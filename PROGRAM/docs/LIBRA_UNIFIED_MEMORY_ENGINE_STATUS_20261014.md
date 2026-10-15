@@ -1,13 +1,13 @@
 # LIBRA 차세대 통합 메모리 엔진 — 현황·미완료 작업
 
-- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.15
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.16
 - 최초 조사 기준: `codex/libra-memory-network-20261013`, [`83caadd3940e121e4d6198bb3619845b59146e91`](https://github.com/rusinus12-droid/Librarian-System/commit/83caadd3940e121e4d6198bb3619845b59146e91)
 - 최초 조사 범위: `6320473` 이후 추가된 6개 커밋과 해당 HEAD의 실제 호출 경로·계약·검증 증거
-- 현재 코드 확인 기준: `f8fce44` 리뷰와 후속 패치. §26–31의 범위를 정정했으며 현재 결함 수정·남은 과제는 §32와 [다음 과제 v1.12](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)를 따른다.
+- 현재 코드 확인 기준: `0e3c39d` 이후 선택적 벡터 페이지·native server GC 구현. 현재 증분은 §33과 [구현 계약](LIBRA_SELECTIVE_VECTOR_AND_NATIVE_GC_CONTRACT_20261015.md)을 우선한다.
 - 목표 계약: [통합 엔진 설계 v1.20](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
-- 전체 잔여 작업: **N01-a/b 원본 증명·전체 자원 상한, N01-e/N02 실제 선택적 표현 접근, N05 native owner fence·회수, N06 실제 품질·규모·설치 인증**. N00 소비자 권한 분리·레거시 전환은 유지한다.
+- 전체 잔여 작업: **N01-a/b 원본 증명·전체 자원 상한, N05 local/mirror transactional backend, N06 실제 품질·규모·설치 인증**. 정본 global의 N01-e와 server_only native GC는 이번 증분에서 연결했다.
 - 결함 증거와 재현: [2026-10-14 코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md), [2026-10-15 최근 커밋 리뷰·패치](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)
-- 판정: **단일 검색기·활성 소비자 연결은 구현됐고 이번 리뷰 결함은 수정했다. 엔진 전체 완성과 native GC/품질 인증은 미완료다.**
+- 판정: **단일 검색·소비자 연결, 정본 global vector page 접근 및 server_only native GC 구현. 전체 원본 원자성·VM 한도·실제 설치/품질 인증은 미완료다.**
 
 이 문서는 구현한 코드, 실제 연결, 통과한 검증, 미완료 항목을 구분한다. 아래의 미완료 항목은 이 문서 작성으로 해결되지 않는다. 상태·근거는 조사 HEAD에 결속되며 이후 커밋에서는 재확인이 필요하다.
 
@@ -436,3 +436,11 @@ generic kernel은 owner가 제공하는 fence·activeBuilds·activeReaders를 �
 - N01-e/N02·N05·N06의 과도한 완료 표기를 정정했다. 구체적인 작업자 평가·변경 전 증거·검증 명령은 [리뷰 §5](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md#5-f8fce44-리뷰와-후속-수정)를 따른다.
 
 **남은 보장:** native 표현 선택 읽기·원본 변경 증명 확대·전체 자원 상한·owner 원자적 GC·실제 품질/설치/규모 인증. `byteBounded:false`, `ownerAtomicity:false`, `inventoryComplete:false`, `calibration:unmeasured`를 유지한다.
+
+## 33. 선택적 벡터 저장 읽기와 실제 서버 GC
+
+정본 global 표현을 불변 vector page와 source/profile-bound 의미 참조 인덱스로 게시한다. 질의는 같은 Index·공통 Cache Manager·Memory Lane에서 필요한 페이지만 읽고 같은 scorer/frontier로 source activation을 전달한다. 기존 전체 선행 vector hydration을 제거했다. 이전 manifest/cold 호환도 같은 Lane의 지연 owner record 접근을 사용한다. 원본 vector의 본문·서버 revision, 모델/auth/view/reset과 최종 private 권한은 재검증한다.
+
+server_only는 실제 전용 SDK·HTTP·SQLite writer transaction에 영속 build/read lease와 배타 GC lease를 연결한다. 현재 root·proof/projection·의미 참조 인덱스·vector page·최근 checkpoint를 보존하며 고아 파생 데이터를 회수한다. reachable/source/root/다른 scope·만료 토큰 삭제와 삭제 후 늦은 root 게시를 거부한다. plugin_only/mirror의 실제 삭제는 원자적 host API 부재로 계속 차단한다.
+
+원본 자료를 변경하지 않는 query 계약을 유지하되 owner의 서버 lease bookkeeping은 발생한다. GRADIA의 보존 readonly SDK/쓰기 권한은 변경하지 않았다. [지원·수명·한도·검증 계약](LIBRA_SELECTIVE_VECTOR_AND_NATIVE_GC_CONTRACT_20261015.md)을 따른다. N01-a/b 및 실제 설치/모델·규모 인증은 남는다.

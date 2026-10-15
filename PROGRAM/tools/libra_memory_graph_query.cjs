@@ -88,6 +88,8 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     queryEmbedding = null,
     documentRepresentations = {},
     representationDecisions = {},
+    semanticReferences = [],
+    semanticBinding = '',
     ablationMode = 'full',
     lambda = 0.82,
     epsilon = 1e-6,
@@ -98,6 +100,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       || typeof worldlineId !== 'string' || !worldlineId.trim() || typeof viewerId !== 'string' || !viewerId.trim()) {
       fail('frame_scope_invalid');
     }
+    if(!Array.isArray(semanticReferences)||semanticReferences.length>32768||typeof semanticBinding!=='string')fail('semantic_references_invalid');
     if (!['full', 'lexical_only'].includes(ablationMode)) fail('ablation_mode_invalid');
     if (asOfTurn !== null && (!Number.isSafeInteger(asOfTurn) || asOfTurn < 0)) fail('as_of_turn_invalid');
     if (typeof lambda !== 'number' || !(lambda > 0 && lambda < 1)) fail('lambda_invalid');
@@ -143,6 +146,8 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       excludedNodeIds: excluded,
       semanticSpace: normalizedSpace,
       ablationMode,
+      semanticBinding,
+      semanticReferences: Object.freeze([...new Set(semanticReferences.map(String))]),
       hasQueryVectors: Object.keys(queryVectors || {}).length > 0 || Boolean(normalizedEmbedding),
       lambda,
       epsilon,
@@ -539,6 +544,10 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       }
     }
 
+    if(queryFrame.ablationMode!=='lexical_only')for(const nodeId of queryFrame.semanticReferences||[]){
+      if(isNodeEligible(nodeId))laneSession.enqueue({laneRole:'semantic_access',table:'representations',anchorNodeId:nodeId,priorityHint:0.8,requesterId:'vector:'+nodeId});
+    }
+
     const rawFeatures = new Map();
     const ensureFeat = nodeId => {
       if (!rawFeatures.has(nodeId)) {
@@ -554,7 +563,9 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
 
     const ingestAccesses = accesses => {
       for (const access of accesses) {
-        if (access.table === 'postings') {
+        if(access.table==='representations'){
+          for(const row of access.items){if(!isNodeEligible(row.nodeId))continue;const sem=row.semanticFeature;semanticByNodeId.set(row.nodeId,sem);if(sem?.status==='available_vector_space'){semanticDiagnostics.compatibleCount++;}else semanticDiagnostics.missingCount++;}
+        } else if (access.table === 'postings') {
           for (const hit of access.items) {
             if (!isNodeEligible(hit.nodeId)) continue;
             const feat = ensureFeat(hit.nodeId);
@@ -1118,5 +1129,5 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     while (!next.done) next = work.next(await next.value.drainPendingAsync());
     return next.value;
   };
-  return Object.freeze({ sealQueryFrame, openView, closeView: handle => issuedViews.delete(handle), scoreCandidate, retrieve, retrieveAsync });
+  return Object.freeze({ sealQueryFrame, openView, closeView: handle => issuedViews.delete(handle), evaluateRepresentation: resolveSemanticFeature, scoreCandidate, retrieve, retrieveAsync });
 };

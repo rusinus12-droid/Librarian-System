@@ -292,10 +292,13 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
     dryRun = false,
     throwOnConflict = false,
     nowMs = Date.now(),
-    leaseTtlMs = 60000
+    leaseTtlMs = 60000,
+    candidateKeys: requestedCandidates = null
   } = {}) => {
     if (active) fail('build_busy'); if (disposed) fail('disposed');
     if (!owner || typeof owner.listKeys !== 'function' || typeof scopeKey !== 'string' || !scopeKey) fail('options_invalid');
+    if(requestedCandidates!==null&&(!Array.isArray(requestedCandidates)||requestedCandidates.length>8192||requestedCandidates.some(key=>typeof key!=='string')))fail('options_invalid');
+    const selected=requestedCandidates===null?null:new Set(requestedCandidates);
     active = true; const ticket = epoch; counters.gcRuns++;
     try {
       const prefix = 'libra:v1:scope:' + scopeKey + ':memory-graph:v1:';
@@ -316,6 +319,24 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
           candidateKeys: [],
           deletedKeys: []
         };
+      }
+
+      // A real owner can mark and re-check reachability inside its own writer
+      // transaction. Its fence excludes concurrent readers and publishers.
+      if(inventory.fence?.schema==='libra.graph_namespace_fence.v1'&&Array.isArray(inventory.retainedKeys)){
+        const retained=new Set(inventory.retainedKeys),candidateKeys=inventory.keys.filter(key=>key.startsWith(prefix)&&(!selected||selected.has(key))&&!retained.has(key)&&
+          /^libra:v1:scope:[^:]+:memory-graph:v1:(?:generation:|page:|corpus:(?:manifest:|page:|proof:|projection:|checkpoint:|semantic-directory:|vector:)|semantic:(?:page:|manifest:))/.test(key));
+        const deletedKeys=[];let status='completed';
+        if(!dryRun&&typeof owner.deleteConditional!=='function')status='blocked_atomic_gc_unavailable';
+        else if(!dryRun)for(const key of candidateKeys){check(ticket,owner);if(!await owner.deleteConditional({key,inventory,fence:inventory.fence})){status='aborted_concurrent_mutation';break;}deletedKeys.push(key);counters.gcDeleted++;}
+        return {schema:'libra.graph_store_gc.v1',status,scopeKey,dryRun:Boolean(dryRun),candidateKeys,deletedKeys,
+          activeRoots:inventory.keys.filter(key=>key.startsWith(prefix+'root:')).length,
+          activeCorpusRoots:inventory.keys.filter(key=>key.startsWith(corpusPrefix+'root:')).length,
+          retainedManifestCount:[...retained].filter(key=>key.startsWith(prefix+'generation:')||key.startsWith(corpusPrefix+'manifest:')).length,
+          retainedPageCount:[...retained].filter(key=>key.startsWith(prefix+'page:')||key.startsWith(corpusPrefix+'page:')||key.startsWith(corpusPrefix+'vector:')).length,
+          retainedCorpusKeyCount:[...retained].filter(key=>key.startsWith(corpusPrefix)).length,
+          protectedBuildCount:0,protectedReaderCount:0,
+          corpusReclamation:'owner_atomic_reachability',representationReclamation:'derived_pages_only',retainedKeyCount:retained.size};
       }
 
       // 1. Partition keys across window graph, corpus, and representations
@@ -469,7 +490,7 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
       }
 
       const initialKeySet = new Set(allKeys);
-      const candidates = postMarkKeys.filter(k => initialKeySet.has(k) && !protectedKeys.has(k) && (
+      const candidates = postMarkKeys.filter(k => (!selected||selected.has(k)) && initialKeySet.has(k) && !protectedKeys.has(k) && (
         (k.startsWith(prefix + 'generation:') && !retainedManifests.has(k))
         || (k.startsWith(prefix + 'page:') && !retainedPages.has(k))
       )).sort((a, b) => a.localeCompare(b, 'en'));

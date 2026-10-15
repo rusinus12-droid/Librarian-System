@@ -82,7 +82,7 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
       storageCursor = null
     } = {}) => {
       if (!validRoles.has(laneRole)) fail('lane_role_invalid');
-      if (!['directory', 'adjacency', 'postings', 'reverseDependencies'].includes(table)) fail('table_invalid');
+      if (!['directory', 'adjacency', 'postings', 'reverseDependencies', 'representations'].includes(table)) fail('table_invalid');
       if (!Number.isSafeInteger(offset) || offset < 0) fail('offset_invalid');
       if (typeof priorityHint !== 'number' || !Number.isFinite(priorityHint)) fail('priority_invalid');
 

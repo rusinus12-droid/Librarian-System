@@ -11,6 +11,7 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
   const tokenizerVersion = 'libra.tokenizer.nfkc_ko_particle_v2';
   const issued = new WeakSet();
   const lazyReaders = new WeakMap();
+  const semanticReaders = new WeakMap();
   const issue = value => { issued.add(value); return Object.freeze(value); };
   const structuralPredicates = new Set([
     'mentions', 'subject_of', 'target_of', 'evidenced_by', 'derived_from',
@@ -506,6 +507,7 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
     lazyReaders.set(compiled,readRows); return compiled;
   };
   const queryPageAsync = async (compiled, options = {}, storageBudget) => {
+    if(options.table==='representations'){const reader=semanticReaders.get(compiled);if(!reader)fail('semantic_reader_required');return await reader({...options,partition:compiled.partition,generation:compiled.generation,indexDigest:compiled.indexDigest},storageBudget);}
     const reader = lazyReaders.get(compiled);
     if (!reader) return queryPage(compiled,options);
     const table = options.table || 'adjacency', offset = options.offset ?? 0, pageBytes = options.pageBytes ?? 16384;
@@ -526,5 +528,5 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
   };
   const isCompatible = (compiled, { partition, generation } = {}) => issued.has(compiled)
     && compiled.partition === partition && compiled.generation === generation;
-  return Object.freeze({ compile, restore, restoreLazy, isCompatible, affectedByChanges, queryPage, queryPageAsync, tokenize: tokenizer });
+  return Object.freeze({ withSemanticReader(compiled,reader){if(!issued.has(compiled)||typeof reader!=='function')fail('semantic_reader_invalid');const view=issue({...compiled});if(lazyReaders.has(compiled))lazyReaders.set(view,lazyReaders.get(compiled));semanticReaders.set(view,reader);return view;}, compile, restore, restoreLazy, isCompatible, affectedByChanges, queryPage, queryPageAsync, tokenize: tokenizer });
 };

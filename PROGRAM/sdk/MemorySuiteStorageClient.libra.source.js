@@ -7237,6 +7237,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const dispose = async () => {
     if (lifecycle.disposed) return false;
+    for(const lease of graphStorageLeases.values())void lease.release();
     lifecycle.disposed = true;
     for (const timer of [...lifecycle.timers]) clearTimeout(timer);
     lifecycle.timers.clear();
@@ -7339,6 +7340,46 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     return true;
   };
+  const captureServerBinding=async()=>{
+    for(let attempt=0;attempt<4;attempt++){
+      const connection=await bootstrap(false,true),generation=dataBinding.generation;
+      await assertConnectionCurrent(connection,generation);
+      // A refresh temporarily clears bootstrap.value. Wait for its validated
+      // result instead of misclassifying an unknown reset epoch as a change.
+      if(state.bootstrap.pending||state.bootstrap.value!==connection)continue;
+      if(dataBinding.generation!==generation)throw connectionStaleError();
+      return serverBinding();
+    }
+    throw connectionStaleError();
+  };
+  // Server-only derived-store leases. Public DTOs and process-local Maps are
+  // never accepted as a namespace fence by the storage owner.
+  const graphStorageLeases=new Map();
+  const graphLifecycleRequest=async(scopeKey,body)=>{
+    const scope=await resolveCurrentScope(false),mode=(await readScopeMode(scope,false)).mode;
+    if(scope.scopeKey!==scopeKey||![MODE_SERVER_ONLY,MODE_MIRROR].includes(mode))throw new Error('LIBRA_GRAPH_LEASE_ROUTE_CHANGED');
+    const before=await conditionalBatchBoundary();
+    const boot=await bootstrap(false,true);
+    if(boot?.capabilities?.['libra-graph-lifecycle.v1']!==true)throw new Error('LIBRA_GRAPH_LEASE_UPGRADE_REQUIRED');
+    const payload=await request('POST','/v1/libra/graph-lifecycle',{scopeKey,...body},{allowPluginOnly:true,scopeId:scopeKey,storageMode:mode});
+    if(jsonComparable(before)!==jsonComparable(await conditionalBatchBoundary()))throw new Error('LIBRA_GRAPH_LEASE_ROUTE_CHANGED');
+    if(payload?.ok!==true||!payload.result)throw new Error('LIBRA_GRAPH_LEASE_RESPONSE_INVALID');
+    return payload.result;
+  };
+  const acquireGraphStorageLease=async(scopeKey,kind)=>{
+    const mode=(await readScopeMode(await resolveCurrentScope(false),false)).mode;
+    if(![MODE_SERVER_ONLY,MODE_MIRROR].includes(mode)||kind==='gc'&&mode!==MODE_SERVER_ONLY)return null;
+    let lease=await graphLifecycleRequest(scopeKey,{action:'acquire',kind,requestId:operationId('graph-lease')}),closed=false,timer=null,failure=null;
+    const key=lease.token;
+    const assertCurrent=async()=>{if(closed||failure)throw failure||new Error('LIBRA_GRAPH_LEASE_CLOSED');return await graphLifecycleRequest(scopeKey,{action:'assert',token:key});};
+    const renew=async()=>{try{if(closed)return;lease=await graphLifecycleRequest(scopeKey,{action:'renew',token:key});}catch(error){failure=error;}finally{if(!closed&&!failure){timer=setTimeout(renew,20000);timer?.unref?.();}}};
+    timer=setTimeout(renew,20000);timer?.unref?.();
+    const session={scopeKey,kind,token:key,assertCurrent,
+      command:async body=>{await assertCurrent();return await graphLifecycleRequest(scopeKey,{...body,token:key});},
+      release:async()=>{if(closed)return;closed=true;clearTimeout(timer);graphStorageLeases.delete(key);try{await graphLifecycleRequest(scopeKey,{action:'release',token:key});}catch(_){/* durable expiration still revokes this lease */}}
+    };
+    graphStorageLeases.set(key,session);return Object.freeze(session);
+  };
   const prepareConditionalBatch = async (input = {}) => {
     const mutations = input.mutations, conditions = input.conditions || [];
     if (!Array.isArray(mutations) || !mutations.length || !Array.isArray(conditions) || mutations.length+conditions.length>64) {
@@ -7368,6 +7409,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     for(const pin of pinnedSets)for(const saved of pin.records){
       const condition=[...body.conditions,...body.mutations].find(c=>c.space===saved.space&&c.key===saved.remoteKey);
       if(!condition||condition.expectedRevision!==saved.revision||condition.expectedDigest!==saved.digest||condition.expectedExists!==saved.exists||condition.expectedTombstone!==saved.tombstone)throw conditionalBatchError('MEMORY_SUITE_BATCH_PIN_NOT_BOUND');
+    }
+    const graphScope=/^libra:v1:scope:([^:]+):memory-graph:v1:/.exec(body.mutations[0]?.key||'')?.[1];
+    if(graphScope&&body.mutations.some(m=>m.key.includes(':root:'))){
+      const lease=[...graphStorageLeases.values()].find(x=>x.scopeKey===graphScope&&x.kind==='build');
+      if(!lease)throw new Error('LIBRA_GRAPH_BUILD_LEASE_REQUIRED');await lease.assertCurrent();body.graphLease={scopeKey:graphScope,token:lease.token};
     }
     if (storageValueBytes(body)>4*1024*1024) throw conditionalBatchError('MEMORY_SUITE_BATCH_BODY_LIMIT');
     if (jsonComparable(boundary)!==jsonComparable(await conditionalBatchBoundary())) throw conditionalBatchError('MEMORY_SUITE_BATCH_BOUNDARY_CHANGED');
@@ -7661,6 +7707,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     namespace,
     pluginId,
     observeReadonlyRoute, observeOwnerReadonlyRoute, assertReadonlyRouteCurrent, releaseReadonlyRouteObservation,
+    acquireGraphStorageLease,
     captureConditionalReadSet,
     assertConditionalReadSet,
     prepareConditionalBatch,
@@ -7699,6 +7746,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     keys: scopedKeys,
     bootstrap: scopedBootstrap,
     serverBinding,
+    captureServerBinding,
     shouldRoute: matchesRoute,
     createPluginStorageProxy: legacy => createScopedProxy(legacy, 'plugin', proxyCache),
     createLocalStorageProxy: legacy => createScopedProxy(legacy, 'local', localProxyCache),

@@ -1,8 +1,8 @@
 # LIBRA Storage Lifecycle & Namespace Fence GC Contract (N05)
 
-**Document Version:** 1.1.0
+**Document Version:** 1.2.0
 **Date:** 2026-10-15  
-**Status:** Proposed owner protocol; generic kernel tests exist; native deletion blocked
+**Status:** Native server_only protocol implemented; local/mirror destructive GC blocked
 **Related Documents:**
 - [`LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md`](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md) (§8 N05)
 - [`LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md`](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)
@@ -13,11 +13,11 @@
 
 ---
 
-## 0. 구현 상태와 증거 범위
+## 0. 현재 구현 범위
 
-`64990aa`는 주입 owner의 GC kernel 계약과 mock 테스트를 추가했다. native owner/SDK/server의 원자적 namespace fence·durable build/reader lease는 **미구현**이다. native `captureGCInventory()`는 `fence:null`이며 `deleteConditional`을 제공하지 않는다. 이 문서 §1–3은 owner가 충족해야 할 프로토콜 요구사항이며 실제 native 구현 완료 선언이 아니다.
+`0e3c39d` 후속 구현에서 server_only SDK/HTTP/SQLite의 실제 영속 build/read lease와 배타 GC lease를 연결했다. 서버가 현재 root 도달성·후보 revision/digest·lease를 삭제 트랜잭션에서 검사하고, root 게시도 참조 존재를 검증한다. [실제 프로토콜·수명·한도·검증](LIBRA_SELECTIVE_VECTOR_AND_NATIVE_GC_CONTRACT_20261015.md)을 이 문서의 현재 구현 기준으로 삼는다.
 
-현재 corpus는 namespace 전체를 보존하고 회수하지 않는다(`corpusReclamation:conservative_namespace_retention`). 표현 회수도 미구현이다. 실제 corpus manifest는 `refs/sourceProofs`, checkpoint는 `windowSlices`를 사용한다. 64KiB를 넘는 정상 checkpoint도 GC 관찰/차단이 동작하도록 불필요한 body decode를 제거했다. schema-aware 다계층 회수는 owner fence와 함께 후속 구현한다. 커널 `inspect.gcLifecycleProtection`은 주입 계약의 처리 기능이며 native capability 증명이 아니다.
+plugin_only/mirror의 destructive GC는 원자적 host 기능 부재로 차단한다. 아래 §1–3의 세분화 workingKeys/reader page pin은 generic owner의 목표 계약이다. 이번 native 구현은 scope 전체를 보호하는 공유 build/read lease와 배타 GC lease를 사용한다. corpus/파생 vector 페이지 회수는 실제 schema에 연결했으며 원본 producer vector는 회수하지 않는다.
 
 ## 1. 개요 및 목적 (Overview & Purpose)
 
@@ -155,4 +155,4 @@ $ /usr/local/bin/node PROGRAM/tests/libra_memory_graph_store_lifecycle_gc_test.c
 All 7/7 N05 storage lifecycle and GC tests passed.
 ```
 
-실제 등록 API 검증은 `libra_memory_graph_review_boundaries_runtime_test.cjs`의 두 저장 모드 삭제 차단/transport 0과 `libra_memory_graph_review_f8_runtime_test.cjs`의 실제 대형 checkpoint dry-run/차단·저장값 불변을 따른다. native destructive GC는 이 검사로 활성화하지 않는다.
+실제 등록 API 검증은 `libra_memory_graph_review_boundaries_runtime_test.cjs`의 두 저장 모드 삭제 차단/transport 0과 `libra_memory_graph_review_f8_runtime_test.cjs`의 실제 대형 checkpoint dry-run/차단·저장값 불변을 따른다. 현재 server_only의 실제 회수는 새 구현 계약과 `libra_memory_graph_native_gc_runtime_test.cjs`를 따른다. plugin_only/mirror의 실제 삭제는 계속 차단한다.

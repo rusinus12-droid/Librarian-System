@@ -1120,8 +1120,15 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       };
 
       const metadata = { ...compiled }; for (const table of tables) delete metadata[table];
+      let semanticDirectory=null;
+      if(typeof owner.buildSemanticDirectory==='function'){
+        const directory=await owner.buildSemanticDirectory(graph,value.collected);
+        if(directory){const raw=JSON.stringify(directory),digest=hash(raw),key=loc.prefix+'semantic-directory:'+digest;
+          pages.measure(directory,config.maxSerializedBytes);owner.resources?.retain(directory,'publication_semantic_directory',2);
+          await immutable(owner,key,raw);semanticDirectory={schema:directory.schema,key,digest};}
+      }
       const manifest = { schema, routingVersion, frame: graph.readerFrame, config, windows: value.windows, generation, metadata, refs,
-        sourceProofs, buildMetrics, serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
+        sourceProofs, semanticDirectory, buildMetrics, serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
         ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
       pages.measure(manifest, 131072);
       owner.resources?.retain(manifest,'publication_manifest',2);
@@ -1409,6 +1416,26 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         if (releaseScope) scope?.close();
       }
     };
+    let semanticDirectory=null;
+    if(manifest.semanticDirectory){const ref=manifest.semanticDirectory;
+      if(ref.schema!=='libra.graph_semantic_directory.v1'||ref.key!==loc.prefix+'semantic-directory:'+ref.digest)fail('semantic_directory_invalid');
+      const raw=await owner.read(ref.key);semanticDirectory=await parse(raw,config.maxSerializedBytes,owner.resources);
+      if(hash(raw)!==ref.digest||semanticDirectory.schema!==ref.schema||!Array.isArray(semanticDirectory.entries)
+        ||!Number.isSafeInteger(semanticDirectory.dimension)||semanticDirectory.dimension<1||semanticDirectory.dimension>65536)fail('semantic_directory_invalid');
+      for(const entry of semanticDirectory.entries){
+        if(!Array.isArray(entry.coordinates)||entry.coordinates.length>16||entry.coordinates.some(x=>!Number.isFinite(x))
+          ||!Number.isFinite(entry.tailNorm)||entry.tailNorm<0||entry.tailNorm>1.000000001)fail('semantic_directory_invalid');
+        if(entry.vectorPages!==undefined&&!Array.isArray(entry.vectorPages))fail('semantic_directory_invalid');
+        for(const page of entry.vectorPages||[]){
+          if(!/^[a-f0-9]{64}$/.test(page.digest)||page.key!==loc.prefix+'vector:'+page.digest||!Number.isSafeInteger(page.bytes)||page.bytes<2||page.bytes>65536)fail('semantic_directory_invalid');
+          if(eager){const raw=await owner.read(page.key);owner.check();if(typeof raw!=='string'||hash(raw)!==page.digest||pages.encodedSize(raw).utf8Bytes!==page.bytes)fail('semantic_page_corrupt');
+            const handle=pages.open({partition:loc.partition,generation:manifest.generation});let stage,lease;
+            try{stage=pages.reserve(handle,pages.stageCost(pages.encodedSize(raw)));lease=pages.install(handle,{pool:'units',codec:'json_array.v1',digest:page.digest,rows:1},raw,stage);if(typeof pages.decode(lease)[0]!=='string')fail('semantic_page_corrupt');}
+            finally{if(lease)pages.release(lease);if(stage)pages.releaseStage(stage);pages.close(handle);}}
+        }
+      }
+
+    }
     let compiledIndex;
     if (lazy) compiledIndex = index.restoreLazy(manifest.metadata, { partition: loc.partition, generation: manifest.generation, readRows });
     else {
@@ -1438,6 +1465,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     };
     return {
       ...native,
+      semanticDirectory,
       sourceProofs: canVerifyIncrementally ? proofRecord : null,
       currentnessVerification,
       compiledIndex,

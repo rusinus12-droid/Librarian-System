@@ -90,6 +90,44 @@ async function test(name, fn) { await fn(); tests.push(name); }
     await assert.rejects(() => f.semantic.prepare({ ...f.options, check() { if (!active) throw Error('owner_changed'); },
       embedQuery: async () => { active = false; throw Error('provider_failure'); } }), /owner_changed/);
   });
+  await test('lazy owner vectors are read only by Lane, with exact routing, common cache and the same eager witnesses', async () => {
+    const f=fixture(),fingerprint=text=>crypto.createHash('sha256').update(text).digest('hex');
+    const pages=createPages({fingerprint}),index=createIndex({pages,fingerprint}),lane=createLane({index,pages}),query=createQuery({index,lane,pages,fingerprint});
+    let reads=0;const options={...f.options,readVector:async key=>{reads++;return f.records.get(key);},pages,fingerprint,evaluate:query.evaluateRepresentation};
+    const directory=await f.semantic.buildDirectory(options);assert.equal(f.calls(),0,'maintenance never embeds a query/document');assert.equal(reads,2);
+    reads=0;const prepared=await f.semantic.prepareLazy({...options,routingDirectory:directory});assert.equal(reads,0,'opening metadata reads no vectors');
+    assert.deepEqual(prepared.queryInput.semanticReferences,['source-one'],'orthogonal zero-score source is pruned by an exact bound');
+    const partition='semantic',generation=pages.generation(f.graph,{partition,restoreEpoch:0,view:f.graph.readerFrame});
+    const base=index.compile(f.graph,{partition,generation}),compiled=index.withSemanticReader(base,prepared.readPage);
+    const frame=query.sealQueryFrame({...prepared.queryInput,queryText:f.options.queryText,owner:f.graph.readerFrame.owner,scopeKey:'scope',worldlineId:'main'}),view=query.openView(f.graph,compiled,frame);
+    const result=await query.retrieveAsync(view,{maxStoragePages:1});query.closeView(view);
+    assert.equal(reads,1);assert.ok(result.candidates.some(x=>x.nodeId==='fact-one'));assert.equal(result.complete,true);
+    assert.ok(result.diagnostics.laneRoleStats.semantic_access.pages>0);assert.equal(pages.inspect().pins,0);assert.equal(pages.inspect().activeRequests,0);
+    const eager=await f.semantic.prepare(f.options),eagerFrame=query.sealQueryFrame({...eager.queryInput,queryText:f.options.queryText,owner:f.graph.readerFrame.owner,scopeKey:'scope',worldlineId:'main'}),eagerView=query.openView(f.graph,base,eagerFrame);
+    const expected=await query.retrieveAsync(eagerView);query.closeView(eagerView);
+    assert.deepEqual(result.candidates.map(x=>[x.nodeId,x.score,x.winningWitness]),expected.candidates.map(x=>[x.nodeId,x.score,x.winningWitness]));
+  });
+  await test('lazy semantic physical budget stops before reading the next owner ref and leaves a resumable unread access', async () => {
+    const f=fixture(),fingerprint=text=>crypto.createHash('sha256').update(text).digest('hex');
+    const pages=createPages({fingerprint}),index=createIndex({pages,fingerprint}),lane=createLane({index,pages}),query=createQuery({index,lane,pages,fingerprint});let reads=0;
+    const prepared=await f.semantic.prepareLazy({...f.options,readVector:async key=>{reads++;return f.records.get(key);},pages,fingerprint,evaluate:query.evaluateRepresentation});
+    const partition='budget',generation=pages.generation(f.graph,{partition,restoreEpoch:0,view:f.graph.readerFrame});
+    const base=index.compile(f.graph,{partition,generation}),compiled=index.withSemanticReader(base,prepared.readPage);
+    const frame=query.sealQueryFrame({...prepared.queryInput,queryText:f.options.queryText,owner:f.graph.readerFrame.owner,scopeKey:'scope',worldlineId:'main'}),view=query.openView(f.graph,compiled,frame);
+    const result=await query.retrieveAsync(view,{maxStoragePages:1});assert.equal(reads,1);assert.equal(result.complete,false);
+    assert.ok(result.diagnostics.unreadCursors.some(x=>x.table==='representations'));query.closeView(view);
+    assert.equal(pages.inspect().pins,0);assert.equal(pages.inspect().activeRequests,0);
+  });
+  await test('lazy admission preserves the eager representation budget near its boundary', async () => {
+    const f=fixture(),fingerprint=text=>crypto.createHash('sha256').update(text).digest('hex');
+    const pages=createPages({fingerprint}),index=createIndex({pages,fingerprint}),lane=createLane({index,pages}),query=createQuery({index,lane,pages,fingerprint});
+    const prepared=await f.semantic.prepareLazy({...f.options,maxBytes:4400,pages,fingerprint,evaluate:query.evaluateRepresentation});
+    const partition='boundary',generation=pages.generation(f.graph,{partition,restoreEpoch:0,view:f.graph.readerFrame}),compiled=index.withSemanticReader(index.compile(f.graph,{partition,generation}),prepared.readPage);
+    const frame=query.sealQueryFrame({...prepared.queryInput,queryText:f.options.queryText,owner:f.graph.readerFrame.owner,scopeKey:'scope',worldlineId:'main'}),view=query.openView(f.graph,compiled,frame);
+    const result=await query.retrieveAsync(view);query.closeView(view);
+    assert.equal(result.complete,true);assert.equal(prepared.diagnostics.admittedRepresentations,2);
+    const eager=await f.semantic.prepare({...f.options,maxBytes:4400});assert.equal(eager.diagnostics.admittedRepresentations,2);assert.equal(prepared.diagnostics.representationBytes,eager.diagnostics.representationBytes);
+  });
   await test('N02: additional representation admits valid multi-family vector and removes it from vectorlessFamilies', async () => {
     const f = fixture();
     const microNodeId = 'micro-fact-one';

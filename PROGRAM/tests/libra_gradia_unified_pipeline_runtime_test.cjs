@@ -32,7 +32,7 @@ test('native LIBRA kernel -> authenticated owner receipt -> real GRADIA SHADOW/A
  await g.plugin.saveRuntimeSettings({mode:'normal',default_preset:'offline',input_assist_mode:'off',multi_pipeline_mode:'lightweight',
    enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true,failure_mode:'hard',lore_activation_mode:'off'});
  const messages=chat.message.map(row=>({role:row.role,content:row.data,messageId:row.chatId,chatId:row.chatId}));
- const before=x.server.storedRows(),calls=f.control.calls.length;
+ const before=x.server.storedRows().filter(row=>!row.key.includes(':memory-graph-control:v1:')),calls=f.control.calls.length;
  const output=await g.hooks.beforeRequest(messages,'model');
  assert.equal(prompts.length,4,JSON.stringify(g.plugin.getRuntime().last));
  assert.ok(prompts.every(body=>JSON.stringify(body).includes('owner_issued_evidence_bundle')));
@@ -42,7 +42,7 @@ test('native LIBRA kernel -> authenticated owner receipt -> real GRADIA SHADOW/A
  assert.equal(bus.messages.find(row=>row.body.result?.engine?.corpusRead)?.body.result.engine.corpusRead.mode,'durable_common_index');
  assert.equal(bus.messages.find(row=>row.body.result?.engine?.corpusRead)?.body.result.engine.corpusRead.storage.storageAccess,'selective_durable_pages');
  assert.ok(bus.messages.some(row=>row.body.action==='current'));
- assert.equal(f.control.calls.length,calls);assert.deepEqual(x.server.storedRows(),before,'reading must not write owner memory');
+ assert.equal(f.control.calls.length,calls);assert.deepEqual(x.server.storedRows().filter(row=>!row.key.includes(':memory-graph-control:v1:')),before,'reading must not write owner memory');
  assert.ok(!JSON.stringify([...g.store]).includes('owner_issued_evidence_bundle'));
  // A second request gets a fresh selection, but an owner source edit during
  // SHADOW must stop the pending draft before AIDE or the host can receive it.

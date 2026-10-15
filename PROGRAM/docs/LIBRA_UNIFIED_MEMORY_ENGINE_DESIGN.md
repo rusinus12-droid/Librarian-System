@@ -1,8 +1,8 @@
 # LIBRA 차세대 통합 메모리 엔진 설계
 
-- 문서 버전: 1.20 · 작성일: 2026-10-13 · 갱신일: 2026-10-15
-- 상태: **통합 엔진이 기본·유일한 검색기로 기존 검색을 대체했다. Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기는 같은 검색기를 사용한다. 신규 게시 인덱스의 선택적 저장 page 접근을 연결했다. 증분 원본 검증·구축 재개를 연결했으며, 증명 보장 확대·전체 자원 계상·안전한 native GC·실제 설치/품질·규모 인증은 미완성이다.**
-- 현재 코드 확인 기준: `codex/libra-memory-network-20261013`, `f8fce44` 리뷰 후 결함 수정. 요청 간 storage 재개는 별도 제한·만료·일회용 private staging으로 연결하고, 합성 평가의 기대값 검사와 실제 signal 절제를 보완했다. N00 소비자 권한 분리는 유지한다. N01-e/N02의 실제 선택적 표현 저장 접근과 N05 native owner fence·삭제는 미완료다. 최신 판정은 [현황 §32](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [다음 과제 v1.12](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md), [리뷰 §5](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)를 따른다. `byteBounded:false`, `ownerAtomicity:false`, `inventoryComplete:false`를 유지한다.
+- 문서 버전: 1.21 · 작성일: 2026-10-13 · 갱신일: 2026-10-15
+- 상태: **통합 엔진이 기본·유일한 검색기로 기존 검색을 대체했다. Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기는 같은 검색기를 사용한다. 신규 게시 인덱스의 선택적 저장 page 접근을 연결했다. 증분 원본 검증·구축 재개를 연결했으며, 증명 보장 확대·전체 자원 계상·server_only native GC까지 연결했으며, local/mirror 원자적 회수·전체 자원/원본 보장·실제 설치/품질·규모 인증은 미완성이다.**
+- 현재 코드 확인 기준: `0e3c39d` 이후 정본 global vector page·의미 참조 인덱스·공통 Cache/Lane 읽기와 server_only native GC 증분. [실제 구현·지원 계약](LIBRA_SELECTIVE_VECTOR_AND_NATIVE_GC_CONTRACT_20261015.md)과 [현황 §33](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)을 우선한다. plugin_only/mirror 실제 GC에는 원자적 host API 또는 transactional 파생 저장소가 필요하다. N01-a/b·실제 설치/품질·규모 인증은 남으며 전체 보장 플래그는 유지한다.
 - N03 연결 계약: [GRADIA 통합 읽기](LIBRA_GRADIA_UNIFIED_READ_CONTRACT_20261014.md). server_only·인증된 호스트 채널·기존 readonly 권한·private owner 영수증을 유지한다. 인풋 작성기는 [별도 N04 읽기 계약](LIBRA_GRADIA_INPUT_WRITER_READ_CONTRACT_20261014.md)으로 연결하며, 실제 설치 인증은 후속 과제다.
 - 비교 기준: main, a9549e0505989a1187f510b9596ab98a44352c04
 - 참고 구현: 첨부 `LIBRA_World_Manager.js` v6.0.0의 HME. [검토 기록·source fingerprint](WM_HME_ASSOCIATIVE_GRAPH_REVIEW_20261014.md)에 구현 경로와 적용 범위를 고정

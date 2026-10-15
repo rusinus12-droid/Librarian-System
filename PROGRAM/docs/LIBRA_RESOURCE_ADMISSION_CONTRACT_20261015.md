@@ -1,6 +1,6 @@
 # LIBRA 원본·JSON·보유 데이터의 자원 예산 — N01-C1/C2
 
-- 작성일: 2026-10-15 · 버전: 1.2
+- 작성일: 2026-10-15 · 버전: 1.3
 - 기준: `e542ce8` 이후 N01-C2 보유 예약·권한 수명·코퍼스 유지보수 증분
 - 판정: **owner 본문 I/O·JSON 처리와 명시적으로 계상한 graph/index/표현/private 근거의 보유 예약·해제를 연결했다. 코퍼스 build/publication·eager audit도 같은 pool을 사용한다. 전체 원본/HTTP/VM 상한은 미완료다. `byteBounded:false`를 유지한다.**
 - 관련: [전체 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현황 §25](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [남은 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
@@ -127,3 +127,9 @@ storage budget stop은 요청 scope를 항상 닫는다. 요청을 넘겨 보존
 완료·소비·만료·취소/unload·실패 시 staging ledger를 해제한다. claim은 await 전에 일회용으로 소비하며 replay/동시 재개를 거부한다. 잘못된 다른 query/view/access cursor는 정상 lease를 소비하지 않는다. `inspectMemoryGraphStore().corpus.storageStaging`은 현재 개수·계상 byte·한도를 보고한다. partial 공개 반환 뒤 공통 pool에는 이 reachable staging만 남을 수 있으며, 성공적으로 끝난 일반 공개 질의는 기존처럼 private authority를 유지하지 않는다.
 
 회귀: `libra_memory_graph_review_f8_runtime_test.cjs`의 세 저장 모드 공개 API 재개·완료/취소 해제·결속·만료·후속 실패, `libra_memory_graph_selective_index_test.cjs`의 독립 reader 재개·정원·만료·root/재시작 거부. 추정 예약이며 물리 heap 상한 인증은 아니다.
+
+## 8. 선택적 벡터 페이지와 서버 사용권
+
+정본 global vector의 파생 불변 페이지가 공통 cache staging/pin/decode 및 요청별 durable/source/retained admission을 사용한다. 의미 접근은 Lane의 같은 storage 예산에 참여한다. 원본 벡터 최종 검증과 과거 형식의 owner record 접근은 source 예산으로 별도 계상한다. query가 문서 임베딩이나 durable index를 자동 생성하지 않는다.
+
+server_only의 private query·Classic context·GRADIA receipt와 build 수명은 서버의 영속 lease에 연결한다. 종료/실패/취소/dispose에서 해제하며 연결 단절/응답 손실은 서버 만료로 정리한다. 이는 owner bookkeeping 쓰기다. source 불변성과 readonly consumer 권한은 유지한다. 지원 모드/명시적 큰 합성 profile과 전체 상한 미완료 범위는 [구현 계약](LIBRA_SELECTIVE_VECTOR_AND_NATIVE_GC_CONTRACT_20261015.md)을 따른다.

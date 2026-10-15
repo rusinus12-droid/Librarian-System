@@ -44,7 +44,7 @@ test('source body changed after projection cannot be certified as the baseline f
   assert.equal(legacy.modelDispatchEligible,true);assert.equal(legacy.corpusRead.nativeReprojectionRequired,true);
 });
 
-for(const mode of ['plugin_only','server_only'])test(`${mode}: native GC never treats runtime maps and root rereads as an atomic namespace fence`,async t=>{
+for(const mode of ['plugin_only','server_only'])test(`${mode}: native GC requires an owner fence and never uses runtime maps as deletion authority`,async t=>{
   const x=await fixture({mode});t.after(()=>x.cleanup());
   const api=x.f.r.api;
   await api.buildMemoryGraphGeneration({pageBytes:16384});
@@ -71,10 +71,12 @@ for(const mode of ['plugin_only','server_only'])test(`${mode}: native GC never t
     t.after(()=>{backend.removeItem=remove;});
   }
   const result=await api.collectMemoryGraphGarbage({dryRun:false});
-  assert.deepEqual(Array.from(result.deletedKeys),[],`late publisher race=${raced}; no certified owner fence exists`);
-  assert.equal(result.status,'blocked_atomic_gc_unavailable');
-  assert.equal(raced,false,'without the owner capability there must be no destructive transport call');
+  assert.equal(raced,false,'native server deletion uses the fenced owner endpoint; plugin-only never issues deletion');
   const remaining=x.f.getRecords('libra.graph_generation.v1').find(r=>r.key===orphanKey);
-  assert.ok(remaining,'the candidate remains available to an independent publisher');
+  if(mode==='server_only'){
+    assert.equal(result.status,'completed');assert.ok(result.deletedKeys.includes(orphanKey));assert.equal(remaining,undefined);
+  }else{
+    assert.deepEqual(Array.from(result.deletedKeys),[]);assert.equal(result.status,'blocked_atomic_gc_unavailable');assert.ok(remaining);
+  }
   assert.equal((await api.collectMemoryGraphGarbage({dryRun:true})).status,'completed');
 });

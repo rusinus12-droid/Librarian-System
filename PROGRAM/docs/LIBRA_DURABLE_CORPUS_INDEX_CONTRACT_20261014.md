@@ -98,3 +98,7 @@ N01-C1은 actual query의 root/manifest/proof/projection/page payload 접근을 
 구축 checkpoint 재개와 query의 storage continuation은 별개다. 후자는 runtime private staging의 일회용·기한부 lease이며 새 공개 요청/reader에서도 재개된다. root·generation/index·query/view/access에 결속하고 기본 60초·16건·건당 추정 16MiB·전체 64MiB를 적용한다. 공통 resource pool 예약과 소비/만료/실패/취소 해제는 [자원 예산 계약 §7](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다. 재시작 후 영속 query/frontier 재개는 지원하지 않는다.
 
 GC는 corpus namespace 전체를 보존한다. 실제 checkpoint는 `windowSlices`, manifest는 `refs/sourceProofs`를 사용하며 window Store의 작은 decoder로 이 body를 읽지 않는다. schema-aware 도달성 회수와 native owner fence는 N05 잔여 과제다.
+
+## 선택적 벡터 페이지와 native server GC 후속 연결
+
+`0e3c39d` 후속 구현은 정본 global vector의 불변 페이지·의미 참조 인덱스·공통 Cache/Index/Lane 접근과 server_only의 실제 lease/fence·도달성 GC를 연결한다. 현재 지원 범위·실제 검증·이전 manifest/cold 호환·원본 불변/owner bookkeeping 구분은 [후속 구현 계약](LIBRA_SELECTIVE_VECTOR_AND_NATIVE_GC_CONTRACT_20261015.md)을 우선한다. 전체 자원/원본 보장·실제 설치/품질·규모 인증 및 local/mirror transactional backend는 후속 과제다.

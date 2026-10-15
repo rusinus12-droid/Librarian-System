@@ -1,9 +1,9 @@
 # LIBRA 통합 메모리 엔진 — 다음 과제와 완료 기준
 
-- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.12
-- 현재 코드 확인 기준: `codex/libra-memory-network-20261013`, `f8fce44` 리뷰와 후속 결함 수정. 최신 재현·수정은 [리뷰 §5](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md#5-f8fce44-리뷰와-후속-수정)를 따른다.
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.13
+- 현재 코드 확인 기준: `0e3c39d` 이후 선택적 벡터 페이지와 native server GC 증분. [실제 구현·지원 계약](LIBRA_SELECTIVE_VECTOR_AND_NATIVE_GC_CONTRACT_20261015.md)을 우선한다.
 - 관련: [통합 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현황 §32](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [선택적 읽기](LIBRA_SELECTIVE_INDEX_READ_CONTRACT_20261014.md), [평가 계약](LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md), [GC 계약](LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md)
-- 판정: **단일 검색기·활성 소비자 연결은 구현됐다. 저장 재개와 평가 판정의 결함을 수정했으나, 선택적 표현 저장 접근(N01-e/N02), native owner의 원자적 GC(N05), 실제 품질·규모·설치 인증(N06)은 미완료다. 원본 증명 확대·전체 자원 상한(N01-a/b)도 남는다.**
+- 판정: **정본 global의 영속 vector page·의미 참조 인덱스·공통 Cache/Lane 읽기와 server_only native GC를 연결했다. plugin_only/mirror의 실제 GC는 원자적 호스트 기능 부재로 차단한다. N01-a/b의 원본 증명·전체 자원 상한과 N06의 실제 품질·규모·설치 인증은 남는다.**
 
 이 문서는 최신 잔여 과제의 기준이다. 이전 버전의 증분별 설명을 현재 상태로 다시 정리했다. 구현 이력과 당시 검증은 [현황 §12–31](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md) 및 각 계약에 보존한다. N01-C1/C2의 현재 범위는 [자원 예산 계약](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다. 이전 리뷰·패치 근거는 [2026-10-15 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)와 현황 §23을 따른다. 과제 정의 자체를 구현·검증 완료로 읽지 않는다.
 
@@ -21,17 +21,17 @@
 | --- | --- | --- | --- | --- |
 | 저장 재개 | N01-c · 결함 수정 | 공개 API 간 일회용·기한부 재개 검증을 유지. runtime 재시작 이후 영속 재개는 지원하지 않음 | 유지 검증 | 동일 근거, query/view/access 결속, 만료·취소·실패·정원 초과 시 예약 해제 |
 | 원본·대규모 운용 | N01-a/b/d · 부분 구현 | 원본 변경 증명 확대, 전체 자원 상한·선택적 재컴파일 및 지원 규모 검증. N01-d의 구축 동등성/CAS 테스트는 진척으로 인정 | 중간~큼 | 실제 모드별 I/O·retained/peak, 삭제·ABA·복원·경합·취소 대조 |
-| 의미 표현 접근 | N01-e/N02 · 미완료 | 지원 표현을 실제 durable page/공통 cache/Lane으로 선택해 읽기. 추가 producer는 명시적 지원 범위로 결정 | 큼 | 불필요한 vector hydration 전후 실제 읽기·예약 비교, 호환성/현재성 검증 |
-| 안전한 GC | N05 · native 삭제 차단 | SDK/server·저장 owner의 원자적 namespace fence와 build/reader lease, 실제 schema의 corpus/representation 회수 | 큼 | 독립 publisher·reader·재시작·만료/갱신·늦은 삭제 경합을 실제 owner에서 검증 |
+| 의미 표현 접근 | N01-e 구현 · N02 지원 범위 유지 | 정본 global vector page·의미 참조 인덱스·공통 Lane 연결. 추가 producer와 실제 규모/품질 측정은 남음 | 후속 검증 | 실제 API에서 미선택 vector 읽기 0, eager 대조·현재성·손상/예산 검증 |
+| 안전한 GC | N05 server_only 구현 | 실제 SDK/server fence·영속 build/read lease·도달성 회수 연결. local/mirror는 호스트 atomic 기능 또는 별도 transactional 파생 저장소 필요 | 모드 확장·설치 검증 | 독립 SQLite/process, 실제 API 회수·보존·만료·늦은 게시 거부 |
 | 품질·실사용 | N06-a/b/c | 합성 평가의 품질 범위 확장, 실제 provider·호스트·규모·소비자 전달의 인증 | 큼 | 고정 SHA/profile·사전 gate·raw 측정·반증 대조 |
 
 N03/N04는 연결 구현 완료이며 실제 설치 검증을 마지막 묶음에 포함한다. Micro·State·로어 모두에 벡터를 의무화하지 않는다. 의도적 vectorless도 같은 검색기에서 유효하다. 완료율·남은 일수는 현재 근거로 산정하지 않는다.
 
 ### 0.3 다음 순서
 
-1. N01-e/N02의 native 표현 선택 읽기를 우선 구현하고, 읽기·보유 비용을 실제 경로에서 측정한다.
+1. 연결한 vector page/GC 경로의 지원 corpus·동시성·host profile을 측정하고 N01-b의 전체 자원 한도를 보강한다.
 2. N01-a/b의 증명·전체 상한과 선택적 재컴파일을 지원 profile별로 보강한다.
-3. N05는 owner 프로토콜을 먼저 구현·검증한 뒤 삭제를 연결한다. 현재는 `blocked_atomic_gc_unavailable`을 유지한다.
+3. N05 server_only를 실제 설치에서 검증하고, plugin_only/mirror 회수는 원자적 저장 backend가 확보되기 전까지 차단한다.
 4. N06-a는 단순 fixture PASS에서 실제 품질·반증 사례로 확대하고, N06-b/c는 고정 구현에서 실제 provider·설치·규모를 측정한다.
 
 ### 0.4 전체 완료 판정
@@ -62,10 +62,10 @@ GRADIA는 현재 **server_only·readonly 승인·동일 native scope·수락한 
 | --- | --- | --- | --- | --- |
 | N00 | 구현 완료 (`0f65798`) | 활성 소비자와 역사 packet 포맷의 발송 권한 분리 완료 | M09/M15 | 현재 퇴역 계약 유지 |
 | N01 | P1 · 부분 구현 | 저장 재개 결함 수정, 원본 증명·전체 상한·선택적 표현 접근 남음 | M02–M05 | 원본/예산 계약 |
-| N02 | P1 · 부분 구현 | verdict 게이트는 연결, native 선택적 표현 저장 접근·지원 producer 정책 남음 | M06–M08 | N01-e |
+| N02 | 지원 범위 유지 | 정본 global 선택 읽기 연결. 추가 family producer·실제 모델 품질은 후속이며 vectorless는 정상 지원 | M06–M08 | 지원 profile 검증 |
 | N03 | 연결 완료 | 셰도우·AIDE 실제 설치/지원 profile 인증 | M09/M10 | N06 |
 | N04 | 연결 완료 | 별도 인풋 작성기 실제 설치/지원 profile 인증 | M09/M10/M15 | N06 |
-| N05 | P1 · native 삭제 차단 | owner fence/lease와 실제 다계층 회수 미구현 | M11 | SDK/server owner 프로토콜 |
+| N05 | server_only 구현 | 실제 owner fence/lease·다계층 회수. local/mirror의 transactional backend·설치/규모 검증 남음 | M11 | 원자적 owner 기능 |
 | N06 | 부분 구현 | 합성 평가 runner·검사 수정, 실제 품질·규모·설치 인증 남음 | M12/M14 | 고정 profile·raw 측정 |
 | N07 | 전환 완료 | 단일 검색·설정 이관 회귀 유지 | M13/M15 | 기존 퇴역 계약 |
 
@@ -122,17 +122,15 @@ GRADIA는 현재 **server_only·readonly 승인·동일 native scope·수락한 
 - **원자적 CAS 게시:** 다른 퍼블리셔가 루트를 먼저 갱신한 경우 CAS 충돌(`root_conflict`)을 감지하여 덮어쓰지 않고 안전하게 거부한다.
 - **취소 및 재개:** 빌드 중 취소되더라도 이전 유효 루트가 손상되지 않으며, 다음 빌드 시 유효한 최근 체크포인트에서 안정적으로 재개한다.
 
-### N01-e · P1 · semantic 접근·관찰의 나머지 연결
+### N01-e · 구현 연결 · 실제 vector page 접근
 
-`6689fe4`는 `representationDecisions`를 주입 벡터보다 먼저 검사하도록 고쳤다. native bridge는 여전히 canonicalRows를 순회하며 벡터를 hydrate하고, semantic Lane은 directory를 읽는다. 이 게이트를 선택적 vector 저장 읽기의 완료로 취급하지 않는다.
+명시적 corpus 구축에서 정본 global vector의 불변 페이지와 의미 참조 인덱스를 게시한다. 질의는 metadata bounds로 순서를 정하고 같은 Index·Cache Manager·Memory Lane으로 선택한 벡터만 읽는다. 의미만으로 찾는 source seed와 같은 scorer/frontier를 유지하며 미독 범위는 partial/cursor로 남긴다. 이전 manifest와 cold 검색도 같은 Lane의 owner record 지연 접근을 사용한다.
 
-**남은 구현:** 실제 표현 page/ref를 index·공통 cache·Lane에 연결하고, 공간/본문/profile/view/reset 검증과 원본 source access를 유지한다. 선택하지 않은 표현의 실제 I/O·보유 예약이 발생하지 않는 것을 cold/warm/축출·장애·재시작에서 측정한다.
+[구현 계약](LIBRA_SELECTIVE_VECTOR_AND_NATIVE_GC_CONTRACT_20261015.md)의 실제 API·eager·손상·현재성 대조를 따른다. 원본/VM 전체 상한·지원 규모 인증은 N01-b/N06이며 닫지 않는다.
 
-**N01 전체 완료 조건:** 전 구간 도달·현재성·선택적 읽기를 유지하며 N01-a/b/e의 증거를 갖춘다. `nativeReprojectionRequired`, `inventoryComplete`, `ownerAtomicity`, `byteBounded`는 각각의 실제 보장 범위로만 변경한다.
+## 5. N02 — 자료별 semantic 표현
 
-## 5. N02 — 자료별 semantic 표현 — 부분 구현
-
-정본 global 저장 벡터와 실제 질의 임베딩은 같은 scorer/frontier에 참여한다. 다중 family verdict 우선 검사도 연결됐다. 추가 표현 producer와 실제 선택적 저장 접근은 지원 범위를 정해 구현해야 한다. Micro·State·로어에 벡터를 강제하지 않으며 vectorless 참여는 유지한다. 주입 representation fixture의 PASS를 native producer·선택 읽기 구현 증거로 바꾸지 않는다.
+정본 global의 저장 페이지·질의 임베딩·동일 scorer/frontier 연결을 구현했다. Micro·State·로어는 의도적 vectorless를 유지한다. 추가 producer 또는 section 표현 지원을 확장할 때는 해당 원본/view/profile·현재성 계약과 실제 품질 증거를 별도로 갖춘다. 이번 작업으로 모든 family embedding 생산을 완료했다고 표시하지 않는다.
 
 ## 6. N03 — GRADIA 셰도우·AIDE 연결
 
@@ -150,13 +148,11 @@ GRADIA는 현재 **server_only·readonly 승인·동일 native scope·수락한 
 
 계약·지원 제한: [인풋 작성기 읽기](LIBRA_GRADIA_INPUT_WRITER_READ_CONTRACT_20261014.md).
 
-## 8. N05 — GC와 수명주기 — native 삭제 차단
+## 8. N05 — server_only native GC 연결
 
-`64990aa`의 generic store는 주입 owner가 제공한 fence/build/reader 목록을 처리한다. 전용 7개 mock 테스트는 이 조건부 계약의 증거다. 실제 native owner는 여전히 `fence:null`이며 조건부 삭제 adapter가 없다. SDK/server 프로토콜을 구현하지 않았으므로 N05는 미완료다.
+실제 LIBRA SDK→HTTP→SQLite writer transaction에 scope-wide build/read lease와 배타 GC lease를 연결했다. 서버가 현재 도달성과 candidate revision/digest를 삭제 시 재검증한다. root 게시도 build lease와 참조 존재를 트랜잭션에서 검사한다. 원본 producer vector는 유지하며 engine의 corpus·파생 vector page·오래된 checkpoint를 회수한다.
 
-코퍼스 namespace는 전부 보존하며 checkpoint·projection 본문을 작은 store decode 한도로 읽지 않는다. dry-run은 관찰만 수행하고 실제 삭제는 `blocked_atomic_gc_unavailable`, `deletedKeys:[]`다. 표현 자산도 실제 회수하지 않는다.
-
-**다음 구현/완료 기준:** 완전한 durable inventory와 독립 publisher/reader를 포함하는 원자적 namespace fence, build 작업 키·reader lease의 durable 발급/갱신/해제/만료, 실제 corpus `refs/sourceProofs/windowSlices` schema의 도달성·조건부 회수를 구현한다. 두 VM·재시작·새 root 게시·ABA·늦은 응답 경합 검증 뒤에만 native 삭제를 활성화한다. [GC 계약](LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md)을 따른다.
+지원 범위는 server_only다. plugin_only/mirror에는 해당 host transaction이 없어 실제 삭제를 계속 차단한다. 호스트 원자적 API 또는 별도 transactional 파생 저장소가 다음 모드 확장의 선행 조건이다. [구현·수명·한도·검증](LIBRA_SELECTIVE_VECTOR_AND_NATIVE_GC_CONTRACT_20261015.md)을 따른다.
 
 ## 9. N06 — 품질·비용·실제 호스트
 
@@ -186,7 +182,7 @@ Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기의 실제 발송/복사/�
 
 ## 11. 실행 순서·검증·종료 기록
 
-권장 다음 구현은 **N01-e/N02의 실제 선택적 표현 접근**이다. N01-b의 전체 상한 증명, N01-a의 증명 확대와 N01-d의 선택적 재컴파일은 owner 기능·계측 근거에 맞춰 진행한다. N06-a 품질 사례 보강과 N00 회귀를 함께 유지하고, N02는 N01-e와 맞추어 진행한다. N05는 owner 기능을 먼저 구현·검증하고 삭제를 연결한다. N06-b/c의 최종 인증은 해당 변경이 고정된 뒤 수행한다.
+권장 다음 작업은 **N01-b 전체 자원 한도·지원 profile 측정과 N06 실제 품질/설치 검증**이다. N01-b의 전체 상한 증명, N01-a의 증명 확대와 N01-d의 선택적 재컴파일은 owner 기능·계측 근거에 맞춰 진행한다. N06-a 품질 사례 보강과 N00 회귀를 함께 유지하고, N02는 N01-e와 맞추어 진행한다. N05는 server_only의 실제 설치 검증과 local/mirror transactional backend 확장을 구분한다. N06-b/c의 최종 인증은 해당 변경이 고정된 뒤 수행한다.
 
 기존 회귀 검사의 시작점은 다음과 같다. 아래 명령의 존재는 미래 증분의 완료 증거가 아니며, 실제 실행 결과와 재현 범위는 현황 §23–25 및 리뷰 문서에 기록한다. 후속 구현도 같은 방식으로 근거를 추가한다.
 

@@ -5,15 +5,22 @@ const root=fs.mkdtempSync(path.join(os.tmpdir(),'libra-sdk-batch-'));
 const sdk=fs.readFileSync(path.join(__dirname,'../sdk/MemorySuiteStorageClient.libra.source.js'),'utf8');
 const createBridge=new Function(sdk+'\nreturn createMemorySuiteStorageBridge;')();
 const results=[];async function test(name,fn){await fn();results.push(name);console.log('PASS',name);}
-(async()=>{let app,bridge,prior=globalThis.risuai;let mode='server_only',scope={scopeId:'sdk-batch-scope',scopeKey:'sdk-batch-scope',available:true},fault='',calls=[];
+(async()=>{let app,bridge,prior=globalThis.risuai;let mode='server_only',scope={scopeId:'sdk-batch-scope',scopeKey:'sdk-batch-scope',available:true},fault='',calls=[],holdBootstrap=null;
 try{
  app=createMemorySuiteServer({host:'127.0.0.1',port:0,dataDir:root,autoBackup:false});const addr=await app.listen(),url=`http://127.0.0.1:${addr.port}`;
- globalThis.risuai={getArgument:async n=>n==='memory_suite_server_url'?url:n==='memory_suite_server_mode'?mode:'',nativeFetch:async(u,i)=>{calls.push([u,i]);const out=await fetch(u,i);if(fault==='lost'&&u.endsWith('/v1/kv/batch')){fault='';throw Error('network_response_lost_after_server_commit');}if(fault==='bad-cap'&&u.endsWith('/bootstrap')){const j=await out.json();delete j.capabilities['conditional-batch.v1'];return new Response(JSON.stringify(j),{status:200});}return out;}};
+ globalThis.risuai={getArgument:async n=>n==='memory_suite_server_url'?url:n==='memory_suite_server_mode'?mode:'',nativeFetch:async(u,i)=>{calls.push([u,i]);if(u.endsWith('/bootstrap')&&holdBootstrap){holdBootstrap.enter();await holdBootstrap.wait;}const out=await fetch(u,i);if(fault==='lost'&&u.endsWith('/v1/kv/batch')){fault='';throw Error('network_response_lost_after_server_commit');}if(fault==='bad-cap'&&u.endsWith('/bootstrap')){const j=await out.json();delete j.capabilities['conditional-batch.v1'];return new Response(JSON.stringify(j),{status:200});}return out;}};
  bridge=createBridge({namespace:'libra',pluginId:'libra',pluginPrefixes:['libra:'],managementButton:false,startupDiagnostics:false,autoMigratePlugin:false,currentScopeProvider:async()=>scope,
   resolveKeyScope:({key,currentScope})=>key.startsWith('libra:foreign:')?{kind:'scope',scopeId:'other-scope'}:{kind:'scope',...currentScope}});
  const mem={map:new Map(),async getItem(k){return this.map.get(k)??null;},async setItem(k,v){this.map.set(k,v);return true;},async removeItem(k){return this.map.delete(k);},async keys(){return [...this.map.keys()];}};
  const proxy=bridge.createPluginStorageProxy(mem),absent={exists:false},expected=async key=>{const r=await bridge.serverGet('plugin',key);return {exists:r.exists,...(r.exists?{value:r.value}:{})};};
  const set=(key,value,exp=absent)=>({space:'plugin',key,kind:'set',value,expected:exp});
+ await test('current binding waits for a pending certified bootstrap refresh without dropping route/reset checks',async()=>{
+  await bridge.bootstrap();let enter,release;const started=new Promise(r=>enter=r),wait=new Promise(r=>release=r);holdBootstrap={enter,wait};
+  const refresh=bridge.bootstrap(true);await started;let settled=false;
+  const captured=bridge.captureServerBinding().then(value=>{settled=true;return value;});await Promise.resolve();assert.equal(settled,false);
+  holdBootstrap=null;release();await refresh;const binding=await captured;
+  assert.equal(binding.resetEpochCertified,true);assert.equal(binding.current,true);assert.equal(binding.dataInstanceId,bridge.serverBinding().dataInstanceId);
+ });
  await test('real SDK prepares and atomically commits multiple exact values and read conditions',async()=>{
   await proxy.setItem('libra:basis','approved');const p=await bridge.prepareConditionalBatch({mutations:[set('libra:head',{t:5}),set('libra:registry',{person:'Mina'})],conditions:[{key:'libra:basis',expected:await expected('libra:basis')}]});
   const r=await bridge.commitConditionalBatch(p);assert.equal(r.endToEndVerified,true);assert.equal(r.receipts.length,2);assert.deepEqual(await proxy.getItem('libra:head'),{t:5});assert.equal(mem.map.has('libra:head'),false);

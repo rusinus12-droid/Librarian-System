@@ -97,6 +97,7 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
     laneBudget = {},
     semanticAccessComplete = true,
     preparedIndex = null,
+    semanticReader = null,
     ownerVerifier = null,
     resources = null
   } = {}) => {
@@ -124,7 +125,8 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
     let indexCompilations = 0;
     const compileResources = resources?.scope();
     try {
-      const compiledIndex = preparedIndex || (() => { indexCompilations++; return index.compile(graph, { partition, generation, resources: compileResources }); })();
+      let compiledIndex = preparedIndex || (() => { indexCompilations++; return index.compile(graph, { partition, generation, resources: compileResources }); })();
+      if(semanticReader)compiledIndex=index.withSemanticReader(compiledIndex,semanticReader);
       const queryFrame = query.sealQueryFrame({
         ...queryInput,
         owner: sealed.owner,
@@ -135,7 +137,7 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
       let viewHandle, retrieved;
       try { viewHandle = query.openView(graph, compiledIndex, queryFrame); retrieved = await query.retrieveAsync(viewHandle, laneBudget); }
       finally { if (viewHandle && typeof query.closeView === 'function') query.closeView(viewHandle); viewLease?.release(); }
-      const queryResult = semanticAccessComplete ? retrieved : { ...retrieved, complete: false,
+      const queryResult = (typeof semanticAccessComplete==='function'?semanticAccessComplete():semanticAccessComplete) ? retrieved : { ...retrieved, complete: false,
         stopReason: 'semantic_representation_byte_budget',
         coverage: { ...retrieved.coverage, semanticAccessComplete: false } };
       const guiSearch = consumerPolicy.consumer === 'gui' ? (() => {
@@ -212,7 +214,7 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
         queryComplete: queryResult.complete,
         traversalComplete: queryResult.traversalComplete,
         sourceCoverageComplete: queryResult.sourceCoverageComplete,
-        semanticCoverageComplete: semanticAccessComplete,
+        semanticCoverageComplete: typeof semanticAccessComplete==='function'?semanticAccessComplete():semanticAccessComplete,
         stopReason: queryResult.stopReason,
         coverage: queryResult.coverage,
         accessTrace: queryResult.accessTrace || null,

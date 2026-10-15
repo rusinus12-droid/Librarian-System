@@ -81,3 +81,7 @@ node tools/sync_libra_memory_graph.cjs --check
 순수 검사는 서로 직교하는 두 문서 벡터의 검색 차이·source witness·잘못된 owner/profile/text/payload·시간·byte budget을 검사한다. 등록 fixture는 native writer가 만든 저장 벡터를 읽고 실제 OpenAI/Cohere 어댑터를 통과하는 controlled HTTP 응답으로 source activation·네 자료 참여·Classic injection·warm/restart·coalescing·auth/prefix 변경·벡터 손상/최종 변경·provider 실패/timeout을 검사한다. 고정 숫자 벡터로 wiring을 증명하며 실제 언어 의미의 검색 품질을 증명하지 않는다.
 
 남은 작업은 전체 corpus durable index/shard/vector page 접근, representation 생산의 자료별 계약, 실제 provider 평가·calibration·규모/latency/peak memory, 활성 소비자 연결, native GC와 실제 설치 호스트 qualification이다. 활성 대상은 LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기다. LIBRA의 Planner·SGA·Input Writer 실행은 퇴역했다. GRADIA 셰도우/AIDE의 기존 서버 읽기는 새 엔진 연결과 구분하며, 인풋 작성기는 현재 회수 없음 계약을 별도 미전송 입력 세션으로 갱신해야 한다. 세부 범위와 완료 기준은 [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)을 따른다. 기본 모드는 legacy를 유지한다.
+
+## 선택적 벡터 페이지와 native server GC 후속 연결
+
+`0e3c39d` 후속 구현은 정본 global vector의 불변 페이지·의미 참조 인덱스·공통 Cache/Index/Lane 접근과 server_only의 실제 lease/fence·도달성 GC를 연결한다. 현재 지원 범위·실제 검증·이전 manifest/cold 호환·원본 불변/owner bookkeeping 구분은 [후속 구현 계약](LIBRA_SELECTIVE_VECTOR_AND_NATIVE_GC_CONTRACT_20261015.md)을 우선한다. 전체 자원/원본 보장·실제 설치/품질·규모 인증 및 local/mirror transactional backend는 후속 과제다.

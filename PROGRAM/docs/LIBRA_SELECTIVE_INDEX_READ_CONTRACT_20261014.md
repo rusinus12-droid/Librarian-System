@@ -69,3 +69,7 @@ N01-A에서 `FAMILY_CURRENTNESS_CONTRACTS`와 `verifyIncrementalSourceProofs()`�
 N01-C1의 요청별 durable payload byte/read quota와 shared I/O allowance가 실제 owner read에 적용된다. Lane의 선택적 page 예산과 Cache Manager의 page staging은 유지하며 두 계측은 일부 같은 접근을 포함하므로 합산하지 않는다. `accessTrace.resources`는 초기 dispatch 검증까지의 owner I/O·JSON·명시적 보유 추정 snapshot이다. shared I/O 예약을 transport peak, workspace 추정을 VM heap으로 해석하지 않는다. 설정·실패·미측정 범위는 [N01-C1/C2 계약](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다.
 
 N01-C2에서 선택한 저장 행·재조립 결과는 별도 retained scope에 예약한다. index page 생성 소비가 끝나거나 실패하면 해당 scope를 닫는다. query eligibility view도 검색 직후 명시적으로 닫는다. N01-c 후속 수정은 budget stop에도 요청 scope를 닫고, 요청 간 재조립 데이터는 별도 private ledger에 계상한다. 기본 60초·16건·건당 추정 16MiB·전체 64MiB다. root/partition/generation/index·QueryFrame·logical access/offset/pageBytes를 검사하며 일회용이다. 원문/발송 권한은 DTO에 포함하지 않는다. 만료·취소·unload·실패·재시작은 재개를 거부한다. 구체적인 예약/관찰은 [자원 예산 계약 §7](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다.
+
+## 선택적 벡터 페이지와 native server GC 후속 연결
+
+`0e3c39d` 후속 구현은 정본 global vector의 불변 페이지·의미 참조 인덱스·공통 Cache/Index/Lane 접근과 server_only의 실제 lease/fence·도달성 GC를 연결한다. 현재 지원 범위·실제 검증·이전 manifest/cold 호환·원본 불변/owner bookkeeping 구분은 [후속 구현 계약](LIBRA_SELECTIVE_VECTOR_AND_NATIVE_GC_CONTRACT_20261015.md)을 우선한다. 전체 자원/원본 보장·실제 설치/품질·규모 인증 및 local/mirror transactional backend는 후속 과제다.
