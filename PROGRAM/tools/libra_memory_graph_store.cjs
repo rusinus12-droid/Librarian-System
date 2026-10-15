@@ -125,6 +125,14 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
         if (!same(stored.value, record)) fail('projection_mismatch'); counters.validations++;
       });
       if (!same(directory.refs, rederived.refs)) fail('source_changed');
+      if (typeof owner.registerInProgressBuild === 'function') {
+        await owner.registerInProgressBuild({
+          jobToken,
+          scopeKey: initial.graph.scopeKey,
+          workingKeys: directory.refs.map(r => r.key),
+          startedAtMs: Date.now()
+        });
+      }
       // N01: publish what this generation's source window covers, per family, without claiming a whole
       // family. The owner reports its own unread cursors; a window larger than one page is a page, and
       // a page must never be diffed against a whole family.
@@ -278,28 +286,54 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
       requestLocalReadOnly: true, byteBounded: false, ownerTransportBounded: false,
       cache: pages.inspect() };
   };
-  const collectGarbage = async ({ owner, scopeKey, dryRun = false, throwOnConflict = false } = {}) => {
+  const collectGarbage = async ({
+    owner,
+    scopeKey,
+    dryRun = false,
+    throwOnConflict = false,
+    nowMs = Date.now(),
+    leaseTtlMs = 60000
+  } = {}) => {
     if (active) fail('build_busy'); if (disposed) fail('disposed');
     if (!owner || typeof owner.listKeys !== 'function' || typeof scopeKey !== 'string' || !scopeKey) fail('options_invalid');
     active = true; const ticket = epoch; counters.gcRuns++;
     try {
       const prefix = 'libra:v1:scope:' + scopeKey + ':memory-graph:v1:';
+      const corpusPrefix = prefix + 'corpus:';
+      const repPrefix = 'libra:v1:scope:' + scopeKey + ':representations:v1:';
       const part = JSON.stringify({ owner: 'gc', scopeKey, viewer: 'maintenance_gc' });
       const stamp = hash(prefix + ':' + ticket);
       check(ticket, owner);
+
       const inventory = typeof owner.captureGCInventory === 'function' ? await owner.captureGCInventory(prefix) : null;
       if (!inventory || inventory.complete !== true || !Array.isArray(inventory.keys)) {
-        return { schema: 'libra.graph_store_gc.v1', status: 'blocked_incomplete_inventory', scopeKey,
-          dryRun: Boolean(dryRun), activeRoots: null, candidateKeys: [], deletedKeys: [] };
+        return {
+          schema: 'libra.graph_store_gc.v1',
+          status: 'blocked_incomplete_inventory',
+          scopeKey,
+          dryRun: Boolean(dryRun),
+          activeRoots: null,
+          candidateKeys: [],
+          deletedKeys: []
+        };
       }
+
+      // 1. Partition keys across window graph, corpus, and representations
       const allKeys = inventory.keys.filter(k => typeof k === 'string' && k.startsWith(prefix));
-      const rootKeys = allKeys.filter(k => k.startsWith(prefix + 'root:')).sort((a, b) => a.localeCompare(b, 'en'));
-      const rootPin = typeof owner.capture === 'function' ? await owner.capture(rootKeys) : null;
+      const windowRootKeys = allKeys.filter(k => k.startsWith(prefix + 'root:') && !k.startsWith(corpusPrefix)).sort((a, b) => a.localeCompare(b, 'en'));
+      const corpusRootKeys = allKeys.filter(k => k.startsWith(corpusPrefix + 'root:')).sort((a, b) => a.localeCompare(b, 'en'));
+      const allRootKeys = [...windowRootKeys, ...corpusRootKeys];
+
+      const rootPin = typeof owner.capture === 'function' ? await owner.capture(allRootKeys) : null;
       const rootRawByKey = new Map();
+      const corpusRootRawByKey = new Map();
       const retainedManifests = new Set();
       const retainedPages = new Set();
+      const retainedCorpusKeys = new Set();
+      const retainedRepKeys = new Set();
 
-      for (const rootKey of rootKeys) {
+      // 2. Mark Window Graph Roots -> Generations -> Pages
+      for (const rootKey of windowRootKeys) {
         const root = await load(owner, rootKey, 32768, part, stamp, ticket);
         rootRawByKey.set(rootKey, root.raw);
         if (root.raw === null) continue;
@@ -318,17 +352,113 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
         }
       }
 
+      // 3. Mark Corpus Roots & Checkpoints (N05 multi-tier reachability)
+      for (const corpusRootKey of corpusRootKeys) {
+        const cRoot = await load(owner, corpusRootKey, 32768, part, stamp, ticket);
+        corpusRootRawByKey.set(corpusRootKey, cRoot.raw);
+        if (cRoot.raw === null) continue;
+        retainedCorpusKeys.add(corpusRootKey);
+        if (cRoot.value && typeof cRoot.value.manifestKey === 'string') {
+          retainedCorpusKeys.add(cRoot.value.manifestKey);
+          const cManifest = await load(owner, cRoot.value.manifestKey, 131072, part, stamp, ticket);
+          if (cManifest.value) {
+            if (typeof cManifest.value.proofKey === 'string') retainedCorpusKeys.add(cManifest.value.proofKey);
+            if (typeof cManifest.value.projectionKey === 'string') retainedCorpusKeys.add(cManifest.value.projectionKey);
+            if (Array.isArray(cManifest.value.pages)) {
+              for (const p of cManifest.value.pages) {
+                if (p?.key) retainedCorpusKeys.add(p.key);
+              }
+            }
+          }
+        }
+      }
+
+      for (const k of allKeys) {
+        if (k.startsWith(corpusPrefix + 'checkpoint:')) {
+          retainedCorpusKeys.add(k);
+          const cp = await load(owner, k, 65536, part, stamp, ticket);
+          if (cp.value && Array.isArray(cp.value.pages)) {
+            for (const p of cp.value.pages) if (p?.key) retainedCorpusKeys.add(p.key);
+          }
+        } else if (k.startsWith(corpusPrefix)) {
+          retainedCorpusKeys.add(k);
+        } else if (k.startsWith(repPrefix)) {
+          retainedRepKeys.add(k);
+        }
+      }
+
+      // 4. In-progress build protection & Reader lease protection (N05)
+      const fenceObj = typeof inventory.fence === 'object' && inventory.fence !== null
+        ? inventory.fence
+        : { fenceId: String(inventory.fence || ''), epoch: 0 };
+
+      const activeBuilds = Array.isArray(fenceObj.activeBuilds)
+        ? fenceObj.activeBuilds
+        : (typeof owner.getActiveBuilds === 'function' ? await owner.getActiveBuilds(prefix) : []);
+
+      const activeReaders = Array.isArray(fenceObj.activeReaders)
+        ? fenceObj.activeReaders
+        : (typeof owner.getActiveReaders === 'function' ? await owner.getActiveReaders(prefix) : []);
+
+      const protectedBuildKeys = new Set();
+      let protectedBuildCount = 0;
+      for (const b of activeBuilds) {
+        const exp = Number.isSafeInteger(b?.expiresAtMs)
+          ? b.expiresAtMs
+          : (Number.isSafeInteger(b?.startedAtMs) ? b.startedAtMs + leaseTtlMs : Infinity);
+        if (exp > nowMs && !b?.cancelled) {
+          protectedBuildCount++;
+          for (const k of b.workingKeys || []) protectedBuildKeys.add(k);
+          if (b.manifestKey) protectedBuildKeys.add(b.manifestKey);
+          if (b.generationKey) protectedBuildKeys.add(b.generationKey);
+        }
+      }
+
+      const protectedReaderKeys = new Set();
+      let protectedReaderCount = 0;
+      for (const r of activeReaders) {
+        const exp = Number.isSafeInteger(r?.expiresAtMs)
+          ? r.expiresAtMs
+          : (Number.isSafeInteger(r?.acquiredAtMs) ? r.acquiredAtMs + leaseTtlMs : Infinity);
+        if (exp > nowMs && !r?.released) {
+          protectedReaderCount++;
+          if (r.generationKey) protectedReaderKeys.add(r.generationKey);
+          for (const k of r.pageKeys || []) protectedReaderKeys.add(k);
+        }
+      }
+
+      const extraProtected = typeof owner.getProtectedKeys === 'function'
+        ? new Set(await owner.getProtectedKeys(prefix))
+        : new Set();
+
+      const protectedKeys = new Set([
+        ...protectedBuildKeys,
+        ...protectedReaderKeys,
+        ...retainedCorpusKeys,
+        ...retainedRepKeys,
+        ...extraProtected
+      ]);
+
       const verifyRootsUnchanged = async () => {
         check(ticket, owner);
         if (rootPin && typeof owner.assertCaptured === 'function') {
           await owner.assertCaptured(rootPin);
         }
+        if (typeof owner.assertNamespaceFence === 'function') {
+          await owner.assertNamespaceFence(inventory.fence);
+        }
         const currentKeys = (await owner.listKeys(prefix)).filter(k => typeof k === 'string' && k.startsWith(prefix));
-        const currentRootKeys = currentKeys.filter(k => k.startsWith(prefix + 'root:')).sort((a, b) => a.localeCompare(b, 'en'));
-        if (!same(currentRootKeys, rootKeys)) fail('gc_concurrent_root_change');
-        for (const rootKey of rootKeys) {
+        const currentWindowRootKeys = currentKeys.filter(k => k.startsWith(prefix + 'root:') && !k.startsWith(corpusPrefix)).sort((a, b) => a.localeCompare(b, 'en'));
+        if (!same(currentWindowRootKeys, windowRootKeys)) fail('gc_concurrent_root_change');
+        for (const rootKey of windowRootKeys) {
           const latest = await load(owner, rootKey, 32768, part, stamp, ticket);
           if (latest.raw !== rootRawByKey.get(rootKey)) fail('gc_concurrent_root_change');
+        }
+        const currentCorpusRootKeys = currentKeys.filter(k => k.startsWith(corpusPrefix + 'root:')).sort((a, b) => a.localeCompare(b, 'en'));
+        if (!same(currentCorpusRootKeys, corpusRootKeys)) fail('gc_concurrent_root_change');
+        for (const corpusRootKey of corpusRootKeys) {
+          const latest = await load(owner, corpusRootKey, 32768, part, stamp, ticket);
+          if (latest.raw !== corpusRootRawByKey.get(corpusRootKey)) fail('gc_concurrent_root_change');
         }
         return currentKeys;
       };
@@ -343,7 +473,7 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
           status: 'aborted_concurrent_mutation',
           scopeKey,
           dryRun: Boolean(dryRun),
-          activeRoots: rootKeys.length,
+          activeRoots: windowRootKeys.length,
           retainedManifestCount: retainedManifests.size,
           retainedPageCount: retainedPages.size,
           candidateKeys: [],
@@ -352,7 +482,7 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
       }
 
       const initialKeySet = new Set(allKeys);
-      const candidates = postMarkKeys.filter(k => initialKeySet.has(k) && (
+      const candidates = postMarkKeys.filter(k => initialKeySet.has(k) && !protectedKeys.has(k) && (
         (k.startsWith(prefix + 'generation:') && !retainedManifests.has(k))
         || (k.startsWith(prefix + 'page:') && !retainedPages.has(k))
       )).sort((a, b) => a.localeCompare(b, 'en'));
@@ -374,8 +504,16 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
             break;
           }
           const expectedRaw = await owner.read(candidateKey);
-          const removed = await owner.deleteConditional({ key: candidateKey, expectedRaw, prefix,
-            inventory, roots: [...rootRawByKey].map(([key, raw]) => ({ key, raw })) });
+          const removed = await owner.deleteConditional({
+            key: candidateKey,
+            expectedRaw,
+            prefix,
+            inventory,
+            roots: [...rootRawByKey].map(([key, raw]) => ({ key, raw })),
+            corpusRoots: [...corpusRootRawByKey].map(([key, raw]) => ({ key, raw })),
+            protectedKeys: Array.from(protectedKeys),
+            fence: inventory.fence
+          });
           check(ticket, owner);
           if (removed !== true) { status = 'aborted_concurrent_mutation'; break; }
           deleted.push(candidateKey);
@@ -387,17 +525,41 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
         status,
         scopeKey,
         dryRun: Boolean(dryRun),
-        activeRoots: rootKeys.length,
+        activeRoots: windowRootKeys.length,
+        activeCorpusRoots: corpusRootKeys.length,
         retainedManifestCount: retainedManifests.size,
         retainedPageCount: retainedPages.size,
+        retainedCorpusKeyCount: retainedCorpusKeys.size,
+        protectedBuildCount,
+        protectedReaderCount,
         candidateKeys: candidates,
         deletedKeys: deleted
       };
     } finally { active = false; }
   };
-  return Object.freeze({ build, read, collectGarbage, location, inspect: () => ({ schema: 'libra.graph_store.v1', activeBuild: active,
-    invalidationEpoch: epoch, counters: { ...counters }, durableStoreImplemented: true,
-    exhaustiveOwnerInventory: false, rootGCImplemented: true,
-    gcDeletionRequirement: 'complete_durable_inventory_and_atomic_namespace_fence_for_publishers_and_readers', ownerTransportBounded: false }),
-    invalidate() { epoch++; }, dispose() { epoch++; disposed = true; } });
+  return Object.freeze({
+    build,
+    read,
+    collectGarbage,
+    location,
+    inspect: () => ({
+      schema: 'libra.graph_store.v1',
+      activeBuild: active,
+      invalidationEpoch: epoch,
+      counters: { ...counters },
+      durableStoreImplemented: true,
+      exhaustiveOwnerInventory: false,
+      rootGCImplemented: true,
+      gcDeletionRequirement: 'complete_durable_inventory_and_atomic_namespace_fence_for_publishers_and_readers',
+      gcLifecycleProtection: Object.freeze({
+        multiTierReachability: Object.freeze(['window_graph', 'corpus', 'checkpoint', 'representation']),
+        inProgressBuildProtection: true,
+        readerLeaseProtection: true,
+        leaseExpirationSupported: true
+      }),
+      ownerTransportBounded: false
+    }),
+    invalidate() { epoch++; },
+    dispose() { epoch++; disposed = true; }
+  });
 };

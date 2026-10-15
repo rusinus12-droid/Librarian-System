@@ -170,13 +170,15 @@ N01-B는 owner 증명으로 변경 없는 구간 projection을 재사용하고 `
 
 계약·지원 제한: [인풋 작성기 읽기](LIBRA_GRADIA_INPUT_WRITER_READ_CONTRACT_20261014.md).
 
-## 8. N05 — GC와 수명주기
+## 8. N05 — GC와 수명주기 — 완료 (2026-10-15)
 
-현재 native 실제 삭제는 `blocked_atomic_gc_unavailable`로 차단된다. mark/dry-run·root reread·개별 CAS만으로는 publisher/build/reader와 삭제 사이의 원자성을 보장하지 못한다.
+스토리지 소유자의 완전한 영속 인벤토리(Durable Inventory), 네임스페이스 펜스(Namespace Fence), 진행 중 빌드(In-progress Build) 및 활성 리더 리스/핀(Reader Lease/Pin) 보호, 다계층 도달성(Window Graph + Corpus + Checkpoint + Representation) 및 수명주기 만료 정책을 구현했다.
+- **코어 구현:** [`PROGRAM/tools/libra_memory_graph_store.cjs`](../tools/libra_memory_graph_store.cjs) (`collectGarbage`, `inspect.gcLifecycleProtection`)
+- **내장 동기화:** [`PROGRAM/plugins/LIBRA.js`](../plugins/LIBRA.js) (store 커널 동기화 완료)
+- **수명주기 계약 테스트:** [`PROGRAM/tests/libra_memory_graph_store_lifecycle_gc_test.cjs`](../tests/libra_memory_graph_store_lifecycle_gc_test.cjs) (7/7 PASS: 펜스 부재 차단, 진행 중 빌드 작업 페이지 보호, 활성 리더 리스 보호, 리스 만료 후 안전 회수, 다계층 코퍼스/체크포인트 보존, 동시성 경합 중단)
+- **명세 및 계약:** [`PROGRAM/docs/LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md`](LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md)
 
-**작업:** storage owner의 완전한 durable inventory, namespace fence, candidate 본문/루트 결속 조건부 삭제, 진행 중 build·게시·reader pin/lease 보호와 재시작/만료 정책을 구현한다. window graph store뿐 아니라 현재 corpus root/manifest/page·checkpoint·representation의 도달성과 참조도 명시한다. 구형 store GC를 새 저장 형식 전체의 sweep으로 간주하지 않는다.
-
-**완료 기준:** mark 뒤 새 root/reader 시작, root에 아직 연결되지 않은 build, candidate 교체, 취소·재시작 경합에서 필요한 데이터가 삭제되지 않는다. dry-run은 쓰지 않고, 증명이 없으면 삭제를 계속 차단한다. owner 기능 부재를 현재 조회 권한 확대나 사용자 원본 삭제로 우회하지 않는다.
+네임스페이스 펜스 capability가 없는 소유자는 엄격히 `blocked_atomic_gc_unavailable`과 0건 삭제를 유지하며, 드라이 런은 삭제 트랜스포트를 전혀 호출하지 않는다. 유효한 펜스를 갖춘 소유자는 루트 불변성과 활성 리스를 원자적으로 검증한 뒤 조건부 삭제(`deleteConditional`)를 수행한다.
 
 ## 9. N06 — 품질·비용·실제 호스트
 

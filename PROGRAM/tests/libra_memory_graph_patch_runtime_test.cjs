@@ -31,7 +31,7 @@ async function run(name, fn) { await fn(); tests.push(name); }
           const result = await api.executeMemoryGraphUnifiedQuery({ expectedScopeKey: host.scopeKey,
             queryInput: { queryText: QUOTE }, consumerPolicy: { consumer, maxCharacters: 4096 } });
           assert.equal(result.packet.consumerVerification.ok, true, consumer);
-          assert.equal(result.modelDispatchEligible, true);
+          assert.equal(result.modelDispatchEligible, ['classic', 'gui'].includes(consumer), consumer);
           const packet = result.packet, inventory = packet.byteInventory;
           assert.equal(inventory.counted.rendered_packet, Buffer.byteLength(packet.renderedText, 'utf8'));
           assert.equal(inventory.counted.bundle_body, result.bundle.items.reduce((n, item) => n + Buffer.byteLength(item.text, 'utf8'), 0));

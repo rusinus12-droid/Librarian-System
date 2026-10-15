@@ -134,7 +134,7 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
       const viewLease = resources?.retain({ graph, queryFrame }, 'eligibility_view', 2);
       let viewHandle, retrieved;
       try { viewHandle = query.openView(graph, compiledIndex, queryFrame); retrieved = await query.retrieveAsync(viewHandle, laneBudget); }
-      finally { if (viewHandle) query.closeView(viewHandle); viewLease?.release(); }
+      finally { if (viewHandle && typeof query.closeView === 'function') query.closeView(viewHandle); viewLease?.release(); }
       const queryResult = semanticAccessComplete ? retrieved : { ...retrieved, complete: false,
         stopReason: 'semantic_representation_byte_budget',
         coverage: { ...retrieved.coverage, semanticAccessComplete: false } };
