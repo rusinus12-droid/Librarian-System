@@ -1176,9 +1176,13 @@ manifest.dataContract.gradiaThreeOwnerRead = {
   evidence:'known_committed_producer_formats; provenance_preserving_deduplication',
   corpusDefaultBytes:4194304,corpusMaximumBytes:33554432,itemLimit:4096,metadataMaximumBytes:1048576,
   rawAllowance:'7 * maxCorpusBytes + 2 MiB; remaining allowance passed before materialization',
-  promptMaximumBytes:65536,promptSelection:'whole_item_newest_first_owner_round_robin',
+  promptMaximumBytes:4194304,promptProfileMaximumChars:{fast:48000,balanced:96000,quality:160000,custom:240000},
+  promptBytePolicy:'min(4 MiB, max(64 KiB, profile chars * 4 + 8192))',
+  promptSelection:'whole_item_owner_round_robin_then_stage_model_context_subset',
   currentness:'logical_metadata_digest_reset_epochs; not_physical_ABA_certification',
-  modelProfile:'existing_G2_OpenAI_chat_completions_gpt-4o-mini-2024-07-18_unchanged',
+  modelProfile:'configured_stage_context_unicode_text_estimate_plus_framing',
+  modelPayloadMaximumBytes:16777216,outputReserve:'actual_final_provider_payload',contextSafetyMargin:'10_percent_minimum_256_tokens',
+  budgetContract:'docs/gradia/MODEL-CONTEXT-BUDGET-20261015.md',
   strongFullCorpusV2:false,actualHostQualified:false,implementation:'source_and_offline_composed_fixtures',
   contract:'docs/gradia/THREE-OWNER-READ-20261009.md'
 };

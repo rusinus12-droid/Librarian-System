@@ -21,7 +21,7 @@ async function fixture(t,{native=false,writingMode='novel',unified=true}={}){
   boundary:async request=>({scope:request.scope,dataInstanceId:dataId,resetEpoch:0}),
   query:async(request,authority)=>{queries++;authority.bindGraph({readerFrame:{},nodes:[],edges:[],bases:[]});await controls.onQuery?.(request);
    return {modelDispatchEligible:true,queryComplete:false,deliveryOutcome:'partial',windowRead:{limit:20},nextWindow:null,
-    bundle:{generation:'g1'},packet:{renderedText:'WRITER_OWNER_EVIDENCE: 준호가 은빛 열쇠를 보관한다.',packetDigest:fingerprint('packet')}};},verify:async()=>{await controls.onCurrent?.();return controls.current;}});await owner.start();}
+    bundle:{generation:'g1'},packet:{renderedText:controls.evidenceText||'WRITER_OWNER_EVIDENCE: 준호가 은빛 열쇠를 보관한다.',packetDigest:fingerprint(controls.evidenceText||'packet')}};},verify:async()=>{await controls.onCurrent?.();return controls.current;}});await owner.start();}
  const dom=new JSDOM('<!doctype html><html><body></body></html>',{pretendToBeVisual:true,url:'https://offline.invalid/'});
  const transport=async(target,init={})=>{
   if(target.startsWith(url+'/')){
@@ -35,13 +35,17 @@ async function fixture(t,{native=false,writingMode='novel',unified=true}={}){
    return new Response(JSON.stringify({ok:true,dataInstanceId:dataId,result}));
   }
   const body=JSON.parse(init.body);prompts.push(body);await controls.onModel?.(prompts.length,body,init);
-  const system=body.messages?.filter(m=>m.role==='system').map(m=>m.content).join('\n')||'';
+  const system=body.messages?.filter(m=>m.role==='system').map(m=>m.content).join('\n')||body.instructions||body.system||body.systemInstruction?.parts?.map(p=>p.text).join('\n')||body.input?.filter(m=>m.role==='system').flatMap(m=>m.content.map(p=>p.text)).join('\n')||'';
   let content;
   if(system.includes('faithful RP input translator'))content='TRANSLATED_WRITER_CHOICE 은빛 열쇠의 위치를 묻는다.';
   else if(system.includes('PLAYER-CONTROLLED RP ACTION CHOICE ADVISER'))content=JSON.stringify({schema:'gradia_author_directed_input_choices_v1',choices:['A','B','C'].map((id,i)=>({id,title:'행동 '+id,summary:'선택 '+id,input:'WRITER_CHOICE_'+id+' 은빛 열쇠에 대해 묻는다.'}))});
   else content=JSON.stringify({schema:'gradia_novel_input_choices_v1',choices:['user_focus','npc_focus','offscreen_focus'].map(perspective=>({perspective,title:perspective,summary:'현재 장면을 잇는다.',input:'WRITER_CHOICE_'+perspective+' 은빛 열쇠가 있는 문 앞에서 장면을 잇는다.'}))});
   if(controls.output!==undefined)content=controls.output;
-  return {ok:true,status:200,text:async()=>JSON.stringify({choices:[{message:{content},finish_reason:'stop'}]})};
+  const result=body.contents?{candidates:[{content:{parts:[{text:content}]},finishReason:'STOP'}]}:body.generationConfig?{}
+   :body.system!==undefined?{content:[{type:'text',text:content}],stop_reason:'end_turn'}
+   :body.options?{message:{content},done:true,done_reason:'stop'}
+   :{choices:[{message:{content},finish_reason:'stop'}]};
+  return {ok:true,status:200,text:async()=>JSON.stringify(result)};
  };
  const host=await load({api:{...bus.api('serial_gradation_agents_for_rp'),pluginStorage:nativeHost?.server.backend||store,getLocalPluginStorage:async()=>nativeHost?.server.backend||device,
   getArgument:async name=>name.includes('url')?url:name==='mode'?'off':undefined,

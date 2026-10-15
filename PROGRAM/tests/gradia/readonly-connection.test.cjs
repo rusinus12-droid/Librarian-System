@@ -41,7 +41,7 @@ async function fixture(t,options={}){
 test('fresh startup and unapproved saved URL perform no connection writes or transport',async t=>{
  const h=await fixture(t,{preference:{schema:'gradia.lib-read-connection.v1',explicit:false}});
  assert.deepEqual(h.initial.requests,[]);assert.deepEqual(h.initial.locals,[]);assert.deepEqual(h.initial.writes,[]);
- assert.equal(h.status().connection?.state,'disconnected');assert.ok(h.node('[data-page="sources"] .state-grid > div:nth-child(4)').textContent.includes('gpt-4o-mini-2024-07-18'));
+ assert.equal(h.status().connection?.state,'disconnected');assert.ok(h.node('[data-page="sources"] .state-grid > div:nth-child(4)').textContent.includes('모델·문맥 설정 기준'));
 });
 test('actual Connect and inspect handlers use only bootstrap/capture/current and leave SQLite unchanged',async t=>{
  const h=await fixture(t),before=h.rows(),start=h.writes.length;assert.equal((await h.connect()).connection.state,'connected');

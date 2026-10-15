@@ -1,6 +1,6 @@
 # GRADIA 인풋 작성기의 통합 읽기 계약
 
-- 작성일: 2026-10-14 · 버전: 1.0
+- 작성일: 2026-10-14 · 갱신: 2026-10-15 · 버전: 1.1
 - 범위: [다음 과제 N04](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md). N03의 readonly 공급자를 사용하되 작성기 세션은 별도로 발급한다.
 
 ## 사용과 지원 조건
@@ -9,7 +9,7 @@ GRADIA 자료 화면에서 **LIBRA 검색 → 통합 메모리 검색 → 연결
 
 N03과 같은 `server_only`, 실제 readonly 서버 권한, 동일 character/chat scope, 수락된 data/reset, 인증된 RisuAI plugin channel이 필요하다. owner의 describe 응답에 `input_writer_proposal` 목적이 있어야 하며 미지원 공급자를 대신 다른 검색으로 처리하지 않는다. 미연결/기존 논리 읽기 설정의 작성기는 기존처럼 새 메모리 검색 없이 실행한다.
 
-지원하는 근거 포함 모델 요청은 기존 G2의 `gpt-4o-mini-2024-07-18`, 공식 OpenAI chat-completions route, 명시한 문맥 한도다. 작성기에서는 허용된 일반 텍스트 요청 형식으로 JSON을 요구하고 기존 parser가 스키마·선택지 수를 검증한다. generic `json_object`나 새 structured schema를 예산 검사에서 무조건 허용하지 않는다. 모델의 잘못된 출력에 자동 재시도·근거 재포장을 추가하지 않는다. native-only 작성기의 기존 요청 형식은 유지한다.
+근거 포함 모델 요청은 [모델 문맥·전송 예산](gradia/MODEL-CONTEXT-BUDGET-20261015.md)에 따라 실제 stage preset의 모델·context metadata와 지원하는 텍스트 요청 형식을 검사한다. GPT4o-mini 고정 모델 및 근거 64KiB/전체 요청 128,000바이트 제한은 사용하지 않는다. 작성기에서는 허용된 일반 텍스트 요청 형식으로 JSON을 요구하고 기존 parser가 스키마·선택지 수를 검증한다. generic `json_object`나 새 structured schema를 예산 검사에서 무조건 허용하지 않는다. 모델의 잘못된 출력에 자동 재시도·근거 재포장을 추가하지 않는다. native-only 작성기의 기존 요청 형식은 유지한다.
 
 자동 input handler와 beforeRequest 입력 가로채기는 등록하지 않는다. 공개 `rewriteInput`은 동일 생성 함수를 사용할 수 있지만 전송 권한이나 private 선택지 세션을 반환하지 않으며 종료 시 읽기를 해제한다.
 
@@ -33,13 +33,13 @@ copy 직전 검증의 비동기 대기가 브라우저 clipboard activation을 �
 
 ## 저장·재사용과 예산
 
-선택지/편집 UI를 위한 private 작업 메모리만 결과를 유지한다. generic runtime/confirmation/send 진단은 근거 포함 작업을 가리고, 종료·실패 시 근거·파생 선택지/입력·provider trace·static handoff를 폐기한다. generic checkpoint/response 재사용 저장소에 근거와 파생 입력을 쓰지 않는다. 모델 payload·출력·인용 근거의 기존 G2 검사와 readonly corpus/raw/metadata 한도를 유지한다.
+선택지/편집 UI를 위한 private 작업 메모리만 결과를 유지한다. generic runtime/confirmation/send 진단은 근거 포함 작업을 가리고, 종료·실패 시 근거·파생 선택지/입력·provider trace·static handoff를 폐기한다. generic checkpoint/response 재사용 저장소에 근거와 파생 입력을 쓰지 않는다. 모델 payload·실제 출력 예약·인용 근거를 최종 모델 문맥에 합산하고 완전한 항목 단위로 포장한다. readonly corpus/raw/metadata 한도와 최종 현재성 검사를 유지한다.
 
 한 세션은 생성 및 명시적 번역을 포함해 최대 16회 모델 호출을 허용한다. 영수증은 기존 채널의 10분 한도와 개별 요청 제한을 따른다. 사용자 선택창을 무제한 오래 유지할 수 있다고 보장하지 않는다. 현재성 검사에는 추가 서버 read/current와 fresh native context 읽기 비용이 들며, 전체 heap 상한이나 실제 호스트 지연 인증은 아니다.
 
 ## 재현과 증거 범위
 
-- `node PROGRAM/tests/gradia_input_writer_unified_runtime_test.cjs`: **21 PASS**. 실제 작성 UI의 RP/Novel·번역·정확한 편집본 복사/전송·재생성/실패·취소/늦은 응답·native/scope/원본/권한/설정/연결 변경·미연결 native 흐름·빈 이어쓰기·초기 준비 취소 검사. 공급자의 query/verify는 제어된 fixture다.
+- `node PROGRAM/tests/gradia_input_writer_unified_runtime_test.cjs`: **22 PASS**. 실제 작성 UI의 RP/Novel·번역·정확한 편집본 복사/전송·재생성/실패·취소/늦은 응답·native/scope/원본/권한/설정/연결 변경·미연결 native 흐름·빈 이어쓰기·초기 준비 취소 검사. 공급자의 query/verify는 제어된 fixture다.
 - `node PROGRAM/tests/libra_input_writer_unified_native_runtime_test.cjs`: 실제 LIBRA producer/kernel·SQLite·GRADIA 공개 연결 API·작성 버튼·선택/복사/전송 흐름을 결합한다. 읽기만으로 원본/분석 모델 호출이 늘지 않는지, 전송 권한 확인 중 정본을 교체하면 handoff가 거부되는지 검사한다.
 - `node PROGRAM/tests/libra_gradia_unified_read_owner_test.cjs`: 실제 채널 factory의 제안 목적/shape·비채택·영수증·위조·현재성·취소/해제 검사.
 - `gradia_three_owner_sdk_test.cjs`: 실제 고정 SDK의 지원 목적 협상·readonly 권한·source/route gate 검사. 기존 evidence bridge는 미연결 작성기가 셰도우 근거를 빌리지 않음을 계속 검사한다.

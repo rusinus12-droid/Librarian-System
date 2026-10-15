@@ -224,7 +224,8 @@ function unifiedProvider(options = {}) {
     assert.equal(session.readSource, 'unified_engine');
     assert.equal(session.engine.generation, 'mgm1:5');
     assert.equal(session.selection.readSource, 'unified_engine');
-    assert.equal(session.selection.promptByteLimit, 65536, 'the prompt budget still applies');
+    assert.equal(session.selection.promptByteLimit, 96000*4+8192, 'render bytes follow the reference profile, independently of model tokens');
+    assert.equal(session.selection.promptCharLimit, 96000);
     assert.equal(session.selection.selectedItems, 1);
     assert.equal(f.asked()[0], 'unified_engine');
     assert.equal((await session.getEvidence()).items[0].content, 'historical evidence');

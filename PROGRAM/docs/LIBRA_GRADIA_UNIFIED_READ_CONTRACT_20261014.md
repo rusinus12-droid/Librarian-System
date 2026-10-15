@@ -1,15 +1,15 @@
 # GRADIA의 LIBRA 통합 메모리 읽기 계약
 
-- 작성일: 2026-10-14 · 버전: 1.2
+- 작성일: 2026-10-14 · 갱신: 2026-10-15 · 버전: 1.3
 - 범위: [다음 과제 N03](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)의 실제 공급자 연결. 통합 엔진 전체 완성이나 설치 호스트 인증은 아니다.
 
 ## 사용 방법과 지원 범위
 
 LIBRA와 GRADIA를 함께 로드하고 기존 LIB 서버 읽기 전용 연결 조건을 갖춘다. GRADIA 자료 화면에서 **연결**을 누르면 LIBRA는 통합 엔진을 사용한다. 공개 `connectLibReadOnly(url)`와 호환 별칭 `connectUnifiedLibReadOnly(url)`도 같은 경로를 실행한다. 연결 성공 후 상태의 `readSource`는 `unified_engine`이다. URL별로 저장한 연결 동의에 출처도 보존한다. 출처 누락 및 이전 `server_logical_read` 저장 동의도 `unified_engine`으로 이관한다. 새 동의 없이 자동 연결 범위를 넓히지는 않는다.
 
-현재 지원 조건은 **server_only**, 수락된 data identity/reset, 등록된 동일 character/chat scope, GRADIA의 실제 readonly 서버 권한, 인증된 plugin channel이다. 기존 G2 모델·문맥·payload 예산 제한을 유지하므로 연결 성공만으로 모든 생성 모델이 지원되는 것은 아니다. 현재 고정 profile은 `gpt-4o-mini-2024-07-18`의 허용된 요청 형식이다. plugin_only/mirror 또는 호스트 채널이 없는 환경을 같은 지원 범위로 주장하지 않는다.
+현재 지원 조건은 **server_only**, 수락된 data identity/reset, 등록된 동일 character/chat scope, GRADIA의 실제 readonly 서버 권한, 인증된 plugin channel이다. 근거 포함 모델 호출은 [모델 문맥·전송 예산](gradia/MODEL-CONTEXT-BUDGET-20261015.md)에 따라 실제 stage preset과 context metadata, 출력 예약, 최종 payload를 검사한다. GPT4o-mini 고정 profile과 전체 요청 128,000바이트/근거 64KiB 고정 한도를 사용하지 않는다. 연결 성공만으로 모델 context metadata와 요청 형식 검증이 생략되지는 않는다. plugin_only/mirror 또는 호스트 채널이 없는 환경을 같은 지원 범위로 주장하지 않는다.
 
-연결/점검은 서버 권한과 통합 공급자 가용성을 검사한다. 실제 검색은 새 응답 실행에서 제출된 최신 사용자 입력을 질의로 실행한다. 채널의 질의 한도는 UTF-8 16 KiB, 직렬화된 요청 한도는 64 KiB이며 초과 요청을 거부한다. 점검 화면의 서버 원문 개수를 통합 검색 결과로 표시하지 않는다. GRADIA 인풋 작성기는 [N04 별도 세션 계약](LIBRA_GRADIA_INPUT_WRITER_READ_CONTRACT_20261014.md)으로 같은 공급자를 읽는다. 셰도우 세션을 재사용하지 않는다.
+연결/점검은 서버 권한과 통합 공급자 가용성을 검사한다. 실제 검색은 새 응답 실행에서 제출된 최신 사용자 입력을 질의로 실행한다. 이는 통합 엔진의 읽기 전용 검색 API이며 LIBRA 생성 모델에 답변을 요청하거나 원본을 수정하는 호출이 아니다. 채널의 질의 한도는 UTF-8 16 KiB, 직렬화된 요청 한도는 64 KiB이며 초과 요청을 거부한다. 점검 화면의 서버 원문 개수를 통합 검색 결과로 표시하지 않는다. GRADIA 인풋 작성기는 [N04 별도 세션 계약](LIBRA_GRADIA_INPUT_WRITER_READ_CONTRACT_20261014.md)으로 같은 공급자를 읽는다. 셰도우 세션을 재사용하지 않는다.
 
 ## 실제 실행과 권한
 
@@ -26,7 +26,7 @@ HAYAKU·Flashback을 함께 읽는 경우 LIBRA만 통합 엔진을 사용한다
 
 응답은 `memory-suite.libra-read-session.v1`과 기존 proof/current 봉투를 사용한다. `source: unified_engine`, generation, owner corpus digest, selection receipt, `queryComplete`, `deliveryOutcome`, `windowRead`, `nextWindow`를 함께 보존한다. `complete:true`는 발급한 bundle을 완전히 캡처했다는 뜻이다. 미독 projection window가 있는 검색을 전체 corpus 완료로 바꾸지 않는다.
 
-item의 `libra.unified.bundle:<receipt>` key는 이 실행에서 발급한 bundle 식별자다. durable 원본 주소로 해석하지 않는다. 원래 출처·시간·State 역할·충돌·로어 역할은 compiler packet에 보존한다. 내용이 prompt 예산에 맞지 않으면 전체 item을 거부하고 중간을 자르지 않는다. 빈 결과는 기존 무근거 흐름을 따르며 서버 검색으로 대체하지 않는다.
+item의 `libra.unified.bundle:<receipt>` key는 이 실행에서 발급한 bundle 식별자다. durable 원본 주소로 해석하지 않는다. 원래 출처·시간·State 역할·충돌·로어 역할은 compiler packet에 보존한다. 내용이 프로필의 근거 포장 예산이나 실제 모델 요청의 남은 문맥에 맞지 않으면 전체 item을 거부하고 중간을 자르지 않는다. 모델 단계별 최종 subset은 capture 전체의 owner 현재성 검증을 유지한다. 빈 결과는 기존 무근거 흐름을 따르며 서버 검색으로 대체하지 않는다.
 
 현재성은 원본 물리 readset, private 영수증, server readonly 권한, native 입력/설정, source·scope·연결·route·data/reset을 함께 검사한다. 변경이 확인되면 진행 중인 근거·초안과 후속 모델 전달을 차단한다. 정상 종료·무효화·취소·연결 해제·unload에는 영수증을 해제한다. 통신 불능 시 owner 메모리의 영수증도 최대 10분 유효기간으로 차단하며 다음 요청 때 정리한다. 활성 capture와 receipt 합계는 최대 32개다. 개별 채널 요청은 10초, 기존 consumer의 읽기 작업 제한은 30초다. 모든 단계의 무제한 실행 시간을 보장하지 않는다.
 

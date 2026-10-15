@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-15T19:41:37.654Z",
+  "generatedAt": "2026-10-15T20:35:55.335Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -1339,7 +1339,7 @@
       "sourceAuthorityUntilCutover": true
     },
     "gradiaThreeOwnerRead": {
-      "pluginVersion": "0.25.83",
+      "pluginVersion": "0.25.84",
       "principal": "serial_gradation_agents_for_rp",
       "readers": [
         "libra",
@@ -1357,10 +1357,21 @@
       "itemLimit": 4096,
       "metadataMaximumBytes": 1048576,
       "rawAllowance": "7 * maxCorpusBytes + 2 MiB; remaining allowance passed before materialization",
-      "promptMaximumBytes": 65536,
-      "promptSelection": "whole_item_newest_first_owner_round_robin",
+      "promptMaximumBytes": 4194304,
+      "promptProfileMaximumChars": {
+        "fast": 48000,
+        "balanced": 96000,
+        "quality": 160000,
+        "custom": 240000
+      },
+      "promptBytePolicy": "min(4 MiB, max(64 KiB, profile chars * 4 + 8192))",
+      "promptSelection": "whole_item_owner_round_robin_then_stage_model_context_subset",
       "currentness": "logical_metadata_digest_reset_epochs; not_physical_ABA_certification",
-      "modelProfile": "existing_G2_OpenAI_chat_completions_gpt-4o-mini-2024-07-18_unchanged",
+      "modelProfile": "configured_stage_context_unicode_text_estimate_plus_framing",
+      "modelPayloadMaximumBytes": 16777216,
+      "outputReserve": "actual_final_provider_payload",
+      "contextSafetyMargin": "10_percent_minimum_256_tokens",
+      "budgetContract": "docs/gradia/MODEL-CONTEXT-BUDGET-20261015.md",
       "strongFullCorpusV2": false,
       "actualHostQualified": false,
       "implementation": "source_and_offline_composed_fixtures",
@@ -1406,7 +1417,7 @@
     "libra": "2.3.149",
     "lia": "0.26.83",
     "retrace": "1.9.84",
-    "gradia": "0.25.83"
+    "gradia": "0.25.84"
   },
   "files": {
     "_common.cmd": {
@@ -1586,12 +1597,12 @@
       "bytes": 6517
     },
     "docs/gradia/THREE-OWNER-READ-20261009.md": {
-      "sha256": "0278d52fb6a6c5b3cd0bed8385737198beb4626b3bebbfbd704cbb8f2c8f5f9a",
-      "bytes": 6414
+      "sha256": "36e6979ebdb0f9872ee0a72e2e53ede55b2bc6e6d28600fa9836b44d331a7430",
+      "bytes": 6693
     },
     "docs/gradia/TOKEN-ACCOUNTING-PROFILE.md": {
-      "sha256": "1b2ef26bbdf910ec85cffc373fe49f9650d689c11c9f8d4eb0e6d37248a08832",
-      "bytes": 6994
+      "sha256": "9b0cdd41fa708ace4049a247568e864e53728a794c1efe4f0adb79317d754fd7",
+      "bytes": 7313
     },
     "docs/GUI_AVAILABILITY_PATCH_0.3.42.md": {
       "sha256": "3239ab09e592a6f2448eac61986a738487f8a98861b2dfc9fc4e2d3aa4935ab1",
@@ -2498,12 +2509,12 @@
       "bytes": 2284
     },
     "docs/LIBRA_GRADIA_INPUT_WRITER_READ_CONTRACT_20261014.md": {
-      "sha256": "e469164b85e8198bc6ba29f894b9b0d5d2e78c2668c1074bdf0333d72d6b619e",
-      "bytes": 7917
+      "sha256": "3f29d5f3722d7817c290ee6840a02e2f006d516b5ec0995eecfe7b235fabf43e",
+      "bytes": 8214
     },
     "docs/LIBRA_GRADIA_UNIFIED_READ_CONTRACT_20261014.md": {
-      "sha256": "f6ef9aa3be9a475e0e4085f2337c4ea88517ddbea7e9d28353ea030c02a502e9",
-      "bytes": 9758
+      "sha256": "a670520e338a9f4ad79bd1b68bae7f8b18b2dfc3f41ce8b45050ead53d15b905",
+      "bytes": 10271
     },
     "docs/LIBRA_GUI_LAYOUT_2.3.83.md": {
       "sha256": "7a625eb238c0f0186d83763979e0518434ea818aa80a9522f93879107889c8ec",
@@ -3682,8 +3693,8 @@
       "bytes": 3266990
     },
     "plugins/GRADIA.js": {
-      "sha256": "78665e2514f97682135ff4c5404a041bd40f58334a25f4b40c6cb057b09a6f1c",
-      "bytes": 2910922
+      "sha256": "fb468acfb71c646949f03007641f421da87948c75ad543a515e70aa5e00b326e",
+      "bytes": 2927285
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "fb24c0017a95d2225127dfbabec5ba92a494325883c257df8829fa98cc41db66",
@@ -4806,8 +4817,8 @@
       "bytes": 840
     },
     "tests/fixtures/gradia_input_writer_unified_fixture.cjs": {
-      "sha256": "f476a6ccf67d874d1f10dcfda821e97f513c398094ca7acf19fa6b7373a362a1",
-      "bytes": 9835
+      "sha256": "557a9fbb46da117e6295763e85384f09d27c0db69b28fbcd38405a9365be85ad",
+      "bytes": 10353
     },
     "tests/fixtures/hayaku_cache_rediscovery_cap_mutation.cjs": {
       "sha256": "e2aa561db72fe744006d915c741077d47ae3cf3a3a589a26222ea9c0dcbea2ae",
@@ -5774,8 +5785,8 @@
       "bytes": 17118
     },
     "tests/gradia_input_writer_unified_runtime_test.cjs": {
-      "sha256": "71a7993f2f73efce31b940bf8bc0a1dec75bde24cabdaf99ce68554a2a95b7dd",
-      "bytes": 10540
+      "sha256": "68cd8b273ffab6289eb4e60d683c61f7dd8b7b3c2cf64d4b6fcbdeeb4221962f",
+      "bytes": 11105
     },
     "tests/gradia_plugin_integration_test.cjs": {
       "sha256": "2e11a22a522d5f2d105780cff379d7a50b9e876f94870263424d223be0876374",
@@ -5818,8 +5829,8 @@
       "bytes": 7892
     },
     "tests/gradia_three_owner_consumer_test.cjs": {
-      "sha256": "a7deaed80c39be4a730a5b6fd10bede26ff26930a5dd42753b965363c57d6851",
-      "bytes": 4641
+      "sha256": "3b9ff4129a928fdb46257a759fdd34c58eac4aadf71d0d95dde4aa69de10e8ee",
+      "bytes": 4696
     },
     "tests/gradia_three_owner_pipeline_test.cjs": {
       "sha256": "1d57ab0a695ff9e3cb2e0c0484077b7b6628b4138bfdcfadf7102d0084e7119d",
@@ -5838,8 +5849,8 @@
       "bytes": 5262
     },
     "tests/gradia/evidence-bridge.test.cjs": {
-      "sha256": "dba173ef1981dd59dd85b9647139b1675d6fb573c2b261bd6f6c649e63fc1f56",
-      "bytes": 31330
+      "sha256": "76615d3c108015b12743ebca0e3a2c777d2e2027f8d00d08572c28f591e82a1a",
+      "bytes": 31574
     },
     "tests/gradia/evidence-budget-builder-v2.test.cjs": {
       "sha256": "b9140cb4b64afd6e525e3ee0e4ab06a0e6af4fa0333f39a162412f1560830e40",
@@ -5934,12 +5945,12 @@
       "bytes": 6636
     },
     "tests/gradia/readonly-connection.test.cjs": {
-      "sha256": "b2ea8b12a685cf93426767c6f45f0334f9530a9f82087d5ba4ce2c4edc66baf2",
-      "bytes": 20808
+      "sha256": "abfebe163452d0e70a51cc2d2c1e1c4d5d54fe161e6c2c040c8e405e222f06c5",
+      "bytes": 20814
     },
     "tests/gradia/server-read-adapter.test.cjs": {
-      "sha256": "ac19d289384316bef2769de546810e31560cf18d5b6fe23354638cf2ad4a5f9a",
-      "bytes": 8721
+      "sha256": "ee15f1162430623c7dd58917392dfb58dd44f70830aac727145e7363af2609f9",
+      "bytes": 8835
     },
     "tests/gradia/server-read-public.test.cjs": {
       "sha256": "65f04e9a2f50093cfd1d78ff6a9f65d6b7e3e80aefaa7e76bfe70bfaacb8c785",
@@ -7222,8 +7233,8 @@
       "bytes": 7882
     },
     "tests/libra_gradia_unified_read_source_test.cjs": {
-      "sha256": "7b19372ffe6b17317e83023486b3614d85ca1e8a88d1b13b4a77d923be096e18",
-      "bytes": 19024
+      "sha256": "87bc0909e54fee601c5dc23a7185c43b9316628ac3f0ae786947a89646939376",
+      "bytes": 19132
     },
     "tests/libra_graph_lifecycle_sqlite_test.cjs": {
       "sha256": "6f184bae62b7048d93b8fafbe26d54726f1b92a2c99ff175ed8442f05574c01f",
@@ -10558,8 +10569,8 @@
       "bytes": 3434
     },
     "tools/update_manifest.cjs": {
-      "sha256": "b9cfe6bbea5c1f129635b41257a8942945fc3d1d9a2683b250598b81a62147eb",
-      "bytes": 61116
+      "sha256": "9def6e4b91da85ff938b3d07b7f6d3e45123d838a49f355d8852d0ce47fac92e",
+      "bytes": 61486
     },
     "tools/verify_runtime_archive.cjs": {
       "sha256": "29e2de76fce6e71a1ebe211c3ca4f0685a22539ccf69bb1cd1e7ebc443a62730",
