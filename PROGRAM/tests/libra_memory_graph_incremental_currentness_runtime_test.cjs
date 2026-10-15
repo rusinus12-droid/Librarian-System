@@ -84,4 +84,40 @@ test('N01-A runtime: incremental owner proofs skip unconsumed historical body re
   assert.equal(audit.currentnessVerification.nativeReprojectionPerformed,true);
   assert.ok(audit.familyContracts.canonical.skipUnchangedWindowBodyRead===true);
   assert.ok(audit.familyContracts.lore.reReadRequiredEveryRequest===true);
+
+  // N01-B runtime: multi-step checkpoint resume + incremental window reuse on appended turn + pageBytes=512 split row reassembly
+  const cp1=await api.buildMemoryGraphCorpus({limit:2,maxWindowsPerStep:1});
+  assert.equal(cp1.status,'checkpointed');
+  assert.equal(cp1.completedWindows,1);
+
+  const cp2=await api.buildMemoryGraphCorpus({limit:2,maxWindowsPerStep:2});
+  assert.equal(cp2.status,'published');
+  assert.equal(cp2.buildMode,'checkpoint_resume');
+  assert.equal(cp2.windowCount,3);
+  assert.equal(cp2.reusedWindowCount,1);
+  assert.equal(cp2.enumeratedWindowCount,2);
+
+  // Append 1 new turn (6 -> 7 turns, so windowCount grows from 3 -> 4 at limit=2): windows 0..2 reused, window 3 enumerated
+  x.f.chat.message.push(
+    { role: 'user', chatId: 't7-u', data: '추가 질문 7' },
+    { role: 'assistant', chatId: 't7-a', data: '추가 원문 7' }
+  );
+  x.f.chat.messages = x.f.chat.message;
+  const incBuilt=await api.buildMemoryGraphCorpus({limit:2});
+  assert.equal(incBuilt.status,'published');
+  assert.equal(incBuilt.buildMode,'incremental_reuse');
+  assert.equal(incBuilt.windowCount,4);
+  assert.equal(incBuilt.reusedWindowCount,3);
+  assert.equal(incBuilt.enumeratedWindowCount,1);
+  const incAudit=await api.verifyMemoryGraphCorpus();
+  assert.equal(incAudit.status,'verified');
+
+  // Build with pageBytes=2048 so oversized single index rows split deterministically across pages and query/verify cleanly
+  const splitBuilt=await api.buildMemoryGraphCorpus({limit:2,pageBytes:2048});
+  assert.equal(splitBuilt.status,'published');
+  assert.ok(splitBuilt.storage.splitRowCount>0,'runtime corpus with pageBytes=2048 must split oversized index rows');
+  const splitQuery=await api.executeMemoryGraphUnifiedQuery(options);
+  assert.equal(splitQuery.modelDispatchEligible,true);
+  const splitAudit=await api.verifyMemoryGraphCorpus();
+  assert.equal(splitAudit.status,'verified');
 });

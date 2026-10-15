@@ -177,15 +177,44 @@ module.exports = function createMemoryGraphInventory({ fingerprint } = {}) {
     if (stateReasons.length || loreReasons.length || frameChanged) changedWindowSet.add(0);
     const changedWindows = [...changedWindowSet].sort((a, b) => a - b);
     const unchangedWindows = allWindowIndices.filter(index => !changedWindowSet.has(index));
+    const sharedSingletonUnchanged = !frameChanged
+      && published.registryDigest === live.registryDigest
+      && stateReasons.length === 0
+      && loreReasons.length === 0;
+    const minWindows = Math.min(published.windows.length, live.windows.length);
+    const reusableWindows = sharedSingletonUnchanged
+      ? Array.from({ length: minWindows }, (_, index) => index)
+          .filter(index => !canonicalWindows.has(index) && !microWindows.has(index))
+      : [];
+    const canonicalKeys = new Set(), microTurns = new Set();
+    for (const win of live.windows) {
+      for (const item of Array.isArray(win?.canonicalSlice) ? win.canonicalSlice : []) {
+        if (item?.refIdentity?.key) canonicalKeys.add(String(item.refIdentity.key));
+      }
+      for (const item of Array.isArray(win?.microSlice) ? win.microSlice : []) {
+        if (Number.isSafeInteger(item?.turn)) microTurns.add(Number(item.turn));
+      }
+    }
     return Object.freeze({
       schema: 'libra.graph_corpus_currentness.v1',
       status: !frameChanged && !windowCountChanged && changedFamilies.length === 0 && changedWindows.length === 0 ? 'verified' : 'stale_source',
       mode: 'incremental_owner_proof',
       frameChanged,
       windowCountChanged,
+      publishedWindowCount: published.windows.length,
+      liveWindowCount: live.windows.length,
+      liveCanonicalTotal: canonicalKeys.size,
+      liveMicroTurnTotal: microTurns.size,
       changedFamilies: Object.freeze(changedFamilies),
       changedWindows: Object.freeze(changedWindows),
       unchangedWindows: Object.freeze(unchangedWindows),
+      reusableWindows: Object.freeze(reusableWindows),
+      liveWindows: Object.freeze(live.windows.map((win, index) => Object.freeze({
+        ordinal: index,
+        canonicalOffset: Number.isSafeInteger(win?.canonicalOffset) ? win.canonicalOffset : null,
+        microOffset: Number.isSafeInteger(win?.microOffset) ? win.microOffset : null,
+        limit: Number.isSafeInteger(win?.limit) ? win.limit : null
+      }))),
       familyVerdicts,
       guaranteedFamiliesWithoutBodyReRead: Object.freeze(SOURCE_FAMILIES.filter(f => FAMILY_CURRENTNESS_CONTRACTS[f].skipUnchangedWindowBodyRead)),
       reReadRequiredEveryRequestFamilies: Object.freeze(SOURCE_FAMILIES.filter(f => FAMILY_CURRENTNESS_CONTRACTS[f].reReadRequiredEveryRequest)),

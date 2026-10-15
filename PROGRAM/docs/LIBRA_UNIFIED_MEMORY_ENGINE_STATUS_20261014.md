@@ -341,4 +341,10 @@ N01의 매 질의 전체 구간 재투영을 owner 증분 증명(`N01-A`)으로 
 
 질의 시작과 최종 전달 시 `verifyIncrementalSourceProofs()`가 정본 매니페스트 ref 테이블·엔티티 레지스트리·Micro 턴 페어/헤드·State 헤더/정정 저널·호스트 로어 스냅샷/링크 인덱스를 구간별로 대조한다. 증분 증명이 통과하면 변경되지 않은 과거 구간의 정본·Micro 본문 재읽기를 생략(`nativeReprojectionRequired:false`)하고, 최종 Compiler 발송 직전에는 채택·억제된 소비 readset의 물리 레코드 본문 digest와 조건부 readset만 재확인한다. 명시적 `verifyMemoryGraphCorpus()` 감사는 전체 구간 재투영(`eager_full_reprojection_audit`)을 수행한다.
 
-53구간 커널 suite(`libra_memory_graph_corpus_test.cjs` 12 PASS), 자료별 현재성 계약 suite(`libra_memory_graph_inventory_test.cjs` 12 PASS), 등록 native 런타임(`libra_memory_graph_incremental_currentness_runtime_test.cjs` 1 PASS)에서 미소비 정본 본문 미읽기, 소비 Micro 본문 물리 변조 거부, Lore/State 변경 감지를 확인했다. 증분 구축·재개 및 대형 단일 행 분할(N01-B), 전체 자원·작업공간·I/O 바이트 예산(N01-C)은 후속 단계다.
+53구간 커널 suite(`libra_memory_graph_corpus_test.cjs` 14 PASS), 자료별 현재성 계약 suite(`libra_memory_graph_inventory_test.cjs` 12 PASS), 등록 native 런타임(`libra_memory_graph_incremental_currentness_runtime_test.cjs` 1 PASS)에서 미소비 정본 본문 미읽기, 소비 Micro 본문 물리 변조 거부, Lore/State 변경 감지를 확인했다.
+
+## 22. 증분 코퍼스 구축·체크포인트 재개 및 대형 단일 레코드 분할 (N01-B)
+
+N01-B의 두 축을 연결했다. 첫째, `buildMemoryGraphCorpus()`가 이전 게시 세대의 `projection:` 구간 슬라이스와 `verifyIncrementalSourceProofs()`의 `reusableWindows`·`liveWindows`를 대조해 변경되지 않은 과거 구간은 재열거하지 않고 변경·추가된 구간만 열거해 병합한다(`buildMode: 'incremental_reuse'`). `maxWindowsPerStep` 옵션을 지정하면 단계별 `checkpoint:`(`libra.graph_corpus_build_checkpoint.v1`) 불변 레코드를 기록해 부분 root 게시 없이 다음 호출에서 이어받아 완주한다(`buildMode: 'checkpoint_resume'`).
+
+둘째, 단일 인덱스 행(예: 대형 허브 엔티티의 `reverseDependencies`·`directory`·`postings`)이 `pageBytes`를 초과할 때 빌드를 실패시키지 않고 결정론적 청크(`libra.graph_corpus_row_chunk.v1`)로 분할 저장하며, 매니페스트 `ref.splitRow` 연속성 검증과 읽기(전체 복원 및 선택적 `readRows`/`queryPageAsync`) 시 `rowDigest` 검증 후 재조립한다. 청크 변조나 누락은 `PAGE_CORRUPT`로 거부한다. 전체 자원·작업공간·I/O 바이트 예산(N01-C)은 후속 단계다.

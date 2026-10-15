@@ -1,14 +1,14 @@
 # LIBRA 전체 구간 공통 인덱스 — 구현 계약
 
-- 작성일: 2026-10-14 · 버전: 1.3
-- 조사 기준: `89fb341` 이후의 이 증분 및 N01-A 증분 원본 현재성 검증
-- 판정: **여러 원본 구간을 하나의 검색 그래프로 연결하고 공통 인덱스를 영속화·재사용한다. 신규 게시 index의 선택적 페이지 접근과 owner 증분 증명(`N01-A`)을 연결했다. 증분 구축·재개, 큰 단일 행 분할, 전체 바이트 예산 및 대규모 성능 인증은 아직 미완성이다.**
+- 작성일: 2026-10-14 · 버전: 1.4
+- 조사 기준: `89fb341` 이후의 이 증분, N01-A 증분 원본 현재성 검증 및 N01-B 증분 구축·재개·대형 단일 행 분할
+- 판정: **여러 원본 구간을 하나의 검색 그래프로 연결하고 공통 인덱스를 영속화·재사용한다. 신규 게시 index의 선택적 페이지 접근, owner 증분 증명(`N01-A`), 증분 구축·체크포인트 재개 및 대형 단일 행 분할(`N01-B`)을 연결했다. 전체 바이트 예산(`N01-C`) 및 대규모 성능 인증은 아직 미완성이다.**
 
 ## 1. 실제 사용 경로
 
-`buildMemoryGraphCorpus()`를 명시적으로 실행하면 현재 scope·세계선·복원 epoch·owner view에서 정본/Micro의 owner cursor를 끝까지 순회한다. State·로어북·대상 노드와 반복되는 자료는 identity별로 통합하며, 같은 ID의 내용이 구간 사이에서 달라지면 게시를 거부한다. 먼저 끝난 family는 마지막 구간을 유지해 처음으로 돌아가지 않는다. State의 근거가 나중 구간에서 발견되면 그 `derived_from` 관계도 같은 그래프에 참여한다.
+`buildMemoryGraphCorpus()`를 명시적으로 실행하면 현재 scope·세계선·복원 epoch·owner view에서 정본/Micro의 owner cursor를 순회한다. 이전 게시 세대와 `projection:`의 구간별 슬라이스가 호환되면(`incremental_reuse`) 변경되지 않은 구간은 재열거하지 않고 변경·추가된 구간만 다시 열거하며, `maxWindowsPerStep` 옵션을 주면 단계별 `checkpoint:` 불변 레코드를 저장해 부분 root 게시 없이 다음 호출에서 이어받아(`checkpoint_resume`) 완주한다. State·로어북·대상 노드와 반복되는 자료는 identity별로 통합하며, 같은 ID의 내용이 구간 사이에서 달라지면 게시를 거부한다. 먼저 끝난 family는 마지막 구간을 유지해 처음으로 돌아가지 않는다. State의 근거가 나중 구간에서 발견되면 그 `derived_from` 관계도 같은 그래프에 참여한다.
 
-합쳐진 그래프로 directory, 양방향 typed adjacency, lexical/entity/predicate/time postings, 역의존 표를 한 번 만든다. 각 표는 공통 page cache의 계상·pin/release를 거쳐 불변 byte page로 저장된다. 이 저장은 원본 자료나 문서 벡터를 새로 생산하지 않는다. 저장 위치는 해당 scope의 `memory-graph:v1:corpus:` 아래다.
+합쳐진 그래프로 directory, 양방향 typed adjacency, lexical/entity/predicate/time postings, 역의존 표를 한 번 만든다. 각 표는 공통 page cache의 계상·pin/release를 거쳐 불변 byte page로 저장되며, 단일 행이 `pageBytes`를 초과하는 대형 허브/역의존 행은 결정론적 청크(`libra.graph_corpus_row_chunk.v1`)로 분할 저장하고 읽기 시 `rowDigest` 검증과 함께 재조립한다. 이 저장은 원본 자료나 문서 벡터를 새로 생산하지 않는다. 저장 위치는 해당 scope의 `memory-graph:v1:corpus:` 아래다.
 
 GUI 진단 카드의 **전체 이력 인덱스 구축** 버튼과 등록 API가 같은 maintenance 함수를 호출한다. **인덱스 구축 취소**는 기존 store serial/복원/삭제/unload fence를 사용한다. 함수가 저장한 generation이나 GUI 상태는 모델 전달 권한이 아니다. GUI 버튼의 실제 설치 DOM 동작은 별도 E4 검증 대상이다.
 
@@ -43,11 +43,12 @@ server_only의 개별 source readset은 기존 SDK 한도인 64키를 유지한�
 | 구간당 limit | 20 | 1–50 |
 | 구간당 nodeLimit | 2048 | 1–8192 |
 | maxWindows | 64 | 1–128 |
+| maxWindowsPerStep | 무제한(일괄) | 1–maxWindows (지정 시 단계별 체크포인트) |
 | maxSerializedBytes | 4 MiB | 64 KiB–8 MiB |
 | pageBytes | 8 KiB | 512 B–16 KiB |
 | 저장 index page 수 | 최대 512 | 고정 상한 |
 
-`maxSerializedBytes`는 중복을 제거한 graph 행들의 JSON byte 합과 저장 index page byte 합에 **각각** 적용한다. 원본 본문, canonical row, Map/Set, 컴파일 중간값, 반환값, VM heap의 총량 제한이 아니다. JSON 원본 parse도 이 값으로 admission하는 것은 아니다. 디렉터리 manifest는 128 KiB 이하다. 한 행이 page 예산보다 크면 숨기지 않고 게시를 거부한다.
+`maxSerializedBytes`는 중복을 제거한 graph 행들의 JSON byte 합과 저장 index page byte 합에 **각각** 적용한다. 원본 본문, canonical row, Map/Set, 컴파일 중간값, 반환값, VM heap의 총량 제한이 아니다. JSON 원본 parse도 이 값으로 admission하는 것은 아니다. 디렉터리 manifest는 128 KiB 이하다. 한 행이 `pageBytes`보다 크면 결정론적 청크(`libra.graph_corpus_row_chunk.v1`)로 분할하고 `splitRow` 메타데이터와 `rowDigest`로 연속성·무결성을 검증하며, 청크 메타데이터 자체가 페이지 한도를 넘거나 청크가 손상되면 숨기지 않고 게시·읽기를 거부한다.
 
 구축의 window/byte/page 예산이 부족하면 마지막 구간을 전체 자료처럼 게시하지 않는다. 이전 root는 유지되고, 이미 쓴 불변 page는 나중 재사용하거나 별도 GC 대상이 된다. 중간 쓰기가 끝날 때까지 build barrier를 유지하며 취소 후 새 build가 그 쓰기와 겹치지 않는다.
 
@@ -57,8 +58,8 @@ owner가 보고한 원본 읽기 실패는 `coverage.sourceReadFailures`로 보�
 
 ## 4. 검증과 남은 종료 조건
 
-- 순수 corpus suite 12건: 53구간의 단일 인덱스, N01-A 53구간 증분 owner 증명(무재열거 검증·자료별 변이 거부·오염된 proof/projection 거부), cold/warm/축출/독립 runtime 복원, fresh 커서와 실제 내용 변경 구분, 첫 구간 밖 수정, warm 상태의 디스크 오염, 게시 실패·예산·취소, 외부 namespace 참조 거부, 잘못된 partition/generation/digest 거부.
-- 등록 API suite 및 N01-A 런타임: plugin_only/server_only의 실제 native reader·storage bridge로 첫 구간 밖 Micro 검색, 미소비 정본 본문 미읽기 및 소비된 Micro 본문 물리 변조 거부, Lore/State 변경 거부, 재시작·수정 거부.
+- 순수 corpus suite 14건: 53구간의 단일 인덱스, N01-A 53구간 증분 owner 증명(무재열거 검증·자료별 변이 거부·오염된 proof/projection 거부), N01-B 증분 구축(단일 창 수정·신규 창 추가 시 변경 없는 창 슬라이스 재사용 및 `maxWindowsPerStep` 다단계 체크포인트 재개), N01-B 대형 단일 행(`pageBytes:512`) 분할·재조립·변조 거부, cold/warm/축출/독립 runtime 복원, fresh 커서와 실제 내용 변경 구분, 첫 구간 밖 수정, warm 상태의 디스크 오염, 게시 실패·예산·취소, 외부 namespace 참조 거부, 잘못된 partition/generation/digest 거부.
+- 등록 API suite 및 N01-A/N01-B 런타임: plugin_only/server_only의 실제 native reader·storage bridge로 첫 구간 밖 Micro 검색, 미소비 정본 본문 미읽기 및 소비된 Micro 본문 물리 변조 거부, Lore/State 변경 거부, 다단계 체크포인트 재개·신규 턴 추가 시 증분 창 재사용·대형 단일 행 분할(`pageBytes:2048`) 후 질의/전체 감사 통과.
 - native 벡터 fixture: 어휘가 겹치지 않는 질의의 음성 대조와 저장 정본 벡터의 단일 frontier 참여, 질의 호출 1회/warm 0회, 실제 Classic beforeRequest의 최종 전달·검증. 30턴의 서버 fixture에서는 여러 64키 이하 readset을 관찰하고 원본을 읽지 못한 구간을 partial로 유지한다. 외부 모델 품질 측정은 아니다.
 - 실제 GRADIA 합성 호스트: 저장 인덱스를 거친 SHADOW/AIDE와 명시적 인풋 작성기 전달 및 원본 수정 후 전달 차단. 실제 설치된 RisuAI나 외부 모델 품질 인증을 뜻하지 않는다.
 
@@ -74,6 +75,6 @@ node PROGRAM/tools/sync_libra_gradia_unified_read.cjs --check
 node PROGRAM/tools/check_sdk_sync.cjs
 ```
 
-**N01은 아직 전체 완료가 아니다.** N01-A로 owner 증분 현재성 증명과 미소비 과거 구간 본문 재읽기 생략을 연결했으며, 다음 구현은 증분 build·재개와 큰 단일/역의존 행 분할(N01-B), 전체 자원·작업공간·I/O 바이트 예산(N01-C)이다. 현재 byte 합이나 `indexBuildsDuringQuery:0`을 전체 heap 제한·대규모 성능 합격으로 사용하지 않는다.
+**N01은 아직 전체 완료가 아니다.** N01-A로 owner 증분 현재성 증명과 미소비 과거 구간 본문 재읽기 생략을, N01-B로 증분 구축·체크포인트 재개와 대형 단일 행 분할을 연결했으며, 다음 구현은 전체 자원·작업공간·I/O 바이트 예산(N01-C)이다. 현재 byte 합이나 `indexBuildsDuringQuery:0`을 전체 heap 제한·대규모 성능 합격으로 사용하지 않는다.
 
 N02의 다른 family 벡터 생산, N05의 안전한 실제 삭제, N06의 실제 호스트 품질·성능 측정, N07의 serving 전환은 수행했으며 실제 인증 gate를 대신하지 않는다. 벡터가 없는 자료는 현재도 동일 검색기의 lexical/entity/graph 경로로 참여한다.

@@ -109,9 +109,9 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
         structural,
         neighborNodeId: edge.to,
         edgeId: edge.id,
-        basisId: edge.basisId,
-        bindingId: edge.bindingId,
-        identityCoverage: edge.identityCoverage
+        basisId: edge.basisId || null,
+        bindingId: edge.bindingId || null,
+        identityCoverage: edge.identityCoverage || null
       });
       adjacency.push({
         anchorNodeId: edge.to,
@@ -120,9 +120,9 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
         structural,
         neighborNodeId: edge.from,
         edgeId: edge.id,
-        basisId: edge.basisId,
-        bindingId: edge.bindingId,
-        identityCoverage: edge.identityCoverage
+        basisId: edge.basisId || null,
+        bindingId: edge.bindingId || null,
+        identityCoverage: edge.identityCoverage || null
       });
     }
     adjacency.sort((a, b) => (
@@ -511,7 +511,14 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       || !Number.isSafeInteger(pageBytes) || pageBytes < 256 || pageBytes > 65536) fail('options_invalid');
     const result = await reader({ ...options, table, offset, pageBytes },storageBudget);
     if (result.storageStopped) return result;
-    return queryPage({ ...compiled, [table]: result.rows },{ ...options, table, offset, pageBytes });
+    let page = queryPage({ ...compiled, [table]: result.rows },{ ...options, table, offset, pageBytes });
+    if (page.stopReason === 'row_exceeds_page' && result.splitReassembled === true) {
+      const ceiling = Math.min(65536, typeof pages.inspect === 'function' ? pages.inspect().limits.pageBytes : 65536);
+      if (pageBytes < ceiling) {
+        page = queryPage({ ...compiled, [table]: result.rows },{ ...options, table, offset, pageBytes: ceiling });
+      }
+    }
+    return page;
   };
   const isCompatible = (compiled, { partition, generation } = {}) => issued.has(compiled)
     && compiled.partition === partition && compiled.generation === generation;
