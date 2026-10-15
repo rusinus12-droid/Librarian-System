@@ -179,7 +179,10 @@ async function measureMode(mode) {
     assert.ok(armCandidates.length > 0,
       `${mode}: the recall arms must carry candidates for a query that matches the seeded records (got ${armCandidates.length} across arms ${JSON.stringify(armCounts)})`);
     assert.ok(armCounts.dense > 0, `${mode}: comparable model vectors produce positive recall candidates`);
-    for (const arm of ['hashRecovery','sparse','exact']) assert.equal(armCounts[arm], 0, `${mode}: model recall cannot downgrade to ${arm}`);
+    // Hybrid recall: lexical arms run beside the dense arm and are fused by rank;
+    // the legacy hash-vector recovery arm stays retired.
+    assert.equal(armCounts.hashRecovery, 0, `${mode}: model recall never uses the retired hash recovery arm`);
+    assert.ok(armCounts.sparse > 0, `${mode}: hybrid recall keeps the lexical arm for a matching query`);
     features.RECALL = { arms: armKeys.length, candidates: armCandidates.length, sparse: armCounts.sparse };
     need('applyRecallTemporalHardGate');
     need('resolveRecallLane');

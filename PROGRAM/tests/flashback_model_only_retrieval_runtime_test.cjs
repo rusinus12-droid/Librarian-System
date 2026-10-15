@@ -98,17 +98,19 @@ for (const mode of ['pending', 'legacy_hash', 'wrong_profile', 'changed_source']
     assert.deepEqual(clone(await read()), before, 'query filtering never deletes legacy or raw source bytes');
   });
 });
-test('query provider failure cannot fall back to lexical/raw evidence', async () => {
+test('query provider failure falls back to keyword retrieval over admitted records only', async () => {
   await setup(async ({ h, cfg, scope, read }) => {
     await h.api.processPendingEmbeddingWork({ sourceHash: SOURCE.sourceHash });
     const before = clone(await read());
     h.host.nativeFetch = async () => { throw Error('synthetic query outage'); };
     const result = await h.api.recallRecords(QUERY, { ...cfg, fallbackHashEmbedding: true }, scope, { currentPairIndex: 10 });
-    assert.equal(result.records.length, 0);
-    assert.equal(result.currentStateFacts?.length || 0, 0);
-    assert.equal(result.modelReadiness.status, 'query_failed');
-    assert.equal(h.api._selectionTest.selectFlashbackEvidencePlan(result, cfg, 8000).text, '');
-    assert.deepEqual(clone(await read()), before);
+    assert.equal(result.modelReadiness.status, 'lexical_fallback');
+    assert.equal(result.modelReadiness.reason, 'query_failed');
+    assert.equal(result.modelReadiness.ready, false, 'a keyword fallback is never reported as semantic readiness');
+    assert.equal(result.queryDim, 0, 'no hash or substitute query vector is manufactured');
+    assert.match(result.fallbackWarning, /키워드 검색/);
+    assert.ok(h.api._selectionTest.selectFlashbackEvidencePlan(result, cfg, 8000).text.includes('blue ribbon'), 'the admitted model-ready record is found by keywords');
+    assert.deepEqual(clone(await read()), before, 'fallback recall writes nothing');
   });
 });
 test('legacy/default recall is unavailable with zero provider calls and no alternate hash output', async () => {
@@ -264,15 +266,15 @@ test('legacy compaction preserves malformed derived vector bytes as repair evide
     assert.deepEqual(evidence.embeddingProvenance, old.embeddingProvenance);
   });
 });
-test('request-hook diagnostics and GUI retain the model query failure state', async () => {
+test('request-hook diagnostics and GUI report the keyword fallback after a query failure', async () => {
   await setup(async ({ h, cfg }) => {
     h.host.nativeFetch = async () => ({ ok: false, status: 503, async json() { return { error: { message: 'synthetic query failure' } }; } });
-    const output = await h.api._test.beforeRequest([{ role: 'user', content: QUERY }], 'model');
-    assert(!JSON.stringify(output).includes('blue ribbon'));
+    await h.api._test.beforeRequest([{ role: 'user', content: QUERY }], 'model');
     const state = (await h.api.debugState()).lastRecall;
-    assert.equal(state.modelReadiness.status, 'query_failed');
+    assert.equal(state.modelReadiness.status, 'lexical_fallback');
+    assert.equal(state.modelReadiness.reason, 'query_failed');
     assert.equal(state.modelReadiness.ready, false);
-    assert(h.api._test.renderLastRecallPanel(state, state.scopeKey).includes('원문은 보관'));
+    assert(h.api._test.renderLastRecallPanel(state, state.scopeKey).includes('키워드 검색으로 대체'));
   });
 });
 for (const changed of ['', 'scope', 'credential']) test(`actual hook final manifest read ${changed ? 'rejects changed ' + changed : 'retains the current scope positive'}`, async () => {

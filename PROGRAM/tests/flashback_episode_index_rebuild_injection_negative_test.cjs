@@ -320,7 +320,8 @@ async function checkMode(mode) {
       assertCompletedQuery(recall, scope, label);
       if (query === QUERY) assert.equal(recall.contextualRecall.mode, 'semantic_embedding');
       assert.equal(recall.contextualRecall.lexicalFallbackCandidates, 0);
-      for (const arm of ['hashRecovery', 'sparse', 'exact']) assert.equal(recall.candidateArms[arm], 0);
+      // Hybrid recall keeps keyword arms beside dense; the hash recovery arm stays retired.
+      assert.equal(recall.candidateArms.hashRecovery, 0);
       return api._selectionTest.selectFlashbackEvidencePlan(recall, settings, SETTINGS.maxInjectionChars);
     };
     const readyPositive = await recallWitness(QUERY, 'model-ready positive');

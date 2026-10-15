@@ -56,7 +56,8 @@ const readyForRecall = async (fixture, mode, fact) => {
     assert.equal(positive.contextualRecall.mode, 'semantic_embedding', 'positive recall uses comparable model evidence');
     assert.equal(positive.queryDim, 3);
     assert.equal(positive.contextualRecall.lexicalFallbackCandidates, 0);
-    for (const arm of ['hashRecovery', 'sparse', 'exact']) assert.equal(positive.candidateArms[arm], 0);
+    // Hybrid recall keeps the lexical arms beside dense; the hash recovery arm stays retired.
+    assert.equal(positive.candidateArms.hashRecovery, 0);
     assert.ok(api._selectionTest.selectFlashbackEvidencePlan(positive, cfg, 4000).text.includes(fact));
     const query = 'UNRELATED_FIXTURE_QUERY';
     const negative = await api._selectionTest.prepareFlashbackRecall(query, cfg, scope, { currentUser: query });

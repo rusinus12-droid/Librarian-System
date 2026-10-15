@@ -1910,6 +1910,20 @@ const PLUGIN_VERSION = '1.0.101';
   const FINALIZED_CAPTURE_IDLE_POLL_MS = 2200;
   const FINALIZED_CAPTURE_STABLE_MS = 4000;
   const FINALIZED_CAPTURE_MAX_AGE_MS = 4 * 60 * 1000;
+  // Share of the hook recall deadline the query embedding may use before the
+  // request falls back to keyword retrieval (default 20 s hook -> 4 s).
+  // After a query embedding failure, skip the provider for a short cooldown and use
+  // keyword retrieval directly, so an outage costs one slow request instead of
+  // every request. Cleared by any success or embedding settings change.
+  const FLASHBACK_QUERY_EMBEDDING_COOLDOWN_MS = 60000;
+  let flashbackQueryEmbeddingCooldown = { until: 0, generation: -1, fingerprint: '', error: '' };
+  const flashbackQueryEmbeddingCoolingDown = settings => flashbackQueryEmbeddingCooldown.until > Date.now()
+    && flashbackQueryEmbeddingCooldown.generation === Runtime.embeddingGeneration
+    && flashbackQueryEmbeddingCooldown.fingerprint === embeddingProfileSettingsFingerprint(settings);
+  const flashbackQueryEmbeddingBudgetMs = (settings = {}) => {
+    const hook = Math.max(1000, Number(settings?.hookRecallTimeoutMs || DEFAULTS.hookRecallTimeoutMs) || DEFAULTS.hookRecallTimeoutMs);
+    return Math.min(4000, Math.max(1500, Math.round(hook * 0.25)));
+  };
   const recallExecutionDeadline = (configuredTimeoutMs = 0, now = Date.now()) => {
     const checkedAt = Math.max(0, Number(now || Date.now()) || Date.now());
     const configured = Math.max(1, Number(configuredTimeoutMs || DEFAULTS.hookRecallTimeoutMs) || DEFAULTS.hookRecallTimeoutMs);
@@ -32097,12 +32111,24 @@ const MemorySuiteHealthRecovery = (() => {
     return RecallKeywordFeatures.resolveMentions(value,Array.from(entries.values()));
   };
   const recallFocusForRecord = (record,anchors) => RecallKeywordFeatures.evidenceFocus(record,anchors?.queryPlan || {targets:RecallKeywordFeatures.directAnchors(anchors?.surfaceAnchors||[])},{entities:recallEntitiesForRecord(record),facts:recordStructuredStateFacts(record),properties:[...extractQueryStateProperties(anchors?.queryPlan?.requestText||'')]});
+  // Lexical evidence for a semantic candidate, 0..1: an exact surface match counts
+  // fully, a BM25 hit decays with its rank. Used as a bounded boost, never alone
+  // as a semantic score.
+  const flashbackHybridLexicalSignal = (channels = {}) => {
+    const exact = channels.exact ? 1 : 0;
+    const rank = Number(channels.sparse?.rank || 0);
+    const sparse = rank > 0 && rank <= 8 ? 1 / Math.sqrt(rank) : 0;
+    return Math.max(exact, sparse);
+  };
   const selectFusedRecallCandidates = (fusedAll, queryAnchors, settings, candidateLimit, effectiveTopK) => {
     // Eligibility has already been checked. Preserve direct targets before truncation,
     // within the existing limit, even when other records hit more RRF channels.
     if(settings.contextualRecall!==false && normalizeProvider(settings.embeddingProvider)!=='hash' && fusedAll.some(item=>item.channels?.dense)){
-      const dense=fusedAll.filter(item=>item.channels?.dense && Number(item.channels.dense.score)>=Number(settings.minScore||0))
-        .sort((a,b)=>Number(b.channels.dense.score)-Number(a.channels.dense.score)||text(a.record?.id).localeCompare(text(b.record?.id)));
+      // Keep semantic hits above the floor plus records the lexical arms ranked,
+      // ordered by the fused (dense + sparse + exact) reciprocal rank.
+      const dense=fusedAll.filter(item=>item.channels?.dense && (Number(item.channels.dense.score)>=Number(settings.minScore||0)
+          || flashbackHybridLexicalSignal(item.channels)>0))
+        .sort((a,b)=>b.rrfScore-a.rrfScore||Number(b.channels.dense.score)-Number(a.channels.dense.score)||text(a.record?.id).localeCompare(text(b.record?.id)));
       // These rows have no compatible semantic vector. Keep their independent
       // fallback rank; never mix its score into a semantic candidate's score.
       const fallback=fusedAll.filter(item=>!item.channels?.dense)
@@ -32741,8 +32767,13 @@ const MemorySuiteHealthRecovery = (() => {
     const cap = Math.max(8, Number(settings.candidateLimit || DEFAULTS.candidateLimit) || DEFAULTS.candidateLimit);
     const modelContext = { provider: context.queryProvider || settings.embeddingProvider,
       model: context.queryModel || settings.embeddingModel, dimensions: queryVector.length, profileId: context.queryProfileId };
-    records = queryVector.length && configuredModelEmbedding(settings)
-      ? (records || []).filter(record => recordEmbeddingCompatibility(record, settings, modelContext).comparable) : [];
+    // Keyword fallback (no query vector this request) keeps the same admission:
+    // profile, ready receipt and source binding must still match; only the query
+    // dimension is taken from the record because there is no query vector.
+    records = context.allowLexicalFallback === true && configuredModelEmbedding(settings)
+      ? (records || []).filter(record => recordEmbeddingCompatibility(record, settings, { ...modelContext, dimensions: Array.isArray(record?.vector) ? record.vector.length : 0, profileId: '' }).comparable)
+      : queryVector.length && configuredModelEmbedding(settings)
+        ? (records || []).filter(record => recordEmbeddingCompatibility(record, settings, modelContext).comparable) : [];
     const responseRecords = records.filter(record => isResponseMemoryRecord(record));
     delete context.computeCosine;
     if(queryVector.length && responseRecords.length){
@@ -32776,12 +32807,14 @@ const MemorySuiteHealthRecovery = (() => {
       dense.length = Math.min(dense.length, cap);
     }
     if(dense.some(item=>item.semantic.contextualSemantic)){
-      const fallbackRecords=responseRecords.filter(record=>!recallSemanticSignals(record,queryVector,settings,context).vectorComparable);
-      const sparse=scoreBm25fCandidates(fallbackRecords,queryText,settings,{limit:cap});
-      const exact=fallbackRecords.map(record=>exactRecallCandidateScore(record,queryText,anchors,settings)).filter(Boolean)
+      // Hybrid retrieval: the lexical arms run over every record, not only the
+      // vectorless ones. Names, numbers and rare words that a general embedding
+      // blurs still reach the candidate pool and are fused by rank (RRF).
+      const sparse=scoreBm25fCandidates(responseRecords,queryText,settings,{limit:cap});
+      const exact=responseRecords.map(record=>exactRecallCandidateScore(record,queryText,anchors,settings)).filter(Boolean)
         .sort((a,b)=>b.score-a.score||text(a.record?.id).localeCompare(text(b.record?.id))).slice(0,cap);
       const sceneText=text(context.sceneContext?.text||'').trim();
-      const contextSparse=sceneText?scoreBm25fCandidates(fallbackRecords,sceneText,settings,{limit:cap}):[];
+      const contextSparse=sceneText?scoreBm25fCandidates(responseRecords,sceneText,settings,{limit:cap}):[];
       const hashRecovery = [];
       return {dense,hashRecovery,sparse,exact,forced:[],contextSparse,topicSparse:[],topicExact:[]};
     }
@@ -33633,10 +33666,21 @@ const MemorySuiteHealthRecovery = (() => {
     const candidateMeta = context.candidateMeta instanceof Map
       ? context.candidateMeta.get(text(record.id || record.hash || record.sourceId || ''))
       : null;
+    if(context.allowLexicalFallback){
+      // Keyword fallback (no query vector this request): rank-based keyword evidence only. The scene-context BM25
+      // arm counts at half strength, as it does in fusion.
+      const channels=candidateMeta?.channels||{};
+      const contextRank=Number(channels.contextSparse?.rank||0);
+      const lexicalSignal=Math.max(flashbackHybridLexicalSignal(channels),contextRank>0&&contextRank<=8?0.5/Math.sqrt(contextRank):0);
+      return {record,score:lexicalSignal,cosine:0,lexical:lexicalSignal,rrfScore:Number(candidateMeta?.rrfScore||0),channels,mmrScore:lexicalSignal,gate:null,
+        components:{contextualSemantic:false,lexicalFallback:true,hybridLexicalSignal:lexicalSignal,vectorComparable:false,cosine:0,semanticCosine:0}};
+    }
     if(semantic.contextualSemantic){
-      const score=semantic.fusedSemantic;
-      return {record,score,cosine,lexical:0,rrfScore:Number(candidateMeta?.rrfScore||0),channels:candidateMeta?.channels||{},mmrScore:score,gate:null,
-        components:{contextualSemantic:true,semanticCosine:score,vectorComparable:true,cosine,
+      const lexicalSignal=flashbackHybridLexicalSignal(candidateMeta?.channels||{});
+      const lexicalBoost=lexicalSignal*Math.max(0,Number(settings.lexicalWeight??DEFAULTS.lexicalWeight)||0);
+      const score=clampNumber(semantic.fusedSemantic+lexicalBoost,0,1,semantic.fusedSemantic);
+      return {record,score,cosine,lexical:lexicalSignal,rrfScore:Number(candidateMeta?.rrfScore||0),channels:candidateMeta?.channels||{},mmrScore:score,gate:null,
+        components:{contextualSemantic:true,semanticCosine:semantic.fusedSemantic,hybridLexicalSignal:lexicalSignal,hybridLexicalBoost:lexicalBoost,vectorComparable:true,cosine,
           currentSemantic:semantic.currentSemantic,sceneContextCosine:semantic.sceneContextCosine,
           sceneContextComparable:semantic.sceneContextComparable,sceneContextQueryWeight:semantic.sceneContextWeight,
           sceneContextContribution:semantic.sceneContextContribution,semanticSupportSource:semantic.supportSource,
@@ -33804,7 +33848,11 @@ const MemorySuiteHealthRecovery = (() => {
   const evidenceGateForRecall = (item, queryAnchors, settings) => {
     if (!settings.evidenceGate) return { passed: true, reasons: ['gate_disabled'] };
     const c = item.components || {};
-    if(c.contextualSemantic)return {passed:Number(c.semanticCosine)>=Number(settings.minScore||0),reasons:['contextual_embedding']};
+    if(c.lexicalFallback)return {passed:Number(c.hybridLexicalSignal||0)>=0.3,reasons:['keyword_fallback']};
+    if(c.contextualSemantic){
+      if(Number(c.semanticCosine)>=Number(settings.minScore||0))return {passed:true,reasons:['contextual_embedding']};
+      return {passed:Number(c.hybridLexicalSignal||0)>=0.5,reasons:['hybrid_lexical']};
+    }
     const group = sourceGroup(item.record?.sourceType);
     const reasons = [];
     // State-age estimates remain ranking signals; authoritative gates run separately.
@@ -34485,16 +34533,28 @@ const MemorySuiteHealthRecovery = (() => {
       let result;
       let contextResult = null;
       let error = '';
+      let timedOut = false;
+      let coolingDown = false;
       try {
         const embeddingSettings = { ...cfg, fallbackHashEmbedding: false };
         const jointQuery=cfg.contextualRecall!==false && normalizeProvider(cfg.embeddingProvider)!=='hash';
         const queryBatch = jointQuery ? [sceneContextProfile.text || primaryQueryText] : [primaryQueryText, ...(sceneContextProfile.text ? [sceneContextProfile.text] : [])];
         await assertQueryProfileCurrent();
-        const embedded = await getCachedQueryEmbeddings(queryBatch, embeddingSettings, { taskType: 'query', scope, validateAuthority: assertQueryProfileCurrent });
+        if (flashbackQueryEmbeddingCoolingDown(cfg)) throw Object.assign(new Error(`query embedding cooling down after: ${flashbackQueryEmbeddingCooldown.error}`), { code: 'FLASHBACK_QUERY_EMBEDDING_COOLDOWN' });
+        // The query embedding gets its own short budget inside the hook deadline.
+        // A slow or failed provider degrades this request to keyword retrieval
+        // instead of consuming the whole hook budget and delivering nothing.
+        const embedded = await withDeadline(getCachedQueryEmbeddings(queryBatch, embeddingSettings, { taskType: 'query', scope, validateAuthority: assertQueryProfileCurrent }),
+          flashbackQueryEmbeddingBudgetMs(cfg), 'query embedding');
         result = embedded[0];
         contextResult = sceneContextProfile.text ? embedded[jointQuery?0:1] : null;
+        if (result?.vector?.length && result.fallbackUsed !== true) flashbackQueryEmbeddingCooldown = { until: 0, generation: -1, fingerprint: '', error: '' };
       } catch (embeddingError) {
         error = compact(embeddingError?.message || embeddingError || 'query embedding failed', 800);
+        timedOut = embeddingError?.code === 'FLASHBACK_DEADLINE';
+        coolingDown = embeddingError?.code === 'FLASHBACK_QUERY_EMBEDDING_COOLDOWN';
+        if (!coolingDown && embeddingError?.code !== 'STALE_SOURCE') flashbackQueryEmbeddingCooldown = { until: Date.now() + FLASHBACK_QUERY_EMBEDDING_COOLDOWN_MS,
+          generation: Runtime.embeddingGeneration, fingerprint: embeddingProfileSettingsFingerprint(cfg), error: compact(error, 200) };
         result = {
           vector: [],
           providerUsed: normalizeProvider(cfg.embeddingProvider),
@@ -34506,7 +34566,7 @@ const MemorySuiteHealthRecovery = (() => {
         };
         contextResult = sceneContextProfile.text ? { ...result, vector: [] } : null;
       }
-      return { result, contextResult, error, elapsed: Date.now() - startedAt };
+      return { result, contextResult, error, timedOut, coolingDown, elapsed: Date.now() - startedAt };
     })() : Promise.resolve({ result: null, contextResult: null, error: '', elapsed: 0 });
     const [manifestState, worldlineState, embeddingState] = await Promise.all([manifestTask, worldlineTask, embeddingTask]);
     if (!flashbackRequestCurrent(options.requestToken, options.requestBranch)) throw Object.assign(new Error("Recall request expired"), {code:"FLASHBACK_RECALL_EXPIRED"});
@@ -34526,7 +34586,14 @@ const MemorySuiteHealthRecovery = (() => {
       modelReadiness: { status, ready: false }, fallbackWarning: '현재 모델 검색을 사용할 수 없습니다. 원문은 보관되어 있습니다.',
       stageElapsed: { ...stageElapsed, total: Date.now() - recallStartedAt } });
     if (!configuredModelEmbedding(cfg)) return unavailable('unconfigured');
-    if (embeddingState.error || !embeddingState.result?.vector?.length || embeddingState.result?.fallbackUsed) return unavailable('query_failed');
+    const queryEmbeddingFailed = !!embeddingState.error || !embeddingState.result?.vector?.length || embeddingState.result?.fallbackUsed === true;
+    if (queryEmbeddingFailed && cfg.heuristicRecall === false) return unavailable('query_failed');
+    // Keyword fallback: this request ranks stored records with BM25 / exact
+    // matching only. Diagnostics and the GUI report it as a fallback, never as a
+    // semantic success; nothing is re-embedded or written.
+    const lexicalFallback = queryEmbeddingFailed
+      ? { status: embeddingState.coolingDown ? 'query_cooldown' : embeddingState.timedOut ? 'query_timeout' : 'query_failed', error: compact(embeddingState.error || 'query embedding unavailable', 300) }
+      : null;
     const recallModelCurrent = async () => {
       try { await assertQueryProfileCurrent(); return true; } catch (_) { return false; }
     };
@@ -34534,7 +34601,7 @@ const MemorySuiteHealthRecovery = (() => {
     const queryEmbeddingResult = embeddingState.result;
     const sceneContextEmbeddingResult = embeddingState.contextResult;
     const remoteEmbeddingError = embeddingState.error;
-    let queryVector = Array.isArray(queryEmbeddingResult?.vector) ? queryEmbeddingResult.vector : [];
+    let queryVector = !lexicalFallback && Array.isArray(queryEmbeddingResult?.vector) ? queryEmbeddingResult.vector : [];
     let sceneContextVector = Array.isArray(sceneContextEmbeddingResult?.vector) ? sceneContextEmbeddingResult.vector : [];
     let queryFallbackUsed = queryEmbeddingResult?.fallbackUsed === true;
     const semanticQuery=cfg.contextualRecall!==false && normalizeProvider(cfg.embeddingProvider)!=='hash' && queryVector.length>0 && !queryFallbackUsed;
@@ -34727,9 +34794,11 @@ const MemorySuiteHealthRecovery = (() => {
     if (!records.length) {
       if (!await recallModelCurrent()) return unavailable('changed');
       stageElapsed.total = Date.now() - recallStartedAt;
-      return { records: [], currentStateFacts, total: 0, storedTotal: Math.max(0, Number(manifest.count || 0) || 0) + Math.max(0, Number(manifest.archiveRef?.recordCount || 0) || 0), loadedTotal: storedRecords.length, externalSuppressed, storageMissingShards, storageCorruptShards, storageManifestCorrupt, storageForeignScopeKey, storageRecordCountMismatch, queryDim: queryVector.length, queryText: primaryQueryText, requestedQueryText, scopeKey: scope.scopeKey, candidates: 0, gateRejected: 0, scoreRejected: 0, shardSelection, queryEmbeddingCost, queryType, temporalIntent, truthIntent, queryIntent, overlay, previousTurnRecall, inactiveBranchFiltered, worldlineMismatchFiltered, privacyFiltered, sourceEditFiltered, stageElapsed };
+      return { records: [], currentStateFacts, total: 0, storedTotal: Math.max(0, Number(manifest.count || 0) || 0) + Math.max(0, Number(manifest.archiveRef?.recordCount || 0) || 0), loadedTotal: storedRecords.length, externalSuppressed, storageMissingShards, storageCorruptShards, storageManifestCorrupt, storageForeignScopeKey, storageRecordCountMismatch, queryDim: queryVector.length, queryText: primaryQueryText, requestedQueryText, scopeKey: scope.scopeKey, candidates: 0, gateRejected: 0, scoreRejected: 0, shardSelection, queryEmbeddingCost, queryType, temporalIntent, truthIntent, queryIntent, overlay, previousTurnRecall, inactiveBranchFiltered, worldlineMismatchFiltered, privacyFiltered, sourceEditFiltered, stageElapsed,
+        ...(lexicalFallback ? { fallbackWarning: '임베딩 검색을 쓸 수 없어 이번 요청은 키워드 검색으로 기억을 찾았습니다.', modelReadiness: { status: 'lexical_fallback', ready: false, reason: lexicalFallback.status, error: lexicalFallback.error } } : {}) };
     }
     const recallContext = { scopeKey: scope.scopeKey, currentUser: primaryQueryText, recentResponseRanks, latestStateByEntity, queryStateProperties, stateQueryAnchors: rawQueryAnchors, queryType, temporalIntent, truthIntent, queryIntent, overlay, strategy, records, latestResponseTurn, queryFallbackUsed, queryProvider, queryModel, queryProfileId, queryVector, allowLexicalFallback: true, sceneContext, queryTopics, previousTurn, previousTurnProfile, previousTurnNumber, excludedPreviousTurnNumber, excludedPreviousTurnSourceHash };
+    recallContext.allowLexicalFallback = !!lexicalFallback;
     const candidateLimit = Math.max(effectiveTopK, Math.min(records.length, Math.ceil(Number(cfg.candidateLimit || DEFAULTS.candidateLimit) * topKMultiplier)));
     const sparseStageStartedAt = Date.now();
     let arms = await generateRecallCandidateArms({
@@ -34779,7 +34848,8 @@ const MemorySuiteHealthRecovery = (() => {
     for (const fused of candidateHardGate) {
       const record = fused.record;
       const recordProvider = text(record?.provider || '').trim();
-      const compatibility = recordEmbeddingCompatibility(record, cfg, { provider: queryProvider, model: queryModel, dimensions: queryVector.length, profileId: queryProfileId });
+      const compatibility = recordEmbeddingCompatibility(record, cfg, { provider: queryProvider, model: queryModel,
+        dimensions: lexicalFallback && Array.isArray(record?.vector) ? record.vector.length : queryVector.length, profileId: lexicalFallback ? '' : queryProfileId });
       if (compatibility.legacyProfileCompatible && compatibility.comparable) vectorCompatibility.legacyCompatible++;
       if (!compatibility.comparable) {
         dimSkipped += 1;
@@ -34995,8 +35065,8 @@ const MemorySuiteHealthRecovery = (() => {
       episodeTraversal,
       latentEpisodic,
       stateValidity: { version: FLASHBACK_STATE_VALIDITY_VERSION, currentFacts: currentStateFacts.length },
-      fallbackWarning: '',
-      modelReadiness: { status: 'ready', ready: true },
+      fallbackWarning: lexicalFallback ? '임베딩 검색을 쓸 수 없어 이번 요청은 키워드 검색으로 기억을 찾았습니다.' : '',
+      modelReadiness: lexicalFallback ? { status: 'lexical_fallback', ready: false, reason: lexicalFallback.status, error: lexicalFallback.error } : { status: 'ready', ready: true },
       dimSkipped,
       vectorCompatibility,
       currentSceneTail: { candidates: currentSceneTail.length, selected: selected.filter(item => item.components?.currentSceneTail > 0).length },
@@ -45496,6 +45566,8 @@ ${cleanedText}`, 80),
     }
     const queryFailure = recall.modelReadiness?.status === 'query_failed'
       ? `<div class="note note--warn"><b>쿼리 임베딩 실패 · 리콜 미전달</b><span> 원문은 보관됩니다. 모델 연결과 실제 오류를 확인한 뒤 다시 요청하세요.${recall.modelReadiness.error ? ` ${escapeHtml(recall.modelReadiness.error)}` : ''}</span></div>` : '';
+    const keywordFallback = recall.modelReadiness?.status === 'lexical_fallback'
+      ? `<div class="note note--warn"><b>키워드 검색으로 대체</b><span> ${recall.modelReadiness.reason === 'query_timeout' ? '임베딩 응답이 늦어' : recall.modelReadiness.reason === 'query_cooldown' ? '최근 임베딩 실패 후 1분 동안' : '쿼리 임베딩이 실패해'} 이번 요청은 BM25·정확 일치로 기억을 찾았습니다.${recall.modelReadiness.error ? ` ${escapeHtml(recall.modelReadiness.error)}` : ''}</span></div>` : '';
     if (recall.skipped) return queryFailure + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">최근 요청은 리콜을 건너뛰었습니다.</p><div class="lab__meta">${escapeHtml(recall.reason || recall.normalizedType || 'skipped')}</div><div class="lab__chips"><span class="badge">리콜 건너뜀</span></div></div><div class="frames"><div class="empty"><b>이 요청에서 선택된 기억이 없습니다.</b></div></div><nav class="film" aria-label="최근 선택 기억 프레임"></nav><details class="fold"><summary>검색 과정 · 고급 진단</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">${escapeHtml(safeStringify({reason:recall.reason,normalizedType:recall.normalizedType},'{}'))}</pre></div></details>`;
     const selected = Array.isArray(recall.selected) ? recall.selected.slice(0, 8) : [];
     const delivery = recall.delivery || {}, pipeline = delivery.pipeline || {};
@@ -45513,7 +45585,7 @@ ${cleanedText}`, 80),
     }).join('');
     const actualChars = Math.max(0, Number(recall.evidenceBudgetPlan?.actualChars || 0) || 0);
     const deliveredText = returned ? `후크 반환 ${delivered == null ? '확인 불가' : `${formatNumber(delivered)}개`} 프래그먼트${returnedMessages == null ? '' : ` · ${formatNumber(returnedMessages)}개 메시지`}` : '주입 여부 미확인';
-    return queryFailure + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">${escapeHtml(compact(recall.retrievalQuery || recall.latestUser || '', 180) || '검색 문맥을 확인할 수 없습니다.')}</p><div class="lab__meta">${escapeHtml(recallAgeText(recall.at))} · 후보 ${formatNumber(recall.candidates || 0)}개 → 선택 ${formatNumber(selectedCount)}개 · ${deliveredText}${actualChars ? ` · ${formatNumber(actualChars)}자` : ''}</div><div class="lab__chips"><span class="badge">저장 ${formatNumber(recall.storedRecords ?? recall.totalRecords ?? 0)}</span><span class="badge">후보 ${formatNumber(recall.candidates || 0)}</span><span class="badge">선택 ${formatNumber(selectedCount)}</span><span class="badge ${returned ? 'badge--ok' : 'badge--warn'}">${returned ? `주입 ${delivered == null ? '확인 불가' : formatNumber(delivered)}` : '주입 상태 미확인'}</span><span class="badge">제외(예산) ${formatNumber((delivery.discarded || []).filter(item => item.reason === 'not_delivered_budget').length)}</span></div></div><div class="frames">${rows || '<div class="empty"><b>이 검색에서 선택된 기억이 없습니다.</b></div>'}</div><nav class="film" aria-label="최근 선택 기억 프레임">${selected.map((_, i) => `<a href="#fb-recall-frame-${i}" data-frame="fb-recall-frame-${i}">FRAME ${String(i + 1).padStart(2, '0')}</a>`).join('')}</nav><details class="fold"><summary>검색 과정 · 고급 진단</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">${escapeHtml(safeStringify({ queryType: recall.queryType, candidateArms: recall.candidateArms, laneDiagnostics: recall.laneDiagnostics, elapsed: recall.stageElapsed, gateRejected: recall.gateRejected, alignment: recall.recallAlignment }, '{}'))}</pre></div></details>`;
+    return queryFailure + keywordFallback + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">${escapeHtml(compact(recall.retrievalQuery || recall.latestUser || '', 180) || '검색 문맥을 확인할 수 없습니다.')}</p><div class="lab__meta">${escapeHtml(recallAgeText(recall.at))} · 후보 ${formatNumber(recall.candidates || 0)}개 → 선택 ${formatNumber(selectedCount)}개 · ${deliveredText}${actualChars ? ` · ${formatNumber(actualChars)}자` : ''}</div><div class="lab__chips"><span class="badge">저장 ${formatNumber(recall.storedRecords ?? recall.totalRecords ?? 0)}</span><span class="badge">후보 ${formatNumber(recall.candidates || 0)}</span><span class="badge">선택 ${formatNumber(selectedCount)}</span><span class="badge ${returned ? 'badge--ok' : 'badge--warn'}">${returned ? `주입 ${delivered == null ? '확인 불가' : formatNumber(delivered)}` : '주입 상태 미확인'}</span><span class="badge">제외(예산) ${formatNumber((delivery.discarded || []).filter(item => item.reason === 'not_delivered_budget').length)}</span></div></div><div class="frames">${rows || '<div class="empty"><b>이 검색에서 선택된 기억이 없습니다.</b></div>'}</div><nav class="film" aria-label="최근 선택 기억 프레임">${selected.map((_, i) => `<a href="#fb-recall-frame-${i}" data-frame="fb-recall-frame-${i}">FRAME ${String(i + 1).padStart(2, '0')}</a>`).join('')}</nav><details class="fold"><summary>검색 과정 · 고급 진단</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">${escapeHtml(safeStringify({ queryType: recall.queryType, candidateArms: recall.candidateArms, laneDiagnostics: recall.laneDiagnostics, elapsed: recall.stageElapsed, gateRejected: recall.gateRejected, alignment: recall.recallAlignment }, '{}'))}</pre></div></details>`;
   };
 
   const renderActivityLogHtml = () => {
