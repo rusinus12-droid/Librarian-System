@@ -112,3 +112,44 @@ test('N01-c: Lane unreadCursors captures intermediate storageCursor on storage b
  assert.equal(rep2.unreadCursors.length,0);
  idle(x);
 });
+
+test('storage fragments resume through newly opened corpus readers, with accounting, one-use claims and unchanged rows',async t=>{
+ const x=fixture();t.after(()=>x.env.resources.closeAll());await x.build();
+ const opened=await x.read(),a=x.env.lane.createSession(opened.compiledIndex,{maxPages:64,maxStoragePages:1});
+ a.enqueue({laneRole:'graph_neighborhood',table:'adjacency'});await a.drainPendingAsync();const first=a.finalize();
+ assert.ok(first.unreadCursors[0].storageCursor);
+ assert.ok(x.env.resources.inspect().retainedBytes>0);
+ const reopened=await x.read(),b=x.env.lane.createSession(reopened.compiledIndex,{maxPages:64,maxBytes:524288,maxStoragePages:512,resumeCursors:first.unreadCursors});
+ await b.drainPendingAsync();const resumed=b.finalize();assert.equal(resumed.complete,true);
+ const fresh=x.env.lane.createSession((await x.read({eager:true})).compiledIndex,{maxPages:64,maxBytes:524288});
+ fresh.enqueue({laneRole:'graph_neighborhood',table:'adjacency'});await fresh.drainPendingAsync();
+ assert.deepEqual(resumed.accesses.flatMap(a=>a.items),fresh.finalize().accesses.flatMap(a=>a.items));
+ assert.equal(x.env.resources.inspect().sessions,0);assert.equal(x.env.resources.inspect().retainedBytes,0);
+ const replay=x.env.lane.createSession(reopened.compiledIndex,{maxPages:64,maxStoragePages:512,resumeCursors:first.unreadCursors});
+ await assert.rejects(()=>replay.drainPendingAsync(),/STORAGE_CURSOR_INVALID/);idle(x);
+});
+
+test('shared retained backpressure rejects a continuation without leaving a request or staging reservation',async()=>{
+ let manager;
+ const x=fixture(160,{resources:{open:(...args)=>manager.open(...args)}});
+ manager=require('../tools/libra_memory_graph_resources.cjs')({measure:x.env.pages.measure,encodedSize:x.env.pages.encodedSize,stageCost:x.env.pages.stageCost,limits:{retainedBytes:1}});
+ await x.build();await assert.rejects(()=>x.execute({laneBudget:{maxStoragePages:1}}),/RETAINED_BACKPRESSURE/);
+ assert.equal(manager.inspect().retainedBytes,0);assert.equal(manager.inspect().sessions,0);
+ assert.equal(x.env.corpus.inspect().storageStaging.entries,0);idle(x);
+});
+
+test('abandoned storage continuations expire, enforce count admission and reject changed roots or restarted runtimes',async t=>{
+ let clock=0;const callbacks=new Map();
+ const x=fixture(160,{maxStorageStaging:2,stagingLifetimeMs:10,now:()=>clock,schedule:fn=>{const id={};callbacks.set(id,fn);return id;},cancel:id=>callbacks.delete(id)});
+ t.after(()=>x.env.resources.closeAll());await x.build();
+ const partial=()=>x.execute({laneBudget:{maxStoragePages:1}});
+ const first=await partial();await partial();assert.equal(x.env.corpus.inspect().storageStaging.entries,2);
+ await assert.rejects(partial,/STORAGE_STAGING_COUNT_BUDGET/);assert.equal(x.env.resources.inspect().sessions,2);
+ clock=11;assert.equal(x.env.corpus.inspect().storageStaging.entries,0);assert.equal(callbacks.size,0);assert.equal(x.env.resources.inspect().retainedBytes,0);
+ await assert.rejects(()=>x.execute({laneBudget:{maxStoragePages:512,resumeCursors:first.result.accessTrace.lane.unreadCursors}}),/STORAGE_CURSOR_INVALID/);
+ const second=await partial(),{loc,root}=x.manifest();x.values.set(loc.rootKey,JSON.stringify({...root,publication:2}));
+ await assert.rejects(()=>x.execute({laneBudget:{maxStoragePages:512,resumeCursors:second.result.accessTrace.lane.unreadCursors}}),/STORAGE_CURSOR_INVALID/);
+ assert.equal(x.env.resources.inspect().sessions,0);
+ const third=await partial();x.env.resources.closeAll();x.restart();
+ await assert.rejects(()=>x.execute({laneBudget:{maxStoragePages:512,resumeCursors:third.result.accessTrace.lane.unreadCursors}}),/STORAGE_CURSOR_INVALID/);idle(x);
+});

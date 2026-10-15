@@ -1,13 +1,13 @@
 # LIBRA 차세대 통합 메모리 엔진 — 현황·미완료 작업
 
-- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.14
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.15
 - 최초 조사 기준: `codex/libra-memory-network-20261013`, [`83caadd3940e121e4d6198bb3619845b59146e91`](https://github.com/rusinus12-droid/Librarian-System/commit/83caadd3940e121e4d6198bb3619845b59146e91)
 - 최초 조사 범위: `6320473` 이후 추가된 6개 커밋과 해당 HEAD의 실제 호출 경로·계약·검증 증거
-- 현재 코드 확인 기준: `64990aa`(N05)까지. N01-c(저장 커서 재개), N01-d(재구축 동일성), N01-e/N02(다중 표현 수락), N00(소비자 발송 권한 분리), N06-a(표준 평가 벤치마크), N05(스토리지 네임스페이스 펜스 및 수명주기 보호 GC) 구현 완료. 최신 실행·증분 구현은 §19–31, 자원 admission은 §24–25, 평가 계약은 [평가 계약 v1.0](LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md), GC 계약은 [GC 계약 v1.0](LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md)을 따른다.
-- 목표 계약: [통합 엔진 설계 v1.19](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
-- 전체 잔여 작업: **N01-a/b 세부 증명(원본 보장 확대·전체 한도 증명) + N06-b/c(실제 모델 규모 계측·RisuAI 설치 인증)**. N00, N01-c, N01-d, N01-e, N02, N05, N06-a는 완료되었다.
+- 현재 코드 확인 기준: `f8fce44` 리뷰와 후속 패치. §26–31의 범위를 정정했으며 현재 결함 수정·남은 과제는 §32와 [다음 과제 v1.12](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)를 따른다.
+- 목표 계약: [통합 엔진 설계 v1.20](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
+- 전체 잔여 작업: **N01-a/b 원본 증명·전체 자원 상한, N01-e/N02 실제 선택적 표현 접근, N05 native owner fence·회수, N06 실제 품질·규모·설치 인증**. N00 소비자 권한 분리·레거시 전환은 유지한다.
 - 결함 증거와 재현: [2026-10-14 코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md), [2026-10-15 최근 커밋 리뷰·패치](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)
-- 판정: **기본·유일한 통합 검색기와 활성 소비자 연결은 완료됐다. 원본 증분 검증·구축 재개·대형 행 분할에 이어, 저장 접근 커서 재개(N01-c), 전체 재구축 동일성(N01-d), 다중 표현 게이트 수락(N01-e/N02), 활성 소비자 모델 발송 권한 분리(N00), 8대 표준 평가 벤치마크(N06-a: 100% Gold Recall, 0 Leaks), 스토리지 소유자 네임스페이스 펜스 및 진행 중 빌드/리더 리스 보호 GC(N05)를 연결했다. 원본 증명 보장 확대(N01-a), 전체 상한 증명(N01-b), 실제 임베딩 모델 규모 계측(N06-b), 실제 RisuAI 설치 인증(N06-c)이 남는다.**
+- 판정: **단일 검색기·활성 소비자 연결은 구현됐고 이번 리뷰 결함은 수정했다. 엔진 전체 완성과 native GC/품질 인증은 미완료다.**
 
 이 문서는 구현한 코드, 실제 연결, 통과한 검증, 미완료 항목을 구분한다. 아래의 미완료 항목은 이 문서 작성으로 해결되지 않는다. 상태·근거는 조사 HEAD에 결속되며 이후 커밋에서는 재확인이 필요하다.
 
@@ -394,31 +394,22 @@ N01-C의 첫 증분을 실제 native query에 연결했다. scoped 원본 reader
 **남음:** 전체 heap·transport/host buffer·미등록 할당·hash/serialization scratch·진단 Store 경로의 전수 계상, 초기 retained 산식/지원 corpus·동시성 profile 검증. `byteBounded:false`, `ownerAtomicity:false`, `inventoryComplete:false`를 유지한다.
 
 
-## 26. N01-c — 저장 접근 커서 및 분할 행 재조립 재개 (`ac1e2a1`)
+## 26. N01-c — 저장 접근 커서 (`ac1e2a1`, 후속 결함 수정)
 
-작은 예산으로 중단된 저장 페이지 접근과 분할 저장된 대형 행(`libra.graph_corpus_row_chunk.v1`) 재조립을 동일 generation에 결속한 진행 커서(`resumeCursors`)로 안전하게 이어갈 수 있도록 구현했다.
-
-- **커서 무결성:** 다른 세대나 변조된 digest가 주입되면 `LIBRA_GRAPH_LANE_CURSOR_STALE`로 즉각 거부한다.
-- **분할 행 연속성:** 청크 누락, 순서 뒤바뀜, 오염 발생 시 `PAGE_CORRUPT`로 방어하며, 불완전 중간 상태를 완료로 위조하지 않는다.
-- **동일성 검증:** 한 번에 읽은 결과와 작은 예산으로 분할 재개하여 읽은 결과의 후보 점수, witness, 최종 근거가 100% 동일함을 증명했다.
-
+당시 테스트는 같은 opened index에서의 Lane 재개만 검증했다. 실제 공개 요청 간 재개는 staging Map 수명 때문에 거부됐고 budget stop의 요청 scope가 남았다. §32의 후속 패치에서 runtime의 별도 제한·만료·일회용 staging과 실제 API 회귀로 보완했다. 전체 frontier의 영속 재개를 의미하지 않는다.
 
 ## 27. N01-d — 전체 재구축 동일성, 취소 재개, CAS 충돌 거부 (`c689559`)
 
 증분 체크포인트 기반 구축과 전체 재구축(`full rebuild`)의 동등성을 확립하고, 취소 및 CAS(Compare-And-Swap) 충돌 복구를 구현했다.
 
-- **전체 재구축 동등성:** 기존 캐시 없이 처음부터 전체 그래프를 재구축한 결과와 증분 체크포인트로 재개한 결과의 인덱스 다이제스트, 디렉터리, 4채널 포스팅이 정확히 일치함을 확인했다 (`libra_memory_graph_rebuild_equivalence_test.cjs`).
+- **전체 재구축 동등성:** 기존 캐시 없이 처음부터 전체 그래프를 재구축한 결과와 증분 체크포인트로 재개한 결과의 인덱스 다이제스트, 디렉터리, 4채널 포스팅이 정확히 일치함을 확인했다 (`libra_memory_graph_corpus_test.cjs`).
 - **원자적 CAS 게시:** 다른 퍼블리셔가 루트를 먼저 갱신한 경우 CAS 충돌(`root_conflict`)을 감지하여 덮어쓰지 않고 안전하게 거부한다.
 - **취소 및 재개:** 빌드 중 취소되더라도 이전 유효 루트가 손상되지 않으며, 다음 빌드 시 유효한 최근 체크포인트에서 안정적으로 재개한다.
 
 
-## 28. N01-e / N02 — 다중 패밀리 표현 수락 게이트 및 선택적 시맨틱 레인 접근 (`6689fe4`)
+## 28. N01-e/N02 — 표현 verdict 우선 검사 (`6689fe4`, 부분 구현)
 
-정본(Canonical) 외 Micro·State·Lore의 다중 패밀리 시맨틱 표현 수락 순서를 규범화하고, 선택적 시맨틱 레인 접근 격리를 구현했다.
-
-- **게이트 순서 엄수:** `query.sealQueryFrame` 및 `resolveSemanticFeature`에서 패밀리 자체의 표현 수락 계약(`representationDecisions`)을 외부 주입 벡터보다 먼저 검사하여, 권한 없는 임의 벡터 주입으로 시맨틱 점수를 획득하는 우회를 차단했다.
-- **선택적 레인 접근:** 선택되지 않은 표현의 무조건적 전체 hydration을 방지하고, 벡터가 없는 패밀리(의도적 vectorless)도 동일한 어휘·엔티티·시간·그래프 단일 프론티어에 안전하게 참여하도록 보장했다.
-
+family의 `representationDecisions`가 주입 representation보다 먼저 적용된다. 이 게이트는 유효한 수정이다. native canonical vector hydration은 여전히 전체 순회이며 semantic Lane의 directory 조회가 실제 vector 선택 저장 읽기는 아니다. 추가 producer·선택적 표현 page 접근은 미완료다. vectorless family도 같은 검색에 참여한다.
 
 ## 29. N00 — 활성 제품 소비자 vs 역사 포매터 발송 권한 분리 (`0f65798`)
 
@@ -428,29 +419,20 @@ N01-C의 첫 증분을 실제 native query에 연결했다. scoped 원본 reader
 - **권한 위조 차단:** 패킷 스스로 모델 발송 권한을 주장하거나 물리 검증을 통과하더라도 역사 포매터에 대해서는 디스패치 자격이 부여되지 않음을 회귀 검증했다 (`libra_memory_graph_consumers_test.cjs`).
 
 
-## 30. N06-a — 통합 메모리 엔진 표준 평가 벤치마크 세트 (`a9540ea`)
+## 30. N06-a — 합성 평가 기반 (`a9540ea`, 후속 검사 수정)
 
-통합 메모리 엔진의 8대 품질 및 안전 경계를 포괄하는 표준 평가 벤치마크 세트와 사전 합격 기준을 확정했다.
+8개 fixture·runner·계약 테스트가 추가됐다. 최초 runner는 deliveryOutcome·requiredFamilies·hasDroppedUnits를 합격 조건으로 검사하지 않았으며, 미지원 ablationMode를 넘겨 raw 후보와 최종 bundle을 비교했다. §32의 패치에서 기대 필드 검사와 실제 kernel signal 절제를 연결했다. 합성 8/8 PASS를 native owner/provider 또는 실제 설치 품질 합격으로 해석하지 않는다.
 
-- **8대 표준 시나리오 (`UME-01` ~ `UME-08`):**
-  - `UME-01`: 4대 자료(정본·Micro·State·Lore) 복합 연결 질의
-  - `UME-02`: 기본 20턴 창 밖 원거리 과거 사건 도출
-  - `UME-03`: 고유명사·별칭·다국어(Dr. Evelyn Reed ↔ 에블린 박사) 식별
-  - `UME-04`: 정정·충돌 방어 (과거 폐기 상태 배제 및 최신 상태 확정)
-  - `UME-05`: 분기 세계선 및 비공개 열람자 권한 격리
-  - `UME-06`: 필수 설정(Mandatory Lore) 강제 포함 및 동일 사건 Micro의 M08 보수적 흡수
-  - `UME-07`: 임베딩 부재/장애 시 어휘(BM25)·그래프 완전 복원 검색
-  - `UME-08`: 자원 예산 초과 시 안전한 Bounded 수렴
-- **엔드투엔드 평가 러너 및 신호 절제:** [`PROGRAM/tools/evaluate_libra_unified_memory.cjs`](../tools/evaluate_libra_unified_memory.cjs)를 통해 어휘 전용 vs 전체 그래프 탐색의 기여도와 중복비율을 계측했다.
-- **계약 및 검증:** [`PROGRAM/docs/LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md`](LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md), 8/8 통과, Gold Recall 1.0, Forbidden Leaks 0건.
+## 31. N05 — 주입 owner의 GC 계약 (`64990aa`, native 미완료)
 
+generic kernel은 owner가 제공하는 fence·activeBuilds·activeReaders를 처리한다. 7개 mock owner 테스트가 있으며 SDK/server의 원자적 fence 발급·리스 프로토콜을 구현한 것은 아니다. native owner는 `fence:null`과 destructive adapter 부재를 유지한다. 실제 sweep은 차단되며 corpus는 전체 보존, representation 회수는 미구현이다.
 
-## 31. N05 — 스토리지 소유자 네임스페이스 펜스 및 수명주기 보호 GC (`64990aa`)
+## 32. `f8fce44` 리뷰 후 자원·재개·GC·평가 결함 수정
 
-스토리지 소유자의 영속 인벤토리, 원자적 네임스페이스 펜스, 진행 중 빌드 및 리더 리스 보호를 갖춘 GC 수명주기를 완성했다.
+- 저장 budget stop의 read scope를 항상 닫는다. 요청 간 staging은 원문/권한 없는 private 일회용 lease로 분리해 공통 resource pool에 계상한다. 기본 60초·16건·건당 추정 16MiB·전체 64MiB다. query/view/access/root 결속과 만료·실패·취소·재시작 거부를 적용한다.
+- 실제 공개 API를 두 번 호출해 세 저장 모드에서 재개한다. 완료·취소 후 resource 예약/세션은 0이다. partial 반환 후에는 명시적으로 보존한 staging 예약만 남으며 `inspectMemoryGraphStore().corpus.storageStaging`으로 확인한다.
+- 정상 incremental checkpoint가 64KiB를 넘는 경우에도 GC dry-run/차단이 동작한다. corpus 전체 보존에 필요 없는 checkpoint/manifest 본문 파싱을 제거했다. 저장값은 변경하지 않는다.
+- 평가기는 기대 outcome·family·drop·흡수·각 예산을 검사하고 알 수 없는 criterion을 거부한다. lexical-only는 같은 query kernel에서 실제 signal 절제를 수행하며 동일 eligibility/consumer 정책의 채택 bundle끼리 비교한다. graph-only/vector-only 반증과 실제 격리 반례를 추가했다.
+- N01-e/N02·N05·N06의 과도한 완료 표기를 정정했다. 구체적인 작업자 평가·변경 전 증거·검증 명령은 [리뷰 §5](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md#5-f8fce44-리뷰와-후속-수정)를 따른다.
 
-- **펜스 없는 소유자 안전 차단:** 네임스페이스 펜스 capability가 없는 소유자는 실제 삭제를 `blocked_atomic_gc_unavailable`로 차단하고 삭제 수 0건을 유지한다. 드라이 런은 삭제 트랜스포트를 전혀 호출하지 않는다.
-- **진행 중 빌드 보호:** 미커밋 작업 페이지(working keys)는 활성 빌드 펜스(`activeBuilds`)에 등록되어 GC 후보에서 제외되며 절대 조기 삭제되지 않는다.
-- **활성 리더 리스/핀 보호:** 동시 실행 중인 리더가 보유한 세대 및 페이지(`activeReaders`)는 루트 변경 후에도 보호되며, 리스 만료(`nowMs > expiresAtMs`) 시에만 안전하게 고아 자산으로 회수된다.
-- **다계층 도달성 보존:** 윈도우 그래프뿐 아니라 코퍼스 루트, 매니페스트, 증명, 투영, 페이지, 체크포인트, 표현 자산의 도달성을 전수 추적하여 코퍼스 자산이 오인 삭제되지 않도록 보장했다.
-- **계약 및 검증:** [`PROGRAM/docs/LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md`](LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md), 전용 테스트 7/7 PASS (`libra_memory_graph_store_lifecycle_gc_test.cjs`).
+**남은 보장:** native 표현 선택 읽기·원본 변경 증명 확대·전체 자원 상한·owner 원자적 GC·실제 품질/설치/규모 인증. `byteBounded:false`, `ownerAtomicity:false`, `inventoryComplete:false`, `calibration:unmeasured`를 유지한다.

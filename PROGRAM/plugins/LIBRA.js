@@ -46004,27 +46004,14 @@ function createLibraReadonlySourceContext(owner) {
         retainedCorpusKeys.add(corpusRootKey);
         if (cRoot.value && typeof cRoot.value.manifestKey === 'string') {
           retainedCorpusKeys.add(cRoot.value.manifestKey);
-          const cManifest = await load(owner, cRoot.value.manifestKey, 131072, part, stamp, ticket);
-          if (cManifest.value) {
-            if (typeof cManifest.value.proofKey === 'string') retainedCorpusKeys.add(cManifest.value.proofKey);
-            if (typeof cManifest.value.projectionKey === 'string') retainedCorpusKeys.add(cManifest.value.projectionKey);
-            if (Array.isArray(cManifest.value.pages)) {
-              for (const p of cManifest.value.pages) {
-                if (p?.key) retainedCorpusKeys.add(p.key);
-              }
-            }
-          }
         }
       }
 
       for (const k of allKeys) {
-        if (k.startsWith(corpusPrefix + 'checkpoint:')) {
-          retainedCorpusKeys.add(k);
-          const cp = await load(owner, k, 65536, part, stamp, ticket);
-          if (cp.value && Array.isArray(cp.value.pages)) {
-            for (const p of cp.value.pages) if (p?.key) retainedCorpusKeys.add(p.key);
-          }
-        } else if (k.startsWith(corpusPrefix)) {
+        // Corpus checkpoints contain windowSlices and may exceed this store's
+        // decode allowance. Until corpus reclamation has its own schema-aware
+        // owner fence, retain the entire namespace without decoding its bodies.
+        if (k.startsWith(corpusPrefix)) {
           retainedCorpusKeys.add(k);
         } else if (k.startsWith(repPrefix)) {
           retainedRepKeys.add(k);
@@ -46174,6 +46161,8 @@ function createLibraReadonlySourceContext(owner) {
         retainedManifestCount: retainedManifests.size,
         retainedPageCount: retainedPages.size,
         retainedCorpusKeyCount: retainedCorpusKeys.size,
+        corpusReclamation: 'conservative_namespace_retention',
+        representationReclamation: 'unimplemented',
         protectedBuildCount,
         protectedReaderCount,
         candidateKeys: candidates,
@@ -46732,7 +46721,8 @@ function createLibraReadonlySourceContext(owner) {
     && compiled.partition === partition && compiled.generation === generation;
   return Object.freeze({ compile, restore, restoreLazy, isCompatible, affectedByChanges, queryPage, queryPageAsync, tokenize: tokenizer });
 });
-    const createLibraMemoryGraphCorpus = (function createMemoryGraphCorpus({ pages, index, fingerprint, inventory = null } = {}) {
+    const createLibraMemoryGraphCorpus = (function createMemoryGraphCorpus({ pages, index, fingerprint, inventory = null, resources = null,
+  stagingLifetimeMs = 60000, maxStorageStaging = 16, schedule = setTimeout, cancel = clearTimeout, now = Date.now } = {}) {
   if (!pages || !index?.restore || typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_CORPUS_ADAPTER_REQUIRED');
   const pools = ['nodes','edges','bases','units'];
   const tables = ['directory','adjacency','postings','reverseDependencies'];
@@ -46759,6 +46749,40 @@ function createLibraReadonlySourceContext(owner) {
   const hash = value => { const h = fingerprint(value); if (!/^[a-f0-9]{64}$/.test(h)) fail('digest_invalid'); return h; };
   const same = (a,b) => JSON.stringify(a) === JSON.stringify(b);
   const clone = value => JSON.parse(JSON.stringify(value));
+  // Private, one-use continuation leases survive a public query's resource root.
+  // They contain relevance rows only, never a readset, owner verifier or dispatch authority.
+  if (!Number.isSafeInteger(stagingLifetimeMs) || stagingLifetimeMs < 1
+    || !Number.isSafeInteger(maxStorageStaging) || maxStorageStaging < 1 || maxStorageStaging > 32) fail('staging_options_invalid');
+  const storageStaging = new Map();
+  const stagingSalt = String(now()) + ':' + Math.random();
+  let stagingNonce = 0, stagingBytes = 0;
+  const closeStaging = key => {
+    const entry = storageStaging.get(key);
+    if (!entry) return;
+    storageStaging.delete(key); stagingBytes -= entry.bytes;
+    cancel(entry.timer); entry.resources?.close('storage_cursor_released');
+  };
+  const pruneStaging = () => {
+    for (const [key, entry] of storageStaging) if (entry.expiresAt <= now()) closeStaging(key);
+  };
+  const saveStaging = (data, binding) => {
+    pruneStaging();
+    if (storageStaging.size >= maxStorageStaging) fail('storage_staging_count_budget');
+    const size = pages.measure(data, 16777216);
+    const bytes = 4096 + size.codeUnits * 2 + size.tokens * 64;
+    if (bytes > 16777216 || stagingBytes + bytes > 67108864) fail('storage_staging_byte_budget');
+    let ledger = null;
+    try {
+      ledger = resources?.open({ maxRetainedBytes: 16777216 });
+      ledger?.retain(data, 'storage_cursor_staging');
+      const key = hash(JSON.stringify([stagingSalt, ++stagingNonce]));
+      const entry = { ...binding, data, bytes, resources: ledger, expiresAt: now() + stagingLifetimeMs, timer: null };
+      storageStaging.set(key, entry); stagingBytes += bytes;
+      ledger?.onClose(() => closeStaging(key));
+      entry.timer = schedule(() => closeStaging(key), stagingLifetimeMs); entry.timer?.unref?.();
+      return key;
+    } catch (error) { ledger?.close('storage_cursor_failed'); throw error; }
+  };
   const partition = graph => JSON.stringify({ owner: graph.readerFrame.owner, scopeKey: graph.scopeKey, viewer: graph.readerFrame.view.viewerId });
   const stamp = graph => pages.generation(graph, { partition: partition(graph), restoreEpoch: graph.readerFrame.restoreEpoch, view: graph.readerFrame });
 
@@ -48027,17 +48051,14 @@ function createLibraReadonlySourceContext(owner) {
         consume(rows); owner.check(); return null;
       } finally { if (lease) pages.release(lease); if (stage) pages.releaseStage(stage); if (handle) pages.close(handle); }
     };
-    const storageStaging = new Map();
-    let stagingNonce = 0;
-    if (owner.resources?.onClose) {
-      owner.resources.onClose(() => {
-        for (const s of storageStaging.values()) { try { s.stagingScope?.close(); } catch (_) {} }
-        storageStaging.clear();
-      });
+    pruneStaging();
+    const rootBinding = hash(rootRaw);
+    for (const [key, entry] of storageStaging) {
+      if (entry.rootKey === loc.rootKey && entry.rootBinding !== rootBinding) closeStaging(key);
     }
     const readRows = async (spec, budget) => {
       const scope = owner.resources?.scope();
-      let activeStagingKey = null;
+      let releaseScope = true;
       try {
         owner.check(); await owner.assertRoute?.(); owner.check();
         const credit = budget || { maxPages: 512, maxBytes: 8388608, pagesRead: 0, bytesRead: 0 };
@@ -48048,106 +48069,63 @@ function createLibraReadonlySourceContext(owner) {
         const matchingRefs = manifest.refs.filter(ref => ref.table === spec.table && mightContain(ref, spec));
         const cursor = spec.storageCursor || null;
         const indexDigest = manifest.metadata.indexDigest;
-        let startIndex = 0;
-        let staging = null;
+        const accessBinding = hash(JSON.stringify([spec.requestBinding || '', spec.table, spec.anchorNodeId || '',
+          spec.direction || '', spec.predicate || '', Boolean(spec.structuralOnly), spec.channel || '', spec.term || '',
+          spec.dependencyKey || '', spec.offset || 0, spec.pageBytes || 8192]));
+        let startIndex = 0, staging = null;
         if (cursor) {
-          if (!cursor || typeof cursor !== 'object'
-            || cursor.schema !== 'libra.graph_storage_access_cursor.v1'
-            || cursor.table !== spec.table
-            || cursor.partition !== loc.partition
-            || cursor.generation !== manifest.generation
-            || cursor.indexDigest !== indexDigest
+          pruneStaging();
+          const entry = storageStaging.get(cursor.stagingKey);
+          if (cursor.schema !== 'libra.graph_storage_access_cursor.v1' || cursor.table !== spec.table
+            || cursor.partition !== loc.partition || cursor.generation !== manifest.generation
+            || cursor.indexDigest !== indexDigest || cursor.accessBinding !== accessBinding
             || !Number.isSafeInteger(cursor.refIndex) || cursor.refIndex < 0 || cursor.refIndex >= matchingRefs.length
-            || cursor.totalMatchingRefs !== matchingRefs.length
-            || matchingRefs[cursor.refIndex]?.key !== cursor.refKey
-            || typeof cursor.stagingKey !== 'string') {
-            fail('storage_cursor_invalid');
-          }
-          activeStagingKey = cursor.stagingKey;
-          staging = storageStaging.get(activeStagingKey);
-          if (!staging || staging.generation !== manifest.generation || staging.indexDigest !== indexDigest
-            || staging.table !== spec.table || staging.partition !== loc.partition) {
-            fail('storage_cursor_invalid');
-          }
+            || cursor.totalMatchingRefs !== matchingRefs.length || matchingRefs[cursor.refIndex]?.key !== cursor.refKey
+            || !entry || entry.accessBinding !== accessBinding || entry.rootBinding !== rootBinding
+            || entry.refIndex !== cursor.refIndex || entry.generation !== manifest.generation
+            || entry.indexDigest !== indexDigest || entry.partition !== loc.partition) fail('storage_cursor_invalid');
+          // Claim synchronously before any await: replay and overlapping resumes cannot share this lease.
+          staging = entry.data;
+          try { scope?.retain(staging, 'restored_storage_staging'); }
+          finally { closeStaging(cursor.stagingKey); }
           startIndex = cursor.refIndex;
-        } else {
-          activeStagingKey = hash(JSON.stringify([
-            manifest.generation,
-            indexDigest,
-            loc.partition,
-            spec.table,
-            spec.channel || '',
-            spec.term || spec.dependencyKey || spec.anchorNodeId || '',
-            ++stagingNonce
-          ]));
         }
-
         const reassembler = createTableReassembler(spec.table, scope);
-        if (staging) {
-          reassembler.restoreStaging(staging);
-        }
-
+        if (staging) reassembler.restoreStaging(staging);
         for (let i = startIndex; i < matchingRefs.length; i++) {
           const ref = matchingRefs[i];
           let pageItems = null;
           const stopped = await readPage(ref, page => {
-            pageItems = page;
-            scope?.retain(page, 'selected_index_rows');
+            pageItems = page; scope?.retain(page, 'selected_index_rows');
           }, credit);
           if (stopped) {
-            const stagingScope = staging?.stagingScope || owner.resources?.scope();
-            const stagingData = reassembler.getStagingData();
-            stagingScope?.retain(stagingData, 'reassembly_staging');
-            storageStaging.set(activeStagingKey, {
-              generation: manifest.generation,
-              indexDigest,
-              partition: loc.partition,
-              table: spec.table,
-              ...stagingData,
-              stagingScope
+            await assertIndexCurrent();
+            const stagingKey = saveStaging(reassembler.getStagingData(), {
+              rootKey: loc.rootKey, rootBinding, accessBinding, refIndex: i,
+              generation: manifest.generation, indexDigest, partition: loc.partition
             });
-            const nextCursor = {
-              schema: 'libra.graph_storage_access_cursor.v1',
-              generation: manifest.generation,
-              indexDigest,
-              partition: loc.partition,
-              table: spec.table,
-              refIndex: i,
-              refKey: ref.key,
-              totalMatchingRefs: matchingRefs.length,
-              stagingKey: activeStagingKey,
-              assembledRowCount: reassembler.getRows().length,
-              hasPendingSplit: Boolean(reassembler.getPending())
-            };
+            const requestResources = owner.resources;
+            requestResources?.onClose?.(() => {
+              if (['failed','expired','invalidated','unloaded'].includes(requestResources.inspect().closeReason)) closeStaging(stagingKey);
+            });
             return {
-              storageStopped: true,
-              stopReason: stopped,
-              storageCursor: nextCursor,
-              rows: [],
-              splitReassembled: reassembler.hasSplit()
+              storageStopped: true, stopReason: stopped, rows: [], splitReassembled: reassembler.hasSplit(),
+              storageCursor: { schema: 'libra.graph_storage_access_cursor.v1', generation: manifest.generation,
+                indexDigest, partition: loc.partition, table: spec.table, refIndex: i, refKey: ref.key,
+                totalMatchingRefs: matchingRefs.length, stagingKey, accessBinding,
+                assembledRowCount: reassembler.getRows().length, hasPendingSplit: Boolean(reassembler.getPending()) }
             };
           }
-          if (pageItems) {
-            await reassembler.pushPage(pageItems);
-          }
+          if (pageItems) await reassembler.pushPage(pageItems);
         }
         await assertIndexCurrent();
         const { rows, splitReassembled } = reassembler.finish();
-        if (storageStaging.has(activeStagingKey)) {
-          const oldStaging = storageStaging.get(activeStagingKey);
-          try { oldStaging.stagingScope?.close(); } catch (_) {}
-          storageStaging.delete(activeStagingKey);
-        }
         scope?.retain(rows, 'reassembled_index_rows');
+        releaseScope = false;
         return { rows, splitReassembled, storageCursor: null, release: () => scope?.close() };
-      } catch (error) {
-        if (activeStagingKey && storageStaging.has(activeStagingKey)) {
-          const oldStaging = storageStaging.get(activeStagingKey);
-          try { oldStaging.stagingScope?.close(); } catch (_) {}
-          storageStaging.delete(activeStagingKey);
-        }
-        scope?.close();
-        throw error;
+      } finally {
+        // A partial stop never transfers an active request scope into a continuation.
+        if (releaseScope) scope?.close();
       }
     };
     let compiledIndex;
@@ -48211,7 +48189,7 @@ function createLibraReadonlySourceContext(owner) {
     prepare,
     enumerate,
     location,
-    inspect: () => ({ activeBuild: active })
+    inspect: () => { pruneStaging(); return { activeBuild: active, storageStaging: { entries: storageStaging.size, retainedBytes: stagingBytes, maxEntries: maxStorageStaging, maxBytes: 67108864, lifetimeMs: stagingLifetimeMs } }; }
   });
 });
     const createLibraMemoryGraphLane = (function createMemoryGraphLane({ index, pages } = {}) {
@@ -48234,6 +48212,7 @@ function createLibraReadonlySourceContext(owner) {
     maxBytes = 65536,
     pageBytes = 8192,
     resumeCursors = [],
+    requestBinding = '',
     maxStoragePages = maxPages,
     maxStorageBytes = maxBytes
   } = {}) => {
@@ -48262,6 +48241,7 @@ function createLibraReadonlySourceContext(owner) {
     let finalizedReport = null;
 
     const accessKeyOf = req => JSON.stringify([
+      requestBinding,
       req.table,
       req.anchorNodeId || '',
       req.direction || '',
@@ -48306,6 +48286,7 @@ function createLibraReadonlySourceContext(owner) {
         dependencyKey: String(dependencyKey || ''),
         offset,
         pageBytes,
+        requestBinding,
         storageCursor: storageCursor || null
       };
       const key = accessKeyOf(spec);
@@ -48343,6 +48324,8 @@ function createLibraReadonlySourceContext(owner) {
           || (cur.indexDigest && cur.indexDigest !== compiledIndex.indexDigest)) {
           fail('cursor_stale');
         }
+        if ((cur.requestBinding || '') !== requestBinding
+          || (cur.pageBytes !== undefined && cur.pageBytes !== pageBytes)) fail('cursor_invalid');
         const role = Array.isArray(cur.lanes) && validRoles.has(cur.lanes[0]) ? cur.lanes[0] : 'graph_neighborhood';
         enqueue({
           laneRole: role,
@@ -48410,6 +48393,7 @@ function createLibraReadonlySourceContext(owner) {
           channel: next.spec.channel,
           term: next.spec.term,
           offset: next.spec.offset,
+          dependencyKey: next.spec.dependencyKey, pageBytes, requestBinding,
           stopReason: 'row_exceeds_page',
           storageCursor: next.spec.storageCursor || null
         });
@@ -48527,6 +48511,7 @@ function createLibraReadonlySourceContext(owner) {
           channel: pending.spec.channel,
           term: pending.spec.term,
           offset: pending.spec.offset,
+          dependencyKey: pending.spec.dependencyKey, pageBytes, requestBinding,
           stopReason: lastStopReason,
           storageCursor: pending.spec.storageCursor || null
         });
@@ -48654,6 +48639,7 @@ function createLibraReadonlySourceContext(owner) {
     queryEmbedding = null,
     documentRepresentations = {},
     representationDecisions = {},
+    ablationMode = 'full',
     lambda = 0.82,
     epsilon = 1e-6,
     maxFrontierSteps = 256,
@@ -48663,6 +48649,7 @@ function createLibraReadonlySourceContext(owner) {
       || typeof worldlineId !== 'string' || !worldlineId.trim() || typeof viewerId !== 'string' || !viewerId.trim()) {
       fail('frame_scope_invalid');
     }
+    if (!['full', 'lexical_only'].includes(ablationMode)) fail('ablation_mode_invalid');
     if (asOfTurn !== null && (!Number.isSafeInteger(asOfTurn) || asOfTurn < 0)) fail('as_of_turn_invalid');
     if (typeof lambda !== 'number' || !(lambda > 0 && lambda < 1)) fail('lambda_invalid');
     if (typeof epsilon !== 'number' || !(epsilon > 0 && epsilon < 0.1)) fail('epsilon_invalid');
@@ -48706,6 +48693,7 @@ function createLibraReadonlySourceContext(owner) {
       asOfTurn,
       excludedNodeIds: excluded,
       semanticSpace: normalizedSpace,
+      ablationMode,
       hasQueryVectors: Object.keys(queryVectors || {}).length > 0 || Boolean(normalizedEmbedding),
       lambda,
       epsilon,
@@ -48818,11 +48806,11 @@ function createLibraReadonlySourceContext(owner) {
     }
 
     const resolvedEntityIds = new Set(
-      (queryFrame.entityIds || []).map(id => entityNodeIdByLogicalId.get(id) || id)
+      (queryFrame.ablationMode === 'lexical_only' ? [] : queryFrame.entityIds || []).map(id => entityNodeIdByLogicalId.get(id) || id)
     );
     const ambiguousAliases = [];
     const queryLower = String(queryFrame.queryText || '').normalize('NFKC').toLowerCase();
-    for (const [alias, entNodeIds] of aliasToEntities.entries()) {
+    for (const [alias, entNodeIds] of queryFrame.ablationMode === 'lexical_only' ? [] : aliasToEntities.entries()) {
       const matchedInQuery = queryFrame.tokens.includes(alias) || (alias.length >= 2 && queryLower.includes(alias));
       if (!matchedInQuery) continue;
       const uniqueIds = [...new Set(entNodeIds)].sort((a, b) => a.localeCompare(b, 'en'));
@@ -48930,6 +48918,7 @@ function createLibraReadonlySourceContext(owner) {
 
   // M06: Evaluate semantic representation compatibility & similarity without background re-embedding
   const resolveSemanticFeature = (node, queryFrame) => {
+    if (queryFrame.ablationMode === 'lexical_only') return { score: undefined, status: 'disabled_by_ablation', reason: null };
     // The plan is consulted BEFORE any injected representation: an injected vector cannot buy a
     // semantic score that the family's own representation contract refused.
     const decision = queryFrame.representationDecisions?.[node.id];
@@ -48970,8 +48959,8 @@ function createLibraReadonlySourceContext(owner) {
     return { score: undefined, status: 'unavailable', reason: null };
   };
 
-  // Ranking coefficients for the single frontier. DECLARED, NOT CALIBRATED: no ablation or
-  // acceptance set exists yet, so these numbers are not quality evidence (M14 / D2 gate). The
+  // Ranking coefficients for the single frontier. DECLARED, NOT CALIBRATED: synthetic
+  // ablation fixtures do not calibrate weights or certify product quality (M14 / D2 gate). The
   // provenance marker is asserted by tests/libra_memory_engine_mode_test.cjs.
   const MEMORY_ENGINE_SCORE_WEIGHTS = Object.freeze({
     calibration: 'unmeasured',
@@ -48989,10 +48978,10 @@ function createLibraReadonlySourceContext(owner) {
 
   const scoreCandidate = (unit, features = {}, queryFrame) => {
     const lexicalScore = clamp01(features.lexicalScore || 0);
-    const hasSemantic = typeof features.semanticScore === 'number' && Number.isFinite(features.semanticScore);
+    const hasSemantic = queryFrame?.ablationMode !== 'lexical_only' && typeof features.semanticScore === 'number' && Number.isFinite(features.semanticScore);
     const semanticScore = hasSemantic ? clamp01(features.semanticScore) : 0;
-    const entitySlotScore = clamp01(features.entitySlotScore || 0);
-    const predicateScore = clamp01(features.predicateScore || 0);
+    const entitySlotScore = queryFrame?.ablationMode === 'lexical_only' ? 0 : clamp01(features.entitySlotScore || 0);
+    const predicateScore = queryFrame?.ablationMode === 'lexical_only' ? 0 : clamp01(features.predicateScore || 0);
 
     const roleWeight = MEMORY_ENGINE_SCORE_WEIGHTS.role[unit?.semanticRole] ?? MEMORY_ENGINE_SCORE_WEIGHTS.roleDefault;
 
@@ -49055,7 +49044,7 @@ function createLibraReadonlySourceContext(owner) {
       isEdgeEligible
     } = view;
 
-    const laneSession = lane.createSession(compiledIndex, { maxPages, maxBytes, pageBytes, resumeCursors, maxStoragePages, maxStorageBytes });
+    const laneSession = lane.createSession(compiledIndex, { maxPages, maxBytes, pageBytes, resumeCursors, maxStoragePages, maxStorageBytes, requestBinding: queryFrame.frameId });
 
     // Phase A (M05, M06, M07): Enqueue initial seed anchor, resolved entity, temporal, and compatible semantic accesses
     for (const token of queryFrame.tokens) {
@@ -49064,7 +49053,7 @@ function createLibraReadonlySourceContext(owner) {
     for (const entId of resolvedEntityIds) {
       laneSession.enqueue({ laneRole: 'query_anchor_access', table: 'postings', channel: 'entity', term: entId, priorityHint: 1.0, requesterId: `ent:${entId}` });
     }
-    for (const pred of queryFrame.predicates) {
+    for (const pred of queryFrame.ablationMode === 'lexical_only' ? [] : queryFrame.predicates) {
       laneSession.enqueue({ laneRole: 'temporal_state_access', table: 'postings', channel: 'predicate', term: pred, priorityHint: 0.9, requesterId: `pred:${pred}` });
     }
 
@@ -49360,7 +49349,7 @@ function createLibraReadonlySourceContext(owner) {
         break;
       }
 
-      if (current.witness.edgeChain.length < queryFrame.maxHops && !requestedAdjacencyAnchors.has(top.nodeId)) {
+      if (queryFrame.ablationMode !== 'lexical_only' && current.witness.edgeChain.length < queryFrame.maxHops && !requestedAdjacencyAnchors.has(top.nodeId)) {
         requestedAdjacencyAnchors.add(top.nodeId);
         laneSession.enqueue({
           laneRole: 'graph_neighborhood',
@@ -49382,7 +49371,7 @@ function createLibraReadonlySourceContext(owner) {
       current.poppedOnce = true;
       poppedSteps++;
 
-      if (current.witness.edgeChain.length >= queryFrame.maxHops) continue;
+      if (queryFrame.ablationMode === 'lexical_only' || current.witness.edgeChain.length >= queryFrame.maxHops) continue;
 
       const adjRows = outgoingByNode.get(top.nodeId) || [];
       const deg = degreeByNode.get(top.nodeId) || 1;
@@ -70837,7 +70826,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const buildMemoryGraphGeneration = async (options = {}) => await memoryGraphDurableOperation(options, true);
     const getMemoryGraphDurablePage = async (options = {}) => await memoryGraphDurableOperation(options, false);
     const cancelMemoryGraphGenerationBuild = () => { state.memoryGraphStoreSerial++; state.memoryGraphStore?.invalidate(); state.memoryGraphCompiler?.invalidateAll(); state.memoryGraphResources?.closeAll(); state.memoryGraphActiveGCFences?.clear(); return { cancelled: true, activeBuild: state.memoryGraphStore?.inspect().activeBuild === true }; };
-    const inspectMemoryGraphStore = () => ({ ...(state.memoryGraphStore?.inspect() || { schema: 'libra.graph_store.v1', initialized: false, activeBuild: false }), resources: state.memoryGraphResources?.inspect() || null });
+    const inspectMemoryGraphStore = () => ({ ...(state.memoryGraphStore?.inspect() || { schema: 'libra.graph_store.v1', initialized: false, activeBuild: false }), resources: state.memoryGraphResources?.inspect() || null, corpus: state.memoryGraphCorpus?.inspect() || null });
     const ensureMemoryGraphUnifiedSuite = () => {
       const primitive = createLibraMemoryNetwork({ adapters: { hash: stableHash } });
       if (!state.memoryGraphPages) state.memoryGraphPages = createLibraMemoryGraphPages({ fingerprint: primitive.fingerprint });
@@ -70845,7 +70834,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (!state.memoryGraphInventory) state.memoryGraphInventory = createLibraMemoryGraphInventory({ fingerprint: primitive.fingerprint });
       if (!state.memoryGraphStore) state.memoryGraphStore = createLibraMemoryGraphStore({ pages: state.memoryGraphPages, fingerprint: primitive.fingerprint, inventory: state.memoryGraphInventory });
       if (!state.memoryGraphIndex) state.memoryGraphIndex = createLibraMemoryGraphIndex({ pages: state.memoryGraphPages, fingerprint: primitive.fingerprint });
-      if (!state.memoryGraphCorpus) state.memoryGraphCorpus = createLibraMemoryGraphCorpus({ pages: state.memoryGraphPages, index: state.memoryGraphIndex, fingerprint: primitive.fingerprint, inventory: state.memoryGraphInventory });
+      if (!state.memoryGraphCorpus) state.memoryGraphCorpus = createLibraMemoryGraphCorpus({ pages: state.memoryGraphPages, index: state.memoryGraphIndex, fingerprint: primitive.fingerprint, inventory: state.memoryGraphInventory, resources: state.memoryGraphResources });
       if (!state.memoryGraphLane) state.memoryGraphLane = createLibraMemoryGraphLane({ index: state.memoryGraphIndex, pages: state.memoryGraphPages });
       if (!state.memoryGraphQuery) state.memoryGraphQuery = createLibraMemoryGraphQuery({ index: state.memoryGraphIndex, lane: state.memoryGraphLane, pages: state.memoryGraphPages, fingerprint: primitive.fingerprint });
       if (!state.memoryGraphCompiler) state.memoryGraphCompiler = createLibraMemoryGraphCompiler({ fingerprint: primitive.fingerprint });

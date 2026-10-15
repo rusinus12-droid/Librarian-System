@@ -1,6 +1,6 @@
 # LIBRA 공통 인덱스의 선택적 저장 페이지 읽기
 
-- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 버전: 1.5
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 버전: 1.6
 - 기준: `9c03c35` 이후의 N01 증분, `1aa630e` N01-A 증분 원본 현재성 검증 및 N01-B 증분 구축·재개·대형 단일 행 분할. 기본·유일한 통합 검색 계약은 유지한다.
 - 판정: **신규 게시 인덱스는 검색에 필요한 저장 페이지만 읽고, N01-A owner 증분 증명으로 변경되지 않은 과거 구간 본문 재읽기를 생략하며, N01-B로 증분 구축·체크포인트 재개와 대형 단일 행 분할(`libra.graph_corpus_row_chunk.v1`)을 연결했다. 전체 VM 자원 계상(N01-C)과 실제 설치/규모 인증은 여전히 남아 있다.**
 
@@ -25,7 +25,7 @@ I/O 전에 예상 raw/hash workspace를 예약하고, 받은 문자열의 크기
 | `laneBudget.maxStoragePages` | 같은 요청의 `maxPages`(기본 64) | 1–512 |
 | `laneBudget.maxStorageBytes` | 같은 요청의 `maxBytes`(기본 262,144) | 512 B–8 MiB |
 
-두 예산은 실제 저장 page payload 접근의 admission이며 기존 논리 Lane page/byte 예산과 별개다. 한 access에 필요한 페이지를 다 읽을 예산이 없으면 그 access를 완료로 게시하지 않고 `lane_storage_page_count_budget` / `lane_storage_byte_budget`, partial과 미독 cursor를 반환한다. 현재 storage 중단은 그 access를 재시도하며 별도 disk cursor를 만들지 않는다. 큰 단일 posting/access에는 더 큰 명시적 예산이 필요할 수 있다.
+두 예산은 실제 저장 page payload 접근의 admission이며 기존 논리 Lane page/byte 예산과 별개다. 한 access에 필요한 페이지를 다 읽을 예산이 없으면 그 access를 완료로 게시하지 않고 `lane_storage_page_count_budget` / `lane_storage_byte_budget`, partial과 미독 cursor를 반환한다. storage 중단은 opaque continuation을 `lane.unreadCursors[].storageCursor`에 포함한다. 같은 query/view/access의 다음 공개 요청에서 `laneBudget.resumeCursors`로 한 번 재개할 수 있다. 전체 frontier의 영속 세션이 아니므로 완주에는 충분한 요청 예산이 필요하다.
 
 `corpusRead.storage`는 `publishedPages/Bytes`, `pagesRead/bytesRead`, `uniquePagesRead`, `cacheHits`, `storageAccess`를 보고한다. `accessTrace.lane.storage`는 요청의 물리 예산과 사용량을 보고한다. bytes는 검증한 index JSON payload byte이며 HTTP header/envelope·원본 읽기·전체 heap byte가 아니다. shared cache의 accounted resident/request/staging과도 구분한다.
 
@@ -68,4 +68,4 @@ N01-A에서 `FAMILY_CURRENTNESS_CONTRACTS`와 `verifyIncrementalSourceProofs()`�
 
 N01-C1의 요청별 durable payload byte/read quota와 shared I/O allowance가 실제 owner read에 적용된다. Lane의 선택적 page 예산과 Cache Manager의 page staging은 유지하며 두 계측은 일부 같은 접근을 포함하므로 합산하지 않는다. `accessTrace.resources`는 초기 dispatch 검증까지의 owner I/O·JSON·명시적 보유 추정 snapshot이다. shared I/O 예약을 transport peak, workspace 추정을 VM heap으로 해석하지 않는다. 설정·실패·미측정 범위는 [N01-C1/C2 계약](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다.
 
-N01-C2에서 선택한 저장 행·재조립 결과는 별도 retained scope에 예약한다. index page 생성 소비가 끝나거나 실패하면 해당 scope를 닫는다. query eligibility view도 검색 직후 명시적으로 닫는다. 저장 진행 cursor·재조립 중간 상태의 generation 결속과 재개는 여전히 N01-c다.
+N01-C2에서 선택한 저장 행·재조립 결과는 별도 retained scope에 예약한다. index page 생성 소비가 끝나거나 실패하면 해당 scope를 닫는다. query eligibility view도 검색 직후 명시적으로 닫는다. N01-c 후속 수정은 budget stop에도 요청 scope를 닫고, 요청 간 재조립 데이터는 별도 private ledger에 계상한다. 기본 60초·16건·건당 추정 16MiB·전체 64MiB다. root/partition/generation/index·QueryFrame·logical access/offset/pageBytes를 검사하며 일회용이다. 원문/발송 권한은 DTO에 포함하지 않는다. 만료·취소·unload·실패·재시작은 재개를 거부한다. 구체적인 예약/관찰은 [자원 예산 계약 §7](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다.

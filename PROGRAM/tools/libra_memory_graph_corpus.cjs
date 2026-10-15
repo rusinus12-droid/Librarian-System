@@ -2,7 +2,8 @@
 // Full owner-window enumeration + durable common index + N01-A incremental source currentness verification
 // + N01-B incremental corpus build/resume & oversized single-row splitting.
 // Native readers still supply every fact and final delivery proof; persisted tables grant no authority.
-module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, inventory = null } = {}) {
+module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, inventory = null, resources = null,
+  stagingLifetimeMs = 60000, maxStorageStaging = 16, schedule = setTimeout, cancel = clearTimeout, now = Date.now } = {}) {
   if (!pages || !index?.restore || typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_CORPUS_ADAPTER_REQUIRED');
   const pools = ['nodes','edges','bases','units'];
   const tables = ['directory','adjacency','postings','reverseDependencies'];
@@ -29,6 +30,40 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
   const hash = value => { const h = fingerprint(value); if (!/^[a-f0-9]{64}$/.test(h)) fail('digest_invalid'); return h; };
   const same = (a,b) => JSON.stringify(a) === JSON.stringify(b);
   const clone = value => JSON.parse(JSON.stringify(value));
+  // Private, one-use continuation leases survive a public query's resource root.
+  // They contain relevance rows only, never a readset, owner verifier or dispatch authority.
+  if (!Number.isSafeInteger(stagingLifetimeMs) || stagingLifetimeMs < 1
+    || !Number.isSafeInteger(maxStorageStaging) || maxStorageStaging < 1 || maxStorageStaging > 32) fail('staging_options_invalid');
+  const storageStaging = new Map();
+  const stagingSalt = String(now()) + ':' + Math.random();
+  let stagingNonce = 0, stagingBytes = 0;
+  const closeStaging = key => {
+    const entry = storageStaging.get(key);
+    if (!entry) return;
+    storageStaging.delete(key); stagingBytes -= entry.bytes;
+    cancel(entry.timer); entry.resources?.close('storage_cursor_released');
+  };
+  const pruneStaging = () => {
+    for (const [key, entry] of storageStaging) if (entry.expiresAt <= now()) closeStaging(key);
+  };
+  const saveStaging = (data, binding) => {
+    pruneStaging();
+    if (storageStaging.size >= maxStorageStaging) fail('storage_staging_count_budget');
+    const size = pages.measure(data, 16777216);
+    const bytes = 4096 + size.codeUnits * 2 + size.tokens * 64;
+    if (bytes > 16777216 || stagingBytes + bytes > 67108864) fail('storage_staging_byte_budget');
+    let ledger = null;
+    try {
+      ledger = resources?.open({ maxRetainedBytes: 16777216 });
+      ledger?.retain(data, 'storage_cursor_staging');
+      const key = hash(JSON.stringify([stagingSalt, ++stagingNonce]));
+      const entry = { ...binding, data, bytes, resources: ledger, expiresAt: now() + stagingLifetimeMs, timer: null };
+      storageStaging.set(key, entry); stagingBytes += bytes;
+      ledger?.onClose(() => closeStaging(key));
+      entry.timer = schedule(() => closeStaging(key), stagingLifetimeMs); entry.timer?.unref?.();
+      return key;
+    } catch (error) { ledger?.close('storage_cursor_failed'); throw error; }
+  };
   const partition = graph => JSON.stringify({ owner: graph.readerFrame.owner, scopeKey: graph.scopeKey, viewer: graph.readerFrame.view.viewerId });
   const stamp = graph => pages.generation(graph, { partition: partition(graph), restoreEpoch: graph.readerFrame.restoreEpoch, view: graph.readerFrame });
 
@@ -1297,17 +1332,14 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         consume(rows); owner.check(); return null;
       } finally { if (lease) pages.release(lease); if (stage) pages.releaseStage(stage); if (handle) pages.close(handle); }
     };
-    const storageStaging = new Map();
-    let stagingNonce = 0;
-    if (owner.resources?.onClose) {
-      owner.resources.onClose(() => {
-        for (const s of storageStaging.values()) { try { s.stagingScope?.close(); } catch (_) {} }
-        storageStaging.clear();
-      });
+    pruneStaging();
+    const rootBinding = hash(rootRaw);
+    for (const [key, entry] of storageStaging) {
+      if (entry.rootKey === loc.rootKey && entry.rootBinding !== rootBinding) closeStaging(key);
     }
     const readRows = async (spec, budget) => {
       const scope = owner.resources?.scope();
-      let activeStagingKey = null;
+      let releaseScope = true;
       try {
         owner.check(); await owner.assertRoute?.(); owner.check();
         const credit = budget || { maxPages: 512, maxBytes: 8388608, pagesRead: 0, bytesRead: 0 };
@@ -1318,106 +1350,63 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         const matchingRefs = manifest.refs.filter(ref => ref.table === spec.table && mightContain(ref, spec));
         const cursor = spec.storageCursor || null;
         const indexDigest = manifest.metadata.indexDigest;
-        let startIndex = 0;
-        let staging = null;
+        const accessBinding = hash(JSON.stringify([spec.requestBinding || '', spec.table, spec.anchorNodeId || '',
+          spec.direction || '', spec.predicate || '', Boolean(spec.structuralOnly), spec.channel || '', spec.term || '',
+          spec.dependencyKey || '', spec.offset || 0, spec.pageBytes || 8192]));
+        let startIndex = 0, staging = null;
         if (cursor) {
-          if (!cursor || typeof cursor !== 'object'
-            || cursor.schema !== 'libra.graph_storage_access_cursor.v1'
-            || cursor.table !== spec.table
-            || cursor.partition !== loc.partition
-            || cursor.generation !== manifest.generation
-            || cursor.indexDigest !== indexDigest
+          pruneStaging();
+          const entry = storageStaging.get(cursor.stagingKey);
+          if (cursor.schema !== 'libra.graph_storage_access_cursor.v1' || cursor.table !== spec.table
+            || cursor.partition !== loc.partition || cursor.generation !== manifest.generation
+            || cursor.indexDigest !== indexDigest || cursor.accessBinding !== accessBinding
             || !Number.isSafeInteger(cursor.refIndex) || cursor.refIndex < 0 || cursor.refIndex >= matchingRefs.length
-            || cursor.totalMatchingRefs !== matchingRefs.length
-            || matchingRefs[cursor.refIndex]?.key !== cursor.refKey
-            || typeof cursor.stagingKey !== 'string') {
-            fail('storage_cursor_invalid');
-          }
-          activeStagingKey = cursor.stagingKey;
-          staging = storageStaging.get(activeStagingKey);
-          if (!staging || staging.generation !== manifest.generation || staging.indexDigest !== indexDigest
-            || staging.table !== spec.table || staging.partition !== loc.partition) {
-            fail('storage_cursor_invalid');
-          }
+            || cursor.totalMatchingRefs !== matchingRefs.length || matchingRefs[cursor.refIndex]?.key !== cursor.refKey
+            || !entry || entry.accessBinding !== accessBinding || entry.rootBinding !== rootBinding
+            || entry.refIndex !== cursor.refIndex || entry.generation !== manifest.generation
+            || entry.indexDigest !== indexDigest || entry.partition !== loc.partition) fail('storage_cursor_invalid');
+          // Claim synchronously before any await: replay and overlapping resumes cannot share this lease.
+          staging = entry.data;
+          try { scope?.retain(staging, 'restored_storage_staging'); }
+          finally { closeStaging(cursor.stagingKey); }
           startIndex = cursor.refIndex;
-        } else {
-          activeStagingKey = hash(JSON.stringify([
-            manifest.generation,
-            indexDigest,
-            loc.partition,
-            spec.table,
-            spec.channel || '',
-            spec.term || spec.dependencyKey || spec.anchorNodeId || '',
-            ++stagingNonce
-          ]));
         }
-
         const reassembler = createTableReassembler(spec.table, scope);
-        if (staging) {
-          reassembler.restoreStaging(staging);
-        }
-
+        if (staging) reassembler.restoreStaging(staging);
         for (let i = startIndex; i < matchingRefs.length; i++) {
           const ref = matchingRefs[i];
           let pageItems = null;
           const stopped = await readPage(ref, page => {
-            pageItems = page;
-            scope?.retain(page, 'selected_index_rows');
+            pageItems = page; scope?.retain(page, 'selected_index_rows');
           }, credit);
           if (stopped) {
-            const stagingScope = staging?.stagingScope || owner.resources?.scope();
-            const stagingData = reassembler.getStagingData();
-            stagingScope?.retain(stagingData, 'reassembly_staging');
-            storageStaging.set(activeStagingKey, {
-              generation: manifest.generation,
-              indexDigest,
-              partition: loc.partition,
-              table: spec.table,
-              ...stagingData,
-              stagingScope
+            await assertIndexCurrent();
+            const stagingKey = saveStaging(reassembler.getStagingData(), {
+              rootKey: loc.rootKey, rootBinding, accessBinding, refIndex: i,
+              generation: manifest.generation, indexDigest, partition: loc.partition
             });
-            const nextCursor = {
-              schema: 'libra.graph_storage_access_cursor.v1',
-              generation: manifest.generation,
-              indexDigest,
-              partition: loc.partition,
-              table: spec.table,
-              refIndex: i,
-              refKey: ref.key,
-              totalMatchingRefs: matchingRefs.length,
-              stagingKey: activeStagingKey,
-              assembledRowCount: reassembler.getRows().length,
-              hasPendingSplit: Boolean(reassembler.getPending())
-            };
+            const requestResources = owner.resources;
+            requestResources?.onClose?.(() => {
+              if (['failed','expired','invalidated','unloaded'].includes(requestResources.inspect().closeReason)) closeStaging(stagingKey);
+            });
             return {
-              storageStopped: true,
-              stopReason: stopped,
-              storageCursor: nextCursor,
-              rows: [],
-              splitReassembled: reassembler.hasSplit()
+              storageStopped: true, stopReason: stopped, rows: [], splitReassembled: reassembler.hasSplit(),
+              storageCursor: { schema: 'libra.graph_storage_access_cursor.v1', generation: manifest.generation,
+                indexDigest, partition: loc.partition, table: spec.table, refIndex: i, refKey: ref.key,
+                totalMatchingRefs: matchingRefs.length, stagingKey, accessBinding,
+                assembledRowCount: reassembler.getRows().length, hasPendingSplit: Boolean(reassembler.getPending()) }
             };
           }
-          if (pageItems) {
-            await reassembler.pushPage(pageItems);
-          }
+          if (pageItems) await reassembler.pushPage(pageItems);
         }
         await assertIndexCurrent();
         const { rows, splitReassembled } = reassembler.finish();
-        if (storageStaging.has(activeStagingKey)) {
-          const oldStaging = storageStaging.get(activeStagingKey);
-          try { oldStaging.stagingScope?.close(); } catch (_) {}
-          storageStaging.delete(activeStagingKey);
-        }
         scope?.retain(rows, 'reassembled_index_rows');
+        releaseScope = false;
         return { rows, splitReassembled, storageCursor: null, release: () => scope?.close() };
-      } catch (error) {
-        if (activeStagingKey && storageStaging.has(activeStagingKey)) {
-          const oldStaging = storageStaging.get(activeStagingKey);
-          try { oldStaging.stagingScope?.close(); } catch (_) {}
-          storageStaging.delete(activeStagingKey);
-        }
-        scope?.close();
-        throw error;
+      } finally {
+        // A partial stop never transfers an active request scope into a continuation.
+        if (releaseScope) scope?.close();
       }
     };
     let compiledIndex;
@@ -1481,6 +1470,6 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     prepare,
     enumerate,
     location,
-    inspect: () => ({ activeBuild: active })
+    inspect: () => { pruneStaging(); return { activeBuild: active, storageStaging: { entries: storageStaging.size, retainedBytes: stagingBytes, maxEntries: maxStorageStaging, maxBytes: 67108864, lifetimeMs: stagingLifetimeMs } }; }
   });
 };

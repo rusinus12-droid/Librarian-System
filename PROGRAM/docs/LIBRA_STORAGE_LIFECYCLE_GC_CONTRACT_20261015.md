@@ -1,8 +1,8 @@
 # LIBRA Storage Lifecycle & Namespace Fence GC Contract (N05)
 
-**Document Version:** 1.0.0  
+**Document Version:** 1.1.0
 **Date:** 2026-10-15  
-**Status:** Canonical Storage Lifecycle & GC Specification  
+**Status:** Proposed owner protocol; generic kernel tests exist; native deletion blocked
 **Related Documents:**
 - [`LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md`](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md) (§8 N05)
 - [`LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md`](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md)
@@ -12,6 +12,12 @@
 - Test Suite: [`PROGRAM/tests/libra_memory_graph_store_lifecycle_gc_test.cjs`](../tests/libra_memory_graph_store_lifecycle_gc_test.cjs)
 
 ---
+
+## 0. 구현 상태와 증거 범위
+
+`64990aa`는 주입 owner의 GC kernel 계약과 mock 테스트를 추가했다. native owner/SDK/server의 원자적 namespace fence·durable build/reader lease는 **미구현**이다. native `captureGCInventory()`는 `fence:null`이며 `deleteConditional`을 제공하지 않는다. 이 문서 §1–3은 owner가 충족해야 할 프로토콜 요구사항이며 실제 native 구현 완료 선언이 아니다.
+
+현재 corpus는 namespace 전체를 보존하고 회수하지 않는다(`corpusReclamation:conservative_namespace_retention`). 표현 회수도 미구현이다. 실제 corpus manifest는 `refs/sourceProofs`, checkpoint는 `windowSlices`를 사용한다. 64KiB를 넘는 정상 checkpoint도 GC 관찰/차단이 동작하도록 불필요한 body decode를 제거했다. schema-aware 다계층 회수는 owner fence와 함께 후속 구현한다. 커널 `inspect.gcLifecycleProtection`은 주입 계약의 처리 기능이며 native capability 증명이 아니다.
 
 ## 1. 개요 및 목적 (Overview & Purpose)
 
@@ -28,7 +34,7 @@ N05는 LIBRA 메모리 그래프 저장소의 **완전한 영속 인벤토리(Du
 4. **리스 만료 정책 (Lease Expiration & Reclamation)**:
    - 활성 리스/핀은 만료 시각(`expiresAtMs`)을 가지며, 리스가 만료(`nowMs > expiresAtMs`)되거나 명시적으로 해제된 경우에만 안전하게 고아 자산(orphan candidate)으로 편입되어 회수된다.
 5. **다계층 도달성 보존 (Multi-tier Reachability)**:
-   - 윈도우 그래프 스토어 GC는 코퍼스 자산(코퍼스 루트, 매니페스트, 증명, 투영, 페이지, 체크포인트) 및 표현(representation) 자산을 고아로 오인하여 청소하지 않는다. 모든 계층의 루트 및 체크포인트를 명시적으로 마킹하여 보존한다.
+   - 윈도우 그래프 스토어 GC는 코퍼스 자산(코퍼스 루트, 매니페스트, 증명, 투영, 페이지, 체크포인트) 및 표현(representation) 자산을 고아로 오인하여 청소하지 않는다. 현재는 corpus namespace 전체 보존으로 보호한다. 실제 schema의 도달성 기반 회수는 후속 요구사항이다.
 6. **동시성 경합 시 원자적 중단 (Atomic Conflict Abort)**:
    - 마크 단계 이후 조건부 삭제 직전 또는 도중에 다른 퍼블리셔가 루트를 변경하거나 후보 내용이 변조된 경우, `deleteConditional` 및 `verifyRootsUnchanged`가 이를 즉각 감지하고 `aborted_concurrent_mutation`으로 안전하게 중단한다.
 
@@ -79,7 +85,7 @@ const removed = await owner.deleteConditional({
 
 ## 3. 다계층 자산 도달성 구조 (Multi-Tier Reachability Map)
 
-GC 마크 단계는 단일 계층만 보지 않고 스코프 네임스페이스 전체의 활성 참조를 전수 탐색한다:
+아래는 목표 도달성 구조다. 현재 window graph만 후보를 만들며 corpus namespace는 전부 보존한다. checkpoint의 `windowSlices`는 projection 재개용 데이터다:
 
 ```mermaid
 flowchart TD
@@ -95,7 +101,7 @@ flowchart TD
         CManifest --> CPages["Corpus Pages (corpus:page:*)"]
         CManifest --> CProof["Corpus Proofs (corpus:proof:*)"]
         CManifest --> CProj["Corpus Projections (corpus:projection:*)"]
-        CCheck["Corpus Checkpoints (corpus:checkpoint:*)"] --> CCPages["Checkpoint Pages"]
+        CCheck["Corpus Checkpoints (corpus:checkpoint:*)"] --> CCPages["windowSlices / ownerProof"]
     end
 
     subgraph LifecycleLeases["3. In-Progress & Reader Leases"]
@@ -126,11 +132,11 @@ flowchart TD
 
 ## 4. 검증 결과 및 계약 테스트 (Verification & Tests)
 
-신규 구축된 전용 테스트 스위트 [`PROGRAM/tests/libra_memory_graph_store_lifecycle_gc_test.cjs`](../tests/libra_memory_graph_store_lifecycle_gc_test.cjs)를 통해 7대 핵심 불변식을 100% 검증했다:
+신규 구축된 전용 테스트 스위트 [`PROGRAM/tests/libra_memory_graph_store_lifecycle_gc_test.cjs`](../tests/libra_memory_graph_store_lifecycle_gc_test.cjs)는 주입 mock owner에서 아래 7개 조건을 검사한다. 고정 fixture fence와 직접 주입한 build/reader 목록이며 실제 owner의 발급·원자성·재시작·독립 VM 경합 증거는 아니다:
 
 1. **펜스 부재 시 삭제 차단**: `fence: null`인 경우 `blocked_atomic_gc_unavailable` 반환, 0건 삭제.
 2. **불완전 인벤토리 거부**: `complete: false`인 경우 `blocked_incomplete_inventory` 반환, 0건 삭제.
-3. **진행 중 빌드 보호**: 미커밋 작업 페이지는 후보에서 제외되어 완벽 보존.
+3. **진행 중 빌드 보호**: 미커밋 작업 페이지는 후보에서 제외되어 보존(mock owner).
 4. **리더 리스 보호**: 만료되지 않은 리더 리스가 걸린 구세대 매니페스트/페이지는 보존.
 5. **리스 만료 후 안전 회수**: 리스 만료(`nowMs > expiresAtMs`) 후 정상적으로 고아 후보 등록 및 조건부 삭제.
 6. **다계층 도달성**: 코퍼스 루트, 매니페스트, 증명, 체크포인트 자산 보존.
@@ -148,3 +154,5 @@ $ /usr/local/bin/node PROGRAM/tests/libra_memory_graph_store_lifecycle_gc_test.c
 
 All 7/7 N05 storage lifecycle and GC tests passed.
 ```
+
+실제 등록 API 검증은 `libra_memory_graph_review_boundaries_runtime_test.cjs`의 두 저장 모드 삭제 차단/transport 0과 `libra_memory_graph_review_f8_runtime_test.cjs`의 실제 대형 checkpoint dry-run/차단·저장값 불변을 따른다. native destructive GC는 이 검사로 활성화하지 않는다.

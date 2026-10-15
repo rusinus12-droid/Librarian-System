@@ -12,16 +12,21 @@
       "corpus": {
         "scopeKey": "eval-scope-01",
         "canonical": [
-          { "nodeId": "c_key_history", "recordKey": "rec_canon_key", "turn": 5, "text": "앨리스는 은빛 열쇠를 제작하여 서재에 보관하기 시작했다." }
+          {"nodeId": "c_key_history", "recordKey": "rec_canon_key", "turn": 5, "text": "앨리스는 은빛 열쇠를 제작하여 서재에 보관하기 시작했다."}
         ],
         "micro": [
-          { "nodeId": "m_key_action", "recordKey": "rec_micro_key", "turn": 12, "text": "앨리스는 서재 문을 열고 은빛 열쇠를 서랍에 넣었다." }
+          {"nodeId": "m_key_action", "recordKey": "rec_micro_key", "turn": 12, "text": "앨리스는 서재 문을 열고 은빛 열쇠를 서랍에 넣었다."}
         ],
         "state": [
-          { "nodeId": "s_key_current", "recordKey": "rec_state_key", "turn": 15, "text": "은빛 열쇠의 현재 위치는 서재 책상 안쪽 비밀 서랍이다." }
+          {"nodeId": "s_key_current", "recordKey": "rec_state_key", "turn": 15, "text": "은빛 열쇠의 현재 위치는 서재 책상 안쪽 비밀 서랍이다."}
         ],
         "lore": [
-          { "nodeId": "l_key_lore", "locator": "lore:silver_key", "text": "은빛 열쇠는 고대 서재의 봉인을 해제하는 특수 아티팩트다.", "mandatoryInclusion": false }
+          {"nodeId": "l_key_lore", "locator": "lore:silver_key", "text": "은빛 열쇠는 고대 서재의 봉인을 해제하는 특수 아티팩트다.", "mandatoryInclusion": false}
+        ],
+        "edges": [
+          {"from": "c_key_history", "to": "s_key_current", "predicate": "updates"},
+          {"from": "s_key_current", "to": "l_key_lore", "predicate": "applies_to"},
+          {"from": "m_key_action", "to": "c_key_history", "predicate": "corroborates"}
         ]
       },
       "query": {
@@ -29,7 +34,7 @@
         "asOfTurn": 15,
         "viewerId": "owner_reader",
         "worldlineId": "main",
-        "consumerPolicy": { "consumer": "classic", "maxCharacters": 4096, "maxUnits": 10 }
+        "consumerPolicy": {"consumer": "classic", "maxCharacters": 4096, "maxUnits": 10}
       },
       "expected": {
         "goldNodeIds": ["s_key_current", "l_key_lore", "c_key_history"],
@@ -54,21 +59,22 @@
       "corpus": {
         "scopeKey": "eval-scope-02",
         "canonical": [
-          { "nodeId": "c_ancient_treaty", "recordKey": "rec_canon_treaty", "turn": 2, "text": "턴 2에서 왕국과 북부 연합은 사파이어 평화 조약을 체결했다." },
-          { "nodeId": "c_recent_event", "recordKey": "rec_canon_recent", "turn": 45, "text": "턴 45에서 왕국 사절단이 북부 성채를 방문했다." }
+          {"nodeId": "c_ancient_treaty", "recordKey": "rec_canon_treaty", "turn": 2, "text": "턴 2에서 왕국과 북부 연합은 사파이어 평화 조약을 체결했다."},
+          {"nodeId": "c_recent_event", "recordKey": "rec_canon_recent", "turn": 45, "text": "턴 45에서 왕국 사절단이 북부 성채를 방문했다."}
         ],
         "micro": [
-          { "nodeId": "m_ancient_witness", "recordKey": "rec_micro_treaty", "turn": 2, "text": "조약 체결식에서 사파이어 인장이 찍혔다." }
+          {"nodeId": "m_ancient_witness", "recordKey": "rec_micro_treaty", "turn": 2, "text": "조약 체결식에서 사파이어 인장이 찍혔다."}
         ],
         "state": [],
-        "lore": []
+        "lore": [],
+        "edges": []
       },
       "query": {
         "queryText": "과거 사파이어 평화 조약의 체결 내력",
         "asOfTurn": 50,
         "viewerId": "owner_reader",
         "worldlineId": "main",
-        "consumerPolicy": { "consumer": "classic", "maxCharacters": 4096, "maxUnits": 10 }
+        "consumerPolicy": {"consumer": "classic", "maxCharacters": 4096, "maxUnits": 10}
       },
       "expected": {
         "goldNodeIds": ["c_ancient_treaty"],
@@ -93,14 +99,26 @@
       "corpus": {
         "scopeKey": "eval-scope-03",
         "canonical": [
-          { "nodeId": "c_evelyn_intro", "recordKey": "rec_canon_evelyn", "turn": 4, "text": "연구소의 수석 과학자 Dr. Evelyn Reed는 그림자 연구원이라는 이명으로 불린다." }
+          {"nodeId": "c_evelyn_intro", "recordKey": "rec_canon_evelyn", "turn": 4, "text": "연구소의 수석 과학자 Dr. Evelyn Reed는 그림자 연구원이라는 이명으로 불린다.", "subjectId": "entity_evelyn"}
         ],
         "micro": [],
         "state": [
-          { "nodeId": "s_evelyn_status", "recordKey": "rec_state_evelyn", "turn": 10, "text": "에블린 박사는 현재 중앙 타워 제3연구실에서 연구를 진행 중이다." }
+          {"nodeId": "s_evelyn_status", "recordKey": "rec_state_evelyn", "turn": 10, "text": "에블린 박사는 현재 중앙 타워 제3연구실에서 연구를 진행 중이다.", "subjectId": "entity_evelyn"}
         ],
         "lore": [
-          { "nodeId": "l_evelyn_lore", "locator": "lore:evelyn_project", "text": "그림자 연구원(Shadow Researcher)은 에테르 안정화 프로젝트의 총책임자다.", "mandatoryInclusion": false }
+          {"nodeId": "l_evelyn_lore", "locator": "lore:evelyn_project", "text": "그림자 연구원(Shadow Researcher)은 에테르 안정화 프로젝트의 총책임자다.", "mandatoryInclusion": false, "subjectId": "entity_evelyn"}
+        ],
+        "edges": [
+          {"from": "c_evelyn_intro", "to": "entity_evelyn", "predicate": "subject_of"},
+          {"from": "s_evelyn_status", "to": "entity_evelyn", "predicate": "subject_of"},
+          {"from": "l_evelyn_lore", "to": "entity_evelyn", "predicate": "subject_of"}
+        ],
+        "entities": [
+          {
+            "id": "entity_evelyn",
+            "name": "Dr. Evelyn Reed",
+            "aliases": ["에블린 박사", "그림자 연구원", "Shadow Researcher"]
+          }
         ]
       },
       "query": {
@@ -108,7 +126,7 @@
         "asOfTurn": 12,
         "viewerId": "owner_reader",
         "worldlineId": "main",
-        "consumerPolicy": { "consumer": "classic", "maxCharacters": 4096, "maxUnits": 10 }
+        "consumerPolicy": {"consumer": "classic", "maxCharacters": 4096, "maxUnits": 10}
       },
       "expected": {
         "goldNodeIds": ["c_evelyn_intro", "s_evelyn_status"],
@@ -133,14 +151,15 @@
       "corpus": {
         "scopeKey": "eval-scope-04",
         "canonical": [
-          { "nodeId": "c_bob_history", "recordKey": "rec_canon_bob", "turn": 3, "text": "밥은 성문 경비병으로 처음 고용되었다." }
+          {"nodeId": "c_bob_history", "recordKey": "rec_canon_bob", "turn": 3, "text": "밥은 성문 경비병으로 처음 고용되었다."}
         ],
         "micro": [],
         "state": [
-          { "nodeId": "s_bob_stale", "recordKey": "rec_state_bob_old", "turn": 6, "text": "밥의 직업은 성문 경비병이다.", "lifecycleStatus": "superseded" },
-          { "nodeId": "s_bob_current", "recordKey": "rec_state_bob_cur", "turn": 18, "text": "밥의 현재 직업은 약초상으로 전직하여 약방을 운영하고 있다.", "lifecycleStatus": "active" }
+          {"nodeId": "s_bob_stale", "recordKey": "rec_state_bob_old", "turn": 6, "text": "밥의 직업은 성문 경비병이다.", "lifecycleStatus": "superseded"},
+          {"nodeId": "s_bob_current", "recordKey": "rec_state_bob_cur", "turn": 18, "text": "밥의 현재 직업은 약초상으로 전직하여 약방을 운영하고 있다.", "lifecycleStatus": "active"}
         ],
-        "lore": []
+        "lore": [],
+        "edges": []
       },
       "query": {
         "queryText": "밥의 현재 직업과 일하는 곳",
@@ -148,7 +167,7 @@
         "viewerId": "owner_reader",
         "worldlineId": "main",
         "excludedNodeIds": ["s_bob_stale"],
-        "consumerPolicy": { "consumer": "classic", "maxCharacters": 4096, "maxUnits": 10 }
+        "consumerPolicy": {"consumer": "classic", "maxCharacters": 4096, "maxUnits": 10}
       },
       "expected": {
         "goldNodeIds": ["s_bob_current"],
@@ -173,22 +192,26 @@
       "corpus": {
         "scopeKey": "eval-scope-05",
         "canonical": [
-          { "nodeId": "c_main_event", "recordKey": "rec_canon_main", "turn": 5, "text": "메인 세계선: 성채 정상에서 축제가 열렸다." }
+          {"nodeId": "c_main_event", "recordKey": "rec_canon_main", "turn": 5, "text": "메인 세계선: 성채 정상에서 축제가 열렸다."},
+          {"nodeId": "c_other_worldline", "recordKey": "rec_branch", "turn": 5, "text": "수도 성채의 축제는 분기_세계선 침공 계획이다.", "worldlineId": "branch"},
+          {"nodeId": "c_future", "recordKey": "rec_future", "turn": 15, "text": "수도 성채의 축제는 미래_폐허가 된다."}
         ],
         "micro": [],
         "state": [
-          { "nodeId": "s_main_state", "recordKey": "rec_state_main", "turn": 8, "text": "도시의 분위기는 축제로 평화롭다." }
+          {"nodeId": "s_main_state", "recordKey": "rec_state_main", "turn": 8, "text": "도시의 분위기는 축제로 평화롭다."},
+          {"nodeId": "s_private", "recordKey": "rec_private", "turn": 8, "text": "수도 성채 축제의 비밀_반역 계획.", "viewerId": "owner_reader", "visibility": "private"}
         ],
         "lore": [
-          { "nodeId": "l_public_lore", "locator": "lore:city_guide", "text": "수도 성채는 모든 시민에게 개방되어 있다.", "mandatoryInclusion": false }
-        ]
+          {"nodeId": "l_public_lore", "locator": "lore:city_guide", "text": "수도 성채는 모든 시민에게 개방되어 있다.", "mandatoryInclusion": false}
+        ],
+        "edges": []
       },
       "query": {
         "queryText": "수도 성채의 현재 상황과 축제",
         "asOfTurn": 10,
         "viewerId": "public_observer",
         "worldlineId": "main",
-        "consumerPolicy": { "consumer": "classic", "maxCharacters": 4096, "maxUnits": 10 }
+        "consumerPolicy": {"consumer": "classic", "maxCharacters": 4096, "maxUnits": 10}
       },
       "expected": {
         "goldNodeIds": ["c_main_event", "s_main_state"],
@@ -197,8 +220,8 @@
         "modelDispatchEligible": true
       },
       "forbidden": {
-        "forbiddenTokens": ["분기_세계선", "비밀_반역"],
-        "forbiddenNodeIds": []
+        "forbiddenTokens": ["분기_세계선", "비밀_반역", "미래_폐허"],
+        "forbiddenNodeIds": ["c_other_worldline", "c_future", "s_private"]
       },
       "passCriteria": {
         "minGoldRecall": 1.0,
@@ -227,18 +250,7 @@
               "temporalRole": "current_sequence",
               "certainty": "confirmed",
               "epistemicStatus": "observed",
-              "sourceOccurrence": {
-                "scopeKey": "eval-scope-06",
-                "worldlineId": "main",
-                "sessionEpoch": 0,
-                "turn": 7,
-                "role": "assistant",
-                "messageId": "msg-7",
-                "startOffset": 0,
-                "endOffset": 19,
-                "exactQuote": "카일은 마법 반지를 손가락에 끼웠다",
-                "sourceTextDigest": "dig-7"
-              }
+              "sourceOccurrence": {"scopeKey": "eval-scope-06", "worldlineId": "main", "sessionEpoch": 0, "turn": 7, "role": "assistant", "messageId": "msg-7", "startOffset": 0, "endOffset": 19, "exactQuote": "카일은 마법 반지를 손가락에 끼웠다", "sourceTextDigest": "dig-7"}
             }
           }
         ],
@@ -257,32 +269,22 @@
               "temporalRole": "current_sequence",
               "certainty": "confirmed",
               "epistemicStatus": "observed",
-              "sourceOccurrence": {
-                "scopeKey": "eval-scope-06",
-                "worldlineId": "main",
-                "sessionEpoch": 0,
-                "turn": 7,
-                "role": "assistant",
-                "messageId": "msg-7",
-                "startOffset": 0,
-                "endOffset": 19,
-                "exactQuote": "카일은 마법 반지를 손가락에 끼웠다",
-                "sourceTextDigest": "dig-7"
-              }
+              "sourceOccurrence": {"scopeKey": "eval-scope-06", "worldlineId": "main", "sessionEpoch": 0, "turn": 7, "role": "assistant", "messageId": "msg-7", "startOffset": 0, "endOffset": 19, "exactQuote": "카일은 마법 반지를 손가락에 끼웠다", "sourceTextDigest": "dig-7"}
             }
           }
         ],
         "state": [],
         "lore": [
-          { "nodeId": "l_mandatory_rule", "locator": "lore:magic_rule", "text": "반지 마법을 발동할 때는 항상 마나 10이 소모된다.", "mandatoryInclusion": true }
-        ]
+          {"nodeId": "l_mandatory_rule", "locator": "lore:magic_rule", "text": "반지 마법을 발동할 때는 항상 마나 10이 소모된다.", "mandatoryInclusion": true}
+        ],
+        "edges": []
       },
       "query": {
         "queryText": "카일의 반지 착용과 마법",
         "asOfTurn": 8,
         "viewerId": "owner_reader",
         "worldlineId": "main",
-        "consumerPolicy": { "consumer": "classic", "maxCharacters": 4096, "maxUnits": 10 }
+        "consumerPolicy": {"consumer": "classic", "maxCharacters": 4096, "maxUnits": 10}
       },
       "expected": {
         "goldNodeIds": ["l_mandatory_rule", "c_absorbed_counterpart"],
@@ -304,18 +306,19 @@
     {
       "id": "UME-07",
       "category": "vectorless_and_provider_fault",
-      "label": "임베딩 부재/장애 시 어휘·그래프 경로 완전 검색 (Vectorless 복원력)",
-      "description": "외부 벡터/임베딩이 없거나 공간 불일치(foreign_space)여도 어휘(BM25) 및 그래프 탐색으로 정상 정답을 도출해야 함",
+      "label": "임베딩이 없는 fixture에서 어휘 검색",
+      "description": "외부 provider 장애·공간 불일치의 native 검증은 별도 회귀가 담당한다. 이 fixture는 벡터가 없는 입력만 검증한다.",
       "corpus": {
         "scopeKey": "eval-scope-07",
         "canonical": [
-          { "nodeId": "c_lexical_target", "recordKey": "rec_canon_lex", "turn": 9, "text": "비밀 결사 크로노스는 고대 시계탑 지하에 본거지를 두고 있다." }
+          {"nodeId": "c_lexical_target", "recordKey": "rec_canon_lex", "turn": 9, "text": "비밀 결사 크로노스는 고대 시계탑 지하에 본거지를 두고 있다."}
         ],
         "micro": [],
         "state": [
-          { "nodeId": "s_lexical_state", "recordKey": "rec_state_lex", "turn": 11, "text": "크로노스의 수장은 현재 지하 3층 밀실에 머무르고 있다." }
+          {"nodeId": "s_lexical_state", "recordKey": "rec_state_lex", "turn": 11, "text": "크로노스의 수장은 현재 지하 3층 밀실에 머무르고 있다."}
         ],
-        "lore": []
+        "lore": [],
+        "edges": []
       },
       "query": {
         "queryText": "비밀 결사 크로노스의 본거지와 수장 위치",
@@ -323,7 +326,7 @@
         "viewerId": "owner_reader",
         "worldlineId": "main",
         "vectorlessMode": true,
-        "consumerPolicy": { "consumer": "classic", "maxCharacters": 4096, "maxUnits": 10 }
+        "consumerPolicy": {"consumer": "classic", "maxCharacters": 4096, "maxUnits": 10}
       },
       "expected": {
         "goldNodeIds": ["c_lexical_target", "s_lexical_state"],
@@ -348,34 +351,28 @@
       "corpus": {
         "scopeKey": "eval-scope-08",
         "canonical": [
-          { "nodeId": "c_budget_item_1", "recordKey": "rec_canon_b1", "turn": 1, "text": "첫 번째 기록: 성벽 보수 공사가 완료되었다." },
-          { "nodeId": "c_budget_item_2", "recordKey": "rec_canon_b2", "turn": 2, "text": "두 번째 기록: 군수 물자 보급이 증원되었다." },
-          { "nodeId": "c_budget_item_3", "recordKey": "rec_canon_b3", "turn": 3, "text": "세 번째 기록: 남쪽 관문 통행이 통제되었다." }
+          {"nodeId": "c_budget_item_1", "recordKey": "rec_canon_b1", "turn": 1, "text": "첫 번째 기록: 성벽 보수 공사가 완료되었다."},
+          {"nodeId": "c_budget_item_2", "recordKey": "rec_canon_b2", "turn": 2, "text": "두 번째 기록: 군수 물자 보급이 증원되었다."},
+          {"nodeId": "c_budget_item_3", "recordKey": "rec_canon_b3", "turn": 3, "text": "세 번째 기록: 남쪽 관문 통행이 통제되었다."}
         ],
         "micro": [],
         "state": [],
-        "lore": []
+        "lore": [],
+        "edges": []
       },
       "query": {
         "queryText": "성벽 보수 군수 물자 통행 통제",
         "asOfTurn": 5,
         "viewerId": "owner_reader",
         "worldlineId": "main",
-        "consumerPolicy": { "consumer": "classic", "maxCharacters": 150, "maxUnits": 1 }
+        "consumerPolicy": {"consumer": "classic", "maxCharacters": 150, "maxUnits": 1}
       },
-      "expected": {
-        "maxAdmittedUnits": 1,
-        "hasDroppedUnits": true,
-        "modelDispatchEligible": true
-      },
+      "expected": {"maxAdmittedUnits": 1, "hasDroppedUnits": true, "modelDispatchEligible": true},
       "forbidden": {
         "forbiddenTokens": [],
         "forbiddenNodeIds": []
       },
-      "passCriteria": {
-        "maxAdmittedUnits": 1,
-        "maxCharactersStrict": 150
-      }
+      "passCriteria": {"maxAdmittedUnits": 1, "maxCharactersStrict": 150}
     }
   ]
 }

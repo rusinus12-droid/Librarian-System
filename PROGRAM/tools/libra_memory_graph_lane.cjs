@@ -24,6 +24,7 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
     maxBytes = 65536,
     pageBytes = 8192,
     resumeCursors = [],
+    requestBinding = '',
     maxStoragePages = maxPages,
     maxStorageBytes = maxBytes
   } = {}) => {
@@ -52,6 +53,7 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
     let finalizedReport = null;
 
     const accessKeyOf = req => JSON.stringify([
+      requestBinding,
       req.table,
       req.anchorNodeId || '',
       req.direction || '',
@@ -96,6 +98,7 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
         dependencyKey: String(dependencyKey || ''),
         offset,
         pageBytes,
+        requestBinding,
         storageCursor: storageCursor || null
       };
       const key = accessKeyOf(spec);
@@ -133,6 +136,8 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
           || (cur.indexDigest && cur.indexDigest !== compiledIndex.indexDigest)) {
           fail('cursor_stale');
         }
+        if ((cur.requestBinding || '') !== requestBinding
+          || (cur.pageBytes !== undefined && cur.pageBytes !== pageBytes)) fail('cursor_invalid');
         const role = Array.isArray(cur.lanes) && validRoles.has(cur.lanes[0]) ? cur.lanes[0] : 'graph_neighborhood';
         enqueue({
           laneRole: role,
@@ -200,6 +205,7 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
           channel: next.spec.channel,
           term: next.spec.term,
           offset: next.spec.offset,
+          dependencyKey: next.spec.dependencyKey, pageBytes, requestBinding,
           stopReason: 'row_exceeds_page',
           storageCursor: next.spec.storageCursor || null
         });
@@ -317,6 +323,7 @@ module.exports = function createMemoryGraphLane({ index, pages } = {}) {
           channel: pending.spec.channel,
           term: pending.spec.term,
           offset: pending.spec.offset,
+          dependencyKey: pending.spec.dependencyKey, pageBytes, requestBinding,
           stopReason: lastStopReason,
           storageCursor: pending.spec.storageCursor || null
         });

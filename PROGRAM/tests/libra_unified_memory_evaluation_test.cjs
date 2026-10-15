@@ -140,6 +140,56 @@ test('N06-a: negative control - deliberate missing gold evidence fails acceptanc
   assert.ok(evalRes.metrics.goldRecall < 1.0, 'gold recall must drop below 1.0');
 });
 
+test('declared outcome, families, drops, absorption and both unit ceilings are enforced independently', async () => {
+  const scenarios = loadCases();
+  for (const [id, mutate, check] of [
+    ['UME-01', c => { c.expected.deliveryOutcome = 'base_request_only'; }, 'deliveryOutcome'],
+    ['UME-01', c => { c.expected.requiredFamilies = ['nonexistent_family']; }, 'requiredFamilies'],
+    ['UME-08', c => { c.expected.hasDroppedUnits = false; }, 'hasDroppedUnits'],
+    ['UME-08', c => { c.expected.maxAdmittedUnits = 0; c.passCriteria.maxAdmittedUnits = 1; }, 'expectedUnits'],
+    ['UME-01', c => { c.passCriteria.mustAbsorbMicro = true; }, 'microAbsorption']
+  ]) {
+    const c = structuredClone(scenarios.find(c => c.id === id)); mutate(c);
+    const result = await evaluateScenario(c);
+    assert.equal(result.passed, false, check); assert.equal(result.checks[check], false, check);
+  }
+  const unsupported = structuredClone(scenarios[0]); unsupported.passCriteria.imaginaryGate = true;
+  await assert.rejects(() => evaluateScenario(unsupported), /UNSUPPORTED_CRITERION/);
+});
+
+test('lexical ablation removes graph-only and vector-only evidence at the same admitted stage', async () => {
+  const c = { id: 'ablation-control', corpus: { scopeKey: 'ablation', canonical: [
+    { nodeId: 'anchor', text: 'needle anchor', turn: 1 },
+    { nodeId: 'graph_only', text: 'distant witness', turn: 1 },
+    { nodeId: 'vector_only', text: 'unrelated wording', turn: 1 },
+    { nodeId: 'future', text: 'needle future', turn: 20 },
+    { nodeId: 'private', text: 'needle secret', turn: 1, viewerId: 'owner_reader', visibility: 'private' }
+  ], edges: [{ from: 'anchor', to: 'graph_only', predicate: 'corroborates' }] },
+    query: { queryText: 'needle', asOfTurn: 5, viewerId: 'public_observer', worldlineId: 'main',
+      semanticSpace: { spaceId: 'eval-space', dimension: 2 }, queryEmbedding: [1, 0] },
+    expected: { goldNodeIds: ['anchor','graph_only','vector_only'] },
+    forbidden: { forbiddenNodeIds: ['future','private'] } };
+  const node = buildGraphFromCorpus(c).nodes.find(n => n.id === 'vector_only');
+  c.query.documentRepresentations = { vector_only: { spaceId: 'eval-space', dimension: 2, vector: [1, 0], bindingId: node.bindingId } };
+  const result = await evaluateScenario(c); assert.equal(result.passed, true);
+  assert.deepEqual(result.metrics.ablation.lexicalNodeIds, ['anchor']);
+  assert.ok(result.metrics.ablation.fullNodeIds.includes('graph_only'));
+  assert.ok(result.metrics.ablation.fullNodeIds.includes('vector_only'));
+  assert.equal(result.metrics.ablation.stage, 'admitted_bundle');
+  assert.ok(result.metrics.ablation.overlapRatio < 1);
+});
+
+test('isolation fixture contains and rejects actual future, other-worldline and private counterexamples', async () => {
+  const c = loadCases().find(c => c.id === 'UME-05');
+  const graph = buildGraphFromCorpus(c);
+  for (const id of c.forbidden.forbiddenNodeIds) assert.ok(graph.units.some(u => u.nodeId === id));
+  const result = await evaluateScenario(c); assert.equal(result.passed, true);
+  for (const id of c.forbidden.forbiddenNodeIds) {
+    assert.ok(!result.metrics.admittedNodeIds.includes(id));
+    assert.ok(!result.metrics.ablation.lexicalNodeIds.includes(id));
+  }
+});
+
 const run = async () => {
   let passed = 0;
   for (const { name, fn } of tests) {

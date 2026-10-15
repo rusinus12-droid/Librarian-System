@@ -8,7 +8,8 @@ const createLane=require('../../tools/libra_memory_graph_lane.cjs');
 const createQuery=require('../../tools/libra_memory_graph_query.cjs');
 const createCompiler=require('../../tools/libra_memory_graph_compiler.cjs');
 const createRollout=require('../../tools/libra_memory_graph_rollout.cjs');
-function fixture(count=160){
+const createResources=require('../../tools/libra_memory_graph_resources.cjs');
+function fixture(count=160,corpusOptions={}){
  const values=new Map(),reads=[],writes=[];let canceled=false,onRead=null;
  const graph={schema:'libra.memory_graph_projection.v1',scopeKey:'selective',
   readerFrame:{owner:'libra:plugin_only',scopeKey:'selective',worldlineId:'main',restoreEpoch:0,view:{viewerId:'owner_reader'}},
@@ -27,7 +28,8 @@ function fixture(count=160){
    if((values.get(key)??null)!==previous||values.get(manifestKey)!==manifestRaw)throw Error('CONFLICT');values.set(key,raw);writes.push(key);}};
  const snapshot=async()=>({graph,collected:{scope:{scopeKey:graph.scopeKey},sourceKeys:[],canonicalRows:[]}});
  const environment=()=>{const pages=createPages({fingerprint:hash}),index=createIndex({pages,fingerprint:hash}),lane=createLane({index,pages}),query=createQuery({index,lane,pages,fingerprint:hash});
-  const compiler=createCompiler({fingerprint:hash}),rollout=createRollout({index,lane,query,compiler,pages,fingerprint:hash}),corpus=createCorpus({pages,index,fingerprint:hash});return {pages,index,lane,query,compiler,rollout,corpus};};
+  const resources=createResources({measure:pages.measure,encodedSize:pages.encodedSize,stageCost:pages.stageCost});
+  const compiler=createCompiler({fingerprint:hash}),rollout=createRollout({index,lane,query,compiler,pages,fingerprint:hash}),corpus=createCorpus({pages,index,fingerprint:hash,resources,...corpusOptions});return {pages,index,lane,query,compiler,rollout,corpus,resources};};
  let env=environment();
  const build=options=>env.corpus.build({snapshot,owner,options:{pageBytes:16384,...options}});
  const read=options=>env.corpus.read({initialGraph:graph,snapshot,owner,...options});

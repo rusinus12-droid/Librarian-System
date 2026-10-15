@@ -99,6 +99,11 @@ const buildGraphFromCorpus = (caseDef, fingerprint = sha256) => {
       recordKey: unitDef.recordKey || nodeId,
       mandatoryInclusion: Boolean(unitDef.mandatoryInclusion),
       lifecycleStatus: unitDef.lifecycleStatus || 'active',
+      worldlineId: unitDef.worldlineId || worldlineId,
+      viewerId: unitDef.viewerId || null,
+      visibility: unitDef.visibility || 'public',
+      subjectId: unitDef.subjectId || null,
+      activation: { alwaysActive: Boolean(unitDef.mandatoryInclusion) },
       locator: unitDef.locator || null,
       correspondenceProof: unitDef.correspondenceProof ? JSON.parse(JSON.stringify(unitDef.correspondenceProof)) : null,
       score: 1.0
@@ -113,18 +118,22 @@ const buildGraphFromCorpus = (caseDef, fingerprint = sha256) => {
   (corpus.state || []).forEach((u, i) => addUnitNode(u, 'state', i));
   (corpus.lore || []).forEach((u, i) => addUnitNode(u, 'lore', i));
 
-  // Build witness edges between entities and claims
-  for (let i = 0; i < units.length - 1; i++) {
-    const from = nodes.find(n => n.id === units[i].nodeId);
-    const to = nodes.find(n => n.id === units[i + 1].nodeId);
+  for (const entity of corpus.entities || []) {
+    nodes.push({ ...entity, layer: 'entity', kind: 'entity', validated: true, status: 'active',
+      bindingId: fingerprint('entity:' + entity.id), identityCoverage: null });
+  }
+  // Only explicit fixture relationships may propagate activation.
+  for (const [i, relation] of (corpus.edges || []).entries()) {
+    const from = nodes.find(n => n.id === relation.from);
+    const to = nodes.find(n => n.id === relation.to);
     if (from && to) {
       const edgeId = `edge_${from.id}_${to.id}`;
       edges.push({
         id: edgeId,
         from: from.id,
         to: to.id,
-        predicate: 'corroborates',
-        basisId: bases[i]?.id || `basis_${from.id}`,
+        predicate: relation.predicate || 'corroborates',
+        basisId: `basis_${from.id}`,
         bindingId: fingerprint(`edge:${edgeId}`),
         identityCoverage: null
       });
@@ -194,11 +203,35 @@ const evaluateScenario = async (caseDef, suite = createEngineSuite()) => {
   const forbidden = caseDef.forbidden || {};
   const passCriteria = caseDef.passCriteria || {};
 
+  // Reject unsupported declarations instead of silently awarding a pass.
+  const allowedExpected = new Set(['goldNodeIds','requiredFamilies','deliveryOutcome','modelDispatchEligible',
+    'suppressedMicroNodeIds','maxAdmittedUnits','hasDroppedUnits']);
+  const allowedCriteria = new Set(['minGoldRecall','maxForbiddenFound','maxAdmittedUnits','maxCharactersStrict','mustAbsorbMicro']);
+  for (const [group, value, allowed] of [['expected',expected,allowedExpected], ['passCriteria',passCriteria,allowedCriteria]]) {
+    for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error('LIBRA_EVAL_UNSUPPORTED_CRITERION:' + group + '.' + key);
+  }
+  for (const key of ['goldNodeIds','requiredFamilies','suppressedMicroNodeIds']) {
+    if (expected[key] !== undefined && (!Array.isArray(expected[key]) || expected[key].some(x => typeof x !== 'string' || !x))) throw new Error('LIBRA_EVAL_EXPECTATION_INVALID:' + key);
+  }
+  for (const key of ['hasDroppedUnits','modelDispatchEligible']) {
+    if (expected[key] !== undefined && typeof expected[key] !== 'boolean') throw new Error('LIBRA_EVAL_EXPECTATION_INVALID:' + key);
+  }
+  if (expected.deliveryOutcome !== undefined && typeof expected.deliveryOutcome !== 'string') throw new Error('LIBRA_EVAL_EXPECTATION_INVALID:deliveryOutcome');
+  for (const [key,value] of Object.entries(passCriteria)) {
+    if (key === 'mustAbsorbMicro' ? typeof value !== 'boolean' : !Number.isFinite(value) || value < 0
+      || (key === 'minGoldRecall' ? value > 1 : !Number.isSafeInteger(value))) throw new Error('LIBRA_EVAL_CRITERION_INVALID:' + key);
+  }
+  if (expected.maxAdmittedUnits !== undefined && (!Number.isSafeInteger(expected.maxAdmittedUnits) || expected.maxAdmittedUnits < 0)) throw new Error('LIBRA_EVAL_EXPECTATION_INVALID:maxAdmittedUnits');
   const queryInput = {
-    queryText: queryDef.queryText || '',
-    asOfTurn: queryDef.asOfTurn,
-    viewerId: queryDef.viewerId || 'owner_reader',
-    excludedNodeIds: queryDef.excludedNodeIds || []
+    queryText: queryDef.queryText || '', asOfTurn: queryDef.asOfTurn,
+    viewerId: queryDef.viewerId || 'owner_reader', worldlineId: queryDef.worldlineId || 'main',
+    excludedNodeIds: queryDef.excludedNodeIds || [],
+    allowedPredecessorWorldlines: queryDef.allowedPredecessorWorldlines || [],
+    entityIds: queryDef.entityIds || [], predicates: queryDef.predicates || [],
+    queryVectors: queryDef.vectorlessMode ? {} : queryDef.queryVectors || {},
+    semanticSpace: queryDef.vectorlessMode ? null : queryDef.semanticSpace || null,
+    queryEmbedding: queryDef.vectorlessMode ? null : queryDef.queryEmbedding || null,
+    documentRepresentations: queryDef.vectorlessMode ? {} : queryDef.documentRepresentations || {}
   };
 
   const consumerPolicy = queryDef.consumerPolicy || { consumer: 'classic', maxCharacters: 4096, maxUnits: 10 };
@@ -254,47 +287,44 @@ const evaluateScenario = async (caseDef, suite = createEngineSuite()) => {
   const expectedDispatch = expected.modelDispatchEligible !== false;
   const dispatchPass = unifiedResult.modelDispatchEligible === expectedDispatch;
 
-  // 6. Signal Ablation Measurement
-  // Compare full retrieval against lexical-only query
-  const compiledIndex = suite.index.compile(graph, {
-    partition: JSON.stringify({ owner: graph.readerFrame.owner, scopeKey: graph.scopeKey, viewer: queryInput.viewerId }),
-    generation: suite.pages.generation(graph, { partition: graph.scopeKey, restoreEpoch: 0, view: graph.readerFrame })
-  });
-  const lexicalQueryFrame = suite.query.sealQueryFrame({
-    queryText: queryInput.queryText,
-    owner: graph.readerFrame.owner,
-    scopeKey: graph.scopeKey,
-    worldlineId: graph.readerFrame.worldlineId,
-    ablationMode: 'lexical_only'
-  });
-  const viewHandle = suite.query.openView(graph, compiledIndex, lexicalQueryFrame);
+  // The control runs through the SAME engine, eligibility frame and compiler policy.
+  // It disables semantic/entity/predicate seeds and graph expansion in the query kernel.
+  const lexicalResources = suite.resources.open({});
   let lexicalResult;
   try {
-    lexicalResult = await suite.query.retrieveAsync(viewHandle, {});
-  } finally {
-    suite.query.closeView(viewHandle);
-  }
-  const lexicalCandidates = (lexicalResult.candidates || []).map(c => c.nodeId);
-  const fullCandidates = admittedItems.map(i => i.nodeId);
+    lexicalResult = await suite.rollout.executeUnifiedRequest({
+      sealToken: suite.rollout.sealRequestMode({ mode: 'unified', requestId: 'ablation-' + caseDef.id,
+        owner: graph.readerFrame.owner, scopeKey: graph.scopeKey, worldlineId: graph.readerFrame.worldlineId, restoreEpoch: 0 }),
+      graph, queryInput: { ...queryInput, ablationMode: 'lexical_only' }, consumerPolicy, ownerVerifier, resources: lexicalResources
+    });
+  } finally { lexicalResources.close(); }
+  const lexicalCandidates = (lexicalResult.bundle?.items || []).map(item => item.nodeId);
+  const fullCandidates = admittedItems.map(item => item.nodeId);
   const overlapCount = fullCandidates.filter(id => lexicalCandidates.includes(id)).length;
   const ablationOverlap = fullCandidates.length ? overlapCount / fullCandidates.length : 1.0;
-
-  // Overall Pass / Fail Decision
-  const minGoldRecall = passCriteria.minGoldRecall ?? 1.0;
-  const maxForbiddenFound = passCriteria.maxForbiddenFound ?? 0;
-
-  const passed = goldRecall >= minGoldRecall
-    && totalForbiddenLeaks <= maxForbiddenFound
-    && suppressedMicroPass
-    && unitsBudgetPass
-    && charBudgetPass
-    && dispatchPass;
+  const droppedUnits = unifiedResult.bundle?.budget?.droppedUnits || 0;
+  const admittedFamilies = [...new Set(admittedItems.map(item => item.family))];
+  const checks = {
+    goldRecall: goldRecall >= (passCriteria.minGoldRecall ?? 1),
+    forbiddenEvidence: totalForbiddenLeaks <= (passCriteria.maxForbiddenFound ?? 0),
+    suppressedMicro: suppressedMicroPass,
+    expectedUnits: expected.maxAdmittedUnits === undefined || admittedItems.length <= expected.maxAdmittedUnits,
+    unitsBudget: unitsBudgetPass,
+    characterBudget: charBudgetPass,
+    dispatch: dispatchPass,
+    deliveryOutcome: expected.deliveryOutcome === undefined || unifiedResult.deliveryOutcome === expected.deliveryOutcome,
+    requiredFamilies: (expected.requiredFamilies || []).every(family => admittedFamilies.includes(family)),
+    hasDroppedUnits: expected.hasDroppedUnits === undefined || (droppedUnits > 0) === expected.hasDroppedUnits,
+    microAbsorption: !passCriteria.mustAbsorbMicro || expectedSuppressedMicro.length > 0 && suppressedMicroPass
+  };
+  const passed = Object.values(checks).every(Boolean);
 
   return {
     caseId: caseDef.id,
     label: caseDef.label,
     category: caseDef.category,
     passed,
+    checks,
     metrics: {
       goldNodeIds,
       goldFound,
@@ -303,11 +333,14 @@ const evaluateScenario = async (caseDef, suite = createEngineSuite()) => {
       leakedTokens,
       totalForbiddenLeaks,
       admittedUnits: admittedItems.length,
+      admittedNodeIds: [...admittedNodeIds], admittedFamilies, droppedUnits,
       renderedCharacterLength: renderedText.length,
       suppressedMicroPass,
       modelDispatchEligible: unifiedResult.modelDispatchEligible,
       deliveryOutcome: unifiedResult.deliveryOutcome,
       ablation: {
+        status: 'measured_synthetic_fixture', stage: 'admitted_bundle', mode: 'lexical_only',
+        lexicalNodeIds: lexicalCandidates, fullNodeIds: fullCandidates,
         lexicalCandidateCount: lexicalCandidates.length,
         fullCandidateCount: fullCandidates.length,
         overlapRatio: ablationOverlap
@@ -333,7 +366,8 @@ const runEvaluationSuite = async (options = {}) => {
 
   return {
     schema: 'libra.unified_memory_evaluation_result.v1',
-    evaluationVersion: 1,
+    evaluationVersion: 2,
+    evidenceScope: 'synthetic_kernel_fixtures_not_native_owner_or_production_acceptance',
     timestamp: new Date().toISOString(),
     wallMs: Date.now() - startedAt,
     totalCases: results.length,
@@ -343,7 +377,7 @@ const runEvaluationSuite = async (options = {}) => {
     summaryMetrics: {
       averageGoldRecall: avgRecall,
       totalForbiddenLeaks: totalLeaks,
-      allDispatchEligibleAsExpected: results.every(r => r.passed)
+      allDispatchEligibleAsExpected: results.every(r => r.checks.dispatch)
     },
     results
   };

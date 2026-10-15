@@ -1,9 +1,9 @@
 # LIBRA 통합 메모리 엔진 — 다음 과제와 완료 기준
 
-- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.11
-- 현재 코드 확인 기준: `codex/libra-memory-network-20261013`, `64990aa`(N05)까지. N01-c(저장 커서 재개), N01-d(재구축 동일성), N01-e/N02(다중 표현 수락), N00(소비자 발송 권한 분리), N06-a(표준 평가 벤치마크), N05(스토리지 소유자 네임스페이스 펜스 및 수명주기 보호 GC) 구현 완료.
-- 관련: [통합 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현재 현황](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [선택적 인덱스 읽기](LIBRA_SELECTIVE_INDEX_READ_CONTRACT_20261014.md), [레거시 검색 종료](LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md), [평가 계약 v1.0](LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md), [GC 계약 v1.0](LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md)
-- 판정: **기본·유일한 통합 검색기와 활성 소비자 연결은 완료됐다. 원본 증분 검증·구축 재개·대형 행 분할에 이어, 저장 접근 커서 재개(N01-c), 전체 재구축 동일성(N01-d), 다중 표현 게이트 수락(N01-e/N02), 활성 소비자 모델 발송 권한 분리(N00), 8대 표준 평가 벤치마크(N06-a: 100% Gold Recall, 0 Leaks), 스토리지 소유자 네임스페이스 펜스 및 수명주기 보호 GC(N05)를 연결했다. 원본 증명 보장 확대(N01-a), 전체 상한 증명(N01-b), 실제 임베딩 모델 규모 계측(N06-b), 실제 RisuAI 설치 인증(N06-c)이 남는다.**
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.12
+- 현재 코드 확인 기준: `codex/libra-memory-network-20261013`, `f8fce44` 리뷰와 후속 결함 수정. 최신 재현·수정은 [리뷰 §5](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md#5-f8fce44-리뷰와-후속-수정)를 따른다.
+- 관련: [통합 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현황 §32](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [선택적 읽기](LIBRA_SELECTIVE_INDEX_READ_CONTRACT_20261014.md), [평가 계약](LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md), [GC 계약](LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md)
+- 판정: **단일 검색기·활성 소비자 연결은 구현됐다. 저장 재개와 평가 판정의 결함을 수정했으나, 선택적 표현 저장 접근(N01-e/N02), native owner의 원자적 GC(N05), 실제 품질·규모·설치 인증(N06)은 미완료다. 원본 증명 확대·전체 자원 상한(N01-a/b)도 남는다.**
 
 이 문서는 최신 잔여 과제의 기준이다. 이전 버전의 증분별 설명을 현재 상태로 다시 정리했다. 구현 이력과 당시 검증은 [현황 §12–31](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md) 및 각 계약에 보존한다. N01-C1/C2의 현재 범위는 [자원 예산 계약](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다. 이전 리뷰·패치 근거는 [2026-10-15 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)와 현황 §23을 따른다. 과제 정의 자체를 구현·검증 완료로 읽지 않는다.
 
@@ -11,45 +11,28 @@
 
 ### 0.1 현재 위치
 
-**핵심 통합 기능과 주요 안전·영속·GC·평가 계약 구현이 완료됐으며, 전체 완성까지는 원본 증명 확대 및 전체 상한 증명(N01-a/b)과 실제 호스트·모델 실사용 검증(N06-b/c)이 남아 있다.** 활성 소비자의 통합 연결과 레거시 serving 대체는 완료된 범위로 유지한다. 지금의 판정은 통합 검색기가 핵심 영속·수명주기·품질 기준을 충족하는 단계이며, 지원 규모와 실제 설치 환경에서 안정성·품질까지 입증한 완성판 판정(N06-b/c)은 아직 남아 있다.
+정본·Micro·State·로어가 하나의 graph/index·scorer/frontier·Memory Lane·Compiler를 사용하며 Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기에 연결된다. 레거시 serving 대체와 N00의 활성 소비자/역사 포맷 권한 분리는 유지한다.
 
-이미 구현한 범위는 다음과 같다.
-
-- 정본·Micro·State·로어가 하나의 graph/index·scorer/frontier·Memory Lane·Compiler를 사용하는 검색 경로.
-- 정본 global 저장 벡터와 실제 질의 임베딩의 동일 검색 경로 참여, 다중 representation admission 순서 엄수 및 selective semantic lane access 격리 (`N01-e`, `N02`).
-- 공통 Cache Manager·영속 인덱스의 선택적 page 읽기, 원본 구간 재사용·구축 체크포인트·대형 행 분할, 저장 접근 커서 및 분할 행 재조립 재개 (`N01-c`), 증분 vs 전체 재구축 동일성 및 CAS 게시 (`N01-d`).
-- LIBRA Classic·GUI 및 GRADIA 셰도우/AIDE·인풋 작성기의 통합 읽기와 최종 private 검증, 활성 소비자 vs 역사 호환 포매터 발송 권한 분리 (`N00`).
-- 스토리지 소유자 네임스페이스 펜스, 진행 중 빌드(activeBuilds) 및 활성 리더 리스(activeReaders) 보호, 만료 회수, 다계층 도달성 GC (`N05`).
-- 8대 품질·안전 표준 평가 세트(`UME-01` ~ `UME-08`) 및 합격 기준(100% Gold Recall, 0 Forbidden Leaks) 검증 (`N06-a`).
-- 레거시 serving 제거와 설정 이관, N01-C1/C2의 원본 I/O·JSON·명시적 보유 예약 및 소비자별 해제.
-
-이 목록의 구현·등록 호스트 검증과 실제 RisuAI 설치 인증은 구분한다. 네임스페이스 펜스가 없는 소유자는 여전히 GC 실제 삭제가 차단된다.
+`f8fce44`의 여러 완료 표기는 실제 연결보다 넓었다. `6689fe4`는 표현 verdict 우선 검사를 추가했지만 native vector 전체 hydration을 제거하지 않았다. `64990aa`는 주입 owner의 GC 계약 테스트이며 native SDK/server fence 구현은 없다. 8개 평가 fixture는 실제 owner·provider·설치 품질 인증을 대체하지 않는다.
 
 ### 0.2 남은 과제 묶음
 
-| 묶음 | 관련 ID | 상태 및 남은 결과물 | 상대 작업량 | 완료를 판단할 근거 |
+| 묶음 | ID·상태 | 남은 결과물 | 상대 작업량 | 종료 근거 |
 | --- | --- | --- | --- | --- |
-| 1. 저장 읽기 재개 | N01-c | **구현 완료 (`ac1e2a1`)** — generation 결속 진행 cursor(`resumeCursors`) 및 대형 행 분할 재조립 재개 | - | 중단·재개 결과가 한 번에 읽은 점수·witness·근거와 100% 일치하며 오염/세대 불일치 시 `PAGE_CORRUPT`/`STALE` 방어 확인 |
-| 2. 대규모 운용 보강 | N01-a/b/d | N01-d 완료 (`c689559`), 원본 변경 증명 확대(N01-a), 전체 자원 비용과 지원 한도 검증(N01-b) 남음 | 중간~큼 | 저장 모드별 실제 I/O와 보유/peak 비용, 변경·삭제·ABA·복원·동시 게시/취소 대조. full rebuild 동일성 및 CAS 게시 거부는 확인 완료 |
-| 3. 의미 검색과 표현 접근 확장 | N01-e·N02 | **구현 완료 (`6689fe4`)** — 다중 패밀리 표현 게이트 순서 규범화, 의도적 vectorless 지원 및 선택적 시맨틱 레인 접근 격리 | - | 지원 표현 및 의도적 vectorless가 동일한 어휘·엔티티·시간·그래프 단일 프론티어에서 검증 통과, 불필요한 전체 표현 hydration 차단 |
-| 4. 안전한 GC | N05 | **구현 완료 (`64990aa`)** — 스토리지 소유자 네임스페이스 펜스, 진행 중 빌드(activeBuilds) 및 활성 리더 리스/핀(activeReaders) 보호, 다계층 도달성 GC | - | 펜스 부재 시 원자적 차단(`blocked_atomic_gc_unavailable`), 진행 중 작업 페이지 및 활성 리스 보호, 리스 만료 후 안전 회수, 다계층 코퍼스/체크포인트 보존 (7/7 PASS) |
-| 5. 품질·실사용 검증 | N06-a/b/c, N03/N04의 잔여 검증 | N06-a 완료 (`a9540ea`), 실제 임베딩 모델(N06-b) 및 RisuAI 설치 인증(N06-c) 남음 | 큼 | 8대 표준 평가 세트 100% Gold Recall·0 Leaks 달성. 고정 구현 SHA·설정·workload와 raw 측정으로 지원 profile별 합격/미지원 범위 재현 필요 |
+| 저장 재개 | N01-c · 결함 수정 | 공개 API 간 일회용·기한부 재개 검증을 유지. runtime 재시작 이후 영속 재개는 지원하지 않음 | 유지 검증 | 동일 근거, query/view/access 결속, 만료·취소·실패·정원 초과 시 예약 해제 |
+| 원본·대규모 운용 | N01-a/b/d · 부분 구현 | 원본 변경 증명 확대, 전체 자원 상한·선택적 재컴파일 및 지원 규모 검증. N01-d의 구축 동등성/CAS 테스트는 진척으로 인정 | 중간~큼 | 실제 모드별 I/O·retained/peak, 삭제·ABA·복원·경합·취소 대조 |
+| 의미 표현 접근 | N01-e/N02 · 미완료 | 지원 표현을 실제 durable page/공통 cache/Lane으로 선택해 읽기. 추가 producer는 명시적 지원 범위로 결정 | 큼 | 불필요한 vector hydration 전후 실제 읽기·예약 비교, 호환성/현재성 검증 |
+| 안전한 GC | N05 · native 삭제 차단 | SDK/server·저장 owner의 원자적 namespace fence와 build/reader lease, 실제 schema의 corpus/representation 회수 | 큼 | 독립 publisher·reader·재시작·만료/갱신·늦은 삭제 경합을 실제 owner에서 검증 |
+| 품질·실사용 | N06-a/b/c | 합성 평가의 품질 범위 확장, 실제 provider·호스트·규모·소비자 전달의 인증 | 큼 | 고정 SHA/profile·사전 gate·raw 측정·반증 대조 |
 
-N00의 호환 포맷·권한·문서 마감 점검은 완료되었다 (`0f65798`). N07은 전환을 유지하는 회귀 검사로 관리한다. N03/N04의 남은 설치 검증은 묶음 5에 포함하므로 미구현 소비자 연결로 중복 계상하지 않는다.
+N03/N04는 연결 구현 완료이며 실제 설치 검증을 마지막 묶음에 포함한다. Micro·State·로어 모두에 벡터를 의무화하지 않는다. 의도적 vectorless도 같은 검색기에서 유효하다. 완료율·남은 일수는 현재 근거로 산정하지 않는다.
 
-상대 작업량은 현재 구조와 의존성에 따른 정성적 판단이다. `중간`은 기존 경로의 확장과 경계 검증, `큼`은 여러 모듈·저장 owner 프로토콜 또는 실제 환경의 증거 확보가 필요한 범위를 뜻한다.
+### 0.3 다음 순서
 
-완료율 백분율·남은 커밋 수·달력 일수는 현재 증거로 산정하지 않는다. 서버/호스트가 제공해야 할 기능, 실제 장비·모델·규모의 합격 기준과 측정 결과에 따라 달라진다.
-
-### 0.3 구현 진행 경과와 남은 순서
-
-1. **저장 읽기 재개(N01-c), 재구축 동일성(N01-d), 표현 수락 게이트(N01-e/N02), 소비자 권한 격리(N00) 완료.**
-2. **안전한 GC와 수명주기 보호(N05) 완료:** 네임스페이스 펜스, 활성 빌드/리더 리스 보호, 만료 회수, 다계층 도달성 보존을 구현 및 검증 완료했다 (`64990aa`).
-3. **표준 평가 벤치마크 및 고정 합격 기준(N06-a) 완료:** 8대 표준 시나리오 100% Gold Recall, 0 Leaks 확정 완료했다 (`a9540ea`).
-4. **남은 구현:** N01-a 원본 증명 확대, N01-b 전체 자원 상한 증명.
-5. **남은 검증:** N06-b/c의 최종 합격은 해당 구현이 고정된 SHA에서 실제 host/provider 접근과 장비·corpus·동시성 profile로 판정한다. Classic·GUI·GRADIA 셰도우/AIDE·작성기의 실제 전달과 실패/취소 경계를 포함한다.
-
-N06-a의 평가 세트·합격 기준 정의와 N00 점검은 첫 단계부터 준비할 수 있다. 실제 host/provider 접근과 장비·corpus·동시성 profile도 먼저 확보한다. GC의 owner 기능 부재와 실제 설치 인증의 환경 부재는 해당 항목의 미완료/blocked 사유로 기록한다.
+1. N01-e/N02의 native 표현 선택 읽기를 우선 구현하고, 읽기·보유 비용을 실제 경로에서 측정한다.
+2. N01-a/b의 증명·전체 상한과 선택적 재컴파일을 지원 profile별로 보강한다.
+3. N05는 owner 프로토콜을 먼저 구현·검증한 뒤 삭제를 연결한다. 현재는 `blocked_atomic_gc_unavailable`을 유지한다.
+4. N06-a는 단순 fixture PASS에서 실제 품질·반증 사례로 확대하고, N06-b/c는 고정 구현에서 실제 provider·설치·규모를 측정한다.
 
 ### 0.4 전체 완료 판정
 
@@ -62,7 +45,7 @@ N06-a의 평가 세트·합격 기준 정의와 N00 점검은 첫 단계부터 �
 | 대상 | 현재 구현·검증 범위 | 남은 범위 |
 | --- | --- | --- |
 | 단일 검색 | 네 자료가 한 graph/index·scorer/frontier·Memory Lane·Compiler를 사용. 정본 저장 벡터와 질의 임베딩도 같은 평가에 참여 | N01의 접근 비용, N02의 표현 확장, N06의 품질·규모 검증 |
-| 영속 인덱스 | 전체 owner cursor 구간 구축·저장·재시작 후 재사용. 신규 manifest는 필요한 저장 페이지만 읽음 | 원본 증명 범위 확대, 저장 access cursor·재조립 재개·전체 자원 상한 검증 |
+| 영속 인덱스 | 전체 owner cursor 구간 구축·저장·재시작 후 재사용. 신규 manifest는 필요한 저장 페이지만 읽음 | 원본 증명 범위 확대·전체 자원 상한·지원 규모 검증 |
 | LIBRA Classic·GUI | 기본 통합 검색과 Classic 최종 전달 연결. GUI 열람 질의는 provider 호출 없이 같은 lexical/graph 경로 사용 | 실제 설치 검증, coverage·실제 채택·비용 표시 점검 |
 | GRADIA 셰도우·AIDE | 기본 LIBRA source는 unified_engine. private owner 영수증과 readonly 권한을 거쳐 실제 단계·최종 전달 연결 | 지원 profile에서 실제 설치·성능 인증 |
 | GRADIA 인풋 작성기 | 별도 미전송 제안 세션·작성 버튼·생성/번역·선택/편집·복사/전송 검증 연결 | 지원 profile에서 실제 설치·성능 인증 |
@@ -78,15 +61,14 @@ GRADIA는 현재 **server_only·readonly 승인·동일 native scope·수락한 
 | ID | 우선순위·현재 상태 | 남은 과제 | 기존 항목 | 선행 조건 |
 | --- | --- | --- | --- | --- |
 | N00 | 구현 완료 (`0f65798`) | 활성 소비자와 역사 packet 포맷의 발송 권한 분리 완료 | M09/M15 | 현재 퇴역 계약 유지 |
-| N01 | P1 · 주요 구현 완료 | 원본 증명 범위 확대(N01-a), 총 자원 상한 증명(N01-b) (N01-c/d/e 완료) | M02–M05 | 원본별 변경 증명·coverage 계약 |
-| N02 | 구현 완료 (`6689fe4`) | 다중 family representation admission 및 선택적 시맨틱 레인 접근 완료 | M06–M08 | 표현/producer 계약 완료 |
-| N03 | 연결 완료 · N06 검증 남음 | 셰도우·AIDE의 실제 설치·지원 profile 검증 | M09/M10 | 현재 reader/영수증 계약 유지 |
-| N04 | 연결 완료 · N06 검증 남음 | 인풋 작성기의 실제 설치·지원 profile 검증 | M09/M10/M15 | 별도 proposal 세션 유지 |
-| N05 | 구현 완료 (`64990aa`) | 네임스페이스 펜스, 활성 빌드/리더 리스 보호, 만료 회수, 다계층 도달성 GC 완료 | M11 | 스토리지 계약 [GC 계약](LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md) 준수 |
-| N06 | N06-a 완료 · N06-b/c 남음 | 8대 평가 세트 완료(N06-a), 실제 provider·설치 호스트·규모 인증(N06-b/c) 남음 | M12/M14 | 평가 계약 [평가 계약](LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md) 고정, 실제 환경 접근 필요 |
-| N07 | 전환·실행 제거 완료 | 단일 엔진 계약과 설정/백업 이관의 회귀 방지 | M13/M15 | 회귀 방지 유지 |
+| N01 | P1 · 부분 구현 | 저장 재개 결함 수정, 원본 증명·전체 상한·선택적 표현 접근 남음 | M02–M05 | 원본/예산 계약 |
+| N02 | P1 · 부분 구현 | verdict 게이트는 연결, native 선택적 표현 저장 접근·지원 producer 정책 남음 | M06–M08 | N01-e |
+| N03 | 연결 완료 | 셰도우·AIDE 실제 설치/지원 profile 인증 | M09/M10 | N06 |
+| N04 | 연결 완료 | 별도 인풋 작성기 실제 설치/지원 profile 인증 | M09/M10/M15 | N06 |
+| N05 | P1 · native 삭제 차단 | owner fence/lease와 실제 다계층 회수 미구현 | M11 | SDK/server owner 프로토콜 |
+| N06 | 부분 구현 | 합성 평가 runner·검사 수정, 실제 품질·규모·설치 인증 남음 | M12/M14 | 고정 profile·raw 측정 |
+| N07 | 전환 완료 | 단일 검색·설정 이관 회귀 유지 | M13/M15 | 기존 퇴역 계약 |
 
-N01-b의 원본/저장 읽기·JSON admission(N01-C1) 및 자원 예약(N01-C2)에 이어, **N01-c(저장 접근 커서 및 분할 행 재조립 재개)**, **N01-d(증분 구축 vs 전체 재구축 동일성, 취소 재개, CAS 충돌 거부)**, **N01-e / N02(다중 representation admission 게이트 순서 수정 및 selective semantic lane access 격리)**, **N00(활성 제품 소비자 vs 역사 호환 포맷의 발송 권한 분리)**, **N06-a(8대 표준 평가 세트 100% Gold Recall·0 Leaks 검증)**, **N05(스토리지 소유자 네임스페이스 펜스 및 수명주기 보호 GC)** 구현과 검증을 완료했다.
 
 ## 3. N00 — 활성 소비자와 호환 포맷 (구현 완료)
 
@@ -121,39 +103,36 @@ N01-b의 원본/저장 읽기·JSON admission(N01-C1) 및 자원 예약(N01-C2)�
 
 **완료 기준:** cold/warm/축출/재시작·동시 요청·pending I/O 취소에서 budget 종료가 partial/reject·미독 범위로 드러나고 pin/staging이 해제된다. 미측정은 `null`과 사유로 표시한다. 지원 profile의 전체 상한을 증명하기 전 `byteBounded:false`를 유지한다.
 
-### N01-c · 구현 완료 (2026-10-15, `ac1e2a1`) · 큰 단일 행과 저장 접근의 재개
+### N01-c · 저장 접근과 분할 재조립 재개 — 결함 수정
 
-N01-B의 큰 단일 행 청크 분할 및 digest·연속성 확인에 이어, 동일 generation에 결속한 저장 진행 cursor(`resumeCursors`)와 분할 저장된 대형 행(`libra.graph_corpus_row_chunk.v1`) 재조립 재개를 구현했다.
+`ac1e2a1`의 커서는 같은 `corpus.read` 인스턴스에서만 재개됐고, storage budget stop에서 요청 scope가 남았다. 후속 수정은 runtime 공통 private staging에 완료 행/분할 조각만 보존한다. 공개 DTO에는 원문이나 권한을 넣지 않는다.
 
-- **커서 무결성:** 다른 세대나 변조된 digest 주입 시 `LIBRA_GRAPH_LANE_CURSOR_STALE`로 즉각 거부한다.
-- **분할 행 연속성:** 청크 누락, 순서 뒤바뀜, 오염 발생 시 `PAGE_CORRUPT`로 방어하며, 불완전 중간 상태를 완료로 위조하지 않는다.
-- **동일성 검증:** 한 번에 읽은 결과와 작은 예산으로 분할 재개하여 읽은 결과의 후보 점수, witness, 최종 근거가 100% 동일함을 증명했다 (`libra_memory_graph_chunk_resume_test.cjs`).
+- root·partition·generation·index·QueryFrame·logical access·offset/pageBytes에 결속한다. 일회용이며 runtime 재시작·만료·취소 이후 재사용은 거부한다.
+- 기본 수명 60초, 최대 16건, 건당 추정 16MiB·전체 64MiB이며 공통 resource pool에도 예약한다. 정원 초과는 명시적 거부다.
+- 공개 API를 두 번 호출해 새 reader로 재개하고, 세 저장 모드에서 전체 읽기와 같은 채택 근거 및 완료/취소 후 예약 0을 확인한다.
+- 이는 저장 접근의 진행 재개다. 전체 검색 frontier·이전 결과·private 발송 권한을 보존하는 영속 세션은 아니다. 작은 예산에서 매번 전체 검색 완료를 보장하지 않는다.
+
+검증: `libra_memory_graph_selective_index_test.cjs`, `libra_memory_graph_review_f8_runtime_test.cjs`.
 
 ### N01-d · 구현 완료 (2026-10-15, `c689559`) · 증분 구축·취소 후 재개·게시
 
 증분 체크포인트 기반 구축과 전체 재구축(`full rebuild`)의 동등성을 확립하고, 취소 및 CAS(Compare-And-Swap) 충돌 복구를 구현했다.
 
-- **전체 재구축 동등성:** 기존 캐시 없이 처음부터 전체 그래프를 재구축한 결과와 증분 체크포인트로 재개한 결과의 인덱스 다이제스트, 디렉터리, 4채널 포스팅이 정확히 일치함을 확인했다 (`libra_memory_graph_rebuild_equivalence_test.cjs`).
+- **전체 재구축 동등성:** 기존 캐시 없이 처음부터 전체 그래프를 재구축한 결과와 증분 체크포인트로 재개한 결과의 인덱스 다이제스트, 디렉터리, 4채널 포스팅이 정확히 일치함을 확인했다 (`libra_memory_graph_corpus_test.cjs`).
 - **원자적 CAS 게시:** 다른 퍼블리셔가 루트를 먼저 갱신한 경우 CAS 충돌(`root_conflict`)을 감지하여 덮어쓰지 않고 안전하게 거부한다.
 - **취소 및 재개:** 빌드 중 취소되더라도 이전 유효 루트가 손상되지 않으며, 다음 빌드 시 유효한 최근 체크포인트에서 안정적으로 재개한다.
 
-### N01-e · 구현 완료 (2026-10-15, `6689fe4`) · semantic 접근·관찰의 나머지 연결
+### N01-e · P1 · semantic 접근·관찰의 나머지 연결
 
-다중 패밀리 표현 수락 순서를 규범화하고, 선택적 시맨틱 레인 접근 격리를 구현했다.
+`6689fe4`는 `representationDecisions`를 주입 벡터보다 먼저 검사하도록 고쳤다. native bridge는 여전히 canonicalRows를 순회하며 벡터를 hydrate하고, semantic Lane은 directory를 읽는다. 이 게이트를 선택적 vector 저장 읽기의 완료로 취급하지 않는다.
 
-- **게이트 순서 엄수:** `query.sealQueryFrame` 및 `resolveSemanticFeature`에서 패밀리 자체의 표현 수락 계약(`representationDecisions`)을 외부 주입 벡터보다 먼저 검사하여, 권한 없는 임의 벡터 주입으로 시맨틱 점수를 획득하는 우회를 차단했다.
-- **선택적 레인 접근:** 선택되지 않은 표현의 무조건적 전체 hydration을 방지하고, 벡터가 없는 패밀리(의도적 vectorless)도 동일한 어휘·엔티티·시간·그래프 단일 프론티어에 안전하게 참여하도록 보장했다.
+**남은 구현:** 실제 표현 page/ref를 index·공통 cache·Lane에 연결하고, 공간/본문/profile/view/reset 검증과 원본 source access를 유지한다. 선택하지 않은 표현의 실제 I/O·보유 예약이 발생하지 않는 것을 cold/warm/축출·장애·재시작에서 측정한다.
 
-**N01 전체 완료 조건:** 전 구간 자료의 도달과 현재 구현된 선택적 index 읽기를 유지하면서 남은 비용(N01-b)과 변경 증명 경계(N01-a)를 닫는다. `nativeReprojectionRequired`, `inventoryComplete`, `ownerAtomicity`, `byteBounded`는 각각의 증거 범위로만 변경한다. 한 항목의 개선으로 나머지 보장을 참으로 바꾸지 않는다.
+**N01 전체 완료 조건:** 전 구간 도달·현재성·선택적 읽기를 유지하며 N01-a/b/e의 증거를 갖춘다. `nativeReprojectionRequired`, `inventoryComplete`, `ownerAtomicity`, `byteBounded`는 각각의 실제 보장 범위로만 변경한다.
 
-## 5. N02 — 자료별 semantic 표현 — 구현 완료 (2026-10-15, `6689fe4`)
+## 5. N02 — 자료별 semantic 표현 — 부분 구현
 
-다중 family representation admission 게이트 순서 및 selective semantic lane access 격리를 구현했다.
-
-- 정본(Canonical) 외 Micro·State·Lore의 다중 family representation 수락 순서를 정립했다 (`representationDecisions` 우선 검사).
-- 각 family는 명시적 표현 지원 또는 의도적 vectorless로 취급되며, 벡터가 없는 패밀리도 동일한 어휘·엔티티·시간·그래프 단일 프론티어에 안전하게 참여한다.
-- 임의 벡터 주입을 통한 점수 우회를 차단하고, 선택되지 않은 표현의 불필요한 전체 hydration을 방지했다.
-- 회귀 검증: `libra_memory_graph_semantic_runtime_test.cjs`, `libra_memory_graph_producer_policy_test.cjs`.
+정본 global 저장 벡터와 실제 질의 임베딩은 같은 scorer/frontier에 참여한다. 다중 family verdict 우선 검사도 연결됐다. 추가 표현 producer와 실제 선택적 저장 접근은 지원 범위를 정해 구현해야 한다. Micro·State·로어에 벡터를 강제하지 않으며 vectorless 참여는 유지한다. 주입 representation fixture의 PASS를 native producer·선택 읽기 구현 증거로 바꾸지 않는다.
 
 ## 6. N03 — GRADIA 셰도우·AIDE 연결
 
@@ -171,27 +150,23 @@ N01-B의 큰 단일 행 청크 분할 및 digest·연속성 확인에 이어, �
 
 계약·지원 제한: [인풋 작성기 읽기](LIBRA_GRADIA_INPUT_WRITER_READ_CONTRACT_20261014.md).
 
-## 8. N05 — GC와 수명주기 — 완료 (2026-10-15)
+## 8. N05 — GC와 수명주기 — native 삭제 차단
 
-스토리지 소유자의 완전한 영속 인벤토리(Durable Inventory), 네임스페이스 펜스(Namespace Fence), 진행 중 빌드(In-progress Build) 및 활성 리더 리스/핀(Reader Lease/Pin) 보호, 다계층 도달성(Window Graph + Corpus + Checkpoint + Representation) 및 수명주기 만료 정책을 구현했다.
-- **코어 구현:** [`PROGRAM/tools/libra_memory_graph_store.cjs`](../tools/libra_memory_graph_store.cjs) (`collectGarbage`, `inspect.gcLifecycleProtection`)
-- **내장 동기화:** [`PROGRAM/plugins/LIBRA.js`](../plugins/LIBRA.js) (store 커널 동기화 완료)
-- **수명주기 계약 테스트:** [`PROGRAM/tests/libra_memory_graph_store_lifecycle_gc_test.cjs`](../tests/libra_memory_graph_store_lifecycle_gc_test.cjs) (7/7 PASS: 펜스 부재 차단, 진행 중 빌드 작업 페이지 보호, 활성 리더 리스 보호, 리스 만료 후 안전 회수, 다계층 코퍼스/체크포인트 보존, 동시성 경합 중단)
-- **명세 및 계약:** [`PROGRAM/docs/LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md`](LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md)
+`64990aa`의 generic store는 주입 owner가 제공한 fence/build/reader 목록을 처리한다. 전용 7개 mock 테스트는 이 조건부 계약의 증거다. 실제 native owner는 여전히 `fence:null`이며 조건부 삭제 adapter가 없다. SDK/server 프로토콜을 구현하지 않았으므로 N05는 미완료다.
 
-네임스페이스 펜스 capability가 없는 소유자는 엄격히 `blocked_atomic_gc_unavailable`과 0건 삭제를 유지하며, 드라이 런은 삭제 트랜스포트를 전혀 호출하지 않는다. 유효한 펜스를 갖춘 소유자는 루트 불변성과 활성 리스를 원자적으로 검증한 뒤 조건부 삭제(`deleteConditional`)를 수행한다.
+코퍼스 namespace는 전부 보존하며 checkpoint·projection 본문을 작은 store decode 한도로 읽지 않는다. dry-run은 관찰만 수행하고 실제 삭제는 `blocked_atomic_gc_unavailable`, `deletedKeys:[]`다. 표현 자산도 실제 회수하지 않는다.
+
+**다음 구현/완료 기준:** 완전한 durable inventory와 독립 publisher/reader를 포함하는 원자적 namespace fence, build 작업 키·reader lease의 durable 발급/갱신/해제/만료, 실제 corpus `refs/sourceProofs/windowSlices` schema의 도달성·조건부 회수를 구현한다. 두 VM·재시작·새 root 게시·ABA·늦은 응답 경합 검증 뒤에만 native 삭제를 활성화한다. [GC 계약](LIBRA_STORAGE_LIFECYCLE_GC_CONTRACT_20261015.md)을 따른다.
 
 ## 9. N06 — 품질·비용·실제 호스트
 
-### N06-a · P1 · 평가 세트와 합격 기준 — 완료 (2026-10-15)
+### N06-a · 합성 평가 기반 연결, 실제 품질 인증은 미완료
 
-네 자료 연결 질문, 첫 window 밖 기억, 고유명사/동의어/다국어, 정정·충돌·unknown, 현재/과거·세계선·viewer, mandatory lore, vectorless·provider 실패를 포함하는 8대 표준 평가 벤치마크 셋을 정의하고 사전 합격 기준을 고정했다.
-- **표준 픽스처:** [`PROGRAM/tests/fixtures/libra_unified_memory_eval_cases_v1.json`](../tests/fixtures/libra_unified_memory_eval_cases_v1.json) (`libra.unified_memory_eval_cases.v1`, `UME-01` ~ `UME-08`)
-- **평가 러너 도구:** [`PROGRAM/tools/evaluate_libra_unified_memory.cjs`](../tools/evaluate_libra_unified_memory.cjs) (통합 요청 종단 실행, 8/8 통과, 어휘-전체 신호 ablation 중복비율 산출)
-- **합격 검증 테스트:** [`PROGRAM/tests/libra_unified_memory_evaluation_test.cjs`](../tests/libra_unified_memory_evaluation_test.cjs) (5/5 PASS: 8대 벤치마크 100% Gold Recall, 0 Forbidden Leak, 음성 대조 유출·누락 감지)
-- **명세 및 계약:** [`PROGRAM/docs/LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md`](LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md)
+8개 fixture와 runner는 존재한다. 후속 수정은 기대 outcome·필수 family·drop·흡수·각 예산을 모두 검사하고 미지원 criterion을 거부한다. 어휘 ablation은 같은 엔진에서 semantic/entity/predicate seed·관계 확장을 끄며 같은 viewer/시점·consumer 정책의 최종 채택 묶음을 비교한다. graph-only/vector-only 반증도 추가했다.
 
-과거 엔진 비교는 보존된 동일 snapshot/baseline artifact 또는 격리된 역사 checkout으로 수행하며, 평가를 위해 현재 제품의 레거시 serving을 되살리지 않는다. 같은 자료·질의로 semantic/lexical/관계 신호 ablation을 측정하되, N06-b 대규모 모델 보정 전까지 `calibration:unmeasured`는 규범대로 유지한다.
+현재 8/8 PASS는 **합성 커널 fixture**의 결과다. UME-02는 owner cursor의 실제 창 밖 읽기를 검증하지 않고, UME-04는 명시적 제외 입력을 포함하며, UME-07은 외부 provider 장애를 호출하지 않는다. UME-05에는 실제 future/다른 세계선/private 반례를 넣었다. native provider 장애·실제 소비자 연결은 별도 회귀로 확인하며 합성 결과를 설치 인증으로 확대하지 않는다.
+
+[평가 계약](LIBRA_UNIFIED_MEMORY_EVALUATION_CONTRACT_20261015.md)에 검사·미측정 범위를 고정한다. 품질 사례 확대, 실제 corpus relevance 정답·signal별 대조·과거 baseline artifact 비교는 남는다. `calibration:unmeasured`를 유지한다.
 
 ### N06-b · P1 · 실제 embedding provider와 규모 측정
 
@@ -211,7 +186,7 @@ Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기의 실제 발송/복사/�
 
 ## 11. 실행 순서·검증·종료 기록
 
-권장 구현 순서는 **N01-c → N01-e**다. N01-b의 전체 상한 증명, N01-a의 증명 확대와 N01-d의 선택적 재컴파일은 owner 기능·계측 근거에 맞춰 진행한다. N06-a와 N00 점검은 그 전에 시작할 수 있고, N02는 N01-e와 맞추어 진행한다. N05는 owner 기능을 먼저 구현·검증하고 삭제를 연결한다. N06-b/c의 최종 인증은 해당 변경이 고정된 뒤 수행한다.
+권장 다음 구현은 **N01-e/N02의 실제 선택적 표현 접근**이다. N01-b의 전체 상한 증명, N01-a의 증명 확대와 N01-d의 선택적 재컴파일은 owner 기능·계측 근거에 맞춰 진행한다. N06-a 품질 사례 보강과 N00 회귀를 함께 유지하고, N02는 N01-e와 맞추어 진행한다. N05는 owner 기능을 먼저 구현·검증하고 삭제를 연결한다. N06-b/c의 최종 인증은 해당 변경이 고정된 뒤 수행한다.
 
 기존 회귀 검사의 시작점은 다음과 같다. 아래 명령의 존재는 미래 증분의 완료 증거가 아니며, 실제 실행 결과와 재현 범위는 현황 §23–25 및 리뷰 문서에 기록한다. 후속 구현도 같은 방식으로 근거를 추가한다.
 

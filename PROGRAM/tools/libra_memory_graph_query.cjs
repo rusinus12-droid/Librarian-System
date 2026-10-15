@@ -88,6 +88,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     queryEmbedding = null,
     documentRepresentations = {},
     representationDecisions = {},
+    ablationMode = 'full',
     lambda = 0.82,
     epsilon = 1e-6,
     maxFrontierSteps = 256,
@@ -97,6 +98,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       || typeof worldlineId !== 'string' || !worldlineId.trim() || typeof viewerId !== 'string' || !viewerId.trim()) {
       fail('frame_scope_invalid');
     }
+    if (!['full', 'lexical_only'].includes(ablationMode)) fail('ablation_mode_invalid');
     if (asOfTurn !== null && (!Number.isSafeInteger(asOfTurn) || asOfTurn < 0)) fail('as_of_turn_invalid');
     if (typeof lambda !== 'number' || !(lambda > 0 && lambda < 1)) fail('lambda_invalid');
     if (typeof epsilon !== 'number' || !(epsilon > 0 && epsilon < 0.1)) fail('epsilon_invalid');
@@ -140,6 +142,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       asOfTurn,
       excludedNodeIds: excluded,
       semanticSpace: normalizedSpace,
+      ablationMode,
       hasQueryVectors: Object.keys(queryVectors || {}).length > 0 || Boolean(normalizedEmbedding),
       lambda,
       epsilon,
@@ -252,11 +255,11 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     }
 
     const resolvedEntityIds = new Set(
-      (queryFrame.entityIds || []).map(id => entityNodeIdByLogicalId.get(id) || id)
+      (queryFrame.ablationMode === 'lexical_only' ? [] : queryFrame.entityIds || []).map(id => entityNodeIdByLogicalId.get(id) || id)
     );
     const ambiguousAliases = [];
     const queryLower = String(queryFrame.queryText || '').normalize('NFKC').toLowerCase();
-    for (const [alias, entNodeIds] of aliasToEntities.entries()) {
+    for (const [alias, entNodeIds] of queryFrame.ablationMode === 'lexical_only' ? [] : aliasToEntities.entries()) {
       const matchedInQuery = queryFrame.tokens.includes(alias) || (alias.length >= 2 && queryLower.includes(alias));
       if (!matchedInQuery) continue;
       const uniqueIds = [...new Set(entNodeIds)].sort((a, b) => a.localeCompare(b, 'en'));
@@ -364,6 +367,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
 
   // M06: Evaluate semantic representation compatibility & similarity without background re-embedding
   const resolveSemanticFeature = (node, queryFrame) => {
+    if (queryFrame.ablationMode === 'lexical_only') return { score: undefined, status: 'disabled_by_ablation', reason: null };
     // The plan is consulted BEFORE any injected representation: an injected vector cannot buy a
     // semantic score that the family's own representation contract refused.
     const decision = queryFrame.representationDecisions?.[node.id];
@@ -404,8 +408,8 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     return { score: undefined, status: 'unavailable', reason: null };
   };
 
-  // Ranking coefficients for the single frontier. DECLARED, NOT CALIBRATED: no ablation or
-  // acceptance set exists yet, so these numbers are not quality evidence (M14 / D2 gate). The
+  // Ranking coefficients for the single frontier. DECLARED, NOT CALIBRATED: synthetic
+  // ablation fixtures do not calibrate weights or certify product quality (M14 / D2 gate). The
   // provenance marker is asserted by tests/libra_memory_engine_mode_test.cjs.
   const MEMORY_ENGINE_SCORE_WEIGHTS = Object.freeze({
     calibration: 'unmeasured',
@@ -423,10 +427,10 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
 
   const scoreCandidate = (unit, features = {}, queryFrame) => {
     const lexicalScore = clamp01(features.lexicalScore || 0);
-    const hasSemantic = typeof features.semanticScore === 'number' && Number.isFinite(features.semanticScore);
+    const hasSemantic = queryFrame?.ablationMode !== 'lexical_only' && typeof features.semanticScore === 'number' && Number.isFinite(features.semanticScore);
     const semanticScore = hasSemantic ? clamp01(features.semanticScore) : 0;
-    const entitySlotScore = clamp01(features.entitySlotScore || 0);
-    const predicateScore = clamp01(features.predicateScore || 0);
+    const entitySlotScore = queryFrame?.ablationMode === 'lexical_only' ? 0 : clamp01(features.entitySlotScore || 0);
+    const predicateScore = queryFrame?.ablationMode === 'lexical_only' ? 0 : clamp01(features.predicateScore || 0);
 
     const roleWeight = MEMORY_ENGINE_SCORE_WEIGHTS.role[unit?.semanticRole] ?? MEMORY_ENGINE_SCORE_WEIGHTS.roleDefault;
 
@@ -489,7 +493,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       isEdgeEligible
     } = view;
 
-    const laneSession = lane.createSession(compiledIndex, { maxPages, maxBytes, pageBytes, resumeCursors, maxStoragePages, maxStorageBytes });
+    const laneSession = lane.createSession(compiledIndex, { maxPages, maxBytes, pageBytes, resumeCursors, maxStoragePages, maxStorageBytes, requestBinding: queryFrame.frameId });
 
     // Phase A (M05, M06, M07): Enqueue initial seed anchor, resolved entity, temporal, and compatible semantic accesses
     for (const token of queryFrame.tokens) {
@@ -498,7 +502,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     for (const entId of resolvedEntityIds) {
       laneSession.enqueue({ laneRole: 'query_anchor_access', table: 'postings', channel: 'entity', term: entId, priorityHint: 1.0, requesterId: `ent:${entId}` });
     }
-    for (const pred of queryFrame.predicates) {
+    for (const pred of queryFrame.ablationMode === 'lexical_only' ? [] : queryFrame.predicates) {
       laneSession.enqueue({ laneRole: 'temporal_state_access', table: 'postings', channel: 'predicate', term: pred, priorityHint: 0.9, requesterId: `pred:${pred}` });
     }
 
@@ -794,7 +798,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
         break;
       }
 
-      if (current.witness.edgeChain.length < queryFrame.maxHops && !requestedAdjacencyAnchors.has(top.nodeId)) {
+      if (queryFrame.ablationMode !== 'lexical_only' && current.witness.edgeChain.length < queryFrame.maxHops && !requestedAdjacencyAnchors.has(top.nodeId)) {
         requestedAdjacencyAnchors.add(top.nodeId);
         laneSession.enqueue({
           laneRole: 'graph_neighborhood',
@@ -816,7 +820,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       current.poppedOnce = true;
       poppedSteps++;
 
-      if (current.witness.edgeChain.length >= queryFrame.maxHops) continue;
+      if (queryFrame.ablationMode === 'lexical_only' || current.witness.edgeChain.length >= queryFrame.maxHops) continue;
 
       const adjRows = outgoingByNode.get(top.nodeId) || [];
       const deg = degreeByNode.get(top.nodeId) || 1;

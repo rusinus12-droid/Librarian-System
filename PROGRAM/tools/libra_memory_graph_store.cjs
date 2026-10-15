@@ -360,27 +360,14 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
         retainedCorpusKeys.add(corpusRootKey);
         if (cRoot.value && typeof cRoot.value.manifestKey === 'string') {
           retainedCorpusKeys.add(cRoot.value.manifestKey);
-          const cManifest = await load(owner, cRoot.value.manifestKey, 131072, part, stamp, ticket);
-          if (cManifest.value) {
-            if (typeof cManifest.value.proofKey === 'string') retainedCorpusKeys.add(cManifest.value.proofKey);
-            if (typeof cManifest.value.projectionKey === 'string') retainedCorpusKeys.add(cManifest.value.projectionKey);
-            if (Array.isArray(cManifest.value.pages)) {
-              for (const p of cManifest.value.pages) {
-                if (p?.key) retainedCorpusKeys.add(p.key);
-              }
-            }
-          }
         }
       }
 
       for (const k of allKeys) {
-        if (k.startsWith(corpusPrefix + 'checkpoint:')) {
-          retainedCorpusKeys.add(k);
-          const cp = await load(owner, k, 65536, part, stamp, ticket);
-          if (cp.value && Array.isArray(cp.value.pages)) {
-            for (const p of cp.value.pages) if (p?.key) retainedCorpusKeys.add(p.key);
-          }
-        } else if (k.startsWith(corpusPrefix)) {
+        // Corpus checkpoints contain windowSlices and may exceed this store's
+        // decode allowance. Until corpus reclamation has its own schema-aware
+        // owner fence, retain the entire namespace without decoding its bodies.
+        if (k.startsWith(corpusPrefix)) {
           retainedCorpusKeys.add(k);
         } else if (k.startsWith(repPrefix)) {
           retainedRepKeys.add(k);
@@ -530,6 +517,8 @@ module.exports = function createMemoryGraphStore({ pages, fingerprint, inventory
         retainedManifestCount: retainedManifests.size,
         retainedPageCount: retainedPages.size,
         retainedCorpusKeyCount: retainedCorpusKeys.size,
+        corpusReclamation: 'conservative_namespace_retention',
+        representationReclamation: 'unimplemented',
         protectedBuildCount,
         protectedReaderCount,
         candidateKeys: candidates,

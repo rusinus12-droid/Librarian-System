@@ -1,6 +1,6 @@
 # LIBRA 원본·JSON·보유 데이터의 자원 예산 — N01-C1/C2
 
-- 작성일: 2026-10-15 · 버전: 1.1
+- 작성일: 2026-10-15 · 버전: 1.2
 - 기준: `e542ce8` 이후 N01-C2 보유 예약·권한 수명·코퍼스 유지보수 증분
 - 판정: **owner 본문 I/O·JSON 처리와 명시적으로 계상한 graph/index/표현/private 근거의 보유 예약·해제를 연결했다. 코퍼스 build/publication·eager audit도 같은 pool을 사용한다. 전체 원본/HTTP/VM 상한은 미완료다. `byteBounded:false`를 유지한다.**
 - 관련: [전체 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현황 §25](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [남은 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
@@ -119,3 +119,11 @@ node --test PROGRAM/tests/libra_gradia_unified_pipeline_runtime_test.cjs PROGRAM
 종료는 즉시 권한을 취소하지만 실행 중인 query·검증·유지보수가 아직 값을 참조하면 보유 예약을 유지한다. 그 작업의 activity가 끝나야 최종 drain한다. 실제 pending I/O·JSON workspace 역시 실제 `finally` 전에는 반환하지 않는다. 타이머 종료를 강제 GC나 transport abort로 해석하지 않는다.
 
 검증은 retained 공유 한도·실패 latch·idempotent release·session 제한·만료/무효화 중 active 작업·겹친 validation scope를 포함한다. native 3모드의 정상·낮은 retained 예산, 공개 DTO 후 pool 0, 코퍼스 build/eager audit 실패 후 root 보존·pool 0, Classic 5개 요청의 4개 문맥 제한·축출된 context 거부·예약 해제, 실제 owner receipt의 반복 검증·동시 session 거부·release/dispose/무효화 후 pool 0을 검사한다. GRADIA의 취소 후 late query·응답 예산 실패·만료도 release callback까지 확인한다. 실제 설치 호스트의 heap/규모 인증은 별도다.
+
+## 7. 저장 접근 continuation의 별도 수명
+
+storage budget stop은 요청 scope를 항상 닫는다. 요청을 넘겨 보존할 재조립 행/조각은 corpus runtime의 private 일회용 staging에만 넣는다. 별도 ledger로 공통 pool에 예약하며 원본/권한 cache로 사용하지 않는다. 기본 수명 60초, 최대 16건, 건당 retained 추정 16MiB·전체 64MiB다. count/byte/pool 정원이 부족하면 저장하지 않고 거부한다.
+
+완료·소비·만료·취소/unload·실패 시 staging ledger를 해제한다. claim은 await 전에 일회용으로 소비하며 replay/동시 재개를 거부한다. 잘못된 다른 query/view/access cursor는 정상 lease를 소비하지 않는다. `inspectMemoryGraphStore().corpus.storageStaging`은 현재 개수·계상 byte·한도를 보고한다. partial 공개 반환 뒤 공통 pool에는 이 reachable staging만 남을 수 있으며, 성공적으로 끝난 일반 공개 질의는 기존처럼 private authority를 유지하지 않는다.
+
+회귀: `libra_memory_graph_review_f8_runtime_test.cjs`의 세 저장 모드 공개 API 재개·완료/취소 해제·결속·만료·후속 실패, `libra_memory_graph_selective_index_test.cjs`의 독립 reader 재개·정원·만료·root/재시작 거부. 추정 예약이며 물리 heap 상한 인증은 아니다.
