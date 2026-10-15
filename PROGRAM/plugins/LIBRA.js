@@ -10789,6 +10789,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       #${rootId} .scopetoggle button[aria-pressed="true"]{background:#1d2f52;color:#eef4ff;box-shadow:0 0 0 1px #5d88ff inset}
       #${rootId} .scopetoggle button small{display:block;margin-top:2px;font-weight:400;font-size:10px;color:#9eacc3}
       #${rootId} .scopetoggle button[aria-pressed="true"] small{color:#cdd9f2}
+      #${rootId} .scopetoggle button:only-child{grid-column:1/-1}
+      #${rootId} .mscx-advanced{border:1px solid #34425b;border-radius:10px;padding:0 12px} #${rootId} .mscx-advanced>summary{cursor:pointer;padding:11px 0;font-weight:700;font-size:13px} #${rootId} .mscx-advanced>summary small{font-weight:400;color:#9eacc3;margin-left:6px} #${rootId} .mscx-advanced-body{display:grid;gap:8px;padding-bottom:12px}
       #${rootId} .scopeunset{border-color:#f0b65c;background:#241d10}
       #${rootId} .modes{display:grid;gap:8px} #${rootId} label.mode{display:flex;gap:9px;align-items:flex-start;border:1px solid #34425b;border-radius:10px;padding:10px;cursor:pointer}
       #${rootId} input[type=text],#${rootId} input[type=password]{width:100%;padding:10px 11px;border-radius:9px;border:1px solid #465a79;background:#0b1321;color:#fff}
@@ -10804,6 +10806,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       #${rootId} :is(.muted,span,small){color:#6f5a44!important;-webkit-text-fill-color:#6f5a44!important}
       #${rootId} :is(.scope,.status,.result){background:#fffaf2;border-color:#cbb89d;color:#4d3929;min-width:0;overflow-wrap:anywhere}
       #${rootId} label.mode{background:#f5ebdc;border-color:#cbb89d;color:#392b20;min-width:0}
+      #${rootId} .scopetoggle{background:#efe2cd;border-color:#cbb89d}
+      #${rootId} .scopetoggle button{background:transparent;border:0;color:#6f5a44;-webkit-text-fill-color:#6f5a44}
+      #${rootId} .scopetoggle button[aria-pressed="true"]{background:#fffaf2;color:#392b20;-webkit-text-fill-color:#392b20;box-shadow:0 0 0 1px #a77742 inset}
+      #${rootId} .scopetoggle button[aria-pressed="true"] small{color:#6f5a44!important;-webkit-text-fill-color:#6f5a44!important}
+      #${rootId} .mscx-advanced{border-color:#cbb89d;background:#f5ebdc}
       #${rootId} label.mode:has(input:checked){background:#e8d6bb;border-color:#a77742}
       #${rootId} label.mode>span{min-width:0;overflow-wrap:anywhere}
       #${rootId} input[type=radio]{flex:none;accent-color:#966334}
@@ -10831,10 +10838,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         </div>
         <div class="muted" data-mirror-transition>미러는 두 저장 위치 사이의 전환 중에만 사용합니다. 기존 미러 설정은 단독 모드를 선택해 전환을 완료하세요.</div>
         <div class="scope" data-mode-summary${integratesCompute ? '' : ' hidden'}></div>
-        <p>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
-        <div class="actions"><button data-test>연결 테스트</button><button class="primary" data-apply>설정 적용</button><button data-sync>지금 동기화</button><button data-restore>서버 → pluginStorage 복구</button><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div>
+        <p class="muted" data-server-hint>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
+        <div class="actions"><button data-test>연결 테스트</button><button class="primary" data-apply>설정 적용</button></div>
+        <details class="mscx-advanced"><summary>고급 작업 <small>동기화 · 복구 · 이전 · 초기화</small></summary><div class="mscx-advanced-body"><div class="muted">평소에는 쓰지 않아도 됩니다. 저장 위치를 옮기거나 문제를 복구할 때만 사용하세요.</div>
+        <div class="actions"><button data-sync>지금 동기화</button><button data-restore>서버 → pluginStorage 복구</button></div>
         ${globalModeEnabled ? '<div class="actions"><button data-global-pause>전체 이전 중단·보존</button><button data-global-resume>미완료 전체 이전 재개</button></div>' : ''}
-        <div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div><div class="status" data-status>${integratesCompute ? `현재 방식: ${esc(initial.modeLabel)}\n연산: ${initial.executionPolicy?.computeMode === 'prefer_server' ? '서버 우선 · 실패 시 로컬' : '로컬'}` : `현재 모드: ${esc(initial.modeLabel)}\n서버 상태를 확인할 수 있습니다.`}</div>
+        <div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div>
+        <div class="actions"><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div></div></details><div class="status" data-status>${integratesCompute ? `현재 방식: ${esc(initial.modeLabel)}\n연산: ${initial.executionPolicy?.computeMode === 'prefer_server' ? '서버 우선 · 실패 시 로컬' : '로컬'}` : `현재 모드: ${esc(initial.modeLabel)}\n서버 상태를 확인할 수 있습니다.`}</div>
       </div>
       <div class="job" data-job><b data-job-title>작업 진행 중</b><div class="bar"><i data-job-bar></i></div><div class="grid"><span data-job-phase></span><span data-job-count></span><span data-job-bytes></span><span data-job-time></span><span data-job-retry></span><span data-job-key></span></div><div class="result" data-job-result></div><textarea data-job-diagnostics aria-label="저장 이전 상세 진단" readonly style="display:none"></textarea><button data-job-copy type="button">상세 진단 복사</button><div class="actions" data-job-terminal-actions style="display:none"><button data-job-dismiss type="button">결과 확인 닫기</button></div></div>
     </div>`;
@@ -10850,6 +10860,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const local = mode === MODE_PLUGIN_ONLY;
       const serverFields = q('[data-server-fields]');
       if (serverFields) serverFields.hidden = integratesCompute && local;
+      const serverHint = q('[data-server-hint]');
+      if (serverHint) serverHint.hidden = integratesCompute && local;
       const testButton = q('[data-test]');
       if (testButton) testButton.disabled = integratesCompute && local;
       const summary = q('[data-mode-summary]');
