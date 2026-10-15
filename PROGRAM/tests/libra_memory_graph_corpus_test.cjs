@@ -83,7 +83,7 @@ function fixture({count=53,canonicalCount=2,incrementalProof=false,hubEdges=0}={
   const idle=()=>{const s=pages.inspect();assert.equal(s.pins,0);assert.equal(s.activeRequests,0);assert.equal(s.bytes.request,0);assert.equal(s.bytes.staging,0);assert.equal(corpus.inspect().activeBuild,false);};
   return {values,writes,reads,visits,pages,index,corpus,owner,snapshot,initial,build,read,idle,
     change(){editedMicro=count-1;revision++;},changeCanonical(){canonicalRev++;},changeState(){stateRev++;},changeLore(){loreRev++;},
-    grow(delta=1){count+=delta;},restartCursor(){cursorEpoch++;},cancel(){broken=true;},get compiles(){return compileCount;}};
+    grow(delta=1){count+=delta;},restartCursor(){cursorEpoch++;},cancel(){broken=true;},uncancel(){broken=false;},get compiles(){return compileCount;}};
 }
 test('one durable index spans 53 owner windows and the ended family never restarts',async()=>{
   const x=fixture();const built=await x.build();assert.equal(built.windowCount,53);
@@ -436,3 +436,90 @@ test('one-window checkpoint steps can complete beyond the old 64-attempt scan ce
   }
   assert.equal(result.status,'published');assert.equal(result.windowCount,67);assert.equal(result.reusedWindowCount,66);x.idle();
 });
+
+test('N01-d: incremental build matches full rebuild byte-for-byte, resumes across cancellations, and refuses concurrent root-last CAS overwrite',async()=>{
+  const x=fixture({count:10,canonicalCount:2,incrementalProof:true});
+  const frameGraph=await x.initial();
+  const rootKey=x.corpus.location(frameGraph).rootKey;
+
+  // 1. Initial build
+  const built1=await x.build();
+  assert.equal(built1.status,'published');
+  assert.equal(built1.windowCount,10);
+
+  // 2. Incremental build vs Full rebuild comparison
+  x.change();
+  x.visits.length=0;
+  const builtInc=await x.build({incremental:true});
+  assert.equal(builtInc.status,'published');
+  assert.equal(builtInc.buildMode,'incremental_reuse');
+  assert.equal(builtInc.reusedWindowCount,9);
+  assert.equal(builtInc.enumeratedWindowCount,1);
+  assert.equal(x.visits.length,1);
+
+  // Run full rebuild with incremental: false on the exact same state
+  x.visits.length=0;
+  const builtFull=await x.build({incremental:false});
+  assert.equal(builtFull.status,'published');
+  assert.equal(builtFull.buildMode,'full_build');
+  assert.equal(builtFull.reusedWindowCount,0);
+  assert.equal(builtFull.enumeratedWindowCount,10);
+  assert.equal(x.visits.length,10);
+
+  // Exact equivalence of generation, indexDigest, page counts, and query candidates
+  assert.equal(builtInc.indexDigest,builtFull.indexDigest,'incremental build and full rebuild must produce identical indexDigest');
+  assert.equal(builtInc.generation,builtFull.generation,'incremental build and full rebuild must produce identical generation');
+  assert.equal(builtInc.pageCount,builtFull.pageCount);
+
+  const readInc=await x.corpus.read({owner:x.owner,snapshot:x.snapshot,initialGraph:frameGraph,eager:true});
+  assert.equal(readInc.compiledIndex.indexDigest,builtFull.indexDigest);
+  assert.equal(readInc.access.currentnessVerification.status,'verified');
+
+  // 3. Concurrent publication CAS protection: foreign root update refuses overwrite
+  const stalePrevious=x.values.get(rootKey);
+  const foreignRoot=JSON.stringify({schema:'libra.memory_graph_corpus_root.v1',manifestKey:'foreign:manifest',digest:hash('foreign')});
+  x.values.set(rootKey,foreignRoot);
+
+  await assert.rejects(async()=>{
+    await x.owner.publish({
+      key:rootKey,
+      previous:stalePrevious,
+      raw:JSON.stringify({schema:'libra.memory_graph_corpus_root.v1',manifestKey:'my:manifest',digest:hash('mine')}),
+      manifestKey:'my:manifest',
+      manifestRaw:'mine'
+    });
+  },/conflict/);
+  assert.equal(x.values.get(rootKey),foreignRoot,'concurrent foreign root must never be overwritten on CAS failure');
+
+  // Restore root for resumption testing
+  x.values.set(rootKey,stalePrevious);
+
+  // 4. Resumption across cancellation
+  // Append 6 new windows: windows 0..9 are reused, 6 new windows need enumeration
+  x.grow(6);
+
+  // Step 1: enumerates 3 of the 6 new windows (windows 10..12) -> checkpoints at 13 windows
+  const step1=await x.corpus.build({owner:x.owner,snapshot:x.snapshot,initialGraph:frameGraph,options:{limit:1,maxWindowsPerStep:3}});
+  assert.equal(step1.status,'checkpointed');
+  assert.equal(step1.completedWindows,13);
+  assert.equal(step1.reusedWindowCount,10);
+  assert.equal(step1.enumeratedWindowCount,3);
+
+  // Step 2: cancellation occurs mid-flight
+  x.cancel();
+  await assert.rejects(async()=>{
+    await x.corpus.build({owner:x.owner,snapshot:x.snapshot,initialGraph:frameGraph,options:{limit:1,maxWindowsPerStep:3}});
+  },/canceled/);
+  assert.equal(x.corpus.inspect().activeBuild,false,'canceled build must release build lock');
+
+  // Step 3: resume after cancellation from step 1 checkpoint (enumerates remaining 3 windows 13..15)
+  x.uncancel();
+  const step3=await x.corpus.build({owner:x.owner,snapshot:x.snapshot,initialGraph:frameGraph,options:{limit:1,maxWindowsPerStep:3}});
+  assert.equal(step3.status,'published');
+  assert.equal(step3.windowCount,16);
+  assert.equal(step3.reusedWindowCount,13,'resumed step must reuse the 13 completed windows from step 1');
+  assert.equal(step3.enumeratedWindowCount,3);
+
+  x.idle();
+});
+
