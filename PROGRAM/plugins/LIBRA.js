@@ -45018,6 +45018,26 @@ function createLibraReadonlySourceContext(owner) {
       const correctionSources = new Map();
       const projectFields = (domain, row, values, evidence, clears = {}, correctionFields = {}, clearCorrections = {}) => {
         const fields = [...new Set([...Object.keys(object(values)), ...Object.keys(object(clears)), ...Object.keys(object(clearCorrections))])];
+        // A field value is not evidence until it can be read. Rendering JSON.stringify(value) put internal
+        // ids and raw objects into the evidence block; this renders the value a reader can use instead,
+        // preferring the human-facing fields of a structured value and never falling back to an identifier.
+        const readableStateValue = candidate => {
+          if (candidate === null || candidate === undefined) return 'none';
+          if (typeof candidate === 'string') return candidate;
+          if (typeof candidate === 'number' || typeof candidate === 'boolean') return String(candidate);
+          if (Array.isArray(candidate)) return candidate.map(readableStateValue).join(', ');
+          if (typeof candidate === 'object') {
+            for (const preferred of ['title', 'summary', 'text', 'name', 'description', 'label', 'value']) {
+              const found = candidate[preferred];
+              if (typeof found === 'string' && found.trim()) return found;
+            }
+            const scalars = Object.entries(candidate)
+              .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value) && String(value).trim());
+            if (scalars.length) return scalars.map(([name, value]) => name + ': ' + value).join(', ');
+            return 'structured value';
+          }
+          return String(candidate);
+        };
         for (const field of fields) {
           const isClear = !own(values, field) && (own(clears, field) || own(clearCorrections, field));
           if (own(values, field) && (own(clears, field) || own(clearCorrections, field))) { note('state', 'field_value_clear_conflict'); continue; }
@@ -45036,8 +45056,9 @@ function createLibraReadonlySourceContext(owner) {
             const role = correction.correctionId ? 'user_corrected' : !hasProvenance ? 'state_unprovenanced'
               : authority.current === true && authority.pending !== true ? 'state_current' : 'state_last_known';
             if (hasProvenance && correction.correctionId && !correctionSources.has(correction.correctionId)) check(2);
+            const stateText = `${domain}.${field} = ${readableStateValue(items[itemIndex])}${isClear ? ' (cleared)' : ''}`;
             const node = meaning(src, isCollection ? 'state_item' : 'state_field', key, body, selector,
-              { semanticRole: role, ...body, text: JSON.stringify(items[itemIndex]) });
+              { semanticRole: role, ...body, text: stateText });
             if (!hasProvenance) { note('state', 'field_provenance_unknown'); continue; }
             if (correction.correctionId) {
               const record = corrections.get(correction.correctionId), nativeDomain = { character: 'characters', relationship: 'relationships' }[domain] || domain;
@@ -48412,6 +48433,9 @@ function createLibraReadonlySourceContext(owner) {
       const text = String(value == null ? '' : value).trim().replace(/^"([\s\S]*)"$/, '$1').trim();
       if (!text) return false;
       if (/^ce_[a-z0-9_]+$/i.test(text)) return true;
+      // A field whose value is only a reference to another unit still exposes nothing a reader can use,
+      // even when it is labelled: "world.holderRef = ce_person_02c035f3" is the same leak with a prefix.
+      if (/(?:^|=\s*)ce_[a-z0-9_]+(?:\s*$)/i.test(text)) return true;
       if (/^[{\[]/.test(text) && /[}\]]$/.test(text)) {
         try { JSON.parse(text); return true; } catch (_) { return false; }
       }

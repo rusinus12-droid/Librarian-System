@@ -360,6 +360,9 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       const text = String(value == null ? '' : value).trim().replace(/^"([\s\S]*)"$/, '$1').trim();
       if (!text) return false;
       if (/^ce_[a-z0-9_]+$/i.test(text)) return true;
+      // A field whose value is only a reference to another unit still exposes nothing a reader can use,
+      // even when it is labelled: "world.holderRef = ce_person_02c035f3" is the same leak with a prefix.
+      if (/(?:^|=\s*)ce_[a-z0-9_]+(?:\s*$)/i.test(text)) return true;
       if (/^[{\[]/.test(text) && /[}\]]$/.test(text)) {
         try { JSON.parse(text); return true; } catch (_) { return false; }
       }
