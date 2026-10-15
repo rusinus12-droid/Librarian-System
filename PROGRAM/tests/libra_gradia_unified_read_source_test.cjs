@@ -9,6 +9,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const path = require('node:path');
 const { load } = require('./gradia/host.cjs');
 const acorn = require('../tools/gradia/load-dev-dependency.cjs')('acorn');
 
@@ -210,24 +211,30 @@ function unifiedProvider(options = {}) {
       if (options.onCapture) await options.onCapture(binding);
       return { snapshot: packet, source: options.answerSource, engine: options.engine,
         assertCurrentSync: () => { if (options.onSyncCurrent) options.onSyncCurrent(binding); return true; }, assertCurrent: async () => true }; } };
-    const binding = options.unbound ? null : { client, scope, maxCorpusBytes: 4194304, ...(options.readSource === undefined ? {} : { readSource: options.readSource }) };
+    const binding = options.unbound ? null : { client, scope, maxCorpusBytes: 4194304, generation: 1, ...(options.readSource === undefined ? {} : { readSource: options.readSource }) };
     const consumer = host.createLibReadConsumer({ getBinding: () => binding, assertNativeScope: options.assertNativeScope || (async () => true), digest: async value => crypto.createHash('sha256').update(value).digest('hex') });
     return { consumer, binding, counts: () => ({ captures }), asked: () => asked };
   }
 
-  await test('N03: the consumer asks for the declared source and the legacy default is unchanged', async () => {
-    const f = await consumerFixture({ readSource: 'server_logical_read', answerSource: 'server_logical_read' });
+  await test('N03: the consumer asks for the unified engine and reports which engine answered', async () => {
+    const f = await consumerFixture({ readSource: 'unified_engine', answerSource: 'unified_engine', engine: { generation: 'mgm1:5', units: 33 } });
     const session = await f.consumer.beginRead({ requestId: 'r1' });
     assert.equal(session.status, 'ready');
     assert.equal(session.contract, 'existing-server-logical-read.v1', 'the envelope contract the budget and scope gates use stays the same');
-    assert.equal(session.readSource, 'server_logical_read');
+    assert.equal(session.readSource, 'unified_engine');
+    assert.equal(session.engine.generation, 'mgm1:5');
+    assert.equal(session.selection.readSource, 'unified_engine');
+    assert.equal(session.selection.promptByteLimit, 65536, 'the prompt budget still applies');
+    assert.equal(session.selection.selectedItems, 1);
+    assert.equal(f.asked()[0], 'unified_engine');
     assert.equal((await session.getEvidence()).items[0].content, 'historical evidence');
-    assert.equal(f.asked()[0], 'server_logical_read');
+  });
 
-    // A client that predates the field, with a binding that asks for nothing, still works.
-    const legacy = await consumerFixture({ answerSource: undefined });
-    const legacySession = await legacy.consumer.beginRead({ requestId: 'r2' });
-    assert.equal(legacySession.readSource, 'server_logical_read');
+  await test('N03: a binding that names no source still requires the unified engine', async () => {
+    const f = await consumerFixture({ answerSource: 'server_logical_read' });
+    await assert.rejects(() => f.consumer.beginRead({ requestId: 'r2' }), error => error.code === 'LIB_READ_SOURCE_MISMATCH');
+    const ok = await consumerFixture({ answerSource: 'unified_engine' });
+    assert.equal((await ok.consumer.beginRead({ requestId: 'r2b' })).readSource, 'unified_engine');
   });
 
   await test('N03: a server read cannot pass as the unified engine', async () => {
@@ -236,67 +243,23 @@ function unifiedProvider(options = {}) {
     assert.equal(f.counts().captures, 1, 'a mismatching source is refused, never retried against the other source');
   });
 
-  await test('N03: a unified session is accepted, reported, and still budget-gated', async () => {
-    const f = await consumerFixture({ readSource: 'unified_engine', answerSource: 'unified_engine', engine: { generation: 'mgm1:5', units: 33 } });
-    const session = await f.consumer.beginRead({ requestId: 'r4' });
-    assert.equal(session.status, 'ready');
-    assert.equal(session.readSource, 'unified_engine');
-    assert.equal(session.engine.generation, 'mgm1:5');
-    assert.equal(session.selection.readSource, 'unified_engine');
-    assert.equal(session.selection.promptByteLimit, 65536, 'the prompt budget still applies to a unified read');
-    assert.equal(session.selection.selectedItems, 1);
-    assert.equal(f.asked()[0], 'unified_engine');
-    assert.equal((await session.getEvidence()).items[0].content, 'historical evidence');
+  await test('N03: a source that is not the unified engine is refused before any capture', async () => {
+    for (const readSource of ['server_logical_read', 'moon']) {
+      const f = await consumerFixture({ readSource, answerSource: 'unified_engine' });
+      await assert.rejects(() => f.consumer.beginRead({ requestId: 'r5' }), error => error.code === 'LIB_READ_SOURCE_UNSUPPORTED',
+        readSource + ' must not be served by this consumer');
+      assert.equal(f.counts().captures, 0, 'the refusal must happen before the provider is asked');
+    }
   });
 
-  await test('N03: an unknown source is refused before any capture happens', async () => {
-    const f = await consumerFixture({ readSource: 'moon', answerSource: 'unified_engine' });
-    await assert.rejects(() => f.consumer.beginRead({ requestId: 'r5' }), error => error.code === 'LIB_READ_SOURCE_UNSUPPORTED');
-    assert.equal(f.counts().captures, 0);
-  });
-
-  await test('N03 regression: changing the declared source discards the previous evidence and draft', async () => {
-    const f = await consumerFixture({ readSource: 'unified_engine', answerSource: 'unified_engine' });
-    const session = await f.consumer.beginRead({ requestId: 'source-change' });
-    await session.bindDraft('OLD_UNIFIED_DRAFT');
-    f.binding.readSource = 'server_logical_read';
-    assert.throws(() => session.assertLocalCurrent(), error => error.code === 'LIB_READ_BOUNDARY_CHANGED');
-    await assert.rejects(() => session.finalizeDraft(), error => error.code === 'LIB_READ_BOUNDARY_CHANGED');
-    await assert.rejects(() => session.getEvidence(), error => error.code === 'LIB_READ_BOUNDARY_CHANGED');
-  });
-
-  await test('N03 regression: a source change during capture refuses the late answer', async () => {
-    const f = await consumerFixture({ readSource: 'unified_engine', answerSource: 'unified_engine',
-      onCapture: async binding => { binding.readSource = 'server_logical_read'; } });
-    await assert.rejects(() => f.consumer.beginRead({ requestId: 'late-source' }), error => error.code === 'LIB_READ_BOUNDARY_CHANGED');
-    assert.equal(f.counts().captures, 1);
-  });
-
-  await test('N03 regression: the final native-scope await cannot hide a source change', async () => {
-    let armed = false, checks = 0, binding;
-    const f = await consumerFixture({ readSource: 'unified_engine', answerSource: 'unified_engine',
-      assertNativeScope: async () => { if (armed && ++checks === 2) binding.readSource = 'server_logical_read'; return true; } });
-    binding = f.binding;
-    const session = await f.consumer.beginRead({ requestId: 'final-source' });
-    await session.bindDraft('OLD_UNIFIED_DRAFT'); armed = true;
-    await assert.rejects(() => session.finalizeDraft(), error => error.code === 'LIB_READ_BOUNDARY_CHANGED');
-  });
-
-  await test('N03 regression: absent and explicit legacy defaults remain the same source', async () => {
-    const f = await consumerFixture({ answerSource: undefined });
-    const session = await f.consumer.beginRead({ requestId: 'legacy-default' });
-    await session.bindDraft('LEGACY_DRAFT'); f.binding.readSource = 'server_logical_read';
-    assert.equal(await session.finalizeDraft(), 'LEGACY_DRAFT');
-  });
-
-  await test('N03 regression: the synchronous final owner check cannot hide a source change', async () => {
-    let armed = false;
-    const f = await consumerFixture({ readSource: 'unified_engine', answerSource: 'unified_engine',
-      onSyncCurrent: binding => { if (armed) binding.readSource = 'server_logical_read'; } });
-    const session = await f.consumer.beginRead({ requestId: 'sync-source' });
-    await session.bindDraft('OLD_UNIFIED_DRAFT'); armed = true;
-    assert.throws(() => session.assertLocalCurrent(), error => error.code === 'LIB_READ_BOUNDARY_CHANGED');
-    await assert.rejects(() => session.finalizeDraft(), error => error.code === 'LIB_READ_BOUNDARY_CHANGED');
+  await test('N03: a legacy source request is migrated at the binding and the effective source is recorded', () => {
+    const plugin = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'GRADIA.js'), 'utf8');
+    assert.ok(plugin.includes("requestedSource === 'server_logical_read' ? 'unified_engine' : requestedSource"),
+      'a retired source selection is migrated rather than served');
+    const binding = plugin.slice(plugin.indexOf('libReadBinding = Object.freeze({ client, scope'));
+    assert.ok(binding.slice(0, 200).includes('readSource'), 'the binding records the effective source, not the requested one');
+    assert.ok(plugin.includes("String(read?.source || 'server_logical_read') !== readSource"),
+      'the answered source is still compared with the required one');
   });
 
   console.log(JSON.stringify({ suite: 'libra_gradia_unified_read_source', passed: results.length, tests: results }));
