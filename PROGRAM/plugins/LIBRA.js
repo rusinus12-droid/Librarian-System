@@ -48405,6 +48405,19 @@ function createLibraReadonlySourceContext(owner) {
 
     const admitted = [];
     const admittedNodeIds = new Set();
+    // A delivered evidence line has to carry something a reader can use. A state/field unit whose text is
+    // only an internal identifier or a raw JSON object reads as noise and exposes internals, so it stays in
+    // the graph for scoring and trace but is not admitted as evidence. Counted, never dropped silently.
+    const unreadableEvidenceText = value => {
+      const text = String(value == null ? '' : value).trim().replace(/^"([\s\S]*)"$/, '$1').trim();
+      if (!text) return false;
+      if (/^ce_[a-z0-9_]+$/i.test(text)) return true;
+      if (/^[{\[]/.test(text) && /[}\]]$/.test(text)) {
+        try { JSON.parse(text); return true; } catch (_) { return false; }
+      }
+      return false;
+    };
+    const excludedUnreadable = [];
     const droppedForBudget = [];
     const suppressedMicro = [];
     const provisionalHeldMicro = [];
@@ -48440,6 +48453,10 @@ function createLibraReadonlySourceContext(owner) {
     };
 
     for (const cand of ordered) {
+      if (unreadableEvidenceText(cand.text)) {
+        excludedUnreadable.push({ nodeId: cand.nodeId, family: cand.family, reason: 'unreadable_evidence_text' });
+        continue;
+      }
       const counterpartCanonicalId = cand.family === 'micro'
         ? (combinedCorrespondence[cand.nodeId] || null)
         : null;
@@ -48575,6 +48592,7 @@ function createLibraReadonlySourceContext(owner) {
         envelopeCharacters: usedCharacters - bodyCharacters,
         maxUnits: policy.maxUnits,
         admittedUnits: items.length,
+        excludedUnreadableUnits: excludedUnreadable.length,
         droppedUnits: droppedForBudget.length,
         suppressedMicroCount: suppressedMicro.length
       },
