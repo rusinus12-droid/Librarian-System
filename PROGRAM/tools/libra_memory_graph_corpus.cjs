@@ -520,9 +520,10 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     return result;
   };
 
-  const parse = (raw, maximum) => {
-    if (typeof raw !== 'string' || raw.length > maximum || new TextEncoder().encode(raw).length > maximum) fail('record_size');
-    try { return JSON.parse(raw); } catch (_) { fail('record_invalid'); }
+  const parse = async (raw, maximum, resources = null) => {
+    if (typeof raw !== 'string' || raw.length > maximum || pages.encodedSize(raw).utf8Bytes > maximum) fail('record_size');
+    const decode = () => { try { return JSON.parse(raw); } catch (_) { fail('record_invalid'); } };
+    return resources ? await resources.withValue(raw,decode) : decode();
   };
   const immutable = async (owner, key, raw) => {
     owner.check(); const before = await owner.read(key); owner.check();
@@ -655,7 +656,8 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     }));
   };
 
-  const reassembleTableRows = (table, rawItems) => {
+  const reassembleTableRows = async (table, rawItems, resources = null) => {
+    const run = async () => {
     const out = [];
     let splitReassembled = false;
     let i = 0;
@@ -687,11 +689,14 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       }
       if (hash(joined) !== rowDigest) fail('page_corrupt');
       let parsed;
-      try { parsed = JSON.parse(joined); } catch (_) { fail('page_corrupt'); }
+      const decode = () => { try { return JSON.parse(joined); } catch (_) { fail('page_corrupt'); } };
+      parsed = resources ? await resources.withValue(joined,decode) : decode();
       out.push(parsed);
       i += chunkCount;
     }
     return { rows: out, splitReassembled };
+    };
+    return resources ? await resources.withValue(rawItems,run) : await run();
   };
 
   const checkpointAttemptKey = (loc, frame, previousRootRaw, attempt) =>
@@ -703,7 +708,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       const key = checkpointAttemptKey(loc, frame, previousRootRaw, attempt);
       const raw = await owner.read(key); owner.check();
       if (raw === null) break;
-      const parsed = parse(raw, config.maxSerializedBytes);
+      const parsed = await parse(raw, config.maxSerializedBytes, owner.resources);
       const { payloadDigest, ...body } = parsed || {};
       if (parsed?.schema === checkpointSchema && parsed.proofVersion === proofVersion && payloadDigest === hash(JSON.stringify(body)) && same(parsed.frame, frame)
         && parsed.config?.limit === config.limit && parsed.config?.nodeLimit === config.nodeLimit
@@ -748,11 +753,11 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     }
     if (!previousRootRaw || typeof owner.verifySourceProofs !== 'function') return null;
     try {
-      const root = parse(previousRootRaw, 2048);
+      const root = await parse(previousRootRaw, 2048, owner.resources);
       if (root?.schema !== schema || !/^[a-f0-9]{64}$/.test(root.digest) || root.manifestKey !== loc.prefix + 'manifest:' + root.digest) return null;
       const manifestRaw = await owner.read(root.manifestKey); owner.check();
       if (typeof manifestRaw !== 'string' || hash(manifestRaw) !== root.digest) return null;
-      const manifest = parse(manifestRaw, 131072);
+      const manifest = await parse(manifestRaw, 131072, owner.resources);
       if (!same(manifest.frame, startGraph.readerFrame)
         || manifest.config?.limit !== config.limit
         || manifest.config?.nodeLimit !== config.nodeLimit
@@ -760,10 +765,10 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         || !manifest.sourceProofs?.proofKey || !manifest.sourceProofs?.projectionKey) return null;
       const proofRaw = await owner.read(manifest.sourceProofs.proofKey); owner.check();
       if (typeof proofRaw !== 'string' || hash(proofRaw) !== manifest.sourceProofs.proofDigest) return null;
-      const proofRecord = parse(proofRaw, config.maxSerializedBytes);
+      const proofRecord = await parse(proofRaw, config.maxSerializedBytes, owner.resources);
       const projRaw = await owner.read(manifest.sourceProofs.projectionKey); owner.check();
       if (typeof projRaw !== 'string' || hash(projRaw) !== manifest.sourceProofs.projectionDigest) return null;
-      const projRecord = parse(projRaw, config.maxSerializedBytes);
+      const projRecord = await parse(projRaw, config.maxSerializedBytes, owner.resources);
       if (!proofRecord?.ownerProof || !Array.isArray(projRecord?.windowSlices) || !projRecord.windowSlices.length) return null;
       const verdict = await owner.verifySourceProofs(proofRecord, { initialGraph: startGraph, config, phase: 'build' });
       owner.check();
@@ -1084,9 +1089,9 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     if (owner && typeof owner === 'object') knownFrames.set(owner, startGraph);
     const loc = location(startGraph), rootRaw = await owner.read(loc.rootKey); owner.check();
     if (rootRaw === null) return null;
-    const root = parse(rootRaw, 2048);
+    const root = await parse(rootRaw, 2048, owner.resources);
     if (root.schema !== schema || !/^[a-f0-9]{64}$/.test(root.digest) || root.manifestKey !== loc.prefix + 'manifest:' + root.digest) fail('root_invalid');
-    const raw = await owner.read(root.manifestKey), manifest = parse(raw, 131072);
+    const raw = await owner.read(root.manifestKey), manifest = await parse(raw, 131072, owner.resources);
     if (hash(raw) !== root.digest || manifest.schema !== schema || !same(manifest.frame, startGraph.readerFrame)
       || !Array.isArray(manifest.refs) || manifest.refs.length > 512 || !Array.isArray(manifest.windows)
       || manifest.windows.length < 1 || manifest.windows.length > 128) fail('manifest_invalid');
@@ -1134,13 +1139,13 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     if (manifest.sourceProofs) {
       const proofRaw = await owner.read(manifest.sourceProofs.proofKey); owner.check();
       if (typeof proofRaw !== 'string' || hash(proofRaw) !== manifest.sourceProofs.proofDigest) fail('page_corrupt');
-      proofRecord = parse(proofRaw, config.maxSerializedBytes);
+      proofRecord = await parse(proofRaw, config.maxSerializedBytes, owner.resources);
       if (proofRecord?.schema !== proofSchema || proofRecord.proofVersion !== manifest.sourceProofs.proofVersion
         || proofRecord.generation !== manifest.generation || !same(proofRecord.windows, manifest.windows)) fail('page_corrupt');
 
       const projectionRaw = await owner.read(manifest.sourceProofs.projectionKey); owner.check();
       if (typeof projectionRaw !== 'string' || hash(projectionRaw) !== manifest.sourceProofs.projectionDigest) fail('page_corrupt');
-      projectionRecord = parse(projectionRaw, config.maxSerializedBytes);
+      projectionRecord = await parse(projectionRaw, config.maxSerializedBytes, owner.resources);
       if (projectionRecord?.schema !== projectionSchema || projectionRecord.generation !== manifest.generation
         || !same(projectionRecord.frame, manifest.frame) || stamp(projectionRecord.graph) !== manifest.generation) fail('page_corrupt');
     }
@@ -1258,7 +1263,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         if (stopped) return { storageStopped: true, stopReason: stopped };
       }
       await assertIndexCurrent();
-      const reassembled = reassembleTableRows(spec.table, rawRows);
+      const reassembled = await reassembleTableRows(spec.table, rawRows, owner.resources);
       return { rows: reassembled.rows, splitReassembled: reassembled.splitReassembled };
     };
     let compiledIndex;
@@ -1268,7 +1273,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       for (const ref of manifest.refs) await readPage(ref, rows => rawRestored[ref.table].push(...rows));
       const restored = { ...manifest.metadata };
       for (const table of tables) {
-        restored[table] = reassembleTableRows(table, rawRestored[table]).rows;
+        restored[table] = (await reassembleTableRows(table, rawRestored[table], owner.resources)).rows;
       }
       compiledIndex = index.restore(restored, { partition: loc.partition, generation: manifest.generation });
     }

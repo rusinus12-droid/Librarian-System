@@ -1,11 +1,11 @@
 # LIBRA 통합 메모리 엔진 — 다음 과제와 완료 기준
 
-- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.7
-- 현재 코드 확인 기준: `codex/libra-memory-network-20261013`, [`923580b`](https://github.com/rusinus12-droid/Librarian-System/commit/923580b)와 후속 원본 증명·GC 경계 패치
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.8
+- 현재 코드 확인 기준: `codex/libra-memory-network-20261013`, [`923580b`](https://github.com/rusinus12-droid/Librarian-System/commit/923580b)이후 원본 증명·GC 경계 패치와 N01-C1 원본/저장 읽기·JSON admission
 - 관련: [통합 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현재 현황](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [선택적 인덱스 읽기](LIBRA_SELECTIVE_INDEX_READ_CONTRACT_20261014.md), [레거시 검색 종료](LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md)
 - 판정: **기본·유일한 통합 검색기와 활성 소비자 연결은 구현됐다. 원본 증분 검증·구축 재개·대형 행 분할도 연결됐다. 원본 증명의 보장 확대, 전체 자원 계상·admission, 추가 semantic 표현, 안전한 native GC, 실제 설치·품질·규모 검증은 남아 있다.**
 
-이 문서는 최신 잔여 과제의 기준이다. 이전 버전의 증분별 설명을 현재 상태로 다시 정리했다. 구현 이력과 당시 검증은 [현황 §12–23](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md) 및 각 계약에 보존한다. 이번 리뷰·패치 근거는 [2026-10-15 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)와 현황 §23을 따른다. 과제 정의 자체를 구현·검증 완료로 읽지 않는다.
+이 문서는 최신 잔여 과제의 기준이다. 이전 버전의 증분별 설명을 현재 상태로 다시 정리했다. 구현 이력과 당시 검증은 [현황 §12–23](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md) 및 각 계약에 보존한다. N01-C1의 현재 범위는 [자원 예산 계약](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다. 이전 리뷰·패치 근거는 [2026-10-15 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)와 현황 §23을 따른다. 과제 정의 자체를 구현·검증 완료로 읽지 않는다.
 
 ## 1. 확인한 실행 범위
 
@@ -36,7 +36,7 @@ GRADIA는 현재 **server_only·readonly 승인·동일 native scope·수락한 
 | N06 | P1 · 미완료 | 고정 평가 세트, 계수 평가, 실제 provider·설치 호스트·규모 인증 | M12/M14 | 평가 정의는 즉시 가능, 인증에는 해당 구현 필요 |
 | N07 | 전환·실행 제거 완료 | 단일 엔진 계약과 설정/백업 이관의 회귀 방지 | M13/M15 | N06은 별도 미완료 |
 
-다음 구현은 **N01-b 전체 자원 계상·admission(N01-C)**부터 진행한다. N01-a는 현재 증분 증명의 보장 확대 과제로 추적한다. N06-a 평가 세트 정의는 먼저 준비할 수 있다. N03/N04는 이미 연결된 기능을 다시 만드는 과제로 잡지 않고 N06의 소비자별 검증 대상으로 관리한다.
+N01-b의 원본/저장 읽기·일시적 JSON 처리 admission(N01-C1)을 연결했다. 다음 구현은 **N01-C2의 장기 보유 graph/index/representation·private readset 및 유지보수 admission**이다. N01-a는 현재 증분 증명의 보장 확대 과제로 추적한다. N06-a 평가 세트 정의는 먼저 준비할 수 있다. N03/N04는 이미 연결된 기능을 다시 만드는 과제로 잡지 않고 N06의 소비자별 검증 대상으로 관리한다.
 
 ## 3. N00 — 활성 소비자와 호환 포맷
 
@@ -60,9 +60,11 @@ GRADIA는 현재 **server_only·readonly 승인·동일 native scope·수락한 
 
 **완료 기준:** full-reread 대조와 동일 근거/현재성, 저장 모드별 실제 source I/O 감소, 변경·삭제/재생성·ABA·복원·viewer/시간·profile/route/data/reset·await 중 변경/취소/늦은 응답 검증을 갖춘다. 지원하지 않는 owner 범위는 재읽기 또는 명시적 partial/reject로 남긴다. manifest/cache hit·public DTO digest만으로 발송 권한을 만들지 않는다.
 
-### N01-b · P1 · 원본부터 출력까지 자원 계상·admission — 다음 구현(N01-C)
+### N01-b · P1 · 원본부터 출력까지 자원 계상·admission — N01-C1 부분 연결
 
-현재 `maxStoragePages/maxStorageBytes`는 **인덱스 JSON payload** 접근 예산이다. 전체 원본 읽기·HTTP envelope·graph/eligibility/semantic Map·frontier/witness·private readset·결과/동시 I/O의 전체 상한은 아니다.
+현재 `maxStoragePages/maxStorageBytes`는 **인덱스 JSON payload** 접근 예산이다. N01-C1에서는 실제 scoped source reader와 LIBRA SDK readset, corpus root/proof/projection/page 접근에 요청별 byte/read quota와 공유 I/O 예약을 연결했다. JSON 처리/분할 재조립은 공통 page 계층의 workspace 산식으로 미리 예약한다. 실패 latch·취소/late 응답 해제와 `resourceAccess` trace를 추가했다. [계약·실제 검증](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다.
+
+**남은 N01-C2:** 장기 보유 graph/eligibility/semantic Map·index compile·vector hydration·private readset·반환/동시 처리, build/publication의 admission과 수명별 release다. 호스트 context/route bootstrap과 HTTP envelope/transport buffer를 포함한 bounded response/stream protocol도 증명이 필요하다. 현재 I/O 예약 peak나 JSON workspace 추정을 실제 네트워크/heap peak로 사용하지 않는다.
 
 **작업:** 비용 범주별 counter와 admission/backpressure를 실제 읽기·할당 경로에 연결한다. 누적 전송량, 동시에 보유한 resident/staging, peak heap, 문자·token 예산을 분리한다. page cache 외 별도 무계상 full-array/cache 우회를 만들지 않는다.
 
@@ -153,13 +155,13 @@ Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기의 실제 발송/복사/�
 
 ## 11. 실행 순서·검증·종료 기록
 
-권장 구현 순서는 **N01-b(N01-C) → N01-c/e**다. N01-a의 증명 확대와 N01-d의 선택적 재컴파일은 owner 기능·계측 근거에 맞춰 진행한다. N06-a와 N00 점검은 그 전에 시작할 수 있고, N02는 N01-e와 맞추어 진행한다. N05는 owner 기능을 먼저 구현·검증하고 삭제를 연결한다. N06-b/c의 최종 인증은 해당 변경이 고정된 뒤 수행한다.
+권장 구현 순서는 **N01-b의 N01-C2 → N01-c/e**다. N01-a의 증명 확대와 N01-d의 선택적 재컴파일은 owner 기능·계측 근거에 맞춰 진행한다. N06-a와 N00 점검은 그 전에 시작할 수 있고, N02는 N01-e와 맞추어 진행한다. N05는 owner 기능을 먼저 구현·검증하고 삭제를 연결한다. N06-b/c의 최종 인증은 해당 변경이 고정된 뒤 수행한다.
 
 기존 회귀 검사의 시작점은 다음과 같다. 아래 명령의 존재는 미래 증분의 완료 증거가 아니며, 이번 후속 패치의 실제 실행 결과와 재현 범위는 현황 §23 및 리뷰 문서에 기록한다.
 
 | 변경 경계 | 기존 검사·기록 |
 | --- | --- |
-| N01 원본/영속 접근 | `libra_memory_graph_corpus_test.cjs`, `libra_memory_graph_corpus_runtime_test.cjs`, `libra_sdk_conditional_batch_v1_test.cjs`, `libra_memory_graph_inventory_store_test.cjs`, `libra_memory_graph_review_boundaries_runtime_test.cjs` |
+| N01 원본/영속 접근 | `libra_memory_graph_corpus_test.cjs`, `libra_memory_graph_corpus_runtime_test.cjs`, `libra_sdk_conditional_batch_v1_test.cjs`, `libra_memory_graph_inventory_store_test.cjs`, `libra_memory_graph_review_boundaries_runtime_test.cjs`, `libra_memory_graph_resources_test.cjs`, `libra_memory_graph_resources_runtime_test.cjs` |
 | N01 index/cache/Lane | `libra_memory_graph_selective_index_test.cjs`, `libra_memory_graph_selective_runtime_test.cjs`, `libra_memory_graph_pages_test.cjs`, `libra_memory_graph_query_test.cjs`, `libra_memory_graph_rollout_test.cjs` |
 | N02 표현/producer | `libra_memory_graph_representation_test.cjs`, `libra_memory_graph_producer_policy_test.cjs`, `libra_memory_graph_semantic_runtime_test.cjs` |
 | N03/N04 소비자 | `libra_gradia_unified_pipeline_runtime_test.cjs`, `libra_input_writer_unified_native_runtime_test.cjs`, `gradia_input_writer_unified_runtime_test.cjs`, `libra_gradia_unified_read_source_test.cjs` |

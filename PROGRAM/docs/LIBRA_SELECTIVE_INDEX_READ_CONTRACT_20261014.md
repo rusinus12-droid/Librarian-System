@@ -1,6 +1,6 @@
 # LIBRA 공통 인덱스의 선택적 저장 페이지 읽기
 
-- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 버전: 1.3
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 버전: 1.4
 - 기준: `9c03c35` 이후의 N01 증분, `1aa630e` N01-A 증분 원본 현재성 검증 및 N01-B 증분 구축·재개·대형 단일 행 분할. 기본·유일한 통합 검색 계약은 유지한다.
 - 판정: **신규 게시 인덱스는 검색에 필요한 저장 페이지만 읽고, N01-A owner 증분 증명으로 변경되지 않은 과거 구간 본문 재읽기를 생략하며, N01-B로 증분 구축·체크포인트 재개와 대형 단일 행 분할(`libra.graph_corpus_row_chunk.v1`)을 연결했다. 전체 VM 자원 계상(N01-C)과 실제 설치/규모 인증은 여전히 남아 있다.**
 
@@ -62,3 +62,8 @@ N01-A에서 `FAMILY_CURRENTNESS_CONTRACTS`와 `verifyIncrementalSourceProofs()`�
 원본 proof v2는 native 투영과 physical body baseline을 함께 캡처한다. v1 proof는 전체 native 재투영으로 읽으며, 선택적 **인덱스** 접근은 계속 사용할 수 있다. proof 버전 때문에 query가 자동 저장 repair/build하거나 레거시 검색을 실행하지 않는다. checkpoint의 owner 증명·payload 검증과 GC 삭제 차단은 [후속 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)를 따른다.
 
 `owner_io_in_flight`는 누적 Lane payload byte와 다르다. owner의 실제 동시 버퍼 계측과 미측정 `write_barrier`는 null·missingMeasurements로 남긴다. 이 정정은 N01-C 전체 admission 구현을 뜻하지 않는다.
+
+
+## 7. owner 읽기의 추가 admission
+
+N01-C1의 요청별 durable payload byte/read quota와 shared I/O allowance가 실제 owner read에 적용된다. Lane의 선택적 page 예산과 Cache Manager의 page staging은 유지하며 두 계측은 일부 같은 접근을 포함하므로 합산하지 않는다. `accessTrace.resources`는 초기 dispatch 검증까지의 observed owner I/O·transient JSON 처리 snapshot이다. shared I/O 예약을 transport peak, workspace 추정을 VM heap으로 해석하지 않는다. 설정·실패·미측정 범위는 [N01-C1 계약](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다.

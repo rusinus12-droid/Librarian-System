@@ -60,6 +60,17 @@ try{
   await assert.rejects(()=>bridge.prepareConditionalBatch({mutations:[set('libra:pinmissing',1)],readSet}),/PIN_NOT_BOUND/);
   await proxy.setItem('libra:head',{t:5});await assert.rejects(()=>bridge.assertConditionalReadSet(readSet),/READ_SET_CHANGED/);
  });
+ await test('read observers reserve before actual read and always release without replacing route or body validation',async()=>{
+  let active=0,stages=0,seen=0;
+  const readObserver=()=>{active++;return {accept(){seen++;},prepare(){stages++;return{release(){stages--;}};},release(){active--;}};};
+  const pin=await bridge.captureConditionalReadSet(['libra:head'],{readObserver});
+  assert.equal(await bridge.assertConditionalReadSet(pin,{readObserver}),true);assert.equal(seen,2);assert.equal(active,0);assert.equal(stages,0);
+  await assert.rejects(()=>bridge.captureConditionalReadSet(['libra:head'],{readObserver:()=>{active++;return{accept(){throw Error('admission_refused');},release(){active--;}};}}),/admission_refused/);
+  assert.equal(active,0);assert.equal(stages,0);
+  await proxy.setItem('libra:head',{t:9});
+  await assert.rejects(()=>bridge.assertConditionalReadSet(pin,{readObserver}),/READ_SET_CHANGED/);assert.equal(active,0);assert.equal(stages,0);
+  await assert.rejects(()=>bridge.captureConditionalReadSet(['libra:head'],{readObserver:'invalid'}),/READ_OBSERVER_INVALID/);
+ });
  await test('unsupported capability and plugin-only mode do not silently downgrade to sequential writes',async()=>{
   await bridge.dispose();fault='bad-cap';bridge=createBridge({namespace:'libra',pluginId:'libra',pluginPrefixes:['libra:'],managementButton:false,startupDiagnostics:false,currentScopeProvider:async()=>scope});bridge.createPluginStorageProxy(mem);await assert.rejects(()=>bridge.prepareConditionalBatch({mutations:[set('libra:unsupported',1)]}),/CAPABILITY_MISSING/);fault='';await bridge.dispose();mode='plugin_only';bridge=createBridge({namespace:'libra',pluginId:'libra',pluginPrefixes:['libra:'],managementButton:false,startupDiagnostics:false,currentScopeProvider:async()=>scope});bridge.createPluginStorageProxy({...mem,map:new Map()});const n=calls.length;await assert.rejects(()=>bridge.prepareConditionalBatch({mutations:[set('libra:offline',1)]}),/REQUIRES_SERVER_ONLY/);assert.equal(calls.length,n);
  });

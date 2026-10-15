@@ -61,7 +61,7 @@ test('stored canonical vectors seed the same durable-index frontier without lexi
 });
 
 test('server corpus uses multiple bounded readsets and preserves unread native turns as partial coverage',async t=>{
-  const anchor='const captureConditionalReadSet = async (keys = []) => {';
+  const anchor='const captureConditionalReadSet = async (keys = [], { readObserver = null } = {}) => {';
   const x=await fixture({mode:'server_only',transformSource:source=>{
     assert.equal(source.split(anchor).length,2);
     return source.replace(anchor,anchor+' globalThis.__testCorpusPins ||= []; globalThis.__testCorpusPins.push(keys.length);');
