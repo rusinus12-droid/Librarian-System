@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-15T12:09:32.683Z",
+  "generatedAt": "2026-10-15T12:24:10.169Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2650,8 +2650,8 @@
       "bytes": 84320
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md": {
-      "sha256": "c0a35cfdbe62d9ecd3bfe7a5f6d3e45bce0ea2abfbe1740bb5aeb472a8484731",
-      "bytes": 38256
+      "sha256": "d6f6757fafa494527525c4122cb4daa227084428951306c586c16d978259edc9",
+      "bytes": 38010
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md": {
       "sha256": "bd7dec8c30e4ac2b0623fbce5e1dcd4fe36d18fc86bd7425632cc0a5bcd3ffaf",
@@ -3674,8 +3674,8 @@
       "bytes": 1834762
     },
     "plugins/LIBRA.js": {
-      "sha256": "9903ef4db3f5d9106dd98c39a6270dc9c7909f01c8b163fa6bc901d68408c99d",
-      "bytes": 5890601
+      "sha256": "50e55e052d11d0c767b387fe45184a75e9444676792c0778863ed43eb505273e",
+      "bytes": 5892215
     },
     "plugins/RETRACE.js": {
       "sha256": "eb3b80d2c2ff5876d80b0af29782b0fe93b580d0febc5533d036d54b71f5146e",
@@ -7534,8 +7534,8 @@
       "bytes": 23450
     },
     "tests/libra_memory_graph_consumers_test.cjs": {
-      "sha256": "0a8b7ea4322b7bf90c9f93b246d4a02a72b0a6896373899f4e9e13328ea6761c",
-      "bytes": 13351
+      "sha256": "4da2d4b741b9ab8b2c2315c6d0bb71a4aa0d7ac76408a5d3542d95d4eb09136d",
+      "bytes": 17553
     },
     "tests/libra_memory_graph_continuation_runtime_test.cjs": {
       "sha256": "11c5a5be947d4859501ea579a4c65ae6dd0f5c3b5af9f16e17e13ec68f60ef11",
@@ -10270,8 +10270,8 @@
       "bytes": 2989
     },
     "tools/libra_memory_graph_compiler.cjs": {
-      "sha256": "262ff76004bfb6ec95e9366afdbb7c2494462bcabba49d3d41d9c296991617dc",
-      "bytes": 41685
+      "sha256": "a528f315e9d239dcd6b372b48315791f445a5175e2327cd19746deec442a3f1a",
+      "bytes": 43299
     },
     "tools/libra_memory_graph_corpus.cjs": {
       "sha256": "f6df9aa6e3b56e0d77e2980a67883f85141553808111ed4045257da5a099e1e4",

@@ -206,8 +206,82 @@ test('M04 admission: readset handle budget violation triggers refusal', () => {
 test('closure: the extended compiler kernel is embedded in the shipped plugin', () => {
   const source = fs.readFileSync(pluginPath, 'utf8');
   for (const marker of ['libra.memory_byte_inventory.v1', 'libra.consumer_packet_verification.v1',
-    'CONSUMER_PACKET_POLICIES', 'verifyConsumerPacket', 'memoryByteInventory']) {
+    'CONSUMER_PACKET_POLICIES', 'verifyConsumerPacket', 'memoryByteInventory',
+    'ACTIVE_PRODUCT_CONSUMERS', 'HISTORICAL_FORMAT_ONLY_CONSUMERS']) {
     assert.ok(source.includes(marker), 'plugins/LIBRA.js must embed ' + marker + ' (run tools/sync_libra_memory_graph.cjs)');
+  }
+});
+
+test('N00: active product consumers vs historical formatters execution authority separation', async () => {
+  assert.ok(Object.isFrozen(compiler.ACTIVE_PRODUCT_CONSUMERS), 'ACTIVE_PRODUCT_CONSUMERS must be frozen');
+  assert.ok(Object.isFrozen(compiler.HISTORICAL_FORMAT_ONLY_CONSUMERS), 'HISTORICAL_FORMAT_ONLY_CONSUMERS must be frozen');
+  assert.deepEqual([...compiler.ACTIVE_PRODUCT_CONSUMERS].sort(), ['classic', 'gradia', 'gui']);
+  assert.deepEqual([...compiler.HISTORICAL_FORMAT_ONLY_CONSUMERS].sort(), ['input_writer', 'planner', 'sga']);
+
+  const queryResult = {
+    schema: 'libra.memory_graph_query.v1',
+    generation: 'a'.repeat(64),
+    indexDigest: 'b'.repeat(64),
+    frameId: 'c'.repeat(64),
+    complete: true,
+    candidates: [{ nodeId: 'node-0', family: 'canonical', semanticRole: 'canonical_assertion', text: 'evidence item', score: 1 }]
+  };
+  const mockGraph = {
+    schema: 'libra.memory_graph_projection.v1',
+    scopeKey: 'scope-alpha',
+    units: [{ nodeId: 'node-0', family: 'canonical', text: 'evidence item', recordKey: 'rec-0' }],
+    nodes: [{ id: 'node-0', sourceId: 'src-0', layer: 'source', bindingId: 'b-node-0' }],
+    edges: [],
+    bases: [],
+    readerFrame: { owner: 'libra:plugin_only', scopeKey: 'scope-alpha', worldlineId: 'main', restoreEpoch: 0 }
+  };
+  const verifier = {
+    currentGraph: async () => mockGraph,
+    assertPhysicalCurrentness: async () => true,
+    verifyGradiaReceipt: async () => true
+  };
+
+  for (const consumer of compiler.ACTIVE_PRODUCT_CONSUMERS) {
+    const policy = compiler.CONSUMER_PACKET_POLICIES[consumer];
+    assert.equal(policy.productExecutionAuthorized, true, `${consumer} must be authorized for product execution`);
+    assert.equal(policy.historicalFormatOnly, false, `${consumer} must not be marked historical format only`);
+
+    const packet = buildPacket(consumer);
+    const verification = compiler.verifyConsumerPacket(packet, { maxCharacters: 4096 });
+    assert.equal(verification.ok, true);
+    assert.equal(verification.productExecutionAuthorized, true);
+    assert.equal(verification.historicalFormatOnly, false);
+
+    const selPolicy = consumer === 'gradia' ? { consumer, gradiaSelectionReceipt: RECEIPT } : { consumer };
+    const sel = compiler.select(queryResult, mockGraph, selPolicy);
+    const readsetVerif = await compiler.validateConsumedReadSet(sel.readSetHandle, verifier);
+    assert.equal(readsetVerif.status, 'verified');
+    assert.equal(readsetVerif.productExecutionAuthorized, true);
+    assert.equal(readsetVerif.historicalFormatOnly, false);
+    assert.equal(readsetVerif.modelDispatchEligible, true, `${consumer} must be eligible for model dispatch`);
+  }
+
+  for (const consumer of compiler.HISTORICAL_FORMAT_ONLY_CONSUMERS) {
+    const policy = compiler.CONSUMER_PACKET_POLICIES[consumer];
+    assert.equal(policy.productExecutionAuthorized, false, `${consumer} must NOT be authorized for product execution`);
+    assert.equal(policy.historicalFormatOnly, true, `${consumer} must be marked historical format only`);
+
+    const packet = buildPacket(consumer);
+    const verification = compiler.verifyConsumerPacket(packet, { maxCharacters: 4096 });
+    assert.equal(verification.ok, true);
+    assert.equal(verification.productExecutionAuthorized, false);
+    assert.equal(verification.historicalFormatOnly, true);
+
+    const sel = compiler.select(queryResult, mockGraph, { consumer });
+    const readsetVerif = await compiler.validateConsumedReadSet(sel.readSetHandle, verifier);
+    assert.equal(readsetVerif.status, 'verified', 'readset verification for historical audit/reading must succeed');
+    assert.equal(readsetVerif.productExecutionAuthorized, false);
+    assert.equal(readsetVerif.historicalFormatOnly, true);
+    assert.equal(readsetVerif.modelDispatchEligible, false, `historical format ${consumer} must NEVER have model dispatch authority`);
+
+    const rendered = compiler.render(sel);
+    const packetVerif = await compiler.validatePacket(rendered, verifier);
+    assert.equal(packetVerif.modelDispatchEligible, false, `validatePacket on ${consumer} must return modelDispatchEligible: false`);
   }
 });
 

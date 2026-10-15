@@ -75,24 +75,23 @@ GRADIA는 현재 **server_only·readonly 승인·동일 native scope·수락한 
 
 | ID | 우선순위·현재 상태 | 남은 과제 | 기존 항목 | 선행 조건 |
 | --- | --- | --- | --- | --- |
-| N00 | P2 · 마감 점검 | 활성 소비자와 역사 packet 포맷의 권한·문서 정합성 | M09/M15 | 현재 퇴역 계약 유지 |
-| N01 | P1 · 부분 구현 | 원본 증명 범위 확대, 총 자원 admission, 저장 access 재개·재조립, 선택적 표현 접근 | M02–M05 | 원본별 변경 증명·coverage 계약 |
-| N02 | P1 · 정본 global만 연결 | Micro·State·lore 및 세부 표현의 생산·저장·선택적 접근 결정과 구현 | M06–M08 | 표현/producer 계약, 접근 최적화에는 N01 |
+| N00 | 구현 완료 | 활성 소비자와 역사 packet 포맷의 권한·문서 정합성 분리 | M09/M15 | 현재 퇴역 계약 유지 |
+| N01 | P1 · 주요 구현 완료 | 원본 증명 범위 확대, 총 자원 admission (N01-c/d/e 완료, N01-a/b 세부 증명 남음) | M02–M05 | 원본별 변경 증명·coverage 계약 |
+| N02 | P1 · 다중 family admission 연결 완료 | Micro·State·lore 및 세부 표현의 생산·저장·선택적 접근 결정과 구현 | M06–M08 | 표현/producer 계약, 접근 최적화에는 N01 |
 | N03 | 연결 완료 · N06 검증 남음 | 셰도우·AIDE의 실제 설치·지원 profile 검증 | M09/M10 | 현재 reader/영수증 계약 유지 |
 | N04 | 연결 완료 · N06 검증 남음 | 인풋 작성기의 실제 설치·지원 profile 검증 | M09/M10/M15 | 별도 proposal 세션 유지 |
 | N05 | P1 · owner 기능 필요 | 완전한 inventory와 publisher/build/reader 보호를 갖춘 native GC | M11 | storage owner의 원자적 fence·조건부 삭제 |
 | N06 | P1 · 미완료 | 고정 평가 세트, 계수 평가, 실제 provider·설치 호스트·규모 인증 | M12/M14 | 평가 정의는 즉시 가능, 인증에는 해당 구현 필요 |
 | N07 | 전환·실행 제거 완료 | 단일 엔진 계약과 설정/백업 이관의 회귀 방지 | M13/M15 | N06은 별도 미완료 |
 
-N01-b의 원본/저장 읽기·JSON admission(N01-C1)에 이어 명시적 graph/index/representation·private 근거의 보유 예약·소비자별 해제와 코퍼스 유지보수 admission(N01-C2)을 연결했다. 다음 구현은 **N01-c의 generation에 결속한 저장 접근 진행 cursor·재조립 재개**다. 전체 자원 상한 증명은 계속 N01-b에서 추적한다. N01-a는 현재 증분 증명의 보장 확대 과제로 추적한다. N06-a 평가 세트 정의는 먼저 준비할 수 있다. N03/N04는 이미 연결된 기능을 다시 만드는 과제로 잡지 않고 N06의 소비자별 검증 대상으로 관리한다.
+N01-b의 원본/저장 읽기·JSON admission(N01-C1) 및 자원 예약(N01-C2)에 이어, **N01-c(저장 접근 커서 및 분할 행 재조립 재개)**, **N01-d(증분 구축 vs 전체 재구축 동일성, 취소 재개, CAS 충돌 거부)**, **N01-e / N02(다중 representation admission 게이트 순서 수정 및 selective semantic lane access 격리)**, **N00(활성 제품 소비자 vs 역사 호환 포맷의 발송 권한 분리)** 구현과 검증을 완료했다.
 
-## 3. N00 — 활성 소비자와 호환 포맷
+## 3. N00 — 활성 소비자와 호환 포맷 (구현 완료)
 
-- facade·public API·설정·GUI·백업 가져오기의 활성 소비자 목록을 Classic·GUI·별도 GRADIA와 일치시킨다. 옛 `planner/sga/input_writer` formatter 지원은 그 자체로 제품 실행/발송 권한이 아님을 명시한다.
-- 기존 퇴역 검사를 유지하고 역사 포맷을 실제 제품 권한으로 받아들이는 통로가 있는지 점검한다. 이번 문서 확인만으로 신규 결함이 재현됐다고 주장하지 않는다.
-- 구형 저장 키·원문·사용자 draft의 일괄 삭제나 퇴역 helper 복원은 포함하지 않는다.
-
-**완료 기준:** 활성 목록·호스트 등록·runtime 권한 검사·문서가 일치하고, 옛 설정/백업/공개 API 입력으로 퇴역 실행이 재개되지 않는다. 현재 Classic·GUI와 역사 자료 읽기는 유지한다.
+- `ACTIVE_PRODUCT_CONSUMERS`(`classic`, `gui`, `gradia`)와 `HISTORICAL_FORMAT_ONLY_CONSUMERS`(`planner`, `sga`, `input_writer`)의 권한 경계를 명확히 분리했다.
+- 옛 `planner/sga/input_writer` formatter 지원은 저장/분석 포맷 호환을 위한 것일 뿐, 제품 실행 및 모델 발송 권한(`modelDispatchEligible`)을 획득할 수 없도록 컴파일러 및 런타임에서 차단했다.
+- 물리적 정본 currentness 검증이 성공하더라도 역사 포맷에 대해서는 `modelDispatchEligible: false`가 유지되며, 스스로 발송 권한을 주장하거나 위조할 수 없다.
+- `libra_memory_graph_consumers_test.cjs`에 N00 권한 격리 및 호환성 회귀 검증을 추가했다.
 
 ## 4. N01 — 전체 기록의 공통 영속 접근
 

@@ -49648,17 +49648,21 @@ function createLibraReadonlySourceContext(owner) {
     const createLibraMemoryGraphCompiler = (function createMemoryGraphCompiler({ fingerprint } = {}) {
   if (typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_COMPILER_FINGERPRINT_REQUIRED');
   const schema = 'libra.memory_graph_compiler.v1';
-  const validConsumers = new Set(['classic', 'planner', 'sga', 'input_writer', 'gui', 'gradia']);
+  const ACTIVE_PRODUCT_CONSUMERS = Object.freeze(['classic', 'gui', 'gradia']);
+  const HISTORICAL_FORMAT_ONLY_CONSUMERS = Object.freeze(['planner', 'sga', 'input_writer']);
+  const validConsumers = new Set([...ACTIVE_PRODUCT_CONSUMERS, ...HISTORICAL_FORMAT_ONLY_CONSUMERS]);
 
-  // M09/E3: what each consumer's rendered packet must satisfy before this layer hands it over. Only
-  // facts this layer can check on the envelope are declared here; no host-side behaviour is claimed.
+  // M09/E3/N00: what each consumer's rendered packet must satisfy before this layer hands it over.
+  // Active product consumers (classic, gui, gradia) are authorized for product execution.
+  // Historical formatters (planner, sga, input_writer) are compatibility formats only: support for
+  // their envelope format does NOT grant product execution or model dispatch authority (N00).
   const CONSUMER_PACKET_POLICIES = Object.freeze({
-    classic: Object.freeze({ consumer: 'classic', formatFamily: 'default', lineTag: false, requiresSelectionReceipt: false }),
-    planner: Object.freeze({ consumer: 'planner', formatFamily: 'plan_lines', lineTag: true, requiresSelectionReceipt: false }),
-    sga: Object.freeze({ consumer: 'sga', formatFamily: 'plan_lines', lineTag: true, requiresSelectionReceipt: false }),
-    input_writer: Object.freeze({ consumer: 'input_writer', formatFamily: 'default', lineTag: false, requiresSelectionReceipt: false }),
-    gui: Object.freeze({ consumer: 'gui', formatFamily: 'default', lineTag: false, requiresSelectionReceipt: false }),
-    gradia: Object.freeze({ consumer: 'gradia', formatFamily: 'default', lineTag: false, requiresSelectionReceipt: true })
+    classic: Object.freeze({ consumer: 'classic', formatFamily: 'default', lineTag: false, requiresSelectionReceipt: false, productExecutionAuthorized: true, historicalFormatOnly: false }),
+    planner: Object.freeze({ consumer: 'planner', formatFamily: 'plan_lines', lineTag: true, requiresSelectionReceipt: false, productExecutionAuthorized: false, historicalFormatOnly: true }),
+    sga: Object.freeze({ consumer: 'sga', formatFamily: 'plan_lines', lineTag: true, requiresSelectionReceipt: false, productExecutionAuthorized: false, historicalFormatOnly: true }),
+    input_writer: Object.freeze({ consumer: 'input_writer', formatFamily: 'default', lineTag: false, requiresSelectionReceipt: false, productExecutionAuthorized: false, historicalFormatOnly: true }),
+    gui: Object.freeze({ consumer: 'gui', formatFamily: 'default', lineTag: false, requiresSelectionReceipt: false, productExecutionAuthorized: true, historicalFormatOnly: false }),
+    gradia: Object.freeze({ consumer: 'gradia', formatFamily: 'default', lineTag: false, requiresSelectionReceipt: true, productExecutionAuthorized: true, historicalFormatOnly: false })
   });
 
   // M04: every byte category this boundary can see gets a decision — counted at this layer, or
@@ -49775,10 +49779,15 @@ function createLibraReadonlySourceContext(owner) {
       check('no_unrequested_receipt', packet?.gradiaSelectionReceipt == null, 'receipt present for a non-receipt consumer');
     }
     check('dispatch_not_self_asserted', packet?.modelDispatchEligible !== true, packet?.modelDispatchEligible);
+    if (!policy.productExecutionAuthorized) {
+      check('historical_format_not_authorized_for_dispatch', packet?.modelDispatchEligible !== true, 'historical format cannot have model dispatch');
+    }
     return Object.freeze({
       schema: 'libra.consumer_packet_verification.v1',
       consumer,
       formatFamily: policy.formatFamily,
+      productExecutionAuthorized: Boolean(policy.productExecutionAuthorized),
+      historicalFormatOnly: Boolean(policy.historicalFormatOnly),
       ok: findings.length === 0,
       checked: Object.freeze(checked),
       findings: Object.freeze(findings)
@@ -49808,8 +49817,12 @@ function createLibraReadonlySourceContext(owner) {
         fail('gradia_receipt_required');
       }
     }
+    const packetPolicy = CONSUMER_PACKET_POLICIES[consumer];
     return {
       consumer,
+      formatFamily: packetPolicy.formatFamily,
+      productExecutionAuthorized: packetPolicy.productExecutionAuthorized,
+      historicalFormatOnly: packetPolicy.historicalFormatOnly,
       maxCharacters,
       maxUnits,
       includeMandatoryLore: policy.includeMandatoryLore !== false,
@@ -50424,10 +50437,13 @@ function createLibraReadonlySourceContext(owner) {
     assertHandleActive();
     if (physicalOk !== true && physicalOk?.verified !== true) fail('physical_readset_stale');
 
+    const productExecutionAuthorized = Boolean(record.policy.productExecutionAuthorized);
     return Object.freeze({
       schema: 'libra.consumed_readset_verification.v1',
       status: 'verified',
       consumer: record.policy.consumer,
+      productExecutionAuthorized,
+      historicalFormatOnly: Boolean(record.policy.historicalFormatOnly),
       scopeKey: record.frame.scopeKey,
       worldlineId: record.frame.worldlineId,
       restoreEpoch: record.frame.restoreEpoch,
@@ -50436,7 +50452,7 @@ function createLibraReadonlySourceContext(owner) {
       verifiedBasisCount: Object.keys(record.dependencies.requiredBasisBindings || {}).length,
       verifiedSourceCount: record.dependencies.sourceIds.length,
       verifiedSuppressedMicroCount: record.bundle.suppressedMicroIds.length,
-      modelDispatchEligible: true
+      modelDispatchEligible: productExecutionAuthorized
     });
   };
 
@@ -50459,6 +50475,7 @@ function createLibraReadonlySourceContext(owner) {
 
   return Object.freeze({ select, render, validatePacket, validateConsumedReadSet, revoke, invalidateAll,
     renderPacketText: formatPacketText, verifyConsumerPacket, memoryByteInventory,
+    ACTIVE_PRODUCT_CONSUMERS, HISTORICAL_FORMAT_ONLY_CONSUMERS,
     CONSUMER_PACKET_POLICIES, MEMORY_BYTE_CATEGORY_DECISIONS });
 });
     const createLibraMemoryGraphRollout = (function createMemoryGraphRollout({ index, lane, query, compiler, pages, fingerprint } = {}) {
