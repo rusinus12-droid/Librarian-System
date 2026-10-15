@@ -38,12 +38,13 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
   const fail = reason => { const err = new Error('LIBRA_GRAPH_INDEX_' + reason.toUpperCase()); err.reason = reason; throw err; };
   const hash = text => { const val = fingerprint(text); if (!/^[a-f0-9]{64}$/.test(val)) fail('fingerprint_invalid'); return val; };
 
-  const compile = (graph, { partition, generation, pageBytes = 16384 } = {}) => {
+  const compile = (graph, { partition, generation, pageBytes = 16384, resources = null } = {}) => {
     if (!graph || graph.schema !== 'libra.memory_graph_projection.v1' || typeof partition !== 'string' || !partition
       || typeof generation !== 'string' || !/^[a-f0-9]{64}$/.test(generation)) {
       fail('input_invalid');
     }
 
+    resources?.retain(graph, 'index_compile_input', 4);
     const normalizedGraph = {
       ...graph,
       nodes: Array.isArray(graph.nodes) ? graph.nodes : [],
@@ -295,6 +296,7 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       maxInDegree
     };
     const indexDigest = hash(JSON.stringify([schema, tokenizerVersion, dfScope, partition, generation, stats, tableDigests]));
+    resources?.retain({ directory, adjacency, postings, reverseDependencies, stats }, 'index_compile_tables');
     return issue({
       schema,
       projectionSchema: graph.schema,
@@ -511,14 +513,16 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       || !Number.isSafeInteger(pageBytes) || pageBytes < 256 || pageBytes > 65536) fail('options_invalid');
     const result = await reader({ ...options, table, offset, pageBytes },storageBudget);
     if (result.storageStopped) return result;
-    let page = queryPage({ ...compiled, [table]: result.rows },{ ...options, table, offset, pageBytes });
-    if (page.stopReason === 'row_exceeds_page' && result.splitReassembled === true) {
-      const ceiling = Math.min(65536, typeof pages.inspect === 'function' ? pages.inspect().limits.pageBytes : 65536);
-      if (pageBytes < ceiling) {
-        page = queryPage({ ...compiled, [table]: result.rows },{ ...options, table, offset, pageBytes: ceiling });
+    try {
+      let page = queryPage({ ...compiled, [table]: result.rows },{ ...options, table, offset, pageBytes });
+      if (page.stopReason === 'row_exceeds_page' && result.splitReassembled === true) {
+        const ceiling = Math.min(65536, typeof pages.inspect === 'function' ? pages.inspect().limits.pageBytes : 65536);
+        if (pageBytes < ceiling) {
+          page = queryPage({ ...compiled, [table]: result.rows },{ ...options, table, offset, pageBytes: ceiling });
+        }
       }
-    }
-    return page;
+      return page;
+    } finally { result.release?.(); }
   };
   const isCompatible = (compiled, { partition, generation } = {}) => issued.has(compiled)
     && compiled.partition === partition && compiled.generation === generation;

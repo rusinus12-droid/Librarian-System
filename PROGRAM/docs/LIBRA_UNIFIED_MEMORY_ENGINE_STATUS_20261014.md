@@ -1,16 +1,16 @@
 # LIBRA 차세대 통합 메모리 엔진 — 현황·미완료 작업
 
-- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.11
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 문서 버전: 1.12
 - 최초 조사 기준: `codex/libra-memory-network-20261013`, [`83caadd3940e121e4d6198bb3619845b59146e91`](https://github.com/rusinus12-droid/Librarian-System/commit/83caadd3940e121e4d6198bb3619845b59146e91)
 - 최초 조사 범위: `6320473` 이후 추가된 6개 커밋과 해당 HEAD의 실제 호출 경로·계약·검증 증거
-- 현재 코드 확인 기준: `dbb6f21` 이후 N01-C1 원본/저장 읽기·JSON admission. 최신 실행·증분 구현은 §19–22, 리뷰·패치는 §23, 원본/저장 읽기·JSON admission과 잔여 작업은 §24 및 다음 과제 v1.8을 우선한다.
-- 목표 계약: [통합 엔진 설계 v1.17](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
+- 현재 코드 확인 기준: `e542ce8` 이후 N01-C2 명시적 보유 예약·수명과 코퍼스 유지보수 admission. 최신 실행·증분 구현은 §19–22, 리뷰·패치는 §23, 원본/저장 읽기·JSON admission과 잔여 작업은 §24–25 및 다음 과제 v1.9을 우선한다.
+- 목표 계약: [통합 엔진 설계 v1.18](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [UM0/UM1 대응표](LIBRA_UM0_UM1_ADAPTER_MAPPING.md), [다음 과제 N00–N07](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
 - 결함 증거와 재현: [2026-10-14 코드 리뷰](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md), [2026-10-15 최근 커밋 리뷰·패치](LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261015.md)
 - 판정: **통합 엔진 미완성. 기본 unified의 Classic·GUI·GRADIA 셰도우/AIDE·인풋 작성기와 최종 private 검증을 제한 연결했다. 전체 owner 구간의 단일 그래프·공통 영속 index를 구축하고 실제 검색에서 재사용한다. 정본 벡터와 질의 임베딩도 같은 frontier를 사용한다. 신규 게시 인덱스는 선택적 저장 페이지로 읽는다. 원본 증분 검증·구축 재개·대형 행 분할도 연결했다. 증명 보장 확대, 총 자원 계상, 실제 설치·품질/규모 검증과 안전한 native GC는 남는다. 기본·유일한 serving 엔진은 unified다. 이전 shortlist/RRF/MMR·catalog 준비·최종 renderer는 제거했다.**
 
 이 문서는 구현한 코드, 실제 연결, 통과한 검증, 미완료 항목을 구분한다. 아래의 미완료 항목은 이 문서 작성으로 해결되지 않는다. 상태·근거는 조사 HEAD에 결속되며 이후 커밋에서는 재확인이 필요하다.
 
-§2–11에는 최초 조사와 후속 구현자의 당시 기록이 포함된다. 최신 실행·증분 판정은 §19–22, 리뷰·남은 작업은 §23–24를 우선한다. §2–18의 기본값·구간 제한·소비자 미연결 설명은 당시 기록이다. 특히 옛 `planner/sga/input_writer` 포맷 검사 기록을 LIBRA의 활성 실행 기능으로 읽지 않는다. 현재 연결 대상은 LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기이며, 작성기의 읽기도 별도 미전송 제안 계약으로 제한 연결했다(§17).
+§2–11에는 최초 조사와 후속 구현자의 당시 기록이 포함된다. 최신 실행·증분 판정은 §19–22, 리뷰·남은 작업은 §23–25를 우선한다. §2–18의 기본값·구간 제한·소비자 미연결 설명은 당시 기록이다. 특히 옛 `planner/sga/input_writer` 포맷 검사 기록을 LIBRA의 활성 실행 기능으로 읽지 않는다. 현재 연결 대상은 LIBRA Classic·GUI와 별도 GRADIA의 셰도우·AIDE·인풋 작성기이며, 작성기의 읽기도 별도 미전송 제안 계약으로 제한 연결했다(§17).
 
 ## 1. 완성이 의미하는 것
 
@@ -370,6 +370,8 @@ N01-B의 두 축을 연결했다. 첫째, `buildMemoryGraphCorpus()`가 이전 �
 
 ## 24. 원본/저장 읽기와 JSON workspace admission (N01-C1)
 
+이 절은 N01-C1 당시의 범위다. 보유·수명·코퍼스 유지보수에 대한 후속 구현은 §25를 우선한다.
+
 N01-C의 첫 증분을 실제 native query에 연결했다. scoped 원본 reader·정본 source evidence·최종 source/vector/readset 검증과 corpus root/manifest/proof/projection/page I/O가 요청별 payload byte/read quota와 runtime 공유 pool을 사용한다. JSON record 처리와 분할 재조립도 `measure/encodedSize/stageCost`의 사전 workspace 예약을 거친다. 요청의 scope 복사본/private WeakMap으로 전달하며 전역 current-request나 별도 payload cache를 만들지 않는다.
 
 기본 요청 예산은 source 64 MiB, durable 32 MiB, value 8 MiB, JSON workspace 추정 64 MiB, read 8,192회다. 공유 pool은 I/O allowance 32 MiB·JSON workspace 추정 128 MiB·pending read 8개다. 대기 대신 명시적 backpressure로 거부하며 quota는 최종 재검증에도 이어 적용한다. reader가 중간 오류를 pending으로 잡아도 예산 실패 latch를 최종 native/semantic 경계에서 재확인한다. 취소·복원/store serial·늦은 응답·실패에는 lease를 해제한다.
@@ -379,3 +381,13 @@ N01-C의 첫 증분을 실제 native query에 연결했다. scoped 원본 reader
 새 자원 커널 8건과 등록 native 5건을 검사한다. 세 저장 모드의 정상/저예산/복구·원본 쓰기/모델 호출 없음, 네 pending query와 추가 요청의 shared backpressure, 취소 후 과거 결과 거부·현재 예약 0, 큰 Micro의 budget 오류가 partial로 가려지지 않음을 확인한다. SDK 실제 HTTP/SQLite observer 회귀와 기존 corpus·semantic·Classic/GUI·GRADIA 통합 경로도 검사한다. 상세 재현은 [N01-C1 계약](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다.
 
 **N01-C 전체 완료는 아니다.** scope 결속 전 host context/route bootstrap, host lore/settings·외부 permission witness, HTTP envelope/transport parsing과 oversized 응답의 선할당, 장기 보유 graph/index/representation/private authority, vector hydration·build/publication·전체 VM heap은 남는다. Compiler의 기존 전체 counter를 거짓 계측값으로 채우지 않으며 `byteBounded:false`를 유지한다. 다음은 N01-C2의 장기 보유 데이터·유지보수 admission/release와 owner bounded transport 증명이다. 실제 설치·품질·규모 인증은 N06이다.
+
+## 25. N01-C2 — 명시적 보유 예약·권한 수명·코퍼스 유지보수
+
+`e542ce8`의 I/O/JSON 예산에 별도 retained ledger를 연결했다. 기본 요청 64 MiB·공유 256 MiB·활성 session 32개·10분 만료는 명시적 보유 추정의 초기 profile이다. graph projection, durable proof/projection decode, vector hydration·semantic allowance, index compile·eligibility·선택 작업·private readset/packet, 선택한 저장 행의 재조립에 적용한다. 코퍼스 build/publication·eager audit도 같은 owner read·보유 pool을 사용한다. [자원 예산 계약 v1.1](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)에 산식·실제 예약 지점과 미측정을 명시했다.
+
+공개 query/GUI는 DTO 처리 후 private 실행을 해제하고 Classic은 성공한 UI 검증 문맥에 수명을 이전한다. Classic 실패·supersession·4개 문맥 축출, GRADIA receipt release·취소·연결 해제·현재성 실패·만료·dispose와 compiler 무효화는 권한을 폐기한다. 취소 뒤 query가 늦게 끝나도 실행을 해제한다. 작업 중인 reference는 activity 종료까지 예약을 유지한다. 최종 검증의 재투영은 매 호출의 별도 scope로 계상하고 해제하므로 반복 검증이 보유량을 누적하지 않는다.
+
+검증은 순수 retained/shared/session/expiry/활성 작업·동시 scope 사례, plugin_only/server_only/mirror native query의 예산 실패·DTO 해제, native corpus build/eager audit의 실패·root 보존, 실제 HTTP/SQLite owner receipt의 반복 검증·backpressure·release/dispose/무효화 해제와 기존 semantic·Classic·GRADIA SHADOW/AIDE·인풋 작성기 경로를 포함한다. 등록 fixture/통합 검증이며 실제 RisuAI 설치의 물리적 peak heap 인증은 아니다.
+
+**남음:** 전체 heap·transport/host buffer·미등록 할당·hash/serialization scratch·진단 Store 경로의 전수 계상, 초기 retained 산식/지원 corpus·동시성 profile 검증. `byteBounded:false`, `ownerAtomicity:false`, `inventoryComplete:false`를 유지한다. 다음 구현 우선순위는 N01-c의 저장 접근 cursor·재조립 재개다. 추가 표현 producer, 안전한 원자적 native GC, 설치·품질·규모 인증도 남아 있다.

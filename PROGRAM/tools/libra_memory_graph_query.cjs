@@ -1114,5 +1114,5 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     while (!next.done) next = work.next(await next.value.drainPendingAsync());
     return next.value;
   };
-  return Object.freeze({ sealQueryFrame, openView, scoreCandidate, retrieve, retrieveAsync });
+  return Object.freeze({ sealQueryFrame, openView, closeView: handle => issuedViews.delete(handle), scoreCandidate, retrieve, retrieveAsync });
 };

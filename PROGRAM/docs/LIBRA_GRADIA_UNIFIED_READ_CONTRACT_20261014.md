@@ -1,6 +1,6 @@
 # GRADIA의 LIBRA 통합 메모리 읽기 계약
 
-- 작성일: 2026-10-14 · 버전: 1.1
+- 작성일: 2026-10-14 · 버전: 1.2
 - 범위: [다음 과제 N03](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)의 실제 공급자 연결. 통합 엔진 전체 완성이나 설치 호스트 인증은 아니다.
 
 ## 사용 방법과 지원 범위
@@ -50,3 +50,7 @@ item의 `libra.unified.bundle:<receipt>` key는 이 실행에서 발급한 bundl
 N03 최초 연결(`e4ef853`)에서 위 세 신규/확장 suite의 23개 검사와 기존 영향권 검사 묶음의 99개가 통과했다. source 계약 파일 내부의 18개 판정과 native semantic 회귀의 8개 시나리오도 모두 통과했다. 두 플러그인의 source 빌드·구문 검사와 SDK/graph/channel 내장 동기화 검사를 수행했다. 빌드의 기존 크기 기준 초과 경고는 성능 인증으로 해석하지 않는다. 후속 작성기 검증은 N04 계약에서 추적한다.
 
 호스트 채널과 모델 응답은 제어된 fixture다. 실제 설치 RisuAI의 채널 호환·성능, 외부 모델 답변의 의미 품질, 대규모 workload는 미인증이다. 검색은 게시된 전체 corpus index 또는 같은 엔진의 request-local 전체 owner 구간을 사용하며, owner coverage와 자원 상한은 보존한다. 전체 corpus의 durable 인덱스·공통 캐시/Memory Lane(N01), 자료별 나머지 representation(N02), 안전한 native GC(N05), 품질/설치 인증(N06), 기본·유일한 serving 전환(N07)은 [전환 계약](LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md)에 따라 수행했다.
+
+## 보유 수명과 해제 (N01-C2)
+
+owner receipt의 private 실행은 [공통 retained 예산](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)에 연결한다. release·취소·disconnect·dispose·현재성 실패·10분 만료 시 실행을 폐기한다. 취소 뒤 늦게 끝난 query도 해제한다. 반복 검증은 호출별 scope를 사용한다. compiler 무효화도 원본 권한을 폐기하며 active 작업의 예약은 실제 종료까지 유지한다. 공유 예산이 부족한 새 읽기는 거부하며 기존 receipt를 유효하다고 위조하거나 다른 검색으로 우회하지 않는다.

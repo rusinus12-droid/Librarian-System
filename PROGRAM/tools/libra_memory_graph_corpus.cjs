@@ -522,6 +522,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
 
   const parse = async (raw, maximum, resources = null) => {
     if (typeof raw !== 'string' || raw.length > maximum || pages.encodedSize(raw).utf8Bytes > maximum) fail('record_size');
+    resources?.retain(raw,'durable_decoded_record');
     const decode = () => { try { return JSON.parse(raw); } catch (_) { fail('record_invalid'); } };
     return resources ? await resources.withValue(raw,decode) : decode();
   };
@@ -539,9 +540,10 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
   const prepare = async ({ snapshot, owner, options = {}, reason = 'no_published_corpus' } = {}) => {
     const native = await enumerate(snapshot, options, owner.check), generation = stamp(native.graph);
     if (owner && typeof owner === 'object') knownFrames.set(owner, native.graph);
+    owner.resources?.retain(native.graph,'merged_corpus_graph');
     return { ...native, compiledIndex: null,
-      currentGraph: async () => {
-        const live = await enumerate(snapshot, native.config, owner.check);
+      currentGraph: async (resources = owner.resources) => {
+        const live = await enumerate(opts => snapshot(opts,resources), native.config, resources?.check || owner.check);
         if (!same(live.windows,native.windows) || stamp(live.graph) !== generation) fail('source_changed');
         return live.graph;
       },
@@ -842,6 +844,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
           windowSlices: value.windowSlices,
           ownerProof: partialOwnerProof || null
         };
+        owner.resources?.retain(cpRecord,'publication_checkpoint',2);
         const cpRaw = JSON.stringify({ ...cpRecord, payloadDigest: hash(JSON.stringify(cpRecord)) });
         if (new TextEncoder().encode(cpRaw).length > config.maxSerializedBytes) fail('workspace_budget');
         let attempt = incrementalPlan?.checkpointAttempt ?? 0;
@@ -876,7 +879,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         previous = await owner.read(loc.rootKey);
         owner.check();
       }
-      const compiled = index.compile(graph, { partition: loc.partition, generation, pageBytes: config.pageBytes });
+      const compiled = index.compile(graph, { partition: loc.partition, generation, pageBytes: config.pageBytes, resources: owner.resources });
       const refs = [];
       let total = 0, reusedPageCount = 0, writtenPageCount = 0, splitRowCount = 0, splitChunkCount = 0;
 
@@ -992,6 +995,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         familyContracts: FAMILY_CURRENTNESS_CONTRACTS,
         ownerProof: ownerProof || null
       };
+      owner.resources?.retain(proofRecord,'publication_proof',2);
       const proofRaw = JSON.stringify(proofRecord), proofDigest = hash(proofRaw), proofKey = loc.prefix + 'proof:' + proofDigest;
       if (new TextEncoder().encode(proofRaw).length > config.maxSerializedBytes) fail('index_budget');
       await immutable(owner, proofKey, proofRaw);
@@ -1010,6 +1014,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
           canonicalRows: Array.isArray(value.collected?.canonicalRows) ? value.collected.canonicalRows : []
         }
       };
+      owner.resources?.retain(projectionRecord,'publication_projection',2);
       const projectionRaw = JSON.stringify(projectionRecord), projectionDigest = hash(projectionRaw), projectionKey = loc.prefix + 'projection:' + projectionDigest;
       if (new TextEncoder().encode(projectionRaw).length > config.maxSerializedBytes) fail('index_budget');
       await immutable(owner, projectionKey, projectionRaw);
@@ -1043,6 +1048,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         sourceProofs, buildMetrics, serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
         ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
       pages.measure(manifest, 131072);
+      owner.resources?.retain(manifest,'publication_manifest',2);
       const raw = JSON.stringify(manifest), digest = hash(raw), key = loc.prefix + 'manifest:' + digest;
       await immutable(owner, key, raw);
 
@@ -1251,26 +1257,30 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       } finally { if (lease) pages.release(lease); if (stage) pages.releaseStage(stage); if (handle) pages.close(handle); }
     };
     const readRows = async (spec, budget) => {
-      owner.check(); await owner.assertRoute?.(); owner.check();
-      const credit = budget || { maxPages: 512, maxBytes: 8388608, pagesRead: 0, bytesRead: 0 };
-      if (!Number.isSafeInteger(credit.maxPages) || credit.maxPages < 1 || credit.maxPages > 512
-        || !Number.isSafeInteger(credit.maxBytes) || credit.maxBytes < 512 || credit.maxBytes > 8388608
-        || !Number.isSafeInteger(credit.pagesRead) || credit.pagesRead < 0 || credit.pagesRead > credit.maxPages
-        || !Number.isSafeInteger(credit.bytesRead) || credit.bytesRead < 0 || credit.bytesRead > credit.maxBytes) fail('storage_budget_invalid');
-      const rawRows = [];
-      for (const ref of manifest.refs) if (ref.table === spec.table && mightContain(ref, spec)) {
-        const stopped = await readPage(ref, page => rawRows.push(...page), credit);
-        if (stopped) return { storageStopped: true, stopReason: stopped };
-      }
-      await assertIndexCurrent();
-      const reassembled = await reassembleTableRows(spec.table, rawRows, owner.resources);
-      return { rows: reassembled.rows, splitReassembled: reassembled.splitReassembled };
+      const scope = owner.resources?.scope();
+      try {
+        owner.check(); await owner.assertRoute?.(); owner.check();
+        const credit = budget || { maxPages: 512, maxBytes: 8388608, pagesRead: 0, bytesRead: 0 };
+        if (!Number.isSafeInteger(credit.maxPages) || credit.maxPages < 1 || credit.maxPages > 512
+          || !Number.isSafeInteger(credit.maxBytes) || credit.maxBytes < 512 || credit.maxBytes > 8388608
+          || !Number.isSafeInteger(credit.pagesRead) || credit.pagesRead < 0 || credit.pagesRead > credit.maxPages
+          || !Number.isSafeInteger(credit.bytesRead) || credit.bytesRead < 0 || credit.bytesRead > credit.maxBytes) fail('storage_budget_invalid');
+        const rawRows = [];
+        for (const ref of manifest.refs) if (ref.table === spec.table && mightContain(ref, spec)) {
+          const stopped = await readPage(ref, page => { scope?.retain(page,'selected_index_rows'); rawRows.push(...page); }, credit);
+          if (stopped) { scope?.close(); return { storageStopped: true, stopReason: stopped }; }
+        }
+        await assertIndexCurrent();
+        const reassembled = await reassembleTableRows(spec.table, rawRows, scope);
+        scope?.retain(reassembled.rows,'reassembled_index_rows');
+        return { rows: reassembled.rows, splitReassembled: reassembled.splitReassembled, release: () => scope?.close() };
+      } catch (error) { scope?.close(); throw error; }
     };
     let compiledIndex;
     if (lazy) compiledIndex = index.restoreLazy(manifest.metadata, { partition: loc.partition, generation: manifest.generation, readRows });
     else {
       const rawRestored = Object.fromEntries(tables.map(table => [table, []]));
-      for (const ref of manifest.refs) await readPage(ref, rows => rawRestored[ref.table].push(...rows));
+      for (const ref of manifest.refs) await readPage(ref, rows => { owner.resources?.retain(rows,'eager_index_rows'); rawRestored[ref.table].push(...rows); });
       const restored = { ...manifest.metadata };
       for (const table of tables) {
         restored[table] = (await reassembleTableRows(table, rawRestored[table], owner.resources)).rows;
@@ -1278,7 +1288,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       compiledIndex = index.restore(restored, { partition: loc.partition, generation: manifest.generation });
     }
     await assertIndexCurrent();
-    const currentGraph = async () => {
+    const currentGraph = async (resources = owner.resources) => {
       await assertIndexCurrent();
       if (canVerifyIncrementally) {
         const latestVerdict = await owner.verifySourceProofs(proofRecord, { initialGraph: startGraph, config: native.config, phase: 'commit' });
@@ -1289,7 +1299,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         await assertIndexCurrent();
         return native.graph;
       }
-      const live = await enumerate(snapshot, native.config, owner.check);
+      const live = await enumerate(opts => snapshot(opts,resources), native.config, resources?.check || owner.check);
       if (!same(live.windows, manifest.windows) || stamp(live.graph) !== manifest.generation) fail('stale_generation');
       await assertIndexCurrent(); return live.graph;
     };

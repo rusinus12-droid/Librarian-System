@@ -480,6 +480,30 @@ test('R6: final packet validation rejects clones and invalidated private handles
   await assert.rejects(() => compiler.validatePacket(packet, verifier), /PACKET_NOT_ISSUED/);
 });
 
+
+test('resource-backed issuance revokes every packet and drains only after overlapping validators finish', async () => {
+  const { graph, queryResult, compiler } = runPipeline(makeSnapshot());
+  const pages = createMemoryGraphPages({ fingerprint: sha256 });
+  const pool = resolveTool('libra_memory_graph_resources.cjs')({ measure: pages.measure, encodedSize: pages.encodedSize, stageCost: pages.stageCost });
+  const unissued = pool.open(); unissued.reserveRetained(100,'unissued');
+  compiler.invalidateAll(); unissued.check(); // Derived writes cannot cancel a not-yet-issued query globally.
+  const resources = pool.open(), selected = compiler.select(queryResult,graph,{},resources);
+  const first = compiler.render(selected), second = compiler.render(selected);
+  let release, entered = 0, started;
+  const waiting = new Promise(r => { started = r; }), gate = new Promise(r => { release = r; });
+  const verifier = { openValidation() {
+    const scope = resources.scope(); scope.reserveRetained(200,'validation');
+    return { release: () => scope.close(), currentGraph: async () => { if (++entered === 2) started(); await gate; return graph; }, assertPhysicalCurrentness: async () => true };
+  } };
+  const pending = Promise.allSettled([compiler.validatePacket(first,verifier),compiler.validatePacket(second,verifier)]);
+  await waiting; compiler.invalidateAll();
+  assert.equal(resources.inspect().closed,true);assert.ok(pool.inspect().retainedBytes>500,'active validators retain their authority allocation');
+  await assert.rejects(()=>compiler.validatePacket(first,verifier),/PACKET_NOT_ISSUED/);
+  await assert.rejects(()=>compiler.validatePacket(second,verifier),/PACKET_NOT_ISSUED/);
+  release();assert.ok((await pending).every(result=>result.status==='rejected'));
+  assert.equal(pool.inspect().retainedBytes,100);unissued.close();assert.equal(pool.inspect().retainedBytes,0);assert.equal(pool.inspect().sessions,0);
+});
+
 (async () => {
   for (const t of tests) {
     await t.fn();

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-15T09:32:23.595Z",
+  "generatedAt": "2026-10-15T10:10:03.761Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2474,8 +2474,8 @@
       "bytes": 1059
     },
     "docs/LIBRA_DURABLE_CORPUS_INDEX_CONTRACT_20261014.md": {
-      "sha256": "3743317869859576daf2694a38f96803b1fd38b3d94b2040e494bb7196975c3c",
-      "bytes": 14740
+      "sha256": "9001049c8e05d9f103545171e8951df9a6257f177720276f54b12263f88c1ac2",
+      "bytes": 14868
     },
     "docs/LIBRA_EROSYNC_ADOPTION_2.3.64.md": {
       "sha256": "0b481b98acd7a018dbdc36d570c1ad5568ba989224a91f9a68454d5714599d6f",
@@ -2502,8 +2502,8 @@
       "bytes": 7917
     },
     "docs/LIBRA_GRADIA_UNIFIED_READ_CONTRACT_20261014.md": {
-      "sha256": "f6215acd9e1550963d2f911e68a2c9a20cc817b085b76818129e8664bd6712ee",
-      "bytes": 9140
+      "sha256": "f6ef9aa3be9a475e0e4085f2337c4ea88517ddbea7e9d28353ea030c02a502e9",
+      "bytes": 9758
     },
     "docs/LIBRA_GUI_LAYOUT_2.3.83.md": {
       "sha256": "7a625eb238c0f0186d83763979e0518434ea818aa80a9522f93879107889c8ec",
@@ -2590,8 +2590,8 @@
       "bytes": 2810
     },
     "docs/LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md": {
-      "sha256": "e4129ded053aaf0d585ffbf0eb06d7dc6342fc8c3729c31d453b44cf33a2dbc8",
-      "bytes": 10897
+      "sha256": "8ffaab4e06525ebdb0e87b47dc298ad6ec915d2fb436d7f6de2b75ebcca62179",
+      "bytes": 16025
     },
     "docs/LIBRA_RESPONSE_MODE_DEFAULT_2.3.66.md": {
       "sha256": "37c7f106ed1555c5106edb75eff6e8edfa9f2c38b14b8c1ef2701f43bb9645b8",
@@ -2602,8 +2602,8 @@
       "bytes": 1106
     },
     "docs/LIBRA_SELECTIVE_INDEX_READ_CONTRACT_20261014.md": {
-      "sha256": "c6e325a01af79e9e36db5c2d39ac73305f38a54d50e1b9c95f85b90e6329e2a1",
-      "bytes": 10652
+      "sha256": "0a98128cc0875ef2a1da3c8b185e6f45d27a4d7c247a427a5f0e391464d7c346",
+      "bytes": 10997
     },
     "docs/LIBRA_SENSITIVE_MEMORY_2.3.63.md": {
       "sha256": "6fb3f812d95a21445ca49fe784d9177a131d0a3539258e3e666e27f844a13560",
@@ -2646,12 +2646,12 @@
       "bytes": 52740
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md": {
-      "sha256": "6689df1afad6b1adbde24ffa2a1f52a10ac1bb2c2a7652295e52a78174c70431",
-      "bytes": 84190
+      "sha256": "ef67f163a1a7dcf519d33223a7378f5daf800fafc074e5770ae6e06772387ca6",
+      "bytes": 84242
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md": {
-      "sha256": "df1152ad0ffbf70a6df99935561b58df182974e05e7f44613f39b6500807125e",
-      "bytes": 31140
+      "sha256": "e23488f926c1663b51e3f5b2ff208008b1629822d2e9f211dda4069255ad1fad",
+      "bytes": 31741
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_REVIEW_20261014.md": {
       "sha256": "bd7dec8c30e4ac2b0623fbce5e1dcd4fe36d18fc86bd7425632cc0a5bcd3ffaf",
@@ -2662,8 +2662,8 @@
       "bytes": 9117
     },
     "docs/LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md": {
-      "sha256": "3e9b72933fa1c1b4132db27c49be4be7bb5e4aca6f7af54516de6d897a038990",
-      "bytes": 66042
+      "sha256": "ab629c4a1ef12a1ecf90086067f738320d4fe12a22cee0a578a15c2612c5edc7",
+      "bytes": 68484
     },
     "docs/LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md": {
       "sha256": "31b82e1060a20d5d30371ab60c0a026f1375ab71c1e14e7f9d05a2a05fad31de",
@@ -3662,8 +3662,8 @@
       "bytes": 3266990
     },
     "plugins/GRADIA.js": {
-      "sha256": "12787edef4691da321968ecb7a606421b37c024a7a343f39e5332117b48ff9e3",
-      "bytes": 2910511
+      "sha256": "78665e2514f97682135ff4c5404a041bd40f58334a25f4b40c6cb057b09a6f1c",
+      "bytes": 2910922
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "fb24c0017a95d2225127dfbabec5ba92a494325883c257df8829fa98cc41db66",
@@ -3674,8 +3674,8 @@
       "bytes": 1834762
     },
     "plugins/LIBRA.js": {
-      "sha256": "eca4f08b443aeca31073e9815920cd38471c4a2d65a0e43824e13be755038c99",
-      "bytes": 5871091
+      "sha256": "d05466ce6058e5ac10735152d8b9e79c0d545c7eb0c47d69e84c5b93f179f607",
+      "bytes": 5884972
     },
     "plugins/RETRACE.js": {
       "sha256": "eb3b80d2c2ff5876d80b0af29782b0fe93b580d0febc5533d036d54b71f5146e",
@@ -7190,8 +7190,8 @@
       "bytes": 4984
     },
     "tests/libra_gradia_unified_read_owner_test.cjs": {
-      "sha256": "ae6f4cc13ea1228e6b654af3bf3969facef0a97e0b235571ec4bab2b2a4e1bfa",
-      "bytes": 7054
+      "sha256": "f7fa824473ba6c1b98777e1f3bb207e1794c54e7aeecf0c3e215d6d8554acd90",
+      "bytes": 7882
     },
     "tests/libra_gradia_unified_read_source_test.cjs": {
       "sha256": "7b19372ffe6b17317e83023486b3614d85ca1e8a88d1b13b4a77d923be096e18",
@@ -7530,8 +7530,8 @@
       "bytes": 2508
     },
     "tests/libra_memory_graph_compiler_test.cjs": {
-      "sha256": "784154a1726db707f75a99835fe21b2ae2482e339cf11a040215e62431fe32fc",
-      "bytes": 21515
+      "sha256": "44388536468e70ccbc1fedc5a0adcf4302189cda370530118b26d06b6348e314",
+      "bytes": 23450
     },
     "tests/libra_memory_graph_consumers_test.cjs": {
       "sha256": "0a8b7ea4322b7bf90c9f93b246d4a02a72b0a6896373899f4e9e13328ea6761c",
@@ -7610,12 +7610,12 @@
       "bytes": 11540
     },
     "tests/libra_memory_graph_resources_runtime_test.cjs": {
-      "sha256": "14b6895aca74c6f0c8f15fb0c1580bef2576ffc7e2c92e46a1eeda0e68d1df72",
-      "bytes": 4419
+      "sha256": "8496dd4a2ec226d9efd34c2c1d4e7ec9917b25555f26b2f8bd44ef3f81f78c83",
+      "bytes": 9919
     },
     "tests/libra_memory_graph_resources_test.cjs": {
-      "sha256": "2504863be3d20989ecf02485b5e8402cb064cd053debea1b27eb8de97a9b8a04",
-      "bytes": 4379
+      "sha256": "c0bf103c889ccf6922ea445650ff6c0be7a1399cf8a69daed32536820e8c364d",
+      "bytes": 7087
     },
     "tests/libra_memory_graph_review_boundaries_runtime_test.cjs": {
       "sha256": "767aacb407e7debbe6148cf1077969c8f57bcc29a4eda0c1f9b570bd70a699b8",
@@ -10262,28 +10262,28 @@
       "bytes": 29067
     },
     "tools/libra_gradia_unified_read.cjs": {
-      "sha256": "e63ed0e069bcd384af7e7711429949601e841cf014a5d35e98f5538bd45e0288",
-      "bytes": 13333
+      "sha256": "606d6b9ae2d64b09f42c8244077ede87ea530ce30756b75a8abb665a78f055ee",
+      "bytes": 13744
     },
     "tools/libra_memory_engine_mode.cjs": {
       "sha256": "450764f41c9be217efacbc1a68142cface96c8436815d2584ee6604b45769738",
       "bytes": 2989
     },
     "tools/libra_memory_graph_compiler.cjs": {
-      "sha256": "561a82d15aa04b93d9c7453f65cc4b8f766d3924892104d8c8460fac7ba476ed",
-      "bytes": 40316
+      "sha256": "262ff76004bfb6ec95e9366afdbb7c2494462bcabba49d3d41d9c296991617dc",
+      "bytes": 41685
     },
     "tools/libra_memory_graph_corpus.cjs": {
-      "sha256": "c6b1762e468acdf88e45795f7c87cd7c20f68171f6c5bbfd82d43bac6b605153",
-      "bytes": 71418
+      "sha256": "d26b746d88823df48ac1ca5b8b8367790e118c45ab9058e31503aa0f4deb8487",
+      "bytes": 72335
     },
     "tools/libra_memory_graph_identity.cjs": {
       "sha256": "2e30acf13362eee0a223b54a7d3a7c045b0bec5371d65a3363166c76496f8b30",
       "bytes": 10543
     },
     "tools/libra_memory_graph_index.cjs": {
-      "sha256": "d10c032a08fa4e8050ea6bf7530dc3ce1fdf588a1f8315b03fca53b425b63771",
-      "bytes": 24855
+      "sha256": "fe80491297e08a8209eec0b4f5ffebadca17efd47cb5a75995ca73cb45652bfb",
+      "bytes": 25104
     },
     "tools/libra_memory_graph_inventory.cjs": {
       "sha256": "5165b286f18a3d1bc3df4e9a850ac4b3bbaecbe56d048681e41aa8b3a55f5c4c",
@@ -10298,8 +10298,8 @@
       "bytes": 18020
     },
     "tools/libra_memory_graph_query.cjs": {
-      "sha256": "98f4ed33fb35b4ee2a1abbd0c1f615bf38d852cfd4d958f1159021f3a7ed949a",
-      "bytes": 50486
+      "sha256": "12d7526b27c6a7cab53b6abda094896a48ef0e97572f7428fdf9fdd7a6940403",
+      "bytes": 50535
     },
     "tools/libra_memory_graph_readers.cjs": {
       "sha256": "b13cc3cbf6b75c08ec70194e020bdb83374c6c9a2b6ce1b45a8928ae3eab7142",
@@ -10310,12 +10310,12 @@
       "bytes": 13957
     },
     "tools/libra_memory_graph_resources.cjs": {
-      "sha256": "aeab84fc6aad8792d541d3d3749a91566d4cc92da1cc8bbd61235664c298a4a9",
-      "bytes": 7513
+      "sha256": "28728efcf4886f37633d44558c4d6d9423964b23a378296c8a6afb2a2189b645",
+      "bytes": 12869
     },
     "tools/libra_memory_graph_rollout.cjs": {
-      "sha256": "75e2fe05452ddb8bb9026173de16e9d0eb52eed1665f27fe9af0645c7e1ab832",
-      "bytes": 19601
+      "sha256": "9737d4e95d98348780f604e59268aca5c62ebd7c63321377bf6e379d2e6a6b7b",
+      "bytes": 20427
     },
     "tools/libra_memory_graph_semantic.cjs": {
       "sha256": "7aeea54db90413ed109c7f0c86e766da648acad67baefc1bf039876f9f24a13d",

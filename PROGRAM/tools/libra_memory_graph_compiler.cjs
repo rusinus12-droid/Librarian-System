@@ -154,6 +154,8 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
   let issuedReadSets = new WeakMap();
   let issuedPackets = new WeakMap();
   let compilerEpoch = 0;
+  // Only resource-backed issued readsets are held strongly; their session limit/TTL bounds this set.
+  const resourceReadSets = new Set();
 
   const normalizePolicy = (policy = {}) => {
     const consumer = String(policy.consumer || 'classic');
@@ -329,7 +331,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
   };
 
   // Select an EvidenceBundle under envelope-aware character & unit budgets with conservative Micro absorption (§10, V09, D07, M08, M09)
-  const select = (queryResult, graph, rawPolicy = {}) => {
+  const select = (queryResult, graph, rawPolicy = {}, resources = null) => {
     if (!queryResult || queryResult.schema !== 'libra.memory_graph_query.v1') fail('query_result_invalid');
     if (!graph || graph.schema !== 'libra.memory_graph_projection.v1') fail('graph_invalid');
     const policy = normalizePolicy(rawPolicy);
@@ -590,7 +592,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       scopeKey: bundle.scopeKey
     });
 
-    issuedReadSets.set(readSetToken, {
+    const privateRecord = {
       compilerEpoch,
       revoked: false,
       bundle,
@@ -616,9 +618,15 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
         + utf8Bytes(JSON.stringify(Object.fromEntries(requiredBindings)))
         + utf8Bytes(JSON.stringify(Object.fromEntries(requiredEdgeBindings)))
         + utf8Bytes(JSON.stringify(Object.fromEntries(requiredBasisBindings)))
-    });
+    };
 
-    const readSetBytes = issuedReadSets.get(readSetToken).readSetBytes;
+    resources?.retain(privateRecord, 'private_readset');
+    privateRecord.resources = resources;
+    privateRecord.release = resources ? () => resources.close('readset_revoked') : null;
+    issuedReadSets.set(readSetToken,privateRecord);
+    if (resources) resourceReadSets.add(readSetToken);
+    resources?.onClose(() => revoke(readSetToken));
+    const readSetBytes = privateRecord.readSetBytes;
     return Object.freeze({ bundle, readSetHandle: readSetToken, readSetBytes });
   };
 
@@ -685,6 +693,11 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
         modelDispatchEligible: false
       }, { maxCharacters: Number(bundle.budget?.maxCharacters || 0), itemCount: bundle.items.length })
     });
+    // Packet issuance happens only after retained admission. A failed render revokes the selection.
+    try { record.packetLease = record.resources?.retain(packet, 'consumer_packet'); }
+    catch (error) { revoke(readSetHandle); throw error; }
+    if (!record.packets) record.packets = new Set();
+    record.packets.add(packet);
     issuedPackets.set(packet, { bundle, readSetHandle });
     return packet;
   };
@@ -704,6 +717,11 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
 
   // Final physical readset verification at model dispatch boundary (§10, §11, D02, D04, M10, V06, V07, V09, V12)
   const validateConsumedReadSet = async (readSetHandle, ownerVerifier = {}) => {
+    const scoped = ownerVerifier.openValidation ? ownerVerifier.openValidation() : ownerVerifier;
+    try { return await validateReadSet(readSetHandle,scoped); }
+    finally { if (scoped !== ownerVerifier) scoped.release(); }
+  };
+  const validateReadSet = async (readSetHandle, ownerVerifier) => {
     const record = readSetHandle && issuedReadSets.get(readSetHandle);
     const assertHandleActive = () => {
       const current = readSetHandle && issuedReadSets.get(readSetHandle);
@@ -788,11 +806,17 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
 
   const revoke = readSetHandle => {
     const record = readSetHandle && issuedReadSets.get(readSetHandle);
-    if (record) record.revoked = true;
+    if (record) {
+      record.revoked = true; issuedReadSets.delete(readSetHandle);
+      resourceReadSets.delete(readSetHandle);
+      for (const packet of record.packets || []) issuedPackets.delete(packet);
+      record.release?.();
+    }
   };
 
   const invalidateAll = () => {
     compilerEpoch++;
+    for (const handle of [...resourceReadSets]) revoke(handle);
     issuedReadSets = new WeakMap();
     issuedPackets = new WeakMap();
   };

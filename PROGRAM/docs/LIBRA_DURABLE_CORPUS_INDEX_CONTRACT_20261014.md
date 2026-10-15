@@ -1,6 +1,6 @@
 # LIBRA 전체 구간 공통 인덱스 — 구현 계약
 
-- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 버전: 1.6
+- 작성일: 2026-10-14 · 갱신일: 2026-10-15 · 버전: 1.7
 - 조사 기준: `89fb341` 이후의 이 증분, N01-A 증분 원본 현재성 검증 및 N01-B 증분 구축·재개·대형 단일 행 분할
 - 판정: **여러 원본 구간을 하나의 검색 그래프로 연결하고 공통 인덱스를 영속화·재사용한다. 신규 게시 index의 선택적 페이지 접근, owner 증분 증명(`N01-A`), 증분 구축·체크포인트 재개 및 대형 단일 행 분할(`N01-B`)을 연결했다. 전체 바이트 예산(`N01-C`) 및 대규모 성능 인증은 아직 미완성이다.**
 
@@ -91,4 +91,4 @@ native GC는 owner namespace의 원자적 publisher/build/reader 보호 기능�
 
 ## 6. 질의 중 owner I/O·JSON admission
 
-N01-C1은 actual query의 root/manifest/proof/projection/page payload 접근을 요청의 durable byte/read quota에 계상하고 shared I/O allowance를 사전 예약한다. record JSON 처리와 분할 행의 결합·재조립은 공통 workspace 산식을 사용한다. 낮은 예산·shared backpressure·취소에서 저장 repair나 다른 검색으로 우회하지 않는다. 상세 설정·counter 단위·미측정 범위는 [자원 예산 계약](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다. maintenance build/publication과 장기 보유 graph/index/표현은 아직 이 예산의 전체 보장 범위가 아니다.
+N01-C1은 actual query의 root/manifest/proof/projection/page payload 접근을 요청의 durable byte/read quota에 계상하고 shared I/O allowance를 사전 예약한다. record JSON 처리와 분할 행의 결합·재조립은 공통 workspace 산식을 사용한다. 낮은 예산·shared backpressure·취소에서 저장 repair나 다른 검색으로 우회하지 않는다. 상세 설정·counter 단위·미측정 범위는 [자원 예산 계약](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)을 따른다. N01-C2는 명시적 graph/index/표현·private 근거 보유와 코퍼스 build/publication·eager audit도 같은 pool에 예약하고 수명별로 해제한다. 실제 heap·transport·hash/serialization scratch의 전체 상한 증명은 남는다.

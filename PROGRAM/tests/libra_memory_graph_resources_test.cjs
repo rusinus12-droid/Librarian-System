@@ -50,3 +50,36 @@ test('concurrent decode stages share a byte pool and are released on callback fa
  await assert.rejects(()=>b.withValue('[]',()=>[]),/DECODE_BACKPRESSURE/);
  g.release();await assert.rejects(()=>pending,/decode_failed/);idle(pool);
 });
+
+test('retained admission is shared, latched, and restored by idempotent release',()=>{
+ const pool=make({retainedBytes:100}),a=pool.open({maxRetainedBytes:80}),b=pool.open();
+ const lease=a.reserveRetained(70,'graph');assert.equal(a.inspect().retainedByCategory.graph,70);
+ assert.throws(()=>b.reserveRetained(31,'authority'),/RETAINED_BACKPRESSURE/);
+ assert.throws(b.check,/RETAINED_BACKPRESSURE/);lease.release();lease.release();a.close();b.close();
+ assert.equal(pool.inspect().retainedBytes,0);assert.equal(pool.inspect().sessions,0);
+ const c=pool.open({maxRetainedBytes:10});assert.throws(()=>c.reserveRetained(11),/RETAINED_BYTE_BUDGET/);c.close();
+ const d=pool.open();d.reserveRetained(100);d.close();assert.equal(pool.inspect().retainedBytes,0);
+});
+test('expiration and invalidation revoke authority once and preserve active-operation reservations until unwind',()=>{
+ let expire,revoked=0;const pool=factory({measure:pages.measure,encodedSize:pages.encodedSize,stageCost:pages.stageCost,
+  schedule:callback=>{expire=callback;return 1;},cancel:()=>{}});
+ const q=pool.open(),operation=q.begin();q.reserveRetained(1234,'graph');q.onClose(()=>revoked++);
+ expire();assert.equal(revoked,1);assert.throws(q.check,/CLOSED/);assert.equal(pool.inspect().retainedBytes,1234);
+ assert.equal(pool.inspect().sessions,1);pool.closeAll();q.close();assert.equal(revoked,1);
+ operation.release();operation.release();assert.equal(pool.inspect().retainedBytes,0);assert.equal(pool.inspect().sessions,0);
+});
+test('overlapping validation scopes release their own estimates without releasing the retained authority',()=>{
+ const pool=make(),q=pool.open();q.reserveRetained(100,'authority');const a=q.scope(),b=q.scope();
+ a.reserveRetained(200,'validation');b.reserveRetained(300,'validation');assert.equal(pool.inspect().retainedBytes,600);
+ a.close();assert.equal(pool.inspect().retainedBytes,400);assert.throws(()=>a.retain({}),/SCOPE_CLOSED/);
+ q.close();assert.equal(pool.inspect().retainedBytes,400);b.close();assert.equal(pool.inspect().retainedBytes,0);
+});
+test('session limits reject before work and closing a session permits a fresh operation',()=>{
+ const pool=make({sessions:1}),q=pool.open();assert.throws(()=>pool.open(),/SESSION_BACKPRESSURE/);
+ q.close();const next=pool.open();next.close();assert.equal(pool.inspect().sessions,0);
+});
+test('retained estimates measure UTF-16 and structure before allocation callbacks',()=>{
+ const pool=make(),q=pool.open({maxRetainedBytes:10});let allocated=false;
+ assert.throws(()=>{q.retain({values:Array(100).fill('가🙂')},'graph');allocated=true;},/RETAINED_/);
+ assert.equal(allocated,false);q.close();assert.equal(pool.inspect().retainedBytes,0);
+});

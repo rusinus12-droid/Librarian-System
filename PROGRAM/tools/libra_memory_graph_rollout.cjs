@@ -97,7 +97,8 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
     laneBudget = {},
     semanticAccessComplete = true,
     preparedIndex = null,
-    ownerVerifier = null
+    ownerVerifier = null,
+    resources = null
   } = {}) => {
     const sealed = sealToken && sealedRequests.get(sealToken);
     if (!sealed) fail('request_seal_invalid');
@@ -121,96 +122,107 @@ module.exports = function createMemoryGraphRollout({ index, lane, query, compile
     });
     if (preparedIndex && !index.isCompatible(preparedIndex, { partition, generation })) fail('prepared_index_invalid');
     let indexCompilations = 0;
-    const compiledIndex = preparedIndex || (() => { indexCompilations++; return index.compile(graph, { partition, generation }); })();
-    const queryFrame = query.sealQueryFrame({
-      ...queryInput,
-      owner: sealed.owner,
-      scopeKey: sealed.scopeKey,
-      worldlineId: sealed.worldlineId
-    });
-    const viewHandle = query.openView(graph, compiledIndex, queryFrame);
-    const retrieved = await query.retrieveAsync(viewHandle, laneBudget);
-    const queryResult = semanticAccessComplete ? retrieved : { ...retrieved, complete: false,
-      stopReason: 'semantic_representation_byte_budget',
-      coverage: { ...retrieved.coverage, semanticAccessComplete: false } };
-    const guiSearch = consumerPolicy.consumer === 'gui' ? (() => {
-      const units = new Map(graph.units.map(unit => [unit.nodeId,unit]));
-      return { sourceKeys: [...new Set(queryResult.candidates.filter(row => row.family === 'canonical')
-        .map(row => units.get(row.nodeId)?.recordKey).filter(Boolean))],
-        complete: queryResult.complete, stopReason: queryResult.stopReason };
-    })() : null;
-    const selected = compiler.select(queryResult, graph, consumerPolicy);
-    const packet = compiler.render(selected, {
-      l0WorkspaceBytes: queryResult.diagnostics?.l0WorkspaceBytes,
-      l0WorkspaceBudget: queryResult.diagnostics?.maxWorkspaceBytes,
-      lanePageBytes: queryResult.diagnostics?.laneBytesRead,
-      lanePageBudget: queryResult.diagnostics?.laneMaxBytes,
-      sourceReadJsonBytes: queryResult.diagnostics?.sourceReadJsonBytes ?? graph?.coverage?.sourceReadJsonBytes ?? null,
-      sourceReadJsonBudget: queryResult.diagnostics?.sourceReadJsonBudget ?? graph?.coverage?.sourceReadJsonBudget ?? null,
-      l0WitnessBytes: queryResult.diagnostics?.l0WitnessBytes ?? null,
-      l0WitnessBudget: queryResult.diagnostics?.maxWitnessBytes ?? null,
-      indexPageBuildBytes: compiledIndex?.indexPageBuildBytes ?? graph?.indexPageBuildBytes ?? null,
-      indexPageBuildBudget: compiledIndex?.indexPageBuildBudget ?? null,
-      frontierExpansionBytes: queryResult.diagnostics?.frontierExpansionBytes ?? null,
-      frontierExpansionBudget: queryResult.diagnostics?.maxFrontierBytes ?? null,
-      readsetHandleStateBytes: selected.readSetBytes ?? null,
-      readsetHandleStateBudget: laneBudget?.readsetHandleStateBudget ?? null,
-      ownerIoInFlightBytes: queryResult.diagnostics?.ownerIoInFlightBytes ?? null,
-      ownerIoInFlightBudget: queryResult.diagnostics?.ownerIoInFlightBudget ?? null,
-      writeBarrierBytes: queryResult.diagnostics?.writeBarrierBytes ?? compiledIndex?.writeBarrierBytes ?? null,
-      writeBarrierBudget: laneBudget?.writeBarrierBudget ?? null
-    });
-
-    let dispatchVerification = null;
-    let deliveryOutcome = queryResult.complete ? 'complete' : 'partial';
-    let fallbackAction = 'none';
-
-    if (!packet.consumerVerification.ok) {
-      deliveryOutcome = 'base_request_only'; fallbackAction = 'preserve_base_model_request';
-      dispatchVerification = { status: 'rejected', reason: 'consumer_packet_invalid', modelDispatchEligible: false };
-    } else if (ownerVerifier) {
+    const compileResources = resources?.scope();
+    try {
+      const compiledIndex = preparedIndex || (() => { indexCompilations++; return index.compile(graph, { partition, generation, resources: compileResources }); })();
+      const queryFrame = query.sealQueryFrame({
+        ...queryInput,
+        owner: sealed.owner,
+        scopeKey: sealed.scopeKey,
+        worldlineId: sealed.worldlineId
+      });
+      const viewLease = resources?.retain({ graph, queryFrame }, 'eligibility_view', 2);
+      let viewHandle, retrieved;
+      try { viewHandle = query.openView(graph, compiledIndex, queryFrame); retrieved = await query.retrieveAsync(viewHandle, laneBudget); }
+      finally { if (viewHandle) query.closeView(viewHandle); viewLease?.release(); }
+      const queryResult = semanticAccessComplete ? retrieved : { ...retrieved, complete: false,
+        stopReason: 'semantic_representation_byte_budget',
+        coverage: { ...retrieved.coverage, semanticAccessComplete: false } };
+      const guiSearch = consumerPolicy.consumer === 'gui' ? (() => {
+        const units = new Map(graph.units.map(unit => [unit.nodeId,unit]));
+        return { sourceKeys: [...new Set(queryResult.candidates.filter(row => row.family === 'canonical')
+          .map(row => units.get(row.nodeId)?.recordKey).filter(Boolean))],
+          complete: queryResult.complete, stopReason: queryResult.stopReason };
+      })() : null;
+      const selectionLease = resources?.retain(graph,'selection_workspace',2);
+      let selected, packet;
       try {
-        dispatchVerification = await compiler.validatePacket(packet, ownerVerifier);
-      } catch (err) {
-        // Unified verification failure NEVER runs legacy ranker; falls back to base model request only (§10, §13)
-        deliveryOutcome = 'base_request_only';
-        fallbackAction = 'preserve_base_model_request';
-        dispatchVerification = {
-          schema: 'libra.consumed_readset_verification.v1',
-          status: 'rejected',
-          reason: err.message,
-          modelDispatchEligible: false
-        };
-      }
-    }
+        selected = compiler.select(queryResult, graph, consumerPolicy, resources);
+        packet = compiler.render(selected, {
+          l0WorkspaceBytes: queryResult.diagnostics?.l0WorkspaceBytes,
+          l0WorkspaceBudget: queryResult.diagnostics?.maxWorkspaceBytes,
+          lanePageBytes: queryResult.diagnostics?.laneBytesRead,
+          lanePageBudget: queryResult.diagnostics?.laneMaxBytes,
+          sourceReadJsonBytes: queryResult.diagnostics?.sourceReadJsonBytes ?? graph?.coverage?.sourceReadJsonBytes ?? null,
+          sourceReadJsonBudget: queryResult.diagnostics?.sourceReadJsonBudget ?? graph?.coverage?.sourceReadJsonBudget ?? null,
+          l0WitnessBytes: queryResult.diagnostics?.l0WitnessBytes ?? null,
+          l0WitnessBudget: queryResult.diagnostics?.maxWitnessBytes ?? null,
+          indexPageBuildBytes: compiledIndex?.indexPageBuildBytes ?? graph?.indexPageBuildBytes ?? null,
+          indexPageBuildBudget: compiledIndex?.indexPageBuildBudget ?? null,
+          frontierExpansionBytes: queryResult.diagnostics?.frontierExpansionBytes ?? null,
+          frontierExpansionBudget: queryResult.diagnostics?.maxFrontierBytes ?? null,
+          readsetHandleStateBytes: selected.readSetBytes ?? null,
+          readsetHandleStateBudget: laneBudget?.readsetHandleStateBudget ?? null,
+          ownerIoInFlightBytes: queryResult.diagnostics?.ownerIoInFlightBytes ?? null,
+          ownerIoInFlightBudget: queryResult.diagnostics?.ownerIoInFlightBudget ?? null,
+          writeBarrierBytes: queryResult.diagnostics?.writeBarrierBytes ?? compiledIndex?.writeBarrierBytes ?? null,
+          writeBarrierBudget: laneBudget?.writeBarrierBudget ?? null
+        });
 
-    return Object.freeze({
-      schema: 'libra.unified_execution_result.v1',
-      ...(guiSearch ? { guiSearch } : {}),
-      mode: sealed.mode,
-      requestId: sealed.requestId,
-      generation,
-      indexDigest: compiledIndex.indexDigest,
-      frameId: queryFrame.frameId,
-      deliveryOutcome,
-      fallbackAction,
-      legacyRankerExecuted: false,
-      legacyCachesRebuilt: false,
-      doubleInjection: false,
-      additionalModelCalls: 0,
-      queryComplete: queryResult.complete,
-      traversalComplete: queryResult.traversalComplete,
-      sourceCoverageComplete: queryResult.sourceCoverageComplete,
-      semanticCoverageComplete: semanticAccessComplete,
-      stopReason: queryResult.stopReason,
-      coverage: queryResult.coverage,
-      accessTrace: queryResult.accessTrace || null,
-      diagnostics: { ...queryResult.diagnostics, indexAccess: { source: preparedIndex ? 'restored' : 'compiled', compilations: indexCompilations, storageAccess: compiledIndex.storageAccess || 'materialized_tables' } },
-      bundle: selected.bundle,
-      packet: deliveryOutcome === 'base_request_only' ? null : packet,
-      dispatchVerification,
-      modelDispatchEligible: Boolean(dispatchVerification?.modelDispatchEligible === true && sealed.mode === 'unified')
-    });
+      } catch (error) { if (selected) compiler.revoke(selected.readSetHandle); throw error; }
+      finally { selectionLease?.release(); }
+
+      let dispatchVerification = null;
+      let deliveryOutcome = queryResult.complete ? 'complete' : 'partial';
+      let fallbackAction = 'none';
+
+      if (!packet.consumerVerification.ok) {
+        deliveryOutcome = 'base_request_only'; fallbackAction = 'preserve_base_model_request';
+        dispatchVerification = { status: 'rejected', reason: 'consumer_packet_invalid', modelDispatchEligible: false };
+      } else if (ownerVerifier) {
+        try {
+          dispatchVerification = await compiler.validatePacket(packet, ownerVerifier);
+        } catch (err) {
+          // Unified verification failure NEVER runs legacy ranker; falls back to base model request only (§10, §13)
+          deliveryOutcome = 'base_request_only';
+          fallbackAction = 'preserve_base_model_request';
+          dispatchVerification = {
+            schema: 'libra.consumed_readset_verification.v1',
+            status: 'rejected',
+            reason: err.message,
+            modelDispatchEligible: false
+          };
+        }
+      }
+
+      return Object.freeze({
+        schema: 'libra.unified_execution_result.v1',
+        ...(guiSearch ? { guiSearch } : {}),
+        mode: sealed.mode,
+        requestId: sealed.requestId,
+        generation,
+        indexDigest: compiledIndex.indexDigest,
+        frameId: queryFrame.frameId,
+        deliveryOutcome,
+        fallbackAction,
+        legacyRankerExecuted: false,
+        legacyCachesRebuilt: false,
+        doubleInjection: false,
+        additionalModelCalls: 0,
+        queryComplete: queryResult.complete,
+        traversalComplete: queryResult.traversalComplete,
+        sourceCoverageComplete: queryResult.sourceCoverageComplete,
+        semanticCoverageComplete: semanticAccessComplete,
+        stopReason: queryResult.stopReason,
+        coverage: queryResult.coverage,
+        accessTrace: queryResult.accessTrace || null,
+        diagnostics: { ...queryResult.diagnostics, indexAccess: { source: preparedIndex ? 'restored' : 'compiled', compilations: indexCompilations, storageAccess: compiledIndex.storageAccess || 'materialized_tables' } },
+        bundle: selected.bundle,
+        packet: deliveryOutcome === 'base_request_only' ? null : packet,
+        dispatchVerification,
+        modelDispatchEligible: Boolean(dispatchVerification?.modelDispatchEligible === true && sealed.mode === 'unified')
+      });
+    } finally { compileResources?.close(); }
   };
 
   // UM6 & V05 (D08): Verify that cold cache, warm cache, post-LRU/partition eviction, and fresh restart produce

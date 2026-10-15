@@ -1,9 +1,9 @@
-# LIBRA 원본·저장 읽기와 JSON 작업공간 예산 — N01-C1
+# LIBRA 원본·JSON·보유 데이터의 자원 예산 — N01-C1/C2
 
-- 작성일: 2026-10-15 · 버전: 1.0
-- 기준: `dbb6f21` 이후 N01-C의 첫 증분
-- 판정: **관찰한 owner 본문 읽기와 일시적 JSON 처리에 실제 admission·계측·공유 예약·해제를 연결했다. 전체 원본/HTTP/VM 및 장기 보유 데이터의 자원 상한은 미완료다. `byteBounded:false`를 유지한다.**
-- 관련: [전체 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현황 §24](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [남은 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
+- 작성일: 2026-10-15 · 버전: 1.1
+- 기준: `e542ce8` 이후 N01-C2 보유 예약·권한 수명·코퍼스 유지보수 증분
+- 판정: **owner 본문 I/O·JSON 처리와 명시적으로 계상한 graph/index/표현/private 근거의 보유 예약·해제를 연결했다. 코퍼스 build/publication·eager audit도 같은 pool을 사용한다. 전체 원본/HTTP/VM 상한은 미완료다. `byteBounded:false`를 유지한다.**
+- 관련: [전체 설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현황 §25](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [남은 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)
 
 ## 1. 실제 연결 경로
 
@@ -20,7 +20,7 @@ GRADIA·LIA·RETRACE의 고정 SDK는 유지한다. source observer는 LIBRA 변
 
 ## 2. 예산과 실행
 
-등록 API `executeMemoryGraphUnifiedQuery()`는 선택적인 `resourceBudget`을 받는다. 각 값은 양의 정수이고, 알 수 없는 설정은 거부한다.
+등록 API `executeMemoryGraphUnifiedQuery()`, `buildMemoryGraphCorpus()`, `verifyMemoryGraphCorpus()`는 선택적인 `resourceBudget`을 받는다. 각 값은 양의 정수이고, 알 수 없는 설정은 거부한다.
 
 | 요청 설정 | 기본값 | 의미 |
 | --- | --- | --- |
@@ -28,9 +28,10 @@ GRADIA·LIA·RETRACE의 고정 SDK는 유지한다. source observer는 LIBRA 변
 | `maxDurableBytes` | 32 MiB | 관찰·수용한 파생 저장 value payload의 누적 UTF-8 byte |
 | `maxValueBytes` | 8 MiB | 한 읽기의 수용 payload 및 읽기 전 예약의 상한 |
 | `maxDecodeBytes` | 64 MiB | 요청의 동시에 예약한 JSON 처리 workspace 추정 byte |
+| `maxRetainedBytes` | 64 MiB | 명시적 retained lease의 동시 보유 추정 byte |
 | `maxReads` | 8,192 | budget 계층의 owner load 호출 수 |
 
-byte 설정은 최대 256 MiB, 읽기 수는 최대 65,536이다. `maxValueBytes`는 공유 I/O pool의 32 MiB를 넘을 수 없다. 공유 pool은 I/O 예약 32 MiB, JSON workspace 추정 128 MiB, pending read 8개다. 이 값은 실사용 성능 인증값이 아닌 초기 admission profile이다. 기본 8 MiB를 예약하는 read 네 개면 32 MiB가 차므로 다섯 번째는 거부될 수 있다.
+byte 설정은 최대 256 MiB, 읽기 수는 최대 65,536이다. `maxValueBytes`는 공유 I/O pool의 32 MiB를 넘을 수 없다. 공유 pool은 I/O 예약 32 MiB, JSON workspace 추정 128 MiB, pending read 8개, retained 추정 256 MiB, 활성 resource session 32개다. session은 생성 후 10분에 만료한다. 이 값은 실사용 성능 인증값이 아닌 초기 admission profile이다. 기본 8 MiB를 예약하는 read 네 개면 32 MiB가 차므로 다섯 번째는 거부될 수 있다.
 
 읽기 전에 해당 누적 예산의 남은 분량과 `maxValueBytes` 중 작은 값을 예약한다. pending read가 이미 예약한 누적 분량도 공제해 동시에 같은 quota를 소비하지 못하게 한다. shared pool이 부족하면 기다림 없이 `IO_BACKPRESSURE`로 거부한다. 받은 value가 cap보다 크면 수용·owner JSON 처리 전에 거부한다. source/durable 누적 byte와 read 수는 같은 요청의 최종 현재성 재검증에도 이어서 적용된다.
 
@@ -48,7 +49,7 @@ ledger는 raw body나 모델 전달 권한을 보관하지 않는다. private ow
 
 ## 4. 관찰과 미측정 범위
 
-`diagnostics.resourceAccess`와 `accessTrace.resources`는 `libra.graph_resource_access.v1`을 보고한다. snapshot은 API query가 초기 dispatch 검증을 마친 시점이다. 이후 Classic/GRADIA의 최종 handoff 재검증 비용까지 소급해 완료 계측이라고 부르지 않는다.
+`diagnostics.resourceAccess`와 `accessTrace.resources`는 `libra.graph_resource_access.v2`을 보고한다. snapshot은 API query가 초기 dispatch 검증을 마친 시점이다. 이후 Classic/GRADIA의 최종 handoff 재검증 비용까지 소급해 완료 계측이라고 부르지 않는다.
 
 | 값 | 정확한 의미 |
 | --- | --- |
@@ -58,6 +59,8 @@ ledger는 raw body나 모델 전달 권한을 보관하지 않는다. private ow
 | `decodeBytes/peakDecodeBytes` | 현재/최대 JSON workspace 예약 추정. 실제 heap이 아님 |
 | `inFlightReads/peakInFlightReads` | 현재/최대 해당 요청의 pending read |
 | `rejectedPayloadLowerBoundBytes` | cap 초과를 확인하며 센 거부 payload byte의 하한. 전체 응답 크기는 아닐 수 있음 |
+| `retainedBytes/peakRetainedBytes`, `retainedLeases`, `retainedByCategory` | 명시적 보유 예약의 현재값·peak·lease 수·범주별 합. 실측 heap이 아님 |
+| `closed/closeReason/activities` | 권한 종료와 아직 unwind 중인 작업. 종료된 작업의 예약도 active 작업이 끝나기 전까지 유지될 수 있음 |
 | `pool` | runtime 공유 pool의 현재값·runtime 누적 peak·한도 |
 | `failure` | 해당 ledger의 terminal 예산 실패 사유 |
 
@@ -67,10 +70,11 @@ Lane의 저장 page byte와 여기의 durable byte는 일부 동일 접근을 �
 
 - budget scope를 결속하기 전의 native context/readonly capture·route bootstrap, 호스트 chat/lore/settings 자체의 전송/할당과 외부 readonly permission witness.
 - HTTP body/envelope parsing, transport buffer 및 스트리밍. 현재 host/SDK는 value 전체를 받은 뒤 크기를 알 수 있다. 예약보다 큰 응답이 host 내부에 먼저 할당되는 것을 막는 프로토콜은 아직 없다.
-- 반환된 graph/projection/canonical rows/Map·frontier·private authority의 장기 보유량, index.compile 중간 데이터, portable vector hydration, hash/serialization scratch, build/publication, 전체 VM heap. 기존 부분 예산을 전체 상한으로 승격하지 않는다.
+- 명시적 예약 밖의 할당, hash/serialization scratch, 호스트/SDK cache, 전체 VM heap. 검사 전 이미 호출자가 만든 query DTO, 호스트 원본과 JSON 직렬화의 선행 할당도 물리적으로 제한하지 않는다. 명시적 retained 추정을 전수 heap 계측으로 승격하지 않는다.
+- 진단용 단일 구간 `buildMemoryGraphGeneration`/page inspector는 기존 Store/Page 자체 예산을 유지하며, 이번 코퍼스 유지보수 ledger가 전부 연결된 경로가 아니다.
 - shared page-cache workspace와 이 admission pool의 합을 포함한 전체 memory ceiling, 지원 corpus·동시성별 실제 품질/규모·설치 호스트 인증.
 
-**다음 N01-C2는 장기 보유 graph/index/representation·private readset과 유지보수 작업의 admission/release다.** owner의 bounded response/stream protocol은 별도의 증명이 필요하다. `byteBounded:false`, `ownerAtomicity:false`, `inventoryComplete:false`는 유지한다.
+**N01-C2는 아래 명시적 할당·수명 경로에 연결했다.** owner의 bounded response/stream protocol, 미등록 할당과 전체 지원 profile 상한은 별도의 증명이 필요하다. `byteBounded:false`, `ownerAtomicity:false`, `inventoryComplete:false`는 유지한다.
 
 ## 5. 검증 근거
 
@@ -87,3 +91,31 @@ node --test PROGRAM/tests/libra_memory_graph_corpus_test.cjs PROGRAM/tests/libra
 node --test PROGRAM/tests/libra_unified_search_replacement_runtime_test.cjs PROGRAM/tests/libra_memory_graph_semantic_runtime_test.cjs
 node --test PROGRAM/tests/libra_gradia_unified_pipeline_runtime_test.cjs PROGRAM/tests/libra_input_writer_unified_native_runtime_test.cjs
 ```
+
+## 6. N01-C2의 보유 예약과 수명
+
+보유 회계는 I/O allowance·JSON workspace와 구분한다. `retain(value,label,copies)`는 공통 `measure/encodedSize`의 UTF-16 code unit·JSON 값/token 수를 이용해 `(4096 + codeUnits × 2 + tokens × 64) × copies`를 예약한다. `reserveRetained(bytes,label)`는 이미 정한 표현 allowance 등을 예약한다. 이 산식은 초기 회계 profile이며 엔진별 객체 overhead를 실측해 증명한 값이 아니다. 반복 참조·복사까지 보수적으로 중복 계상할 수 있다. JSON workspace의 더 큰 `stageCost` 산식을 보유 heap 값으로 재사용하지 않는다.
+
+실제 예약 지점은 다음과 같다.
+
+- native projection의 원본 묶음 → graph 생성·복사, cold merged graph, durable proof/projection의 decode 전 encoded 내용.
+- query 신호의 native JSON 변환, portable vector hydration 전 allowance와 hydrated readback, semantic representation allowance, owner lookup Map와 pinned source/conditional readset.
+- index compile 전 입력 allowance 및 생성한 table, eligibility view, 선택 작업, compiler private readset과 발급 packet. 일부 생성 결과의 계상은 생성 후 공개/보관 전에 이루어지므로 임시 할당 전부를 사전 차단하지는 않는다.
+- 선택적 index page를 모으는 동안의 행과 split 재조립 결과. index page 생성 소비가 끝나면 해당 scope를 닫는다. Cache Manager/Lane의 기존 별도 예산을 대체하지 않는다.
+- 코퍼스 build/publication의 graph/index·checkpoint/proof/projection/manifest 직렬화 입력·서버 publication batch, eager audit. 정상·실패·취소의 `finally`에서 유지보수 session을 닫는다. 각 명시적 할당·쓰기 준비 전에 예산을 검사하며 원본이나 다른 검색기로 우회하지 않는다. 이미 쓴 immutable 파생 페이지는 남을 수 있다. root 게시 후 readback의 I/O 한도가 소진되면 이미 게시한 root를 되돌렸다고 보고하지 않는다. publication의 기존 CAS/readback 보장과 비용 계상은 별개다.
+
+`RETAINED_BYTE_BUDGET`, `RETAINED_VALUE_BUDGET`, `RETAINED_BACKPRESSURE`, `SESSION_BACKPRESSURE`도 terminal resource 실패다. 공개 trace는 DTO이고, `inspectMemoryGraphStore().resources`는 현시점 pool 진단이다.
+
+권한별 해제는 다음과 같다.
+
+| 수명 | 해제 경계 |
+| --- | --- |
+| 공개 query API/GUI 검색 | DTO 복사 또는 검색 metadata 추출 후 private 실행 해제 |
+| Classic | 실패·supersession은 미전달 실행 해제, 성공은 UI 검증 문맥으로 이전. 4개 graph 문맥 또는 전체 256개 token 축출 때 해제 |
+| GRADIA 셰도우/AIDE·작성기 | receipt release·취소·연결 해제·owner dispose·현재성 실패·10분 만료. query가 취소 뒤 늦게 끝나도 그 실행을 해제 |
+| compiler/restore/store serial 무효화 | `invalidateAll`은 발급한 readset의 session·packet·native authority를 폐기. 명시적 취소/unload는 미발급 session도 종료 |
+| 반복/동시 최종 검증 | 호출마다 별도 scope. 검증용 재투영은 해당 scope에 예약하며 `finally`에서 해제 |
+
+종료는 즉시 권한을 취소하지만 실행 중인 query·검증·유지보수가 아직 값을 참조하면 보유 예약을 유지한다. 그 작업의 activity가 끝나야 최종 drain한다. 실제 pending I/O·JSON workspace 역시 실제 `finally` 전에는 반환하지 않는다. 타이머 종료를 강제 GC나 transport abort로 해석하지 않는다.
+
+검증은 retained 공유 한도·실패 latch·idempotent release·session 제한·만료/무효화 중 active 작업·겹친 validation scope를 포함한다. native 3모드의 정상·낮은 retained 예산, 공개 DTO 후 pool 0, 코퍼스 build/eager audit 실패 후 root 보존·pool 0, Classic 5개 요청의 4개 문맥 제한·축출된 context 거부·예약 해제, 실제 owner receipt의 반복 검증·동시 session 거부·release/dispose/무효화 후 pool 0을 검사한다. GRADIA의 취소 후 late query·응답 예산 실패·만료도 release callback까지 확인한다. 실제 설치 호스트의 heap/규모 인증은 별도다.

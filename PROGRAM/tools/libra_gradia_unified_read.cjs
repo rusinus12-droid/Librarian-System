@@ -14,9 +14,17 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
   const pending = new Map(), receipts = new Map(), operations = new Map(), issued = new Set();
   const requestLimit = 65536, ttl = 600000;
   const check = signal => { if (disposed || signal?.aborted) fail('LIB_READ_CANCELED'); options.check?.(); };
+  const releaseRecord = record => {
+    if (!record) return;
+    record.active = false;
+    if (record.timer) clearTimeout(record.timer); record.timer = null;
+    receipts.delete(record.id); operations.delete(record.operationId);
+    // This also runs when a query finishes after cancellation/disposal.
+    if (record.execution) { const execution = record.execution; record.execution = null; options.release?.(execution); }
+  };
   const prune = () => {
-    for (const [id, record] of receipts) if (!record.active || record.expires <= now()) { record.active = false; receipts.delete(id); }
-    for (const [id, record] of operations) if (!record.active || record.expires <= now()) operations.delete(id);
+    for (const record of receipts.values()) if (!record.active || record.expires <= now()) releaseRecord(record);
+    for (const record of operations.values()) if (!record.active || record.expires <= now()) releaseRecord(record);
   };
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const assertRecord = record => { check(); if (!record?.active || record.expires <= now()) fail('LIB_READ_STALE'); };
@@ -37,14 +45,14 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
     if (action === 'release') {
       const record = receipts.get(payload.receiptId) || operations.get(payload.operationId)
         || [...receipts.values()].find(row => row.operationId === payload.operationId);
-      if (record) { record.active = false; receipts.delete(record.id); operations.delete(record.operationId); }
+      releaseRecord(record);
       return { released: true };
     }
     if (action === 'current') {
       const proof = payload.proof;
       const record = receipts.get(proof?.readIdentity?.ownerReceiptId);
       if (!record || !same(proof, record.proof)) fail('LIB_READ_STALE');
-      await validate(record);
+      try { await validate(record); } catch (error) { releaseRecord(record); throw error; }
       return { schema: 'memory-suite.libra-read-session-current.v1', current: true,
         scope: record.request.scope, evidenceRevision: record.proof.evidenceRevision,
         dataInstanceId: record.boundary.dataInstanceId, resetEpoch: record.boundary.resetEpoch };
@@ -66,6 +74,7 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
         || payload.maxRawBytes > 7 * payload.maxCorpusBytes + 2097152)) fail('LIB_READ_BUDGET_INVALID');
     if (operations.has(payload.operationId) || receipts.size + operations.size >= 32) fail('LIB_READ_SESSION_LIMIT');
     const record = { id: options.randomId(), operationId: payload.operationId, request: copy(payload), active: true, expires: now() + ttl, execution: null, receipt: null };
+    record.timer = setTimeout(() => releaseRecord(record),ttl); record.timer?.unref?.();
     operations.set(record.operationId, record);
     try {
       record.boundary = await options.boundary(record.request); assertRecord(record);
@@ -107,7 +116,7 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
       return { schema: 'memory-suite.libra-read-session.v1', readOnly: true, complete: true,
         ...record.proof, items, engine, corpusBytes, metadataBytes, rawBytes, maxCorpusBytes: payload.maxCorpusBytes,
         ...(payload.maxRawBytes === undefined ? {} : { maxRawBytes: payload.maxRawBytes }) };
-    } catch (error) { record.active = false; operations.delete(record.operationId); receipts.delete(record.id); throw error; }
+    } catch (error) { releaseRecord(record); throw error; }
   };
   const listener = async (message, metadata = {}) => {
     if (disposed || message?.schema !== schema || typeof message.requestId !== 'string') return;
@@ -170,8 +179,8 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
       }
       issued.clear();
       disposed = true;
-      for (const record of receipts.values()) record.active = false;
-      for (const record of operations.values()) record.active = false;
+      for (const record of receipts.values()) releaseRecord(record);
+      for (const record of operations.values()) releaseRecord(record);
       receipts.clear(); operations.clear();
       for (const record of pending.values()) { record.finish(); record.reject(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' })); }
       pending.clear();

@@ -3,8 +3,8 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),crypto=re
 const create=require('../tools/libra_gradia_unified_read.cjs'),createBus=require('./fixtures/libra_gradia_read_bus.cjs');
 const fingerprint=v=>crypto.createHash('sha256').update(v).digest('hex');
 async function fixture(t,options={}){
- const bus=createBus();let serial=0,queries=0,current=true,boundary=1,authority;
- const owner=create({role:'owner',api:bus.api('libra'),fingerprint,randomId:()=>String(++serial),
+ const bus=createBus();let serial=0,queries=0,releases=0,current=true,boundary=1,authority;
+ const owner=create({role:'owner',api:bus.api('libra'),now:options.now,release:execution=>{releases++;options.onRelease?.(execution);},fingerprint,randomId:()=>String(++serial),
    boundary:async()=>({dataInstanceId:'A'.repeat(32),resetEpoch:0,boundary}),
    query:async(request,cap)=>{queries++;authority=cap;const receipt=cap.bindGraph({readerFrame:{},nodes:[],edges:[],bases:[]});
      assert.equal(cap.verifyReceipt(receipt),true);await options.onQuery?.();
@@ -16,7 +16,7 @@ async function fixture(t,options={}){
  t.after(async()=>{await client.dispose();await owner.dispose();});
  const input={scope:{scopeKey:'s',characterId:'c',chatId:'h'},queryText:'current question',maxCorpusBytes:4096};
  const proof=s=>({scope:s.scope,readIdentity:s.readIdentity,dependencies:s.dependencies,evidenceRevision:s.evidenceRevision,dataInstanceId:s.dataInstanceId,resetEpoch:s.resetEpoch});
- return {client,owner,bus,input,proof,queries:()=>queries,authority:()=>authority,setCurrent:v=>{current=v;},changeBoundary:()=>{boundary++;}};
+ return {client,owner,bus,input,proof,queries:()=>queries,releases:()=>releases,authority:()=>authority,setCurrent:v=>{current=v;},changeBoundary:()=>{boundary++;}};
 }
 test('issued owner receipt serves one shared query and reports bounded query coverage',async t=>{
  const f=await fixture(t);const r=await f.client.capture(f.input);
@@ -28,8 +28,8 @@ test('issued owner receipt serves one shared query and reports bounded query cov
 test('owner currentness and native-boundary changes reject the previously issued receipt',async t=>{
  const f=await fixture(t),r=await f.client.capture(f.input);f.setCurrent(false);
  await assert.rejects(()=>f.client.current({proof:f.proof(r)}),e=>e.code==='LIB_READ_STALE');
- f.setCurrent(true);f.changeBoundary();
- await assert.rejects(()=>f.client.current({proof:f.proof(r)}),e=>e.code==='LIB_READ_BOUNDARY_CHANGED');
+ f.setCurrent(true);const next=await f.client.capture(f.input);f.changeBoundary();
+ await assert.rejects(()=>f.client.current({proof:f.proof(next)}),e=>e.code==='LIB_READ_BOUNDARY_CHANGED');
 });
 test('receipt release revokes both currentness and the private compiler callback',async t=>{
  const f=await fixture(t),r=await f.client.capture(f.input);await f.client.release(r.readIdentity.ownerReceiptId);
@@ -41,7 +41,7 @@ test('a canceled capture cannot publish its late query result',async t=>{
  const f=await fixture(t,{onQuery:async()=>{entered();await new Promise(r=>{release=r;});}});
  const controller=new AbortController();const pending=f.client.capture({...f.input,signal:controller.signal});
  const rejected=assert.rejects(pending,e=>e.code==='LIB_READ_CANCELED');await waiting;controller.abort();await rejected;release();
- await new Promise(r=>setTimeout(r,10));assert.throws(()=>f.authority().verifyReceipt({}),/LIB_READ_STALE/);
+ await new Promise(r=>setTimeout(r,10));assert.throws(()=>f.authority().verifyReceipt({}),/LIB_READ_STALE/);assert.equal(f.releases(),1);
 });
 test('host-authenticated sender, not a payload sender field, authorizes owner access',async t=>{
  const f=await fixture(t);const intruder=f.bus.api('other-plugin');
@@ -79,4 +79,14 @@ test('the owner seals an unsubmitted proposal as query intent and never as a fac
  for(const bad of [{...proposal,factAdopted:true},{...proposal,proposalDigest:'invalid'},{...proposal,currentState:'caller claim'},{}])
   await assert.rejects(()=>f.client.capture({...f.input,proposal:bad}),e=>e.code==='LIB_READ_PROPOSAL_INVALID');
  assert.equal(f.queries(),1);
+});
+
+test('receipt expiry releases its private execution once even without another currentness check',async t=>{
+ let clock=0;const f=await fixture(t,{now:()=>clock});await f.client.capture(f.input);assert.equal(f.releases(),0);
+ clock=600001;await f.client.describe();assert.equal(f.releases(),1);await f.client.describe();assert.equal(f.releases(),1);
+});
+test('a response budget rejection releases the completed query authority',async t=>{
+ const f=await fixture(t,{content:'x'.repeat(2048)});
+ await assert.rejects(()=>f.client.capture({...f.input,maxCorpusBytes:512}),/LIB_READ_CORPUS_BUDGET_EXCEEDED/);
+ assert.equal(f.releases(),1);
 });
