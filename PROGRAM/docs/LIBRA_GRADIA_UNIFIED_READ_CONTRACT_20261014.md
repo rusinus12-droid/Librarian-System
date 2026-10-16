@@ -1,9 +1,11 @@
 # GRADIA의 LIBRA 통합 메모리 읽기 계약
 
-- 작성일: 2026-10-14 · 갱신: 2026-10-15 · 버전: 1.3
+- 작성일: 2026-10-14 · 갱신: 2026-10-15 · 버전: 1.4
 - 범위: [다음 과제 N03](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md)의 실제 공급자 연결. 통합 엔진 전체 완성이나 설치 호스트 인증은 아니다.
 
 ## 사용 방법과 지원 범위
+
+GRADIA 0.25.85부터 별도 `plugin_ipc` 읽기 방식도 제공한다. 자료 화면에서 **플러그인 · 기억 직접 읽기 (IPC)**를 선택하고 연결하면 같은 native character/chat의 LIBRA·HAYAKU·Flashback이 자기 plugin_only 저장소를 읽는다. 일반 생성과 인풋 작성기 모두 사용한다. 세부 계약은 [최근 챗과 플러그인 IPC](gradia/RECENT-CHAT-AND-PLUGIN-IPC-20261015.md)를 따른다. 아래 `unified_engine`의 server_only 조건은 기존 서버 연결 방식에 적용된다.
 
 LIBRA와 GRADIA를 함께 로드하고 기존 LIB 서버 읽기 전용 연결 조건을 갖춘다. GRADIA 자료 화면에서 **연결**을 누르면 LIBRA는 통합 엔진을 사용한다. 공개 `connectLibReadOnly(url)`와 호환 별칭 `connectUnifiedLibReadOnly(url)`도 같은 경로를 실행한다. 연결 성공 후 상태의 `readSource`는 `unified_engine`이다. URL별로 저장한 연결 동의에 출처도 보존한다. 출처 누락 및 이전 `server_logical_read` 저장 동의도 `unified_engine`으로 이관한다. 새 동의 없이 자동 연결 범위를 넓히지는 않는다.
 

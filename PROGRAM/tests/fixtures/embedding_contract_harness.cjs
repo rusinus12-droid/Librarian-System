@@ -149,6 +149,7 @@ const context = vm.createContext({
 });
 
 
+Object.assign(host, fixtureOptions.hostOverrides || {});
 if(fixtureOptions.transformSource)source=fixtureOptions.transformSource(source);
 await vm.runInContext(source, context, {filename:'Flashback_Memory.js'});
 const api=await waitFor(()=>context.__FlashbackMemory);
