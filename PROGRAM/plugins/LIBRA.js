@@ -80391,11 +80391,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // The bridge cache is the saved configuration; embeddingSettings contains editable GUI drafts.
     const savedEmbed = LibraProviderBridge.peekConfig()?.embed;
     const embed = savedEmbed ? EmbeddingProviderRegistry.normalizeConfig(savedEmbed) : null;
-    const embeddingModel = !embed ? '설정 읽는 중' : String(embed.model || '').trim() || '모델 미설정';
-    const embeddingMeta = !embed ? '저장된 임베딩 설정을 확인합니다.' : [
-      embed.enabled === false ? '사용 안 함' : '',
-      EmbeddingProviderRegistry.getCapabilities(embed.provider).label
-    ].filter(Boolean).join(' · ');
+    const embedStatus = libraEmbeddingStatusSummary();
+    const embeddingModel = !embed ? '설정 읽는 중' : embedStatus.state === 'ready' ? (String(embed.model || '').trim() || '기본 모델') : embedStatus.state === 'off' ? '임베딩 꺼짐' : '임베딩 미설정';
+    const embeddingMeta = !embed ? '저장된 임베딩 설정을 확인합니다.' : embedStatus.state === 'ready'
+      ? EmbeddingProviderRegistry.getCapabilities(embed.provider).label
+      : '키워드 검색만 사용 중 · 빠른 연결로 키 하나만 넣으면 됩니다';
     const item = (kind, label, model, meta, controls = null) => guiEl('div', { class: "row", dataset: { memoryModel: kind } }, [
       guiEl('span', { class: "setting__name", text: label }),
       guiEl('strong', { text: model }), guiEl('small', { text: meta }), controls
@@ -80420,7 +80420,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     ]) : null;
     return guiEl('div', { class: "stack", 'aria-label': '기억 작성 모델 설정' }, [
       item('analysis', 'AI 분석 · Librarian', analysisModel, analysisMeta, analysisControls),
-      item('embedding', '임베딩', embeddingModel, embeddingMeta, guiEl('button',{class:'btn',type:'button',text:'모델 설정',onClick:()=>selectBookSettingsRoomSection('embedding')}))
+      item('embedding', '임베딩', embeddingModel, embeddingMeta, guiEl('button',{class:'btn',type:'button',text:embedStatus.state === 'ready' ? '모델 설정' : '빠른 연결',onClick:()=>selectBookSettingsRoomSection('embedding')}))
     ]);
   };
 
@@ -84370,6 +84370,204 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     ])]);
   };
 
+  // Quick connect: one pasted key sets up the memory-analysis AI and/or embedding.
+  // The provider is detected from the key, the model is picked from the provider's
+  // own model list (free, also validates the key), one short test call is made,
+  // and nothing is saved unless every requested part passed.
+  const LIBRA_QUICK_KEY_PATTERNS = Object.freeze([
+    { re: /^sk-ant-/i, llm: 'claude', embed: '', label: 'Claude / Anthropic' },
+    { re: /^sk-or-/i, llm: 'openrouter', embed: '', label: 'OpenRouter' },
+    { re: /^AIza[0-9A-Za-z_-]{20,}$/, llm: 'gemini', embed: 'gemini', label: 'Gemini' },
+    { re: /^pa-/i, llm: '', embed: 'voyageai', label: 'Voyage AI' },
+    { re: /^jina_/i, llm: '', embed: 'jina', label: 'Jina AI' },
+    { re: /^csk-/i, llm: 'cerebras', embed: '', label: 'Cerebras' },
+    { re: /^fw_/i, llm: 'fireworks', embed: '', label: 'Fireworks AI' },
+    { re: /^sk-(?:proj|svcacct|admin)-/i, llm: 'openai', embed: 'openai', label: 'OpenAI' },
+    { re: /^sk-[0-9a-f]{32}$/i, llm: 'deepseek', embed: '', label: 'DeepSeek' },
+    { re: /^sk-/i, llm: 'openai', embed: 'openai', label: 'OpenAI' }
+  ]);
+  const LIBRA_QUICK_EMBED_ONLY = Object.freeze({ voyageai: 'Voyage AI', jina: 'Jina AI', cohere: 'Cohere', mistral: 'Mistral AI' });
+  const detectLibraKeyProvider = (keyInput = '') => {
+    const key = String(keyInput || '').trim().replace(/^Bearer\s+/i, '');
+    if (!key) return { llm: '', embed: '', label: '', detected: false };
+    const hit = LIBRA_QUICK_KEY_PATTERNS.find(row => row.re.test(key));
+    return hit ? { llm: hit.llm, embed: hit.embed, label: hit.label, detected: true } : { llm: '', embed: '', label: '', detected: false };
+  };
+  const libraQuickProviderTargets = (providerChoice = 'auto', key = '') => {
+    if (!providerChoice || providerChoice === 'auto') return detectLibraKeyProvider(key);
+    const llmIds = providerChoices().map(([id]) => id);
+    const embedLabel = LIBRA_QUICK_EMBED_ONLY[providerChoice];
+    const llm = llmIds.includes(providerChoice) && providerChoice !== 'custom' ? providerChoice : '';
+    const embed = embedLabel ? providerChoice : (['openai', 'gemini'].includes(providerChoice) ? providerChoice : '');
+    return { llm, embed, label: embedLabel || providerDisplayLabel(providerChoice), detected: true };
+  };
+  const LIBRA_QUICK_MODEL_EXCLUDE = /(audio|realtime|transcribe|tts|image|embed|search|moderation|whisper|dall-e|davinci|babbage|instruct|computer-use|codex|-live|guard|aqa|learnlm|gemma|vision|-exp|preview)/i;
+  const LIBRA_QUICK_MODEL_PREFERENCES = Object.freeze({
+    openai: [/^gpt-[\d.]+-mini$/i, /^gpt-[\d.]+-mini/i, /mini/i],
+    claude: [/haiku/i, /sonnet/i],
+    gemini: [/^gemini-[\d.]+-flash$/i, /^gemini-[\d.]+-flash(?!-lite)/i, /flash/i],
+    openrouter: [/^google\/gemini-[\d.]+-flash$/i, /^openai\/gpt-[\d.]+-mini$/i, /^anthropic\/claude-[\w.-]*haiku/i],
+    deepseek: [/^deepseek-chat$/i, /^deepseek-/i]
+  });
+  // Version numbers only; dated snapshot suffixes (e.g. 20251001) are ignored so aliases win.
+  const libraModelVersion = id => (String(id).match(/\d+(?:\.\d+)?/g) || []).filter(part => part.length < 4).map(Number);
+  const compareLibraModelVersions = (a, b) => {
+    const left = libraModelVersion(a), right = libraModelVersion(b);
+    for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+      const diff = (right[i] ?? -1) - (left[i] ?? -1);
+      if (diff) return diff;
+    }
+    return String(a).length - String(b).length;
+  };
+  // Picks a fast, inexpensive model suited to background memory analysis.
+  const pickLibraRecommendedModel = (provider = '', modelIds = []) => {
+    const ids = [...new Set(guiAsArray(modelIds).map(id => String(id || '').trim()).filter(Boolean))];
+    const usable = ids.filter(id => !LIBRA_QUICK_MODEL_EXCLUDE.test(id));
+    for (const pattern of LIBRA_QUICK_MODEL_PREFERENCES[canonicalProvider(provider)] || []) {
+      const matches = usable.filter(id => pattern.test(id)).sort(compareLibraModelVersions);
+      if (matches.length) return matches[0];
+    }
+    return '';
+  };
+  const LIBRA_QUICK_OLLAMA_PREFERENCE = /(bge-m3|multilingual|qwen\d*-embedding|embeddinggemma|e5)/i;
+  const pickLibraOllamaEmbeddingModel = (names = []) => {
+    const list = guiAsArray(names).map(name => String(name || '').trim()).filter(Boolean);
+    return list.find(name => LIBRA_QUICK_OLLAMA_PREFERENCE.test(name)) || list[0] || '';
+  };
+  const libraQuickConnectState = () => Gui.quickConnect || (Gui.quickConnect = { key: '', provider: 'auto', model: '', useLlm: true, useEmbed: true, busy: false, message: '', error: false });
+  const libraEmbeddingStatusSummary = () => {
+    const saved = LibraProviderBridge.peekConfig()?.embed;
+    if (!saved) return { state: 'loading', text: '설정 읽는 중' };
+    const embed = EmbeddingProviderRegistry.normalizeConfig(saved);
+    const label = EmbeddingProviderRegistry.getCapabilities(embed.provider)?.label || embed.provider;
+    if (embed.enabled === false) return { state: 'off', text: '꺼짐 · 키워드 검색만 사용', label, model: embed.model };
+    let validation = null;
+    try { validation = EmbeddingProviderRegistry.validateConfig(embed); } catch (error) { validation = { ok: false, missing: [String(error?.message || error)] }; }
+    if (!validation?.ok) return { state: 'unconfigured', text: `설정 안 됨 · 키워드 검색만 사용 (${guiAsArray(validation?.missing).join(', ') || '확인 필요'})`, label, model: embed.model };
+    return { state: 'ready', text: `켜짐 · ${label} · ${embed.model || '기본 모델'}`, label, model: embed.model };
+  };
+  const libraEmbeddingPatchFor = (provider, key, model = '', url = '') => {
+    const capability = EmbeddingProviderRegistry.getCapabilities(provider) || {};
+    return { enabled: true, provider, url: url || capability.defaultUrl || '', model: model || capability.models?.[0] || '', key: key || '', dimensions: 'auto',
+      batchSize: capability.batchSize || 8, queryTask: '', documentTask: '', queryPrefix: '', documentPrefix: '', normalizeVectors: true };
+  };
+  // Embedding settings have their own durable save (provider switch resets, rebuild
+  // bookkeeping); the GUI save bar only persists them from the embedding page.
+  const applyLibraEmbeddingPatch = async patch => {
+    LibraMemoryCore.state.embeddingSettings = await LibraMemoryCore.saveEmbeddingSettings(patch);
+    return LibraMemoryCore.state.embeddingSettings;
+  };
+  const runLibraQuickConnect = async () => {
+    const qc = libraQuickConnectState();
+    const key = String(qc.key || '').trim().replace(/^Bearer\s+/i, '');
+    if (!key) throw new Error('API 키를 붙여넣어 주세요.');
+    const target = libraQuickProviderTargets(qc.provider, key);
+    if (!target.llm && !target.embed) throw new Error('키 종류를 알아내지 못했습니다. 제공자를 직접 골라 주세요.');
+    const useLlm = qc.useLlm !== false && !!target.llm;
+    const useEmbed = qc.useEmbed !== false && !!target.embed;
+    if (!useLlm && !useEmbed) throw new Error(target.llm ? '사용할 항목(기억 분석 AI 또는 임베딩)을 하나 이상 켜 주세요.' : `${target.label} 키는 임베딩 전용입니다. 임베딩 사용을 켜 주세요.`);
+    let llm = null;
+    if (useLlm) {
+      let model = String(qc.model || '').trim();
+      let listError = '';
+      if (!model) {
+        guiSetStatus(`${target.label} 모델 목록을 확인합니다…`);
+        try {
+          const models = await listProviderModels({ provider: target.llm, url: defaultUrlForProvider(target.llm), key }, { force: true });
+          model = pickLibraRecommendedModel(target.llm, models.map(item => item.id));
+        } catch (error) { listError = String(error?.message || error); }
+      }
+      if (!model) throw new Error(`${target.label} 모델을 자동으로 고르지 못했습니다. 모델 이름을 입력해 주세요.${listError ? ` (${listError})` : ''}`);
+      const preset = sanitizePreset({ preset_id: `libra-preset-${stableDraftHash(`${Date.now()}:${Math.random()}:${target.llm}`).slice(0, 20)}`,
+        provider: target.llm, url: defaultUrlForProvider(target.llm), key, model });
+      guiSetStatus(`${target.label} · ${model} 연결을 시험합니다…`);
+      const result = await testProviderPreset(preset);
+      if (!result?.ok) throw new Error(`기억 분석 AI 연결 실패 · ${result?.reason || result?.error || '빈 응답'}`);
+      llm = { preset, model };
+    }
+    let embed = null;
+    if (useEmbed) {
+      const patch = libraEmbeddingPatchFor(target.embed, key);
+      guiSetStatus(`${EmbeddingProviderRegistry.getCapabilities(target.embed)?.label || target.embed} 임베딩을 시험합니다…`);
+      const result = await LibraMemoryCore.testEmbeddingConnection(patch);
+      if (result?.ok !== true) throw new Error(`임베딩 연결 실패 · ${result?.error || result?.status || '응답 없음'}`);
+      embed = patch;
+    }
+    if (llm) {
+      const name = uniquePresetName(`${target.label} 빠른 연결`);
+      Gui.state.providers[name] = llm.preset;
+      Gui.state.runtime.defaultPresetName = name;
+      Gui.selectedPreset = name;
+    }
+    if (llm) {
+      markGuiDirty();
+      if (await saveGuiState() !== true) throw new Error('기억 분석 AI 설정을 저장하지 못했습니다.');
+    }
+    if (embed) await applyLibraEmbeddingPatch(embed);
+    qc.key = ''; qc.model = '';
+    return [llm ? `기억 분석 AI: ${target.label} · ${llm.model}` : '', embed ? `임베딩: ${EmbeddingProviderRegistry.getCapabilities(embed.provider)?.label} · ${embed.model}` : ''].filter(Boolean).join(' / ');
+  };
+  const runLibraQuickOllama = async () => {
+    guiSetStatus('이 PC의 Ollama를 찾습니다…');
+    let discovery = null;
+    try { discovery = await EmbeddingProviderRegistry.discoverOllamaModels({ provider: 'ollama', url: 'http://127.0.0.1:11434' }, { force: true }); }
+    catch (error) { throw new Error(`Ollama에 연결하지 못했습니다. Ollama가 실행 중인지 확인해 주세요. (${String(error?.message || error)})`); }
+    const model = pickLibraOllamaEmbeddingModel(guiAsArray(discovery?.models).map(item => item?.name));
+    if (!model) throw new Error('Ollama는 찾았지만 임베딩 모델이 없습니다. 터미널에서 "ollama pull bge-m3"를 실행한 뒤 다시 눌러 주세요.');
+    const patch = libraEmbeddingPatchFor('ollama', '', model, 'http://127.0.0.1:11434');
+    const result = await LibraMemoryCore.testEmbeddingConnection(patch);
+    if (result?.ok !== true) throw new Error(`Ollama 임베딩 시험 실패 · ${result?.error || result?.status || '응답 없음'}`);
+    await applyLibraEmbeddingPatch(patch);
+    return `임베딩: Ollama · ${model} (무료 · 이 PC에서 실행)`;
+  };
+  const buildLibraQuickConnectCard = ({ card, field, toggle }) => {
+    const qc = libraQuickConnectState();
+    const runtime = Gui.state?.runtime || {};
+    const providers = Gui.state?.providers || {};
+    const defaultName = normalizeProviderPresetBindingName(runtime.defaultPresetName) || RISUAI_AUX_PRESET_NAME;
+    const defaultPreset = providers[defaultName] || providers[RISUAI_AUX_PRESET_NAME] || null;
+    const auxDefault = !defaultPreset || canonicalProvider(defaultPreset.provider) === RISUAI_AUX_PROVIDER;
+    const aiLine = auxDefault ? 'RisuAI 보조 모델 · 따로 설정하지 않아도 동작합니다' : `${presetDisplayName(defaultName)} · ${providerDisplayLabel(defaultPreset.provider)} · ${presetModelDisplay(defaultPreset)}`;
+    const embedStatus = libraEmbeddingStatusSummary();
+    const detectedText = () => {
+      const target = libraQuickProviderTargets(qc.provider, qc.key);
+      if (!String(qc.key || '').trim()) return '키를 붙여넣으면 제공자를 자동으로 알아냅니다.';
+      if (!target.llm && !target.embed) return '알 수 없는 키 형식입니다. 아래에서 제공자를 골라 주세요.';
+      return `감지: ${target.label} · ${[target.llm ? '기억 분석 AI' : '', target.embed ? '임베딩' : ''].filter(Boolean).join(' + ')} 사용 가능`;
+    };
+    const run = fn => async () => {
+      if (qc.busy) return;
+      qc.busy = true; qc.message = ''; qc.error = false; queueGuiRender(0, 'body');
+      try { qc.message = `연결 완료 · ${await fn()}`; guiSetStatus(qc.message); }
+      catch (error) { qc.message = String(error?.message || error); qc.error = true; guiSetStatus(qc.message, true, true); }
+      finally { qc.busy = false; queueGuiRender(0, 'body'); }
+    };
+    const providerOptions = [['auto', '자동 감지'], ...providerChoices().filter(([id]) => !['custom', RISUAI_AUX_PROVIDER].includes(id)),
+      ...Object.entries(LIBRA_QUICK_EMBED_ONLY).map(([id, label]) => [id, `${label} (임베딩 전용)`])];
+    return card('빠른 연결', 'API 키 하나만 붙여넣으면 제공자·추천 모델을 고르고, 시험 호출이 성공할 때만 저장합니다.', [
+      guiEl('div', { class: 'stack', dataset: { libraQuickConnect: 'true' } }, [
+        guiEl('div', { class: 'row' }, [guiEl('span', { class: 'setting__name', text: '기억 분석 AI' }), guiEl('strong', { text: aiLine })]),
+        guiEl('div', { class: 'row' }, [guiEl('span', { class: 'setting__name', text: '임베딩' }), guiEl('strong', { text: embedStatus.text }),
+          embedStatus.state === 'ready' ? guiEl('span', { class: 'badge badge--ok', text: '정상' }) : embedStatus.state === 'loading' ? null : guiEl('span', { class: 'badge badge--warn', text: '키워드 검색만' })]),
+        field('API 키', guiEl('input', { class: 'input', type: 'password', value: qc.key, autocomplete: 'off', placeholder: 'sk-… / AIza… / pa-… 등', dataset: { libraQuickKey: 'true' },
+          onInput: event => { qc.key = event.target.value; const hint = Gui.app?.querySelector?.('[data-libra-quick-detected]'); if (hint) hint.textContent = detectedText(); } })),
+        guiEl('p', { class: 'hint', dataset: { libraQuickDetected: 'true' }, text: detectedText() }),
+        guiEl('div', { class: 'grid g2' }, [
+          field('제공자', selectNode(qc.provider, providerOptions, value => { qc.provider = value; queueGuiRender(0, 'body'); })),
+          field('모델 (비우면 자동 추천)', guiEl('input', { class: 'input', type: 'text', value: qc.model, placeholder: '자동 추천', onInput: event => { qc.model = event.target.value; } })),
+          field('기억 분석 AI로 사용', toggle(qc.useLlm !== false, '기억 분석 AI로 사용', value => { qc.useLlm = value; }), auxDefault ? '끄면 RisuAI 보조 모델을 계속 씁니다.' : ''),
+          field('임베딩으로 사용', toggle(qc.useEmbed !== false, '임베딩으로 사용', value => { qc.useEmbed = value; }), '임베딩을 지원하는 키(OpenAI·Gemini·Voyage 등)일 때만 적용됩니다.')
+        ]),
+        guiEl('div', { class: 'cluster' }, [
+          guiEl('button', { class: 'btn btn--primary btn--sm', type: 'button', disabled: qc.busy, text: qc.busy ? '확인 중…' : '확인하고 연결', onClick: run(runLibraQuickConnect) }),
+          guiEl('button', { class: 'btn btn--sm', type: 'button', disabled: qc.busy, text: '이 PC의 Ollama로 무료 임베딩', onClick: run(runLibraQuickOllama) })
+        ]),
+        qc.message ? guiEl('div', { class: qc.error ? 'note note--warn' : 'note' }, [guiEl('p', { text: qc.message })]) : null,
+        guiEl('p', { class: 'hint', text: '키는 저장 전에 시험 호출 1회로 확인합니다. 키는 화면에 다시 표시하지 않으며 백업에 포함되지 않습니다.' })
+      ])
+    ]);
+  };
+
   const buildApprovedMockupSettingsPanel = (groupId, sectionId) => {
     const runtime=Gui.state.runtime||(Gui.state.runtime={});
     const card=(title,description,children=[])=>guiEl('div',{class:'card'},[
@@ -84460,6 +84658,7 @@ advanced
         const embedState=LibraMemoryCore.getEmbeddingRebuildState(),status=guiEl('p',{class:'hint',dataset:{embeddingStatus:'true'},text:`${embedState.status||'unknown'} · 현재 ${embedState.counts?.current||0} · 최신 ${embedState.counts?.ready||0} · 미완료 ${embedState.counts?.stale||0}`});
         const providerSelect=guiEl('select',{class:'select',value:cfg.provider,dataset:{embeddingField:'provider'},onChange:event=>{LibraMemoryCore.resetEmbeddingProviderDefaults(event.target.value);markGuiDirty();void renderSettingsGui();}},providers.map(item=>guiEl('option',{value:item.provider,selected:item.provider===cfg.provider,text:item.label})));
         return guiEl('div',{class:'stack',dataset:{settingsCategory:'ai',settingsReadback:'embedding-settings'}},[
+          buildLibraQuickConnectCard({card,field,toggle}),
           card('임베딩','검색에 쓰는 실제 vector provider·model 공간을 설정합니다.',[
             guiEl('div',{class:'grid g2'},[field('임베딩 사용',toggle(cfg.enabled!==false,'임베딩 사용',value=>updateEmbedding({enabled:value}))),field('임베딩 모델',embeddingField('model','임베딩 모델',{placeholder:'provider model ID'})),field('Provider',providerSelect),field('Endpoint URL',embeddingField('url','Endpoint URL',{placeholder:'기본값'}))]),
             guiEl('div',{class:'three-status'},[guiEl('div',{},[guiEl('b',{text:'작업'}),status]),guiEl('div',{},[guiEl('b',{text:'이전'}),guiEl('span',{dataset:{embeddingMigrationStatus:'true'},text:Gui.embeddingMigrationStatus||'같은 공간 이전 가능 여부 확인 전'})]),guiEl('div',{},[guiEl('b',{text:'격리 벡터'}),guiEl('span',{text:String(embedState.counts?.quarantined||0)+'개 · 읽기 전용'})])]),
@@ -84508,6 +84707,7 @@ advanced
         ])
       ])):guiEl('div',{class:'empty',text:'편집할 연결 프리셋이 없습니다.'});
       return guiEl('div',{class:'stack',dataset:{settingsCategory:'ai',settingsReadback:'provider-settings'}},[
+        buildLibraQuickConnectCard({card,field,toggle}),
         card('생성 AI 프리셋','현재 저장된 프리셋 이름과 모델만 표시합니다. 비밀 키는 노출하지 않습니다.',[
           guiEl('div',{class:'list',id:'ai-presets'},names.length?names.map(name=>guiEl('button',{class:'row',type:'button',dataset:{providerPreset:name},'aria-pressed':String(name===Gui.selectedPreset),onClick:()=>{Gui.selectedPreset=name;void renderSettingsGui();}},[guiEl('span',{class:'row__title',text:name}),guiEl('span',{class:'row__meta',text:`${providerDisplayLabel(providers[name]?.provider)} · ${presetModelDisplay(providers[name]||{})}`}),name===defaultName?guiEl('span',{class:'badge',text:'기본'}):null])):[guiEl('div',{class:'empty',text:'저장된 생성 AI 프리셋이 없습니다.'})]),
           guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm',type:'button',text:'프리셋 추가',onClick:()=>addGuiPreset()}),guiEl('button',{class:'btn btn--sm',type:'button',text:'프리셋 관리…',onClick:()=>{Gui.selectedPreset=Gui.selectedPreset||names[0]||'';void renderSettingsGui();}})]),defaultPanel,editPanel
