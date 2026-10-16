@@ -1,4 +1,7 @@
 'use strict';
+// Background Recovery Journal repair is retired: afterRequest repair is the only
+// automatic stage. Scheduling a durable debt must never queue a timer, a confirmation
+// dialog or a paid call; the entry waits for manual repair.
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
@@ -9,40 +12,19 @@ const end=source.indexOf('  const pruneInBandRecoveryReservations',start);
 assert.ok(start>0 && end>start);
 const timers=[], microtasks=[], requests=[];
 const Memory={settings:{backgroundAutoRepair:true},nativeRecovery:{},finalizedCaptureInFlight:new Set(),finalizedBindingInFlight:new Set()};
-let owner=true, responder=async r=>{requests.push(r.recordId);return true;};
 const ctx=vm.createContext({Memory,Map,NATIVE_JOB_TERMINAL_STATES:new Set(['completed','failed','cancelled']),
-  ownsRuntime:()=>owner,inBandRecoveryPendingForDebt:()=>false,
-  requestRecoveryJournalBackgroundConfirmation:(...args)=>responder(...args),
+  ownsRuntime:()=>true,inBandRecoveryPendingForDebt:()=>false,
+  requestRecoveryJournalBackgroundConfirmation:r=>{requests.push(r.recordId);return true;},
   setTimeout:fn=>{timers.push(fn);return {unref(){}};},queueMicrotask:fn=>microtasks.push(fn),
   pushOperationLog:()=>{},compact:x=>String(x)});
 vm.runInContext(source.slice(start,end)+'\nglobalThis.schedule=scheduleNativeRecoveryDebtRepair;',ctx);
-const row=n=>({scopeKey:'scope',recordId:String(n),worldlineStatus:'active'});
-const tick=async()=>{const f=timers.splice(0);for(const fn of f)fn();for(let i=0;i<8;i++)await Promise.resolve();};
-const flush=async()=>{while(microtasks.length)microtasks.shift()();for(let i=0;i<8;i++)await Promise.resolve();};
 (async()=>{
-  Memory.finalizedCaptureInFlight.add('capture');
-  ctx.schedule(row(1));ctx.schedule(row(1));await flush();
-  for(let i=0;i<70;i++)await tick();
-  assert.equal(requests.length,0);assert.equal(timers.length,1,'deduplicated wait survives old cutoff');
-  Memory.finalizedCaptureInFlight.clear();await tick();
-  assert.deepEqual(requests,['1']);assert.equal(Memory.nativeRecovery.confirmationTimers.size,0);
-  responder=async r=>{requests.push(r.recordId);Memory.nativeRecovery.job={state:'awaiting_confirmation'};return true;};
-  ctx.schedule(row(2));ctx.schedule(row(3));await flush();await tick();
-  assert.deepEqual(requests,['1','2']);
-  Memory.nativeRecovery.job.state='completed';await tick();
-  assert.deepEqual(requests,['1','2','3'],'next consent resumes after active dialog');
-  Memory.nativeRecovery.job=null;
-  let racing=true;
-  responder=async r=>{if(racing){Memory.nativeRecovery.repairInFlight=true;return false;}requests.push(r.recordId);return true;};
-  ctx.schedule(row(4));await flush();assert.equal(timers.length,1);
-  racing=false;Memory.nativeRecovery.repairInFlight=false;await tick();assert.equal(requests.at(-1),'4');
-  Memory.nativeRecovery.coldStartInFlight=true;ctx.schedule(row(5));await flush();
-  Memory.settings.backgroundAutoRepair=false;await tick();assert.equal(Memory.nativeRecovery.confirmationTimers.size,0);
-  Memory.settings.backgroundAutoRepair=true;ctx.schedule(row(6));await flush();owner=false;await tick();
-  assert.equal(Memory.nativeRecovery.confirmationTimers.size,0);
-  owner=true;Memory.nativeRecovery.coldStartInFlight=false;
-  responder=async()=>false;ctx.schedule(row(7));await flush();
-  assert.equal(timers.length,0,'UI unavailable or non-actionable debt must not loop');
-  assert.match(source,/호출 가능 · 모델 연결 미확인/);
-  console.log('PASS long wait, dedup, sequential consent, readback race, disabled/owner cancellation, no UI retry loop');
-})().catch(e=>{console.error(e);process.exitCode=1;});
+  for(const reason of ['packet_debt_ready','packet_debt_reactivated'])
+    assert.equal(ctx.schedule({scopeKey:'scope',recordId:'1',worldlineStatus:'active'},reason),false,reason);
+  for(let i=0;i<8;i++)await Promise.resolve();
+  assert.equal(timers.length,0,'no timer');
+  assert.equal(microtasks.length,0,'no queued attempt');
+  assert.deepEqual(requests,[],'no confirmation dialog or background repair');
+  assert.equal(Memory.nativeRecovery.confirmationTimers,undefined);
+  console.log('hayaku recovery confirmation queue retired: ok');
+})().catch(error=>{console.error(error);process.exit(1);});

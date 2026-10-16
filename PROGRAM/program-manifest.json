@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-16T00:54:51.601Z",
+  "generatedAt": "2026-10-16T03:07:13.877Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2293,8 +2293,8 @@
       "bytes": 23120
     },
     "docs/HAYAKU_PACKET_SAFETY_NET_20261016.md": {
-      "sha256": "121cd06027a78238f1bd323228edd7db9d4405a03a256b983936c9f60bc94b0c",
-      "bytes": 4640
+      "sha256": "e7beb804cf5d11f291e883bf9bdd5756889d58e05cb44e33dfc37796b2b28b34",
+      "bytes": 5566
     },
     "docs/HAYAKU_Packet_Write_Failure_Analysis_20260904.md": {
       "sha256": "2d506254e023b7819e48e6ed69d25a434372b6c70367c98f233f8eed546f76ec",
@@ -3669,8 +3669,8 @@
       "bytes": 1083
     },
     "docs/USABILITY_SETTINGS_DISPLAY_20261015.md": {
-      "sha256": "96e2913b837299cdb0df5e93a4367856635fec1998a5157dcf7c2219bba30d4d",
-      "bytes": 6902
+      "sha256": "76704d24841105dea6032fd7789e44232ed71cd159ae0d3c874ad7cf33e01eaf",
+      "bytes": 6927
     },
     "docs/WM_ACCEPTANCE_05.md": {
       "sha256": "e3e0f95f941bbbe95e02193a7b6383759215de68cd0354be358c9f7fdfedd8a3",
@@ -3689,8 +3689,8 @@
       "bytes": 9711
     },
     "docs/사용설명서.md": {
-      "sha256": "19530d380ebc59f577318655efa826b8c1566548aafdde309baf42145833a260",
-      "bytes": 107696
+      "sha256": "79977b34e4a950c734c98f7afc1739e0c7ab62d5c6c604e22f78b3b6e5569ab0",
+      "bytes": 107572
     },
     "macOS_서버_실행.command": {
       "sha256": "cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c",
@@ -3713,8 +3713,8 @@
       "bytes": 2932363
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "dfdd494785ed669d21f34e7d8fa67358168b948218f4db821b74674160ea83e7",
-      "bytes": 3962825
+      "sha256": "56f409bf793169c4df3fbecf38db8fc5b1d21b68359503c01c6db71c4cda311c",
+      "bytes": 3959756
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "9b94274e457b46fe2c85fea6721804a1eb13ff006e5c63fd7b2e6800931cca1b",
@@ -6033,8 +6033,8 @@
       "bytes": 3643
     },
     "tests/hayaku_after_request_recovery_journal_runtime_test.cjs": {
-      "sha256": "28342c5dba1da9778332395a0b962bfb0ed23a2dd8ea526b71e5af945a925b45",
-      "bytes": 9537
+      "sha256": "8d3d6283ff1fffd197f7a6f7ac5c58ce63efb1864f1e922bdbbe5a902c2baf1b",
+      "bytes": 9739
     },
     "tests/hayaku_alias_incremental_certificate_test.cjs": {
       "sha256": "7c6fc5d13ab67c8e23aa9f4f9228500d5b50788d55f92b6d1e9ef0193d253286",
@@ -6217,8 +6217,8 @@
       "bytes": 19092
     },
     "tests/hayaku_gui_ux_contract_test.cjs": {
-      "sha256": "9d1a2780f7d654e8e0db7b5ef89dc1b88f324a0d686b52cb30ef95ffddb27bf1",
-      "bytes": 11736
+      "sha256": "75817e8a3151d5dd9f56fce45f05deee1bc1e00d1b13acfcbc615ed571cbdb6e",
+      "bytes": 11739
     },
     "tests/hayaku_gui_workspace_v346_runtime_test.cjs": {
       "sha256": "ebaac4661d0240d5237b2f266c1d9b3b7b7c0787a57fcf1e6c541953a7d8a55f",
@@ -6353,8 +6353,8 @@
       "bytes": 8491
     },
     "tests/hayaku_packet_safety_net_test.cjs": {
-      "sha256": "9a26e5a21c26a5054bd805473c86dae1fd24b2fd49ab24dc597fcefee8b5ed16",
-      "bytes": 4608
+      "sha256": "f044e8ad72fab7f3eeaca15d01ff7cfe28712109feb0cb4638ec4708b07b0f64",
+      "bytes": 4048
     },
     "tests/hayaku_paged_provider_fence_runtime_test.cjs": {
       "sha256": "e082588dc80d6c5eb2e4e4f39733b801a227313e6849cc26a8fc1b7c45571567",
@@ -6417,8 +6417,8 @@
       "bytes": 6982
     },
     "tests/hayaku_recovery_confirmation_queue_test.cjs": {
-      "sha256": "0ef4136635e2564f394aef524e9b0b34010b35782922f0d8e3cebdb77f5c56b4",
-      "bytes": 3488
+      "sha256": "bcf0fc32dcb2c256226f1eef191088c37726c3ed3ed44914bfc2f242c359a3a8",
+      "bytes": 1976
     },
     "tests/hayaku_recovery_consent_block_test.cjs": {
       "sha256": "f13b12d64362274f6af0a7f9f5d0f99b7430b3d92520a59425166553ce458869",

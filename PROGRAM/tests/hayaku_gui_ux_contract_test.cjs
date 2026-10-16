@@ -70,7 +70,7 @@ assert.ok(mockup.includes('연속성 노선도'), 'approved mockup reference mus
 assert.ok(source.includes('data-hayaku-open-record='), 'worldline selection must link to packet detail');
 
 assert.ok(source.includes('id="st-after"') && source.includes('hayaku_after_request_auto_repair'), 'afterRequest repair setting must remain bound to the canonical control');
-assert.ok(source.includes('id="st-bg"') && source.includes('hayaku_background_auto_repair'), 'background repair setting must remain bound to the canonical control');
+assert.ok(!source.includes('id="st-bg"') && !source.includes('id="auto-bg"'), 'retired background repair has no GUI control; afterRequest is the only automatic stage');
 assert.ok(source.includes("{ argument: 'risuai_aux_allow_plugins', type: 'boolean' }"), 'the RisuAI-owned auxiliary model permission must remain in the actual settings schema');
 assert.ok(source.includes("mode: 'otherAx'"), 'auxiliary call test must use RisuAI Other Ax');
 assert.ok(source.includes('writesPacketLedger: false'), 'auxiliary call test must not write the packet ledger');

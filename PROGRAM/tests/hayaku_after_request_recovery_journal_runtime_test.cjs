@@ -115,16 +115,18 @@ const historicalEnvelope = assistantText => {
     assert.equal(failure.payload.attempts[0].rawResponse, 'not-json-after-request');
     assert.deepEqual(Array.from(failure.payload.attempts[0].requestMessages || []), []);
     await waitFor(() => ['failed', 'idle'].includes(failedRuntime.hayaku.recovery.jobStatus()?.state || 'idle'), 'headless Recovery Journal confirmation refusal');
-    assert.equal(failedRuntime.llmCalls.length, 1, 'journal creation must not start a background call without a visible confirmation UI');
+    assert.equal(failedRuntime.llmCalls.length, 1, 'journal creation never starts a background call');
     const absent = await failedRuntime.hayaku._test.resolveRecoveryJournalBackgroundConfirmation(true);
     assert.equal(absent.ok, false);
     assert.equal(absent.reason, 'recovery_confirmation_absent');
     assert.equal(failedRuntime.llmCalls.length, 1, 'headless confirmation failure remains zero-extra-call');
     const readback = await failedRuntime.hayaku._test.loadRecoveryVault(scope.key, { force: true });
     assert.equal(readback.records.length, 1, 'when confirmation UI is unavailable, exact Recovery Journal debt remains durable');
-    // Finalized capture may defer the fresh debt preflight until its write ends.
-    await waitFor(() => failedRuntime.hayaku.lastDebug().lastWarnings.includes('recovery_confirmation_ui_unavailable'), 'fresh headless confirmation refusal', 5000);
-    assert.ok(failedRuntime.hayaku.lastDebug().lastWarnings.includes('recovery_confirmation_ui_unavailable'));
+    // afterRequest is the only automatic stage: a failed turn gets no background
+    // repair and no confirmation dialog, only the durable Journal entry.
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    assert.ok(!failedRuntime.hayaku.lastDebug().lastWarnings.includes('recovery_confirmation_ui_unavailable'), 'no confirmation dialog is requested');
+    assert.equal(failedRuntime.llmCalls.length, 1, 'a failed afterRequest repair is never retried automatically');
   } finally {
     await failedRuntime.dispose();
   }
@@ -153,14 +155,15 @@ const historicalEnvelope = assistantText => {
     assert.equal(journal.records.length, 1);
     assert.equal(journal.records[0].afterRequestRepair.outcome, 'disabled_journal_only');
     await waitFor(() => ['failed', 'idle'].includes(journalOnlyRuntime.hayaku.recovery.jobStatus()?.state || 'idle'), 'headless independent background confirmation refusal');
-    assert.equal(journalOnlyRuntime.llmCalls.length, 0, 'background auto repair must not start without explicit visible confirmation');
+    assert.equal(journalOnlyRuntime.llmCalls.length, 0, 'the retired background stage never calls Other Ax');
     const absent = await journalOnlyRuntime.hayaku._test.resolveRecoveryJournalBackgroundConfirmation(false);
     assert.equal(absent.ok, false);
     assert.equal(absent.reason, 'recovery_confirmation_absent');
     assert.equal(journalOnlyRuntime.llmCalls.length, 0);
     const retained = await journalOnlyRuntime.hayaku._test.loadRecoveryVault(scope.key, { force: true });
-    assert.equal(retained.records.length, 1, 'unavailable confirmation UI keeps the Journal entry for manual handling');
-    assert.equal(retained.records[0].backgroundDecision, 'pending');
+    assert.equal(retained.records.length, 1, 'the Journal entry stays for manual repair');
+    assert.equal(Number(retained.records[0].backgroundPromptedAt || 0), 0, 'the retired background stage never prompts');
+    assert.ok(!journalOnlyRuntime.hayaku.lastDebug().lastWarnings.includes('recovery_confirmation_ui_unavailable'));
   } finally {
     await journalOnlyRuntime.dispose();
   }

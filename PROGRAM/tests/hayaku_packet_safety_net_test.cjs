@@ -1,35 +1,31 @@
 'use strict';
 // HAYAKU packet safety net:
-//  - a missing packet whose afterRequest repair never ran is repaired in the
-//    background without a confirmation dialog when afterRequest auto repair is on;
-//    turns that already used or failed their repair keep the existing flow, so no
-//    turn is charged twice;
+//  - afterRequest repair is the only automatic recovery stage: background Recovery
+//    Journal repair (and its confirmation dialog) and Failed Recovery automation are
+//    retired, so a missing turn costs at most one Other Ax call and otherwise waits
+//    for manual repair;
 //  - the session authoring history explains repeated causes with actionable advice.
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), assert = require('node:assert/strict');
 const { test } = require('node:test');
 const H = fs.readFileSync(path.join(__dirname, '../plugins/HAYAKU_Locator_Continuity.js'), 'utf8');
 const slice = (a, b) => { const i = H.indexOf(a), j = H.indexOf(b, i + a.length); assert(i >= 0 && j > i, `${a}/${b}`); return H.slice(i, j); };
 const context = (settings = {}) => {
-  const c = vm.createContext({ Memory: { settings: { afterRequestAutoRepair: true, ...settings } }, text: value => String(value ?? ''),
+  const c = vm.createContext({ Memory: { settings: { ...settings } }, text: value => String(value ?? ''),
     ensureArray: value => Array.isArray(value) ? value : value == null ? [] : [value], viewerEscapeHtml: value => String(value ?? ''),
     viewerScopeFields: rows => rows.map(([label, value]) => `${label}=${value}`).join(';') });
-  vm.runInContext(slice('  const recoveryJournalAutoApproved =', '  const requestRecoveryJournalBackgroundConfirmationOnce =')
-    + slice('  // Session-only rolling history of main-model packet authoring', '  const viewerRenderOverview =')
-    + '\nObject.assign(globalThis,{recoveryJournalAutoApproved,recordPacketAuthoringHistory,recordPacketRepairHistory,packetAuthoringSummary,packetAuthoringAdvice});', c);
+  vm.runInContext(slice('  // Session-only rolling history of main-model packet authoring', '  const viewerRenderOverview =')
+    + '\nObject.assign(globalThis,{recordPacketAuthoringHistory,recordPacketRepairHistory,packetAuthoringSummary,packetAuthoringAdvice});', c);
   return c;
 };
 
-test('skipped afterRequest repairs are auto-approved; attempted or failed ones are not', () => {
-  const c = context();
-  for (const outcome of ['not_observed', 'auxiliary_probe_in_progress', 'evidence_unavailable', 'lineage_unavailable'])
-    assert.equal(c.recoveryJournalAutoApproved({ afterRequestRepair: { attempted: false, outcome } }), true, outcome);
-  assert.equal(c.recoveryJournalAutoApproved({ afterRequestRepair: null }), true, 'no observation at all');
-  assert.equal(c.recoveryJournalAutoApproved({ afterRequestRepair: { attempted: true, outcome: 'failed_journal_required' } }), false);
-  assert.equal(c.recoveryJournalAutoApproved({ afterRequestRepair: { attempted: false, outcome: 'failed_journal_required' } }), false);
-  assert.equal(c.recoveryJournalAutoApproved({ failedAnalysisId: 'f1', afterRequestRepair: null }), false, 'a failure record goes to Failed Recovery automation');
-  assert.equal(c.recoveryJournalAutoApproved({ afterRequestRepair: { attempted: false, outcome: 'disabled_journal_only' } }), false);
-  const off = context({ afterRequestAutoRepair: false });
-  assert.equal(off.recoveryJournalAutoApproved({ afterRequestRepair: { attempted: false, outcome: 'not_observed' } }), false, 'without afterRequest consent the dialog stays');
+test('afterRequest repair is the only automatic recovery stage', () => {
+  assert.match(H, /const scheduleNativeRecoveryDebtRepair = \(\) => false;/, 'background Recovery Journal repair never starts by itself');
+  assert.match(H, /const scheduleFailedAutoRecovery = \(\) => false;/, 'Failed Recovery automation stays retired');
+  assert.match(H, /const failedAutoMode = \(\) => 'off';/);
+  assert.ok(!H.includes('recoveryJournalAutoApproved'), 'no automatic approval of background repair');
+  assert.ok(!H.includes('id="auto-bg"') && !H.includes('id="st-bg"'), 'no background toggle in the GUI');
+  assert.ok(!H.includes("'hayaku_background_auto_repair', 'hayaku_cold_start_batch_turns'"), 'not an essential setting');
+  assert.match(H, /maxPhysicalCalls: 1,\n\s+preserveFailure: false/, 'afterRequest repair makes at most one call');
 });
 
 test('authoring history summarizes causes per chat and gives advice', () => {
@@ -53,6 +49,7 @@ test('authoring history summarizes causes per chat and gives advice', () => {
   assert.match(advice, /응답 최대 토큰/);
   assert.match(advice, /자주 생략/);
   assert.match(advice, /Other Ax/);
+  assert.match(advice, /수동 복구/);
   assert.equal(c.packetAuthoringSummary('chat-b').total, 1, 'history is per chat');
   for (let i = 0; i < 80; i += 1) c.recordPacketAuthoringHistory({ at: 2, scopeKey: 'chat-a', requestNonce: 'm' + i, result: 'valid_packet_awaiting_binding' });
   assert.ok(c.Memory.packetAuthoringHistory.length <= 60, 'history stays bounded');
