@@ -1,6 +1,8 @@
 # GRADIA 인풋 작성기의 통합 읽기 계약
 
-- 작성일: 2026-10-14 · 갱신: 2026-10-15 · 버전: 1.1
+- 작성일: 2026-10-14 · 갱신: 2026-10-15 · 버전: 1.2
+
+GRADIA 0.25.85의 `plugin_ipc` 연결에서도 같은 미제출 제안·별도 세션·모델 예산·현재성 검사를 사용한다. 이 방식은 server_only 권한 대신 각 owner의 plugin_only native scope와 전용 읽기 채널을 확인한다. [최근 챗과 플러그인 IPC](gradia/RECENT-CHAT-AND-PLUGIN-IPC-20261015.md)를 함께 참고한다.
 - 범위: [다음 과제 N04](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md). N03의 readonly 공급자를 사용하되 작성기 세션은 별도로 발급한다.
 
 ## 사용과 지원 조건

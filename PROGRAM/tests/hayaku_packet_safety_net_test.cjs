@@ -14,7 +14,8 @@ const context = (settings = {}) => {
     ensureArray: value => Array.isArray(value) ? value : value == null ? [] : [value], viewerEscapeHtml: value => String(value ?? ''),
     viewerScopeFields: rows => rows.map(([label, value]) => `${label}=${value}`).join(';') });
   vm.runInContext(slice('  // Session-only rolling history of main-model packet authoring', '  const viewerRenderOverview =')
-    + '\nObject.assign(globalThis,{recordPacketAuthoringHistory,recordPacketRepairHistory,packetAuthoringSummary,packetAuthoringAdvice});', c);
+    + slice('  const viewerPacketAuthoringHistoryHtml =', '  // Session-only rolling history of main-model packet authoring')
+    + '\nObject.assign(globalThis,{recordPacketAuthoringHistory,recordPacketRepairHistory,packetAuthoringSummary,packetAuthoringAdvice,viewerPacketAuthoringHistoryHtml});', c);
   return c;
 };
 
@@ -22,7 +23,7 @@ test('afterRequest repair is the only automatic recovery stage', () => {
   assert.match(H, /const scheduleNativeRecoveryDebtRepair = \(\) => false;/, 'background Recovery Journal repair never starts by itself');
   assert.match(H, /const scheduleFailedAutoRecovery = \(\) => false;/, 'Failed Recovery automation stays retired');
   assert.match(H, /const failedAutoMode = \(\) => 'off';/);
-  assert.ok(!H.includes('recoveryJournalAutoApproved'), 'no automatic approval of background repair');
+  assert.match(H, /const recoveryJournalAutoApproved = \(\) => false;/, 'nothing is auto-approved, so the durable approval fences stay closed');
   assert.ok(!H.includes('id="auto-bg"') && !H.includes('id="st-bg"'), 'no background toggle in the GUI');
   assert.ok(!H.includes("'hayaku_background_auto_repair', 'hayaku_cold_start_batch_turns'"), 'not an essential setting');
   assert.match(H, /maxPhysicalCalls: 1,\n\s+preserveFailure: false/, 'afterRequest repair makes at most one call');
@@ -44,7 +45,11 @@ test('authoring history summarizes causes per chat and gives advice', () => {
   }
   c.recordPacketAuthoringHistory({ at: 1, scopeKey: 'chat-b', requestNonce: 'x', result: 'markers_missing' });
   const summary = c.packetAuthoringSummary('chat-a');
-  assert.deepEqual(JSON.parse(JSON.stringify(summary)), { total: 6, mainOk: 1, missing: 2, truncated: 2, invalid: 1, repaired: 3, repairFailed: 1, repairSkipped: 1, skipReasons: ['auxiliary_probe_in_progress'] });
+  assert.deepEqual(JSON.parse(JSON.stringify(summary)), { total: 6, mainOk: 1, missing: 2, truncated: 2, invalid: 1, repairCandidates: 3, repairFailed: 1, repairSkipped: 1, skipReasons: ['auxiliary_probe_in_progress'] });
+  const html = c.viewerPacketAuthoringHistoryHtml('chat-a');
+  assert.match(html, /보조 모델 후보 작성=3턴 · 저장 완료 여부는 별도 확인/);
+  assert.doesNotMatch(html, /보조 모델 복구 성공/);
+  assert.equal(summary.repaired, undefined, 'no durable commit has been observed by this authoring-only history');
   const advice = Array.from(c.packetAuthoringAdvice(summary)).join('\n');
   assert.match(advice, /응답 최대 토큰/);
   assert.match(advice, /자주 생략/);
