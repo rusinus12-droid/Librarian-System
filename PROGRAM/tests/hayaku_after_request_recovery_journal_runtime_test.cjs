@@ -109,6 +109,13 @@ const historicalEnvelope = assistantText => {
     assert.equal(journal.assistant.text, assistantText);
     assert.equal(journal.afterRequestRepair.outcome, 'failed_journal_required');
     assert.ok(journal.failedAnalysisId);
+    const automaticLease = await failedRuntime.hayaku._test.acquireRecoveryDebtLeaseForNativeRepair({
+      debtId: journal.recordId, runId: 'review-stale-automatic-approval', scopeKey: scope.key,
+      explicitRetry: true, requireAutoApproval: true
+    });
+    assert.equal(automaticLease.acquired, false, 'a stale automatic approval cannot bypass fresh failed repair provenance at lease acquisition');
+    assert.equal(automaticLease.reason, 'recovery_journal_auto_approval_changed');
+    assert.equal(failedRuntime.llmCalls.length, 1);
     const failure = await failedRuntime.hayaku._test.readFailedAnalysisArtifact(scope.key, journal.failedAnalysisId);
     assert.equal(failure.durable, true);
     assert.equal(failure.payload.attempts.length, 1);

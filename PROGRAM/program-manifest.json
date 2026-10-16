@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-16T02:00:10.829Z",
+  "generatedAt": "2026-10-16T02:32:13.952Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -397,7 +397,7 @@
           ]
         },
         "hayaku": {
-          "version": "3.0.139",
+          "version": "3.0.140",
           "deferredAuthoritativeBinding": true,
           "backendOrder": [
             "chat_output_v3",
@@ -407,7 +407,7 @@
           "nonOwningOutputHooksAreSanitizers": true
         },
         "flashback": {
-          "version": "1.0.102",
+          "version": "1.0.103",
           "provisionalRemoteEmbedding": false,
           "backendOrder": [
             "chat_output_v3",
@@ -569,7 +569,7 @@
       "nativePersonaDatabaseExcluded": true
     },
     "hayakuNativeOtherAxRecovery": {
-      "version": "3.0.139",
+      "version": "3.0.140",
       "schema": "hayaku.native_recovery.v1",
       "normalPathNoLlmWhenCurrentPacketUsable": true,
       "normalPathLlmCallsWhenCurrentPacketUsable": 0,
@@ -589,7 +589,11 @@
       "recoveryVaultExactEvidence": true,
       "backgroundAutoRepairDefault": true,
       "backgroundAutoRepairIndependentFromAfterRequest": true,
-      "backgroundPerEntryConfirmationRequired": true,
+      "backgroundPerEntryConfirmationRequired": false,
+      "backgroundConfirmationRequiredAfterRepairAttemptOrFailure": true,
+      "backgroundAutomaticApprovalUsesCurrentJournal": true,
+      "backgroundAutomaticApprovalRecheckedAtLease": true,
+      "packetAuthoringCandidateCountDoesNotAssertDurableCommit": true,
       "backgroundApprovedPhysicalCalls": 1,
       "backgroundTimerRetry": false,
       "coldStartManualOnly": true,
@@ -765,7 +769,7 @@
         "canonicalStorageFormatUnchanged": true
       },
       "flashback": {
-        "version": "1.0.102",
+        "version": "1.0.103",
         "unchangedNormalizedDescriptorReuse": true,
         "unchangedLivePairStateReuse": true,
         "changedMessageOnlyRenormalized": true,
@@ -1027,7 +1031,7 @@
       "remountPreservesBusyState": true
     },
     "flashbackArchiveReembedding": {
-      "version": "1.0.102",
+      "version": "1.0.103",
       "fullMaintenanceIncludesArchive": true,
       "automaticMaintenanceIncludesArchive": true,
       "progressiveMaintenanceIncludesArchive": true,
@@ -1127,7 +1131,7 @@
         ]
       },
       "hayakuSparseRrfPilot": {
-        "version": "3.0.139",
+        "version": "3.0.140",
         "operation": "hayaku.sparse-rrf-fusion.v1",
         "algorithmFingerprint": "7f32e8b10fdd34e8356af70e40ad90d3c48e6fda132080046a807db0ea3ec58f",
         "execution": "bounded_interactive_execute_with_local_fallback",
@@ -1435,11 +1439,23 @@
       "incompleteDiscoveryBlocksCompletion": true,
       "sourceCommitAfterVerifiedMigration": true
     },
-    "scopeSpecificStorageModesCompatibilityOnly": true
+    "scopeSpecificStorageModesCompatibilityOnly": true,
+    "flashbackQueryEmbeddingLifetime": {
+      "version": "1.0.103",
+      "callerBudgetMs": [
+        1500,
+        4000
+      ],
+      "coalescedRequestHasPerCallerLeases": true,
+      "lastCallerCancellationAbortsProvider": true,
+      "abandonedResultCannotPublishCache": true,
+      "cachePublicationRequiresLiveCallerAndValidVectorUnion": true,
+      "physicalPendingRequestRetainedUntilSettled": true
+    }
   },
   "plugins": {
-    "flashback": "1.0.102",
-    "hayaku": "3.0.139",
+    "flashback": "1.0.103",
+    "hayaku": "3.0.140",
     "libra": "2.3.150",
     "lia": "0.26.83",
     "retrace": "1.9.84",
@@ -1495,8 +1511,8 @@
       "bytes": 2289
     },
     "docs/CLAUDE_MEMORY_NETWORK_MERGE_20261016.md": {
-      "sha256": "018f23611436ff2741ae275d86c2db741676b1d57004ea8c6995735bbd30a6d4",
-      "bytes": 3235
+      "sha256": "17f845bfb52ed3df447b785230cfcfb963140890aac71e037d9638065679ee2e",
+      "bytes": 3439
     },
     "docs/CLIENT_PROBE_STATUS_PUBLICATION_20261005.md": {
       "sha256": "8e1fb388d4f32add6690034761f94106ae0e6af24ee0aa36aa0f0e07210fd9af",
@@ -2327,8 +2343,8 @@
       "bytes": 23120
     },
     "docs/HAYAKU_PACKET_SAFETY_NET_20261016.md": {
-      "sha256": "121cd06027a78238f1bd323228edd7db9d4405a03a256b983936c9f60bc94b0c",
-      "bytes": 4640
+      "sha256": "213e067077316e57bc1cfde8980a36685efc91f3b22a4076d86edf1ce7020d6b",
+      "bytes": 5384
     },
     "docs/HAYAKU_Packet_Write_Failure_Analysis_20260904.md": {
       "sha256": "2d506254e023b7819e48e6ed69d25a434372b6c70367c98f233f8eed546f76ec",
@@ -3410,6 +3426,10 @@
       "sha256": "0a4b85aaed80372780fbbeb97953c94ab30c5ae07a3fac47deda710d8c5f9ec5",
       "bytes": 6221
     },
+    "docs/REVIEW_FOLLOWUP_PATCH_20261016.md": {
+      "sha256": "5ea79d4f22bff37a9e857f14cd32934567c11c83ec9eeecb44626e886de0987b",
+      "bytes": 4726
+    },
     "docs/REVISION_RECOVERY_PATCH_20260912.md": {
       "sha256": "6ae8f40d1a9754d9f56f79880ab04bf1b9d233d4c64e348588b60a981aabbb8c",
       "bytes": 4851
@@ -3739,16 +3759,16 @@
       "bytes": 3359
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "49a02c34a2ea15dbf2aba9deb1dc4ec35fe98cead256be4fa8b31ca32157d9a1",
-      "bytes": 3323497
+      "sha256": "cbbb21c16edada658742f82834e6a36c63bf9bda66509b26f7289c6d719d970c",
+      "bytes": 3327566
     },
     "plugins/GRADIA.js": {
       "sha256": "b40181c32ce01bc40bdefff17debedd78bf0c3a18c35c0aa51360ba3442a5499",
       "bytes": 2955285
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "56a60f0dd2f25ff32544a9a92e07c3ef68898fd7588965c67d4e006f712ccc35",
-      "bytes": 4009215
+      "sha256": "f57316574cd93167e9d7f94e0e8c42a52d8e599db5b30b6b71dd0504d98d95de",
+      "bytes": 4011324
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "9b94274e457b46fe2c85fea6721804a1eb13ff006e5c63fd7b2e6800931cca1b",
@@ -5570,6 +5590,10 @@
       "sha256": "821e38c94791c760b9bb41b3696c5bab3f4ea1f0d6067be5b2bf8c80114fa94c",
       "bytes": 13064
     },
+    "tests/flashback_query_embedding_lifetime_test.cjs": {
+      "sha256": "764ea7520cc38a8f682865fddc684f88f47a3337063959920e4457413500b1d3",
+      "bytes": 10552
+    },
     "tests/flashback_query_policy_runtime_test.cjs": {
       "sha256": "c284e5349b269241ed6448b6d050d93620d3f7ae110ea6333d20e0d9145587a0",
       "bytes": 1083
@@ -6079,8 +6103,8 @@
       "bytes": 3643
     },
     "tests/hayaku_after_request_recovery_journal_runtime_test.cjs": {
-      "sha256": "28342c5dba1da9778332395a0b962bfb0ed23a2dd8ea526b71e5af945a925b45",
-      "bytes": 9537
+      "sha256": "a46f7f0b2960661b38fc8d22584ed4389cc7802e224f7968f4272866336981e1",
+      "bytes": 10076
     },
     "tests/hayaku_alias_incremental_certificate_test.cjs": {
       "sha256": "7c6fc5d13ab67c8e23aa9f4f9228500d5b50788d55f92b6d1e9ef0193d253286",
@@ -6097,6 +6121,10 @@
     "tests/hayaku_archive_coverage_runtime_test.cjs": {
       "sha256": "021f53d8f8282ab89cadc2a5aa25a179d04549a22017f5ddfb8fbbd7bd3a1deb",
       "bytes": 13457
+    },
+    "tests/hayaku_background_approval_race_test.cjs": {
+      "sha256": "36be7f12f79748093ea2d6c073b7ac357aeaa658d9345a3fdd7c0dfdf5647902",
+      "bytes": 5277
     },
     "tests/hayaku_before_request_source_preservation_runtime_test.cjs": {
       "sha256": "31ab71ed4a79ac6a627153bf8ad436439e0381d8f407fedb125fe9fb5bf231b2",
@@ -6399,8 +6427,8 @@
       "bytes": 8491
     },
     "tests/hayaku_packet_safety_net_test.cjs": {
-      "sha256": "9a26e5a21c26a5054bd805473c86dae1fd24b2fd49ab24dc597fcefee8b5ed16",
-      "bytes": 4608
+      "sha256": "ff4f83644e88d446b269c09c8732c244a1fa3834c09b09498b9fd6982f8914d8",
+      "bytes": 5363
     },
     "tests/hayaku_paged_provider_fence_runtime_test.cjs": {
       "sha256": "e082588dc80d6c5eb2e4e4f39733b801a227313e6849cc26a8fc1b7c45571567",
@@ -10703,8 +10731,8 @@
       "bytes": 3434
     },
     "tools/update_manifest.cjs": {
-      "sha256": "230a0d62ba1df2dfe0d3bb960465364c511cb78e951d963b47d53052f958a407",
-      "bytes": 62106
+      "sha256": "0c60b7f0d78a24f7f0b68c805b23c8fe0c07cdaf95b1503345c56c432377774c",
+      "bytes": 62724
     },
     "tools/verify_runtime_archive.cjs": {
       "sha256": "29e2de76fce6e71a1ebe211c3ca4f0685a22539ccf69bb1cd1e7ebc443a62730",

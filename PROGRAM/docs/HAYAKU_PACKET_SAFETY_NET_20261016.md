@@ -17,10 +17,10 @@
 `afterRequest 자동 복구`가 켜져 있으면 사용자는 이미 "누락 패킷당 Other Ax 1회" 비용에 동의한 상태다. 다음 조건을 모두 만족하는 누락 턴은 확인창 없이 바로 백그라운드 복구한다.
 
 - afterRequest 복구를 시도하지 않았다(`attempted !== true`).
-- 결과가 `failed_journal_required`, `candidate_returned_pending_commit`, `disabled_journal_only`가 아니다.
+- 결과가 `failed_journal_required`, `candidate_returned_pending_commit`, `candidate_not_committed_journal_required`, `disabled_journal_only`가 아니다.
 - 실패 기록(`failedAnalysisId`)이 없다.
 
-이미 시도했거나 실패한 턴은 기존 흐름(실패 복구 자동 처리, 확인창)을 그대로 따른다. 같은 턴에 자동 호출이 겹치지 않는다. `afterRequest 자동 복구`를 끄면 이전처럼 확인창을 띄운다. `백그라운드 자동 복구`를 끄면 백그라운드 복구 자체를 하지 않는다. 작업 기록에 `native_recovery:background_auto_approved`가 남는다.
+이미 시도했거나 실패한 턴은 기존 흐름(실패 복구 자동 처리, 확인창)을 그대로 따른다. 최초 관측 객체 대신 저장 큐에서 읽은 최신 Journal로 확인창을 선점하고 자동 승인 여부를 결정한다. 자동 승인 기록을 저장할 때와 복구 lease를 획득할 때도 시도·실패·설정·진행 중 캡처를 재검사한다. 검사 중 afterRequest 복구가 진행됐으면 자동 호출을 중단한다. `afterRequest 자동 복구`를 끄면 이전처럼 확인창을 띄운다. `백그라운드 자동 복구`를 끄면 백그라운드 복구 자체를 하지 않는다. 작업 기록에 `native_recovery:background_auto_approved`가 남는다. 이 기록만으로 실제 호출·저장 완료를 뜻하지는 않는다.
 
 설정 화면 설명을 "afterRequest 자동 복구가 켜져 있으면 확인 없이 실행하고, 꺼져 있으면 시작 전에 확인합니다."로 바꿨다.
 
@@ -33,7 +33,8 @@
 | 패킷 생략 | 패킷 표시가 전혀 없음 |
 | 패킷 잘림 | 시작 표시만 있고 끝이 없음(출력 길이 부족 가능성) |
 | 형식 오류 | JSON·schema·계보 검사 실패 |
-| 보조 모델 복구 성공 / 실패 / 건너뜀 | afterRequest 복구 결과와 건너뛴 사유 |
+| 보조 모델 후보 작성 | 검증된 후보 패킷을 반환한 횟수. 저장 완료 여부는 별도로 확인해야 함 |
+| 보조 모델 복구 실패 / 건너뜀 | afterRequest 복구 결과와 건너뛴 사유 |
 
 반복되는 원인에는 할 일을 함께 표시한다.
 
@@ -42,6 +43,7 @@
 - 보조 모델 복구 실패: 실패 복구 자동 처리가 한 번 더 시도한다. 계속 실패하면 RisuAI 보조 모델 설정을 확인한다.
 
 기록은 메모리에만 두고 저장하지 않는다(새로고침하면 초기화).
+후보 반환 후 실제 Assistant 출력에 패킷이 채택되지 않거나 저장이 취소·실패할 수 있다. 이 작성 이력은 durable commit을 추적하는 지표로 사용하지 않는다.
 
 ## 확인 범위
 

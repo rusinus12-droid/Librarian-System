@@ -999,7 +999,11 @@ manifest.dataContract.hayakuNativeOtherAxRecovery = {
   recoveryVaultExactEvidence: true,
   backgroundAutoRepairDefault: true,
   backgroundAutoRepairIndependentFromAfterRequest: true,
-  backgroundPerEntryConfirmationRequired: true,
+  backgroundPerEntryConfirmationRequired: false,
+  backgroundConfirmationRequiredAfterRepairAttemptOrFailure: true,
+  backgroundAutomaticApprovalUsesCurrentJournal: true,
+  backgroundAutomaticApprovalRecheckedAtLease: true,
+  packetAuthoringCandidateCountDoesNotAssertDurableCommit: true,
   backgroundApprovedPhysicalCalls: 1,
   backgroundTimerRetry: false,
   coldStartManualOnly: true,
@@ -1088,6 +1092,15 @@ manifest.dataContract.hayakuNativeOtherAxRecovery = {
   stableHash64Unchanged: true,
   ledgerSchema: 'hayaku_storage_ledger_v2',
   worldlineSchema: 'hayaku_turn_worldline_v2'
+};
+manifest.dataContract.flashbackQueryEmbeddingLifetime = {
+  version: pluginVersions.flashback,
+  callerBudgetMs: [1500, 4000],
+  coalescedRequestHasPerCallerLeases: true,
+  lastCallerCancellationAbortsProvider: true,
+  abandonedResultCannotPublishCache: true,
+  cachePublicationRequiresLiveCallerAndValidVectorUnion: true,
+  physicalPendingRequestRetainedUntilSettled: true
 };
 manifest.dataContract.retraceHayakuNativeOwnerDeference = {
   "version": "1.9.65",

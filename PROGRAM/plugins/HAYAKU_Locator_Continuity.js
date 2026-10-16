@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.0.139
-//@version 3.0.139
+//@display-name HAYAKU · Locator Continuity v3.0.140
+//@version 3.0.140
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.0.139';
+  const PLUGIN_VERSION = '3.0.140';
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
   const HAYAKU_SPARSE_RRF_COMPUTE_FINGERPRINT = '7f32e8b10fdd34e8356af70e40ad90d3c48e6fda132080046a807db0ea3ec58f';
   const HAYAKU_SPARSE_RRF_INPUT_SCHEMA = 'hayaku.sparse-rrf-fusion.input.v1';
@@ -25217,6 +25217,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       };
     }
     if (inBandRecoveryPendingForDebt(record)) return { ok: false, acquired: false, reason: 'hayaku_inband_recovery_pending' };
+    if (payload.requireAutoApproval === true && !recoveryJournalAutoApproved(record)) {
+      return { ok: false, acquired: false, reason: 'recovery_journal_auto_approval_changed' };
+    }
     if (payload.explicitRetry !== true && Number(record.nextRepairAt || 0) > now()) return { ok: false, acquired: false, reason: 'recovery_debt_backoff_active', nextRepairAt: record.nextRepairAt };
     if (payload.explicitRetry !== true && Number(record.repairAttempts || 0) >= RECOVERY_DEBT_MAX_AUTO_ATTEMPTS) return { ok: false, acquired: false, reason: 'recovery_debt_attempt_limit' };
     const existingLease = normalizeRecoveryDebtLease(record.repairLease);
@@ -25335,6 +25338,19 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const vault = await loadRecoveryVault(scopeKey, { force: true, debtId });
     const current = ensureArray(vault.records).find(record => record.recordId === debtId) || null;
     if (!current) return { ok: false, durable: false, reason: 'recovery_journal_entry_not_found' };
+    // Inspect and claim against the durable record in the same storage queue as
+    // afterRequest provenance writes. The caller's earlier snapshot is not consent.
+    if (patch.claimPrompt === true && (current.backgroundDecision !== 'pending'
+      || Number(current.backgroundPromptedAt || 0) > 0 || current.inheritedSessionHistory === true
+      || current.worldlineStatus !== 'active' || Memory.settings?.backgroundAutoRepair === false
+      || inBandRecoveryPendingForDebt(current) || Memory.finalizedCaptureInFlight?.size || Memory.finalizedBindingInFlight?.size)) {
+      return { ok: false, durable: false, reason: 'recovery_journal_prompt_changed' };
+    }
+    if (patch.requireAutoApproval === true && (current.backgroundDecision !== 'pending'
+      || !recoveryJournalAutoApproved(current) || inBandRecoveryPendingForDebt(current)
+      || Memory.finalizedCaptureInFlight?.size || Memory.finalizedBindingInFlight?.size)) {
+      return { ok: false, durable: false, reason: 'recovery_journal_auto_approval_changed' };
+    }
     const changedAt = now();
     const records = ensureArray(vault.records).map(record => record.recordId === debtId
       ? normalizeRecoveryVaultRecord({
@@ -25347,7 +25363,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         }, scopeKey)
       : record);
     const write = await writeRecoveryVaultDirect(scopeKey, { ...vault, records }, `recovery_journal_background_${decision}`,{partial:true});
-    return { ...write,ok:write.durable===true,durable: write.durable === true, reason: write.reason, scopeKey, debtId, decision };
+    return { ...write,ok:write.durable===true,durable: write.durable === true, reason: write.reason, scopeKey, debtId, decision,
+      record: clone(records.find(record => record.recordId === debtId), null) };
   });
   const upsertRecoveryVaultEvidence = async (pending = {}, candidate = {}, reason = 'packet_missing') => {
     const settings = Memory.settings || DEFAULT_SETTINGS;
@@ -47261,7 +47278,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!debtId || !scopeKey) return { ok: false, skipped: true, reason: 'debt_identity_missing' };
     const runId = `hayaku-native-repair-${stableHash64([scopeKey, debtId, now()].join('\u0001'))}`;
     setNativeManualRepairPhase('lease_acquire');
-    const leaseResponse = await acquireRecoveryDebtLeaseForNativeRepair({ debtId, runId, scopeKey,explicitRetry:options.explicitRetry===true });
+    const leaseResponse = await acquireRecoveryDebtLeaseForNativeRepair({ debtId, runId, scopeKey,
+      explicitRetry:options.explicitRetry===true, requireAutoApproval:options.requireAutoApproval===true });
     if (leaseResponse?.acquired !== true || !leaseResponse?.debt?.evidenceRecord) {
       return {
         ok: false,
@@ -47795,9 +47813,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   // call per missing packet. A turn whose afterRequest repair was skipped (no failure
   // record) is then repaired in the background without asking again; turns with a
   // failure record stay with Failed Recovery automation, so no turn is charged twice.
-  const recoveryJournalAutoApproved = record => Memory.settings?.afterRequestAutoRepair !== false
+  const recoveryJournalAutoApproved = record => !!record && Memory.settings?.afterRequestAutoRepair !== false && Memory.settings?.backgroundAutoRepair !== false
     && !record?.failedAnalysisId && record?.afterRequestRepair?.attempted !== true
-    && !['failed_journal_required', 'candidate_returned_pending_commit', 'disabled_journal_only'].includes(text(record?.afterRequestRepair?.outcome || ''));
+    && !['failed_journal_required', 'candidate_returned_pending_commit', 'candidate_not_committed_journal_required', 'disabled_journal_only'].includes(text(record?.afterRequestRepair?.outcome || ''));
   const requestRecoveryJournalBackgroundConfirmationOnce = async (recordInput, reason = 'packet_debt_ready') => {
     await loadSettings(false);
     const record = normalizeRecoveryVaultRecord(recordInput, recordInput?.scopeKey || '');
@@ -47815,12 +47833,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!freshDebt || !ensureArray(inspected.coverage?.missingTurns).includes(record.pairIndex)) return false;
     // afterRequest/finalized capture gets its chance before the fallback prompt.
     if(inBandRecoveryPendingForDebt(record) || Memory.finalizedCaptureInFlight?.size || Memory.finalizedBindingInFlight?.size) return false;
-    const marked = await updateRecoveryJournalBackgroundDecision(record.scopeKey, record.recordId, 'pending', { promptedAt: now() });
+    const marked = await updateRecoveryJournalBackgroundDecision(record.scopeKey, record.recordId, 'pending', { promptedAt: now(), claimPrompt: true });
     if (marked.durable !== true) return false;
+    const autoApproved = recoveryJournalAutoApproved(marked.record);
     Memory.ledgerViewer.recoveryConfirmation = {
       scopeKey: record.scopeKey,
       debtId: record.recordId,
       pairIndex: record.pairIndex,
+      autoApproved,
       targetFingerprint:nativeRepairTargetFingerprint(freshDebt),
       sourceDigest:inspected.coverage?.rows?.find(r=>r.turn===record.pairIndex)?.sourceDigest || '',
       reason: compact(reason || record.reason || 'packet_missing', 96),
@@ -47839,9 +47859,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       total: 1,
       currentTurn: record.pairIndex,
       cancellable: false,
-      message: recoveryJournalAutoApproved(record) ? '패킷이 누락돼 백그라운드에서 자동 복구합니다.' : '패킷이 누락됐습니다. 자동 복구를 시도하시겠습니까?'
+      message: autoApproved ? '패킷이 누락돼 백그라운드에서 자동 복구합니다.' : '패킷이 누락됐습니다. 자동 복구를 시도하시겠습니까?'
     });
-    if (recoveryJournalAutoApproved(record)) {
+    if (autoApproved) {
       pushOperationLog('native_recovery:background_auto_approved', { scopeKey: record.scopeKey, turn: record.pairIndex, reason: compact(reason || '', 96) }, 'info');
       void resolveRecoveryJournalBackgroundConfirmation(true).catch(error => pushOperationLog('native_recovery:background_auto_failed',
         { scopeKey: record.scopeKey, turn: record.pairIndex, error: compact(error?.message || error, 200) }, 'warn'));
@@ -47889,8 +47909,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const result={ok:alreadyCovered,repaired:false,reason:alreadyCovered?'already_covered':'recovery_confirmation_source_changed'};
       finishNativeJob(alreadyCovered?'completed':'cancelled',result,alreadyCovered?'':result.reason);return result;
     }
-    const approved = await updateRecoveryJournalBackgroundDecision(confirmation.scopeKey, confirmation.debtId, 'approved');
+    const approved = await updateRecoveryJournalBackgroundDecision(confirmation.scopeKey, confirmation.debtId, 'approved', {
+      requireAutoApproval: confirmation.autoApproved === true
+    });
     if (approved.durable !== true) {
+      if (approved.reason === 'recovery_journal_auto_approval_changed') {
+        Memory.ledgerViewer.recoveryConfirmation = null;
+        Memory.ledgerViewer.recoveryConfirmationUi = null;
+        finishNativeJob('cancelled', approved, approved.reason);
+        return approved;
+      }
       finishNativeJob('failed', approved, approved.reason || 'recovery_confirmation_write_failed');
       return {...approved,ok:false,reason:approved.reason||'recovery_confirmation_write_failed'};
     }
@@ -47907,6 +47935,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         force: true,
         reason: 'background_user_approved',
         explicitRetry: true,
+        requireAutoApproval: confirmation.autoApproved === true,
         debtId: confirmation.debtId,
         targetPairIndex: confirmation.pairIndex,
         includeAwaitingReview: true
@@ -48111,7 +48140,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       state.repairDebtId = compact(debt.debtId || '', 196);
       state.repairRunId = `pending:${state.repairDebtId}`;
-      const result = { ...(await executeNativeRepairDebt(debt,{explicitRetry:options.explicitRetry===true})), scan: clone(scan, {}), legacyTakeover: clone(legacyTakeover, {}) };
+      const result = { ...(await executeNativeRepairDebt(debt,{explicitRetry:options.explicitRetry===true,
+        requireAutoApproval:options.requireAutoApproval===true})), scan: clone(scan, {}), legacyTakeover: clone(legacyTakeover, {}) };
       state.lastRepairResult = result;
       state.lastRepairError = result.ok || result.deferred === true ? '' : compact(result.reason || '', 320);
       if (result.ok) {
@@ -58597,7 +58627,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       ['패킷 생략', `${summary.missing}턴`],
       ['패킷 잘림', `${summary.truncated}턴`],
       ['형식 오류', `${summary.invalid}턴`],
-      ['보조 모델 복구 성공', `${summary.repaired}턴`],
+      ['보조 모델 후보 작성', `${summary.repairCandidates}턴 · 저장 완료 여부는 별도 확인`],
       ['보조 모델 복구 실패', `${summary.repairFailed}턴`],
       ['복구 건너뜀', summary.repairSkipped ? `${summary.repairSkipped}턴 · ${summary.skipReasons.join(', ')}` : '0턴']
     ];
@@ -58622,7 +58652,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   const packetAuthoringSummary = scopeKey => {
     const rows = ensureArray(Memory.packetAuthoringHistory).filter(row => row.scopeKey === scopeKey);
     const count = predicate => rows.filter(predicate).length;
-    const repaired = row => row.repair === 'candidate_returned_pending_commit';
+    const repairCandidate = row => row.repair === 'candidate_returned_pending_commit';
     const repairFailed = row => ['failed_journal_required', 'suspended'].includes(row.repair);
     const mainOk = row => row.result === 'valid_packet_awaiting_binding';
     return {
@@ -58631,10 +58661,10 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       missing: count(row => row.result === 'markers_missing'),
       truncated: count(row => row.result === 'marker_incomplete'),
       invalid: count(row => !mainOk(row) && !['markers_missing', 'marker_incomplete'].includes(row.result)),
-      repaired: count(repaired),
+      repairCandidates: count(repairCandidate),
       repairFailed: count(repairFailed),
-      repairSkipped: count(row => !mainOk(row) && row.repair && !repaired(row) && !repairFailed(row) && row.repair !== 'packet_already_usable'),
-      skipReasons: [...new Set(rows.filter(row => !mainOk(row) && row.repair && !repaired(row) && !repairFailed(row)).map(row => row.repair))].slice(0, 4)
+      repairSkipped: count(row => !mainOk(row) && row.repair && !repairCandidate(row) && !repairFailed(row) && row.repair !== 'packet_already_usable'),
+      skipReasons: [...new Set(rows.filter(row => !mainOk(row) && row.repair && !repairCandidate(row) && !repairFailed(row)).map(row => row.repair))].slice(0, 4)
     };
   };
   const packetAuthoringAdvice = summary => {

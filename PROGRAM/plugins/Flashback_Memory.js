@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.102
+//@display-name ⚡ FLASHBACK Memory v1.0.103
 //@api 3.0
-//@version 1.0.102
+//@version 1.0.103
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.102';
+const PLUGIN_VERSION = '1.0.103';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -16483,7 +16483,7 @@ let MemorySuiteComputeBridge = null;
       if (row.physicalSubmitted) Runtime.embeddingActiveRequests.set(id,Object.freeze({...row,physicalPending:true,state:'cancelled_pending',cancelReason:reason}));
       else Runtime.embeddingActiveRequests.delete(id);
     }
-    Runtime.queryEmbeddingInFlight.clear();
+    clearQueryEmbeddingInFlight(reason);
     if (reason === 'settings_changed' || reason === 'credential_changed') {
       const invalidatedQueries = Runtime.queryEmbeddingCache.size;
       Runtime.queryEmbeddingCache.clear();
@@ -18118,7 +18118,18 @@ let MemorySuiteComputeBridge = null;
     Runtime.queryEmbeddingCache.delete(key);Runtime.queryEmbeddingCacheStats.invalidations++;return {key,cached:null};
   };
 
-  const storeQueryEmbeddingEntry = (key, vector, vectors, cfg) => {
+  const publishQueryEmbeddingEntry = entry => {
+    if (Runtime.queryEmbeddingCache.has(entry.cacheKey)) return;
+    while (Runtime.queryEmbeddingCache.size >= QUERY_EMBEDDING_CACHE_MAX) {
+      const oldest = Runtime.queryEmbeddingCache.keys().next().value;
+      if (!oldest) break;
+      Runtime.queryEmbeddingCache.delete(oldest);
+      Runtime.queryEmbeddingCacheStats.evictions += 1;
+    }
+    Runtime.queryEmbeddingCache.set(entry.cacheKey, entry);
+  };
+
+  const storeQueryEmbeddingEntry = (key, vector, vectors, cfg, publish = true) => {
     if (!Array.isArray(vector) || !vector.length) throw new Error('empty embedding vector');
     const fallbackUsed = vectors.flashbackFallbackUsed === true;
     const dim = vector.length;
@@ -18127,18 +18138,59 @@ let MemorySuiteComputeBridge = null;
     const modelUsed = cfg.embeddingModel || '';
     const profileId = vectors.flashbackEmbeddingProfileId || embeddingProfileId(cfg, dim, providerUsed, modelUsed);
     const entry = { vector, providerUsed, modelUsed, dim, profileId, fallbackUsed, at: Date.now(), cacheKey: key };
-    if (!fallbackUsed) {
-      while (Runtime.queryEmbeddingCache.size >= QUERY_EMBEDDING_CACHE_MAX) {
-        const oldest = Runtime.queryEmbeddingCache.keys().next().value;
-        if (!oldest) break;
-        Runtime.queryEmbeddingCache.delete(oldest);
-        Runtime.queryEmbeddingCacheStats.evictions += 1;
-      }
-      Runtime.queryEmbeddingCache.set(key, entry);
-    } else {
-      Runtime.queryEmbeddingCacheStats.fallbackSkipped += 1;
-    }
+    if (publish) publishQueryEmbeddingEntry(entry);
     return { ...entry, cacheHit: false, ageMs: 0 };
+  };
+
+  const clearQueryEmbeddingInFlight = reason => {
+    for (const pending of Runtime.queryEmbeddingInFlight.values()) pending.queryBatch?.controller?.abort(reason);
+    Runtime.queryEmbeddingInFlight.clear();
+  };
+
+  // Each caller owns a lease, not the shared wire request. Only the last caller
+  // leaving aborts that request; a timed-out caller can never publish late cache data.
+  const createQueryEmbeddingWaiter = (options = {}) => {
+    const batches = new Set();
+    const signals = [...new Set([options.signal, options.requestSignal].filter(Boolean))];
+    let failure = null, timer = null, closed = false, rejectCancelled;
+    const cancelled = new Promise((_, reject) => { rejectCancelled = reject; });
+    cancelled.catch(() => {});
+    const release = () => {
+      for (const batch of batches) {
+        batch.waiters.delete(waiter);
+        if (!batch.waiters.size && !batch.settled) {
+          batch.abandoned = true;
+          batch.controller?.abort('query_waiters_released');
+          for (const [key, pending] of Runtime.queryEmbeddingInFlight) {
+            if (pending.queryBatch === batch) Runtime.queryEmbeddingInFlight.delete(key);
+          }
+        }
+      }
+      batches.clear();
+    };
+    const cancel = error => {
+      if (closed || failure) return;
+      failure = error;
+      release();
+      rejectCancelled(error);
+    };
+    const abort = () => cancel(new EmbeddingAdapterError('ABORTED', 'Query embedding was cancelled.'));
+    const deadlineAt = Math.min(Number(options.deadlineAt) > 0 ? Number(options.deadlineAt) : Infinity,
+      Number(options.queryBudgetMs) > 0 ? Date.now() + Number(options.queryBudgetMs) : Infinity);
+    const check = () => {
+      if (signals.some(signal => signal.aborted)) abort();
+      if (Date.now() >= deadlineAt) cancel(Object.assign(new Error('query embedding deadline expired'), { code: 'FLASHBACK_DEADLINE' }));
+      if (failure) throw failure;
+      options.operationLedger?.check();
+    };
+    const waiter = { options, check,
+      wait: promise => Promise.race([promise, cancelled]),
+      acquire(batch) { check(); if (!batches.has(batch)) { batches.add(batch); batch.waiters.add(waiter); } },
+      close() { closed = true; if (timer) clearTimeout(timer); for (const signal of signals) signal.removeEventListener?.('abort', abort); release(); }
+    };
+    if (Number.isFinite(deadlineAt)) timer = setTimeout(() => cancel(Object.assign(new Error('query embedding deadline expired'), { code: 'FLASHBACK_DEADLINE' })), Math.max(0, deadlineAt - Date.now()));
+    for (const signal of signals) signal.addEventListener?.('abort', abort, { once: true });
+    return waiter;
   };
 
   // Batch all currently-missing query vectors in one provider request. This keeps
@@ -18146,37 +18198,53 @@ let MemorySuiteComputeBridge = null;
   // vector independent without doubling network round trips.
   const getCachedQueryEmbeddings = async (queries=[],cfg,options={}) => {
     if (!configuredModelEmbedding(cfg)) throw new EmbeddingAdapterError('EMBEDDING_UNCONFIGURED', 'Configure an enabled query embedding model.');
+    const waiter = createQueryEmbeddingWaiter(options);
+    try {
+    waiter.check();
     const taskType=options.taskType||'query',source=(Array.isArray(queries)?queries:[queries]).map(q=>recallQueryTextOf(q).trim());
     const generation=Runtime.embeddingGeneration;
-    const authorityEpoch=MemorySuiteExecutionContract.authorityEpoch([await readEmbeddingExecutionKey(options),cfg.embeddingCustomHeaders]);
+    const authorityEpoch=MemorySuiteExecutionContract.authorityEpoch([await waiter.wait(readEmbeddingExecutionKey(options)),cfg.embeddingCustomHeaders]);
+    waiter.check();
     const cacheOptions={...options,authorityEpoch};
     const results=new Array(source.length).fill(null),pending=new Map(),waits=[];
     source.forEach((query,index)=>{if(!query)return;const lookup=cachedQueryEmbeddingEntry(query,cfg,taskType,cacheOptions);
       if(lookup.cached){results[index]=lookup.cached;return;}
       if(!pending.has(lookup.key))pending.set(lookup.key,{key:lookup.key,query,indexes:[]});pending.get(lookup.key).indexes.push(index);});
     const missing=[];
-    for(const group of pending.values()){const active=Runtime.queryEmbeddingInFlight.get(group.key);if(active){Runtime.queryEmbeddingCacheStats.coalesced++;waits.push(Promise.resolve(active).then(entry=>group.indexes.forEach(i=>{results[i]=entry;})));}else missing.push(group);}
-    const coalescedWaits=waits.slice();
+    for(const group of pending.values()){const active=Runtime.queryEmbeddingInFlight.get(group.key);if(active){waiter.acquire(active.queryBatch);Runtime.queryEmbeddingCacheStats.coalesced++;waits.push(active.then(entry=>group.indexes.forEach(i=>{results[i]=entry;})));}else missing.push(group);}
     if(missing.length){Runtime.queryEmbeddingCacheStats.misses+=missing.length;
+      const batch = { controller: typeof AbortController === 'undefined' ? null : new AbortController(), waiters: new Set(), settled: false, abandoned: false };
+      waiter.acquire(batch);
       const batchPromise=(async()=>{
-        // The owner cache is authoritative for this batch. Adapter writes are deferred
-        // by bypass so a failed cache+fresh union cannot publish a partial result.
-        const vectors=await embedTexts(missing.map(g=>g.query),cfg,{...options,taskType,cacheMode:'bypass'});
+        const validateAuthority = async () => {
+          if (batch.abandoned || !batch.waiters.size) throw new EmbeddingAdapterError('ABORTED', 'Query embedding has no active callers.');
+          for (const owner of [...batch.waiters]) {
+            try { owner.check(); await owner.options.validateAuthority?.(); }
+            catch (error) { if (batch.waiters.has(owner)) throw error; }
+          }
+          if (batch.abandoned || !batch.waiters.size) throw new EmbeddingAdapterError('ABORTED', 'Query embedding has no active callers.');
+        };
+        // Caller deadlines only release leases. The shared request has its own
+        // provider timeout and is cancelled when no active caller needs it.
+        const vectors=await embedTexts(missing.map(g=>g.query),cfg,{...options,taskType,cacheMode:'bypass',
+          signal:batch.controller?.signal,deadlineAt:0,validateAuthority});
         if(generation!==Runtime.embeddingGeneration)throw new EmbeddingAdapterError('STALE_SOURCE','Query settings changed during embedding.');
-        await Promise.all(coalescedWaits);
-        options.operationLedger?.check();
-        if(options.signal?.aborted)throw new EmbeddingAdapterError('ABORTED','Query embedding was cancelled.');
-        if(generation!==Runtime.embeddingGeneration)throw new EmbeddingAdapterError('STALE_SOURCE','Query settings changed during coalesced embedding.');
-        const all=[...results.filter(Boolean).map(e=>e.vector),...vectors];
-        MemorySuiteExecutionContract.batch(all,all.length,cfg.embeddingDimensions||0);
-        return missing.map((g,i)=>storeQueryEmbeddingEntry(g.key,vectors[i],vectors,cfg));
-      })();
-      missing.forEach((g,i)=>{let one;one=batchPromise.then(entries=>entries[i]).finally(()=>{if(Runtime.queryEmbeddingInFlight.get(g.key)===one)Runtime.queryEmbeddingInFlight.delete(g.key);});Runtime.queryEmbeddingInFlight.set(g.key,one);waits.push(one.then(e=>g.indexes.forEach(index=>{results[index]=e;})));});
+        if(batch.abandoned || batch.controller?.signal.aborted || !batch.waiters.size)throw new EmbeddingAdapterError('ABORTED','Query embedding was abandoned.');
+        MemorySuiteExecutionContract.batch(vectors,missing.length,cfg.embeddingDimensions||0);
+        return missing.map((g,i)=>storeQueryEmbeddingEntry(g.key,vectors[i],vectors,cfg,false));
+      })().finally(() => { batch.settled = true; });
+      missing.forEach((g,i)=>{let one;one=batchPromise.then(entries=>entries[i]).finally(()=>{if(Runtime.queryEmbeddingInFlight.get(g.key)===one)Runtime.queryEmbeddingInFlight.delete(g.key);});one.queryBatch=batch;Runtime.queryEmbeddingInFlight.set(g.key,one);waits.push(one.then(e=>g.indexes.forEach(index=>{results[index]=e;})));});
     }
-    await Promise.all(waits);
+    await waiter.wait(Promise.all(waits));
+    await waiter.wait(options.validateAuthority?.());
+    waiter.check();
     if(generation!==Runtime.embeddingGeneration)throw new EmbeddingAdapterError('STALE_SOURCE','Query cache generation was invalidated.');
     const vectors=results.filter(Boolean).map(e=>e.vector);MemorySuiteExecutionContract.batch(vectors,vectors.length,cfg.embeddingDimensions||0);
+    // Publish only after this live caller validates its entire cached/coalesced/
+    // fresh union. Provider completion alone cannot mutate the owner cache.
+    for (const entry of new Set(results.filter(entry => entry && !entry.cacheHit))) publishQueryEmbeddingEntry(entry);
     return results;
+    } finally { waiter.close(); }
   };
 
   const getCachedQueryEmbedding = async (query, cfg, options = {}) => {
@@ -18188,7 +18256,7 @@ let MemorySuiteComputeBridge = null;
   const invalidateQueryEmbeddingCache = () => {
     const count = Runtime.queryEmbeddingCache.size;
     Runtime.queryEmbeddingCache.clear();
-    Runtime.queryEmbeddingInFlight.clear();
+    clearQueryEmbeddingInFlight('query_cache_invalidated');
     Runtime.embeddingGeneration=Number(Runtime.embeddingGeneration||0)+1;
     if (count) Runtime.queryEmbeddingCacheStats.invalidations += count;
   };
@@ -34545,8 +34613,9 @@ const MemorySuiteHealthRecovery = (() => {
         // The query embedding gets its own short budget inside the hook deadline.
         // A slow or failed provider degrades this request to keyword retrieval
         // instead of consuming the whole hook budget and delivering nothing.
-        const embedded = await withDeadline(getCachedQueryEmbeddings(queryBatch, embeddingSettings, { taskType: 'query', scope, validateAuthority: assertQueryProfileCurrent }),
-          flashbackQueryEmbeddingBudgetMs(cfg), 'query embedding');
+        const embedded = await getCachedQueryEmbeddings(queryBatch, embeddingSettings, { taskType: 'query', scope,
+          validateAuthority: assertQueryProfileCurrent, queryBudgetMs: flashbackQueryEmbeddingBudgetMs(cfg),
+          signal: options.signal, requestSignal: strictReadSet?.signal });
         result = embedded[0];
         contextResult = sceneContextProfile.text ? embedded[jointQuery?0:1] : null;
         if (result?.vector?.length && result.fallbackUsed !== true) flashbackQueryEmbeddingCooldown = { until: 0, generation: -1, fingerprint: '', error: '' };
@@ -34554,7 +34623,7 @@ const MemorySuiteHealthRecovery = (() => {
         error = compact(embeddingError?.message || embeddingError || 'query embedding failed', 800);
         timedOut = embeddingError?.code === 'FLASHBACK_DEADLINE';
         coolingDown = embeddingError?.code === 'FLASHBACK_QUERY_EMBEDDING_COOLDOWN';
-        if (!coolingDown && embeddingError?.code !== 'STALE_SOURCE') flashbackQueryEmbeddingCooldown = { until: Date.now() + FLASHBACK_QUERY_EMBEDDING_COOLDOWN_MS,
+        if (!coolingDown && !['STALE_SOURCE', 'ABORTED'].includes(embeddingError?.code || embeddingError?.type)) flashbackQueryEmbeddingCooldown = { until: Date.now() + FLASHBACK_QUERY_EMBEDDING_COOLDOWN_MS,
           generation: Runtime.embeddingGeneration, fingerprint: embeddingProfileSettingsFingerprint(cfg), error: compact(error, 200) };
         result = {
           vector: [],
@@ -34570,6 +34639,7 @@ const MemorySuiteHealthRecovery = (() => {
       return { result, contextResult, error, timedOut, coolingDown, elapsed: Date.now() - startedAt };
     })() : Promise.resolve({ result: null, contextResult: null, error: '', elapsed: 0 });
     const [manifestState, worldlineState, embeddingState] = await Promise.all([manifestTask, worldlineTask, embeddingTask]);
+    if (options.signal?.aborted) throw new EmbeddingAdapterError('ABORTED', 'Recall request was cancelled.');
     if (!flashbackRequestCurrent(options.requestToken, options.requestBranch)) throw Object.assign(new Error("Recall request expired"), {code:"FLASHBACK_RECALL_EXPIRED"});
     const manifest = manifestState.value;
     const recallWorldline = worldlineState.value;
@@ -50150,7 +50220,7 @@ return createReadSession;
         Runtime.sparseProjectionCache.clear();
         Runtime.sparseProjectionRecordKeys.clear();
         Runtime.queryEmbeddingCache.clear();
-        Runtime.queryEmbeddingInFlight.clear();
+        clearQueryEmbeddingInFlight('unload');
         Runtime.documentEmbeddingCache.clear();
         Runtime.latentEpisodeCooldown.clear();
         Runtime.embeddingDiagnostics.length = 0;

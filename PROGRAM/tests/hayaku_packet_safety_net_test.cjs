@@ -15,7 +15,8 @@ const context = (settings = {}) => {
     viewerScopeFields: rows => rows.map(([label, value]) => `${label}=${value}`).join(';') });
   vm.runInContext(slice('  const recoveryJournalAutoApproved =', '  const requestRecoveryJournalBackgroundConfirmationOnce =')
     + slice('  // Session-only rolling history of main-model packet authoring', '  const viewerRenderOverview =')
-    + '\nObject.assign(globalThis,{recoveryJournalAutoApproved,recordPacketAuthoringHistory,recordPacketRepairHistory,packetAuthoringSummary,packetAuthoringAdvice});', c);
+    + slice('  const viewerPacketAuthoringHistoryHtml =', '  // Session-only rolling history of main-model packet authoring')
+    + '\nObject.assign(globalThis,{recoveryJournalAutoApproved,recordPacketAuthoringHistory,recordPacketRepairHistory,packetAuthoringSummary,packetAuthoringAdvice,viewerPacketAuthoringHistoryHtml});', c);
   return c;
 };
 
@@ -24,10 +25,12 @@ test('skipped afterRequest repairs are auto-approved; attempted or failed ones a
   for (const outcome of ['not_observed', 'auxiliary_probe_in_progress', 'evidence_unavailable', 'lineage_unavailable'])
     assert.equal(c.recoveryJournalAutoApproved({ afterRequestRepair: { attempted: false, outcome } }), true, outcome);
   assert.equal(c.recoveryJournalAutoApproved({ afterRequestRepair: null }), true, 'no observation at all');
+  assert.equal(c.recoveryJournalAutoApproved(null), false, 'absent current record is not consent');
   assert.equal(c.recoveryJournalAutoApproved({ afterRequestRepair: { attempted: true, outcome: 'failed_journal_required' } }), false);
   assert.equal(c.recoveryJournalAutoApproved({ afterRequestRepair: { attempted: false, outcome: 'failed_journal_required' } }), false);
   assert.equal(c.recoveryJournalAutoApproved({ failedAnalysisId: 'f1', afterRequestRepair: null }), false, 'a failure record goes to Failed Recovery automation');
   assert.equal(c.recoveryJournalAutoApproved({ afterRequestRepair: { attempted: false, outcome: 'disabled_journal_only' } }), false);
+  assert.equal(c.recoveryJournalAutoApproved({ afterRequestRepair: { attempted: false, outcome: 'candidate_not_committed_journal_required' } }), false);
   const off = context({ afterRequestAutoRepair: false });
   assert.equal(off.recoveryJournalAutoApproved({ afterRequestRepair: { attempted: false, outcome: 'not_observed' } }), false, 'without afterRequest consent the dialog stays');
 });
@@ -48,7 +51,11 @@ test('authoring history summarizes causes per chat and gives advice', () => {
   }
   c.recordPacketAuthoringHistory({ at: 1, scopeKey: 'chat-b', requestNonce: 'x', result: 'markers_missing' });
   const summary = c.packetAuthoringSummary('chat-a');
-  assert.deepEqual(JSON.parse(JSON.stringify(summary)), { total: 6, mainOk: 1, missing: 2, truncated: 2, invalid: 1, repaired: 3, repairFailed: 1, repairSkipped: 1, skipReasons: ['auxiliary_probe_in_progress'] });
+  assert.deepEqual(JSON.parse(JSON.stringify(summary)), { total: 6, mainOk: 1, missing: 2, truncated: 2, invalid: 1, repairCandidates: 3, repairFailed: 1, repairSkipped: 1, skipReasons: ['auxiliary_probe_in_progress'] });
+  const html = c.viewerPacketAuthoringHistoryHtml('chat-a');
+  assert.match(html, /보조 모델 후보 작성=3턴 · 저장 완료 여부는 별도 확인/);
+  assert.doesNotMatch(html, /보조 모델 복구 성공/);
+  assert.equal(summary.repaired, undefined, 'no durable commit has been observed by this authoring-only history');
   const advice = Array.from(c.packetAuthoringAdvice(summary)).join('\n');
   assert.match(advice, /응답 최대 토큰/);
   assert.match(advice, /자주 생략/);
