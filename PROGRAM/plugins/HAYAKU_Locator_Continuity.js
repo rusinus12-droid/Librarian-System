@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.0.140
-//@version 3.0.140
+//@display-name HAYAKU · Locator Continuity v3.0.141
+//@version 3.0.141
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.0.140';
+  const PLUGIN_VERSION = '3.0.141';
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
   const HAYAKU_SPARSE_RRF_COMPUTE_FINGERPRINT = '7f32e8b10fdd34e8356af70e40ad90d3c48e6fda132080046a807db0ea3ec58f';
   const HAYAKU_SPARSE_RRF_INPUT_SCHEMA = 'hayaku.sparse-rrf-fusion.input.v1';
@@ -60305,6 +60305,15 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   // unclear packet position). It never blocks, never calls a provider by itself except
   // one bounded auxiliary connectivity probe, and disappears once the cause is gone.
   const HAYAKU_ATTENTION_BUTTON_UI_ID = 'hayaku-locator-continuity-attention';
+  // Match the owner-marked LIBRA button while keeping HAYAKU identifiable even
+  // when the host hides button names and only renders the icon.
+  const hayakuAttentionIcon = kind => {
+    const warning = ['aux', 'missing'].includes(kind), action = kind === 'cold_start';
+    const label = warning ? '확인 필요' : action ? '지난 대화 기억 만들기' : '안내';
+    const badge = warning ? '#dc2626' : action ? '#fbbf24' : '#0e7490';
+    const mark = warning ? 'M25 3.5v4M25 10v.15' : action ? 'M25 3.5V7l2 1.5' : 'M25 6v4M25 3.5v.15';
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 32 32" role="img" aria-label="HAYAKU · ${label}" data-memory-owner="hayaku"><title>HAYAKU · ${label}</title><rect x="2" y="5" width="25" height="25" rx="7" fill="#b45309" stroke="#fcd34d"/><text x="14.5" y="24" text-anchor="middle" font-family="system-ui,sans-serif" font-size="20" font-weight="800" fill="#fff">H</text><circle cx="25" cy="7" r="6" fill="${badge}" stroke="#fff" stroke-width="1.5"/><path d="${mark}" fill="none" stroke="${action ? '#422006' : '#fff'}" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+  };
   const HAYAKU_AUX_PROBE_CACHE_KEY = 'hayaku.auxProbe.v1';
   const HAYAKU_AUX_PROBE_FRESH_MS = 7 * 24 * 60 * 60 * 1000;
   const HAYAKU_ATTENTION_REFRESH_DELAY_MS = 2500;
@@ -60407,7 +60416,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     HayakuAttention.buttonSignature = '';
     if (!next?.kind || !buttonApi || Memory.unloaded || !ownsRuntime()) return !next?.kind;
     try {
-      await buttonApi.registerButton({ name: next.name, icon: next.icon, iconType: 'html', location: 'chat', id: HAYAKU_ATTENTION_BUTTON_UI_ID },
+      await buttonApi.registerButton({ name: next.name, icon: hayakuAttentionIcon(next.kind), iconType: 'html', location: 'chat', id: HAYAKU_ATTENTION_BUTTON_UI_ID },
         () => { void openHayakuAttention(); });
       HayakuAttention.buttonSignature = signature;
       pushOperationLog('attention:shown', { kind: next.kind, count: next.count }, 'info');

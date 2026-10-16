@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.150
-//@version 2.3.150
+//@display-name LIBRA v2.3.151
+//@version 2.3.151
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1557,7 +1557,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.3.150';
+  const PLUGIN_VERSION = '2.3.151';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -86168,6 +86168,15 @@ advanced
   // without memory). It never starts model work; the click opens the screen that
   // shows the targets and expected calls before anything runs.
   const LIBRA_ATTENTION_BUTTON_ID = `${SETTINGS_UI_ID}-attention`;
+  // Chat hosts can display only the icon. Keep the owner visible independently
+  // of the tooltip, with a small badge for the current reason.
+  const libraAttentionIcon = kind => {
+    const warning = ['review', 'failed'].includes(kind), action = kind === 'missing';
+    const label = warning ? '확인 필요' : action ? '지난 대화 기억 만들기' : '안내';
+    const badge = warning ? '#dc2626' : action ? '#fbbf24' : '#0e7490';
+    const mark = warning ? 'M25 3.5v4M25 10v.15' : action ? 'M25 3.5V7l2 1.5' : 'M25 6v4M25 3.5v.15';
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 32 32" role="img" aria-label="LIBRA · ${label}" data-memory-owner="libra"><title>LIBRA · ${label}</title><rect x="2" y="5" width="25" height="25" rx="7" fill="#2563eb" stroke="#bfdbfe"/><text x="14.5" y="24" text-anchor="middle" font-family="system-ui,sans-serif" font-size="20" font-weight="800" fill="#fff">L</text><circle cx="25" cy="7" r="6" fill="${badge}" stroke="#fff" stroke-width="1.5"/><path d="${mark}" fill="none" stroke="${action ? '#422006' : '#fff'}" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+  };
   const LIBRA_ATTENTION_POLL_MS = 10000;
   const LIBRA_ATTENTION_REFRESH_DELAY_MS = 3000;
   const LibraAttention = { started: false, refreshTimer: null, pollTimer: null, evaluating: false, opening: false,
@@ -86207,7 +86216,7 @@ advanced
     const buttonApi = getLiveApi(['registerButton']);
     if (!next?.kind || typeof buttonApi?.registerButton !== 'function' || LibraMemoryCore.state.disposed) return !next?.kind;
     try {
-      await buttonApi.registerButton({ name: next.name, icon: next.icon, iconType: 'html', location: 'chat', id: LIBRA_ATTENTION_BUTTON_ID },
+      await buttonApi.registerButton({ name: next.name, icon: libraAttentionIcon(next.kind), iconType: 'html', location: 'chat', id: LIBRA_ATTENTION_BUTTON_ID },
         () => { void openLibraAttention(); });
       LibraAttention.buttonSignature = signature;
       return true;
