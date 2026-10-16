@@ -39236,8 +39236,10 @@ const MemorySuiteHealthRecovery = (() => {
           || ['queue_running', 'request_active'].includes(result.reason)) {
           schedulePendingEmbeddingWork(key, { reason: 'continue_pending', delayMs: result.reason === 'queue_running' ? 1000 : 250 });
         }
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('embedding_queue', 120);
       })().catch(error => {
         Runtime.lastEmbeddingQueue = { scopeKey: key, ready: 0, reason: error?.code || 'queue_failed', at: Date.now() };
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('embedding_queue_failed', 120);
         warn('pending embedding queue failed', error);
       });
     }, clampInt(options.delayMs, 0, 5000, 250));
@@ -39425,6 +39427,7 @@ const MemorySuiteHealthRecovery = (() => {
         remoteUpgradeQueued
       }, 'success');
       log(provisional ? 'captured completed response pending live confirmation' : 'captured finalized chat response', Runtime.lastCapture);
+      if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh(provisional ? 'provisional_capture_saved' : 'finalized_capture_saved', 120);
       return true;
     } finally {
       Runtime.finalizedCaptureInFlight.delete(pendingId);
@@ -39718,6 +39721,7 @@ const MemorySuiteHealthRecovery = (() => {
           opLog(provisionalPreserved ? 'capture_confirmation_expired' : 'finalized_capture_expired', { hook: 'liveChatMonitor', pending: current, result: Runtime.lastCapture }, 'warn');
         }
         stopFinalizedCaptureMonitor(pendingId);
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('capture_monitor_expired', 80);
         return;
       }
       const activeBarrier = currentPendingCaptureBarrier();
@@ -39814,6 +39818,7 @@ const MemorySuiteHealthRecovery = (() => {
                   reason: 'finalized_capture_save_rejected'
                 }, 'error');
                 stopFinalizedCaptureMonitor(pendingId);
+                if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('capture_save_rejected', 80);
                 return;
               }
             }
@@ -39846,6 +39851,7 @@ const MemorySuiteHealthRecovery = (() => {
             reason: 'finalized_capture_monitor_failed'
           }, 'error');
           stopFinalizedCaptureMonitor(pendingId);
+          if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('capture_monitor_failed', 80);
           return;
         }
       }
@@ -40665,12 +40671,14 @@ const MemorySuiteHealthRecovery = (() => {
           revisionRecord.error = text(error?.code || error?.message || error).slice(0, 500);
           Runtime.lastChatOutputCapture = { ...revisionRecord, saved: false, provisional: true, remoteEmbeddingQueued: false };
           opLog('risu_chat_output_save_failed', { hook: 'risuChatOutput', ...Runtime.lastChatOutputCapture }, 'warn');
+          if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('risu_chat_output_failed', 80);
           // Keep the pending journal and request decision for the normal reconcile
           // path as well as an identical committed-output callback.
           throw error;
         }
         Runtime.lastChatOutputCapture = { ...revisionRecord, saved: saved === true, provisional: true, remoteEmbeddingQueued: false };
         opLog('risu_chat_output_revision', { hook: 'risuChatOutput', ...Runtime.lastChatOutputCapture }, 'info');
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('risu_chat_output_saved', 120);
       }
       return { ok: true, captured, duplicates, scopeKey: scope.scopeKey };
     });
@@ -46569,6 +46577,7 @@ ${cleanedText}`, 80),
           expectedStorageBinding: view.storageBinding, expectedGeneration: view.generation, retryFailed, onlyFailed: retryFailed });
       } catch (error) { result = { ok: false, reason: error?.code || error?.message || 'queue_failed' }; }
       finally { embeddingWorkPanelBusy = false; syncEmbeddingWorkButtons(guiRoot); }
+      if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('embedding_work_ui', 80);
       if (root === guiRoot && isGuiRenderActive()) await refreshEmbeddingWorkPanel(root, result);
     };
     root.querySelector?.('#embeddingWorkRunBtn')?.addEventListener('click', () => run(false));
@@ -48092,6 +48101,7 @@ ${cleanedText}`, 80),
             : await inspectEmbeddingKeyPersistence());
         Runtime.lastStorageAction = { at: Date.now(), savedSettings: true, embeddingKeyPersistence: keyPersistence };
         schedulePendingEmbeddingWork(Runtime.currentScope?.scopeKey, { reason: 'settings_saved' });
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('settings_saved', 120);
         pushActivityLog('settings_saved', '프로바이더 설정을 저장했습니다.', {
           scopeKey: Runtime.currentScope?.scopeKey || '',
           mode: settings.mode,
@@ -48115,6 +48125,7 @@ ${cleanedText}`, 80),
           savedAdvancedSettings: true,
           embeddingKeyPersistence: keyPersistence
         };
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('advanced_settings_saved', 120);
         pushActivityLog('advanced_settings_saved', `고급 설정을 저장했습니다. 개발자 진단 로그: ${settings.operationLogEnabled ? '켜짐' : '꺼짐'}`, {
           scopeKey: Runtime.currentScope?.scopeKey || '',
           mode: settings.mode,
@@ -48491,6 +48502,7 @@ ${cleanedText}`, 80),
         // Release the host/UI lock before the potentially slow refresh and
         // completion dialog. A stalled repaint or modal must not strand RisuAI.
         setBusy(false);
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('maintenance_auto', 80);
         await refreshUi('import');
         await guiAlert(maintenanceResultText(result), maintenanceCompletionTitle(result));
       } catch (error) { await guiError('자동 점검·복구 실패', error); }
@@ -48504,6 +48516,7 @@ ${cleanedText}`, 80),
         if(!await guiConfirm(`${preview.warning}\n\n선택 ${c.eligibleGroups}묶음 · ${c.eligibleRecords}개 레코드\n남은 응답 묶음 ${c.remainingGroups}\n제외 ${c.excludedGroups}묶음 · ${c.excludedRecords}개 레코드\n\n선택한 묶음만 실행할까요?`,'아카이브 응답 한 묶음 복구'))return;
         setBusy(true,'아카이브 응답 묶음 복구');
         const result=await flashbackArchiveRecovery.repair(preview.ticket);setBusy(false);
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('maintenance_archive_repair', 80);
         const label=result.status==='verified'?'선택한 아카이브 응답 묶음 완료':result.status==='uncertain'?'아카이브 응답 묶음 결과 불명':result.status==='failed'?'아카이브 응답 묶음 실패':'아카이브 응답 묶음 실행 차단';
         await guiAlert(`${label}\n검증 완료 ${result.archiveReembedded||0}개 레코드\n남은 응답 묶음 ${result.counts?.remainingGroups??c.remainingGroups}\n제외 ${result.counts?.excludedGroups??c.excludedGroups}묶음 · ${result.counts?.excludedRecords??c.excludedRecords}개 레코드\n제공자 요청 ${result.provider?.requests?.length||0}회\n후보 저장 ${result.candidates?.state||'none'} · 소유자 게시 ${result.publication?.state||'none'}\n아카이브 전체 범위는 이번 작업에서 검증하지 않았습니다.`,label);
       }catch(error){await guiError('아카이브 응답 묶음 복구 실패',error);}finally{setBusy(false);}
@@ -48523,6 +48536,7 @@ ${cleanedText}`, 80),
             if(!await guiConfirm(`${ticket.warning}\n\n대상 ${c.eligibleSources}묶음 · ${c.eligibleRecords}개 벡터\n제외: 실패 ${c.failedSources} · 결과 불명 ${c.uncertainSources} · 이관/복구 필요 ${c.legacySources+c.blockedSources}묶음 · 아카이브 ${c.archivePending}개 레코드\n\n확인한 대상만 실행할까요?`,'로컬 미완료 벡터 복구'))return;
             setBusy(true,'미완료 벡터 복구');
             const result=await flashbackHealthRecovery.repair(ticket);setBusy(false);
+            if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('maintenance_reembed_repair', 80);
             const labels={verified:'검증 완료',partial_success:'부분 성공',failed:'확정 실패',uncertain:'결과 불명',blocked:'실행 차단'};
             const states={none:'없음',requested:'요청함',verified:'읽기 검증 완료',unknown:'결과 불명'};
             await guiAlert(`${labels[result.status]||'미검증'}\n완료 ${result.counts?.completed||0} · 미완료 ${result.counts?.pending||0} · 실패 ${result.counts?.failed||0} · 결과 불명 ${result.counts?.unknown||0}\n진행 기록: ${states[result.journal?.state]||'없음'}\n기억 게시: ${states[result.publication?.state]||'없음'}\n제공자 요청: ${result.provider?.requests?.length||0}회\n로컬 대상 검증: ${result.finalVerification?.complete?'완료':'미완료'}\n아카이브 ${result.counts?.archivePending??'확인 불가'}개 레코드 제외 · 아카이브 복구 미지원\n전체 자료 정상 여부는 별도 점검으로 확인해 주세요.`,labels[result.status]||'복구 결과');
@@ -48541,6 +48555,7 @@ ${cleanedText}`, 80),
           // The maintenance commit is complete; refresh and the result dialog
           // are presentation work and must not keep the host locked.
           setBusy(false);
+          if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh(`maintenance_${mode}`, 80);
           await refreshUi('import');
           await guiAlert(maintenanceResultText(result), maintenanceCompletionTitle(result));
         } catch (error) { await guiError('고급 기억 유지보수 실패', error); }
@@ -48776,6 +48791,7 @@ ${cleanedText}`, 80),
     try {
       const ready = await registerUiOnce();
       if (ready) {
+        startFlashbackAttention();
         console.log(`[${PLUGIN_NAME}] GUI hook registered. setting=${!!Runtime.registered.setting} hamburger=${!!Runtime.registered.hamburgerButton}`);
         console.log(`[${PLUGIN_NAME}] Manual GUI command: __FlashbackMemory.showUi()`);
       } else {
@@ -48791,6 +48807,298 @@ ${cleanedText}`, 80),
       scheduleTimer(() => { registerUi(Runtime.settings || settings).catch(error => warn('registerUi retry failed', error)); }, 500);
     }
   };
+
+  // Zero-touch attention: a single chat-area button that exists only while attention
+  // is needed (raw response text capture failure, storage/manifest corruption, embedding
+  // failure, unconfigured embedding provider with pending work, cold start, or missing turns).
+  // Clicking the button immediately opens the relevant Flashback GUI tab ('import' or 'provider').
+  const FLASHBACK_ATTENTION_DISPLAY_NAME = 'FLASHBACK';
+  const FLASHBACK_ATTENTION_BUTTON_ID = 'vector-rag-memory-attention';
+  const flashbackAttentionIcon = kind => {
+    const warning = ['capture_failed', 'storage_error', 'embedding_uncertain', 'embedding_failed', 'vector_repair', 'embedding_unconfigured'].includes(kind);
+    const action = ['cold_start', 'missing_turns', 'embedding_pending'].includes(kind);
+    const label = warning ? '확인 필요' : action ? '기억 동기화 필요' : '안내';
+    const badge = warning ? '#dc2626' : action ? '#fbbf24' : '#0e7490';
+    const mark = warning ? 'M25 3.5v4M25 10v.15' : action ? 'M25 3.5V7l2 1.5' : 'M25 6v4M25 3.5v.15';
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 32 32" role="img" aria-label="${FLASHBACK_ATTENTION_DISPLAY_NAME} · ${label}" data-memory-owner="flashback"><title>${FLASHBACK_ATTENTION_DISPLAY_NAME} · ${label}</title><rect x="2" y="5" width="25" height="25" rx="7" fill="#7c3aed" stroke="#ddd6fe"/><text x="14.5" y="24" text-anchor="middle" font-family="system-ui,sans-serif" font-size="20" font-weight="800" fill="#fff">F</text><circle cx="25" cy="7" r="6" fill="${badge}" stroke="#fff" stroke-width="1.5"/><path d="${mark}" fill="none" stroke="${action ? '#422006' : '#fff'}" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+  };
+  const FLASHBACK_ATTENTION_POLL_MS = 10000;
+  const FLASHBACK_ATTENTION_REFRESH_DELAY_MS = 2500;
+  const FlashbackAttention = {
+    started: false,
+    refreshTimer: null,
+    pollTimer: null,
+    evaluating: false,
+    lastIndexes: '',
+    buttonSignature: '',
+    state: null
+  };
+  const flashbackAttentionDecision = ({
+    captureFailed = false,
+    storageError = false,
+    embeddingUncertain = 0,
+    embeddingFailed = 0,
+    vectorRepair = 0,
+    embeddingUnconfigured = 0,
+    embeddingPending = 0,
+    coldStart = 0,
+    missingTurns = 0
+  } = {}) => {
+    if (captureFailed) {
+      return { kind: 'capture_failed', count: 1, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 원문 저장 실패`, tab: 'import' };
+    }
+    if (storageError) {
+      return { kind: 'storage_error', count: 1, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 저장소 오류 확인`, tab: 'import' };
+    }
+    if (embeddingUncertain > 0) {
+      return { kind: 'embedding_uncertain', count: embeddingUncertain, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 벡터 상태 확인 필요`, tab: 'provider' };
+    }
+    if (embeddingFailed > 0) {
+      return { kind: 'embedding_failed', count: embeddingFailed, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 응답 벡터화 실패`, tab: 'provider' };
+    }
+    if (vectorRepair > 0) {
+      return { kind: 'vector_repair', count: vectorRepair, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 벡터 복구 필요`, tab: 'provider' };
+    }
+    if (embeddingUnconfigured > 0) {
+      return { kind: 'embedding_unconfigured', count: embeddingUnconfigured, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 임베딩 제공자 설정 필요`, tab: 'provider' };
+    }
+    if (embeddingPending > 0) {
+      return { kind: 'embedding_pending', count: embeddingPending, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 벡터 생성 대기 중`, tab: 'provider' };
+    }
+    if (coldStart > 0) {
+      return { kind: 'cold_start', count: coldStart, icon: '🕘', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 지난 ${coldStart}턴 기억 만들기`, tab: 'import' };
+    }
+    if (missingTurns > 0) {
+      return { kind: 'missing_turns', count: missingTurns, icon: '🕘', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 기억 없는 턴 ${missingTurns}개`, tab: 'import' };
+    }
+    return { kind: '', count: 0 };
+  };
+  const computeFlashbackAttention = async () => {
+    const settings = await loadSettings(false);
+    if (settings?.enabled === false || settings?.mode === 'disabled' || Runtime.unloaded) {
+      return { scopeKey: '', kind: '', count: 0 };
+    }
+    const snapshot = await loadRisuSnapshot(false);
+    const scope = applyCurrentScope(resolveScopeFromSnapshot(snapshot));
+    if (!scope?.scopeKey) return { scopeKey: '', kind: '', count: 0 };
+
+    let captureFailed = false;
+    if (Runtime.lastCapture?.skipped && ['finalized_capture_save_rejected', 'finalized_capture_monitor_failed', 'capture_monitor_expired'].includes(Runtime.lastCapture?.reason)) {
+      captureFailed = true;
+    }
+    if (Runtime.lastChatOutputCapture && (Runtime.lastChatOutputCapture.saved === false || Runtime.lastChatOutputCapture.status === 'failed')) {
+      captureFailed = true;
+    }
+    if (Runtime.lastPendingCaptureRecovery?.reason === 'recovery_failed') {
+      captureFailed = true;
+    }
+    for (const [, monitor] of Runtime.finalizedCaptureMonitors) {
+      if (monitor && (monitor.attempts >= 3 || monitor.lastFailureStage === 'finalized_capture_save_rejected' || monitor.lastFailureStage === 'capture_monitor_expired' || monitor.lastFailureStage === 'capture_monitor_failed')) {
+        captureFailed = true;
+        break;
+      }
+    }
+
+    let storageError = false;
+    const statsValue = await currentScopeStats().catch(() => null);
+    const manifest = statsValue?.manifest;
+    if (manifest && (manifest.manifestCorrupt === true || manifest.archiveRefInvalid === true || manifest.foreignScopeKey)) {
+      storageError = true;
+    }
+
+    const work = statsValue?.stats?.embeddingWork || { pending: 0, unconfigured: 0, repairNeeded: 0, running: 0, failed: 0, uncertain: 0 };
+    const lastQueue = Runtime.lastEmbeddingQueue;
+    const embeddingEnabled = settings?.embeddingEnabled !== false;
+    const isConfiguredProvider = configuredModelEmbedding(settings);
+
+    let embeddingUncertain = 0;
+    let embeddingFailed = 0;
+    let vectorRepair = 0;
+    let embeddingUnconfigured = 0;
+    let embeddingPending = 0;
+
+    if (embeddingEnabled) {
+      embeddingUncertain = Number(work.uncertain || 0);
+      if (lastQueue?.uncertain || (lastQueue?.reason && ['AUTH_ERROR', 'RATE_LIMIT', 'NETWORK_ERROR', 'TIMEOUT', 'EMBEDDING_PHYSICAL_PENDING', 'uncertain_attempt'].includes(lastQueue.reason))) {
+        embeddingUncertain = Math.max(embeddingUncertain, Number(lastQueue?.uncertainRecords || 0) || 1);
+      }
+
+      embeddingFailed = Number(work.failed || 0);
+      if (lastQueue && lastQueue.ok === false && (lastQueue.failed > 0 || lastQueue.failedSources > 0 || lastQueue.reason === 'queue_failed')) {
+        embeddingFailed = Math.max(embeddingFailed, Number(lastQueue.failed || lastQueue.failedSources || 0) || 1);
+      }
+      if (Runtime.lastEmbedError && (!lastQueue || lastQueue.ok === false)) {
+        embeddingFailed = Math.max(embeddingFailed, 1);
+      }
+
+      vectorRepair = Number(work.repairNeeded || 0);
+      embeddingUnconfigured = !isConfiguredProvider && (Number(work.pending || 0) > 0 || Number(work.unconfigured || 0) > 0)
+        ? Math.max(Number(work.unconfigured || 0), Number(work.pending || 0))
+        : Number(work.unconfigured || 0);
+
+      if (isConfiguredProvider && Number(work.pending || 0) > 0) {
+        if (lastQueue?.reason === 'automatic_paused' || lastQueue?.reason === 'no_durable_progress' || lastQueue?.blocked || (lastQueue && lastQueue.pendingSources > 0 && lastQueue.ready === 0 && lastQueue.failed === 0)) {
+          embeddingPending = Number(work.pending || 0);
+        }
+      }
+    }
+
+    let coldStart = 0;
+    let missingTurns = 0;
+    const live = liveChatReadState(snapshot.chat || {}, scope.scopeKey);
+    const livePairs = liveChatStateFromNormalized(live.normalized || []).pairs || [];
+    const completedTurns = livePairs.length;
+    const recordTotal = Math.max(0, Number(statsValue?.manifest?.count || statsValue?.stats?.recordTotal || 0) || 0);
+
+    if (recordTotal === 0 && completedTurns > 0) {
+      coldStart = completedTurns;
+    } else if (completedTurns > 0 && !captureFailed && !storageError) {
+      const sources = collectLiveChatSourcesFromSnapshot(snapshot, normalizeColdStartOptions(settings, { scope: 'current', historyLimit: 0 }));
+      if (sources.length > 0) {
+        const rawLoaded = await loadScopeRecordsRaw(scope.scopeKey).catch(() => null);
+        if (rawLoaded?.records) {
+          const responseRecords = rawLoaded.records.filter(r => isResponseMemoryRecord(r) && !(r.autoEpisode || r.sourceType === 'episode_index'));
+          const diff = diffLiveChatSourcesAgainstRecords(sources, responseRecords);
+          const pendingPairIndexes = new Set();
+          for (const pending of Runtime.pendingTurns || []) {
+            if (pending?.pairIndex) pendingPairIndexes.add(Number(pending.pairIndex));
+          }
+          for (const [, monitor] of Runtime.finalizedCaptureMonitors || []) {
+            if (monitor?.pending?.pairIndex) pendingPairIndexes.add(Number(monitor.pending.pairIndex));
+          }
+          const actualMissing = diff.missing.filter(source => {
+            const pair = responsePairFromMaintenanceSource(source);
+            return !pendingPairIndexes.has(Number(pair.pairIndex));
+          });
+          missingTurns = actualMissing.length;
+        }
+      }
+    }
+
+    const decision = flashbackAttentionDecision({
+      captureFailed,
+      storageError,
+      embeddingUncertain,
+      embeddingFailed,
+      vectorRepair,
+      embeddingUnconfigured,
+      embeddingPending,
+      coldStart,
+      missingTurns
+    });
+
+    return {
+      ...decision,
+      scopeKey: scope.scopeKey,
+      completedTurns,
+      checkedAt: Date.now()
+    };
+  };
+  const syncFlashbackAttentionButton = async next => {
+    const signature = next?.kind ? `${next.kind}:${next.count}:${next.scopeKey || ''}` : '';
+    if (signature === FlashbackAttention.buttonSignature) return true;
+    const uiApi = getApiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || getLiveApi();
+    const buttonApi = getApiCandidates().find(candidate => typeof candidate?.registerButton === 'function') || getLiveApi();
+    if (FlashbackAttention.buttonSignature && typeof uiApi?.unregisterUIPart === 'function') {
+      try { await uiApi.unregisterUIPart(FLASHBACK_ATTENTION_BUTTON_ID); } catch (_) {}
+    }
+    FlashbackAttention.buttonSignature = '';
+    if (!next?.kind || typeof buttonApi?.registerButton !== 'function' || Runtime.unloaded) return !next?.kind;
+    try {
+      await buttonApi.registerButton({
+        name: next.name,
+        icon: flashbackAttentionIcon(next.kind),
+        iconType: 'html',
+        location: 'chat',
+        id: FLASHBACK_ATTENTION_BUTTON_ID
+      }, () => { void openFlashbackAttention(); });
+      FlashbackAttention.buttonSignature = signature;
+      pushActivityLog('attention_shown', `${PLUGIN_NAME} 주의 알림 버튼이 표시되었습니다.`, { kind: next.kind, count: next.count }, 'info');
+      return true;
+    } catch (error) {
+      warn('flashback_attention_button_failed', error);
+      return false;
+    }
+  };
+  const refreshFlashbackAttention = async () => {
+    if (!FlashbackAttention.started || Runtime.unloaded) return null;
+    if (FlashbackAttention.evaluating) {
+      scheduleFlashbackAttentionRefresh('busy', 1000);
+      return null;
+    }
+    FlashbackAttention.evaluating = true;
+    try {
+      const next = await computeFlashbackAttention();
+      if (Runtime.unloaded) return null;
+      FlashbackAttention.state = next;
+      await syncFlashbackAttentionButton(next);
+      return next;
+    } catch (error) {
+      warn('flashback_attention_refresh_failed', error);
+      return null;
+    } finally {
+      FlashbackAttention.evaluating = false;
+    }
+  };
+  function scheduleFlashbackAttentionRefresh(reason = '', delayMs = FLASHBACK_ATTENTION_REFRESH_DELAY_MS) {
+    if (!FlashbackAttention.started || Runtime.unloaded) return false;
+    if (FlashbackAttention.refreshTimer) clearTimeout(FlashbackAttention.refreshTimer);
+    FlashbackAttention.refreshTimer = setTimeout(() => {
+      FlashbackAttention.refreshTimer = null;
+      void refreshFlashbackAttention();
+    }, Math.max(0, Number(delayMs) || 0));
+    FlashbackAttention.refreshTimer?.unref?.();
+    return true;
+  }
+  const pollFlashbackAttention = async () => {
+    FlashbackAttention.pollTimer = null;
+    if (!FlashbackAttention.started || Runtime.unloaded) return;
+    try {
+      const api = getApiCandidates().find(candidate => typeof candidate?.getCurrentCharacterIndex === 'function' && typeof candidate?.getCurrentChatIndex === 'function') || getLiveApi();
+      if (typeof api?.getCurrentCharacterIndex === 'function' && typeof api?.getCurrentChatIndex === 'function') {
+        const indexes = `${await api.getCurrentCharacterIndex()}:${await api.getCurrentChatIndex()}`;
+        if (indexes !== FlashbackAttention.lastIndexes) {
+          FlashbackAttention.lastIndexes = indexes;
+          scheduleFlashbackAttentionRefresh('chat_switch', 500);
+        }
+      }
+    } catch (_) {}
+    if (!Runtime.unloaded) {
+      FlashbackAttention.pollTimer = setTimeout(() => void pollFlashbackAttention(), FLASHBACK_ATTENTION_POLL_MS);
+      FlashbackAttention.pollTimer?.unref?.();
+    }
+  };
+  const startFlashbackAttention = () => {
+    if (FlashbackAttention.started || Runtime.unloaded) return false;
+    FlashbackAttention.started = true;
+    void pollFlashbackAttention();
+    scheduleFlashbackAttentionRefresh('start', 800);
+    return true;
+  };
+  const stopFlashbackAttention = async () => {
+    for (const key of ['refreshTimer', 'pollTimer']) {
+      if (FlashbackAttention[key]) {
+        try { clearTimeout(FlashbackAttention[key]); } catch (_) {}
+        FlashbackAttention[key] = null;
+      }
+    }
+    FlashbackAttention.started = false;
+    if (FlashbackAttention.buttonSignature) {
+      const uiApi = getApiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || getLiveApi();
+      try { await uiApi?.unregisterUIPart?.(FLASHBACK_ATTENTION_BUTTON_ID); } catch (_) {}
+      FlashbackAttention.buttonSignature = '';
+    }
+  };
+  async function openFlashbackAttention() {
+    const state = FlashbackAttention.state;
+    if (!state?.kind || Runtime.unloaded) return false;
+    const targetTab = state.tab || 'overview';
+    Runtime.guiTab = targetTab;
+    const shown = await showUi();
+    if (!shown) return false;
+    setActiveGuiTab(targetTab);
+    return true;
+  }
 
   const sanitizeEmbeddingSettingsForDiagnostics = (settings = {}) => ({
     ...settings,
@@ -50000,6 +50308,16 @@ return createReadSession;
   publicApi._test.operationLogResultSummary = operationLogResultSummary;
   publicApi._test.liveCaptureRemoteUpgradeSettings = liveCaptureRemoteUpgradeSettings;
   publicApi._test.reembedCapturedTurnRecords = reembedCapturedTurnRecords;
+  publicApi._test.Runtime = Runtime;
+  publicApi._test.FlashbackAttention = FlashbackAttention;
+  publicApi._test.flashbackAttentionDecision = flashbackAttentionDecision;
+  publicApi._test.computeFlashbackAttention = computeFlashbackAttention;
+  publicApi._test.syncFlashbackAttentionButton = syncFlashbackAttentionButton;
+  publicApi._test.startFlashbackAttention = startFlashbackAttention;
+  publicApi._test.stopFlashbackAttention = stopFlashbackAttention;
+  publicApi._test.refreshFlashbackAttention = refreshFlashbackAttention;
+  publicApi._test.scheduleFlashbackAttentionRefresh = scheduleFlashbackAttentionRefresh;
+  publicApi._test.openFlashbackAttention = openFlashbackAttention;
   globalThis.__FlashbackMemory = publicApi;
   globalThis.__VectorRagMemory = publicApi;
 
@@ -50224,6 +50542,7 @@ return createReadSession;
         Runtime.documentEmbeddingCache.clear();
         Runtime.latentEpisodeCooldown.clear();
         Runtime.embeddingDiagnostics.length = 0;
+        try { await stopFlashbackAttention(); } catch (_) {}
         try { await closeGui({ hideContainer: true, removeRoot: true }); } catch (_) {}
         try {
           if (Runtime.legacyScriptOutputHandler && typeof live.removeRisuScriptHandler === 'function') {

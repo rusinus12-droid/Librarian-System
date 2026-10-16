@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-16T06:31:23.259Z",
+  "generatedAt": "2026-10-16T15:14:35.402Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -3779,8 +3779,8 @@
       "bytes": 3359
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "cbbb21c16edada658742f82834e6a36c63bf9bda66509b26f7289c6d719d970c",
-      "bytes": 3327566
+      "sha256": "b811d1db7bb8d79942a5b677e4801f3452ea219efb07905a231dcf285262fc99",
+      "bytes": 3345177
     },
     "plugins/GRADIA.js": {
       "sha256": "b40181c32ce01bc40bdefff17debedd78bf0c3a18c35c0aa51360ba3442a5499",
@@ -5385,6 +5385,10 @@
     "tests/flashback_capture_profile_regression_test.cjs": {
       "sha256": "3d5bdeec2dc8219d871c38a914503af7fbd39321d240b1d9ab3690f4afd8e700",
       "bytes": 3543
+    },
+    "tests/flashback_chat_attention_runtime_test.cjs": {
+      "sha256": "eaf8d7d26b01b2db05b7b0b32f8b6e8669c63e4ad0484e2bae1bab52223c9dc5",
+      "bytes": 12486
     },
     "tests/flashback_chat_output_unload_deferred_dispose_deadline_test.cjs": {
       "sha256": "c757b5e2c0067638f0f290ea0229da91628d85a3b738146baaeb140b4932ee2b",
