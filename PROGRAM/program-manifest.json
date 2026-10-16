@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-16T03:08:36.087Z",
+  "generatedAt": "2026-10-16T04:08:56.364Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -2398,6 +2398,10 @@
       "sha256": "404f7ffa099a264ce75529f6230f9f4141361a97b9ec4ed98723a0538a21b9b4",
       "bytes": 3102
     },
+    "docs/HAYAKU_ZERO_TOUCH_ATTENTION_20261016.md": {
+      "sha256": "f6ce2b362860b24d3947d18ca6992b9f266637360c4a9f67eb14666d7908cd41",
+      "bytes": 5295
+    },
     "docs/HOST_MODEL_VALIDATION_06.md": {
       "sha256": "c4b8d64f0e639f0e4454e59ad5960832de52d6c637a01b7712419f48ca87f3de",
       "bytes": 4288
@@ -3743,8 +3747,8 @@
       "bytes": 9711
     },
     "docs/사용설명서.md": {
-      "sha256": "79977b34e4a950c734c98f7afc1739e0c7ab62d5c6c604e22f78b3b6e5569ab0",
-      "bytes": 107572
+      "sha256": "eba5b4a284aa1e555dd019bde6464ed09046cfd44581ef9ccfe6f35f92df6de1",
+      "bytes": 108235
     },
     "macOS_서버_실행.command": {
       "sha256": "cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c",
@@ -3767,8 +3771,8 @@
       "bytes": 2955285
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "bdd75ac553388d3bafc0a2b753bdf166491895b3868ab411899d9d10e57bc7da",
-      "bytes": 4008398
+      "sha256": "84ce8674201b6542bce09d81a94c74ac21f92e34e478899960a664688ec30af1",
+      "bytes": 4024184
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "9b94274e457b46fe2c85fea6721804a1eb13ff006e5c63fd7b2e6800931cca1b",
@@ -6677,6 +6681,10 @@
     "tests/hayaku_visible_source_admission_runtime_test.cjs": {
       "sha256": "868774beb8a3a7baa341a6cedd5d24d24e7ea0806721fde5e0b7ed93de6688b7",
       "bytes": 5261
+    },
+    "tests/hayaku_zero_touch_attention_runtime_test.cjs": {
+      "sha256": "916ecaecb1874ad9665d7cf22a2387c90784172e29f14a2349f4a6726496eadc",
+      "bytes": 4983
     },
     "tests/health_action_orchestrator_test.cjs": {
       "sha256": "109974546562aa35edb789fd34be21e59383e0b2b72a147fec3ee163a02005e4",

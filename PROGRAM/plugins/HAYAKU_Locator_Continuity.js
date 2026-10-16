@@ -17178,14 +17178,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       ...patch
     });
   };
-  const finishNativeJob = (state, result = null, error = '') => updateNativeJob({
+  const finishNativeJob = (state, result = null, error = '') => (typeof scheduleHayakuAttentionRefresh === 'function' && scheduleHayakuAttentionRefresh('job_finished'), updateNativeJob({
     ...(state === 'completed' && result?.repaired === true && result?.adoption?.durable === true ? {completed:Memory.nativeRecovery.job?.total || 1} : {}),
     state: compact(state || 'completed', 48),
     result: clone(result, null),
     error: compact(error || result?.error || '', 320),
     cancellable: false,
     finishedAt: now()
-  });
+  }));
   const cancelNativeJob = () => {
     const job = Memory.nativeRecovery.job;
     if (!job) {
@@ -44999,6 +44999,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           throw error;
         }
         callSucceeded=true;
+        if (typeof markHayakuAuxiliaryReady === 'function') markHayakuAuxiliaryReady();
         return {
           ok: true,
           content,
@@ -51906,6 +51907,7 @@ return createReadSession;
     canonicalCaptureJobs.set(jobKey,entry);return entry.promise;
   };
   const processRisuChatOutputEvent = async (eventValue,observation={}) => {
+    if (typeof scheduleHayakuAttentionRefresh === 'function') scheduleHayakuAttentionRefresh('chat_output');
     if (Memory.unloaded || !ownsRuntime()) return { ok: false, skipped: true, reason: 'runtime_inactive' };
     if (hayakuSourceInputReadyError) return { ok: true, skipped: true, reason: 'source_input_preferences_unavailable' };
     if (Memory.captureBackend !== HAYAKU_CAPTURE_BACKENDS.CHAT_OUTPUT_V3 && Memory.captureBackend !== HAYAKU_CAPTURE_BACKENDS.NONE) return { ok: true, skipped: true, reason: 'capture_backend_not_owner' };
@@ -58583,7 +58585,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       ['작성 지시', b.packetWriteActive ? '메인 응답 모델에 적용' : `우회: ${b.packetWriteSuppressionReason || '미확인'}`],
       ['관측 시각', b.at ? viewerFormatDate(b.at) : '미관측'],
       ['출력 위치', placement.mode === 'inside_terminal_wrapper' ? `${placement.closingTag} 직전` : placement.mode === 'before_required_footer' ? '필수 footer 직전' : '본문 뒤'],
-      ['위치 경고', b.outputContract?.packetPlacementWarning || '없음'],
+      ['위치 경고', b.outputContract?.packetPlacementWarning ? (typeof hayakuPlacementWarningLabel === 'function' ? hayakuPlacementWarningLabel(b.outputContract.packetPlacementWarning) : b.outputContract.packetPlacementWarning) : '없음'],
       ['계약 / 형식 / 알림', `${b.staticWriteChars || 0} / ${b.runtimeSkeletonChars || 0} / ${b.terminalSealChars || 0}자`],
       ['메인 작성 결과', data.authoring ? results[data.authoring.result] || data.authoring.result : '이번 요청의 메인 출력 미관측'],
       ['패킷 저장', data.storageStatus],
@@ -60473,6 +60475,230 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     };
   };
 
+  // Zero-touch attention: a single chat button that exists only while the user has
+  // something to do (auxiliary model broken, Cold Start pending, turns without memory,
+  // unclear packet position). It never blocks, never calls a provider by itself except
+  // one bounded auxiliary connectivity probe, and disappears once the cause is gone.
+  const HAYAKU_ATTENTION_BUTTON_UI_ID = 'hayaku-locator-continuity-attention';
+  const HAYAKU_AUX_PROBE_CACHE_KEY = 'hayaku.auxProbe.v1';
+  const HAYAKU_AUX_PROBE_FRESH_MS = 7 * 24 * 60 * 60 * 1000;
+  const HAYAKU_ATTENTION_REFRESH_DELAY_MS = 2500;
+  const HAYAKU_ATTENTION_POLL_MS = 10000;
+  const HAYAKU_ATTENTION_AUTO_PROBE_DELAY_MS = 30000;
+  const HAYAKU_PLACEMENT_WARNING_LABELS = Object.freeze({
+    ambiguous_output_slot_use_verified_override: '프리셋에 출력 감싸기 태그가 여러 개라 패킷을 응답 끝에 둡니다.',
+    requested_closing_tag_not_in_active_output_contract: '설정한 닫는 태그가 현재 프리셋에 없어 자동 위치를 씁니다.',
+    required_footer_not_confirmed: 'footer 위치를 확인하지 못해 자동 위치를 씁니다.',
+    tail_conflicts_with_required_output_slot: '프리셋이 요구하는 출력 위치가 있어 응답 끝 지정과 충돌합니다.'
+  });
+  const hayakuPlacementWarningLabel = code => HAYAKU_PLACEMENT_WARNING_LABELS[text(code)] || text(code);
+  const HayakuAttention = {
+    started: false, refreshTimer: null, pollTimer: null, probeTimer: null, evaluating: false, dirty: false,
+    lastIndexes: '', buttonSignature: '', state: null, lastOtherAxSuccessAt: 0, autoProbeAttempted: false,
+    chatObserved: false, dismissedPlacement: new Set(), inspectedKey: '', inspected: null
+  };
+  const readAuxProbeCache = () => {
+    try { const value = JSON.parse(globalThis.localStorage?.getItem?.(HAYAKU_AUX_PROBE_CACHE_KEY) || 'null'); return objectish(value) ? value : null; } catch (_) { return null; }
+  };
+  const writeAuxProbeCache = ok => {
+    try { globalThis.localStorage?.setItem?.(HAYAKU_AUX_PROBE_CACHE_KEY, JSON.stringify({ ok: ok === true, at: now() })); } catch (_) {}
+  };
+  const markHayakuAuxiliaryReady = () => {
+    HayakuAttention.lastOtherAxSuccessAt = now();
+    writeAuxProbeCache(true);
+  };
+  // ready | failed | unavailable | unknown. Only a probe or a real call decides.
+  const hayakuAuxiliaryReadiness = () => {
+    if (!nativeLlmApiResolution().api) return 'unavailable';
+    const last = Memory.nativeRecovery?.auxiliaryProbe?.last;
+    if (HayakuAttention.lastOtherAxSuccessAt > 0 && Number(last?.finishedAt || 0) <= HayakuAttention.lastOtherAxSuccessAt) return 'ready';
+    if (last?.status === 'complete') return 'ready';
+    if (last?.status === 'failed') return 'failed';
+    const cached = readAuxProbeCache();
+    if (cached?.ok === true && now() - Number(cached.at || 0) < HAYAKU_AUX_PROBE_FRESH_MS) return 'ready';
+    return 'unknown';
+  };
+  const hayakuAttentionBusy = () => Memory.unloaded || !ownsRuntime()
+    || Memory.finalizedCaptureInFlight?.size > 0 || Memory.finalizedBindingInFlight?.size > 0 || Memory.capturePersistInFlight?.size > 0
+    || Memory.nativeRecovery.repairInFlight || Memory.nativeRecovery.coldStartInFlight || Memory.nativeRecovery.manualBatchInFlight
+    || Memory.nativeRecovery.auxiliaryProbe?.inFlight
+    || (Memory.nativeRecovery.job && !NATIVE_JOB_TERMINAL_STATES.has(Memory.nativeRecovery.job.state));
+  // Pure decision from already-computed facts; exported for tests.
+  const hayakuAttentionDecision = ({ aux = 'unknown', mode = 'empty', completedTurns = 0, missing = 0, placementWarning = '', placementDismissed = false } = {}) => {
+    const needsAux = mode === 'cold_start' || missing > 0;
+    if (aux === 'failed' || (aux === 'unavailable' && needsAux)) {
+      return { kind: 'aux', count: 0, icon: '⚠️', name: `${PLUGIN_NAME} · 보조 모델 연결 필요`, tab: 'recovery', subtab: 'miss' };
+    }
+    if (mode === 'cold_start' && completedTurns > 0) {
+      return { kind: 'cold_start', count: completedTurns, icon: '🕘', name: `${PLUGIN_NAME} · 지난 ${completedTurns}턴 기억 만들기`, tab: 'recovery', subtab: 'cold' };
+    }
+    if (missing > 0) {
+      return { kind: 'missing', count: missing, icon: '⚠️', name: `${PLUGIN_NAME} · 기억 없는 턴 ${missing}개`, tab: 'recovery', subtab: 'miss' };
+    }
+    if (placementWarning && !placementDismissed) {
+      return { kind: 'placement', count: 0, icon: 'ℹ️', name: `${PLUGIN_NAME} · 패킷 위치 확인`, tab: 'settings', subtab: 'basic', warning: placementWarning };
+    }
+    return { kind: '', count: 0 };
+  };
+  const computeHayakuAttention = async () => {
+    await loadSettings(false);
+    if (Memory.settings?.enabled === false) return { scopeKey: '', kind: '' };
+    const scope = await RisuCompat.currentChatScope();
+    if (!scope?.confident || !scope?.key || scope.chatMessagesAvailable !== true) return { scopeKey: '', kind: '' };
+    const summary = await loadStorageLedgerSummary(scope);
+    if (summary.enabled !== true) return { scopeKey: scope.key, kind: '' };
+    const quick = nativeColdStartExistingPacketState(scope, summary);
+    let completedTurns = Math.max(0, Number(quick.coverage?.completedTurns || 0) || 0);
+    let mode = completedTurns === 0 ? 'empty' : !quick.hasExistingPackets ? 'cold_start' : ensureArray(quick.coverage?.missingTurns).length ? 'incremental_missing' : 'complete';
+    let missing = mode === 'incremental_missing' ? ensureArray(quick.coverage?.missingTurns).length : 0;
+    if (mode === 'cold_start' || mode === 'incremental_missing') {
+      // Confirm with the same inspection the recovery screen uses (copied chats,
+      // journal debts), but only once per transcript/ledger state.
+      const inspectKey = `${scope.key}\u0001${quick.coverage?.sourceFingerprint || ''}\u0001${summary.logicalRecordCount || 0}\u0001${ensureArray(summary.records).length}`;
+      if (HayakuAttention.inspectedKey !== inspectKey) {
+        const inspected = await inspectRecoveryDebtsForNativeRepair({ includeEvidence: false, limit: 1 }).catch(() => null);
+        HayakuAttention.inspected = inspected?.available === true && inspected.scopeKey === scope.key ? clone(inspected.coverage, null) : null;
+        HayakuAttention.inspectedKey = inspectKey;
+      }
+      const coverage = HayakuAttention.inspected;
+      if (coverage) {
+        mode = text(coverage.mode || mode);
+        completedTurns = Math.max(0, Number(coverage.completedTurns || completedTurns) || 0);
+        missing = mode === 'cold_start' ? 0 : Math.max(0, Number(coverage.activeDebtCount || 0) || 0);
+      }
+    }
+    const before = Memory.lastBeforeRequest?.scopeKey === scope.key ? Memory.lastBeforeRequest : null;
+    const placementWarning = text(before?.outputContract?.packetPlacementWarning || '');
+    const decision = hayakuAttentionDecision({ aux: hayakuAuxiliaryReadiness(), mode, completedTurns, missing,
+      placementWarning, placementDismissed: HayakuAttention.dismissedPlacement.has(`${scope.key}\u0001${placementWarning}`) });
+    return { ...decision, scopeKey: scope.key, mode, missing, completedTurns, placementWarning, checkedAt: now() };
+  };
+  const syncHayakuAttentionButton = async next => {
+    const signature = next?.kind ? `${next.kind}:${next.count}:${next.scopeKey}` : '';
+    if (signature === HayakuAttention.buttonSignature) return true;
+    const uiApi = apiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || null;
+    const buttonApi = apiCandidates().find(candidate => typeof candidate?.registerButton === 'function') || null;
+    if (HayakuAttention.buttonSignature && uiApi) { try { await uiApi.unregisterUIPart(HAYAKU_ATTENTION_BUTTON_UI_ID); } catch (_) {} }
+    HayakuAttention.buttonSignature = '';
+    if (!next?.kind || !buttonApi || Memory.unloaded || !ownsRuntime()) return !next?.kind;
+    try {
+      await buttonApi.registerButton({ name: next.name, icon: next.icon, iconType: 'html', location: 'chat', id: HAYAKU_ATTENTION_BUTTON_UI_ID },
+        () => { void openHayakuAttention(); });
+      HayakuAttention.buttonSignature = signature;
+      pushOperationLog('attention:shown', { kind: next.kind, count: next.count }, 'info');
+      return true;
+    } catch (error) {
+      Memory.lastWarnings = [...ensureArray(Memory.lastWarnings), `attention_button_failed:${compact(error?.message || error, 120)}`].slice(-20);
+      return false;
+    }
+  };
+  const scheduleHayakuAutoProbe = () => {
+    if (HayakuAttention.autoProbeAttempted || HayakuAttention.probeTimer || !HayakuAttention.chatObserved) return false;
+    if (hayakuAuxiliaryReadiness() !== 'unknown') return false;
+    HayakuAttention.probeTimer = setTimeout(async () => {
+      HayakuAttention.probeTimer = null;
+      if (Memory.unloaded || !ownsRuntime() || hayakuAuxiliaryReadiness() !== 'unknown') return;
+      if (hayakuAttentionBusy()) { scheduleHayakuAutoProbe(); return; }
+      HayakuAttention.autoProbeAttempted = true;
+      const result = await runNativeAuxiliaryProbe().catch(() => null);
+      if (result?.status === 'busy') { HayakuAttention.autoProbeAttempted = false; scheduleHayakuAutoProbe(); return; }
+      if (result) writeAuxProbeCache(result.ok === true);
+      pushOperationLog('attention:auxiliary_probe', { ok: result?.ok === true, code: compact(result?.error?.code || '', 96) }, result?.ok ? 'info' : 'warn');
+      scheduleHayakuAttentionRefresh('auxiliary_probe', 0);
+    }, HAYAKU_ATTENTION_AUTO_PROBE_DELAY_MS);
+    HayakuAttention.probeTimer?.unref?.();
+    return true;
+  };
+  const refreshHayakuAttention = async () => {
+    if (!HayakuAttention.started || Memory.unloaded || !ownsRuntime()) return null;
+    if (HayakuAttention.evaluating || hayakuAttentionBusy()) { scheduleHayakuAttentionRefresh('busy'); return null; }
+    HayakuAttention.evaluating = true;
+    try {
+      const next = await computeHayakuAttention();
+      if (Memory.unloaded || !ownsRuntime()) return null;
+      HayakuAttention.state = next;
+      await syncHayakuAttentionButton(next);
+      scheduleHayakuAutoProbe();
+      return next;
+    } catch (error) {
+      Memory.lastWarnings = [...ensureArray(Memory.lastWarnings), `attention_refresh_failed:${compact(error?.message || error, 120)}`].slice(-20);
+      return null;
+    } finally {
+      HayakuAttention.evaluating = false;
+    }
+  };
+  function scheduleHayakuAttentionRefresh(reason = '', delay = HAYAKU_ATTENTION_REFRESH_DELAY_MS) {
+    if (!HayakuAttention.started || Memory.unloaded) return false;
+    if (reason === 'chat_output') HayakuAttention.chatObserved = true;
+    if (HayakuAttention.refreshTimer) clearTimeout(HayakuAttention.refreshTimer);
+    HayakuAttention.refreshTimer = setTimeout(() => { HayakuAttention.refreshTimer = null; void refreshHayakuAttention(); }, Math.max(0, Number(delay) || 0));
+    HayakuAttention.refreshTimer?.unref?.();
+    return true;
+  }
+  // Cheap chat-switch detection: two index reads, never the transcript.
+  const pollHayakuAttention = async () => {
+    HayakuAttention.pollTimer = null;
+    if (!HayakuAttention.started || Memory.unloaded || !ownsRuntime()) return;
+    try {
+      const indexApi = apiCandidates().find(candidate => typeof candidate?.getCurrentCharacterIndex === 'function' && typeof candidate?.getCurrentChatIndex === 'function');
+      if (indexApi) {
+        const indexes = `${await indexApi.getCurrentCharacterIndex()}:${await indexApi.getCurrentChatIndex()}`;
+        if (indexes !== HayakuAttention.lastIndexes) {
+          HayakuAttention.lastIndexes = indexes;
+          scheduleHayakuAttentionRefresh('chat_switch', 500);
+        }
+      }
+    } catch (_) {}
+    if (!Memory.unloaded) { HayakuAttention.pollTimer = setTimeout(() => void pollHayakuAttention(), HAYAKU_ATTENTION_POLL_MS); HayakuAttention.pollTimer?.unref?.(); }
+  };
+  const startHayakuAttention = () => {
+    if (HayakuAttention.started || Memory.unloaded || !ownsRuntime()) return false;
+    HayakuAttention.started = true;
+    void pollHayakuAttention();
+    return true;
+  };
+  const stopHayakuAttention = async () => {
+    for (const key of ['refreshTimer', 'pollTimer', 'probeTimer']) {
+      if (HayakuAttention[key]) { try { clearTimeout(HayakuAttention[key]); } catch (_) {} HayakuAttention[key] = null; }
+    }
+    HayakuAttention.started = false;
+    if (HayakuAttention.buttonSignature) {
+      const uiApi = apiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || null;
+      try { await uiApi?.unregisterUIPart?.(HAYAKU_ATTENTION_BUTTON_UI_ID); } catch (_) {}
+      HayakuAttention.buttonSignature = '';
+    }
+  };
+  // The button opens the screen that resolves the cause. Cold Start and auxiliary
+  // checks still go through their existing confirmation/visible result.
+  async function openHayakuAttention() {
+    const state = HayakuAttention.state;
+    if (!state?.kind || Memory.unloaded || !ownsRuntime()) return false;
+    const shown = await showLedgerViewer();
+    if (!shown) return false;
+    viewerSetTab(state.tab);
+    const root = Memory.ledgerViewer.root;
+    const group = state.tab === 'settings' ? 'st' : 'rc';
+    root?.querySelector?.(`[data-subtabs="${group}"] [data-subtab="${state.subtab}"]`)?.click?.();
+    if (state.kind === 'aux') {
+      viewerRecoveryMessage('RisuAI 보조 모델(Other Ax)을 호출하지 못했습니다. RisuAI 설정에서 보조 모델을 지정한 뒤 다시 확인합니다. 확인 요청 1회를 보냅니다.', true);
+      const result = await runNativeAuxiliaryProbe().catch(() => null);
+      if (result) writeAuxProbeCache(result.ok === true);
+      if (typeof viewerRenderAuxiliaryProbe === 'function') viewerRenderAuxiliaryProbe();
+      viewerRecoveryMessage(result?.ok ? '보조 모델 연결을 확인했습니다. 이제 누락된 패킷을 자동으로 복구합니다.'
+        : `보조 모델 연결 실패 · ${compact(result?.error?.message || result?.status || '응답 없음', 160)}. RisuAI 설정 → 보조 모델(Other Ax)을 확인하세요.`, result?.ok !== true);
+    } else if (state.kind === 'cold_start') {
+      viewerRecoveryMessage(`이 채팅의 지난 ${state.count}턴은 아직 HAYAKU 기억이 없습니다. 비용을 확인한 뒤 시작하세요.`);
+      await viewerRunNativeColdStart();
+    } else if (state.kind === 'missing') {
+      viewerRecoveryMessage(`기억이 없는 턴 ${state.count}개가 있습니다. 복구할 턴을 고르면 비용을 확인한 뒤 시작합니다. 원하지 않는 턴은 제외할 수 있습니다.`);
+    } else if (state.kind === 'placement') {
+      HayakuAttention.dismissedPlacement.add(`${state.scopeKey}\u0001${state.warning}`);
+      viewerSetSettingsMessage(`패킷 위치 · ${hayakuPlacementWarningLabel(state.warning)} 패킷은 계속 저장됩니다. 프리셋 형식이 깨지면 '패킷 출력 위치'를 wrapper로 바꾸고 닫는 태그를 지정하세요.`);
+    }
+    scheduleHayakuAttentionRefresh('opened');
+    return true;
+  }
+
   let ledgerViewerUiRetryTimer = null;
   let ledgerViewerUiRegistrationRunning = false;
   let ledgerViewerUiRegistrationAttempts = 0;
@@ -60485,6 +60711,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const result = await registerLedgerViewerUi();
       ready = result.setting && result.button;
       debugLog('install:ledger_viewer', result);
+      if (ready || result.button) startHayakuAttention();
     } catch (error) {
       debugError('install:ledger_viewer_failed', error);
     } finally {
@@ -61086,6 +61313,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         nativePacketAuthoringPrompt,
         nativeAnalysisRepairPromptWithFailure,
         validateNativeRepairEnvelopeShape,
+        hayakuAttentionDecision, computeHayakuAttention, refreshHayakuAttention, hayakuAuxiliaryReadiness, HayakuAttention,
+        startHayakuAttention, stopHayakuAttention, openHayakuAttention, hayakuPlacementWarningLabel,
         runFailedAutoRecovery, scheduleFailedAutoRecovery, failedAutoJournalKey, failedAutoJournalHash,
         validateNativeRepairGrounding,
         validateNativeRepairCoverage,
@@ -61697,6 +61926,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           Memory.ledgerViewer.jobTicker = null;
         }
         await removeMemoryBridgeIpc();
+        await stopHayakuAttention();
         await unregisterLedgerViewerUiPartsIfOwner();
         Memory.capturePersistInFlight.clear();
         Memory.capturePersistRecent.clear();
