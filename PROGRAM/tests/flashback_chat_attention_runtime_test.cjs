@@ -162,6 +162,8 @@ const assistant = (id, data) => ({ role: 'assistant', chatId: id, id, data, cont
       // Scenario B: Raw response capture failure outranks cold start
       t.Runtime.lastCapture = {
         skipped: true,
+        scopeKey: (await fixture.api.resolveCurrentScope()).scopeKey,
+        pairIndex: 1,
         reason: 'finalized_capture_save_rejected',
         at: Date.now()
       };
@@ -174,7 +176,7 @@ const assistant = (id, data) => ({ role: 'assistant', chatId: id, id, data, cont
       await btnCapture.handler();
       assert.equal(t.Runtime.guiTab, 'import', 'opens import tab for raw capture failure');
 
-      // Scenario C: Embedding vectorization failure routes to 'provider' tab
+      // Scenario C: Historical queue diagnostics cannot invent missing durable failures
       t.Runtime.lastCapture = null;
       t.Runtime.lastEmbeddingQueue = {
         ok: false,
@@ -184,12 +186,12 @@ const assistant = (id, data) => ({ role: 'assistant', chatId: id, id, data, cont
         at: Date.now()
       };
       const stateEmbed = await t.refreshFlashbackAttention();
-      assert.equal(stateEmbed.kind, 'embedding_failed');
+      assert.equal(stateEmbed.kind, 'cold_start');
       const btnEmbed = registered.at(-1);
-      assert.match(btnEmbed.spec.name, /FLASHBACK · 응답 벡터화 실패/);
+      assert.match(btnEmbed.spec.name, /FLASHBACK · 지난 3턴 기억 만들기/);
 
       await btnEmbed.handler();
-      assert.equal(t.Runtime.guiTab, 'provider', 'opens provider tab for embedding failure');
+      assert.equal(t.Runtime.guiTab, 'import', 'historical failure does not redirect to provider settings');
 
       // Scenario D: Turns ingested without configured embedding provider -> alerts 'embedding_unconfigured'
       t.Runtime.lastEmbeddingQueue = null;

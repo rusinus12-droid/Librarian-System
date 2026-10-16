@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.103
+//@display-name ⚡ FLASHBACK Memory v1.0.104
 //@api 3.0
-//@version 1.0.103
+//@version 1.0.104
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.103';
+const PLUGIN_VERSION = '1.0.104';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -15499,6 +15499,7 @@ let MemorySuiteComputeBridge = null;
     if (previousEmbeddingFingerprint !== nextEmbeddingFingerprint) abortEmbeddingJobs('settings_changed');
     Runtime.settings = normalized;
     if (!normalized.operationLogEnabled) await clearOperationLogs().catch(() => false);
+    scheduleFlashbackAttentionRefresh('settings_committed', 120);
     return normalized;
   };
 
@@ -19724,6 +19725,7 @@ let MemorySuiteComputeBridge = null;
     syncGuiCachesAfterManifestSave(next, registryScope, existing);
     next[MANIFEST_STORAGE_READ] = { raw:serialized, scopeKey:next.scopeKey };
     Object.defineProperty(next, 'storageCommitProof', { enumerable:false, value:serverCommit || { durability:'host_readback_only', endToEndVerified:false } });
+    scheduleFlashbackAttentionRefresh('manifest_committed', 120);
     return next;
   };
 
@@ -22556,7 +22558,7 @@ const MemorySuiteSnapshotCache = (() => {
     const loaded = await loadScopeRecordsRaw(scopeOrKey, options);
     const retained = loaded.records.filter(isRetainedMemoryRecord);
     const removed = loaded.records.length - retained.length;
-    if (loaded.manifest.manifestCorrupt !== true
+    if (options.readOnly !== true && loaded.manifest.manifestCorrupt !== true
       && Number(loaded.manifest.missingShards || 0) === 0
       && loaded.manifest.recordCountMismatch !== true
       && (removed > 0 || loaded.manifest.externalRetirementVersion < EXTERNAL_RETIREMENT_VERSION)) {
@@ -39225,11 +39227,12 @@ const MemorySuiteHealthRecovery = (() => {
       if (scheduledEmbeddingQueues.get(key) !== marker) return;
       scheduledEmbeddingQueues.delete(key);
       if (Runtime.inBefore) { schedulePendingEmbeddingWork(key, { reason: options.reason, delayMs: 250 }); return; }
+      const generation = Runtime.embeddingGeneration;
       void (async () => {
         const settings = await loadSettings(true);
         if (settings.embeddingAutoProcess === false || !configuredModelEmbedding(settings)) return;
         const result = await processPendingEmbeddingQueue({ scopeKey: key, automatic: true });
-        Runtime.lastEmbeddingQueue = { ...result, reason: result.reason, trigger: options.reason || 'background', at: Date.now() };
+        Runtime.lastEmbeddingQueue = { ...result, scopeKey: key, generation, reason: result.reason, trigger: options.reason || 'background', at: Date.now() };
         invalidateGuiDataCache('all');
         if (isGuiRenderActive() && Runtime.guiTab === 'provider') void refreshEmbeddingWorkPanel(guiRoot, result);
         if ((result.ok && result.pendingSources > 0 && Number(result.ready || 0) + Number(result.failed || 0) > 0)
@@ -39238,7 +39241,7 @@ const MemorySuiteHealthRecovery = (() => {
         }
         if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('embedding_queue', 120);
       })().catch(error => {
-        Runtime.lastEmbeddingQueue = { scopeKey: key, ready: 0, reason: error?.code || 'queue_failed', at: Date.now() };
+        Runtime.lastEmbeddingQueue = { scopeKey: key, generation, ready: 0, reason: error?.code || 'queue_failed', at: Date.now() };
         if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('embedding_queue_failed', 120);
         warn('pending embedding queue failed', error);
       });
@@ -39806,6 +39809,7 @@ const MemorySuiteHealthRecovery = (() => {
                   at: Date.now(),
                   skipped: true,
                   reason: 'finalized_capture_save_rejected',
+                  pairIndex: Number(current.pairIndex || 0) || 0,
                   scopeKey: current.scope?.scopeKey || '',
                   pendingId,
                   attempts: state.attempts
@@ -39837,6 +39841,7 @@ const MemorySuiteHealthRecovery = (() => {
             at: Date.now(),
             skipped: true,
             reason: 'finalized_capture_monitor_failed',
+            pairIndex: Number(current.pairIndex || 0) || 0,
             scopeKey: current.scope?.scopeKey || '',
             pendingId,
             attempts: state.attempts,
@@ -48816,7 +48821,7 @@ ${cleanedText}`, 80),
   const FLASHBACK_ATTENTION_BUTTON_ID = 'vector-rag-memory-attention';
   const flashbackAttentionIcon = kind => {
     const warning = ['capture_failed', 'storage_error', 'embedding_uncertain', 'embedding_failed', 'vector_repair', 'embedding_unconfigured'].includes(kind);
-    const action = ['cold_start', 'missing_turns', 'embedding_pending'].includes(kind);
+    const action = ['cold_start', 'missing_turns', 'source_changed', 'embedding_pending'].includes(kind);
     const label = warning ? '확인 필요' : action ? '기억 동기화 필요' : '안내';
     const badge = warning ? '#dc2626' : action ? '#fbbf24' : '#0e7490';
     const mark = warning ? 'M25 3.5v4M25 10v.15' : action ? 'M25 3.5V7l2 1.5' : 'M25 6v4M25 3.5v.15';
@@ -48842,7 +48847,8 @@ ${cleanedText}`, 80),
     embeddingUnconfigured = 0,
     embeddingPending = 0,
     coldStart = 0,
-    missingTurns = 0
+    missingTurns = 0,
+    changedTurns = 0
   } = {}) => {
     if (captureFailed) {
       return { kind: 'capture_failed', count: 1, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 원문 저장 실패`, tab: 'import' };
@@ -48851,22 +48857,25 @@ ${cleanedText}`, 80),
       return { kind: 'storage_error', count: 1, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 저장소 오류 확인`, tab: 'import' };
     }
     if (embeddingUncertain > 0) {
-      return { kind: 'embedding_uncertain', count: embeddingUncertain, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 벡터 상태 확인 필요`, tab: 'provider' };
+      return { kind: 'embedding_uncertain', count: embeddingUncertain, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 벡터 상태 확인 필요`, tab: 'provider', subtab: 'emb' };
     }
     if (embeddingFailed > 0) {
-      return { kind: 'embedding_failed', count: embeddingFailed, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 응답 벡터화 실패`, tab: 'provider' };
+      return { kind: 'embedding_failed', count: embeddingFailed, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 응답 벡터화 실패`, tab: 'provider', subtab: 'emb' };
     }
     if (vectorRepair > 0) {
-      return { kind: 'vector_repair', count: vectorRepair, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 벡터 복구 필요`, tab: 'provider' };
+      return { kind: 'vector_repair', count: vectorRepair, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 벡터 복구 필요`, tab: 'provider', subtab: 'emb' };
     }
     if (embeddingUnconfigured > 0) {
-      return { kind: 'embedding_unconfigured', count: embeddingUnconfigured, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 임베딩 제공자 설정 필요`, tab: 'provider' };
+      return { kind: 'embedding_unconfigured', count: embeddingUnconfigured, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 임베딩 제공자 설정 필요`, tab: 'provider', subtab: 'emb' };
     }
     if (embeddingPending > 0) {
-      return { kind: 'embedding_pending', count: embeddingPending, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 벡터 생성 대기 중`, tab: 'provider' };
+      return { kind: 'embedding_pending', count: embeddingPending, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 벡터 생성 대기 중`, tab: 'provider', subtab: 'emb' };
     }
     if (coldStart > 0) {
       return { kind: 'cold_start', count: coldStart, icon: '🕘', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 지난 ${coldStart}턴 기억 만들기`, tab: 'import' };
+    }
+    if (changedTurns > 0) {
+      return { kind: 'source_changed', count: changedTurns + missingTurns, icon: '🕘', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 원문 동기화 ${changedTurns + missingTurns}턴`, tab: 'import' };
     }
     if (missingTurns > 0) {
       return { kind: 'missing_turns', count: missingTurns, icon: '🕘', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 기억 없는 턴 ${missingTurns}개`, tab: 'import' };
@@ -48879,101 +48888,97 @@ ${cleanedText}`, 80),
       return { scopeKey: '', kind: '', count: 0 };
     }
     const snapshot = await loadRisuSnapshot(false);
-    const scope = applyCurrentScope(resolveScopeFromSnapshot(snapshot));
+    const scope = resolveScopeFromSnapshot(snapshot);
     if (!scope?.scopeKey) return { scopeKey: '', kind: '', count: 0 };
 
-    let captureFailed = false;
-    if (Runtime.lastCapture?.skipped && ['finalized_capture_save_rejected', 'finalized_capture_monitor_failed', 'capture_monitor_expired'].includes(Runtime.lastCapture?.reason)) {
-      captureFailed = true;
+    // Read the owner's logical corpus, including immutable archive layers. This
+    // inspection must not schedule retirement, write memory, or call a provider.
+    let loaded = null;
+    try { loaded = await loadScopeRecords(scope.scopeKey, { readOnly: true, rawTextOnly: true }); }
+    catch (_) { /* An unavailable corpus is a storage warning, never an empty one. */ }
+    const manifest = loaded?.manifest;
+    const storageError = !loaded || manifest?.manifestCorrupt === true || !!manifest?.foreignScopeKey
+      || manifest?.archiveRefInvalid === true || Number(manifest?.missingShards || 0) > 0
+      || Number(manifest?.corruptShards || 0) > 0 || manifest?.recordCountMismatch === true;
+    const records = loaded?.records || [];
+    const work = statsForRecords(records).embeddingWork;
+    const registry = readEmbeddingAttemptRegistry(manifest || {});
+    const runtimeId = currentEmbeddingWorkRuntime();
+    for (const record of records) {
+      if (!isValidatedEmbeddingWorkRecord(record) || record.embeddingWork.status === 'uncertain') continue;
+      const job = record.embeddingWork;
+      const detached = job.status === 'running'
+        && (job.attempt?.runtimeId !== runtimeId || !activeEmbeddingWorkAttempts.has(job.attempt?.id));
+      const unresolved = unresolvedEmbeddingEntries(registry, record, settings)
+        .some(entry => entry.attemptId !== job.attempt?.id || entry.runtimeId !== runtimeId || !activeEmbeddingWorkAttempts.has(entry.attemptId));
+      if (detached || unresolved) { work.uncertain++; if (Object.hasOwn(work, job.status)) work[job.status]--; }
     }
-    if (Runtime.lastChatOutputCapture && (Runtime.lastChatOutputCapture.saved === false || Runtime.lastChatOutputCapture.status === 'failed')) {
-      captureFailed = true;
-    }
-    if (Runtime.lastPendingCaptureRecovery?.reason === 'recovery_failed') {
-      captureFailed = true;
-    }
-    for (const [, monitor] of Runtime.finalizedCaptureMonitors) {
-      if (monitor && (monitor.attempts >= 3 || monitor.lastFailureStage === 'finalized_capture_save_rejected' || monitor.lastFailureStage === 'capture_monitor_expired' || monitor.lastFailureStage === 'capture_monitor_failed')) {
-        captureFailed = true;
-        break;
-      }
-    }
-
-    let storageError = false;
-    const statsValue = await currentScopeStats().catch(() => null);
-    const manifest = statsValue?.manifest;
-    if (manifest && (manifest.manifestCorrupt === true || manifest.archiveRefInvalid === true || manifest.foreignScopeKey)) {
-      storageError = true;
-    }
-
-    const work = statsValue?.stats?.embeddingWork || { pending: 0, unconfigured: 0, repairNeeded: 0, running: 0, failed: 0, uncertain: 0 };
-    const lastQueue = Runtime.lastEmbeddingQueue;
+    const queue = Runtime.lastEmbeddingQueue;
+    const lastQueue = queue?.scopeKey === scope.scopeKey && queue?.generation === Runtime.embeddingGeneration ? queue : null;
     const embeddingEnabled = settings?.embeddingEnabled !== false;
     const isConfiguredProvider = configuredModelEmbedding(settings);
+    // lastEmbedError also contains query errors. Only durable document work can
+    // establish a failed/uncertain response vector in this scope.
+    const embeddingUncertain = embeddingEnabled ? Number(work.uncertain || 0) : 0;
+    const embeddingFailed = embeddingEnabled ? Number(work.failed || 0) : 0;
+    const vectorRepair = embeddingEnabled ? Number(work.repairNeeded || 0) : 0;
+    const embeddingUnconfigured = embeddingEnabled
+      ? (!isConfiguredProvider ? Math.max(Number(work.unconfigured || 0), Number(work.pending || 0)) : Number(work.unconfigured || 0)) : 0;
+    const embeddingPending = embeddingEnabled && isConfiguredProvider && Number(work.pending || 0) > 0
+      && (settings.embeddingAutoProcess === false || lastQueue?.reason === 'automatic_paused'
+        || lastQueue?.reason === 'no_durable_progress' || lastQueue?.reason === 'queue_failed' || lastQueue?.blocked?.length > 0
+        || (lastQueue && lastQueue.pendingSources > 0 && lastQueue.ready === 0 && lastQueue.failed === 0))
+      ? Number(work.pending || 0) : 0;
 
-    let embeddingUncertain = 0;
-    let embeddingFailed = 0;
-    let vectorRepair = 0;
-    let embeddingUnconfigured = 0;
-    let embeddingPending = 0;
-
-    if (embeddingEnabled) {
-      embeddingUncertain = Number(work.uncertain || 0);
-      if (lastQueue?.uncertain || (lastQueue?.reason && ['AUTH_ERROR', 'RATE_LIMIT', 'NETWORK_ERROR', 'TIMEOUT', 'EMBEDDING_PHYSICAL_PENDING', 'uncertain_attempt'].includes(lastQueue.reason))) {
-        embeddingUncertain = Math.max(embeddingUncertain, Number(lastQueue?.uncertainRecords || 0) || 1);
-      }
-
-      embeddingFailed = Number(work.failed || 0);
-      if (lastQueue && lastQueue.ok === false && (lastQueue.failed > 0 || lastQueue.failedSources > 0 || lastQueue.reason === 'queue_failed')) {
-        embeddingFailed = Math.max(embeddingFailed, Number(lastQueue.failed || lastQueue.failedSources || 0) || 1);
-      }
-      if (Runtime.lastEmbedError && (!lastQueue || lastQueue.ok === false)) {
-        embeddingFailed = Math.max(embeddingFailed, 1);
-      }
-
-      vectorRepair = Number(work.repairNeeded || 0);
-      embeddingUnconfigured = !isConfiguredProvider && (Number(work.pending || 0) > 0 || Number(work.unconfigured || 0) > 0)
-        ? Math.max(Number(work.unconfigured || 0), Number(work.pending || 0))
-        : Number(work.unconfigured || 0);
-
-      if (isConfiguredProvider && Number(work.pending || 0) > 0) {
-        if (lastQueue?.reason === 'automatic_paused' || lastQueue?.reason === 'no_durable_progress' || lastQueue?.blocked || (lastQueue && lastQueue.pendingSources > 0 && lastQueue.ready === 0 && lastQueue.failed === 0)) {
-          embeddingPending = Number(work.pending || 0);
-        }
-      }
-    }
-
-    let coldStart = 0;
-    let missingTurns = 0;
     const live = liveChatReadState(snapshot.chat || {}, scope.scopeKey);
     const livePairs = liveChatStateFromNormalized(live.normalized || []).pairs || [];
     const completedTurns = livePairs.length;
-    const recordTotal = Math.max(0, Number(statsValue?.manifest?.count || statsValue?.stats?.recordTotal || 0) || 0);
-
-    if (recordTotal === 0 && completedTurns > 0) {
-      coldStart = completedTurns;
-    } else if (completedTurns > 0 && !captureFailed && !storageError) {
-      const sources = collectLiveChatSourcesFromSnapshot(snapshot, normalizeColdStartOptions(settings, { scope: 'current', historyLimit: 0 }));
-      if (sources.length > 0) {
-        const rawLoaded = await loadScopeRecordsRaw(scope.scopeKey).catch(() => null);
-        if (rawLoaded?.records) {
-          const responseRecords = rawLoaded.records.filter(r => isResponseMemoryRecord(r) && !(r.autoEpisode || r.sourceType === 'episode_index'));
-          const diff = diffLiveChatSourcesAgainstRecords(sources, responseRecords);
-          const pendingPairIndexes = new Set();
-          for (const pending of Runtime.pendingTurns || []) {
-            if (pending?.pairIndex) pendingPairIndexes.add(Number(pending.pairIndex));
-          }
-          for (const [, monitor] of Runtime.finalizedCaptureMonitors || []) {
-            if (monitor?.pending?.pairIndex) pendingPairIndexes.add(Number(monitor.pending.pairIndex));
-          }
-          const actualMissing = diff.missing.filter(source => {
-            const pair = responsePairFromMaintenanceSource(source);
-            return !pendingPairIndexes.has(Number(pair.pairIndex));
-          });
-          missingTurns = actualMissing.length;
-        }
+    const sources = collectLiveChatSourcesFromSnapshot(snapshot, normalizeColdStartOptions(settings, { scope: 'current', historyLimit: 0 }));
+    const responseRecords = records.filter(r => isResponseMemoryRecord(r) && !(r.autoEpisode || r.sourceType === 'episode_index'));
+    const diff = diffLiveChatSourcesAgainstRecords(sources, responseRecords);
+    const unresolved = [...diff.missing, ...diff.changed];
+    const unresolvedPairs = new Set(unresolved.map(source => Number(responsePairFromMaintenanceSource(source).pairIndex)));
+    const pendingPairIndexes = new Set();
+    const failures = [];
+    const capture = Runtime.lastCapture;
+    if (capture?.skipped && ['finalized_capture_save_rejected', 'finalized_capture_monitor_failed', 'capture_monitor_expired'].includes(capture.reason)) failures.push(capture);
+    const output = Runtime.lastChatOutputCapture;
+    if (output && (output.saved === false || output.status === 'failed')) failures.push(output);
+    if (Runtime.lastPendingCaptureRecovery?.reason === 'recovery_failed') failures.push(Runtime.lastPendingCaptureRecovery);
+    const pendingById = new Map();
+    for (const pending of Runtime.pendingTurns || []) {
+      if (pending?.scope?.scopeKey !== scope.scopeKey) continue;
+      pendingById.set(pending.pendingId, pending);
+      if (pending.pairIndex) pendingPairIndexes.add(Number(pending.pairIndex));
+    }
+    for (const [pendingId, monitor] of Runtime.finalizedCaptureMonitors || []) {
+      const pending = monitor?.pending || pendingById.get(pendingId);
+      if (pending?.scope?.scopeKey !== scope.scopeKey) continue;
+      if (pending.pairIndex) pendingPairIndexes.add(Number(pending.pairIndex));
+      if (monitor.attempts >= 3 || ['finalized_capture_save_rejected', 'capture_monitor_expired', 'capture_monitor_failed'].includes(monitor.lastFailureStage)) {
+        failures.push({ ...monitor, scopeKey: scope.scopeKey, pairIndex: pending.pairIndex });
       }
     }
+    // A past event is not an unresolved failure after the exact live source has
+    // been recovered. Do not clear diagnostic history as a side effect of reading.
+    const captureFailed = !storageError && failures.some(failure => {
+      if (failure.scopeKey !== scope.scopeKey) return false;
+      const pairIndex = Number(failure.pairIndex || pendingById.get(failure.pendingId)?.pairIndex || 0);
+      if (!unresolvedPairs.has(pairIndex)) return false;
+      const pair = livePairs.find(row => Number(row.pairIndex) === pairIndex);
+      return !failure.bodyHash || failure.bodyHash === stableHash(canonicalChatResponseText(pair?.assistantText || ''));
+    });
+    const actionable = source => !pendingPairIndexes.has(Number(responsePairFromMaintenanceSource(source).pairIndex));
+    const missing = storageError ? [] : diff.missing.filter(actionable);
+    const changed = storageError ? [] : diff.changed.filter(actionable);
+    const coldStart = records.length === 0 && !storageError ? missing.length : 0;
+    const missingTurns = coldStart ? 0 : missing.length;
+    const changedTurns = changed.length;
+
+    // Scope changes during asynchronous storage reads must not publish a stale
+    // chat's warning into the new chat's button registry.
+    const current = resolveScopeFromSnapshot(await loadRisuSnapshot(true));
+    if (current?.scopeKey !== scope.scopeKey) return { stale: true };
 
     const decision = flashbackAttentionDecision({
       captureFailed,
@@ -48984,7 +48989,8 @@ ${cleanedText}`, 80),
       embeddingUnconfigured,
       embeddingPending,
       coldStart,
-      missingTurns
+      missingTurns,
+      changedTurns
     });
 
     return {
@@ -49029,6 +49035,7 @@ ${cleanedText}`, 80),
     FlashbackAttention.evaluating = true;
     try {
       const next = await computeFlashbackAttention();
+      if (next?.stale) { scheduleFlashbackAttentionRefresh('scope_changed', 0); return null; }
       if (Runtime.unloaded) return null;
       FlashbackAttention.state = next;
       await syncFlashbackAttentionButton(next);
@@ -49094,6 +49101,7 @@ ${cleanedText}`, 80),
     if (!state?.kind || Runtime.unloaded) return false;
     const targetTab = state.tab || 'overview';
     Runtime.guiTab = targetTab;
+    if (targetTab === 'provider') Runtime.guiConnectSubtab = state.subtab || 'emb';
     const shown = await showUi();
     if (!shown) return false;
     setActiveGuiTab(targetTab);
