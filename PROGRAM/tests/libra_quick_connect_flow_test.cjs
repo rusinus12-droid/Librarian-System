@@ -26,10 +26,14 @@ const makeContext = ({ llmOk = true, embedOk = true, models = ['gpt-5.4-mini', '
   const embedConfig = { enabled: true, provider: 'voyageai', model: 'voyage-4-lite', url: 'https://api.voyageai.com/v1/embeddings', key: '' };
   const capabilities = { openai: { label: 'OpenAI', defaultUrl: 'https://api.openai.com/v1/embeddings', models: ['text-embedding-3-small'], batchSize: 8 },
     voyageai: { label: 'Voyage AI', defaultUrl: 'https://api.voyageai.com/v1/embeddings', models: ['voyage-4-lite'], batchSize: 8 },
-    ollama: { label: 'Ollama', defaultUrl: 'http://127.0.0.1:11434', models: ['nomic-embed-text'], batchSize: 8 } };
-  const Gui = { state: { providers: { 'RisuAI 보조 모델': { provider: 'risuai_aux' } }, runtime: { defaultPresetName: '' } }, app: document.getElementById('app') };
+  };
+  const Gui = { state: { providers: { 'RisuAI 보조 모델': { provider: 'risuai_aux' } }, runtime: { defaultPresetName: '' } }, app: document.getElementById('app'), visible: true };
+  const storage = new Map();
   const c = vm.createContext({
     document, Gui, guiEl, log,
+    localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) },
+    LibraAttention: { opening: false }, bindApprovedOverlayKeyboard: () => {},
+    fieldNode: (label, control, note = '') => guiEl('div', { class: 'field' }, [guiEl('label', { text: label }), control, note ? guiEl('small', { text: note }) : null]),
     guiAsArray: value => Array.isArray(value) ? value : [],
     canonicalProvider: value => String(value || '').toLowerCase(),
     providerDisplayLabel: value => ({ openai: 'OpenAI', risuai_aux: 'RisuAI 보조 모델' })[value] || String(value || ''),
@@ -48,8 +52,7 @@ const makeContext = ({ llmOk = true, embedOk = true, models = ['gpt-5.4-mini', '
     LibraProviderBridge: { peekConfig: () => ({ embed: embedConfig }) },
     EmbeddingProviderRegistry: {
       normalizeConfig: cfg => ({ ...cfg }), getCapabilities: provider => capabilities[provider] || { label: provider, models: [] },
-      validateConfig: cfg => ({ ok: !!cfg.key || cfg.provider === 'ollama', missing: cfg.key || cfg.provider === 'ollama' ? [] : ['API Key'] }),
-      discoverOllamaModels: async () => ({ models: [{ name: 'nomic-embed-text:latest' }, { name: 'bge-m3:latest' }] })
+      validateConfig: cfg => ({ ok: !!cfg.key, missing: cfg.key ? [] : ['API Key'] })
     },
     LibraMemoryCore: {
       state: {},
@@ -57,22 +60,18 @@ const makeContext = ({ llmOk = true, embedOk = true, models = ['gpt-5.4-mini', '
       saveEmbeddingSettings: async patch => { log.embedSaved = patch; Object.assign(embedConfig, patch); return patch; }
     }
   });
-  vm.runInContext(source + '\nObject.assign(globalThis,{runLibraQuickConnect,runLibraQuickOllama,buildLibraQuickConnectCard,libraQuickConnectState,libraEmbeddingStatusSummary});', c);
+  vm.runInContext(source + '\nObject.assign(globalThis,{runLibraQuickConnect,buildLibraQuickConnectBody,buildLibraQuickConnectCard,libraQuickConnectState,libraEmbeddingStatusSummary,openLibraQuickConnectDialog,maybeOpenLibraFirstSetup});', c);
   return c;
 };
-const helpers = c => ({
-  card: (title, desc, children) => c.guiEl('div', { class: 'card' }, [c.guiEl('h2', { text: title }), ...children]),
-  field: (label, control, note = '') => c.guiEl('div', { class: 'field' }, [c.guiEl('label', { text: label }), control, note ? c.guiEl('small', { text: note }) : null]),
-  toggle: (checked, label) => c.guiEl('input', { type: 'checkbox', checked, 'aria-label': label })
-});
+const card = c => (title, desc, children) => c.guiEl('div', { class: 'card' }, [c.guiEl('h2', { text: title }), ...children]);
 
 (async () => {
   // Renders with an unusable default embedding shown honestly.
   {
     const c = makeContext();
-    const node = c.buildLibraQuickConnectCard(helpers(c));
+    const node = c.buildLibraQuickConnectBody();
     const textContent = node.textContent;
-    assert.match(textContent, /빠른 연결/);
+    assert.match(c.buildLibraQuickConnectCard({ card: card(c) }).textContent, /빠른 연결 열기…/, 'settings pages show a compact card');
     assert.match(textContent, /RisuAI 보조 모델 · 따로 설정하지 않아도 동작합니다/);
     assert.match(textContent, /설정 안 됨 · 키워드 검색만 사용 \(API Key\)/);
     assert.match(textContent, /키를 붙여넣으면 제공자를 자동으로 알아냅니다/);
@@ -122,11 +121,31 @@ const helpers = c => ({
     Object.assign(c.libraQuickConnectState(), { key: 'xyz' });
     await assert.rejects(c.runLibraQuickConnect(), /제공자를 직접 골라 주세요/);
   }
-  // Local Ollama: multilingual model preferred, no key.
+  // First setup popup: opens once while embedding is unusable, never again after closing.
   {
     const c = makeContext();
-    assert.match(await c.runLibraQuickOllama(), /Ollama · bge-m3:latest/);
-    assert.equal(c.log.embedSaved.provider, 'ollama'); assert.equal(c.log.embedSaved.key, '');
+    assert.equal(c.maybeOpenLibraFirstSetup(), true);
+    const dialog = c.Gui.app.querySelector('[data-libra-quick-dialog]');
+    assert.ok(dialog, 'popup opened');
+    assert.match(dialog.textContent, /LIBRA 시작하기/);
+    assert.match(dialog.textContent, /나중에 하기/);
+    [...dialog.querySelectorAll('button')].find(button => button.textContent === '나중에 하기').click();
+    assert.equal(c.Gui.app.querySelector('[data-libra-quick-dialog]'), null, 'closed');
+    assert.equal(c.maybeOpenLibraFirstSetup(), false, 'shown only once');
+  }
+  // Already configured embedding: no popup.
+  {
+    const c = makeContext();
+    Object.assign(c.libraQuickConnectState(), { key: 'pa-abc' });
+    await c.runLibraQuickConnect();
+    assert.equal(c.maybeOpenLibraFirstSetup(), false);
+    assert.equal(c.Gui.app.querySelector('[data-libra-quick-dialog]'), null);
+  }
+  // Not while the attention button is opening another screen.
+  {
+    const c = makeContext();
+    c.LibraAttention.opening = true;
+    assert.equal(c.maybeOpenLibraFirstSetup(), false);
   }
   console.log('PASS libra_quick_connect_flow_test');
 })().catch(error => { console.error(error); process.exit(1); });

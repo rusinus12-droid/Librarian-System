@@ -436,7 +436,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 //@arg provider_presets_json string Alternate provider-preset JSON input
 //@arg default_preset string Default LLM preset name
 //@arg risuai_aux_allow_plugins string true|false — allow a plugin-provided RisuAI auxiliary model; blank uses true
-//@arg story_arc_preset string Historical configuration only; no automatic Story Arc Director execution
+//@arg story_arc_preset string Retired and ignored; kept only so an old saved value is not lost
 //@arg response_lore_enabled string true|false — shared LIBRA consumers use unified full-body lore retrieval; default true
 //@arg response_lore_start_count int Adaptive lore frontier starting count; default 8, expands toward the 128 ceiling
 //@arg response_lore_max_items int Maximum lore items per consumer after adaptive expansion; default 48, hard ceiling 128
@@ -450,9 +450,9 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 //@arg librarian_preset string LLM preset for Librarian; blank inherits the existing Ariadne binding or shared default
 //@arg enable_librarian string optional true|false; blank preserves previous explicit memory enable choice
 //@arg ariadne_preset string Legacy model-binding input; inherited only when no Librarian binding exists
-//@arg character_ito_preset string Historical configuration only; retired memory reviewer cannot execute
-//@arg world_ito_preset string Historical configuration only; retired memory reviewer cannot execute
-//@arg plot_ito_preset string Historical configuration only; retired memory reviewer cannot execute
+//@arg character_ito_preset string Retired and ignored; kept only so an old saved value is not lost
+//@arg world_ito_preset string Retired and ignored; kept only so an old saved value is not lost
+//@arg plot_ito_preset string Retired and ignored; kept only so an old saved value is not lost
 //@arg selected_module_lore_ids string JSON/comma-separated IDs or namespaces of module lorebooks Ariadne memory stages may read
 //@arg excluded_module_lore_ids string JSON/comma-separated stable IDs of entries inside selected module lorebooks Ariadne must not read
 //@arg excluded_character_lore_ids string JSON/comma-separated stable IDs of character lorebook entries Ariadne must not read
@@ -27191,6 +27191,7 @@ function summarizeAgentCbsTag(rawContent) {
   const libraMemoryFailureDiagnostic = (value, detail = {}) => {
     const raw = String(value?.message || value?.reason || value || '');
     const defs = [
+      ['CONFIGURATION_REVIEW', /LIBRARIAN_CONFIGURATION_REVIEW_REQUIRED/i, '이전 기억 지침 확인 필요', '업데이트 전에 쓰던 사용자 기억 지침을 가져올지 정해야 기억 생성을 이어갈 수 있습니다. 채팅 옆 LIBRA 알림 버튼이나 기억 분석 상세 설정에서 확인해 주세요.'],
       ['NATIVE_REQUEST_PENDING', /CANONICAL_NATIVE_REQUEST_PENDING/i, '이전 AI 요청 종료 대기', '이전 AI 요청이 아직 종료되지 않았습니다. 종료를 확인한 뒤 이전 실패 작업을 폐기하고 새 분석을 시작할 수 있습니다.'],
       ['HOST_REQUEST_PENDING', /CANONICAL_HOST_REQUEST_PENDING/i, '이전 보조 모델 요청 종료 대기', '이전 RisuAI 보조 모델 요청이 아직 진행 중입니다. 종료 전에는 작업 기록을 지우거나 새 요청을 제출하지 않습니다.'],
       ['PREVIOUS_WORK_DELETE', /PREVIOUS_WORK_(?:DELETE|MANIFEST)|FRESH_ANALYSIS_.*READBACK/i, '새 분석 준비 확인 실패', '이전 임시 작업의 삭제 또는 새 작업 저장을 확인하지 못해 분석을 시작하지 않았습니다. 다시 실행하면 남은 임시 기록부터 정리합니다.'],
@@ -63445,6 +63446,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         noteCompletedTurnReceiptFailure(context,pair,recoveryBoundary,error);
       }
       state.lastOutputCapture = capture;
+      if (typeof scheduleLibraAttentionRefresh === 'function') scheduleLibraAttentionRefresh('chat_output');
       if (state.settings?.autoAnalyze !== false && pair.turn > 0 && pair.turn % BATCH_SIZE === 0) {
         const capturedContext = {
           ...context,
@@ -80315,6 +80317,22 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     }
   };
 
+  // Manual cold start used to start immediately; show the range count and expected
+  // model calls first. Cold start processes every complete range without memory.
+  const runLibraColdStartWithConfirm = async () => {
+    let missing = null;
+    try { missing = (await LibraMemoryCore.listCanonicalBatchRanges()).ranges.filter(row => row.status !== 'saved').length; } catch (_) {}
+    if (missing === 0) { guiSetStatus('기억을 만들 구간이 없습니다. 완성된 5턴 구간이 모두 저장돼 있습니다.'); return null; }
+    const confirmed = await confirmApprovedOperation(missing == null
+      ? '완성된 5턴 구간 중 기억이 없는 구간을 모두 분석합니다.'
+      : `완성된 5턴 구간 중 기억이 없는 ${missing}개 구간을 분석합니다.`, {
+      title: '지난 대화 기억 만들기', kind: '콜드스타트', actionLabel: '기억 만들기 시작',
+      cost: missing == null ? '구간당 정상 생성 1회 · 모델 사용량이 발생할 수 있습니다.' : `약 ${missing}회 (구간당 정상 생성 1회 · 상태 확인 호출이 더해질 수 있습니다)`
+    });
+    if (!confirmed) { guiSetStatus('콜드스타트를 취소했습니다.'); return null; }
+    return await runCanonicalGuiCommand('콜드스타트를 시작합니다.', () => LibraMemoryCore.startManualColdStart({}));
+  };
+
   const closeCanonicalRangeDrawer = () => { try { Gui.canonicalRangeDrawerClose?.(); } catch (_) {} };
   const showCanonicalRangeDrawer = async (mode='missing') => {
     closeCanonicalRangeDrawer();if(!Gui.root||!Gui.visible)return;
@@ -80326,7 +80344,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const choices=overlay.querySelector('#kind-sel');choices.setAttribute('aria-label','기억 작업 종류');choices.replaceChildren(...optionNodes([['missing','누락 구간 생성 (기본)'],['failed','실패 구간 새 분석'],['source_edit','선택 구간 재분석'],['regenerate','기존 기억 재생성']],mode==='latest'?'missing':mode));
     const submit=overlay.querySelector('#range-go'),status=overlay.querySelector('#kind-hint'),count=overlay.querySelector('#range-n'),calls=overlay.querySelector('#range-calls'),effect=overlay.querySelector('#range-effect');
     submit.removeAttribute('data-close');submit.removeAttribute('data-run-job');submit.removeAttribute('data-ctx');
-    let inventory=null,alive=true,running=false,currentMode=mode==='latest'?'missing':mode;const selected=new Set();
+    let inventory=null,alive=true,running=false,currentMode=mode==='latest'||mode==='missing_all'?'missing':mode;const selected=new Set();
     const valid=()=>alive&&bindingKey===canonicalReaderBindingKey(canonicalReaderBinding())&&overlay.dataset.canonicalRangeScope===binding.scopeKey;
     const close=()=>{if(!alive)return;alive=false;document.removeEventListener('keydown',escape,true);overlay.remove();if(Gui.canonicalRangeDrawerClose===close)Gui.canonicalRangeDrawerClose=null;};
     const escape=event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();}};Gui.canonicalRangeDrawerClose=close;
@@ -80368,7 +80386,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if(inventory.scopeKey!==binding.scopeKey)throw new Error('CANONICAL_READER_SCOPE_CHANGED');
       panel.querySelector('#dg-t').textContent=Object.values(LibraMemoryCore.peekSnapshot()?.manifest?.memories||{}).some(row=>row.status==='committed')?'기억 생성 구간 선택':'수동 콜드스타트 · 기억 생성 구간 선택';
       status.textContent=`현재 ${inventory.observedTurns} U+A턴 · 완성 구간 ${inventory.completeBatches}개`;
-      if(mode==='latest'){const row=inventory.ranges.filter(eligible).at(-1);if(row)selected.add(row.startTurn);}if(mode==='failed')inventory.ranges.filter(eligible).forEach(row=>selected.add(row.startTurn));paint();
+      if(mode==='latest'){const row=inventory.ranges.filter(eligible).at(-1);if(row)selected.add(row.startTurn);}if(mode==='failed'||mode==='missing_all')inventory.ranges.filter(eligible).forEach(row=>selected.add(row.startTurn));paint();
       if(!inventory.ranges.length)status.textContent='아직 완성된 U+A 5턴 구간이 없습니다. 사용자 입력과 완료된 AI 응답 한 쌍을 1턴으로 계산합니다.';
     }catch(error){status.textContent=String(error.message||error);submit.disabled=true;}
   };
@@ -80392,9 +80410,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const savedEmbed = LibraProviderBridge.peekConfig()?.embed;
     const embed = savedEmbed ? EmbeddingProviderRegistry.normalizeConfig(savedEmbed) : null;
     const embedStatus = libraEmbeddingStatusSummary();
-    const embeddingModel = !embed ? '설정 읽는 중' : embedStatus.state === 'ready' ? (String(embed.model || '').trim() || '기본 모델') : embedStatus.state === 'off' ? '임베딩 꺼짐' : '임베딩 미설정';
+    const embeddingModel = !embed ? '설정 읽는 중' : embedStatus.state === 'unconfigured' ? '임베딩 미설정' : (String(embed.model || '').trim() || '모델 미설정');
     const embeddingMeta = !embed ? '저장된 임베딩 설정을 확인합니다.' : embedStatus.state === 'ready'
       ? EmbeddingProviderRegistry.getCapabilities(embed.provider).label
+      : embedStatus.state === 'off' ? '사용 안 함 · 키워드 검색만 사용 중'
       : '키워드 검색만 사용 중 · 빠른 연결로 키 하나만 넣으면 됩니다';
     const item = (kind, label, model, meta, controls = null) => guiEl('div', { class: "row", dataset: { memoryModel: kind } }, [
       guiEl('span', { class: "setting__name", text: label }),
@@ -80472,7 +80491,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     guiEl('button', { class: 'btn btn--primary', type: 'button', text: '5턴 구간 선택 · 다중 분석', onClick: () => void showCanonicalRangeDrawer('missing') }),
     guiEl('div', { class: 'hint', text: '모든 작업은 중앙 작업창에 실제 단계와 배치 수를 표시합니다. 창을 최소화하면 헤더 진행 칩으로 계속 추적할 수 있습니다.' }),
     guiEl('div', { class: 'cluster', style: { marginTop: '10px' } }, [
-      guiEl('button', { class: 'btn btn--primary', type: 'button', text: '수동 콜드스타트', onClick: () => { void runCanonicalGuiCommand('콜드스타트를 시작합니다.', () => LibraMemoryCore.startManualColdStart({})).catch(() => null); } }),
+      guiEl('button', { class: 'btn btn--primary', type: 'button', text: '수동 콜드스타트', onClick: () => { void runLibraColdStartWithConfirm().catch(() => null); } }),
       guiEl('button', { class: 'btn btn--primary', type: 'button', text: '현재 5턴 분석', onClick: () => { void runCanonicalGuiCommand('현재 완성된 5턴을 분석합니다.', () => LibraMemoryCore.startManualCanonicalScan({})).catch(() => null); } }),
       guiEl('button', { class: 'btn', type: 'button', text: '실패 구간 새 분석', onClick: () => { void runCanonicalGuiCommand('실패 배치를 다시 처리합니다.', () => LibraMemoryCore.startFailedRetry({})).catch(() => null); } })
     ])
@@ -80526,7 +80545,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const memories = (snapshot.memories || []).slice();
     if (worldManagerCanonicalMemoryFocus?.memory && !memories.some(row => String(row?.memoryId || '') === String(worldManagerCanonicalMemoryFocus.memoryId || '') && Number(row?.revision || 0) === Number(worldManagerCanonicalMemoryFocus.revision || 0))) memories.push(worldManagerCanonicalMemoryFocus.memory);
     const total = Math.max(Number(snapshot.totals?.memories ?? memories.length), memories.length);
-    if (!memories.length) return guiEl('div', {}, [buildCanonicalActionPanel(), guiEl('div', { class: 'hint', style: { marginBottom: '12px' }, text: CANONICAL_VALIDATOR_RETIREMENT_NOTE }), guiEl('div', { class: 'card' }, [guiEl('h3', { text: '정본 메모리가 없습니다.' }), guiEl('div', { class: 'hint', text: '완성된 5턴이 있다면 수동 콜드스타트로 기존 세션의 누락 정본을 생성할 수 있습니다.' }), guiEl('button', { class: 'btn btn--primary', type: 'button', text: '수동 콜드스타트 실행', onClick: () => { void runCanonicalGuiCommand('콜드스타트를 시작합니다.', () => LibraMemoryCore.startManualColdStart({})).catch(() => null); } })])]);
+    if (!memories.length) return guiEl('div', {}, [buildCanonicalActionPanel(), guiEl('div', { class: 'hint', style: { marginBottom: '12px' }, text: CANONICAL_VALIDATOR_RETIREMENT_NOTE }), guiEl('div', { class: 'card' }, [guiEl('h3', { text: '정본 메모리가 없습니다.' }), guiEl('div', { class: 'hint', text: '완성된 5턴이 있다면 수동 콜드스타트로 기존 세션의 누락 정본을 생성할 수 있습니다.' }), guiEl('button', { class: 'btn btn--primary', type: 'button', text: '지난 대화 기억 만들기…', onClick: () => { void runLibraColdStartWithConfirm().catch(() => null); } })])]);
     const ordered = memories.slice().reverse();
     if (worldManagerCanonicalMemoryFocus) ordered.sort((left,right) => {
       const leftFocused=String(left?.memoryId||'')===String(worldManagerCanonicalMemoryFocus.memoryId||'')&&Number(left?.revision||0)===Number(worldManagerCanonicalMemoryFocus.revision||0);
@@ -84429,11 +84448,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     }
     return '';
   };
-  const LIBRA_QUICK_OLLAMA_PREFERENCE = /(bge-m3|multilingual|qwen\d*-embedding|embeddinggemma|e5)/i;
-  const pickLibraOllamaEmbeddingModel = (names = []) => {
-    const list = guiAsArray(names).map(name => String(name || '').trim()).filter(Boolean);
-    return list.find(name => LIBRA_QUICK_OLLAMA_PREFERENCE.test(name)) || list[0] || '';
-  };
   const libraQuickConnectState = () => Gui.quickConnect || (Gui.quickConnect = { key: '', provider: 'auto', model: '', useLlm: true, useEmbed: true, busy: false, message: '', error: false });
   const libraEmbeddingStatusSummary = () => {
     const saved = LibraProviderBridge.peekConfig()?.embed;
@@ -84507,21 +84521,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     qc.key = ''; qc.model = '';
     return [llm ? `기억 분석 AI: ${target.label} · ${llm.model}` : '', embed ? `임베딩: ${EmbeddingProviderRegistry.getCapabilities(embed.provider)?.label} · ${embed.model}` : ''].filter(Boolean).join(' / ');
   };
-  const runLibraQuickOllama = async () => {
-    guiSetStatus('이 PC의 Ollama를 찾습니다…');
-    let discovery = null;
-    try { discovery = await EmbeddingProviderRegistry.discoverOllamaModels({ provider: 'ollama', url: 'http://127.0.0.1:11434' }, { force: true }); }
-    catch (error) { throw new Error(`Ollama에 연결하지 못했습니다. Ollama가 실행 중인지 확인해 주세요. (${String(error?.message || error)})`); }
-    const model = pickLibraOllamaEmbeddingModel(guiAsArray(discovery?.models).map(item => item?.name));
-    if (!model) throw new Error('Ollama는 찾았지만 임베딩 모델이 없습니다. 터미널에서 "ollama pull bge-m3"를 실행한 뒤 다시 눌러 주세요.');
-    const patch = libraEmbeddingPatchFor('ollama', '', model, 'http://127.0.0.1:11434');
-    const result = await LibraMemoryCore.testEmbeddingConnection(patch);
-    if (result?.ok !== true) throw new Error(`Ollama 임베딩 시험 실패 · ${result?.error || result?.status || '응답 없음'}`);
-    await applyLibraEmbeddingPatch(patch);
-    return `임베딩: Ollama · ${model} (무료 · 이 PC에서 실행)`;
-  };
-  const buildLibraQuickConnectCard = ({ card, field, toggle }) => {
-    const qc = libraQuickConnectState();
+  // Shared status lines for the quick connect popup and the settings-page card.
+  const libraQuickConnectStatusRows = () => {
     const runtime = Gui.state?.runtime || {};
     const providers = Gui.state?.providers || {};
     const defaultName = normalizeProviderPresetBindingName(runtime.defaultPresetName) || RISUAI_AUX_PRESET_NAME;
@@ -84529,6 +84530,20 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const auxDefault = !defaultPreset || canonicalProvider(defaultPreset.provider) === RISUAI_AUX_PROVIDER;
     const aiLine = auxDefault ? 'RisuAI 보조 모델 · 따로 설정하지 않아도 동작합니다' : `${presetDisplayName(defaultName)} · ${providerDisplayLabel(defaultPreset.provider)} · ${presetModelDisplay(defaultPreset)}`;
     const embedStatus = libraEmbeddingStatusSummary();
+    return { auxDefault, embedStatus, nodes: [
+      guiEl('div', { class: 'row' }, [guiEl('span', { class: 'setting__name', text: '기억 분석 AI' }), guiEl('strong', { text: aiLine })]),
+      guiEl('div', { class: 'row' }, [guiEl('span', { class: 'setting__name', text: '임베딩' }), guiEl('strong', { text: embedStatus.text }),
+        embedStatus.state === 'ready' ? guiEl('span', { class: 'badge badge--ok', text: '정상' }) : embedStatus.state === 'loading' ? null : guiEl('span', { class: 'badge badge--warn', text: '키워드 검색만' })])
+    ] };
+  };
+  const libraQuickToggle = (checked, label, onChange) => guiEl('label', { class: 'switch' }, [
+    guiEl('input', { type: 'checkbox', checked: checked === true, 'aria-label': label, onChange: event => onChange(event.target.checked === true) }),
+    guiEl('span', { class: 'switch__track' }), guiEl('span', { class: 'sr-only', text: label })
+  ]);
+  // The quick connect form. `rerender` repaints only the surface that hosts it.
+  const buildLibraQuickConnectBody = ({ rerender = () => {} } = {}) => {
+    const qc = libraQuickConnectState();
+    const status = libraQuickConnectStatusRows();
     const detectedText = () => {
       const target = libraQuickProviderTargets(qc.provider, qc.key);
       if (!String(qc.key || '').trim()) return '키를 붙여넣으면 제공자를 자동으로 알아냅니다.';
@@ -84537,36 +84552,78 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
     const run = fn => async () => {
       if (qc.busy) return;
-      qc.busy = true; qc.message = ''; qc.error = false; queueGuiRender(0, 'body');
-      try { qc.message = `연결 완료 · ${await fn()}`; guiSetStatus(qc.message); }
+      qc.busy = true; qc.message = ''; qc.error = false; rerender();
+      try { qc.message = `연결 완료 · ${await fn()}`; qc.done = true; guiSetStatus(qc.message); }
       catch (error) { qc.message = String(error?.message || error); qc.error = true; guiSetStatus(qc.message, true, true); }
-      finally { qc.busy = false; queueGuiRender(0, 'body'); }
+      finally { qc.busy = false; rerender(); }
     };
     const providerOptions = [['auto', '자동 감지'], ...providerChoices().filter(([id]) => !['custom', RISUAI_AUX_PROVIDER].includes(id)),
       ...Object.entries(LIBRA_QUICK_EMBED_ONLY).map(([id, label]) => [id, `${label} (임베딩 전용)`])];
-    return card('빠른 연결', 'API 키 하나만 붙여넣으면 제공자·추천 모델을 고르고, 시험 호출이 성공할 때만 저장합니다.', [
-      guiEl('div', { class: 'stack', dataset: { libraQuickConnect: 'true' } }, [
-        guiEl('div', { class: 'row' }, [guiEl('span', { class: 'setting__name', text: '기억 분석 AI' }), guiEl('strong', { text: aiLine })]),
-        guiEl('div', { class: 'row' }, [guiEl('span', { class: 'setting__name', text: '임베딩' }), guiEl('strong', { text: embedStatus.text }),
-          embedStatus.state === 'ready' ? guiEl('span', { class: 'badge badge--ok', text: '정상' }) : embedStatus.state === 'loading' ? null : guiEl('span', { class: 'badge badge--warn', text: '키워드 검색만' })]),
-        field('API 키', guiEl('input', { class: 'input', type: 'password', value: qc.key, autocomplete: 'off', placeholder: 'sk-… / AIza… / pa-… 등', dataset: { libraQuickKey: 'true' },
-          onInput: event => { qc.key = event.target.value; const hint = Gui.app?.querySelector?.('[data-libra-quick-detected]'); if (hint) hint.textContent = detectedText(); } })),
-        guiEl('p', { class: 'hint', dataset: { libraQuickDetected: 'true' }, text: detectedText() }),
-        guiEl('div', { class: 'grid g2' }, [
-          field('제공자', selectNode(qc.provider, providerOptions, value => { qc.provider = value; queueGuiRender(0, 'body'); })),
-          field('모델 (비우면 자동 추천)', guiEl('input', { class: 'input', type: 'text', value: qc.model, placeholder: '자동 추천', onInput: event => { qc.model = event.target.value; } })),
-          field('기억 분석 AI로 사용', toggle(qc.useLlm !== false, '기억 분석 AI로 사용', value => { qc.useLlm = value; }), auxDefault ? '끄면 RisuAI 보조 모델을 계속 씁니다.' : ''),
-          field('임베딩으로 사용', toggle(qc.useEmbed !== false, '임베딩으로 사용', value => { qc.useEmbed = value; }), '임베딩을 지원하는 키(OpenAI·Gemini·Voyage 등)일 때만 적용됩니다.')
-        ]),
-        guiEl('div', { class: 'cluster' }, [
-          guiEl('button', { class: 'btn btn--primary btn--sm', type: 'button', disabled: qc.busy, text: qc.busy ? '확인 중…' : '확인하고 연결', onClick: run(runLibraQuickConnect) }),
-          guiEl('button', { class: 'btn btn--sm', type: 'button', disabled: qc.busy, text: '이 PC의 Ollama로 무료 임베딩', onClick: run(runLibraQuickOllama) })
-        ]),
-        qc.message ? guiEl('div', { class: qc.error ? 'note note--warn' : 'note' }, [guiEl('p', { text: qc.message })]) : null,
-        guiEl('p', { class: 'hint', text: '키는 저장 전에 시험 호출 1회로 확인합니다. 키는 화면에 다시 표시하지 않으며 백업에 포함되지 않습니다.' })
-      ])
+    const hint = guiEl('p', { class: 'hint', dataset: { libraQuickDetected: 'true' }, text: detectedText() });
+    return guiEl('div', { class: 'stack', dataset: { libraQuickConnect: 'true' } }, [
+      ...status.nodes,
+      fieldNode('API 키', guiEl('input', { class: 'input', type: 'password', value: qc.key, autocomplete: 'off', placeholder: 'sk-… / AIza… / pa-… 등', dataset: { libraQuickKey: 'true' },
+        onInput: event => { qc.key = event.target.value; hint.textContent = detectedText(); } })),
+      hint,
+      guiEl('div', { class: 'grid g2' }, [
+        fieldNode('제공자', selectNode(qc.provider, providerOptions, value => { qc.provider = value; hint.textContent = detectedText(); })),
+        fieldNode('모델 (비우면 자동 추천)', guiEl('input', { class: 'input', type: 'text', value: qc.model, placeholder: '자동 추천', onInput: event => { qc.model = event.target.value; } })),
+        fieldNode('기억 분석 AI로 사용', libraQuickToggle(qc.useLlm !== false, '기억 분석 AI로 사용', value => { qc.useLlm = value; }), status.auxDefault ? '끄면 RisuAI 보조 모델을 계속 씁니다.' : ''),
+        fieldNode('임베딩으로 사용', libraQuickToggle(qc.useEmbed !== false, '임베딩으로 사용', value => { qc.useEmbed = value; }), '임베딩을 지원하는 키(OpenAI·Gemini·Voyage 등)일 때만 적용됩니다.')
+      ]),
+      guiEl('div', { class: 'cluster' }, [
+        guiEl('button', { class: 'btn btn--primary btn--sm', type: 'button', disabled: qc.busy, text: qc.busy ? '확인 중…' : '확인하고 연결', onClick: run(runLibraQuickConnect) })
+      ]),
+      qc.message ? guiEl('div', { class: qc.error ? 'note note--warn' : 'note' }, [guiEl('p', { text: qc.message })]) : null,
+      guiEl('p', { class: 'hint', text: '키는 저장 전에 시험 호출 1회로 확인합니다. 키는 화면에 다시 표시하지 않으며 백업에 포함되지 않습니다.' })
     ]);
   };
+  const LIBRA_FIRST_SETUP_KEY = 'libra.firstSetupSeen.v1';
+  const libraFirstSetupSeen = () => { try { return globalThis.localStorage?.getItem?.(LIBRA_FIRST_SETUP_KEY) === '1'; } catch (_) { return false; } };
+  const markLibraFirstSetupSeen = () => { try { globalThis.localStorage?.setItem?.(LIBRA_FIRST_SETUP_KEY, '1'); } catch (_) {} };
+  // First setup popup: the quick connect form in a dialog over the LIBRA window.
+  const openLibraQuickConnectDialog = (options = {}) => {
+    if (!Gui.app || !Gui.visible) return false;
+    Gui.app.querySelector('[data-libra-quick-dialog]')?.remove();
+    const qc = libraQuickConnectState();
+    qc.message = ''; qc.error = false; qc.done = false;
+    const overlay = guiEl('div', { class: 'overlay is-open', 'aria-hidden': 'false', dataset: { libraQuickDialog: 'true' } });
+    const dialog = guiEl('div', { class: 'dialog dialog--wide', role: 'dialog', 'aria-modal': 'true', 'aria-label': '빠른 연결' });
+    overlay.append(dialog);
+    let closed = false;
+    const close = () => { if (closed) return; closed = true; overlay.remove(); markLibraFirstSetupSeen(); queueGuiRender(0, 'body'); };
+    const paint = () => {
+      if (closed) return;
+      dialog.replaceChildren(
+        guiEl('div', { class: 'eyebrow', text: options.firstRun ? 'First setup' : 'Quick connect' }),
+        guiEl('h2', { text: options.firstRun ? 'LIBRA 시작하기' : '빠른 연결' }),
+        guiEl('p', { class: 'muted', text: '기억 분석 AI는 RisuAI 보조 모델로 이미 동작합니다. 임베딩을 켜면 표현이 달라도 뜻이 비슷한 기억까지 찾습니다. API 키 하나만 붙여넣으면 됩니다.' }),
+        buildLibraQuickConnectBody({ rerender: paint }),
+        guiEl('div', { class: 'dialog__actions' }, [guiEl('button', { class: qc.done ? 'btn btn--primary' : 'btn', type: 'button', text: qc.done ? '완료' : options.firstRun ? '나중에 하기' : '닫기', onClick: close })]),
+        options.firstRun && !qc.done ? guiEl('p', { class: 'hint', text: '나중에 설정 › AI 연결에서 다시 열 수 있습니다.' }) : null
+      );
+    };
+    paint();
+    overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+    Gui.app.appendChild(overlay);
+    bindApprovedOverlayKeyboard(overlay, close);
+    return true;
+  };
+  // Shown once, on the first LIBRA window open, only while embedding is not usable.
+  const maybeOpenLibraFirstSetup = () => {
+    if (libraFirstSetupSeen() || LibraAttention.opening || !Gui.app || !Gui.visible) return false;
+    if (Gui.app.querySelector('.overlay.is-open')) return false;
+    const state = libraEmbeddingStatusSummary().state;
+    if (state === 'loading') return false;
+    if (state === 'ready') { markLibraFirstSetupSeen(); return false; }
+    return openLibraQuickConnectDialog({ firstRun: true });
+  };
+  const buildLibraQuickConnectCard = ({ card }) => card('빠른 연결', 'API 키 하나만 붙여넣으면 제공자·추천 모델을 고르고, 시험 호출이 성공할 때만 저장합니다.', [
+    guiEl('div', { class: 'stack', dataset: { libraQuickConnectSummary: 'true' } }, [
+      ...libraQuickConnectStatusRows().nodes,
+      guiEl('div', { class: 'cluster' }, [guiEl('button', { class: 'btn btn--primary btn--sm', type: 'button', text: '빠른 연결 열기…', onClick: () => openLibraQuickConnectDialog() })])
+    ])
+  ]);
 
   const buildApprovedMockupSettingsPanel = (groupId, sectionId) => {
     const runtime=Gui.state.runtime||(Gui.state.runtime={});
@@ -84658,7 +84715,7 @@ advanced
         const embedState=LibraMemoryCore.getEmbeddingRebuildState(),status=guiEl('p',{class:'hint',dataset:{embeddingStatus:'true'},text:`${embedState.status||'unknown'} · 현재 ${embedState.counts?.current||0} · 최신 ${embedState.counts?.ready||0} · 미완료 ${embedState.counts?.stale||0}`});
         const providerSelect=guiEl('select',{class:'select',value:cfg.provider,dataset:{embeddingField:'provider'},onChange:event=>{LibraMemoryCore.resetEmbeddingProviderDefaults(event.target.value);markGuiDirty();void renderSettingsGui();}},providers.map(item=>guiEl('option',{value:item.provider,selected:item.provider===cfg.provider,text:item.label})));
         return guiEl('div',{class:'stack',dataset:{settingsCategory:'ai',settingsReadback:'embedding-settings'}},[
-          buildLibraQuickConnectCard({card,field,toggle}),
+          buildLibraQuickConnectCard({card}),
           card('임베딩','검색에 쓰는 실제 vector provider·model 공간을 설정합니다.',[
             guiEl('div',{class:'grid g2'},[field('임베딩 사용',toggle(cfg.enabled!==false,'임베딩 사용',value=>updateEmbedding({enabled:value}))),field('임베딩 모델',embeddingField('model','임베딩 모델',{placeholder:'provider model ID'})),field('Provider',providerSelect),field('Endpoint URL',embeddingField('url','Endpoint URL',{placeholder:'기본값'}))]),
             guiEl('div',{class:'three-status'},[guiEl('div',{},[guiEl('b',{text:'작업'}),status]),guiEl('div',{},[guiEl('b',{text:'이전'}),guiEl('span',{dataset:{embeddingMigrationStatus:'true'},text:Gui.embeddingMigrationStatus||'같은 공간 이전 가능 여부 확인 전'})]),guiEl('div',{},[guiEl('b',{text:'격리 벡터'}),guiEl('span',{text:String(embedState.counts?.quarantined||0)+'개 · 읽기 전용'})])]),
@@ -84676,7 +84733,7 @@ advanced
       const configuredDefaultName=normalizeProviderPresetBindingName(runtime.defaultPresetName)||RISUAI_AUX_PRESET_NAME;
       const effectiveDefaultName=providers[configuredDefaultName]?configuredDefaultName:providers[RISUAI_AUX_PRESET_NAME]?RISUAI_AUX_PRESET_NAME:names[0]||'';
       const defaultName=effectiveDefaultName,defaultPresetMissing=configuredDefaultName!==effectiveDefaultName;
-      const orphanBindings=[...(configuredDefaultName&&!providers[configuredDefaultName]?[{stage:'전역 기본',name:configuredDefaultName}]:[]),...PERSISTED_AGENT_STAGE_DEFS.map(def=>({stage:def.label||def.id,name:text(Gui.state.agents?.[def.id]?.presetName||'')})).filter(row=>row.name&&!providers[row.name])];
+      const orphanBindings=[...(configuredDefaultName&&!providers[configuredDefaultName]?[{stage:'전역 기본',name:configuredDefaultName}]:[]),...PERSISTED_AGENT_STAGE_DEFS.filter(def=>!LEGACY_MEMORY_STAGE_DEFS.some(legacy=>legacy.id===def.id)).map(def=>({stage:def.label||def.id,name:text(Gui.state.agents?.[def.id]?.presetName||'')})).filter(row=>row.name&&!providers[row.name])];
       const defaultPanel=guiEl('details',{class:'fold',dataset:{defaultConnectionSettings:'true'}},[guiEl('summary',{text:'전역 기본 AI 연결'}),guiEl('div',{class:'fold__body stack'},[
         field('기본 AI 연결',selectNode(effectiveDefaultName,names.map(name=>[name,presetDisplayName(name)]),next=>{runtime.defaultPresetName=next;markGuiDirty();queueGuiRender(0);}),'단계별 AI 연결에서 전역 기본 연결을 사용하도록 둔 모든 기능이 공유하는 폴백입니다.'),
         guiEl('p',{class:'hint',text:effectiveDefaultName?`${presetDisplayName(effectiveDefaultName)} · ${providerDisplayLabel(providers[effectiveDefaultName]?.provider)} · ${presetModelDisplay(providers[effectiveDefaultName]||{})}`:'사용 가능한 기본 연결이 없습니다.'}),
@@ -84707,7 +84764,7 @@ advanced
         ])
       ])):guiEl('div',{class:'empty',text:'편집할 연결 프리셋이 없습니다.'});
       return guiEl('div',{class:'stack',dataset:{settingsCategory:'ai',settingsReadback:'provider-settings'}},[
-        buildLibraQuickConnectCard({card,field,toggle}),
+        buildLibraQuickConnectCard({card}),
         card('생성 AI 프리셋','현재 저장된 프리셋 이름과 모델만 표시합니다. 비밀 키는 노출하지 않습니다.',[
           guiEl('div',{class:'list',id:'ai-presets'},names.length?names.map(name=>guiEl('button',{class:'row',type:'button',dataset:{providerPreset:name},'aria-pressed':String(name===Gui.selectedPreset),onClick:()=>{Gui.selectedPreset=name;void renderSettingsGui();}},[guiEl('span',{class:'row__title',text:name}),guiEl('span',{class:'row__meta',text:`${providerDisplayLabel(providers[name]?.provider)} · ${presetModelDisplay(providers[name]||{})}`}),name===defaultName?guiEl('span',{class:'badge',text:'기본'}):null])):[guiEl('div',{class:'empty',text:'저장된 생성 AI 프리셋이 없습니다.'})]),
           guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm',type:'button',text:'프리셋 추가',onClick:()=>addGuiPreset()}),guiEl('button',{class:'btn btn--sm',type:'button',text:'프리셋 관리…',onClick:()=>{Gui.selectedPreset=Gui.selectedPreset||names[0]||'';void renderSettingsGui();}})]),defaultPanel,editPanel
@@ -86037,6 +86094,7 @@ advanced
       // because applyGuiSettingsState() refuses to replace a dirty draft.
       await renderSettingsGui();
       guiSetStatus(rejected ? `일부 백그라운드 갱신 실패: ${perf.lastError}` : '최신 LIBRA 데이터를 확인했습니다.', !!rejected, false);
+      if (typeof maybeOpenLibraFirstSetup === 'function') maybeOpenLibraFirstSetup();
       perf.hydratedAt = Date.now();
       // Native-copy completeness checking can scan sibling chat lineage. Keep it entirely
       // outside the opening critical path, then refresh only if it actually writes target data.
@@ -86104,6 +86162,139 @@ advanced
     Runtime.uiLaunchKind = '';
     return true;
   };
+
+  // Zero-touch attention: one chat-area button that exists only while the user
+  // has something to do (upgrade review blocking memory, failed ranges, past turns
+  // without memory). It never starts model work; the click opens the screen that
+  // shows the targets and expected calls before anything runs.
+  const LIBRA_ATTENTION_BUTTON_ID = `${SETTINGS_UI_ID}-attention`;
+  const LIBRA_ATTENTION_POLL_MS = 10000;
+  const LIBRA_ATTENTION_REFRESH_DELAY_MS = 3000;
+  const LibraAttention = { started: false, refreshTimer: null, pollTimer: null, evaluating: false, opening: false,
+    lastIndexes: '', lastJobState: '', buttonSignature: '', state: null };
+  // Pure decision; exported for tests. Missing ranges exclude the newest complete
+  // range because the automatic 5-turn scan is about to handle it.
+  const libraAttentionDecision = ({ enabled = true, reviewRequired = false, jobActive = false, ranges = [] } = {}) => {
+    if (enabled === false || jobActive) return { kind: '', count: 0 };
+    if (reviewRequired) return { kind: 'review', count: 0, icon: '⚠️', name: `${PUBLIC_DISPLAY_NAME} · 기억 지침 확인 필요` };
+    const rows = guiAsArray(ranges);
+    const failed = rows.filter(row => row.status === 'failed').length;
+    if (failed) return { kind: 'failed', count: failed, icon: '⚠️', name: `${PUBLIC_DISPLAY_NAME} · 기억 실패 ${failed}구간` };
+    const newest = Math.max(0, ...rows.map(row => Number(row.startTurn || 0)));
+    const missing = rows.filter(row => row.status === 'missing' && Number(row.startTurn || 0) !== newest).length;
+    if (missing) return { kind: 'missing', count: missing, icon: '🕘', name: `${PUBLIC_DISPLAY_NAME} · 지난 대화 ${missing}구간 기억 만들기` };
+    return { kind: '', count: 0 };
+  };
+  const libraCanonicalJobActive = () => {
+    const job = LibraMemoryCore.state?.canonicalJob;
+    return !!job && ['preparing', 'running', 'awaiting_edit', 'cancel_requested', 'adopting'].includes(String(job.state || ''));
+  };
+  const computeLibraAttention = async () => {
+    const settings = await loadSettings();
+    if (settings?.enableLibrarian === false) return { kind: '', count: 0 };
+    const reviewRequired = settings?.librarianPolicy?.reviewRequired === true;
+    if (reviewRequired) return libraAttentionDecision({ reviewRequired });
+    if (libraCanonicalJobActive()) return libraAttentionDecision({ jobActive: true });
+    const inventory = await LibraMemoryCore.listCanonicalBatchRanges();
+    return { ...libraAttentionDecision({ ranges: inventory?.ranges }), scopeKey: String(inventory?.scopeKey || '') };
+  };
+  const syncLibraAttentionButton = async next => {
+    const signature = next?.kind ? `${next.kind}:${next.count}:${next.scopeKey || ''}` : '';
+    if (signature === LibraAttention.buttonSignature) return true;
+    const uiApi = getLiveApi(['unregisterUIPart']);
+    if (LibraAttention.buttonSignature && typeof uiApi?.unregisterUIPart === 'function') { try { await uiApi.unregisterUIPart(LIBRA_ATTENTION_BUTTON_ID); } catch (_) {} }
+    LibraAttention.buttonSignature = '';
+    const buttonApi = getLiveApi(['registerButton']);
+    if (!next?.kind || typeof buttonApi?.registerButton !== 'function' || LibraMemoryCore.state.disposed) return !next?.kind;
+    try {
+      await buttonApi.registerButton({ name: next.name, icon: next.icon, iconType: 'html', location: 'chat', id: LIBRA_ATTENTION_BUTTON_ID },
+        () => { void openLibraAttention(); });
+      LibraAttention.buttonSignature = signature;
+      return true;
+    } catch (error) { warn('libra_attention_button_failed', error); return false; }
+  };
+  const refreshLibraAttention = async () => {
+    if (!LibraAttention.started || LibraMemoryCore.state.disposed) return null;
+    if (LibraAttention.evaluating) { scheduleLibraAttentionRefresh('busy'); return null; }
+    LibraAttention.evaluating = true;
+    try {
+      const next = await computeLibraAttention();
+      if (LibraMemoryCore.state.disposed) return null;
+      LibraAttention.state = next;
+      await syncLibraAttentionButton(next);
+      return next;
+    } catch (error) { warn('libra_attention_refresh_failed', error); return null; }
+    finally { LibraAttention.evaluating = false; }
+  };
+  function scheduleLibraAttentionRefresh(reason = '', delay = LIBRA_ATTENTION_REFRESH_DELAY_MS) {
+    if (!LibraAttention.started || LibraMemoryCore.state.disposed) return false;
+    if (LibraAttention.refreshTimer) clearTimeout(LibraAttention.refreshTimer);
+    LibraAttention.refreshTimer = setTimeout(() => { LibraAttention.refreshTimer = null; void refreshLibraAttention(); }, Math.max(0, Number(delay) || 0));
+    LibraAttention.refreshTimer?.unref?.();
+    return true;
+  }
+  // Cheap change detection: chat indexes and the canonical job state only.
+  const pollLibraAttention = async () => {
+    LibraAttention.pollTimer = null;
+    if (!LibraAttention.started || LibraMemoryCore.state.disposed) return;
+    try {
+      const api = getLiveApi(['getCurrentCharacterIndex', 'getCurrentChatIndex']);
+      if (typeof api?.getCurrentCharacterIndex === 'function' && typeof api?.getCurrentChatIndex === 'function') {
+        const indexes = `${await api.getCurrentCharacterIndex()}:${await api.getCurrentChatIndex()}`;
+        if (indexes !== LibraAttention.lastIndexes) { LibraAttention.lastIndexes = indexes; scheduleLibraAttentionRefresh('chat_switch', 500); }
+      }
+      const jobState = `${LibraMemoryCore.state?.canonicalJob?.jobId || ''}:${LibraMemoryCore.state?.canonicalJob?.state || ''}`;
+      if (jobState !== LibraAttention.lastJobState) { LibraAttention.lastJobState = jobState; scheduleLibraAttentionRefresh('job_state', 500); }
+    } catch (_) {}
+    if (!LibraMemoryCore.state.disposed) { LibraAttention.pollTimer = setTimeout(() => void pollLibraAttention(), LIBRA_ATTENTION_POLL_MS); LibraAttention.pollTimer?.unref?.(); }
+  };
+  const startLibraAttention = () => {
+    if (LibraAttention.started || LibraMemoryCore.state.disposed) return false;
+    LibraAttention.started = true;
+    void pollLibraAttention();
+    return true;
+  };
+  const stopLibraAttention = async () => {
+    for (const key of ['refreshTimer', 'pollTimer']) { if (LibraAttention[key]) { try { clearTimeout(LibraAttention[key]); } catch (_) {} LibraAttention[key] = null; } }
+    LibraAttention.started = false;
+    if (LibraAttention.buttonSignature) {
+      const uiApi = getLiveApi(['unregisterUIPart']);
+      try { await uiApi?.unregisterUIPart?.(LIBRA_ATTENTION_BUTTON_ID); } catch (_) {}
+      LibraAttention.buttonSignature = '';
+    }
+  };
+  // A small dialog around an existing panel (used for the upgrade review).
+  const openLibraPanelDialog = (title, eyebrow, body) => {
+    if (!Gui.app || !Gui.visible) return false;
+    Gui.app.querySelector('[data-libra-panel-dialog]')?.remove();
+    const overlay = guiEl('div', { class: 'overlay is-open', 'aria-hidden': 'false', dataset: { libraPanelDialog: 'true' } });
+    const close = () => { overlay.remove(); scheduleLibraAttentionRefresh('dialog_closed', 0); queueGuiRender(0, 'body'); };
+    overlay.append(guiEl('div', { class: 'dialog dialog--wide', role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, [
+      guiEl('div', { class: 'eyebrow', text: eyebrow }), guiEl('h2', { text: title }), body,
+      guiEl('div', { class: 'dialog__actions' }, [guiEl('button', { class: 'btn', type: 'button', text: '닫기', onClick: close })])
+    ]));
+    overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+    Gui.app.appendChild(overlay);
+    bindApprovedOverlayKeyboard(overlay, close);
+    return true;
+  };
+  async function openLibraAttention() {
+    const state = LibraAttention.state;
+    if (!state?.kind || LibraMemoryCore.state.disposed) return false;
+    LibraAttention.opening = true;
+    try {
+      if (!(await showSettingsGui())) return false;
+      if (state.kind === 'review') {
+        return openLibraPanelDialog('이전 기억 지침 확인', 'Update',
+          guiEl('div', { class: 'stack' }, [
+            guiEl('p', { class: 'muted', text: '업데이트 전에 쓰던 사용자 기억 지침이 있습니다. 가져올지 정하기 전까지 자동 기억 생성이 멈춰 있습니다.' }),
+            buildLibrarianConfigurationReviewPanel()
+          ]));
+      }
+      await showCanonicalRangeDrawer(state.kind === 'failed' ? 'failed' : 'missing_all');
+      return true;
+    } finally { LibraAttention.opening = false; }
+  }
 
   const showSettingsGui = async () => {
     if (LibraMemoryCore.state.disposed || Gui.confirmationVisible === true) return false;
@@ -86232,6 +86423,7 @@ advanced
       }, Math.min(2400, 350 * libraUiRegistrationRetryCount));
     }
 
+    if (registered.setting || registered.button) startLibraAttention();
     return allOk && !!(registered.setting || registered.button);
   };
 
@@ -87553,6 +87745,7 @@ advanced
       // Retire the runtime before touching host APIs. Any failed/unavailable removal then
       // leaves only inert callbacks, and local timers cannot repopulate UI or storage.
       LibraMemoryCore.state.disposed = true;
+      void stopLibraAttention();
       LibraMemoryCore.readonlySourceContext.dispose();
       LibraMemoryCore.state.memoryGraphPages?.dispose();
       LibraMemoryCore.state.memoryGraphStore?.dispose();

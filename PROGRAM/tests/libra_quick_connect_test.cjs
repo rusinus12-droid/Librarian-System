@@ -10,7 +10,7 @@ const c = vm.createContext({
   providerChoices: () => [['openai', 'OpenAI'], ['claude', 'Claude'], ['gemini', 'Gemini'], ['openrouter', 'OpenRouter'], ['deepseek', 'DeepSeek'], ['custom', 'Custom']]
 });
 vm.runInContext(slice('  const LIBRA_QUICK_KEY_PATTERNS =', '  const libraQuickConnectState =')
-  + '\nObject.assign(globalThis,{detectLibraKeyProvider,libraQuickProviderTargets,pickLibraRecommendedModel,pickLibraOllamaEmbeddingModel});', c);
+  + '\nObject.assign(globalThis,{detectLibraKeyProvider,libraQuickProviderTargets,pickLibraRecommendedModel});', c);
 const plain = value => JSON.parse(JSON.stringify(value));
 
 // Key prefixes → generation and/or embedding provider.
@@ -33,16 +33,16 @@ assert.equal(c.pickLibraRecommendedModel('claude', ['claude-opus-4-1', 'claude-h
 assert.equal(c.pickLibraRecommendedModel('gemini', ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-3.0-flash', 'gemini-3.0-flash-lite', 'gemini-3.0-flash-preview', 'gemini-embedding-001']), 'gemini-3.0-flash');
 assert.equal(c.pickLibraRecommendedModel('deepseek', ['deepseek-reasoner', 'deepseek-chat']), 'deepseek-chat');
 assert.equal(c.pickLibraRecommendedModel('kimi', ['kimi-k3']), '', 'unknown families ask the user');
-assert.equal(c.pickLibraOllamaEmbeddingModel(['nomic-embed-text:latest', 'bge-m3:latest']), 'bge-m3:latest', 'multilingual model preferred for Korean RP');
-assert.equal(c.pickLibraOllamaEmbeddingModel(['nomic-embed-text:latest']), 'nomic-embed-text:latest');
-assert.equal(c.pickLibraOllamaEmbeddingModel([]), '');
 
-// Wiring: the card is on both connection pages and the memory summary is honest.
-assert.ok(L.includes("buildLibraQuickConnectCard({card,field,toggle}),\n        card('생성 AI 프리셋',"), 'AI page shows quick connect first');
-assert.ok(L.includes("buildLibraQuickConnectCard({card,field,toggle}),\n          card('임베딩',"), 'embedding page shows quick connect first');
+// Wiring: a compact card on both connection pages opens the quick connect popup,
+// the popup opens itself once on first LIBRA open, and the memory summary is honest.
+assert.ok(L.includes("buildLibraQuickConnectCard({card}),\n        card('생성 AI 프리셋',"), 'AI page shows quick connect first');
+assert.ok(L.includes("buildLibraQuickConnectCard({card}),\n          card('임베딩',"), 'embedding page shows quick connect first');
+assert.ok(L.includes("if (typeof maybeOpenLibraFirstSetup === 'function') maybeOpenLibraFirstSetup();"), 'first setup popup is offered when the window opens');
+assert.ok(!/Ollama로 무료 임베딩|runLibraQuickOllama/.test(L), 'local Ollama shortcut removed');
 assert.ok(L.includes("'임베딩 미설정'") && L.includes('키워드 검색만 사용 중'), 'memory summary no longer shows an unusable default as configured');
 // Nothing is saved before every requested test passes.
-const flow = slice('  const runLibraQuickConnect = async () => {', '  const runLibraQuickOllama =');
+const flow = slice('  const runLibraQuickConnect = async () => {', '  const libraQuickConnectStatusRows =');
 assert.ok(flow.indexOf('testProviderPreset(preset)') < flow.indexOf('Gui.state.providers[name] = llm.preset'));
 assert.ok(flow.indexOf('testEmbeddingConnection(patch)') < flow.indexOf('await applyLibraEmbeddingPatch(embed)'));
 console.log('PASS libra_quick_connect_test');
