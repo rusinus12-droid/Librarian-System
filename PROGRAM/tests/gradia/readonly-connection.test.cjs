@@ -163,7 +163,7 @@ for(const timing of ['disconnectBeforeStart','disconnectDuringRead'])test(`faile
 test('old saved read-source choices migrate to the unified engine and the old search option is absent',async t=>{
  const h=await fixture(t,{preference:{schema:'gradia.lib-read-connection.v2',explicit:true,readOwners:['libra'],readSource:'server_logical_read'}});
  await wait(()=>h.status().connection?.state==='connected');assert.equal(h.status().connection.readSource,'unified_engine');
- assert.deepEqual([...h.node('#lib-read-source').options].map(o=>o.value),['unified_engine']);
+ assert.deepEqual([...h.node('#lib-read-source').options].map(o=>o.value),['unified_engine','plugin_ipc']);
 });
 test('missing unified owner support cannot fall back to server logical memory',async t=>{
  const h=await fixture(t,{ownerUnavailable:true});assert.equal((await h.connect()).connection.state,'error');

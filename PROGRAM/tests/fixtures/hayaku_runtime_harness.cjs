@@ -305,6 +305,7 @@ const createHayakuRuntime = async (options = {}) => {
     prompt: () => null
   });
 
+  Object.assign(host, options.hostOverrides || {});
   const originalHayakuSource = fs.readFileSync(options.pluginSourceFile || path.join(pluginRoot, 'HAYAKU_Locator_Continuity.js'), 'utf8');
   const hayakuSource=typeof options.transformSource==='function'?options.transformSource(originalHayakuSource):originalHayakuSource;
   let publishedHayaku = null;

@@ -1,7 +1,10 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.25.84
+//@display-name GRADIA v0.25.85
 //@api 3.0
-//@version 0.25.84
+//@version 0.25.85
+//@allowed-ipc libra
+//@allowed-ipc hayaku_locator_continuity
+//@allowed-ipc flashback_memory
 
 /* v0.25.84 completes ordinary RisuAI native chat-copy continuity: heuristic source selection now prioritizes the longest verified U+A transcript prefix over Copy-title proximity, Story Arc/Writer state can repair a shorter legacy copy when the verified source is further advanced, and Narrative Archive state is merged into the target scope without re-embedding while reusing existing vector references/shared archive history. A v2 completeness receipt verifies Story Arc, Writer, and Narrative Archive readback, and legacy v1 receipts are repaired idempotently instead of being frozen as already adopted. RE:TRACE next-session handoff remains separate and source-immutable. */
 /* v0.25.82 makes WebRisu credential persistence update-safe by mirroring every provider-preset secret, Narrative Archive embedding key, and hosting token into verified pluginStorage backups while retaining localPluginStorage; startup reads repair a missing local copy from the synced backup, and the active narrative-embedding/hosting credentials also use host arguments when available without changing provider/model selection. */
@@ -934,7 +937,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.25.84';
+  const PLUGIN_VERSION = '0.25.85';
   
   
   
@@ -3562,7 +3565,7 @@
   }, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
     ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
   const prepareInputWriterEvidence = () => {
-    if (libReadBinding?.readSource !== 'unified_engine') return null;
+    if (!['unified_engine','plugin_ipc'].includes(libReadBinding?.readSource)) return null;
     if (activeLibEvidenceRun) throw libEvidenceError('LIB_READ_BUSY');
     const lease = { operationId: globalThis.crypto?.randomUUID?.() || idForInputWriter(), failed: '', run: null, controller: new AbortController(),
       binding: libReadBinding, parentRequestId: Runtime.inputAssistSend?.busy ? Runtime.inputAssistSend.requestId : null };
@@ -29174,7 +29177,7 @@ function createGradiaEvidenceBudget({ digest }) {
         const maxCorpusBytes = binding.maxCorpusBytes === undefined ? 4194304 : binding.maxCorpusBytes;
         if (!Number.isSafeInteger(maxCorpusBytes) || maxCorpusBytes < 1 || maxCorpusBytes > 33554432) fail('LIB_READ_BUDGET_INVALID');
         const readSource = String(binding.readSource || 'unified_engine');
-        if (readSource !== 'unified_engine') fail('LIB_READ_SOURCE_UNSUPPORTED');
+        if (!['unified_engine','plugin_ipc'].includes(readSource)) fail('LIB_READ_SOURCE_UNSUPPORTED');
         const signature = JSON.stringify([scope, maxCorpusBytes, binding.generation, readSource]);
         const assertBindingSignature = () => {
           check(record); const now = dependencies.getBinding?.();
@@ -29193,7 +29196,7 @@ function createGradiaEvidenceBudget({ digest }) {
         const digest = dependencies.digest || libReadSha256;
         if (!/^[a-f0-9]{64}$/.test(await guarded(() => digest('')))) fail('LIB_READ_HASH_UNAVAILABLE');
         let read = await guarded(() => client.openReadSession(scope, { maxCorpusBytes, signal: record.controller.signal, source: readSource,
-          ...(readSource === 'unified_engine' ? { queryText: input.queryText, ...(input.proposal ? {proposal: input.proposal} : {}) } : {}) }));
+          queryText: input.queryText, ...(input.proposal ? {proposal: input.proposal} : {}) }));
         if (typeof read?.close === 'function') record.releaseRead = read.close;
         await assertBinding();
         // The declared source must be the one that answered. A silent fall back to the server read would
@@ -29318,7 +29321,7 @@ function createGradiaEvidenceBudget({ digest }) {
     if (!Number.isSafeInteger(maxCorpusBytes) || maxCorpusBytes < 1 || maxCorpusBytes > 33554432) throw libEvidenceError('LIB_READ_BUDGET_INVALID');
     const requestedSource = options.readSource === undefined ? 'unified_engine' : String(options.readSource);
     const readSource = requestedSource === 'server_logical_read' ? 'unified_engine' : requestedSource;
-    if (!['server_logical_read','unified_engine'].includes(readSource)) throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
+    if (!['server_logical_read','unified_engine','plugin_ipc'].includes(readSource)) throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
     closeInputWriterEvidence('LIB_READ_BOUNDARY_CHANGED');
     LibReadConsumer.invalidate('LIB_READ_BOUNDARY_CHANGED');
     if (activeLibEvidenceRun) { const old = activeLibEvidenceRun; old.fail('LIB_READ_BOUNDARY_CHANGED'); old.close(); }
@@ -37077,6 +37080,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       defaultUrl:url,managementButton:false,startupDiagnostics:false,autoMigratePlugin:false,autoMigrateLocal:false,unifiedReadProvider:unifiedProvider});
     return Object.freeze({...bridge,describeUnifiedRead:()=>unifiedProvider.describe(),dispose:async()=>{await unifiedProvider.dispose();await bridge.dispose();}});
   };
+  const readLibPluginNativeIdentity = async () => {
+    const api = getLiveApi(['getCurrentCharacterIndex','getCurrentChatIndex','getCharacterFromIndex','getChatFromIndex']);
+    const indexes = async () => [await api.getCurrentCharacterIndex(), await api.getCurrentChatIndex()];
+    const before = await indexes();
+    if (!before.every(value => Number.isInteger(value) && value >= 0)) throw libEvidenceError('LIB_READ_SCOPE_UNAVAILABLE');
+    const load = async () => {
+      const character = await api.getCharacterFromIndex(before[0]), chat = await api.getChatFromIndex(...before);
+      const ids = [...new Set([character?.id, character?.chaId].filter(value => typeof value === 'string' && value.trim()))];
+      if (ids.length !== 1 || typeof chat?.id !== 'string' || !chat.id.trim()) throw libEvidenceError('LIB_READ_SCOPE_UNAVAILABLE');
+      return {characterId:ids[0],chatId:chat.id};
+    };
+    const native = await load();
+    if (JSON.stringify(before) !== JSON.stringify(await indexes()) || JSON.stringify(native) !== JSON.stringify(await load())
+      || JSON.stringify(before) !== JSON.stringify(await indexes())) throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED');
+    return native;
+  };
   const LibReadConnection = (() => {
     let url = LIB_READ_DEFAULT_URL, state = 'disconnected', reason = '', corpus = null, explicit = false;
     let generation = 0, bridge = null, scope = null, scopeBundle = null, timer = null, disposed = false, pendingConsent = null, preferenceTail = Promise.resolve();
@@ -37109,7 +37128,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (pendingConsent) {
         const stale = pendingConsent; pendingConsent = null; explicit = false;
         const revokedAt = generation;
-        void persistPreference({schema:'gradia.lib-read-connection.v2',url:stale.url,explicit:false,readOwners:[...readOwners],...(readSource==='unified_engine'?{readSource}:{})}).catch(() => {
+        void persistPreference({schema:'gradia.lib-read-connection.v2',url:stale.url,explicit:false,readOwners:[...readOwners],readSource}).catch(() => {
           if (generation === revokedAt) { reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; refresh(); }
         });
       }
@@ -37124,7 +37143,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         // A canceled startup read may never reveal saved consent. Retain that
         // uncertainty until a verified false write, so a failed revoke can retry.
         consentMayBeStored = true;
-        try { await persistPreference({schema:'gradia.lib-read-connection.v2',url,explicit:false,readOwners:[...readOwners],...(readSource==='unified_engine'?{readSource}:{})}); }
+        try { await persistPreference({schema:'gradia.lib-read-connection.v2',url,explicit:false,readOwners:[...readOwners],readSource}); }
         catch (error) { state = 'error'; reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; refresh(); throw error; }
       }
     };
@@ -37138,6 +37157,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       void saving.catch(() => { reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; });
     };
     const assertScope = async expected => {
+      if (readSource === 'plugin_ipc') {
+        const current = await readLibPluginNativeIdentity();
+        if (current.characterId !== expected.characterId || current.chatId !== expected.chatId) throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED');
+        return true;
+      }
       let current;
       try { current = await resolveLibRegisteredScopes(readOwners); } catch (_) { throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED'); }
       if (JSON.stringify(current.scope) !== JSON.stringify(expected)
@@ -37157,7 +37181,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const epoch = generation, target = url;
       const check = () => { if (disposed || epoch !== generation || url !== target) throw libEvidenceError('LIB_READ_CONNECTION_CHANGED'); };
       try {
-        if(!['server_logical_read','unified_engine'].includes(readSource))throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
+        if(!['server_logical_read','unified_engine','plugin_ipc'].includes(readSource))throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
+        if (readSource === 'plugin_ipc') {
+          const native = await readLibPluginNativeIdentity(); check();
+          const next = createGradiaPluginRead({ role:'reader', primitives:createGradiaReadPrimitives(),
+            api:()=>getLiveApi(['addPluginChannelListener','postPluginChannelMessage']), check });
+          bridge = next;
+          const resolved = await next.describe(native,readOwners); check();
+          scopeBundle = resolved; scope = resolved.scope; unavailable = {...resolved.unavailable};
+          await assertScope(scope); check();
+          if (!startup) {
+            pendingConsent = {url:target};
+            await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource}); check();
+            await assertScope(scope); check(); pendingConsent = null; explicit = true;
+          }
+          bindLibReadOnlyClient(next.createClient(resolved.scopes),{scope,readSource});
+          watch(epoch); state = 'connected'; reason = ''; refresh(); return status();
+        }
         const normalized = normalizeLibReadUrl(target);
         // Input is normalized before the operation; an imported setting is never consent.
         if (normalized !== target) throw libEvidenceError('LIB_READ_SERVER_URL_INVALID');
@@ -37173,7 +37213,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if(readSource==='unified_engine'){const capability=await next.describeUnifiedRead();check();if(capability?.source!=='unified_engine'||capability.readOnly!==true)throw libEvidenceError('LIB_READ_UNIFIED_UNAVAILABLE');}
         if (!startup) {
           pendingConsent = {url:target};
-          await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],...(readSource==='unified_engine'?{readSource}:{})}); check();
+          await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource}); check();
           await assertScope(resolved); check();
           pendingConsent = null; explicit = true;
         }
@@ -37188,6 +37228,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (state !== 'connected' || !binding) return status();
       try {
         await assertScope(binding.scope);
+        if (binding.readSource === 'plugin_ipc') {
+          const found = await bridge.describe(await readLibPluginNativeIdentity(),Object.keys(scopeBundle.scopes));
+          if (JSON.stringify(found.scopes) !== JSON.stringify(scopeBundle.scopes)) throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED');
+          if (disposed || epoch !== generation || binding !== libReadBinding) throw libEvidenceError('LIB_READ_CONNECTION_CHANGED');
+          corpus = {source:'plugin_ipc',queried:false}; refresh(); return status();
+        }
         let read = await binding.client.openReadSession(binding.scope,{maxCorpusBytes:binding.maxCorpusBytes});
         await read.assertCurrent(); await assertScope(binding.scope);
         if (disposed || epoch !== generation || binding !== libReadBinding) throw libEvidenceError('LIB_READ_CONNECTION_CHANGED');
@@ -42594,10 +42640,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const status=LibReadConnection.status();
     const connectButton=page.querySelector('#lib-connect');
     if(connectButton&&!page.querySelector('#lib-read-source')){
-      const field=mockupNode('label','field'),label=mockupNode('span','label','LIBRA 검색');
+      const field=mockupNode('label','field'),label=mockupNode('span','label','기억 읽기');
       const select=document.createElement('select');select.id='lib-read-source';select.className='input';
-      select.setAttribute('aria-label','LIBRA 검색 방식');
-      for(const [value,title] of [['unified_engine','통합 메모리 검색']]){
+      select.setAttribute('aria-label','기억 읽기 방식');
+      for(const [value,title] of [['unified_engine','서버 · 통합 메모리 검색'],['plugin_ipc','플러그인 · 기억 직접 읽기 (IPC)']]){
         const option=document.createElement('option');option.value=value;option.textContent=title;select.append(option);
       }
       select.value=status.readSource;field.append(label,select);connectButton.parentElement?.prepend(field);
@@ -42611,13 +42657,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const state=page.querySelector('#lib-state');if(state)state.textContent=status.state+(status.reason?' · '+status.reason:'');
     const inspect=page.querySelector('#lib-check');if(inspect)inspect.disabled=status.state!=='connected';
     const connect=page.querySelector('#lib-connect');if(connect)connect.disabled=status.state==='connecting';
-    const corpus=page.querySelector('.kv dd:last-child');if(corpus)corpus.textContent=status.corpus?.source==='unified_engine'?'통합 검색 연결 확인 · 질문은 실행 시 전달됩니다':status.corpus?status.corpus.items+'개 / '+status.corpus.bytes+' bytes (한도 4 MiB)':'연결 뒤 실제 읽기 검증 전';
+    const corpus=page.querySelector('.kv dd:last-child');if(corpus)corpus.textContent=status.corpus?.source==='plugin_ipc'?'플러그인 IPC 연결 확인 · 실행 순서와 무관하게 읽습니다':status.corpus?.source==='unified_engine'?'통합 검색 연결 확인 · 질문은 실행 시 전달됩니다':status.corpus?status.corpus.items+'개 / '+status.corpus.bytes+' bytes (한도 4 MiB)':'연결 뒤 실제 읽기 검증 전';
     const activeOwners=page.querySelector('.kv dd:first-of-type');if(activeOwners)activeOwners.textContent=status.activeOwners.join(' · ')||'없음';
     const names=page.querySelectorAll('.state-grid > div');
     if(names[1])names[1].replaceChildren(mockupNode('b','','활성 읽기 대상'),document.createTextNode((status.activeOwners.join(' · ')||'없음')+' · 쓰기 권한 없음'));
     if(names[2])names[2].replaceChildren(mockupNode('b','','현재 채팅 scope'),document.createTextNode(Runtime.currentChatScope||'현재 채팅 scope 미확인'));
     if(names[3])names[3].replaceChildren(mockupNode('b','','단계 모델 호환'),document.createTextNode('모델·문맥 설정 기준 · 입력 토큰 추정'));
-    const note=page.querySelector('.note--warn');if(note)note.textContent='LIB 기억 연결은 읽기 전용입니다. URL 변경·가져오기·연결 해제는 기존 동의와 연결을 초기화합니다. 연결 성공은 생성 호환을 뜻하지 않습니다.';
+    const note=page.querySelector('.note--warn');if(note)note.textContent='기억 연결은 읽기 전용입니다. 플러그인 IPC는 각 플러그인의 현재 채팅 기억을 직접 읽습니다. 서버 모드는 기존 통합 읽기를 사용합니다. 방식 변경 후 연결 버튼을 눌러 적용하세요.';
     const charList=page.querySelector('#lib-char');if(charList){charList.replaceChildren();(Gui.characterLoreCatalog||[]).forEach(item=>{const row=mockupNode('label','row');const check=document.createElement('input');check.type='checkbox';check.checked=!new Set(normalizeExcludedCharacterLoreIds(mockupRuntime().excludedCharacterLoreIds)).has(item.key);check.dataset.characterLoreKey=item.key;const copy=mockupNode('div','');copy.append(mockupNode('div','row__title',item.name||item.key),mockupNode('div','row__meta',item.key));row.append(check,copy,mockupNode('span','badge',check.checked?'사용':'제외'));charList.append(row);});}
     const modList=page.querySelector('#lib-mod');if(modList){modList.replaceChildren();(Gui.moduleCatalog||[]).filter(item=>item.active).forEach(item=>{const row=mockupNode('label','row');const check=document.createElement('input');check.type='checkbox';check.checked=normalizeSelectedModuleLoreIds(mockupRuntime().selectedModuleLoreIds).includes(item.key);check.dataset.moduleLoreKey=item.key;const copy=mockupNode('div','');copy.append(mockupNode('div','row__title',item.name||item.key),mockupNode('div','row__meta',String(item.loreEntries?.length||0)+'개 항목'));row.append(check,copy,mockupNode('span','badge',check.checked?'사용':'제외'));modList.append(row);});}
     const charSummary=page.querySelector('#sum-char');if(charSummary){const rows=[...charList.querySelectorAll('input[type="checkbox"]')];charSummary.textContent=rows.filter(row=>row.checked).length+' / '+rows.length+' 사용';}
@@ -43146,9 +43192,326 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   });
 });
   /* LIBRA GRADIA UNIFIED READ END */
+  /* GRADIA PLUGIN READ START */
+function createGradiaReadPrimitives() {
+  const utf8Bytes = value => {
+    const text = String(value || '');
+    if (typeof TextEncoder === 'function') return new TextEncoder().encode(text);
+    const bytes = [];
+    for (let i = 0; i < text.length; i += 1) {
+      let code = text.charCodeAt(i);
+      if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) {
+        const next = text.charCodeAt(i + 1);
+        if (next >= 0xdc00 && next <= 0xdfff) {
+          code = 0x10000 + ((code - 0xd800) << 10) + (next - 0xdc00);
+          i += 1;
+        } else code = 0xfffd;
+      } else if (code >= 0xd800 && code <= 0xdfff) code = 0xfffd;
+      if (code <= 0x7f) bytes.push(code);
+      else if (code <= 0x7ff) bytes.push(0xc0 | (code >>> 6), 0x80 | (code & 0x3f));
+      else if (code <= 0xffff) bytes.push(0xe0 | (code >>> 12), 0x80 | ((code >>> 6) & 0x3f), 0x80 | (code & 0x3f));
+      else bytes.push(0xf0 | (code >>> 18), 0x80 | ((code >>> 12) & 0x3f), 0x80 | ((code >>> 6) & 0x3f), 0x80 | (code & 0x3f));
+    }
+    return new Uint8Array(bytes);
+  };
+  const sha256Hex = value => {
+    const bytes = utf8Bytes(value);
+    const bitLength = bytes.length * 8;
+    const paddedLength = Math.ceil((bytes.length + 9) / 64) * 64;
+    const data = new Uint8Array(paddedLength);
+    data.set(bytes);
+    data[bytes.length] = 0x80;
+    const high = Math.floor(bitLength / 0x100000000);
+    const low = bitLength >>> 0;
+    data[paddedLength - 8] = (high >>> 24) & 0xff;
+    data[paddedLength - 7] = (high >>> 16) & 0xff;
+    data[paddedLength - 6] = (high >>> 8) & 0xff;
+    data[paddedLength - 5] = high & 0xff;
+    data[paddedLength - 4] = (low >>> 24) & 0xff;
+    data[paddedLength - 3] = (low >>> 16) & 0xff;
+    data[paddedLength - 2] = (low >>> 8) & 0xff;
+    data[paddedLength - 1] = low & 0xff;
+    const constants = [
+      0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+      0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+      0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+      0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+      0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+      0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+      0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+      0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    ];
+    const rotate = (word, bits) => (word >>> bits) | (word << (32 - bits));
+    let h0=0x6a09e667, h1=0xbb67ae85, h2=0x3c6ef372, h3=0xa54ff53a;
+    let h4=0x510e527f, h5=0x9b05688c, h6=0x1f83d9ab, h7=0x5be0cd19;
+    const words = new Uint32Array(64);
+    for (let offset = 0; offset < data.length; offset += 64) {
+      for (let i = 0; i < 16; i += 1) {
+        const at = offset + i * 4;
+        words[i] = ((data[at] << 24) | (data[at + 1] << 16) | (data[at + 2] << 8) | data[at + 3]) >>> 0;
+      }
+      for (let i = 16; i < 64; i += 1) {
+        const s0 = rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >>> 3);
+        const s1 = rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >>> 10);
+        words[i] = (words[i - 16] + s0 + words[i - 7] + s1) >>> 0;
+      }
+      let a=h0, b=h1, c=h2, d=h3, e=h4, f=h5, g=h6, h=h7;
+      for (let i = 0; i < 64; i += 1) {
+        const s1 = rotate(e, 6) ^ rotate(e, 11) ^ rotate(e, 25);
+        const choice = (e & f) ^ (~e & g);
+        const temp1 = (h + s1 + choice + constants[i] + words[i]) >>> 0;
+        const s0 = rotate(a, 2) ^ rotate(a, 13) ^ rotate(a, 22);
+        const majority = (a & b) ^ (a & c) ^ (b & c);
+        const temp2 = (s0 + majority) >>> 0;
+        h=g; g=f; f=e; e=(d + temp1) >>> 0; d=c; c=b; b=a; a=(temp1 + temp2) >>> 0;
+      }
+      h0=(h0+a)>>>0; h1=(h1+b)>>>0; h2=(h2+c)>>>0; h3=(h3+d)>>>0;
+      h4=(h4+e)>>>0; h5=(h5+f)>>>0; h6=(h6+g)>>>0; h7=(h7+h)>>>0;
+    }
+    return [h0,h1,h2,h3,h4,h5,h6,h7].map(word => word.toString(16).padStart(8, '0')).join('');
+  };
+
+return {fingerprint: sha256Hex, byteLength: value => utf8Bytes(value).length};
+}
+const createGradiaPluginRead = (function createGradiaPluginRead(options) {
+  const schema = 'memory-suite.gradia-plugin-read.v1';
+  const requestChannel = 'gradia_memory_read_request_v1', responseChannel = 'gradia_memory_read_response_v1';
+  const readerId = 'serial_gradation_agents_for_rp';
+  const ids = { libra: 'libra', hayaku: 'hayaku_locator_continuity', flashback: 'flashback_memory' };
+  const { fingerprint, byteLength } = options.primitives;
+  const fail = code => { throw Object.assign(new Error(code), { code }); };
+  const api = () => typeof options.api === 'function' ? options.api() : options.api;
+  const copy = value => JSON.parse(JSON.stringify(value));
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const native = scope => ({ characterId: scope?.characterId, chatId: scope?.chatId });
+  const validScope = scope => ['scopeKey', 'characterId', 'chatId'].every(key => typeof scope?.[key] === 'string'
+    && scope[key].length > 0 && scope[key].length <= 512 && !/[\0\r\n]/.test(scope[key]));
+  const budget = value => Number.isSafeInteger(value) && value >= 1 && value <= 33554432;
+  let disposed = false, registered = false, sequence = 0;
+  const instance = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+  const nextId = () => instance + ':' + (++sequence);
+  const receipts = new Map(), pending = new Map(), issued = new Map();
+  const closeRecord = record => {
+    if (!record || record.closed) return;
+    record.closed = true; clearTimeout(record.timer); record.read?.close?.(); record.read = null;
+    receipts.delete(record.id);
+  };
+  const send = async (target, channel, body) => await api().postPluginChannelMessage(target, channel, body);
+  const ownerBoundary = async request => {
+    if (disposed) fail('LIB_READ_CANCELED');
+    const value = await options.boundary();
+    if (!validScope(value?.scope) || value.mode !== 'plugin_only') fail('LIB_READ_PLUGIN_MODE_REQUIRED');
+    if (value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
+    if (request?.native && !same(native(value.scope), request.native)
+      || request?.scope && !same(value.scope, request.scope)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
+    return copy(value);
+  };
+  const assertRecord = async record => {
+    if (!record || record.closed || !record.read) fail('LIB_READ_STALE');
+    if (!same(await ownerBoundary({ scope: record.boundary.scope }), record.boundary)) fail('LIB_READ_BOUNDARY_CHANGED');
+    if (await record.read.assertCurrent() !== true) fail('LIB_READ_STALE');
+    if (record.closed || !same(await ownerBoundary({ scope: record.boundary.scope }), record.boundary)) fail('LIB_READ_BOUNDARY_CHANGED');
+    return true;
+  };
+  const ownerHandler = async (message, metadata = {}) => {
+    // The sender is host metadata, never a self-asserted body field.
+    if (disposed || metadata.sender !== readerId || message?.schema !== schema || message.kind !== 'request'
+      || typeof message.id !== 'string' || message.id.length > 160
+      || !['describe', 'capture', 'current', 'release'].includes(message.action)) return;
+    if (byteLength(JSON.stringify(message)) > 65536) return;
+    const { id, action } = message;
+    let result, record;
+    try {
+      if (action === 'release') { closeRecord(receipts.get(message.receipt || id)); result = { released: true }; }
+      else if (action === 'describe') result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await ownerBoundary(message)) };
+      else if (action === 'current') {
+        record = receipts.get(message.receipt);
+        await assertRecord(record); result = { current: true, evidenceRevision: record.revision };
+      } else {
+        if (receipts.has(id) || receipts.size >= 16) fail('LIB_READ_BUSY');
+        if (!validScope(message.scope) || !budget(message.maxCorpusBytes) || typeof message.queryText !== 'string'
+          || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
+        const p = message.proposal;
+        if (p !== undefined && (!p || p.schema !== 'gradia.input-writer-proposal.v1' || p.purpose !== 'input_writer_proposal'
+          || p.factAdopted !== false || typeof p.operationId !== 'string' || !p.operationId || p.operationId.length > 160
+          || !/^[a-f0-9]{64}$/.test(p.proposalDigest || '') || !/^[a-f0-9]{64}$/.test(p.nativeContextDigest || '')
+          || typeof p.queryTruncated !== 'boolean' || Object.keys(p).length !== 7)) fail('LIB_READ_PROPOSAL_INVALID');
+        // Reserve before the first await so timeout/release can cancel discovery
+        // as well as an in-flight owner query.
+        record = { id, boundary: null, read: null, closed: false };
+        receipts.set(id, record);
+        record.timer = setTimeout(() => closeRecord(record), options.receiptTtlMs || 600000);
+        record.timer?.unref?.();
+        const boundary = await ownerBoundary(message);
+        if (record.closed) fail('LIB_READ_CANCELED');
+        record.boundary = boundary;
+        const read = await options.capture(message, { check() { if (record.closed || disposed) fail('LIB_READ_CANCELED'); } });
+        if (record.closed || disposed) { read?.close?.(); fail('LIB_READ_CANCELED'); }
+        record.read = read;
+        if (!Array.isArray(read?.items) || read.items.length > 4096) fail('LIB_READ_RESPONSE_INVALID');
+        let bytes = 0, metadataBytes = 0;
+        const seen = new Set();
+        for (const item of read.items) {
+          if (typeof item?.content !== 'string' || !item.id || !item.key || seen.has(JSON.stringify([item.id, item.key]))
+            || item.source?.namespace !== options.owner) fail('LIB_READ_RESPONSE_INVALID');
+          seen.add(JSON.stringify([item.id, item.key])); bytes += byteLength(item.content);
+          const size = byteLength(JSON.stringify({ ...item, content: '' })); metadataBytes += size;
+          if (size > 65536 || metadataBytes > 1048576 || bytes > message.maxCorpusBytes) fail('LIB_READ_BUDGET_EXCEEDED');
+        }
+        record.revision = fingerprint(JSON.stringify([instance, id, boundary, read.items]));
+        await assertRecord(record);
+        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, complete: true, scope: boundary.scope,
+          receipt: id, evidenceRevision: record.revision, items: read.items, corpusBytes: bytes, engine: read.engine || null };
+      }
+      await send(readerId, responseChannel, { schema, kind: 'response', id, action, result });
+    } catch (error) {
+      if (record) closeRecord(record);
+      await send(readerId, responseChannel, { schema, kind: 'response', id, action,
+        error: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_OWNER_UNAVAILABLE' });
+    }
+  };
+  const release = (owner, receipt) => {
+    issued.delete(receipt);
+    // A release uses the capture ID and also cancels an owner operation that is
+    // still running; it never releases an unrelated request's receipt.
+    return send(ids[owner], requestChannel, { schema, kind: 'request', id: receipt, action: 'release', receipt }).catch(() => {});
+  };
+  const readerHandler = (message, metadata = {}) => {
+    if (disposed || message?.schema !== schema || message.kind !== 'response') return;
+    const record = pending.get(message.id);
+    if (!record || metadata.sender !== ids[record.owner] || message.action !== record.action) return;
+    if (!message.error && record.action === 'capture' && message.result?.receipt !== message.id) {
+      record.finish(Object.assign(new Error('LIB_READ_RESPONSE_INVALID'), { code: 'LIB_READ_RESPONSE_INVALID' })); return;
+    }
+    record.finish(message.error ? Object.assign(new Error(message.error), { code: message.error }) : null, message.result);
+  };
+  let starting = null;
+  const register = async () => {
+    if (disposed) fail('LIB_READ_CANCELED');
+    if (registered) return true;
+    const host = api();
+    if (typeof host?.addPluginChannelListener !== 'function' || typeof host?.postPluginChannelMessage !== 'function') fail('LIB_READ_IPC_UNAVAILABLE');
+    const channel = options.role === 'owner' ? requestChannel : responseChannel;
+    const handler = options.role === 'owner' ? ownerHandler : readerHandler;
+    if (await host.addPluginChannelListener(channel, handler) === false) fail('LIB_READ_IPC_UNAVAILABLE');
+    if (disposed) { await host.removePluginChannelListener?.(channel, handler); fail('LIB_READ_CANCELED'); }
+    registered = true; return true;
+  };
+  const start = async () => {
+    if (!starting) starting = register().finally(() => { starting = null; });
+    return await starting;
+  };
+  const rpc = async (owner, action, body = {}, signal) => {
+    await start();
+    if (signal?.aborted) fail('LIB_READ_CANCELED');
+    const id = nextId();
+    if (action === 'capture') issued.set(id, owner);
+    return await new Promise((resolve, reject) => {
+      const record = { owner, action, finish(error, result) {
+        if (!pending.delete(id)) return;
+        clearTimeout(record.timer); signal?.removeEventListener('abort', record.abort);
+        if (error && action === 'capture') void release(owner, id);
+        error ? reject(error) : resolve(result);
+      } };
+      record.abort = () => record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
+      record.timer = setTimeout(() => record.finish(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' })),
+        options.timeoutMs || (action === 'describe' ? 1500 : 25000));
+      pending.set(id, record); signal?.addEventListener('abort', record.abort, { once: true });
+      if (signal?.aborted) { record.abort(); return; }
+      void send(ids[owner], requestChannel, { schema, kind: 'request', id, action, ...body })
+        .catch(() => record.finish(Object.assign(new Error('LIB_READ_IPC_UNAVAILABLE'), { code: 'LIB_READ_IPC_UNAVAILABLE' })));
+    });
+  };
+  const describe = async (scope, owners = Object.keys(ids)) => {
+    const scopes = {}, unavailable = {};
+    await Promise.all(owners.map(async owner => {
+      try {
+        const result = await rpc(owner, 'describe', { native: native(scope) });
+        if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true
+          || result.mode !== 'plugin_only' || !validScope(result.scope) || !same(native(result.scope), native(scope))) fail('LIB_READ_RESPONSE_INVALID');
+        scopes[owner] = result.scope;
+      } catch (error) { unavailable[owner] = error.code || 'LIB_READ_IPC_UNAVAILABLE'; }
+    }));
+    if (disposed) fail('LIB_READ_CANCELED');
+    // Stable owner order is part of binding identity, independent of RPC order.
+    const ordered = Object.fromEntries(Object.keys(ids).filter(owner => scopes[owner]).map(owner => [owner, scopes[owner]]));
+    if (!Object.keys(ordered).length) fail('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE');
+    return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
+  };
+  const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
+    async openReadSession(scope, input = {}) {
+      const owners = Object.keys(scopes), captured = [];
+      let closed = false, stale = false;
+      const close = () => { if (closed) return; closed = true; for (const value of captured) void release(value.owner, value.receipt); };
+      const assertCurrentSync = () => {
+        options.check?.();
+        if (closed || stale || disposed) fail('LIB_READ_STALE');
+        return true;
+      };
+      try {
+        options.check?.();
+        if (!budget(input.maxCorpusBytes) || !same(scope, scopes[owners[0]])) fail('LIB_READ_REQUEST_INVALID');
+        let corpusBytes = 0;
+        const items = [];
+        for (const owner of owners) {
+          assertCurrentSync();
+          const remaining = input.maxCorpusBytes - corpusBytes;
+          if (remaining < 1) fail('LIB_READ_BUDGET_EXCEEDED');
+          const result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '',
+            maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
+          // Retain the receipt before validating the response or cancellation.
+          if (typeof result?.receipt === 'string') captured.push({ ...result, owner });
+          assertCurrentSync();
+          if (result?.source !== 'plugin_ipc' || result.owner !== owner || !result.receipt
+            || !same(result.scope, scopes[owner]) || result.readOnly !== true || result.complete !== true
+            || !/^[a-f0-9]{64}$/.test(result.evidenceRevision || '') || !Array.isArray(result.items)) fail('LIB_READ_RESPONSE_INVALID');
+          let actual = 0;
+          for (const item of result.items) {
+            if (typeof item?.content !== 'string' || item.source?.namespace !== owner) fail('LIB_READ_RESPONSE_INVALID');
+            actual += byteLength(item.content); items.push({ ...item, owner });
+          }
+          if (actual !== result.corpusBytes || actual > remaining || items.length > 4096) fail('LIB_READ_BUDGET_EXCEEDED');
+          corpusBytes += actual;
+        }
+        const evidenceRevision = fingerprint(JSON.stringify(captured.map(value => [value.owner, value.evidenceRevision])));
+        const assertCurrent = async () => {
+          try {
+            assertCurrentSync();
+            for (const value of captured) {
+              const now = await rpc(value.owner, 'current', { receipt: value.receipt }, input.signal);
+              if (now?.current !== true || now.evidenceRevision !== value.evidenceRevision) fail('LIB_READ_STALE');
+            }
+            return assertCurrentSync();
+          } catch (error) { stale = true; close(); throw error; }
+        };
+        await assertCurrent();
+        return Object.freeze({ source: 'plugin_ipc', engine: {
+          purpose: input.proposal ? 'input_writer_proposal' : 'response_evidence',
+          ...(input.proposal ? { proposal: copy(input.proposal) } : {}),
+          sourceByOwner: Object.fromEntries(captured.map(value =>
+          [value.owner, value.owner === 'libra' ? 'unified_engine' : 'published_owner_memory'])) },
+          snapshot: { schema: 'memory-suite.memory-read-session.v1', complete: true, readOnly: true, scope,
+            owners, items, evidenceRevision, corpusBytes, maxCorpusBytes: input.maxCorpusBytes },
+          assertCurrent, assertCurrentSync, close });
+      } catch (error) { close(); throw error; }
+    }
+  });
+  const dispose = async () => {
+    if (disposed) return;
+    disposed = true;
+    for (const record of [...pending.values()]) record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
+    for (const [receipt, owner] of [...issued]) await release(owner, receipt);
+    for (const record of [...receipts.values()]) closeRecord(record);
+    if (registered) try { await api()?.removePluginChannelListener?.(options.role === 'owner' ? requestChannel : responseChannel,
+      options.role === 'owner' ? ownerHandler : readerHandler); } catch (_) { /* Host teardown can remove the channel API first. */ }
+    registered = false;
+  };
+  return Object.freeze({ start, describe, createClient, dispose });
+});
+  /* GRADIA PLUGIN READ END */
   const publicApi = Object.freeze({
     bindLibReadOnlyClient, unbindLibReadOnlyClient: () => LibReadConnection.disconnect(),
-    async connectLibReadOnly(url = '') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connect();},
+    async connectLibReadOnly(url = '', source = 'unified_engine') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connect(source);},
     async connectUnifiedLibReadOnly(url = '') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connectUnified();},
     getLibReadOnlyStatus: () => Object.freeze({ modelSelection:activeLibEvidenceRun?.modelSelection||null, connection: LibReadConnection.status(), status: libReadBinding ? 'bound' : 'unavailable', reason: libReadBinding ? 'request_validation_required' : 'LIB_READ_CONNECTION_UNAVAILABLE', maxCorpusBytes: libReadBinding?.maxCorpusBytes || 4194304, selection: libReadSelection }),
     async debugNativeRecentContext(currentInput = '', currentMessageId = null, turnWindow = DEFAULT_RECENT_TURNS) {
@@ -43503,7 +43866,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }, event);
     },
     async rewriteInput(content) {
-      if (libReadBinding?.readSource === 'unified_engine' && Runtime.inputAssistSend?.busy) throw libEvidenceError('LIB_READ_BUSY');
+      if (['unified_engine','plugin_ipc'].includes(libReadBinding?.readSource) && Runtime.inputAssistSend?.busy) throw libEvidenceError('LIB_READ_BUSY');
       const settings = await loadSettings();
       try {
         return await runInputAssistForContent(content, settings, {

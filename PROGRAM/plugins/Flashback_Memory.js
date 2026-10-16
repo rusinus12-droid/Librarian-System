@@ -1,7 +1,8 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.101
+//@display-name ⚡ FLASHBACK Memory v1.0.102
 //@api 3.0
-//@version 1.0.101
+//@version 1.0.102
+//@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
  * verified/current are assertions supplied AFTER the owner's existing final
@@ -1484,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.101';
+const PLUGIN_VERSION = '1.0.102';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -41018,6 +41019,7 @@ const MemorySuiteHealthRecovery = (() => {
   let memoryBridgeIpcApi = null;
   let memoryBridgeIpcRetryScheduled = false;
   const registerMemoryBridgeIpc = async () => {
+    await getGradiaPluginReadOwner().start().catch(() => false);
     if (Runtime.unloaded) return false;
     if (memoryBridgeIpcRegistered) return true;
     const api = getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']);
@@ -48988,6 +48990,727 @@ ${cleanedText}`, 80),
     return true;
   };
 
+  /* GRADIA PLUGIN READ START */
+function createGradiaReadPrimitives() {
+  const utf8Bytes = value => {
+    const text = String(value || '');
+    if (typeof TextEncoder === 'function') return new TextEncoder().encode(text);
+    const bytes = [];
+    for (let i = 0; i < text.length; i += 1) {
+      let code = text.charCodeAt(i);
+      if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) {
+        const next = text.charCodeAt(i + 1);
+        if (next >= 0xdc00 && next <= 0xdfff) {
+          code = 0x10000 + ((code - 0xd800) << 10) + (next - 0xdc00);
+          i += 1;
+        } else code = 0xfffd;
+      } else if (code >= 0xd800 && code <= 0xdfff) code = 0xfffd;
+      if (code <= 0x7f) bytes.push(code);
+      else if (code <= 0x7ff) bytes.push(0xc0 | (code >>> 6), 0x80 | (code & 0x3f));
+      else if (code <= 0xffff) bytes.push(0xe0 | (code >>> 12), 0x80 | ((code >>> 6) & 0x3f), 0x80 | (code & 0x3f));
+      else bytes.push(0xf0 | (code >>> 18), 0x80 | ((code >>> 12) & 0x3f), 0x80 | ((code >>> 6) & 0x3f), 0x80 | (code & 0x3f));
+    }
+    return new Uint8Array(bytes);
+  };
+  const sha256Hex = value => {
+    const bytes = utf8Bytes(value);
+    const bitLength = bytes.length * 8;
+    const paddedLength = Math.ceil((bytes.length + 9) / 64) * 64;
+    const data = new Uint8Array(paddedLength);
+    data.set(bytes);
+    data[bytes.length] = 0x80;
+    const high = Math.floor(bitLength / 0x100000000);
+    const low = bitLength >>> 0;
+    data[paddedLength - 8] = (high >>> 24) & 0xff;
+    data[paddedLength - 7] = (high >>> 16) & 0xff;
+    data[paddedLength - 6] = (high >>> 8) & 0xff;
+    data[paddedLength - 5] = high & 0xff;
+    data[paddedLength - 4] = (low >>> 24) & 0xff;
+    data[paddedLength - 3] = (low >>> 16) & 0xff;
+    data[paddedLength - 2] = (low >>> 8) & 0xff;
+    data[paddedLength - 1] = low & 0xff;
+    const constants = [
+      0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+      0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+      0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+      0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+      0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+      0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+      0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+      0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    ];
+    const rotate = (word, bits) => (word >>> bits) | (word << (32 - bits));
+    let h0=0x6a09e667, h1=0xbb67ae85, h2=0x3c6ef372, h3=0xa54ff53a;
+    let h4=0x510e527f, h5=0x9b05688c, h6=0x1f83d9ab, h7=0x5be0cd19;
+    const words = new Uint32Array(64);
+    for (let offset = 0; offset < data.length; offset += 64) {
+      for (let i = 0; i < 16; i += 1) {
+        const at = offset + i * 4;
+        words[i] = ((data[at] << 24) | (data[at + 1] << 16) | (data[at + 2] << 8) | data[at + 3]) >>> 0;
+      }
+      for (let i = 16; i < 64; i += 1) {
+        const s0 = rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >>> 3);
+        const s1 = rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >>> 10);
+        words[i] = (words[i - 16] + s0 + words[i - 7] + s1) >>> 0;
+      }
+      let a=h0, b=h1, c=h2, d=h3, e=h4, f=h5, g=h6, h=h7;
+      for (let i = 0; i < 64; i += 1) {
+        const s1 = rotate(e, 6) ^ rotate(e, 11) ^ rotate(e, 25);
+        const choice = (e & f) ^ (~e & g);
+        const temp1 = (h + s1 + choice + constants[i] + words[i]) >>> 0;
+        const s0 = rotate(a, 2) ^ rotate(a, 13) ^ rotate(a, 22);
+        const majority = (a & b) ^ (a & c) ^ (b & c);
+        const temp2 = (s0 + majority) >>> 0;
+        h=g; g=f; f=e; e=(d + temp1) >>> 0; d=c; c=b; b=a; a=(temp1 + temp2) >>> 0;
+      }
+      h0=(h0+a)>>>0; h1=(h1+b)>>>0; h2=(h2+c)>>>0; h3=(h3+d)>>>0;
+      h4=(h4+e)>>>0; h5=(h5+f)>>>0; h6=(h6+g)>>>0; h7=(h7+h)>>>0;
+    }
+    return [h0,h1,h2,h3,h4,h5,h6,h7].map(word => word.toString(16).padStart(8, '0')).join('');
+  };
+
+return {fingerprint: sha256Hex, byteLength: value => utf8Bytes(value).length};
+}
+const createGradiaPluginRead = (function createGradiaPluginRead(options) {
+  const schema = 'memory-suite.gradia-plugin-read.v1';
+  const requestChannel = 'gradia_memory_read_request_v1', responseChannel = 'gradia_memory_read_response_v1';
+  const readerId = 'serial_gradation_agents_for_rp';
+  const ids = { libra: 'libra', hayaku: 'hayaku_locator_continuity', flashback: 'flashback_memory' };
+  const { fingerprint, byteLength } = options.primitives;
+  const fail = code => { throw Object.assign(new Error(code), { code }); };
+  const api = () => typeof options.api === 'function' ? options.api() : options.api;
+  const copy = value => JSON.parse(JSON.stringify(value));
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const native = scope => ({ characterId: scope?.characterId, chatId: scope?.chatId });
+  const validScope = scope => ['scopeKey', 'characterId', 'chatId'].every(key => typeof scope?.[key] === 'string'
+    && scope[key].length > 0 && scope[key].length <= 512 && !/[\0\r\n]/.test(scope[key]));
+  const budget = value => Number.isSafeInteger(value) && value >= 1 && value <= 33554432;
+  let disposed = false, registered = false, sequence = 0;
+  const instance = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+  const nextId = () => instance + ':' + (++sequence);
+  const receipts = new Map(), pending = new Map(), issued = new Map();
+  const closeRecord = record => {
+    if (!record || record.closed) return;
+    record.closed = true; clearTimeout(record.timer); record.read?.close?.(); record.read = null;
+    receipts.delete(record.id);
+  };
+  const send = async (target, channel, body) => await api().postPluginChannelMessage(target, channel, body);
+  const ownerBoundary = async request => {
+    if (disposed) fail('LIB_READ_CANCELED');
+    const value = await options.boundary();
+    if (!validScope(value?.scope) || value.mode !== 'plugin_only') fail('LIB_READ_PLUGIN_MODE_REQUIRED');
+    if (value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
+    if (request?.native && !same(native(value.scope), request.native)
+      || request?.scope && !same(value.scope, request.scope)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
+    return copy(value);
+  };
+  const assertRecord = async record => {
+    if (!record || record.closed || !record.read) fail('LIB_READ_STALE');
+    if (!same(await ownerBoundary({ scope: record.boundary.scope }), record.boundary)) fail('LIB_READ_BOUNDARY_CHANGED');
+    if (await record.read.assertCurrent() !== true) fail('LIB_READ_STALE');
+    if (record.closed || !same(await ownerBoundary({ scope: record.boundary.scope }), record.boundary)) fail('LIB_READ_BOUNDARY_CHANGED');
+    return true;
+  };
+  const ownerHandler = async (message, metadata = {}) => {
+    // The sender is host metadata, never a self-asserted body field.
+    if (disposed || metadata.sender !== readerId || message?.schema !== schema || message.kind !== 'request'
+      || typeof message.id !== 'string' || message.id.length > 160
+      || !['describe', 'capture', 'current', 'release'].includes(message.action)) return;
+    if (byteLength(JSON.stringify(message)) > 65536) return;
+    const { id, action } = message;
+    let result, record;
+    try {
+      if (action === 'release') { closeRecord(receipts.get(message.receipt || id)); result = { released: true }; }
+      else if (action === 'describe') result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await ownerBoundary(message)) };
+      else if (action === 'current') {
+        record = receipts.get(message.receipt);
+        await assertRecord(record); result = { current: true, evidenceRevision: record.revision };
+      } else {
+        if (receipts.has(id) || receipts.size >= 16) fail('LIB_READ_BUSY');
+        if (!validScope(message.scope) || !budget(message.maxCorpusBytes) || typeof message.queryText !== 'string'
+          || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
+        const p = message.proposal;
+        if (p !== undefined && (!p || p.schema !== 'gradia.input-writer-proposal.v1' || p.purpose !== 'input_writer_proposal'
+          || p.factAdopted !== false || typeof p.operationId !== 'string' || !p.operationId || p.operationId.length > 160
+          || !/^[a-f0-9]{64}$/.test(p.proposalDigest || '') || !/^[a-f0-9]{64}$/.test(p.nativeContextDigest || '')
+          || typeof p.queryTruncated !== 'boolean' || Object.keys(p).length !== 7)) fail('LIB_READ_PROPOSAL_INVALID');
+        // Reserve before the first await so timeout/release can cancel discovery
+        // as well as an in-flight owner query.
+        record = { id, boundary: null, read: null, closed: false };
+        receipts.set(id, record);
+        record.timer = setTimeout(() => closeRecord(record), options.receiptTtlMs || 600000);
+        record.timer?.unref?.();
+        const boundary = await ownerBoundary(message);
+        if (record.closed) fail('LIB_READ_CANCELED');
+        record.boundary = boundary;
+        const read = await options.capture(message, { check() { if (record.closed || disposed) fail('LIB_READ_CANCELED'); } });
+        if (record.closed || disposed) { read?.close?.(); fail('LIB_READ_CANCELED'); }
+        record.read = read;
+        if (!Array.isArray(read?.items) || read.items.length > 4096) fail('LIB_READ_RESPONSE_INVALID');
+        let bytes = 0, metadataBytes = 0;
+        const seen = new Set();
+        for (const item of read.items) {
+          if (typeof item?.content !== 'string' || !item.id || !item.key || seen.has(JSON.stringify([item.id, item.key]))
+            || item.source?.namespace !== options.owner) fail('LIB_READ_RESPONSE_INVALID');
+          seen.add(JSON.stringify([item.id, item.key])); bytes += byteLength(item.content);
+          const size = byteLength(JSON.stringify({ ...item, content: '' })); metadataBytes += size;
+          if (size > 65536 || metadataBytes > 1048576 || bytes > message.maxCorpusBytes) fail('LIB_READ_BUDGET_EXCEEDED');
+        }
+        record.revision = fingerprint(JSON.stringify([instance, id, boundary, read.items]));
+        await assertRecord(record);
+        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, complete: true, scope: boundary.scope,
+          receipt: id, evidenceRevision: record.revision, items: read.items, corpusBytes: bytes, engine: read.engine || null };
+      }
+      await send(readerId, responseChannel, { schema, kind: 'response', id, action, result });
+    } catch (error) {
+      if (record) closeRecord(record);
+      await send(readerId, responseChannel, { schema, kind: 'response', id, action,
+        error: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_OWNER_UNAVAILABLE' });
+    }
+  };
+  const release = (owner, receipt) => {
+    issued.delete(receipt);
+    // A release uses the capture ID and also cancels an owner operation that is
+    // still running; it never releases an unrelated request's receipt.
+    return send(ids[owner], requestChannel, { schema, kind: 'request', id: receipt, action: 'release', receipt }).catch(() => {});
+  };
+  const readerHandler = (message, metadata = {}) => {
+    if (disposed || message?.schema !== schema || message.kind !== 'response') return;
+    const record = pending.get(message.id);
+    if (!record || metadata.sender !== ids[record.owner] || message.action !== record.action) return;
+    if (!message.error && record.action === 'capture' && message.result?.receipt !== message.id) {
+      record.finish(Object.assign(new Error('LIB_READ_RESPONSE_INVALID'), { code: 'LIB_READ_RESPONSE_INVALID' })); return;
+    }
+    record.finish(message.error ? Object.assign(new Error(message.error), { code: message.error }) : null, message.result);
+  };
+  let starting = null;
+  const register = async () => {
+    if (disposed) fail('LIB_READ_CANCELED');
+    if (registered) return true;
+    const host = api();
+    if (typeof host?.addPluginChannelListener !== 'function' || typeof host?.postPluginChannelMessage !== 'function') fail('LIB_READ_IPC_UNAVAILABLE');
+    const channel = options.role === 'owner' ? requestChannel : responseChannel;
+    const handler = options.role === 'owner' ? ownerHandler : readerHandler;
+    if (await host.addPluginChannelListener(channel, handler) === false) fail('LIB_READ_IPC_UNAVAILABLE');
+    if (disposed) { await host.removePluginChannelListener?.(channel, handler); fail('LIB_READ_CANCELED'); }
+    registered = true; return true;
+  };
+  const start = async () => {
+    if (!starting) starting = register().finally(() => { starting = null; });
+    return await starting;
+  };
+  const rpc = async (owner, action, body = {}, signal) => {
+    await start();
+    if (signal?.aborted) fail('LIB_READ_CANCELED');
+    const id = nextId();
+    if (action === 'capture') issued.set(id, owner);
+    return await new Promise((resolve, reject) => {
+      const record = { owner, action, finish(error, result) {
+        if (!pending.delete(id)) return;
+        clearTimeout(record.timer); signal?.removeEventListener('abort', record.abort);
+        if (error && action === 'capture') void release(owner, id);
+        error ? reject(error) : resolve(result);
+      } };
+      record.abort = () => record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
+      record.timer = setTimeout(() => record.finish(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' })),
+        options.timeoutMs || (action === 'describe' ? 1500 : 25000));
+      pending.set(id, record); signal?.addEventListener('abort', record.abort, { once: true });
+      if (signal?.aborted) { record.abort(); return; }
+      void send(ids[owner], requestChannel, { schema, kind: 'request', id, action, ...body })
+        .catch(() => record.finish(Object.assign(new Error('LIB_READ_IPC_UNAVAILABLE'), { code: 'LIB_READ_IPC_UNAVAILABLE' })));
+    });
+  };
+  const describe = async (scope, owners = Object.keys(ids)) => {
+    const scopes = {}, unavailable = {};
+    await Promise.all(owners.map(async owner => {
+      try {
+        const result = await rpc(owner, 'describe', { native: native(scope) });
+        if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true
+          || result.mode !== 'plugin_only' || !validScope(result.scope) || !same(native(result.scope), native(scope))) fail('LIB_READ_RESPONSE_INVALID');
+        scopes[owner] = result.scope;
+      } catch (error) { unavailable[owner] = error.code || 'LIB_READ_IPC_UNAVAILABLE'; }
+    }));
+    if (disposed) fail('LIB_READ_CANCELED');
+    // Stable owner order is part of binding identity, independent of RPC order.
+    const ordered = Object.fromEntries(Object.keys(ids).filter(owner => scopes[owner]).map(owner => [owner, scopes[owner]]));
+    if (!Object.keys(ordered).length) fail('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE');
+    return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
+  };
+  const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
+    async openReadSession(scope, input = {}) {
+      const owners = Object.keys(scopes), captured = [];
+      let closed = false, stale = false;
+      const close = () => { if (closed) return; closed = true; for (const value of captured) void release(value.owner, value.receipt); };
+      const assertCurrentSync = () => {
+        options.check?.();
+        if (closed || stale || disposed) fail('LIB_READ_STALE');
+        return true;
+      };
+      try {
+        options.check?.();
+        if (!budget(input.maxCorpusBytes) || !same(scope, scopes[owners[0]])) fail('LIB_READ_REQUEST_INVALID');
+        let corpusBytes = 0;
+        const items = [];
+        for (const owner of owners) {
+          assertCurrentSync();
+          const remaining = input.maxCorpusBytes - corpusBytes;
+          if (remaining < 1) fail('LIB_READ_BUDGET_EXCEEDED');
+          const result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '',
+            maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
+          // Retain the receipt before validating the response or cancellation.
+          if (typeof result?.receipt === 'string') captured.push({ ...result, owner });
+          assertCurrentSync();
+          if (result?.source !== 'plugin_ipc' || result.owner !== owner || !result.receipt
+            || !same(result.scope, scopes[owner]) || result.readOnly !== true || result.complete !== true
+            || !/^[a-f0-9]{64}$/.test(result.evidenceRevision || '') || !Array.isArray(result.items)) fail('LIB_READ_RESPONSE_INVALID');
+          let actual = 0;
+          for (const item of result.items) {
+            if (typeof item?.content !== 'string' || item.source?.namespace !== owner) fail('LIB_READ_RESPONSE_INVALID');
+            actual += byteLength(item.content); items.push({ ...item, owner });
+          }
+          if (actual !== result.corpusBytes || actual > remaining || items.length > 4096) fail('LIB_READ_BUDGET_EXCEEDED');
+          corpusBytes += actual;
+        }
+        const evidenceRevision = fingerprint(JSON.stringify(captured.map(value => [value.owner, value.evidenceRevision])));
+        const assertCurrent = async () => {
+          try {
+            assertCurrentSync();
+            for (const value of captured) {
+              const now = await rpc(value.owner, 'current', { receipt: value.receipt }, input.signal);
+              if (now?.current !== true || now.evidenceRevision !== value.evidenceRevision) fail('LIB_READ_STALE');
+            }
+            return assertCurrentSync();
+          } catch (error) { stale = true; close(); throw error; }
+        };
+        await assertCurrent();
+        return Object.freeze({ source: 'plugin_ipc', engine: {
+          purpose: input.proposal ? 'input_writer_proposal' : 'response_evidence',
+          ...(input.proposal ? { proposal: copy(input.proposal) } : {}),
+          sourceByOwner: Object.fromEntries(captured.map(value =>
+          [value.owner, value.owner === 'libra' ? 'unified_engine' : 'published_owner_memory'])) },
+          snapshot: { schema: 'memory-suite.memory-read-session.v1', complete: true, readOnly: true, scope,
+            owners, items, evidenceRevision, corpusBytes, maxCorpusBytes: input.maxCorpusBytes },
+          assertCurrent, assertCurrentSync, close });
+      } catch (error) { close(); throw error; }
+    }
+  });
+  const dispose = async () => {
+    if (disposed) return;
+    disposed = true;
+    for (const record of [...pending.values()]) record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
+    for (const [receipt, owner] of [...issued]) await release(owner, receipt);
+    for (const record of [...receipts.values()]) closeRecord(record);
+    if (registered) try { await api()?.removePluginChannelListener?.(options.role === 'owner' ? requestChannel : responseChannel,
+      options.role === 'owner' ? ownerHandler : readerHandler); } catch (_) { /* Host teardown can remove the channel API first. */ }
+    registered = false;
+  };
+  return Object.freeze({ start, describe, createClient, dispose });
+});
+const createGradiaPluginSnapshot = (function createPluginSnapshot(options) {
+  const { fingerprint, byteLength } = options.primitives;
+  const instance = 'plugin-local:' + Date.now() + ':' + Math.random();
+  const fail = code => { throw Object.assign(new Error(code), { code }); };
+  return async (request, authority = {}) => {
+    let reading = true, closed = false;
+    const cache = new Map();
+    let loadedBytes = 0;
+    const rawLimit = 7 * request.maxCorpusBytes + 2097152;
+    const get = async key => {
+      authority.check?.();
+      if (closed) fail('LIB_READ_STALE');
+      if (reading && cache.has(key)) return cache.get(key);
+      const value = await options.read(key);
+      authority.check?.();
+      if (closed) fail('LIB_READ_STALE');
+      const serialized = JSON.stringify(value ?? null), size = byteLength(serialized);
+      loadedBytes += size;
+      if (loadedBytes > rawLimit) fail('LIB_READ_BUDGET_EXCEEDED');
+      const row = { value: value ?? null, exists: value != null, tombstone: false,
+        revision: 1, updatedAt: 0, digest: fingerprint(serialized), valueBytes: size };
+      if (reading) cache.set(key, row);
+      return row;
+    };
+    const repository = { database: { exec() {} }, getMetadata: async (_space, key) => await get(key),
+      get: async (_space, key, limits) => {
+        const row = await get(key);
+        if (row.valueBytes > limits.maxValueBytes) fail('LIB_READ_BUDGET_EXCEEDED');
+        return row;
+      } };
+    const session = options.createReadSession({ getRepository: () => repository, dataInstanceId: instance,
+      epochs: () => ({}), canRead: () => !closed });
+    const snapshot = await session.capture({ scope: request.scope, maxCorpusBytes: request.maxCorpusBytes });
+    reading = false; cache.clear();
+    let currentTail = Promise.resolve();
+    return { items: snapshot.items,
+      async assertCurrent() {
+        const task = currentTail.then(async () => {
+          loadedBytes = 0;
+          if (closed) fail('LIB_READ_STALE');
+          return (await session.current(snapshot)).current === true;
+        });
+        currentTail = task.catch(() => {});
+        return await task;
+      },
+      close() { closed = true; cache.clear(); }
+    };
+  };
+});
+function createFlashbackPluginReadSession(primitives) {
+'use strict';
+
+// Request-local read evidence over Flashback's published owner manifests. This
+// does not hydrate vectors, repair storage, recall, or certify host currentness.
+const crypto = { createHash: () => ({ update: value => ({ digest: () => primitives.fingerprint(value) }) }) };
+const Buffer = { byteLength: value => primitives.byteLength(value), from: value => Uint8Array.from(atob(value), c => c.charCodeAt(0)) };
+  const gunzip = async (compressed, options) => {
+    if (typeof DecompressionStream !== 'function') throw Error('LIB_READ_GZIP_UNAVAILABLE');
+    const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+    const chunks = []; let size = 0;
+    try { while (true) { const next = await stream.read(); if (next.done) break;
+      size += next.value.byteLength;
+      if (size > options.maxOutputLength) throw Object.assign(Error('decode budget'), { code: 'ERR_BUFFER_TOO_LARGE' });
+      chunks.push(next.value);
+    } } finally { await stream.cancel().catch(() => {}); stream.releaseLock(); }
+    const bytes = new Uint8Array(size); let at = 0; for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.byteLength; }
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return { toString: () => text };
+  };
+const PLUGIN_ID = 'serial_gradation_agents_for_rp';
+const CAPTURE_ROUTE = '/v1/flashback/read-session/capture';
+const CURRENT_ROUTE = '/v1/flashback/read-session/current';
+const MiB = 1024 ** 2;
+const LIMITS = Object.freeze({ defaultCorpusBytes: 4 * MiB, maxCorpusBytes: 32 * MiB,
+  manifestBytes: MiB, itemMetadataBytes: 64 * 1024, totalMetadataBytes: MiB,
+  maxRefs: 4096, currentRequestBytes: 4 * MiB, maxArchiveDepth: 256 });
+const fail = (message, statusCode = 409) => { throw Object.assign(new Error(message), { statusCode }); };
+const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
+const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+const sha = value => crypto.createHash('sha256').update(value).digest('hex');
+const hash = value => sha(JSON.stringify(value));
+const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+const bytes = value => Buffer.byteLength(value, 'utf8');
+const deepFreeze = value => {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+};
+const validText = (value, max = 512) => typeof value === 'string' && value.length > 0
+  && value.length <= max && !/[\0\r\n]/.test(value);
+const integer = (value, max = LIMITS.maxRefs) => Number.isSafeInteger(value) && value >= 0 && value <= max;
+const validCommit = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value);
+const digest64 = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
+// Flashback hashes UTF-16 code units, not UTF-8 bytes.
+function keyHash(value) {
+  let result = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) result = Math.imul(result ^ value.charCodeAt(i), 0x01000193);
+  return (result >>> 0).toString(36);
+}
+function stable(value, depth = 0) {
+  if (depth > 32) fail('gradia_read_metadata_depth_exceeded', 413);
+  if (Array.isArray(value)) return `[${value.map(v => stable(v, depth + 1)).join(',')}]`;
+  if (object(value)) return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${stable(value[k], depth + 1)}`).join(',')}}`;
+  return JSON.stringify(value) ?? 'null';
+}
+function scopeOf(value) {
+  if (!object(value) || !['scopeKey', 'characterId', 'chatId'].every(key => validText(value[key]))
+    || value.scopeKey !== `char:${keyHash(value.characterId)}|chat:${keyHash(value.chatId)}`) fail('gradia_read_scope_invalid', 400);
+  return { scopeKey: value.scopeKey, characterId: value.characterId, chatId: value.chatId };
+}
+function corpusLimit(value) {
+  if (value === undefined) return LIMITS.defaultCorpusBytes;
+  if (!Number.isSafeInteger(value) || value < 1 || value > LIMITS.maxCorpusBytes) fail('gradia_read_corpus_limit_invalid', 400);
+  return value;
+}
+const prefixFor = scopeKey => `vector_rag_memory:scope:${keyHash(scopeKey)}:`;
+const manifestKeyFor = scopeKey => `${prefixFor(scopeKey)}manifest:v2`;
+const shardKeyFor = (scopeKey, commitId, index) => `${prefixFor(scopeKey)}records:${commitId ? `commit:${commitId}:` : ''}shard:${String(index).padStart(4, '0')}`;
+const allowedKey = key => validText(key, 1200) && /^vector_rag_memory:scope:[a-z0-9]+:(?:manifest:v2|records:(?:commit:[A-Za-z0-9_-]{1,160}:)?shard:[0-9]{4})$/.test(key);
+function decode(value) {
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value); } catch (_) { fail('gradia_read_stored_json_invalid'); }
+  }
+  if (!object(value)) fail('gradia_read_stored_object_invalid');
+  return value;
+}
+async function metadataOf(repository, key) {
+  const value = await repository.getMetadata('plugin', key);
+  return { namespace: 'flashback', space: 'plugin', key, exists: value.exists, tombstone: value.tombstone,
+    revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
+}
+function validateDependency(value, index, scope) {
+  if (!object(value) || value.namespace !== 'flashback' || value.space !== 'plugin'
+    || (index === 0 ? value.key !== manifestKeyFor(scope.scopeKey) : !allowedKey(value.key))
+    || value.exists !== true || value.tombstone !== false
+    || !Number.isSafeInteger(value.revision) || value.revision < 1 || !digest64(value.digest)
+    || !Number.isSafeInteger(value.updatedAt) || value.updatedAt < 0
+    || !Number.isSafeInteger(value.valueBytes) || value.valueBytes < 0) fail('gradia_read_dependencies_invalid', 400);
+  return { namespace: 'flashback', space: 'plugin', key: value.key, exists: true, tombstone: false,
+    revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
+}
+const sourceType = record => {
+  const type = String(record.sourceType || record.type || 'unknown').trim();
+  return type === 'chat_turn' ? 'response' : type;
+};
+function retained(record) {
+  const origin = String(record.origin || '').trim().toLowerCase();
+  return record.autoStatic !== true && origin !== 'manual_gui'
+    && !String(record.sourceId || '').trim().toLowerCase().startsWith('manual:')
+    && !(Array.isArray(record.tags) && record.tags.some(tag => String(tag).trim().toLowerCase() === 'manual'))
+    && (sourceType(record) === 'response' || (sourceType(record) === 'episode_index'
+      && (record.autoEpisode === true || String(record.origin || '').startsWith('episode_index'))));
+}
+function inheritedHistory(record) {
+  return record.permanentSessionHistory === true || record.inheritedSessionHistory === true
+    || String(record.historicalProtection || '').trim() === 'permanent_session_history'
+    || Boolean(String(record.inheritedFromScopeKey || record.clonedFromScopeKey || '').trim());
+}
+function recordIdentity(record) {
+  return String(record.permanentHistoryId || '').trim() || keyHash(JSON.stringify([
+    String(record.sourceHash || ''), String(record.sourceId || ''), sourceType(record),
+    number(record.turnIndex || record.pairIndex), number(record.chunkIndex), String(record.text || '')
+  ], null, 2));
+}
+const timeOf = record => Date.parse(record.updatedAt || record.createdAt || '') || 0;
+const sortKey = row => `${row.record.sourceType || ''}:${row.record.createdAt || ''}:${row.record.id || ''}`;
+function mergeRecords(...lists) {
+  const byId = new Map();
+  for (const row of lists.flat()) {
+    const id = recordIdentity(row.record), previous = byId.get(id);
+    if (!previous || timeOf(row.record) >= timeOf(previous.record)) byId.set(id, row);
+  }
+  return [...byId.values()].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+}
+function archivePointer(value) {
+  if (!object(value) || value.schema !== 'flashback_memory.archive_ref.v1'
+    || !validText(value.archiveId, 160) || !/^[A-Za-z0-9_-]+$/.test(value.archiveId)
+    || value.archiveScopeKey !== `flashback_archive_v1:${value.archiveId}`
+    || !integer(value.generation, LIMITS.maxArchiveDepth) || value.generation < 1
+    || !integer(value.depth, LIMITS.maxArchiveDepth) || value.depth < 1
+    || !integer(value.deltaCount) || !integer(value.recordCount)
+    || !validText(value.digest, 64)) fail('gradia_read_archive_pointer_invalid');
+  return { archiveId: value.archiveId, archiveScopeKey: value.archiveScopeKey,
+    generation: value.generation, depth: value.depth, deltaCount: value.deltaCount,
+    recordCount: value.recordCount, digest: value.digest };
+}
+// A composed reader can only tighten this owner's existing raw-read ceiling.
+function rawLimitOf(value, maxCorpusBytes) {
+  const maximum = 7 * maxCorpusBytes + 2 * LIMITS.totalMetadataBytes;
+  if (value === undefined) return maximum;
+  if (!Number.isSafeInteger(value) || value < 0 || value > maximum) fail('gradia_read_storage_limit_invalid', 400);
+  return value;
+}
+function createReadSession({ getRepository, dataInstanceId, epochs, canRead }) {
+  const identity = scope => ({ scope: { ...scope }, dataInstanceId, resetEpoch: Number(epochs().flashback || 0) });
+  async function readUnit(body) {
+    if (!canRead()) fail('gradia_read_maintenance', 503);
+    const repository = getRepository(), epoch = Number(epochs().flashback || 0);
+    repository.database.exec('BEGIN');
+    try {
+      const result = await body(repository);
+      if (!canRead()) fail('gradia_read_maintenance', 503);
+      if (Number(epochs().flashback || 0) !== epoch) fail('gradia_read_reset_changed');
+      return deepFreeze(result);
+    } finally { repository.database.exec('ROLLBACK'); }
+  }
+  function capture(body) {
+    const scope = scopeOf(body?.scope), maxCorpusBytes = corpusLimit(body?.maxCorpusBytes);
+    const rawLimit = rawLimitOf(body?.maxRawBytes, maxCorpusBytes);
+    return readUnit(async repository => {
+      const readIdentity = identity(scope), dependencies = [], seen = new Set();
+      let rawBytes = 0, metadataBytes = 0, recordCount = 0;
+      // A repository value can wrap JSON in one additional string; NUL costs
+      // seven bytes there. Gzip expansion is separately bounded before parsing.
+      const chargeMetadata = (value, perItem = false) => {
+        let size;
+        try { size = bytes(JSON.stringify(value)); } catch (_) { fail('gradia_read_metadata_invalid'); }
+        metadataBytes += size;
+        if ((perItem && size > LIMITS.itemMetadataBytes) || metadataBytes > LIMITS.totalMetadataBytes) fail('gradia_read_metadata_budget_exceeded', 413);
+      };
+      const read = async (key, limit) => {
+        if (!allowedKey(key)) fail('gradia_read_memory_pointer_invalid');
+        if (seen.has(key)) fail('gradia_read_duplicate_dependency');
+        if (dependencies.length >= LIMITS.maxRefs + 1) fail('gradia_read_reference_limit_exceeded', 413);
+        const metadata = await metadataOf(repository, key);
+        if (!metadata.exists || metadata.tombstone) fail('gradia_read_dependency_unavailable');
+        const bound = Math.min(limit, rawLimit - rawBytes);
+        if (!Number.isSafeInteger(metadata.valueBytes) || metadata.valueBytes < 0 || metadata.valueBytes > bound) fail('gradia_read_storage_budget_exceeded', 413);
+        let row;
+        try { row = await repository.get('plugin', key, { maxValueBytes: bound }); }
+        catch (error) { fail(error?.statusCode === 413 ? 'gradia_read_storage_budget_exceeded' : 'gradia_read_dependency_decode_failed', error?.statusCode === 413 ? 413 : 409); }
+        if (!row?.exists || row.tombstone || row.revision !== metadata.revision || row.digest !== metadata.digest) fail('gradia_read_dependency_changed');
+        // Check actual bytes as well as metadata; this is read evidence, not a
+        // producer commit label being mistaken for current content authority.
+        const serialized = JSON.stringify(row.value);
+        if (bytes(serialized) !== metadata.valueBytes || sha(serialized) !== metadata.digest) fail('gradia_read_dependency_digest_mismatch');
+        rawBytes += metadata.valueBytes;
+        seen.add(key); dependencies.push(metadata);
+        return row.value;
+      };
+      const load = async (scopeKey, isCurrent = false) => {
+        const manifest = decode(await read(manifestKeyFor(scopeKey), Math.min(LIMITS.manifestBytes, 2 * (LIMITS.totalMetadataBytes - metadataBytes))));
+        chargeMetadata(manifest);
+        if (manifest.schema !== 'vector_rag_memory.scope_manifest.v2' || manifest.scopeKey !== scopeKey
+          || (manifest.storageHash && manifest.storageHash !== keyHash(scopeKey))) fail('gradia_read_manifest_scope_mismatch');
+        if (isCurrent && ((manifest.canonicalCharacterId || manifest.characterId) !== scope.characterId
+          || (manifest.canonicalChatId || manifest.chatId) !== scope.chatId
+          || (manifest.canonicalScopeId && manifest.canonicalScopeId !== scope.scopeKey)
+          || manifest.archiveOwner === true)) fail('gradia_read_manifest_scope_mismatch');
+        if (!integer(manifest.count) || !integer(manifest.shardCount)) fail('gradia_read_reference_limit_exceeded', 413);
+        if (manifest.count + recordCount > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
+        if (manifest.commitId && !validCommit(manifest.commitId)) fail('gradia_read_commit_invalid');
+        const directory = ['rawPageLayout', 'rawPageReferences', 'rawPageDirectoryDigest'].some(key => own(manifest, key));
+        if (directory) {
+          if (manifest.rawPageLayout !== 'flashback.raw_pages.v1' || !Array.isArray(manifest.rawPageReferences)
+            || manifest.rawPageReferences.length !== manifest.shardCount || !digest64(manifest.rawPageDirectoryDigest)) fail('gradia_read_raw_page_directory_invalid');
+          let count = 0;
+          for (let i = 0; i < manifest.shardCount; i++) {
+            const ref = manifest.rawPageReferences[i];
+            if (!object(ref) || ref.scopeKey !== scopeKey || ref.payloadShardIndex !== i || !validCommit(ref.payloadCommitId)
+              || ref.storageKey !== shardKeyFor(scopeKey, ref.payloadCommitId, i) || !integer(ref.recordCount)
+              || !digest64(ref.serializedValueDigest)) fail('gradia_read_raw_page_directory_invalid');
+            count += ref.recordCount;
+          }
+          if (count !== manifest.count || sha(stable(manifest.rawPageReferences)) !== manifest.rawPageDirectoryDigest) fail('gradia_read_raw_page_directory_invalid');
+        }
+        const records = [];
+        let loadedCount = 0;
+        for (let i = 0; i < manifest.shardCount; i++) {
+          const ref = directory ? manifest.rawPageReferences[i] : null;
+          const commitId = ref?.payloadCommitId || manifest.commitId || '';
+          const key = shardKeyFor(scopeKey, commitId, i);
+          const remaining = rawLimit - rawBytes;
+          const raw = await read(key, remaining);
+          if (ref && (typeof raw !== 'string' || sha(stable(raw)) !== ref.serializedValueDigest)) fail('gradia_read_raw_page_digest_invalid');
+          let envelope = decode(raw);
+          if (envelope.schema === 'flashback_memory.archive_shard_gzip.v1') {
+            if (!scopeKey.startsWith('flashback_archive_v1:') || envelope.encoding !== 'gzip+base64'
+              || envelope.scopeKey !== scopeKey || envelope.commitId !== commitId || envelope.shard !== i
+              || typeof envelope.data !== 'string' || (envelope.data.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(envelope.data))) fail('gradia_read_archive_encoding_invalid');
+            const decodeLimit = Math.min(remaining, rawLimit - rawBytes);
+            if (decodeLimit < 1 || !Number.isSafeInteger(envelope.rawChars) || envelope.rawChars < 1 || envelope.rawChars > decodeLimit) fail('gradia_read_storage_budget_exceeded', 413);
+            const compressed = Buffer.from(envelope.data, 'base64');
+            if (compressed.length !== envelope.compressedBytes) fail('gradia_read_archive_encoding_invalid');
+            let decoded;
+            try { decoded = (await gunzip(compressed, { maxOutputLength: decodeLimit })).toString('utf8'); }
+            catch (error) { fail(error.code === 'ERR_BUFFER_TOO_LARGE' ? 'gradia_read_storage_budget_exceeded' : 'gradia_read_archive_decode_failed', error.code === 'ERR_BUFFER_TOO_LARGE' ? 413 : 409); }
+            rawBytes += bytes(decoded);
+            if (rawBytes > rawLimit) fail('gradia_read_storage_budget_exceeded', 413);
+            if (decoded.length !== envelope.rawChars || keyHash(decoded) !== envelope.rawHash) fail('gradia_read_archive_digest_invalid');
+            chargeMetadata({ ...envelope, data: '' }, true);
+            envelope = decode(decoded);
+          }
+          const rows = envelope.records;
+          if (envelope.version !== 2 || envelope.scopeKey !== scopeKey || (envelope.commitId || '') !== commitId
+            || envelope.shard !== i || !Array.isArray(rows) || !rows.every(object)
+            || envelope.checksum !== keyHash(JSON.stringify(rows, null, 2))) fail('gradia_read_shard_invalid');
+          const summary = Array.isArray(manifest.shardSummaries)
+            ? manifest.shardSummaries.find((row, index) => Number(row?.shardIndex ?? index) === i) : null;
+          if ((ref && rows.length !== ref.recordCount) || (summary && rows.length !== Number(summary.recordCount))) fail('gradia_read_shard_count_mismatch');
+          chargeMetadata({ ...envelope, records: [] }, true);
+          for (const record of rows) {
+            if (++recordCount > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
+            loadedCount++;
+            if (record.scopeKey !== scopeKey || typeof record.text !== 'string') fail('gradia_read_memory_scope_mismatch');
+            chargeMetadata({ ...record, text: '' }, true);
+            if (retained(record)) records.push({ record, key, scopeKey, commitId, inherited: !isCurrent || inheritedHistory(record), archiveShared: !isCurrent });
+          }
+        }
+        if (loadedCount !== manifest.count) fail('gradia_read_shard_count_mismatch');
+        return { manifest, records };
+      };
+      const local = await load(scope.scopeKey, true), layers = [], archiveScopes = new Set();
+      let cursor = local.manifest.archiveRef;
+      const archivePresent = cursor != null && cursor !== '' && cursor !== false;
+      const head = archivePresent ? archivePointer(cursor) : null;
+      while (archivePresent && cursor) {
+        const pointer = archivePointer(cursor);
+        if (layers.length >= LIMITS.maxArchiveDepth || archiveScopes.has(pointer.archiveScopeKey)) fail('gradia_read_archive_cycle_or_depth');
+        archiveScopes.add(pointer.archiveScopeKey);
+        const layer = await load(pointer.archiveScopeKey), manifest = layer.manifest;
+        if (manifest.archiveOwner !== true || manifest.archiveId !== pointer.archiveId
+          || manifest.archiveGeneration !== pointer.generation
+          || (manifest.archiveRecordCount ?? manifest.count) !== pointer.recordCount
+          || manifest.archiveDigest !== pointer.digest || layer.records.length !== pointer.deltaCount) fail('gradia_read_archive_identity_mismatch');
+        const cursorParentRaw = cursor.parentRef || cursor.parentArchiveRef;
+        const cursorParent = cursorParentRaw ? archivePointer(cursorParentRaw) : null;
+        const manifestParentPresent = own(manifest, 'parentArchiveRef') && manifest.parentArchiveRef != null;
+        const manifestParent = manifestParentPresent ? archivePointer(manifest.parentArchiveRef) : null;
+        if (cursorParent && (!manifestParent || !same(cursorParent, manifestParent))) fail('gradia_read_archive_parent_mismatch');
+        const parent = cursorParent || manifestParent;
+        if (!parent) {
+          if (pointer.depth !== 1 || pointer.generation !== 1 || pointer.recordCount !== pointer.deltaCount) fail('gradia_read_archive_parent_required');
+        } else if (parent.depth + 1 !== pointer.depth || parent.generation + 1 !== pointer.generation
+          || (manifest.archiveVectorOverlay === true ? parent.recordCount !== pointer.recordCount : parent.recordCount + pointer.deltaCount !== pointer.recordCount)) fail('gradia_read_archive_parent_mismatch');
+        layers.push(layer);
+        cursor = parent ? { schema: 'flashback_memory.archive_ref.v1', ...parent } : null;
+      }
+      const archiveRecords = mergeRecords(...layers.reverse().map(layer => layer.records));
+      if (head && (archiveRecords.length !== head.recordCount
+        || keyHash(archiveRecords.map(row => recordIdentity(row.record)).sort().join('\u0001')) !== head.digest)) fail('gradia_read_archive_digest_mismatch');
+      const selected = mergeRecords(archiveRecords, local.records), items = [];
+      let corpusBytes = 0;
+      for (const row of selected) {
+        const record = row.record, id = String(record.id || record.hash || recordIdentity(record));
+        if (!validText(id, 1200)) fail('gradia_read_memory_id_invalid');
+        corpusBytes += bytes(record.text);
+        if (corpusBytes > maxCorpusBytes) fail('gradia_read_corpus_budget_exceeded', 413);
+        const turn = number(record.turnIndex || record.pairIndex);
+        items.push({ id, key: row.key, content: record.text, source: {
+          namespace: 'flashback', space: 'plugin', scopeKey: row.scopeKey, memoryId: id,
+          revision: number(record.revision), sourceDigest: String(record.sourceHash || ''),
+          turnRange: { start: turn, end: turn }, sessionEpoch: number(record.sessionEpoch),
+          inherited: row.inherited, archiveShared: row.archiveShared, commitId: row.commitId,
+          sourceType: sourceType(record), chunkIndex: number(record.chunkIndex)
+        } });
+      }
+      return { schema: 'memory-suite.flashback-read-session.v1', readOnly: true, complete: true, scope, items, dependencies,
+        evidenceRevision: hash(dependencies), corpusBytes, maxCorpusBytes, maxRawBytes: rawLimit, metadataBytes, rawBytes, dataInstanceId,
+        resetEpoch: readIdentity.resetEpoch, readIdentity };
+    });
+  }
+  function current(body) {
+    const scope = scopeOf(body?.scope);
+    if (!object(body.readIdentity) || !same(scopeOf(body.readIdentity.scope), scope)) fail('gradia_read_scope_changed', 400);
+    if (!Array.isArray(body.dependencies) || body.dependencies.length < 1 || body.dependencies.length > LIMITS.maxRefs + 1) fail('gradia_read_dependencies_invalid', 400);
+    const dependencies = body.dependencies.map((value, index) => validateDependency(value, index, scope));
+    if (new Set(dependencies.map(value => value.key)).size !== dependencies.length || body.evidenceRevision !== hash(dependencies)) fail('gradia_read_evidence_revision_invalid', 400);
+    return readUnit(async repository => {
+      const expected = identity(scope);
+      const bindingMatches = body.dataInstanceId === expected.dataInstanceId && body.resetEpoch === expected.resetEpoch
+        && body.readIdentity.dataInstanceId === expected.dataInstanceId && body.readIdentity.resetEpoch === expected.resetEpoch;
+      let current = bindingMatches; for (const value of dependencies) if (!same(value, await metadataOf(repository, value.key))) current = false;
+      return { schema: 'memory-suite.flashback-read-session-current.v1', current, scope,
+        evidenceRevision: body.evidenceRevision, dataInstanceId, resetEpoch: expected.resetEpoch };
+    });
+  }
+  return Object.freeze({ capture, current });
+}
+return createReadSession;
+}
+  /* GRADIA PLUGIN READ END */
+  let gradiaPluginReadOwner = null;
+  const getGradiaPluginReadOwner = () => {
+    if (gradiaPluginReadOwner) return gradiaPluginReadOwner;
+    const primitives = createGradiaReadPrimitives();
+    gradiaPluginReadOwner = createGradiaPluginRead({ role: 'owner', owner: 'flashback', primitives,
+      api: () => getLiveApi(['addPluginChannelListener','postPluginChannelMessage']),
+      boundary: async () => {
+          if (Runtime.unloaded) throw Error('LIB_READ_CANCELED');
+          // Identity only: resolveCurrentScope() also performs adoption/repair.
+          const native = resolveScopeFromSnapshot(await loadRisuSnapshot(false));
+          const scope = { scopeKey: native.scopeKey, characterId: native.canonicalCharacterId || native.characterId,
+            chatId: native.canonicalChatId || native.chatId };
+          const route = await MemorySuiteStorageBridge.getScopeMode({ ...scope, scopeId: scope.scopeKey });
+          return { scope, mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation };
+      },
+      capture: createGradiaPluginSnapshot({ primitives, createReadSession: createFlashbackPluginReadSession(primitives),
+        read: key => MemorySuiteStorageBridge.ownerLegacyRead('plugin', key) })
+    });
+    return gradiaPluginReadOwner;
+  };
   const publicApi = Object.freeze({
     getHostLineageStatus: async () => { const snapshot = await loadRisuSnapshot(false); return { ...MemorySuiteHostLineage.inspect(snapshot.character, snapshot.chat), owner: 'flashback', scopeKey: resolveScopeFromSnapshot(snapshot).scopeKey }; },
     getReanalysisStatus:()=>({...flashbackReanalysisStatus}),
@@ -49367,6 +50090,7 @@ ${cleanedText}`, 80),
             warn('Committed chat-output capture is still finishing after the bounded unload drain; storage bridge disposal is deferred.', error);
           });
         }
+        await gradiaPluginReadOwner?.dispose();
         try { await unregisterMemoryBridgeIpc(); } catch (_) {
           memoryBridgeIpcRegistered = false;
           memoryBridgeIpcHandler = null;
@@ -51604,7 +52328,27 @@ ${cleanedText}`, 80),
       });
       runtime.observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
     };
-    const publicApi = Object.freeze({
+    let gradiaPluginReadOwner = null;
+  const getGradiaPluginReadOwner = () => {
+    if (gradiaPluginReadOwner) return gradiaPluginReadOwner;
+    const primitives = createGradiaReadPrimitives();
+    gradiaPluginReadOwner = createGradiaPluginRead({ role: 'owner', owner: 'flashback', primitives,
+      api: () => getLiveApi(['addPluginChannelListener','postPluginChannelMessage']),
+      boundary: async () => {
+          if (Runtime.unloaded) throw Error('LIB_READ_CANCELED');
+          // Identity only: resolveCurrentScope() also performs adoption/repair.
+          const native = resolveScopeFromSnapshot(await loadRisuSnapshot(false));
+          const scope = { scopeKey: native.scopeKey, characterId: native.canonicalCharacterId || native.characterId,
+            chatId: native.canonicalChatId || native.chatId };
+          const route = await MemorySuiteStorageBridge.getScopeMode({ ...scope, scopeId: scope.scopeKey });
+          return { scope, mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation };
+      },
+      capture: createGradiaPluginSnapshot({ primitives, createReadSession: createFlashbackPluginReadSession(primitives),
+        read: key => MemorySuiteStorageBridge.ownerLegacyRead('plugin', key) })
+    });
+    return gradiaPluginReadOwner;
+  };
+  const publicApi = Object.freeze({
       schema: Flashback_PORTABLE_BACKUP_SCHEMA,
       pluginId: config.pluginId,
       pluginVersion: config.pluginVersion,

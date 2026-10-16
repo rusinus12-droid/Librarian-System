@@ -6,7 +6,7 @@
 
 GRADIA는 기억의 읽기 소비자다. 현재 `unified_engine` 연결에서 LIBRA에 보내는 query는 통합 검색 엔진의 읽기 API 호출이다. LIBRA의 생성 모델에 답변을 요청하거나 정본·Micro·State·로어를 수정하는 호출이 아니다. native semantic query가 필요하면 설정된 query embedding 정책은 적용될 수 있다.
 
-LIBRA는 공통 엔진이 선택하고 검증한 atomic 근거 묶음을 반환한다. HAYAKU/Flashback은 기존 server logical read로 자료를 제공하며, GRADIA는 완전한 항목을 선택해 읽는다. LIBRA 원본 전체를 GRADIA에 복사해서 GRADIA의 로어 랭커로 다시 검색하는 구조는 아니다. 이번 변경은 이 자료 소유권과 읽기·현재성 계약을 유지한다.
+LIBRA는 공통 엔진이 선택하고 검증한 atomic 근거 묶음을 반환한다. HAYAKU/Flashback은 서버 모드에서는 기존 server logical read, 플러그인 모드에서는 owner 전용 IPC로 자료를 제공하며 GRADIA는 완전한 항목을 선택해 읽는다. LIBRA 원본 전체를 GRADIA에 복사해서 GRADIA의 로어 랭커로 다시 검색하는 구조는 아니다. 두 방식 모두 아래 모델 예산을 사용한다. 최근 챗·플러그인 IPC의 사용 방법과 검증 범위는 [별도 문서](RECENT-CHAT-AND-PLUGIN-IPC-20261015.md)를 따른다.
 
 ## 변경 이유
 
