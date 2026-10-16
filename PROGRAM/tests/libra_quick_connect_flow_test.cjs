@@ -27,10 +27,19 @@ const makeContext = ({ llmOk = true, embedOk = true, models = ['gpt-5.4-mini', '
   const capabilities = { openai: { label: 'OpenAI', defaultUrl: 'https://api.openai.com/v1/embeddings', models: ['text-embedding-3-small'], batchSize: 8 },
     voyageai: { label: 'Voyage AI', defaultUrl: 'https://api.voyageai.com/v1/embeddings', models: ['voyage-4-lite'], batchSize: 8 },
   };
-  const Gui = { state: { providers: { 'RisuAI 보조 모델': { provider: 'risuai_aux' } }, runtime: { defaultPresetName: '' } }, app: document.getElementById('app'), visible: true };
+  const Gui = { state: { providers: { 'RisuAI 보조 모델': { provider: 'risuai_aux' } }, runtime: { defaultPresetName: '' }, agents: { librarian: { presetName: '' } } }, app: document.getElementById('app'), visible: true };
   const storage = new Map();
   const c = vm.createContext({
-    document, Gui, guiEl, log,
+    document, Gui, guiEl, log, text: value => String(value || ''),
+    RisuCompat: { localGetItem: async key => storage.get(key), localSetItem: async (key, value) => { storage.set(key, value); return true; } },
+    Runtime: {}, clearRequestReuseCache: () => {}, warn: () => {},
+    settingsSemanticHash: value => JSON.stringify(value),
+    readSettingsPersistenceBasis: async () => ({ semanticHash: 'before', state: { providers: { ...Gui.state.providers }, runtime: {}, agents: { librarian: {} } } }),
+    persistStructuredSettingsState: async payload => {
+      if (payload.providers) log.saved += 1;
+      if (payload.embeddingConfig) { log.embedSaved = payload.embeddingConfig; Object.assign(embedConfig, payload.embeddingConfig); }
+      return { semanticHash: 'after' };
+    },
     localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)) },
     LibraAttention: { opening: false }, bindApprovedOverlayKeyboard: () => {},
     fieldNode: (label, control, note = '') => guiEl('div', { class: 'field' }, [guiEl('label', { text: label }), control, note ? guiEl('small', { text: note }) : null]),
@@ -49,18 +58,18 @@ const makeContext = ({ llmOk = true, embedOk = true, models = ['gpt-5.4-mini', '
     markGuiDirty: () => {}, saveGuiState: async () => { log.saved += 1; return true; },
     guiSetStatus: message => log.status.push(message), queueGuiRender: () => {},
     selectNode: (value, items) => guiEl('select', {}, items.map(([v, label]) => guiEl('option', { value: v, text: label }))),
-    LibraProviderBridge: { peekConfig: () => ({ embed: embedConfig }) },
+    LibraProviderBridge: { peekConfig: () => ({ embed: embedConfig }), getConfig: async () => ({ embed: { ...embedConfig } }) },
     EmbeddingProviderRegistry: {
       normalizeConfig: cfg => ({ ...cfg }), getCapabilities: provider => capabilities[provider] || { label: provider, models: [] },
       validateConfig: cfg => ({ ok: !!cfg.key, missing: cfg.key ? [] : ['API Key'] })
     },
     LibraMemoryCore: {
-      state: {},
+      state: {}, publishSavedEmbeddingSettings: async (current, next) => next,
       testEmbeddingConnection: async patch => { log.embedTests.push(patch); return embedOk ? { ok: true } : { ok: false, error: 'HTTP 401' }; },
       saveEmbeddingSettings: async patch => { log.embedSaved = patch; Object.assign(embedConfig, patch); return patch; }
     }
   });
-  vm.runInContext(source + '\nObject.assign(globalThis,{runLibraQuickConnect,buildLibraQuickConnectBody,buildLibraQuickConnectCard,libraQuickConnectState,libraEmbeddingStatusSummary,openLibraQuickConnectDialog,maybeOpenLibraFirstSetup});', c);
+  vm.runInContext(slice('  const resolvePreset =', '  const stageExecutionOptions =') + source + '\nObject.assign(globalThis,{runLibraQuickConnect,buildLibraQuickConnectBody,buildLibraQuickConnectCard,libraQuickConnectState,libraEmbeddingStatusSummary,openLibraQuickConnectDialog,maybeOpenLibraFirstSetup});', c);
   return c;
 };
 const card = c => (title, desc, children) => c.guiEl('div', { class: 'card' }, [c.guiEl('h2', { text: title }), ...children]);
@@ -75,6 +84,16 @@ const card = c => (title, desc, children) => c.guiEl('div', { class: 'card' }, [
     assert.match(textContent, /RisuAI 보조 모델 · 따로 설정하지 않아도 동작합니다/);
     assert.match(textContent, /설정 안 됨 · 키워드 검색만 사용 \(API Key\)/);
     assert.match(textContent, /키를 붙여넣으면 제공자를 자동으로 알아냅니다/);
+  }
+  // Summary uses the same Librarian binding and fallback as actual execution.
+  {
+    const c = makeContext();
+    c.Gui.state.providers.old = { provider: 'openai', model: 'bound-model' };
+    c.Gui.state.agents.librarian.presetName = 'old';
+    assert.match(c.buildLibraQuickConnectBody().textContent, /bound-model/);
+    c.Gui.state.runtime.defaultPresetName = 'old';
+    c.Gui.state.agents.librarian.presetName = 'removed';
+    assert.match(c.buildLibraQuickConnectBody().textContent, /bound-model/, 'missing stage binding falls back to the default');
   }
   // One OpenAI key: generation preset + embedding, both tested before saving.
   {
@@ -124,28 +143,28 @@ const card = c => (title, desc, children) => c.guiEl('div', { class: 'card' }, [
   // First setup popup: opens once while embedding is unusable, never again after closing.
   {
     const c = makeContext();
-    assert.equal(c.maybeOpenLibraFirstSetup(), true);
+    assert.equal(await c.maybeOpenLibraFirstSetup(), true);
     const dialog = c.Gui.app.querySelector('[data-libra-quick-dialog]');
     assert.ok(dialog, 'popup opened');
     assert.match(dialog.textContent, /LIBRA 시작하기/);
     assert.match(dialog.textContent, /나중에 하기/);
     [...dialog.querySelectorAll('button')].find(button => button.textContent === '나중에 하기').click();
     assert.equal(c.Gui.app.querySelector('[data-libra-quick-dialog]'), null, 'closed');
-    assert.equal(c.maybeOpenLibraFirstSetup(), false, 'shown only once');
+    assert.equal(await c.maybeOpenLibraFirstSetup(), false, 'shown only once');
   }
   // Already configured embedding: no popup.
   {
     const c = makeContext();
     Object.assign(c.libraQuickConnectState(), { key: 'pa-abc' });
     await c.runLibraQuickConnect();
-    assert.equal(c.maybeOpenLibraFirstSetup(), false);
+    assert.equal(await c.maybeOpenLibraFirstSetup(), false);
     assert.equal(c.Gui.app.querySelector('[data-libra-quick-dialog]'), null);
   }
   // Not while the attention button is opening another screen.
   {
     const c = makeContext();
     c.LibraAttention.opening = true;
-    assert.equal(c.maybeOpenLibraFirstSetup(), false);
+    assert.equal(await c.maybeOpenLibraFirstSetup(), false);
   }
   console.log('PASS libra_quick_connect_flow_test');
 })().catch(error => { console.error(error); process.exit(1); });

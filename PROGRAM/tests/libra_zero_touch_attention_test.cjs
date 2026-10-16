@@ -44,8 +44,9 @@ const range = (startTurn, status) => ({ startTurn, endTurn: startTurn + 4, statu
     const c = make();
     const d = c.libraAttentionDecision;
     assert.equal(d({ ranges: [] }).kind, '');
-    assert.equal(d({ ranges: [range(1, 'saved'), range(6, 'missing')] }).kind, '', 'the newest range is left to the automatic scan');
-    const missing = d({ ranges: [range(1, 'missing'), range(6, 'missing'), range(11, 'saved'), range(16, 'missing')] });
+    assert.equal(d({ ranges: [range(1, 'missing')] }).kind, 'missing', 'an existing five-turn chat needs attention');
+    assert.equal(d({ ranges: [range(1, 'saved'), range(6, 'missing')], pendingStarts: [6] }).kind, '', 'only an actually pending scan hides its range');
+    const missing = d({ ranges: [range(1, 'missing'), range(6, 'missing'), range(11, 'saved'), range(16, 'missing')], pendingStarts: [16] });
     assert.equal(missing.kind, 'missing'); assert.equal(missing.count, 2); assert.match(missing.name, /지난 대화 2구간 기억 만들기/);
     const failed = d({ ranges: [range(1, 'missing'), range(6, 'failed'), range(11, 'missing')] });
     assert.equal(failed.kind, 'failed'); assert.match(failed.name, /기억 실패 1구간/);
@@ -72,7 +73,7 @@ const range = (startTurn, status) => ({ startTurn, endTurn: startTurn + 4, statu
     assert.equal((await c.refreshLibraAttention()).kind, 'failed');
     await c.openLibraAttention();
     assert.equal(c.log.drawers.at(-1), 'failed');
-    c.ranges = [range(1, 'saved'), range(6, 'saved'), range(11, 'missing')];
+    c.ranges = [range(1, 'saved'), range(6, 'saved'), range(11, 'saved')];
     assert.equal((await c.refreshLibraAttention()).kind, '');
     assert.equal(c.log.removed.at(-1), 'libra-v1-settings-attention');
     // Upgrade review opens its own dialog.
@@ -85,6 +86,25 @@ const range = (startTurn, status) => ({ startTurn, endTurn: startTurn + 4, statu
     assert.ok(dialogNodes.some(node => node.review === true), 'the existing review panel is shown in the dialog');
     await c.stopLibraAttention();
     assert.equal(c.LibraAttention.buttonSignature, '');
+  }
+  {
+    const c = make();
+    c.ranges = [range(1, 'missing')];
+    const memory = c.LibraMemoryCore.state;
+    memory.scheduledScanSerial = 3;
+    memory.lastScanSchedule = { channel: 'current', serial: 3, boundScope: { scopeKey: 's' }, automaticStartTurn: 1, phase: 'scheduled' };
+    assert.equal((await c.computeLibraAttention()).kind, '');
+    memory.lastScanSchedule.phase = 'failed';
+    assert.equal((await c.computeLibraAttention()).kind, 'missing', 'failed automatic work no longer hides a missing range');
+    memory.lastScanSchedule.phase = 'scheduled';
+    memory.lastScanSchedule.boundScope.scopeKey = 'other-chat';
+    assert.equal((await c.computeLibraAttention()).kind, 'missing', 'another chat cannot suppress attention');
+    memory.lastScanSchedule.boundScope.scopeKey = 's';
+    memory.scheduledScanSerial = 4;
+    assert.equal((await c.computeLibraAttention()).kind, 'missing', 'superseded work cannot suppress attention');
+    memory.scheduledScanSerial = 3;
+    memory.settings = { autoAnalyze: false };
+    assert.equal((await c.computeLibraAttention()).kind, 'missing', 'disabled automatic analysis cannot suppress attention');
   }
   {
     // Manual cold start: count and calls first; cancel runs nothing.

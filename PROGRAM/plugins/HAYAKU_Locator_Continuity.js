@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.0.141
-//@version 3.0.141
+//@display-name HAYAKU · Locator Continuity v3.0.142
+//@version 3.0.142
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.0.141';
+  const PLUGIN_VERSION = '3.0.142';
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
   const HAYAKU_SPARSE_RRF_COMPUTE_FINGERPRINT = '7f32e8b10fdd34e8356af70e40ad90d3c48e6fda132080046a807db0ea3ec58f';
   const HAYAKU_SPARSE_RRF_INPUT_SCHEMA = 'hayaku.sparse-rrf-fusion.input.v1';
@@ -44961,6 +44961,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     let row=null,abandoned=false;
     if(jobId&&!NATIVE_JOB_TERMINAL_STATES.has(Memory.nativeRecovery.job.state))updateNativeJob({transportPhase:'queued',queuedAt});
     const physical=enqueueNativeOtherAxCall(async () => {
+      if (options.automaticProbe === true && ((await loadSettings(true))?.enabled === false || Memory.unloaded || !ownsRuntime())) {
+        const error = new Error('hayaku_automatic_probe_cancelled');
+        error.code = 'HAYAKU_AUTOMATIC_PROBE_CANCELLED';
+        error.hayakuRunLlmSubmitted = false;
+        throw error;
+      }
       ledger.check();
       if(abandoned || (jobId && (Memory.nativeRecovery.job?.jobId!==jobId || NATIVE_JOB_TERMINAL_STATES.has(Memory.nativeRecovery.job.state))))throw new MemorySuiteExecutionContract.ContractError('STALE_SOURCE','Queued recovery operation is no longer current.');
       const startedAt = now();
@@ -45012,7 +45018,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           throw error;
         }
         callSucceeded=true;
-        if (typeof markHayakuAuxiliaryReady === 'function') markHayakuAuxiliaryReady();
+        if (typeof markHayakuAuxiliaryReady === 'function') await markHayakuAuxiliaryReady();
         return {
           ok: true,
           content,
@@ -45057,9 +45063,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       last: probe.last
     }, {});
   };
-  const runNativeAuxiliaryProbe = async () => {
+  const runNativeAuxiliaryProbe = async (options = {}) => {
     const probe = Memory.nativeRecovery.auxiliaryProbe || (Memory.nativeRecovery.auxiliaryProbe = { inFlight: false, last: null });
-    const settings = await loadSettings(false);
+    const settings = await loadSettings(options.automatic === true);
+    if (options.automatic === true && (settings?.enabled === false || Memory.unloaded || !ownsRuntime())) return { ok: false, status: 'cancelled', submitted: false };
     const allowPlugins = settings?.risuAuxAllowPlugins !== false;
     const resolution = nativeLlmApiResolution();
     const startedAt = now();
@@ -45111,7 +45118,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           content: 'This is a HAYAKU connectivity probe for the RisuAI auxiliary model. Do not analyze memory, do not create a HAYAKU packet, and do not modify state. Reply briefly.'
         },
         { role: 'user', content: 'Reply with HAYAKU OK.' }
-      ],{taskKind:'connection_probe'});
+      ],{taskKind:'connection_probe', automaticProbe: options.automatic === true});
       const result = {
         ...base,
         ok: true,
@@ -45130,7 +45137,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     } catch (error) {
       const result = {
         ...base,
-        status: 'failed',
+        status: error?.code === 'HAYAKU_AUTOMATIC_PROBE_CANCELLED' ? 'cancelled' : 'failed',
         submitted: error?.hayakuRunLlmSubmitted === true,
         finishedAt: now(),
         elapsedMs: Math.max(0, now() - startedAt),
@@ -57051,6 +57058,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         error.effectiveMismatches = effectiveMismatches;
         throw error;
       }
+      if (appliedSettings.enabled === false) cancelHayakuAutoProbe();
       if (beforeSettings.backgroundAutoRepair !== appliedSettings.backgroundAutoRepair) {
         if (!appliedSettings.backgroundAutoRepair && Memory.nativeRecovery.repairTimer != null) {
           try { clearTimeout(Memory.nativeRecovery.repairTimer); } catch (_) {}
@@ -60331,15 +60339,29 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     lastIndexes: '', buttonSignature: '', state: null, lastOtherAxSuccessAt: 0, autoProbeAttempted: false,
     chatObserved: false, dismissedPlacement: new Set(), inspectedKey: '', inspected: null
   };
-  const readAuxProbeCache = () => {
-    try { const value = JSON.parse(globalThis.localStorage?.getItem?.(HAYAKU_AUX_PROBE_CACHE_KEY) || 'null'); return objectish(value) ? value : null; } catch (_) { return null; }
+  let auxProbeCache = null;
+  const readAuxProbeCache = () => auxProbeCache;
+  const loadAuxProbeCache = async () => {
+    try {
+      const { values } = await RisuCompat.literalDeviceStorageAuthority([HAYAKU_AUX_PROBE_CACHE_KEY]);
+      const raw = values[0] ?? globalThis.localStorage?.getItem?.(HAYAKU_AUX_PROBE_CACHE_KEY);
+      const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      auxProbeCache = objectish(value) && Number(value.at) > 0 && Number(value.at) <= now() ? value : null;
+    } catch (_) { auxProbeCache = null; }
+    return auxProbeCache;
   };
-  const writeAuxProbeCache = ok => {
-    try { globalThis.localStorage?.setItem?.(HAYAKU_AUX_PROBE_CACHE_KEY, JSON.stringify({ ok: ok === true, at: now() })); } catch (_) {}
+  const writeAuxProbeCache = async ok => {
+    const value = { ok: ok === true, at: now() };
+    auxProbeCache = value;
+    try {
+      const { provider } = await RisuCompat.literalDeviceStorageAuthority([]);
+      if (typeof provider?.setItem === 'function') await provider.setItem(HAYAKU_AUX_PROBE_CACHE_KEY, JSON.stringify(value));
+      else globalThis.localStorage?.setItem?.(HAYAKU_AUX_PROBE_CACHE_KEY, JSON.stringify(value));
+    } catch (_) { /* Session readiness remains usable if device storage fails. */ }
   };
-  const markHayakuAuxiliaryReady = () => {
+  const markHayakuAuxiliaryReady = async () => {
     HayakuAttention.lastOtherAxSuccessAt = now();
-    writeAuxProbeCache(true);
+    await writeAuxProbeCache(true);
   };
   // ready | failed | unavailable | unknown. Only a probe or a real call decides.
   const hayakuAuxiliaryReadiness = () => {
@@ -60426,17 +60448,23 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       return false;
     }
   };
+  const cancelHayakuAutoProbe = () => {
+    if (HayakuAttention.probeTimer) clearTimeout(HayakuAttention.probeTimer);
+    HayakuAttention.probeTimer = null;
+  };
   const scheduleHayakuAutoProbe = () => {
+    if (Memory.settings?.enabled === false || Memory.unloaded || !ownsRuntime()) return false;
     if (HayakuAttention.autoProbeAttempted || HayakuAttention.probeTimer || !HayakuAttention.chatObserved) return false;
     if (hayakuAuxiliaryReadiness() !== 'unknown') return false;
     HayakuAttention.probeTimer = setTimeout(async () => {
       HayakuAttention.probeTimer = null;
-      if (Memory.unloaded || !ownsRuntime() || hayakuAuxiliaryReadiness() !== 'unknown') return;
+      if ((await loadSettings(true))?.enabled === false || Memory.unloaded || !ownsRuntime() || hayakuAuxiliaryReadiness() !== 'unknown') return;
       if (hayakuAttentionBusy()) { scheduleHayakuAutoProbe(); return; }
       HayakuAttention.autoProbeAttempted = true;
-      const result = await runNativeAuxiliaryProbe().catch(() => null);
+      const result = await runNativeAuxiliaryProbe({ automatic: true }).catch(() => null);
+      if (result?.status === 'cancelled') { HayakuAttention.autoProbeAttempted = false; return; }
       if (result?.status === 'busy') { HayakuAttention.autoProbeAttempted = false; scheduleHayakuAutoProbe(); return; }
-      if (result) writeAuxProbeCache(result.ok === true);
+      if (result && result.status !== 'cancelled') await writeAuxProbeCache(result.ok === true);
       pushOperationLog('attention:auxiliary_probe', { ok: result?.ok === true, code: compact(result?.error?.code || '', 96) }, result?.ok ? 'info' : 'warn');
       scheduleHayakuAttentionRefresh('auxiliary_probe', 0);
     }, HAYAKU_ATTENTION_AUTO_PROBE_DELAY_MS);
@@ -60516,7 +60544,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     if (state.kind === 'aux') {
       viewerRecoveryMessage('RisuAI 보조 모델(Other Ax)을 호출하지 못했습니다. RisuAI 설정에서 보조 모델을 지정한 뒤 다시 확인합니다. 확인 요청 1회를 보냅니다.', true);
       const result = await runNativeAuxiliaryProbe().catch(() => null);
-      if (result) writeAuxProbeCache(result.ok === true);
+      if (result && result.status !== 'cancelled') await writeAuxProbeCache(result.ok === true);
       if (typeof viewerRenderAuxiliaryProbe === 'function') viewerRenderAuxiliaryProbe();
       viewerRecoveryMessage(result?.ok ? '보조 모델 연결을 확인했습니다. 이제 누락된 패킷을 자동으로 복구합니다.'
         : `보조 모델 연결 실패 · ${compact(result?.error?.message || result?.status || '응답 없음', 160)}. RisuAI 설정 → 보조 모델(Other Ax)을 확인하세요.`, result?.ok !== true);
@@ -61578,6 +61606,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (!earlyBridgeIpc) scheduleMemoryBridgeIpcRetry();
       await RisuCompat.refreshInfo();
       await loadSettings(true);
+      await loadAuxProbeCache();
       await ensureHayakuSourceInputReady('install');
       const legacyStorage = await RisuCompat.purgeLegacyHayakuStorage();
       if (!ownsRuntime()) return;

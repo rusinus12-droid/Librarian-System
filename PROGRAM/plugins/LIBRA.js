@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.151
-//@version 2.3.151
+//@display-name LIBRA v2.3.152
+//@version 2.3.152
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1557,7 +1557,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.3.151';
+  const PLUGIN_VERSION = '2.3.152';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -15604,7 +15604,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     kind: value === null || value === undefined ? 'absent' : typeof value,
     value: value === undefined ? null : value
   });
-  const readSettingsPersistenceSnapshot = async () => {
+  const readSettingsPersistenceSnapshot = async ({ includeProviderArguments = false } = {}) => {
     const plugin = [];
     for (const key of SETTINGS_TRANSACTION_PLUGIN_KEYS) {
       const value = await RisuCompat.getItem(key);
@@ -15616,7 +15616,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       local.push({ key, present: value !== null && value !== undefined, value: safeClone(value) });
     }
     const backendArgument = text(await getArgument('backend_hosting_token', '') || '').trim();
-    return { plugin, local, backendArgument };
+    const providerArguments = {};
+    if (includeProviderArguments) for (const key of ['llm_key', 'embedding_key']) providerArguments[key] = await getArgument(key, '');
+    return { plugin, local, backendArgument, providerArguments };
   };
   const restoreSettingsPersistenceSnapshot = async snapshot => {
     const failures = [];
@@ -15660,6 +15662,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     } catch (error) {
       failures.push({ space: 'argument', key: 'backend_hosting_token', error: compact(error?.message || error, 300) });
     }
+    for (const [key, value] of Object.entries(snapshot?.providerArguments || {})) {
+      try {
+        const result = await setPluginArgumentValue(key, value);
+        if (result?.attempted && result?.verified !== true) throw new Error('argument_restore_failed');
+      } catch (error) { failures.push({ space: 'argument', key, error: compact(error?.message || error, 300) }); }
+    }
+    LibraProviderBridge.resetConfigRuntime();
+    EmbeddingProviderRegistry.clearQueryCache();
     return { ok: failures.length === 0, failures };
   };
   const normalizeSettingsProviderBank = bank => Object.fromEntries(
@@ -15678,7 +15688,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     };
     return { semanticHash: settingsSemanticHash(state), state };
   };
-  const runSettingsPersistenceTransaction = async ({ expectedBasisHash = '', memorySettingsBasisHash = '', includeMemorySettings = false, label = 'settings_save', apply, validate } = {}) => {
+  const runSettingsPersistenceTransaction = async ({ expectedBasisHash = '', memorySettingsBasisHash = '', includeMemorySettings = false, includeProviderArguments = false, expectedEmbeddingHash = '', label = 'settings_save', apply, validate } = {}) => {
     if (typeof apply !== 'function') throw new Error('settings_transaction_apply_missing');
     const before = await readSettingsPersistenceBasis();
     const expected = compact(expectedBasisHash || '', 200);
@@ -15689,7 +15699,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       stale.actualBasisHash = before.semanticHash;
       throw stale;
     }
-    const snapshot = await readSettingsPersistenceSnapshot();
+    if (expectedEmbeddingHash) {
+      LibraProviderBridge.resetConfigRuntime();
+      if (settingsSemanticHash((await LibraProviderBridge.getConfig()).embed) !== expectedEmbeddingHash) {
+        const stale = new Error('embedding_settings_stale_basis'); stale.code = 'EMBEDDING_SETTINGS_STALE_BASIS'; throw stale;
+      }
+    }
+    const snapshot = await readSettingsPersistenceSnapshot({ includeProviderArguments });
     if (includeMemorySettings) {
       // Recall configuration uses its existing memory-storage owner in every mode.
       snapshot.memorySettings = await LibraMemoryCore.readSettingsSnapshot();
@@ -15796,12 +15812,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       runtime: owns('runtime') ? normalizeRuntimeSettingsForStorage(payload.runtime) : null,
       agents: owns('agents') ? normalizeStoredAgentSlots(payload.agents || {}, true) : null,
       prompts: owns('prompts') ? normalizeStoredPromptOverrides(payload.prompts || {}) : null,
+      embeddingConfig: owns('embeddingConfig') ? LibraMemoryCore.normalizeEmbeddingSettings(payload.embeddingConfig) : null,
       memorySettings: owns('memorySettings') ? LibraMemoryCore.normalizeMemorySettings(payload.memorySettings) : null,
       backendToken: owns('backendToken') ? text(payload.backendToken || '').trim() : null
     };
     return await runSettingsPersistenceTransaction({
       expectedBasisHash: options.expectedBasisHash || '',
       includeMemorySettings: owns('memorySettings'),
+      includeProviderArguments: owns('embeddingConfig'),
+      expectedEmbeddingHash: owns('embeddingConfig') ? options.expectedEmbeddingHash || '' : '',
       memorySettingsBasisHash: options.memorySettingsBasisHash || '',
       label: options.label || 'structured_settings_save',
       apply: async ({ memorySettingsSnapshot }) => {
@@ -15826,10 +15845,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
             onCommitted: claim => { memorySettingsSnapshot.writtenHash = claim.semanticHash; memorySettingsSnapshot.writtenRevision = claim.revision; }
           });
         }
+        if (expected.embeddingConfig) await LibraProviderBridge.saveConfig({ embed: expected.embeddingConfig });
         return { ok: true };
       },
       validate: async () => {
         const failures = [];
+        if (expected.embeddingConfig) {
+          LibraProviderBridge.resetConfigRuntime();
+          if (settingsSemanticHash(LibraMemoryCore.normalizeEmbeddingSettings((await LibraProviderBridge.getConfig()).embed)) !== settingsSemanticHash(expected.embeddingConfig)) failures.push('embedding_settings');
+        }
         if (expected.memorySettings && (await LibraMemoryCore.readSettingsSnapshot()).semanticHash !== LibraMemoryCore.memorySettingsHash(expected.memorySettings)) failures.push('memory_settings');
         if (expected.providers && settingsSemanticHash(normalizeSettingsProviderBank(await readStoredPresetBank())) !== settingsSemanticHash(expected.providers)) failures.push('provider_presets');
         if (expected.runtime && runtimeSettingsSemanticHash(await readRuntimeSettings()) !== runtimeSettingsSemanticHash(expected.runtime)) failures.push('runtime_settings');
@@ -37505,8 +37529,6 @@ function createLibraReadonlySourceContext(owner) {
 
     const saveEmbeddingSettings = async patch => {
       const current = await loadEmbeddingSettings();
-      const sourceSignature = embeddingConfigSignature(current);
-      const sourceRequestSignature = embeddingRequestSignature(current);
       const incoming = asObject(patch);
       let base = current;
       if (incoming.provider && EmbeddingProviderRegistry.normalizeProvider(incoming.provider) !== EmbeddingProviderRegistry.normalizeProvider(current.provider)) {
@@ -37527,7 +37549,13 @@ function createLibraReadonlySourceContext(owner) {
       }
       const next = normalizeEmbeddingSettings({ ...base, ...incoming });
       const providerConfig = await LibraProviderBridge.saveConfig({ embed: next });
-      state.embeddingSettings = normalizeEmbeddingSettings(providerConfig?.embed || next);
+      return await publishSavedEmbeddingSettings(current, providerConfig?.embed || next);
+    };
+
+    const publishSavedEmbeddingSettings = async (current, next) => {
+      const sourceSignature = embeddingConfigSignature(current);
+      const sourceRequestSignature = embeddingRequestSignature(current);
+      state.embeddingSettings = normalizeEmbeddingSettings(next);
       const targetSignature = embeddingConfigSignature(state.embeddingSettings);
       if (sourceRequestSignature !== embeddingRequestSignature(state.embeddingSettings) || string(current.key) !== string(state.embeddingSettings.key)) EmbeddingProviderRegistry.clearQueryCache();
       if (sourceSignature !== targetSignature) {
@@ -63523,6 +63551,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         reason: string(scheduledOptions.reason || scheduledOptions.mode || 'live'),
         requestType: string(scheduledOptions.requestType || state.lastAfterRequest?.requestType || ''),
         delay,
+        automaticStartTurn: scheduledOptions.capturedContext?.outputCapture?.turn > 0
+          ? Math.floor((Number(scheduledOptions.capturedContext.outputCapture.turn) - 1) / BATCH_SIZE) * BATCH_SIZE + 1 : 0,
         boundScope: boundScope ? clone(boundScope) : null
       };
       let resolvedScope = boundScope ? clone(boundScope) : null;
@@ -75251,7 +75281,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       readSettingsSnapshot: readMemorySettingsSnapshot, restoreSettingsSnapshot: restoreMemorySettingsSnapshot,
       listPerformancePresets, applyPerformancePreset, listRecallQualityPresets, applyRecallQualityPreset, resetEmbeddingProviderDefaults,
       getUnifiedStorageStatus,
-      getServerScopeHealth, healthRecovery: libraHealthRecovery, loadEmbeddingSettings, saveEmbeddingSettings, testEmbeddingConnection, getLastMultilingualEmbeddingProbe,
+      getServerScopeHealth, healthRecovery: libraHealthRecovery, loadEmbeddingSettings, saveEmbeddingSettings, normalizeEmbeddingSettings, publishSavedEmbeddingSettings, testEmbeddingConnection, getLastMultilingualEmbeddingProbe,
       loadEmbeddingRebuildState, refreshEmbeddingRebuildInventory, startEmbeddingRebuild, stopEmbeddingRebuild,
       retryFailedEmbeddingRebuild, cleanupQuarantinedVectors, runAutomaticLegacyVectorMigration, scheduleAutomaticLegacyVectorMigration, purgeLegacyWorldAdditionalData,
       readonlySourceContext,
@@ -84465,12 +84495,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return { enabled: true, provider, url: url || capability.defaultUrl || '', model: model || capability.models?.[0] || '', key: key || '', dimensions: 'auto',
       batchSize: capability.batchSize || 8, queryTask: '', documentTask: '', queryPrefix: '', documentPrefix: '', normalizeVectors: true };
   };
-  // Embedding settings have their own durable save (provider switch resets, rebuild
-  // bookkeeping); the GUI save bar only persists them from the embedding page.
-  const applyLibraEmbeddingPatch = async patch => {
-    LibraMemoryCore.state.embeddingSettings = await LibraMemoryCore.saveEmbeddingSettings(patch);
-    return LibraMemoryCore.state.embeddingSettings;
-  };
   const runLibraQuickConnect = async () => {
     const qc = libraQuickConnectState();
     const key = String(qc.key || '').trim().replace(/^Bearer\s+/i, '');
@@ -84480,6 +84504,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const useLlm = qc.useLlm !== false && !!target.llm;
     const useEmbed = qc.useEmbed !== false && !!target.embed;
     if (!useLlm && !useEmbed) throw new Error(target.llm ? '사용할 항목(기억 분석 AI 또는 임베딩)을 하나 이상 켜 주세요.' : `${target.label} 키는 임베딩 전용입니다. 임베딩 사용을 켜 주세요.`);
+    const basis = await readSettingsPersistenceBasis();
+    const previousEmbed = (await LibraProviderBridge.getConfig()).embed;
+    const embeddingBasisHash = settingsSemanticHash(previousEmbed);
     let llm = null;
     if (useLlm) {
       let model = String(qc.model || '').trim();
@@ -84507,17 +84534,38 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (result?.ok !== true) throw new Error(`임베딩 연결 실패 · ${result?.error || result?.status || '응답 없음'}`);
       embed = patch;
     }
+    const payload = { removePostProcessors: false };
+    let name = '';
     if (llm) {
-      const name = uniquePresetName(`${target.label} 빠른 연결`);
+      const baseName = `${target.label} 빠른 연결`;
+      name = uniquePresetName(baseName);
+      for (let suffix = 2; basis.state.providers[name]; suffix += 1) name = `${baseName} ${suffix}`;
+      payload.providers = { ...basis.state.providers, [name]: llm.preset };
+      payload.runtime = { ...basis.state.runtime, default_preset: name };
+      payload.agents = { ...basis.state.agents, librarian: { ...basis.state.agents.librarian, preset: name } };
+    }
+    if (embed) payload.embeddingConfig = { ...previousEmbed, ...embed };
+    const transaction = await persistStructuredSettingsState(payload, {
+      label: 'quick_connect', expectedBasisHash: basis.semanticHash, expectedEmbeddingHash: embeddingBasisHash
+    });
+    if (llm) {
       Gui.state.providers[name] = llm.preset;
       Gui.state.runtime.defaultPresetName = name;
+      Gui.state.agents.librarian.presetName = name;
       Gui.selectedPreset = name;
+      Runtime.settings = null;
+      Runtime.settingsLoadedAt = 0;
+      clearRequestReuseCache();
     }
-    if (llm) {
-      markGuiDirty();
-      if (await saveGuiState() !== true) throw new Error('기억 분석 AI 설정을 저장하지 못했습니다.');
+    Gui.settingsBasisHash = transaction.semanticHash;
+    if (embed) {
+      try { await LibraMemoryCore.publishSavedEmbeddingSettings(previousEmbed, payload.embeddingConfig); }
+      catch (error) {
+        warn('quick_connect_embedding_refresh_failed', error);
+        qc.key = ''; qc.model = '';
+        return '연결 설정 저장됨 · 임베딩 재구축 상태를 확인해 주세요.';
+      }
     }
-    if (embed) await applyLibraEmbeddingPatch(embed);
     qc.key = ''; qc.model = '';
     return [llm ? `기억 분석 AI: ${target.label} · ${llm.model}` : '', embed ? `임베딩: ${EmbeddingProviderRegistry.getCapabilities(embed.provider)?.label} · ${embed.model}` : ''].filter(Boolean).join(' / ');
   };
@@ -84525,8 +84573,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const libraQuickConnectStatusRows = () => {
     const runtime = Gui.state?.runtime || {};
     const providers = Gui.state?.providers || {};
-    const defaultName = normalizeProviderPresetBindingName(runtime.defaultPresetName) || RISUAI_AUX_PRESET_NAME;
-    const defaultPreset = providers[defaultName] || providers[RISUAI_AUX_PRESET_NAME] || null;
+    const resolved = resolvePreset({ presets: providers, defaultPresetName: runtime.defaultPresetName,
+      stagePresetNames: { librarian: Gui.state?.agents?.librarian?.presetName } }, 'librarian');
+    const defaultName = resolved.name;
+    const defaultPreset = resolved.preset;
     const auxDefault = !defaultPreset || canonicalProvider(defaultPreset.provider) === RISUAI_AUX_PROVIDER;
     const aiLine = auxDefault ? 'RisuAI 보조 모델 · 따로 설정하지 않아도 동작합니다' : `${presetDisplayName(defaultName)} · ${providerDisplayLabel(defaultPreset.provider)} · ${presetModelDisplay(defaultPreset)}`;
     const embedStatus = libraEmbeddingStatusSummary();
@@ -84579,8 +84629,23 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     ]);
   };
   const LIBRA_FIRST_SETUP_KEY = 'libra.firstSetupSeen.v1';
-  const libraFirstSetupSeen = () => { try { return globalThis.localStorage?.getItem?.(LIBRA_FIRST_SETUP_KEY) === '1'; } catch (_) { return false; } };
-  const markLibraFirstSetupSeen = () => { try { globalThis.localStorage?.setItem?.(LIBRA_FIRST_SETUP_KEY, '1'); } catch (_) {} };
+  let libraFirstSetupSeenInSession = false;
+  const libraFirstSetupSeen = async () => {
+    if (libraFirstSetupSeenInSession) return true;
+    try {
+      const value = await RisuCompat.localGetItem(LIBRA_FIRST_SETUP_KEY);
+      if (value === '1' || value === 1) return (libraFirstSetupSeenInSession = true);
+      if (globalThis.localStorage?.getItem?.(LIBRA_FIRST_SETUP_KEY) === '1') {
+        await markLibraFirstSetupSeen();
+        return true;
+      }
+    } catch (_) {}
+    return libraFirstSetupSeenInSession;
+  };
+  const markLibraFirstSetupSeen = async () => {
+    libraFirstSetupSeenInSession = true;
+    try { await RisuCompat.localSetItem(LIBRA_FIRST_SETUP_KEY, '1'); } catch (_) {}
+  };
   // First setup popup: the quick connect form in a dialog over the LIBRA window.
   const openLibraQuickConnectDialog = (options = {}) => {
     if (!Gui.app || !Gui.visible) return false;
@@ -84610,8 +84675,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return true;
   };
   // Shown once, on the first LIBRA window open, only while embedding is not usable.
-  const maybeOpenLibraFirstSetup = () => {
-    if (libraFirstSetupSeen() || LibraAttention.opening || !Gui.app || !Gui.visible) return false;
+  const maybeOpenLibraFirstSetup = async () => {
+    const app = Gui.app, openSerial = Gui.openSerial;
+    if (await libraFirstSetupSeen() || LibraAttention.opening || !Gui.app || !Gui.visible || Gui.app !== app || Gui.openSerial !== openSerial) return false;
     if (Gui.app.querySelector('.overlay.is-open')) return false;
     const state = libraEmbeddingStatusSummary().state;
     if (state === 'loading') return false;
@@ -86094,7 +86160,7 @@ advanced
       // because applyGuiSettingsState() refuses to replace a dirty draft.
       await renderSettingsGui();
       guiSetStatus(rejected ? `일부 백그라운드 갱신 실패: ${perf.lastError}` : '최신 LIBRA 데이터를 확인했습니다.', !!rejected, false);
-      if (typeof maybeOpenLibraFirstSetup === 'function') maybeOpenLibraFirstSetup();
+      if (typeof maybeOpenLibraFirstSetup === 'function') await maybeOpenLibraFirstSetup();
       perf.hydratedAt = Date.now();
       // Native-copy completeness checking can scan sibling chat lineage. Keep it entirely
       // outside the opening critical path, then refresh only if it actually writes target data.
@@ -86181,16 +86247,15 @@ advanced
   const LIBRA_ATTENTION_REFRESH_DELAY_MS = 3000;
   const LibraAttention = { started: false, refreshTimer: null, pollTimer: null, evaluating: false, opening: false,
     lastIndexes: '', lastJobState: '', buttonSignature: '', state: null };
-  // Pure decision; exported for tests. Missing ranges exclude the newest complete
-  // range because the automatic 5-turn scan is about to handle it.
-  const libraAttentionDecision = ({ enabled = true, reviewRequired = false, jobActive = false, ranges = [] } = {}) => {
+  // A missing range is hidden only while an automatic scan for that range is pending.
+  const libraAttentionDecision = ({ enabled = true, reviewRequired = false, jobActive = false, ranges = [], pendingStarts = [] } = {}) => {
     if (enabled === false || jobActive) return { kind: '', count: 0 };
     if (reviewRequired) return { kind: 'review', count: 0, icon: '⚠️', name: `${PUBLIC_DISPLAY_NAME} · 기억 지침 확인 필요` };
     const rows = guiAsArray(ranges);
     const failed = rows.filter(row => row.status === 'failed').length;
     if (failed) return { kind: 'failed', count: failed, icon: '⚠️', name: `${PUBLIC_DISPLAY_NAME} · 기억 실패 ${failed}구간` };
-    const newest = Math.max(0, ...rows.map(row => Number(row.startTurn || 0)));
-    const missing = rows.filter(row => row.status === 'missing' && Number(row.startTurn || 0) !== newest).length;
+    const pending = new Set(pendingStarts.map(Number));
+    const missing = rows.filter(row => row.status === 'missing' && !pending.has(Number(row.startTurn || 0))).length;
     if (missing) return { kind: 'missing', count: missing, icon: '🕘', name: `${PUBLIC_DISPLAY_NAME} · 지난 대화 ${missing}구간 기억 만들기` };
     return { kind: '', count: 0 };
   };
@@ -86205,7 +86270,12 @@ advanced
     if (reviewRequired) return libraAttentionDecision({ reviewRequired });
     if (libraCanonicalJobActive()) return libraAttentionDecision({ jobActive: true });
     const inventory = await LibraMemoryCore.listCanonicalBatchRanges();
-    return { ...libraAttentionDecision({ ranges: inventory?.ranges }), scopeKey: String(inventory?.scopeKey || '') };
+    const memory = LibraMemoryCore.state;
+    const scan = memory?.lastScanSchedule;
+    const pending = memory?.settings?.autoAnalyze !== false && scan?.channel === 'current'
+      && scan.serial === memory.scheduledScanSerial && scan.boundScope?.scopeKey === inventory?.scopeKey
+      && ['scheduled', 'context_retry', 'executing', 'stale_branch_retry', 'settle_retry'].includes(scan.phase);
+    return { ...libraAttentionDecision({ ranges: inventory?.ranges, pendingStarts: pending ? [scan.automaticStartTurn] : [] }), scopeKey: String(inventory?.scopeKey || '') };
   };
   const syncLibraAttentionButton = async next => {
     const signature = next?.kind ? `${next.kind}:${next.count}:${next.scopeKey || ''}` : '';
@@ -86252,7 +86322,7 @@ advanced
         const indexes = `${await api.getCurrentCharacterIndex()}:${await api.getCurrentChatIndex()}`;
         if (indexes !== LibraAttention.lastIndexes) { LibraAttention.lastIndexes = indexes; scheduleLibraAttentionRefresh('chat_switch', 500); }
       }
-      const jobState = `${LibraMemoryCore.state?.canonicalJob?.jobId || ''}:${LibraMemoryCore.state?.canonicalJob?.state || ''}`;
+      const jobState = `${LibraMemoryCore.state?.canonicalJob?.jobId || ''}:${LibraMemoryCore.state?.canonicalJob?.state || ''}:${LibraMemoryCore.state?.lastScanSchedule?.serial || ''}:${LibraMemoryCore.state?.lastScanSchedule?.phase || ''}`;
       if (jobState !== LibraAttention.lastJobState) { LibraAttention.lastJobState = jobState; scheduleLibraAttentionRefresh('job_state', 500); }
     } catch (_) {}
     if (!LibraMemoryCore.state.disposed) { LibraAttention.pollTimer = setTimeout(() => void pollLibraAttention(), LIBRA_ATTENTION_POLL_MS); LibraAttention.pollTimer?.unref?.(); }

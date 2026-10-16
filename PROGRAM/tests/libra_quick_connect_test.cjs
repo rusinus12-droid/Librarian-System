@@ -38,11 +38,11 @@ assert.equal(c.pickLibraRecommendedModel('kimi', ['kimi-k3']), '', 'unknown fami
 // the popup opens itself once on first LIBRA open, and the memory summary is honest.
 assert.ok(L.includes("buildLibraQuickConnectCard({card}),\n        card('생성 AI 프리셋',"), 'AI page shows quick connect first');
 assert.ok(L.includes("buildLibraQuickConnectCard({card}),\n          card('임베딩',"), 'embedding page shows quick connect first');
-assert.ok(L.includes("if (typeof maybeOpenLibraFirstSetup === 'function') maybeOpenLibraFirstSetup();"), 'first setup popup is offered when the window opens');
+assert.ok(L.includes("if (typeof maybeOpenLibraFirstSetup === 'function') await maybeOpenLibraFirstSetup();"), 'first setup popup is offered when the window opens');
 assert.ok(!/Ollama로 무료 임베딩|runLibraQuickOllama/.test(L), 'local Ollama shortcut removed');
 assert.ok(L.includes("'임베딩 미설정'") && L.includes('키워드 검색만 사용 중'), 'memory summary no longer shows an unusable default as configured');
 // Nothing is saved before every requested test passes.
 const flow = slice('  const runLibraQuickConnect = async () => {', '  const libraQuickConnectStatusRows =');
 assert.ok(flow.indexOf('testProviderPreset(preset)') < flow.indexOf('Gui.state.providers[name] = llm.preset'));
-assert.ok(flow.indexOf('testEmbeddingConnection(patch)') < flow.indexOf('await applyLibraEmbeddingPatch(embed)'));
+assert.ok(flow.indexOf('testEmbeddingConnection(patch)') < flow.indexOf('await persistStructuredSettingsState(payload,'));
 console.log('PASS libra_quick_connect_test');
