@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-16T05:15:19.437Z",
+  "generatedAt": "2026-10-16T05:15:55.312Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -4503,8 +4503,8 @@
       "bytes": 5155
     },
     "tests/checksum_generator_worktree_metadata_test.cjs": {
-      "sha256": "fc35cd0a3d120051e89f6e0fd7ae50a85d624ac5dd45f9bc563a53dea77b40e1",
-      "bytes": 5271
+      "sha256": "e012802f0335b2246cfacb4165dd0779e329e0aa38f3b3bd3fed976da4e275ad",
+      "bytes": 5354
     },
     "tests/code_review_findings_reachability_test.cjs": {
       "sha256": "65c8cd092647d503c0c08784b6ef005dc4f21818eb4135c7abe9e93431612afb",
@@ -8907,12 +8907,12 @@
       "bytes": 4927
     },
     "tests/manifest_clean_tree_file_set_test.cjs": {
-      "sha256": "8e423c4b13c2828a91b4cd436dda837c48cfd7dba33bf7926d3e33b92a5db73e",
-      "bytes": 7534
+      "sha256": "08a98493b0b02d70de7178fe2aed4b82d4c6b025f50ce477e8f2caaf9a68d3c1",
+      "bytes": 7617
     },
     "tests/manifest_generator_untracked_exclusion_test.cjs": {
-      "sha256": "0a04f318d1ff0194d3ca6d01a6925a09a1d10efd5daa15595fa06fb285d3bd98",
-      "bytes": 8115
+      "sha256": "ab49364dabf626a5ff01def36082f17b56f67db1dbf33c171eb063ca4bf9157c",
+      "bytes": 8198
     },
     "tests/manifest_minified_declaration_binding_test.cjs": {
       "sha256": "7eed7aa4092d556eb394beb39e444cfbbaaa4eab3aa801c1d8d60c1af2ce7f39",

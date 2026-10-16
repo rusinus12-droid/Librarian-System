@@ -25,7 +25,8 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const GENERATOR = path.resolve(__dirname, '..', 'tools', 'update_checksums.cjs');
-const MAX_BUFFER = 64 * 1024 * 1024;
+// `git archive HEAD PROGRAM` passed 64 MiB in 2026-10; keep headroom for growth.
+const MAX_BUFFER = 256 * 1024 * 1024;
 
 const buildSandbox = () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'checksum-generator-worktree-'));

@@ -35,7 +35,8 @@ const REPO_ROOT=locatedRoot.stdout.trim();
 const MANIFEST = path.join(PROGRAM, 'program-manifest.json');
 const RELATIVE_PROGRAM=path.relative(REPO_ROOT,PROGRAM);
 // The whole 5 MB plugin set is read by the generator, so the default 1 MB buffer would truncate it.
-const MAX_BUFFER = 64 * 1024 * 1024;
+// `git archive HEAD PROGRAM` passed 64 MiB in 2026-10; keep headroom for growth.
+const MAX_BUFFER = 256 * 1024 * 1024;
 
 const manifestFiles = programRoot => {
   const raw = JSON.parse(fs.readFileSync(path.join(programRoot, 'program-manifest.json'), 'utf8'));
