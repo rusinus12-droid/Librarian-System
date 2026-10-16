@@ -69,7 +69,7 @@ const startGuiRuntime = async ({ storedOnly = false } = {}) => {
   try {
   assert.equal(await runtime.hayaku.showUi(), true, 'the real public viewer entry point should mount in the test host document');
   const root = doc.getElementById('hayaku-ledger-viewer-root');
-  await waitFor(() => root?.querySelector('.app') && !root.querySelector('.app').classList.contains('is-busy') && /records/.test(root.querySelector('#hayakuViewerScopeMeta')?.textContent || ''), 'initial current-scope ledger publication');
+  await waitFor(() => root?.querySelector('.app') && !root.querySelector('.app').classList.contains('is-busy') && /세계선 원장 · 기록 [\d,]+개/.test(root.querySelector('#hayakuViewerScopeMeta')?.textContent || ''), 'initial current-scope ledger publication');
   await root.querySelector('[data-hayaku-viewer-goto="recovery"]').fire('click');
   await root.querySelector('[data-recovery-view="cold"]').fire('click');
   assert.equal(root.querySelector('[data-recovery-panel="cold"]').hidden,false,'actual cold-start recovery tab is visible');

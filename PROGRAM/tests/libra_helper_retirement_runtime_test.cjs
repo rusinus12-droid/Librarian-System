@@ -11,7 +11,7 @@ const exclusive=/^(?:sga(?:_|[A-Z])|gradia(?:_|[A-Z])|planner(?:_|[A-Z])|input_w
 test('retired helper executors and declared host controls are removed; core memory entrypoints remain',()=>{
  for(const name of ['runTurnPlanner','runSgaPipeline','runExplicitLibraInputWriter','generateLibraInputWriterChoices'])assert(!bindings.has(name),'retired executable remains '+name);
  const controls=[...source.matchAll(/^\/\/@arg\s+(\S+)/gm)].map(m=>m[1]);assert(!controls.some(k=>exclusive.test(k)),'retired host settings remain');
- for(const name of ['readCompletedReceiptSet','produceMicroForTurn','renderClassicBlock','assertConsumerEvidenceCurrent','captureUnifiedResponseBoundary'])assert(source.includes(name),'retained core missing '+name);
+ for(const name of ['readCompletedReceiptSet','produceMicroForTurn','UNIFIED_CLASSIC_HEADER','assertConsumerEvidenceCurrent','captureUnifiedResponseBoundary'])assert(source.includes(name),'retained core missing '+name);
 });
 test('all legacy response selections resolve to retained default recall without retired output routes',async()=>{
  const r=await createLibraVmHarness();try{for(const old of [{injectionMode:'planner'},{injection_mode:'sga'},{responseFamily:'gradia',gradiaWritingMode:'author'},{response_family:'gradia',input_writer_enabled:true}]){

@@ -770,6 +770,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       dataIdentityContract:connection.dataIdentityContract, certified:connection.dataIdentityCertified, rejected:false});
   };
   const serverBinding = () => Object.freeze({schema:'memory-suite.client-data-binding.v1', ...dataBinding,
+    resetEpoch: state.bootstrap.value?.resetEpochs?.[namespace] ?? 0,
+    resetEpochCertified: state.bootstrap.value?.resetEpochCertified === true,
     current:!lifecycle.disposed && !dataBinding.rejected && !!dataBinding.url && state.config.url === dataBinding.url});
   const configuredServerUrlNow = async () => normalizeServerUrl(await getArgumentValue(urlArguments, defaultUrl));
   const captureBootstrapIntent = config => ({
@@ -6590,6 +6592,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       #${rootId} .scopetoggle button[aria-pressed="true"]{background:#1d2f52;color:#eef4ff;box-shadow:0 0 0 1px #5d88ff inset}
       #${rootId} .scopetoggle button small{display:block;margin-top:2px;font-weight:400;font-size:10px;color:#9eacc3}
       #${rootId} .scopetoggle button[aria-pressed="true"] small{color:#cdd9f2}
+      #${rootId} .scopetoggle button:only-child{grid-column:1/-1}
+      #${rootId} .mscx-advanced{border:1px solid #34425b;border-radius:10px;padding:0 12px} #${rootId} .mscx-advanced>summary{cursor:pointer;padding:11px 0;font-weight:700;font-size:13px} #${rootId} .mscx-advanced>summary small{font-weight:400;color:#9eacc3;margin-left:6px} #${rootId} .mscx-advanced-body{display:grid;gap:8px;padding-bottom:12px}
       #${rootId} .scopeunset{border-color:#f0b65c;background:#241d10}
       #${rootId} .modes{display:grid;gap:8px} #${rootId} label.mode{display:flex;gap:9px;align-items:flex-start;border:1px solid #34425b;border-radius:10px;padding:10px;cursor:pointer}
       #${rootId} input[type=text],#${rootId} input[type=password]{width:100%;padding:10px 11px;border-radius:9px;border:1px solid #465a79;background:#0b1321;color:#fff}
@@ -6605,6 +6609,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       #${rootId} :is(.muted,span,small){color:#6f5a44!important;-webkit-text-fill-color:#6f5a44!important}
       #${rootId} :is(.scope,.status,.result){background:#fffaf2;border-color:#cbb89d;color:#4d3929;min-width:0;overflow-wrap:anywhere}
       #${rootId} label.mode{background:#f5ebdc;border-color:#cbb89d;color:#392b20;min-width:0}
+      #${rootId} .scopetoggle{background:#efe2cd;border-color:#cbb89d}
+      #${rootId} .scopetoggle button{background:transparent;border:0;color:#6f5a44;-webkit-text-fill-color:#6f5a44}
+      #${rootId} .scopetoggle button[aria-pressed="true"]{background:#fffaf2;color:#392b20;-webkit-text-fill-color:#392b20;box-shadow:0 0 0 1px #a77742 inset}
+      #${rootId} .scopetoggle button[aria-pressed="true"] small{color:#6f5a44!important;-webkit-text-fill-color:#6f5a44!important}
+      #${rootId} .mscx-advanced{border-color:#cbb89d;background:#f5ebdc}
       #${rootId} label.mode:has(input:checked){background:#e8d6bb;border-color:#a77742}
       #${rootId} label.mode>span{min-width:0;overflow-wrap:anywhere}
       #${rootId} input[type=radio]{flex:none;accent-color:#966334}
@@ -6632,10 +6641,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         </div>
         <div class="muted" data-mirror-transition>미러는 두 저장 위치 사이의 전환 중에만 사용합니다. 기존 미러 설정은 단독 모드를 선택해 전환을 완료하세요.</div>
         <div class="scope" data-mode-summary${integratesCompute ? '' : ' hidden'}></div>
-        <p>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
-        <div class="actions"><button data-test>연결 테스트</button><button class="primary" data-apply>설정 적용</button><button data-sync>지금 동기화</button><button data-restore>서버 → pluginStorage 복구</button><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div>
+        <p class="muted" data-server-hint>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
+        <div class="actions"><button data-test>연결 테스트</button><button class="primary" data-apply>설정 적용</button></div>
+        <details class="mscx-advanced"><summary>고급 작업 <small>동기화 · 복구 · 이전 · 초기화</small></summary><div class="mscx-advanced-body"><div class="muted">평소에는 쓰지 않아도 됩니다. 저장 위치를 옮기거나 문제를 복구할 때만 사용하세요.</div>
+        <div class="actions"><button data-sync>지금 동기화</button><button data-restore>서버 → pluginStorage 복구</button></div>
         ${globalModeEnabled ? '<div class="actions"><button data-global-pause>전체 이전 중단·보존</button><button data-global-resume>미완료 전체 이전 재개</button></div>' : ''}
-        <div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div><div class="status" data-status>${integratesCompute ? `현재 방식: ${esc(initial.modeLabel)}\n연산: ${initial.executionPolicy?.computeMode === 'prefer_server' ? '서버 우선 · 실패 시 로컬' : '로컬'}` : `현재 모드: ${esc(initial.modeLabel)}\n서버 상태를 확인할 수 있습니다.`}</div>
+        <div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div>
+        <div class="actions"><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div></div></details><div class="status" data-status>${integratesCompute ? `현재 방식: ${esc(initial.modeLabel)}\n연산: ${initial.executionPolicy?.computeMode === 'prefer_server' ? '서버 우선 · 실패 시 로컬' : '로컬'}` : `현재 모드: ${esc(initial.modeLabel)}\n서버 상태를 확인할 수 있습니다.`}</div>
       </div>
       <div class="job" data-job><b data-job-title>작업 진행 중</b><div class="bar"><i data-job-bar></i></div><div class="grid"><span data-job-phase></span><span data-job-count></span><span data-job-bytes></span><span data-job-time></span><span data-job-retry></span><span data-job-key></span></div><div class="result" data-job-result></div><textarea data-job-diagnostics aria-label="저장 이전 상세 진단" readonly style="display:none"></textarea><button data-job-copy type="button">상세 진단 복사</button><div class="actions" data-job-terminal-actions style="display:none"><button data-job-dismiss type="button">결과 확인 닫기</button></div></div>
     </div>`;
@@ -6651,6 +6663,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const local = mode === MODE_PLUGIN_ONLY;
       const serverFields = q('[data-server-fields]');
       if (serverFields) serverFields.hidden = integratesCompute && local;
+      const serverHint = q('[data-server-hint]');
+      if (serverHint) serverHint.hidden = integratesCompute && local;
       const testButton = q('[data-test]');
       if (testButton) testButton.disabled = integratesCompute && local;
       const summary = q('[data-mode-summary]');
@@ -7235,6 +7249,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const dispose = async () => {
     if (lifecycle.disposed) return false;
+    for(const lease of graphStorageLeases.values())void lease.release();
     lifecycle.disposed = true;
     for (const timer of [...lifecycle.timers]) clearTimeout(timer);
     lifecycle.timers.clear();
@@ -7291,43 +7306,93 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     return {space, key, remoteKey:route.remoteKey, scopeId:route.scopeId};
   };
-  const conditionalBatchRecord = async (space, key) => {
-    const row = await remoteGet(space,key,{allowPluginOnly:true});
-    if (typeof row.exists !== 'boolean' || typeof row.tombstone !== 'boolean' || row.exists && row.tombstone
-      || !Number.isSafeInteger(row.revision) || row.revision < 0 || typeof row.digest !== 'string') {
-      throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_INVALID');
-    }
-    if (row.revision === 0) {
-      if (row.exists || row.tombstone || row.digest !== '') throw conditionalBatchError('MEMORY_SUITE_BATCH_ABSENCE_INVALID');
-    } else if (!/^[a-f0-9]{64}$/.test(row.digest) || row.exists === row.tombstone) {
-      throw conditionalBatchError('MEMORY_SUITE_BATCH_REVISION_INVALID');
-    }
-    if (row.exists && await conditionalBatchSHA(row.value) !== row.digest) throw conditionalBatchError('MEMORY_SUITE_BATCH_VALUE_DIGEST_MISMATCH');
-    return row;
+  const conditionalBatchRecord = async (space, key, readObserver = null) => {
+    const lease = readObserver ? readObserver() : null;
+    let stage = null;
+    try {
+      const row = await remoteGet(space,key,{allowPluginOnly:true});
+      if (lease) { lease.accept(row.value ?? null); stage = lease.prepare(row.value ?? null); }
+      if (typeof row.exists !== 'boolean' || typeof row.tombstone !== 'boolean' || row.exists && row.tombstone
+        || !Number.isSafeInteger(row.revision) || row.revision < 0 || typeof row.digest !== 'string') {
+        throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_INVALID');
+      }
+      if (row.revision === 0) {
+        if (row.exists || row.tombstone || row.digest !== '') throw conditionalBatchError('MEMORY_SUITE_BATCH_ABSENCE_INVALID');
+      } else if (!/^[a-f0-9]{64}$/.test(row.digest) || row.exists === row.tombstone) {
+        throw conditionalBatchError('MEMORY_SUITE_BATCH_REVISION_INVALID');
+      }
+      if (row.exists && await conditionalBatchSHA(row.value) !== row.digest) throw conditionalBatchError('MEMORY_SUITE_BATCH_VALUE_DIGEST_MISMATCH');
+      return row;
+    } finally { stage?.release(); lease?.release(); }
   };
-  const captureConditionalReadSet = async (keys = []) => {
+
+  const captureConditionalReadSet = async (keys = [], { readObserver = null } = {}) => {
+    if (readObserver !== null && typeof readObserver !== 'function') throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_OBSERVER_INVALID');
     if(!Array.isArray(keys)||!keys.length||keys.length>64)throw conditionalBatchError('MEMORY_SUITE_BATCH_ITEM_LIMIT');
     const boundary=await conditionalBatchBoundary(),records=[],seen=new Set();
     for(const key of keys){const route=await conditionalBatchRoute('plugin',key,boundary);
       if(seen.has(route.remoteKey))throw conditionalBatchError('MEMORY_SUITE_BATCH_DUPLICATE_KEY');seen.add(route.remoteKey);
-      const row=await conditionalBatchRecord(route.space,route.remoteKey);
+      const row=await conditionalBatchRecord(route.space,route.remoteKey,readObserver);
       records.push({...route,revision:row.revision,digest:row.digest,exists:row.exists,tombstone:row.tombstone});
     }
     if(jsonComparable(boundary)!==jsonComparable(await conditionalBatchBoundary()))throw conditionalBatchError('MEMORY_SUITE_BATCH_BOUNDARY_CHANGED');
     const data={schema:'memory-suite.storage.read-set.v1',boundary,records,capturedAt:Date.now()};
     return {...data,payloadDigest:await conditionalBatchSHA(data)};
   };
-  const assertConditionalReadSet = async raw => {
+  const assertConditionalReadSet = async (raw, { readObserver = null } = {}) => {
+    if (readObserver !== null && typeof readObserver !== 'function') throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_OBSERVER_INVALID');
     const data=conditionalBatchClone(raw || {}),hash=data.payloadDigest;delete data.payloadDigest;
     if(data.schema!=='memory-suite.storage.read-set.v1' || !Array.isArray(data.records)||!data.records.length||data.records.length>64
       || hash!==await conditionalBatchSHA(data))throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_SET_INVALID');
     if(jsonComparable(data.boundary)!==jsonComparable(await conditionalBatchBoundary()))throw conditionalBatchError('MEMORY_SUITE_BATCH_BOUNDARY_CHANGED');
     for(const saved of data.records){const route=await conditionalBatchRoute(saved.space,saved.key,data.boundary);
       if(route.remoteKey!==saved.remoteKey)throw conditionalBatchError('MEMORY_SUITE_BATCH_ROUTE_CHANGED');
-      const row=await conditionalBatchRecord(route.space,route.remoteKey);
+      const row=await conditionalBatchRecord(route.space,route.remoteKey,readObserver);
       if(row.revision!==saved.revision||row.digest!==saved.digest||row.exists!==saved.exists||row.tombstone!==saved.tombstone)throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_SET_CHANGED',{storageMutationKey:saved.key});
     }
     return true;
+  };
+  const captureServerBinding=async()=>{
+    for(let attempt=0;attempt<4;attempt++){
+      const connection=await bootstrap(false,true),generation=dataBinding.generation;
+      await assertConnectionCurrent(connection,generation);
+      // A refresh temporarily clears bootstrap.value. Wait for its validated
+      // result instead of misclassifying an unknown reset epoch as a change.
+      if(state.bootstrap.pending||state.bootstrap.value!==connection)continue;
+      if(dataBinding.generation!==generation)throw connectionStaleError();
+      return serverBinding();
+    }
+    throw connectionStaleError();
+  };
+  // Server-only derived-store leases. Public DTOs and process-local Maps are
+  // never accepted as a namespace fence by the storage owner.
+  const graphStorageLeases=new Map();
+  const graphLifecycleRequest=async(scopeKey,body)=>{
+    const scope=await resolveCurrentScope(false),mode=(await readScopeMode(scope,false)).mode;
+    if(scope.scopeKey!==scopeKey||![MODE_SERVER_ONLY,MODE_MIRROR].includes(mode))throw new Error('LIBRA_GRAPH_LEASE_ROUTE_CHANGED');
+    const before=await conditionalBatchBoundary();
+    const boot=await bootstrap(false,true);
+    if(boot?.capabilities?.['libra-graph-lifecycle.v1']!==true)throw new Error('LIBRA_GRAPH_LEASE_UPGRADE_REQUIRED');
+    // A v2 projection must only be published by a GC-aware storage owner.
+    if(body.action==='acquire'&&body.kind==='build'&&boot?.capabilities?.['libra-graph-projection-pages.v1']!==true)throw new Error('LIBRA_GRAPH_PROJECTION_UPGRADE_REQUIRED');
+    const payload=await request('POST','/v1/libra/graph-lifecycle',{scopeKey,...body},{allowPluginOnly:true,scopeId:scopeKey,storageMode:mode});
+    if(jsonComparable(before)!==jsonComparable(await conditionalBatchBoundary()))throw new Error('LIBRA_GRAPH_LEASE_ROUTE_CHANGED');
+    if(payload?.ok!==true||!payload.result)throw new Error('LIBRA_GRAPH_LEASE_RESPONSE_INVALID');
+    return payload.result;
+  };
+  const acquireGraphStorageLease=async(scopeKey,kind)=>{
+    const mode=(await readScopeMode(await resolveCurrentScope(false),false)).mode;
+    if(![MODE_SERVER_ONLY,MODE_MIRROR].includes(mode)||kind==='gc'&&mode!==MODE_SERVER_ONLY)return null;
+    let lease=await graphLifecycleRequest(scopeKey,{action:'acquire',kind,requestId:operationId('graph-lease')}),closed=false,timer=null,failure=null;
+    const key=lease.token;
+    const assertCurrent=async()=>{if(closed||failure)throw failure||new Error('LIBRA_GRAPH_LEASE_CLOSED');return await graphLifecycleRequest(scopeKey,{action:'assert',token:key});};
+    const renew=async()=>{try{if(closed)return;lease=await graphLifecycleRequest(scopeKey,{action:'renew',token:key});}catch(error){failure=error;}finally{if(!closed&&!failure){timer=setTimeout(renew,20000);timer?.unref?.();}}};
+    timer=setTimeout(renew,20000);timer?.unref?.();
+    const session={scopeKey,kind,token:key,assertCurrent,
+      command:async body=>{await assertCurrent();return await graphLifecycleRequest(scopeKey,{...body,token:key});},
+      release:async()=>{if(closed)return;closed=true;clearTimeout(timer);graphStorageLeases.delete(key);try{await graphLifecycleRequest(scopeKey,{action:'release',token:key});}catch(_){/* durable expiration still revokes this lease */}}
+    };
+    graphStorageLeases.set(key,session);return Object.freeze(session);
   };
   const prepareConditionalBatch = async (input = {}) => {
     const mutations = input.mutations, conditions = input.conditions || [];
@@ -7358,6 +7423,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     for(const pin of pinnedSets)for(const saved of pin.records){
       const condition=[...body.conditions,...body.mutations].find(c=>c.space===saved.space&&c.key===saved.remoteKey);
       if(!condition||condition.expectedRevision!==saved.revision||condition.expectedDigest!==saved.digest||condition.expectedExists!==saved.exists||condition.expectedTombstone!==saved.tombstone)throw conditionalBatchError('MEMORY_SUITE_BATCH_PIN_NOT_BOUND');
+    }
+    const graphScope=/^libra:v1:scope:([^:]+):memory-graph:v1:/.exec(body.mutations[0]?.key||'')?.[1];
+    if(graphScope&&body.mutations.some(m=>m.key.includes(':root:'))){
+      const lease=[...graphStorageLeases.values()].find(x=>x.scopeKey===graphScope&&x.kind==='build');
+      if(!lease)throw new Error('LIBRA_GRAPH_BUILD_LEASE_REQUIRED');await lease.assertCurrent();body.graphLease={scopeKey:graphScope,token:lease.token};
     }
     if (storageValueBytes(body)>4*1024*1024) throw conditionalBatchError('MEMORY_SUITE_BATCH_BODY_LIMIT');
     if (jsonComparable(boundary)!==jsonComparable(await conditionalBatchBoundary())) throw conditionalBatchError('MEMORY_SUITE_BATCH_BOUNDARY_CHANGED');
@@ -7462,7 +7532,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let value;try{value=JSON.parse(raw);}catch(_){readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');}
     if(!value||typeof value!=='object'||Array.isArray(value))readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');return value;
   };
-  const readReadonlyRoute=async identity=>{
+  const readReadonlyRoute=async (identity, ownerRead=false)=>{
     const fence=readonlyRouteFence(),plugin=rawPluginStorage(),device=await rawDeviceStorage({strict:true});
     if(typeof plugin?.getItem!=='function')readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');
     const rawScope=await plugin.getItem('libra:v1:scope-registry:v1'),registry=readonlyRouteObject(rawScope);
@@ -7487,13 +7557,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const pick=id=>{let out=null;for(const candidate of candidates){const value=candidate[id];if(!value)continue;if(out&&value.updatedAt===out.updatedAt&&JSON.stringify(value)!==JSON.stringify(out))readonlyRouteFail('READ_ROUTE_AMBIGUOUS');if(!out||value.updatedAt>out.updatedAt)out=value;}return out;};
     const stored=pick(scope.scopeKey),global=pick(GLOBAL_SCOPE_ID);
     if(stored?.removed||stored?.origin==='transition_pending'||state.scopeRouting.transientModes.has(scope.scopeKey))readonlyRouteFail('READ_ROUTE_SCOPE_UNAVAILABLE');
-    const explicit=stored&&!['inherited','migrated'].includes(stored.origin),selected=explicit?stored:global&&!global.removed?global:stored;
-    if(!selected||selected.removed||selected.mode===MODE_MIRROR||selected.origin==='transition_pending')readonlyRouteFail('READ_ROUTE_MODE_UNAVAILABLE');
+    const explicit=stored&&!['inherited','migrated'].includes(stored.origin);
+    let selected=explicit?stored:global&&!global.removed?global:stored,ownerLocalWitness=null;
+    if(!selected&&ownerRead){
+      // Only the native owner's engine may observe the established fresh-local
+      // default. Reuse the strict argument/transition/reset witness; never import
+      // a mode, create routing rows or weaken the external readonly contract.
+      const local=await inspectLocalHealthSnapshot({...scope,scopeId:scope.scopeKey},'libra:v1:scope:'+scope.scopeKey+':manifest',{strictPhysical:true});
+      if(local.mode!==MODE_PLUGIN_ONLY)readonlyRouteFail('READ_ROUTE_MODE_UNAVAILABLE');
+      selected={mode:MODE_PLUGIN_ONLY,origin:'owner_observed_local_default'};ownerLocalWitness=local.binding;
+    }
+    if(!selected||selected.removed||selected.mode===MODE_MIRROR&&!ownerRead||selected.origin==='transition_pending')readonlyRouteFail('READ_ROUTE_MODE_UNAVAILABLE');
     const reset=await plugin.getItem(resetChoiceKey);if(reset!=null&&reset!=='')readonlyRouteFail('READ_ROUTE_RESET_UNAVAILABLE');
     const currentDevice=await rawDeviceStorage({strict:true});
     if(readonlyRouteFence()!==fence||rawPluginStorage()!==plugin||currentDevice!==device)readonlyRouteFail('READ_ROUTE_CHANGED');
     // Includes only relevant routing rows; unrelated registry entries are harmless.
-    return {scope,mode:selected.mode,scopeRow:stored,globalRow:explicit?null:global,modePublication,fence,plugin,device};
+    return {scope,mode:selected.mode,scopeRow:stored,globalRow:explicit?null:global,modePublication,fence,plugin,device,ownerLocalWitness};
   };
   const readonlyRouteState=input=>{
     readonlyRouteExact(input,['handle','requestId']);const s=readonlyRouteHandles.get(input.handle);
@@ -7502,22 +7581,24 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(performance.now()>=s.deadline){s.active=false;readonlyRouteActive.delete(s);readonlyRouteFail('READ_ROUTE_EXPIRED');}
     return s;
   };
-  const observeReadonlyRoute=async input=>{
+  const observeReadRoute=async (input,ownerRead)=>{
     readonlyRouteExact(input,['requestId','characterId','chatId','durationMs']);readonlyRouteId(input.requestId);readonlyRouteId(input.characterId);readonlyRouteId(input.chatId);
     if(!Number.isSafeInteger(input.durationMs)||input.durationMs<1||input.durationMs>120000)readonlyRouteFail('READ_ROUTE_REQUEST_INVALID');
     for(const s of readonlyRouteActive)if(performance.now()>=s.deadline&&!s.pending){s.active=false;readonlyRouteActive.delete(s);}
     if(readonlyRouteActive.size>=4)readonlyRouteFail('READ_ROUTE_LIMIT');
-    const s={requestId:input.requestId,identity:{characterId:input.characterId,chatId:input.chatId},deadline:performance.now()+input.durationMs,pending:true,active:true};readonlyRouteActive.add(s);
+    const s={requestId:input.requestId,identity:{characterId:input.characterId,chatId:input.chatId},deadline:performance.now()+input.durationMs,pending:true,active:true,ownerRead};readonlyRouteActive.add(s);
     try{
-      s.value=await readReadonlyRoute(s.identity);if(performance.now()>=s.deadline)readonlyRouteFail('READ_ROUTE_EXPIRED');
+      s.value=await readReadonlyRoute(s.identity,ownerRead);if(performance.now()>=s.deadline)readonlyRouteFail('READ_ROUTE_EXPIRED');
       const handle=Object.freeze({});readonlyRouteHandles.set(handle,s);
       const summary=Object.freeze({schema:'memory-suite.readonly-route-observation.v1',scope:Object.freeze({...s.value.scope}),mode:s.value.mode,routeEpoch:Object.freeze({kind:'sdk-instance-configuration-generation',generation:wholeDataInventoryEpoch}),semanticModeEpoch:null,modePublication:s.value.modePublication,usage:'request-local-route-observation',authorityQualified:false});
       return Object.freeze({handle,summary});
     }catch(error){s.active=false;readonlyRouteActive.delete(s);throw error;}finally{s.pending=false;}
   };
+  const observeReadonlyRoute=input=>observeReadRoute(input,false);
+  const observeOwnerReadonlyRoute=input=>observeReadRoute(input,true);
   const assertReadonlyRouteCurrent=async input=>{
     const s=readonlyRouteState(input);if(s.pending)readonlyRouteFail('READ_ROUTE_BUSY');s.pending=true;
-    try{const current=await readReadonlyRoute(s.identity);readonlyRouteState(input);const binding=v=>JSON.stringify([v.scope,v.mode,v.scopeRow,v.globalRow,v.modePublication,v.fence]);
+    try{const current=await readReadonlyRoute(s.identity,s.ownerRead);readonlyRouteState(input);const binding=v=>JSON.stringify([v.scope,v.mode,v.scopeRow,v.globalRow,v.modePublication,v.fence,v.ownerLocalWitness]);
       if(current.plugin!==s.value.plugin||current.device!==s.value.device||binding(current)!==binding(s.value))readonlyRouteFail('READ_ROUTE_CHANGED');
       return Object.freeze({status:'request-local-current',semanticModeEpoch:null});
     }catch(error){s.active=false;readonlyRouteActive.delete(s);throw error;}finally{s.pending=false;}
@@ -7639,7 +7720,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const bridge = Object.freeze({
     namespace,
     pluginId,
-    observeReadonlyRoute, assertReadonlyRouteCurrent, releaseReadonlyRouteObservation,
+    observeReadonlyRoute, observeOwnerReadonlyRoute, assertReadonlyRouteCurrent, releaseReadonlyRouteObservation,
+    acquireGraphStorageLease,
     captureConditionalReadSet,
     assertConditionalReadSet,
     prepareConditionalBatch,
@@ -7678,6 +7760,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     keys: scopedKeys,
     bootstrap: scopedBootstrap,
     serverBinding,
+    captureServerBinding,
     shouldRoute: matchesRoute,
     createPluginStorageProxy: legacy => createScopedProxy(legacy, 'plugin', proxyCache),
     createLocalStorageProxy: legacy => createScopedProxy(legacy, 'local', localProxyCache),

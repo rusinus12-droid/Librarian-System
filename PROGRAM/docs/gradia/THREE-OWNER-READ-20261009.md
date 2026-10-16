@@ -25,11 +25,11 @@ Both new adapters use the actual producer hashes, checksums, serialization and a
 
 - One combined corpus: 4 MiB default; 32 MiB maximum. Owners receive only the remaining logical corpus budget. No substring truncation.
 - Combined committed item limit: 4096. Aggregate metadata admission: 1 MiB. Each owner retains the existing per-item metadata and bounded stored/decompressed-read guards; combined raw-read allowance remains `7 * maxCorpusBytes + 2 MiB`. The facade passes the remaining allowance to the next owner before any value materialization or gzip expansion. These are protocol/read limits, not an exact JavaScript heap bound.
-- Whole-item prompt selection remains 64 KiB, using deterministic newest-first round robin across owners. Exact duplicate text is emitted once with every contributing owner/record/key/source retained as provenance.
+- Updated 2026-10-15: Whole-item capture packing follows the reference profile, then each stage selects a complete-item subset within its configured model context. See [current budget contract](MODEL-CONTEXT-BUDGET-20261015.md). Initial order uses deterministic newest-first round robin across owners. Exact duplicate text is emitted once with every contributing owner/record/key/source retained as provenance.
 - Evidence IDs include the owner and a digest of the record ID plus physical key. Separate records in one HAYAKU ledger or Flashback shard remain distinct; equal IDs from different owners or keys cannot collide.
 - Every owner is rechecked before evidence use, dispatch and final handoff. A changed owner invalidates the complete influenced draft. A read unavailable before evidence consumption retains the existing native-only fallback, with no external memory in that payload.
 - The native-view guard permits only scope enrichment matching the already-bound character/chat pair. Changed IDs, hashes, generations, foreign scopes, completed-turn selection or prompt text remain rejected.
-- G2 model restrictions remain official OpenAI Chat Completions with `gpt-4o-mini-2024-07-18`, existing context accounting, output reserve and payload limits. This change adds no model calls.
+- Updated 2026-10-15: Final text payloads use the configured stage model/context, actual output reserve and separate byte limits; the GPT4o-mini pin is retired. Input token accounting is a disclosed estimate, not exact provider tokenization. This change adds no model calls.
 
 ## SDK preservation
 

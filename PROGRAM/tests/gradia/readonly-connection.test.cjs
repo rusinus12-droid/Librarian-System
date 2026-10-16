@@ -3,6 +3,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const {JSDOM}=require('jsdom');
 const {createMemorySuiteServer,mockFetch,trace}=require('../fixtures/flashback_in_memory_server_fixture.cjs');
 const {load}=require('./host.cjs');
+const createBus=require('../fixtures/libra_gradia_read_bus.cjs'),createOwner=require('../../tools/libra_gradia_unified_read.cjs');
 const PREF='serial_gradation_agents_for_rp:lib_read_connection:v1';
 const REG='libra:v1:scope-registry:v1',ROUTE='__memory_suite_internal_scope_routes_v1__:libra';
 const wait=async fn=>{const start=Date.now();while(Date.now()-start<6000){const v=fn();if(v)return v;await new Promise(r=>setTimeout(r,10));}throw Error('Connection action did not settle');};
@@ -18,13 +19,14 @@ async function fixture(t,options={}){
  const values=new Map([[REG,JSON.stringify({'c::h':scope})],[ROUTE,JSON.stringify({schema:'memory-suite.scope-routing.v1',namespace:'libra',version:1,legacyGlobalModeImported:true,entries:{registered:{scopeId:'registered',scopeKey:'registered',mode:'server_only',origin:'user_explicit',updatedAt:1}}})]]);
  if(options.resetEpoch){const identity=require('../../server/core/data-instance-identity.cjs').readDataInstanceIdentity(dir);values.set('memory_suite_reset_choice.v2.libra',JSON.stringify({schema:'memory-suite.reset-choice.v2',namespace:'libra',url,...identity,dataIdentityCertified:true,resetEpochCertified:true,epoch:options.resetEpoch,choice:'empty'}));}
  const local=new Map();if(options.preference)local.set(PREF,JSON.stringify({...options.preference,url:options.preference.url||url}));
+ const bus=createBus(),owner=createOwner({role:'owner',api:bus.api('libra'),fingerprint:v=>crypto.createHash('sha256').update(v).digest('hex'),randomId:()=>crypto.randomUUID(),boundary:async()=>({scope}),query:async()=>{throw Error('Connection inspection must not query memory');},verify:async()=>false});await owner.start();
  const writes=[],requests=[],unloads=[],locals=[];let currentChat={id:'h',message:[]},release,releasePreference,releaseNative,failRevocation=options.failInitialRevocation?1:0,nativeReads=0,currentIndex=0,capturedPlugin,firstPreferenceRead=true;const chatRows={0:currentChat,1:{id:'other',message:[]}};
  const storage={getItem:async k=>values.get(k)??null,setItem:async(k,v)=>{writes.push(k);values.set(k,v);},removeItem:async k=>{writes.push(k);values.delete(k);}};
  const localStorage={getItem:async k=>{const value=local.get(k)??null;if(options.disconnectDuringRead&&firstPreferenceRead&&k===PREF){firstPreferenceRead=false;await capturedPlugin.unbindLibReadOnlyClient();}return value;},setItem:async(k,v)=>{locals.push(k);if(failRevocation>0&&JSON.parse(v).explicit===false){failRevocation--;throw Error('SYNTHETIC_LOCAL_WRITE_FAILURE');}if(options.delayPreference&&JSON.parse(v).explicit===true)await new Promise(r=>releasePreference=r);local.set(k,v);},removeItem:async k=>{locals.push(k);local.delete(k);}};
  const transport=async(u,init)=>{requests.push({url:String(u),headers:init?.headers});if(options.delayBootstrap&&String(u).endsWith('/bootstrap'))await new Promise(r=>release=r);if(options.deny)throw Error('SYNTHETIC_DENIED');return mockFetch(u,init);};
  const dom=new JSDOM('<!doctype html><html><body></body></html>',{pretendToBeVisual:true,url:'https://offline.invalid/'});
- const host=await load({transformSource:s=>(options.disconnectDuringRead||options.disconnectBeforeStart)?`{let value;Object.defineProperty(globalThis,'__SerialGradationAgentsForRP',{configurable:true,get:()=>value,set:v=>{value=v;__captureApi(v);}});}`+s:s,api:{pluginStorage:storage,getLocalPluginStorage:async()=>localStorage,nativeFetch:transport,fetch:transport,onUnload:async fn=>unloads.push(fn),showContainer:async()=>{},hideContainer:async()=>{},getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>currentIndex,getCharacterFromIndex:async()=>{if(options.delayFinalNative&&++nativeReads===2)await new Promise(r=>releaseNative=r);return {chaId:'c',chats:Object.values(chatRows)};},getCharacter:async()=>({chaId:'c',chats:[currentChat]}),getChatFromIndex:async(_c,index)=>chatRows[index]},testGlobals:{__captureApi:value=>{capturedPlugin=value;if(options.disconnectBeforeStart)void value.unbindLibReadOnlyClient().catch(()=>{});},crypto:crypto.webcrypto,Response,window:dom.window,Element:dom.window.Element,document:dom.window.document,getComputedStyle:dom.window.getComputedStyle.bind(dom.window),MutationObserver:dom.window.MutationObserver,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window)}});
- t.after(async()=>{release?.();releasePreference?.();releaseNative?.();await host.plugin.closeSettingsGui();for(const fn of unloads)await fn();dom.window.close();await app.close();fs.rmSync(dir,{recursive:true,force:true});});
+ const host=await load({transformSource:s=>(options.disconnectDuringRead||options.disconnectBeforeStart)?`{let value;Object.defineProperty(globalThis,'__SerialGradationAgentsForRP',{configurable:true,get:()=>value,set:v=>{value=v;__captureApi(v);}});}`+s:s,api:{...(options.ownerUnavailable?{}:bus.api('serial_gradation_agents_for_rp')),pluginStorage:storage,getLocalPluginStorage:async()=>localStorage,nativeFetch:transport,fetch:transport,onUnload:async fn=>unloads.push(fn),showContainer:async()=>{},hideContainer:async()=>{},getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>currentIndex,getCharacterFromIndex:async()=>{if(options.delayFinalNative&&++nativeReads===2)await new Promise(r=>releaseNative=r);return {chaId:'c',chats:Object.values(chatRows)};},getCharacter:async()=>({chaId:'c',chats:[currentChat]}),getChatFromIndex:async(_c,index)=>chatRows[index]},testGlobals:{__captureApi:value=>{capturedPlugin=value;if(options.disconnectBeforeStart)void value.unbindLibReadOnlyClient().catch(()=>{});},crypto:crypto.webcrypto,Response,window:dom.window,Element:dom.window.Element,document:dom.window.document,getComputedStyle:dom.window.getComputedStyle.bind(dom.window),MutationObserver:dom.window.MutationObserver,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window)}});
+ t.after(async()=>{await owner.dispose();release?.();releasePreference?.();releaseNative?.();await host.plugin.closeSettingsGui();for(const fn of unloads)await fn();dom.window.close();await app.close();fs.rmSync(dir,{recursive:true,force:true});});
  const initial={writes:[...writes],locals:[...locals],requests:[...requests]};
  await host.plugin.openSettingsGui();dom.window.document.querySelector('.sidebar [data-go="sources"]').click();
  const doc=dom.window.document;
@@ -39,13 +41,13 @@ async function fixture(t,options={}){
 test('fresh startup and unapproved saved URL perform no connection writes or transport',async t=>{
  const h=await fixture(t,{preference:{schema:'gradia.lib-read-connection.v1',explicit:false}});
  assert.deepEqual(h.initial.requests,[]);assert.deepEqual(h.initial.locals,[]);assert.deepEqual(h.initial.writes,[]);
- assert.equal(h.status().connection?.state,'disconnected');assert.ok(h.node('[data-page="sources"] .state-grid > div:nth-child(4)').textContent.includes('gpt-4o-mini-2024-07-18'));
+ assert.equal(h.status().connection?.state,'disconnected');assert.ok(h.node('[data-page="sources"] .state-grid > div:nth-child(4)').textContent.includes('모델·문맥 설정 기준'));
 });
 test('actual Connect and inspect handlers use only bootstrap/capture/current and leave SQLite unchanged',async t=>{
  const h=await fixture(t),before=h.rows(),start=h.writes.length;assert.equal((await h.connect()).connection.state,'connected');
  assert.equal(h.requests.filter(r=>r.url.endsWith('/bootstrap')).length,1);assert.ok(h.requests.every(r=>r.headers['X-Memory-Suite-Plugin']==='serial_gradation_agents_for_rp'));
- h.click('inspect');await wait(()=>h.status().connection?.corpus?.items===1);
- assert.equal(h.status().connection.corpus.bytes,Buffer.byteLength('Existing memory only'));
+ h.click('inspect');await wait(()=>h.status().connection?.corpus?.source==='unified_engine');
+ assert.equal(h.status().connection.corpus.queried,false);assert.equal(h.status().connection.readSource,'unified_engine');
  assert.ok(h.requests.every(r=>/\/(bootstrap|capture|current)$/.test(r.url)));assert.deepEqual(h.rows(),before);assert.equal(h.app.repositories.libra.database.prepare('SELECT COUNT(*) n FROM operations').get().n,0);
  assert.deepEqual(h.writes.slice(start),[]);assert.deepEqual([...new Set(h.locals)],[PREF]);assert.equal(JSON.parse(h.local.get(PREF)).explicit,true);
  assert.equal(h.status().status,'bound');assert.equal(h.getCalls(),0);assert.equal(h.plugin.createPluginStorageProxy,undefined);assert.equal(h.plugin.configureConnection,undefined);
@@ -156,4 +158,14 @@ for(const timing of ['disconnectBeforeStart','disconnectDuringRead'])test(`faile
  assert.equal(JSON.parse(h.local.get(PREF)).explicit,false,'retry must persist revocation even after startup clears pending state');
  assert.ok(h.locals.length>writes,'retry must make a new persistence attempt');
  assert.equal(h.requests.length,0);assert.notEqual(h.status().status,'bound');
+});
+
+test('old saved read-source choices migrate to the unified engine and the old search option is absent',async t=>{
+ const h=await fixture(t,{preference:{schema:'gradia.lib-read-connection.v2',explicit:true,readOwners:['libra'],readSource:'server_logical_read'}});
+ await wait(()=>h.status().connection?.state==='connected');assert.equal(h.status().connection.readSource,'unified_engine');
+ assert.deepEqual([...h.node('#lib-read-source').options].map(o=>o.value),['unified_engine','plugin_ipc']);
+});
+test('missing unified owner support cannot fall back to server logical memory',async t=>{
+ const h=await fixture(t,{ownerUnavailable:true});assert.equal((await h.connect()).connection.state,'error');
+ assert.match(h.status().connection.reason,/LIB_READ_UNIFIED_UNAVAILABLE/);assert.notEqual(h.status().status,'bound');
 });

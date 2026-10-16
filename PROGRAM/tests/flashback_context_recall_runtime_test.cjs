@@ -54,8 +54,9 @@ const plain=x=>JSON.parse(JSON.stringify(x));
   assert.equal(requests[0].length,1,'No separately weighted current-input query');
   assert.ok(requests[0][0].includes(scene[0].content)&&requests[0][0].includes(scene[1].content)&&requests[0][0].includes(latest));
   assert.equal(raw.queryType,'context');assert.equal(raw.temporalIntent,'unspecified');
-  assert.equal(raw.diagnostics.candidateArms.exact,0,'No exact-word arm in semantic recall');
-  assert.equal(raw.diagnostics.candidateArms.sparse,0,'No keyword score mixed into semantic ranking');
+  // Hybrid recall: keyword arms run beside the dense arm and only add a bounded
+  // rank-based boost; the retired hash recovery arm never runs.
+  assert.equal(raw.diagnostics.candidateArms.hashRecovery,0,'No hash recovery arm in semantic recall');
   assert.equal(plan.items.length,1);assert.ok(plan.text.includes(target),'The complete relation is retained through final injection selection');
   assert.ok(!plan.text.includes(distractor),'Exact word priority cannot override contextual ranking');
   const repeat=await sel.prepareFlashbackRecall(latest,cfg,scope,{currentUser:latest,messages:outgoing,liveMessages:scene});
@@ -96,7 +97,7 @@ const plain=x=>JSON.parse(JSON.stringify(x));
   assert.equal(JSON.stringify((await t.loadScopeRecords(scope.scopeKey)).records),before,'BeforeRequest preserves durable evidence');
   f.host.nativeFetch=async()=>{throw Error('offline fixture unavailable');};
   const degraded=await sel.prepareFlashbackRecall('새 실패 질의',cfg,scope,{currentUser:'새 실패 질의',liveMessages:scene});
-  assert.equal(degraded.modelReadiness.status,'query_failed');assert.equal(degraded.modelReadiness.ready,false);assert.equal(degraded.records.length,0);assert.equal(degraded.currentStateFacts?.length||0,0);assert.equal(sel.selectFlashbackEvidencePlan(degraded,cfg,8000).text,'');assert.equal(JSON.stringify((await t.loadScopeRecords(scope.scopeKey)).records),before,'query failure preserves durable evidence');
+  assert.equal(degraded.modelReadiness.status,'lexical_fallback');assert.equal(degraded.modelReadiness.reason,'query_failed');assert.equal(degraded.modelReadiness.ready,false);{const storedIds=new Set(JSON.parse(before).map(r=>r.id));assert.ok(degraded.records.every(item=>storedIds.has((item.record||item).id)),'keyword fallback returns only stored, admitted records (scene keywords may match)');}assert.equal(JSON.stringify((await t.loadScopeRecords(scope.scopeKey)).records),before,'query failure preserves durable evidence');
   const off={...cfg,embeddingProvider:'hash',embeddingModel:'hash-3'};
   assert.equal(t.recallSemanticSignals({...semanticItem.record,provider:'hash',model:'hash-3',vector:[1,0,0]},[1,0,0],off,{queryProvider:'hash',queryModel:'hash-3'}).contextualSemantic,false,'Hash vectors are not labeled semantic');
   console.log('flashback_context_recall_runtime_test: PASS (offline protocol and ranking; real model NOT_RUN)');

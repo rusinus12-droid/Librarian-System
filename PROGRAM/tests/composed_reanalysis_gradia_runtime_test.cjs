@@ -8,6 +8,7 @@ require.cache[serverPath].exports={...actual,createMemorySuiteServer};
 const {serverFixture}=require('./fixtures/libra_server_runtime_fixture.cjs');
 require.cache[serverPath].exports=actual;
 const {load}=require('./gradia/host.cjs');
+const createOwnerUnifiedReadProvider=require('./fixtures/libra_owner_unified_read_provider.cjs');
 const {createReadBoundaryDiagnostic}=require('./fixtures/composed_read_boundary_diagnostic.cjs');
 const {createNaturalManifestTrace}=require('./fixtures/composed_natural_manifest_trace.cjs');
 const acorn=require('acorn'),sha=v=>crypto.createHash('sha256').update(v).digest('hex'),plain=v=>JSON.parse(JSON.stringify(v));
@@ -24,8 +25,15 @@ async function reader(t,fx,diagnostic,natural){
  const host={getArgument:async name=>name.includes('url')?fx.url:undefined,pluginStorage:store,getLocalPluginStorage:async()=>store,nativeFetch:async(url,init)=>{readerRequests.push({url,method:init.method,principal:init.headers?.['X-Memory-Suite-Plugin']});return natural.fetch(url,init,mockFetch);}};
  const context=vm.createContext({console,URL,Response,TextEncoder,TextDecoder,AbortController,setTimeout,clearTimeout,RisuAI:host,__composedReadDiagnostic:diagnostic.observe});
  vm.runInContext(diagnostic.sdkSource(fs.readFileSync(path.join(__dirname,'../sdk/MemorySuiteStorageClient.source.js'),'utf8'))+';globalThis.factory=createMemorySuiteStorageBridge',context);
- const bridge=context.factory({namespace:'libra',pluginId:'serial_gradation_agents_for_rp',managementButton:false,startupDiagnostics:false});t.after(()=>bridge.dispose());
- const accepted=await bridge.bootstrap();assert.equal(accepted.dataIdentityCertified,true);assert.equal(accepted.capabilities['libra-read-session.v1'],true);
+ // The LIBRA read is served by the owner unified engine now, so the fixture supplies that owner read
+ // from the canonical memory the LIBRA plugin itself produced and re-read after a replacement.
+ const ownerMemory=()=>({key:fx.getManifest().memories['1'].key,revision:fx.getManifest().memories['1'].revision,text:fx.getMemory().text});
+ let accepted;
+ const ownerRead=createOwnerUnifiedReadProvider({scope,dataInstanceId:()=>accepted?.dataInstanceId,resetEpoch:()=>accepted?.resetEpoch,
+   revision:()=>ownerMemory().revision,
+   items:()=>{const current=ownerMemory();return [{id:'one',key:current.key,content:current.text,revision:current.revision,turnRange:{start:1,end:5}}];}});
+ const bridge=context.factory({namespace:'libra',pluginId:'serial_gradation_agents_for_rp',managementButton:false,startupDiagnostics:false,unifiedReadProvider:ownerRead});t.after(()=>bridge.dispose());
+ accepted=await bridge.bootstrap();assert.equal(accepted.dataIdentityCertified,true);assert.equal(accepted.capabilities['libra-read-session.v1'],true);
  const g=await load({testGlobals:{crypto:crypto.webcrypto,__composedReadDiagnostic:diagnostic.observe},transformSource:source=>captureConsumer(diagnostic.consumerSource(source))});
  const client=bridge.createLibraReadOnlyClient(),binding={client,scope,maxCorpusBytes:4194304};
  const bound=g.plugin.bindLibReadOnlyClient(client,{scope});assert.equal(bound.liveConnectionVerified,false,'binding is not certification');
@@ -51,7 +59,7 @@ test('composed producer replacement reaches GRA; tag-only host edits preserve ev
  finally{restoreMetadataObserver();}
  const evidence=await priorSession.getEvidence();assert.equal(evidence.items.length,1);assert.equal(evidence.items[0].content,oldText);assert.equal(priorSession.selection.corpusBytes,Buffer.byteLength(oldText));
  await priorSession.bindDraft('DRAFT_USING_OLD_CANONICAL');assert.equal(await priorSession.finalizeDraft(),'DRAFT_USING_OLD_CANONICAL');
- assert.deepEqual(rows(),before);assert.equal(ops(),beforeOps);assert.ok(readerRequests.slice(start).every(r=>r.principal==='serial_gradation_agents_for_rp' && r.method==='POST' && (r.url.endsWith('/capture')||r.url.endsWith('/current'))),JSON.stringify(readerRequests.slice(start)));assert.equal(readerRequests.slice(start).filter(r=>r.url.endsWith('/capture')).length,1);
+ assert.deepEqual(rows(),before);assert.equal(ops(),beforeOps);assert.equal(readerRequests.slice(start).length,0,'the LIBRA owner read must not touch the server read-session endpoints any more');
  // Source edits alone must neither rerun a model nor revoke committed canonical history.
  const calls=f.control.calls.length;
  f.chat.message[1].data+='<decoration>TAG_ONLY_LOCAL_HOST_CHANGE</decoration>';
@@ -68,7 +76,7 @@ test('composed producer replacement reaches GRA; tag-only host edits preserve ev
  await assert.rejects(()=>priorSession.finalizeDraft(),e=>/^LIB_READ_/.test(e.code));
  const after=rows(),afterOps=ops(),readStart=readerRequests.length,newSession=await consumer.beginRead({requestId:'after-explicit-reanalysis'}),newEvidence=await newSession.getEvidence();
  assert.equal(newEvidence.items.length,1);assert.equal(newEvidence.items[0].content,newText);assert.equal(newEvidence.items[0].key,replacement.key);assert.equal(newSession.selection.corpusBytes,Buffer.byteLength(newText));
- await newSession.bindDraft('DRAFT_USING_NEW_CANONICAL');assert.equal(await newSession.finalizeDraft(),'DRAFT_USING_NEW_CANONICAL');assert.deepEqual(rows(),after);assert.equal(ops(),afterOps);assert.ok(readerRequests.slice(readStart).every(r=>r.principal==='serial_gradation_agents_for_rp' && r.method==='POST' && (r.url.endsWith('/capture')||r.url.endsWith('/current'))));
+ await newSession.bindDraft('DRAFT_USING_NEW_CANONICAL');assert.equal(await newSession.finalizeDraft(),'DRAFT_USING_NEW_CANONICAL');assert.deepEqual(rows(),after);assert.equal(ops(),afterOps);assert.equal(readerRequests.slice(readStart).length,0,'the replacement read must not touch the server read-session endpoints either');
  assert.equal(g.getCalls(),0);assert.equal(fx.storedRows().some(r=>r.key.includes(':source-edit-consent:')),false);
  console.log('COMPOSED_REPLACEMENT_PROOF '+JSON.stringify({oldKey:old.key,newKey:replacement.key,oldTextSha256:sha(oldText),newTextSha256:sha(newText),oldRevision:old.revision,newRevision:replacement.revision,tagOnlyKeptCurrent:true,oldReadRejected:true,newReadValid:true,readerWrites:0}));
 });

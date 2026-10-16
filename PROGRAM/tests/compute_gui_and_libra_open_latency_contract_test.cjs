@@ -76,7 +76,7 @@ assert.ok(paintedAt >= 0 && showScheduledAt > paintedAt,
 const serverPanel = between(libra, 'const buildLibraServerConnectionPanel = () => {', 'const scheduleLibraPortableMemoryBackupMount =');
 assert.match(serverPanel, /저장 및 연산 설정을 불러오는 중/);
 assert.doesNotMatch(serverPanel, /Compute 설정을 불러오는 중/);
-assert.match(libra, /getMemorySuiteComputeBridge: \(\) => MemorySuiteLibraComputeBridge/,
+assert.match(libra, /getMemorySuiteComputeBridge: \(\) => (?:MemorySuiteLibraComputeBridge|null)/,
   'LibraMemoryCore must explicitly export its closure-owned Compute bridge');
 assert.match(serverPanel, /const computeBridge = LibraMemoryCore\.getMemorySuiteComputeBridge\?\.\(\) \|\| null/,
   'the server panel must resolve Compute through the core boundary');

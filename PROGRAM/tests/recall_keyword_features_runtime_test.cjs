@@ -94,7 +94,8 @@ try{
  const typedArms=await ft.generateRecallCandidateArms(request);
  const contextualArms=await ft.generateRecallCandidateArms({...request,settings:{...cfg,contextualRecall:true}});
  assert.ok(contextualArms.dense.some(x=>x.record.id===readyTyped.id),'Default contextual mode still admits the comparable model record through the dense arm');
- assert.equal(contextualArms.exact.length,0,'Contextual semantic mode does not manufacture a separate lexical fallback');
+ assert.ok(contextualArms.exact.some(x=>x.record.id===readyTyped.id),'Contextual semantic mode keeps the exact-surface arm beside dense (hybrid fusion)');
+ assert.equal(contextualArms.hashRecovery.length,0,'Contextual semantic mode never uses the retired hash recovery arm');
  assert.ok(!typedArms.forced.some(x=>x.reasons.includes('entity_focused')),'Partial local metadata cannot certify an alias globally');
  assert.ok(typedArms.exact.some(x=>x.record.id===readyTyped.id),'Unverified aliases retain ordinary retrieval among model-ready records');
  assert.ok(!typedArms.forced.some(x=>x.record.id===readyOther.id&&x.reasons.includes('entity_focused')));

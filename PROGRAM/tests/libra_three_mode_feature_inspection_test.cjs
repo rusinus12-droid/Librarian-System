@@ -12,38 +12,14 @@ const MARKERS = {
   memory: '[LIBRA 장기기억 — 관련 기억만 시간순으로 제공됨]'
 };
 const clone = value => JSON.parse(JSON.stringify(value));
-const exposeRenderer = source => {
-  const anchor = '      debugReadActiveCompletedTurnReceipt: async turnValue => {';
-  assert.ok(source.includes(anchor));
-  source = source.replace(anchor, '      inspectionClassic: (packet, delivery) => renderClassicBlock(packet, delivery),\n' + anchor);
-  const api = "    debugBuildPairs(chat = {}, cacheKey = '')";
-  assert.ok(source.includes(api));
-  return source.replace(api, '    inspectionClassic(packet, delivery) { return LibraMemoryCore.inspectionClassic(packet, delivery); },\n' + api);
-};
 (async () => {
-  const f = await fixture({ transformSource: exposeRenderer, args: { memory_suite_server_mode: 'plugin_only' } });
+  const f = await fixture({ args: { memory_suite_server_mode: 'plugin_only' } });
   try {
     assert.equal((await f.run()).completed, 1);
     assert.equal((await f.r.api.retryPendingUnifiedVectors()).ok, true);
     for (const removed of ['debugPlannerFinalOverlay', 'debugSgaFinalOverlay', 'prepareInputWriterEvidence']) {
       assert.equal(typeof f.r.api[removed], 'undefined', `${removed} remains retired`);
     }
-    const rows = [
-      { selectedText: '나중 장면: 민준이 문을 열었다.', sessionEpoch: 1, turnRange: { start: 8, end: 9 }, order: 5 },
-      { selectedText: '첫 번째 장면: 민준이 복도에 도착했다.', sessionEpoch: 1, turnRange: { start: 3, end: 4 }, order: 2 }
-    ];
-    const direct = f.r.api.inspectionClassic({}, { rows: clone(rows) });
-    assert.ok(direct.startsWith(MARKERS.classic));
-    assert.match(direct, /<LIBRA_CLASSIC_RECALL>[\s\S]+<\/LIBRA_CLASSIC_RECALL>/);
-    assert.match(direct, /current user input.*outrank/i);
-    assert.match(direct, /Do not mention/);
-    for (const row of rows) assert.ok(direct.includes(row.selectedText), 'exact prose survives rendering');
-    assert.ok(direct.indexOf(rows[1].selectedText) < direct.indexOf(rows[0].selectedText), 'reversed input is sorted chronologically');
-    assert.equal(f.r.api.inspectionClassic({}, { rows: [] }), '');
-    assert.equal(f.r.api.inspectionClassic({}, { rows: [{ selectedText: '' }] }), '');
-    for (const leak of ['request_actor_id', 'request_object_id', '"actorId"', '"objectId"',
-      'libra.turn_planner', 'REQUIRED JSON SHAPE']) assert.equal(direct.includes(leak), false);
-
     const reports = [];
     for (const requested of ['classic', 'planner', 'sga']) {
       const config = await f.r.api.saveLibraProviderConfig({ responseFamily: 'libra', libraResponseMode: requested });
@@ -60,7 +36,7 @@ const exposeRenderer = source => {
       const delivered = Array.from(viewer.rows).filter(row => row.classicUsed && row.injected);
       assert.ok(delivered.length > 0, 'real canonical evidence reaches the model request');
       for (const row of delivered) assert.ok(block.includes(row.selectedText || row.text), 'actual evidence bytes survive the final hop');
-      assert.match(block, /current user input.*outrank/i);
+      assert.match(block, /current user input.*priority/i);
       assert.match(block, /Do not mention/);
       assert.equal(output.filter(row => row.role === 'user').at(-1).content, input[0].content);
       assert.equal(f.control.calls.length, before, 'Classic makes no rewriting provider call');

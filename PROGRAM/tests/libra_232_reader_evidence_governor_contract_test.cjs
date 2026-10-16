@@ -32,18 +32,16 @@ for (const api of [
   assert.match(publicApiSource, new RegExp(`async\\s+${api}\\s*\\(`), `missing host public API wrapper ${api}`);
 }
 
-const readerList = between('const listCanonicalReaderChapters = async', 'const canonicalReaderPatchFields =');
+const readerList = between('const listCanonicalReaderChapters = async', '// Native owner projection shared');
 assert.match(readerList, /limit=20/);
 assert.match(readerList, /canonicalReaderSearchRefs/);
 assert.doesNotMatch(readerList, /loadMemoryRef|LibraProviderBridge|callTask|storage\.set|saveManifest|embed(?:Query|Text)?\s*\(/,
   'Chapter list must remain summary-only, provider-free, and mutation-free');
 
-const readerSearch = between('const readCanonicalReaderRecallCatalog = async', 'const listCanonicalReaderChapters = async');
-assert.match(readerSearch, /storage\.getJson\(key\.recallCatalog/);
-assert.match(readerSearch, /value\.signature===signature&&value\.complete!==false/);
-assert.match(readerSearch, /fallbackMatch/);
-assert.doesNotMatch(readerSearch, /loadOrRefreshRecallCatalog|recallCatalogEntryFromMemory|loadMemoryRef|storage\.set|saveManifest|LibraProviderBridge|callTask/,
-  'Reader search must not rebuild or hydrate a stale retrieval catalog synchronously');
+const readerSearch = between('const canonicalReaderSearchRefs = async', 'const listCanonicalReaderChapters = async');
+assert.match(readerSearch,/executeMemoryGraphUnifiedQuery/);
+assert.match(readerSearch,/semanticPolicy: \{ mode: 'disabled' \}/);
+assert.doesNotMatch(readerSearch,/recallCatalog|fallbackMatch|storage\.set|saveManifest/);
 
 const readerDetail = between('const getCanonicalReaderChapter = async', 'const canonicalEvidenceArtifactRows =');
 assert.match(readerDetail, /loadMemoryRef\(ref\)/, 'detail must lazily hydrate only the selected ref');
@@ -71,30 +69,11 @@ assert.match(receipts, /sessionOnly:true/);
 assert.match(receipts, /durable:true/);
 assert.doesNotMatch(receipts, /storage\.set|saveManifest|LibraProviderBridge|callTask/);
 
-const memoryGui = between('const canonicalReaderIdentityKey =', 'const buildLibraReferenceHubPanel =');
-for (const label of ['읽기', '근거와 상태 반영', '정본 근거']) assert.ok(memoryGui.includes(label), `missing Memory GUI label ${label}`);
-const readerProjection = between('const buildBookMemoryReaderProjection =', 'const buildBookCharacterProfileProjection =');
-assert.match(readerProjection, /buildBookMemoryRail\(\)/);
-assert.match(readerProjection, /buildBookMemoryReadingSheet\(\)/);
-const bookMemoryGui = between('const buildBookMemoryPanel =', 'const buildBookPeoplePanel =');
-for (const label of ['기억 서가', '근거와 상태 반영', '기억 상세 · 관리']) assert.ok(bookMemoryGui.includes(label), `missing active Memory page label ${label}`);
-assert.match(memoryGui, /limit: 20/);
-assert.match(memoryGui, /getCanonicalReaderChapter\(\{\s*\.\.\.identity,\s*expectedScopeKey:\s*ticket\.scopeKey\s*\}\)/);
-assert.match(memoryGui, /getCanonicalEvidenceChain/);
-assert.match(memoryGui, /libra-evidence-drawer/);
-
-const canonicalContextGui = between('const buildCanonicalContextPanel =', 'const buildLibraReferenceHubPanel =');
-assert.doesNotMatch(canonicalContextGui, /buildLibraRecallPanel|이번 턴에 떠올린 기억/,
-  'Canonical Evidence must contain only the selected canonical provenance chain');
-const executionLogGui = between('const buildSharedExecutionLogsPanel =', 'const buildGeneralSettingsPanel =');
-assert.match(executionLogGui, /Gui\.executionLogSection === 'recall'.*buildLibraRecallPanel\(\{ hideWhenEmpty: true \}\)/s,
-  'the current-turn recall viewer belongs to Execution Log > Recall');
-assert.match(executionLogGui, /buildExecutionReceiptPanel\(Gui\.executionLogSection\)/,
-  'durable recall receipt history remains available beside the current-turn view');
-
-assert.match(source, /const SHARED_MEMORY_HUB_SECTIONS = Object\.freeze\(\['read', 'context', 'manage'\]\)/);
-assert.match(source, /const SHARED_EXECUTION_LOG_SECTIONS = Object\.freeze\(\['memory',\s*'state',\s*'draft',\s*'recall',\s*'embedding',\s*'rebuild'\]\)/);
-require('./helpers/libra_active_book_routes.cjs')(source);
+// Actual approved GUI behavior is exercised by the DOM transaction/retirement
+// suites. Check the current read/detail/evidence wiring rather than old CSS ids.
+for(const name of ['buildBookMemoryReaderProjection','buildBookMemoryRail','buildBookMemoryReadingSheet','buildCanonicalEvidenceDrawer'])assert.match(source,new RegExp('const '+name+' ='));
+const currentMemory=between('const buildApprovedMockupMemory =','const buildApprovedMockupSettings =');
+assert.match(currentMemory,/buildBookMemoryReaderProjection/);assert.match(currentMemory,/buildCanonicalEvidenceDrawer/);
 
 const references = between('const sealReferenceSourceSnapshot =', 'const formatShadowRisuContext =');
 assert.match(references, /libra\.reference_source_snapshot\.v1|REFERENCE_SOURCE_SNAPSHOT_SCHEMA/);

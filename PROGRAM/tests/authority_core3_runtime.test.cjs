@@ -22,6 +22,23 @@ function current(repo,key,kind='remove'){const row=repo.get('plugin',key);return
 function receipt(f,n,id){return f.control.readOperation({generation:f.control.readWitness().generation,namespace:n,operationId:id});}
 function noAncillary(f){for(const p of ['stores/lia','stores/retrace','stores/unknown-owner','runtime','logs','backups','migrations','runtime-token.txt','config/compute-signing-key.txt','data-layout.json'])assert.equal(fs.existsSync(path.join(f.dataDir,p)),false,p);}
 
+test('graph namespace leases and GC commit through the qualified core3 request handler and owner coordinator',async t=>{
+ const f=prepared(t),app=appFor(t,f),scopeKey='core3-graph';
+ const extra={headers:{'x-memory-suite-storage-mode':'server_only','x-memory-suite-scope-id':scopeKey}};
+ const command=async body=>(await request(app,'/v1/libra/graph-lifecycle',{scopeKey,...body},extra).result);
+ const read=await command({action:'acquire',kind:'read',requestId:'core3-reader'});assert.equal(read.status,200);
+ const blocked=await command({action:'acquire',kind:'gc'});assert.equal(blocked.status,409);
+ await command({action:'release',token:read.body.result.token});
+ const key='libra:v1:scope:'+scopeKey+':memory-graph:v1:corpus:page:directory:'+'a'.repeat(64);
+ app.repositories.libra.mutate({kind:'set',space:'plugin',key,value:'[]',operationId:'core3-graph-orphan'});
+ const gc=await command({action:'acquire',kind:'gc'});assert.equal(gc.status,200);const token=gc.body.result.token;
+ const inventory=await command({action:'inventory',token});assert.equal(inventory.status,200);
+ const candidate=inventory.body.result.records.find(row=>row.key===key);assert.ok(candidate);
+ const removed=await command({action:'delete',token,candidate});assert.equal(removed.status,200);assert.equal(removed.body.result.deleted,true);
+ assert.equal(app.repositories.libra.get('plugin',key).tombstone,true);
+ await command({action:'release',token});noAncillary(f);
+});
+
 test('qualified core3 normal constructor opens a usable no-listen runtime without ancillary enrollment',async t=>{
  const f=prepared(t),initial=f.control.readInitialQualification(),app=appFor(t,f);
  assert.equal(app.authorityRuntime.authorityProfile,PROFILE);assert.equal(app.authorityRuntime.qualificationScope,'isolated-core3-server-candidate.v1');

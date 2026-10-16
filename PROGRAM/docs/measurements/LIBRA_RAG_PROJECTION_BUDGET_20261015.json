@@ -1,0 +1,451 @@
+{
+  "schema": "libra.rag_projection_budget_measurements.v1",
+  "date": "2026-10-15",
+  "baselineCommit": "31b0a4211c77aaa30cb6dcadb720c969d7b3f809",
+  "evidenceScope": "native plugin + SDK + local HTTP/SQLite, controlled host/provider, 256-dimensional vectors; reservation estimates, not heap or installation certification",
+  "regression": "node --test PROGRAM/tests/libra_memory_graph_vector_lane_runtime_test.cjs",
+  "additionalProbe": "reader fixture without Micro, advance matching evidence spans through 40 turns, compare limit:1 growth and limit:20 rebuild; direct default and 16MiB decode/32MiB retained queries",
+  "beforeTwoRecordQuery": {
+    "peakDecodeBytes": 82279432,
+    "peakRetainedBytes": 23676224,
+    "durableBytes": 3097876,
+    "defaultClassicInjected": false
+  },
+  "afterOrthogonalTwoRecordQuery": {
+    "peakDecodeBytes": 977328,
+    "peakRetainedBytes": 7405638,
+    "durableBytes": 578875,
+    "projectionPagesRead": 53,
+    "projectionBytesRead": 348387,
+    "historyWindowsRead": 0,
+    "defaultClassicInjected": true
+  },
+  "cases": [
+    {
+      "profile": "budget-after",
+      "canonicalRecords": 1,
+      "turns": 5,
+      "stages": {
+        "build": {
+          "status": "published",
+          "reservationEstimates": {
+            "peakDecodeBytes": 863572,
+            "peakRetainedBytes": 17884554,
+            "sourceBytes": 1489057,
+            "durableBytes": 756870,
+            "reads": 512
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 67108864,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 67108864,
+            "maxReads": 8192
+          }
+        },
+        "default": {
+          "dispatch": true,
+          "outcome": "complete",
+          "units": 20,
+          "reservationEstimates": {
+            "peakDecodeBytes": 865412,
+            "peakRetainedBytes": 6414002,
+            "sourceBytes": 304529,
+            "durableBytes": 430299,
+            "reads": 197
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 67108864,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 67108864,
+            "maxReads": 8192
+          }
+        },
+        "compact": {
+          "dispatch": true,
+          "outcome": "complete",
+          "units": 20,
+          "reservationEstimates": {
+            "peakDecodeBytes": 865412,
+            "peakRetainedBytes": 6414002,
+            "sourceBytes": 304529,
+            "durableBytes": 430299,
+            "reads": 197
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 33554432,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 16777216,
+            "maxReads": 8192
+          }
+        }
+      }
+    },
+    {
+      "profile": "budget-after",
+      "canonicalRecords": 2,
+      "turns": 10,
+      "stages": {
+        "build": {
+          "status": "published",
+          "reservationEstimates": {
+            "peakDecodeBytes": 874084,
+            "peakRetainedBytes": 38316614,
+            "sourceBytes": 3002209,
+            "durableBytes": 3019228,
+            "reads": 1184
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 67108864,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 67108864,
+            "maxReads": 8192
+          }
+        },
+        "default": {
+          "dispatch": true,
+          "outcome": "complete",
+          "units": 24,
+          "reservationEstimates": {
+            "peakDecodeBytes": 977344,
+            "peakRetainedBytes": 7377446,
+            "sourceBytes": 460721,
+            "durableBytes": 579920,
+            "reads": 280
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 67108864,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 67108864,
+            "maxReads": 8192
+          }
+        },
+        "compact": {
+          "dispatch": true,
+          "outcome": "complete",
+          "units": 24,
+          "reservationEstimates": {
+            "peakDecodeBytes": 977344,
+            "peakRetainedBytes": 7377446,
+            "sourceBytes": 460721,
+            "durableBytes": 579920,
+            "reads": 280
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 33554432,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 16777216,
+            "maxReads": 8192
+          }
+        },
+        "audit": {
+          "status": "verified",
+          "reservationEstimates": {
+            "peakDecodeBytes": 4729592,
+            "peakRetainedBytes": 63317768,
+            "sourceBytes": 5340706,
+            "durableBytes": 3755055,
+            "reads": 1548
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 67108864,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 67108864,
+            "maxReads": 8192
+          }
+        }
+      },
+      "classicInjected": true
+    },
+    {
+      "profile": "budget-after",
+      "canonicalRecords": 4,
+      "turns": 20,
+      "stages": {
+        "build": {
+          "error": "LIBRA_GRAPH_RESOURCE_RETAINED_BYTE_BUDGET",
+          "reservationEstimates": {
+            "peakDecodeBytes": 977344,
+            "peakRetainedBytes": 66650134,
+            "sourceBytes": 5535566,
+            "durableBytes": 3250010,
+            "reads": 1498
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 67108864,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 67108864,
+            "maxReads": 8192
+          }
+        }
+      }
+    },
+    {
+      "profile": "budget-after",
+      "canonicalRecords": 8,
+      "turns": 40,
+      "stages": {
+        "build": {
+          "error": "LIBRA_GRAPH_RESOURCE_RETAINED_BYTE_BUDGET",
+          "reservationEstimates": {
+            "peakDecodeBytes": 977344,
+            "peakRetainedBytes": 66647786,
+            "sourceBytes": 6540370,
+            "durableBytes": 3250010,
+            "reads": 1654
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 67108864,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 67108864,
+            "maxReads": 8192
+          }
+        }
+      }
+    },
+    {
+      "profile": "budget-recommendation",
+      "canonicalRecords": 4,
+      "turns": 20,
+      "stages": {
+        "fineDefault": {
+          "status": "published",
+          "reservationEstimates": {
+            "peakDecodeBytes": 875972,
+            "peakRetainedBytes": 58247220,
+            "sourceBytes": 5937617,
+            "durableBytes": 2083880,
+            "reads": 1648
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 67108864,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 67108864,
+            "maxReads": 8192
+          }
+        },
+        "fineMaintenance": {
+          "status": "published",
+          "reservationEstimates": {
+            "peakDecodeBytes": 1560008,
+            "peakRetainedBytes": 35138984,
+            "sourceBytes": 343163,
+            "durableBytes": 10433689,
+            "reads": 1687
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 134217728,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 67108864,
+            "maxReads": 8192
+          }
+        },
+        "build": {
+          "status": "published",
+          "reservationEstimates": {
+            "peakDecodeBytes": 1560120,
+            "peakRetainedBytes": 14207712,
+            "sourceBytes": 1204837,
+            "durableBytes": 2588159,
+            "reads": 836
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 67108864,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 67108864,
+            "maxReads": 8192
+          }
+        },
+        "default": {
+          "dispatch": true,
+          "outcome": "partial",
+          "units": 24,
+          "reservationEstimates": {
+            "peakDecodeBytes": 1514536,
+            "peakRetainedBytes": 9246074,
+            "sourceBytes": 773797,
+            "durableBytes": 832462,
+            "reads": 419
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 67108864,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 67108864,
+            "maxReads": 8192
+          }
+        },
+        "compact": {
+          "dispatch": true,
+          "outcome": "partial",
+          "units": 24,
+          "reservationEstimates": {
+            "peakDecodeBytes": 1514536,
+            "peakRetainedBytes": 9246074,
+            "sourceBytes": 773797,
+            "durableBytes": 832462,
+            "reads": 419
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 33554432,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 16777216,
+            "maxReads": 8192
+          }
+        }
+      }
+    },
+    {
+      "profile": "budget-recommendation",
+      "canonicalRecords": 8,
+      "turns": 40,
+      "stages": {
+        "fineDefault": {
+          "error": "LIBRA_GRAPH_RESOURCE_RETAINED_BYTE_BUDGET",
+          "reservationEstimates": {
+            "peakDecodeBytes": 1514536,
+            "peakRetainedBytes": 65962152,
+            "sourceBytes": 7893355,
+            "durableBytes": 56868,
+            "reads": 1297
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 67108864,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 67108864,
+            "maxReads": 8192
+          }
+        },
+        "fineMaintenance": {
+          "status": "published",
+          "reservationEstimates": {
+            "peakDecodeBytes": 1514536,
+            "peakRetainedBytes": 112434118,
+            "sourceBytes": 12379081,
+            "durableBytes": 4396569,
+            "reads": 3119
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 134217728,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 67108864,
+            "maxReads": 8192
+          }
+        },
+        "build": {
+          "status": "published",
+          "reservationEstimates": {
+            "peakDecodeBytes": 2530496,
+            "peakRetainedBytes": 28162186,
+            "sourceBytes": 3224687,
+            "durableBytes": 4576774,
+            "reads": 1527
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 67108864,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 67108864,
+            "maxReads": 8192
+          }
+        },
+        "default": {
+          "dispatch": true,
+          "outcome": "partial",
+          "units": 24,
+          "reservationEstimates": {
+            "peakDecodeBytes": 2439408,
+            "peakRetainedBytes": 12950654,
+            "sourceBytes": 1363146,
+            "durableBytes": 1240400,
+            "reads": 659
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 67108864,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 67108864,
+            "maxReads": 8192
+          }
+        },
+        "compact": {
+          "dispatch": true,
+          "outcome": "partial",
+          "units": 24,
+          "reservationEstimates": {
+            "peakDecodeBytes": 2439408,
+            "peakRetainedBytes": 12950654,
+            "sourceBytes": 1363146,
+            "durableBytes": 1240400,
+            "reads": 659
+          },
+          "limits": {
+            "maxSourceBytes": 67108864,
+            "maxDurableBytes": 33554432,
+            "maxRetainedBytes": 33554432,
+            "maxValueBytes": 8388608,
+            "maxDecodeBytes": 16777216,
+            "maxReads": 8192
+          }
+        }
+      },
+      "classicInjected": true
+    }
+  ],
+  "extendedLaneProbe": {
+    "canonicalRecords": 8,
+    "buildLimit": 20,
+    "defaultLane": {
+      "maxPages": 64,
+      "maxBytes": 262144,
+      "queryComplete": false,
+      "stopReason": "lane_page_count_budget"
+    },
+    "extendedLane": {
+      "maxPages": 128,
+      "maxBytes": 524288,
+      "maxStoragePages": 128,
+      "maxStorageBytes": 1048576,
+      "maxWorkspaceBytes": 524288,
+      "maxWitnessBytes": 524288,
+      "maxFrontierBytes": 524288,
+      "queryComplete": false,
+      "stopReason": "lane_page_count_budget",
+      "dispatch": true,
+      "peakDecodeBytes": 2439408,
+      "peakRetainedBytes": 13058434
+    }
+  }
+}

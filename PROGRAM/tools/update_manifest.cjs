@@ -131,6 +131,11 @@ const computePilots = Object.freeze({
 });
 
 const MANIFEST_EXCLUDED_DIRECTORIES = new Set(['.git', 'node_modules', '__pycache__', 'dist']);
+// A linked worktree has `.git` as a FILE (a `gitdir:` pointer), not a directory. The tracked-file filter
+// below would normally drop it, but that filter has no opinion when Git is unavailable or when the
+// generator runs somewhere `ls-files` returns nothing — then the pointer was recorded in the manifest.
+// Exclude the name in both shapes.
+const MANIFEST_EXCLUDED_FILES = new Set(['.git']);
 // OS metadata (macOS .DS_Store, Windows Thumbs.db/desktop.ini) is written by the file manager into
 // any directory a user has browsed. It is gitignored, never tracked, and never copied into a release
 // — the artifact builder is an allowlist (shouldCopySourceProgram / shouldCopyUpdater), so it cannot
@@ -228,6 +233,7 @@ const listFiles = current => {
     if (entry.isDirectory()) {
       if (!MANIFEST_EXCLUDED_DIRECTORIES.has(entry.name)) rows.push(...listFiles(full));
     } else if (entry.isFile()
+      && !MANIFEST_EXCLUDED_FILES.has(entry.name)
       && path.resolve(full) !== path.resolve(manifestPath)
       && !isManifestEphemeralFile(entry.name)
       && !isManifestCopyOfExistingFile(full)
@@ -349,9 +355,11 @@ manifest.dataContract.computePlane = {
     version: pluginVersions.libra,
     operation: computePilots.libra.operation,
     algorithmFingerprint: computePilots.libra.fingerprint,
-    execution: 'bounded_interactive_execute_with_local_fallback',
+    retired: true,
+    replacement: 'libra.memory_graph_query.v1',
+    execution: 'retired_unified_engine_replacement',
     localDefaultZeroNetwork: true,
-    preferServerDelegatesCurrentRequest: true,
+    preferServerDelegatesCurrentRequest: false,
     deadlineMs: 1500,
     localReserveMs: 400,
     ownerBindingReadback: ['scopeKey', 'characterId', 'chatId', 'branchDigest', 'manifestSignature', 'queryDigest', 'candidateDigest']
@@ -991,7 +999,11 @@ manifest.dataContract.hayakuNativeOtherAxRecovery = {
   recoveryVaultExactEvidence: true,
   backgroundAutoRepairDefault: true,
   backgroundAutoRepairIndependentFromAfterRequest: true,
-  backgroundPerEntryConfirmationRequired: true,
+  backgroundPerEntryConfirmationRequired: false,
+  backgroundConfirmationRequiredAfterRepairAttemptOrFailure: true,
+  backgroundAutomaticApprovalUsesCurrentJournal: true,
+  backgroundAutomaticApprovalRecheckedAtLease: true,
+  packetAuthoringCandidateCountDoesNotAssertDurableCommit: true,
   backgroundApprovedPhysicalCalls: 1,
   backgroundTimerRetry: false,
   coldStartManualOnly: true,
@@ -1081,6 +1093,15 @@ manifest.dataContract.hayakuNativeOtherAxRecovery = {
   ledgerSchema: 'hayaku_storage_ledger_v2',
   worldlineSchema: 'hayaku_turn_worldline_v2'
 };
+manifest.dataContract.flashbackQueryEmbeddingLifetime = {
+  version: pluginVersions.flashback,
+  callerBudgetMs: [1500, 4000],
+  coalescedRequestHasPerCallerLeases: true,
+  lastCallerCancellationAbortsProvider: true,
+  abandonedResultCannotPublishCache: true,
+  cachePublicationRequiresLiveCallerAndValidVectorUnion: true,
+  physicalPendingRequestRetainedUntilSettled: true
+};
 manifest.dataContract.retraceHayakuNativeOwnerDeference = {
   "version": "1.9.65",
   "nativeCapabilityNegotiation": false,
@@ -1164,13 +1185,22 @@ manifest.dataContract.gradiaThreeOwnerRead = {
   pluginVersion:pluginVersions.gradia,principal:'serial_gradation_agents_for_rp',
   readers:['libra','hayaku','flashback'],writeNamespaces:[],newStorageOwner:false,
   consent:'v1_exact_url_preserves_libra_only; explicit_reconnect_v2_signed_reader_set',
-  startupReaderExpansion:false,registeredScopePolicy:'exact_current_server_only',
+  startupReaderExpansion:false,registeredScopePolicy:'server_registered_scope_or_explicit_plugin_ipc_native_owner_scope',
+  readSources:['unified_engine','plugin_ipc'],
+  pluginIpc:{schema:'memory-suite.gradia-plugin-read.v1',readOnly:true,storageMode:'plugin_only',hookOrderIndependent:true,
+    actions:['describe','capture','current','release'],sender:'host_metadata',receiptLimitPerOwner:16,receiptTtlMs:600000,
+    sourceByOwner:{libra:'unified_engine',hayaku:'published_owner_memory',flashback:'published_owner_memory'},
+    libraSessionMaximumReads:32768,contract:'docs/gradia/RECENT-CHAT-AND-PLUGIN-IPC-20261015.md'},
   evidence:'known_committed_producer_formats; provenance_preserving_deduplication',
   corpusDefaultBytes:4194304,corpusMaximumBytes:33554432,itemLimit:4096,metadataMaximumBytes:1048576,
   rawAllowance:'7 * maxCorpusBytes + 2 MiB; remaining allowance passed before materialization',
-  promptMaximumBytes:65536,promptSelection:'whole_item_newest_first_owner_round_robin',
-  currentness:'logical_metadata_digest_reset_epochs; not_physical_ABA_certification',
-  modelProfile:'existing_G2_OpenAI_chat_completions_gpt-4o-mini-2024-07-18_unchanged',
+  promptMaximumBytes:4194304,promptProfileMaximumChars:{fast:48000,balanced:96000,quality:160000,custom:240000},
+  promptBytePolicy:'min(4 MiB, max(64 KiB, profile chars * 4 + 8192))',
+  promptSelection:'two_recent_items_per_owner_then_query_bm25_then_newest_round_robin_and_stage_model_context_subset',
+  currentness:'server_metadata_digest_reset_epochs_or_plugin_owner_dependency_body_rereads; not_physical_ABA_certification',
+  modelProfile:'configured_stage_context_unicode_text_estimate_plus_framing',
+  modelPayloadMaximumBytes:16777216,outputReserve:'actual_final_provider_payload',contextSafetyMargin:'10_percent_minimum_256_tokens',
+  budgetContract:'docs/gradia/MODEL-CONTEXT-BUDGET-20261015.md',
   strongFullCorpusV2:false,actualHostQualified:false,implementation:'source_and_offline_composed_fixtures',
   contract:'docs/gradia/THREE-OWNER-READ-20261009.md'
 };

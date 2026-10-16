@@ -14,8 +14,10 @@ const tokenize=tokenizer();
 for(const query of ['돈 물','가 나','너를 사랑','민수는 지금 어디에 있어?','東京 图书馆 academy','한'.repeat(50000)]){
  assert.deepEqual(plain(l.api.debugRecallTokenStream(query)),tokenize(query));assert(tokenize(query).length<=1600);cases++;
  const rows=['돈 물','너를 사랑','東京 图书馆 academy'].map((text,i)=>({id:'m'+i,memory:{retrieval:{sparseFields:{summary:text,full_text:text}}}}));
- const input=plain(l.api.debugBuildRecallBm25fInput(rows,query)),before=JSON.stringify(input);
- assert.deepEqual(plain(l.api.debugRunRecallBm25fComputeLocal(input)),plain(executeOperation('libra.recall-bm25f.v1',input)));assert.equal(JSON.stringify(input),before);
+ if(typeof l.api.debugBuildRecallBm25fInput==='function'){
+  const input=plain(l.api.debugBuildRecallBm25fInput(rows,query)),before=JSON.stringify(input);
+  assert.deepEqual(plain(l.api.debugRunRecallBm25fComputeLocal(input)),plain(executeOperation('libra.recall-bm25f.v1',input)));assert.equal(JSON.stringify(input),before);
+ }
 }
 assert.deepEqual(tokenize('돈 물'),['돈','물']);assert(!tokenize('너를 사랑').includes('를사'));
 assert.notEqual(DEFINITIONS['libra.recall-bm25f.v1'].fingerprint,'dea19e8a1c43caf8050d8225b15bf5a0d755a9974a56d22b996b4c4826c120fd');

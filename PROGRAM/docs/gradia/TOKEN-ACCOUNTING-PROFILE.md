@@ -1,3 +1,7 @@
+# Historical G2 accounting profile
+
+2026-10-15: The live GRADIA path now uses [model-configured context and separate transport budgets](MODEL-CONTEXT-BUDGET-20261015.md). The fixed model/route and byte-as-token bound below describe the retained v2 component and its historical fixtures, not current runtime admission.
+
 # First local model accounting profile
 
 Profile ID: `openai-gpt4omini-20240718-chattext-conservative.v1`.

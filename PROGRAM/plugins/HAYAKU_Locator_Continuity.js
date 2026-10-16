@@ -1,6 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.0.138
-//@version 3.0.138
+//@display-name HAYAKU · Locator Continuity v3.0.142
+//@version 3.0.142
+//@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
  * verified/current are assertions supplied AFTER the owner's existing final
@@ -395,8 +396,8 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 //@arg hayaku_after_request_auto_repair string true|false; repair the current missing/unusable packet once inside the normal afterRequest pipeline; blank uses true
 //@arg hayaku_recovery_extra_calls string 0|1; explicit structural recovery allowance per operation; default 0
 //@arg hayaku_failed_recovery_automation string deprecated compatibility argument; ignored; failed-output automation is always off
-//@arg hayaku_background_auto_repair string true|false; ask before one background Other Ax repair for a durable Recovery Journal entry; blank uses true
-//@arg hayaku_native_auto_repair string true|false; deprecated compatibility fallback for hayaku_background_auto_repair
+//@arg hayaku_background_auto_repair string true|false; retired and ignored; afterRequest repair is the only automatic stage
+//@arg hayaku_native_auto_repair string true|false; retired and ignored
 //@arg risuai_aux_allow_plugins string true|false; allow a plugin-provided RisuAI auxiliary model; blank uses true
 //@arg hayaku_cold_start_batch_turns string 1|5|10; maximum completed U+A turns per Other Ax Cold Start call; blank uses 1
 //@arg hayaku_packet_coverage_audit string true|false
@@ -413,9 +414,9 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 //@arg hayaku_recall_stability_boost string 0.0-0.08 request-local scene persistence boost; blank uses 0.025
 //@arg hayaku_recovery_vault string true|false; deprecated compatibility argument; exact visible U+A Recovery Journal preservation is always enabled
 //@arg hayaku_raw_passage_recall string true|false; search Recovery Journal evidence with exact/BM25/trigram/proximity passage retrieval; blank uses true
-//@arg hayaku_raw_recall_max_items string Maximum verbatim recovery passages injected per request; blank uses 3
+//@arg hayaku_raw_recall_max_items string retired and ignored; raw passage recall is bounded by hayaku_raw_recall_max_chars
 //@arg hayaku_raw_recall_max_chars string Maximum total verbatim recovery evidence characters; blank uses 2400
-//@arg hayaku_raw_recall_min_score string 0.0-1.0 minimum gated raw passage score; blank uses 0.16
+//@arg hayaku_raw_recall_min_score string retired and ignored; raw passage recall uses rank fusion, not a score floor
 //@arg hayaku_typed_memory_graph string true|false; derive deterministic typed relations between packet memory rows; blank uses true
 //@arg hayaku_graph_closure_recall string true|false; admit bounded typed-neighbor evidence after the normal retrieval gate; blank uses true
 //@arg hayaku_graph_closure_max_nodes string Maximum typed graph closure rows kept per request; blank uses 8
@@ -989,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.0.138';
+  const PLUGIN_VERSION = '3.0.142';
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
   const HAYAKU_SPARSE_RRF_COMPUTE_FINGERPRINT = '7f32e8b10fdd34e8356af70e40ad90d3c48e6fda132080046a807db0ea3ec58f';
   const HAYAKU_SPARSE_RRF_INPUT_SCHEMA = 'hayaku.sparse-rrf-fusion.input.v1';
@@ -3021,6 +3022,13 @@ const MemorySuiteHostLineage = createMemorySuiteHostLineage();
 const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const options = rawOptions && typeof rawOptions === 'object' ? rawOptions : {};
   const localOnlyOwner = options.storagePolicy === 'local_only';
+  // The unified engine's read source (the LIBRA owner read-session) is supplied by the host that embeds
+  // this client. Without it a unified read is refused rather than quietly served from the server's read.
+  const unifiedReadProviderOption = options.unifiedReadProvider;
+  // A provider object (or a getter returning one) is accepted; anything else cannot serve a unified read.
+  const resolveUnifiedReadProvider = () => (typeof unifiedReadProviderOption === 'function'
+    ? unifiedReadProviderOption()
+    : (unifiedReadProviderOption && typeof unifiedReadProviderOption === 'object' ? unifiedReadProviderOption : null));
   const managerOnly = options.storagePolicy === 'manager_only';
   const managerOnlyError = () => Object.assign(new Error('MEMORY_SUITE_MANAGER_ONLY_POLICY'), {code:'MEMORY_SUITE_MANAGER_ONLY_POLICY'});
   const localOnlyError = () => Object.assign(new Error('MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY'), {code:'MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY'});
@@ -9714,6 +9722,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       #${rootId} .scopetoggle button[aria-pressed="true"]{background:#1d2f52;color:#eef4ff;box-shadow:0 0 0 1px #5d88ff inset}
       #${rootId} .scopetoggle button small{display:block;margin-top:2px;font-weight:400;font-size:10px;color:#9eacc3}
       #${rootId} .scopetoggle button[aria-pressed="true"] small{color:#cdd9f2}
+      #${rootId} .scopetoggle button:only-child{grid-column:1/-1}
+      #${rootId} .mscx-advanced{border:1px solid #34425b;border-radius:10px;padding:0 12px} #${rootId} .mscx-advanced>summary{cursor:pointer;padding:11px 0;font-weight:700;font-size:13px} #${rootId} .mscx-advanced>summary small{font-weight:400;color:#9eacc3;margin-left:6px} #${rootId} .mscx-advanced-body{display:grid;gap:8px;padding-bottom:12px}
       #${rootId} .scopeunset{border-color:#f0b65c;background:#241d10}
       #${rootId} .modes{display:grid;gap:8px} #${rootId} label.mode{display:flex;gap:9px;align-items:flex-start;border:1px solid #34425b;border-radius:10px;padding:10px;cursor:pointer}
       #${rootId} input[type=text],#${rootId} input[type=password]{width:100%;padding:10px 11px;border-radius:9px;border:1px solid #465a79;background:#0b1321;color:#fff}
@@ -9736,10 +9746,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         </div>
         <div class="muted" data-mirror-transition>미러는 두 저장 위치 사이의 전환 중에만 사용합니다. 기존 미러 설정은 단독 모드를 선택해 전환을 완료하세요.</div>
         <div class="scope" data-mode-summary${integratesCompute ? '' : ' hidden'}></div>
-        <p>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
-        <div class="actions"><button data-test>연결 테스트</button><button class="primary" data-apply>설정 적용</button><button data-sync>지금 동기화</button><button data-restore>서버 → pluginStorage 복구</button><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div>
+        <p class="muted" data-server-hint>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
+        <div class="actions"><button data-test>연결 테스트</button><button class="primary" data-apply>설정 적용</button></div>
+        <details class="mscx-advanced"><summary>고급 작업 <small>동기화 · 복구 · 이전 · 초기화</small></summary><div class="mscx-advanced-body"><div class="muted">평소에는 쓰지 않아도 됩니다. 저장 위치를 옮기거나 문제를 복구할 때만 사용하세요.</div>
+        <div class="actions"><button data-sync>지금 동기화</button><button data-restore>서버 → pluginStorage 복구</button></div>
         ${globalModeEnabled ? '<div class="actions"><button data-global-pause>전체 이전 중단·보존</button><button data-global-resume>미완료 전체 이전 재개</button></div>' : ''}
-        <div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div><div class="status" data-status>${integratesCompute ? `현재 방식: ${esc(initial.modeLabel)}\n연산: ${initial.executionPolicy?.computeMode === 'prefer_server' ? '서버 우선 · 실패 시 로컬' : '로컬'}` : `현재 모드: ${esc(initial.modeLabel)}\n서버 상태를 확인할 수 있습니다.`}</div>
+        <div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div>
+        <div class="actions"><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div></div></details><div class="status" data-status>${integratesCompute ? `현재 방식: ${esc(initial.modeLabel)}\n연산: ${initial.executionPolicy?.computeMode === 'prefer_server' ? '서버 우선 · 실패 시 로컬' : '로컬'}` : `현재 모드: ${esc(initial.modeLabel)}\n서버 상태를 확인할 수 있습니다.`}</div>
       </div>
       <div class="job" data-job><b data-job-title>작업 진행 중</b><div class="bar"><i data-job-bar></i></div><div class="grid"><span data-job-phase></span><span data-job-count></span><span data-job-bytes></span><span data-job-time></span><span data-job-retry></span><span data-job-key></span></div><div class="result" data-job-result></div><textarea data-job-diagnostics aria-label="저장 이전 상세 진단" readonly style="display:none"></textarea><button data-job-copy type="button">상세 진단 복사</button><div class="actions" data-job-terminal-actions style="display:none"><button data-job-dismiss type="button">결과 확인 닫기</button></div></div>
     </div>`;
@@ -9755,6 +9768,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const local = mode === MODE_PLUGIN_ONLY;
       const serverFields = q('[data-server-fields]');
       if (serverFields) serverFields.hidden = integratesCompute && local;
+      const serverHint = q('[data-server-hint]');
+      if (serverHint) serverHint.hidden = integratesCompute && local;
       const testButton = q('[data-test]');
       if (testButton) testButton.disabled = integratesCompute && local;
       const summary = q('[data-mode-summary]');
@@ -10635,6 +10650,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(!Number.isSafeInteger(maxCorpusBytes)||maxCorpusBytes<1||maxCorpusBytes>33554432)reject('LIB_READ_BUDGET_INVALID');
     const checkAbort=()=>{if(readOptions.signal?.aborted)reject('LIB_READ_CANCELED');};
     checkAbort();
+    const readSource=readOptions.source === undefined ? 'server_logical_read' : String(readOptions.source);
+    if(!['server_logical_read','unified_engine'].includes(readSource))reject('LIB_READ_SOURCE_UNSUPPORTED');
     if (namespace !== 'libra' || pluginId !== 'serial_gradation_agents_for_rp') reject('LIB_READ_PRINCIPAL_REQUIRED');
     const sourceScope={};
     for(const key of ['scopeKey','characterId','chatId']){const value=scopeInput?.[key];if(typeof value!=='string'||!value.trim()||value.length>512||/[\r\n\0]/.test(value))reject('LIB_READ_SCOPE_INVALID');sourceScope[key]=value;}
@@ -10727,7 +10744,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(payload?.dataInstanceId!==connection.dataInstanceId)reject('LIB_READ_DATA_CHANGED');
       return payload.result;
     };
-    const result=await read('capture',{scope:sourceScope,maxCorpusBytes});
+    const unifiedReadProvider=readSource==='unified_engine'?resolveUnifiedReadProvider():null;
+    if(readSource==='unified_engine'&&(!unifiedReadProvider||typeof unifiedReadProvider.capture!=='function'||typeof unifiedReadProvider.current!=='function'))reject('LIB_READ_UNIFIED_UNAVAILABLE');
+    // Same envelope, same validation below: only where the answer comes from changes.
+    const sourceRead=readSource==='unified_engine'?async(action,body)=>{
+      await assertRoute();
+      const answer=action==='capture'
+        ? await unifiedReadProvider.capture({scope:body?.scope,maxCorpusBytes:body?.maxCorpusBytes,signal:readOptions.signal})
+        : await unifiedReadProvider.current({proof:body,signal:readOptions.signal});
+      await assertRoute();
+      if(!answer||typeof answer!=='object')reject('LIB_READ_UNIFIED_UNAVAILABLE');
+      return answer;
+    }:read;
+    const result=await sourceRead('capture',{scope:sourceScope,maxCorpusBytes});
     if(result?.schema!=='memory-suite.libra-read-session.v1'||result.readOnly!==true||result.complete!==true
       ||result.dataInstanceId!==connection.dataInstanceId||result.resetEpoch!==epoch
       ||JSON.stringify(result.scope)!==JSON.stringify(sourceScope)||!/^[a-f0-9]{64}$/.test(result.evidenceRevision||'')
@@ -10745,8 +10774,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       evidenceRevision:result.evidenceRevision,dataInstanceId:connection.dataInstanceId,resetEpoch:epoch});
     localCurrent();
     return Object.freeze({snapshot,
+      source:readSource,
+      ...(readSource==='unified_engine'&&result&&typeof result==='object'&&result.engine?{engine:result.engine}:{}),
       assertCurrentSync:()=>{localCurrent();assertConnectionState(connection.url);return true;},
-      assertCurrent:async()=>{const now=await read('current',proof);
+      assertCurrent:async()=>{const now=await sourceRead('current',proof);
         if(now?.schema!=='memory-suite.libra-read-session-current.v1'||now.current!==true||JSON.stringify(now.scope)!==JSON.stringify(sourceScope)||now.evidenceRevision!==proof.evidenceRevision
           ||now.dataInstanceId!==connection.dataInstanceId||now.resetEpoch!==epoch)reject('LIB_READ_STALE');localCurrent();return true;}
     });
@@ -17147,14 +17178,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       ...patch
     });
   };
-  const finishNativeJob = (state, result = null, error = '') => updateNativeJob({
+  const finishNativeJob = (state, result = null, error = '') => (typeof scheduleHayakuAttentionRefresh === 'function' && scheduleHayakuAttentionRefresh('job_finished'), updateNativeJob({
     ...(state === 'completed' && result?.repaired === true && result?.adoption?.durable === true ? {completed:Memory.nativeRecovery.job?.total || 1} : {}),
     state: compact(state || 'completed', 48),
     result: clone(result, null),
     error: compact(error || result?.error || '', 320),
     cancellable: false,
     finishedAt: now()
-  });
+  }));
   const cancelNativeJob = () => {
     const job = Memory.nativeRecovery.job;
     if (!job) {
@@ -24610,9 +24641,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       assistantMessageIndex: assistantIndex
     };
   };
-  const liveRecoveryEvidenceForRecord = (record, scope) => {
+  const liveRecoveryEvidenceForRecord = (record, scope, snapshotInput = null) => {
     if (!scope?.confident || scope.chatMessagesAvailable !== true) return null;
-    const snapshot = authoritativeChatSnapshot(scope.chatMessages, scope);
+    const snapshot = objectish(snapshotInput) && Array.isArray(snapshotInput.conversationPairs) ? snapshotInput : authoritativeChatSnapshot(scope.chatMessages, scope);
     const pair = ensureArray(snapshot?.conversationPairs).find(candidate => (
       Number(candidate?.pairIndex || 0) === Number(record?.pairIndex || 0)
       && (!record?.userHash || candidate?.userHash === record.userHash)
@@ -24642,6 +24673,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const liveVerificationRequired = scope?.confident === true && scope?.chatMessagesAvailable === true;
     if (liveEvidence && (liveEvidence.userHash !== record.userHash || liveEvidence.assistantHash !== record.assistantHash)) {
       return { ok: false, durable: false, reason: 'recovery_evidence_live_hash_mismatch', completeness: record.evidenceCompleteness };
+    }
+    // The visible chat already holds this exact turn (identity and hashes match), so
+    // read it from there. The Journal copy is needed only when no live chat exists.
+    if (liveEvidence && (liveEvidence.userText || liveEvidence.assistantText)) {
+      return { ok: true, durable: true, reason: 'recovery_evidence_live_chat', completeness: record.evidenceCompleteness || 'live_chat',
+        user: text(liveEvidence.userText || ''), assistant: text(liveEvidence.assistantText || ''), record, source: 'live_chat' };
     }
     if (record.evidenceManifest) {
       const sidecar = await readRecoveryEvidenceSidecar(record.evidenceManifest, { scopeKey: record.scopeKey, recordId: record.recordId });
@@ -24825,34 +24862,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       terminalRecords: ensureArray(finalVault.records).filter(record => RECOVERY_DEBT_TERMINAL_STATUSES.has(record.status)).length
     };
   };
-  const scheduleNativeRecoveryDebtRepair = (record, reason = 'packet_debt_ready') => {
-    if (!record || record.inheritedSessionHistory === true || record.worldlineStatus !== 'active' || Memory.unloaded) return false;
-    const timers=Memory.nativeRecovery.confirmationTimers || (Memory.nativeRecovery.confirmationTimers=new Map());
-    const key=`${record.scopeKey}:${record.recordId}`;
-    if(timers.has(key))return true;
-    const busy=()=>Memory.finalizedCaptureInFlight?.size>0 || Memory.finalizedBindingInFlight?.size>0
-      || inBandRecoveryPendingForDebt(record) || Memory.nativeRecovery.confirmationInspecting
-      || Memory.nativeRecovery.repairInFlight || Memory.nativeRecovery.coldStartInFlight
-      || (Memory.nativeRecovery.job && !NATIVE_JOB_TERMINAL_STATES.has(Memory.nativeRecovery.job.state));
-    const defer=()=>{
-      // Wait for local work/consent only; never retry paid analysis from this timer.
-      const timer=setTimeout(()=>void attempt(),1000);timer?.unref?.();timers.set(key,timer);
-    };
-    const attempt=async()=>{
-      if(Memory.unloaded||!ownsRuntime()||Memory.settings?.backgroundAutoRepair===false){timers.delete(key);return;}
-      if(busy()){defer();return;}
-      try{
-        const shown=await requestRecoveryJournalBackgroundConfirmation(record,reason);
-        // Work may start while the approval request performs fresh readback.
-        if(!shown && !Memory.unloaded && ownsRuntime() && busy()){defer();return;}
-      }catch(error){
-        pushOperationLog('native_recovery:confirmation_check_failed',{scopeKey:record.scopeKey,turn:record.pairIndex,error:compact(error?.message||error,160)},'warn');
-      }
-      timers.delete(key);
-    };
-    timers.set(key,null);queueMicrotask(()=>void attempt());
-    return true;
-  };
+  // Retired: afterRequest repair is the only automatic stage. Missing turns stay in the
+  // Recovery Journal for manual repair; no background run and no confirmation dialog.
+  const scheduleNativeRecoveryDebtRepair = () => false;
   const pruneInBandRecoveryReservations = () => {
     const at = now();
     for (const [key, value] of Memory.recoveryDebtInBandReservations.entries()) {
@@ -25186,6 +25198,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       };
     }
     if (inBandRecoveryPendingForDebt(record)) return { ok: false, acquired: false, reason: 'hayaku_inband_recovery_pending' };
+    if (payload.requireAutoApproval === true && !recoveryJournalAutoApproved(record)) {
+      return { ok: false, acquired: false, reason: 'recovery_journal_auto_approval_changed' };
+    }
     if (payload.explicitRetry !== true && Number(record.nextRepairAt || 0) > now()) return { ok: false, acquired: false, reason: 'recovery_debt_backoff_active', nextRepairAt: record.nextRepairAt };
     if (payload.explicitRetry !== true && Number(record.repairAttempts || 0) >= RECOVERY_DEBT_MAX_AUTO_ATTEMPTS) return { ok: false, acquired: false, reason: 'recovery_debt_attempt_limit' };
     const existingLease = normalizeRecoveryDebtLease(record.repairLease);
@@ -25304,6 +25319,19 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const vault = await loadRecoveryVault(scopeKey, { force: true, debtId });
     const current = ensureArray(vault.records).find(record => record.recordId === debtId) || null;
     if (!current) return { ok: false, durable: false, reason: 'recovery_journal_entry_not_found' };
+    // Inspect and claim against the durable record in the same storage queue as
+    // afterRequest provenance writes. The caller's earlier snapshot is not consent.
+    if (patch.claimPrompt === true && (current.backgroundDecision !== 'pending'
+      || Number(current.backgroundPromptedAt || 0) > 0 || current.inheritedSessionHistory === true
+      || current.worldlineStatus !== 'active' || Memory.settings?.backgroundAutoRepair === false
+      || inBandRecoveryPendingForDebt(current) || Memory.finalizedCaptureInFlight?.size || Memory.finalizedBindingInFlight?.size)) {
+      return { ok: false, durable: false, reason: 'recovery_journal_prompt_changed' };
+    }
+    if (patch.requireAutoApproval === true && (current.backgroundDecision !== 'pending'
+      || !recoveryJournalAutoApproved(current) || inBandRecoveryPendingForDebt(current)
+      || Memory.finalizedCaptureInFlight?.size || Memory.finalizedBindingInFlight?.size)) {
+      return { ok: false, durable: false, reason: 'recovery_journal_auto_approval_changed' };
+    }
     const changedAt = now();
     const records = ensureArray(vault.records).map(record => record.recordId === debtId
       ? normalizeRecoveryVaultRecord({
@@ -25316,7 +25344,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         }, scopeKey)
       : record);
     const write = await writeRecoveryVaultDirect(scopeKey, { ...vault, records }, `recovery_journal_background_${decision}`,{partial:true});
-    return { ...write,ok:write.durable===true,durable: write.durable === true, reason: write.reason, scopeKey, debtId, decision };
+    return { ...write,ok:write.durable===true,durable: write.durable === true, reason: write.reason, scopeKey, debtId, decision,
+      record: clone(records.find(record => record.recordId === debtId), null) };
   });
   const upsertRecoveryVaultEvidence = async (pending = {}, candidate = {}, reason = 'packet_missing') => {
     const settings = Memory.settings || DEFAULT_SETTINGS;
@@ -26316,9 +26345,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const lifecycle=snapshot&&worldline?await reconcileRecoveryVaultWorldlineLifecycleDirect(scope,snapshot,worldline,{reason:'raw_recall_worldline_reconcile'}):{vault:await loadRecoveryVault(scope.key)};
     const vault=lifecycle.vault,active=activeRecoveryVaultRecords(vault,snapshot,worldline);
     const passages=[];
-    for(const record of active.records)for(const role of ['user','assistant']){
-      const body=text(record[role]?.text||'');if(!body)continue;
-      passages.push({id:record.recordId+':'+role,publicText:body,axis:'narrative',record,role});
+    const liveSnapshot=scope.chatMessagesAvailable===true?(snapshot||authoritativeChatSnapshot(scope.chatMessages,scope)):null;
+    for(const record of active.records){
+      const inherited=record?.inheritedSessionHistory===true||record?.permanentSessionHistory===true;
+      // Current-session turns are read from the visible chat; a changed turn is skipped.
+      const live=!inherited&&liveSnapshot?liveRecoveryEvidenceForRecord(record,scope,liveSnapshot):null;
+      if(!inherited&&liveSnapshot&&!live)continue;
+      for(const role of ['user','assistant']){
+        const body=text(live?(role==='user'?live.userText:live.assistantText):record[role]?.text||'');if(!body)continue;
+        passages.push({id:record.recordId+':'+role,publicText:body,axis:'narrative',record,role});
+      }
     }
     const context=settings.retrievalRecentContext||buildRecentContextFocus(messages,query,settings);
     const chosen=localRecallFairMerge([localRecallRank(passages,[query]),localRecallRank(passages,context.topics||[])],PACKET_CORE_RECALL_CANDIDATE_LIMIT);
@@ -35020,7 +35056,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const prose = configured === 'source'
       ? 'Write summaries and descriptions in the language of the completed text and established story facts.'
       : `Write summaries and descriptions in ${memoryNoteLocale(configured).promptLabel}.`;
-    return `${prose} Preserve original names, IDs, JSON keys and enum tokens. Keep critical_dialogue and grounding quotes verbatim in their source language, including punctuation. Only meta.summary_memory.recallAliases may add compact ko/en/ja/zh paraphrases of the same fact, without new details.`;
+    return `${prose} Preserve original names, IDs, JSON keys and enum tokens. Keep critical_dialogue and grounding quotes verbatim in their source language, including punctuation. Only meta.summary_memory.recallAliases may add compact ko/en/ja/zh paraphrases of the same fact, without new details; always add en and the user's language if different.`;
   };
   const packetActiveSceneIdForSettings = settings => {
     const sceneBaton = objectish(settings?.sceneBaton) ? settings.sceneBaton : {};
@@ -43807,7 +43843,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       '[HAYAKU CANONICAL PACKET AUTHORING CONTRACT]',
       profile.humanReadableInstruction,
       ...ensureArray(profile.schemaInstructions),
-      `Populate meta.summary_memory.recallAliases as an object using these language keys when useful: ${aliases}. Each alias must paraphrase the same established fact and add no detail.`,
+      `Populate meta.summary_memory.recallAliases as an object using these language keys: ${aliases}. Always include en and the language of the latest user input whenever it differs from the summary language, so the memory stays findable across languages. Each alias must paraphrase the same established fact and add no detail.`,
       `Use meta.summary_memory.canonicalAnchors only with these prefixes: ${prefixes}.`,
       'Keep canonical names and refs in their exact established spelling. Do not romanize or translate names to match memoryLanguage; preserve the spelling quoted in TARGET TURN. Unknown identities stay unknown.',
       'Model metadata containers (think, thoughts, reasoning, analysis) are not story evidence. Never turn their author, model, or planning notes into a story character, secret, event or memory. A narrator explicitly established in the visible story remains valid.',
@@ -44925,6 +44961,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     let row=null,abandoned=false;
     if(jobId&&!NATIVE_JOB_TERMINAL_STATES.has(Memory.nativeRecovery.job.state))updateNativeJob({transportPhase:'queued',queuedAt});
     const physical=enqueueNativeOtherAxCall(async () => {
+      if (options.automaticProbe === true && ((await loadSettings(true))?.enabled === false || Memory.unloaded || !ownsRuntime())) {
+        const error = new Error('hayaku_automatic_probe_cancelled');
+        error.code = 'HAYAKU_AUTOMATIC_PROBE_CANCELLED';
+        error.hayakuRunLlmSubmitted = false;
+        throw error;
+      }
       ledger.check();
       if(abandoned || (jobId && (Memory.nativeRecovery.job?.jobId!==jobId || NATIVE_JOB_TERMINAL_STATES.has(Memory.nativeRecovery.job.state))))throw new MemorySuiteExecutionContract.ContractError('STALE_SOURCE','Queued recovery operation is no longer current.');
       const startedAt = now();
@@ -44976,6 +45018,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           throw error;
         }
         callSucceeded=true;
+        if (typeof markHayakuAuxiliaryReady === 'function') await markHayakuAuxiliaryReady();
         return {
           ok: true,
           content,
@@ -45020,9 +45063,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       last: probe.last
     }, {});
   };
-  const runNativeAuxiliaryProbe = async () => {
+  const runNativeAuxiliaryProbe = async (options = {}) => {
     const probe = Memory.nativeRecovery.auxiliaryProbe || (Memory.nativeRecovery.auxiliaryProbe = { inFlight: false, last: null });
-    const settings = await loadSettings(false);
+    const settings = await loadSettings(options.automatic === true);
+    if (options.automatic === true && (settings?.enabled === false || Memory.unloaded || !ownsRuntime())) return { ok: false, status: 'cancelled', submitted: false };
     const allowPlugins = settings?.risuAuxAllowPlugins !== false;
     const resolution = nativeLlmApiResolution();
     const startedAt = now();
@@ -45074,7 +45118,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           content: 'This is a HAYAKU connectivity probe for the RisuAI auxiliary model. Do not analyze memory, do not create a HAYAKU packet, and do not modify state. Reply briefly.'
         },
         { role: 'user', content: 'Reply with HAYAKU OK.' }
-      ],{taskKind:'connection_probe'});
+      ],{taskKind:'connection_probe', automaticProbe: options.automatic === true});
       const result = {
         ...base,
         ok: true,
@@ -45093,7 +45137,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     } catch (error) {
       const result = {
         ...base,
-        status: 'failed',
+        status: error?.code === 'HAYAKU_AUTOMATIC_PROBE_CANCELLED' ? 'cancelled' : 'failed',
         submitted: error?.hayakuRunLlmSubmitted === true,
         finishedAt: now(),
         elapsedMs: Math.max(0, now() - startedAt),
@@ -47192,9 +47236,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const nativeRepairRunSnapshot = () => ({
     schema: HAYAKU_NATIVE_RECOVERY_SCHEMA,
     version: HAYAKU_NATIVE_REPAIR_WORKER_VERSION,
-    autoRepairEnabled: Memory.settings?.backgroundAutoRepair !== false,
+    autoRepairEnabled: false,
     afterRequestAutoRepairEnabled: Memory.settings?.afterRequestAutoRepair !== false,
-    backgroundAutoRepairEnabled: Memory.settings?.backgroundAutoRepair !== false,
+    backgroundAutoRepairEnabled: false,
     backgroundConfirmation: clone(Memory.ledgerViewer?.recoveryConfirmation, null),
     timerPending: Memory.nativeRecovery.repairTimer != null,
     timerDueAt: Math.max(0, Number(Memory.nativeRecovery.repairTimerDueAt || 0) || 0),
@@ -47230,7 +47274,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!debtId || !scopeKey) return { ok: false, skipped: true, reason: 'debt_identity_missing' };
     const runId = `hayaku-native-repair-${stableHash64([scopeKey, debtId, now()].join('\u0001'))}`;
     setNativeManualRepairPhase('lease_acquire');
-    const leaseResponse = await acquireRecoveryDebtLeaseForNativeRepair({ debtId, runId, scopeKey,explicitRetry:options.explicitRetry===true });
+    const leaseResponse = await acquireRecoveryDebtLeaseForNativeRepair({ debtId, runId, scopeKey,
+      explicitRetry:options.explicitRetry===true, requireAutoApproval:options.requireAutoApproval===true });
     if (leaseResponse?.acquired !== true || !leaseResponse?.debt?.evidenceRecord) {
       return {
         ok: false,
@@ -47637,193 +47682,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     return false;
   };
-  const showIndependentRecoveryConfirmation = async confirmation => {
-    let doc = null;
-    try { doc = Memory.ledgerViewer?.root?.ownerDocument || globalThis.document || null; } catch (_) { doc = null; }
-    if (!doc?.body || typeof doc.createElement !== 'function') return false;
-    removeIndependentRecoveryConfirmation();
-    const overlay = doc.createElement('div');
-    overlay.id = RECOVERY_CONFIRMATION_OVERLAY_ID;
-    overlay.className = 'overlay is-open';
-    overlay.setAttribute('role', 'presentation');
-    const dialog = doc.createElement('section');
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    dialog.className = 'dialog';
-    dialog.setAttribute('aria-labelledby', 'hayakuRecoveryConfirmationTitle');
-    const eyebrow = doc.createElement('small');
-    eyebrow.className = 'eyebrow';
-    eyebrow.textContent = 'HAYAKU RECOVERY';
-    const title = doc.createElement('h2');
-    title.id = 'hayakuRecoveryConfirmationTitle';
-    title.className = 'page-title';
-    title.textContent = '기억을 다시 생성할까요?';
-    const summary = doc.createElement('p');
-    const turn = Math.max(1, Number(confirmation?.pairIndex || 0) || 1);
-    summary.textContent = `T${turn}의 기억을 저장하지 못했어요. 보존된 대화에서 다시 생성할까요?`;
-    summary.className = 'card__desc';
-    const reason = doc.createElement('div');
-    reason.textContent = '현재 완료된 턴에 사용할 패킷을 찾지 못했습니다. 원문은 보존되어 있습니다.';
-    reason.title = compact(confirmation?.reason || 'packet_missing', 120);
-    reason.className = 'note';
-    const note = doc.createElement('p');
-    note.textContent = '기억 생성은 AI를 한 번 더 호출하며 추가 비용이 발생할 수 있습니다. 나중에 선택하면 관제창에서 다시 생성할 수 있습니다.';
-    note.className = 'hint';
-    const status = doc.createElement('div');
-    status.setAttribute('aria-live', 'polite');
-    status.className = 'hint';
-    const actions = doc.createElement('div');
-    actions.className = 'dialog__actions';
-    const makeButton = (label, primary = false) => {
-      const button = doc.createElement('button');
-      button.type = 'button';
-      button.className = primary ? 'btn btn--primary' : 'btn';
-      button.textContent = label;
-      return button;
-    };
-    const minimizeButton = makeButton('최소화');
-    minimizeButton.id = 'minimizeHayakuIndependentRecovery';
-    minimizeButton.setAttribute('aria-label', '복구 창 최소화');
-    minimizeButton.classList.add('btn--sm');
-    minimizeButton.addEventListener('click', () => { void minimizeIndependentRecoveryConfirmation(); });
-    dialog.appendChild(minimizeButton);
-    const noButton = makeButton('나중에');
-    const yesButton = makeButton('기억 생성', true);
-    actions.append(noButton, yesButton);
-    dialog.append(eyebrow, title, summary, reason, note, status, actions);
-    overlay.appendChild(dialog);
-    let settled = false;
-    const setButtonsDisabled = disabled => {
-      noButton.disabled = disabled;
-      yesButton.disabled = disabled;
-
-    };
-    const finish = async accepted => {
-      if (settled) return;
-      settled = true;
-      setButtonsDisabled(true);
-      status.textContent = accepted ? '승인 내용을 저장하고 복구를 준비하는 중입니다…' : '저널 유지 결정을 저장하는 중입니다…';
-      try {
-        const result = await resolveRecoveryJournalBackgroundConfirmation(accepted);
-        if (Memory.ledgerViewer.recoveryConfirmation) {
-          settled = false;
-          setButtonsDisabled(false);
-          status.textContent = `처리하지 못했습니다 · ${compact(result?.reason || 'recovery_confirmation_write_failed', 180)}`;
-          return;
-        }
-        if (Memory.ledgerViewer.recoveryConfirmationUi?.requestedAt === Number(confirmation.requestedAt)) await hideIndependentRecoveryConfirmation();
-      } catch (error) {
-        settled = false;
-        setButtonsDisabled(false);
-        status.textContent = `처리 실패 · ${compact(error?.message || error, 180)}`;
-      }
-    };
-    noButton.addEventListener('click', () => { void finish(false); });
-    yesButton.addEventListener('click', () => { void finish(true); });
-    overlay.addEventListener('click', event => { if (event?.target === overlay) event.preventDefault(); });
-    doc.body.appendChild(overlay);
-    let teardownDialog = viewerBindConfirmDialogKeys(overlay, dialog, () => {
-      if (settled) void minimizeIndependentRecoveryConfirmation();
-      else void finish(false);
-    });
-    overlay.__hayakuCleanup = () => { try { teardownDialog(); } catch (_) {} };
-    const wasViewerVisible = Memory.ledgerViewer.visible === true;
-    if (!wasViewerVisible) {
-      try {
-        const viewerRoot = doc.getElementById?.(LEDGER_VIEWER_ROOT_ID);
-        if (viewerRoot) {
-          viewerRoot.style.display = 'none';
-          viewerRoot.dataset.hayakuViewerSuppressed = 'recovery_confirmation';
-        }
-      } catch (_) {}
-    }
-    const ui = { mode:'independent', overlayId:RECOVERY_CONFIRMATION_OVERLAY_ID,
-      containerShown:wasViewerVisible, requestedAt:Number(confirmation?.requestedAt || now()), showPending:false };
-    Memory.ledgerViewer.recoveryConfirmationUi = ui;
-    if (!wasViewerVisible) {
-      const api = apiCandidates().find(candidate => typeof candidate?.showContainer === 'function') || RisuCompat.api();
-      if (typeof api?.showContainer !== 'function') { removeIndependentRecoveryConfirmation(); return false; }
-      ui.containerShown = true;
-      ui.showPending = true;
-      Promise.resolve().then(() => api.showContainer('fullscreen')).then(() => {
-        ui.showPending = false;
-        // A late host acknowledgement must not reopen a minimized, hidden dialog.
-        if (Memory.ledgerViewer.recoveryConfirmationUi !== ui && Memory.ledgerViewer.visible !== true) {
-          try { Promise.resolve(api.hideContainer?.()).catch(() => null); } catch (_) {}
-        }
-      }, error => {
-        ui.showPending = false;
-        if (Memory.ledgerViewer.recoveryConfirmationUi !== ui) return;
-        status.textContent = '복구 창 표시를 확인하지 못했습니다. 최소화 후 HAYAKU에서 다시 열어 주세요.';
-        Memory.lastWarnings = [...ensureArray(Memory.lastWarnings), `recovery_confirmation_container_failed:${compact(error?.message || error,120)}`].slice(-20);
-      });
-    }
-    return true;
-  };
-  const requestRecoveryJournalBackgroundConfirmationOnce = async (recordInput, reason = 'packet_debt_ready') => {
-    await loadSettings(false);
-    const record = normalizeRecoveryVaultRecord(recordInput, recordInput?.scopeKey || '');
-    if (!record || record.inheritedSessionHistory === true || record.worldlineStatus !== 'active') return false;
-    // Failure diagnostics never suppress the one-time source regeneration question.
-    if (Memory.settings?.backgroundAutoRepair === false) return false;
-    if (record.backgroundDecision && record.backgroundDecision !== 'pending') return false;
-    if (Number(record.backgroundPromptedAt || 0) > 0) return false;
-    if (Memory.nativeRecovery.repairInFlight || Memory.nativeRecovery.coldStartInFlight) return false;
-    const activeJob = Memory.nativeRecovery.job;
-    if (activeJob && !NATIVE_JOB_TERMINAL_STATES.has(activeJob.state)) return false;
-    const inspected = await inspectRecoveryDebtsForNativeRepair({debtId:record.recordId,targetPairIndex:record.pairIndex,includeEvidence:false,includeAwaitingReview:true,limit:1});
-    if (inspected?.available!==true || inspected.scopeKey!==record.scopeKey) return false;
-    const freshDebt=ensureArray(inspected.debts).find(d=>d.debtId===record.recordId);
-    if (!freshDebt || !ensureArray(inspected.coverage?.missingTurns).includes(record.pairIndex)) return false;
-    // afterRequest/finalized capture gets its chance before the fallback prompt.
-    if(inBandRecoveryPendingForDebt(record) || Memory.finalizedCaptureInFlight?.size || Memory.finalizedBindingInFlight?.size) return false;
-    const marked = await updateRecoveryJournalBackgroundDecision(record.scopeKey, record.recordId, 'pending', { promptedAt: now() });
-    if (marked.durable !== true) return false;
-    Memory.ledgerViewer.recoveryConfirmation = {
-      scopeKey: record.scopeKey,
-      debtId: record.recordId,
-      pairIndex: record.pairIndex,
-      targetFingerprint:nativeRepairTargetFingerprint(freshDebt),
-      sourceDigest:inspected.coverage?.rows?.find(r=>r.turn===record.pairIndex)?.sourceDigest || '',
-      reason: compact(reason || record.reason || 'packet_missing', 96),
-      requestedAt: now()
-    };
-    Memory.ledgerViewer.recoveryConfirmationUi = {
-      mode: 'independent',
-      overlayId: RECOVERY_CONFIRMATION_OVERLAY_ID,
-      containerShown: false,
-      requestedAt: Memory.ledgerViewer.recoveryConfirmation.requestedAt
-    };
-    beginNativeJob('background_repair_confirmation', {
-      scopeKey: record.scopeKey,
-      state: 'awaiting_confirmation',
-      targetTurns: [record.pairIndex],
-      total: 1,
-      currentTurn: record.pairIndex,
-      cancellable: false,
-      message: '패킷이 누락됐습니다. 자동 복구를 시도하시겠습니까?'
-    });
-    const independentShown = await showIndependentRecoveryConfirmation(Memory.ledgerViewer.recoveryConfirmation).catch(() => false);
-    if (independentShown !== true) {
-      Memory.ledgerViewer.recoveryConfirmation = null;
-      Memory.ledgerViewer.recoveryConfirmationUi = null;
-      await updateRecoveryJournalBackgroundDecision(record.scopeKey, record.recordId, 'pending', {
-        promptedAt: 0,
-        error: 'recovery_confirmation_ui_unavailable'
-      }).catch(() => null);
-      finishNativeJob('failed', null, 'recovery_confirmation_ui_unavailable');
-      Memory.lastWarnings = [...ensureArray(Memory.lastWarnings), 'recovery_confirmation_ui_unavailable'].slice(-20);
-      return false;
-    }
-    viewerRenderNativeJob();
-    return true;
-  };
-  const requestRecoveryJournalBackgroundConfirmation = async (recordInput,reason='packet_debt_ready')=>{
-    if(Memory.nativeRecovery.confirmationInspecting)return false;
-    Memory.nativeRecovery.confirmationInspecting=true;
-    try{return await requestRecoveryJournalBackgroundConfirmationOnce(recordInput,reason);}
-    finally{Memory.nativeRecovery.confirmationInspecting=false;}
-  };
+  // The per-entry background repair dialog was retired with background repair:
+  // afterRequest is the only automatic stage and missing turns wait for manual repair.
+  const recoveryJournalAutoApproved = () => false;
   const resolveRecoveryJournalBackgroundConfirmationOnce = async accepted => {
     const confirmation = clone(Memory.ledgerViewer.recoveryConfirmation, null);
     if (!confirmation?.scopeKey || !confirmation?.debtId) return { ok: false, reason: 'recovery_confirmation_absent' };
@@ -47845,8 +47706,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const result={ok:alreadyCovered,repaired:false,reason:alreadyCovered?'already_covered':'recovery_confirmation_source_changed'};
       finishNativeJob(alreadyCovered?'completed':'cancelled',result,alreadyCovered?'':result.reason);return result;
     }
-    const approved = await updateRecoveryJournalBackgroundDecision(confirmation.scopeKey, confirmation.debtId, 'approved');
+    const approved = await updateRecoveryJournalBackgroundDecision(confirmation.scopeKey, confirmation.debtId, 'approved', {
+      requireAutoApproval: confirmation.autoApproved === true
+    });
     if (approved.durable !== true) {
+      if (approved.reason === 'recovery_journal_auto_approval_changed') {
+        Memory.ledgerViewer.recoveryConfirmation = null;
+        Memory.ledgerViewer.recoveryConfirmationUi = null;
+        finishNativeJob('cancelled', approved, approved.reason);
+        return approved;
+      }
       finishNativeJob('failed', approved, approved.reason || 'recovery_confirmation_write_failed');
       return {...approved,ok:false,reason:approved.reason||'recovery_confirmation_write_failed'};
     }
@@ -47863,6 +47732,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         force: true,
         reason: 'background_user_approved',
         explicitRetry: true,
+        requireAutoApproval: confirmation.autoApproved === true,
         debtId: confirmation.debtId,
         targetPairIndex: confirmation.pairIndex,
         includeAwaitingReview: true
@@ -48067,7 +47937,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       state.repairDebtId = compact(debt.debtId || '', 196);
       state.repairRunId = `pending:${state.repairDebtId}`;
-      const result = { ...(await executeNativeRepairDebt(debt,{explicitRetry:options.explicitRetry===true})), scan: clone(scan, {}), legacyTakeover: clone(legacyTakeover, {}) };
+      const result = { ...(await executeNativeRepairDebt(debt,{explicitRetry:options.explicitRetry===true,
+        requireAutoApproval:options.requireAutoApproval===true})), scan: clone(scan, {}), legacyTakeover: clone(legacyTakeover, {}) };
       state.lastRepairResult = result;
       state.lastRepairError = result.ok || result.deferred === true ? '' : compact(result.reason || '', 320);
       if (result.ok) {
@@ -48625,8 +48496,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       // though the Recovery Vault has the authoritative U+A sidecar. Hydrate
       // the artifact view and the next repair request from that sidecar.
       const current = objectish(payload.source) ? payload.source : {};
-      const userText = text(vaultRecord?.user?.text || '').trim();
-      const assistantText = text(vaultRecord?.assistant?.text || '').trim();
+      const live = liveRecoveryEvidenceForRecord(vaultRecord, scope);
+      const userText = text(live?.userText || vaultRecord?.user?.text || '').trim();
+      const assistantText = text(live?.assistantText || vaultRecord?.assistant?.text || '').trim();
       const currentText = text(current.text || '');
       const lazyMarker = /<lb-lazy\b|\[LBDATA\s+START\]/i.test(currentText);
       if (userText || assistantText) {
@@ -49874,7 +49746,689 @@ const MemorySuiteHealthRecovery = (() => {
     };
   };
 
+  /* GRADIA PLUGIN READ START */
+function createGradiaReadPrimitives() {
+  const utf8Bytes = value => {
+    const text = String(value || '');
+    if (typeof TextEncoder === 'function') return new TextEncoder().encode(text);
+    const bytes = [];
+    for (let i = 0; i < text.length; i += 1) {
+      let code = text.charCodeAt(i);
+      if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) {
+        const next = text.charCodeAt(i + 1);
+        if (next >= 0xdc00 && next <= 0xdfff) {
+          code = 0x10000 + ((code - 0xd800) << 10) + (next - 0xdc00);
+          i += 1;
+        } else code = 0xfffd;
+      } else if (code >= 0xd800 && code <= 0xdfff) code = 0xfffd;
+      if (code <= 0x7f) bytes.push(code);
+      else if (code <= 0x7ff) bytes.push(0xc0 | (code >>> 6), 0x80 | (code & 0x3f));
+      else if (code <= 0xffff) bytes.push(0xe0 | (code >>> 12), 0x80 | ((code >>> 6) & 0x3f), 0x80 | (code & 0x3f));
+      else bytes.push(0xf0 | (code >>> 18), 0x80 | ((code >>> 12) & 0x3f), 0x80 | ((code >>> 6) & 0x3f), 0x80 | (code & 0x3f));
+    }
+    return new Uint8Array(bytes);
+  };
+  const sha256Hex = value => {
+    const bytes = utf8Bytes(value);
+    const bitLength = bytes.length * 8;
+    const paddedLength = Math.ceil((bytes.length + 9) / 64) * 64;
+    const data = new Uint8Array(paddedLength);
+    data.set(bytes);
+    data[bytes.length] = 0x80;
+    const high = Math.floor(bitLength / 0x100000000);
+    const low = bitLength >>> 0;
+    data[paddedLength - 8] = (high >>> 24) & 0xff;
+    data[paddedLength - 7] = (high >>> 16) & 0xff;
+    data[paddedLength - 6] = (high >>> 8) & 0xff;
+    data[paddedLength - 5] = high & 0xff;
+    data[paddedLength - 4] = (low >>> 24) & 0xff;
+    data[paddedLength - 3] = (low >>> 16) & 0xff;
+    data[paddedLength - 2] = (low >>> 8) & 0xff;
+    data[paddedLength - 1] = low & 0xff;
+    const constants = [
+      0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+      0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+      0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+      0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+      0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+      0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+      0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+      0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    ];
+    const rotate = (word, bits) => (word >>> bits) | (word << (32 - bits));
+    let h0=0x6a09e667, h1=0xbb67ae85, h2=0x3c6ef372, h3=0xa54ff53a;
+    let h4=0x510e527f, h5=0x9b05688c, h6=0x1f83d9ab, h7=0x5be0cd19;
+    const words = new Uint32Array(64);
+    for (let offset = 0; offset < data.length; offset += 64) {
+      for (let i = 0; i < 16; i += 1) {
+        const at = offset + i * 4;
+        words[i] = ((data[at] << 24) | (data[at + 1] << 16) | (data[at + 2] << 8) | data[at + 3]) >>> 0;
+      }
+      for (let i = 16; i < 64; i += 1) {
+        const s0 = rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >>> 3);
+        const s1 = rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >>> 10);
+        words[i] = (words[i - 16] + s0 + words[i - 7] + s1) >>> 0;
+      }
+      let a=h0, b=h1, c=h2, d=h3, e=h4, f=h5, g=h6, h=h7;
+      for (let i = 0; i < 64; i += 1) {
+        const s1 = rotate(e, 6) ^ rotate(e, 11) ^ rotate(e, 25);
+        const choice = (e & f) ^ (~e & g);
+        const temp1 = (h + s1 + choice + constants[i] + words[i]) >>> 0;
+        const s0 = rotate(a, 2) ^ rotate(a, 13) ^ rotate(a, 22);
+        const majority = (a & b) ^ (a & c) ^ (b & c);
+        const temp2 = (s0 + majority) >>> 0;
+        h=g; g=f; f=e; e=(d + temp1) >>> 0; d=c; c=b; b=a; a=(temp1 + temp2) >>> 0;
+      }
+      h0=(h0+a)>>>0; h1=(h1+b)>>>0; h2=(h2+c)>>>0; h3=(h3+d)>>>0;
+      h4=(h4+e)>>>0; h5=(h5+f)>>>0; h6=(h6+g)>>>0; h7=(h7+h)>>>0;
+    }
+    return [h0,h1,h2,h3,h4,h5,h6,h7].map(word => word.toString(16).padStart(8, '0')).join('');
+  };
+
+return {fingerprint: sha256Hex, byteLength: value => utf8Bytes(value).length};
+}
+const createGradiaPluginRead = (function createGradiaPluginRead(options) {
+  const schema = 'memory-suite.gradia-plugin-read.v1';
+  const requestChannel = 'gradia_memory_read_request_v1', responseChannel = 'gradia_memory_read_response_v1';
+  const readerId = 'serial_gradation_agents_for_rp';
+  const ids = { libra: 'libra', hayaku: 'hayaku_locator_continuity', flashback: 'flashback_memory' };
+  const { fingerprint, byteLength } = options.primitives;
+  const fail = code => { throw Object.assign(new Error(code), { code }); };
+  const api = () => typeof options.api === 'function' ? options.api() : options.api;
+  const copy = value => JSON.parse(JSON.stringify(value));
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const native = scope => ({ characterId: scope?.characterId, chatId: scope?.chatId });
+  const validScope = scope => ['scopeKey', 'characterId', 'chatId'].every(key => typeof scope?.[key] === 'string'
+    && scope[key].length > 0 && scope[key].length <= 512 && !/[\0\r\n]/.test(scope[key]));
+  const budget = value => Number.isSafeInteger(value) && value >= 1 && value <= 33554432;
+  let disposed = false, registered = false, sequence = 0;
+  const instance = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+  const nextId = () => instance + ':' + (++sequence);
+  const receipts = new Map(), pending = new Map(), issued = new Map();
+  const closeRecord = record => {
+    if (!record || record.closed) return;
+    record.closed = true; clearTimeout(record.timer); record.read?.close?.(); record.read = null;
+    receipts.delete(record.id);
+  };
+  const send = async (target, channel, body) => await api().postPluginChannelMessage(target, channel, body);
+  const ownerBoundary = async request => {
+    if (disposed) fail('LIB_READ_CANCELED');
+    const value = await options.boundary();
+    if (!validScope(value?.scope) || value.mode !== 'plugin_only') fail('LIB_READ_PLUGIN_MODE_REQUIRED');
+    if (value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
+    if (request?.native && !same(native(value.scope), request.native)
+      || request?.scope && !same(value.scope, request.scope)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
+    return copy(value);
+  };
+  const assertRecord = async record => {
+    if (!record || record.closed || !record.read) fail('LIB_READ_STALE');
+    if (!same(await ownerBoundary({ scope: record.boundary.scope }), record.boundary)) fail('LIB_READ_BOUNDARY_CHANGED');
+    if (await record.read.assertCurrent() !== true) fail('LIB_READ_STALE');
+    if (record.closed || !same(await ownerBoundary({ scope: record.boundary.scope }), record.boundary)) fail('LIB_READ_BOUNDARY_CHANGED');
+    return true;
+  };
+  const ownerHandler = async (message, metadata = {}) => {
+    // The sender is host metadata, never a self-asserted body field.
+    if (disposed || metadata.sender !== readerId || message?.schema !== schema || message.kind !== 'request'
+      || typeof message.id !== 'string' || message.id.length > 160
+      || !['describe', 'capture', 'current', 'release'].includes(message.action)) return;
+    if (byteLength(JSON.stringify(message)) > 65536) return;
+    const { id, action } = message;
+    let result, record;
+    try {
+      if (action === 'release') { closeRecord(receipts.get(message.receipt || id)); result = { released: true }; }
+      else if (action === 'describe') result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await ownerBoundary(message)) };
+      else if (action === 'current') {
+        record = receipts.get(message.receipt);
+        await assertRecord(record); result = { current: true, evidenceRevision: record.revision };
+      } else {
+        if (receipts.has(id) || receipts.size >= 16) fail('LIB_READ_BUSY');
+        if (!validScope(message.scope) || !budget(message.maxCorpusBytes) || typeof message.queryText !== 'string'
+          || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
+        const p = message.proposal;
+        if (p !== undefined && (!p || p.schema !== 'gradia.input-writer-proposal.v1' || p.purpose !== 'input_writer_proposal'
+          || p.factAdopted !== false || typeof p.operationId !== 'string' || !p.operationId || p.operationId.length > 160
+          || !/^[a-f0-9]{64}$/.test(p.proposalDigest || '') || !/^[a-f0-9]{64}$/.test(p.nativeContextDigest || '')
+          || typeof p.queryTruncated !== 'boolean' || Object.keys(p).length !== 7)) fail('LIB_READ_PROPOSAL_INVALID');
+        // Reserve before the first await so timeout/release can cancel discovery
+        // as well as an in-flight owner query.
+        record = { id, boundary: null, read: null, closed: false };
+        receipts.set(id, record);
+        record.timer = setTimeout(() => closeRecord(record), options.receiptTtlMs || 600000);
+        record.timer?.unref?.();
+        const boundary = await ownerBoundary(message);
+        if (record.closed) fail('LIB_READ_CANCELED');
+        record.boundary = boundary;
+        const read = await options.capture(message, { check() { if (record.closed || disposed) fail('LIB_READ_CANCELED'); } });
+        if (record.closed || disposed) { read?.close?.(); fail('LIB_READ_CANCELED'); }
+        record.read = read;
+        if (!Array.isArray(read?.items) || read.items.length > 4096) fail('LIB_READ_RESPONSE_INVALID');
+        let bytes = 0, metadataBytes = 0;
+        const seen = new Set();
+        for (const item of read.items) {
+          if (typeof item?.content !== 'string' || !item.id || !item.key || seen.has(JSON.stringify([item.id, item.key]))
+            || item.source?.namespace !== options.owner) fail('LIB_READ_RESPONSE_INVALID');
+          seen.add(JSON.stringify([item.id, item.key])); bytes += byteLength(item.content);
+          const size = byteLength(JSON.stringify({ ...item, content: '' })); metadataBytes += size;
+          if (size > 65536 || metadataBytes > 1048576 || bytes > message.maxCorpusBytes) fail('LIB_READ_BUDGET_EXCEEDED');
+        }
+        record.revision = fingerprint(JSON.stringify([instance, id, boundary, read.items]));
+        await assertRecord(record);
+        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, complete: true, scope: boundary.scope,
+          receipt: id, evidenceRevision: record.revision, items: read.items, corpusBytes: bytes, engine: read.engine || null };
+      }
+      await send(readerId, responseChannel, { schema, kind: 'response', id, action, result });
+    } catch (error) {
+      if (record) closeRecord(record);
+      await send(readerId, responseChannel, { schema, kind: 'response', id, action,
+        error: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_OWNER_UNAVAILABLE' });
+    }
+  };
+  const release = (owner, receipt) => {
+    issued.delete(receipt);
+    // A release uses the capture ID and also cancels an owner operation that is
+    // still running; it never releases an unrelated request's receipt.
+    return send(ids[owner], requestChannel, { schema, kind: 'request', id: receipt, action: 'release', receipt }).catch(() => {});
+  };
+  const readerHandler = (message, metadata = {}) => {
+    if (disposed || message?.schema !== schema || message.kind !== 'response') return;
+    const record = pending.get(message.id);
+    if (!record || metadata.sender !== ids[record.owner] || message.action !== record.action) return;
+    if (!message.error && record.action === 'capture' && message.result?.receipt !== message.id) {
+      record.finish(Object.assign(new Error('LIB_READ_RESPONSE_INVALID'), { code: 'LIB_READ_RESPONSE_INVALID' })); return;
+    }
+    record.finish(message.error ? Object.assign(new Error(message.error), { code: message.error }) : null, message.result);
+  };
+  let starting = null;
+  const register = async () => {
+    if (disposed) fail('LIB_READ_CANCELED');
+    if (registered) return true;
+    const host = api();
+    if (typeof host?.addPluginChannelListener !== 'function' || typeof host?.postPluginChannelMessage !== 'function') fail('LIB_READ_IPC_UNAVAILABLE');
+    const channel = options.role === 'owner' ? requestChannel : responseChannel;
+    const handler = options.role === 'owner' ? ownerHandler : readerHandler;
+    if (await host.addPluginChannelListener(channel, handler) === false) fail('LIB_READ_IPC_UNAVAILABLE');
+    if (disposed) { await host.removePluginChannelListener?.(channel, handler); fail('LIB_READ_CANCELED'); }
+    registered = true; return true;
+  };
+  const start = async () => {
+    if (!starting) starting = register().finally(() => { starting = null; });
+    return await starting;
+  };
+  const rpc = async (owner, action, body = {}, signal) => {
+    await start();
+    if (signal?.aborted) fail('LIB_READ_CANCELED');
+    const id = nextId();
+    if (action === 'capture') issued.set(id, owner);
+    return await new Promise((resolve, reject) => {
+      const record = { owner, action, finish(error, result) {
+        if (!pending.delete(id)) return;
+        clearTimeout(record.timer); signal?.removeEventListener('abort', record.abort);
+        if (error && action === 'capture') void release(owner, id);
+        error ? reject(error) : resolve(result);
+      } };
+      record.abort = () => record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
+      record.timer = setTimeout(() => record.finish(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' })),
+        options.timeoutMs || (action === 'describe' ? 1500 : 25000));
+      pending.set(id, record); signal?.addEventListener('abort', record.abort, { once: true });
+      if (signal?.aborted) { record.abort(); return; }
+      void send(ids[owner], requestChannel, { schema, kind: 'request', id, action, ...body })
+        .catch(() => record.finish(Object.assign(new Error('LIB_READ_IPC_UNAVAILABLE'), { code: 'LIB_READ_IPC_UNAVAILABLE' })));
+    });
+  };
+  const describe = async (scope, owners = Object.keys(ids)) => {
+    const scopes = {}, unavailable = {};
+    await Promise.all(owners.map(async owner => {
+      try {
+        const result = await rpc(owner, 'describe', { native: native(scope) });
+        if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true
+          || result.mode !== 'plugin_only' || !validScope(result.scope) || !same(native(result.scope), native(scope))) fail('LIB_READ_RESPONSE_INVALID');
+        scopes[owner] = result.scope;
+      } catch (error) { unavailable[owner] = error.code || 'LIB_READ_IPC_UNAVAILABLE'; }
+    }));
+    if (disposed) fail('LIB_READ_CANCELED');
+    // Stable owner order is part of binding identity, independent of RPC order.
+    const ordered = Object.fromEntries(Object.keys(ids).filter(owner => scopes[owner]).map(owner => [owner, scopes[owner]]));
+    if (!Object.keys(ordered).length) fail('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE');
+    return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
+  };
+  const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
+    async openReadSession(scope, input = {}) {
+      const owners = Object.keys(scopes), captured = [];
+      let closed = false, stale = false;
+      const close = () => { if (closed) return; closed = true; for (const value of captured) void release(value.owner, value.receipt); };
+      const assertCurrentSync = () => {
+        options.check?.();
+        if (closed || stale || disposed) fail('LIB_READ_STALE');
+        return true;
+      };
+      try {
+        options.check?.();
+        if (!budget(input.maxCorpusBytes) || !same(scope, scopes[owners[0]])) fail('LIB_READ_REQUEST_INVALID');
+        let corpusBytes = 0;
+        const items = [];
+        for (const owner of owners) {
+          assertCurrentSync();
+          const remaining = input.maxCorpusBytes - corpusBytes;
+          if (remaining < 1) fail('LIB_READ_BUDGET_EXCEEDED');
+          const result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '',
+            maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
+          // Retain the receipt before validating the response or cancellation.
+          if (typeof result?.receipt === 'string') captured.push({ ...result, owner });
+          assertCurrentSync();
+          if (result?.source !== 'plugin_ipc' || result.owner !== owner || !result.receipt
+            || !same(result.scope, scopes[owner]) || result.readOnly !== true || result.complete !== true
+            || !/^[a-f0-9]{64}$/.test(result.evidenceRevision || '') || !Array.isArray(result.items)) fail('LIB_READ_RESPONSE_INVALID');
+          let actual = 0;
+          for (const item of result.items) {
+            if (typeof item?.content !== 'string' || item.source?.namespace !== owner) fail('LIB_READ_RESPONSE_INVALID');
+            actual += byteLength(item.content); items.push({ ...item, owner });
+          }
+          if (actual !== result.corpusBytes || actual > remaining || items.length > 4096) fail('LIB_READ_BUDGET_EXCEEDED');
+          corpusBytes += actual;
+        }
+        const evidenceRevision = fingerprint(JSON.stringify(captured.map(value => [value.owner, value.evidenceRevision])));
+        const assertCurrent = async () => {
+          try {
+            assertCurrentSync();
+            for (const value of captured) {
+              const now = await rpc(value.owner, 'current', { receipt: value.receipt }, input.signal);
+              if (now?.current !== true || now.evidenceRevision !== value.evidenceRevision) fail('LIB_READ_STALE');
+            }
+            return assertCurrentSync();
+          } catch (error) { stale = true; close(); throw error; }
+        };
+        await assertCurrent();
+        return Object.freeze({ source: 'plugin_ipc', engine: {
+          purpose: input.proposal ? 'input_writer_proposal' : 'response_evidence',
+          ...(input.proposal ? { proposal: copy(input.proposal) } : {}),
+          sourceByOwner: Object.fromEntries(captured.map(value =>
+          [value.owner, value.owner === 'libra' ? 'unified_engine' : 'published_owner_memory'])) },
+          snapshot: { schema: 'memory-suite.memory-read-session.v1', complete: true, readOnly: true, scope,
+            owners, items, evidenceRevision, corpusBytes, maxCorpusBytes: input.maxCorpusBytes },
+          assertCurrent, assertCurrentSync, close });
+      } catch (error) { close(); throw error; }
+    }
+  });
+  const dispose = async () => {
+    if (disposed) return;
+    disposed = true;
+    for (const record of [...pending.values()]) record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
+    for (const [receipt, owner] of [...issued]) await release(owner, receipt);
+    for (const record of [...receipts.values()]) closeRecord(record);
+    if (registered) try { await api()?.removePluginChannelListener?.(options.role === 'owner' ? requestChannel : responseChannel,
+      options.role === 'owner' ? ownerHandler : readerHandler); } catch (_) { /* Host teardown can remove the channel API first. */ }
+    registered = false;
+  };
+  return Object.freeze({ start, describe, createClient, dispose });
+});
+const createGradiaPluginSnapshot = (function createPluginSnapshot(options) {
+  const { fingerprint, byteLength } = options.primitives;
+  const instance = 'plugin-local:' + Date.now() + ':' + Math.random();
+  const fail = code => { throw Object.assign(new Error(code), { code }); };
+  return async (request, authority = {}) => {
+    let reading = true, closed = false;
+    const cache = new Map();
+    let loadedBytes = 0;
+    const rawLimit = 7 * request.maxCorpusBytes + 2097152;
+    const get = async key => {
+      authority.check?.();
+      if (closed) fail('LIB_READ_STALE');
+      if (reading && cache.has(key)) return cache.get(key);
+      const value = await options.read(key);
+      authority.check?.();
+      if (closed) fail('LIB_READ_STALE');
+      const serialized = JSON.stringify(value ?? null), size = byteLength(serialized);
+      loadedBytes += size;
+      if (loadedBytes > rawLimit) fail('LIB_READ_BUDGET_EXCEEDED');
+      const row = { value: value ?? null, exists: value != null, tombstone: false,
+        revision: 1, updatedAt: 0, digest: fingerprint(serialized), valueBytes: size };
+      if (reading) cache.set(key, row);
+      return row;
+    };
+    const repository = { database: { exec() {} }, getMetadata: async (_space, key) => await get(key),
+      get: async (_space, key, limits) => {
+        const row = await get(key);
+        if (row.valueBytes > limits.maxValueBytes) fail('LIB_READ_BUDGET_EXCEEDED');
+        return row;
+      } };
+    const session = options.createReadSession({ getRepository: () => repository, dataInstanceId: instance,
+      epochs: () => ({}), canRead: () => !closed });
+    const snapshot = await session.capture({ scope: request.scope, maxCorpusBytes: request.maxCorpusBytes });
+    reading = false; cache.clear();
+    let currentTail = Promise.resolve();
+    return { items: snapshot.items,
+      async assertCurrent() {
+        const task = currentTail.then(async () => {
+          loadedBytes = 0;
+          if (closed) fail('LIB_READ_STALE');
+          return (await session.current(snapshot)).current === true;
+        });
+        currentTail = task.catch(() => {});
+        return await task;
+      },
+      close() { closed = true; cache.clear(); }
+    };
+  };
+});
+function createHayakuPluginReadSession(primitives) {
+'use strict';
+
+// Read only the HAYAKU producer's published ledger, selected packet bodies and
+// explicitly referenced immutable archives. Never enumerate or replay receipts.
+const crypto = { createHash: () => ({ update: value => ({ digest: () => primitives.fingerprint(value) }) }) };
+const Buffer = { byteLength: value => primitives.byteLength(value), from: value => Uint8Array.from(atob(value), c => c.charCodeAt(0)) };
+  const gunzip = async (compressed, options) => {
+    if (typeof DecompressionStream !== 'function') throw Error('LIB_READ_GZIP_UNAVAILABLE');
+    const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+    const chunks = []; let size = 0;
+    try { while (true) { const next = await stream.read(); if (next.done) break;
+      size += next.value.byteLength;
+      if (size > options.maxOutputLength) throw Object.assign(Error('decode budget'), { code: 'ERR_BUFFER_TOO_LARGE' });
+      chunks.push(next.value);
+    } } finally { await stream.cancel().catch(() => {}); stream.releaseLock(); }
+    const bytes = new Uint8Array(size); let at = 0; for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.byteLength; }
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return { toString: () => text };
+  };
+const PLUGIN_ID = 'serial_gradation_agents_for_rp';
+const CAPTURE_ROUTE = '/v1/hayaku/read-session/capture';
+const CURRENT_ROUTE = '/v1/hayaku/read-session/current';
+const MiB = 1024 ** 2;
+const LIMITS = Object.freeze({ defaultCorpusBytes: 4 * MiB, maxCorpusBytes: 32 * MiB,
+  manifestBytes: MiB, itemMetadataBytes: 64 * 1024, totalMetadataBytes: MiB,
+  maxRefs: 4096, currentRequestBytes: 4 * MiB });
+const DELTA_PREFIX = 'hayaku.v2.storage_reconciliation_journal.capture_delta::';
+const ARCHIVE_PREFIX = 'hayaku.v2.shared_archive.';
+const META_PREFIX = 'hayaku.v2.shared_archive_meta.';
+const fail = (message, statusCode = 409) => { throw Object.assign(new Error(message), { statusCode }); };
+const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
+const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+const bytes = value => Buffer.byteLength(JSON.stringify(value), 'utf8');
+const text = (value, max = 512) => typeof value === 'string' && value.length > 0 && value.length <= max && !/[\0\r\n]/.test(value);
+const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
+const int = value => Number.isSafeInteger(value) && value >= 0;
+function stableHash64(value) {
+  // Exact producer FNV-1a/64 over UTF-16 code units, including surrogate pairs.
+  let high = 0xcbf29ce4, low = 0x84222325;
+  for (let i = 0; i < value.length; i++) {
+    low = (low ^ value.charCodeAt(i)) >>> 0;
+    high = (Math.imul(high, 435) + (low << 8) + Math.floor(low * 435 / 0x100000000)) >>> 0;
+    low = Math.imul(low, 435) >>> 0;
+  }
+  return 'h64' + ((BigInt(high) << 32n) | BigInt(low)).toString(36);
+}
+function scopeOf(value) {
+  if (!object(value) || !['scopeKey', 'characterId', 'chatId'].every(key => text(value[key]))) fail('gradia_read_scope_invalid', 400);
+  const scope = { scopeKey: value.scopeKey, characterId: value.characterId, chatId: value.chatId };
+  if (scope.scopeKey !== 'chat_' + stableHash64(scope.characterId + '\n' + scope.chatId)) fail('gradia_read_scope_invalid', 400);
+  return scope;
+}
+const ledgerKeyFor = scope => 'hayaku.v2.ledger.' + scope.scopeKey;
+function corpusLimit(value) {
+  if (value === undefined) return LIMITS.defaultCorpusBytes;
+  if (!Number.isSafeInteger(value) || value < 1 || value > LIMITS.maxCorpusBytes) fail('gradia_read_corpus_limit_invalid', 400);
+  return value;
+}
+function decode(value) {
+  if (typeof value === 'string') { try { value = JSON.parse(value); } catch (_) { fail('gradia_read_stored_json_invalid'); } }
+  if (!object(value)) fail('gradia_read_stored_object_invalid');
+  return value;
+}
+function deepFreeze(value) {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) { for (const child of Object.values(value)) deepFreeze(child); Object.freeze(value); }
+  return value;
+}
+async function metadataOf(repository, key) {
+  const value = await repository.getMetadata('plugin', key);
+  return { namespace: 'hayaku', space: 'plugin', key, exists: value.exists, tombstone: value.tombstone,
+    revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
+}
+function allowedKey(key, scope, index) {
+  if (!text(key, 1200)) return false;
+  if (index === 0) return key === ledgerKeyFor(scope);
+  return key.startsWith(DELTA_PREFIX + scope.scopeKey + '::')
+    || /^hayaku\.v2\.shared_archive(?:_meta)?\.[A-Za-z0-9_-]{1,128}$/.test(key);
+}
+function validMetadata(value, scope, index) {
+  if (!object(value) || value.namespace !== 'hayaku' || value.space !== 'plugin' || !allowedKey(value.key, scope, index)
+    || value.exists !== true || value.tombstone !== false || !int(value.revision) || value.revision < 1
+    || !/^[a-f0-9]{64}$/.test(value.digest || '') || !int(value.updatedAt) || !int(value.valueBytes)) fail('gradia_read_dependencies_invalid', 400);
+  return { namespace: 'hayaku', space: 'plugin', key: value.key, exists: true, tombstone: false,
+    revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
+}
+function slotId(record) {
+  const type = record.packetType || 'current_snapshot';
+  if (record.inheritedSessionHistory === true || record.memoryClass === 'historical') return record.permanentHistoryId
+    ? ['historical_permanent', record.permanentHistoryId, type].join('\x01')
+    : ['historical', record.coldStartEpochId || record.inheritedFromScopeKey || 'session', number(record.historicalOrdinal), type].join('\x01');
+  if (record.incrementalRecoveryId) return ['incremental_recovery', record.ownerTurnNodeId || record.ownerNodeId || `pair:${Math.max(1, number(record.targetPairIndex) || 1)}`, record.incrementalRecoveryId, type].join('\x01');
+  if (record.ownerTurnNodeId || record.ownerNodeId) return ['node', record.ownerTurnNodeId || record.ownerNodeId, type].join('\x01');
+  if (record.requestNonce) return ['pending', record.requestNonce, type].join('\x01');
+  return ['pair', Math.max(1, number(record.targetPairIndex) || 1), record.userHash || record.userMessageIdHash || '', type].join('\x01');
+}
+const archiveIdFor = record => record.permanentHistoryId || record.archiveCanonicalId
+  || stableHash64([record.inheritedFromScopeKey || '', slotId(record), record.hash || '', record.packetType || ''].join('\x01'));
+function selectedRecords(ledger) {
+  const records = ledger.records, heads = ledger.slotHeads || [], tombstones = ledger.tombstones || [];
+  if (!Array.isArray(records) || !Array.isArray(heads) || !Array.isArray(tombstones)) fail('gradia_read_ledger_schema_invalid');
+  if (records.length > LIMITS.maxRefs || heads.length > LIMITS.maxRefs || tombstones.length > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
+  if (records.some(record => !object(record) || !text(record.recordId, 196) || !text(record.hash, 96))) fail('gradia_read_memory_identity_mismatch');
+  const byId = new Map(records.map(record => [record.recordId, record])), byHash = new Map(records.map(record => [record.hash, record]));
+  if (byId.size !== records.length) fail('gradia_read_duplicate_memory_pointer');
+  const eligible = heads.length ? heads.filter(head => ['active', 'historical'].includes(head?.state))
+    .map(head => byId.get(head.selectedRecordId) || byHash.get(head.selectedVariantHash)).filter(Boolean)
+    : records.filter(record => ['active', 'historical'].includes(record.recordState));
+  const tombstonesBySlot = new Map(tombstones.filter(t => object(t) && t.active !== false && !number(t.restoredAt)).map(t => [t.slotId, t]));
+  return [...new Map(eligible.filter(record => {
+    if (record.permanentSessionHistory === true || record.deletionProtected === true || record.historicalProtection === 'permanent_session_history') return true;
+    const tombstone = tombstonesBySlot.get(slotId(record));
+    return !tombstone || (Boolean(tombstone.recordId || tombstone.variantHash) && tombstone.recordId !== record.recordId && tombstone.variantHash !== record.hash);
+  }).map(record => [record.recordId, record])).values()];
+}
+function archivePointer(value) {
+  if (!object(value) || value.schema !== 'hayaku.shared_archive_ref.v1' || !text(value.archiveId, 128)
+    || !/^[A-Za-z0-9_-]+$/.test(value.archiveId) || value.storageKey !== ARCHIVE_PREFIX + value.archiveId
+    || value.metaKey !== META_PREFIX + value.archiveId || !int(value.recordCount) || !int(value.deltaCount)
+    || !int(value.generation) || value.generation < 1 || !int(value.depth) || value.depth < 1 || value.depth > 256
+    || !text(value.digest, 96)) fail('gradia_read_archive_pointer_invalid');
+  return value;
+}
+// A composed reader can only tighten this owner's existing raw-read ceiling.
+function rawLimitOf(value, maxCorpusBytes) {
+  const maximum = 7 * maxCorpusBytes + 2 * LIMITS.totalMetadataBytes;
+  if (value === undefined) return maximum;
+  if (!Number.isSafeInteger(value) || value < 0 || value > maximum) fail('gradia_read_storage_limit_invalid', 400);
+  return value;
+}
+function createReadSession({ getRepository, dataInstanceId, epochs, canRead }) {
+  const identity = scope => ({ scope: { ...scope }, dataInstanceId, resetEpoch: Number(epochs().hayaku || 0) });
+  async function readUnit(body) {
+    if (!canRead()) fail('gradia_read_maintenance', 503);
+    const repository = getRepository(), epoch = Number(epochs().hayaku || 0);
+    repository.database.exec('BEGIN');
+    try {
+      const result = await body(repository);
+      if (!canRead() || Number(epochs().hayaku || 0) !== epoch) fail('gradia_read_maintenance', 503);
+      return deepFreeze(result);
+    } finally { repository.database.exec('ROLLBACK'); }
+  }
+  function capture(body) {
+    const scope = scopeOf(body?.scope), maxCorpusBytes = corpusLimit(body?.maxCorpusBytes);
+    const rawLimit = rawLimitOf(body?.maxRawBytes, maxCorpusBytes);
+    return readUnit(async repository => {
+      const readIdentity = identity(scope), dependencies = [], cache = new Map();
+      let rawBytes = 0, decodedBytes = 0, metadataBytes = 0, corpusBytes = 0, recordCount = 0, packetRefs = 0;
+      const chargedReceipts = new Set();
+      // Inline packets live inside the ledger itself. Its body limit must be a
+      // corpus limit plus metadata, rather than treating the corpus as metadata.
+      const chargeMetadata = (value, perItem = false) => {
+        const size = bytes(value); metadataBytes += size;
+        if ((perItem && size > LIMITS.itemMetadataBytes) || metadataBytes > LIMITS.totalMetadataBytes) fail('gradia_read_metadata_budget_exceeded', 413);
+      };
+      const read = async key => {
+        if (cache.has(key)) return cache.get(key);
+        if (dependencies.length > LIMITS.maxRefs || !allowedKey(key, scope, dependencies.length)) fail('gradia_read_memory_pointer_invalid');
+        const metadata = await metadataOf(repository, key);
+        if (!metadata.exists || metadata.tombstone) fail('gradia_read_dependency_unavailable');
+        if (!int(metadata.valueBytes) || metadata.valueBytes > rawLimit - rawBytes - decodedBytes) fail('gradia_read_storage_budget_exceeded', 413);
+        let row;
+        try { row = await repository.get('plugin', key, { maxValueBytes: rawLimit - rawBytes - decodedBytes }); }
+        catch (error) { fail(error?.statusCode === 413 ? 'gradia_read_storage_budget_exceeded' : 'gradia_read_dependency_decode_failed', error?.statusCode === 413 ? 413 : 409); }
+        if (!row?.exists || row.tombstone || row.revision !== metadata.revision || row.digest !== metadata.digest) fail('gradia_read_dependency_changed');
+        if (bytes(row.value) !== metadata.valueBytes || hash(row.value) !== metadata.digest) fail('gradia_read_dependency_digest_mismatch');
+        rawBytes += metadata.valueBytes;
+        const result = { parsed: decode(row.value), raw: typeof row.value === 'string' ? row.value : JSON.stringify(row.value), metadata };
+        dependencies.push(metadata); cache.set(key, result); return result;
+      };
+      const head = await read(ledgerKeyFor(scope)), ledger = head.parsed;
+      if (!['hayaku_storage_ledger_v1', 'hayaku_storage_ledger_v2'].includes(ledger.version) || ledger.scopeKey !== scope.scopeKey
+        || ledger.identity?.schema !== 'hayaku.scope_identity.v1' || !['scopeKey', 'characterId', 'chatId'].every(key => ledger.identity[key] === scope[key])) fail('gradia_read_manifest_scope_mismatch');
+      chargeMetadata({ ...ledger, records: [] });
+      const validateRecords = records => {
+        if (!Array.isArray(records) || (recordCount += records.length) > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
+        for (const record of records) { if (!object(record)) fail('gradia_read_memory_schema_invalid'); chargeMetadata({ ...record, raw: '' }, true); }
+      };
+      validateRecords(ledger.records);
+      const packetOf = async (record, ownerScope, archive = false) => {
+        let raw = record.raw;
+        if (!archive && record.captureRawRef != null) {
+          const ref = record.captureRawRef;
+          if (!object(ref) || ref.schema !== 'hayaku.capture_raw_delta.v1' || ref.scopeKey !== ownerScope
+            || !text(ref.binding, 512) || !text(ref.digest, 96) || !text(ref.rawDigest, 96) || !int(ref.packetIndex)
+            || ref.storageKey !== DELTA_PREFIX + ownerScope + '::' + ref.binding + '::' + ref.digest) fail('gradia_read_memory_pointer_invalid');
+          const receipt = await read(ref.storageKey);
+          if (stableHash64(receipt.raw) !== ref.digest || receipt.parsed.schema !== ref.schema
+            || receipt.parsed.scopeKey !== ownerScope || receipt.parsed.binding !== ref.binding) fail('gradia_read_memory_identity_mismatch');
+          if (!chargedReceipts.has(ref.storageKey)) {
+            const packets = receipt.parsed.packets;
+            if (!Array.isArray(packets) || (packetRefs += packets.length) > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
+            chargeMetadata({ ...receipt.parsed, packets: [] });
+            for (const packet of packets) {
+              if (!object(packet) || typeof packet.raw !== 'string') fail('gradia_read_memory_schema_invalid');
+              chargeMetadata({ ...packet, raw: '' }, true);
+            }
+            chargedReceipts.add(ref.storageKey);
+          }
+          const packet = receipt.parsed.packets?.[ref.packetIndex];
+          if (typeof packet?.raw !== 'string' || stableHash64(packet.raw) !== ref.rawDigest
+            || (raw !== undefined && raw !== packet.raw)) fail('gradia_read_memory_identity_mismatch');
+          raw = packet.raw;
+        }
+        if (typeof raw !== 'string' || !raw || raw.trim().length > 96000 || stableHash64(raw.trim()) !== record.hash) fail('gradia_read_memory_identity_mismatch');
+        const parsed = decode(raw);
+        if (parsed.meta?.schema !== 'hayaku_packet_v1' || Number(parsed.meta.packet_schema_rev) !== 2
+          || !['meta', 'entity', 'world', 'narrative', 'planner', 'importance'].every(key => object(parsed[key]))) fail('gradia_read_memory_schema_invalid');
+        const packetType = parsed.meta.packet_type || parsed.meta.packetType || 'current_snapshot';
+        if (record.packetType && record.packetType !== packetType) fail('gradia_read_memory_identity_mismatch');
+        return raw;
+      };
+      const rows = new Map();
+      const append = async (record, key, inherited, ownerScope) => {
+        if (!text(record.recordId, 196) || !text(record.hash, 96)) fail('gradia_read_memory_identity_mismatch');
+        const content = await packetOf(record, ownerScope, key.startsWith(ARCHIVE_PREFIX)), id = archiveIdFor(record), previous = rows.get(id);
+        if (!previous || number(record.capturedAt || record.inheritedAt) >= number(previous.record.capturedAt || previous.record.inheritedAt)) {
+          corpusBytes += Buffer.byteLength(content, 'utf8') - (previous ? Buffer.byteLength(previous.content, 'utf8') : 0);
+          rows.set(id, {record,key,inherited,ownerScope,content});
+        }
+      };
+      if (ledger.archiveRef != null && ledger.archiveRef !== false && ledger.archiveRef !== '') {
+        const first = archivePointer(ledger.archiveRef), seen = new Set(), layers = [];
+        let cursor = first;
+        while (cursor) {
+          if (seen.has(cursor.storageKey) || layers.length >= 256) fail('gradia_read_archive_cycle');
+          seen.add(cursor.storageKey);
+          const stored = await read(cursor.storageKey), meta = (await read(cursor.metaKey)).parsed;
+          let archive = stored.parsed;
+          if (archive.schema === 'hayaku.shared_archive.gzip.v1') {
+            if (archive.encoding !== 'gzip+base64' || archive.archiveSchema !== 'hayaku.shared_archive.v1' || archive.archiveId !== cursor.archiveId
+              || !int(archive.rawChars) || typeof archive.data !== 'string' || !int(archive.compressedBytes)
+              || archive.data.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(archive.data)) fail('gradia_read_archive_schema_invalid');
+            const remaining = rawLimit - rawBytes - decodedBytes;
+            if (archive.rawChars > remaining || remaining < 1) fail('gradia_read_storage_budget_exceeded', 413);
+            const compressed = Buffer.from(archive.data, 'base64');
+            if (compressed.length !== archive.compressedBytes) fail('gradia_read_archive_identity_mismatch');
+            let raw;
+            try { raw = (await gunzip(compressed, { maxOutputLength: remaining })).toString('utf8'); }
+            catch (error) { fail(error?.code === 'ERR_BUFFER_TOO_LARGE' ? 'gradia_read_storage_budget_exceeded' : 'gradia_read_archive_decode_failed', error?.code === 'ERR_BUFFER_TOO_LARGE' ? 413 : 409); }
+            if (raw.length !== archive.rawChars || stableHash64(raw) !== archive.rawHash) fail('gradia_read_archive_identity_mismatch');
+            decodedBytes += Buffer.byteLength(raw, 'utf8');
+            archive = decode(raw);
+          }
+          if (archive.schema !== 'hayaku.shared_archive.v1' || meta.schema !== 'hayaku.shared_archive_meta.v1'
+            || archive.archiveId !== cursor.archiveId || meta.archiveId !== cursor.archiveId
+            || ['generation','depth','deltaCount','recordCount','digest'].some(key => archive[key] !== cursor[key] || meta[key] !== cursor[key])) fail('gradia_read_archive_identity_mismatch');
+          validateRecords(archive.records); chargeMetadata({ ...archive, records: [] }); chargeMetadata(meta);
+          const ids = archive.records.map(archiveIdFor).sort(), digest = stableHash64(ids.join('\x01'));
+          if (new Set(ids).size !== ids.length || ids.length !== cursor.deltaCount || archive.deltaDigest !== digest
+            || meta.deltaDigest !== digest || !same([...meta.deltaMemberIds || []].sort(), ids)) fail('gradia_read_archive_identity_mismatch');
+          const parents = [cursor.parentRef, archive.parentRef || archive.parentArchiveRef, meta.parentRef || meta.parentArchiveRef].filter(Boolean).map(archivePointer);
+          if (parents.some(parent => !['archiveId','storageKey','metaKey','generation','depth','deltaCount','recordCount','digest'].every(key => parent[key] === parents[0][key]))) fail('gradia_read_archive_parent_mismatch');
+          const parent = parents[0] || null;
+          if (parent ? parent.depth + 1 !== cursor.depth || parent.generation + 1 !== cursor.generation || parent.recordCount + cursor.deltaCount !== cursor.recordCount
+            : cursor.depth !== 1 || cursor.generation !== 1 || cursor.recordCount !== cursor.deltaCount) fail('gradia_read_archive_parent_mismatch');
+          layers.push({archive,key:cursor.storageKey}); cursor = parent;
+        }
+        const archiveIds = new Set();
+        for (const {archive,key} of layers.reverse()) for (const record of archive.records) {
+          const id = archiveIdFor(record); if (archiveIds.has(id)) fail('gradia_read_duplicate_memory_pointer'); archiveIds.add(id);
+          await append(record,key,true,record.inheritedFromScopeKey || scope.scopeKey);
+        }
+        if (archiveIds.size !== first.recordCount || stableHash64([...archiveIds].sort().join('\x01')) !== first.digest) fail('gradia_read_archive_identity_mismatch');
+      }
+      for (const record of selectedRecords(ledger)) await append(record,head.metadata.key,record.inheritedSessionHistory === true || record.memoryClass === 'historical',scope.scopeKey);
+      if (corpusBytes > maxCorpusBytes) fail('gradia_read_corpus_budget_exceeded', 413);
+      const items = [...rows.values()].map(({record,key,inherited,ownerScope,content}) => {
+        const start = number(record.recoveryTurnStart || record.targetPairIndex), end = number(record.recoveryTurnEnd || record.targetPairIndex);
+        return { id: record.recordId, key, content, source: {namespace:'hayaku',space:'plugin',scopeKey:ownerScope,
+          memoryId:record.recordId,revision:cache.get(key).metadata.revision,sourceDigest:record.hash,
+          turnRange:{start,end},sessionEpoch:0,inherited,archiveShared:key.startsWith(ARCHIVE_PREFIX)} };
+      });
+      return {schema:'memory-suite.hayaku-read-session.v1',readOnly:true,complete:true,scope,items,dependencies,
+        evidenceRevision:hash(dependencies),corpusBytes,maxCorpusBytes,maxRawBytes:rawLimit,metadataBytes,rawBytes:rawBytes+decodedBytes,dataInstanceId,resetEpoch:readIdentity.resetEpoch,readIdentity};
+    });
+  }
+  function current(body) {
+    const scope = scopeOf(body?.scope);
+    if (!object(body.readIdentity) || !same(scopeOf(body.readIdentity.scope), scope)) fail('gradia_read_scope_changed', 400);
+    if (!Array.isArray(body.dependencies) || body.dependencies.length < 1 || body.dependencies.length > LIMITS.maxRefs + 1) fail('gradia_read_dependencies_invalid', 400);
+    const dependencies = body.dependencies.map((value,index) => validMetadata(value,scope,index));
+    if (new Set(dependencies.map(value=>value.key)).size !== dependencies.length || body.evidenceRevision !== hash(dependencies)) fail('gradia_read_evidence_revision_invalid',400);
+    return readUnit(async repository => {
+      const expected = identity(scope);
+      const matches = body.dataInstanceId === dataInstanceId && body.resetEpoch === expected.resetEpoch
+        && body.readIdentity.dataInstanceId === dataInstanceId && body.readIdentity.resetEpoch === expected.resetEpoch;
+      let allCurrent = true; for (const value of dependencies) if (!same(value, await metadataOf(repository,value.key))) allCurrent = false;
+      return {schema:'memory-suite.hayaku-read-session-current.v1',current:matches && allCurrent,
+        scope,evidenceRevision:body.evidenceRevision,dataInstanceId,resetEpoch:expected.resetEpoch};
+    });
+  }
+  return Object.freeze({capture,current});
+}
+return createReadSession;
+}
+  /* GRADIA PLUGIN READ END */
+  let gradiaPluginReadOwner = null;
+  const getGradiaPluginReadOwner = () => {
+    if (gradiaPluginReadOwner) return gradiaPluginReadOwner;
+    const primitives = createGradiaReadPrimitives();
+    gradiaPluginReadOwner = createGradiaPluginRead({ role: 'owner', owner: 'hayaku', primitives,
+      api: () => apiCandidates().find(candidate => typeof candidate?.addPluginChannelListener === 'function' && typeof candidate?.postPluginChannelMessage === 'function') || RisuCompat.api(),
+      boundary: async () => {
+          const native = await RisuCompat.currentChatScope();
+          if (Memory.unloaded || !ownsRuntime() || native.confident !== true) throw Error('LIB_READ_CANCELED');
+          const scope = { scopeKey: native.key, characterId: native.characterId, chatId: native.chatId };
+          const route = await MemorySuiteStorageBridge.getScopeMode({ ...scope, scopeId: scope.scopeKey });
+          return { scope, mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation };
+      },
+      capture: createGradiaPluginSnapshot({ primitives, createReadSession: createHayakuPluginReadSession(primitives),
+        read: key => MemorySuiteStorageBridge.ownerLegacyRead('plugin', key) })
+    });
+    return gradiaPluginReadOwner;
+  };
   const registerMemoryBridgeIpc = async (allowRetry = true) => {
+    await getGradiaPluginReadOwner().start().catch(() => false);
     if (memoryBridgeIpcRegistered) return true;
     const api = apiCandidates().find(candidate => (
       typeof candidate?.addPluginChannelListener === 'function'
@@ -50984,6 +51538,7 @@ const MemorySuiteHealthRecovery = (() => {
         outcome: text(r.outcome), errorCode: text(r.errorCode || ''),
         packetHash: text(r.packetHash || ''), source: 'existing_bounded_after_request_repair'
       };
+      if (typeof recordPacketRepairHistory === 'function') recordPacketRepairHistory(Memory.lastPacketRepairObservation);
     };
     const echoGuard = stripHayakuRuntimeInstructionEcho(source, {
       incompleteTail: true,
@@ -51184,6 +51739,7 @@ const MemorySuiteHealthRecovery = (() => {
     canonicalCaptureJobs.set(jobKey,entry);return entry.promise;
   };
   const processRisuChatOutputEvent = async (eventValue,observation={}) => {
+    if (typeof scheduleHayakuAttentionRefresh === 'function') scheduleHayakuAttentionRefresh('chat_output');
     if (Memory.unloaded || !ownsRuntime()) return { ok: false, skipped: true, reason: 'runtime_inactive' };
     if (hayakuSourceInputReadyError) return { ok: true, skipped: true, reason: 'source_input_preferences_unavailable' };
     if (Memory.captureBackend !== HAYAKU_CAPTURE_BACKENDS.CHAT_OUTPUT_V3 && Memory.captureBackend !== HAYAKU_CAPTURE_BACKENDS.NONE) return { ok: true, skipped: true, reason: 'capture_backend_not_owner' };
@@ -56268,13 +56824,13 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   const HAYAKU_MOCKUP_SETTINGS_PAGE = String.raw`<section class="page" id="hayakuViewerPanelSettings" data-hayaku-viewer-panel="settings" data-page="settings" role="tabpanel" aria-labelledby="hayakuViewerTabSettings">
     <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Settings</div><h1 class="page-title">설정</h1><p class="page-desc">변경은 초안으로 유지되고, 아래 저장 막대에서 저장할 때 전체를 검증하고 다시 읽어 확인합니다. 저장에 실패하면 이전 값으로 되돌립니다(rollback). LLM은 호출하지 않습니다.</p></div><div class="page-actions"><button class="btn" id="defaultHayakuSettings" data-load-defaults="[data-page=settings]" type="button">전체 기본값</button></div></div>
     <div class="st-layout">
-      <div class="st-nav" role="tablist" data-subtabs="st"><button role="tab" aria-selected="true" data-subtab="basic" data-hayaku-settings-section-button="basic"><b>기본 동작</b><small>켜기 · 성능 · 출력 (7)</small></button><button role="tab" aria-selected="false" data-subtab="pick" data-hayaku-settings-section-button="pick"><b>기억 선택</b><small>회상 기준 · 문맥 (10+5)</small></button><button role="tab" aria-selected="false" data-subtab="safe" data-hayaku-settings-section-button="safe"><b>복구 · 안전</b><small>누락 · Cold Start (10)</small></button><button role="tab" aria-selected="false" data-subtab="adv" data-hayaku-settings-section-button="adv"><b>고급 검색</b><small>BM25 · 그래프 (11+테스트)</small></button></div>
+      <div class="st-nav" role="tablist" data-subtabs="st"><button role="tab" aria-selected="true" data-subtab="basic" data-hayaku-settings-section-button="basic"><b>기본 동작</b><small>켜기 · 성능 · 출력 (7)</small></button><button role="tab" aria-selected="false" data-subtab="pick" data-hayaku-settings-section-button="pick"><b>기억 선택</b><small>회상 기준 · 문맥 (10+5)</small></button><button role="tab" aria-selected="false" data-subtab="safe" data-hayaku-settings-section-button="safe"><b>복구 · 안전</b><small>누락 · Cold Start (9)</small></button><button role="tab" aria-selected="false" data-subtab="adv" data-hayaku-settings-section-button="adv"><b>고급 검색</b><small>BM25 · 그래프 (9+테스트)</small></button></div>
       <div class="stack" id="hayakuSettingsForm" aria-live="polite">
         <div class="search"><i data-i="search" data-size="sm"></i><input id="hayakuSettingsFilter" class="input" placeholder="설정 이름, 설명, 인자 이름으로 찾기" aria-label="설정 검색" data-no-track></div>
-        <div class="card is-active" data-subpanel="basic" data-group="st" data-hayaku-settings-section="basic"><div class="split" style="margin-bottom:6px"><span class="hint">기본 동작 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">HAYAKU 사용</div><div class="setting__desc">끄면 패킷 작성 지시와 회상이 모두 중지됩니다.</div><span class="argtag">hayaku_enabled</span></div><label class="switch"><input type="checkbox" id="st-enabled" checked><span class="switch__track"></span><span class="sr-only">HAYAKU 사용</span></label></div><div class="setting"><div><div class="setting__name">성능 모드</div><div class="setting__desc">현재 실제 적용: Balanced (최근 요청 기준)</div><span class="argtag">hayaku_mode</span></div><div class="seg" data-dirty role="group" aria-label="성능 모드"><button aria-pressed="false">Auto</button><button aria-pressed="false">Fast</button><button aria-pressed="true">Balanced</button><button aria-pressed="false">Deep</button></div></div><div class="setting"><div><div class="setting__name">프롬프트 방식</div><div class="setting__desc">작성 지시의 상세 수준</div><span class="argtag">hayaku_prompt_mode</span></div><select class="select" style="width:210px" aria-label="프롬프트 방식"><option>auto</option><option>balanced</option><option>full</option></select></div><div class="setting"><div><div class="setting__name">패킷 출력 위치</div><div class="setting__desc">auto이면 응답 본문 뒤에 붙입니다.</div><span class="argtag">hayaku_packet_output_slot</span></div><select class="select" style="width:210px" aria-label="패킷 출력 위치"><option>auto</option><option>tail</option><option>wrapper</option><option>footer</option></select></div><div class="setting"><div><div class="setting__name">닫는 태그</div><div class="setting__desc">선택. 예: </Story> — 출력 위치가 wrapper일 때 그 앞에 둡니다.</div><span class="argtag">hayaku_packet_closing_tag</span></div><input class="input" value="" placeholder="</Story>" style="width:210px" aria-label="닫는 태그"></div><div class="setting"><div><div class="setting__name">프롬프트 캐시</div><div class="setting__desc">캐시 사용 방식</div><span class="argtag">hayaku_prompt_cache</span></div><select class="select" style="width:210px" aria-label="프롬프트 캐시"><option>off</option><option>structural</option><option>native</option></select></div><div class="setting"><div><div class="setting__name">기억 언어</div><div class="setting__desc">source면 완료된 대화 원문 언어를 따릅니다.</div><span class="argtag">hayaku_memory_language</span></div><select class="select" style="width:210px" aria-label="기억 언어"><option>source</option><option>ko</option><option>en</option><option>ja</option><option>zh</option></select></div></div>
+        <div class="card is-active" data-subpanel="basic" data-group="st" data-hayaku-settings-section="basic"><div class="split" style="margin-bottom:6px"><span class="hint">기본 동작 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">HAYAKU 사용</div><div class="setting__desc">끄면 패킷 작성 지시와 회상이 모두 중지됩니다.</div><span class="argtag">hayaku_enabled</span></div><label class="switch"><input type="checkbox" id="st-enabled" checked><span class="switch__track"></span><span class="sr-only">HAYAKU 사용</span></label></div><div class="setting"><div><div class="setting__name">성능 모드</div><div class="setting__desc">현재 실제 적용: Balanced (최근 요청 기준)</div><span class="argtag">hayaku_mode</span></div><div class="seg" data-dirty role="group" aria-label="성능 모드"><button aria-pressed="false">Auto</button><button aria-pressed="false">Fast</button><button aria-pressed="true">Balanced</button><button aria-pressed="false">Deep</button></div></div><div class="setting"><div><div class="setting__name">프롬프트 방식</div><div class="setting__desc">작성 지시의 상세 수준</div><span class="argtag">hayaku_prompt_mode</span></div><select class="select" style="width:210px" aria-label="프롬프트 방식"><option>auto</option><option>balanced</option><option>full</option></select></div><div class="setting"><div><div class="setting__name">패킷 출력 위치</div><div class="setting__desc">자동이면 응답 본문 뒤에 붙입니다.</div><span class="argtag">hayaku_packet_output_slot</span></div><select class="select" style="width:210px" aria-label="패킷 출력 위치"><option>auto</option><option>tail</option><option>wrapper</option><option>footer</option></select></div><div class="setting"><div><div class="setting__name">닫는 태그</div><div class="setting__desc">선택. 예: </Story> — 출력 위치가 ‘닫는 태그 앞’일 때 그 앞에 둡니다.</div><span class="argtag">hayaku_packet_closing_tag</span></div><input class="input" value="" placeholder="</Story>" style="width:210px" aria-label="닫는 태그"></div><div class="setting"><div><div class="setting__name">프롬프트 캐시</div><div class="setting__desc">캐시 사용 방식</div><span class="argtag">hayaku_prompt_cache</span></div><select class="select" style="width:210px" aria-label="프롬프트 캐시"><option>off</option><option>structural</option><option>native</option></select></div><div class="setting"><div><div class="setting__name">기억 언어</div><div class="setting__desc">대화 원문 언어를 고르면 완료된 대화의 언어를 따릅니다.</div><span class="argtag">hayaku_memory_language</span></div><select class="select" style="width:210px" aria-label="기억 언어"><option>source</option><option>ko</option><option>en</option><option>ja</option><option>zh</option></select></div></div>
         <div class="card" data-subpanel="pick" data-group="st" data-hayaku-settings-section="pick"><div class="split" style="margin-bottom:6px"><span class="hint">기억 선택 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">축당 최대 항목</div><div class="setting__desc">기억 축 하나에서 가져올 최대 항목 수</div><span class="argtag">hayaku_max_items_per_axis</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="축당 최대 항목"></div><div class="setting"><div><div class="setting__name">관련성 비중</div><div class="setting__desc">0–100. 비우면 70</div><span class="argtag">hayaku_recall_relatedness_weight</span></div><input class="input" type="number" value="70" style="width:90px" aria-label="관련성 비중"></div><div class="setting"><div><div class="setting__name">최신성 비중</div><div class="setting__desc">0–100. 비우면 30</div><span class="argtag">hayaku_recall_recency_weight</span></div><input class="input" type="number" value="30" style="width:90px" aria-label="최신성 비중"></div><div class="setting"><div><div class="setting__name">문맥 메시지 수</div><div class="setting__desc">현재 입력 앞의 고정 최근 메시지 창. 비우면 5</div><span class="argtag">hayaku_recall_context_messages</span></div><input class="input" type="number" value="5" style="width:90px" aria-label="문맥 메시지 수"></div><div class="setting"><div><div class="setting__name">적응형 문맥 창</div><div class="setting__desc"></div><span class="argtag">hayaku_adaptive_context_window</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">적응형 문맥 창</span></label></div><div class="setting"><div><div class="setting__name">다중 주제 회상</div><div class="setting__desc">한 입력에서 여러 주제를 따로 찾습니다.</div><span class="argtag">hayaku_multi_query_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 주제 회상</span></label></div><div class="setting"><div><div class="setting__name">모순 묶음</div><div class="setting__desc"></div><span class="argtag">hayaku_contradiction_bundle</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">모순 묶음</span></label></div><div class="setting"><div><div class="setting__name">다중 해상도 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_multi_resolution_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 해상도 회상</span></label></div><div class="setting"><div><div class="setting__name">회상 안정성</div><div class="setting__desc"></div><span class="argtag">hayaku_recall_stability</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">회상 안정성</span></label></div><div class="setting"><div><div class="setting__name">안정성 가산</div><div class="setting__desc">0.0–0.08. 비우면 0.025</div><span class="argtag">hayaku_recall_stability_boost</span></div><input class="input" type="number" value="0.025" style="width:100px" aria-label="안정성 가산"></div><details class="fold" style="margin-top:12px"><summary>시간대별 회상 <span class="hint">선택 · 5개 값을 모두 입력해야 적용</span></summary><div class="fold__body"><div class="setting"><div><div class="setting__name">단기 최대 경과 턴</div><div class="setting__desc">선택</div><span class="argtag">hayaku_recall_short_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="단기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">중기 최대 경과 턴</div><div class="setting__desc">단기보다 커야 함</div><span class="argtag">hayaku_recall_medium_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="중기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">단기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_short_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="단기 턴 할당"></div><div class="setting"><div><div class="setting__name">중기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_medium_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="중기 턴 할당"></div><div class="setting"><div><div class="setting__name">장기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_long_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="장기 턴 할당"></div></div></details></div>
-        <div class="card" data-subpanel="safe" data-group="st" data-hayaku-settings-section="safe"><div class="note note--warn" style="margin-bottom:6px"><b>비용 안내</b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다.</div><div class="split" style="margin-bottom:6px"><span class="hint">복구 · 안전 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">패킷 복구 사용</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_recovery</span></div><label class="switch"><input type="checkbox" id="st-packet-recovery" checked><span class="switch__track"></span><span class="sr-only">패킷 복구 사용</span></label><span class="badge" data-setting-state="packet-recovery" aria-live="polite"></span></div><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">복구 화면의 표시와 같은 값입니다.</div><span class="argtag">hayaku_after_request_auto_repair</span></div><label class="switch"><input type="checkbox" id="st-after" checked><span class="switch__track"></span><span class="sr-only">afterRequest 자동 복구</span></label></div><div class="setting"><div><div class="setting__name">추가 복구 허용량</div><div class="setting__desc">작업당 구조 복구 추가 호출. 기본 0</div><span class="argtag">hayaku_recovery_extra_calls</span></div><select class="select" id="st-extra" style="width:110px" aria-label="추가 복구 허용량"><option>0</option><option>1</option></select></div><div class="setting"><div><div class="setting__name">백그라운드 자동 복구 <span class="lvl">확인 후 실행</span></div><div class="setting__desc">시작 전 확인 대화상자가 항상 표시됩니다.</div><span class="argtag">hayaku_background_auto_repair</span></div><label class="switch"><input type="checkbox" id="st-bg" checked><span class="switch__track"></span><span class="sr-only">백그라운드 자동 복구 <span class="lvl">확인 후 실행</span></span></label></div><div class="setting"><div><div class="setting__name">Cold Start 묶음</div><div class="setting__desc">호출당 최대 완료 U+A 턴</div><span class="argtag">hayaku_cold_start_batch_turns</span></div><select class="select" style="width:110px" aria-label="Cold Start 묶음" id="st-cold"><option>1</option><option selected>5</option><option>10</option></select></div><div class="setting"><div><div class="setting__name">패킷 커버리지 점검</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_audit</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">패킷 커버리지 점검</span></label></div><div class="setting"><div><div class="setting__name">커버리지 대체 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_fallback_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">커버리지 대체 회상</span></label></div><div class="setting"><div><div class="setting__name">표시 스크러버</div><div class="setting__desc"></div><span class="argtag">hayaku_display_scrubber</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">표시 스크러버</span></label></div><div class="setting"><div><div class="setting__name">플러그인 보조 모델 허용</div><div class="setting__desc">RisuAI 보조 모델에 플러그인 제공 모델을 쓸 수 있게 합니다.</div><span class="argtag">risuai_aux_allow_plugins</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">플러그인 보조 모델 허용</span></label></div><div class="setting"><div><div class="setting__name">디버그</div><div class="setting__desc"></div><span class="argtag">hayaku_debug</span></div><label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="sr-only">디버그</span></label></div></div>
-        <div class="card" data-subpanel="adv" data-group="st" data-hayaku-settings-section="adv"><div class="split" style="margin-bottom:6px"><span class="hint">고급 검색 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">BM25 채널 <span class="lvl">고급</span></div><div class="setting__desc">키워드 기반 검색을 함께 사용합니다.</div><span class="argtag">hayaku_bm25_channel</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">BM25 채널 <span class="lvl">고급</span></span></label></div><div class="setting"><div><div class="setting__name">BM25 가중치</div><div class="setting__desc">비우면 0.08</div><span class="argtag">hayaku_bm25_weight</span></div><input class="input" type="number" value="0.08" style="width:100px" aria-label="BM25 가중치"></div><div class="setting"><div><div class="setting__name">원문 구절 회상</div><div class="setting__desc">Recovery Journal 증거를 정확/BM25/trigram/근접도로 검색</div><span class="argtag">hayaku_raw_passage_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">원문 구절 회상</span></label></div><div class="setting"><div><div class="setting__name">원문 구절 최대 수</div><div class="setting__desc">요청당 최대 3</div><span class="argtag">hayaku_raw_recall_max_items</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="원문 구절 최대 수"></div><div class="setting"><div><div class="setting__name">원문 증거 최대 글자</div><div class="setting__desc">비우면 2400</div><span class="argtag">hayaku_raw_recall_max_chars</span></div><input class="input" type="number" value="2400" style="width:110px" aria-label="원문 증거 최대 글자"></div><div class="setting"><div><div class="setting__name">원문 최소 점수</div><div class="setting__desc">0.0–1.0. 비우면 0.16</div><span class="argtag">hayaku_raw_recall_min_score</span></div><input class="input" type="number" value="0.16" style="width:100px" aria-label="원문 최소 점수"></div><div class="setting"><div><div class="setting__name">타입 기억 그래프</div><div class="setting__desc">패킷 기억 행 사이의 관계를 결정적으로 도출</div><span class="argtag">hayaku_typed_memory_graph</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">타입 기억 그래프</span></label></div><div class="setting"><div><div class="setting__name">그래프 이웃 회상</div><div class="setting__desc">일반 검색 게이트 이후 제한된 이웃 근거 허용</div><span class="argtag">hayaku_graph_closure_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">그래프 이웃 회상</span></label></div><div class="setting"><div><div class="setting__name">그래프 최대 노드</div><div class="setting__desc">요청당. 비우면 8</div><span class="argtag">hayaku_graph_closure_max_nodes</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="그래프 최대 노드"></div><div class="setting"><div><div class="setting__name">계층 에피소드 기억</div><div class="setting__desc">장면/턴 라우터 전용 계층</div><span class="argtag">hayaku_hierarchical_episode_memory</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">계층 에피소드 기억</span></label></div><div class="setting"><div><div class="setting__name">에피소드 라우터 최대 수</div><div class="setting__desc">요청당. 비우면 3</div><span class="argtag">hayaku_episode_router_max_hits</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="에피소드 라우터 최대 수"></div><div class="setting"><div><div class="setting__name">RisuAI 보조 모델 호출 테스트</div><div class="setting__desc">API · 모델 · 지연 시간을 확인합니다 (1회 호출).</div></div><button class="btn btn--sm" id="ax-test" type="button">테스트</button></div></div>
+        <div class="card" data-subpanel="safe" data-group="st" data-hayaku-settings-section="safe"><div class="note note--warn" style="margin-bottom:6px"><b>비용 안내</b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다.</div><div class="split" style="margin-bottom:6px"><span class="hint">복구 · 안전 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">패킷 복구 사용</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_recovery</span></div><label class="switch"><input type="checkbox" id="st-packet-recovery" checked><span class="switch__track"></span><span class="sr-only">패킷 복구 사용</span></label><span class="badge" data-setting-state="packet-recovery" aria-live="polite"></span></div><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">유일한 자동 복구입니다. 누락 패킷당 Other Ax 1회, 실패하면 수동 복구로 남깁니다.</div><span class="argtag">hayaku_after_request_auto_repair</span></div><label class="switch"><input type="checkbox" id="st-after" checked><span class="switch__track"></span><span class="sr-only">afterRequest 자동 복구</span></label></div><div class="setting"><div><div class="setting__name">추가 복구 허용량</div><div class="setting__desc">작업당 구조 복구 추가 호출. 기본 0</div><span class="argtag">hayaku_recovery_extra_calls</span></div><select class="select" id="st-extra" style="width:110px" aria-label="추가 복구 허용량"><option>0</option><option>1</option></select></div><div class="setting"><div><div class="setting__name">Cold Start 묶음</div><div class="setting__desc">호출당 최대 완료 U+A 턴</div><span class="argtag">hayaku_cold_start_batch_turns</span></div><select class="select" style="width:110px" aria-label="Cold Start 묶음" id="st-cold"><option>1</option><option selected>5</option><option>10</option></select></div><div class="setting"><div><div class="setting__name">패킷 커버리지 점검</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_audit</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">패킷 커버리지 점검</span></label></div><div class="setting"><div><div class="setting__name">커버리지 대체 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_fallback_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">커버리지 대체 회상</span></label></div><div class="setting"><div><div class="setting__name">표시 스크러버</div><div class="setting__desc"></div><span class="argtag">hayaku_display_scrubber</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">표시 스크러버</span></label></div><div class="setting"><div><div class="setting__name">플러그인 보조 모델 허용</div><div class="setting__desc">RisuAI 보조 모델에 플러그인 제공 모델을 쓸 수 있게 합니다.</div><span class="argtag">risuai_aux_allow_plugins</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">플러그인 보조 모델 허용</span></label></div><div class="setting"><div><div class="setting__name">디버그</div><div class="setting__desc"></div><span class="argtag">hayaku_debug</span></div><label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="sr-only">디버그</span></label></div></div>
+        <div class="card" data-subpanel="adv" data-group="st" data-hayaku-settings-section="adv"><div class="split" style="margin-bottom:6px"><span class="hint">고급 검색 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">BM25 채널 <span class="lvl">고급</span></div><div class="setting__desc">키워드 기반 검색을 함께 사용합니다.</div><span class="argtag">hayaku_bm25_channel</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">BM25 채널 <span class="lvl">고급</span></span></label></div><div class="setting"><div><div class="setting__name">BM25 가중치</div><div class="setting__desc">비우면 0.08</div><span class="argtag">hayaku_bm25_weight</span></div><input class="input" type="number" value="0.08" style="width:100px" aria-label="BM25 가중치"></div><div class="setting"><div><div class="setting__name">원문 구절 회상</div><div class="setting__desc">Recovery Journal 증거를 정확/BM25/trigram/근접도로 검색</div><span class="argtag">hayaku_raw_passage_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">원문 구절 회상</span></label></div><div class="setting"><div><div class="setting__name">원문 증거 최대 글자</div><div class="setting__desc">비우면 2400</div><span class="argtag">hayaku_raw_recall_max_chars</span></div><input class="input" type="number" value="2400" style="width:110px" aria-label="원문 증거 최대 글자"></div><div class="setting"><div><div class="setting__name">타입 기억 그래프</div><div class="setting__desc">패킷 기억 행 사이의 관계를 결정적으로 도출</div><span class="argtag">hayaku_typed_memory_graph</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">타입 기억 그래프</span></label></div><div class="setting"><div><div class="setting__name">그래프 이웃 회상</div><div class="setting__desc">일반 검색 게이트 이후 제한된 이웃 근거 허용</div><span class="argtag">hayaku_graph_closure_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">그래프 이웃 회상</span></label></div><div class="setting"><div><div class="setting__name">그래프 최대 노드</div><div class="setting__desc">요청당. 비우면 8</div><span class="argtag">hayaku_graph_closure_max_nodes</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="그래프 최대 노드"></div><div class="setting"><div><div class="setting__name">계층 에피소드 기억</div><div class="setting__desc">장면/턴 라우터 전용 계층</div><span class="argtag">hayaku_hierarchical_episode_memory</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">계층 에피소드 기억</span></label></div><div class="setting"><div><div class="setting__name">에피소드 라우터 최대 수</div><div class="setting__desc">요청당. 비우면 3</div><span class="argtag">hayaku_episode_router_max_hits</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="에피소드 라우터 최대 수"></div><div class="setting"><div><div class="setting__name">RisuAI 보조 모델 호출 테스트</div><div class="setting__desc">API · 모델 · 지연 시간을 확인합니다 (1회 호출).</div></div><button class="btn btn--sm" id="ax-test" type="button">테스트</button></div></div>
       </div>
     </div>
   </section>`;
@@ -56293,7 +56849,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     { argument: 'hayaku_debug', type: 'boolean' },
     { argument: 'hayaku_packet_recovery', type: 'boolean' },
     { argument: 'hayaku_after_request_auto_repair', type: 'boolean' },
-    { argument: 'hayaku_background_auto_repair', type: 'boolean' },
+    { argument: 'hayaku_background_auto_repair', type: 'boolean', retired: true },
     { argument: 'hayaku_recovery_extra_calls', type: 'enum', values:['0','1'] },
     { argument: 'risuai_aux_allow_plugins', type: 'boolean' },
     { argument: 'hayaku_cold_start_batch_turns', type: 'enum', values: ['1', '5', '10'] },
@@ -56310,9 +56866,9 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     { argument: 'hayaku_recall_stability', type: 'boolean' },
     { argument: 'hayaku_recall_stability_boost', type: 'number', min: 0, max: 0.08 },
     { argument: 'hayaku_raw_passage_recall', type: 'boolean' },
-    { argument: 'hayaku_raw_recall_max_items', type: 'integer', min: 1, max: 8 },
+    { argument: 'hayaku_raw_recall_max_items', type: 'integer', min: 1, max: 8, retired: true },
     { argument: 'hayaku_raw_recall_max_chars', type: 'integer', min: 600, max: 8000 },
-    { argument: 'hayaku_raw_recall_min_score', type: 'number', min: 0.04, max: 0.8 },
+    { argument: 'hayaku_raw_recall_min_score', type: 'number', min: 0.04, max: 0.8, retired: true },
     { argument: 'hayaku_typed_memory_graph', type: 'boolean' },
     { argument: 'hayaku_graph_closure_recall', type: 'boolean' },
     { argument: 'hayaku_graph_closure_max_nodes', type: 'integer', min: 2, max: 24 },
@@ -56366,6 +56922,20 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         control.step = spec.type.includes('integer') ? '1' : 'any';
       }
       wired.add(argument);
+    }
+    // Retired settings have no visible row; a hidden control keeps the stored value as-is on save.
+    const form = root?.querySelector?.('#hayakuSettingsForm');
+    for (const spec of HAYAKU_GUI_SETTING_SPECS) {
+      if (spec.retired !== true || wired.has(spec.argument) || !form) continue;
+      let control = form.querySelector?.(`[name="${spec.argument}"]`);
+      if (!control) {
+        control = root.ownerDocument.createElement('input');
+        control.type = 'hidden';
+        control.name = spec.argument;
+        control.setAttribute('data-hayaku-retired-setting', 'true');
+        form.appendChild(control);
+      }
+      wired.add(spec.argument);
     }
     return { wired: wired.size, missing: HAYAKU_GUI_SETTING_SPECS.map(spec => spec.argument).filter(argument => !wired.has(argument)) };
   };
@@ -56488,6 +57058,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         error.effectiveMismatches = effectiveMismatches;
         throw error;
       }
+      if (appliedSettings.enabled === false) cancelHayakuAutoProbe();
       if (beforeSettings.backgroundAutoRepair !== appliedSettings.backgroundAutoRepair) {
         if (!appliedSettings.backgroundAutoRepair && Memory.nativeRecovery.repairTimer != null) {
           try { clearTimeout(Memory.nativeRecovery.repairTimer); } catch (_) {}
@@ -56605,6 +57176,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (!root) return;
       const needle = String(root.querySelector?.('#hayakuSettingsFilter')?.value || '').trim().toLowerCase();
       const rows = [...(root.querySelectorAll?.('#hayakuSettingsForm .setting') || [])];
+      root.querySelector?.('#hayakuSettingsForm')?.classList?.toggle?.('hayaku-settings-searching', !!needle);
       let shown = 0;
       for (const row of rows) {
         const name = text(row.querySelector?.('[name]')?.getAttribute?.('name') || '');
@@ -56625,6 +57197,81 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     } catch (_e) { try { globalThis.__librarianDiag && globalThis.__librarianDiag('hayaku', 'viewer.settings.filter', _e); } catch (__) {} }
   };
 
+  // Easy/full settings view. Easy view keeps the handful of settings people actually change
+  // and moves tuning knobs, ARG names and raw enum values out of sight. Presentation only:
+  // every control stays in the DOM, so save/readback/defaults still cover all settings.
+  const HAYAKU_SETTINGS_ESSENTIAL_ARGUMENTS = Object.freeze([
+    'hayaku_enabled', 'hayaku_mode', 'hayaku_memory_language', 'hayaku_packet_output_slot',
+    'hayaku_recall_context_messages', 'hayaku_packet_recovery', 'hayaku_after_request_auto_repair',
+    'hayaku_cold_start_batch_turns'
+  ]);
+  const HAYAKU_SETTINGS_VALUE_LABELS = Object.freeze({
+    hayaku_mode: { auto: '자동', fast: '빠르게', balanced: '균형', deep: '깊게' },
+    hayaku_prompt_mode: { auto: '자동', balanced: '균형 · 핵심 지시', full: '전체 · 상세 지시' },
+    hayaku_packet_output_slot: { auto: '자동 (본문 뒤)', tail: '본문 끝', wrapper: '닫는 태그 앞', footer: '꼬리말 영역' },
+    hayaku_prompt_cache: { off: '사용 안 함', structural: '구조 캐시', native: '제공자 기본 캐시' },
+    hayaku_memory_language: { source: '대화 원문 언어', ko: '한국어', en: '영어', ja: '일본어', zh: '중국어' },
+    hayaku_recovery_extra_calls: { 0: '추가 호출 없음', 1: '1회 추가' },
+    hayaku_cold_start_batch_turns: { 1: '1턴씩', 5: '5턴씩', 10: '10턴씩' }
+  });
+  const hayakuSettingValueLabel = (argument, value) => {
+    const raw = text(value || '').trim();
+    return HAYAKU_SETTINGS_VALUE_LABELS[argument]?.[raw.toLowerCase()] || raw;
+  };
+  const HAYAKU_SETTINGS_VIEW_STORAGE_KEY = 'hayaku.settingsView.v1';
+  const readHayakuSettingsView = () => {
+    try { return globalThis.localStorage?.getItem?.(HAYAKU_SETTINGS_VIEW_STORAGE_KEY) === 'full' ? 'full' : 'easy'; } catch (_) { return 'easy'; }
+  };
+  const viewerSetSettingsView = view => {
+    const root = Memory.ledgerViewer.root;
+    const form = root?.querySelector?.('#hayakuSettingsForm');
+    if (!form) return;
+    const mode = view === 'full' ? 'full' : 'easy';
+    form.classList.toggle('hayaku-settings-easy', mode === 'easy');
+    root.querySelectorAll?.('[data-hayaku-settings-view]')?.forEach(button => button.setAttribute('aria-pressed', String(button.getAttribute('data-hayaku-settings-view') === mode)));
+    try { globalThis.localStorage?.setItem?.(HAYAKU_SETTINGS_VIEW_STORAGE_KEY, mode); } catch (_) {}
+  };
+  const viewerInstallSettingsEasyView = root => {
+    const form = root?.querySelector?.('#hayakuSettingsForm');
+    if (!form || form.querySelector?.('.hayaku-view-bar')) return { advanced: 0 };
+    const essential = new Set(HAYAKU_SETTINGS_ESSENTIAL_ARGUMENTS);
+    let advanced = 0;
+    for (const row of form.querySelectorAll?.('.setting') || []) {
+      const argument = text(row.querySelector?.('.argtag')?.textContent || '').trim();
+      if (essential.has(argument)) continue;
+      row.setAttribute('data-hayaku-advanced', '1');
+      advanced += 1;
+    }
+    for (const fold of form.querySelectorAll?.('details.fold') || []) {
+      if (![...(fold.querySelectorAll?.('.setting') || [])].some(row => !row.hasAttribute('data-hayaku-advanced'))) fold.setAttribute('data-hayaku-advanced', '1');
+    }
+    // Human labels replace raw enum text. Option values were already fixed by the wiring step.
+    for (const [argument, labels] of Object.entries(HAYAKU_SETTINGS_VALUE_LABELS)) {
+      const control = form.querySelector?.(`select[name="${argument}"]`);
+      for (const option of control?.options || []) if (labels[option.value] != null) option.textContent = labels[option.value];
+    }
+    form.querySelectorAll?.('[data-hayaku-mode-value]')?.forEach(button => {
+      button.textContent = hayakuSettingValueLabel('hayaku_mode', button.getAttribute('data-hayaku-mode-value'));
+    });
+    const doc = root.ownerDocument;
+    const bar = doc.createElement('div');
+    bar.className = 'hayaku-view-bar';
+    bar.innerHTML = '<div><b>보기 방식</b><span class="hint">간편 보기는 자주 바꾸는 항목만 보여 줍니다. 숨겨진 항목도 저장값은 그대로 유지됩니다.</span></div><div class="seg" role="group" aria-label="설정 보기 방식"><button type="button" data-hayaku-settings-view="easy" aria-pressed="true">간편</button><button type="button" data-hayaku-settings-view="full" aria-pressed="false">전체</button></div>';
+    form.insertBefore(bar, form.firstChild);
+    bar.querySelectorAll('[data-hayaku-settings-view]').forEach(button => button.addEventListener('click', () => viewerSetSettingsView(button.getAttribute('data-hayaku-settings-view'))));
+    for (const section of form.querySelectorAll?.('[data-hayaku-settings-section]') || []) {
+      const hidden = section.querySelectorAll?.('.setting[data-hayaku-advanced]')?.length || 0;
+      if (!hidden) continue;
+      const shown = section.querySelectorAll?.('.setting:not([data-hayaku-advanced])')?.length || 0;
+      const note = doc.createElement('div');
+      note.className = 'hayaku-easy-note';
+      note.innerHTML = `<span>${shown ? `세부 조정 항목 ${hidden.toLocaleString()}개가 숨겨져 있습니다.` : `이 섹션은 세부 조정 항목 ${hidden.toLocaleString()}개로만 이루어져 있습니다. 기본값으로도 잘 동작합니다.`}</span><button type="button" class="btn btn--sm">전체 보기</button>`;
+      note.querySelector('button').addEventListener('click', () => viewerSetSettingsView('full'));
+      section.appendChild(note);
+    }
+    viewerSetSettingsView(readHayakuSettingsView());
+    return { advanced };
+  };
   const viewerRenderSettingSources = rawSnapshot => {
     const root = Memory.ledgerViewer.root;
     if (!root) return;
@@ -56731,7 +57378,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const effective = [...(root.querySelectorAll?.('[data-hayaku-settings-section="basic"] .argtag') || [])].find(node => text(node.textContent || '').trim() === 'hayaku_mode');
     if (effective) {
       const description = effective.closest('.setting')?.querySelector('.setting__desc');
-      if (description) description.textContent = `현재 실제 적용: ${settings.effectiveMode || settings.mode || '아직 요청 없음'}${settings.effectiveModeReason ? ` · ${settings.effectiveModeReason}` : ''}`;
+      if (description) description.textContent = `현재 실제 적용: ${settings.effectiveMode || settings.mode ? hayakuSettingValueLabel('hayaku_mode', settings.effectiveMode || settings.mode) : '아직 요청 없음'}${settings.effectiveModeReason ? ` · ${settings.effectiveModeReason}` : ''}`;
     }
     viewerUpdateSettingsDraftState(); viewerSetSettingsSection(Memory.ledgerViewer.settingsSection);
     return values;
@@ -57237,7 +57884,6 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const coldRun = status?.coldStartRun?.run || null;
       const repairInFlight = status?.inFlight === true || Memory.nativeRecovery.manualBatchInFlight===true;
       const coldInFlight = status?.coldStart?.inFlight === true;
-      const autoEnabled = Memory.settings?.backgroundAutoRepair !== false;
       const afterRequestAutoEnabled = Memory.settings?.afterRequestAutoRepair !== false;
       const setText = (selector, value) => {
         const node = root.querySelector?.(selector);
@@ -57248,10 +57894,9 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         : !status.runLLMModelAvailable ? 'Other Ax API 사용 불가'
         : coldInFlight ? 'Cold Start 실행 중' : repairInFlight ? '누락 복구 실행 중'
         : Memory.nativeRecovery.lastManualBatchResult?.ok === false && Memory.nativeRecovery.lastManualBatchResult?.scopeKey === renderScopeKey ? '최근 복구 중단' : '호출 가능 · 모델 연결 미확인');
-      setText('#hayakuNativeAutoRepairText', autoEnabled ? '켜짐' : '꺼짐');
+      setText('#hayakuNativeAutoRepairText', afterRequestAutoEnabled ? '켜짐 · afterRequest 1회' : '꺼짐');
       setText('#hayakuAfterRequestAutoRepairText', afterRequestAutoEnabled ? '켜짐 · 누락 시 1회' : '꺼짐 · 저널만 생성');
       setText('#auto-after', afterRequestAutoEnabled ? '켜짐' : '꺼짐');
-      setText('#auto-bg', autoEnabled ? '켜짐 · 확인 후 실행' : '꺼짐');
       setText('#hayakuNativeDebtCount', Number(coverage?.activeDebtCount ?? debt?.totalActiveDebts ?? 0).toLocaleString());
       setText('#hayakuNativeRepairableCount', Number(coverage?.recoverableDebtCount ?? debt?.repairableDebts ?? 0).toLocaleString());
       setText('#hayakuNativeNextRetry', Number(debt?.nextRetryAt || 0) > 0 ? viewerFormatDate(debt.nextRetryAt) : '-');
@@ -57270,7 +57915,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           : `완료 턴 ${completedTurns}개 · 커버 ${coveredTurns}개 · 누락 ${missingTurns.length}개`;
       setText('#hayakuNativeCoverageSummary', coverageSummary);
       setText('#hayakuOverviewCoverage', completedTurns > 0 ? `${coveredTurns} / ${completedTurns}` : '-');
-      setText('#hayakuOverviewCoverageBadge', completedTurns > 0 ? `coverage ${Math.round(coveredTurns / completedTurns * 100)}%` : 'coverage 미확인');
+      setText('#hayakuOverviewCoverageBadge', completedTurns > 0 ? `연결률 ${Math.round(coveredTurns / completedTurns * 100)}%` : '연결률 미확인');
       setText('#hayakuOverviewRecoveryCount', Number(coverage?.activeDebtCount ?? debt?.totalActiveDebts ?? 0).toLocaleString());
       setText('#hayakuOverviewJournal', Number(coverage?.activeDebtCount ?? debt?.totalActiveDebts ?? 0).toLocaleString());
       setText('#hayakuOverviewJournalMeta', Number(coverage?.recoverableDebtCount ?? debt?.repairableDebts ?? 0) > 0
@@ -57308,8 +57953,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         : '-');
       const toggle = root.querySelector?.('#hayakuNativeAutoRepairToggle');
       if (toggle) {
-        toggle.checked = autoEnabled;
-        toggle.disabled = repairInFlight || coldInFlight;
+        toggle.checked = false;
+        toggle.disabled = true;
       }
       const afterRequestToggle = root.querySelector?.('#hayakuAfterRequestAutoRepairToggle');
       if (afterRequestToggle) {
@@ -57736,6 +58381,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       semanticIncompleteCount: Number(source.semanticIncompleteCount || 0), invalidCount: Number(source.invalidCount || 0),
       finishReason: 'unobserved', source: 'main_after_request_before_repair' };
     Memory.lastPacketAuthoringObservation = observation;
+    if (typeof recordPacketAuthoringHistory === 'function') recordPacketAuthoringHistory(observation);
     return observation;
   };
   const packetAuthoringViewerSnapshot = () => {
@@ -57772,7 +58418,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       ['작성 지시', b.packetWriteActive ? '메인 응답 모델에 적용' : `우회: ${b.packetWriteSuppressionReason || '미확인'}`],
       ['관측 시각', b.at ? viewerFormatDate(b.at) : '미관측'],
       ['출력 위치', placement.mode === 'inside_terminal_wrapper' ? `${placement.closingTag} 직전` : placement.mode === 'before_required_footer' ? '필수 footer 직전' : '본문 뒤'],
-      ['위치 경고', b.outputContract?.packetPlacementWarning || '없음'],
+      ['위치 경고', b.outputContract?.packetPlacementWarning ? (typeof hayakuPlacementWarningLabel === 'function' ? hayakuPlacementWarningLabel(b.outputContract.packetPlacementWarning) : b.outputContract.packetPlacementWarning) : '없음'],
       ['계약 / 형식 / 알림', `${b.staticWriteChars || 0} / ${b.runtimeSkeletonChars || 0} / ${b.terminalSealChars || 0}자`],
       ['메인 작성 결과', data.authoring ? results[data.authoring.result] || data.authoring.result : '이번 요청의 메인 출력 미관측'],
       ['패킷 저장', data.storageStatus],
@@ -57782,7 +58428,66 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       ['출력 종료 사유', '미관측 · 입력 예산 확보는 출력 여유를 보장하지 않습니다.'],
       ['관측 경계', 'HAYAKU beforeRequest 및 Other Ax 복구 전 afterRequest. Provider 직전 최종 payload 보장은 아닙니다.']
     ];
-    node.innerHTML = heading + viewerScopeFields(rows);
+    node.innerHTML = heading + viewerScopeFields(rows) + viewerPacketAuthoringHistoryHtml(text(b.scopeKey || Memory.ledgerViewer.scope?.key || ''));
+  };
+  const viewerPacketAuthoringHistoryHtml = scopeKey => {
+    const summary = packetAuthoringSummary(scopeKey);
+    if (!summary.total) return '';
+    const percent = value => `${Math.round(value / summary.total * 100)}%`;
+    const rows = [
+      ['메인 모델이 정상 작성', `${summary.mainOk}턴 · ${percent(summary.mainOk)}`],
+      ['패킷 생략', `${summary.missing}턴`],
+      ['패킷 잘림', `${summary.truncated}턴`],
+      ['형식 오류', `${summary.invalid}턴`],
+      ['보조 모델 후보 작성', `${summary.repairCandidates}턴 · 저장 완료 여부는 별도 확인`],
+      ['보조 모델 복구 실패', `${summary.repairFailed}턴`],
+      ['복구 건너뜀', summary.repairSkipped ? `${summary.repairSkipped}턴 · ${summary.skipReasons.join(', ')}` : '0턴']
+    ];
+    const advice = packetAuthoringAdvice(summary);
+    return `<h3 class="card__title" style="margin-top:14px">최근 ${summary.total}턴 패킷 작성 현황 <span class="hint">이번 세션</span></h3>${viewerScopeFields(rows)}`
+      + (advice.length ? `<div class="note" style="margin-top:8px">${advice.map(line => `<p style="margin:2px 0">${viewerEscapeHtml(line)}</p>`).join('')}</div>` : '');
+  };
+  // Session-only rolling history of main-model packet authoring and the afterRequest
+  // repair that followed, so repeated causes are visible. Not persisted.
+  const PACKET_AUTHORING_HISTORY_LIMIT = 60;
+  const recordPacketAuthoringHistory = observation => {
+    const history = Memory.packetAuthoringHistory || (Memory.packetAuthoringHistory = []);
+    const existing = observation.requestNonce ? history.find(row => row.scopeKey === observation.scopeKey && row.requestNonce === observation.requestNonce) : null;
+    if (existing) Object.assign(existing, { at: observation.at, result: observation.result });
+    else history.push({ at: observation.at, scopeKey: observation.scopeKey, requestNonce: observation.requestNonce, result: observation.result, repair: '', repairError: '' });
+    while (history.length > PACKET_AUTHORING_HISTORY_LIMIT) history.shift();
+  };
+  const recordPacketRepairHistory = repair => {
+    const row = ensureArray(Memory.packetAuthoringHistory).find(item => item.scopeKey === repair.scopeKey && item.requestNonce && item.requestNonce === repair.requestNonce);
+    if (row) Object.assign(row, { repair: repair.outcome, repairError: repair.errorCode || '' });
+  };
+  const packetAuthoringSummary = scopeKey => {
+    const rows = ensureArray(Memory.packetAuthoringHistory).filter(row => row.scopeKey === scopeKey);
+    const count = predicate => rows.filter(predicate).length;
+    const repairCandidate = row => row.repair === 'candidate_returned_pending_commit';
+    const repairFailed = row => ['failed_journal_required', 'suspended'].includes(row.repair);
+    const mainOk = row => row.result === 'valid_packet_awaiting_binding';
+    return {
+      total: rows.length,
+      mainOk: count(mainOk),
+      missing: count(row => row.result === 'markers_missing'),
+      truncated: count(row => row.result === 'marker_incomplete'),
+      invalid: count(row => !mainOk(row) && !['markers_missing', 'marker_incomplete'].includes(row.result)),
+      repairCandidates: count(repairCandidate),
+      repairFailed: count(repairFailed),
+      repairSkipped: count(row => !mainOk(row) && row.repair && !repairCandidate(row) && !repairFailed(row) && row.repair !== 'packet_already_usable'),
+      skipReasons: [...new Set(rows.filter(row => !mainOk(row) && row.repair && !repairCandidate(row) && !repairFailed(row)).map(row => row.repair))].slice(0, 4)
+    };
+  };
+  const packetAuthoringAdvice = summary => {
+    const advice = [];
+    if (!summary.total) return advice;
+    const failing = summary.total - summary.mainOk;
+    if (summary.truncated && summary.truncated >= Math.max(1, failing / 3)) advice.push('패킷이 끝까지 쓰이지 않고 잘린 턴이 많습니다. 응답 최대 토큰(출력 길이)을 늘리면 대부분 해결됩니다.');
+    if (summary.missing && summary.missing >= Math.max(2, failing / 3)) advice.push('응답 모델이 패킷을 자주 생략합니다. 설정의 프롬프트 방식을 전체(full)로 바꾸거나 지시를 잘 따르는 모델을 쓰면 줄어듭니다.');
+    if (summary.repairFailed) advice.push('보조 모델(Other Ax) 복구가 실패한 턴이 있습니다. 자동 재시도는 하지 않으니 복구 화면에서 수동 복구하세요. 계속 실패하면 RisuAI 보조 모델 설정을 확인하세요.');
+    if (summary.repairSkipped) advice.push('자동 복구가 건너뛴 턴은 백그라운드 복구 대기열로 넘어갑니다.');
+    return advice;
   };
   function viewerRenderSourceEditConsent() {
     const viewer=Memory.ledgerViewer,root=viewer?.root;if(!root)return;
@@ -57883,7 +58588,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (health) health.className='banner banner--danger';
       if (title) title.textContent='현재 채팅 원장을 읽지 못했습니다.';
       if (copy) copy.textContent=compact(viewer.ledger?.reason || 'storage_unavailable',180);
-      if (badge) badge.textContent='coverage 미확인';
+      if (badge) badge.textContent='연결률 미확인';
       host.innerHTML='<div class="empty"><b>원장을 읽지 못해 노선도를 표시하지 않습니다.</b><span>다시 대조해 현재 채팅 범위를 확인하세요.</span></div>';
       return;
     }
@@ -57898,8 +58603,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       : current?.sourceEditError ? `원문 재분석 상태 확인 필요 · ${compact(current.sourceEditError,160)}`
       : `완료 U+A ${Number(current?.completedTurns || 0).toLocaleString()}턴 · 패킷 보유 ${ensureArray(current?.coveredTurns).length.toLocaleString()}턴 · 누락 ${missing.toLocaleString()} · 검토 대기 ${pending.toLocaleString()}`;
     if (badge) badge.textContent = verified && Number(current?.completedTurns)>0
-      ? `coverage ${Math.round(ensureArray(current?.coveredTurns).length/Number(current.completedTurns)*100)}%`
-      : 'coverage 미확인';
+      ? `연결률 ${Math.round(ensureArray(current?.coveredTurns).length/Number(current.completedTurns)*100)}%`
+      : '연결률 미확인';
     if (badge) {
       const healthy = verified && Number(current?.completedTurns)>0 && ensureArray(current?.coveredTurns).length >= Number(current.completedTurns);
       badge.classList?.toggle('badge--ok',healthy);
@@ -57937,14 +58642,14 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     if(packetCountNode) packetCountNode.hidden=active<=0;
     setText('#hayakuOverviewPacketsDenominator',records.length.toLocaleString());
     setText('#hayakuViewerScopeTop',Memory.ledgerViewer.scope?.chatTitle || '현재 채팅');
-    setText('#hayakuViewerScopeMeta',`세계선 원장 · ${records.length.toLocaleString()} records`);
+    setText('#hayakuViewerScopeMeta',`세계선 원장 · 기록 ${records.length.toLocaleString()}개`);
     const coverageSnapshot=Memory.ledgerViewer.continuitySnapshot?.coverage;
     if(Array.isArray(coverageSnapshot?.rows)){
       const completed=Math.max(0,Number(coverageSnapshot.completedTurns||0)||0);
       const covered=ensureArray(coverageSnapshot.coveredTurns).length;
       setText('#hayakuOverviewCoverage',completed?covered.toLocaleString():'-');
       setText('#hayakuOverviewCoverageDenominator',completed?completed.toLocaleString():'-');
-      setText('#hayakuOverviewCoverageBadge',completed?`coverage ${Math.round(covered/completed*100)}%`:'coverage 미확인');
+      setText('#hayakuOverviewCoverageBadge',completed?`연결률 ${Math.round(covered/completed*100)}%`:'연결률 미확인');
       const coverageBadge = root.querySelector('#hayakuOverviewCoverageBadge');
       if (coverageBadge) {
         const healthy = completed > 0 && covered >= completed;
@@ -58315,7 +59020,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     };
     setText('#hayakuViewerScope', scope?.chatTitle || scope?.chatId || scope?.key || '-');
     setText('#hayakuViewerScopeTop', scope?.chatTitle || scope?.chatId || '현재 채팅');
-    setText('#hayakuViewerScopeMeta', scope?.confident ? `세계선 원장 · ${records.length.toLocaleString()} records` : compact(scope?.reason || 'scope_unavailable', 100));
+    setText('#hayakuViewerScopeMeta', scope?.confident ? `세계선 원장 · 기록 ${records.length.toLocaleString()}개` : compact(scope?.reason || 'scope_unavailable', 100));
     setText('#hayakuViewerKey', scope?.key ? `${STORAGE_LEDGER_KEY_PREFIX}${scope.key}` : '-');
     setText('#hayakuViewerUpdated', viewerFormatDate(ledger?.updatedAt));
     setText('#hayakuMetricRecords', records.length.toLocaleString());
@@ -59245,6 +59950,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   const HAYAKU_GUI_SUITE_CSS = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n";
   const HAYAKU_GUI_THEME_CSS = "/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n";
   const HAYAKU_GUI_COMPONENT_CSS = "\n/* HAYAKU 전용: 관제실 / 노선도 컨셉 */\n.route{overflow-x:auto;padding:6px 4px 12px}\n.route__track{display:flex;min-width:max-content}\n.stop{position:relative;flex:1 0 82px;width:82px;display:grid;justify-items:center;gap:4px;padding:6px 4px;border:0;background:transparent;color:var(--text);border-radius:var(--r-sm)}\n.stop:hover{background:var(--surface3)}\n.stop::before{content:\"\";position:absolute;top:34px;left:-50%;width:100%;height:4px;background:var(--ok)}\n.stop:first-child::before{display:none}\n.stop b{font:700 12px var(--font-mono)}\n.stop i{position:relative;z-index:1;width:20px;height:20px;border-radius:50%;border:4px solid var(--ok);background:var(--surface)}\n.stop small{font-size:11.5px;color:var(--text2)}\n.stop--miss::before{background:repeating-linear-gradient(90deg,var(--warn) 0 7px,transparent 7px 13px)}\n.stop--miss i{border:3px dashed var(--warn);background:var(--warn-soft)}\n.stop--wait i{border-color:var(--warn);border-radius:4px;transform:rotate(45deg)}\n.stop--fail i{border-color:var(--danger);border-radius:3px;background:var(--danger-soft)}\n.stop--fail::before{background:var(--danger)}\n.stop--skip i{border-color:var(--border2);background:var(--surface3)}.stop--skip::before{background:var(--border2)}\n.stop.is-now b::before{content:\"▼ \";color:var(--accent)}\n.legend{display:flex;flex-wrap:wrap;gap:6px 18px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--text2)}\n.legend span{display:inline-flex;align-items:center;gap:6px}\n.legend i{width:11px;height:11px;border-radius:50%;border:3px solid var(--ok);display:inline-block}\n.legend .m{border:2px dashed var(--warn)}.legend .w{border-color:var(--warn);border-radius:2px;transform:rotate(45deg)}.legend .f{border-color:var(--danger);border-radius:2px}.legend .s{border-color:var(--border2)}\n.metric-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}\n.dash{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px}\n.rec{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:11px 0;border-top:1px solid var(--border)}\n.rec:first-child{border-top:0}\n.rec .score{font:700 12px var(--font-mono);padding:3px 8px;border-radius:5px;background:var(--accent-soft);color:var(--accent-ink)}\n.rec p{margin:0;font-size:12.5px;color:var(--text2)}\n.pk-layout{display:grid;grid-template-columns:minmax(280px,.9fr) minmax(0,1.4fr);gap:14px;align-items:start}\n.pk-list{max-height:520px;overflow:auto}\n.pk-row{display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 14px;border:0;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;color:var(--text)}\n.pk-row:first-child{border-top:0}.pk-row:hover{background:var(--surface2)}\n.pk-row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.pk-row b{font:700 13px var(--font-mono);color:var(--accent-ink)}\n.pk-row strong{display:block;font-size:13px}.pk-row small{color:var(--text3);font-size:12px}\n.axes{display:grid;grid-template-columns:1fr 1fr;gap:10px}\n.axis{padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2)}\n.axis h4{margin:0 0 6px;font-size:12.5px;color:var(--accent-ink)}.axis p{margin:0;font-size:12.5px;color:var(--text2)}\npre.json{margin:0;padding:14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:12px;line-height:1.6;overflow:auto;max-height:220px;white-space:pre-wrap}\n.cost{display:flex;gap:10px;align-items:flex-start}\n.picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}\n.picker label{display:flex;gap:9px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);cursor:pointer}\n.picker input{width:17px;height:17px;margin-top:2px;accent-color:var(--accent)}\n.picker label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}\n.picker small{display:block;color:var(--text3);font-size:11.5px}\n.st-layout{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;align-items:start}\n.st-nav{display:grid;gap:3px;position:sticky;top:0}\n.st-nav button{text-align:left;padding:10px 12px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--text)}\n.st-nav b{display:block;font-size:13.5px}.st-nav small{color:var(--text3);font-size:12px}\n.st-nav button[aria-selected=true]{background:var(--surface);border-color:var(--border2);box-shadow:inset 3px 0 0 var(--accent)}\n.lvl{display:inline-flex;margin-left:6px;padding:0 7px;border-radius:99px;font:650 11px/1.7 var(--font-sans);background:var(--surface3);color:var(--text2)}\nhtml[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[data-scenario=warn] [data-scenario-show]:not([data-scenario-show~=warn]),html[data-scenario=fail] [data-scenario-show]:not([data-scenario-show~=fail]),html:not([data-scenario]) [data-scenario-show]:not([data-scenario-show~=ok]){display:none!important}\n.pk-list.is-world{border-left:3px solid var(--accent);border-radius:0 var(--r-md) var(--r-md) 0;padding-left:6px}\n.pk-list.is-world .pk-row{position:relative}.pk-list.is-world .pk-row::before{content:\"\";position:absolute;left:-14px;top:50%;width:11px;height:11px;margin-top:-6px;border-radius:50%;background:var(--surface);border:3px solid var(--accent)}\n.fail-box{display:none}\nhtml[data-scenario=fail] .fail-box{display:block}\n.cost-table{display:grid;grid-template-columns:minmax(110px,160px) minmax(0,1fr);gap:6px 14px;margin:0;font-size:12.5px}.cost-table dt{color:var(--text3)}.cost-table dd{margin:0}\n.res-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 12px;border-top:1px solid var(--border);font-size:12.5px}.res-row:first-child{border-top:0}.res-row small{grid-column:1;color:var(--text3)}\n.fd-grid{display:grid;grid-template-columns:minmax(240px,.7fr) minmax(0,1.6fr);gap:14px}\n.cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px}.cmp>div{padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--surface2);font-size:12.5px}.cmp b{display:block;font-size:12px;color:var(--text3);margin-bottom:3px}\n.cmp ins{background:var(--ok-soft);color:var(--ok-ink);text-decoration:none;padding:0 3px;border-radius:3px}.cmp del{background:var(--danger-soft);color:var(--danger-ink);padding:0 3px;border-radius:3px}\n.btn[disabled]+.why{display:block}.why{display:none;font-size:12px;color:var(--danger-ink);margin-top:4px}\n.why.on{display:block}\n@container app (max-width:900px){.fd-grid,.cmp{grid-template-columns:1fr}}\n@container app (max-width:640px){.cost-table{grid-template-columns:1fr}}\n@container app (max-width:900px){\n  .metric-row{grid-template-columns:repeat(2,1fr)}.dash,.pk-layout,.axes{grid-template-columns:1fr}\n  .st-layout{grid-template-columns:1fr}.st-nav{grid-auto-flow:column;grid-auto-columns:max-content;overflow:auto;position:static}.st-nav small{display:none}\n  .pk-list{max-height:260px}\n}\n";
+  // Settings easy/full view (outside the approved mockup stylesheet).
+  const HAYAKU_SETTINGS_EASY_CSS = "\n/* 설정 간편 보기 */\n.hayaku-view-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 16px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\n.hayaku-view-bar>div:first-child{display:grid;gap:2px;min-width:0}.hayaku-view-bar b{font-size:13.5px}\n.hayaku-settings-easy:not(.hayaku-settings-searching) [data-hayaku-advanced]{display:none!important}\n.hayaku-settings-easy .argtag{display:none}\n.hayaku-easy-note{display:none;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;padding:10px 14px;border:1px dashed var(--border2);border-radius:var(--r-sm);font-size:var(--fs-note);color:var(--text2)}\n.hayaku-settings-easy:not(.hayaku-settings-searching) .hayaku-easy-note{display:flex}\n@container app (max-width:640px){.hayaku-view-bar,.hayaku-easy-note{flex-direction:column;align-items:stretch}}\n";
   const HAYAKU_GUI_ICONS = Object.freeze({
     grid:'<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
     layers:'<path d="m12 4 8.5 4.5L12 13 3.5 8.5z"/><path d="m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.5 12 21l8.5-4.5"/>',
@@ -59296,7 +60003,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 누락 복구와 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><div id="hayakuSourceTrackingSettings" class="stack"></div><div id="hayakuSourceEditConsent" class="stack"></div></div></section>
         <section data-recovery-panel="failed" data-subpanel="failed" data-group="rc" hidden><div class="stack"><div class="card"><div class="card__head"><div><h2 class="card__title">실패 후보</h2><p id="hayakuFailedRecoveryAutomationStatus" class="card__desc"></p></div><div class="cluster"><button id="refreshHayakuFailedRecovery" class="btn btn--sm" type="button">새로고침</button><button id="selectAllHayakuFailures" class="btn btn--sm" type="button">전체 선택</button><button id="clearHayakuFailureSelection" class="btn btn--sm" type="button">선택 해제</button><button id="deleteHayakuSelectedFailures" class="btn btn--danger btn--sm" type="button">선택 기록 삭제</button></div></div><div class="search">${hayakuMockupIcon('search','ic ic--sm')}<input id="hayakuFailedRecoveryFilter" class="input" type="search" placeholder="턴·원인·상태 검색" aria-label="실패 기록 검색"></div><span id="hayakuFailedRecoveryFilterCount" class="hint"></span><div class="fd-grid" data-detail-root><div><div id="hayakuFailedRecoveryList" class="list" aria-label="실패 후보 목록"></div><div id="hayakuFailedRecoveryEmpty" class="empty" hidden><b>보관된 실패 분석이 없습니다.</b><span>현재 채팅에서 보관된 실패가 나타납니다.</span></div></div><section id="hayakuFailedRecoveryDetail" class="card" hidden><div class="card__head"><div><div class="eyebrow">Failed recovery</div><h2 id="hayakuFailedRecoveryTitle" class="card__title"></h2><p id="hayakuFailedRecoveryReason" class="card__desc"></p></div><span id="hayakuFailedRecoveryState" class="badge"></span></div><p id="hayakuFailedRecoveryExplanation"></p><p id="hayakuFailedRecoverySummary"></p><p id="hayakuFailedRecoveryHashes" class="hint mono"></p><p id="hayakuFailedRecoveryEvidenceStatus" class="hint"></p><p id="hayakuFailedRecoveryRequestStatus" class="hint"></p><p id="hayakuFailedRecoveryAutomationDetail" class="hint"></p><div class="tabs" role="tablist" aria-label="실패 분석 상세" data-subtabs="hayakuFailureDetail"><button class="tab" type="button" role="tab" aria-selected="true" data-subtab="src">원문 U+A</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="raw">원시 응답</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="dx">진단</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="cand">승격 후보</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="hist">처리 이력</button></div><div data-subpanel="src" data-group="hayakuFailureDetail" class="is-active"><pre id="hayakuFailedRecoverySource" class="json"></pre></div><div data-subpanel="raw" data-group="hayakuFailureDetail" hidden><pre id="hayakuFailedRecoveryRaw" class="json"></pre></div><div data-subpanel="dx" data-group="hayakuFailureDetail" hidden><pre id="hayakuFailedRecoveryGroundingStatus" class="json"></pre></div><div data-subpanel="cand" data-group="hayakuFailureDetail" hidden><pre id="hayakuFailedRecoveryPreview" class="json"></pre><textarea id="hayakuFailedRecoveryEditor" class="textarea" rows="12" hidden></textarea></div><div data-subpanel="hist" data-group="hayakuFailureDetail" hidden><div id="hayakuFailureCaseHistory" class="list"></div></div><p id="hayakuFailedRecoveryActionHint" class="hint"></p><div class="stack stack--sm"><div><button id="adoptHayakuFailedAnalysis" class="btn btn--primary" type="button">후보 확인 후 채택</button></div><div><button id="editHayakuFailedAnalysis" class="btn" type="button">직접 수정·검증</button><button id="saveHayakuFailedAnalysisEdit" class="btn btn--primary" type="button" hidden>수정 후보 저장</button></div><div><button id="autoRepairHayakuFailedAnalysis" class="btn" type="button">AI 다시 분석…</button></div></div><div class="cluster" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)"><span>삭제는 수리와 별개입니다.</span><button id="loadHayakuArchivedFailures" class="btn btn--sm" type="button">보관 진단 읽기</button></div><p id="hayakuFailureDeleteResult" class="hint" hidden></p><p id="hayakuFailedRecoveryMessage" role="status" aria-live="polite"></p><pre id="hayakuArchivedFailures" class="json"></pre></section></div></div></section>
         <section data-recovery-panel="cold" data-subpanel="cold" data-group="rc" hidden><div class="stack"><div class="card fail-box" hidden><div class="empty"><b>원장을 읽지 못해 복구 대상을 계산하지 않습니다.</b><span>AI 작업은 시작할 수 없습니다. 현재 채팅 범위를 다시 확인하세요.</span></div></div><div class="card"><h2 class="card__title">Cold Start</h2><p class="card__desc">기록이 없는 채팅의 완료 턴을 묶음 단위로 분석합니다.</p><div class="cluster"><span class="badge" id="hayakuNativeColdStartState">대기</span><span id="hayakuNativeColdStartProgress">-</span><span>Cold Start 대상 <b id="hayakuNativeColdStartTurns">-</b></span></div><div class="field" style="margin-top:12px"><label for="hayakuColdStartBatchTurns">호출당 U+A</label><select id="hayakuColdStartBatchTurns" class="select" data-no-track aria-label="Cold Start 호출당 U+A"><option value="1">1턴</option><option value="5">5턴</option><option value="10">10턴</option></select><span class="hint">이번 실행에만 적용됩니다. 기본값은 설정 › 복구·안전의 Cold Start 묶음입니다 (저장된 값 <b id="hayakuColdStartSavedValue">-</b>).</span></div><dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>Cold Start</dd><dt>대상 턴</dt><dd id="hayakuColdStartTargetRows">완료된 턴 수는 현재 원장에서 계산합니다.</dd><dt>선택 묶음</dt><dd id="hayakuColdStartBundleCount">-</dd><dt>예상 기본 호출</dt><dd id="hayakuColdStartCallCount">-</dd><dt>추가 복구 허용량</dt><dd>설정에 따른 묶음별 제한</dd></dl><div class="cluster" style="margin-top:12px"><button id="runHayakuNativeColdStart" class="btn btn--primary" type="button">Cold Start 실행…</button><button id="cancelHayakuNativeColdStart" class="btn" type="button">중단 요청</button></div></div></div></section>
-        <div class="grid g2"><div class="card"><h2 class="card__title">자동 복구</h2><p class="card__desc">설정 탭과 같은 값입니다 (한 곳에서만 편집).</p><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">정상 응답 처리 안에서 현재 누락/불가 패킷을 1회 복구합니다. 성공 시에만 원장에 기록합니다.</div></div><span class="badge" id="auto-after" aria-live="polite">설정 확인 중</span></div><div class="setting"><div><div class="setting__name">백그라운드 자동 복구</div><div class="setting__desc">매번 시작 전에 확인을 요청합니다.</div></div><span class="badge" id="auto-bg" aria-live="polite">설정 확인 중</span></div><button class="linkbtn" id="hayakuRecoverySettingsLink" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경 →</button></div><div class="card"><h2 class="card__title">기억 복원 · Portable JSON</h2><p class="card__desc">같은 채팅은 교체 복원, 다른 채팅은 이사/복사 모드만 허용됩니다. 작업 전 대상 기억을 자동 백업합니다.</p><div data-portable-backup-host="hayaku_locator_continuity"></div></div></div>
+        <div class="grid g2"><div class="card"><h2 class="card__title">자동 복구</h2><p class="card__desc">설정 탭과 같은 값입니다 (한 곳에서만 편집).</p><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">정상 응답 처리 안에서 현재 누락/불가 패킷을 1회 복구합니다. 유일한 자동 복구 단계이며, 실패하거나 건너뛴 턴은 Recovery Journal에 남아 아래 수동 복구를 기다립니다.</div></div><span class="badge" id="auto-after" aria-live="polite">설정 확인 중</span></div><button class="linkbtn" id="hayakuRecoverySettingsLink" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경 →</button></div><div class="card"><h2 class="card__title">기억 복원 · Portable JSON</h2><p class="card__desc">같은 채팅은 교체 복원, 다른 채팅은 이사/복사 모드만 허용됩니다. 작업 전 대상 기억을 자동 백업합니다.</p><div data-portable-backup-host="hayaku_locator_continuity"></div></div></div>
         <details class="fold"><summary>안전 검사 도구</summary><div class="fold__body"><div class="cluster"><button id="hayakuSafeHealthInspect" class="btn" type="button">읽기 전용 검사</button><button id="hayakuSafeHealthPreview" class="btn" type="button">안전 복구 미리보기</button><button id="hayakuSafeHealthApply" class="btn" type="button" disabled>캐시 복구</button></div><p id="hayakuSafeHealthStatus" role="status">원문·정본 전체를 검사하는 기능은 아닙니다.</p></div></details>
       </div></section>`;
     const serverPage = `<section class="page" id="hayakuViewerPanelServer" data-hayaku-viewer-panel="server" data-page="server" role="tabpanel" aria-labelledby="hayakuViewerTabServer" hidden><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">서버 연결</h1><p class="page-desc">Storage와 Compute는 독립된 연결입니다. 공용 연결 패널을 같은 토큰으로 감쌉니다.</p></div></div><div class="grid g2"><div class="card" id="hayakuMemorySuiteServerConnectionPanel"></div></div></section>`;
@@ -59306,7 +60013,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       <div class="stack"><div class="search">${hayakuMockupIcon('search')}<input id="hayakuLogFilter" class="input" type="search" placeholder="로그 내용으로 찾기" aria-label="로그 검색"></div><div class="cluster"><span>로그 <b id="hayakuViewerLogCount">0</b></span><button id="refreshHayakuLog" class="btn btn--sm" type="button">새로고침</button><button id="showHayakuDebug" class="btn btn--sm" type="button">JSON 보기</button><span id="hayakuLogFilterCount" class="hint"></span></div><div id="hayakuViewerOperationLog" class="list"></div>
         <details class="fold"><summary>진단 · 내보내기 자료</summary><div class="stack"><div class="card"><div class="card__head"><div><h2 class="card__title">내부 오류 진단</h2><p class="card__desc">현재 실행에서 기록된 오류를 확인합니다.</p></div><div class="cluster"><button id="refreshHayakuSwallowedDiag" class="btn btn--sm" type="button">새로고침</button><button id="resetHayakuSwallowedDiag" class="btn btn--sm" type="button">진단 초기화</button><b id="hayakuViewerSwallowedDiagCount">0</b></div></div><div class="search">${hayakuMockupIcon('search')}<input id="hayakuSwallowedDiagFilter" class="input" type="search" placeholder="오류 검색" aria-label="오류 검색"></div><span id="hayakuSwallowedDiagFilterCount" class="hint"></span><div id="hayakuViewerSwallowedDiag" class="list"></div></div><details class="fold"><summary>복구 진단 JSON</summary><div class="fold__body"><p>현재 채팅의 복구 자격·Debt 상태를 확인하는 읽기 자료입니다.</p><dl class="kv"><dt>현재 상태</dt><dd id="hayakuNativeRecoveryState">-</dd><dt>coverage</dt><dd id="hayakuNativeCoverageSummary">-</dd><dt>Debt</dt><dd id="hayakuNativeDebtCount">-</dd><dt>복구 가능</dt><dd id="hayakuNativeRepairableCount">-</dd><dt>현재 작업</dt><dd id="hayakuNativeRepairCurrent">-</dd><dt>다음 재시도</dt><dd id="hayakuNativeNextRetry">-</dd><dt>복구 가능 턴</dt><dd id="hayakuNativeRepairableTurns">-</dd><dt>재시도 대기</dt><dd id="hayakuNativeBackoffTurns">-</dd><dt>횟수 초과</dt><dd id="hayakuNativeExhaustedTurns">-</dd><dt>다른 작업 점유</dt><dd id="hayakuNativeLeasedTurns">-</dd><dt>사용자 제외</dt><dd id="hayakuNativeSuppressedTurns">-</dd></dl><pre id="hayakuNativeRecoveryJson" class="json"></pre></div></details><section id="hayakuViewerDebugExportPanel" class="card"><div class="card__head"><div><h2 class="card__title">디버그 JSON</h2><p class="card__desc">민감한 값을 제거한 현재 실행 자료입니다.</p></div><button id="clearHayakuDebugText" class="btn btn--sm" type="button">JSON 표시 닫기</button></div><pre id="hayakuViewerDebugExportText"></pre></section></div></details>
       </div></section>`;
-    root.innerHTML = `<style>${HAYAKU_GUI_SUITE_CSS}\n${HAYAKU_GUI_THEME_CSS}\n${HAYAKU_GUI_COMPONENT_CSS}\n#${LEDGER_VIEWER_ROOT_ID}{position:fixed;inset:0;width:100%;height:100dvh;z-index:2147483000;background:var(--page-bg,#cdd5d8);font:var(--fs-body)/1.65 var(--font-sans);color:var(--text)}#${LEDGER_VIEWER_ROOT_ID} .stage{width:100%;height:100%;padding:14px;overflow:auto}#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button[hidden]{display:none!important}#${LEDGER_VIEWER_ROOT_ID} .mapping-incomplete{display:grid;gap:8px}
+    root.innerHTML = `<style>${HAYAKU_GUI_SUITE_CSS}\n${HAYAKU_GUI_THEME_CSS}\n${HAYAKU_GUI_COMPONENT_CSS}\n${HAYAKU_SETTINGS_EASY_CSS}\n#${LEDGER_VIEWER_ROOT_ID}{position:fixed;inset:0;width:100%;height:100dvh;z-index:2147483000;background:var(--page-bg,#cdd5d8);font:var(--fs-body)/1.65 var(--font-sans);color:var(--text)}#${LEDGER_VIEWER_ROOT_ID} .stage{width:100%;height:100%;padding:14px;overflow:auto}#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button[hidden]{display:none!important}#${LEDGER_VIEWER_ROOT_ID} .mapping-incomplete{display:grid;gap:8px}
 /* Preserve the reference single-column mobile layout while allowing intrinsic content to shrink inside its panel. */
 #${LEDGER_VIEWER_ROOT_ID} .pk-layout{min-width:0}
 @container app (max-width:900px){#${LEDGER_VIEWER_ROOT_ID} .pk-layout{grid-template-columns:minmax(0,1fr)}}
@@ -59325,7 +60032,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           <section class="page is-active" id="hayakuViewerPanelOverview" data-hayaku-viewer-panel="overview" data-page="overview" role="tabpanel" aria-labelledby="hayakuViewerTabOverview">
             <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Continuity status</div><h1 class="page-title">연속성 관제</h1><p class="page-desc">완료된 턴마다 기억 패킷이 이어져 있는지 한눈에 확인합니다. 이 화면은 읽기 전용입니다.</p></div><div class="page-actions"><button class="btn" data-hayaku-viewer-goto="recovery" type="button">${hayakuMockupIcon('wrench')}구간 점검</button><button id="hayakuOverviewReconcile" class="btn btn--primary" type="button">${hayakuMockupIcon('refresh')}다시 대조</button></div></div>
             <div class="stack">
-              <div id="hayakuOverviewHealth" class="banner banner--danger"><div class="banner__icon">${hayakuMockupIcon('alert')}</div><div><b id="hayakuOverviewHealthTitle">현재 채팅 원장을 확인하고 있습니다.</b><span id="hayakuOverviewHealthCopy">데이터를 변경하지 않고 현재 채팅의 원장 상태를 읽습니다.</span></div><span id="hayakuOverviewCoverageBadge" class="badge">coverage 미확인</span></div>
+              <div id="hayakuOverviewHealth" class="banner banner--danger"><div class="banner__icon">${hayakuMockupIcon('alert')}</div><div><b id="hayakuOverviewHealthTitle">현재 채팅 원장을 확인하고 있습니다.</b><span id="hayakuOverviewHealthCopy">데이터를 변경하지 않고 현재 채팅의 원장 상태를 읽습니다.</span></div><span id="hayakuOverviewCoverageBadge" class="badge">연결률 미확인</span></div>
               <div id="hayakuOverviewFailBox" class="card fail-box"><div class="empty"><b>원장을 읽지 못해 수치와 노선도를 표시하지 않습니다.</b><span>정상 수치를 그대로 보여주지 않습니다. 다시 대조해 현재 채팅 범위를 확인하세요.</span></div></div>
               <div class="metric-row" id="hayakuOverviewMetrics"><div class="card card--tight"><div class="label">패킷 원장</div><div class="stat__value"><span id="hayakuOverviewPackets">-</span><small style="font-size:16px"> / <span id="hayakuOverviewPacketsDenominator">-</span></small></div><div class="stat__meta">활성·영구 / 전체 레코드</div></div><div class="card card--tight"><div class="label">기억이 연결된 턴</div><div class="stat__value"><span id="hayakuOverviewCoverage">-</span><small style="font-size:16px"> / <span id="hayakuOverviewCoverageDenominator">-</span></small></div><div class="stat__meta">패킷 보유 / 완료 U+A</div></div><div class="card card--tight"><div class="label">복구 대기</div><div class="stat__value" id="hayakuOverviewJournal">-</div><div class="stat__meta" id="hayakuOverviewJournalMeta">Recovery Journal 확인 중</div></div><div class="card card--tight"><div class="label">이번 회상</div><div class="stat__value" id="hayakuOverviewRecallCount">0</div><div class="stat__meta" id="hayakuOverviewRecallMeta">이번 실행 기록 없음</div></div></div>
               <div class="card" id="hayakuOverviewRouteCard"><div class="card__head"><div><h2 class="card__title">연속성 노선도</h2><p class="card__desc">최근 24턴. 점을 누르면 해당 패킷(또는 점검 화면)으로 이동합니다.</p></div><button class="btn btn--sm" data-hayaku-viewer-goto="packets" type="button">전체 기록 →</button></div><div id="hayakuContinuityLine" class="route" tabindex="0" aria-label="최근 24턴 연속성 노선도"><div class="route__track" id="route"></div></div><div class="legend"><span><i></i>패킷 연결됨</span><span><i class="m"></i>누락</span><span><i class="w"></i>검토 대기</span><span><i class="f"></i>복구 실패</span><span><i class="s"></i>사용자 제외</span></div></div>
@@ -59338,6 +60045,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       </div></div>`;
     root.dataset.hayakuViewerMounted = '1';
     const settingsWiring = viewerWireSettingsMarkup(root);
+    try { viewerInstallSettingsEasyView(root); } catch (_e) { try { globalThis.__librarianDiag && globalThis.__librarianDiag('hayaku', 'viewer.settings.easy_view', _e); } catch (__) {} }
     if (settingsWiring.missing.length) {
       pushOperationLog('settings:markup_binding_incomplete', { missing: settingsWiring.missing }, 'error');
     }
@@ -59600,6 +60308,259 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     };
   };
 
+  // Zero-touch attention: a single chat button that exists only while the user has
+  // something to do (auxiliary model broken, Cold Start pending, turns without memory,
+  // unclear packet position). It never blocks, never calls a provider by itself except
+  // one bounded auxiliary connectivity probe, and disappears once the cause is gone.
+  const HAYAKU_ATTENTION_BUTTON_UI_ID = 'hayaku-locator-continuity-attention';
+  // Match the owner-marked LIBRA button while keeping HAYAKU identifiable even
+  // when the host hides button names and only renders the icon.
+  const hayakuAttentionIcon = kind => {
+    const warning = ['aux', 'missing'].includes(kind), action = kind === 'cold_start';
+    const label = warning ? '확인 필요' : action ? '지난 대화 기억 만들기' : '안내';
+    const badge = warning ? '#dc2626' : action ? '#fbbf24' : '#0e7490';
+    const mark = warning ? 'M25 3.5v4M25 10v.15' : action ? 'M25 3.5V7l2 1.5' : 'M25 6v4M25 3.5v.15';
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 32 32" role="img" aria-label="HAYAKU · ${label}" data-memory-owner="hayaku"><title>HAYAKU · ${label}</title><rect x="2" y="5" width="25" height="25" rx="7" fill="#b45309" stroke="#fcd34d"/><text x="14.5" y="24" text-anchor="middle" font-family="system-ui,sans-serif" font-size="20" font-weight="800" fill="#fff">H</text><circle cx="25" cy="7" r="6" fill="${badge}" stroke="#fff" stroke-width="1.5"/><path d="${mark}" fill="none" stroke="${action ? '#422006' : '#fff'}" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+  };
+  const HAYAKU_AUX_PROBE_CACHE_KEY = 'hayaku.auxProbe.v1';
+  const HAYAKU_AUX_PROBE_FRESH_MS = 7 * 24 * 60 * 60 * 1000;
+  const HAYAKU_ATTENTION_REFRESH_DELAY_MS = 2500;
+  const HAYAKU_ATTENTION_POLL_MS = 10000;
+  const HAYAKU_ATTENTION_AUTO_PROBE_DELAY_MS = 30000;
+  const HAYAKU_PLACEMENT_WARNING_LABELS = Object.freeze({
+    ambiguous_output_slot_use_verified_override: '프리셋에 출력 감싸기 태그가 여러 개라 패킷을 응답 끝에 둡니다.',
+    requested_closing_tag_not_in_active_output_contract: '설정한 닫는 태그가 현재 프리셋에 없어 자동 위치를 씁니다.',
+    required_footer_not_confirmed: 'footer 위치를 확인하지 못해 자동 위치를 씁니다.',
+    tail_conflicts_with_required_output_slot: '프리셋이 요구하는 출력 위치가 있어 응답 끝 지정과 충돌합니다.'
+  });
+  const hayakuPlacementWarningLabel = code => HAYAKU_PLACEMENT_WARNING_LABELS[text(code)] || text(code);
+  const HayakuAttention = {
+    started: false, refreshTimer: null, pollTimer: null, probeTimer: null, evaluating: false, dirty: false,
+    lastIndexes: '', buttonSignature: '', state: null, lastOtherAxSuccessAt: 0, autoProbeAttempted: false,
+    chatObserved: false, dismissedPlacement: new Set(), inspectedKey: '', inspected: null
+  };
+  let auxProbeCache = null;
+  const readAuxProbeCache = () => auxProbeCache;
+  const loadAuxProbeCache = async () => {
+    try {
+      const { values } = await RisuCompat.literalDeviceStorageAuthority([HAYAKU_AUX_PROBE_CACHE_KEY]);
+      const raw = values[0] ?? globalThis.localStorage?.getItem?.(HAYAKU_AUX_PROBE_CACHE_KEY);
+      const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      auxProbeCache = objectish(value) && Number(value.at) > 0 && Number(value.at) <= now() ? value : null;
+    } catch (_) { auxProbeCache = null; }
+    return auxProbeCache;
+  };
+  const writeAuxProbeCache = async ok => {
+    const value = { ok: ok === true, at: now() };
+    auxProbeCache = value;
+    try {
+      const { provider } = await RisuCompat.literalDeviceStorageAuthority([]);
+      if (typeof provider?.setItem === 'function') await provider.setItem(HAYAKU_AUX_PROBE_CACHE_KEY, JSON.stringify(value));
+      else globalThis.localStorage?.setItem?.(HAYAKU_AUX_PROBE_CACHE_KEY, JSON.stringify(value));
+    } catch (_) { /* Session readiness remains usable if device storage fails. */ }
+  };
+  const markHayakuAuxiliaryReady = async () => {
+    HayakuAttention.lastOtherAxSuccessAt = now();
+    await writeAuxProbeCache(true);
+  };
+  // ready | failed | unavailable | unknown. Only a probe or a real call decides.
+  const hayakuAuxiliaryReadiness = () => {
+    if (!nativeLlmApiResolution().api) return 'unavailable';
+    const last = Memory.nativeRecovery?.auxiliaryProbe?.last;
+    if (HayakuAttention.lastOtherAxSuccessAt > 0 && Number(last?.finishedAt || 0) <= HayakuAttention.lastOtherAxSuccessAt) return 'ready';
+    if (last?.status === 'complete') return 'ready';
+    if (last?.status === 'failed') return 'failed';
+    const cached = readAuxProbeCache();
+    if (cached?.ok === true && now() - Number(cached.at || 0) < HAYAKU_AUX_PROBE_FRESH_MS) return 'ready';
+    return 'unknown';
+  };
+  const hayakuAttentionBusy = () => Memory.unloaded || !ownsRuntime()
+    || Memory.finalizedCaptureInFlight?.size > 0 || Memory.finalizedBindingInFlight?.size > 0 || Memory.capturePersistInFlight?.size > 0
+    || Memory.nativeRecovery.repairInFlight || Memory.nativeRecovery.coldStartInFlight || Memory.nativeRecovery.manualBatchInFlight
+    || Memory.nativeRecovery.auxiliaryProbe?.inFlight
+    || (Memory.nativeRecovery.job && !NATIVE_JOB_TERMINAL_STATES.has(Memory.nativeRecovery.job.state));
+  // Pure decision from already-computed facts; exported for tests.
+  const hayakuAttentionDecision = ({ aux = 'unknown', mode = 'empty', completedTurns = 0, missing = 0, placementWarning = '', placementDismissed = false } = {}) => {
+    const needsAux = mode === 'cold_start' || missing > 0;
+    if (aux === 'failed' || (aux === 'unavailable' && needsAux)) {
+      return { kind: 'aux', count: 0, icon: '⚠️', name: `${PLUGIN_NAME} · 보조 모델 연결 필요`, tab: 'recovery', subtab: 'miss' };
+    }
+    if (mode === 'cold_start' && completedTurns > 0) {
+      return { kind: 'cold_start', count: completedTurns, icon: '🕘', name: `${PLUGIN_NAME} · 지난 ${completedTurns}턴 기억 만들기`, tab: 'recovery', subtab: 'cold' };
+    }
+    if (missing > 0) {
+      return { kind: 'missing', count: missing, icon: '⚠️', name: `${PLUGIN_NAME} · 기억 없는 턴 ${missing}개`, tab: 'recovery', subtab: 'miss' };
+    }
+    if (placementWarning && !placementDismissed) {
+      return { kind: 'placement', count: 0, icon: 'ℹ️', name: `${PLUGIN_NAME} · 패킷 위치 확인`, tab: 'settings', subtab: 'basic', warning: placementWarning };
+    }
+    return { kind: '', count: 0 };
+  };
+  const computeHayakuAttention = async () => {
+    await loadSettings(false);
+    if (Memory.settings?.enabled === false) return { scopeKey: '', kind: '' };
+    const scope = await RisuCompat.currentChatScope();
+    if (!scope?.confident || !scope?.key || scope.chatMessagesAvailable !== true) return { scopeKey: '', kind: '' };
+    const summary = await loadStorageLedgerSummary(scope);
+    if (summary.enabled !== true) return { scopeKey: scope.key, kind: '' };
+    const quick = nativeColdStartExistingPacketState(scope, summary);
+    let completedTurns = Math.max(0, Number(quick.coverage?.completedTurns || 0) || 0);
+    let mode = completedTurns === 0 ? 'empty' : !quick.hasExistingPackets ? 'cold_start' : ensureArray(quick.coverage?.missingTurns).length ? 'incremental_missing' : 'complete';
+    let missing = mode === 'incremental_missing' ? ensureArray(quick.coverage?.missingTurns).length : 0;
+    if (mode === 'cold_start' || mode === 'incremental_missing') {
+      // Confirm with the same inspection the recovery screen uses (copied chats,
+      // journal debts), but only once per transcript/ledger state.
+      const inspectKey = `${scope.key}\u0001${quick.coverage?.sourceFingerprint || ''}\u0001${summary.logicalRecordCount || 0}\u0001${ensureArray(summary.records).length}`;
+      if (HayakuAttention.inspectedKey !== inspectKey) {
+        const inspected = await inspectRecoveryDebtsForNativeRepair({ includeEvidence: false, limit: 1 }).catch(() => null);
+        HayakuAttention.inspected = inspected?.available === true && inspected.scopeKey === scope.key ? clone(inspected.coverage, null) : null;
+        HayakuAttention.inspectedKey = inspectKey;
+      }
+      const coverage = HayakuAttention.inspected;
+      if (coverage) {
+        mode = text(coverage.mode || mode);
+        completedTurns = Math.max(0, Number(coverage.completedTurns || completedTurns) || 0);
+        missing = mode === 'cold_start' ? 0 : Math.max(0, Number(coverage.activeDebtCount || 0) || 0);
+      }
+    }
+    const before = Memory.lastBeforeRequest?.scopeKey === scope.key ? Memory.lastBeforeRequest : null;
+    const placementWarning = text(before?.outputContract?.packetPlacementWarning || '');
+    const decision = hayakuAttentionDecision({ aux: hayakuAuxiliaryReadiness(), mode, completedTurns, missing,
+      placementWarning, placementDismissed: HayakuAttention.dismissedPlacement.has(`${scope.key}\u0001${placementWarning}`) });
+    return { ...decision, scopeKey: scope.key, mode, missing, completedTurns, placementWarning, checkedAt: now() };
+  };
+  const syncHayakuAttentionButton = async next => {
+    const signature = next?.kind ? `${next.kind}:${next.count}:${next.scopeKey}` : '';
+    if (signature === HayakuAttention.buttonSignature) return true;
+    const uiApi = apiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || null;
+    const buttonApi = apiCandidates().find(candidate => typeof candidate?.registerButton === 'function') || null;
+    if (HayakuAttention.buttonSignature && uiApi) { try { await uiApi.unregisterUIPart(HAYAKU_ATTENTION_BUTTON_UI_ID); } catch (_) {} }
+    HayakuAttention.buttonSignature = '';
+    if (!next?.kind || !buttonApi || Memory.unloaded || !ownsRuntime()) return !next?.kind;
+    try {
+      await buttonApi.registerButton({ name: next.name, icon: hayakuAttentionIcon(next.kind), iconType: 'html', location: 'chat', id: HAYAKU_ATTENTION_BUTTON_UI_ID },
+        () => { void openHayakuAttention(); });
+      HayakuAttention.buttonSignature = signature;
+      pushOperationLog('attention:shown', { kind: next.kind, count: next.count }, 'info');
+      return true;
+    } catch (error) {
+      Memory.lastWarnings = [...ensureArray(Memory.lastWarnings), `attention_button_failed:${compact(error?.message || error, 120)}`].slice(-20);
+      return false;
+    }
+  };
+  const cancelHayakuAutoProbe = () => {
+    if (HayakuAttention.probeTimer) clearTimeout(HayakuAttention.probeTimer);
+    HayakuAttention.probeTimer = null;
+  };
+  const scheduleHayakuAutoProbe = () => {
+    if (Memory.settings?.enabled === false || Memory.unloaded || !ownsRuntime()) return false;
+    if (HayakuAttention.autoProbeAttempted || HayakuAttention.probeTimer || !HayakuAttention.chatObserved) return false;
+    if (hayakuAuxiliaryReadiness() !== 'unknown') return false;
+    HayakuAttention.probeTimer = setTimeout(async () => {
+      HayakuAttention.probeTimer = null;
+      if ((await loadSettings(true))?.enabled === false || Memory.unloaded || !ownsRuntime() || hayakuAuxiliaryReadiness() !== 'unknown') return;
+      if (hayakuAttentionBusy()) { scheduleHayakuAutoProbe(); return; }
+      HayakuAttention.autoProbeAttempted = true;
+      const result = await runNativeAuxiliaryProbe({ automatic: true }).catch(() => null);
+      if (result?.status === 'cancelled') { HayakuAttention.autoProbeAttempted = false; return; }
+      if (result?.status === 'busy') { HayakuAttention.autoProbeAttempted = false; scheduleHayakuAutoProbe(); return; }
+      if (result && result.status !== 'cancelled') await writeAuxProbeCache(result.ok === true);
+      pushOperationLog('attention:auxiliary_probe', { ok: result?.ok === true, code: compact(result?.error?.code || '', 96) }, result?.ok ? 'info' : 'warn');
+      scheduleHayakuAttentionRefresh('auxiliary_probe', 0);
+    }, HAYAKU_ATTENTION_AUTO_PROBE_DELAY_MS);
+    HayakuAttention.probeTimer?.unref?.();
+    return true;
+  };
+  const refreshHayakuAttention = async () => {
+    if (!HayakuAttention.started || Memory.unloaded || !ownsRuntime()) return null;
+    if (HayakuAttention.evaluating || hayakuAttentionBusy()) { scheduleHayakuAttentionRefresh('busy'); return null; }
+    HayakuAttention.evaluating = true;
+    try {
+      const next = await computeHayakuAttention();
+      if (Memory.unloaded || !ownsRuntime()) return null;
+      HayakuAttention.state = next;
+      await syncHayakuAttentionButton(next);
+      scheduleHayakuAutoProbe();
+      return next;
+    } catch (error) {
+      Memory.lastWarnings = [...ensureArray(Memory.lastWarnings), `attention_refresh_failed:${compact(error?.message || error, 120)}`].slice(-20);
+      return null;
+    } finally {
+      HayakuAttention.evaluating = false;
+    }
+  };
+  function scheduleHayakuAttentionRefresh(reason = '', delay = HAYAKU_ATTENTION_REFRESH_DELAY_MS) {
+    if (!HayakuAttention.started || Memory.unloaded) return false;
+    if (reason === 'chat_output') HayakuAttention.chatObserved = true;
+    if (HayakuAttention.refreshTimer) clearTimeout(HayakuAttention.refreshTimer);
+    HayakuAttention.refreshTimer = setTimeout(() => { HayakuAttention.refreshTimer = null; void refreshHayakuAttention(); }, Math.max(0, Number(delay) || 0));
+    HayakuAttention.refreshTimer?.unref?.();
+    return true;
+  }
+  // Cheap chat-switch detection: two index reads, never the transcript.
+  const pollHayakuAttention = async () => {
+    HayakuAttention.pollTimer = null;
+    if (!HayakuAttention.started || Memory.unloaded || !ownsRuntime()) return;
+    try {
+      const indexApi = apiCandidates().find(candidate => typeof candidate?.getCurrentCharacterIndex === 'function' && typeof candidate?.getCurrentChatIndex === 'function');
+      if (indexApi) {
+        const indexes = `${await indexApi.getCurrentCharacterIndex()}:${await indexApi.getCurrentChatIndex()}`;
+        if (indexes !== HayakuAttention.lastIndexes) {
+          HayakuAttention.lastIndexes = indexes;
+          scheduleHayakuAttentionRefresh('chat_switch', 500);
+        }
+      }
+    } catch (_) {}
+    if (!Memory.unloaded) { HayakuAttention.pollTimer = setTimeout(() => void pollHayakuAttention(), HAYAKU_ATTENTION_POLL_MS); HayakuAttention.pollTimer?.unref?.(); }
+  };
+  const startHayakuAttention = () => {
+    if (HayakuAttention.started || Memory.unloaded || !ownsRuntime()) return false;
+    HayakuAttention.started = true;
+    void pollHayakuAttention();
+    return true;
+  };
+  const stopHayakuAttention = async () => {
+    for (const key of ['refreshTimer', 'pollTimer', 'probeTimer']) {
+      if (HayakuAttention[key]) { try { clearTimeout(HayakuAttention[key]); } catch (_) {} HayakuAttention[key] = null; }
+    }
+    HayakuAttention.started = false;
+    if (HayakuAttention.buttonSignature) {
+      const uiApi = apiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || null;
+      try { await uiApi?.unregisterUIPart?.(HAYAKU_ATTENTION_BUTTON_UI_ID); } catch (_) {}
+      HayakuAttention.buttonSignature = '';
+    }
+  };
+  // The button opens the screen that resolves the cause. Cold Start and auxiliary
+  // checks still go through their existing confirmation/visible result.
+  async function openHayakuAttention() {
+    const state = HayakuAttention.state;
+    if (!state?.kind || Memory.unloaded || !ownsRuntime()) return false;
+    const shown = await showLedgerViewer();
+    if (!shown) return false;
+    viewerSetTab(state.tab);
+    const root = Memory.ledgerViewer.root;
+    const group = state.tab === 'settings' ? 'st' : 'rc';
+    root?.querySelector?.(`[data-subtabs="${group}"] [data-subtab="${state.subtab}"]`)?.click?.();
+    if (state.kind === 'aux') {
+      viewerRecoveryMessage('RisuAI 보조 모델(Other Ax)을 호출하지 못했습니다. RisuAI 설정에서 보조 모델을 지정한 뒤 다시 확인합니다. 확인 요청 1회를 보냅니다.', true);
+      const result = await runNativeAuxiliaryProbe().catch(() => null);
+      if (result && result.status !== 'cancelled') await writeAuxProbeCache(result.ok === true);
+      if (typeof viewerRenderAuxiliaryProbe === 'function') viewerRenderAuxiliaryProbe();
+      viewerRecoveryMessage(result?.ok ? '보조 모델 연결을 확인했습니다. 이제 누락된 패킷을 자동으로 복구합니다.'
+        : `보조 모델 연결 실패 · ${compact(result?.error?.message || result?.status || '응답 없음', 160)}. RisuAI 설정 → 보조 모델(Other Ax)을 확인하세요.`, result?.ok !== true);
+    } else if (state.kind === 'cold_start') {
+      viewerRecoveryMessage(`이 채팅의 지난 ${state.count}턴은 아직 HAYAKU 기억이 없습니다. 비용을 확인한 뒤 시작하세요.`);
+      await viewerRunNativeColdStart();
+    } else if (state.kind === 'missing') {
+      viewerRecoveryMessage(`기억이 없는 턴 ${state.count}개가 있습니다. 복구할 턴을 고르면 비용을 확인한 뒤 시작합니다. 원하지 않는 턴은 제외할 수 있습니다.`);
+    } else if (state.kind === 'placement') {
+      HayakuAttention.dismissedPlacement.add(`${state.scopeKey}\u0001${state.warning}`);
+      viewerSetSettingsMessage(`패킷 위치 · ${hayakuPlacementWarningLabel(state.warning)} 패킷은 계속 저장됩니다. 프리셋 형식이 깨지면 '패킷 출력 위치'를 wrapper로 바꾸고 닫는 태그를 지정하세요.`);
+    }
+    scheduleHayakuAttentionRefresh('opened');
+    return true;
+  }
+
   let ledgerViewerUiRetryTimer = null;
   let ledgerViewerUiRegistrationRunning = false;
   let ledgerViewerUiRegistrationAttempts = 0;
@@ -59612,6 +60573,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const result = await registerLedgerViewerUi();
       ready = result.setting && result.button;
       debugLog('install:ledger_viewer', result);
+      if (ready || result.button) startHayakuAttention();
     } catch (error) {
       debugError('install:ledger_viewer_failed', error);
     } finally {
@@ -60213,6 +61175,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         nativePacketAuthoringPrompt,
         nativeAnalysisRepairPromptWithFailure,
         validateNativeRepairEnvelopeShape,
+        hayakuAttentionDecision, computeHayakuAttention, refreshHayakuAttention, hayakuAuxiliaryReadiness, HayakuAttention,
+        startHayakuAttention, stopHayakuAttention, openHayakuAttention, hayakuPlacementWarningLabel,
         runFailedAutoRecovery, scheduleFailedAutoRecovery, failedAutoJournalKey, failedAutoJournalHash,
         validateNativeRepairGrounding,
         validateNativeRepairCoverage,
@@ -60256,7 +61220,6 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         viewerRenderFailedRecovery,
         viewerResolveFailedRecovery,
         viewerRenderNativeJob,
-        showIndependentRecoveryConfirmation,
         failedAnalysisReasonExplanation,
         inspectFailedAnalysisAdoption,
         failedAnalysisAdoptionBinding,
@@ -60275,7 +61238,6 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         acquireRecoveryDebtLeaseForNativeRepair,
         releaseRecoveryDebtLeaseForNativeRepair,
         updateRecoveryJournalBackgroundDecision,
-        requestRecoveryJournalBackgroundConfirmation,
         resolveRecoveryJournalBackgroundConfirmation,
         minimizeIndependentRecoveryConfirmation,
         inheritRecoveryVaultForBridgeSession,
@@ -60644,6 +61606,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (!earlyBridgeIpc) scheduleMemoryBridgeIpcRetry();
       await RisuCompat.refreshInfo();
       await loadSettings(true);
+      await loadAuxProbeCache();
       await ensureHayakuSourceInputReady('install');
       const legacyStorage = await RisuCompat.purgeLegacyHayakuStorage();
       if (!ownsRuntime()) return;
@@ -60816,6 +61779,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         for(const timer of (Memory.nativeRecovery.confirmationTimers?.values()||[]))if(timer)clearTimeout(timer);
         Memory.nativeRecovery.confirmationTimers?.clear();
         Memory.nativeRecovery.manualBatchCancelRequested=true;
+        await gradiaPluginReadOwner?.dispose();
         hayakuSourceInput?.dispose();
         stopWorldlineTopologyObserver();
         if (Memory.ledgerViewer.jobTicker) {
@@ -60823,6 +61787,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           Memory.ledgerViewer.jobTicker = null;
         }
         await removeMemoryBridgeIpc();
+        await stopHayakuAttention();
         await unregisterLedgerViewerUiPartsIfOwner();
         Memory.capturePersistInFlight.clear();
         Memory.capturePersistRecent.clear();

@@ -1,0 +1,440 @@
+{
+  "schema": "memory-suite.rag-eval.v1",
+  "description": "30-turn Korean RP chat with planted facts, distractors and three question families. Gold turns are 1-based U+A pair indexes; a question is a hit when every expected substring appears in the delivered memory text. The latest turn is visible in the prompt itself and is never expected in recalled memory.",
+  "turns": [
+    [
+      "오늘 처음 항구 마을에 도착했어.",
+      "바람이 짠 항구 마을이네요. 안내인 유나가 반갑게 손을 흔듭니다."
+    ],
+    [
+      "유나에게 묵을 곳을 물어봤어.",
+      "유나는 등대 여관을 추천했습니다. 하룻밤에 은화 세 닢이라고 합니다."
+    ],
+    [
+      "시장 구경을 갔어.",
+      "항구 시장에는 생선 장수와 향신료 상인들이 북적입니다. 상인 서린이 푸른 비단을 팔고 있습니다."
+    ],
+    [
+      "서린에게 비단 값을 물었어.",
+      "서린은 푸른 비단 한 필에 금화 일곱 닢을 불렀습니다. 흥정은 받지 않는다고 합니다."
+    ],
+    [
+      "하준이라는 사람이 나를 노려봤어.",
+      "검은 외투를 입은 하준은 당신을 경계하듯 바라보다가 골목으로 사라졌습니다."
+    ],
+    [
+      "유나에게 하준에 대해 물어봤어.",
+      "유나는 하준이 예전에 도서관 기록을 훔치다 쫓겨난 사람이라고 귀띔했습니다."
+    ],
+    [
+      "북쪽 탑에 올라가 봤어.",
+      "북쪽 탑 꼭대기에는 녹슨 망원경과 깨진 별자리 지도가 있습니다."
+    ],
+    [
+      "별자리 지도를 자세히 봤어.",
+      "지도 뒷면에 달이 세 번 차면 문이 열린다는 문장이 적혀 있습니다."
+    ],
+    [
+      "배가 고파서 식당에 갔어.",
+      "식당 주인은 오늘의 요리로 고등어 구이를 내왔습니다. 맛이 훌륭합니다."
+    ],
+    [
+      "유나가 갑자기 울었어.",
+      "유나는 어릴 적 잃어버린 동생 이야기를 꺼내며 눈물을 흘렸습니다. 동생의 이름은 미루였다고 합니다."
+    ],
+    [
+      "유나를 위로했어.",
+      "당신의 위로에 유나는 조금 진정했고, 고맙다며 작은 조개 목걸이를 건넸습니다."
+    ],
+    [
+      "하준이 여관에 찾아왔어.",
+      "하준은 문 앞에서 탑의 지도를 넘기면 동생의 행방을 알려주겠다고 거래를 제안했습니다."
+    ],
+    [
+      "하준의 제안을 거절했어.",
+      "하준은 이를 악물며 분노했고, 후회하게 될 거라는 말을 남기고 떠났습니다."
+    ],
+    [
+      "다음 날 시장에서 서린을 다시 만났어.",
+      "서린은 어젯밤 누군가 자기 창고에 몰래 들어왔다며 불안해했습니다."
+    ],
+    [
+      "서린의 창고를 같이 조사했어.",
+      "창고 바닥에서 검은 외투 단추 하나와 젖은 발자국을 찾았습니다."
+    ],
+    [
+      "유나와 함께 지하 서고에 갔어.",
+      "지하 서고 입구는 무거운 철문으로 막혀 있고, 문에는 초승달 모양 홈이 파여 있습니다."
+    ],
+    [
+      "비가 많이 왔어.",
+      "폭우가 하루 종일 이어져 항구의 배들이 모두 묶였습니다."
+    ],
+    [
+      "여관 주인과 수다를 떨었어.",
+      "여관 주인은 30년 전 북쪽 탑에서 불이 났었다는 옛이야기를 들려주었습니다."
+    ],
+    [
+      "서린이 은밀히 쪽지를 건넸어.",
+      "쪽지에는 자정에 등대 아래에서라고만 적혀 있습니다."
+    ],
+    [
+      "자정에 등대로 갔어.",
+      "서린은 하준이 밀수 조직과 손잡았다는 사실을 털어놓았습니다."
+    ],
+    [
+      "서린에게 증거가 있는지 물었어.",
+      "서린은 밀수 장부의 한 페이지를 보여주었는데, 거기에 하준의 서명이 있었습니다."
+    ],
+    [
+      "다음 날 아침 산책을 했어.",
+      "아침 안개가 짙게 깔려 갈매기 소리만 들립니다."
+    ],
+    [
+      "유나에게 미루의 행방을 다시 물었어.",
+      "유나는 미루가 마지막으로 목격된 곳이 남쪽 섬의 수도원이라고 했습니다."
+    ],
+    [
+      "배를 빌리려고 선착장에 갔어.",
+      "선장 도윤은 남쪽 섬까지 금화 두 닢을 요구했습니다."
+    ],
+    [
+      "돈이 모자라서 고민했어.",
+      "당신은 가진 돈이 금화 한 닢뿐이라 난감해졌습니다."
+    ],
+    [
+      "조개 목걸이를 팔까 고민했어.",
+      "골동품 상인은 조개 목걸이가 희귀한 진주 조개로 만들어졌다며 금화 다섯 닢을 쳐주겠다고 합니다."
+    ],
+    [
+      "목걸이는 팔지 않기로 했어.",
+      "유나의 선물이라 팔 수 없다고 결심했습니다. 대신 여관에서 일을 돕기로 했습니다."
+    ],
+    [
+      "여관 일을 사흘 동안 했어.",
+      "사흘 동안 설거지와 장작 패기를 해서 금화 한 닢을 더 벌었습니다."
+    ],
+    [
+      "도윤에게 다시 갔어.",
+      "금화 두 닢을 건네자 도윤은 내일 새벽에 출항하자고 약속했습니다."
+    ],
+    [
+      "출발 전날 밤 유나와 이야기했어.",
+      "유나는 미루를 꼭 찾아 달라며 초승달 모양의 은 브로치를 맡겼습니다."
+    ]
+  ],
+  "questions": [
+    {
+      "id": "n01",
+      "family": "name_number",
+      "q": "등대 여관 하룻밤 숙박비가 얼마였지?",
+      "gold": [
+        2
+      ],
+      "expect": [
+        "은화 세 닢"
+      ]
+    },
+    {
+      "id": "n02",
+      "family": "name_number",
+      "q": "서린이 팔던 비단 가격은?",
+      "gold": [
+        4
+      ],
+      "expect": [
+        "금화 일곱 닢"
+      ]
+    },
+    {
+      "id": "n03",
+      "family": "name_number",
+      "q": "미루가 누구였더라?",
+      "gold": [
+        10
+      ],
+      "expect": [
+        "동생의 이름은 미루"
+      ]
+    },
+    {
+      "id": "n04",
+      "family": "name_number",
+      "q": "도윤이 뱃삯으로 얼마를 불렀지?",
+      "gold": [
+        24
+      ],
+      "expect": [
+        "금화 두 닢을 요구"
+      ]
+    },
+    {
+      "id": "n05",
+      "family": "name_number",
+      "q": "하준의 서명은 어디에 있었지?",
+      "gold": [
+        21
+      ],
+      "expect": [
+        "하준의 서명"
+      ]
+    },
+    {
+      "id": "n06",
+      "family": "name_number",
+      "q": "별자리 지도 뒷면 문장이 뭐였지?",
+      "gold": [
+        8
+      ],
+      "expect": [
+        "달이 세 번 차면"
+      ]
+    },
+    {
+      "id": "p01",
+      "family": "paraphrase",
+      "q": "그 남자가 왜 그렇게 화를 냈던 거야?",
+      "gold": [
+        13
+      ],
+      "expect": [
+        "분노했고"
+      ]
+    },
+    {
+      "id": "p02",
+      "family": "paraphrase",
+      "q": "그녀가 슬퍼하며 털어놓은 가족 이야기 기억나?",
+      "gold": [
+        10
+      ],
+      "expect": [
+        "잃어버린 동생"
+      ]
+    },
+    {
+      "id": "p03",
+      "family": "paraphrase",
+      "q": "창고 침입범이 남긴 흔적으로 뭘 찾았지?",
+      "gold": [
+        15
+      ],
+      "expect": [
+        "외투 단추"
+      ]
+    },
+    {
+      "id": "p04",
+      "family": "paraphrase",
+      "q": "옛날에 그 높은 건물에서 무슨 사고가 있었다고?",
+      "gold": [
+        18
+      ],
+      "expect": [
+        "불이 났었다"
+      ]
+    },
+    {
+      "id": "p05",
+      "family": "paraphrase",
+      "q": "밤늦게 만나자고 한 장소가 어디였지?",
+      "gold": [
+        19
+      ],
+      "expect": [
+        "등대 아래"
+      ]
+    },
+    {
+      "id": "m01",
+      "family": "mixed",
+      "q": "유나가 나한테 준 선물들 뭐였지?",
+      "gold": [
+        11
+      ],
+      "expect": [
+        "조개 목걸이를 건넸"
+      ],
+      "note": "Turn 30 (the brooch) is the latest turn and already visible in the prompt, so it is not expected in recalled memory."
+    },
+    {
+      "id": "m02",
+      "family": "mixed",
+      "q": "하준이 몰래 하던 나쁜 짓은?",
+      "gold": [
+        20
+      ],
+      "expect": [
+        "밀수 조직"
+      ]
+    },
+    {
+      "id": "m03",
+      "family": "mixed",
+      "q": "지하 서고 문을 열려면 뭐가 필요할 것 같아?",
+      "gold": [
+        16
+      ],
+      "expect": [
+        "초승달 모양 홈"
+      ]
+    },
+    {
+      "id": "m04",
+      "family": "mixed",
+      "q": "배 타려고 돈을 어떻게 마련했지?",
+      "gold": [
+        28
+      ],
+      "expect": [
+        "금화 한 닢을 더 벌었"
+      ]
+    },
+    {
+      "id": "m05",
+      "family": "mixed",
+      "q": "미루를 마지막으로 본 곳은?",
+      "gold": [
+        23
+      ],
+      "expect": [
+        "남쪽 섬의 수도원"
+      ]
+    }
+  ],
+  "translations": {
+    "en": {
+      "turnsAssistant": [
+        "A salty-aired harbor town. The guide 유나 waves at you warmly.",
+        "유나 recommended the 등대 Inn. One night costs three silver coins.",
+        "The harbor market is crowded with fishmongers and spice traders. The merchant 서린 is selling blue silk.",
+        "서린 asked seven gold coins for one bolt of blue silk and refuses to haggle.",
+        "하준, wearing a black coat, watched you warily and disappeared into an alley.",
+        "유나 whispered that 하준 was once expelled for stealing library records.",
+        "At the top of the north tower there is a rusty telescope and a broken star chart.",
+        "On the back of the chart is written: when the moon is full three times, the door will open.",
+        "The cook served grilled mackerel as today's dish. It tastes excellent.",
+        "유나 told the story of the younger sibling she lost as a child and cried. The sibling's name was 미루.",
+        "Comforted, 유나 calmed down and gave you a small seashell necklace as thanks.",
+        "At the door, 하준 offered a deal: hand over the tower's map and he will reveal where the sibling is.",
+        "하준 clenched his teeth in fury and left, saying you would regret it.",
+        "서린 said someone sneaked into her warehouse last night and looked uneasy.",
+        "On the warehouse floor you found a black coat button and wet footprints.",
+        "The entrance of the underground archive is blocked by a heavy iron door carved with a crescent-shaped groove.",
+        "Heavy rain lasted all day and every ship in the harbor stayed moored.",
+        "The innkeeper told an old story that a fire broke out in the north tower thirty years ago.",
+        "The note only says: at midnight, beneath the lighthouse.",
+        "서린 confessed that 하준 has joined a smuggling ring.",
+        "서린 showed a page of the smuggling ledger, and it bore 하준's signature.",
+        "Thick morning fog covers everything; only the gulls can be heard.",
+        "유나 said 미루 was last seen at the monastery on the southern island.",
+        "Captain 도윤 demanded two gold coins to sail to the southern island.",
+        "You only have one gold coin and are at a loss.",
+        "An antique dealer offers five gold coins, saying the necklace is made from a rare pearl shell.",
+        "You decided not to sell it because it was a gift from 유나, and chose to help at the inn instead.",
+        "Washing dishes and chopping firewood for three days earned you one more gold coin.",
+        "When you handed over two gold coins, 도윤 promised to set sail at dawn tomorrow.",
+        "유나 entrusted you with a crescent-shaped silver brooch, asking you to find 미루."
+      ],
+      "questions": {
+        "n01": {
+          "q": "How much did one night at the inn cost?",
+          "expect": [
+            "three silver coins"
+          ]
+        },
+        "n02": {
+          "q": "What price did 서린 ask for the silk?",
+          "expect": [
+            "seven gold coins"
+          ]
+        },
+        "n03": {
+          "q": "Who was 미루 again?",
+          "expect": [
+            "sibling's name was 미루"
+          ]
+        },
+        "n04": {
+          "q": "How much did 도윤 want for the boat trip?",
+          "expect": [
+            "demanded two gold coins"
+          ]
+        },
+        "n05": {
+          "q": "Where was 하준's signature?",
+          "expect": [
+            "하준's signature"
+          ]
+        },
+        "n06": {
+          "q": "What was written on the back of the star chart?",
+          "expect": [
+            "full three times"
+          ]
+        },
+        "p01": {
+          "q": "Why did that man get so angry?",
+          "expect": [
+            "in fury"
+          ]
+        },
+        "p02": {
+          "q": "Do you remember the family story she told while crying?",
+          "expect": [
+            "lost as a child"
+          ]
+        },
+        "p03": {
+          "q": "What traces did the warehouse intruder leave?",
+          "expect": [
+            "coat button"
+          ]
+        },
+        "p04": {
+          "q": "What accident happened at that tall building long ago?",
+          "expect": [
+            "fire broke out"
+          ]
+        },
+        "p05": {
+          "q": "Where were we supposed to meet late at night?",
+          "expect": [
+            "beneath the lighthouse"
+          ]
+        },
+        "m01": {
+          "q": "What gifts did 유나 give me?",
+          "expect": [
+            "seashell necklace"
+          ]
+        },
+        "m02": {
+          "q": "What shady business was 하준 doing?",
+          "expect": [
+            "smuggling ring"
+          ]
+        },
+        "m03": {
+          "q": "What do we need to open the archive door?",
+          "expect": [
+            "crescent-shaped groove"
+          ]
+        },
+        "m04": {
+          "q": "How did I get the money for the boat?",
+          "expect": [
+            "one more gold coin"
+          ]
+        },
+        "m05": {
+          "q": "Where was 미루 last seen?",
+          "expect": [
+            "monastery on the southern island"
+          ]
+        }
+      },
+      "note": "English memory text keeps character names in their original Hangul spelling, as HAYAKU packets are instructed to."
+    }
+  }
+}

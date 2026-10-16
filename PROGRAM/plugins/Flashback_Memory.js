@@ -1,7 +1,8 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.101
+//@display-name ⚡ FLASHBACK Memory v1.0.104
 //@api 3.0
-//@version 1.0.101
+//@version 1.0.104
+//@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
  * verified/current are assertions supplied AFTER the owner's existing final
@@ -1484,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.101';
+const PLUGIN_VERSION = '1.0.104';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -1910,6 +1911,20 @@ const PLUGIN_VERSION = '1.0.101';
   const FINALIZED_CAPTURE_IDLE_POLL_MS = 2200;
   const FINALIZED_CAPTURE_STABLE_MS = 4000;
   const FINALIZED_CAPTURE_MAX_AGE_MS = 4 * 60 * 1000;
+  // Share of the hook recall deadline the query embedding may use before the
+  // request falls back to keyword retrieval (default 20 s hook -> 4 s).
+  // After a query embedding failure, skip the provider for a short cooldown and use
+  // keyword retrieval directly, so an outage costs one slow request instead of
+  // every request. Cleared by any success or embedding settings change.
+  const FLASHBACK_QUERY_EMBEDDING_COOLDOWN_MS = 60000;
+  let flashbackQueryEmbeddingCooldown = { until: 0, generation: -1, fingerprint: '', error: '' };
+  const flashbackQueryEmbeddingCoolingDown = settings => flashbackQueryEmbeddingCooldown.until > Date.now()
+    && flashbackQueryEmbeddingCooldown.generation === Runtime.embeddingGeneration
+    && flashbackQueryEmbeddingCooldown.fingerprint === embeddingProfileSettingsFingerprint(settings);
+  const flashbackQueryEmbeddingBudgetMs = (settings = {}) => {
+    const hook = Math.max(1000, Number(settings?.hookRecallTimeoutMs || DEFAULTS.hookRecallTimeoutMs) || DEFAULTS.hookRecallTimeoutMs);
+    return Math.min(4000, Math.max(1500, Math.round(hook * 0.25)));
+  };
   const recallExecutionDeadline = (configuredTimeoutMs = 0, now = Date.now()) => {
     const checkedAt = Math.max(0, Number(now || Date.now()) || Date.now());
     const configured = Math.max(1, Number(configuredTimeoutMs || DEFAULTS.hookRecallTimeoutMs) || DEFAULTS.hookRecallTimeoutMs);
@@ -4338,6 +4353,13 @@ const MemorySuiteHostLineage = createMemorySuiteHostLineage();
 const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const options = rawOptions && typeof rawOptions === 'object' ? rawOptions : {};
   const localOnlyOwner = options.storagePolicy === 'local_only';
+  // The unified engine's read source (the LIBRA owner read-session) is supplied by the host that embeds
+  // this client. Without it a unified read is refused rather than quietly served from the server's read.
+  const unifiedReadProviderOption = options.unifiedReadProvider;
+  // A provider object (or a getter returning one) is accepted; anything else cannot serve a unified read.
+  const resolveUnifiedReadProvider = () => (typeof unifiedReadProviderOption === 'function'
+    ? unifiedReadProviderOption()
+    : (unifiedReadProviderOption && typeof unifiedReadProviderOption === 'object' ? unifiedReadProviderOption : null));
   const managerOnly = options.storagePolicy === 'manager_only';
   const managerOnlyError = () => Object.assign(new Error('MEMORY_SUITE_MANAGER_ONLY_POLICY'), {code:'MEMORY_SUITE_MANAGER_ONLY_POLICY'});
   const localOnlyError = () => Object.assign(new Error('MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY'), {code:'MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY'});
@@ -11031,6 +11053,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       #${rootId} .scopetoggle button[aria-pressed="true"]{background:#1d2f52;color:#eef4ff;box-shadow:0 0 0 1px #5d88ff inset}
       #${rootId} .scopetoggle button small{display:block;margin-top:2px;font-weight:400;font-size:10px;color:#9eacc3}
       #${rootId} .scopetoggle button[aria-pressed="true"] small{color:#cdd9f2}
+      #${rootId} .scopetoggle button:only-child{grid-column:1/-1}
+      #${rootId} .mscx-advanced{border:1px solid #34425b;border-radius:10px;padding:0 12px} #${rootId} .mscx-advanced>summary{cursor:pointer;padding:11px 0;font-weight:700;font-size:13px} #${rootId} .mscx-advanced>summary small{font-weight:400;color:#9eacc3;margin-left:6px} #${rootId} .mscx-advanced-body{display:grid;gap:8px;padding-bottom:12px}
       #${rootId} .scopeunset{border-color:#f0b65c;background:#241d10}
       #${rootId} .modes{display:grid;gap:8px} #${rootId} label.mode{display:flex;gap:9px;align-items:flex-start;border:1px solid #34425b;border-radius:10px;padding:10px;cursor:pointer}
       #${rootId} input[type=text],#${rootId} input[type=password]{width:100%;padding:10px 11px;border-radius:9px;border:1px solid #465a79;background:#0b1321;color:#fff}
@@ -11053,10 +11077,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         </div>
         <div class="muted" data-mirror-transition>미러는 두 저장 위치 사이의 전환 중에만 사용합니다. 기존 미러 설정은 단독 모드를 선택해 전환을 완료하세요.</div>
         <div class="scope" data-mode-summary${integratesCompute ? '' : ' hidden'}></div>
-        <p>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
-        <div class="actions"><button data-test>연결 테스트</button><button class="primary" data-apply>설정 적용</button><button data-sync>지금 동기화</button><button data-restore>서버 → pluginStorage 복구</button><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div>
+        <p class="muted" data-server-hint>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
+        <div class="actions"><button data-test>연결 테스트</button><button class="primary" data-apply>설정 적용</button></div>
+        <details class="mscx-advanced"><summary>고급 작업 <small>동기화 · 복구 · 이전 · 초기화</small></summary><div class="mscx-advanced-body"><div class="muted">평소에는 쓰지 않아도 됩니다. 저장 위치를 옮기거나 문제를 복구할 때만 사용하세요.</div>
+        <div class="actions"><button data-sync>지금 동기화</button><button data-restore>서버 → pluginStorage 복구</button></div>
         ${globalModeEnabled ? '<div class="actions"><button data-global-pause>전체 이전 중단·보존</button><button data-global-resume>미완료 전체 이전 재개</button></div>' : ''}
-        <div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div><div class="status" data-status>${integratesCompute ? `현재 방식: ${esc(initial.modeLabel)}\n연산: ${initial.executionPolicy?.computeMode === 'prefer_server' ? '서버 우선 · 실패 시 로컬' : '로컬'}` : `현재 모드: ${esc(initial.modeLabel)}\n서버 상태를 확인할 수 있습니다.`}</div>
+        <div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div>
+        <div class="actions"><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div></div></details><div class="status" data-status>${integratesCompute ? `현재 방식: ${esc(initial.modeLabel)}\n연산: ${initial.executionPolicy?.computeMode === 'prefer_server' ? '서버 우선 · 실패 시 로컬' : '로컬'}` : `현재 모드: ${esc(initial.modeLabel)}\n서버 상태를 확인할 수 있습니다.`}</div>
       </div>
       <div class="job" data-job><b data-job-title>작업 진행 중</b><div class="bar"><i data-job-bar></i></div><div class="grid"><span data-job-phase></span><span data-job-count></span><span data-job-bytes></span><span data-job-time></span><span data-job-retry></span><span data-job-key></span></div><div class="result" data-job-result></div><textarea data-job-diagnostics aria-label="저장 이전 상세 진단" readonly style="display:none"></textarea><button data-job-copy type="button">상세 진단 복사</button><div class="actions" data-job-terminal-actions style="display:none"><button data-job-dismiss type="button">결과 확인 닫기</button></div></div>
     </div>`;
@@ -11072,6 +11099,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const local = mode === MODE_PLUGIN_ONLY;
       const serverFields = q('[data-server-fields]');
       if (serverFields) serverFields.hidden = integratesCompute && local;
+      const serverHint = q('[data-server-hint]');
+      if (serverHint) serverHint.hidden = integratesCompute && local;
       const testButton = q('[data-test]');
       if (testButton) testButton.disabled = integratesCompute && local;
       const summary = q('[data-mode-summary]');
@@ -11952,6 +11981,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(!Number.isSafeInteger(maxCorpusBytes)||maxCorpusBytes<1||maxCorpusBytes>33554432)reject('LIB_READ_BUDGET_INVALID');
     const checkAbort=()=>{if(readOptions.signal?.aborted)reject('LIB_READ_CANCELED');};
     checkAbort();
+    const readSource=readOptions.source === undefined ? 'server_logical_read' : String(readOptions.source);
+    if(!['server_logical_read','unified_engine'].includes(readSource))reject('LIB_READ_SOURCE_UNSUPPORTED');
     if (namespace !== 'libra' || pluginId !== 'serial_gradation_agents_for_rp') reject('LIB_READ_PRINCIPAL_REQUIRED');
     const sourceScope={};
     for(const key of ['scopeKey','characterId','chatId']){const value=scopeInput?.[key];if(typeof value!=='string'||!value.trim()||value.length>512||/[\r\n\0]/.test(value))reject('LIB_READ_SCOPE_INVALID');sourceScope[key]=value;}
@@ -12044,7 +12075,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(payload?.dataInstanceId!==connection.dataInstanceId)reject('LIB_READ_DATA_CHANGED');
       return payload.result;
     };
-    const result=await read('capture',{scope:sourceScope,maxCorpusBytes});
+    const unifiedReadProvider=readSource==='unified_engine'?resolveUnifiedReadProvider():null;
+    if(readSource==='unified_engine'&&(!unifiedReadProvider||typeof unifiedReadProvider.capture!=='function'||typeof unifiedReadProvider.current!=='function'))reject('LIB_READ_UNIFIED_UNAVAILABLE');
+    // Same envelope, same validation below: only where the answer comes from changes.
+    const sourceRead=readSource==='unified_engine'?async(action,body)=>{
+      await assertRoute();
+      const answer=action==='capture'
+        ? await unifiedReadProvider.capture({scope:body?.scope,maxCorpusBytes:body?.maxCorpusBytes,signal:readOptions.signal})
+        : await unifiedReadProvider.current({proof:body,signal:readOptions.signal});
+      await assertRoute();
+      if(!answer||typeof answer!=='object')reject('LIB_READ_UNIFIED_UNAVAILABLE');
+      return answer;
+    }:read;
+    const result=await sourceRead('capture',{scope:sourceScope,maxCorpusBytes});
     if(result?.schema!=='memory-suite.libra-read-session.v1'||result.readOnly!==true||result.complete!==true
       ||result.dataInstanceId!==connection.dataInstanceId||result.resetEpoch!==epoch
       ||JSON.stringify(result.scope)!==JSON.stringify(sourceScope)||!/^[a-f0-9]{64}$/.test(result.evidenceRevision||'')
@@ -12062,8 +12105,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       evidenceRevision:result.evidenceRevision,dataInstanceId:connection.dataInstanceId,resetEpoch:epoch});
     localCurrent();
     return Object.freeze({snapshot,
+      source:readSource,
+      ...(readSource==='unified_engine'&&result&&typeof result==='object'&&result.engine?{engine:result.engine}:{}),
       assertCurrentSync:()=>{localCurrent();assertConnectionState(connection.url);return true;},
-      assertCurrent:async()=>{const now=await read('current',proof);
+      assertCurrent:async()=>{const now=await sourceRead('current',proof);
         if(now?.schema!=='memory-suite.libra-read-session-current.v1'||now.current!==true||JSON.stringify(now.scope)!==JSON.stringify(sourceScope)||now.evidenceRevision!==proof.evidenceRevision
           ||now.dataInstanceId!==connection.dataInstanceId||now.resetEpoch!==epoch)reject('LIB_READ_STALE');localCurrent();return true;}
     });
@@ -15454,6 +15499,7 @@ let MemorySuiteComputeBridge = null;
     if (previousEmbeddingFingerprint !== nextEmbeddingFingerprint) abortEmbeddingJobs('settings_changed');
     Runtime.settings = normalized;
     if (!normalized.operationLogEnabled) await clearOperationLogs().catch(() => false);
+    scheduleFlashbackAttentionRefresh('settings_committed', 120);
     return normalized;
   };
 
@@ -16438,7 +16484,7 @@ let MemorySuiteComputeBridge = null;
       if (row.physicalSubmitted) Runtime.embeddingActiveRequests.set(id,Object.freeze({...row,physicalPending:true,state:'cancelled_pending',cancelReason:reason}));
       else Runtime.embeddingActiveRequests.delete(id);
     }
-    Runtime.queryEmbeddingInFlight.clear();
+    clearQueryEmbeddingInFlight(reason);
     if (reason === 'settings_changed' || reason === 'credential_changed') {
       const invalidatedQueries = Runtime.queryEmbeddingCache.size;
       Runtime.queryEmbeddingCache.clear();
@@ -18073,7 +18119,18 @@ let MemorySuiteComputeBridge = null;
     Runtime.queryEmbeddingCache.delete(key);Runtime.queryEmbeddingCacheStats.invalidations++;return {key,cached:null};
   };
 
-  const storeQueryEmbeddingEntry = (key, vector, vectors, cfg) => {
+  const publishQueryEmbeddingEntry = entry => {
+    if (Runtime.queryEmbeddingCache.has(entry.cacheKey)) return;
+    while (Runtime.queryEmbeddingCache.size >= QUERY_EMBEDDING_CACHE_MAX) {
+      const oldest = Runtime.queryEmbeddingCache.keys().next().value;
+      if (!oldest) break;
+      Runtime.queryEmbeddingCache.delete(oldest);
+      Runtime.queryEmbeddingCacheStats.evictions += 1;
+    }
+    Runtime.queryEmbeddingCache.set(entry.cacheKey, entry);
+  };
+
+  const storeQueryEmbeddingEntry = (key, vector, vectors, cfg, publish = true) => {
     if (!Array.isArray(vector) || !vector.length) throw new Error('empty embedding vector');
     const fallbackUsed = vectors.flashbackFallbackUsed === true;
     const dim = vector.length;
@@ -18082,18 +18139,59 @@ let MemorySuiteComputeBridge = null;
     const modelUsed = cfg.embeddingModel || '';
     const profileId = vectors.flashbackEmbeddingProfileId || embeddingProfileId(cfg, dim, providerUsed, modelUsed);
     const entry = { vector, providerUsed, modelUsed, dim, profileId, fallbackUsed, at: Date.now(), cacheKey: key };
-    if (!fallbackUsed) {
-      while (Runtime.queryEmbeddingCache.size >= QUERY_EMBEDDING_CACHE_MAX) {
-        const oldest = Runtime.queryEmbeddingCache.keys().next().value;
-        if (!oldest) break;
-        Runtime.queryEmbeddingCache.delete(oldest);
-        Runtime.queryEmbeddingCacheStats.evictions += 1;
-      }
-      Runtime.queryEmbeddingCache.set(key, entry);
-    } else {
-      Runtime.queryEmbeddingCacheStats.fallbackSkipped += 1;
-    }
+    if (publish) publishQueryEmbeddingEntry(entry);
     return { ...entry, cacheHit: false, ageMs: 0 };
+  };
+
+  const clearQueryEmbeddingInFlight = reason => {
+    for (const pending of Runtime.queryEmbeddingInFlight.values()) pending.queryBatch?.controller?.abort(reason);
+    Runtime.queryEmbeddingInFlight.clear();
+  };
+
+  // Each caller owns a lease, not the shared wire request. Only the last caller
+  // leaving aborts that request; a timed-out caller can never publish late cache data.
+  const createQueryEmbeddingWaiter = (options = {}) => {
+    const batches = new Set();
+    const signals = [...new Set([options.signal, options.requestSignal].filter(Boolean))];
+    let failure = null, timer = null, closed = false, rejectCancelled;
+    const cancelled = new Promise((_, reject) => { rejectCancelled = reject; });
+    cancelled.catch(() => {});
+    const release = () => {
+      for (const batch of batches) {
+        batch.waiters.delete(waiter);
+        if (!batch.waiters.size && !batch.settled) {
+          batch.abandoned = true;
+          batch.controller?.abort('query_waiters_released');
+          for (const [key, pending] of Runtime.queryEmbeddingInFlight) {
+            if (pending.queryBatch === batch) Runtime.queryEmbeddingInFlight.delete(key);
+          }
+        }
+      }
+      batches.clear();
+    };
+    const cancel = error => {
+      if (closed || failure) return;
+      failure = error;
+      release();
+      rejectCancelled(error);
+    };
+    const abort = () => cancel(new EmbeddingAdapterError('ABORTED', 'Query embedding was cancelled.'));
+    const deadlineAt = Math.min(Number(options.deadlineAt) > 0 ? Number(options.deadlineAt) : Infinity,
+      Number(options.queryBudgetMs) > 0 ? Date.now() + Number(options.queryBudgetMs) : Infinity);
+    const check = () => {
+      if (signals.some(signal => signal.aborted)) abort();
+      if (Date.now() >= deadlineAt) cancel(Object.assign(new Error('query embedding deadline expired'), { code: 'FLASHBACK_DEADLINE' }));
+      if (failure) throw failure;
+      options.operationLedger?.check();
+    };
+    const waiter = { options, check,
+      wait: promise => Promise.race([promise, cancelled]),
+      acquire(batch) { check(); if (!batches.has(batch)) { batches.add(batch); batch.waiters.add(waiter); } },
+      close() { closed = true; if (timer) clearTimeout(timer); for (const signal of signals) signal.removeEventListener?.('abort', abort); release(); }
+    };
+    if (Number.isFinite(deadlineAt)) timer = setTimeout(() => cancel(Object.assign(new Error('query embedding deadline expired'), { code: 'FLASHBACK_DEADLINE' })), Math.max(0, deadlineAt - Date.now()));
+    for (const signal of signals) signal.addEventListener?.('abort', abort, { once: true });
+    return waiter;
   };
 
   // Batch all currently-missing query vectors in one provider request. This keeps
@@ -18101,37 +18199,53 @@ let MemorySuiteComputeBridge = null;
   // vector independent without doubling network round trips.
   const getCachedQueryEmbeddings = async (queries=[],cfg,options={}) => {
     if (!configuredModelEmbedding(cfg)) throw new EmbeddingAdapterError('EMBEDDING_UNCONFIGURED', 'Configure an enabled query embedding model.');
+    const waiter = createQueryEmbeddingWaiter(options);
+    try {
+    waiter.check();
     const taskType=options.taskType||'query',source=(Array.isArray(queries)?queries:[queries]).map(q=>recallQueryTextOf(q).trim());
     const generation=Runtime.embeddingGeneration;
-    const authorityEpoch=MemorySuiteExecutionContract.authorityEpoch([await readEmbeddingExecutionKey(options),cfg.embeddingCustomHeaders]);
+    const authorityEpoch=MemorySuiteExecutionContract.authorityEpoch([await waiter.wait(readEmbeddingExecutionKey(options)),cfg.embeddingCustomHeaders]);
+    waiter.check();
     const cacheOptions={...options,authorityEpoch};
     const results=new Array(source.length).fill(null),pending=new Map(),waits=[];
     source.forEach((query,index)=>{if(!query)return;const lookup=cachedQueryEmbeddingEntry(query,cfg,taskType,cacheOptions);
       if(lookup.cached){results[index]=lookup.cached;return;}
       if(!pending.has(lookup.key))pending.set(lookup.key,{key:lookup.key,query,indexes:[]});pending.get(lookup.key).indexes.push(index);});
     const missing=[];
-    for(const group of pending.values()){const active=Runtime.queryEmbeddingInFlight.get(group.key);if(active){Runtime.queryEmbeddingCacheStats.coalesced++;waits.push(Promise.resolve(active).then(entry=>group.indexes.forEach(i=>{results[i]=entry;})));}else missing.push(group);}
-    const coalescedWaits=waits.slice();
+    for(const group of pending.values()){const active=Runtime.queryEmbeddingInFlight.get(group.key);if(active){waiter.acquire(active.queryBatch);Runtime.queryEmbeddingCacheStats.coalesced++;waits.push(active.then(entry=>group.indexes.forEach(i=>{results[i]=entry;})));}else missing.push(group);}
     if(missing.length){Runtime.queryEmbeddingCacheStats.misses+=missing.length;
+      const batch = { controller: typeof AbortController === 'undefined' ? null : new AbortController(), waiters: new Set(), settled: false, abandoned: false };
+      waiter.acquire(batch);
       const batchPromise=(async()=>{
-        // The owner cache is authoritative for this batch. Adapter writes are deferred
-        // by bypass so a failed cache+fresh union cannot publish a partial result.
-        const vectors=await embedTexts(missing.map(g=>g.query),cfg,{...options,taskType,cacheMode:'bypass'});
+        const validateAuthority = async () => {
+          if (batch.abandoned || !batch.waiters.size) throw new EmbeddingAdapterError('ABORTED', 'Query embedding has no active callers.');
+          for (const owner of [...batch.waiters]) {
+            try { owner.check(); await owner.options.validateAuthority?.(); }
+            catch (error) { if (batch.waiters.has(owner)) throw error; }
+          }
+          if (batch.abandoned || !batch.waiters.size) throw new EmbeddingAdapterError('ABORTED', 'Query embedding has no active callers.');
+        };
+        // Caller deadlines only release leases. The shared request has its own
+        // provider timeout and is cancelled when no active caller needs it.
+        const vectors=await embedTexts(missing.map(g=>g.query),cfg,{...options,taskType,cacheMode:'bypass',
+          signal:batch.controller?.signal,deadlineAt:0,validateAuthority});
         if(generation!==Runtime.embeddingGeneration)throw new EmbeddingAdapterError('STALE_SOURCE','Query settings changed during embedding.');
-        await Promise.all(coalescedWaits);
-        options.operationLedger?.check();
-        if(options.signal?.aborted)throw new EmbeddingAdapterError('ABORTED','Query embedding was cancelled.');
-        if(generation!==Runtime.embeddingGeneration)throw new EmbeddingAdapterError('STALE_SOURCE','Query settings changed during coalesced embedding.');
-        const all=[...results.filter(Boolean).map(e=>e.vector),...vectors];
-        MemorySuiteExecutionContract.batch(all,all.length,cfg.embeddingDimensions||0);
-        return missing.map((g,i)=>storeQueryEmbeddingEntry(g.key,vectors[i],vectors,cfg));
-      })();
-      missing.forEach((g,i)=>{let one;one=batchPromise.then(entries=>entries[i]).finally(()=>{if(Runtime.queryEmbeddingInFlight.get(g.key)===one)Runtime.queryEmbeddingInFlight.delete(g.key);});Runtime.queryEmbeddingInFlight.set(g.key,one);waits.push(one.then(e=>g.indexes.forEach(index=>{results[index]=e;})));});
+        if(batch.abandoned || batch.controller?.signal.aborted || !batch.waiters.size)throw new EmbeddingAdapterError('ABORTED','Query embedding was abandoned.');
+        MemorySuiteExecutionContract.batch(vectors,missing.length,cfg.embeddingDimensions||0);
+        return missing.map((g,i)=>storeQueryEmbeddingEntry(g.key,vectors[i],vectors,cfg,false));
+      })().finally(() => { batch.settled = true; });
+      missing.forEach((g,i)=>{let one;one=batchPromise.then(entries=>entries[i]).finally(()=>{if(Runtime.queryEmbeddingInFlight.get(g.key)===one)Runtime.queryEmbeddingInFlight.delete(g.key);});one.queryBatch=batch;Runtime.queryEmbeddingInFlight.set(g.key,one);waits.push(one.then(e=>g.indexes.forEach(index=>{results[index]=e;})));});
     }
-    await Promise.all(waits);
+    await waiter.wait(Promise.all(waits));
+    await waiter.wait(options.validateAuthority?.());
+    waiter.check();
     if(generation!==Runtime.embeddingGeneration)throw new EmbeddingAdapterError('STALE_SOURCE','Query cache generation was invalidated.');
     const vectors=results.filter(Boolean).map(e=>e.vector);MemorySuiteExecutionContract.batch(vectors,vectors.length,cfg.embeddingDimensions||0);
+    // Publish only after this live caller validates its entire cached/coalesced/
+    // fresh union. Provider completion alone cannot mutate the owner cache.
+    for (const entry of new Set(results.filter(entry => entry && !entry.cacheHit))) publishQueryEmbeddingEntry(entry);
     return results;
+    } finally { waiter.close(); }
   };
 
   const getCachedQueryEmbedding = async (query, cfg, options = {}) => {
@@ -18143,7 +18257,7 @@ let MemorySuiteComputeBridge = null;
   const invalidateQueryEmbeddingCache = () => {
     const count = Runtime.queryEmbeddingCache.size;
     Runtime.queryEmbeddingCache.clear();
-    Runtime.queryEmbeddingInFlight.clear();
+    clearQueryEmbeddingInFlight('query_cache_invalidated');
     Runtime.embeddingGeneration=Number(Runtime.embeddingGeneration||0)+1;
     if (count) Runtime.queryEmbeddingCacheStats.invalidations += count;
   };
@@ -19611,6 +19725,7 @@ let MemorySuiteComputeBridge = null;
     syncGuiCachesAfterManifestSave(next, registryScope, existing);
     next[MANIFEST_STORAGE_READ] = { raw:serialized, scopeKey:next.scopeKey };
     Object.defineProperty(next, 'storageCommitProof', { enumerable:false, value:serverCommit || { durability:'host_readback_only', endToEndVerified:false } });
+    scheduleFlashbackAttentionRefresh('manifest_committed', 120);
     return next;
   };
 
@@ -22443,7 +22558,7 @@ const MemorySuiteSnapshotCache = (() => {
     const loaded = await loadScopeRecordsRaw(scopeOrKey, options);
     const retained = loaded.records.filter(isRetainedMemoryRecord);
     const removed = loaded.records.length - retained.length;
-    if (loaded.manifest.manifestCorrupt !== true
+    if (options.readOnly !== true && loaded.manifest.manifestCorrupt !== true
       && Number(loaded.manifest.missingShards || 0) === 0
       && loaded.manifest.recordCountMismatch !== true
       && (removed > 0 || loaded.manifest.externalRetirementVersion < EXTERNAL_RETIREMENT_VERSION)) {
@@ -32067,12 +32182,24 @@ const MemorySuiteHealthRecovery = (() => {
     return RecallKeywordFeatures.resolveMentions(value,Array.from(entries.values()));
   };
   const recallFocusForRecord = (record,anchors) => RecallKeywordFeatures.evidenceFocus(record,anchors?.queryPlan || {targets:RecallKeywordFeatures.directAnchors(anchors?.surfaceAnchors||[])},{entities:recallEntitiesForRecord(record),facts:recordStructuredStateFacts(record),properties:[...extractQueryStateProperties(anchors?.queryPlan?.requestText||'')]});
+  // Lexical evidence for a semantic candidate, 0..1: an exact surface match counts
+  // fully, a BM25 hit decays with its rank. Used as a bounded boost, never alone
+  // as a semantic score.
+  const flashbackHybridLexicalSignal = (channels = {}) => {
+    const exact = channels.exact ? 1 : 0;
+    const rank = Number(channels.sparse?.rank || 0);
+    const sparse = rank > 0 && rank <= 8 ? 1 / Math.sqrt(rank) : 0;
+    return Math.max(exact, sparse);
+  };
   const selectFusedRecallCandidates = (fusedAll, queryAnchors, settings, candidateLimit, effectiveTopK) => {
     // Eligibility has already been checked. Preserve direct targets before truncation,
     // within the existing limit, even when other records hit more RRF channels.
     if(settings.contextualRecall!==false && normalizeProvider(settings.embeddingProvider)!=='hash' && fusedAll.some(item=>item.channels?.dense)){
-      const dense=fusedAll.filter(item=>item.channels?.dense && Number(item.channels.dense.score)>=Number(settings.minScore||0))
-        .sort((a,b)=>Number(b.channels.dense.score)-Number(a.channels.dense.score)||text(a.record?.id).localeCompare(text(b.record?.id)));
+      // Keep semantic hits above the floor plus records the lexical arms ranked,
+      // ordered by the fused (dense + sparse + exact) reciprocal rank.
+      const dense=fusedAll.filter(item=>item.channels?.dense && (Number(item.channels.dense.score)>=Number(settings.minScore||0)
+          || flashbackHybridLexicalSignal(item.channels)>0))
+        .sort((a,b)=>b.rrfScore-a.rrfScore||Number(b.channels.dense.score)-Number(a.channels.dense.score)||text(a.record?.id).localeCompare(text(b.record?.id)));
       // These rows have no compatible semantic vector. Keep their independent
       // fallback rank; never mix its score into a semantic candidate's score.
       const fallback=fusedAll.filter(item=>!item.channels?.dense)
@@ -32711,8 +32838,13 @@ const MemorySuiteHealthRecovery = (() => {
     const cap = Math.max(8, Number(settings.candidateLimit || DEFAULTS.candidateLimit) || DEFAULTS.candidateLimit);
     const modelContext = { provider: context.queryProvider || settings.embeddingProvider,
       model: context.queryModel || settings.embeddingModel, dimensions: queryVector.length, profileId: context.queryProfileId };
-    records = queryVector.length && configuredModelEmbedding(settings)
-      ? (records || []).filter(record => recordEmbeddingCompatibility(record, settings, modelContext).comparable) : [];
+    // Keyword fallback (no query vector this request) keeps the same admission:
+    // profile, ready receipt and source binding must still match; only the query
+    // dimension is taken from the record because there is no query vector.
+    records = context.allowLexicalFallback === true && configuredModelEmbedding(settings)
+      ? (records || []).filter(record => recordEmbeddingCompatibility(record, settings, { ...modelContext, dimensions: Array.isArray(record?.vector) ? record.vector.length : 0, profileId: '' }).comparable)
+      : queryVector.length && configuredModelEmbedding(settings)
+        ? (records || []).filter(record => recordEmbeddingCompatibility(record, settings, modelContext).comparable) : [];
     const responseRecords = records.filter(record => isResponseMemoryRecord(record));
     delete context.computeCosine;
     if(queryVector.length && responseRecords.length){
@@ -32746,12 +32878,14 @@ const MemorySuiteHealthRecovery = (() => {
       dense.length = Math.min(dense.length, cap);
     }
     if(dense.some(item=>item.semantic.contextualSemantic)){
-      const fallbackRecords=responseRecords.filter(record=>!recallSemanticSignals(record,queryVector,settings,context).vectorComparable);
-      const sparse=scoreBm25fCandidates(fallbackRecords,queryText,settings,{limit:cap});
-      const exact=fallbackRecords.map(record=>exactRecallCandidateScore(record,queryText,anchors,settings)).filter(Boolean)
+      // Hybrid retrieval: the lexical arms run over every record, not only the
+      // vectorless ones. Names, numbers and rare words that a general embedding
+      // blurs still reach the candidate pool and are fused by rank (RRF).
+      const sparse=scoreBm25fCandidates(responseRecords,queryText,settings,{limit:cap});
+      const exact=responseRecords.map(record=>exactRecallCandidateScore(record,queryText,anchors,settings)).filter(Boolean)
         .sort((a,b)=>b.score-a.score||text(a.record?.id).localeCompare(text(b.record?.id))).slice(0,cap);
       const sceneText=text(context.sceneContext?.text||'').trim();
-      const contextSparse=sceneText?scoreBm25fCandidates(fallbackRecords,sceneText,settings,{limit:cap}):[];
+      const contextSparse=sceneText?scoreBm25fCandidates(responseRecords,sceneText,settings,{limit:cap}):[];
       const hashRecovery = [];
       return {dense,hashRecovery,sparse,exact,forced:[],contextSparse,topicSparse:[],topicExact:[]};
     }
@@ -33603,10 +33737,21 @@ const MemorySuiteHealthRecovery = (() => {
     const candidateMeta = context.candidateMeta instanceof Map
       ? context.candidateMeta.get(text(record.id || record.hash || record.sourceId || ''))
       : null;
+    if(context.allowLexicalFallback){
+      // Keyword fallback (no query vector this request): rank-based keyword evidence only. The scene-context BM25
+      // arm counts at half strength, as it does in fusion.
+      const channels=candidateMeta?.channels||{};
+      const contextRank=Number(channels.contextSparse?.rank||0);
+      const lexicalSignal=Math.max(flashbackHybridLexicalSignal(channels),contextRank>0&&contextRank<=8?0.5/Math.sqrt(contextRank):0);
+      return {record,score:lexicalSignal,cosine:0,lexical:lexicalSignal,rrfScore:Number(candidateMeta?.rrfScore||0),channels,mmrScore:lexicalSignal,gate:null,
+        components:{contextualSemantic:false,lexicalFallback:true,hybridLexicalSignal:lexicalSignal,vectorComparable:false,cosine:0,semanticCosine:0}};
+    }
     if(semantic.contextualSemantic){
-      const score=semantic.fusedSemantic;
-      return {record,score,cosine,lexical:0,rrfScore:Number(candidateMeta?.rrfScore||0),channels:candidateMeta?.channels||{},mmrScore:score,gate:null,
-        components:{contextualSemantic:true,semanticCosine:score,vectorComparable:true,cosine,
+      const lexicalSignal=flashbackHybridLexicalSignal(candidateMeta?.channels||{});
+      const lexicalBoost=lexicalSignal*Math.max(0,Number(settings.lexicalWeight??DEFAULTS.lexicalWeight)||0);
+      const score=clampNumber(semantic.fusedSemantic+lexicalBoost,0,1,semantic.fusedSemantic);
+      return {record,score,cosine,lexical:lexicalSignal,rrfScore:Number(candidateMeta?.rrfScore||0),channels:candidateMeta?.channels||{},mmrScore:score,gate:null,
+        components:{contextualSemantic:true,semanticCosine:semantic.fusedSemantic,hybridLexicalSignal:lexicalSignal,hybridLexicalBoost:lexicalBoost,vectorComparable:true,cosine,
           currentSemantic:semantic.currentSemantic,sceneContextCosine:semantic.sceneContextCosine,
           sceneContextComparable:semantic.sceneContextComparable,sceneContextQueryWeight:semantic.sceneContextWeight,
           sceneContextContribution:semantic.sceneContextContribution,semanticSupportSource:semantic.supportSource,
@@ -33774,7 +33919,11 @@ const MemorySuiteHealthRecovery = (() => {
   const evidenceGateForRecall = (item, queryAnchors, settings) => {
     if (!settings.evidenceGate) return { passed: true, reasons: ['gate_disabled'] };
     const c = item.components || {};
-    if(c.contextualSemantic)return {passed:Number(c.semanticCosine)>=Number(settings.minScore||0),reasons:['contextual_embedding']};
+    if(c.lexicalFallback)return {passed:Number(c.hybridLexicalSignal||0)>=0.3,reasons:['keyword_fallback']};
+    if(c.contextualSemantic){
+      if(Number(c.semanticCosine)>=Number(settings.minScore||0))return {passed:true,reasons:['contextual_embedding']};
+      return {passed:Number(c.hybridLexicalSignal||0)>=0.5,reasons:['hybrid_lexical']};
+    }
     const group = sourceGroup(item.record?.sourceType);
     const reasons = [];
     // State-age estimates remain ranking signals; authoritative gates run separately.
@@ -34455,16 +34604,29 @@ const MemorySuiteHealthRecovery = (() => {
       let result;
       let contextResult = null;
       let error = '';
+      let timedOut = false;
+      let coolingDown = false;
       try {
         const embeddingSettings = { ...cfg, fallbackHashEmbedding: false };
         const jointQuery=cfg.contextualRecall!==false && normalizeProvider(cfg.embeddingProvider)!=='hash';
         const queryBatch = jointQuery ? [sceneContextProfile.text || primaryQueryText] : [primaryQueryText, ...(sceneContextProfile.text ? [sceneContextProfile.text] : [])];
         await assertQueryProfileCurrent();
-        const embedded = await getCachedQueryEmbeddings(queryBatch, embeddingSettings, { taskType: 'query', scope, validateAuthority: assertQueryProfileCurrent });
+        if (flashbackQueryEmbeddingCoolingDown(cfg)) throw Object.assign(new Error(`query embedding cooling down after: ${flashbackQueryEmbeddingCooldown.error}`), { code: 'FLASHBACK_QUERY_EMBEDDING_COOLDOWN' });
+        // The query embedding gets its own short budget inside the hook deadline.
+        // A slow or failed provider degrades this request to keyword retrieval
+        // instead of consuming the whole hook budget and delivering nothing.
+        const embedded = await getCachedQueryEmbeddings(queryBatch, embeddingSettings, { taskType: 'query', scope,
+          validateAuthority: assertQueryProfileCurrent, queryBudgetMs: flashbackQueryEmbeddingBudgetMs(cfg),
+          signal: options.signal, requestSignal: strictReadSet?.signal });
         result = embedded[0];
         contextResult = sceneContextProfile.text ? embedded[jointQuery?0:1] : null;
+        if (result?.vector?.length && result.fallbackUsed !== true) flashbackQueryEmbeddingCooldown = { until: 0, generation: -1, fingerprint: '', error: '' };
       } catch (embeddingError) {
         error = compact(embeddingError?.message || embeddingError || 'query embedding failed', 800);
+        timedOut = embeddingError?.code === 'FLASHBACK_DEADLINE';
+        coolingDown = embeddingError?.code === 'FLASHBACK_QUERY_EMBEDDING_COOLDOWN';
+        if (!coolingDown && !['STALE_SOURCE', 'ABORTED'].includes(embeddingError?.code || embeddingError?.type)) flashbackQueryEmbeddingCooldown = { until: Date.now() + FLASHBACK_QUERY_EMBEDDING_COOLDOWN_MS,
+          generation: Runtime.embeddingGeneration, fingerprint: embeddingProfileSettingsFingerprint(cfg), error: compact(error, 200) };
         result = {
           vector: [],
           providerUsed: normalizeProvider(cfg.embeddingProvider),
@@ -34476,9 +34638,10 @@ const MemorySuiteHealthRecovery = (() => {
         };
         contextResult = sceneContextProfile.text ? { ...result, vector: [] } : null;
       }
-      return { result, contextResult, error, elapsed: Date.now() - startedAt };
+      return { result, contextResult, error, timedOut, coolingDown, elapsed: Date.now() - startedAt };
     })() : Promise.resolve({ result: null, contextResult: null, error: '', elapsed: 0 });
     const [manifestState, worldlineState, embeddingState] = await Promise.all([manifestTask, worldlineTask, embeddingTask]);
+    if (options.signal?.aborted) throw new EmbeddingAdapterError('ABORTED', 'Recall request was cancelled.');
     if (!flashbackRequestCurrent(options.requestToken, options.requestBranch)) throw Object.assign(new Error("Recall request expired"), {code:"FLASHBACK_RECALL_EXPIRED"});
     const manifest = manifestState.value;
     const recallWorldline = worldlineState.value;
@@ -34496,7 +34659,14 @@ const MemorySuiteHealthRecovery = (() => {
       modelReadiness: { status, ready: false }, fallbackWarning: '현재 모델 검색을 사용할 수 없습니다. 원문은 보관되어 있습니다.',
       stageElapsed: { ...stageElapsed, total: Date.now() - recallStartedAt } });
     if (!configuredModelEmbedding(cfg)) return unavailable('unconfigured');
-    if (embeddingState.error || !embeddingState.result?.vector?.length || embeddingState.result?.fallbackUsed) return unavailable('query_failed');
+    const queryEmbeddingFailed = !!embeddingState.error || !embeddingState.result?.vector?.length || embeddingState.result?.fallbackUsed === true;
+    if (queryEmbeddingFailed && cfg.heuristicRecall === false) return unavailable('query_failed');
+    // Keyword fallback: this request ranks stored records with BM25 / exact
+    // matching only. Diagnostics and the GUI report it as a fallback, never as a
+    // semantic success; nothing is re-embedded or written.
+    const lexicalFallback = queryEmbeddingFailed
+      ? { status: embeddingState.coolingDown ? 'query_cooldown' : embeddingState.timedOut ? 'query_timeout' : 'query_failed', error: compact(embeddingState.error || 'query embedding unavailable', 300) }
+      : null;
     const recallModelCurrent = async () => {
       try { await assertQueryProfileCurrent(); return true; } catch (_) { return false; }
     };
@@ -34504,7 +34674,7 @@ const MemorySuiteHealthRecovery = (() => {
     const queryEmbeddingResult = embeddingState.result;
     const sceneContextEmbeddingResult = embeddingState.contextResult;
     const remoteEmbeddingError = embeddingState.error;
-    let queryVector = Array.isArray(queryEmbeddingResult?.vector) ? queryEmbeddingResult.vector : [];
+    let queryVector = !lexicalFallback && Array.isArray(queryEmbeddingResult?.vector) ? queryEmbeddingResult.vector : [];
     let sceneContextVector = Array.isArray(sceneContextEmbeddingResult?.vector) ? sceneContextEmbeddingResult.vector : [];
     let queryFallbackUsed = queryEmbeddingResult?.fallbackUsed === true;
     const semanticQuery=cfg.contextualRecall!==false && normalizeProvider(cfg.embeddingProvider)!=='hash' && queryVector.length>0 && !queryFallbackUsed;
@@ -34697,9 +34867,11 @@ const MemorySuiteHealthRecovery = (() => {
     if (!records.length) {
       if (!await recallModelCurrent()) return unavailable('changed');
       stageElapsed.total = Date.now() - recallStartedAt;
-      return { records: [], currentStateFacts, total: 0, storedTotal: Math.max(0, Number(manifest.count || 0) || 0) + Math.max(0, Number(manifest.archiveRef?.recordCount || 0) || 0), loadedTotal: storedRecords.length, externalSuppressed, storageMissingShards, storageCorruptShards, storageManifestCorrupt, storageForeignScopeKey, storageRecordCountMismatch, queryDim: queryVector.length, queryText: primaryQueryText, requestedQueryText, scopeKey: scope.scopeKey, candidates: 0, gateRejected: 0, scoreRejected: 0, shardSelection, queryEmbeddingCost, queryType, temporalIntent, truthIntent, queryIntent, overlay, previousTurnRecall, inactiveBranchFiltered, worldlineMismatchFiltered, privacyFiltered, sourceEditFiltered, stageElapsed };
+      return { records: [], currentStateFacts, total: 0, storedTotal: Math.max(0, Number(manifest.count || 0) || 0) + Math.max(0, Number(manifest.archiveRef?.recordCount || 0) || 0), loadedTotal: storedRecords.length, externalSuppressed, storageMissingShards, storageCorruptShards, storageManifestCorrupt, storageForeignScopeKey, storageRecordCountMismatch, queryDim: queryVector.length, queryText: primaryQueryText, requestedQueryText, scopeKey: scope.scopeKey, candidates: 0, gateRejected: 0, scoreRejected: 0, shardSelection, queryEmbeddingCost, queryType, temporalIntent, truthIntent, queryIntent, overlay, previousTurnRecall, inactiveBranchFiltered, worldlineMismatchFiltered, privacyFiltered, sourceEditFiltered, stageElapsed,
+        ...(lexicalFallback ? { fallbackWarning: '임베딩 검색을 쓸 수 없어 이번 요청은 키워드 검색으로 기억을 찾았습니다.', modelReadiness: { status: 'lexical_fallback', ready: false, reason: lexicalFallback.status, error: lexicalFallback.error } } : {}) };
     }
     const recallContext = { scopeKey: scope.scopeKey, currentUser: primaryQueryText, recentResponseRanks, latestStateByEntity, queryStateProperties, stateQueryAnchors: rawQueryAnchors, queryType, temporalIntent, truthIntent, queryIntent, overlay, strategy, records, latestResponseTurn, queryFallbackUsed, queryProvider, queryModel, queryProfileId, queryVector, allowLexicalFallback: true, sceneContext, queryTopics, previousTurn, previousTurnProfile, previousTurnNumber, excludedPreviousTurnNumber, excludedPreviousTurnSourceHash };
+    recallContext.allowLexicalFallback = !!lexicalFallback;
     const candidateLimit = Math.max(effectiveTopK, Math.min(records.length, Math.ceil(Number(cfg.candidateLimit || DEFAULTS.candidateLimit) * topKMultiplier)));
     const sparseStageStartedAt = Date.now();
     let arms = await generateRecallCandidateArms({
@@ -34749,7 +34921,8 @@ const MemorySuiteHealthRecovery = (() => {
     for (const fused of candidateHardGate) {
       const record = fused.record;
       const recordProvider = text(record?.provider || '').trim();
-      const compatibility = recordEmbeddingCompatibility(record, cfg, { provider: queryProvider, model: queryModel, dimensions: queryVector.length, profileId: queryProfileId });
+      const compatibility = recordEmbeddingCompatibility(record, cfg, { provider: queryProvider, model: queryModel,
+        dimensions: lexicalFallback && Array.isArray(record?.vector) ? record.vector.length : queryVector.length, profileId: lexicalFallback ? '' : queryProfileId });
       if (compatibility.legacyProfileCompatible && compatibility.comparable) vectorCompatibility.legacyCompatible++;
       if (!compatibility.comparable) {
         dimSkipped += 1;
@@ -34965,8 +35138,8 @@ const MemorySuiteHealthRecovery = (() => {
       episodeTraversal,
       latentEpisodic,
       stateValidity: { version: FLASHBACK_STATE_VALIDITY_VERSION, currentFacts: currentStateFacts.length },
-      fallbackWarning: '',
-      modelReadiness: { status: 'ready', ready: true },
+      fallbackWarning: lexicalFallback ? '임베딩 검색을 쓸 수 없어 이번 요청은 키워드 검색으로 기억을 찾았습니다.' : '',
+      modelReadiness: lexicalFallback ? { status: 'lexical_fallback', ready: false, reason: lexicalFallback.status, error: lexicalFallback.error } : { status: 'ready', ready: true },
       dimSkipped,
       vectorCompatibility,
       currentSceneTail: { candidates: currentSceneTail.length, selected: selected.filter(item => item.components?.currentSceneTail > 0).length },
@@ -39054,19 +39227,22 @@ const MemorySuiteHealthRecovery = (() => {
       if (scheduledEmbeddingQueues.get(key) !== marker) return;
       scheduledEmbeddingQueues.delete(key);
       if (Runtime.inBefore) { schedulePendingEmbeddingWork(key, { reason: options.reason, delayMs: 250 }); return; }
+      const generation = Runtime.embeddingGeneration;
       void (async () => {
         const settings = await loadSettings(true);
         if (settings.embeddingAutoProcess === false || !configuredModelEmbedding(settings)) return;
         const result = await processPendingEmbeddingQueue({ scopeKey: key, automatic: true });
-        Runtime.lastEmbeddingQueue = { ...result, reason: result.reason, trigger: options.reason || 'background', at: Date.now() };
+        Runtime.lastEmbeddingQueue = { ...result, scopeKey: key, generation, reason: result.reason, trigger: options.reason || 'background', at: Date.now() };
         invalidateGuiDataCache('all');
         if (isGuiRenderActive() && Runtime.guiTab === 'provider') void refreshEmbeddingWorkPanel(guiRoot, result);
         if ((result.ok && result.pendingSources > 0 && Number(result.ready || 0) + Number(result.failed || 0) > 0)
           || ['queue_running', 'request_active'].includes(result.reason)) {
           schedulePendingEmbeddingWork(key, { reason: 'continue_pending', delayMs: result.reason === 'queue_running' ? 1000 : 250 });
         }
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('embedding_queue', 120);
       })().catch(error => {
-        Runtime.lastEmbeddingQueue = { scopeKey: key, ready: 0, reason: error?.code || 'queue_failed', at: Date.now() };
+        Runtime.lastEmbeddingQueue = { scopeKey: key, generation, ready: 0, reason: error?.code || 'queue_failed', at: Date.now() };
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('embedding_queue_failed', 120);
         warn('pending embedding queue failed', error);
       });
     }, clampInt(options.delayMs, 0, 5000, 250));
@@ -39254,6 +39430,7 @@ const MemorySuiteHealthRecovery = (() => {
         remoteUpgradeQueued
       }, 'success');
       log(provisional ? 'captured completed response pending live confirmation' : 'captured finalized chat response', Runtime.lastCapture);
+      if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh(provisional ? 'provisional_capture_saved' : 'finalized_capture_saved', 120);
       return true;
     } finally {
       Runtime.finalizedCaptureInFlight.delete(pendingId);
@@ -39547,6 +39724,7 @@ const MemorySuiteHealthRecovery = (() => {
           opLog(provisionalPreserved ? 'capture_confirmation_expired' : 'finalized_capture_expired', { hook: 'liveChatMonitor', pending: current, result: Runtime.lastCapture }, 'warn');
         }
         stopFinalizedCaptureMonitor(pendingId);
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('capture_monitor_expired', 80);
         return;
       }
       const activeBarrier = currentPendingCaptureBarrier();
@@ -39631,6 +39809,7 @@ const MemorySuiteHealthRecovery = (() => {
                   at: Date.now(),
                   skipped: true,
                   reason: 'finalized_capture_save_rejected',
+                  pairIndex: Number(current.pairIndex || 0) || 0,
                   scopeKey: current.scope?.scopeKey || '',
                   pendingId,
                   attempts: state.attempts
@@ -39643,6 +39822,7 @@ const MemorySuiteHealthRecovery = (() => {
                   reason: 'finalized_capture_save_rejected'
                 }, 'error');
                 stopFinalizedCaptureMonitor(pendingId);
+                if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('capture_save_rejected', 80);
                 return;
               }
             }
@@ -39661,6 +39841,7 @@ const MemorySuiteHealthRecovery = (() => {
             at: Date.now(),
             skipped: true,
             reason: 'finalized_capture_monitor_failed',
+            pairIndex: Number(current.pairIndex || 0) || 0,
             scopeKey: current.scope?.scopeKey || '',
             pendingId,
             attempts: state.attempts,
@@ -39675,6 +39856,7 @@ const MemorySuiteHealthRecovery = (() => {
             reason: 'finalized_capture_monitor_failed'
           }, 'error');
           stopFinalizedCaptureMonitor(pendingId);
+          if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('capture_monitor_failed', 80);
           return;
         }
       }
@@ -40494,12 +40676,14 @@ const MemorySuiteHealthRecovery = (() => {
           revisionRecord.error = text(error?.code || error?.message || error).slice(0, 500);
           Runtime.lastChatOutputCapture = { ...revisionRecord, saved: false, provisional: true, remoteEmbeddingQueued: false };
           opLog('risu_chat_output_save_failed', { hook: 'risuChatOutput', ...Runtime.lastChatOutputCapture }, 'warn');
+          if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('risu_chat_output_failed', 80);
           // Keep the pending journal and request decision for the normal reconcile
           // path as well as an identical committed-output callback.
           throw error;
         }
         Runtime.lastChatOutputCapture = { ...revisionRecord, saved: saved === true, provisional: true, remoteEmbeddingQueued: false };
         opLog('risu_chat_output_revision', { hook: 'risuChatOutput', ...Runtime.lastChatOutputCapture }, 'info');
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('risu_chat_output_saved', 120);
       }
       return { ok: true, captured, duplicates, scopeKey: scope.scopeKey };
     });
@@ -40918,6 +41102,7 @@ const MemorySuiteHealthRecovery = (() => {
   let memoryBridgeIpcApi = null;
   let memoryBridgeIpcRetryScheduled = false;
   const registerMemoryBridgeIpc = async () => {
+    await getGradiaPluginReadOwner().start().catch(() => false);
     if (Runtime.unloaded) return false;
     if (memoryBridgeIpcRegistered) return true;
     const api = getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']);
@@ -43945,11 +44130,12 @@ ${cleanedText}`, 80),
   const formatUsd = (value) => {
     if (value == null || !Number.isFinite(Number(value))) return 'N/A';
     const n = Math.max(0, Number(value));
-    if (n === 0) return '$0.000000';
-    if (n < 0.000001) return '<$0.000001';
-    if (n < 0.01) return `$${n.toFixed(6)}`;
-    if (n < 1) return `$${n.toFixed(4)}`;
-    return `$${n.toFixed(2)}`;
+    // Readable money: no six-zero tails; tiny non-zero costs stay visibly non-zero.
+    if (n === 0) return '$0';
+    if (n < 0.0001) return '<$0.0001';
+    if (n < 0.01) return `$${n.toFixed(4)}`;
+    if (n < 1) return `$${n.toFixed(3)}`;
+    return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const scopeEmbeddingCostEstimate = (stats = {}, settings = Runtime.settings || DEFAULTS) => {
@@ -45465,6 +45651,8 @@ ${cleanedText}`, 80),
     }
     const queryFailure = recall.modelReadiness?.status === 'query_failed'
       ? `<div class="note note--warn"><b>쿼리 임베딩 실패 · 리콜 미전달</b><span> 원문은 보관됩니다. 모델 연결과 실제 오류를 확인한 뒤 다시 요청하세요.${recall.modelReadiness.error ? ` ${escapeHtml(recall.modelReadiness.error)}` : ''}</span></div>` : '';
+    const keywordFallback = recall.modelReadiness?.status === 'lexical_fallback'
+      ? `<div class="note note--warn"><b>키워드 검색으로 대체</b><span> ${recall.modelReadiness.reason === 'query_timeout' ? '임베딩 응답이 늦어' : recall.modelReadiness.reason === 'query_cooldown' ? '최근 임베딩 실패 후 1분 동안' : '쿼리 임베딩이 실패해'} 이번 요청은 BM25·정확 일치로 기억을 찾았습니다.${recall.modelReadiness.error ? ` ${escapeHtml(recall.modelReadiness.error)}` : ''}</span></div>` : '';
     if (recall.skipped) return queryFailure + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">최근 요청은 리콜을 건너뛰었습니다.</p><div class="lab__meta">${escapeHtml(recall.reason || recall.normalizedType || 'skipped')}</div><div class="lab__chips"><span class="badge">리콜 건너뜀</span></div></div><div class="frames"><div class="empty"><b>이 요청에서 선택된 기억이 없습니다.</b></div></div><nav class="film" aria-label="최근 선택 기억 프레임"></nav><details class="fold"><summary>검색 과정 · 고급 진단</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">${escapeHtml(safeStringify({reason:recall.reason,normalizedType:recall.normalizedType},'{}'))}</pre></div></details>`;
     const selected = Array.isArray(recall.selected) ? recall.selected.slice(0, 8) : [];
     const delivery = recall.delivery || {}, pipeline = delivery.pipeline || {};
@@ -45482,7 +45670,7 @@ ${cleanedText}`, 80),
     }).join('');
     const actualChars = Math.max(0, Number(recall.evidenceBudgetPlan?.actualChars || 0) || 0);
     const deliveredText = returned ? `후크 반환 ${delivered == null ? '확인 불가' : `${formatNumber(delivered)}개`} 프래그먼트${returnedMessages == null ? '' : ` · ${formatNumber(returnedMessages)}개 메시지`}` : '주입 여부 미확인';
-    return queryFailure + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">${escapeHtml(compact(recall.retrievalQuery || recall.latestUser || '', 180) || '검색 문맥을 확인할 수 없습니다.')}</p><div class="lab__meta">${escapeHtml(recallAgeText(recall.at))} · 후보 ${formatNumber(recall.candidates || 0)}개 → 선택 ${formatNumber(selectedCount)}개 · ${deliveredText}${actualChars ? ` · ${formatNumber(actualChars)}자` : ''}</div><div class="lab__chips"><span class="badge">저장 ${formatNumber(recall.storedRecords ?? recall.totalRecords ?? 0)}</span><span class="badge">후보 ${formatNumber(recall.candidates || 0)}</span><span class="badge">선택 ${formatNumber(selectedCount)}</span><span class="badge ${returned ? 'badge--ok' : 'badge--warn'}">${returned ? `주입 ${delivered == null ? '확인 불가' : formatNumber(delivered)}` : '주입 상태 미확인'}</span><span class="badge">제외(예산) ${formatNumber((delivery.discarded || []).filter(item => item.reason === 'not_delivered_budget').length)}</span></div></div><div class="frames">${rows || '<div class="empty"><b>이 검색에서 선택된 기억이 없습니다.</b></div>'}</div><nav class="film" aria-label="최근 선택 기억 프레임">${selected.map((_, i) => `<a href="#fb-recall-frame-${i}" data-frame="fb-recall-frame-${i}">FRAME ${String(i + 1).padStart(2, '0')}</a>`).join('')}</nav><details class="fold"><summary>검색 과정 · 고급 진단</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">${escapeHtml(safeStringify({ queryType: recall.queryType, candidateArms: recall.candidateArms, laneDiagnostics: recall.laneDiagnostics, elapsed: recall.stageElapsed, gateRejected: recall.gateRejected, alignment: recall.recallAlignment }, '{}'))}</pre></div></details>`;
+    return queryFailure + keywordFallback + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">${escapeHtml(compact(recall.retrievalQuery || recall.latestUser || '', 180) || '검색 문맥을 확인할 수 없습니다.')}</p><div class="lab__meta">${escapeHtml(recallAgeText(recall.at))} · 후보 ${formatNumber(recall.candidates || 0)}개 → 선택 ${formatNumber(selectedCount)}개 · ${deliveredText}${actualChars ? ` · ${formatNumber(actualChars)}자` : ''}</div><div class="lab__chips"><span class="badge">저장 ${formatNumber(recall.storedRecords ?? recall.totalRecords ?? 0)}</span><span class="badge">후보 ${formatNumber(recall.candidates || 0)}</span><span class="badge">선택 ${formatNumber(selectedCount)}</span><span class="badge ${returned ? 'badge--ok' : 'badge--warn'}">${returned ? `주입 ${delivered == null ? '확인 불가' : formatNumber(delivered)}` : '주입 상태 미확인'}</span><span class="badge">제외(예산) ${formatNumber((delivery.discarded || []).filter(item => item.reason === 'not_delivered_budget').length)}</span></div></div><div class="frames">${rows || '<div class="empty"><b>이 검색에서 선택된 기억이 없습니다.</b></div>'}</div><nav class="film" aria-label="최근 선택 기억 프레임">${selected.map((_, i) => `<a href="#fb-recall-frame-${i}" data-frame="fb-recall-frame-${i}">FRAME ${String(i + 1).padStart(2, '0')}</a>`).join('')}</nav><details class="fold"><summary>검색 과정 · 고급 진단</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">${escapeHtml(safeStringify({ queryType: recall.queryType, candidateArms: recall.candidateArms, laneDiagnostics: recall.laneDiagnostics, elapsed: recall.stageElapsed, gateRejected: recall.gateRejected, alignment: recall.recallAlignment }, '{}'))}</pre></div></details>`;
   };
 
   const renderActivityLogHtml = () => {
@@ -46115,7 +46303,7 @@ ${cleanedText}`, 80),
     return true;
   };
 
-  const FLASHBACK_GUI_MOCKUP_STYLES = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n\n\n/* Flashback 전용: 현상실 / 필름 / 프레임 컨셉 (현행 구현의 시각 언어를 유지하고 구조만 정리) */\n.lab{padding:24px 26px;background:#2c2d2b;color:#f3ece1;border-radius:var(--r-sm);position:relative}\n.lab .eyebrow{color:#cfc6b6;letter-spacing:.17em}\n.lab__q{margin:10px 0 0;font-size:16px;line-height:1.85;color:#f3ece1;max-width:60ch}\n.lab__meta{margin-top:10px;font-size:12px;color:#cfc6b6}\n.lab__chips{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}\n.lab__chips .badge{background:#45483f;border-color:#747469;color:#f0e9d9}\n.frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:18px}\n.frame-card{background:#fffdf7;border:1px solid var(--border);border-radius:2px;padding:10px;box-shadow:0 3px 8px #34291709}\n.frame-card[open]{grid-column:1/-1;border-color:var(--accent)}\n.frame-card>summary{list-style:none;cursor:pointer;display:block}\n.frame-card>summary::-webkit-details-marker{display:none}\n.frame-card__img{min-height:108px;padding:18px 16px;font-size:13px;line-height:1.8;margin-bottom:12px}\n.fc1{background:#d7e0da;color:#36483f}.fc2{background:#e8d9c6;color:#574737}.fc3{background:#d8dfe2;color:#374951}.fc4{background:#e4e1d1;color:#534e38}\n.frame-card__row{display:flex;justify-content:space-between;gap:10px;align-items:baseline}\n.frame-card__type{font:11.5px var(--font-mono);color:var(--text3)}\n.frame-card__title{font-size:14px;font-weight:700;margin:2px 0 4px}\n.frame-card__score{font:12px var(--font-mono);padding:3px 8px;background:var(--surface2);border-radius:2px;white-space:nowrap}\n.frame-card__more{color:var(--accent-ink);font-size:12px}\n.frame-card__more::after{content:\"기억 펼치기 ↗\"}.frame-card[open] .frame-card__more::after{content:\"기억 접기 −\"}\n.frame-card__detail{padding:16px 6px 6px;font-size:14px;line-height:1.9}\n.meter{display:grid;gap:6px;padding:12px;background:var(--surface2);border-radius:5px;margin-bottom:14px;font:12px var(--font-mono)}\n.meter meter{width:100%;height:12px;accent-color:var(--accent)}\n.film{display:flex;gap:9px;overflow-x:auto;margin:20px 0 4px;padding:12px;background:#2c2d2b;border-top:5px dashed #a99f8b;border-bottom:5px dashed #a99f8b}\n.film a{flex:0 0 auto;min-height:40px;display:grid;place-items:center;padding:6px 13px;background:#45483f;border:1px solid #747469;color:#f0e9d9;font:11.5px var(--font-mono);text-decoration:none}\n.film a:hover{background:#76594b}\n.inj{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;margin-top:14px}\n.inj>div{background:var(--surface);padding:12px 14px}.inj b{display:block;font:800 22px var(--font-mono)}.inj span{font-size:12px;color:var(--text2)}\n.rec-split{display:grid;grid-template-columns:1fr 1fr;gap:14px}\n.work{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:16px 18px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\n.work__no{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:800 14px var(--font-sans);background:var(--surface3)}\n.work+.work{margin-top:10px}\n.scopes tr.is-cur td{background:var(--accent-soft)}\n.tbl-act{display:flex;gap:6px;justify-content:flex-end}\n.matrix{display:grid;grid-template-columns:auto repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);font-size:12px;text-align:center}\n.matrix>*{background:var(--surface);padding:8px}.matrix .h{background:var(--surface2);font-weight:700}\n.ok-c{color:var(--ok-ink);font-weight:700}.bad-c{color:var(--danger-ink);font-weight:700}\n.plan-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.plan-grid>div{padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);font-size:12.5px}.plan-grid b{display:block;font-size:12px;color:var(--text3);margin-bottom:2px}\n.cost-table{display:grid;grid-template-columns:minmax(120px,170px) minmax(0,1fr);gap:6px 14px;margin:0;font-size:12.5px}.cost-table dt{color:var(--text3)}.cost-table dd{margin:0}\n.res-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 12px;border-top:1px solid var(--border);font-size:12.5px}.res-row:first-child{border-top:0}.res-row small{grid-column:1;color:var(--text3)}\n.mode-opt{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:12px 14px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}\n.mode-opt.is-on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:var(--accent-soft)}\n.mode-opt[disabled]{opacity:.62;cursor:not-allowed;background:var(--surface2)}\n.mode-opt b{font-size:14px}.mode-opt small{grid-column:1/-1;font-size:12.5px;color:var(--text2)}.mode-opt .why{grid-column:1/-1;font-size:12px;color:var(--danger-ink)}\n.film a.is-on{background:var(--accent);color:var(--on-accent)}\n.frame-card.is-cut .frame-card__img{opacity:.78}\n.cut-tag{font-size:11.5px;padding:1px 8px;border-radius:99px;border:1px dashed var(--border2);color:var(--text3)}\n.btn[disabled]+.why-d{display:block}.why-d{display:none;font-size:12px;color:var(--danger-ink);margin-top:4px}\n@container app (max-width:900px){.plan-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}\n@container app (max-width:640px){.cost-table{grid-template-columns:1fr}}\n@container app (max-width:900px){.rec-split,.inj{grid-template-columns:1fr}.frames{grid-template-columns:1fr}.work{grid-template-columns:auto 1fr}.work>.btn,.work>.cluster{grid-column:1/-1}}\n";
+  const FLASHBACK_GUI_MOCKUP_STYLES = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n\n\n/* Flashback 전용: 현상실 / 필름 / 프레임 컨셉 (현행 구현의 시각 언어를 유지하고 구조만 정리) */\n.lab{padding:24px 26px;background:#2c2d2b;color:#f3ece1;border-radius:var(--r-sm);position:relative}\n.lab .eyebrow{color:#cfc6b6;letter-spacing:.17em}\n.lab__q{margin:10px 0 0;font-size:16px;line-height:1.85;color:#f3ece1;max-width:60ch}\n.lab__meta{margin-top:10px;font-size:12px;color:#cfc6b6}\n.lab__chips{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}\n.lab__chips .badge{background:#45483f;border-color:#747469;color:#f0e9d9}\n.frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:18px}\n.frame-card{background:#fffdf7;border:1px solid var(--border);border-radius:2px;padding:10px;box-shadow:0 3px 8px #34291709}\n.frame-card[open]{grid-column:1/-1;border-color:var(--accent)}\n.frame-card>summary{list-style:none;cursor:pointer;display:block}\n.frame-card>summary::-webkit-details-marker{display:none}\n.frame-card__img{min-height:108px;padding:18px 16px;font-size:13px;line-height:1.8;margin-bottom:12px}\n.fc1{background:#d7e0da;color:#36483f}.fc2{background:#e8d9c6;color:#574737}.fc3{background:#d8dfe2;color:#374951}.fc4{background:#e4e1d1;color:#534e38}\n.frame-card__row{display:flex;justify-content:space-between;gap:10px;align-items:baseline}\n.frame-card__type{font:11.5px var(--font-mono);color:var(--text3)}\n.frame-card__title{font-size:14px;font-weight:700;margin:2px 0 4px}\n.frame-card__score{font:12px var(--font-mono);padding:3px 8px;background:var(--surface2);border-radius:2px;white-space:nowrap}\n.frame-card__more{color:var(--accent-ink);font-size:12px}\n.frame-card__more::after{content:\"기억 펼치기 ↗\"}.frame-card[open] .frame-card__more::after{content:\"기억 접기 −\"}\n.frame-card__detail{padding:16px 6px 6px;font-size:14px;line-height:1.9}\n.meter{display:grid;gap:6px;padding:12px;background:var(--surface2);border-radius:5px;margin-bottom:14px;font:12px var(--font-mono)}\n.meter meter{width:100%;height:12px;accent-color:var(--accent)}\n.film{display:flex;gap:9px;overflow-x:auto;margin:20px 0 4px;padding:12px;background:#2c2d2b;border-top:5px dashed #a99f8b;border-bottom:5px dashed #a99f8b}\n.film a{flex:0 0 auto;min-height:40px;display:grid;place-items:center;padding:6px 13px;background:#45483f;border:1px solid #747469;color:#f0e9d9;font:11.5px var(--font-mono);text-decoration:none}\n.film a:hover{background:#76594b}\n.inj{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;margin-top:14px}\n.inj>div{background:var(--surface);padding:12px 14px}.inj b{display:block;font:800 22px var(--font-mono)}.inj span{font-size:12px;color:var(--text2)}\n.rec-split{display:grid;grid-template-columns:1fr 1fr;gap:14px}\n.work{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:16px 18px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\n.work__no{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:800 14px var(--font-sans);background:var(--surface3)}\n.work+.work{margin-top:10px}\n.scopes tr.is-cur td{background:var(--accent-soft)}\n.tbl-act{display:flex;gap:6px;justify-content:flex-end}\n.matrix{display:grid;grid-template-columns:auto repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);font-size:12px;text-align:center}\n.matrix>*{background:var(--surface);padding:8px}.matrix .h{background:var(--surface2);font-weight:700}\n.ok-c{color:var(--ok-ink);font-weight:700}.bad-c{color:var(--danger-ink);font-weight:700}\n.plan-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.plan-grid>div{padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);font-size:12.5px}.plan-grid b{display:block;font-size:12px;color:var(--text3);margin-bottom:2px}\n.cost-table{display:grid;grid-template-columns:minmax(120px,170px) minmax(0,1fr);gap:6px 14px;margin:0;font-size:12.5px}.cost-table dt{color:var(--text3)}.cost-table dd{margin:0}\n.res-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 12px;border-top:1px solid var(--border);font-size:12.5px}.res-row:first-child{border-top:0}.res-row small{grid-column:1;color:var(--text3)}\n.mode-opt{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:12px 14px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}\n.mode-opt.is-on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:var(--accent-soft)}\n.mode-opt[disabled]{opacity:.62;cursor:not-allowed;background:var(--surface2)}\n.mode-opt b{font-size:14px}.mode-opt small{grid-column:1/-1;font-size:12.5px;color:var(--text2)}.mode-opt .why{grid-column:1/-1;font-size:12px;color:var(--danger-ink)}\n.film a.is-on{background:var(--accent);color:var(--on-accent)}\n.frame-card.is-cut .frame-card__img{opacity:.78}\n.cut-tag{font-size:11.5px;padding:1px 8px;border-radius:99px;border:1px dashed var(--border2);color:var(--text3)}\n.btn[disabled]+.why-d{display:block}.why-d{display:none;font-size:12px;color:var(--danger-ink);margin-top:4px}\n@container app (max-width:900px){.plan-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}\n@container app (max-width:640px){.cost-table{grid-template-columns:1fr}}\n@container app (max-width:900px){.rec-split,.inj{grid-template-columns:1fr}.frames{grid-template-columns:1fr}.work{grid-template-columns:auto 1fr}.work>.btn,.work>.cluster{grid-column:1/-1}}\n\n/* 설정 행: 이름과 설명을 두 줄로 분리 */\nlabel.setting>span:first-child{display:grid;gap:3px;min-width:0}\nlabel.setting .setting__name,label.setting .setting__desc{display:block}\n";
 
   const buildUiHtml = async () => {
     const settings = await loadSettings();
@@ -46394,6 +46582,7 @@ ${cleanedText}`, 80),
           expectedStorageBinding: view.storageBinding, expectedGeneration: view.generation, retryFailed, onlyFailed: retryFailed });
       } catch (error) { result = { ok: false, reason: error?.code || error?.message || 'queue_failed' }; }
       finally { embeddingWorkPanelBusy = false; syncEmbeddingWorkButtons(guiRoot); }
+      if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('embedding_work_ui', 80);
       if (root === guiRoot && isGuiRenderActive()) await refreshEmbeddingWorkPanel(root, result);
     };
     root.querySelector?.('#embeddingWorkRunBtn')?.addEventListener('click', () => run(false));
@@ -47917,6 +48106,7 @@ ${cleanedText}`, 80),
             : await inspectEmbeddingKeyPersistence());
         Runtime.lastStorageAction = { at: Date.now(), savedSettings: true, embeddingKeyPersistence: keyPersistence };
         schedulePendingEmbeddingWork(Runtime.currentScope?.scopeKey, { reason: 'settings_saved' });
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('settings_saved', 120);
         pushActivityLog('settings_saved', '프로바이더 설정을 저장했습니다.', {
           scopeKey: Runtime.currentScope?.scopeKey || '',
           mode: settings.mode,
@@ -47940,6 +48130,7 @@ ${cleanedText}`, 80),
           savedAdvancedSettings: true,
           embeddingKeyPersistence: keyPersistence
         };
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('advanced_settings_saved', 120);
         pushActivityLog('advanced_settings_saved', `고급 설정을 저장했습니다. 개발자 진단 로그: ${settings.operationLogEnabled ? '켜짐' : '꺼짐'}`, {
           scopeKey: Runtime.currentScope?.scopeKey || '',
           mode: settings.mode,
@@ -48316,6 +48507,7 @@ ${cleanedText}`, 80),
         // Release the host/UI lock before the potentially slow refresh and
         // completion dialog. A stalled repaint or modal must not strand RisuAI.
         setBusy(false);
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('maintenance_auto', 80);
         await refreshUi('import');
         await guiAlert(maintenanceResultText(result), maintenanceCompletionTitle(result));
       } catch (error) { await guiError('자동 점검·복구 실패', error); }
@@ -48329,6 +48521,7 @@ ${cleanedText}`, 80),
         if(!await guiConfirm(`${preview.warning}\n\n선택 ${c.eligibleGroups}묶음 · ${c.eligibleRecords}개 레코드\n남은 응답 묶음 ${c.remainingGroups}\n제외 ${c.excludedGroups}묶음 · ${c.excludedRecords}개 레코드\n\n선택한 묶음만 실행할까요?`,'아카이브 응답 한 묶음 복구'))return;
         setBusy(true,'아카이브 응답 묶음 복구');
         const result=await flashbackArchiveRecovery.repair(preview.ticket);setBusy(false);
+        if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('maintenance_archive_repair', 80);
         const label=result.status==='verified'?'선택한 아카이브 응답 묶음 완료':result.status==='uncertain'?'아카이브 응답 묶음 결과 불명':result.status==='failed'?'아카이브 응답 묶음 실패':'아카이브 응답 묶음 실행 차단';
         await guiAlert(`${label}\n검증 완료 ${result.archiveReembedded||0}개 레코드\n남은 응답 묶음 ${result.counts?.remainingGroups??c.remainingGroups}\n제외 ${result.counts?.excludedGroups??c.excludedGroups}묶음 · ${result.counts?.excludedRecords??c.excludedRecords}개 레코드\n제공자 요청 ${result.provider?.requests?.length||0}회\n후보 저장 ${result.candidates?.state||'none'} · 소유자 게시 ${result.publication?.state||'none'}\n아카이브 전체 범위는 이번 작업에서 검증하지 않았습니다.`,label);
       }catch(error){await guiError('아카이브 응답 묶음 복구 실패',error);}finally{setBusy(false);}
@@ -48348,6 +48541,7 @@ ${cleanedText}`, 80),
             if(!await guiConfirm(`${ticket.warning}\n\n대상 ${c.eligibleSources}묶음 · ${c.eligibleRecords}개 벡터\n제외: 실패 ${c.failedSources} · 결과 불명 ${c.uncertainSources} · 이관/복구 필요 ${c.legacySources+c.blockedSources}묶음 · 아카이브 ${c.archivePending}개 레코드\n\n확인한 대상만 실행할까요?`,'로컬 미완료 벡터 복구'))return;
             setBusy(true,'미완료 벡터 복구');
             const result=await flashbackHealthRecovery.repair(ticket);setBusy(false);
+            if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('maintenance_reembed_repair', 80);
             const labels={verified:'검증 완료',partial_success:'부분 성공',failed:'확정 실패',uncertain:'결과 불명',blocked:'실행 차단'};
             const states={none:'없음',requested:'요청함',verified:'읽기 검증 완료',unknown:'결과 불명'};
             await guiAlert(`${labels[result.status]||'미검증'}\n완료 ${result.counts?.completed||0} · 미완료 ${result.counts?.pending||0} · 실패 ${result.counts?.failed||0} · 결과 불명 ${result.counts?.unknown||0}\n진행 기록: ${states[result.journal?.state]||'없음'}\n기억 게시: ${states[result.publication?.state]||'없음'}\n제공자 요청: ${result.provider?.requests?.length||0}회\n로컬 대상 검증: ${result.finalVerification?.complete?'완료':'미완료'}\n아카이브 ${result.counts?.archivePending??'확인 불가'}개 레코드 제외 · 아카이브 복구 미지원\n전체 자료 정상 여부는 별도 점검으로 확인해 주세요.`,labels[result.status]||'복구 결과');
@@ -48366,6 +48560,7 @@ ${cleanedText}`, 80),
           // The maintenance commit is complete; refresh and the result dialog
           // are presentation work and must not keep the host locked.
           setBusy(false);
+          if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh(`maintenance_${mode}`, 80);
           await refreshUi('import');
           await guiAlert(maintenanceResultText(result), maintenanceCompletionTitle(result));
         } catch (error) { await guiError('고급 기억 유지보수 실패', error); }
@@ -48601,6 +48796,7 @@ ${cleanedText}`, 80),
     try {
       const ready = await registerUiOnce();
       if (ready) {
+        startFlashbackAttention();
         console.log(`[${PLUGIN_NAME}] GUI hook registered. setting=${!!Runtime.registered.setting} hamburger=${!!Runtime.registered.hamburgerButton}`);
         console.log(`[${PLUGIN_NAME}] Manual GUI command: __FlashbackMemory.showUi()`);
       } else {
@@ -48616,6 +48812,301 @@ ${cleanedText}`, 80),
       scheduleTimer(() => { registerUi(Runtime.settings || settings).catch(error => warn('registerUi retry failed', error)); }, 500);
     }
   };
+
+  // Zero-touch attention: a single chat-area button that exists only while attention
+  // is needed (raw response text capture failure, storage/manifest corruption, embedding
+  // failure, unconfigured embedding provider with pending work, cold start, or missing turns).
+  // Clicking the button immediately opens the relevant Flashback GUI tab ('import' or 'provider').
+  const FLASHBACK_ATTENTION_DISPLAY_NAME = 'FLASHBACK';
+  const FLASHBACK_ATTENTION_BUTTON_ID = 'vector-rag-memory-attention';
+  const flashbackAttentionIcon = kind => {
+    const warning = ['capture_failed', 'storage_error', 'embedding_uncertain', 'embedding_failed', 'vector_repair', 'embedding_unconfigured'].includes(kind);
+    const action = ['cold_start', 'missing_turns', 'source_changed', 'embedding_pending'].includes(kind);
+    const label = warning ? '확인 필요' : action ? '기억 동기화 필요' : '안내';
+    const badge = warning ? '#dc2626' : action ? '#fbbf24' : '#0e7490';
+    const mark = warning ? 'M25 3.5v4M25 10v.15' : action ? 'M25 3.5V7l2 1.5' : 'M25 6v4M25 3.5v.15';
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 32 32" role="img" aria-label="${FLASHBACK_ATTENTION_DISPLAY_NAME} · ${label}" data-memory-owner="flashback"><title>${FLASHBACK_ATTENTION_DISPLAY_NAME} · ${label}</title><rect x="2" y="5" width="25" height="25" rx="7" fill="#7c3aed" stroke="#ddd6fe"/><text x="14.5" y="24" text-anchor="middle" font-family="system-ui,sans-serif" font-size="20" font-weight="800" fill="#fff">F</text><circle cx="25" cy="7" r="6" fill="${badge}" stroke="#fff" stroke-width="1.5"/><path d="${mark}" fill="none" stroke="${action ? '#422006' : '#fff'}" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+  };
+  const FLASHBACK_ATTENTION_POLL_MS = 10000;
+  const FLASHBACK_ATTENTION_REFRESH_DELAY_MS = 2500;
+  const FlashbackAttention = {
+    started: false,
+    refreshTimer: null,
+    pollTimer: null,
+    evaluating: false,
+    lastIndexes: '',
+    buttonSignature: '',
+    state: null
+  };
+  const flashbackAttentionDecision = ({
+    captureFailed = false,
+    storageError = false,
+    embeddingUncertain = 0,
+    embeddingFailed = 0,
+    vectorRepair = 0,
+    embeddingUnconfigured = 0,
+    embeddingPending = 0,
+    coldStart = 0,
+    missingTurns = 0,
+    changedTurns = 0
+  } = {}) => {
+    if (captureFailed) {
+      return { kind: 'capture_failed', count: 1, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 원문 저장 실패`, tab: 'import' };
+    }
+    if (storageError) {
+      return { kind: 'storage_error', count: 1, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 저장소 오류 확인`, tab: 'import' };
+    }
+    if (embeddingUncertain > 0) {
+      return { kind: 'embedding_uncertain', count: embeddingUncertain, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 벡터 상태 확인 필요`, tab: 'provider', subtab: 'emb' };
+    }
+    if (embeddingFailed > 0) {
+      return { kind: 'embedding_failed', count: embeddingFailed, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 응답 벡터화 실패`, tab: 'provider', subtab: 'emb' };
+    }
+    if (vectorRepair > 0) {
+      return { kind: 'vector_repair', count: vectorRepair, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 벡터 복구 필요`, tab: 'provider', subtab: 'emb' };
+    }
+    if (embeddingUnconfigured > 0) {
+      return { kind: 'embedding_unconfigured', count: embeddingUnconfigured, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 임베딩 제공자 설정 필요`, tab: 'provider', subtab: 'emb' };
+    }
+    if (embeddingPending > 0) {
+      return { kind: 'embedding_pending', count: embeddingPending, icon: '⚠️', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 벡터 생성 대기 중`, tab: 'provider', subtab: 'emb' };
+    }
+    if (coldStart > 0) {
+      return { kind: 'cold_start', count: coldStart, icon: '🕘', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 지난 ${coldStart}턴 기억 만들기`, tab: 'import' };
+    }
+    if (changedTurns > 0) {
+      return { kind: 'source_changed', count: changedTurns + missingTurns, icon: '🕘', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 원문 동기화 ${changedTurns + missingTurns}턴`, tab: 'import' };
+    }
+    if (missingTurns > 0) {
+      return { kind: 'missing_turns', count: missingTurns, icon: '🕘', name: `${FLASHBACK_ATTENTION_DISPLAY_NAME} · 기억 없는 턴 ${missingTurns}개`, tab: 'import' };
+    }
+    return { kind: '', count: 0 };
+  };
+  const computeFlashbackAttention = async () => {
+    const settings = await loadSettings(false);
+    if (settings?.enabled === false || settings?.mode === 'disabled' || Runtime.unloaded) {
+      return { scopeKey: '', kind: '', count: 0 };
+    }
+    const snapshot = await loadRisuSnapshot(false);
+    const scope = resolveScopeFromSnapshot(snapshot);
+    if (!scope?.scopeKey) return { scopeKey: '', kind: '', count: 0 };
+
+    // Read the owner's logical corpus, including immutable archive layers. This
+    // inspection must not schedule retirement, write memory, or call a provider.
+    let loaded = null;
+    try { loaded = await loadScopeRecords(scope.scopeKey, { readOnly: true, rawTextOnly: true }); }
+    catch (_) { /* An unavailable corpus is a storage warning, never an empty one. */ }
+    const manifest = loaded?.manifest;
+    const storageError = !loaded || manifest?.manifestCorrupt === true || !!manifest?.foreignScopeKey
+      || manifest?.archiveRefInvalid === true || Number(manifest?.missingShards || 0) > 0
+      || Number(manifest?.corruptShards || 0) > 0 || manifest?.recordCountMismatch === true;
+    const records = loaded?.records || [];
+    const work = statsForRecords(records).embeddingWork;
+    const registry = readEmbeddingAttemptRegistry(manifest || {});
+    const runtimeId = currentEmbeddingWorkRuntime();
+    for (const record of records) {
+      if (!isValidatedEmbeddingWorkRecord(record) || record.embeddingWork.status === 'uncertain') continue;
+      const job = record.embeddingWork;
+      const detached = job.status === 'running'
+        && (job.attempt?.runtimeId !== runtimeId || !activeEmbeddingWorkAttempts.has(job.attempt?.id));
+      const unresolved = unresolvedEmbeddingEntries(registry, record, settings)
+        .some(entry => entry.attemptId !== job.attempt?.id || entry.runtimeId !== runtimeId || !activeEmbeddingWorkAttempts.has(entry.attemptId));
+      if (detached || unresolved) { work.uncertain++; if (Object.hasOwn(work, job.status)) work[job.status]--; }
+    }
+    const queue = Runtime.lastEmbeddingQueue;
+    const lastQueue = queue?.scopeKey === scope.scopeKey && queue?.generation === Runtime.embeddingGeneration ? queue : null;
+    const embeddingEnabled = settings?.embeddingEnabled !== false;
+    const isConfiguredProvider = configuredModelEmbedding(settings);
+    // lastEmbedError also contains query errors. Only durable document work can
+    // establish a failed/uncertain response vector in this scope.
+    const embeddingUncertain = embeddingEnabled ? Number(work.uncertain || 0) : 0;
+    const embeddingFailed = embeddingEnabled ? Number(work.failed || 0) : 0;
+    const vectorRepair = embeddingEnabled ? Number(work.repairNeeded || 0) : 0;
+    const embeddingUnconfigured = embeddingEnabled
+      ? (!isConfiguredProvider ? Math.max(Number(work.unconfigured || 0), Number(work.pending || 0)) : Number(work.unconfigured || 0)) : 0;
+    const embeddingPending = embeddingEnabled && isConfiguredProvider && Number(work.pending || 0) > 0
+      && (settings.embeddingAutoProcess === false || lastQueue?.reason === 'automatic_paused'
+        || lastQueue?.reason === 'no_durable_progress' || lastQueue?.reason === 'queue_failed' || lastQueue?.blocked?.length > 0
+        || (lastQueue && lastQueue.pendingSources > 0 && lastQueue.ready === 0 && lastQueue.failed === 0))
+      ? Number(work.pending || 0) : 0;
+
+    const live = liveChatReadState(snapshot.chat || {}, scope.scopeKey);
+    const livePairs = liveChatStateFromNormalized(live.normalized || []).pairs || [];
+    const completedTurns = livePairs.length;
+    const sources = collectLiveChatSourcesFromSnapshot(snapshot, normalizeColdStartOptions(settings, { scope: 'current', historyLimit: 0 }));
+    const responseRecords = records.filter(r => isResponseMemoryRecord(r) && !(r.autoEpisode || r.sourceType === 'episode_index'));
+    const diff = diffLiveChatSourcesAgainstRecords(sources, responseRecords);
+    const unresolved = [...diff.missing, ...diff.changed];
+    const unresolvedPairs = new Set(unresolved.map(source => Number(responsePairFromMaintenanceSource(source).pairIndex)));
+    const pendingPairIndexes = new Set();
+    const failures = [];
+    const capture = Runtime.lastCapture;
+    if (capture?.skipped && ['finalized_capture_save_rejected', 'finalized_capture_monitor_failed', 'capture_monitor_expired'].includes(capture.reason)) failures.push(capture);
+    const output = Runtime.lastChatOutputCapture;
+    if (output && (output.saved === false || output.status === 'failed')) failures.push(output);
+    if (Runtime.lastPendingCaptureRecovery?.reason === 'recovery_failed') failures.push(Runtime.lastPendingCaptureRecovery);
+    const pendingById = new Map();
+    for (const pending of Runtime.pendingTurns || []) {
+      if (pending?.scope?.scopeKey !== scope.scopeKey) continue;
+      pendingById.set(pending.pendingId, pending);
+      if (pending.pairIndex) pendingPairIndexes.add(Number(pending.pairIndex));
+    }
+    for (const [pendingId, monitor] of Runtime.finalizedCaptureMonitors || []) {
+      const pending = monitor?.pending || pendingById.get(pendingId);
+      if (pending?.scope?.scopeKey !== scope.scopeKey) continue;
+      if (pending.pairIndex) pendingPairIndexes.add(Number(pending.pairIndex));
+      if (monitor.attempts >= 3 || ['finalized_capture_save_rejected', 'capture_monitor_expired', 'capture_monitor_failed'].includes(monitor.lastFailureStage)) {
+        failures.push({ ...monitor, scopeKey: scope.scopeKey, pairIndex: pending.pairIndex });
+      }
+    }
+    // A past event is not an unresolved failure after the exact live source has
+    // been recovered. Do not clear diagnostic history as a side effect of reading.
+    const captureFailed = !storageError && failures.some(failure => {
+      if (failure.scopeKey !== scope.scopeKey) return false;
+      const pairIndex = Number(failure.pairIndex || pendingById.get(failure.pendingId)?.pairIndex || 0);
+      if (!unresolvedPairs.has(pairIndex)) return false;
+      const pair = livePairs.find(row => Number(row.pairIndex) === pairIndex);
+      return !failure.bodyHash || failure.bodyHash === stableHash(canonicalChatResponseText(pair?.assistantText || ''));
+    });
+    const actionable = source => !pendingPairIndexes.has(Number(responsePairFromMaintenanceSource(source).pairIndex));
+    const missing = storageError ? [] : diff.missing.filter(actionable);
+    const changed = storageError ? [] : diff.changed.filter(actionable);
+    const coldStart = records.length === 0 && !storageError ? missing.length : 0;
+    const missingTurns = coldStart ? 0 : missing.length;
+    const changedTurns = changed.length;
+
+    // Scope changes during asynchronous storage reads must not publish a stale
+    // chat's warning into the new chat's button registry.
+    const current = resolveScopeFromSnapshot(await loadRisuSnapshot(true));
+    if (current?.scopeKey !== scope.scopeKey) return { stale: true };
+
+    const decision = flashbackAttentionDecision({
+      captureFailed,
+      storageError,
+      embeddingUncertain,
+      embeddingFailed,
+      vectorRepair,
+      embeddingUnconfigured,
+      embeddingPending,
+      coldStart,
+      missingTurns,
+      changedTurns
+    });
+
+    return {
+      ...decision,
+      scopeKey: scope.scopeKey,
+      completedTurns,
+      checkedAt: Date.now()
+    };
+  };
+  const syncFlashbackAttentionButton = async next => {
+    const signature = next?.kind ? `${next.kind}:${next.count}:${next.scopeKey || ''}` : '';
+    if (signature === FlashbackAttention.buttonSignature) return true;
+    const uiApi = getApiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || getLiveApi();
+    const buttonApi = getApiCandidates().find(candidate => typeof candidate?.registerButton === 'function') || getLiveApi();
+    if (FlashbackAttention.buttonSignature && typeof uiApi?.unregisterUIPart === 'function') {
+      try { await uiApi.unregisterUIPart(FLASHBACK_ATTENTION_BUTTON_ID); } catch (_) {}
+    }
+    FlashbackAttention.buttonSignature = '';
+    if (!next?.kind || typeof buttonApi?.registerButton !== 'function' || Runtime.unloaded) return !next?.kind;
+    try {
+      await buttonApi.registerButton({
+        name: next.name,
+        icon: flashbackAttentionIcon(next.kind),
+        iconType: 'html',
+        location: 'chat',
+        id: FLASHBACK_ATTENTION_BUTTON_ID
+      }, () => { void openFlashbackAttention(); });
+      FlashbackAttention.buttonSignature = signature;
+      pushActivityLog('attention_shown', `${PLUGIN_NAME} 주의 알림 버튼이 표시되었습니다.`, { kind: next.kind, count: next.count }, 'info');
+      return true;
+    } catch (error) {
+      warn('flashback_attention_button_failed', error);
+      return false;
+    }
+  };
+  const refreshFlashbackAttention = async () => {
+    if (!FlashbackAttention.started || Runtime.unloaded) return null;
+    if (FlashbackAttention.evaluating) {
+      scheduleFlashbackAttentionRefresh('busy', 1000);
+      return null;
+    }
+    FlashbackAttention.evaluating = true;
+    try {
+      const next = await computeFlashbackAttention();
+      if (next?.stale) { scheduleFlashbackAttentionRefresh('scope_changed', 0); return null; }
+      if (Runtime.unloaded) return null;
+      FlashbackAttention.state = next;
+      await syncFlashbackAttentionButton(next);
+      return next;
+    } catch (error) {
+      warn('flashback_attention_refresh_failed', error);
+      return null;
+    } finally {
+      FlashbackAttention.evaluating = false;
+    }
+  };
+  function scheduleFlashbackAttentionRefresh(reason = '', delayMs = FLASHBACK_ATTENTION_REFRESH_DELAY_MS) {
+    if (!FlashbackAttention.started || Runtime.unloaded) return false;
+    if (FlashbackAttention.refreshTimer) clearTimeout(FlashbackAttention.refreshTimer);
+    FlashbackAttention.refreshTimer = setTimeout(() => {
+      FlashbackAttention.refreshTimer = null;
+      void refreshFlashbackAttention();
+    }, Math.max(0, Number(delayMs) || 0));
+    FlashbackAttention.refreshTimer?.unref?.();
+    return true;
+  }
+  const pollFlashbackAttention = async () => {
+    FlashbackAttention.pollTimer = null;
+    if (!FlashbackAttention.started || Runtime.unloaded) return;
+    try {
+      const api = getApiCandidates().find(candidate => typeof candidate?.getCurrentCharacterIndex === 'function' && typeof candidate?.getCurrentChatIndex === 'function') || getLiveApi();
+      if (typeof api?.getCurrentCharacterIndex === 'function' && typeof api?.getCurrentChatIndex === 'function') {
+        const indexes = `${await api.getCurrentCharacterIndex()}:${await api.getCurrentChatIndex()}`;
+        if (indexes !== FlashbackAttention.lastIndexes) {
+          FlashbackAttention.lastIndexes = indexes;
+          scheduleFlashbackAttentionRefresh('chat_switch', 500);
+        }
+      }
+    } catch (_) {}
+    if (!Runtime.unloaded) {
+      FlashbackAttention.pollTimer = setTimeout(() => void pollFlashbackAttention(), FLASHBACK_ATTENTION_POLL_MS);
+      FlashbackAttention.pollTimer?.unref?.();
+    }
+  };
+  const startFlashbackAttention = () => {
+    if (FlashbackAttention.started || Runtime.unloaded) return false;
+    FlashbackAttention.started = true;
+    void pollFlashbackAttention();
+    scheduleFlashbackAttentionRefresh('start', 800);
+    return true;
+  };
+  const stopFlashbackAttention = async () => {
+    for (const key of ['refreshTimer', 'pollTimer']) {
+      if (FlashbackAttention[key]) {
+        try { clearTimeout(FlashbackAttention[key]); } catch (_) {}
+        FlashbackAttention[key] = null;
+      }
+    }
+    FlashbackAttention.started = false;
+    if (FlashbackAttention.buttonSignature) {
+      const uiApi = getApiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || getLiveApi();
+      try { await uiApi?.unregisterUIPart?.(FLASHBACK_ATTENTION_BUTTON_ID); } catch (_) {}
+      FlashbackAttention.buttonSignature = '';
+    }
+  };
+  async function openFlashbackAttention() {
+    const state = FlashbackAttention.state;
+    if (!state?.kind || Runtime.unloaded) return false;
+    const targetTab = state.tab || 'overview';
+    Runtime.guiTab = targetTab;
+    if (targetTab === 'provider') Runtime.guiConnectSubtab = state.subtab || 'emb';
+    const shown = await showUi();
+    if (!shown) return false;
+    setActiveGuiTab(targetTab);
+    return true;
+  }
 
   const sanitizeEmbeddingSettingsForDiagnostics = (settings = {}) => ({
     ...settings,
@@ -48885,6 +49376,727 @@ ${cleanedText}`, 80),
     return true;
   };
 
+  /* GRADIA PLUGIN READ START */
+function createGradiaReadPrimitives() {
+  const utf8Bytes = value => {
+    const text = String(value || '');
+    if (typeof TextEncoder === 'function') return new TextEncoder().encode(text);
+    const bytes = [];
+    for (let i = 0; i < text.length; i += 1) {
+      let code = text.charCodeAt(i);
+      if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) {
+        const next = text.charCodeAt(i + 1);
+        if (next >= 0xdc00 && next <= 0xdfff) {
+          code = 0x10000 + ((code - 0xd800) << 10) + (next - 0xdc00);
+          i += 1;
+        } else code = 0xfffd;
+      } else if (code >= 0xd800 && code <= 0xdfff) code = 0xfffd;
+      if (code <= 0x7f) bytes.push(code);
+      else if (code <= 0x7ff) bytes.push(0xc0 | (code >>> 6), 0x80 | (code & 0x3f));
+      else if (code <= 0xffff) bytes.push(0xe0 | (code >>> 12), 0x80 | ((code >>> 6) & 0x3f), 0x80 | (code & 0x3f));
+      else bytes.push(0xf0 | (code >>> 18), 0x80 | ((code >>> 12) & 0x3f), 0x80 | ((code >>> 6) & 0x3f), 0x80 | (code & 0x3f));
+    }
+    return new Uint8Array(bytes);
+  };
+  const sha256Hex = value => {
+    const bytes = utf8Bytes(value);
+    const bitLength = bytes.length * 8;
+    const paddedLength = Math.ceil((bytes.length + 9) / 64) * 64;
+    const data = new Uint8Array(paddedLength);
+    data.set(bytes);
+    data[bytes.length] = 0x80;
+    const high = Math.floor(bitLength / 0x100000000);
+    const low = bitLength >>> 0;
+    data[paddedLength - 8] = (high >>> 24) & 0xff;
+    data[paddedLength - 7] = (high >>> 16) & 0xff;
+    data[paddedLength - 6] = (high >>> 8) & 0xff;
+    data[paddedLength - 5] = high & 0xff;
+    data[paddedLength - 4] = (low >>> 24) & 0xff;
+    data[paddedLength - 3] = (low >>> 16) & 0xff;
+    data[paddedLength - 2] = (low >>> 8) & 0xff;
+    data[paddedLength - 1] = low & 0xff;
+    const constants = [
+      0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+      0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+      0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+      0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+      0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+      0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+      0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+      0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    ];
+    const rotate = (word, bits) => (word >>> bits) | (word << (32 - bits));
+    let h0=0x6a09e667, h1=0xbb67ae85, h2=0x3c6ef372, h3=0xa54ff53a;
+    let h4=0x510e527f, h5=0x9b05688c, h6=0x1f83d9ab, h7=0x5be0cd19;
+    const words = new Uint32Array(64);
+    for (let offset = 0; offset < data.length; offset += 64) {
+      for (let i = 0; i < 16; i += 1) {
+        const at = offset + i * 4;
+        words[i] = ((data[at] << 24) | (data[at + 1] << 16) | (data[at + 2] << 8) | data[at + 3]) >>> 0;
+      }
+      for (let i = 16; i < 64; i += 1) {
+        const s0 = rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >>> 3);
+        const s1 = rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >>> 10);
+        words[i] = (words[i - 16] + s0 + words[i - 7] + s1) >>> 0;
+      }
+      let a=h0, b=h1, c=h2, d=h3, e=h4, f=h5, g=h6, h=h7;
+      for (let i = 0; i < 64; i += 1) {
+        const s1 = rotate(e, 6) ^ rotate(e, 11) ^ rotate(e, 25);
+        const choice = (e & f) ^ (~e & g);
+        const temp1 = (h + s1 + choice + constants[i] + words[i]) >>> 0;
+        const s0 = rotate(a, 2) ^ rotate(a, 13) ^ rotate(a, 22);
+        const majority = (a & b) ^ (a & c) ^ (b & c);
+        const temp2 = (s0 + majority) >>> 0;
+        h=g; g=f; f=e; e=(d + temp1) >>> 0; d=c; c=b; b=a; a=(temp1 + temp2) >>> 0;
+      }
+      h0=(h0+a)>>>0; h1=(h1+b)>>>0; h2=(h2+c)>>>0; h3=(h3+d)>>>0;
+      h4=(h4+e)>>>0; h5=(h5+f)>>>0; h6=(h6+g)>>>0; h7=(h7+h)>>>0;
+    }
+    return [h0,h1,h2,h3,h4,h5,h6,h7].map(word => word.toString(16).padStart(8, '0')).join('');
+  };
+
+return {fingerprint: sha256Hex, byteLength: value => utf8Bytes(value).length};
+}
+const createGradiaPluginRead = (function createGradiaPluginRead(options) {
+  const schema = 'memory-suite.gradia-plugin-read.v1';
+  const requestChannel = 'gradia_memory_read_request_v1', responseChannel = 'gradia_memory_read_response_v1';
+  const readerId = 'serial_gradation_agents_for_rp';
+  const ids = { libra: 'libra', hayaku: 'hayaku_locator_continuity', flashback: 'flashback_memory' };
+  const { fingerprint, byteLength } = options.primitives;
+  const fail = code => { throw Object.assign(new Error(code), { code }); };
+  const api = () => typeof options.api === 'function' ? options.api() : options.api;
+  const copy = value => JSON.parse(JSON.stringify(value));
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const native = scope => ({ characterId: scope?.characterId, chatId: scope?.chatId });
+  const validScope = scope => ['scopeKey', 'characterId', 'chatId'].every(key => typeof scope?.[key] === 'string'
+    && scope[key].length > 0 && scope[key].length <= 512 && !/[\0\r\n]/.test(scope[key]));
+  const budget = value => Number.isSafeInteger(value) && value >= 1 && value <= 33554432;
+  let disposed = false, registered = false, sequence = 0;
+  const instance = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+  const nextId = () => instance + ':' + (++sequence);
+  const receipts = new Map(), pending = new Map(), issued = new Map();
+  const closeRecord = record => {
+    if (!record || record.closed) return;
+    record.closed = true; clearTimeout(record.timer); record.read?.close?.(); record.read = null;
+    receipts.delete(record.id);
+  };
+  const send = async (target, channel, body) => await api().postPluginChannelMessage(target, channel, body);
+  const ownerBoundary = async request => {
+    if (disposed) fail('LIB_READ_CANCELED');
+    const value = await options.boundary();
+    if (!validScope(value?.scope) || value.mode !== 'plugin_only') fail('LIB_READ_PLUGIN_MODE_REQUIRED');
+    if (value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
+    if (request?.native && !same(native(value.scope), request.native)
+      || request?.scope && !same(value.scope, request.scope)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
+    return copy(value);
+  };
+  const assertRecord = async record => {
+    if (!record || record.closed || !record.read) fail('LIB_READ_STALE');
+    if (!same(await ownerBoundary({ scope: record.boundary.scope }), record.boundary)) fail('LIB_READ_BOUNDARY_CHANGED');
+    if (await record.read.assertCurrent() !== true) fail('LIB_READ_STALE');
+    if (record.closed || !same(await ownerBoundary({ scope: record.boundary.scope }), record.boundary)) fail('LIB_READ_BOUNDARY_CHANGED');
+    return true;
+  };
+  const ownerHandler = async (message, metadata = {}) => {
+    // The sender is host metadata, never a self-asserted body field.
+    if (disposed || metadata.sender !== readerId || message?.schema !== schema || message.kind !== 'request'
+      || typeof message.id !== 'string' || message.id.length > 160
+      || !['describe', 'capture', 'current', 'release'].includes(message.action)) return;
+    if (byteLength(JSON.stringify(message)) > 65536) return;
+    const { id, action } = message;
+    let result, record;
+    try {
+      if (action === 'release') { closeRecord(receipts.get(message.receipt || id)); result = { released: true }; }
+      else if (action === 'describe') result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await ownerBoundary(message)) };
+      else if (action === 'current') {
+        record = receipts.get(message.receipt);
+        await assertRecord(record); result = { current: true, evidenceRevision: record.revision };
+      } else {
+        if (receipts.has(id) || receipts.size >= 16) fail('LIB_READ_BUSY');
+        if (!validScope(message.scope) || !budget(message.maxCorpusBytes) || typeof message.queryText !== 'string'
+          || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
+        const p = message.proposal;
+        if (p !== undefined && (!p || p.schema !== 'gradia.input-writer-proposal.v1' || p.purpose !== 'input_writer_proposal'
+          || p.factAdopted !== false || typeof p.operationId !== 'string' || !p.operationId || p.operationId.length > 160
+          || !/^[a-f0-9]{64}$/.test(p.proposalDigest || '') || !/^[a-f0-9]{64}$/.test(p.nativeContextDigest || '')
+          || typeof p.queryTruncated !== 'boolean' || Object.keys(p).length !== 7)) fail('LIB_READ_PROPOSAL_INVALID');
+        // Reserve before the first await so timeout/release can cancel discovery
+        // as well as an in-flight owner query.
+        record = { id, boundary: null, read: null, closed: false };
+        receipts.set(id, record);
+        record.timer = setTimeout(() => closeRecord(record), options.receiptTtlMs || 600000);
+        record.timer?.unref?.();
+        const boundary = await ownerBoundary(message);
+        if (record.closed) fail('LIB_READ_CANCELED');
+        record.boundary = boundary;
+        const read = await options.capture(message, { check() { if (record.closed || disposed) fail('LIB_READ_CANCELED'); } });
+        if (record.closed || disposed) { read?.close?.(); fail('LIB_READ_CANCELED'); }
+        record.read = read;
+        if (!Array.isArray(read?.items) || read.items.length > 4096) fail('LIB_READ_RESPONSE_INVALID');
+        let bytes = 0, metadataBytes = 0;
+        const seen = new Set();
+        for (const item of read.items) {
+          if (typeof item?.content !== 'string' || !item.id || !item.key || seen.has(JSON.stringify([item.id, item.key]))
+            || item.source?.namespace !== options.owner) fail('LIB_READ_RESPONSE_INVALID');
+          seen.add(JSON.stringify([item.id, item.key])); bytes += byteLength(item.content);
+          const size = byteLength(JSON.stringify({ ...item, content: '' })); metadataBytes += size;
+          if (size > 65536 || metadataBytes > 1048576 || bytes > message.maxCorpusBytes) fail('LIB_READ_BUDGET_EXCEEDED');
+        }
+        record.revision = fingerprint(JSON.stringify([instance, id, boundary, read.items]));
+        await assertRecord(record);
+        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, complete: true, scope: boundary.scope,
+          receipt: id, evidenceRevision: record.revision, items: read.items, corpusBytes: bytes, engine: read.engine || null };
+      }
+      await send(readerId, responseChannel, { schema, kind: 'response', id, action, result });
+    } catch (error) {
+      if (record) closeRecord(record);
+      await send(readerId, responseChannel, { schema, kind: 'response', id, action,
+        error: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_OWNER_UNAVAILABLE' });
+    }
+  };
+  const release = (owner, receipt) => {
+    issued.delete(receipt);
+    // A release uses the capture ID and also cancels an owner operation that is
+    // still running; it never releases an unrelated request's receipt.
+    return send(ids[owner], requestChannel, { schema, kind: 'request', id: receipt, action: 'release', receipt }).catch(() => {});
+  };
+  const readerHandler = (message, metadata = {}) => {
+    if (disposed || message?.schema !== schema || message.kind !== 'response') return;
+    const record = pending.get(message.id);
+    if (!record || metadata.sender !== ids[record.owner] || message.action !== record.action) return;
+    if (!message.error && record.action === 'capture' && message.result?.receipt !== message.id) {
+      record.finish(Object.assign(new Error('LIB_READ_RESPONSE_INVALID'), { code: 'LIB_READ_RESPONSE_INVALID' })); return;
+    }
+    record.finish(message.error ? Object.assign(new Error(message.error), { code: message.error }) : null, message.result);
+  };
+  let starting = null;
+  const register = async () => {
+    if (disposed) fail('LIB_READ_CANCELED');
+    if (registered) return true;
+    const host = api();
+    if (typeof host?.addPluginChannelListener !== 'function' || typeof host?.postPluginChannelMessage !== 'function') fail('LIB_READ_IPC_UNAVAILABLE');
+    const channel = options.role === 'owner' ? requestChannel : responseChannel;
+    const handler = options.role === 'owner' ? ownerHandler : readerHandler;
+    if (await host.addPluginChannelListener(channel, handler) === false) fail('LIB_READ_IPC_UNAVAILABLE');
+    if (disposed) { await host.removePluginChannelListener?.(channel, handler); fail('LIB_READ_CANCELED'); }
+    registered = true; return true;
+  };
+  const start = async () => {
+    if (!starting) starting = register().finally(() => { starting = null; });
+    return await starting;
+  };
+  const rpc = async (owner, action, body = {}, signal) => {
+    await start();
+    if (signal?.aborted) fail('LIB_READ_CANCELED');
+    const id = nextId();
+    if (action === 'capture') issued.set(id, owner);
+    return await new Promise((resolve, reject) => {
+      const record = { owner, action, finish(error, result) {
+        if (!pending.delete(id)) return;
+        clearTimeout(record.timer); signal?.removeEventListener('abort', record.abort);
+        if (error && action === 'capture') void release(owner, id);
+        error ? reject(error) : resolve(result);
+      } };
+      record.abort = () => record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
+      record.timer = setTimeout(() => record.finish(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' })),
+        options.timeoutMs || (action === 'describe' ? 1500 : 25000));
+      pending.set(id, record); signal?.addEventListener('abort', record.abort, { once: true });
+      if (signal?.aborted) { record.abort(); return; }
+      void send(ids[owner], requestChannel, { schema, kind: 'request', id, action, ...body })
+        .catch(() => record.finish(Object.assign(new Error('LIB_READ_IPC_UNAVAILABLE'), { code: 'LIB_READ_IPC_UNAVAILABLE' })));
+    });
+  };
+  const describe = async (scope, owners = Object.keys(ids)) => {
+    const scopes = {}, unavailable = {};
+    await Promise.all(owners.map(async owner => {
+      try {
+        const result = await rpc(owner, 'describe', { native: native(scope) });
+        if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true
+          || result.mode !== 'plugin_only' || !validScope(result.scope) || !same(native(result.scope), native(scope))) fail('LIB_READ_RESPONSE_INVALID');
+        scopes[owner] = result.scope;
+      } catch (error) { unavailable[owner] = error.code || 'LIB_READ_IPC_UNAVAILABLE'; }
+    }));
+    if (disposed) fail('LIB_READ_CANCELED');
+    // Stable owner order is part of binding identity, independent of RPC order.
+    const ordered = Object.fromEntries(Object.keys(ids).filter(owner => scopes[owner]).map(owner => [owner, scopes[owner]]));
+    if (!Object.keys(ordered).length) fail('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE');
+    return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
+  };
+  const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
+    async openReadSession(scope, input = {}) {
+      const owners = Object.keys(scopes), captured = [];
+      let closed = false, stale = false;
+      const close = () => { if (closed) return; closed = true; for (const value of captured) void release(value.owner, value.receipt); };
+      const assertCurrentSync = () => {
+        options.check?.();
+        if (closed || stale || disposed) fail('LIB_READ_STALE');
+        return true;
+      };
+      try {
+        options.check?.();
+        if (!budget(input.maxCorpusBytes) || !same(scope, scopes[owners[0]])) fail('LIB_READ_REQUEST_INVALID');
+        let corpusBytes = 0;
+        const items = [];
+        for (const owner of owners) {
+          assertCurrentSync();
+          const remaining = input.maxCorpusBytes - corpusBytes;
+          if (remaining < 1) fail('LIB_READ_BUDGET_EXCEEDED');
+          const result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '',
+            maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
+          // Retain the receipt before validating the response or cancellation.
+          if (typeof result?.receipt === 'string') captured.push({ ...result, owner });
+          assertCurrentSync();
+          if (result?.source !== 'plugin_ipc' || result.owner !== owner || !result.receipt
+            || !same(result.scope, scopes[owner]) || result.readOnly !== true || result.complete !== true
+            || !/^[a-f0-9]{64}$/.test(result.evidenceRevision || '') || !Array.isArray(result.items)) fail('LIB_READ_RESPONSE_INVALID');
+          let actual = 0;
+          for (const item of result.items) {
+            if (typeof item?.content !== 'string' || item.source?.namespace !== owner) fail('LIB_READ_RESPONSE_INVALID');
+            actual += byteLength(item.content); items.push({ ...item, owner });
+          }
+          if (actual !== result.corpusBytes || actual > remaining || items.length > 4096) fail('LIB_READ_BUDGET_EXCEEDED');
+          corpusBytes += actual;
+        }
+        const evidenceRevision = fingerprint(JSON.stringify(captured.map(value => [value.owner, value.evidenceRevision])));
+        const assertCurrent = async () => {
+          try {
+            assertCurrentSync();
+            for (const value of captured) {
+              const now = await rpc(value.owner, 'current', { receipt: value.receipt }, input.signal);
+              if (now?.current !== true || now.evidenceRevision !== value.evidenceRevision) fail('LIB_READ_STALE');
+            }
+            return assertCurrentSync();
+          } catch (error) { stale = true; close(); throw error; }
+        };
+        await assertCurrent();
+        return Object.freeze({ source: 'plugin_ipc', engine: {
+          purpose: input.proposal ? 'input_writer_proposal' : 'response_evidence',
+          ...(input.proposal ? { proposal: copy(input.proposal) } : {}),
+          sourceByOwner: Object.fromEntries(captured.map(value =>
+          [value.owner, value.owner === 'libra' ? 'unified_engine' : 'published_owner_memory'])) },
+          snapshot: { schema: 'memory-suite.memory-read-session.v1', complete: true, readOnly: true, scope,
+            owners, items, evidenceRevision, corpusBytes, maxCorpusBytes: input.maxCorpusBytes },
+          assertCurrent, assertCurrentSync, close });
+      } catch (error) { close(); throw error; }
+    }
+  });
+  const dispose = async () => {
+    if (disposed) return;
+    disposed = true;
+    for (const record of [...pending.values()]) record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
+    for (const [receipt, owner] of [...issued]) await release(owner, receipt);
+    for (const record of [...receipts.values()]) closeRecord(record);
+    if (registered) try { await api()?.removePluginChannelListener?.(options.role === 'owner' ? requestChannel : responseChannel,
+      options.role === 'owner' ? ownerHandler : readerHandler); } catch (_) { /* Host teardown can remove the channel API first. */ }
+    registered = false;
+  };
+  return Object.freeze({ start, describe, createClient, dispose });
+});
+const createGradiaPluginSnapshot = (function createPluginSnapshot(options) {
+  const { fingerprint, byteLength } = options.primitives;
+  const instance = 'plugin-local:' + Date.now() + ':' + Math.random();
+  const fail = code => { throw Object.assign(new Error(code), { code }); };
+  return async (request, authority = {}) => {
+    let reading = true, closed = false;
+    const cache = new Map();
+    let loadedBytes = 0;
+    const rawLimit = 7 * request.maxCorpusBytes + 2097152;
+    const get = async key => {
+      authority.check?.();
+      if (closed) fail('LIB_READ_STALE');
+      if (reading && cache.has(key)) return cache.get(key);
+      const value = await options.read(key);
+      authority.check?.();
+      if (closed) fail('LIB_READ_STALE');
+      const serialized = JSON.stringify(value ?? null), size = byteLength(serialized);
+      loadedBytes += size;
+      if (loadedBytes > rawLimit) fail('LIB_READ_BUDGET_EXCEEDED');
+      const row = { value: value ?? null, exists: value != null, tombstone: false,
+        revision: 1, updatedAt: 0, digest: fingerprint(serialized), valueBytes: size };
+      if (reading) cache.set(key, row);
+      return row;
+    };
+    const repository = { database: { exec() {} }, getMetadata: async (_space, key) => await get(key),
+      get: async (_space, key, limits) => {
+        const row = await get(key);
+        if (row.valueBytes > limits.maxValueBytes) fail('LIB_READ_BUDGET_EXCEEDED');
+        return row;
+      } };
+    const session = options.createReadSession({ getRepository: () => repository, dataInstanceId: instance,
+      epochs: () => ({}), canRead: () => !closed });
+    const snapshot = await session.capture({ scope: request.scope, maxCorpusBytes: request.maxCorpusBytes });
+    reading = false; cache.clear();
+    let currentTail = Promise.resolve();
+    return { items: snapshot.items,
+      async assertCurrent() {
+        const task = currentTail.then(async () => {
+          loadedBytes = 0;
+          if (closed) fail('LIB_READ_STALE');
+          return (await session.current(snapshot)).current === true;
+        });
+        currentTail = task.catch(() => {});
+        return await task;
+      },
+      close() { closed = true; cache.clear(); }
+    };
+  };
+});
+function createFlashbackPluginReadSession(primitives) {
+'use strict';
+
+// Request-local read evidence over Flashback's published owner manifests. This
+// does not hydrate vectors, repair storage, recall, or certify host currentness.
+const crypto = { createHash: () => ({ update: value => ({ digest: () => primitives.fingerprint(value) }) }) };
+const Buffer = { byteLength: value => primitives.byteLength(value), from: value => Uint8Array.from(atob(value), c => c.charCodeAt(0)) };
+  const gunzip = async (compressed, options) => {
+    if (typeof DecompressionStream !== 'function') throw Error('LIB_READ_GZIP_UNAVAILABLE');
+    const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+    const chunks = []; let size = 0;
+    try { while (true) { const next = await stream.read(); if (next.done) break;
+      size += next.value.byteLength;
+      if (size > options.maxOutputLength) throw Object.assign(Error('decode budget'), { code: 'ERR_BUFFER_TOO_LARGE' });
+      chunks.push(next.value);
+    } } finally { await stream.cancel().catch(() => {}); stream.releaseLock(); }
+    const bytes = new Uint8Array(size); let at = 0; for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.byteLength; }
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return { toString: () => text };
+  };
+const PLUGIN_ID = 'serial_gradation_agents_for_rp';
+const CAPTURE_ROUTE = '/v1/flashback/read-session/capture';
+const CURRENT_ROUTE = '/v1/flashback/read-session/current';
+const MiB = 1024 ** 2;
+const LIMITS = Object.freeze({ defaultCorpusBytes: 4 * MiB, maxCorpusBytes: 32 * MiB,
+  manifestBytes: MiB, itemMetadataBytes: 64 * 1024, totalMetadataBytes: MiB,
+  maxRefs: 4096, currentRequestBytes: 4 * MiB, maxArchiveDepth: 256 });
+const fail = (message, statusCode = 409) => { throw Object.assign(new Error(message), { statusCode }); };
+const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
+const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+const sha = value => crypto.createHash('sha256').update(value).digest('hex');
+const hash = value => sha(JSON.stringify(value));
+const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+const bytes = value => Buffer.byteLength(value, 'utf8');
+const deepFreeze = value => {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+};
+const validText = (value, max = 512) => typeof value === 'string' && value.length > 0
+  && value.length <= max && !/[\0\r\n]/.test(value);
+const integer = (value, max = LIMITS.maxRefs) => Number.isSafeInteger(value) && value >= 0 && value <= max;
+const validCommit = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value);
+const digest64 = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
+// Flashback hashes UTF-16 code units, not UTF-8 bytes.
+function keyHash(value) {
+  let result = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) result = Math.imul(result ^ value.charCodeAt(i), 0x01000193);
+  return (result >>> 0).toString(36);
+}
+function stable(value, depth = 0) {
+  if (depth > 32) fail('gradia_read_metadata_depth_exceeded', 413);
+  if (Array.isArray(value)) return `[${value.map(v => stable(v, depth + 1)).join(',')}]`;
+  if (object(value)) return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${stable(value[k], depth + 1)}`).join(',')}}`;
+  return JSON.stringify(value) ?? 'null';
+}
+function scopeOf(value) {
+  if (!object(value) || !['scopeKey', 'characterId', 'chatId'].every(key => validText(value[key]))
+    || value.scopeKey !== `char:${keyHash(value.characterId)}|chat:${keyHash(value.chatId)}`) fail('gradia_read_scope_invalid', 400);
+  return { scopeKey: value.scopeKey, characterId: value.characterId, chatId: value.chatId };
+}
+function corpusLimit(value) {
+  if (value === undefined) return LIMITS.defaultCorpusBytes;
+  if (!Number.isSafeInteger(value) || value < 1 || value > LIMITS.maxCorpusBytes) fail('gradia_read_corpus_limit_invalid', 400);
+  return value;
+}
+const prefixFor = scopeKey => `vector_rag_memory:scope:${keyHash(scopeKey)}:`;
+const manifestKeyFor = scopeKey => `${prefixFor(scopeKey)}manifest:v2`;
+const shardKeyFor = (scopeKey, commitId, index) => `${prefixFor(scopeKey)}records:${commitId ? `commit:${commitId}:` : ''}shard:${String(index).padStart(4, '0')}`;
+const allowedKey = key => validText(key, 1200) && /^vector_rag_memory:scope:[a-z0-9]+:(?:manifest:v2|records:(?:commit:[A-Za-z0-9_-]{1,160}:)?shard:[0-9]{4})$/.test(key);
+function decode(value) {
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value); } catch (_) { fail('gradia_read_stored_json_invalid'); }
+  }
+  if (!object(value)) fail('gradia_read_stored_object_invalid');
+  return value;
+}
+async function metadataOf(repository, key) {
+  const value = await repository.getMetadata('plugin', key);
+  return { namespace: 'flashback', space: 'plugin', key, exists: value.exists, tombstone: value.tombstone,
+    revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
+}
+function validateDependency(value, index, scope) {
+  if (!object(value) || value.namespace !== 'flashback' || value.space !== 'plugin'
+    || (index === 0 ? value.key !== manifestKeyFor(scope.scopeKey) : !allowedKey(value.key))
+    || value.exists !== true || value.tombstone !== false
+    || !Number.isSafeInteger(value.revision) || value.revision < 1 || !digest64(value.digest)
+    || !Number.isSafeInteger(value.updatedAt) || value.updatedAt < 0
+    || !Number.isSafeInteger(value.valueBytes) || value.valueBytes < 0) fail('gradia_read_dependencies_invalid', 400);
+  return { namespace: 'flashback', space: 'plugin', key: value.key, exists: true, tombstone: false,
+    revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
+}
+const sourceType = record => {
+  const type = String(record.sourceType || record.type || 'unknown').trim();
+  return type === 'chat_turn' ? 'response' : type;
+};
+function retained(record) {
+  const origin = String(record.origin || '').trim().toLowerCase();
+  return record.autoStatic !== true && origin !== 'manual_gui'
+    && !String(record.sourceId || '').trim().toLowerCase().startsWith('manual:')
+    && !(Array.isArray(record.tags) && record.tags.some(tag => String(tag).trim().toLowerCase() === 'manual'))
+    && (sourceType(record) === 'response' || (sourceType(record) === 'episode_index'
+      && (record.autoEpisode === true || String(record.origin || '').startsWith('episode_index'))));
+}
+function inheritedHistory(record) {
+  return record.permanentSessionHistory === true || record.inheritedSessionHistory === true
+    || String(record.historicalProtection || '').trim() === 'permanent_session_history'
+    || Boolean(String(record.inheritedFromScopeKey || record.clonedFromScopeKey || '').trim());
+}
+function recordIdentity(record) {
+  return String(record.permanentHistoryId || '').trim() || keyHash(JSON.stringify([
+    String(record.sourceHash || ''), String(record.sourceId || ''), sourceType(record),
+    number(record.turnIndex || record.pairIndex), number(record.chunkIndex), String(record.text || '')
+  ], null, 2));
+}
+const timeOf = record => Date.parse(record.updatedAt || record.createdAt || '') || 0;
+const sortKey = row => `${row.record.sourceType || ''}:${row.record.createdAt || ''}:${row.record.id || ''}`;
+function mergeRecords(...lists) {
+  const byId = new Map();
+  for (const row of lists.flat()) {
+    const id = recordIdentity(row.record), previous = byId.get(id);
+    if (!previous || timeOf(row.record) >= timeOf(previous.record)) byId.set(id, row);
+  }
+  return [...byId.values()].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+}
+function archivePointer(value) {
+  if (!object(value) || value.schema !== 'flashback_memory.archive_ref.v1'
+    || !validText(value.archiveId, 160) || !/^[A-Za-z0-9_-]+$/.test(value.archiveId)
+    || value.archiveScopeKey !== `flashback_archive_v1:${value.archiveId}`
+    || !integer(value.generation, LIMITS.maxArchiveDepth) || value.generation < 1
+    || !integer(value.depth, LIMITS.maxArchiveDepth) || value.depth < 1
+    || !integer(value.deltaCount) || !integer(value.recordCount)
+    || !validText(value.digest, 64)) fail('gradia_read_archive_pointer_invalid');
+  return { archiveId: value.archiveId, archiveScopeKey: value.archiveScopeKey,
+    generation: value.generation, depth: value.depth, deltaCount: value.deltaCount,
+    recordCount: value.recordCount, digest: value.digest };
+}
+// A composed reader can only tighten this owner's existing raw-read ceiling.
+function rawLimitOf(value, maxCorpusBytes) {
+  const maximum = 7 * maxCorpusBytes + 2 * LIMITS.totalMetadataBytes;
+  if (value === undefined) return maximum;
+  if (!Number.isSafeInteger(value) || value < 0 || value > maximum) fail('gradia_read_storage_limit_invalid', 400);
+  return value;
+}
+function createReadSession({ getRepository, dataInstanceId, epochs, canRead }) {
+  const identity = scope => ({ scope: { ...scope }, dataInstanceId, resetEpoch: Number(epochs().flashback || 0) });
+  async function readUnit(body) {
+    if (!canRead()) fail('gradia_read_maintenance', 503);
+    const repository = getRepository(), epoch = Number(epochs().flashback || 0);
+    repository.database.exec('BEGIN');
+    try {
+      const result = await body(repository);
+      if (!canRead()) fail('gradia_read_maintenance', 503);
+      if (Number(epochs().flashback || 0) !== epoch) fail('gradia_read_reset_changed');
+      return deepFreeze(result);
+    } finally { repository.database.exec('ROLLBACK'); }
+  }
+  function capture(body) {
+    const scope = scopeOf(body?.scope), maxCorpusBytes = corpusLimit(body?.maxCorpusBytes);
+    const rawLimit = rawLimitOf(body?.maxRawBytes, maxCorpusBytes);
+    return readUnit(async repository => {
+      const readIdentity = identity(scope), dependencies = [], seen = new Set();
+      let rawBytes = 0, metadataBytes = 0, recordCount = 0;
+      // A repository value can wrap JSON in one additional string; NUL costs
+      // seven bytes there. Gzip expansion is separately bounded before parsing.
+      const chargeMetadata = (value, perItem = false) => {
+        let size;
+        try { size = bytes(JSON.stringify(value)); } catch (_) { fail('gradia_read_metadata_invalid'); }
+        metadataBytes += size;
+        if ((perItem && size > LIMITS.itemMetadataBytes) || metadataBytes > LIMITS.totalMetadataBytes) fail('gradia_read_metadata_budget_exceeded', 413);
+      };
+      const read = async (key, limit) => {
+        if (!allowedKey(key)) fail('gradia_read_memory_pointer_invalid');
+        if (seen.has(key)) fail('gradia_read_duplicate_dependency');
+        if (dependencies.length >= LIMITS.maxRefs + 1) fail('gradia_read_reference_limit_exceeded', 413);
+        const metadata = await metadataOf(repository, key);
+        if (!metadata.exists || metadata.tombstone) fail('gradia_read_dependency_unavailable');
+        const bound = Math.min(limit, rawLimit - rawBytes);
+        if (!Number.isSafeInteger(metadata.valueBytes) || metadata.valueBytes < 0 || metadata.valueBytes > bound) fail('gradia_read_storage_budget_exceeded', 413);
+        let row;
+        try { row = await repository.get('plugin', key, { maxValueBytes: bound }); }
+        catch (error) { fail(error?.statusCode === 413 ? 'gradia_read_storage_budget_exceeded' : 'gradia_read_dependency_decode_failed', error?.statusCode === 413 ? 413 : 409); }
+        if (!row?.exists || row.tombstone || row.revision !== metadata.revision || row.digest !== metadata.digest) fail('gradia_read_dependency_changed');
+        // Check actual bytes as well as metadata; this is read evidence, not a
+        // producer commit label being mistaken for current content authority.
+        const serialized = JSON.stringify(row.value);
+        if (bytes(serialized) !== metadata.valueBytes || sha(serialized) !== metadata.digest) fail('gradia_read_dependency_digest_mismatch');
+        rawBytes += metadata.valueBytes;
+        seen.add(key); dependencies.push(metadata);
+        return row.value;
+      };
+      const load = async (scopeKey, isCurrent = false) => {
+        const manifest = decode(await read(manifestKeyFor(scopeKey), Math.min(LIMITS.manifestBytes, 2 * (LIMITS.totalMetadataBytes - metadataBytes))));
+        chargeMetadata(manifest);
+        if (manifest.schema !== 'vector_rag_memory.scope_manifest.v2' || manifest.scopeKey !== scopeKey
+          || (manifest.storageHash && manifest.storageHash !== keyHash(scopeKey))) fail('gradia_read_manifest_scope_mismatch');
+        if (isCurrent && ((manifest.canonicalCharacterId || manifest.characterId) !== scope.characterId
+          || (manifest.canonicalChatId || manifest.chatId) !== scope.chatId
+          || (manifest.canonicalScopeId && manifest.canonicalScopeId !== scope.scopeKey)
+          || manifest.archiveOwner === true)) fail('gradia_read_manifest_scope_mismatch');
+        if (!integer(manifest.count) || !integer(manifest.shardCount)) fail('gradia_read_reference_limit_exceeded', 413);
+        if (manifest.count + recordCount > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
+        if (manifest.commitId && !validCommit(manifest.commitId)) fail('gradia_read_commit_invalid');
+        const directory = ['rawPageLayout', 'rawPageReferences', 'rawPageDirectoryDigest'].some(key => own(manifest, key));
+        if (directory) {
+          if (manifest.rawPageLayout !== 'flashback.raw_pages.v1' || !Array.isArray(manifest.rawPageReferences)
+            || manifest.rawPageReferences.length !== manifest.shardCount || !digest64(manifest.rawPageDirectoryDigest)) fail('gradia_read_raw_page_directory_invalid');
+          let count = 0;
+          for (let i = 0; i < manifest.shardCount; i++) {
+            const ref = manifest.rawPageReferences[i];
+            if (!object(ref) || ref.scopeKey !== scopeKey || ref.payloadShardIndex !== i || !validCommit(ref.payloadCommitId)
+              || ref.storageKey !== shardKeyFor(scopeKey, ref.payloadCommitId, i) || !integer(ref.recordCount)
+              || !digest64(ref.serializedValueDigest)) fail('gradia_read_raw_page_directory_invalid');
+            count += ref.recordCount;
+          }
+          if (count !== manifest.count || sha(stable(manifest.rawPageReferences)) !== manifest.rawPageDirectoryDigest) fail('gradia_read_raw_page_directory_invalid');
+        }
+        const records = [];
+        let loadedCount = 0;
+        for (let i = 0; i < manifest.shardCount; i++) {
+          const ref = directory ? manifest.rawPageReferences[i] : null;
+          const commitId = ref?.payloadCommitId || manifest.commitId || '';
+          const key = shardKeyFor(scopeKey, commitId, i);
+          const remaining = rawLimit - rawBytes;
+          const raw = await read(key, remaining);
+          if (ref && (typeof raw !== 'string' || sha(stable(raw)) !== ref.serializedValueDigest)) fail('gradia_read_raw_page_digest_invalid');
+          let envelope = decode(raw);
+          if (envelope.schema === 'flashback_memory.archive_shard_gzip.v1') {
+            if (!scopeKey.startsWith('flashback_archive_v1:') || envelope.encoding !== 'gzip+base64'
+              || envelope.scopeKey !== scopeKey || envelope.commitId !== commitId || envelope.shard !== i
+              || typeof envelope.data !== 'string' || (envelope.data.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(envelope.data))) fail('gradia_read_archive_encoding_invalid');
+            const decodeLimit = Math.min(remaining, rawLimit - rawBytes);
+            if (decodeLimit < 1 || !Number.isSafeInteger(envelope.rawChars) || envelope.rawChars < 1 || envelope.rawChars > decodeLimit) fail('gradia_read_storage_budget_exceeded', 413);
+            const compressed = Buffer.from(envelope.data, 'base64');
+            if (compressed.length !== envelope.compressedBytes) fail('gradia_read_archive_encoding_invalid');
+            let decoded;
+            try { decoded = (await gunzip(compressed, { maxOutputLength: decodeLimit })).toString('utf8'); }
+            catch (error) { fail(error.code === 'ERR_BUFFER_TOO_LARGE' ? 'gradia_read_storage_budget_exceeded' : 'gradia_read_archive_decode_failed', error.code === 'ERR_BUFFER_TOO_LARGE' ? 413 : 409); }
+            rawBytes += bytes(decoded);
+            if (rawBytes > rawLimit) fail('gradia_read_storage_budget_exceeded', 413);
+            if (decoded.length !== envelope.rawChars || keyHash(decoded) !== envelope.rawHash) fail('gradia_read_archive_digest_invalid');
+            chargeMetadata({ ...envelope, data: '' }, true);
+            envelope = decode(decoded);
+          }
+          const rows = envelope.records;
+          if (envelope.version !== 2 || envelope.scopeKey !== scopeKey || (envelope.commitId || '') !== commitId
+            || envelope.shard !== i || !Array.isArray(rows) || !rows.every(object)
+            || envelope.checksum !== keyHash(JSON.stringify(rows, null, 2))) fail('gradia_read_shard_invalid');
+          const summary = Array.isArray(manifest.shardSummaries)
+            ? manifest.shardSummaries.find((row, index) => Number(row?.shardIndex ?? index) === i) : null;
+          if ((ref && rows.length !== ref.recordCount) || (summary && rows.length !== Number(summary.recordCount))) fail('gradia_read_shard_count_mismatch');
+          chargeMetadata({ ...envelope, records: [] }, true);
+          for (const record of rows) {
+            if (++recordCount > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
+            loadedCount++;
+            if (record.scopeKey !== scopeKey || typeof record.text !== 'string') fail('gradia_read_memory_scope_mismatch');
+            chargeMetadata({ ...record, text: '' }, true);
+            if (retained(record)) records.push({ record, key, scopeKey, commitId, inherited: !isCurrent || inheritedHistory(record), archiveShared: !isCurrent });
+          }
+        }
+        if (loadedCount !== manifest.count) fail('gradia_read_shard_count_mismatch');
+        return { manifest, records };
+      };
+      const local = await load(scope.scopeKey, true), layers = [], archiveScopes = new Set();
+      let cursor = local.manifest.archiveRef;
+      const archivePresent = cursor != null && cursor !== '' && cursor !== false;
+      const head = archivePresent ? archivePointer(cursor) : null;
+      while (archivePresent && cursor) {
+        const pointer = archivePointer(cursor);
+        if (layers.length >= LIMITS.maxArchiveDepth || archiveScopes.has(pointer.archiveScopeKey)) fail('gradia_read_archive_cycle_or_depth');
+        archiveScopes.add(pointer.archiveScopeKey);
+        const layer = await load(pointer.archiveScopeKey), manifest = layer.manifest;
+        if (manifest.archiveOwner !== true || manifest.archiveId !== pointer.archiveId
+          || manifest.archiveGeneration !== pointer.generation
+          || (manifest.archiveRecordCount ?? manifest.count) !== pointer.recordCount
+          || manifest.archiveDigest !== pointer.digest || layer.records.length !== pointer.deltaCount) fail('gradia_read_archive_identity_mismatch');
+        const cursorParentRaw = cursor.parentRef || cursor.parentArchiveRef;
+        const cursorParent = cursorParentRaw ? archivePointer(cursorParentRaw) : null;
+        const manifestParentPresent = own(manifest, 'parentArchiveRef') && manifest.parentArchiveRef != null;
+        const manifestParent = manifestParentPresent ? archivePointer(manifest.parentArchiveRef) : null;
+        if (cursorParent && (!manifestParent || !same(cursorParent, manifestParent))) fail('gradia_read_archive_parent_mismatch');
+        const parent = cursorParent || manifestParent;
+        if (!parent) {
+          if (pointer.depth !== 1 || pointer.generation !== 1 || pointer.recordCount !== pointer.deltaCount) fail('gradia_read_archive_parent_required');
+        } else if (parent.depth + 1 !== pointer.depth || parent.generation + 1 !== pointer.generation
+          || (manifest.archiveVectorOverlay === true ? parent.recordCount !== pointer.recordCount : parent.recordCount + pointer.deltaCount !== pointer.recordCount)) fail('gradia_read_archive_parent_mismatch');
+        layers.push(layer);
+        cursor = parent ? { schema: 'flashback_memory.archive_ref.v1', ...parent } : null;
+      }
+      const archiveRecords = mergeRecords(...layers.reverse().map(layer => layer.records));
+      if (head && (archiveRecords.length !== head.recordCount
+        || keyHash(archiveRecords.map(row => recordIdentity(row.record)).sort().join('\u0001')) !== head.digest)) fail('gradia_read_archive_digest_mismatch');
+      const selected = mergeRecords(archiveRecords, local.records), items = [];
+      let corpusBytes = 0;
+      for (const row of selected) {
+        const record = row.record, id = String(record.id || record.hash || recordIdentity(record));
+        if (!validText(id, 1200)) fail('gradia_read_memory_id_invalid');
+        corpusBytes += bytes(record.text);
+        if (corpusBytes > maxCorpusBytes) fail('gradia_read_corpus_budget_exceeded', 413);
+        const turn = number(record.turnIndex || record.pairIndex);
+        items.push({ id, key: row.key, content: record.text, source: {
+          namespace: 'flashback', space: 'plugin', scopeKey: row.scopeKey, memoryId: id,
+          revision: number(record.revision), sourceDigest: String(record.sourceHash || ''),
+          turnRange: { start: turn, end: turn }, sessionEpoch: number(record.sessionEpoch),
+          inherited: row.inherited, archiveShared: row.archiveShared, commitId: row.commitId,
+          sourceType: sourceType(record), chunkIndex: number(record.chunkIndex)
+        } });
+      }
+      return { schema: 'memory-suite.flashback-read-session.v1', readOnly: true, complete: true, scope, items, dependencies,
+        evidenceRevision: hash(dependencies), corpusBytes, maxCorpusBytes, maxRawBytes: rawLimit, metadataBytes, rawBytes, dataInstanceId,
+        resetEpoch: readIdentity.resetEpoch, readIdentity };
+    });
+  }
+  function current(body) {
+    const scope = scopeOf(body?.scope);
+    if (!object(body.readIdentity) || !same(scopeOf(body.readIdentity.scope), scope)) fail('gradia_read_scope_changed', 400);
+    if (!Array.isArray(body.dependencies) || body.dependencies.length < 1 || body.dependencies.length > LIMITS.maxRefs + 1) fail('gradia_read_dependencies_invalid', 400);
+    const dependencies = body.dependencies.map((value, index) => validateDependency(value, index, scope));
+    if (new Set(dependencies.map(value => value.key)).size !== dependencies.length || body.evidenceRevision !== hash(dependencies)) fail('gradia_read_evidence_revision_invalid', 400);
+    return readUnit(async repository => {
+      const expected = identity(scope);
+      const bindingMatches = body.dataInstanceId === expected.dataInstanceId && body.resetEpoch === expected.resetEpoch
+        && body.readIdentity.dataInstanceId === expected.dataInstanceId && body.readIdentity.resetEpoch === expected.resetEpoch;
+      let current = bindingMatches; for (const value of dependencies) if (!same(value, await metadataOf(repository, value.key))) current = false;
+      return { schema: 'memory-suite.flashback-read-session-current.v1', current, scope,
+        evidenceRevision: body.evidenceRevision, dataInstanceId, resetEpoch: expected.resetEpoch };
+    });
+  }
+  return Object.freeze({ capture, current });
+}
+return createReadSession;
+}
+  /* GRADIA PLUGIN READ END */
+  let gradiaPluginReadOwner = null;
+  const getGradiaPluginReadOwner = () => {
+    if (gradiaPluginReadOwner) return gradiaPluginReadOwner;
+    const primitives = createGradiaReadPrimitives();
+    gradiaPluginReadOwner = createGradiaPluginRead({ role: 'owner', owner: 'flashback', primitives,
+      api: () => getLiveApi(['addPluginChannelListener','postPluginChannelMessage']),
+      boundary: async () => {
+          if (Runtime.unloaded) throw Error('LIB_READ_CANCELED');
+          // Identity only: resolveCurrentScope() also performs adoption/repair.
+          const native = resolveScopeFromSnapshot(await loadRisuSnapshot(false));
+          const scope = { scopeKey: native.scopeKey, characterId: native.canonicalCharacterId || native.characterId,
+            chatId: native.canonicalChatId || native.chatId };
+          const route = await MemorySuiteStorageBridge.getScopeMode({ ...scope, scopeId: scope.scopeKey });
+          return { scope, mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation };
+      },
+      capture: createGradiaPluginSnapshot({ primitives, createReadSession: createFlashbackPluginReadSession(primitives),
+        read: key => MemorySuiteStorageBridge.ownerLegacyRead('plugin', key) })
+    });
+    return gradiaPluginReadOwner;
+  };
   const publicApi = Object.freeze({
     getHostLineageStatus: async () => { const snapshot = await loadRisuSnapshot(false); return { ...MemorySuiteHostLineage.inspect(snapshot.character, snapshot.chat), owner: 'flashback', scopeKey: resolveScopeFromSnapshot(snapshot).scopeKey }; },
     getReanalysisStatus:()=>({...flashbackReanalysisStatus}),
@@ -49104,6 +50316,16 @@ ${cleanedText}`, 80),
   publicApi._test.operationLogResultSummary = operationLogResultSummary;
   publicApi._test.liveCaptureRemoteUpgradeSettings = liveCaptureRemoteUpgradeSettings;
   publicApi._test.reembedCapturedTurnRecords = reembedCapturedTurnRecords;
+  publicApi._test.Runtime = Runtime;
+  publicApi._test.FlashbackAttention = FlashbackAttention;
+  publicApi._test.flashbackAttentionDecision = flashbackAttentionDecision;
+  publicApi._test.computeFlashbackAttention = computeFlashbackAttention;
+  publicApi._test.syncFlashbackAttentionButton = syncFlashbackAttentionButton;
+  publicApi._test.startFlashbackAttention = startFlashbackAttention;
+  publicApi._test.stopFlashbackAttention = stopFlashbackAttention;
+  publicApi._test.refreshFlashbackAttention = refreshFlashbackAttention;
+  publicApi._test.scheduleFlashbackAttentionRefresh = scheduleFlashbackAttentionRefresh;
+  publicApi._test.openFlashbackAttention = openFlashbackAttention;
   globalThis.__FlashbackMemory = publicApi;
   globalThis.__VectorRagMemory = publicApi;
 
@@ -49264,6 +50486,7 @@ ${cleanedText}`, 80),
             warn('Committed chat-output capture is still finishing after the bounded unload drain; storage bridge disposal is deferred.', error);
           });
         }
+        await gradiaPluginReadOwner?.dispose();
         try { await unregisterMemoryBridgeIpc(); } catch (_) {
           memoryBridgeIpcRegistered = false;
           memoryBridgeIpcHandler = null;
@@ -49323,10 +50546,11 @@ ${cleanedText}`, 80),
         Runtime.sparseProjectionCache.clear();
         Runtime.sparseProjectionRecordKeys.clear();
         Runtime.queryEmbeddingCache.clear();
-        Runtime.queryEmbeddingInFlight.clear();
+        clearQueryEmbeddingInFlight('unload');
         Runtime.documentEmbeddingCache.clear();
         Runtime.latentEpisodeCooldown.clear();
         Runtime.embeddingDiagnostics.length = 0;
+        try { await stopFlashbackAttention(); } catch (_) {}
         try { await closeGui({ hideContainer: true, removeRoot: true }); } catch (_) {}
         try {
           if (Runtime.legacyScriptOutputHandler && typeof live.removeRisuScriptHandler === 'function') {
@@ -51501,7 +52725,27 @@ ${cleanedText}`, 80),
       });
       runtime.observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
     };
-    const publicApi = Object.freeze({
+    let gradiaPluginReadOwner = null;
+  const getGradiaPluginReadOwner = () => {
+    if (gradiaPluginReadOwner) return gradiaPluginReadOwner;
+    const primitives = createGradiaReadPrimitives();
+    gradiaPluginReadOwner = createGradiaPluginRead({ role: 'owner', owner: 'flashback', primitives,
+      api: () => getLiveApi(['addPluginChannelListener','postPluginChannelMessage']),
+      boundary: async () => {
+          if (Runtime.unloaded) throw Error('LIB_READ_CANCELED');
+          // Identity only: resolveCurrentScope() also performs adoption/repair.
+          const native = resolveScopeFromSnapshot(await loadRisuSnapshot(false));
+          const scope = { scopeKey: native.scopeKey, characterId: native.canonicalCharacterId || native.characterId,
+            chatId: native.canonicalChatId || native.chatId };
+          const route = await MemorySuiteStorageBridge.getScopeMode({ ...scope, scopeId: scope.scopeKey });
+          return { scope, mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation };
+      },
+      capture: createGradiaPluginSnapshot({ primitives, createReadSession: createFlashbackPluginReadSession(primitives),
+        read: key => MemorySuiteStorageBridge.ownerLegacyRead('plugin', key) })
+    });
+    return gradiaPluginReadOwner;
+  };
+  const publicApi = Object.freeze({
       schema: Flashback_PORTABLE_BACKUP_SCHEMA,
       pluginId: config.pluginId,
       pluginVersion: config.pluginVersion,

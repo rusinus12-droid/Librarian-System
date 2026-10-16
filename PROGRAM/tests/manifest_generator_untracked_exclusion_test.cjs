@@ -35,7 +35,8 @@ const locatedRoot=spawnSync('git',['rev-parse','--show-toplevel'],{cwd:PROGRAM,e
 assert.equal(locatedRoot.status,0,'actual checkout Git root must be available');
 const REPO_ROOT=locatedRoot.stdout.trim();
 const RELATIVE_PROGRAM=path.relative(REPO_ROOT,PROGRAM).split(path.sep).join('/');
-const MAX_BUFFER = 64 * 1024 * 1024;
+// `git archive HEAD PROGRAM` passed 64 MiB in 2026-10; keep headroom for growth.
+const MAX_BUFFER = 256 * 1024 * 1024;
 
 const git = (cwd, args) => {
   const run = spawnSync('git', args, { cwd, maxBuffer: MAX_BUFFER });
