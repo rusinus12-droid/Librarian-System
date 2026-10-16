@@ -74,10 +74,7 @@ assert.ok(!source.includes('id="st-bg"') && !source.includes('id="auto-bg"'), 'r
 assert.ok(source.includes("{ argument: 'risuai_aux_allow_plugins', type: 'boolean' }"), 'the RisuAI-owned auxiliary model permission must remain in the actual settings schema');
 assert.ok(source.includes("mode: 'otherAx'"), 'auxiliary call test must use RisuAI Other Ax');
 assert.ok(source.includes('writesPacketLedger: false'), 'auxiliary call test must not write the packet ledger');
-assert.ok(source.includes('const showIndependentRecoveryConfirmation = async confirmation => {'), 'recovery confirmation must have an independent dialog path');
-assert.ok(source.includes('overlay.id = RECOVERY_CONFIRMATION_OVERLAY_ID;'), 'independent recovery confirmation must use a dedicated overlay id');
-assert.ok(source.includes("mode: 'independent'"), 'independent recovery confirmation mode must be tracked');
-assert.ok(source.includes("dialog.setAttribute('aria-modal', 'true')") && source.includes("dialog.setAttribute('aria-labelledby', 'hayakuRecoveryConfirmationTitle')"), 'independent recovery confirmation must use the accessible dialog structure');
+assert.ok(!source.includes('const showIndependentRecoveryConfirmation'), 'the retired background repair dialog stays removed');
 const recoveryPanelStart = source.indexOf('const recoveryPage = `');
 const serverPanelStart = source.indexOf('const serverPage = `', recoveryPanelStart);
 const settingsMarkupStart = source.indexOf('const HAYAKU_MOCKUP_SETTINGS_PAGE =');

@@ -27,29 +27,36 @@ function fixture(hooks = {}) {
   });
   vm.runInContext(slice('  const updateRecoveryJournalBackgroundDecision =', '  const upsertRecoveryVaultEvidence =')
     + slice('  const recoveryJournalAutoApproved =', '  let recoveryConfirmationResolution =')
-    + '\nglobalThis.request = requestRecoveryJournalBackgroundConfirmationOnce; globalThis.resolve = resolveRecoveryJournalBackgroundConfirmationOnce;', c);
+    + '\nglobalThis.update = updateRecoveryJournalBackgroundDecision; globalThis.resolve = resolveRecoveryJournalBackgroundConfirmationOnce;', c);
   c.resolveRecoveryJournalBackgroundConfirmation = accepted => (resolution = c.resolve(accepted));
-  return Object.assign(f, { request: () => c.request(structuredClone(record)), resolve: accepted => c.resolve(accepted) });
+  return Object.assign(f, { update: (decision, patch) => c.update('scope', 'debt', decision, patch), resolve: accepted => c.resolve(accepted),
+    confirm: () => { Memory.ledgerViewer.recoveryConfirmation = { scopeKey: 'scope', debtId: 'debt', pairIndex: 1, targetFingerprint: 'same-source' }; } });
 }
 
-test('repair failure during debt inspection uses the current journal and asks for consent', async () => {
-  const f = fixture({ inspect(f, n) { if (n === 1) f.failRepair(); } });
-  assert.equal(await f.request(), true); await f.settled();
-  assert.equal(f.prompts, 1); assert.equal(f.sweeps, 0);
-  assert.equal(f.Memory.ledgerViewer.recoveryConfirmation.autoApproved, false);
-  await f.resolve(true); assert.equal(f.sweeps, 1, 'explicit consent still permits a retry');
+// Background repair and its dialog are retired. The durable decision fences stay,
+// and an explicit confirmation (set by the host/tests) still runs one repair.
+test('automatic approval is always refused and leaves the journal untouched', async () => {
+  const f = fixture();
+  const result = await f.update('approved', { requireAutoApproval: true });
+  assert.equal(result.reason, 'recovery_journal_auto_approval_changed');
+  assert.equal(f.current().backgroundDecision, 'pending');
 });
 
-// Background repair is retired (afterRequest is the only automatic stage), so nothing is
-// auto-approved: even a skipped repair that once qualified needs explicit consent.
-test('a skipped repair is never auto-approved and runs nothing without consent', async () => {
-  const f = fixture(); assert.equal(await f.request(), true); await f.settled();
-  assert.equal(f.Memory.ledgerViewer.recoveryConfirmation.autoApproved, false);
-  assert.equal(f.prompts, 1); assert.equal(f.sweeps, 0);
-  assert.equal(await f.request(), false, 'a stale prompt cannot be reclaimed'); assert.equal(f.prompts, 1);
+test('a prompt cannot be claimed when background repair is off', async () => {
+  const f = fixture(); f.Memory.settings.backgroundAutoRepair = false;
+  assert.equal((await f.update('pending', { promptedAt: Date.now(), claimPrompt: true })).reason, 'recovery_journal_prompt_changed');
+  assert.equal(Number(f.current().backgroundPromptedAt || 0), 0);
 });
 
-test('consent disabled during inspection cannot claim an automatic prompt', async () => {
-  const f = fixture({ inspect(f) { f.Memory.settings.backgroundAutoRepair = false; } });
-  assert.equal(await f.request(), false); assert.equal(f.sweeps, 0); assert.equal(f.prompts, 0);
+test('resolving without a confirmation does nothing', async () => {
+  const f = fixture();
+  assert.equal((await f.resolve(true)).reason, 'recovery_confirmation_absent');
+  assert.equal(f.sweeps, 0);
+});
+
+test('an explicit confirmation still runs exactly one repair', async () => {
+  const f = fixture(); f.confirm();
+  await f.resolve(true);
+  assert.equal(f.sweeps, 1);
+  assert.equal(f.current().backgroundDecision, 'completed');
 });

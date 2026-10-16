@@ -414,9 +414,9 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 //@arg hayaku_recall_stability_boost string 0.0-0.08 request-local scene persistence boost; blank uses 0.025
 //@arg hayaku_recovery_vault string true|false; deprecated compatibility argument; exact visible U+A Recovery Journal preservation is always enabled
 //@arg hayaku_raw_passage_recall string true|false; search Recovery Journal evidence with exact/BM25/trigram/proximity passage retrieval; blank uses true
-//@arg hayaku_raw_recall_max_items string Maximum verbatim recovery passages injected per request; blank uses 3
+//@arg hayaku_raw_recall_max_items string retired and ignored; raw passage recall is bounded by hayaku_raw_recall_max_chars
 //@arg hayaku_raw_recall_max_chars string Maximum total verbatim recovery evidence characters; blank uses 2400
-//@arg hayaku_raw_recall_min_score string 0.0-1.0 minimum gated raw passage score; blank uses 0.16
+//@arg hayaku_raw_recall_min_score string retired and ignored; raw passage recall uses rank fusion, not a score floor
 //@arg hayaku_typed_memory_graph string true|false; derive deterministic typed relations between packet memory rows; blank uses true
 //@arg hayaku_graph_closure_recall string true|false; admit bounded typed-neighbor evidence after the normal retrieval gate; blank uses true
 //@arg hayaku_graph_closure_max_nodes string Maximum typed graph closure rows kept per request; blank uses 8
@@ -24641,9 +24641,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       assistantMessageIndex: assistantIndex
     };
   };
-  const liveRecoveryEvidenceForRecord = (record, scope) => {
+  const liveRecoveryEvidenceForRecord = (record, scope, snapshotInput = null) => {
     if (!scope?.confident || scope.chatMessagesAvailable !== true) return null;
-    const snapshot = authoritativeChatSnapshot(scope.chatMessages, scope);
+    const snapshot = objectish(snapshotInput) && Array.isArray(snapshotInput.conversationPairs) ? snapshotInput : authoritativeChatSnapshot(scope.chatMessages, scope);
     const pair = ensureArray(snapshot?.conversationPairs).find(candidate => (
       Number(candidate?.pairIndex || 0) === Number(record?.pairIndex || 0)
       && (!record?.userHash || candidate?.userHash === record.userHash)
@@ -24673,6 +24673,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const liveVerificationRequired = scope?.confident === true && scope?.chatMessagesAvailable === true;
     if (liveEvidence && (liveEvidence.userHash !== record.userHash || liveEvidence.assistantHash !== record.assistantHash)) {
       return { ok: false, durable: false, reason: 'recovery_evidence_live_hash_mismatch', completeness: record.evidenceCompleteness };
+    }
+    // The visible chat already holds this exact turn (identity and hashes match), so
+    // read it from there. The Journal copy is needed only when no live chat exists.
+    if (liveEvidence && (liveEvidence.userText || liveEvidence.assistantText)) {
+      return { ok: true, durable: true, reason: 'recovery_evidence_live_chat', completeness: record.evidenceCompleteness || 'live_chat',
+        user: text(liveEvidence.userText || ''), assistant: text(liveEvidence.assistantText || ''), record, source: 'live_chat' };
     }
     if (record.evidenceManifest) {
       const sidecar = await readRecoveryEvidenceSidecar(record.evidenceManifest, { scopeKey: record.scopeKey, recordId: record.recordId });
@@ -26339,9 +26345,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const lifecycle=snapshot&&worldline?await reconcileRecoveryVaultWorldlineLifecycleDirect(scope,snapshot,worldline,{reason:'raw_recall_worldline_reconcile'}):{vault:await loadRecoveryVault(scope.key)};
     const vault=lifecycle.vault,active=activeRecoveryVaultRecords(vault,snapshot,worldline);
     const passages=[];
-    for(const record of active.records)for(const role of ['user','assistant']){
-      const body=text(record[role]?.text||'');if(!body)continue;
-      passages.push({id:record.recordId+':'+role,publicText:body,axis:'narrative',record,role});
+    const liveSnapshot=scope.chatMessagesAvailable===true?(snapshot||authoritativeChatSnapshot(scope.chatMessages,scope)):null;
+    for(const record of active.records){
+      const inherited=record?.inheritedSessionHistory===true||record?.permanentSessionHistory===true;
+      // Current-session turns are read from the visible chat; a changed turn is skipped.
+      const live=!inherited&&liveSnapshot?liveRecoveryEvidenceForRecord(record,scope,liveSnapshot):null;
+      if(!inherited&&liveSnapshot&&!live)continue;
+      for(const role of ['user','assistant']){
+        const body=text(live?(role==='user'?live.userText:live.assistantText):record[role]?.text||'');if(!body)continue;
+        passages.push({id:record.recordId+':'+role,publicText:body,axis:'narrative',record,role});
+      }
     }
     const context=settings.retrievalRecentContext||buildRecentContextFocus(messages,query,settings);
     const chosen=localRecallFairMerge([localRecallRank(passages,[query]),localRecallRank(passages,context.topics||[])],PACKET_CORE_RECALL_CANDIDATE_LIMIT);
@@ -47662,198 +47675,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     return false;
   };
-  const showIndependentRecoveryConfirmation = async confirmation => {
-    let doc = null;
-    try { doc = Memory.ledgerViewer?.root?.ownerDocument || globalThis.document || null; } catch (_) { doc = null; }
-    if (!doc?.body || typeof doc.createElement !== 'function') return false;
-    removeIndependentRecoveryConfirmation();
-    const overlay = doc.createElement('div');
-    overlay.id = RECOVERY_CONFIRMATION_OVERLAY_ID;
-    overlay.className = 'overlay is-open';
-    overlay.setAttribute('role', 'presentation');
-    const dialog = doc.createElement('section');
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    dialog.className = 'dialog';
-    dialog.setAttribute('aria-labelledby', 'hayakuRecoveryConfirmationTitle');
-    const eyebrow = doc.createElement('small');
-    eyebrow.className = 'eyebrow';
-    eyebrow.textContent = 'HAYAKU RECOVERY';
-    const title = doc.createElement('h2');
-    title.id = 'hayakuRecoveryConfirmationTitle';
-    title.className = 'page-title';
-    title.textContent = '기억을 다시 생성할까요?';
-    const summary = doc.createElement('p');
-    const turn = Math.max(1, Number(confirmation?.pairIndex || 0) || 1);
-    summary.textContent = `T${turn}의 기억을 저장하지 못했어요. 보존된 대화에서 다시 생성할까요?`;
-    summary.className = 'card__desc';
-    const reason = doc.createElement('div');
-    reason.textContent = '현재 완료된 턴에 사용할 패킷을 찾지 못했습니다. 원문은 보존되어 있습니다.';
-    reason.title = compact(confirmation?.reason || 'packet_missing', 120);
-    reason.className = 'note';
-    const note = doc.createElement('p');
-    note.textContent = '기억 생성은 AI를 한 번 더 호출하며 추가 비용이 발생할 수 있습니다. 나중에 선택하면 관제창에서 다시 생성할 수 있습니다.';
-    note.className = 'hint';
-    const status = doc.createElement('div');
-    status.setAttribute('aria-live', 'polite');
-    status.className = 'hint';
-    const actions = doc.createElement('div');
-    actions.className = 'dialog__actions';
-    const makeButton = (label, primary = false) => {
-      const button = doc.createElement('button');
-      button.type = 'button';
-      button.className = primary ? 'btn btn--primary' : 'btn';
-      button.textContent = label;
-      return button;
-    };
-    const minimizeButton = makeButton('최소화');
-    minimizeButton.id = 'minimizeHayakuIndependentRecovery';
-    minimizeButton.setAttribute('aria-label', '복구 창 최소화');
-    minimizeButton.classList.add('btn--sm');
-    minimizeButton.addEventListener('click', () => { void minimizeIndependentRecoveryConfirmation(); });
-    dialog.appendChild(minimizeButton);
-    const noButton = makeButton('나중에');
-    const yesButton = makeButton('기억 생성', true);
-    actions.append(noButton, yesButton);
-    dialog.append(eyebrow, title, summary, reason, note, status, actions);
-    overlay.appendChild(dialog);
-    let settled = false;
-    const setButtonsDisabled = disabled => {
-      noButton.disabled = disabled;
-      yesButton.disabled = disabled;
-
-    };
-    const finish = async accepted => {
-      if (settled) return;
-      settled = true;
-      setButtonsDisabled(true);
-      status.textContent = accepted ? '승인 내용을 저장하고 복구를 준비하는 중입니다…' : '저널 유지 결정을 저장하는 중입니다…';
-      try {
-        const result = await resolveRecoveryJournalBackgroundConfirmation(accepted);
-        if (Memory.ledgerViewer.recoveryConfirmation) {
-          settled = false;
-          setButtonsDisabled(false);
-          status.textContent = `처리하지 못했습니다 · ${compact(result?.reason || 'recovery_confirmation_write_failed', 180)}`;
-          return;
-        }
-        if (Memory.ledgerViewer.recoveryConfirmationUi?.requestedAt === Number(confirmation.requestedAt)) await hideIndependentRecoveryConfirmation();
-      } catch (error) {
-        settled = false;
-        setButtonsDisabled(false);
-        status.textContent = `처리 실패 · ${compact(error?.message || error, 180)}`;
-      }
-    };
-    noButton.addEventListener('click', () => { void finish(false); });
-    yesButton.addEventListener('click', () => { void finish(true); });
-    overlay.addEventListener('click', event => { if (event?.target === overlay) event.preventDefault(); });
-    doc.body.appendChild(overlay);
-    let teardownDialog = viewerBindConfirmDialogKeys(overlay, dialog, () => {
-      if (settled) void minimizeIndependentRecoveryConfirmation();
-      else void finish(false);
-    });
-    overlay.__hayakuCleanup = () => { try { teardownDialog(); } catch (_) {} };
-    const wasViewerVisible = Memory.ledgerViewer.visible === true;
-    if (!wasViewerVisible) {
-      try {
-        const viewerRoot = doc.getElementById?.(LEDGER_VIEWER_ROOT_ID);
-        if (viewerRoot) {
-          viewerRoot.style.display = 'none';
-          viewerRoot.dataset.hayakuViewerSuppressed = 'recovery_confirmation';
-        }
-      } catch (_) {}
-    }
-    const ui = { mode:'independent', overlayId:RECOVERY_CONFIRMATION_OVERLAY_ID,
-      containerShown:wasViewerVisible, requestedAt:Number(confirmation?.requestedAt || now()), showPending:false };
-    Memory.ledgerViewer.recoveryConfirmationUi = ui;
-    if (!wasViewerVisible) {
-      const api = apiCandidates().find(candidate => typeof candidate?.showContainer === 'function') || RisuCompat.api();
-      if (typeof api?.showContainer !== 'function') { removeIndependentRecoveryConfirmation(); return false; }
-      ui.containerShown = true;
-      ui.showPending = true;
-      Promise.resolve().then(() => api.showContainer('fullscreen')).then(() => {
-        ui.showPending = false;
-        // A late host acknowledgement must not reopen a minimized, hidden dialog.
-        if (Memory.ledgerViewer.recoveryConfirmationUi !== ui && Memory.ledgerViewer.visible !== true) {
-          try { Promise.resolve(api.hideContainer?.()).catch(() => null); } catch (_) {}
-        }
-      }, error => {
-        ui.showPending = false;
-        if (Memory.ledgerViewer.recoveryConfirmationUi !== ui) return;
-        status.textContent = '복구 창 표시를 확인하지 못했습니다. 최소화 후 HAYAKU에서 다시 열어 주세요.';
-        Memory.lastWarnings = [...ensureArray(Memory.lastWarnings), `recovery_confirmation_container_failed:${compact(error?.message || error,120)}`].slice(-20);
-      });
-    }
-    return true;
-  };
-  // Retired with background repair: nothing is auto-approved. Kept so the durable
-  // approval fences (claimPrompt / requireAutoApproval) stay closed.
+  // The per-entry background repair dialog was retired with background repair:
+  // afterRequest is the only automatic stage and missing turns wait for manual repair.
   const recoveryJournalAutoApproved = () => false;
-  const requestRecoveryJournalBackgroundConfirmationOnce = async (recordInput, reason = 'packet_debt_ready') => {
-    await loadSettings(false);
-    const record = normalizeRecoveryVaultRecord(recordInput, recordInput?.scopeKey || '');
-    if (!record || record.inheritedSessionHistory === true || record.worldlineStatus !== 'active') return false;
-    // Failure diagnostics never suppress the one-time source regeneration question.
-    if (Memory.settings?.backgroundAutoRepair === false) return false;
-    if (record.backgroundDecision && record.backgroundDecision !== 'pending') return false;
-    if (Number(record.backgroundPromptedAt || 0) > 0) return false;
-    if (Memory.nativeRecovery.repairInFlight || Memory.nativeRecovery.coldStartInFlight) return false;
-    const activeJob = Memory.nativeRecovery.job;
-    if (activeJob && !NATIVE_JOB_TERMINAL_STATES.has(activeJob.state)) return false;
-    const inspected = await inspectRecoveryDebtsForNativeRepair({debtId:record.recordId,targetPairIndex:record.pairIndex,includeEvidence:false,includeAwaitingReview:true,limit:1});
-    if (inspected?.available!==true || inspected.scopeKey!==record.scopeKey) return false;
-    const freshDebt=ensureArray(inspected.debts).find(d=>d.debtId===record.recordId);
-    if (!freshDebt || !ensureArray(inspected.coverage?.missingTurns).includes(record.pairIndex)) return false;
-    // afterRequest/finalized capture gets its chance before the fallback prompt.
-    if(inBandRecoveryPendingForDebt(record) || Memory.finalizedCaptureInFlight?.size || Memory.finalizedBindingInFlight?.size) return false;
-    const marked = await updateRecoveryJournalBackgroundDecision(record.scopeKey, record.recordId, 'pending', { promptedAt: now(), claimPrompt: true });
-    if (marked.durable !== true) return false;
-    const autoApproved = recoveryJournalAutoApproved(marked.record);
-    Memory.ledgerViewer.recoveryConfirmation = {
-      scopeKey: record.scopeKey,
-      debtId: record.recordId,
-      pairIndex: record.pairIndex,
-      autoApproved,
-      targetFingerprint:nativeRepairTargetFingerprint(freshDebt),
-      sourceDigest:inspected.coverage?.rows?.find(r=>r.turn===record.pairIndex)?.sourceDigest || '',
-      reason: compact(reason || record.reason || 'packet_missing', 96),
-      requestedAt: now()
-    };
-    Memory.ledgerViewer.recoveryConfirmationUi = {
-      mode: 'independent',
-      overlayId: RECOVERY_CONFIRMATION_OVERLAY_ID,
-      containerShown: false,
-      requestedAt: Memory.ledgerViewer.recoveryConfirmation.requestedAt
-    };
-    beginNativeJob('background_repair_confirmation', {
-      scopeKey: record.scopeKey,
-      state: 'awaiting_confirmation',
-      targetTurns: [record.pairIndex],
-      total: 1,
-      currentTurn: record.pairIndex,
-      cancellable: false,
-      message: '패킷이 누락됐습니다. 자동 복구를 시도하시겠습니까?'
-    });
-    const independentShown = await showIndependentRecoveryConfirmation(Memory.ledgerViewer.recoveryConfirmation).catch(() => false);
-    if (independentShown !== true) {
-      Memory.ledgerViewer.recoveryConfirmation = null;
-      Memory.ledgerViewer.recoveryConfirmationUi = null;
-      await updateRecoveryJournalBackgroundDecision(record.scopeKey, record.recordId, 'pending', {
-        promptedAt: 0,
-        error: 'recovery_confirmation_ui_unavailable'
-      }).catch(() => null);
-      finishNativeJob('failed', null, 'recovery_confirmation_ui_unavailable');
-      Memory.lastWarnings = [...ensureArray(Memory.lastWarnings), 'recovery_confirmation_ui_unavailable'].slice(-20);
-      return false;
-    }
-    viewerRenderNativeJob();
-    return true;
-  };
-  const requestRecoveryJournalBackgroundConfirmation = async (recordInput,reason='packet_debt_ready')=>{
-    if(Memory.nativeRecovery.confirmationInspecting)return false;
-    Memory.nativeRecovery.confirmationInspecting=true;
-    try{return await requestRecoveryJournalBackgroundConfirmationOnce(recordInput,reason);}
-    finally{Memory.nativeRecovery.confirmationInspecting=false;}
-  };
   const resolveRecoveryJournalBackgroundConfirmationOnce = async accepted => {
     const confirmation = clone(Memory.ledgerViewer.recoveryConfirmation, null);
     if (!confirmation?.scopeKey || !confirmation?.debtId) return { ok: false, reason: 'recovery_confirmation_absent' };
@@ -48665,8 +48489,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       // though the Recovery Vault has the authoritative U+A sidecar. Hydrate
       // the artifact view and the next repair request from that sidecar.
       const current = objectish(payload.source) ? payload.source : {};
-      const userText = text(vaultRecord?.user?.text || '').trim();
-      const assistantText = text(vaultRecord?.assistant?.text || '').trim();
+      const live = liveRecoveryEvidenceForRecord(vaultRecord, scope);
+      const userText = text(live?.userText || vaultRecord?.user?.text || '').trim();
+      const assistantText = text(live?.assistantText || vaultRecord?.assistant?.text || '').trim();
       const currentText = text(current.text || '');
       const lazyMarker = /<lb-lazy\b|\[LBDATA\s+START\]/i.test(currentText);
       if (userText || assistantText) {
@@ -56992,13 +56817,13 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   const HAYAKU_MOCKUP_SETTINGS_PAGE = String.raw`<section class="page" id="hayakuViewerPanelSettings" data-hayaku-viewer-panel="settings" data-page="settings" role="tabpanel" aria-labelledby="hayakuViewerTabSettings">
     <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Settings</div><h1 class="page-title">설정</h1><p class="page-desc">변경은 초안으로 유지되고, 아래 저장 막대에서 저장할 때 전체를 검증하고 다시 읽어 확인합니다. 저장에 실패하면 이전 값으로 되돌립니다(rollback). LLM은 호출하지 않습니다.</p></div><div class="page-actions"><button class="btn" id="defaultHayakuSettings" data-load-defaults="[data-page=settings]" type="button">전체 기본값</button></div></div>
     <div class="st-layout">
-      <div class="st-nav" role="tablist" data-subtabs="st"><button role="tab" aria-selected="true" data-subtab="basic" data-hayaku-settings-section-button="basic"><b>기본 동작</b><small>켜기 · 성능 · 출력 (7)</small></button><button role="tab" aria-selected="false" data-subtab="pick" data-hayaku-settings-section-button="pick"><b>기억 선택</b><small>회상 기준 · 문맥 (10+5)</small></button><button role="tab" aria-selected="false" data-subtab="safe" data-hayaku-settings-section-button="safe"><b>복구 · 안전</b><small>누락 · Cold Start (9)</small></button><button role="tab" aria-selected="false" data-subtab="adv" data-hayaku-settings-section-button="adv"><b>고급 검색</b><small>BM25 · 그래프 (11+테스트)</small></button></div>
+      <div class="st-nav" role="tablist" data-subtabs="st"><button role="tab" aria-selected="true" data-subtab="basic" data-hayaku-settings-section-button="basic"><b>기본 동작</b><small>켜기 · 성능 · 출력 (7)</small></button><button role="tab" aria-selected="false" data-subtab="pick" data-hayaku-settings-section-button="pick"><b>기억 선택</b><small>회상 기준 · 문맥 (10+5)</small></button><button role="tab" aria-selected="false" data-subtab="safe" data-hayaku-settings-section-button="safe"><b>복구 · 안전</b><small>누락 · Cold Start (9)</small></button><button role="tab" aria-selected="false" data-subtab="adv" data-hayaku-settings-section-button="adv"><b>고급 검색</b><small>BM25 · 그래프 (9+테스트)</small></button></div>
       <div class="stack" id="hayakuSettingsForm" aria-live="polite">
         <div class="search"><i data-i="search" data-size="sm"></i><input id="hayakuSettingsFilter" class="input" placeholder="설정 이름, 설명, 인자 이름으로 찾기" aria-label="설정 검색" data-no-track></div>
         <div class="card is-active" data-subpanel="basic" data-group="st" data-hayaku-settings-section="basic"><div class="split" style="margin-bottom:6px"><span class="hint">기본 동작 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">HAYAKU 사용</div><div class="setting__desc">끄면 패킷 작성 지시와 회상이 모두 중지됩니다.</div><span class="argtag">hayaku_enabled</span></div><label class="switch"><input type="checkbox" id="st-enabled" checked><span class="switch__track"></span><span class="sr-only">HAYAKU 사용</span></label></div><div class="setting"><div><div class="setting__name">성능 모드</div><div class="setting__desc">현재 실제 적용: Balanced (최근 요청 기준)</div><span class="argtag">hayaku_mode</span></div><div class="seg" data-dirty role="group" aria-label="성능 모드"><button aria-pressed="false">Auto</button><button aria-pressed="false">Fast</button><button aria-pressed="true">Balanced</button><button aria-pressed="false">Deep</button></div></div><div class="setting"><div><div class="setting__name">프롬프트 방식</div><div class="setting__desc">작성 지시의 상세 수준</div><span class="argtag">hayaku_prompt_mode</span></div><select class="select" style="width:210px" aria-label="프롬프트 방식"><option>auto</option><option>balanced</option><option>full</option></select></div><div class="setting"><div><div class="setting__name">패킷 출력 위치</div><div class="setting__desc">자동이면 응답 본문 뒤에 붙입니다.</div><span class="argtag">hayaku_packet_output_slot</span></div><select class="select" style="width:210px" aria-label="패킷 출력 위치"><option>auto</option><option>tail</option><option>wrapper</option><option>footer</option></select></div><div class="setting"><div><div class="setting__name">닫는 태그</div><div class="setting__desc">선택. 예: </Story> — 출력 위치가 ‘닫는 태그 앞’일 때 그 앞에 둡니다.</div><span class="argtag">hayaku_packet_closing_tag</span></div><input class="input" value="" placeholder="</Story>" style="width:210px" aria-label="닫는 태그"></div><div class="setting"><div><div class="setting__name">프롬프트 캐시</div><div class="setting__desc">캐시 사용 방식</div><span class="argtag">hayaku_prompt_cache</span></div><select class="select" style="width:210px" aria-label="프롬프트 캐시"><option>off</option><option>structural</option><option>native</option></select></div><div class="setting"><div><div class="setting__name">기억 언어</div><div class="setting__desc">대화 원문 언어를 고르면 완료된 대화의 언어를 따릅니다.</div><span class="argtag">hayaku_memory_language</span></div><select class="select" style="width:210px" aria-label="기억 언어"><option>source</option><option>ko</option><option>en</option><option>ja</option><option>zh</option></select></div></div>
         <div class="card" data-subpanel="pick" data-group="st" data-hayaku-settings-section="pick"><div class="split" style="margin-bottom:6px"><span class="hint">기억 선택 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">축당 최대 항목</div><div class="setting__desc">기억 축 하나에서 가져올 최대 항목 수</div><span class="argtag">hayaku_max_items_per_axis</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="축당 최대 항목"></div><div class="setting"><div><div class="setting__name">관련성 비중</div><div class="setting__desc">0–100. 비우면 70</div><span class="argtag">hayaku_recall_relatedness_weight</span></div><input class="input" type="number" value="70" style="width:90px" aria-label="관련성 비중"></div><div class="setting"><div><div class="setting__name">최신성 비중</div><div class="setting__desc">0–100. 비우면 30</div><span class="argtag">hayaku_recall_recency_weight</span></div><input class="input" type="number" value="30" style="width:90px" aria-label="최신성 비중"></div><div class="setting"><div><div class="setting__name">문맥 메시지 수</div><div class="setting__desc">현재 입력 앞의 고정 최근 메시지 창. 비우면 5</div><span class="argtag">hayaku_recall_context_messages</span></div><input class="input" type="number" value="5" style="width:90px" aria-label="문맥 메시지 수"></div><div class="setting"><div><div class="setting__name">적응형 문맥 창</div><div class="setting__desc"></div><span class="argtag">hayaku_adaptive_context_window</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">적응형 문맥 창</span></label></div><div class="setting"><div><div class="setting__name">다중 주제 회상</div><div class="setting__desc">한 입력에서 여러 주제를 따로 찾습니다.</div><span class="argtag">hayaku_multi_query_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 주제 회상</span></label></div><div class="setting"><div><div class="setting__name">모순 묶음</div><div class="setting__desc"></div><span class="argtag">hayaku_contradiction_bundle</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">모순 묶음</span></label></div><div class="setting"><div><div class="setting__name">다중 해상도 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_multi_resolution_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 해상도 회상</span></label></div><div class="setting"><div><div class="setting__name">회상 안정성</div><div class="setting__desc"></div><span class="argtag">hayaku_recall_stability</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">회상 안정성</span></label></div><div class="setting"><div><div class="setting__name">안정성 가산</div><div class="setting__desc">0.0–0.08. 비우면 0.025</div><span class="argtag">hayaku_recall_stability_boost</span></div><input class="input" type="number" value="0.025" style="width:100px" aria-label="안정성 가산"></div><details class="fold" style="margin-top:12px"><summary>시간대별 회상 <span class="hint">선택 · 5개 값을 모두 입력해야 적용</span></summary><div class="fold__body"><div class="setting"><div><div class="setting__name">단기 최대 경과 턴</div><div class="setting__desc">선택</div><span class="argtag">hayaku_recall_short_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="단기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">중기 최대 경과 턴</div><div class="setting__desc">단기보다 커야 함</div><span class="argtag">hayaku_recall_medium_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="중기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">단기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_short_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="단기 턴 할당"></div><div class="setting"><div><div class="setting__name">중기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_medium_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="중기 턴 할당"></div><div class="setting"><div><div class="setting__name">장기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_long_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="장기 턴 할당"></div></div></details></div>
         <div class="card" data-subpanel="safe" data-group="st" data-hayaku-settings-section="safe"><div class="note note--warn" style="margin-bottom:6px"><b>비용 안내</b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다.</div><div class="split" style="margin-bottom:6px"><span class="hint">복구 · 안전 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">패킷 복구 사용</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_recovery</span></div><label class="switch"><input type="checkbox" id="st-packet-recovery" checked><span class="switch__track"></span><span class="sr-only">패킷 복구 사용</span></label><span class="badge" data-setting-state="packet-recovery" aria-live="polite"></span></div><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">유일한 자동 복구입니다. 누락 패킷당 Other Ax 1회, 실패하면 수동 복구로 남깁니다.</div><span class="argtag">hayaku_after_request_auto_repair</span></div><label class="switch"><input type="checkbox" id="st-after" checked><span class="switch__track"></span><span class="sr-only">afterRequest 자동 복구</span></label></div><div class="setting"><div><div class="setting__name">추가 복구 허용량</div><div class="setting__desc">작업당 구조 복구 추가 호출. 기본 0</div><span class="argtag">hayaku_recovery_extra_calls</span></div><select class="select" id="st-extra" style="width:110px" aria-label="추가 복구 허용량"><option>0</option><option>1</option></select></div><div class="setting"><div><div class="setting__name">Cold Start 묶음</div><div class="setting__desc">호출당 최대 완료 U+A 턴</div><span class="argtag">hayaku_cold_start_batch_turns</span></div><select class="select" style="width:110px" aria-label="Cold Start 묶음" id="st-cold"><option>1</option><option selected>5</option><option>10</option></select></div><div class="setting"><div><div class="setting__name">패킷 커버리지 점검</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_audit</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">패킷 커버리지 점검</span></label></div><div class="setting"><div><div class="setting__name">커버리지 대체 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_fallback_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">커버리지 대체 회상</span></label></div><div class="setting"><div><div class="setting__name">표시 스크러버</div><div class="setting__desc"></div><span class="argtag">hayaku_display_scrubber</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">표시 스크러버</span></label></div><div class="setting"><div><div class="setting__name">플러그인 보조 모델 허용</div><div class="setting__desc">RisuAI 보조 모델에 플러그인 제공 모델을 쓸 수 있게 합니다.</div><span class="argtag">risuai_aux_allow_plugins</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">플러그인 보조 모델 허용</span></label></div><div class="setting"><div><div class="setting__name">디버그</div><div class="setting__desc"></div><span class="argtag">hayaku_debug</span></div><label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="sr-only">디버그</span></label></div></div>
-        <div class="card" data-subpanel="adv" data-group="st" data-hayaku-settings-section="adv"><div class="split" style="margin-bottom:6px"><span class="hint">고급 검색 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">BM25 채널 <span class="lvl">고급</span></div><div class="setting__desc">키워드 기반 검색을 함께 사용합니다.</div><span class="argtag">hayaku_bm25_channel</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">BM25 채널 <span class="lvl">고급</span></span></label></div><div class="setting"><div><div class="setting__name">BM25 가중치</div><div class="setting__desc">비우면 0.08</div><span class="argtag">hayaku_bm25_weight</span></div><input class="input" type="number" value="0.08" style="width:100px" aria-label="BM25 가중치"></div><div class="setting"><div><div class="setting__name">원문 구절 회상</div><div class="setting__desc">Recovery Journal 증거를 정확/BM25/trigram/근접도로 검색</div><span class="argtag">hayaku_raw_passage_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">원문 구절 회상</span></label></div><div class="setting"><div><div class="setting__name">원문 구절 최대 수</div><div class="setting__desc">요청당 최대 3</div><span class="argtag">hayaku_raw_recall_max_items</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="원문 구절 최대 수"></div><div class="setting"><div><div class="setting__name">원문 증거 최대 글자</div><div class="setting__desc">비우면 2400</div><span class="argtag">hayaku_raw_recall_max_chars</span></div><input class="input" type="number" value="2400" style="width:110px" aria-label="원문 증거 최대 글자"></div><div class="setting"><div><div class="setting__name">원문 최소 점수</div><div class="setting__desc">0.0–1.0. 비우면 0.16</div><span class="argtag">hayaku_raw_recall_min_score</span></div><input class="input" type="number" value="0.16" style="width:100px" aria-label="원문 최소 점수"></div><div class="setting"><div><div class="setting__name">타입 기억 그래프</div><div class="setting__desc">패킷 기억 행 사이의 관계를 결정적으로 도출</div><span class="argtag">hayaku_typed_memory_graph</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">타입 기억 그래프</span></label></div><div class="setting"><div><div class="setting__name">그래프 이웃 회상</div><div class="setting__desc">일반 검색 게이트 이후 제한된 이웃 근거 허용</div><span class="argtag">hayaku_graph_closure_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">그래프 이웃 회상</span></label></div><div class="setting"><div><div class="setting__name">그래프 최대 노드</div><div class="setting__desc">요청당. 비우면 8</div><span class="argtag">hayaku_graph_closure_max_nodes</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="그래프 최대 노드"></div><div class="setting"><div><div class="setting__name">계층 에피소드 기억</div><div class="setting__desc">장면/턴 라우터 전용 계층</div><span class="argtag">hayaku_hierarchical_episode_memory</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">계층 에피소드 기억</span></label></div><div class="setting"><div><div class="setting__name">에피소드 라우터 최대 수</div><div class="setting__desc">요청당. 비우면 3</div><span class="argtag">hayaku_episode_router_max_hits</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="에피소드 라우터 최대 수"></div><div class="setting"><div><div class="setting__name">RisuAI 보조 모델 호출 테스트</div><div class="setting__desc">API · 모델 · 지연 시간을 확인합니다 (1회 호출).</div></div><button class="btn btn--sm" id="ax-test" type="button">테스트</button></div></div>
+        <div class="card" data-subpanel="adv" data-group="st" data-hayaku-settings-section="adv"><div class="split" style="margin-bottom:6px"><span class="hint">고급 검색 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">BM25 채널 <span class="lvl">고급</span></div><div class="setting__desc">키워드 기반 검색을 함께 사용합니다.</div><span class="argtag">hayaku_bm25_channel</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">BM25 채널 <span class="lvl">고급</span></span></label></div><div class="setting"><div><div class="setting__name">BM25 가중치</div><div class="setting__desc">비우면 0.08</div><span class="argtag">hayaku_bm25_weight</span></div><input class="input" type="number" value="0.08" style="width:100px" aria-label="BM25 가중치"></div><div class="setting"><div><div class="setting__name">원문 구절 회상</div><div class="setting__desc">Recovery Journal 증거를 정확/BM25/trigram/근접도로 검색</div><span class="argtag">hayaku_raw_passage_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">원문 구절 회상</span></label></div><div class="setting"><div><div class="setting__name">원문 증거 최대 글자</div><div class="setting__desc">비우면 2400</div><span class="argtag">hayaku_raw_recall_max_chars</span></div><input class="input" type="number" value="2400" style="width:110px" aria-label="원문 증거 최대 글자"></div><div class="setting"><div><div class="setting__name">타입 기억 그래프</div><div class="setting__desc">패킷 기억 행 사이의 관계를 결정적으로 도출</div><span class="argtag">hayaku_typed_memory_graph</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">타입 기억 그래프</span></label></div><div class="setting"><div><div class="setting__name">그래프 이웃 회상</div><div class="setting__desc">일반 검색 게이트 이후 제한된 이웃 근거 허용</div><span class="argtag">hayaku_graph_closure_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">그래프 이웃 회상</span></label></div><div class="setting"><div><div class="setting__name">그래프 최대 노드</div><div class="setting__desc">요청당. 비우면 8</div><span class="argtag">hayaku_graph_closure_max_nodes</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="그래프 최대 노드"></div><div class="setting"><div><div class="setting__name">계층 에피소드 기억</div><div class="setting__desc">장면/턴 라우터 전용 계층</div><span class="argtag">hayaku_hierarchical_episode_memory</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">계층 에피소드 기억</span></label></div><div class="setting"><div><div class="setting__name">에피소드 라우터 최대 수</div><div class="setting__desc">요청당. 비우면 3</div><span class="argtag">hayaku_episode_router_max_hits</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="에피소드 라우터 최대 수"></div><div class="setting"><div><div class="setting__name">RisuAI 보조 모델 호출 테스트</div><div class="setting__desc">API · 모델 · 지연 시간을 확인합니다 (1회 호출).</div></div><button class="btn btn--sm" id="ax-test" type="button">테스트</button></div></div>
       </div>
     </div>
   </section>`;
@@ -57034,9 +56859,9 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     { argument: 'hayaku_recall_stability', type: 'boolean' },
     { argument: 'hayaku_recall_stability_boost', type: 'number', min: 0, max: 0.08 },
     { argument: 'hayaku_raw_passage_recall', type: 'boolean' },
-    { argument: 'hayaku_raw_recall_max_items', type: 'integer', min: 1, max: 8 },
+    { argument: 'hayaku_raw_recall_max_items', type: 'integer', min: 1, max: 8, retired: true },
     { argument: 'hayaku_raw_recall_max_chars', type: 'integer', min: 600, max: 8000 },
-    { argument: 'hayaku_raw_recall_min_score', type: 'number', min: 0.04, max: 0.8 },
+    { argument: 'hayaku_raw_recall_min_score', type: 'number', min: 0.04, max: 0.8, retired: true },
     { argument: 'hayaku_typed_memory_graph', type: 'boolean' },
     { argument: 'hayaku_graph_closure_recall', type: 'boolean' },
     { argument: 'hayaku_graph_closure_max_nodes', type: 'integer', min: 2, max: 24 },
@@ -61358,7 +61183,6 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         viewerRenderFailedRecovery,
         viewerResolveFailedRecovery,
         viewerRenderNativeJob,
-        showIndependentRecoveryConfirmation,
         failedAnalysisReasonExplanation,
         inspectFailedAnalysisAdoption,
         failedAnalysisAdoptionBinding,
@@ -61377,7 +61201,6 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         acquireRecoveryDebtLeaseForNativeRepair,
         releaseRecoveryDebtLeaseForNativeRepair,
         updateRecoveryJournalBackgroundDecision,
-        requestRecoveryJournalBackgroundConfirmation,
         resolveRecoveryJournalBackgroundConfirmation,
         minimizeIndependentRecoveryConfirmation,
         inheritRecoveryVaultForBridgeSession,

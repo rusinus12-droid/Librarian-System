@@ -129,14 +129,14 @@ requireText(hayaku, "mode: 'otherAx'", 'afterRequest recovery retains Other Ax t
 requireText(hayaku, "outcome: 'candidate_returned_pending_commit'", 'afterRequest success waits for committed chat output');
 requireText(hayaku, "pending.afterRequestRepair.outcome = 'committed_chat_output_verified';", 'chat output commit readback');
 requireText(hayaku, 'const updateRecoveryJournalBackgroundDecision = async', 'durable Recovery Journal decision state');
-requireText(hayaku, 'const requestRecoveryJournalBackgroundConfirmation = async', 'Recovery Journal confirmation scheduling');
+forbidText(hayaku, 'const requestRecoveryJournalBackgroundConfirmation', 'retired background repair dialog stays removed');
 requireText(hayaku, 'const resolveRecoveryJournalBackgroundConfirmationOnce = async', 'confirmation resolution');
-requireText(hayaku, '패킷이 누락됐습니다. 자동 복구를 시도하시겠습니까?', 'user confirmation text');
+forbidText(hayaku, '패킷이 누락됐습니다. 자동 복구를 시도하시겠습니까?', 'retired background repair prompt text');
 requireText(hayaku, 'id="hayakuRecoveryConfirmationChoices"', 'confirmation controls');
 requireText(hayaku, 'hayaku_after_request_auto_repair', 'independent afterRequest setting');
 requireText(hayaku, 'hayaku_background_auto_repair', 'independent background setting');
 requireText(hayaku, 'recoveryVaultEnabled: true', 'Recovery Journal preservation always enabled');
-const legacyScheduler = section(hayaku, 'const scheduleNativeRepairSweep = (reason = \'event\'', 'const requestRecoveryJournalBackgroundConfirmation = async', 'legacy timer scheduler');
+const legacyScheduler = section(hayaku, 'const scheduleNativeRepairSweep = (reason = \'event\'', 'const resolveRecoveryJournalBackgroundConfirmationOnce = async', 'legacy timer scheduler');
 forbidText(legacyScheduler, 'setTimeout(', 'legacy scheduler must not start background model work');
 requireText(hayaku, 'const startNativeColdStart = async (options = {}) => {', 'native cold start');
 requireText(hayaku, 'const cancelNativeColdStart = () => {', 'cold-start cancellation');
