@@ -58,3 +58,13 @@ test(`${kind}: public archive restore is healthy after logical inheritance`,asyn
     assert.equal(f.wire.length,0);assert.equal(f.errors.length,0);
   }finally{await f.close();}
 });
+test(`${kind}: the public off setting removes the warning and normal mode restores it`,async()=>{
+  const {f,parts}=await boot();try{
+    await until(()=>parts.get(id)?.name.includes('지난 1턴'),'initial cold-start warning');
+    await f.api.saveSettings({...await f.api.loadSettings(),mode:'off'});
+    await until(()=>!parts.has(id),'off mode unregisters the warning automatically');
+    await f.api.saveSettings({...await f.api.loadSettings(),mode:'normal'});
+    await until(()=>parts.get(id)?.name.includes('지난 1턴'),'normal mode rechecks the unchanged chat');
+    assert.equal(f.wire.length,0);assert.equal(f.errors.length,0);
+  }finally{await f.close();}
+});

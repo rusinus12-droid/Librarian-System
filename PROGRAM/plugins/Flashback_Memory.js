@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.108
+//@display-name ⚡ FLASHBACK Memory v1.0.109
 //@api 3.0
-//@version 1.0.108
+//@version 1.0.109
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.108';
+const PLUGIN_VERSION = '1.0.109';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -48829,6 +48829,8 @@ ${cleanedText}`, 80),
   };
   const FLASHBACK_ATTENTION_POLL_MS = 10000;
   const FLASHBACK_ATTENTION_REFRESH_DELAY_MS = 2500;
+  const flashbackAttentionEnabled = (settings = Runtime.settings) => settings?.mode !== 'off'
+    && settings?.mode !== 'disabled' && settings?.enabled !== false;
   const FlashbackAttention = {
     started: false,
     generation: 0,
@@ -48965,10 +48967,11 @@ ${cleanedText}`, 80),
   };
   const computeFlashbackAttention = async () => {
     const settings = await loadSettings(false);
-    if (settings?.enabled === false || settings?.mode === 'disabled' || Runtime.unloaded) {
+    if (!flashbackAttentionEnabled(settings) || Runtime.unloaded) {
       return { scopeKey: '', kind: '', count: 0 };
     }
     const snapshot = await loadRisuSnapshot(false);
+    if (!flashbackAttentionEnabled() || Runtime.unloaded) return { scopeKey: '', kind: '', count: 0 };
     const scope = resolveScopeFromSnapshot(snapshot);
     if (!scope?.scopeKey) return { scopeKey: '', kind: '', count: 0 };
 
@@ -48977,6 +48980,7 @@ ${cleanedText}`, 80),
     let loaded = null;
     try { loaded = await loadScopeRecords(scope.scopeKey, { readOnly: true, rawTextOnly: true }); }
     catch (_) { /* An unavailable corpus is a storage warning, never an empty one. */ }
+    if (!flashbackAttentionEnabled() || Runtime.unloaded) return { scopeKey: '', kind: '', count: 0 };
     const manifest = loaded?.manifest;
     let storageError = !loaded || manifest?.manifestCorrupt === true || !!manifest?.foreignScopeKey
       || manifest?.archiveRefInvalid === true || Number(manifest?.missingShards || 0) > 0
@@ -49060,7 +49064,9 @@ ${cleanedText}`, 80),
 
     // Scope changes during asynchronous storage reads must not publish a stale
     // chat's warning into the new chat's button registry.
-    const current = resolveScopeFromSnapshot(await loadRisuSnapshot(true));
+    const currentSnapshot = await loadRisuSnapshot(true);
+    if (!flashbackAttentionEnabled() || Runtime.unloaded) return { scopeKey: '', kind: '', count: 0 };
+    const current = resolveScopeFromSnapshot(currentSnapshot);
     if (current?.scopeKey !== scope.scopeKey) return { stale: true };
 
     const decision = flashbackAttentionDecision({
@@ -49086,7 +49092,8 @@ ${cleanedText}`, 80),
   let flashbackAttentionButtonTail = Promise.resolve();
   const syncFlashbackAttentionButton = (next, isCurrent = () => true) => {
     const generation = FlashbackAttention.generation;
-    const current = () => generation === FlashbackAttention.generation && !Runtime.unloaded && isCurrent();
+    const current = () => generation === FlashbackAttention.generation && !Runtime.unloaded && isCurrent()
+      && (!next?.kind || flashbackAttentionEnabled());
     const update = async () => {
       if (!current()) return false;
       const signature = next?.kind ? `${next.kind}:${next.count}:${next.scopeKey || ''}` : '';
@@ -49143,6 +49150,14 @@ ${cleanedText}`, 80),
       if (next?.stale) { scheduleFlashbackAttentionRefresh('scope_changed', 0); return null; }
       FlashbackAttention.state = next;
       await syncFlashbackAttentionButton(next, current);
+      // Settings may turn off while the host acknowledges a button operation.
+      // Clear any previous warning too, without stopping re-enable monitoring.
+      if (current() && !flashbackAttentionEnabled()) {
+        const idle = { scopeKey: '', kind: '', count: 0 };
+        FlashbackAttention.state = idle;
+        await syncFlashbackAttentionButton(idle, current);
+        return idle;
+      }
       return next;
     } catch (error) {
       warn('flashback_attention_refresh_failed', error);
@@ -49176,10 +49191,12 @@ ${cleanedText}`, 80),
     const current = () => FlashbackAttention.started && !Runtime.unloaded
       && generation === FlashbackAttention.generation && FlashbackAttention.pollFlight === flight;
     try {
+      const settings = await loadSettings(false);
+      if (!current() || !flashbackAttentionEnabled(settings)) return;
       const snapshot = await loadRisuCaptureSnapshot();
-      if (!current()) return;
+      if (!current() || !flashbackAttentionEnabled()) return;
       const indexes = `${Number(snapshot?.chatInfo?.charIndex ?? -1)}:${Number(snapshot?.chatInfo?.chatIndex ?? -1)}`;
-      const live = await flashbackAttentionRevision(snapshot?.chat || null, current);
+      const live = await flashbackAttentionRevision(snapshot?.chat || null, () => current() && flashbackAttentionEnabled());
       if (!live || !current()) return;
       const revision = `${live.cacheKey || ''}:${live.revisionSignature || ''}`;
       const indexChanged = indexes !== FlashbackAttention.lastIndexes;
@@ -49194,6 +49211,11 @@ ${cleanedText}`, 80),
       const rearm = current();
       if (FlashbackAttention.pollFlight === flight) FlashbackAttention.pollFlight = null;
       if (rearm) {
+        if (!flashbackAttentionEnabled()) {
+          FlashbackAttention.revisionTracker = null;
+          FlashbackAttention.lastIndexes = '';
+          FlashbackAttention.lastRevision = '';
+        }
         FlashbackAttention.pollTimer = setTimeout(() => {
           if (generation === FlashbackAttention.generation) void pollFlashbackAttention();
         }, FLASHBACK_ATTENTION_POLL_MS);

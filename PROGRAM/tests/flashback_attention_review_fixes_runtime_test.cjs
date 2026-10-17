@@ -315,3 +315,64 @@ test('stopping during a revision slice cancels the remainder of the scan',async(
     assert.equal(t.FlashbackAttention.pollTimer,null);
   }finally{resume?.();await f.dispose();}
 });
+
+test('the public off setting clears attention and skips transcript polling until re-enabled',async()=>{
+  const f=await createFixture({pauseScheduledTimers:true,chat:chat()}),t=f.api._test,buttons=new Set();
+  try{
+    await t.stopFlashbackAttention();t.FlashbackAttention.started=true;
+    f.host.registerButton=async spec=>{buttons.add(spec.id);return true;};
+    f.host.unregisterUIPart=async id=>{buttons.delete(id);return true;};
+    assert.equal((await t.refreshFlashbackAttention()).kind,'cold_start');
+    await t.pollFlashbackAttention();
+    await f.api.saveSettings({...await f.api.loadSettings(),mode:'off'});
+    let reads=0;
+    f.host.getChatFromIndex=async()=>{reads++;return f.currentChat;};
+    assert.equal((await t.refreshFlashbackAttention()).kind,'');
+    assert.equal(buttons.size,0,'turning the engine off removes the existing warning');
+    await t.pollFlashbackAttention();await t.pollFlashbackAttention();
+    assert.equal(reads,0,'off mode does not fetch or hash the transcript');
+    assert.equal(t.FlashbackAttention.revisionTracker,null);
+    assert.equal(t.FlashbackAttention.pollTimer?.fixturePausedTimer,true,'a lightweight timer can notice re-enabling');
+    await f.api.saveSettings({...await f.api.loadSettings(),mode:'normal'});
+    await t.pollFlashbackAttention();
+    assert.ok(reads>0);assert.ok(t.FlashbackAttention.revisionTracker);
+    assert.equal((await t.refreshFlashbackAttention()).kind,'cold_start');
+    assert.equal(buttons.size,1,'the same unchanged chat is inspected after re-enabling');
+  }finally{await f.dispose();}
+});
+
+test('turning the engine off while the host registers a warning removes that late button',async()=>{
+  const f=await createFixture({pauseScheduledTimers:true,chat:chat()}),t=f.api._test;
+  const entered=deferred(),release=deferred(),buttons=new Set();
+  try{
+    await t.stopFlashbackAttention();t.FlashbackAttention.started=true;
+    f.host.registerButton=async spec=>{entered.resolve();await release.promise;buttons.add(spec.id);return true;};
+    f.host.unregisterUIPart=async id=>{buttons.delete(id);return true;};
+    const pending=t.refreshFlashbackAttention();
+    await entered.promise;
+    await f.api.saveSettings({...await f.api.loadSettings(),mode:'off'});
+    release.resolve();const state=await pending;
+    assert.equal(state.kind,'');assert.equal(t.FlashbackAttention.state.kind,'');
+    assert.equal(buttons.size,0,'an off-mode warning cannot survive a delayed host acknowledgement');
+  }finally{release.resolve();await f.dispose();}
+});
+
+test('turning the engine off cancels a revision scan and preserves idle re-enable polling',async()=>{
+  const f=await createFixture({pauseScheduledTimers:true,chat:chat()}),t=f.api._test;
+  const yielded=deferred();let resume,held=false;
+  try{
+    await t.stopFlashbackAttention();const schedule=f.context.setTimeout;
+    f.context.setTimeout=(callback,delay,...args)=>{
+      if(delay===0&&!held){held=true;resume=()=>callback(...args);yielded.resolve();return {fixturePausedTimer:true};}
+      if(delay===0)return setTimeout(callback,0,...args);
+      return schedule(callback,delay,...args);
+    };
+    f.currentChat.message[1].data='z'.repeat(4*1024*1024);t.FlashbackAttention.started=true;
+    const pending=t.pollFlashbackAttention();await yielded.promise;
+    await f.api.saveSettings({...await f.api.loadSettings(),mode:'off'});
+    resume();resume=null;await pending;
+    assert.equal(t.FlashbackAttention.revisionTracker,null);
+    assert.equal(t.FlashbackAttention.lastRevision,'');
+    assert.equal(t.FlashbackAttention.pollTimer?.fixturePausedTimer,true);
+  }finally{resume?.();await f.dispose();}
+});
