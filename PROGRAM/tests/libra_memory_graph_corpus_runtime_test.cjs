@@ -8,7 +8,7 @@ for (const mode of ['plugin_only','server_only']) test(`${mode}: shipped API sea
   await assert.rejects(()=>api.executeMemoryGraphUnifiedQuery(options),/CORPUS_MISSING_GENERATION/);
   const first=await api.executeMemoryGraphUnifiedQuery({...options,corpusMode:'window',limit:1});
   assert.equal(first.bundle.items.some(i=>i.family==='micro'),false);assert.equal(first.queryComplete,false);
-  const built=await api.buildMemoryGraphCorpus({limit:1});assert.equal(built.status,'published');assert.ok(built.windowCount>1);
+  const built=await api.buildMemoryGraphCorpus({limit:1});assert.equal(built.status,'published');assert.equal(built.persistenceBackend,mode==='plugin_only'?'host_storage':'server_storage');assert.ok(built.windowCount>1);
   const records=()=>mode==='server_only'?x.server.storedRows().filter(row=>!row.key.includes(':memory-graph-control:v1:')):[...x.f.r.values].filter(([key])=>key.includes(':memory-graph:v1:'));
   const before=records(),calls=x.f.control.calls.length;
   const cold=await api.executeMemoryGraphUnifiedQuery(options),warm=await api.executeMemoryGraphUnifiedQuery({...options,corpusMode:'auto'});

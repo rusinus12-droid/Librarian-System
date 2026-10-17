@@ -41,12 +41,27 @@ const recallFromRuntimeIndex = async f => {
 };
 
 async function run(mode) {
-  const snapshot = await serverFixture({ mode });
+  let interrupted = false;
+  const snapshot = await serverFixture({ mode,
+    host: { beforeVolatileBuild: () => {
+      if (!interrupted) { interrupted = true; throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED'); }
+    } },
+    transformSource: source => {
+      const anchor = 'const buildMemoryGraphCorpusInto = async (options, volatile, yieldCheck = null) => {';
+      assert.equal(source.split(anchor).length, 2);
+      return source.replace(anchor, anchor + '\n      if (volatile) risuai.beforeVolatileBuild();');
+    }
+  });
   try {
     const f = snapshot.f;
     await f.run();
     moreTurns(f, 1); await f.run(); await f.r.api.retryPendingUnifiedVectors?.();
-    await sleep(500);
+    // Startup migration writes its device marker after 1.5s. Settle that
+    // independent maintenance before attributing any write to the runtime index.
+    for (const deadline = Date.now() + 10000; !f.r.api.getLastEmbeddingVectorMigration()?.complete;) {
+      assert.ok(Date.now() < deadline, 'startup vector migration must settle');
+      await sleep(50);
+    }
     const localBytes = () => [...snapshot.local].reduce((sum, [, value]) => sum + String(value).length, 0);
     const serverRows = () => snapshot.storedRows().length;
 
@@ -70,6 +85,7 @@ async function run(mode) {
     assert.equal(durable.corpusRead?.mode, 'durable_common_index');
     assert.equal(excerpts(rebuilt), excerpts(durable), `${mode}: runtime and durable indexes deliver the same memory`);
     assert.equal(f.r.api.inspectVolatileMemoryGraphCorpus().failures, 0, `${mode}: background builds did not fail`);
+    assert.ok(f.r.api.inspectVolatileMemoryGraphCorpus().sourceChangeRetries >= 1, `${mode}: a torn whole-build snapshot is retried`);
     return { mode, coldItems: cold.memories.length, warmItems: warm.memories.length };
   } finally { await snapshot.cleanup(); }
 }

@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.0.144
-//@version 3.0.144
+//@display-name HAYAKU · Locator Continuity v3.0.145
+//@version 3.0.145
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.0.144';
+  const PLUGIN_VERSION = '3.0.145';
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
   const HAYAKU_SPARSE_RRF_COMPUTE_FINGERPRINT = '7f32e8b10fdd34e8356af70e40ad90d3c48e6fda132080046a807db0ea3ec58f';
   const HAYAKU_SPARSE_RRF_INPUT_SCHEMA = 'hayaku.sparse-rrf-fusion.input.v1';
@@ -11366,7 +11366,7 @@ const createMemorySuiteSearchClient = function createMemorySuiteSearchClient(opt
   return {execute,vectors,status:bridge.status,dispose:async()=>{disposed=true;corpora.clear();retainedBytes=0;await bridge.dispose();}};
 };
 // END MEMORY SUITE SEARCH
-/* LIBRARIAN SYSTEM COMPUTE SDK v0.3.6
+/* LIBRARIAN SYSTEM COMPUTE SDK v0.3.7
  * Optional deterministic-compute client shared by Librarian System owner plugins.
  *
  * The plugin remains authoritative: local execution is always available, the
@@ -11406,6 +11406,7 @@ const createMemorySuiteComputeBridge = (rawOptions = {}) => {
   const maxDerivedCacheEntries = Math.max(1, Math.min(1000, Number(options.maxDerivedCacheEntries || 64) || 64));
   const jobPollIntervalMs = Math.max(25, Math.min(2000, Number(options.jobPollIntervalMs || 100) || 100));
   const disposeCancelGraceMs = Math.max(0, Math.min(2000, Number(options.disposeCancelGraceMs ?? 250) || 0));
+  const FAILED_JOB_CANCEL_TIMEOUT_MS = 250;
   const now = typeof options.now === 'function' ? options.now : () => Date.now();
 
   const codedError = (message, code, extra = null) => {
@@ -12275,7 +12276,7 @@ const createMemorySuiteComputeBridge = (rawOptions = {}) => {
     }
     return Object.freeze({ ...job, jobId });
   };
-  const computeJobRequest = async (prepared, path, init, label, expectedSchema, expectedEpoch) => {
+  const computeJobRequest = async (prepared, path, init, label, expectedSchema, expectedEpoch, acceptedTransport = null) => {
     let connection = await ensureComputeConnectionRaw(false, Math.max(25, remainingJobBudget(prepared)), expectedEpoch);
     const send = async authRetry => {
       try {
@@ -12291,6 +12292,7 @@ const createMemorySuiteComputeBridge = (rawOptions = {}) => {
         if (payload?.schema !== expectedSchema) {
           throw codedError('memory_suite_compute_job_response_contract_mismatch', 'MEMORY_SUITE_COMPUTE_JOB_INVALID');
         }
+        if (acceptedTransport) acceptedTransport.connection = connection;
         return payload?.result;
       } catch (error) {
         if (authRetry && [401, 403].includes(Number(error?.status || 0)) && remainingJobBudget(prepared) >= 50) {
@@ -12303,7 +12305,7 @@ const createMemorySuiteComputeBridge = (rawOptions = {}) => {
     };
     return await send(true);
   };
-  const remoteSubmitPreparedJob = async (prepared, expectedEpoch) => {
+  const remoteSubmitPreparedJob = async (prepared, expectedEpoch, acceptedJob = null) => {
     assertActive(expectedEpoch);
     const ticket = acquireCircuit(false);
     if (!ticket) throw codedError('memory_suite_compute_circuit_open', 'MEMORY_SUITE_COMPUTE_CIRCUIT_OPEN', { retryAt: state.circuit.openUntil });
@@ -12334,9 +12336,10 @@ const createMemorySuiteComputeBridge = (rawOptions = {}) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
-      }, 'Librarian System compute job submit', 'memory-suite.compute.job-response.v1', expectedEpoch);
+      }, 'Librarian System compute job submit', 'memory-suite.compute.job-response.v1', expectedEpoch, acceptedJob);
       const job = validateJobStatus(prepared, rawJob);
       state.jobContexts.set(job.jobId, prepared);
+      if (acceptedJob) acceptedJob.jobId = job.jobId;
       state.counters.jobsSubmitted += 1;
       circuitSuccess(ticket);
       emitStatus('job_submitted', '', { operation: prepared.operation, jobId: job.jobId });
@@ -12410,13 +12413,28 @@ const createMemorySuiteComputeBridge = (rawOptions = {}) => {
   const getJobResult = async jobOrId => await getPreparedJobResult(jobOrId, lifecycle.epoch);
   const cancelJob = async jobOrId => await cancelPreparedJob(jobOrId, lifecycle.epoch);
   const waitForJob = async (jobOrId, waitOptions = {}) => await waitForPreparedJob(jobOrId, waitOptions, lifecycle.epoch);
+  const cancelFailedBackgroundJob = async (acceptedJob, expectedEpoch) => {
+    if (lifecycle.disposed || lifecycle.epoch !== expectedEpoch || !acceptedJob.connection) return;
+    // Use only the verified endpoint/token that accepted this Job. Do not
+    // bootstrap, follow a later URL change, or retain the failed input snapshot.
+    const { jobId, connection } = acceptedJob;
+    await fetchJson(`${connection.url}/v1/compute/jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${connection.token}`,
+        'X-Memory-Suite-Plugin': pluginId,
+        'X-Memory-Suite-Plugin-Version': pluginVersion
+      }
+    }, 'Librarian System failed background job cancel', FAILED_JOB_CANCEL_TIMEOUT_MS, expectedEpoch);
+  };
   const schedulePreparedJob = (prepared, expectedEpoch) => {
     const key = preparedCacheKey(prepared);
     const existing = state.jobRuns.get(key);
     if (existing) return existing;
     const task = trackBackgroundTask((async () => {
+      const acceptedJob = { jobId: '', connection: null };
       try {
-        const job = await remoteSubmitPreparedJob(prepared, expectedEpoch);
+        const job = await remoteSubmitPreparedJob(prepared, expectedEpoch, acceptedJob);
         const envelope = await waitForPreparedJob(job, {}, expectedEpoch);
         const cachedAt = now();
         state.derivedCache.set(key, { envelope, cachedAt, lastUsedAt: cachedAt, expiresAt: cachedAt + derivedCacheTtlMs });
@@ -12433,6 +12451,13 @@ const createMemorySuiteComputeBridge = (rawOptions = {}) => {
         if (!lifecycle.disposed) emitStatus('job_failed', error?.code || error?.message || error, { operation: prepared.operation });
         throw error;
       } finally {
+        if (acceptedJob.jobId && state.jobContexts.get(acceptedJob.jobId) === prepared) {
+          // Successful adoption and terminal status handling already release
+          // their contexts. Every other exit must release before remote cleanup,
+          // even if cancellation fails, hangs or returns an unusable response.
+          state.jobContexts.delete(acceptedJob.jobId);
+          try { await cancelFailedBackgroundJob(acceptedJob, expectedEpoch); } catch (_) {}
+        }
         state.jobRuns.delete(key);
       }
     })());

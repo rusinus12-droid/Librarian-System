@@ -31,6 +31,15 @@ test('measurement never runs caller getters, toJSON, sparse arrays or cycles', (
   for (const value of [getter, { toJSON() { invoked++; return 1; } }, [,,], cycle, { value: undefined }]) assert.throws(() => store.measure(value), /JSON_INVALID/);
   assert.equal(invoked, 0);
 });
+test('dense provider vector accounting keeps exact byte and token admission boundaries', () => {
+  const store = create({ fingerprint });
+  const record = { schema: 'libra.micro_vector.v1', vector: Array.from({ length: 1024 }, (_, i) => Math.sin(i) / 32) };
+  record.vector[0] = -0; record.vector[1] = Number.MIN_VALUE; record.vector[2] = Number.MAX_VALUE;
+  const text = JSON.stringify(record), bytes = Buffer.byteLength(text), size = store.measure(record, bytes);
+  assert.equal(size.utf8Bytes, bytes); assert.equal(size.codeUnits, text.length);
+  assert.equal(size.tokens, 1027, 'one object, schema string, vector array and 1024 coordinates');
+  assert.throws(() => store.measure(record, bytes - 1), /ROW_EXCEEDS_PAGE/);
+});
 test('nested empty containers and recorded narrative dictionaries fit their preflight validation reservation', () => {
   const store = create({ fingerprint }), source = graph(1);
   source.units[0].value = Object.fromEntries(Array.from({ length: 80 }, (_, i) => ['field' + i, i % 2 ? {} : []]));

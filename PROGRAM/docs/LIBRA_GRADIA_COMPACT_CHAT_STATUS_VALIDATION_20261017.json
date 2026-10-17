@@ -1,0 +1,139 @@
+{
+  "schema": "memory-suite.compact-chat-status-validation.v1",
+  "date": "2026-10-17",
+  "base": "974828a11c40494083c378980e2f6029d09f7f26",
+  "versions": {
+    "libra": "2.3.161",
+    "gradia": "0.25.88"
+  },
+  "sourceSha256": {
+    "PROGRAM/plugins/LIBRA.js": "ea9c19a5828afa854d21f252973eb73e3c410ffb81158109d84deb4043bd47ef",
+    "PROGRAM/plugins/GRADIA.js": "de70f1e0a79ee86f4b0e3334bbc1173cd6f7c5a0f4d72c9ddff063033ebe53dc",
+    "PROGRAM/tools/memory_suite_chat_status.cjs": "4f9cb51d947de836d11e5c9207fe8fb89522d6d312fd92ea36235c105aba3cef"
+  },
+  "fullArtifactsEqualSource": true,
+  "controllerTests": {
+    "passed": 8,
+    "scope": [
+      "sticky dismissal",
+      "new operation",
+      "keyboard focus",
+      "owner isolation",
+      "slow host write",
+      "unload",
+      "escaping",
+      "listener cleanup",
+      "unavailable or denied DOM"
+    ]
+  },
+  "fullPluginBrowserFixture": {
+    "cases": [
+      {
+        "width": 1440,
+        "delegatedEvents": false,
+        "collapsedHeight": 40,
+        "gap": 8,
+        "manualDismissSticky": true,
+        "keyboardClose": true,
+        "cancelSeparate": true,
+        "networkCalls": 0
+      },
+      {
+        "width": 1440,
+        "delegatedEvents": true,
+        "collapsedHeight": 40,
+        "gap": 8,
+        "manualDismissSticky": true,
+        "keyboardClose": true,
+        "cancelSeparate": true,
+        "networkCalls": 0
+      },
+      {
+        "width": 390,
+        "delegatedEvents": false,
+        "collapsedHeight": 42,
+        "gap": 8,
+        "manualDismissSticky": true,
+        "keyboardClose": true,
+        "cancelSeparate": true,
+        "networkCalls": 0
+      },
+      {
+        "width": 390,
+        "delegatedEvents": true,
+        "collapsedHeight": 42,
+        "gap": 8,
+        "manualDismissSticky": true,
+        "keyboardClose": true,
+        "cancelSeparate": true,
+        "networkCalls": 0
+      }
+    ],
+    "sanitizerReproduced": false
+  },
+  "isolatedNativeHost": {
+    "hostCommit": "e773240bfab72f3704f3efa52722ec7d105cdcf3",
+    "historicalHostPanelMarkupEqual": "f9728b14c733d073168d8d0c6a8f34f8febf0304",
+    "components": [
+      "setChatPanel",
+      "SafeElement",
+      "SafeDocument",
+      "DefaultChatScreen panel block"
+    ],
+    "sanitizer": "DOMPurify 3.3.2",
+    "cases": 16,
+    "viewports": [
+      [
+        390,
+        844
+      ],
+      [
+        1440,
+        900
+      ]
+    ],
+    "fixedInputVariants": [
+      false,
+      true
+    ],
+    "registrationOrderVariants": [
+      "libra-first",
+      "gradia-first"
+    ],
+    "terminalMemoryVariants": [
+      false,
+      true
+    ],
+    "overlap": false,
+    "inputOverlap": false,
+    "clickAndEnterClose": true,
+    "panelGapPx": 8,
+    "collapsedHeightPx": {
+      "desktop": 40,
+      "mobile": 42
+    }
+  },
+  "existingRegressionChecks": [
+    "libra_memory_work_status_runtime_test",
+    "libra_writing_mode_live_work_ui_contract_test",
+    "libra_pipeline_scope_navigation_quick_settings_test",
+    "libra_micro_vector_ranking_regression_test",
+    "libra_micro_vector_ranking_runtime_test",
+    "libra_memory_graph_assembly_test",
+    "gradia/producer-owner-migration.test:4",
+    "gradia/memory-retirement.test:3",
+    "gradia/draft-only.test:7",
+    "gradia/turn-eligibility.test:21"
+  ],
+  "preExistingFailure": {
+    "suite": "gradia_suite_test.cjs --list",
+    "reason": "suite-inventory omits model-context-budget and producer-owner-migration",
+    "launcherAndInventoryEqualBase": true
+  },
+  "limits": [
+    "installed user app not connected",
+    "isolated native host instead of full RisuAI build",
+    "mainDom permission required for close binding",
+    "no new live model evaluation"
+  ]
+}

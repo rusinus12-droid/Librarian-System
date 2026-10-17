@@ -83,11 +83,18 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
         try { vectorRecord = await readVector(extra.vectorKey); } catch (_) { check(); reject(extra.recordKey, 'vector_read_unavailable'); continue; }
       }
       check();
+      if (extra.selectionDigest && digest(vectorRecord) !== extra.selectionDigest) throw new Error('LIBRA_GRAPH_SEMANTIC_VECTOR_CHANGED');
       if (!vectorRecord || !vectorValid(vectorRecord.vector, vectorRecord.dimensions)) { reject(extra.recordKey, 'invalid_vector'); continue; }
       const d = vectorRecord.dimensions;
       let profile;
       try { profile = profileFor({ ...config, dimensions: d }); }
       catch (_) { reject(extra.recordKey, 'projection_or_profile_unavailable'); continue; }
+      if (!Number.isSafeInteger(d) || d < 1 || d > 65536) { reject(extra.recordKey, 'invalid_vector'); continue; }
+      if (!extra.vectorRecord && extra.family === 'micro'
+        && (vectorRecord.schema !== 'libra.micro_vector.v1' || vectorRecord.scopeKey !== graph.scopeKey
+          || vectorRecord.textHash !== extra.textHash || vectorRecord.spaceDigest !== extra.spaceDigest
+          || vectorRecord.provider !== profile.provider || vectorRecord.model !== profile.model
+          || vectorRecord.profileId !== profile.profileId)) { reject(extra.recordKey, 'vector_owner_binding_mismatch'); continue; }
       if (dimension !== null && dimension !== d) { reject(extra.recordKey, 'embedding_space_mismatch'); continue; }
       const additional = 1024 + d * 8 + (dimension === null ? d * 16 : 0);
       if (bytes + additional > maxBytes) { reject(extra.recordKey, 'representation_byte_budget'); continue; }
@@ -95,7 +102,8 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
       documents.push({ nodeId: extra.nodeId, bindingId: node?.bindingId || extra.nodeId, vector: vectorRecord.vector.slice(),
         representationId: digest([extra.vectorKey, vectorRecord.profileId || profile.profileId, extra.textHash || '', vectorRecord.vectorHash || '']),
         projectionVersion: 'projection_v1', textHash: extra.textHash || '', temporalEndTurn: extra.temporalEndTurn ?? null });
-      // An inline (runtime-produced) vector has no stored body to re-verify at delivery.
+      // Persisted representations retain their real owner key and body dependency.
+      // Ephemeral inline representations are used only by callers without a stored body.
       if (extra.vectorKey && !extra.vectorRecord) dependencies.push({ key: extra.vectorKey, digest: digest(vectorRecord) });
       dimension = d; expectedProfile = profile; bytes += additional;
       admittedFamilies.add(fam);
@@ -126,6 +134,59 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
     diagnostics.admittedFamilies = [...admittedFamilies].sort();
     return { queryInput: { semanticSpace, queryEmbedding: query.vectors[0], documentRepresentations, queryVectors: {} }, dependencies, diagnostics };
   };
+  // Rank all compatible Micro sources before spending the retained representation
+  // allowance. The source-read ledger bounds this scan independently of the lane's
+  // selected feature pages. Keep only eight scores/owner digests, never all vectors.
+  const selectAdditionalRepresentations = async input => {
+    const { graph, config, check = () => {}, resources } = input;
+    const selected = [], diagnostics = { strategy: 'streaming_exact_cosine_top8', scanned: 0, compatible: 0, selected: 0 };
+    let query = null, queryNorm = 0;
+    const profiles = new Map(), sources = new Set((graph.nodes || []).filter(node => node.layer === 'source').map(node => node.id));
+    for (const extra of input.additionalRepresentations || []) {
+      check();
+      if (extra.family !== 'micro' || !sources.has(extra.nodeId)
+        || input.asOfTurn != null && Number.isSafeInteger(extra.temporalEndTurn) && extra.temporalEndTurn > input.asOfTurn) continue;
+      const scope = resources?.scope();
+      try {
+        const record = await input.readVector(extra.vectorKey, { selectionScan: true });
+        check(); diagnostics.scanned++;
+        scope?.retain(record, 'micro_selection_workspace', 2);
+        const dimension = record?.dimensions;
+        if (!Number.isSafeInteger(dimension) || dimension < 1 || dimension > 65536
+          || !vectorValid(record?.vector, dimension) || 3072 + dimension * 24 > (input.maxBytes ?? 262144)) continue;
+        if (!profiles.has(dimension)) {
+          try { profiles.set(dimension, profileFor({ ...config, dimensions: dimension })); }
+          catch (_) { continue; }
+        }
+        const profile = profiles.get(dimension);
+        if (record.schema !== 'libra.micro_vector.v1' || record.scopeKey !== graph.scopeKey
+          || record.textHash !== extra.textHash || record.spaceDigest !== extra.spaceDigest
+          || record.provider !== profile.provider || record.model !== profile.model || record.profileId !== profile.profileId) continue;
+        if (!query) {
+          try { query = await input.embedQuery(input.queryText, config); }
+          catch (error) { check(); diagnostics.status = 'query_embedding_unavailable'; diagnostics.reason = error.code || 'query_embedding_failed'; return { references: [], diagnostics }; }
+        }
+        check();
+        if (query?.provider !== profile.provider || query?.model !== profile.model
+          || query?.metadata?.profileId !== profile.profileId || query?.dimensions !== dimension
+          || !vectorValid(query?.vectors?.[0], dimension)) continue;
+        const vector = record.vector, q = query.vectors[0];
+        if (!queryNorm) queryNorm = Math.hypot(...q);
+        let dot = 0, vNorm = 0;
+        for (let i = 0; i < dimension; i++) { dot += q[i] * vector[i]; vNorm += vector[i] * vector[i]; }
+        const similarity = dot / (queryNorm * Math.sqrt(vNorm));
+        diagnostics.compatible++;
+        const last = selected[selected.length - 1];
+        if (selected.length === 8 && (similarity < last.similarity
+          || similarity === last.similarity && extra.nodeId.localeCompare(last.nodeId) >= 0)) continue;
+        selected.push({ ...extra, selectionDigest: digest(record), similarity });
+        selected.sort((a, b) => b.similarity - a.similarity || a.nodeId.localeCompare(b.nodeId));
+        if (selected.length > 8) selected.pop();
+      } finally { scope?.close(); }
+    }
+    diagnostics.selected = selected.length;
+    return { references: selected, diagnostics };
+  };
   // Metadata-only directory: canonical corpus projections persist these owner
   // vector refs already. No vector body is read until Memory Lane executes it.
   const prepareLazy = async (input = {}) => {
@@ -135,14 +196,14 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
     if(!Number.isSafeInteger(maximum)||maximum<4096||maximum>16777216)throw new TypeError('LIBRA_GRAPH_SEMANTIC_BUDGET_INVALID');
     const diagnostics={schema:'libra.native_graph_semantic.v1',status:!config?'configuration_unavailable':!config.enabled?'disabled':'no_compatible_representations',
       representationScope:'canonical_global_projection_source_access',access:'memory_lane_selective_vector_pages',durableVectorPagesRead:0,durableVectorBytesRead:0,ownerVectorRecordLoads:0,vectorCacheHits:0,queryRequestCount:0,queryCacheHits:0,coalesced:false,documentEmbeddingCalls:0,backgroundEmbeddingStarted:false,
-      admittedRepresentations:0,representationBytes:0,maxRepresentationBytes:maximum,rejected:[],vectorlessFamilies:['micro','state','lore'],byteBounded:false};
+      admittedRepresentations:0,representationBytes:0,maxRepresentationBytes:maximum,rejected:[],microRepresentations:[],vectorlessFamilies:['micro','state','lore'],byteBounded:false};
     const bySource=new Map();
     for(const unit of graph.units||[]){if(unit.family!=='canonical')continue;const source=(graph.nodes||[]).find(n=>n.id===unit.nodeId)?.sourceId;if(source)bySource.set(unit.recordKey,source);}
     const rows=new Map(),routingByNode=new Map((input.routingDirectory?.entries||[]).map(entry=>[entry.nodeId,entry]));
-    // Pre-selected non-canonical representations (inline vectors) are read first by the lane.
+    // Non-canonical owner references use the same lazy lane as canonical vectors.
     const extras=new Map();
     if(config?.enabled&&String(queryText).trim())for(const extra of input.additionalRepresentations||[]){
-      if(extra?.nodeId&&extra.vectorRecord&&(graph.nodes||[]).some(node=>node.id===extra.nodeId&&node.layer==='source'))extras.set(extra.nodeId,extra);
+      if(extra?.nodeId&&extra.vectorKey&&(graph.nodes||[]).some(node=>node.id===extra.nodeId&&node.layer==='source'))extras.set(extra.nodeId,extra);
     }
     if(config?.enabled&&String(queryText).trim())for(const row of canonicalRows){
       if(!bySource.has(row.key)||row.record?.embedding?.status!=='ready'||!row.record.embedding.vectorKey){diagnostics.rejected.push({recordKey:row.key,reason:'representation_missing'});continue;}
@@ -182,7 +243,7 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
     }
     const readPage=async(spec,budget)=>{
       check();const extra=extras.get(spec.anchorNodeId);
-      const row=extra?{key:extra.recordKey,record:{embedding:{dimensions:extra.vectorRecord.dimensions}}}:rows.get(spec.anchorNodeId);
+      const row=extra?{key:extra.recordKey,record:{embedding:{dimensions:extra.vectorRecord?.dimensions||extra.dimensions}}}:rows.get(spec.anchorNodeId);
       if(!row)throw new Error('LIBRA_GRAPH_SEMANTIC_REFERENCE_INVALID');
       if(budget.pagesRead>=budget.maxPages)return {storageStopped:true,stopReason:'storage_page_count_budget',rows:[]};
       const required=routingByNode.get(spec.anchorNodeId)?.payloadBytes;
@@ -191,6 +252,10 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
       // Reserve the minimum retained feature before owner I/O. Once exhausted,
       // stop the scheduler; never continue hydrating the rest of the directory.
       const dimension=Number(routingByNode.get(spec.anchorNodeId)?routing?.dimension:row.record.embedding.dimensions||0);
+      // Unknown-size owner records still need at least one feature envelope and
+      // the vector's numeric coordinates; do not issue I/O for an impossible page.
+      const storageFloor=512+(Number.isSafeInteger(dimension)&&dimension>0?dimension*2:0);
+      if(budget.bytesRead+storageFloor>budget.maxBytes)return {storageStopped:true,stopReason:'storage_byte_budget',rows:[]};
       const minimum=used?1024+(diagnostics.dimension||0)*8:Number.isSafeInteger(dimension)&&dimension>0?3072+dimension*24:0;
       if(remaining<minimum){diagnostics.rejected.push({recordKey:row.key,reason:'representation_byte_budget'});return {storageStopped:true,stopReason:'storage_representation_byte_budget',rows:[]};}
       const entry=extra?null:routingByNode.get(spec.anchorNodeId);
@@ -228,6 +293,7 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
         if(cost>remaining){diagnostics.rejected.push({recordKey:row.key,reason:'representation_byte_budget'});return {storageStopped:true,stopReason:'storage_representation_byte_budget',rows:[]};}
         used+=result.diagnostics.representationBytes-(used?2048+result.diagnostics.dimension*16:0);dependencies.push(...result.dependencies);
         diagnostics.status='available';diagnostics.admittedRepresentations++;diagnostics.representationBytes=used;
+        diagnostics.vectorlessFamilies=diagnostics.vectorlessFamilies.filter(family=>!result.diagnostics.admittedFamilies.includes(family));
         for(const key of ['queryRequestCount','queryCacheHits','coalesced','spaceId','dimension','queryTask','documentTask'])diagnostics[key]=result.diagnostics[key];
       }else if(!diagnostics.admittedRepresentations)diagnostics.status=result.diagnostics.status;
       let rep=result.queryInput.documentRepresentations[spec.anchorNodeId];
@@ -256,6 +322,7 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
         }finally{scope?.close();}
       }
       const feature=rep?evaluate(node,{...result.queryInput,documentRepresentations:{[node.id]:rep},asOfTurn}):{score:null,status:'unavailable'};
+      if(extra?.family==='micro'&&rep)diagnostics.microRepresentations.push({turn:extra.temporalEndTurn,similarity:feature.score});
       const items=[{nodeId:spec.anchorNodeId,semanticFeature:feature}];
       // Feature pages use the shared Cache Manager. Vectors remain scoped owner
       // payloads, with the same source I/O/retained/decode admission as before.
@@ -278,12 +345,16 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
     if(!result.documents?.length)return null;
     const bySource=new Map();
     for(const unit of input.graph.units||[]){const source=input.graph.nodes.find(n=>n.id===unit.nodeId)?.sourceId;if(unit.family==='canonical'&&source)bySource.set(source,input.canonicalRows.find(r=>r.key===unit.recordKey));}
-    return {schema:'libra.graph_semantic_directory.v1',dimension:result.documents[0].vector.length,profileId:result.profile.profileId,
-      entries:await Promise.all(result.documents.map(async document=>{const vector=document.vector,norm=Math.hypot(...vector),coordinates=vector.slice(0,16).map(x=>x/norm),row=bySource.get(document.nodeId);
+    // Each writer reserves the full unknown-value read allowance. Parallel
+    // writes can exhaust pending durable quota before small reads settle.
+    // Keep all representations and their order, with one writer in flight.
+    const entries=[];
+    for(const document of result.documents){input.check?.();const vector=document.vector,norm=Math.hypot(...vector),coordinates=vector.slice(0,16).map(x=>x/norm),row=bySource.get(document.nodeId);
         const rep={...document,spaceId:result.profile.descriptor.spaceId,provider:result.profile.provider,model:result.profile.model,dimension:vector.length,metric:'cosine',profileDigest:digest(result.profile.descriptor)},raw=JSON.stringify(rep);
         let payloadBytes=0;for(let offset=0;offset<raw.length;offset+=24576)payloadBytes+=input.pages?input.pages.encodedSize(JSON.stringify([raw.slice(offset,offset+24576)])).utf8Bytes:JSON.stringify([raw.slice(offset,offset+24576)]).length*3;
-        return {nodeId:document.nodeId,bindingId:document.bindingId,vectorKey:row.record.embedding.vectorKey,vectorHash:row.record.embedding.vectorHash,payloadBytes,...(input.writeRepresentation?await input.writeRepresentation(rep,row):{}),
-          coordinates,tailNorm:Math.hypot(...vector.slice(coordinates.length))/norm};}))};
+        entries.push({nodeId:document.nodeId,bindingId:document.bindingId,vectorKey:row.record.embedding.vectorKey,vectorHash:row.record.embedding.vectorHash,payloadBytes,...(input.writeRepresentation?await input.writeRepresentation(rep,row):{}),
+          coordinates,tailNorm:Math.hypot(...vector.slice(coordinates.length))/norm});}
+    return {schema:'libra.graph_semantic_directory.v1',dimension:result.documents[0].vector.length,profileId:result.profile.profileId,entries};
   };
-  return Object.freeze({ prepare, prepareLazy, buildDirectory });
+  return Object.freeze({ prepare, prepareLazy, buildDirectory, selectAdditionalRepresentations });
 };

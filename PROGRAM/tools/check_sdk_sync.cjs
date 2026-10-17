@@ -40,3 +40,4 @@ for (const [name, {variant,embedsCompute}] of Object.entries(STORAGE_VARIANTS)) 
 if (failed) process.exitCode = 1;
 
 require('node:child_process').execFileSync(process.execPath,[require('node:path').join(__dirname,'sync_source_review.cjs'),'--check'],{stdio:'inherit'});
+require('./sync_chat_status.cjs').sync({ check:true });

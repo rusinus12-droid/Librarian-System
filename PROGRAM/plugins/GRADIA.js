@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.25.89
+//@display-name GRADIA v0.25.90
 //@api 3.0
-//@version 0.25.89
+//@version 0.25.90
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -937,7 +937,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.25.89';
+  const PLUGIN_VERSION = '0.25.90';
   
   
   
@@ -20272,6 +20272,132 @@ ${passage.text || ''}`, 420));
     };
   };
 
+  /* MEMORY SUITE CHAT STATUS START */
+  const createMemorySuiteChatStatus = (function createMemorySuiteChatStatus(options = {}) {
+  const id = String(options.id || '');
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error('chat_status_id_invalid');
+  const rootId = `${id}-compact`, closeId = `${id}-close`;
+  const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[char]);
+  const api = methods => options.api?.(methods) || {};
+  let disposed = false, dismissed = false, epoch = 0, tail = Promise.resolve(), binding = null;
+  const unbind = async () => {
+    const previous = binding;
+    binding = null;
+    if (previous) try { await previous.button.removeEventListener('click', previous.listener); } catch (_) {}
+  };
+  const queue = action => {
+    const next = tail.catch(() => {}).then(action);
+    tail = next.catch(() => {});
+    return next;
+  };
+  const current = version => !disposed && !dismissed && epoch === version;
+  const bindClose = async version => {
+    const domApi = api(['getRootDocument']);
+    if (typeof domApi.getRootDocument !== 'function') return;
+    try {
+      const permissionApi = api(['requestPluginPermission']);
+      if (typeof permissionApi.requestPluginPermission === 'function'
+        && await permissionApi.requestPluginPermission('mainDom') === false) return;
+      for (let attempt = 0; attempt < 25 && current(version); attempt += 1) {
+        const root = await domApi.getRootDocument();
+        const button = await root?.getElementById?.(closeId);
+        if (!current(version)) return;
+        if (button && typeof button.addEventListener === 'function') {
+          const listener = await button.addEventListener('click', async event => {
+            if (!current(version)) return;
+            // Older SafeElement hosts delegate clicks through the document and
+            // strip event.target. Check the actual button bounds, or focus for
+            // the zero-coordinate click produced by keyboard activation.
+            const x = Number(event?.clientX), y = Number(event?.clientY);
+            let inside = false;
+            if (Number.isFinite(x) && Number.isFinite(y)) {
+              const rect = await button.getBoundingClientRect();
+              inside = rect.width > 0 && rect.height > 0 && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+              if (!inside && x === 0 && y === 0 && typeof root.querySelector === 'function')
+                inside = !!(await root.querySelector(`#${closeId}:focus`));
+            }
+            if (inside && current(version)) await dismiss();
+          });
+          if (!current(version)) {
+            try { await button.removeEventListener('click', listener); } catch (_) {}
+            return;
+          }
+          binding = { button, listener };
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 40));
+      }
+    } catch (_) { /* The status text remains readable when mainDom is unavailable. */ }
+  };
+  const render = view => {
+    const brand = escape(options.brand), message = escape(view.message);
+    const state = ['done','error','cancelled'].includes(view.state) ? view.state : 'working';
+    const label = { working:'진행 중', done:'완료', error:'확인 필요', cancelled:'취소됨' }[state];
+    const accent = { working:'#a8b9ff', done:'#79d8b2', error:'#ffacb4', cancelled:'#c7b6ef' }[state];
+    const result = view.result && view.result !== view.message ? `<pre>${escape(view.result)}</pre>` : '';
+    const cancel = view.cancelId ? `<button id="${escape(view.cancelId)}" class="mscs-cancel" type="button" aria-label="${brand} 전송 취소">전송 취소</button>` : '';
+    // Only the owning host section is restyled. No shared container, chat input
+    // or other plugin panel is selected, reordered or positioned by this CSS.
+    return `<div id="${rootId}" style="--mscs-accent:${accent}"><style>
+section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;background:transparent!important}
+#${rootId}{box-sizing:border-box;width:100%;border:1px solid rgba(136,155,188,.24);border-radius:10px;background:linear-gradient(115deg,rgba(25,34,51,.97),rgba(16,23,36,.96));color:#dce5f5;font:12px/1.5 system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.10)}
+#${rootId} .mscs-bar{display:flex;align-items:flex-start;gap:9px;min-height:38px;padding:5px 8px;box-sizing:border-box}
+#${rootId} .mscs-brand{display:flex;align-items:center;gap:7px;flex:none;height:28px;font-size:10px;font-weight:750;letter-spacing:.07em;color:#dce5f5}
+#${rootId} .mscs-dot{width:6px;height:6px;border-radius:50%;background:var(--mscs-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--mscs-accent) 10%,transparent)}
+#${rootId} .mscs-state{flex:none;line-height:28px;font-size:10px;color:var(--mscs-accent)}
+#${rootId} details{flex:1 1 auto;min-width:0}
+#${rootId} summary{display:flex;align-items:center;gap:5px;min-height:28px;cursor:pointer;list-style:none;border-radius:5px;color:#c8d3e8}
+#${rootId} summary::-webkit-details-marker{display:none}
+#${rootId} .mscs-preview{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+#${rootId} .mscs-chevron{width:12px;height:12px;flex:none;opacity:.55;transition:transform .15s}
+#${rootId} details[open] .mscs-chevron{transform:rotate(180deg)}
+#${rootId} .mscs-body{margin:4px 0 3px;padding:8px 0 2px;border-top:1px solid rgba(136,155,188,.16);white-space:pre-wrap;overflow-wrap:anywhere;color:#c8d3e8;max-height:160px;overflow:auto}
+#${rootId} pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 0;font:11px/1.6 ui-monospace,monospace}
+#${rootId} .mscs-actions{display:flex;gap:4px;flex:none}
+#${rootId} button{box-sizing:border-box;display:flex;align-items:center;justify-content:center;min-height:28px;border-radius:6px;font:inherit;cursor:pointer;transition:background .15s,color .15s}
+#${rootId} .mscs-close{width:28px;border:0;background:transparent;color:#94a4c1;font-size:19px;line-height:1}
+#${rootId} .mscs-close:hover{background:rgba(167,185,220,.12);color:#fff}
+#${rootId} .mscs-cancel{padding:0 7px;border:1px solid rgba(255,172,180,.3);background:rgba(255,172,180,.06);color:#ffbec5;font-size:11px}
+#${rootId} .mscs-cancel:hover{background:rgba(255,172,180,.14)}
+#${rootId} button:focus-visible,#${rootId} summary:focus-visible{outline:2px solid var(--mscs-accent);outline-offset:2px}
+@media(max-width:520px){#${rootId} .mscs-bar{gap:6px;padding:4px 6px;min-height:40px}#${rootId} .mscs-brand{height:32px;gap:5px;font-size:9px}#${rootId} .mscs-state{line-height:32px;font-size:9px}#${rootId} summary{min-height:32px}#${rootId} button{min-height:32px}#${rootId} .mscs-close{width:32px}#${rootId} .mscs-cancel{font-size:10px;padding:0 5px}}
+@media(prefers-reduced-motion:reduce){#${rootId} button,#${rootId} .mscs-chevron{transition:none}}
+</style><div class="mscs-bar"><span class="mscs-brand"><span class="mscs-dot" aria-hidden="true"></span>${brand}</span><span class="mscs-state" role="status">${label}</span><details><summary title="${message}" aria-label="${brand} 작업 상세 펼치기"><span class="mscs-preview">${message}</span><svg class="mscs-chevron" aria-hidden="true" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="mscs-body">${message}${result}</div></details><div class="mscs-actions">${cancel}<button id="${closeId}" class="mscs-close" type="button" title="상태 표시 닫기 · 작업은 계속됩니다" aria-label="${brand} 상태 표시 닫기">×</button></div></div></div>`;
+  };
+  const show = async view => {
+    const version = ++epoch;
+    await unbind();
+    return await queue(async () => {
+      if (disposed || version !== epoch) return false;
+      const panelApi = api(['setChatPanel']);
+      if (typeof panelApi.setChatPanel !== 'function') return false;
+      const visible = !!view.message && !dismissed;
+      await panelApi.setChatPanel(visible ? render(view) : null, { id, className: options.className || '' });
+      if (current(version) && visible) void bindClose(version);
+      return visible;
+    });
+  };
+  const dismiss = async () => {
+    if (disposed || dismissed) return false;
+    dismissed = true;
+    options.onDismiss?.();
+    await show({ message:'' });
+    return true;
+  };
+  return {
+    show,
+    begin() { dismissed = false; epoch += 1; void unbind(); },
+    dismiss,
+    isDismissed() { return dismissed; },
+    async dispose() {
+      disposed = true; epoch += 1;
+      await unbind();
+      await queue(async () => { await api(['setChatPanel']).setChatPanel?.(null, { id }); });
+    }
+  };
+});
+  /* MEMORY SUITE CHAT STATUS END */
+
   let InputAssistContinuePanelTimer = null;
   let InputAssistContinuePanelEpoch = 0;
   let InputAssistContinueCancelBinding = null;
@@ -20350,46 +20476,30 @@ ${passage.text || ''}`, 420));
     return false;
   };
 
+  const InputAssistContinuePanel = createMemorySuiteChatStatus({
+    id: INPUT_ASSIST_CONTINUE_PANEL_ID, brand: 'GRADIA', className: 'gradia-input-assist-status', api: getLiveApi,
+    onDismiss: () => {
+      InputAssistContinuePanelEpoch += 1;
+      if (InputAssistContinuePanelTimer) { clearTimeout(InputAssistContinuePanelTimer); InputAssistContinuePanelTimer = null; }
+      void unbindInputAssistContinueCancelButton();
+    }
+  });
+
   const setInputAssistContinuePanel = async (message = '', state = 'working', autoClearMs = 0, cancelable = false) => {
-    const panelApi = getLiveApi(['setChatPanel']);
     const panelEpoch = ++InputAssistContinuePanelEpoch;
     await unbindInputAssistContinueCancelButton();
-    if (typeof panelApi?.setChatPanel !== 'function') return false;
-    if (InputAssistContinuePanelTimer) {
-      clearTimeout(InputAssistContinuePanelTimer);
-      InputAssistContinuePanelTimer = null;
-    }
+    if (InputAssistContinuePanelTimer) { clearTimeout(InputAssistContinuePanelTimer); InputAssistContinuePanelTimer = null; }
     try {
-      if (!message) {
-        await panelApi.setChatPanel(null, { id: INPUT_ASSIST_CONTINUE_PANEL_ID });
-        return true;
-      }
-      const color = state === 'error'
-        ? '#ff8fa3'
-        : state === 'done'
-          ? '#76e6a5'
-          : state === 'cancelled'
-            ? '#c8b5ff'
-            : '#b7c5ff';
-      const safeMessage = text(message)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-      const cancelButton = cancelable
-        ? `<button id="${INPUT_ASSIST_CONTINUE_CANCEL_BUTTON_ID}" type="button" aria-label="GRADIA 전송 취소" style="flex:0 0 auto;margin-left:auto;padding:7px 13px;border:1px solid #ff8fa3;border-radius:8px;background:rgba(107,31,55,.55);color:#ffd5dd;font:inherit;font-weight:700;line-height:1;cursor:pointer;">전송 취소</button>`
-        : '';
-      await panelApi.setChatPanel(
-        `<div style="display:flex;align-items:center;gap:14px;width:100%;padding:10px 12px;border:1px solid ${color};border-radius:10px;background:rgba(10,16,30,.82);color:${color};font-size:13px;box-sizing:border-box;"><div style="min-width:0;flex:1 1 auto;"><strong>GRADIA</strong> · ${safeMessage}</div>${cancelButton}</div>`,
-        { id: INPUT_ASSIST_CONTINUE_PANEL_ID, className: 'gradia-input-assist-status' }
-      );
-      if (cancelable) {
+      const visible = await InputAssistContinuePanel.show({ message: text(message || ''), state,
+        cancelId: cancelable ? INPUT_ASSIST_CONTINUE_CANCEL_BUTTON_ID : '' });
+      if (panelEpoch !== InputAssistContinuePanelEpoch) return false;
+      if (visible && cancelable) {
         const requestId = Number(Runtime.inputAssistSend?.requestId || 0);
         void bindInputAssistContinueCancelButton(requestId, panelEpoch);
       }
-      if (autoClearMs > 0) {
+      if (visible && autoClearMs > 0) {
         InputAssistContinuePanelTimer = setTimeout(() => {
+          if (panelEpoch !== InputAssistContinuePanelEpoch) return;
           InputAssistContinuePanelTimer = null;
           void setInputAssistContinuePanel('');
         }, autoClearMs);
@@ -20421,6 +20531,7 @@ ${passage.text || ''}`, 420));
   const updatePipelineWorkPanel = async (message, phase = 'working', options = {}) => {
     const current = Runtime.pipelineWorkStatus || {};
     const begin = options.begin === true;
+    if (begin) InputAssistContinuePanel.begin();
     const requestId = begin
       ? (Number(current.requestId) || 0) + 1
       : Number(current.requestId) || 1;
@@ -21115,6 +21226,7 @@ ${passage.text || ''}`, 420));
       busy: true, phase: 'generating', requestId, cancelRequested: false, cancelled: false,
       lastAt: Date.now(), ok: null, reason: '', generated: ''
     };
+    InputAssistContinuePanel.begin();
     await setInputAssistContinuePanel(
       continuationMode ? '직전 장면을 바탕으로 이어질 인풋을 작성하고 있습니다…' : '작성한 인풋을 바탕으로 확장안을 만들고 있습니다…',
       'working', 0, true
@@ -45555,7 +45667,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         InputAssistContinuePanelTimer = null;
       }
       try { await unbindInputAssistContinueCancelButton(); } catch (_) {}
-      try { await setInputAssistContinuePanel(''); } catch (_) {}
+      try { await setInputAssistContinuePanel(''); await InputAssistContinuePanel.dispose(); } catch (_) {}
       Runtime.hookStatus.unload = false;
       Runtime.loreContinuity = { scopes: {} };
       ;

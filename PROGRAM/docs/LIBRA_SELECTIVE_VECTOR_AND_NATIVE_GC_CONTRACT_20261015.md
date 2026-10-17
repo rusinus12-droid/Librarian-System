@@ -1,5 +1,7 @@
 # LIBRA 선택적 벡터 페이지와 실제 서버 GC
 
+2026-10-17 후속: 아래 plugin_only 삭제 차단은 호스트 pluginStorage의 계약이다. LIBRA 2.3.160의 새 로컬 corpus는 별도의 IndexedDB 트랜잭션으로 회수한다. 지원·이전 자료·미지원 origin 경계는 [로컬 corpus GC](LIBRA_LOCAL_CORPUS_GC_20261017.md)를 따른다. mirror의 호스트 삭제 차단은 유지한다.
+
 - 작성일: 2026-10-15 · 버전: 1.1
 - 기준: `0e3c39d` 이후 선택적 벡터 저장 접근과 native server GC 구현
 - 관련: [설계](LIBRA_UNIFIED_MEMORY_ENGINE_DESIGN.md), [현황 §33](LIBRA_UNIFIED_MEMORY_ENGINE_STATUS_20261014.md), [다음 과제](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md), [자원 예산](LIBRA_RESOURCE_ADMISSION_CONTRACT_20261015.md)

@@ -7,12 +7,12 @@ const createLane = require('../tools/libra_memory_graph_lane.cjs'), createQuery 
 const clone = value => JSON.parse(JSON.stringify(value));
 const profile = { provider: 'fixture', model: 'model', profileId: 'profile', queryTask: 'search_query', documentTask: 'search_document',
   descriptor: { spaceId: 'space', dimension: 2, taskPair: 'search_query/search_document' } };
-function fixture() {
+function fixture(vectors = [['one',[1,0]],['two',[0,1]]]) {
   const graph = { schema: 'libra.memory_graph_projection.v1', scopeKey: 'scope',
     readerFrame: { owner: 'libra:plugin_only', scopeKey: 'scope', worldlineId: 'main', restoreEpoch: 0, view: { viewerId: 'owner_reader' } },
     coverage: {}, nodes: [], units: [], edges: [], bases: [] };
   const canonicalRows = [], records = new Map();
-  for (const [id, vector] of [['one',[1,0]],['two',[0,1]]]) {
+  for (const [id, vector] of vectors) {
     const source = 'source-' + id, node = 'fact-' + id, key = 'memory-' + id, vectorKey = 'vector-' + id;
     graph.nodes.push({ id: source, bindingId: 'source-binding-' + id, layer: 'source', identityCoverage: 'revision_bound' }, { id: node, bindingId: 'fact-binding-' + id, layer: 'meaning', sourceId: source, identityCoverage: 'revision_bound' });
     graph.units.push({ nodeId: node, recordKey: key, family: 'canonical', semanticRole: 'canonical_assertion', turn: 2, text: 'original fact ' + id });
@@ -34,6 +34,20 @@ function fixture() {
 const tests = [];
 async function test(name, fn) { await fn(); tests.push(name); }
 (async () => {
+  await test('six maintenance representations share default read admission without dropping a vector', async () => {
+    const f=fixture(Array.from({length:6},(_,i)=>['item'+i,[1,i%2]]));
+    const pages=createPages({fingerprint:digest});
+    const resources=require('../tools/libra_memory_graph_resources.cjs')({measure:pages.measure,encodedSize:pages.encodedSize,stageCost:pages.stageCost}).openMaintenance();
+    let active=0,peak=0;
+    try {
+      const directory=await f.semantic.buildDirectory({...f.options,writeRepresentation:async()=>{
+        await resources.read(async()=>{active++;peak=Math.max(peak,active);await new Promise(resolve=>setImmediate(resolve));active--;return '[]';},{kind:'durable'});
+        return {};
+      }});
+      assert.equal(directory.entries.length,6);assert.equal(peak,1);assert.equal(f.calls(),0);
+      assert.equal(resources.inspect().failure,null);assert.equal(resources.inspect().durableBytes,12);
+    } finally {resources.close();}
+  });
   await test('a compatible source representation retrieves a fact through its evidence edge in the single frontier', async () => {
     const f = fixture(), prepared = await f.semantic.prepare(f.options);
     assert.equal(prepared.diagnostics.status, 'available'); assert.equal(prepared.dependencies.length, 2);
@@ -163,6 +177,43 @@ async function test(name, fn) { await fn(); tests.push(name); }
     const microCandidate = result.candidates.find(c => c.nodeId === microNodeId);
     assert.ok(microCandidate, 'microCandidate must be found in retrieval');
     assert.ok(microCandidate.score > 0, 'microCandidate must receive positive score from vector');
+  });
+  await test('persisted Micro references are lazy, untruncated, budgeted and retain owner dependencies', async () => {
+    const f=fixture(), fingerprint=text=>crypto.createHash('sha256').update(text).digest('hex');
+    const pages=createPages({fingerprint}), index=createIndex({pages,fingerprint}), lane=createLane({index,pages}), query=createQuery({index,lane,pages,fingerprint});
+    const extras=[];
+    for(let i=0;i<10;i++){
+      const id='micro-source-'+i,key='micro-vector-'+i;
+      f.graph.nodes.push({id,bindingId:id,layer:'source',identityCoverage:'revision_bound'});
+      extras.push({family:'micro',nodeId:id,recordKey:'micro-'+i,vectorKey:key,textHash:'text-'+i,spaceDigest:'space',dimensions:2,temporalEndTurn:2});
+      f.records.set(key,{schema:'libra.micro_vector.v1',scopeKey:'scope',textHash:'text-'+i,spaceDigest:'space',vector:[1,0],dimensions:2,provider:'fixture',model:'model',profileId:'profile'});
+    }
+    let reads=0;
+    const options={...f.options,canonicalRows:[],additionalRepresentations:extras,pages,fingerprint,evaluate:query.evaluateRepresentation,
+      readVector:async key=>{reads++;return f.records.get(key);}};
+    const prepared=await f.semantic.prepareLazy(options);
+    assert.equal(reads,0);assert.equal(f.calls(),0);assert.equal(prepared.queryInput.semanticReferences.length,10);
+    const partition='micro',generation=pages.generation(f.graph,{partition,restoreEpoch:0,view:f.graph.readerFrame});
+    const compiled=index.withSemanticReader(index.compile(f.graph,{partition,generation}),prepared.readPage);
+    const frame=query.sealQueryFrame({...prepared.queryInput,queryText:f.options.queryText,owner:f.graph.readerFrame.owner,scopeKey:'scope',worldlineId:'main'});
+    const view=query.openView(f.graph,compiled,frame);
+    try {
+      const stopped=await query.retrieveAsync(view,{maxStoragePages:1});
+      assert.equal(reads,1);assert.equal(stopped.complete,false);
+      assert.equal(prepared.dependencies.length,1);assert.match(prepared.dependencies[0].key,/^micro-vector-/);
+      assert.equal(prepared.dependencies[0].digest,digest(f.records.get(prepared.dependencies[0].key)));
+      assert.equal(prepared.diagnostics.microRepresentations.length,1);
+      assert.ok(!prepared.diagnostics.vectorlessFamilies.includes('micro'));
+    } finally { query.closeView(view); }
+    const tiny=await f.semantic.prepareLazy(options);
+    const noIo=await tiny.readPage({anchorNodeId:extras[0].nodeId},{pagesRead:0,maxPages:1,bytesRead:0,maxBytes:1});
+    assert.equal(noIo.storageStopped,true);assert.equal(reads,1,'no owner I/O outside the storage allowance');
+    for(const mutate of [record=>record.scopeKey='foreign',record=>record.textHash='wrong',record=>record.profileId='wrong']){
+      const record=f.records.get(extras[0].vectorKey),saved={...record};mutate(record);
+      const rejected=await f.semantic.prepare({...f.options,canonicalRows:[],additionalRepresentations:[extras[0]]});
+      assert.equal(rejected.diagnostics.admittedRepresentations,0);assert.ok(rejected.diagnostics.rejected.some(row=>row.reason==='vector_owner_binding_mismatch'));
+      Object.assign(record,saved);
+    }
   });
   console.log(JSON.stringify({ suite: 'libra_memory_graph_semantic', passed: tests.length, tests }));
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

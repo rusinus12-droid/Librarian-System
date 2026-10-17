@@ -31,7 +31,7 @@ async function fixture(options={}){
  addRisuReplacer:async(mode,fn)=>{control.hooks[mode]=fn;return true;},
  runLLMModel:async(...args)=>{control.calls.push(clone(args));if(control.onCall)return control.onCall(args);if(control.modelFails)return {type:'error',result:'synthetic_provider_failure'};return {type:'success',result:JSON.stringify(control.artifact)};}};
  Object.assign(host,options.host || {});
- const r=await createLibraVmHarness({enable_character_ito:false,enable_world_ito:false,enable_plot_ito:false,...options.args},host,{initialValues:options.snapshot?.values,transformSource:options.transformSource});
+ const r=await createLibraVmHarness({enable_character_ito:false,enable_world_ito:false,enable_plot_ito:false,...options.args},host,{initialValues:options.snapshot?.values,transformSource:options.transformSource,contextGlobals:options.contextGlobals});
  const settings=await r.api.getLibraMemorySettings();
  const requestedEngine=options.mode || 'unified';
  // Getter settings are normalized. Skip only the identical supported engine

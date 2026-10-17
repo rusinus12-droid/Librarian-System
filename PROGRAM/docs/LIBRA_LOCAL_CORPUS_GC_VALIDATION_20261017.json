@@ -1,0 +1,314 @@
+{
+  "schema": "libra.local_corpus_gc_validation.v1",
+  "date": "2026-10-17",
+  "pluginVersion": "2.3.160",
+  "sourceSha256": "129c77d3dfca7e16fe274c55c43e46d22ff2c457d7ae9f5607d7555eb96c8efc",
+  "models": {
+    "embedding": "voyage-4-large",
+    "dimensions": 1024,
+    "originalExtractionLlm": "deepseek-v4.1-flash:cloud",
+    "newExtractionCalls": 0
+  },
+  "nativeBrowser": {
+    "twoTabs": true,
+    "atomicRollback": true,
+    "processRestart": true,
+    "readerPinsPreserved": true,
+    "reclaimedAfterReaderRelease": 10,
+    "successiveInventories": [
+      20,
+      20,
+      20,
+      20,
+      20,
+      20
+    ]
+  },
+  "pluginFixture": {
+    "rebuilds": 6,
+    "retainedRecords": [
+      120,
+      120,
+      120,
+      120,
+      120,
+      120
+    ],
+    "characters": [
+      849561,
+      849568,
+      849568,
+      849568,
+      849568,
+      849568
+    ]
+  },
+  "realProviderSnapshotReplay": {
+    "runtime": {
+      "pluginSha256": "7d2d7e87ff30ffe866ed3835724b6a8d6b94c87c08021864d510d80f8b4fa3ef",
+      "snapshotSha256": "36864288b1a46c8787545e053aefe37040e1e992177e05f3b2e4d67ad0a63522",
+      "fixtureSha256": "199b8ee0156d52d4d2b25ffca88eda2ff4c3aecfc04426026c62063cb814704a",
+      "entrypoint": "preview",
+      "queryCount": 32,
+      "hits": 30,
+      "missIds": [
+        "n03"
+      ],
+      "latencyMs": {
+        "p50": 201.5,
+        "p95": 657,
+        "max": 987
+      },
+      "cachedRoundMedianMs": 195.0,
+      "calls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmMs": 0,
+        "llmFailures": 0,
+        "embedCalls": 16,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 16,
+        "embedOtherInputCalls": 0,
+        "embedMs": 6643
+      },
+      "budgetStops": 0,
+      "errors": 0,
+      "corpusModes": [
+        "volatile_common_index"
+      ],
+      "builds": []
+    },
+    "local_preview": {
+      "pluginSha256": "b0dfa57b14fb90168016f69a1ae39b4c39f2c81284a0e0c0c9e429ce9275a425",
+      "snapshotSha256": "36864288b1a46c8787545e053aefe37040e1e992177e05f3b2e4d67ad0a63522",
+      "fixtureSha256": "199b8ee0156d52d4d2b25ffca88eda2ff4c3aecfc04426026c62063cb814704a",
+      "entrypoint": "preview",
+      "queryCount": 32,
+      "hits": 30,
+      "missIds": [
+        "n03"
+      ],
+      "latencyMs": {
+        "p50": 294.5,
+        "p95": 717,
+        "max": 1023
+      },
+      "cachedRoundMedianMs": 285.0,
+      "calls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmMs": 0,
+        "llmFailures": 0,
+        "embedCalls": 16,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 16,
+        "embedOtherInputCalls": 0,
+        "embedMs": 6466
+      },
+      "budgetStops": 0,
+      "errors": 0,
+      "corpusModes": [
+        "durable_common_index"
+      ],
+      "builds": [
+        {
+          "retainedKeyCount": 264,
+          "deletedKeyCount": 0,
+          "inventoryBytes": 4883960,
+          "status": "published",
+          "calls": null
+        },
+        {
+          "retainedKeyCount": 264,
+          "deletedKeyCount": 1,
+          "inventoryBytes": 5008320,
+          "status": "published",
+          "calls": null
+        },
+        {
+          "retainedKeyCount": 264,
+          "deletedKeyCount": 0,
+          "inventoryBytes": 4883974,
+          "status": "published",
+          "calls": null
+        },
+        {
+          "retainedKeyCount": 264,
+          "deletedKeyCount": 0,
+          "inventoryBytes": 4883974,
+          "status": "published",
+          "calls": null
+        },
+        {
+          "retainedKeyCount": 264,
+          "deletedKeyCount": 0,
+          "inventoryBytes": 4883974,
+          "status": "published",
+          "calls": null
+        },
+        {
+          "retainedKeyCount": 264,
+          "deletedKeyCount": 0,
+          "inventoryBytes": 4883974,
+          "status": "published",
+          "calls": null
+        }
+      ]
+    },
+    "local_before_request": {
+      "pluginSha256": "129c77d3dfca7e16fe274c55c43e46d22ff2c457d7ae9f5607d7555eb96c8efc",
+      "snapshotSha256": "36864288b1a46c8787545e053aefe37040e1e992177e05f3b2e4d67ad0a63522",
+      "fixtureSha256": "199b8ee0156d52d4d2b25ffca88eda2ff4c3aecfc04426026c62063cb814704a",
+      "entrypoint": "before-request",
+      "queryCount": 16,
+      "hits": 15,
+      "missIds": [
+        "n03"
+      ],
+      "latencyMs": {
+        "p50": 635.5,
+        "p95": 873,
+        "max": 873
+      },
+      "cachedRoundMedianMs": null,
+      "calls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmMs": 0,
+        "llmFailures": 0,
+        "embedCalls": 16,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 16,
+        "embedOtherInputCalls": 0,
+        "embedMs": 6182
+      },
+      "budgetStops": 0,
+      "errors": 0,
+      "corpusModes": [
+        "durable_common_index"
+      ],
+      "builds": [
+        {
+          "retainedKeyCount": 264,
+          "deletedKeyCount": 0,
+          "inventoryBytes": 4883960,
+          "status": "published",
+          "calls": {
+            "llmCalls": 0,
+            "llmAttempts": 0,
+            "llmMs": 0,
+            "llmFailures": 0,
+            "embedCalls": 0,
+            "embedFailures": 0,
+            "embedFixtureQueryCalls": 0,
+            "embedOtherInputCalls": 0,
+            "embedMs": 0
+          }
+        },
+        {
+          "retainedKeyCount": 264,
+          "deletedKeyCount": 1,
+          "inventoryBytes": 5008320,
+          "status": "published",
+          "calls": {
+            "llmCalls": 0,
+            "llmAttempts": 0,
+            "llmMs": 0,
+            "llmFailures": 0,
+            "embedCalls": 0,
+            "embedFailures": 0,
+            "embedFixtureQueryCalls": 0,
+            "embedOtherInputCalls": 0,
+            "embedMs": 0
+          }
+        },
+        {
+          "retainedKeyCount": 264,
+          "deletedKeyCount": 0,
+          "inventoryBytes": 4883974,
+          "status": "published",
+          "calls": {
+            "llmCalls": 0,
+            "llmAttempts": 0,
+            "llmMs": 0,
+            "llmFailures": 0,
+            "embedCalls": 0,
+            "embedFailures": 0,
+            "embedFixtureQueryCalls": 0,
+            "embedOtherInputCalls": 0,
+            "embedMs": 0
+          }
+        },
+        {
+          "retainedKeyCount": 264,
+          "deletedKeyCount": 0,
+          "inventoryBytes": 4883974,
+          "status": "published",
+          "calls": {
+            "llmCalls": 0,
+            "llmAttempts": 0,
+            "llmMs": 0,
+            "llmFailures": 0,
+            "embedCalls": 0,
+            "embedFailures": 0,
+            "embedFixtureQueryCalls": 0,
+            "embedOtherInputCalls": 0,
+            "embedMs": 0
+          }
+        },
+        {
+          "retainedKeyCount": 264,
+          "deletedKeyCount": 0,
+          "inventoryBytes": 4883974,
+          "status": "published",
+          "calls": {
+            "llmCalls": 0,
+            "llmAttempts": 0,
+            "llmMs": 0,
+            "llmFailures": 0,
+            "embedCalls": 0,
+            "embedFailures": 0,
+            "embedFixtureQueryCalls": 0,
+            "embedOtherInputCalls": 0,
+            "embedMs": 0
+          }
+        },
+        {
+          "retainedKeyCount": 264,
+          "deletedKeyCount": 0,
+          "inventoryBytes": 4883974,
+          "status": "published",
+          "calls": {
+            "llmCalls": 0,
+            "llmAttempts": 0,
+            "llmMs": 0,
+            "llmFailures": 0,
+            "embedCalls": 0,
+            "embedFailures": 0,
+            "embedFixtureQueryCalls": 0,
+            "embedOtherInputCalls": 0,
+            "embedMs": 0
+          }
+        }
+      ],
+      "freshFirstRequestBeforeIndexBuild": {
+        "elapsedMs": 5872,
+        "hit": true,
+        "corpus": "request_local_corpus",
+        "modelDispatchEligible": true,
+        "error": null
+      },
+      "inputFileUnchanged": true
+    }
+  },
+  "limits": [
+    "Native IndexedDB correctness was tested in Chromium; model-replay VM storage used fake-indexeddb.",
+    "Runtime and local replay legs are separate serial runs, not a controlled native storage performance benchmark.",
+    "Supplementary local preview was prewarmed before building; only the public before-request replay retains a fresh-process observation before index construction.",
+    "The default RAM path remains faster than the simulated persistent path in these runs; persistent storage reuses an index across restarts.",
+    "Existing host pluginStorage corpus records are preserved; unsupported origins and mirror keep host destructive GC blocked.",
+    "Real RisuAI installation capability, large-history scale, complete source coverage and downstream LLM answer quality were not certified.",
+    "Supplementary RAM/preview runs preceded final expiry/cancellation guards; final before-request replay matches sourceSha256."
+  ],
+  "kernelCases": 13
+}

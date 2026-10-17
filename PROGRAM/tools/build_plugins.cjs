@@ -1096,6 +1096,8 @@ async function buildPlugins(options = {}) {
 
   if (list.includes('libra')) require('./sync_libra_memory_network.cjs').sync({ target: path.join(programDir, 'plugins/LIBRA.js'), check: true });
   if (list.includes('libra')) require('./sync_libra_memory_graph.cjs').sync({ target: path.join(programDir, 'plugins/LIBRA.js'), check: true });
+  if (list.includes('libra') || list.includes('gradia')) require('./sync_chat_status.cjs').sync({ root:programDir, check:true,
+    plugins:list.filter(name => ['libra','gradia'].includes(name)).map(name => name.toUpperCase()+'.js') });
 
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ultralight-build-'));
   const report = { schema: 'librarian.ultralight.build.v1', at: new Date().toISOString(), profile, variant:profile==='source'?'Full':'Min', outDir: path.relative(programDir, outDir).split(path.sep).join('/'), rows: [] };
