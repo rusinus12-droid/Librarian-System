@@ -44,7 +44,7 @@ const chatModel = async (messages, limits = {}) => {
     try {
       const response = await fetch(llmUrl + '/chat/completions', { method: 'POST',
         headers: { Authorization: `Bearer ${process.env.RAG_EVAL_LLM_KEY || ''}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: process.env.RAG_EVAL_LLM_MODEL, messages, temperature: 0, stream: false, ...limits }),
+        body: JSON.stringify({ temperature: 0, ...limits, model: process.env.RAG_EVAL_LLM_MODEL, messages, stream: false }),
         signal: AbortSignal.timeout(300000) });
       if (!response.ok) throw new Error(`${response.status} ${(await response.text()).slice(0, 200)}`);
       const choice = (await response.json()).choices?.[0] || {};
@@ -64,8 +64,9 @@ const chatModel = async (messages, limits = {}) => {
     const sdkFetch = async (url, init) => {
       if (url.startsWith(x.server.url + '/')) return await fetch(url, init);
       const body = JSON.parse(init.body);
-      // The plugin's own output budget goes to the model.
-      const limits = Object.fromEntries(['max_tokens', 'max_completion_tokens'].filter(key => body[key] != null).map(key => [key, body[key]]));
+      // The plugin's own request (output budget, reasoning control, response format) goes to
+      // the model unchanged; only the model id is replaced.
+      const limits = Object.fromEntries(Object.entries(body).filter(([key]) => !['messages', 'model', 'stream'].includes(key)));
       const { content, finish } = await chatModel(body.messages, limits);
       stages.push({ system: String(body.messages?.find(m => m.role === 'system')?.content || '').slice(0, 120), content, finish,
         evidence: JSON.stringify(body).includes('owner_issued_evidence_bundle') });
