@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.157
-//@version 2.3.157
+//@display-name LIBRA v2.3.158
+//@version 2.3.158
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1557,7 +1557,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.3.157';
+  const PLUGIN_VERSION = '2.3.158';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -50132,6 +50132,7 @@ function createLibraReadonlySourceContext(owner) {
         try { vectorRecord = await readVector(extra.vectorKey); } catch (_) { check(); reject(extra.recordKey, 'vector_read_unavailable'); continue; }
       }
       check();
+      if (extra.selectionDigest && digest(vectorRecord) !== extra.selectionDigest) throw new Error('LIBRA_GRAPH_SEMANTIC_VECTOR_CHANGED');
       if (!vectorRecord || !vectorValid(vectorRecord.vector, vectorRecord.dimensions)) { reject(extra.recordKey, 'invalid_vector'); continue; }
       const d = vectorRecord.dimensions;
       let profile;
@@ -50181,6 +50182,59 @@ function createLibraReadonlySourceContext(owner) {
     diagnostics.vectorlessFamilies = ['micro','state','lore'].filter(family => !admittedFamilies.has(family));
     diagnostics.admittedFamilies = [...admittedFamilies].sort();
     return { queryInput: { semanticSpace, queryEmbedding: query.vectors[0], documentRepresentations, queryVectors: {} }, dependencies, diagnostics };
+  };
+  // Rank all compatible Micro sources before spending the retained representation
+  // allowance. The source-read ledger bounds this scan independently of the lane's
+  // selected feature pages. Keep only eight scores/owner digests, never all vectors.
+  const selectAdditionalRepresentations = async input => {
+    const { graph, config, check = () => {}, resources } = input;
+    const selected = [], diagnostics = { strategy: 'streaming_exact_cosine_top8', scanned: 0, compatible: 0, selected: 0 };
+    let query = null, queryNorm = 0;
+    const profiles = new Map(), sources = new Set((graph.nodes || []).filter(node => node.layer === 'source').map(node => node.id));
+    for (const extra of input.additionalRepresentations || []) {
+      check();
+      if (extra.family !== 'micro' || !sources.has(extra.nodeId)
+        || input.asOfTurn != null && Number.isSafeInteger(extra.temporalEndTurn) && extra.temporalEndTurn > input.asOfTurn) continue;
+      const scope = resources?.scope();
+      try {
+        const record = await input.readVector(extra.vectorKey, { selectionScan: true });
+        check(); diagnostics.scanned++;
+        scope?.retain(record, 'micro_selection_workspace', 2);
+        const dimension = record?.dimensions;
+        if (!Number.isSafeInteger(dimension) || dimension < 1 || dimension > 65536
+          || !vectorValid(record?.vector, dimension) || 3072 + dimension * 24 > (input.maxBytes ?? 262144)) continue;
+        if (!profiles.has(dimension)) {
+          try { profiles.set(dimension, profileFor({ ...config, dimensions: dimension })); }
+          catch (_) { continue; }
+        }
+        const profile = profiles.get(dimension);
+        if (record.schema !== 'libra.micro_vector.v1' || record.scopeKey !== graph.scopeKey
+          || record.textHash !== extra.textHash || record.spaceDigest !== extra.spaceDigest
+          || record.provider !== profile.provider || record.model !== profile.model || record.profileId !== profile.profileId) continue;
+        if (!query) {
+          try { query = await input.embedQuery(input.queryText, config); }
+          catch (error) { check(); diagnostics.status = 'query_embedding_unavailable'; diagnostics.reason = error.code || 'query_embedding_failed'; return { references: [], diagnostics }; }
+        }
+        check();
+        if (query?.provider !== profile.provider || query?.model !== profile.model
+          || query?.metadata?.profileId !== profile.profileId || query?.dimensions !== dimension
+          || !vectorValid(query?.vectors?.[0], dimension)) continue;
+        const vector = record.vector, q = query.vectors[0];
+        if (!queryNorm) queryNorm = Math.hypot(...q);
+        let dot = 0, vNorm = 0;
+        for (let i = 0; i < dimension; i++) { dot += q[i] * vector[i]; vNorm += vector[i] * vector[i]; }
+        const similarity = dot / (queryNorm * Math.sqrt(vNorm));
+        diagnostics.compatible++;
+        const last = selected[selected.length - 1];
+        if (selected.length === 8 && (similarity < last.similarity
+          || similarity === last.similarity && extra.nodeId.localeCompare(last.nodeId) >= 0)) continue;
+        selected.push({ ...extra, selectionDigest: digest(record), similarity });
+        selected.sort((a, b) => b.similarity - a.similarity || a.nodeId.localeCompare(b.nodeId));
+        if (selected.length > 8) selected.pop();
+      } finally { scope?.close(); }
+    }
+    diagnostics.selected = selected.length;
+    return { references: selected, diagnostics };
   };
   // Metadata-only directory: canonical corpus projections persist these owner
   // vector refs already. No vector body is read until Memory Lane executes it.
@@ -50347,7 +50401,7 @@ function createLibraReadonlySourceContext(owner) {
         return {nodeId:document.nodeId,bindingId:document.bindingId,vectorKey:row.record.embedding.vectorKey,vectorHash:row.record.embedding.vectorHash,payloadBytes,...(input.writeRepresentation?await input.writeRepresentation(rep,row):{}),
           coordinates,tailNorm:Math.hypot(...vector.slice(coordinates.length))/norm};}))};
   };
-  return Object.freeze({ prepare, prepareLazy, buildDirectory });
+  return Object.freeze({ prepare, prepareLazy, buildDirectory, selectAdditionalRepresentations });
 });
     const createLibraMemoryGraphCompiler = (function createMemoryGraphCompiler({ fingerprint } = {}) {
   if (typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_COMPILER_FINGERPRINT_REQUIRED');
@@ -72320,30 +72374,44 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             ? microRepresentationReferences(graph, config, rawQueryInput.asOfTurn ?? null) : [];
           if (microRepresentations.length) resources.retain(microRepresentations, 'micro_semantic_directory', 2);
           const microVectorKeys = new Set(microRepresentations.map(row => row.vectorKey));
+          const readNativeVector = async (storageKey, { selectionScan = false } = {}) => {
+            if (!embeddingVectorStorageKey(storageKey) && !microVectorKeys.has(storageKey)) throw new Error('LIBRA_GRAPH_SEMANTIC_VECTOR_KEY_UNOWNED');
+            const pin = storageMode !== 'plugin_only' ? await MemorySuiteStorageBridge.captureConditionalReadSet([storageKey],{ readObserver: sourceReadObserver }) : null;
+            const record = await storage.getVerifiedJson(storageKey, initialCollected.scope, null);
+            if (pin) { await MemorySuiteStorageBridge.assertConditionalReadSet(pin,{ readObserver: sourceReadObserver }); if (!selectionScan) vectorPins.push(pin); }
+            // Decode the captured portable payload directly; a stale device-local
+            // cache must never substitute different bytes for the pinned record.
+            let hydrated = record;
+            if (record?.portableVectorPayload?.schema === LOCAL_VECTOR_PAYLOAD_SCHEMA) {
+              resources.retain(record,'portable_vector_hydration',4);
+              const decoded = decodeLocalProjectionPayload(record.portableVectorPayload, record.localVectorRef || record.portableVectorPayload);
+              hydrated = { ...record, entries: Object.fromEntries(Object.entries(record.entries || {}).map(([key, entry]) => [key, { ...entry, vector: decoded.vectors[key] || [] }])),
+                vector: decoded.vectors.global || [] };
+            }
+            if (!selectionScan) resources.retain(hydrated,'vector_readback',2);
+            if (!selectionScan) vectorReadbacks.set(storageKey, { record, rawBody: stableReferenceJson(record), hydratedDigest: digest(hydrated) });
+            return hydrated;
+          };
+          let selectedMicro = microRepresentations, microSelection = null;
+          const microDimension = Number(config?.dimensions) || 0;
+          // An impossible selected page must not trigger a scan or model request.
+          if (microRepresentations.length && (semanticPolicy.maxRepresentationBytes ?? 262144) >= 3072 + microDimension * 24
+            && (options.laneBudget?.maxStorageBytes ?? 1048576) >= 512 + microDimension * 2) {
+            const selection = await bridge.selectAdditionalRepresentations({ graph, config, queryText: rawQueryInput.queryText,
+              asOfTurn: rawQueryInput.asOfTurn ?? null, additionalRepresentations: microRepresentations,
+              readVector: readNativeVector, embedQuery: nativeEmbedQuery, resources, check: checkSemanticOwner,
+              maxBytes: semanticPolicy.maxRepresentationBytes ?? 262144 });
+            selectedMicro = selection.references; microSelection = selection.diagnostics;
+            resources.retain(selectedMicro, 'micro_selected_references');
+          }
           nativeSemantic = await bridge.prepareLazy({ readRepresentationPage: key=>corpusContext.owner.read(key),routingDirectory:corpus?.semanticDirectory||null,fingerprint:memoryGraphSourceFingerprint,pages:suite.pages,resources,evaluate:suite.query.evaluateRepresentation,graph, canonicalRows: initialCollected.canonicalRows || [], config,
             queryText: rawQueryInput.queryText || '', asOfTurn: rawQueryInput.asOfTurn ?? null,
             maxBytes: semanticPolicy.maxRepresentationBytes ?? 262144, check: checkSemanticOwner,
-            readVector: async storageKey => {
-              if (!embeddingVectorStorageKey(storageKey) && !microVectorKeys.has(storageKey)) throw new Error('LIBRA_GRAPH_SEMANTIC_VECTOR_KEY_UNOWNED');
-              const pin = storageMode !== 'plugin_only' ? await MemorySuiteStorageBridge.captureConditionalReadSet([storageKey],{ readObserver: sourceReadObserver }) : null;
-              const record = await storage.getVerifiedJson(storageKey, initialCollected.scope, null);
-              if (pin) { await MemorySuiteStorageBridge.assertConditionalReadSet(pin,{ readObserver: sourceReadObserver }); vectorPins.push(pin); }
-              // Decode the captured portable payload directly; a stale device-local
-              // cache must never substitute different bytes for the pinned record.
-              let hydrated = record;
-              if (record?.portableVectorPayload?.schema === LOCAL_VECTOR_PAYLOAD_SCHEMA) {
-                resources.retain(record,'portable_vector_hydration',4);
-                const decoded = decodeLocalProjectionPayload(record.portableVectorPayload, record.localVectorRef || record.portableVectorPayload);
-                hydrated = { ...record, entries: Object.fromEntries(Object.entries(record.entries || {}).map(([key, entry]) => [key, { ...entry, vector: decoded.vectors[key] || [] }])),
-                  vector: decoded.vectors.global || [] };
-              }
-              resources.retain(hydrated,'vector_readback',2);
-              vectorReadbacks.set(storageKey, { record, rawBody: stableReferenceJson(record), hydratedDigest: digest(hydrated) });
-              return hydrated;
-            },
-            additionalRepresentations: microRepresentations,
+            readVector: readNativeVector,
+            additionalRepresentations: selectedMicro,
             embedQuery: nativeEmbedQuery
           });
+          nativeSemantic.diagnostics.microSelection = microSelection;
           nativeSemantic.diagnostics.queryBudgetMs = queryBudgetMs;
           Object.assign(queryInput, nativeSemantic.queryInput);
           // N02: the family declaration plus the semantic bridge's own rejections become per-node verdicts

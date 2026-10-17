@@ -5,7 +5,7 @@ const { waitFor } = require('./libra_vm_harness.cjs');
 const { fixture: baseFixture } = require('./libra_unified_runtime_fixture.cjs');
 const QUOTE = '민아가 은빛 열쇠를 준호에게 잠시 건넸다.';
 
-async function fixture({ mode = 'plugin_only', minimum = false, transformSource, hostOverrides = {}, args = {}, embeddingConfig, embeddingFetch, includeMicro = true, microTurn = 6 } = {}) {
+async function fixture({ mode = 'plugin_only', minimum = false, transformSource, hostOverrides = {}, args = {}, embeddingConfig, embeddingFetch, includeMicro = true, microTurn = 6, microCount = 1, microText = () => QUOTE } = {}) {
   let listener;
   const host = { ...hostOverrides, addRisuChatListener: async (_kind, handler) => { listener = handler; return true; } };
   const serverOptions = { mode, host, transformSource, args };
@@ -33,23 +33,26 @@ async function fixture({ mode = 'plugin_only', minimum = false, transformSource,
       for (let turn = 6; turn < microTurn; turn++) f.chat.message.push(
         { role: 'user', chatId: 'gap-u'+turn, data: '추가 질문 '+turn },
         { role: 'assistant', chatId: 'gap-a'+turn, data: '추가 원문 '+turn });
-      f.chat.message.push({ role: 'user', chatId: 't'+microTurn+'-u', data: '열쇠는 누가 보관하지?' },
-        { role: 'assistant', chatId: 't'+microTurn+'-a', data: minimum ? QUOTE.repeat(30) : QUOTE });
-      f.chat.messages = f.chat.message;
-      f.control.onCall = async args => {
-        if (minimum) return { type: 'error', result: 'fixture_micro_provider_unavailable' };
-        const input = JSON.parse(args[0].messages[1].content);
-        return { type: 'success', result: JSON.stringify({ schema: 'libra.micro_producer_envelope.v1',
-          personCandidates: { spans: [], relations: [] }, micro: { schema: 'libra.micro_memory.v1', ...input.binding,
-            claims: [{ changeKind: 'world', text: QUOTE, actor: '민아', target: '은빛 열쇠', temporalRole: 'current',
-              certainty: 'confirmed', epistemicStatus: 'observed', stateChangeType: 'none', evidence: {
-                role: 'assistant', messageId: input.assistant.messageId, startOffset: 0, endOffset: QUOTE.length, exactQuote: QUOTE } }] } }) };
-      };
-      listener({ char: f.character, chat: f.chat, characterIndex: 0, chatIndex: 0, messageIndex: f.chat.message.length - 1 });
-      await waitFor(() => f.r.api.getCaptureBackendState().lastMicroPublication?.turn === microTurn, 15000);
-      await new Promise(resolve => setTimeout(resolve, 5));
-      active = await f.r.api.debugReadActiveMicroMemory(microTurn);
-      if (active.status !== 'verified') throw new Error('graph fixture failed to publish a real Micro');
+      for (let currentMicroTurn = microTurn; currentMicroTurn < microTurn + microCount; currentMicroTurn++) {
+        const quote = microText(currentMicroTurn);
+        f.chat.message.push({ role: 'user', chatId: 't'+currentMicroTurn+'-u', data: '열쇠는 누가 보관하지?' },
+          { role: 'assistant', chatId: 't'+currentMicroTurn+'-a', data: minimum ? quote.repeat(30) : quote });
+        f.chat.messages = f.chat.message;
+        f.control.onCall = async args => {
+          if (minimum) return { type: 'error', result: 'fixture_micro_provider_unavailable' };
+          const input = JSON.parse(args[0].messages[1].content);
+          return { type: 'success', result: JSON.stringify({ schema: 'libra.micro_producer_envelope.v1',
+            personCandidates: { spans: [], relations: [] }, micro: { schema: 'libra.micro_memory.v1', ...input.binding,
+              claims: [{ changeKind: 'world', text: quote, actor: '민아', target: '은빛 열쇠', temporalRole: 'current',
+                certainty: 'confirmed', epistemicStatus: 'observed', stateChangeType: 'none', evidence: {
+                  role: 'assistant', messageId: input.assistant.messageId, startOffset: 0, endOffset: quote.length, exactQuote: quote } }] } }) };
+        };
+        listener({ char: f.character, chat: f.chat, characterIndex: 0, chatIndex: 0, messageIndex: f.chat.message.length - 1 });
+        await waitFor(() => f.r.api.getCaptureBackendState().lastMicroPublication?.turn === currentMicroTurn, microCount > 1 ? 60000 : 15000).catch(error => { error.message += ' at Micro turn ' + currentMicroTurn + ': ' + JSON.stringify(f.r.api.getCaptureBackendState()); throw error; });
+        await new Promise(resolve => setTimeout(resolve, 5));
+        active = await f.r.api.debugReadActiveMicroMemory(currentMicroTurn);
+        if (active.status !== 'verified') throw new Error('graph fixture failed to publish a real Micro');
+      }
     }
     f.control.onCall = async () => { throw new Error('graph projection must not invoke a provider'); };
     return { get f() { return f; }, server, scopeKey, active,

@@ -83,6 +83,7 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
         try { vectorRecord = await readVector(extra.vectorKey); } catch (_) { check(); reject(extra.recordKey, 'vector_read_unavailable'); continue; }
       }
       check();
+      if (extra.selectionDigest && digest(vectorRecord) !== extra.selectionDigest) throw new Error('LIBRA_GRAPH_SEMANTIC_VECTOR_CHANGED');
       if (!vectorRecord || !vectorValid(vectorRecord.vector, vectorRecord.dimensions)) { reject(extra.recordKey, 'invalid_vector'); continue; }
       const d = vectorRecord.dimensions;
       let profile;
@@ -132,6 +133,59 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
     diagnostics.vectorlessFamilies = ['micro','state','lore'].filter(family => !admittedFamilies.has(family));
     diagnostics.admittedFamilies = [...admittedFamilies].sort();
     return { queryInput: { semanticSpace, queryEmbedding: query.vectors[0], documentRepresentations, queryVectors: {} }, dependencies, diagnostics };
+  };
+  // Rank all compatible Micro sources before spending the retained representation
+  // allowance. The source-read ledger bounds this scan independently of the lane's
+  // selected feature pages. Keep only eight scores/owner digests, never all vectors.
+  const selectAdditionalRepresentations = async input => {
+    const { graph, config, check = () => {}, resources } = input;
+    const selected = [], diagnostics = { strategy: 'streaming_exact_cosine_top8', scanned: 0, compatible: 0, selected: 0 };
+    let query = null, queryNorm = 0;
+    const profiles = new Map(), sources = new Set((graph.nodes || []).filter(node => node.layer === 'source').map(node => node.id));
+    for (const extra of input.additionalRepresentations || []) {
+      check();
+      if (extra.family !== 'micro' || !sources.has(extra.nodeId)
+        || input.asOfTurn != null && Number.isSafeInteger(extra.temporalEndTurn) && extra.temporalEndTurn > input.asOfTurn) continue;
+      const scope = resources?.scope();
+      try {
+        const record = await input.readVector(extra.vectorKey, { selectionScan: true });
+        check(); diagnostics.scanned++;
+        scope?.retain(record, 'micro_selection_workspace', 2);
+        const dimension = record?.dimensions;
+        if (!Number.isSafeInteger(dimension) || dimension < 1 || dimension > 65536
+          || !vectorValid(record?.vector, dimension) || 3072 + dimension * 24 > (input.maxBytes ?? 262144)) continue;
+        if (!profiles.has(dimension)) {
+          try { profiles.set(dimension, profileFor({ ...config, dimensions: dimension })); }
+          catch (_) { continue; }
+        }
+        const profile = profiles.get(dimension);
+        if (record.schema !== 'libra.micro_vector.v1' || record.scopeKey !== graph.scopeKey
+          || record.textHash !== extra.textHash || record.spaceDigest !== extra.spaceDigest
+          || record.provider !== profile.provider || record.model !== profile.model || record.profileId !== profile.profileId) continue;
+        if (!query) {
+          try { query = await input.embedQuery(input.queryText, config); }
+          catch (error) { check(); diagnostics.status = 'query_embedding_unavailable'; diagnostics.reason = error.code || 'query_embedding_failed'; return { references: [], diagnostics }; }
+        }
+        check();
+        if (query?.provider !== profile.provider || query?.model !== profile.model
+          || query?.metadata?.profileId !== profile.profileId || query?.dimensions !== dimension
+          || !vectorValid(query?.vectors?.[0], dimension)) continue;
+        const vector = record.vector, q = query.vectors[0];
+        if (!queryNorm) queryNorm = Math.hypot(...q);
+        let dot = 0, vNorm = 0;
+        for (let i = 0; i < dimension; i++) { dot += q[i] * vector[i]; vNorm += vector[i] * vector[i]; }
+        const similarity = dot / (queryNorm * Math.sqrt(vNorm));
+        diagnostics.compatible++;
+        const last = selected[selected.length - 1];
+        if (selected.length === 8 && (similarity < last.similarity
+          || similarity === last.similarity && extra.nodeId.localeCompare(last.nodeId) >= 0)) continue;
+        selected.push({ ...extra, selectionDigest: digest(record), similarity });
+        selected.sort((a, b) => b.similarity - a.similarity || a.nodeId.localeCompare(b.nodeId));
+        if (selected.length > 8) selected.pop();
+      } finally { scope?.close(); }
+    }
+    diagnostics.selected = selected.length;
+    return { references: selected, diagnostics };
   };
   // Metadata-only directory: canonical corpus projections persist these owner
   // vector refs already. No vector body is read until Memory Lane executes it.
@@ -298,5 +352,5 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
         return {nodeId:document.nodeId,bindingId:document.bindingId,vectorKey:row.record.embedding.vectorKey,vectorHash:row.record.embedding.vectorHash,payloadBytes,...(input.writeRepresentation?await input.writeRepresentation(rep,row):{}),
           coordinates,tailNorm:Math.hypot(...vector.slice(coordinates.length))/norm};}))};
   };
-  return Object.freeze({ prepare, prepareLazy, buildDirectory });
+  return Object.freeze({ prepare, prepareLazy, buildDirectory, selectAdditionalRepresentations });
 };
