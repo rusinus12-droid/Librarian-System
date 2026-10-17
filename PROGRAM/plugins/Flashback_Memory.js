@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.107
+//@display-name ⚡ FLASHBACK Memory v1.0.108
 //@api 3.0
-//@version 1.0.107
+//@version 1.0.108
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.107';
+const PLUGIN_VERSION = '1.0.108';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -48831,6 +48831,9 @@ ${cleanedText}`, 80),
   const FLASHBACK_ATTENTION_REFRESH_DELAY_MS = 2500;
   const FlashbackAttention = {
     started: false,
+    generation: 0,
+    pollFlight: null,
+    evaluationFlight: null,
     refreshTimer: null,
     pollTimer: null,
     evaluating: false,
@@ -48851,7 +48854,8 @@ ${cleanedText}`, 80),
       + `|disabled:${message?.disabled === true}|comment:${message?.isComment === true}`;
     return { rawType: raw.type, rawValue: raw.value, metaKey };
   };
-  const flashbackAttentionRevision = async chat => {
+  const flashbackAttentionRevision = async (chat, isCurrent = () => true) => {
+    if (!isCurrent()) return null;
     const cacheKey = flashbackLiveChatCacheKey(chat, '');
     const previous = FlashbackAttention.revisionTracker;
     const tracker = previous?.cacheKey === cacheKey ? previous : null;
@@ -48883,25 +48887,27 @@ ${cleanedText}`, 80),
             workSinceCheck += end - offset;
             if (workSinceCheck >= 16384) {
               workSinceCheck = 0;
+              if (!isCurrent()) return false;
               if (performance.now() - sliceStarted >= 4) {
                 await new Promise(resolve => setTimeout(resolve, 0));
+                if (!isCurrent()) return false;
                 sliceStarted = performance.now();
               }
             }
           }
         }
+        return true;
       };
-      await append(sourcePolicy);
+      if (!await append(sourcePolicy)) return null;
       for (let index = 0; index < messages.length; index += 1) {
         const entry = flashbackAttentionRevisionEntry(messages[index], index);
-        await append(entry.rawType);
-        await append(entry.rawValue);
-        await append(entry.metaKey);
+        if (!await append(entry.rawType) || !await append(entry.rawValue) || !await append(entry.metaKey)) return null;
       }
       const signature = `${messages.length}:${chars}:${first >>> 0}:${second >>> 0}`;
       aliases.set(messages, signature);
       sources.set(label, signature);
     }
+    if (!isCurrent()) return null;
     const changed = !tracker || tracker.sources.size !== sources.size
       || [...sources].some(([label, signature]) => tracker.sources.get(label) !== signature);
     const revision = Number(tracker?.revision || 0) + Number(changed);
@@ -49077,57 +49083,83 @@ ${cleanedText}`, 80),
       checkedAt: Date.now()
     };
   };
-  const syncFlashbackAttentionButton = async next => {
-    const signature = next?.kind ? `${next.kind}:${next.count}:${next.scopeKey || ''}` : '';
-    if (signature === FlashbackAttention.buttonSignature) return true;
-    const uiApi = getApiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || getLiveApi();
-    const buttonApi = getApiCandidates().find(candidate => typeof candidate?.registerButton === 'function') || getLiveApi();
-    if (FlashbackAttention.buttonSignature && typeof uiApi?.unregisterUIPart === 'function') {
-      try { await uiApi.unregisterUIPart(FLASHBACK_ATTENTION_BUTTON_ID); } catch (_) {}
-    }
-    FlashbackAttention.buttonSignature = '';
-    if (!next?.kind || typeof buttonApi?.registerButton !== 'function' || Runtime.unloaded) return !next?.kind;
-    try {
-      await buttonApi.registerButton({
-        name: next.name,
-        icon: flashbackAttentionIcon(next.kind),
-        iconType: 'html',
-        location: 'chat',
-        id: FLASHBACK_ATTENTION_BUTTON_ID
-      }, () => { void openFlashbackAttention(); });
-      FlashbackAttention.buttonSignature = signature;
-      pushActivityLog('attention_shown', `${PLUGIN_NAME} 주의 알림 버튼이 표시되었습니다.`, { kind: next.kind, count: next.count }, 'info');
-      return true;
-    } catch (error) {
-      warn('flashback_attention_button_failed', error);
-      return false;
-    }
+  let flashbackAttentionButtonTail = Promise.resolve();
+  const syncFlashbackAttentionButton = (next, isCurrent = () => true) => {
+    const generation = FlashbackAttention.generation;
+    const current = () => generation === FlashbackAttention.generation && !Runtime.unloaded && isCurrent();
+    const update = async () => {
+      if (!current()) return false;
+      const signature = next?.kind ? `${next.kind}:${next.count}:${next.scopeKey || ''}` : '';
+      if (signature === FlashbackAttention.buttonSignature) return true;
+      const uiApi = getApiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || getLiveApi();
+      const buttonApi = getApiCandidates().find(candidate => typeof candidate?.registerButton === 'function') || getLiveApi();
+      if (FlashbackAttention.buttonSignature && typeof uiApi?.unregisterUIPart === 'function') {
+        try { await uiApi.unregisterUIPart(FLASHBACK_ATTENTION_BUTTON_ID); } catch (_) {}
+      }
+      FlashbackAttention.buttonSignature = '';
+      if (!current()) return false;
+      if (!next?.kind || typeof buttonApi?.registerButton !== 'function') return !next?.kind;
+      try {
+        await buttonApi.registerButton({
+          name: next.name,
+          icon: flashbackAttentionIcon(next.kind),
+          iconType: 'html',
+          location: 'chat',
+          id: FLASHBACK_ATTENTION_BUTTON_ID
+        }, () => { void openFlashbackAttention(); });
+        // A physical host registration can finish after stop/unload. Serialize
+        // button writes and drain this one before a newer session can publish.
+        if (!current()) {
+          try { await uiApi?.unregisterUIPart?.(FLASHBACK_ATTENTION_BUTTON_ID); } catch (_) {}
+          return false;
+        }
+        FlashbackAttention.buttonSignature = signature;
+        pushActivityLog('attention_shown', `${PLUGIN_NAME} 주의 알림 버튼이 표시되었습니다.`, { kind: next.kind, count: next.count }, 'info');
+        return true;
+      } catch (error) {
+        warn('flashback_attention_button_failed', error);
+        return false;
+      }
+    };
+    const task = flashbackAttentionButtonTail.then(update, update);
+    flashbackAttentionButtonTail = task.catch(() => false);
+    return task;
   };
   const refreshFlashbackAttention = async () => {
     if (!FlashbackAttention.started || Runtime.unloaded) return null;
+    const generation = FlashbackAttention.generation;
     if (FlashbackAttention.evaluating) {
       scheduleFlashbackAttentionRefresh('busy', 1000);
       return null;
     }
+    const flight = { generation };
+    FlashbackAttention.evaluationFlight = flight;
     FlashbackAttention.evaluating = true;
+    const current = () => FlashbackAttention.started && !Runtime.unloaded
+      && generation === FlashbackAttention.generation && FlashbackAttention.evaluationFlight === flight;
     try {
       const next = await computeFlashbackAttention();
+      if (!current()) return null;
       if (next?.stale) { scheduleFlashbackAttentionRefresh('scope_changed', 0); return null; }
-      if (Runtime.unloaded) return null;
       FlashbackAttention.state = next;
-      await syncFlashbackAttentionButton(next);
+      await syncFlashbackAttentionButton(next, current);
       return next;
     } catch (error) {
       warn('flashback_attention_refresh_failed', error);
       return null;
     } finally {
-      FlashbackAttention.evaluating = false;
+      if (FlashbackAttention.evaluationFlight === flight) {
+        FlashbackAttention.evaluationFlight = null;
+        FlashbackAttention.evaluating = false;
+      }
     }
   };
   function scheduleFlashbackAttentionRefresh(reason = '', delayMs = FLASHBACK_ATTENTION_REFRESH_DELAY_MS) {
     if (!FlashbackAttention.started || Runtime.unloaded) return false;
+    const generation = FlashbackAttention.generation;
     if (FlashbackAttention.refreshTimer) clearTimeout(FlashbackAttention.refreshTimer);
     FlashbackAttention.refreshTimer = setTimeout(() => {
+      if (generation !== FlashbackAttention.generation) return;
       FlashbackAttention.refreshTimer = null;
       void refreshFlashbackAttention();
     }, Math.max(0, Number(delayMs) || 0));
@@ -49135,12 +49167,20 @@ ${cleanedText}`, 80),
     return true;
   }
   const pollFlashbackAttention = async () => {
-    FlashbackAttention.pollTimer = null;
     if (!FlashbackAttention.started || Runtime.unloaded) return;
+    if (FlashbackAttention.pollFlight) return;
+    if (FlashbackAttention.pollTimer) clearTimeout(FlashbackAttention.pollTimer);
+    FlashbackAttention.pollTimer = null;
+    const generation = FlashbackAttention.generation, flight = { generation };
+    FlashbackAttention.pollFlight = flight;
+    const current = () => FlashbackAttention.started && !Runtime.unloaded
+      && generation === FlashbackAttention.generation && FlashbackAttention.pollFlight === flight;
     try {
       const snapshot = await loadRisuCaptureSnapshot();
+      if (!current()) return;
       const indexes = `${Number(snapshot?.chatInfo?.charIndex ?? -1)}:${Number(snapshot?.chatInfo?.chatIndex ?? -1)}`;
-      const live = await flashbackAttentionRevision(snapshot?.chat || null);
+      const live = await flashbackAttentionRevision(snapshot?.chat || null, current);
+      if (!live || !current()) return;
       const revision = `${live.cacheKey || ''}:${live.revisionSignature || ''}`;
       const indexChanged = indexes !== FlashbackAttention.lastIndexes;
       const revisionChanged = revision !== FlashbackAttention.lastRevision;
@@ -49150,34 +49190,52 @@ ${cleanedText}`, 80),
         scheduleFlashbackAttentionRefresh(indexChanged ? 'chat_switch' : 'chat_source_changed', 500);
       }
     } catch (_) {}
-    if (!Runtime.unloaded) {
-      FlashbackAttention.pollTimer = setTimeout(() => void pollFlashbackAttention(), FLASHBACK_ATTENTION_POLL_MS);
-      FlashbackAttention.pollTimer?.unref?.();
+    finally {
+      const rearm = current();
+      if (FlashbackAttention.pollFlight === flight) FlashbackAttention.pollFlight = null;
+      if (rearm) {
+        FlashbackAttention.pollTimer = setTimeout(() => {
+          if (generation === FlashbackAttention.generation) void pollFlashbackAttention();
+        }, FLASHBACK_ATTENTION_POLL_MS);
+        FlashbackAttention.pollTimer?.unref?.();
+      }
     }
   };
   const startFlashbackAttention = () => {
     if (FlashbackAttention.started || Runtime.unloaded) return false;
+    FlashbackAttention.generation += 1;
     FlashbackAttention.started = true;
     void pollFlashbackAttention();
     scheduleFlashbackAttentionRefresh('start', 800);
     return true;
   };
   const stopFlashbackAttention = async () => {
+    const generation = ++FlashbackAttention.generation;
+    FlashbackAttention.started = false;
+    FlashbackAttention.pollFlight = null;
+    FlashbackAttention.evaluationFlight = null;
+    FlashbackAttention.evaluating = false;
     for (const key of ['refreshTimer', 'pollTimer']) {
       if (FlashbackAttention[key]) {
         try { clearTimeout(FlashbackAttention[key]); } catch (_) {}
         FlashbackAttention[key] = null;
       }
     }
-    FlashbackAttention.started = false;
     FlashbackAttention.lastIndexes = '';
     FlashbackAttention.lastRevision = '';
     FlashbackAttention.revisionTracker = null;
-    if (FlashbackAttention.buttonSignature) {
-      const uiApi = getApiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || getLiveApi();
-      try { await uiApi?.unregisterUIPart?.(FLASHBACK_ATTENTION_BUTTON_ID); } catch (_) {}
-      FlashbackAttention.buttonSignature = '';
-    }
+    FlashbackAttention.state = null;
+    const cleanup = async () => {
+      if (generation !== FlashbackAttention.generation) return;
+      if (FlashbackAttention.buttonSignature) {
+        const uiApi = getApiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || getLiveApi();
+        try { await uiApi?.unregisterUIPart?.(FLASHBACK_ATTENTION_BUTTON_ID); } catch (_) {}
+        FlashbackAttention.buttonSignature = '';
+      }
+    };
+    const task = flashbackAttentionButtonTail.then(cleanup, cleanup);
+    flashbackAttentionButtonTail = task.catch(() => false);
+    await task;
   };
   async function openFlashbackAttention() {
     const state = FlashbackAttention.state;
