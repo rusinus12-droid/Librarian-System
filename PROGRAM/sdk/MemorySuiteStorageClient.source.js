@@ -1,4 +1,4 @@
-/* LIBRARIAN SYSTEM STORAGE SDK v1.8.25
+/* LIBRARIAN SYSTEM STORAGE SDK v1.8.26
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
  * The server stores opaque values. Each plugin keeps ownership of its own data schema.
  */
@@ -1425,6 +1425,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return receipt;
   };
 
+  const statusReadbackAttempts = 3;
+  const statusReadbackDelayMs = 400;
   const statusReadback = async (id, requestOptions = {}) => {
     try {
       return await request('GET', `/v1/operations/${encodeURIComponent(namespace)}/${encodeURIComponent(id)}`, null, { authRetry: true, allowPluginOnly: requestOptions.allowPluginOnly === true, forceBootstrap:requestOptions.forceBootstrap === true, scope:requestOptions.scope, storageMode:requestOptions.storageMode });
@@ -1578,11 +1580,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (!valueMatches
         || Number(stored.revision || 0) !== Number(receipt.revision || 0)
         || String(stored.digest || '') !== String(receipt.digest || '')) {
+        // Another writer committed after this write: the server's operation record,
+        // not the live value, proves this write committed (it was then superseded).
+        if (Number(stored.revision || 0) > Number(receipt.revision || 0) && confirmSuperseded) {
+          const record = verifyReceipt(await confirmSuperseded(), id, space, key);
+          if (Number(record.revision || 0) === Number(receipt.revision || 0) && String(record.digest || '') === String(receipt.digest || '')) {
+            setStatus('durable', '', { operationId: id, revision: receipt.revision, key: compact(key, 180), space, superseded: true });
+            return { ...receipt, endToEndVerified: true, superseded: true, currentRevision: Number(stored.revision || 0) };
+          }
+        }
         throw new Error('memory_suite_end_to_end_readback_mismatch');
       }
       setStatus('durable', '', { operationId: id, revision: receipt.revision, key: compact(key, 180), space });
       return { ...receipt, endToEndVerified: true };
     };
+    const readbackOptions = { allowPluginOnly: mutateOptions.allowPluginOnly === true, scope:mutateOptions.scope, storageMode:mutateOptions.storageMode };
+    const confirmSuperseded = () => statusReadback(id, readbackOptions);
     try {
       const payload = await request('POST', `/v1/kv/${kind}`, body, { allowPluginOnly: mutateOptions.allowPluginOnly === true, scope:mutateOptions.scope, storageMode:mutateOptions.storageMode });
       return await verifyStored(verifyReceipt(payload, id, space, key));
@@ -1591,10 +1604,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         error.storageMutationRejected = true;
         throw error;
       }
-      try {
-        const status = await statusReadback(id, { allowPluginOnly: mutateOptions.allowPluginOnly === true, forceBootstrap:!!writerAlias, scope:mutateOptions.scope, storageMode:mutateOptions.storageMode });
-        if (status) return await verifyStored(verifyReceipt(status, id, space, key));
-      } catch (_) {}
+      // A lost response may hide a committed write. The request path has already opened
+      // the shared outage circuit, so the operation lookup forces a fresh bootstrap.
+      for (let attempt = 0; attempt < statusReadbackAttempts; attempt += 1) {
+        if (attempt) await new Promise(resolve => setTimeout(resolve, statusReadbackDelayMs * attempt));
+        if (lifecycle.disposed) break;
+        try {
+          const status = await statusReadback(id, { ...readbackOptions, forceBootstrap:true });
+          if (status) return await verifyStored(verifyReceipt(status, id, space, key));
+          break;
+        } catch (readbackError) {
+          if (readbackError?.message === 'memory_suite_end_to_end_readback_mismatch' || readbackError?.status === 403) break;
+        }
+      }
       error.storageMutationIndeterminate = true;
       error.storageMutationKey = key;
       error.storageOperationId = id;
@@ -3639,6 +3661,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (!success) {
         state.scopeRouting.registry = null;
         state.scopeRouting.registryLoaded = false;
+        scopeRegistryGeneration += 1;
         state.scopeRouting.routeCache.clear();
         const error = new Error('memory_suite_scope_routing_storage_unavailable');
         error.code = 'MEMORY_SUITE_SCOPE_ROUTING_STORAGE_UNAVAILABLE';
@@ -3646,6 +3669,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       state.scopeRouting.registry = registry;
       state.scopeRouting.registryLoaded = true;
+      state.scopeRouting.registryCheckedAt = Date.now();
+      scopeRegistryGeneration += 1;
       state.scopeRouting.routeCache.clear();
       return registry;
     });
@@ -3653,9 +3678,25 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return task;
   };
 
+  // Another tab or bridge can switch a scope's mode in shared storage. A loaded registry is
+  // re-read after a short TTL so routing follows the switch; unchanged, the route cache stays.
+  // Bounded: archive and ledger scans touch many distinct keys in one chat.
+  const routeCacheLimit = 2048;
+  const rememberRoute = (cacheKey, route) => {
+    const cache = state.scopeRouting.routeCache;
+    cache.delete(cacheKey);
+    cache.set(cacheKey, route);
+    while (cache.size > routeCacheLimit) cache.delete(cache.keys().next().value);
+  };
+  const scopeRegistryRevalidateMs = 2000;
+  let scopeRegistryGeneration = 0;
   const loadScopeRegistry = async (force = false, tryServer = false) => {
-    if (!force && state.scopeRouting.registryLoaded && state.scopeRouting.registry) return state.scopeRouting.registry;
+    const loaded = state.scopeRouting.registryLoaded && state.scopeRouting.registry;
+    const fresh = Date.now() - Number(state.scopeRouting.registryCheckedAt || 0) < scopeRegistryRevalidateMs;
+    if (!force && loaded && fresh) return state.scopeRouting.registry;
     if (!force && state.scopeRouting.registryLoading) return await state.scopeRouting.registryLoading;
+    const revalidating = !force && loaded;
+    const generation = scopeRegistryGeneration;
     const task = (async () => {
       let pluginRaw = null, deviceRaw = null, serverRaw = null;
       const pluginStore = rawPluginStorage();
@@ -3669,6 +3710,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         } catch (error) { reportStorageFailure('storage.scope.route.read.server', error); }
       }
       const registry = mergeScopeRegistries(serverRaw, pluginRaw, deviceRaw);
+      // A local registry write that landed meanwhile is newer than this read.
+      if (generation !== scopeRegistryGeneration && state.scopeRouting.registryLoaded && state.scopeRouting.registry) return state.scopeRouting.registry;
+      state.scopeRouting.registryCheckedAt = Date.now();
+      if (revalidating && JSON.stringify(registry) === JSON.stringify(state.scopeRouting.registry)) return state.scopeRouting.registry;
       state.scopeRouting.registry = registry;
       state.scopeRouting.registryLoaded = true;
       state.scopeRouting.routeCache.clear();
@@ -4746,7 +4791,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const preCacheKey = `${space}\n${normalizedKey}\n${routeScopeId}`;
       if (!routeOptions.noCache && state.scopeRouting.routeCache.has(preCacheKey)) return state.scopeRouting.routeCache.get(preCacheKey);
       const route = await normalizeRouteDescriptor(preResolved, space, normalizedKey, null);
-      state.scopeRouting.routeCache.set(preCacheKey, route);
+      rememberRoute(preCacheKey, route);
       return route;
     }
 
@@ -4764,7 +4809,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       raw = { kind: 'scope', ...currentScope };
     }
     const route = await normalizeRouteDescriptor(raw, space, normalizedKey, currentScope);
-    state.scopeRouting.routeCache.set(cacheKey, route);
+    rememberRoute(cacheKey, route);
     return route;
   };
 
@@ -5015,7 +5060,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           void serializeMutation(space, route.remoteKey, async () => {
             try {
               if (remote.exists !== true || jsonComparable(remote.value) !== jsonComparable(projected)) {
-                await remoteMutate('set', space, route.remoteKey, projected, { allowPluginOnly: true, scope:route.scope, storageMode:route.mode });
+                // Conditional on the revision just read: a server write landing meanwhile is not overwritten.
+                await remoteMutate('set', space, route.remoteKey, projected, { allowPluginOnly: true, scope:route.scope, storageMode:route.mode, expectedRevision: Number(remote.revision || 0) });
               }
               setStatus('synced', '', { scopeId: route.scopeId, mode: route.mode, key: compact(key, 160), space });
             } catch (error) {
