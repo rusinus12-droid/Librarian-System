@@ -46,8 +46,10 @@ async function recallFor(mode) {
     assert.ok(starts.length >= 1,
       `${mode}: the corpus produced at least one canonical (got ${starts.length})`);
 
-    // Recall through the public entry point, exactly as the chat flow does.
-    const recall = await snapshot.f.r.api.previewUnifiedMemoryRecall('기억을 회상한다');
+    // Recall through the public entry point, exactly as the chat flow does. The unified
+    // engine admits only evidence related to the query, so the query names the corpus'
+    // subject; a contentless query correctly recalls nothing in every mode.
+    const recall = await snapshot.f.r.api.previewUnifiedMemoryRecall('은빛 열쇠는 누가 가지고 있지?');
     assert.ok(recall && typeof recall === 'object', `${mode}: recall returned an object`);
 
     const memories = Array.isArray(recall.memories) ? Array.from(recall.memories) : [];

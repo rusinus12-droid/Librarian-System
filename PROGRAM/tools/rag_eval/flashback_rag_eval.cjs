@@ -11,8 +11,18 @@
 //   RAG_EVAL_EMBED_URL OpenAI-compatible base URL of a real provider (…/v1)
 //   RAG_EVAL_EMBED_KEY / RAG_EVAL_EMBED_MODEL / RAG_EVAL_EMBED_DIMENSIONS
 //   RAG_EVAL_EMBED_DELAY_MS adds artificial latency to the synthetic provider.
-// Usage: node tools/rag_eval/flashback_rag_eval.cjs [fixture.json] [--json out.json] [--arg name=value ...]
+// Storage:
+//   default            plugin_only (RisuAI pluginStorage)
+//   --server           server_only: boots the real Librarian System server in-process on a
+//                      temporary DATA directory and routes this chat's scope to it.
+//   RAG_EVAL_SERVER_RTT_MS adds latency to every server request (host bridge / remote device).
+// Visibility:
+//   --visible N        the host sends only the last N turns with each question (context
+//                      truncation). `availableRate` then counts a fact as available when it
+//                      is in the injected memory OR in the visible turns.
+// Usage: node tools/rag_eval/flashback_rag_eval.cjs [fixture.json] [--json out.json] [--server] [--visible N] [--arg name=value ...]
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const { performance } = require('node:perf_hooks');
@@ -31,8 +41,13 @@ const FAKE_BASE = 'https://rag-eval.invalid/v1';
 // during the question phase only (stored document vectors stay valid).
 const queryFailure = String(process.env.RAG_EVAL_QUERY_FAILURE || '');
 let questionPhase = false;
+const serverMode = argv.includes('--server');
+const visibleTurns = option('--visible') === undefined ? Infinity : Math.max(0, Number(option('--visible')));
+const serverRttMs = Math.max(0, Number(process.env.RAG_EVAL_SERVER_RTT_MS || 0));
+let serverBase = '';
 
-const src = fs.readFileSync(pluginPath, 'utf8');
+let src = fs.readFileSync(pluginPath, 'utf8');
+if (serverMode) src = src.replace('const RisuCompat = (() => {', 'globalThis.__ragEvalStorageBridge = MemorySuiteStorageBridge;\nconst RisuCompat = (() => {');
 // Blank ARGs mean product defaults; only the evaluator's own boundary is set.
 const args = {};
 Object.assign(args, {
@@ -49,7 +64,7 @@ let lastWriteAt = Date.now();
 const makeStore = () => { const map = new Map(); return { __map: map, getItem: async k => map.has(String(k)) ? map.get(String(k)) : null, setItem: async (k, v) => { lastWriteAt = Date.now(); map.set(String(k), v); return true; }, removeItem: async k => { map.delete(String(k)); return true; }, keys: async () => [...map.keys()], length: async () => map.size, clear: async () => { map.clear(); return true; } }; };
 const localPluginStorage = makeStore();
 const handlers = { beforeRequest: [], afterRequest: [], chatOutput: [], scriptOutput: [] };
-const network = { embeddingCalls: 0, embeddingInputs: 0, embeddingMs: 0 };
+const network = { embeddingCalls: 0, embeddingInputs: 0, embeddingMs: 0, serverCalls: 0, serverMs: 0 };
 const liveChat = { id: 'chat-rag-eval', name: 'RAG eval', message: [], fmIndex: -1 };
 const character = { name: '사서', chaId: 'char-rag-eval', id: 'char-rag-eval', chats: [liveChat], chat: liveChat, chatPage: 0 };
 let seq = 0;
@@ -59,6 +74,17 @@ let uiSeq = 0;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const embedRequest = async (url, init = {}) => {
+  if (serverBase && String(url).startsWith(serverBase)) {
+    const started = performance.now();
+    if (questionPhase && process.env.RAG_EVAL_TRACE_SERVER) {
+      let keys = '';
+      try { const body = JSON.parse(String(init.body || '{}')); keys = JSON.stringify(body.keys || body.key || body.prefix || body.operations?.map?.(op => op.key) || '').slice(0, 160); } catch (_) {}
+      process.stderr.write(`[server] ${init.method || 'GET'} ${String(url).slice(serverBase.length)} ${keys}\n`);
+      if (process.env.RAG_EVAL_TRACE_SERVER === 'stack') process.stderr.write(String(new Error().stack).split('\n').slice(2, 40).map(line => '    ' + line.trim().replace(/\(.*Flashback_Memory\.js:/, '(FB:')).join('\n') + '\n');
+    }
+    try { if (serverRttMs) await sleep(serverRttMs); return await fetch(url, init); }
+    finally { network.serverCalls += 1; network.serverMs += performance.now() - started; }
+  }
   const started = performance.now();
   try {
     if (realUrl) {
@@ -132,9 +158,24 @@ async function runTurn(user, assistant) {
 const percentile = (values, p) => { if (!values.length) return 0; const sorted = [...values].sort((a, b) => a - b); return sorted[Math.min(sorted.length - 1, Math.ceil(p / 100 * sorted.length) - 1)]; };
 
 async function main() {
+  let server = null, dataDir = '';
+  if (serverMode) {
+    const { createMemorySuiteServer } = require('../../server/server.cjs');
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rag-eval-server-'));
+    server = createMemorySuiteServer({ host: '127.0.0.1', port: 0, dataDir, autoBackup: false });
+    const address = await server.listen();
+    serverBase = `http://127.0.0.1:${address.port}`;
+    args.memory_suite_server_url = serverBase;
+  }
   vm.runInThisContext(src, { filename: pluginPath });
   await sleep(1500);
   if (!handlers.beforeRequest.length) throw new Error('Flashback hooks were not registered');
+  if (serverMode) {
+    const t = globalThis.__FlashbackMemory?._test;
+    const scope = t.resolveScopeFromSnapshot({ character, chat: liveChat, db: { personas: [], selectedPersona: '' }, chatInfo: { characterIndex: 0, chatIndex: 0 } });
+    await globalThis.__ragEvalStorageBridge.setScopeMode({ scopeId: scope.scopeKey, scopeKey: scope.scopeKey, characterId: scope.characterId, chatId: scope.chatId,
+      aliases: [scope.scopeKey, scope.storageHash, scope.chatId].filter(Boolean) }, 'server_only');
+  }
   for (const [user, assistant] of fixture.turns) await runTurn(user, assistant);
   // Flashback finalizes a turn after ~4 s of stability and then embeds episode
   // records in the background. Start questions only once storage is quiet.
@@ -143,9 +184,13 @@ async function main() {
   questionPhase = true;
   const results = [];
   for (const question of fixture.questions) {
-    const messages = transcript().concat([{ role: 'user', content: question.q }]);
+    const full = transcript();
+    const visible = Number.isFinite(visibleTurns) ? [full[0], ...full.slice(1).slice(-visibleTurns * 2)].filter(Boolean) : full;
+    const messages = visible.concat([{ role: 'user', content: question.q }]);
+    const visibleText = visible.map(content).join('\n');
     const inputs = new Set(messages.map(content));
     const callsBefore = network.embeddingCalls;
+    const serverCallsBefore = network.serverCalls;
     const started = performance.now();
     const out = await before(messages);
     const elapsedMs = performance.now() - started;
@@ -157,9 +202,12 @@ async function main() {
       process.stderr.write(JSON.stringify(lastRecall, (key, value) => Array.isArray(value) && value.length > 8 ? value.slice(0, 8) : value, 1) + '\n');
     }
     const found = question.expect.filter(needle => injected.includes(needle));
-    results.push({ id: question.id, family: question.family, hit: found.length === question.expect.length, partial: found.length > 0,
+    const lastRecall = globalThis.__FlashbackMemory?._test?.pendingCaptureRuntimeSnapshot?.()?.lastRecall || {};
+    const recallNote = lastRecall.skipped ? `skipped:${lastRecall.reason || ''}:${String(lastRecall.error || '').slice(0, 160)}` : '';
+    const available = question.expect.every(needle => injected.includes(needle) || visibleText.includes(needle));
+    results.push({ id: question.id, family: question.family, hit: found.length === question.expect.length, available, partial: found.length > 0,
       found: found.length, expected: question.expect.length, injectedChars: injected.length, elapsedMs: Math.round(elapsedMs),
-      embeddingCalls: network.embeddingCalls - callsBefore });
+      embeddingCalls: network.embeddingCalls - callsBefore, serverCalls: network.serverCalls - serverCallsBefore, ...(recallNote ? { recallNote } : {}) });
     await sleep(150);
   }
   console.log = quietLog; console.warn = quiet;
@@ -175,16 +223,22 @@ async function main() {
     embedder: realUrl ? { kind: 'real', url: realUrl, model: args.embedding_model } : { kind: 'synthetic', model: synthetic.name, delayMs, queryFailure: queryFailure || null },
     overrides: argv.filter((v, i) => argv[i - 1] === '--arg'),
     hitRate: +(results.filter(row => row.hit).length / results.length).toFixed(3),
+    availableRate: +(results.filter(row => row.available).length / results.length).toFixed(3),
+    visibleTurns: Number.isFinite(visibleTurns) ? visibleTurns : 'all',
     partialRate: +(results.filter(row => row.partial).length / results.length).toFixed(3),
     families,
     latencyMs: { p50: percentile(latency, 50), p95: percentile(latency, 95), max: Math.max(...latency) },
     avgInjectedChars: Math.round(results.reduce((sum, row) => sum + row.injectedChars, 0) / results.length),
     embedding: { captureCalls: captureEmbeddingCalls, recallCallsPerQuestion: +((network.embeddingCalls - captureEmbeddingCalls) / results.length).toFixed(2) },
+    storage: serverMode ? { mode: 'server_only', rttMs: serverRttMs, requests: network.serverCalls, requestMs: Math.round(network.serverMs),
+      recallRequestsPerQuestion: +(results.reduce((sum, row) => sum + row.serverCalls, 0) / results.length).toFixed(2),
+      localScopeKeys: (await localPluginStorage.keys()).filter(key => String(key).startsWith('vector_rag_memory:scope:')).length } : { mode: 'plugin_only' },
     results
   };
   const jsonPath = option('--json');
   if (jsonPath) fs.writeFileSync(jsonPath, JSON.stringify(report, null, 2));
-  process.stdout.write(JSON.stringify({ ...report, results: undefined, misses: results.filter(row => !row.hit).map(row => row.id) }, null, 2) + '\n');
+  process.stdout.write(JSON.stringify({ ...report, results: undefined, unavailable: results.filter(row => !row.available).map(row => row.id), misses: results.filter(row => !row.hit).map(row => row.recallNote ? `${row.id} (${row.recallNote})` : row.id) }, null, 2) + '\n');
+  if (dataDir) fs.rmSync(dataDir, { recursive: true, force: true });
   process.exit(0);
 }
 main().catch(error => { console.log = quietLog; console.error(error); process.exit(1); });

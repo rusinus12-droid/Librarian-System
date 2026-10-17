@@ -71,14 +71,28 @@ const plain = value => JSON.parse(JSON.stringify(value));
         const key = (await f.getManifest()).memories['1'].key, values = f.r.values;
         const get = values.get, original = get.call(values, key); let visits = 0;
         try {
+          // One write landing mid-read: the torn snapshot is rejected and a fresh,
+          // consistent one is read instead of failing the whole projection.
           values.get = function(storageKey) {
             if (storageKey === key && ++visits === 2) {
               const body = JSON.parse(get.call(this, key)); body.summary = 'changed during graph read'; this.set(key, JSON.stringify(body));
             }
             return get.call(this, storageKey);
           };
+          const reread = await x.project();
+          assert.ok(visits >= 3, 'the real physical body was independently re-read and then read again');
+          values.get = get;
+          const settled = await x.project();
+          assert.equal(JSON.stringify(reread.nodes), JSON.stringify(settled.nodes), 'the retried projection equals a clean read of the current body');
+          // A body that keeps changing is never certified.
+          values.set(key, original); visits = 0;
+          values.get = function(storageKey) {
+            if (storageKey === key && ++visits >= 2) {
+              const body = JSON.parse(get.call(this, key)); body.summary = 'changed during graph read ' + visits; this.set(key, JSON.stringify(body));
+            }
+            return get.call(this, storageKey);
+          };
           await assert.rejects(() => x.project(), /BODY_CHANGED/);
-          assert.ok(visits >= 2, 'the real physical body was independently re-read');
         } finally { values.get = get; values.set(key, original); }
         const routeKey = '__memory_suite_internal_scope_routes_v1__:libra', route = values.get(routeKey), beforeBlocked = f.r.storageWrites.length;
         try { values.delete(routeKey); await assert.rejects(() => x.project(), /READ_ROUTE_MODE_UNAVAILABLE/); }

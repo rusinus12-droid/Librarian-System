@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.109
+//@display-name ⚡ FLASHBACK Memory v1.0.110
 //@api 3.0
-//@version 1.0.109
+//@version 1.0.110
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -326,7 +326,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 //@arg hash_dimensions string Legacy vector metadata compatibility only; no new hash embeddings
 //@arg top_k string Number of vector records injected per request; blank uses 12
 //@arg min_score string Minimum cosine score for recall; blank uses 0.12
-//@arg lexical_weight string Small lexical overlap boost added to cosine score; blank uses 0.08
+//@arg lexical_weight string Small lexical overlap boost added to cosine score; blank uses 0.12
 //@arg max_injection_chars string Maximum dynamic evidence characters injected into beforeRequest; blank uses 4000
 //@arg injection_position string before_current_input|last_system|before_last_user; blank uses before_current_input
 //@arg prompt_cache_mode string off|existing_only|safe_auto; blank uses existing_only
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.109';
+const PLUGIN_VERSION = '1.0.110';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -1825,7 +1825,7 @@ const PLUGIN_VERSION = '1.0.109';
     hashDimensions: 384,
     topK: 12,
     minScore: 0.12,
-    lexicalWeight: 0.08,
+    lexicalWeight: 0.12,
     maxInjectionChars: 4000,
     injectionPosition: 'before_current_input',
     promptCacheMode: 'existing_only',
@@ -31429,6 +31429,7 @@ const MemorySuiteHealthRecovery = (() => {
       const latestDigest = episodeSourceDigestForRecords(latestBase, cfg);
       const finalEpisodes = latestDigest === digest ? episodes : buildEpisodeIndexRecords(latestBase, cfg, scope);
       const allEpisodes = [...latestInheritedEpisodes, ...finalEpisodes];
+      if (options.yieldToRecall === true) await yieldToActiveFlashbackRecall(scope.scopeKey);
       const savedInner = await saveScopeRecords(scope, [...latestBase, ...allEpisodes], cfg, scope);
       const manifestInner = await saveScopeManifest({
         ...savedInner.manifest,
@@ -31453,7 +31454,7 @@ const MemorySuiteHealthRecovery = (() => {
     if (Runtime.episodeIndexInFlight.has(scope.scopeKey)) return false;
     Runtime.episodeIndexInFlight.add(scope.scopeKey);
     scheduleTimer(() => {
-      maybeRebuildEpisodeIndex(scope, settings, null, options)
+      maybeRebuildEpisodeIndex(scope, settings, null, { ...options, yieldToRecall: true })
         .catch(error => warn('episode index rebuild failed', error))
         .finally(() => Runtime.episodeIndexInFlight.delete(scope.scopeKey));
     }, 0);
@@ -32854,9 +32855,10 @@ const MemorySuiteHealthRecovery = (() => {
         MemorySuiteFlashbackSearchClient ||= createMemorySuiteSearchClient({namespace:'flashback',pluginId:PLUGIN_SLUG,pluginVersion:PLUGIN_VERSION,storage:MemorySuiteStorageBridge});
         const scopeKey=text(scope?.scopeKey||'');
         const readSearchBasis=async()=>{
-          const snapshot=await loadRisuSnapshot(false), current=resolveScopeFromSnapshot(snapshot);
-          const manifest=await RisuCompat.getItem(scopeKeys.manifest(scopeKey));
-          const worldline=await RisuCompat.getItem(scopeKeys.worldline(scopeKey));
+          // Independent reads; on server_only each one is a round trip.
+          const [snapshot,manifest,worldline]=await Promise.all([loadRisuSnapshot(false),
+            RisuCompat.getItem(scopeKeys.manifest(scopeKey)),RisuCompat.getItem(scopeKeys.worldline(scopeKey))]);
+          const current=resolveScopeFromSnapshot(snapshot);
           return {scopeKey:current.scopeKey,chat:stableHash(safeStringify(snapshot.chat||{})),manifest:stableHash(safeStringify(manifest)),worldline:stableHash(safeStringify(worldline))};
         };
         const searchBasis=await readSearchBasis();
@@ -32864,7 +32866,7 @@ const MemorySuiteHealthRecovery = (() => {
         try {
           context.computeCosine=await MemorySuiteFlashbackSearchClient.vectors(responseRecords.map(r=>r.vector),[queryVector,context.sceneContext?.vector,context.previousTurn?.vector],scope,searchBasis,valid);
         } catch(error){warn('memory search compute fallback',error);}
-        if(!await valid())throw new Error('FLASHBACK_SEARCH_BINDING_STALE');
+        if(!await valid())throw Object.assign(new Error('FLASHBACK_SEARCH_BINDING_STALE'),{code:'FLASHBACK_SEARCH_BINDING_STALE'});
       }
     }
     const dense = [];
@@ -38899,6 +38901,18 @@ const MemorySuiteHealthRecovery = (() => {
       throw error;
     }
   });
+  // A background embedding completion or episode-index rebuild writes the scope's
+  // records, which revokes a recall being prepared or checked for the same scope (a
+  // reroll right after a response, or slow server_only I/O). Inside its write lock it
+  // waits for that recall, bounded. Recall and request delivery never take this lock.
+  const FLASHBACK_RECALL_YIELD_MAX_MS = 8000;
+  const yieldToActiveFlashbackRecall = async scopeKey => {
+    for (const until = Date.now() + FLASHBACK_RECALL_YIELD_MAX_MS; Date.now() < until;) {
+      const active = flashbackRecallRequests.active;
+      if (!active || active.cancelled || active.scopeKey !== text(scopeKey) || Runtime.unloaded) return;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+  };
   const processPendingEmbeddingWork = async (options = {}) => {
     if(flashbackRecoveryActions?.isBusy()&&!physicalContext(options))return {ok:false,ready:0,failed:0,reason:'FLASHBACK_REPAIR_ACTION_BUSY'};
     if(physicalRepairUnresolved()&&!physicalContext(options)&&!embeddingRecoveryOffers.has(options.recoveryToken))return {ok:false,ready:0,failed:0,reason:'FLASHBACK_PHYSICAL_OUTCOME_UNRESOLVED'};
@@ -38952,6 +38966,7 @@ const MemorySuiteHealthRecovery = (() => {
           return completed;
         });
         if(physicalContext(options)){physicalContext(options).phase='completion';physicalContext(options).completing=proof.targets;}
+        else await yieldToActiveFlashbackRecall(proof.scope.scopeKey);
         await saveScopeRecords(proof.scope, next, cfg, proof.scope, { metadataOnly: true, physicalRecovery:physicalContext(options), embeddingAttemptRegistry: updateEmbeddingAttemptRegistry(current.manifest, proof.attemptId), assertCurrent: () => assertEmbeddingAttemptCurrent(proof) });
       });
       const current = await assertEmbeddingWorkBoundary(proof);
@@ -39073,6 +39088,7 @@ const MemorySuiteHealthRecovery = (() => {
       const next = loaded.records.map(record => patches.get(embeddingOwnedRecordId(record)) || record);
       try {
         options.operationLedger?.check();
+        await yieldToActiveFlashbackRecall(boundary.scope.scopeKey);
         await saveScopeRecords(boundary.scope, next, boundary.settings, boundary.scope, { metadataOnly: true,
           embeddingAttemptRegistry: registry, assertCurrent: async () => {
             options.operationLedger?.check(); await options.maintenanceSourceValidate?.(); await assertEmbeddingWorkBoundary(boundary);
@@ -40168,7 +40184,21 @@ const MemorySuiteHealthRecovery = (() => {
         ...settings,
         embeddingTimeoutMs: Math.min(settings.embeddingTimeoutMs, recallBudgetMs)
       };
-      let recall;
+      let recall, renderStageStartedAt = 0, preparedBinding, strictReadSet;
+      // A background owner write (embedding queue, worldline sync) that lands while
+      // recall is being prepared invalidates its read set. When no newer request or
+      // scope replaced this one, prepare again within the remaining deadline instead
+      // of delivering nothing.
+      const settingsHashAtRecall = recallToken.settingsHash;
+      const recallRetryable = attempt => attempt < 2 && !Runtime.unloaded && flashbackRecallRequests.active === recallToken
+        && recallToken.branch === recallBranch && (!Runtime.currentScope?.scopeKey || Runtime.currentScope.scopeKey === scope.scopeKey)
+        && stableHash(JSON.stringify(Runtime.settings || {})) === settingsHashAtRecall && hookDeadlineAt - Date.now() > 1000;
+      const retryRecall = () => {
+        closeFlashbackRecallReadSet(recallToken);
+        recallToken = beginFlashbackRecallRequest(scope.scopeKey,recallRequestId);
+        recallToken.settingsHash = settingsHashAtRecall; recallBranch = recallToken.branch;
+      };
+      for (let recallAttempt = 0; ; recallAttempt += 1) {
       try {
         recall = await withDeadline(
           prepareFlashbackRecall(retrievalQuery, recallSettings, scope, {
@@ -40180,10 +40210,11 @@ const MemorySuiteHealthRecovery = (() => {
             liveMessages: liveChat.normalized || [],
             messages
           }),
-          recallBudgetMs,
+          recallAttempt ? Math.max(1, hookDeadlineAt - Date.now()) : recallBudgetMs,
           'beforeRequest recall'
         );
       } catch (error) {
+        if (['FLASHBACK_RECALL_EXPIRED','FLASHBACK_SEARCH_BINDING_STALE'].includes(error?.code) && recallRetryable(recallAttempt)) { retryRecall(); continue; }
         if (error?.code !== 'FLASHBACK_DEADLINE') throw error;
         recallBranch = ++recallToken.branch;
         Runtime.lastRecall = {
@@ -40206,10 +40237,10 @@ const MemorySuiteHealthRecovery = (() => {
         ...(recall.stageElapsed || {}),
         preRecallHook: Math.max(0, recallCallStartedAt - hookStartedAt)
       };
-      const renderStageStartedAt = Date.now();
+      renderStageStartedAt = Date.now();
       ensureHookDeadline('beforeRequest render/injection');
-      const preparedBinding = flashbackRecallPreparations.get(recall)?.binding;
-      const strictReadSet = flashbackRecallReadSets.get(recall);
+      preparedBinding = flashbackRecallPreparations.get(recall)?.binding;
+      strictReadSet = flashbackRecallReadSets.get(recall);
       if (preparedBinding) {
         const currentManifest = await withinHookDeadline(loadScopeManifest(scope.scopeKey),'recall binding');
         if (preparedBinding.rawPageLayout) {
@@ -40273,7 +40304,10 @@ const MemorySuiteHealthRecovery = (() => {
         && (preparedBinding.embeddingGeneration !== Runtime.embeddingGeneration
           || preparedBinding.modelProfile !== embeddingProfileSettingsFingerprint(finalSettings)))) recallToken.cancelled = true;
       // No await follows this final live authority check before constructing and returning evidence.
+      // A change observed after preparation revokes this request's evidence.
       if (!flashbackRequestCurrent(recallToken,recallBranch) || (strictReadSet && (strictReadSet.epoch !== flashbackRecallCacheEpoch || !flashbackProjectionBindingCurrent(strictReadSet.binding))) || recallToken.settingsHash !== stableHash(JSON.stringify(Runtime.settings || {}))) return injectStableFlashbackPrefix(messages);
+      break;
+      }
       const rawHostInjectionBudget = flashbackHostInjectionBudget(messages, scopeBundle.snapshot, settings);
       const contextDynamicAllowance = rawHostInjectionBudget.available
         ? Math.max(0, Math.floor(Number(rawHostInjectionBudget.remainingTokens || 0) * 3) - staticContract.chars)

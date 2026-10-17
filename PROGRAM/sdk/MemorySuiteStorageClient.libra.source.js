@@ -7539,11 +7539,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const key=identity.characterId+'::'+identity.chatId,row=Object.hasOwn(registry,key)?registry[key]:null;
     if(!row||row.characterId!==identity.characterId||row.chatId!==identity.chatId)readonlyRouteFail('READ_ROUTE_SCOPE_UNAVAILABLE');
     const scope={characterId:identity.characterId,chatId:identity.chatId,scopeKey:readonlyRouteId(row.scopeKey)};
-    const candidates=[],modePublicationCopies=[];
+    const candidates=[],modePublicationCopies=[];let legacyModeImported=false;
     for(const store of [...new Set([plugin,device].filter(Boolean))]){
       const raw=await store.getItem(SCOPE_ROUTING_LOCAL_KEY);modePublicationCopies.push(raw);if(raw==null||raw==='')continue;
       const parsed=readonlyRouteObject(raw);
       if(parsed.schema!==SCOPE_ROUTING_SCHEMA||parsed.namespace!==namespace||!parsed.entries||typeof parsed.entries!=='object'||Array.isArray(parsed.entries))readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');
+      if(parsed.legacyGlobalModeImported===true)legacyModeImported=true;
       const picked={};
       for(const id of [scope.scopeKey,GLOBAL_SCOPE_ID]){
         const value=Object.hasOwn(parsed.entries,id)?parsed.entries[id]:null;if(!value)continue;
@@ -7559,7 +7560,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(stored?.removed||stored?.origin==='transition_pending'||state.scopeRouting.transientModes.has(scope.scopeKey))readonlyRouteFail('READ_ROUTE_SCOPE_UNAVAILABLE');
     const explicit=stored&&!['inherited','migrated'].includes(stored.origin);
     let selected=explicit?stored:global&&!global.removed?global:stored,ownerLocalWitness=null;
-    if(!selected&&ownerRead){
+    // The owner's writer resolves an unrouted, unimported scope from the legacy
+    // mode argument (readScopeModeValue). The owner's own engine observes the same
+    // choice, so server-only data written that way stays readable for recall.
+    const legacyMode=!selected&&ownerRead&&globalModeEnabled&&!legacyModeImported?normalizeMode(await getArgumentValue(modeArguments,MODE_PLUGIN_ONLY)):MODE_PLUGIN_ONLY;
+    if(!selected&&ownerRead&&legacyMode!==MODE_PLUGIN_ONLY){
+      selected={mode:legacyMode,origin:'owner_observed_legacy_argument'};ownerLocalWitness=JSON.stringify(['legacy_argument',legacyMode]);
+    }else if(!selected&&ownerRead){
       // Only the native owner's engine may observe the established fresh-local
       // default. Reuse the strict argument/transition/reset witness; never import
       // a mode, create routing rows or weaken the external readonly contract.

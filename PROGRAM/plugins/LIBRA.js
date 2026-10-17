@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.152
-//@version 2.3.152
+//@display-name LIBRA v2.3.153
+//@version 2.3.153
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1557,7 +1557,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.3.152';
+  const PLUGIN_VERSION = '2.3.153';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -11737,11 +11737,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const key=identity.characterId+'::'+identity.chatId,row=Object.hasOwn(registry,key)?registry[key]:null;
     if(!row||row.characterId!==identity.characterId||row.chatId!==identity.chatId)readonlyRouteFail('READ_ROUTE_SCOPE_UNAVAILABLE');
     const scope={characterId:identity.characterId,chatId:identity.chatId,scopeKey:readonlyRouteId(row.scopeKey)};
-    const candidates=[],modePublicationCopies=[];
+    const candidates=[],modePublicationCopies=[];let legacyModeImported=false;
     for(const store of [...new Set([plugin,device].filter(Boolean))]){
       const raw=await store.getItem(SCOPE_ROUTING_LOCAL_KEY);modePublicationCopies.push(raw);if(raw==null||raw==='')continue;
       const parsed=readonlyRouteObject(raw);
       if(parsed.schema!==SCOPE_ROUTING_SCHEMA||parsed.namespace!==namespace||!parsed.entries||typeof parsed.entries!=='object'||Array.isArray(parsed.entries))readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');
+      if(parsed.legacyGlobalModeImported===true)legacyModeImported=true;
       const picked={};
       for(const id of [scope.scopeKey,GLOBAL_SCOPE_ID]){
         const value=Object.hasOwn(parsed.entries,id)?parsed.entries[id]:null;if(!value)continue;
@@ -11757,7 +11758,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(stored?.removed||stored?.origin==='transition_pending'||state.scopeRouting.transientModes.has(scope.scopeKey))readonlyRouteFail('READ_ROUTE_SCOPE_UNAVAILABLE');
     const explicit=stored&&!['inherited','migrated'].includes(stored.origin);
     let selected=explicit?stored:global&&!global.removed?global:stored,ownerLocalWitness=null;
-    if(!selected&&ownerRead){
+    // The owner's writer resolves an unrouted, unimported scope from the legacy
+    // mode argument (readScopeModeValue). The owner's own engine observes the same
+    // choice, so server-only data written that way stays readable for recall.
+    const legacyMode=!selected&&ownerRead&&globalModeEnabled&&!legacyModeImported?normalizeMode(await getArgumentValue(modeArguments,MODE_PLUGIN_ONLY)):MODE_PLUGIN_ONLY;
+    if(!selected&&ownerRead&&legacyMode!==MODE_PLUGIN_ONLY){
+      selected={mode:legacyMode,origin:'owner_observed_legacy_argument'};ownerLocalWitness=JSON.stringify(['legacy_argument',legacyMode]);
+    }else if(!selected&&ownerRead){
       // Only the native owner's engine may observe the established fresh-local
       // default. Reuse the strict argument/transition/reset witness; never import
       // a mode, create routing rows or weaken the external readonly contract.
@@ -33734,6 +33741,9 @@ function createLibraReadonlySourceContext(owner) {
       lastNarrativeRecall: null,
       storyArcRebuildInFlight: new Map()
     };
+    // Runtime-only common index handles (timer, build promise, page Map). Kept out of
+    // `state`, which public diagnostics clone.
+    let volatileCorpusRuntime = null;
 
     Runtime.libraMemory = state;
 
@@ -35261,6 +35271,7 @@ function createLibraReadonlySourceContext(owner) {
         else state.memoryGraphKnownKeys.add(storageKey);
       } else {
         state.memoryGraphCompiler?.invalidateAll();
+        noteMemoryGraphSourceWrite(storageKey);
       }
       return true;
     };
@@ -35286,8 +35297,18 @@ function createLibraReadonlySourceContext(owner) {
         state.memoryGraphKnownKeys?.delete(storageKey);
       } else {
         state.memoryGraphCompiler?.invalidateAll();
+        noteMemoryGraphSourceWrite(storageKey);
       }
       return true;
+    };
+    // Owner source writes make the runtime index stale. Its read path would reject it
+    // through the source proofs anyway; dropping it here only skips that costly check.
+    const noteMemoryGraphSourceWrite = storageKey => {
+      const volatileState = volatileCorpusRuntime;
+      if (!volatileState || !String(storageKey || '').startsWith(PREFIX + ':scope:')) return;
+      volatileState.sourceWrites = (volatileState.sourceWrites || 0) + 1;
+      if (volatileState.store) Object.assign(volatileState, { store: null, scopeKey: '', generation: '' });
+      if (state.memoryGraphCorpus) scheduleVolatileMemoryGraphCorpus();
     };
 
     const memoryGraphSourceBudgets = new WeakMap();
@@ -59744,6 +59765,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       await validate?.();
       const receipt=await MemorySuiteStorageBridge.commitConditionalBatch(tx.serverPrepared);
       unifiedAssert(receipt.endToEndVerified===true,'UNIFIED_SERVER_COMMIT_NOT_VERIFIED');
+      noteMemoryGraphSourceWrite(PREFIX + ':scope:');
       return receipt;
     };
     const activateUnifiedServerCanonical = async ({context,manifest,basis,memoryKey,validate}) => {
@@ -62864,6 +62886,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             personInventoryStatus: string(result?.personInventoryStatus || ''),
             personInventoryError: string(result?.personInventoryError || ''),
             stateAdmission: clone(result?.stateAdmission || null) };
+          if (result?.status === 'verified' && state.memoryGraphCorpus) scheduleVolatileMemoryGraphCorpus();
           return result;
         }).catch(error => {
           const result = { status: 'pending_reconciliation', reason: compact(error?.message || error, 300) };
@@ -70947,7 +70970,20 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     };
     // Native owner projection shared by the common engine and explicit read-only inspectors.
     const memoryGraphSourceFingerprint = createLibraMemoryNetwork({ adapters: { hash: stableHash } }).fingerprint;
+    // A background writer (embedding status, micro memory, state) can publish while a
+    // projection is being read. The final readback then rejects the torn snapshot;
+    // re-read a fresh one a bounded number of times instead of failing the recall.
+    const MEMORY_GRAPH_TORN_READ_CODES = new Set(['LIBRA_GRAPH_READER_BODY_CHANGED', 'LIBRA_GRAPH_READER_LORE_CHANGED']);
     const readMemoryGraphProjection = async (options = {}, collect = null, resources = null) => {
+      for (let attempt = 0; ; attempt++) {
+        try { return await readMemoryGraphProjectionOnce(options, collect, resources); }
+        catch (error) {
+          if (attempt >= 2 || !MEMORY_GRAPH_TORN_READ_CODES.has(error?.message) || state.disposed) throw error;
+          await new Promise(resolve => setTimeout(resolve, 40 * (attempt + 1)));
+        }
+      }
+    };
+    const readMemoryGraphProjectionOnce = async (options = {}, collect = null, resources = null) => {
       const allowedOptionNames = collect
         ? ['expectedScopeKey','canonicalCursor','microCursor','canonicalOffset','microOffset','limit','nodeLimit']
         : ['expectedScopeKey','canonicalCursor','microCursor','limit','nodeLimit'];
@@ -71393,10 +71429,12 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         if (captured) ownerReadonlySourceContext.release({ handle: captured.handle, requestId });
       }
     };
-    const memoryGraphCorpusContext = async (initialGraph, collected, epoch, serial, guard = null, resources = null, leaseKind = 'read') => {
+    // `volatile` (a Map) keeps the derived corpus pages in this runtime only. Owner
+    // sources and their currentness proofs are still read from storage per request.
+    const memoryGraphCorpusContext = async (initialGraph, collected, epoch, serial, guard = null, resources = null, leaseKind = 'read', volatile = null) => {
       const mode = string((await MemorySuiteStorageBridge.getScopeMode(collected.scope))?.mode || '');
       if (!['plugin_only','server_only','mirror'].includes(mode)) throw new Error('LIBRA_GRAPH_CORPUS_MODE_UNSUPPORTED');
-      const graphLease = await MemorySuiteStorageBridge.acquireGraphStorageLease(initialGraph.scopeKey,leaseKind);
+      const graphLease = volatile ? null : await MemorySuiteStorageBridge.acquireGraphStorageLease(initialGraph.scopeKey,leaseKind);
       try { resources?.onClose(() => { void graphLease?.release(); }); } catch(error){await graphLease?.release();throw error;}
       const binding = mode !== 'plugin_only' ? stableReferenceJson(await MemorySuiteStorageBridge.captureServerBinding()) : '';
       const check = () => {
@@ -71416,6 +71454,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const read = async storageKey => {
         if (!storageKey.startsWith(prefix)) throw new Error('LIBRA_GRAPH_CORPUS_KEY_UNOWNED');
         await assertRoute();
+        if (volatile) { const value = volatile.get(storageKey); await assertRoute(); return value ?? null; }
         const load = () => mode !== 'plugin_only' ? MemorySuiteStorageBridge.serverGet('plugin',storageKey) : MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey);
         const raw = resources ? await resources.read(load,{ kind: 'durable', select: row => mode !== 'plugin_only' ? row?.value ?? null : row }) : await load();
         await assertRoute();
@@ -71439,6 +71478,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         if (receipt.endToEndVerified !== true) throw new Error('LIBRA_GRAPH_CORPUS_COMMIT_UNVERIFIED');
         } finally { stage?.release(); }
       };
+      const writeDerived = async (storageKey, raw) => {
+        if (volatile) { await assertRoute(); volatile.set(storageKey, raw); await assertRoute(); }
+        else if (mode !== 'plugin_only') await commit([{ key: storageKey, kind: 'set', expected: { exists: false }, value: raw }]);
+        else { await assertRoute(); await fencedMemoryStorageSet(storageKey,raw); await assertRoute(); }
+      };
       const semanticVectorBodies=new Map(),semanticVectorRevisions=new Map(),semanticVectorPins=[];
       const assertSemanticDirectoryCurrent=async()=>{
         for(const pin of semanticVectorPins)await MemorySuiteStorageBridge.assertConditionalReadSet(pin,{readObserver:resources?()=>resources.reserveRead('source'):null});
@@ -71454,7 +71498,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
               resources?.retain(raw,'publication_semantic_vector',2);
               for(let offset=0;offset<raw.length;offset+=24576){const text=JSON.stringify([raw.slice(offset,offset+24576)]),digest=memoryGraphSourceFingerprint(text),key=prefix+'vector:'+digest;
                 const existing=await read(key);if(existing!==null&&existing!==text)throw new Error('LIBRA_GRAPH_SEMANTIC_PAGE_CORRUPT');
-                if(existing===null){if(mode!=='plugin_only')await commit([{key,kind:'set',expected:{exists:false},value:text}]);else{await assertRoute();await fencedMemoryStorageSet(key,text);await assertRoute();}}
+                if(existing===null)await writeDerived(key,text);
                 vectorPages.push({key,digest,bytes:state.memoryGraphPages.encodedSize(text).utf8Bytes});}
               return {vectorPages,ownerBodyDigest:semanticVectorBodies.get(row.record.embedding.vectorKey),ownerRevision:semanticVectorRevisions.get(row.record.embedding.vectorKey)||null};
             },readVector:async key=>{
@@ -71470,13 +71514,15 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         },
         async putImmutable(storageKey,raw) {
           if (!storageKey.startsWith(prefix)) throw new Error('LIBRA_GRAPH_CORPUS_KEY_UNOWNED');
-          if (mode !== 'plugin_only') await commit([{ key: storageKey, kind: 'set', expected: { exists: false }, value: raw }]);
-          else { await assertRoute(); await fencedMemoryStorageSet(storageKey,raw); await assertRoute(); }
+          await writeDerived(storageKey,raw);
         },
         async publish({ key: rootKey, raw, previous, manifestKey, manifestRaw }) {
           await assertSemanticDirectoryCurrent();
           if (!rootKey.startsWith(prefix) || !manifestKey.startsWith(prefix)) throw new Error('LIBRA_GRAPH_CORPUS_KEY_UNOWNED');
-          if (mode !== 'plugin_only') await commit([{ key: rootKey, kind: 'set', value: raw,
+          if (volatile) {
+            if (await read(rootKey) !== previous || await read(manifestKey) !== manifestRaw) throw new Error('LIBRA_GRAPH_CORPUS_ROOT_CONFLICT');
+            volatile.set(rootKey,raw); await assertRoute();
+          } else if (mode !== 'plugin_only') await commit([{ key: rootKey, kind: 'set', value: raw,
             expected: previous === null ? { exists: false } : { exists: true, value: previous } }],
             [{ key: manifestKey, expected: { exists: true, value: manifestRaw } }]);
           else {
@@ -71799,26 +71845,85 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const buildMemoryGraphCorpus = async (options = {}) => {
       const allowed = ['expectedScopeKey','limit','nodeLimit','maxWindows','maxWindowsPerStep','maxSerializedBytes','pageBytes','incremental','resume','resourceBudget'];
       if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(key => !allowed.includes(key))) throw new Error('LIBRA_GRAPH_CORPUS_OPTIONS_INVALID');
+      // An explicit build takes precedence over the background runtime index.
+      await yieldVolatileMemoryGraphCorpusBuild();
+      return await buildMemoryGraphCorpusInto(options, null);
+    };
+    const buildMemoryGraphCorpusInto = async (options, volatile, yieldCheck = null) => {
       const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
       ensureMemoryGraphUnifiedSuite();
       if (state.memoryGraphCorpus.inspect().activeBuild) throw new Error('LIBRA_GRAPH_CORPUS_BUILD_BUSY');
       const resources = state.memoryGraphResources.openMaintenance(options.resourceBudget || {},() => {
         if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)) throw new Error('LIBRA_GRAPH_QUERY_EPOCH_CHANGED');
+        yieldCheck?.();
       });
       const activity = resources.begin();
       try {
         const { graph, collected } = await resolveMemoryGraphCorpusFrame(options.expectedScopeKey || '',resources);
-        const buildPinToken = id('build_pin');
-        state.memoryGraphActiveBuilds.set(buildPinToken, { scopeKey: graph.scopeKey, startedAt: Date.now() });
+        const buildPinToken = volatile ? '' : id('build_pin');
+        if (buildPinToken) state.memoryGraphActiveBuilds.set(buildPinToken, { scopeKey: graph.scopeKey, startedAt: Date.now() });
         try {
-          const context = await memoryGraphCorpusContext(graph,collected,epoch,serial,null,resources,'build');
+          const context = await memoryGraphCorpusContext(graph,collected,epoch,serial,null,resources,'build',volatile);
           const result = await state.memoryGraphCorpus.build({ initialGraph: graph, ...context, options: Object.fromEntries(Object.entries(options).filter(([key]) => !['expectedScopeKey','resourceBudget'].includes(key))) });
           await context.owner.graphLease?.release();
-          return { ...result, resourceAccess: resources.inspect() };
+          return { ...result, scopeKey: graph.scopeKey, resourceAccess: resources.inspect() };
         } finally {
-          state.memoryGraphActiveBuilds.delete(buildPinToken);
+          if (buildPinToken) state.memoryGraphActiveBuilds.delete(buildPinToken);
         }
       } finally { resources.close('maintenance_complete'); activity.release(); }
+    };
+    // Runtime-only common index. Without it every unified recall re-enumerates and
+    // re-projects every owner window. The durable index is built only on request and
+    // plugin_only cannot reclaim superseded pages, so this one never writes storage.
+    // It is rebuilt in the background after new memory and yields to recall requests.
+    const VOLATILE_CORPUS_DELAY_MS = 1500;
+    const volatileMemoryGraphCorpus = () => volatileCorpusRuntime || (volatileCorpusRuntime = {
+      store: null, scopeKey: '', generation: '', builtAt: 0, timer: null, running: null, yieldRequested: false,
+      queriesInFlight: 0, builds: 0, failures: 0, lastError: '', lastBuildMs: 0 });
+    const yieldVolatileMemoryGraphCorpusBuild = async () => {
+      const volatileState = volatileMemoryGraphCorpus();
+      clearTimeout(volatileState.timer); volatileState.timer = null;
+      if (!volatileState.running) return;
+      volatileState.yieldRequested = true;
+      try { await volatileState.running; } catch (_) { /* The yielded build is discarded. */ }
+    };
+    const scheduleVolatileMemoryGraphCorpus = (delayMs = VOLATILE_CORPUS_DELAY_MS) => {
+      if (state.disposed) return;
+      const volatileState = volatileMemoryGraphCorpus();
+      clearTimeout(volatileState.timer);
+      volatileState.timer = setTimeout(() => {
+        volatileState.timer = null;
+        if (state.disposed) return;
+        if (volatileState.running || volatileState.queriesInFlight > 0 || state.memoryGraphCorpus?.inspect().activeBuild) {
+          scheduleVolatileMemoryGraphCorpus(delayMs); return;
+        }
+        const store = new Map(), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
+        volatileState.yieldRequested = false;
+        volatileState.running = buildMemoryGraphCorpusInto({}, store, () => {
+          if (volatileState.yieldRequested || volatileState.queriesInFlight > 0) throw new Error('LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED');
+        }).then(result => {
+          if (state.disposed || result?.status !== 'published') return;
+          if ((volatileState.sourceWrites || 0) !== sourceWrites) { scheduleVolatileMemoryGraphCorpus(delayMs); return; }
+          Object.assign(volatileState, { store, scopeKey: result.scopeKey, generation: string(result.generation || ''), builtAt: Date.now(),
+            builds: volatileState.builds + 1, lastError: '', lastBuildMs: Date.now() - startedAt });
+        }).catch(error => {
+          const message = compact(error?.message || error, 200);
+          if (message === 'LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED') { if (!volatileState.yieldRequested) scheduleVolatileMemoryGraphCorpus(delayMs); return; }
+          volatileState.failures += 1; volatileState.lastError = message;
+        }).finally(() => { volatileState.running = null; volatileState.yieldRequested = false; });
+      }, delayMs);
+    };
+    const disposeVolatileMemoryGraphCorpus = () => {
+      if (!volatileCorpusRuntime) return;
+      clearTimeout(volatileCorpusRuntime.timer); volatileCorpusRuntime.timer = null;
+      volatileCorpusRuntime.yieldRequested = true; volatileCorpusRuntime.store = null;
+    };
+    const inspectVolatileMemoryGraphCorpus = () => {
+      const volatileState = volatileMemoryGraphCorpus();
+      return { schema: 'libra.volatile_graph_corpus.v1', available: Boolean(volatileState.store), scopeKey: volatileState.scopeKey,
+        generation: volatileState.generation, builtAt: volatileState.builtAt, building: Boolean(volatileState.running),
+        scheduled: Boolean(volatileState.timer), entries: volatileState.store?.size || 0, builds: volatileState.builds,
+        failures: volatileState.failures, lastError: volatileState.lastError, lastBuildMs: volatileState.lastBuildMs };
     };
     const verifyMemoryGraphCorpus = async (options = {}) => {
       if (!options || typeof options !== 'object' || Array.isArray(options)
@@ -71843,6 +71948,13 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       } finally { resources.close('audit_complete'); activity.release(); }
     };
     const executeMemoryGraphUnifiedQuery = async (options = {}, recallGuard = null, gradiaAuthority = null) => {
+      // A background runtime-index build yields while any query is in flight.
+      const volatileState = volatileMemoryGraphCorpus();
+      volatileState.queriesInFlight += 1;
+      try { return await executeMemoryGraphUnifiedQueryOnce(options, recallGuard, gradiaAuthority); }
+      finally { volatileState.queriesInFlight -= 1; }
+    };
+    const executeMemoryGraphUnifiedQueryOnce = async (options = {}, recallGuard = null, gradiaAuthority = null) => {
       const allowed = ['expectedScopeKey','canonicalCursor','microCursor','limit','nodeLimit','mode','requestId','queryInput','consumerPolicy','laneBudget','semanticPolicy','corpusMode','resourceBudget'];
       if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(name => !allowed.includes(name))) {
         throw new Error('LIBRA_GRAPH_QUERY_OPTIONS_INVALID');
@@ -71884,8 +71996,26 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             coldReason = error.reason === 'stale_generation' ? 'superseded_derived_index' : 'incompatible_derived_index';
           }
           if (!corpus && corpusMode === 'required') throw new Error('LIBRA_GRAPH_CORPUS_MISSING_GENERATION');
+          const volatileState = volatileMemoryGraphCorpus();
+          let runtimeIndex = volatileState.store ? 'unavailable' : volatileState.running ? 'building' : 'absent';
+          if (!corpus && corpusMode === 'auto' && volatileState.store && volatileState.scopeKey === graph.scopeKey) {
+            runtimeIndex = 'stale';
+            const volatileContext = await memoryGraphCorpusContext(graph, initialCollected, epoch, serial, recallGuard, resources, 'read', volatileState.store);
+            try {
+              const volatileCorpus = await state.memoryGraphCorpus.read({ initialGraph: graph, ...volatileContext });
+              if (volatileCorpus) {
+                corpus = { ...volatileCorpus, access: { ...volatileCorpus.access, mode: 'volatile_common_index', durableReason: coldReason } };
+                corpusContext = volatileContext;
+              }
+            } catch (error) {
+              if (!['stale_generation','restore_binding_invalid'].includes(error.reason)) throw error;
+            }
+            if (!corpus) Object.assign(volatileState, { store: null, scopeKey: '', generation: '' });
+          }
           if (!corpus && corpusMode === 'auto') {
             corpus = await state.memoryGraphCorpus.prepare({ ...corpusContext, reason: coldReason });
+            corpus = { ...corpus, access: { ...corpus.access, runtimeIndex } };
+            scheduleVolatileMemoryGraphCorpus();
           }
           if (corpus) {
             graph = corpus.graph;
@@ -75296,7 +75426,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       getUnifiedResponseContext, validateUnifiedResponseContext, previewUnifiedIdentityMerge, mergeUnifiedIdentity, previewUnifiedIdentitySplit, splitUnifiedIdentity, previewUnifiedMigration, beginUnifiedMigration, previewUnifiedLegacyRebuild, getUnifiedLegacyRebuildEvidence, rebuildSelectedUnifiedLegacy, previewUnifiedRetention, collectUnifiedRetention, listWorldManagerHistory, getWorldManagerHistoryDetail, listCanonicalReaderChapters, getCanonicalReaderChapter, getCanonicalEvidenceChain,
       listExecutionReceipts, getExecutionReceiptDetail, listWorldManagerCorrections, getWorldManagerRuntimeMeta,
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
-      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, releaseMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
+      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, inspectVolatileMemoryGraphCorpus, disposeVolatileMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, releaseMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
 
       armPendingLiveBoundary, loadPendingBoundaryStore, pruneExpiredPendingBoundaryStore, recoverPendingLiveBoundaryAtStartup, clearPendingBoundaryAfterCommit,
       reconcileCanonicalBranchBeforeRecall, verifyBatchStillCurrent, captureCommittedOutputEvent,
@@ -86901,6 +87031,7 @@ advanced
     async getMemoryGraphDurablePage(options = {}) { return await safeClone(await LibraMemoryCore.getMemoryGraphDurablePage(options)); },
     getMemoryRecallDiagnosticsView() { return safeClone(LibraMemoryCore.getMemoryRecallDiagnosticsView()); },
     cancelMemoryGraphGenerationBuild() { return LibraMemoryCore.cancelMemoryGraphGenerationBuild(); },
+    inspectVolatileMemoryGraphCorpus() { return safeClone(LibraMemoryCore.inspectVolatileMemoryGraphCorpus()); },
     inspectMemoryGraphStore() { return LibraMemoryCore.inspectMemoryGraphStore(); },
     async executeMemoryGraphUnifiedQuery(options = {}) {
       const execution = await LibraMemoryCore.executeMemoryGraphUnifiedQuery(options);
@@ -87830,6 +87961,7 @@ advanced
       LibraMemoryCore.state.memoryGraphStore?.dispose();
       LibraMemoryCore.state.memoryGraphCompiler?.invalidateAll();
       LibraMemoryCore.state.memoryGraphResources?.closeAll('unloaded');
+      LibraMemoryCore.disposeVolatileMemoryGraphCorpus();
       for(const group of ConsumerActiveOperations.keys())cancelConsumerOperation(group);
       LibraMemoryCore.disposeSourceRules();
       LibraMemoryCore.state.scheduledScanSerial += 1;
