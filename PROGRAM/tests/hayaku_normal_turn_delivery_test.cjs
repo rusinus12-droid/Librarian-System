@@ -115,9 +115,11 @@ const { createHayakuRuntime } = require('./fixtures/hayaku_runtime_harness.cjs')
     // ------------------------------------------------------------------------------------
     assert.ok(seal.length < 850,
       `the seal must stay compact (got ${seal.length} chars)`);
-    assert.ok(full.length < 7000,
+    // +~210 chars (2026-10-17): same-language recallAliases paraphrases. Measured with a real
+    // model (tools/rag_eval/hayaku_alias_llm_eval.cjs): paraphrased-question recall 81.3% -> 93.8%.
+    assert.ok(full.length < 7250,
       `the full contract must not balloon (got ${full.length} chars)`);
-    assert.ok(compact.length < 6000 && critical.length < 6000,
+    assert.ok(compact.length < 6300 && critical.length < 6300,
       'the compact/critical contracts must not balloon either');
 
     console.log(JSON.stringify({

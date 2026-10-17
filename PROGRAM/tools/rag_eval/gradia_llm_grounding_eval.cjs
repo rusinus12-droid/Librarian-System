@@ -71,7 +71,8 @@ const chatModel = async messages => {
       model: 'gpt-4o-mini-2024-07-18', request_format: 'chat_completions', context_window: 128000, max_tokens: 4096,
       reasoning_preset: 'off', reasoning_effort: 'none', timeout_ms: 180000, stream: false });
     await g.plugin.saveRuntimeSettings({ mode: 'normal', default_preset: 'eval', input_assist_mode: 'off', multi_pipeline_mode: 'lightweight',
-      enable_shadow_act: true, enable_character_aide: true, enable_world_aide: true, enable_plot_aide: true, failure_mode: 'hard', lore_activation_mode: 'off' });
+      enable_shadow_act: true, enable_character_aide: true, enable_world_aide: true, enable_plot_aide: true, failure_mode: 'hard', lore_activation_mode: 'off',
+      stage_timeout_ms: 300000 });
     const base = chat.message.slice();
     for (const question of QUESTIONS) {
       chat.message.length = 0; chat.message.push(...base, { role: 'user', chatId: 'q-' + question.id, data: question.q });

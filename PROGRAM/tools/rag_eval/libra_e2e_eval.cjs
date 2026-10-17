@@ -100,8 +100,16 @@ let outputListener = null;
           }
         }
       }
-      for (let round = 0; round < 12; round += 1) {
-        const result = await f.r.api.runManualColdStart();
+      if (live && statePath && mode === 'plugin_only') fs.writeFileSync(statePath + '.live', JSON.stringify([...snapshot.local]));
+      // The live path already schedules canonical analysis; wait for it instead of failing.
+      for (let round = 0, waits = 0; round < 12 && waits < 240;) {
+        let result;
+        try { result = await f.r.api.runManualColdStart(); }
+        catch (error) {
+          if (error?.code !== 'CANONICAL_HOST_REQUEST_PENDING') throw error;
+          waits += 1; await sleep(5000); continue;
+        }
+        round += 1;
         if (!result?.completed) break;
       }
       await f.r.api.retryPendingUnifiedVectors?.();
