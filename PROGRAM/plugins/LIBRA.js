@@ -71947,11 +71947,18 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           if ((volatileState.sourceWrites || 0) !== sourceWrites) { scheduleVolatileMemoryGraphCorpus(delayMs); return; }
           const chars = volatileStoreChars(store);
           Object.assign(volatileState, { store, basis: store, basisScopeKey: result.scopeKey, freshChars: basis ? volatileState.freshChars : chars,
-            scopeKey: result.scopeKey, generation: string(result.generation || ''), builtAt: Date.now(), yields: 0,
+            scopeKey: result.scopeKey, generation: string(result.generation || ''), builtAt: Date.now(), yields: 0, tornRetries: 0,
             builds: volatileState.builds + 1, lastError: '', lastBuildMs: Date.now() - startedAt, lastBuildMode: string(result.buildMode || '') });
         }).catch(error => {
           const message = compact(error?.message || error, 200);
           if (message === 'LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED') { if (!volatileState.yieldRequested) scheduleVolatileMemoryGraphCorpus(delayMs); return; }
+          // A build that read across a concurrent owner write saw a torn snapshot; the
+          // write made it stale anyway, so build again (bounded) instead of failing.
+          if ((MEMORY_GRAPH_TORN_READ_CODES.has(message) || message.startsWith('LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:'))
+            && (volatileState.tornRetries || 0) < VOLATILE_CORPUS_MAX_TORN_RETRIES) {
+            volatileState.tornRetries = (volatileState.tornRetries || 0) + 1;
+            scheduleVolatileMemoryGraphCorpus(delayMs); return;
+          }
           // A startup prewarm can run before the host route is ready; the next request
           // builds again, so only that attempt's error is kept, not counted as a failure.
           if (!volatileState.prewarming) volatileState.failures += 1;
@@ -71964,7 +71971,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     // runtime index. It never competes with memory work: if a Micro, receipt or canonical
     // job, a query or another build is active then, it is skipped and the first request
     // builds as before.
-    const VOLATILE_CORPUS_STARTUP_DELAY_MS = 10000;
+    const VOLATILE_CORPUS_STARTUP_DELAY_MS = 10000, VOLATILE_CORPUS_MAX_TORN_RETRIES = 3;
     let volatilePrewarmTimer = null;
     const libraMemoryWorkActive = () => state.microJobs.size > 0 || state.microQueues.size > 0 || state.receiptCaptureJobs.size > 0
       || state.receiptRecoveryRuns.size > 0 || Boolean(state.canonicalJobPromise) || Boolean(state.memoryGraphActiveBuilds?.size);

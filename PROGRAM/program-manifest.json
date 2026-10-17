@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-17T12:10:55.049Z",
+  "generatedAt": "2026-10-17T12:32:18.641Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -3807,8 +3807,8 @@
       "bytes": 1837310
     },
     "plugins/LIBRA.js": {
-      "sha256": "b558d4c35e74ad1a6528209a2adc613f1e3275bbd007e1e77f4f6a053907d86b",
-      "bytes": 6031068
+      "sha256": "09968be4240c2a949d16d84382a126f48afb822513fe80a517ea4a3c200be253",
+      "bytes": 6031658
     },
     "plugins/RETRACE.js": {
       "sha256": "eb3b80d2c2ff5876d80b0af29782b0fe93b580d0febc5533d036d54b71f5146e",
@@ -10659,8 +10659,8 @@
       "bytes": 23684
     },
     "tools/rag_eval/gradia_llm_grounding_eval.cjs": {
-      "sha256": "f9d2e30318670aa96cec1d958ba7ce9939da8807ab6160b1c6f81786e7b8e1ed",
-      "bytes": 9388
+      "sha256": "ad7074984bcc125b44459c5da0ec8bf238fc16702c63948be3462234eac34cec",
+      "bytes": 9469
     },
     "tools/rag_eval/hayaku_alias_llm_eval.cjs": {
       "sha256": "1330bd630610acfb6344d536bc50c4c8718f28df09c2c8d1ac375b9f189fd729",
