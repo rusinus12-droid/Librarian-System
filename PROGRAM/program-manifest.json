@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-17T08:27:11.000Z",
+  "generatedAt": "2026-10-17T09:49:19.076Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -257,7 +257,7 @@
       "retraceBackupCatalogTargetChecksum": true
     },
     "ariadneLatestState": {
-      "version": "2.3.156",
+      "version": "2.3.157",
       "schema": "libra.continuity_state.v2",
       "canonicalArtifactSchema": "libra.canonical_artifact.v3",
       "commitEnvelopeSchema": "libra.canonical_commit.v1",
@@ -388,7 +388,7 @@
       ],
       "plugins": {
         "libra": {
-          "version": "2.3.156",
+          "version": "2.3.157",
           "fiveTurnCommitRevisionGate": true,
           "backendOrder": [
             "chat_output_v3",
@@ -761,7 +761,7 @@
       "boundedMemory": true,
       "scopeSeparated": true,
       "libra": {
-        "version": "2.3.156",
+        "version": "2.3.157",
         "unchangedMessageProjectionReuse": true,
         "unchangedCompletedPairSnapshotReuse": true,
         "changedMessageOnlyRenormalized": true,
@@ -779,7 +779,7 @@
     },
     "libraClassicProvenanceRescue": {
       "schema": "libra.classic_provenance_rescue.v1",
-      "version": "2.3.156",
+      "version": "2.3.157",
       "route": "classic_only",
       "source": "validated_current_state_head_provenance_only",
       "maxRescuedCanonicalRefs": 2,
@@ -805,7 +805,7 @@
       "duplicatePluginCopies": false
     },
     "libraCanonicalCuration": {
-      "version": "2.3.156",
+      "version": "2.3.157",
       "activeManifestPointerUnchanged": true,
       "canonicalArtifactSchema": "libra.canonical_artifact.v3",
       "canonicalCommitSchema": "libra.canonical_commit.v1",
@@ -995,7 +995,7 @@
       "jobPortalDoesNotRefreshSnapshot": true
     },
     "libraPortableMemoryRecoveryUi": {
-      "version": "2.3.156",
+      "version": "2.3.157",
       "navigation": "recovery",
       "subsection": "memory_restore",
       "dedicatedHost": "data-portable-backup-host=libra",
@@ -1110,7 +1110,7 @@
         ]
       },
       "libraRecallBm25fPilot": {
-        "version": "2.3.156",
+        "version": "2.3.157",
         "operation": "libra.recall-bm25f.v1",
         "algorithmFingerprint": "7a096a212eb71e1a87639347659ca9216fe32149068153491315734133217840",
         "retired": true,
@@ -1195,7 +1195,7 @@
       "libraLargeResultFullBodyHydration": "details_toggle_only"
     },
     "libraInferenceBudget": {
-      "version": "2.3.156",
+      "version": "2.3.157",
       "canonicalSchema": "libra.canonical_provider_budget.v2",
       "sgaSchema": "libra.sga_provider_budget.v2",
       "providerRetrySchema": "libra.provider_retry_governor.v1",
@@ -1219,7 +1219,7 @@
       "reasoningBudgetClampedToRemainingRunBudget": true
     },
     "libraRisuAiAuxiliaryDefault": {
-      "version": "2.3.156",
+      "version": "2.3.157",
       "presetName": "risuai_aux",
       "transport": "risuai.runLLMModel",
       "mode": "otherAx",
@@ -1235,7 +1235,7 @@
       "localStructuredValidationRequired": true
     },
     "libraUnifiedGui": {
-      "version": "2.3.156",
+      "version": "2.3.157",
       "pageCount": 12,
       "initialPage": "memory",
       "homeDashboard": false,
@@ -1307,7 +1307,7 @@
       "runLogsSeparatePage": true
     },
     "libraReaderEvidenceAndOperations": {
-      "version": "2.3.156",
+      "version": "2.3.157",
       "canonicalReaderPageSchema": "libra.canonical_reader_page.v1",
       "canonicalReaderChapterSchema": "libra.canonical_reader_chapter.v1",
       "evidenceChainSchema": "libra.evidence_chain.v1",
@@ -1456,7 +1456,7 @@
   "plugins": {
     "flashback": "1.0.111",
     "hayaku": "3.0.143",
-    "libra": "2.3.156",
+    "libra": "2.3.157",
     "lia": "0.26.83",
     "retrace": "1.9.84",
     "gradia": "0.25.87"
@@ -2927,8 +2927,8 @@
       "bytes": 11582
     },
     "docs/RAG_SPEED_ACCURACY_STORAGE_AUDIT_20261017.md": {
-      "sha256": "41b6a26e7de31f22e6541e8c0d1e638632af702204943d31932b4ecde537837b",
-      "bytes": 15613
+      "sha256": "b31ef0923d5b3933afc56465b9a79c454b8c9f16ed3504d17f0a0ab7026ad17d",
+      "bytes": 17909
     },
     "docs/recall_evidence_policy_v5_KO.md": {
       "sha256": "6f2e9dc5d4ada64bd2d8161740e5f1cbb2554906d87b20201a677d84799917e7",
@@ -3803,8 +3803,8 @@
       "bytes": 1834762
     },
     "plugins/LIBRA.js": {
-      "sha256": "2133a0cedb8f40bb6ca264850baa764f3529c8f43ab3a6b73c34c834d3feb621",
-      "bytes": 6029126
+      "sha256": "3adf77fc6810ca121082cf55aef4f906df54bdb5bb3bae716ae354a5e4e93301",
+      "bytes": 6031386
     },
     "plugins/RETRACE.js": {
       "sha256": "eb3b80d2c2ff5876d80b0af29782b0fe93b580d0febc5533d036d54b71f5146e",
@@ -7867,8 +7867,8 @@
       "bytes": 17830
     },
     "tests/libra_memory_graph_semantic_test.cjs": {
-      "sha256": "faa95f10ca67e23a220edb20758d33411387b49be0a2283d0dec0d9a6b01699d",
-      "bytes": 15296
+      "sha256": "54f7495abc7641da107029470485716567fffaf2dce4dcd6b81edef8cd1408af",
+      "bytes": 18454
     },
     "tests/libra_memory_graph_store_lifecycle_gc_test.cjs": {
       "sha256": "75826877ce858b6811ac306866768c28815dbb50701bc8adbb0361eb297266e2",
@@ -8002,6 +8002,10 @@
       "sha256": "915e7d7dcbad3659eec47021310b882c9ac1bdda581194b869900e37287bf5f6",
       "bytes": 11591
     },
+    "tests/libra_micro_representation_vectors_runtime_test.cjs": {
+      "sha256": "8c963b4d08f51fb809c2b043a8ece4af064d44bb4f79439e2666ca870616a520",
+      "bytes": 3143
+    },
     "tests/libra_micro_stage_retry_test.cjs": {
       "sha256": "45bfc371e2cc16a2940bb33018898fb0c44af95211be4ae2f871f0615fe9e354",
       "bytes": 35435
@@ -8021,6 +8025,10 @@
     "tests/libra_micro_timeline_t1t3t5_test.cjs": {
       "sha256": "71f41e3bd79c759e773698f473d270d1c93c396fcdd51f5d011f676a8a7e74b5",
       "bytes": 11035
+    },
+    "tests/libra_micro_vector_authority_runtime_test.cjs": {
+      "sha256": "c129b2ca7f09f3a1db1ff10e5ca3ff13de58ec2e3b26098e020931d8224be4f0",
+      "bytes": 8203
     },
     "tests/libra_mirror_linkage_runtime_test.cjs": {
       "sha256": "7d9be9a2b1c52e01e5401c5f72a06d1fe266b7246e2e7f28a547721b3d1eeed3",
@@ -8851,8 +8859,8 @@
       "bytes": 18094
     },
     "tests/libra_volatile_corpus_index_runtime_test.cjs": {
-      "sha256": "1ab540ca9982b02a844e74c78730124d659658d3ffcb33d4a671a1543e1a0bff",
-      "bytes": 4652
+      "sha256": "daefca526189013458802a5a2d2fb9c15fd8d7bd92ffb1676e0ae25ab984dc63",
+      "bytes": 5268
     },
     "tests/libra_world_additional_retired_3mode_parity_test.cjs": {
       "sha256": "918e468c70692ea65151c3728eb37eef8c47e2f18739dc972552dcb12d996c5b",
@@ -10595,8 +10603,8 @@
       "bytes": 20725
     },
     "tools/libra_memory_graph_semantic.cjs": {
-      "sha256": "4eeb52cdc277bedf674d4e4cff677f37e437861bd44737ad9c21978d919b248d",
-      "bytes": 26820
+      "sha256": "5fc1ce1cc659d103ef97eeaefda0d0a2cfc778f755b56d8115c1ea71dd9206d1",
+      "bytes": 28196
     },
     "tools/libra_memory_graph_store.cjs": {
       "sha256": "3e5b1470dd373ab1aa74dd08b08f4a34e9c08d368291f00ff90415f8d3f5ca40",
@@ -10639,8 +10647,8 @@
       "bytes": 23062
     },
     "tools/rag_eval/flashback_rag_eval.cjs": {
-      "sha256": "3b433c89b6af90f562f61e0020107e37630b637ed30f3f710c3f19a22d59c508",
-      "bytes": 18460
+      "sha256": "3652f26ce540a61d5424b8cba3dcab152cad3db2abcca3de458a870643cb0cea",
+      "bytes": 21601
     },
     "tools/rag_eval/gradia_evidence_eval.cjs": {
       "sha256": "15346fe6a5b56e77680b0b4241e31b2a78a2d501afbe2969038aa81001fea1d4",
@@ -10659,8 +10667,12 @@
       "bytes": 4691
     },
     "tools/rag_eval/libra_e2e_eval.cjs": {
-      "sha256": "c85fee576d2758218571469c8c7102c3ac7200a6e44145e4e00c729935415b2f",
-      "bytes": 10594
+      "sha256": "849b6ffc53feed656047dd5be68c30f64929f7b247052e91b0327632a6a6dc8b",
+      "bytes": 10919
+    },
+    "tools/rag_eval/libra_feature_check.cjs": {
+      "sha256": "958226f3c77f09736a7ccba5d982c8b41b862f6ad30640d8f8df2d44a0739080",
+      "bytes": 9898
     },
     "tools/rag_eval/libra_kernel_eval.cjs": {
       "sha256": "7f507b8aaf6f06b2db4897cafa87ab84ecb3d49ca1590c0907d810c80cd16680",

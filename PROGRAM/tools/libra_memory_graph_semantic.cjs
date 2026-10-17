@@ -88,6 +88,12 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
       let profile;
       try { profile = profileFor({ ...config, dimensions: d }); }
       catch (_) { reject(extra.recordKey, 'projection_or_profile_unavailable'); continue; }
+      if (!Number.isSafeInteger(d) || d < 1 || d > 65536) { reject(extra.recordKey, 'invalid_vector'); continue; }
+      if (!extra.vectorRecord && extra.family === 'micro'
+        && (vectorRecord.schema !== 'libra.micro_vector.v1' || vectorRecord.scopeKey !== graph.scopeKey
+          || vectorRecord.textHash !== extra.textHash || vectorRecord.spaceDigest !== extra.spaceDigest
+          || vectorRecord.provider !== profile.provider || vectorRecord.model !== profile.model
+          || vectorRecord.profileId !== profile.profileId)) { reject(extra.recordKey, 'vector_owner_binding_mismatch'); continue; }
       if (dimension !== null && dimension !== d) { reject(extra.recordKey, 'embedding_space_mismatch'); continue; }
       const additional = 1024 + d * 8 + (dimension === null ? d * 16 : 0);
       if (bytes + additional > maxBytes) { reject(extra.recordKey, 'representation_byte_budget'); continue; }
@@ -95,7 +101,8 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
       documents.push({ nodeId: extra.nodeId, bindingId: node?.bindingId || extra.nodeId, vector: vectorRecord.vector.slice(),
         representationId: digest([extra.vectorKey, vectorRecord.profileId || profile.profileId, extra.textHash || '', vectorRecord.vectorHash || '']),
         projectionVersion: 'projection_v1', textHash: extra.textHash || '', temporalEndTurn: extra.temporalEndTurn ?? null });
-      // An inline (runtime-produced) vector has no stored body to re-verify at delivery.
+      // Persisted representations retain their real owner key and body dependency.
+      // Ephemeral inline representations are used only by callers without a stored body.
       if (extra.vectorKey && !extra.vectorRecord) dependencies.push({ key: extra.vectorKey, digest: digest(vectorRecord) });
       dimension = d; expectedProfile = profile; bytes += additional;
       admittedFamilies.add(fam);
@@ -135,14 +142,14 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
     if(!Number.isSafeInteger(maximum)||maximum<4096||maximum>16777216)throw new TypeError('LIBRA_GRAPH_SEMANTIC_BUDGET_INVALID');
     const diagnostics={schema:'libra.native_graph_semantic.v1',status:!config?'configuration_unavailable':!config.enabled?'disabled':'no_compatible_representations',
       representationScope:'canonical_global_projection_source_access',access:'memory_lane_selective_vector_pages',durableVectorPagesRead:0,durableVectorBytesRead:0,ownerVectorRecordLoads:0,vectorCacheHits:0,queryRequestCount:0,queryCacheHits:0,coalesced:false,documentEmbeddingCalls:0,backgroundEmbeddingStarted:false,
-      admittedRepresentations:0,representationBytes:0,maxRepresentationBytes:maximum,rejected:[],vectorlessFamilies:['micro','state','lore'],byteBounded:false};
+      admittedRepresentations:0,representationBytes:0,maxRepresentationBytes:maximum,rejected:[],microRepresentations:[],vectorlessFamilies:['micro','state','lore'],byteBounded:false};
     const bySource=new Map();
     for(const unit of graph.units||[]){if(unit.family!=='canonical')continue;const source=(graph.nodes||[]).find(n=>n.id===unit.nodeId)?.sourceId;if(source)bySource.set(unit.recordKey,source);}
     const rows=new Map(),routingByNode=new Map((input.routingDirectory?.entries||[]).map(entry=>[entry.nodeId,entry]));
-    // Pre-selected non-canonical representations (inline vectors) are read first by the lane.
+    // Non-canonical owner references use the same lazy lane as canonical vectors.
     const extras=new Map();
     if(config?.enabled&&String(queryText).trim())for(const extra of input.additionalRepresentations||[]){
-      if(extra?.nodeId&&extra.vectorRecord&&(graph.nodes||[]).some(node=>node.id===extra.nodeId&&node.layer==='source'))extras.set(extra.nodeId,extra);
+      if(extra?.nodeId&&extra.vectorKey&&(graph.nodes||[]).some(node=>node.id===extra.nodeId&&node.layer==='source'))extras.set(extra.nodeId,extra);
     }
     if(config?.enabled&&String(queryText).trim())for(const row of canonicalRows){
       if(!bySource.has(row.key)||row.record?.embedding?.status!=='ready'||!row.record.embedding.vectorKey){diagnostics.rejected.push({recordKey:row.key,reason:'representation_missing'});continue;}
@@ -182,7 +189,7 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
     }
     const readPage=async(spec,budget)=>{
       check();const extra=extras.get(spec.anchorNodeId);
-      const row=extra?{key:extra.recordKey,record:{embedding:{dimensions:extra.vectorRecord.dimensions}}}:rows.get(spec.anchorNodeId);
+      const row=extra?{key:extra.recordKey,record:{embedding:{dimensions:extra.vectorRecord?.dimensions||extra.dimensions}}}:rows.get(spec.anchorNodeId);
       if(!row)throw new Error('LIBRA_GRAPH_SEMANTIC_REFERENCE_INVALID');
       if(budget.pagesRead>=budget.maxPages)return {storageStopped:true,stopReason:'storage_page_count_budget',rows:[]};
       const required=routingByNode.get(spec.anchorNodeId)?.payloadBytes;
@@ -191,6 +198,10 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
       // Reserve the minimum retained feature before owner I/O. Once exhausted,
       // stop the scheduler; never continue hydrating the rest of the directory.
       const dimension=Number(routingByNode.get(spec.anchorNodeId)?routing?.dimension:row.record.embedding.dimensions||0);
+      // Unknown-size owner records still need at least one feature envelope and
+      // the vector's numeric coordinates; do not issue I/O for an impossible page.
+      const storageFloor=512+(Number.isSafeInteger(dimension)&&dimension>0?dimension*2:0);
+      if(budget.bytesRead+storageFloor>budget.maxBytes)return {storageStopped:true,stopReason:'storage_byte_budget',rows:[]};
       const minimum=used?1024+(diagnostics.dimension||0)*8:Number.isSafeInteger(dimension)&&dimension>0?3072+dimension*24:0;
       if(remaining<minimum){diagnostics.rejected.push({recordKey:row.key,reason:'representation_byte_budget'});return {storageStopped:true,stopReason:'storage_representation_byte_budget',rows:[]};}
       const entry=extra?null:routingByNode.get(spec.anchorNodeId);
@@ -228,6 +239,7 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
         if(cost>remaining){diagnostics.rejected.push({recordKey:row.key,reason:'representation_byte_budget'});return {storageStopped:true,stopReason:'storage_representation_byte_budget',rows:[]};}
         used+=result.diagnostics.representationBytes-(used?2048+result.diagnostics.dimension*16:0);dependencies.push(...result.dependencies);
         diagnostics.status='available';diagnostics.admittedRepresentations++;diagnostics.representationBytes=used;
+        diagnostics.vectorlessFamilies=diagnostics.vectorlessFamilies.filter(family=>!result.diagnostics.admittedFamilies.includes(family));
         for(const key of ['queryRequestCount','queryCacheHits','coalesced','spaceId','dimension','queryTask','documentTask'])diagnostics[key]=result.diagnostics[key];
       }else if(!diagnostics.admittedRepresentations)diagnostics.status=result.diagnostics.status;
       let rep=result.queryInput.documentRepresentations[spec.anchorNodeId];
@@ -256,6 +268,7 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
         }finally{scope?.close();}
       }
       const feature=rep?evaluate(node,{...result.queryInput,documentRepresentations:{[node.id]:rep},asOfTurn}):{score:null,status:'unavailable'};
+      if(extra?.family==='micro'&&rep)diagnostics.microRepresentations.push({turn:extra.temporalEndTurn,similarity:feature.score});
       const items=[{nodeId:spec.anchorNodeId,semanticFeature:feature}];
       // Feature pages use the shared Cache Manager. Vectors remain scoped owner
       // payloads, with the same source I/O/retained/decode admission as before.
