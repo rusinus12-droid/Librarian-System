@@ -1,7 +1,7 @@
 # RAG 속도·정확도 개선과 저장소 점검 (2026-10-17)
 
 대상: LIBRA · HAYAKU · Flashback (플러그인 모드·서버 모드), LIA (플러그인 모드 RAG), GRADIA (플러그인 IPC·통합 엔진 RAG와 응답 반영).
-측정은 모두 오프라인 합성 임베더(`tools/rag_eval/synthetic_embedder.cjs`)와 실제 플러그인·실제 서버(`server/server.cjs`, 임시 DATA) 기준이다. 실제 임베딩 제공자·실제 RisuAI 설치 측정이 아니다.
+1~6절은 오프라인 합성 임베더(`tools/rag_eval/synthetic_embedder.cjs`)와 실제 플러그인·실제 서버(`server/server.cjs`, 임시 DATA) 기준이다. 7절은 실제 제공자 측정을 별도로 구분한다. 실제 RisuAI 설치 측정은 아니다.
 
 ## 1. 요약
 
@@ -81,7 +81,7 @@ Flashback 최종 확인 단계(준비 후 원본·URL·호스트 변경)는 재�
 
 ## 7. 실제 제공자 측정 (Voyage `voyage-4-large`, Ollama `deepseek-v4.1-flash:cloud`)
 
-키는 환경 변수로만 넘겼고 저장소에는 들어가지 않는다. 평가 도구는 `tools/rag_eval/`에 있다.
+키는 환경 변수로 주입했고 Git 저장소에는 넣지 않았다. 플러그인 설정·평가 스냅샷에는 키가 포함될 수 있어 원본을 비공개 경로에 보관한다. 평가 도구는 `tools/rag_eval/`에 있다.
 
 | 대상 | 측정 | 변경 전 | 변경 후 |
 | --- | --- | --- | --- |
@@ -143,7 +143,7 @@ Flashback 최종 확인 단계(준비 후 원본·URL·호스트 변경)는 재�
 | 질의 임베딩 호출 | 1 | 1 |
 | 저장 벡터 읽기 | 26 | 30개 비교 + 8개 재검증 |
 
-이 표는 통제된 1,024차원 벡터 실험이다. 실제 Voyage/Ollama 정확도·속도 재측정 결과가 아니다. 원본 검증 스캔의 I/O 비용이 추가되므로 기존 7.1의 93.8%·p50 약 1.0초를 새 버전의 측정치로 인용하면 안 된다. 실제 모델 환경에서 같은 질문·데이터로 재측정해야 한다. 사용자가 제공자 인증을 제공했지만 현재 환경 프록시가 해당 도메인 접속을 403으로 차단한다. 비밀값은 저장소 밖에만 보관하며, 허용 도메인 설정 후 같은 데이터로 비교할 수 있다.
+이 표는 통제된 1,024차원 벡터 실험이다. 실제 Voyage/Ollama 정확도·속도 재측정 결과가 아니다. 원본 검증 스캔의 I/O 비용이 추가되므로 기존 7.1의 93.8%·p50 약 1.0초를 새 버전의 측정치로 인용하면 안 된다. 당시 환경에서는 프록시 CONNECT 403으로 두 제공자 도메인이 차단돼 실모델 비교를 진행하지 못했다. 후속 환경에서 재확인한 접속과 동일 스냅샷 실모델 비교는 7.4절에 별도로 기록한다. 비밀값·원본 스냅샷·원본 로그는 저장소 밖 비공개 경로에 보관한다.
 
 동일한 30개 Micro 저장 스냅샷을 이용한 plugin_only 종단 비교도 통과했다. 네 번의 조회에서 두 버전 모두 정답 패킷을 전달했다. 수정본 지연은 `[6589, 5680, 4006, 4085]ms`, Claude 기준은 `[4569, 4136, 4085, 4086]ms`였다. 첫 조회를 제외한 3회 중앙값은 각각 4085ms와 4086ms다. 합성 제공자 벡터·VM 호스트에서 단 한 차례 비교한 값이며, 최초 조회는 출판 직후와 재시작 직후로 준비 상태가 달라 직접적인 콜드 성능 비교로 해석하지 않는다. 실모델 성능 동등성을 입증하는 수치는 아니다.
 
@@ -151,9 +151,73 @@ Flashback 최종 확인 단계(준비 후 원본·URL·호스트 변경)는 재�
 
 회귀 검사는 `libra_micro_vector_ranking_regression_test.cjs`(후반 정답, 단일 질의 임베딩, 선택 후 본문 변경 거부), `libra_micro_vector_ranking_runtime_test.cjs`(실제 플러그인에서 30개 Micro 출판·정답 RAG 패킷 전달; `LIBRA_COMPARE_PLUGIN`으로 같은 저장 스냅샷의 이전 버전 비교), `libra_micro_vector_authority_runtime_test.cjs`(기존 권한/예산 검사), 기존 semantic/runtime/restart 검사로 구성한다.
 
+### 7.4 LIBRA 2.3.159: 동일 저장 스냅샷의 실모델 비교와 지연 회귀 수정
+
+비교 기준은 Claude `d335f1bb92fab38e99e8346b8f2046cc65f51793`, 복구 출발점은 `07d4271653d13aee8b7ed1c00149af6738097d86`이다. 최종 비교본은 이 복구본에 아래 두 최적화를 적용한 **2.3.159**이며, 별도 브랜치 `codex/micro-vector-real-model-comparison-20261017`에서 작업했다. 기계 판독용 집계는 [LIBRA_REAL_MODEL_COMPARISON_20261017.json](LIBRA_REAL_MODEL_COMPARISON_20261017.json)에 있다. 이 집계에는 키·설정 본문·원본 기억·모델 요청/응답을 넣지 않았다.
+
+**접속과 데이터 통제.** 새 환경에서 `api.voyageai.com`, `ollama.com`은 모두 프록시 CONNECT 200이었고, 인증한 임베딩·채팅 요청도 각각 HTTP 200이었다. Voyage `voyage-4-large`와 Ollama `deepseek-v4.1-flash:cloud`를 사용했다. 임베딩 연결은 기존 평가 도구의 Voyage OpenAI 호환 설정(`provider: openai`)을 유지했다.
+
+Claude 플러그인으로 한국어 30턴 fixture를 **한 번만 추출**했다. LLM 성공 36회(Micro 30회·정본 6회), 최종 LLM 실패 0회였다. 최종 스냅샷에는 Micro 30개, 정본 6개, 실제 1,024차원 Micro 벡터 30개가 저장됐다. 기존 추출 도구는 5·10·15·20·25·30턴의 출판 표시를 각각 180초까지 기다렸지만, 최종 저장에서는 30개 모두 확인됐다. 이 추출 대기를 검색 지연에 포함하지 않았다. 추출 실행의 임베딩 호출 52회에는 추출 후 예비 질문 16회가 포함돼 있으며, 이 예비 조회는 아래 비교에서 제외했다. 최초 추출은 기존 도구로 실행해 LLM 성공 응답과 최종 실패를 기록했으며, HTTP 재시도 시도 수는 소급 집계할 수 없다. 접속 진단·프로파일링·중간 수정안 실행도 최종 6개 비교의 호출 수에서 제외했다.
+
+- 입력 스냅샷 SHA-256: `36864288b1a46c8787545e053aefe37040e1e992177e05f3b2e4d67ad0a63522`.
+- 각 실행마다 이 파일을 복제하고 `--require-state`로 읽었다. 추출·명시적 벡터 보수/재생성 없이 시작하며, 입력 파일은 실행 후에도 바이트 단위로 같았다.
+- 독립 프로세스 순서는 **Claude → 복구본 → 복구본 → Claude**였다. 각각 첫 `n01` 조회 후 런타임 색인을 기다리고, 고정된 16개 질문을 같은 프로세스에서 3회 반복했다. 버전당 반복 표본 96회이며 서로 다른 질문은 16개다.
+- 별도로 각 버전에서 실제 `beforeRequest` 훅을 첫 조회 + 질문 16개로 실행했다. 호스트 채팅과 전달 메시지의 `chatId`를 보존했다. 미리보기는 전달 가능한 패킷만, 훅은 실제 반환된 system 근거만 채점한다. 질문·기대 문자열을 고정했다.
+
+**확인한 회귀와 수정.** 최적화 전 `07d4271`의 반복 조회 p50은 두 실행 모두 516.5ms였고, 같은 초기 비교의 Claude는 371ms·373.5ms였다. 실제 모델에서도 지연 회귀가 확인됐다. CPU 프로파일에서 전체 벡터 스캔이 반복 사용하는 문자열 digest와 JSON 자원 크기 계산이 큰 비용을 차지했다.
+
+1. `createTextHasher.update`의 곱셈 함수 참조와 루프 누산을 지역 변수로 옮겼다. UTF-16 코드 단위, 매 update의 구분자, digest 결과를 유지한다. 기존 저장 ID·본문 digest를 바꾸거나 재임베딩하지 않는다.
+2. JSON `measure`의 descriptor·유한수·배열·직렬화 함수 참조를 계산마다 한 번만 구하고, 문자별 제어문자 배열 할당을 없앴다. getter·toJSON·희소 배열·순환 객체의 거부, 바이트·문자·토큰 수와 예산 경계를 유지한다. 원본 읽기·단일 값·디코딩·보관·레인·표현 예산의 값은 변경하지 않았다.
+
+최종 실모델 조회에서도 모든 Micro 30개를 정확 코사인으로 비교하고 **top-8**을 선별했다. 선택 후 본문 digest, 최종 저장 본문·서버 revision 검증과 벡터 하나씩 처리하는 방식은 유지한다. 전체 숫자 벡터 캐시를 추가하지 않았다.
+
+| 최종 동일 스냅샷 결과 | Claude 기준 | 2.3.159 |
+| --- | --- | --- |
+| 반복 미리보기 정답 근거 | 15/16, 반복 90/96회 | 15/16, 반복 90/96회 |
+| 실제 `beforeRequest` 정답 근거 | 15/16 | 15/16 |
+| 반복 미리보기 전체 p50 / p95 | 370 / 752ms | 199 / 540ms |
+| 질의 캐시가 준비된 2·3라운드 p50 (각 64회) | 349ms | 195ms |
+| 정순 / 역순 실행별 반복 p50 | 337 / 376ms | 195.5 / 200.5ms |
+| 실제 `beforeRequest` 첫 조회 `n01` (전달 성공, 각 1회) | 8074ms | 5368ms |
+| 실제 `beforeRequest` 질문 16개 p50 | 822.5ms | 596.5ms |
+| 각 실행의 모델 호출 | 질의 임베딩 16회, LLM 0회 | 질의 임베딩 16회, LLM 0회 |
+| 각 실행의 문서/기타 입력 임베딩·제공자 실패 | 0회 | 0회 |
+| 자원 예산 중단·조회 예외 | 0회 | 0회 |
+
+최종 정순·역순 모두 Claude에서 적중한 질문이 복구본에서 빠지는 경우는 없었다. 양쪽의 유일한 반복 미적중은 `n03`이며, 채점 문자열은 수정하지 않았다. 질의 캐시가 준비된 라운드에서는 외부 모델 호출이 0회였다. 미리보기 반복 후 자원 세션·보관량은 모두 0으로 돌아갔다. 실제 요청 훅은 제품 정책대로 UI 응답 문맥 4개를 보관하며, 자원 예산 중단은 없었다.
+
+**콜드 조회와 coverage 한계.** 새 프로세스의 첫 **미리보기**는 양쪽 모두 `LIBRA_GRAPH_CORPUS_SOURCE_CHANGED`로 전달이 거부됐다. 지연은 Claude `[6293, 5791]`ms, 복구본 `[3781, 3739]`ms였으나 이를 성공한 콜드 검색 시간으로 해석하면 안 된다. 위 표의 실제 요청 훅 첫 조회는 양쪽 모두 정답 근거를 전달했다. 반복 미리보기와 실제 훅의 이후 조회는 모두 모델 전달 가능했다.
+
+두 버전 모두 `queryComplete=false`, `sourceCoverageComplete=false`, `stopReason=projection_coverage_incomplete`를 그대로 보고했다. 공통 원인은 canonical의 `claim_schema_or_identity_ambiguous`이며, Micro의 `entity_name_ambiguous_or_unavailable`, State의 `field_provenance_unknown`도 note로 남았다. 원본 읽기 실패·미열람 cursor는 없었다. 이 결과는 정해진 질문의 근거 전달을 보존했다는 뜻이며, 모든 원본 주장을 완전하게 투영했다는 검증은 아니다. 이 상태를 예산 중단이나 완전 성공으로 바꿔 표시하지 않았다.
+
+**검증과 재현.** 저장 해시 호환성(빈 입력·다중 update·한글·서로게이트), 페이지 단위 14사례(실제 밀집 벡터의 정확한 바이트/토큰 경계 포함), 자원 단위 14사례·런타임 8사례, authority 6사례(삭제·수정·서버 ABA·예산·취소·후반 Micro), 재시작 2모드, 순위 엔진 회귀·native 30-source 정답 전달·조립 검사가 통과했다. `libra_memory_graph_pages_runtime_test.cjs`는 첫 `initialized=false` 가정에서 실패했고, 수정 전 `07d4271` 플러그인에서도 같은 assertion 실패를 확인했다. 이 오래된 테스트는 통과로 집계하지 않았다.
+
+`libra_e2e_eval.cjs`는 `--capture-only`, `--require-state`, `--repeat`, `--entrypoint before-request`, 입력 스냅샷·플러그인 해시, 콜드 결과, 요청별 모델 호출·전달 가능성·coverage·자원 진단을 기록한다. 누락된 필수 스냅샷은 모델 호출 전에 실패한다. 빈 입력의 capture/preview/hook 검사에서는 거짓 적중과 모델 호출이 없었다. 스냅샷·모델 로그는 Git 저장소 밖으로 제한하고, 생성하는 원본 상태·보고서 파일의 권한은 0600으로 둔다. 실제 원본과 로그는 저장소 밖 0700 디렉터리에만 남겼다. 스냅샷의 플러그인 설정에도 키가 포함될 수 있다.
+
+기존 비공개 스냅샷으로 재측정할 때는 저장소 루트에서 다음과 같이 실행한다(비밀값 파일의 값은 출력하지 않는다). 첫 추출이 필요한 새 실험은 Claude 플러그인으로 `--live --capture-only --state <새 비공개 파일>`을 한 번만 수행한 뒤 복제한다.
+
+```bash
+. /tmp/libra-rag-eval-secrets.env
+export NODE_USE_ENV_PROXY=1
+export NODE_PATH=/workspace/librarian-cloud/dependencies/node_modules
+export RAG_EVAL_LLM_URL=https://ollama.com/v1
+export RAG_EVAL_LLM_MODEL=deepseek-v4.1-flash:cloud
+export RAG_EVAL_EMBED_URL=https://api.voyageai.com/v1
+export RAG_EVAL_EMBED_MODEL=voyage-4-large
+umask 077
+cp /tmp/libra-real-rag-comparison/capture.json /tmp/libra-real-rag-comparison/recheck-state.json
+LIBRA_TEST_PLUGIN=/tmp/libra-claude-d335f1b.js node PROGRAM/tools/rag_eval/libra_e2e_eval.cjs \
+  --require-state --state /tmp/libra-real-rag-comparison/recheck-state.json --repeat 3 \
+  --json /tmp/libra-real-rag-comparison/recheck-claude.json
+# 복구본은 LIBRA_TEST_PLUGIN을 해제하고 별도 사본으로 같은 명령을 실행한다.
+# 실제 요청 경로는 --entrypoint before-request --repeat 1로 측정한다.
+```
+
+실험 환경은 Node 24.19.0, CPU 2개 분량·메모리 8GiB의 VM 호스트다. 지연은 API/훅 호출과 평가용 결과 검사까지의 wall time이다. 자원 카운터는 등록된 할당의 보수적 추정이며 전체 JS 힙 계측이 아니다. 실제 Voyage/Ollama를 사용했지만 실제 RisuAI 설치·브라우저 IPC, 실모델 `server_only`, 최종 LLM 답변 정확도는 측정하지 않았다. 하나의 새 저장 스냅샷과 16개 질문의 반복이며, 별도 데이터셋이나 다른 호스트에 대한 성능·정확도 보장은 아니다. 이전 합성 실험 및 7.1의 별도 추출 스냅샷 수치와 직접 합산하지 않는다.
+
 ## 8. 남은 과제
 
-1. LIBRA: 평가 지표를 문자열 일치에서 정답 턴 기준으로 바꾸기. 늘어난 회상 지연(p50 약 1.0s) 줄이기. 출처 접근 점수 보정(`calibration: 'unmeasured'`)을 다른 임베딩 모델로도 측정.
+1. LIBRA: 평가 지표를 문자열 일치에서 정답 턴 기준으로 바꾸기. 실제 RisuAI 설치의 지연과 더 다양한 데이터에서 7.4의 개선을 재검증하기. 출처 접근 점수 보정(`calibration: 'unmeasured'`)을 다른 임베딩 모델로도 측정.
 2. GRADIA: 느린 클라우드 모델에서는 단계 시간 초과가 실제로 발생한다. 단계별 `timeout_ms`를 모델 지연에 맞게 잡아야 한다.
 3. LIBRA 그래프 ID 해시 입력 축소(색인 세대 이전 계획 필요).
 4. GRADIA 다중 소유자 경로에서 소유자 의미 순위 사용.

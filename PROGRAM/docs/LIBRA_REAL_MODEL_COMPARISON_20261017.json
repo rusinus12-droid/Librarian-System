@@ -1,0 +1,2844 @@
+{
+  "schema": "libra.real-model-snapshot-comparison.v1",
+  "date": "2026-10-17",
+  "timezone": "Asia/Seoul",
+  "baselineCommit": "d335f1bb92fab38e99e8346b8f2046cc65f51793",
+  "recoveryBaseCommit": "07d4271653d13aee8b7ed1c00149af6738097d86",
+  "recoveryPluginVersion": "2.3.159",
+  "recoveryBranch": "codex/micro-vector-real-model-comparison-20261017",
+  "regressionCommit": "9d7eb4f",
+  "models": {
+    "embedding": "voyage-4-large",
+    "llm": "deepseek-v4.1-flash:cloud"
+  },
+  "environment": {
+    "node": "24.19.0",
+    "host": "RisuAI VM fixture",
+    "mode": "plugin_only",
+    "cpuQuota": 2,
+    "memoryLimitBytes": 8589934592,
+    "proxyConnect": {
+      "api.voyageai.com": 200,
+      "ollama.com": 200
+    },
+    "authenticatedProbeStatus": {
+      "voyage": 200,
+      "ollama": 200
+    }
+  },
+  "snapshotSha256": "36864288b1a46c8787545e053aefe37040e1e992177e05f3b2e4d67ad0a63522",
+  "fixtureSha256": "199b8ee0156d52d4d2b25ffca88eda2ff4c3aecfc04426026c62063cb814704a",
+  "extraction": {
+    "runs": 1,
+    "plugin": "Claude baseline",
+    "captureMs": 1528784,
+    "successfulLlmCalls": 36,
+    "finalLlmFailures": 0,
+    "embeddingCallsIncludingInitialRecall": 52,
+    "storageEntries": 387,
+    "schemas": {
+      "libra.canonical_memory.v1": 6,
+      "libra.manifest.v1": 1,
+      "libra.micro_memory.v1": 30,
+      "libra.micro_vector.v1": 30
+    },
+    "microVectorDimensions": {
+      "1024": 30
+    },
+    "microVectorModels": {
+      "voyage-4-large": 30
+    },
+    "modelResponseSchemas": {
+      "libra.micro_producer_envelope.v1": 30,
+      "libra.canonical_artifact.v5": 6
+    },
+    "publicationWaits": [
+      {
+        "turn": 1,
+        "waitMs": 20794,
+        "observedTurn": 1,
+        "status": "verified",
+        "successfulLlmCalls": 1
+      },
+      {
+        "turn": 2,
+        "waitMs": 16532,
+        "observedTurn": 2,
+        "status": "verified",
+        "successfulLlmCalls": 2
+      },
+      {
+        "turn": 3,
+        "waitMs": 30567,
+        "observedTurn": 3,
+        "status": "verified",
+        "successfulLlmCalls": 3
+      },
+      {
+        "turn": 4,
+        "waitMs": 15550,
+        "observedTurn": 4,
+        "status": "verified",
+        "successfulLlmCalls": 4
+      },
+      {
+        "turn": 5,
+        "waitMs": 180007,
+        "observedTurn": 4,
+        "status": "verified",
+        "successfulLlmCalls": 6
+      },
+      {
+        "turn": 6,
+        "waitMs": 37994,
+        "observedTurn": 6,
+        "status": "verified",
+        "successfulLlmCalls": 7
+      },
+      {
+        "turn": 7,
+        "waitMs": 13141,
+        "observedTurn": 7,
+        "status": "verified",
+        "successfulLlmCalls": 8
+      },
+      {
+        "turn": 8,
+        "waitMs": 9720,
+        "observedTurn": 8,
+        "status": "verified",
+        "successfulLlmCalls": 9
+      },
+      {
+        "turn": 9,
+        "waitMs": 20305,
+        "observedTurn": 9,
+        "status": "verified",
+        "successfulLlmCalls": 10
+      },
+      {
+        "turn": 10,
+        "waitMs": 180111,
+        "observedTurn": 9,
+        "status": "verified",
+        "successfulLlmCalls": 12
+      },
+      {
+        "turn": 11,
+        "waitMs": 24046,
+        "observedTurn": 11,
+        "status": "verified",
+        "successfulLlmCalls": 13
+      },
+      {
+        "turn": 12,
+        "waitMs": 15605,
+        "observedTurn": 12,
+        "status": "verified",
+        "successfulLlmCalls": 14
+      },
+      {
+        "turn": 13,
+        "waitMs": 23370,
+        "observedTurn": 13,
+        "status": "verified",
+        "successfulLlmCalls": 15
+      },
+      {
+        "turn": 14,
+        "waitMs": 19294,
+        "observedTurn": 14,
+        "status": "verified",
+        "successfulLlmCalls": 16
+      },
+      {
+        "turn": 15,
+        "waitMs": 180108,
+        "observedTurn": 14,
+        "status": "verified",
+        "successfulLlmCalls": 18
+      },
+      {
+        "turn": 16,
+        "waitMs": 18094,
+        "observedTurn": 16,
+        "status": "verified",
+        "successfulLlmCalls": 19
+      },
+      {
+        "turn": 17,
+        "waitMs": 19858,
+        "observedTurn": 17,
+        "status": "verified",
+        "successfulLlmCalls": 20
+      },
+      {
+        "turn": 18,
+        "waitMs": 16145,
+        "observedTurn": 18,
+        "status": "verified",
+        "successfulLlmCalls": 21
+      },
+      {
+        "turn": 19,
+        "waitMs": 11218,
+        "observedTurn": 19,
+        "status": "verified",
+        "successfulLlmCalls": 22
+      },
+      {
+        "turn": 20,
+        "waitMs": 180171,
+        "observedTurn": 19,
+        "status": "verified",
+        "successfulLlmCalls": 24
+      },
+      {
+        "turn": 21,
+        "waitMs": 24542,
+        "observedTurn": 21,
+        "status": "verified",
+        "successfulLlmCalls": 25
+      },
+      {
+        "turn": 22,
+        "waitMs": 7415,
+        "observedTurn": 22,
+        "status": "verified",
+        "successfulLlmCalls": 26
+      },
+      {
+        "turn": 23,
+        "waitMs": 28638,
+        "observedTurn": 23,
+        "status": "verified",
+        "successfulLlmCalls": 27
+      },
+      {
+        "turn": 24,
+        "waitMs": 13314,
+        "observedTurn": 24,
+        "status": "verified",
+        "successfulLlmCalls": 28
+      },
+      {
+        "turn": 25,
+        "waitMs": 180094,
+        "observedTurn": 24,
+        "status": "verified",
+        "successfulLlmCalls": 30
+      },
+      {
+        "turn": 26,
+        "waitMs": 15319,
+        "observedTurn": 26,
+        "status": "verified",
+        "successfulLlmCalls": 31
+      },
+      {
+        "turn": 27,
+        "waitMs": 16961,
+        "observedTurn": 27,
+        "status": "verified",
+        "successfulLlmCalls": 32
+      },
+      {
+        "turn": 28,
+        "waitMs": 12501,
+        "observedTurn": 28,
+        "status": "verified",
+        "successfulLlmCalls": 33
+      },
+      {
+        "turn": 29,
+        "waitMs": 12542,
+        "observedTurn": 29,
+        "status": "verified",
+        "successfulLlmCalls": 34
+      },
+      {
+        "turn": 30,
+        "waitMs": 180016,
+        "observedTurn": 29,
+        "status": "verified",
+        "successfulLlmCalls": 36
+      }
+    ],
+    "llmHttpAttemptsTracked": false
+  },
+  "preOptimization": {
+    "claude-1": {
+      "pluginSha256": "2133a0cedb8f40bb6ca264850baa764f3529c8f43ab3a6b73c34c834d3feb621",
+      "snapshotSha256": "36864288b1a46c8787545e053aefe37040e1e992177e05f3b2e4d67ad0a63522",
+      "hitRate": 0.938,
+      "latencyMs": {
+        "p50": 371,
+        "p95": 736,
+        "max": 955
+      },
+      "coldRecallMs": 5761,
+      "calls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmMs": 0,
+        "llmFailures": 0,
+        "embedCalls": 16,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 16,
+        "embedOtherInputCalls": 0,
+        "embedMs": 6814
+      },
+      "misses": [
+        "n03"
+      ],
+      "budgetStops": 0,
+      "errors": 0,
+      "cachedRoundMedianMs": 368.0
+    },
+    "recovery-1": {
+      "pluginSha256": "0651fd4a6d65e8d024238bd5be2c35f820d4d1666a87feaa0c74f5cb8e09eed3",
+      "snapshotSha256": "36864288b1a46c8787545e053aefe37040e1e992177e05f3b2e4d67ad0a63522",
+      "hitRate": 0.938,
+      "latencyMs": {
+        "p50": 516.5,
+        "p95": 856,
+        "max": 861
+      },
+      "coldRecallMs": 5987,
+      "calls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmMs": 0,
+        "llmFailures": 0,
+        "embedCalls": 16,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 16,
+        "embedOtherInputCalls": 0,
+        "embedMs": 6481
+      },
+      "misses": [
+        "n03"
+      ],
+      "budgetStops": 0,
+      "errors": 0,
+      "cachedRoundMedianMs": 513.0
+    },
+    "recovery-2": {
+      "pluginSha256": "0651fd4a6d65e8d024238bd5be2c35f820d4d1666a87feaa0c74f5cb8e09eed3",
+      "snapshotSha256": "36864288b1a46c8787545e053aefe37040e1e992177e05f3b2e4d67ad0a63522",
+      "hitRate": 0.938,
+      "latencyMs": {
+        "p50": 516.5,
+        "p95": 890,
+        "max": 1173
+      },
+      "coldRecallMs": 5849,
+      "calls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmMs": 0,
+        "llmFailures": 0,
+        "embedCalls": 16,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 16,
+        "embedOtherInputCalls": 0,
+        "embedMs": 7087
+      },
+      "misses": [
+        "n03"
+      ],
+      "budgetStops": 0,
+      "errors": 0,
+      "cachedRoundMedianMs": 513.0
+    },
+    "claude-2": {
+      "pluginSha256": "2133a0cedb8f40bb6ca264850baa764f3529c8f43ab3a6b73c34c834d3feb621",
+      "snapshotSha256": "36864288b1a46c8787545e053aefe37040e1e992177e05f3b2e4d67ad0a63522",
+      "hitRate": 0.938,
+      "latencyMs": {
+        "p50": 373.5,
+        "p95": 715,
+        "max": 968
+      },
+      "coldRecallMs": 5724,
+      "calls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmMs": 0,
+        "llmFailures": 0,
+        "embedCalls": 16,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 16,
+        "embedOtherInputCalls": 0,
+        "embedMs": 6788
+      },
+      "misses": [
+        "n03"
+      ],
+      "budgetStops": 0,
+      "errors": 0,
+      "cachedRoundMedianMs": 371.0
+    }
+  },
+  "order": [
+    "claude-1",
+    "recovery-1",
+    "recovery-2",
+    "claude-2",
+    "claude-hook",
+    "recovery-hook"
+  ],
+  "legs": {
+    "claude-1": {
+      "pluginSha256": "2133a0cedb8f40bb6ca264850baa764f3529c8f43ab3a6b73c34c834d3feb621",
+      "entrypoint": "preview",
+      "repeats": 3,
+      "canonicals": 6,
+      "cold": {
+        "id": "n01",
+        "hit": false,
+        "elapsedMs": 6293,
+        "corpus": "request_local_corpus",
+        "modelDispatchEligible": false,
+        "queryComplete": false,
+        "stopReason": "projection_coverage_incomplete",
+        "budgetStopped": false
+      },
+      "coldDispatchReason": "LIBRA_GRAPH_CORPUS_SOURCE_CHANGED",
+      "coverageSample": {
+        "projectionComplete": false,
+        "inventoryComplete": false,
+        "familyIncompleteReasons": [
+          {
+            "family": "canonical",
+            "reasons": [
+              "claim_schema_or_identity_ambiguous"
+            ]
+          }
+        ],
+        "familyNotes": [
+          {
+            "family": "canonical",
+            "reasons": [
+              "claim_schema_or_identity_ambiguous"
+            ]
+          },
+          {
+            "family": "micro",
+            "reasons": [
+              "entity_name_ambiguous_or_unavailable"
+            ]
+          },
+          {
+            "family": "state",
+            "reasons": [
+              "field_provenance_unknown"
+            ]
+          }
+        ],
+        "sourceReadFailures": [],
+        "unreadInventoryCursors": [],
+        "historicalCanonicalUnavailable": false
+      },
+      "warmIneligible": 0,
+      "latency": {
+        "n": 48,
+        "medianMs": 337.0,
+        "p95Ms": 818,
+        "maxMs": 1247
+      },
+      "rounds": {
+        "1": {
+          "hits": 15,
+          "latency": {
+            "n": 16,
+            "medianMs": 678.5,
+            "p95Ms": 1247,
+            "maxMs": 1247
+          }
+        },
+        "2": {
+          "hits": 15,
+          "latency": {
+            "n": 16,
+            "medianMs": 337.5,
+            "p95Ms": 365,
+            "maxMs": 365
+          }
+        },
+        "3": {
+          "hits": 15,
+          "latency": {
+            "n": 16,
+            "medianMs": 329.5,
+            "p95Ms": 335,
+            "maxMs": 335
+          }
+        }
+      },
+      "hits": 45,
+      "questions": 48,
+      "missIds": [
+        "n03"
+      ],
+      "calls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 16,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 16,
+        "embedOtherInputCalls": 0
+      },
+      "embeddingRequestModels": [
+        "voyage-4-large"
+      ],
+      "preparationCalls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 0,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 0,
+        "embedOtherInputCalls": 0
+      },
+      "coldAndWarmupCalls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 1,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 1,
+        "embedOtherInputCalls": 0
+      },
+      "budgetStops": 0,
+      "errors": 0,
+      "ineligible": 1,
+      "incomplete": 49,
+      "sourceCoverageIncomplete": 49,
+      "stopReasons": {
+        "projection_coverage_incomplete": 49
+      },
+      "runtimeIndexReady": true,
+      "semantic": {
+        "statuses": {
+          "available": 49
+        },
+        "microSelectionStrategies": [],
+        "microScanned": [],
+        "microSelected": [],
+        "microRepresentationCounts": [
+          8
+        ]
+      },
+      "resourceMax": {
+        "sourceBytes": 5852780,
+        "durableBytes": 0,
+        "reads": 1509,
+        "peakRetainedBytes": 64520828,
+        "peakDecodeBytes": 1693184
+      },
+      "poolAfter": {
+        "sessions": 0,
+        "retainedBytes": 0,
+        "peakRetainedBytes": 64520828
+      },
+      "perQuestion": {
+        "n01": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            327,
+            320,
+            304
+          ],
+          "embedCalls": [
+            0,
+            0,
+            0
+          ]
+        },
+        "n02": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            752,
+            338,
+            335
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n03": {
+          "hits": [
+            false,
+            false,
+            false
+          ],
+          "elapsedMs": [
+            1247,
+            336,
+            326
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n04": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            734,
+            348,
+            332
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n05": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            818,
+            337,
+            329
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n06": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            765,
+            336,
+            329
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p01": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            662,
+            345,
+            327
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p02": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            746,
+            365,
+            330
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p03": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            672,
+            349,
+            335
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p04": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            639,
+            358,
+            331
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p05": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            685,
+            353,
+            326
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m01": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            632,
+            347,
+            330
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m02": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            643,
+            337,
+            329
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m03": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            637,
+            318,
+            313
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m04": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            981,
+            335,
+            333
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m05": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            636,
+            335,
+            333
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    "recovery-1": {
+      "pluginSha256": "5ac2b60be1f212dbaa574cbde49cc1d0f0c78aa673f74b79687e04a7ff793704",
+      "entrypoint": "preview",
+      "repeats": 3,
+      "canonicals": 6,
+      "cold": {
+        "id": "n01",
+        "hit": false,
+        "elapsedMs": 3781,
+        "corpus": "request_local_corpus",
+        "modelDispatchEligible": false,
+        "queryComplete": false,
+        "stopReason": "projection_coverage_incomplete",
+        "budgetStopped": false
+      },
+      "coldDispatchReason": "LIBRA_GRAPH_CORPUS_SOURCE_CHANGED",
+      "coverageSample": {
+        "projectionComplete": false,
+        "inventoryComplete": false,
+        "familyIncompleteReasons": [
+          {
+            "family": "canonical",
+            "reasons": [
+              "claim_schema_or_identity_ambiguous"
+            ]
+          }
+        ],
+        "familyNotes": [
+          {
+            "family": "canonical",
+            "reasons": [
+              "claim_schema_or_identity_ambiguous"
+            ]
+          },
+          {
+            "family": "micro",
+            "reasons": [
+              "entity_name_ambiguous_or_unavailable"
+            ]
+          },
+          {
+            "family": "state",
+            "reasons": [
+              "field_provenance_unknown"
+            ]
+          }
+        ],
+        "sourceReadFailures": [],
+        "unreadInventoryCursors": [],
+        "historicalCanonicalUnavailable": false
+      },
+      "warmIneligible": 0,
+      "latency": {
+        "n": 48,
+        "medianMs": 195.5,
+        "p95Ms": 540,
+        "maxMs": 566
+      },
+      "rounds": {
+        "1": {
+          "hits": 15,
+          "latency": {
+            "n": 16,
+            "medianMs": 525.5,
+            "p95Ms": 566,
+            "maxMs": 566
+          }
+        },
+        "2": {
+          "hits": 15,
+          "latency": {
+            "n": 16,
+            "medianMs": 195.0,
+            "p95Ms": 222,
+            "maxMs": 222
+          }
+        },
+        "3": {
+          "hits": 15,
+          "latency": {
+            "n": 16,
+            "medianMs": 193.0,
+            "p95Ms": 201,
+            "maxMs": 201
+          }
+        }
+      },
+      "hits": 45,
+      "questions": 48,
+      "missIds": [
+        "n03"
+      ],
+      "calls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 16,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 16,
+        "embedOtherInputCalls": 0
+      },
+      "embeddingRequestModels": [
+        "voyage-4-large"
+      ],
+      "preparationCalls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 0,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 0,
+        "embedOtherInputCalls": 0
+      },
+      "coldAndWarmupCalls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 1,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 1,
+        "embedOtherInputCalls": 0
+      },
+      "budgetStops": 0,
+      "errors": 0,
+      "ineligible": 1,
+      "incomplete": 49,
+      "sourceCoverageIncomplete": 49,
+      "stopReasons": {
+        "projection_coverage_incomplete": 49
+      },
+      "runtimeIndexReady": true,
+      "semantic": {
+        "statuses": {
+          "available": 49
+        },
+        "microSelectionStrategies": [
+          "streaming_exact_cosine_top8"
+        ],
+        "microScanned": [
+          30
+        ],
+        "microSelected": [
+          8
+        ],
+        "microRepresentationCounts": [
+          8
+        ]
+      },
+      "resourceMax": {
+        "sourceBytes": 6686654,
+        "durableBytes": 0,
+        "reads": 1547,
+        "peakRetainedBytes": 66454686,
+        "peakDecodeBytes": 1693184
+      },
+      "poolAfter": {
+        "sessions": 0,
+        "retainedBytes": 0,
+        "peakRetainedBytes": 66454686
+      },
+      "perQuestion": {
+        "n01": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            199,
+            190,
+            181
+          ],
+          "embedCalls": [
+            0,
+            0,
+            0
+          ]
+        },
+        "n02": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            525,
+            193,
+            195
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n03": {
+          "hits": [
+            false,
+            false,
+            false
+          ],
+          "elapsedMs": [
+            514,
+            195,
+            193
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n04": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            517,
+            193,
+            192
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n05": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            540,
+            191,
+            195
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n06": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            520,
+            195,
+            192
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p01": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            519,
+            195,
+            195
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p02": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            507,
+            195,
+            200
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p03": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            526,
+            206,
+            193
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p04": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            554,
+            195,
+            194
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p05": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            538,
+            222,
+            192
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m01": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            528,
+            206,
+            198
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m02": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            566,
+            211,
+            201
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m03": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            526,
+            184,
+            182
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m04": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            535,
+            196,
+            193
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m05": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            512,
+            193,
+            193
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    "recovery-2": {
+      "pluginSha256": "5ac2b60be1f212dbaa574cbde49cc1d0f0c78aa673f74b79687e04a7ff793704",
+      "entrypoint": "preview",
+      "repeats": 3,
+      "canonicals": 6,
+      "cold": {
+        "id": "n01",
+        "hit": false,
+        "elapsedMs": 3739,
+        "corpus": "request_local_corpus",
+        "modelDispatchEligible": false,
+        "queryComplete": false,
+        "stopReason": "projection_coverage_incomplete",
+        "budgetStopped": false
+      },
+      "coldDispatchReason": "LIBRA_GRAPH_CORPUS_SOURCE_CHANGED",
+      "coverageSample": {
+        "projectionComplete": false,
+        "inventoryComplete": false,
+        "familyIncompleteReasons": [
+          {
+            "family": "canonical",
+            "reasons": [
+              "claim_schema_or_identity_ambiguous"
+            ]
+          }
+        ],
+        "familyNotes": [
+          {
+            "family": "canonical",
+            "reasons": [
+              "claim_schema_or_identity_ambiguous"
+            ]
+          },
+          {
+            "family": "micro",
+            "reasons": [
+              "entity_name_ambiguous_or_unavailable"
+            ]
+          },
+          {
+            "family": "state",
+            "reasons": [
+              "field_provenance_unknown"
+            ]
+          }
+        ],
+        "sourceReadFailures": [],
+        "unreadInventoryCursors": [],
+        "historicalCanonicalUnavailable": false
+      },
+      "warmIneligible": 0,
+      "latency": {
+        "n": 48,
+        "medianMs": 200.5,
+        "p95Ms": 538,
+        "maxMs": 618
+      },
+      "rounds": {
+        "1": {
+          "hits": 15,
+          "latency": {
+            "n": 16,
+            "medianMs": 501.5,
+            "p95Ms": 618,
+            "maxMs": 618
+          }
+        },
+        "2": {
+          "hits": 15,
+          "latency": {
+            "n": 16,
+            "medianMs": 197.0,
+            "p95Ms": 206,
+            "maxMs": 206
+          }
+        },
+        "3": {
+          "hits": 15,
+          "latency": {
+            "n": 16,
+            "medianMs": 196.0,
+            "p95Ms": 208,
+            "maxMs": 208
+          }
+        }
+      },
+      "hits": 45,
+      "questions": 48,
+      "missIds": [
+        "n03"
+      ],
+      "calls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 16,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 16,
+        "embedOtherInputCalls": 0
+      },
+      "embeddingRequestModels": [
+        "voyage-4-large"
+      ],
+      "preparationCalls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 0,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 0,
+        "embedOtherInputCalls": 0
+      },
+      "coldAndWarmupCalls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 1,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 1,
+        "embedOtherInputCalls": 0
+      },
+      "budgetStops": 0,
+      "errors": 0,
+      "ineligible": 1,
+      "incomplete": 49,
+      "sourceCoverageIncomplete": 49,
+      "stopReasons": {
+        "projection_coverage_incomplete": 49
+      },
+      "runtimeIndexReady": true,
+      "semantic": {
+        "statuses": {
+          "available": 49
+        },
+        "microSelectionStrategies": [
+          "streaming_exact_cosine_top8"
+        ],
+        "microScanned": [
+          30
+        ],
+        "microSelected": [
+          8
+        ],
+        "microRepresentationCounts": [
+          8
+        ]
+      },
+      "resourceMax": {
+        "sourceBytes": 6686684,
+        "durableBytes": 0,
+        "reads": 1547,
+        "peakRetainedBytes": 66454276,
+        "peakDecodeBytes": 1693184
+      },
+      "poolAfter": {
+        "sessions": 0,
+        "retainedBytes": 0,
+        "peakRetainedBytes": 66454276
+      },
+      "perQuestion": {
+        "n01": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            203,
+            188,
+            207
+          ],
+          "embedCalls": [
+            0,
+            0,
+            0
+          ]
+        },
+        "n02": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            514,
+            197,
+            208
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n03": {
+          "hits": [
+            false,
+            false,
+            false
+          ],
+          "elapsedMs": [
+            538,
+            195,
+            200
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n04": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            618,
+            193,
+            199
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n05": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            511,
+            205,
+            197
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n06": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            494,
+            197,
+            201
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p01": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            545,
+            197,
+            206
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p02": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            502,
+            195,
+            193
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p03": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            531,
+            195,
+            194
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p04": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            496,
+            194,
+            191
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p05": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            501,
+            198,
+            191
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m01": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            493,
+            201,
+            195
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m02": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            516,
+            199,
+            193
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m03": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            485,
+            190,
+            180
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m04": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            496,
+            206,
+            190
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m05": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            498,
+            202,
+            200
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    "claude-2": {
+      "pluginSha256": "2133a0cedb8f40bb6ca264850baa764f3529c8f43ab3a6b73c34c834d3feb621",
+      "entrypoint": "preview",
+      "repeats": 3,
+      "canonicals": 6,
+      "cold": {
+        "id": "n01",
+        "hit": false,
+        "elapsedMs": 5791,
+        "corpus": "request_local_corpus",
+        "modelDispatchEligible": false,
+        "queryComplete": false,
+        "stopReason": "projection_coverage_incomplete",
+        "budgetStopped": false
+      },
+      "coldDispatchReason": "LIBRA_GRAPH_CORPUS_SOURCE_CHANGED",
+      "coverageSample": {
+        "projectionComplete": false,
+        "inventoryComplete": false,
+        "familyIncompleteReasons": [
+          {
+            "family": "canonical",
+            "reasons": [
+              "claim_schema_or_identity_ambiguous"
+            ]
+          }
+        ],
+        "familyNotes": [
+          {
+            "family": "canonical",
+            "reasons": [
+              "claim_schema_or_identity_ambiguous"
+            ]
+          },
+          {
+            "family": "micro",
+            "reasons": [
+              "entity_name_ambiguous_or_unavailable"
+            ]
+          },
+          {
+            "family": "state",
+            "reasons": [
+              "field_provenance_unknown"
+            ]
+          }
+        ],
+        "sourceReadFailures": [],
+        "unreadInventoryCursors": [],
+        "historicalCanonicalUnavailable": false
+      },
+      "warmIneligible": 0,
+      "latency": {
+        "n": 48,
+        "medianMs": 376.0,
+        "p95Ms": 702,
+        "maxMs": 744
+      },
+      "rounds": {
+        "1": {
+          "hits": 15,
+          "latency": {
+            "n": 16,
+            "medianMs": 685.5,
+            "p95Ms": 744,
+            "maxMs": 744
+          }
+        },
+        "2": {
+          "hits": 15,
+          "latency": {
+            "n": 16,
+            "medianMs": 371.5,
+            "p95Ms": 386,
+            "maxMs": 386
+          }
+        },
+        "3": {
+          "hits": 15,
+          "latency": {
+            "n": 16,
+            "medianMs": 372.5,
+            "p95Ms": 411,
+            "maxMs": 411
+          }
+        }
+      },
+      "hits": 45,
+      "questions": 48,
+      "missIds": [
+        "n03"
+      ],
+      "calls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 16,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 16,
+        "embedOtherInputCalls": 0
+      },
+      "embeddingRequestModels": [
+        "voyage-4-large"
+      ],
+      "preparationCalls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 0,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 0,
+        "embedOtherInputCalls": 0
+      },
+      "coldAndWarmupCalls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 1,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 1,
+        "embedOtherInputCalls": 0
+      },
+      "budgetStops": 0,
+      "errors": 0,
+      "ineligible": 1,
+      "incomplete": 49,
+      "sourceCoverageIncomplete": 49,
+      "stopReasons": {
+        "projection_coverage_incomplete": 49
+      },
+      "runtimeIndexReady": true,
+      "semantic": {
+        "statuses": {
+          "available": 49
+        },
+        "microSelectionStrategies": [],
+        "microScanned": [],
+        "microSelected": [],
+        "microRepresentationCounts": [
+          8
+        ]
+      },
+      "resourceMax": {
+        "sourceBytes": 5852780,
+        "durableBytes": 0,
+        "reads": 1509,
+        "peakRetainedBytes": 64521352,
+        "peakDecodeBytes": 1693184
+      },
+      "poolAfter": {
+        "sessions": 0,
+        "retainedBytes": 0,
+        "peakRetainedBytes": 64521352
+      },
+      "perQuestion": {
+        "n01": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            357,
+            346,
+            344
+          ],
+          "embedCalls": [
+            0,
+            0,
+            0
+          ]
+        },
+        "n02": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            686,
+            369,
+            366
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n03": {
+          "hits": [
+            false,
+            false,
+            false
+          ],
+          "elapsedMs": [
+            687,
+            371,
+            363
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n04": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            702,
+            369,
+            369
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n05": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            669,
+            377,
+            411
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "n06": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            679,
+            377,
+            369
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p01": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            667,
+            367,
+            382
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p02": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            690,
+            372,
+            378
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p03": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            691,
+            375,
+            379
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p04": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            692,
+            372,
+            372
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "p05": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            704,
+            374,
+            369
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m01": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            744,
+            386,
+            373
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m02": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            685,
+            373,
+            378
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m03": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            658,
+            345,
+            349
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m04": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            677,
+            368,
+            375
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        },
+        "m05": {
+          "hits": [
+            true,
+            true,
+            true
+          ],
+          "elapsedMs": [
+            677,
+            369,
+            407
+          ],
+          "embedCalls": [
+            1,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    "claude-hook": {
+      "pluginSha256": "2133a0cedb8f40bb6ca264850baa764f3529c8f43ab3a6b73c34c834d3feb621",
+      "entrypoint": "before-request",
+      "repeats": 1,
+      "canonicals": 6,
+      "cold": {
+        "id": "n01",
+        "hit": true,
+        "elapsedMs": 8074,
+        "corpus": "request_local_corpus",
+        "modelDispatchEligible": true,
+        "queryComplete": false,
+        "stopReason": "projection_coverage_incomplete",
+        "budgetStopped": false
+      },
+      "coldDispatchReason": null,
+      "coverageSample": {
+        "projectionComplete": false,
+        "inventoryComplete": false,
+        "familyIncompleteReasons": [
+          {
+            "family": "canonical",
+            "reasons": [
+              "claim_schema_or_identity_ambiguous"
+            ]
+          }
+        ],
+        "familyNotes": [
+          {
+            "family": "canonical",
+            "reasons": [
+              "claim_schema_or_identity_ambiguous"
+            ]
+          },
+          {
+            "family": "micro",
+            "reasons": [
+              "entity_name_ambiguous_or_unavailable"
+            ]
+          },
+          {
+            "family": "state",
+            "reasons": [
+              "field_provenance_unknown"
+            ]
+          }
+        ],
+        "sourceReadFailures": [],
+        "unreadInventoryCursors": [],
+        "historicalCanonicalUnavailable": false
+      },
+      "warmIneligible": 0,
+      "latency": {
+        "n": 16,
+        "medianMs": 822.5,
+        "p95Ms": 856,
+        "maxMs": 856
+      },
+      "rounds": {
+        "1": {
+          "hits": 15,
+          "latency": {
+            "n": 16,
+            "medianMs": 822.5,
+            "p95Ms": 856,
+            "maxMs": 856
+          }
+        }
+      },
+      "hits": 15,
+      "questions": 16,
+      "missIds": [
+        "n03"
+      ],
+      "calls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 16,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 16,
+        "embedOtherInputCalls": 0
+      },
+      "embeddingRequestModels": [
+        "voyage-4-large"
+      ],
+      "preparationCalls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 0,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 0,
+        "embedOtherInputCalls": 0
+      },
+      "coldAndWarmupCalls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 1,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 1,
+        "embedOtherInputCalls": 0
+      },
+      "budgetStops": 0,
+      "errors": 0,
+      "ineligible": 0,
+      "incomplete": 17,
+      "sourceCoverageIncomplete": 17,
+      "stopReasons": {
+        "projection_coverage_incomplete": 17
+      },
+      "runtimeIndexReady": true,
+      "semantic": {
+        "statuses": {
+          "available": 17
+        },
+        "microSelectionStrategies": [],
+        "microScanned": [],
+        "microSelected": [],
+        "microRepresentationCounts": [
+          8
+        ]
+      },
+      "resourceMax": {
+        "sourceBytes": 6538676,
+        "durableBytes": 0,
+        "reads": 1682,
+        "peakRetainedBytes": 64520826,
+        "peakDecodeBytes": 1693184
+      },
+      "poolAfter": {
+        "sessions": 4,
+        "retainedBytes": 45869556,
+        "peakRetainedBytes": 86898030
+      },
+      "perQuestion": {
+        "n01": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            525
+          ],
+          "embedCalls": [
+            0
+          ]
+        },
+        "n02": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            832
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "n03": {
+          "hits": [
+            false
+          ],
+          "elapsedMs": [
+            856
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "n04": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            812
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "n05": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            831
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "n06": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            826
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "p01": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            813
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "p02": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            813
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "p03": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            807
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "p04": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            829
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "p05": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            823
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "m01": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            805
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "m02": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            846
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "m03": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            783
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "m04": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            822
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "m05": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            853
+          ],
+          "embedCalls": [
+            1
+          ]
+        }
+      }
+    },
+    "recovery-hook": {
+      "pluginSha256": "5ac2b60be1f212dbaa574cbde49cc1d0f0c78aa673f74b79687e04a7ff793704",
+      "entrypoint": "before-request",
+      "repeats": 1,
+      "canonicals": 6,
+      "cold": {
+        "id": "n01",
+        "hit": true,
+        "elapsedMs": 5368,
+        "corpus": "request_local_corpus",
+        "modelDispatchEligible": true,
+        "queryComplete": false,
+        "stopReason": "projection_coverage_incomplete",
+        "budgetStopped": false
+      },
+      "coldDispatchReason": null,
+      "coverageSample": {
+        "projectionComplete": false,
+        "inventoryComplete": false,
+        "familyIncompleteReasons": [
+          {
+            "family": "canonical",
+            "reasons": [
+              "claim_schema_or_identity_ambiguous"
+            ]
+          }
+        ],
+        "familyNotes": [
+          {
+            "family": "canonical",
+            "reasons": [
+              "claim_schema_or_identity_ambiguous"
+            ]
+          },
+          {
+            "family": "micro",
+            "reasons": [
+              "entity_name_ambiguous_or_unavailable"
+            ]
+          },
+          {
+            "family": "state",
+            "reasons": [
+              "field_provenance_unknown"
+            ]
+          }
+        ],
+        "sourceReadFailures": [],
+        "unreadInventoryCursors": [],
+        "historicalCanonicalUnavailable": false
+      },
+      "warmIneligible": 0,
+      "latency": {
+        "n": 16,
+        "medianMs": 596.5,
+        "p95Ms": 617,
+        "maxMs": 617
+      },
+      "rounds": {
+        "1": {
+          "hits": 15,
+          "latency": {
+            "n": 16,
+            "medianMs": 596.5,
+            "p95Ms": 617,
+            "maxMs": 617
+          }
+        }
+      },
+      "hits": 15,
+      "questions": 16,
+      "missIds": [
+        "n03"
+      ],
+      "calls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 16,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 16,
+        "embedOtherInputCalls": 0
+      },
+      "embeddingRequestModels": [
+        "voyage-4-large"
+      ],
+      "preparationCalls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 0,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 0,
+        "embedOtherInputCalls": 0
+      },
+      "coldAndWarmupCalls": {
+        "llmCalls": 0,
+        "llmAttempts": 0,
+        "llmFailures": 0,
+        "embedCalls": 1,
+        "embedFailures": 0,
+        "embedFixtureQueryCalls": 1,
+        "embedOtherInputCalls": 0
+      },
+      "budgetStops": 0,
+      "errors": 0,
+      "ineligible": 0,
+      "incomplete": 17,
+      "sourceCoverageIncomplete": 17,
+      "stopReasons": {
+        "projection_coverage_incomplete": 17
+      },
+      "runtimeIndexReady": true,
+      "semantic": {
+        "statuses": {
+          "available": 17
+        },
+        "microSelectionStrategies": [
+          "streaming_exact_cosine_top8"
+        ],
+        "microScanned": [
+          30
+        ],
+        "microSelected": [
+          8
+        ],
+        "microRepresentationCounts": [
+          8
+        ]
+      },
+      "resourceMax": {
+        "sourceBytes": 7548181,
+        "durableBytes": 0,
+        "reads": 1728,
+        "peakRetainedBytes": 66454274,
+        "peakDecodeBytes": 1693184
+      },
+      "poolAfter": {
+        "sessions": 4,
+        "retainedBytes": 53621258,
+        "peakRetainedBytes": 96564914
+      },
+      "perQuestion": {
+        "n01": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            302
+          ],
+          "embedCalls": [
+            0
+          ]
+        },
+        "n02": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            603
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "n03": {
+          "hits": [
+            false
+          ],
+          "elapsedMs": [
+            601
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "n04": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            617
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "n05": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            596
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "n06": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            612
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "p01": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            584
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "p02": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            605
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "p03": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            590
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "p04": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            603
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "p05": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            601
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "m01": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            596
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "m02": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            577
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "m03": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            575
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "m04": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            586
+          ],
+          "embedCalls": [
+            1
+          ]
+        },
+        "m05": {
+          "hits": [
+            true
+          ],
+          "elapsedMs": [
+            597
+          ],
+          "embedCalls": [
+            1
+          ]
+        }
+      }
+    }
+  },
+  "comparisons": {
+    "forward": {
+      "queries": 48,
+      "lostBaselineHits": [],
+      "packetTextIdentical": 15,
+      "recoveryMedianDeltaPercent": -41.99
+    },
+    "reverse": {
+      "queries": 48,
+      "lostBaselineHits": [],
+      "packetTextIdentical": 9,
+      "recoveryMedianDeltaPercent": -46.68
+    },
+    "hook": {
+      "queries": 16,
+      "lostBaselineHits": [],
+      "packetTextIdentical": 4,
+      "recoveryMedianDeltaPercent": -27.48
+    }
+  },
+  "limits": [
+    "One newly extracted Korean 30-turn snapshot, 16 distinct questions; repeated measurements are not independent datasets.",
+    "LLM used for extraction; no downstream answer quality measurement. Strict substring evidence score, unchanged gold strings.",
+    "Fresh-process cold recall measures n01 only; startup and extraction excluded. Local VM host, not a real RisuAI/browser or real-model server_only benchmark.",
+    "First preview cold recall is rejected with LIBRA_GRAPH_CORPUS_SOURCE_CHANGED in both versions; report its latency separately from successful beforeRequest cold delivery.",
+    "Both versions report projection_coverage_incomplete; a correct evidence packet does not establish complete source coverage. No resource budget stop was observed.",
+    "Resource counters estimate registered allocations, not the full JavaScript heap.",
+    "Raw snapshots, model requests/responses and logs remain outside Git in private storage. This file contains selected aggregate metrics only.",
+    "The original capture evaluator recorded successful LLM responses and final failures, but not its HTTP retry attempt count; final retrieval runs record attempts and have zero LLM attempts. Connectivity probes, profiling and intermediate runs are excluded from final six-leg metrics."
+  ],
+  "combinedPreview": {
+    "claude": {
+      "hits": 90,
+      "questions": 96,
+      "latency": {
+        "n": 96,
+        "medianMs": 370.0,
+        "p95Ms": 752,
+        "maxMs": 1247
+      },
+      "cachedRoundLatency": {
+        "n": 64,
+        "medianMs": 349.0,
+        "p95Ms": 382,
+        "maxMs": 411
+      },
+      "coldMs": [
+        6293,
+        5791
+      ]
+    },
+    "recovery": {
+      "hits": 90,
+      "questions": 96,
+      "latency": {
+        "n": 96,
+        "medianMs": 199.0,
+        "p95Ms": 540,
+        "maxMs": 618
+      },
+      "cachedRoundLatency": {
+        "n": 64,
+        "medianMs": 195.0,
+        "p95Ms": 207,
+        "maxMs": 222
+      },
+      "coldMs": [
+        3781,
+        3739
+      ]
+    }
+  },
+  "validation": {
+    "textHasherCompatibility": "pass",
+    "pagesUnitCases": 14,
+    "resourceUnitCases": 14,
+    "resourceRuntimeCases": 8,
+    "authorityCases": 6,
+    "restartModes": [
+      "plugin_only",
+      "server_only"
+    ],
+    "rankingEngine": "pass",
+    "rankingNative30Sources": "pass",
+    "embeddedAssembly": "pass",
+    "legacyPagesRuntime": "same pre-existing initialized=false assertion failure on recovery base 07d4271 and final plugin"
+  }
+}

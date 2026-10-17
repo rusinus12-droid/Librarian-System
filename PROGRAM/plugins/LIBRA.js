@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.158
-//@version 2.3.158
+//@display-name LIBRA v2.3.159
+//@version 2.3.159
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1557,7 +1557,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.3.158';
+  const PLUGIN_VERSION = '2.3.159';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -18015,17 +18015,19 @@ ${text(paired.leadingAssistant.content || '')}
   const getCurrentCharacterChat = currentChatFromCharacter;
   const getSelectedPersona = (db) => selectedPersonaFromDb(db, null);
   const createTextHasher = () => {
+    const imul = Math.imul;
     let hash = 2166136261;
     let length = 0;
     return {
       update(value) {
         const body = String(value ?? '');
+        // Keep the existing UTF-16 hash and per-update delimiter. Local loop
+        // state avoids repeated closure writes and VM global Math lookups.
+        let next = hash;
         for (let idx = 0; idx < body.length; idx += 1) {
-          hash ^= body.charCodeAt(idx);
-          hash = Math.imul(hash, 16777619);
+          next = imul(next ^ body.charCodeAt(idx), 16777619);
         }
-        hash ^= 31;
-        hash = Math.imul(hash, 16777619);
+        hash = imul(next ^ 31, 16777619);
         length += body.length + 1;
         return this;
       },
@@ -45521,6 +45523,11 @@ function createLibraReadonlySourceContext(owner) {
   // Measure JSON before serialization/decode admission, including UTF-16 escaped
   // controls/lone surrogates and UTF-8 astral characters. Never invoke getters.
   const measure = (value, ceiling = Number.MAX_SAFE_INTEGER) => {
+    // Inspect the same descriptors and count the same JSON values, without a VM
+    // global lookup for each coordinate in a dense provider vector.
+    const descriptorFor = Object.getOwnPropertyDescriptor, owns = Object.hasOwn,
+      prototypeOf = Object.getPrototypeOf, plainPrototype = Object.prototype,
+      isArray = Array.isArray, isFiniteNumber = Number.isFinite, stringify = JSON.stringify;
     let utf8Bytes = 0, codeUnits = 0, tokens = 0;
     const seen = new Set();
     const add = (bytes, units = bytes) => { utf8Bytes += bytes; codeUnits += units; if (utf8Bytes > ceiling) fail('row_exceeds_page'); };
@@ -45528,7 +45535,7 @@ function createLibraReadonlySourceContext(owner) {
       add(2);
       for (let i = 0; i < text.length; i++) {
         const code = text.charCodeAt(i);
-        if (code === 34 || code === 92 || [8,9,10,12,13].includes(code)) add(2);
+        if (code === 34 || code === 92 || code === 8 || code === 9 || code === 10 || code === 12 || code === 13) add(2);
         else if (code < 32) add(6);
         else if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length && text.charCodeAt(i + 1) >= 0xdc00 && text.charCodeAt(i + 1) <= 0xdfff) { add(4, 2); i++; }
         else if (code >= 0xd800 && code <= 0xdfff) add(6);
@@ -45540,24 +45547,24 @@ function createLibraReadonlySourceContext(owner) {
       if (item === null) { add(4); return; }
       if (typeof item === 'string') { quoted(item); return; }
       if (typeof item === 'boolean') { add(item ? 4 : 5); return; }
-      if (typeof item === 'number' && Number.isFinite(item)) { add(JSON.stringify(item).length); return; }
+      if (typeof item === 'number' && isFiniteNumber(item)) { add(stringify(item).length); return; }
       if (!item || typeof item !== 'object' || seen.has(item)) fail('json_invalid');
-      const proto = Object.getPrototypeOf(item);
-      if (!Array.isArray(item) && proto !== Object.prototype && proto !== null) fail('json_invalid');
-      if (Object.hasOwn(item, 'toJSON')) fail('json_invalid');
+      const proto = prototypeOf(item);
+      if (!isArray(item) && proto !== plainPrototype && proto !== null) fail('json_invalid');
+      if (owns(item, 'toJSON')) fail('json_invalid');
       seen.add(item); add(2);
-      if (Array.isArray(item)) {
+      if (isArray(item)) {
         for (let i = 0; i < item.length; i++) {
-          const descriptor = Object.getOwnPropertyDescriptor(item, String(i));
-          if (!descriptor || !Object.hasOwn(descriptor, 'value')) fail('json_invalid');
+          const descriptor = descriptorFor(item, i);
+          if (!descriptor || !owns(descriptor, 'value')) fail('json_invalid');
           if (i) add(1); walk(descriptor.value, depth + 1);
         }
       } else {
         let index = 0;
         for (const key in item) {
-          if (!Object.hasOwn(item, key)) continue;
-          const descriptor = Object.getOwnPropertyDescriptor(item, key);
-          if (!descriptor || !Object.hasOwn(descriptor, 'value')) fail('json_invalid');
+          if (!owns(item, key)) continue;
+          const descriptor = descriptorFor(item, key);
+          if (!descriptor || !owns(descriptor, 'value')) fail('json_invalid');
           if (index++) add(1); quoted(key); add(1); walk(descriptor.value, depth + 1);
         }
       }

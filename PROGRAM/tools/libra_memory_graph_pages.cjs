@@ -22,6 +22,11 @@ module.exports = function createMemoryGraphPages({ fingerprint, limits = {} } = 
   // Measure JSON before serialization/decode admission, including UTF-16 escaped
   // controls/lone surrogates and UTF-8 astral characters. Never invoke getters.
   const measure = (value, ceiling = Number.MAX_SAFE_INTEGER) => {
+    // Inspect the same descriptors and count the same JSON values, without a VM
+    // global lookup for each coordinate in a dense provider vector.
+    const descriptorFor = Object.getOwnPropertyDescriptor, owns = Object.hasOwn,
+      prototypeOf = Object.getPrototypeOf, plainPrototype = Object.prototype,
+      isArray = Array.isArray, isFiniteNumber = Number.isFinite, stringify = JSON.stringify;
     let utf8Bytes = 0, codeUnits = 0, tokens = 0;
     const seen = new Set();
     const add = (bytes, units = bytes) => { utf8Bytes += bytes; codeUnits += units; if (utf8Bytes > ceiling) fail('row_exceeds_page'); };
@@ -29,7 +34,7 @@ module.exports = function createMemoryGraphPages({ fingerprint, limits = {} } = 
       add(2);
       for (let i = 0; i < text.length; i++) {
         const code = text.charCodeAt(i);
-        if (code === 34 || code === 92 || [8,9,10,12,13].includes(code)) add(2);
+        if (code === 34 || code === 92 || code === 8 || code === 9 || code === 10 || code === 12 || code === 13) add(2);
         else if (code < 32) add(6);
         else if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length && text.charCodeAt(i + 1) >= 0xdc00 && text.charCodeAt(i + 1) <= 0xdfff) { add(4, 2); i++; }
         else if (code >= 0xd800 && code <= 0xdfff) add(6);
@@ -41,24 +46,24 @@ module.exports = function createMemoryGraphPages({ fingerprint, limits = {} } = 
       if (item === null) { add(4); return; }
       if (typeof item === 'string') { quoted(item); return; }
       if (typeof item === 'boolean') { add(item ? 4 : 5); return; }
-      if (typeof item === 'number' && Number.isFinite(item)) { add(JSON.stringify(item).length); return; }
+      if (typeof item === 'number' && isFiniteNumber(item)) { add(stringify(item).length); return; }
       if (!item || typeof item !== 'object' || seen.has(item)) fail('json_invalid');
-      const proto = Object.getPrototypeOf(item);
-      if (!Array.isArray(item) && proto !== Object.prototype && proto !== null) fail('json_invalid');
-      if (Object.hasOwn(item, 'toJSON')) fail('json_invalid');
+      const proto = prototypeOf(item);
+      if (!isArray(item) && proto !== plainPrototype && proto !== null) fail('json_invalid');
+      if (owns(item, 'toJSON')) fail('json_invalid');
       seen.add(item); add(2);
-      if (Array.isArray(item)) {
+      if (isArray(item)) {
         for (let i = 0; i < item.length; i++) {
-          const descriptor = Object.getOwnPropertyDescriptor(item, String(i));
-          if (!descriptor || !Object.hasOwn(descriptor, 'value')) fail('json_invalid');
+          const descriptor = descriptorFor(item, i);
+          if (!descriptor || !owns(descriptor, 'value')) fail('json_invalid');
           if (i) add(1); walk(descriptor.value, depth + 1);
         }
       } else {
         let index = 0;
         for (const key in item) {
-          if (!Object.hasOwn(item, key)) continue;
-          const descriptor = Object.getOwnPropertyDescriptor(item, key);
-          if (!descriptor || !Object.hasOwn(descriptor, 'value')) fail('json_invalid');
+          if (!owns(item, key)) continue;
+          const descriptor = descriptorFor(item, key);
+          if (!descriptor || !owns(descriptor, 'value')) fail('json_invalid');
           if (index++) add(1); quoted(key); add(1); walk(descriptor.value, depth + 1);
         }
       }
