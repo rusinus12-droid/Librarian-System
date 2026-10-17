@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.104
+//@display-name ⚡ FLASHBACK Memory v1.0.109
 //@api 3.0
-//@version 1.0.104
+//@version 1.0.109
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.104';
+const PLUGIN_VERSION = '1.0.109';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -48829,14 +48829,97 @@ ${cleanedText}`, 80),
   };
   const FLASHBACK_ATTENTION_POLL_MS = 10000;
   const FLASHBACK_ATTENTION_REFRESH_DELAY_MS = 2500;
+  const flashbackAttentionEnabled = (settings = Runtime.settings) => settings?.mode !== 'off'
+    && settings?.mode !== 'disabled' && settings?.enabled !== false;
   const FlashbackAttention = {
     started: false,
+    generation: 0,
+    pollFlight: null,
+    evaluationFlight: null,
     refreshTimer: null,
     pollTimer: null,
     evaluating: false,
     lastIndexes: '',
+    lastRevision: '',
+    revisionTracker: null,
     buttonSignature: '',
     state: null
+  };
+  // Keep only small source fingerprints, never a second transcript or entries
+  // in the bounded normalization cache. Hash in short slices so a long message
+  // or chat cannot monopolize the UI thread during the fallback poll.
+  const flashbackAttentionRevisionEntry = (message, index) => {
+    const identity = stableChatMessageSourceIdentity(message);
+    const role = rawMessageRole(message);
+    const raw = flashbackLiveChatComparable(flashbackLiveChatRawPayload(message));
+    const metaKey = flashbackMessageRevisionMetaKey(message, index, identity, role)
+      + `|disabled:${message?.disabled === true}|comment:${message?.isComment === true}`;
+    return { rawType: raw.type, rawValue: raw.value, metaKey };
+  };
+  const flashbackAttentionRevision = async (chat, isCurrent = () => true) => {
+    if (!isCurrent()) return null;
+    const cacheKey = flashbackLiveChatCacheKey(chat, '');
+    const previous = FlashbackAttention.revisionTracker;
+    const tracker = previous?.cacheKey === cacheKey ? previous : null;
+    const sourcePolicy = memorySuiteSourceTagKey('flashback');
+    const sources = new Map(), aliases = new Map();
+    const multiply = Math.imul;
+    let messageCount = 0;
+    let workSinceCheck = 0;
+    let sliceStarted = performance.now();
+    for (const [label, messages] of chatMessageSourceSpecs(chat || {})) {
+      messageCount += messages.length;
+      if (aliases.has(messages)) {
+        sources.set(label, aliases.get(messages));
+        continue;
+      }
+      let first = 0x811c9dc5, second = 5381, chars = 0;
+      const append = async value => {
+        // Length prefixes keep field/message boundaries unambiguous. Two
+        // independent 32-bit accumulators avoid a single short-hash identity.
+        for (const part of [`${value.length}:`, value]) {
+          chars += part.length;
+          for (let offset = 0; offset < part.length; offset += 16384) {
+            const end = Math.min(part.length, offset + 16384);
+            for (let index = offset; index < end; index += 1) {
+              const code = part.charCodeAt(index);
+              first = multiply(first ^ code, 0x01000193);
+              second = multiply(second, 33) ^ code;
+            }
+            workSinceCheck += end - offset;
+            if (workSinceCheck >= 16384) {
+              workSinceCheck = 0;
+              if (!isCurrent()) return false;
+              if (performance.now() - sliceStarted >= 4) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+                if (!isCurrent()) return false;
+                sliceStarted = performance.now();
+              }
+            }
+          }
+        }
+        return true;
+      };
+      if (!await append(sourcePolicy)) return null;
+      for (let index = 0; index < messages.length; index += 1) {
+        const entry = flashbackAttentionRevisionEntry(messages[index], index);
+        if (!await append(entry.rawType) || !await append(entry.rawValue) || !await append(entry.metaKey)) return null;
+      }
+      const signature = `${messages.length}:${chars}:${first >>> 0}:${second >>> 0}`;
+      aliases.set(messages, signature);
+      sources.set(label, signature);
+    }
+    if (!isCurrent()) return null;
+    const changed = !tracker || tracker.sources.size !== sources.size
+      || [...sources].some(([label, signature]) => tracker.sources.get(label) !== signature);
+    const revision = Number(tracker?.revision || 0) + Number(changed);
+    FlashbackAttention.revisionTracker = { cacheKey, revision, sources };
+    return {
+      cacheKey,
+      revisionSignature: String(revision),
+      sourceCount: sources.size,
+      messageCount
+    };
   };
   const flashbackAttentionDecision = ({
     captureFailed = false,
@@ -48884,10 +48967,11 @@ ${cleanedText}`, 80),
   };
   const computeFlashbackAttention = async () => {
     const settings = await loadSettings(false);
-    if (settings?.enabled === false || settings?.mode === 'disabled' || Runtime.unloaded) {
+    if (!flashbackAttentionEnabled(settings) || Runtime.unloaded) {
       return { scopeKey: '', kind: '', count: 0 };
     }
     const snapshot = await loadRisuSnapshot(false);
+    if (!flashbackAttentionEnabled() || Runtime.unloaded) return { scopeKey: '', kind: '', count: 0 };
     const scope = resolveScopeFromSnapshot(snapshot);
     if (!scope?.scopeKey) return { scopeKey: '', kind: '', count: 0 };
 
@@ -48896,16 +48980,19 @@ ${cleanedText}`, 80),
     let loaded = null;
     try { loaded = await loadScopeRecords(scope.scopeKey, { readOnly: true, rawTextOnly: true }); }
     catch (_) { /* An unavailable corpus is a storage warning, never an empty one. */ }
+    if (!flashbackAttentionEnabled() || Runtime.unloaded) return { scopeKey: '', kind: '', count: 0 };
     const manifest = loaded?.manifest;
-    const storageError = !loaded || manifest?.manifestCorrupt === true || !!manifest?.foreignScopeKey
+    let storageError = !loaded || manifest?.manifestCorrupt === true || !!manifest?.foreignScopeKey
       || manifest?.archiveRefInvalid === true || Number(manifest?.missingShards || 0) > 0
       || Number(manifest?.corruptShards || 0) > 0 || manifest?.recordCountMismatch === true;
     const records = loaded?.records || [];
     const work = statsForRecords(records).embeddingWork;
-    const registry = readEmbeddingAttemptRegistry(manifest || {});
+    let registry = null;
+    try { registry = readEmbeddingAttemptRegistry(manifest || {}); }
+    catch (_) { storageError = true; }
     const runtimeId = currentEmbeddingWorkRuntime();
     for (const record of records) {
-      if (!isValidatedEmbeddingWorkRecord(record) || record.embeddingWork.status === 'uncertain') continue;
+      if (!registry || !isValidatedEmbeddingWorkRecord(record) || record.embeddingWork.status === 'uncertain') continue;
       const job = record.embeddingWork;
       const detached = job.status === 'running'
         && (job.attempt?.runtimeId !== runtimeId || !activeEmbeddingWorkAttempts.has(job.attempt?.id));
@@ -48977,7 +49064,9 @@ ${cleanedText}`, 80),
 
     // Scope changes during asynchronous storage reads must not publish a stale
     // chat's warning into the new chat's button registry.
-    const current = resolveScopeFromSnapshot(await loadRisuSnapshot(true));
+    const currentSnapshot = await loadRisuSnapshot(true);
+    if (!flashbackAttentionEnabled() || Runtime.unloaded) return { scopeKey: '', kind: '', count: 0 };
+    const current = resolveScopeFromSnapshot(currentSnapshot);
     if (current?.scopeKey !== scope.scopeKey) return { stale: true };
 
     const decision = flashbackAttentionDecision({
@@ -49000,57 +49089,92 @@ ${cleanedText}`, 80),
       checkedAt: Date.now()
     };
   };
-  const syncFlashbackAttentionButton = async next => {
-    const signature = next?.kind ? `${next.kind}:${next.count}:${next.scopeKey || ''}` : '';
-    if (signature === FlashbackAttention.buttonSignature) return true;
-    const uiApi = getApiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || getLiveApi();
-    const buttonApi = getApiCandidates().find(candidate => typeof candidate?.registerButton === 'function') || getLiveApi();
-    if (FlashbackAttention.buttonSignature && typeof uiApi?.unregisterUIPart === 'function') {
-      try { await uiApi.unregisterUIPart(FLASHBACK_ATTENTION_BUTTON_ID); } catch (_) {}
-    }
-    FlashbackAttention.buttonSignature = '';
-    if (!next?.kind || typeof buttonApi?.registerButton !== 'function' || Runtime.unloaded) return !next?.kind;
-    try {
-      await buttonApi.registerButton({
-        name: next.name,
-        icon: flashbackAttentionIcon(next.kind),
-        iconType: 'html',
-        location: 'chat',
-        id: FLASHBACK_ATTENTION_BUTTON_ID
-      }, () => { void openFlashbackAttention(); });
-      FlashbackAttention.buttonSignature = signature;
-      pushActivityLog('attention_shown', `${PLUGIN_NAME} 주의 알림 버튼이 표시되었습니다.`, { kind: next.kind, count: next.count }, 'info');
-      return true;
-    } catch (error) {
-      warn('flashback_attention_button_failed', error);
-      return false;
-    }
+  let flashbackAttentionButtonTail = Promise.resolve();
+  const syncFlashbackAttentionButton = (next, isCurrent = () => true) => {
+    const generation = FlashbackAttention.generation;
+    const current = () => generation === FlashbackAttention.generation && !Runtime.unloaded && isCurrent()
+      && (!next?.kind || flashbackAttentionEnabled());
+    const update = async () => {
+      if (!current()) return false;
+      const signature = next?.kind ? `${next.kind}:${next.count}:${next.scopeKey || ''}` : '';
+      if (signature === FlashbackAttention.buttonSignature) return true;
+      const uiApi = getApiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || getLiveApi();
+      const buttonApi = getApiCandidates().find(candidate => typeof candidate?.registerButton === 'function') || getLiveApi();
+      if (FlashbackAttention.buttonSignature && typeof uiApi?.unregisterUIPart === 'function') {
+        try { await uiApi.unregisterUIPart(FLASHBACK_ATTENTION_BUTTON_ID); } catch (_) {}
+      }
+      FlashbackAttention.buttonSignature = '';
+      if (!current()) return false;
+      if (!next?.kind || typeof buttonApi?.registerButton !== 'function') return !next?.kind;
+      try {
+        await buttonApi.registerButton({
+          name: next.name,
+          icon: flashbackAttentionIcon(next.kind),
+          iconType: 'html',
+          location: 'chat',
+          id: FLASHBACK_ATTENTION_BUTTON_ID
+        }, () => { void openFlashbackAttention(); });
+        // A physical host registration can finish after stop/unload. Serialize
+        // button writes and drain this one before a newer session can publish.
+        if (!current()) {
+          try { await uiApi?.unregisterUIPart?.(FLASHBACK_ATTENTION_BUTTON_ID); } catch (_) {}
+          return false;
+        }
+        FlashbackAttention.buttonSignature = signature;
+        pushActivityLog('attention_shown', `${PLUGIN_NAME} 주의 알림 버튼이 표시되었습니다.`, { kind: next.kind, count: next.count }, 'info');
+        return true;
+      } catch (error) {
+        warn('flashback_attention_button_failed', error);
+        return false;
+      }
+    };
+    const task = flashbackAttentionButtonTail.then(update, update);
+    flashbackAttentionButtonTail = task.catch(() => false);
+    return task;
   };
   const refreshFlashbackAttention = async () => {
     if (!FlashbackAttention.started || Runtime.unloaded) return null;
+    const generation = FlashbackAttention.generation;
     if (FlashbackAttention.evaluating) {
       scheduleFlashbackAttentionRefresh('busy', 1000);
       return null;
     }
+    const flight = { generation };
+    FlashbackAttention.evaluationFlight = flight;
     FlashbackAttention.evaluating = true;
+    const current = () => FlashbackAttention.started && !Runtime.unloaded
+      && generation === FlashbackAttention.generation && FlashbackAttention.evaluationFlight === flight;
     try {
       const next = await computeFlashbackAttention();
+      if (!current()) return null;
       if (next?.stale) { scheduleFlashbackAttentionRefresh('scope_changed', 0); return null; }
-      if (Runtime.unloaded) return null;
       FlashbackAttention.state = next;
-      await syncFlashbackAttentionButton(next);
+      await syncFlashbackAttentionButton(next, current);
+      // Settings may turn off while the host acknowledges a button operation.
+      // Clear any previous warning too, without stopping re-enable monitoring.
+      if (current() && !flashbackAttentionEnabled()) {
+        const idle = { scopeKey: '', kind: '', count: 0 };
+        FlashbackAttention.state = idle;
+        await syncFlashbackAttentionButton(idle, current);
+        return idle;
+      }
       return next;
     } catch (error) {
       warn('flashback_attention_refresh_failed', error);
       return null;
     } finally {
-      FlashbackAttention.evaluating = false;
+      if (FlashbackAttention.evaluationFlight === flight) {
+        FlashbackAttention.evaluationFlight = null;
+        FlashbackAttention.evaluating = false;
+      }
     }
   };
   function scheduleFlashbackAttentionRefresh(reason = '', delayMs = FLASHBACK_ATTENTION_REFRESH_DELAY_MS) {
     if (!FlashbackAttention.started || Runtime.unloaded) return false;
+    const generation = FlashbackAttention.generation;
     if (FlashbackAttention.refreshTimer) clearTimeout(FlashbackAttention.refreshTimer);
     FlashbackAttention.refreshTimer = setTimeout(() => {
+      if (generation !== FlashbackAttention.generation) return;
       FlashbackAttention.refreshTimer = null;
       void refreshFlashbackAttention();
     }, Math.max(0, Number(delayMs) || 0));
@@ -49058,43 +49182,82 @@ ${cleanedText}`, 80),
     return true;
   }
   const pollFlashbackAttention = async () => {
-    FlashbackAttention.pollTimer = null;
     if (!FlashbackAttention.started || Runtime.unloaded) return;
+    if (FlashbackAttention.pollFlight) return;
+    if (FlashbackAttention.pollTimer) clearTimeout(FlashbackAttention.pollTimer);
+    FlashbackAttention.pollTimer = null;
+    const generation = FlashbackAttention.generation, flight = { generation };
+    FlashbackAttention.pollFlight = flight;
+    const current = () => FlashbackAttention.started && !Runtime.unloaded
+      && generation === FlashbackAttention.generation && FlashbackAttention.pollFlight === flight;
     try {
-      const api = getApiCandidates().find(candidate => typeof candidate?.getCurrentCharacterIndex === 'function' && typeof candidate?.getCurrentChatIndex === 'function') || getLiveApi();
-      if (typeof api?.getCurrentCharacterIndex === 'function' && typeof api?.getCurrentChatIndex === 'function') {
-        const indexes = `${await api.getCurrentCharacterIndex()}:${await api.getCurrentChatIndex()}`;
-        if (indexes !== FlashbackAttention.lastIndexes) {
-          FlashbackAttention.lastIndexes = indexes;
-          scheduleFlashbackAttentionRefresh('chat_switch', 500);
-        }
+      const settings = await loadSettings(false);
+      if (!current() || !flashbackAttentionEnabled(settings)) return;
+      const snapshot = await loadRisuCaptureSnapshot();
+      if (!current() || !flashbackAttentionEnabled()) return;
+      const indexes = `${Number(snapshot?.chatInfo?.charIndex ?? -1)}:${Number(snapshot?.chatInfo?.chatIndex ?? -1)}`;
+      const live = await flashbackAttentionRevision(snapshot?.chat || null, () => current() && flashbackAttentionEnabled());
+      if (!live || !current()) return;
+      const revision = `${live.cacheKey || ''}:${live.revisionSignature || ''}`;
+      const indexChanged = indexes !== FlashbackAttention.lastIndexes;
+      const revisionChanged = revision !== FlashbackAttention.lastRevision;
+      FlashbackAttention.lastIndexes = indexes;
+      FlashbackAttention.lastRevision = revision;
+      if (indexChanged || revisionChanged) {
+        scheduleFlashbackAttentionRefresh(indexChanged ? 'chat_switch' : 'chat_source_changed', 500);
       }
     } catch (_) {}
-    if (!Runtime.unloaded) {
-      FlashbackAttention.pollTimer = setTimeout(() => void pollFlashbackAttention(), FLASHBACK_ATTENTION_POLL_MS);
-      FlashbackAttention.pollTimer?.unref?.();
+    finally {
+      const rearm = current();
+      if (FlashbackAttention.pollFlight === flight) FlashbackAttention.pollFlight = null;
+      if (rearm) {
+        if (!flashbackAttentionEnabled()) {
+          FlashbackAttention.revisionTracker = null;
+          FlashbackAttention.lastIndexes = '';
+          FlashbackAttention.lastRevision = '';
+        }
+        FlashbackAttention.pollTimer = setTimeout(() => {
+          if (generation === FlashbackAttention.generation) void pollFlashbackAttention();
+        }, FLASHBACK_ATTENTION_POLL_MS);
+        FlashbackAttention.pollTimer?.unref?.();
+      }
     }
   };
   const startFlashbackAttention = () => {
     if (FlashbackAttention.started || Runtime.unloaded) return false;
+    FlashbackAttention.generation += 1;
     FlashbackAttention.started = true;
     void pollFlashbackAttention();
     scheduleFlashbackAttentionRefresh('start', 800);
     return true;
   };
   const stopFlashbackAttention = async () => {
+    const generation = ++FlashbackAttention.generation;
+    FlashbackAttention.started = false;
+    FlashbackAttention.pollFlight = null;
+    FlashbackAttention.evaluationFlight = null;
+    FlashbackAttention.evaluating = false;
     for (const key of ['refreshTimer', 'pollTimer']) {
       if (FlashbackAttention[key]) {
         try { clearTimeout(FlashbackAttention[key]); } catch (_) {}
         FlashbackAttention[key] = null;
       }
     }
-    FlashbackAttention.started = false;
-    if (FlashbackAttention.buttonSignature) {
-      const uiApi = getApiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || getLiveApi();
-      try { await uiApi?.unregisterUIPart?.(FLASHBACK_ATTENTION_BUTTON_ID); } catch (_) {}
-      FlashbackAttention.buttonSignature = '';
-    }
+    FlashbackAttention.lastIndexes = '';
+    FlashbackAttention.lastRevision = '';
+    FlashbackAttention.revisionTracker = null;
+    FlashbackAttention.state = null;
+    const cleanup = async () => {
+      if (generation !== FlashbackAttention.generation) return;
+      if (FlashbackAttention.buttonSignature) {
+        const uiApi = getApiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || getLiveApi();
+        try { await uiApi?.unregisterUIPart?.(FLASHBACK_ATTENTION_BUTTON_ID); } catch (_) {}
+        FlashbackAttention.buttonSignature = '';
+      }
+    };
+    const task = flashbackAttentionButtonTail.then(cleanup, cleanup);
+    flashbackAttentionButtonTail = task.catch(() => false);
+    await task;
   };
   async function openFlashbackAttention() {
     const state = FlashbackAttention.state;
@@ -50323,6 +50486,8 @@ return createReadSession;
   publicApi._test.syncFlashbackAttentionButton = syncFlashbackAttentionButton;
   publicApi._test.startFlashbackAttention = startFlashbackAttention;
   publicApi._test.stopFlashbackAttention = stopFlashbackAttention;
+  publicApi._test.flashbackAttentionRevision = flashbackAttentionRevision;
+  publicApi._test.pollFlashbackAttention = pollFlashbackAttention;
   publicApi._test.refreshFlashbackAttention = refreshFlashbackAttention;
   publicApi._test.scheduleFlashbackAttentionRefresh = scheduleFlashbackAttentionRefresh;
   publicApi._test.openFlashbackAttention = openFlashbackAttention;

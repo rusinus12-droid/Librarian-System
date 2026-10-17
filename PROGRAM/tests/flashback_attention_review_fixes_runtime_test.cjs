@@ -4,6 +4,11 @@ const assert=require('node:assert/strict');
 const {test}=require('node:test');
 const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
 const chat=()=>({message:[{role:'user',chatId:'u1',data:'Where is the brass key?'},{role:'assistant',chatId:'a1',data:'The brass key is under the blue sundial.'}]});
+function allowRevisionYields(f) {
+  const schedule=f.context.setTimeout;
+  f.context.setTimeout=(callback,delay,...args)=>delay===0?setTimeout(callback,0,...args):schedule(callback,delay,...args);
+}
+const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return {promise,resolve};};
 async function seed({ingest=true,source,embedding=false,nativeFetch}={}) {
   const f=await createFixture({pauseScheduledTimers:true,chat:chat(),source,nativeFetch});
   const cfg=await f.api.loadSettings();cfg.embeddingEnabled=embedding;
@@ -135,4 +140,239 @@ test('attention inspection does not switch the active runtime scope',async()=>{
     assert.equal(state.kind,'');
     assert.equal(t.Runtime.currentScope.scopeKey,scope.scopeKey,'read inspection cannot abort work by applying a different scope');
   }finally{await f.dispose();}
+});
+
+test('corrupt embedding attempt registry becomes a storage warning instead of aborting attention',async()=>{
+  const {f,t,scope}=await seed();try{
+    const manifest=await t.loadScopeManifest(scope.scopeKey);
+    await t.saveScopeManifest({...manifest,embeddingAttemptRegistry:{schema:'broken'}},scope);
+    const before=JSON.stringify([...f.pluginStorage.values]);
+    const state=await t.computeFlashbackAttention();
+    assert.equal(state.kind,'storage_error');
+    assert.equal(JSON.stringify([...f.pluginStorage.values]),before,'warning inspection remains read-only');
+  }finally{await f.dispose();}
+});
+
+test('attention poll notices an edited response without a chat-index change',async()=>{
+  const {f,t}=await seed();try{
+    await t.stopFlashbackAttention();
+    t.FlashbackAttention.started=true;
+    t.FlashbackAttention.lastIndexes='';
+    t.FlashbackAttention.lastRevision='';
+    t.FlashbackAttention.refreshTimer=null;
+    await t.pollFlashbackAttention();
+    t.FlashbackAttention.refreshTimer=null;
+    f.currentChat.message[1].data='The brass key is now inside the red tower.';
+    await t.pollFlashbackAttention();
+    assert.equal(t.FlashbackAttention.lastIndexes,'0:0','the chat identity did not change');
+    assert.equal(t.FlashbackAttention.refreshTimer?.fixturePausedTimer,true,'source revision schedules a refresh');
+    assert.equal((await t.computeFlashbackAttention()).kind,'source_changed');
+  }finally{await f.dispose();}
+});
+
+test('attention poll keeps large-chat revision tracking outside the normalization cache',async()=>{
+  const messages=Array.from({length:5000},(_,index)=>({
+    role:index%2?'assistant':'user',chatId:`large-${index}`,data:`message ${index} ${'x'.repeat(80)}`
+  }));
+  const f=await createFixture({pauseScheduledTimers:true,chat:{id:'large-chat',chatId:'large-chat',message:messages,messages:[]}});
+  const t=f.api._test;
+  try{
+    await t.stopFlashbackAttention();
+    allowRevisionYields(f);
+    t.FlashbackAttention.started=true;
+    const before={...t.Runtime.liveChatRevisionCacheStats};
+    await t.pollFlashbackAttention();
+    t.FlashbackAttention.refreshTimer=null;
+    await t.pollFlashbackAttention();
+    assert.deepEqual({...t.Runtime.liveChatRevisionCacheStats},before,'polling does not populate or churn the full normalization cache');
+    assert.equal(t.FlashbackAttention.refreshTimer,null,'an unchanged large chat does not schedule work');
+    f.currentChat.message=structuredClone(f.currentChat.message);
+    await t.pollFlashbackAttention();
+    assert.equal(t.FlashbackAttention.refreshTimer,null,'equivalent host clones do not create a false revision');
+    f.currentChat.message[4500].data='edited near the end of a large chat';
+    await t.pollFlashbackAttention();
+    assert.equal(t.FlashbackAttention.refreshTimer?.fixturePausedTimer,true,'an edit beyond the former 4096-entry limit is detected');
+    assert.deepEqual({...t.Runtime.liveChatRevisionCacheStats},before,'edit detection remains isolated from normalized transcript storage');
+  }finally{await f.dispose();}
+});
+
+test('attention revision retains only fingerprints and yields while scanning long messages',async()=>{
+  const f=await createFixture({pauseScheduledTimers:true,chat:chat()}),t=f.api._test;
+  try{
+    await t.stopFlashbackAttention();
+    allowRevisionYields(f);
+    f.currentChat.message[1].data='a'.repeat(4*1024*1024);
+    t.FlashbackAttention.started=true;
+    let responsive=false;
+    const heartbeat=setTimeout(()=>{responsive=true;},0);
+    try{await t.pollFlashbackAttention();}finally{clearTimeout(heartbeat);}
+    assert.equal(responsive,true,'a large payload scan lets pending UI tasks run');
+    const retained=JSON.stringify([...t.FlashbackAttention.revisionTracker.sources.values()]);
+    assert.ok(retained.length<4096,'attention must not keep a second copy of the full source text');
+    t.FlashbackAttention.refreshTimer=null;
+    const old=f.currentChat.message[1].data;
+    f.currentChat.message[1].data=old.slice(0,old.length/2)+'b'+old.slice(old.length/2+1);
+    await t.pollFlashbackAttention();
+    assert.equal(t.FlashbackAttention.refreshTimer?.fixturePausedTimer,true,'same-length edits in the middle are detected');
+  }finally{await f.dispose();}
+});
+
+test('a stopped attention poll cannot recreate its tracker or timers',async()=>{
+  const f=await createFixture({pauseScheduledTimers:true,chat:chat()}),t=f.api._test;
+  const entered=deferred(),release=deferred();
+  try{
+    await t.stopFlashbackAttention();
+    t.FlashbackAttention.started=true;
+    f.host.getChatFromIndex=async()=>{entered.resolve();await release.promise;return f.currentChat;};
+    const pending=t.pollFlashbackAttention();
+    await entered.promise;
+    await t.stopFlashbackAttention();
+    release.resolve();await pending;
+    assert.equal(t.FlashbackAttention.revisionTracker,null,'a completed old host read cannot restore released revision data');
+    assert.equal(t.FlashbackAttention.pollTimer,null,'stop leaves no polling timer');
+    assert.equal(t.FlashbackAttention.refreshTimer,null,'stop leaves no refresh timer');
+  }finally{release.resolve();await f.dispose();}
+});
+
+test('a stopped attention evaluation cannot publish an old warning',async()=>{
+  const f=await createFixture({pauseScheduledTimers:true,chat:chat()}),t=f.api._test;
+  const entered=deferred(),release=deferred();let registered=0;
+  try{
+    await t.stopFlashbackAttention();
+    t.FlashbackAttention.started=true;
+    f.host.getChatFromIndex=async()=>{entered.resolve();await release.promise;return f.currentChat;};
+    f.host.registerButton=async()=>{registered++;return true;};
+    const pending=t.refreshFlashbackAttention();
+    await entered.promise;
+    await t.stopFlashbackAttention();
+    release.resolve();await pending;
+    assert.equal(registered,0,'an evaluation from a stopped session cannot create a button');
+    assert.equal(t.FlashbackAttention.state,null,'stopped attention keeps no actionable old state');
+  }finally{release.resolve();await f.dispose();}
+});
+
+test('stopping attention drains an in-flight host button registration',async()=>{
+  const f=await createFixture({pauseScheduledTimers:true,chat:chat()}),t=f.api._test;
+  const entered=deferred(),release=deferred(),buttons=new Set();
+  try{
+    await t.stopFlashbackAttention();
+    t.FlashbackAttention.started=true;
+    f.host.registerButton=async spec=>{entered.resolve();await release.promise;buttons.add(spec.id);return true;};
+    f.host.unregisterUIPart=async id=>{buttons.delete(id);return true;};
+    const pending=t.refreshFlashbackAttention();
+    await entered.promise;
+    const stopped=t.stopFlashbackAttention();
+    release.resolve();await Promise.all([pending,stopped]);
+    assert.equal(buttons.size,0,'a late physical registration is removed before shutdown completes');
+    assert.equal(t.FlashbackAttention.buttonSignature,'');
+  }finally{release.resolve();await f.dispose();}
+});
+
+test('an old poll cannot overwrite or duplicate a restarted attention session',async()=>{
+  const f=await createFixture({pauseScheduledTimers:true,chat:chat()}),t=f.api._test;
+  const entered=deferred(),release=deferred();let reads=0;
+  try{
+    await t.stopFlashbackAttention();
+    t.FlashbackAttention.started=true;
+    const previousChat=structuredClone(f.currentChat);
+    f.host.getChatFromIndex=async()=>{
+      if(++reads===1){entered.resolve();await release.promise;return previousChat;}
+      return f.currentChat;
+    };
+    const pending=t.pollFlashbackAttention();
+    await entered.promise;
+    await t.pollFlashbackAttention();
+    assert.equal(reads,1,'only one poll can read the host in each session');
+    await t.stopFlashbackAttention();
+    f.currentChat.id='new-session-chat';f.currentChat.chatId=f.currentChat.id;
+    t.startFlashbackAttention();
+    await new Promise(setImmediate);
+    const currentTracker=t.FlashbackAttention.revisionTracker,currentTimer=t.FlashbackAttention.pollTimer;
+    assert.equal(currentTracker.cacheKey,'chat:new-session-chat');
+    release.resolve();await pending;
+    assert.equal(t.FlashbackAttention.revisionTracker,currentTracker,'old completion cannot replace the new tracker');
+    assert.equal(t.FlashbackAttention.pollTimer,currentTimer,'old completion cannot install another polling loop');
+  }finally{release.resolve();await f.dispose();}
+});
+
+test('stopping during a revision slice cancels the remainder of the scan',async()=>{
+  const f=await createFixture({pauseScheduledTimers:true,chat:chat()}),t=f.api._test;
+  const yielded=deferred();let resume;
+  try{
+    await t.stopFlashbackAttention();
+    const schedule=f.context.setTimeout;
+    f.context.setTimeout=(callback,delay,...args)=>{
+      if(delay===0){resume=()=>callback(...args);yielded.resolve();return {fixturePausedTimer:true};}
+      return schedule(callback,delay,...args);
+    };
+    f.currentChat.message[1].data='z'.repeat(4*1024*1024);
+    t.FlashbackAttention.started=true;
+    const pending=t.pollFlashbackAttention();
+    await yielded.promise;
+    await t.stopFlashbackAttention();
+    resume();resume=null;await pending;
+    assert.equal(t.FlashbackAttention.revisionTracker,null);
+    assert.equal(t.FlashbackAttention.pollTimer,null);
+  }finally{resume?.();await f.dispose();}
+});
+
+test('the public off setting clears attention and skips transcript polling until re-enabled',async()=>{
+  const f=await createFixture({pauseScheduledTimers:true,chat:chat()}),t=f.api._test,buttons=new Set();
+  try{
+    await t.stopFlashbackAttention();t.FlashbackAttention.started=true;
+    f.host.registerButton=async spec=>{buttons.add(spec.id);return true;};
+    f.host.unregisterUIPart=async id=>{buttons.delete(id);return true;};
+    assert.equal((await t.refreshFlashbackAttention()).kind,'cold_start');
+    await t.pollFlashbackAttention();
+    await f.api.saveSettings({...await f.api.loadSettings(),mode:'off'});
+    let reads=0;
+    f.host.getChatFromIndex=async()=>{reads++;return f.currentChat;};
+    assert.equal((await t.refreshFlashbackAttention()).kind,'');
+    assert.equal(buttons.size,0,'turning the engine off removes the existing warning');
+    await t.pollFlashbackAttention();await t.pollFlashbackAttention();
+    assert.equal(reads,0,'off mode does not fetch or hash the transcript');
+    assert.equal(t.FlashbackAttention.revisionTracker,null);
+    assert.equal(t.FlashbackAttention.pollTimer?.fixturePausedTimer,true,'a lightweight timer can notice re-enabling');
+    await f.api.saveSettings({...await f.api.loadSettings(),mode:'normal'});
+    await t.pollFlashbackAttention();
+    assert.ok(reads>0);assert.ok(t.FlashbackAttention.revisionTracker);
+    assert.equal((await t.refreshFlashbackAttention()).kind,'cold_start');
+    assert.equal(buttons.size,1,'the same unchanged chat is inspected after re-enabling');
+  }finally{await f.dispose();}
+});
+
+test('turning the engine off while the host registers a warning removes that late button',async()=>{
+  const f=await createFixture({pauseScheduledTimers:true,chat:chat()}),t=f.api._test;
+  const entered=deferred(),release=deferred(),buttons=new Set();
+  try{
+    await t.stopFlashbackAttention();t.FlashbackAttention.started=true;
+    f.host.registerButton=async spec=>{entered.resolve();await release.promise;buttons.add(spec.id);return true;};
+    f.host.unregisterUIPart=async id=>{buttons.delete(id);return true;};
+    const pending=t.refreshFlashbackAttention();
+    await entered.promise;
+    await f.api.saveSettings({...await f.api.loadSettings(),mode:'off'});
+    release.resolve();const state=await pending;
+    assert.equal(state.kind,'');assert.equal(t.FlashbackAttention.state.kind,'');
+    assert.equal(buttons.size,0,'an off-mode warning cannot survive a delayed host acknowledgement');
+  }finally{release.resolve();await f.dispose();}
+});
+
+test('turning the engine off cancels a revision scan and preserves idle re-enable polling',async()=>{
+  const f=await createFixture({pauseScheduledTimers:true,chat:chat()}),t=f.api._test;
+  const yielded=deferred();let resume,held=false;
+  try{
+    await t.stopFlashbackAttention();const schedule=f.context.setTimeout;
+    f.context.setTimeout=(callback,delay,...args)=>{
+      if(delay===0&&!held){held=true;resume=()=>callback(...args);yielded.resolve();return {fixturePausedTimer:true};}
+      if(delay===0)return setTimeout(callback,0,...args);
+      return schedule(callback,delay,...args);
+    };
+    f.currentChat.message[1].data='z'.repeat(4*1024*1024);t.FlashbackAttention.started=true;
+    const pending=t.pollFlashbackAttention();await yielded.promise;
+    await f.api.saveSettings({...await f.api.loadSettings(),mode:'off'});
+    resume();resume=null;await pending;
+    assert.equal(t.FlashbackAttention.revisionTracker,null);
+    assert.equal(t.FlashbackAttention.lastRevision,'');
+    assert.equal(t.FlashbackAttention.pollTimer?.fixturePausedTimer,true);
+  }finally{resume?.();await f.dispose();}
 });
