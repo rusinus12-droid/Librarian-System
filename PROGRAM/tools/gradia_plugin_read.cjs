@@ -68,7 +68,7 @@ module.exports = function createGradiaPluginRead(options) {
         // as well as an in-flight owner query.
         record = { id, boundary: null, read: null, closed: false };
         receipts.set(id, record);
-        record.timer = setTimeout(() => closeRecord(record), options.receiptTtlMs || 600000);
+        record.timer = setTimeout(() => closeRecord(record), options.receiptTtlMs || 1800000);
         record.timer?.unref?.();
         const boundary = await ownerBoundary(message);
         if (record.closed) fail('LIB_READ_CANCELED');

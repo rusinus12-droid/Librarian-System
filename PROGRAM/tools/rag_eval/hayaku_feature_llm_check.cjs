@@ -284,9 +284,9 @@ const runColdStartAndRegen = async () => {
       for (const entry of (Array.isArray(failed?.entries) ? failed.entries : []).slice(0, 3)) {
         const read = await h.hayaku.recovery.failedAnalysis.read(entry.failureId).catch(e => ({ error: String(e?.message || e) }));
         const art = read?.artifact || read?.entry || read || {};
-        failedDetail.push({ turns: entry.targetTurns || entry.turns || entry.targetPairIndex || entry.turn, code: entry.errorCode || entry.code || art?.error?.code || '',
+        failedDetail.push({ state: entry.state, turns: entry.targetTurns || entry.turns || entry.targetPairIndex || entry.turn, code: entry.errorCode || entry.code || art?.error?.code || '',
           message: short(entry.errorMessage || entry.message || art?.error?.message || '', 240),
-          reason: entry.reason, diag: (() => { const j = JSON.stringify(read || {}); const i = j.indexOf('originalValidation'); const k = j.indexOf('rejected'); return short(j.slice(Math.max(0, (i >= 0 ? i : k >= 0 ? k : 0))), 900); })() });
+          reason: entry.reason, diag: (() => { const j = JSON.stringify(read || {}); const i = j.indexOf('original_validation'); const k = j.indexOf('rejected'); return short(j.slice(Math.max(0, (i >= 0 ? i : k >= 0 ? k : 0))), 900); })() });
       }
       let resumed = null;
       if (r.ok === true && r.completed !== true) {
@@ -302,7 +302,7 @@ const runColdStartAndRegen = async () => {
       record('coldstart', `recovery.coldStart({resume:true}) over ${N} packet-less turns, batch=5`, r.ok === true && r.completed === true && records.length === N, {
         failedDetail,
         coverageBefore: { mode: before.mode, completedTurns: before.completedTurns, missing: before.missingTurns },
-        result: { ok: r.ok, completed: r.completed, packets: r.packets, llmCalls: r.llmCalls, batchTurns: r.analysisBatchTurns, reason: r.reason, error: r.error || r.lastError },
+        result: { ok: r.ok, completed: r.completed, packets: r.packets, llmCalls: r.llmCalls, batchTurns: r.analysisBatchTurns, automaticRetry: r.automaticRetry, reason: r.reason, error: r.error || r.lastError },
         packetsAdmitted: records.length, turnsCovered, summaries: records.slice(0, N).map(x => short(summaryOf(x), 90)),
         chunks: status?.coldStartRun?.run?.chunks?.map(c => c.status), failedAnalysisEntries: Array.isArray(failed?.entries) ? failed.entries.length : failed
       }, { raw: short(r, 1500) });

@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.25.88
+//@display-name GRADIA v0.25.89
 //@api 3.0
-//@version 0.25.88
+//@version 0.25.89
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -25,7 +25,7 @@
 //@arg built_in_style_preset string unified_stylepack
 //@arg injection_position string before_last_user|first_system|last_system
 //@arg failure_mode string soft|degraded|hard
-//@arg stage_timeout_ms int Legacy global timeout fallback; migrated once into each stage slot
+//@arg stage_timeout_ms int Global stage timeout (ms) for stage slots without their own timeout
 //@arg model_presets_json string JSON object of saved model presets
 //@arg provider_presets_json string LIBRA/RE-compatible alias for model_presets_json
 //@arg provider_presets_risuai_enabled string Reserved LIBRA-compatible flag: true|false
@@ -937,7 +937,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.25.88';
+  const PLUGIN_VERSION = '0.25.89';
   
   
   
@@ -1019,7 +1019,13 @@
     quality: 160000,
     custom: REFERENCE_BUDGET_CUSTOM_MAX_CHARS
   });
-  const DEFAULT_STAGE_TIMEOUT_MS = 120000;
+  // Stage model-call timeout. Slow cloud models routinely need 20-80 s per stage call and
+  // occasionally several minutes, so the default is 300 s and a user may raise it to 600 s.
+  // 120 s was the previous default; a stored slot/preset value equal to either default is
+  // treated as "not chosen" and follows the runtime stage_timeout_ms or the preset value.
+  const DEFAULT_STAGE_TIMEOUT_MS = 300000;
+  const LEGACY_DEFAULT_STAGE_TIMEOUT_MS = 120000;
+  const MAX_STAGE_TIMEOUT_MS = 600000;
   const DEFAULT_STAGE_CONTEXT_CHARS = REFERENCE_PROFILE_CAPS.balanced;
   const DEFAULT_MAX_STAGE_TOKENS = 16384;
   const MAX_ANALYSIS_OUTPUT_TOKENS = 4096;
@@ -3218,6 +3224,9 @@
     Runtime.lastFinalOverlayMeta = null;
   };
   const LIB_EVIDENCE_MAX_BYTES = 4 * 1024 * 1024;
+  // Per evidence request: at most this many stall/length recoveries (see beforeModel), so the
+  // whole request stays within (stage calls + this) x stage timeout.
+  const LIB_EVIDENCE_MAX_RECOVERIES = 2;
   const libEvidenceBudget = (settings = {}) => {
     const profile = normalizeChoice(settings.quickProfile || 'balanced', QUICK_PROFILE_IDS, 'balanced');
     const maxChars = REFERENCE_PROFILE_CAPS[profile] || REFERENCE_PROFILE_CAPS.balanced;
@@ -3373,7 +3382,7 @@
       || JSON.stringify(session.engine?.proposal) !== JSON.stringify(proposalContext.proposal))) {
       session.invalidate('LIB_READ_PROPOSAL_CHANGED'); throw libEvidenceError('LIB_READ_PROPOSAL_CHANGED');
     }
-    const run = { status: 'ready', purpose: proposalContext ? 'input_writer' : 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), stageViews: new Map(),
+    const run = { status: 'ready', purpose: proposalContext ? 'input_writer' : 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), attempt: null, stageViews: new Map(),
       fail(code) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); if (proposalContext) purgeInputWriterEvidenceRuntime(); } return libEvidenceError(code); },
       assertStageView(stage, recent) {
         const expected = certifiedSelections.find(selection => selection.stage === stage);
@@ -3408,8 +3417,24 @@
         if (requestSettingsSignature(settings) !== settingsSignature
           || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
       },
-      async beforeModel(stage, phase) {
+      // recovery: 'stall' resends a request that was dispatched but produced no response at all
+      // (nothing was received, so there is no response to reuse); 'length' discards a provider
+      // length-stopped response and asks again with a larger output budget. Each is allowed once
+      // per stage+phase that already made its own call, and at most LIB_EVIDENCE_MAX_RECOVERIES
+      // times per request. The same immutable evidence packet and the same bound prompts are
+      // re-admitted through assertPayload/assertDispatch like any other call.
+      async beforeModel(stage, phase, recovery = '') {
         await this.assertCurrent();
+        if (recovery) {
+          const base = `${stage}:${phase}`, key = `${proposalContext ? 'input_writer:' : ''}${base}:${recovery}`;
+          if (!['stall', 'length'].includes(recovery) || this.recoveries.has(key) || this.recoveries.size >= LIB_EVIDENCE_MAX_RECOVERIES
+            || (proposalContext
+              ? stage !== INPUT_ASSIST_STAGE_ID || !['analysis','draft'].includes(phase) || this.calls.size >= 16
+              : !this.calls.has(base))) throw this.fail('LIB_READ_RETRY_DISABLED');
+          this.recoveries.add(key);
+          if (proposalContext) this.calls.add('input_writer:' + this.calls.size);
+          return;
+        }
         if (proposalContext) {
           if (stage !== INPUT_ASSIST_STAGE_ID || !['analysis','draft'].includes(phase) || this.calls.size >= 16) throw this.fail('LIB_READ_RETRY_DISABLED');
           this.calls.add('input_writer:' + this.calls.size); return;
@@ -3420,20 +3445,34 @@
         if (!allowed.includes(phase) || this.calls.has(key)) throw this.fail('LIB_READ_RETRY_DISABLED');
         this.calls.add(key);
       },
-      async guardModel(operation, timeoutMs) {
+      // A stage call that reaches its timeout fails the run, except a dispatched request with no
+      // response yet when stallRetryable: only that attempt is aborted and LIB_READ_MODEL_STALLED
+      // lets the caller resend it once (beforeModel 'stall'). A late response to the abandoned
+      // attempt is dropped by nativeFetch and never read.
+      timeoutAttempt(attempt) {
+        if (!this.failed && attempt && this.attempt === attempt && attempt.stallRetryable && attempt.dispatched && !attempt.responded) {
+          attempt.stalled = true; this.lastAttemptStalled = true; attempt.controller.abort(); return libEvidenceError('LIB_READ_MODEL_STALLED');
+        }
+        return this.failed ? libEvidenceError(this.failed) : this.fail('LIB_READ_MODEL_TIMEOUT');
+      },
+      async guardModel(operation, timeoutMs, options = {}) {
         await this.assertCurrent();
         let timer, abort;
+        const attempt = { controller: new AbortController(), stallRetryable: options.stallRetryable === true,
+          dispatched: false, responded: false, stalled: false };
+        this.attempt = attempt; this.lastAttemptStalled = false;
         try {
           const canceled = new Promise((_, reject) => {
             abort = () => reject(libEvidenceError(this.failed || 'LIB_READ_CANCELED'));
             this.signal.addEventListener('abort', abort, { once: true });
-            timer = setTimeout(() => { this.fail('LIB_READ_MODEL_TIMEOUT'); }, Math.max(10, Math.min(300000, Number(timeoutMs) || 120000)));
+            timer = setTimeout(() => { const error = this.timeoutAttempt(attempt); if (attempt.stalled) reject(error); },
+              Math.max(10, Math.min(MAX_STAGE_TIMEOUT_MS, Number(timeoutMs) || DEFAULT_STAGE_TIMEOUT_MS)));
             if (this.signal.aborted) abort();
           });
           const result = await Promise.race([Promise.resolve().then(operation), canceled]);
           await this.assertCurrent();
           return result;
-        } finally { clearTimeout(timer); if (abort) this.signal.removeEventListener('abort', abort); }
+        } finally { clearTimeout(timer); if (abort) this.signal.removeEventListener('abort', abort); if (this.attempt === attempt) this.attempt = null; }
       },
       async assertPayload(body, route = '', method = 'POST') {
         await this.assertCurrent();
@@ -3897,13 +3936,21 @@
       let timer = null;
       let controller = null;
       let removeEvidenceAbort = null;
+      let removeAttemptAbort = null;
       let removeTransportAbort = null;
       let timedOut = false;
+      let rejectTimeout = null;
+      const timeoutError = () => Object.assign(new Error(`provider request timed out after ${timeoutMs}ms`), { code: 'PROVIDER_REQUEST_TIMEOUT' });
+      // A host transport that ignores the abort signal still cannot hold the call past its timeout.
+      const timeoutReached = new Promise((_, reject) => { rejectTimeout = reject; });
+      timeoutReached.catch(() => {});
+      // The evidence attempt this request belongs to (guardModel owns the stage deadline).
+      const attempt = evidenceRun?.attempt || null;
       try {
         if (typeof AbortController !== 'undefined' && !requestInit.signal) {
           controller = new AbortController();
           requestInit.signal = controller.signal;
-          timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+          timer = setTimeout(() => { timedOut = true; controller.abort(); rejectTimeout(timeoutError()); }, timeoutMs);
         }
         if (evidenceRun) {
           await evidenceRun.assertCurrent();
@@ -3912,21 +3959,40 @@
             evidenceRun.signal.addEventListener('abort', abort, { once: true });
             removeEvidenceAbort = () => evidenceRun.signal.removeEventListener('abort', abort);
             if (evidenceRun.signal.aborted) abort();
+            if (attempt) {
+              attempt.controller.signal.addEventListener('abort', abort, { once: true });
+              removeAttemptAbort = () => attempt.controller.signal.removeEventListener('abort', abort);
+              if (attempt.controller.signal.aborted) abort();
+            }
           }
         }
         if (evidenceRun) evidenceRun.assertDispatch?.(requestUrl, requestInit);
         if (typeof API.nativeFetch === 'function' || typeof API.risuFetch === 'function') {
+          if (attempt) {
+            if (attempt.stalled) throw libEvidenceError(evidenceRun.failed || 'LIB_READ_MODEL_STALLED');
+            attempt.dispatched = true;
+          }
           const transport = typeof API.nativeFetch === 'function' ? API.nativeFetch(requestUrl, requestInit) : API.risuFetch(requestUrl, requestInit);
+          if (evidenceRun) Promise.resolve(transport).catch(() => {});
           const response = evidenceRun ? await Promise.race([transport, new Promise((_, reject) => {
             const signal = requestInit.signal || evidenceRun.signal;
             // The request's own stage timeout is a model timeout, not a canceled read; a run
             // that already failed keeps its own reason instead of reporting the abort it caused.
+            // A stalled attempt (nothing received) is released for one resend instead.
             const abort = () => reject(evidenceRun.failed ? libEvidenceError(evidenceRun.failed)
-              : evidenceRun.fail(timedOut ? 'LIB_READ_MODEL_TIMEOUT' : 'LIB_READ_CANCELED'));
+              : attempt?.stalled ? libEvidenceError('LIB_READ_MODEL_STALLED')
+                : timedOut ? evidenceRun.timeoutAttempt(attempt) : evidenceRun.fail('LIB_READ_CANCELED'));
             signal.addEventListener('abort', abort, { once: true });
             removeTransportAbort = () => signal.removeEventListener('abort', abort);
             if (signal.aborted) abort();
-          })]) : await transport;
+          })]) : await (async () => {
+            try { return await (controller ? Promise.race([transport, timeoutReached]) : transport); }
+            catch (error) { if (timedOut) throw timeoutError(); throw error; }
+          })();
+          if (attempt) {
+            if (attempt.stalled) throw libEvidenceError(evidenceRun.failed || 'LIB_READ_MODEL_STALLED');
+            attempt.responded = true;
+          }
           if (evidenceRun) await evidenceRun.assertCurrent();
           return response;
         }
@@ -3934,6 +4000,7 @@
       } finally {
         if (timer) clearTimeout(timer);
         removeEvidenceAbort?.();
+        removeAttemptAbort?.();
         removeTransportAbort?.();
       }
     };
@@ -4053,7 +4120,7 @@
 
   const sanitizePreset = (raw = {}) => {
     const provider = canonicalProvider(raw.provider || raw.llm_provider || 'custom');
-    const timeoutFallback = clampInt(raw.timeout_ms || raw.timeout || raw.llm_timeout_ms || raw.llm_timeout, 5000, 300000, DEFAULT_STAGE_TIMEOUT_MS);
+    const timeoutFallback = clampInt(raw.timeout_ms || raw.timeout || raw.llm_timeout_ms || raw.llm_timeout, 5000, MAX_STAGE_TIMEOUT_MS, DEFAULT_STAGE_TIMEOUT_MS);
     const thinkingType = raw.thinking_type ?? raw.thinkingType ?? raw.llm_thinking_type ?? raw.glm_thinking_type ?? raw.llm_glm_thinking_type ?? raw.glm_thinking ?? raw.llm_glm_thinking ?? '';
     const rawBudget = Number(raw.reasoning_budget_tokens ?? raw.llm_reasoning_budget_tokens ?? 0);
     const reasoningBudget = rawBudget === -1 ? -1 : clampInt(rawBudget, 0, 200000, 0);
@@ -4387,8 +4454,10 @@
     return out;
   };
 
+  // stage_timeout_ms is kept: it is the global default for stage slots whose own timeout
+  // was never chosen (see resolveStageTimeoutMs), so saving it later still takes effect.
   const LEGACY_STAGE_RUNTIME_KEYS = Object.freeze([
-    'turn_window', 'max_recent_chars', 'stage_timeout_ms', 'two_call_aide',
+    'turn_window', 'max_recent_chars', 'two_call_aide',
     'shadow_include_risu_context', 'shadow_risu_context_max_chars'
   ]);
 
@@ -4401,7 +4470,7 @@
   const legacyStageDefaultsFromRuntime = (runtime = {}) => ({
     turnWindow: clampInt(runtime?.turn_window ?? runtime?.turnWindow, 1, 64, DEFAULT_RECENT_TURNS),
     maxChars: clampInt(runtime?.max_recent_chars ?? runtime?.maxRecentChars ?? runtime?.shadow_risu_context_max_chars ?? runtime?.shadowRisuContextMaxChars, 1000, REFERENCE_BUDGET_CUSTOM_MAX_CHARS, DEFAULT_STAGE_CONTEXT_CHARS),
-    timeoutMs: clampInt(runtime?.stage_timeout_ms ?? runtime?.stageTimeoutMs, 5000, 300000, DEFAULT_STAGE_TIMEOUT_MS),
+    timeoutMs: clampInt(runtime?.stage_timeout_ms ?? runtime?.stageTimeoutMs, 5000, MAX_STAGE_TIMEOUT_MS, DEFAULT_STAGE_TIMEOUT_MS),
     analysisDraft: asBool(runtime?.two_call_aide ?? runtime?.twoCallAide, true),
     risuEnabled: asBool(runtime?.shadow_include_risu_context ?? runtime?.enableShadowRisuContext, true)
   });
@@ -4413,7 +4482,7 @@
     turn_window: [INPUT_ASSIST_STAGE_ID, ARC_DIRECTOR_STAGE_ID].includes(stageId)
       ? 1
       : clampInt(fallback.turn_window ?? fallback.turnWindow, 1, 64, defaultTurnWindowForStage(stageId)),
-    timeout_ms: clampInt(fallback.timeout_ms ?? fallback.timeoutMs, 5000, 300000, DEFAULT_STAGE_TIMEOUT_MS),
+    timeout_ms: clampInt(fallback.timeout_ms ?? fallback.timeoutMs, 5000, MAX_STAGE_TIMEOUT_MS, DEFAULT_STAGE_TIMEOUT_MS),
     risu_refs: normalizeRisuReferences(fallback.risu_refs ?? fallback.risuRefs, defaultRisuReferencesForStage(stageId))
   });
 
@@ -4426,7 +4495,7 @@
       turn_window: [INPUT_ASSIST_STAGE_ID, ARC_DIRECTOR_STAGE_ID].includes(stageId)
         ? 1
         : clampInt(value?.turn_window ?? value?.turnWindow, 1, 64, defaults.turn_window),
-      timeout_ms: clampInt(value?.timeout_ms ?? value?.timeoutMs, 5000, 300000, defaults.timeout_ms),
+      timeout_ms: clampInt(value?.timeout_ms ?? value?.timeoutMs, 5000, MAX_STAGE_TIMEOUT_MS, defaults.timeout_ms),
       risu_refs: normalizeRisuReferences(value?.risu_refs ?? value?.risuRefs, defaults.risu_refs)
     };
   };
@@ -4442,7 +4511,7 @@
         ? 1
         : clampInt(value.turn_window ?? value.turnWindow, 1, 64, defaultTurnWindowForStage(stageId));
     }
-    if (['timeout_ms', 'timeoutMs'].some(key => Object.prototype.hasOwnProperty.call(value, key))) out.timeout_ms = clampInt(value.timeout_ms ?? value.timeoutMs, 5000, 300000, DEFAULT_STAGE_TIMEOUT_MS);
+    if (['timeout_ms', 'timeoutMs'].some(key => Object.prototype.hasOwnProperty.call(value, key))) out.timeout_ms = clampInt(value.timeout_ms ?? value.timeoutMs, 5000, MAX_STAGE_TIMEOUT_MS, DEFAULT_STAGE_TIMEOUT_MS);
     if (['risu_refs', 'risuRefs'].some(key => Object.prototype.hasOwnProperty.call(value, key))) out.risu_refs = normalizeRisuReferences(value.risu_refs ?? value.risuRefs, defaultRisuReferencesForStage(stageId));
     return out;
   };
@@ -5571,10 +5640,16 @@
     const shadowStage = settings.stageOptions.shadow_act;
     settings.turnWindow = shadowStage.turn_window;
     settings.maxRecentChars = shadowStage.max_chars;
+    {
+      const rawGlobal = Number.parseInt(await runtimeCfg('stage_timeout_ms', ''), 10);
+      settings.globalStageTimeoutMs = Number.isFinite(rawGlobal) && rawGlobal > 0
+        ? clampInt(rawGlobal, 5000, MAX_STAGE_TIMEOUT_MS, DEFAULT_STAGE_TIMEOUT_MS) : 0;
+    }
     settings.stageTimeoutMs = shadowStage.timeout_ms;
     settings.enableShadowRisuContext = Object.values(shadowStage.risu_refs || {}).some(Boolean);
     settings.shadowRisuContextMaxChars = shadowStage.max_chars;
     settings.presets = await loadPresetBank(settings);
+    settings.stageTimeoutMs = resolveStageTimeoutMs(settings, 'shadow_act');
     Runtime.settings = settings;
     Runtime.settingsLoadedAt = Date.now();
     return settings;
@@ -5589,6 +5664,28 @@
     return { name: resolvedName, preset: sanitizePreset(settings.presets?.[resolvedName] || {}) };
   };
 
+  // A slot/preset timeout equal to the current or the previous built-in default is a value
+  // nobody chose (first-load migration wrote it into every slot). Such a slot follows the
+  // runtime stage_timeout_ms, then an explicitly chosen preset timeout_ms, then the default.
+  // Any other slot value is an explicit per-stage choice and wins.
+  const isDefaultStageTimeoutValue = value => {
+    const n = Number(value);
+    return !Number.isFinite(n) || n <= 0 || n === DEFAULT_STAGE_TIMEOUT_MS || n === LEGACY_DEFAULT_STAGE_TIMEOUT_MS;
+  };
+  const resolveStageTimeoutMs = (settings, stageName, preset = null) => {
+    const clampTimeout = value => clampInt(value, 5000, MAX_STAGE_TIMEOUT_MS, DEFAULT_STAGE_TIMEOUT_MS);
+    const slotValue = settings?.stageOptions?.[stageName]?.timeout_ms;
+    if (!isDefaultStageTimeoutValue(slotValue)) return clampTimeout(slotValue);
+    const globalValue = Number(settings?.globalStageTimeoutMs || 0);
+    if (globalValue > 0) return clampTimeout(globalValue);
+    let presetValue = preset?.timeout_ms;
+    if (!preset && settings?.presets) {
+      try { presetValue = resolvePreset(settings, stageName).preset?.timeout_ms; } catch (_) { presetValue = 0; }
+    }
+    if (!isDefaultStageTimeoutValue(presetValue)) return clampTimeout(presetValue);
+    return DEFAULT_STAGE_TIMEOUT_MS;
+  };
+
   const stageExecutionOptions = (settings, stageName) => {
     const raw = settings?.stageOptions?.[stageName] || {};
     const defaults = defaultStoredStageSlot(stageName, {
@@ -5601,7 +5698,7 @@
     return {
       maxChars: normalized.max_chars,
       turnWindow: normalized.turn_window,
-      timeoutMs: normalized.timeout_ms,
+      timeoutMs: resolveStageTimeoutMs(settings, stageName),
       risuRefs: normalized.risu_refs
     };
   };
@@ -18705,11 +18802,9 @@ ${passage.text || ''}`, 420));
       if (settings.debugLog && rendered.warnings?.length) log('rag_cbs_warnings', rendered.warnings);
     }
     const resolved = resolvePreset(settings, stageName);
-    const timeoutOverride = settings?.stageOptions?.[stageName]
-      ? stageExecutionOptions(settings, stageName).timeoutMs
-      : 0;
+    const timeoutOverride = resolveStageTimeoutMs(settings, stageName, resolved.preset);
     const name = resolved.name;
-    const basePreset = timeoutOverride ? sanitizePreset({ ...resolved.preset, timeout_ms: timeoutOverride }) : resolved.preset;
+    const basePreset = sanitizePreset({ ...resolved.preset, timeout_ms: timeoutOverride });
     const promptPhase = normalizePromptExecutionPhase(options.promptPhase || options.phase || (options.jsonMode ? 'analysis' : 'draft'));
     const telemetryLogicalCallId = beginTelemetryLogicalCall(settings, stageName, promptPhase, options);
     options = { ...options, telemetryLogicalCallId };
@@ -18752,9 +18847,10 @@ ${passage.text || ''}`, 420));
         && settings?.sharedReferencePromptCacheEnabled === true,
       maxTokens: options.maxTokens || stageOutputTokenBudget(settings, stageName, systemPrompt, preset, options)
     };
+    const userPromptBeforeEvidence = userPrompt;
     if (evidenceRun) {
       evidenceRun.setBudgetProfile?.(preset, name);
-      await evidenceRun.beforeModel(stageName, promptPhase);
+      await evidenceRun.beforeModel(stageName, promptPhase, options.evidenceRecovery || '');
       userPrompt = appendLibEvidence(userPrompt, settings);
       evidenceRun.expectedUser = userPrompt;
       evidenceRun.expectedSystem = systemPrompt;
@@ -18770,8 +18866,29 @@ ${passage.text || ''}`, 420));
       else if (mode === 'ollama_native') return await callOllamaNative({ ...preset, provider }, systemPrompt, userPrompt, tracedOptions);
       else return await callOpenAICompat({ ...preset, provider }, systemPrompt, userPrompt, tracedOptions);
       };
-      result = evidenceRun ? await evidenceRun.guardModel(dispatch, preset.timeout_ms) : await dispatch();
+      // Plugin mode bounds the whole call (headers and body) too, so a stalled provider surfaces
+      // as a timeout that the transient retry below can resend once.
+      const dispatchDeadlineMs = Number(preset.timeout_ms || DEFAULT_STAGE_TIMEOUT_MS) + 5000;
+      let dispatchTimer = null;
+      result = evidenceRun
+        ? await evidenceRun.guardModel(dispatch, preset.timeout_ms, { stallRetryable: !options.evidenceStallRetry && evidenceRun.recoveries.size < LIB_EVIDENCE_MAX_RECOVERIES })
+        : await Promise.race([dispatch(), new Promise((_, reject) => {
+          dispatchTimer = setTimeout(() => reject(Object.assign(new Error(`${stageName} provider request timed out after ${dispatchDeadlineMs}ms`), { code: 'PROVIDER_REQUEST_TIMEOUT' })), dispatchDeadlineMs);
+        })]).finally(() => clearTimeout(dispatchTimer));
     } catch (error) {
+      if (evidenceRun && !evidenceRun.failed && evidenceRun.lastAttemptStalled && !options.evidenceStallRetry) {
+        // Dispatched, nothing received: resend once with the same prompts and evidence.
+        evidenceRun.lastAttemptStalled = false;
+        finishTelemetryAttempt(telemetryAttempt, false, 'provider_stall');
+        warn('evidence_provider_stall_retry', `${stageName}: no response within ${preset.timeout_ms}ms; resending once`);
+        return await callLLMWithPreset(settings, stageName, systemPrompt, userPromptBeforeEvidence, {
+          ...options,
+          maxTokens: effectiveOptions.maxTokens,
+          evidenceStallRetry: true,
+          evidenceRecovery: 'stall',
+          telemetryRetryKind: 'provider_stall'
+        });
+      }
       if (evidenceRun) throw evidenceRun.fail(evidenceRun.failed || 'LIB_READ_MODEL_FAILED');
       finishTelemetryAttempt(telemetryAttempt, false, error?.message || error);
       rememberProviderError({ stageName, presetName: name, provider, model: preset.model }, error);
@@ -18941,6 +19058,26 @@ ${passage.text || ''}`, 420));
     const lengthLimit = providerLengthLimitInfo(result.finishReason) || unreportedJsonTruncation;
     if (evidenceRun) {
       await evidenceRun.assertCurrent();
+      if (result.content && lengthLimit && !lengthLimit.unreported && !options.lengthLimitRetry && !options.evidenceLengthRetry) {
+        // Only a provider-reported length stop (the output budget was too small). The truncated
+        // response is discarded, never reused; the same prompts and evidence are sent once more
+        // with a larger output budget, re-admitted by the context budget gate. Malformed output
+        // that claims a normal stop is not retried.
+        const configuredCap = clampInt(preset?.max_tokens, 64, 200000, DEFAULT_MAX_STAGE_TOKENS);
+        const expandedMaxTokens = Math.min(configuredCap, Math.max(effectiveOptions.maxTokens + 1024,
+          Math.ceil(effectiveOptions.maxTokens * 1.5), options.jsonMode === true ? MIN_JSON_LENGTH_RETRY_TOKENS : 0));
+        if (expandedMaxTokens > effectiveOptions.maxTokens && evidenceRun.recoveries.size < LIB_EVIDENCE_MAX_RECOVERIES) {
+          warn('evidence_provider_length_retry', `${stageName}: provider stopped at ${lengthLimit.reason}; retrying once with ${expandedMaxTokens} output tokens`);
+          return await callLLMWithPreset(settings, stageName, systemPrompt, userPromptBeforeEvidence, {
+            ...options,
+            maxTokens: expandedMaxTokens,
+            lengthLimitRetry: true,
+            evidenceLengthRetry: true,
+            evidenceRecovery: 'length',
+            telemetryRetryKind: 'length_expansion'
+          });
+        }
+      }
       if (lengthLimit || !result.content) throw evidenceRun.fail('LIB_READ_MODEL_INCOMPLETE');
     }
     if (result.content && lengthLimit && !options.lengthLimitRetry) {
@@ -43346,7 +43483,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         // as well as an in-flight owner query.
         record = { id, boundary: null, read: null, closed: false };
         receipts.set(id, record);
-        record.timer = setTimeout(() => closeRecord(record), options.receiptTtlMs || 600000);
+        record.timer = setTimeout(() => closeRecord(record), options.receiptTtlMs || 1800000);
         record.timer?.unref?.();
         const boundary = await ownerBoundary(message);
         if (record.closed) fail('LIB_READ_CANCELED');
@@ -43637,7 +43774,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         usesGlobalDefault: !selectedPresetName,
         configured: providerConfigured(resolved.preset),
         provider: canonicalProvider(resolved.preset?.provider || 'custom'),
-        model: resolved.preset?.model || ''
+        model: resolved.preset?.model || '',
+        timeoutMs: resolveStageTimeoutMs(settings, safeStage, resolved.preset)
       }));
     },
     async listProviderModels(presetOrName = 'default', options = {}) {

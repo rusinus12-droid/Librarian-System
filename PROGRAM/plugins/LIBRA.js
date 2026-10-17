@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.157
-//@version 2.3.157
+//@display-name LIBRA v2.3.158
+//@version 2.3.158
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1557,7 +1557,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.3.157';
+  const PLUGIN_VERSION = '2.3.158';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -33431,6 +33431,23 @@ function createLibraReadonlySourceContext(owner) {
     const RECALL_REQUEST_BUDGET_MS = 30000; // absolute live-recall watchdog; per-step guards remain separately bounded
     const RECALL_STEP_BUDGET_MS = 20000;
     const RECALL_EMBEDDING_BUDGET_MS = 3500;
+    // A provider slower than the default budget would otherwise leave every recall
+    // lexical-only. The default query-embedding budget adapts per embedding space: a
+    // timeout doubles it (up to the cap, inside the 30 s recall watchdog); measured
+    // requests pull it back to 1.5x the slowest recent latency, never below the default.
+    const RECALL_EMBEDDING_MAX_BUDGET_MS = 12000;
+    const queryEmbeddingBudgets = new Map();
+    const adaptiveQueryEmbeddingBudget = binding => queryEmbeddingBudgets.get(binding)?.budget || RECALL_EMBEDDING_BUDGET_MS;
+    const noteQueryEmbeddingLatency = (binding, { elapsedMs = 0, timedOut = false } = {}) => {
+      const entry = queryEmbeddingBudgets.get(binding) || { budget: RECALL_EMBEDDING_BUDGET_MS, samples: [] };
+      if (timedOut) entry.budget = Math.min(RECALL_EMBEDDING_MAX_BUDGET_MS, entry.budget * 2);
+      else {
+        entry.samples = [...entry.samples, Math.max(0, Math.round(elapsedMs))].slice(-8);
+        entry.budget = Math.min(RECALL_EMBEDDING_MAX_BUDGET_MS, Math.max(RECALL_EMBEDDING_BUDGET_MS, Math.ceil(Math.max(...entry.samples) * 1.5)));
+      }
+      queryEmbeddingBudgets.delete(binding); queryEmbeddingBudgets.set(binding, entry);
+      while (queryEmbeddingBudgets.size > 32) queryEmbeddingBudgets.delete(queryEmbeddingBudgets.keys().next().value);
+    };
     const RECALL_DYNAMIC_BUDGET_VERSION = 2;
     const RECALL_BUDGET_MIN_CHARS = 3000;
     const RECALL_BUDGET_STANDARD_CHARS = 3000;
@@ -39238,6 +39255,41 @@ function createLibraReadonlySourceContext(owner) {
         reason:'completed_turn_receipt_failed'}).catch(()=>null);
     };
 
+    // The ordinary reconcile examines only the last BATCH_SIZE pairs. A turn whose receipt
+    // or Micro was lost (a capture/canonical race, a crash) and then fell out of that tail
+    // was never revisited. Older completed turns of the current worldline missing either
+    // are repaired a few at a time; each turn revision is attempted once per runtime, so
+    // one that genuinely cannot be analyzed does not cost model calls in a loop.
+    const RECEIPT_GAP_REPAIR_LIMIT = 4, RECEIPT_GAP_SCAN_INTERVAL_MS = 30000;
+    const receiptGapAttempts = new Set();
+    let receiptGapScannedAt = 0;
+    const findCompletedTurnGaps = async (context, pairs, tail) => {
+      if (Date.now() - receiptGapScannedAt < RECEIPT_GAP_SCAN_INTERVAL_MS) return [];
+      receiptGapScannedAt = Date.now();
+      const scopeKey = string(context?.scope?.scopeKey || ''), worldlineId = hostWorldlineIdForScope(context.scope);
+      const inTail = new Set(asArray(tail).map(pair => Number(pair.turn)));
+      const older = asArray(pairs).filter(pair => !inTail.has(Number(pair.turn)));
+      if (!scopeKey || !worldlineId || !older.length) return [];
+      let microEnabled = true;
+      try { microEnabled = (await loadMemorySettings()).enabled !== false; } catch (_) { return []; }
+      const prefix = `${PREFIX}:scope:${scopeKey}:`, receipts = new Set(), micros = new Set();
+      const escaped = worldlineId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const receiptHead = new RegExp(`^source-receipt-head:${escaped}:e\\d+:t(\\d+)$`), microHead = new RegExp(`^micro-memory-head:${escaped}:e\\d+:t(\\d+)$`);
+      for (const storageKey of await storage.keys()) {
+        if (!String(storageKey).startsWith(prefix)) continue;
+        const tail = String(storageKey).slice(prefix.length);
+        let match = tail.match(receiptHead); if (match) receipts.add(Number(match[1]));
+        match = tail.match(microHead); if (match) micros.add(Number(match[1]));
+      }
+      return older.filter(pair => {
+        const turn = Number(pair.turn), attempt = `${scopeKey}:${worldlineId}:${turn}:${completedTurnRevisionId(pair)}`;
+        if (receiptGapAttempts.has(attempt) || receipts.has(turn) && (!microEnabled || micros.has(turn))) return false;
+        return true;
+      }).slice(0, RECEIPT_GAP_REPAIR_LIMIT).map(pair => {
+        receiptGapAttempts.add(`${scopeKey}:${worldlineId}:${Number(pair.turn)}:${completedTurnRevisionId(pair)}`);
+        return pair;
+      });
+    };
     const reconcileCompletedTurnReceipts = async (context, pairs, options = {}) => {
       const preparationGuard = options.receiptPreparationGuard;
       const reason = string(options.reason || options.mode || 'scan');
@@ -39276,6 +39328,16 @@ function createLibraReadonlySourceContext(owner) {
           return result;
         }
       }
+      try {
+        // Historical runs already examine every pair; there the gap turns only need their
+        // Micro re-opened. Ordinary runs add the older gap turns to the tail.
+        const gapPairs = await findCompletedTurnGaps(context, pairs, historical ? [] : candidates);
+        if (gapPairs.length) {
+          const listed = new Set(candidates.map(pair => Number(pair.turn)));
+          candidates = [...gapPairs.filter(pair => !listed.has(Number(pair.turn))), ...candidates];
+          result.examined = candidates.length; result.gapRepairs = gapPairs.map(pair => Number(pair.turn));
+        }
+      } catch (error) { result.gaps.push({ turn: 0, reason: `gap_scan:${compact(error?.message || error, 200)}` }); }
       const inventoryTurns = [];
       const microTurns = [];
       for (const pair of candidates) {
@@ -39318,9 +39380,12 @@ function createLibraReadonlySourceContext(owner) {
         }
       }));
       await preparationGuard?.();
+      const gapTurns = new Set(asArray(result.gapRepairs));
       for (const item of microTurns) {
+        // A gap turn's earlier attempt ended without a Micro (outcome unknown, failed):
+        // re-open it once through the explicit retry path instead of re-reading that result.
         void scheduleMicroForTurn(context.scope, hostWorldlineIdForScope(context.scope),
-          0, item.turn, item.revisionId);
+          0, item.turn, item.revisionId, gapTurns.has(item.turn) ? { manual: true, reason: 'receipt_gap_repair' } : {});
       }
       state.lastSourceReceiptReconcile = result;
       return result;
@@ -56361,13 +56426,15 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         })
       });
       const startedAt = Date.now();
-      const deadlineAt = startedAt + 45000;
+      // Reasoning models on cloud routes take 20-60 s per Micro call, more when a canonical
+      // analysis runs alongside; 45 s for both attempts lost turns to provider timeouts.
+      const deadlineAt = startedAt + MICRO_PROVIDER_TIMEOUT_MS;
       const maxPhysicalAttempts = options.maxPhysicalAttempts === 1 ? 1 : 2;
       let result;
       try {
         result = await LibraProviderBridge.callTask(LIBRARIAN_STAGE_ID, systemPrompt, userPrompt, {
           taskKind: 'micro_memory', taskSettingsSnapshot: settings, signal,
-          maxTokens: 4096, reasoningBudgetCapTokens: 2048, timeoutMs: 45000, deadlineAt,
+          maxTokens: 4096, reasoningBudgetCapTokens: 2048, timeoutMs: MICRO_PROVIDER_TIMEOUT_MS, deadlineAt,
           extraCalls: maxPhysicalAttempts - 1, maxCorrectiveRetries: maxPhysicalAttempts - 1,
           jsonMode: true, structuredTask: true,
           forceNonStreaming: true, disablePromptCache: true, temp: 0.1
@@ -57032,6 +57099,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const boundary=await captureReceiptRecoveryBoundary(context,pair);
       return {scope,identity,boundary};
     };
+     const MICRO_PROVIDER_TIMEOUT_MS = 120000, MICRO_LEASE_MARGIN_MS = 30000;
+     const microInvocationsInFlight = new Set();
      const produceMicroForTurn = async (scope, worldlineId, sessionEpoch, turn, expectedRevisionId = '', options={}) => {
        const active = await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn);
       if (active.status !== 'verified' || (expectedRevisionId && active.receipt.revisionId !== expectedRevisionId)) {
@@ -57108,7 +57177,9 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         if (!Number.isFinite(Number(work.leaseExpiresAt))) {
           throw new Error('LIBRA_MICRO_WORK_LEASE_INVALID');
         }
-        if (Number(work.leaseExpiresAt) > Date.now()) {
+        // This runtime's own call may outlive a lease written by an older version; it is
+        // still in flight, not lost.
+        if (Number(work.leaseExpiresAt) > Date.now() || microInvocationsInFlight.has(workKey)) {
           return { status: 'pending', reason: 'provider_in_flight', workKey };
         }
         const outcomeUnknown = { status: 'pending', reason: 'provider_outcome_unknown',
@@ -57159,7 +57230,10 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           return {status:'unknown',reason:'manual_attempt_not_started',workKey};
         const permit=await checkClaim();
         if(permit.status!=='current')return {status:permit.status,reason:permit.reason};
+        // The lease starts with the call: a job that waited in the Micro queue behind a
+        // canonical analysis would otherwise start with an already expired lease.
         work = { ...work, phase: 'invoking',invocationStartedAt:Date.now(),
+          leaseExpiresAt: Date.now() + MICRO_PROVIDER_TIMEOUT_MS + MICRO_LEASE_MARGIN_MS,
           attemptHistory:[...asArray(work.attemptHistory),{
             attemptId:string(work.attemptId),status:'started',physicalAttemptsUsed:0}] };
         await storage.setVerifiedJson(workKey, work, scope);
@@ -57176,8 +57250,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         const settings=await loadSettings();
         const permit=await checkClaim();
         if(permit.status!=='current')return {status:permit.status,reason:permit.reason};
-        analysis = await analyzeCompletedReceipt({ ...receipt, receiptKey: active.receiptKey },
-          inventory, settings, null, { maxPhysicalAttempts: remaining, expectedRawPacketRef:raw.rawPacketRef });
+        microInvocationsInFlight.add(workKey);
+        try {
+          analysis = await analyzeCompletedReceipt({ ...receipt, receiptKey: active.receiptKey },
+            inventory, settings, null, { maxPhysicalAttempts: remaining, expectedRawPacketRef:raw.rawPacketRef });
+        } finally { microInvocationsInFlight.delete(workKey); }
         analysis={...analysis,rawPacketRef:clone(raw.rawPacketRef)};
         const afterProvider=await checkClaim();
         if(afterProvider.status!=='current')return {status:afterProvider.status,reason:afterProvider.reason};
@@ -72077,7 +72154,10 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         const rows = all.filter(row => !microVectorCache.has(row.cacheKey));
         for (let offset = 0; offset < rows.length && !state.disposed; offset += MICRO_EMBED_BATCH_LIMIT) {
           const missing = rows.slice(offset, offset + MICRO_EMBED_BATCH_LIMIT);
+          const batchStartedAt = Date.now();
           const result = await EmbeddingProviderRegistry.embedTexts(config, missing.map(row => row.text), { purpose: 'document', scopeKey: graph.scopeKey });
+          // The provider's measured latency tunes the recall query budget before the next question.
+          noteQueryEmbeddingLatency(stableReferenceJson(embeddingRequestDescriptor(config)), { elapsedMs: Date.now() - batchStartedAt });
           for (const [index, row] of missing.entries()) {
             const vector = result?.vectors?.[index];
             if (!Array.isArray(vector) || !vector.length || state.disposed || state.deletingScopes.has(graph.scopeKey)) continue;
@@ -72287,8 +72367,9 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         if (!semanticPolicy || typeof semanticPolicy !== 'object' || Array.isArray(semanticPolicy)
           || Object.keys(semanticPolicy).some(key => !['mode','maxRepresentationBytes','queryBudgetMs'].includes(key))
           || !['native','disabled'].includes(semanticPolicy.mode || 'native')) throw new Error('LIBRA_GRAPH_SEMANTIC_POLICY_INVALID');
-        const queryBudgetMs = semanticPolicy.queryBudgetMs ?? RECALL_EMBEDDING_BUDGET_MS;
-        if (!Number.isSafeInteger(queryBudgetMs) || queryBudgetMs < 250 || queryBudgetMs > RECALL_EMBEDDING_BUDGET_MS) throw new Error('LIBRA_GRAPH_SEMANTIC_QUERY_BUDGET_INVALID');
+        const explicitQueryBudget = semanticPolicy.queryBudgetMs ?? null;
+        if (explicitQueryBudget !== null && (!Number.isSafeInteger(explicitQueryBudget) || explicitQueryBudget < 250 || explicitQueryBudget > RECALL_EMBEDDING_BUDGET_MS)) throw new Error('LIBRA_GRAPH_SEMANTIC_QUERY_BUDGET_INVALID');
+        let queryBudgetMs = explicitQueryBudget ?? RECALL_EMBEDDING_BUDGET_MS;
         const injected = ['semanticSpace','queryEmbedding','documentRepresentations','queryVectors'].some(key => Object.hasOwn(rawQueryInput, key));
         let nativeSemantic = null, semanticSettingsBinding = null;
         const readSemanticConfig = async () => normalizeEmbeddingSettings((await LibraProviderBridge.getConfig())?.embed || DEFAULT_EMBEDDING);
@@ -72299,6 +72380,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             : await runRecallStep(semanticGuard, 'native_semantic_settings', readSemanticConfig, RECALL_STEP_BUDGET_MS,
               { soft: true, fallback: null, abortOnTimeout: false });
           if (config?.enabled) semanticSettingsBinding = settingsBinding(config);
+          if (config?.enabled && explicitQueryBudget === null) queryBudgetMs = adaptiveQueryEmbeddingBudget(stableReferenceJson(embeddingRequestDescriptor(config)));
           const bridge = createLibraMemoryGraphSemantic({ digest, profileFor: config => EmbeddingProviderRegistry.profileFor(config), projectionFor: buildMemoryRetrievalProjection });
           resources.reserveRetained((semanticPolicy.maxRepresentationBytes ?? 262144) * 4,'semantic_representation_allowance');
           let queryEmbeddingPromise = null;
@@ -72312,14 +72394,21 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
                 if (parent?.aborted) abort(); else parent?.addEventListener?.('abort', abort, { once: true });
                 const timer = setTimeout(() => child.abort(recallStepTimeoutError('native_query_embedding', queryBudgetMs)), Math.max(1, deadlineAt - Date.now()));
                 const ledger = MemorySuiteExecutionContract.createLedger({ maxRequests: 16, signal: child.signal, deadlineAt });
+                const budgetSpace = stableReferenceJson(embeddingRequestDescriptor(config)), embeddingStartedAt = Date.now();
                 try {
                   const result = await runRecallStep(semanticGuard, 'native_query_embedding',
                     () => EmbeddingProviderRegistry.embedTexts(config, [text], { purpose: 'query', scopeKey: scopeIdentity,
                       signal: child.signal, deadlineAt, operationLedger: ledger }), queryBudgetMs,
                     { abortOnTimeout: false });
+                  // Only provider requests measure latency; a cached query vector does not.
+                  if (Number(ledger.snapshot().requestCount || 0) > 0) noteQueryEmbeddingLatency(budgetSpace, { elapsedMs: Date.now() - embeddingStartedAt });
                   return { ...result, graphEmbeddingOperation: ledger.snapshot(),
                     graphEmbeddingCoalesced: ledger.snapshot().requestCount === 0 && !result.metadata?.cacheHits };
-                } catch (error) { error.graphEmbeddingOperation = ledger.snapshot(); throw error; }
+                } catch (error) {
+                  error.graphEmbeddingOperation = ledger.snapshot();
+                  if (explicitQueryBudget === null && Date.now() - embeddingStartedAt >= queryBudgetMs - 250) noteQueryEmbeddingLatency(budgetSpace, { timedOut: true });
+                  throw error;
+                }
                 finally { clearTimeout(timer); child.abort(); parent?.removeEventListener?.('abort', abort); }
               })(text, config));
           const microRepresentations = config?.enabled && String(rawQueryInput.queryText || '').trim()
@@ -72712,7 +72801,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         // as well as an in-flight owner query.
         record = { id, boundary: null, read: null, closed: false };
         receipts.set(id, record);
-        record.timer = setTimeout(() => closeRecord(record), options.receiptTtlMs || 600000);
+        record.timer = setTimeout(() => closeRecord(record), options.receiptTtlMs || 1800000);
         record.timer?.unref?.();
         const boundary = await ownerBoundary(message);
         if (record.closed) fail('LIB_READ_CANCELED');

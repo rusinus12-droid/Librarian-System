@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.0.143
-//@version 3.0.143
+//@display-name HAYAKU · Locator Continuity v3.0.144
+//@version 3.0.144
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.0.143';
+  const PLUGIN_VERSION = '3.0.144';
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
   const HAYAKU_SPARSE_RRF_COMPUTE_FINGERPRINT = '7f32e8b10fdd34e8356af70e40ad90d3c48e6fda132080046a807db0ea3ec58f';
   const HAYAKU_SPARSE_RRF_INPUT_SCHEMA = 'hayaku.sparse-rrf-fusion.input.v1';
@@ -45495,9 +45495,21 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
 
     if(!objectish(envelope)||envelope.schema!==HAYAKU_NATIVE_REPAIR_OUTPUT_SCHEMA||!objectish(envelope.packet)||!Array.isArray(envelope.grounding))return envelope;
     const extra=Object.keys(envelope).filter(key=>!['schema','packet','grounding'].includes(key));
-    if(!extra.length)return envelope;
-    const packet=clone(envelope.packet,{});packet.meta=objectish(packet.meta)?packet.meta:{};
-    packet.meta.response_admission={schema:'hayaku.response_admission.v1',ignoredEnvelopeFields:extra,reason:'outside_packet_contract'};
+    // An axis the model left out entirely holds no records, exactly like an empty {} axis. Measured
+    // (deepseek-v4.1-flash, Cold Start batch): a turn with no world facts came back without "world",
+    // and the exact-key shape check discarded the whole otherwise-grounded turn. Only ABSENT content
+    // axes are filled with {}; meta is never synthesized, a present non-object axis still fails, and
+    // stray extra packet keys are still rejected by validateNativeRepairEnvelopeShape.
+    const absentAxes=NATIVE_REPAIR_PACKET_TOP_LEVEL_KEYS.filter(key=>key!=='meta'&&!Object.prototype.hasOwnProperty.call(envelope.packet,key));
+    if(!extra.length&&!absentAxes.length)return envelope;
+    const packet=clone(envelope.packet,{});
+    for(const key of absentAxes)packet[key]={};
+    if(extra.length){
+      packet.meta=objectish(packet.meta)?packet.meta:{};
+      packet.meta.response_admission={schema:'hayaku.response_admission.v1',ignoredEnvelopeFields:extra,reason:'outside_packet_contract',...(absentAxes.length?{absentAxesAsEmpty:absentAxes}:{})};
+    } else if(objectish(packet.meta)) {
+      packet.meta.response_admission={...(objectish(packet.meta.response_admission)?packet.meta.response_admission:{schema:'hayaku.response_admission.v1',reason:'absent_axes_as_empty'}),absentAxesAsEmpty:absentAxes};
+    }
     return {schema:envelope.schema,packet,grounding:clone(envelope.grounding,[])};
   };
   const validateNativeRepairEnvelopeShape = envelope => {
@@ -46344,6 +46356,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     error.failedAnalysisReason = preserved.reason;
     throw error;
   };
+  // Upper bound on automatic single-turn re-analysis calls in one Cold Start run (only multi-turn
+  // batches retry): one batch's worth of turns, or one per batch for long chats.
+  const coldStartAutomaticRetryBudget = (targetTurns, batchTurnsInput) => {
+    const turns = Math.max(0, Number(targetTurns || 0) || 0), batchTurns = normalizeColdStartBatchTurns(batchTurnsInput);
+    return batchTurns > 1 && turns > 1 ? Math.max(batchTurns, Math.ceil(turns / batchTurns)) : 0;
+  };
   const normalizeColdStartBatchTurns = value => {
     const numeric = Math.max(1, Math.floor(Number(value || 1) || 1));
     return HAYAKU_COLD_START_BATCH_TURNS.includes(numeric) ? numeric : 1;
@@ -46386,7 +46404,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       '[COLD START BATCH ENVELOPE — THIS OVERRIDES THE SINGLE-PACKET OUTPUT LINE ABOVE]',
       `Return one JSON envelope for exactly these unitOrdinal values: ${ordinals.join(', ')}.`,
       `Envelope schema: {"schema":"hayaku.native_cold_start_batch_output.v1","packets":[{"unitOrdinal":${ordinals[0] || 1},"packet":{"meta":{},"entity":{},"world":{},"narrative":{},"planner":{},"importance":{}}}]}`,
-      'Each packets entry must contain exactly one independent HAYAKU packet for only that numbered evidence unit, plus a grounding array alongside packet: {unitOrdinal, packet, grounding}. Every item and meta.summary_memory.summary needs a packet-relative path, source="target", and exact contiguous evidence quotes from that unit only.',
+      'Each packets entry must contain exactly one independent HAYAKU packet for only that numbered evidence unit, plus a grounding array alongside packet: {unitOrdinal, packet, grounding}. Every packet keeps all six keys; write {} for an axis with nothing to record. Every item and meta.summary_memory.summary needs a packet-relative path, source="target", and exact contiguous evidence quotes from that unit only.',
       'Do not merge turns. Do not omit, duplicate, reorder, or renumber unitOrdinal values.',
       'Return the envelope only. No Markdown, reasoning, commentary, or text before/after it.',
       repair ? 'STRICT BATCH REPAIR: the prior envelope was missing, duplicated, unparsable, oversized, or locally invalid. Repair only the listed units and preserve every distinct established fact.' : '',
@@ -46488,7 +46506,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
             error = new Error(`native_cold_start_batch_missing_ordinal:${ordinal}`);
             error.code = 'HAYAKU_NATIVE_BATCH_MISSING_ORDINAL';
           } else {
-            candidate = entriesByOrdinal.get(ordinal);
+            // Same packaging normalization as the single-unit path (executeNativeAnalysisAttempt).
+            candidate = normalizeNativeRepairEnvelope(entriesByOrdinal.get(ordinal));
             try {
               const shape=validateNativeRepairEnvelopeShape(candidate);
               if(shape.ok!==true)throw Object.assign(new Error('native_cold_start_unit_envelope_invalid:'+shape.reason),{validation:shape});
@@ -46501,7 +46520,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
               const coverage=validateNativeRepairCoverage(normalized.packet,{targetText:unit.text||''});
               if(coverage.ok!==true)throw Object.assign(new Error('native_repair_coverage_failed:'+coverage.reason),{validation:coverage,canonicalPreview:normalized.packet});
             } catch (normalizationError) {
-              if(normalizationError?.validation?.kind!=='record_admission'){const salvage=salvageNativeResponseRecords(candidate,'cold_start',unit,context);normalizationError.canonicalPreview=salvage.packet;normalizationError.validation={kind:'record_admission',...salvage.admission};normalizationError.message=salvage.admission.acceptedPaths.length?'native_record_admission_partial':'no_storable_memory';}
+              if(normalizationError?.validation?.kind!=='record_admission'){
+                // Keep the reason the unit was refused (shape/coverage/...) next to the salvage result,
+                // as the single-unit path does; otherwise every refusal reads only "partial".
+                const salvage=salvageNativeResponseRecords(candidate,'cold_start',unit,context);
+                normalizationError.originalValidation=clone(normalizationError.validation||null,null);
+                normalizationError.originalMessage=text(normalizationError.message||'');
+                salvage.admission.normalized.push({path:'response',reason:'original_validation',message:normalizationError.originalMessage,detail:normalizationError.originalValidation});
+                normalizationError.canonicalPreview=salvage.packet;normalizationError.validation={kind:'record_admission',...salvage.admission};normalizationError.message=salvage.admission.acceptedPaths.length?'native_record_admission_partial':'no_storable_memory';
+              }
               error = normalizationError;
             }
           }
@@ -48252,6 +48279,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         state.lastColdStartResult = result;
         return result;
       }
+      const automaticRetry = { budget: coldStartAutomaticRetryBudget(run.chunks.length, batchTurns), attempted: 0, recovered: 0, consecutiveFailures: 0 };
       for (const batch of analysisBatches) {
         if (Memory.unloaded || !ownsRuntime()) throw new Error('cold_start_runtime_replaced');
         if (state.coldStartCancelRequested) {
@@ -48294,7 +48322,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         });
         run.llmCalls = Math.max(0, Number(run.llmCalls || 0) || 0) + Math.max(0, Number(batchResult.calls || 0) || 0);
         if (Memory.unloaded || !ownsRuntime()) throw new Error('cold_start_runtime_replaced_before_checkpoint');
-        for (const resultEntry of batchResult.results) {
+        const markVerified = resultEntry => {
           const entry = run.chunks[Number(resultEntry.unit.ordinal) - 1];
           const analyzed = resultEntry.analyzed;
           entry.status = 'verified';
@@ -48307,14 +48335,64 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           entry.batchContractHash = analyzed.batchContractHash || '';
           entry.error = '';
           entry.failedAnalysisId = '';
-        }
-        for (const failure of batchResult.failures) {
+        };
+        const markFailed = failure => {
           const entry = run.chunks[Number(failure.unit.ordinal) - 1];
           entry.status = 'failed';
           entry.error = compact(failure.error?.message || failure.error, 320);
           entry.failedAnalysisId = compact(failure.failureId || failure.error?.failedAnalysisId || '', 160);
-        }
+        };
+        batchResult.results.forEach(markVerified);
+        batchResult.failures.forEach(markFailed);
         await persist();
+        // Automatic in-run retry: a turn the batch answer could not admit is re-analyzed ONCE on its
+        // own (a one-unit request, the same path as batch size 1), so a single rejected turn does not
+        // leave the run partial until the user presses resume. Every retry answer passes the same
+        // admission/grounding/coverage checks; a retry that also fails keeps the turn failed and the
+        // run partial exactly as before. Transport/scope failures are not retried, the total is
+        // bounded (coldStartAutomaticRetryBudget), and two consecutive failed retries stop the pass.
+        if (batchResult.failures.length && targetUnits.length > 1 && options.automaticRetry !== false) {
+          for (const failure of batchResult.failures) {
+            if (automaticRetry.attempted >= automaticRetry.budget || automaticRetry.consecutiveFailures >= 2) break;
+            if (state.coldStartCancelRequested || Memory.unloaded || !ownsRuntime()) break;
+            if (nativeRepairTransportFailure(failure.error) || hayakuRecoveryBlocked(failure.error)) continue;
+            const ordinal = Number(failure.unit.ordinal);
+            const entry = run.chunks[ordinal - 1];
+            const batchFailureId = compact(entry.failedAnalysisId || '', 160);
+            entry.status = 'running';
+            entry.attempts = Math.max(0, Number(entry.attempts || 0) || 0) + 1;
+            entry.lastAttemptAt = now();
+            entry.automaticRetry = true;
+            automaticRetry.attempted += 1;
+            await persist();
+            const retryContext = [evidence.systemContextText, nativePriorTurnContext(evidence.units, Number(failure.unit.turn || 0), 2)]
+              .filter(Boolean).join('\n\n---\n\n').slice(-HAYAKU_NATIVE_CONTEXT_MAX_CHARS);
+            const retry = await executeNativeColdStartBatchAttempt([failure.unit], {
+              scopeKey: scope.key,
+              contextOnly: retryContext,
+              batchHash: batch.batchHash,
+              batchOrdinal: batch.batchOrdinal,
+              analysisPlanHash,
+              priorFailureReport: { error: failure.error, rawResponse: '' }
+            });
+            run.llmCalls = Math.max(0, Number(run.llmCalls || 0) || 0) + Math.max(0, Number(retry.calls || 0) || 0);
+            if (Memory.unloaded || !ownsRuntime()) throw new Error('cold_start_runtime_replaced_before_checkpoint');
+            if (retry.results.length) {
+              retry.results.forEach(markVerified);
+              entry.retriedFailureIds = uniq([...ensureArray(entry.retriedFailureIds), batchFailureId].filter(Boolean), 8);
+              automaticRetry.recovered += 1;
+              automaticRetry.consecutiveFailures = 0;
+            } else {
+              const retryFailure = retry.failures[0] || { unit: failure.unit, error: failure.error, failureId: batchFailureId };
+              markFailed(retryFailure);
+              if (!entry.failedAnalysisId) entry.failedAnalysisId = batchFailureId;
+              automaticRetry.consecutiveFailures += 1;
+              await persist();
+              if (nativeRepairTransportFailure(retryFailure.error)) break;
+            }
+            await persist();
+          }
+        }
       }
       const failedChunksForReview = run.chunks.filter(entry => entry.status !== 'verified');
       if (failedChunksForReview.length && !run.chunks.some(entry=>entry.status==='verified')) {
@@ -48336,6 +48414,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           analysisBatchTurns: batchTurns,
           analysisBatchCount: analysisBatches.length,
           llmCalls: run.llmCalls,
+          automaticRetry: { budget: automaticRetry.budget, attempted: automaticRetry.attempted, recovered: automaticRetry.recovered },
           checkpointsPreserved: true
         };
         state.lastColdStartResult = result;
@@ -48418,7 +48497,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       run.error = failedChunksForReview.length?'cold_start_some_turns_failed':'';
       run.adoption = clone(adoption, {});
       run.appendedMessageCount = compatibility.appendedMessageCount;
+      run.automaticRetry = { budget: automaticRetry.budget, attempted: automaticRetry.attempted, recovered: automaticRetry.recovered };
       await persist();
+      // The batch failure a verified automatic retry replaced is closed, not left pending review.
+      for (const entry of run.chunks) {
+        if (entry.status !== 'verified') continue;
+        for (const failureId of ensureArray(entry.retriedFailureIds)) await updateFailedAnalysisManifest(scope.key, failureId, {
+          state:'resolved_by_retry', resolution:{action:'verified_retry',canonical:true,durable:true,packetHash:entry.packetHash,
+            reason:adoption.reason || 'cold_start_adopted', resolvedAt:now()}
+        }).catch(() => null);
+      }
       const result = {
         ok: true,
         completed: failedChunksForReview.length===0,
@@ -48433,6 +48521,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         analysisBatchTurns: batchTurns,
         analysisBatchCount: analysisBatches.length,
         llmCalls: run.llmCalls,
+        automaticRetry: { budget: automaticRetry.budget, attempted: automaticRetry.attempted, recovered: automaticRetry.recovered },
         assistantOnlyUnits: evidence.assistantOnlyUnits,
         appendedMessageCount: compatibility.appendedMessageCount,
         adoption: clone(adoption, {})
@@ -49894,7 +49983,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         // as well as an in-flight owner query.
         record = { id, boundary: null, read: null, closed: false };
         receipts.set(id, record);
-        record.timer = setTimeout(() => closeRecord(record), options.receiptTtlMs || 600000);
+        record.timer = setTimeout(() => closeRecord(record), options.receiptTtlMs || 1800000);
         record.timer?.unref?.();
         const boundary = await ownerBoundary(message);
         if (record.closed) fail('LIB_READ_CANCELED');
@@ -58018,7 +58107,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     summary.innerHTML = `완료된 U+A를 최대 <b>${batchTurns}</b>턴씩 한 번의 Other Ax 호출로 묶고, 결과는 기존과 같은 턴별 패킷으로 저장합니다.`;
     const cost = doc.createElement('dl');
     cost.className = 'cost-table';
-    cost.innerHTML = `<dt>대상 턴</dt><dd>완료 U+A ${targets.toLocaleString()}턴</dd><dt>묶음</dt><dd>${bundles.toLocaleString()}묶음</dd><dt>예상 기본 호출</dt><dd>${bundles.toLocaleString()}회</dd><dt>추가 복구 허용량</dt><dd>${bundles ? `묶음마다 설정에 따라 최대 +${extraCalls}회` : '설정 확인 중'}</dd>`;
+    cost.innerHTML = `<dt>대상 턴</dt><dd>완료 U+A ${targets.toLocaleString()}턴</dd><dt>묶음</dt><dd>${bundles.toLocaleString()}묶음</dd><dt>예상 기본 호출</dt><dd>${bundles.toLocaleString()}회</dd><dt>추가 복구 허용량</dt><dd>${bundles ? `묶음마다 설정에 따라 최대 +${extraCalls}회` : '설정 확인 중'}</dd>${bundles && batchTurns > 1 ? `<dt>거부된 턴 자동 재분석</dt><dd>턴당 1회, 최대 ${coldStartAutomaticRetryBudget(targets, batchTurns).toLocaleString()}회</dd>` : ''}`;
     const note = doc.createElement('div');
     note.className = 'note';
     note.className = 'note note--warn';

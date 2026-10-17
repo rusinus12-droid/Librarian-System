@@ -103,7 +103,8 @@ let outputListener = null;
             if (Number(f.r.api.getCaptureBackendState().lastMicroPublication?.turn || 0) >= turn) break;
           }
           const published = f.r.api.getCaptureBackendState().lastMicroPublication;
-          process.stderr.write(`[live] turn ${turn} ${Date.now() - turnStarted}ms micro=${published?.turn}:${published?.status} llm=${stats.llmCalls}\n`);
+          const receipts = [...snapshot.local.keys()].filter(key => new RegExp(`:source-receipt-head:[^:]+:e\\d+:t${turn}$`).test(key)).length;
+          process.stderr.write(`[live] turn ${turn} ${Date.now() - turnStarted}ms micro=${published?.turn}:${published?.status}:${published?.reason || ''} receipt=${receipts} llm=${stats.llmCalls}\n`);
         }
       }
       if (live && statePath && mode === 'plugin_only') fs.writeFileSync(statePath + '.live', JSON.stringify([...snapshot.local]));

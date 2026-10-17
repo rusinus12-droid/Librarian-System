@@ -9,9 +9,12 @@ const messages=[1,2].flatMap(n=>[{role:'user',id:'u'+n,chatId:'u'+n,data:'Open t
  const r=await createHayakuRuntime({autoRepair:false,messages,llmResponder:async()=>{const bad=entry(2);bad.grounding.forEach(row=>row.evidence=['Absent quote']);return {type:'success',result:JSON.stringify({packets:[entry(1),bad]})};}});
  try{
   const first=await r.hayaku.recovery.coldStart({resume:true,batchTurns:5});assert.equal(first.ok,true);assert.equal(first.completed,false);assert.equal(first.awaitingUserReview,false);assert.equal(first.adoption.durable,true);
+  // The rejected turn is re-analyzed once on its own inside the same run; this responder keeps
+  // answering with the bad batch, so the retry also fails and the run stays partial.
+  assert.equal(JSON.stringify(first.automaticRetry),JSON.stringify({budget:5,attempted:1,recovered:0}));assert.equal(r.llmCalls.length,2);
   let ledger=await r.hayaku.ledger.inspect({includeRecords:true});assert.equal(ledger.records.filter(row=>row.captureSource==='bridge_cold_start').length,1);
   r.setLlmResponder(async()=>({type:'success',result:JSON.stringify(entry(2))}));
-  const resumed=await r.hayaku.recovery.coldStart({resume:true,batchTurns:5});assert.equal(resumed.completed,true,JSON.stringify(resumed));assert.equal(resumed.reusedChunks,1);assert.equal(r.llmCalls.length,2);
+  const resumed=await r.hayaku.recovery.coldStart({resume:true,batchTurns:5});assert.equal(resumed.completed,true,JSON.stringify(resumed));assert.equal(resumed.reusedChunks,1);assert.equal(r.llmCalls.length,3);
   ledger=await r.hayaku.ledger.inspect({includeRecords:true});assert.equal(ledger.records.filter(row=>row.captureSource==='bridge_cold_start').length,2);
  }finally{await r.dispose();}
  for(const mode of ['retry','salvage']){

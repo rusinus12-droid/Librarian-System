@@ -98,7 +98,7 @@ test('GRADIA recommendation review includes exact stage inclusion and timeout ch
     assert(row('agents.input_assist.enabled'), 'stage inclusion has its own row');
     assert.match(row('agents.input_assist.enabled').textContent, /인풋 관리자.*켜짐.*꺼짐/);
     assert(row('agents.input_assist.timeoutMs'), 'stage timeout has its own row');
-    assert.match(row('agents.input_assist.timeoutMs').textContent, /대기.*51[,.]?550.*120[,.]?000/);
+    assert.match(row('agents.input_assist.timeoutMs').textContent, /대기.*51[,.]?550.*300[,.]?000/);
     assert(!row('agents.shadow_act.enabled'), 'unchanged disabled SHADOW is not listed');
     assert(!row('agents.shadow_act.timeoutMs'), 'unchanged SHADOW timeout is not listed');
     assert.equal(JSON.stringify([...f.store]), stored, 'review cannot write settings');
@@ -107,7 +107,7 @@ test('GRADIA recommendation review includes exact stage inclusion and timeout ch
     assert.equal(JSON.stringify([...f.store]), stored, 'apply remains a draft');
     f.doc.querySelector('#savebar [data-save]').click(); await wait(() => !f.plugin.debugGuiStateInfo().dirty, 'recommendation save');
     const after = JSON.parse(f.store.get(AGENTS));
-    assert.equal(after.slots.input_assist.enabled, false); assert.equal(after.slots.input_assist.timeout_ms, 120000);
+    assert.equal(after.slots.input_assist.enabled, false); assert.equal(after.slots.input_assist.timeout_ms, 300000);
     assert.equal(after.slots.shadow_act.enabled, false); assert.equal(after.slots.shadow_act.timeout_ms, 51000);
     assert.equal(JSON.parse(f.store.get(RUNTIME)).settings.skill_router_top_k, '2');
     f.doc.querySelector('[data-open="dlg-reco"]').click();

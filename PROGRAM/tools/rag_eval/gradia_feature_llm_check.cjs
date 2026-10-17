@@ -61,15 +61,18 @@ const meteredFetch = (isLlm = url => !url.startsWith('http://127.0.0.1')) => asy
   } catch (error) { row.ms = Math.round(performance.now() - started); row.error = String(error?.cause?.code || error?.message || error); throw error; }
 };
 
-// stage_timeout_ms is a legacy fallback migrated ONCE into the per-stage agent slots (on the first
-// loadSettings); afterwards each slot's timeout_ms overrides preset.timeout_ms. Set the slots directly.
+// Since 0.25.89 untouched agent slots follow the runtime stage_timeout_ms / preset timeout_ms
+// (default 300 s), so nothing has to be written into the slots. GRADIA_CHECK_TIMEOUT_MODE=slots
+// still writes every slot's own timeout_ms (the earlier workaround) to compare both ways.
 const setSlotTimeouts = async plugin => {
-  await plugin.debugResolveStagePreset('shadow_act'); // forces the one-time slot migration
-  const slots = await plugin.getAgentSlots();
-  for (const id of Object.keys(slots)) slots[id] = { ...slots[id], timeout_ms: TIMEOUT };
-  await plugin.saveAgentSlots(slots);
-  const check = await plugin.getAgentSlots();
-  if (Object.values(check).some(slot => slot.timeout_ms !== TIMEOUT)) throw new Error('slot timeout not applied');
+  if (process.env.GRADIA_CHECK_TIMEOUT_MODE === 'slots') {
+    await plugin.debugResolveStagePreset('shadow_act'); // forces the one-time slot migration
+    const slots = await plugin.getAgentSlots();
+    for (const id of Object.keys(slots)) slots[id] = { ...slots[id], timeout_ms: TIMEOUT };
+    await plugin.saveAgentSlots(slots);
+  }
+  const effective = (await plugin.debugResolveStagePreset('shadow_act')).timeoutMs;
+  if (effective !== TIMEOUT && !(effective === undefined && process.env.GRADIA_CHECK_TIMEOUT_MODE === 'slots')) throw new Error('stage timeout not effective: ' + effective);
 };
 
 const results = [];

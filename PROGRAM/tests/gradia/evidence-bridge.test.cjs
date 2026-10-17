@@ -32,7 +32,8 @@ async function fixture(opts={}){
   const user=body.messages?.find(m=>m.role==='user')?.content||'';
   let content=system.includes('patch JSON')||system.includes('serial RP draft analysis-and-patch agent')?JSON.stringify({schema:'serial_gradation_agents_for_rp_draft_patch_v1',stage:(system.match(/Return the compact (aide_\w+) patch JSON/)||[])[1],ok:true,domain:{},analysis:{summary:'No changes necessary',constraints:[],risks:[]},edits:[]}):system.includes('Run shadow_act analysis now')||system.includes('Run aide_')?JSON.stringify({schema:'serial_gradation_agents_for_rp_analysis_v4',stage:(system.match(/Run (\w+) analysis now/)||[])[1],ok:true,analysis:{summary:'Preserve the scene',constraints:['Preserve door'],risks:[]},domain:{continuity:'The archivist waits.',story_author_plan:{scene_purpose:'Continue the scene',beats:Array.from({length:24},(_,i)=>'Beat '+i)},director_brief:{required_outcomes:['Keep current scene']}},rewrite_directives:['Continue the current scene.']}):'DERIVED_DRAFT_SENTINEL The archivist rested one hand on the door. “Come in,” he said. The lamplight spread over the quiet room, and the clock continued its measured ticking.';
   if(opts.modelContent)content=opts.modelContent(prompts.length,body,content);
-  return {ok:true,status:200,json:async()=>({choices:[{message:{content},finish_reason:'stop'}]}),text:async()=>{await opts.onBody?.();return JSON.stringify({choices:[{message:{content},finish_reason:'stop'}]})}};}}});
+  const finish=opts.finish?.(prompts.length,body)||'stop';
+  return {ok:true,status:200,json:async()=>({choices:[{message:{content},finish_reason:finish}]}),text:async()=>{await opts.onBody?.();return JSON.stringify({choices:[{message:{content},finish_reason:finish}]})}};}}});
  await host.hooks.beforeRequest(messages(),'model');
  const settings={...host.plugin.getRuntime().settings,inputAssistMode:'off',enableShadowAct:true,enableCharacterAide:true,enableWorldAide:true,enablePlotAide:true,multiPipelineMode:opts.mode||'lightweight',mode:'normal',failureMode:'hard',loreActivationMode:'off',debugLog:true,stagePresetNames:{},defaultPresetName:'offline',presets:{offline:{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'synthetic-not-a-credential',model:'offline-fake',context_window:128000,max_tokens:4096,timeout_ms:1000,stream:false}},skillRouterEnabled:false};
  const certifyInput=input=>{
@@ -200,4 +201,54 @@ test('owner request carries hashes and native references, not a duplicate transc
 });
 test('oversized native read-set metadata is unavailable before owner recall',async()=>{
  const f=await fixture();const input=messages();input[0].messageId='native-user-'+ 'x'.repeat(20000);f.certifyInput(input);const r=await f.run(input);assert.equal(f.recalls,0);assert.equal(r.externalEvidence,false);assert.equal(f.host.plugin.getRuntime().finalDraftMeta.libReadReason,'LIB_READ_REQUEST_BUDGET_EXCEEDED');r.closeEvidence();
+});
+
+// Slow cloud models: a dispatched stage request that produces no response at all is resent once
+// (nothing was received, so no response is reused); a response that started is never retried.
+test('a stalled evidence transport with no response is resent once with the same request and evidence',async()=>{
+ const f=await fixture({onModel:n=>n===1?new Promise(()=>{}):undefined});f.settings.presets.offline.timeout_ms=5000;
+ const start=Date.now();const r=await f.run();assert.equal(r.ok,true);assert.ok(Date.now()-start<9000);
+ assert.equal(f.recalls,1);assert.equal(f.prompts.length,5);assert.deepEqual(f.prompts[1],f.prompts[0]);
+ for(const body of f.prompts)assert.equal(JSON.stringify(body).split('EVIDENCE_SENTINEL').length-1,1);r.closeEvidence();
+});
+test('a second stall of the same evidence stage call fails as a model timeout',async()=>{
+ const f=await fixture({onModel:n=>n<=2?new Promise(()=>{}):undefined});f.settings.presets.offline.timeout_ms=5000;
+ const start=Date.now();await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_MODEL_TIMEOUT');assert.ok(Date.now()-start<14000);assert.equal(f.prompts.length,2);
+ const state=JSON.stringify(f.host.plugin.getRuntime());assert.ok(!state.includes('EVIDENCE_SENTINEL'));
+});
+test('evidence stall recoveries are capped per request',async()=>{
+ const f=await fixture({onModel:n=>[1,3,5].includes(n)?new Promise(()=>{}):undefined});f.settings.presets.offline.timeout_ms=5000;
+ await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_MODEL_TIMEOUT');assert.equal(f.prompts.length,5);
+});
+test('a provider length stop in an evidence run is discarded and asked once more with a larger output budget',async()=>{
+ const f=await fixture({modelContent:(n,body,content)=>n===2?content.slice(0,40):content,finish:n=>n===2?'length':'stop'});
+ const r=await f.run();assert.equal(r.ok,true);assert.equal(f.prompts.length,5);assert.equal(f.recalls,1);
+ const budget=b=>b.max_tokens??b.max_completion_tokens;assert.ok(budget(f.prompts[2])>budget(f.prompts[1]));
+ assert.deepEqual(f.prompts[2].messages,f.prompts[1].messages);r.closeEvidence();
+});
+test('stage timeout: default 300 s, runtime stage_timeout_ms and preset follow untouched slots, explicit slots win',async()=>{
+ const {load}=require('./host.cjs');const host=await load();const p=host.plugin;
+ await p.saveProviderPreset('main',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'k',model:'m'});
+ await p.saveRuntimeSettings({default_preset:'main'});
+ assert.equal((await p.debugResolveStagePreset('shadow_act')).timeoutMs,300000);
+ const slots=await p.getAgentSlots();assert.ok([120000,300000].includes(slots.shadow_act.timeout_ms));
+ await p.saveProviderPreset('main',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'k',model:'m',timeout_ms:180000});
+ assert.equal((await p.debugResolveStagePreset('shadow_act')).timeoutMs,180000);
+ await p.saveRuntimeSettings({default_preset:'main',stage_timeout_ms:450000});
+ assert.equal((await p.debugResolveStagePreset('shadow_act')).timeoutMs,450000);
+ assert.equal((await p.debugResolveStagePreset('aide_plot')).timeoutMs,450000);
+ await p.saveAgentSlots({...slots,aide_plot:{...slots.aide_plot,timeout_ms:200000},shadow_act:{...slots.shadow_act,timeout_ms:120000}});
+ assert.equal((await p.debugResolveStagePreset('aide_plot')).timeoutMs,200000);
+ assert.equal((await p.debugResolveStagePreset('shadow_act')).timeoutMs,450000);
+ await p.saveRuntimeSettings({default_preset:'main',stage_timeout_ms:900000});
+ assert.equal((await p.debugResolveStagePreset('shadow_act')).timeoutMs,600000);
+});
+test('plugin mode: a stalled stage request times out and is resent once by the transient retry',async()=>{
+ const f=await fixture({unbound:true,onModel:n=>n===1?new Promise(()=>{}):undefined});f.settings.presets.offline.timeout_ms=5000;
+ const start=Date.now();const r=await f.run();assert.equal(r.ok,true);assert.ok(Date.now()-start<10000);assert.equal(f.prompts.length,5);
+ assert.ok(!JSON.stringify(f.prompts).includes('EVIDENCE_SENTINEL'));
+});
+test('an evidence response that claims stop but is truncated is not retried',async()=>{
+ const f=await fixture({modelContent:(n,body,content)=>n===2?content.slice(0,40):content});f.settings.failureMode='soft';
+ await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_MODEL_INCOMPLETE');assert.equal(f.prompts.length,2);
 });
