@@ -185,6 +185,7 @@ async function main() {
   for (const deadline = Date.now() + 180000; Date.now() < deadline && Date.now() - lastWriteAt < 3000;) await sleep(250);
   const captureEmbeddingCalls = network.embeddingCalls;
   questionPhase = true;
+  const askAll = async () => {
   const results = [];
   for (const question of fixture.questions) {
     const full = transcript();
@@ -213,6 +214,43 @@ async function main() {
       embeddingCalls: network.embeddingCalls - callsBefore, serverCalls: network.serverCalls - serverCallsBefore, ...(recallNote ? { recallNote } : {}) });
     await sleep(150);
   }
+  return results;
+  };
+  const results = await askAll();
+  // --manual: run every manual embedding feature against the same provider, then ask
+  // the questions again after each one that rewrites records or vectors.
+  const manual = [];
+  if (argv.includes('--manual')) {
+    const api = globalThis.__FlashbackMemory;
+    const settle = async () => { for (const deadline = Date.now() + 180000; Date.now() < deadline && Date.now() - lastWriteAt < 3000;) await sleep(250); };
+    const summarize = value => { try { return JSON.stringify(value, (key, v) => Array.isArray(v) && v.length > 4 ? `[${v.length}]` : typeof v === 'string' && v.length > 120 ? v.slice(0, 120) : v).slice(0, 400); } catch (_) { return String(value).slice(0, 400); } };
+    const step = async (name, fn, { recheck = false } = {}) => {
+      const calls = network.embeddingCalls, started = performance.now();
+      const row = { name };
+      try { row.result = summarize(await fn()); row.ok = true; } catch (error) { row.ok = false; row.error = String(error?.code || '') + ' ' + String(error?.message || error).slice(0, 300); }
+      await settle();
+      row.ms = Math.round(performance.now() - started); row.embeddingCalls = network.embeddingCalls - calls;
+      if (recheck) { const again = await askAll(); row.hitRateAfter = +(again.filter(r => r.hit).length / again.length).toFixed(3); row.missesAfter = again.filter(r => !r.hit).map(r => r.id); }
+      manual.push(row);
+    };
+    const settings = await api.loadSettings();
+    await step('multilingual_probe', () => api._test.runMultilingualEmbeddingProbe(settings));
+    await step('inspect_embedding_work', () => api.inspectEmbeddingWork());
+    await step('recall_records_api', async () => {
+      const q = fixture.questions.find(x => x.family === 'paraphrase') || fixture.questions[0];
+      const r = await api.recallRecords(q.q);
+      const text = (r.records || []).map(x => String(x.text || x.record?.text || '')).join('\n');
+      if (!q.expect.every(n => text.includes(n))) throw new Error('recallRecords missed ' + q.id + ' (' + (r.records || []).length + ' records)');
+      return { records: (r.records || []).length, stage: r.selection?.stage };
+    });
+    await step('maintenance_sync', () => api.runMemoryMaintenance('sync'), { recheck: true });
+    await step('maintenance_reembed', () => api.runMemoryMaintenance('reembed'), { recheck: true });
+    await step('reembed_all_records', () => api.reembedAllRecords(), { recheck: true });
+    await step('progressively_reembed_records', () => api.progressivelyReembedRecords(), { recheck: true });
+    await step('rebuild_current_chat_memory', async () => { const r = await api.rebuildCurrentChatMemory(); await api.processPendingEmbeddingQueue?.(); return r; }, { recheck: true });
+    await step('clean_and_reembed_all_records', () => api.cleanAndReembedAllRecords(), { recheck: true });
+    await step('ingest_live_chat_cold_start', async () => { const r = await api.ingestLiveChatColdStart(); await api.processPendingEmbeddingQueue?.(); return r; }, { recheck: true });
+  }
   console.log = quietLog; console.warn = quiet;
   const families = {};
   for (const row of results) {
@@ -229,7 +267,7 @@ async function main() {
     availableRate: +(results.filter(row => row.available).length / results.length).toFixed(3),
     visibleTurns: Number.isFinite(visibleTurns) ? visibleTurns : 'all',
     partialRate: +(results.filter(row => row.partial).length / results.length).toFixed(3),
-    families,
+    families, ...(manual.length ? { manual } : {}),
     latencyMs: { p50: percentile(latency, 50), p95: percentile(latency, 95), max: Math.max(...latency) },
     avgInjectedChars: Math.round(results.reduce((sum, row) => sum + row.injectedChars, 0) / results.length),
     embedding: { captureCalls: captureEmbeddingCalls, recallCallsPerQuestion: +((network.embeddingCalls - captureEmbeddingCalls) / results.length).toFixed(2) },

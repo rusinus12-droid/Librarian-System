@@ -42,7 +42,8 @@ const callModel = async args => {
     try {
       const response = await fetch(llmUrl + '/chat/completions', { method: 'POST',
         headers: { Authorization: `Bearer ${process.env.RAG_EVAL_LLM_KEY || ''}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: process.env.RAG_EVAL_LLM_MODEL, messages, temperature: 0, stream: false }) });
+        body: JSON.stringify({ model: process.env.RAG_EVAL_LLM_MODEL, messages, temperature: 0, stream: false }),
+        signal: AbortSignal.timeout(180000) });
       if (!response.ok) throw new Error(`${response.status} ${(await response.text()).slice(0, 200)}`);
       const body = await response.json();
       stats.llmCalls += 1; stats.llmMs += performance.now() - started;
@@ -97,9 +98,12 @@ let outputListener = null;
           f.chat.messages = f.chat.message;
           const turn = index / 2 + 1;
           outputListener?.({ char: f.character, chat: f.chat, characterIndex: 0, chatIndex: 0, messageIndex: f.chat.message.length - 1 });
+          const turnStarted = Date.now();
           for (const deadline = Date.now() + 180000; Date.now() < deadline; await sleep(250)) {
             if (Number(f.r.api.getCaptureBackendState().lastMicroPublication?.turn || 0) >= turn) break;
           }
+          const published = f.r.api.getCaptureBackendState().lastMicroPublication;
+          process.stderr.write(`[live] turn ${turn} ${Date.now() - turnStarted}ms micro=${published?.turn}:${published?.status} llm=${stats.llmCalls}\n`);
         }
       }
       if (live && statePath && mode === 'plugin_only') fs.writeFileSync(statePath + '.live', JSON.stringify([...snapshot.local]));
