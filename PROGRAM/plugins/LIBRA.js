@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.156
-//@version 2.3.156
+//@display-name LIBRA v2.3.157
+//@version 2.3.157
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1557,7 +1557,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.3.156';
+  const PLUGIN_VERSION = '2.3.157';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -71952,9 +71952,23 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         }).catch(error => {
           const message = compact(error?.message || error, 200);
           if (message === 'LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED') { if (!volatileState.yieldRequested) scheduleVolatileMemoryGraphCorpus(delayMs); return; }
-          volatileState.failures += 1; volatileState.lastError = message;
-        }).finally(() => { volatileState.running = null; volatileState.yieldRequested = false; });
+          // A startup prewarm can run before the host route is ready; the next request
+          // builds again, so only that attempt's error is kept, not counted as a failure.
+          if (!volatileState.prewarming) volatileState.failures += 1;
+          volatileState.lastError = message;
+        }).finally(() => { volatileState.running = null; volatileState.yieldRequested = false; volatileState.prewarming = false; });
       }, delayMs);
+    };
+    // The first request after load otherwise pays the cold build (~15 s for a 30-turn
+    // chat with real vectors). Build the same read-only runtime index shortly after
+    // startup; a request arriving first still yields it the usual way.
+    const VOLATILE_CORPUS_STARTUP_DELAY_MS = 3000;
+    const prewarmVolatileMemoryGraphCorpus = () => {
+      if (state.disposed) return false;
+      ensureMemoryGraphUnifiedSuite();
+      volatileMemoryGraphCorpus().prewarming = true;
+      scheduleVolatileMemoryGraphCorpus(VOLATILE_CORPUS_STARTUP_DELAY_MS);
+      return true;
     };
     const disposeVolatileMemoryGraphCorpus = () => {
       if (!volatileCorpusRuntime) return;
@@ -75609,7 +75623,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       getUnifiedResponseContext, validateUnifiedResponseContext, previewUnifiedIdentityMerge, mergeUnifiedIdentity, previewUnifiedIdentitySplit, splitUnifiedIdentity, previewUnifiedMigration, beginUnifiedMigration, previewUnifiedLegacyRebuild, getUnifiedLegacyRebuildEvidence, rebuildSelectedUnifiedLegacy, previewUnifiedRetention, collectUnifiedRetention, listWorldManagerHistory, getWorldManagerHistoryDetail, listCanonicalReaderChapters, getCanonicalReaderChapter, getCanonicalEvidenceChain,
       listExecutionReceipts, getExecutionReceiptDetail, listWorldManagerCorrections, getWorldManagerRuntimeMeta,
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
-      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, inspectVolatileMemoryGraphCorpus, inspectMicroRepresentationVectors, warmMicroRepresentationVectors, disposeVolatileMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, releaseMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
+      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, inspectVolatileMemoryGraphCorpus, inspectMicroRepresentationVectors, warmMicroRepresentationVectors, prewarmVolatileMemoryGraphCorpus, disposeVolatileMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, releaseMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
 
       armPendingLiveBoundary, loadPendingBoundaryStore, pruneExpiredPendingBoundaryStore, recoverPendingLiveBoundaryAtStartup, clearPendingBoundaryAfterCommit,
       reconcileCanonicalBranchBeforeRecall, verifyBatchStillCurrent, captureCommittedOutputEvent,
@@ -88143,6 +88157,7 @@ advanced
     } catch (error) { warn('LIBRA recall delimiter display cleanup unavailable.', error); }
     await registerOutputListener();
     await LibraMemoryCore.readySourceRules();
+    try { LibraMemoryCore.prewarmVolatileMemoryGraphCorpus(); } catch (error) { warn('LIBRA runtime recall index prewarm unavailable.', error); }
 
     const unload = async () => {
       // Retire the runtime before touching host APIs. Any failed/unavailable removal then

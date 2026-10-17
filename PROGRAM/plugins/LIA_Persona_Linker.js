@@ -1,7 +1,7 @@
 //@name lia_persona_linker
 //@display-name LIA: Persona Linker
 //@api 3.0
-//@version 0.26.83
+//@version 0.26.84
 /* Target-only handoff storage preparation v1. Authenticated owner handlers only. */
 async function prepareMemorySuiteHandoffTargetStorage(api, storage, owner, payload) {
   const readTarget = async () => {
@@ -274,7 +274,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
   const OPERATION_LOG_MAX = 300;
   const DEBUG_LOG_MAX = 600;
   const LOG_PERSIST_DEBOUNCE_MS = 1500;
-const PLUGIN_VERSION = "0.26.83";
+const PLUGIN_VERSION = "0.26.84";
   const LIA_SETTING_UI_ID = "lia-persona-linker-setting";
   const LIA_BUTTON_UI_ID = "lia-persona-linker-button";
   const PERSONA_PROOF_VERSION = 1;
@@ -16053,12 +16053,15 @@ ${revisionText}`);
       name: compact(parsed.name || ""),
       aliases: normalizeStringArray(parsed.aliases, 12),
       role: compact(parsed.role || ""),
-      identitySummary: String(parsed.identitySummary || parsed.identity_summary || "").trim(),
+      identitySummary: String(parsed.identitySummary || parsed.identity_summary || parsed.summary || parsed.description || "").trim(),
       sourceTypes: normalizeStringArray(parsed.sourceTypes || parsed.source_types, 8),
       evidence: normalizeStringArray(parsed.evidence, 10),
       confidence: Math.max(0, Math.min(100, Math.round(Number(parsed.confidence || 0) || 0))),
       selectionReason: String(parsed.selectionReason || parsed.selection_reason || "").trim(),
     };
+    // Providers without schema enforcement may omit the summary; the role and the
+    // source-grounded evidence still identify the person.
+    if (!candidate.identitySummary) candidate.identitySummary = [candidate.role, candidate.evidence.slice(0, 3).join("; ")].filter(Boolean).join(" — ");
     if (!candidate.name || !candidate.identitySummary) return null;
     return candidate;
   }
@@ -16950,6 +16953,8 @@ ${revisionText}`);
       "You are LIA's named-character/entity extractor for RisuAI.",
       "The current RisuAI Character may be a single-person bot OR a large simulation/world bot containing many NPCs. Detect independently playable PERSON/character identities without merging them.",
       "Return JSON only with a candidates array.",
+      'Shape: {"candidates":[{"name":"...","aliases":["..."],"role":"short role in the story","identitySummary":"one or two sentences identifying this person","sourceTypes":["character_card"|"lore"|"recent_chat"],"evidence":["source-grounded identity fact"],"confidence":0-100,"selectionReason":"why this is a separate playable identity"}]}',
+      "Every candidate must include name and identitySummary.",
       "",
       "Entity rules:",
       "- Extract only concrete person/character identities supported by the Character Card, selected lore, or recent assistant/NPC roleplay evidence.",
@@ -18753,6 +18758,9 @@ ${revisionText}`);
       else body.thinking = { type: config.thinkingType === "disabled" ? "disabled" : "enabled" };
     }
     if (family === "glm") body.thinking = { type: config.thinkingType === "disabled" ? "disabled" : "enabled" };
+    // Generic OpenAI-compatible routes (Ollama, vLLM, gateways) honour reasoning_effort "none";
+    // a route that rejects the field is retried without it (isReasoningUnsupportedError).
+    if (normalizeProviderKey(config.provider) === "custom" && family !== "gpt" && config.thinkingType === "disabled" && !config.omitReasoningEffort) body.reasoning_effort = "none";
     if (normalizeProviderKey(config.provider) === "ollama_cloud" && family !== "gpt") {
       delete body.thinking;
       if (config.thinkingType === "disabled") body.reasoning_effort = "none";
@@ -19286,11 +19294,15 @@ ${revisionText}`);
         const result = await executeProviderCall(config, systemPrompt, userPrompt, callOptions);
         if (callOptions.signal?.aborted) throw Object.assign(new Error("Provider request cancelled by the caller."), { code: "LIA_PROVIDER_CANCELLED" });
         const content = String(result?.content || "").trim();
-        if (!content && normalizeProviderKey(config.provider) === "ollama_cloud" && !emptyContentReasoningRetry) {
-          // Thinking-capable Ollama models can return an empty final content when the output budget
-          // is consumed by reasoning. Retry once with reasoning explicitly disabled.
+        const lengthStop = /length|max_tokens|max_output/i.test(String(result?.finishReason || ""));
+        const reasoningMayRun = !(config.thinkingType === "disabled" && String(config.reasoningEffort || "none") === "none");
+        if (!emptyContentReasoningRetry && reasoningMayRun
+          && ((!content && (normalizeProviderKey(config.provider) === "ollama_cloud" || lengthStop)) || (content && lengthStop))) {
+          // Thinking-capable models can spend the output budget on reasoning: the final content is
+          // empty or cut off at the length limit (a cut-off JSON cannot be repaired). Retry once
+          // with reasoning explicitly disabled, on any provider.
           emptyContentReasoningRetry = true;
-          appendDebugLog("provider", "retry_empty_content_reasoning_off", { requestId: providerCallId, provider: config.provider, model: config.model }, "warn");
+          appendDebugLog("provider", content ? "retry_length_stop_reasoning_off" : "retry_empty_content_reasoning_off", { requestId: providerCallId, provider: config.provider, model: config.model }, "warn");
           config = { ...config, reasoningPreset: "off", reasoningEffort: "none", reasoningBudgetTokens: 0, thinkingType: "disabled", serviceTier: "off" };
           continue;
         }
@@ -19357,6 +19369,11 @@ ${revisionText}`);
           appendDebugLog("provider", "retry_json_mode_off", { requestId: providerCallId, error: errorForLog(error) }, "warn");
           callOptions.jsonMode = false;
           callOptions.jsonSchema = null;
+          continue;
+        }
+        if (!config.omitReasoningEffort && normalizeProviderKey(config.provider) === "custom" && config.thinkingType === "disabled" && isReasoningUnsupportedError(error)) {
+          appendDebugLog("provider", "retry_without_reasoning_effort", { requestId: providerCallId, error: errorForLog(error) }, "warn");
+          config = { ...config, omitReasoningEffort: true };
           continue;
         }
         if (!reasoningRetry && config.reasoningPreset !== "off" && isReasoningUnsupportedError(error)) {
@@ -20239,7 +20256,7 @@ ${revisionText}`);
       "- Preserve placeholders and runtime tokens such as {{user}}, {{char}}, IDs, template syntax, code-like markers, and variable names exactly.",
       "- Do not add, remove, soften, strengthen, censor, explain, or reinterpret content.",
       "- Keep proper names stable unless the target language normally requires a straightforward transliteration; never invent a new name.",
-      "- Output only the translated personaPrompt in the requested JSON field.",
+      '- Return exactly {"personaPrompt": "<the translated persona prompt>"} and nothing else.',
       ...(personaSpec ? ["- The PersonaSpec below is the canonical semantic reference. If wording in the source prompt is ambiguous, preserve PersonaSpec meaning rather than inventing a new trait."] : []),
       "",
       ...(personaSpec ? ["[CANONICAL PERSONA SPEC]", JSON.stringify(personaSpec, null, 2), ""] : []),
@@ -20262,6 +20279,14 @@ ${revisionText}`);
       },
     );
     const parsed = parseLLMResult(content);
+    // Providers without schema enforcement sometimes name the single field differently
+    // ({"translated": ...}); a lone string value is the translation.
+    if (parsed && typeof parsed === "object" && !parsed.personaPrompt) {
+      const strings = Object.values(parsed).filter(value => typeof value === "string" && value.trim());
+      const named = parsed.translated || parsed.translation || parsed.translatedPersonaPrompt;
+      if (typeof named === "string" && named.trim()) parsed.personaPrompt = named;
+      else if (strings.length === 1) parsed.personaPrompt = strings[0];
+    }
     if (!parsed?.personaPrompt) throw new Error("번역 응답에서 personaPrompt를 추출하지 못했습니다.");
     setTranslationText(parsed.personaPrompt, language);
     return { language, label: target.label, personaPrompt: parsed.personaPrompt };

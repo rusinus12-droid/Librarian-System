@@ -9,7 +9,7 @@
 //   RAG_EVAL_LLM_URL / RAG_EVAL_LLM_KEY / RAG_EVAL_LLM_MODEL
 //   RAG_EVAL_EMBED_URL / RAG_EVAL_EMBED_KEY / RAG_EVAL_EMBED_MODEL
 // Node's built-in fetch ignores HTTPS_PROXY; run with NODE_USE_ENV_PROXY=1 behind a proxy.
-// Usage: node tools/rag_eval/libra_feature_check.cjs --state file [--json out.json]
+// Usage: node tools/rag_eval/libra_feature_check.cjs --state file [--json out.json] [--only step,step]
 const fs = require('node:fs');
 const path = require('node:path');
 const { performance } = require('node:perf_hooks');
@@ -70,7 +70,9 @@ const summarize = value => { try { return JSON.stringify(value, (k, v) => Array.
       }
       return +(hits / questions.length).toFixed(3);
     };
+    const only = option('--only') ? new Set(option('--only').split(',')) : null;
     const step = async (name, fn, { recall = false } = {}) => {
+      if (only && !only.has(name)) return null;
       const before = { ...stats }, started = performance.now(), row = { name };
       try { row.result = summarize(await fn()); row.ok = true; }
       catch (error) { row.ok = false; row.error = (String(error?.code || '') + ' ' + String(error?.message || error)).trim().slice(0, 300); }
@@ -107,7 +109,8 @@ const summarize = value => { try { return JSON.stringify(value, (k, v) => Array.
         f.chat.message.push({ role: 'user', chatId: 'q-' + q.id, data: q.q }); f.chat.messages = f.chat.message;
         try {
           const messages = [{ role: 'system', content: '너는 이야기의 진행자다.' },
-            ...f.chat.message.slice(-5).map(m => ({ role: m.role === 'char' ? 'assistant' : 'user', content: m.data }))];
+            // RisuAI carries each chat message's chatId as memo (LIBRA's request provenance).
+            ...f.chat.message.slice(-5).map(m => ({ role: m.role === 'char' ? 'assistant' : 'user', content: m.data, memo: m.chatId }))];
           const out = await hook(messages.map(m => ({ ...m })), 'model');
           const inputs = new Set(messages.map(m => m.content));
           const injected = (out || []).map(m => String(m.content || '')).filter(t => !inputs.has(t)).join('\n');

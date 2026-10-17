@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.25.87
+//@display-name GRADIA v0.25.88
 //@api 3.0
-//@version 0.25.87
+//@version 0.25.88
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -937,7 +937,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.25.87';
+  const PLUGIN_VERSION = '0.25.88';
   
   
   
@@ -25211,7 +25211,9 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
     const profileId = normalizeChoice(settings?.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom');
     const cap = AIDE_PATCH_OUTPUT_TOKEN_CAPS[profileId] || AIDE_PATCH_OUTPUT_TOKEN_CAPS.custom;
     const proportional = 700 + Math.ceil(Math.min(text(draft || '').length, 24000) * 0.16 / 2.2);
-    return Math.max(900, Math.min(cap, proportional));
+    // A Korean patch JSON with a few edits needs ~1200-1600 tokens; at 900 a real model
+    // stopped at the length limit in 4 of 6 calls, and an evidence run cannot retry one.
+    return Math.max(Math.min(cap, 1800), Math.min(cap, proportional));
   };
 
   const aidePatchPrompt = (stageName, recent, previous, settings, ledger, precomputedAnalysis = null) => {

@@ -31,21 +31,24 @@ const QUESTIONS = [
 ];
 
 // RAG_EVAL_LLM_URL=fake answers instantly after RAG_EVAL_FAKE_DELAY_MS (pipeline timing probe).
-const chatModel = async messages => {
+// Returns { content, finish } so the plugin sees a real length stop instead of 'stop'.
+const chatModel = async (messages, limits = {}) => {
   if (llmUrl === 'fake') {
     await new Promise(resolve => setTimeout(resolve, Number(process.env.RAG_EVAL_FAKE_DELAY_MS || 0)));
     const system = String(messages.find(m => m.role === 'system')?.content || '');
     const stage = (system.match(/(aide_\w+) patch JSON/) || [])[1];
-    return stage ? JSON.stringify({ schema: 'serial_gradation_agents_for_rp_draft_patch_v1', stage, ok: true, domain: {}, analysis: { summary: 'keep', constraints: [], risks: [] }, edits: [] })
-      : '민아는 은빛 열쇠를 준호에게 건넸다.';
+    return { finish: 'stop', content: stage ? JSON.stringify({ schema: 'serial_gradation_agents_for_rp_draft_patch_v1', stage, ok: true, domain: {}, analysis: { summary: 'keep', constraints: [], risks: [] }, edits: [] })
+      : '민아는 은빛 열쇠를 준호에게 건넸다.' };
   }
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       const response = await fetch(llmUrl + '/chat/completions', { method: 'POST',
         headers: { Authorization: `Bearer ${process.env.RAG_EVAL_LLM_KEY || ''}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: process.env.RAG_EVAL_LLM_MODEL, messages, temperature: 0, stream: false }) });
+        body: JSON.stringify({ model: process.env.RAG_EVAL_LLM_MODEL, messages, temperature: 0, stream: false, ...limits }),
+        signal: AbortSignal.timeout(300000) });
       if (!response.ok) throw new Error(`${response.status} ${(await response.text()).slice(0, 200)}`);
-      return String((await response.json()).choices?.[0]?.message?.content || '');
+      const choice = (await response.json()).choices?.[0] || {};
+      return { content: String(choice.message?.content || ''), finish: String(choice.finish_reason || 'stop') };
     } catch (error) { if (attempt === 2) throw error; await new Promise(resolve => setTimeout(resolve, 3000)); }
   }
 };
@@ -61,10 +64,12 @@ const chatModel = async messages => {
     const sdkFetch = async (url, init) => {
       if (url.startsWith(x.server.url + '/')) return await fetch(url, init);
       const body = JSON.parse(init.body);
-      const content = await chatModel(body.messages);
-      stages.push({ system: String(body.messages?.find(m => m.role === 'system')?.content || '').slice(0, 120), content,
+      // The plugin's own output budget goes to the model.
+      const limits = Object.fromEntries(['max_tokens', 'max_completion_tokens'].filter(key => body[key] != null).map(key => [key, body[key]]));
+      const { content, finish } = await chatModel(body.messages, limits);
+      stages.push({ system: String(body.messages?.find(m => m.role === 'system')?.content || '').slice(0, 120), content, finish,
         evidence: JSON.stringify(body).includes('owner_issued_evidence_bundle') });
-      return { ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: { content }, finish_reason: 'stop' }] }) };
+      return { ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: { content }, finish_reason: finish }] }) };
     };
     const g = await load({ testGlobals: { crypto: crypto.webcrypto }, api: { ...bus.api('serial_gradation_agents_for_rp'),
       pluginStorage: x.server.backend, getLocalPluginStorage: async () => x.server.backend,
@@ -81,6 +86,13 @@ const chatModel = async messages => {
     await g.plugin.saveRuntimeSettings({ mode: 'normal', default_preset: 'eval', input_assist_mode: 'off', multi_pipeline_mode: 'lightweight',
       enable_shadow_act: true, enable_character_aide: true, enable_world_aide: true, enable_plot_aide: true, failure_mode: 'hard', lore_activation_mode: 'off',
       stage_timeout_ms: 300000 });
+    // stage_timeout_ms is a legacy key copied into the agent slots only once; each slot's own
+    // timeout_ms (default 120 s) is what a stage uses.
+    // Resolve a stage once so the first settings load (and its one-time slot migration) has run.
+    await g.plugin.debugResolveStagePreset('shadow_act');
+    { const slots = await g.plugin.getAgentSlots(); for (const k of Object.keys(slots)) slots[k].timeout_ms = 300000; await g.plugin.saveAgentSlots(slots);
+      const saved = await g.plugin.getAgentSlots();
+      if (Object.values(saved).some(slot => Number(slot?.timeout_ms) !== 300000)) throw new Error('agent slot timeouts were not applied'); }
     const base = chat.message.slice();
     for (const question of QUESTIONS) {
       chat.message.length = 0; chat.message.push(...base, { role: 'user', chatId: 'q-' + question.id, data: question.q });
@@ -92,10 +104,10 @@ const chatModel = async messages => {
       try { output = await g.hooks.beforeRequest(messages, 'model'); }
       catch (failure) { error = String(failure?.code || failure?.message || failure) + ' ' + JSON.stringify(g.plugin.getRuntime()?.last || {}).slice(0, 600); }
       const gradiaMs = performance.now() - started;
-      const final = output ? await chatModel(output.map(row => ({ role: row.role === 'char' ? 'assistant' : row.role, content: String(row.content ?? '') }))) : '';
+      const final = output ? (await chatModel(output.map(row => ({ role: row.role === 'char' ? 'assistant' : row.role, content: String(row.content ?? '') })))).content : '';
       const draft = stages[0]?.content || '';
       results.push({ id: question.id, q: question.q, expect: question.expect, error,
-        stages: stages.length, stagesWithEvidence: stages.filter(stage => stage.evidence).length,
+        stages: stages.length, lengthStops: stages.filter(stage => stage.finish === 'length').length, stagesWithEvidence: stages.filter(stage => stage.evidence).length,
         draftHit: question.expect.every(needle => draft.includes(needle)), finalHit: question.expect.every(needle => final.includes(needle)),
         gradiaMs: Math.round(gradiaMs), draft: draft.slice(0, 400), final: final.slice(0, 400) });
     }
