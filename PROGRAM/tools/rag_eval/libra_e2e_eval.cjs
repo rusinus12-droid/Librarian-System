@@ -137,7 +137,7 @@ let outputListener = null;
       const found = question.expect.filter(needle => delivered.includes(needle));
       results.push({ id: question.id, family: question.family, hit: found.length === question.expect.length,
         items: (recall.memories || []).length, elapsedMs: Math.round(elapsedMs), corpus: recall.corpusRead?.mode || '',
-        ...(process.env.RAG_EVAL_DUMP === question.id ? { delivered } : {}) });
+        delivered: delivered.slice(0, 6000) });
     }
     const families = {};
     for (const row of results) { const b = families[row.family] ||= { questions: 0, hits: 0 }; b.questions += 1; b.hits += row.hit ? 1 : 0; }

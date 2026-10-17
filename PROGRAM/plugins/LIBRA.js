@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.154
-//@version 2.3.154
+//@display-name LIBRA v2.3.155
+//@version 2.3.155
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1557,7 +1557,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.3.154';
+  const PLUGIN_VERSION = '2.3.155';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -44810,9 +44810,13 @@ function createLibraReadonlySourceContext(owner) {
   if (!Number.isSafeInteger(lifetimeMs) || lifetimeMs < 1 || typeof schedule !== 'function' || typeof cancel !== 'function') throw new TypeError('LIBRA_GRAPH_RESOURCE_LIFETIME_INVALID');
   const sessions = new Set();
   const pool = { retainedBytes: 0, peakRetainedBytes: 0, sessions: 0, peakSessions: 0, ioBytes: 0, decodeBytes: 0, reads: 0, peakIoBytes: 0, peakDecodeBytes: 0, peakReads: 0 };
+  // A cold query holds the projection, its compile input and the vector readback at once;
+  // with real extracted canonical/Micro records a 30-turn chat estimates ~62 MiB, so the
+  // query session gets 128 MiB and maintenance (a full build) 192 MiB; the 256 MiB pool
+  // still bounds them together.
   const defaults = Object.freeze({ maxSourceBytes: 64 * 1024 * 1024, maxDurableBytes: 32 * 1024 * 1024,
-    maxRetainedBytes: 64 * 1024 * 1024, maxValueBytes: 8 * 1024 * 1024, maxDecodeBytes: 64 * 1024 * 1024, maxReads: 8192 });
-  const maintenanceDefaults = Object.freeze({ ...defaults, maxRetainedBytes: 128 * 1024 * 1024 });
+    maxRetainedBytes: 128 * 1024 * 1024, maxValueBytes: 8 * 1024 * 1024, maxDecodeBytes: 64 * 1024 * 1024, maxReads: 8192 });
+  const maintenanceDefaults = Object.freeze({ ...defaults, maxRetainedBytes: 192 * 1024 * 1024 });
   const inspect = () => ({ ...pool, limits: { ...poolLimits } });
   const openWithDefaults = (input = {}, check = () => {}, profile = defaults) => {
     if (!input || typeof input !== 'object' || Array.isArray(input) || typeof check !== 'function') throw new TypeError('LIBRA_GRAPH_RESOURCE_OPTIONS_INVALID');
@@ -70979,7 +70983,10 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       for (let attempt = 0; ; attempt++) {
         try { return await readMemoryGraphProjectionOnce(options, collect, resources); }
         catch (error) {
-          if (attempt >= 2 || !MEMORY_GRAPH_TORN_READ_CODES.has(error?.message) || state.disposed) throw error;
+          // A dual-copy read can also land between a write's local and server halves.
+          const torn = MEMORY_GRAPH_TORN_READ_CODES.has(error?.message)
+            || String(error?.message || '').startsWith('LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:');
+          if (attempt >= 2 || !torn || state.disposed) throw error;
           await new Promise(resolve => setTimeout(resolve, 40 * (attempt + 1)));
         }
       }

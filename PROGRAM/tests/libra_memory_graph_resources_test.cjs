@@ -8,11 +8,11 @@ const gate=()=>{let release;const promise=new Promise(r=>release=r);return{promi
 
 test('query and maintenance profiles enforce their own limits in the same unchanged pool',()=>{
  const pool=make(),MiB=1024*1024,query=pool.open(),maintenance=pool.openMaintenance();
- assert.equal(query.inspect().limits.maxRetainedBytes,64*MiB);
- assert.equal(maintenance.inspect().limits.maxRetainedBytes,128*MiB);
+ assert.equal(query.inspect().limits.maxRetainedBytes,128*MiB);
+ assert.equal(maintenance.inspect().limits.maxRetainedBytes,192*MiB);
  assert.equal(maintenance.inspect().limits.maxDecodeBytes,64*MiB);
  maintenance.reserveRetained(100*MiB,'build');
- assert.throws(()=>query.reserveRetained(65*MiB,'query'),/RETAINED_BYTE_BUDGET/);
+ assert.throws(()=>query.reserveRetained(129*MiB,'query'),/RETAINED_BYTE_BUDGET/);
  const second=pool.openMaintenance();second.reserveRetained(100*MiB,'audit');
  const third=pool.openMaintenance();assert.throws(()=>third.reserveRetained(57*MiB),/RETAINED_BACKPRESSURE/);
  assert.equal(pool.inspect().limits.retainedBytes,256*MiB);

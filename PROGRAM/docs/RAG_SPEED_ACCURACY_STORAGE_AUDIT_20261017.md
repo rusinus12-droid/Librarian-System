@@ -79,12 +79,28 @@
 
 Flashback 최종 확인 단계(준비 후 원본·URL·호스트 변경)는 재시도하지 않고 이전처럼 그 요청의 근거를 취소한다. 대신 백그라운드 임베딩 완료·에피소드 색인 재구축 저장이 같은 스코프의 회상이 끝날 때까지 쓰기 잠금 안에서 최대 8초 기다린다.
 
-## 7. 남은 과제
+## 7. 실제 제공자 측정 (Voyage `voyage-4-large`, Ollama `deepseek-v4.1-flash:cloud`)
 
-실제 임베딩(Voyage `voyage-4-large`)과 LLM(Ollama `deepseek-v4.1-flash:cloud`) 측정은 이 작업 환경의 네트워크 정책이 `api.voyageai.com`, `ollama.com` 연결을 거부해 수행하지 못했다. 허용된 환경에서 `RAG_EVAL_EMBED_URL=https://api.voyageai.com/v1 RAG_EVAL_EMBED_MODEL=voyage-4-large RAG_EVAL_EMBED_KEY=… node tools/rag_eval/flashback_rag_eval.cjs --visible 4` 로 측정할 수 있다.
+키는 환경 변수로만 넘겼고 저장소에는 들어가지 않는다. 평가 도구는 `tools/rag_eval/`에 있다.
 
-1. 실제 임베딩 제공자로 Flashback `lexical_weight`와 LIBRA 런타임 색인 효과 재측정 (`RAG_EVAL_EMBED_URL`).
-2. LIBRA 그래프 ID 해시 입력 축소(부모 정규 JSON 대신 부모 ID 해시). ID가 바뀌므로 색인 세대 이전 계획이 필요하다.
-3. GRADIA 다중 소유자 경로에서 소유자 의미 순위 사용.
-4. HAYAKU `recallAliases`에 같은 언어 바꿔 말하기 키워드 추가 후 실제 모델 측정.
-5. 런타임 색인 증분 구축(변경 구간만), 질의가 촘촘할 때의 양보 정책.
+| 대상 | 측정 | 변경 전 | 변경 후 |
+| --- | --- | --- | --- |
+| Flashback plugin_only | 실제 Voyage 임베딩, 질문 16개 적중률 | 93.8% | 100% |
+| Flashback server_only (RTT 10ms) | 같은 조건 | 68.8% (회상 생략) | 100% |
+| HAYAKU | 실제 LLM이 쓴 `recallAliases` + 실제 `localRecallRank` top-5 | 81.3% | 93.8% |
+| LIBRA 커널 | Voyage 벡터 top-3 | — | 93.8% (섹션 벡터 추가 이득 없음) |
+| LIBRA 종단 | 실제 LLM 추출(Micro+정규) + Voyage, 질문 16개 | 50% | 56.3% (Micro 의미 표현 시제품 62.5%, 미포함) |
+| LIBRA 종단 지연 | 30턴 실제 데이터 | — | 첫 회상 13.9s, 이후 p50 0.76s |
+| GRADIA 근거 작성 | 실제 LLM 전 단계, 질문 5개 | — | 완료된 질문은 모두 정답, 2개는 단계 모델 시간 초과 |
+
+- **Flashback**: 회상 준비 중 매니페스트·월드라인 저장이 회상 토큰을 취소해 생략되던 문제를 재시도 + 백그라운드 쓰기 양보로 해결했다(`lexical_weight` 기본 0.12).
+- **HAYAKU**: 기록 지시에 같은 언어 바꿔 말하기 2-4개를 추가했다. 남은 실패 1개는 질문 어휘가 기록 어디에도 없는 경우다.
+- **LIBRA**: 실제 30턴 데이터가 질의 자원 예산(64MiB)을 넘어 `RETAINED_BYTE_BUDGET`으로 실패했다. 질의 128MiB, 유지보수 192MiB로 올렸다(실측 약 62MiB). 미리보기 회상이 세션을 반납하지 않아 호출마다 약 15MB가 쌓이던 누수를 고쳤다. Micro 기억은 저장된 의미 표현이 없어 바꿔 말한 질문은 어휘로만 닿는다. Micro 문장 벡터를 런타임 캐시에 두고 의미 레인의 추가 표현으로 넣는 시제품은 62.5%까지 올렸지만, 캐시가 프로세스 안에만 있어 재시작 전후 같은 질의의 패킷이 달라진다(`libra_memory_graph_semantic_runtime_test`의 재시작 동일성 계약 위반). 그래서 이번 변경에서 뺐고, 정규 기억처럼 쓰기 시점에 Micro 벡터를 저장하는 설계로 다시 넣어야 한다. 시제품 기준 남은 실패 6개 중 2개(n03, p01)는 내용은 전달됐지만 표현이 바뀌어 문자열 일치 지표가 놓친 경우이고, 4개(p04, p05, m01, m04)는 Micro에 사실이 있으나 순위에 들지 못했다.
+- **GRADIA**: 완료된 질문의 SHADOW 초안과 최종 응답이 LIBRA 근거의 사실(준호, 기록회, 공연실 등)을 그대로 썼다. 실패 2개는 약 170초에서 단계 모델 시간 초과였는데, fetch 중단 처리기가 실패 사유를 `LIB_READ_CANCELED`로 덮어써 원인이 가려졌다. 이미 실패한 실행은 원래 사유를 유지하도록 고쳤다(0.25.87).
+
+## 8. 남은 과제
+
+1. LIBRA: Micro 벡터를 쓰기 시점에 저장(정규 기억의 임베딩 큐와 같은 방식)해 의미 레인에 넣기. 그 뒤에도 남는 질문(p04, p05, m01, m04)에는 질의 확장 또는 Micro·정규 순위 융합이 후보다. 문자열 일치 대신 정답 턴 기준 지표도 필요하다.
+2. GRADIA: 느린 클라우드 모델에서는 단계 시간 초과가 실제로 발생한다. 단계별 `timeout_ms`를 모델 지연에 맞게 잡아야 한다.
+3. LIBRA 그래프 ID 해시 입력 축소(색인 세대 이전 계획 필요).
+4. GRADIA 다중 소유자 경로에서 소유자 의미 순위 사용.

@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.25.86
+//@display-name GRADIA v0.25.87
 //@api 3.0
-//@version 0.25.86
+//@version 0.25.87
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -937,7 +937,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.25.86';
+  const PLUGIN_VERSION = '0.25.87';
   
   
   
@@ -3919,8 +3919,10 @@
           const transport = typeof API.nativeFetch === 'function' ? API.nativeFetch(requestUrl, requestInit) : API.risuFetch(requestUrl, requestInit);
           const response = evidenceRun ? await Promise.race([transport, new Promise((_, reject) => {
             const signal = requestInit.signal || evidenceRun.signal;
-            // The request's own stage timeout is a model timeout, not a canceled read.
-            const abort = () => reject(evidenceRun.fail(timedOut ? 'LIB_READ_MODEL_TIMEOUT' : 'LIB_READ_CANCELED'));
+            // The request's own stage timeout is a model timeout, not a canceled read; a run
+            // that already failed keeps its own reason instead of reporting the abort it caused.
+            const abort = () => reject(evidenceRun.failed ? libEvidenceError(evidenceRun.failed)
+              : evidenceRun.fail(timedOut ? 'LIB_READ_MODEL_TIMEOUT' : 'LIB_READ_CANCELED'));
             signal.addEventListener('abort', abort, { once: true });
             removeTransportAbort = () => signal.removeEventListener('abort', abort);
             if (signal.aborted) abort();

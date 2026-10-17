@@ -7,7 +7,7 @@ for(const mode of ['plugin_only','server_only','mirror'])test(`${mode}: native s
  const options={corpusMode:'required',queryInput:{queryText:QUOTE},semanticPolicy:{mode:'disabled'}};
  const first=await api.executeMemoryGraphUnifiedQuery(options);assert.equal(first.modelDispatchEligible,true);
  const report=first.diagnostics.resourceAccess;
- assert.equal(report.limits.maxDecodeBytes,64*1024*1024);assert.equal(report.limits.maxRetainedBytes,64*1024*1024);
+ assert.equal(report.limits.maxDecodeBytes,64*1024*1024);assert.equal(report.limits.maxRetainedBytes,128*1024*1024);
  assert.ok(report.retainedBytes>0);assert.ok(report.peakRetainedBytes>=report.retainedBytes);
  for(const label of ['durable_decoded_record','native_authority_maps','private_readset','consumer_packet'])assert.ok(report.retainedByCategory[label]>0,label);
  assert.equal(api.inspectMemoryGraphStore().resources.retainedBytes,0,'the public clone retains no private native authority');
@@ -56,7 +56,7 @@ test('a Micro loader cannot turn a caught payload-budget failure into a delivera
 test('native build and eager audit share retained admission and always release their sessions',async t=>{
  const x=await fixture();t.after(()=>x.cleanup());const api=x.f.r.api;
  const built=await api.buildMemoryGraphCorpus();assert.ok(built.resourceAccess.peakRetainedBytes>0);
- assert.equal(built.resourceAccess.limits.maxDecodeBytes,64*1024*1024);assert.equal(built.resourceAccess.limits.maxRetainedBytes,128*1024*1024);
+ assert.equal(built.resourceAccess.limits.maxDecodeBytes,64*1024*1024);assert.equal(built.resourceAccess.limits.maxRetainedBytes,192*1024*1024);
  assert.ok(built.resourceAccess.retainedByCategory.publication_projection>0);
  const roots=()=>[...x.f.r.values].filter(([key])=>key.includes(':corpus:root:'));
  const root=JSON.parse(roots()[0][1]),manifest=JSON.parse(x.f.r.values.get(root.manifestKey));
@@ -67,7 +67,7 @@ test('native build and eager audit share retained admission and always release t
  assert.deepEqual(roots(),before);assert.equal(x.f.r.storageWrites.length,writes);
  await assert.rejects(()=>api.verifyMemoryGraphCorpus({resourceBudget:{maxRetainedBytes:1}}),/RETAINED_/);
  const audit=await api.verifyMemoryGraphCorpus();assert.equal(audit.status,'verified');assert.ok(audit.resourceAccess.peakRetainedBytes>0);
- assert.equal(audit.resourceAccess.limits.maxDecodeBytes,64*1024*1024);assert.equal(audit.resourceAccess.limits.maxRetainedBytes,128*1024*1024);
+ assert.equal(audit.resourceAccess.limits.maxDecodeBytes,64*1024*1024);assert.equal(audit.resourceAccess.limits.maxRetainedBytes,192*1024*1024);
  assert.equal(api.inspectMemoryGraphStore().resources.retainedBytes,0);assert.equal(api.inspectMemoryGraphStore().resources.sessions,0);
 });
 

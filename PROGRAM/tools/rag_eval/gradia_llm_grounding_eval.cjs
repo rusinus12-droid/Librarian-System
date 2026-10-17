@@ -30,7 +30,15 @@ const QUESTIONS = [
   { id: 'relation', q: '민아는 지호를 어떻게 생각한다고 말했지?', expect: ['신뢰'] }
 ];
 
+// RAG_EVAL_LLM_URL=fake answers instantly after RAG_EVAL_FAKE_DELAY_MS (pipeline timing probe).
 const chatModel = async messages => {
+  if (llmUrl === 'fake') {
+    await new Promise(resolve => setTimeout(resolve, Number(process.env.RAG_EVAL_FAKE_DELAY_MS || 0)));
+    const system = String(messages.find(m => m.role === 'system')?.content || '');
+    const stage = (system.match(/(aide_\w+) patch JSON/) || [])[1];
+    return stage ? JSON.stringify({ schema: 'serial_gradation_agents_for_rp_draft_patch_v1', stage, ok: true, domain: {}, analysis: { summary: 'keep', constraints: [], risks: [] }, edits: [] })
+      : '민아는 은빛 열쇠를 준호에게 건넸다.';
+  }
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       const response = await fetch(llmUrl + '/chat/completions', { method: 'POST',
@@ -81,7 +89,8 @@ const chatModel = async messages => {
       stages.length = 0;
       const started = performance.now();
       let output, error = '';
-      try { output = await g.hooks.beforeRequest(messages, 'model'); } catch (failure) { error = String(failure?.code || failure?.message || failure); }
+      try { output = await g.hooks.beforeRequest(messages, 'model'); }
+      catch (failure) { error = String(failure?.code || failure?.message || failure) + ' ' + JSON.stringify(g.plugin.getRuntime()?.last || {}).slice(0, 600); }
       const gradiaMs = performance.now() - started;
       const final = output ? await chatModel(output.map(row => ({ role: row.role === 'char' ? 'assistant' : row.role, content: String(row.content ?? '') }))) : '';
       const draft = stages[0]?.content || '';
