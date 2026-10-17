@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.105
+//@display-name ⚡ FLASHBACK Memory v1.0.106
 //@api 3.0
-//@version 1.0.105
+//@version 1.0.106
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.105';
+const PLUGIN_VERSION = '1.0.106';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -48836,8 +48836,67 @@ ${cleanedText}`, 80),
     evaluating: false,
     lastIndexes: '',
     lastRevision: '',
+    revisionTracker: null,
     buttonSignature: '',
     state: null
+  };
+  // Polling only needs to know whether the host transcript changed. Keep this
+  // exact, lightweight snapshot separate from the bounded normalization cache:
+  // walking a chat larger than that cache on every poll otherwise evicts the
+  // entries that the same walk is about to need again.
+  const flashbackAttentionRevisionEntry = (message, index) => {
+    const identity = stableChatMessageSourceIdentity(message);
+    const role = rawMessageRole(message);
+    const raw = flashbackLiveChatComparable(flashbackLiveChatRawPayload(message));
+    const metaKey = flashbackMessageRevisionMetaKey(message, index, identity, role)
+      + memorySuiteSourceTagKey('flashback')
+      + `|disabled:${message?.disabled === true}|comment:${message?.isComment === true}`;
+    return { rawType: raw.type, rawValue: raw.value, metaKey };
+  };
+  const sameFlashbackAttentionRevisionEntry = (left, right) => !!left && !!right
+    && left.rawType === right.rawType && left.rawValue === right.rawValue && left.metaKey === right.metaKey;
+  const flashbackAttentionRevision = chat => {
+    const cacheKey = flashbackLiveChatCacheKey(chat, '');
+    let tracker = FlashbackAttention.revisionTracker;
+    if (!tracker || tracker.cacheKey !== cacheKey) {
+      tracker = { cacheKey, revision: 0, sources: new Map() };
+      FlashbackAttention.revisionTracker = tracker;
+    }
+    let changed = false;
+    let messageCount = 0;
+    const seenSources = new Set();
+    for (const [label, messages] of chatMessageSourceSpecs(chat || {})) {
+      if (seenSources.has(label)) continue;
+      seenSources.add(label);
+      messageCount += messages.length;
+      let source = tracker.sources.get(label);
+      if (!source) {
+        source = { entries: [] };
+        tracker.sources.set(label, source);
+        changed = true;
+      }
+      const entries = source.entries;
+      if (entries.length !== messages.length) changed = true;
+      for (let index = 0; index < messages.length; index += 1) {
+        const next = flashbackAttentionRevisionEntry(messages[index], index);
+        if (sameFlashbackAttentionRevisionEntry(entries[index], next)) continue;
+        entries[index] = next;
+        changed = true;
+      }
+      if (entries.length > messages.length) entries.length = messages.length;
+    }
+    for (const label of [...tracker.sources.keys()]) {
+      if (seenSources.has(label)) continue;
+      tracker.sources.delete(label);
+      changed = true;
+    }
+    if (changed) tracker.revision += 1;
+    return {
+      cacheKey,
+      revisionSignature: String(tracker.revision),
+      sourceCount: tracker.sources.size,
+      messageCount
+    };
   };
   const flashbackAttentionDecision = ({
     captureFailed = false,
@@ -49066,7 +49125,7 @@ ${cleanedText}`, 80),
     try {
       const snapshot = await loadRisuCaptureSnapshot();
       const indexes = `${Number(snapshot?.chatInfo?.charIndex ?? -1)}:${Number(snapshot?.chatInfo?.chatIndex ?? -1)}`;
-      const live = liveChatReadState(snapshot?.chat || null, '');
+      const live = flashbackAttentionRevision(snapshot?.chat || null);
       const revision = `${live.cacheKey || ''}:${live.revisionSignature || ''}`;
       const indexChanged = indexes !== FlashbackAttention.lastIndexes;
       const revisionChanged = revision !== FlashbackAttention.lastRevision;
@@ -49096,6 +49155,9 @@ ${cleanedText}`, 80),
       }
     }
     FlashbackAttention.started = false;
+    FlashbackAttention.lastIndexes = '';
+    FlashbackAttention.lastRevision = '';
+    FlashbackAttention.revisionTracker = null;
     if (FlashbackAttention.buttonSignature) {
       const uiApi = getApiCandidates().find(candidate => typeof candidate?.unregisterUIPart === 'function') || getLiveApi();
       try { await uiApi?.unregisterUIPart?.(FLASHBACK_ATTENTION_BUTTON_ID); } catch (_) {}
@@ -50329,6 +50391,7 @@ return createReadSession;
   publicApi._test.syncFlashbackAttentionButton = syncFlashbackAttentionButton;
   publicApi._test.startFlashbackAttention = startFlashbackAttention;
   publicApi._test.stopFlashbackAttention = stopFlashbackAttention;
+  publicApi._test.flashbackAttentionRevision = flashbackAttentionRevision;
   publicApi._test.pollFlashbackAttention = pollFlashbackAttention;
   publicApi._test.refreshFlashbackAttention = refreshFlashbackAttention;
   publicApi._test.scheduleFlashbackAttentionRefresh = scheduleFlashbackAttentionRefresh;

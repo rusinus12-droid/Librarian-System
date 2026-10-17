@@ -164,3 +164,28 @@ test('attention poll notices an edited response without a chat-index change',asy
     assert.equal((await t.computeFlashbackAttention()).kind,'source_changed');
   }finally{await f.dispose();}
 });
+
+test('attention poll keeps large-chat revision tracking outside the normalization cache',async()=>{
+  const messages=Array.from({length:5000},(_,index)=>({
+    role:index%2?'assistant':'user',chatId:`large-${index}`,data:`message ${index} ${'x'.repeat(80)}`
+  }));
+  const f=await createFixture({pauseScheduledTimers:true,chat:{id:'large-chat',chatId:'large-chat',message:messages,messages:[]}});
+  const t=f.api._test;
+  try{
+    await t.stopFlashbackAttention();
+    t.FlashbackAttention.started=true;
+    const before={...t.Runtime.liveChatRevisionCacheStats};
+    await t.pollFlashbackAttention();
+    t.FlashbackAttention.refreshTimer=null;
+    await t.pollFlashbackAttention();
+    assert.deepEqual({...t.Runtime.liveChatRevisionCacheStats},before,'polling does not populate or churn the full normalization cache');
+    assert.equal(t.FlashbackAttention.refreshTimer,null,'an unchanged large chat does not schedule work');
+    f.currentChat.message=structuredClone(f.currentChat.message);
+    await t.pollFlashbackAttention();
+    assert.equal(t.FlashbackAttention.refreshTimer,null,'equivalent host clones do not create a false revision');
+    f.currentChat.message[4500].data='edited near the end of a large chat';
+    await t.pollFlashbackAttention();
+    assert.equal(t.FlashbackAttention.refreshTimer?.fixturePausedTimer,true,'an edit beyond the former 4096-entry limit is detected');
+    assert.deepEqual({...t.Runtime.liveChatRevisionCacheStats},before,'edit detection remains isolated from normalized transcript storage');
+  }finally{await f.dispose();}
+});
