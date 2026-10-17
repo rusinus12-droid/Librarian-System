@@ -8,6 +8,7 @@ const extractConst=name=>{const found=all.filter(n=>n.type==='VariableDeclarator
 const section=(a,b)=>{const start=source.indexOf(a),end=source.indexOf(b,start+a.length);assert(start>=0&&end>start);return source.slice(start,end);};
 (async()=>{
 const updateContext = {
+    PipelineWorkPanel: { begin() {} },
     Runtime: { pipelineWorkStatus: { requestId: 7, busy: true, phase: 'old', source: "memory", stagePlan: [] } },
     text: value => String(value ?? ''),
     panelCalls: [],
@@ -26,6 +27,7 @@ const updateContext = {
   // has already taken Runtime. The actual update helper must repaint the newest
   // message and return the old token so its caller remains safely stale-guarded.
   const raceContext = {
+    PipelineWorkPanel: { begin() {} },
     Runtime: { pipelineWorkStatus: { requestId: 3, busy: false, phase: 'idle', source: '', stagePlan: [] } },
     text: value => String(value ?? ''),
     calls: [],
@@ -47,6 +49,7 @@ const updateContext = {
   assert.deepEqual(raceContext.calls.map(call => [call.message, call.requestId]), [['old begin', 4], ['new begin', 5]]);
 
   const sameRequestRace = {
+    PipelineWorkPanel: { begin() {} },
     Runtime: { pipelineWorkStatus: { requestId: 8, updateSerial: 3, busy: true, phase: 'stage', source: 'normal_input', message: 'stage old', stagePlan: [] } },
     text: value => String(value ?? ''),
     calls: [],
@@ -107,6 +110,7 @@ const updateContext = {
   assert.equal(finishContext.updateArgs[2].panelDismissed, true, 'a zero-delay terminal result must be dismissed immediately');
 
   const panelContext = {
+    createMemorySuiteChatStatus: require('../tools/memory_suite_chat_status.cjs'),
     Runtime: { pipelineWorkStatus: { requestId: 31, busy: false, ok: true, resultAvailable: true, message: 'done', panelDismissed: false } },
     PIPELINE_WORK_PANEL_ID: 'libra-pipeline-work-status',
     panelCalls: [],
@@ -121,7 +125,7 @@ const updateContext = {
   };
   vm.createContext(panelContext);
   const panelHelper = section('const setPipelineWorkPanel =', 'const pipelineWorkStagePlan =');
-  vm.runInContext(`let PipelineWorkPanelTimer = null;\n${panelHelper}\nthis.setPipelineWorkPanel = setPipelineWorkPanel;`, panelContext);
+  vm.runInContext(`let PipelineWorkPanelTimer = null;\n${extractConst('PipelineWorkPanel')}\n${panelHelper}\nthis.setPipelineWorkPanel = setPipelineWorkPanel;`, panelContext);
   assert.equal(await panelContext.setPipelineWorkPanel('완료', 'done', 2600, 31), true);
   assert.equal(panelContext.scheduled.delay, 2600, 'terminal work panels must schedule their requested removal');
   panelContext.scheduled.handler();
