@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.158
-//@version 2.3.158
+//@display-name LIBRA v2.3.159
+//@version 2.3.159
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1557,7 +1557,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.3.158';
+  const PLUGIN_VERSION = '2.3.159';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -39255,40 +39255,62 @@ function createLibraReadonlySourceContext(owner) {
         reason:'completed_turn_receipt_failed'}).catch(()=>null);
     };
 
-    // The ordinary reconcile examines only the last BATCH_SIZE pairs. A turn whose receipt
-    // or Micro was lost (a capture/canonical race, a crash) and then fell out of that tail
-    // was never revisited. Older completed turns of the current worldline missing either
-    // are repaired a few at a time; each turn revision is attempted once per runtime, so
-    // one that genuinely cannot be analyzed does not cost model calls in a loop.
+    // The ordinary reconcile examines only the last BATCH_SIZE pairs. A Micro attempt
+    // that ended without a result for a transient reason (outcome unknown, provider
+    // error, a late result a fence rejected) and then fell out of that tail was never revisited. Such older
+    // turns of the current worldline are re-opened a few at a time; each turn revision
+    // is attempted once per runtime, so a turn that cannot be analyzed does not loop.
     const RECEIPT_GAP_REPAIR_LIMIT = 4, RECEIPT_GAP_SCAN_INTERVAL_MS = 30000;
     const receiptGapAttempts = new Set();
     let receiptGapScannedAt = 0;
     const findCompletedTurnGaps = async (context, pairs, tail) => {
       if (Date.now() - receiptGapScannedAt < RECEIPT_GAP_SCAN_INTERVAL_MS) return [];
-      receiptGapScannedAt = Date.now();
       const scopeKey = string(context?.scope?.scopeKey || ''), worldlineId = hostWorldlineIdForScope(context.scope);
       const inTail = new Set(asArray(tail).map(pair => Number(pair.turn)));
       const older = asArray(pairs).filter(pair => !inTail.has(Number(pair.turn)));
       if (!scopeKey || !worldlineId || !older.length) return [];
-      let microEnabled = true;
-      try { microEnabled = (await loadMemorySettings()).enabled !== false; } catch (_) { return []; }
-      const prefix = `${PREFIX}:scope:${scopeKey}:`, receipts = new Set(), micros = new Set();
+      receiptGapScannedAt = Date.now();
+      try { if ((await loadMemorySettings()).enabled === false) return []; } catch (_) { return []; }
+      const prefix = `${PREFIX}:scope:${scopeKey}:`, micros = new Set(), works = new Map();
       const escaped = worldlineId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const receiptHead = new RegExp(`^source-receipt-head:${escaped}:e\\d+:t(\\d+)$`), microHead = new RegExp(`^micro-memory-head:${escaped}:e\\d+:t(\\d+)$`);
+      const microHead = new RegExp(`^micro-memory-head:${escaped}:e\\d+:t(\\d+)$`), microWork = new RegExp(`^micro-work:${escaped}:e\\d+:t(\\d+):([^:]+):`);
       for (const storageKey of await storage.keys()) {
         if (!String(storageKey).startsWith(prefix)) continue;
-        const tail = String(storageKey).slice(prefix.length);
-        let match = tail.match(receiptHead); if (match) receipts.add(Number(match[1]));
-        match = tail.match(microHead); if (match) micros.add(Number(match[1]));
+        const rest = String(storageKey).slice(prefix.length);
+        let match = rest.match(microHead); if (match) micros.add(Number(match[1]));
+        match = rest.match(microWork); if (match) works.set(`${match[1]}:${match[2]}`, storageKey);
       }
-      return older.filter(pair => {
-        const turn = Number(pair.turn), attempt = `${scopeKey}:${worldlineId}:${turn}:${completedTurnRevisionId(pair)}`;
-        if (receiptGapAttempts.has(attempt) || receipts.has(turn) && (!microEnabled || micros.has(turn))) return false;
-        return true;
-      }).slice(0, RECEIPT_GAP_REPAIR_LIMIT).map(pair => {
-        receiptGapAttempts.add(`${scopeKey}:${worldlineId}:${Number(pair.turn)}:${completedTurnRevisionId(pair)}`);
-        return pair;
-      });
+      const gaps = [];
+      for (const pair of older) {
+        if (gaps.length >= RECEIPT_GAP_REPAIR_LIMIT) break;
+        const turn = Number(pair.turn), revisionId = completedTurnRevisionId(pair);
+        const attempt = `${scopeKey}:${worldlineId}:${turn}:${revisionId}`, workKey = works.get(`${turn}:${revisionId}`);
+        if (micros.has(turn) || !workKey || receiptGapAttempts.has(attempt)) continue;
+        let work = null;
+        try { work = await storage.getStoredJson(workKey, null); } catch (_) { continue; }
+        // An invoking attempt whose lease expired and that is not running here was left
+        // behind by an earlier runtime or version; the explicit retry path re-opens it.
+        const abandoned = work?.status === 'reserved' && work.phase === 'invoking'
+          && Number(work.leaseExpiresAt || 0) <= Date.now() && !microInvocationsInFlight.has(workKey);
+        if (!abandoned && (work?.status !== 'result_ready' || work.result?.micro?.status === 'source_bound_candidate'
+          || !/^provider_(?:outcome_unknown|error|result_stale)/.test(string(work.result?.reason || '')))) continue;
+        receiptGapAttempts.add(attempt);
+        gaps.push(pair);
+      }
+      return gaps;
+    };
+    // After a Micro publication finishes the queue is free: re-open older
+    // turns whose Micro ended on a transient provider failure (same rule as reconcile).
+    const repairMicroGapsAfterPublication = async scope => {
+      const context = await resolveContext();
+      if (state.disposed || string(context?.scope?.scopeKey || '') !== string(scope?.scopeKey || '')) return;
+      const pairs = buildPairs(context.chat, context.scope.scopeKey);
+      // In-flight attempts are never result_ready, so only the newest turn is held back.
+      const gaps = await findCompletedTurnGaps(context, pairs, pairs.slice(-1));
+      for (const pair of gaps) {
+        void scheduleMicroForTurn(context.scope, hostWorldlineIdForScope(context.scope), 0, Number(pair.turn),
+          completedTurnRevisionId(pair), { manual: true, reason: 'micro_gap_repair' });
+      }
     };
     const reconcileCompletedTurnReceipts = async (context, pairs, options = {}) => {
       const preparationGuard = options.receiptPreparationGuard;
@@ -39328,16 +39350,12 @@ function createLibraReadonlySourceContext(owner) {
           return result;
         }
       }
-      try {
-        // Historical runs already examine every pair; there the gap turns only need their
-        // Micro re-opened. Ordinary runs add the older gap turns to the tail.
-        const gapPairs = await findCompletedTurnGaps(context, pairs, historical ? [] : candidates);
-        if (gapPairs.length) {
-          const listed = new Set(candidates.map(pair => Number(pair.turn)));
-          candidates = [...gapPairs.filter(pair => !listed.has(Number(pair.turn))), ...candidates];
-          result.examined = candidates.length; result.gapRepairs = gapPairs.map(pair => Number(pair.turn));
-        }
-      } catch (error) { result.gaps.push({ turn: 0, reason: `gap_scan:${compact(error?.message || error, 200)}` }); }
+      if (!historical) {
+        try {
+          const gapPairs = await findCompletedTurnGaps(context, pairs, candidates);
+          if (gapPairs.length) { candidates = [...gapPairs, ...candidates]; result.examined = candidates.length; result.gapRepairs = gapPairs.map(pair => Number(pair.turn)); }
+        } catch (error) { result.gaps.push({ turn: 0, reason: `gap_scan:${compact(error?.message || error, 200)}` }); }
+      }
       const inventoryTurns = [];
       const microTurns = [];
       for (const pair of candidates) {
@@ -57256,9 +57274,25 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             inventory, settings, null, { maxPhysicalAttempts: remaining, expectedRawPacketRef:raw.rawPacketRef });
         } finally { microInvocationsInFlight.delete(workKey); }
         analysis={...analysis,rawPacketRef:clone(raw.rawPacketRef)};
+        // A late result the fences reject is discarded, but the attempt must not stay
+        // "invoking" forever: record it as a source-only stale outcome so the turn is
+        // re-analyzed on the current boundary (gap repair) instead of being lost.
+        const closeRejectedAttempt = async reason => {
+          try {
+            const current = await storage.getVerifiedJson(workKey, scope, null);
+            if (current?.status !== 'reserved' || current.phase !== 'invoking' || current.attemptId !== work.attemptId) return;
+            const rejected = { status: 'pending', reason: `provider_result_stale:${reason}`, micro: null, personInventory: null,
+              provider: null, minimumSourceBound: minimumSourceBoundMicro(receipt) };
+            await storage.setVerifiedJson(workKey, { ...current, status: 'result_ready', result: rejected,
+              resultDigest: digest(rejected), physicalAttemptsUsed: 2 }, scope);
+          } catch (_) { /* The lease still bounds the attempt. */ }
+        };
         const afterProvider=await checkClaim();
-        if(afterProvider.status!=='current')return {status:afterProvider.status,reason:afterProvider.reason};
-        if (!await activeMicroSource(receipt)) return { status: 'stale_source', reason: 'source_changed_after_provider' };
+        if(afterProvider.status!=='current'){
+          if(afterProvider.status==='stale'||afterProvider.status==='stale_source')await closeRejectedAttempt(afterProvider.reason);
+          return {status:afterProvider.status,reason:afterProvider.reason};
+        }
+        if (!await activeMicroSource(receipt)) { await closeRejectedAttempt('source_changed_after_provider'); return { status: 'stale_source', reason: 'source_changed_after_provider' }; }
         const started=await storage.getVerifiedJson(workKey,scope,null);
         if(started?.status!=='reserved' || started.phase!=='invoking'
           || started.attemptId!==work.attemptId || started.invocationStartedAt!==work.invocationStartedAt)
@@ -62991,6 +63025,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             personInventoryError: string(result?.personInventoryError || ''),
             stateAdmission: clone(result?.stateAdmission || null) };
           if (result?.status === 'verified' && state.memoryGraphCorpus) scheduleVolatileMemoryGraphCorpus();
+          if (!state.disposed) setTimeout(() => { void repairMicroGapsAfterPublication(scope).catch(() => null); }, 0);
           return result;
         }).catch(error => {
           const result = { status: 'pending_reconciliation', reason: compact(error?.message || error, 300) };
