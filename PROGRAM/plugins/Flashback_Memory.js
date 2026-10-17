@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.106
+//@display-name ⚡ FLASHBACK Memory v1.0.107
 //@api 3.0
-//@version 1.0.106
+//@version 1.0.107
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.106';
+const PLUGIN_VERSION = '1.0.107';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -48840,61 +48840,76 @@ ${cleanedText}`, 80),
     buttonSignature: '',
     state: null
   };
-  // Polling only needs to know whether the host transcript changed. Keep this
-  // exact, lightweight snapshot separate from the bounded normalization cache:
-  // walking a chat larger than that cache on every poll otherwise evicts the
-  // entries that the same walk is about to need again.
+  // Keep only small source fingerprints, never a second transcript or entries
+  // in the bounded normalization cache. Hash in short slices so a long message
+  // or chat cannot monopolize the UI thread during the fallback poll.
   const flashbackAttentionRevisionEntry = (message, index) => {
     const identity = stableChatMessageSourceIdentity(message);
     const role = rawMessageRole(message);
     const raw = flashbackLiveChatComparable(flashbackLiveChatRawPayload(message));
     const metaKey = flashbackMessageRevisionMetaKey(message, index, identity, role)
-      + memorySuiteSourceTagKey('flashback')
       + `|disabled:${message?.disabled === true}|comment:${message?.isComment === true}`;
     return { rawType: raw.type, rawValue: raw.value, metaKey };
   };
-  const sameFlashbackAttentionRevisionEntry = (left, right) => !!left && !!right
-    && left.rawType === right.rawType && left.rawValue === right.rawValue && left.metaKey === right.metaKey;
-  const flashbackAttentionRevision = chat => {
+  const flashbackAttentionRevision = async chat => {
     const cacheKey = flashbackLiveChatCacheKey(chat, '');
-    let tracker = FlashbackAttention.revisionTracker;
-    if (!tracker || tracker.cacheKey !== cacheKey) {
-      tracker = { cacheKey, revision: 0, sources: new Map() };
-      FlashbackAttention.revisionTracker = tracker;
-    }
-    let changed = false;
+    const previous = FlashbackAttention.revisionTracker;
+    const tracker = previous?.cacheKey === cacheKey ? previous : null;
+    const sourcePolicy = memorySuiteSourceTagKey('flashback');
+    const sources = new Map(), aliases = new Map();
+    const multiply = Math.imul;
     let messageCount = 0;
-    const seenSources = new Set();
+    let workSinceCheck = 0;
+    let sliceStarted = performance.now();
     for (const [label, messages] of chatMessageSourceSpecs(chat || {})) {
-      if (seenSources.has(label)) continue;
-      seenSources.add(label);
       messageCount += messages.length;
-      let source = tracker.sources.get(label);
-      if (!source) {
-        source = { entries: [] };
-        tracker.sources.set(label, source);
-        changed = true;
+      if (aliases.has(messages)) {
+        sources.set(label, aliases.get(messages));
+        continue;
       }
-      const entries = source.entries;
-      if (entries.length !== messages.length) changed = true;
+      let first = 0x811c9dc5, second = 5381, chars = 0;
+      const append = async value => {
+        // Length prefixes keep field/message boundaries unambiguous. Two
+        // independent 32-bit accumulators avoid a single short-hash identity.
+        for (const part of [`${value.length}:`, value]) {
+          chars += part.length;
+          for (let offset = 0; offset < part.length; offset += 16384) {
+            const end = Math.min(part.length, offset + 16384);
+            for (let index = offset; index < end; index += 1) {
+              const code = part.charCodeAt(index);
+              first = multiply(first ^ code, 0x01000193);
+              second = multiply(second, 33) ^ code;
+            }
+            workSinceCheck += end - offset;
+            if (workSinceCheck >= 16384) {
+              workSinceCheck = 0;
+              if (performance.now() - sliceStarted >= 4) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+                sliceStarted = performance.now();
+              }
+            }
+          }
+        }
+      };
+      await append(sourcePolicy);
       for (let index = 0; index < messages.length; index += 1) {
-        const next = flashbackAttentionRevisionEntry(messages[index], index);
-        if (sameFlashbackAttentionRevisionEntry(entries[index], next)) continue;
-        entries[index] = next;
-        changed = true;
+        const entry = flashbackAttentionRevisionEntry(messages[index], index);
+        await append(entry.rawType);
+        await append(entry.rawValue);
+        await append(entry.metaKey);
       }
-      if (entries.length > messages.length) entries.length = messages.length;
+      const signature = `${messages.length}:${chars}:${first >>> 0}:${second >>> 0}`;
+      aliases.set(messages, signature);
+      sources.set(label, signature);
     }
-    for (const label of [...tracker.sources.keys()]) {
-      if (seenSources.has(label)) continue;
-      tracker.sources.delete(label);
-      changed = true;
-    }
-    if (changed) tracker.revision += 1;
+    const changed = !tracker || tracker.sources.size !== sources.size
+      || [...sources].some(([label, signature]) => tracker.sources.get(label) !== signature);
+    const revision = Number(tracker?.revision || 0) + Number(changed);
+    FlashbackAttention.revisionTracker = { cacheKey, revision, sources };
     return {
       cacheKey,
-      revisionSignature: String(tracker.revision),
-      sourceCount: tracker.sources.size,
+      revisionSignature: String(revision),
+      sourceCount: sources.size,
       messageCount
     };
   };
@@ -49125,7 +49140,7 @@ ${cleanedText}`, 80),
     try {
       const snapshot = await loadRisuCaptureSnapshot();
       const indexes = `${Number(snapshot?.chatInfo?.charIndex ?? -1)}:${Number(snapshot?.chatInfo?.chatIndex ?? -1)}`;
-      const live = flashbackAttentionRevision(snapshot?.chat || null);
+      const live = await flashbackAttentionRevision(snapshot?.chat || null);
       const revision = `${live.cacheKey || ''}:${live.revisionSignature || ''}`;
       const indexChanged = indexes !== FlashbackAttention.lastIndexes;
       const revisionChanged = revision !== FlashbackAttention.lastRevision;

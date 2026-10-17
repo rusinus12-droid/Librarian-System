@@ -4,6 +4,10 @@ const assert=require('node:assert/strict');
 const {test}=require('node:test');
 const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
 const chat=()=>({message:[{role:'user',chatId:'u1',data:'Where is the brass key?'},{role:'assistant',chatId:'a1',data:'The brass key is under the blue sundial.'}]});
+function allowRevisionYields(f) {
+  const schedule=f.context.setTimeout;
+  f.context.setTimeout=(callback,delay,...args)=>delay===0?setTimeout(callback,0,...args):schedule(callback,delay,...args);
+}
 async function seed({ingest=true,source,embedding=false,nativeFetch}={}) {
   const f=await createFixture({pauseScheduledTimers:true,chat:chat(),source,nativeFetch});
   const cfg=await f.api.loadSettings();cfg.embeddingEnabled=embedding;
@@ -173,6 +177,7 @@ test('attention poll keeps large-chat revision tracking outside the normalizatio
   const t=f.api._test;
   try{
     await t.stopFlashbackAttention();
+    allowRevisionYields(f);
     t.FlashbackAttention.started=true;
     const before={...t.Runtime.liveChatRevisionCacheStats};
     await t.pollFlashbackAttention();
@@ -187,5 +192,26 @@ test('attention poll keeps large-chat revision tracking outside the normalizatio
     await t.pollFlashbackAttention();
     assert.equal(t.FlashbackAttention.refreshTimer?.fixturePausedTimer,true,'an edit beyond the former 4096-entry limit is detected');
     assert.deepEqual({...t.Runtime.liveChatRevisionCacheStats},before,'edit detection remains isolated from normalized transcript storage');
+  }finally{await f.dispose();}
+});
+
+test('attention revision retains only fingerprints and yields while scanning long messages',async()=>{
+  const f=await createFixture({pauseScheduledTimers:true,chat:chat()}),t=f.api._test;
+  try{
+    await t.stopFlashbackAttention();
+    allowRevisionYields(f);
+    f.currentChat.message[1].data='a'.repeat(4*1024*1024);
+    t.FlashbackAttention.started=true;
+    let responsive=false;
+    const heartbeat=setTimeout(()=>{responsive=true;},0);
+    try{await t.pollFlashbackAttention();}finally{clearTimeout(heartbeat);}
+    assert.equal(responsive,true,'a large payload scan lets pending UI tasks run');
+    const retained=JSON.stringify([...t.FlashbackAttention.revisionTracker.sources.values()]);
+    assert.ok(retained.length<4096,'attention must not keep a second copy of the full source text');
+    t.FlashbackAttention.refreshTimer=null;
+    const old=f.currentChat.message[1].data;
+    f.currentChat.message[1].data=old.slice(0,old.length/2)+'b'+old.slice(old.length/2+1);
+    await t.pollFlashbackAttention();
+    assert.equal(t.FlashbackAttention.refreshTimer?.fixturePausedTimer,true,'same-length edits in the middle are detected');
   }finally{await f.dispose();}
 });
