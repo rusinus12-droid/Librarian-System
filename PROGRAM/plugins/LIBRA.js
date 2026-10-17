@@ -71960,17 +71960,30 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       }, delayMs);
     };
     // The first request after load otherwise pays the cold build (~15 s for a 30-turn
-    // chat with real vectors). Build the same read-only runtime index shortly after
-    // startup; a request arriving first still yields it the usual way.
-    const VOLATILE_CORPUS_STARTUP_DELAY_MS = 3000;
-    const prewarmVolatileMemoryGraphCorpus = () => {
-      if (state.disposed) return false;
-      ensureMemoryGraphUnifiedSuite();
-      volatileMemoryGraphCorpus().prewarming = true;
-      scheduleVolatileMemoryGraphCorpus(VOLATILE_CORPUS_STARTUP_DELAY_MS);
+    // chat with real vectors). One idle attempt after startup builds the same read-only
+    // runtime index. It never competes with memory work: if a Micro, receipt or canonical
+    // job, a query or another build is active then, it is skipped and the first request
+    // builds as before.
+    const VOLATILE_CORPUS_STARTUP_DELAY_MS = 10000;
+    let volatilePrewarmTimer = null;
+    const libraMemoryWorkActive = () => state.microJobs.size > 0 || state.microQueues.size > 0 || state.receiptCaptureJobs.size > 0
+      || state.receiptRecoveryRuns.size > 0 || Boolean(state.canonicalJobPromise) || Boolean(state.memoryGraphActiveBuilds?.size);
+    const prewarmVolatileMemoryGraphCorpus = (delayMs = VOLATILE_CORPUS_STARTUP_DELAY_MS) => {
+      if (state.disposed || volatilePrewarmTimer) return false;
+      volatilePrewarmTimer = setTimeout(() => {
+        volatilePrewarmTimer = null;
+        if (state.disposed || libraMemoryWorkActive()) return;
+        const volatileState = volatileMemoryGraphCorpus();
+        if (volatileState.store || volatileState.running || volatileState.timer || volatileState.queriesInFlight > 0) return;
+        ensureMemoryGraphUnifiedSuite();
+        volatileState.prewarming = true;
+        scheduleVolatileMemoryGraphCorpus(0);
+      }, delayMs);
+      volatilePrewarmTimer?.unref?.();
       return true;
     };
     const disposeVolatileMemoryGraphCorpus = () => {
+      clearTimeout(volatilePrewarmTimer); volatilePrewarmTimer = null;
       if (!volatileCorpusRuntime) return;
       clearTimeout(volatileCorpusRuntime.timer); volatileCorpusRuntime.timer = null;
       volatileCorpusRuntime.yieldRequested = true; volatileCorpusRuntime.store = null; volatileCorpusRuntime.basis = null;

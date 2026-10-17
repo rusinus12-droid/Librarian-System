@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-17T11:40:01.748Z",
+  "generatedAt": "2026-10-17T12:10:55.049Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -1573,6 +1573,10 @@
     "docs/EXECUTION_TASK_PROFILES.md": {
       "sha256": "9aa14ecce580280955a1f630d1eb799c6ffaa1c6457e557cce871cd0cb80be11",
       "bytes": 2494
+    },
+    "docs/FEATURE_LLM_EMBEDDING_CHECK_20261017.md": {
+      "sha256": "c7ef40249ce698c816a6996f16c8af061f089b1b9905d640e9d0db46f4b08ada",
+      "bytes": 7909
     },
     "docs/FLASHBACK_ATTENTION_REVIEW_FIXES_20261017.md": {
       "sha256": "ec4eb68f8c1940fb68f7ec4217accdfa1011e11c84b0ac4018e7d281ca4a3172",
@@ -3803,8 +3807,8 @@
       "bytes": 1837310
     },
     "plugins/LIBRA.js": {
-      "sha256": "d2340ca74ce2c93b5d3da6b7df82df6d9f531b3465877df7033e20bd96b63af8",
-      "bytes": 6030141
+      "sha256": "b558d4c35e74ad1a6528209a2adc613f1e3275bbd007e1e77f4f6a053907d86b",
+      "bytes": 6031068
     },
     "plugins/RETRACE.js": {
       "sha256": "eb3b80d2c2ff5876d80b0af29782b0fe93b580d0febc5533d036d54b71f5146e",
@@ -10650,6 +10654,10 @@
       "sha256": "15346fe6a5b56e77680b0b4241e31b2a78a2d501afbe2969038aa81001fea1d4",
       "bytes": 6040
     },
+    "tools/rag_eval/gradia_feature_llm_check.cjs": {
+      "sha256": "465a733097214702033f573bb07adbe78ed5bcfa88338a4ff71593f1fc93df70",
+      "bytes": 23684
+    },
     "tools/rag_eval/gradia_llm_grounding_eval.cjs": {
       "sha256": "f9d2e30318670aa96cec1d958ba7ce9939da8807ab6160b1c6f81786e7b8e1ed",
       "bytes": 9388
@@ -10658,9 +10666,17 @@
       "sha256": "1330bd630610acfb6344d536bc50c4c8718f28df09c2c8d1ac375b9f189fd729",
       "bytes": 6398
     },
+    "tools/rag_eval/hayaku_feature_llm_check.cjs": {
+      "sha256": "27af344df325cdcc6cd0f5648878f80ec6629d99f11d83206cabfc78aa3bcb2a",
+      "bytes": 28492
+    },
     "tools/rag_eval/hayaku_recall_eval.cjs": {
       "sha256": "dd97d67462e898ab036bbe2206168f29f3a3b4f836e8a7e02143334d671d3217",
       "bytes": 4691
+    },
+    "tools/rag_eval/lia_feature_llm_check.cjs": {
+      "sha256": "3916ea17033cf432786642a022b7a76e192dc9bc7c4fb44bdf7fb231a8d4fecd",
+      "bytes": 28733
     },
     "tools/rag_eval/libra_e2e_eval.cjs": {
       "sha256": "849b6ffc53feed656047dd5be68c30f64929f7b247052e91b0327632a6a6dc8b",
