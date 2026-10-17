@@ -16,6 +16,6 @@ function run([name,end],transform=s=>s){
  vm.runInNewContext(contract,{require:n=>n==='node:fs'?wrappedFs:requireHere(n),__dirname,console:{log(){}}},{filename:file});
 }
 for(const spec of specs){
- test(spec[0]+': benign SDK comment version change passes',()=>run(spec,s=>s.replaceAll('COMPUTE SDK v0.3.6','COMPUTE SDK v9.8.7')));
+ test(spec[0]+': benign SDK comment version change passes',()=>run(spec,s=>s.replaceAll(/COMPUTE SDK v\d+\.\d+\.\d+/g,'COMPUTE SDK v9.8.7')));
  test(spec[0]+': missing required capability still fails',()=>{run(spec);assert.throws(()=>run(spec,s=>s.replaceAll(spec[2],'__removed_capability__')),e=>e.code==='ERR_ASSERTION'&&e.message.includes(spec[3]));});
 }

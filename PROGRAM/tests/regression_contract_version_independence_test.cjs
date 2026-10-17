@@ -25,7 +25,7 @@ const computeTest = 'compute_gui_and_libra_open_latency_contract_test.cjs';
 const coveredFixture = s => s.replace('const FLASHBACK_ARGUMENT_SETTING_FIELDS = Object.freeze([', "const FLASHBACK_ARGUMENT_SETTING_FIELDS = Object.freeze([\n    Object.freeze({ name: 'fixture_extra', key: 'fixtureExtra' }),").replace('const SETTING_ARGUMENT_NAMES = Object.freeze([', "const SETTING_ARGUMENT_NAMES = Object.freeze([ 'fixture_extra',") + '\n//@arg fixture_extra string Test-only additional setting\n';
 test('a complete in-memory settings inventory passes independent of historical count', () => run(argTest, (file, s) => file.endsWith('Flashback_Memory.js') ? coveredFixture(s) : s));
 test('a future coherent Flashback version passes the same complete-inventory contracts', () => run(argTest, (file, s) => file.endsWith('Flashback_Memory.js') ? coveredFixture(s).replace(/(^\/\/@version )\S+/m, '$19.8.7').replace(/(const PLUGIN_VERSION = ')[^']+/, '$19.8.7') : s));
-test('a future SDK comment version preserves GUI contracts', () => run(computeTest, (file, s) => file.endsWith('MemorySuiteComputeClient.source.js') ? s.replace('SDK v0.3.6', 'SDK v9.8.7') : s));
+test('a future SDK comment version preserves GUI contracts', () => run(computeTest, (file, s) => file.endsWith('MemorySuiteComputeClient.source.js') ? s.replace(/SDK v\d+\.\d+\.\d+/, 'SDK v9.8.7') : s));
 function runCovered(transform = source => source) {
   return run(argTest, (file, source) => file.endsWith('Flashback_Memory.js') ? transform(coveredFixture(source)) : source);
 }
