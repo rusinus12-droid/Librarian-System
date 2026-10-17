@@ -5,12 +5,12 @@ const { waitFor } = require('./libra_vm_harness.cjs');
 const { fixture: baseFixture } = require('./libra_unified_runtime_fixture.cjs');
 const QUOTE = '민아가 은빛 열쇠를 준호에게 잠시 건넸다.';
 
-async function fixture({ mode = 'plugin_only', minimum = false, transformSource, hostOverrides = {}, args = {}, embeddingConfig, embeddingFetch, includeMicro = true, microTurn = 6, microCount = 1, microText = () => QUOTE } = {}) {
+async function fixture({ mode = 'plugin_only', minimum = false, transformSource, hostOverrides = {}, args = {}, embeddingConfig, embeddingFetch, includeMicro = true, microTurn = 6, microCount = 1, microText = () => QUOTE, contextGlobals } = {}) {
   let listener;
   const host = { ...hostOverrides, addRisuChatListener: async (_kind, handler) => { listener = handler; return true; } };
-  const serverOptions = { mode, host, transformSource, args };
+  const serverOptions = { mode, host, transformSource, args, contextGlobals };
   const server = ['server_only','mirror'].includes(mode) ? await serverFixture(serverOptions) : null;
-  let f = server ? withLorebook(server.f) : await localFixture({ host, transformSource, args });
+  let f = server ? withLorebook(server.f) : await localFixture({ host, transformSource, args, contextGlobals });
   try {
     if (embeddingConfig) await f.r.api.saveEmbeddingSettings(embeddingConfig);
     if (embeddingFetch) {
@@ -62,7 +62,7 @@ async function fixture({ mode = 'plugin_only', minimum = false, transformSource,
         if (server) { serverOptions.snapshot = { chat }; f = await server.restart(); }
         else {
           const values = [...f.r.values.entries()]; await f.r.cleanup();
-          f = await baseFixture({ snapshot: { chat, values }, host, transformSource, args });
+          f = await baseFixture({ snapshot: { chat, values }, host, transformSource, args, contextGlobals });
         }
         f.character.lorebook = lore;
         if (embeddingFetch) { if (server) server.hooks.externalFetch = embeddingFetch; else f.r.context.risuai.nativeFetch = embeddingFetch; }

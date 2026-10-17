@@ -1,6 +1,6 @@
 //@name libra
 //@display-name LIBRA v2.3.159
-//@version 2.3.159
+//@version 2.3.160
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1557,7 +1557,8 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.3.159';
+  // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
+  const PLUGIN_VERSION = '2.3.160';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -33746,6 +33747,28 @@ function createLibraReadonlySourceContext(owner) {
     // Runtime-only common index handles (timer, build promise, page Map). Kept out of
     // `state`, which public diagnostics clone.
     let volatileCorpusRuntime = null;
+    let localCorpusStore = null, localCorpusOpening = null, localCorpusUnavailable = '';
+    const getLocalCorpusStore = async () => {
+      if (localCorpusStore) return localCorpusStore;
+      if (localCorpusUnavailable) return null;
+      let factory;
+      try { factory = globalThis.indexedDB; }
+      catch (error) {
+        if (error?.name !== 'SecurityError') throw error;
+        localCorpusUnavailable = error.name; return null;
+      }
+      if (!factory?.open) { localCorpusUnavailable = 'indexeddb_unavailable'; return null; }
+      return await (localCorpusOpening || (localCorpusOpening = (async () => {
+        const store = createLibraMemoryGraphLocalStore({ indexedDB: factory, fingerprint: memoryGraphSourceFingerprint });
+        try { await store.ready(); localCorpusStore = store; return store; }
+        catch (error) {
+          if (!['SecurityError','NotSupportedError','InvalidStateError'].includes(error?.name)) throw error;
+          localCorpusUnavailable = error.name; return null;
+        } finally { localCorpusOpening = null; }
+      })()));
+    };
+    const inspectLocalMemoryGraphCorpus = () => ({ backend: 'indexeddb', available: Boolean(localCorpusStore),
+      unavailableReason: localCorpusUnavailable, legacyHostRecords: 'preserved_atomic_gc_unavailable' });
 
     Runtime.libraMemory = state;
 
@@ -44808,6 +44831,306 @@ function createLibraReadonlySourceContext(owner) {
 });
     // END LIBRA MEMORY NETWORK
     // BEGIN LIBRA MEMORY GRAPH
+    const createLibraMemoryGraphLocalStore = (function createMemoryGraphLocalStore({ indexedDB, fingerprint, now = Date.now,
+  databaseName = 'libra-derived-corpus-v1', leaseMs = 60000 } = {}) {
+  if (!indexedDB?.open || typeof fingerprint !== 'function') throw new TypeError('LIBRA_LOCAL_CORPUS_ADAPTER_REQUIRED');
+  const fail = reason => { throw new Error('LIBRA_LOCAL_CORPUS_' + reason); };
+  const prefixFor = scope => {
+    if (typeof scope !== 'string' || !/^[A-Za-z0-9_.:-]{1,700}$/.test(scope)) fail('SCOPE_INVALID');
+    return 'libra:v1:scope:' + scope + ':memory-graph:v1:corpus:';
+  };
+  let opening = null, nonce = 0;
+  const salt = String(now()) + ':' + Math.random();
+  const open = () => opening || (opening = new Promise((resolve, reject) => {
+    const request = indexedDB.open(databaseName, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore('records', { keyPath: ['scope','key'] }).createIndex('scope','scope');
+      request.result.createObjectStore('controls', { keyPath: 'scope' });
+    };
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error('LIBRA_LOCAL_CORPUS_OPEN_BLOCKED'));
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => { db.close(); opening = null; };
+      resolve(db);
+    };
+  }).catch(error => { opening = null; throw error; }));
+  const transaction = async (scope, body, onBegin = null) => {
+    const db = await open();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(['records','controls'], 'readwrite');
+      const records = tx.objectStore('records'), controls = tx.objectStore('controls');
+      let result, failure;
+      const abort = error => { failure = error; try { tx.abort(); } catch (_) {} };
+      const run = fn => { try { fn(); } catch (error) { abort(error); } };
+      const get = (store, key, callback) => {
+        const request = store.get(store.name === 'records' ? [scope,key] : key);
+        request.onsuccess = () => run(() => callback(request.result));
+      };
+      tx.oncomplete = () => resolve(result);
+      tx.onabort = () => reject(failure || tx.error || new Error('LIBRA_LOCAL_CORPUS_TRANSACTION_ABORTED'));
+      tx.onerror = () => {}; // onabort reports the transaction's error.
+      if (onBegin) { try { onBegin(tx); } catch (error) { abort(error); return; } }
+      get(controls, scope, saved => {
+        const state = saved || { scope, schema: 'libra.local_corpus_control.v1', leases: [], roots: {} };
+        if (state.schema !== 'libra.local_corpus_control.v1' || !Array.isArray(state.leases) || state.leases.length > 32
+          || !state.roots || Object.keys(state.roots).length > 16
+          || state.leases.some(lease => !['read','build'].includes(lease.kind) || !Number.isSafeInteger(lease.expiresAt)
+            || !Array.isArray(lease.pins) || lease.pins.length > 32)) fail('CONTROL_CORRUPT');
+        state.leases = state.leases.filter(lease => lease.expiresAt > now());
+        body({ records, controls, state, get, run, finish: value => { result = value; } });
+      });
+    });
+  };
+  const requireLease = (state, token, kind = null) => {
+    const lease = state.leases.find(row => row.token === token && row.expiresAt > now() && (!kind || row.kind === kind));
+    if (!lease) fail('LEASE_EXPIRED');
+    return lease;
+  };
+  const owned = (prefix, key) => { if (typeof key !== 'string' || !key.startsWith(prefix)) fail('KEY_UNOWNED'); };
+  // Every callback stays inside its native transaction. Never await an IPC or a
+  // promise while holding the storage transaction, or emulate it with a JS lock.
+  const acquire = async (scope, kind, partition = 'owner') => {
+    const prefix = prefixFor(scope);
+    if (!['read','build'].includes(kind) || typeof partition !== 'string' || partition.length > 2048) fail('LEASE_INVALID');
+    const token = fingerprint(salt + ':' + ++nonce);
+    await transaction(scope, ({ controls, state, finish }) => {
+      if (state.leases.length >= 32) fail('LEASE_LIMIT');
+      state.leases.push({ token, kind, expiresAt: now() + leaseMs, pins: [] });
+      controls.put(state); finish(true);
+    });
+    let closed = false, timer;
+    const activeTransactions = new Set();
+    const operate = async body => {
+      if (closed) fail('LEASE_CLOSED');
+      let physical;
+      try {
+        return await transaction(scope, context => {
+          if (closed) fail('LEASE_CLOSED');
+          body(context, requireLease(context.state, token));
+        }, tx => { physical = tx; activeTransactions.add(tx); if (closed) fail('LEASE_CLOSED'); });
+      } finally { if (physical) activeTransactions.delete(physical); }
+    };
+    const renew = async () => {
+      try { await operate(({ controls, state, finish }, lease) => {
+        lease.expiresAt = now() + leaseMs; controls.put(state); finish(true);
+      }); } catch (_) { return; }
+      timer = setTimeout(renew, Math.max(1, Math.floor(leaseMs / 3))); timer?.unref?.();
+    };
+    timer = setTimeout(renew, Math.max(1, Math.floor(leaseMs / 3))); timer?.unref?.();
+    return Object.freeze({
+      backend: 'indexeddb',
+      assertCurrent: () => operate(({ finish }) => finish(true)),
+      read: key => {
+        owned(prefix,key);
+        return operate(({ records, controls, state, get, finish }, lease) => get(records,key,row => {
+          requireLease(state,token);
+          if (row && key.startsWith(prefix + 'root:')) {
+            if (row.raw.length > 4096) fail('ROOT_CORRUPT');
+            const root = JSON.parse(row.raw);
+            if (!lease.pins.some(pin => pin.key === key && pin.raw === row.raw)) {
+              if (lease.pins.length >= 32) fail('PIN_LIMIT');
+              lease.pins.push({ key, raw: row.raw }); controls.put(state);
+            }
+            if (root.schema !== 'libra.graph_corpus.v1') fail('ROOT_CORRUPT');
+          }
+          finish(row?.raw ?? null);
+        }));
+      },
+      putImmutable: (key, raw) => {
+        owned(prefix,key);
+        if (typeof raw !== 'string' || raw.length > 8388608 || key.startsWith(prefix + 'root:')) fail('VALUE_INVALID');
+        return operate(({ records, state, get, finish }, lease) => {
+          if (lease.kind !== 'build') fail('BUILD_LEASE_REQUIRED');
+          get(records,key,row => {
+            requireLease(state,token,'build');
+            if (row && row.raw !== raw) fail('IMMUTABLE_CONFLICT');
+            if (!row) records.put({ scope, key, raw, updatedAt: now() });
+            finish(true);
+          });
+        });
+      },
+      publish: ({ key, raw, previous, manifestKey, manifestRaw }) => {
+        owned(prefix,key); owned(prefix,manifestKey);
+        if (!key.startsWith(prefix + 'root:') || typeof raw !== 'string' || raw.length > 4096) fail('ROOT_INVALID');
+        return operate(({ records, controls, state, get, finish }, lease) => {
+          if (lease.kind !== 'build') fail('BUILD_LEASE_REQUIRED');
+          get(records,key,current => get(records,manifestKey,manifest => {
+            if ((current?.raw ?? null) !== previous || manifest?.raw !== manifestRaw) fail('ROOT_CONFLICT');
+            const root = JSON.parse(raw);
+            if (root.schema !== 'libra.graph_corpus.v1' || root.manifestKey !== manifestKey
+              || fingerprint(manifestRaw) !== (root.digest || root.generation)) fail('ROOT_CORRUPT');
+            const pending = [{ key: manifestKey, digest: root.digest || root.generation, type: 'manifest' }], seen = new Set();
+            let checkedBytes = 0;
+            const next = () => {
+              const ref = pending.pop();
+              if (!ref) {
+                // Validation can span many asynchronous IDB reads. Expiration
+                // at entry alone cannot authorize a later root mutation.
+                requireLease(state,token,'build');
+                records.put({ scope, key, raw, updatedAt: now() });
+                // A changing cutoff/view must not keep every historical root alive.
+                // Active readers pin their old root + manifest independently.
+                state.roots[partition] = { key, publishedAt: now() };
+                const partitions = Object.keys(state.roots).sort((a,b) => state.roots[b].publishedAt - state.roots[a].publishedAt);
+                for (const old of partitions.slice(16)) delete state.roots[old];
+                controls.put(state); finish(true); return;
+              }
+              owned(prefix,ref.key);
+              if (!/^[a-f0-9]{64}$/.test(ref.digest)) fail('REFERENCE_CORRUPT');
+              if (seen.has(ref.key)) { next(); return; } seen.add(ref.key);
+              if (seen.size > 8192) fail('REFERENCE_BUDGET');
+              get(records,ref.key,row => {
+                if (!row) fail('REFERENCE_MISSING');
+                checkedBytes += row.raw.length * 2 + 2048;
+                if (checkedBytes > 33554432) fail('REFERENCE_BUDGET');
+                if (fingerprint(row.raw) !== ref.digest) fail('REFERENCE_CORRUPT');
+                if (ref.type) {
+                  const item = JSON.parse(row.raw);
+                  if (ref.type === 'manifest') {
+                    if (item.schema !== 'libra.graph_corpus.v1' || !Array.isArray(item.refs)) fail('MANIFEST_CORRUPT');
+                    pending.push(...item.refs);
+                    if (item.sourceProofs) pending.push({key:item.sourceProofs.proofKey,digest:item.sourceProofs.proofDigest},
+                      {key:item.sourceProofs.projectionKey,digest:item.sourceProofs.projectionDigest,type:'projection'});
+                    if (item.semanticDirectory) pending.push({...item.semanticDirectory,type:'semantic'});
+                  } else if (ref.type === 'semantic') {
+                    if (item.schema !== 'libra.graph_semantic_directory.v1' || !Array.isArray(item.entries)) fail('SEMANTIC_DIRECTORY_CORRUPT');
+                    for (const entry of item.entries) pending.push(...(entry.vectorPages || []));
+                  } else if (item.schema === 'libra.graph_corpus_projection_build.v1') {
+                    if (!Array.isArray(item.windows)) fail('PROJECTION_CORRUPT');
+                    pending.push(...item.windows.map(child => ({...child,type:'projection'})));
+                  } else if (['libra.graph_corpus_projection.v2','libra.graph_corpus_projection_window.v1'].includes(item.schema)) {
+                    if (!item.parts || Object.keys(item.parts).sort().join(',') !== 'bases,canonicalRows,edges,nodes,units') fail('PROJECTION_CORRUPT');
+                    for (const part of Object.values(item.parts)) {
+                      if (!Array.isArray(part.refs)) fail('PROJECTION_CORRUPT');
+                      pending.push(...part.refs);
+                    }
+                    if (item.schema === 'libra.graph_corpus_projection.v2') pending.push({...item.build,type:'projection'});
+                  } else if (item.schema !== 'libra.graph_corpus_projection.v1') fail('PROJECTION_CORRUPT');
+                }
+                next();
+              });
+            };
+            next();
+          }));
+        });
+      },
+      release: async () => {
+        if (closed) return;
+        closed = true; clearTimeout(timer);
+        for (const tx of activeTransactions) { try { tx.abort(); } catch (_) {} }
+        try {
+          await transaction(scope, ({ controls, state, finish }) => {
+            state.leases = state.leases.filter(lease => lease.token !== token); controls.put(state); finish(true);
+          });
+        } catch (_) { /* Closed locally; a failed durable release expires after 60s. */ }
+      }
+    });
+  };
+  const collectGarbage = async (scope, { dryRun = false, candidateKeys = null, resources = null } = {}) => {
+    const prefix = prefixFor(scope);
+    if (candidateKeys !== null && (!Array.isArray(candidateKeys) || candidateKeys.length > 8192 || candidateKeys.some(key => typeof key !== 'string'))) fail('CANDIDATES_INVALID');
+    const selected = candidateKeys === null ? null : new Set(candidateKeys);
+    return await transaction(scope, ({ records, state, get, run, finish }) => {
+      const base = { schema: 'libra.graph_store_gc.v1', scopeKey: scope, dryRun: Boolean(dryRun),
+        backend: 'indexeddb', corpusReclamation: 'local_transaction_reachability', candidateKeys: [], deletedKeys: [],
+        legacyHostRecords: 'preserved_atomic_gc_unavailable' };
+      if (state.leases.some(lease => lease.kind === 'build')) { finish({ ...base, status: 'blocked_active_builds' }); return; }
+      const rows = new Map(); let bytes = 0;
+      const cursor = records.index('scope').openCursor(scope);
+      cursor.onsuccess = () => run(() => {
+        resources?.check();
+        const current = cursor.result;
+        if (current) {
+          const row = current.value;
+          if (row.scope === scope) {
+            owned(prefix,row.key);
+            bytes += row.raw.length * 2 + 2048;
+            if (rows.size >= 8192 || bytes > 33554432) fail('INVENTORY_BUDGET');
+            resources?.reserveRetained(row.raw.length * 2 + 2048,'local_gc_inventory');
+            rows.set(row.key,row);
+          }
+          current.continue(); return;
+        }
+        const retained = new Set(), visited = new Set();
+        const keep = key => {
+          owned(prefix,key);
+          if (!rows.has(key)) fail('REFERENCE_MISSING');
+          retained.add(key); return rows.get(key).raw;
+        };
+        const value = (key, digest = null) => {
+          resources?.check();
+          const raw = keep(key);
+          if (digest && fingerprint(raw) !== digest) fail('REFERENCE_CORRUPT');
+          const parsed = JSON.parse(raw);
+          resources?.retain(parsed,'local_gc_metadata');
+          return parsed;
+        };
+        const projection = ref => {
+          if (!ref || ref.key !== prefix + 'projection:' + ref.digest) fail('REFERENCE_UNOWNED');
+          const item = value(ref.key,ref.digest);
+          if (visited.has(ref.key)) return; visited.add(ref.key);
+          if (item.schema === 'libra.graph_corpus_projection.v1') return;
+          if (item.schema === 'libra.graph_corpus_projection_build.v1') {
+            if (!Array.isArray(item.windows)) fail('PROJECTION_CORRUPT');
+            for (const child of item.windows) projection(child);
+          } else if (['libra.graph_corpus_projection.v2','libra.graph_corpus_projection_window.v1'].includes(item.schema)) {
+            if (!item.parts || Object.keys(item.parts).sort().join(',') !== 'bases,canonicalRows,edges,nodes,units') fail('PROJECTION_CORRUPT');
+            for (const part of Object.values(item.parts)) {
+              if (!Array.isArray(part.refs)) fail('PROJECTION_CORRUPT');
+              for (const child of part.refs) { if (child.key !== prefix + 'projection:' + child.digest) fail('REFERENCE_UNOWNED'); keep(child.key); }
+            }
+            if (item.schema === 'libra.graph_corpus_projection.v2') projection(item.build);
+          } else fail('PROJECTION_CORRUPT');
+        };
+        const root = (key, raw = null) => {
+          const saved = keep(key);
+          // The same mutable root key may already publish a newer manifest.
+          // Retain the old reader's captured manifest as well as the live root.
+          const item = JSON.parse(raw === null ? saved : raw);
+          if (item.schema !== 'libra.graph_corpus.v1') fail('ROOT_CORRUPT');
+          const manifest = value(item.manifestKey,item.digest || item.generation);
+          if (!Array.isArray(manifest.refs)) fail('MANIFEST_CORRUPT');
+          for (const ref of manifest.refs) keep(ref.key);
+          if (manifest.sourceProofs) {
+            keep(manifest.sourceProofs.proofKey);
+            projection({ key: manifest.sourceProofs.projectionKey, digest: manifest.sourceProofs.projectionDigest });
+          }
+          if (manifest.semanticDirectory) {
+            const directory = value(manifest.semanticDirectory.key,manifest.semanticDirectory.digest);
+            if (directory.schema !== 'libra.graph_semantic_directory.v1' || !Array.isArray(directory.entries)) fail('SEMANTIC_DIRECTORY_CORRUPT');
+            for (const entry of directory.entries) for (const page of entry.vectorPages || []) keep(page.key);
+          }
+        };
+        for (const entry of Object.values(state.roots)) root(entry.key);
+        for (const lease of state.leases) for (const pin of lease.pins) root(pin.key,pin.raw);
+        for (const row of rows.values()) if (row.key.startsWith(prefix + 'checkpoint:') && now() - row.updatedAt < 86400000) retained.add(row.key);
+        const candidates = [...rows.keys()].filter(key => !retained.has(key) && (!selected || selected.has(key)));
+        // Inventory, reachability, pins and deletion share this single native
+        // read/write transaction; a crashed tab cannot leave a partial sweep.
+        if (!dryRun) for (const key of candidates) records.delete([scope,key]);
+        finish({ ...base, status: 'completed', candidateKeys: candidates, deletedKeys: dryRun ? [] : candidates,
+          retainedKeyCount: retained.size, protectedReaderCount: state.leases.filter(lease => lease.kind === 'read').length,
+          inventoryBytes: bytes, inventoryRecords: rows.size });
+      });
+    });
+  };
+  const discardScope = async scope => {
+    prefixFor(scope);
+    return await transaction(scope, ({ records, controls, state, run, finish }) => {
+      const cursor = records.index('scope').openCursor(scope); let deleted = 0;
+      cursor.onsuccess = () => run(() => {
+        const current = cursor.result;
+        if (current) { if (current.value.scope === scope) { current.delete(); deleted++; } current.continue(); return; }
+        // Revoke old readers/builders in the same transaction as the deletion.
+        state.leases = []; state.roots = {}; controls.put(state); finish({deleted});
+      });
+    });
+  };
+  return Object.freeze({ ready: open, acquire, collectGarbage, discardScope, close: async () => {
+    if (opening) { (await opening).close(); opening = null; }
+  } });
+});
     const createLibraMemoryGraphResources = (function createMemoryGraphResources({ measure, encodedSize, stageCost, limits = {}, lifetimeMs = 600000, schedule = setTimeout, cancel = clearTimeout } = {}) {
   if (typeof measure !== 'function' || typeof encodedSize !== 'function' || typeof stageCost !== 'function') throw new TypeError('LIBRA_GRAPH_RESOURCE_MEASURE_REQUIRED');
   const poolLimits = { ioBytes: 32 * 1024 * 1024, decodeBytes: 128 * 1024 * 1024, reads: 8, retainedBytes: 256 * 1024 * 1024, sessions: 32, ...limits };
@@ -50401,12 +50724,16 @@ function createLibraReadonlySourceContext(owner) {
     if(!result.documents?.length)return null;
     const bySource=new Map();
     for(const unit of input.graph.units||[]){const source=input.graph.nodes.find(n=>n.id===unit.nodeId)?.sourceId;if(unit.family==='canonical'&&source)bySource.set(source,input.canonicalRows.find(r=>r.key===unit.recordKey));}
-    return {schema:'libra.graph_semantic_directory.v1',dimension:result.documents[0].vector.length,profileId:result.profile.profileId,
-      entries:await Promise.all(result.documents.map(async document=>{const vector=document.vector,norm=Math.hypot(...vector),coordinates=vector.slice(0,16).map(x=>x/norm),row=bySource.get(document.nodeId);
+    // Each writer reserves the full unknown-value read allowance. Parallel
+    // writes can exhaust pending durable quota before small reads settle.
+    // Keep all representations and their order, with one writer in flight.
+    const entries=[];
+    for(const document of result.documents){input.check?.();const vector=document.vector,norm=Math.hypot(...vector),coordinates=vector.slice(0,16).map(x=>x/norm),row=bySource.get(document.nodeId);
         const rep={...document,spaceId:result.profile.descriptor.spaceId,provider:result.profile.provider,model:result.profile.model,dimension:vector.length,metric:'cosine',profileDigest:digest(result.profile.descriptor)},raw=JSON.stringify(rep);
         let payloadBytes=0;for(let offset=0;offset<raw.length;offset+=24576)payloadBytes+=input.pages?input.pages.encodedSize(JSON.stringify([raw.slice(offset,offset+24576)])).utf8Bytes:JSON.stringify([raw.slice(offset,offset+24576)]).length*3;
-        return {nodeId:document.nodeId,bindingId:document.bindingId,vectorKey:row.record.embedding.vectorKey,vectorHash:row.record.embedding.vectorHash,payloadBytes,...(input.writeRepresentation?await input.writeRepresentation(rep,row):{}),
-          coordinates,tailNorm:Math.hypot(...vector.slice(coordinates.length))/norm};}))};
+        entries.push({nodeId:document.nodeId,bindingId:document.bindingId,vectorKey:row.record.embedding.vectorKey,vectorHash:row.record.embedding.vectorHash,payloadBytes,...(input.writeRepresentation?await input.writeRepresentation(rep,row):{}),
+          coordinates,tailNorm:Math.hypot(...vector.slice(coordinates.length))/norm});}
+    return {schema:'libra.graph_semantic_directory.v1',dimension:result.documents[0].vector.length,profileId:result.profile.profileId,entries};
   };
   return Object.freeze({ prepare, prepareLazy, buildDirectory, selectAdditionalRepresentations });
 });
@@ -69160,6 +69487,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const deleteCurrentScope = async (options = {}) => {
       const context = await resolveContext();
       if(options.expectedScopeKey&&string(context.scope.scopeKey)!==string(options.expectedScopeKey))throw new Error('scope_delete_scope_changed');
+      const localStore = await getLocalCorpusStore();
+      if (localStore) await localStore.discardScope(string(context.scope.scopeKey));
       state.memoryGraphPages?.invalidate();
       state.memoryGraphStore?.invalidate();
       state.memoryGraphCompiler?.invalidateAll();
@@ -71539,7 +71868,19 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const memoryGraphCorpusContext = async (initialGraph, collected, epoch, serial, guard = null, resources = null, leaseKind = 'read', volatile = null) => {
       const mode = string((await MemorySuiteStorageBridge.getScopeMode(collected.scope))?.mode || '');
       if (!['plugin_only','server_only','mirror'].includes(mode)) throw new Error('LIBRA_GRAPH_CORPUS_MODE_UNSUPPORTED');
-      const graphLease = volatile ? null : await MemorySuiteStorageBridge.acquireGraphStorageLease(initialGraph.scopeKey,leaseKind);
+      const localStore = !volatile && mode === 'plugin_only' ? await getLocalCorpusStore() : null;
+      let localLease = localStore ? await localStore.acquire(initialGraph.scopeKey,leaseKind,
+        JSON.stringify([initialGraph.readerFrame.owner, initialGraph.readerFrame.view.viewerId])) : null;
+      if (localLease && leaseKind === 'read') {
+        // Select one complete backend. A missing local page must never silently
+        // fall back to a similarly named legacy host record.
+        const rootKey = `${PREFIX}:scope:${initialGraph.scopeKey}:memory-graph:v1:corpus:root:` + memoryGraphSourceFingerprint(JSON.stringify(initialGraph.readerFrame));
+        try {
+          const raw = resources ? await resources.read(() => localLease.read(rootKey),{kind:'durable'}) : await localLease.read(rootKey);
+          if (raw === null) { await localLease.release(); localLease = null; }
+        } catch (error) { await localLease.release(); localLease = null; throw error; }
+      }
+      const graphLease = localLease || (volatile ? null : await MemorySuiteStorageBridge.acquireGraphStorageLease(initialGraph.scopeKey,leaseKind));
       try { resources?.onClose(() => { void graphLease?.release(); }); } catch(error){await graphLease?.release();throw error;}
       const binding = mode !== 'plugin_only' ? stableReferenceJson(await MemorySuiteStorageBridge.captureServerBinding()) : '';
       const check = () => {
@@ -71549,7 +71890,12 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           || state.deletingScopes.has(initialGraph.scopeKey)) throw new Error('LIBRA_GRAPH_CORPUS_OWNER_CHANGED');
       };
       const assertRoute = async () => {
-        check(); await graphLease?.assertCurrent();
+        check();
+        // IndexedDB checks the lease inside every page I/O/publication transaction.
+        // Final assertIndexCurrent physically reads the root through that lease.
+        // Repeating a separate control transaction around each source read adds
+        // no storage fence; source bodies and routing are still verified below.
+        if (!localLease) await graphLease?.assertCurrent();
         const currentMode=string((await MemorySuiteStorageBridge.getScopeMode(collected.scope))?.mode||'');
         const currentBinding=mode!=='plugin_only'?stableReferenceJson(await MemorySuiteStorageBridge.captureServerBinding()):'';
         if (mode !== currentMode || mode !== 'plugin_only' && binding !== currentBinding) throw new Error('LIBRA_GRAPH_CORPUS_ROUTE_CHANGED');
@@ -71560,6 +71906,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         if (!storageKey.startsWith(prefix)) throw new Error('LIBRA_GRAPH_CORPUS_KEY_UNOWNED');
         await assertRoute();
         if (volatile) { const value = volatile.get(storageKey); await assertRoute(); return value ?? null; }
+        if (localLease) { const value = resources ? await resources.read(() => localLease.read(storageKey),{kind:'durable'}) : await localLease.read(storageKey); await assertRoute(); return value; }
         const load = () => mode !== 'plugin_only' ? MemorySuiteStorageBridge.serverGet('plugin',storageKey) : MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey);
         const raw = resources ? await resources.read(load,{ kind: 'durable', select: row => mode !== 'plugin_only' ? row?.value ?? null : row }) : await load();
         await assertRoute();
@@ -71585,6 +71932,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       };
       const writeDerived = async (storageKey, raw) => {
         if (volatile) { await assertRoute(); volatile.set(storageKey, raw); await assertRoute(); }
+        else if (localLease) { await assertRoute(); await localLease.putImmutable(storageKey,raw); await assertRoute(); }
         else if (mode !== 'plugin_only') await commit([{ key: storageKey, kind: 'set', expected: { exists: false }, value: raw }]);
         else { await assertRoute(); await fencedMemoryStorageSet(storageKey,raw); await assertRoute(); }
       };
@@ -71593,7 +71941,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         for(const pin of semanticVectorPins)await MemorySuiteStorageBridge.assertConditionalReadSet(pin,{readObserver:resources?()=>resources.reserveRead('source'):null});
         for(const [key,hash] of semanticVectorBodies){if(memoryGraphSourceFingerprint(stableReferenceJson(await storage.getVerifiedJson(key,collected.scope,null)))!==hash)throw new Error('LIBRA_GRAPH_SEMANTIC_VECTOR_CHANGED');}
       };
-      return { owner: { check, read, assertRoute, resources, graphLease,
+      return { backend: localLease ? 'indexeddb' : volatile ? 'runtime_memory' : mode === 'plugin_only' ? 'host_storage' : 'server_storage', owner: { check, read, assertRoute, resources, graphLease,
         async buildSemanticDirectory(graph,fullCollected){
           const config=normalizeEmbeddingSettings((await LibraProviderBridge.getConfig())?.embed||DEFAULT_EMBEDDING);
           const semantic=createLibraMemoryGraphSemantic({digest,profileFor:config=>EmbeddingProviderRegistry.profileFor(config),projectionFor:buildMemoryRetrievalProjection});
@@ -71627,7 +71975,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           if (volatile) {
             if (await read(rootKey) !== previous || await read(manifestKey) !== manifestRaw) throw new Error('LIBRA_GRAPH_CORPUS_ROOT_CONFLICT');
             volatile.set(rootKey,raw); await assertRoute();
-          } else if (mode !== 'plugin_only') await commit([{ key: rootKey, kind: 'set', value: raw,
+          } else if (localLease) await localLease.publish({key:rootKey,raw,previous,manifestKey,manifestRaw});
+          else if (mode !== 'plugin_only') await commit([{ key: rootKey, kind: 'set', value: raw,
             expected: previous === null ? { exists: false } : { exists: true, value: previous } }],
             [{ key: manifestKey, expected: { exists: true, value: manifestRaw } }]);
           else {
@@ -71952,7 +72301,14 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(key => !allowed.includes(key))) throw new Error('LIBRA_GRAPH_CORPUS_OPTIONS_INVALID');
       // An explicit build takes precedence over the background runtime index.
       await yieldVolatileMemoryGraphCorpusBuild();
-      return await buildMemoryGraphCorpusInto(options, null);
+      const result = await buildMemoryGraphCorpusInto(options, null);
+      if (result.persistenceBackend === 'indexeddb') {
+        try { result.reclamation = await collectLocalMemoryGraphGarbage(result.scopeKey); }
+        catch (error) { result.reclamation = {status:'failed',code:String(error?.message || error)}; }
+      } else if (result.persistenceBackend === 'host_storage') {
+        result.reclamation = {status:'blocked_atomic_gc_unavailable',reason:localCorpusUnavailable || 'host_storage'};
+      }
+      return result;
     };
     const buildMemoryGraphCorpusInto = async (options, volatile, yieldCheck = null) => {
       const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
@@ -71971,7 +72327,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           const context = await memoryGraphCorpusContext(graph,collected,epoch,serial,null,resources,'build',volatile);
           const result = await state.memoryGraphCorpus.build({ initialGraph: graph, ...context, options: Object.fromEntries(Object.entries(options).filter(([key]) => !['expectedScopeKey','resourceBudget'].includes(key))) });
           await context.owner.graphLease?.release();
-          return { ...result, scopeKey: graph.scopeKey, resourceAccess: resources.inspect() };
+          return { ...result, scopeKey: graph.scopeKey, persistenceBackend: context.backend, resourceAccess: resources.inspect() };
         } finally {
           if (buildPinToken) state.memoryGraphActiveBuilds.delete(buildPinToken);
         }
@@ -72251,6 +72607,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             if (corpusMode !== 'auto' || !['stale_generation','restore_binding_invalid'].includes(error.reason)) throw error;
             coldReason = error.reason === 'stale_generation' ? 'superseded_derived_index' : 'incompatible_derived_index';
           }
+          if (corpus) corpus = {...corpus,access:{...corpus.access,persistenceBackend:corpusContext.backend}};
           if (!corpus && corpusMode === 'required') throw new Error('LIBRA_GRAPH_CORPUS_MISSING_GENERATION');
           const volatileState = volatileMemoryGraphCorpus();
           let runtimeIndex = volatileState.store ? 'unavailable' : volatileState.running ? 'building' : 'absent';
@@ -73044,6 +73401,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
     const startGradiaUnifiedRead = async () => { await getGradiaPluginReadOwner().start(); return await getGradiaUnifiedReadOwner().start(); };
     const stopGradiaUnifiedRead = async () => { await state.gradiaPluginReadOwner?.dispose(); state.gradiaPluginReadOwner = null; await state.gradiaUnifiedReadOwner?.dispose(); state.gradiaUnifiedReadOwner = null; };
+    const collectLocalMemoryGraphGarbage = async (scopeKey, options = {}) => {
+      const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
+      ensureMemoryGraphUnifiedSuite();
+      const resources = state.memoryGraphResources.openMaintenance({},() => {
+        if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)
+          || state.deletingScopes.has(scopeKey)) throw new Error('LIBRA_GRAPH_STORE_OWNER_CHANGED');
+      });
+      const activity = resources.begin();
+      try { return await localCorpusStore.collectGarbage(scopeKey,{...options,resources}); }
+      finally { resources.close('gc_complete'); activity.release(); }
+    };
     const collectMemoryGraphGarbage = async (options = {}) => {
       const allowed = ['expectedScopeKey','dryRun','throwOnConflict','candidateKeys'];
       if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(name => !allowed.includes(name))) {
@@ -73057,6 +73425,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         throw new Error('LIBRA_GRAPH_STORE_CANCELLED');
       }
       const storageMode = string((await MemorySuiteStorageBridge.getScopeMode(initialCollected.scope))?.mode || 'plugin_only');
+      if (storageMode === 'plugin_only') {
+        const localStore = await getLocalCorpusStore();
+        if (localStore) return await collectLocalMemoryGraphGarbage(graph.scopeKey,{dryRun:Boolean(options.dryRun),candidateKeys:options.candidateKeys??null});
+      }
       let graphLease=null;
       try { graphLease=await MemorySuiteStorageBridge.acquireGraphStorageLease(graph.scopeKey,'gc'); }
       catch(error){if(String(error.message).includes('LIBRA_GRAPH_NAMESPACE_BUSY'))return {schema:'libra.graph_store_gc.v1',status:'blocked_active_leases',dryRun:Boolean(options.dryRun),candidateKeys:[],deletedKeys:[]};throw error;}
@@ -75716,7 +76088,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       getUnifiedResponseContext, validateUnifiedResponseContext, previewUnifiedIdentityMerge, mergeUnifiedIdentity, previewUnifiedIdentitySplit, splitUnifiedIdentity, previewUnifiedMigration, beginUnifiedMigration, previewUnifiedLegacyRebuild, getUnifiedLegacyRebuildEvidence, rebuildSelectedUnifiedLegacy, previewUnifiedRetention, collectUnifiedRetention, listWorldManagerHistory, getWorldManagerHistoryDetail, listCanonicalReaderChapters, getCanonicalReaderChapter, getCanonicalEvidenceChain,
       listExecutionReceipts, getExecutionReceiptDetail, listWorldManagerCorrections, getWorldManagerRuntimeMeta,
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
-      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, inspectVolatileMemoryGraphCorpus, inspectMicroRepresentationVectors, warmMicroRepresentationVectors, disposeVolatileMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, releaseMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
+      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, inspectLocalMemoryGraphCorpus, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, inspectVolatileMemoryGraphCorpus, inspectMicroRepresentationVectors, warmMicroRepresentationVectors, disposeVolatileMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, releaseMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
 
       armPendingLiveBoundary, loadPendingBoundaryStore, pruneExpiredPendingBoundaryStore, recoverPendingLiveBoundaryAtStartup, clearPendingBoundaryAfterCommit,
       reconcileCanonicalBranchBeforeRecall, verifyBatchStillCurrent, captureCommittedOutputEvent,
@@ -79873,7 +80245,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
               try {
                 guiSetStatus('전체 이력 인덱스를 구축하는 중입니다.');
                 const result = await LibraMemoryCore.buildMemoryGraphCorpus();
-                guiSetStatus(`전체 이력 인덱스 게시: ${result.windowCount}구간 · ${result.pageCount}페이지`);
+                guiSetStatus(`전체 이력 인덱스 게시: ${result.windowCount}구간 · ${result.pageCount}페이지${result.reclamation?.status === 'completed' ? ' · 이전 로컬 페이지 ' + result.reclamation.deletedKeys.length + '개 정리' : result.reclamation?.status === 'failed' ? ' · 이전 페이지 정리 실패: ' + result.reclamation.code : result.reclamation?.status === 'blocked_atomic_gc_unavailable' ? ' · 이 환경은 이전 페이지 자동 정리를 지원하지 않음' : ''}`);
               } catch (error) { guiSetStatus(error?.message || String(error),true,true); }
             } }),
             guiEl('button', { class: 'btn', text: '전체 인덱스 검증', onClick: async () => {
@@ -87337,6 +87709,7 @@ advanced
       const execution = await LibraMemoryCore.executeMemoryGraphUnifiedQuery(options);
       try { return await safeClone(execution); } finally { LibraMemoryCore.releaseMemoryGraphUnifiedQuery(execution); }
     },
+    inspectLocalMemoryGraphCorpus() { return LibraMemoryCore.inspectLocalMemoryGraphCorpus(); },
     async collectMemoryGraphGarbage(options = {}) { return await safeClone(await LibraMemoryCore.collectMemoryGraphGarbage(options)); },
     async getAssociativeRecallDiagnostics() { return await safeClone(await LibraMemoryCore.getAssociativeRecallDiagnostics()); },
     // The read-set contract suite drives the SHIPPED builder, so its bridge handling is asserted against

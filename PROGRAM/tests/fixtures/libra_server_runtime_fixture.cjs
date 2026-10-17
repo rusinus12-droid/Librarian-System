@@ -24,7 +24,7 @@ async function serverFixture(options={}){
   const r=await send('POST','/v1/kv/batch',{namespace:'libra',operationId:'external_'+Date.now()+'_'+Math.random().toString(36).slice(2),mutations:[mutation]});if(r.status!==200)throw Error(JSON.stringify(r));return r;
  };
  const start=async()=>{
-  const x=await fixture({snapshot:options.snapshot,transformSource:options.transformSource,args:{memory_suite_server_mode:options.mode||'server_only',memory_suite_server_url:url,...options.args},host:{...options.host,pluginStorage:backend,safeLocalStorage:backend,getLocalPluginStorage:async()=>backend,nativeFetch:async(u,i)=>{
+  const x=await fixture({snapshot:options.snapshot,transformSource:options.transformSource,contextGlobals:options.contextGlobals,args:{memory_suite_server_mode:options.mode||'server_only',memory_suite_server_url:url,...options.args},host:{...options.host,pluginStorage:backend,safeLocalStorage:backend,getLocalPluginStorage:async()=>backend,nativeFetch:async(u,i)=>{
    requests.push({url:u,method:i?.method});if(!u.startsWith(url+'/')&&hooks.externalFetch)return await hooks.externalFetch(u,i);await hooks.beforeServerRequest?.(u,i);let body;
    if(u.endsWith('/v1/kv/batch')){body=JSON.parse(i.body);batches.push(body);await hooks.beforeBatch?.(body);}
    const r=await fetch(u,i);if(body)await hooks.afterBatch?.(body,r);return r;

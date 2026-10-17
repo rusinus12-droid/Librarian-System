@@ -345,12 +345,16 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
     if(!result.documents?.length)return null;
     const bySource=new Map();
     for(const unit of input.graph.units||[]){const source=input.graph.nodes.find(n=>n.id===unit.nodeId)?.sourceId;if(unit.family==='canonical'&&source)bySource.set(source,input.canonicalRows.find(r=>r.key===unit.recordKey));}
-    return {schema:'libra.graph_semantic_directory.v1',dimension:result.documents[0].vector.length,profileId:result.profile.profileId,
-      entries:await Promise.all(result.documents.map(async document=>{const vector=document.vector,norm=Math.hypot(...vector),coordinates=vector.slice(0,16).map(x=>x/norm),row=bySource.get(document.nodeId);
+    // Each writer reserves the full unknown-value read allowance. Parallel
+    // writes can exhaust pending durable quota before small reads settle.
+    // Keep all representations and their order, with one writer in flight.
+    const entries=[];
+    for(const document of result.documents){input.check?.();const vector=document.vector,norm=Math.hypot(...vector),coordinates=vector.slice(0,16).map(x=>x/norm),row=bySource.get(document.nodeId);
         const rep={...document,spaceId:result.profile.descriptor.spaceId,provider:result.profile.provider,model:result.profile.model,dimension:vector.length,metric:'cosine',profileDigest:digest(result.profile.descriptor)},raw=JSON.stringify(rep);
         let payloadBytes=0;for(let offset=0;offset<raw.length;offset+=24576)payloadBytes+=input.pages?input.pages.encodedSize(JSON.stringify([raw.slice(offset,offset+24576)])).utf8Bytes:JSON.stringify([raw.slice(offset,offset+24576)]).length*3;
-        return {nodeId:document.nodeId,bindingId:document.bindingId,vectorKey:row.record.embedding.vectorKey,vectorHash:row.record.embedding.vectorHash,payloadBytes,...(input.writeRepresentation?await input.writeRepresentation(rep,row):{}),
-          coordinates,tailNorm:Math.hypot(...vector.slice(coordinates.length))/norm};}))};
+        entries.push({nodeId:document.nodeId,bindingId:document.bindingId,vectorKey:row.record.embedding.vectorKey,vectorHash:row.record.embedding.vectorHash,payloadBytes,...(input.writeRepresentation?await input.writeRepresentation(rep,row):{}),
+          coordinates,tailNorm:Math.hypot(...vector.slice(coordinates.length))/norm});}
+    return {schema:'libra.graph_semantic_directory.v1',dimension:result.documents[0].vector.length,profileId:result.profile.profileId,entries};
   };
   return Object.freeze({ prepare, prepareLazy, buildDirectory, selectAdditionalRepresentations });
 };

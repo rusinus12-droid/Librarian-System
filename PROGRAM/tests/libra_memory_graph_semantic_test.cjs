@@ -7,12 +7,12 @@ const createLane = require('../tools/libra_memory_graph_lane.cjs'), createQuery 
 const clone = value => JSON.parse(JSON.stringify(value));
 const profile = { provider: 'fixture', model: 'model', profileId: 'profile', queryTask: 'search_query', documentTask: 'search_document',
   descriptor: { spaceId: 'space', dimension: 2, taskPair: 'search_query/search_document' } };
-function fixture() {
+function fixture(vectors = [['one',[1,0]],['two',[0,1]]]) {
   const graph = { schema: 'libra.memory_graph_projection.v1', scopeKey: 'scope',
     readerFrame: { owner: 'libra:plugin_only', scopeKey: 'scope', worldlineId: 'main', restoreEpoch: 0, view: { viewerId: 'owner_reader' } },
     coverage: {}, nodes: [], units: [], edges: [], bases: [] };
   const canonicalRows = [], records = new Map();
-  for (const [id, vector] of [['one',[1,0]],['two',[0,1]]]) {
+  for (const [id, vector] of vectors) {
     const source = 'source-' + id, node = 'fact-' + id, key = 'memory-' + id, vectorKey = 'vector-' + id;
     graph.nodes.push({ id: source, bindingId: 'source-binding-' + id, layer: 'source', identityCoverage: 'revision_bound' }, { id: node, bindingId: 'fact-binding-' + id, layer: 'meaning', sourceId: source, identityCoverage: 'revision_bound' });
     graph.units.push({ nodeId: node, recordKey: key, family: 'canonical', semanticRole: 'canonical_assertion', turn: 2, text: 'original fact ' + id });
@@ -34,6 +34,20 @@ function fixture() {
 const tests = [];
 async function test(name, fn) { await fn(); tests.push(name); }
 (async () => {
+  await test('six maintenance representations share default read admission without dropping a vector', async () => {
+    const f=fixture(Array.from({length:6},(_,i)=>['item'+i,[1,i%2]]));
+    const pages=createPages({fingerprint:digest});
+    const resources=require('../tools/libra_memory_graph_resources.cjs')({measure:pages.measure,encodedSize:pages.encodedSize,stageCost:pages.stageCost}).openMaintenance();
+    let active=0,peak=0;
+    try {
+      const directory=await f.semantic.buildDirectory({...f.options,writeRepresentation:async()=>{
+        await resources.read(async()=>{active++;peak=Math.max(peak,active);await new Promise(resolve=>setImmediate(resolve));active--;return '[]';},{kind:'durable'});
+        return {};
+      }});
+      assert.equal(directory.entries.length,6);assert.equal(peak,1);assert.equal(f.calls(),0);
+      assert.equal(resources.inspect().failure,null);assert.equal(resources.inspect().durableBytes,12);
+    } finally {resources.close();}
+  });
   await test('a compatible source representation retrieves a fact through its evidence edge in the single frontier', async () => {
     const f = fixture(), prepared = await f.semantic.prepare(f.options);
     assert.equal(prepared.diagnostics.status, 'available'); assert.equal(prepared.dependencies.length, 2);

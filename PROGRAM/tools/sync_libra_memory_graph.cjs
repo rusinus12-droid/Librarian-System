@@ -13,8 +13,9 @@ const rollout = require('./libra_memory_graph_rollout.cjs');
 const inventory = require('./libra_memory_graph_inventory.cjs');
 const representation = require('./libra_memory_graph_representation.cjs');
 const resources = require('./libra_memory_graph_resources.cjs');
+const localStore = require('./libra_memory_graph_local_store.cjs');
 const begin = '// BEGIN LIBRA MEMORY GRAPH', end = '// END LIBRA MEMORY GRAPH';
-const block = () => `    ${begin}\n    const createLibraMemoryGraphResources = (${resources.toString()});\n    const createLibraMemoryGraphIdentity = (${identity.toString()});\n    const createLibraMemoryGraphReaders = (${readers.toString()});\n    const createLibraMemoryGraphPages = (${pages.toString()});\n    const createLibraMemoryGraphStore = (${store.toString()});\n    const createLibraMemoryGraphIndex = (${index.toString()});\n    const createLibraMemoryGraphCorpus = (${corpus.toString()});\n    const createLibraMemoryGraphLane = (${lane.toString()});\n    const createLibraMemoryGraphQuery = (${query.toString()});\n    const createLibraMemoryGraphSemantic = (${semantic.toString()});\n    const createLibraMemoryGraphCompiler = (${compiler.toString()});\n    const createLibraMemoryGraphRollout = (${rollout.toString()});\n    const createLibraMemoryGraphInventory = (${inventory.toString()});\n    const createLibraMemoryGraphRepresentation = (${representation.toString()});\n    ${end}`;
+const block = () => `    ${begin}\n    const createLibraMemoryGraphLocalStore = (${localStore.toString()});\n    const createLibraMemoryGraphResources = (${resources.toString()});\n    const createLibraMemoryGraphIdentity = (${identity.toString()});\n    const createLibraMemoryGraphReaders = (${readers.toString()});\n    const createLibraMemoryGraphPages = (${pages.toString()});\n    const createLibraMemoryGraphStore = (${store.toString()});\n    const createLibraMemoryGraphIndex = (${index.toString()});\n    const createLibraMemoryGraphCorpus = (${corpus.toString()});\n    const createLibraMemoryGraphLane = (${lane.toString()});\n    const createLibraMemoryGraphQuery = (${query.toString()});\n    const createLibraMemoryGraphSemantic = (${semantic.toString()});\n    const createLibraMemoryGraphCompiler = (${compiler.toString()});\n    const createLibraMemoryGraphRollout = (${rollout.toString()});\n    const createLibraMemoryGraphInventory = (${inventory.toString()});\n    const createLibraMemoryGraphRepresentation = (${representation.toString()});\n    ${end}`;
 function sync({ target = path.join(__dirname, '../plugins/LIBRA.js'), check = false } = {}) {
   const before = fs.readFileSync(target, 'utf8');
   const starts = [...before.matchAll(/^[ \t]*\/\/ BEGIN LIBRA MEMORY GRAPH[ \t]*$/gm)];
@@ -36,6 +37,7 @@ function sync({ target = path.join(__dirname, '../plugins/LIBRA.js'), check = fa
     finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
   }
   return { checked: check, changed: after !== before,
+    localStoreSHA256: crypto.createHash('sha256').update(localStore.toString()).digest('hex'),
     identitySHA256: crypto.createHash('sha256').update(identity.toString()).digest('hex'),
     readersSHA256: crypto.createHash('sha256').update(readers.toString()).digest('hex'),
     pagesSHA256: crypto.createHash('sha256').update(pages.toString()).digest('hex'),

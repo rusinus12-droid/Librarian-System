@@ -56,7 +56,12 @@ async function run(mode) {
     const f = snapshot.f;
     await f.run();
     moreTurns(f, 1); await f.run(); await f.r.api.retryPendingUnifiedVectors?.();
-    await sleep(500);
+    // Startup migration writes its device marker after 1.5s. Settle that
+    // independent maintenance before attributing any write to the runtime index.
+    for (const deadline = Date.now() + 10000; !f.r.api.getLastEmbeddingVectorMigration()?.complete;) {
+      assert.ok(Date.now() < deadline, 'startup vector migration must settle');
+      await sleep(50);
+    }
     const localBytes = () => [...snapshot.local].reduce((sum, [, value]) => sum + String(value).length, 0);
     const serverRows = () => snapshot.storedRows().length;
 
