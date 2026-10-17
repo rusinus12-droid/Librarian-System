@@ -101,17 +101,22 @@ const summarize = value => { try { return JSON.stringify(value, (k, v) => Array.
     await step('before_request_injection', async () => {
       const hook = f.control.hooks.beforeRequest;
       if (typeof hook !== 'function') throw new Error('beforeRequest replacer not registered');
-      let hits = 0; const misses = [];
+      let hits = 0; const misses = [], skips = {};
       for (const q of questions.filter(x => x.family !== 'name_number').slice(0, 6)) {
-        const messages = [{ role: 'system', content: '너는 이야기의 진행자다.' },
-          ...chat.message.slice(-4).map(m => ({ role: m.role === 'char' ? 'assistant' : 'user', content: m.data })), { role: 'user', content: q.q }];
-        const out = await hook(messages.map(m => ({ ...m })), 'model');
-        const inputs = new Set(messages.map(m => m.content));
-        const injected = (out || []).map(m => String(m.content || '')).filter(t => !inputs.has(t)).join('\n');
-        if (q.expect.every(n => injected.includes(n))) hits += 1; else misses.push(q.id);
+        // RisuAI appends the user's message to the chat before calling beforeRequest.
+        f.chat.message.push({ role: 'user', chatId: 'q-' + q.id, data: q.q }); f.chat.messages = f.chat.message;
+        try {
+          const messages = [{ role: 'system', content: '너는 이야기의 진행자다.' },
+            ...f.chat.message.slice(-5).map(m => ({ role: m.role === 'char' ? 'assistant' : 'user', content: m.data }))];
+          const out = await hook(messages.map(m => ({ ...m })), 'model');
+          const inputs = new Set(messages.map(m => m.content));
+          const injected = (out || []).map(m => String(m.content || '')).filter(t => !inputs.has(t)).join('\n');
+          if (q.expect.every(n => injected.includes(n))) hits += 1;
+          else { misses.push(q.id); const meta = api().getRuntime?.()?.lastMemoryInjectionMeta || {}; skips[q.id] = meta.skipReason || (meta.injected ? 'injected_without_expected' : 'not_injected'); }
+        } finally { f.chat.message.pop(); f.chat.messages = f.chat.message; }
       }
-      if (!hits) throw new Error('nothing recalled into the request; misses ' + misses.join(','));
-      return { hits, misses };
+      if (!hits) throw new Error('nothing recalled into the request; ' + JSON.stringify(skips));
+      return { hits, misses, skips };
     });
     await step('regenerate_canonical_preview_adopt', async () => {
       const job = await api().regenerateCanonicalMemory({ startTurn: 1 });
@@ -126,7 +131,7 @@ const summarize = value => { try { return JSON.stringify(value, (k, v) => Array.
       let state = null;
       for (const deadline = Date.now() + 300000; Date.now() < deadline; await sleep(1000)) {
         state = await api().getEmbeddingRebuildState();
-        if (!['running', 'queued', 'pending'].includes(String(state?.status || ''))) break;
+        if (!['running', 'queued', 'pending', 'rebuilding'].includes(String(state?.status || ''))) break;
       }
       if (/fail/i.test(String(state?.status || ''))) throw new Error('rebuild ' + summarize(state));
       return { started: summarize(started), status: state?.status, done: state?.done ?? state?.completed, failed: state?.failed };
