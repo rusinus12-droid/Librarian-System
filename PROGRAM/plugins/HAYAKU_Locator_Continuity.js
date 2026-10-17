@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.0.142
-//@version 3.0.142
+//@display-name HAYAKU · Locator Continuity v3.0.143
+//@version 3.0.143
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.0.142';
+  const PLUGIN_VERSION = '3.0.143';
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
   const HAYAKU_SPARSE_RRF_COMPUTE_FINGERPRINT = '7f32e8b10fdd34e8356af70e40ad90d3c48e6fda132080046a807db0ea3ec58f';
   const HAYAKU_SPARSE_RRF_INPUT_SCHEMA = 'hayaku.sparse-rrf-fusion.input.v1';
@@ -35056,7 +35056,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const prose = configured === 'source'
       ? 'Write summaries and descriptions in the language of the completed text and established story facts.'
       : `Write summaries and descriptions in ${memoryNoteLocale(configured).promptLabel}.`;
-    return `${prose} Preserve original names, IDs, JSON keys and enum tokens. Keep critical_dialogue and grounding quotes verbatim in their source language, including punctuation. Only meta.summary_memory.recallAliases may add compact ko/en/ja/zh paraphrases of the same fact, without new details; always add en and the user's language if different.`;
+    return `${prose} Preserve original names, IDs, JSON keys and enum tokens. Keep critical_dialogue and grounding quotes verbatim in their source language, including punctuation. Only meta.summary_memory.recallAliases may add compact ko/en/ja/zh paraphrases of the same fact, without new details; always add en and the user's language if different. Under the summary language key also add 2-4 short same-language paraphrases in the everyday words a reader would later use to ask about the fact (synonyms, the general category of a named thing, the purpose or result of the action).`;
   };
   const packetActiveSceneIdForSettings = settings => {
     const sceneBaton = objectish(settings?.sceneBaton) ? settings.sceneBaton : {};
@@ -43843,7 +43843,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       '[HAYAKU CANONICAL PACKET AUTHORING CONTRACT]',
       profile.humanReadableInstruction,
       ...ensureArray(profile.schemaInstructions),
-      `Populate meta.summary_memory.recallAliases as an object using these language keys: ${aliases}. Always include en and the language of the latest user input whenever it differs from the summary language, so the memory stays findable across languages. Each alias must paraphrase the same established fact and add no detail.`,
+      `Populate meta.summary_memory.recallAliases as an object using these language keys: ${aliases}. Always include en and the language of the latest user input whenever it differs from the summary language, so the memory stays findable across languages. Under the summary language key also add 2-4 short same-language paraphrases in the everyday words a reader would later use to ask about the fact (synonyms, the general category of a named thing, the purpose or result of the action). Each alias must paraphrase the same established fact and add no detail.`,
       `Use meta.summary_memory.canonicalAnchors only with these prefixes: ${prefixes}.`,
       'Keep canonical names and refs in their exact established spelling. Do not romanize or translate names to match memoryLanguage; preserve the spelling quoted in TARGET TURN. Unknown identities stay unknown.',
       'Model metadata containers (think, thoughts, reasoning, analysis) are not story evidence. Never turn their author, model, or planning notes into a story character, secret, event or memory. A narrator explicitly established in the visible story remains valid.',

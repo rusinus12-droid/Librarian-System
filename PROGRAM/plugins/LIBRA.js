@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.153
-//@version 2.3.153
+//@display-name LIBRA v2.3.154
+//@version 2.3.154
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1557,7 +1557,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.3.153';
+  const PLUGIN_VERSION = '2.3.154';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -56306,6 +56306,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         'For an observed current set/clear change, optionally include stateIntent with domain (character, relationship, world or narrative), target, field, operation matching stateChangeType, and value for set only. Character/world target is {entityName}; relationship target is {subjectName,targetName,dimension}; narrative target is {scope:"current_narrative"}. Names must appear in the exact evidence quote. Omit stateIntent when the target, field or value is uncertain; a source quote alone does not approve State.',
         'Offsets are UTF-16 indices in the exact U or A text. Quote only an exact contiguous source span. Do not invent an outcome from a request, intention or report.',
         'Evidence and person span role is exactly user or assistant, never subject, narrator or description. evidenceCandidates provide exact optional UTF-16 spans; other exact source spans are also allowed. Actor and target must be strings: copy only a named participant that appears inside that claim\'s exactQuote, otherwise use empty string; never use assistant, user, narrator, null, or a translated name as a participant. STATIC DESCRIPTION IS NOT A STATE TRANSITION: a sentence saying a room contains something, a rule exists, or a speaker reports an existing condition has stateChangeType:none and no stateIntent. Keep its directly grounded world claim. set or clear is only for an explicit change action in this turn with temporalRole:current, certainty:confirmed, epistemicStatus:observed. If used, stateIntent.target is an object such as {\"entityName\":\"exact cited name\"}, never a string. Omit stateIntent for a mere description or unsupported State field/value Check both source roles: preserve a directly evidenced user question as an event with stateChangeType:none, alongside assistant world facts; the question itself does not prove the requested outcome.',
+        'Write each claim text in the language of the source turn, keeping names, numbers and quantities exactly as written there; recall searches this text with the user\'s own words.',
         'Describe this turn\'s changes and precise evidence only; do not recap five turns or merge identities. Return JSON only.'
       ].join('\n');
       const userPrompt = JSON.stringify({
@@ -71875,11 +71876,16 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     // Runtime-only common index. Without it every unified recall re-enumerates and
     // re-projects every owner window. The durable index is built only on request and
     // plugin_only cannot reclaim superseded pages, so this one never writes storage.
-    // It is rebuilt in the background after new memory and yields to recall requests.
-    const VOLATILE_CORPUS_DELAY_MS = 1500;
+    // It is rebuilt in the background after new memory. A build yields to recall
+    // requests at most twice, then completes, so back-to-back requests cannot starve it.
+    // Each build starts from the previous runtime index (`basis`), so the corpus module's
+    // incremental path re-enumerates only changed windows; superseded pages are dropped
+    // by starting fresh once the basis outgrows the last fresh build threefold.
+    const VOLATILE_CORPUS_DELAY_MS = 1500, VOLATILE_CORPUS_MAX_YIELDS = 2;
     const volatileMemoryGraphCorpus = () => volatileCorpusRuntime || (volatileCorpusRuntime = {
-      store: null, scopeKey: '', generation: '', builtAt: 0, timer: null, running: null, yieldRequested: false,
-      queriesInFlight: 0, builds: 0, failures: 0, lastError: '', lastBuildMs: 0 });
+      store: null, basis: null, basisScopeKey: '', freshChars: 0, scopeKey: '', generation: '', builtAt: 0, timer: null,
+      running: null, yieldRequested: false, yields: 0, queriesInFlight: 0, builds: 0, failures: 0, lastError: '', lastBuildMs: 0, lastBuildMode: '' });
+    const volatileStoreChars = store => { let chars = 0; for (const value of store.values()) chars += String(value).length; return chars; };
     const yieldVolatileMemoryGraphCorpusBuild = async () => {
       const volatileState = volatileMemoryGraphCorpus();
       clearTimeout(volatileState.timer); volatileState.timer = null;
@@ -71890,22 +71896,30 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const scheduleVolatileMemoryGraphCorpus = (delayMs = VOLATILE_CORPUS_DELAY_MS) => {
       if (state.disposed) return;
       const volatileState = volatileMemoryGraphCorpus();
-      clearTimeout(volatileState.timer);
+      // Keep an already pending build time: repeated cold requests must not push it back.
+      if (volatileState.timer) return;
       volatileState.timer = setTimeout(() => {
         volatileState.timer = null;
         if (state.disposed) return;
-        if (volatileState.running || volatileState.queriesInFlight > 0 || state.memoryGraphCorpus?.inspect().activeBuild) {
+        if (volatileState.running || state.memoryGraphCorpus?.inspect().activeBuild
+          || volatileState.queriesInFlight > 0 && volatileState.yields < VOLATILE_CORPUS_MAX_YIELDS) {
           scheduleVolatileMemoryGraphCorpus(delayMs); return;
         }
-        const store = new Map(), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
+        const basis = volatileState.basis && volatileState.basisScopeKey && volatileState.freshChars
+          && volatileStoreChars(volatileState.basis) <= volatileState.freshChars * 3 ? volatileState.basis : null;
+        const store = new Map(basis || []), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
         volatileState.yieldRequested = false;
         volatileState.running = buildMemoryGraphCorpusInto({}, store, () => {
-          if (volatileState.yieldRequested || volatileState.queriesInFlight > 0) throw new Error('LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED');
+          if (volatileState.yieldRequested || volatileState.queriesInFlight > 0 && volatileState.yields < VOLATILE_CORPUS_MAX_YIELDS) {
+            volatileState.yields += 1; throw new Error('LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED');
+          }
         }).then(result => {
           if (state.disposed || result?.status !== 'published') return;
           if ((volatileState.sourceWrites || 0) !== sourceWrites) { scheduleVolatileMemoryGraphCorpus(delayMs); return; }
-          Object.assign(volatileState, { store, scopeKey: result.scopeKey, generation: string(result.generation || ''), builtAt: Date.now(),
-            builds: volatileState.builds + 1, lastError: '', lastBuildMs: Date.now() - startedAt });
+          const chars = volatileStoreChars(store);
+          Object.assign(volatileState, { store, basis: store, basisScopeKey: result.scopeKey, freshChars: basis ? volatileState.freshChars : chars,
+            scopeKey: result.scopeKey, generation: string(result.generation || ''), builtAt: Date.now(), yields: 0,
+            builds: volatileState.builds + 1, lastError: '', lastBuildMs: Date.now() - startedAt, lastBuildMode: string(result.buildMode || '') });
         }).catch(error => {
           const message = compact(error?.message || error, 200);
           if (message === 'LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED') { if (!volatileState.yieldRequested) scheduleVolatileMemoryGraphCorpus(delayMs); return; }
@@ -71916,14 +71930,14 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const disposeVolatileMemoryGraphCorpus = () => {
       if (!volatileCorpusRuntime) return;
       clearTimeout(volatileCorpusRuntime.timer); volatileCorpusRuntime.timer = null;
-      volatileCorpusRuntime.yieldRequested = true; volatileCorpusRuntime.store = null;
+      volatileCorpusRuntime.yieldRequested = true; volatileCorpusRuntime.store = null; volatileCorpusRuntime.basis = null;
     };
     const inspectVolatileMemoryGraphCorpus = () => {
       const volatileState = volatileMemoryGraphCorpus();
       return { schema: 'libra.volatile_graph_corpus.v1', available: Boolean(volatileState.store), scopeKey: volatileState.scopeKey,
         generation: volatileState.generation, builtAt: volatileState.builtAt, building: Boolean(volatileState.running),
         scheduled: Boolean(volatileState.timer), entries: volatileState.store?.size || 0, builds: volatileState.builds,
-        failures: volatileState.failures, lastError: volatileState.lastError, lastBuildMs: volatileState.lastBuildMs };
+        failures: volatileState.failures, lastError: volatileState.lastError, lastBuildMs: volatileState.lastBuildMs, lastBuildMode: volatileState.lastBuildMode };
     };
     const verifyMemoryGraphCorpus = async (options = {}) => {
       if (!options || typeof options !== 'object' || Array.isArray(options)
@@ -86990,18 +87004,25 @@ advanced
     },
     async previewUnifiedMemoryRecall(queryOrOptions='') {
       const ctx = await LibraMemoryCore.resolveContext();
+      // A preview delivers nothing to a model: release the query's resource session
+      // once the result is copied, or every preview keeps its graph inputs retained.
+      const preview = async query => {
+        const result = await LibraMemoryCore.recall(ctx, query);
+        try { return safeClone(result); }
+        finally { if (result?.unifiedExecution) LibraMemoryCore.releaseMemoryGraphUnifiedQuery(result.unifiedExecution); }
+      };
       if (queryOrOptions && typeof queryOrOptions === 'object' && !Array.isArray(queryOrOptions)) {
         const qText = String(queryOrOptions.queryText ?? queryOrOptions.currentText ?? '');
-        return safeClone(await LibraMemoryCore.recall(ctx, {
+        return await preview({
           currentText: qText,
           sceneText: '',
           sparseText: qText,
           currentWeight: 1,
           sceneWeight: 0,
           ...queryOrOptions
-        }));
+        });
       }
-      return safeClone(await LibraMemoryCore.recall(ctx, String(queryOrOptions)));
+      return await preview(String(queryOrOptions));
     },
     async scanMemoryNow(options = {}) {
       return await LibraMemoryCore.startManualCanonicalScan(options);

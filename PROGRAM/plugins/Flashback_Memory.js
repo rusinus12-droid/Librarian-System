@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.110
+//@display-name ⚡ FLASHBACK Memory v1.0.111
 //@api 3.0
-//@version 1.0.110
+//@version 1.0.111
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.110';
+const PLUGIN_VERSION = '1.0.111';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -31429,16 +31429,17 @@ const MemorySuiteHealthRecovery = (() => {
       const latestDigest = episodeSourceDigestForRecords(latestBase, cfg);
       const finalEpisodes = latestDigest === digest ? episodes : buildEpisodeIndexRecords(latestBase, cfg, scope);
       const allEpisodes = [...latestInheritedEpisodes, ...finalEpisodes];
-      if (options.yieldToRecall === true) await yieldToActiveFlashbackRecall(scope.scopeKey);
-      const savedInner = await saveScopeRecords(scope, [...latestBase, ...allEpisodes], cfg, scope);
-      const manifestInner = await saveScopeManifest({
-        ...savedInner.manifest,
-        episodeSourceDigest: latestDigest,
-        episodeIndexedAt: indexedAt,
-        episodeCount: allEpisodes.length,
-        episodeChildCount: allEpisodes.reduce((sum, record) => sum + Number(record.childCount || 0), 0)
-      }, scope);
-      return { latestDigest, finalEpisodes: allEpisodes, manifest: manifestInner };
+      return await backgroundFlashbackWrite(scope.scopeKey, async () => {
+        const savedInner = await saveScopeRecords(scope, [...latestBase, ...allEpisodes], cfg, scope);
+        const manifestInner = await saveScopeManifest({
+          ...savedInner.manifest,
+          episodeSourceDigest: latestDigest,
+          episodeIndexedAt: indexedAt,
+          episodeCount: allEpisodes.length,
+          episodeChildCount: allEpisodes.reduce((sum, record) => sum + Number(record.childCount || 0), 0)
+        }, scope);
+        return { latestDigest, finalEpisodes: allEpisodes, manifest: manifestInner };
+      });
     });
     const { latestDigest, finalEpisodes, manifest } = result;
     if (result.missingScope) {
@@ -31454,7 +31455,7 @@ const MemorySuiteHealthRecovery = (() => {
     if (Runtime.episodeIndexInFlight.has(scope.scopeKey)) return false;
     Runtime.episodeIndexInFlight.add(scope.scopeKey);
     scheduleTimer(() => {
-      maybeRebuildEpisodeIndex(scope, settings, null, { ...options, yieldToRecall: true })
+      maybeRebuildEpisodeIndex(scope, settings, null, options)
         .catch(error => warn('episode index rebuild failed', error))
         .finally(() => Runtime.episodeIndexInFlight.delete(scope.scopeKey));
     }, 0);
@@ -38721,7 +38722,8 @@ const MemorySuiteHealthRecovery = (() => {
       const registry = updateEmbeddingAttemptRegistry(current.manifest, proof.attemptId, { ...entry, state: 'submitted', submittedAt: Date.now() });
       proof.submissionAttempted = true;
       if(physicalContext(proof))physicalContext(proof).phase='submission';
-      await saveScopeManifest({ ...current.manifest, embeddingAttemptRegistry: registry }, proof.scope, { physicalRecovery:physicalContext(proof), assertCurrent:()=>assertEmbeddingAttemptCurrent({...proof,submissionAttempted:false}) });
+      const saveSubmission = () => saveScopeManifest({ ...current.manifest, embeddingAttemptRegistry: registry }, proof.scope, { physicalRecovery:physicalContext(proof), assertCurrent:()=>assertEmbeddingAttemptCurrent({...proof,submissionAttempted:false}) });
+      await (physicalContext(proof) ? saveSubmission() : backgroundFlashbackWrite(proof.scope.scopeKey, saveSubmission));
       const persisted = await loadScopeManifest(proof.scope,physicalReaders(proof));
       if (safeStringify(persisted.embeddingAttemptRegistry) !== safeStringify(registry)) throw embeddingWorkError('FLASHBACK_EMBEDDING_REGISTRY_SUBMISSION_UNVERIFIED');
       await assertEmbeddingAttemptCurrent(proof);
@@ -38905,11 +38907,29 @@ const MemorySuiteHealthRecovery = (() => {
   // records, which revokes a recall being prepared or checked for the same scope (a
   // reroll right after a response, or slow server_only I/O). Inside its write lock it
   // waits for that recall, bounded. Recall and request delivery never take this lock.
-  const FLASHBACK_RECALL_YIELD_MAX_MS = 8000;
+  // The other direction: a recall starting while such a write is in flight waits for it
+  // (bounded) instead of reading a scope that is about to change.
+  const FLASHBACK_RECALL_YIELD_MAX_MS = 8000, FLASHBACK_BACKGROUND_WRITE_WAIT_MAX_MS = 3000;
+  const flashbackBackgroundWrites = new Map();
   const yieldToActiveFlashbackRecall = async scopeKey => {
     for (const until = Date.now() + FLASHBACK_RECALL_YIELD_MAX_MS; Date.now() < until;) {
       const active = flashbackRecallRequests.active;
       if (!active || active.cancelled || active.scopeKey !== text(scopeKey) || Runtime.unloaded) return;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+  };
+  const backgroundFlashbackWrite = async (scopeKey, write) => {
+    await yieldToActiveFlashbackRecall(scopeKey);
+    const key = text(scopeKey);
+    flashbackBackgroundWrites.set(key, (flashbackBackgroundWrites.get(key) || 0) + 1);
+    try { return await write(); }
+    finally {
+      const left = (flashbackBackgroundWrites.get(key) || 1) - 1;
+      if (left > 0) flashbackBackgroundWrites.set(key, left); else flashbackBackgroundWrites.delete(key);
+    }
+  };
+  const waitForBackgroundFlashbackWrites = async (scopeKey, maxMs = FLASHBACK_BACKGROUND_WRITE_WAIT_MAX_MS) => {
+    for (const until = Date.now() + maxMs; flashbackBackgroundWrites.has(text(scopeKey)) && Date.now() < until && !Runtime.unloaded;) {
       await new Promise(resolve => setTimeout(resolve, 25));
     }
   };
@@ -38966,8 +38986,8 @@ const MemorySuiteHealthRecovery = (() => {
           return completed;
         });
         if(physicalContext(options)){physicalContext(options).phase='completion';physicalContext(options).completing=proof.targets;}
-        else await yieldToActiveFlashbackRecall(proof.scope.scopeKey);
-        await saveScopeRecords(proof.scope, next, cfg, proof.scope, { metadataOnly: true, physicalRecovery:physicalContext(options), embeddingAttemptRegistry: updateEmbeddingAttemptRegistry(current.manifest, proof.attemptId), assertCurrent: () => assertEmbeddingAttemptCurrent(proof) });
+        const saveCompletion = () => saveScopeRecords(proof.scope, next, cfg, proof.scope, { metadataOnly: true, physicalRecovery:physicalContext(options), embeddingAttemptRegistry: updateEmbeddingAttemptRegistry(current.manifest, proof.attemptId), assertCurrent: () => assertEmbeddingAttemptCurrent(proof) });
+        await (physicalContext(options) ? saveCompletion() : backgroundFlashbackWrite(proof.scope.scopeKey, saveCompletion));
       });
       const current = await assertEmbeddingWorkBoundary(proof);
       const completed = await loadScopeRecordsRaw(proof.scope.scopeKey,physicalReaders(proof));
@@ -39088,8 +39108,7 @@ const MemorySuiteHealthRecovery = (() => {
       const next = loaded.records.map(record => patches.get(embeddingOwnedRecordId(record)) || record);
       try {
         options.operationLedger?.check();
-        await yieldToActiveFlashbackRecall(boundary.scope.scopeKey);
-        await saveScopeRecords(boundary.scope, next, boundary.settings, boundary.scope, { metadataOnly: true,
+        await backgroundFlashbackWrite(boundary.scope.scopeKey, () => saveScopeRecords(boundary.scope, next, boundary.settings, boundary.scope, { metadataOnly: true,
           embeddingAttemptRegistry: registry, assertCurrent: async () => {
             options.operationLedger?.check(); await options.maintenanceSourceValidate?.(); await assertEmbeddingWorkBoundary(boundary);
             const current = await loadScopeRecordsRaw(boundary.scope.scopeKey,physicalReaders(boundary));
@@ -39098,7 +39117,7 @@ const MemorySuiteHealthRecovery = (() => {
               || MemorySuiteExecutionContract.hash(current.manifest.embeddingAttemptRegistry) !== MemorySuiteExecutionContract.hash(loaded.manifest.embeddingAttemptRegistry)) {
               throw embeddingWorkError('FLASHBACK_EMBEDDING_MIGRATION_SOURCE_CHANGED');
             }
-          } });
+          } }));
         return { prepared: patches.size, deferred, remainingSources, inlineBytes: bytes, reason: 'migration_prepared' };
       } catch (error) {
         return { ...empty, deferred: deferred + selectedSources, remainingSources: remainingSources + selectedSources,
@@ -40173,6 +40192,7 @@ const MemorySuiteHealthRecovery = (() => {
         retrievalQuery,
         messageCount: Array.isArray(messages) ? messages.length : 0
       });
+      await waitForBackgroundFlashbackWrites(scope.scopeKey, Math.min(FLASHBACK_BACKGROUND_WRITE_WAIT_MAX_MS, Math.max(0, hookTimeoutMs / 4)));
       recallToken = beginFlashbackRecallRequest(scope.scopeKey,recallRequestId);
       recallToken.settingsHash = stableHash(JSON.stringify(Runtime.settings || {}));
       const recallCallStartedAt = Date.now();

@@ -82,6 +82,7 @@ const embedRequest = async (url, init = {}) => {
       process.stderr.write(`[server] ${init.method || 'GET'} ${String(url).slice(serverBase.length)} ${keys}\n`);
       if (process.env.RAG_EVAL_TRACE_SERVER === 'stack') process.stderr.write(String(new Error().stack).split('\n').slice(2, 40).map(line => '    ' + line.trim().replace(/\(.*Flashback_Memory\.js:/, '(FB:')).join('\n') + '\n');
     }
+    if (String(init.method || 'GET') !== 'GET') lastWriteAt = Date.now();
     try { if (serverRttMs) await sleep(serverRttMs); return await fetch(url, init); }
     finally { network.serverCalls += 1; network.serverMs += performance.now() - started; }
   }
@@ -99,7 +100,7 @@ const embedRequest = async (url, init = {}) => {
     network.embeddingInputs += inputs.length;
     if (delayMs) await sleep(delayMs);
     return new Response(JSON.stringify({ data: inputs.map((text, index) => ({ index, embedding: synthetic.embed(text) })) }), { status: 200 });
-  } finally { network.embeddingCalls += 1; network.embeddingMs += performance.now() - started; }
+  } finally { network.embeddingCalls += 1; network.embeddingMs += performance.now() - started; lastWriteAt = Math.max(lastWriteAt, Date.now()); }
 };
 
 const Risuai = {
@@ -179,7 +180,9 @@ async function main() {
   for (const [user, assistant] of fixture.turns) await runTurn(user, assistant);
   // Flashback finalizes a turn after ~4 s of stability and then embeds episode
   // records in the background. Start questions only once storage is quiet.
-  for (const deadline = Date.now() + 60000; Date.now() < deadline && Date.now() - lastWriteAt < 3000;) await sleep(250);
+  // Local writes, server writes and embedding calls all count as activity (server_only
+  // and real providers settle much later than the in-memory synthetic path).
+  for (const deadline = Date.now() + 180000; Date.now() < deadline && Date.now() - lastWriteAt < 3000;) await sleep(250);
   const captureEmbeddingCalls = network.embeddingCalls;
   questionPhase = true;
   const results = [];
