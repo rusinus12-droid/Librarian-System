@@ -86,6 +86,8 @@ let outputListener = null;
       for (const [key, value] of JSON.parse(fs.readFileSync(statePath, 'utf8'))) snapshot.local.set(key, value);
       f = await snapshot.restart();
       f.control.onCall = callModel;
+      // A state captured before Micro vectors existed gets them stored here.
+      await f.r.api.retryPendingUnifiedVectors?.();
     } else {
       if (live) {
         const full = f.chat.message.slice();
@@ -127,7 +129,12 @@ let outputListener = null;
       const status = f.r.api.inspectVolatileMemoryGraphCorpus?.();
       if (!status || status.available && !status.building && !status.scheduled) break;
     }
+    // Micro vectors are stored in the background after publication / index builds.
+    for (const deadline = Date.now() + 120000; Date.now() < deadline; await sleep(500)) {
+      if (!f.r.api.inspectMicroRepresentationVectors?.().warming) break;
+    }
     const runtimeIndex = f.r.api.inspectVolatileMemoryGraphCorpus?.() || null;
+    const microVectors = f.r.api.inspectMicroRepresentationVectors?.() || null;
     const manifest = snapshot.getManifest?.() || f.getManifest();
     for (const question of fixture.questions) {
       const started = performance.now();
@@ -147,7 +154,7 @@ let outputListener = null;
       llm: process.env.RAG_EVAL_LLM_MODEL, embedder: embedUrl ? process.env.RAG_EVAL_EMBED_MODEL : 'none (lexical)',
       canonicals: Object.keys(manifest?.memories || {}).length, captureMs: Math.round(captureMs),
       resourcePoolAfterCapture: pool && { sessions: pool.sessions, retainedBytes: pool.retainedBytes },
-      coldRecallMs: Math.round(coldRecallMs), runtimeIndex,
+      coldRecallMs: Math.round(coldRecallMs), runtimeIndex, microVectors,
       hitRate: +(results.filter(row => row.hit).length / results.length).toFixed(3), families,
       latencyMs: { p50: latency[Math.floor(latency.length / 2)], max: latency.at(-1) },
       calls: { ...stats, llmMs: Math.round(stats.llmMs), embedMs: Math.round(stats.embedMs) },

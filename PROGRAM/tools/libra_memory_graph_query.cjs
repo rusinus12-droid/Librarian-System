@@ -725,8 +725,12 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       if (!unit) {
         const sem = semanticByNodeId.get(node.id);
         if (node.layer === 'source' && sem?.status === 'available_vector_space' && sem.score > 0) {
-          const evaluated = scoreCandidate({ family: 'canonical', semanticRole: 'source_access' },
-            { semanticScore: sem.score, semanticFeatureStatus: sem.status }, queryFrame);
+          // A source reached only by its vector has no lexical/entity/predicate signal to
+          // share the weighted sum with; scoring it as 0.32 of a full match capped every
+          // paraphrase hit below any name match. Its similarity is its whole signal.
+          const evaluated = { ...scoreCandidate({ family: 'canonical', semanticRole: 'source_access' },
+            { semanticScore: sem.score, semanticFeatureStatus: sem.status }, queryFrame) };
+          evaluated.directScore = clamp01(clamp01(sem.score) * evaluated.roleWeight);
           directFeaturesByNode.set(node.id, evaluated);
           offer(node.id, evaluated.directScore, { seedNodeId: node.id, directScore: evaluated.directScore,
             edgeChain: [], visitedNodes: [node.id], basisIds: [], sourceDependencies: [node.id] });

@@ -95,7 +95,8 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
       documents.push({ nodeId: extra.nodeId, bindingId: node?.bindingId || extra.nodeId, vector: vectorRecord.vector.slice(),
         representationId: digest([extra.vectorKey, vectorRecord.profileId || profile.profileId, extra.textHash || '', vectorRecord.vectorHash || '']),
         projectionVersion: 'projection_v1', textHash: extra.textHash || '', temporalEndTurn: extra.temporalEndTurn ?? null });
-      if (extra.vectorKey) dependencies.push({ key: extra.vectorKey, digest: digest(vectorRecord) });
+      // An inline (runtime-produced) vector has no stored body to re-verify at delivery.
+      if (extra.vectorKey && !extra.vectorRecord) dependencies.push({ key: extra.vectorKey, digest: digest(vectorRecord) });
       dimension = d; expectedProfile = profile; bytes += additional;
       admittedFamilies.add(fam);
     }
@@ -138,6 +139,11 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
     const bySource=new Map();
     for(const unit of graph.units||[]){if(unit.family!=='canonical')continue;const source=(graph.nodes||[]).find(n=>n.id===unit.nodeId)?.sourceId;if(source)bySource.set(unit.recordKey,source);}
     const rows=new Map(),routingByNode=new Map((input.routingDirectory?.entries||[]).map(entry=>[entry.nodeId,entry]));
+    // Pre-selected non-canonical representations (inline vectors) are read first by the lane.
+    const extras=new Map();
+    if(config?.enabled&&String(queryText).trim())for(const extra of input.additionalRepresentations||[]){
+      if(extra?.nodeId&&extra.vectorRecord&&(graph.nodes||[]).some(node=>node.id===extra.nodeId&&node.layer==='source'))extras.set(extra.nodeId,extra);
+    }
     if(config?.enabled&&String(queryText).trim())for(const row of canonicalRows){
       if(!bySource.has(row.key)||row.record?.embedding?.status!=='ready'||!row.record.embedding.vectorKey){diagnostics.rejected.push({recordKey:row.key,reason:'representation_missing'});continue;}
       if(asOfTurn!==null&&(!Number.isSafeInteger(row.record.turnRange?.end)||row.record.turnRange.end>asOfTurn)){diagnostics.rejected.push({recordKey:row.key,reason:'representation_outside_temporal_view'});continue;}
@@ -175,7 +181,9 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
       }
     }
     const readPage=async(spec,budget)=>{
-      check();const row=rows.get(spec.anchorNodeId);if(!row)throw new Error('LIBRA_GRAPH_SEMANTIC_REFERENCE_INVALID');
+      check();const extra=extras.get(spec.anchorNodeId);
+      const row=extra?{key:extra.recordKey,record:{embedding:{dimensions:extra.vectorRecord.dimensions}}}:rows.get(spec.anchorNodeId);
+      if(!row)throw new Error('LIBRA_GRAPH_SEMANTIC_REFERENCE_INVALID');
       if(budget.pagesRead>=budget.maxPages)return {storageStopped:true,stopReason:'storage_page_count_budget',rows:[]};
       const required=routingByNode.get(spec.anchorNodeId)?.payloadBytes;
       if(Number.isSafeInteger(required)&&budget.bytesRead+required+512>budget.maxBytes)return {storageStopped:true,stopReason:'storage_byte_budget',rows:[]};
@@ -185,7 +193,7 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
       const dimension=Number(routingByNode.get(spec.anchorNodeId)?routing?.dimension:row.record.embedding.dimensions||0);
       const minimum=used?1024+(diagnostics.dimension||0)*8:Number.isSafeInteger(dimension)&&dimension>0?3072+dimension*24:0;
       if(remaining<minimum){diagnostics.rejected.push({recordKey:row.key,reason:'representation_byte_budget'});return {storageStopped:true,stopReason:'storage_representation_byte_budget',rows:[]};}
-      const entry=routingByNode.get(spec.anchorNodeId);
+      const entry=extra?null:routingByNode.get(spec.anchorNodeId);
       let savedRepresentation=null;
       if(Array.isArray(entry?.vectorPages)&&entry.vectorPages.length){
         const total=entry.vectorPages.reduce((n,ref)=>n+ref.bytes,0);
@@ -210,7 +218,7 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
         provider:savedRepresentation.provider,model:savedRepresentation.model,profileId:routing.profileId,dimensions:savedRepresentation.dimension,
         embeddingDescriptor:profileFor({...config,dimensions:savedRepresentation.dimension}).descriptor,projectionVersion:savedRepresentation.projectionVersion,
         textHash:savedRepresentation.textHash,vectorHash:row.record.embedding.vectorHash,entries:{global:{vector:savedRepresentation.vector,textHash:savedRepresentation.textHash}}}):async key=>{diagnostics.ownerVectorRecordLoads++;return await input.readVector(key);};
-      const result=await prepare({...input,readVector,canonicalRows:[row],maxBytes:Math.max(4096,remaining+(used?2048+(diagnostics.dimension||0)*16:0)),embedQuery});check();
+      const result=await prepare({...input,readVector,canonicalRows:extra?[]:[row],additionalRepresentations:extra?[extra]:[],maxBytes:Math.max(4096,remaining+(used?2048+(diagnostics.dimension||0)*16:0)),embedQuery});check();
       if(savedRepresentation)for(const dependency of result.dependencies)Object.assign(dependency,{ownerBodyDigest:entry.ownerBodyDigest,ownerRevision:entry.ownerRevision});
 
       diagnostics.rejected.push(...result.diagnostics.rejected);
@@ -263,7 +271,7 @@ module.exports = function createMemoryGraphSemantic({ digest, profileFor, projec
           offset:0,nextOffset:1,totalRows:1,items:decoded,serializedUtf8Bytes:vectorBytes+size.utf8Bytes,cacheHit:vectorCacheHits>0,stopReason:'frontier_exhausted'};
       }finally{if(lease)pages.release(lease);if(stage)pages.releaseStage(stage);pages.close(handle);}
     };
-    return {queryInput:{semanticReferences:references.filter(id=>rows.has(id)),semanticBinding:input.fingerprint(JSON.stringify(config||null)),semanticSpace:null,queryEmbedding:null,documentRepresentations:{},queryVectors:{}},readPage,dependencies,diagnostics};
+    return {queryInput:{semanticReferences:[...extras.keys(),...references.filter(id=>rows.has(id))],semanticBinding:input.fingerprint(JSON.stringify(config||null)),semanticSpace:null,queryEmbedding:null,documentRepresentations:{},queryVectors:{}},readPage,dependencies,diagnostics};
   };
   const buildDirectory=async input=>{
     const result=await prepare({...input,queryText:'maintenance semantic directory',collectOnly:true,maxBytes:16777216});

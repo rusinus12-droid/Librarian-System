@@ -24,13 +24,17 @@ function provider() {
   for (const mode of ['plugin_only','server_only']) await test(`${mode}: stored projection seeds the common graph, warm query cache and actual Classic injection`, async () => {
     const p = provider(), host = await fixture({ mode, embeddingConfig: config, embeddingFetch: p.fetch });
     try {
-      const api = host.f.r.api, calls = host.f.control.calls.length, before = p.requests.length;
+      const api = host.f.r.api;
+      // Micro vectors are produced after publication, outside retrieval; let that settle.
+      await wait(() => !api.inspectMicroRepresentationVectors().warming);
+      const calls = host.f.control.calls.length, before = p.requests.length;
       const disabled = await api.executeMemoryGraphUnifiedQuery({ queryInput: { queryText: query }, semanticPolicy: { mode: 'disabled' }, consumerPolicy: { maxUnits: 64 } });
       assert.equal(disabled.bundle.items.some(item => item.family === 'canonical'), false, 'negative control has no lexical/entity path');
       assert.equal(p.requests.length, before);
       const first = await api.executeMemoryGraphUnifiedQuery({ queryInput: { queryText: query }, consumerPolicy: { maxUnits: 64 } });
       assert.equal(first.diagnostics.nativeSemantic.status, 'available', JSON.stringify(first.diagnostics.nativeSemantic));
-      assert.equal(first.diagnostics.nativeSemantic.admittedRepresentations, 1);
+      // Micro vectors warmed after publication join as inline representations; retrieval embeds no documents.
+      assert.equal(first.diagnostics.nativeSemantic.admittedRepresentations, 1 + (first.diagnostics.nativeSemantic.microRepresentations || []).length);
       assert.equal(first.diagnostics.nativeSemantic.queryRequestCount, 1);
       assert.equal(first.additionalEmbeddingCalls, 1); assert.equal(first.modelDispatchEligible, true);
       assert.equal(p.requests.length, before + 1); assert.deepEqual(p.requests.at(-1), [query]);
@@ -38,7 +42,7 @@ function provider() {
       const canonical = first.bundle.items.filter(item => item.family === 'canonical'); assert.ok(canonical.length);
       for (const item of canonical) assert.ok(sourceIds.has(item.winningWitness.seedNodeId), 'the vector remains a source access signal');
       for (const family of ['canonical','micro','state','lore']) assert.ok(first.bundle.items.some(item => item.family === family), 'same graph reaches ' + family);
-      assert.equal(first.diagnostics.semanticDiagnostics.compatibleCount, 1);
+      assert.equal(first.diagnostics.semanticDiagnostics.compatibleCount, 1 + (first.diagnostics.nativeSemantic.microRepresentations || []).length);
       assert.equal(first.legacyRankerExecuted, false); assert.equal(first.diagnostics.nativeSemantic.documentEmbeddingCalls, 0);
       const warm = await api.executeMemoryGraphUnifiedQuery({ queryInput: { queryText: query }, consumerPolicy: { maxUnits: 64 } });
       assert.equal(warm.additionalEmbeddingCalls, 0); assert.equal(warm.diagnostics.nativeSemantic.queryCacheHits, 1);

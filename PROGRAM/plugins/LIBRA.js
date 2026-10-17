@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.155
-//@version 2.3.155
+//@display-name LIBRA v2.3.156
+//@version 2.3.156
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1557,7 +1557,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.3.155';
+  const PLUGIN_VERSION = '2.3.156';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -13575,7 +13575,7 @@ const memorySuiteLibraResolveKeyScope = async ({ key, currentScope, registry }) 
         .sort((a, b) => b.length - a.length);
       if (ids.some(id => tail === id || tail.startsWith(`${id}:`))) return { kind: 'scope', ...candidate };
     }
-    const match = tail.match(/^(.+?):(?:source-evidence:|source-edit-consent:|source-receipt:|source-receipt-head:|source-receipt-capture:|receipt-recovery:|person-span-inventory:|person-span-inventory-head:|micro-work:|micro-memory:|micro-memory-head:|micro-state-admission:|manifest$|story-arc$|continuity-state$|memory:|vector:|work:|run:|predecessor:|predecessor-vector:|recall-catalog:|pending-live-boundaries:|canonical-variants:|canonical-job:|canonical-job-head:|canonical-adoption-transaction:|continuity-delta:|continuity-overrides:|candidate-work:|portable-restore-snapshot:|portable-restore-journal:|portable-import-journal:)/);
+    const match = tail.match(/^(.+?):(?:source-evidence:|source-edit-consent:|source-receipt:|source-receipt-head:|source-receipt-capture:|receipt-recovery:|person-span-inventory:|person-span-inventory-head:|micro-work:|micro-memory:|micro-memory-head:|micro-vector:|micro-state-admission:|manifest$|story-arc$|continuity-state$|memory:|vector:|work:|run:|predecessor:|predecessor-vector:|recall-catalog:|pending-live-boundaries:|canonical-variants:|canonical-job:|canonical-job-head:|canonical-adoption-transaction:|continuity-delta:|continuity-overrides:|candidate-work:|portable-restore-snapshot:|portable-restore-journal:|portable-import-journal:)/);
     const scopeId = String(match?.[1] || '').trim();
     if (scopeId) return { kind: 'scope', scopeId, scopeKey: scopeId, aliases: [scopeId], label: scopeId };
     return { kind: 'scope', scopeAlias: tail };
@@ -13983,7 +13983,7 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
     const id = JSON.stringify([scope.characterId,scope.chatId]), prior = identities.get(id);
     if (prior && prior !== scope.scopeId) issue('identity_conflict',null,prior + ':' + scope.scopeId); identities.set(id,scope.scopeId);
   }
-  const families = /^(?:manifest$|story-arc$|continuity-state$|(?:source-evidence|source-edit-consent|source-receipt|source-receipt-head|source-receipt-capture|receipt-recovery|person-span-inventory|person-span-inventory-head|micro-work|micro-memory|micro-memory-head|micro-state-admission|inherited-micro-state-admission|micro-handoff-archive|memory|vector|work|run|predecessor|predecessor-vector|recall-catalog|evidence-link-index|lore-link-index|lore-link-mapping|pending-live-boundaries|canonical-variants|canonical-job|canonical-job-head|canonical-adoption-transaction|continuity-delta|continuity-overrides|candidate-work|portable-restore-snapshot|portable-restore-journal|portable-import-journal|entity-registry|entity-admission|manual-state-disposition|state-observation|state-pipeline-receipt|state-corrections|state-correction-meta|state-correction-commit|state-worldline-meta|state-replay-cache|state-replay-errors|state-tracking-journal|unified-migration|planner-narrative-direction|story-arc-migration|embedding-metadata-migration):)/;
+  const families = /^(?:manifest$|story-arc$|continuity-state$|(?:source-evidence|source-edit-consent|source-receipt|source-receipt-head|source-receipt-capture|receipt-recovery|person-span-inventory|person-span-inventory-head|micro-work|micro-memory|micro-memory-head|micro-vector|micro-state-admission|inherited-micro-state-admission|micro-handoff-archive|memory|vector|work|run|predecessor|predecessor-vector|recall-catalog|evidence-link-index|lore-link-index|lore-link-mapping|pending-live-boundaries|canonical-variants|canonical-job|canonical-job-head|canonical-adoption-transaction|continuity-delta|continuity-overrides|candidate-work|portable-restore-snapshot|portable-restore-journal|portable-import-journal|entity-registry|entity-admission|manual-state-disposition|state-observation|state-pipeline-receipt|state-corrections|state-correction-meta|state-correction-commit|state-worldline-meta|state-replay-cache|state-replay-errors|state-tracking-journal|unified-migration|planner-narrative-direction|story-arc-migration|embedding-metadata-migration):)/;
   for (const row of records) {
     if (['control','artifact'].includes(row.classification)) continue;
     const key = row.logicalKey, value = values.get(row);
@@ -35306,6 +35306,8 @@ function createLibraReadonlySourceContext(owner) {
     const noteMemoryGraphSourceWrite = storageKey => {
       const volatileState = volatileCorpusRuntime;
       if (!volatileState || !String(storageKey || '').startsWith(PREFIX + ':scope:')) return;
+      // Derived Micro vectors are not graph source records.
+      if (/^[^]*?:micro-vector:[^:]+:[^:]+$/.test(String(storageKey))) return;
       volatileState.sourceWrites = (volatileState.sourceWrites || 0) + 1;
       if (volatileState.store) Object.assign(volatileState, { store: null, scopeKey: '', generation: '' });
       if (state.memoryGraphCorpus) scheduleVolatileMemoryGraphCorpus();
@@ -35429,6 +35431,7 @@ function createLibraReadonlySourceContext(owner) {
       inheritedMicroStateAdmission: (scope, archiveDigest, recordKey, claimIndex, basisDigest) => `${PREFIX}:scope:${scope.scopeKey}:inherited-micro-state-admission:${digest([archiveDigest, recordKey, claimIndex])}:${basisDigest}`,
       microHandoffArchive: transferId => `${PREFIX}:micro-handoff-archive:${transferId}`,
       microPortableArchive: (scope, identity) => `${PREFIX}:scope:${scope.scopeKey}:micro-handoff-archive:${identity}`,
+      microVector: (scope, spaceDigest, textHash) => `${PREFIX}:scope:${scope.scopeKey}:micro-vector:${String(spaceDigest).replace(/:/g, '-')}:${String(textHash).replace(/:/g, '-')}`,
       memory: (scope, startTurn, revision) => `${PREFIX}:scope:${scope.scopeKey}:memory:${startTurn}:r${revision}`,
       vector: (scope, memoryId, revision, profileId) => `${PREFIX}:scope:${scope.scopeKey}:vector:${memoryId}:r${revision}:${profileId}`,
       work: (scope, startTurn) => `${PREFIX}:scope:${scope.scopeKey}:work:${startTurn}`,
@@ -49636,8 +49639,12 @@ function createLibraReadonlySourceContext(owner) {
       if (!unit) {
         const sem = semanticByNodeId.get(node.id);
         if (node.layer === 'source' && sem?.status === 'available_vector_space' && sem.score > 0) {
-          const evaluated = scoreCandidate({ family: 'canonical', semanticRole: 'source_access' },
-            { semanticScore: sem.score, semanticFeatureStatus: sem.status }, queryFrame);
+          // A source reached only by its vector has no lexical/entity/predicate signal to
+          // share the weighted sum with; scoring it as 0.32 of a full match capped every
+          // paraphrase hit below any name match. Its similarity is its whole signal.
+          const evaluated = { ...scoreCandidate({ family: 'canonical', semanticRole: 'source_access' },
+            { semanticScore: sem.score, semanticFeatureStatus: sem.status }, queryFrame) };
+          evaluated.directScore = clamp01(clamp01(sem.score) * evaluated.roleWeight);
           directFeaturesByNode.set(node.id, evaluated);
           offer(node.id, evaluated.directScore, { seedNodeId: node.id, directScore: evaluated.directScore,
             edgeChain: [], visitedNodes: [node.id], basisIds: [], sourceDependencies: [node.id] });
@@ -50136,7 +50143,8 @@ function createLibraReadonlySourceContext(owner) {
       documents.push({ nodeId: extra.nodeId, bindingId: node?.bindingId || extra.nodeId, vector: vectorRecord.vector.slice(),
         representationId: digest([extra.vectorKey, vectorRecord.profileId || profile.profileId, extra.textHash || '', vectorRecord.vectorHash || '']),
         projectionVersion: 'projection_v1', textHash: extra.textHash || '', temporalEndTurn: extra.temporalEndTurn ?? null });
-      if (extra.vectorKey) dependencies.push({ key: extra.vectorKey, digest: digest(vectorRecord) });
+      // An inline (runtime-produced) vector has no stored body to re-verify at delivery.
+      if (extra.vectorKey && !extra.vectorRecord) dependencies.push({ key: extra.vectorKey, digest: digest(vectorRecord) });
       dimension = d; expectedProfile = profile; bytes += additional;
       admittedFamilies.add(fam);
     }
@@ -50179,6 +50187,11 @@ function createLibraReadonlySourceContext(owner) {
     const bySource=new Map();
     for(const unit of graph.units||[]){if(unit.family!=='canonical')continue;const source=(graph.nodes||[]).find(n=>n.id===unit.nodeId)?.sourceId;if(source)bySource.set(unit.recordKey,source);}
     const rows=new Map(),routingByNode=new Map((input.routingDirectory?.entries||[]).map(entry=>[entry.nodeId,entry]));
+    // Pre-selected non-canonical representations (inline vectors) are read first by the lane.
+    const extras=new Map();
+    if(config?.enabled&&String(queryText).trim())for(const extra of input.additionalRepresentations||[]){
+      if(extra?.nodeId&&extra.vectorRecord&&(graph.nodes||[]).some(node=>node.id===extra.nodeId&&node.layer==='source'))extras.set(extra.nodeId,extra);
+    }
     if(config?.enabled&&String(queryText).trim())for(const row of canonicalRows){
       if(!bySource.has(row.key)||row.record?.embedding?.status!=='ready'||!row.record.embedding.vectorKey){diagnostics.rejected.push({recordKey:row.key,reason:'representation_missing'});continue;}
       if(asOfTurn!==null&&(!Number.isSafeInteger(row.record.turnRange?.end)||row.record.turnRange.end>asOfTurn)){diagnostics.rejected.push({recordKey:row.key,reason:'representation_outside_temporal_view'});continue;}
@@ -50216,7 +50229,9 @@ function createLibraReadonlySourceContext(owner) {
       }
     }
     const readPage=async(spec,budget)=>{
-      check();const row=rows.get(spec.anchorNodeId);if(!row)throw new Error('LIBRA_GRAPH_SEMANTIC_REFERENCE_INVALID');
+      check();const extra=extras.get(spec.anchorNodeId);
+      const row=extra?{key:extra.recordKey,record:{embedding:{dimensions:extra.vectorRecord.dimensions}}}:rows.get(spec.anchorNodeId);
+      if(!row)throw new Error('LIBRA_GRAPH_SEMANTIC_REFERENCE_INVALID');
       if(budget.pagesRead>=budget.maxPages)return {storageStopped:true,stopReason:'storage_page_count_budget',rows:[]};
       const required=routingByNode.get(spec.anchorNodeId)?.payloadBytes;
       if(Number.isSafeInteger(required)&&budget.bytesRead+required+512>budget.maxBytes)return {storageStopped:true,stopReason:'storage_byte_budget',rows:[]};
@@ -50226,7 +50241,7 @@ function createLibraReadonlySourceContext(owner) {
       const dimension=Number(routingByNode.get(spec.anchorNodeId)?routing?.dimension:row.record.embedding.dimensions||0);
       const minimum=used?1024+(diagnostics.dimension||0)*8:Number.isSafeInteger(dimension)&&dimension>0?3072+dimension*24:0;
       if(remaining<minimum){diagnostics.rejected.push({recordKey:row.key,reason:'representation_byte_budget'});return {storageStopped:true,stopReason:'storage_representation_byte_budget',rows:[]};}
-      const entry=routingByNode.get(spec.anchorNodeId);
+      const entry=extra?null:routingByNode.get(spec.anchorNodeId);
       let savedRepresentation=null;
       if(Array.isArray(entry?.vectorPages)&&entry.vectorPages.length){
         const total=entry.vectorPages.reduce((n,ref)=>n+ref.bytes,0);
@@ -50251,7 +50266,7 @@ function createLibraReadonlySourceContext(owner) {
         provider:savedRepresentation.provider,model:savedRepresentation.model,profileId:routing.profileId,dimensions:savedRepresentation.dimension,
         embeddingDescriptor:profileFor({...config,dimensions:savedRepresentation.dimension}).descriptor,projectionVersion:savedRepresentation.projectionVersion,
         textHash:savedRepresentation.textHash,vectorHash:row.record.embedding.vectorHash,entries:{global:{vector:savedRepresentation.vector,textHash:savedRepresentation.textHash}}}):async key=>{diagnostics.ownerVectorRecordLoads++;return await input.readVector(key);};
-      const result=await prepare({...input,readVector,canonicalRows:[row],maxBytes:Math.max(4096,remaining+(used?2048+(diagnostics.dimension||0)*16:0)),embedQuery});check();
+      const result=await prepare({...input,readVector,canonicalRows:extra?[]:[row],additionalRepresentations:extra?[extra]:[],maxBytes:Math.max(4096,remaining+(used?2048+(diagnostics.dimension||0)*16:0)),embedQuery});check();
       if(savedRepresentation)for(const dependency of result.dependencies)Object.assign(dependency,{ownerBodyDigest:entry.ownerBodyDigest,ownerRevision:entry.ownerRevision});
 
       diagnostics.rejected.push(...result.diagnostics.rejected);
@@ -50304,7 +50319,7 @@ function createLibraReadonlySourceContext(owner) {
           offset:0,nextOffset:1,totalRows:1,items:decoded,serializedUtf8Bytes:vectorBytes+size.utf8Bytes,cacheHit:vectorCacheHits>0,stopReason:'frontier_exhausted'};
       }finally{if(lease)pages.release(lease);if(stage)pages.releaseStage(stage);pages.close(handle);}
     };
-    return {queryInput:{semanticReferences:references.filter(id=>rows.has(id)),semanticBinding:input.fingerprint(JSON.stringify(config||null)),semanticSpace:null,queryEmbedding:null,documentRepresentations:{},queryVectors:{}},readPage,dependencies,diagnostics};
+    return {queryInput:{semanticReferences:[...extras.keys(),...references.filter(id=>rows.has(id))],semanticBinding:input.fingerprint(JSON.stringify(config||null)),semanticSpace:null,queryEmbedding:null,documentRepresentations:{},queryVectors:{}},readPage,dependencies,diagnostics};
   };
   const buildDirectory=async input=>{
     const result=await prepare({...input,queryText:'maintenance semantic directory',collectOnly:true,maxBytes:16777216});
@@ -62883,7 +62898,14 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         .then(async result => result?.status === 'verified' && !state.disposed
           ? { ...result, stateAdmission: await admitPublishedMicroStateClaims(scope, worldlineId, sessionEpoch, turn) }
           : result)
-        .then(result => {
+        .then(async result => {
+          // Store this turn's Micro vectors before reporting the publication, so whoever
+          // waits on it observes them; a slow provider only delays this report, bounded.
+          if (result?.status === 'verified' && !state.disposed) {
+            let timer = null;
+            await Promise.race([warmMicroRepresentationVectors(), new Promise(resolve => { timer = setTimeout(resolve, MICRO_WARM_PUBLICATION_WAIT_MS); })]);
+            clearTimeout(timer);
+          }
           state.lastMicroPublication = { at: Date.now(), turn, revisionId,
             queueMetrics: { queuedAt, startedAt, finishedAt: Date.now(),
               queueWaitMs: Math.max(0, startedAt - queuedAt) },
@@ -71939,6 +71961,130 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       clearTimeout(volatileCorpusRuntime.timer); volatileCorpusRuntime.timer = null;
       volatileCorpusRuntime.yieldRequested = true; volatileCorpusRuntime.store = null; volatileCorpusRuntime.basis = null;
     };
+    // Micro memory has no canonical representation producer (N02), so a paraphrased
+    // question could reach a turn's facts only lexically. Each Micro source's claim text
+    // is embedded after publication (or on retryPendingUnifiedVectors) into an immutable,
+    // content-addressed micro-vector record; per query the closest few stored vectors
+    // are handed to the semantic lane as inline representations. Retrieval only reads
+    // stored vectors (never embeds documents), so a restart serves the same packet;
+    // until a vector is stored (or on any failure) Micro stays lexical-only as before.
+    const MICRO_VECTOR_CACHE_LIMIT = 8192, MICRO_REPRESENTATION_TOP_K = 8, MICRO_EMBED_BATCH_LIMIT = 96;
+    const microVectorCache = new Map(), microVectorMisses = new Set();
+    const microRepresentationRows = (graph, asOfTurn = null) => {
+      const nodes = new Map(asArray(graph?.nodes).map(node => [node.id, node])), sources = new Map();
+      for (const unit of asArray(graph?.units)) {
+        if (string(unit?.family) !== 'micro') continue;
+        const sourceId = string(nodes.get(unit.nodeId)?.sourceId || '');
+        if (!sourceId || nodes.get(sourceId)?.layer !== 'source') continue;
+        const turn = Number(unit.turn || unit.turnRange?.end || 0) || null;
+        if (asOfTurn !== null && turn !== null && turn > asOfTurn) continue;
+        const row = sources.get(sourceId) || { sourceId, recordKey: string(unit.recordKey || sourceId), texts: [], turn };
+        const text = string(unit.text || '').trim();
+        if (text && !row.texts.includes(text)) row.texts.push(text);
+        sources.set(sourceId, row);
+      }
+      return [...sources.values()].filter(row => row.texts.length);
+    };
+    const microRowsInSpace = (graph, config, asOfTurn = null) => {
+      const space = stableReferenceJson(embeddingRequestDescriptor(config)), rows = microRepresentationRows(graph, asOfTurn);
+      const spaceDigest = digest(space);
+      for (const row of rows) {
+        row.text = row.texts.join('\n'); row.textHash = digest(row.text); row.cacheKey = space + '|' + row.textHash;
+        row.storageKey = key.microVector({ scopeKey: graph.scopeKey }, spaceDigest, row.textHash); row.spaceDigest = spaceDigest;
+      }
+      return rows;
+    };
+    const rememberMicroVector = (row, entry) => {
+      microVectorCache.delete(row.cacheKey); microVectorCache.set(row.cacheKey, entry); microVectorMisses.delete(row.storageKey);
+      while (microVectorCache.size > MICRO_VECTOR_CACHE_LIMIT) microVectorCache.delete(microVectorCache.keys().next().value);
+    };
+    // Loads stored vectors for rows missing from the runtime cache; invalid or foreign
+    // records are ignored (the row stays lexical-only). Keys found missing are not
+    // re-read until the next background warm, which is the only writer.
+    const loadStoredMicroVectors = async (rows, graph, check = () => {}) => {
+      for (const row of rows.filter(row => !microVectorCache.has(row.cacheKey) && !microVectorMisses.has(row.storageKey)).slice(0, MICRO_VECTOR_CACHE_LIMIT)) {
+        const record = await storage.getStoredJson(row.storageKey, null); check();
+        if (record == null) { if (microVectorMisses.size >= MICRO_VECTOR_CACHE_LIMIT) microVectorMisses.clear(); microVectorMisses.add(row.storageKey); continue; }
+        if (record?.schema !== 'libra.micro_vector.v1' || record.scopeKey !== graph.scopeKey || record.textHash !== row.textHash
+          || record.spaceDigest !== row.spaceDigest || !Array.isArray(record.vector) || record.vector.length !== record.dimensions
+          || record.vector.some(value => !Number.isFinite(value))) continue;
+        rememberMicroVector(row, { vector: record.vector, dimensions: record.dimensions, provider: record.provider, model: record.model,
+          profileId: string(record.profileId || '') });
+      }
+    };
+    let microVectorWarm = null, microVectorWarmQueued = null, microVectorWarmError = '';
+    // Reads every Micro turn through owner projection pages (the corpus reader's route).
+    const MICRO_WARM_PAGE_TURNS = 50, MICRO_WARM_MAX_PAGES = 40, MICRO_WARM_PUBLICATION_WAIT_MS = 15000;
+    const readMicroRepresentationGraph = async () => {
+      let scopeKey = '';
+      const nodes = new Map(), units = [];
+      for (let page = 0; page < MICRO_WARM_MAX_PAGES && !state.disposed; page++) {
+        const graph = await readMemoryGraphProjection({ expectedScopeKey: scopeKey, limit: MICRO_WARM_PAGE_TURNS,
+          microOffset: page * MICRO_WARM_PAGE_TURNS }, () => {});
+        scopeKey ||= graph.scopeKey;
+        const micro = asArray(graph.units).filter(unit => string(unit?.family) === 'micro');
+        if (!micro.length) break;
+        for (const node of asArray(graph.nodes)) nodes.set(node.id, node);
+        units.push(...micro);
+      }
+      return { scopeKey, nodes: [...nodes.values()], units };
+    };
+    const warmMicroRepresentationVectors = () => {
+      if (state.disposed) return null;
+      // A running warm may predate the caller's new records: run once more after it.
+      if (microVectorWarm) return microVectorWarmQueued ||= microVectorWarm.then(() => { microVectorWarmQueued = null; return warmMicroRepresentationVectors(); });
+      microVectorWarm = (async () => {
+        microVectorMisses.clear();
+        const config = normalizeEmbeddingSettings((await LibraProviderBridge.getConfig())?.embed || DEFAULT_EMBEDDING);
+        if (!config?.enabled || state.disposed) return;
+        const graph = await readMicroRepresentationGraph();
+        const all = microRowsInSpace(graph, config);
+        await loadStoredMicroVectors(all, graph);
+        const rows = all.filter(row => !microVectorCache.has(row.cacheKey));
+        for (let offset = 0; offset < rows.length && !state.disposed; offset += MICRO_EMBED_BATCH_LIMIT) {
+          const missing = rows.slice(offset, offset + MICRO_EMBED_BATCH_LIMIT);
+          const result = await EmbeddingProviderRegistry.embedTexts(config, missing.map(row => row.text), { purpose: 'document', scopeKey: graph.scopeKey });
+          for (const [index, row] of missing.entries()) {
+            const vector = result?.vectors?.[index];
+            if (!Array.isArray(vector) || !vector.length || state.disposed || state.deletingScopes.has(graph.scopeKey)) continue;
+            const entry = { vector: vector.slice(), dimensions: vector.length, provider: result.provider, model: result.model,
+              profileId: string(result.metadata?.profileId || '') };
+            await storage.setJson(row.storageKey, { schema: 'libra.micro_vector.v1', scopeKey: graph.scopeKey, textHash: row.textHash,
+              spaceDigest: row.spaceDigest, ...entry, createdAt: nowIso() });
+            rememberMicroVector(row, entry);
+          }
+        }
+        microVectorWarmError = '';
+      })().catch(error => { microVectorWarmError = compact(error?.message || error, 200); /* Micro stays lexical-only; the next publication retries. */ })
+        .finally(() => { microVectorWarm = null; });
+      return microVectorWarm;
+    };
+    const selectMicroRepresentations = async ({ graph, config, queryText, asOfTurn = null, maxBytes = 262144, embedQuery, check = () => {} }) => {
+      const all = microRowsInSpace(graph, config, asOfTurn);
+      await loadStoredMicroVectors(all, graph, check);
+      const rows = all.filter(row => microVectorCache.has(row.cacheKey));
+      // Same admission floor as the semantic lane: a budget that cannot hold one
+      // representation never pays for a query embedding.
+      if (!rows.length || maxBytes < 3072 + microVectorCache.get(rows[0].cacheKey).dimensions * 24) return [];
+      const query = await embedQuery(String(queryText), config); check();
+      const q = query?.vectors?.[0];
+      if (!Array.isArray(q) || !q.length) return [];
+      const norm = vector => Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0)) || 1, qNorm = norm(q);
+      const scored = [];
+      for (const row of rows) {
+        const cached = microVectorCache.get(row.cacheKey);
+        if (!cached || cached.dimensions !== q.length || cached.profileId !== string(query.metadata?.profileId || '')) continue;
+        let dot = 0; for (let i = 0; i < q.length; i++) dot += q[i] * cached.vector[i];
+        scored.push({ row, cached, score: dot / (qNorm * norm(cached.vector)) });
+      }
+      scored.sort((a, b) => b.score - a.score || a.row.sourceId.localeCompare(b.row.sourceId));
+      return scored.slice(0, MICRO_REPRESENTATION_TOP_K).map(({ row, cached, score }) => Object.freeze({
+        family: 'micro', nodeId: row.sourceId, recordKey: row.recordKey, vectorKey: 'runtime:micro:' + row.textHash,
+        textHash: row.textHash, temporalEndTurn: row.turn, similarity: Math.round(score * 1000) / 1000,
+        vectorRecord: Object.freeze({ vector: cached.vector, dimensions: cached.dimensions, profileId: cached.profileId }) }));
+    };
+    const inspectMicroRepresentationVectors = () => ({ schema: 'libra.micro_representation_vectors.v1',
+      warming: Boolean(microVectorWarm || microVectorWarmQueued), cached: microVectorCache.size, knownMissing: microVectorMisses.size, lastError: microVectorWarmError });
     const inspectVolatileMemoryGraphCorpus = () => {
       const volatileState = volatileMemoryGraphCorpus();
       return { schema: 'libra.volatile_graph_corpus.v1', available: Boolean(volatileState.store), scopeKey: volatileState.scopeKey,
@@ -72121,6 +72267,33 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           if (config?.enabled) semanticSettingsBinding = settingsBinding(config);
           const bridge = createLibraMemoryGraphSemantic({ digest, profileFor: config => EmbeddingProviderRegistry.profileFor(config), projectionFor: buildMemoryRetrievalProjection });
           resources.reserveRetained((semanticPolicy.maxRepresentationBytes ?? 262144) * 4,'semantic_representation_allowance');
+          let queryEmbeddingPromise = null;
+          const nativeEmbedQuery = (text, config) => queryEmbeddingPromise || (queryEmbeddingPromise = (async (text, config) => {
+                const current = await readSemanticConfig(); checkSemanticOwner();
+                if (settingsBinding(current) !== semanticSettingsBinding) throw new Error('LIBRA_GRAPH_SEMANTIC_SETTINGS_CHANGED');
+                const scopeIdentity = stableReferenceJson([graph.readerFrame.owner, graph.scopeKey, graph.readerFrame.worldlineId, epoch, graph.readerFrame.view]);
+                const child = new AbortController(), parent = semanticGuard.controller?.signal;
+                const deadlineAt = Math.min(Date.now() + queryBudgetMs - 120, semanticGuard.deadlineAt - 120);
+                const abort = () => child.abort(parent?.reason || recallDeadlineError('native_query_embedding'));
+                if (parent?.aborted) abort(); else parent?.addEventListener?.('abort', abort, { once: true });
+                const timer = setTimeout(() => child.abort(recallStepTimeoutError('native_query_embedding', queryBudgetMs)), Math.max(1, deadlineAt - Date.now()));
+                const ledger = MemorySuiteExecutionContract.createLedger({ maxRequests: 16, signal: child.signal, deadlineAt });
+                try {
+                  const result = await runRecallStep(semanticGuard, 'native_query_embedding',
+                    () => EmbeddingProviderRegistry.embedTexts(config, [text], { purpose: 'query', scopeKey: scopeIdentity,
+                      signal: child.signal, deadlineAt, operationLedger: ledger }), queryBudgetMs,
+                    { abortOnTimeout: false });
+                  return { ...result, graphEmbeddingOperation: ledger.snapshot(),
+                    graphEmbeddingCoalesced: ledger.snapshot().requestCount === 0 && !result.metadata?.cacheHits };
+                } catch (error) { error.graphEmbeddingOperation = ledger.snapshot(); throw error; }
+                finally { clearTimeout(timer); child.abort(); parent?.removeEventListener?.('abort', abort); }
+              })(text, config));
+          const microRepresentations = config?.enabled && String(rawQueryInput.queryText || '').trim()
+            ? await runRecallStep(semanticGuard, 'micro_representations', () => selectMicroRepresentations({ graph, config,
+                queryText: rawQueryInput.queryText, asOfTurn: rawQueryInput.asOfTurn ?? null, embedQuery: nativeEmbedQuery,
+                maxBytes: semanticPolicy.maxRepresentationBytes ?? 262144,
+                check: checkSemanticOwner, guard: semanticGuard }), queryBudgetMs, { soft: true, fallback: [], abortOnTimeout: false })
+            : [];
           nativeSemantic = await bridge.prepareLazy({ readRepresentationPage: key=>corpusContext.owner.read(key),routingDirectory:corpus?.semanticDirectory||null,fingerprint:memoryGraphSourceFingerprint,pages:suite.pages,resources,evaluate:suite.query.evaluateRepresentation,graph, canonicalRows: initialCollected.canonicalRows || [], config,
             queryText: rawQueryInput.queryText || '', asOfTurn: rawQueryInput.asOfTurn ?? null,
             maxBytes: semanticPolicy.maxRepresentationBytes ?? 262144, check: checkSemanticOwner,
@@ -72142,28 +72315,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
               vectorReadbacks.set(storageKey, { record, rawBody: stableReferenceJson(record), hydratedDigest: digest(hydrated) });
               return hydrated;
             },
-            embedQuery: async (text, config) => {
-              const current = await readSemanticConfig(); checkSemanticOwner();
-              if (settingsBinding(current) !== semanticSettingsBinding) throw new Error('LIBRA_GRAPH_SEMANTIC_SETTINGS_CHANGED');
-              const scopeIdentity = stableReferenceJson([graph.readerFrame.owner, graph.scopeKey, graph.readerFrame.worldlineId, epoch, graph.readerFrame.view]);
-              const child = new AbortController(), parent = semanticGuard.controller?.signal;
-              const deadlineAt = Math.min(Date.now() + queryBudgetMs - 120, semanticGuard.deadlineAt - 120);
-              const abort = () => child.abort(parent?.reason || recallDeadlineError('native_query_embedding'));
-              if (parent?.aborted) abort(); else parent?.addEventListener?.('abort', abort, { once: true });
-              const timer = setTimeout(() => child.abort(recallStepTimeoutError('native_query_embedding', queryBudgetMs)), Math.max(1, deadlineAt - Date.now()));
-              const ledger = MemorySuiteExecutionContract.createLedger({ maxRequests: 16, signal: child.signal, deadlineAt });
-              try {
-                const result = await runRecallStep(semanticGuard, 'native_query_embedding',
-                  () => EmbeddingProviderRegistry.embedTexts(config, [text], { purpose: 'query', scopeKey: scopeIdentity,
-                    signal: child.signal, deadlineAt, operationLedger: ledger }), queryBudgetMs,
-                  { abortOnTimeout: false });
-                return { ...result, graphEmbeddingOperation: ledger.snapshot(),
-                  graphEmbeddingCoalesced: ledger.snapshot().requestCount === 0 && !result.metadata?.cacheHits };
-              } catch (error) { error.graphEmbeddingOperation = ledger.snapshot(); throw error; }
-              finally { clearTimeout(timer); child.abort(); parent?.removeEventListener?.('abort', abort); }
-            }
+            additionalRepresentations: microRepresentations,
+            embedQuery: nativeEmbedQuery
           });
           nativeSemantic.diagnostics.queryBudgetMs = queryBudgetMs;
+          nativeSemantic.diagnostics.microRepresentations = microRepresentations.map(row => ({ turn: row.temporalEndTurn, similarity: row.similarity }));
           Object.assign(queryInput, nativeSemantic.queryInput);
           // N02: the family declaration plus the semantic bridge's own rejections become per-node verdicts
           // the scorer must respect, so a family without a representation producer cannot be scored as if
@@ -72307,7 +72463,13 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           graph,
           queryInput,
           consumerPolicy: options.consumerPolicy || {},
-          laneBudget: options.laneBudget || {},
+          // Semantic vector pages are read through the lane's storage budget: a 1024-d
+          // provider vector is ~22 KB, so ten canonical plus a few Micro representations
+          // alone exceed the 256 KB lane default and the query would stop before any
+          // item. Reserve room for the representation budget on top of the lane default.
+          laneBudget: { ...(nativeSemantic?.readPage
+            ? { maxStorageBytes: Math.min(8388608, 262144 + 3 * (semanticPolicy.maxRepresentationBytes ?? 262144)), maxPages: 128, maxBytes: 524288 } : {}),
+          ...(options.laneBudget || {}) },
           ownerVerifier,
           semanticAccessComplete: () => !semanticBudgetStopped(), semanticReader: nativeSemantic?.readPage || null,
           preparedIndex: corpus?.compiledIndex || null, resources
@@ -75447,7 +75609,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       getUnifiedResponseContext, validateUnifiedResponseContext, previewUnifiedIdentityMerge, mergeUnifiedIdentity, previewUnifiedIdentitySplit, splitUnifiedIdentity, previewUnifiedMigration, beginUnifiedMigration, previewUnifiedLegacyRebuild, getUnifiedLegacyRebuildEvidence, rebuildSelectedUnifiedLegacy, previewUnifiedRetention, collectUnifiedRetention, listWorldManagerHistory, getWorldManagerHistoryDetail, listCanonicalReaderChapters, getCanonicalReaderChapter, getCanonicalEvidenceChain,
       listExecutionReceipts, getExecutionReceiptDetail, listWorldManagerCorrections, getWorldManagerRuntimeMeta,
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
-      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, inspectVolatileMemoryGraphCorpus, disposeVolatileMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, releaseMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
+      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, inspectVolatileMemoryGraphCorpus, inspectMicroRepresentationVectors, warmMicroRepresentationVectors, disposeVolatileMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, releaseMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
 
       armPendingLiveBoundary, loadPendingBoundaryStore, pruneExpiredPendingBoundaryStore, recoverPendingLiveBoundaryAtStartup, clearPendingBoundaryAfterCommit,
       reconcileCanonicalBranchBeforeRecall, verifyBatchStillCurrent, captureCommittedOutputEvent,
@@ -87007,7 +87169,9 @@ advanced
       return safeClone(await LibraMemoryCore.recoverPendingStateTrackingJournal(await LibraMemoryCore.resolveContext(),{force:true,unifiedOnly:true}));
     },
     async retryPendingUnifiedVectors() {
-      return safeClone(await LibraMemoryCore.flushUnifiedDerivedVectors(await LibraMemoryCore.resolveContext(),{retry:true}));
+      const result = safeClone(await LibraMemoryCore.flushUnifiedDerivedVectors(await LibraMemoryCore.resolveContext(),{retry:true}));
+      await LibraMemoryCore.warmMicroRepresentationVectors();
+      return result;
     },
     async previewUnifiedMemoryRecall(queryOrOptions='') {
       const ctx = await LibraMemoryCore.resolveContext();
@@ -87060,6 +87224,7 @@ advanced
     getMemoryRecallDiagnosticsView() { return safeClone(LibraMemoryCore.getMemoryRecallDiagnosticsView()); },
     cancelMemoryGraphGenerationBuild() { return LibraMemoryCore.cancelMemoryGraphGenerationBuild(); },
     inspectVolatileMemoryGraphCorpus() { return safeClone(LibraMemoryCore.inspectVolatileMemoryGraphCorpus()); },
+    inspectMicroRepresentationVectors() { return safeClone(LibraMemoryCore.inspectMicroRepresentationVectors()); },
     inspectMemoryGraphStore() { return LibraMemoryCore.inspectMemoryGraphStore(); },
     async executeMemoryGraphUnifiedQuery(options = {}) {
       const execution = await LibraMemoryCore.executeMemoryGraphUnifiedQuery(options);
