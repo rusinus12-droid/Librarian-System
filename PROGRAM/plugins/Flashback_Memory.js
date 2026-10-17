@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.104
+//@display-name ⚡ FLASHBACK Memory v1.0.105
 //@api 3.0
-//@version 1.0.104
+//@version 1.0.105
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.104';
+const PLUGIN_VERSION = '1.0.105';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -48835,6 +48835,7 @@ ${cleanedText}`, 80),
     pollTimer: null,
     evaluating: false,
     lastIndexes: '',
+    lastRevision: '',
     buttonSignature: '',
     state: null
   };
@@ -48897,15 +48898,17 @@ ${cleanedText}`, 80),
     try { loaded = await loadScopeRecords(scope.scopeKey, { readOnly: true, rawTextOnly: true }); }
     catch (_) { /* An unavailable corpus is a storage warning, never an empty one. */ }
     const manifest = loaded?.manifest;
-    const storageError = !loaded || manifest?.manifestCorrupt === true || !!manifest?.foreignScopeKey
+    let storageError = !loaded || manifest?.manifestCorrupt === true || !!manifest?.foreignScopeKey
       || manifest?.archiveRefInvalid === true || Number(manifest?.missingShards || 0) > 0
       || Number(manifest?.corruptShards || 0) > 0 || manifest?.recordCountMismatch === true;
     const records = loaded?.records || [];
     const work = statsForRecords(records).embeddingWork;
-    const registry = readEmbeddingAttemptRegistry(manifest || {});
+    let registry = null;
+    try { registry = readEmbeddingAttemptRegistry(manifest || {}); }
+    catch (_) { storageError = true; }
     const runtimeId = currentEmbeddingWorkRuntime();
     for (const record of records) {
-      if (!isValidatedEmbeddingWorkRecord(record) || record.embeddingWork.status === 'uncertain') continue;
+      if (!registry || !isValidatedEmbeddingWorkRecord(record) || record.embeddingWork.status === 'uncertain') continue;
       const job = record.embeddingWork;
       const detached = job.status === 'running'
         && (job.attempt?.runtimeId !== runtimeId || !activeEmbeddingWorkAttempts.has(job.attempt?.id));
@@ -49061,13 +49064,16 @@ ${cleanedText}`, 80),
     FlashbackAttention.pollTimer = null;
     if (!FlashbackAttention.started || Runtime.unloaded) return;
     try {
-      const api = getApiCandidates().find(candidate => typeof candidate?.getCurrentCharacterIndex === 'function' && typeof candidate?.getCurrentChatIndex === 'function') || getLiveApi();
-      if (typeof api?.getCurrentCharacterIndex === 'function' && typeof api?.getCurrentChatIndex === 'function') {
-        const indexes = `${await api.getCurrentCharacterIndex()}:${await api.getCurrentChatIndex()}`;
-        if (indexes !== FlashbackAttention.lastIndexes) {
-          FlashbackAttention.lastIndexes = indexes;
-          scheduleFlashbackAttentionRefresh('chat_switch', 500);
-        }
+      const snapshot = await loadRisuCaptureSnapshot();
+      const indexes = `${Number(snapshot?.chatInfo?.charIndex ?? -1)}:${Number(snapshot?.chatInfo?.chatIndex ?? -1)}`;
+      const live = liveChatReadState(snapshot?.chat || null, '');
+      const revision = `${live.cacheKey || ''}:${live.revisionSignature || ''}`;
+      const indexChanged = indexes !== FlashbackAttention.lastIndexes;
+      const revisionChanged = revision !== FlashbackAttention.lastRevision;
+      FlashbackAttention.lastIndexes = indexes;
+      FlashbackAttention.lastRevision = revision;
+      if (indexChanged || revisionChanged) {
+        scheduleFlashbackAttentionRefresh(indexChanged ? 'chat_switch' : 'chat_source_changed', 500);
       }
     } catch (_) {}
     if (!Runtime.unloaded) {
@@ -50323,6 +50329,7 @@ return createReadSession;
   publicApi._test.syncFlashbackAttentionButton = syncFlashbackAttentionButton;
   publicApi._test.startFlashbackAttention = startFlashbackAttention;
   publicApi._test.stopFlashbackAttention = stopFlashbackAttention;
+  publicApi._test.pollFlashbackAttention = pollFlashbackAttention;
   publicApi._test.refreshFlashbackAttention = refreshFlashbackAttention;
   publicApi._test.scheduleFlashbackAttentionRefresh = scheduleFlashbackAttentionRefresh;
   publicApi._test.openFlashbackAttention = openFlashbackAttention;

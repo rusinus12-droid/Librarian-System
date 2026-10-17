@@ -136,3 +136,31 @@ test('attention inspection does not switch the active runtime scope',async()=>{
     assert.equal(t.Runtime.currentScope.scopeKey,scope.scopeKey,'read inspection cannot abort work by applying a different scope');
   }finally{await f.dispose();}
 });
+
+test('corrupt embedding attempt registry becomes a storage warning instead of aborting attention',async()=>{
+  const {f,t,scope}=await seed();try{
+    const manifest=await t.loadScopeManifest(scope.scopeKey);
+    await t.saveScopeManifest({...manifest,embeddingAttemptRegistry:{schema:'broken'}},scope);
+    const before=JSON.stringify([...f.pluginStorage.values]);
+    const state=await t.computeFlashbackAttention();
+    assert.equal(state.kind,'storage_error');
+    assert.equal(JSON.stringify([...f.pluginStorage.values]),before,'warning inspection remains read-only');
+  }finally{await f.dispose();}
+});
+
+test('attention poll notices an edited response without a chat-index change',async()=>{
+  const {f,t}=await seed();try{
+    await t.stopFlashbackAttention();
+    t.FlashbackAttention.started=true;
+    t.FlashbackAttention.lastIndexes='';
+    t.FlashbackAttention.lastRevision='';
+    t.FlashbackAttention.refreshTimer=null;
+    await t.pollFlashbackAttention();
+    t.FlashbackAttention.refreshTimer=null;
+    f.currentChat.message[1].data='The brass key is now inside the red tower.';
+    await t.pollFlashbackAttention();
+    assert.equal(t.FlashbackAttention.lastIndexes,'0:0','the chat identity did not change');
+    assert.equal(t.FlashbackAttention.refreshTimer?.fixturePausedTimer,true,'source revision schedules a refresh');
+    assert.equal((await t.computeFlashbackAttention()).kind,'source_changed');
+  }finally{await f.dispose();}
+});
