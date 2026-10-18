@@ -49,7 +49,11 @@ const integrations = [
 for (const [relative, hostId] of integrations) {
   const source = read(relative);
   assert.match(source, new RegExp(hostId));
-  assert.match(source, /MemorySuiteStorageBridge\.mountConnectionPanel\([\s\S]{0,500}?computeBridge:/);
+  assert.match(source, /MemorySuiteStorageBridge\.mountConnectionPanel\(/);
+  // The Compute SDK is retired from Flashback and HAYAKU: their panels mount Storage alone.
+  // LIBRA keeps its optional core-boundary lookup, checked below.
+  if (!relative.endsWith('LIBRA.js')) assert.doesNotMatch(source, /computeBridge:\s*MemorySuite/);
+  assert.doesNotMatch(source, /LIBRARIAN SYSTEM COMPUTE SDK v/, relative + ' no longer embeds the Compute SDK');
   assert.doesNotMatch(source, /MemorySuiteComputeSettingsPanel/);
 }
 

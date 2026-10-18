@@ -35,27 +35,15 @@ function checkBookHeader(source){
  }
  return true;
 }
-function checkComputeMode(source,bridgeName,{flashback=false}={}){
+// The Compute SDK is retired from the plugins: no owner creates a Compute bridge or search
+// client, and no embedded SDK remains. Search and reranking run locally.
+function checkComputeRetired(source){
+ assert.doesNotMatch(source,/LIBRARIAN SYSTEM COMPUTE SDK v/,'no embedded Compute SDK');
  const ast=parse(source);
- if(!flashback){
-  const calls=findAll(ast,n=>n.type==='CallExpression'&&member(n.callee,bridgeName,'execute'));
-  assert.ok(calls.length,'required owner Compute call: '+bridgeName);
-  for(const call of calls)assert.ok(member(prop(call.arguments[0],'mode'),'executionPolicy','computeMode'),'owner Compute mode derives from scope policy: '+bridgeName);
- }else{
-  const factoryCalls=findAll(ast,n=>n.type==='CallExpression'&&n.callee?.name==='createMemorySuiteSearchClient'&&prop(n.arguments[0],'namespace')?.value==='flashback');
-  assert.ok(factoryCalls.length,'Flashback creates its current vector-search client');
-  for(const call of factoryCalls)assert.equal(prop(call.arguments[0],'storage')?.name,'MemorySuiteStorageBridge','Flashback search client uses owner storage policy');
-  const vectors=findAll(ast,n=>n.type==='CallExpression'&&member(n.callee,'MemorySuiteFlashbackSearchClient','vectors'));
-  assert.ok(vectors.length,'Flashback calls the current vector-search client');
-  for(const call of vectors)assert.equal(call.arguments[2]?.name,'scope','Flashback vector search retains owner scope');
-  const client=variable(ast,'createMemorySuiteSearchClient').init;
-  const policy=variable(client,'policy').init;
-  assert.equal(key(policy.argument?.callee?.property),'getScopeExecutionPolicy','search client reads scope execution policy');
-  assert.equal(policy.argument?.arguments[0]?.name,'scope','search policy is scoped');
-  const calls=findAll(client,n=>n.type==='CallExpression'&&member(n.callee,'bridge','execute'));
-  assert.ok(calls.length,'current search client dispatches Compute');
-  for(const call of calls)assert.ok(member(prop(call.arguments[0],'mode'),'policy','computeMode'),'search Compute mode derives from scope policy');
- }
+ const factories=findAll(ast,n=>n.type==='CallExpression'&&['createMemorySuiteComputeBridge','createMemorySuiteSearchClient'].includes(n.callee?.name));
+ assert.equal(factories.length,0,'no retired Compute bridge or search client is created');
+ const executes=findAll(ast,n=>n.type==='CallExpression'&&n.callee?.type==='MemberExpression'&&/ComputeBridge$|SearchClient$/.test(String(n.callee.object?.name||'')));
+ assert.equal(executes.length,0,'no retired Compute bridge or search client is called');
  return true;
 }
-module.exports={checkNavigation,checkBookHeader,checkComputeMode};
+module.exports={checkNavigation,checkBookHeader,checkComputeRetired};

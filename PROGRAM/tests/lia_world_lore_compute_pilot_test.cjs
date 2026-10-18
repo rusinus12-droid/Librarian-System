@@ -14,14 +14,13 @@ const operation = 'lia.world-lore-rerank.v2';
 const fingerprint = 'cbd91cc90d01c8fc052669390badab3d0c2c7a52c4b6c314ac2ca61716fc7a75';
 
 assert.match(source, releasePattern("\\/\\/@version\\s+{lia}\\b", ""));
-assert.match(source, /const createMemorySuiteComputeBridge\s*=/, 'embedded Compute factory is available to the owner');
+// The Compute SDK is retired from LIA: world-lore rerank runs the same kernel locally.
+assert.doesNotMatch(source, /LIBRARIAN SYSTEM COMPUTE SDK v|createMemorySuiteComputeBridge|MemorySuiteLiaComputeBridge/, 'LIA no longer embeds the Compute SDK');
 assert.doesNotMatch(source, /\/\/@arg memory_suite_lia_compute_mode\b/);
-assert.match(source, /MemorySuiteStorageBridge\.getScopeExecutionPolicy\(/);
-assert.match(source, /const LIA_WORLD_LORE_COMPUTE_OPERATION = "lia\.world-lore-rerank\.v2"/);
+assert.match(source, /const LIA_WORLD_LORE_COMPUTE_OPERATION = "lia\.world-lore-rerank\.v2"/, 'historical operation id stays disclosed');
 assert.match(source, new RegExp(fingerprint));
-assert.match(source, /MemorySuiteLiaComputeBridge\.execute\(/);
+assert.match(source, /const result = liaCanonicalCopy\(runLiaWorldLoreComputeLocal\(input\)\);/, 'world-lore rerank runs the local kernel');
 assert.match(source, /const worldLoreRerank = await rerankWorldLoreEntriesWithCompute/);
-assert.match(source, /await MemorySuiteLiaComputeBridge\.dispose/);
 assert.equal(DEFINITIONS[operation].fingerprint, fingerprint, 'plugin and server algorithm fingerprints match');
 
 const values = new Map();
@@ -165,7 +164,7 @@ async function main() {
   assert.equal(softStressResult.hardProtectedCount, 1, 'hard constraints remain outside the soft budget');
   assert.ok(softStressResult.softProtectedCount <= softStressResult.softProtectedBudget, 'many always-active rows cannot bypass Top-K through protection');
   assert.ok(softStressResult.selected.length <= 1 + softStress.topK, 'hard rows are extra, all other selections stay inside Top-K');
-  assert.equal(runtime.debugWorldLoreComputeStatus().mode, 'local');
+  assert.equal(runtime.debugWorldLoreComputeStatus().status, 'retired');
   assert.equal(computeNetworkCalls, 0, 'LIA local mode never probes Compute');
   const ownerEntries = input.entries.map((entry, index) => ({ ...entry, raw: { owner: `owner-${index}` }, label: `Lore ${index}` }));
   const ownerContext = {

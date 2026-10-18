@@ -1,5 +1,5 @@
 'use strict';
-// Parse source only. Never evaluate the plugin, its factories or its Compute bridge.
+// Parse source only. Never evaluate the plugin or its factories.
 const assert = require('node:assert/strict');
 const { resolveAcorn } = require('../../tools/build_plugins.cjs');
 
@@ -51,9 +51,11 @@ function checkLiaLocalComputeOwner(source) {
     namespace: 'lia', pluginId: 'lia_persona_linker', storagePolicy: 'local_only',
     autoMigratePlugin: false, autoMigrateLocal: false
   });
-  factory('MemorySuiteLiaComputeBridge', 'createMemorySuiteComputeBridge', {
-    namespace: 'lia', pluginId: 'lia_persona_linker', defaultMode: 'local', backgroundProbe: false
-  });
+  // The Compute SDK is retired: world-lore rerank runs locally and no owner bridge exists.
+  const computeOwners = statements.filter(node => node.type === 'VariableDeclaration')
+    .flatMap(node => node.declarations)
+    .filter(declaration => declaration.id.type === 'Identifier' && declaration.id.name === 'MemorySuiteLiaComputeBridge');
+  assert.equal(computeOwners.length, 0, 'LIA owns no retired Compute bridge: MemorySuiteLiaComputeBridge');
   return true;
 }
 

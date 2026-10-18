@@ -17,7 +17,6 @@ async function main() {
   const address = await app.listen();
   const baseUrl = `http://127.0.0.1:${address.port}`;
   const routes = [];
-  let failExecute = false;
   const packet = createValidPacket({ turn: 1, subject: 'Alice', scene: 'royal-academy' });
   const messages = [
     { role: 'user', data: '금지된 기록보관소를 조사한다.', chatId: 'u-1' },
@@ -35,7 +34,6 @@ async function main() {
       nativeFetch: async (url, init = {}) => {
         const pathname = new URL(String(url)).pathname;
         routes.push(pathname);
-        if (failExecute && pathname === '/v1/compute/execute') throw new Error('test_compute_unavailable');
         return await fetch(url, init);
       }
     });
@@ -44,29 +42,20 @@ async function main() {
       { axis: 'world', category: 'world_rule', publicRef: 'world.rule.magic', publicText: 'Magic is forbidden at the academy.', score: 0.5, importance: 0.9, scoreBreakdown: { bm25fSignal: 0.92, identitySignal: 0.12, canonicalExactSignal: 0.86, associationSignal: 0.3, charNgramSignal: 0.28, lexicalCoverageSignal: 0.71, sparsePhraseSignal: 0.69 } }
     ];
     const query = 'Alice와 아카데미의 금지된 마법 기록';
+    // The Compute SDK is retired from HAYAKU: even with a server-backed (mirror) policy,
+    // sparse RRF runs locally and no Compute route is called.
+    const expected = normalize(runtime.hayaku._test.applyRrfFusion(rows));
     const cold = normalize(await runtime.hayaku._test.debugApplyRrfFusionWithCurrentOwner(rows, query));
-    let status = runtime.hayaku.compute.status();
-    assert.equal(status.counters.local, 0, 'current product call adopts the verified server HAYAKU RRF candidate');
-    assert.equal(status.counters.server, 1, 'current product call is delegated to the server');
-    const warm = normalize(await runtime.hayaku._test.debugApplyRrfFusionWithCurrentOwner(rows, query));
-    assert.deepEqual(warm, cold, 'repeated direct candidate preserves exact HAYAKU row scores and metadata');
-    status = runtime.hayaku.compute.status();
-    assert.equal(status.counters.local, 0, 'repeated server call does not run the local scorer');
-    assert.equal(status.counters.server, 2, 'repeated product call delegates the current request again');
-
-    failExecute = true;
+    assert.deepEqual(cold, expected, 'the product entry point returns the local RRF rows');
+    assert.equal(runtime.hayaku.compute.status().status, 'retired');
     runtime.setMessages([
       messages[0],
       { role: 'assistant', data: hiddenPacketMessage('The edited branch no longer contains the sealed archive.', packet), chatId: 'a-1' }
     ]);
     const changed = normalize(await runtime.hayaku._test.debugApplyRrfFusionWithCurrentOwner(rows, query));
     assert.deepEqual(changed, cold, 'visible transcript edit preserves deterministic RRF values');
-    status = runtime.hayaku.compute.status();
-    assert.equal(status.counters.local, 1, 'server failure after visible transcript/worldline change falls back locally once');
-    assert.ok(routes.includes('/v1/compute/bootstrap'));
-    assert.ok(routes.includes('/v1/compute/execute'));
-    assert.equal(routes.includes('/v1/compute/jobs'), false, 'foreground HAYAKU uses bounded direct execute, not a warm-cache Job');
-    assert.equal(routes.includes('/bootstrap'), true, 'mirror mode verifies the shared Storage connection that owns Compute routing');
+    assert.equal(routes.filter(route => route.startsWith('/v1/compute/')).length, 0, 'no Compute route is called');
+    assert.equal(routes.includes('/bootstrap'), true, 'mirror mode still verifies the shared Storage connection');
     process.stdout.write('hayaku_sparse_rrf_product_server_integration_test: PASS\n');
   } finally {
     try { await runtime?.dispose?.(); } catch (_) {}

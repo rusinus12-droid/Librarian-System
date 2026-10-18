@@ -46,9 +46,9 @@ for (const [name, version, namespaceMarker] of cases) {
   assert.ok(!text.includes('data-mscx-key'), `${name} has no manual bootstrap key input`);
   if (!['RETRACE.js', 'LIA_Persona_Linker.js'].includes(name)) {
     assert.equal((text.match(/^\/\/@arg memory_suite_.*_compute_mode /gm) || []).length, 0, `${name} has no independent Compute mode selector`);
-    assert.ok(text.includes('getScopeExecutionPolicy'), `${name} derives Compute from the scoped Storage mode`);
-    assert.ok(text.includes('computeBridge:'), `${name} mounts Compute inside the Storage panel`);
-    assert.ok(text.includes('/v1/compute/bootstrap'), `${name} performs automatic compute-only bootstrap`);
+    // The Compute SDK is retired from the plugins: no Compute bootstrap or bridge remains.
+    assert.ok(!text.includes('/v1/compute/bootstrap'), `${name} performs no Compute bootstrap`);
+    assert.ok(!/LIBRARIAN SYSTEM COMPUTE SDK v|computeBridge:\s*MemorySuite/.test(text), `${name} embeds no Compute SDK`);
     assert.ok(!text.includes('X-Memory-Suite-Compute-Pairing'), `${name} never sends a pairing header`);
   }
   assert.ok(text.includes('mountConnectionPanel'), `${name} server connection panel SDK`);

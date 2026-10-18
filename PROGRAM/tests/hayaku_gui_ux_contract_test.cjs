@@ -105,7 +105,7 @@ assert.ok(source.includes('기본값 적용'), 'blank raw arguments must be iden
 assert.ok(source.includes('명시값 · GUI와 플러그인 argument 화면이 같은 ARG 저장소를 사용합니다.'), 'stored raw arguments must be identified as explicit shared ARG values');
 assert.ok(source.includes('id="hayakuMemorySuiteServerConnectionPanel"'), 'shared Storage owner panel must be preserved');
 assert.ok(source.includes("title: 'HAYAKU · 저장 및 연산'"), 'Storage panel must own the derived Compute policy');
-assert.ok(source.includes('computeBridge: MemorySuiteHayakuComputeBridge'), 'integrated Storage panel must receive the Compute bridge');
+assert.ok(!/computeBridge:\s*MemorySuite|LIBRARIAN SYSTEM COMPUTE SDK v/.test(source), 'the retired Compute SDK is neither embedded nor passed to the Storage panel');
 assert.ok(!source.includes('id="hayakuMemorySuiteComputeSettingsPanel"'), 'separate Compute panel must be retired');
 
 const viewerSetTabStart = source.indexOf('const viewerSetTab = tab => {');

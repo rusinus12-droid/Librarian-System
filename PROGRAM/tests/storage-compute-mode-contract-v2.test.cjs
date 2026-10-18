@@ -25,27 +25,22 @@ assert.match(computeSdk, /const VALID_MODES = new Set\(\[MODE_LOCAL, MODE_PREFER
 assert.doesNotMatch(computeSdk, /MODE_SHADOW|shadowMatches|shadowMismatches|onShadowComparison|mountSettingsPanel/);
 assert.match(computeSdk, /modes: Object\.freeze\(\{ local: MODE_LOCAL, preferServer: MODE_PREFER_SERVER \}\)/);
 
+// The Compute SDK is retired from the plugins: the Storage SDK still derives the scope
+// execution policy above, but no plugin embeds the Compute SDK or mounts a Compute bridge.
 const integrations = [
-  ['plugins/Flashback_Memory.js', releaseVersion('flashback'), 'MemorySuiteComputeBridge', 'Runtime.currentScope'],
-  ['plugins/HAYAKU_Locator_Continuity.js', releaseVersion('hayaku'), 'MemorySuiteHayakuComputeBridge', 'owner?.scope'],
-  ['plugins/LIBRA.js', releaseVersion('libra'), 'MemorySuiteLibraComputeBridge', 'owner?.context?.scope'],
-  ['plugins/LIA_Persona_Linker.js', releaseVersion('lia'), 'MemorySuiteLiaComputeBridge', 'binding.scopeKey']
+  ['plugins/Flashback_Memory.js', releaseVersion('flashback')],
+  ['plugins/HAYAKU_Locator_Continuity.js', releaseVersion('hayaku')],
+  ['plugins/LIBRA.js', releaseVersion('libra')],
+  ['plugins/LIA_Persona_Linker.js', releaseVersion('lia')]
 ];
-for (const [relative, version, bridgeName, scopeNeedle] of integrations) {
+for (const [relative, version] of integrations) {
   const source = read(relative);
   const escapedVersion = version.replaceAll('.', '\\.');
   assert.match(source, new RegExp(`^\\/\\/@version ${escapedVersion}\\s*$`, 'm'));
   assert.doesNotMatch(source, /^\/\/@arg memory_suite_(?:flashback|hayaku|libra|lia)_compute_mode\b/m);
-  assert.match(source, /getScopeExecutionPolicy\(/);
-  assert.ok(source.includes(scopeNeedle), `${relative} seals its concrete owner scope before Compute`);
-  require('./fixtures/current_ui_compute_contracts.cjs').checkComputeMode(source, bridgeName, {flashback: relative.endsWith('Flashback_Memory.js')});
-  if (relative === 'plugins/LIA_Persona_Linker.js') {
-    // LIA retired the general server panel; its owner remains local-only with scoped Compute.
-    require('./fixtures/lia_local_compute_owner_contract.cjs').checkLiaLocalComputeOwner(source);
-  } else {
-    assert.match(source, /computeBridge:/, `${relative} mounts Compute inside the Storage panel`);
-  }
-  assert.doesNotMatch(source, new RegExp(`${bridgeName}\\.mountSettingsPanel`));
+  assert.doesNotMatch(source, /LIBRARIAN SYSTEM COMPUTE SDK v|createMemorySuiteComputeBridge\(|\.mountSettingsPanel/, `${relative} embeds no Compute SDK`);
+  assert.doesNotMatch(source, /computeBridge:\s*MemorySuite/, `${relative} mounts Storage without a Compute bridge`);
+  if (relative === 'plugins/LIA_Persona_Linker.js') require('./fixtures/lia_local_compute_owner_contract.cjs').checkLiaLocalComputeOwner(source);
 }
 
 require('./fixtures/lia_local_compute_owner_contract_controls.cjs').runControls();

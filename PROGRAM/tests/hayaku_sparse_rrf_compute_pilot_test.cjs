@@ -15,14 +15,13 @@ const fingerprint = '7f32e8b10fdd34e8356af70e40ad90d3c48e6fda132080046a807db0ea3
 const normalize = value => JSON.parse(JSON.stringify(value));
 
 assert.match(source, releasePattern("^\\/\\/@version {hayaku}\\s*$", "m"));
-assert.match(source, /const createMemorySuiteComputeBridge\s*=/, 'embedded Compute factory is available to the owner');
+// The Compute SDK is retired from HAYAKU: sparse RRF and composite recall run locally.
+assert.doesNotMatch(source, /LIBRARIAN SYSTEM COMPUTE SDK v|createMemorySuiteComputeBridge|MemorySuiteHayakuComputeBridge|createMemorySuiteSearchClient/, 'HAYAKU no longer embeds the Compute SDK');
 assert.doesNotMatch(source, /^\/\/@arg memory_suite_hayaku_compute_mode\b/m);
-assert.match(source, /MemorySuiteStorageBridge\.getScopeExecutionPolicy\(owner\?\.scope/);
-assert.match(source, /const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku\.sparse-rrf-fusion\.v1'/);
+assert.match(source, /const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku\.sparse-rrf-fusion\.v1'/, 'historical operation id stays disclosed');
 assert.match(source, new RegExp(fingerprint));
-assert.match(source, /MemorySuiteHayakuComputeBridge\.execute\(/);
-assert.match(source, /const rows=localRecallCandidates\(store,query,settings,computedRanks\)/);
-assert.match(source, /await MemorySuiteHayakuComputeBridge\.dispose/);
+assert.match(source, /return materializeHayakuSparseRrfRows\(rows, runHayakuSparseRrfLocal\(input\)\);/, 'applyRrfFusion runs the local sparse RRF kernel');
+assert.match(source, /const rows=localRecallCandidates\(store,query,settings,null\)/, 'composite recall ranks locally');
 assert.equal(DEFINITIONS[operation].fingerprint, fingerprint, 'plugin and server algorithm fingerprints match');
 
 const sparseSignals = ['bm25fSignal', 'identitySignal', 'canonicalExactSignal', 'associationSignal', 'charNgramSignal', 'lexicalCoverageSignal', 'sparsePhraseSignal'];
@@ -101,7 +100,7 @@ const legacyApplyRrfFusion = (rows, k = 60, blend = 0.12, epsilon = 0.001) => {
     assert.deepEqual(actual, expected, 'the pure seam preserves the pre-Compute RRF formula and stable ties');
     assert.deepEqual(rows, original, 'RRF Compute input never mutates HAYAKU owner rows');
     assert.deepEqual(actual.map(row => row.ownerMarker), original.map(row => row.ownerMarker), 'owner row metadata remains local and unchanged');
-    assert.equal(runtime.hayaku.compute.status().mode, 'local');
+    assert.equal(runtime.hayaku.compute.status().status, 'retired');
     await new Promise(resolve => setTimeout(resolve, 120));
     assert.equal(runtime.fetchCalls.filter(call => call.url.includes('/v1/compute/')).length, 0, 'HAYAKU local mode never probes Compute');
     process.stdout.write('hayaku_sparse_rrf_compute_pilot_test: PASS\n');
