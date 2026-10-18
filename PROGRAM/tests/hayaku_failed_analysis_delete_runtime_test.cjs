@@ -46,6 +46,7 @@ const snapshotEvidence = store => new Map(
 
 (async () => {
   const runtime = await createHayakuRuntime({
+    arguments: { hayaku_debug: 'true' },
     autoRepair: false,
     messages: missingTurnMessages('delete-success')
   });
@@ -93,6 +94,7 @@ const snapshotEvidence = store => new Map(
 
   const rollbackStore = createStore();
   const rollbackRuntime = await createHayakuRuntime({
+    arguments: { hayaku_debug: 'true' },
     autoRepair: false,
     pluginStorage: rollbackStore,
     messages: missingTurnMessages('delete-rollback')

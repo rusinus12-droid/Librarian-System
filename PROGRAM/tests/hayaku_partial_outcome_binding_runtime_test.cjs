@@ -14,11 +14,11 @@ const msg=(role,id,data)=>({role,id,chatId:id,data});
 const r=await createHayakuRuntime({autoRepair:false,messages:[msg('user','u1','Enter.'),msg('assistant','a1',hiddenPacketMessage('Alice entered.',createValidPacket({turn:1}))),msg('user','u2','Open it.'),msg('assistant','a2',source)],llmResponder:async()=>({type:'success',result:JSON.stringify({answer:envelope})})});
 try{
  const first=await r.hayaku.recovery.repairNow();assert.equal(first.partialMemory.durable,true);assert.equal(first.recordAdmission.rejected.length,0);assert(first.recordAdmission.derived.some(x=>x.reason==='unbound_entity_reference'));
- let debug=await r.hayaku._test.buildHayakuOperationDebugExport();const firstAtoms=debug.analysisDiagnostics.partialMemory.stored.records[0].atoms;
+ let debug=await r.hayaku._test.buildHayakuOperationDebugExport({includeAnalysisDetails:true});const firstAtoms=debug.analysisDiagnostics.partialMemory.stored.records[0].atoms;
  const pov=firstAtoms.find(x=>x.path.startsWith('entity.pov'));assert.equal(pov.value.ownerEntityId,undefined);assert.equal(pov.value._unresolvedEntityBindings.ownerEntityId,'ALICE_UNDECLARED');
  packet.world.active_events[0].summary='The chest contained a blue ribbon.';
  const second=await r.hayaku.recovery.repairNow();assert.equal(second.partialMemory.durable,true);
- debug=await r.hayaku._test.buildHayakuOperationDebugExport();const stored=debug.analysisDiagnostics.partialMemory.stored.records[0];
+ debug=await r.hayaku._test.buildHayakuOperationDebugExport({includeAnalysisDetails:true});const stored=debug.analysisDiagnostics.partialMemory.stored.records[0];
  assert.equal(stored.atoms.filter(x=>x.value.id==='discovery').length,1);assert(stored.supersededAtoms.some(x=>x.value.id==='discovery'));assert.equal(stored.completeTurn,false);assert.equal(r.llmCalls.length,2);
  const recalled=await r.hayaku._test.searchAcceptedPartialMemory(await r.hayaku._test.currentChatScope(),'ribbon');assert(!JSON.stringify(recalled).includes('ALICE_UNDECLARED'));
 }finally{await r.dispose();}

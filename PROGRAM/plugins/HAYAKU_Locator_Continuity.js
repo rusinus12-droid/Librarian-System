@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.0.151
-//@version 3.0.151
+//@display-name HAYAKU · Locator Continuity v3.0.152
+//@version 3.0.152
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.0.151';
+  const PLUGIN_VERSION = '3.0.152';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -2491,7 +2491,9 @@ const MODE_PROFILES = Object.freeze({
     lastEpisodeRouting: null,
     recoveryVaultCache: new Map(),
     failedAnalysisVolatile: new Map(),
+    analysisFailureSummaries: [],
     failedAnalysisMutationQueue: Promise.resolve(),
+    partialMemoryMutationQueue: Promise.resolve(),
     failedAnalysisStats: { writes: 0, readbacks: 0, failures: 0, volatile: 0, lastError: '' },
     recoveryVaultStats: {
       reads: 0,
@@ -23713,16 +23715,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const includeAwaitingReview = true; // Diagnostics are not a separate recovery queue.
     const explicitRetry = payload?.explicitRetry === true && targetPairIndex > 0;
     const checkedAt = now();
-    const failedAnalysis = await listFailedAnalysisArtifacts(scope.key);
-    const pendingAnalysisEntries = ensureArray(failedAnalysis.entries).filter(entry => (
-      ['pending_review', 'storage_incomplete'].includes(compact(entry?.state || '', 48))
-      && compact(entry?.debtId || '', 196)
-    ));
-    const pendingAnalysisDebtIds = new Set(pendingAnalysisEntries.map(entry => compact(entry.debtId || '', 196)));
+    const pendingAnalysisEntries = []; // Failure diagnostics never determine repair eligibility.
     const repairableRecords = lifecycle.activeRecords
       .filter(record => !targetDebtId || record.recordId === targetDebtId)
       .filter(record => !targetPairIndex || Number(record.pairIndex || 0) === targetPairIndex)
-      .filter(record => includeAwaitingReview || !pendingAnalysisDebtIds.has(compact(record.recordId || '', 196)))
       .filter(record => explicitRetry || Number(record.repairAttempts || 0) < RECOVERY_DEBT_MAX_AUTO_ATTEMPTS);
     const eligibleRecords = repairableRecords
       .filter(record => !recoveryDebtLeaseIsActive(record, checkedAt))
@@ -42519,6 +42515,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     reason: text(manifest?.reason || ''),
     canAdopt: manifest?.canAdopt === true,
     rawChars: Math.max(0, Number(manifest?.rawChars || 0) || 0),
+    retention: text(manifest?.retention || ''),
     payloadChars: Math.max(0, Number(manifest?.payloadChars || 0) || 0),
     payloadHash: compact(manifest?.payloadHash || '', 96),
     createdAt: Math.max(1, Number(manifest?.createdAt || now()) || now()),
@@ -42587,7 +42584,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         const manifest={...existing.manifest,repeatCount:Math.max(1,Number(existing.manifest.repeatCount||1))+1,lastRepeatedAt:now(),updatedAt:now()};
         const write=await writeFailedAnalysisJsonExact(existing.manifestKey,manifest,'failed_analysis_repeat_update_failed');
         const index=write.durable===true?await writeFailedAnalysisIndexEntry(scopeKey,manifest):write;
-        if(write.durable===true&&index.durable===true){let partialMemory;try{partialMemory=await saveAcceptedPartialMemory(existing.payload);}catch(error){partialMemory={saved:false,reason:text(error?.message||error)};}pushOperationLog(partialMemory.saved?'partial_memory:saved':'partial_memory:not_saved',partialMemory);return {ok:true,durable:true,deduplicated:true,reason:'identical_failure_revision_reused',failureId:duplicate.failureId,manifestKey:existing.manifestKey,manifest,payloadHash:existing.payloadHash,partialMemory};}
+        if(write.durable===true&&index.durable===true)return {ok:true,durable:true,deduplicated:true,reason:'identical_failure_revision_reused',failureId:duplicate.failureId,manifestKey:existing.manifestKey,manifest,payloadHash:existing.payloadHash};
         // Never turn a failed history update into a successful preserved result.
         return {ok:false,durable:false,reason:'failed_analysis_repeat_update_failed',failureId:duplicate.failureId,manifest};
       }
@@ -42625,6 +42622,19 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       createdAt
     };
     const serialized = JSON.stringify(payload);
+    // Only explicitly requested debug details use this legacy physical store.
+    // Retention applies to new debug rows; historical records remain readable.
+    if (input?.retention === 'debug_recent_v1') {
+      if (serialized.length > 200_000) return { ok: true, durable: false, failureId: '', reason: 'analysis_diagnostic_size_limit' };
+      let retained = ensureArray(loadedCases.index.entries).filter(entry => entry.retention === 'debug_recent_v1');
+      const retainedChars = () => retained.reduce((sum, entry) => sum + Number(entry.payloadChars || 0), 0);
+      retained.sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+      while (retained.length >= 10 || retainedChars() + serialized.length > 1_000_000) {
+        const oldest = retained.shift();
+        const removed = await deleteFailedAnalysisArtifactDirect(scopeKey, oldest.failureId);
+        if (removed.durable !== true || removed.deleted !== true) return { ok: false, durable: false, failureId: '', reason: 'analysis_diagnostic_retention_unconfirmed' };
+      }
+    }
     const payloadHash = stableHash64(serialized);
     const rawChars = ensureArray(payload.attempts).reduce((sum, attempt) => sum + text(attempt?.rawResponse || '').length, 0);
     const chunkBodies = [];
@@ -42657,6 +42667,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       canAdopt: payload.canAdopt,
       rawChars,
       payloadChars: serialized.length,
+      retention: input?.retention === 'debug_recent_v1' ? 'debug_recent_v1' : '',
       payloadHash,
       chunks,
       createdAt,
@@ -42699,10 +42710,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       Memory.failedAnalysisStats.writes += 1;
       Memory.failedAnalysisStats.readbacks += 1;
       Memory.failedAnalysisStats.volatile = Memory.failedAnalysisVolatile.size;
-      let partialMemory=null;
-      try { partialMemory=await saveAcceptedPartialMemory(payload); pushOperationLog(partialMemory.saved?'partial_memory:saved':'partial_memory:not_saved',partialMemory,partialMemory.saved?'info':'warn'); }
-      catch(error){partialMemory={saved:false,durable:false,reason:text(error?.message||error)};pushOperationLog('partial_memory:save_failed',partialMemory,'warn');}
-      return { ok: true, durable: true, reason: 'failed_analysis_preserved', failureId, manifestKey, manifest, payloadHash, partialMemory };
+      return { ok: true, durable: true, reason: 'failed_analysis_preserved', failureId, manifestKey, manifest, payloadHash };
     } catch (error) {
       const reason = text(error?.message || error || 'failed_analysis_write_failed');
       manifest = { ...manifest, state: 'storage_incomplete', reason, updatedAt: now() };
@@ -42756,7 +42764,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     return value;
   };
-  const saveAcceptedPartialMemory = async payload => {
+  const saveAcceptedPartialMemoryDirect = async payload => {
     const packet=payload?.proposedCanonical,admission=packet?.meta?.record_admission;
     if(admission?.schema!=='hayaku.record_admission.v1'||admission.status!=='partial')return {saved:false,reason:'not_partial'};
     const scope=await RisuCompat.currentChatScope();
@@ -42782,6 +42790,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const write=await writeFailedAnalysisJsonExact(key,store,'partial_memory_write_failed');
     if(write.durable!==true)throw new Error(write.reason||'partial_memory_readback_failed');
     return {saved:true,durable:true,accepted:unique.length,acceptedThisAttempt:atoms.length,totalStored:unique.length,superseded:record.supersededAtoms.length,turn:binding.turn};
+  };
+  const saveAcceptedPartialMemory = payload => {
+    const queued = Memory.partialMemoryMutationQueue.catch(() => null).then(() => saveAcceptedPartialMemoryDirect(payload));
+    Memory.partialMemoryMutationQueue = queued.catch(() => null);
+    return queued;
   };
   const searchAcceptedPartialMemory = async (scope,query) => {
     if(!scope?.confident||!scope.key)return [];
@@ -42810,10 +42823,40 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return localRecallRank(candidates,[query]).slice(0,8).map((row,index)=>({id:row.id,text:row.publicText,pairIndex:row.turn,path:row.path,score:1/(61+index),stateAuthority:false,completeTurn:false}));
   };
 
+  const analysisFailureSummaries = scopeKey => clone(ensureArray(Memory.analysisFailureSummaries).filter(row => row.scopeKey === scopeKey), []);
   const saveFailedAnalysisArtifact = async input => {
-    const result = await enqueueFailedAnalysisMutation(() => saveFailedAnalysisArtifactDirect(input));
-    scheduleFailedAutoRecovery();
-    return result;
+    const scopeKey = compact(input?.scopeKey || input?.context?.scopeKey || '', 196);
+    // Useful admitted records belong to memory, independently of diagnostic retention.
+    let partialMemory;
+    try { partialMemory = await saveAcceptedPartialMemory({ scopeKey, source: input?.chunk, proposedCanonical: input?.proposedCanonical }); }
+    catch (error) { partialMemory = { saved: false, durable: false, reason: compact(error?.message || error, 240) }; }
+    const summary = {
+      scopeKey, at: now(), turn: Math.max(0, Number(input?.chunk?.targetPairIndex || input?.chunk?.turn || input?.chunk?.startTurn || 0)),
+      kind: compact(input?.kind || 'unknown', 48), flow: compact(input?.flow || input?.context?.failureFlow || '', 64),
+      code: compact(input?.failure?.code || 'HAYAKU_ANALYSIS_FAILED', 96), reason: compact(input?.failure?.message || 'analysis_failed', 240),
+      physicalCalls: ensureArray(input?.attempts).length, partialSaved: partialMemory.saved === true && partialMemory.durable === true,
+      outcome: partialMemory.saved === true && partialMemory.durable === true ? 'partial_memory_saved' : 'analysis_failed'
+    };
+    Memory.analysisFailureSummaries.push(summary);
+    if (Memory.analysisFailureSummaries.length > 50) Memory.analysisFailureSummaries.splice(0, Memory.analysisFailureSummaries.length - 50);
+    pushOperationLog('analysis:failure_summary', summary, summary.partialSaved ? 'info' : 'warn');
+    pushOperationLog(partialMemory.saved ? 'partial_memory:saved' : 'partial_memory:not_saved', partialMemory, partialMemory.saved ? 'info' : 'warn');
+    let detail = { ok: true, durable: false, failureId: '', reason: 'analysis_details_disabled' };
+    if (Memory.settings?.debug === true) {
+      try { detail = await enqueueFailedAnalysisMutation(() => saveFailedAnalysisArtifactDirect({ ...input, retention: 'debug_recent_v1' })); }
+      catch (error) { detail = { ok: false, durable: false, failureId: '', reason: compact(error?.message || error, 240) }; }
+      // Failed physical writes may keep a session fallback, under the same size/count limits.
+      const volatile = [...Memory.failedAnalysisVolatile];
+      let chars = volatile.reduce((sum, [, value]) => sum + Number(value.manifest?.payloadChars || 0), 0);
+      while (volatile.length > 10 || chars > 1_000_000) {
+        const [key, value] = volatile.shift(); chars -= Number(value.manifest?.payloadChars || 0);
+        Memory.failedAnalysisVolatile.delete(key);
+      }
+      Memory.failedAnalysisStats.volatile = Memory.failedAnalysisVolatile.size;
+      if (detail.durable !== true) pushOperationLog('analysis:detail_not_saved', { scopeKey, turn: summary.turn, reason: detail.reason }, 'warn');
+    }
+    // Diagnostic failures never turn a valid candidate or partial memory into a failed write.
+    return { ...detail, ok: true, partialMemory, summary, detailsRetained: detail.durable === true };
   };
   async function readFailedAnalysisArtifact(scopeKeyInput, failureIdInput, options = {}) {
     const scopeKey = compact(scopeKeyInput || '', 196);
@@ -44784,19 +44827,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
             canAdopt: true,
             failure: failedAttempts.at(-1)?.error || { code: 'HAYAKU_NATIVE_PRIMARY_REPAIRED', message: 'primary response failed and repair response succeeded' }
           });
-          if (preserved.durable !== true) {
-            const preservationError = new Error(`failed_analysis_preservation_failed:${preserved.reason || 'unknown'}`);
-            preservationError.code = 'HAYAKU_FAILED_ANALYSIS_PRESERVATION_FAILED';
-            preservationError.failedAnalysisId = preserved.failureId;
-            throw preservationError;
-          }
           if (groundedRepair && groundingReceipt?.verified === true) {
             correctedFailureId = preserved.failureId;
           } else {
           const reviewError = new Error('native_analysis_user_review_required');
           reviewError.code = 'HAYAKU_NATIVE_USER_REVIEW_REQUIRED';
           reviewError.failedAnalysisId = preserved.failureId;
-          reviewError.failedAnalysisDurable = true;
+          reviewError.failedAnalysisDurable = preserved.durable === true;
+          reviewError.analysisFailureRecorded = true;
           reviewError.failedAnalysisAlreadyPreserved = true;
           throw reviewError;
           }
@@ -44870,6 +44908,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     });
     error.generationMetrics=failedAttempts.map(attempt=>({mode:attempt.mode,inputChars:ensureArray(attempt.requestMessages).reduce((n,m)=>n+text(m.content||m.data||'').length,0),outputChars:attempt.rawChars,responseMetadata:attempt.responseMetadata}));
     error.partialMemory=clone(preserved.partialMemory||{saved:false,reason:'not_observed'},null);
+    error.analysisFailureRecorded = true;
     error.failedAnalysisId = preserved.failureId;
     error.failedAnalysisDurable = preserved.durable === true;
     error.failedAnalysisReason = preserved.reason;
@@ -45082,11 +45121,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
               canAdopt: true,
               failure: previousFailures.at(-1)?.error || { code: 'HAYAKU_NATIVE_BATCH_PRIMARY_REPAIRED', message: 'batch primary output was repaired' }
             });
-            if (preserved.durable !== true) {
-              error = new Error(`failed_analysis_preservation_failed:${preserved.reason || 'unknown'}`);
-              error.code = 'HAYAKU_FAILED_ANALYSIS_PRESERVATION_FAILED';
-              error.failedAnalysisId = preserved.failureId;
-            }
+
           }
         }
         if (!error && normalized) {
@@ -46168,15 +46203,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         return {ok:false,skipped:true,suspended:true,reason:run.error,error:run.error,runId,debtId,scopeKey,release};
       }
       const deferred = nativeRepairTransportFailure(error);
-      const awaitingUserReview = deferred !== true && Boolean(error?.failedAnalysisId) && error?.failedAnalysisDurable === true;
+      const generationIncomplete = deferred !== true && (error?.analysisFailureRecorded === true || Boolean(error?.failedAnalysisId) && error?.failedAnalysisDurable === true);
       run.state = deferred ? 'deferred' : 'failed';
       run.error = compact(error?.message || error, 320);
       run.failedAnalysisId = compact(error?.failedAnalysisId || '', 160);
       run.updatedAt = now();
       run.finishedAt = now();
       await writeNativeRunRecord(runPrefix, scopeKey, run).catch(() => null);
-      const release = await releaseLease(awaitingUserReview?'generation_incomplete':(deferred?'deferred':'failed'),run.error);
-      if (awaitingUserReview) {
+      const release = await releaseLease(generationIncomplete?'generation_incomplete':(deferred?'deferred':'failed'),run.error);
+      if (generationIncomplete) {
         return {
           ok: false,
           repaired: false,
@@ -48115,13 +48150,12 @@ const MemorySuiteHealthRecovery = (() => {
     if (!scope?.confident || !scope?.key) {
       return { ...base, ...transportStatus, available: false, reason: scope?.reason || 'scope_unavailable' };
     }
-    const [repairRun, coldStartRun, regenerationRun, legacyColdStartRun, legacyIncrementalRun, failedAnalysis] = await Promise.all([
+    const [repairRun, coldStartRun, regenerationRun, legacyColdStartRun, legacyIncrementalRun] = await Promise.all([
       readNativeRunRecord(HAYAKU_NATIVE_REPAIR_RUN_KEY_PREFIX, scope.key, HAYAKU_NATIVE_REPAIR_RUN_SCHEMA),
       readNativeRunRecord(HAYAKU_NATIVE_COLD_START_RUN_KEY_PREFIX, scope.key, HAYAKU_NATIVE_COLD_START_RUN_SCHEMA),
       readNativeRunRecord(HAYAKU_NATIVE_REGEN_RUN_KEY_PREFIX, scope.key, HAYAKU_NATIVE_REGEN_RUN_SCHEMA),
       readLegacyRetraceRun(scope.key, 'cold_start'),
-      readLegacyRetraceRun(scope.key, 'incremental_recovery'),
-      listFailedAnalysisArtifacts(scope.key)
+      readLegacyRetraceRun(scope.key, 'incremental_recovery')
     ]);
     let debt = null;
     let debtScan = null;
@@ -48164,7 +48198,7 @@ const MemorySuiteHealthRecovery = (() => {
       repairRun,
       coldStartRun,
       regenerationRun,
-      failedAnalysis,
+      failedAnalysis: { retired: true, entries: [], pending: 0, summaries: analysisFailureSummaries(scope.key) },
       coldStartBatchTurns: normalizeColdStartBatchTurns(Memory.settings?.coldStartBatchTurns || 1),
       job: nativeJobSnapshot(),
       legacyTakeover: {
@@ -54614,7 +54648,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     }
     const memorySuite = await MemorySuiteStorageBridge.getDiagnostics({ force: true, limit: 500 }).catch(() => MemorySuiteStorageBridge.getCachedDiagnostics());
     const result=composeHayakuOperationDebugExport(scope, ledger, memorySuite);
-    result.analysisDiagnostics={scopeKey:scope?.key||'',limit:10,artifacts:[],partialMemory:null};
+    result.analysisDiagnostics={scopeKey:scope?.key||'',limit:10,artifacts:[],partialMemory:null,summaries:analysisFailureSummaries(scope?.key||''),detailsIncluded:options.includeAnalysisDetails===true};
+    if(options.includeAnalysisDetails!==true){result.privacy.analysisResponses='omitted';return debugSanitizeForExport(result);}
     if(scope?.confident){
       try {
         const listed=await listFailedAnalysisArtifacts(scope.key);
@@ -55198,6 +55233,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     'install:ledger_viewer': '원장 뷰어 등록 완료',
     'install:unbound_identity_repaired': '미결속 패킷 복구',
     'native_recovery:repair_failed': 'Other Ax 누락 복구 실패',
+    'analysis:failure_summary': '기억 분석 결과 요약',
+    'analysis:detail_not_saved': '상세 진단 보관 생략',
     'native_recovery:targeted_regeneration_completed': '패킷 재생성 완료',
     'native_recovery:targeted_regeneration_candidate_ready': '패킷 재생성 후보 준비 완료',
     'native_recovery:targeted_regeneration_failed': '패킷 재생성 실패',
@@ -55216,7 +55253,6 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   // instead of re-querying data, so it works unchanged with every existing renderer.
   const VIEWER_LIST_FILTERS = Object.freeze([
     Object.freeze({ input: 'hayakuWorldlineFilter', container: 'hayakuWorldlineTimeline', item: '.pk-row', count: 'hayakuWorldlineFilterCount' }),
-    Object.freeze({ input: 'hayakuFailedRecoveryFilter', container: 'hayakuFailedRecoveryList', item: 'article.row', count: 'hayakuFailedRecoveryFilterCount' }),
     Object.freeze({ input: 'hayakuLogFilter', container: 'hayakuViewerOperationLog', item: '.row', count: 'hayakuLogFilterCount' }),
     Object.freeze({ input: 'hayakuSwallowedDiagFilter', container: 'hayakuViewerSwallowedDiag', item: '.row', count: 'hayakuSwallowedDiagFilterCount' })
   ]);
@@ -55442,7 +55478,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         <div class="search"><i data-i="search" data-size="sm"></i><input id="hayakuSettingsFilter" class="input" placeholder="설정 이름, 설명, 인자 이름으로 찾기" aria-label="설정 검색" data-no-track></div>
         <div class="card is-active" data-subpanel="basic" data-group="st" data-hayaku-settings-section="basic"><div class="split" style="margin-bottom:6px"><span class="hint">기본 동작 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">HAYAKU 사용</div><div class="setting__desc">끄면 패킷 작성 지시와 회상이 모두 중지됩니다.</div><span class="argtag">hayaku_enabled</span></div><label class="switch"><input type="checkbox" id="st-enabled" checked><span class="switch__track"></span><span class="sr-only">HAYAKU 사용</span></label></div><div class="setting"><div><div class="setting__name">성능 모드</div><div class="setting__desc">현재 실제 적용: Balanced (최근 요청 기준)</div><span class="argtag">hayaku_mode</span></div><div class="seg" data-dirty role="group" aria-label="성능 모드"><button aria-pressed="false">Auto</button><button aria-pressed="false">Fast</button><button aria-pressed="true">Balanced</button><button aria-pressed="false">Deep</button></div></div><div class="setting"><div><div class="setting__name">프롬프트 방식</div><div class="setting__desc">작성 지시의 상세 수준</div><span class="argtag">hayaku_prompt_mode</span></div><select class="select" style="width:210px" aria-label="프롬프트 방식"><option>auto</option><option>balanced</option><option>full</option></select></div><div class="setting"><div><div class="setting__name">패킷 출력 위치</div><div class="setting__desc">자동이면 응답 본문 뒤에 붙입니다.</div><span class="argtag">hayaku_packet_output_slot</span></div><select class="select" style="width:210px" aria-label="패킷 출력 위치"><option>auto</option><option>tail</option><option>wrapper</option><option>footer</option></select></div><div class="setting"><div><div class="setting__name">닫는 태그</div><div class="setting__desc">선택. 예: </Story> — 출력 위치가 ‘닫는 태그 앞’일 때 그 앞에 둡니다.</div><span class="argtag">hayaku_packet_closing_tag</span></div><input class="input" value="" placeholder="</Story>" style="width:210px" aria-label="닫는 태그"></div><div class="setting"><div><div class="setting__name">프롬프트 캐시</div><div class="setting__desc">캐시 사용 방식</div><span class="argtag">hayaku_prompt_cache</span></div><select class="select" style="width:210px" aria-label="프롬프트 캐시"><option>off</option><option>structural</option><option>native</option></select></div><div class="setting"><div><div class="setting__name">기억 언어</div><div class="setting__desc">대화 원문 언어를 고르면 완료된 대화의 언어를 따릅니다.</div><span class="argtag">hayaku_memory_language</span></div><select class="select" style="width:210px" aria-label="기억 언어"><option>source</option><option>ko</option><option>en</option><option>ja</option><option>zh</option></select></div></div>
         <div class="card" data-subpanel="pick" data-group="st" data-hayaku-settings-section="pick"><div class="split" style="margin-bottom:6px"><span class="hint">기억 선택 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">축당 최대 항목</div><div class="setting__desc">기억 축 하나에서 가져올 최대 항목 수</div><span class="argtag">hayaku_max_items_per_axis</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="축당 최대 항목"></div><div class="setting"><div><div class="setting__name">관련성 비중</div><div class="setting__desc">0–100. 비우면 70</div><span class="argtag">hayaku_recall_relatedness_weight</span></div><input class="input" type="number" value="70" style="width:90px" aria-label="관련성 비중"></div><div class="setting"><div><div class="setting__name">최신성 비중</div><div class="setting__desc">0–100. 비우면 30</div><span class="argtag">hayaku_recall_recency_weight</span></div><input class="input" type="number" value="30" style="width:90px" aria-label="최신성 비중"></div><div class="setting"><div><div class="setting__name">문맥 메시지 수</div><div class="setting__desc">현재 입력 앞의 고정 최근 메시지 창. 비우면 5</div><span class="argtag">hayaku_recall_context_messages</span></div><input class="input" type="number" value="5" style="width:90px" aria-label="문맥 메시지 수"></div><div class="setting"><div><div class="setting__name">적응형 문맥 창</div><div class="setting__desc"></div><span class="argtag">hayaku_adaptive_context_window</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">적응형 문맥 창</span></label></div><div class="setting"><div><div class="setting__name">다중 주제 회상</div><div class="setting__desc">한 입력에서 여러 주제를 따로 찾습니다.</div><span class="argtag">hayaku_multi_query_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 주제 회상</span></label></div><div class="setting"><div><div class="setting__name">모순 묶음</div><div class="setting__desc"></div><span class="argtag">hayaku_contradiction_bundle</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">모순 묶음</span></label></div><div class="setting"><div><div class="setting__name">다중 해상도 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_multi_resolution_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 해상도 회상</span></label></div><div class="setting"><div><div class="setting__name">회상 안정성</div><div class="setting__desc"></div><span class="argtag">hayaku_recall_stability</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">회상 안정성</span></label></div><div class="setting"><div><div class="setting__name">안정성 가산</div><div class="setting__desc">0.0–0.08. 비우면 0.025</div><span class="argtag">hayaku_recall_stability_boost</span></div><input class="input" type="number" value="0.025" style="width:100px" aria-label="안정성 가산"></div><details class="fold" style="margin-top:12px"><summary>시간대별 회상 <span class="hint">선택 · 5개 값을 모두 입력해야 적용</span></summary><div class="fold__body"><div class="setting"><div><div class="setting__name">단기 최대 경과 턴</div><div class="setting__desc">선택</div><span class="argtag">hayaku_recall_short_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="단기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">중기 최대 경과 턴</div><div class="setting__desc">단기보다 커야 함</div><span class="argtag">hayaku_recall_medium_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="중기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">단기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_short_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="단기 턴 할당"></div><div class="setting"><div><div class="setting__name">중기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_medium_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="중기 턴 할당"></div><div class="setting"><div><div class="setting__name">장기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_long_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="장기 턴 할당"></div></div></details></div>
-        <div class="card" data-subpanel="safe" data-group="st" data-hayaku-settings-section="safe"><div class="note note--warn" style="margin-bottom:6px"><b>비용 안내</b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다.</div><div class="split" style="margin-bottom:6px"><span class="hint">복구 · 안전 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">패킷 복구 사용</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_recovery</span></div><label class="switch"><input type="checkbox" id="st-packet-recovery" checked><span class="switch__track"></span><span class="sr-only">패킷 복구 사용</span></label><span class="badge" data-setting-state="packet-recovery" aria-live="polite"></span></div><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">유일한 자동 복구입니다. 누락 패킷당 Other Ax 1회, 실패하면 수동 복구로 남깁니다.</div><span class="argtag">hayaku_after_request_auto_repair</span></div><label class="switch"><input type="checkbox" id="st-after" checked><span class="switch__track"></span><span class="sr-only">afterRequest 자동 복구</span></label></div><div class="setting"><div><div class="setting__name">추가 복구 허용량</div><div class="setting__desc">작업당 구조 복구 추가 호출. 기본 0</div><span class="argtag">hayaku_recovery_extra_calls</span></div><select class="select" id="st-extra" style="width:110px" aria-label="추가 복구 허용량"><option>0</option><option>1</option></select></div><div class="setting"><div><div class="setting__name">Cold Start 묶음</div><div class="setting__desc">호출당 최대 완료 U+A 턴</div><span class="argtag">hayaku_cold_start_batch_turns</span></div><select class="select" style="width:110px" aria-label="Cold Start 묶음" id="st-cold"><option>1</option><option selected>5</option><option>10</option></select></div><div class="setting"><div><div class="setting__name">패킷 커버리지 점검</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_audit</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">패킷 커버리지 점검</span></label></div><div class="setting"><div><div class="setting__name">커버리지 대체 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_fallback_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">커버리지 대체 회상</span></label></div><div class="setting"><div><div class="setting__name">표시 스크러버</div><div class="setting__desc"></div><span class="argtag">hayaku_display_scrubber</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">표시 스크러버</span></label></div><div class="setting"><div><div class="setting__name">플러그인 보조 모델 허용</div><div class="setting__desc">RisuAI 보조 모델에 플러그인 제공 모델을 쓸 수 있게 합니다.</div><span class="argtag">risuai_aux_allow_plugins</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">플러그인 보조 모델 허용</span></label></div><div class="setting"><div><div class="setting__name">디버그</div><div class="setting__desc"></div><span class="argtag">hayaku_debug</span></div><label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="sr-only">디버그</span></label></div></div>
+        <div class="card" data-subpanel="safe" data-group="st" data-hayaku-settings-section="safe"><div class="note note--warn" style="margin-bottom:6px"><b>비용 안내</b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다.</div><div class="split" style="margin-bottom:6px"><span class="hint">복구 · 안전 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">패킷 복구 사용</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_recovery</span></div><label class="switch"><input type="checkbox" id="st-packet-recovery" checked><span class="switch__track"></span><span class="sr-only">패킷 복구 사용</span></label><span class="badge" data-setting-state="packet-recovery" aria-live="polite"></span></div><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">유일한 자동 복구입니다. 누락 패킷당 Other Ax 1회, 실패하면 수동 복구로 남깁니다.</div><span class="argtag">hayaku_after_request_auto_repair</span></div><label class="switch"><input type="checkbox" id="st-after" checked><span class="switch__track"></span><span class="sr-only">afterRequest 자동 복구</span></label></div><div class="setting"><div><div class="setting__name">추가 복구 허용량</div><div class="setting__desc">작업당 구조 복구 추가 호출. 기본 0</div><span class="argtag">hayaku_recovery_extra_calls</span></div><select class="select" id="st-extra" style="width:110px" aria-label="추가 복구 허용량"><option>0</option><option>1</option></select></div><div class="setting"><div><div class="setting__name">Cold Start 묶음</div><div class="setting__desc">호출당 최대 완료 U+A 턴</div><span class="argtag">hayaku_cold_start_batch_turns</span></div><select class="select" style="width:110px" aria-label="Cold Start 묶음" id="st-cold"><option>1</option><option selected>5</option><option>10</option></select></div><div class="setting"><div><div class="setting__name">패킷 커버리지 점검</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_audit</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">패킷 커버리지 점검</span></label></div><div class="setting"><div><div class="setting__name">커버리지 대체 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_fallback_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">커버리지 대체 회상</span></label></div><div class="setting"><div><div class="setting__name">표시 스크러버</div><div class="setting__desc"></div><span class="argtag">hayaku_display_scrubber</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">표시 스크러버</span></label></div><div class="setting"><div><div class="setting__name">플러그인 보조 모델 허용</div><div class="setting__desc">RisuAI 보조 모델에 플러그인 제공 모델을 쓸 수 있게 합니다.</div><span class="argtag">risuai_aux_allow_plugins</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">플러그인 보조 모델 허용</span></label></div><div class="setting"><div><div class="setting__name">디버그</div><div class="setting__desc">상세 분석 원문·모델 응답을 보관합니다. 채팅별 최근 10건·총 100만 자, 건별 20만 자 이내입니다.</div><span class="argtag">hayaku_debug</span></div><label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="sr-only">디버그</span></label></div></div>
         <div class="card" data-subpanel="adv" data-group="st" data-hayaku-settings-section="adv"><div class="split" style="margin-bottom:6px"><span class="hint">고급 검색 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">BM25 채널 <span class="lvl">고급</span></div><div class="setting__desc">키워드 기반 검색을 함께 사용합니다.</div><span class="argtag">hayaku_bm25_channel</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">BM25 채널 <span class="lvl">고급</span></span></label></div><div class="setting"><div><div class="setting__name">BM25 가중치</div><div class="setting__desc">비우면 0.08</div><span class="argtag">hayaku_bm25_weight</span></div><input class="input" type="number" value="0.08" style="width:100px" aria-label="BM25 가중치"></div><div class="setting"><div><div class="setting__name">원문 구절 회상</div><div class="setting__desc">Recovery Journal 증거를 정확/BM25/trigram/근접도로 검색</div><span class="argtag">hayaku_raw_passage_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">원문 구절 회상</span></label></div><div class="setting"><div><div class="setting__name">원문 증거 최대 글자</div><div class="setting__desc">비우면 2400</div><span class="argtag">hayaku_raw_recall_max_chars</span></div><input class="input" type="number" value="2400" style="width:110px" aria-label="원문 증거 최대 글자"></div><div class="setting"><div><div class="setting__name">타입 기억 그래프</div><div class="setting__desc">패킷 기억 행 사이의 관계를 결정적으로 도출</div><span class="argtag">hayaku_typed_memory_graph</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">타입 기억 그래프</span></label></div><div class="setting"><div><div class="setting__name">그래프 이웃 회상</div><div class="setting__desc">일반 검색 게이트 이후 제한된 이웃 근거 허용</div><span class="argtag">hayaku_graph_closure_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">그래프 이웃 회상</span></label></div><div class="setting"><div><div class="setting__name">그래프 최대 노드</div><div class="setting__desc">요청당. 비우면 8</div><span class="argtag">hayaku_graph_closure_max_nodes</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="그래프 최대 노드"></div><div class="setting"><div><div class="setting__name">계층 에피소드 기억</div><div class="setting__desc">장면/턴 라우터 전용 계층</div><span class="argtag">hayaku_hierarchical_episode_memory</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">계층 에피소드 기억</span></label></div><div class="setting"><div><div class="setting__name">에피소드 라우터 최대 수</div><div class="setting__desc">요청당. 비우면 3</div><span class="argtag">hayaku_episode_router_max_hits</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="에피소드 라우터 최대 수"></div><div class="setting"><div><div class="setting__name">RisuAI 보조 모델 호출 테스트</div><div class="setting__desc">API · 모델 · 지연 시간을 확인합니다 (1회 호출).</div></div><button class="btn btn--sm" id="ax-test" type="button">테스트</button></div></div>
       </div>
     </div>
@@ -56980,7 +57016,6 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     overview: Object.freeze({ label: '개요', description: '' }),
     packets: Object.freeze({ label: '패킷 원장', description: '턴별 정본 패킷과 원문·결속·JSON을 조회합니다.' }),
     recovery: Object.freeze({ label: 'Recovery Journal', description: '정상 afterRequest 복구와 확인형 백그라운드 복구를 관리합니다.' }),
-    failed_recovery: Object.freeze({ label: '실패 복구', description: '원본·실패 원인·승격 예정 패킷을 비교하고 처리합니다.' }),
     server: Object.freeze({ label: '서버 연결', description: 'Storage와 Compute의 독립된 연결을 관리합니다.' }),
     settings: Object.freeze({ label: '설정', description: 'HAYAKU의 사용자 argument를 draft와 readback으로 관리합니다.' }),
     logs: Object.freeze({ label: '작동 로그', description: '현재 실행의 요청·회상·패킷·복구 기록을 확인합니다.' })
@@ -57407,9 +57442,6 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       viewerMountServerConnection();
     } else if (active === 'recovery') {
       void viewerRenderNativeRecovery();
-      void viewerRenderFailedRecovery();
-    } else if (active === 'failed_recovery') {
-      void viewerRenderFailedRecovery();
     } else if (active === 'settings') {
       void viewerRenderSettings(false);
     } else {
@@ -57791,7 +57823,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     return ok;
   };
   const showHayakuOperationDebugJson = async (message = '디버그 JSON을 아래 영역에 표시했습니다.', isError = false) => {
-    const payload = await buildHayakuOperationDebugExport();
+    const payload = await buildHayakuOperationDebugExport({ includeAnalysisDetails: Memory.ledgerViewer.root?.querySelector?.('#hayakuIncludeAnalysisDetails')?.checked === true });
     Memory.ledgerViewer.debugExportText = viewerPrettyJson(payload);
     viewerRenderDebugExportText();
     viewerSetStatusMessage(message, isError);
@@ -57801,7 +57833,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const environment = viewerClipboardEnvironment();
 
     // Fresh diagnostics may outlive clipboard activation; the existing text fallback remains available.
-    const payload = await buildHayakuOperationDebugExport();
+    const payload = await buildHayakuOperationDebugExport({ includeAnalysisDetails: Memory.ledgerViewer.root?.querySelector?.('#hayakuIncludeAnalysisDetails')?.checked === true });
     const body = viewerPrettyJson(payload);
     const result = await viewerCopyTextWithFallback(body);
     if (result.ok) {
@@ -57816,7 +57848,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     return result;
   };
   const downloadHayakuOperationDebugJson = async () => {
-    const payload = await buildHayakuOperationDebugExport();
+    const payload = await buildHayakuOperationDebugExport({ includeAnalysisDetails: Memory.ledgerViewer.root?.querySelector?.('#hayakuIncludeAnalysisDetails')?.checked === true });
     const scopeKey = payload?.scope?.key || 'current';
     const filename = `hayaku-debug-${scopeKey}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
     const ok = viewerDownloadJson(filename, payload);
@@ -58318,68 +58350,6 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const callsNode = root.querySelector?.('#hayakuColdStartCallCount'); if (callsNode) callsNode.textContent = bundles ? `${bundles}회 기본 호출` : '-';
       viewerRecoveryMessage(`이번 Cold Start에서 호출당 최대 ${selected}턴을 사용합니다. 저장된 기본값은 설정 화면에서 관리합니다.`);
     });
-    root.querySelector?.('#hayakuFailedRecoveryDetail')?.addEventListener('click', event => {
-      const tab = event?.target?.closest?.('[data-subtabs="hayakuFailureDetail"] [data-subtab]');
-      if (!tab) return;
-      const selected = tab.dataset.subtab;
-      root.querySelectorAll?.('[data-subtabs="hayakuFailureDetail"] [data-subtab]')?.forEach(node => {
-        const active = node === tab; node.setAttribute('aria-selected', String(active)); node.classList.toggle('is-active', active); node.tabIndex = active ? 0 : -1;
-      });
-      root.querySelectorAll?.('[data-group="hayakuFailureDetail"][data-subpanel]')?.forEach(panel => {
-        const active = panel.dataset.subpanel === selected; panel.hidden = !active; panel.classList.toggle('is-active', active);
-      });
-    });
-    root.querySelector?.('#selectAllHayakuFailures')?.addEventListener('click', () => {
-      if (Memory.ledgerViewer.failedDeleteBusy) return;
-      Memory.ledgerViewer.failedDeleteSelection = new Set(ensureArray(Memory.ledgerViewer.failedDeleteEntries).map(entry => entry.failureId));
-      viewerUpdateFailureSelection();
-    });
-    root.querySelector?.('#clearHayakuFailureSelection')?.addEventListener('click', () => {
-      if (Memory.ledgerViewer.failedDeleteBusy) return;
-      Memory.ledgerViewer.failedDeleteSelection = new Set(); viewerUpdateFailureSelection();
-    });
-    root.querySelector?.('#deleteHayakuSelectedFailures')?.addEventListener('click', () => {
-      void viewerDeleteFailedRecovery([...(Memory.ledgerViewer.failedDeleteSelection || [])]);
-    });
-    root.querySelector?.('#hayakuFailedRecoveryList')?.addEventListener('change', event => {
-      const node = event?.target?.closest?.('[data-hayaku-select-failure-id]');
-      if (!node || Memory.ledgerViewer.failedDeleteBusy) return;
-      const selected = Memory.ledgerViewer.failedDeleteSelection ||= new Set();
-      const id = node.getAttribute('data-hayaku-select-failure-id');
-      if (node.checked) selected.add(id); else selected.delete(id);
-      viewerUpdateFailureSelection();
-    });
-    root.querySelector?.('#hayakuFailedRecoveryList')?.addEventListener('click', event => {
-      const deleteButton = event?.target?.closest?.('[data-hayaku-delete-failure-id]');
-      if (deleteButton) {
-        void viewerDeleteFailedRecovery(deleteButton.getAttribute('data-hayaku-delete-failure-id'));
-        return;
-      }
-      const row = event?.target?.closest?.('[data-hayaku-failure-id]');
-      if (!row) return;
-      Memory.ledgerViewer.failedAnalysisSelectedId = compact(row.getAttribute('data-hayaku-failure-id') || '', 160);
-      Memory.ledgerViewer.failedAnalysisManualEdit = false;
-      void viewerRenderFailedRecovery(Memory.ledgerViewer.failedAnalysisSelectedId);
-    });
-    // Revision history is outside the case list. Delegate on its stable detail
-    // container so freshly rendered buttons can open the actual stored revision.
-    root.querySelector?.('#hayakuFailedRecoveryDetail')?.addEventListener('click', event => {
-      const row = event?.target?.closest?.('#hayakuFailureCaseHistory [data-hayaku-failure-id]');
-      if (!row) return;
-      Memory.ledgerViewer.failedAnalysisSelectedId = compact(row.getAttribute('data-hayaku-failure-id') || '', 160);
-      Memory.ledgerViewer.failedAnalysisManualEdit = false;
-      void viewerRenderFailedRecovery(Memory.ledgerViewer.failedAnalysisSelectedId);
-    });
-    root.querySelector?.('#adoptHayakuFailedAnalysis')?.addEventListener('click', () => viewerResolveFailedRecovery('adopt'));
-    root.querySelector?.('#autoRepairHayakuFailedAnalysis')?.addEventListener('click', () => viewerResolveFailedRecovery('llm'));
-    root.querySelector?.('#editHayakuFailedAnalysis')?.addEventListener('click', () => {
-      Memory.ledgerViewer.failedAnalysisManualEdit = true;
-      void viewerRenderFailedRecovery(Memory.ledgerViewer.failedAnalysisSelectedId);
-    });
-    root.querySelector?.('#saveHayakuFailedAnalysisEdit')?.addEventListener('click', () => {
-      const body = root.querySelector?.('#hayakuFailedRecoveryEditor')?.value || '';
-      void viewerResolveFailedRecovery('manual', body);
-    });
     root.querySelector?.('#cleanupHayakuOrphans')?.addEventListener('click', () => cleanupLedgerViewerOrphans());
     root.querySelector?.('#hayakuViewerRecords')?.addEventListener('click', event => {
       const selected = event?.target?.closest?.('[data-hayaku-record-select]');
@@ -58646,7 +58616,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const recoveryPage = `<section class="page" id="hayakuViewerPanelRecovery" data-hayaku-viewer-panel="recovery" data-page="recovery" role="tabpanel" aria-labelledby="hayakuViewerTabRecovery" hidden>
       <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Section maintenance</div><h1 class="page-title">구간 점검 · 복구</h1><p class="page-desc">진단은 읽기 전용입니다. AI를 쓰는 작업은 대상·비용을 먼저 보여주고 확인을 받은 뒤에만 시작됩니다.</p></div><div class="page-actions"><button class="btn" id="refreshHayakuRecovery" type="button">${hayakuMockupIcon('refresh')}상태 새로고침</button></div></div>
       <div class="stack">
-        <div class="tabs" role="tablist" aria-label="복구 작업" data-subtabs="rc"><button class="tab is-active" type="button" role="tab" aria-selected="true" data-subtab="miss" data-recovery-view="missing">누락 복구</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="reana" data-recovery-view="reanalysis">직접 원문 재분석</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="failed" data-recovery-view="failed">실패 후보 수리</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="cold" data-recovery-view="cold">Cold Start</button></div>
+        <div class="tabs" role="tablist" aria-label="복구 작업" data-subtabs="rc"><button class="tab is-active" type="button" role="tab" aria-selected="true" data-subtab="miss" data-recovery-view="missing">누락 복구</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="reana" data-recovery-view="reanalysis">직접 원문 재분석</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="cold" data-recovery-view="cold">Cold Start</button></div>
         <section data-recovery-panel="missing" data-subpanel="miss" data-group="rc" class="is-active"><div class="stack">
           <div class="card" id="hayakuRecoveryStepsCard"><div class="steps"><div class="step is-done"><span class="step__no">1</span><b>1 · 진단</b><span id="hayakuNativeMissingTurns">누락 상태 확인</span></div><div class="step is-active"><span class="step__no">2</span><b>2 · 대상 선택</b><span>복구할 턴을 고릅니다</span></div><div class="step"><span class="step__no">3</span><b>3 · 비용 확인</b><span>Other Ax 호출 승인</span></div><div class="step"><span class="step__no">4</span><b>4 · 복구·결과</b><span>readback 확인</span></div></div></div>
           <div class="card"><div class="card__head"><div><h2 class="card__title">복구할 턴 선택</h2><p class="card__desc">패킷이 없는 완료 턴만 표시합니다. 원문이 수정된 턴은 직접 원문 재분석에서 다룹니다.</p></div></div><div id="hayakuMissingTurnPicker"></div>
@@ -58655,7 +58625,6 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             <div class="cluster" style="margin-top:14px"><button id="runHayakuNativeRepair" class="btn btn--primary" type="button">선택한 턴 복구…</button></div><div id="hayakuNativeRepairOutcome" class="stack"></div>
           </div></div></section>
         <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 누락 복구와 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><div id="hayakuSourceTrackingSettings" class="stack"></div><div id="hayakuSourceEditConsent" class="stack"></div></div></section>
-        <section data-recovery-panel="failed" data-subpanel="failed" data-group="rc" hidden><div class="stack"><div class="card"><div class="card__head"><div><h2 class="card__title">실패 후보</h2><p id="hayakuFailedRecoveryAutomationStatus" class="card__desc"></p></div><div class="cluster"><button id="refreshHayakuFailedRecovery" class="btn btn--sm" type="button">새로고침</button><button id="selectAllHayakuFailures" class="btn btn--sm" type="button">전체 선택</button><button id="clearHayakuFailureSelection" class="btn btn--sm" type="button">선택 해제</button><button id="deleteHayakuSelectedFailures" class="btn btn--danger btn--sm" type="button">선택 기록 삭제</button></div></div><div class="search">${hayakuMockupIcon('search','ic ic--sm')}<input id="hayakuFailedRecoveryFilter" class="input" type="search" placeholder="턴·원인·상태 검색" aria-label="실패 기록 검색"></div><span id="hayakuFailedRecoveryFilterCount" class="hint"></span><div class="fd-grid" data-detail-root><div><div id="hayakuFailedRecoveryList" class="list" aria-label="실패 후보 목록"></div><div id="hayakuFailedRecoveryEmpty" class="empty" hidden><b>보관된 실패 분석이 없습니다.</b><span>현재 채팅에서 보관된 실패가 나타납니다.</span></div></div><section id="hayakuFailedRecoveryDetail" class="card" hidden><div class="card__head"><div><div class="eyebrow">Failed recovery</div><h2 id="hayakuFailedRecoveryTitle" class="card__title"></h2><p id="hayakuFailedRecoveryReason" class="card__desc"></p></div><span id="hayakuFailedRecoveryState" class="badge"></span></div><p id="hayakuFailedRecoveryExplanation"></p><p id="hayakuFailedRecoverySummary"></p><p id="hayakuFailedRecoveryHashes" class="hint mono"></p><p id="hayakuFailedRecoveryEvidenceStatus" class="hint"></p><p id="hayakuFailedRecoveryRequestStatus" class="hint"></p><p id="hayakuFailedRecoveryAutomationDetail" class="hint"></p><div class="tabs" role="tablist" aria-label="실패 분석 상세" data-subtabs="hayakuFailureDetail"><button class="tab" type="button" role="tab" aria-selected="true" data-subtab="src">원문 U+A</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="raw">원시 응답</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="dx">진단</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="cand">승격 후보</button><button class="tab" type="button" role="tab" aria-selected="false" data-subtab="hist">처리 이력</button></div><div data-subpanel="src" data-group="hayakuFailureDetail" class="is-active"><pre id="hayakuFailedRecoverySource" class="json"></pre></div><div data-subpanel="raw" data-group="hayakuFailureDetail" hidden><pre id="hayakuFailedRecoveryRaw" class="json"></pre></div><div data-subpanel="dx" data-group="hayakuFailureDetail" hidden><pre id="hayakuFailedRecoveryGroundingStatus" class="json"></pre></div><div data-subpanel="cand" data-group="hayakuFailureDetail" hidden><pre id="hayakuFailedRecoveryPreview" class="json"></pre><textarea id="hayakuFailedRecoveryEditor" class="textarea" rows="12" hidden></textarea></div><div data-subpanel="hist" data-group="hayakuFailureDetail" hidden><div id="hayakuFailureCaseHistory" class="list"></div></div><p id="hayakuFailedRecoveryActionHint" class="hint"></p><div class="stack stack--sm"><div><button id="adoptHayakuFailedAnalysis" class="btn btn--primary" type="button">후보 확인 후 채택</button></div><div><button id="editHayakuFailedAnalysis" class="btn" type="button">직접 수정·검증</button><button id="saveHayakuFailedAnalysisEdit" class="btn btn--primary" type="button" hidden>수정 후보 저장</button></div><div><button id="autoRepairHayakuFailedAnalysis" class="btn" type="button">AI 다시 분석…</button></div></div><div class="cluster" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)"><span>삭제는 수리와 별개입니다.</span><button id="loadHayakuArchivedFailures" class="btn btn--sm" type="button">보관 진단 읽기</button></div><p id="hayakuFailureDeleteResult" class="hint" hidden></p><p id="hayakuFailedRecoveryMessage" role="status" aria-live="polite"></p><pre id="hayakuArchivedFailures" class="json"></pre></section></div></div></section>
         <section data-recovery-panel="cold" data-subpanel="cold" data-group="rc" hidden><div class="stack"><div class="card fail-box" hidden><div class="empty"><b>원장을 읽지 못해 복구 대상을 계산하지 않습니다.</b><span>AI 작업은 시작할 수 없습니다. 현재 채팅 범위를 다시 확인하세요.</span></div></div><div class="card"><h2 class="card__title">Cold Start</h2><p class="card__desc">기록이 없는 채팅의 완료 턴을 묶음 단위로 분석합니다.</p><div class="cluster"><span class="badge" id="hayakuNativeColdStartState">대기</span><span id="hayakuNativeColdStartProgress">-</span><span>Cold Start 대상 <b id="hayakuNativeColdStartTurns">-</b></span></div><div class="field" style="margin-top:12px"><label for="hayakuColdStartBatchTurns">호출당 U+A</label><select id="hayakuColdStartBatchTurns" class="select" data-no-track aria-label="Cold Start 호출당 U+A"><option value="1">1턴</option><option value="5">5턴</option><option value="10">10턴</option></select><span class="hint">이번 실행에만 적용됩니다. 기본값은 설정 › 복구·안전의 Cold Start 묶음입니다 (저장된 값 <b id="hayakuColdStartSavedValue">-</b>).</span></div><dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>Cold Start</dd><dt>대상 턴</dt><dd id="hayakuColdStartTargetRows">완료된 턴 수는 현재 원장에서 계산합니다.</dd><dt>선택 묶음</dt><dd id="hayakuColdStartBundleCount">-</dd><dt>예상 기본 호출</dt><dd id="hayakuColdStartCallCount">-</dd><dt>추가 복구 허용량</dt><dd>설정에 따른 묶음별 제한</dd></dl><div class="cluster" style="margin-top:12px"><button id="runHayakuNativeColdStart" class="btn btn--primary" type="button">Cold Start 실행…</button><button id="cancelHayakuNativeColdStart" class="btn" type="button">중단 요청</button></div></div></div></section>
         <div class="grid g2"><div class="card"><h2 class="card__title">자동 복구</h2><p class="card__desc">설정 탭과 같은 값입니다 (한 곳에서만 편집).</p><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">정상 응답 처리 안에서 현재 누락/불가 패킷을 1회 복구합니다. 유일한 자동 복구 단계이며, 실패하거나 건너뛴 턴은 Recovery Journal에 남아 아래 수동 복구를 기다립니다.</div></div><span class="badge" id="auto-after" aria-live="polite">설정 확인 중</span></div><button class="linkbtn" id="hayakuRecoverySettingsLink" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경 →</button></div><div class="card"><h2 class="card__title">기억 복원 · Portable JSON</h2><p class="card__desc">같은 채팅은 교체 복원, 다른 채팅은 이사/복사 모드만 허용됩니다. 작업 전 대상 기억을 자동 백업합니다.</p><div data-portable-backup-host="hayaku_locator_continuity"></div></div></div>
         <details class="fold"><summary>안전 검사 도구</summary><div class="fold__body"><div class="cluster"><button id="hayakuSafeHealthInspect" class="btn" type="button">읽기 전용 검사</button><button id="hayakuSafeHealthPreview" class="btn" type="button">안전 복구 미리보기</button><button id="hayakuSafeHealthApply" class="btn" type="button" disabled>캐시 복구</button></div><p id="hayakuSafeHealthStatus" role="status">원문·정본 전체를 검사하는 기능은 아닙니다.</p></div></details>
@@ -58665,7 +58634,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const logsPage = `<section class="page" id="hayakuViewerPanelLogs" data-hayaku-viewer-panel="logs" data-page="logs" role="tabpanel" aria-labelledby="hayakuViewerTabLogs" hidden>
       <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Session log</div><h1 class="page-title">작동 기록</h1><p class="page-desc">현재 실행의 요청·회상·패킷·복구 기록입니다. 민감한 값은 제거됩니다.</p></div><div class="page-actions"><button id="copyHayakuDebug" class="btn" type="button">디버그 JSON 복사</button><button id="exportHayakuDebug" class="btn" type="button">파일로 저장</button></div></div>
       <div class="stack"><div class="search">${hayakuMockupIcon('search')}<input id="hayakuLogFilter" class="input" type="search" placeholder="로그 내용으로 찾기" aria-label="로그 검색"></div><div class="cluster"><span>로그 <b id="hayakuViewerLogCount">0</b></span><button id="refreshHayakuLog" class="btn btn--sm" type="button">새로고침</button><button id="showHayakuDebug" class="btn btn--sm" type="button">JSON 보기</button><span id="hayakuLogFilterCount" class="hint"></span></div><div id="hayakuViewerOperationLog" class="list"></div>
-        <details class="fold"><summary>진단 · 내보내기 자료</summary><div class="stack"><div class="card"><div class="card__head"><div><h2 class="card__title">내부 오류 진단</h2><p class="card__desc">현재 실행에서 기록된 오류를 확인합니다.</p></div><div class="cluster"><button id="refreshHayakuSwallowedDiag" class="btn btn--sm" type="button">새로고침</button><button id="resetHayakuSwallowedDiag" class="btn btn--sm" type="button">진단 초기화</button><b id="hayakuViewerSwallowedDiagCount">0</b></div></div><div class="search">${hayakuMockupIcon('search')}<input id="hayakuSwallowedDiagFilter" class="input" type="search" placeholder="오류 검색" aria-label="오류 검색"></div><span id="hayakuSwallowedDiagFilterCount" class="hint"></span><div id="hayakuViewerSwallowedDiag" class="list"></div></div><details class="fold"><summary>복구 진단 JSON</summary><div class="fold__body"><p>현재 채팅의 복구 자격·Debt 상태를 확인하는 읽기 자료입니다.</p><dl class="kv"><dt>현재 상태</dt><dd id="hayakuNativeRecoveryState">-</dd><dt>coverage</dt><dd id="hayakuNativeCoverageSummary">-</dd><dt>Debt</dt><dd id="hayakuNativeDebtCount">-</dd><dt>복구 가능</dt><dd id="hayakuNativeRepairableCount">-</dd><dt>현재 작업</dt><dd id="hayakuNativeRepairCurrent">-</dd><dt>다음 재시도</dt><dd id="hayakuNativeNextRetry">-</dd><dt>복구 가능 턴</dt><dd id="hayakuNativeRepairableTurns">-</dd><dt>재시도 대기</dt><dd id="hayakuNativeBackoffTurns">-</dd><dt>횟수 초과</dt><dd id="hayakuNativeExhaustedTurns">-</dd><dt>다른 작업 점유</dt><dd id="hayakuNativeLeasedTurns">-</dd><dt>사용자 제외</dt><dd id="hayakuNativeSuppressedTurns">-</dd></dl><pre id="hayakuNativeRecoveryJson" class="json"></pre></div></details><section id="hayakuViewerDebugExportPanel" class="card"><div class="card__head"><div><h2 class="card__title">디버그 JSON</h2><p class="card__desc">민감한 값을 제거한 현재 실행 자료입니다.</p></div><button id="clearHayakuDebugText" class="btn btn--sm" type="button">JSON 표시 닫기</button></div><pre id="hayakuViewerDebugExportText"></pre></section></div></details>
+        <details class="fold"><summary>진단 · 내보내기 자료</summary><div class="stack"><div class="note">기본 기록에는 실패 턴·원인·호출 수만 남깁니다. 상세 분석 보관은 설정의 디버그를 켠 이후 적용됩니다.</div><label class="pk-check"><input id="hayakuIncludeAnalysisDetails" type="checkbox">내보내기에 보관된 상세 분석 포함 (원문·모델 응답)</label><details class="fold"><summary>보관된 상세 분석</summary><div class="fold__body"><button id="loadHayakuArchivedFailures" class="btn btn--sm" type="button">최근 상세 진단 읽기</button><pre id="hayakuArchivedFailures" class="json"></pre></div></details><div class="card"><div class="card__head"><div><h2 class="card__title">내부 오류 진단</h2><p class="card__desc">현재 실행에서 기록된 오류를 확인합니다.</p></div><div class="cluster"><button id="refreshHayakuSwallowedDiag" class="btn btn--sm" type="button">새로고침</button><button id="resetHayakuSwallowedDiag" class="btn btn--sm" type="button">진단 초기화</button><b id="hayakuViewerSwallowedDiagCount">0</b></div></div><div class="search">${hayakuMockupIcon('search')}<input id="hayakuSwallowedDiagFilter" class="input" type="search" placeholder="오류 검색" aria-label="오류 검색"></div><span id="hayakuSwallowedDiagFilterCount" class="hint"></span><div id="hayakuViewerSwallowedDiag" class="list"></div></div><details class="fold"><summary>복구 진단 JSON</summary><div class="fold__body"><p>현재 채팅의 복구 자격·Debt 상태를 확인하는 읽기 자료입니다.</p><dl class="kv"><dt>현재 상태</dt><dd id="hayakuNativeRecoveryState">-</dd><dt>coverage</dt><dd id="hayakuNativeCoverageSummary">-</dd><dt>Debt</dt><dd id="hayakuNativeDebtCount">-</dd><dt>복구 가능</dt><dd id="hayakuNativeRepairableCount">-</dd><dt>현재 작업</dt><dd id="hayakuNativeRepairCurrent">-</dd><dt>다음 재시도</dt><dd id="hayakuNativeNextRetry">-</dd><dt>복구 가능 턴</dt><dd id="hayakuNativeRepairableTurns">-</dd><dt>재시도 대기</dt><dd id="hayakuNativeBackoffTurns">-</dd><dt>횟수 초과</dt><dd id="hayakuNativeExhaustedTurns">-</dd><dt>다른 작업 점유</dt><dd id="hayakuNativeLeasedTurns">-</dd><dt>사용자 제외</dt><dd id="hayakuNativeSuppressedTurns">-</dd></dl><pre id="hayakuNativeRecoveryJson" class="json"></pre></div></details><section id="hayakuViewerDebugExportPanel" class="card"><div class="card__head"><div><h2 class="card__title">디버그 JSON</h2><p class="card__desc">민감한 값을 제거한 현재 실행 자료입니다.</p></div><button id="clearHayakuDebugText" class="btn btn--sm" type="button">JSON 표시 닫기</button></div><pre id="hayakuViewerDebugExportText"></pre></section></div></details>
       </div></section>`;
     root.innerHTML = `<style>${HAYAKU_GUI_SUITE_CSS}\n${HAYAKU_GUI_THEME_CSS}\n${HAYAKU_GUI_COMPONENT_CSS}\n${HAYAKU_SETTINGS_EASY_CSS}\n#${LEDGER_VIEWER_ROOT_ID}{position:fixed;inset:0;width:100%;height:100dvh;z-index:2147483000;background:var(--page-bg,#cdd5d8);font:var(--fs-body)/1.65 var(--font-sans);color:var(--text)}#${LEDGER_VIEWER_ROOT_ID} .stage{width:100%;height:100%;padding:14px;overflow:auto}#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button[hidden]{display:none!important}#${LEDGER_VIEWER_ROOT_ID} .mapping-incomplete{display:grid;gap:8px}
 /* Preserve the reference single-column mobile layout while allowing intrinsic content to shrink inside its panel. */
@@ -58747,7 +58716,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     root.querySelectorAll('[data-packet-view]').forEach(button => button.addEventListener('click', () => showPacketView(button.dataset.packetView)));
     root.querySelectorAll('[data-recovery-view]').forEach(button => button.addEventListener('click', () => {
       const view = button.dataset.recoveryView;
-      const panelKey = ({ missing: 'miss', reanalysis: 'reana', failed: 'failed', cold: 'cold' })[view] || 'miss';
+      const panelKey = ({ missing: 'miss', reanalysis: 'reana', cold: 'cold' })[view] || 'miss';
       root.querySelectorAll('[data-recovery-view]').forEach(node => {
         const selected = node === button;
         node.classList.toggle('is-active', selected);
@@ -58760,7 +58729,6 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         panel.classList.toggle('is-active', selected);
       });
       root.querySelectorAll('[data-group="rc"][data-subpanel]').forEach(panel => panel.classList.toggle('is-active', panel.dataset.subpanel === panelKey));
-      if (view === 'failed') void viewerRenderFailedRecovery();
       if (view === 'reanalysis' || view === 'missing' || view === 'cold') void viewerRenderNativeRecovery();
     }));
     showPacketView('list');
@@ -59539,6 +59507,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         coldStart: async options => clone(await startNativeColdStart(options || {}), {}),
         cancelColdStart: () => cancelNativeColdStart(),
         failedAnalysis: {
+          summaries: async () => { const scope = await RisuCompat.currentChatScope(); return analysisFailureSummaries(scope?.key || ''); },
           list: async () => {
             const scope = await RisuCompat.currentChatScope();
             return scope?.confident ? clone(await listFailedAnalysisArtifacts(scope.key), {}) : { available: false, reason: scope?.reason || 'scope_unavailable', entries: [] };

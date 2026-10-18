@@ -16,7 +16,7 @@ try{
  const initial=await r.hayaku.recovery.repairNow();assert.equal(initial.partialMemory.durable,true);
  const api=r.hayaku._test,scope=await api.currentChatScope();
  assert((await api.searchAcceptedPartialMemory(scope,'blue ribbon')).length>0,'missing turn retains partial recall');
- const before=(await api.buildHayakuOperationDebugExport()).analysisDiagnostics.partialMemory.stored;
+ const before=(await api.buildHayakuOperationDebugExport({includeAnalysisDetails:true})).analysisDiagnostics.partialMemory.stored;
  r.setLlmResponder(async()=>({type:'success',result:JSON.stringify(envelope)}));
  const result=await r.hayaku.recovery.repairNow();assert.equal(result.repaired,true,JSON.stringify(result));assert.equal(result.ok,true);
  const ledger=await r.hayaku.ledger.inspect({includeRecords:true});
@@ -26,7 +26,7 @@ try{
  assert(saved.world.active_events.some(x=>x.summary.includes('blue ribbon')));
  const status=await r.hayaku.recovery.status({includeDebts:true,refreshDebts:true});assert(!status.debt.coverage.missingTurns.includes(2));
  assert.equal((await api.searchAcceptedPartialMemory(await api.currentChatScope(),'blue ribbon')).length,0,'covered turn cannot inject old partial recall');
- const after=(await api.buildHayakuOperationDebugExport()).analysisDiagnostics.partialMemory.stored;
+ const after=(await api.buildHayakuOperationDebugExport({includeAnalysisDetails:true})).analysisDiagnostics.partialMemory.stored;
  assert.equal(JSON.stringify(after),JSON.stringify(before),'partial storage preserved exactly');
  await r.hayaku.recovery.repairNow();assert.equal(r.llmCalls.length,2,'completed turn does not call model again');
  console.log('PASS recall dedup: missing turn recalled, normal recovery suppresses partial recall, original partial store unchanged, no extra model calls');

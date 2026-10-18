@@ -82,6 +82,7 @@ const readDurableFailure = async (runtime, failureId) => {
   // retained byte-for-character after both parse attempts fail. The sentinel is
   // deliberately at the suffix so a hidden prefix truncation cannot pass.
   const hugeRuntime = await createHayakuRuntime({
+    arguments: { hayaku_debug: 'true' },
     autoRepair: false,
     messages: missingTurnMessages('huge')
   });
@@ -120,6 +121,7 @@ const readDurableFailure = async (runtime, failureId) => {
   // artifact. The raw candidate remains intact, while the separate preview is
   // explicit and adoptable only through the user-resolution boundary.
   const lossRuntime = await createHayakuRuntime({
+    arguments: { hayaku_debug: 'true' },
     autoRepair: false,
     messages: missingTurnMessages('loss')
   });
@@ -147,6 +149,7 @@ const readDurableFailure = async (runtime, failureId) => {
   // Cold Start no longer throws away the flow on analysis failure. It returns a
   // review receipt that points to the same durable Failed Recovery artifact.
   const coldRuntime = await createHayakuRuntime({
+    arguments: { hayaku_debug: 'true' },
     autoRepair: false,
     messages: [
       user('cold-u1', 'I light the brass lamp.'),

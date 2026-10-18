@@ -8,7 +8,7 @@ const grounding=[];for(const axis of ['entity','world','narrative','planner'])fo
 const envelope={schema:'hayaku.native_repair_output.v1',packet,grounding,providerNote:'extra envelope metadata'};
 const msg=(role,id,data)=>({role,id,chatId:id,data});
 (async()=>{
-const r=await createHayakuRuntime({autoRepair:false,failedRecoveryAutomation:'retry_once',messages:[msg('user','u1','Enter.'),msg('assistant','a1',hiddenPacketMessage('Alice entered.',createValidPacket({turn:1}))),msg('user','u2','Open the chest.'),msg('assistant','a2',summary)],llmResponder:async()=>({type:'success',result:'FAILED_RAW_SENTINEL'})});
+const r=await createHayakuRuntime({arguments:{hayaku_debug:'true'},autoRepair:false,failedRecoveryAutomation:'retry_once',messages:[msg('user','u1','Enter.'),msg('assistant','a1',hiddenPacketMessage('Alice entered.',createValidPacket({turn:1}))),msg('user','u2','Open the chest.'),msg('assistant','a2',summary)],llmResponder:async()=>({type:'success',result:'FAILED_RAW_SENTINEL'})});
 try{
  const first=await r.hayaku.recovery.repairNow();assert.equal(first.ok,false);assert.equal(first.reason,'no_storable_memory');assert.equal(first.awaitingUserReview,false);assert.equal(r.llmCalls.length,1);
  assert.equal(r.hayaku.recovery.failedAnalysis.automationStatus().mode,'off');

@@ -15,7 +15,7 @@ packet.meta.summary_memory={summary:visible};
 const paths=['entity.characters[0]','planner.continuity_locks[0]','planner.continuity_locks[1]','planner.open_invitations[0]','planner.do_not_resolve_yet[0]','meta.summary_memory.summary'];
 const envelope={schema:'hayaku.native_repair_output.v1',packet,grounding:paths.map(path=>({path,source:'target',evidence:['Alice waited by the door.','She asked Bob to wait until tomorrow.']}))};
 (async()=>{
-const r=await createHayakuRuntime({autoRepair:false,messages,llmResponder:async()=>({type:'success',result:JSON.stringify({answer:envelope})})});
+const r=await createHayakuRuntime({arguments:{hayaku_debug:'true'},autoRepair:false,messages,llmResponder:async()=>({type:'success',result:JSON.stringify({answer:envelope})})});
 try{
  const api=r.hayaku._test;
  for(const tag of ['think','Thoughts','reasoning','analysis']){

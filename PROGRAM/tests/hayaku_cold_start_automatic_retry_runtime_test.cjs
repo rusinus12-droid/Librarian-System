@@ -69,7 +69,7 @@ const coldRecords = async r => (await r.hayaku.ledger.inspect({ includeRecords: 
   {
     let calls = 0;
     const prompts = [];
-    const r = await createHayakuRuntime({ autoRepair: false, messages, llmResponder: async options => {
+    const r = await createHayakuRuntime({ arguments: {hayaku_debug:'true'}, autoRepair: false, messages, llmResponder: async options => {
       calls++; prompts.push((options?.messages || []).map(m => String(m.content || '')).join('\n'));
       if (calls === 1) { const rows = [1, 2, 3].map(entry); rows[1] = badGrounding(2); return batch(rows); }
       return { type: 'success', result: JSON.stringify(single(2)), finish_reason: 'stop' };
@@ -95,7 +95,7 @@ const coldRecords = async r => (await r.hayaku.ledger.inspect({ includeRecords: 
   // Original refusal reason survives the salvage relabel (batch path).
   {
     let calls = 0;
-    const r = await createHayakuRuntime({ autoRepair: false, messages, llmResponder: async () => {
+    const r = await createHayakuRuntime({ arguments: {hayaku_debug:'true'}, autoRepair: false, messages, llmResponder: async () => {
       calls++;
       const rows = [1, 2, 3].map(entry); rows[1].packet.extra_metadata = { note: 'x' };
       return calls === 1 ? batch(rows) : { type: 'success', result: 'not json', finish_reason: 'stop' };

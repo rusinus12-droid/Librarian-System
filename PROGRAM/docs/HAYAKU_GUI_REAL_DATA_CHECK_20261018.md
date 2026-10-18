@@ -1,5 +1,7 @@
 # HAYAKU GUI check against real data (2026-10-18)
 
+This records the 3.0.151 run. In 3.0.152 the retired failure-repair subpanel is removed; diagnostic details move to explicit log access and opt-in bounded retention. See [analysis diagnostics retirement](HAYAKU_ANALYSIS_DIAGNOSTICS_RETIREMENT_20261018.md). The later change was tested with controlled model outputs, without repeating this provider run.
+
 **Goal.** Check that the data HAYAKU writes on each of its four write paths shows up correctly in the GUI, and that it is presented cleanly.
 
 ## Method

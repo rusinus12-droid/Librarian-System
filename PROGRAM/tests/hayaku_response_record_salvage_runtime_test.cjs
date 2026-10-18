@@ -19,7 +19,7 @@ const msg=(role,id,data)=>({role,id,chatId:id,data});
   {label:'no usable records',raw:JSON.stringify({answer:invalid}),names:[]},
  ];
  for(const scenario of cases){
-  const r=await createHayakuRuntime({autoRepair:false,messages:[msg('user','u1','Enter.'),msg('assistant','a1',hiddenPacketMessage('Alice entered.',createValidPacket({turn:1}))),msg('user','u2','Continue.'),msg('assistant','a2',text)],llmResponder:async()=>({type:'success',result:scenario.raw})});
+  const r=await createHayakuRuntime({arguments:{hayaku_debug:'true'},autoRepair:false,messages:[msg('user','u1','Enter.'),msg('assistant','a1',hiddenPacketMessage('Alice entered.',createValidPacket({turn:1}))),msg('user','u2','Continue.'),msg('assistant','a2',text)],llmResponder:async()=>({type:'success',result:scenario.raw})});
   try{
    const result=await r.hayaku.recovery.repairNow();assert.equal(r.llmCalls.length,1);
    assert.equal(result.repaired,false,'salvage never claims complete turn');
@@ -28,7 +28,7 @@ const msg=(role,id,data)=>({role,id,chatId:id,data});
    const recalled=JSON.stringify(await r.hayaku._test.searchAcceptedPartialMemory(scope,'Alice Bob Missing Person'));
    for(const name of scenario.names)assert.ok(recalled.includes(name),scenario.label+recalled);
    assert.ok(!recalled.includes('Missing Person'));
-   const out=await r.hayaku._test.buildHayakuOperationDebugExport();
+   const out=await r.hayaku._test.buildHayakuOperationDebugExport({includeAnalysisDetails:true});
    assert.equal(out.analysisDiagnostics.artifacts[0].attempts[0].rawResponse,scenario.raw);
   }finally{await r.dispose();}
  }

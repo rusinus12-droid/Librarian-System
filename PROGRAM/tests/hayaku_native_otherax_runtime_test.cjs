@@ -324,7 +324,7 @@ const createRuntime = async (argumentOverrides = {}) => {
     // Malformed output ends this request. A separate explicit generation is allowed.
     // Retired extra-call settings cannot silently add paid requests.
     context.risuai=runtime.host;
-    assert.equal((await api.settingsControl.apply({hayaku_recovery_extra_calls:'1'})).ok,true);
+    assert.equal((await api.settingsControl.apply({hayaku_recovery_extra_calls:'1',hayaku_debug:'true'})).ok,true);
     const repairScopeKey = (await test.currentChatScope()).key;
     const repairCandidate = createCandidate('민수가 방 안으로 들어갔다.');
     llmQueue.push('not-json', createRecoveryEnvelope(repairCandidate, '민수가 방 안으로 들어갔다.'));

@@ -95,6 +95,7 @@ const historicalEnvelope = assistantText => {
   }
 
   const failedRuntime = await createHayakuRuntime({
+    arguments: { hayaku_debug: 'true' },
     afterRequestAutoRepair: true,
     backgroundAutoRepair: true,
     messages: [user('failed-u1', 'I turn the brass valve.')],

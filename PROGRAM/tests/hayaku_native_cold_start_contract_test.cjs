@@ -51,7 +51,8 @@ const assistant = (id, data) => ({ role: 'assistant', chatId: id, id, data });
     assert.equal(failedStatus.coldStartRun.run.chunks.length, 2);
     assert.equal(failedStatus.coldStartRun.run.chunks[0].status, 'verified');
     assert.equal(failedStatus.coldStartRun.run.chunks[1].status, 'failed');
-    assert.ok(failedStatus.coldStartRun.run.chunks[1].failedAnalysisId);
+    assert.equal(failedStatus.coldStartRun.run.chunks[1].failedAnalysisId, '', 'checkpoints do not depend on a separate default failure archive');
+    assert.ok(failedStatus.failedAnalysis.summaries.some(row => row.turn === 2));
     assert.ok(failedStatus.coldStartRun.run.chunks[0].body, 'verified chunk body must survive failure');
 
     runtime.setLlmResponder(async () => ({
