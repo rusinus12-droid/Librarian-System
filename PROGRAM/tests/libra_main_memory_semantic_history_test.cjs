@@ -56,6 +56,7 @@ const correctionRequestFromShippedEditor = (row, view, nextValues) => {
     worldManagerArticleValue:value=>String(value??''),worldManagerDisplayReferences:value=>value,queueGuiNavigationRender:()=>{},
     fieldNode:(label,control,note='')=>guiNode('div',{dataset:{field:label}},[guiNode('label',{text:label}),control,note?guiNode('small',{text:note}):null]),
     guiLazyDetails:(attrs,summary,render)=>{const result=render();return guiNode('details',attrs,[summary,...(Array.isArray(result)?result:[result])]);},
+    LibraMemoryCore:{state:{snapshot:view.snapshot||{scope:{scopeKey:view.scopeKey||view.scope?.scopeKey||'semantic-history-scope'}}}},
     optionNodes:(items,value)=>items.map(([optionValue,label])=>guiNode('option',{value:optionValue,text:label,selected:String(optionValue)===String(value)})),Gui:{},String,Number,Array,Object,JSON
   });
   vm.runInContext(`${sourceBetween('const worldManagerDraftKey =','const worldManagerInput =')}

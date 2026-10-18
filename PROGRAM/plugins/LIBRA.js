@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.168
-//@version 2.3.168
+//@display-name LIBRA v2.3.169
+//@version 2.3.169
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1558,7 +1558,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.168';
+  const PLUGIN_VERSION = '2.3.169';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -55531,14 +55531,22 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         'ENVELOPE SHAPE: {"schema":"libra.micro_producer_envelope.v1","personCandidates":{"spans":[],"relations":[]},"micro":{"schema":"libra.micro_memory.v1","scopeKey":"copy binding","worldlineId":"copy binding","sessionEpoch":0,"turn":1,"sourceRevisionId":"copy binding","sourceDigest":"copy binding","claims":[]}}. Copy every binding value exactly; personCandidates is an object, never an array.',
         'micro has schema libra.micro_memory.v1, scopeKey, worldlineId, sessionEpoch, turn, sourceRevisionId, sourceDigest and claims.',
         'Each claim has changeKind (event, person, relation, world, thread or correction), text, actor, target, temporalRole (current, historical, hypothetical or uncertain), certainty (confirmed or uncertain), epistemicStatus (observed, reported or uncertain), stateChangeType (none, set or clear), and evidence with role, messageId, startOffset, endOffset and exactQuote.',
+        'EVIDENCE SHAPE: evidence is exactly ONE object, NEVER an array: {"role":"assistant","messageId":"copy source ID","startOffset":0,"endOffset":1,"exactQuote":"copy exact source span"}. Copy an evidenceCandidates object unchanged when it supports the claim. claims is an array; each claim.evidence is an object.',
         'For an observed current set/clear change, optionally include stateIntent with domain (character, relationship, world or narrative), target, field, operation matching stateChangeType, and value for set only. Character/world target is {entityName}; relationship target is {subjectName,targetName,dimension}; narrative target is {scope:"current_narrative"}. Names must appear in the exact evidence quote. Omit stateIntent when the target, field or value is uncertain; a source quote alone does not approve State.',
+        'CURRENT CHANGES: an explicitly completed movement, loss/recovery of consciousness, injury/recovery, or opening/closing is a change, not a static description. Preserve both the event and its supported current State intent. For a person use domain character; use field locationRef for a changed location (value is the exact cited place name, not an invented ID), or condition for a changed physical condition. For world changes use domain world and the precise affected property: a location door opening/closing uses doorStatus on that location, not condition implying that the whole building changed. condition describes the explicitly stated condition of the target itself. Copy the value literally from the quote, not a translation or a label such as open/closed. Registry resolution and State approval belong to runtime; do not invent a target or approve the claim yourself.',
+        'LOCATION VALUE: copy only the destination place name, without its containing-place phrase: 북관 안의 의무실 -> 의무실. Prefer an exact registeredStateTargets name/alias appearing in the source quote. This list clarifies existing identity only; it proves no event, presence or State change. A separately named door/object is not its building; never merge similarly named targets. Keep the exact affected property when describing an unnamed part of a known location.',
+        'CHANGE EXAMPLE (shape only, never copy these source facts): for source 아린이 기절했다. with messageId a1, a claim is {"changeKind":"person","text":"아린이 기절했다.","actor":"아린","target":"","temporalRole":"current","certainty":"confirmed","epistemicStatus":"observed","stateChangeType":"set","stateIntent":{"domain":"character","target":{"entityName":"아린"},"field":"condition","operation":"set","value":"기절했다"},"evidence":{"role":"assistant","messageId":"a1","startOffset":0,"endOffset":9,"exactQuote":"아린이 기절했다."}}. A question or an unperformed plan never proves that change.',
         'Offsets are UTF-16 indices in the exact U or A text. Quote only an exact contiguous source span. Do not invent an outcome from a request, intention or report.',
         'Evidence and person span role is exactly user or assistant, never subject, narrator or description. evidenceCandidates provide exact optional UTF-16 spans; other exact source spans are also allowed. Actor and target must be strings: copy only a named participant that appears inside that claim\'s exactQuote, otherwise use empty string; never use assistant, user, narrator, null, or a translated name as a participant. STATIC DESCRIPTION IS NOT A STATE TRANSITION: a sentence saying a room contains something, a rule exists, or a speaker reports an existing condition has stateChangeType:none and no stateIntent. Keep its directly grounded world claim. set or clear is only for an explicit change action in this turn with temporalRole:current, certainty:confirmed, epistemicStatus:observed. If used, stateIntent.target is an object such as {\"entityName\":\"exact cited name\"}, never a string. Omit stateIntent for a mere description or unsupported State field/value Check both source roles: preserve a directly evidenced user question as an event with stateChangeType:none, alongside assistant world facts; the question itself does not prove the requested outcome.',
         'Write each claim text in the language of the source turn, keeping names, numbers and quantities exactly as written there; recall searches this text with the user\'s own words.',
         'Describe this turn\'s changes and precise evidence only; do not recap five turns or merge identities. Return JSON only.'
       ].join('\n');
+      const sourceRegistry = await storage.getVerifiedJson(key.entityRegistry(scope), scope, null).catch(() => null);
       const userPrompt = JSON.stringify({
         schema: 'libra.micro_source_input.v1',
+        registeredStateTargets: asArray(sourceRegistry?.entities).filter(entity => entity.validated === true)
+          .slice(0, 64).map(entity => ({name: compact(entity.name, 120), type: entity.type, kind: entity.kind,
+            aliases: asArray(entity.aliases).slice(0, 6).map(alias => compact(alias, 120))})),
         rawPacketRef: raw.rawPacketRef,
         binding: { scopeKey: scope.scopeKey, worldlineId: receipt.worldlineId,
           sessionEpoch: receipt.sessionEpoch, turn: receipt.turn,
@@ -56529,6 +56537,14 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         || !canonicalEntityNameBoundToEvidence(intent.value, claim.evidence.exactQuote)) {
         return pending('state_value_not_source_bound');
       }
+      // The producer cites a place name. Only the verified Registry resolves it
+      // to the same typed locationRef used by Canonical; unknown/ambiguous places stay pending.
+      let stateValue = intent.value;
+      if (domain === 'character' && field === 'locationRef') {
+        const place = resolveEntity(intent.value, 'world');
+        if (!place || place.kind !== 'location') return pending('registry_location_unresolved');
+        stateValue = place.id;
+      }
       const rows = domain === 'character' ? asArray(head.characters) : asArray(head.world);
       const targetRow = rows.find(row => row?.id === entity?.id);
       const current = domain === 'narrative' ? asObject(head.narrative)
@@ -56556,14 +56572,14 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           }
           if (Number(micro.turn) <= observedThroughTurn) {
             return {status: 'superseded', reason: 'explicit_user_correction',
-              disposition: hasCurrentField && statePipelineSemanticEqual(field, current[field], intent.value)
+              disposition: hasCurrentField && statePipelineSemanticEqual(field, current[field], stateValue)
                 ? 'absorbed' : 'corrected', patch: null,
               targetIds: entity ? [entity.id] : []};
           }
         } else {
           // An inherited source turn predates corrections made in the target session.
           return {status: 'superseded', reason: 'explicit_user_correction',
-            disposition: hasCurrentField && statePipelineSemanticEqual(field, current[field], intent.value)
+            disposition: hasCurrentField && statePipelineSemanticEqual(field, current[field], stateValue)
               ? 'absorbed' : 'corrected', patch: null,
             targetIds: entity ? [entity.id] : []};
         }
@@ -56572,7 +56588,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         ?? fieldEvidence.canonical?.sessionEpoch ?? Number.NEGATIVE_INFINITY);
       if (inherited && evidenceEpoch > effectiveEpoch) {
         return {status: 'superseded', reason: 'newer_state_field_evidence',
-          disposition: hasCurrentField && statePipelineSemanticEqual(field, current[field], intent.value)
+          disposition: hasCurrentField && statePipelineSemanticEqual(field, current[field], stateValue)
             ? 'absorbed' : 'corrected', patch: null,
           targetIds: entity ? [entity.id] : []};
       }
@@ -56581,13 +56597,13 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (canonicalOverlap && evidenceEpoch === effectiveEpoch
         && evidenceRangeStart > Number(micro.turn)) {
         return {status: 'superseded', reason: 'later_canonical_field_evidence',
-          disposition: hasCurrentField && statePipelineSemanticEqual(field, current[field], intent.value)
+          disposition: hasCurrentField && statePipelineSemanticEqual(field, current[field], stateValue)
             ? 'absorbed' : 'corrected', patch: null,
           targetIds: entity ? [entity.id] : []};
       }
       if (canonicalOverlap && Object.keys(fieldEvidence).length) {
         if (evidenceEpoch === effectiveEpoch
-          && (!hasCurrentField || !statePipelineSemanticEqual(field, current[field], intent.value))) {
+          && (!hasCurrentField || !statePipelineSemanticEqual(field, current[field], stateValue))) {
           return pending('canonical_overlap_conflict');
         }
       } else if (canonicalOverlap && hasCurrentField) {
@@ -56597,7 +56613,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const assertionId = `micro_${digest({ analysisRevisionId: micro.analysisRevisionId, claimIndex, claim })}`;
       const patchId = `micro_patch_${digest({ assertionId, field })}`;
       const patch = { patchId, operation: 'upsert', entityId: entity?.id || '',
-        set: { [field]: clone(intent.value) }, clear: [],
+        set: { [field]: clone(stateValue) }, clear: [],
         expectedFieldHashes: { [field]: expectedFieldHash },
         evidenceByField: { [field]: { assertionIds: [assertionId] } } };
       const basis = { schema: 'libra.micro_state_basis.v1', scopeKey: targetScopeKey,
@@ -56623,7 +56639,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         return { status: 'admitted', reason: '', disposition: 'still_current', patch,
           expectedFieldHash, targetIds: entity ? [entity.id] : [], assertionId };
       }
-      if (statePipelineSemanticEqual(field, current[field], intent.value)) {
+      if (statePipelineSemanticEqual(field, current[field], stateValue)) {
         return { status: 'admitted', reason: '', disposition: 'absorbed', patch,
           expectedFieldHash, targetIds: entity ? [entity.id] : [], assertionId };
       }
@@ -56877,12 +56893,24 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       }
       return { status: decision.status, reason: decision.reason, decision, decisionKey };
     };
+    const retainMicroLocationReference = (head, registry, domain, field, value, proof) => {
+      if (domain !== 'character' || field !== 'locationRef' || asArray(head.world).some(row => row.id === value)) return;
+      const place = asArray(registry?.entities).find(row => row.id === value && row.validated === true
+        && row.type === 'world' && row.kind === 'location');
+      if (!place) return;
+      // Identity-only read model row: name the verified reference without
+      // inventing a current world field or persisting a second State Head.
+      head.world = [...asArray(head.world), {id: place.id, name: place.name, kind: place.kind,
+        aliases: clone(asArray(place.aliases)), state: {}, fieldEvidence: {},
+        identityEvidence: clone(proof), certainty: 'confirmed'}];
+    };
     const projectActiveMicroStateForResponse = async (scope, manifest, canonicalView) => {
       const base = asObject(canonicalView);
       const stateProofs = asArray(consumedMicroProofsByState.get(base.authority || base.head)).slice();
       const genesis = !base.head && continuityStateRefs(manifest).length === 0;
-      if (!genesis && (!base.head || base.authority?.exactBasis !== true
-        || base.authority?.current !== true)) return canonicalView;
+      // One pending domain must not discard admitted changes in another ready
+      // domain. Keep the overall pending authority and verify each domain below.
+      if (!genesis && (!base.head || base.authority?.exactBasis !== true)) return canonicalView;
       const context = await resolveContext();
       if (string(context.scope?.scopeKey || '') !== string(scope.scopeKey || '')) return canonicalView;
       const worldlineMeta = await loadStateWorldlineMeta(scope, { strict: true });
@@ -56924,6 +56952,10 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           if (active.status !== 'verified' || active.record.analysisStatus !== 'verified') continue;
           for (const [claimIndex, claim] of asArray(active.record.claims).entries()) {
             if (!isPlainObject(claim.stateIntent)) continue;
+            if (head.domainStatus?.[STATE_PIPELINE_DOMAIN_HEAD_KEYS[claim.stateIntent.domain]]?.status !== 'ready') {
+              pendingClaims.push({turn, claimIndex, reason: 'state_domain_not_ready'});
+              continue;
+            }
             stateProofs.push(activeMicroConsumptionProof(active));
             const prefix = key.microStateAdmission(scope, worldlineId, 0, turn,
               active.record.sourceRevisionId, active.record.analysisRevisionId, claimIndex, '');
@@ -57088,7 +57120,9 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
                   role: item.claim.evidence.role, messageId: item.claim.evidence.messageId,
                   startOffset: item.claim.evidence.startOffset,
                   endOffset: item.claim.evidence.endOffset,
-                  exactQuote: item.claim.evidence.exactQuote, turn: item.turn};
+                  exactQuote: item.claim.evidence.exactQuote, turn: item.turn,
+                  evidenceSpans: [{ ref: item.claim.evidence.messageId, quote: item.claim.evidence.exactQuote }] };
+                retainMicroLocationReference(head, registry, item.domain, item.field, item.value, fieldEvidence);
                 target[item.field] = clone(item.value);
                 targetRow.fieldEvidence = asObject(targetRow.fieldEvidence);
                 targetRow.fieldEvidence[item.field] = fieldEvidence;
@@ -57117,6 +57151,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         const admitted = [];
         for (const [claimIndex, claim] of asArray(active.record.claims).entries()) {
           if (!isPlainObject(claim.stateIntent)) continue;
+          const domainKey = STATE_PIPELINE_DOMAIN_HEAD_KEYS[claim.stateIntent.domain];
+          if (!genesis && head.domainStatus?.[domainKey]?.status !== 'ready') {
+            pendingClaims.push({ turn, claimIndex, reason: 'state_domain_not_ready' });
+            continue;
+          }
           stateProofs.push(activeMicroConsumptionProof(active));
           let read;
           try { read = await admitMicroStateClaim(scope, worldlineId, 0, turn, claimIndex, { readOnly: true }); }
@@ -57172,7 +57211,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             decisionKey: item.decisionKey, decisionDigest: item.decision.decisionDigest,
             role: item.claim.evidence.role, messageId: item.claim.evidence.messageId,
             startOffset: item.claim.evidence.startOffset, endOffset: item.claim.evidence.endOffset,
-            exactQuote: item.claim.evidence.exactQuote, turn };
+            exactQuote: item.claim.evidence.exactQuote, turn,
+            evidenceSpans: [{ ref: item.claim.evidence.messageId, quote: item.claim.evidence.exactQuote }] };
           let target;
           if (item.domain === 'narrative') target = head.narrative = asObject(head.narrative);
           else {
@@ -57194,6 +57234,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             row.fieldEvidence = asObject(row.fieldEvidence);
             row.fieldEvidence[item.field] = fieldEvidence;
           }
+          retainMicroLocationReference(head, registry, item.domain, item.field, item.value, fieldEvidence);
           target[item.field] = clone(item.value);
           if (item.domain === 'narrative') {
             head.narrative.fieldEvidence = asObject(head.narrative.fieldEvidence);
@@ -57358,7 +57399,9 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           messageId: candidate.claim.evidence.messageId,
           startOffset: candidate.claim.evidence.startOffset,
           endOffset: candidate.claim.evidence.endOffset,
-          exactQuote: candidate.claim.evidence.exactQuote, turn: candidate.turn};
+          exactQuote: candidate.claim.evidence.exactQuote, turn: candidate.turn,
+          evidenceSpans: [{ref: candidate.claim.evidence.messageId, quote: candidate.claim.evidence.exactQuote}]};
+        retainMicroLocationReference(head, basis?.registry, domain, field, set[field], inheritedEvidence);
         target[field] = clone(set[field]);
         if (domain === 'narrative') {
           head.narrative.fieldEvidence = asObject(head.narrative.fieldEvidence);
@@ -59439,6 +59482,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       'SENSITIVE MEMORY SELECTION: Record sexual preferences, attitudes or identity labels only when explicitly established and relevant to later continuity; never infer them from gender, genre, appearance, a role or an isolated reaction. Preserve the scope of a stated boundary; one act or prior consent does not establish a standing preference or ongoing consent. Omit unsupported sensitive attributes without discarding independently supported events and consequences. Keep unknown information unknown.',
       `OUTPUT: one complete JSON object with schema="${UNIFIED_ARTIFACT_SCHEMA_V5}" and entities, facts, stateBindings only. No prose, continuation, reasoning or review. Runtime owns persistent IDs, hashes, storage and State mutation; Profile instructions cannot change this evidence/output contract.`,
       'Entity: {tempId,name,type:person|world,kind:person|location|object|organization|rule|environment|condition|thread|other,evidenceSpans:[{ref:tN-a,quote:exact source}]}. Names appear in the cited quote; use temporary IDs.',
+      'LITERAL ENTITY NAMES: copy each name as one literal contiguous phrase from its own quotation. Do not invent descriptive titles by joining distant words. A rule about a place is a rule fact on that place, not a newly titled rule entity. A promise or question may use a short literal name such as 약속 or 공연 허가 when that exact phrase is cited; keep its full meaning in the thread value. Do not drop a supported rule or thread merely to avoid extracting it.',
       'Fact: {tempFactId,domain,subjectTempRef,claimKind,values,text,temporalRole:current_sequence|historical|flashback|reported|hypothetical|uncertain,certainty:confirmed|uncertain|conflict|unknown,evidenceSpans:[{ref,quote}],dependsOn:[]}. Keep text concise; use the shortest exact supporting quotation (2–320 normalized characters) from its row, not a whole passage or unrelated name.',
       'claimKind→domain: event→event; location|character_state|knowledge|affiliation|character_preference|character_boundary→character; relationship→relationship; scene_time|containment|management|ownership|possession|placement|access|rule|world_state→world; thread→narrative.',
       'Optional character information: claimKind:"character_info", domain:"character", values:{category,content}; category=appearance|background|personality|speech|habits|abilities|goal; content is one concise string. Emit direct evidence only; leave absent categories unset. Unknown categories remain memory without profile updates.',
@@ -59448,6 +59492,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       'Use only the typed values object, never a claimKind/domain/field wrapper. E.g. character_state:{condition:"recovering"}; location:{locationRef:"ent_room"}. Relationship also needs targetTempRef and dimension: '+CONTINUITY_STATE_RELATION_DIMENSIONS.join('|')+'. A→B never proves B→A; use qualitative, not numeric, values.',
       'effect defaults to set. clear uses null for typed scalars or an exact selector; remove is only for knowledge/profile arrays. Clear/remove require direct confirmed evidence; profile operations need a non-empty exact preference/boundary selector with topic and resolved boundary scope. Empty selectors never clear a collection. A finished/abandoned goal uses character_info, effect:clear, values:{category:goal,content:null}. Unknown/omission is not deletion. Keep owner, holder, container, manager, physical parent, membership and access distinct; keep rule scope/conditions and prevent containment cycles.',
       'State bindings are optional {factTempId} entries for confirmed current facts. Bind only an explicitly final same-row value; leave unknown/conflicts unbound.',
+      'FINAL STATE CHECK: emit a typed location fact in domain character for each explicitly established final person location, even when movement was also recorded as an event. location is NEVER domain world; subjectTempRef is the person and locationRef is the place. A containment fact has the contained place as subject and a DIFFERENT containing place as parentRef. Ownership/possession use the object as subject, access uses the affected world place/object as subject, and a thread uses its literal world/thread entity as subject. Include {factTempId} bindings for supported final locations, conditions, ownership, possession, knowledge, relationships, rules and threads; event-only facts do not establish those State fields.',
+      'CONTAINMENT EXAMPLE (shape only): for source 본관 안에 작업실과 휴게실이 있다, emit TWO containment facts: subjectTempRef=작업실 entity with values {parentRef:본관 entity}, and subjectTempRef=휴게실 entity with values {parentRef:본관 entity}. NEVER use 본관 as both subjectTempRef and parentRef. One fact represents one child-parent edge, not a sentence listing several rooms.',
+      'REFERENCE TYPE CHECK: parentRef must reference a world entity with kind location, never a manager/organization. An organization managing a building is management with values {managerRef:organizationTempId}, not containment. RELATIONSHIP SHAPE: {tempFactId,domain:"relationship",subjectTempRef:personA,targetTempRef:personB,dimension:"trust",claimKind:"relationship",values:{value:"source-supported qualitative statement"},text,temporalRole,certainty,evidenceSpans}. targetTempRef and dimension are TOP-LEVEL fact fields, NEVER inside values.',
+      'ACCESS UNCERTAINTY: custody/possession does not grant access. A statement that lending/custody did not include permission establishes no grant from that act; it does NOT establish that entry is forbidden. Use access status unknown unless the source explicitly grants or denies permission. Preserve the stated limitation and do not invent a blanket denial.',
+      'THREAD SHAPE CHECK: participants is optional. If no person/role is directly established, OMIT participants entirely; do not emit an empty array, invent a participant or repeat a role. A directly stated unresolved question is a confirmed fact that its answer is unknown: use fact certainty confirmed and thread status open/uncertain; never claim that the unknown answer is known. Bind the confirmed existence of that unresolved situation, not an invented answer.',
       'ACTOR KNOWLEDGE: narrator knowledge is not every actor’s; names do not merge people. Resolved threads remain history.',
       'WORLD IDENTITY: fictional world identity is content, not the host chat worldline. Separate containment, membership and scene time. Physical containment is not membership; a thread is not a future plan.'
     ].join('\n');
@@ -59720,6 +59769,16 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           if(scope.targetRef)currentEntities.add(scope.targetRef);
         }
         if(f.claimKind==='thread' && f.values.thread)for(const participant of asArray(f.values.thread.participants))currentEntities.add(participant.personTempRef);
+      }
+      // A cited place/person can be known from an event without a current State
+      // field. Retain that validated identity for later Micro references; this
+      // creates no location, presence or other State assertion. Reported/history
+      // evidence is excluded by currentFacts above.
+      for (const entity of artifact.entities) {
+        if (currentEntities.has(entity.tempId)) continue;
+        if (asArray(entity.evidenceSpans).some(span => [...currentFacts.values()].some(fact =>
+          asArray(fact.evidenceSpans).some(proof => proof.ref === span.ref
+            && canonicalEntityNameBoundToEvidence(entity.name, proof.quote))))) currentEntities.add(entity.tempId);
       }
       for(const e of artifact.entities.filter(e=>currentEntities.has(e.tempId))){
         const nameKey=statePipelineIdentityKey(e.name);
@@ -62087,6 +62146,21 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       }
       return summary;
     };
+    const scheduleCurrentStateSnapshotRefresh = scope => {
+      if (state.disposed) return;
+      const timerKey = 'current_state_snapshot';
+      clearTimeout(state.timers.get(timerKey));
+      const timer = setTimeout(async () => {
+        state.timers.delete(timerKey);
+        if (state.disposed) return;
+        try {
+          const context = await resolveContext();
+          if (!sameSnapshotScope(context.scope, scope)) return;
+          await refreshSnapshot(context, { limits: state.guiSnapshotLimits || LIBRA_SNAPSHOT_PAGE_LIMITS, summaryOnly: true });
+        } catch (_) { /* A later explicit refresh still revalidates all State evidence. */ }
+      }, 100);
+      state.timers.set(timerKey, timer);
+    };
     const refreshMicroStateAdmissionsAfterCanonical = (scope, startTurn, throughTurn) => {
       void (async () => {
         const totals = { admitted: 0, pending: 0, pendingReconciliation: 0 };
@@ -62099,6 +62173,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         const inherited = await admitInheritedMicroStateClaims(scope);
         state.lastMicroStateAdmissionRefresh = { at: Date.now(), startTurn,
           throughTurn: end, ...totals, inherited };
+        scheduleCurrentStateSnapshotRefresh(scope);
       })().catch(error => {
         state.lastMicroStateAdmissionRefresh = { at: Date.now(), startTurn,
           status: 'pending_reconciliation', reason: compact(error?.message || error, 300) };
@@ -62143,13 +62218,17 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             await Promise.race([warmMicroRepresentationVectors(), new Promise(resolve => { timer = setTimeout(resolve, MICRO_WARM_PUBLICATION_WAIT_MS); })]);
             clearTimeout(timer);
           }
-          state.lastMicroPublication = { at: Date.now(), turn, revisionId,
+          state.lastMicroPublication = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId,
             queueMetrics: { queuedAt, startedAt, finishedAt: Date.now(),
               queueWaitMs: Math.max(0, startedAt - queuedAt) },
             status: string(result?.status || 'pending'), reason: string(result?.reason || ''),
             personInventoryStatus: string(result?.personInventoryStatus || ''),
             personInventoryError: string(result?.personInventoryError || ''),
+            analysisStatus: string(result?.record?.analysisStatus || ''),
+            analysisReason: string(result?.record?.analysisStatus === 'minimum_source_bound'
+              ? 'micro_analysis_unavailable_source_only' : ''),
             stateAdmission: clone(result?.stateAdmission || null) };
+          if (result?.status === 'verified') scheduleCurrentStateSnapshotRefresh(scope);
           if (result?.status === 'verified' && state.memoryGraphCorpus) scheduleVolatileMemoryGraphCorpus();
           if (!state.disposed) setTimeout(() => { void repairMicroGapsAfterPublication(scope).catch(() => null); }, 0);
           return result;
@@ -67391,7 +67470,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         const runs = runSlots.filter(Boolean);
         const nextSnapshot = {
           scope: clone(context.scope), hostLineage: MemorySuiteHostLineage.inspect(context.character, context.chat), manifest: clone(manifest), storyArc: storyArc ? clone(storyArc) : null,
-          continuityState: continuityState ? clone(continuityState) : null, pairs: clone(pairs), memories, runs,
+          continuityState: continuityState ? clone(continuityState) : null, currentStateView: null, pairs: clone(pairs), memories, runs,
           totals: { memories: memoryRefs.length, runs: runIds.length },
           refreshedAt: Date.now(), error: ''
         };
@@ -67404,6 +67483,27 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           let activeContext = null;
           try { activeContext = await resolveContext(); } catch (_) {}
           if (refreshSerial === state.snapshotRefreshSerial && sameSnapshotScope(activeContext?.scope, context.scope)) {
+            // Canonical Head stays immutable. The viewer consumes the same verified,
+            // read-only Micro projection as responses, with physical/source readback.
+            try {
+              const boundary = await captureUnifiedResponseBoundary(context);
+              const view = await loadContinuityStateForResponse(context.scope, manifest);
+              const token = registerConsumedDataReadSet(context.scope,
+                asArray(consumedMicroProofsByState.get(view?.authority || view?.head)), null);
+              try {
+                bindConsumedResponseBoundary(token, boundary);
+                await assertConsumedDataCurrent(token);
+              }
+              finally { releaseConsumedDataReadSet(token); }
+              nextSnapshot.currentStateView = clone(view);
+            } catch (error) {
+              nextSnapshot.currentStateView = { head: null, authority: { current: false, pending: true,
+                sourceMode: 'unavailable' }, error: compact(error?.message || error, 300) };
+            }
+            activeContext = await resolveContext();
+            if (refreshSerial !== state.snapshotRefreshSerial || !sameSnapshotScope(activeContext?.scope, context.scope)) {
+              return options.cloneResult === false ? nextSnapshot : clone(nextSnapshot);
+            }
             nextSnapshot.hostLineage = MemorySuiteHostLineage.inspect(activeContext.character, activeContext.chat);
             state.snapshot = nextSnapshot;
             if (options.trackGuiLimits === true) {
@@ -75272,7 +75372,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       },
       getLastRecall: () => clone(state.lastRecall),
       getStoryArc: () => clone(state.snapshot?.storyArc || state.lastStoryArc || null),
-      getContinuityState: () => clone(state.snapshot?.continuityState || state.lastContinuityState || null),
+      getContinuityState: () => clone(state.snapshot?.currentStateView
+        ? state.snapshot.currentStateView.head : state.snapshot?.continuityState || state.lastContinuityState || null),
       getLastStoryArcUpdate: () => clone(state.lastStoryArcUpdate || null),
       getLastNarrativeRecall: () => clone(state.lastNarrativeRecall || null),
       getLastLiveTail: () => clone(state.lastLiveTail || Runtime.lastLiveTail || null),
@@ -75875,7 +75976,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         // Runtime trace refreshes update the main reading/body region only. Quick Settings is a
         // stable root-level drawer and must not be destroyed/re-mounted by background receipts.
         Gui.invalidations.add('body');
-        void renderSettingsGui();
+        void Promise.resolve(renderSettingsGui()).then(() => {
+          Gui.app?.querySelector('#dialog-state.is-open')?.libraRefreshState?.();
+        });
       }, editing ? 650 : 220);
     } catch (_) {}
   }
@@ -81370,10 +81473,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
   const worldManagerSnapshotView = () => {
     const snapshot = LibraMemoryCore.peekSnapshot() || {};
-    const head = snapshot.continuityState && typeof snapshot.continuityState === 'object' ? snapshot.continuityState : null;
+    const current = snapshot.currentStateView;
+    const value = current ? current.head : snapshot.continuityState;
+    const head = value && typeof value === 'object' ? value : null;
     return {
       snapshot,
       head,
+      authority: guiAsObject(current?.authority || head?.responseAuthority),
+      error: text(current?.error || snapshot.error || ''),
+      canonicalThroughTurn: Number(snapshot.continuityState?.throughTurn || 0),
       throughTurn: Number(head?.throughTurn || 0),
       characters: guiAsArray(head?.characters),
       relationships: guiAsArray(head?.relationships),
@@ -81443,6 +81551,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
   const worldManagerSourceDescriptor = (domain, row, view = null) => {
     if (worldManagerCorrectionId(row)) return { label: '사용자 교정', kind: 'warn', source: 'user_correction' };
+    if (Object.values(guiAsObject(row?.fieldEvidence)).some(proof => proof?.schema === 'libra.micro_state_field_evidence.v1'
+      && proof.status === 'state_admitted')) return {label:'정본 · 승인된 Micro 근거',kind:'good',source:'state_admitted_micro'};
     if (worldManagerIsUnified(view)) return {label:'통합 분석 · 정본 근거',kind:'good',source:'integrated_evidence_checked'};
     const normalizedDomain = text(domain || '').toLowerCase();
     const domainKey = normalizedDomain.startsWith('narrative') ? 'narrative' : normalizedDomain;
@@ -81469,12 +81579,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const copy = worldManagerDomainCopy(view, domain, label);
     if (!view.head) return guiEl('div', { class: 'note', dataset: { snapshotOnly: 'true', worldDomain: domain } }, [
       guiEl('strong', { text: `아직 ${label} Current Head가 없습니다.` }),
-      guiEl('div', { text: '다음 5턴 정본 분석이 완료되면 이 화면에 표시됩니다.' })
+      guiEl('div', { text: view.error ? '상태 조회 실패 · 다시 확인해 주세요.' : '승인된 상태가 생성되면 자동으로 표시됩니다.' })
     ]);
     const sourceRow = domain === 'narrative' ? view.narrative : {};
     return guiEl('div', { class: `note${copy.ready ? '' : ' warn'}`, dataset: { snapshotOnly: 'true', worldDomain: domain } }, [
       guiEl('div', { class: 'split' }, [guiEl('strong', { text: `${label} · ${copy.status} · ${Number(count || 0)}개` }), worldManagerSourceBadge(domain, sourceRow, view)]),
-      guiEl('div', { text: `정본 기준 T${copy.turn || view.throughTurn} · ${libraFormatTime(view.head.updatedAt)}` }),
+      guiEl('div', { text: `정본 기준 T${view.canonicalThroughTurn ?? copy.turn ?? view.throughTurn}${view.head.microProjection ? ` · Micro 상태 T${view.throughTurn}` : ''} · ${libraFormatTime(view.head.updatedAt)}` }),
       copy.reason ? guiEl('div', { class: 'hint', text: copy.reason }) : null,
       view.head?.unifiedCoverage?.legacyCount ? guiEl('div',{class:'note warn',text:`과거 정본 ${view.head.unifiedCoverage.legacyCount}개는 기존 형식으로 보존 중입니다. 그 구간의 상태는 미해석이며 빈값을 부재로 판단하지 않습니다.`}) : null,
       guiEl('div', { class: 'hint', text: '이 읽기 화면은 현재 snapshot만 사용합니다. 정본 근거와 Correction Journal은 해당 탭을 열 때 조회합니다.' })
@@ -82014,7 +82124,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     ownerRef:'소유자',holderRef:'현재 소지자',containerRef:'보관 위치',managerRef:'관리자',scopeRef:'적용 범위',
     personRef:'대상 인물',organizationRef:'소속 조직',affiliations:'소속',access:'접근 권한',sceneTime:'장면 시각',
     rule:'적용 규칙',exceptions:'조건부 예외',permission:'권한',effect:'효과',explicitlyCleared:'명시적으로 해제된 값',
-    location: '현재 위치', currentLocation: '현재 위치', goal: '현재 목표', goals: '현재 목표', currentGoal: '현재 목표',
+    location: '현재 위치', currentLocation: '현재 위치', doorStatus: '문 상태', goal: '현재 목표', goals: '현재 목표', currentGoal: '현재 목표',
     knowledge: '현재 지식', belief: '현재 믿음', beliefs: '현재 믿음', emotion: '현재 감정', emotions: '현재 감정', mood: '현재 기분',
     motive: '현재 동기', motives: '현재 동기', intention: '현재 의도', intentions: '현재 의도', desire: '현재 욕구', desires: '현재 욕구',
     trait: '성향', traits: '성향', personality: '성격', habits: '습관', preferences: '선호', boundaries: '경계', consent: '동의 상태',
@@ -83614,7 +83724,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const row=node.row,state=guiAsObject(row.state);
       const readable=value=>worldManagerArticleValue(worldManagerDisplayReferences(value,view));
       const lead='';
-      const facts=worldManagerArticleFacts({state},view,Number.MAX_SAFE_INTEGER).filter(f=>BOOK_WORLD_AUTO_FIELDS.has(f.key));
+      const admittedFields=new Set(Object.entries(guiAsObject(row.fieldEvidence))
+        .filter(([,proof])=>proof?.schema==='libra.micro_state_field_evidence.v1'&&proof.status==='state_admitted').map(([field])=>field));
+      const visibleField=field=>BOOK_WORLD_AUTO_FIELDS.has(field)||admittedFields.has(field);
+      const facts=worldManagerArticleFacts({state},view,Number.MAX_SAFE_INTEGER).filter(f=>visibleField(f.key));
       const rule=guiAsObject(state.rule),ruleFact=facts.find(f=>f.key==='rule');
       if(ruleFact){
         const scope=byId.get(String(rule.scopeRef||''));
@@ -83622,7 +83735,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       // Unsupported legacy fields remain stored and accessible through detail management.
       const evidence=[],confirmations=[],seen=new Set();
-      for(const [field,record] of [['이름',row.identityEvidence],...Object.entries(guiAsObject(row.fieldEvidence)).filter(([k])=>BOOK_WORLD_AUTO_FIELDS.has(k)).map(([k,v])=>[worldManagerArticleFieldLabel(k),v]),['기록',row.evidence]]){
+      for(const [field,record] of [['이름',row.identityEvidence],...Object.entries(guiAsObject(row.fieldEvidence)).filter(([k])=>visibleField(k)).map(([k,v])=>[worldManagerArticleFieldLabel(k),v]),['기록',row.evidence]]){
         const confirmedTurn=Number(record?.turnRange?.end||0);
         if(confirmedTurn>0){const prior=confirmations.find(e=>e.turn===confirmedTurn);if(prior){if(!prior.fields.includes(field))prior.fields.push(field);}else confirmations.push({turn:confirmedTurn,fields:[field]});}
         for(const span of guiAsArray(record?.evidenceSpans)){
@@ -84897,10 +85010,20 @@ advanced
   const openApprovedStateDialog = () => {
     Gui.app.querySelector('#dialog-state')?.remove();const binding=canonicalReaderBinding();
     const template=document.createElement('template');template.innerHTML=LIBRA_APPROVED_STATE_DIALOG_HTML;const overlay=template.content.firstElementChild;overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');
-    const snap=LibraMemoryCore.peekSnapshot()||{},view=worldManagerSnapshotView(),refs=Object.values(guiAsObject(snap.manifest?.memories));
-    const committed=refs.filter(row=>row.status==='committed'),current=Array.isArray(snap.pairs)?snap.pairs.length:null,last=Math.max(0,...committed.map(row=>Number(row.turnRange?.end||0)));
-    const dl=overlay.querySelector('.kv');dl.replaceChildren();
-    for(const [label,value] of [['현재 U+A',current==null?'확인 불가':`${current}턴`],['저장된 기억',`${committed.length}개 · T${last}까지`],['대기',current==null?'확인 불가':`${Math.max(0,current-last)}턴`],['상태 반영',view.head?`T${Number(view.throughTurn||0)} · ${view.head.status||'확인 필요'}`:'Current Head 없음'],['부분 저장',`${committed.filter(row=>row.pipelineStatus==='partial').length}개 구간`],['대기 중 반영',`${committed.filter(row=>Number(row.turnRange?.end||0)>Number(view.throughTurn||0)).length}개 구간`]])dl.append(guiEl('dt',{text:label}),guiEl('dd',{text:value}));
+    overlay.libraRefreshState=()=>{
+      if(canonicalReaderBindingKey(binding)!==canonicalReaderBindingKey(canonicalReaderBinding())){overlay.remove();return;}
+      const snap=LibraMemoryCore.peekSnapshot()||{},view=worldManagerSnapshotView(),refs=Object.values(guiAsObject(snap.manifest?.memories));
+      const committed=refs.filter(row=>row.status==='committed'),current=Array.isArray(snap.pairs)?snap.pairs.length:null,last=Math.max(0,...committed.map(row=>Number(row.turnRange?.end||0)));
+      const dl=overlay.querySelector('.kv');dl.replaceChildren();
+      for(const [label,value] of [['현재 U+A',current==null?'확인 불가':`${current}턴`],['저장된 기억',`${committed.length}개 · T${last}까지`],['대기',current==null?'확인 불가':`${Math.max(0,current-last)}턴`],['상태 반영',view.head?`T${Number(view.throughTurn||0)} · ${view.head.status||'확인 필요'}`:'Current Head 없음'],['부분 저장',`${committed.filter(row=>row.pipelineStatus==='partial').length}개 구간`],['대기 중 반영',`${committed.filter(row=>Number(row.turnRange?.end||0)>Number(view.throughTurn||0)).length}개 구간`]])dl.append(guiEl('dt',{text:label}),guiEl('dd',{text:value}));
+      const publication=LibraMemoryCore.state.lastMicroPublication;
+      if(publication?.scopeKey===snap.scope?.scopeKey){
+        const admission=publication.stateAdmission||{},sourceOnly=publication.analysisStatus==='minimum_source_bound';
+        dl.append(guiEl('dt',{text:'최근 턴 분석'}),guiEl('dd',{text:sourceOnly?'원문만 보관 · 상태 분석 필요':publication.analysisStatus==='verified'
+          ?`분석 완료 · 상태 승인 ${Number(admission.admitted||0)}개 · 보류 ${Number(admission.pending||0)+Number(admission.pendingReconciliation||0)}개`:'분석 결과 확인 필요'}));
+      }
+    };
+    overlay.libraRefreshState();
     const actions=overlay.querySelector('.dialog__actions');actions.replaceChildren(guiEl('button',{class:'btn',type:'button',text:'전체 상태 확인',onClick:()=>{if(canonicalReaderBindingKey(binding)!==canonicalReaderBindingKey(canonicalReaderBinding()))return;void refreshGuiSnapshot(false).then(()=>openApprovedStateDialog());}}),guiEl('button',{class:'btn btn--primary',type:'button',text:'닫기',onClick:()=>overlay.remove()}));
     overlay.addEventListener('click',event=>{if(event.target===overlay)overlay.remove();});Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,()=>overlay.remove());return overlay;
   };
@@ -85270,12 +85393,19 @@ advanced
     ]);
     if(!rail.querySelector('[data-character-search-empty]'))rail.querySelector('.rail__list').appendChild(guiEl('div',{class:'empty',hidden:true,dataset:{characterSearchEmpty:'true'},text:'일치하는 인물이 없습니다.'}));
     const evidenceSummary=record=>{
-      const spans=guiAsArray(record?.evidenceSpans).filter(s=>text(s?.quote||'').trim());
-      const turns=[record?.sourceTurnRange?.end,record?.turnRange?.end,...spans.map(s=>Number(/^t(\\d+)-/.exec(text(s.ref||''))?.[1]||0))].map(Number).filter(n=>n>0);
-      return {count:spans.length,turn:Math.max(0,...turns),spans};
+      const records=Array.isArray(record)?record:[record],unique=new Map(),turns=[];
+      for(const proof of records){
+        const spans=guiAsArray(proof?.evidenceSpans).filter(s=>text(s?.quote||'').trim());
+        if(proof?.exactQuote)spans.push({ref:proof.messageId||'',quote:proof.exactQuote});
+        for(const span of spans)unique.set(JSON.stringify([span.ref||'',span.quote]),span);
+        const cited=spans.map(s=>Number(/^t(\d+)-/.exec(text(s.ref||''))?.[1]||0));
+        turns.push(Number(proof?.turn||0),...cited);
+        if(!cited.some(n=>n>0))turns.push(Number(proof?.sourceTurnRange?.end||proof?.turnRange?.end||0));
+      }
+      return {count:unique.size,turn:Math.max(0,...turns),spans:[...unique.values()]};
     };
     if(!row)return guiEl('div',{class:'grid g-side',dataset:{libraProductDetail:'people',productReadback:'people'}},[rail,guiEl('article',{class:'sheet-page detail-pane'},[guiEl('div',{class:'eyebrow',text:'Character Introduction'}),guiEl('h2',{text:'인물 기록 없음'}),guiEl('p',{class:'deck',text:'현재 LIBRA 저장소에서 인물 기록을 읽지 못했습니다.'}),guiEl('div',{class:'empty',text:'표본 인물은 표시하지 않습니다.'})])]);
-    const evidence=evidenceSummary(row.identityEvidence||row.evidence);
+    const evidence=evidenceSummary([row.identityEvidence||row.evidence,...Object.values(guiAsObject(row.fieldEvidence))]);
     const groupKeys={intro:['appearance','background','personality','speech','habits','abilities'],pref:['preferences'],bound:['boundaries'],now:['locationRef','condition','goal'],know:['knowledge'],own:['affiliations']};
     const groupFactNodes=key=>{
       const keys=groupKeys[key]||[],matched=facts.filter(f=>keys.includes(f.key));
@@ -85293,7 +85423,7 @@ advanced
     const relRows=guiAsArray(view.relationships).filter(rel=>text(rel.subjectId||'')===text(row.id||'')||text(rel.targetId||'')===text(row.id||''));
     const relContent=relRows.length?guiEl('div',{class:'stack stack--sm'},relRows.map(rel=>{
       const from=rows.find(person=>person.id===rel.subjectId),to=rows.find(person=>person.id===rel.targetId);
-      const summary=evidenceSummary(rel.evidence||rel.identityEvidence);
+      const summary=evidenceSummary([rel.evidence||rel.identityEvidence,...Object.values(guiAsObject(rel.fieldEvidence))]);
       return guiEl('div',{class:'rel',dataset:{relationshipId:bookProjectionIdentity('relationships',rel,relRows.indexOf(rel))}},[
         guiEl('b',{text:from?bookCharacterName(from):bookRelationshipEndpointName(rel,'subject')}),guiEl('span',{},[guiEl('span',{class:'rel__arrow',text:'→'}),` ${to?bookCharacterName(to):bookRelationshipEndpointName(rel,'target')} `,guiEl('span',{class:'chip',text:[worldManagerArticleValue(worldManagerDisplayReferences(rel.dimension,view,'dimension')),bookProjectionReadable(worldManagerRelationshipDefinition(rel),240)||'상태 미기록'].filter(Boolean).join(' · ')})]),
         guiEl('button',{class:'linkbtn',type:'button',text:`근거${summary.count?` ${summary.count}개`:''}`,onClick:()=>{Gui.worldManagerSelectedRelationshipId=bookProjectionIdentity('relationships',rel,relRows.indexOf(rel));bookSelectPeopleSection('relationships');}})
@@ -85327,7 +85457,8 @@ advanced
     const kinds = [...new Set(items.map(item => item.kind))];
     const filtered = items.filter(item => (!state.kind || item.kind === state.kind) && (!query || [item.title, item.lead, ...guiAsArray(item.aliases), ...guiAsArray(item.facts).map(fact => fact.value)].join(' ').toLocaleLowerCase().includes(query)));
     const read = item => {
-      const start = Math.max(0, guiAsArray(item.facts).length ? Number(item.confirmations?.[0]?.turn || item.evidence?.[0]?.turn || 0) : 0);
+      const start = Math.max(0, guiAsArray(item.facts).length
+        ? Math.max(Number(item.confirmations?.[0]?.turn || 0), Number(item.evidence?.[0]?.turn || 0)) : 0);
       const body = item.lead || guiAsArray(item.facts).slice(0, 2).map(fact => `${fact.label} · ${fact.value}`).join(' · ') || '저장된 세부 정보가 없습니다.';
       return guiEl('article', { class: 'card cardlet', dataset: { worldEntry: item.id } }, [
         guiEl('div', { class: 'split' }, [guiEl('span', { class: 'badge badge--info', text: item.kind }), guiEl('span', { class: 'hint', text: start ? `T${start}` : '기준 턴 미확인' })]),
@@ -85405,7 +85536,7 @@ advanced
     ]);
     return guiEl('div',{class:'grid g-side g-side--r',dataset:{libraProductDetail:'story',productReadback:'narrative-snapshot'}},[
       guiEl('article',{class:'card'},[
-        guiEl('div',{class:'tabs',role:'tablist',dataset:{subtabs:'s'}},tabs.map(([id,label,key])=>guiEl('button',{class:`tab${active===id?' is-on':''}`,type:'button',role:'tab','aria-selected':String(active===id),dataset:{subtab:id},text:label+` ${id==='open'?groups.threads.length:all.length}`,onClick:()=>choose(id)}))),
+        guiEl('div',{class:'tabs',role:'tablist',dataset:{subtabs:'s'}},tabs.map(([id,label,key])=>guiEl('button',{class:`tab${active===id?' is-on':''}`,type:'button',role:'tab','aria-selected':String(active===id),dataset:{subtab:id},text:label+` ${id==='motif'?groups.arcs.filter(item=>item.kind==='반복 소재').length:id==='flow'?groups.arcs.filter(item=>item.kind!=='반복 소재').length:guiAsArray(groups[key]).length}`,onClick:()=>choose(id)}))),
         guiEl('div',{class:'stack'},[guiEl('div',{class:'search'},[guiEl('input',{class:'input',type:'search',value:Gui.bookNarrativeQuery||'',placeholder:'현재 분류에서 찾기','aria-label':'서사 연감 검색',onInput:event=>{Gui.bookNarrativeQuery=event.target.value;},onKeyDown:event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur();queueGuiNavigationRender();}}}),guiEl('button',{class:'btn btn--sm',type:'button',text:'찾기',onClick:()=>queueGuiNavigationRender()})]),narrativeList,selected,
           guiEl('details',{class:'fold',dataset:{narrativeHistory:'true'}},[guiEl('summary',{text:'상세 · 정본 기억 이력'}),guiEl('div',{class:'fold__body stack'},[
             guiEl('p',{class:'hint',role:'status',text:history.error|| (history.loading?'정본 기억 이력을 읽는 중입니다.':history.loaded?`정본 이력 ${history.chapters.length}개를 읽었습니다. 당시 기록은 현재 상태를 변경하지 않습니다.`:'기억 이력을 명시적으로 읽어 당시 해결된 이야기와 사건을 확인합니다.')}),
@@ -86625,7 +86756,8 @@ advanced
     async getWorldManagerRuntimeMeta() { return safeClone(await LibraMemoryCore.getWorldManagerRuntimeMeta()); },
     async getWorldManagerNarrative() {
       const snapshot = await LibraMemoryCore.refreshSnapshot(undefined, { suppressGuiSchedule: true });
-      return safeClone(snapshot?.continuityState?.narrative || __libraNarrativeEmptyState());
+      return safeClone((snapshot?.currentStateView ? snapshot.currentStateView.head?.narrative
+        : snapshot?.continuityState?.narrative) || __libraNarrativeEmptyState());
     },
     async addWorldManagerCorrection(options = {}) { return safeClone(await LibraMemoryCore.appendStateCorrection(options)); },
     async addWorldManagerNarrativeCorrection(narrativePatch = {}, options = {}) {

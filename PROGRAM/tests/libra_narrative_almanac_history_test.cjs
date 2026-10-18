@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert/strict');
-const s=fs.readFileSync(path.join(__dirname,'../plugins/LIBRA.js'),'utf8');const a=s.indexOf('  const bookNarrativeHistoryKey ='),b=s.indexOf('  const bookAlmanacCss =',a);
+const s=fs.readFileSync(path.join(__dirname,'../plugins/LIBRA.js'),'utf8');const a=s.indexOf('  const bookNarrativeHistoryKey ='),b=s.indexOf('\n  const ',s.indexOf('  const loadBookNarrativeHistory =',a)+1);
 let snapshot={scope:{scopeKey:'one'},continuityState:{throughTurn:10},manifest:{memories:{a:{revision:1}}}},pageResponse={items:[{memoryId:'one',revision:1}],nextCursor:'p2',hasMore:true},fail=false,hold=null;
 const ctx=vm.createContext({Gui:{},LibraMemoryCore:{peekSnapshot:()=>snapshot},canonicalReaderBinding:()=>({scopeKey:snapshot.scope.scopeKey,worldlineId:'main',openSerial:1}),canonicalReaderIdentityKey:c=>c.memoryId+':'+c.revision,guiAsArray:x=>Array.isArray(x)?x:[],text:x=>String(x??''),queueGuiNavigationRender:()=>{},__LIBRA__:{listCanonicalReaderChapters:async()=>pageResponse,getCanonicalReaderChapter:async x=>{if(hold)await hold;if(fail)throw Error('read failed');return {...x,canonicalArtifact:{facts:[]}};}}});
 vm.runInContext(s.slice(a,b)+';globalThis.read=loadBookNarrativeHistory;globalThis.state=bookNarrativeHistoryState;',ctx);

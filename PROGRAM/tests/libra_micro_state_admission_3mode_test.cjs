@@ -191,6 +191,8 @@ const quoteSpan = (text, quote, messageId) => ({role: 'assistant', messageId,
       assert.equal(genesisView.head?.narrative?.summary, value,
         `${mode}: first-turn admitted Micro change is visible before a Canonical exists`);
       assert.equal(genesisView.authority?.microProjection?.throughTurn, 1);
+      assert.equal((await f.r.api.getWorldManagerNarrative()).summary, value,
+        `${mode}: the public narrative viewer reads the admitted Micro projection before Canonical`);
       assert.equal(f.control.calls.length, 1);
       f.chat.message = fullMessages;
       f.chat.messages = fullMessages;
