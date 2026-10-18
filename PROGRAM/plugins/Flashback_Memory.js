@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.116
+//@display-name ⚡ FLASHBACK Memory v1.0.117
 //@api 3.0
-//@version 1.0.116
+//@version 1.0.117
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.116';
+const PLUGIN_VERSION = '1.0.117';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -2132,6 +2132,9 @@ const PLUGIN_VERSION = '1.0.116';
     autoOpenScheduled: false,
     guiCurrentStatsCache: null,
     guiStorageStatsCache: null,
+    guiStorageLastConfirmedRows: null,
+    guiStorageListUnavailable: false,
+    guiStorageScopeCount: null,
     guiCurrentStatsInFlight: null,
     guiStorageStatsInFlight: null,
     guiStorageStatsInFlightMode: '',
@@ -23715,7 +23718,9 @@ const MemorySuiteSnapshotCache = (() => {
 
   const deleteScopeStorage = async (scopeKey,options={}) => {
     if(!text(scopeKey).trim())throw new Error('FLASHBACK_NO_ACTIVE_SCOPE');
+    const authority = await assertLocalScopeManagement(scopeKey);
     return await withScopeWriteLock(scopeKey,async()=>{
+      await authority.assertCurrent();
       if(options.protectCurrent&&(scopeKey===Runtime.currentScope?.scopeKey||scopeHasProtectedActivity(scopeKey)))return {deleted:false,protected:true,reason:'active_scope_protected'};
       const manifest = await loadScopeManifest(scopeKey);
       assertNoForeignScopeCollision(manifest, 'scope deletion');
@@ -23738,10 +23743,12 @@ const MemorySuiteSnapshotCache = (() => {
         };
       }
       const settings = await loadSettings();
+      await authority.assertCurrent();
       // Commit an empty scope before physical deletion. If any later removal
       // fails, readers see a valid empty manifest instead of a manifest that
       // points at a partially deleted shard set.
       await saveTurnWorldline(scopeKey, emptyTurnWorldline(scopeKey));
+      await authority.assertCurrent();
       await saveScopeRecords({ scopeKey }, [], settings, { scopeKey });
       // The empty commit above can schedule a best-effort registry retry. Any
       // retry created before physical deletion must not resurrect this scope.
@@ -23749,8 +23756,10 @@ const MemorySuiteSnapshotCache = (() => {
       await withScopeWriteLock(SCOPE_REGISTRY_WRITE_LOCK, async () => {
         const registry = await readRegistry();
         registry.scopes = registry.scopes.filter(item => item?.scopeKey !== scopeKey);
+        await authority.assertCurrent();
         await writeRegistry(registry);
       });
+      await authority.assertCurrent();
       await requireStorageRemove(scopeKeys.manifest(scopeKey), 'scope manifest remove');
       await requireStorageRemove(`${scopeKeys.manifest(scopeKey)}:previous:v1`, 'verified manifest backup remove');
       await requireStorageRemove(scopeKeys.worldline(scopeKey), 'scope worldline remove');
@@ -44991,7 +45000,9 @@ ${cleanedText}`, 80),
         let task = Runtime.guiStorageHydrationInFlight.get(scopeKey);
         if (!task) {
           task = (async () => {
+            const authority = await assertLocalScopeManagement(scopeKey);
             const manifest = await loadScopeManifest(scopeKey);
+            await authority.assertCurrent();
             if (manifest.manifestRawPresent !== true) {
               const verification = recordScopeStorageVerification(
                 scopeKey,
@@ -45046,6 +45057,10 @@ ${cleanedText}`, 80),
           Runtime.guiStorageHydrationInFlight.set(scopeKey, task);
         }
         const row = await task.catch(error => {
+          if (error?.code === 'FLASHBACK_SERVER_SCOPE_MANAGEMENT_REQUIRED') {
+            const state = scopeManagementClassificationError(scopeKey, error);
+            return {...guiStorageRowFromRegistryMeta(meta), managementKind:state.kind, storageMode:state.storageMode};
+          }
           transportUnavailable = true;
           const verification = recordScopeStorageVerification(
             scopeKey,
@@ -45088,6 +45103,46 @@ ${cleanedText}`, 80),
     text:['scopeKey','storageHash','characterId','chatId','canonicalCharacterId','canonicalChatId','canonicalScopeId','characterName','chatTitle','personaName','commitId','copiedFromScopeKey','copiedFromChatId'].map(k=>text(value?.[k]||'')),
     numbers:['count','tokenTotal','responseCount','responseTokens','episodeCount','episodeTokens','shardCount','archiveCount'].map(k=>Number(value?.[k]||0))
   });
+  const scopeManagementError = (code, storageMode = '') => Object.assign(new Error(code), {
+    code, storageMode,
+    userMessage: code === 'FLASHBACK_SERVER_SCOPE_MANAGEMENT_REQUIRED'
+      ? '서버를 사용하는 스코프는 RE:TRACE → 서버 데이터 관리에서 삭제하세요. 로컬 보존·보존 고정·참조 관계·백업을 확인하는 서버 사본 삭제 절차가 필요합니다.'
+      : '대상의 로컬 저장 권한이나 현재 채팅을 확인하지 못했습니다. 플러그인 단독 채팅에서 새로고침한 뒤 다시 시도하세요.'
+  });
+  // Ordinary owner proxies follow the active chat. Prove the target and active
+  // route are local; RE:TRACE exclusively owns server preservation/backup plans.
+  const assertLocalScopeManagement = async scopeKey => {
+    const key = text(scopeKey || '').trim();
+    if (!key) throw scopeManagementError('FLASHBACK_SCOPE_MANAGEMENT_UNVERIFIED');
+    const descriptor = {scopeId:key, scopeKey:key, aliases:[keyHash(key)]};
+    const target = await MemorySuiteStorageBridge.getScopeMode(descriptor);
+    if (target.mode !== 'plugin_only') throw scopeManagementError('FLASHBACK_SERVER_SCOPE_MANAGEMENT_REQUIRED', target.mode);
+    if (target.transition || target.migrationRequired) throw scopeManagementError('FLASHBACK_SCOPE_MANAGEMENT_UNVERIFIED');
+    const active = await MemorySuiteStorageBridge.getScopeMode();
+    if (!active.scope?.scopeId || active.mode !== 'plugin_only' || active.transition || active.migrationRequired) throw scopeManagementError('FLASHBACK_SCOPE_MANAGEMENT_UNVERIFIED');
+    const fence = MemorySuiteStorageBridge.captureReadOnlyAuthorityFence();
+    const witness = await MemorySuiteStorageBridge.inspectLocalHealthSnapshot(descriptor, scopeKeys.manifest(key), {strictPhysical:true});
+    const activeDescriptor = {scopeId:active.scope.scopeId, scopeKey:active.scope.scopeId};
+    const activeWitness = active.scope.scopeId === key ? witness : await MemorySuiteStorageBridge.inspectLocalHealthSnapshot(activeDescriptor, scopeKeys.manifest(active.scope.scopeId), {strictPhysical:true});
+    const assertCurrent = async () => {
+      fence.assertCurrent();
+      if ((await MemorySuiteStorageBridge.getCurrentScope()).scopeId !== active.scope.scopeId) throw scopeManagementError('FLASHBACK_SCOPE_MANAGEMENT_UNVERIFIED');
+      const next = await MemorySuiteStorageBridge.inspectLocalHealthSnapshot(descriptor, scopeKeys.manifest(key), {strictPhysical:true});
+      const current = active.scope.scopeId === key ? next : await MemorySuiteStorageBridge.inspectLocalHealthSnapshot(activeDescriptor, scopeKeys.manifest(active.scope.scopeId), {strictPhysical:true});
+      if (next.binding !== witness.binding || current.binding !== activeWitness.binding) throw scopeManagementError('FLASHBACK_SCOPE_MANAGEMENT_UNVERIFIED');
+      fence.assertCurrent();
+    };
+    await assertCurrent();
+    if (['server_managed','unavailable'].includes(Runtime.scopeManagementClassification?.get(key)?.kind)) Runtime.scopeManagementClassification.delete(key);
+    return {assertCurrent};
+  };
+  const scopeManagementClassificationError = (scopeKey, error) => {
+    const state = {scopeKey, kind:error?.code === 'FLASHBACK_SERVER_SCOPE_MANAGEMENT_REQUIRED' ? 'server_managed' : 'unavailable', storageMode:error?.storageMode || '', reason:error?.userMessage || '대상 저장소의 읽기 또는 권한 검증에 실패했습니다. 새로고침 후 다시 확인해 주세요.'};
+    if (!(Runtime.scopeManagementClassification instanceof Map)) Runtime.scopeManagementClassification = new Map();
+    Runtime.scopeManagementClassification.set(scopeKey, state);
+    recordScopeStorageVerification(scopeKey, SCOPE_STORAGE_VERIFICATION.UNAVAILABLE, {error:state.reason});
+    return state;
+  };
   const verifiedRegistrySummaryFromManifest = async (manifest, meta = {}) => {
     const archiveRef = normalizeFlashbackArchiveRef(manifest.archiveRef);
     const archiveSummary = archiveRef
@@ -45126,7 +45181,9 @@ ${cleanedText}`, 80),
     const scopeKey = text(meta.scopeKey || '').trim();
     if (!scopeKey) return { status: 'skipped', scopeKey: '' };
     try {
+      const authority = await assertLocalScopeManagement(scopeKey);
       const manifest = await loadScopeManifest(scopeKey);
+      await authority.assertCurrent();
       if (manifest.manifestRawPresent !== true) {
         const verification = recordScopeStorageVerification(
           scopeKey,
@@ -45195,7 +45252,9 @@ ${cleanedText}`, 80),
     return summary;
   };
 
-  const removeVerifiedRegistryOnlyScope = async scopeKey => await withScopeWriteLock(text(scopeKey),async()=>{
+  const removeVerifiedRegistryOnlyScope = async scopeKey => {
+    const authority = await assertLocalScopeManagement(scopeKey);
+    return await withScopeWriteLock(text(scopeKey),async()=>{
     const key = text(scopeKey || '').trim();
     if (!key) throw new Error('scope key is required');
     if (key === text(Runtime.currentScope?.scopeKey || '').trim()) {
@@ -45231,6 +45290,7 @@ ${cleanedText}`, 80),
     await withScopeWriteLock(SCOPE_REGISTRY_WRITE_LOCK, async () => {
       const registry = await readRegistry();
       registry.scopes = registry.scopes.filter(item => text(item?.scopeKey || '') !== key);
+      await authority.assertCurrent();
       await writeRegistry(registry);
       const readback = await readRegistry();
       if (readback.scopes.some(item => text(item?.scopeKey || '') === key)) {
@@ -45243,7 +45303,8 @@ ${cleanedText}`, 80),
     Runtime.lastStorageAction = { at: Date.now(), registryOnlyScopeRemoved: key, physicalDataRemoved: false };
     invalidateGuiDataCache('storage');
     return {removed:true,protected:false,scopeKey:key,physicalDataRemoved:false};
-  });
+    });
+  };
 
   const listScopeManagementPhysicalKeys = async scopeKey => {
     const hash=keyHash(scopeKey),prefix=scopePrefix(scopeKey)+':';
@@ -45285,7 +45346,9 @@ ${cleanedText}`, 80),
   const classifyScopeForManagement = async scopeKey => {
     const key=text(scopeKey||'').trim();if(!key)return {scopeKey:key,kind:'unavailable',reason:'no_scope'};
     try{
+      const authority = await assertLocalScopeManagement(key);
       const manifest=await loadScopeManifest(key);
+      await authority.assertCurrent();
       if(manifest.manifestCorrupt||manifest.foreignScopeKey)return {scopeKey:key,kind:'corrupt',manifest};
       if(manifest.manifestRawPresent!==true){
         for(let n=0;n<2;n++)await inspectScopeRegistryEntry({scopeKey:key},++Runtime.guiStorageVerificationEpoch);
@@ -45294,7 +45357,7 @@ ${cleanedText}`, 80),
       }
       recordScopeStorageVerification(key,SCOPE_STORAGE_VERIFICATION.MANIFEST_VERIFIED);
       return {scopeKey:key,kind:await scopeHasEmptyPayloadOnly(key,manifest)?'empty':'memory',manifest};
-    }catch(error){recordScopeStorageVerification(key,SCOPE_STORAGE_VERIFICATION.UNAVAILABLE,{error:formatErrorMessage(error,300)});return {scopeKey:key,kind:'unavailable',reason:formatErrorMessage(error,300)};}
+    }catch(error){return scopeManagementClassificationError(key,error);}
   };
   const cleanupSelectedScopeStorages = async keys => {
     const result={requested:0,cleaned:0,protected:0,failed:0,failures:[]};
@@ -45950,7 +46013,16 @@ ${cleanedText}`, 80),
     return Runtime.guiStorageSelectedScopeKeys;
   };
 
+  const storageScopeCountLabel = () => Number.isInteger(Runtime.guiStorageScopeCount) ? formatNumber(Runtime.guiStorageScopeCount) : '—';
+  const rememberConfirmedStorageRows = rows => {
+    Runtime.guiStorageLastConfirmedRows = rows.slice();
+    Runtime.guiStorageScopeCount = new Set(rows.map(row => text(row?.scopeKey || '').trim()).filter(Boolean)).size;
+    setNodeText('tab-scope-n', storageScopeCountLabel());
+    setNodeText('nav-scope-n', storageScopeCountLabel());
+  };
+
   const selectableStorageScopeKeys = (scopeStats = [], currentScopeKey = '') => (Array.isArray(scopeStats) ? scopeStats : [])
+    .filter(item => storageManagementKind(item) !== 'server_managed')
     .map(item => text(item?.scopeKey || '').trim())
     .filter(scopeKey => scopeKey && scopeKey !== currentScopeKey);
 
@@ -45959,7 +46031,7 @@ ${cleanedText}`, 80),
     // select-all must not become indeterminate because hidden rows exist.
     const rows = filteredManagementRows(Array.isArray(scopeStats)
       ? scopeStats
-      : (Array.isArray(Runtime.guiStorageStatsCache?.rows) ? Runtime.guiStorageStatsCache.rows : []));
+      : (Runtime.guiStorageStatsCache?.rows || (Runtime.guiStorageListUnavailable ? Runtime.guiStorageLastConfirmedRows : null) || []));
     const activeScopeKey = text(currentScopeKey || Runtime.guiCurrentStatsCache?.value?.scope?.scopeKey || Runtime.currentScope?.scopeKey || '').trim();
     const selectable = selectableStorageScopeKeys(rows, activeScopeKey);
     const selectableSet = new Set(selectable);
@@ -45970,16 +46042,21 @@ ${cleanedText}`, 80),
     for (const checkbox of guiQueryAll('input[data-select-scope]')) {
       const scopeKey = text(checkbox.getAttribute?.('data-select-scope') || '').trim();
       if (!scopeKey) continue;
-      const canSelect = scopeKey !== activeScopeKey && selectableSet.has(scopeKey);
+      const canSelect = !Runtime.guiStorageListUnavailable && scopeKey !== activeScopeKey && selectableSet.has(scopeKey);
       checkbox.disabled = !canSelect;
       checkbox.checked = canSelect && selected.has(scopeKey);
     }
     const selectedCount = Array.from(selected).filter(scopeKey => selectableSet.has(scopeKey)).length;
+    for (const button of guiQueryAll('#storageRows button[data-delete-scope], #storageRows button[data-clean-registry-scope]')) button.disabled = Runtime.guiStorageListUnavailable || Runtime.guiBusyDepth > 0;
     const countNode = getGuiNode('selectedScopeCount');
     if (countNode) countNode.textContent = `선택 ${formatNumber(selectedCount)}개`;
     const cleanupBtn=getGuiNode('cleanupSelectedScopesBtn');if(cleanupBtn)cleanupBtn.disabled=selectedCount<1||Runtime.guiBusyDepth>0;
     const deleteBtn = getGuiNode('deleteSelectedScopesBtn');
-    if (deleteBtn) deleteBtn.disabled = selectedCount < 1 || Runtime.guiBusyDepth > 0;
+    if (deleteBtn) deleteBtn.disabled = Runtime.guiStorageListUnavailable || selectedCount < 1 || Runtime.guiBusyDepth > 0;
+    for (const id of ['cleanupSelectedScopesBtn','selectCleanupCandidatesBtn','selectOrphanScopesBtn','repairScopeRegistryBtn','deleteCurrentScopeBtn']) {
+      const button = getGuiNode(id);
+      if (button) button.disabled = Runtime.guiStorageListUnavailable || Runtime.guiBusyDepth > 0 || (id === 'cleanupSelectedScopesBtn' && selectedCount < 1);
+    }
     const allBox = getGuiNode('selectAllScopes');
     if (allBox) {
       const needle = text(getGuiNode('storageScopeFilter')?.value || '').trim().toLowerCase();
@@ -45987,7 +46064,7 @@ ${cleanedText}`, 80),
         || [row.characterName, row.chatTitle, row.chatId].join(' ').toLowerCase().includes(needle)), activeScopeKey);
       const allSelected = visibleKeys.length > 0 && visibleKeys.every(scopeKey => selected.has(scopeKey));
       const someSelected = visibleKeys.some(scopeKey => selected.has(scopeKey));
-      allBox.disabled = visibleKeys.length < 1 || Runtime.guiBusyDepth > 0;
+      allBox.disabled = Runtime.guiStorageListUnavailable || visibleKeys.length < 1 || Runtime.guiBusyDepth > 0;
       allBox.checked = allSelected;
       allBox.indeterminate = someSelected && !allSelected;
       allBox.title = visibleKeys.length ? `현재 표시된 ${formatNumber(visibleKeys.length)}개 선택` : '선택 가능한 다른 스코프가 없습니다.';
@@ -46001,11 +46078,11 @@ ${cleanedText}`, 80),
       const scopeKey = text(item.scopeKey || '').trim();
       const isCurrent = scopeKey === currentScopeKey;
       const kind=storageManagementKind(item),live=isCurrent&&Runtime.currentScope?.scopeKey===scopeKey?Runtime.currentScope:{};
-      const label={empty:'빈 저장소 · 정리 후보',registry_only:'목록 잔재 · 기억 데이터 삭제 없이 정리',orphan:'원본 채팅 없음 · 기억은 보존됨',corrupt:'손상 확인 · 데이터 유지',unavailable:'연결 확인 보류 · 데이터 유지'}[kind];
+      const label={server_managed:'서버 사용 · RE:TRACE → 서버 데이터 관리에서 삭제',empty:'빈 저장소 · 정리 후보',registry_only:'목록 잔재 · 기억 데이터 삭제 없이 정리',orphan:'원본 채팅 없음 · 기억은 보존됨',corrupt:'손상 확인 · 데이터 유지',unavailable:'연결 확인 보류 · 데이터 유지'}[kind];
       const verificationStatus = text(item.storageVerificationStatus || SCOPE_STORAGE_VERIFICATION.PENDING);
       const manifestVerified = verificationStatus === SCOPE_STORAGE_VERIFICATION.MANIFEST_VERIFIED;
       const registryOnlyVerified = verificationStatus === SCOPE_STORAGE_VERIFICATION.REGISTRY_ONLY_VERIFIED;
-      const canSelect = !isCurrent && !!scopeKey;
+      const canSelect = !Runtime.guiStorageListUnavailable && kind !== 'server_managed' && !isCurrent && !!scopeKey;
       const fallbackName = verificationStatus === SCOPE_STORAGE_VERIFICATION.UNAVAILABLE
         ? '서버 확인 보류'
         : registryOnlyVerified
@@ -46032,11 +46109,14 @@ ${cleanedText}`, 80),
       const selector = scopeKey
         ? `<input class="storage-scope-select" type="checkbox" data-select-scope="${escapeHtml(scopeKey)}" ${canSelect && selected.has(scopeKey) ? 'checked' : ''} ${canSelect ? '' : 'disabled'} aria-label="${escapeHtml(isCurrent ? '현재 스코프는 선택 삭제에서 제외됩니다.' : '스코프 선택 · 실행할 때 안전 검증')}" />`
         : '';
-      const action = manifestVerified
-        ? `<button class="btn btn--danger btn--sm" data-delete-scope="${escapeHtml(scopeKey)}">삭제</button>`
+      const disabled = Runtime.guiStorageListUnavailable ? ' disabled' : '';
+      const action = kind === 'server_managed'
+        ? '<span class="hint">RE:TRACE에서 관리</span>'
+        : manifestVerified
+        ? `<button class="btn btn--danger btn--sm" data-delete-scope="${escapeHtml(scopeKey)}"${disabled}>삭제</button>`
         : registryOnlyVerified
-          ? `<button class="btn btn--sm" data-clean-registry-scope="${escapeHtml(scopeKey)}">목록 정리</button>`
-          : `<button class="btn btn--sm" data-delete-scope="${escapeHtml(scopeKey)}">확인 후 삭제</button>`;
+          ? `<button class="btn btn--sm" data-clean-registry-scope="${escapeHtml(scopeKey)}"${disabled}>목록 정리</button>`
+          : `<button class="btn btn--sm" data-delete-scope="${escapeHtml(scopeKey)}"${disabled}>확인 후 삭제</button>`;
       return `<tr class="${isCurrent ? 'is-cur' : ''}" data-storage-scope-row="${escapeHtml(scopeKey)}">
         <td><div class="cluster">${selector}${isCurrent ? '<span class="badge badge--info">현재</span>' : ''}</div></td>
         <td><strong>${escapeHtml(live.characterName || item.characterName || fallbackName)}</strong><div class="hint">${escapeHtml(live.chatTitle || item.chatTitle || item.chatId || `scope ${text(item.storageHash || '').slice(0, 10)}`)}</div><div class="hint">${escapeHtml(item.personaName || '')}</div><div class="hint">${escapeHtml(label || verificationLabel)}</div>${copied}</td>
@@ -46064,9 +46144,11 @@ ${cleanedText}`, 80),
     const refreshToken = Number(options.refreshToken || 0) || 0;
     const cancelled = () => token !== storageRenderToken || (refreshToken && refreshToken !== Runtime.guiRefreshToken);
     if (cancelled()) return { ok: false, cancelled: true };
+    if (!Runtime.guiStorageListUnavailable) rememberConfirmedStorageRows(Array.isArray(scopeStats) ? scopeStats : []);
     if (!rows.length) {
-      node.innerHTML = '<tr><td colspan="7" class="muted">저장된 스코프가 없습니다.</td></tr>';
+      node.innerHTML = '<tr data-gui-filter-exempt><td colspan="7" class="muted">저장된 스코프가 없습니다.</td></tr>';
       syncStorageSelectionUi(rows, currentScopeKey);
+      applyGuiListFilter('storageScopeFilter', 'storageRows', 'tr', 'storageScopeFilterCount');
       return { ok: true, cancelled: false };
     }
     node.innerHTML = `<tr><td colspan="7" class="muted">저장소 목록을 그리는 중... 0 / ${formatNumber(rows.length)}</td></tr>`;
@@ -46909,7 +46991,7 @@ ${cleanedText}`, 80),
     const healthDescription = `${health.title} · ${health.meta}`;
     const routeTabKey = {lab:'overview',vault:'storage',care:'import',connect:'provider',log:'activity',settings:'advanced'};
     const subtab = (group,id,label,selected) => `<button class="tab" type="button" role="tab" data-subtab="${id}" data-group="${group}" aria-selected="${selected ? 'true':'false'}">${label}</button>`;
-    const storageMarkup = `<section id="panel-storage" data-panel="storage"><div class="tabs" role="tablist" data-subtabs="v">${subtab('v','resp','응답 원문',subtabs.vault==='resp')}${subtab('v','wl','세계선',subtabs.vault==='wl')}${subtab('v','scopes',`스코프 정리 <span class="count" id="tab-scope-n">${formatNumber(Runtime.guiStorageScopeCount || 0)}</span>`,subtabs.vault==='scopes')}</div><div data-subpanel="resp" data-group="v" class="${subtabs.vault==='resp'?'is-active':''}"><div id="manualEditorPanel">${renderManualEditorPanelHtml(null)}</div></div><div id="panel-worldline" data-panel="worldline" data-subpanel="wl" data-group="v" class="${subtabs.vault==='wl'?'is-active':''}"><div class="stack"><div class="cluster"><button type="button" class="btn" id="fbWorldlineRefresh">세계선 새로고침</button><button type="button" class="btn" data-open-manual-editor="response">저장 원문 보기</button></div><div id="fbWorldlineContent" aria-live="polite">${renderFlashbackWorldlineView(null)}</div></div></div><div data-subpanel="scopes" data-group="v" class="${subtabs.vault==='scopes'?'is-active':''}"><div class="stack"><div class="note note--warn">삭제·정리는 선택 항목을 실행 시점에 다시 확인합니다. 확인할 수 없는 데이터는 자동 정리하지 않습니다.</div><div class="cluster"><select id="storageManagementView" class="select" aria-label="저장소 분류">${[['memory','기억 저장소'],['cleanup','정리 후보'],['orphan','고아 기억'],['all','전체']].map(([value,label])=>`<option value="${value}" ${(Runtime.guiStorageManagementView||'memory')===value?'selected':''}>${label}</option>`).join('')}</select><div class="search grow"><i data-i="search" data-size="sm"></i><input id="storageScopeFilter" class="input" type="search" placeholder="캐릭터 / 채팅 이름으로 찾기" aria-label="스코프 검색"></div><button id="deleteSelectedScopesBtn" class="btn btn--danger" disabled>선택 삭제</button><button id="deleteCurrentScopeBtn" class="btn btn--danger">현재 스코프 삭제</button></div><div class="cluster"><button id="refreshStorageBtn" class="btn">새로고침</button><button id="repairScopeRegistryBtn" class="btn">목록 상태 검사</button><button id="selectCleanupCandidatesBtn" class="btn">빈 목록·저장소 선택</button><button id="cleanupSelectedScopesBtn" class="btn" disabled>선택 항목 안전 정리</button><button id="selectOrphanScopesBtn" class="btn">고아 기억 선택</button><span id="selectedScopeCount" class="hint">선택 0개</span><span id="storageScopeFilterCount" class="hint"></span></div><div class="table-wrap"><table class="table scopes"><thead><tr><th><input id="selectAllScopes" class="storage-scope-select" type="checkbox" aria-label="현재 스코프를 제외한 모든 스코프 선택"></th><th>캐릭터 / 채팅</th><th>토큰</th><th>chunks</th><th>shards / archive</th><th>업데이트</th><th></th></tr></thead><tbody id="storageRows"><tr><td colspan="7" class="muted">저장소 목록을 불러오는 중…</td></tr></tbody></table></div></div></div></section>`;
+    const storageMarkup = `<section id="panel-storage" data-panel="storage"><div class="tabs" role="tablist" data-subtabs="v">${subtab('v','resp','응답 원문',subtabs.vault==='resp')}${subtab('v','wl','세계선',subtabs.vault==='wl')}${subtab('v','scopes',`스코프 정리 <span class="count" id="tab-scope-n">${storageScopeCountLabel()}</span>`,subtabs.vault==='scopes')}</div><div data-subpanel="resp" data-group="v" class="${subtabs.vault==='resp'?'is-active':''}"><div id="manualEditorPanel">${renderManualEditorPanelHtml(null)}</div></div><div id="panel-worldline" data-panel="worldline" data-subpanel="wl" data-group="v" class="${subtabs.vault==='wl'?'is-active':''}"><div class="stack"><div class="cluster"><button type="button" class="btn" id="fbWorldlineRefresh">세계선 새로고침</button><button type="button" class="btn" data-open-manual-editor="response">저장 원문 보기</button></div><div id="fbWorldlineContent" aria-live="polite">${renderFlashbackWorldlineView(null)}</div></div></div><div data-subpanel="scopes" data-group="v" class="${subtabs.vault==='scopes'?'is-active':''}"><div class="stack"><div class="note note--warn">삭제·정리는 선택 항목을 실행 시점에 다시 확인합니다. 확인할 수 없는 데이터는 자동 정리하지 않습니다. 서버 사본 삭제는 RE:TRACE → 서버 데이터 관리에서 진행합니다.</div><div id="storageScopeLoadStatus" class="note note--warn" role="status" aria-live="polite" hidden></div><div class="cluster"><select id="storageManagementView" class="select" aria-label="저장소 분류">${[['memory','기억 저장소'],['cleanup','정리 후보'],['orphan','고아 기억'],['all','전체']].map(([value,label])=>`<option value="${value}" ${(Runtime.guiStorageManagementView||'memory')===value?'selected':''}>${label}</option>`).join('')}</select><div class="search grow"><i data-i="search" data-size="sm"></i><input id="storageScopeFilter" class="input" type="search" placeholder="캐릭터 / 채팅 이름으로 찾기" aria-label="스코프 검색"></div><button id="deleteSelectedScopesBtn" class="btn btn--danger" disabled>선택 삭제</button><button id="deleteCurrentScopeBtn" class="btn btn--danger">현재 스코프 삭제</button></div><div class="cluster"><button id="refreshStorageBtn" class="btn">새로고침</button><button id="repairScopeRegistryBtn" class="btn">목록 상태 검사</button><button id="selectCleanupCandidatesBtn" class="btn">빈 목록·저장소 선택</button><button id="cleanupSelectedScopesBtn" class="btn" disabled>선택 항목 안전 정리</button><button id="selectOrphanScopesBtn" class="btn">고아 기억 선택</button><span id="selectedScopeCount" class="hint">선택 0개</span><span id="storageScopeFilterCount" class="hint"></span></div><div class="table-wrap"><table class="table scopes"><thead><tr><th><input id="selectAllScopes" class="storage-scope-select" type="checkbox" aria-label="현재 스코프를 제외한 모든 스코프 선택"></th><th>캐릭터 / 채팅</th><th>토큰</th><th>chunks</th><th>shards / archive</th><th>업데이트</th><th></th></tr></thead><tbody id="storageRows"><tr><td colspan="7" class="muted">저장소 목록을 불러오는 중…</td></tr></tbody></table></div></div></div></section>`;
     const careBody = buildImportTab() + `<section id="panel-source-edits" data-panel="source-edits"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Source edits</div><h2 class="section-title">원문 수정 동기화</h2><p class="page-desc">제품 원문 변경을 확인하고 선택한 범위만 현재 원문으로 재분석합니다.</p></div></div>${buildFlashbackSourceEditCard()}</section><section id="panel-restore" data-panel="restore"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Memory restore</div><h2 class="section-title">백업 · 복원 · 이사</h2><p class="page-desc">파일을 검사하고 대상과 복원 방식을 확인한 뒤 적용합니다.</p></div></div><div class="card"><div class="card__head"><div><h2 class="card__title">JSON 백업 및 복원</h2><p class="card__desc">대화 원문과 비공개 기억이 포함될 수 있습니다. 안전한 곳에 보관하세요.</p></div><span class="badge">JSON</span></div><div data-portable-backup-host="flashback_memory" aria-label="JSON 기억 백업 및 복원"></div><p class="hint">같은 채팅 복원·새 채팅 이사·복사된 채팅 복구는 검사된 파일의 허용 조건을 따릅니다.</p></div></section>`;
     const providerBody = buildProviderTab(settings, current.stats);
     const serverBody = buildServerConnectionTab();
@@ -46927,7 +47009,7 @@ ${cleanedText}`, 80),
     ].join('');
     const pageKey = routeTabKey[pageFor] || 'overview';
     const side = [['lab','eye','기억 현상실','현상실'],['vault','film','필름 보관함','보관함'],['care','wrench','기억 관리','관리'],['connect','link','임베딩 · 서버','연결'],['log','log','현상 기록','기록'],['settings','sliders','리콜 설정','설정']];
-    const sidebar = `<nav class="sidebar" aria-label="Flashback 메뉴">${[['상태',[side[0]]],['기억',[side[1],side[2]]],['연결',[side[3]]],['설정 및 진단',[side[4],side[5]]]].map(([group,items])=>`<div class="nav-label">${group}</div>${items.map(([go,icon,label,short])=>`<button class="nav-item" type="button" data-go="${go}" data-short="${short}" aria-current="${pageFor===go?'page':'false'}"><i data-i="${icon}"></i><span class="nav-text">${label}</span>${go==='vault'?`<span class="count" id="nav-scope-n">${formatNumber(current.manifest?.shardCount || 0)}</span>`:''}${go==='log'?`<span class="count" id="nav-log-n">${formatNumber(Runtime.activityLog.length)}</span>`:''}</button>`).join('')}`).join('')}<div class="side-foot"><b id="foot-model">${escapeHtml(settings.embeddingModel || '모델 미설정')}</b><span id="foot-meta">${escapeHtml(settings.embeddingProvider || 'provider 미설정')} · ${settings.embeddingDimensions?`${formatNumber(settings.embeddingDimensions)}차원`:'차원 자동'}</span></div></nav>`;
+    const sidebar = `<nav class="sidebar" aria-label="Flashback 메뉴">${[['상태',[side[0]]],['기억',[side[1],side[2]]],['연결',[side[3]]],['설정 및 진단',[side[4],side[5]]]].map(([group,items])=>`<div class="nav-label">${group}</div>${items.map(([go,icon,label,short])=>`<button class="nav-item" type="button" data-go="${go}" data-short="${short}" aria-current="${pageFor===go?'page':'false'}"><i data-i="${icon}"></i><span class="nav-text">${label}</span>${go==='vault'?`<span class="count" id="nav-scope-n">${storageScopeCountLabel()}</span>`:''}${go==='log'?`<span class="count" id="nav-log-n">${formatNumber(Runtime.activityLog.length)}</span>`:''}</button>`).join('')}`).join('')}<div class="side-foot"><b id="foot-model">${escapeHtml(settings.embeddingModel || '모델 미설정')}</b><span id="foot-meta">${escapeHtml(settings.embeddingProvider || 'provider 미설정')} · ${settings.embeddingDimensions?`${formatNumber(settings.embeddingDimensions)}차원`:'차원 자동'}</span></div></nav>`;
     const root = `<div class="stage"><div class="frame" data-device="desktop"><div class="app t-flashback" data-flashback-memory="flashback_memory"><header class="topbar"><div class="brand"><div class="brand__mark"><i data-i="film" data-size="lg"></i></div><div><div class="brand__name">Flashback Memory</div><div class="brand__ver">v${escapeHtml(PLUGIN_VERSION)}</div></div></div><div class="scope"><b id="currentScopeText">${escapeHtml(current.scope?.characterName || current.scope?.characterId || '현재 채팅 없음')}</b><span>›</span><span id="currentChatText">${escapeHtml(current.scope?.chatTitle || current.scope?.chatId || '')}</span><span id="topModeBadge" class="badge ${settings.mode==='off'?'':'badge--ok'}">${settings.mode==='off'?'OFF':'ON'}</span></div><div class="grow"></div><span class="health ${healthTone}" id="sidebarHealth" title="${escapeHtml(healthDescription)}"><i aria-hidden="true"></i><span id="sidebarHealthState">${escapeHtml(flashbackHealthChipLabel(health))}</span><span id="sidebarHealthMeta"> · ${formatNumber(current.records.length)}개</span></span><div class="menu topbar-actions"><button class="btn btn--icon" id="topMoreBtn" type="button" aria-label="더 보기" aria-haspopup="menu" aria-expanded="false" aria-controls="topMoreMenu"><i data-i="more"></i></button><div id="topMoreMenu" class="menu__panel" role="menu" hidden><button id="topMenuRefreshBtn" class="menu-item" type="button" role="menuitem"><i data-i="refresh"></i>새로고침</button><button id="topMenuDebugBtn" class="menu-item" type="button" role="menuitem"><i data-i="download"></i>디버그 로그 내보내기</button><button id="topMenuCloseBtn" class="menu-item" type="button" role="menuitem">닫기</button></div></div></header>${sidebar}<main class="main"><div class="page-body">${pages}</div></main><nav class="tabbar" aria-label="Flashback 하단 메뉴">${side.slice(0,4).map(([go,icon,label,short])=>`<button type="button" data-go="${go}" aria-current="${pageFor===go?'page':'false'}"><svg class="ic"><use href="#i-${icon}"/></svg>${short}</button>`).join('')}<button type="button" data-more="1" aria-haspopup="dialog" aria-controls="sheet-more" aria-expanded="false"><svg class="ic"><use href="#i-more"/></svg>더보기</button></nav><div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list>${side.slice(4).map(([go,icon,label])=>`<button type="button" class="row" data-go="${go}" data-close><span class="row__icon"><svg class="ic"><use href="#i-${icon}"/></svg></span><span><span class="row__title">${label}</span></span><svg class="ic ic--sm faint"><use href="#i-arrow"/></svg></button>`).join('')}</div></div></div><div class="toasts" aria-live="polite"></div></div></div></div>`;
     return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(PLUGIN_NAME)}</title><style>${FLASHBACK_GUI_MOCKUP_STYLES}</style></head><body>${root}</body></html>`;
   };
@@ -47922,7 +48004,7 @@ ${cleanedText}`, 80),
       setBusy(true, '스코프 삭제');
       try {
         const result=await deleteSelectedScopeStorages([scopeKey]);
-        if(result?.protected||result?.failed)await guiAlert(`삭제 ${result.deleted}개 · 보호 ${result.protected}개 · 실패 ${result.failed}개\n확인할 수 없는 데이터는 유지했습니다.`,'삭제 결과');
+        if(result?.protected||result?.failed)await guiAlert(`삭제 ${result.deleted}개 · 보호 ${result.protected}개 · 실패 ${result.failed}개\n${[...new Set([...(result.protectedReasons||[]),...(result.failures||[]).map(item=>item.reason)])].slice(0,3).join('\n')||'확인할 수 없는 데이터는 유지했습니다.'}`,'삭제 결과');
         if (result?.deleted) storageScopeSelection().delete(scopeKey);
         await refreshUi('storage', { storage: true, forceData: true });
         syncStorageSelectionUi();
@@ -47936,16 +48018,16 @@ ${cleanedText}`, 80),
     const currentScopeKey = text(options.currentScopeKey || Runtime.currentScope?.scopeKey || '').trim();
     const uniqueKeys = Array.from(new Set((scopeKeys || []).map(scopeKey => text(scopeKey).trim()).filter(Boolean)))
       .filter(scopeKey => scopeKey !== currentScopeKey);
-    const result = { requested: uniqueKeys.length, deleted: 0, protected: 0, failed: 0, skippedCurrent: Math.max(0, new Set((scopeKeys || []).map(scopeKey => text(scopeKey).trim()).filter(Boolean)).size - uniqueKeys.length), deletedScopeKeys: [], protectedScopeKeys: [], failures: [] };
+    const result = { requested: uniqueKeys.length, deleted: 0, protected: 0, failed: 0, skippedCurrent: Math.max(0, new Set((scopeKeys || []).map(scopeKey => text(scopeKey).trim()).filter(Boolean)).size - uniqueKeys.length), deletedScopeKeys: [], protectedScopeKeys: [], protectedReasons: [], failures: [] };
     for (let index = 0; index < uniqueKeys.length; index += 1) {
       const scopeKey = uniqueKeys[index];
       Runtime.guiBusyLabel = `선택 스코프 삭제 ${index + 1}/${uniqueKeys.length}`;
       applyBusyState();
       try {
         const state=await classifyScopeForManagement(scopeKey);
-        if(scopeKey===Runtime.currentScope?.scopeKey||scopeHasProtectedActivity(scopeKey)||['unavailable','corrupt','physical_without_manifest'].includes(state.kind)){
+        if(scopeKey===Runtime.currentScope?.scopeKey||scopeHasProtectedActivity(scopeKey)||['server_managed','unavailable','corrupt','physical_without_manifest'].includes(state.kind)){
           if(state.kind==='unavailable'){result.failed++;result.failures.push({scopeKey,reason:state.reason});}
-          else{result.protected++;result.protectedScopeKeys.push(scopeKey);}continue;
+          else{result.protected++;result.protectedScopeKeys.push(scopeKey);if(state.reason)result.protectedReasons.push(state.reason);}continue;
         }
         const cleaned=state.kind==='registry_only'?await removeVerifiedRegistryOnlyScope(scopeKey):null;
         const deletion=cleaned?{...cleaned,deleted:cleaned.removed}:await deleteScopeStorage(scopeKey,{protectCurrent:true});
@@ -47962,7 +48044,7 @@ ${cleanedText}`, 80),
         }
       } catch (error) {
         result.failed += 1;
-        result.failures.push({ scopeKey, reason: formatErrorMessage(error, 300) });
+        result.failures.push({ scopeKey, reason: error?.userMessage || formatErrorMessage(error, 300) });
       }
       if ((index + 1) % 3 === 0 && index + 1 < uniqueKeys.length) await nextRenderFrame().catch(() => {});
     }
@@ -47982,8 +48064,27 @@ ${cleanedText}`, 80),
   const refreshStoragePanel = async (currentScopeKey = '', options = {}) => {
     const refreshToken = Number(options.refreshToken || 0) || 0;
     const cancelled = () => !guiVisible || (refreshToken && refreshToken !== Runtime.guiRefreshToken);
-    const rows = await listScopeStorageStats({ guiFast: true, force: options.force === true, shouldCancel: cancelled }).catch(error => { warn('scope stats failed', error); return []; });
+    let rows;
+    try {
+      rows = await listScopeStorageStats({guiFast:true, force:options.force === true, shouldCancel:cancelled});
+    } catch (error) {
+      if (cancelled()) return {rows:[], cancelled:true};
+      warn('scope stats failed', error);
+      Runtime.guiStorageListUnavailable = true;
+      rows = Runtime.guiStorageLastConfirmedRows;
+      const status = getGuiNode('storageScopeLoadStatus');
+      if (status) { status.hidden = false; status.textContent = Array.isArray(rows)
+        ? '목록 조회에 실패했습니다. 마지막 확인 목록을 표시합니다. 최신 상태를 확인할 때까지 삭제·정리는 사용할 수 없습니다. 새로고침해 주세요.'
+        : '스코프 목록을 확인하지 못했습니다. 저장소가 비었다는 뜻이 아닙니다. 새로고침해 주세요.'; }
+      if (Array.isArray(rows)) await renderStorageRowsChunked(rows, currentScopeKey || Runtime.currentScope?.scopeKey || '', {refreshToken});
+      else setNodeHtml('storageRows', '<tr data-gui-filter-exempt><td colspan="7" class="muted">스코프 목록 조회 실패 · 새로고침 필요</td></tr>');
+      syncStorageSelectionUi(rows || [], currentScopeKey);
+      return {rows:rows || [], unavailable:true, cancelled:false};
+    }
     if (refreshToken && refreshToken !== Runtime.guiRefreshToken) return { rows, cancelled: true };
+    Runtime.guiStorageListUnavailable = false;
+    const status = getGuiNode('storageScopeLoadStatus');
+    if (status) { status.hidden = true; status.textContent = ''; }
     const scopeKey = currentScopeKey || (await currentScopeStats()).scope.scopeKey;
     if (refreshToken && refreshToken !== Runtime.guiRefreshToken) return { rows, cancelled: true };
     const rendered = await renderStorageRowsChunked(rows, scopeKey, { refreshToken });
@@ -49123,7 +49224,8 @@ ${cleanedText}`, 80),
     getGuiNode('storageScopeFilter')?.addEventListener('input', () => syncStorageSelectionUi());
     getGuiNode('storageManagementView')?.addEventListener('change',async event=>{
       Runtime.guiStorageManagementView=event.target.value;storageScopeSelection().clear();
-      await renderStorageRowsChunked(Runtime.guiStorageStatsCache?.rows||[],Runtime.currentScope?.scopeKey||'');
+      if(Runtime.guiStorageListUnavailable&&!Array.isArray(Runtime.guiStorageLastConfirmedRows))return;
+      await renderStorageRowsChunked(Runtime.guiStorageStatsCache?.rows||Runtime.guiStorageLastConfirmedRows||[],Runtime.currentScope?.scopeKey||'');
     });
     const selectManagementCandidates=async mode=>{
       setBusy(true,'정리 대상 확인');
@@ -49175,6 +49277,7 @@ ${cleanedText}`, 80),
           `보호되어 유지 ${formatNumber(result.protected)}개`,
           `실패 ${formatNumber(result.failed)}개`
         ];
+        if (result.protectedReasons?.length) details.push(...new Set(result.protectedReasons));
         if (result.failures.length) details.push(`실패 사유: ${result.failures.slice(0, 5).map(item => `${item.scopeKey.slice(0, 24)}…: ${item.reason}`).join(' / ')}`);
         await guiAlert(details.join('\n'), '선택 스코프 삭제 완료');
       } catch (error) {

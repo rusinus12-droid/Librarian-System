@@ -43,16 +43,16 @@ Windows에서는 업데이트.bat, macOS에서는 업데이트.command, Linux/Te
 
 [현재 구성]
 - Librarian System Server 0.3.71
-- Flashback Memory 1.0.101
-- HAYAKU Locator Continuity 3.0.138
-- LIBRA 2.3.149
-- LIA Persona Linker 0.26.83
+- Flashback Memory 1.0.117
+- HAYAKU Locator Continuity 3.0.148
+- LIBRA 2.3.166
+- LIA Persona Linker 0.26.86
 - RE:TRACE 1.9.84
-- GRADIA 0.25.83
+- GRADIA 0.25.90
 
 [호환 정보]
-- Storage SDK 1.8.25
-- Compute SDK 0.3.6
+- Storage SDK 1.8.26
+- Compute SDK 0.3.8
 플러그인 단독(plugin_only) 모드에서는 로컬 연산을 사용합니다.
 
 상세 기술 문서와 과거 변경 기록은 PROGRAM/docs를 확인하세요.
