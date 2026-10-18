@@ -192,6 +192,7 @@ test('startup repairs changed node lifecycle and invalidates the actual prepared
    await x.pluginStorage.setItem(key,JSON.stringify(worldline));result=await startupRestore(x);
   };
   const actual=await x.f.api._selectionTest.beforeRequest(query,'model');assert(visited);assert.equal(result.changed,true);
+  assert.equal(result.restoredRecords,0,'a lifecycle repair restores nothing from the retired pool (the startup log must not claim it did)');
   assert.equal(JSON.parse(await x.pluginStorage.getItem(key)).nodes.find(n=>n.turnNodeId===nodeId).status,'active');
   assert(!JSON.stringify(actual).includes('The codeword SigilaaaabA'),'a real lifecycle repair still revokes prepared evidence');
   exactPrior(x,priorRecords,(await x.read()).records);assert.equal(x.providerCalls(),0);
@@ -211,7 +212,7 @@ test('startup restores an exact retired raw/vector group and invalidates the act
    await t.saveScopeRecords(x.scope,priorRecords.filter(r=>r.id!==retired.id),x.cfg,x.scope,{metadataOnly:true});
    assert(!(await x.read()).records.some(r=>r.id===retired.id));result=await startupRestore(x);
   };
-  const actual=await x.f.api._selectionTest.beforeRequest(query,'model');assert(visited);assert.equal(result.changed,true);assert.equal(result.restoredTurnGroups,1);
+  const actual=await x.f.api._selectionTest.beforeRequest(query,'model');assert(visited);assert.equal(result.changed,true);assert.equal(result.restoredTurnGroups,1);assert.equal(result.restoredRecords,1,'only the retired record counts as restored');
   const active=(await x.read()).records;exactPrior(x,priorRecords,active);assert(active.some(r=>r.id===retired.id&&r.lifecycleStatus==='active'));
   assert(!JSON.parse(await x.pluginStorage.getItem(key)).retiredRecords.some(r=>r.id===retired.id),'restored raw remains in its active owner generation');
   assert(!JSON.stringify(actual).includes('The codeword SigilaaaabA'),'a changed raw owner generation still revokes prepared evidence');assert.equal(x.providerCalls(),0);
