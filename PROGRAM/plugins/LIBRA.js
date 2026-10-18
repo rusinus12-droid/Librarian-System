@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.169
-//@version 2.3.169
+//@display-name LIBRA v2.3.170
+//@version 2.3.170
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1558,7 +1558,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.169';
+  const PLUGIN_VERSION = '2.3.170';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -55751,6 +55751,49 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       return { status: 'verified', reason: '', record, receipt: active.receipt,
         head, recordKey, headKey };
     };
+    const readMicroReaderTurn = async (scope, turn) => {
+      const active = await readActiveMicroMemory(scope, hostWorldlineIdForScope(scope), 0, turn);
+      if (active.status === 'verified' && !microRecallMemoryFromRecord(active.record, active.receipt, active.recordKey)) {
+        return {status: 'pending_reconciliation', reason: 'micro_body_verification_failed', record: null, head: null};
+      }
+      return active;
+    };
+    // Independent read-only catalog. Read one bounded page of current-chat turns;
+    // every preview uses the same verified owner read as the selected detail.
+    const listMicroReaderTurns = async ({beforeTurn = 0, limit = 20, expectedScopeKey = ''} = {}) => {
+      const context = await resolveContext();
+      const scope = context.scope, worldlineId = hostWorldlineIdForScope(scope);
+      if (expectedScopeKey && string(expectedScopeKey) !== string(scope.scopeKey)) {
+        throw new Error('MICRO_READER_SCOPE_CHANGED');
+      }
+      const before = Number(beforeTurn);
+      if (!Number.isInteger(before) || before < 0) throw new Error('MICRO_READER_CURSOR_INVALID');
+      const pageLimit = Math.min(20, Math.max(1, Math.floor(Number(limit) || 20)));
+      const allTurns = buildPairs(context.chat, scope.scopeKey).map(pair => Number(pair.turn));
+      const turns = allTurns.filter(turn => !before || turn < before).reverse();
+      const pageTurns = turns.slice(0, pageLimit), items = [];
+      for (const turn of pageTurns) {
+        let active;
+        try { active = await readMicroReaderTurn(scope, turn); }
+        catch (_) { active = {status: 'unavailable', reason: 'micro_read_unavailable'}; }
+        const record = active.status === 'verified' ? active.record : null;
+        const claims = record?.analysisStatus === 'verified' ? asArray(record.claims) : [];
+        items.push({turn, status: string(active.status || 'unavailable'), reason: string(active.reason || ''),
+          analysisStatus: string(record?.analysisStatus || ''),
+          analysisRevisionId: string(record?.analysisRevisionId || ''),
+          claimCount: claims.length,
+          summary: record ? compact(claims.map(claim => string(claim.text)).join(' ')
+            || record.excerpt?.exactQuote || '', 180) : ''});
+      }
+      const current = await resolveContext();
+      if (current.scope.scopeKey !== scope.scopeKey || hostWorldlineIdForScope(current.scope) !== worldlineId) {
+        throw new Error('MICRO_READER_SCOPE_CHANGED');
+      }
+      return {schema: 'libra.micro_reader_page.v1', scopeKey: scope.scopeKey, worldlineId,
+        totalTurns: allTurns.length, latestTurn: allTurns.at(-1) || 0, items, limit: pageLimit,
+        hasMore: turns.length > pageTurns.length,
+        nextBeforeTurn: turns.length > pageTurns.length ? pageTurns.at(-1) : 0};
+    };
     // Called before same-scope portable restore mutates storage. A restored
     // planned journal is not proof that a later model call never occurred.
     const noteMicroRestoreBoundary = () => {
@@ -75114,8 +75157,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (scopeKeyValue && text(context.scope?.scopeKey || '') !== text(scopeKeyValue)) {
           return { status: 'scope_mismatch', reason: 'scope_mismatch' };
         }
-        return clone(await readActiveMicroMemory(context.scope, hostWorldlineIdForScope(context.scope), 0, turnValue));
+        return clone(await readMicroReaderTurn(context.scope, turnValue));
       },
+      listMicroReaderTurns,
       debugReadActiveMicroMemory: async turnValue => {
         const context = await resolveContext();
         return clone(await readActiveMicroMemory(context.scope, hostWorldlineIdForScope(context.scope), 0, turnValue));
@@ -75600,6 +75644,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     narrativeDirectionLoadSerial: 0,
     libraSidebarSection: 'home',
     memoryHubSection: 'read',
+    bookMemoryKind: 'canonical',
+    microReader: null,
     canonicalReaderItems: [],
     canonicalReaderCursor: '',
     canonicalReaderHasMore: false,
@@ -81116,7 +81162,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return { scopeKey: text(snapshot.scope?.scopeKey || ''), worldlineId: text(snapshot.continuityState?.worldlineId || snapshot.manifest?.activeWorldlineId || 'main'), openSerial: Number(Gui.openSerial || 0) };
   };
   const canonicalReaderBindingKey = value => JSON.stringify([value.scopeKey, value.worldlineId, value.openSerial]);
-  const canonicalReaderViewActive = () => Gui.visible === true && (!Gui.bookPage || Gui.bookPage === 'memory');
+  const canonicalReaderViewActive = () => Gui.visible === true && (!Gui.bookPage || Gui.bookPage === 'memory')
+    && Gui.bookMemoryKind !== 'micro';
   const resetCanonicalReaderView = ({ preserveQuery = true } = {}) => {
     Gui.canonicalReaderGeneration = Number(Gui.canonicalReaderGeneration || 0) + 1;
     Gui.canonicalReaderBindingKey = canonicalReaderBindingKey(canonicalReaderBinding());
@@ -81128,6 +81175,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.canonicalReaderSelected = null; Gui.canonicalReaderDetail = null;
     Gui.canonicalReaderDetailLoading = false; Gui.canonicalReaderDetailError = '';
     Gui.canonicalReaderEvidence = null; Gui.canonicalReaderEvidenceLoading = false; Gui.canonicalReaderEvidenceError = '';
+    Gui.bookTurnEvidence = null; Gui.canonicalReaderMicroPublicationKey = '';
+    Gui.microReader = null;
     Gui.evidenceDrawerOpen = false; Gui.evidenceDrawerChain = null; Gui.evidenceDrawerTitle = '';
     Gui.worldManagerCanonicalMemoryFocus = null;
   };
@@ -81144,6 +81193,99 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return { ...binding, valid: () => canonicalReaderViewActive()
       && generation === Number(Gui.canonicalReaderGeneration || 0) && serial === Gui[serialKey]
       && canonicalReaderBindingKey(binding) === canonicalReaderBindingKey(canonicalReaderBinding()) };
+  };
+  const microReaderViewActive = () => Gui.visible === true && Gui.bookPage === 'memory' && Gui.bookMemoryKind === 'micro';
+  const microReaderState = () => {
+    const binding = canonicalReaderBinding(), bindingKey = canonicalReaderBindingKey(binding);
+    if (!Gui.microReader || Gui.microReader.bindingKey !== bindingKey) {
+      Gui.microReader = {...binding, bindingKey, items: [], loaded: false, loading: false, error: '',
+        hostWorldlineId: '',
+        nextBeforeTurn: 0, hasMore: false, totalTurns: 0, selectedTurn: 0,
+        detail: null, detailLoading: false, detailError: '', pageSerial: 0, detailSerial: 0, publicationKey: ''};
+    }
+    return Gui.microReader;
+  };
+  const microReaderCurrent = reader => microReaderViewActive() && Gui.microReader === reader
+    && reader.bindingKey === canonicalReaderBindingKey(canonicalReaderBinding());
+  const microReaderPublicationKey = reader => {
+    const publication = LibraMemoryCore.getCaptureBackendState().lastMicroPublication;
+    return publication?.scopeKey === reader.scopeKey ? JSON.stringify([
+      publication.turn, publication.revisionId, publication.at, publication.status, publication.analysisStatus]) : '';
+  };
+  const loadMicroReaderDetail = async (turnValue, reader = microReaderState()) => {
+    const turn = Number(turnValue);
+    if (!microReaderCurrent(reader) || !Number.isInteger(turn) || turn < 1) return;
+    const serial = ++reader.detailSerial;
+    reader.selectedTurn = turn; reader.detail = null; reader.detailError = ''; reader.detailLoading = true;
+    queueGuiNavigationRender();
+    try {
+      const api = globalThis.__LIBRA__;
+      if (!api?.readActiveMicroMemoryForTurn) throw new Error('Micro 읽기 API가 준비되지 않았습니다.');
+      const active = await api.readActiveMicroMemoryForTurn(turn, reader.scopeKey);
+      if (!microReaderCurrent(reader) || reader.detailSerial !== serial) return;
+      if (active?.status === 'verified' && (active.record?.scopeKey !== reader.scopeKey
+        || reader.hostWorldlineId && active.record?.worldlineId !== reader.hostWorldlineId
+        || Number(active.record?.turn) !== turn)) {
+        throw new Error('Micro 조회 범위가 변경됐습니다. 다시 읽어 주세요.');
+      }
+      reader.detail = {status: text(active?.status || 'unavailable'), reason: text(active?.reason || ''),
+        record: active?.status === 'verified' ? active.record : null};
+    } catch (error) {
+      if (microReaderCurrent(reader) && reader.detailSerial === serial) reader.detailError = text(error?.message || error);
+    } finally {
+      if (microReaderCurrent(reader) && reader.detailSerial === serial) {
+        reader.detailLoading = false; queueGuiNavigationRender();
+      }
+    }
+  };
+  const loadMicroReaderPage = async (append = false) => {
+    const reader = microReaderState();
+    if (!microReaderCurrent(reader) || !reader.scopeKey || reader.loading || append && !reader.hasMore) return;
+    const serial = ++reader.pageSerial, publicationKey = microReaderPublicationKey(reader);
+    const followLatest = !reader.selectedTurn || reader.selectedTurn === reader.items[0]?.turn;
+    reader.loading = true; reader.error = ''; queueGuiNavigationRender();
+    try {
+      const api = globalThis.__LIBRA__;
+      if (!api?.listMicroReaderTurns) throw new Error('Micro 목록 API가 준비되지 않았습니다.');
+      const page = await api.listMicroReaderTurns({beforeTurn: append ? reader.nextBeforeTurn : 0,
+        limit: 20, expectedScopeKey: reader.scopeKey});
+      if (!microReaderCurrent(reader) || reader.pageSerial !== serial) return;
+      if (page?.schema !== 'libra.micro_reader_page.v1' || page.scopeKey !== reader.scopeKey
+        || !page.worldlineId || reader.hostWorldlineId && page.worldlineId !== reader.hostWorldlineId) {
+        throw new Error('Micro 목록 범위가 변경됐습니다. 다시 읽어 주세요.');
+      }
+      // Micro uses the physical host worldline, while Canonical uses a logical branch ID.
+      reader.hostWorldlineId = page.worldlineId;
+      const incoming = guiAsArray(page.items), old = append ? reader.items : [];
+      const seen = new Set(old.map(row => row.turn));
+      reader.items = [...old, ...incoming.filter(row => {if (seen.has(row.turn)) return false; seen.add(row.turn); return true;})];
+      reader.loaded = true; reader.totalTurns = Number(page.totalTurns || 0);
+      reader.hasMore = page.hasMore === true; reader.nextBeforeTurn = Number(page.nextBeforeTurn || 0);
+      reader.publicationKey = publicationKey;
+      const selected = !append && followLatest ? reader.items[0]?.turn
+        : reader.items.find(row => row.turn === reader.selectedTurn)?.turn || reader.items[0]?.turn;
+      if (selected && (!append || !reader.detail)) void loadMicroReaderDetail(selected, reader);
+    } catch (error) {
+      if (microReaderCurrent(reader) && reader.pageSerial === serial) reader.error = text(error?.message || error);
+    } finally {
+      if (microReaderCurrent(reader) && reader.pageSerial === serial) {
+        reader.loading = false; queueGuiNavigationRender();
+      }
+    }
+  };
+  const ensureMicroReaderPage = () => {
+    const reader = microReaderState();
+    if (microReaderCurrent(reader) && reader.scopeKey && !reader.loading && !reader.error
+      && (!reader.loaded || reader.publicationKey !== microReaderPublicationKey(reader))) {
+      void loadMicroReaderPage(false);
+    }
+    return reader;
+  };
+  const selectBookMemoryKind = kind => {
+    const next = kind === 'micro' ? 'micro' : 'canonical';
+    if (Gui.bookMemoryKind === next) return;
+    resetCanonicalReaderView({preserveQuery: true});
+    Gui.bookMemoryKind = next; queueGuiNavigationRender();
   };
   // Reads the durable Micro rows for the turns a Canonical chapter covers, so the Book can present the
   // synthesis and the per-turn evidence in one flow. Read-only: a missing or unreadable row is reported
@@ -81194,6 +81336,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const identityKey = canonicalReaderIdentityKey(identity);
     Gui.canonicalReaderSelected = { ...identity, scopeKey: binding.scopeKey };
     Gui.canonicalReaderDetail = null; Gui.canonicalReaderDetailError = '';
+    Gui.bookTurnEvidence = null;
     Gui.canonicalReaderEvidence = null; Gui.canonicalReaderEvidenceError = ''; Gui.canonicalReaderEvidenceLoading = false;
     Gui.evidenceDrawerOpen = false; Gui.evidenceDrawerChain = null;
     Gui.canonicalReader_evidenceSerial = Number(Gui.canonicalReader_evidenceSerial || 0) + 1;
@@ -81210,10 +81353,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       // its evidence are always shown from the same scope, and the section disappears as soon as the
       // reader selects a chapter without evidence.
       try {
-        Gui.bookTurnEvidence = await loadBookTurnEvidence(detail?.turnRange, ticket.scopeKey);
+        const evidence = await loadBookTurnEvidence(detail?.turnRange, ticket.scopeKey);
+        if (!ticket.valid() || canonicalReaderSelectedKey() !== identityKey) return;
+        Gui.bookTurnEvidence = evidence;
       } catch (error) {
-        Gui.bookTurnEvidence = { schema: 'libra.micro_turn_evidence.v1', turns: [],
-          pending: [{ reason: String(error?.message || error) }] };
+        if (ticket.valid() && canonicalReaderSelectedKey() === identityKey) {
+          Gui.bookTurnEvidence = { schema: 'libra.micro_turn_evidence.v1', turns: [],
+            pending: [{ reason: String(error?.message || error) }] };
+        }
       }
     } catch (error) {
       if (ticket.valid()) Gui.canonicalReaderDetailError = String(error?.message || error);
@@ -81249,6 +81396,21 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
   const ensureCanonicalReaderPage = () => {
     const binding = ensureCanonicalReaderLifetime();
+    const detail = Gui.canonicalReaderDetail;
+    const publication = LibraMemoryCore.getCaptureBackendState().lastMicroPublication;
+    if (canonicalReaderViewActive() && detail?.detailLoaded === true && !Gui.canonicalReaderDetailLoading
+      && publication?.status === 'verified' && publication.scopeKey === binding.scopeKey
+      && Number(publication.turn) >= Number(detail.turnRange?.start)
+      && Number(publication.turn) <= Number(detail.turnRange?.end)) {
+      const publicationKey = JSON.stringify([canonicalReaderIdentityKey(detail), binding.scopeKey,
+        publication.turn, publication.revisionId, publication.at, publication.analysisStatus]);
+      if (Gui.canonicalReaderMicroPublicationKey !== publicationKey) {
+        Gui.canonicalReaderMicroPublicationKey = publicationKey;
+        // A completed/retried Micro changes the chapter evidence, not the Canonical body.
+        // Re-read through the same scope/identity guards; GUI reads never call a model.
+        void loadCanonicalReaderDetail(detail);
+      }
+    }
     if (!canonicalReaderViewActive() || !binding.scopeKey || Gui.canonicalReaderLoaded || Gui.canonicalReaderLoading || Gui.canonicalReaderError || Gui.canonicalReaderQueued) return;
     Gui.canonicalReaderQueued = true;
     queueMicrotask(() => { Gui.canonicalReaderQueued = false; if (!Gui.canonicalReaderError) void loadCanonicalReaderPage(false); });
@@ -83649,6 +83811,68 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     ]);
   };
 
+  const microReaderStatusLabel = row => row?.status === 'verified'
+    ? row.analysisStatus === 'minimum_source_bound' ? '원문만 보관 · 분석 미완' : '분석 완료'
+    : ({missing: '기록 없음', stale_source: '원문 변경 · 확인 필요',
+      pending_reconciliation: '저장 확인 필요', unavailable: '조회 실패'}[row?.status] || '확인 필요');
+  const buildBookMicroReaderProjection = () => {
+    const reader = ensureMicroReaderPage();
+    const retry = () => void loadMicroReaderPage(false);
+    const rail = guiEl('aside', {class: 'rail', 'aria-label': 'Micro 기억 목록'}, [
+      guiEl('div', {class: 'rail__search'}, [guiEl('strong', {text: '턴별 Micro'}),
+        guiEl('button', {class: 'btn btn--sm', type: 'button', text: '새로고침', disabled: reader.loading, onClick: retry})]),
+      guiEl('p', {class: 'hint', text: '최신 턴부터 · 20턴씩 표시'}),
+      reader.error ? guiEl('div', {class: 'note note--danger', role: 'alert'}, [
+        guiEl('p', {text: `목록을 읽지 못했습니다. ${reader.items.length ? '마지막으로 확인한 목록을 표시합니다. ' : ''}${reader.error}`}),
+        guiEl('button', {class: 'btn btn--sm', type: 'button', text: '목록 다시 읽기', onClick: retry})]) : null,
+      guiEl('div', {class: 'rail__list'}, reader.items.length ? reader.items.map(row => guiEl('button', {
+        class: `chapter${reader.selectedTurn === row.turn ? ' is-on' : ''}`, type: 'button',
+        'aria-current': reader.selectedTurn === row.turn ? 'true' : null,
+        dataset: {microReaderTurn: String(row.turn), microReaderStatus: row.status},
+        onClick: () => void loadMicroReaderDetail(row.turn, reader)
+      }, [guiEl('b', {text: `T${row.turn} · ${microReaderStatusLabel(row)}`}),
+        row.summary ? guiEl('small', {text: row.summary}) : null])) : [guiEl('div', {class: 'empty',
+          text: reader.loading ? 'Micro 목록을 읽는 중입니다.' : reader.loaded ? '아직 완료된 턴이 없습니다.' : 'Micro 목록을 준비하고 있습니다.'})]),
+      reader.hasMore ? guiEl('button', {class: 'btn btn--sm', type: 'button', text: '이전 턴 더 보기',
+        disabled: reader.loading, onClick: () => void loadMicroReaderPage(true)}) : null,
+      reader.loaded ? guiEl('p', {class: 'hint', text: `${reader.items.length} / ${reader.totalTurns}턴 표시 · 저장 확인 ${reader.items.filter(row => row.status === 'verified').length}개`}) : null
+    ]);
+    const current = reader.detail, record = current?.record;
+    const note = (title, message) => guiEl('div', {class: 'empty'}, [guiEl('b', {text: title}), guiEl('p', {text: message})]);
+    let content;
+    if (reader.detailLoading) content = note('Micro를 읽는 중입니다', `T${reader.selectedTurn}의 저장된 기록을 확인합니다.`);
+    else if (reader.detailError) content = guiEl('div', {class: 'stack', role: 'alert'}, [
+      note('Micro를 열지 못했습니다', reader.detailError), guiEl('button', {class: 'btn btn--sm', type: 'button',
+        text: 'Micro 다시 읽기', onClick: () => void loadMicroReaderDetail(reader.selectedTurn, reader)})]);
+    else if (!current) content = note('Micro 기억', '목록에서 확인할 턴을 선택하세요.');
+    else if (!record) content = guiEl('div', {class: 'stack'}, [
+      note(`T${reader.selectedTurn} · ${microReaderStatusLabel(current)}`, current.status === 'missing'
+        ? '이 턴에 저장된 Micro가 없습니다.' : current.status === 'stale_source'
+          ? '원문이 변경되어 이전 Micro 본문을 표시하지 않습니다.' : '현재 원문과 일치하는 저장 기록을 확인하지 못했습니다.'),
+      guiEl('button', {class: 'btn btn--sm', type: 'button', text: '다시 확인',
+        onClick: () => void loadMicroReaderDetail(reader.selectedTurn, reader)})]);
+    else {
+      const sourceOnly = record.analysisStatus === 'minimum_source_bound';
+      const quote = evidence => guiEl('blockquote', {}, [
+        guiEl('p', {text: `“${text(evidence?.exactQuote || '')}”`}),
+        guiEl('div', {class: 'muted', text: `${evidence?.role === 'assistant' ? 'AI 응답' : '사용자'} · ${text(evidence?.messageId || '')}`})]);
+      content = guiEl('div', {class: 'stack'}, [
+        guiEl('div', {class: 'eyebrow', text: `MICRO · T${record.turn}`}),
+        guiEl('h2', {text: `T${record.turn}의 Micro 기억`}),
+        guiEl('p', {class: 'deck', text: microReaderStatusLabel({status: 'verified', analysisStatus: record.analysisStatus})}),
+        sourceOnly ? guiEl('div', {class: 'note note--warn'}, [guiEl('p', {
+          text: '분석이 완료되지 않아 원문만 보관된 기록입니다.'}), quote(record.excerpt)])
+          : guiEl('div', {class: 'stack'}, guiAsArray(record.claims).map((claim, index) => guiEl('section', {
+            class: 'note', dataset: {microReaderClaim: String(index)}
+          }, [guiEl('h3', {text: `기록 ${index + 1}`}), guiEl('p', {text: text(claim.text)}), quote(claim.evidence)]))),
+        guiEl('p', {class: 'muted', text: '턴별 추출 기록입니다. 현재 상태에는 근거 검증과 상태 승인을 통과한 변화만 반영됩니다.'})
+      ]);
+    }
+    return guiEl('div', {class: 'grid g-side', dataset: {microReader: 'true'}}, [rail,
+      guiEl('article', {class: 'sheet-page detail-pane', style: {overflowWrap: 'anywhere', minWidth: '0'}, dataset: {microReaderDetail: String(reader.selectedTurn || ''),
+        analysisStatus: text(record?.analysisStatus || '')}}, [content])]);
+  };
+
   const buildBookSaveBar = () => guiEl('footer',{class:'savebar',dataset:{bookSaveBar:'true'}},[
     guiEl('span',{class:'hint',dataset:{settingsRoomSaveStatus:'true'},role:'status','aria-live':'polite',text:Gui.settingsRoomSaveStatus||(Gui.dirty?'저장되지 않은 변경':'저장됨')}),
     guiEl('div',{class:'cluster'},[
@@ -84806,7 +85030,7 @@ advanced
     if (page === 'settings') return [page, bookSettingsRoomActiveSection(), Gui.referenceHubSection,
       Gui.agentHubSection, Gui.memoryPipelineStage, Gui.pipelineHubSection, Gui.customHubSection,
       Gui.executionLogSection, false === true].join('|');
-    if (page === 'memory') return [page, Gui.memoryHubSection].join('|');
+    if (page === 'memory') return [page, Gui.memoryHubSection, Gui.bookMemoryKind || 'canonical'].join('|');
     if (page === 'people') return [page, Gui.bookPeopleSection].join('|');
     if (page === 'world') return [page, Gui.bookWorldSection].join('|');
     if (page === 'story') return [page, Gui.bookStorySection].join('|');
@@ -85295,11 +85519,22 @@ advanced
   };
 
   const buildApprovedMockupMemory = () => {
-    ensureCanonicalReaderPage();
-    if (!Gui.canonicalReaderLoaded && !Gui.canonicalReaderLoading) void loadCanonicalReaderPage(false);
-    const reader = buildBookMemoryReaderProjection();
-    reader.id='memory-root'; reader.dataset.productReadback='canonical-memory-reader';
-    const manage = guiEl('div', { class: 'manage-block' }, [guiEl('div', { class: 'banner banner--info' }, [
+    const micro = Gui.bookMemoryKind === 'micro';
+    if (!micro) {
+      ensureCanonicalReaderPage();
+      if (!Gui.canonicalReaderLoaded && !Gui.canonicalReaderLoading) void loadCanonicalReaderPage(false);
+    }
+    const tabs = guiEl('nav', {class: 'tabs', role: 'tablist', 'aria-label': '기억 종류'}, [
+      ...[['canonical', '정본 기억'], ['micro', 'Micro 기억']].map(([kind, label]) => guiEl('button', {
+        class: `tab${(micro ? 'micro' : 'canonical') === kind ? ' is-on' : ''}`, type: 'button', role: 'tab',
+        'aria-selected': String((micro ? 'micro' : 'canonical') === kind), dataset: {memoryReaderKind: kind},
+        text: label, onClick: () => selectBookMemoryKind(kind)
+      }))]);
+    const reader = micro ? buildBookMicroReaderProjection() : buildBookMemoryReaderProjection();
+    reader.id='memory-root'; reader.dataset.productReadback=micro ? 'micro-memory-reader' : 'canonical-memory-reader';
+    reader.setAttribute?.('role', 'tabpanel');
+    reader.setAttribute?.('aria-label', micro ? 'Micro 기억' : '정본 기억');
+    const manage = micro ? null : guiEl('div', { class: 'manage-block' }, [guiEl('div', { class: 'banner banner--info' }, [
       guiEl('div', {}, [guiEl('b', { text: '정본 기억 관리' }), guiEl('p', { text: '재분석 후보와 수정용 복사본은 검토 후 별도 승인해야 정본에 반영됩니다.' })]),
       guiEl('div', { class: 'cluster' }, [
         guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: '기억 생성 구간 선택', onClick: () => void showCanonicalRangeDrawer('missing') }),
@@ -85307,7 +85542,7 @@ advanced
         guiEl('button', { class: 'btn btn--sm', type: 'button', text: '복구 · 재구축', onClick: () => selectBookSettingsRoomSection('recovery') })
       ])
     ]), guiEl('section', { class: 'card', dataset: { productMemoryManagement: 'true' } }, [buildLibraMemoriesPanel(), buildCanonicalEvidenceDrawer()])]);
-    return guiEl('div', { class: 'stack', dataset: { libraProductDetail: 'memory' } }, [manage, reader]);
+    return guiEl('div', { class: 'stack', dataset: { libraProductDetail: 'memory' } }, [tabs, manage, reader]);
   };
 
   const buildApprovedMockupSettings = () => {
@@ -85682,6 +85917,17 @@ advanced
     const app = Gui.mockupApp; Gui.app = app;
     const page = normalizeBookPage(Gui.bookPage);
     Gui.bookPage = page;
+    if (page === 'memory') {
+      const header = app.querySelector('.page[data-page="memory"] .page-head');
+      const micro = Gui.bookMemoryKind === 'micro';
+      const eyebrow = header?.querySelector('.eyebrow'), description = header?.querySelector('.page-desc');
+      if (eyebrow) eyebrow.textContent = micro ? 'Micro Archive' : 'Canonical Archive';
+      if (description) description.textContent = micro
+        ? '완료된 각 턴의 Micro 기록과 원문 근거를 읽습니다. 정본 작성 전의 최신 턴도 확인할 수 있습니다.'
+        : '기억은 완결된 5턴 단위로 저장되는 정본입니다. 읽는 화면과 고치는 화면은 같은 자리에서 모드로만 전환합니다.';
+      const actions = header?.querySelector('.page-actions');
+      if (actions) actions.hidden = micro;
+    }
     const manageMode = page === 'memory' ? Gui.memoryHubSection !== 'read'
       : page === 'people' ? Gui.bookPeopleSection !== 'profile'
         : page === 'world' ? Gui.bookWorldSection !== 'guide' : false;
@@ -86576,6 +86822,10 @@ advanced
     debugValidateMicroCandidate(candidate = {}, receipt = {}) { return safeClone(LibraMemoryCore.debugValidateMicroCandidate(candidate, receipt)); },
     async debugAnalyzeCompletedReceipt(turn) { return safeClone(await LibraMemoryCore.debugAnalyzeCompletedReceipt(turn)); },
     async debugReadPersonSpanInventory(turn) { return safeClone(await LibraMemoryCore.debugReadPersonSpanInventory(turn)); },
+    async readActiveMicroMemoryForTurn(turn, scopeKey = '') {
+      return safeClone(await LibraMemoryCore.readActiveMicroMemoryForTurn(turn, scopeKey));
+    },
+    async listMicroReaderTurns(options = {}) { return safeClone(await LibraMemoryCore.listMicroReaderTurns(options)); },
     async debugReadActiveMicroMemory(turn) { return safeClone(await LibraMemoryCore.debugReadActiveMicroMemory(turn)); },
     async debugProduceMicroForTurn(turn) { return safeClone(await LibraMemoryCore.debugProduceMicroForTurn(turn)); },
     async debugAdmitActiveMicroStateClaim(turn, claimIndex = 0) {

@@ -9,16 +9,16 @@ function flat(n){return n&&typeof n==='object'?[n,...arr(n.children).flatMap(fla
 function ctx(extra={}){return vm.createContext({Gui:{visible:true,bookPage:'memory',openSerial:1,state:{runtime:{},agents:{}}},guiEl:el,guiAsArray:arr,guiAsObject:obj,libraGuiArray:arr,text:x=>String(x??''),console,Promise,Set,Map,JSON,Number,String,Object,Date,queueMicrotask,...require('./fixtures/librarian_production_bindings.cjs')(source,['isReadableUnifiedEngineVersion']),...extra});}
 function run(c,s,names){vm.runInContext(s+'\nObject.assign(globalThis,{'+names.join(',')+'});',c);return c;}
 async function test(name,fn){try{await fn();results.push({name,ok:true});}catch(e){results.push({name,ok:false,error:String(e.stack||e)});}}
-function reader(api={}){let snap={scope:{scopeKey:'A'},continuityState:{worldlineId:'main'}};let renders=0;let status=[];const c=ctx({LibraMemoryCore:{peekSnapshot:()=>snap,...api},__LIBRA__:api,queueGuiNavigationRender:()=>renders++,guiSetStatus:(...s)=>status.push(s),bookSelectMemorySection:section=>{c.Gui.memoryHubSection=section;}});
-run(c,part('const canonicalReaderIdentityKey =','const canonicalEvidenceLayerCopy ='),['resetCanonicalReaderView','ensureCanonicalReaderLifetime','ensureCanonicalReaderPage','loadCanonicalReaderPage','loadCanonicalReaderDetail','loadCanonicalReaderEvidence','openCanonicalReaderCorrection','applyCanonicalReaderSearch','canonicalReaderBinding','canonicalReaderBindingKey']);
+function reader(api={}){let snap={scope:{scopeKey:'A'},continuityState:{worldlineId:'main'}};let renders=0;let status=[];const c=ctx({LibraMemoryCore:{peekSnapshot:()=>snap,getCaptureBackendState:()=>({}),...api},__LIBRA__:api,queueGuiNavigationRender:()=>renders++,guiSetStatus:(...s)=>status.push(s),bookSelectMemorySection:section=>{c.Gui.memoryHubSection=section;}});
+run(c,part('const canonicalReaderIdentityKey =','const canonicalEvidenceLayerCopy ='),['resetCanonicalReaderView','ensureCanonicalReaderLifetime','ensureCanonicalReaderPage','loadCanonicalReaderPage','loadCanonicalReaderDetail','loadCanonicalReaderEvidence','openCanonicalReaderCorrection','applyCanonicalReaderSearch','canonicalReaderBinding','canonicalReaderBindingKey','microReaderState','loadMicroReaderPage','loadMicroReaderDetail','ensureMicroReaderPage']);
 c.ensureCanonicalReaderLifetime();return {c,setScope:key=>snap={scope:{scopeKey:key},continuityState:{worldlineId:'main'}},renders:()=>renders,status};}
 const identity=id=>({memoryId:id,revision:1,worldlineId:'main'}),detail=id=>({...identity(id),scopeKey:'A',detailLoaded:true,text:id,title:id});
 function variantDom(c){const {JSDOM}=require('jsdom'),dom=new JSDOM('<div id="app"></div>'),doc=dom.window.document;c.document=doc;c.Gui.app=doc.querySelector('#app');c.guiEl=(tag,attrs={},children=[])=>{const node=doc.createElement(tag);for(const[key,value]of Object.entries(attrs)){if(value==null)continue;if(key==='class')node.className=value;else if(key==='text')node.textContent=value;else if(key==='dataset')Object.assign(node.dataset,value);else if(key==='onClick')node.onclick=value;else if(key==='style')Object.assign(node.style,value);else if(key in node)node[key]=value;else node.setAttribute(key,String(value));}for(const child of children.filter(Boolean))node.appendChild(child);return node;};c.LIBRA_APPROVED_VERSIONS_DRAWER_HTML=approved.literal(source,'LIBRA_APPROVED_VERSIONS_DRAWER_HTML');c.LIBRA_APPROVED_DELETE_VERSION_DIALOG_HTML=approved.literal(source,'LIBRA_APPROVED_DELETE_VERSION_DIALOG_HTML');c.bindApprovedOverlayKeyboard=()=>{};c.buildSharedExecutionLogsPanel=()=>doc.createElement('div');c.confirmApprovedOperation=async()=>true;c.libraFormatTime=()=>'';return doc;}
 (async()=>{
 await test('Reader catalog separates inherited physical worldline from selected branch', async()=>{
  const ref={memoryId:'inherited',revision:1,worldlineId:'main',summary:'memo'};
- const c=ctx({string:x=>String(x??''),compact:(x,n)=>String(x??'').slice(0,n),clone:x=>JSON.parse(JSON.stringify(x)),worldManagerPageLimit:n=>n,resolveContext:async()=>({scope:{scopeKey:'A'},chat:{}}),buildPairs:()=>[],loadManifest:async()=>({}),resolveWorldManagerHistoryWorldline:async()=>({worldlineId:'branch-B',cutoffTurn:10}),canonicalReaderRefs:()=>[ref],canonicalReaderSearchRefs:async(c,m,refs)=>refs,canonicalReaderRefIdentity:r=>({memoryId:r.memoryId,revision:r.revision,worldlineId:r.worldlineId}),canonicalReaderTitle:()=> 'memo',canonicalReaderEpisode:()=>'',worldManagerDecodeCursor:()=>0,worldManagerEncodeCursor:()=>'',CANONICAL_READER_CHAPTER_SCHEMA:'chapter',CANONICAL_READER_PAGE_SCHEMA:'page',stateCorrectionFailure:s=>Error(s)});
- run(c,part('const listCanonicalReaderChapters =','const canonicalReaderPatchFields ='),['listCanonicalReaderChapters']);
+ const c=ctx({string:x=>String(x??''),compact:(x,n)=>String(x??'').slice(0,n),clone:x=>JSON.parse(JSON.stringify(x)),worldManagerPageLimit:n=>n,resolveContext:async()=>({scope:{scopeKey:'A'},chat:{}}),buildPairs:()=>[],loadManifest:async()=>({}),resolveWorldManagerHistoryWorldline:async()=>({worldlineId:'branch-B',cutoffTurn:10}),canonicalReaderRefs:()=>[ref],canonicalReaderSearchRefs:async(c,m,refs)=>({refs,coverage:{}}),canonicalReaderRefIdentity:r=>({memoryId:r.memoryId,revision:r.revision,worldlineId:r.worldlineId}),canonicalReaderTitle:()=> 'memo',canonicalReaderEpisode:()=>'',worldManagerDecodeCursor:()=>0,worldManagerEncodeCursor:()=>'',CANONICAL_READER_CHAPTER_SCHEMA:'chapter',CANONICAL_READER_PAGE_SCHEMA:'page',stateCorrectionFailure:s=>Error(s)});
+ run(c,approved.extract(source,'listCanonicalReaderChapters'),['listCanonicalReaderChapters']);
  const result=await c.listCanonicalReaderChapters({expectedScopeKey:'A'});assert.equal(result.items[0].worldlineId,'branch-B');assert.equal(result.items[0].sourceWorldlineId,'main');assert.equal(ref.worldlineId,'main');await assert.rejects(c.listCanonicalReaderChapters({expectedScopeKey:'B'}),/SCOPE_CHANGED/);
 });
 await test('quick analyzer delegates to production Librarian panel; save controls retain dirty behavior',async()=>{
@@ -34,6 +34,39 @@ for(const transition of ['scope','close','generation'])await test(`late page dis
 await test('page scope readback mismatch is error, not data',async()=>{const {c}=reader({listCanonicalReaderChapters:async()=>({scopeKey:'B',worldlineId:'main',items:[identity('wrong')]})});await c.loadCanonicalReaderPage();assert.match(c.Gui.canonicalReaderError,/scope/);assert.equal(arr(c.Gui.canonicalReaderItems).length,0);});
 await test('latest chapter selection wins while earlier read is pending',async()=>{const releases={};const {c}=reader({getCanonicalReaderChapter:opt=>new Promise(r=>releases[opt.memoryId]=r)});const a=c.loadCanonicalReaderDetail(identity('one'));const b=c.loadCanonicalReaderDetail(identity('two'));releases.two(detail('two'));await b;releases.one(detail('one'));await a;assert.equal(c.Gui.canonicalReaderDetail.memoryId,'two');assert.equal(c.Gui.canonicalReaderDetailLoading,false);});
 await test('closing or switching scope discards late detail',async()=>{let release;const {c,setScope}=reader({getCanonicalReaderChapter:()=>new Promise(r=>release=r)});const a=c.loadCanonicalReaderDetail(identity('one'));setScope('B');release(detail('one'));await a;assert.equal(c.Gui.canonicalReaderDetail,null);});
+await test('late Micro evidence cannot replace another chapter',async()=>{
+ const releases={};
+ const {c}=reader({getCanonicalReaderChapter:async opt=>({...detail(opt.memoryId),turnRange:{start:opt.memoryId==='one'?1:2,end:opt.memoryId==='one'?1:2}}),
+  readActiveMicroMemoryForTurn:turn=>new Promise(resolve=>{releases[turn]=resolve;})});
+ const first=c.loadCanonicalReaderDetail(identity('one'));await tick();
+ const second=c.loadCanonicalReaderDetail(identity('two'));await tick();
+ const evidence=turn=>({status:'verified',record:{analysisStatus:'verified',claims:[{text:'T'+turn,evidence:{role:'assistant',messageId:'m'+turn,exactQuote:'quote'+turn}}]}});
+ releases[2](evidence(2));await second;releases[1](evidence(1));await first;
+ assert.equal(c.Gui.canonicalReaderDetail.memoryId,'two');
+ assert.equal(c.Gui.bookTurnEvidence.turns[0].turn,2);
+ assert.match(c.Gui.bookTurnEvidence.turns[0].text,/quote2/);
+});
+await test('Micro page arriving after a scope switch is discarded',async()=>{
+ let release;const {c,setScope}=reader({listMicroReaderTurns:()=>new Promise(resolve=>release=resolve)});
+ c.Gui.bookMemoryKind='micro';const pending=c.loadMicroReaderPage();
+ setScope('B');const next=c.microReaderState();
+ release({schema:'libra.micro_reader_page.v1',scopeKey:'A',worldlineId:'host-A',items:[{turn:1,status:'verified'}]});
+ await pending;assert.equal(next.items.length,0);assert.equal(next.scopeKey,'B');
+});
+await test('latest Micro selection wins while the old detail is pending',async()=>{
+ const releases={};const {c}=reader({readActiveMicroMemoryForTurn:turn=>new Promise(resolve=>releases[turn]=resolve)});
+ c.Gui.bookMemoryKind='micro';const state=c.microReaderState();
+ const first=c.loadMicroReaderDetail(1),second=c.loadMicroReaderDetail(2);
+ const row=turn=>({status:'verified',record:{scopeKey:'A',worldlineId:'host-A',turn,analysisStatus:'verified',claims:[]}});
+ releases[2](row(2));await second;releases[1](row(1));await first;
+ assert.equal(state.selectedTurn,2);assert.equal(state.detail.record.turn,2);
+});
+await test('Micro list errors retain the last checked list without render retry loops',async()=>{
+ let calls=0;const {c}=reader({listMicroReaderTurns:async()=>{calls++;throw Error('offline');}});
+ c.Gui.bookMemoryKind='micro';const state=c.microReaderState();state.items=[{turn:3,status:'verified'}];state.loaded=true;
+ await c.loadMicroReaderPage();for(let n=0;n<10;n++){c.ensureMicroReaderPage();await tick();}
+ assert.equal(state.items[0].turn,3);assert.match(state.error,/offline/);assert.equal(calls,1);
+});
 await test('wrong detail identity fails closed',async()=>{const {c}=reader({getCanonicalReaderChapter:async()=>detail('two')});await c.loadCanonicalReaderDetail(identity('one'));assert.equal(c.Gui.canonicalReaderDetail,null);assert.match(c.Gui.canonicalReaderDetailError,/identity/);});
 await test('evidence from old selection not adopted',async()=>{let release;const {c}=reader({getCanonicalEvidenceChain:()=>new Promise(r=>release=r),getCanonicalReaderChapter:async opt=>detail(opt.memoryId)});await c.loadCanonicalReaderDetail(identity('one'));const p=c.loadCanonicalReaderEvidence({openDrawer:true});await c.loadCanonicalReaderDetail(identity('two'));release({...identity('one'),scopeKey:'A'});await p;assert.equal(c.Gui.canonicalReaderEvidence,null);assert.equal(c.Gui.evidenceDrawerOpen,false);});
 await test('evidence mismatched scope fails closed',async()=>{const {c}=reader({getCanonicalEvidenceChain:async()=>({...identity('one'),scopeKey:'B'}),getCanonicalReaderChapter:async()=>detail('one')});await c.loadCanonicalReaderDetail(identity('one'));await c.loadCanonicalReaderEvidence({openDrawer:true});assert.match(c.Gui.canonicalReaderEvidenceError,/scope/);assert.equal(c.Gui.evidenceDrawerChain,null);});
