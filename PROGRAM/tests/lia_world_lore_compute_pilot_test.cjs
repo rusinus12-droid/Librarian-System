@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { DEFINITIONS, executeOperation } = require('../server/compute/registry.cjs');
+const { DEFINITIONS, executeOperation } = require('./fixtures/retired_compute_reference_kernels.cjs');
 
 const program = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(program, 'plugins', 'LIA_Persona_Linker.js'), 'utf8');

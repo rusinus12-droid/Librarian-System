@@ -146,26 +146,13 @@ function readConfig(dataDir, options = {}) {
   const port = Number(config.port);
   if (!['127.0.0.1', 'localhost', '::1'].includes(host)) throw new Error('server_config_host_must_be_loopback');
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('server_config_port_invalid');
-  const hasComputeEnabled = Object.prototype.hasOwnProperty.call(config, 'computeEnabled');
-  const hasComputeWorkers = Object.prototype.hasOwnProperty.call(config, 'computeWorkers');
-  if (hasComputeEnabled && typeof config.computeEnabled !== 'boolean') {
-    throw new Error('server_config_compute_enabled_must_be_boolean');
-  }
-  if (hasComputeWorkers && (
-    typeof config.computeWorkers !== 'number'
-    || !Number.isInteger(config.computeWorkers)
-    || config.computeWorkers < 0
-    || config.computeWorkers > 16
-  )) {
-    throw new Error('server_config_compute_workers_must_be_integer_0_to_16');
-  }
+  // Server Compute is retired: computeEnabled/computeWorkers in an existing config are accepted
+  // and ignored, whatever their value.
   const urlHost = host === '::1' ? '[::1]' : host;
   return {
     host,
     port,
     autoBackup: config.autoBackup !== false,
-    computeEnabled: hasComputeEnabled ? config.computeEnabled : DEFAULT_CONFIG.computeEnabled,
-    computeWorkers: hasComputeWorkers ? config.computeWorkers : DEFAULT_CONFIG.computeWorkers,
     url: `http://${urlHost}:${port}`,
     configPath
   };

@@ -5,7 +5,7 @@ const hash=value=>crypto.createHash('sha256').update(value).digest('hex');
 const factorySource=factory.toString();
 const descriptor='libra/recall-bm25f/v3:tokenizer-sha256:'+hash(factorySource)+':fields-v1:weights-v1:length-norm-v1:k1-1.2:evidence-strong-word-cjk-exp1:stable-input-position';
 const fingerprint=hash(descriptor),check=process.argv.includes('--check');
-for(const [file,indent,name] of [['plugins/LIBRA.js','    ','tokenStream'],['server/compute/registry.cjs','','libraTokenStream']]){
+for(const [file,indent,name] of [['plugins/LIBRA.js','    ','tokenStream'],['tests/fixtures/retired_compute_reference_kernels.cjs','','libraTokenStream']]){
  const target=path.join(root,file),before=fs.readFileSync(target,'utf8');
  const block=`${indent}// BEGIN LIBRA RECALL TOKENIZER\n${indent}const ${name} = (${factorySource})();\n${indent}// END LIBRA RECALL TOKENIZER`;
  let after=before.replace(/^[ \t]*\/\/ BEGIN LIBRA RECALL TOKENIZER[\s\S]*?^[ \t]*\/\/ END LIBRA RECALL TOKENIZER/m,()=>block);

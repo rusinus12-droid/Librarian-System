@@ -7,8 +7,8 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),vm=r
 const root=path.resolve(__dirname,'..'),launcherPath=path.join(root,'tools/platform_launcher.cjs');
 const Module=require('node:module');
 const serverFile=path.join(root,'server/server.cjs'),serverModule=new Module(serverFile,module);serverModule.filename=serverFile;serverModule.paths=Module._nodeModulePaths(path.dirname(serverFile));
-const serverSource=fs.readFileSync(serverFile,'utf8'),anchor='    computeSigningKeyPath: computeSigning.keyPath,';assert(serverSource.includes(anchor));
-serverModule._compile(serverSource.replace(anchor,anchor+'\n    observedStartupPreferences: {autoBackup, computeEnabled:computeConfigured, computeWorkers:options.computeWorkers},'),serverFile);
+const serverSource=fs.readFileSync(serverFile,'utf8'),anchor='    managerControl,';assert(serverSource.includes(anchor));
+serverModule._compile(serverSource.replace(anchor,anchor+'\n    observedStartupPreferences: {autoBackup},'),serverFile);
 const server=serverModule.exports,metadata=require('../server/core/migration_metadata.cjs'),launcher=require('../tools/platform_launcher.cjs');
 function fixture(){
  const data=fs.mkdtempSync(path.join(os.tmpdir(),'lib-launch-order-'));fs.mkdirSync(path.join(data,'config'),{recursive:true});fs.mkdirSync(path.join(data,'migrations'));
@@ -31,7 +31,7 @@ async function run(mode,fault=''){
   else await module.exports.run[mode](initial,f.data);
  }finally{fs.writeFileSync=write;}
  if(fault){assert.equal(captured.length,0,'no healthy child admitted after failed recovery or live maintenance');assert.deepEqual(fs.readFileSync(f.journal),journalBefore);if(fault==='rollback-io'){assert(injected);assert.equal(spawnAttempts,1);}else assert.equal(spawnAttempts,0);}
- else {assert.equal(captured.length,1);assert.equal(captured[0].autoBackup,true);assert.equal(captured[0].computeEnabled,true);assert.equal(captured[0].computeWorkers,1);assert.equal(fs.existsSync(f.journal),false);}
+ else {assert.equal(captured.length,1);assert.equal(captured[0].autoBackup,true);assert.deepEqual(Object.keys(captured[0]),['autoBackup'],'retired Compute settings never reach the server');assert.equal(fs.existsSync(f.journal),false);}
  console.log(JSON.stringify({mode,fault: fault||'interrupted-restore',spawnAttempts,healthyChildren:captured.length,healthCalls,settings:captured[0]||null}));
 }
 (async()=>{
@@ -40,16 +40,19 @@ async function run(mode,fault=''){
   const f=fixture();server.recoverInterruptedRestore(f.data);fs.writeFileSync(f.file,JSON.stringify({...f.before,...cfg}));
   const initial=launcher.readConfig(f.data),args=server.parseArgs(launcher.serverArguments(initial,f.data).slice(2));
   assert.equal(args.portableSettingsFromData,true);let app=server.createMemorySuiteServer(args);
-  try{assert.deepEqual(app.observedStartupPreferences,cfg);}finally{app.server.emit('close');}
+  try{assert.deepEqual(app.observedStartupPreferences,{autoBackup:cfg.autoBackup});}finally{app.server.emit('close');}
   const overridden=server.parseArgs([...launcher.serverArguments(initial,f.data).slice(2),'--no-auto-backup','--no-compute','--compute-workers','3']);app=server.createMemorySuiteServer(overridden);
-  try{assert.deepEqual(app.observedStartupPreferences,{autoBackup:false,computeEnabled:false,computeWorkers:3});}finally{app.server.emit('close');}
+  try{assert.deepEqual(app.observedStartupPreferences,{autoBackup:false});}finally{app.server.emit('close');}
  }
- for(const invalid of [null,'{invalid',JSON.stringify({schema:'memory-suite.server-config.v1',host:'127.0.0.1',port:47630,computeEnabled:'false',computeWorkers:0})]){
+ for(const invalid of [null,'{invalid']){
   const f=fixture();server.recoverInterruptedRestore(f.data);if(invalid===null)fs.rmSync(f.file);else fs.writeFileSync(f.file,invalid);
   assert.throws(()=>server.createMemorySuiteServer(server.parseArgs(['--data-dir',f.data,'--portable-settings-from-data'])),invalid===null?/server_config_missing/:undefined);
  }
- const defaults=server.parseArgs([]);assert.equal(defaults.portableSettingsFromData,undefined);assert.equal(defaults.explicitPortableSettings,undefined);assert.equal(defaults.computeWorkers,0);assert.equal(defaults.autoBackup,true);assert.equal(defaults.computeEnabled,true);
- assert.throws(()=>server.parseArgs(['--compute-workers','0']),/invalid_compute_workers/);
+ const defaults=server.parseArgs([]);assert.equal(defaults.portableSettingsFromData,undefined);assert.equal(defaults.explicitPortableSettings,undefined);assert.equal(defaults.computeWorkers,undefined);assert.equal(defaults.autoBackup,true);assert.equal(defaults.computeEnabled,undefined);
+ // Server Compute is retired: legacy flags and config values are accepted and ignored.
+ for(const legacy of [['--compute-workers','0'],['--compute-workers','x'],['--compute-workers'],['--no-compute','--compute-workers','99','--no-auto-backup']]){const parsed=server.parseArgs(legacy);assert.equal(parsed.computeWorkers,undefined);if(legacy.includes('--no-auto-backup'))assert.equal(parsed.autoBackup,false);}
+ {const f=fixture();server.recoverInterruptedRestore(f.data);fs.writeFileSync(f.file,JSON.stringify({...f.before,computeEnabled:'false',computeWorkers:99}));
+  const app=server.createMemorySuiteServer(server.parseArgs(['--data-dir',f.data,'--portable-settings-from-data']));try{assert.deepEqual(app.observedStartupPreferences,{autoBackup:true});}finally{app.server.emit('close');}}
  const f=fixture(),app=server.createMemorySuiteServer({dataDir:f.data,autoBackup:false,computeEnabled:false,computeWorkers:3});
- try{assert.equal(app.interruptedRestoreRecovery.action,'rollback');assert.equal(app.repositories.hayaku.get('plugin','hayaku.value').value,'BEFORE');assert.deepEqual(JSON.parse(fs.readFileSync(f.file)),f.before);assert.equal(fs.existsSync(f.journal),false);assert.deepEqual(app.observedStartupPreferences,{autoBackup:false,computeEnabled:false,computeWorkers:3});console.log('PASS direct server startup retains its own recovery and explicit API preferences');}finally{app.server.emit('close');}
+ try{assert.equal(app.interruptedRestoreRecovery.action,'rollback');assert.equal(app.repositories.hayaku.get('plugin','hayaku.value').value,'BEFORE');assert.deepEqual(JSON.parse(fs.readFileSync(f.file)),f.before);assert.equal(fs.existsSync(f.journal),false);assert.deepEqual(app.observedStartupPreferences,{autoBackup:false});console.log('PASS direct server startup retains its own recovery and explicit API preferences');}finally{app.server.emit('close');}
 })().catch(e=>{console.error(e);process.exitCode=1;});

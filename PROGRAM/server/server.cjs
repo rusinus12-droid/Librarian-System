@@ -1,7 +1,7 @@
 'use strict';
 
 // Experimental reference-v2 HTTP interception is retired. All requests use the
-// authenticated router and the normal owner/scope-bound Compute plane below.
+// authenticated router below. Server Compute is retired: /v1/compute/* answers 410.
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -9,8 +9,6 @@ const createLibraGraphLifecycle = require('./core/libra-graph-lifecycle.cjs');
 const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 const { Worker } = require('node:worker_threads');
-const { createComputePlane } = require('./compute/compute_plane.cjs');
-const { publicError: publicComputeError } = require('./compute/contracts.cjs');
 const { validateStoredHostLineage } = require('./core/host-lineage-metadata.cjs');
 const { createFlashbackWriterFence } = require('./core/flashback-writer-fence.cjs');
 const gradiaReadSession = require('./core/gradia-libra-read-session.cjs');
@@ -223,14 +221,6 @@ const PLUGIN_NAMESPACE_MAP = Object.freeze({
 const RETRACE_PLUGIN_ID = 'flashback_hayaku_bridge';
 const RETRACE_PEER_PREFIX = `${RETRACE_PLUGIN_ID}:peer:`;
 const CAPABILITY_TOKEN_PREFIX = 'mscap1';
-const COMPUTE_CAPABILITY_TOKEN_PREFIX = 'mscompute1';
-const COMPUTE_TOKEN_TTL_MS = 30 * 60 * 1000;
-const OPTIONAL_COMPUTE_CAPABILITIES = Object.freeze([
-  'compute.v1',
-  'compute-jobs.v1',
-  'compute-worker-pool.v1',
-  'compute-auto-bootstrap.v1'
-]);
 
 function namespaceForPluginId(value) {
   const plugin = String(value || '').trim().toLowerCase();
@@ -326,49 +316,6 @@ function verifyCapabilityToken(masterToken, value) {
   if (payload?.schema !== 'memory-suite.capability-token.v1') return null;
   // Tokens issued before this feature have no owner set and remain LIBRA-only.
   return principalForPluginId(payload.pluginId, payload.gradiaReadOwners);
-}
-
-function issueComputeCapabilityToken(signingKey, principal) {
-  const issuedAt = now();
-  const payload = Buffer.from(JSON.stringify({
-    schema: 'memory-suite.compute-capability-token.v1',
-    pluginId: principal.pluginId,
-    issuedAt,
-    expiresAt: issuedAt + COMPUTE_TOKEN_TTL_MS,
-    nonce: crypto.randomBytes(12).toString('base64url')
-  }), 'utf8').toString('base64url');
-  const signature = crypto.createHmac('sha256', signingKey)
-    .update(`${COMPUTE_CAPABILITY_TOKEN_PREFIX}.${payload}`)
-    .digest('base64url');
-  return `${COMPUTE_CAPABILITY_TOKEN_PREFIX}.${payload}.${signature}`;
-}
-
-function verifyComputeCapabilityToken(signingKey, value) {
-  const token = String(value || '').trim();
-  const parts = token.split('.');
-  if (parts.length !== 3 || parts[0] !== COMPUTE_CAPABILITY_TOKEN_PREFIX || !safeEqual(
-    crypto.createHmac('sha256', signingKey).update(`${parts[0]}.${parts[1]}`).digest('base64url'),
-    parts[2]
-  )) return null;
-  let payload = null;
-  try { payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')); }
-  catch (_) { return null; }
-  if (payload?.schema !== 'memory-suite.compute-capability-token.v1') return null;
-  const issuedAt = Number(payload.issuedAt);
-  const expiresAt = Number(payload.expiresAt);
-  const currentTime = now();
-  if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt)) return null;
-  if (issuedAt > currentTime + 60 * 1000 || expiresAt <= currentTime || expiresAt - issuedAt > COMPUTE_TOKEN_TTL_MS) return null;
-  const principal = principalForPluginId(payload.pluginId);
-  if (!principal || !principal.roles.includes('owner')) return null;
-  return {
-    kind: 'compute',
-    pluginId: principal.pluginId,
-    namespace: principal.namespace,
-    roles: ['compute'],
-    readNamespaces: [],
-    writeNamespaces: []
-  };
 }
 
 function safeDiagnosticIntegrity(value) {
@@ -576,9 +523,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     port: DEFAULT_PORT,
     dataDir: path.resolve(__dirname, '..', '..', 'DATA'),
     backupDir: '',
-    autoBackup: true,
-    computeEnabled: true,
-    computeWorkers: 0
+    autoBackup: true
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = String(argv[index] || '');
@@ -589,16 +534,9 @@ function parseArgs(argv = process.argv.slice(2)) {
     else if (arg === '--port') result.port = Number(argv[++index] || result.port);
     else if (arg === '--portable-settings-from-data') result.portableSettingsFromData = true;
     else if (arg === '--no-auto-backup') { result.autoBackup = false; explicitPortableSettings.add('autoBackup'); }
-    else if (arg === '--no-compute') { result.computeEnabled = false; explicitPortableSettings.add('computeEnabled'); }
-    else if (arg === '--compute-workers') {
-      if (index + 1 >= argv.length) throw new Error('invalid_compute_workers:missing');
-      const rawWorkers = String(argv[++index] ?? '').trim();
-      if (!/^[0-9]+$/.test(rawWorkers)) throw new Error(`invalid_compute_workers:${rawWorkers || 'missing'}`);
-      const workers = Number(rawWorkers);
-      if (!Number.isInteger(workers) || workers < 1 || workers > 16) throw new Error(`invalid_compute_workers:${rawWorkers}`);
-      result.computeWorkers = workers;
-      explicitPortableSettings.add('computeWorkers');
-    }
+    // Server Compute is retired. Older launchers may still pass these flags: accept and ignore them.
+    else if (arg === '--no-compute') {}
+    else if (arg === '--compute-workers') { if (index + 1 < argv.length && !String(argv[index + 1]).startsWith('--')) index += 1; }
   }
   if (result.portableSettingsFromData === true) result.explicitPortableSettings = [...explicitPortableSettings];
   if (!Number.isInteger(result.port) || result.port < 0 || result.port > 65535 || (result.port > 0 && result.port < 1024)) {
@@ -1364,26 +1302,6 @@ function loadOrCreateToken(dataDir) {
   const token = crypto.randomBytes(32).toString('base64url');
   atomicWrite(tokenPath, `${token}\n`, { mode: 0o600 });
   return token;
-}
-
-function loadOrCreateComputeSigningKey(dataDir) {
-  const keyPath = path.join(dataDir, 'config', 'compute-signing-key.txt');
-  if (fs.existsSync(keyPath)) {
-    const existing = fs.readFileSync(keyPath, 'utf8').trim();
-    if (existing.length >= 32) return { key: existing, keyPath };
-    throw new Error('compute_signing_key_is_invalid');
-  }
-  const legacyPath = path.join(dataDir, 'config', 'compute-pairing-key.txt');
-  if (fs.existsSync(legacyPath)) {
-    const legacy = fs.readFileSync(legacyPath, 'utf8').trim();
-    if (legacy.length >= 32) {
-      atomicWrite(keyPath, `${legacy}\n`, { mode: 0o600 });
-      return { key: legacy, keyPath, migratedFrom: legacyPath };
-    }
-  }
-  const key = crypto.randomBytes(32).toString('base64url');
-  atomicWrite(keyPath, `${key}\n`, { mode: 0o600 });
-  return { key, keyPath };
 }
 
 function namespaceDbPath(dataDir, namespace) {
@@ -2250,8 +2168,7 @@ function createMemorySuiteServer(options = {}) {
   if (options.authorityProfile !== undefined) {
     // Selection grants no authority. Stored profile/receipt/locks are checked
     // independently; this constructor branch has no qualified live transport.
-    if (options.autoBackup !== false || options.computeEnabled !== false || options.portableSettingsFromData === true
-      || options.computeSigningKey !== undefined) {
+    if (options.autoBackup !== false || options.portableSettingsFromData === true) {
       throw Object.assign(new Error('AUTHORITY_RUNTIME_OPTIONS_UNSUPPORTED'), {code:'AUTHORITY_RUNTIME_OPTIONS_UNSUPPORTED',statusCode:503});
     }
     authorityRuntime = openCore3ServerRuntime({dataDir,authorityProfile:options.authorityProfile});
@@ -2285,7 +2202,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     const stored = require('../tools/platform_launcher.cjs').readConfig(dataDir);
     const explicit = new Set(Array.isArray(options.explicitPortableSettings) ? options.explicitPortableSettings : []);
     options = { ...options };
-    for (const key of ['autoBackup', 'computeEnabled', 'computeWorkers']) {
+    for (const key of ['autoBackup']) {
       if (!explicit.has(key)) options[key] = stored[key];
     }
   }
@@ -2304,42 +2221,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   }
   const databasePreparation = authorityRuntime ? {migrated:false,authorityProfile:authorityContracts.CORE3_AUTHORITY_PROFILE,ownerSchemaVersion:3} : prepareDatabaseSchemas(dataDir, backupDir);
   const token = options.token || (authorityRuntime ? crypto.randomBytes(32).toString('base64url') : loadOrCreateToken(dataDir));
-  const computeConfigured = options.computeEnabled !== false;
-  const injectedSigningKey = String(options.computeSigningKey || '').trim();
-  if (injectedSigningKey && injectedSigningKey.length < 32) throw new Error('compute_signing_key_is_invalid');
-  let computeSigning = { key: '', keyPath: '' };
-  let computeConfigurationError = '';
-  if (computeConfigured) {
-    if (injectedSigningKey) computeSigning = { key: injectedSigningKey, keyPath: '' };
-    else {
-      const keyPath = path.join(dataDir, 'config', 'compute-signing-key.txt');
-      try { computeSigning = loadOrCreateComputeSigningKey(dataDir); }
-      catch (_) {
-        // Do not overwrite an invalid signing key. Storage remains available
-        // while compute authentication fails closed.
-        computeSigning = { key: '', keyPath };
-        computeConfigurationError = 'compute_signing_key_invalid';
-      }
-    }
-  }
-  const computeEnabled = computeConfigured && !computeConfigurationError;
-  // Keep compute authorization cryptographically separate from the storage
-  // runtime token. This server-only secret is never returned by HTTP.
-  const computeTokenSigningKey = computeEnabled
-    ? crypto.createHmac('sha256', computeSigning.key)
-      .update('memory-suite.compute-token-signing.v1', 'utf8')
-      .digest()
-    : Buffer.alloc(0);
-  const computePlane = createComputePlane({
-    configured: computeConfigured,
-    enabled: computeEnabled,
-    startupError: computeConfigurationError,
-    poolSize: Number(options.computeWorkers || options.computePoolSize || 0),
-    workerPath: options.computeWorkerPath,
-    allowTestOperations: options.allowComputeTestOperations === true,
-    limits: options.computeLimits || {},
-    resourceLimits: options.computeResourceLimits || {}
-  });
   const updaterVerificationMode = String(process.env.LIBRARIAN_UPDATER_VERIFY_MODE || '') === '1';
   let maintenanceMode = updaterVerificationMode;
   const repositories = authorityRuntime
@@ -2379,17 +2260,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   };
 
   const authorityHandler = authorityRuntime?.createAuthenticatedHandler({authenticate});
-
-  const authenticateCompute = request => {
-    if (!computeEnabled || computeTokenSigningKey.length === 0) return null;
-    const authorization = String(request.headers.authorization || '');
-    const supplied = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
-    if (!supplied) return null;
-    const principal = verifyComputeCapabilityToken(computeTokenSigningKey, supplied);
-    if (!principal) return null;
-    const claimedPluginId = String(request.headers['x-memory-suite-plugin'] || '').trim().toLowerCase();
-    return claimedPluginId === principal.pluginId ? principal : null;
-  };
 
   const rememberClient = (request, principal = null) => {
     const plugin = String(principal?.pluginId || request.headers['x-memory-suite-plugin'] || '').trim().slice(0, 120);
@@ -3285,11 +3155,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     if (route === '/v1/kv/batch') return 'kv.conditional_batch';
     if (route === '/v1/integrity') return 'namespace.integrity';
     if (route.startsWith('/v1/operations/')) return 'operation.get';
-    if (route === '/v1/compute/bootstrap') return 'compute.bootstrap';
-    if (route === '/v1/compute/capabilities') return 'compute.capabilities';
-    if (route === '/v1/compute/execute') return 'compute.execute';
-    if (route === '/v1/compute/jobs') return 'compute.jobs.submit';
-    if (route.startsWith('/v1/compute/jobs/')) return `compute.jobs.${route.split('/').slice(5).join('.') || 'status'}`;
+    if (route.startsWith('/v1/compute/')) return 'compute.retired';
     if (route.startsWith('/v1/manager/')) return `manager.${route.split('/').slice(3).join('.') || 'request'}`;
     if (route.startsWith('/v1/admin/')) return `admin.${route.split('/').slice(3).join('.') || 'request'}`;
     if (route === '/v1/shutdown') return 'server.shutdown';
@@ -3435,7 +3301,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           dirtySinceBackup,
           lastSuccessfulAutoBackupAt,
           autoBackupPolicy: { intervalMs: autoBackupIntervalMs, minCooldownMs: autoBackupMinCooldownMs, recentKeep: AUTO_BACKUP_RECENT_KEEP, dailyKeep: AUTO_BACKUP_DAILY_KEEP, weeklyKeep: AUTO_BACKUP_WEEKLY_KEEP },
-          compute: computePlane.stats(),
+          compute: { retired: true, enabled: false, configured: false, ready: false },
           scopeCatalogDegraded,
           interruptedRestoreRecovery
         });
@@ -3490,70 +3356,20 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
             'libra-read-session.v1',
             'gradia-memory-read-session.v1',
             'flashback-physical-repair-protocol.v2',
-            ...REQUIRED_CAPABILITIES,
-            ...(computePlane.ready ? OPTIONAL_COMPUTE_CAPABILITIES : [])
+            ...REQUIRED_CAPABILITIES
           ]).map(capability => [capability, true])),
           storageModeContract: authorityRuntime ? null : {schema:'memory-suite.storage-mode-contract.v2', operationalModes:['plugin_only','server_only'], transitionPhase:'mirror', mirrorSelectable:false, legacyMirrorReadable:true}
         });
       }
-      if (request.method === 'POST' && url.pathname === '/v1/compute/bootstrap') {
-        const bootstrapPrincipal = principalForPluginId(request.headers['x-memory-suite-plugin']);
-        if (bootstrapPrincipal?.pluginId === gradiaReadSession.PLUGIN_ID) return sendJson(request, response, 403, { ok: false, error: 'gradia_readonly_route_forbidden' });
-        if (!computeConfigured || computeConfigurationError) {
-          return sendJson(request, response, 503, publicComputeError(Object.assign(new Error(
-            computeConfigurationError || 'compute_disabled'
-          ), {
-            code: computeConfigurationError ? 'COMPUTE_SIGNING_UNAVAILABLE' : 'COMPUTE_DISABLED',
-            statusCode: 503, compute: true, retryAfterMs: 1000
-          })));
-        }
-        if (!bootstrapPrincipal?.roles?.includes('owner')) {
-          return sendJson(request, response, 403, publicComputeError(Object.assign(new Error('compute_owner_plugin_required'), {
-            code: 'COMPUTE_OWNER_PLUGIN_REQUIRED', statusCode: 403, compute: true
-          })));
-        }
-        const bootstrapBody = await readBody(request, 64 * 1024);
-        if (bootstrapBody.namespace && String(bootstrapBody.namespace).trim().toLowerCase() !== bootstrapPrincipal.namespace) {
-          return sendJson(request, response, 403, publicComputeError(Object.assign(new Error('compute_namespace_forbidden'), {
-            code: 'COMPUTE_NAMESPACE_FORBIDDEN', statusCode: 403, compute: true
-          })));
-        }
-        if (!computePlane.ready) {
-          return sendJson(request, response, 503, publicComputeError(Object.assign(new Error('compute_unavailable'), {
-            code: 'COMPUTE_UNAVAILABLE', statusCode: 503, compute: true, retryAfterMs: 250
-          })));
-        }
-        rememberClient(request, bootstrapPrincipal);
-        const address = server.address();
-        const actualPort = typeof address === 'object' && address ? address.port : port;
-        const actualHost = typeof address === 'object' && address && address.address
-          ? (address.address === '::' ? '::1' : address.address)
-          : host;
-        const computeCapabilities = computePlane.capabilities(bootstrapPrincipal.namespace);
-        return sendJson(request, response, 200, {
-          ok: true,
-          schema: 'memory-suite.compute.bootstrap.v1',
-          name: SERVER_NAME,
-          version: SERVER_VERSION,
-          url: loopbackUrl(actualHost, actualPort),
-          token: issueComputeCapabilityToken(computeTokenSigningKey, bootstrapPrincipal),
-          authorization: {
-            schema: 'memory-suite.compute-authorization.v1',
-            pluginId: bootstrapPrincipal.pluginId,
-            namespace: bootstrapPrincipal.namespace,
-            roles: ['compute']
-          },
-          capabilities: {
-            'compute.v1': true,
-            'compute-jobs.v1': true,
-            'compute-worker-pool.v1': true
-          },
-          limits: computeCapabilities.limits,
-          operations: computeCapabilities.operations
-        });
+      if (url.pathname.startsWith('/v1/compute/')) {
+        // Server Compute is retired. Older plugins (Compute SDK <= 0.3.8) open their circuit
+        // on this answer and compute locally; GRADIA keeps its read-only refusal.
+        const claimed = principalForPluginId(request.headers['x-memory-suite-plugin']);
+        if (claimed?.pluginId === gradiaReadSession.PLUGIN_ID) return sendJson(request, response, 403, { ok: false, error: 'gradia_readonly_route_forbidden' });
+        request.resume();
+        return sendJson(request, response, 410, { ok: false, error: 'compute_retired', code: 'COMPUTE_RETIRED', schema: 'memory-suite.compute.retired.v1' });
       }
-      const computeRoute = url.pathname.startsWith('/v1/compute/');
-      const principal = computeRoute ? authenticateCompute(request) : authenticate(request);
+      const principal = authenticate(request);
       if (!principal) return sendJson(request, response, 403, { ok: false, error: 'forbidden' });
       if (authorityHandler && url.pathname.startsWith('/v1/authority/')) {
         const body = await readBody(request, 32768, 'authority_request_too_large');
@@ -3605,10 +3421,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         if(!namespaceReset.allows(target,request.headers['x-memory-suite-reset-epochs']))return sendJson(request,response,409,{ok:false,error:'MEMORY_SUITE_RESET_RECONNECT_REQUIRED',resetEpochs:namespaceReset.epochs()});
       }
 
-
-      if (request.method === 'GET' && url.pathname === '/v1/compute/capabilities') {
-        return sendJson(request, response, 200, { ok: true, result: computePlane.capabilities(principal.namespace) });
-      }
 
       if (request.method === 'GET' && url.pathname === '/v1/clients') {
         if (!isAdminRequest(principal)) return sendJson(request, response, 403, { ok: false, error: 'admin_capability_required' });
@@ -3696,11 +3508,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
 
       if (maintenanceMode && !url.pathname.startsWith('/v1/admin/')
           && !(isAdminRequest(principal) && request.method === 'POST' && url.pathname === '/v1/shutdown')) {
-        if (computeRoute) {
-          return sendJson(request, response, 503, publicComputeError(Object.assign(new Error('server_maintenance_in_progress'), {
-            code: 'COMPUTE_SERVER_MAINTENANCE', statusCode: 503, compute: true, retryAfterMs: 250
-          })));
-        }
         return sendJson(request, response, 503, { ok: false, error: 'server_maintenance_in_progress' });
       }
 
@@ -3710,46 +3517,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         if (!namespaceReset.allows(gradiaRouteOwner, request.headers['x-memory-suite-reset-epochs'])) return sendJson(request, response, 409, { ok: false, error: 'MEMORY_SUITE_RESET_RECONNECT_REQUIRED' });
         const result = url.pathname === adapter.CAPTURE_ROUTE ? reader.capture(body) : reader.current(body);
         return sendJson(request, response, 200, { ok: true, result });
-      }
-
-      if (request.method === 'POST' && url.pathname === '/v1/compute/execute') {
-        const body = await readBody(request, computePlane.limits.maxRequestBytes);
-        let responseCompleted = false;
-        const cancelDisconnectedExecute = () => {
-          if (responseCompleted || response.writableEnded) return;
-          try { computePlane.cancelOperation(principal, body?.operationId); } catch (_) {}
-        };
-        request.once('aborted', cancelDisconnectedExecute);
-        response.once('close', cancelDisconnectedExecute);
-        try {
-          const result = await computePlane.execute(principal, body);
-          sendJson(request, response, 200, { ok: true, schema: 'memory-suite.compute.execute-response.v1', result });
-          responseCompleted = true;
-          return;
-        } finally {
-          request.off('aborted', cancelDisconnectedExecute);
-          response.off('close', cancelDisconnectedExecute);
-        }
-      }
-      if (request.method === 'POST' && url.pathname === '/v1/compute/jobs') {
-        const body = await readBody(request, computePlane.limits.maxRequestBytes);
-        const result = computePlane.submitJob(principal, body);
-        return sendJson(request, response, 202, { ok: true, schema: 'memory-suite.compute.job-response.v1', result });
-      }
-      if (url.pathname.startsWith('/v1/compute/jobs/')) {
-        const parts = url.pathname.slice('/v1/compute/jobs/'.length).split('/').filter(Boolean).map(decodeURIComponent);
-        if (parts.length < 1 || parts.length > 2) throw Object.assign(new Error('invalid_compute_job_route'), { statusCode: 400 });
-        const [jobId, action = 'status'] = parts;
-        if (request.method === 'GET' && action === 'status') {
-          return sendJson(request, response, 200, { ok: true, schema: 'memory-suite.compute.job-response.v1', result: computePlane.status(principal, jobId) });
-        }
-        if (request.method === 'GET' && action === 'result') {
-          return sendJson(request, response, 200, { ok: true, schema: 'memory-suite.compute.result-response.v1', result: computePlane.result(principal, jobId) });
-        }
-        if (request.method === 'POST' && action === 'cancel') {
-          return sendJson(request, response, 200, { ok: true, schema: 'memory-suite.compute.cancel-response.v1', result: computePlane.cancel(principal, jobId) });
-        }
-        throw Object.assign(new Error('invalid_compute_job_route'), { statusCode: 400 });
       }
 
       if (request.method === 'GET' && url.pathname === '/v1/kv/get') {
@@ -3987,9 +3754,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       }
       return sendJson(request, response, 404, { ok: false, error: 'not_found' });
     } catch (error) {
-      if (error?.compute === true) {
-        return sendJson(request, response, Number(error?.statusCode || 500), publicComputeError(error));
-      }
       return sendJson(request, response, Number(error?.statusCode || 500), {
         ok: false,
         error: String(error?.message || error || 'internal_error'),
@@ -4024,11 +3788,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     autoBackupTimer = null;
     startupBackupTimer = null;
     changeSettledBackupTimer = null;
-    try {
-      await computePlane.close({ graceMs: computePlane.limits.shutdownGraceMs });
-    } catch (error) {
-      diagnosticJournal.record({ event: 'compute.shutdown_failed', operation: 'compute.shutdown', ok: false, error: String(error?.message || error) });
-    }
     if (autoBackup && dirtySinceBackup) {
       try {
         await maybeCreateAutomaticBackup('shutdown', { allowDuringMaintenance: true, ignoreCooldown: true });
@@ -4049,7 +3808,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     if (autoBackupTimer) clearInterval(autoBackupTimer);
     if (startupBackupTimer) clearTimeout(startupBackupTimer);
     if (changeSettledBackupTimer) clearTimeout(changeSettledBackupTimer);
-    computePlane.close({ graceMs: 0 }).catch(() => null);
     diagnosticJournal.record({ event: 'server.closed', operation: 'server.shutdown', ok: true, durationMs: now() - startedAt });
     diagnosticJournal.close();
     closeDatabases();
@@ -4083,24 +3841,14 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     restoreBackup,
     diagnosticJournal,
     managerControl,
-    computePlane,
-    computeSigningKeyPath: computeSigning.keyPath,
     listen: () => new Promise((resolve, reject) => {
       if (authorityRuntime) return reject(Object.assign(new Error('AUTHORITY_HOST_PROFILE_UNQUALIFIED'),{code:'AUTHORITY_HOST_PROFILE_UNQUALIFIED',statusCode:503}));
       server.once('error', reject);
       server.listen(port, host, async () => {
         server.off('error', reject);
-        try {
-          const compute = await computePlane.start();
-          scheduleAutomaticBackups();
-          diagnosticJournal.record({ event: 'server.started', operation: 'server.listen', ok: true, message: `${host}:${server.address()?.port || port}`, itemCount: NAMESPACES.length });
-          diagnosticJournal.record({ event: 'compute.started', operation: 'compute.start', ok: compute.ready === true || compute.enabled === false, itemCount: Number(compute.pool?.ready || 0), message: compute.ready ? 'worker pool ready' : (compute.enabled ? 'worker pool unavailable; local fallback required' : 'compute disabled') });
-          resolve(server.address());
-        } catch (error) {
-          diagnosticJournal.record({ event: 'compute.start_failed', operation: 'compute.start', ok: false, error: String(error?.message || error) });
-          scheduleAutomaticBackups();
-          resolve(server.address());
-        }
+        scheduleAutomaticBackups();
+        diagnosticJournal.record({ event: 'server.started', operation: 'server.listen', ok: true, message: `${host}:${server.address()?.port || port}`, itemCount: NAMESPACES.length });
+        resolve(server.address());
       });
     }),
     close: gracefulClose
@@ -4238,10 +3986,6 @@ async function main() {
     process.stdout.write('[LIBRARIAN SYSTEM] Normal plugin reads/writes are blocked until a verified backup is restored.\n');
   } else {
     process.stdout.write(`[LIBRARIAN SYSTEM] Stores: ${NAMESPACES.join(', ')}\n`);
-    if (app.computeSigningKeyPath) {
-      process.stdout.write(`[LIBRARIAN SYSTEM] Compute signing key: ${app.computeSigningKeyPath}\n`);
-      process.stdout.write('[LIBRARIAN SYSTEM] Compute clients authenticate automatically after backend compute is explicitly enabled in the plugin.\n');
-    }
   }
   const shutdown = () => app.close().finally(() => process.exit(0));
   process.on('SIGINT', shutdown);

@@ -292,17 +292,8 @@ function ensureConfig(dataDir, legacyConfigCandidates = [], options = {}) {
   if (!config || config.schema !== SERVER_CONFIG_SCHEMA) throw new Error('invalid_server_config_schema');
   const hasComputeEnabled = Object.prototype.hasOwnProperty.call(config, 'computeEnabled');
   const hasComputeWorkers = Object.prototype.hasOwnProperty.call(config, 'computeWorkers');
-  if (hasComputeEnabled && typeof config.computeEnabled !== 'boolean') {
-    throw new Error('server_config_compute_enabled_must_be_boolean');
-  }
-  if (hasComputeWorkers && (
-    typeof config.computeWorkers !== 'number'
-    || !Number.isInteger(config.computeWorkers)
-    || config.computeWorkers < 0
-    || config.computeWorkers > 16
-  )) {
-    throw new Error('server_config_compute_workers_must_be_integer_0_to_16');
-  }
+  // Server Compute is retired. The two legacy keys stay in the distribution template (older
+  // updaters check its exact key set) but any existing value is accepted and never rejected.
   config = {
     ...config,
     computeEnabled: hasComputeEnabled ? config.computeEnabled : DEFAULT_CONFIG.computeEnabled,

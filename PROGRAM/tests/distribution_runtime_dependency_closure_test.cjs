@@ -24,8 +24,9 @@ try{
  assert.equal(fs.existsSync(path.join(unpacked,'PROGRAM/sdk/MemorySuiteSearchKernel.source.cjs')),true);
  const {inspectExtractedRuntime}=require('../tools/verify_runtime_archive.cjs');
  const closure=inspectExtractedRuntime(unpacked);assert.equal(closure.verified,true);assert.ok(closure.localRequires>100);
- const dependency=path.join(unpacked,'PROGRAM/sdk/MemorySuiteSearchKernel.source.cjs'),saved=fs.readFileSync(dependency);
- assert.equal(typeof require(dependency),'function','the retained search-kernel dependency is actually loaded before the missing-member control');
+ // The retired server Compute plane no longer requires the search kernel; use a server dependency.
+ const dependency=path.join(unpacked,'PROGRAM/server/core/libra-graph-lifecycle.cjs'),saved=fs.readFileSync(dependency);
+ assert.equal(typeof require(dependency),'function','the server graph-lifecycle dependency is actually loaded before the missing-member control');
  fs.unlinkSync(dependency);
  assert.throws(()=>inspectExtractedRuntime(unpacked),/distribution_runtime_dependency_missing/,'a loaded module cache must not hide a missing ZIP member');
  fs.writeFileSync(dependency,saved);

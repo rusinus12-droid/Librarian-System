@@ -28,12 +28,12 @@ const marker='retired_'+crypto.randomBytes(12).toString('hex');
   }
   for(const credentials of [{},auth])for(const endpoint of ['query','clear','status']){
    const r=await request('/v1/compute/reference-v2/'+endpoint,endpoint==='status'?undefined:{kind:'hayaku',scopeId:marker,query:'non-disclosure fixture'},credentials);
-   assert([403,404].includes(r.status),JSON.stringify(r));assert(!JSON.stringify(r.data).includes('non-disclosure fixture'));assert(!r.data.items);cases.push(`${endpoint}: ${Object.keys(credentials).length?'authenticated':'anonymous'} access denied`);
+   assert([403,404,410].includes(r.status),JSON.stringify(r));assert(!JSON.stringify(r.data).includes('non-disclosure fixture'));assert(!r.data.items);cases.push(`${endpoint}: ${Object.keys(credentials).length?'authenticated':'anonymous'} access denied`);
   }
   // Alternate legacy env token must not restore the retired route.
   process.env.LIBRARIAN_TOKEN=marker;
   const alternate=await request('/v1/compute/reference-v2/query',{kind:'hayaku',scopeId:marker,query:'non-disclosure fixture'},{Authorization:`Bearer ${marker}`});
-  assert([403,404].includes(alternate.status));cases.push('alternate legacy token does not enable a bypass');
+  assert([403,404,410].includes(alternate.status));cases.push('alternate legacy token does not enable a bypass');
   for(const suffix of ['','-other-scope']){const r=await request('/v1/kv/get?namespace=hayaku&space=plugin&key='+encodeURIComponent(marker+suffix),undefined,auth);assert.equal(r.status,200);assert(JSON.stringify(r.data).includes('non-disclosure fixture'));}
   cases.push('owner data and other-scope data unchanged after retired clear/query');
   assert.equal(http.createServer,createServerBefore);cases.push('HTTP routing remains unmodified');

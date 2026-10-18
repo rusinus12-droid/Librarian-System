@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const { createLibraVmHarness } = require('./fixtures/libra_vm_harness.cjs');
-const { executeOperation } = require('../server/compute/registry.cjs');
+const { executeOperation } = require('./fixtures/retired_compute_reference_kernels.cjs');
 
 const fields = text => ({
   summary: text,

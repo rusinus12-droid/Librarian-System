@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHayakuRuntime } = require('./fixtures/hayaku_runtime_harness.cjs');
-const { DEFINITIONS, executeOperation } = require('../server/compute/registry.cjs');
+const { DEFINITIONS, executeOperation } = require('./fixtures/retired_compute_reference_kernels.cjs');
 
 const program = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(program, 'plugins', 'HAYAKU_Locator_Continuity.js'), 'utf8');

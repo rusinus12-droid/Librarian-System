@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{execFileSync}=require('node:child_process');
-const {executeOperation,DEFINITIONS}=require('../server/compute/registry.cjs');
+const {executeOperation,DEFINITIONS}=require('./fixtures/retired_compute_reference_kernels.cjs');
 const {createLibraVmHarness}=require('./fixtures/libra_vm_harness.cjs');
 const {createHayakuRuntime}=require('./fixtures/hayaku_runtime_harness.cjs');
 const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');

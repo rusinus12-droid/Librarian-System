@@ -1,7 +1,16 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const { computeError } = require('./contracts.cjs');
+// Reference kernels of the retired server Compute plane, kept only as test oracles for
+// the plugins' local implementations (exact parity and fingerprints). Nothing ships them.
+function computeError(code, statusCode = 500, details = {}) {
+  const error = new Error(String(code || 'compute_error'));
+  error.code = String(code || 'COMPUTE_ERROR').toUpperCase().replace(/[^A-Z0-9_]+/g, '_');
+  error.statusCode = statusCode;
+  error.compute = true;
+  for (const [key, value] of Object.entries(details || {})) error[key] = value;
+  return error;
+}
 
 const OWNER_NAMESPACES = Object.freeze(['flashback', 'hayaku', 'libra', 'lia']);
 const ALL_NAMESPACES = Object.freeze([...OWNER_NAMESPACES, 'retrace']);

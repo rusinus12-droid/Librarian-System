@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { performance } = require('node:perf_hooks');
 const { createHayakuRuntime } = require('./fixtures/hayaku_runtime_harness.cjs');
-const { executeOperation } = require('../server/compute/registry.cjs');
+const { executeOperation } = require('./fixtures/retired_compute_reference_kernels.cjs');
 const fact = '서연은 은색 열쇠를 소나무 상자에 보관했다.';
 const alias = 'silver key';
 const makePacket = (count, aliases = true, lateSummary = false) => {
