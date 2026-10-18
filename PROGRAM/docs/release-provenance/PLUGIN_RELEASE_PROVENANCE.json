@@ -284,34 +284,34 @@
     "artifact": "Librarian-System-0.3.71-Source.zip",
     "plugins": {
       "flashback": {
-        "version": "1.0.101",
-        "sha256": "d9026d86f5310fcc2357b824735007fd515719d0b7ddfa515cc34e5ea08336be",
-        "bytes": 3294016
+        "version": "1.0.115",
+        "sha256": "7f73075e368d60cfeb1dcf6bd7ecb2550bb2fad9a00d2761759590be44a9ea8d",
+        "bytes": 3387865
       },
       "hayaku": {
-        "version": "3.0.138",
-        "sha256": "361df4c47da8632e87f4b12782676812ffb6fad8d45b8fbebe90895021746778",
-        "bytes": 3962847
+        "version": "3.0.146",
+        "sha256": "71b5b65219c42134f9cc9bc65bf12f0b8c62230f5aca80e6a6b48f8a6b992c09",
+        "bytes": 4044398
       },
       "libra": {
-        "version": "2.3.149",
-        "sha256": "0f45ca2b95abfbcc125c28c90191cfdfbc9e768df8d0fe22eadf422d71702306",
-        "bytes": 5785062
+        "version": "2.3.164",
+        "sha256": "91b37099f132297719b519ac68763b710fa1419130a523ccca69f7986d66be1d",
+        "bytes": 6098644
       },
       "lia": {
-        "version": "0.26.83",
-        "sha256": "4a6ccdea6b3473db964ac8c359c9b7eccf00738ef61098aefc7a332c0bf9b8c8",
-        "bytes": 1870745
+        "version": "0.26.86",
+        "sha256": "472a0462c7988fa85fbf84b648e600c7153ef09788666005219bc68d07b3222f",
+        "bytes": 1856831
       },
       "retrace": {
         "version": "1.9.84",
-        "sha256": "1162070e5201d9f162d51657f5d6b669457af285e4f904baa28cb1f3511702b8",
-        "bytes": 1160663
+        "sha256": "eb3b80d2c2ff5876d80b0af29782b0fe93b580d0febc5533d036d54b71f5146e",
+        "bytes": 1220357
       },
       "gradia": {
-        "version": "0.25.83",
-        "sha256": "65683b39dea36f760101e9710200b6ad99ec51006b19d2f6f75dea8b7bde5284",
-        "bytes": 3035965
+        "version": "0.25.90",
+        "sha256": "a754ae947239db4c87717afd8363370295d06f73990bf5942fd8192b2b946086",
+        "bytes": 2973827
       }
     },
     "note": "Generated from current readable Source plugin bytes. This unpublished source candidate is not a published archive, deployment, or live-host/model execution receipt. Historical records and anomalies are preserved; prior candidate bytes are backed up separately.",

@@ -9,6 +9,6 @@ const current=(await t.resolveCurrentScopeIdentityBundle(false)).scope;await t.s
 const key=t.scopeKeys.manifest(current.scopeKey);assert.equal(JSON.parse(app.repositories.flashback.get('plugin',key).value).count,1);
 f.currentChat.id='another';f.currentChat.chatId='another';f.currentChat.name='Another';await t.resolveCurrentScopeIdentityBundle(false);const next=await b.getConnectionSettings({force:true});await b.setScopeMode(next.scope,'server_only');
 t.clearVerificationForTest();offline=true;const failed=await t.deleteSelectedScopeStorages([current.scopeKey]);assert.equal(failed.deleted,0);assert.equal(JSON.parse(app.repositories.flashback.get('plugin',key).value).count,1);
-offline=false;t.clearVerificationForTest();const deleted=await t.deleteSelectedScopeStorages([current.scopeKey]);assert.equal(deleted.deleted,1,JSON.stringify(deleted));assert.equal(app.repositories.flashback.get('plugin',key).exists,false);
-console.log('flashback_scope_management_server_test: PASS HTTP/SQLite, no prerequisite scan, storage errors protect data');
+offline=false;t.clearVerificationForTest();const blocked=await t.deleteSelectedScopeStorages([current.scopeKey]);assert.equal(blocked.deleted,0,JSON.stringify(blocked));assert.equal(blocked.protected,1);assert.match(blocked.protectedReasons.join(' '),/RE:TRACE.*서버 데이터 관리/);assert.equal(app.repositories.flashback.get('plugin',key).exists,true);
+console.log('flashback_scope_management_server_test: PASS HTTP/SQLite, offline and online owner deletion preserve server originals; RE:TRACE required');
 }finally{await f?.dispose();await app?.close();fs.rmSync(root,{recursive:true,force:true});}})().catch(e=>{console.error(e);process.exitCode=1;});
