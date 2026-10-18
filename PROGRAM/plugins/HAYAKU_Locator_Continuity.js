@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.0.150
-//@version 3.0.150
+//@display-name HAYAKU · Locator Continuity v3.0.151
+//@version 3.0.151
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.0.150';
+  const PLUGIN_VERSION = '3.0.151';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -37991,6 +37991,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       recoveryDebtId: compact(record.recoveryDebtId || '', 196),
       recoveryTargetVariantId: compact(record.recoveryTargetVariantId || '', 96),
       recoveryTargetEvidenceHash: compact(record.recoveryTargetEvidenceHash || '', 96),
+      ...(record.packetAuthor==='after_request_repair'?{packetAuthor:'after_request_repair'}:{}),
       ...(captureSource==='bridge_incremental_recovery' && record.sourceRevisionBasis && record.sourceRevisionBasis===validation.sourcePrefixDigest ? {sourceRevisionBasis:compact(record.sourceRevisionBasis,96)} : {}),
       ...(['afterRequest','risu_chat_output','finalized_live_chat'].includes(captureSource)
         && record.sourceRevisionOrigin==='regular_request' && record.sourceRevisionBasis
@@ -49700,6 +49701,9 @@ return createReadSession;
               ].join('\u0001'))} : {}),
           ...(packetType==='current_snapshot'&&options.rawReceipt?.sourceRevisionBasis
             ?{sourceRevisionOrigin:'regular_request',sourceRevisionBasis:options.rawReceipt.sourceRevisionBasis}:{}),
+          // The packet came from the afterRequest repair call, not the main model.
+          ...(packetType==='current_snapshot'&&pending?.afterRequestRepairAuthored===true
+            ?{packetAuthor:'after_request_repair'}:{}),
           capturedAt: now(),
           captureSource,
           sourcePriority
@@ -50256,6 +50260,9 @@ return createReadSession;
         attemptedAt
       };
       pending.inlineRepairFailure = null;
+      // Sticky for this request: a later afterRequest pass may rewrite afterRequestRepair.outcome
+      // (packet_already_usable), but the packet in this response was still written by the repair.
+      pending.afterRequestRepairAuthored = true;
       pushOperationLog('native_recovery:after_request_packet_candidate_returned', {
         scopeKey: scope.key,
         pairIndex: targetPairIndex,
@@ -54306,7 +54313,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   const viewerFormatDate = value => {
     const n = Number(value || 0) || 0;
     if (!n) return '-';
-    try { return new Date(n).toLocaleString(); }
+    try { return new Date(n).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); }
     catch (_) { return text(value || '-'); }
   };
   const viewerRelativeTime = value => {
@@ -55092,11 +55099,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       : result;
   };
   const viewerRecordSort = (a, b) => {
-    const inheritedA = a?.inheritedSessionHistory === true;
-    const inheritedB = b?.inheritedSessionHistory === true;
+    const inheritedA = a?.inheritedSessionHistory === true && !viewerRecordTurnSpan(a);
+    const inheritedB = b?.inheritedSessionHistory === true && !viewerRecordTurnSpan(b);
     if (inheritedA !== inheritedB) return inheritedA ? 1 : -1;
-    return Number(b?.targetPairIndex || b?.historicalOrdinal || 0)
-      - Number(a?.targetPairIndex || a?.historicalOrdinal || 0)
+    return Number(viewerRecordTurn(b) || b?.historicalOrdinal || 0)
+      - Number(viewerRecordTurn(a) || a?.historicalOrdinal || 0)
       || Number(b?.capturedAt || 0) - Number(a?.capturedAt || 0)
       || text(a?.recordId || '').localeCompare(text(b?.recordId || ''));
   };
@@ -56071,6 +56078,15 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (!current() || listedScope?.key !== scope.key) return null;
       const entries = listing.cases || listing.entries;
       const viewer = Memory.ledgerViewer;
+      // A failed turn that a later repair filled is no longer waiting: the ledger now holds a
+      // live record for it. The artifact stays for audit; only its presentation changes.
+      const coveredTurns = new Set(ensureArray(viewer.ledger?.records)
+        .filter(record => ['active', 'historical'].includes(record?.recordState) && record?.auditRetained !== true)
+        .map(record => viewerRecordTurn(record)).filter(turn => turn > 0));
+      const coveredLater = entry => entry?.kind !== 'cold_start' && ['pending_review', 'storage_incomplete'].includes(entry?.state)
+        && coveredTurns.has(Number(entry?.turn ?? entry?.startTurn ?? 0));
+      const entryStateLabel = entry => coveredLater(entry) ? '이후 복구됨' : failedAnalysisStateLabel(entry?.state);
+      viewer.failedCoveredLater = coveredLater;
       if (viewer.failedDeleteScope !== scope.key || viewer.failedDeleteRoot !== root) {
         viewer.failedDeleteSelection = new Set();
         if (!viewer.failedDeleteBusy) {
@@ -56083,13 +56099,13 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       viewer.failedDeleteEntries = entries;
       viewer.failedDeleteSelection = new Set([...(viewer.failedDeleteSelection || [])].filter(id => entries.some(entry => entry.failureId === id)));
       const badge = root.querySelector?.('#hayakuFailedRecoveryCountNav');
-      if (badge) badge.textContent = String(listing.pending || 0);
+      if (badge) badge.textContent = String(Math.max(0, Number(listing.pending || 0) - entries.filter(coveredLater).length));
       if (listNode) {
         listNode.innerHTML = entries.length ? entries.map(entry => {
           const failureId = viewerEscapeHtml(entry.failureId);
           const title = `${entry.kind === 'cold_start' ? '지난 대화 기억' : '턴 기억 복구'} · T${entry.turn ?? entry.startTurn ?? '-'}`;
           const diagnosis = failedAnalysisReasonExplanation({message:entry.reason},entry);
-          return `<article class="row"><input type="checkbox" data-hayaku-select-failure-id="${failureId}" aria-label="${viewerEscapeHtml(title)} 삭제 선택"><button type="button" class="btn ${entry.failureId === Memory.ledgerViewer.failedAnalysisSelectedId ? 'btn--primary' : ''}" data-hayaku-failure-id="${failureId}"><span><b>${viewerEscapeHtml(title)}</b><small>${viewerEscapeHtml(diagnosis.title)} · ${viewerEscapeHtml(failedAnalysisStateLabel(entry.state))} · ${Number(entry.revisionCount||1)}개 이력${Number(entry.attemptCount||1)>Number(entry.revisionCount||1)?` · 동일 제출 ${Number(entry.attemptCount)-Number(entry.revisionCount||1)}회`:''}</small></span></button><button type="button" class="btn btn--sm" data-hayaku-delete-failure-id="${failureId}" aria-label="${viewerEscapeHtml(title)} 실패 기록 삭제" title="실패 기록 삭제">삭제</button></article>`;
+          return `<article class="row"><input type="checkbox" data-hayaku-select-failure-id="${failureId}" aria-label="${viewerEscapeHtml(title)} 삭제 선택"><button type="button" class="btn ${entry.failureId === Memory.ledgerViewer.failedAnalysisSelectedId ? 'btn--primary' : ''}" data-hayaku-failure-id="${failureId}"><span><b>${viewerEscapeHtml(title)}</b><small>${viewerEscapeHtml(diagnosis.title)} · ${viewerEscapeHtml(entryStateLabel(entry))} · ${Number(entry.revisionCount||1)}개 이력${Number(entry.attemptCount||1)>Number(entry.revisionCount||1)?` · 동일 제출 ${Number(entry.attemptCount)-Number(entry.revisionCount||1)}회`:''}</small></span></button><button type="button" class="btn btn--sm" data-hayaku-delete-failure-id="${failureId}" aria-label="${viewerEscapeHtml(title)} 실패 기록 삭제" title="실패 기록 삭제">삭제</button></article>`;
         }).join('') : '';
       }
       viewerUpdateFailureSelection();
@@ -56099,7 +56115,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         emptyNode.setAttribute?.('aria-hidden', showEmptyState ? 'false' : 'true');
         emptyNode.style?.setProperty?.('display', showEmptyState ? 'flex' : 'none', 'important');
       }
-      let selectedId = compact(preferredFailureId || Memory.ledgerViewer.failedAnalysisSelectedId || entries.find(entry => ['pending_review', 'storage_incomplete'].includes(entry.state))?.failureId || entries[0]?.failureId || '', 160);
+      let selectedId = compact(preferredFailureId || Memory.ledgerViewer.failedAnalysisSelectedId || entries.find(entry => ['pending_review', 'storage_incomplete'].includes(entry.state) && !coveredLater(entry))?.failureId || entries[0]?.failureId || '', 160);
       if (selectedId && !listing.entries.some(entry => entry.failureId === selectedId)) selectedId = entries[0]?.failureId || '';
       Memory.ledgerViewer.failedAnalysisSelectedId = selectedId;
       root.querySelectorAll?.('[data-hayaku-failure-id]')?.forEach(node => node.classList.toggle('active', node.getAttribute('data-hayaku-failure-id') === selectedId));
@@ -56131,11 +56147,12 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (historyNode) historyNode.innerHTML = ensureArray(selectedCase?.revisions || [manifest]).map(row => `<button type="button" class="row" data-hayaku-failure-id="${viewerEscapeHtml(row.failureId)}"><span class="row__title">${viewerEscapeHtml(viewerFormatDate(row.createdAt))}</span><span class="row__meta">${viewerEscapeHtml(failedAnalysisStateLabel(row.state))}${row.flow?.includes('manual') ? ' · 직접 수정' : row.flow?.includes('llm') ? ' · AI 재시도' : ''}</span></button>`).join('') || '<p class="hint">처리 이력이 없습니다.</p>';
 
       setText('#hayakuFailedRecoveryTitle', `${payload.kind === 'cold_start' ? '지난 대화 기억' : '턴 기억 복구'} · T${payload.source?.turn ?? payload.source?.startTurn ?? '-'}`);
-      setText('#hayakuFailedRecoveryState', failedAnalysisStateLabel(manifest.state || payload.state || 'pending_review'));
+      const selectedCovered = Memory.ledgerViewer.failedCoveredLater?.({ kind: payload.kind, state: manifest.state || payload.state || 'pending_review', turn: payload.source?.turn ?? payload.source?.startTurn });
+      setText('#hayakuFailedRecoveryState', selectedCovered ? '이후 복구됨' : failedAnalysisStateLabel(manifest.state || payload.state || 'pending_review'));
       const failureExplanation = failedAnalysisReasonExplanation(payload.failure || { message: manifest.reason || '' }, payload);
       setText('#hayakuFailedRecoveryReason', failureExplanation.title);
       const previouslyResolved = ['resolved','resolved_checkpointed','resolved_by_retry'].includes(manifest.state);
-      setText('#hayakuFailedRecoveryExplanation', previouslyResolved ? `처리 완료 · ${failedAnalysisStateLabel(manifest.state)}. 아래에는 당시의 후보와 진단 기록을 보관합니다.` : `${failureExplanation.title} · ${failureExplanation.detail}`);
+      setText('#hayakuFailedRecoveryExplanation', selectedCovered ? '이 턴은 이후 누락 복구 등으로 원장에 활성 기억이 저장되었습니다. 아래는 당시 실패의 진단 기록입니다.' : previouslyResolved ? `처리 완료 · ${failedAnalysisStateLabel(manifest.state)}. 아래에는 당시의 후보와 진단 기록을 보관합니다.` : `${failureExplanation.title} · ${failureExplanation.detail}`);
       setText('#hayakuFailedRecoverySummary', text(payload.proposedCanonical?.meta?.summary_memory?.summary || '').trim() || '저장할 기억 본문이 아직 없습니다.');
       setText('#hayakuFailedRecoveryHashes', `raw ${ensureArray(payload.attempts).map(attempt => attempt.rawHash).filter(Boolean).join(', ') || '-'} · preview ${payload.proposedCanonicalHash || '-'} · payload ${manifest.payloadHash || '-'}`);
       const evidenceCompleteness = payload.context?.evidenceCompleteness || payload.source?.evidenceCompleteness || (payload.context?.evidenceManifest || payload.source?.evidenceManifest ? 'complete_sidecar' : 'legacy_inline_or_unknown');
@@ -56969,9 +56986,37 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     logs: Object.freeze({ label: '작동 로그', description: '현재 실행의 요청·회상·패킷·복구 기록을 확인합니다.' })
   });
   const viewerRecordIdentity = record => text(record?.recordId || record?.hash || viewerAuditVariantKey(record));
-  const viewerRecordPairLabel = record => record?.inheritedSessionHistory === true
-    ? `과거 #${Math.max(0, Number(record?.historicalOrdinal || 0) || 0)}`
-    : `T${Math.max(0, Number(record?.targetPairIndex || 0) || 0)}`;
+  // Cold-start records carry their real turns in the packet's source range (targetPairIndex is 0).
+  const viewerRecordTurnSpan = record => {
+    if (record?.captureSource !== 'bridge_cold_start' && !record?.coldStartEpochId) return null;
+    const range = storageRecordTurnRange(record);
+    return range.turnStart > 0 ? range : null;
+  };
+  const viewerRecordTurn = record => viewerRecordTurnSpan(record)?.turnStart || Math.max(0, Number(record?.targetPairIndex || 0) || 0);
+  const viewerRecordPairLabel = record => {
+    const span = viewerRecordTurnSpan(record);
+    if (span) return span.turnEnd > span.turnStart ? `T${span.turnStart}–T${span.turnEnd}` : `T${span.turnStart}`;
+    return record?.inheritedSessionHistory === true
+      ? `과거 #${Math.max(0, Number(record?.historicalOrdinal || 0) || 0)}`
+      : `T${Math.max(0, Number(record?.targetPairIndex || 0) || 0)}`;
+  };
+  // Which HAYAKU path wrote the record.
+  const viewerRecordOrigin = record => {
+    const source = text(record?.captureSource || '');
+    if (source === 'bridge_cold_start' || record?.coldStartEpochId) return { key: 'cold', label: '콜드스타트', title: '패킷 없는 지난 대화를 묶음으로 분석해 만든 기억' };
+    if (source === 'bridge_incremental_recovery') return { key: 'manual', label: '누락 복구', title: '구간 점검에서 누락 턴을 다시 분석해 만든 기억' };
+    if (source === 'partial_memory') return { key: 'partial', label: '부분 기억', title: '이전 분석에서 저장한 부분 기억' };
+    if (record?.packetAuthor === 'after_request_repair') return { key: 'auto', label: '자동 복구', title: '응답에 패킷이 없어 afterRequest 자동 복구가 작성한 기억' };
+    if (record?.inheritedSessionHistory === true) return { key: 'inherited', label: '이전 채팅', title: '이전 채팅에서 이어받은 과거 기억' };
+    if (['afterRequest', 'risu_chat_output', 'finalized_live_chat'].includes(source)) return { key: 'canonical', label: '정본 패킷', title: '본 응답 모델이 응답과 함께 작성한 기억' };
+    return { key: 'other', label: source || '출처 미상', title: source || '출처 미상' };
+  };
+  const viewerRecordOriginBadge = record => {
+    const origin = viewerRecordOrigin(record);
+    return `<span class="pk-origin" data-origin="${origin.key}" title="${viewerEscapeHtml(origin.title)}">${viewerEscapeHtml(origin.label)}</span>`;
+  };
+  const viewerRecordStateLabel = state => ({ active: '활성', historical: '과거 기억', unbound: '결속 대기', tombstoned: '대체됨', superseded: '대체됨', audit: '감사 사본' }[text(state)] || text(state || '결속 대기'));
+  const viewerPacketTypeLabel = type => ({ current_snapshot: '턴 패킷', recovery_snapshot: '복구 패킷', cold_start_snapshot: '콜드스타트 패킷', partial_memory: '부분 기억' }[text(type)] || text(type || '턴 패킷'));
   const observePacketAuthoring = (inspection, pending) => {
     const source = inspection || {}; const packets = ensureArray(source.packets);
     const nonce = text(pending?.lineage?.requestNonce || pending?.requestNonce || '');
@@ -57306,7 +57351,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       return;
     }
     const records = ensureArray(ledger?.records)
-      .filter(record => Number.isFinite(Number(record?.targetPairIndex)) && Number(record.targetPairIndex) >= 0)
+      .filter(record => Number.isFinite(Number(record?.targetPairIndex)) && Number(record.targetPairIndex) >= 0 && viewerRecordTurn(record) > 0)
       .sort(viewerRecordSort);
     const unboundCount = records.filter(record => record?.recordState === 'unbound').length;
     const stateBadge = root?.querySelector?.('#hayakuWorldlineStateBadge');
@@ -57316,7 +57361,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const turns = [];
     const seen = new Set();
     for (const record of records) {
-      const turn = Math.max(0, Number(record.targetPairIndex || 0) || 0);
+      const turn = viewerRecordTurn(record);
       if (seen.has(turn)) continue;
       seen.add(turn);
       turns.push({ turn, record });
@@ -57336,11 +57381,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const state = text(record?.recordState || 'unbound');
       const selected = String(turn) === selectedTurn;
       const tone = ['active', 'historical'].includes(state) ? 'live' : (state === 'unbound' ? 'pending' : 'retired');
-      return `<button type="button" class="pk-row ${tone}${selected ? ' active' : ''}" data-hayaku-worldline-turn="${turn}"><span>T${turn}</span><strong>${viewerEscapeHtml(compact(viewerPacketSummary(record), 42) || record?.packetType || 'packet')}</strong><small>${viewerEscapeHtml(state)} · ${viewerEscapeHtml(record?.packetType || 'current_snapshot')}</small></button>`;
+      return `<button type="button" class="pk-row ${tone}${selected ? ' active' : ''}" data-hayaku-worldline-turn="${turn}"><span>T${turn}</span><strong>${viewerEscapeHtml(compact(viewerPacketSummary(record), 42) || viewerPacketTypeLabel(record?.packetType))}</strong><small>${viewerRecordOriginBadge(record)}${viewerEscapeHtml(viewerRecordStateLabel(state))}</small></button>`;
     }).join('');
     const selectedRecord = turns.find(item => String(item.turn) === selectedTurn)?.record || turns[turns.length - 1].record;
-    const variants = records.filter(record => Number(record?.targetPairIndex || 0) === Number(selectedTurn));
-    detail.innerHTML = `<div class="card__head"><div><small>TURN BINDING</small><h2>T${viewerEscapeHtml(selectedTurn)} · ${viewerEscapeHtml(selectedRecord?.packetType || 'current_snapshot')}</h2><p>${viewerEscapeHtml(viewerPacketSummary(selectedRecord) || '패킷 요약 없음')}</p></div><em class="${viewerStateClass(selectedRecord?.recordState)}">${viewerEscapeHtml(selectedRecord?.recordState || 'unbound')}</em></div><div class="kv"><b>결속 레코드</b><span>${variants.length.toLocaleString()}개</span><b>원장 slot</b><span>${viewerEscapeHtml(selectedRecord?.slotId || '-')}</span><b>Request nonce</b><span>${viewerEscapeHtml(compact(selectedRecord?.requestNonce || '-', 80))}</span><b>Packet hash</b><span>${viewerEscapeHtml(compact(selectedRecord?.hash || '-', 80))}</span><b>저장 시각</b><span>${viewerEscapeHtml(viewerFormatDate(selectedRecord?.capturedAt))}</span></div><div class="cluster"><button type="button" class="btn" data-hayaku-open-record="${viewerEscapeHtml(viewerRecordIdentity(selectedRecord))}">패킷 상세 열기</button></div>`;
+    const variants = records.filter(record => viewerRecordTurn(record) === Number(selectedTurn));
+    detail.innerHTML = `<div class="card__head"><div><small>TURN BINDING</small><h2>T${viewerEscapeHtml(selectedTurn)} · ${viewerEscapeHtml(viewerPacketTypeLabel(selectedRecord?.packetType))}</h2><p>${viewerEscapeHtml(viewerPacketSummary(selectedRecord) || '패킷 요약 없음')}</p></div><em class="${viewerStateClass(selectedRecord?.recordState)}">${viewerEscapeHtml(viewerRecordStateLabel(selectedRecord?.recordState))}</em></div><div class="kv"><b>작성 경로</b><span>${viewerRecordOriginBadge(selectedRecord)}</span><b>결속 레코드</b><span>${variants.length.toLocaleString()}개</span><b>원장 slot</b><span>${viewerEscapeHtml(selectedRecord?.slotId || '-')}</span><b>Request nonce</b><span>${viewerEscapeHtml(compact(selectedRecord?.requestNonce || '-', 80))}</span><b>Packet hash</b><span>${viewerEscapeHtml(compact(selectedRecord?.hash || '-', 80))}</span><b>저장 시각</b><span>${viewerEscapeHtml(viewerFormatDate(selectedRecord?.capturedAt))}</span></div><div class="cluster"><button type="button" class="btn" data-hayaku-open-record="${viewerEscapeHtml(viewerRecordIdentity(selectedRecord))}">패킷 상세 열기</button></div>`;
   };
   // Scroll offset, open <details> and the active text filter survive this render.
   const viewerRenderWorldline = (...args) => viewerPreserveScroll(
@@ -57462,8 +57507,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   const viewerRecordWriteStatus = record => {
     // Ledger reads prove that a row was read, not which write/nonce was acknowledged.
     if (record?.durable === false) return '개별 쓰기 확인 필요';
-    if (record?.durable === true) return '개별 쓰기 확인 정보 있음 · 활성 결속은 별도';
-    return '원장 조회됨 · 개별 쓰기 readback 영수증 미조회';
+    if (record?.durable === true) return '개별 쓰기 확인됨 · 활성 결속은 별도';
+    return '원장에 저장됨 · 개별 쓰기 확인 정보는 없음';
   };
   // Presentation only: preserve packet values and expose the exact structure in the JSON tab.
   const viewerAxisLabels = {
@@ -57528,7 +57573,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const detailTags = tags.length ? `<dt>분류</dt><dd>${viewerEscapeHtml(tags.join(' · '))}</dd>` : '';
     const axis = name => viewerRenderAxisValue(packet?.[name]) || '<p class="muted">기록 없음</p>';
     const tabBody = activeTab === 'summary'
-      ? `<p style="margin:0 0 12px;font-weight:650">${viewerEscapeHtml(viewerPacketSummary(record) || '요약 없음')}</p><dl class="kv"><dt>패킷 타입</dt><dd>${viewerEscapeHtml(record?.packetType || 'current_snapshot')}</dd><dt>저장 시각</dt><dd>${viewerEscapeHtml(viewerFormatDate(record?.capturedAt))}</dd><dt>저장 확인</dt><dd>${viewerEscapeHtml(viewerRecordWriteStatus(record))}</dd><dt>회상 가능</dt><dd>${viewerEscapeHtml(viewerRecordAvailability(record, ledger))}</dd></dl>`
+      ? `<p style="margin:0 0 12px;font-weight:650">${viewerEscapeHtml(viewerPacketSummary(record) || '요약 없음')}</p><dl class="kv"><dt>작성 경로</dt><dd>${viewerRecordOriginBadge(record)}<span class="muted">${viewerEscapeHtml(viewerRecordOrigin(record).title)}</span></dd><dt>패킷 종류</dt><dd>${viewerEscapeHtml(viewerPacketTypeLabel(record?.packetType))}</dd><dt>저장 시각</dt><dd>${viewerEscapeHtml(viewerFormatDate(record?.capturedAt))}</dd><dt>저장 확인</dt><dd>${viewerEscapeHtml(viewerRecordWriteStatus(record))}</dd><dt>회상 가능</dt><dd>${viewerEscapeHtml(viewerRecordAvailability(record, ledger))}</dd></dl>`
       : activeTab === 'axes'
         ? `<div class="axes"><article class="axis"><h4>인물과 관계</h4>${axis('entity')}</article><article class="axis"><h4>세계와 상황</h4>${axis('world')}</article><article class="axis"><h4>이야기의 흐름</h4>${axis('narrative')}</article><article class="axis"><h4>앞으로 이어갈 내용</h4>${axis('planner')}</article></div>`
         : activeTab === 'binding'
@@ -57543,7 +57588,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const preservationNote = reselection.eligible
       ? `<div class="note" style="margin-top:12px"><b>이전 패킷 보존</b> ${viewerEscapeHtml(reselection.revisionLabel || '이전 교체 패킷')}이 보존되어 있습니다. <button class="btn btn--sm" type="button" data-hayaku-select-variant="${viewerEscapeHtml(reselection.recordId)}" title="${viewerEscapeHtml(reselectTitle)}" style="margin-left:6px">이전 패킷 다시 채택…</button></div>`
       : '';
-    detail.innerHTML = `<div class="card__head"><div><div class="eyebrow">Memory packet</div><h2 class="card__title" style="font-size:19px">${viewerEscapeHtml(viewerRecordPairLabel(record))} · ${viewerEscapeHtml(record?.packetType || 'current_snapshot')}</h2><p class="card__desc">${viewerEscapeHtml(viewerRecordWriteStatus(record))}</p></div><span class="badge ${['active','historical'].includes(state)?'badge--ok':''}">${viewerEscapeHtml(state)}</span></div><div class="tabs" role="tablist" aria-label="패킷 상세"><button type="button" role="tab" aria-selected="${activeTab === 'summary'}" data-hayaku-record-detail-tab="summary" class="tab ${activeTab === 'summary' ? 'is-active' : ''}">요약</button><button type="button" role="tab" aria-selected="${activeTab === 'axes'}" data-hayaku-record-detail-tab="axes" class="tab ${activeTab === 'axes' ? 'is-active' : ''}">기억 축</button><button type="button" role="tab" aria-selected="${activeTab === 'binding'}" data-hayaku-record-detail-tab="binding" class="tab ${activeTab === 'binding' ? 'is-active' : ''}">결속</button><button type="button" role="tab" aria-selected="${activeTab === 'json'}" data-hayaku-record-detail-tab="json" class="tab ${activeTab === 'json' ? 'is-active' : ''}">원본 JSON</button></div><div class="stack">${tabBody}</div>${preservationNote}<div class="cluster" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"><button type="button" class="btn" data-hayaku-regenerate-record="${viewerEscapeHtml(regeneration.recordId || '')}" ${regeneration.eligible ? '' : 'disabled'} title="${viewerEscapeHtml(regenerationTitle)}"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>Other Ax로 재생성</button>${reselection.eligible ? `<button type="button" class="btn" data-hayaku-select-variant="${viewerEscapeHtml(reselection.recordId)}" title="${viewerEscapeHtml(reselectTitle)}">이 버전 다시 채택</button>` : ''}<button type="button" class="btn btn--ghost" data-hayaku-copy-record="${viewerEscapeHtml(text(record?.recordId || record?.slotId || record?.hash || ''))}">패킷 복사</button></div>`;
+    detail.innerHTML = `<div class="card__head"><div><div class="eyebrow">Memory packet</div><h2 class="card__title" style="font-size:19px">${viewerEscapeHtml(viewerRecordPairLabel(record))} · ${viewerEscapeHtml(viewerPacketTypeLabel(record?.packetType))}</h2><p class="card__desc">${viewerRecordOriginBadge(record)}${viewerEscapeHtml(viewerFormatDate(record?.capturedAt))}</p></div><span class="badge ${['active','historical'].includes(state)?'badge--ok':''}">${viewerEscapeHtml(viewerRecordStateLabel(state))}</span></div><div class="tabs" role="tablist" aria-label="패킷 상세"><button type="button" role="tab" aria-selected="${activeTab === 'summary'}" data-hayaku-record-detail-tab="summary" class="tab ${activeTab === 'summary' ? 'is-active' : ''}">요약</button><button type="button" role="tab" aria-selected="${activeTab === 'axes'}" data-hayaku-record-detail-tab="axes" class="tab ${activeTab === 'axes' ? 'is-active' : ''}">기억 축</button><button type="button" role="tab" aria-selected="${activeTab === 'binding'}" data-hayaku-record-detail-tab="binding" class="tab ${activeTab === 'binding' ? 'is-active' : ''}">결속</button><button type="button" role="tab" aria-selected="${activeTab === 'json'}" data-hayaku-record-detail-tab="json" class="tab ${activeTab === 'json' ? 'is-active' : ''}">원본 JSON</button></div><div class="stack">${tabBody}</div>${preservationNote}<div class="cluster" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"><button type="button" class="btn" data-hayaku-regenerate-record="${viewerEscapeHtml(regeneration.recordId || '')}" ${regeneration.eligible ? '' : 'disabled'} title="${viewerEscapeHtml(regenerationTitle)}"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>Other Ax로 재생성</button>${reselection.eligible ? `<button type="button" class="btn" data-hayaku-select-variant="${viewerEscapeHtml(reselection.recordId)}" title="${viewerEscapeHtml(reselectTitle)}">이 버전 다시 채택</button>` : ''}<button type="button" class="btn btn--ghost" data-hayaku-copy-record="${viewerEscapeHtml(text(record?.recordId || record?.slotId || record?.hash || ''))}">패킷 복사</button></div>`;
   };
   const viewerRenderRecords = () => {
     const root = Memory.ledgerViewer.root;
@@ -57604,7 +57649,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const recordId = viewerRecordIdentity(record);
       const state = text(record?.recordState || 'unbound');
       const selectedRow = recordId === Memory.ledgerViewer.selectedRecordId;
-      return `<button type="button" class="pk-row${selectedRow ? ' is-on' : ''}" data-hayaku-record-select="${viewerEscapeHtml(recordId)}"><b>${viewerEscapeHtml(viewerRecordPairLabel(record))}</b><span><strong>${viewerEscapeHtml(record?.packetType || 'current_snapshot')} · ${viewerEscapeHtml(viewerPacketSummary(record) || '패킷 요약 없음')}</strong><small>${viewerEscapeHtml(viewerFormatDate(record?.capturedAt))} · ${text(record?.raw || '').length.toLocaleString()}자</small></span><span class="badge ${['active','historical'].includes(state)?'badge--ok':''}">${viewerEscapeHtml(state)}</span></button>`;
+      return `<button type="button" class="pk-row${selectedRow ? ' is-on' : ''}" data-hayaku-record-select="${viewerEscapeHtml(recordId)}"><b>${viewerEscapeHtml(viewerRecordPairLabel(record))}</b><span><strong>${viewerEscapeHtml(viewerPacketSummary(record) || '패킷 요약 없음')}</strong><small>${viewerRecordOriginBadge(record)}${viewerEscapeHtml(viewerPacketTypeLabel(record?.packetType))} · ${viewerEscapeHtml(viewerFormatDate(record?.capturedAt))} · ${text(record?.raw || '').length.toLocaleString()}자</small></span><span class="badge ${['active','historical'].includes(state)?'badge--ok':''}">${viewerEscapeHtml(viewerRecordStateLabel(state))}</span></button>`;
     }).join('');
     viewerRenderRecordDetail(selected);
   };
@@ -58341,6 +58386,9 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (selected) {
         Memory.ledgerViewer.selectedRecordId = compact(selected.getAttribute('data-hayaku-record-select') || '', 196);
         viewerRenderRecords();
+        const detailNode = root.querySelector?.('#hayakuViewerRecordDetail'), listNode = root.querySelector?.('#hayakuViewerRecords');
+        // One-column layout: the detail sits below the list, so bring it into view.
+        if (detailNode && listNode && detailNode.getBoundingClientRect?.().top >= listNode.getBoundingClientRect?.().bottom - 1) detailNode.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
         return;
       }
       const regenerate = event?.target?.closest?.('[data-hayaku-regenerate-record]');
@@ -58586,7 +58634,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       <div class="stack">
         <div class="card fail-box" id="hayakuPacketReadError" hidden><div class="empty"><b>현재 채팅 원장을 읽지 못했습니다.</b><span>정상으로 간주하지 않고 패킷 목록을 표시하지 않습니다. 개요에서 다시 확인하세요.</span></div></div>
         <div id="hayakuPacketListView" class="stack">
-          <div class="cluster"><select id="hayakuViewerState" class="select" style="width:auto" aria-label="상태 필터"><option value="all">모든 상태</option><option value="active">활성</option><option value="historical">영구 과거</option><option value="audit">감사 사본</option></select><select id="hayakuViewerType" class="select" style="width:auto" aria-label="타입"><option value="all">모든 패킷 타입</option><option value="current_snapshot">current_snapshot</option><option value="recovery_snapshot">recovery_snapshot</option></select><label class="search grow" style="min-width:200px">${hayakuMockupIcon('search')}<input id="hayakuViewerSearch" class="input" type="search" placeholder="본문 · hash · nonce 검색" aria-label="패킷 검색"></label><label class="field"><input id="hayakuViewerShowAuditCopies" type="checkbox"><span>감사 사본 표시</span></label><span id="hayakuViewerVisibleCount" class="hint"></span><button id="refreshHayakuViewer" class="btn" type="button">${hayakuMockupIcon('refresh')}다시 확인</button><button id="openHayakuManualRecapture" class="btn" type="button">완료 턴 패킷 검토</button></div>
+          <div class="cluster"><select id="hayakuViewerState" class="select" style="width:auto" aria-label="상태 필터"><option value="all">모든 상태</option><option value="active">활성</option><option value="historical">영구 과거</option><option value="audit">감사 사본</option></select><select id="hayakuViewerType" class="select" style="width:auto" aria-label="타입"><option value="all">모든 패킷 타입</option><option value="current_snapshot">턴 패킷</option><option value="recovery_snapshot">복구 패킷</option><option value="cold_start_snapshot">콜드스타트 패킷</option></select><label class="search grow" style="min-width:200px">${hayakuMockupIcon('search')}<input id="hayakuViewerSearch" class="input" type="search" placeholder="본문 · hash · nonce 검색" aria-label="패킷 검색"></label><label class="pk-check"><input id="hayakuViewerShowAuditCopies" type="checkbox"><span>감사 사본 표시</span></label><span id="hayakuViewerVisibleCount" class="hint"></span><button id="refreshHayakuViewer" class="btn" type="button">${hayakuMockupIcon('refresh')}다시 확인</button><button id="openHayakuManualRecapture" class="btn" type="button">완료 턴 패킷 검토</button></div>
           <div class="pk-layout" data-detail-root><div id="hayakuViewerRecords" class="list pk-list" aria-label="패킷 목록"></div><section id="hayakuViewerRecordDetail" class="card" aria-live="polite"></section></div>
           <div id="hayakuViewerRecordsPager" class="cluster" aria-label="패킷 페이지"></div>
           <details class="fold"><summary>정리 도구 · 고아 데이터 <span class="badge" id="hayakuOrphanCleanupCount">검사 전</span></summary><div class="fold__body"><p class="muted" style="margin-top:0">활성·상속·영구·보호 데이터는 건드리지 않습니다. 삭제 직전에 대상을 다시 검증하며 되돌릴 수 없습니다.</p><button id="cleanupHayakuOrphans" class="btn btn--danger" type="button">${hayakuMockupIcon('trash')}고아 데이터 정리</button></div></details>
@@ -58629,7 +58677,26 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
 /* Local HAYAKU header fit: preserve type scale and actions; remove only the long sublabel on narrow panels. */
 @container app (max-width:414px){#${LEDGER_VIEWER_ROOT_ID} .topbar{padding:0 6px;gap:4px}#${LEDGER_VIEWER_ROOT_ID} .brand{flex:0 0 auto;gap:8px}#${LEDGER_VIEWER_ROOT_ID} .brand>div:last-child{min-width:max-content}#${LEDGER_VIEWER_ROOT_ID} .brand__name{white-space:nowrap}#${LEDGER_VIEWER_ROOT_ID} .brand__ver{display:none}}
 @container app (max-width:350px){#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button [data-tray-text]{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}}
-@container app (max-width:300px){#${LEDGER_VIEWER_ROOT_ID} .brand>div:last-child{min-width:0}#${LEDGER_VIEWER_ROOT_ID} .brand__name{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}}</style>
+@container app (max-width:300px){#${LEDGER_VIEWER_ROOT_ID} .brand>div:last-child{min-width:0}#${LEDGER_VIEWER_ROOT_ID} .brand__name{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}}
+#${LEDGER_VIEWER_ROOT_ID} .pk-origin{display:inline-flex;align-items:center;margin-right:6px;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:700;line-height:16px;vertical-align:1px;border:1px solid transparent;white-space:nowrap}
+#${LEDGER_VIEWER_ROOT_ID} .pk-origin[data-origin="canonical"]{background:#e3f1ea;color:#145a3c;border-color:#bcdccb}
+#${LEDGER_VIEWER_ROOT_ID} .pk-origin[data-origin="auto"]{background:#e6eefb;color:#1d4a8f;border-color:#c3d4f1}
+#${LEDGER_VIEWER_ROOT_ID} .pk-origin[data-origin="manual"]{background:#fbf0dc;color:#7a4a05;border-color:#ecd3a4}
+#${LEDGER_VIEWER_ROOT_ID} .pk-origin[data-origin="cold"]{background:#efe8f8;color:#55307f;border-color:#d8c8ee}
+#${LEDGER_VIEWER_ROOT_ID} .pk-origin[data-origin="partial"],#${LEDGER_VIEWER_ROOT_ID} .pk-origin[data-origin="inherited"],#${LEDGER_VIEWER_ROOT_ID} .pk-origin[data-origin="other"]{background:#eef1f3;color:#3b4a54;border-color:#d5dde2}
+#${LEDGER_VIEWER_ROOT_ID} .axis .kv{grid-template-columns:minmax(0,1fr);gap:2px}
+#${LEDGER_VIEWER_ROOT_ID} .axis .kv dt{margin-top:8px;font-size:11.5px}
+#${LEDGER_VIEWER_ROOT_ID} .axis .kv dd{min-width:0;overflow-wrap:anywhere}
+#${LEDGER_VIEWER_ROOT_ID} .axis .list{display:grid;gap:6px;margin:4px 0 0;padding:0;list-style:none}
+#${LEDGER_VIEWER_ROOT_ID} .axis .list>.row{display:block;min-height:0;padding:8px 10px}
+#${LEDGER_VIEWER_ROOT_ID} .axis .list>.row>.kv>dt:first-child{margin-top:0}
+#${LEDGER_VIEWER_ROOT_ID} .pk-check{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:13px;cursor:pointer}
+#${LEDGER_VIEWER_ROOT_ID} .pk-check input{margin:0}
+#${LEDGER_VIEWER_ROOT_ID} #hayakuFailedRecoveryList article.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px}
+#${LEDGER_VIEWER_ROOT_ID} #hayakuFailedRecoveryList article.row>.btn:not(.btn--sm){height:auto;min-height:44px;padding:8px 12px;white-space:normal;text-align:left;justify-content:flex-start}
+#${LEDGER_VIEWER_ROOT_ID} #hayakuFailedRecoveryList article.row>.btn:not(.btn--sm)>span{display:grid;gap:2px;min-width:0}
+#${LEDGER_VIEWER_ROOT_ID} #hayakuFailedRecoveryList article.row>.btn:not(.btn--sm) small{font-weight:500;opacity:.85;overflow-wrap:anywhere}
+@container app (max-width:414px){#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button [data-tray-text]{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}}</style>
       <div class="stage"><div class="frame"><div class="app" data-hayaku-mockup="1">
         <header class="topbar"><div class="brand"><div class="brand__mark" style="font:800 20px var(--font-sans)">速</div><div><div class="brand__name">HAYAKU</div><div class="brand__ver">CONTINUITY CONTROL · v${PLUGIN_VERSION}</div></div></div><div class="scope"><b id="hayakuViewerScopeTop">현재 채팅</b><span>›</span><span id="hayakuViewerScopeMeta">현재 채팅의 원장 상태를 읽습니다.</span></div><div class="grow"></div><span id="hayakuViewerHealth" class="health health--danger"><i></i><span data-health-text>원장 확인 중</span></span><button id="hayakuNativeJobChip" class="btn btn--sm hayaku-job-button" type="button" data-idle-go="logs" aria-controls="hayakuNativeJobOverlay" aria-expanded="false" title="진행 중이거나 끝난 작업을 다시 엽니다">${hayakuMockupIcon('clock')}<span data-tray-text>작업 없음</span></button><div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기">${hayakuMockupIcon('more')}</button><div class="menu__panel"><button id="hayakuOverviewRefresh" type="button">${hayakuMockupIcon('refresh')}다시 대조</button><button id="hayakuOverviewExport" type="button">${hayakuMockupIcon('download')}디버그 JSON 내보내기</button><button id="closeHayakuViewer" type="button">${hayakuMockupIcon('x')}닫기</button></div></div></header>
         <div id="hayakuNativeJobOverlay" class="overlay" aria-hidden="true" hidden><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-live="polite" aria-labelledby="hayakuNativeJobTitle"><div class="split"><div><div class="eyebrow" id="hayakuNativeJobEyebrow">Other Ax</div><h2 id="hayakuNativeJobTitle">복구 작업</h2><p><span id="hayakuNativeJobState">대기</span> · 경과 <span id="hayakuNativeJobElapsed">0초</span></p></div><span class="badge badge--info"><span id="hayakuNativeJobStateCompact">대기</span> · <span id="hayakuNativeJobElapsedCompact">0초</span></span></div><div class="progress" style="margin:14px 0"><i id="hayakuNativeJobProgressBar" style="width:0%"></i></div><div class="cluster"><span>대상 <b id="hayakuNativeJobTurns">-</b></span><span>현재 <b id="hayakuNativeJobCurrent">-</b></span><span id="hayakuNativeJobProgressText" class="hint">대상 확인</span></div><p id="hayakuNativeJobMessage" class="muted">작업 상태를 확인합니다.</p><div class="steps" style="margin-top:12px"><div class="step is-active"><span class="step__no">1</span><b data-job-step="1">대조</b></div><div class="step"><span class="step__no">2</span><b data-job-step="2">분석</b></div><div class="step"><span class="step__no">3</span><b data-job-step="3">검증</b></div><div class="step"><span class="step__no">4</span><b data-job-step="4">기록</b></div></div><div class="list" data-hayaku-job-body="repair" hidden style="margin-top:12px"><div class="res-row"><b>대상</b><span id="hayakuNativeJobResultTarget">-</span></div><div class="res-row"><b>기억 저장</b><span id="hayakuNativeJobResultMemory">0/0턴</span></div><div class="res-row"><b>완전 패킷</b><span id="hayakuNativeJobResultPackets">0개</span></div><div class="res-row"><b>부분 저장</b><span id="hayakuNativeJobResultPartial">0개</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultCalls">0회</span></div></div><div class="list" data-hayaku-job-body="cold" hidden style="margin-top:12px"><div class="res-row"><b>대상 묶음</b><span id="hayakuNativeJobColdBundles">-</span></div><div class="res-row"><b>저장된 패킷</b><span id="hayakuNativeJobResultColdSaved">0개</span></div><div class="res-row"><b>실패한 묶음</b><span id="hayakuNativeJobResultColdHeld">0묶음</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultColdCalls">0회</span></div></div><div class="card" data-hayaku-job-body="regen" hidden style="margin-top:12px"><p id="hayakuNativeJobResultRegeneration" class="muted">후보 준비 상태를 확인합니다.</p><section id="hayakuNativeJobComparison" class="cmp" hidden aria-label="기존 패킷과 재생성 후보 비교"></section><div id="hayakuNativeJobChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-regeneration-choice="later">나중에 결정</button><button type="button" class="btn" data-hayaku-regeneration-choice="keep_original">기존 패킷 유지</button><button type="button" class="btn btn--primary" data-hayaku-regeneration-choice="adopt_regenerated">재생성 후보 채택</button></div></div><div class="card" data-hayaku-job-body="background" hidden style="margin-top:12px"><p>복구 저널을 유지하거나 실행 전에 확인한 대상으로 복구를 요청합니다.</p><div class="list"><div class="res-row"><b>확인된 대상</b><span id="hayakuNativeJobConfirmationTarget">-</span></div></div><div id="hayakuRecoveryConfirmationChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-recovery-confirmation="no">아니요 · 저널에 유지</button><button type="button" class="btn btn--primary" data-hayaku-recovery-confirmation="yes">예 · 자동 복구 시작</button></div></div><div class="dialog__actions"><button id="minimizeHayakuNativeJob" class="btn">최소화</button><button id="cancelHayakuNativeJob" class="btn btn--danger">작업 중단</button><button id="closeHayakuNativeJob" class="btn btn--primary" hidden>닫기</button></div></div></div>
@@ -60117,6 +60184,10 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         applyUnifiedMemoryCandidateSignals,
         attachUnifiedMemoryAssociations,
         rankSparseCandidates,
+        viewerRecordPairLabel,
+        viewerRecordOrigin,
+        viewerRecordStateLabel,
+        viewerPacketTypeLabel,
         buildHayakuSparseRrfInput,
         runHayakuSparseRrfLocal,
         validateHayakuSparseRrfResult,
