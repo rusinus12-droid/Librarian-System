@@ -16,14 +16,14 @@ for (const source of [storageSdk, libraStorageSdk]) {
   assert.match(source, releasePattern("^\\/\\* LIBRARIAN SYSTEM STORAGE SDK v{storage}", "m"));
   assert.match(source, /schema: 'memory-suite\.scope-execution-policy\.v1'/);
   assert.match(source, /configuredRoute: serverBacked \? 'server' : 'local'/);
-  assert.match(source, /computeMode: serverBacked \? 'prefer_server' : 'local'/);
+  // Compute is retired: the execution policy no longer derives a compute mode.
+  assert.doesNotMatch(source, /computeMode|integratesCompute|computeBridge/);
   assert.match(source, /lockedByStorageMode: true/);
   assert.match(source, /const getScopeExecutionPolicy = async/);
 }
 
-assert.match(computeSdk, /const VALID_MODES = new Set\(\[MODE_LOCAL, MODE_PREFER_SERVER\]\)/);
-assert.doesNotMatch(computeSdk, /MODE_SHADOW|shadowMatches|shadowMismatches|onShadowComparison|mountSettingsPanel/);
-assert.match(computeSdk, /modes: Object\.freeze\(\{ local: MODE_LOCAL, preferServer: MODE_PREFER_SERVER \}\)/);
+// The Compute SDK source ships only for installed updaters' release checks.
+assert.match(computeSdk, /^\/\* LIBRARIAN SYSTEM COMPUTE SDK v\d+\.\d+\.\d+/m, 'Compute SDK source header');
 
 // The Compute SDK is retired from the plugins: the Storage SDK still derives the scope
 // execution policy above, but no plugin embeds the Compute SDK or mounts a Compute bridge.

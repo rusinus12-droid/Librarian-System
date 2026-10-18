@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.118
+//@display-name ⚡ FLASHBACK Memory v1.0.119
 //@api 3.0
-//@version 1.0.118
+//@version 1.0.119
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.118';
+const PLUGIN_VERSION = '1.0.119';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -4349,7 +4349,7 @@ function createMemorySuiteHostLineage() {
 /* END LIBRARIAN HOST LINEAGE SDK */
 const MemorySuiteHostLineage = createMemorySuiteHostLineage();
 
-/* LIBRARIAN SYSTEM STORAGE SDK v1.8.26
+/* LIBRARIAN SYSTEM STORAGE SDK v1.8.27
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
  * The server stores opaque values. Each plugin keeps ownership of its own data schema.
  */
@@ -8313,7 +8313,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       ...modeLifecycle(storageMode), migrationRequired:modeState?.migrationRequired === true, transition:modeState?.transition || null,
       storagePhase:modeState?.storagePhase || storageMode,
       configuredRoute: serverBacked ? 'server' : 'local',
-      computeMode: serverBacked ? 'prefer_server' : 'local',
       lockedByStorageMode: true,
       serverBacked
     });
@@ -11088,8 +11087,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const scopedMountConnectionPanel = async (container, panelOptions = {}) => {
     if (!container || typeof container.innerHTML === 'undefined') throw new Error('memory_suite_connection_panel_container_required');
     const initial = await scopedGetConnectionSettings({ force:true });
-    const computeBridge = panelOptions.computeBridge && typeof panelOptions.computeBridge === 'object' ? panelOptions.computeBridge : null;
-    const integratesCompute = !!computeBridge;
     const rootId = `memory-suite-scope-connection-${namespace}-${Math.random().toString(36).slice(2,8)}`;
     const esc = value => safeText(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     container.innerHTML = `<div id="${rootId}" class="mscx-scope-root"><style>
@@ -11113,26 +11110,27 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       #${rootId} .bar{height:9px;background:#25344d;border-radius:99px;overflow:hidden} #${rootId} .bar>i{display:block;height:100%;background:#5d88ff;width:0%}
       #${rootId} .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;font-size:12px} #${rootId} .result{display:none;white-space:pre-wrap;border:1px solid #34425b;background:#0b1423;border-radius:9px;padding:10px;font-size:12px;line-height:1.55} #${rootId} .job.terminal .result{display:block} #${rootId} [hidden]{display:none!important} @media(max-width:540px){#${rootId} .grid{grid-template-columns:1fr}}
     </style>
-      <div class="mscx-card"><div><h3>${esc(panelOptions.title || (integratesCompute ? `${displayName} · 저장 및 연산` : `${displayName} · 서버 연결`))}</h3><div class="muted">${esc(panelOptions.description || (globalModeEnabled ? '이 플러그인의 전체 대화를 확인하고 저장 위치를 전환합니다.' : integratesCompute ? '현재 스코프의 저장 위치를 선택하면 연산 위치도 함께 결정됩니다.' : '현재 스코프의 저장 방식을 변경합니다.'))}</div></div>
+      <div class="mscx-card"><div><h3>${esc(panelOptions.title || `${displayName} · 서버 연결`)}</h3><div class="muted">${esc(panelOptions.description || (globalModeEnabled ? '이 플러그인의 전체 대화를 확인하고 저장 위치를 전환합니다.' : '현재 스코프의 저장 방식을 변경합니다.'))}</div></div>
         <div class="scope"><b>현재 스코프</b><span data-scope-label>${esc(initial.scopeLabel || '확인 불가')}</span><div class="muted" data-scope-id>${esc(initial.scopeId || '')}</div></div>
-        <div class="muted" data-scope-note><b>${globalModeEnabled ? '이 플러그인의 전체 대화에 적용되는 전역 설정입니다.' : integratesCompute ? '이 설정은 현재 스코프의 저장과 연산에 함께 적용됩니다.' : '이 설정은 현재 스코프에만 적용됩니다.'}</b><br>새 스코프의 기본값은 플러그인 단독이며, 전역 설정을 지정하면 설정하지 않은 스코프가 그 값을 따릅니다. 서버 주소만 플러그인 공통 설정입니다.</div>
+        <div class="muted" data-scope-note><b>${globalModeEnabled ? '이 플러그인의 전체 대화에 적용되는 전역 설정입니다.' : '이 설정은 현재 스코프에만 적용됩니다.'}</b><br>새 스코프의 기본값은 플러그인 단독이며, 전역 설정을 지정하면 설정하지 않은 스코프가 그 값을 따릅니다. 서버 주소만 플러그인 공통 설정입니다.</div>
         <div class="scopetoggle" id="${rootId}-scopecard" role="group" aria-label="저장 설정 적용 범위">
           <button type="button" data-scope-global aria-pressed="${globalModeEnabled ? 'true' : 'false'}">전역<small>이 플러그인의 모든 대화에 적용</small></button>
           ${globalModeEnabled ? '' : '<button type="button" data-scope-perchat aria-pressed="true">스코프별<small>이 대화에만 적용</small></button>'}
         </div>
         <div class="modes">
-          <label class="mode"><input type="radio" name="${rootId}-mode" value="plugin_only"><span><b>플러그인 단독 · 기본</b><br><small>${integratesCompute ? 'RisuAI에 저장하고 로컬에서 연산합니다. 서버를 사용하지 않습니다.' : '현재 스코프를 RisuAI pluginStorage에만 저장합니다.'}</small></span></label>
-          <label class="mode"><input type="radio" name="${rootId}-mode" value="server_only"><span><b>서버 단독</b><br><small>${integratesCompute ? '서버를 영구 정본으로 사용하고 서버에서 우선 연산합니다. 연산 실패는 로컬로 복귀합니다.' : '현재 스코프의 영구 정본을 Librarian System DATA에 저장합니다.'}</small></span></label>
+          <label class="mode"><input type="radio" name="${rootId}-mode" value="plugin_only"><span><b>플러그인 단독 · 기본</b><br><small>현재 스코프를 RisuAI pluginStorage에만 저장합니다.</small></span></label>
+          <label class="mode"><input type="radio" name="${rootId}-mode" value="server_only"><span><b>서버 단독</b><br><small>현재 스코프의 영구 정본을 Librarian System DATA에 저장합니다.</small></span></label>
         </div>
         <div class="muted" data-mirror-transition>미러는 두 저장 위치 사이의 전환 중에만 사용합니다. 기존 미러 설정은 단독 모드를 선택해 전환을 완료하세요.</div>
-        <div class="scope" data-mode-summary${integratesCompute ? '' : ' hidden'}></div>
+        <div class="scope" data-mode-summary hidden></div>
         <p class="muted" data-server-hint>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
         <div class="actions"><button data-test>연결 테스트</button><button class="primary" data-apply>설정 적용</button></div>
         <details class="mscx-advanced"><summary>고급 작업 <small>동기화 · 복구 · 이전 · 초기화</small></summary><div class="mscx-advanced-body"><div class="muted">평소에는 쓰지 않아도 됩니다. 저장 위치를 옮기거나 문제를 복구할 때만 사용하세요.</div>
         <div class="actions"><button data-sync>지금 동기화</button><button data-restore>서버 → pluginStorage 복구</button></div>
         ${globalModeEnabled ? '<div class="actions"><button data-global-pause>전체 이전 중단·보존</button><button data-global-resume>미완료 전체 이전 재개</button></div>' : ''}
         <div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div>
-        <div class="actions"><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div></div></details><div class="status" data-status>${integratesCompute ? `현재 방식: ${esc(initial.modeLabel)}\n연산: ${initial.executionPolicy?.computeMode === 'prefer_server' ? '서버 우선 · 실패 시 로컬' : '로컬'}` : `현재 모드: ${esc(initial.modeLabel)}\n서버 상태를 확인할 수 있습니다.`}</div>
+        <div class="actions"><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div></div></details><div class="status" data-status>현재 모드: ${esc(initial.modeLabel)}
+서버 상태를 확인할 수 있습니다.</div>
       </div>
       <div class="job" data-job><b data-job-title>작업 진행 중</b><div class="bar"><i data-job-bar></i></div><div class="grid"><span data-job-phase></span><span data-job-count></span><span data-job-bytes></span><span data-job-time></span><span data-job-retry></span><span data-job-key></span></div><div class="result" data-job-result></div><textarea data-job-diagnostics aria-label="저장 이전 상세 진단" readonly style="display:none"></textarea><button data-job-copy type="button">상세 진단 복사</button><div class="actions" data-job-terminal-actions style="display:none"><button data-job-dismiss type="button">결과 확인 닫기</button></div></div>
     </div>`;
@@ -11147,18 +11145,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const mode = selectedMode();
       const local = mode === MODE_PLUGIN_ONLY;
       const serverFields = q('[data-server-fields]');
-      if (serverFields) serverFields.hidden = integratesCompute && local;
+      if (serverFields) serverFields.hidden = false;
       const serverHint = q('[data-server-hint]');
-      if (serverHint) serverHint.hidden = integratesCompute && local;
+      if (serverHint) serverHint.hidden = false;
       const testButton = q('[data-test]');
-      if (testButton) testButton.disabled = integratesCompute && local;
+      if (testButton) testButton.disabled = false;
       const summary = q('[data-mode-summary]');
-      if (summary) summary.hidden = !integratesCompute;
-      if (summary && integratesCompute) summary.innerHTML = local
-        ? '<b>저장: RisuAI pluginStorage</b><br><span class="muted">연산: 로컬 · 자동 서버 요청 0회</span>'
-        : mode === MODE_MIRROR
-          ? '<b>저장: RisuAI + Librarian System</b><br><span class="muted">연산: 서버 우선 · 실패 시 로컬</span>'
-          : '<b>저장: Librarian System 영구 정본</b><br><span class="muted">연산: 서버 우선 · 실패 시 로컬 · 저장 장애는 fail-closed</span>';
+      if (summary) summary.hidden = true;
     };
     const applyRecoveryGuard = lock => {
       const active=!!lock;
@@ -11171,7 +11164,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     for(const input of root.querySelectorAll(`input[name="${rootId}-mode"]`)) input.addEventListener('change',syncModePresentation);
     syncModePresentation();
     const formatBytes = bytes => { const n=Math.max(0,Number(bytes||0)); if(n<1024)return `${n} B`; if(n<1048576)return `${(n/1024).toFixed(1)} KB`; if(n<1073741824)return `${(n/1048576).toFixed(1)} MB`; return `${(n/1073741824).toFixed(2)} GB`; };
-    let dismissedJobId='',terminalRefreshId='',computeProbeJobId='';
+    let dismissedJobId='',terminalRefreshId='';
     const renderJob = job => {
       const card=q('[data-job]');
       if (!job || (job.kind !== 'global_mode' && job.scopeId !== initial.scopeId) || job.jobId === dismissedJobId) { card.classList.remove('show','terminal','failed'); return; }
@@ -11185,18 +11178,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const terminalActions=q('[data-job-terminal-actions]'); terminalActions.style.display=terminal?'flex':'none';
       const result=job.result&&typeof job.result==='object'?job.result:{};
       q('[data-job-result]').textContent=terminal
-        ? [job.status==='completed'?'완료 결과':'실패 결과',`요청 모드: ${modeLabel(job.requestedMode || job.targetMode || initial.mode)}`,`현재 적용 모드: ${modeLabel(job.effectiveMode || result.effectiveMode || job.sourceMode || initial.mode)}`,job.status==='failed'?'전환 미완료 · 현재 적용 모드를 확인하세요.':'',integratesCompute?`연산: ${normalizeMode(job.effectiveMode || result.effectiveMode || job.sourceMode || initial.mode) === MODE_PLUGIN_ONLY ? '로컬' : '서버 우선 · 실패 시 로컬'}`:'',`복원 ${Number(job.restored||result.restored||0)} · 업로드 ${Number(job.uploaded||result.uploaded||0)} · 일치 ${Number(job.matched||result.matched||0)}`,`삭제 표식 ${Number(job.removedByTombstone||result.removed||0)} · 검증 ${Number(result.verified||0)}`,job.recoveryRequired?'복구 필수 잠금: 활성 · 서버 단독 유지':'복구 필수 잠금: 없음',job.error?`오류: ${job.error}`:''].filter(Boolean).join('\n')
+        ? [job.status==='completed'?'완료 결과':'실패 결과',`요청 모드: ${modeLabel(job.requestedMode || job.targetMode || initial.mode)}`,`현재 적용 모드: ${modeLabel(job.effectiveMode || result.effectiveMode || job.sourceMode || initial.mode)}`,job.status==='failed'?'전환 미완료 · 현재 적용 모드를 확인하세요.':'',`복원 ${Number(job.restored||result.restored||0)} · 업로드 ${Number(job.uploaded||result.uploaded||0)} · 일치 ${Number(job.matched||result.matched||0)}`,`삭제 표식 ${Number(job.removedByTombstone||result.removed||0)} · 검증 ${Number(result.verified||0)}`,job.recoveryRequired?'복구 필수 잠금: 활성 · 서버 단독 유지':'복구 필수 잠금: 없음',job.error?`오류: ${job.error}`:''].filter(Boolean).join('\n')
         : '';
       const diagnosticText = terminal ? JSON.stringify({ schema:'memory-suite.scope-sync-diagnostics.v1', requestedMode:job.requestedMode || job.targetMode || '', effectiveMode:job.effectiveMode || job.sourceMode || '', failures:result.failures || [], metrics:result.metrics || {}, result }, null, 2) : '';
       const diagnosticBox = q('[data-job-diagnostics]'); if (diagnosticBox) { diagnosticBox.value = diagnosticText; diagnosticBox.style.display = terminal && diagnosticText ? 'block' : 'none'; }
       const copyButton = q('[data-job-copy]'); if (copyButton && !copyButton.dataset.bound) { copyButton.dataset.bound = '1'; copyButton.onclick = async () => { try { const value = q('[data-job-diagnostics]')?.value || ''; if (navigator?.clipboard?.writeText) await navigator.clipboard.writeText(value); else { q('[data-job-diagnostics]')?.select?.(); document.execCommand?.('copy'); } setMessage('Detailed diagnostics copied','good'); } catch (error) { setMessage('Detailed diagnostics copy failed\n' + (error?.message || error),'error'); } }; }
-      if(terminal&&job.status==='completed'&&normalizeMode(job.targetMode)!==MODE_PLUGIN_ONLY&&computeProbeJobId!==job.jobId){computeProbeJobId=job.jobId;try{computeBridge?.scheduleProbe?.(0);}catch(_){}}
       if(terminal&&job.jobId!==terminalRefreshId){terminalRefreshId=job.jobId;scheduleLifecycleTimeout(()=>{void scopedGetConnectionSettings({scope:initial.scope,force:true}).then(settings=>applyRecoveryGuard(settings.recoveryRequired)).catch(()=>{});},0);}
     };
     for(const [selector,choice] of [['[data-reset-empty]','empty'],['[data-reset-upload]','upload']]){
       q(selector).onclick=async()=>{try{await acceptServerReset(choice);setMessage('선택을 저장했습니다. 기존 실행의 재업로드를 막기 위해 RisuAI를 새로고침한 뒤 사용하세요.','good');}catch(error){setMessage(error.message,'error');}};
     }
-    q('[data-test]').onclick = async()=>{ setMessage(integratesCompute?'Storage와 Compute 연결을 확인하고 있습니다…':'서버 연결을 확인하고 있습니다…'); const attempt=probeUi.begin(); const storageResult=await testConnection(q('[data-url]').value, {adoptDataInstance:true}); if(!await attempt.current(storageResult))return storageResult; let computeResult=null; if(integratesCompute&&storageResult.ok&&computeBridge?.probe){try{computeResult=await computeBridge.probe({force:true,deep:true,reason:'integrated_connection_test'});}catch(error){computeResult={ok:false,error:compact(error?.message||error,300)};}} if(!await attempt.current(storageResult))return storageResult; const storageLine=storageResult.ok?`${integratesCompute?'Storage: ':''}연결됨 · Librarian System ${storageResult.serverVersion} · 항목 ${storageResult.liveRecords}`:`${integratesCompute?'Storage: ':''}연결 실패 · ${storageResult.error}`; const computeLine=!integratesCompute?'':!storageResult.ok?'Compute: Storage 연결 실패로 확인하지 않음':computeResult?.ok?`Compute: 연결됨 · ${Number(computeResult.operations?.length||computeResult.operationCount||0)}개 연산`:`Compute: 연결 실패 · 연산 시 로컬 폴백 · ${computeResult?.error||computeResult?.reason||'unavailable'}`; setMessage([storageLine,computeLine].filter(Boolean).join('\n'),storageResult.ok&&(!integratesCompute||computeResult?.ok)?'good':storageResult.ok?'':'error'); };
+    q('[data-test]').onclick = async()=>{ setMessage('서버 연결을 확인하고 있습니다…'); const attempt=probeUi.begin(); const storageResult=await testConnection(q('[data-url]').value, {adoptDataInstance:true}); if(!await attempt.current(storageResult))return storageResult; setMessage(storageResult.ok?`연결됨 · Librarian System ${storageResult.serverVersion} · 항목 ${storageResult.liveRecords}`:`연결 실패 · ${storageResult.error}`,storageResult.ok?'good':'error'); };
     // ── 적용 범위 (전역 / 스코프별) ────────────────────────────────────────────────────────────────
     // `scopeTarget` is declared before the handlers below read it; the panel also refreshes through a
     // scheduled callback, so a later `let` would be a TDZ error on the first refresh.
@@ -13585,8 +13577,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   ]);
 
   const FLASHBACK_SPECIAL_ARGUMENTS = Object.freeze([
-    Object.freeze({ name: 'memory_suite_server_mode', label: '레거시 전역 저장 모드', location: '저장 및 연산', policy: 'legacy', note: '현재 스코프 저장 모드는 라우팅 레지스트리가 권위이며 이 ARG는 최초 마이그레이션에만 사용됩니다.' }),
-    Object.freeze({ name: 'memory_suite_server_url', label: 'Librarian System 서버 URL', location: '저장 및 연산', policy: 'dedicated', note: '저장 및 연산 탭에서 설정하고 정확한 ARG readback을 확인합니다.' }),
+    Object.freeze({ name: 'memory_suite_server_mode', label: '레거시 전역 저장 모드', location: '저장', policy: 'legacy', note: '현재 스코프 저장 모드는 라우팅 레지스트리가 권위이며 이 ARG는 최초 마이그레이션에만 사용됩니다.' }),
+    Object.freeze({ name: 'memory_suite_server_url', label: 'Librarian System 서버 URL', location: '저장', policy: 'dedicated', note: '저장 탭에서 설정하고 정확한 ARG readback을 확인합니다.' }),
     Object.freeze({ name: 'embedding_key', label: '임베딩 API 키', location: '임베딩 Provider', policy: 'credential', note: '평문을 표시하지 않으며 Provider 탭의 키 저장·삭제 계약으로 관리합니다.' })
   ]);
 
@@ -45151,13 +45143,13 @@ ${cleanedText}`, 80),
     </div>`;
   };
 
-  const buildServerConnectionTab = () => `<div class="stack"><div class="card"><div class="card__head"><div><h2 class="card__title">FLASHBACK · 저장 및 연산</h2><p class="card__desc">연결 전환은 공용 SDK 검증 절차로만 진행됩니다. 여기서 직접 모드를 바꾸지 않습니다.</p></div><span id="flashbackServerModeBadge" class="badge">현재 설정 읽기 중</span></div><div id="flashbackMemorySuiteServerConnectionPanel"><div class="empty"><span>저장 및 연산 설정을 불러오는 중…</span></div></div></div></div>`;
+  const buildServerConnectionTab = () => `<div class="stack"><div class="card"><div class="card__head"><div><h2 class="card__title">FLASHBACK · 저장</h2><p class="card__desc">연결 전환은 공용 SDK 검증 절차로만 진행됩니다. 여기서 직접 모드를 바꾸지 않습니다.</p></div><span id="flashbackServerModeBadge" class="badge">현재 설정 읽기 중</span></div><div id="flashbackMemorySuiteServerConnectionPanel"><div class="empty"><span>저장 설정을 불러오는 중…</span></div></div></div></div>`;
 
   const mountFlashbackServerConnectionPanel = () => {
     const storageHost = getGuiNode('flashbackMemorySuiteServerConnectionPanel');
     if (!storageHost) return false;
     if (storageHost) void MemorySuiteStorageBridge.mountConnectionPanel(storageHost, {
-      title: 'FLASHBACK · 저장 및 연산',
+      title: 'FLASHBACK · 저장',
       description: 'Flashback 전체 대화의 원문과 벡터 저장 위치를 설정합니다. 전체 자료를 검증한 뒤 적용합니다. 임베딩 모델은 임베딩 프로바이더 화면에서 설정합니다.'
     }).catch(error => warn('Librarian System server connection panel failed', error));
     return true;

@@ -14,21 +14,15 @@ const between = (source, start, end) => {
   return source.slice(from, to);
 };
 
-const computeSdk = read('sdk/MemorySuiteComputeClient.source.js');
-// SDK comment/version changes are not GUI regressions; the contracts below
-// check the actual integrated control, bridge and hydration behavior.
-assert.doesNotMatch(computeSdk, /const mountSettingsPanel = async/);
-assert.doesNotMatch(computeSdk, /value="shadow"/);
+// Compute is retired: the Storage panel no longer integrates a Compute bridge or shows a
+// compute mode. The contracts below check the storage control and hydration behavior.
 
 const storageSdk = read('sdk/MemorySuiteStorageClient.source.js');
 const panel = between(storageSdk, 'const scopedMountConnectionPanel = async', 'const ensureHandoffReady = async');
-assert.match(panel, /const integratesCompute = !!computeBridge/);
+assert.doesNotMatch(panel, /integratesCompute|computeBridge|연산/, 'the Storage panel carries no retired Compute control');
 assert.match(panel, /플러그인 단독/);
 assert.match(panel, /미러/);
 assert.match(panel, /서버 단독/);
-assert.match(panel, /로컬에서 연산/);
-assert.match(panel, /서버 우선 · 실패 시 로컬/);
-assert.match(panel, /computeBridge\.probe/);
 
 const libraStorageSdk = read('sdk/MemorySuiteStorageClient.libra.source.js');
 const libraPanel = between(libraStorageSdk, 'const scopedMountConnectionPanel = async', 'const ensureHandoffReady = async');
@@ -78,15 +72,8 @@ assert.ok(paintedAt >= 0 && showScheduledAt > paintedAt,
   'the local iframe shell must be complete before the non-blocking host show call is scheduled');
 
 const serverPanel = between(libra, 'const buildLibraServerConnectionPanel = () => {', 'const scheduleLibraPortableMemoryBackupMount =');
-assert.match(serverPanel, /저장 및 연산 설정을 불러오는 중/);
-assert.doesNotMatch(serverPanel, /Compute 설정을 불러오는 중/);
-assert.match(libra, /getMemorySuiteComputeBridge: \(\) => (?:MemorySuiteLibraComputeBridge|null)/,
-  'LibraMemoryCore must explicitly export its closure-owned Compute bridge');
-assert.match(serverPanel, /const computeBridge = LibraMemoryCore\.getMemorySuiteComputeBridge\?\.\(\) \|\| null/,
-  'the server panel must resolve Compute through the core boundary');
-assert.match(serverPanel, /\.\.\.\(computeBridge \? \{ computeBridge: computeBridge \} : \{\}\)/,
-  'Storage must still mount when the optional Compute bridge is unavailable');
-assert.doesNotMatch(serverPanel, /computeBridge:\s*MemorySuiteLibraComputeBridge/,
-  'the GUI must not reference the core-private Compute binding directly');
+assert.match(serverPanel, /저장 설정을 불러오는 중/);
+assert.doesNotMatch(serverPanel, /연산|computeBridge/, 'the LIBRA server panel mounts Storage alone');
+assert.doesNotMatch(libra, /getMemorySuiteComputeBridge/, 'LibraMemoryCore exports no retired Compute bridge');
 
 console.log('integrated storage-compute GUI and LIBRA open-latency contract test: PASS');

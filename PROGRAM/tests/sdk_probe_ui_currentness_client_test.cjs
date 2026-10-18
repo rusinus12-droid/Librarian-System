@@ -158,15 +158,7 @@ for(const file of ['MemorySuiteStorageClient.source.js','MemorySuiteStorageClien
   }finally{await b.dispose();}
  });
  for(const event of ['input','change'])test(file+': ABA selection event cancels publication '+event,async()=>{const f=fixture(file),b=f.bridge,dom=makePanelDom();try{await b.bootstrap();await b.mountConnectionPanel(dom.container);dom.byAttr('data-url').value=f.url;const h=f.hold(),pending=dom.byAttr('data-test').onclick();await h.entered.promise;dom.root.dispatch(event);const before=dom.byAttr('data-status').textContent;h.release.resolve();await pending;assert.equal(dom.byAttr('data-status').textContent,before);}finally{await b.dispose();}});
- for(const change of ['new-test','bootstrap','close','dispose','url','mode','scope','message'])test(file+': delayed Compute cannot overwrite '+change,async()=>{
-  const f=fixture(file),b=f.bridge,dom=makePanelDom(),hold={entered:deferred(),release:deferred()};let first=true;
-  const computeBridge={async probe(){if(first){first=false;hold.entered.resolve();await hold.release.promise;}return {ok:true,operationCount:3};}};
-  try{await b.bootstrap();await b.mountConnectionPanel(dom.container,{computeBridge});for(const r of dom.radios)r.checked=r.value==='server_only';dom.radios.find(r=>r.checked).dispatch('change');dom.root.dispatch('change');assert.equal(dom.byAttr('data-test').disabled,false);dom.byAttr('data-url').value=f.url;
-   const pending=dom.byAttr('data-test').onclick();await hold.entered.promise;
-   if(change==='new-test')await dom.byAttr('data-test').onclick();if(change==='bootstrap')await b.bootstrap(true);if(change==='close')dom.root.isConnected=false;if(change==='dispose')await b.dispose();if(change==='url')dom.byAttr('data-url').value='http://localhost:47630';if(change==='mode')for(const r of dom.radios)r.checked=r.value==='plugin_only';if(change==='scope')dom.byAttr('data-scope-global').onclick();if(change==='message')await dom.byAttr('data-apply').onclick();
-   const before=dom.byAttr('data-status').textContent;hold.release.resolve();await pending;assert.equal(dom.byAttr('data-status').textContent,before);
-  }finally{await b.dispose();}
- });
+ // Compute is retired: the panel's connection test probes Storage only (no delayed Compute probe).
  if(!process.env.SDK_TEST_SKIP_LEGACY)test(file+': legacy automatic probe cannot overwrite newer manual probe',async()=>{
   const f=fixture(file,false,true),b=f.bridge,dom=makePanelDom();try{await b.bootstrap();const h=f.hold();await b.mountConnectionPanel(dom.container);await h.entered.promise;dom.byAttr('data-mscx-url').value=f.url;await dom.byAttr('data-mscx-test').onclick();assert.equal(dom.byAttr('data-mscx-state-text').textContent,'서버 연결됨');h.error=new Error('old network failure');h.release.resolve();await new Promise(r=>setImmediate(r));assert.equal(dom.byAttr('data-mscx-state-text').textContent,'서버 연결됨');}finally{await b.dispose();}
  });
@@ -181,7 +173,7 @@ if(!process.env.SDK_TEST_SKIP_LEGACY)for(const file of ['MemorySuiteStorageClien
  }finally{await b.dispose();}
 });
 
-for(const file of ['MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js'])for(const phase of ['storage','compute'])for(const start of ['scope','global'])for(const action of ['switch','aba','same'])test(`${file}: ${phase} pending range ${start}/${action}`,async()=>{
+for(const file of ['MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js'])for(const phase of ['storage'])for(const start of ['scope','global'])for(const action of ['switch','aba','same'])test(`${file}: ${phase} pending range ${start}/${action}`,async()=>{
  const f=fixture(file),b=f.bridge,dom=makePanelDom(),held={entered:deferred(),release:deferred()};
  const computeBridge={async probe(){held.entered.resolve();await held.release.promise;return {ok:true,operationCount:3};}};
  try{await b.bootstrap();await b.mountConnectionPanel(dom.container,phase==='compute'?{computeBridge}:{});if(phase==='compute'){for(const r of dom.radios)r.checked=r.value==='server_only';dom.radios.find(r=>r.checked).dispatch('change');dom.root.dispatch('change');assert.equal(dom.byAttr('data-test').disabled,false);}dom.byAttr('data-url').value=f.url;

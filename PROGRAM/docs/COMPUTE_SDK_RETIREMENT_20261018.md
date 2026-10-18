@@ -44,9 +44,26 @@ Decision: retire the Compute SDK from the plugins. See `COMPUTE_SDK_ARRANGEMENT_
   - The reference kernels of the retired registry live on as test oracles in `tests/fixtures/retired_compute_reference_kernels.cjs`. The LIBRA tokenizer sync tool now targets this file.
   - 16 tests of the server, pool, scheduler and Compute integrations were removed, with their 3 fixtures.
 
-## Remaining step
+## Step 3 (Storage SDK and tests)
 
-3. **Tests and Storage SDK.**
-   - Retire the SDK-only Compute tests (`compute_bridge`, `compute_sdk_robustness`, `compute_background_job*`, `compute_late_risu_api_binding`, `docker_compute_*`).
-   - Drop the `computeMode` execution policy and the "연산" (computation) label from the Storage SDK panels.
-   - The Compute SDK source and the manifest compatibility fields can only go once the oldest supported updater no longer checks them.
+**Storage SDK 1.8.27 (both shared variants)**
+- The scope execution policy no longer derives `computeMode`.
+- The connection panel drops its Compute integration: the `computeBridge` option, the compute summaries and labels, and the Compute probe in the connection test.
+- The panels already rendered without a bridge (step 1 stopped passing one), so the visible UI does not change apart from wording.
+
+**Plugins (LIBRA 2.3.168, Flashback 1.0.119, HAYAKU 3.0.150)**
+- Panel titles change from "저장 및 연산" ("storage and computation") to "저장" ("storage"), and HAYAKU's description drops the sparse-RRF placement sentence.
+- LIBRA no longer exports `getMemorySuiteComputeBridge`. `getMemorySuiteComputeStatus()` still reports `retired` for diagnostics.
+
+**SDK and tests**
+- Removed the SDK-only Compute tests: `compute_bridge`, `compute_sdk_robustness`, `compute_background_job_cache` / `_failure_cleanup`, `compute_late_risu_api_binding`, `docker_compute_connection_contract`, `docker_compute_deep_probe`.
+- Removed the unused `sdk/MemorySuiteSearchClient.source.cjs`.
+- `sdk/MemorySuiteSearchKernel.source.cjs` stays only as the source of the test oracles and is no longer shipped in the distribution.
+
+**Manifest:** `dataContract.computePlane` is a retirement record: `retired`, `execution: local_only`, `pluginsEmbedCompute: false`, `storageDerivesComputeMode: false`, `serverRetired`. It keeps the historical operation identities.
+
+## Kept on purpose
+
+`sdk/MemorySuiteComputeClient.source.js` (with its version header), the manifest `computeProtocol` / `computeSdk` fields, and the six-key DATA template stay. Installed updaters check them when they validate a new release. They can go once the oldest supported updater no longer reads them.
+
+`compute_retired_server_fallback_test` uses that SDK source to show that previously released plugins still fall back to local computation against the retired server.

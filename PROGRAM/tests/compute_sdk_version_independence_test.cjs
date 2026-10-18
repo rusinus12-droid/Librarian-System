@@ -4,8 +4,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const {createRequire}=require('node:module');const {test}=require('node:test');
 const specs=[
- ['compute_bridge_test.cjs','const context = {','const createMemorySuiteComputeBridge','one compute factory'],
- ['storage-compute-mode-contract-v2.test.cjs','const integrations =','const VALID_MODES = new Set','VALID_MODES'],
+ ['storage-compute-mode-contract-v2.test.cjs','const integrations =','LIBRARIAN SYSTEM COMPUTE SDK v','Compute SDK source header'],
  ['hayaku_sparse_rrf_compute_pilot_test.cjs','const sparseSignals =','materializeHayakuSparseRrfRows(rows, runHayakuSparseRrfLocal(input))', 'local sparse RRF kernel'],
  ['lia_world_lore_compute_pilot_test.cjs','const values = new Map','liaCanonicalCopy(runLiaWorldLoreComputeLocal(input))', 'local kernel']
 ];

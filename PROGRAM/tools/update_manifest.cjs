@@ -299,31 +299,19 @@ manifest.dataContract.programDistribution = {
   canonicalPluginCount: Object.keys(pluginFiles).length,
   duplicatePluginCopies: false
 };
+// Compute is retired end to end: no plugin embeds the Compute SDK, the Storage SDK derives no
+// compute mode, and the server answers every /v1/compute/* request with 410 COMPUTE_RETIRED.
+// The record and the historical operation identities stay for distribution provenance.
 manifest.dataContract.computePlane = {
   schema: 'memory-suite.compute-plane.v1',
-  pluginDefaultMode: 'local',
-  modes: ['local', 'prefer_server'],
-  guiModeControl: false,
-  guiModeScope: 'derived_from_current_scope_storage_mode',
-  storageComputeIntegratedControl: true,
-  guiOwners: ['flashback', 'hayaku', 'libra', 'lia'],
-  remoteOnlyMode: false,
-  storageModeIndependent: false,
-  scopeExecutionPolicySchema: 'memory-suite.scope-execution-policy.v1',
-  storageModeToComputeMode: { plugin_only: 'local', mirror: 'prefer_server', server_only: 'prefer_server' },
-  legacyShadowNormalization: 'local',
-  computeModeArgumentExposed: false,
-  localFallbackRequired: true,
-  // The plugins no longer embed Compute and the server answers every /v1/compute/* request
-  // with 410 COMPUTE_RETIRED; plugins compute locally in every storage mode.
+  retired: true,
+  execution: 'local_only',
   pluginsEmbedCompute: false,
+  storageDerivesComputeMode: false,
+  scopeExecutionPolicySchema: 'memory-suite.scope-execution-policy.v1',
   serverRetired: true,
   serverRetiredResponse: { status: 410, code: 'COMPUTE_RETIRED', schema: 'memory-suite.compute.retired.v1' },
-  authorizationSeparateFromStorage: true,
-  storageBootstrapRequired: false,
-  userCredentialInputRequired: false,
-  pluginIdentityTrustBoundary: 'loopback_official_plugin_id',
-  canonicalNamespaceWrites: false,
+  computeModeArgumentExposed: false,
   arbitraryCodeExecution: false,
   ...(computePilots.flashback ? { flashbackPilot: {
     version: pluginVersions.flashback,

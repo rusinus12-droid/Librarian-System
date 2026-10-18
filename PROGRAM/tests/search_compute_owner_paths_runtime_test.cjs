@@ -1,13 +1,12 @@
 'use strict';
-// The Compute SDK is retired from the plugins. A server-backed storage policy must give
-// the same search results as plugin_only, computed locally, with no Compute request.
+// Compute is retired. With a Librarian System server configured, Flashback and HAYAKU search
+// locally (repeatable results) and no plugin sends a Compute request.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {createMemorySuiteServer}=require('../server/server.cjs');
 const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
 const {createHayakuRuntime,createValidPacket}=require('./fixtures/hayaku_runtime_harness.cjs');
 const {createLibraVmHarness}=require('./fixtures/libra_vm_harness.cjs');
 const plain=v=>JSON.parse(JSON.stringify(v));
-const policySource=source=>source.replace("computeMode: serverBacked ? 'prefer_server' : 'local',","computeMode: globalThis.__searchTestMode || 'local',");
 (async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'search-owner-paths-'));assert.equal(path.dirname(dir),path.resolve(os.tmpdir()));
  const app=createMemorySuiteServer({host:'127.0.0.1',port:0,dataDir:dir,autoBackup:false,computeWorkers:2});
@@ -20,19 +19,19 @@ const policySource=source=>source.replace("computeMode: serverBacked ? 'prefer_s
      assert.doesNotMatch(source,/LIBRARIAN SYSTEM COMPUTE SDK v|createMemorySuiteComputeBridge|createMemorySuiteSearchClient/,name+' embeds no Compute SDK or search client');
    }
    passed++;
-   const f=await createFixture({arguments:args,nativeFetch,source:policySource(fs.readFileSync(path.join(__dirname,'../plugins/Flashback_Memory.js'),'utf8'))});
+   const f=await createFixture({arguments:args,nativeFetch,source:fs.readFileSync(path.join(__dirname,'../plugins/Flashback_Memory.js'),'utf8')});
    try{
      const settings={...await f.api.loadSettings(),embeddingProvider:'openai',embeddingModel:'text-embedding-test',contextualRecall:true};
      const scope=await f.api.resolveCurrentScope();
      const rows=['a','b'].map((id,index)=>({id,sourceType:'response',scopeKey:scope.scopeKey,text:'User: query\nAssistant: '+id,provider:'openai',model:'text-embedding-test',
        embeddingProfileId:f.api._test.embeddingProfileId(settings,64,'openai','text-embedding-test'),vector:Array.from({length:64},(_,i)=>i===index?1:0)}));
      const request=()=>({records:rows,queryText:'a',queryVector:rows[0].vector,settings,context:{queryProvider:'openai',queryModel:'text-embedding-test'}});
-     f.context.__searchTestMode='local';const local=await f.api._test.generateRecallCandidateArms(request());
+     const local=await f.api._test.generateRecallCandidateArms(request());
      assert(local.dense.length>0,'fixture produces dense candidates');
-     f.context.__searchTestMode='prefer_server';const served=await f.api._test.generateRecallCandidateArms(request());
-     assert.deepEqual(plain(served),plain(local),'Flashback server-backed recall equals plugin-only recall');passed++;
+     const served=await f.api._test.generateRecallCandidateArms(request());
+     assert.deepEqual(plain(served),plain(local),'Flashback recall is repeatable and local');passed++;
    }finally{await f.dispose();}
-   const hf=path.join(dir,'hayaku-test.js');fs.writeFileSync(hf,policySource(fs.readFileSync(path.join(__dirname,'../plugins/HAYAKU_Locator_Continuity.js'),'utf8')));
+   const hf=path.join(dir,'hayaku-test.js');fs.writeFileSync(hf,fs.readFileSync(path.join(__dirname,'../plugins/HAYAKU_Locator_Continuity.js'),'utf8'));
    const h=await createHayakuRuntime({autoRepair:false,arguments:args,nativeFetch,pluginSourceFile:hf});
    try{
      const t=h.hayaku._test,s=h.hayaku.settings(),p=createValidPacket({turn:1}),raw=JSON.stringify(p),store=t.emptyStore();
@@ -40,9 +39,9 @@ const policySource=source=>source.replace("computeMode: serverBacked ? 'prefer_s
      await t.localRecallPrepareSources([{raw,hash:'search-source',messageIndex:1}],store,s,'search-scope',Date.now()+10000);
      const scope=await t.currentChatScope(),snapshot=t.authoritativeChatSnapshot(scope.chatMessages,scope),owner={scope,snapshot,worldline:t.authoritativeLedgerFromSnapshot(snapshot,scope).worldline};
      const local=await t.searchIndexCompositeRecall(store,'Alice',s,owner);
-     const before=JSON.stringify(store._recallSourceRows);h.context.__searchTestMode='prefer_server';
+     const before=JSON.stringify(store._recallSourceRows);
      const served=await t.searchIndexCompositeRecall(store,'Alice',s,owner);
-     assert.deepEqual(plain(served),plain(local),'HAYAKU server-backed composite recall equals plugin-only recall');
+     assert.deepEqual(plain(served),plain(local),'HAYAKU composite recall is repeatable and local');
      assert.equal(JSON.stringify(store._recallSourceRows),before);passed++;
    }finally{await h.dispose();}
    const l=await createLibraVmHarness();try{assert.equal(l.api.debugRecallBm25fScoresLocal,undefined);assert.equal(l.api.getMemorySuiteComputeStatus().status,'retired');passed++;}finally{await l.cleanup();}

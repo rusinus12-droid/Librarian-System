@@ -280,7 +280,8 @@ const RUNTIME_TOOL_FILES = new Set([
   'prepare_data.cjs','release_asset_contract.cjs','release_metadata.cjs','runtime_release_validation.cjs','termux_install.py','zip_writer.cjs'
 ]);
 const RUNTIME_SDK_FILES = new Set([
-  'MemorySuiteSearchKernel.source.cjs','MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js','MemorySuiteComputeClient.source.js','MemorySuiteExecutionContract.source.js'
+  // The search kernel stays in sdk/ only as a test oracle; nothing at runtime loads it.
+  'MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js','MemorySuiteComputeClient.source.js','MemorySuiteExecutionContract.source.js'
 ]);
 const RUNTIME_DOC_FILES = new Set([
   'ANDROID_INSTALL_HELPER.md','STORAGE_MODE_TRANSITION_CONTRACT.md','UPDATER_0.3.51_BOOTSTRAP.md','사용설명서.md','데이터_구조와_마이그레이션.md','보안과_복구.md'

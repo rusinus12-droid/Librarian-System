@@ -57,17 +57,13 @@ function main() {
   assert.deepEqual(manifest.computeProtocol, { major: 1, minor: 2 });
 
   const plane = manifest.dataContract.computePlane;
-  assert.deepEqual(plane.modes, ['local', 'prefer_server']);
-  assert.equal(plane.guiModeControl, false);
-  assert.equal(plane.storageComputeIntegratedControl, true);
-  assert.equal(plane.storageModeIndependent, false);
-  assert.equal(plane.scopeExecutionPolicySchema, 'memory-suite.scope-execution-policy.v1');
-  assert.deepEqual(plane.storageModeToComputeMode, {
-    plugin_only: 'local',
-    mirror: 'prefer_server',
-    server_only: 'prefer_server'
-  });
-  assert.equal(plane.legacyShadowNormalization, 'local');
+  // Compute is retired: the record says so; historical operation identities stay below.
+  assert.equal(plane.retired, true);
+  assert.equal(plane.execution, 'local_only');
+  assert.equal(plane.pluginsEmbedCompute, false);
+  assert.equal(plane.storageDerivesComputeMode, false);
+  assert.equal(plane.serverRetired, true);
+  assert.equal(plane.serverRetiredResponse.code, 'COMPUTE_RETIRED');
   assert.equal(plane.computeModeArgumentExposed, false);
 
   const pilots = {

@@ -61,12 +61,13 @@ values.set('__memory_suite_internal_scope_routes_v1__:policy_test', JSON.stringi
     const mirror = await bridge.getScopeExecutionPolicy(scopes.mirror, { force: true });
     const server = await bridge.getScopeExecutionPolicy(scopes.server, { force: true });
     assert.equal(local.schema, 'memory-suite.scope-execution-policy.v1');
-    assert.deepEqual([local.storageMode, local.configuredRoute, local.computeMode], ['plugin_only', 'local', 'local']);
-    assert.deepEqual([mirror.storageMode, mirror.configuredRoute, mirror.computeMode], ['mirror', 'server', 'prefer_server']);
-    assert.deepEqual([server.storageMode, server.configuredRoute, server.computeMode], ['server_only', 'server', 'prefer_server']);
+    assert.deepEqual([local.storageMode, local.configuredRoute, Object.hasOwn(local, 'computeMode')], ['plugin_only', 'local', false]);
+    assert.deepEqual([mirror.storageMode, mirror.configuredRoute, Object.hasOwn(mirror, 'computeMode')], ['mirror', 'server', false]);
+    assert.deepEqual([server.storageMode, server.configuredRoute, Object.hasOwn(server, 'computeMode')], ['server_only', 'server', false]);
     assert.ok([local, mirror, server].every(item => item.lockedByStorageMode === true));
     const settings = await bridge.getConnectionSettings({ scope: scopes.mirror, force: true });
-    assert.equal(settings.executionPolicy.computeMode, 'prefer_server');
+    // Compute is retired: the policy derives no compute mode.
+    assert.equal(Object.hasOwn(settings.executionPolicy, 'computeMode'), false);
     assert.equal(settings.mode, 'mirror');
     process.stdout.write('storage_compute_scope_policy_runtime_test: PASS\n');
   } finally {

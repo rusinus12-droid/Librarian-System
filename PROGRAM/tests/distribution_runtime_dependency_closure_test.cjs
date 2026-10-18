@@ -21,7 +21,7 @@ try{
  const server=require(serverPath);
  assert.equal(typeof server.createMemorySuiteServer,'function');
  assert.equal(typeof require(path.join(unpacked,'PROGRAM/tools/portable_export_stopped.cjs')).exportStopped,'function');
- assert.equal(fs.existsSync(path.join(unpacked,'PROGRAM/sdk/MemorySuiteSearchKernel.source.cjs')),true);
+ assert.equal(fs.existsSync(path.join(unpacked,'PROGRAM/sdk/MemorySuiteSearchKernel.source.cjs')),false,'the retired search kernel is not shipped');
  const {inspectExtractedRuntime}=require('../tools/verify_runtime_archive.cjs');
  const closure=inspectExtractedRuntime(unpacked);assert.equal(closure.verified,true);assert.ok(closure.localRequires>100);
  // The retired server Compute plane no longer requires the search kernel; use a server dependency.
