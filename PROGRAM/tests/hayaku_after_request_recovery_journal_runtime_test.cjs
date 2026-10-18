@@ -77,6 +77,19 @@ const historicalEnvelope = assistantText => {
     const unchanged = await runtime.hayaku._test.repairCurrentPacketInsideAfterRequest(repaired, 'model');
     assert.equal(unchanged, repaired, 'an already usable exact-lineage packet must not be called again');
     assert.equal(runtime.llmCalls.length, 1);
+    // The repaired packet is captured from the chat output like any packet, but keeps its authorship
+    // so the GUI can show it as an automatic repair rather than a main-model packet.
+    runtime.chat.message.push(assistant('after-a1', repaired));
+    runtime.chat.messages = runtime.chat.message;
+    await runtime.hayaku._test.processRisuChatOutputEvent({ char: runtime.character, chat: runtime.chat, characterIndex: 0, chatIndex: 0, messageIndex: 1 });
+    let captured = null;
+    for (const started = Date.now(); !captured && Date.now() - started < 15000; await new Promise(resolve => setTimeout(resolve, 50))) {
+      captured = Array.from((await runtime.hayaku.ledger.inspect({ includeRecords: true })).records || [])
+        .find(record => record.recordState === 'active' && Number(record.targetPairIndex) === 1) || null;
+    }
+    assert.ok(captured, 'repaired packet captured from the chat output');
+    assert.equal(captured.packetAuthor, 'after_request_repair', 'an afterRequest-repaired packet records its authorship');
+    assert.equal(runtime.hayaku._test.viewerRecordOrigin(captured).label, '자동 복구');
   } finally {
     await runtime.dispose();
   }
