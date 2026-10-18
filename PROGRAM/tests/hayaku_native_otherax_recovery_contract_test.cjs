@@ -105,12 +105,11 @@ requireText(hayaku, "const RECOVERY_EVIDENCE_MANIFEST_SCHEMA = 'hayaku.recovery_
 requireText(hayaku, 'const readVerifiedRecoveryEvidence = async', 'verified evidence readback');
 forbidText(hayaku, '.slice(0, RECOVERY_VAULT_MAX_TURN_CHARS)', 'Recovery Vault canonical evidence must not truncate');
 requireText(hayaku, "reason: 'evidence_over_request_budget'", 'oversized evidence routes to Failed Recovery without LLM');
-// The approved failure-detail destination keeps source, raw response,
-// diagnostics, candidate and history as five internal panels. These read-only
-// evidence fields belong to its diagnostic panel, not a retired top-level page.
-requireText(hayaku, 'data-subpanel="dx" data-group="hayakuFailureDetail" hidden><pre id="hayakuFailedRecoveryGroundingStatus"', 'failure grounding diagnostics remain in the diagnostic detail tab');
-requireText(hayaku, 'id="hayakuFailedRecoveryEvidenceStatus"', 'failure evidence completeness remains readable');
-requireText(hayaku, 'id="hayakuFailedRecoveryRequestStatus"', 'failure request budget remains readable');
+// The failure-repair page is retired. Archived details remain explicitly
+// readable/exportable from Logs, without reviving its obsolete repair controls.
+forbidText(hayaku, 'id="hayakuFailedRecoveryGroundingStatus"', 'retired failure-repair markup stays removed');
+requireText(hayaku, 'id="loadHayakuArchivedFailures"', 'archived diagnostics retain an explicit read action');
+requireText(hayaku, 'id="hayakuIncludeAnalysisDetails" type="checkbox"', 'diagnostic export remains opt-in');
 requireText(hayaku, '|chunkKeys|', 'Portable Backup recovery sidecar dependency discovery');
 requireText(hayaku, 'const recoveryCoverageProjection = ({ snapshot = {}, ledger = {}, activeRecords = [], checkedAt = now() } = {}) => {', 'owner-native recovery coverage');
 requireText(hayaku, "schema: 'hayaku.recovery_coverage.v1'", 'recovery coverage schema');

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-18T20:06:41.379Z",
+  "generatedAt": "2026-10-18T22:23:39.214Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -397,7 +397,7 @@
           ]
         },
         "hayaku": {
-          "version": "3.0.152",
+          "version": "3.0.153",
           "deferredAuthoritativeBinding": true,
           "backendOrder": [
             "chat_output_v3",
@@ -569,7 +569,7 @@
       "nativePersonaDatabaseExcluded": true
     },
     "hayakuNativeOtherAxRecovery": {
-      "version": "3.0.152",
+      "version": "3.0.153",
       "schema": "hayaku.native_recovery.v1",
       "normalPathNoLlmWhenCurrentPacketUsable": true,
       "normalPathLlmCallsWhenCurrentPacketUsable": 0,
@@ -1098,7 +1098,7 @@
         ]
       },
       "hayakuSparseRrfPilot": {
-        "version": "3.0.152",
+        "version": "3.0.153",
         "operation": "hayaku.sparse-rrf-fusion.v1",
         "algorithmFingerprint": "7f32e8b10fdd34e8356af70e40ad90d3c48e6fda132080046a807db0ea3ec58f",
         "retired": true,
@@ -1424,7 +1424,7 @@
   },
   "plugins": {
     "flashback": "1.0.120",
-    "hayaku": "3.0.152",
+    "hayaku": "3.0.153",
     "libra": "2.3.170",
     "lia": "0.26.87",
     "retrace": "1.9.84",
@@ -2418,6 +2418,10 @@
     "docs/HAYAKU_SIMPLE_RECOVERY_20260912.md": {
       "sha256": "5bded0cc00955c865c10121072910bbf0b4a4f0f904d2aac42b28dd8461efa7e",
       "bytes": 3363
+    },
+    "docs/HAYAKU_SOURCE_REANALYSIS_CONFIRMATION_20261019.md": {
+      "sha256": "5215e10efec2b5d515ec040ab85b22f98e457ecf98311f9c1887b371da0fca4d",
+      "bytes": 4713
     },
     "docs/HAYAKU_ZERO_TOUCH_ATTENTION_20261016.md": {
       "sha256": "247f5088d97306a21b923d1838858abfdc1a559131b32ba0f8ffaf938ed3f0d0",
@@ -3448,7 +3452,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "6e7d40b83774c46d0c2bf8dbea3d31982cb311c96d039530e348dd79e4716047",
+      "sha256": "ef8752508f76cb042adf5a6ddb3227b4590289097e5a85d752bfa5640302fa92",
       "bytes": 11842
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3816,7 +3820,7 @@
       "bytes": 733
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "ae592247e4ced1512d6c296a443fc16ffb5d617ddecddde130740f8751aefb8a",
+      "sha256": "ec55ee258f07668312967af94f99548e78f2e56041ff39870a9ba4c97d410c13",
       "bytes": 3359
     },
     "plugins/Flashback_Memory.js": {
@@ -3828,8 +3832,8 @@
       "bytes": 2973827
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "648f8b5f678339c5b2935c98008bb9bc1c3c759e310302ef26492246654a1d43",
-      "bytes": 3948071
+      "sha256": "8cba4a9eeae07520228a8edab47454631d32c170c0f54666b3c99a97a08c1bd4",
+      "bytes": 3953048
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "38143308a25fa8d393530a9156cbf8bd1f2b9d139023f1001a13dae86eb7c336",
@@ -6392,8 +6396,8 @@
       "bytes": 3858
     },
     "tests/hayaku_native_otherax_recovery_contract_test.cjs": {
-      "sha256": "10ff800aeccd4f6b5f678c1f661008fda686d5c80fad1760cd92caf4008fa5cf",
-      "bytes": 17793
+      "sha256": "d57601ccbc198dea23b0dbed14d98304c58b205f9576d3256f5444766dfeb78c",
+      "bytes": 17631
     },
     "tests/hayaku_native_otherax_recovery_runtime_test.cjs": {
       "sha256": "d79e435288a710d5525381f5ffa062d92dc27684ceb35f9db42b3bb4ec31943f",
@@ -6634,6 +6638,10 @@
     "tests/hayaku_source_identity_contract_runtime_test.cjs": {
       "sha256": "02938c3ffb8e728c8f3709c7ee9e4b1b1bb239c5a68b28c30f4307512cea35c6",
       "bytes": 3996
+    },
+    "tests/hayaku_source_reanalysis_confirmation_gui_test.cjs": {
+      "sha256": "b3909e7ddb39f6dfeadc14f4f04e0c67aa6d38344386a171afd7f89435303495",
+      "bytes": 11631
     },
     "tests/hayaku_source_review_v2_test.cjs": {
       "sha256": "53cd8e900102d64901689221a4290e2ff8c2ba3d0046fb3e9078d5ae21ba3e68",
@@ -11004,7 +11012,7 @@
       "bytes": 632
     },
     "처음_읽어주세요.txt": {
-      "sha256": "e12d5f57da0cd20e09b51a41492c98166dcc6b5e6a45dfdcc9c7e533a5894a75",
+      "sha256": "cf9b111cf2c2a64725a6f8bfb810af52451bed728025f745641b0e5ae826ce11",
       "bytes": 3466
     }
   },

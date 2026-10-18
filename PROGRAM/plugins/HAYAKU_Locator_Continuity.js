@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.0.152
-//@version 3.0.152
+//@display-name HAYAKU · Locator Continuity v3.0.153
+//@version 3.0.153
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.0.152';
+  const PLUGIN_VERSION = '3.0.153';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -45285,7 +45285,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const chunkHash = stableHash64([repairTarget.sourceEvidenceHash, targetText, contextOnly, replacements.ids.join('|')].join('\u0001'));
     const chunk = { ordinal: 1, kind: 'completed_turn', turn: pairIndex, startTurn: pairIndex, endTurn: pairIndex, targetPairIndex: pairIndex, messageIndexes: [evidence.userMessageIndex, evidence.assistantMessageIndex].filter(Number.isFinite), text: targetText, chunkHash };
     pushOperationLog('native_recovery:targeted_model_started',{turn:pairIndex,sourceEvidenceHash:repairTarget.sourceEvidenceHash},'debug');
-    const analyzed = await executeNativeAnalysisAttempt('incremental_recovery', chunk, { scopeKey: scope.key, sourceEvidenceHash: repairTarget.sourceEvidenceHash, repairTarget, contextOnly, failureFlow: 'targeted_regeneration', replacementRecordIds: replacements.ids });
+    const analyzed = await executeNativeAnalysisAttempt('incremental_recovery', chunk, { scopeKey: scope.key, sourceEvidenceHash: repairTarget.sourceEvidenceHash, repairTarget, contextOnly, failureFlow: 'targeted_regeneration', replacementRecordIds: replacements.ids, extraCalls: options.extraCalls });
     pushOperationLog('native_recovery:targeted_model_completed',{turn:pairIndex,packetHash:analyzed.packetHash},'debug');
     if (Memory.unloaded || !ownsRuntime()) throw new Error('native_regeneration_runtime_replaced_before_commit');
     if (Memory.nativeRecovery.repairCancelRequested) {
@@ -45537,6 +45537,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           repairTarget: plan.repairTarget,
           contextOnly: plan.contextOnly,
           failureFlow: 'targeted_regeneration',
+          extraCalls: options.extraCalls,
           replacementRecordIds
         });
         await options.sourceEditValidate?.();
@@ -45771,7 +45772,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       for (const turn of turns) {
         await options.sourceEditValidate?.();
         if(options.sourceEditValidate && Memory.nativeRecovery.job?.kind==='source_edit')updateNativeJob({currentTurn:turn,state:'analyzing',message:`T${turn} · 모델 분석 및 원문 근거 검사`});
-        const result = await executeNativeTargetedRegenerationTurn(scope, turn, { replacementRecordIds: [], allowMissing: options?.allowMissing === true, sourceEditValidate:options.sourceEditValidate });
+        const result = await executeNativeTargetedRegenerationTurn(scope, turn, { replacementRecordIds: [], allowMissing: options?.allowMissing === true, sourceEditValidate:options.sourceEditValidate, extraCalls:options.extraCalls });
         if(options.sourceEditValidate && Memory.nativeRecovery.job?.kind==='source_edit')updateNativeJob({state:result.ok?'adopting':'analyzing',message:result.ok?`T${turn} · 저장 확인 완료, 명시적 작업 기록 저장 중`:`T${turn} · 분석 결과 확인 필요`});
         run.results.push(clone(result, {}));
         run.updatedAt = now();
@@ -53538,11 +53539,20 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const value=await hayakuSourceEditSnapshot();
     return {scopeKey:value.scopeKey,topology:value.topology,ranges:value.units.map(({sourceDigest,basis,...unit})=>unit)};
   };
-  const selectHayakuReanalysisRanges=async keys=>{
-    const inventory=await listHayakuReanalysisRanges(),wanted=new Set(ensureArray(keys).map(String));
+  const selectHayakuReanalysisRanges=async selection=>{
+    const inventory=await listHayakuReanalysisRanges(),rows=Array.isArray(selection)?selection:ensureArray(selection?.ranges);
+    const wanted=new Set(rows.map(row=>String(objectish(row)?row.key:row)));
     const units=inventory.ranges.filter(unit=>wanted.has(unit.key));
-    if(!wanted.size||wanted.size!==units.length)return {allowed:false,reason:'selected_source_unavailable'};
-    return {allowed:true,owner:'hayaku',scopeKey:inventory.scopeKey,topology:inventory.topology,units,model:true,warning:'선택한 턴의 현재 채팅 내용을 재분석합니다. Other Ax 모델 사용량이 발생합니다.'};
+    if(!wanted.size||wanted.size>128||wanted.size!==units.length)return {allowed:false,reason:'selected_source_unavailable'};
+    // GUI selections retain the displayed identities. Never silently retarget a
+    // stale checkbox to a different message or chat while preparing its ticket.
+    if(!Array.isArray(selection)){
+      if(selection?.scopeKey!==inventory.scopeKey||selection?.topology!==inventory.topology)return {allowed:false,reason:'selected_source_changed_refresh_required'};
+      if(rows.some(row=>!objectish(row)||units.find(unit=>unit.key===String(row.key))?.identity!==row.identity))return {allowed:false,reason:'selected_source_changed_refresh_required'};
+    }
+    const extraCalls=(await loadSettings()).recoveryExtraCalls===1?1:0;
+    return {allowed:true,owner:'hayaku',scopeKey:inventory.scopeKey,topology:inventory.topology,units,extraCalls,model:true,
+      warning:`Other Ax 기본 ${units.length}회(턴당 1회), 구조 복구 추가 허용은 턴당 최대 ${extraCalls}회로 전체 최대 ${units.length*(1+extraCalls)}회입니다. Provider 비용이 발생할 수 있습니다. 검증과 저장 확인에 성공하면 선택한 턴의 기존 기억을 새 기억으로 자동 교체합니다. 채팅 원문은 변경하지 않습니다.`};
   };
   const runHayakuSelectedReanalysis=selection=>{
     if(hayakuReanalysisRunning?.selection===selection)return hayakuReanalysisRunning.promise;
@@ -53613,7 +53623,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
               if(!keys.has(String(turn)))throw Error('SOURCE_EDIT_SELECTION_COVERAGE_INCOMPLETE');}
           replacementRecordIds=targets.map(record=>record.recordId);
         }
-        let result=await runNativeTargetedRegeneration({targetTurns:units.map(u=>u.start),replacementRecordIds,allowMissing:true,sourceEditValidate:assertCurrent,sourceEditScope:scopeKey});
+        let result=await runNativeTargetedRegeneration({targetTurns:units.map(u=>u.start),replacementRecordIds,allowMissing:true,sourceEditValidate:assertCurrent,sourceEditScope:scopeKey,extraCalls:selection?.extraCalls});
         if(units.length>1&&result.ok===true){
           if(result.awaitingChoice!==true)throw Error('SOURCE_EDIT_ATOMIC_STAGE_INCOMPLETE');
           operation.atomicRunId=result.runId;
@@ -53632,7 +53642,10 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   };
   const previewSourceEdits=keys=>getHayakuRecoveryActions().preview('explicit_reanalysis',keys);
   const applySourceEdits=ticket=>getHayakuRecoveryActions().apply(ticket);
-  const clearSourceEditPreview=()=>getHayakuRecoveryActions().clear();
+  const clearSourceEditPreview=()=>{
+    Memory.ledgerViewer?.sourceReanalysisConfirmationCancel?.();
+    getHayakuRecoveryActions().clear();
+  };
   const ensureHayakuSourceInputReady=async phase=>{
     try{await getHayakuSourceInput().ready();hayakuSourceInputReadyError='';return true;}
     catch(error){hayakuSourceInputReadyError=compact(error?.message||error,160)||'SOURCE_INPUT_PREFERENCES_UNAVAILABLE';
@@ -57175,13 +57188,46 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     if (summary.repairSkipped) advice.push('자동 복구가 건너뛴 턴은 백그라운드 복구 대기열로 넘어갑니다.');
     return advice;
   };
+  const viewerConfirmSourceReanalysis = ticket => new Promise(resolve => {
+    const viewer=Memory.ledgerViewer,root=viewer.root,doc=root?.ownerDocument;
+    const host=root?.querySelector('.app')||root;
+    if(!host||typeof doc?.createElement!=='function'){resolve(false);return;}
+    viewer.sourceReanalysisConfirmationCancel?.();
+    const overlay=doc.createElement('div');
+    overlay.id='hayakuSourceReanalysisConfirmOverlay';overlay.className='overlay is-open';
+    const dialog=doc.createElement('section');dialog.className='dialog';
+    dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');
+    dialog.setAttribute('aria-labelledby','hayakuSourceReanalysisConfirmTitle');
+    const title=doc.createElement('h2');title.id='hayakuSourceReanalysisConfirmTitle';title.textContent='선택한 턴의 기억을 재분석하고 교체할까요?';
+    const summary=doc.createElement('p');summary.textContent='실행 시점의 현재 채팅 원문을 분석합니다. 여러 턴은 모두 검증된 뒤 한 번에 교체합니다.';
+    const cost=doc.createElement('dl');cost.className='cost-table';
+    for(const [label,value] of [['선택한 턴',ticket.units.map(unit=>unit.label).join(', ')],['대상 수',`${ticket.units.length}턴`],['예상 기본 호출',`Other Ax ${ticket.units.length}회 (턴당 1회)`]]){
+      const dt=doc.createElement('dt'),dd=doc.createElement('dd');dt.textContent=label;dd.textContent=value;cost.append(dt,dd);
+    }
+    const note=doc.createElement('div');note.className='note note--warn';note.textContent=ticket.warning;
+    const actions=doc.createElement('div');actions.className='dialog__actions';
+    const cancel=doc.createElement('button');cancel.type='button';cancel.className='btn';cancel.dataset.reanalysisConfirm='cancel';cancel.textContent='취소';
+    const confirm=doc.createElement('button');confirm.type='button';confirm.className='btn btn--primary';confirm.dataset.reanalysisConfirm='apply';confirm.textContent='재분석 후 기억 교체';
+    let settled=false,teardownDialog=()=>{};
+    const dismiss=()=>finish(false);
+    const finish=value=>{
+      if(settled)return;settled=true;overlay.remove();teardownDialog();
+      if(viewer.sourceReanalysisConfirmationCancel===dismiss)viewer.sourceReanalysisConfirmationCancel=null;
+      resolve(value===true);
+    };
+    viewer.sourceReanalysisConfirmationCancel=dismiss;
+    cancel.addEventListener('click',dismiss);confirm.addEventListener('click',()=>finish(true));
+    overlay.addEventListener('click',event=>{if(event.target===overlay)dismiss();});
+    actions.append(cancel,confirm);dialog.append(title,summary,cost,note,actions);overlay.append(dialog);host.append(overlay);
+    teardownDialog=viewerBindConfirmDialogKeys(overlay,dialog,dismiss,'[data-reanalysis-confirm="cancel"]');
+  });
   function viewerRenderSourceEditConsent() {
     const viewer=Memory.ledgerViewer,root=viewer?.root;if(!root)return;
     getHayakuSourceInput().mountControls(root.querySelector('#hayakuSourceTrackingSettings'));
     if(viewer.activeTab!=='recovery')return;
     const card=root.querySelector('#hayakuSourceEditConsent');if(!card||card.dataset.reanalysisMounted===text(viewer.scope?.key))return;
     card.dataset.reanalysisMounted=text(viewer.scope?.key);let inventory=null,busy=false,version=0;
-    card.innerHTML='<header class="card__head"><div><h2 id="hayakuSourceEditConsentTitle">직접 재분석</h2><p>저장된 턴을 선택하면 실행 시점의 현재 채팅 내용으로 다시 분석합니다. 메시지 ID가 없는 예전 채팅은 편집 후 구간 목록을 새로고침하세요.</p></div></header><button type="button" class="btn" data-reanalysis-refresh>구간 목록 새로고침</button><div data-reanalysis-ranges></div><button type="button" class="btn" data-reanalysis-run disabled>선택한 구간 재분석</button><p role="status" aria-live="polite" data-reanalysis-status></p>';
+    card.innerHTML='<header class="card__head"><div><h2 id="hayakuSourceEditConsentTitle">직접 재분석</h2><p>저장된 턴을 선택하면 실행 시점의 현재 채팅 내용으로 다시 분석합니다. 실행 전에 대상·호출 수·기억 교체를 확인합니다. 메시지 ID가 없는 예전 채팅은 편집 후 구간 목록을 새로고침하세요.</p></div></header><button type="button" class="btn" data-reanalysis-refresh>구간 목록 새로고침</button><div data-reanalysis-ranges></div><button type="button" class="btn" data-reanalysis-run disabled>재분석 내용 확인</button><p role="status" aria-live="polite" data-reanalysis-status></p>';
     const list=card.querySelector('[data-reanalysis-ranges]'),run=card.querySelector('[data-reanalysis-run]'),refresh=card.querySelector('[data-reanalysis-refresh]'),status=card.querySelector('[data-reanalysis-status]');
     const current=()=>Memory.ledgerViewer.root===root&&Memory.ledgerViewer.activeTab==='recovery'&&root.querySelector('#hayakuSourceEditConsent')===card;
     const selected=()=>[...list.querySelectorAll('input:checked')].map(node=>node.value);
@@ -57192,9 +57238,18 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         status.textContent=result.ranges.length?'원하는 구간을 선택하세요.':'재분석할 저장 구간이 없습니다.';sync();
       }catch(error){if(token===version&&current())status.textContent='목록 조회 실패: '+text(error?.message||error);}};
     refresh.onclick=load;run.onclick=async()=>{if(busy||!inventory)return;const keys=new Set(selected());if(!keys.size)return;
-      const selection={scopeKey:inventory.scopeKey,topology:inventory.topology,ranges:inventory.ranges.filter(r=>keys.has(r.key))};busy=true;sync();status.textContent='선택한 구간을 재분석하는 중…';
-      try{const result=await runHayakuSelectedReanalysis(selection);if(current())status.textContent=result.ok?'선택한 구간의 기억을 갱신했습니다.':'재분석 중단: '+(result.reason||'결과를 확인하세요.');}
-      finally{busy=false;if(current())sync();}};
+      const selection={scopeKey:inventory.scopeKey,topology:inventory.topology,ranges:inventory.ranges.filter(r=>keys.has(r.key))};busy=true;sync();status.textContent='실행할 내용을 확인하는 중…';
+      try{
+        const ticket=await previewSourceEdits(selection);
+        if(!current()){clearSourceEditPreview();return;}
+        if(ticket.allowed!==true){status.textContent='대상을 확인할 수 없습니다. 구간 목록을 새로고침한 뒤 다시 선택하세요.';return;}
+        if(!await viewerConfirmSourceReanalysis(ticket)){clearSourceEditPreview();status.textContent='재분석을 취소했습니다. 기존 기억을 유지합니다.';return;}
+        if(!current()){clearSourceEditPreview();return;}
+        status.textContent='선택한 구간을 재분석하는 중…';
+        const result=await applySourceEdits(ticket);
+        if(current())status.textContent=result.ok?'선택한 구간의 기억을 갱신했습니다.':'재분석 중단: '+(result.reason||'결과를 확인하세요.');
+      }catch(error){clearSourceEditPreview();if(current())status.textContent='재분석 중단: '+text(error?.message||error);}
+      finally{busy=false;sync();if(current()&&!run.disabled)run.focus?.();}};
     void load();
   }
   const viewerRenderHostLineage = () => {
@@ -58716,6 +58771,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     root.querySelectorAll('[data-packet-view]').forEach(button => button.addEventListener('click', () => showPacketView(button.dataset.packetView)));
     root.querySelectorAll('[data-recovery-view]').forEach(button => button.addEventListener('click', () => {
       const view = button.dataset.recoveryView;
+      if(view!=='reanalysis')clearSourceEditPreview();
       const panelKey = ({ missing: 'miss', reanalysis: 'reana', cold: 'cold' })[view] || 'miss';
       root.querySelectorAll('[data-recovery-view]').forEach(node => {
         const selected = node === button;
@@ -60415,6 +60471,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       scheduleFailedAutoRecovery();
       await RisuCompat.onUnload(async () => {
         Memory.unloaded = true;
+        clearSourceEditPreview();
         if (ledgerViewerUiRetryTimer !== null) clearTimeout(ledgerViewerUiRetryTimer);
         ledgerViewerUiRetryTimer = null;
         if (FailedAutoRecovery.timer != null) clearTimeout(FailedAutoRecovery.timer);
