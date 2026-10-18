@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.115
+//@display-name ⚡ FLASHBACK Memory v1.0.116
 //@api 3.0
-//@version 1.0.115
+//@version 1.0.116
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.115';
+const PLUGIN_VERSION = '1.0.116';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -12680,6 +12680,12 @@ const MEMORY_SUITE_SEARCH_FINGERPRINT = 'ca7fb7aa2d7b7a5225697c3701c272bdf9573eb
 const createMemorySuiteSearchClient = function createMemorySuiteSearchClient(options) {
   const run=createMemorySuiteSearchKernel(), operation=options.namespace+'.memory-search.v1';
   const corpora=new Map(); let retainedBytes=0, disposed=false;
+  // The compute server is loopback-only, so it shares this device's CPU. Measured
+  // (docs/COMPUTE_SDK_ARRANGEMENT_20261017.md): cosine over 3000 vectors is 22 ms locally
+  // and 2.8 s through the server; HAYAKU's warm local lexical index is 14 ms against
+  // 480-575 ms remote. Neither kind is offloaded unless the owner opts in.
+  const offload={vectors:false,lexical:false,...(options.offload||{})};
+  const offloads=kind=>offload[kind]===true;
   const validate=(result,ctx)=>{
     const input=ctx.input, corpus=input.corpus;
     if(!corpus||result?.kind!==input.kind)return false;
@@ -12700,7 +12706,7 @@ const createMemorySuiteSearchClient = function createMemorySuiteSearchClient(opt
     if(disposed)throw Error('search_client_disposed');
     const policy=await options.storage.getScopeExecutionPolicy(scope,{force:false});
     if(disposed)throw Error('search_client_disposed');
-    if(policy.computeMode==='local')return run(input);
+    if(policy.computeMode==='local'||!offloads(input.kind))return run(input);
     // Keep the full immutable payload for local fallback. A reference is only a
     // transport optimization; it never selects or authorizes another snapshot.
     const full=JSON.parse(JSON.stringify(input)), serialized=JSON.stringify(full.corpus);
@@ -12722,6 +12728,7 @@ const createMemorySuiteSearchClient = function createMemorySuiteSearchClient(opt
   const vectors=async(vectors,queries,scope,binding={},validateBinding=null)=>{
     const unique=[...new Set(vectors.filter(Array.isArray))], qs=[...new Set(queries.filter(q=>Array.isArray(q)&&q.length))];
     if([...unique,...qs].some(vector=>vector.some(value=>typeof value!=='number'||!Number.isFinite(value))))throw Error('search_vector_non_finite');
+    if(!offloads('vectors'))return (query,vector,fallback)=>fallback(query,vector);
     const started=Date.now();
     const scores=new Map();let offset=0;
     while(offset<unique.length&&qs.length){
@@ -12740,7 +12747,7 @@ const createMemorySuiteSearchClient = function createMemorySuiteSearchClient(opt
 
     return (query,vector,fallback)=>scores.get(vector)?.get(query)??fallback(query,vector);
   };
-  return {execute,vectors,status:bridge.status,dispose:async()=>{disposed=true;corpora.clear();retainedBytes=0;await bridge.dispose();}};
+  return {execute,vectors,offloads,status:bridge.status,dispose:async()=>{disposed=true;corpora.clear();retainedBytes=0;await bridge.dispose();}};
 };
 // END MEMORY SUITE SEARCH
 /* LIBRARIAN SYSTEM COMPUTE SDK v0.3.8
@@ -27587,6 +27594,50 @@ const MemorySuiteSnapshotCache = (() => {
   const recordEmbeddingProfileId = (record = {}, settings = DEFAULTS) => text(record.embeddingProfileId || '').trim()
     || inferredLegacyEmbeddingProfileId(record, settings);
 
+  // Same checks as MemorySuiteExecutionContract.vector without copying the vector
+  // (no normalization, Float32 representable, nonzero norm).
+  const embeddingVectorNumericValid = input => {
+    if (!Array.isArray(input) || !input.length || input.length > 65536) return false;
+    let sum = 0, storedNorm = 0;
+    for (const n of input) {
+      if (typeof n !== 'number' || !Number.isFinite(n)) return false;
+      sum += n * n;
+      if (!Number.isFinite(sum)) return false;
+      const f = Math.fround(n);
+      if (!Number.isFinite(f)) return false;
+      storedNorm += f * f;
+    }
+    return sum > 0 && storedNorm > 0 && Number.isFinite(storedNorm);
+  };
+  // Recall checks every record against one query profile. The query side depends only on
+  // the settings object and the query context, so it is derived once per synchronous pass
+  // (the memo is dropped at the next microtask, before any settings change can land).
+  let embeddingCompatibilityMemo = null;
+  const embeddingCompatibilityPass = () => {
+    if (!embeddingCompatibilityMemo) {
+      embeddingCompatibilityMemo = { profiles: new Map(), vectors: new Map() };
+      Promise.resolve().then(() => { embeddingCompatibilityMemo = null; });
+    }
+    return embeddingCompatibilityMemo;
+  };
+  const embeddingCompatibilityProfiles = settings => {
+    const pass = embeddingCompatibilityPass();
+    let profiles = pass.profiles.get(settings);
+    if (!profiles) pass.profiles.set(settings, profiles = new Map());
+    return profiles;
+  };
+  const passEmbeddingVectorNumericValid = vector => {
+    const vectors = embeddingCompatibilityPass().vectors;
+    let valid = vectors.get(vector);
+    if (valid === undefined) vectors.set(vector, valid = embeddingVectorNumericValid(vector));
+    return valid;
+  };
+  const passEmbeddingProfileId = (settings, dimensions, provider, model) => {
+    const profiles = embeddingCompatibilityProfiles(settings), key = ["profile-id", provider, model, dimensions].join("\u0000");
+    let id = profiles.get(key);
+    if (id === undefined) profiles.set(key, id = embeddingProfileId(settings, dimensions, provider, model));
+    return id;
+  };
   const recordEmbeddingCompatibility = (record = {}, settings = DEFAULTS, context = {}) => {
     const vector = Array.isArray(record.vector) ? record.vector : [];
     const recordProvider = text(record.provider || '').trim();
@@ -27595,6 +27646,25 @@ const MemorySuiteSnapshotCache = (() => {
     const queryProvider = normalizeProvider(context.provider || settings.embeddingProvider);
     const queryModel = text(context.model || (queryProvider === 'hash' ? `hash-${vector.length || settings.hashDimensions}` : settings.embeddingModel)).trim();
     const dimensions = Number(context.dimensions || vector.length || 0) || 0;
+    const profiles = embeddingCompatibilityProfiles(settings);
+    const profileKey = [queryProvider, queryModel, dimensions, text(context.profileId || '')].join('\u0000');
+    let query = profiles.get(profileKey);
+    if (!query) profiles.set(profileKey, query = queryEmbeddingCompatibilityProfile(settings, context, queryProvider, queryModel, dimensions));
+    const { queryProfileId, legacyProfileId, oldEndpointProfileId, legacyRoute, queryProfileCurrent, settingsFingerprint } = query;
+    const legacyProfileCompatible = queryProvider === 'voyageai'
+      && !text(settings.embeddingModelRevision || '').trim()
+      && (recordProfileId === legacyProfileId || (legacyRoute === 'https://api.voyageai.com/v1/embeddings' && recordProfileId === oldEndpointProfileId))
+      && queryProfileCurrent;
+    const profileCompatible = recordProfileId === queryProfileId || legacyProfileCompatible;
+    const numericValid = passEmbeddingVectorNumericValid(vector);
+    const receipt = record.embeddingReceipt;
+    const sourceCurrent = (!record.embeddingWork || isValidatedRetainedEmbeddingRecord(record)) && (!receipt || (receipt.schema === 'flashback.embedding_work_receipt.v1'
+      && receipt.status === 'ready' && receipt.sourceRevision === rawEmbeddingSourceRevision(record)
+      && receipt.targetProfile?.profileFingerprint === settingsFingerprint && !!receipt.attemptId));
+    return recordEmbeddingCompatibilityResult(record, settings, { vector, recordProvider, recordModel, recordProfileId, queryProvider, queryModel, dimensions,
+      queryProfileId, legacyProfileCompatible, profileCompatible, numericValid, sourceCurrent });
+  };
+  const queryEmbeddingCompatibilityProfile = (settings, context, queryProvider, queryModel, dimensions) => {
     const queryProfileId = text(context.profileId || embeddingProfileId(settings, dimensions, queryProvider, queryModel)).trim();
     // Older shipped profiles lacked executionDescriptor although Voyage's wire
     // request and preprocessing were identical. Match that exact old fingerprint,
@@ -27611,17 +27681,12 @@ const MemorySuiteSnapshotCache = (() => {
     } catch (_) {}
     const oldEndpointDescriptor = { ...legacyDescriptor, endpointIdentity: `endpoint_${stableHash(`${queryProvider}\n${legacyRoute}`)}` };
     const oldEndpointProfileId = 'emb_' + stableHash(JSON.stringify(oldEndpointDescriptor));
-    const legacyProfileCompatible = queryProvider === 'voyageai'
-      && !text(settings.embeddingModelRevision || '').trim()
-      && (recordProfileId === legacyProfileId || (legacyRoute === 'https://api.voyageai.com/v1/embeddings' && recordProfileId === oldEndpointProfileId))
-      && queryProfileId === embeddingProfileId(settings, dimensions, queryProvider, queryModel);
-    const profileCompatible = recordProfileId === queryProfileId || legacyProfileCompatible;
-    let numericValid = false;
-    try { MemorySuiteExecutionContract.vector(vector); numericValid = true; } catch (_) {}
-    const receipt = record.embeddingReceipt;
-    const sourceCurrent = (!record.embeddingWork || isValidatedRetainedEmbeddingRecord(record)) && (!receipt || (receipt.schema === 'flashback.embedding_work_receipt.v1'
-      && receipt.status === 'ready' && receipt.sourceRevision === rawEmbeddingSourceRevision(record)
-      && receipt.targetProfile?.profileFingerprint === embeddingProfileSettingsFingerprint(settings) && !!receipt.attemptId));
+    return { queryProfileId, legacyProfileId, oldEndpointProfileId, legacyRoute,
+      queryProfileCurrent: queryProfileId === embeddingProfileId(settings, dimensions, queryProvider, queryModel),
+      settingsFingerprint: embeddingProfileSettingsFingerprint(settings) };
+  };
+  const recordEmbeddingCompatibilityResult = (record, settings, { vector, recordProvider, recordModel, recordProfileId, queryProvider, queryModel, dimensions,
+    queryProfileId, legacyProfileCompatible, profileCompatible, numericValid, sourceCurrent }) => {
     const modelConfigured = configuredModelEmbedding(settings) && queryProvider !== 'hash' && recordProvider !== 'hash';
     const legacy = !recordProvider || !recordModel || !recordProfileId || !numericValid || !sourceCurrent || !modelConfigured;
     return {
@@ -32676,8 +32741,20 @@ const MemorySuiteHealthRecovery = (() => {
 
   const buildSparseFieldsForRecord = (record = {}, settings = Runtime.settings || DEFAULTS) => visibleRecallFieldsForRecord(record);
 
+  // Every projection lookup re-derives this revision; hashing the full text each time
+  // dominated BM25F passes. The text hash is kept per record while its text is unchanged.
+  const recordTextHashes = new WeakMap();
+  const recordTextHash = record => {
+    const body = record?.text || '';
+    if (!record || typeof record !== 'object') return stableHash(body);
+    const memo = recordTextHashes.get(record);
+    if (memo && memo.text === body) return memo.hash;
+    const hash = stableHash(body);
+    recordTextHashes.set(record, { text: body, hash });
+    return hash;
+  };
   const sparseProjectionRevisionForRecord = (record = {}) => {
-    const textRevision = `${text(record?.hash || '').trim()}\u0000${stableHash(record?.text || '')}`;
+    const textRevision = `${text(record?.hash || '').trim()}\u0000${recordTextHash(record)}`;
     const stateRevisionSource = Array.isArray(record?.structuredStateFacts)
       ? record.structuredStateFacts
       : (Number(record?.chunkIndex || 0) > 0 ? [] : (record?.metadata || {}));
@@ -32773,24 +32850,52 @@ const MemorySuiteHealthRecovery = (() => {
     return { ...projection, bodyForLexical, scoringAnchors: extractRecordAnchors(bodyForLexical,record) };
   };
 
+  // One recall request scores the same record array 3-6 times (query, scene, topics).
+  // Field averages and token postings depend only on the array's sparse projections,
+  // so they are built once and reused while every projection is the same object.
+  const bm25fCorpusCache = new WeakMap();
+  const bm25fCorpusFor = (records, settings) => {
+    const sparses = records.map(record => sparseProjectionForRecord(record, settings));
+    const fields = Object.keys(FLASHBACK_BM25F_WEIGHTS);
+    const cached = records.length >= 8 ? bm25fCorpusCache.get(records) : null;
+    if (cached && cached.settings === settings && cached.sparses.length === sparses.length
+      && cached.sparses.every((sparse, index) => sparse === sparses[index])) return cached;
+    const averages = Object.fromEntries(fields.map(field => [
+      field,
+      sparses.reduce((sum, sparse) => sum + Math.max(1, Number(sparse.lengths[field] || 1)), 0) / Math.max(1, sparses.length)
+    ]));
+    const postings = new Map();
+    sparses.forEach((sparse, index) => {
+      for (const field of fields) {
+        const tf = sparse.fieldTf[field];
+        if (!tf) continue;
+        for (const token of tf.keys()) {
+          const list = postings.get(token);
+          if (!list) postings.set(token, [index]);
+          else if (list[list.length - 1] !== index) list.push(index);
+        }
+      }
+    });
+    const corpus = { settings, sparses, fields, averages, postings };
+    if (records.length >= 8) bm25fCorpusCache.set(records, corpus);
+    return corpus;
+  };
   const scoreBm25fCandidates = (records = [], queryText = '', settings = Runtime.settings || DEFAULTS, options = {}) => {
     const queryTokens = sparseTokenArray(queryText, { limit: 160, unique: true });
     const families=RecallKeywordFeatures.tokenFamilies(queryText,queryTokens);
-    const documents = (records || []).map(record => ({ record, sparse: sparseProjectionForRecord(record, settings) }));
-    if (!queryTokens.length || !documents.length) return [];
-    const fields = Object.keys(FLASHBACK_BM25F_WEIGHTS);
-    const averages = Object.fromEntries(fields.map(field => [
-      field,
-      documents.reduce((sum, item) => sum + Math.max(1, Number(item.sparse.lengths[field] || 1)), 0) / Math.max(1, documents.length)
-    ]));
+    const list = Array.isArray(records) ? records : [];
+    if (!queryTokens.length || !list.length) return [];
+    const { sparses, fields, averages, postings } = bm25fCorpusFor(list, settings);
     const documentFrequency = new Map();
+    const candidates = new Set();
     for (const token of queryTokens) {
-      let count = 0;
-      for (const item of documents) {
-        if (fields.some(field => item.sparse.fieldTf[field]?.has(token))) count += 1;
-      }
-      documentFrequency.set(token, count);
+      const docs = postings.get(token) || [];
+      documentFrequency.set(token, docs.length);
+      for (const index of docs) candidates.add(index);
     }
+    // Only documents holding a query token can score; document order is kept for ties.
+    const documents = [...candidates].sort((x, y) => x - y).map(index => ({ record: list[index], sparse: sparses[index] }));
+    const documentCount = list.length;
     const rows = [];
     for (const item of documents) {
       let rawScore = 0;
@@ -32799,7 +32904,7 @@ const MemorySuiteHealthRecovery = (() => {
       const fieldHits = {};
       for (const token of queryTokens) {
         const df = documentFrequency.get(token) || 0;
-        const idf = Math.log(1 + ((documents.length - df + 0.5) / (df + 0.5)));
+        const idf = Math.log(1 + ((documentCount - df + 0.5) / (df + 0.5)));
         let weightedTf = 0;
         for (const field of fields) {
           const tf = Number(item.sparse.fieldTf[field]?.get(token) || 0);
@@ -33243,8 +33348,9 @@ const MemorySuiteHealthRecovery = (() => {
     if(queryVector.length && responseRecords.length){
       const scope=Runtime.currentScope;
       const policy=await MemorySuiteStorageBridge.getScopeExecutionPolicy(scope||null,{force:false});
-      if(policy.computeMode==='prefer_server'){
-        MemorySuiteFlashbackSearchClient ||= createMemorySuiteSearchClient({namespace:'flashback',pluginId:PLUGIN_SLUG,pluginVersion:PLUGIN_VERSION,storage:MemorySuiteStorageBridge});
+      // Local cosine is cheaper than the loopback server; the search basis reads are skipped too.
+      if(policy.computeMode==='prefer_server'
+        && (MemorySuiteFlashbackSearchClient ||= createMemorySuiteSearchClient({namespace:'flashback',pluginId:PLUGIN_SLUG,pluginVersion:PLUGIN_VERSION,storage:MemorySuiteStorageBridge})).offloads('vectors')){
         const scopeKey=text(scope?.scopeKey||'');
         const readSearchBasis=async()=>{
           // Independent reads; on server_only each one is a round trip.
@@ -34045,7 +34151,7 @@ const MemorySuiteHealthRecovery = (() => {
       provider: queryProvider,
       model: queryModel,
       dimensions: queryVector.length,
-      profileId: context.queryProfileId || embeddingProfileId(settings, queryVector.length, queryProvider, queryModel)
+      profileId: context.queryProfileId || passEmbeddingProfileId(settings, queryVector.length, queryProvider, queryModel)
     });
     const providerComparable = compatibility.providerComparable;
     const modelComparable = compatibility.modelComparable;

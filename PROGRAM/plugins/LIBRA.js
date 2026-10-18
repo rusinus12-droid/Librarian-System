@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.165
-//@version 2.3.165
+//@display-name LIBRA v2.3.166
+//@version 2.3.166
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1558,7 +1558,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.165';
+  const PLUGIN_VERSION = '2.3.166';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -12245,6 +12245,12 @@ const MEMORY_SUITE_SEARCH_FINGERPRINT = 'ca7fb7aa2d7b7a5225697c3701c272bdf9573eb
 const createMemorySuiteSearchClient = function createMemorySuiteSearchClient(options) {
   const run=createMemorySuiteSearchKernel(), operation=options.namespace+'.memory-search.v1';
   const corpora=new Map(); let retainedBytes=0, disposed=false;
+  // The compute server is loopback-only, so it shares this device's CPU. Measured
+  // (docs/COMPUTE_SDK_ARRANGEMENT_20261017.md): cosine over 3000 vectors is 22 ms locally
+  // and 2.8 s through the server; HAYAKU's warm local lexical index is 14 ms against
+  // 480-575 ms remote. Neither kind is offloaded unless the owner opts in.
+  const offload={vectors:false,lexical:false,...(options.offload||{})};
+  const offloads=kind=>offload[kind]===true;
   const validate=(result,ctx)=>{
     const input=ctx.input, corpus=input.corpus;
     if(!corpus||result?.kind!==input.kind)return false;
@@ -12265,7 +12271,7 @@ const createMemorySuiteSearchClient = function createMemorySuiteSearchClient(opt
     if(disposed)throw Error('search_client_disposed');
     const policy=await options.storage.getScopeExecutionPolicy(scope,{force:false});
     if(disposed)throw Error('search_client_disposed');
-    if(policy.computeMode==='local')return run(input);
+    if(policy.computeMode==='local'||!offloads(input.kind))return run(input);
     // Keep the full immutable payload for local fallback. A reference is only a
     // transport optimization; it never selects or authorizes another snapshot.
     const full=JSON.parse(JSON.stringify(input)), serialized=JSON.stringify(full.corpus);
@@ -12287,6 +12293,7 @@ const createMemorySuiteSearchClient = function createMemorySuiteSearchClient(opt
   const vectors=async(vectors,queries,scope,binding={},validateBinding=null)=>{
     const unique=[...new Set(vectors.filter(Array.isArray))], qs=[...new Set(queries.filter(q=>Array.isArray(q)&&q.length))];
     if([...unique,...qs].some(vector=>vector.some(value=>typeof value!=='number'||!Number.isFinite(value))))throw Error('search_vector_non_finite');
+    if(!offloads('vectors'))return (query,vector,fallback)=>fallback(query,vector);
     const started=Date.now();
     const scores=new Map();let offset=0;
     while(offset<unique.length&&qs.length){
@@ -12305,7 +12312,7 @@ const createMemorySuiteSearchClient = function createMemorySuiteSearchClient(opt
 
     return (query,vector,fallback)=>scores.get(vector)?.get(query)??fallback(query,vector);
   };
-  return {execute,vectors,status:bridge.status,dispose:async()=>{disposed=true;corpora.clear();retainedBytes=0;await bridge.dispose();}};
+  return {execute,vectors,offloads,status:bridge.status,dispose:async()=>{disposed=true;corpora.clear();retainedBytes=0;await bridge.dispose();}};
 };
 // END MEMORY SUITE SEARCH
 /* LIBRARIAN SYSTEM COMPUTE SDK v0.3.8

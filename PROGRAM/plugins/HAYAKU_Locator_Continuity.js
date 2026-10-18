@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.0.147
-//@version 3.0.147
+//@display-name HAYAKU · Locator Continuity v3.0.148
+//@version 3.0.148
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.0.147';
+  const PLUGIN_VERSION = '3.0.148';
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
   const HAYAKU_SPARSE_RRF_COMPUTE_FINGERPRINT = '7f32e8b10fdd34e8356af70e40ad90d3c48e6fda132080046a807db0ea3ec58f';
   const HAYAKU_SPARSE_RRF_INPUT_SCHEMA = 'hayaku.sparse-rrf-fusion.input.v1';
@@ -11349,6 +11349,12 @@ const MEMORY_SUITE_SEARCH_FINGERPRINT = 'ca7fb7aa2d7b7a5225697c3701c272bdf9573eb
 const createMemorySuiteSearchClient = function createMemorySuiteSearchClient(options) {
   const run=createMemorySuiteSearchKernel(), operation=options.namespace+'.memory-search.v1';
   const corpora=new Map(); let retainedBytes=0, disposed=false;
+  // The compute server is loopback-only, so it shares this device's CPU. Measured
+  // (docs/COMPUTE_SDK_ARRANGEMENT_20261017.md): cosine over 3000 vectors is 22 ms locally
+  // and 2.8 s through the server; HAYAKU's warm local lexical index is 14 ms against
+  // 480-575 ms remote. Neither kind is offloaded unless the owner opts in.
+  const offload={vectors:false,lexical:false,...(options.offload||{})};
+  const offloads=kind=>offload[kind]===true;
   const validate=(result,ctx)=>{
     const input=ctx.input, corpus=input.corpus;
     if(!corpus||result?.kind!==input.kind)return false;
@@ -11369,7 +11375,7 @@ const createMemorySuiteSearchClient = function createMemorySuiteSearchClient(opt
     if(disposed)throw Error('search_client_disposed');
     const policy=await options.storage.getScopeExecutionPolicy(scope,{force:false});
     if(disposed)throw Error('search_client_disposed');
-    if(policy.computeMode==='local')return run(input);
+    if(policy.computeMode==='local'||!offloads(input.kind))return run(input);
     // Keep the full immutable payload for local fallback. A reference is only a
     // transport optimization; it never selects or authorizes another snapshot.
     const full=JSON.parse(JSON.stringify(input)), serialized=JSON.stringify(full.corpus);
@@ -11391,6 +11397,7 @@ const createMemorySuiteSearchClient = function createMemorySuiteSearchClient(opt
   const vectors=async(vectors,queries,scope,binding={},validateBinding=null)=>{
     const unique=[...new Set(vectors.filter(Array.isArray))], qs=[...new Set(queries.filter(q=>Array.isArray(q)&&q.length))];
     if([...unique,...qs].some(vector=>vector.some(value=>typeof value!=='number'||!Number.isFinite(value))))throw Error('search_vector_non_finite');
+    if(!offloads('vectors'))return (query,vector,fallback)=>fallback(query,vector);
     const started=Date.now();
     const scores=new Map();let offset=0;
     while(offset<unique.length&&qs.length){
@@ -11409,7 +11416,7 @@ const createMemorySuiteSearchClient = function createMemorySuiteSearchClient(opt
 
     return (query,vector,fallback)=>scores.get(vector)?.get(query)??fallback(query,vector);
   };
-  return {execute,vectors,status:bridge.status,dispose:async()=>{disposed=true;corpora.clear();retainedBytes=0;await bridge.dispose();}};
+  return {execute,vectors,offloads,status:bridge.status,dispose:async()=>{disposed=true;corpora.clear();retainedBytes=0;await bridge.dispose();}};
 };
 // END MEMORY SUITE SEARCH
 /* LIBRARIAN SYSTEM COMPUTE SDK v0.3.8
@@ -34384,13 +34391,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const searchIndexCompositeRecall = async (store, query, settings = Memory.settings, owner = {}) => {
     let computedRanks=null;
     const policy=await MemorySuiteStorageBridge.getScopeExecutionPolicy(owner.scope||null,{force:false});
-    if(policy.computeMode==='prefer_server' && owner.scope?.confident){
+    // The warm local recall index answers faster than the loopback server; no corpus is built for it.
+    if(policy.computeMode==='prefer_server' && owner.scope?.confident
+      && (MemorySuiteHayakuSearchClient ||= createMemorySuiteSearchClient({namespace:'hayaku',pluginId:HAYAKU_PLUGIN_ID,pluginVersion:PLUGIN_VERSION,storage:MemorySuiteStorageBridge})).offloads('lexical')){
       const queryText=localRecallQueryText(query), knowledge=buildKnowledgeContext(store,queryText,settings);
       const eligibleRows=()=>[...new Map(bindPacketRecordReferences(ensureArray(store._recallSourceRows||store.index),store).filter(row=>row&&localRecallBody(row)
         && !requestKnowledgeUnavailableForRow(row,queryText,knowledge,settings)
         && ensureArray(row.projectionVisibilityBoundaries).every(visibility=>!isKnowledgeUnavailableForQuery({...row,visibility},queryText,knowledge))).map(row=>[localRecallSourceKey(row),row])).values()];
       const eligible=eligibleRows();
-      MemorySuiteHayakuSearchClient ||= createMemorySuiteSearchClient({namespace:'hayaku',pluginId:HAYAKU_PLUGIN_ID,pluginVersion:PLUGIN_VERSION,storage:MemorySuiteStorageBridge});
       const corpusFor=rows=>({rankingPolicy:'hayaku.evidence-lexical.v1',documents:rows.map(row=>({key:localRecallSourceKey(row),body:localRecallSearchBody(row),evidenceBody:localRecallBody(row)}))});
       const input={kind:'lexical',owner:'hayaku',corpus:corpusFor(eligible),queries:[[queryText],ensureArray(settings.retrievalRecentContext?.topics).map(localRecallQueryText)]};
       const binding=await captureHayakuSparseRrfBinding(owner,{});

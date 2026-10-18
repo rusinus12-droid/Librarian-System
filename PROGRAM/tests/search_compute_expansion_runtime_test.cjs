@@ -30,7 +30,7 @@ const make=new Function(`${compute}\nconst createMemorySuiteSearchKernel=${kerne
      }
    }finally{await h.dispose();}
    for(const namespace of ['flashback','libra','hayaku']){
-     const c=make({namespace,pluginId:{flashback:'flashback_memory',libra:'libra',hayaku:'hayaku_locator_continuity'}[namespace],pluginVersion:'test',storage});
+     const c=make({namespace,pluginId:{flashback:'flashback_memory',libra:'libra',hayaku:'hayaku_locator_continuity'}[namespace],pluginVersion:'test',storage,offload:{vectors:true,lexical:true}});
      const input=namespace==='hayaku'?{kind:'lexical',owner:namespace,corpus:{documents:[{key:'a',body:'blue gem in the library'},{key:'b',body:'red cloak at the gate'}]},queries:[['gem']]}:
        {kind:'vectors',owner:namespace,corpus:{vectors:[[1,0],[0,1],[0,0],[-1,0]]},queries:[[1,0],[0,1]]};
      const before=JSON.stringify(input),binding={scopeKey:'test-scope',revision:1};

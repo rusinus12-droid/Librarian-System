@@ -39,7 +39,9 @@ const evidence = result => {
     assert.equal(original.split(capture).length, 2, 'capture the real source-row input without replacing search results');
     const sourceFile = path.join(root, 'hayaku-test.js');
     fs.writeFileSync(sourceFile, original.replace(needle, "computeMode: globalThis.__aliasComputeMode || 'local',")
-      .replace(capture, 'globalThis.__aliasRuntimeRows=store._recallSourceRows||store.index;\n    '+capture));
+      .replace(capture, 'globalThis.__aliasRuntimeRows=store._recallSourceRows||store.index;\n    '+capture)
+      // Search offload is off by default; this parity check exercises the server path.
+      .replace('const offloads=kind=>offload[kind]===true;', 'const offloads=kind=>true;'));
     const history = [];
     for (let turn = 1; turn <= 12; turn++) {
       const summary = turn === 1 ? fact : `돌담 아래 벽돌이 놓였다. ${turn}`;

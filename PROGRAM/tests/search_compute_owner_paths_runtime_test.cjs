@@ -5,7 +5,10 @@ const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs')
 const {createHayakuRuntime,createValidPacket}=require('./fixtures/hayaku_runtime_harness.cjs');
 const {createLibraVmHarness}=require('./fixtures/libra_vm_harness.cjs');
 const plain=v=>JSON.parse(JSON.stringify(v));
-const policySource=source=>source.replace("computeMode: serverBacked ? 'prefer_server' : 'local',","computeMode: globalThis.__searchTestMode || 'local',");
+// Search offload is off by default (measured slower on the loopback server); the remote
+// path stays covered by forcing it through __searchTestOffload.
+const policySource=source=>source.replace("computeMode: serverBacked ? 'prefer_server' : 'local',","computeMode: globalThis.__searchTestMode || 'local',")
+ .replace("const offloads=kind=>offload[kind]===true;","const offloads=kind=>(globalThis.__searchTestOffload||offload)[kind]===true;");
 (async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'search-owner-paths-'));assert.equal(path.dirname(dir),path.resolve(os.tmpdir()));
  const app=createMemorySuiteServer({host:'127.0.0.1',port:0,dataDir:dir,autoBackup:false,computeWorkers:2});
@@ -32,7 +35,10 @@ const policySource=source=>source.replace("computeMode: serverBacked ? 'prefer_s
      const nonHash={...settings,embeddingProvider:'openai',embeddingModel:'text-embedding-test',contextualRecall:true};
      const realRows=rows.map(r=>({...r,provider:'openai',model:'text-embedding-test',embeddingProfileId:f.api._test.embeddingProfileId(nonHash,64,'openai','text-embedding-test')}));
      f.context.__searchTestMode='local';const a=await f.api._test.generateRecallCandidateArms({records:realRows,queryText:'a',queryVector:query,settings:nonHash,context:{queryProvider:'openai',queryModel:'text-embedding-test'}});
-     const count=calls.length;f.context.__searchTestMode='prefer_server';
+     f.context.__searchTestMode='prefer_server';const unforced=calls.length;
+     assert.deepEqual(plain(await f.api._test.generateRecallCandidateArms({records:realRows,queryText:'a',queryVector:query,settings:nonHash,context:{queryProvider:'openai',queryModel:'text-embedding-test'}})),plain(a));
+     assert.equal(calls.length,unforced,'vectors stay local by default in prefer_server');passed++;
+     f.context.__searchTestOffload={vectors:true,lexical:true};const count=calls.length;
      const b=await f.api._test.generateRecallCandidateArms({records:realRows,queryText:'a',queryVector:query,settings:nonHash,context:{queryProvider:'openai',queryModel:'text-embedding-test'}});
      assert(a.dense.length>0,"nonhash fixture must produce dense candidates");assert.deepEqual(plain(b),plain(a));assert(calls.length>count);passed++;
      afterCompute=()=>{f.currentChat.message=[{role:'user',data:'changed while searching',chatId:'changed'}];f.currentChat.messages=f.currentChat.message;afterCompute=null;};
@@ -47,6 +53,9 @@ const policySource=source=>source.replace("computeMode: serverBacked ? 'prefer_s
      const scope=await t.currentChatScope(),snapshot=t.authoritativeChatSnapshot(scope.chatMessages,scope),owner={scope,snapshot,worldline:t.authoritativeLedgerFromSnapshot(snapshot,scope).worldline};
      const local=await t.searchIndexCompositeRecall(store,'Alice',s,owner);
      const before=JSON.stringify(store._recallSourceRows);h.context.__searchTestMode='prefer_server';
+     const unforced=calls.length;assert.deepEqual(plain(await t.searchIndexCompositeRecall(store,'Alice',s,owner)),plain(local));
+     assert.equal(calls.length,unforced,'lexical stays local by default in prefer_server');passed++;
+     h.context.__searchTestOffload={vectors:true,lexical:true};
      const remote=await t.searchIndexCompositeRecall(store,'Alice',s,owner);
      assert.deepEqual(plain(remote),plain(local));assert.equal(JSON.stringify(store._recallSourceRows),before);
      assert(calls.some(c=>c.operation==='hayaku.memory-search.v1'));passed++;

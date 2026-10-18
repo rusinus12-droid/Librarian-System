@@ -2,6 +2,12 @@
 module.exports = function createMemorySuiteSearchClient(options) {
   const run=createMemorySuiteSearchKernel(), operation=options.namespace+'.memory-search.v1';
   const corpora=new Map(); let retainedBytes=0, disposed=false;
+  // The compute server is loopback-only, so it shares this device's CPU. Measured
+  // (docs/COMPUTE_SDK_ARRANGEMENT_20261017.md): cosine over 3000 vectors is 22 ms locally
+  // and 2.8 s through the server; HAYAKU's warm local lexical index is 14 ms against
+  // 480-575 ms remote. Neither kind is offloaded unless the owner opts in.
+  const offload={vectors:false,lexical:false,...(options.offload||{})};
+  const offloads=kind=>offload[kind]===true;
   const validate=(result,ctx)=>{
     const input=ctx.input, corpus=input.corpus;
     if(!corpus||result?.kind!==input.kind)return false;
@@ -22,7 +28,7 @@ module.exports = function createMemorySuiteSearchClient(options) {
     if(disposed)throw Error('search_client_disposed');
     const policy=await options.storage.getScopeExecutionPolicy(scope,{force:false});
     if(disposed)throw Error('search_client_disposed');
-    if(policy.computeMode==='local')return run(input);
+    if(policy.computeMode==='local'||!offloads(input.kind))return run(input);
     // Keep the full immutable payload for local fallback. A reference is only a
     // transport optimization; it never selects or authorizes another snapshot.
     const full=JSON.parse(JSON.stringify(input)), serialized=JSON.stringify(full.corpus);
@@ -44,6 +50,7 @@ module.exports = function createMemorySuiteSearchClient(options) {
   const vectors=async(vectors,queries,scope,binding={},validateBinding=null)=>{
     const unique=[...new Set(vectors.filter(Array.isArray))], qs=[...new Set(queries.filter(q=>Array.isArray(q)&&q.length))];
     if([...unique,...qs].some(vector=>vector.some(value=>typeof value!=='number'||!Number.isFinite(value))))throw Error('search_vector_non_finite');
+    if(!offloads('vectors'))return (query,vector,fallback)=>fallback(query,vector);
     const started=Date.now();
     const scores=new Map();let offset=0;
     while(offset<unique.length&&qs.length){
@@ -62,5 +69,5 @@ module.exports = function createMemorySuiteSearchClient(options) {
 
     return (query,vector,fallback)=>scores.get(vector)?.get(query)??fallback(query,vector);
   };
-  return {execute,vectors,status:bridge.status,dispose:async()=>{disposed=true;corpora.clear();retainedBytes=0;await bridge.dispose();}};
+  return {execute,vectors,offloads,status:bridge.status,dispose:async()=>{disposed=true;corpora.clear();retainedBytes=0;await bridge.dispose();}};
 };
