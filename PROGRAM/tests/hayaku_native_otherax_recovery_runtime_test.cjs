@@ -96,7 +96,9 @@ const assertOtherAxCalls = runtime => {
     const failure = await failureRuntime.hayaku.recovery.repairNow({ reason: 'runtime_failure_test' });
     assert.equal(failure.ok, false);
     assert.equal(failure.awaitingUserReview, false, 'a new validation failure is not a retired review workflow');
-    assert.ok(failure.failureId);
+    assert.equal(failure.failureId, '', 'default diagnostics do not persist full failed responses');
+    const summaries = await failureRuntime.hayaku.recovery.failedAnalysis.summaries();
+    assert.ok(summaries.some(row => row.turn === 2 && row.physicalCalls === 1), 'a source-free failure summary retains the observed call count');
     assert.equal(failureRuntime.llmCalls.length, 1);
     assertOtherAxCalls(failureRuntime);
 

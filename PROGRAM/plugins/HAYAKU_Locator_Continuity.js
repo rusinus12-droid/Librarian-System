@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.0.153
-//@version 3.0.153
+//@display-name HAYAKU · Locator Continuity v3.0.154
+//@version 3.0.154
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.0.153';
+  const PLUGIN_VERSION = '3.0.154';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -43392,6 +43392,18 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       || { api: null, source: 'unavailable' };
   };
   const nativeLlmApi = () => nativeLlmApiResolution().api;
+  const nativeLlmResponseCandidates = response => [
+    response?.content,
+    response?.text,
+    response?.result,
+    response?.response,
+    response?.output_text,
+    response?.outputText,
+    response?.message?.content,
+    response?.data?.content,
+    response?.choices?.[0]?.message?.content,
+    response?.candidates?.[0]?.content?.parts?.filter?.(part=>part?.thought!==true)?.map?.(part => part?.text).filter(Boolean).join('\n')
+  ];
   const nativeLlmResponseText = response => {
     if (typeof response === 'string') return response;
     if (!response) return '';
@@ -43406,18 +43418,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       } catch (__) {}
       return '';
     }
-    const direct = [
-      response.content,
-      response.text,
-      response.result,
-      response.response,
-      response.output_text,
-      response.outputText,
-      response.message?.content,
-      response.data?.content,
-      response.choices?.[0]?.message?.content,
-      response.candidates?.[0]?.content?.parts?.filter?.(part=>part?.thought!==true)?.map?.(part => part?.text).filter(Boolean).join('\n')
-    ];
+    const direct = nativeLlmResponseCandidates(response);
     for (const value of direct) {
       if (typeof value === 'string' && value.trim()) return value;
       if (Array.isArray(value)) {
@@ -43562,7 +43563,17 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           throw error;
         }
         if (Memory.nativeRecovery.manualBatchDiagnostic?.jobId === jobId) setNativeManualRepairPhase('response_validation');
-        if(typeof response?.getReader==='function')await MemorySuiteExecutionContract.drainUnverifiedStream(response);
+        // A provider stream can be wrapped in result, even beside a success or
+        // failure string. Drain all unique streams before releasing the queue.
+        const streams=[...new Set([response,...nativeLlmResponseCandidates(response)].filter(value=>value&&typeof value.getReader==='function'))];
+        if(streams.length){
+          const drained=await Promise.allSettled(streams.map(stream=>MemorySuiteExecutionContract.drainUnverifiedStream(stream)));
+          const failure=drained.find(result=>result.status==='rejected')?.reason;
+          const error=failure&&typeof failure==='object'?failure
+            :new MemorySuiteExecutionContract.ContractError('UNVERIFIED_STREAM_ROUTE','Host stream protocol is not verified.');
+          try{error.hayakuRunLlmSubmitted=true;error.responseMetadata=nativeLlmResponseMetadata(response);}catch(_){}
+          throw error;
+        }
         const content = nativeLlmResponseText(response);
         const responseMetadata = nativeLlmResponseMetadata(response);
         const completionEnvelope=MemorySuiteExecutionContract.completion({content,...responseMetadata,reasoningOnly:!!response?.reasoning_content});

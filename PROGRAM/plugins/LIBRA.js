@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.170
-//@version 2.3.170
+//@display-name LIBRA v2.3.171
+//@version 2.3.171
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1558,7 +1558,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.170';
+  const PLUGIN_VERSION = '2.3.171';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -22889,6 +22889,27 @@ function summarizeAgentCbsTag(rawContent) {
 
   const risuRunLlmResponseText = async response => {
     if (typeof response === 'string') return response;
+    const candidates = [
+      response?.content,
+      response?.text,
+      response?.result,
+      response?.response,
+      response?.output_text,
+      response?.message?.content,
+      response?.choices?.[0]?.message?.content,
+      response?.choices?.[0]?.text,
+      response?.candidates?.[0]?.content?.parts?.map(part => part?.text || '').join('')
+    ];
+    // RisuAI wraps provider streams in result. Inspect every supported field
+    // before accepting text or a failure, and hold the physical queue until all
+    // distinct streams settle. Unverified content is never accumulated/adopted.
+    const streams = [...new Set([response, ...candidates].filter(value => value && typeof value.getReader === 'function'))];
+    if (streams.length) {
+      const drained = await Promise.allSettled(streams.map(collectRisuRunLlmStream));
+      const failure = drained.find(result => result.status === 'rejected')?.reason;
+      throw failure && typeof failure === 'object' ? failure
+        : new MemorySuiteExecutionContract.ContractError('UNVERIFIED_STREAM_ROUTE', 'Host stream protocol is not verified.');
+    }
     // RisuAI reports a generation failure as { type:'fail', result:'<error message>' } -- the
     // SAME field a success uses, distinguished only by `type`. Verified against the host source
     // (e.g. { type:'fail', result:'Vertex AI authentication information is missing...' }).
@@ -22902,20 +22923,7 @@ function summarizeAgentCbsTag(rawContent) {
       } catch (__) {}
       return '';
     }
-    if (response && typeof response.getReader === 'function') return await collectRisuRunLlmStream(response);
-    const candidates = [
-      response?.content,
-      response?.text,
-      response?.result,
-      response?.response,
-      response?.output_text,
-      response?.message?.content,
-      response?.choices?.[0]?.message?.content,
-      response?.choices?.[0]?.text,
-      response?.candidates?.[0]?.content?.parts?.map(part => part?.text || '').join('')
-    ];
     for (const candidate of candidates) {
-      if (candidate && typeof candidate.getReader === 'function') return await collectRisuRunLlmStream(candidate);
       const normalized = typeof candidate === 'string' ? candidate : '';
       if (normalized.trim()) return normalized;
     }
