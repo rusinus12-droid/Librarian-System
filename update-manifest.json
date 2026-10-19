@@ -1,10 +1,10 @@
 {
   "schema": "librarian.update-manifest.v1",
   "repository": "rusinus12-droid/Librarian-System",
-  "version": "0.3.71",
-  "tag": "v0.3.71",
+  "version": "0.4.1",
+  "tag": "v0.4.1",
   "channel": "stable",
-  "assetName": "Librarian-System-0.3.71.zip",
+  "assetName": "Librarian-System-0.4.1.zip",
   "updatePolicy": "migration_required",
   "minimumSourceVersion": "0.3.51",
   "compatibility": {
@@ -16,15 +16,15 @@
     "releaseArchiveContract": 1
   },
   "components": {
-    "backend": "0.3.71",
-    "libra": "2.3.149",
-    "hayaku": "3.0.138",
-    "flashback": "1.0.101",
-    "lia": "0.26.83",
-    "retrace": "1.9.84",
-    "gradia": "0.25.83",
-    "storageSdk": "1.8.25",
-    "computeSdk": "0.3.6"
+    "backend": "0.4.1",
+    "libra": "2.3.175",
+    "hayaku": "3.0.155",
+    "flashback": "1.0.120",
+    "lia": "0.26.88",
+    "retrace": "1.9.86",
+    "gradia": "0.25.91",
+    "storageSdk": "1.8.27",
+    "computeSdk": "0.3.8"
   },
   "layout": {
     "program": "PROGRAM",

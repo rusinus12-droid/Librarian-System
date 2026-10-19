@@ -37,11 +37,29 @@ function usage() {
   ].join('\n'));
 }
 
+function resolveConfiguredUrl(dataDir) {
+  try {
+    const configPath = path.join(path.resolve(dataDir || DEFAULT_DATA_DIR), 'config', 'server-config.json');
+    if (!fs.existsSync(configPath)) return DEFAULT_URL;
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const host = String(config?.host || '').trim().toLowerCase();
+    const port = Number(config?.port);
+    if (['127.0.0.1', 'localhost', '::1'].includes(host) && Number.isInteger(port) && port >= 1024 && port <= 65535) {
+      return `http://${host === '::1' ? '[::1]' : host}:${port}`;
+    }
+  } catch (_) {}
+  return DEFAULT_URL;
+}
+
 function parse(argv = process.argv.slice(2)) {
-  const result = { command: String(argv[0] || 'status'), args: [], url: DEFAULT_URL, dataDir: DEFAULT_DATA_DIR, yes: false, timeoutMs: 0 };
+  const result = { command: String(argv[0] || 'status'), args: [], url: '', dataDir: DEFAULT_DATA_DIR, yes: false, timeoutMs: 0 };
+  let explicitUrl = false;
   for (let i = 1; i < argv.length; i += 1) {
     if (argv[i] === '--yes') result.yes = true;
-    else if (argv[i] === '--url') result.url = String(argv[++i] || DEFAULT_URL).replace(/\/+$/, '');
+    else if (argv[i] === '--url') {
+      explicitUrl = true;
+      result.url = String(argv[++i] || DEFAULT_URL).replace(/\/+$/, '');
+    }
     else if (argv[i] === '--data-dir') result.dataDir = path.resolve(argv[++i] || DEFAULT_DATA_DIR);
     else if (argv[i] === '--timeout-ms') {
       const value = Number(argv[++i]);
@@ -50,6 +68,7 @@ function parse(argv = process.argv.slice(2)) {
     }
     else result.args.push(String(argv[i] || ''));
   }
+  if (!explicitUrl) result.url = resolveConfiguredUrl(result.dataDir);
   return result;
 }
 

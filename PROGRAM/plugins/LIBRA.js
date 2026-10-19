@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.174
-//@version 2.3.174
+//@display-name LIBRA v2.3.175
+//@version 2.3.175
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1558,7 +1558,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.174';
+  const PLUGIN_VERSION = '2.3.175';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -34155,6 +34155,20 @@ function createLibraReadonlySourceContext(owner) {
           }
           return mode === 'mirror' ? await resources.withValue(entry.local,()=>resources.withValue(raw,consume)) : await resources.withValue(raw,consume);
         },
+        async readRaw(storageKey){
+          const cached = entries.has(storageKey);
+          if(!cached)entries.set(storageKey,physical(storageKey));
+          const entry = await entries.get(storageKey);
+          const raw = mode === 'plugin_only' ? entry.local : entry.remote?.value??null;
+          if(cached && resources){
+            if(mode === 'mirror')await resources.read(async()=>entry.local);
+            await resources.read(async()=>raw);
+          }
+          const localExists = entry.local !== null && entry.local !== undefined && entry.local !== '';
+          const remoteExists = entry.remote?.exists === true && entry.remote.tombstone !== true;
+          if(mode === 'mirror' && localExists !== remoteExists)throw new Error(`LIBRA_VERIFIED_STORAGE_COPY_MISMATCH:${storageKey}`);
+          return mode === 'plugin_only' ? (localExists ? entry.local : null) : (remoteExists ? entry.remote.value : null);
+        },
         async assertCurrent(){
           if(mode !== string((await MemorySuiteStorageBridge.getScopeMode(scope))?.mode || 'plugin_only')
             || mode !== 'plugin_only' && binding !== stableReferenceJson(await MemorySuiteStorageBridge.captureServerBinding()))throw new Error('LIBRA_GRAPH_READER_ROUTE_CHANGED');
@@ -34172,14 +34186,8 @@ function createLibraReadonlySourceContext(owner) {
               if(mode !== 'plugin_only' && resources)for(const _ of part)reservations.push(resources.reserveRead('source'));
               const rows = mode === 'plugin_only' ? null : await MemorySuiteStorageBridge.serverGetMany('plugin',part);
               if(rows)state.memoryNetworkIO.ownerReads += part.length;
-              // A valid owner record can exceed the paged endpoint's envelope
-              // allowance while fitting the owner's payload budget. Read it
-              // individually under the reservation already held for that key.
-              if(rows)for(const storageKey of part){
-                if(!asArray(rows.oversizedKeys).includes(storageKey))continue;
-                rows.values[storageKey] = await MemorySuiteStorageBridge.serverGet('plugin',storageKey);
-                state.memoryNetworkIO.ownerReads++;
-              }
+              // serverGetMany already resolves oversized keys individually.
+              // Keep the held reservations through validation of those bodies.
               if(rows && resources)retained=resources.retain(rows.values,'owner_read_frame_readback',2);
               for(const [index,storageKey] of part.entries()){
                 const before = await entries.get(storageKey);
@@ -70692,9 +70700,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         const sourceBodyDigests = {};
         if (collect) for (const storageKey of sourceKeys) {
           const mode = captured.summary.route.mode;
-          const load = () => mode === 'plugin_only' ? MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey) : MemorySuiteStorageBridge.serverGet('plugin',storageKey);
-          const raw = resources ? await resources.read(load,{ select: row => mode === 'plugin_only' ? row : row?.value ?? null }) : await load();
-          const value = mode === 'plugin_only' ? raw ?? null : raw?.exists === true && raw?.tombstone !== true ? raw.value : null;
+          const value = readFrame.owns(storageKey) ? await readFrame.readRaw(storageKey) : await (async () => {
+            const load = () => mode === 'plugin_only' ? MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey) : MemorySuiteStorageBridge.serverGet('plugin',storageKey);
+            const raw = resources ? await resources.read(load,{ select: row => mode === 'plugin_only' ? row : row?.value ?? null }) : await load();
+            return mode === 'plugin_only' ? raw ?? null : raw?.exists === true && raw?.tombstone !== true ? raw.value : null;
+          })();
           sourceBodyDigests[storageKey] = memoryGraphSourceFingerprint(stableReferenceJson(value));
         }
         for (const item of readbacks) if (stableReferenceJson(await item.load()) !== item.body) throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
@@ -71116,6 +71126,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           const reusedKeySet = new Set(asArray(reusedOnlySourceKeys));
           const prevDigests = asObject(previousOwnerProof?.sourceBodyDigests);
           const sourceBodyDigests = {};
+          const pendingSourceKeys = [];
           for (const storageKey of asArray(corpusCollected?.sourceKeys)) {
             if (typeof storageKey !== 'string' || !storageKey.startsWith(PREFIX + ':scope:')) continue;
             if (reusedKeySet.has(storageKey) && typeof prevDigests[storageKey] === 'string' && /^[a-f0-9]{64}$/.test(prevDigests[storageKey])) {
@@ -71124,8 +71135,37 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             }
             const baseline = corpusCollected?.sourceBodyDigests?.[storageKey];
             if (typeof baseline !== 'string' || !/^[a-f0-9]{64}$/.test(baseline)) throw new Error('LIBRA_GRAPH_CORPUS_SOURCE_PROOF_UNBOUND');
-            if (memoryGraphSourceFingerprint(stableReferenceJson(await readRawOwnerSource(storageKey))) !== baseline) throw new Error('LIBRA_GRAPH_CORPUS_SOURCE_BODY_CHANGED');
-            sourceBodyDigests[storageKey] = baseline;
+            if (mode === 'plugin_only') {
+              if (memoryGraphSourceFingerprint(stableReferenceJson(await readRawOwnerSource(storageKey))) !== baseline) throw new Error('LIBRA_GRAPH_CORPUS_SOURCE_BODY_CHANGED');
+              sourceBodyDigests[storageKey] = baseline;
+            } else {
+              pendingSourceKeys.push([storageKey, baseline]);
+            }
+          }
+          for (let offset = 0; offset < pendingSourceKeys.length;) {
+            await assertRoute();
+            const access = resources?.inspect();
+            const batchSize = access ? Math.max(1, Math.min(4,
+              Math.floor((access.pool.limits.ioBytes - access.pool.ioBytes) / access.limits.maxValueBytes),
+              Math.floor((access.limits.maxSourceBytes - access.sourceBytes) / access.limits.maxValueBytes),
+              access.pool.limits.reads - access.pool.reads)) : 4;
+            const part = pendingSourceKeys.slice(offset, offset + batchSize), partKeys = part.map(([k]) => k), reservations = [];
+            offset += part.length;
+            let retained;
+            try {
+              if (resources) for (const _ of partKeys) reservations.push(resources.reserveRead('source'));
+              const rows = await MemorySuiteStorageBridge.serverGetMany('plugin', partKeys);
+              state.memoryNetworkIO.ownerReads += partKeys.length;
+              if (rows && resources) retained = resources.retain(rows.values, 'corpus_source_proof_readback', 2);
+              await assertRoute();
+              for (const [index, [storageKey, baseline]] of part.entries()) {
+                const current = rows?.values?.[storageKey];
+                reservations[index]?.accept(current?.value ?? null); reservations[index]?.release();
+                const value = current?.exists === true && current?.tombstone !== true ? current.value : null;
+                if (memoryGraphSourceFingerprint(stableReferenceJson(value)) !== baseline) throw new Error('LIBRA_GRAPH_CORPUS_SOURCE_BODY_CHANGED');
+                sourceBodyDigests[storageKey] = baseline;
+              }
+            } finally { retained?.release(); for (const reservation of reservations) reservation.release(); }
           }
           const recordDependencyKeys = {};
           for (const wp of asArray(windowProofs)) {

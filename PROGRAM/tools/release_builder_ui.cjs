@@ -27,7 +27,10 @@ async function main(argv=process.argv.slice(2)){
     }
   }finally{rl.close();}
   const text=String(answer||'').trim();
-  let options={profile};
+  const offline=argv.includes('--offline')||argv.includes('--offline-candidate');
+  const qualIdx=argv.indexOf('--qualification');
+  const qualification=offline?'offline_candidate':(qualIdx>=0?argv[qualIdx+1]:(process.env.LIBRARIAN_PACKAGE_QUALIFICATION||undefined));
+  let options={profile,...(qualification?{qualification}:{})};
   let target=current;
   if(profile==='source'&&!text){target=current;}
   else {target=validateTargetVersion(current,text||(profile==='source'?current:suggested));options.version=target;}

@@ -27,7 +27,7 @@ flowchart TB
     subgraph Host["RisuAI 클라이언트 (Browser / WebView)"]
         direction TB
         subgraph Owners["기억 소유자 플러그인 (Storage Owners)"]
-            LIBRA["LIBRA v2.3.174<br/>(정본/Micro 기억 · 상태 투영 · 그래프 회상)"]
+            LIBRA["LIBRA v2.3.175<br/>(정본/Micro 기억 · 상태 투영 · 그래프 회상)"]
             FB["Flashback v1.0.120<br/>(에피소드 기억 · 채팅 어텐션)"]
             HAYAKU["HAYAKU v3.0.155<br/>(장소/인물 연속성 · 위치 추적)"]
             LIA["LIA v0.26.88<br/>(페르소나 링커 · 로어북 재순위)"]
@@ -56,7 +56,7 @@ flowchart TB
 | 컴포넌트 | 버전 | 구분 | 주요 역할 |
 | :--- | :---: | :---: | :--- |
 | **Librarian System Server** | `0.4.1` | 로컬 서버 | SQLite 기반 KV/그래프 저장소, 스코프 카탈로그, 자동 백업 및 무결성 검증 서버 |
-| **LIBRA** | `2.3.174` | 플러그인 (Owner) | 5턴 정본(Canonical) + 매 턴 Micro 기억 추출, 현재 상태(State Head) 투영, 시맨틱/어휘 하이브리드 회상 |
+| **LIBRA** | `2.3.175` | 플러그인 (Owner) | 5턴 정본(Canonical) + 매 턴 Micro 기억 추출, 현재 상태(State Head) 투영, 시맨틱/어휘 하이브리드 회상 |
 | **Flashback Memory** | `1.0.120` | 플러그인 (Owner) | 대화 맥락 장기 에피소드 기억, 벡터/키워드 검색, 제로터치 채팅 어텐션 버튼 |
 | **HAYAKU Locator Continuity** | `3.0.155` | 플러그인 (Owner) | 장면 전환·장소 이동·인물 배치 연속성 추적 및 빠른 위치 컨텍스트 복원 |
 | **LIA Persona Linker** | `0.26.88` | 플러그인 (Owner) | 페르소나 상태 델타 추적 및 월드 로어북(Lorebook) BM25F 재순위화 |
