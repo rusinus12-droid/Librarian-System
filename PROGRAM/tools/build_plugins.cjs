@@ -107,6 +107,15 @@ const npmExecPackageRoots = packageName => {
       }
     } catch (_) {}
   }
+  if (process.env.GRADIA_TOOLCHAIN_ROOT) {
+    addPackageRoot(path.join(process.env.GRADIA_TOOLCHAIN_ROOT, packageName));
+  }
+  if (!packages.size) {
+    try {
+      const support = require('./ensure_build_support.cjs').ensureBuildSupportDependencies();
+      if (support?.modulesDir) addPackageRoot(path.join(support.modulesDir, packageName));
+    } catch (_) {}
+  }
   return [...packages.values()]
     .sort((left, right) => packageVersionCompare(right.version, left.version))
     .map(row => row.root);

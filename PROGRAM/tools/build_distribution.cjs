@@ -33,6 +33,7 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'release_metadata_test.cjs',
   'release_builder_version_input_test.cjs',
   'release_builder_profiles_test.cjs',
+  'build_support_cache_runtime_test.cjs',
   'manifest_minified_declaration_binding_test.cjs',
   'libra_canonical_reasoning_off_length_runtime_test.cjs',
   'libra_recovery_result_gui_runtime_test.cjs',
@@ -580,7 +581,17 @@ function runReleaseSmokeFromSource() {
   const updaterRoot=path.join(packageRoot,'UPDATER');
   const updaterSnapshot=snapshotAllowlistedTree(updaterRoot,shouldCopyUpdater);
   runNode(path.join(programDir,'tools','check_sdk_sync.cjs'),[],programDir);
-  const smoke=runNodeProcess(['--test',...RELEASE_SMOKE_TESTS.map(name=>path.join(programDir,'tests',name))],programDir,{timeoutMs:240000});
+  const smokeEnv = {};
+  try {
+    const { ensureBuildSupportDependencies } = require('./ensure_build_support.cjs');
+    const support = ensureBuildSupportDependencies({ programDir });
+    if (support?.modulesDir) {
+      smokeEnv.GRADIA_TOOLCHAIN_ROOT = support.modulesDir;
+      const current = process.env.NODE_PATH || '';
+      smokeEnv.NODE_PATH = support.modulesDir + (current ? path.delimiter + current : '');
+    }
+  } catch (_) {}
+  const smoke=runNodeProcess(['--test',...RELEASE_SMOKE_TESTS.map(name=>path.join(programDir,'tests',name))],programDir,{timeoutMs:300000,env:smokeEnv});
   assertTreeSourceUnchanged(programDir,programSnapshot,shouldCopySourceProgram,'program_source_after_smoke');
   assertTreeSourceUnchanged(updaterRoot,updaterSnapshot,shouldCopyUpdater,'updater_source_after_smoke');
   return smoke;
@@ -648,6 +659,12 @@ function buildDistribution(options = {}) {
   const temporaryRoot=fs.mkdtempSync(path.join(outputDir,'.librarian-build-')),stagedRoot=path.join(temporaryRoot,topLevelName);
   let success=false,phase='source_preflight';
   try{
+    if (!offline) {
+      try {
+        const { ensureBuildSupportDependencies } = require('./ensure_build_support.cjs');
+        ensureBuildSupportDependencies({ programDir });
+      } catch (_) {}
+    }
     preflightSourceReleaseGuides(packageRoot);
     if (isSource) { verifySourceFixtureBytes(programDir); }
     const declarationBindings=captureManifestDeclarationBindings();
@@ -713,7 +730,7 @@ function buildDistribution(options = {}) {
     const stagedProgram=path.join(stagedRoot,'PROGRAM');
     phase='sdk_and_syntax';
     const syntaxTargets=['server/server.cjs','tools/platform_launcher.cjs','tools/zip_writer.cjs','tools/runtime_release_validation.cjs'];
-    if(isSource)syntaxTargets.push('tools/build_distribution.cjs','tools/release_builder_ui.cjs','tools/release_version.cjs');
+    if(isSource)syntaxTargets.push('tools/build_distribution.cjs','tools/release_builder_ui.cjs','tools/release_version.cjs','tools/ensure_build_support.cjs');
     for(const relative of syntaxTargets){const file=path.join(stagedProgram,...relative.split('/'));if(fs.existsSync(file))runNodeProcess(['--check',file],stagedProgram);}
     for(const file of listFiles(path.join(stagedProgram,'plugins')).filter(file=>/\.js$/i.test(file)))runNodeProcess(['--check',file],stagedProgram);
     for(const file of listFiles(path.join(stagedRoot,'UPDATER')).filter(file=>/\.cjs$/i.test(file)))runNodeProcess(['--check',file],stagedProgram);
@@ -777,12 +794,14 @@ const VERSION_TRANSACTION_RELATIVE_FILES = Object.freeze([
   'PROGRAM/처음_읽어주세요.txt',
   'PROGRAM/PACKAGE_CONTENTS.txt',
   'PROGRAM/program-manifest.json',
+  'PROGRAM/docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json',
+  'update-manifest.json',
   'SHA256SUMS.txt'
 ]);
 
 function snapshotVersionTransactionFiles(root = packageRoot) {
   const base = path.resolve(root);
-  return VERSION_TRANSACTION_RELATIVE_FILES.map(relative => {
+  return VERSION_TRANSACTION_RELATIVE_FILES.filter(relative => fs.existsSync(path.join(base, ...relative.split('/')))).map(relative => {
     const absolute = path.join(base, ...relative.split('/'));
     return { relative, absolute, bytes: fs.readFileSync(absolute), mode: fs.statSync(absolute).mode };
   });
@@ -795,9 +814,14 @@ function restoreVersionTransactionFiles(snapshot) {
   }
 }
 
-function refreshSourceReleaseMetadata() {
+function refreshSourceReleaseMetadata(qualification) {
   syncReleaseGuides(packageRoot);
-  runNode(path.join(programDir, 'tools', 'update_manifest.cjs'), [], programDir);
+  if (fs.existsSync(path.join(packageRoot, 'update-manifest.json'))) {
+    writeUpdateManifest(packageRoot, { qualification, overwrite: true });
+  }
+  runNode(path.join(programDir, 'tools', 'update_manifest.cjs'), [], programDir, {
+    env: { LIBRARIAN_PACKAGE_QUALIFICATION: qualification }
+  });
   runNode(path.join(programDir, 'tools', 'update_checksums.cjs'), [], programDir);
 }
 
@@ -811,6 +835,8 @@ function removeBuildOutputs(result) {
 function buildRelease(options = {}) {
   const profile = options.profile || 'release';
   if (!['release', 'source', 'all'].includes(profile)) throw new Error(`distribution_profile_invalid:${profile}`);
+  const qualification = options.qualification || process.env.LIBRARIAN_PACKAGE_QUALIFICATION || 'publication_gate';
+  if (!['publication_gate', 'offline_candidate'].includes(qualification)) throw new Error(`distribution_qualification_invalid:${qualification}`);
   const currentVersion = fs.readFileSync(path.join(programDir, 'VERSION.txt'), 'utf8').trim();
   const snapshot = options.version ? snapshotVersionTransactionFiles(packageRoot) : null;
   const completed = [];
@@ -819,14 +845,14 @@ function buildRelease(options = {}) {
     if (options.version) {
       const targetVersion = validateTargetVersion(currentVersion, options.version);
       versionChange = applyReleaseVersion(packageRoot, targetVersion);
-      refreshSourceReleaseMetadata();
+      refreshSourceReleaseMetadata(qualification);
       const metadata = readReleaseMetadata(programDir);
       if (metadata.packageVersion !== targetVersion) throw new Error('distribution_version_refresh_mismatch');
     }
     const profiles = profile === 'all' ? ['release', 'source'] : [profile];
     const results = {};
     for (const selected of profiles) {
-      const result = buildDistribution({ outputDir: options.outputDir, profile: selected, qualification: options.qualification });
+      const result = buildDistribution({ outputDir: options.outputDir, profile: selected, qualification });
       result.versionChange = versionChange;
       results[selected] = result;
       completed.push(result);

@@ -154,7 +154,8 @@ function writeUpdateManifest(packageRoot, options={}) {
   const manifest = buildUpdateManifest(path.join(root, 'PROGRAM'));
   if(options.qualification==='offline_candidate')Object.assign(manifest,{qualification:'offline_candidate',status:'offline_candidate',updaterEligible:false,publicationReady:false});
   const output = path.join(root, 'update-manifest.json');
-  fs.writeFileSync(output, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+  const flag = options.flag || (options.overwrite ? 'w' : 'wx');
+  fs.writeFileSync(output, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: 'utf8', flag });
   return manifest;
 }
 

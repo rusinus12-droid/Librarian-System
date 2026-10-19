@@ -12,6 +12,9 @@ if [ -z "$NODE_EXE" ]; then
   printf '%s\n' '[Librarian System] Node.js 22.13.0 이상을 찾지 못했습니다.' >&2
   exit 22
 fi
+if [ "$#" -gt 0 ]; then
+  exec "$NODE_EXE" --no-warnings "$PROGRAM_DIR/tools/portable_export_stopped.cjs" "$@"
+fi
 printf '기존 DATA 폴더 전체 경로: '
 IFS= read -r OLD_DATA || exit 2
 OLD_DATA=$(printf '%s' "$OLD_DATA" | sed "s/^['\"]//;s/['\"]$//")
