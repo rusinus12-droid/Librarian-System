@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-19T14:58:20.658Z",
+  "generatedAt": "2026-10-19T15:18:51.489Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -4566,6 +4566,10 @@
     "tests/build_plugins_string_value_pool_test.cjs": {
       "sha256": "fd8436fc4da70fc634596e60c052f0e9a56f6b4bec491478ef2096d087535742",
       "bytes": 9699
+    },
+    "tests/build_support_cache_runtime_test.cjs": {
+      "sha256": "c93e2ebefdc0259ecd5d1d4ed9da3fb60f99b19c006575d5d13a4b215ba6eaab",
+      "bytes": 5047
     },
     "tests/capture_backend_compatibility_contract_test.cjs": {
       "sha256": "a3498ea4215dd05819f20beb65a2239cc2a37a60e24ba964b9309b93adc5fbf9",
@@ -9415,6 +9419,10 @@
       "sha256": "a6ebe0083a9b72ecdcc807320f8f850c1b2eac62dbda0477df7d0e3a36332a3b",
       "bytes": 3265
     },
+    "tests/release_builder_qualification_runtime_test.cjs": {
+      "sha256": "c2f0d85de13cb9e5d7d20a3d3f37ba7bf84b3a5a4c3708c23527868635eabc96",
+      "bytes": 4141
+    },
     "tests/release_builder_source_fixture_closure_test.cjs": {
       "sha256": "acff90c8a5239dc496171a5dfc661c3a906adeecbe71fcfcf48f049e54f01a46",
       "bytes": 2938
@@ -10520,8 +10528,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "18340283f93248a0f1f068c21843cdf7adb97523e59001775317596d717d9a94",
-      "bytes": 52362
+      "sha256": "1b648a0f1c4371d26f92127d3ff919000eb374c156444c3d5823d030414524d5",
+      "bytes": 52590
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",
@@ -10562,6 +10570,10 @@
     "tools/css_computed_check.js": {
       "sha256": "1488e632c8a378689f1326e334706dfbc6e0d0b71d2c5e36e811be8883f25c5d",
       "bytes": 19989
+    },
+    "tools/ensure_build_support.cjs": {
+      "sha256": "1816d94848b4f42a65dfcf65972c651d1bd3ba2bcabb0549d7f8c336dd7d7eaa",
+      "bytes": 7212
     },
     "tools/evaluate_libra_unified_memory.cjs": {
       "sha256": "d1cd8be80d32ca71b25c042b7644ccaa293611ac15ac06780100ac72d677d017",

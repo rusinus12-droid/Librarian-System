@@ -33,6 +33,7 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'release_metadata_test.cjs',
   'release_builder_version_input_test.cjs',
   'release_builder_profiles_test.cjs',
+  'build_support_cache_runtime_test.cjs',
   'manifest_minified_declaration_binding_test.cjs',
   'libra_canonical_reasoning_off_length_runtime_test.cjs',
   'libra_recovery_result_gui_runtime_test.cjs',
@@ -813,14 +814,13 @@ function restoreVersionTransactionFiles(snapshot) {
   }
 }
 
-function refreshSourceReleaseMetadata() {
+function refreshSourceReleaseMetadata(qualification) {
   syncReleaseGuides(packageRoot);
-  const qual = process.env.LIBRARIAN_PACKAGE_QUALIFICATION || 'publication_gate';
   if (fs.existsSync(path.join(packageRoot, 'update-manifest.json'))) {
-    writeUpdateManifest(packageRoot, { qualification: qual, overwrite: true });
+    writeUpdateManifest(packageRoot, { qualification, overwrite: true });
   }
   runNode(path.join(programDir, 'tools', 'update_manifest.cjs'), [], programDir, {
-    env: { LIBRARIAN_PACKAGE_QUALIFICATION: qual }
+    env: { LIBRARIAN_PACKAGE_QUALIFICATION: qualification }
   });
   runNode(path.join(programDir, 'tools', 'update_checksums.cjs'), [], programDir);
 }
@@ -835,6 +835,8 @@ function removeBuildOutputs(result) {
 function buildRelease(options = {}) {
   const profile = options.profile || 'release';
   if (!['release', 'source', 'all'].includes(profile)) throw new Error(`distribution_profile_invalid:${profile}`);
+  const qualification = options.qualification || process.env.LIBRARIAN_PACKAGE_QUALIFICATION || 'publication_gate';
+  if (!['publication_gate', 'offline_candidate'].includes(qualification)) throw new Error(`distribution_qualification_invalid:${qualification}`);
   const currentVersion = fs.readFileSync(path.join(programDir, 'VERSION.txt'), 'utf8').trim();
   const snapshot = options.version ? snapshotVersionTransactionFiles(packageRoot) : null;
   const completed = [];
@@ -843,14 +845,14 @@ function buildRelease(options = {}) {
     if (options.version) {
       const targetVersion = validateTargetVersion(currentVersion, options.version);
       versionChange = applyReleaseVersion(packageRoot, targetVersion);
-      refreshSourceReleaseMetadata();
+      refreshSourceReleaseMetadata(qualification);
       const metadata = readReleaseMetadata(programDir);
       if (metadata.packageVersion !== targetVersion) throw new Error('distribution_version_refresh_mismatch');
     }
     const profiles = profile === 'all' ? ['release', 'source'] : [profile];
     const results = {};
     for (const selected of profiles) {
-      const result = buildDistribution({ outputDir: options.outputDir, profile: selected, qualification: options.qualification });
+      const result = buildDistribution({ outputDir: options.outputDir, profile: selected, qualification });
       result.versionChange = versionChange;
       results[selected] = result;
       completed.push(result);

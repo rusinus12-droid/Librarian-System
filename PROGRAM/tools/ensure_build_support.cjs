@@ -7,6 +7,7 @@ const cp = require('node:child_process');
 const crypto = require('node:crypto');
 
 let cachedModulesDir = null;
+const REQUIRED_MODULES = ['jsdom', 'acorn', 'terser', 'fake-indexeddb'];
 
 function npmCacheRoots() {
   const roots = new Set();
@@ -26,100 +27,124 @@ function npmCacheRoots() {
   return [...roots];
 }
 
-function findCacacheContentDir() {
-  for (const root of npmCacheRoots()) {
-    const contentDir = path.join(root, '_cacache', 'content-v2', 'sha512');
-    if (fs.existsSync(contentDir)) return contentDir;
-  }
-  return null;
+function findCacacheContentDirs() {
+  return npmCacheRoots().map(root => path.join(root, '_cacache', 'content-v2', 'sha512')).filter(dir => fs.existsSync(dir));
+}
+
+function modulesLoadable(modulesDir) {
+  try {
+    const entrypoints = REQUIRED_MODULES.map(name => require.resolve(name, { paths: [modulesDir] }));
+    // A fresh process also detects missing files hidden by Node's require cache.
+    const result = cp.spawnSync(process.execPath, ['--no-warnings', '-e',
+      `for (const entry of ${JSON.stringify(entrypoints)}) require(entry);`], { stdio: 'pipe', timeout: 30000 });
+    return result.status === 0;
+  } catch (_) { return false; }
+}
+
+function lockedTreeComplete(modulesDir, packages) {
+  try {
+    for (const [key, info] of packages) {
+      const metadata = JSON.parse(fs.readFileSync(path.join(modulesDir, key.slice('node_modules/'.length), 'package.json'), 'utf8'));
+      if (metadata.version !== info.version) return false;
+    }
+    return modulesLoadable(modulesDir);
+  } catch (_) { return false; }
 }
 
 function ensureBuildSupportDependencies(options = {}) {
   const programDir = options.programDir ? path.resolve(options.programDir) : path.resolve(__dirname, '..');
-  
-  // 1. Check if jsdom is already resolvable
-  if (process.env.GRADIA_TOOLCHAIN_ROOT && fs.existsSync(path.join(process.env.GRADIA_TOOLCHAIN_ROOT, 'jsdom', 'package.json'))) {
-    cachedModulesDir = path.resolve(process.env.GRADIA_TOOLCHAIN_ROOT);
-    return { modulesDir: cachedModulesDir, source: 'GRADIA_TOOLCHAIN_ROOT' };
+  const lockPath = path.join(programDir, 'build-support', 'package-lock.json');
+  const lockContent = fs.existsSync(lockPath) ? fs.readFileSync(lockPath) : null;
+  const packages = lockContent ? Object.entries(JSON.parse(lockContent.toString('utf8')).packages || {}).filter(([key]) => key) : [];
+  for (const [key] of packages) {
+    if (!key.startsWith('node_modules/') || key.includes('\\') || key.split('/').some(part => !part || part === '..')) {
+      throw new Error('build_support_lock_package_path_invalid');
+    }
+  }
+  const lockHash = lockContent ? crypto.createHash('sha256').update(lockContent).digest('hex').slice(0, 16) : null;
+  const cacheRoot = lockHash ? path.join(os.tmpdir(), `librarian-build-support-${lockHash}`) : null;
+  const complete = modulesDir => {
+    const relative = cacheRoot && path.relative(cacheRoot, path.resolve(modulesDir));
+    const managed = cacheRoot && (relative === '' || !relative.startsWith('..') && !path.isAbsolute(relative));
+    return managed ? lockedTreeComplete(modulesDir, packages) : modulesLoadable(modulesDir);
+  };
+  const activate = (modulesDir, source, extra = {}) => {
+    cachedModulesDir = path.resolve(modulesDir);
+    applyEnvironment(cachedModulesDir);
+    return { modulesDir: cachedModulesDir, source, ...extra };
+  };
+
+  if (process.env.GRADIA_TOOLCHAIN_ROOT && complete(process.env.GRADIA_TOOLCHAIN_ROOT)) {
+    return activate(process.env.GRADIA_TOOLCHAIN_ROOT, 'GRADIA_TOOLCHAIN_ROOT');
   }
   try {
     const direct = require.resolve('jsdom/package.json', { paths: [programDir, __dirname] });
-    cachedModulesDir = path.dirname(path.dirname(direct));
-    return { modulesDir: cachedModulesDir, source: 'existing_node_modules' };
+    const modulesDir = path.dirname(path.dirname(direct));
+    if (complete(modulesDir)) return activate(modulesDir, 'existing_node_modules');
   } catch (_) {}
 
-  if (cachedModulesDir && fs.existsSync(path.join(cachedModulesDir, 'jsdom', 'package.json'))) {
-    return { modulesDir: cachedModulesDir, source: 'cached' };
+  if (cachedModulesDir && complete(cachedModulesDir)) {
+    return activate(cachedModulesDir, 'cached');
   }
+  if (!cacheRoot || !packages.length) return null;
 
-  // 2. Locate package-lock.json in build-support
-  const lockPath = path.join(programDir, 'build-support', 'package-lock.json');
-  if (!fs.existsSync(lockPath)) return null;
-
-  const lockContent = fs.readFileSync(lockPath);
-  const lockHash = crypto.createHash('sha256').update(lockContent).digest('hex').slice(0, 16);
-  const targetModulesDir = path.join(os.tmpdir(), `librarian-build-support-${lockHash}`, 'node_modules');
-
-  // If already extracted, return it
-  if (fs.existsSync(path.join(targetModulesDir, 'jsdom', 'package.json')) &&
-      fs.existsSync(path.join(targetModulesDir, 'acorn', 'package.json')) &&
-      fs.existsSync(path.join(targetModulesDir, 'terser', 'package.json'))) {
-    cachedModulesDir = targetModulesDir;
-    applyEnvironment(targetModulesDir);
-    return { modulesDir: targetModulesDir, source: 'extracted_cache' };
-  }
-
-  // 3. Find cacache
-  const cacacheDir = findCacacheContentDir();
-  if (!cacacheDir) return null;
-
-  const lock = JSON.parse(lockContent.toString('utf8'));
-  const packages = lock.packages || {};
-
-  fs.mkdirSync(targetModulesDir, { recursive: true });
-
-  const tarCmd = process.platform === 'win32' ? (process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'tar.exe') : 'tar.exe') : '/usr/bin/tar';
-
-  let extractedCount = 0;
-  for (const [pkgKey, pkgInfo] of Object.entries(packages)) {
-    if (!pkgKey || !pkgKey.startsWith('node_modules/') || !pkgInfo.integrity) continue;
-    const relName = pkgKey.replace(/^node_modules\//, '');
-    const match = String(pkgInfo.integrity).match(/^sha512-(.+)$/);
-    if (!match) continue;
-
-    const hex = Buffer.from(match[1], 'base64').toString('hex');
-    const cacheFile = path.join(cacacheDir, hex.slice(0, 2), hex.slice(2, 4), hex.slice(4));
-    if (!fs.existsSync(cacheFile)) continue;
-
-    const destDir = path.join(targetModulesDir, relName);
-    if (fs.existsSync(path.join(destDir, 'package.json'))) {
-      extractedCount += 1;
-      continue;
-    }
-
-    fs.mkdirSync(destDir, { recursive: true });
-    const res = cp.spawnSync(tarCmd, ['-xzf', cacheFile, '-C', destDir, '--strip-components=1'], {
-      stdio: 'pipe',
-      timeout: 30000
-    });
-    if (res.status === 0) {
-      extractedCount += 1;
+  // Accept an older extraction only when its entire locked dependency tree works.
+  const legacyModulesDir = path.join(cacheRoot, 'node_modules');
+  if (lockedTreeComplete(legacyModulesDir, packages)) return activate(legacyModulesDir, 'extracted_cache');
+  if (fs.existsSync(cacheRoot)) {
+    for (const entry of fs.readdirSync(cacheRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !entry.name.startsWith('ready-')) continue;
+      const modulesDir = path.join(cacheRoot, entry.name, 'node_modules');
+      if (lockedTreeComplete(modulesDir, packages)) return activate(modulesDir, 'extracted_cache');
     }
   }
 
-  if (fs.existsSync(path.join(targetModulesDir, 'jsdom', 'package.json'))) {
-    cachedModulesDir = targetModulesDir;
-    applyEnvironment(targetModulesDir);
-    return { modulesDir: targetModulesDir, source: 'freshly_extracted', extractedCount };
+  // Check every tarball before extraction; missing or damaged entries cannot
+  // activate a partial toolchain or prevent a later retry with a complete cache.
+  const contentDirs = findCacacheContentDirs(), archives = [];
+  for (const [key, info] of packages) {
+    const match = String(info.integrity || '').match(/^sha512-([A-Za-z0-9+/]+={0,2})$/);
+    if (!match) return null;
+    const hash = Buffer.from(match[1], 'base64');
+    if (hash.length !== 64) return null;
+    const hex = hash.toString('hex');
+    let archive = null;
+    for (const dir of contentDirs) {
+      const file = path.join(dir, hex.slice(0, 2), hex.slice(2, 4), hex.slice(4));
+      try {
+        if (crypto.createHash('sha512').update(fs.readFileSync(file)).digest().equals(hash)) { archive = file; break; }
+      } catch (_) {}
+    }
+    if (!archive) return null;
+    archives.push([key, archive]);
   }
 
-  return null;
+  fs.mkdirSync(cacheRoot, { recursive: true });
+  const stagingRoot = fs.mkdtempSync(path.join(cacheRoot, '.extract-'));
+  let published = false;
+  try {
+    const modulesDir = path.join(stagingRoot, 'node_modules');
+    const tarCmd = process.platform === 'win32' ? (process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'tar.exe') : 'tar.exe') : 'tar';
+    for (const [key, archive] of archives) {
+      const destDir = path.join(stagingRoot, key);
+      fs.mkdirSync(destDir, { recursive: true });
+      const result = cp.spawnSync(tarCmd, ['-xzf', archive, '-C', destDir, '--strip-components=1'], { stdio: 'pipe', timeout: 30000 });
+      if (result.status !== 0) return null;
+    }
+    if (!lockedTreeComplete(modulesDir, packages)) return null;
+    // Only verified immutable directories are discoverable. Concurrent builders
+    // publish separate generations and never replace a directory in active use.
+    const readyRoot = path.join(cacheRoot, 'ready-' + path.basename(stagingRoot).slice('.extract-'.length));
+    fs.renameSync(stagingRoot, readyRoot);
+    published = true;
+    return activate(path.join(readyRoot, 'node_modules'), 'freshly_extracted', { extractedCount: archives.length });
+  } finally {
+    if (!published) fs.rmSync(stagingRoot, { recursive: true, force: true });
+  }
 }
 
 function applyEnvironment(modulesDir) {
-  if (!process.env.GRADIA_TOOLCHAIN_ROOT) {
-    process.env.GRADIA_TOOLCHAIN_ROOT = modulesDir;
-  }
+  process.env.GRADIA_TOOLCHAIN_ROOT = modulesDir;
   const currentPath = process.env.NODE_PATH || '';
   if (!currentPath.split(path.delimiter).includes(modulesDir)) {
     process.env.NODE_PATH = modulesDir + (currentPath ? path.delimiter + currentPath : '');
