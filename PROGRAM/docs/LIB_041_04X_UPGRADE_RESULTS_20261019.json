@@ -1,0 +1,167 @@
+{
+  "schema": "lib.real_04x_upgrade_check.v1",
+  "baselineCommit": "562e50501c76571c4fc3930c36bc4a7edf304469",
+  "baselineKind": "unmodified_0.4.0_git_source_installation",
+  "targetArchiveSha256": "655c095c31a69f38f3330db2cf08387f50d923644d2d8eb18780569db994f535",
+  "fromVersion": "0.4.0",
+  "toVersion": "0.4.1",
+  "cases": [
+    {
+      "mode": "running_installed",
+      "status": "pass",
+      "baselineStarted": true,
+      "initialRecordsVerified": 39,
+      "tombstones": 3,
+      "logicalValueBytes": 524052,
+      "preUpdateBackupCreated": true,
+      "updateMs": 2155,
+      "installedVersion": "0.4.1",
+      "policy": "migration_required",
+      "journalStatus": "complete",
+      "sourceVersion": "0.4.0",
+      "targetVersion": "0.4.1",
+      "httpServerVersion": "0.4.1",
+      "ordinaryServiceRestored": true,
+      "migratedRecordsVerified": 39,
+      "runtimeTokenPreserved": true,
+      "endpointPreserved": true,
+      "preUpdateBackupRetainedInRollback": true,
+      "staleCasRejected": true,
+      "postUpdateWriteVerified": true,
+      "integrityVerified": true,
+      "postUpdateBackupCreated": true,
+      "installedMinPluginsMatchCandidate": 6,
+      "afterRestartRecordsVerified": 39,
+      "finalStop": true
+    },
+    {
+      "mode": "stopped_external",
+      "status": "pass",
+      "baselineStarted": true,
+      "initialRecordsVerified": 39,
+      "tombstones": 3,
+      "logicalValueBytes": 524052,
+      "preUpdateBackupCreated": true,
+      "updateMs": 1378,
+      "installedVersion": "0.4.1",
+      "policy": "migration_required",
+      "journalStatus": "complete",
+      "sourceVersion": "0.4.0",
+      "targetVersion": "0.4.1",
+      "offlineStatePreserved": true,
+      "httpServerVersion": "0.4.1",
+      "ordinaryServiceRestored": true,
+      "migratedRecordsVerified": 39,
+      "runtimeTokenPreserved": true,
+      "endpointPreserved": true,
+      "preUpdateBackupRetainedInRollback": true,
+      "staleCasRejected": true,
+      "postUpdateWriteVerified": true,
+      "integrityVerified": true,
+      "postUpdateBackupCreated": true,
+      "installedMinPluginsMatchCandidate": 6,
+      "afterRestartRecordsVerified": 39,
+      "finalStop": true
+    },
+    {
+      "mode": "running_rollback_retry",
+      "status": "pass",
+      "baselineStarted": true,
+      "initialRecordsVerified": 39,
+      "tombstones": 3,
+      "logicalValueBytes": 524052,
+      "preUpdateBackupCreated": true,
+      "rollbackRecordsVerified": 39,
+      "rollbackReturnedTo040": true,
+      "updateMs": 4390,
+      "installedVersion": "0.4.1",
+      "policy": "migration_required",
+      "journalStatus": "complete",
+      "sourceVersion": "0.4.0",
+      "targetVersion": "0.4.1",
+      "httpServerVersion": "0.4.1",
+      "ordinaryServiceRestored": true,
+      "migratedRecordsVerified": 39,
+      "runtimeTokenPreserved": true,
+      "endpointPreserved": true,
+      "preUpdateBackupRetainedInRollback": true,
+      "staleCasRejected": true,
+      "postUpdateWriteVerified": true,
+      "integrityVerified": true,
+      "postUpdateBackupCreated": true,
+      "installedMinPluginsMatchCandidate": 6,
+      "afterRestartRecordsVerified": 39,
+      "finalStop": true
+    }
+  ],
+  "status": "pass",
+  "baselineSourceBinding": {
+    "checkedFiles": 2425,
+    "differentFiles": [],
+    "serverSHA256": "5261e9414476c21306eaf1099704c513fb5e821e97d7a6f1d9108150ea4b7008"
+  },
+  "evidenceBoundary": "Linux VM; actual HTTP and SQLite with unmodified production launcher/updaters; synthetic server records; local ZIP update; no actual RisuAI installation or remote GitHub release download",
+  "sourcePackageQualification": "historical 0.4.0 builder smoke failed; baseline is original Git source installation, not a qualified 0.4.0 ZIP",
+  "fixtureCorpus": {
+    "owners": [
+      "flashback",
+      "hayaku",
+      "libra"
+    ],
+    "spaces": [
+      "plugin",
+      "local"
+    ],
+    "liveRecords": 36,
+    "tombstones": 3,
+    "logicalValueBytes": 524052,
+    "realUserData": false
+  },
+  "httpTransport": "default Node fetch keep-alive; child commands awaited asynchronously; no retry of failed HTTP responses",
+  "preliminaryObservation": {
+    "error": "fetch failed",
+    "occurrences": 1,
+    "phase": "post-update server restart in synchronous harness",
+    "cause": "not_determined",
+    "followUp": "fresh-connection upgrade scenarios and asynchronous keep-alive upgrade scenarios all passed"
+  },
+  "restartTransportProbe": [
+    {
+      "mode": "synchronous_keepalive",
+      "trial": 0,
+      "status": "pass",
+      "version": "0.4.1"
+    },
+    {
+      "mode": "synchronous_keepalive",
+      "trial": 1,
+      "status": "pass",
+      "version": "0.4.1"
+    },
+    {
+      "mode": "asynchronous_keepalive",
+      "trial": 0,
+      "status": "pass",
+      "version": "0.4.1"
+    },
+    {
+      "mode": "asynchronous_keepalive",
+      "trial": 1,
+      "status": "pass",
+      "version": "0.4.1"
+    },
+    {
+      "mode": "synchronous_connection_close",
+      "trial": 0,
+      "status": "pass",
+      "version": "0.4.1"
+    },
+    {
+      "mode": "synchronous_connection_close",
+      "trial": 1,
+      "status": "pass",
+      "version": "0.4.1"
+    }
+  ],
+  "checkedAt": "2026-10-19"
+}
