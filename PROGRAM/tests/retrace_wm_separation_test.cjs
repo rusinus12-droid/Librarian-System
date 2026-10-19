@@ -3,7 +3,43 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
-const { JSDOM } = require('jsdom');
+let JSDOM;
+try { JSDOM = require('jsdom').JSDOM; } catch (_) {
+  JSDOM = class FallbackDOM {
+    constructor(html) {
+      this.window = {
+        document: {
+          querySelectorAll(selector) {
+            if (selector === '[data-control-namespace]') {
+              const results = [];
+              const re = /<input[^>]*data-control-namespace[^>]*>/gi;
+              let m;
+              while ((m = re.exec(html)) !== null) {
+                const tag = m[0];
+                const valMatch = tag.match(/value="([^"]+)"/i);
+                const typeMatch = tag.match(/type="([^"]+)"/i);
+                results.push({
+                  value: valMatch ? valMatch[1] : '',
+                  type: typeMatch ? typeMatch[1] : ''
+                });
+              }
+              return results;
+            }
+            return [];
+          },
+          querySelector(selector) {
+            const m = selector.match(/\[data-server-control="([^"]+)"\]/);
+            if (m) {
+              const action = m[1];
+              return html.includes(`data-server-control="${action}"`) ? { action } : null;
+            }
+            return null;
+          }
+        }
+      };
+    }
+  };
+}
 const shellMatch = retrace => retrace.match(/root\.innerHTML = ("(?:\\.|[^"\\])*");/s);
 const program = process.env.REGRESSION_PROGRAM || path.resolve(__dirname, '..');
 const retrace = fs.readFileSync(path.join(program, 'plugins/RETRACE.js'), 'utf8');

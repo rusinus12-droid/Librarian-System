@@ -14,7 +14,7 @@ const identity = require('../../UPDATER/core/data-identity.cjs');
 function digest(value) { return crypto.createHash('sha256').update(String(value)).digest('hex'); }
 
 (async()=>{
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'librarian-migration-data-next-'));
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'librarian-migration-data-next-')));
   const sourceRoot = path.resolve(__dirname, '..', '..');
   try {
     const oldProgram = path.join(root, 'PROGRAM');

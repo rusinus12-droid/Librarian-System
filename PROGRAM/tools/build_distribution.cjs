@@ -206,7 +206,7 @@ const REQUIRED_UPDATER_FILES = new Set([
 const UPDATER_SENSITIVE_PATH_PATTERN = /(?:^|\/)(?:update-state\.json|latest\.log|[^/]+\.(?:log|tmp|bak|old|sqlite|db|zip))(?:$|\/)/i;
 
 function parseArgs(argv = process.argv.slice(2)) {
-  const result = { outputDir: null, version: null, profile: 'release' };
+  const result = { outputDir: null, version: null, profile: 'release', qualification: process.env.LIBRARIAN_PACKAGE_QUALIFICATION || 'publication_gate' };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = String(argv[index] || '');
     if (arg === '--output-dir') {
@@ -221,6 +221,12 @@ function parseArgs(argv = process.argv.slice(2)) {
       const value = argv[++index];
       if (!value || String(value).startsWith('--')) throw new Error('distribution_version_value_required');
       result.version = String(value);
+    } else if (arg === '--offline' || arg === '--offline-candidate') {
+      result.qualification = 'offline_candidate';
+    } else if (arg === '--qualification') {
+      const value = String(argv[++index] || '');
+      if (!['publication_gate', 'offline_candidate'].includes(value)) throw new Error(`distribution_qualification_invalid:${value}`);
+      result.qualification = value;
     } else throw new Error(`unknown_distribution_builder_argument:${arg}`);
   }
   return result;
@@ -820,7 +826,7 @@ function buildRelease(options = {}) {
     const profiles = profile === 'all' ? ['release', 'source'] : [profile];
     const results = {};
     for (const selected of profiles) {
-      const result = buildDistribution({ outputDir: options.outputDir, profile: selected });
+      const result = buildDistribution({ outputDir: options.outputDir, profile: selected, qualification: options.qualification });
       result.versionChange = versionChange;
       results[selected] = result;
       completed.push(result);
@@ -834,7 +840,10 @@ function buildRelease(options = {}) {
 }
 
 
-function buildOfflineCandidate(options={}) {if(options.version)throw Error('offline_candidate_version_change_not_supported');return buildDistribution({...options,qualification:'offline_candidate'});}
+function buildOfflineCandidate(options = {}) {
+  if (options.version) throw Error('offline_candidate_version_change_not_supported');
+  return buildRelease({ ...options, qualification: 'offline_candidate' });
+}
 function main() {
   const result = buildRelease(parseArgs());
   process.stdout.write(`[LIBRARIAN SYSTEM] Distribution ready\n`);
