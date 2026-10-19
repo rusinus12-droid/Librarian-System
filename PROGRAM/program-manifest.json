@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-19T13:18:21.068Z",
+  "generatedAt": "2026-10-19T13:58:28.087Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -257,7 +257,7 @@
       "retraceBackupCatalogTargetChecksum": true
     },
     "ariadneLatestState": {
-      "version": "2.3.174",
+      "version": "2.3.175",
       "schema": "libra.continuity_state.v2",
       "canonicalArtifactSchema": "libra.canonical_artifact.v3",
       "commitEnvelopeSchema": "libra.canonical_commit.v1",
@@ -388,7 +388,7 @@
       ],
       "plugins": {
         "libra": {
-          "version": "2.3.174",
+          "version": "2.3.175",
           "fiveTurnCommitRevisionGate": true,
           "backendOrder": [
             "chat_output_v3",
@@ -761,7 +761,7 @@
       "boundedMemory": true,
       "scopeSeparated": true,
       "libra": {
-        "version": "2.3.174",
+        "version": "2.3.175",
         "unchangedMessageProjectionReuse": true,
         "unchangedCompletedPairSnapshotReuse": true,
         "changedMessageOnlyRenormalized": true,
@@ -779,7 +779,7 @@
     },
     "libraClassicProvenanceRescue": {
       "schema": "libra.classic_provenance_rescue.v1",
-      "version": "2.3.174",
+      "version": "2.3.175",
       "route": "classic_only",
       "source": "validated_current_state_head_provenance_only",
       "maxRescuedCanonicalRefs": 2,
@@ -805,7 +805,7 @@
       "duplicatePluginCopies": false
     },
     "libraCanonicalCuration": {
-      "version": "2.3.174",
+      "version": "2.3.175",
       "activeManifestPointerUnchanged": true,
       "canonicalArtifactSchema": "libra.canonical_artifact.v3",
       "canonicalCommitSchema": "libra.canonical_commit.v1",
@@ -995,7 +995,7 @@
       "jobPortalDoesNotRefreshSnapshot": true
     },
     "libraPortableMemoryRecoveryUi": {
-      "version": "2.3.174",
+      "version": "2.3.175",
       "navigation": "recovery",
       "subsection": "memory_restore",
       "dedicatedHost": "data-portable-backup-host=libra",
@@ -1077,7 +1077,7 @@
         ]
       },
       "libraRecallBm25fPilot": {
-        "version": "2.3.174",
+        "version": "2.3.175",
         "operation": "libra.recall-bm25f.v1",
         "algorithmFingerprint": "7a096a212eb71e1a87639347659ca9216fe32149068153491315734133217840",
         "retired": true,
@@ -1164,7 +1164,7 @@
       "libraLargeResultFullBodyHydration": "details_toggle_only"
     },
     "libraInferenceBudget": {
-      "version": "2.3.174",
+      "version": "2.3.175",
       "canonicalSchema": "libra.canonical_provider_budget.v2",
       "sgaSchema": "libra.sga_provider_budget.v2",
       "providerRetrySchema": "libra.provider_retry_governor.v1",
@@ -1188,7 +1188,7 @@
       "reasoningBudgetClampedToRemainingRunBudget": true
     },
     "libraRisuAiAuxiliaryDefault": {
-      "version": "2.3.174",
+      "version": "2.3.175",
       "presetName": "risuai_aux",
       "transport": "risuai.runLLMModel",
       "mode": "otherAx",
@@ -1204,7 +1204,7 @@
       "localStructuredValidationRequired": true
     },
     "libraUnifiedGui": {
-      "version": "2.3.174",
+      "version": "2.3.175",
       "pageCount": 12,
       "initialPage": "memory",
       "homeDashboard": false,
@@ -1276,7 +1276,7 @@
       "runLogsSeparatePage": true
     },
     "libraReaderEvidenceAndOperations": {
-      "version": "2.3.174",
+      "version": "2.3.175",
       "canonicalReaderPageSchema": "libra.canonical_reader_page.v1",
       "canonicalReaderChapterSchema": "libra.canonical_reader_chapter.v1",
       "evidenceChainSchema": "libra.evidence_chain.v1",
@@ -1425,7 +1425,7 @@
   "plugins": {
     "flashback": "1.0.120",
     "hayaku": "3.0.155",
-    "libra": "2.3.174",
+    "libra": "2.3.175",
     "lia": "0.26.88",
     "retrace": "1.9.86",
     "gradia": "0.25.91"
@@ -3480,7 +3480,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "48ad57ecca998f2c03420962d1f530572a7ccbe93541bf29ff338cc04e2f7f0d",
+      "sha256": "26ac0f074b00875384580e31197e34209ea86c836562f648894986514a2a8e87",
       "bytes": 11840
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3856,7 +3856,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "c7631927048fbea9ca23ae0dc9694c9e711a4d001ff8ed4cdcd83083604e07f5",
+      "sha256": "af9be1ec71a24beef2adb87bc7620ce0368d14447cc474d27b8d6ca0047bdb8a",
       "bytes": 3357
     },
     "plugins/Flashback_Memory.js": {
@@ -3876,8 +3876,8 @@
       "bytes": 1773375
     },
     "plugins/LIBRA.js": {
-      "sha256": "7ac51f8ec80573a8b48f3fbe195d8ac495bf350b43b6d5495219b9d0dba53a5e",
-      "bytes": 6061195
+      "sha256": "03b741554cd9d921ac973b4401b71a23c2bdfe9a1908110894755699bc44477d",
+      "bytes": 6060505
     },
     "plugins/RETRACE.js": {
       "sha256": "083671ca273a88aba7196701df9833455e776fcb4eb120f253f10d64dab3c2be",
@@ -7856,8 +7856,8 @@
       "bytes": 5395
     },
     "tests/libra_memory_graph_read_frame_runtime_test.cjs": {
-      "sha256": "3faa09aa97d02c0a2a25657515c53ef573374e9a7f39c812f71da856a5b8c214",
-      "bytes": 5393
+      "sha256": "eec01716c63a4ff92f2483de58c20903f3dcd513355c014d1ec0c2b9a29e3863",
+      "bytes": 7719
     },
     "tests/libra_memory_graph_reader_contract_test.cjs": {
       "sha256": "d77e4ba356fb7952b926e34f670781df7d4e0f44861b05f1e6b7d80dbabc0154",
@@ -10999,25 +10999,49 @@
       "sha256": "42950fa08927bcdccaf154dbfc103acecf9374d0aafec66830f85824ac6a5935",
       "bytes": 351
     },
+    "관리도구/백업_건강도_검사.sh": {
+      "sha256": "aae5aff387ef13cd5b43587db82ba421a49a5d2338ec8b0f3e17d9cfa74692dc",
+      "bytes": 274
+    },
     "관리도구/백업_목록_보기.bat": {
       "sha256": "8c32a1805d864d2e463366aed741121291ac1e8def8d7d46889cf69dbaddda01",
       "bytes": 236
+    },
+    "관리도구/백업_목록_보기.sh": {
+      "sha256": "e78b3548338818d96a9118d97bb66b8e2f5dde3d70a5dc6eaa143c3405e10733",
+      "bytes": 200
     },
     "관리도구/백업에서_복원.bat": {
       "sha256": "161c0c43ae294825e0f83574d72f7ef0b4aff902461b5e6b641e42da7c5a9c88",
       "bytes": 1383
     },
+    "관리도구/백업에서_복원.sh": {
+      "sha256": "2366eb9c374acf2e6dc4da40dea78f6c78fc993400a58f40b18bcbbe0c4fa5ff",
+      "bytes": 1229
+    },
     "관리도구/복구_전용_오프라인_복원.bat": {
       "sha256": "1862f9d853ef7e5e587652896bad69a36aadae4f4179f6bcc4e9948b64803eab",
       "bytes": 1072
+    },
+    "관리도구/복구_전용_오프라인_복원.sh": {
+      "sha256": "bf1e61db508cd392de9f46afa6892dc685d94629818706b550d12d4924656ad8",
+      "bytes": 1062
     },
     "관리도구/복원_계획_미리보기.bat": {
       "sha256": "181a05207ce92d92c06f410ef124e645e4f280ec374e0afd78645bbe4a7d646f",
       "bytes": 810
     },
+    "관리도구/복원_계획_미리보기.sh": {
+      "sha256": "bf95305bea5dba5e3d7ce5f73e06a607cb7abb516c8f8942d796d5b00f40eb79",
+      "bytes": 740
+    },
     "관리도구/연결된_플러그인_보기.bat": {
       "sha256": "58ce739b8e1dd523e9d19e1aefc19753acb6d04f7d90ce29500a7ecb400c88e5",
       "bytes": 231
+    },
+    "관리도구/연결된_플러그인_보기.sh": {
+      "sha256": "b73ae50764b4a713ce2eb30368b58ee32b8cb23577e84c677fb837b7ac7f3857",
+      "bytes": 195
     },
     "관리도구/전체_자동시험.bat": {
       "sha256": "8340c360da1bc30dbf2023428d465278f235ae16ee8f28a3f7ddcf9da6893309",
@@ -11030,6 +11054,10 @@
     "관리도구/지금_백업_만들기.bat": {
       "sha256": "6d51afefee97eb3ff95935c746504533ec6faad2343303c794e788c5f2895ac4",
       "bytes": 290
+    },
+    "관리도구/지금_백업_만들기.sh": {
+      "sha256": "13f3a55f29d59328f72f8f8d260e77857caec6e5947f0a23a35081efa9e5630a",
+      "bytes": 284
     },
     "관리도구/포터블_Node_런타임_설치.bat": {
       "sha256": "a053f31b7a80d0894d24eb8bdb1ed55e2016cd5057c11c90df95486251cbadd6",
@@ -11084,7 +11112,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "35c8a25a1d18c227d4c9ba7b939c92c09a2d4654c69088889e3b96738c23278b",
+      "sha256": "0ed2ccafbd0e151894f0ed573c93b6a3d7d3f9a4c8a6b1277e8632b573fd2de6",
       "bytes": 3791
     }
   },

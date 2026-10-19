@@ -62,6 +62,40 @@ test('a valid body larger than the paged HTTP allowance still passes physical re
   assert.equal(x.f.r.api.getRuntime().lastMemoryInjectionMeta.finalVerification.status,'verified');
 });
 
+for (const phase of ['readback','corpus_proof']) test(`${phase}: an oversized owner body uses exactly one SDK fallback GET`,async t=>{
+  const x=await fixture({mode:'server_only',includeMicro:false,transformSource:source=>{
+    const start=phase==='readback'
+      ? 'async assertCurrent(){\n          if(mode !== string((await MemorySuiteStorageBridge.getScopeMode(scope))'
+      : 'async captureSourceProof({ collected: corpusCollected, windowProofs = [], config = {}, previousOwnerProof = null, reusedOnlySourceKeys = [] }) {';
+    const finish=phase==='readback'
+      ? '        },\n        close(){memoryGraphReadFrames.delete(scope);'
+      : '          const recordDependencyKeys = {};';
+    assert.equal(source.split(start).length,2);assert.equal(source.split(finish).length,2);
+    const marked=phase==='readback'
+      ? source.replace(start,start.replace('async assertCurrent(){','async assertCurrent(){ globalThis.__oversizedOwnerRead=true;'))
+      : source.replace(start,start+' globalThis.__oversizedOwnerRead=true;');
+    return marked.replace(finish,'          globalThis.__oversizedOwnerRead=false;\n'+finish);
+  }});t.after(()=>x.cleanup());
+  const api=x.f.r.api,key=x.server.storedRows().find(row=>row.key.endsWith(':manifest')).key;
+  await x.server.mutate(key,{...x.server.getManifest(),readerValidationPadding:'x'.repeat(300*1024)});
+  let pages=0,gets=0;
+  x.server.hooks.beforeServerRequest=async(url,init)=>{
+    if(url.endsWith('/v1/kv/get-many')){
+      const body=JSON.parse(init.body);
+      init.body=JSON.stringify({...body,maxResponseBytes:256*1024});
+      if(x.f.r.context.__oversizedOwnerRead&&body.keys.includes(key))pages++;
+    }
+    if(x.f.r.context.__oversizedOwnerRead&&url.includes('/v1/kv/get?')&&new URL(url).searchParams.get('key')===key)gets++;
+  };
+  const modelCalls=x.f.control.calls.length;
+  if(phase==='readback')await api.executeMemoryGraphUnifiedQuery({...options,corpusMode:'window'});
+  else assert.equal((await api.buildMemoryGraphCorpus({incremental:false})).status,'published');
+  assert.ok(pages>0,'the padded owner body must reach paged verification');
+  assert.equal(gets,pages,'serverGetMany already resolves oversized keys with an individual GET');
+  assert.equal(x.f.control.calls.length,modelCalls,'verification cannot call a model');
+  released(api);
+});
+
 test('an explicit build restarts after a real source change and never resets its cumulative budget',async t=>{
   let changed=false,inject=false,mutate=()=>{};
   const anchor='async captureSourceProof({ collected: corpusCollected, windowProofs = [], config = {}, previousOwnerProof = null, reusedOnlySourceKeys = [] }) {';

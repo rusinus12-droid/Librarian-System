@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.174
-//@version 2.3.174
+//@display-name LIBRA v2.3.175
+//@version 2.3.175
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1558,7 +1558,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.174';
+  const PLUGIN_VERSION = '2.3.175';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -34186,14 +34186,8 @@ function createLibraReadonlySourceContext(owner) {
               if(mode !== 'plugin_only' && resources)for(const _ of part)reservations.push(resources.reserveRead('source'));
               const rows = mode === 'plugin_only' ? null : await MemorySuiteStorageBridge.serverGetMany('plugin',part);
               if(rows)state.memoryNetworkIO.ownerReads += part.length;
-              // A valid owner record can exceed the paged endpoint's envelope
-              // allowance while fitting the owner's payload budget. Read it
-              // individually under the reservation already held for that key.
-              if(rows)for(const storageKey of part){
-                if(!asArray(rows.oversizedKeys).includes(storageKey))continue;
-                rows.values[storageKey] = await MemorySuiteStorageBridge.serverGet('plugin',storageKey);
-                state.memoryNetworkIO.ownerReads++;
-              }
+              // serverGetMany already resolves oversized keys individually.
+              // Keep the held reservations through validation of those bodies.
               if(rows && resources)retained=resources.retain(rows.values,'owner_read_frame_readback',2);
               for(const [index,storageKey] of part.entries()){
                 const before = await entries.get(storageKey);
@@ -71162,11 +71156,6 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
               if (resources) for (const _ of partKeys) reservations.push(resources.reserveRead('source'));
               const rows = await MemorySuiteStorageBridge.serverGetMany('plugin', partKeys);
               state.memoryNetworkIO.ownerReads += partKeys.length;
-              for (const storageKey of partKeys) {
-                if (!asArray(rows?.oversizedKeys).includes(storageKey)) continue;
-                rows.values[storageKey] = await MemorySuiteStorageBridge.serverGet('plugin', storageKey);
-                state.memoryNetworkIO.ownerReads++;
-              }
               if (rows && resources) retained = resources.retain(rows.values, 'corpus_source_proof_readback', 2);
               await assertRoute();
               for (const [index, [storageKey, baseline]] of part.entries()) {
