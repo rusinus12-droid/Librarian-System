@@ -61,6 +61,7 @@ function assertPackageRoot(root) {
     const provenance = JSON.parse(fs.readFileSync(path.join(root, 'PUBLICATION-PROVENANCE.json'), 'utf8'));
     assert.equal(provenance.schema, 'librarian.six-plugin-checkpoint-publication.v2');
     expectedRootEntries.push('.git', 'LICENSE', 'PUBLICATION-PROVENANCE.json');
+    if (fs.existsSync(path.join(root, 'README.md'))) expectedRootEntries.push('README.md');
   }
   assert.deepEqual(rootEntries, expectedRootEntries.sort(), 'Bundle root contains only PROGRAM/DATA, updater, and verified release artifacts.');
 }

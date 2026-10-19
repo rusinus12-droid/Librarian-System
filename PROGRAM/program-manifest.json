@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-19T10:42:40.869Z",
+  "generatedAt": "2026-10-19T12:05:15.758Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -2523,9 +2523,17 @@
       "sha256": "88813f725dc2ec9572c0bdbbd3e38f3b88a03bcc23752a518a5a0e18765252e5",
       "bytes": 5389
     },
+    "docs/LIB_041_04X_UPGRADE_RESULTS_20261019.json": {
+      "sha256": "94b017247f6fc94a20086f3be39feda84d5a2be626e83c656b67e50a339a1554",
+      "bytes": 5213
+    },
     "docs/LIB_041_FEEDBACK_FIX_VALIDATION_20261019.md": {
       "sha256": "868186497a0f412ce28c4c14c201b59273092ec94fe5b9c7eca9d242745220b8",
       "bytes": 10699
+    },
+    "docs/LIB_041_RELEASE_READINESS_20261019.md": {
+      "sha256": "79c9d32201a32eba3b88efaeae78552029571c8ac6f5177d5e7fd857991260bd",
+      "bytes": 14220
     },
     "docs/LIB_RELEASE_041_FIX_VERIFICATION_20261019.md": {
       "sha256": "11544c009ea27ec34b3a2fb46c4a96cc7d0b7549f48023f6cf04a9d578fbdefc",
@@ -9320,8 +9328,8 @@
       "bytes": 3500
     },
     "tests/program_data_layout_test.cjs": {
-      "sha256": "7efb405a9eb09f55580f816566f224bcbb957e2a6f6d62846a8e1229ecc6ee4a",
-      "bytes": 11095
+      "sha256": "16267a3904b8b85ab49fff1f289e8027f0146d9326be1d439d55708942c7daf6",
+      "bytes": 11187
     },
     "tests/rag_eval_flashback_floor_test.cjs": {
       "sha256": "bf7d335985a5c2ba1b792d6db2d48d451572534882a179c0278ae3ce0bf6e99c",
