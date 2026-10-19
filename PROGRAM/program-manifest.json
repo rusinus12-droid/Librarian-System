@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-19T12:05:15.758Z",
+  "generatedAt": "2026-10-19T12:39:19.345Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -3480,7 +3480,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "67596b6b921c24c81614a37815d3078a05737127551f7dda3d874dc8d88f2d96",
+      "sha256": "48ad57ecca998f2c03420962d1f530572a7ccbe93541bf29ff338cc04e2f7f0d",
       "bytes": 11840
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3852,8 +3852,8 @@
       "bytes": 273
     },
     "memory-suite.sh": {
-      "sha256": "2bea48baa060f14ae7fba518beeec32866a8ff0cdd3ec9877cd9c112b383ddf0",
-      "bytes": 733
+      "sha256": "4587c121f08b56d71872eb94cc19ecd7e546d2890011bb673aa08f9d1188c7cf",
+      "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
       "sha256": "c7631927048fbea9ca23ae0dc9694c9e711a4d001ff8ed4cdcd83083604e07f5",
@@ -3876,8 +3876,8 @@
       "bytes": 1773375
     },
     "plugins/LIBRA.js": {
-      "sha256": "e5c94287f7eb6c4f5e22d4496b5a45e9b8d054fcbce9a6f8593f129127a390a7",
-      "bytes": 6057826
+      "sha256": "7ac51f8ec80573a8b48f3fbe195d8ac495bf350b43b6d5495219b9d0dba53a5e",
+      "bytes": 6061195
     },
     "plugins/RETRACE.js": {
       "sha256": "083671ca273a88aba7196701df9833455e776fcb4eb120f253f10d64dab3c2be",
@@ -4028,8 +4028,8 @@
       "bytes": 556680
     },
     "server/admin.cjs": {
-      "sha256": "7505e66967fad6adba119dda4c5596c48f6c6a9bd52eac12a46e5db324946557",
-      "bytes": 9474
+      "sha256": "a67f5877523fa6460b986888aeb659ba84a2fda4ee384101ffc0fed222482480",
+      "bytes": 10223
     },
     "server/authority/contracts.cjs": {
       "sha256": "36791d9e5dd93fed22e44f87a74d841fc7101eeccf2bb46509786e70057d6483",
@@ -4608,8 +4608,8 @@
       "bytes": 4675
     },
     "tests/cross_platform_launcher_test.cjs": {
-      "sha256": "13822e88a93b1bc7a12b299608829ed444657bfd90913c6290bd6ed7e1c15676",
-      "bytes": 6533
+      "sha256": "b45db2ee2a4f4f63b00ef674a5ef4d74d1b9e8314d4166cec834ccdd2d71ff90",
+      "bytes": 6964
     },
     "tests/current_ui_compute_contracts_test.cjs": {
       "sha256": "13fe92078762e9545ae85da015eb0688886146edc075203f7b1e7393053f1aa7",
@@ -9408,8 +9408,8 @@
       "bytes": 4268
     },
     "tests/release_asset_contract_test.cjs": {
-      "sha256": "cbc49f45a662fb297ba25d5679887bb075ccca57e48938d5c2ff2183e0882c25",
-      "bytes": 1894
+      "sha256": "cb234bd798d0a2a97811b8a8989817684798fb0b02ded9882a505a6ff7b55713",
+      "bytes": 2830
     },
     "tests/release_builder_profiles_test.cjs": {
       "sha256": "a6ebe0083a9b72ecdcc807320f8f850c1b2eac62dbda0477df7d0e3a36332a3b",
@@ -10308,8 +10308,8 @@
       "bytes": 4108
     },
     "tests/windows_bootstrap_contract_test.cjs": {
-      "sha256": "b0ee9610a2a1c3b1756722e3864496fe2816dc05d20352bfca0bbd48e0d40a4e",
-      "bytes": 8710
+      "sha256": "0e8fe868281b95f30f6e06ce158f98be38e09bc41e67384b280fcc31737f137c",
+      "bytes": 9093
     },
     "tests/wm_semantic_context_v1_test.cjs": {
       "sha256": "ee742e475a773b042a7d1b3168d5ed14036a3d74c58e61629c3d33da8d94b54b",
@@ -10984,8 +10984,8 @@
       "bytes": 519
     },
     "개발본_만들기.sh": {
-      "sha256": "0266b0e9f4917a0a28f83eb00b190a714eb7f769e607dc09fef5b0d5388dbc3e",
-      "bytes": 638
+      "sha256": "c544ba208ee82647ef6f9ee367b98d42d6d4e7ae761deabee45143b80219fa9b",
+      "bytes": 833
     },
     "관리도구/데이터_무결성_검사.bat": {
       "sha256": "a79cd03194ede05863944bfbec4ae0cdd827c221b5e183d116d52ada0a38af55",
@@ -11024,8 +11024,8 @@
       "bytes": 1558
     },
     "관리도구/전체_자동시험.sh": {
-      "sha256": "c7a8f917d835238dd06b2c0e72406109aba09207f025eee8aab91c1c72b09923",
-      "bytes": 919
+      "sha256": "42969fe2c4460980abd345f7258fcbff30cec68d666afe2ac58e1f50435ff877",
+      "bytes": 1258
     },
     "관리도구/지금_백업_만들기.bat": {
       "sha256": "6d51afefee97eb3ff95935c746504533ec6faad2343303c794e788c5f2895ac4",
@@ -11040,16 +11040,16 @@
       "bytes": 936
     },
     "기존_DATA_이관_ZIP_만들기.sh": {
-      "sha256": "294117db7a1b9aa05bb168cc059e63c481753886168c8abe214d4f45b86ec91e",
-      "bytes": 362
+      "sha256": "ef661117775898151bda7518eec0fdc39a3c3f72528ff57e4de14741a142d625",
+      "bytes": 1262
     },
     "배포본_만들기.bat": {
       "sha256": "045aa6308c19a39f41e74ab142fa27d23d8cd435bc56c54bf3cb30b92c62e11f",
       "bytes": 521
     },
     "배포본_만들기.sh": {
-      "sha256": "3165ee1f65baee69064129185dd9e9b7fb0ff99ced3bdcee39c61aa27f1e0993",
-      "bytes": 640
+      "sha256": "30b0da0fcc25df7c6d9df760f71c3c88a88f8afea4c245fc8c7e2dd6af513a26",
+      "bytes": 835
     },
     "서버_백그라운드_실행.bat": {
       "sha256": "b0fdb73531422faeb7d7d279ae2d6b518460e5a42f25b6153060dad5e128185b",
@@ -11080,12 +11080,12 @@
       "bytes": 513
     },
     "전체_릴리즈_만들기.sh": {
-      "sha256": "f7332051e6bc7702986b184eba1ef60d30517aebc719aa760be1cbc45bd3b555",
-      "bytes": 632
+      "sha256": "3885764ef087a599a67ecb2f7e3b543d8b0928ab6dbae5995a73ca210aab50be",
+      "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "d31f80de85a3ab5797c308fa10a2f04987802411604581996b01fe7bc4614f9f",
-      "bytes": 3464
+      "sha256": "35c8a25a1d18c227d4c9ba7b939c92c09a2d4654c69088889e3b96738c23278b",
+      "bytes": 3791
     }
   },
   "storageSdkVariants": {

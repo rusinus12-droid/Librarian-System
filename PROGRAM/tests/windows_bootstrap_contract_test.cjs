@@ -31,17 +31,24 @@ const requiredUtf8Paths = [
   'PROGRAM/docs/보안과_복구.md',
   'PROGRAM/docs/데이터_구조와_마이그레이션.md',
   'PROGRAM/관리도구/백업_건강도_검사.bat',
+  'PROGRAM/관리도구/백업_건강도_검사.sh',
   'PROGRAM/관리도구/연결된_플러그인_보기.bat',
+  'PROGRAM/관리도구/연결된_플러그인_보기.sh',
   'PROGRAM/관리도구/데이터_무결성_검사.bat',
   'PROGRAM/관리도구/데이터_무결성_검사.sh',
   'PROGRAM/관리도구/백업_목록_보기.bat',
+  'PROGRAM/관리도구/백업_목록_보기.sh',
   'PROGRAM/관리도구/지금_백업_만들기.bat',
+  'PROGRAM/관리도구/지금_백업_만들기.sh',
   'PROGRAM/관리도구/전체_자동시험.bat',
   'PROGRAM/관리도구/전체_자동시험.sh',
   'PROGRAM/관리도구/복구_전용_오프라인_복원.bat',
+  'PROGRAM/관리도구/복구_전용_오프라인_복원.sh',
   'PROGRAM/관리도구/포터블_Node_런타임_설치.bat',
   'PROGRAM/관리도구/복원_계획_미리보기.bat',
-  'PROGRAM/관리도구/백업에서_복원.bat'
+  'PROGRAM/관리도구/복원_계획_미리보기.sh',
+  'PROGRAM/관리도구/백업에서_복원.bat',
+  'PROGRAM/관리도구/백업에서_복원.sh'
 ];
 
 function batchFiles(root) {

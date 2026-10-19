@@ -3,6 +3,11 @@
 Librarian System Server 0.4.1
 
 [처음 사용하는 분]
+먼저 Node.js 22.13.0 이상을 설치하세요. 현재 LTS 버전을 권장합니다.
+공식 다운로드: https://nodejs.org/
+일반 배포 ZIP에는 Node.js가 포함되지 않습니다. 설치 후 실행 파일을 여세요.
+Android/Termux는 PROGRAM/안드로이드_Termux_준비.sh로 실행 환경을 준비하세요.
+
 1. 이 ZIP을 원하는 폴더에 압축 해제합니다.
 2. Windows: PROGRAM\1_서버_실행.bat
    macOS: PROGRAM/macOS_서버_실행.command

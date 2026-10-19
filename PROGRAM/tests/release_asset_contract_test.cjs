@@ -14,6 +14,7 @@ const {
 } = require('../tools/release_asset_contract.cjs');
 
 const programDir = path.resolve(__dirname, '..');
+const packageRoot = path.resolve(programDir, '..');
 const version = fs.readFileSync(path.join(programDir, 'VERSION.txt'), 'utf8').trim();
 assert.equal(OFFICIAL_REPOSITORY, 'rusinus12-droid/Librarian-System');
 assert.equal(expectedTag(version), `v${version}`);
@@ -33,4 +34,17 @@ assert.equal(manifest.updatePolicy, policy.updatePolicy);
 assert.equal(manifest.compatibility.updaterContract, 1);
 assert.equal(validateUpdateManifest(manifest, { expectedVersion: version, expectedAssetName: expectedAssetName(version), expectedChannel: 'stable' }).version, version);
 assert.throws(() => validateUpdateManifest({ ...manifest, assetName: 'release.zip' }), /asset_name_mismatch/);
+const rootManifestPath = path.join(packageRoot, 'update-manifest.json');
+if (fs.existsSync(rootManifestPath)) {
+  const rootManifest = JSON.parse(fs.readFileSync(rootManifestPath, 'utf8'));
+  assert.equal(rootManifest.schema, manifest.schema);
+  assert.equal(rootManifest.repository, manifest.repository);
+  assert.equal(rootManifest.version, manifest.version, 'root update-manifest.json version matches VERSION.txt');
+  assert.equal(rootManifest.tag, manifest.tag);
+  assert.equal(rootManifest.assetName, manifest.assetName);
+  assert.equal(rootManifest.updatePolicy, manifest.updatePolicy);
+  assert.equal(rootManifest.minimumSourceVersion, manifest.minimumSourceVersion);
+  assert.deepEqual(rootManifest.compatibility, manifest.compatibility);
+  assert.deepEqual(rootManifest.components, manifest.components, 'root update-manifest.json component versions match current source');
+}
 console.log('release_asset_contract_test: PASS');
