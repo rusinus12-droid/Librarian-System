@@ -16,7 +16,7 @@ const replaceOnce = (source, needle, replacement, label) => {
   return source.replace(needle, replacement);
 };
 
-const run = ({ scenario = 'different', gui = false } = {}) => {
+const run = ({ scenario = 'different', gui = false, transformHarness = source => source } = {}) => {
   assert.ok(['same', 'different'].includes(scenario), `unknown persona scenario: ${scenario}`);
   let source = fs.readFileSync(publicHarness, 'utf8');
   source = replaceOnce(source,
@@ -295,7 +295,7 @@ const run = ({ scenario = 'different', gui = false } = {}) => {
   const compiled = new Module(publicHarness, module);
   compiled.filename = publicHarness;
   compiled.paths = Module._nodeModulePaths(path.dirname(publicHarness));
-  compiled._compile(source, publicHarness);
+  compiled._compile(transformHarness(source), publicHarness);
 };
 
 if (require.main === module) run({ scenario: process.env.U1_PERSONA_SCENARIO || 'different', gui: process.env.U1_GUI_ENTRY === 'true' });
