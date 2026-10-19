@@ -1,7 +1,7 @@
 //@name lia_persona_linker
 //@display-name LIA: Persona Linker
 //@api 3.0
-//@version 0.26.87
+//@version 0.26.88
 /* Target-only handoff storage preparation v1. Authenticated owner handlers only. */
 async function prepareMemorySuiteHandoffTargetStorage(api, storage, owner, payload) {
   const readTarget = async () => {
@@ -274,7 +274,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
   const OPERATION_LOG_MAX = 300;
   const DEBUG_LOG_MAX = 600;
   const LOG_PERSIST_DEBOUNCE_MS = 1500;
-const PLUGIN_VERSION = "0.26.87";
+const PLUGIN_VERSION = "0.26.88";
   const LIA_SETTING_UI_ID = "lia-persona-linker-setting";
   const LIA_BUTTON_UI_ID = "lia-persona-linker-button";
   const PERSONA_PROOF_VERSION = 1;
@@ -12084,7 +12084,25 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
 
   function normalizeLiveDelta(raw) {
     const parsed = parseJsonObject(raw);
-    if (!parsed) return null;
+    // Storage readers remain permissive for old records. New model output must
+    // satisfy the delta contract before normalization can hide malformed rows:
+    // a valid empty array may clear state, but a malformed response must not.
+    const object = value => value && typeof value === "object" && !Array.isArray(value);
+    const text = value => typeof value === "string" && value.trim().length > 0;
+    const strings = value => Array.isArray(value) && value.every(item => typeof item === "string");
+    const confidence = value => Number.isInteger(value) && value >= 0 && value <= 100;
+    if (!object(parsed) || typeof parsed.summary !== "string"
+      || !Array.isArray(parsed.liveState) || parsed.liveState.length > LIVE_SYNC_STATE_MAX
+      || !Array.isArray(parsed.coreCandidates) || parsed.coreCandidates.length > 12
+      || !strings(parsed.ignoredTransient)) return null;
+    if (!parsed.liveState.every(item => object(item)
+      && text(item.key) && text(item.category) && text(item.value)
+      && ["active", "persistent"].includes(item.durability)
+      && confidence(item.confidence) && strings(item.evidence))) return null;
+    if (!parsed.coreCandidates.every(item => object(item)
+      && text(item.field) && text(item.value) && confidence(item.confidence)
+      && ["user", "objective", "assistant"].includes(item.authority)
+      && strings(item.evidence) && typeof item.rationale === "string")) return null;
     return {
       summary: String(parsed.summary || "").trim(),
       liveState: asArray(parsed.liveState).map(normalizeLiveStateItem).filter(Boolean).slice(0, LIVE_SYNC_STATE_MAX),
@@ -14025,6 +14043,13 @@ ${revisionText}`);
         ? "Policy AUTO: you may propose coreCandidates, but LIA will promote only high-confidence changes repeated across consecutive 5-turn batches."
         : "Policy CONSERVATIVE: coreCandidates are advisory only and will never be promoted automatically.",
       "",
+      "## Required JSON output contract",
+      "Return one object matching this schema, including every required field. Do not return Markdown or prose outside JSON.",
+      "liveState and coreCandidates must be arrays, including when empty. Never group liveState into an object keyed by category.",
+      "Each state needs a stable key, category, value, active or persistent durability, integer confidence from 0 to 100, and an evidence array of strings.",
+      "An empty liveState array means no unresolved current state remains; do not use it to conceal an output-format error.",
+      JSON.stringify(LIVE_PERSONA_DELTA_JSON_SCHEMA),
+      "",
       "## Base Persona Prompt",
       limitText(binding.basePersonaPrompt, 14000),
       "",
@@ -14045,7 +14070,7 @@ ${revisionText}`);
       { signal: options.signal, jsonMode: true, jsonSchema: LIVE_PERSONA_DELTA_JSON_SCHEMA, maxTokens: Math.min(2200, Number(config.maxCompletionTokens || 2200)), sharedPromptPrefix: limitText(binding.basePersonaPrompt, 10000) },
     );
     const delta = normalizeLiveDelta(content);
-    if (!delta) throw new Error("Live Persona 5턴 분석 결과를 구조화된 JSON으로 해석하지 못했습니다.");
+    if (!delta) throw Object.assign(new Error("Live Persona 5턴 분석 결과의 상태 배열 또는 필수 항목 형식이 올바르지 않습니다. 기존 상태와 처리 범위는 변경하지 않았습니다. 같은 범위를 다시 실행해 주세요."), { code: "LIA_LIVE_DELTA_INVALID" });
     return delta;
   }
 
