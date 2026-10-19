@@ -52,7 +52,7 @@ async function exportStopped(options){
   // Copy first, then qualify the complete five-owner set. No source SQLite open.
   for(const ns of NAMESPACES){const src=originals.get(ns);if(src)before.set(src.file,copyMainBounded(src.file,path.join(backup,ns+'.sqlite'),src.stat,budget));}
   for(const ns of NAMESPACES)assertNoAuthorityDatabaseFile(path.join(backup,ns+'.sqlite'));
-  for(const ns of NAMESPACES)if(!originals.has(ns)){const db=new DatabaseSync(path.join(backup,ns+'.sqlite'));try{createCurrentSchema(db,ns,options.version||'0.3.71');}finally{db.close();}}
+  for(const ns of NAMESPACES)if(!originals.has(ns)){const db=new DatabaseSync(path.join(backup,ns+'.sqlite'));try{createCurrentSchema(db,ns,options.version||'0.4.0');}finally{db.close();}}
   const stores={};
   for(const ns of NAMESPACES){const dest=path.join(backup,ns+'.sqlite'),db=new DatabaseSync(dest,{readOnly:true});try{const integrity=String(db.prepare('PRAGMA integrity_check').get()?.integrity_check||'');if(integrity!=='ok')throw Error(`source_database_integrity_failed:${ns}:${integrity}`);const count=Number(db.prepare('SELECT COUNT(*) AS c FROM kv').get()?.c||0),live=Number(db.prepare('SELECT COUNT(*) AS c FROM kv WHERE deleted=0').get()?.c||0),tomb=Number(db.prepare('SELECT COUNT(*) AS c FROM kv WHERE deleted=1').get()?.c||0);stores[ns]={file:`${ns}.sqlite`,sha256:'',bytes:fs.statSync(dest).size,records:count,liveRecords:live,tombstones:tomb};}finally{db.close();}stores[ns].sha256=sha256File(dest);}
   const scopeSrc=path.join(source,'config','scope-catalog.json'),scopeDest=path.join(backup,'scope-catalog.json'),catalog=fs.existsSync(scopeSrc)?readJson(scopeSrc,null):{schema:'memory-suite.scope-catalog.v1',updatedAt:0,namespaces:{}};if(!catalog||catalog.schema!=='memory-suite.scope-catalog.v1')throw Error('source_scope_catalog_invalid');fs.writeFileSync(scopeDest,JSON.stringify(catalog,null,2)+'\n');
@@ -65,7 +65,7 @@ async function exportStopped(options){
   };
   verifyPublicationInputs();
   const unpublished=path.join(temp,'unpublished.zip');
-  const result=await exportLogicalMigration({backupDir:backup,archivePath:unpublished,sourceDataDir:source,serverVersion:options.version||'0.3.71',protocol:{major:1,minor:9},databaseSchemaVersion:1});
+  const result=await exportLogicalMigration({backupDir:backup,archivePath:unpublished,sourceDataDir:source,serverVersion:options.version||'0.4.0',protocol:{major:1,minor:9},databaseSchemaVersion:1});
   // Packaging yields. Recheck AFTER it settles, then publish without an await
   // gap. Atomic hardlink creation cannot overwrite a competing output. This
   // is an observed-input check, not a writer fence or filesystem-wide CAS.
