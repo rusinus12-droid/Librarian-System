@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.3.71",
-  "generatedAt": "2026-10-19T01:05:15.859Z",
+  "generatedAt": "2026-10-19T02:06:01.124Z",
   "server": {
     "version": "0.3.71",
     "protocol": {
@@ -1427,7 +1427,7 @@
     "hayaku": "3.0.154",
     "libra": "2.3.171",
     "lia": "0.26.88",
-    "retrace": "1.9.85",
+    "retrace": "1.9.86",
     "gradia": "0.25.90"
   },
   "files": {
@@ -3460,7 +3460,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "f434a866bfe9eb3e1069cfd2fe0c993f57c4378278f20beac17a3d0d3de6bcea",
+      "sha256": "ab3bc022837b8031356e6b08bc73842fd2889ba6067193932c7742be918fa9d4",
       "bytes": 11842
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3486,6 +3486,10 @@
     "docs/RETRACE_SERVER_COPY_DELETE.md": {
       "sha256": "f59552dbd2ec03a88318010c3ce68218c92c7f67059dde3a56a1dc97b1a0bc92",
       "bytes": 2872
+    },
+    "docs/RETRACE_SERVER_MANAGEMENT_GUI_AUDIT_20261019.md": {
+      "sha256": "741d60f290e42aa2f8c15e7b997e2fe1a4808312137763e748c2dde84ef96563",
+      "bytes": 7160
     },
     "docs/retrace-gui-redesign/plan.md": {
       "sha256": "d2dffee097c46a75a7411a441631566cd3693a68a04b7fdb50a205624231f748",
@@ -3832,7 +3836,7 @@
       "bytes": 733
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "684537568b9a6f108ed505825dd0fe6deb931e72a1d351e0811556a8188c51cd",
+      "sha256": "01fc3a5e51d1b4cbfabaf7c548fbb12dc23d47cf8439be48345a664a2883cf7e",
       "bytes": 3359
     },
     "plugins/Flashback_Memory.js": {
@@ -3856,8 +3860,8 @@
       "bytes": 6038275
     },
     "plugins/RETRACE.js": {
-      "sha256": "1d9ce962bbddaf30336f04390f5eb335db8d9c3cc4fca399a96855596551a355",
-      "bytes": 1225757
+      "sha256": "083671ca273a88aba7196701df9833455e776fcb4eb120f253f10d64dab3c2be",
+      "bytes": 1229845
     },
     "release-policy.json": {
       "sha256": "7d9cee3b785af0c17374d3a5cbfcdc432f92d3c18925bcf1f26569e03d75d870",
@@ -9524,8 +9528,8 @@
       "bytes": 1461
     },
     "tests/retrace_delete_flow_runtime_test.cjs": {
-      "sha256": "480c2884124c2485775f384bce099f37e4fa4105a2a7f188997ca02e399e080d",
-      "bytes": 5314
+      "sha256": "7bf967ceae14ecc57c148d42e9c96ea1c610934abcb14ba31aaddf3153c65c3e",
+      "bytes": 6402
     },
     "tests/retrace_dialog_lifecycle_gui_test.cjs": {
       "sha256": "1873f1c3fc3ba94a75e576ba0e0f438ea1513dd3ac1456c0beebdf23b2695d06",
@@ -9631,6 +9635,10 @@
       "sha256": "34f1377538e56296a75c52e11ed1a64db2e95427da8fe152aebf99bc3f9973a6",
       "bytes": 3101
     },
+    "tests/retrace_server_bulk_selection_runtime_test.cjs": {
+      "sha256": "cedbbbecd810705b98b5a8968b50f9667b46126e0a88f1bef5da7403caf7ebe8",
+      "bytes": 4760
+    },
     "tests/retrace_server_control_currentness_test.cjs": {
       "sha256": "e924809174aa34633cbb2c4980e06b6b17a3451ffece0b41c4f99dd4988b20ba",
       "bytes": 14935
@@ -9640,20 +9648,20 @@
       "bytes": 3540
     },
     "tests/retrace_server_control_navigation_test.cjs": {
-      "sha256": "ae5a315acb5f4c716f0992dc7943cc22dbf4156e1be3be01cbdbb19a27c033f0",
-      "bytes": 3163
+      "sha256": "94f2a34495fe21949680a226abd217f819b928b679c28026fbc8eadb95381fdc",
+      "bytes": 4266
     },
     "tests/retrace_server_control_render_test.cjs": {
-      "sha256": "a152cc6d8614f9926db55e635c8b0db8a6fd8fd7b454f7dae1c93c19a6cb12a1",
-      "bytes": 4854
+      "sha256": "388c60e659107b93c73f56628d161439c62d99fc168c2e97ae5448ba131d01da",
+      "bytes": 5422
     },
     "tests/retrace_server_handoff_test.cjs": {
       "sha256": "8d834ead5198ca006f11f23344463c92a9b7cfc27265987863e1678c3a0e03cd",
       "bytes": 13122
     },
     "tests/retrace_server_restore_gui_runtime_test.cjs": {
-      "sha256": "32a4f783c486b2d1108b80a0c83c54bbf46f8fb043bd3c19588e11d45751ddc9",
-      "bytes": 32746
+      "sha256": "1a93e4d81b94077415530f6455cd88bcfeb884db5cf3e11e4ccf658fa5a8531f",
+      "bytes": 34805
     },
     "tests/retrace_storage_mode_identity_test.cjs": {
       "sha256": "44cf597b26199bb58a60c90d0497626a99eef8569ce8f33dfb5a4d9d7863a616",
@@ -10787,6 +10795,10 @@
       "sha256": "6da3df186ed66d3edcb6d312b134fb6a98cabe4ecc3fb4816e73e67408a4bcd3",
       "bytes": 4124
     },
+    "tools/retrace_server_management_browser_audit.cjs": {
+      "sha256": "a27785f81c008d9edfe178aa854d9ede13135efcac3dfb13d3994be83993562b",
+      "bytes": 18455
+    },
     "tools/risu_plugin_harness.js": {
       "sha256": "26bcbdf15a02b1c988375a231e55b76fa597f9ae3eb63b827aac42847fad0686",
       "bytes": 10409
@@ -11036,7 +11048,7 @@
       "bytes": 632
     },
     "처음_읽어주세요.txt": {
-      "sha256": "930e945ea7893cc74a5891c2a233dbea44ae237014c2bf0776d0f5356614f095",
+      "sha256": "21695c16dac365ddf81a9dbc231efbc5b73e9eb6e747b7aa22b5ec8763f952a0",
       "bytes": 3466
     }
   },

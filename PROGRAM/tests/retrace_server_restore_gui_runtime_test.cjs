@@ -71,7 +71,7 @@ async function realm(baseUrl, sourceHost) {
   const pluginStorage = store([['fixture_original_bytes', JSON.stringify(sourceHost)]]), safeLocalStorage = store();
   const args = { memory_suite_server_mode: 'plugin_only', memory_suite_server_url: baseUrl };
   const requests = [];
-  let held = null, modelCalls = 0, selection = 'present';
+  let held = null, modelCalls = 0, selection = 'present', blockBackupChecks = false;
   const readsetDrifts = [];
   const host = {
     pluginStorage, safeLocalStorage,
@@ -80,6 +80,10 @@ async function realm(baseUrl, sourceHost) {
     async setArgument(name, value) { args[name] = String(value); return true; },
     async nativeFetch(url, init) {
       assert.equal(new URL(String(url)).origin, baseUrl, 'transport is confined to the isolated server');
+      if(blockBackupChecks && new URL(String(url)).pathname==='/v1/manager/control/backup-check'){
+        requests.push({route:'/v1/manager/control/backup-check',status:400});
+        return new Response(JSON.stringify({error:'fixture_backup_check_refused'}),{status:400,headers:{'Content-Type':'application/json'}});
+      }
       const response = await fetch(url, init);
       requests.push({ route: new URL(String(url)).pathname, status: response.status });
       if (held && !held.captured && new URL(String(url)).pathname === '/v1/manager/control/status' && ++held.statusSeen === held.ordinal) {
@@ -130,6 +134,7 @@ async function realm(baseUrl, sourceHost) {
   const document = dom.window.document;
   const open = async () => { await callbacks.get('retrace-main-hamburger')(); return document.querySelector('#flashback-hayaku-bridge-root'); };
   return { context, document, window: dom.window, audit, callbacks, requests, domErrors, readsetDrifts, pluginStorage, open,
+    blockBackupChecks(value) { blockBackupChecks = value; },
     selection(value) { selection = value; },
     holdStatus(ordinal = 1) { held = { entered: deferred(), release: deferred(), captured: null, delivered: false, ordinal, statusSeen: 0 }; return held; },
     async close() {
@@ -188,13 +193,28 @@ async function realm(baseUrl, sourceHost) {
     await waitFor(() => !env.audit.state().busy && env.audit.state().control?.backups?.length === 1, 'GUI backup result');
     assert.equal(root.querySelector('#job-backup').hidden,false,'manager backup opens its named job dialog');
     assert.match(root.querySelector('#job-backup [data-job-result]').textContent,/백업 생성 완료:/,'job result is the real manager response');
+    assert.equal(root.querySelectorAll('#job-backup .step.is-done').length,3,'backup creation and physical integrity check finish every phase');
+    assert.match(root.querySelector('#bk-badge').textContent,/마지막 .*20\d{2}/,'ISO backup timestamps are displayed as dates');
+    assert.equal(root.querySelector('#bk-badge').textContent.includes('마지막 -'),false);
+    assert.equal(env.audit.state().control.backups[0].verifiedAtLastCheck,true,'created backup has actual server scrub proof');
+    assert.match(root.querySelector('#serverControlPlugins').textContent,/HAYAKU.*마지막 접촉 \d/s,'owner plugin ID matches its contact record');
     root.querySelector('#job-backup [data-job-hide]').click();
     const backupId = root.querySelector('#serverControlBackups').value;
     assert.ok(backupId, 'GUI selects its created backup');
+    env.blockBackupChecks(true);
+    click('backup-create');
+    await waitFor(()=>!env.audit.state().busy,'refused backup verification settles');
+    assert.equal(root.querySelectorAll('#job-backup .step.is-done').length,0,'creation alone cannot certify a failed backup check');
+    assert.match(root.querySelector('#job-backup [data-job-msg]').textContent,/미완료/);
+    assert.match(root.querySelector('#job-backup [data-job-result]').textContent,/fixture_backup_check_refused/);
+    root.querySelector('#job-backup [data-job-hide]').click();env.blockBackupChecks(false);
+    click('refresh');await waitFor(()=>!env.audit.state().busy&&env.audit.state().control?.backups?.length===2,'both physically created backups remain available');
+    root.querySelector('#serverControlBackups').value=backupId;
     root.querySelector('[data-control-namespace][value="hayaku"]').checked = true;
     app.repositories.hayaku.mutate({ kind: 'set', space: 'plugin', key, value: { ...payload, text: 'later server value', sessionEpoch: 1 }, expectedRevision: 1, operationId: 'retrace_restore_later_001' });
     click('restore-plan');
     await waitFor(() => !env.audit.state().busy && env.audit.state().control?.plan, 'GUI restore preview');
+    assert.equal(root.querySelector('#serverControlPreview').closest('details').open,true,'requested preview expands its real result panel');
     assert.equal(app.repositories.hayaku.get('plugin', key).value.text, 'later server value', 'preview leaves durable data unchanged');
     click('restore-execute');
     await waitFor(() => !root.querySelector('#dlg-restore').hidden, 'real confirmation dialog');
@@ -370,7 +390,7 @@ async function realm(baseUrl, sourceHost) {
     root.querySelector('#dlg-reset [data-dialog-typed-input]').dispatchEvent(new env.window.Event('input',{bubbles:true}));
     assert.equal(root.querySelector('#dlg-reset [data-dialog-confirm]').disabled,false,'destructive confirmation requires the exact typed word');
     root.querySelector('#dlg-reset [data-dialog-confirm]').click();
-    await waitFor(()=>root.querySelector('#serverResetStatus').textContent.includes('초기화 및 빈 상태 확인 완료'),'actual manager reset readback');
+    await waitFor(()=>!env.audit.state().busy&&root.querySelector('#serverResetStatus').textContent.includes('초기화 및 빈 상태 확인 완료'),'actual manager reset completion and status readback');
     assert.equal(root.querySelector('#job-reset').hidden,false,'reset operation displays its named result dialog');
     assert.equal(root.querySelectorAll('#job-reset [data-job-steps] .step').length,4,'canonical reset steps retained');
     assert.equal(root.querySelectorAll('#job-reset [data-job-result] .res').length,2,'canonical reset target/backup result rows retained');

@@ -10,6 +10,17 @@ assert.ok(start>=0&&end>start);
 const setPage=new Function('Runtime','root',source.slice(start,end)+'return setServerPage;')(Runtime,root);
 for(const page of pages){setPage(page);assert.deepEqual(views.filter(n=>!n.hidden).map(n=>n.attrs['data-server-view']),[page]);assert.deepEqual(buttons.filter(n=>n.attrs['aria-current']==='page').map(n=>n.attrs['data-server-page']),[page]);assert.equal(Runtime.serverControl.plan.planId,'keep','navigation does not invalidate restore selection or plan');}
 setPage('invalid');assert.equal(Runtime.serverControlPage,'overview');
+let scans=0;
+const handlers=new Map(),controls=pages.map(page=>({getAttribute:()=>page,addEventListener:(name,callback)=>handlers.set(page,callback)}));
+const bindStart=source.indexOf("    root.querySelectorAll('[data-server-page]').forEach(button=>",start);
+const bindEnd=source.indexOf('    bindDebugExportButton(',bindStart);
+new Function('root','Runtime','setServerPage','renderServerControl','refreshServerScopeManagement','warn',source.slice(bindStart,bindEnd))(
+  {querySelectorAll:()=>controls},Runtime,setPage,()=>{},async()=>{scans++;},()=>{});
+assert.equal(scans,0,'binding/opening the overview does not scan server data');
+handlers.get('overview')();assert.equal(scans,0);
+handlers.get('data')();assert.equal(scans,1,'explicit first data-view click discovers actual server scopes');
+Runtime.serverScopeManagerLoading=true;handlers.get('data')();assert.equal(scans,1,'navigation does not duplicate an in-flight scan');
+Runtime.serverScopeManagerLoading=false;Runtime.serverScopeCatalog={scopes:[]};handlers.get('data')();assert.equal(scans,1,'known data view does not rescan on navigation');
 const shellStart=source.indexOf('const renderShell = () =>');
 const shellLiteral=source.slice(shellStart).match(/root\.innerHTML = ("(?:\\.|[^"\\])*");/s);
 assert.ok(shellLiteral,'single mockup product shell literal');
