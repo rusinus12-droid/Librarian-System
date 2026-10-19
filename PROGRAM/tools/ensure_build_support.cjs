@@ -51,7 +51,7 @@ function lockedTreeComplete(modulesDir, packages) {
   } catch (_) { return false; }
 }
 
-function ensureBuildSupportDependencies(options = {}) {
+function findBuildSupportDependencies(options = {}) {
   const programDir = options.programDir ? path.resolve(options.programDir) : path.resolve(__dirname, '..');
   const lockPath = path.join(programDir, 'build-support', 'package-lock.json');
   const lockContent = fs.existsSync(lockPath) ? fs.readFileSync(lockPath) : null;
@@ -76,6 +76,10 @@ function ensureBuildSupportDependencies(options = {}) {
 
   if (process.env.GRADIA_TOOLCHAIN_ROOT && complete(process.env.GRADIA_TOOLCHAIN_ROOT)) {
     return activate(process.env.GRADIA_TOOLCHAIN_ROOT, 'GRADIA_TOOLCHAIN_ROOT');
+  }
+  const projectModules = path.join(programDir, 'build-support', 'node_modules');
+  if (packages.length && lockedTreeComplete(projectModules, packages)) {
+    return activate(projectModules, 'build_support_node_modules');
   }
   try {
     const direct = require.resolve('jsdom/package.json', { paths: [programDir, __dirname] });
@@ -143,6 +147,57 @@ function ensureBuildSupportDependencies(options = {}) {
   }
 }
 
+function findNpmCli(nodePath = process.execPath, searchPath = process.env.PATH || '') {
+  const nodeDir = path.dirname(nodePath);
+  const candidates = [
+    path.join(nodeDir, 'node_modules/npm/bin/npm-cli.js'),
+    path.resolve(nodeDir, '../lib/node_modules/npm/bin/npm-cli.js'),
+    path.resolve(nodeDir, '../share/nodejs/npm/bin/npm-cli.js')
+  ];
+  for (const dir of searchPath.split(path.delimiter).filter(Boolean)) {
+    candidates.push(path.join(dir, 'node_modules/npm/bin/npm-cli.js'));
+    try { candidates.push(fs.realpathSync(path.join(dir, 'npm'))); } catch (_) {}
+  }
+  return candidates.find(file => path.basename(file) === 'npm-cli.js' && fs.existsSync(file)) || null;
+}
+
+function ensureBuildSupportDependencies(options = {}) {
+  const existing = findBuildSupportDependencies(options);
+  if (existing || !options.installIfMissing) return existing;
+  const programDir = options.programDir ? path.resolve(options.programDir) : path.resolve(__dirname, '..');
+  const supportRoot = path.join(programDir, 'build-support');
+  const lock = fs.readFileSync(path.join(supportRoot, 'package-lock.json'));
+  const packages = Object.entries(JSON.parse(lock).packages || {}).filter(([key]) => key);
+  const cacheRoot = path.join(os.tmpdir(), 'librarian-build-support-' + crypto.createHash('sha256').update(lock).digest('hex').slice(0, 16));
+  const npmCli = options.npmCliPath || findNpmCli();
+  const help = 'Install Node.js with npm, or run npm ci --include=dev --ignore-scripts --no-audit --no-fund --prefix "' + supportRoot + '" and retry.';
+  if (!npmCli) throw new Error('build_support_npm_unavailable. ' + help);
+  fs.mkdirSync(cacheRoot, { recursive: true });
+  const stagingRoot = fs.mkdtempSync(path.join(cacheRoot, '.install-'));
+  let published = false;
+  try {
+    fs.copyFileSync(path.join(supportRoot, 'package.json'), path.join(stagingRoot, 'package.json'));
+    fs.writeFileSync(path.join(stagingRoot, 'package-lock.json'), lock);
+    options.onProgress?.('빌드 검사 의존성을 준비합니다 (npm ci, 최초 실행 시 네트워크 필요).');
+    // Invoke npm's JS entry with the selected Node executable. No shell/npm.cmd
+    // quoting is involved, including on Windows paths containing spaces.
+    const result = cp.spawnSync(process.execPath, [npmCli, 'ci', '--include=dev', '--ignore-scripts', '--no-audit', '--no-fund', '--prefix', stagingRoot], {
+      cwd: stagingRoot, stdio: 'ignore', timeout: 180000, windowsHide: true
+    });
+    if (result.status !== 0) throw new Error('build_support_npm_ci_failed:' + (result.error?.code || result.status) + '. ' + help);
+    const modulesDir = path.join(stagingRoot, 'node_modules');
+    if (!packages.length || !lockedTreeComplete(modulesDir, packages)) throw new Error('build_support_installed_tree_incomplete. ' + help);
+    const readyRoot = path.join(cacheRoot, 'ready-' + path.basename(stagingRoot).slice('.install-'.length));
+    fs.renameSync(stagingRoot, readyRoot);
+    published = true;
+    cachedModulesDir = path.join(readyRoot, 'node_modules');
+    applyEnvironment(cachedModulesDir);
+    return { modulesDir: cachedModulesDir, source: 'npm_ci' };
+  } finally {
+    if (!published) fs.rmSync(stagingRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+}
+
 function applyEnvironment(modulesDir) {
   process.env.GRADIA_TOOLCHAIN_ROOT = modulesDir;
   const currentPath = process.env.NODE_PATH || '';
@@ -156,5 +211,6 @@ function applyEnvironment(modulesDir) {
 
 module.exports = {
   ensureBuildSupportDependencies,
-  applyEnvironment
+  applyEnvironment,
+  findNpmCli
 };

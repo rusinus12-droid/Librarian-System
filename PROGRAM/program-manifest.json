@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-19T15:18:51.489Z",
+  "generatedAt": "2026-10-19T22:18:53.740Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -4568,8 +4568,8 @@
       "bytes": 9699
     },
     "tests/build_support_cache_runtime_test.cjs": {
-      "sha256": "c93e2ebefdc0259ecd5d1d4ed9da3fb60f99b19c006575d5d13a4b215ba6eaab",
-      "bytes": 5047
+      "sha256": "90c450a404ca7c3f4772eb479c9588a529e9501006b111d2c46fd492b17ae3c5",
+      "bytes": 8432
     },
     "tests/capture_backend_compatibility_contract_test.cjs": {
       "sha256": "a3498ea4215dd05819f20beb65a2239cc2a37a60e24ba964b9309b93adc5fbf9",
@@ -9332,8 +9332,8 @@
       "bytes": 3500
     },
     "tests/program_data_layout_test.cjs": {
-      "sha256": "16267a3904b8b85ab49fff1f289e8027f0146d9326be1d439d55708942c7daf6",
-      "bytes": 11187
+      "sha256": "efefb77a51a218df9b77836d3eef2301c05024be3cbe9df2b4374a582b7ab785",
+      "bytes": 13623
     },
     "tests/rag_eval_flashback_floor_test.cjs": {
       "sha256": "bf7d335985a5c2ba1b792d6db2d48d451572534882a179c0278ae3ce0bf6e99c",
@@ -9420,8 +9420,8 @@
       "bytes": 3265
     },
     "tests/release_builder_qualification_runtime_test.cjs": {
-      "sha256": "c2f0d85de13cb9e5d7d20a3d3f37ba7bf84b3a5a4c3708c23527868635eabc96",
-      "bytes": 4141
+      "sha256": "dfa2a35778ba8b8c6f63efde688e1bf4e5c36434460a0dbb874dd209b808b51a",
+      "bytes": 5342
     },
     "tests/release_builder_source_fixture_closure_test.cjs": {
       "sha256": "acff90c8a5239dc496171a5dfc661c3a906adeecbe71fcfcf48f049e54f01a46",
@@ -10528,8 +10528,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "1b648a0f1c4371d26f92127d3ff919000eb374c156444c3d5823d030414524d5",
-      "bytes": 52590
+      "sha256": "3d1e7e7df1fad7e5135f6f2c0d8db7657f50056758ce52ee594410cd5b3ca7e2",
+      "bytes": 53041
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",
@@ -10572,8 +10572,8 @@
       "bytes": 19989
     },
     "tools/ensure_build_support.cjs": {
-      "sha256": "1816d94848b4f42a65dfcf65972c651d1bd3ba2bcabb0549d7f8c336dd7d7eaa",
-      "bytes": 7212
+      "sha256": "45c11b590916f9c408240d83eddd30582c6662810721c76dbd1f4896d506f599",
+      "bytes": 10719
     },
     "tools/evaluate_libra_unified_memory.cjs": {
       "sha256": "d1cd8be80d32ca71b25c042b7644ccaa293611ac15ac06780100ac72d677d017",

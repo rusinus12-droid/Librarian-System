@@ -17,6 +17,7 @@ const listFiles = root => {
   if (!fs.existsSync(root)) return out;
   const walk = current => {
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      if (entry.name.toLowerCase() === 'node_modules') continue;
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) walk(full);
       else if (entry.isFile()) out.push(full);
@@ -32,7 +33,7 @@ function runPrepare(tempProgram, dataDir) {
   });
 }
 
-function assertPackageRoot(root) {
+function assertPackageRoot(root, { allowSourceInput = false } = {}) {
   // macOS writes .DS_Store into any directory Finder has displayed. It is
   // gitignored, never tracked, and never copied into a release: the builder is an
   // allowlist (shouldCopySourceProgram / shouldCopyUpdater), so these files cannot
@@ -51,23 +52,31 @@ function assertPackageRoot(root) {
     expectedRootEntries.push('.development', 'FIRST-README.md');
   }
   // Release smoke executes against this source checkout before packaging. These
-  // publication inputs are permitted only at a verified Git repository root;
-  // staged bundles keep the exact original release layout.
-  if (fs.existsSync(path.join(root, '.git'))) {
-    const repository = spawnSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
-    assert.equal(repository.status, 0, 'source metadata requires a real repository');
-    assert.equal(fs.realpathSync(repository.stdout.trim()), fs.realpathSync(root), 'source metadata belongs to this repository root');
+  // publication inputs also occur in GitHub Download ZIP, without .git. Admit
+  // them only for a readable build source; packaged runtime roots stay strict.
+  const hasGit = fs.existsSync(path.join(root, '.git'));
+  const hasSourceMetadata = ['LICENSE', 'PUBLICATION-PROVENANCE.json', 'README.md'].some(name => fs.existsSync(path.join(root, name)));
+  if (hasGit || allowSourceInput && hasSourceMetadata) {
+    if (hasGit) {
+      const repository = spawnSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+      assert.equal(repository.status, 0, 'source metadata requires a real repository');
+      assert.equal(fs.realpathSync(repository.stdout.trim()), fs.realpathSync(root), 'source metadata belongs to this repository root');
+      expectedRootEntries.push('.git');
+    }
+    for (const relative of ['tools/build_distribution.cjs', 'tools/release_builder_ui.cjs', 'build-support/package-lock.json', 'tests/program_data_layout_test.cjs']) {
+      assert.ok(fs.statSync(path.join(root, 'PROGRAM', relative)).isFile(), 'publication inputs require readable build source: ' + relative);
+    }
     assert.ok(fs.statSync(path.join(root, 'LICENSE')).isFile(), 'source publication license is present');
     const provenance = JSON.parse(fs.readFileSync(path.join(root, 'PUBLICATION-PROVENANCE.json'), 'utf8'));
     assert.equal(provenance.schema, 'librarian.six-plugin-checkpoint-publication.v2');
-    expectedRootEntries.push('.git', 'LICENSE', 'PUBLICATION-PROVENANCE.json');
+    expectedRootEntries.push('LICENSE', 'PUBLICATION-PROVENANCE.json');
     if (fs.existsSync(path.join(root, 'README.md'))) expectedRootEntries.push('README.md');
   }
   assert.deepEqual(rootEntries, expectedRootEntries.sort(), 'Bundle root contains only PROGRAM/DATA, updater, and verified release artifacts.');
 }
 
 function main() {
-  assertPackageRoot(packageRoot);
+  assertPackageRoot(packageRoot, { allowSourceInput: true });
   const rootControl = fs.mkdtempSync(path.join(os.tmpdir(), 'layout-root-control-'));
   try {
     for (const name of ['0_설치_안내.txt', 'DATA', 'PROGRAM', 'SHA256SUMS.txt', 'UPDATER', '업데이트.bat', '업데이트.command', '업데이트.sh']) {
@@ -80,6 +89,26 @@ function main() {
       assert.throws(() => assertPackageRoot(rootControl), assert.AssertionError, `packaged roots reject ${name}`);
       fs.unlinkSync(path.join(rootControl, name));
     }
+    // A GitHub source archive is a valid build input without initializing Git.
+    const sourceFiles = ['tools/build_distribution.cjs', 'tools/release_builder_ui.cjs', 'build-support/package-lock.json', 'tests/program_data_layout_test.cjs'];
+    for (const relative of sourceFiles) {
+      const file = path.join(rootControl, 'PROGRAM', relative);
+      fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, 'source fixture');
+    }
+    fs.writeFileSync(path.join(rootControl, 'LICENSE'), 'source license');
+    fs.writeFileSync(path.join(rootControl, 'README.md'), 'source readme');
+    const provenancePath = path.join(rootControl, 'PUBLICATION-PROVENANCE.json');
+    fs.writeFileSync(provenancePath, JSON.stringify({ schema: 'librarian.six-plugin-checkpoint-publication.v2' }));
+    assertPackageRoot(rootControl, { allowSourceInput: true });
+    assert.throws(() => assertPackageRoot(rootControl), assert.AssertionError, 'source metadata is not a runtime bundle exemption');
+    fs.writeFileSync(provenancePath, JSON.stringify({ schema: 'wrong' }));
+    assert.throws(() => assertPackageRoot(rootControl, { allowSourceInput: true }), assert.AssertionError);
+    fs.writeFileSync(provenancePath, JSON.stringify({ schema: 'librarian.six-plugin-checkpoint-publication.v2' }));
+    fs.writeFileSync(path.join(rootControl, 'unaccounted.bin'), '');
+    assert.throws(() => assertPackageRoot(rootControl, { allowSourceInput: true }), assert.AssertionError);
+    fs.unlinkSync(path.join(rootControl, 'unaccounted.bin'));
+    fs.unlinkSync(path.join(rootControl, 'PROGRAM', sourceFiles[0]));
+    assert.throws(() => assertPackageRoot(rootControl, { allowSourceInput: true }), /ENOENT/);
   } finally { fs.rmSync(rootControl, { recursive: true, force: true }); }
   assert.ok(fs.existsSync(path.join(packageRoot, 'UPDATER', 'updater.cjs')), 'Cross-platform updater engine is packaged at the bundle root.');
 

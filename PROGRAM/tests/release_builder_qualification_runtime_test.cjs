@@ -19,6 +19,11 @@ test('explicit offline qualification survives a real version bump and failed-bui
  manifest.qualification={status:'offline_candidate',updaterEligible:false,publicationReady:false};fs.writeFileSync(manifestPath,JSON.stringify(manifest,null,2)+'\n');
  const current=fs.readFileSync(path.join(program,'VERSION.txt'),'utf8').trim(),version=builder.nextPatchVersion(current),out=path.join(temp,'out');
  const env={...process.env,LIBRARIAN_PACKAGE_QUALIFICATION:''};
+ // A normal npm toolchain contains links in .bin. Source packaging must prune
+ // node_modules before inspecting them and still reject links in shipped code.
+ const localBin=path.join(program,'build-support/node_modules/.bin'),linked=path.join(temp,'unpackaged-toolchain');
+ fs.mkdirSync(localBin,{recursive:true});fs.mkdirSync(linked);fs.writeFileSync(path.join(linked,'private-tool.txt'),'not for distribution');
+ fs.symlinkSync(linked,path.join(localBin,'tool'),process.platform==='win32'?'junction':'dir');
  const run=spawnSync(process.execPath,[path.join(program,'tools/build_distribution.cjs'),'--profile','source','--offline-candidate','--version',version,'--output-dir',out],{env,encoding:'utf8',timeout:120000});
  assert.equal(run.status,0,run.stderr||String(run.error));
  const update=JSON.parse(fs.readFileSync(path.join(root,'update-manifest.json'),'utf8'));
@@ -28,7 +33,9 @@ test('explicit offline qualification survives a real version bump and failed-bui
  const base=`Librarian-System-${version}-Source-Offline-Candidate`;
  const report=JSON.parse(fs.readFileSync(path.join(out,base+'.build-report.json'),'utf8'));
  assert.equal(report.publicationSmokePassed,false);assert.equal(report.updaterEligible,false);
- const entry=readZipEntries(path.join(out,base+'.zip')).find(row=>row.name.endsWith('/update-manifest.json'));
+ const entries=readZipEntries(path.join(out,base+'.zip'));
+ assert.equal(entries.some(row=>row.name.includes('/node_modules/')),false,'local toolchains are not packaged');
+ const entry=entries.find(row=>row.name.endsWith('/update-manifest.json'));
  assert.ok(entry);assert.equal(JSON.parse(entry.bytes.toString('utf8')).qualification,'offline_candidate');
  const files=['VERSION.txt','server/server.cjs','release-policy.json','server/portable/logical_migration.cjs','server/portable/transfer_manager.cjs','tools/portable_export_stopped.cjs','처음_읽어주세요.txt','PACKAGE_CONTENTS.txt','program-manifest.json','docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json'].map(p=>path.join(program,p));
  files.push(...['0_설치_안내.txt','update-manifest.json','SHA256SUMS.txt'].map(p=>path.join(root,p)));
@@ -36,4 +43,8 @@ test('explicit offline qualification survives a real version bump and failed-bui
  const before=snapshot();
  const failed=spawnSync(process.execPath,[path.join(program,'tools/build_distribution.cjs'),'--profile','source','--offline-candidate','--version',builder.nextPatchVersion(version),'--output-dir',path.join(root,'invalid-output')],{env,encoding:'utf8',timeout:30000});
  assert.notEqual(failed.status,0);assert.match(failed.stderr,/distribution_output_must_be_outside_source_package/);assert.deepEqual(snapshot(),before);
+ fs.symlinkSync(linked,path.join(program,'tools','untrusted-link'),process.platform==='win32'?'junction':'dir');
+ const badLink=spawnSync(process.execPath,[path.join(program,'tools/build_distribution.cjs'),'--profile','source','--offline-candidate','--output-dir',path.join(temp,'bad-link-output')],{env,encoding:'utf8',timeout:30000});
+ assert.notEqual(badLink.status,0);assert.match(badLink.stderr,/distribution_symbolic_link_is_not_allowed/);
+ assert.equal(fs.readdirSync(path.join(temp,'bad-link-output')).some(file=>file.endsWith('.zip')),false);
 });

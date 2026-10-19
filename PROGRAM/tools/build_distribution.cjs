@@ -242,12 +242,15 @@ function sha256File(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
-function listFiles(rootDir) {
+function listFiles(rootDir, skipDependencies = false) {
   const root = path.resolve(rootDir);
   const rows = [];
   if (!fs.existsSync(root)) return rows;
   const walk = current => {
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      // Installed source toolchains are excluded before walking their .bin
+      // symlinks. Packaged trees and UPDATER keep the strict symlink check.
+      if (skipDependencies && entry.name.toLowerCase() === 'node_modules') continue;
       const fullPath = path.join(current, entry.name);
       if (entry.isSymbolicLink()) throw new Error(`distribution_symbolic_link_is_not_allowed:${fullPath}`);
       if (entry.isDirectory()) walk(fullPath);
@@ -364,13 +367,13 @@ function assertRootUpdateLaunchers(stagedRoot) {
   return { launchers: REQUIRED_ROOT_UPDATE_LAUNCHERS.length };
 }
 
-function copyTreeAllowlisted(sourceDir, destinationDir, predicate) {
+function copyTreeAllowlisted(sourceDir, destinationDir, predicate, skipDependencies = false) {
   const source = path.resolve(sourceDir);
   const destination = path.resolve(destinationDir);
   let copied = 0;
   let bytes = 0;
   const sourceFiles = [];
-  for (const filePath of listFiles(source)) {
+  for (const filePath of listFiles(source, skipDependencies)) {
     const relative = path.relative(source, filePath);
     if (!predicate(relative, filePath)) continue;
     const target = path.join(destination, relative);
@@ -386,14 +389,14 @@ function copyTreeAllowlisted(sourceDir, destinationDir, predicate) {
   return { copied, bytes, sourceFiles };
 }
 
-function assertTreeSourceUnchanged(sourceDir, sourceFiles, predicate, label = 'source') {
-  const current = listFiles(sourceDir).filter(file => predicate(path.relative(sourceDir, file), file))
+function assertTreeSourceUnchanged(sourceDir, sourceFiles, predicate, label = 'source', skipDependencies = false) {
+  const current = listFiles(sourceDir, skipDependencies).filter(file => predicate(path.relative(sourceDir, file), file))
     .map(file => ({ path: path.relative(sourceDir, file).split(path.sep).join('/'), sha256: sha256File(file) }));
   if (JSON.stringify(current) !== JSON.stringify(sourceFiles)) throw new Error(`distribution_${label}_changed_during_build`);
 }
 
 function assertSourceUnchanged(sourceDir, sourceFiles) {
-  return assertTreeSourceUnchanged(sourceDir, sourceFiles, shouldCopyProgram, 'source');
+  return assertTreeSourceUnchanged(sourceDir, sourceFiles, shouldCopyProgram, 'source', true);
 }
 
 function runNodeProcess(args = [], cwd = programDir, options = {}) {
@@ -406,7 +409,7 @@ function runNodeProcess(args = [], cwd = programDir, options = {}) {
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
-    throw new Error(`distribution_command_failed:${String(args[0] || 'node')}:${result.status}\n${String(result.stderr || result.stdout || '').trim()}`);
+    throw new Error(`distribution_command_failed:${String(args[0] || 'node')}:${result.status}\n${[result.stdout,result.stderr].filter(Boolean).join('\n').trim()}`);
   }
   return result;
 }
@@ -570,29 +573,25 @@ function safeRemoveTemporary(temporaryRoot, outputDir) {
   fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 20, retryDelay: 150 });
 }
 
-function snapshotAllowlistedTree(rootDir, predicate) {
+function snapshotAllowlistedTree(rootDir, predicate, skipDependencies = false) {
   const root=path.resolve(rootDir);
-  return listFiles(root).filter(file=>predicate(path.relative(root,file),file))
+  return listFiles(root,skipDependencies).filter(file=>predicate(path.relative(root,file),file))
     .map(file=>({path:path.relative(root,file).split(path.sep).join('/'),sha256:sha256File(file)}));
 }
 
 function runReleaseSmokeFromSource() {
-  const programSnapshot=snapshotAllowlistedTree(programDir,shouldCopySourceProgram);
+  const programSnapshot=snapshotAllowlistedTree(programDir,shouldCopySourceProgram,true);
   const updaterRoot=path.join(packageRoot,'UPDATER');
   const updaterSnapshot=snapshotAllowlistedTree(updaterRoot,shouldCopyUpdater);
   runNode(path.join(programDir,'tools','check_sdk_sync.cjs'),[],programDir);
   const smokeEnv = {};
-  try {
-    const { ensureBuildSupportDependencies } = require('./ensure_build_support.cjs');
-    const support = ensureBuildSupportDependencies({ programDir });
-    if (support?.modulesDir) {
-      smokeEnv.GRADIA_TOOLCHAIN_ROOT = support.modulesDir;
-      const current = process.env.NODE_PATH || '';
-      smokeEnv.NODE_PATH = support.modulesDir + (current ? path.delimiter + current : '');
-    }
-  } catch (_) {}
+  const { ensureBuildSupportDependencies } = require('./ensure_build_support.cjs');
+  const support = ensureBuildSupportDependencies({ programDir });
+  if (!support?.modulesDir) throw new Error('distribution_build_support_unavailable');
+  smokeEnv.GRADIA_TOOLCHAIN_ROOT = support.modulesDir;
+  smokeEnv.NODE_PATH = process.env.NODE_PATH || support.modulesDir;
   const smoke=runNodeProcess(['--test',...RELEASE_SMOKE_TESTS.map(name=>path.join(programDir,'tests',name))],programDir,{timeoutMs:300000,env:smokeEnv});
-  assertTreeSourceUnchanged(programDir,programSnapshot,shouldCopySourceProgram,'program_source_after_smoke');
+  assertTreeSourceUnchanged(programDir,programSnapshot,shouldCopySourceProgram,'program_source_after_smoke',true);
   assertTreeSourceUnchanged(updaterRoot,updaterSnapshot,shouldCopyUpdater,'updater_source_after_smoke');
   return smoke;
 }
@@ -659,14 +658,13 @@ function buildDistribution(options = {}) {
   const temporaryRoot=fs.mkdtempSync(path.join(outputDir,'.librarian-build-')),stagedRoot=path.join(temporaryRoot,topLevelName);
   let success=false,phase='source_preflight';
   try{
-    if (!offline) {
-      try {
-        const { ensureBuildSupportDependencies } = require('./ensure_build_support.cjs');
-        ensureBuildSupportDependencies({ programDir });
-      } catch (_) {}
-    }
     preflightSourceReleaseGuides(packageRoot);
     if (isSource) { verifySourceFixtureBytes(programDir); }
+    if (!offline) {
+      phase='build_support';
+      const { ensureBuildSupportDependencies } = require('./ensure_build_support.cjs');
+      ensureBuildSupportDependencies({ programDir, installIfMissing: true, onProgress: message => process.stdout.write(message+'\n') });
+    }
     const declarationBindings=captureManifestDeclarationBindings();
     phase='release_smoke';
     // Candidate packaging verifies source, syntax, SDK sync, inventory, bytes and privacy.
@@ -675,7 +673,7 @@ function buildDistribution(options = {}) {
     phase='stage';fs.mkdirSync(stagedRoot);
     const programPredicate=isSource?shouldCopySourceProgram:shouldCopyRuntimeProgram;
     const stagingPredicate=isSource?programPredicate:relative=>programPredicate(relative)&&!relative.split(path.sep).join('/').startsWith('plugins/');
-    const copiedProgram=copyTreeAllowlisted(programDir,path.join(stagedRoot,'PROGRAM'),stagingPredicate);
+    const copiedProgram=copyTreeAllowlisted(programDir,path.join(stagedRoot,'PROGRAM'),stagingPredicate,true);
     // Pin the bytes actually copied, not only their earlier source observation.
     if(isSource){verifySourceFixtureBytes(path.join(stagedRoot,'PROGRAM'));}
     const sourceUpdater=path.join(packageRoot,'UPDATER');assertUpdaterSourceClean(sourceUpdater);
@@ -747,7 +745,7 @@ function buildDistribution(options = {}) {
       const check=runNode(path.join(programDir,'tools/verify_runtime_archive.cjs'),[archivePath,path.join(temporaryRoot,'verified-runtime')],temporaryRoot,{env:{NODE_PATH:''}});
       runtimeDependencyClosure=JSON.parse(check.stdout.trim());
     }
-    assertTreeSourceUnchanged(programDir,copiedProgram.sourceFiles,stagingPredicate,isSource?'source_program':'runtime_program');
+    assertTreeSourceUnchanged(programDir,copiedProgram.sourceFiles,stagingPredicate,isSource?'source_program':'runtime_program',true);
     assertTreeSourceUnchanged(sourceUpdater,copiedUpdater.sourceFiles,shouldCopyUpdater,'updater_source');
     for(const row of copiedLaunchers)if(sha256File(path.join(packageRoot,row.path))!==row.sha256)throw new Error(`distribution_update_launcher_changed_during_build:${row.path}`);
     if(sha256File(guideSource)!==guideHash)throw new Error('distribution_source_guide_changed');
