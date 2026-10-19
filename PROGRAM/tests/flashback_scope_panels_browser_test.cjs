@@ -184,10 +184,13 @@ let ws,referenceServer;const watchdog=setTimeout(()=>{child.kill('SIGKILL');cons
  const stale=document.querySelector('[data-detail="a"]');if(stale)stale.querySelectorAll('.why-d').forEach(note=>note.remove());`);
  for(const viewport of [{name:'desktop',width:1280,height:900},{name:'tablet',width:900,height:1024},{name:'boundary901',width:901,height:900},{name:'tablet820',width:820,height:900},{name:'boundary641',width:641,height:900},{name:'compact',width:640,height:900},{name:'mobile',width:390,height:844}]){
   await call('Emulation.setDeviceMetricsOverride',{width:viewport.width,height:viewport.height,deviceScaleFactor:1,mobile:false});
-  const referenceShell=await ev(`(()=>{const r=document.querySelector('.app').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,background:getComputedStyle(document.body).backgroundColor}})()`);
   const actualShell=productShell.get(viewport.name);
-  for(const field of ['x','y','width','height'])assert.ok(Math.abs(actualShell[field]-referenceShell[field])<=1,`${viewport.name}: public GUI ${field} matches approved mockup: ${JSON.stringify({actualShell,referenceShell})}`);
-  assert.equal(actualShell.background,referenceShell.background,`${viewport.name}: public host uses the approved page background`);
+  // The current window is centered over a transparent host canvas. The older
+  // standalone prototype remains a screenshot reference for its six page bodies.
+  assert.ok(Math.abs(actualShell.x+actualShell.width/2-viewport.width/2)<=1,`${viewport.name}: window is horizontally centered`);
+  assert.ok(Math.abs(actualShell.y+actualShell.height/2-viewport.height/2)<=1,`${viewport.name}: window is vertically centered`);
+  assert.ok(actualShell.x>=0&&actualShell.y>=0&&actualShell.x+actualShell.width<=viewport.width&&actualShell.y+actualShell.height<=viewport.height,`${viewport.name}: window fits the viewport`);
+  assert.equal(actualShell.background,'rgba(0, 0, 0, 0)',`${viewport.name}: host remains visible outside the window`);
   for(const route of ['lab','vault','care','connect','log','settings']){
    await ev(`document.querySelector('[data-go="${route}"]').click()`);
    await wait(`document.querySelector('[data-page="${route}"]').classList.contains('is-active')`);
