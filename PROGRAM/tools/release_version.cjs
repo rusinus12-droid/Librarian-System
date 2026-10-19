@@ -104,6 +104,16 @@ function applyReleaseVersion(packageRoot, targetVersion) {
     'tools/portable_export_stopped.cjs'
   ));
 
+  const provenancePath = path.join(programDir, 'docs', 'release-provenance', 'PLUGIN_RELEASE_PROVENANCE.json');
+  if (fs.existsSync(provenancePath)) {
+    const provenance = JSON.parse(fs.readFileSync(provenancePath, 'utf8'));
+    if (provenance.currentRelease) {
+      provenance.currentRelease.packageVersion = target;
+      provenance.currentRelease.artifact = `Librarian-System-${target}-Source.zip`;
+      write(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+    }
+  }
+
   return { previousVersion: currentVersion, version: target, changedFiles };
 }
 

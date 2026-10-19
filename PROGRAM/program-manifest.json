@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-19T13:58:28.087Z",
+  "generatedAt": "2026-10-19T14:58:20.658Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -10520,16 +10520,16 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "c5c2efadb17c2fc31325f92789d8ea77f12eb591d753389e9e96a03cd6ade057",
-      "bytes": 51207
+      "sha256": "18340283f93248a0f1f068c21843cdf7adb97523e59001775317596d717d9a94",
+      "bytes": 52362
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",
       "bytes": 368
     },
     "tools/build_plugins.cjs": {
-      "sha256": "8b2992b31e80620d7d1deba622a9db5ddecc70b5a2d9c3d93829a71bcc093eb3",
-      "bytes": 78226
+      "sha256": "094accbfb29f7c69349bacc0ef8a76eadc41a299c40c6b15237de60d9ee5b823",
+      "bytes": 78594
     },
     "tools/build_storage_mode_matrix.cjs": {
       "sha256": "62f12582d3dfa5949fcbc6b19d07480508d35ad75e7e86e37e6cc73010754c3c",
@@ -10584,8 +10584,8 @@
       "bytes": 2468
     },
     "tools/gradia/load-dev-dependency.cjs": {
-      "sha256": "6e37633b4c816387f9ca32f9f579e1ff3f5515a9c3425f87ad270e4ac8c0074d",
-      "bytes": 746
+      "sha256": "84ce6f57cdafaaf2679f8cf24ebbbd6c6cf961bbd9625a7335bdfca3bcb2f3bd",
+      "bytes": 1080
     },
     "tools/gui_verify.js": {
       "sha256": "7b4ef45191ff8bbb49ac961111dc5a023a465fb0bc66c4ad33a560ba1d5eb932",
@@ -10816,20 +10816,20 @@
       "bytes": 31575
     },
     "tools/release_asset_contract.cjs": {
-      "sha256": "c207b5cebc414baed38e2fd8458f2bb5c0f2f157832ca0b6476eb5cc7dc6324c",
-      "bytes": 9294
+      "sha256": "7741cb23d8e8b229f6990015d6223d258430387f74be0d63a4c2569145cac4cf",
+      "bytes": 9353
     },
     "tools/release_builder_ui.cjs": {
-      "sha256": "3dbfb2e99e3a7d492b0780fe80ef9bf1e89f2630323857de4aebde5576b8e56f",
-      "bytes": 3034
+      "sha256": "bc970f79f5c05c87a923b6bfbdd499e5c54b51a310a71e1ba946907dd1441ca6",
+      "bytes": 3033
     },
     "tools/release_metadata.cjs": {
       "sha256": "0940ab4ada4d969731f367afe018156bc59dd28f1df52f75b670f60046c0bbb7",
       "bytes": 4623
     },
     "tools/release_version.cjs": {
-      "sha256": "6da3df186ed66d3edcb6d312b134fb6a98cabe4ecc3fb4816e73e67408a4bcd3",
-      "bytes": 4124
+      "sha256": "a7b21d6bd4f1bad3e831772da4e4652b986a2944b35238d7ca1e9a6fb2130128",
+      "bytes": 4613
     },
     "tools/retrace_server_management_browser_audit.cjs": {
       "sha256": "a27785f81c008d9edfe178aa854d9ede13135efcac3dfb13d3994be83993562b",
@@ -11068,8 +11068,8 @@
       "bytes": 936
     },
     "기존_DATA_이관_ZIP_만들기.sh": {
-      "sha256": "ef661117775898151bda7518eec0fdc39a3c3f72528ff57e4de14741a142d625",
-      "bytes": 1262
+      "sha256": "f8c166ce840d9612c53da6e5b62a372b9bc0f46ea7f576f0c02e728e7b8e7752",
+      "bytes": 1376
     },
     "배포본_만들기.bat": {
       "sha256": "045aa6308c19a39f41e74ab142fa27d23d8cd435bc56c54bf3cb30b92c62e11f",
@@ -11205,20 +11205,6 @@
     "embeddingPhysicalPendingTracked": true,
     "implementationReport": "docs/INTEGRATED_IMPLEMENTATION_10_11.md",
     "remainingPlan": "docs/plan_10_11_remaining.md"
-  },
-  "qualification": {
-    "status": "offline_candidate",
-    "implementation": "provisional_feature_first",
-    "validation": "not_inferred_from_manifest_generation",
-    "deepRegression": "DEFERRED",
-    "independentReview": "DEFERRED",
-    "publicationGate": "NOT_RUN",
-    "actualHost": "NOT_RUN",
-    "actualHostActivation": false,
-    "qualifiedActualProfiles": [],
-    "allWriterOwnership": false,
-    "updaterEligible": false,
-    "publicationReady": false
   },
   "storageSdkBindings": {
     "Flashback_Memory.js": {

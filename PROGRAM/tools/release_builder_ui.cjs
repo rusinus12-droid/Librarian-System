@@ -22,8 +22,8 @@ async function main(argv=process.argv.slice(2)){
       output.write('개발 소스본은 현재 버전을 그대로 패키징할 수 있습니다. 더 높은 버전을 입력하면 그 버전으로 승격합니다.\n');
       answer=await rl.question(`소스 버전 [${current}]: `);
     }else{
-      output.write(`기본 다음 버전: ${suggested}\n그냥 Enter를 누르면 기본 다음 버전을 사용합니다.\n`);
-      answer=await rl.question(`새 버전 [${suggested}]: `);
+      output.write(`현재 버전 유지: [${current}] (Enter 입력 시 유지)\n새 버전으로 승격하려면 더 높은 버전(예: ${suggested})을 입력하세요.\n`);
+      answer=await rl.question(`버전 [${current}]: `);
     }
   }finally{rl.close();}
   const text=String(answer||'').trim();
@@ -32,8 +32,8 @@ async function main(argv=process.argv.slice(2)){
   const qualification=offline?'offline_candidate':(qualIdx>=0?argv[qualIdx+1]:(process.env.LIBRARIAN_PACKAGE_QUALIFICATION||undefined));
   let options={profile,...(qualification?{qualification}:{})};
   let target=current;
-  if(profile==='source'&&!text){target=current;}
-  else {target=validateTargetVersion(current,text||(profile==='source'?current:suggested));options.version=target;}
+  if(!text||text===current){target=current;}
+  else {target=validateTargetVersion(current,text);options.version=target;}
   output.write(`\n[Librarian System] ${labels[profile]} ${target} 생성 시작\n`);
   const result=buildRelease(options),rows=result.profile==='all'?Object.values(result.results):[result];
   output.write('\n[Librarian System] 생성 완료\n');
