@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-19T23:00:49.939Z",
+  "generatedAt": "2026-10-19T23:20:27.240Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -397,7 +397,7 @@
           ]
         },
         "hayaku": {
-          "version": "3.0.155",
+          "version": "3.0.156",
           "deferredAuthoritativeBinding": true,
           "backendOrder": [
             "chat_output_v3",
@@ -569,7 +569,7 @@
       "nativePersonaDatabaseExcluded": true
     },
     "hayakuNativeOtherAxRecovery": {
-      "version": "3.0.155",
+      "version": "3.0.156",
       "schema": "hayaku.native_recovery.v1",
       "normalPathNoLlmWhenCurrentPacketUsable": true,
       "normalPathLlmCallsWhenCurrentPacketUsable": 0,
@@ -1098,7 +1098,7 @@
         ]
       },
       "hayakuSparseRrfPilot": {
-        "version": "3.0.155",
+        "version": "3.0.156",
         "operation": "hayaku.sparse-rrf-fusion.v1",
         "algorithmFingerprint": "7f32e8b10fdd34e8356af70e40ad90d3c48e6fda132080046a807db0ea3ec58f",
         "retired": true,
@@ -1424,7 +1424,7 @@
   },
   "plugins": {
     "flashback": "1.0.121",
-    "hayaku": "3.0.155",
+    "hayaku": "3.0.156",
     "libra": "2.3.175",
     "lia": "0.26.88",
     "retrace": "1.9.86",
@@ -3480,7 +3480,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "7dde077cf441f10c83892a7cb3044dc7a124a5bf713b02736c81a752a7b83494",
+      "sha256": "f76e0a09c8450b1571a0320ac7c6d1071a97a18be4f6176f9f70fe9e5c400bb7",
       "bytes": 11840
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3856,7 +3856,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "4bcc8f5e28f5421870bc0b918c0a4427311f020ee3a4c7eb37c71392e1abf11c",
+      "sha256": "ea10f880911bc55b925d42125c188e5af02cc06bee43a445e5260ee8b2eba11f",
       "bytes": 3357
     },
     "plugins/Flashback_Memory.js": {
@@ -3868,8 +3868,8 @@
       "bytes": 2973984
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "28552ecb02bfe0ad9f950a2c65bcbf1f1fbc48b001f930e7bf91ce506c2c9fa0",
-      "bytes": 3955294
+      "sha256": "0c9a9ef75ea10507004a2e79c0bb42ca87033cbd81e0ce5d3562ca6594d25d69",
+      "bytes": 3958663
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "1d27a06d1f92e7c06450ebccaa22957ecc974cc64de971310eb268e450d8ca0e",
@@ -4406,6 +4406,10 @@
     "tests/browser/hayaku_reviewed_gui_regression_test.py": {
       "sha256": "2de9673e129128f9f8b782bfcb78803820cf3390368f3de2cd3596b014ba508d",
       "bytes": 25427
+    },
+    "tests/browser/hayaku_window_auxiliary_browser_test.py": {
+      "sha256": "e9acf42ec6f0a72570ee056ab0bef2f3a08c0b7e52212f7a55c4e40c54134943",
+      "bytes": 10547
     },
     "tests/browser/lia_mockup_mounted_product_browser_test.cjs": {
       "sha256": "7cd1ef5d2e6e7e760675f38d15671369bba9de202a0e2989339643a0fcf5fef8",
@@ -6176,8 +6180,8 @@
       "bytes": 13457
     },
     "tests/hayaku_attention_probe_lifecycle_runtime_test.cjs": {
-      "sha256": "77147ca7a3183d8ab25c2022e8860b61aaf4286684279ff6811727726bcbe629",
-      "bytes": 4073
+      "sha256": "41bbd2f282013e9fa45d920dab80f876adb05973b8091e2b28630ca018a480d2",
+      "bytes": 4152
     },
     "tests/hayaku_background_approval_race_test.cjs": {
       "sha256": "32e21caac781fdc1cbb0b28d0ff1ff34dd3bae9779a1701fa89bcceffa06aab1",
@@ -11128,7 +11132,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "87d5a815d5051b680b667be43cbb8cf37617e06a12b5253c983531d436a24eb8",
+      "sha256": "463a324236b75f13f5fd80785594dba2cd178289774f4aac1cc012349a4ed10a",
       "bytes": 3791
     }
   },

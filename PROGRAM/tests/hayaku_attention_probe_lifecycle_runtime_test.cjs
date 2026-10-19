@@ -9,26 +9,24 @@ async function disable(r) {
   assert.equal(result.ok, true);
   assert.equal(r.hayaku.settings().enabled, false);
 }
-async function scheduledProbe(r) {
+async function observeChatWithoutProbe(r) {
   const original = r.context.setTimeout;
   let trigger;
   r.context.setTimeout = (fn,ms,...args) => ms === 30000 ? (trigger=()=>fn(...args),{unref(){}}) : original(fn,ms,...args);
   const t = r.hayaku._test;
-  t.startHayakuAttention(); t.HayakuAttention.chatObserved = true;
+  t.startHayakuAttention();
+  t.scheduleHayakuAttentionRefresh('chat_output',0);
   await t.refreshHayakuAttention();
-  assert.ok(trigger, 'real automatic probe scheduled');
-  return trigger;
+  await new Promise(resolve=>r.context.setTimeout(resolve,10));
+  assert.equal(trigger,undefined,'chat observation must not schedule a paid connection test');
 }
-test('disabled HAYAKU cancels a scheduled probe and does not rearm it', async () => {
-  const r = await createHayakuRuntime({messages,llmResponder:async()=>({type:'success',result:'HAYAKU OK'})});
+test('chat attention never schedules a paid connection test, including after disabling HAYAKU', async () => {
+  const r = await createHayakuRuntime({messages,transformSource:s=>s.replace('        startHayakuAttention, stopHayakuAttention,','        scheduleHayakuAttentionRefresh, startHayakuAttention, stopHayakuAttention,'),llmResponder:async()=>({type:'success',result:'HAYAKU OK'})});
   try {
-    const trigger = await scheduledProbe(r);
+    await observeChatWithoutProbe(r);
     await disable(r);
-    assert.equal(r.hayaku._test.HayakuAttention.probeTimer, null);
-    await trigger(); // A callback already dispatched by the host must also stop.
     await r.hayaku._test.refreshHayakuAttention();
     assert.equal(r.llmCalls.length, 0);
-    assert.equal(r.hayaku._test.HayakuAttention.probeTimer, null);
   } finally { await r.dispose(); }
 });
 test('disabling while the probe waits in the physical model queue blocks submission', async () => {
@@ -40,8 +38,7 @@ test('disabling while the probe waits in the physical model queue blocks submiss
   try {
     const first = r.hayaku._test.runNativeOtherAx([{role:'user',content:'synthetic explicit request'}],{taskKind:'connection_probe'});
     await waitFor(()=>release,'first physical call');
-    const trigger = await scheduledProbe(r);
-    const automatic = trigger();
+    const automatic = r.hayaku._test.runNativeAuxiliaryProbe({automatic:true});
     await waitFor(()=>r.hayaku._test.nativeAuxiliaryProbeSnapshot()?.last?.status === 'running','queued probe');
     await disable(r);
     release(); await first; await automatic;
