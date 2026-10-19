@@ -95,6 +95,10 @@ module.exports = function createMemoryGraphResources({ measure, encodedSize, sta
         check: scopedCheck, inspect: snapshot,
         retain: (...args) => { scopedCheck(); return track(retain(...args)); },
         reserveRetained: (...args) => { scopedCheck(); return track(reserveRetained(...args)); },
+        // Physical read batches need the same reservations during final validation.
+        // Closing this scope revokes new reads; existing I/O stays charged until
+        // its physical finally block releases the reservation.
+        reserveRead: (...args) => { scopedCheck(); return reserveRead(...args); },
         read: async (...args) => { scopedCheck(); const result = await read(...args); scopedCheck(); return result; },
         withValue: async (...args) => { scopedCheck(); const result = await withValue(...args); scopedCheck(); return result; },
         close() { if (ended) return; ended = true; for (const lease of held) lease.release(); held.clear(); active.release(); }

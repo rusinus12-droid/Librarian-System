@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.0.154
-//@version 3.0.154
+//@display-name HAYAKU · Locator Continuity v3.0.155
+//@version 3.0.155
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.0.154';
+  const PLUGIN_VERSION = '3.0.155';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -43498,6 +43498,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const extractNativeJsonObject = value => {
     try { return parseNativeJsonObject(value); } catch (_) { return null; }
   };
+  const HOST_STREAM_PENDING_MESSAGE = '이전 Other Ax 스트림의 종료를 기다리는 중입니다. 추가 호출은 보내지 않았습니다. RisuAI에서 스트리밍을 끄고 진행 중인 생성을 종료한 뒤 다시 시도하세요. 종료가 확인되지 않으면 RisuAI를 새로고침하세요.';
   let NativeOtherAxCallQueue = Promise.resolve();
   const enqueueNativeOtherAxCall = task => {
     const scheduled = NativeOtherAxCallQueue.catch(() => undefined).then(task);
@@ -43517,6 +43518,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!api) {
       const error = new Error('risuai_runLLMModel_unavailable');
       error.code = 'HAYAKU_NATIVE_LLM_UNAVAILABLE';
+      error.hayakuRunLlmSubmitted = false;
+      throw error;
+    }
+    if (Memory.nativeRecovery.unverifiedStreams > 0) {
+      const error = new MemorySuiteExecutionContract.ContractError('HOST_STREAM_PENDING', HOST_STREAM_PENDING_MESSAGE);
       error.hayakuRunLlmSubmitted = false;
       throw error;
     }
@@ -43567,7 +43573,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         // failure string. Drain all unique streams before releasing the queue.
         const streams=[...new Set([response,...nativeLlmResponseCandidates(response)].filter(value=>value&&typeof value.getReader==='function'))];
         if(streams.length){
-          const drained=await Promise.allSettled(streams.map(stream=>MemorySuiteExecutionContract.drainUnverifiedStream(stream)));
+          Memory.nativeRecovery.unverifiedStreams = Number(Memory.nativeRecovery.unverifiedStreams || 0) + streams.length;
+          Memory.nativeRecovery.streamStartedAt = now();
+          try { viewerRenderAuxiliaryProbe(); } catch (_) { /* GUI failure cannot release the physical queue. */ }
+          let drained;
+          try { drained=await Promise.allSettled(streams.map(stream=>MemorySuiteExecutionContract.drainUnverifiedStream(stream))); }
+          finally { Memory.nativeRecovery.unverifiedStreams -= streams.length; try { viewerRenderAuxiliaryProbe(); } catch (_) {} }
           const failure=drained.find(result=>result.status==='rejected')?.reason;
           const error=failure&&typeof failure==='object'?failure
             :new MemorySuiteExecutionContract.ContractError('UNVERIFIED_STREAM_ROUTE','Host stream protocol is not verified.');
@@ -43633,6 +43644,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       staticModel: false,
       sessionOnly: true,
       inFlight: probe.inFlight === true,
+      unverifiedStreams: Number(Memory.nativeRecovery.unverifiedStreams || 0),
+      streamStartedAt: Number(Memory.nativeRecovery.streamStartedAt || 0),
+      blockedReason: Memory.nativeRecovery.unverifiedStreams > 0 ? HOST_STREAM_PENDING_MESSAGE : '',
       last: probe.last
     }, {});
   };
@@ -56491,8 +56505,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const node = root.querySelector?.(selector);
       if (node) node.textContent = text(value);
     };
-    const busy = snapshot.inFlight || Memory.nativeRecovery.repairInFlight || Memory.nativeRecovery.coldStartInFlight;
-    setText('#hayakuAuxiliaryProbeState', snapshot.inFlight
+    const busy = snapshot.unverifiedStreams > 0 || snapshot.inFlight || Memory.nativeRecovery.repairInFlight || Memory.nativeRecovery.coldStartInFlight;
+    setText('#hayakuAuxiliaryProbeState', snapshot.unverifiedStreams > 0 ? '호스트 스트림 종료 대기' : snapshot.inFlight
       ? '호출 중'
       : last?.status === 'complete' ? '성공'
         : last?.status === 'failed' ? '실패'
@@ -56507,7 +56521,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     setText('#hayakuAuxiliaryProbeLatency', last?.finishedAt ? `${Number(last.elapsedMs || 0).toLocaleString()} ms` : '-');
     setText('#hayakuAuxiliaryProbeSubmission', last ? (last.submitted ? '실제 호출 전송됨' : '호출 전송 안 됨') : '-');
     setText('#hayakuAuxiliaryPluginModels', snapshot.allowPlugins ? '허용 · 일반/플러그인 모델' : '차단 · 일반 모델만');
-    setText('#hayakuAuxiliaryProbeResponse', last?.responsePreview || last?.error?.message || '아직 호출 테스트를 실행하지 않았습니다.');
+    setText('#hayakuAuxiliaryProbeResponse', snapshot.blockedReason || last?.responsePreview || last?.error?.message || '아직 호출 테스트를 실행하지 않았습니다.');
     if (button) button.disabled = busy || !snapshot.available;
     return snapshot;
   };

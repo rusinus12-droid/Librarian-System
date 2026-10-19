@@ -2,6 +2,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 let fake;try{fake=require('fake-indexeddb');}catch(_){fake=require('../build-support/node_modules/fake-indexeddb');}
 const {fixture,QUOTE}=require('./fixtures/libra_memory_graph_reader_fixture.cjs');
+const {waitFor}=require('./fixtures/libra_vm_harness.cjs');
 const options={corpusMode:'required',queryInput:{queryText:QUOTE},semanticPolicy:{mode:'disabled'}};
 const stored=async indexedDB=>{
  const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('libra-derived-corpus-v1',1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
@@ -10,7 +11,13 @@ const stored=async indexedDB=>{
 
 test('plugin_only rebuilds reuse a transactional corpus and reclaim old generations without host writes',async t=>{
  const indexedDB=new fake.IDBFactory(),x=await fixture({contextGlobals:{indexedDB}});t.after(()=>x.cleanup());const api=x.f.r.api;
- const baseline=await api.executeMemoryGraphUnifiedQuery({...options,corpusMode:'auto'}),sourceRows=()=>[...x.f.r.values].filter(([key])=>key.startsWith('libra:v1:scope:'+x.scopeKey+':')),hostBefore=sourceRows();
+ const baseline=await api.executeMemoryGraphUnifiedQuery({...options,corpusMode:'auto'});
+ // Recall schedules the owner's bootstrap branch audit. Its legitimate frontier
+ // update is not a GC write; finish that work before taking the immutability baseline.
+ await waitFor(()=>x.f.getManifest().frontiers.observedTurn===6
+   && api.getCaptureBackendState().ownerScanQueueScopes===0
+   && api.getCaptureBackendState().branchAuditsInFlight===0);
+ const sourceRows=()=>[...x.f.r.values].filter(([key])=>key.startsWith('libra:v1:scope:'+x.scopeKey+':')),hostBefore=sourceRows();
  assert.equal(baseline.modelDispatchEligible,true);const observations=[];
  for(let n=0;n<6;n++){
   const build=await api.buildMemoryGraphCorpus({limit:1});assert.equal(build.persistenceBackend,'indexeddb');

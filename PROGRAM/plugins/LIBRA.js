@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.173
-//@version 2.3.173
+//@display-name LIBRA v2.3.174
+//@version 2.3.174
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1558,7 +1558,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.173';
+  const PLUGIN_VERSION = '2.3.174';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -3186,6 +3186,8 @@ function __libraNarrativeStripPatch(value) {
       allowPlugins: true,
       queued: 0,
       inFlight: false,
+      unverifiedStreams: 0,
+      streamStartedAt: 0,
       lastStartedAt: 0,
       lastFinishedAt: 0,
       lastElapsedMs: 0,
@@ -22885,6 +22887,13 @@ function summarizeAgentCbsTag(rawContent) {
   };
 
   let RisuAuxiliaryCallQueue = Promise.resolve();
+  const HOST_STREAM_PENDING_MESSAGE = '이전 Other Ax 스트림의 종료를 기다리는 중입니다. 추가 호출은 보내지 않았습니다. RisuAI에서 스트리밍을 끄고 진행 중인 생성을 종료한 뒤 다시 시도하세요. 종료가 확인되지 않으면 RisuAI를 새로고침하세요.';
+  function refreshRisuAuxiliaryStreamNotice() {
+    if (typeof document === 'undefined') return;
+    try {
+      for (const node of document.querySelectorAll('[data-libra-other-ax-stream-pending]')) node.hidden = !(Runtime.risuAuxiliary.unverifiedStreams > 0);
+    } catch (_) { /* A detached GUI must not release the physical provider queue. */ }
+  }
   const collectRisuRunLlmStream = async stream => await MemorySuiteExecutionContract.drainUnverifiedStream(stream);
 
   const risuRunLlmResponseText = async response => {
@@ -22905,7 +22914,12 @@ function summarizeAgentCbsTag(rawContent) {
     // distinct streams settle. Unverified content is never accumulated/adopted.
     const streams = [...new Set([response, ...candidates].filter(value => value && typeof value.getReader === 'function'))];
     if (streams.length) {
-      const drained = await Promise.allSettled(streams.map(collectRisuRunLlmStream));
+      Runtime.risuAuxiliary.unverifiedStreams += streams.length;
+      Runtime.risuAuxiliary.streamStartedAt = Date.now();
+      refreshRisuAuxiliaryStreamNotice();
+      let drained;
+      try { drained = await Promise.allSettled(streams.map(collectRisuRunLlmStream)); }
+      finally { Runtime.risuAuxiliary.unverifiedStreams -= streams.length; refreshRisuAuxiliaryStreamNotice(); }
       const failure = drained.find(result => result.status === 'rejected')?.reason;
       throw failure && typeof failure === 'object' ? failure
         : new MemorySuiteExecutionContract.ContractError('UNVERIFIED_STREAM_ROUTE', 'Host stream protocol is not verified.');
@@ -22943,6 +22957,11 @@ function summarizeAgentCbsTag(rawContent) {
     if (!resolution.api) {
       const error = new Error('risuai_runLLMModel_unavailable');
       error.code = 'RISUAI_RUNLLM_UNAVAILABLE';
+      error.risuaiRunLlmSubmitted = false;
+      throw error;
+    }
+    if (Runtime.risuAuxiliary.unverifiedStreams > 0) {
+      const error = new MemorySuiteExecutionContract.ContractError('HOST_STREAM_PENDING', HOST_STREAM_PENDING_MESSAGE);
       error.risuaiRunLlmSubmitted = false;
       throw error;
     }
@@ -34090,12 +34109,109 @@ function createLibraReadonlySourceContext(owner) {
     };
 
     const memoryGraphSourceBudgets = new WeakMap();
+    const memoryGraphReadFrames = new WeakMap();
+    // One owner projection may inspect the same immutable receipt many times.
+    // Share only its captured bytes; a fresh physical read of every captured key
+    // (including server revision/tombstone) is required before returning the view.
+    const openMemoryGraphReadFrame = async scope => {
+      const resources = memoryGraphSourceBudgets.get(scope);
+      const mode = string((await MemorySuiteStorageBridge.getScopeMode(scope))?.mode || 'plugin_only');
+      const binding = mode === 'plugin_only' ? '' : stableReferenceJson(await MemorySuiteStorageBridge.captureServerBinding());
+      const prefix = `${PREFIX}:scope:${scope.scopeKey}:`, entries = new Map(), leases = [];
+      const account = async (load, select = value => value) => resources ? resources.read(load,{select}) : load();
+      const physical = async storageKey => {
+        const local = mode !== 'server_only'
+          ? await account(() => MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey)) : null;
+        const remote = mode !== 'plugin_only'
+          ? await account(() => MemorySuiteStorageBridge.serverGet('plugin',storageKey),row=>row?.value??null) : null;
+        state.memoryNetworkIO.ownerReads += Number(mode !== 'server_only') + Number(mode !== 'plugin_only');
+        const entry = {local,remote};
+        if(resources)leases.push(resources.retain(entry,'owner_read_frame',2));
+        return entry;
+      };
+      const decode = (entry,storageKey,fallback) => {
+        const localExists = entry.local !== null && entry.local !== undefined && entry.local !== '';
+        const remoteExists = entry.remote?.exists === true && entry.remote.tombstone !== true;
+        if(mode === 'mirror' && localExists !== remoteExists)throw new Error(`LIBRA_VERIFIED_STORAGE_COPY_MISMATCH:${storageKey}`);
+        if(mode !== 'server_only' && !localExists || mode !== 'plugin_only' && !remoteExists)return clone(fallback);
+        const local = mode !== 'server_only' ? parseStoredJson(entry.local,storageKey,fallback) : null;
+        const remote = mode !== 'plugin_only' ? parseStoredJson(entry.remote.value,storageKey,fallback) : null;
+        if(mode === 'mirror' && digest(local) !== digest(remote))throw new Error(`LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:${storageKey}`);
+        return clone(mode === 'plugin_only' ? local : remote);
+      };
+      const frame = {
+        owns: storageKey => string(storageKey).startsWith(prefix),
+        async read(storageKey,fallback){
+          const cached = entries.has(storageKey);
+          if(!cached)entries.set(storageKey,physical(storageKey));
+          const entry = await entries.get(storageKey);
+          // Cached reads retain the existing source/decode accounting policy.
+          const raw = mode === 'plugin_only' ? entry.local : entry.remote?.value??null;
+          const consume = ()=>decode(entry,storageKey,fallback);
+          if(!resources)return consume();
+          if(cached){
+            if(mode === 'mirror')await resources.read(async()=>entry.local);
+            return await resources.read(async()=>raw,{consume:mode === 'mirror' ? ()=>resources.withValue(entry.local,consume) : consume});
+          }
+          return mode === 'mirror' ? await resources.withValue(entry.local,()=>resources.withValue(raw,consume)) : await resources.withValue(raw,consume);
+        },
+        async assertCurrent(){
+          if(mode !== string((await MemorySuiteStorageBridge.getScopeMode(scope))?.mode || 'plugin_only')
+            || mode !== 'plugin_only' && binding !== stableReferenceJson(await MemorySuiteStorageBridge.captureServerBinding()))throw new Error('LIBRA_GRAPH_READER_ROUTE_CHANGED');
+          const keys = [...entries.keys()];
+          for(let offset=0;offset<keys.length;){
+            const access = resources?.inspect();
+            const batchSize = access ? Math.max(1,Math.min(4,
+              Math.floor((access.pool.limits.ioBytes-access.pool.ioBytes)/access.limits.maxValueBytes),
+              Math.floor((access.limits.maxSourceBytes-access.sourceBytes)/access.limits.maxValueBytes),
+              access.pool.limits.reads-access.pool.reads)) : 4;
+            const part = keys.slice(offset,offset+batchSize), reservations=[];
+            offset += part.length;
+            let retained;
+            try {
+              if(mode !== 'plugin_only' && resources)for(const _ of part)reservations.push(resources.reserveRead('source'));
+              const rows = mode === 'plugin_only' ? null : await MemorySuiteStorageBridge.serverGetMany('plugin',part);
+              if(rows)state.memoryNetworkIO.ownerReads += part.length;
+              // A valid owner record can exceed the paged endpoint's envelope
+              // allowance while fitting the owner's payload budget. Read it
+              // individually under the reservation already held for that key.
+              if(rows)for(const storageKey of part){
+                if(!asArray(rows.oversizedKeys).includes(storageKey))continue;
+                rows.values[storageKey] = await MemorySuiteStorageBridge.serverGet('plugin',storageKey);
+                state.memoryNetworkIO.ownerReads++;
+              }
+              if(rows && resources)retained=resources.retain(rows.values,'owner_read_frame_readback',2);
+              for(const [index,storageKey] of part.entries()){
+                const before = await entries.get(storageKey);
+                if(rows){
+                  if(!Object.hasOwn(rows.values||{},storageKey))throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
+                  const current = rows.values[storageKey];
+                  reservations[index]?.accept(current?.value??null);reservations[index]?.release();
+                  const pin = row => [row?.exists,row?.tombstone,row?.revision,row?.digest,row?.value??null];
+                  if(stableReferenceJson(pin(current)) !== stableReferenceJson(pin(before.remote)))throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
+                }
+                if(mode !== 'server_only'){
+                  const current = await account(()=>MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey));
+                  state.memoryNetworkIO.ownerReads++;
+                  if(stableReferenceJson(current) !== stableReferenceJson(before.local))throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
+                }
+              }
+            } finally {retained?.release();for(const reservation of reservations)reservation.release();}
+          }
+        },
+        close(){memoryGraphReadFrames.delete(scope);entries.clear();for(const lease of leases)lease?.release();leases.length=0;}
+      };
+      memoryGraphReadFrames.set(scope,frame);
+      return frame;
+    };
     const memoryGraphBudgetedScope = (scope, resources) => {
       if (!resources) return scope;
       const copy = { ...scope }; memoryGraphSourceBudgets.set(copy,resources); return copy;
     };
     const storage = Object.freeze({
       async getStoredJson(storageKey, fallback = null, scope = null) {
+        const frame = scope && memoryGraphReadFrames.get(scope);
+        if(frame?.owns(storageKey))return await frame.read(storageKey,fallback);
         const load = async () => {
           const raw = await LibraProviderBridge.storage.getItem(storageKey);
           state.memoryNetworkIO.storedReads++;
@@ -34113,6 +34229,8 @@ function createLibraReadonlySourceContext(owner) {
         return await hydrateProjectionFromLocalStorage(value);
       },
       async getVerifiedJson(storageKey, scope, fallback = null) {
+        const frame = scope && memoryGraphReadFrames.get(scope);
+        if(frame?.owns(storageKey))return await frame.read(storageKey,fallback);
         const resources = scope && memoryGraphSourceBudgets.get(scope);
         const read = async (load,select = value => value) => resources ? await resources.read(load,{ select }) : await load();
         const mode = string((await MemorySuiteStorageBridge.getScopeMode(scope))?.mode || 'plugin_only');
@@ -44041,6 +44159,10 @@ function createLibraReadonlySourceContext(owner) {
         check: scopedCheck, inspect: snapshot,
         retain: (...args) => { scopedCheck(); return track(retain(...args)); },
         reserveRetained: (...args) => { scopedCheck(); return track(reserveRetained(...args)); },
+        // Physical read batches need the same reservations during final validation.
+        // Closing this scope revokes new reads; existing I/O stays charged until
+        // its physical finally block releases the reservation.
+        reserveRead: (...args) => { scopedCheck(); return reserveRead(...args); },
         read: async (...args) => { scopedCheck(); const result = await read(...args); scopedCheck(); return result; },
         withValue: async (...args) => { scopedCheck(); const result = await withValue(...args); scopedCheck(); return result; },
         close() { if (ended) return; ended = true; for (const lease of held) lease.release(); held.clear(); active.release(); }
@@ -70424,12 +70546,13 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(nodeLimit)) throw new Error('LIBRA_GRAPH_READER_OPTIONS_INVALID');
       const requestId = id('graph_reader');
       const sourceContext = collect ? ownerReadonlySourceContext : readonlySourceContext;
-      let captured = null, graphIdentity = null;
+      let captured = null, graphIdentity = null, readFrame = null;
       try {
         captured = await sourceContext.capture({ requestId, durationMs: 30000 });
         const request = { handle: captured.handle, requestId };
-        const context = await resolveContext(), scope = memoryGraphBudgetedScope(context.scope,resources);
+        const context = await resolveContext(), scope = memoryGraphBudgetedScope({...context.scope},resources);
         if (scope.scopeKey !== captured.summary.scope.scopeKey || options.expectedScopeKey && options.expectedScopeKey !== scope.scopeKey) throw new Error('LIBRA_GRAPH_READER_SCOPE_CHANGED');
+        readFrame = await openMemoryGraphReadFrame(scope);
         const epoch = Number(state.microRestoreGeneration || 0), pairs = buildPairs(context.chat, scope.scopeKey);
         const manifest = await loadManifest(scope, pairs.length), active = await readUnifiedWorldlineView(scope, manifest, pairs);
         const resolved = await resolveWorldManagerHistoryWorldline(scope);
@@ -70578,6 +70701,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         const finalLore = loreEntries(await loadRisuContextSnapshot(await loadSettings(), [], null));
         if (stableReferenceJson(finalLore) !== stableReferenceJson(allowedLore)) throw new Error('LIBRA_GRAPH_READER_LORE_CHANGED');
         if (Number(state.microRestoreGeneration || 0) !== epoch || state.disposed) throw new Error('LIBRA_GRAPH_READER_EPOCH_CHANGED');
+        await readFrame.assertCurrent();
         const currentness = await sourceContext.assertCurrent(request);
         resources?.check();
         if (collect) collect({
@@ -70628,6 +70752,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           readerValidation: { ...currentness, storedSelectedBodiesRechecked: true },
           nativeSourceCaptureAdmission: 'unsupported', modelDispatchEligible: false });
       } finally {
+        readFrame?.close();
         graphIdentity?.clear();
         if (captured) sourceContext.release({ handle: captured.handle, requestId });
       }
@@ -71317,22 +71442,36 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       });
       const activity = resources.begin();
       try {
-        const { graph, collected } = await resolveMemoryGraphCorpusFrame(options.expectedScopeKey || '',resources);
-        const buildPinToken = volatile ? '' : id('build_pin');
-        if (buildPinToken) state.memoryGraphActiveBuilds.set(buildPinToken, { scopeKey: graph.scopeKey, startedAt: Date.now() });
-        try {
-          const context = await memoryGraphCorpusContext(graph,collected,epoch,serial,null,resources,'build',volatile);
-          const result = await state.memoryGraphCorpus.build({ initialGraph: graph, ...context, options: Object.fromEntries(Object.entries(options).filter(([key]) => !['expectedScopeKey','resourceBudget'].includes(key))) });
-          await context.owner.graphLease?.release();
-          return { ...result, scopeKey: graph.scopeKey, persistenceBackend: context.backend, resourceAccess: resources.inspect() };
-        } finally {
-          if (buildPinToken) state.memoryGraphActiveBuilds.delete(buildPinToken);
+        for (let attempt = 0; ; attempt++) {
+          const retained = resources.scope();
+          const attemptResources = { ...resources, retain: retained.retain, reserveRetained: retained.reserveRetained };
+          let context = null, buildPinToken = '';
+          try {
+            const { graph, collected } = await resolveMemoryGraphCorpusFrame(options.expectedScopeKey || '',attemptResources);
+            buildPinToken = volatile ? '' : id('build_pin');
+            if (buildPinToken) state.memoryGraphActiveBuilds.set(buildPinToken, { scopeKey: graph.scopeKey, startedAt: Date.now() });
+            context = await memoryGraphCorpusContext(graph,collected,epoch,serial,null,attemptResources,'build',volatile);
+            const result = await state.memoryGraphCorpus.build({ initialGraph: graph, ...context, options: Object.fromEntries(Object.entries(options).filter(([key]) => !['expectedScopeKey','resourceBudget'].includes(key))) });
+            return { ...result, scopeKey: graph.scopeKey, persistenceBackend: context.backend, sourceChangeRetries: attempt, resourceAccess: resources.inspect() };
+          } catch (error) {
+            // A normal owner commit can finish between projection and publication.
+            // Rebuild from a fresh frame, with the SAME cumulative I/O/decode budget.
+            // Route, epoch, corruption and admission failures are never retried here.
+            if (volatile || attempt >= 2 || !['LIBRA_GRAPH_CORPUS_SOURCE_BODY_CHANGED',
+              'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED', 'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED_AFTER_PUBLICATION'].includes(error?.message)) throw error;
+            resources.check();
+          } finally {
+            await context?.owner.graphLease?.release();
+            retained.close();
+            if (buildPinToken) state.memoryGraphActiveBuilds.delete(buildPinToken);
+          }
         }
       } finally { resources.close('maintenance_complete'); activity.release(); }
     };
     // Runtime-only common index. Without it every unified recall re-enumerates and
     // re-projects every owner window. The durable index is built only on request and
-    // plugin_only cannot reclaim superseded pages, so this one never writes storage.
+    // host-storage fallback cannot atomically reclaim old pages; IndexedDB can.
+    // This runtime index never writes storage.
     // It is rebuilt in the background after new memory. A build yields to recall
     // requests at most twice, then completes, so back-to-back requests cannot starve it.
     // Each build starts from the previous runtime index (`basis`), so the corpus module's
@@ -75382,6 +75521,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         microQueuedJobs: state.microJobs.size,
         microQueueCapacity: MICRO_QUEUE_CAPACITY,
         microQueueScopes: state.microQueues.size,
+        ownerScanQueueScopes: state.queues.size,
+        scheduledScanPhase: string(state.lastScanSchedule?.phase || ''),
+        branchAuditsInFlight: state.branchAuditInFlight.size,
         healthChecks: Number(state.captureBackendHealthChecks || 0),
         silentFailovers: Number(state.captureBackendSilentFailovers || 0),
         healthPending: state.captureBackendHealthPending ? clone(state.captureBackendHealthPending) : null,
@@ -84447,6 +84589,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       fieldNode('기본 연결',selectNode(runtime.defaultPresetName||'',[['','공용 기본값'],...names.map(name=>[name,presetDisplayName(name)])],value=>{runtime.defaultPresetName=value;markGuiDirty();})),
       guiEl('div',{class:'note'},[guiEl('b',{text:resolution.api?'API 사용 가능':'runLLMModel 사용 불가'}),guiEl('p',{text:`mode: otherAx · API 소스: ${resolution.source} · staticModel 지정 안 함`})]),
       guiEl('p',{class:'hint',text:'모델·출력 토큰·스트리밍·타임아웃은 RisuAI 설정을 사용합니다.'}),
+      guiEl('div',{class:'note note--warn',role:'status',hidden:!(Runtime.risuAuxiliary.unverifiedStreams > 0),dataset:{libraOtherAxStreamPending:'true'},text:HOST_STREAM_PENDING_MESSAGE}),
       checkboxNode(runtime.risuAuxAllowPlugins===true,'플러그인 제공 보조 모델 허용',value=>{runtime.risuAuxAllowPlugins=value===true;markGuiDirty();}),
       guiEl('div',{class:'note',dataset:{risuAuxiliaryCallProbe:probe?.status||'unverified'}},[guiEl('b',{text:probe?(probe.ok?'최근 호출 성공':'최근 호출 실패'):'호출 테스트 기록 없음'}),guiEl('p',{text:probe?`${probe.apiSource||'API 불명'} · ${Number(probe.elapsedMs||0)}ms · ${probe.ok?probe.responsePreview||'':probe.error||''}`:'버튼을 누를 때만 실제 보조 모델 호출을 1회 전송합니다.'})]),
       guiEl('button',{class:'btn btn--sm',type:'button',disabled:!resolution.api,text:'보조 모델 호출 테스트',onClick:async event=>{event.currentTarget.disabled=true;try{const result=await LibraProviderBridge.testRisuAuxiliary({risuAuxAllowPlugins:runtime.risuAuxAllowPlugins===true});if(!result.ok)throw new Error(result.error||'빈 응답');guiSetStatus('RisuAI 보조 모델 호출을 확인했습니다.');}catch(error){guiSetStatus(String(error.message||error),true,true);}finally{await renderSettingsGui();}}})

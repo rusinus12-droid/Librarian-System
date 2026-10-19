@@ -94,6 +94,16 @@ test('session limits reject before work and closing a session permits a fresh op
  const pool=make({sessions:1}),q=pool.open();assert.throws(()=>pool.open(),/SESSION_BACKPRESSURE/);
  q.close();const next=pool.open();next.close();assert.equal(pool.inspect().sessions,0);
 });
+test('validation scopes share physical batch reservations and do not release pending I/O on revocation',()=>{
+ const pool=make(),q=pool.open({maxValueBytes:4,maxSourceBytes:8}),a=q.scope(),b=q.scope();
+ const first=a.reserveRead('source'),second=b.reserveRead('source');
+ assert.equal(pool.inspect().ioBytes,8);assert.equal(pool.inspect().reads,2);
+ a.close();assert.throws(()=>a.reserveRead('source'),/SCOPE_CLOSED/);
+ assert.equal(pool.inspect().ioBytes,8,'revoking authority does not finish the network request');
+ first.accept('abcd');first.release();assert.equal(pool.inspect().ioBytes,4);
+ second.accept('efgh');second.release();assert.equal(q.inspect().sourceBytes,8);
+ b.close();q.close();idle(pool);assert.equal(pool.inspect().sessions,0);
+});
 test('retained estimates measure UTF-16 and structure before allocation callbacks',()=>{
  const pool=make(),q=pool.open({maxRetainedBytes:10});let allocated=false;
  assert.throws(()=>{q.retain({values:Array(100).fill('가🙂')},'graph');allocated=true;},/RETAINED_/);

@@ -45,14 +45,15 @@ for(const owner of ['libra','hayaku']){
           :{type:'streaming',result:s.stream};
       f.respond(async()=>f.calls.length===1?response:{type:'success',result:'{"fresh":true}'});
       first=observed(f.call());
-      await waitFor(()=>f.calls.length===1,'first physical call');
-      second=observed(f.call());await pause(25);
+      await waitFor(()=>s.readers===1,'first physical stream');
+      second=observed(f.call());
+      assert.equal((await second).error?.code,'HOST_STREAM_PENDING');
       assert.equal(f.calls.length,1,'the next request cannot start before stream EOF');
       assert.equal(s.readers,1,'root and aliases use one reader');
       s.close();
       const rejected=await first;assert.equal(rejected.error?.code,'UNVERIFIED_STREAM_ROUTE');
-      const fresh=await second;assert.equal(fresh.error,undefined);assert.equal(fresh.value.content,'{"fresh":true}');
-      assert.equal(f.calls.length,2,'only the separate queued request may add a call');
+      const fresh=await observed(f.call());assert.equal(fresh.error,undefined);assert.equal(fresh.value.content,'{"fresh":true}');
+      assert.equal(f.calls.length,2,'only a fresh request after stream EOF may add a call');
       assert.equal(s.stream.locked,false);
       for(const call of f.calls){assert.equal(call.mode,'otherAx');assert.equal(call.allowPlugins,true);assert.equal(Object.hasOwn(call,'staticModel'),false);}
       await f.assertNoCanon();
@@ -65,11 +66,12 @@ for(const owner of ['libra','hayaku']){
       f.respond(async()=>f.calls.length===1?{type:'streaming',content:a.stream,result:b.stream}:{type:'success',result:'{"fresh":true}'});
       first=observed(f.call());await waitFor(()=>a.readers===1&&b.readers===1,'all stream readers');
       second=observed(f.call());if(failure==='none')a.close();else a.error(failure==='primitive'?'STREAM_FAILED':undefined);
+      assert.equal((await second).error?.code,'HOST_STREAM_PENDING');
       await pause(25);assert.equal(f.calls.length,1,'one completed or errored stream cannot release another active stream');
       b.close();
       const rejected=await first;assert.ok(rejected.error);
       if(failure==='error')assert.match(rejected.error.message,/STREAM_FAILED/);else assert.equal(rejected.error.code,'UNVERIFIED_STREAM_ROUTE');
-      assert.equal((await second).value.content,'{"fresh":true}');
+      assert.equal((await f.call()).content,'{"fresh":true}');
       assert.equal(f.calls.length,2);assert.equal(a.stream.locked,false);assert.equal(b.stream.locked,false);
       await f.assertNoCanon();
     }finally{a.close();b.close();await Promise.all([first,second]);await f.dispose();}
@@ -84,7 +86,9 @@ for(const owner of ['libra','hayaku']){
       if(reason==='cancel')abort.abort();
       const abandoned=await first;assert.equal(abandoned.error?.code,reason==='cancel'?'OUTCOME_UNKNOWN_CANCELLED':'OUTCOME_UNKNOWN_TIMEOUT');
       second=observed(f.call());await pause(25);assert.equal(f.calls.length,1);
-      s.close();assert.equal((await second).value.content,'{"fresh":true}');
+      assert.equal((await second).error?.code,'HOST_STREAM_PENDING');
+      s.close();await waitFor(()=>!s.stream.locked,'physical stream release');
+      assert.equal((await f.call()).content,'{"fresh":true}');
       assert.equal(f.calls.length,2);assert.equal(s.stream.locked,false);await f.assertNoCanon();
     }finally{s.close();await Promise.all([first,second]);await f.dispose();}
   });
@@ -98,6 +102,33 @@ for(const owner of ['libra','hayaku']){
       assert.match(owner==='hayaku'?result.error?.message:result.error,/stream.*not verified/i);
       if(owner==='hayaku')assert.equal(result.error?.code,'UNVERIFIED_STREAM_ROUTE');
       assert.equal(f.calls.length,1);assert.equal(s.stream.locked,false);await f.assertNoCanon();
+    }finally{s.close();await pending;await f.dispose();}
+  });
+
+  test(`${owner} a request already queued before stream detection still waits for physical EOF`,async()=>{
+    const f=await fixture(owner),s=controlledStream();let release,first,second;
+    const response=new Promise(resolve=>release=resolve);
+    try{
+      f.respond(async()=>f.calls.length===1?await response:{type:'success',result:'{"fresh":true}'});
+      first=observed(f.call());await waitFor(()=>f.calls.length===1,'host promise');
+      second=observed(f.call());await pause(25);
+      release({type:'streaming',result:s.stream});await waitFor(()=>s.readers===1,'host stream');
+      await pause(25);assert.equal(f.calls.length,1);
+      s.close();assert.equal((await first).error?.code,'UNVERIFIED_STREAM_ROUTE');
+      assert.equal((await second).value.content,'{"fresh":true}');assert.equal(f.calls.length,2);
+      await f.assertNoCanon();
+    }finally{release({type:'streaming',result:s.stream});s.close();await Promise.all([first,second]);await f.dispose();}
+  });
+
+  test(`${owner} a public probe during an open host stream fails without another model call`,async()=>{
+    const f=await fixture(owner),s=controlledStream();let pending;
+    try{
+      f.respond(async()=>({type:'streaming',result:s.stream}));
+      pending=observed(f.call());await waitFor(()=>s.readers===1,'open stream');
+      const result=await f.probe();
+      assert.equal(result.ok,false);assert.equal(result.submitted,false);assert.equal(f.calls.length,1);
+      assert.match(owner==='hayaku'?result.error?.message:result.error,/RisuAI.*스트리밍.*종료/);
+      await f.assertNoCanon();
     }finally{s.close();await pending;await f.dispose();}
   });
 }
