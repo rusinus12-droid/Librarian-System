@@ -86,6 +86,47 @@ function withFixture(body) {
   try { return body(f); } finally { fs.rmSync(f.temp, { recursive: true, force: true }); }
 }
 function renameAll(f) { for (const owner of Object.keys(names)) put(f.staged, relative(owner), source(owner, declarations[owner], true)); }
+function releaseBindings(f) {
+  return JSON.stringify({ schema: 'librarian.plugin-transform-bindings.v1', profile: 'release',
+    plugins: Object.fromEntries(Object.keys(names).map(owner => [relative(owner), {
+      sourceSha256: f.captured[relative(owner)],
+      artifactSha256: sha(fs.readFileSync(path.join(f.staged, relative(owner))))
+    }])) });
+}
+
+test('a captured release transform can eliminate retired pilot declarations without losing their source identity', () => withFixture(f => {
+  for (const owner of Object.keys(names)) put(f.staged, relative(owner), '//@version ' + version(owner) + '\nvoid 0;\n');
+  const before = snapshot(f.staged);
+  const result = run(f, { LIBRARIAN_MANIFEST_TRANSFORM_BINDINGS: releaseBindings(f) });
+  assert.equal(result.status, 0, result.stderr);
+  const manifest = JSON.parse(fs.readFileSync(path.join(f.staged, 'program-manifest.json')));
+  for (const [owner, field] of [['lia','liaWorldLorePilot'],['libra','libraRecallBm25fPilot'],['hayaku','hayakuSparseRrfPilot']]) {
+    const pilot = manifest.dataContract.computePlane[field];
+    assert.equal(pilot.retired, true);
+    assert.equal(pilot.operation, declarations[owner][0]);
+    assert.equal(pilot.algorithmFingerprint, declarations[owner][1]);
+    assert.equal(manifest.files[relative(owner)].sha256, before[relative(owner)]);
+  }
+}));
+
+test('a staged change after release binding capture is rejected without writes', () => withFixture(f => {
+  renameAll(f); const binding = releaseBindings(f);
+  fs.appendFileSync(path.join(f.staged, relative('lia')), '\nvoid "changed";\n');
+  rejectWithoutWrites(f, /manifest_release_transform_mismatch:lia/, { LIBRARIAN_MANIFEST_TRANSFORM_BINDINGS: binding });
+}));
+
+test('a release receipt cannot authorize metadata from a different source', () => withFixture(f => {
+  renameAll(f); const binding = JSON.parse(releaseBindings(f));
+  binding.plugins[relative('lia')].sourceSha256 = '0'.repeat(64);
+  rejectWithoutWrites(f, /manifest_release_transform_mismatch:lia/, { LIBRARIAN_MANIFEST_TRANSFORM_BINDINGS: JSON.stringify(binding) });
+}));
+
+test('an active pilot still requires its emitted fingerprint even with a release receipt', () => withFixture(f => {
+  put(f.canonical, relative('flashback'), source('flashback') + "const FLASHBACK_HASH_COMPUTE_OPERATION='flashback.hash-embedding-batch.v1';\nconst FLASHBACK_HASH_COMPUTE_FINGERPRINT='active-fingerprint';\n");
+  put(f.staged, relative('flashback'), source('flashback') + "const renamed='flashback.hash-embedding-batch.v1';\n");
+  f.captured = bindings(f.canonical);
+  rejectWithoutWrites(f, /manifest_release_literal_missing:flashback-fingerprint/, { LIBRARIAN_MANIFEST_TRANSFORM_BINDINGS: releaseBindings(f) });
+}));
 
 test('readable declarations remain authoritative without a canonical fallback environment', () => withFixture(f => {
   const result = run(f, { LIBRARIAN_MANIFEST_DECLARATION_ROOT: 'unavailable', LIBRARIAN_MANIFEST_DECLARATION_BINDINGS: 'invalid' });

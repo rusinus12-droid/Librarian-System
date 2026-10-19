@@ -1,4 +1,4 @@
-Librarian System Server 0.4.0
+Librarian System Server 0.4.1
 
 [처음 사용하는 분]
 1. 이 ZIP을 원하는 폴더에 압축 해제합니다.
@@ -42,13 +42,13 @@ Windows에서는 업데이트.bat, macOS에서는 업데이트.command, Linux/Te
 4. DATA 폴더를 임의로 삭제하거나 빈 DATA로 덮어쓰지 마세요.
 
 [현재 구성]
-- Librarian System Server 0.4.0
+- Librarian System Server 0.4.1
 - Flashback Memory 1.0.120
 - HAYAKU Locator Continuity 3.0.154
-- LIBRA 2.3.171
+- LIBRA 2.3.172
 - LIA Persona Linker 0.26.88
 - RE:TRACE 1.9.86
-- GRADIA 0.25.90
+- GRADIA 0.25.91
 
 [호환 정보]
 - Storage SDK 1.8.27

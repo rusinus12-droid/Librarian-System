@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.25.90
+//@display-name GRADIA v0.25.91
 //@api 3.0
-//@version 0.25.90
+//@version 0.25.91
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -937,7 +937,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.25.90';
+  const PLUGIN_VERSION = '0.25.91';
   
   
   
@@ -43033,6 +43033,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     frame.innerHTML = GRADIA_MOCKUP_MARKUP;
     const app = frame.querySelector('.app');
     if (!app) throw new Error('GRADIA mockup shell is missing');
+    const brandVersion = app.querySelector('.brand__ver');
+    if (brandVersion?.firstChild) brandVersion.firstChild.textContent = `v${PLUGIN_VERSION} · `;
     app.classList.add('t-gradia');
     const tabbar=app.querySelector('.tabbar');
     if(tabbar){

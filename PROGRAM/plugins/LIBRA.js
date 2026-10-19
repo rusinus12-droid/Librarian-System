@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.171
-//@version 2.3.171
+//@display-name LIBRA v2.3.172
+//@version 2.3.172
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1558,7 +1558,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.171';
+  const PLUGIN_VERSION = '2.3.172';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -23866,9 +23866,10 @@ function summarizeAgentCbsTag(rawContent) {
       explicitOllamaCloudReasoningDisable
       || budget.reasoningAllowed
       || budget.transformActive
-      // A canonical request with reasoning set to none must not inherit the
-      // provider's default thinking mode merely because no transform is active.
-      || (options.taskKind === 'canonical_memory' && !budget.reasoningAllowed);
+      // Background producers share the configured reasoning choice. In particular,
+      // Micro's smaller output budget must not inherit the provider's thinking default.
+      || (options.taskKind === 'canonical_memory' && !budget.reasoningAllowed)
+      || (!budget.reasoningAllowed && !capability.forcedReasoning);
     const cacheDecision = options.promptCacheDecision;
     const cacheEnvelope = cacheDecision?.enabled ? cacheDecision.envelope : null;
     const useOpenAICacheEnvelope = cacheEnvelope && ['openai_explicit', 'openai_implicit'].includes(cacheDecision.strategy);
@@ -59533,6 +59534,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       'SENSITIVE MEMORY SELECTION: Record sexual preferences, attitudes or identity labels only when explicitly established and relevant to later continuity; never infer them from gender, genre, appearance, a role or an isolated reaction. Preserve the scope of a stated boundary; one act or prior consent does not establish a standing preference or ongoing consent. Omit unsupported sensitive attributes without discarding independently supported events and consequences. Keep unknown information unknown.',
       `OUTPUT: one complete JSON object with schema="${UNIFIED_ARTIFACT_SCHEMA_V5}" and entities, facts, stateBindings only. No prose, continuation, reasoning or review. Runtime owns persistent IDs, hashes, storage and State mutation; Profile instructions cannot change this evidence/output contract.`,
       'Entity: {tempId,name,type:person|world,kind:person|location|object|organization|rule|environment|condition|thread|other,evidenceSpans:[{ref:tN-a,quote:exact source}]}. Names appear in the cited quote; use temporary IDs.',
+      'ID FORMAT: use simple ASCII counters e1,e2,... for tempId and f1,f2,... for tempFactId. Copy those exact IDs into all references and stateBindings. Never transliterate a name into an ID or use visually similar non-ASCII letters. Keep the original language in names, text and quotations.',
       'LITERAL ENTITY NAMES: copy each name as one literal contiguous phrase from its own quotation. Do not invent descriptive titles by joining distant words. A rule about a place is a rule fact on that place, not a newly titled rule entity. A promise or question may use a short literal name such as 약속 or 공연 허가 when that exact phrase is cited; keep its full meaning in the thread value. Do not drop a supported rule or thread merely to avoid extracting it.',
       'Fact: {tempFactId,domain,subjectTempRef,claimKind,values,text,temporalRole:current_sequence|historical|flashback|reported|hypothetical|uncertain,certainty:confirmed|uncertain|conflict|unknown,evidenceSpans:[{ref,quote}],dependsOn:[]}. Keep text concise; use the shortest exact supporting quotation (2–320 normalized characters) from its row, not a whole passage or unrelated name.',
       'claimKind→domain: event→event; location|character_state|knowledge|affiliation|character_preference|character_boundary→character; relationship→relationship; scene_time|containment|management|ownership|possession|placement|access|rule|world_state→world; thread→narrative.',
@@ -59545,7 +59547,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       'State bindings are optional {factTempId} entries for confirmed current facts. Bind only an explicitly final same-row value; leave unknown/conflicts unbound.',
       'FINAL STATE CHECK: emit a typed location fact in domain character for each explicitly established final person location, even when movement was also recorded as an event. location is NEVER domain world; subjectTempRef is the person and locationRef is the place. A containment fact has the contained place as subject and a DIFFERENT containing place as parentRef. Ownership/possession use the object as subject, access uses the affected world place/object as subject, and a thread uses its literal world/thread entity as subject. Include {factTempId} bindings for supported final locations, conditions, ownership, possession, knowledge, relationships, rules and threads; event-only facts do not establish those State fields.',
       'CONTAINMENT EXAMPLE (shape only): for source 본관 안에 작업실과 휴게실이 있다, emit TWO containment facts: subjectTempRef=작업실 entity with values {parentRef:본관 entity}, and subjectTempRef=휴게실 entity with values {parentRef:본관 entity}. NEVER use 본관 as both subjectTempRef and parentRef. One fact represents one child-parent edge, not a sentence listing several rooms.',
-      'REFERENCE TYPE CHECK: parentRef must reference a world entity with kind location, never a manager/organization. An organization managing a building is management with values {managerRef:organizationTempId}, not containment. RELATIONSHIP SHAPE: {tempFactId,domain:"relationship",subjectTempRef:personA,targetTempRef:personB,dimension:"trust",claimKind:"relationship",values:{value:"source-supported qualitative statement"},text,temporalRole,certainty,evidenceSpans}. targetTempRef and dimension are TOP-LEVEL fact fields, NEVER inside values.',
+      'REFERENCE TYPE CHECK: containment requires BOTH subject and parentRef to be world entities with kind location. A box/object in a room is placement with values {containerRef:roomTempId}, NOT containment; keep the box/object kind object. An organization managing a building is management with values {managerRef:organizationTempId}, not containment. RELATIONSHIP SHAPE: {tempFactId,domain:"relationship",subjectTempRef:personA,targetTempRef:personB,dimension:"trust",claimKind:"relationship",values:{value:"source-supported qualitative statement"},text,temporalRole,certainty,evidenceSpans}. targetTempRef and dimension are TOP-LEVEL fact fields, NEVER inside values.',
       'ACCESS UNCERTAINTY: custody/possession does not grant access. A statement that lending/custody did not include permission establishes no grant from that act; it does NOT establish that entry is forbidden. Use access status unknown unless the source explicitly grants or denies permission. Preserve the stated limitation and do not invent a blanket denial.',
       'THREAD SHAPE CHECK: participants is optional. If no person/role is directly established, OMIT participants entirely; do not emit an empty array, invent a participant or repeat a role. A directly stated unresolved question is a confirmed fact that its answer is unknown: use fact certainty confirmed and thread status open/uncertain; never claim that the unknown answer is known. Bind the confirmed existence of that unresolved situation, not an invented answer.',
       'ACTOR KNOWLEDGE: narrator knowledge is not every actor’s; names do not merge people. Resolved threads remain history.',
@@ -67530,10 +67532,10 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           void cleanupQuarantinedVectors(false).catch(error => warn('LIBRA expired embedding quarantine cleanup failed', error));
         }
         let committed = false;
-        if (refreshSerial === state.snapshotRefreshSerial) {
+        if (refreshSerial === state.snapshotRefreshSerial || options.requireCurrentView === true) {
           let activeContext = null;
           try { activeContext = await resolveContext(); } catch (_) {}
-          if (refreshSerial === state.snapshotRefreshSerial && sameSnapshotScope(activeContext?.scope, context.scope)) {
+          if ((refreshSerial === state.snapshotRefreshSerial || options.requireCurrentView === true) && sameSnapshotScope(activeContext?.scope, context.scope)) {
             // Canonical Head stays immutable. The viewer consumes the same verified,
             // read-only Micro projection as responses, with physical/source readback.
             try {
@@ -75167,6 +75169,25 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }
         return clone(await readMicroReaderTurn(context.scope, turnValue));
       },
+      readMicroStateAdmissionForTurn: async (turnValue, scopeKeyValue = '', analysisRevisionId = '') => {
+        const context = await resolveContext(), scope = context.scope;
+        if (scopeKeyValue && scope.scopeKey !== scopeKeyValue) return {status:'scope_mismatch'};
+        const active = await readMicroReaderTurn(scope, turnValue);
+        if (active.status !== 'verified') return {status:active.status, reason:active.reason};
+        const record = active.record;
+        if (analysisRevisionId && record.analysisRevisionId !== analysisRevisionId) return {status:'stale_source'};
+        const decisions = [];
+        for (const [claimIndex, claim] of asArray(record.claims).entries()) {
+          if (!isPlainObject(claim.stateIntent)) continue;
+          const result = await admitMicroStateClaim(scope, hostWorldlineIdForScope(scope),
+            Number(record.sessionEpoch), Number(record.turn), claimIndex, {readOnly:true});
+          decisions.push({claimIndex, status:result.status, reason:string(result.reason || '')});
+        }
+        const current = await resolveContext(), after = await readMicroReaderTurn(scope, turnValue);
+        if (!sameSnapshotScope(current.scope, scope) || after.status !== 'verified'
+          || after.record.analysisRevisionId !== record.analysisRevisionId) return {status:'stale_source'};
+        return {status:'verified', analysisRevisionId:record.analysisRevisionId, decisions};
+      },
       listMicroReaderTurns,
       debugReadActiveMicroMemory: async turnValue => {
         const context = await resolveContext();
@@ -81238,6 +81259,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       reader.detail = {status: text(active?.status || 'unavailable'), reason: text(active?.reason || ''),
         record: active?.status === 'verified' ? active.record : null};
+      if (active?.status === 'verified' && active.record?.analysisStatus === 'verified') {
+        let admission;
+        try { admission = await api.readMicroStateAdmissionForTurn(turn, reader.scopeKey, active.record.analysisRevisionId); }
+        catch (_) { admission = {status:'unavailable'}; }
+        if (!microReaderCurrent(reader) || reader.detailSerial !== serial) return;
+        reader.detail.admission = admission;
+      }
     } catch (error) {
       if (microReaderCurrent(reader) && reader.detailSerial === serial) reader.detailError = text(error?.message || error);
     } finally {
@@ -83823,6 +83851,28 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     ? row.analysisStatus === 'minimum_source_bound' ? '원문만 보관 · 분석 미완' : '분석 완료'
     : ({missing: '기록 없음', stale_source: '원문 변경 · 확인 필요',
       pending_reconciliation: '저장 확인 필요', unavailable: '조회 실패'}[row?.status] || '확인 필요');
+  const microStatePendingLabel = reason => ({
+    state_domain_not_ready:'정본의 상태 근거를 먼저 확인해야 합니다. 열람대에서 부분 저장된 구간을 확인하세요.',
+    registry_location_unresolved:'이 장소의 연결을 확인하지 못했습니다. 장소가 정본에 기록된 뒤 현재 상태를 다시 적용하세요.',
+    registry_target_unresolved:'대상의 이름이 아직 연결되지 않았거나 여러 대상과 겹칩니다. 정본과 인물·세계 항목을 확인하세요.',
+    canonical_state_basis_unavailable:'상태를 적용할 정본 근거가 아직 없습니다. 먼저 정본 기억을 확인하세요.',
+    independent_verifier_required:'이 변화에는 별도 검증이 필요합니다. 현재 상태에 자동으로 적용하지 않았습니다.'
+  }[reason] || '현재 근거로 상태 승인을 확인하지 못했습니다. 정본과 원문을 확인한 뒤 다시 적용하세요.');
+  const buildMicroStateAdmissionPanel = (current, turn) => {
+    const admission=current?.admission;
+    if(!admission || admission.status!=='verified')return guiEl('div',{class:'note note--warn',dataset:{microStateAdmission:'unavailable'}},[
+      guiEl('p',{text:'분석은 저장됐지만 현재 상태 승인을 확인하지 못했습니다.'})]);
+    const decisions=guiAsArray(admission.decisions),pending=decisions.filter(row=>!['admitted','superseded'].includes(row.status));
+    return guiEl('section',{class:pending.length?'note note--warn':'note',dataset:{microStateAdmission:pending.length?'pending':'ready'}},[
+      guiEl('h3',{text:`현재 상태 · 승인 ${decisions.filter(row=>row.status==='admitted').length}개 · 보류 ${pending.length}개`}),
+      !decisions.length?guiEl('p',{text:'이 턴에는 상태에 적용할 변화가 없습니다.'}):null,
+      ...pending.map(row=>guiEl('p',{dataset:{microStatePendingReason:row.reason},text:`기록 ${Number(row.claimIndex)+1} · ${microStatePendingLabel(row.reason)}`})),
+      pending.length?guiEl('div',{class:'cluster'},[
+        guiEl('button',{class:'btn btn--sm',type:'button',text:'정본 상태 확인',onClick:()=>bookNavigate('desk')}),
+        guiEl('button',{class:'btn btn--sm',type:'button',text:'상태 승인 다시 확인',onClick:()=>void loadMicroReaderDetail(turn)})
+      ]):null
+    ]);
+  };
   const buildBookMicroReaderProjection = () => {
     const reader = ensureMicroReaderPage();
     const retry = () => void loadMicroReaderPage(false);
@@ -83868,6 +83918,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         guiEl('div', {class: 'eyebrow', text: `MICRO · T${record.turn}`}),
         guiEl('h2', {text: `T${record.turn}의 Micro 기억`}),
         guiEl('p', {class: 'deck', text: microReaderStatusLabel({status: 'verified', analysisStatus: record.analysisStatus})}),
+        !sourceOnly ? buildMicroStateAdmissionPanel(current, record.turn) : null,
         sourceOnly ? guiEl('div', {class: 'note note--warn'}, [guiEl('p', {
           text: '분석이 완료되지 않아 원문만 보관된 기록입니다.'}), quote(record.excerpt)])
           : guiEl('div', {class: 'stack'}, guiAsArray(record.claims).map((claim, index) => guiEl('section', {
@@ -85259,6 +85310,15 @@ advanced
     const actions=overlay.querySelector('.dialog__actions');actions.replaceChildren(guiEl('button',{class:'btn',type:'button',text:'전체 상태 확인',onClick:()=>{if(canonicalReaderBindingKey(binding)!==canonicalReaderBindingKey(canonicalReaderBinding()))return;void refreshGuiSnapshot(false).then(()=>openApprovedStateDialog());}}),guiEl('button',{class:'btn btn--primary',type:'button',text:'닫기',onClick:()=>overlay.remove()}));
     overlay.addEventListener('click',event=>{if(event.target===overlay)overlay.remove();});Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,()=>overlay.remove());return overlay;
   };
+  const bookRecoveryResult = (kind,result) => {
+    if(result?.status!=='verified')return {outcome:'pending',message:'복구 결과를 아직 확인하지 못했습니다. 원문과 저장 상태를 다시 확인하세요.'};
+    if(kind==='receipt')return {outcome:'completed',message:'원문 저장 영수증과 readback을 확인했습니다.'};
+    if(result.record?.analysisStatus!=='verified')return {outcome:'pending',message:'원문만 보관했습니다. Micro 분석은 완료되지 않았습니다. 분석 상태와 연결 설정을 확인하세요.'};
+    const admission=result.stateAdmission||{},pending=Number(admission.pending||0)+Number(admission.pendingReconciliation||0);
+    return {outcome:pending?'pending':'completed',message:pending
+      ?`Micro 분석은 저장됐지만 현재 상태 ${pending}개가 보류됐습니다. Micro 기억에서 사유를 확인하세요.`
+      :'Micro 분석 저장과 readback을 확인했습니다.'};
+  };
   const openApprovedRecoveryJob = (kind,title,binding) => {
     Gui.app.querySelector('#job-recover')?.remove();
     const template=document.createElement('template');template.innerHTML=LIBRA_APPROVED_RECOVERY_JOB_HTML;
@@ -85272,11 +85332,13 @@ advanced
     const minimize=()=>{overlay.hidden=true;let chip=Gui.app.querySelector('[data-recovery-job-chip]');if(!chip){chip=guiEl('button',{class:'btn btn--sm',type:'button',dataset:{recoveryJobChip:'true'},text:title,onClick:()=>{overlay.hidden=false;chip.remove();}});Gui.app.appendChild(chip);}};
     actions.appendChild(guiEl('button',{class:'btn',type:'button',text:'최소화',onClick:minimize}));
     overlay.addEventListener('click',event=>{if(event.target===overlay)minimize();});Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,minimize);
-    return (message,error=false)=>{
+    return (message,outcome='completed')=>{
       if(!overlay.isConnected)return;
-      steps.forEach(node=>node.classList.remove('is-active'));steps[1].classList.add(error?'is-fail':'is-done');if(!error)steps[2].classList.add('is-done');
-      overlay.querySelector('[data-job-msg]').textContent=error?'작업 결과를 확인하세요.':'실제 처리 결과와 readback을 확인했습니다.';
-      result.hidden=false;result.replaceChildren(guiEl('div',{class:'res-row'},[guiEl('b',{text:error?'오류':'처리 결과'}),guiEl('span',{text:message})]));
+      const failed=outcome===true||outcome==='failed',complete=outcome===false||outcome==='completed';
+      overlay.dataset.recoveryOutcome=failed?'failed':complete?'completed':'pending';
+      steps.forEach(node=>node.classList.remove('is-active'));steps[1].classList.add(failed?'is-fail':'is-done');if(complete)steps.forEach(node=>node.classList.add('is-done'));
+      overlay.querySelector('[data-job-msg]').textContent=failed?'작업 중 오류가 발생했습니다.':complete?'실제 처리 결과와 readback을 확인했습니다.':'확인이 필요한 항목이 남아 있습니다.';
+      result.hidden=false;result.replaceChildren(guiEl('div',{class:'res-row'},[guiEl('b',{text:failed?'오류':complete?'처리 결과':'확인 필요'}),guiEl('span',{text:message})]));
       actions.replaceChildren(guiEl('button',{class:'btn btn--primary',type:'button',text:'확인',onClick:()=>{overlay.remove();Gui.app.querySelector('[data-recovery-job-chip]')?.remove();}}));
     };
   };
@@ -85306,7 +85368,7 @@ advanced
     const execute=guiEl('button',{class:kind==='micro'?'btn btn--danger':'btn btn--primary',type:'button',text:'실행',disabled:true,dataset:{recoveryExecute:'true'},onClick:async()=>{
       if(busy)return;
       if(!valid()||overlay.dataset.recoveryTarget!==(selected?.key||binding.worldlineId)){status.textContent='채팅·분기·scope 또는 작업 대상이 바뀌었습니다. 다시 열어 확인하세요.';execute.disabled=true;return;}
-      busy=true;execute.disabled=true;const finishJob=openApprovedRecoveryJob(kind,title,binding);
+      busy=true;execute.disabled=true;let outcome='completed';const finishJob=openApprovedRecoveryJob(kind,title,binding);
       try{
         if(kind==='state'||kind==='rebuild'){
           await runStateReplayMaintenance({kind:kind==='state'?'rebuild':'rollback',scopeKey:binding.scopeKey,worldlineId:binding.worldlineId,throughTurn:kind==='rebuild'?selected.turn:null});
@@ -85318,9 +85380,9 @@ advanced
           const action=kind==='receipt'?'receipt':same.status==='never_started'?'micro_resume':same.status==='publish_ready'?'micro_publish':'micro_retry';
           const result=await runBookReceiptRecoveryAction(action,same);
           if(!valid())return;
-          status.textContent=result?`실제 처리 결과 · ${String(result.status||result.state||(result.ok===true?'확인됨':'결과 확인 필요'))}${result.reason?' · '+result.reason:''}`:'작업을 실행하지 못했습니다. 범위와 대상을 다시 확인하세요.';
+          const presentation=bookRecoveryResult(kind,result);outcome=presentation.outcome;status.textContent=presentation.message;
         }
-        finishJob(status.textContent);execute.hidden=true;
+        finishJob(status.textContent,outcome);execute.hidden=true;
       }catch(error){status.textContent=String(error.message||error);finishJob(status.textContent,true);}finally{busy=false;if(!execute.hidden)update();}
     }});
     overlay.querySelector('.dialog__actions').append(guiEl('button',{class:'btn',type:'button',text:'닫기',onClick:close}),execute);
@@ -86833,6 +86895,9 @@ advanced
     async readActiveMicroMemoryForTurn(turn, scopeKey = '') {
       return safeClone(await LibraMemoryCore.readActiveMicroMemoryForTurn(turn, scopeKey));
     },
+    async readMicroStateAdmissionForTurn(turn, scopeKey = '', analysisRevisionId = '') {
+      return safeClone(await LibraMemoryCore.readMicroStateAdmissionForTurn(turn, scopeKey, analysisRevisionId));
+    },
     async listMicroReaderTurns(options = {}) { return safeClone(await LibraMemoryCore.listMicroReaderTurns(options)); },
     async debugReadActiveMicroMemory(turn) { return safeClone(await LibraMemoryCore.debugReadActiveMicroMemory(turn)); },
     async debugProduceMicroForTurn(turn) { return safeClone(await LibraMemoryCore.debugProduceMicroForTurn(turn)); },
@@ -87013,7 +87078,7 @@ advanced
     async listWorldManagerCorrections(options = {}) { return safeClone(await LibraMemoryCore.listWorldManagerCorrections(options)); },
     async getWorldManagerRuntimeMeta() { return safeClone(await LibraMemoryCore.getWorldManagerRuntimeMeta()); },
     async getWorldManagerNarrative() {
-      const snapshot = await LibraMemoryCore.refreshSnapshot(undefined, { suppressGuiSchedule: true });
+      const snapshot = await LibraMemoryCore.refreshSnapshot(undefined, { suppressGuiSchedule: true, requireCurrentView: true });
       return safeClone((snapshot?.currentStateView ? snapshot.currentStateView.head?.narrative
         : snapshot?.continuityState?.narrative) || __libraNarrativeEmptyState());
     },

@@ -33,6 +33,10 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'release_metadata_test.cjs',
   'release_builder_version_input_test.cjs',
   'release_builder_profiles_test.cjs',
+  'manifest_minified_declaration_binding_test.cjs',
+  'libra_canonical_reasoning_off_length_runtime_test.cjs',
+  'libra_recovery_result_gui_runtime_test.cjs',
+  'libra_micro_state_reader_gui_runtime_test.cjs',
   // The synthetic action marker uses a `.jsonl.fixture` suffix so it remains shippable
   // while ordinary JSONL data stays excluded by the sensitive-file filter.
   'libra_main_memory_acceptance_reporter_test.cjs',
@@ -597,14 +601,15 @@ function captureManifestDeclarationBindings() {
   })));
 }
 
-function refreshStagedMetadata(stagedRoot, declarationBindings, qualification) {
+function refreshStagedMetadata(stagedRoot, declarationBindings, qualification, transformBindings = null) {
   const stagedProgram=path.join(stagedRoot,'PROGRAM');
   if(JSON.stringify(captureManifestDeclarationBindings())!==JSON.stringify(declarationBindings))throw new Error('distribution_declaration_source_changed');
   runNode(path.join(programDir,'tools','update_manifest.cjs'),[],programDir,{env:{
     LIBRARIAN_PROGRAM_ROOT:stagedProgram,
     LIBRARIAN_PACKAGE_QUALIFICATION:qualification,
     LIBRARIAN_MANIFEST_DECLARATION_ROOT:programDir,
-    LIBRARIAN_MANIFEST_DECLARATION_BINDINGS:JSON.stringify(declarationBindings)
+    LIBRARIAN_MANIFEST_DECLARATION_BINDINGS:JSON.stringify(declarationBindings),
+    LIBRARIAN_MANIFEST_TRANSFORM_BINDINGS:transformBindings ? JSON.stringify(transformBindings) : ''
   }});
   const releasePolicy=readReleasePolicy(stagedProgram);
   const updateManifest=writeUpdateManifest(stagedRoot,{qualification});
@@ -660,11 +665,13 @@ function buildDistribution(options = {}) {
     // release profile only. The SOURCE profile keeps the readable build, because that
     // artifact is the developer package. The swap happens on the STAGED tree, so the
     // readable source is never modified (assertTreeSourceUnchanged still holds below).
-    let pluginArtifacts=null;
+    let pluginArtifacts=null,transformBindings=null;
     if(!isSource){
       phase='release_plugins';
       const artifactDir=path.join(temporaryRoot,'release-plugins');
       buildReleaseArtifacts(artifactDir);
+      const emitted=JSON.parse(fs.readFileSync(path.join(artifactDir,'ultralight-build-report.json')));
+      transformBindings={schema:'librarian.plugin-transform-bindings.v1',profile:'release',plugins:{}};
       const stagedPluginDir=path.join(stagedRoot,'PROGRAM','plugins');
       fs.mkdirSync(stagedPluginDir,{recursive:true});
       let replaced=0,sourceBytes=0,releaseBytes=0;
@@ -672,6 +679,12 @@ function buildDistribution(options = {}) {
         const file=path.join(stagedPluginDir,filename);
         const artifact=path.join(artifactDir,path.basename(file));
         if(!fs.existsSync(artifact))throw new Error(`distribution_release_artifact_missing:${path.basename(file)}`);
+        const relative=`plugins/${filename}`,row=emitted.rows?.find(item=>item.file===relative);
+        if(emitted.profile!=='release'||!row?.wrote||row.variant!=='Min'||row.minified!==true
+          ||row.sourceSha256!==declarationBindings[relative]||row.artifactSha256!==sha256File(artifact)) {
+          throw new Error(`distribution_release_transform_binding_invalid:${filename}`);
+        }
+        transformBindings.plugins[relative]={sourceSha256:row.sourceSha256,artifactSha256:row.artifactSha256};
         sourceBytes+=fs.statSync(path.join(programDir,'plugins',filename)).size;releaseBytes+=fs.statSync(artifact).size;
         fs.copyFileSync(artifact,file);replaced+=1;
       }
@@ -698,7 +711,7 @@ function buildDistribution(options = {}) {
     for(const relative of syntaxTargets){const file=path.join(stagedProgram,...relative.split('/'));if(fs.existsSync(file))runNodeProcess(['--check',file],stagedProgram);}
     for(const file of listFiles(path.join(stagedProgram,'plugins')).filter(file=>/\.js$/i.test(file)))runNodeProcess(['--check',file],stagedProgram);
     for(const file of listFiles(path.join(stagedRoot,'UPDATER')).filter(file=>/\.cjs$/i.test(file)))runNodeProcess(['--check',file],stagedProgram);
-    phase='manifest_and_checksums';const {releasePolicy,updateManifest,checksumCheck}=refreshStagedMetadata(stagedRoot,declarationBindings,qualification);
+    phase='manifest_and_checksums';const {releasePolicy,updateManifest,checksumCheck}=refreshStagedMetadata(stagedRoot,declarationBindings,qualification,transformBindings);
     if(updateManifest.assetName!==expectedAssetName(version)||updateManifest.updatePolicy!==releasePolicy.updatePolicy)throw new Error('distribution_update_manifest_contract_mismatch');
     assertPristineDistributionData(stagedData);verifyChecksumFile(stagedRoot);
     if(isSource){verifySourceFixtureBytes(stagedProgram);}

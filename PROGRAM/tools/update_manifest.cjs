@@ -74,7 +74,7 @@ const libraStorageSdkVersion = extractVersion(readSource('sdk/MemorySuiteStorage
 if (storageSdkVersion !== libraStorageSdkVersion) throw new Error('manifest_storage_sdk_variant_version_mismatch');
 const computeSdkVersion = extractVersion(readSource('sdk/MemorySuiteComputeClient.source.js'), /^\/\* LIBRARIAN SYSTEM COMPUTE SDK v(\d+\.\d+\.\d+)/m, 'compute-sdk');
 const canonicalDeclarations = new Map();
-const resolveComputePilot = (owner, operationName, fingerprintName, { optional = false } = {}) => {
+const resolveComputePilot = (owner, operationName, fingerprintName, { optional = false, retired = false } = {}) => {
   const staged = pluginSources[owner];
   const operation = extractStringConstant(staged, operationName, `${owner}-operation`, { optional: true });
   const fingerprint = extractStringConstant(staged, fingerprintName, `${owner}-fingerprint`, { optional: true });
@@ -108,6 +108,7 @@ const resolveComputePilot = (owner, operationName, fingerprintName, { optional =
     const version = extractVersion(source.slice(0, 512), /^\/\/@version\s+(\d+\.\d+\.\d+)\s*$/m, `declaration:${owner}`);
     if (version !== pluginVersions[owner]) throw new Error(`manifest_declaration_version_mismatch:${owner}`);
     canonicalDeclarations.set(owner, Object.freeze({
+      sourceSha256: expectedSha,
       operation: extractStringConstant(source, operationName, `${owner}-operation`, { optional }),
       fingerprint: extractStringConstant(source, fingerprintName, `${owner}-fingerprint`, { optional })
     }));
@@ -119,15 +120,30 @@ const resolveComputePilot = (owner, operationName, fingerprintName, { optional =
   }
   if (!canonical.operation) throw new Error(`manifest_constant_missing:${owner}-operation`);
   if (!canonical.fingerprint) throw new Error(`manifest_constant_missing:${owner}-fingerprint`);
+  // Retired pilot constants may be eliminated by the verified release transform.
+  // Retain their diagnostic metadata only with both captured source and emitted
+  // byte bindings. Unbound/changed artifacts still need the actual literals.
+  if (retired && process.env.LIBRARIAN_MANIFEST_TRANSFORM_BINDINGS) {
+    let binding;
+    try { binding = JSON.parse(process.env.LIBRARIAN_MANIFEST_TRANSFORM_BINDINGS); }
+    catch (_) { throw new Error(`manifest_release_transform_invalid:${owner}`); }
+    const row = binding?.plugins?.[pluginFiles[owner]];
+    if (binding?.schema !== 'librarian.plugin-transform-bindings.v1' || binding.profile !== 'release'
+      || row?.sourceSha256 !== canonical.sourceSha256
+      || row?.artifactSha256 !== crypto.createHash('sha256').update(staged).digest('hex')) {
+      throw new Error(`manifest_release_transform_mismatch:${owner}`);
+    }
+    return canonical;
+  }
   if (!hasStringLiteral(staged, canonical.operation)) throw new Error(`manifest_release_literal_missing:${owner}-operation`);
   if (!hasStringLiteral(staged, canonical.fingerprint)) throw new Error(`manifest_release_literal_missing:${owner}-fingerprint`);
   return canonical;
 };
 const computePilots = Object.freeze({
   flashback: resolveComputePilot('flashback', 'FLASHBACK_HASH_COMPUTE_OPERATION', 'FLASHBACK_HASH_COMPUTE_FINGERPRINT', { optional: true }),
-  lia: resolveComputePilot('lia', 'LIA_WORLD_LORE_COMPUTE_OPERATION', 'LIA_WORLD_LORE_COMPUTE_FINGERPRINT'),
-  libra: resolveComputePilot('libra', 'LIBRA_RECALL_BM25F_COMPUTE_OPERATION', 'LIBRA_RECALL_BM25F_COMPUTE_FINGERPRINT'),
-  hayaku: resolveComputePilot('hayaku', 'HAYAKU_SPARSE_RRF_COMPUTE_OPERATION', 'HAYAKU_SPARSE_RRF_COMPUTE_FINGERPRINT')
+  lia: resolveComputePilot('lia', 'LIA_WORLD_LORE_COMPUTE_OPERATION', 'LIA_WORLD_LORE_COMPUTE_FINGERPRINT', { retired: true }),
+  libra: resolveComputePilot('libra', 'LIBRA_RECALL_BM25F_COMPUTE_OPERATION', 'LIBRA_RECALL_BM25F_COMPUTE_FINGERPRINT', { retired: true }),
+  hayaku: resolveComputePilot('hayaku', 'HAYAKU_SPARSE_RRF_COMPUTE_OPERATION', 'HAYAKU_SPARSE_RRF_COMPUTE_FINGERPRINT', { retired: true })
 });
 
 const MANIFEST_EXCLUDED_DIRECTORIES = new Set(['.git', 'node_modules', '__pycache__', 'dist']);

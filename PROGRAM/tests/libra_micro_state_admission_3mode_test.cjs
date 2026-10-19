@@ -193,6 +193,9 @@ const quoteSpan = (text, quote, messageId) => ({role: 'assistant', messageId,
       assert.equal(genesisView.authority?.microProjection?.throughTurn, 1);
       assert.equal((await f.r.api.getWorldManagerNarrative()).summary, value,
         `${mode}: the public narrative viewer reads the admitted Micro projection before Canonical`);
+      const overlapping = await Promise.all(Array.from({length:3},()=>f.r.api.getWorldManagerNarrative()));
+      for(const row of overlapping)assert.equal(row.summary,value,
+        `${mode}: superseded refreshes still return their verified Micro view to their own caller`);
       assert.equal(f.control.calls.length, 1);
       f.chat.message = fullMessages;
       f.chat.messages = fullMessages;

@@ -17,7 +17,7 @@ const sha256Text = value => crypto.createHash('sha256').update(String(value)).di
 const sha256FileSync = file => { const h=crypto.createHash('sha256');const fd=fs.openSync(file,'r'),b=Buffer.allocUnsafe(1024*1024);try{let n;while((n=fs.readSync(fd,b,0,b.length,null))>0)h.update(b.subarray(0,n));}finally{fs.closeSync(fd);}return h.digest('hex'); };
 const fail=(code,statusCode=422)=>{throw Object.assign(new Error(code),{statusCode});};
 
-function createCurrentSchema(database, namespace, serverVersion='0.4.0') {
+function createCurrentSchema(database, namespace, serverVersion='0.4.1') {
   database.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA synchronous = FULL;
@@ -65,7 +65,7 @@ function snapshotCatalog(source, snapshot) {
   return safeCatalog(catalog);
 }
 
-async function exportLogicalMigration({backupDir,archivePath,sourceDataDir,serverVersion='0.4.0',protocol={major:1,minor:9},databaseSchemaVersion=1,onProgress=()=>{}}) {
+async function exportLogicalMigration({backupDir,archivePath,sourceDataDir,serverVersion='0.4.1',protocol={major:1,minor:9},databaseSchemaVersion=1,onProgress=()=>{}}) {
   const source=path.resolve(backupDir),snapshot=backupManifest(source),stage=path.join(path.dirname(path.resolve(archivePath)),`.migration-stage-${crypto.randomUUID()}`);
   await fsp.mkdir(path.join(stage,'namespaces'),{recursive:true,mode:0o700});await fsp.mkdir(path.join(stage,'history'),{recursive:true,mode:0o700});
   const members=[],namespaceMeta={},recordState=Object.fromEntries(NAMESPACES.map(ns=>[ns,new Map()])),summary={namespaces:0,records:0,tombstones:0,authorityClears:0,blockers:[]};let processed=0;
@@ -148,7 +148,7 @@ async function readJsonl(file, onRow) {
   for await(const line of rl){if(!line)continue;if(Buffer.byteLength(line,'utf8')>16*1024*1024)fail('migration_line_too_large');let row;try{row=JSON.parse(line);}catch(_){fail(`migration_jsonl_invalid:${index}`);}await onRow(row,index++);}return index;
 }
 
-async function importLogicalMigration({archivePath,backupRootManual,stagingRoot,expectedDatabaseSchemaVersion=1,requiredNamespaces=NAMESPACES,expectedArchiveSha256=null,serverVersion='0.4.0',onProgress=()=>{}}) {
+async function importLogicalMigration({archivePath,backupRootManual,stagingRoot,expectedDatabaseSchemaVersion=1,requiredNamespaces=NAMESPACES,expectedArchiveSha256=null,serverVersion='0.4.1',onProgress=()=>{}}) {
   const extracted=await extractLogicalArchive({archivePath,stagingRoot,expectedArchiveSha256,onProgress});const {dir,manifest}=extracted;
   if(Number(manifest.targetContract.databaseSchemaVersion)!==Number(expectedDatabaseSchemaVersion))fail('migration_target_schema_incompatible');if(requiredNamespaces.some(ns=>!manifest.namespaces?.[ns]))fail('migration_full_namespaces_required');
   const createdAt=Date.now(),id=`${new Date(createdAt).toISOString().replace(/[:.]/g,'-')}_${crypto.randomBytes(8).toString('hex')}_migration`,temp=path.join(path.resolve(backupRootManual),`${id}.migration-temp`),dest=path.join(path.resolve(backupRootManual),id);await fsp.mkdir(temp,{recursive:true,mode:0o700});const stores={};let processed=0;

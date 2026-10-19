@@ -18,7 +18,9 @@ test('build and release registries contain exactly six packaged plugins',()=>{
 test('release metadata and update components report the actual GRADIA version',()=>{
  const metadata=require('../tools/release_metadata.cjs').readReleaseMetadata(program);
  assert.deepEqual(Object.keys(metadata.plugins).sort(),expected);
- assert.equal(metadata.plugins.gradia.version,'0.25.83');
+ const header=fs.readFileSync(path.join(program,'plugins/GRADIA.js'),'utf8').match(/^\/\/@version\s+(\d+\.\d+\.\d+)\s*$/m);
+ assert.ok(header,'installed GRADIA declares one valid version');
+ assert.equal(metadata.plugins.gradia.version,header[1]);
  const update=require('../tools/release_asset_contract.cjs').buildUpdateManifest(program);
  assert.equal(update.components.gradia,metadata.plugins.gradia.version);
 });
@@ -30,7 +32,7 @@ test('actual build CLI accepts GRADIA and preserves its installed plugin identit
  assert.equal(r.status,0,r.stderr||r.stdout);
  const source=fs.readFileSync(path.join(out,'GRADIA.js'),'utf8');
  assert.match(source,/^\/\/@name serial_gradation_agents_for_rp\r?$/m);
- assert.match(source,/^\/\/@version 0\.25\.83\r?$/m);
+ assert.equal(source.match(/^\/\/@version\s+(\d+\.\d+\.\d+)\s*$/m)?.[1],require('../tools/release_metadata.cjs').readReleaseMetadata(program).plugins.gradia.version);
  const directives=text=>(text.match(/^[ \t]*\/\/(?:@|!)[^\r\n]*$/gm)||[]).map(line=>line.trim());
  assert.deepEqual(directives(source),directives(fs.readFileSync(path.join(program,'plugins/GRADIA.js'),'utf8')),'readable artifacts retain each source directive exactly once');
  assert.equal(JSON.parse(fs.readFileSync(path.join(out,'ultralight-build-report.json'))).rows.length,1);

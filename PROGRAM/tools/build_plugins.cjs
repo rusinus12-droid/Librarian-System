@@ -1164,6 +1164,8 @@ async function buildPlugins(options = {}) {
       fs.writeFileSync(outFile, artifact);
       report.rows.push({
         plugin, file, profile, variant:profile==='source'?'Full':'Min',
+        sourceSha256: sha256(src),
+        artifactSha256: sha256(artifact),
         sourceBytes,
         floor,
         bytes: finalBytes,

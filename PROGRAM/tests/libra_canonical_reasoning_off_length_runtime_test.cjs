@@ -29,8 +29,16 @@ const expose=s=>s.replace('const callLLMWithPreset = async','const callLLMWithPr
    results.push('full selected source remains intact with compact output instructions');
    const settings={presets:{direct:preset},defaultPresetName:'direct',stagePresetNames:{librarian:'direct'},generationPolicy:{version:1,enabled:true}};
    const call=()=>f.r.context.__lengthGateway(settings,'librarian','Return JSON.','Source.',{taskKind:'canonical_memory',maxTokens:65536,structuredTask:true,jsonMode:true});
+   const micro=await f.r.context.__lengthGateway(settings,'librarian','Return JSON.','Current source.',{taskKind:'micro_memory',maxTokens:4096,jsonMode:true});
+   assert.equal(wires.at(-1).reasoning_effort,'none','Micro must preserve the same non-reasoning choice as Canonical');
+   assert.equal(wires.at(-1).max_tokens,4096,'fix the request rather than enlarging the Micro budget');
+   assert.equal(micro.ok,true,'a provider default must not consume the entire Micro response budget');
+   results.push('Micro auto/none returns a final response at the unchanged 4096-token cap');
    preset.reasoning_effort='medium';await call();assert.equal(wires.at(-1).reasoning_effort,'medium');results.push('explicit thinking remains user controlled');
    preset.reasoning_effort='none';preset.model='glm-5.3-flash';await call();assert.equal(wires.at(-1).reasoning_effort,'low');results.push('existing forced-thinking model exception remains low');
+   await f.r.context.__lengthGateway(settings,'librarian','Return JSON.','Current source.',{taskKind:'micro_memory',maxTokens:4096,jsonMode:true});
+   assert.notEqual(wires.at(-1).reasoning_effort,'none','Micro cannot disable a model that requires thinking');
+   assert.equal(wires.at(-1).max_tokens,4096);results.push('forced-thinking Micro models retain a supported reasoning mode');
    preset.model='deepseek-v4-flash:0731';preset.catalog_max_output_tokens=12000;preset.metadata_model_id=preset.model;await call();assert.equal(wires.at(-1).max_tokens,12000);assert.equal(f.r.context.__lengthRuntime.lastGenerationInvocation.preflight.effectiveOutputTokens,12000);results.push('matching provider model cap remains binding');
    forceLength=true;const before=wires.length;const failed=await call();assert.equal(wires.length,before+1);assert.equal(failed.ok,false);assert.equal(failed.reason,'output_limit_before_final');assert.equal(f.getMemory().status,'committed');results.push('real length termination remains a failure without automatic calls or prior-memory loss');
    console.log(JSON.stringify({test:'libra_canonical_reasoning_off_length_runtime',passed:results.length,results,externalCalls:0,boundary:'full deployed JS and controlled provider; no live Ollama verification'}));

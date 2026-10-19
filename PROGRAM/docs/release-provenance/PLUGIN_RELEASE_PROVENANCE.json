@@ -280,8 +280,8 @@
     }
   ],
   "currentRelease": {
-    "packageVersion": "0.4.0",
-    "artifact": "Librarian-System-0.4.0-Source.zip",
+    "packageVersion": "0.4.1",
+    "artifact": "Librarian-System-0.4.1-Source.zip",
     "plugins": {
       "flashback": {
         "version": "1.0.120",
@@ -294,9 +294,9 @@
         "bytes": 3953898
       },
       "libra": {
-        "version": "2.3.171",
-        "sha256": "929404dc2f9b8fa42bd5c85820a44783eb5f301456c2bd143b054bacbb620e55",
-        "bytes": 6038275
+        "version": "2.3.172",
+        "sha256": "aaba2cbd7a5a7eab105479e24bc3a86013923db5f8e73722f4a8719c56326843",
+        "bytes": 6044556
       },
       "lia": {
         "version": "0.26.88",
@@ -309,9 +309,9 @@
         "bytes": 1229845
       },
       "gradia": {
-        "version": "0.25.90",
-        "sha256": "a754ae947239db4c87717afd8363370295d06f73990bf5942fd8192b2b946086",
-        "bytes": 2973827
+        "version": "0.25.91",
+        "sha256": "dae97c01b09169ac57a87662584d1ba2a3d22e24e56adfaf13bbafb6371faafb",
+        "bytes": 2973984
       }
     },
     "note": "Generated from current readable Source plugin bytes. This unpublished source candidate is not a published archive, deployment, or live-host/model execution receipt. Historical records and anomalies are preserved; prior candidate bytes are backed up separately.",
