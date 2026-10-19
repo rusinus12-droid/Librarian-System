@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.172
-//@version 2.3.172
+//@display-name LIBRA v2.3.173
+//@version 2.3.173
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1558,7 +1558,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.172';
+  const PLUGIN_VERSION = '2.3.173';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -35012,14 +35012,14 @@ function createLibraReadonlySourceContext(owner) {
       head.responseAuthority = clone(authority);
       return { head, authority };
     };
-    const loadContinuityStateForResponse = async (scope, manifest = null) => {
+    const loadContinuityStateForResponse = async (scope, manifest = null, options = {}) => {
       const refs = continuityStateRefs(manifest);
       const withInheritedMicro = async view => await markInheritedMicroStateForReassessment(scope, manifest, view);
       const currentHead = await loadContinuityState(scope, manifest, { requireCurrent: true }).catch(() => null);
       if (currentHead) {
         const canonicalView = responseStateAuthorityForHead(currentHead, refs,
           { exactBasis: true, sourceMode: 'current_basis' });
-        try { return await withInheritedMicro(await projectActiveMicroStateForResponse(scope, manifest, canonicalView)); }
+        try { return await withInheritedMicro(await projectActiveMicroStateForResponse(scope, manifest, canonicalView, options)); }
         catch (_) {
           const authority = canonicalView.authority;
           authority.current = false;
@@ -35037,7 +35037,7 @@ function createLibraReadonlySourceContext(owner) {
         const unavailable = responseStateAuthorityForHead(null, refs,
           { exactBasis: false, sourceMode: 'unavailable' });
         if (refs.length) return await withInheritedMicro(unavailable);
-        try { return await withInheritedMicro(await projectActiveMicroStateForResponse(scope, manifest, unavailable)); }
+        try { return await withInheritedMicro(await projectActiveMicroStateForResponse(scope, manifest, unavailable, options)); }
         catch (_) {
           unavailable.microProjection = { schema: 'libra.micro_state_projection.v1',
             status: 'pending_reconciliation', reason: 'micro_genesis_read_failed' };
@@ -56956,7 +56956,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         aliases: clone(asArray(place.aliases)), state: {}, fieldEvidence: {},
         identityEvidence: clone(proof), certainty: 'confirmed'}];
     };
-    const projectActiveMicroStateForResponse = async (scope, manifest, canonicalView) => {
+    const projectActiveMicroStateForResponse = async (scope, manifest, canonicalView, options = {}) => {
       const base = asObject(canonicalView);
       const stateProofs = asArray(consumedMicroProofsByState.get(base.authority || base.head)).slice();
       const genesis = !base.head && continuityStateRefs(manifest).length === 0;
@@ -57322,7 +57322,15 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (!genesis) authority.sourceMode = 'canonical_plus_active_micro';
       head.responseAuthority = clone(authority);
       rememberConsumedState(head, authority, stateProofs);
-      return { ...base, head, authority };
+      // The viewer needs this turn's final decisions before the public diagnostic
+      // list is capped. Missing entries in a truncated list cannot prove approval.
+      const readerTurn = Number(options.microStateTurn || 0);
+      return { ...base, head, authority,
+        ...(Number.isInteger(readerTurn) && readerTurn > 0 ? {microStateTurn: {
+          turn: readerTurn,
+          transitions: transitions.filter(row => row.turn === readerTurn),
+          pendingClaims: pendingClaims.filter(row => row.turn === readerTurn || row.turn == null)
+        }} : {}) };
     };
     const markInheritedMicroStateForReassessment = async (scope, manifest, viewValue) => {
       const refs = asArray(manifest?.inheritedMicroArchives);
@@ -75176,17 +75184,38 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (active.status !== 'verified') return {status:active.status, reason:active.reason};
         const record = active.record;
         if (analysisRevisionId && record.analysisRevisionId !== analysisRevisionId) return {status:'stale_source'};
-        const decisions = [];
-        for (const [claimIndex, claim] of asArray(record.claims).entries()) {
-          if (!isPlainObject(claim.stateIntent)) continue;
-          const result = await admitMicroStateClaim(scope, hostWorldlineIdForScope(scope),
-            Number(record.sessionEpoch), Number(record.turn), claimIndex, {readOnly:true});
-          decisions.push({claimIndex, status:result.status, reason:string(result.reason || '')});
-        }
-        const current = await resolveContext(), after = await readMicroReaderTurn(scope, turnValue);
-        if (!sameSnapshotScope(current.scope, scope) || after.status !== 'verified'
-          || after.record.analysisRevisionId !== record.analysisRevisionId) return {status:'stale_source'};
-        return {status:'verified', analysisRevisionId:record.analysisRevisionId, decisions};
+        let token;
+        try {
+          const boundary = await captureUnifiedResponseBoundary(context);
+          const manifest = await loadManifest(scope, buildPairs(context.chat, scope.scopeKey).length);
+          const view = await loadContinuityStateForResponse(scope, manifest, {microStateTurn:Number(record.turn)});
+          token = registerConsumedDataReadSet(scope, [activeMicroConsumptionProof(active),
+            ...asArray(consumedMicroProofsByState.get(view?.authority || view?.head))], null);
+          bindConsumedResponseBoundary(token, boundary);
+          const projection = asObject(view?.microStateTurn);
+          const decisions = [];
+          for (const [claimIndex, claim] of asArray(record.claims).entries()) {
+            if (!isPlainObject(claim.stateIntent)) continue;
+            const pending = asArray(projection.pendingClaims).find(row => row.claimIndex === claimIndex);
+            const transition = asArray(projection.transitions).find(row => row.claimIndex === claimIndex);
+            const disposition = string(transition?.disposition || '');
+            if (!pending && ['still_current','absorbed','corrected'].includes(disposition)) {
+              decisions.push({claimIndex, status:disposition === 'corrected' ? 'superseded' : 'admitted',
+                disposition, reason:string(transition.reason || '')});
+            } else {
+              const fallback = asArray(projection.pendingClaims).find(row => row.claimIndex == null);
+              decisions.push({claimIndex, status:'pending', disposition:'pending',
+                reason:string(pending?.reason || fallback?.reason
+                  || view?.authority?.microProjection?.reason || 'state_projection_unavailable')});
+            }
+          }
+          const current = await resolveContext(), after = await readMicroReaderTurn(scope, turnValue);
+          if (!sameSnapshotScope(current.scope, scope) || after.status !== 'verified'
+            || after.record.analysisRevisionId !== record.analysisRevisionId) return {status:'stale_source'};
+          await assertConsumedDataCurrent(token);
+          return {status:'verified', analysisRevisionId:record.analysisRevisionId, decisions};
+        } catch (_) { return {status:'unavailable', reason:'state_projection_read_failed'}; }
+        finally { if (token) releaseConsumedDataReadSet(token); }
       },
       listMicroReaderTurns,
       debugReadActiveMicroMemory: async turnValue => {
@@ -81238,8 +81267,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     && reader.bindingKey === canonicalReaderBindingKey(canonicalReaderBinding());
   const microReaderPublicationKey = reader => {
     const publication = LibraMemoryCore.getCaptureBackendState().lastMicroPublication;
-    return publication?.scopeKey === reader.scopeKey ? JSON.stringify([
-      publication.turn, publication.revisionId, publication.at, publication.status, publication.analysisStatus]) : '';
+    return JSON.stringify([
+      publication?.scopeKey === reader.scopeKey ? [publication.turn, publication.revisionId,
+        publication.at, publication.status, publication.analysisStatus] : null,
+      Number(LibraMemoryCore.state.worldManagerRuntimeMetaGeneration || 0),
+      Number(LibraMemoryCore.state.lastMicroStateAdmissionRefresh?.at || 0)
+    ]);
   };
   const loadMicroReaderDetail = async (turnValue, reader = microReaderState()) => {
     const turn = Number(turnValue);
@@ -83852,6 +83885,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     : ({missing: '기록 없음', stale_source: '원문 변경 · 확인 필요',
       pending_reconciliation: '저장 확인 필요', unavailable: '조회 실패'}[row?.status] || '확인 필요');
   const microStatePendingLabel = reason => ({
+    micro_same_turn_field_conflict:'같은 턴에 서로 다른 값이 기록돼 상태 반영을 보류했습니다. 원문과 정본을 확인하세요.',
+    state_value_not_source_bound:'변경 값이 인용한 원문과 일치하지 않아 상태 반영을 보류했습니다. 원문과 분석 결과를 확인하세요.',
     state_domain_not_ready:'정본의 상태 근거를 먼저 확인해야 합니다. 열람대에서 부분 저장된 구간을 확인하세요.',
     registry_location_unresolved:'이 장소의 연결을 확인하지 못했습니다. 장소가 정본에 기록된 뒤 현재 상태를 다시 적용하세요.',
     registry_target_unresolved:'대상의 이름이 아직 연결되지 않았거나 여러 대상과 겹칩니다. 정본과 인물·세계 항목을 확인하세요.',
@@ -83863,9 +83898,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if(!admission || admission.status!=='verified')return guiEl('div',{class:'note note--warn',dataset:{microStateAdmission:'unavailable'}},[
       guiEl('p',{text:'분석은 저장됐지만 현재 상태 승인을 확인하지 못했습니다.'})]);
     const decisions=guiAsArray(admission.decisions),pending=decisions.filter(row=>!['admitted','superseded'].includes(row.status));
+    const absorbed=decisions.filter(row=>row.disposition==='absorbed'),replaced=decisions.filter(row=>row.status==='superseded');
     return guiEl('section',{class:pending.length?'note note--warn':'note',dataset:{microStateAdmission:pending.length?'pending':'ready'}},[
-      guiEl('h3',{text:`현재 상태 · 승인 ${decisions.filter(row=>row.status==='admitted').length}개 · 보류 ${pending.length}개`}),
+      guiEl('h3',{text:`현재 상태 · 승인 ${decisions.filter(row=>row.status==='admitted'&&row.disposition!=='absorbed').length}개${absorbed.length?` · 정본·교정에 반영 ${absorbed.length}개`:''}${replaced.length?` · 이후 변경으로 대체 ${replaced.length}개`:''} · 보류 ${pending.length}개`}),
       !decisions.length?guiEl('p',{text:'이 턴에는 상태에 적용할 변화가 없습니다.'}):null,
+      ...[...absorbed,...replaced].map(row=>guiEl('p',{dataset:{microStateDisposition:row.disposition},
+        text:`기록 ${Number(row.claimIndex)+1} · ${row.disposition==='absorbed'?'현재 정본·교정에 반영돼 있습니다.':'이후 정본·교정으로 대체됐습니다.'}`})),
       ...pending.map(row=>guiEl('p',{dataset:{microStatePendingReason:row.reason},text:`기록 ${Number(row.claimIndex)+1} · ${microStatePendingLabel(row.reason)}`})),
       pending.length?guiEl('div',{class:'cluster'},[
         guiEl('button',{class:'btn btn--sm',type:'button',text:'정본 상태 확인',onClick:()=>bookNavigate('desk')}),

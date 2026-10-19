@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-19T06:27:24.078Z",
+  "generatedAt": "2026-10-19T07:09:31.691Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -257,7 +257,7 @@
       "retraceBackupCatalogTargetChecksum": true
     },
     "ariadneLatestState": {
-      "version": "2.3.172",
+      "version": "2.3.173",
       "schema": "libra.continuity_state.v2",
       "canonicalArtifactSchema": "libra.canonical_artifact.v3",
       "commitEnvelopeSchema": "libra.canonical_commit.v1",
@@ -388,7 +388,7 @@
       ],
       "plugins": {
         "libra": {
-          "version": "2.3.172",
+          "version": "2.3.173",
           "fiveTurnCommitRevisionGate": true,
           "backendOrder": [
             "chat_output_v3",
@@ -761,7 +761,7 @@
       "boundedMemory": true,
       "scopeSeparated": true,
       "libra": {
-        "version": "2.3.172",
+        "version": "2.3.173",
         "unchangedMessageProjectionReuse": true,
         "unchangedCompletedPairSnapshotReuse": true,
         "changedMessageOnlyRenormalized": true,
@@ -779,7 +779,7 @@
     },
     "libraClassicProvenanceRescue": {
       "schema": "libra.classic_provenance_rescue.v1",
-      "version": "2.3.172",
+      "version": "2.3.173",
       "route": "classic_only",
       "source": "validated_current_state_head_provenance_only",
       "maxRescuedCanonicalRefs": 2,
@@ -805,7 +805,7 @@
       "duplicatePluginCopies": false
     },
     "libraCanonicalCuration": {
-      "version": "2.3.172",
+      "version": "2.3.173",
       "activeManifestPointerUnchanged": true,
       "canonicalArtifactSchema": "libra.canonical_artifact.v3",
       "canonicalCommitSchema": "libra.canonical_commit.v1",
@@ -995,7 +995,7 @@
       "jobPortalDoesNotRefreshSnapshot": true
     },
     "libraPortableMemoryRecoveryUi": {
-      "version": "2.3.172",
+      "version": "2.3.173",
       "navigation": "recovery",
       "subsection": "memory_restore",
       "dedicatedHost": "data-portable-backup-host=libra",
@@ -1077,7 +1077,7 @@
         ]
       },
       "libraRecallBm25fPilot": {
-        "version": "2.3.172",
+        "version": "2.3.173",
         "operation": "libra.recall-bm25f.v1",
         "algorithmFingerprint": "7a096a212eb71e1a87639347659ca9216fe32149068153491315734133217840",
         "retired": true,
@@ -1164,7 +1164,7 @@
       "libraLargeResultFullBodyHydration": "details_toggle_only"
     },
     "libraInferenceBudget": {
-      "version": "2.3.172",
+      "version": "2.3.173",
       "canonicalSchema": "libra.canonical_provider_budget.v2",
       "sgaSchema": "libra.sga_provider_budget.v2",
       "providerRetrySchema": "libra.provider_retry_governor.v1",
@@ -1188,7 +1188,7 @@
       "reasoningBudgetClampedToRemainingRunBudget": true
     },
     "libraRisuAiAuxiliaryDefault": {
-      "version": "2.3.172",
+      "version": "2.3.173",
       "presetName": "risuai_aux",
       "transport": "risuai.runLLMModel",
       "mode": "otherAx",
@@ -1204,7 +1204,7 @@
       "localStructuredValidationRequired": true
     },
     "libraUnifiedGui": {
-      "version": "2.3.172",
+      "version": "2.3.173",
       "pageCount": 12,
       "initialPage": "memory",
       "homeDashboard": false,
@@ -1276,7 +1276,7 @@
       "runLogsSeparatePage": true
     },
     "libraReaderEvidenceAndOperations": {
-      "version": "2.3.172",
+      "version": "2.3.173",
       "canonicalReaderPageSchema": "libra.canonical_reader_page.v1",
       "canonicalReaderChapterSchema": "libra.canonical_reader_chapter.v1",
       "evidenceChainSchema": "libra.evidence_chain.v1",
@@ -1425,7 +1425,7 @@
   "plugins": {
     "flashback": "1.0.120",
     "hayaku": "3.0.154",
-    "libra": "2.3.172",
+    "libra": "2.3.173",
     "lia": "0.26.88",
     "retrace": "1.9.86",
     "gradia": "0.25.91"
@@ -2663,6 +2663,10 @@
       "sha256": "463c6dc67adcb762d0e56acc4d5917a0da82eb1565413710e01fa5adba3b2705",
       "bytes": 36367
     },
+    "docs/LIBRA_MICRO_STATE_DISPLAY_FIX_20261019.md": {
+      "sha256": "73b86ca8bd679279523151190aed85808a37d45d11b055a0362582ecdfc58245",
+      "bytes": 4570
+    },
     "docs/LIBRA_MODEL_SUMMARY_2.3.53.md": {
       "sha256": "da749705ee7876252213a252cb672a33dc205ac200cd3193228a9f4e2d13fd71",
       "bytes": 1429
@@ -3464,7 +3468,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "eab29e6ab900f9b09f152552744890b4ddc15844de4f3e38a0a84f26f28bd82d",
+      "sha256": "3cac14bdfe3674f3091cf6f5a31b5c29264afaac94c5ab3f1c235aafb3ed8070",
       "bytes": 11840
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3840,7 +3844,7 @@
       "bytes": 733
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "8e15365094c6b6a2fe63e229f1c081c3fa1ebc59405555251ae6b748e83a7e41",
+      "sha256": "bed0fa0992e37c60201f60fc630933f016cb89fd18b79d96b32c43577eb8c349",
       "bytes": 3357
     },
     "plugins/Flashback_Memory.js": {
@@ -3860,8 +3864,8 @@
       "bytes": 1773375
     },
     "plugins/LIBRA.js": {
-      "sha256": "aaba2cbd7a5a7eab105479e24bc3a86013923db5f8e73722f4a8719c56326843",
-      "bytes": 6044556
+      "sha256": "da3baa32780e5b1d333b87ce68fdb7df6556a643853fb9439bf2c344f3564853",
+      "bytes": 6047748
     },
     "plugins/RETRACE.js": {
       "sha256": "083671ca273a88aba7196701df9833455e776fcb4eb120f253f10d64dab3c2be",
@@ -8044,16 +8048,16 @@
       "bytes": 35435
     },
     "tests/libra_micro_state_admission_3mode_test.cjs": {
-      "sha256": "d5056083295fb831911900ac7f9e65ee53a2e1a640375c06c24e563d14ed4c52",
-      "bytes": 14584
+      "sha256": "fda81995e7c2ba1d6af0d5acc828bad48e246967bce10a4d7dfd8e99d3274026",
+      "bytes": 15135
     },
     "tests/libra_micro_state_frontier_3mode_test.cjs": {
-      "sha256": "f3404a889d791f470d9f45da341cec0a8f6c1ed65610cd5c53a1f23dd23b8c25",
-      "bytes": 17175
+      "sha256": "a0e8799a312245601633bea048d4b236e3465dec2df820895d619f8d212fb1e8",
+      "bytes": 17751
     },
     "tests/libra_micro_state_reader_gui_runtime_test.cjs": {
-      "sha256": "abb7de6a0dbd183495789a0fb7b769d95c2843d140a14b1d17eb7833d4853db0",
-      "bytes": 3942
+      "sha256": "a27357bbc3972370ed46f8bee1268c62a6a2f3d5e3be6e61ba2ac34b1c5b13f5",
+      "bytes": 16031
     },
     "tests/libra_micro_storage_3mode_test.cjs": {
       "sha256": "ba73c0be8062171f1e40a5306eddba026ee0af5d2106063ec81a2333043d2747",
@@ -11060,7 +11064,7 @@
       "bytes": 632
     },
     "처음_읽어주세요.txt": {
-      "sha256": "c8c10e7a42d4ed1e7f1bb22e05375c630ee33b37398aadf133d4b1ade99dffe5",
+      "sha256": "4b849b4440033338491cfb4a8ed8d16e770e055aa79881f202a707ebb75382c7",
       "bytes": 3464
     }
   },

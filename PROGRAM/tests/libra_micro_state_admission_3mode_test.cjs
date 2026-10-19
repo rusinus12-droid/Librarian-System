@@ -77,6 +77,9 @@ const quoteSpan = (text, quote, messageId) => ({role: 'assistant', messageId,
       assert.equal(decisions(readRows).length, 3, `${mode}: read-only admission lookup writes no new decision`);
       assert.equal(typeof f.r.api.debugLoadContinuityStateForResponse, 'function');
       const projected = await f.r.api.debugLoadContinuityStateForResponse();
+      const reader = await f.r.api.readMicroStateAdmissionForTurn(6);
+      assert.equal(reader.status, 'verified', `${mode}: the viewer verifies the final State projection`);
+      assert.deepEqual(Array.from(reader.decisions, row => row.status), ['admitted', 'pending', 'pending']);
       const libraryState = projected.head?.world?.find(row => row.name === '도서관')?.state;
       assert.equal(libraryState?.doorStatus, '열렸다', `${mode}: response State includes admitted T6 Micro change`);
       assert.equal(Object.hasOwn(libraryState || {}, 'ownership'), false,
@@ -106,6 +109,10 @@ const quoteSpan = (text, quote, messageId) => ({role: 'assistant', messageId,
         const savedDecision = fixture.local.get(localDecision.key);
         fixture.local.delete(localDecision.key);
         const oneSided = await f.r.api.debugLoadContinuityStateForResponse();
+        const oneSidedReader = await f.r.api.readMicroStateAdmissionForTurn(6);
+        assert.ok(oneSidedReader.status !== 'verified'
+          || oneSidedReader.decisions[0].status === 'pending',
+          'the viewer cannot approve a one-sided mirror decision');
         assert.equal(Object.hasOwn(oneSided.head?.world?.find(row => row.name === '도서관')?.state || {}, 'doorStatus'), false,
           'one-sided mirror admission read cannot project its effect');
         assert.equal(oneSided.authority?.microProjection?.status, 'partial');

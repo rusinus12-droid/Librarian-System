@@ -116,6 +116,13 @@ const sourceClaim = (input, value) => {
         `${mode}: T5 matching Micro effect is acknowledged without double application`);
       assert.ok(overlap.some(row => row.turn === 3 && row.disposition === 'corrected'),
         `${mode}: T3 interim effect is superseded by the admitted T5 effect`);
+      const absorbedReader = await f.r.api.readMicroStateAdmissionForTurn(5);
+      const correctedReader = await f.r.api.readMicroStateAdmissionForTurn(3);
+      assert.equal(absorbedReader.status, 'verified');
+      assert.equal(absorbedReader.decisions[0].disposition, 'absorbed', `${mode}: viewer matches final absorption`);
+      assert.equal(correctedReader.status, 'verified');
+      assert.equal(correctedReader.decisions[0].status, 'superseded');
+      assert.equal(correctedReader.decisions[0].disposition, 'corrected', `${mode}: viewer matches final replacement`);
 
       // A provider response can finish after the user rolls the State view back.
       // Keep its verified Micro, but never project that future turn into T5.
