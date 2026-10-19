@@ -169,3 +169,32 @@ test('missing unified owner support cannot fall back to server logical memory',a
  const h=await fixture(t,{ownerUnavailable:true});assert.equal((await h.connect()).connection.state,'error');
  assert.match(h.status().connection.reason,/LIB_READ_UNIFIED_UNAVAILABLE/);assert.notEqual(h.status().status,'bound');
 });
+
+test('settings applies the server mode through the real read-only connection and saves verified consent',async t=>{
+ const h=await fixture(t);await h.plugin.debugNavigateGui('management','flow');
+ const field=h.node('#lib-settings-url');field.value=h.url;field.dispatchEvent(new h.doc.defaultView.Event('input',{bubbles:true}));
+ h.node('[data-lib-mode-choice="unified_engine"]').click();
+ assert.equal(h.requests.length,0,'selecting a mode cannot connect');
+ assert.equal(h.status().connection.state,'disconnected');
+ h.node('[data-lib-read-action="connect"]').click();await wait(()=>h.status().connection.state==='connected');
+ assert.equal(h.status().connection.readSource,'unified_engine');
+ assert.match(h.node('[data-lib-mode-status]').textContent,/현재 적용: 서버 모드/);
+ const saved=JSON.parse(h.local.get(PREF));assert.equal(saved.readSource,'unified_engine');assert.equal(saved.explicit,true);
+ assert.equal(h.requests.filter(r=>r.url.endsWith('/bootstrap')).length,1);
+ h.node('[data-lib-mode-choice="plugin_ipc"]').click();
+ assert.match(h.node('[data-lib-mode-status]').textContent,/현재 적용: 서버 모드.*선택: 플러그인 모드.*적용 필요/);
+ assert.equal(h.status().connection.readSource,'unified_engine','an unapplied selection must not relabel the active binding');
+ assert.equal(h.node('#lib-read-source').value,'plugin_ipc','both connection views share the selection');
+ h.node('[data-lib-read-action="disconnect"]').click();await wait(()=>JSON.parse(h.local.get(PREF)).explicit===false);
+ assert.match(h.node('[data-lib-mode-status]').textContent,/연결 없음/);assert.equal(h.status().status,'unavailable');
+});
+
+test('a failed settings mode switch reports no active connection and never falls back to the previous server',async t=>{
+ const h=await fixture(t,{ownerUnavailable:true});await h.plugin.debugNavigateGui('management','flow');
+ h.node('[data-lib-mode-choice="plugin_ipc"]').click();
+ assert.equal(h.requests.length,0);assert.equal(h.node('[data-lib-server-field]').hidden,true);
+ h.node('[data-lib-read-action="connect"]').click();await wait(()=>h.status().connection.state==='error');
+ assert.match(h.node('[data-lib-mode-status]').textContent,/연결 없음.*LIB_READ_/);
+ assert.equal(h.status().status,'unavailable');assert.equal(h.requests.length,0,'plugin mode must not bootstrap the server');
+ assert.equal(h.node('[data-lib-read-action="check"]').disabled,true);
+});

@@ -38,6 +38,9 @@ async def main():
         await page.locator('[data-provider-field="key"]:visible').fill('synthetic-not-a-live-key')
         await page.locator('[data-save]').click()
         await page.locator('[data-provider-key-delete]:visible').click()
+        # Let the dialog's deferred initial-focus task settle before testing
+        # keyboard wrapping, so it cannot race the synthetic Shift+Tab.
+        await page.wait_for_timeout(50)
         await page.locator('.overlay.is-open .dialog button').first.focus()
         await page.keyboard.press('Shift+Tab')
         assert await page.locator('.overlay.is-open .dialog button').last.evaluate('(node)=>node===document.activeElement')
@@ -135,7 +138,9 @@ async def main():
             reference=await browser.new_page(viewport={'width':width,'height':height});await reference.set_content(html)
             actual=await mount(browser,width,height);actual.on('pageerror',lambda error:errors.append(str(error)))
             await reference.evaluate('document.fonts.ready');await actual.evaluate('document.fonts.ready')
-            await reference.add_style_tag(content='.proto-bar{display:none!important}')
+            # Preserve interior layout comparisons while applying the product's
+            # centered, viewport-bounded window requirement to the reference.
+            await reference.add_style_tag(content='.proto-bar{display:none!important}.stage{height:100dvh;padding:16px;align-items:center;overflow:hidden}.frame{height:min(830px,100%);min-height:0}')
             await reference.wait_for_timeout(100);await actual.wait_for_timeout(100)
             metric="""()=>Object.fromEntries(['.frame','.app','.topbar','.sidebar','.page-body','#savebar'].map(s=>{let e=document.querySelector(s),r=e.getBoundingClientRect();return[s,{x:r.x,y:r.y,w:r.width,h:r.height,display:getComputedStyle(e).display}]}))"""
             ref=await reference.evaluate(metric);product=await actual.evaluate(metric)
@@ -147,7 +152,7 @@ async def main():
             assert await actual.locator('#sga-rp-gui-root > .stage > .frame > .app').count()==1
             ref_canvas=await reference.evaluate('getComputedStyle(document.body).backgroundColor')
             product_canvas=await actual.evaluate("getComputedStyle(document.querySelector('#sga-rp-gui-root')).backgroundColor")
-            assert product_canvas==ref_canvas,(width,'page canvas color',ref_canvas,product_canvas)
+            assert product_canvas=='rgba(0, 0, 0, 0)',(width,'transparent window exterior',product_canvas)
             nav_metric="""()=>{const n=document.querySelector('.tabbar'),r=n.getBoundingClientRect();return {display:getComputedStyle(n).display,x:r.x,y:r.y,w:r.width,h:r.height,items:[...n.children].map(b=>({text:b.textContent.trim(),go:b.dataset.go||'',more:b.dataset.more||'',icons:[...b.querySelectorAll('svg')].map(svg=>{const u=svg.querySelector('use');return u?document.querySelector(u.getAttribute('href')).innerHTML:svg.innerHTML})}))}}"""
             ref_nav=await reference.evaluate(nav_metric);product_nav=await actual.evaluate(nav_metric)
             assert product_nav==ref_nav,(width,'canonical bottom navigation',ref_nav,product_nav)

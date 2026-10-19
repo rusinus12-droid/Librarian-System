@@ -37,9 +37,16 @@ test('three actual plugin owners -> GRADIA generation and Input Writer, with no 
     origin:'live_chat',role:'turn_pair',turnIndex:1,pairIndex:1,text:'FLASHBACK_IPC_MEMORY: 준호는 문 앞에서 기다렸다.'}],cfg,nativeScope,{deferEmbedding:true});
   await flashback.api._test.saveAllRecords(rows,cfg,nativeScope);
   const f = await writer.fixture(t, { unified: false, bus, chat, character });
-  const status = await f.host.plugin.connectLibReadOnly('http://127.0.0.1:47630', 'plugin_ipc');
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('management', 'flow');
+  f.document.querySelector('[data-lib-mode-choice="plugin_ipc"]').click();
+  f.document.querySelector('[data-lib-read-action="connect"]').click();
+  await writer.wait(()=>['connected','error'].includes(f.host.plugin.getLibReadOnlyStatus().connection.state),'settings plugin-mode connection');
+  const status = f.host.plugin.getLibReadOnlyStatus().connection;
   assert.equal(status.state, 'connected', JSON.stringify(status));
   assert.equal(status.readSource, 'plugin_ipc'); assert.deepEqual(Array.from(status.activeOwners), ['libra', 'hayaku', 'flashback']);
+  assert.match(f.document.querySelector('[data-lib-mode-status]').textContent,/현재 적용: 플러그인 모드/);
+  await f.host.plugin.closeSettingsGui();
   const beforeH = JSON.stringify([...hstore.values]), beforeF = JSON.stringify([...flashback.pluginStorage.values]);
   const pipelineModel = async (_count, body) => {
     const stage = (body.messages.filter(m => m.role === 'system').map(m => m.content).join('\n').match(/(aide_\w+) patch JSON/) || [])[1];
