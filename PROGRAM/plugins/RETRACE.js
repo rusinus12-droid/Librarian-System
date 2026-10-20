@@ -1,7 +1,7 @@
 //@name flashback_hayaku_bridge
 //@display-name RE:TRACE
 //@api 3.0
-//@version 1.9.89
+//@version 1.9.90
 /* v1.9.86 verifies server backup/deletion and portable transfer completion, protects active scopes from bulk selection, and exposes current timestamps, owner contacts and requested server previews. */
 /* v1.9.85 revalidates every required owner's durable target and current LIA Persona binding before reconciling a pending next-session handoff as completed. Reconciliation remains read-only for owner data. */
 /* Retired standalone owner viewers, packet deletion/navigation, and HAYAKU ledger-backup APIs are removed. Legacy capsule reads support handoff only; existing stored artifacts remain available to guarded server management. */
@@ -7652,7 +7652,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 };
 
   const PLUGIN_NAME = 'RE:TRACE';
-const PLUGIN_VERSION = '1.9.89';
+const PLUGIN_VERSION = '1.9.90';
   const RETRACE_SETTING_UI_ID = 'retrace-main-setting';
   const RETRACE_HAMBURGER_UI_ID = 'retrace-main-hamburger';
   const HANDOFF_SCHEMA = 'memory-session-bridge-v2';
@@ -7666,7 +7666,7 @@ const PLUGIN_VERSION = '1.9.89';
   const FLASHBACK_HANDOFF_RECEIPT_SCHEMA = 'flashback_memory.session_handoff_adoption.v4';
   const HAYAKU_HANDOFF_RECEIPT_SCHEMA = 'hayaku.session_handoff.receipt.v1';
   const HAYAKU_REQUIRED_HANDOFF_CONTRACT = 'hayaku.handoff_immutable_source.v1';
-  const LIBRA_REQUIRED_HANDOFF_CONTRACT = 'libra.handoff_immutable_source.v1';
+  const LIBRA_REQUIRED_HANDOFF_CONTRACT = 'libra.handoff_immutable_source_lenses.v2';
   const LIA_REQUIRED_HANDOFF_CONTRACT = 'lia.live_persona_handoff_immutable_source.v1';
   const LIBRA_PLUGIN_ID = 'libra';
   const LIBRA_IPC_SCHEMA = 'libra-retrace-ipc-v1';
@@ -7715,6 +7715,7 @@ const PLUGIN_VERSION = '1.9.89';
     'prepare_session_handoff',
     'adopt_session_handoff',
     'verify_session_handoff',
+    'rollback_lens_session_handoff',
     'memory_suite_prepare_server_scope_delete',
     'memory_suite_prepare_handoff_target',
     'memory_suite_storage_status'
@@ -11423,7 +11424,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     }));
     const snapshotHash = text(source.snapshotHash || fallbackSnapshotHash);
     return {
-      available: schemaOk && scopeMatches && (recordCount > 0 || worldAdditionalCount > 0),
+      available: schemaOk && scopeMatches && (recordCount > 0 || worldAdditionalCount > 0 || Number(source?.lensHandoff?.expectedLensRecords||0)>0),
       pluginAvailable: schemaOk,
       inspectionAvailable: schemaOk && scopeMatches,
       integrityOk,
@@ -11442,6 +11443,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       worldAdditional,
       worldAdditionalRefs,
       recordCount,
+      lensHandoff:clone(source.lensHandoff,{}),
       liveRecordCount: liveCount,
       inheritedRecordCount: inheritedCount,
       partialRecordCount: partialCount,
@@ -12040,11 +12042,26 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     return true;
   };
 
+  const libraLensReceiptSummary = receipt => {
+    const count=field=>Number.isSafeInteger(receipt?.[field])?formatNumber(receipt[field])+'개':'미확인';
+    return `Micro ${count('microOwnerRecords')} · 렌즈 보관 ${count('verifiedLensArchives')} · 렌즈 기록 ${count('verifiedLensRecords')}`;
+  };
+
+  const libraLensReceiptMatches = (receipt,options={},prepared=false) => {
+    for(const field of ['expectedLensArchives','expectedLensRecords']){
+      if(!Number.isSafeInteger(receipt?.[field])||receipt[field]<0)return false;
+      if(options[field]!=null&&Number(options[field])!==receipt[field])return false;
+    }
+    return Boolean(text(receipt?.lensArchiveRefsDigest||'')) && (prepared ||
+      receipt.verifiedLensArchives===receipt.expectedLensArchives && receipt.verifiedLensRecords===receipt.expectedLensRecords);
+  };
+
   const libraPreparationReceiptMatches = (receipt, options, transport) => {
     const expectedRecords = Math.max(0, Number(options?.expectedRecords || 0) || 0);
     return receipt?.schema === LIBRA_HANDOFF_RECEIPT_SCHEMA
       && receipt?.action === 'prepared'
       && receipt?.prepared === true
+      && libraLensReceiptMatches(receipt,options,true)
       && receipt?.durable === true
       && text(receipt?.transferId || '') === text(options?.transferId || '')
       && libraReceiptCountMatches(receipt, 'records', expectedRecords)
@@ -12066,6 +12083,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     return receipt?.schema === LIBRA_HANDOFF_RECEIPT_SCHEMA
       && receipt?.action === 'adopted'
       && receipt?.adopted === true
+      && libraLensReceiptMatches(receipt,options)
       && receipt?.verified === true
       && receipt?.durable === true
       && text(receipt?.targetChatId || '') === text(options?.targetChatId || '')
@@ -12084,6 +12102,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     return receipt?.schema === LIBRA_HANDOFF_RECEIPT_SCHEMA
       && receipt?.action === 'verified'
       && receipt?.verified === true
+      && libraLensReceiptMatches(receipt,options)
       && receipt?.durable === true
       && text(receipt?.targetChatId || '') === text(options?.targetChatId || '')
       && text(receipt?.transferId || '') === text(options?.transferId || '')
@@ -12129,6 +12148,19 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       }
       throw error;
     }
+  };
+
+  const rollbackLibraLensHandoff = async options => {
+    const payload={transferId:text(options?.transferId||''),targetChatId:text(options?.targetChatId||'')};
+    let result;
+    try{result=await requestLibraIpc('rollback_lens_session_handoff',payload,{timeoutMs:LIBRA_VERIFY_TIMEOUT_MS});}
+    catch(error){
+      const runtime=activeLibraRuntime();
+      if(!libraIpcAllowsRuntimeFallback(error)||typeof runtime?.rollbackLensSessionHandoff!=='function')throw error;
+      result=await runtime.rollbackLensSessionHandoff(payload);
+    }
+    if(result?.ok!==true||result?.verified!==true||result.transferId!==payload.transferId||result.targetChatId!==payload.targetChatId)throw Error('LIBRA lens handoff rollback receipt mismatch');
+    return result;
   };
 
   const adoptLibraSessionHandoff = async options => {
@@ -12186,6 +12218,8 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       transferId: text(options?.transferId || ''),
       targetChatId: text(options?.targetChatId || ''),
       expectedRecords: Math.max(0, Number(options?.expectedRecords || 0) || 0),
+      ...(options?.expectedLensArchives!=null?{expectedLensArchives:Number(options.expectedLensArchives)}:{}),
+      ...(options?.expectedLensRecords!=null?{expectedLensRecords:Number(options.expectedLensRecords)}:{}),
       expectedArchiveId: text(options?.expectedArchiveId || ''),
       expectedArchiveGeneration: Math.max(0, Number(options?.expectedArchiveGeneration || 0) || 0),
       expectedArchiveDigest: text(options?.expectedArchiveDigest || '')
@@ -12276,6 +12310,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       hayakuPendingRecoveryRecordCount: hayakuRecoveryAccounting.missingRecoveryCount,
       hayakuArchiveRecordCount: hayakuRecoveryAccounting.archiveRecordCount,
       hayakuRecoveryDurableVerified: hayakuRecoveryAccounting.durableVerified,
+      libraLensRecords:Number(libra.lensHandoff?.expectedLensRecords||0),libraLensArchives:Number(libra.lensHandoff?.expectedLensArchives||0),libraLensCount:Number(libra.lensHandoff?.lensCount||0),libraLensTruncated:libra.lensHandoff?.lensTruncated===true,
       libraRecordCount: libra.recordCount,
       memorySuiteServer,
       serverDataDetected: Object.fromEntries(Object.entries(memorySuiteServer?.namespaces || {}).map(([key, value]) => [
@@ -12477,7 +12512,8 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       verifyDurableLibraSessionHandoff(withLegacyLibraWorldAdditionalExpectation({
         included: libraRequired, targetChatId, transferId,
         expectedRecords: Math.max(0, Number(bridge.libraRecordCount || 0) || 0),
-        expectedArchiveId: text(bridge.libraArchiveId || ''),
+        expectedLensArchives:Number(bridge.libraLensArchives||0),expectedLensRecords:Number(bridge.libraLensRecords||0),
+      expectedArchiveId: text(bridge.libraArchiveId || ''),
         expectedArchiveGeneration: Math.max(0, Number(bridge.libraArchiveGeneration || 0) || 0),
         expectedArchiveDigest: text(bridge.libraArchiveDigest || '')
       }, bridge.libraWorldAdditionalCount))
@@ -12802,6 +12838,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     const libraOptions = withLegacyLibraWorldAdditionalExpectation({
       targetChatId, transferId,
       expectedRecords: libraRecords,
+      expectedLensArchives:Number(bridge.libraLensArchives||0),expectedLensRecords:Number(bridge.libraLensRecords||0),
       expectedArchiveId: text(bridge.libraArchiveId || ''),
       expectedArchiveGeneration: Math.max(0, Number(bridge.libraArchiveGeneration || 0) || 0),
       expectedArchiveDigest: text(bridge.libraArchiveDigest || '')
@@ -13085,7 +13122,8 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     const liaRequired = isLiaLivePersonaId(sourceLivePersonaId);
     const libraPrepareOptions = withLegacyLibraWorldAdditionalExpectation({
       transferId,
-      expectedRecords: libra.recordCount
+      expectedRecords: libra.recordCount,
+      expectedLensArchives:Number(libra.lensHandoff?.expectedLensArchives||0),expectedLensRecords:Number(libra.lensHandoff?.expectedLensRecords||0)
     }, libra.worldAdditionalCount);
     const libraPreparation = preview.includeLibra
       ? await prepareLibraSessionHandoff(libraPrepareOptions)
@@ -13169,6 +13207,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
             ? (pendingIncrementalRecovery?.available ? 'pending_cold_start+incremental_recovery_capsule' : 'pending_cold_start')
             : pendingIncrementalRecovery?.available ? 'incremental_recovery_capsule' : 'none',
         libraSource: preview.includeLibra ? text(libra.readSource || 'unknown') : 'none',
+        libraLensArchives:Number(libraPreparation?.expectedLensArchives||0),libraLensRecords:Number(libraPreparation?.expectedLensRecords||0),
         libraArchiveId: text(libraPreparation?.archiveId || ''),
         libraArchiveGeneration: Math.max(0, Number(libraPreparation?.archiveGeneration || 0) || 0),
         libraArchiveDigest: text(libraPreparation?.archiveDigest || ''),
@@ -13351,7 +13390,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     if(!Runtime.activeJobFinished)layer?.querySelectorAll?.('[data-job-steps] .step').forEach((step,index)=>{step.classList.toggle('is-active',index===phase);});
     if(resultNode){
       resultNode.hidden=!(result||(kind==='del'&&Runtime.serverScopeDeleteJob?.rows?.length));
-      if(kind==='next'){const outcome=readback?.handoff;resultNode.innerHTML=outcome?['flashback','hayaku','libra','lia'].map(owner=>{const verified=outcome[owner+'Verified']===true;return `<div class="res"><b>${label(MEMORY_SUITE_NAMESPACE_LABELS[owner]||owner)}</b><span class="badge ${verified?'badge--ok':'badge--warn'}">${verified?'승계 확인':'결과 확인 필요'}</span><small>${label(outcome[owner+'Adoption']?.reason||outcome[owner+'Verification']?.reason||('레코드 '+Number(outcome[owner+'Records']||0)))}</small></div>`;}).join(''):'<div class="res"><b>승계 결과 확인</b><span>미확인</span><small>'+label(result)+'</small></div>';}
+      if(kind==='next'){const outcome=readback?.handoff;resultNode.innerHTML=outcome?['flashback','hayaku','libra','lia'].map(owner=>{const verified=outcome[owner+'Verified']===true;return `<div class="res"><b>${label(MEMORY_SUITE_NAMESPACE_LABELS[owner]||owner)}</b><span class="badge ${verified?'badge--ok':'badge--warn'}">${verified?'승계 확인':'결과 확인 필요'}</span><small>${label(owner==='libra'?libraLensReceiptSummary(outcome.libraVerification||outcome.libraAdoption):outcome[owner+'Adoption']?.reason||outcome[owner+'Verification']?.reason||('레코드 '+Number(outcome[owner+'Records']||0)))}</small></div>`;}).join(''):'<div class="res"><b>승계 결과 확인</b><span>미확인</span><small>'+label(result)+'</small></div>';}
       else if(kind==='del'){resultNode.innerHTML=scopeManagerArray(Runtime.serverScopeDeleteJob?.rows).map(row=>`<div class="res"><b>${label(row.name)}</b><span class="badge ${row.status==='삭제 완료'?'badge--ok':'badge--warn'}">${label(row.status)}</span><small>${label(row.error||('백업 '+(row.backupId||'미확인')))}</small></div>`).join('')||'<div class="res"><b>삭제 결과 없음</b><span>재조회 필요</span><small>'+label(result)+'</small></div>';}
       else if(kind==='restore'){const heading=resultNode.querySelector('.res b');if(heading)heading.textContent=readback?.verified?'복원한 플러그인':'복원 대상 · 결과 미확인';setField('kept',['flashback','hayaku','libra','lia','retrace'].filter(ns=>!(facts.namespaces||[]).includes(ns)).join(' · ')||'없음');const detail=resultNode.querySelector('small');if(detail)detail.textContent=readback?.verified?'선택 범위의 서버 API readback 완료. 각 owner에서 서버 자료 사용 · 로컬 업로드 안 함을 선택하고 RisuAI를 새로고침하세요.':'복원 결과 미확인 · 원래 작업 결과를 다시 조회하세요.';}
       else if(kind==='reset'){const heading=resultNode.querySelector('.res b');if(heading)heading.textContent=readback?.verified?'초기화한 대상':'초기화 대상 · 결과 미확인';setField('backupResult',readback?.backupId|| (readback?.verified&&facts.withoutBackup?'명시적으로 새 백업 없이 진행':'백업 결과 미확인'));const detail=resultNode.querySelector('small');if(detail)detail.textContent=readback?.verified?'빈 상태를 서버 API에서 다시 읽어 확인했습니다.':'빈 상태 readback 미확인 · 원래 작업 결과를 다시 조회하세요.';}
@@ -14911,7 +14950,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     return receipt;
   };
   const scopeManagerShowDetail = async scope => {
-    const members = scopeManagerArray(scope.members).map(member => `${member.space} · ${member.tombstone ? '[삭제됨] ' : ''}${String(member.key || '').includes(':lens:') ? '[렌즈 기억] ' : ''}${member.key} · rev ${member.revision}`).join('\n');
+    const members = scopeManagerArray(scope.members).map(member => `${member.space} · ${member.tombstone ? '[삭제됨] ' : ''}${String(member.key||'').includes(':lens-handoff-archive:')?'[렌즈 승계 보관] ':String(member.key || '').includes(':lens:') ? '[렌즈 기억] ' : ''}${member.key} · rev ${member.revision}`).join('\n');
     const refs = scopeManagerArray(scope.inboundReferences).map(ref => `${ref.sourceNamespace}/${ref.sourceDisplayName || ref.sourceScopeId} → ${ref.kind}`).join('\n');
     await retraceAlert([
       `${MEMORY_SUITE_NAMESPACE_LABELS[scope.namespace] || scope.namespace} · ${scope.displayName || scope.scopeId}`,
@@ -16114,7 +16153,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       const targetNode = root.querySelector('#handoffTargetId'); if (targetNode) targetNode.textContent = targetChatId || '—';
       const ownerNode = root.querySelector('#handoffOwnerResults');
       const owners = result?.ownerStatus || journal?.ownerStatus || {};
-      if (ownerNode) ownerNode.innerHTML = Object.entries(owners).map(([owner, row]) => `<div class="res"><b>${escapeHtml(MEMORY_SUITE_NAMESPACE_LABELS[owner] || owner)}</b><span class="badge ${row?.verified === true ? 'badge--ok' : row?.required === true ? 'badge--warn' : ''}">${row?.verified === true ? '확인 완료' : row?.required === true ? '확인 필요' : '대상 아님'}</span><small>${escapeHtml(text(row?.reason || row?.status || '실제 owner readback 상태'))}</small></div>`).join('') || '<p class="muted">아직 owner별 결과가 기록되지 않았습니다.</p>';
+      if (ownerNode) ownerNode.innerHTML = Object.entries(owners).map(([owner, row]) => `<div class="res"><b>${escapeHtml(MEMORY_SUITE_NAMESPACE_LABELS[owner] || owner)}</b><span class="badge ${row?.verified === true ? 'badge--ok' : row?.required === true ? 'badge--warn' : ''}">${row?.verified === true ? '확인 완료' : row?.required === true ? '확인 필요' : '대상 아님'}</span><small>${escapeHtml(owner==='libra'?libraLensReceiptSummary(row?.receipt):text(row?.reason || row?.status || '실제 owner readback 상태'))}</small></div>`).join('') || '<p class="muted">아직 owner별 결과가 기록되지 않았습니다.</p>';
       const stateNode = root.querySelector('#handoffResultState');
       if (stateNode) stateNode.textContent = result ? (ok ? '실행 결과가 반환되었습니다. Owner 상태와 target journal readback을 확인했습니다.' : '실행 결과가 미완료입니다. 동일 target과 transferId만 재검증할 수 있습니다.') : '저장된 handoff journal에서 대상과 transferId를 읽었습니다. 새 세션은 만들지 않고 같은 작업만 재검증합니다.';
       const retry = root.querySelector('#handoffRetry'); if (retry) { retry.hidden = !(pending?.pending === true); retry.disabled = pending?.pending !== true; }
@@ -16173,7 +16212,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         ? `HAYAKU 패킷 ${formatNumber(preview.hayakuRecordCount)}개 자동 포함 · Current ${formatNumber(preview.hayakuCurrentRecordCount || 0)} · Recovery ${formatNumber(preview.hayakuRecoveryRecordCount || 0)} · Archive ${formatNumber(preview.hayakuArchiveRecordCount || 0)}${preview.hayakuPendingRecoveryRecordCount ? ` · Recovery 원장 반영 대기 ${formatNumber(preview.hayakuPendingRecoveryRecordCount)}` : ''}${preview.hayaku.available ? '' : ' (캡슐 기반)'}`
         : `HAYAKU 제외 (${preview.hayaku.reason})`;
       const libraLine = preview.includeLibra
-        ? `LIBRA 정본 메모리 ${formatNumber(preview.libraRecordCount)}개 IPC 승계 준비`
+        ? `LIBRA 정본 메모리 ${formatNumber(preview.libraRecordCount)}개 · 렌즈 기억 ${formatNumber(preview.libraLensRecords)}개 · 렌즈 ${formatNumber(preview.libraLensCount)}개${preview.libraLensTruncated?" · 크기 제한으로 최신 기록만 승계":""} IPC 승계 준비`
         : preview.libra.pluginAvailable
           ? ['libra_inspect_timeout', 'libra_inspect_failed'].includes(text(preview.libra.reason))
             ? `LIBRA 연결됨 · 정본 조회 실패 (${preview.libra.reason})`
@@ -16622,7 +16661,7 @@ ${error?.message || error}`);
             ? `HAYAKU 패킷 ${formatNumber(preview.hayakuRecordCount)}개 (Current ${formatNumber(preview.hayakuCurrentRecordCount || 0)} · Recovery ${formatNumber(preview.hayakuRecoveryRecordCount || 0)} · Archive ${formatNumber(preview.hayakuArchiveRecordCount || 0)})`
             : 'HAYAKU 원장 없음')
           + '\n\n미설치 플러그인은 제외됩니다. 원본 채팅과 원장은 그대로 보존됩니다.';
-        if (!(await retraceConfirm(message, { title: '다음 세션 만들기', confirmLabel: '승계 시작', dialogId: 'dlg-next', dialogFields:{participants:storageGate.participantOwners.map(owner=>MEMORY_SUITE_NAMESPACE_LABELS[owner]||owner).join(' · ')+' · '+memorySuiteModeLabel(storageGate.commonMode),counts:'Flashback '+formatNumber(preview.flashback.records)+'개 · HAYAKU '+formatNumber(preview.hayakuRecordCount||0)+'개 · LIBRA '+formatNumber(preview.libraRecordCount||0)+'개',lia:isLiaLivePersonaId(preview.identity?.personaId)?'새 채팅 전용 Fork로 복사합니다. 원본은 보존합니다.':'Live Persona 없음'}, summary: `${preview.identity?.chatId || preview.currentChatId || '현재 채팅'} · 참여 ${storageGate.participantCount}종`, safety: '승인 뒤 currentness와 owner admission을 다시 확인합니다. 원본 채팅/저장은 보존합니다.' }))) return;
+        if (!(await retraceConfirm(message, { title: '다음 세션 만들기', confirmLabel: '승계 시작', dialogId: 'dlg-next', dialogFields:{participants:storageGate.participantOwners.map(owner=>MEMORY_SUITE_NAMESPACE_LABELS[owner]||owner).join(' · ')+' · '+memorySuiteModeLabel(storageGate.commonMode),counts:'Flashback '+formatNumber(preview.flashback.records)+'개 · HAYAKU '+formatNumber(preview.hayakuRecordCount||0)+'개 · LIBRA '+formatNumber(preview.libraRecordCount||0)+'개 · 렌즈 기록 '+formatNumber(preview.libraLensRecords||0)+'개 · 렌즈 '+formatNumber(preview.libraLensCount||0)+'개'+(preview.libraLensTruncated?' · 크기 제한으로 최신 기록만 포함':''),lia:isLiaLivePersonaId(preview.identity?.personaId)?'새 채팅 전용 Fork로 복사합니다. 원본은 보존합니다.':'Live Persona 없음'}, summary: `${preview.identity?.chatId || preview.currentChatId || '현재 채팅'} · 참여 ${storageGate.participantCount}종`, safety: '승인 뒤 currentness와 owner admission을 다시 확인합니다. 원본 채팅/저장은 보존합니다.' }))) return;
         openRetraceJob('next', '승인한 현재 대상의 새 채팅 생성과 owner별 승계를 실행합니다. 실제 완료 readback 전까지 성공으로 표시하지 않습니다.');
         const result = await continueToNextSession();
         if (!result.ok) {
@@ -16651,7 +16690,7 @@ ${error?.message || error}`);
             ? `HAYAKU 승계 표식 저장 · 즉시 검증 실패: ${result.hayakuAdoption?.reason || 'unknown'}`
             : 'HAYAKU 원장 없음';
         const libraStatus = result.libraVerified
-          ? `LIBRA 데이터 승계 확인: ${formatNumber(result.libraAdoption?.records || result.libraRecords)}개`
+          ? `LIBRA 데이터 승계 확인: ${formatNumber(result.libraAdoption?.records || result.libraRecords)}개 · 렌즈 보관 ${formatNumber(result.libraVerification?.verifiedLensArchives||0)}개 · 렌즈 기록 ${formatNumber(result.libraVerification?.verifiedLensRecords||0)}개`
           : result.libraRecords > 0
             ? `LIBRA 승계 표식 저장 · 영속 검증 실패: ${result.libraAdoption?.reason || 'unknown'}`
             : 'LIBRA 데이터 없음';
@@ -17297,6 +17336,7 @@ const createMemorySuiteRetraceHealthAdapter = options => {
     adoptFlashbackSessionHandoff: guardRetraceHealthOperation(adoptFlashbackSessionHandoff),
     adoptHayakuSessionHandoff: guardRetraceHealthOperation(adoptHayakuSessionHandoff),
     probeLiveHayakuOwner,
+    rollbackLibraLensHandoff:guardRetraceHealthOperation(rollbackLibraLensHandoff),
 
     lastTransition: () => clone(Runtime.lastTransition, null),
 
@@ -17318,7 +17358,7 @@ const createMemorySuiteRetraceHealthAdapter = options => {
       probeLibraIpc, normalizeLibraInspection, readLibraSource,
       peerCompatibilityPayload, evaluatePeerCompatibility, inspectCompatibilitySuite, probeUniversalPeerCompatibility, sourcePreservationReceiptMatches,
       adoptLiaLivePersonaHandoff, liaAdoptionReceiptMatches, isLiaLivePersonaId,
-      prepareLibraSessionHandoff, adoptLibraSessionHandoff, adoptLibraSessionHandoffDurable, verifyDurableLibraSessionHandoff,
+      prepareLibraSessionHandoff, rollbackLibraLensHandoff, adoptLibraSessionHandoff, adoptLibraSessionHandoffDurable, verifyDurableLibraSessionHandoff,
       requiredHandoffsVerified, ensurePendingHandoffStorageConfiguration, requestOwnerHandoffStorageMode,
       requestMemorySuiteOwnerStorageStatus, memorySuiteOwnerStorageGateFromRows, inspectMemorySuiteOwnerStorageGate, handoffStoragePolicyFromGate, handoffStoragePolicyMatchesGate,
       sealNextSessionHandoffJournal, nextSessionHandoffJournalFromChat,

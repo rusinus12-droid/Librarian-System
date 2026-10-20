@@ -83,9 +83,19 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   // §32.2/§32.3: the reading space and the status button are a product requirement, and a header
   // that reverts to the stacked layout is exactly the regression this locks.
   'libra_book_reading_space_contract_test.cjs',
+  'libra_final_delivery_view_runtime_test.cjs',
   // §34: one home per setting, one screen for diagnostics — the duplicate call and the four stacked
   // panels are both covered.
   'libra_settings_diagnostics_consolidation_test.cjs',
+  // Lens memory and immutable successor archives are a release invariant.
+  'libra_custom_memory_lens_runtime_test.cjs',
+  'libra_custom_memory_lens_pipeline_runtime_test.cjs',
+  'libra_custom_memory_lens_server_runtime_test.cjs',
+  'libra_lens_handoff_runtime_test.cjs',
+  'libra_lens_archive_bounds_test.cjs',
+  'libra_lens_handoff_server_test.cjs',
+  'retrace_lens_handoff_public_test.cjs',
+  'retrace_peer_runtime_compatibility_test.cjs',
   // Librarian Mobile GPU Contract v1 — a backdrop-filter blur makes the compositor re-filter what is
   // already painted behind the element, which mobile WebView pays for in shared system RAM. The gate
   // scans all five plugin GUIs (CSS declarations and JS style writes) and proves its own extractor

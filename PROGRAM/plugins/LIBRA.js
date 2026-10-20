@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.180
-//@version 2.3.180
+//@display-name LIBRA v2.3.181
+//@version 2.3.181
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.180';
+  const PLUGIN_VERSION = '2.3.181';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -1588,7 +1588,7 @@ function __libraNarrativeStripPatch(value) {
   const LIBRA_SHARED_ARCHIVE_MAX_DEPTH = 256;
   const RETRACE_PEER_COMPATIBILITY_SCHEMA = 'retrace.peer_compatibility.v1';
   const RETRACE_PEER_PROTOCOL_MAJOR = 1;
-  const LIBRA_SESSION_HANDOFF_CONTRACT = 'libra.handoff_immutable_source.v1';
+  const LIBRA_SESSION_HANDOFF_CONTRACT = 'libra.handoff_immutable_source_lenses.v2';
   const LIBRA_SNAPSHOT_PAGE_LIMITS = Object.freeze({ memories: 20, runs: 10 });
   const LIBRA_SESSION_HANDOFF_TTL_MS = 30 * 60 * 1000;
   const INJECTION_HEADER = '[LIBRA LONG-TERM MEMORY]';
@@ -12223,7 +12223,7 @@ const memorySuiteLibraResolveKeyScope = async ({ key, currentScope, registry }) 
     if (scopeId) return { kind: 'scope', scopeId, scopeKey: scopeId, aliases: [scopeId], label: scopeId };
     return { kind: 'scope', scopeAlias: tail };
   }
-  if (key.startsWith('libra:v1:shared-archive:') || key.startsWith('libra:v1:handoff:') || key.startsWith('libra:v1:handoff-receipt:') || key === 'libra:v1:scope-registry:v1' || key.startsWith('libra:v1:local-vector:') || key.startsWith('libra:v1:local-vector-migration:') || key === 'libra:v1:embedding-rebuild') return { kind: 'shared' };
+  if (key.startsWith('libra:v1:lens-handoff-archive:') || key.startsWith('libra:v1:shared-archive:') || key.startsWith('libra:v1:handoff:') || key.startsWith('libra:v1:handoff-receipt:') || key === 'libra:v1:scope-registry:v1' || key.startsWith('libra:v1:local-vector:') || key.startsWith('libra:v1:local-vector-migration:') || key === 'libra:v1:embedding-rebuild') return { kind: 'shared' };
   return { kind: 'global' };
 };
 const memorySuiteLibraRestoreObject = value => {
@@ -12289,6 +12289,10 @@ async function memorySuiteLibraResolveRestoreDependencies(context = {}) {
         if (deltaKey) addDependency({ space:'plugin', remoteKey:deltaKey, logicalKey:deltaKey, reason:'libra.variant.continuityDelta' });
       }
     }
+  }
+  for(const ref of Array.isArray(manifest.inheritedLensArchives)?manifest.inheritedLensArchives:[]){
+    if(ref?.schema!=='libra.lens_handoff_archive_ref.v1'||!String(ref.archiveKey||'').startsWith('libra:v1:lens-handoff-archive:')||!String(ref.archiveKey).endsWith(':'+ref.lensId))throw Error('libra_restore_lens_ref_invalid');
+    addDependency({space:'plugin',remoteKey:ref.archiveKey,logicalKey:ref.archiveKey,reason:'libra.lens.handoffArchive'});
   }
   const seen = new Set();
   let cursor = memorySuiteLibraArchivePointer(manifest.archiveRef);
@@ -12444,6 +12448,12 @@ async function memorySuiteLibraValidateRestore(context = {}) {
   }
   if (!manifest) errors.push('libra_restore_manifest_missing');
   if (manifest) {
+    for(const ref of Array.isArray(manifest.inheritedLensArchives)?manifest.inheritedLensArchives:[]){
+      try{
+        if(!candidateKeys.has(String(ref.archiveKey||'')))throw Error('lens_archive_dependency_missing');
+        LibraMemoryCore.validateLensHandoffArchive(await physicallyRead('plugin',ref.archiveKey),ref);
+      }catch(error){errors.push({code:'libra_restore_lens_archive_invalid',key:ref?.archiveKey,detail:String(error?.message||error)});}
+    }
     const refs = [
       ...Object.values(manifest.memories && typeof manifest.memories === 'object' && !Array.isArray(manifest.memories) ? manifest.memories : {}),
       ...(Array.isArray(manifest.inheritedMemories) ? manifest.inheritedMemories : [])
@@ -12642,7 +12652,7 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
       if (object(value) && value.scopeKey && value.scopeKey !== row.scopeId) issue('payload_scope_identity_conflict',row);
     } else if (key === 'libra:v1:scope-registry:v1') {
       row.ownerWide = true; row.dependencyScopeIds = [...scopesById.keys()];
-    } else if (!/^libra:v1:(?:shared-archive:|handoff:|handoff-receipt:|micro-handoff-archive:|local-vector:)/.test(key)) issue('unknown_owner_key',row);
+    } else if (!/^libra:v1:(?:shared-archive:|handoff:|handoff-receipt:|micro-handoff-archive:|lens-handoff-archive:|local-vector:)/.test(key)) issue('unknown_owner_key',row);
     if (!row.deleted && object(value)) walk(value,(node,field)=> {
       if (['archiveRef','parentRef','parentArchiveRef'].includes(field)) {
         if (!str(node.archiveId)) issue('archive_identity_invalid',row);
@@ -13936,6 +13946,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   });
 
   const LENS_RECALL_SKIP_REASON_LABELS = Object.freeze({
+    inherited_archive_unavailable:'이전 대화 기록을 읽지 못함',
     lens_trashed: '휴지통 렌즈',
     recall_disabled: '렌즈 리콜 꺼짐',
     budget_exceeded: '렌즈 리콜 예산 초과',
@@ -14164,7 +14175,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const all = [...(Array.isArray(src.lenses) ? src.lenses : []), ...(Array.isArray(src.trash) ? src.trash.map(item => ({ ...item, status: 'trashed' })) : [])];
     for (const [index, item] of all.entries()) {
       const lens = normalizeLensDefinition(item, index);
-      if (seen.has(lens.lensId)) continue;
+      if (seen.has(lens.lensId) || (lens.status!=='trashed' && Array.isArray(src.purgedLensIds) && src.purgedLensIds.includes(lens.lensId))) continue;
       seen.add(lens.lensId);
       if (lens.status === 'trashed') trash.push(lens);
       else if (lenses.length < MAX_LENS_SLOTS) lenses.push(lens);
@@ -14180,6 +14191,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       rawResponseRingLimit: clampInt(src.rawResponseRingLimit, 5, 50, LENS_RAW_RING_MAX),
       lenses,
       trash,
+      purgedLensIds: Array.from(new Set((Array.isArray(src.purgedLensIds) ? src.purgedLensIds : []).map(value=>lensSlug(value)).filter(Boolean))),
       updatedAt: lensTimestamp(src.updatedAt, '')
     };
   };
@@ -32691,6 +32703,7 @@ function createLibraReadonlySourceContext(owner) {
       lastEmbeddingMigration: null,
       lastMultilingualEmbeddingProbe: null,
       handoffSourceFreezeDepth: 0,
+      lensHandoffFreezeDepth: 0,
       embeddingMigrationDeferredByHandoff: false,
       lastHandoffSourceIntegrity: null,
       queues: new Map(),
@@ -38848,6 +38861,7 @@ function createLibraReadonlySourceContext(owner) {
       inheritedMemories: [],
       archiveRef: null,
       inheritedMicroArchives: [],
+      inheritedLensArchives: [],
       runIds: [],
       inFlight: null,
       failedBatches: {},
@@ -38875,6 +38889,7 @@ function createLibraReadonlySourceContext(owner) {
       manifest.inheritedMicroArchives = asArray(manifest.inheritedMicroArchives)
         .filter(ref => ref?.schema === 'libra.micro_handoff_archive_ref.v1'
           && string(ref.archiveKey || '') && string(ref.archiveDigest || ''));
+      manifest.inheritedLensArchives = asArray(manifest.inheritedLensArchives).filter(ref => ref && typeof ref === 'object');
       manifest.runIds = asArray(manifest.runIds);
       manifest.failedBatches = normalizeFailedCanonicalBatches(manifest.failedBatches);
       // v1.0.42: World Additional no longer participates in the manifest. Ignore old IDs;
@@ -39642,7 +39657,7 @@ function createLibraReadonlySourceContext(owner) {
 
     const NATIVE_CHAT_COPY_SCHEMA = 'libra.native_chat_copy.v2';
     const NATIVE_CHAT_COPY_LEGACY_SCHEMAS = new Set(['libra.native_chat_copy.v1']);
-    const NATIVE_CHAT_COPY_COMPLETENESS_VERSION = 5;
+    const NATIVE_CHAT_COPY_COMPLETENESS_VERSION = 6;
     const NATIVE_CHAT_COPY_POSITIVE_TTL_MS = 5 * 60 * 1000;
     const NATIVE_CHAT_COPY_NEGATIVE_TTL_MS = 15 * 1000;
 
@@ -39726,6 +39741,7 @@ function createLibraReadonlySourceContext(owner) {
       listCurrentMemoryRefs(manifest).length > 0
       || listInheritedMemoryRefs(manifest).length > 0
       || asArray(manifest.inheritedMicroArchives).length > 0
+      || asArray(manifest.inheritedLensArchives).length > 0
     );
 
     const nativeCopyReceiptSchemaSupported = receipt => {
@@ -39776,6 +39792,9 @@ function createLibraReadonlySourceContext(owner) {
       && Number(receipt?.expectedInheritedMicroOwnerRecords || 0) === Number(receipt?.verifiedInheritedMicroOwnerRecords || 0)
       && !!string(receipt?.expectedInheritedMicroRefsDigest || '')
       && receipt.expectedInheritedMicroRefsDigest === receipt.verifiedInheritedMicroRefsDigest
+      && receipt.expectedLensArchives===receipt.verifiedLensArchives
+      && receipt.expectedLensRecords===receipt.verifiedLensRecords
+      && !!receipt.lensArchiveRefsDigest && receipt.lensArchiveRefsDigest===receipt.verifiedLensRefsDigest
     );
 
     const findStoredScopeForChat = async (characterId, chatId) => {
@@ -41127,14 +41146,22 @@ function createLibraReadonlySourceContext(owner) {
           return digest(archive) === row.archiveDigest;
         } catch (_) { return false; }
       }, 4);
+      const expectedLensRefs=asArray(expected.expectedLensRefs),lensRows=[];
+      for(const ref of expectedLensRefs){
+        try{const stored=asArray(manifest.inheritedLensArchives).find(row=>row.archiveKey===ref.archiveKey);
+          if(!stored||digest(stored)!==digest(ref))throw Error('lens_ref_mismatch');
+          const archive=await readLensHandoffArchive(stored,targetScope);lensRows.push({ref,records:archive.recordCount});
+        }catch(_){}
+      }
+      const lensOk=lensRows.length===expectedLensRefs.length && lensRefsDigest(manifest.inheritedLensArchives)===lensRefsDigest(expectedLensRefs);
       const microOk = microRows.every(Boolean) && microHistory.every(Boolean)
         && pendingMicro.every(Boolean)
         && microOwnerRecords.every(row => row.ok)
         && inheritedMicroArchives.every(Boolean);
       return {
-        verified: rowsOk && inheritedOk && markerOk && microOk,
-        durable: rowsOk && inheritedOk && markerOk && microOk,
-        reason: rowsOk && inheritedOk && markerOk && microOk ? 'native_copy_storage_verified' : 'native_copy_storage_verification_failed',
+        verified: rowsOk && inheritedOk && markerOk && microOk && lensOk,
+        durable: rowsOk && inheritedOk && markerOk && microOk && lensOk,
+        reason: rowsOk && inheritedOk && markerOk && microOk && lensOk ? 'native_copy_storage_verified' : 'native_copy_storage_verification_failed',
         memories: rows.filter(row => row?.ok === true).length,
         expectedMemories: expectedStarts.length,
         inheritedMemories: expectedInheritedIdentities.length - missingInherited.length,
@@ -41156,6 +41183,7 @@ function createLibraReadonlySourceContext(owner) {
           .reduce((count, row) => count + Number(row.ref.recordCount || 0), 0),
         inheritedMicroRefsDigest: digest(asArray(expected.expectedInheritedMicroArchives)
           .filter((_, index) => inheritedMicroArchives[index]).map(row => row.ref)),
+        verifiedLensArchives:lensRows.length,verifiedLensRecords:lensRows.reduce((n,row)=>n+row.records,0),verifiedLensRefsDigest:lensRefsDigest(lensRows.map(row=>row.ref)),
         vectors: rows.filter(row => row?.vector === true).length,
         diagnostics: {
           rowsOk, inheritedOk, markerOk, microOk,
@@ -41165,7 +41193,7 @@ function createLibraReadonlySourceContext(owner) {
       };
     };
 
-    const cloneNativeChatCopyStorage = async (context, sourceCandidate) => {
+    const cloneNativeChatCopyStorageImpl = async (context, sourceCandidate) => {
       const targetScope = context.scope;
       const hostLineage = MemorySuiteHostLineage.inspect(context.character, context.chat);
       if (hostLineage.kind === 'native_branch' && (hostLineage.inheritanceEligible !== true || hostLineage.parentChatId !== sourceCandidate.scope.chatId)) {
@@ -41176,7 +41204,9 @@ function createLibraReadonlySourceContext(owner) {
       let unifiedSourceCapsule=null;let unifiedSelectedSourceRefs=null;
       let microSourceSnapshot=null;
       let inheritedMicroSourceSnapshot=null;
+      let lensSourceSnapshot=null;
       const revalidateNativeCopySource = async () => {
+        if(lensSourceSnapshot!==null && await lensHandoffSourceDigest(sourceCandidate.scope)!==lensSourceSnapshot)throw lensError('LENS_NATIVE_SOURCE_CHANGED','복사 중 렌즈 원본이 변경되었습니다.');
         const snapshot = await nativeCopyChatListSnapshot(context);
         // A failed/stale indexed read is not evidence that the user stayed on this branch.
         if (hostLineage.kind === 'native_branch' && (snapshot.refreshError || snapshot.source !== 'getCharacterFromIndex+getChatFromIndex')) throw new Error('native_branch_fresh_host_read_required');
@@ -41221,6 +41251,8 @@ function createLibraReadonlySourceContext(owner) {
       const sourceScope = sourceCandidate.scope;
       const sourcePairsForCopy = buildPairs(sourceCandidate.chat, sourceCandidate?.scope?.scopeKey || '');
       const sourceManifest = await loadManifest(sourceScope, sourcePairsForCopy.length);
+      lensSourceSnapshot=await lensHandoffSourceDigest(sourceScope);
+      const sourceInheritedLens=await loadInheritedLensArchives(sourceScope,sourceManifest,{strict:true});
       const sourceInheritedMicroArchives = await mapWithConcurrency(asArray(sourceManifest.inheritedMicroArchives),
         async ref => ({ref: clone(ref), archive: (await readMicroHandoffArchive(ref, sourceScope)).archive}), 4);
       inheritedMicroSourceSnapshot = digest(sourceInheritedMicroArchives);
@@ -41388,6 +41420,12 @@ function createLibraReadonlySourceContext(owner) {
           sourceScope, targetScope, sourcePairs: sourcePairsForCopy, targetPairs,
           sourceRows: sourceMicroRows, pendingRows: sourcePendingRows, writtenKeys
         });
+        const sourceLensRows=await buildLensHandoffArchives({scope:sourceScope,chat:sourceCandidate.chat},copyTransferId,
+          {maxTurn:hostLineage.kind==='native_branch'?hostLineage.commonPrefixPairs:Math.min(sourcePairsForCopy.length,targetPairs.length)});
+        await storeLensHandoffArchives(sourceLensRows,targetScope,writtenKeys);
+        const copiedInheritedLens=[...sourceLensRows.map(row=>row.ref),...sourceInheritedLens.rows.map(row=>clone(row.ref))];
+        for(const ref of copiedInheritedLens)await readLensHandoffArchive(ref,targetScope);
+        const expectedLensStats=lensArchiveStats(copiedInheritedLens);
         const copiedInheritedMicro = asArray(targetManifest.inheritedMicroArchives).map(ref => clone(ref));
         const expectedInheritedMicroArchives = [];
         for (const row of sourceInheritedMicroArchives) {
@@ -41431,6 +41469,7 @@ function createLibraReadonlySourceContext(owner) {
           }),
           memories: copiedMemories, inheritedMemories: copiedInherited,
           inheritedMicroArchives: copiedInheritedMicro,
+          inheritedLensArchives:copiedInheritedLens,
           archiveRef: normalizeLibraArchiveRef(targetManifest.archiveRef) || normalizeLibraArchiveRef(sourceManifest.archiveRef),
           inFlight: null,
           stats: {
@@ -41456,6 +41495,7 @@ function createLibraReadonlySourceContext(owner) {
             expectedStartTurns,
             expectedMemories: expectedStartTurns.length,
             expectedInheritedMemories: expectedInheritedIdentities.length,
+            ...expectedLensStats,
             expectedMicroRecords: copiedMicro.activeRows.length + copiedMicro.historicalRows.length,
             expectedPendingMicroTurns: copiedMicro.pendingRows.length,
             expectedMicroOwnerRecords: copiedMicro.ownerRecords.length,
@@ -41494,6 +41534,7 @@ function createLibraReadonlySourceContext(owner) {
           sourceScopeKey: sourceScope.scopeKey,
             expectedStartTurns,
           expectedInheritedIdentities,
+          expectedLensRefs:copiedInheritedLens,
           expectedMicroRows: copiedMicro.activeRows,
           expectedMicroHistory: copiedMicro.historicalRows,
           expectedPendingMicroRows: copiedMicro.pendingRows,
@@ -41507,6 +41548,8 @@ function createLibraReadonlySourceContext(owner) {
           || copyVerification.pendingMicroTurns !== copiedMicro.pendingRows.length
           || copyVerification.microOwnerRecords !== copiedMicro.ownerRecords.length
           || copyVerification.microOwnerGraphDigest !== digest(copiedMicro.ownerRecords)
+          || copyVerification.verifiedLensArchives!==expectedLensStats.expectedLensArchives
+          || copyVerification.verifiedLensRecords!==expectedLensStats.expectedLensRecords
           || copyVerification.inheritedMicroArchives !== expectedInheritedMicroArchives.length
           || copyVerification.inheritedMicroOwnerRecords !== manifest.nativeChatCopy.expectedInheritedMicroOwnerRecords
           || copyVerification.inheritedMicroRefsDigest !== manifest.nativeChatCopy.expectedInheritedMicroRefsDigest) {
@@ -41521,6 +41564,7 @@ function createLibraReadonlySourceContext(owner) {
           verifiedMicroRecords: copyVerification.microRecords,
           verifiedPendingMicroTurns: copyVerification.pendingMicroTurns,
           verifiedMicroOwnerRecords: copyVerification.microOwnerRecords,
+          verifiedLensArchives:copyVerification.verifiedLensArchives,verifiedLensRecords:copyVerification.verifiedLensRecords,verifiedLensRefsDigest:copyVerification.verifiedLensRefsDigest,
           verifiedInheritedMicroArchives: copyVerification.inheritedMicroArchives,
           verifiedInheritedMicroOwnerRecords: copyVerification.inheritedMicroOwnerRecords,
           verifiedInheritedMicroRefsDigest: copyVerification.inheritedMicroRefsDigest,
@@ -41645,6 +41689,12 @@ function createLibraReadonlySourceContext(owner) {
         }
         throw error;
       }
+    };
+
+    const cloneNativeChatCopyStorage = async (context,sourceCandidate) => {
+      state.lensHandoffFreezeDepth++;
+      try{await settleLensesBeforeHandoff();return await cloneNativeChatCopyStorageImpl(context,sourceCandidate);}
+      finally{state.lensHandoffFreezeDepth=Math.max(0,state.lensHandoffFreezeDepth-1);if(!state.lensHandoffFreezeDepth&&lensQueue.length)void kickLensQueue();}
     };
 
     const ensureNativeChatCopyAdopted = async (context, options = {}) => {
@@ -53184,7 +53234,7 @@ function createLibraReadonlySourceContext(owner) {
         if (!isPlainObject(edit) || edit.operation === 'delete') continue;
         const refs = asArray(edit.evidenceRefs).map(ref => string(ref || '').trim().toLowerCase()).filter(Boolean);
         if (!refs.length) { issues.push(`ito_edit_evidence_empty_${index}`); continue; }
-        if (refs.some(ref => !sources.has(ref))) { issues.push(`ito_edit_evidence_ref_invalid_${index}`); continue; }
+        if (refs.length>40 || refs.some(ref => !sources.has(ref))) { issues.push(`ito_edit_evidence_ref_invalid_${index}`); continue; }
         const spans = asArray(edit.evidenceSpans);
         if (!spans.length) { issues.push(`ito_edit_evidence_span_empty_${index}`); continue; }
         const covered = new Set();
@@ -68347,6 +68397,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       ));
       const sidecars = {};
       for (const storageKey of sidecarKeys) sidecars[storageKey] = await storage.getJson(storageKey, null);
+      for(const {ref,archive}of (await loadInheritedLensArchives(context.scope)).rows)sidecars[ref.archiveKey]=archive;
       return clone({
         schema: 'libra.scope_export.v1', version: VERSION, exportedAt: nowIso(),
         settings: await loadMemorySettings(), embedding: { ...(await loadEmbeddingSettings()), key: '[REDACTED]' },
@@ -68429,7 +68480,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       pluginVersion: VERSION,
       available: true,
       inspectSchema: LIBRA_RETRACE_INSPECT_SCHEMA,
-      actions: ['ping', 'capabilities', 'inspect', 'prepare_session_handoff', 'adopt_session_handoff', 'verify_session_handoff', 'memory_suite_prepare_server_scope_delete'],
+      actions: ['ping', 'capabilities', 'inspect', 'prepare_session_handoff', 'adopt_session_handoff', 'verify_session_handoff', 'rollback_lens_session_handoff', 'memory_suite_prepare_server_scope_delete'],
       compatibility: libraRetraceCompatibility(),
       features: {
         retraceCompatibility: libraRetraceCompatibility(),
@@ -68519,6 +68570,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         missingVectors,
         microRecordCount: microArchive.recordCount,
         microRecordsDigest: microArchive.recordsDigest,
+        lensRecordsDigest: await lensHandoffSourceDigest(scope),
         stateDependencies:refs.some(unifiedRefIsReadableUnified)?await Promise.all([key.continuityState(scope),key.entityRegistry(scope),key.stateCorrections(scope),key.stateCorrectionMeta(scope),key.stateCorrectionCommit(scope),key.stateWorldlineMeta(scope),unifiedMigrationKey(scope)].map(async k=>[k,digest(await storage.getStoredJson(k,null))])):[],
         vectorFingerprintMode: 'durable_plugin_storage_record_v2'
       };
@@ -68544,6 +68596,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       }
       return {
         manifestChanged: string(before?.manifestHash || '') !== string(after?.manifestHash || ''),
+        lensRecordsChanged: before?.lensRecordsDigest !== after?.lensRecordsDigest,
         missingMemoriesChanged: Number(before?.missingMemories || 0) !== Number(after?.missingMemories || 0),
         missingVectorsChanged: Number(before?.missingVectors || 0) !== Number(after?.missingVectors || 0),
         changedRecords: changedRecords.slice(0, 24),
@@ -68595,7 +68648,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       // canonical-only so prepare_session_handoff may attach archive metadata without
       // falsely looking like a memory mutation; expose transportSnapshotHash separately.
       const snapshotHash = canonicalStateHash;
+      const lensPreviewRows=await buildLensHandoffArchives(context,'preview');
+      const inheritedLensPreview=await loadInheritedLensArchives(context.scope,manifest,{strict:true});
+      const lensHandoff=lensArchiveStats([...lensPreviewRows.map(row=>row.ref),...inheritedLensPreview.rows.map(row=>row.ref)]);
       const base = {
+        lensHandoff,
         schema: LIBRA_RETRACE_INSPECT_SCHEMA,
         pluginVersion: VERSION,
         available: true,
@@ -68709,10 +68766,14 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       // never race the immutable-source fingerprint. Freeze new scheduling first,
       // finish/cancel any already-scheduled maintenance, then capture the source.
       state.handoffSourceFreezeDepth += 1;
+      state.lensHandoffFreezeDepth += 1;
+      releaseLensHandoffLease(transferId);
       let maintenance = null;
       let expectedScopeKey = '';
+      const writtenLensKeys=[],ownedLensValues=new Map();let preparedPackageDigest='';
 
       try {
+        await settleLensesBeforeHandoff();
         maintenance = await settleAutomaticVectorMaintenanceBeforeHandoff();
         const initialContext = await resolveContext();
         expectedScopeKey = string(initialContext?.scope?.scopeKey || '');
@@ -68745,6 +68806,10 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         const memoryRefs = archive.memoryRefs;
         const expectedRecords = options.expectedRecords == null ? memoryRefs.length : Math.max(0, Number(options.expectedRecords || 0) || 0);
         if (expectedRecords !== memoryRefs.length) throw new Error('LIBRA handoff source count changed before preparation.');
+        const lensRows=await buildLensHandoffArchives(context,transferId);
+        const inheritedLens=await loadInheritedLensArchives(context.scope,manifest,{strict:true});
+        const lensArchiveRefs=[...lensRows.map(row=>row.ref),...inheritedLens.rows.map(row=>row.ref)];
+        const lensStats=lensArchiveStats(lensArchiveRefs);
         const sourceIntegrityAfter = await libraSourceHandoffIntegritySnapshot(context.scope);
         const sourceIntegrityDiff = diffLibraHandoffIntegritySnapshots(sourceIntegrityBefore, sourceIntegrityAfter);
         state.lastHandoffSourceIntegrity = {
@@ -68764,6 +68829,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           error.details = clone(sourceIntegrityDiff);
           throw error;
         }
+        await storeLensHandoffArchives(lensRows,context.scope,writtenLensKeys,ownedLensValues);
         const microSnapshot = await collectMicroHandoffArchive(context.scope, manifest);
         if (microSnapshot.recordsDigest !== sourceIntegrityAfter.microRecordsDigest
           || microSnapshot.recordCount !== sourceIntegrityAfter.microRecordCount) {
@@ -68802,6 +68868,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           source: { scope: clone(context.scope), identity: context.identity },
           archiveRef: archive.archiveRef,
           memoryRefs, unifiedLineage, microArchiveRefs, microArchiveRefsDigest,
+          lensArchiveRefs,lensArchiveRefsDigest:lensStats.lensArchiveRefsDigest,...lensStats,
           storyArcSeed: sourceStoryArcSeed,
           continuityStateSeed: sourceContinuityState ? clone(sourceContinuityState) : null,
           expectedRecords,
@@ -68815,6 +68882,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           expiresAt: new Date(Date.now() + LIBRA_SESSION_HANDOFF_TTL_MS).toISOString()
         };
         packageValue.packageDigest = digest({ ...packageValue, packageDigest: undefined });
+        if((await libraSourceHandoffIntegritySnapshot(context.scope)).fingerprint!==sourceIntegrityBefore.fingerprint)throw lensError('SOURCE_MUTATION_DETECTED','렌즈 승계 보관 중 원본이 변경되었습니다.');
+        preparedPackageDigest=packageValue.packageDigest;
         await storage.setJson(key.handoffPackage(transferId), packageValue);
         const durablePackage = await storage.getJson(key.handoffPackage(transferId), null);
         if (!durablePackage || durablePackage.schema !== LIBRA_SESSION_HANDOFF_PACKAGE_SCHEMA
@@ -68823,9 +68892,12 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           || digest({ ...durablePackage, packageDigest: undefined }) !== string(durablePackage.packageDigest || '')) {
           throw new Error('LIBRA handoff package durable readback failed.');
         }
+        if((await libraSourceHandoffIntegritySnapshot(context.scope)).fingerprint!==sourceIntegrityBefore.fingerprint)throw lensError('SOURCE_MUTATION_DETECTED','승계 준비 완료 전에 원본이 변경되었습니다.');
+        holdLensHandoffLease(transferId);
         return clone({
           schema: LIBRA_SESSION_HANDOFF_RECEIPT_SCHEMA,
           action: 'prepared', transferId, prepared: true, durable: true, sourceScope: context.scope,
+          ...lensStats,lensArchiveRefs:clone(lensArchiveRefs),
           records: memoryRefs.length, expectedRecords,
           worldAdditional: 0, expectedWorldAdditional: 0,
           archiveId: archive.archiveRef.archiveId,
@@ -68849,13 +68921,76 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           preparedAt, expiresAt: packageValue.expiresAt
         });
         });
+      } catch(error) {
+        for(const storageKey of writtenLensKeys){
+          if(digest(await storage.getJson(storageKey,null))===ownedLensValues.get(storageKey))await storage.remove(storageKey);
+        }
+        const failedPackage=await storage.getJson(key.handoffPackage(transferId),null);
+        if(preparedPackageDigest&&failedPackage?.packageDigest===preparedPackageDigest)await storage.remove(key.handoffPackage(transferId));
+        throw error;
       } finally {
         state.handoffSourceFreezeDepth = Math.max(0, Number(state.handoffSourceFreezeDepth || 0) - 1);
+        if(!lensHandoffLeases.has(transferId))state.lensHandoffFreezeDepth=Math.max(0,state.lensHandoffFreezeDepth-1);
+        if(state.lensHandoffFreezeDepth===0 && lensQueue.length)void kickLensQueue();
         if (state.handoffSourceFreezeDepth === 0 && state.embeddingMigrationDeferredByHandoff) {
           state.embeddingMigrationDeferredByHandoff = false;
           scheduleAutomaticLegacyVectorMigration({ reason: 'handoff_postflight_deferred_vector_maintenance', delayMs: 1200 });
         }
       }
+    };
+
+    const cancelPreparedLensHandoff = async (transferId) => {
+      const packageKey=key.handoffPackage(transferId),value=await storage.getJson(packageKey,null);
+      if(!value)return {ok:true,verified:true,transferId,targetChatId:'',removedRefs:0,deletedArchives:0};
+      if(value.transferId!==transferId||value.schema!==LIBRA_SESSION_HANDOFF_PACKAGE_SCHEMA||digest({...value,packageDigest:undefined})!==value.packageDigest)throw Error('LENS_HANDOFF_PACKAGE_INVALID');
+      const referenced=new Set();
+      for(const storageKey of (await storage.keys()).filter(k=>k.startsWith(`${PREFIX}:scope:`)&&k.endsWith(':manifest'))){
+        const manifest=await storage.getJson(storageKey,null);
+        if(manifest?.lastSessionHandoff?.transferId===transferId)throw Error('LENS_HANDOFF_ALREADY_ADOPTED_REQUIRES_TARGET');
+        for(const ref of asArray(manifest?.inheritedLensArchives))referenced.add(ref.archiveKey);
+      }
+      let deletedArchives=0;
+      for(const ref of asArray(value.lensArchiveRefs)){
+        if(!String(ref.archiveKey||'').startsWith(`${PREFIX}:lens-handoff-archive:${transferId}:`)||referenced.has(ref.archiveKey))continue;
+        await readLensHandoffArchive(ref);await storage.remove(ref.archiveKey);
+        if(await storage.getJson(ref.archiveKey,null)!==null)throw Error('LENS_HANDOFF_CANCEL_READBACK_FAILED');deletedArchives++;
+      }
+      await storage.remove(packageKey);
+      return {ok:true,verified:true,transferId,targetChatId:'',removedRefs:0,deletedArchives};
+    };
+    const rollbackLensSessionHandoff = async (options={}) => {
+      const transferId=normalizeHandoffTransferId(options.transferId);
+      try{unifiedAssert((await MemorySuiteStorageBridge.getMode())==='plugin_only','UNIFIED_BACKEND_NOT_SUPPORTED');return options.targetChatId ? await rollbackLensSessionHandoffImpl(options) : await cancelPreparedLensHandoff(transferId);}
+      finally{releaseLensHandoffLease(transferId);}
+    };
+    const rollbackLensSessionHandoffImpl = async (options={}) => {
+      unifiedAssert((await MemorySuiteStorageBridge.getMode())==='plugin_only','UNIFIED_BACKEND_NOT_SUPPORTED');
+      const transferId=normalizeHandoffTransferId(options.transferId),target=await waitForTargetContextForHandoff(string(options.targetChatId||''));
+      return await withLensScopeLock(target.scope.scopeKey,async()=>{
+        const manifest=await loadManifest(target.scope,buildPairs(target.chat,target.scope.scopeKey).length);
+        if(manifest.lastSessionHandoff?.transferId!==transferId)throw lensError('LENS_HANDOFF_TARGET_MISMATCH','되돌릴 렌즈 승계를 찾을 수 없습니다.');
+        const refs=asArray(manifest.inheritedLensArchives).filter(ref=>ref.handoffTransferId===transferId);
+        manifest.inheritedLensArchives=asArray(manifest.inheritedLensArchives).filter(ref=>ref.handoffTransferId!==transferId);
+        Object.assign(manifest.lastSessionHandoff,lensArchiveStats(manifest.inheritedLensArchives),{lensHandoffRolledBack:true});
+        await saveManifest(target.scope,manifest);
+        const stored=await storage.getVerifiedJson(key.manifest(target.scope),target.scope,null);
+        if(asArray(stored?.inheritedLensArchives).some(ref=>ref.handoffTransferId===transferId))throw Error('LENS_HANDOFF_ROLLBACK_READBACK_FAILED');
+        const keys=await storage.keys(),referenced=new Set();
+        for(const storageKey of keys.filter(k=>k.startsWith(`${PREFIX}:scope:`)&&k.endsWith(':manifest'))){
+          const value=await storage.getJson(storageKey,null);for(const ref of asArray(value?.inheritedLensArchives))referenced.add(ref.archiveKey);
+        }
+        let deletedArchives=0;
+        for(const ref of refs){
+          if(!ref.archiveKey.startsWith(`${PREFIX}:lens-handoff-archive:${transferId}:`)||referenced.has(ref.archiveKey))continue;
+          await readLensHandoffArchive(ref,target.scope);await storage.remove(ref.archiveKey);
+          if(await storage.getJson(ref.archiveKey,null)!==null)throw Error('LENS_HANDOFF_ROLLBACK_ARCHIVE_READBACK_FAILED');deletedArchives++;
+        }
+        // A prepared package must not silently re-adopt the notes the user just removed.
+        await storage.remove(key.handoffPackage(transferId));
+        const receipt=await storage.getJson(key.handoffReceipt(transferId),null);
+        if(receipt?.transferId===transferId)await storage.setVerifiedJson(key.handoffReceipt(transferId),{...receipt,...lensArchiveStats(manifest.inheritedLensArchives),verifiedLensArchives:manifest.inheritedLensArchives.length,verifiedLensRecords:manifest.inheritedLensArchives.reduce((n,ref)=>n+ref.recordCount,0),lensHandoffRolledBack:true},target.scope);
+        scheduleGuiTraceRefresh();return {ok:true,verified:true,transferId,targetChatId:target.scope.chatId,removedRefs:refs.length,deletedArchives};
+      });
     };
 
     const inheritedMemoryRefForTransfer = (ref, transferId, sourceScope, headGeneration = 1) => {
@@ -68917,6 +69052,15 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const handoffMarker = manifest.lastSessionHandoff && typeof manifest.lastSessionHandoff === 'object'
         ? manifest.lastSessionHandoff
         : {};
+      const lensRefs=asArray(manifest.inheritedLensArchives),lensStats=lensArchiveStats(lensRefs);
+      let verifiedLensArchives=0,verifiedLensRecords=0;
+      for(const ref of lensRefs){try{const archive=await readLensHandoffArchive(ref,target.scope);verifiedLensArchives++;verifiedLensRecords+=archive.recordCount;}catch(_){}}
+      const lensMarkerMatches=lensRefs.every(ref=>ref.handoffTransferId===transferId) && verifiedLensArchives===lensStats.expectedLensArchives
+        && handoffMarker.expectedLensArchives===lensStats.expectedLensArchives
+        && handoffMarker.expectedLensRecords===verifiedLensRecords
+        && handoffMarker.lensArchiveRefsDigest===lensStats.lensArchiveRefsDigest
+        && (options.expectedLensArchives==null||Number(options.expectedLensArchives)===verifiedLensArchives)
+        && (options.expectedLensRecords==null||Number(options.expectedLensRecords)===verifiedLensRecords);
       const expectedArchiveId = string(options.expectedArchiveId || '').trim();
       const expectedArchiveDigest = string(options.expectedArchiveDigest || '').trim();
       const expectedArchiveGeneration = Math.max(0, Number(options.expectedArchiveGeneration || 0) || 0);
@@ -68941,7 +69085,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         && (!expectedArchiveDigest || expectedArchiveDigest === string(archiveRef?.digest || ''))
         && (!expectedArchiveGeneration || expectedArchiveGeneration === Number(archiveRef?.generation || 0));
       const verified = markerMatches
-        && microMarkerMatches
+        && microMarkerMatches && lensMarkerMatches
         && readable === refs.length && readable === expectedRecords
         && archive.verified === true && archive.memoryRefs.length === expectedRecords
         && requestedArchiveMatches;
@@ -68955,6 +69099,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         archiveGeneration: archiveRef?.generation || 0,
         archiveDigest: archiveRef?.digest || '',
         archiveRecordCount: archiveRef?.recordCount || 0,
+        ...lensStats,verifiedLensArchives,verifiedLensRecords,
         microArchiveCount: microRefs.length, microOwnerRecords,
         microArchiveRefsDigest,
         physicalMemoryCopies: 0,
@@ -68968,7 +69113,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       });
     };
 
-    const adoptSessionHandoff = async (options = {}) => {
+    const adoptSessionHandoff = async (options={}) => {
+      try{return await adoptSessionHandoffImpl(options);}
+      finally{releaseLensHandoffLease(string(options.transferId||''));}
+    };
+    const adoptSessionHandoffImpl = async (options = {}) => {
       const transferId = normalizeHandoffTransferId(options.transferId || '');
       const targetChatId = string(options.targetChatId || '').trim();
       const requestedExpectedRecords = options.expectedRecords == null ? null : Math.max(0, Number(options.expectedRecords || 0) || 0);
@@ -69009,7 +69158,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
             expectedRecords: priorRecords,
             expectedArchiveId: string(prior.archiveId),
             expectedArchiveGeneration: Number(prior.archiveGeneration),
-            expectedArchiveDigest: string(prior.archiveDigest)
+            expectedArchiveDigest: string(prior.archiveDigest),
+            expectedLensArchives:prior.expectedLensArchives,expectedLensRecords:prior.expectedLensRecords
           });
           const currentDurableReadbackMatches = verification?.schema === LIBRA_SESSION_HANDOFF_RECEIPT_SCHEMA
             && verification?.action === 'verified'
@@ -69064,6 +69214,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         throw new Error('LIBRA_MICRO_HANDOFF_PACKAGE_REFS_INVALID');
       }
       for (const ref of sourceMicroArchiveRefs) await readMicroHandoffArchive(ref);
+      const sourceLensRefs=asArray(packageValue.lensArchiveRefs);
+      if(!Array.isArray(packageValue.lensArchiveRefs)||packageValue.lensArchiveRefsDigest!==lensRefsDigest(sourceLensRefs))throw lensError('LENS_HANDOFF_PACKAGE_INVALID','렌즈 승계 목록이 일치하지 않습니다.');
+      const registry=await readLensRegistry({force:true});
+      for(const ref of sourceLensRefs){if(registry.purgedLensIds.includes(ref.lensId))throw lensError('LENS_PURGED','삭제된 렌즈가 포함된 승계는 다시 준비해야 합니다.');await readLensHandoffArchive(ref);}
+
       const packageRecords = archive.memoryRefs.length;
       if (requestedExpectedRecords != null && requestedExpectedRecords !== packageRecords) {
         throw new Error('LIBRA handoff package count does not match the requested transfer.');
@@ -69086,6 +69241,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if (string(packageValue.source?.scope?.chatId) === targetChatId) throw new Error('LIBRA handoff 대상이 원본 채팅과 같습니다.');
       const manifest = await loadManifest(target.scope, buildPairs(target.chat, target?.scope?.scopeKey || '').length);
       const sourceScope = packageValue.source?.scope || {};
+      if(asArray(manifest.inheritedLensArchives).some(ref=>ref.handoffTransferId!==transferId))throw lensError('LENS_TARGET_NOT_EMPTY','대상에 다른 렌즈 승계 기록이 있습니다.');
       const existingMicroRefs = asArray(manifest.inheritedMicroArchives);
       if (existingMicroRefs.some(ref => ref.handoffTransferId !== transferId)) {
         throw new Error('LIBRA_MICRO_HANDOFF_TARGET_FOREIGN_ARCHIVE');
@@ -69110,12 +69266,15 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       })));
       const targetMicroOwnerRecords = manifest.inheritedMicroArchives.reduce(
         (count, ref) => count + Number(ref.recordCount || 0), 0);
+      manifest.inheritedLensArchives=sourceLensRefs.map(ref=>({...clone(ref),sessionEpoch:Number(ref.sessionEpoch||0)-1,handoffTransferId:transferId}));
+      const targetLensStats=lensArchiveStats(manifest.inheritedLensArchives);
       manifest.archiveRef = archiveRef;
       manifest.stats.handoffImports = Number(manifest.stats.handoffImports || 0) + 1;
       manifest.lastSessionHandoff = {
         schema: LIBRA_SESSION_HANDOFF_MARKER_SCHEMA, transferId,
         sourceChatId: string(sourceScope.chatId || ''), sourceScopeKey: string(sourceScope.scopeKey || ''),
         targetChatId, targetScopeKey: target.scope.scopeKey, records: linkedRefs.length,
+        ...targetLensStats,
         microArchiveCount: manifest.inheritedMicroArchives.length,
         microOwnerRecords: targetMicroOwnerRecords,
         microArchiveRefsDigest: targetMicroRefsDigest,
@@ -69219,6 +69378,9 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const deleteCurrentScope = async (options = {}) => {
       const context = await resolveContext();
       if(options.expectedScopeKey&&string(context.scope.scopeKey)!==string(options.expectedScopeKey))throw new Error('scope_delete_scope_changed');
+      lensWriteGeneration++;for(const run of lensActiveRuns)run.controller.abort();
+      lensQueue.splice(0,lensQueue.length,...lensQueue.filter(job=>job.scopeKey!==context.scope.scopeKey));
+      await (lensScopeLocks.get(context.scope.scopeKey)||Promise.resolve());
       const localStore = await getLocalCorpusStore();
       if (localStore) await localStore.discardScope(string(context.scope.scopeKey));
       state.memoryGraphPages?.invalidate();
@@ -75968,7 +76130,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         : typeof rawItem.refs === 'string' ? rawItem.refs.split(/[\s,]+/)
         : typeof rawItem.ref === 'string' ? [rawItem.ref]
         : [];
-      return Array.from(new Set(raw.map(ref => string(ref || '').trim().toLowerCase().replace(/^\[|\]$/g, '')).filter(Boolean))).slice(0, 8);
+      return Array.from(new Set(raw.map(ref => string(ref || '').trim().toLowerCase().replace(/^\[|\]$/g, '')).filter(Boolean)));
     };
 
     // The evidence gate. `quoted`: the quote is found in one of the referenced turns. `interpreted`:
@@ -76044,7 +76206,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
     // ---- source binding ------------------------------------------------------------------------
     const lensActiveWorldlineId = async scope => {
-      const meta = await loadStateWorldlineMeta(scope).catch(() => null);
+      const meta = await loadStateWorldlineMeta(scope);
       return string(meta?.activeWorldlineId || 'main') || 'main';
     };
 
@@ -76054,7 +76216,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const pairs = buildPairs(context.chat, scopeKey);
       const batch = pairs.filter(pair => Number(pair?.turn || 0) >= Number(startTurn) && Number(pair?.turn || 0) <= Number(endTurn));
       if (!batch.length) return null;
-      const worldlineId = await lensActiveWorldlineId(context.scope);
+      const meta=await loadStateWorldlineMeta(context.scope),worldlineId=string(meta?.activeWorldlineId||'main');
+      const cutoff=meta?.worldlines?.[worldlineId]?.cutoffTurn;
+      if(cutoff!=null&&Number(endTurn)>Number(cutoff))return null;
       const digestValue = sourceDigest(batch);
       const revisionIds = batch.map(pair => completedTurnRevisionId(pair));
       return {
@@ -76161,7 +76325,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const mutateLensRegistry = mutation => {
       const task = lensRegistryWriteTail.catch(() => undefined).then(async () => {
         const current = await readLensRegistry({ force: true });
-        const next = normalizeLensRegistry({ ...(await mutation(clone(current)) || current), updatedAt: nowIso() });
+        const candidate=await mutation(clone(current)) || current;
+        const next = normalizeLensRegistry({ ...candidate, purgedLensIds:[...new Set([...current.purgedLensIds,...(candidate.purgedLensIds||[])])], updatedAt: nowIso() });
         await saveLensRegistryOnly(next);
         invalidateLensRegistryCache();
         scheduleGuiTraceRefresh();
@@ -76183,7 +76348,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const base = clone(definition || {});
         delete base.revisionHistory; delete base.createdAt; delete base.updatedAt; delete base.trashedAt;
         let lensId = lensSlug(base.lensId);
-        if (!lensId || findLens(registry, lensId)) lensId = `lens_${String(digest([base.name, base.instruction, Date.now(), Math.random()])).replace(/[^a-zA-Z0-9]/g, '').slice(0, 10)}`;
+        if (!lensId || findLens(registry, lensId) || registry.purgedLensIds.includes(lensId)) lensId = `lens_${String(digest([base.name, base.instruction, Date.now(), Math.random()])).replace(/[^a-zA-Z0-9]/g, '').slice(0, 10)}`;
         const now = nowIso();
         created = normalizeLensDefinition({ ...base, lensId, status: base.status === 'paused' ? 'paused' : 'active', createdAt: now, updatedAt: now });
         registry.lenses.push(created);
@@ -76244,24 +76409,183 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const targetId = lensSlug(lensId);
       if (!targetId) throw lensError('LENS_NOT_FOUND', '영구 삭제할 렌즈 ID가 비어 있습니다.');
       const registry = await readLensRegistry({ force: true });
-      if (!registry.trash.some(lens => lens.lensId === targetId)) throw lensError('LENS_NOT_IN_TRASH', '휴지통에 있는 렌즈만 영구 삭제할 수 있습니다.');
+      if (!registry.trash.some(lens => lens.lensId === targetId) && !registry.purgedLensIds.includes(targetId)) throw lensError('LENS_NOT_IN_TRASH', '휴지통에 있는 렌즈만 영구 삭제할 수 있습니다.');
+      // Publish the tombstone before removing any data. In-flight calls and late imports
+      // cannot recreate this id, including a scope that is offline during the purge.
+      await mutateLensRegistry(current=>({...current,purgedLensIds:[...new Set([...current.purgedLensIds,targetId])]}));
+      // A suspended storage write may still finish after the tombstone. Let its
+      // publication/rollback settle before deleting, so rollback cannot restore old data.
+      await Promise.all([...lensScopeLocks.values()]);
       const allKeys = asArray(await storage.keys());
       const marker = `:lens:${targetId}:`;
-      const dataKeys = allKeys.filter(storageKey => storageKey.includes(':scope:') && storageKey.includes(marker));
+      const dataKeys = allKeys.filter(storageKey => (storageKey.includes(':scope:') && storageKey.includes(marker))
+        || (storageKey.startsWith(`${PREFIX}:lens-handoff-archive:`)&&storageKey.endsWith(`:${targetId}`)));
       const failed = [];
       for (const storageKey of dataKeys) {
-        try { await storage.remove(storageKey); } catch (error) { failed.push({ key: storageKey, error: compact(error?.message || error, 200) }); }
+        try {
+          await storage.remove(storageKey);
+          if(await storage.getJson(storageKey,null)!==null)throw Error('LENS_PURGE_DATA_READBACK');
+        } catch (error) { failed.push({ key: storageKey, error: compact(error?.message || error, 200) }); }
       }
-      for (const headKey of allKeys.filter(storageKey => storageKey.includes(':scope:') && storageKey.endsWith(':lens:head'))) {
-        const head = await storage.getJson(headKey, null).catch(() => null);
-        if (isPlainObject(head?.lenses) && Object.prototype.hasOwnProperty.call(head.lenses, targetId)) {
-          delete head.lenses[targetId];
-          await storage.setJson(headKey, head).catch(error => failed.push({ key: headKey, error: compact(error?.message || error, 200) }));
-        }
+      for (const headKey of allKeys.filter(storageKey => storageKey.startsWith(`${PREFIX}:scope:`) && storageKey.endsWith(':lens:head'))) {
+        try {
+          const scopeKey=headKey.slice(`${PREFIX}:scope:`.length,-':lens:head'.length);
+          await withLensScopeLock(scopeKey,async()=>{
+            const head=await storage.getJson(headKey,null);
+            if(!isPlainObject(head?.lenses)||!Object.prototype.hasOwnProperty.call(head.lenses,targetId))return;
+            delete head.lenses[targetId];await storage.setJson(headKey,head);
+            if(Object.prototype.hasOwnProperty.call((await storage.getJson(headKey,null))?.lenses||{},targetId))throw Error('LENS_PURGE_HEAD_READBACK');
+          });
+        } catch(error) { failed.push({key:headKey,error:compact(error?.message||error,200)}); }
+      }
+      for(const manifestKey of allKeys.filter(storageKey=>storageKey.startsWith(`${PREFIX}:scope:`)&&storageKey.endsWith(':manifest'))){
+        try{
+          const manifest=await storage.getJson(manifestKey,null);
+          if(asArray(manifest?.inheritedLensArchives).some(ref=>ref.lensId===targetId)){
+            manifest.inheritedLensArchives=manifest.inheritedLensArchives.filter(ref=>ref.lensId!==targetId);
+            if(manifest.lastSessionHandoff)Object.assign(manifest.lastSessionHandoff,lensArchiveStats(manifest.inheritedLensArchives));
+            await storage.setJson(manifestKey,manifest);
+            if(digest(await storage.getJson(manifestKey,null))!==digest(manifest))throw Error('LENS_PURGE_MANIFEST_READBACK');
+          }
+        }catch(error){failed.push({key:manifestKey,error:compact(error?.message||error,200)});}
       }
       if (failed.length) throw lensError('LENS_PURGE_INCOMPLETE', `일부 렌즈 기록을 지우지 못했습니다(${failed.length}개). 다시 시도하세요.`);
       await mutateLensRegistry(current => ({ ...current, trash: current.trash.filter(lens => lens.lensId !== targetId) }));
       return { ok: true, purgedLensId: targetId, deletedKeys: dataKeys.length };
+    };
+
+    // Immutable, owner-validated perspective snapshots. No canonical/State writes.
+    const LENS_HANDOFF_ARCHIVE_SCHEMA = 'libra.lens_handoff_archive.v1';
+    const LENS_HANDOFF_REF_SCHEMA = 'libra.lens_handoff_archive_ref.v1';
+    const LENS_HANDOFF_MAX_BYTES = 1024 * 1024;
+    const lensArchiveKey = (transferId, lensId) => `${PREFIX}:lens-handoff-archive:${normalizeHandoffTransferId(transferId)}:${lensSlug(lensId)}`;
+    const lensRefProjection = ref => Object.fromEntries(['archiveKey','archiveDigest','lensId','sourceScopeKey','activeWorldlineId','sessionEpoch','recordCount','itemCount','truncated'].map(field => [field, ref?.[field]]));
+    const lensRefsDigest = refs => digest(asArray(refs).map(lensRefProjection));
+    const lensArchiveStats = refs => ({ expectedLensArchives: asArray(refs).length,
+      expectedLensRecords: asArray(refs).reduce((n, ref) => n + Number(ref.recordCount || 0), 0),
+      lensItems: asArray(refs).reduce((n, ref) => n + Number(ref.itemCount || 0), 0),
+      lensCount: new Set(asArray(refs).map(ref => ref.lensId)).size,
+      lensTruncated: asArray(refs).some(ref => ref.truncated === true), lensArchiveRefsDigest: lensRefsDigest(refs) });
+    const validateLensHandoffArchive = (archive, ref = null) => {
+      const fail = () => { throw lensError('LENS_ARCHIVE_INVALID', '이전 대화 렌즈 기록의 무결성을 확인하지 못했습니다.'); };
+      if (!isPlainObject(archive) || archive.schema !== LENS_HANDOFF_ARCHIVE_SCHEMA || !archive.sourceScopeKey
+        || !archive.activeWorldlineId || !lensSlug(archive.lensId) || archive.lensId !== lensSlug(archive.lensId)
+        || !Array.isArray(archive.records) || archive.records.length > LENS_RECORDS_MAX_PER_LENS
+        || archive.recordCount !== archive.records.length || !isPlainObject(archive.lensDefinition)
+        || archive.lensDefinition.lensId !== archive.lensId || archive.recordsDigest !== digest(archive.records)
+        || archive.archiveDigest !== digest({...archive, archiveDigest:undefined})) fail();
+      const seen = new Set(); let items = 0;
+      for (const record of archive.records) {
+        const range = record?.turnRange;
+        if (record?.schema !== LENS_MEMORY_RECORD_SCHEMA || record.scopeKey !== archive.sourceScopeKey
+          || record.lensId !== archive.lensId || record.worldlineId !== archive.activeWorldlineId
+          || !record.recordKey || seen.has(record.recordKey) || !record.sourceDigest || !record.sourceRevisionId || !record.instructionRevision
+          || !Number.isInteger(range?.start) || !Number.isInteger(range?.end) || range.start < 1 || range.end < range.start
+          || range.end-range.start+1 > LENS_RUN_MAX_TURNS || !Array.isArray(record.items) || !record.items.length || record.items.length > LENS_ITEMS_MAX_PER_RUN) fail();
+        seen.add(record.recordKey);
+        for (const item of record.items) {
+          if (!item?.text || !['quoted','interpreted'].includes(item.evidenceLevel) || !Array.isArray(item.refs) || !item.refs.length
+            || item.refs.some(value => {const match=/^t(\d+)-(u|a)$/.exec(value);return !match || Number(match[1])<range.start || Number(match[1])>range.end;})) fail();
+          if (item.evidenceLevel==='quoted' && (!item.quote || !item.refs.includes(item.quoteRef))) fail();
+          if (item.evidenceLevel==='interpreted' && !item.basis) fail();
+          items++;
+        }
+      }
+      if (archive.itemCount !== items) fail();
+      if (ref && (ref.schema !== LENS_HANDOFF_REF_SCHEMA || !String(ref.archiveKey || '').startsWith(`${PREFIX}:lens-handoff-archive:`)
+        || !String(ref.archiveKey).endsWith(`:${archive.lensId}`) || ref.archiveKey.includes('::chunk:')
+        || ['archiveDigest','lensId','sourceScopeKey','activeWorldlineId','recordCount','itemCount','truncated'].some(field => ref[field] !== archive[field])
+        || !Number.isInteger(ref.sessionEpoch) || ref.sessionEpoch>0)) fail();
+      return archive;
+    };
+    const readLensHandoffArchive = async (ref, scope = null) => validateLensHandoffArchive(
+      scope ? await storage.getVerifiedJson(ref.archiveKey, scope, null) : await storage.getJson(ref.archiveKey, null), ref);
+    const lensHandoffSourceDigest = async scope => {
+      const registry = await readLensRegistry({force:true});
+      const rows = [];
+      for (const lens of registry.lenses) rows.push([lens.lensId, digest(lens),
+        digest(await storage.getStoredJson(key.lensRecords(scope,lens.lensId),null))]);
+      return digest({rows,purgedLensIds:registry.purgedLensIds,worldlineMeta:await storage.getStoredJson(key.stateWorldlineMeta(scope),null)});
+    };
+    const buildLensHandoffArchives = async (context, transferId, {maxTurn=Infinity}={}) => {
+      const registry = await readLensRegistry({force:true}), pairs = buildPairs(context.chat,context.scope.scopeKey);
+      const worldlineId = await lensActiveWorldlineId(context.scope), archives = [];
+      for (const lens of registry.lenses) {
+        const records = Object.values(await loadLensRecordsMap(context.scope,lens.lensId))
+          .filter(record => record.worldlineId===worldlineId && Number(record.turnRange?.end)<=maxTurn)
+          .sort((a,b)=>Number(b.turnRange.end)-Number(a.turnRange.end)||Number(b.createdAt||0)-Number(a.createdAt||0));
+        const current = [];
+        for (const record of records) {
+          const token = await captureLensSourceToken(context,record.turnRange.start,record.turnRange.end);
+          if (!token || token.sourceRevisionId!==record.sourceRevisionId || token.sourceDigest!==record.sourceDigest) continue;
+          const historical = lens.revisionHistory.find(row=>row.revision===record.instructionRevision);
+          const sourceTurns = {};
+          for (const ref of new Set(record.items.flatMap(item=>item.refs))) {
+            const match=/^t(\d+)-(u|a)$/.exec(ref),pair=match&&pairs.find(row=>Number(row.turn)===Number(match[1]));
+            if(pair)sourceTurns[ref]=compact(match[2]==='u'?pair.user.text:pair.assistant.text,4000);
+          }
+          current.push({...clone(record), instructionText:record.instructionText || historical?.instructionText
+            || (record.instructionRevision===lens.instructionRevision?lens.instructionText:''), sourceTurns});
+        }
+        if (!current.length) continue;
+        const definition=Object.fromEntries(['lensId','name','labels','evidenceMode','instruction','instructionText','instructionRevision','revisionHistory'].map(field=>[field,clone(lens[field])]));
+        let truncated=false,archive;
+        do {
+          const core={schema:LENS_HANDOFF_ARCHIVE_SCHEMA,lensId:lens.lensId,sourceScopeKey:context.scope.scopeKey,
+            sourceChatId:context.scope.chatId,sourceChatName:compact(context.chat?.name || '',300),activeWorldlineId:worldlineId,
+            lensDefinition:definition,records:current,recordCount:current.length,itemCount:current.reduce((n,row)=>n+row.items.length,0),
+            recordsDigest:digest(current),truncated};
+          archive={...core,archiveDigest:digest(core)};
+          if (new TextEncoder().encode(JSON.stringify(archive)).length<=LENS_HANDOFF_MAX_BYTES)break;
+          current.pop();truncated=true;
+        } while(current.length);
+        if(!current.length)throw lensError('LENS_ARCHIVE_TOO_LARGE','렌즈 기록 하나가 승계 크기 제한을 넘습니다.');
+        validateLensHandoffArchive(archive);
+        const ref={schema:LENS_HANDOFF_REF_SCHEMA,archiveKey:lensArchiveKey(transferId,lens.lensId),
+          ...Object.fromEntries(['archiveDigest','lensId','sourceScopeKey','activeWorldlineId','recordCount','itemCount','truncated'].map(field=>[field,archive[field]])),sessionEpoch:0};
+        archives.push({ref,archive});
+      }
+      return archives;
+    };
+    const storeLensHandoffArchives = async (rows, scope, writtenKeys=[], ownedValues=null) => {
+      for(const {ref,archive} of rows){
+        const previous=await storage.getVerifiedJson(ref.archiveKey,scope,null);
+        if(previous&&digest(previous)!==digest(archive))throw lensError('LENS_ARCHIVE_IMMUTABLE_CONFLICT','기존 렌즈 승계 보관과 충돌합니다.');
+        if(!previous){writtenKeys.push(ref.archiveKey);ownedValues?.set(ref.archiveKey,digest(archive));await storage.setVerifiedJson(ref.archiveKey,archive,scope);}
+        await readLensHandoffArchive(ref,scope);
+      }
+    };
+    const lensPurgeCleanupJobs=new Map();
+    const schedulePurgedLensRefCleanup = (scope,purgedIds) => {
+      if(!purgedIds.length||state.lensHandoffFreezeDepth>0||lensPurgeCleanupJobs.has(scope.scopeKey))return;
+      const task=enqueue(scope.scopeKey,()=>withLensScopeLock(scope.scopeKey,async()=>{
+        const manifest=await loadManifest(scope,0),refs=asArray(manifest.inheritedLensArchives);
+        if(!refs.some(ref=>purgedIds.includes(ref.lensId)))return;
+        manifest.inheritedLensArchives=refs.filter(ref=>!purgedIds.includes(ref.lensId));
+        const stats=lensArchiveStats(manifest.inheritedLensArchives);
+        if(manifest.lastSessionHandoff)Object.assign(manifest.lastSessionHandoff,stats);
+        if(manifest.nativeChatCopy)Object.assign(manifest.nativeChatCopy,stats,{verifiedLensArchives:stats.expectedLensArchives,verifiedLensRecords:stats.expectedLensRecords,verifiedLensRefsDigest:stats.lensArchiveRefsDigest});
+        await saveManifest(scope,manifest);
+        for(const ref of refs.filter(ref=>purgedIds.includes(ref.lensId))){
+          if(String(ref.archiveKey||'').startsWith(`${PREFIX}:lens-handoff-archive:`)&&ref.archiveKey.endsWith(`:${ref.lensId}`))await storage.remove(ref.archiveKey);
+        }
+      }));
+      lensPurgeCleanupJobs.set(scope.scopeKey,task);
+      void task.catch(error=>warn('LIBRA deferred purged lens refs cleanup failed',error)).finally(()=>lensPurgeCleanupJobs.delete(scope.scopeKey));
+    };
+    const loadInheritedLensArchives = async (scope, manifest = null, {strict=false}={}) => {
+      const registry=await readLensRegistry({force:true});
+      const current=manifest || await loadManifest(scope,0), rows=[],unavailable=[];
+      if(!strict && asArray(current.inheritedLensArchives).some(ref=>registry.purgedLensIds.includes(ref?.lensId)))schedulePurgedLensRefCleanup(scope,registry.purgedLensIds);
+      const seen=new Set();
+      for(const ref of asArray(current.inheritedLensArchives)){
+        if(registry.purgedLensIds.includes(ref?.lensId)||!registry.lenses.some(lens=>lens.lensId===ref?.lensId))continue;
+        const identity=String(ref?.archiveKey || '');
+        if(seen.has(identity))continue;seen.add(identity);
+        try{rows.push({ref:clone(ref),archive:await readLensHandoffArchive(ref,scope)});}
+        catch(error){if(strict)throw error;unavailable.push({lensId:string(ref?.lensId||''),archiveKey:identity,reasonCode:'inherited_archive_unavailable',reasonLabel:'이전 대화 기록을 읽지 못함'});}
+      }
+      return {rows,unavailable};
     };
 
     // ---- prompt & provider ---------------------------------------------------------------------
@@ -76330,9 +76654,43 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       : admission.rejectedItems.length ? 'rejected_all'
       : 'empty';
 
+    const lensHandoffLeases=new Map();
+    const releaseLensHandoffLease = transferId => {
+      const lease=lensHandoffLeases.get(transferId);if(!lease)return;
+      clearTimeout(lease.timer);lensHandoffLeases.delete(transferId);
+      state.lensHandoffFreezeDepth=Math.max(0,state.lensHandoffFreezeDepth-1);
+      if(!state.disposed&&!state.lensHandoffFreezeDepth&&lensQueue.length)void kickLensQueue();
+    };
+    const holdLensHandoffLease = transferId => {
+      if(lensHandoffLeases.has(transferId))return;
+      const timer=setTimeout(()=>{void rollbackLensSessionHandoff({transferId}).catch(error=>warn('LIBRA expired lens handoff cleanup failed',error)).finally(()=>releaseLensHandoffLease(transferId));},LIBRA_SESSION_HANDOFF_TTL_MS);
+      timer?.unref?.();lensHandoffLeases.set(transferId,{timer});
+    };
+    const disposeLensQueue = () => {
+      lensWriteGeneration++;lensQueue.splice(0);
+      for(const run of lensActiveRuns)run.controller.abort();
+      for(const transferId of [...lensHandoffLeases.keys()])releaseLensHandoffLease(transferId);
+      for(const resolve of lensQueueIdleWaiters.splice(0))resolve(false);
+    };
+    const lensActiveRuns = new Set();
+    let lensWriteGeneration = 0;
+    const settleLensesBeforeHandoff = async () => {
+      // Freeze scheduling before waiting. A provider that ignores cancellation may finish late,
+      // but its generation cannot publish anything after the source snapshot is captured.
+      const runs=[...lensActiveRuns];
+      if(runs.length){
+        let timer;
+        const settled=await Promise.race([Promise.allSettled(runs.map(run=>run.promise)).then(()=>true),
+          new Promise(resolve=>{timer=setTimeout(()=>resolve(false),5000);})]);
+        clearTimeout(timer);
+        if(!settled){lensWriteGeneration++;for(const run of runs)run.controller.abort();}
+      }
+      await Promise.all([...lensScopeLocks.values()]);
+    };
+
     // Runs one lens over one turn range. `trialRun` evaluates through the real gate and returns the
     // result without writing anything. A run that admits nothing never replaces an existing record.
-    const runLensForRange = async (arg1 = {}, arg2 = {}) => {
+    const runLensForRangeImpl = async (arg1 = {}, arg2 = {}) => {
       const opts = typeof arg1 === 'string' ? { lensId: arg1, ...(arg2 || {}) } : { ...(arg1 || {}) };
       const trialRun = opts.trialRun === true;
       const trigger = string(opts.trigger || (trialRun ? 'trial' : 'manual_range'));
@@ -76431,7 +76789,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         schema: LENS_MEMORY_RECORD_SCHEMA,
         recordId: `lrec_${lens.lensId}_${digest([recordKeyValue, runId]).slice(0, 10)}`,
         recordKey: recordKeyValue, lensId: lens.lensId, lensNameSnapshot: lens.name,
-        instructionRevision: lens.instructionRevision, evidenceMode: lens.evidenceMode,
+        instructionRevision: lens.instructionRevision, instructionText:lens.instructionText, evidenceMode: lens.evidenceMode,
         scopeKey: token.scopeKey, worldlineId: token.worldlineId, turnRange: clone(token.turnRange),
         sourceRevisionId: token.sourceRevisionId, sourceDigest: token.sourceDigest,
         canonicalContextIncluded: Boolean(canonicalSummary), runId, createdAt: finishedAt,
@@ -76439,31 +76797,60 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       } : null;
       if (!trialRun && status !== 'stale_source_revision') {
         await withLensScopeLock(token.scopeKey, async () => {
+          const assertCurrent = async () => {
+            if(opts.writeGeneration!==lensWriteGeneration || opts.signal?.aborted)throw lensError('LENS_RUN_CANCELLED','승계 또는 취소로 렌즈 응답을 폐기했습니다.');
+            const saved=await readLensRegistry({force:true}), current=saved.lenses.find(row=>row.lensId===lens.lensId);
+            if(!current || current.instructionRevision!==lens.instructionRevision || (opts.requireActive===true && current.status!=='active'))throw lensError('LENS_DEFINITION_CHANGED','렌즈가 변경되거나 삭제되어 응답을 폐기했습니다.');
+            if(!(await verifyLensSourceToken(token)).ok)throw lensError('LENS_SOURCE_CHANGED','원문 변경으로 렌즈 응답을 폐기했습니다.');
+          };
+          await assertCurrent();
+          const prior=new Map(),written=new Map();
+          const write=async(storageKey,value)=>{
+            if(!prior.has(storageKey))prior.set(storageKey,await storage.getVerifiedJson(storageKey,scope,null));
+            await assertCurrent();written.set(storageKey,clone(value));
+            await storage.setVerifiedJson(storageKey,value,scope);await assertCurrent();
+          };
+          try {
           if (record) {
             const records = await loadLensRecordsMap(scope, lens.lensId);
             records[recordKeyValue] = record;
-            await saveLensRecordsMap(scope, lens.lensId, records);
+            await write(key.lensRecords(scope,lens.lensId),{schema:'libra.lens_record_store.v1',scopeKey:scope.scopeKey,lensId:lens.lensId,updatedAt:nowIso(),records:Object.fromEntries(Object.entries(records).sort((a,b)=>Number(b[1].turnRange.end)-Number(a[1].turnRange.end)).slice(0,LENS_RECORDS_MAX_PER_LENS))});
           } else if (existing) {
             run.keptPreviousRecord = true;
           }
           if (provider?.content) {
             const ring = await loadLensRawRing(scope, lens.lensId);
-            await saveLensRawRing(scope, lens.lensId, [{ runId, turnRange: clone(token.turnRange), createdAt: finishedAt, rawResponse: provider.content.slice(0, 32000) }, ...ring], registry.rawResponseRingLimit);
+            await write(key.lensRaw(scope,lens.lensId),{schema:'libra.lens_raw_store.v1',entries:[{runId,turnRange:clone(token.turnRange),createdAt:finishedAt,rawResponse:provider.content.slice(0,32000)},...ring].slice(0,registry.rawResponseRingLimit)});
           }
           const runs = await loadLensRunsList(scope, lens.lensId);
-          await saveLensRunsList(scope, lens.lensId, [run, ...runs]);
+          await write(key.lensRuns(scope,lens.lensId),{schema:'libra.lens_run_store.v1',runs:[run,...runs].slice(0,LENS_RUN_LOG_MAX)});
           const head = await loadLensScopeHead(scope);
           const entry = isPlainObject(head.lenses[lens.lensId]) ? head.lenses[lens.lensId] : {};
           const analyzed = isPlainObject(entry.lastAnalyzedEnd) ? entry.lastAnalyzedEnd : {};
           if (status !== 'failed') analyzed[token.worldlineId] = Math.max(Number(analyzed[token.worldlineId] || 0), end);
           head.lenses[lens.lensId] = { ...entry, lastAnalyzedEnd: analyzed, lastRunAt: finishedAt, lastStatus: status };
-          await saveLensScopeHead(scope, head);
+          await write(key.lensHead(scope),{...head,updatedAt:nowIso()});
+          } catch(error) {
+            const failures=[];
+            for(const [storageKey,value] of [...written].reverse()){
+              try{
+                if(digest(await storage.getVerifiedJson(storageKey,scope,null))!==digest(value)){failures.push(storageKey);continue;}
+                const previous=prior.get(storageKey);
+                if(previous===null)await storage.remove(storageKey);else await storage.setVerifiedJson(storageKey,previous,scope);
+              }catch(_){failures.push(storageKey);}
+            }
+            if(failures.length)throw lensError('LENS_ROLLBACK_INCOMPLETE','렌즈 저장을 되돌리지 못했습니다. 저장 상태를 확인하세요.');
+            throw error;
+          }
         });
         scheduleGuiTraceRefresh();
-      } else if (!trialRun) {
+      } else if (!trialRun && opts.writeGeneration===lensWriteGeneration && !opts.signal?.aborted) {
         // A stale answer is never stored, but the run log still says why nothing changed.
         await withLensScopeLock(token.scopeKey, async () => {
+          const saved=await readLensRegistry({force:true});
+          if(!saved.lenses.some(row=>row.lensId===lens.lensId)||opts.writeGeneration!==lensWriteGeneration)return;
           const runs = await loadLensRunsList(scope, lens.lensId);
+          if(opts.writeGeneration!==lensWriteGeneration)return;
           await saveLensRunsList(scope, lens.lensId, [run, ...runs]);
         });
       }
@@ -76475,6 +76862,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         rawResponse: trialRun ? compact(provider?.content || '', 32000) : undefined
       });
     };
+    const runLensForRange = (arg1={},arg2={}) => {
+      if(state.lensHandoffFreezeDepth>0)return Promise.reject(lensError('LENS_HANDOFF_FROZEN','승계 준비 중입니다. 완료 후 렌즈를 다시 실행하세요.'));
+      const options=typeof arg1==='string'?{lensId:arg1,...arg2}:{...arg1},controller=new AbortController();
+      const abort=()=>controller.abort();options.signal?.addEventListener?.('abort',abort,{once:true});
+      if(options.signal?.aborted)controller.abort();
+      const run={controller,promise:runLensForRangeImpl({...options,signal:controller.signal,writeGeneration:lensWriteGeneration})};
+      lensActiveRuns.add(run);
+      const settled=()=>{lensActiveRuns.delete(run);options.signal?.removeEventListener?.('abort',abort);};
+      void run.promise.then(settled,settled);return run.promise;
+    };
     const runLensForTurnRange = runLensForRange;
     const trialRunLens = async ({ draftLens, startTurn = 0, endTurn = 0 } = {}) => await runLensForRange({ draftLens, startTurn, endTurn, trialRun: true, trigger: 'trial' });
 
@@ -76485,7 +76882,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     let lensQueueRunning = null;
     const lensQueueIdleWaiters = [];
     const drainLensQueue = async () => {
-      while (lensQueue.length) {
+      while (lensQueue.length && state.lensHandoffFreezeDepth===0) {
         const job = lensQueue.shift();
         try {
           const current = await resolveContext();
@@ -76500,10 +76897,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
     };
     const kickLensQueue = () => {
-      if (lensQueueRunning) return lensQueueRunning;
+      if (lensQueueRunning || state.lensHandoffFreezeDepth>0) return lensQueueRunning;
       lensQueueRunning = drainLensQueue().finally(() => {
         lensQueueRunning = null;
-        if (lensQueue.length) { kickLensQueue(); return; }
+        if (lensQueue.length) { if(state.lensHandoffFreezeDepth===0)kickLensQueue(); return; }
         for (const resolve of lensQueueIdleWaiters.splice(0)) resolve();
       });
       return lensQueueRunning;
@@ -76562,7 +76959,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (expectedScopeKey && string(scope?.scopeKey || '') !== string(expectedScopeKey)) throw lensError('LENS_READER_SCOPE_CHANGED', '대화가 바뀌었습니다. 다시 불러오세요.');
       const pairs = buildPairs(context.chat, scope.scopeKey);
       const pairByTurn = new Map(pairs.map(pair => [Number(pair.turn), pair]));
-      const activeWorldlineId = await lensActiveWorldlineId(scope);
+      const lensMeta=await loadStateWorldlineMeta(scope),activeWorldlineId=string(lensMeta?.activeWorldlineId||'main');
+      const cutoff=lensMeta?.worldlines?.[activeWorldlineId]?.cutoffTurn;
       const registry = await readLensRegistry();
       const head = await loadLensScopeHead(scope);
       const revisionByRange = new Map();
@@ -76588,7 +76986,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const recordList = Object.values(records).sort((a, b) => Number(b.turnRange?.end || 0) - Number(a.turnRange?.end || 0));
         let itemCount = 0;
         for (const record of recordList) {
-          const sourceCurrent = record.worldlineId === activeWorldlineId && currentRevision(record.turnRange) === record.sourceRevisionId;
+          const sourceCurrent = (cutoff==null||Number(record.turnRange?.end)<=Number(cutoff)) && record.worldlineId === activeWorldlineId && currentRevision(record.turnRange) === record.sourceRevisionId;
           const instructionCurrent = record.instructionRevision === lens.instructionRevision;
           const historical = lens.revisionHistory.find(entry => entry.revision === record.instructionRevision) || null;
           itemCount += asArray(record.items).length;
@@ -76608,7 +77006,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
               turnRange: clone(record.turnRange), worldlineId: record.worldlineId, createdAt: record.createdAt,
               model: record.model || '', presetName: record.presetName || '', canonicalContextIncluded: record.canonicalContextIncluded === true,
               runId: record.runId, instructionRevision: record.instructionRevision, sourceCurrent, instructionCurrent,
-              recordInstructionText: historical?.instructionText || '', currentInstructionText: lens.instructionText
+              recordInstructionText: record.instructionText || historical?.instructionText || '', currentInstructionText: lens.instructionText
             });
           }
         }
@@ -76619,11 +77017,26 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           recordCount: recordList.length, itemCount, runs: runRows.slice(0, 20), rawRetainedCount: ring.length
         };
       }
+      const inherited=await loadInheritedLensArchives(scope);
+      for(const {ref,archive} of inherited.rows){
+        const lens=registry.lenses.find(row=>row.lensId===ref.lensId);if(!lens)continue;
+        const stats=lenses[lens.lensId];if(stats){stats.inheritedRecordCount=(stats.inheritedRecordCount||0)+archive.recordCount;stats.inheritedItemCount=(stats.inheritedItemCount||0)+archive.itemCount;}
+        for(const record of archive.records)for(const item of record.items)memories.push({
+          ...clone(item),id:`inherited::${ref.archiveKey}::${record.recordKey}::${item.itemId}`,
+          lensId:lens.lensId,lensName:lens.name,lensStatus:lens.status,recordKey:record.recordKey,recordId:record.recordId,
+          inherited:true,readOnly:true,archiveKey:ref.archiveKey,sourceScopeKey:ref.sourceScopeKey,sessionEpoch:ref.sessionEpoch,
+          sourceChatName:archive.sourceChatName||archive.sourceChatId||ref.sourceScopeKey,sourceTurns:clone(record.sourceTurns||{}),
+          turnRange:clone(record.turnRange),worldlineId:record.worldlineId,createdAt:record.createdAt,model:record.model||'',presetName:record.presetName||'',
+          instructionRevision:record.instructionRevision,sourceCurrent:true,instructionCurrent:record.instructionRevision===lens.instructionRevision,
+          recordInstructionText:record.instructionText||'',currentInstructionText:lens.instructionText,runId:record.runId,
+          canonicalContextIncluded:record.canonicalContextIncluded===true
+        });
+      }
       memories.sort((a, b) => Number(b.turnRange?.end || 0) - Number(a.turnRange?.end || 0) || Number(b.createdAt || 0) - Number(a.createdAt || 0));
       runs.sort((a, b) => Number(b.finishedAt || b.startedAt || 0) - Number(a.finishedAt || a.startedAt || 0));
       return clone({
         schema: 'libra.lens_scope_inspection.v2', scopeKey: scope.scopeKey, activeWorldlineId, pairCount: pairs.length,
-        latestCompletedRange: lensLatestCompletedRange(pairs.length), registry, lenses, memories, runs, sourceTurns,
+        latestCompletedRange: lensLatestCompletedRange(pairs.length), registry, lenses, memories, runs, sourceTurns, inheritedArchiveUnavailable:inherited.unavailable,
         queue: lensQueue.filter(job => job.scopeKey === scope.scopeKey).map(job => ({ lensId: job.lensId, startTurn: job.startTurn, endTurn: job.endTurn })),
         running: Boolean(lensQueueRunning)
       });
@@ -76646,6 +77059,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         targetRecord = targetRecord || recordPart;
         targetItem = targetItem || itemParts.join('::');
       }
+      if (String(memoryId).startsWith('inherited::'))return {ok:false,reason:'inherited_lens_read_only',deletedCount:0};
       if (!targetLens) return { ok: false, deletedCount: 0 };
       const context = await resolveContext();
       return await withLensScopeLock(context.scope.scopeKey, async () => {
@@ -76749,7 +77163,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const context = contextArg || options.context || await resolveContext();
       const queryBundle = options.queryBundle || options;
       const registry = await readLensRegistry();
-      const canonicalBudget = Math.max(0, Number(options.canonicalBudgetChars || options.maxChars || 4000));
+      const canonicalBudget = Math.max(0, Number(options.canonicalBudgetChars ?? options.maxChars ?? 4000));
       const budgetChars = Math.min(registry.recallMaxChars, Math.floor(canonicalBudget * registry.recallBudgetRatio));
       const empty = extra => ({ schema: 'libra.lens_recall_delivery.v2', enabled: false, budgetChars, usedChars: 0, renderedBlock: '', injectedItems: [], skippedCandidates: [], perLensBudgets: [], ...extra });
       if (registry.enabled === false) return empty({});
@@ -76768,13 +77182,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       const scope = context.scope;
       const pairs = buildPairs(context.chat, scope.scopeKey);
-      const worldlineId = await lensActiveWorldlineId(scope);
+      const lensMeta=await loadStateWorldlineMeta(scope),worldlineId=string(lensMeta?.activeWorldlineId||'main');
+      const cutoff=lensMeta?.worldlines?.[worldlineId]?.cutoffTurn;
       const digestByRange = new Map();
       const rangeDigest = range => {
         const rangeKey = `${range.start}-${range.end}`;
         if (!digestByRange.has(rangeKey)) {
           const batch = pairs.filter(pair => pair.turn >= range.start && pair.turn <= range.end);
-          digestByRange.set(rangeKey, batch.length === range.end - range.start + 1 ? sourceDigest(batch) : '');
+          digestByRange.set(rangeKey, batch.length === range.end - range.start + 1 ? {sourceDigest:sourceDigest(batch),sourceRevisionId:`lrev_${digest([scope.scopeKey,worldlineId,range.start,range.end,sourceDigest(batch),batch.map(pair=>completedTurnRevisionId(pair))]).slice(0,16)}`} : null);
         }
         return digestByRange.get(rangeKey);
       };
@@ -76784,34 +77199,37 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       // a longer input.
       const minOverlap = queryTokens.size >= 6 ? 2 : 1;
       const recordsByLens = await Promise.all(candidatesLenses.map(lens => loadLensRecordsMap(scope, lens.lensId).catch(() => ({}))));
+      const inherited=await loadInheritedLensArchives(scope);
+      for(const item of inherited.unavailable){const lens=candidatesLenses.find(row=>row.lensId===item.lensId);if(lens)skip(lens,null,null,'inherited_archive_unavailable');}
       const byLens = new Map();
       const seenText = new Set();
       for (const [index, lens] of candidatesLenses.entries()) {
         const records = Object.values(recordsByLens[index]).sort((a, b) => Number(b.turnRange?.end || 0) - Number(a.turnRange?.end || 0));
         const recentKeys = new Set(records.filter(record => record.worldlineId === worldlineId).slice(0, 2).map(record => record.recordKey));
+        const inheritedRecords=inherited.rows.filter(row=>row.ref.lensId===lens.lensId).flatMap(({ref,archive})=>archive.records.map(record=>({...record,inherited:true,archiveKey:ref.archiveKey,sessionEpoch:ref.sessionEpoch,sourceScopeKey:ref.sourceScopeKey})));
         const list = [];
-        for (const record of records) {
-          if (record.worldlineId !== worldlineId) continue;
-          if (rangeDigest(record.turnRange) !== record.sourceDigest) { for (const item of asArray(record.items)) skip(lens, item, record, 'stale_source_revision'); continue; }
-          const recency = Math.min(0.25, (Number(record.turnRange?.end || 0) / Math.max(1, pairs.length)) * 0.25);
+        for (const record of [...records,...inheritedRecords]) {
+          if (!record.inherited && record.worldlineId !== worldlineId) continue;
+          if (!record.inherited && ((cutoff!=null&&Number(record.turnRange?.end)>Number(cutoff)) || rangeDigest(record.turnRange)?.sourceDigest !== record.sourceDigest || rangeDigest(record.turnRange)?.sourceRevisionId !== record.sourceRevisionId)) { for (const item of asArray(record.items)) skip(lens, item, record, 'stale_source_revision'); continue; }
+          const recency = record.inherited ? 0 : Math.min(0.25, (Number(record.turnRange?.end || 0) / Math.max(1, pairs.length)) * 0.25);
           for (const item of asArray(record.items)) {
             const textKey = canonicalEvidenceComparable(item.text);
             if (seenText.has(textKey)) continue;
             const itemTokens = tokenStream(`${item.label} ${item.text} ${item.quote || ''} ${Object.values(item.extra || {}).join(' ')}`);
             const overlap = new Set(itemTokens.filter(token => queryTokens.has(token))).size;
-            const recent = lens.recall.mode === 'recent' && recentKeys.has(record.recordKey);
+            const recent = !record.inherited && lens.recall.mode === 'recent' && recentKeys.has(record.recordKey);
             if (overlap < minOverlap && !recent) { skip(lens, item, record, 'below_score_floor'); continue; }
             seenText.add(textKey);
             const relevance = queryTokens.size ? Math.min(0.6, (overlap / Math.min(queryTokens.size, 8)) * 0.6) : 0;
             const score = Math.round(((item.evidenceLevel === 'quoted' ? 0.5 : 0.39) + relevance + recency + (record.instructionRevision === lens.instructionRevision ? 0.03 : 0)) * 1000) / 1000;
-            const tag = item.evidenceLevel === 'interpreted' ? `[lens:${lensSafeText(lens.name, 40)} · 해석]` : `[lens:${lensSafeText(lens.name, 40)}]`;
+            const tag = `[lens:${lensSafeText(lens.name,40)}${record.inherited?' · 이전 대화':''}${item.evidenceLevel==='interpreted'?' · 해석':''}]`;
             const quote = item.quote ? ` (원문: "${lensSafeText(item.quote, 120)}")` : '';
             const renderedLine = `- ${tag} (T${record.turnRange.start}–T${record.turnRange.end} · ${lensSafeText(item.label, 24)}) ${lensSafeText(item.text, 400)}${quote}`;
             list.push({ lensId: lens.lensId, lensName: lens.name, itemId: item.itemId, label: item.label, text: item.text, evidenceLevel: item.evidenceLevel,
-              turnRange: clone(record.turnRange), instructionRevision: record.instructionRevision, score, renderedLine, chars: renderedLine.length + 1, record });
+              turnRange: clone(record.turnRange), instructionRevision: record.instructionRevision, inherited:record.inherited===true,sourceScopeKey:record.sourceScopeKey||scope.scopeKey,archiveKey:record.archiveKey||'',score, renderedLine, chars: renderedLine.length + 1, record });
           }
         }
-        list.sort((a, b) => b.score - a.score || Number(b.turnRange.end) - Number(a.turnRange.end));
+        list.sort((a, b) => b.score - a.score || Number(a.inherited)-Number(b.inherited) || Number(b.turnRange.end) - Number(a.turnRange.end));
         if (list.length) byLens.set(lens.lensId, list);
       }
       const withCandidates = candidatesLenses.filter(lens => byLens.has(lens.lensId));
@@ -76856,8 +77274,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       loadLensRegistry: async () => await readLensRegistry({ force: true }),
       saveLensRegistry: async (value = {}) => await mutateLensRegistry(() => normalizeLensRegistry(value)),
       createLens, updateLens, setLensStatus, trashLens, restoreLens, purgeTrashedLensData,
-      evaluateLensCandidateItems, captureLensSourceToken, verifyLensSourceToken,
-      runLensForRange, runLensForTurnRange, trialRunLens, runScheduledLensesForCommittedBatch, waitForLensQueueIdle,
+      evaluateLensCandidateItems, captureLensSourceToken, verifyLensSourceToken, validateLensHandoffArchive,
+      runLensForRange, runLensForTurnRange, trialRunLens, runScheduledLensesForCommittedBatch, waitForLensQueueIdle, disposeLensQueue,
       inspectScopeLenses, getLensRawResponse, deleteLensMemories, draftLensWithAssistant, generateLensDefinitionFromDescription,
       recallLensMemories,
       PAIR_REVISION_CACHE_MAX_SCOPES, PAIR_REVISION_CACHE_MAX_ENTRIES_PER_SCOPE, PAIR_REVISION_CACHE_MAX_RETAINED_CHARS,
@@ -77094,7 +77512,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         return clone({ budget: canonicalProviderBudgetSnapshot(budget), errors });
       },
       loadStoryArc, rebuildStoryArc, setStoryArcDestination, clearStoryArc, ensureStoryArcForResponse, storyArcPromptBlock,
-      refreshSnapshot, exportCurrentScope, retraceCapabilities, inspectForRetrace, prepareSessionHandoff, adoptSessionHandoff, verifySessionHandoff, resolveTargetContextForHandoff, waitForTargetContextForHandoff, resolveStableScopeKey, ensureNativeChatCopyAdopted, locateNativeChatCopySource, deleteCurrentScope, retryFailed,
+      refreshSnapshot, exportCurrentScope, retraceCapabilities, inspectForRetrace, prepareSessionHandoff, adoptSessionHandoff, verifySessionHandoff, rollbackLensSessionHandoff, resolveTargetContextForHandoff, waitForTargetContextForHandoff, resolveStableScopeKey, ensureNativeChatCopyAdopted, locateNativeChatCopySource, deleteCurrentScope, retryFailed,
       listEmbeddingProviders: () => EmbeddingProviderRegistry.list(),
       getSnapshot: () => clone(state.snapshot),
       peekSnapshot: () => state.snapshot,
@@ -86280,11 +86698,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       guiEl('div', { class: 'lens-reader__head' }, [
         guiEl('div', {}, [
           guiEl('h2', { text: filterLensId === 'all' ? '렌즈 기억' : text(lenses.find(lens => lens.lensId === filterLensId)?.name || '렌즈 기억') }),
-          guiEl('p', { class: 'deck', text: `켜진 렌즈 ${lenses.filter(lens => lens.status === 'active').length}개 · 이 대화의 렌즈 기억 ${memories.length}개${stale ? ` · 원문이 바뀐 기록 ${stale}개` : ''}${oldInstruction ? ` · 이전 지침 기록 ${oldInstruction}개` : ''}` })
+          guiEl('p', { class: 'deck', text: `켜진 렌즈 ${lenses.filter(lens => lens.status === 'active').length}개 · 이 대화의 렌즈 기억 ${memories.filter(item=>!item.inherited).length}개 · 이전 대화 ${memories.filter(item=>item.inherited).length}개${stale ? ` · 원문이 바뀐 기록 ${stale}개` : ''}${oldInstruction ? ` · 이전 지침 기록 ${oldInstruction}개` : ''}` })
         ]),
         registry.enabled === false ? libraStatusBadge('렌즈 기능 꺼짐', 'warn') : null
       ]),
       guiEl('p', { class: 'hint', text: '렌즈 기억은 정본이 아닌 보조 메모입니다. 응답할 때 별도 예산으로 참고 메모로만 전달되고, 정본 기억과 충돌하면 정본이 우선합니다.' }),
+      guiAsArray(data.inheritedArchiveUnavailable).length ? guiEl('p',{class:'note note--warn',role:'status',text:'이전 대화 기록을 읽지 못함 · 무결성을 확인할 수 없는 보관은 표시·회상에서 제외했습니다.'}) : null,
       reader.error ? guiEl('div', { class: 'note note--danger', role: 'alert' }, [
         guiEl('p', { text: `렌즈 기록을 읽지 못했습니다: ${reader.error}` }),
         guiEl('button', { class: 'btn btn--sm', type: 'button', text: '다시 시도', onClick: refresh })
@@ -86293,14 +86712,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         guiEl('b', { text: '아직 렌즈가 없습니다' }),
         guiEl('p', { text: '떡밥·복선, 감정선, 말투 변화처럼 원하는 관점의 렌즈를 만들면 5턴마다 이곳에 메모가 쌓입니다.' }),
         guiEl('button', { class: 'btn btn--primary', type: 'button', text: '렌즈 만들기', onClick: () => { lensStudioState().view = 'create'; openApprovedPromptDialog(); } })
-      ]) : filtered.length ? guiEl('div', { class: 'stack lens-items' }, filtered.map(item => lensItemCard(item, {
-        memory: true, showLens: filterLensId === 'all',
+      ]) : filtered.length ? guiEl('div', { class:'stack lens-items' }, [
+        filtered.some(item=>!item.inherited) ? guiEl('section',{class:'stack',dataset:{lensCurrentGroup:'true'}},[
+          guiEl('h3',{text:'이 대화의 기록'}),...filtered.filter(item=>!item.inherited).map(item=>lensItemCard(item,{
+            memory:true,showLens:filterLensId==='all',
         onDelete: async () => {
           if (!(await confirmApprovedOperation(`이 렌즈 항목을 삭제할까요?\n${text(item.text).slice(0, 80)}`, { title: '렌즈 항목 삭제', target: item.label, kind: '삭제', cost: '모델 요청을 보내지 않습니다.', actionLabel: '삭제' }))) return;
           try { await LibraMemoryCore.deleteLensMemories({ memoryId: item.id }); } catch (error) { guiSetStatus(text(error?.message || error), true, true); }
           await loadLensReaderData(true);
         }
-      }))) : guiEl('div', { class: 'empty' }, [
+          }))]) : null,
+        filtered.some(item=>item.inherited) ? guiEl('section',{class:'stack',dataset:{lensInheritedGroup:'true'}},[
+          guiEl('h3',{text:'이전 대화에서 넘어온 기록'}),...filtered.filter(item=>item.inherited).map(item=>lensItemCard(item,{memory:true,showLens:filterLensId==='all'}))]) : null
+      ].filter(Boolean)) : guiEl('div', { class: 'empty' }, [
         guiEl('b', { text: reader.loading ? '렌즈 기억을 불러오는 중…' : memories.length ? '조건에 맞는 항목이 없습니다.' : '아직 이 대화의 렌즈 기억이 없습니다.' }),
         reader.loading ? null : guiEl('p', { text: memories.length ? '필터나 검색어를 바꿔 보세요.' : '켜진 렌즈는 다음 5턴이 정본으로 저장될 때 자동으로 분석합니다. 왼쪽에서 구간을 골라 바로 분석할 수도 있습니다.' })
       ].filter(Boolean))
@@ -87992,6 +88416,7 @@ advanced
       : libraStatusBadge('해석', 'warn');
     const extraEntries = Object.entries(item.extra || {});
     const meta = [
+      item.inherited ? libraStatusBadge('이전 대화','info') : null,
       options.showLens ? guiEl('span', { class: 'lens-chip', text: text(item.lensName || '') }) : null,
       item.turnRange ? guiEl('span', { class: 'lens-meta', text: lensRangeLabel(item.turnRange) }) : null,
       guiEl('span', { class: 'lens-label', text: text(item.label || '기록') })
@@ -88003,16 +88428,18 @@ advanced
     const provenance = memory ? guiLazyDetails({ class: 'fold lens-prov' }, guiEl('summary', { text: '근거 · 출처 보기' }), () => [guiEl('div', { class: 'fold__body stack stack--sm' }, [
       ...guiAsArray(item.refs).map(ref => guiEl('div', { class: 'lens-ref' }, [
         guiEl('span', { class: 'lens-meta', text: `${/-u$/.test(ref) ? '사용자' : 'AI 응답'} · ${String(ref).toUpperCase()}` }),
-        Gui.lensReader?.data?.sourceTurns?.[ref]
-          ? lensSourceExcerpt(Gui.lensReader.data.sourceTurns[ref], ref === item.quoteRef ? item.quote : '')
+        (item.inherited?item.sourceTurns?.[ref]:Gui.lensReader?.data?.sourceTurns?.[ref])
+          ? lensSourceExcerpt(item.inherited?item.sourceTurns[ref]:Gui.lensReader.data.sourceTurns[ref], ref === item.quoteRef ? item.quote : '')
           : guiEl('p', { class: 'hint', text: item.sourceCurrent === false ? '원문이 바뀌어 이 근거를 다시 확인할 수 없습니다.' : '원문을 불러오지 못했습니다.' })
       ])),
       guiEl('dl', { class: 'kv' }, [
+        ['출처',item.inherited?`이전 대화 · ${item.sourceChatName||item.sourceScopeKey}`:'현재 대화'],
         ['생성', `${libraFormatTime(item.createdAt)}`],
         ['모델', [item.presetName ? presetDisplayName(item.presetName) : '정본 분석 연결', item.model].filter(Boolean).join(' · ')],
         ['정본 참고', item.canonicalContextIncluded ? '포함' : '포함 안 함'],
         ['지침 버전', `${text(item.instructionRevision)}${item.instructionCurrent === false ? ' (현재 지침과 다름)' : ' (현재 지침)'}`]
       ].flatMap(([k, v]) => [guiEl('dt', { text: k }), guiEl('dd', { text: v || '-' })])),
+      item.instructionCurrent===false && !item.recordInstructionText ? guiEl('p',{class:'hint',text:'이 기록의 원 지침은 보관 이력이 없어 비교할 수 없습니다.'}) : null,
       item.instructionCurrent === false && item.recordInstructionText ? guiEl('div', { class: 'stack stack--sm' }, [
         guiEl('b', { text: '이 기록을 만든 지침과 현재 지침의 차이' }),
         lensLineDiff(item.recordInstructionText, item.currentInstructionText)
@@ -88024,9 +88451,9 @@ advanced
       item.quote ? guiEl('blockquote', { class: 'lens-quote' }, [guiEl('span', { text: `“${text(item.quote)}”` }), guiEl('small', { text: /-u$/.test(item.quoteRef || '') ? '사용자 원문' : 'AI 응답 원문' })])
         : item.basis ? guiEl('p', { class: 'lens-basis' }, [guiEl('b', { text: '해석 근거' }), guiEl('span', { text: text(item.basis) })]) : null,
       extraEntries.length ? guiEl('div', { class: 'lens-extra', 'aria-label': '추가 값' }, extraEntries.map(([k, v]) => guiEl('span', { class: 'lens-extra__pair' }, [guiEl('b', { text: `${k} ` }), document.createTextNode(Array.isArray(v) ? v.join(', ') : String(v))]))) : null,
-      states.length || (memory && options.onDelete) ? guiEl('footer', { class: 'lens-item__foot' }, [
+      states.length || (memory && !item.inherited && options.onDelete) ? guiEl('footer', { class: 'lens-item__foot' }, [
         guiEl('div', { class: 'lens-item__states' }, states),
-        memory && options.onDelete ? guiEl('button', { class: 'btn btn--sm btn--ghost lens-danger', type: 'button', text: '삭제', 'aria-label': `${text(item.label)} 항목 삭제`, onClick: options.onDelete }) : null
+        memory && !item.inherited && options.onDelete ? guiEl('button', { class: 'btn btn--sm btn--ghost lens-danger', type: 'button', text: '삭제', 'aria-label': `${text(item.label)} 항목 삭제`, onClick: options.onDelete }) : null
       ].filter(Boolean)) : null,
       provenance
     ].filter(Boolean));
@@ -88141,7 +88568,7 @@ advanced
       guiEl('div', { class: 'lens-card__chips' }, [lensEvidenceLabel(lens.evidenceMode), lensCadenceLabel(lens), lensRecallLabel(lens), lens.canonicalContext ? '정본 참고' : '']
         .filter(Boolean).map(label => guiEl('span', { class: 'chip', text: label }))),
       guiEl('p', { class: 'lens-card__stat' }, [
-        guiEl('b', { text: stats ? `이 대화 기록 ${Number(stats.itemCount || 0)}개` : '이 대화 기록 -' }),
+        guiEl('b', { text: stats ? `이 대화 기록 ${Number(stats.itemCount || 0)}개 · 이전 대화 ${Number(stats.inheritedItemCount||0)}개` : '이 대화 기록 -' }),
         guiEl('span', { text: queued.length ? ` · 분석 대기 ${queued.map(job => lensRangeLabel({ start: job.startTurn, end: job.endTurn })).join(', ')}`
           : lastRun ? ` · 마지막 실행 ${lensRangeLabel(lastRun.turnRange)} ${lastRun.statusLabel || ''} ${lensRelativeTime(lastRun.finishedAt)}` : ' · 이 대화에서는 아직 실행 전' })
       ]),
@@ -90328,6 +90755,7 @@ advanced
     cancelResponseConsumer(group='input_writer') {return cancelConsumerOperation(group);},
     getRetraceCapabilities() { return LibraMemoryCore.retraceCapabilities(); },
     async inspectForRetrace(options = {}) { return await LibraMemoryCore.inspectForRetrace(options); },
+    async rollbackLensSessionHandoff(options = {}) { return await LibraMemoryCore.rollbackLensSessionHandoff(options); },
     async prepareSessionHandoff(options = {}) { return await LibraMemoryCore.prepareSessionHandoff(options); },
     async adoptSessionHandoff(options = {}) { return await LibraMemoryCore.adoptSessionHandoff(options); },
     async verifySessionHandoff(options = {}) { return await LibraMemoryCore.verifySessionHandoff(options); },
@@ -90766,7 +91194,7 @@ advanced
       let error = '';
       let errorCode = '';
       try {
-        const memorySuiteHandoffAction = ['prepare_session_handoff', 'adopt_session_handoff', 'verify_session_handoff'].includes(action);
+        const memorySuiteHandoffAction = ['prepare_session_handoff', 'adopt_session_handoff', 'verify_session_handoff', 'rollback_lens_session_handoff'].includes(action);
         const memorySuiteBefore = memorySuiteHandoffAction
           ? await MemorySuiteStorageBridge.ensureHandoffReady({ phase: `libra_before_${action}` })
           : null;
@@ -90803,6 +91231,7 @@ advanced
         else if (action === 'memory_suite_prepare_server_scope_delete') result = request.payload?.kind === 'registry_only_shell'
           ? await prepareVerifiedLibraRegistryShellDeletion(request.payload || {})
           : await MemorySuiteStorageBridge.prepareServerScopeDeletion(request.payload || {});
+        else if (action === 'rollback_lens_session_handoff') result = await LibraMemoryCore.rollbackLensSessionHandoff(request.payload || {});
         else if (action === 'prepare_session_handoff') result = await LibraMemoryCore.prepareSessionHandoff(request.payload || {});
         else if (action === 'adopt_session_handoff') result = await LibraMemoryCore.adoptSessionHandoff(request.payload || {});
         else if (action === 'verify_session_handoff') result = await LibraMemoryCore.verifySessionHandoff(request.payload || {});
@@ -91105,6 +91534,7 @@ advanced
       // Retire the runtime before touching host APIs. Any failed/unavailable removal then
       // leaves only inert callbacks, and local timers cannot repopulate UI or storage.
       LibraMemoryCore.state.disposed = true;
+      LibraMemoryCore.disposeLensQueue();
       void stopLibraAttention();
       LibraMemoryCore.readonlySourceContext.dispose();
       LibraMemoryCore.state.memoryGraphPages?.dispose();
@@ -91792,7 +92222,7 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       const currentChat = textValue(scope?.chatId || scope?.canonicalChatId);
       return !!storedCharacter && !!storedChat && storedCharacter === currentCharacter && storedChat === currentChat;
     };
-    const allowedSharedDependencyKey = key => /^(?:libra:v1:shared-archive:|libra:v1:micro-handoff-archive:|libra:v1:scope:archive:[^:]+:source-evidence:v1:|libra:v1:local-vector:)/.test(textValue(key));
+    const allowedSharedDependencyKey = key => /^(?:libra:v1:shared-archive:|libra:v1:micro-handoff-archive:|libra:v1:lens-handoff-archive:|libra:v1:scope:archive:[^:]+:source-evidence:v1:|libra:v1:local-vector:)/.test(textValue(key));
     const collectPotentialReferences = value => {
       const refs = [];
       const seen = new WeakSet();

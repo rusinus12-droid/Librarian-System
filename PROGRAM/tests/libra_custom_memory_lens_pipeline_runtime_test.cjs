@@ -33,7 +33,10 @@ const results = [];
       return { type: 'success', result: JSON.stringify(f.control.artifact) };
     };
 
-    const job = await Promise.race([f.run(), new Promise((_, reject) => setTimeout(() => reject(new Error('canonical job waited for the lens call')), 60000))]);
+    let deadline;
+    let job;
+    try{job=await Promise.race([f.run(),new Promise((_,reject)=>{deadline=setTimeout(()=>reject(new Error('canonical job waited for the lens call')),60000);})]);}
+    finally{clearTimeout(deadline);}
     assert.equal(job.completed, 1, 'the canonical job completes while the lens call is still pending');
     results.push('a pending lens call does not hold the canonical job');
 

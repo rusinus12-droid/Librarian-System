@@ -1,6 +1,6 @@
 # LIBRA lens memory: next-session handoff (design, 2026-10-20)
 
-Status: **design only, not implemented.** It extends `LIBRA_LENS_MEMORY_DESIGN_20261020.md`.
+Status: **implemented on `feature/custom-memory-lenses` (LIBRA 2.3.181 / RE:TRACE 1.9.90).** It extends `LIBRA_LENS_MEMORY_DESIGN_20261020.md`.
 
 ## Problem
 
@@ -179,3 +179,42 @@ carries the source's inherited lens archives along. This is phase 2 below.
   the handoff stays in the archive. That is intended: the handoff is a snapshot.
 - **Contract version.** Raising the handoff contract version forces RE:TRACE and LIBRA to update
   together.
+
+## Implementation and validation (2026-10-20)
+
+All three phases are connected through the actual owner APIs. Archives use the schemas above and a
+1 MiB UTF-8 limit per lens: newest complete records are retained, with `truncated` on the archive and
+ref. Inherited archives use the same digest/count validation for handoff and native copy. Native-copy
+completeness is version 6; immutable-source handoff is `libra.handoff_immutable_source_lenses.v2`.
+
+- Preparation waits up to five seconds for running lens jobs. Unsettled jobs lose publication
+  authority and receive cancellation. A transfer lease keeps queued jobs frozen until adoption,
+  cancellation, or package expiry, so they cannot invalidate the package between prepare and adopt.
+- Lens writes recheck the live source and definition inside the scope lock and after durable
+  readback. A failed publication restores only values still owned by that publication. A purged lens
+  id cannot be recreated by an in-flight response or an imported old registry.
+- The successor reader groups inherited cards separately, keeps them read-only, and reads excerpts
+  and instruction diffs from the archive rather than borrowing same-numbered live turns. Inherited
+  candidates never use recent-mode eligibility or canonical budget. Corrupt archives report the
+  named skip reason without blocking canonical recall.
+- Permanent deletion removes archives and manifest refs across known scopes. Tombstones persist;
+  publication/rollback already in progress settles before deletion, and removal is read back before
+  success. Late copies are hidden immediately and cleaned when a successor reads its lens archive list.
+- `LIBRA.rollbackLensSessionHandoff({transferId,targetChatId})` is the lens-only rollback step,
+  available through RE:TRACE's `rollbackLibraLensHandoff`. It removes inherited lens refs and
+  unreferenced archives created by this transfer, preserving canonical/Micro/State data. Omitting
+  `targetChatId` cancels a prepared, unadopted transfer. This adds the lens rollback component; it
+  does not introduce a general undo of the other owners' completed handoffs.
+- Plugin-only handoff remains required. Native copy and lens purge also use verified mirror and
+  server-only storage. Portable export follows the inherited archive dependencies.
+
+Validation sources: `libra_lens_handoff_runtime_test.cjs`, `libra_lens_handoff_server_test.cjs`,
+`retrace_lens_handoff_public_test.cjs`, and `browser/libra_lens_handoff_browser_test.cjs`. They cover
+real owner writes, HTTP/SQLite storage, the five-peer RE:TRACE UI transition and fresh-runtime
+readback, plus read-only cards/provenance/diffs at 1280 and 390 px. Provider boundaries are controlled
+fixtures; these checks do not establish live model quality.
+
+Historical limitation: notes written before instruction snapshots were stored cannot recover an
+already-evicted original instruction. They retain their revision badge and explicitly report that
+the original text is unavailable; no replacement text or diff is fabricated. New records store the
+instruction text used for their run.

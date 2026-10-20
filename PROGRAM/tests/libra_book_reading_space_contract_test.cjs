@@ -15,9 +15,17 @@ const desk = between('const buildApprovedMockupDesk =', 'const buildApprovedMock
 assert.match(desk, /class: 'spread'/);
 assert.match(desk, /class: 'leaf'/);
 assert.match(desk, /class: 'anno anno--final'/);
-assert.match(desk, /LibraMemoryCore\.getLastRecall\(\)/);
+assert.match(desk, /bookFinalDeliveryView\(\)/);
 assert.match(desk, /worldManagerSnapshotView\(\)/);
-assert.match(desk, /deliveryCurrent/);
+assert.match(desk, /const used = finalView\.rows/);
+assert.match(desk, /finalView\.status === 'verified'/);
+const receipt = between('const bookFinalDeliveryView =', 'const openBookFinalEvidenceDialog =');
+assert.match(receipt, /LibraMemoryCore\.getLastRecallViewer\(\)/);
+assert.match(receipt, /delivery\.scopeKey !== binding\.scopeKey/);
+assert.match(receipt, /worldline !== binding\.worldlineId/);
+assert.match(receipt, /rows\.filter\(row => row\.injected === true\)/);
+assert.doesNotMatch(receipt, /LibraMemoryCore\.getLastRecall\(\)/,
+  'an older successful selection must not replace the last request delivery receipt');
 assert.doesNotMatch(desk, /북쪽 정원|은색 열쇠|M-25|1,248/,
   'desk content must come from the current product snapshot and delivery receipt');
 
