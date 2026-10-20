@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.177
-//@version 2.3.177
+//@display-name LIBRA v2.3.178
+//@version 2.3.178
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1558,7 +1558,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.177';
+  const PLUGIN_VERSION = '2.3.178';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -1894,7 +1894,7 @@ function __libraNarrativeStripPatch(value) {
     label: '인풋 작성 도우미',
     description: '현재 입력의 핵심 의도와 선택은 유지하면서 선택한 행동 주체에 맞게 입력 전체를 다시 구성합니다.'
   });
-  const USER_INTENT_OOC_STAGE_DEF = Object.freeze({ id: USER_INTENT_OOC_STAGE_ID, label: '창작 지침 OOC', description: '대상 단계를 선택하고 OOC 대화로 해당 단계의 창작 지침을 작성하는 설정 에이전트입니다.' });
+  const USER_INTENT_OOC_STAGE_DEF = Object.freeze({ id: USER_INTENT_OOC_STAGE_ID, label: '기억 지침 OOC', description: 'Prompt Studio에서 OOC 대화로 기억 분석 지침을 만드는 설정 에이전트입니다.' });
   const STORY_ARC_STAGE_DEF = Object.freeze({ id: STORY_ARC_STAGE_ID, label: 'Story Arc Director', description: '5턴 정본을 바탕으로 현재 서사 상태와 다음 5턴의 비강제 soft route를 관리하는 선택적 정밀화 단계입니다.' });
 
   const CONFIGURABLE_STAGE_DEFS = Object.freeze([INPUT_ASSIST_STAGE_DEF, ...BEFORE_STAGE_DEFS, USER_INTENT_OOC_STAGE_DEF]);
@@ -13886,7 +13886,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     '[OUTPUT CONTRACT REASSERTION — outranks every analysis-profile instruction above]',
     '- Return exactly one JSON object as the canonical artifact contract defines: same schema, field shapes and IDs.',
     '- Copy evidence quotes exactly from the source and keep names and quoted text in their original language.',
-    '- Certainty, time role and State bindings follow the source evidence only; profile text may change emphasis and selection, never these rules or the output format.'
+    '- Certainty, time role and State bindings follow the source evidence only; profile text may change emphasis and selection, never these rules or the output format.',
+    '- Use only the contract vocabulary (claim kinds, domains, entity types, certainty and time roles, relationship dimensions). Information the profile asks for that has no field goes into the fact text of the closest existing kind; never add fields or new kinds, and keep relationship values qualitative.'
   ].join('\n');
   const librarianProfileIsCustomized = compiled => (compiled?.provenance?.profileName || PROMPT_PROFILE_DEFAULT_NAME) !== PROMPT_PROFILE_DEFAULT_NAME || compiled?.provenance?.customAddendumApplied === true;
   // The exact system prompt the Librarian request sends; the Prompt Studio preview uses it too.
@@ -58404,6 +58405,106 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     };
     // Provider admission is tolerant; stored artifacts and manual patches still use
     // the strict validator below. No generated value or source authority is invented.
+    // Custom analysis instructions (Prompt Studio, the Librarian addendum, OOC guidance) often make
+    // the model write contract vocabulary in Korean or in its own words: certainty "확정", entity
+    // type "인물", a relationship axis "호감도", a new claim kind "emotion", or the whole object
+    // wrapped once. Each of those used to reject the record, and with it every fact that pointed
+    // at it, so the memory and people/State viewers lost data. Only VOCABULARY is mapped here, to
+    // the value the contract already names; evidence, references, IDs and every later validation
+    // are unchanged. Every change is recorded in the admission report.
+    const UNIFIED_VOCABULARY = Object.freeze({
+      certainty: { confirmed: ['확정','확실','확인','사실','명확','certain','definite','true','yes','fact'], uncertain: ['불확실','불명확','추정','미확정','아마','possible','probable','likely','maybe','unsure'], conflict: ['충돌','모순','상충','contradiction','contradictory','conflicting'], unknown: ['알 수 없음','알수없음','모름','미상','불명','unclear','n/a'] },
+      temporalRole: { current_sequence: ['현재','지금','이번','이번 장면','현재 장면','current','present','now','current_scene','ongoing','current sequence'], historical: ['과거','이전','배경','history','past','background','prior'], flashback: ['회상','플래시백','기억 속','memory'], reported: ['전언','보고','소문','전해 들음','reported_speech','hearsay','rumor'], hypothetical: ['가정','가상','만약','상상','hypothesis','imagined','if'], uncertain: ['불확실','미확정','시점 불명','unknown_time'] },
+      entityType: { person: ['인물','사람','캐릭터','등장인물','character','human','npc','people'], world: ['세계','사물','장소','world_entity','thing'] },
+      entityKind: { location: ['장소','위치','지역','건물','방','place','area','building','room'], object: ['물건','사물','물품','아이템','도구','item','thing','artifact','tool'], organization: ['조직','단체','기관','세력','집단','group','faction','guild','company'], rule: ['규칙','법칙','규정','법','law','regulation'], environment: ['환경','날씨','기후','weather','climate'], condition: ['상태','조건','state'], thread: ['떡밥','약속','질문','과제','갈등','사건','plot','quest','promise','question','task'], other: ['기타','그 외','misc','etc'] },
+      domain: { event: ['사건','이벤트','행동'], character: ['인물','캐릭터','등장인물'], relationship: ['관계','인간관계'], world: ['세계','장소','설정'], narrative: ['서사','이야기','줄거리','떡밥'] },
+      claimKind: { event: ['사건','이벤트','행동','action','incident'], relationship: ['관계','인간관계','relation','bond'], character_state: ['상태','인물 상태','감정','기분','컨디션','emotion','mood','feeling','state','condition'], location: ['위치','현재 위치','where'], knowledge: ['지식','앎','정보','info','information'], ownership: ['소유','owner'], possession: ['소지','보유','holding'], rule: ['규칙','법칙','law'], thread: ['떡밥','약속','질문','과제','갈등','미해결','plot','quest','promise','question','task','conflict'], world_state: ['세계 상태','환경','world','environment'] },
+      dimension: { trust: ['신뢰','믿음','trusting'], affection: ['애정','호감','호감도','우정','친밀','친밀감','사랑','좋아함','friendship','fondness','liking','love'], attraction: ['끌림','연애','로맨스','이성적 호감','romance','romantic'], fear: ['두려움','공포','겁','afraid','scared'], obligation: ['의무','빚','은혜','debt','duty'], hostility: ['적대','적의','증오','원한','미움','반감','enmity','hatred','hate','anger'], distance: ['거리','소원','서먹','냉담','distant','coldness'], cooperation: ['협력','동맹','협조','파트너','alliance','partnership'], authority: ['권위','위계','상하','명령','지배','hierarchy','command'], dependency: ['의존','의지','reliance'], knowledge: ['앎','인지','아는 사이','acquaintance','familiarity'] },
+      threadStatus: { open: ['진행','진행중','진행 중','미해결','열림','ongoing','active','pending'], blocked: ['막힘','중단','보류','stalled'], uncertain: ['불확실','불명'], resolved: ['해결','해결됨','완료','끝','done','completed','finished'], closed: ['종료','닫힘','폐기','ended','abandoned'] }
+    });
+    const unifiedVocabularyKey = value => String(value ?? '').trim().toLowerCase().replace(/[\s\-]+/g, value => /\s/.test(value) && /[가-힣]/.test(String(value)) ? ' ' : '_');
+    const unifiedVocabularyMap = (table, value, allowed) => {
+      if (typeof value !== 'string') return null;
+      const raw = value.trim(), key = unifiedVocabularyKey(value);
+      if (allowed.includes(raw)) return raw;
+      if (allowed.includes(key)) return key;
+      for (const [target, aliases] of Object.entries(table)) if (aliases.some(alias => unifiedVocabularyKey(alias) === key || alias === raw)) return target;
+      return null;
+    };
+    const normalizeUnifiedProviderVocabulary = (artifact, admission) => {
+      const mark = change => admission.normalizedFields.push({ ...change, reason: change.reason || 'contract_vocabulary' });
+      const set = (row, field, path, value, allowed, table) => {
+        if (!isPlainObject(row) || row[field] === undefined || allowed.includes(row[field])) return;
+        const mapped = unifiedVocabularyMap(table, row[field], allowed);
+        if (mapped && mapped !== row[field]) { mark({ path: path + '.' + field, field, from: compact(String(row[field]), 80), to: mapped }); row[field] = mapped; }
+      };
+      const entityKinds = ['location','object','organization','rule','environment','condition','thread','other'];
+      for (const [i, e] of asArray(artifact.entities).entries()) {
+        if (!isPlainObject(e)) continue;
+        const path = 'entities[' + i + ']';
+        // A kind written as the type ("장소", "location") makes a world entity of that kind.
+        if (!['person','world'].includes(e.type)) {
+          const asKind = unifiedVocabularyMap(UNIFIED_VOCABULARY.entityKind, e.type, entityKinds);
+          if (asKind && asKind !== 'other' || (asKind === 'other' && !unifiedVocabularyMap(UNIFIED_VOCABULARY.entityType, e.type, ['person','world']))) {
+            if (asKind) { mark({ path: path + '.type', field: 'type', from: compact(String(e.type), 80), to: 'world' }); e.type = 'world'; if (!entityKinds.includes(e.kind)) e.kind = asKind; }
+          } else set(e, 'type', path, null, ['person','world'], UNIFIED_VOCABULARY.entityType);
+        }
+        if (e.type === 'person') { if (e.kind !== undefined && e.kind !== 'person') { mark({ path: path + '.kind', field: 'kind', from: compact(String(e.kind), 80), to: 'person' }); e.kind = 'person'; } }
+        else if (e.type === 'world') set(e, 'kind', path, null, entityKinds, UNIFIED_VOCABULARY.entityKind);
+      }
+      const domains = ['event','character','relationship','world','narrative'];
+      const persons = new Set(asArray(artifact.entities).filter(e => e?.type === 'person').map(e => e.tempId));
+      for (const [i, f] of asArray(artifact.facts).entries()) {
+        if (!isPlainObject(f)) continue;
+        const path = 'facts[' + i + ']';
+        set(f, 'certainty', path, null, ['confirmed','uncertain','conflict','unknown'], UNIFIED_VOCABULARY.certainty);
+        set(f, 'temporalRole', path, null, ['current_sequence','historical','flashback','reported','hypothetical','uncertain'], UNIFIED_VOCABULARY.temporalRole);
+        if (!UNIFIED_CLAIMS[f.claimKind] && f.claimKind !== 'character_info') {
+          set(f, 'claimKind', path, null, Object.keys(UNIFIED_CLAIMS), UNIFIED_VOCABULARY.claimKind);
+          // "상태" names a person's condition or a place's condition depending on the subject.
+          if (f.claimKind === 'character_state' && f.subjectTempRef && !persons.has(f.subjectTempRef)) f.claimKind = 'world_state';
+        }
+        const contract = UNIFIED_CLAIMS[f.claimKind];
+        // A typed value written under its own name ({emotion:"…"} for character_state) moves to the
+        // contract's key when it is the only plain text value; references are never guessed.
+        if (contract && !contract.value.endsWith('Ref') && !contract.collection && isPlainObject(f.values) && f.values[contract.value] === undefined) {
+          const texts = Object.entries(f.values).filter(([, value]) => typeof value === 'string' && value.trim());
+          if (texts.length === 1 && Object.keys(f.values).length === 1 && ['detail','condition','value','sceneTime','goal'].includes(contract.value)) {
+            mark({ path: path + '.values.' + texts[0][0], field: 'values', from: texts[0][0], to: contract.value, reason: 'typed_value_key' });
+            f.values = { [contract.value]: texts[0][1] };
+          }
+        }
+        // A domain written as a known label ("관계", "세계") is mapped when it names the domain the
+        // contract fixes for the claim kind. Typos and other domains still fail validation as before.
+        if (contract && !domains.includes(f.domain) && unifiedVocabularyMap(UNIFIED_VOCABULARY.domain, f.domain, domains) === contract.domain) { mark({ path: path + '.domain', field: 'domain', from: compact(String(f.domain), 80), to: contract.domain }); f.domain = contract.domain; }
+        if (!contract && f.claimKind !== 'character_info' && unifiedText(f.text) && persons.has(f.subjectTempRef)) {
+          // A kind the contract does not have (asked for by a custom instruction) about a person is
+          // kept as an evidence-bound character note, which has no State field. About anything else
+          // it stays rejected: an event would add an invented entry to the chronology.
+          const kind = 'character_note';
+          mark({ path: path + '.claimKind', field: 'claimKind', from: compact(String(f.claimKind ?? ''), 80), to: kind, reason: 'unknown_claim_kind_memory_only' });
+          f.claimKind = kind; f.domain = UNIFIED_CLAIMS[kind].domain; f.values = { detail: f.text };
+          delete f.targetTempRef; delete f.dimension; if (f.effect && f.effect !== 'set') f.effect = 'set';
+        }
+        if (f.claimKind === 'relationship') {
+          set(f, 'dimension', path, null, CONTINUITY_STATE_RELATION_DIMENSIONS, UNIFIED_VOCABULARY.dimension);
+          if (typeof f.dimension === 'string' && !CONTINUITY_STATE_RELATION_DIMENSIONS.includes(f.dimension)) { mark({ path: path + '.dimension', field: 'dimension', from: compact(f.dimension, 80), to: 'other' }); f.dimension = 'other'; }
+          const value = isPlainObject(f.values) ? f.values.value : undefined;
+          // Relationships are qualitative; a score or object becomes the fact's own statement.
+          if (value !== undefined && value !== null && typeof value !== 'string' && unifiedText(f.text)) { mark({ path: path + '.values.value', field: 'value', from: compact(JSON.stringify(value), 80), to: 'fact_text', reason: 'relationship_value_qualitative' }); f.values.value = f.text; }
+        }
+        if (f.claimKind === 'thread' && isPlainObject(f.values?.thread)) set(f.values.thread, 'status', path + '.values.thread', null, ['open','blocked','uncertain','resolved','closed'], UNIFIED_VOCABULARY.threadStatus);
+      }
+    };
+    const unwrapUnifiedProviderArtifact = (value, admission) => {
+      // {"artifact": {schema, entities, facts, ...}} and similar single wrappers.
+      if (!isPlainObject(value) || value.schema !== undefined) return value;
+      const keys = Object.keys(value);
+      const inner = value[keys[0]];
+      if (keys.length !== 1 || !isPlainObject(inner) || !(unifiedArtifactSchemaReadable(inner.schema) || (inner.schema === undefined && Array.isArray(inner.facts)))) return value;
+      admission.normalizedFields.push({ path: keys[0], field: 'artifact', reason: 'artifact_wrapper_removed' });
+      return value[keys[0]];
+    };
     const quarantineUnifiedProviderRecords = (value, batch) => {
       const admission={schema:'libra.record_admission.v1',status:'complete',rejected:[],droppedFields:[],normalizedFields:[],stateBlocks:[]};
       const pick=(row,allowed,path)=>{
@@ -58413,8 +58514,9 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           else admission.droppedFields.push({path:path+'.'+k,reason:'unsupported_field'});
         }return out;
       };
-      const artifact=pick(value,['schema','entities','facts','stateBindings'],'artifact');
+      const artifact=pick(unwrapUnifiedProviderArtifact(value,admission),['schema','entities','facts','stateBindings'],'artifact');
       if(!isPlainObject(artifact)||!unifiedArtifactSchemaReadable(artifact.schema))return {artifact,admission};
+      normalizeUnifiedProviderVocabulary(artifact,admission);
       const sources=canonicalEvidenceSources(batch);
       const reject=(kind,index,row,reason)=>{
         admission.rejected.push({kind,index,id:string(row?.tempFactId||row?.tempId||''),reason});
@@ -58522,6 +58624,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       admission.rejectedEntities=admission.rejected.filter(r=>r.kind==='entity').length;admission.rejectedFacts=admission.rejected.filter(r=>r.kind==='fact').length;
       admission.normalizedTextCount=admission.normalizedFields.filter(x=>x.field==='text').length;
       admission.normalizedDomainCount=admission.normalizedFields.filter(x=>x.field==='domain').length;
+      admission.normalizedVocabularyCount=admission.normalizedFields.filter(x=>['contract_vocabulary','unknown_claim_kind_memory_only','relationship_value_qualitative','typed_value_key','artifact_wrapper_removed'].includes(x.reason)).length;
       admission.rejectionReasons={};for(const item of admission.rejected)admission.rejectionReasons[item.reason]=(admission.rejectionReasons[item.reason]||0)+1;
       admission.status=admission.rejected.length||admission.droppedFields.length?'partial':'complete';
       return {artifact,admission};
@@ -58534,7 +58637,10 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if(batch){const result=quarantineUnifiedProviderRecords(artifact,batch);artifact=result.artifact;admission=result.admission;}
       const facts=new Map(asArray(artifact.facts).map(f=>[f?.tempFactId,f])),seen=new Set(),rejected=new Set(),bindings=[];
       if(artifact.stateBindings!=null&&!Array.isArray(artifact.stateBindings))issues.push('state_bindings_not_array');
-      for(const binding of asArray(artifact.stateBindings)){
+      for(const rawBinding of asArray(artifact.stateBindings)){
+        // Notes or labels a custom instruction adds to a binding are dropped; the binding stays.
+        const binding=isPlainObject(rawBinding)?Object.fromEntries(Object.entries(rawBinding).filter(([k])=>['factTempId','typedValueField','stateDomain','stateField'].includes(k))):rawBinding;
+        if(isPlainObject(rawBinding)&&Object.keys(binding).length!==Object.keys(rawBinding).length&&admission)admission.droppedFields.push({path:'stateBindings.'+String(rawBinding.factTempId||'?'),reason:'unsupported_field'});
         const fact=facts.get(binding?.factTempId),contract=fact&&UNIFIED_CLAIMS[fact.claimKind];
         const expected=contract?.field?{factTempId:fact.tempFactId,typedValueField:contract.value,stateDomain:contract.domain,stateField:contract.field}:null;
         if(!isPlainObject(binding)||!expected||Object.keys(binding).some(k=>!(k in expected))||Object.entries(binding).some(([k,v])=>v!==expected[k])||seen.has(binding.factTempId)){
@@ -59950,7 +60056,9 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       if(state.currentRun)state.currentRun.analysisDiagnostic=clone(responseDiagnostic);
       unifiedAssert(!result?.refusalInfo && !['refusal','safety'].includes(result?.completionEnvelope?.state),'MODEL_DECLINED:'+(result?.refusalInfo?.kind||result?.reason||'provider_refusal'));
       unifiedAssert(result?.ok===true && !result?.typedOutputIssue && !providerOutputWasTruncated(result),'UNIFIED_PROVIDER_FAILED:'+(result?.reason || result?.typedOutputIssue || 'unusable'));
-      const parsedArtifact=parseCanonicalArtifactJson(result.content);
+      // Unwrap {"artifact": {...}} before the schema is read, so the label lands on the artifact.
+      const unwrapAdmission={normalizedFields:[]};
+      const parsedArtifact=unwrapUnifiedProviderArtifact(parseCanonicalArtifactJson(result.content),unwrapAdmission);
       const requestedSchema=string(parsedArtifact?.schema || '');
       unifiedAssert(!requestedSchema || unifiedArtifactSchemaReadable(requestedSchema),
         'UNIFIED_SCHEMA_INVALID:'+requestedSchema);
@@ -59968,6 +60076,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const writeSchema=requestedSchema || (hasV5Extensions?UNIFIED_ARTIFACT_SCHEMA_V5:UNIFIED_ARTIFACT_SCHEMA);
       if(!requestedSchema && isPlainObject(parsedArtifact))parsedArtifact.schema=writeSchema;
       const prepared=prepareUnifiedMemoryArtifact(parsedArtifact,batch);
+      if(prepared.admission&&unwrapAdmission.normalizedFields.length)prepared.admission.normalizedFields.unshift(...unwrapAdmission.normalizedFields);
       if(writeSchema!==string(prepared.artifact?.schema||'') && isPlainObject(prepared.artifact))prepared.artifact.schema=writeSchema;
       const artifact=prepared.artifact,proposalValidation=validateUnifiedArtifact(artifact,batch,{allowCandidateAlias:true});
       const admissionFailure=prepared.admission?.acceptedFacts===0?':accepted=0:rejected='+prepared.admission.rejectedFacts+':normalized='+prepared.admission.normalizedFields.length:'';
@@ -62054,12 +62163,15 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           memoryId: memory.memoryId, revision, turnRange: clone(memory.turnRange), runId: run.runId, promptProvenance: clone(promptProvenance),
           storyArc: clone(storyArcUpdate), continuityState: clone(continuityStateUpdate)
         };
-        const completionMessage = artifactValidation.admission?.status === 'partial'
+        const onlyFieldsDropped = artifactValidation.admission?.status === 'partial' && !artifactValidation.admission.rejectedFacts && !artifactValidation.admission.rejectedEntities;
+        const completionMessage = onlyFieldsDropped
+          ? `TURN ${startTurn}~${startTurn + BATCH_SIZE - 1} 기억 저장 완료 · 사실 ${artifactValidation.admission.acceptedFacts}개 모두 보존 · 계약에 없는 항목 ${artifactValidation.admission.droppedFields.length}개 제외`
+          : artifactValidation.admission?.status === 'partial'
           ? `TURN ${startTurn}~${startTurn + BATCH_SIZE - 1} 기억 부분 저장 · 사실 ${artifactValidation.admission.acceptedFacts}개 보존 · 제외 사실 ${artifactValidation.admission.rejectedFacts}개 / 개체 ${artifactValidation.admission.rejectedEntities}개 / 필드 ${artifactValidation.admission.droppedFields.length}개`
           : pipelineStatus === 'partial'
           ? `TURN ${startTurn}~${startTurn + BATCH_SIZE - 1} 메모리 저장 완료 · ${failedItoStages.map(item => item.label).join(', ')} 보정 실패는 건너뜀`
           : `TURN ${startTurn}~${startTurn + BATCH_SIZE - 1} 종합 메모리 저장 완료`;
-        const normalizationSummary=artifactValidation.admission?.normalizedFields?.length?` · 요약 보완 ${artifactValidation.admission.normalizedTextCount}개 / 분류 보정 ${artifactValidation.admission.normalizedDomainCount}개`:'';
+        const normalizationSummary=artifactValidation.admission?.normalizedFields?.length?` · 요약 보완 ${artifactValidation.admission.normalizedTextCount}개 / 분류 보정 ${artifactValidation.admission.normalizedDomainCount}개${artifactValidation.admission.normalizedVocabularyCount?` / 표기 보정 ${artifactValidation.admission.normalizedVocabularyCount}개`:''}`:'';
         await finishPipelineWorkStatus(completionMessage+normalizationSummary, true, pipelineStatus === 'partial' ? 3500 : 2000, pipelineStatus === 'partial' ? 'completed_with_warnings' : 'completed', pipelineRequestId);
         scheduleGuiTraceRefresh();
         return memory;
@@ -78059,6 +78171,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           isDefaultProfile, readOnly: isDefaultProfile, profileIsActive: activeName === profileName,
           existingMode: override.mode,
           existingText: promptStudioOocCompact(override.text, PROMPT_STUDIO_OOC_MAX_APPEND_CHARS),
+          defaultText: promptStudioOocCompact(definition.text || '', 2000),
           keyQuestion: promptStudioOocQuestionForPath(semanticPath),
           label: [profileLabel, promptStudioOocDomainLabel(domain), stageLabel, definition.label].filter(Boolean).join(' · ')
         };
@@ -78410,6 +78523,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (current()) state.loading = false;
     }
   };
+  // What a guidance append for the Librarian memory analyzer may and may not change. Shared by the
+  // OOC conversation and the compile step so agreed guidance never breaks the route to the GUI.
+  const PROMPT_STUDIO_OOC_ANALYZER_LIMITS = [
+    '[WHAT THIS GUIDANCE CONTROLS]',
+    '- The target is the Librarian memory analyzer. It reads five completed turns and returns one strict JSON memory object that the memory shelf, people cards and current-State views display.',
+    '- Guidance may change what to notice, how much detail to keep, which facts matter more, and how conservative to be.',
+    '- Guidance must NOT change the output format, field names, IDs, the claim kinds, evidence quoting (exact source text), or the original language of names and quotes. Those are runtime-owned; asking for them only makes analysis fail or show wrong values.',
+    '- If the user wants information the memory has no field for (a mood, a score, a tag), the guidance should ask to state it inside the fact text of the closest existing kind, in words, with source evidence. Relationship strength is written qualitatively, never as a number.',
+    '- Never ask to mark facts confirmed without evidence, to guess missing values, or to continue the story.'
+  ];
   const promptStudioOocConversationSystemPrompt = target => [
     'You are LIBRA Prompt Studio memory-guidance OOC.',
     'You help the user turn a personal preference about how story memory is recorded into a reusable custom prompt for ONE selected Prompt Studio section of the Librarian memory analyzer.',
@@ -78424,12 +78547,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '- Do not ask the user to understand inherit/append/replace or internal prompt engineering terms.',
     '- Preserve LIBRA locked contracts, current user input, canon, knowledge boundaries, and user agency.',
     '',
+    '',
+    ...PROMPT_STUDIO_OOC_ANALYZER_LIMITS,
+    '- When the user asks for something outside these limits, say so kindly and offer the closest way that works (for example: "점수 대신 관계 변화를 문장으로 남기도록").',
+    '',
     '[SELECTED PROMPT STUDIO SECTION]',
     `${target?.label || 'Prompt Studio section'}`,
+    target?.defaultText ? `[THIS SECTION'S BUILT-IN RULE — the guidance is added after it]\n${target.defaultText}` : '',
     '',
     '[KEY QUESTION]',
     `${target?.keyQuestion || promptStudioOocQuestionForPath(target?.path || [])}`
-  ].join('\n');
+  ].filter(line => line !== undefined).join('\n');
   const promptStudioOocStarterExamples = target => {
     const joined = promptStudioOocArray(target?.path).join('.').toLowerCase();
     if (/(timeline|chronolog|time)/.test(joined)) return [
@@ -78494,7 +78622,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const state = ensurePromptStudioOocBuilderState();
     const target = promptStudioOocCurrentTarget(state);
     if (!target) throw new Error('먼저 적용할 Prompt Studio 구역을 선택하세요.');
-    if (state.busy) throw new Error('창작 지침 OOC가 이미 작업 중입니다.');
+    if (state.busy) throw new Error('기억 지침 OOC가 이미 작업 중입니다.');
     const current = promptStudioOocMessages(state, target.id);
     if (current.length) return { ok: true, alreadyStarted: true, message: current[0]?.content || '' };
     const firstMessage = promptStudioOocFirstMessage(target);
@@ -78516,7 +78644,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const userMessage = promptStudioOocCompact(message, 5000);
     if (!target) throw new Error('먼저 적용할 Prompt Studio 구역을 선택하세요.');
     if (!userMessage) throw new Error('OOC에서 이야기할 내용을 입력하세요.');
-    if (state.busy) throw new Error('창작 지침 OOC가 이미 작업 중입니다.');
+    if (state.busy) throw new Error('기억 지침 OOC가 이미 작업 중입니다.');
     const request = promptStudioOocRequest(state, target);
     request.assertCurrent();
     state.busy = true;
@@ -78548,9 +78676,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       );
       if (!request.valid()) return { cancelled: true };
       await request.assertDurable();
-      if (!result?.ok) throw new Error(result?.reason || '창작 지침 OOC AI를 호출하지 못했습니다.');
+      if (!result?.ok) throw new Error(result?.reason || '기억 지침 OOC AI를 호출하지 못했습니다.');
       const reply = promptStudioOocCompact(stripHiddenReasoningBlocks(result.content), 7000);
-      if (!reply) throw new Error('창작 지침 OOC AI의 응답이 비어 있습니다.');
+      if (!reply) throw new Error('기억 지침 OOC AI의 응답이 비어 있습니다.');
       state.messagesByTarget[target.id] = [...history, { role: 'assistant', content: reply }]
         .slice(-PROMPT_STUDIO_OOC_MAX_MESSAGES);
       state.draft = '';
@@ -78561,7 +78689,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (!request.valid()) return { cancelled: true };
       state.lastError = promptStudioOocCompact(error?.message || error, 1000);
       state.statusState = 'error';
-      state.statusText = `창작 지침 OOC 실패: ${state.lastError}`;
+      state.statusText = `기억 지침 OOC 실패: ${state.lastError}`;
       throw error;
     } finally {
       request.finish();
@@ -78576,7 +78704,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (!agreementMessages.some(item => item.role === 'user') || !agreementMessages.some(item => item.role === 'assistant')) {
       throw new Error('먼저 OOC와 한 번 이상 실제 대화를 나눈 뒤 지침 미리보기를 만드세요.');
     }
-    if (state.busy) throw new Error('창작 지침 OOC가 이미 작업 중입니다.');
+    if (state.busy) throw new Error('기억 지침 OOC가 이미 작업 중입니다.');
     const request = promptStudioOocRequest(state, target);
     request.assertCurrent();
     state.busy = true;
@@ -78598,6 +78726,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         '- Convert abstract preference into both decision criteria and observable writing/analysis behavior.',
         '- Use the user’s language unless a precise technical term is clearer in English.',
         '',
+        ...PROMPT_STUDIO_OOC_ANALYZER_LIMITS,
+        '- Put any agreed request that crosses these limits into "warnings" and rewrite it into the closest form that stays inside them.',
+        '',
         '[JSON SCHEMA]',
         '{',
         '  "title": "short name",',
@@ -78613,6 +78744,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         '',
         '[TARGET KEY QUESTION]',
         target.keyQuestion,
+        '',
+        '[THIS SECTION\'S BUILT-IN RULE — DO NOT REPEAT IT]',
+        target.defaultText || '(none)',
         '',
         '[CURRENT CUSTOM APPEND — PRESERVE ONLY IF AGREED]',
         target.existingText || '(none)',
@@ -78632,7 +78766,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       );
       if (!request.valid()) return { cancelled: true };
       await request.assertDurable();
-      if (!result?.ok) throw new Error(result?.reason || '창작 지침 미리보기 AI를 호출하지 못했습니다.');
+      if (!result?.ok) throw new Error(result?.reason || '기억 지침 미리보기 AI를 호출하지 못했습니다.');
       const preview = promptStudioOocParseCompilation(stripHiddenReasoningBlocks(result.content));
       if (!preview) throw new Error('생성 결과에서 사용할 수 있는 추가 지침을 찾지 못했습니다.');
       preview.targetId = target.id;
@@ -78683,7 +78817,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const target = promptStudioOocCurrentTarget(state);
     const preview = state.previewByTarget?.[target?.id];
     if (!target || !preview?.appendText) throw new Error('먼저 저장할 지침 미리보기를 만드세요.');
-    if (state.busy) throw new Error('창작 지침 OOC가 이미 작업 중입니다.');
+    if (state.busy) throw new Error('기억 지침 OOC가 이미 작업 중입니다.');
     const request = promptStudioOocRequest(state, target);
     request.assertCurrent();
     const guiBasisHash = Gui.settingsBasisHash;
@@ -78702,11 +78836,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const applied = persisted.applied;
       if (!Gui.state) throw new Error('Prompt Studio GUI 설정을 다시 읽지 못했습니다.');
       promptStudioOocReconcileDirectDraft(target, persisted);
+      // The section editor and the final-prompt view follow the profile OOC just saved and
+      // activated, unless the editor holds unsaved edits of another profile.
+      const followSaved = Gui.promptStudioProfileName !== applied.profileName && !(Gui.promptStudioDraft && promptStudioDraftIsUnsaved(Gui.promptStudioDraft));
       Gui.state.promptProfiles = promptStudioOocMergePersistedProfileIntoGui(
         Gui.state.promptProfiles || {},
         persisted.profiles || {},
         applied
       );
+      if (followSaved) { Gui.promptStudioProfileName = applied.profileName; Gui.promptStudioDraftKey = ''; Gui.promptStudioDraft = null; }
       // Rebase only this verified prompt transaction; never absorb unrelated external settings.
       try {
         const after = await readSettingsPersistenceBasis();
@@ -78744,7 +78882,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (!request.valid(false)) return { cancelled: true };
       state.lastError = promptStudioOocCompact(error?.message || error, 1000);
       state.statusState = 'error';
-      state.statusText = `창작 지침 저장 실패: ${state.lastError}`;
+      state.statusText = `기억 지침 저장 실패: ${state.lastError}`;
       throw error;
     } finally {
       request.finish();
@@ -78785,7 +78923,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ? messages.map(item => guiEl('div', { class: 'card', style: 'margin:6px 0;padding:10px;' }, [
           guiEl('div', {
             class: 'hint',
-            text: item?.guide === true ? `${familyLabel} OOC · 시작 안내` : item.role === 'assistant' ? `${familyLabel} OOC` : 'USER'
+            text: item?.guide === true ? `${familyLabel} OOC · 시작 안내` : item.role === 'assistant' ? `${familyLabel} OOC` : '나'
           }),
           guiEl('div', { text: promptStudioOocCompact(item.content, 7000) })
         ]))
@@ -78849,7 +78987,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           `${familyLabel}와 이야기하기`,
           guiEl('textarea', {
             class: 'textarea', value: state.draft, disabled: state.busy || !target,
-            placeholder: '원하는 창작 취향, 지금 불편한 점, 반드시 지켰으면 하는 기준을 평소 말하듯 적으세요.',
+            placeholder: '기억에 무엇을 더 꼼꼼히 남기면 좋을지, 지금 기억이 어색한 점, 꼭 지켰으면 하는 기준을 평소 말하듯 적으세요.',
             onInput: event => { if (!currentView()) return; state.draft = String(event.target.value || ''); }
           }),
           '질문에 답하며 방향을 다듬을 수 있습니다. 이 단계에서는 저장하지 않습니다.'
@@ -78896,6 +79034,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           guiEl('h4', { text: preview.title || '맞춤 기억 지침 미리보기' }),
           preview.summary ? guiEl('div', { class: 'hint', text: preview.summary }) : null,
           guiEl('pre', { class: 'code', text: preview.appendText }),
+          ...(() => {
+            const risks = PROMPT_STUDIO_LINT_RULES.filter(([pattern]) => pattern.test(preview.appendText || '')).map(([, message]) => message);
+            return risks.length ? [guiEl('div', { class: 'note note--warn', dataset: { oocPreviewRisk: String(risks.length) } }, [guiEl('b', { text: `주의 ${risks.length}건 · 이대로 저장하면 기억 분석이 실패하거나 화면에 틀린 값이 보일 수 있습니다. 대화로 표현을 바꿔 다시 미리보기를 만드는 것을 권장합니다.` }), ...risks.map(item => guiEl('div', { text: `• ${item}` }))])] : [];
+          })(),
           preview.checks?.length ? guiEl('details', {}, [
             guiEl('summary', { text: '이 지침이 잘 적용됐는지 확인할 기준' }),
             ...preview.checks.map(item => guiEl('div', { text: `• ${item}` }))
@@ -78923,6 +79065,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
               }
             })
           ]),
+          preview.saved ? guiEl('div', { class: 'cluster' }, [guiEl('button', { class: 'btn btn--sm', type: 'button', text: '최종 프롬프트에서 확인', onClick: event => { const final = event.currentTarget.closest('[data-memory-prompt-studio]')?.querySelector('#ps-final'); if (final) { final.open = true; final.scrollIntoView({ block: 'start', behavior: 'smooth' }); } } })]) : null,
           guiEl('div', { class: 'hint', text: `저장할 때도 replace를 사용하지 않습니다. 선택한 구역의 append만 갱신하며 다른 단계·구역·프리셋과 ${familyLabel} 잠금 계약은 그대로 유지됩니다.` })
         ]) : null
       ].filter(Boolean))
@@ -81142,7 +81285,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     [/(번역|translate|영어로|in english|한국어로 (바꿔|옮겨|번역))/i, '언어를 바꾸라는 지시가 있습니다. 근거 인용은 원문 그대로여야 하므로 기억이 거부되거나 기억 서가에 다른 언어로 보일 수 있습니다.'],
     [/(항상|모두|전부|always).{0,12}(확정|confirmed|certain)|추측해서|추정해서 채워|빈칸 없이|guess/i, '근거 없이 확정하거나 추측해 채우라는 지시가 있습니다. 검증을 통과해도 현재 상태·인물 화면에 틀린 값이 표시될 수 있습니다.'],
     [/(무시해|무시하고|ignore|disregard|override).{0,20}(규칙|지침|계약|rule|instruction|contract)/i, '기본 규칙을 무시하라는 지시가 있습니다. 런타임 계약이 우선하므로 효과가 없고, 모델이 혼동해 분석 품질이 떨어질 수 있습니다.'],
-    [/(이야기를 이어|다음 장면|continue the (story|scene)|롤플레이|roleplay)/i, '장면을 이어 쓰라는 지시가 있습니다. Librarian은 기록만 하므로 분석이 실패할 수 있습니다.']
+    [/(이야기를 이어|다음 장면|continue the (story|scene)|롤플레이|roleplay)/i, '장면을 이어 쓰라는 지시가 있습니다. Librarian은 기록만 하므로 분석이 실패할 수 있습니다.'],
+    [/(점수|수치로|숫자로|퍼센트|%로|score|rating|필드를? (추가|만들)|새 항목|태그를? (달|붙)|tag)/i, '점수·새 항목·태그는 저장 형식에 없어 화면에 표시되지 않습니다. “사실 문장에 함께 적어 줘”처럼 쓰면 기억 서가에 남습니다.']
   ]);
   const promptStudioLintDraft = draft => {
     const overrides = promptStudioSectionOverrides(draft);
@@ -81599,6 +81743,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const finalPrompt = guiEl('details', { class: 'card', id: 'ps-final', open: lint.length > 0 }, [
       guiEl('summary', { text: '최종 프롬프트 · 점검' }),
       guiEl('p', { class: 'hint', text: 'Librarian 기억 분석 요청이 실제로 보내는 순서 그대로입니다. 지금 편집 중인 내용(저장 전 포함)과 Librarian 추가 지침, 성인 내용 안내를 반영합니다.' }),
+      guiEl('p', { class: `hint${Gui.promptStudioProfileName !== activeName ? ' warn' : ''}`, dataset: { finalPromptBasis: Gui.promptStudioProfileName || PROMPT_PROFILE_DEFAULT_NAME }, text: Gui.promptStudioProfileName === activeName
+        ? `기준: 활성 프리셋 “${activeName}”${draftUnsaved ? ' · 저장 전 편집 포함' : ''}`
+        : `기준: 편집 중인 “${Gui.promptStudioProfileName}” · 실제 분석에는 활성 프리셋 “${activeName}”이(가) 쓰입니다.` }),
       lint.length
         ? guiEl('div', { class: 'note note--warn ps-lint' }, [guiEl('b', { text: `주의 ${lint.length}건 · 저장은 가능하지만 기억 분석이 실패하거나 화면에 틀린 값이 보일 수 있습니다.` }), guiEl('ul', {}, lint.map(item => guiEl('li', { text: item.text })))])
         : guiEl('div', { class: 'note ps-lint ps-lint--ok', text: '점검 통과 · 출력 형식·언어·근거 규칙과 충돌하는 지시가 없습니다.' }),
@@ -87907,6 +88054,8 @@ advanced
     },
     async debugWritePromptOverrides(value = {}, options = {}) {
       const ok = await writePromptOverrides(value, options);
+      // Like every product save, the next request reads the new profiles, not the cached settings.
+      Runtime.settings = null; Runtime.settingsLoadedAt = 0; clearRequestReuseCache();
       const prompts = await readPromptOverrides();
       return safeClone({ ok, prompts, semanticHash: promptOverridesSemanticHash(prompts), transaction: Runtime.lastPromptOverrideTransaction || null });
     },

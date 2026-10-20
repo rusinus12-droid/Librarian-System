@@ -1,7 +1,7 @@
 //@name flashback_hayaku_bridge
 //@display-name RE:TRACE
 //@api 3.0
-//@version 1.9.87
+//@version 1.9.88
 /* v1.9.86 verifies server backup/deletion and portable transfer completion, protects active scopes from bulk selection, and exposes current timestamps, owner contacts and requested server previews. */
 /* v1.9.85 revalidates every required owner's durable target and current LIA Persona binding before reconciling a pending next-session handoff as completed. Reconciliation remains read-only for owner data. */
 /* Retired standalone owner viewers, packet deletion/navigation, and HAYAKU ledger-backup APIs are removed. Legacy capsule reads support handoff only; existing stored artifacts remain available to guarded server management. */
@@ -7652,7 +7652,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 };
 
   const PLUGIN_NAME = 'RE:TRACE';
-const PLUGIN_VERSION = '1.9.87';
+const PLUGIN_VERSION = '1.9.88';
   const RETRACE_SETTING_UI_ID = 'retrace-main-setting';
   const RETRACE_HAMBURGER_UI_ID = 'retrace-main-hamburger';
   const HANDOFF_SCHEMA = 'memory-session-bridge-v2';
@@ -13373,6 +13373,8 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     if(close){close.disabled=false;delete close.dataset.bridgeBusyDisabled;close.textContent='결과 닫기';close.onclick=()=>{const focus=Runtime.dialogReturnFocus;layer.classList.remove('is-open');layer.hidden=true;layer.setAttribute('aria-hidden','true');Runtime.dialogLayer=null;Runtime.activeJobKind='';Runtime.activeJobMessage='';Runtime.activeJobFinished=false;Runtime.dialogReturnFocus=null;clearRetraceDialogListeners();if(focus?.isConnected&&!focus.disabled)setTimeout(()=>focus.focus(),0);};}
   };
 
+  // "…이라고" after a final consonant (복원이라고), "…라고" otherwise (정리라고, 초기화라고).
+  const retraceQuoteParticle = word => { const code = String(word || '').trim().slice(-1).charCodeAt(0); return code >= 0xac00 && code <= 0xd7a3 && (code - 0xac00) % 28 ? '이라고' : '라고'; };
   const showRetraceDialog = (message, options = {}) => new Promise(resolve => {
     const root = Runtime.root;
     const layer = root?.querySelector?.('#'+(options.dialogId||'retraceDialogLayer'));
@@ -13406,7 +13408,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     confirmButton.classList.toggle('btn--primary', options.danger !== true);
     const typedWrap=layer.querySelector('[data-dialog-typed-wrap]'),typedInput=layer.querySelector('[data-dialog-typed-input]'),typedLabel=layer.querySelector('[data-dialog-typed-label]');
     const typedWord=text(options.typedWord||'');
-    if(typedWrap){typedWrap.hidden=!typedWord;if(typedLabel&&typedWord)typedLabel.innerHTML='계속하려면 <b>'+escapeHtml(typedWord)+'</b>라고 입력하세요';if(typedInput){typedInput.value='';typedInput.disabled=false;typedInput.oninput=()=>{confirmButton.disabled=typedInput.value.trim()!==typedWord;};}}
+    if(typedWrap){typedWrap.hidden=!typedWord;if(typedLabel&&typedWord)typedLabel.innerHTML='계속하려면 <b>'+escapeHtml(typedWord)+'</b>'+retraceQuoteParticle(typedWord)+' 입력하세요';if(typedInput){typedInput.value='';typedInput.disabled=false;typedInput.oninput=()=>{confirmButton.disabled=typedInput.value.trim()!==typedWord;};}}
     confirmButton.disabled=!!typedWord;
     confirmButton.dataset.bridgeBusyDisabled && delete confirmButton.dataset.bridgeBusyDisabled;
     if(cancelButton){cancelButton.hidden=options.confirm!==true;cancelButton.textContent=text(options.cancelLabel||'취소');cancelButton.disabled=false;delete cancelButton.dataset.bridgeBusyDisabled;}
@@ -14753,7 +14755,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       rows: pageScopes.filter(scope => scope.classification === status)
     }));
     const inventoryHtml = `<div class="banner ${inventory.stable ? 'banner--ok' : 'banner--warn'}"><div><strong>${inventory.stable ? '채팅 목록 안정 확인' : '채팅 목록 확인 불완전'}</strong><span>${inventory.stable ? `현재 캐릭터의 채팅 ${formatNumber(inventory.chatCount || 0)}개와 비교했습니다.` : '고아 판정과 삭제가 보수적으로 차단됩니다.'}</span></div><em>${scopeManagerFormatTime(catalog.at)}</em></div>`;
-    const toolbarHtml = `<div class="toolbar"><div><strong>다중 작업</strong><span>일괄 선택 가능 ${formatNumber(eligible.length)}개 · 선택 ${formatNumber(selectedScopes.length)}개</span></div><div class="cluster"><button class="btn" data-server-scope-select-all ${eligible.length ? '' : 'disabled'}>정리 후보 전체 선택</button><button class="btn" data-server-scope-select-clear ${selected.size ? '' : 'disabled'}>선택 해제</button><button class="btn btn--danger" data-server-scope-delete-selected ${selectedScopes.length ? '' : 'disabled'}>선택한 서버 사본 삭제</button></div></div>`;
+    const toolbarHtml = `<div class="toolbar"><div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px"><strong>다중 작업</strong><span>일괄 선택 가능 ${formatNumber(eligible.length)}개 · 선택 ${formatNumber(selectedScopes.length)}개</span></div><div class="cluster"><button class="btn" data-server-scope-select-all ${eligible.length ? '' : 'disabled'}>정리 후보 전체 선택</button><button class="btn" data-server-scope-select-clear ${selected.size ? '' : 'disabled'}>선택 해제</button><button class="btn btn--danger" data-server-scope-delete-selected ${selectedScopes.length ? '' : 'disabled'}>선택한 서버 사본 삭제</button></div></div>`;
     const paginationHtml = orderedScopes.length > SERVER_SCOPE_MANAGER_PAGE_SIZE
       ? `<div class="cluster"><button class="btn" data-server-scope-page="prev" ${page <= 0 ? 'disabled' : ''}>이전</button><span>${formatNumber(pageStart + 1)}–${formatNumber(pageEnd)} / ${formatNumber(orderedScopes.length)} · ${formatNumber(page + 1)} / ${formatNumber(totalPages)} 페이지</span><button class="btn" data-server-scope-page="next" ${page + 1 >= totalPages ? 'disabled' : ''}>다음</button></div>`
       : '';
@@ -14785,7 +14787,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
             ? `두 번 연속 내용 데이터가 없음을 확인한 ${shellLabel}입니다. 복구 페어링 대상이 아니며 해당 metadata만 조건부 정리합니다.`
             : `${shellLabel} 후보입니다. 안전한 정리를 위해 동일 상태를 한 번 더 확인해야 합니다. (${formatNumber(shellObservations || 0)}/2)`}</div>`
           : '';
-        return `<article class="scope-card ${statusClass} ${scope.pinned === true ? 'is-pinned' : ''}"><input class="sel" type="checkbox" aria-label="${escapeHtml(scope.displayName || scope.scopeId)} 선택" data-server-scope-select="${escapeHtml(scope.namespace)}|${escapeHtml(scope.scopeId)}" ${scopeManagerBulkSelectable(scope) && selected.has(selectionKey) ? 'checked' : ''} ${blocked || !scopeManagerBulkSelectable(scope) ? 'disabled' : ''}><div><b>${escapeHtml(scope.displayName || scope.scopeId)} <span class="badge">${escapeHtml(MEMORY_SUITE_NAMESPACE_LABELS[scope.namespace] || scope.namespace)}</span>${scope.pinned === true ? ' <span class="badge badge--warn pin-badge">보존 고정</span>' : ''}</b><small>${escapeHtml(scope.kind || 'unknown')} · ${escapeHtml(compact(scope.scopeKey || scope.scopeId, 90))} · 레코드 ${formatNumber(scope.liveRecords || 0)} · tombstone ${formatNumber(scope.tombstones || 0)} · ${scopeManagerFormatBytes(scope.bytes || 0)} · 마지막 저장 ${scopeManagerFormatTime(scope.latestStoredAt)}</small></div><div class="acts"><button class="btn btn--sm" data-server-scope-detail="${escapeHtml(scope.namespace)}|${escapeHtml(scope.scopeId)}">저장 정보·참조 확인</button>${pairButton}<button class="btn btn--sm" data-server-scope-pin="${escapeHtml(scope.namespace)}|${escapeHtml(scope.scopeId)}">${scope.pinned === true ? '보존 해제' : '보존'}</button><button class="btn btn--sm btn--danger" data-server-scope-delete="${escapeHtml(scope.namespace)}|${escapeHtml(scope.scopeId)}" ${blocked ? 'disabled' : ''}>서버 사본 삭제</button></div>${emptyShellNotice}${scope.recoveryPairing ? `<div class="scope-ready">연결 대상: ${escapeHtml(scope.recoveryPairing.targetTitle || scope.recoveryPairing.targetChatId)} · 메시지 ${formatNumber(scope.recoveryPairing.targetMessageCount || 0)}개 · 원본 서버 데이터 보존</div>` : ''}${refs.length ? `<div class="scope-block">참조 중 · ${refs.slice(0, 8).map(ref => `${escapeHtml(ref.sourceDisplayName || ref.sourceScopeId)} (${escapeHtml(ref.kind || 'reference')})`).join(' · ')}</div>` : ''}${blocked ? `<div class="scope-block">${escapeHtml(blocked)}</div>` : plan ? `<div class="scope-ready">서버 백업과 삭제 조건 검증 완료 · 실제 삭제 작업 대기 중</div>` : ''}</article>`;
+        return `<article class="scope-card ${statusClass} ${scope.pinned === true ? 'is-pinned' : ''}"><input class="sel" type="checkbox" aria-label="${escapeHtml(scope.displayName || scope.scopeId)} 선택" data-server-scope-select="${escapeHtml(scope.namespace)}|${escapeHtml(scope.scopeId)}" ${scopeManagerBulkSelectable(scope) && selected.has(selectionKey) ? 'checked' : ''} ${blocked || !scopeManagerBulkSelectable(scope) ? 'disabled' : ''}><div><b>${escapeHtml(scope.displayName || scope.scopeId)} <span class="badge">${escapeHtml(MEMORY_SUITE_NAMESPACE_LABELS[scope.namespace] || scope.namespace)}</span>${scope.pinned === true ? ' <span class="badge badge--warn pin-badge">보존 고정</span>' : ''}</b><small>${escapeHtml(scope.kind || 'unknown')} · ${escapeHtml(compact(scope.scopeKey || scope.scopeId, 90))} · 레코드 ${formatNumber(scope.liveRecords || 0)} · 삭제 표식 ${formatNumber(scope.tombstones || 0)} · ${scopeManagerFormatBytes(scope.bytes || 0)} · 마지막 저장 ${scopeManagerFormatTime(scope.latestStoredAt)}</small></div><div class="acts"><button class="btn btn--sm" data-server-scope-detail="${escapeHtml(scope.namespace)}|${escapeHtml(scope.scopeId)}">저장 정보·참조 확인</button>${pairButton}<button class="btn btn--sm" data-server-scope-pin="${escapeHtml(scope.namespace)}|${escapeHtml(scope.scopeId)}">${scope.pinned === true ? '보존 해제' : '보존'}</button><button class="btn btn--sm btn--danger" data-server-scope-delete="${escapeHtml(scope.namespace)}|${escapeHtml(scope.scopeId)}" ${blocked ? 'disabled' : ''}>서버 사본 삭제</button></div>${emptyShellNotice}${scope.recoveryPairing ? `<div class="scope-ready">연결 대상: ${escapeHtml(scope.recoveryPairing.targetTitle || scope.recoveryPairing.targetChatId)} · 메시지 ${formatNumber(scope.recoveryPairing.targetMessageCount || 0)}개 · 원본 서버 데이터 보존</div>` : ''}${refs.length ? `<div class="scope-block">참조 중 · ${refs.slice(0, 8).map(ref => `${escapeHtml(ref.sourceDisplayName || ref.sourceScopeId)} (${escapeHtml(ref.kind || 'reference')})`).join(' · ')}</div>` : ''}${blocked ? `<div class="scope-block">${escapeHtml(blocked)}</div>` : plan ? `<div class="scope-ready">서버 백업과 삭제 조건 검증 완료 · 실제 삭제 작업 대기 중</div>` : ''}</article>`;
       }).join('')}</section>`;
     }).join('');
     body.innerHTML = `${toolbarHtml}<p class="hint" style="margin:0">활성 스코프는 일괄 선택할 수 없습니다. 카드에서 로컬 보존·모드 전환 증명을 거쳐 따로 삭제합니다.</p><details class="card card--flat"><summary>채팅 목록 검사 · 복구 페어링 상세</summary>${inventoryHtml}${pairingHtml}${errorHtml}</details>${paginationHtml}${groupHtml || '<div class="empty"><strong>표시할 서버 사본 없음</strong><span>검색 조건과 서버 조회 결과를 확인하세요.</span></div>'}${paginationHtml}`;
@@ -14909,15 +14911,15 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     return receipt;
   };
   const scopeManagerShowDetail = async scope => {
-    const members = scopeManagerArray(scope.members).map(member => `${member.space} · ${member.tombstone ? '[tombstone] ' : ''}${member.key} · rev ${member.revision}`).join('\n');
+    const members = scopeManagerArray(scope.members).map(member => `${member.space} · ${member.tombstone ? '[삭제됨] ' : ''}${member.key} · rev ${member.revision}`).join('\n');
     const refs = scopeManagerArray(scope.inboundReferences).map(ref => `${ref.sourceNamespace}/${ref.sourceDisplayName || ref.sourceScopeId} → ${ref.kind}`).join('\n');
     await retraceAlert([
       `${MEMORY_SUITE_NAMESPACE_LABELS[scope.namespace] || scope.namespace} · ${scope.displayName || scope.scopeId}`,
       `상태: ${MEMORY_SUITE_SCOPE_STATUS_LABELS[scope.classification] || scope.classification}`,
-      `scope: ${scope.scopeKey || scope.scopeId}`,
-      `characterId: ${scope.characterId || '(확인 불가)'}`,
-      `chatId: ${scope.chatId || '(확인 불가)'}`,
-      `레코드: ${scope.liveRecords || 0} / tombstone: ${scope.tombstones || 0}`,
+      `스코프 키: ${scope.scopeKey || scope.scopeId}`,
+      `캐릭터 ID: ${scope.characterId || '(확인 불가)'}`,
+      `채팅 ID: ${scope.chatId || '(확인 불가)'}`,
+      `레코드 ${scope.liveRecords || 0}개 · 삭제 표식 ${scope.tombstones || 0}개 (지운 키를 기록해 두는 항목으로, 다른 기기의 오래된 사본이 되살아나지 않게 합니다)`,
       '',
       refs ? `[이 스코프를 참조하는 자료]\n${refs}\n` : '',
       `[서버 키]\n${members || '(없음)'}`
