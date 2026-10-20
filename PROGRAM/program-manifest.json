@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-20T11:17:04.977Z",
+  "generatedAt": "2026-10-20T11:46:45.700Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -2659,9 +2659,13 @@
       "sha256": "c285f744e771568844d8fd81f87359c04f92e632b9833d1081310be02479701f",
       "bytes": 1291
     },
+    "docs/LIBRA_LENS_HANDOFF_DESIGN_20261020.md": {
+      "sha256": "7c6fa821068aa5f6dcc5092bfb33d377e086d7823296b1cf76f3f7413482fb38",
+      "bytes": 10676
+    },
     "docs/LIBRA_LENS_MEMORY_DESIGN_20261020.md": {
-      "sha256": "2f0c6c45135a35e47010a4d890437e9c1b2d8f8ae3ec737cf27ff443b8fddebc",
-      "bytes": 30687
+      "sha256": "3fae5e95f5ff3cb7b0339714481331a2a200a7279ed002104d4a8f92558113d2",
+      "bytes": 30826
     },
     "docs/LIBRA_LOCAL_CORPUS_GC_20261017.md": {
       "sha256": "cf4d721988d955738802d87a6895b8fcbb61a08041c3cac53174ef59bd6d6a96",
