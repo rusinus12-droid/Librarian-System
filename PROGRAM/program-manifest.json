@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-20T00:28:56.824Z",
+  "generatedAt": "2026-10-20T00:38:41.891Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -1427,7 +1427,7 @@
     "hayaku": "3.0.156",
     "libra": "2.3.176",
     "lia": "0.26.89",
-    "retrace": "1.9.86",
+    "retrace": "1.9.87",
     "gradia": "0.25.92"
   },
   "files": {
@@ -3480,7 +3480,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "e54f571ff193554dbf63a682072a5ef412141f04c5adf8d58c8fdcff9f351ecd",
+      "sha256": "c504788d7b4eee0505f2d40bc22826034a723aa13e840e614c6c312b10a2d3e5",
       "bytes": 11840
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3856,7 +3856,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "96ab35d585334145649e0d7fb5ed2a17c0aba15e1e05c781f9b4306578176fd6",
+      "sha256": "6cf1d69f77b4d33d5885cea3530e1cdb4b3ba6a888b67e403fc03497e49f9085",
       "bytes": 3357
     },
     "plugins/Flashback_Memory.js": {
@@ -3880,8 +3880,8 @@
       "bytes": 6083521
     },
     "plugins/RETRACE.js": {
-      "sha256": "083671ca273a88aba7196701df9833455e776fcb4eb120f253f10d64dab3c2be",
-      "bytes": 1229845
+      "sha256": "824024c5683d7763ca844e41f4358870578b7dd58f9a8821fc030368157d16c2",
+      "bytes": 1230611
     },
     "release-policy.json": {
       "sha256": "dd876b2e56bc534c78fdc873914d846175c9d1234cfa926da7736f2447af5206",
@@ -11156,7 +11156,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "deb0ee1a162a258c392a5917ddfc3406e990691032090874cb3fb04cdabf73fc",
+      "sha256": "3ac80b80d85c6bcf5a87911246d189799c121c0c58ce766f2369d7954b9545f4",
       "bytes": 3791
     }
   },
