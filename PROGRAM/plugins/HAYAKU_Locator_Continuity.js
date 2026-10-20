@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.0.156
-//@version 3.0.156
+//@display-name HAYAKU · Locator Continuity v3.0.157
+//@version 3.0.157
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.0.156';
+  const PLUGIN_VERSION = '3.0.157';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -53440,6 +53440,148 @@ function createMemorySuiteSourceInputPolicy(config) {
 // Keep the established LIBRA factory name for existing consumers.
 function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceInputPolicy({...config,owner:'libra'}); }
 /* END LIBRA SOURCE INPUT POLICY */
+/* MEMORY SUITE SOURCE INPUT CONTROLS v1 BEGIN */
+// View-only extension of the existing owner input policy. No model or raw-source write.
+function mountMemorySuiteSourceInputControls(container, config) {
+    const {owner,policy}=config,loadPreferences=()=>policy.ready(),sourceRules=()=>policy.sourceRules(),setSourceRules=rules=>policy.setSourceRules(rules);
+    const disposed=()=>config.isDisposed?.()===true;
+    const preferences={get sourceRules(){return memorySuiteSourceRules(owner);}};
+    if(!container?.ownerDocument||container.querySelector('[data-source-input-controls]'))return;
+    const doc=container.ownerDocument,box=doc.createElement('section');
+    box.dataset.sourceInputControls=owner;box.className='ms-source-settings';container.prepend(box);
+    const make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
+    const style=make('style');style.textContent=`
+.ms-source-settings{font:14px/1.6 system-ui,-apple-system,'Malgun Gothic',sans-serif;display:grid;gap:14px;width:100%;max-width:960px;margin:0 auto 24px;color:inherit}
+.ms-source-settings *{box-sizing:border-box}.ms-source-settings p,.ms-source-settings h3{margin:0}.ms-source-settings h3{font-size:18px}.ms-source-settings label{display:grid;gap:5px;font-size:13px}.ms-source-settings small{opacity:.8}
+.ms-source-settings button,.ms-source-settings input,.ms-source-settings textarea,.ms-source-settings select{font:inherit;color:inherit;border:1px solid #8887;border-radius:9px;background:transparent;min-width:0;padding:8px 10px}.ms-source-settings textarea{width:100%;resize:vertical;min-height:42px}.ms-source-settings button{cursor:pointer;min-height:40px}.ms-source-settings button:disabled{opacity:.5;cursor:default}.ms-source-settings :is(button,input,textarea,select):focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.ms-source-settings .ms-input-list{display:grid;gap:10px}.ms-source-settings .ms-input-row{border:1px solid #8885;border-radius:12px;padding:14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,230px) auto;gap:10px;align-items:start}.ms-source-settings .ms-input-fields{display:grid;gap:8px}.ms-source-settings .ms-custom-toggle{display:flex;align-items:center;gap:8px}.ms-source-settings .ms-custom-toggle input{margin:0}.ms-source-settings .ms-custom-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ms-source-settings [hidden]{display:none!important}
+.ms-source-settings .ms-input-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.ms-source-settings .ms-input-apply{background:#79522d;color:white;border-color:#79522d;font-weight:700}.ms-source-settings .ms-input-status{min-height:24px}.ms-source-settings .ms-input-preview{border-top:1px solid #8885;padding-top:14px;display:grid;gap:10px}.ms-source-settings pre{font:13px/1.6 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid #8885;border-radius:10px;padding:14px;max-height:360px;overflow:auto;margin:0}.ms-source-settings .ms-input-warning{border-left:3px solid #b9802e;padding-left:10px}.ms-source-settings details{font-size:13px}.ms-source-settings summary{cursor:pointer}
+@media(max-width:600px){.ms-source-settings .ms-input-row{grid-template-columns:minmax(0,1fr) auto}.ms-source-settings .ms-input-fields{grid-column:1/-1}.ms-source-settings .ms-custom-fields{grid-template-columns:1fr}.ms-source-settings .ms-input-actions button{flex:1}}
+`;
+    box.append(style,make('h3','분석할 내용'),make('p','설정 없이 바로 사용할 수 있습니다. 알 수 없는 외부 태그와 내용은 그대로 둡니다. 필요한 경우에만 아래 규칙을 바꾸세요.'));
+    const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';box.append(list);
+    const actions=make('div'),apply=make('button','적용'),status=make('p');actions.className='ms-input-actions';apply.type='button';apply.className='ms-input-apply';apply.dataset.sourceInputApply='';apply.disabled=true;
+    status.dataset.sourceInputStatus='';status.className='ms-input-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+    const toolbar=make('div'),add=make('button','태그 추가'),undo=make('button','삭제 되돌리기'),defaults=make('button','기본 규칙 복원');toolbar.className='ms-input-actions';
+    for(const button of [add,undo,defaults]){button.type='button';button.disabled=true;}
+    add.dataset.sourceInputAdd='';undo.dataset.sourceInputUndo='';defaults.dataset.sourceInputDefaults='';toolbar.append(add,undo,defaults);box.insertBefore(toolbar,list);
+    actions.append(apply);box.append(actions,status,make('p','규칙은 적용을 눌러야 저장됩니다. 기본 규칙 복원도 초안만 바꿉니다. 기존 기억은 그대로 유지되며, 바꾸려면 원하는 구간을 직접 재분석하세요.'));
+    const previewArea=make('section'),previewButton=make('button','현재 채팅 미리보기'),previewStatus=make('p'),warning=make('p'),output=make('pre');
+    previewArea.className='ms-input-preview';previewButton.type='button';previewButton.dataset.sourceInputPreview='';previewButton.disabled=true;
+    previewStatus.dataset.sourceInputPreviewStatus='';previewStatus.setAttribute('role','status');previewStatus.setAttribute('aria-live','polite');
+    warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
+    output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
+    previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output);box.append(previewArea);
+    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. 일반 표식은 직접 구분자를 켜고 여는 표식과 닫는 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
+    const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
+    const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
+    let rows=[],removed=[],loaded=false,applying=false,initial='',legacy=false,sample=null,previewVersion=0,readingSample=false;
+    const isEmpty=row=>row.custom.checked?!row.open.value.trim()&&!row.close.value.trim():!row.value.value.trim();
+    function inferTag(input) {
+      const value=input.trim();
+      if(/^[a-z][a-z0-9:_-]{0,63}$/i.test(value))return value.toLowerCase();
+      const tag=/^<([a-z][a-z0-9:_-]{0,63})(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/i.exec(value);
+      if(tag){const rest=value.slice(tag[0].length);if(!rest.trim()||new RegExp('</'+tag[1]+'\\s*>$','i').test(rest))return tag[1].toLowerCase();}
+      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 일반 표식은 직접 구분자를 켜 주세요.');
+    }
+    function readDraft() {
+      const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
+      for(const row of rows){
+        if(isEmpty(row))continue;
+        const key=row.action.value;
+        if(row.custom.checked){
+          const entry={open:row.open.value,close:row.close.value};
+          const form=row.control&&memorySuiteSourceRuleForm('@'+row.control);
+          if(form&&key==='ignoredTags'&&entry.open===form.open&&entry.close===form.close)draft.controls.push(row.control);
+          else draft[key].push(entry);
+        }else draft[key].push(inferTag(row.value.value));
+      }
+      return memorySuiteNormalizeSourceRules(draft);
+    }
+    const fingerprint=rules=>JSON.stringify(memorySuiteNormalizeSourceRules(rules));
+    function setEnabled() {
+      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);}
+      let dirty=true;try{dirty=fingerprint(readDraft())!==initial;}catch{}
+      apply.disabled=!loaded||applying||!dirty;
+      add.disabled=defaults.disabled=!loaded||applying;undo.disabled=!loaded||applying||!removed.length;
+      previewButton.disabled=!loaded||applying||readingSample||typeof config.readSample!=='function';
+    }
+    async function showPreview() {
+      if(!sample)return;
+      const version=++previewVersion;
+      warning.hidden=true;warning.textContent='';output.textContent='';output.hidden=true;
+      try{
+        const rules=readDraft();let projected;
+        if(legacy&&fingerprint(rules)===initial){
+          if(typeof config.projectLegacySample!=='function'){previewStatus.textContent='기본 분석 입력을 미리 볼 수 없습니다.';return;}
+          projected={text:await config.projectLegacySample(sample),warnings:[]};
+        }else projected=memorySuiteProjectSourceRules(memorySuiteStripInternalSource(sample.text),rules);
+        if(disposed()||version!==previewVersion)return;
+        output.textContent=String(projected.text??'').replace(/\r\n/g,'\n').trim();output.hidden=false;
+        warning.textContent=projected.warnings.join(' ');warning.hidden=!projected.warnings.length;
+        previewStatus.textContent=(sample.label?sample.label+' · ':'')+(output.textContent?'불러온 메시지의 분석 입력':'분석할 내용이 없습니다.')+(fingerprint(rules)!==initial?' · 아직 적용하지 않은 규칙':'');
+      }catch(e){if(disposed()||version!==previewVersion)return;warning.textContent=String(e.message||e);warning.hidden=false;previewStatus.textContent='규칙을 확인한 뒤 다시 미리 보세요.';}
+    }
+    function changed() {
+      if(!loaded||applying)return;
+      if(!rows.some(isEmpty))addRow();
+      status.textContent='변경한 규칙을 적용해 주세요.';setEnabled();void showPreview();
+    }
+    function addRow(value=null,key='ignoredTags',control=null) {
+      const element=make('div'),fields=make('div'),tagLabel=make('label','태그 이름 또는 XML 예시'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label','처리 방법'),action=make('select'),remove=make('button','삭제');
+      element.dataset.sourceInputRow='';element.className='ms-input-row';fields.className='ms-input-fields';tagLabel.dataset.ruleTagLabel='';
+      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='예: decoration 또는 <decoration>예시</decoration>';tagLabel.append(valueInput);
+      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','직접 구분자'));
+      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;
+      const openLabel=make('label','여는 표식'),closeLabel=make('label','닫는 표식');openLabel.append(open);closeLabel.append(close);customFields.append(openLabel,closeLabel);
+      for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(action);
+      remove.type='button';remove.dataset.ruleDelete='';remove.setAttribute('aria-label','이 규칙 삭제');
+      if(value&&typeof value==='object'){custom.checked=true;open.value=value.open;close.value=value.close;}else if(value)valueInput.value=value;
+      const row={element,value:valueInput,custom,open,close,action,remove,control};rows.push(row);
+      const syncMode=()=>{tagLabel.hidden=custom.checked;customFields.hidden=!custom.checked;};syncMode();
+      custom.onchange=()=>{
+        if(custom.checked&&!open.value&&!close.value&&valueInput.value.trim()){
+          try{const name=inferTag(valueInput.value);open.value='<'+name+'>';close.value='</'+name+'>';}catch{open.value=valueInput.value;}
+        }
+        if(!custom.checked&&(open.value||close.value))valueInput.value=open.value||close.value;
+        syncMode();changed();
+      };valueInput.oninput=open.oninput=close.oninput=changed;action.onchange=changed;
+      remove.onclick=()=>{if(!loaded||applying||isEmpty(row))return;removed.push({row,index:rows.indexOf(row)});if(removed.length>128)removed.shift();rows=rows.filter(item=>item!==row);element.remove();changed();};
+      fields.append(tagLabel,customLabel,customFields);if(control)fields.append(make('small',controlLabels[control]||'저장된 기본 규칙'));
+      element.append(fields,actionLabel,remove);list.append(element);return row;
+    }
+    function fill(rules=sourceRules(),resetInitial=true) {
+      rows=[];removed=[];list.replaceChildren();
+      for(const key of Object.keys(actionNames))for(const entry of rules[key])addRow(entry,key);
+      for(const control of rules.controls)addRow(memorySuiteSourceRuleForm('@'+control),'ignoredTags',control);
+      addRow();if(resetInitial){initial=fingerprint(rules);legacy=!preferences.sourceRules;}setEnabled();
+    }
+    add.onclick=()=>{if(!loaded||applying||disposed())return;const row=rows.find(isEmpty)||addRow();row.element.scrollIntoView?.({block:'nearest'});row.value.focus();};
+    undo.onclick=()=>{if(!loaded||applying||disposed())return;const entry=removed.pop();if(!entry)return;const index=Math.min(entry.index,rows.length);list.insertBefore(entry.row.element,rows[index]?.element||null);rows.splice(index,0,entry.row);changed();status.textContent='삭제한 규칙을 되돌렸습니다. 적용 전입니다.';};
+    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill({...memorySuiteDefaultSourceRules(owner),ignoredTags:[...memorySuiteSourceIgnoredTags(),'thoughts']},false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
+    apply.onclick=async()=>{
+      if(!loaded||applying||disposed())return;
+      let rules;try{rules=readDraft();if(fingerprint(rules)===initial)return;}catch(e){status.textContent='적용 실패: '+String(e.message||e);return;}
+      applying=true;status.textContent='적용 중…';setEnabled();
+      try{await setSourceRules(rules);if(disposed())return;fill();status.textContent='규칙을 적용했습니다. 기존 기억은 유지됩니다.';await showPreview();}
+      catch(e){if(!disposed())status.textContent='적용 실패: '+String(e.message||e);}
+      finally{applying=false;if(!disposed())setEnabled();}
+    };
+    previewButton.onclick=async()=>{
+      if(!loaded||readingSample||disposed()||typeof config.readSample!=='function')return;
+      readingSample=true;sample=null;const version=++previewVersion;output.textContent='';output.hidden=true;warning.textContent='';warning.hidden=true;previewStatus.textContent='현재 채팅을 읽는 중…';setEnabled();
+      try{
+        const result=await config.readSample();if(disposed()||version!==previewVersion)return;
+        if(result==null){previewStatus.textContent='현재 채팅에 미리 볼 메시지가 없습니다.';return;}
+        if(typeof result!=='string'&&typeof result.text!=='string')throw Error('SOURCE_SAMPLE_INVALID');
+        sample=typeof result==='string'?{text:result}:result;await showPreview();
+      }catch{if(!disposed()&&version===previewVersion)previewStatus.textContent='현재 채팅을 읽지 못했습니다. 잠시 뒤 다시 미리 보세요.';}
+      finally{readingSample=false;if(!disposed())setEnabled();}
+    };
+    status.textContent='저장된 규칙을 읽는 중…';
+    loadPreferences().then(()=>{if(disposed())return;loaded=true;fill();status.textContent='';if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!disposed())status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
+  }
+/* MEMORY SUITE SOURCE INPUT CONTROLS v1 END */
 
 
   let hayakuSourceEvidence = null;
@@ -53530,7 +53672,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     return stableHash64(pairs.map(hayakuSourceEditDigest).join('\u0001'));
   };
   const hayakuReanalysisBusy=()=>hayakuInputRequestActive||Memory.nativeRecovery?.manualBatchInFlight===true||Memory.nativeRecovery?.repairInFlight===true||Memory.nativeRecovery?.coldStartInFlight===true||Memory.finalizedCaptureInFlight?.size>0||Memory.finalizedBindingInFlight?.size>0;
-  const getHayakuSourceInput=()=>hayakuSourceInput||(hayakuSourceInput=createMemorySuiteSourceInputPolicy({
+  const hayakuSourceInputConfig={
     owner:'hayaku',
     read:async()=>{const r=await RisuCompat.getStorageItemOutcome('hayaku.v2.settings.source-tracking.v1');if(r.state!=='fulfilled')throw Error('SOURCE_INPUT_READ_UNAVAILABLE');return r.value;},
     write:body=>RisuCompat.setStorageItem('hayaku.v2.settings.source-tracking.v1',body),
@@ -53539,7 +53681,9 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       const row=ensureArray(scope.chatMessages).slice().reverse().find(m=>/^(?:user|assistant|human|model)$/.test(normalizeMessageRole(m?.role||roleFromUserFlag(m))));
       return row?{text:rawMessagePayload(row),role:normalizeMessageRole(row.role||roleFromUserFlag(row)),label:'현재 채팅의 마지막 메시지'}:null;},
     projectLegacySample:sample=>canonicalHistoryText(sample.text,sample.role)
-  }));
+  };
+  const getHayakuSourceInput=()=>hayakuSourceInput||(hayakuSourceInput=createMemorySuiteSourceInputPolicy(hayakuSourceInputConfig));
+  const mountHayakuSourceInput=container=>mountMemorySuiteSourceInputControls(container,{...hayakuSourceInputConfig,policy:getHayakuSourceInput(),isDisposed:()=>Memory.unloaded});
   // Selection binds scope and topology only. Text is deliberately read on Apply.
   const hayakuSourceEditSnapshot=async(scopeValue=null,snapshotValue=null,ledgerValue=null)=>{
     await getHayakuSourceInput().ready();
@@ -56055,7 +56199,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   const viewerRenderSettings = async (force = false) => {
     const ticket = viewerSettingsLifetime(); const root = ticket.root;
     if (!root) return null;
-    getHayakuSourceInput().mountControls(root.querySelector('#hayakuSourceTrackingSettings'));
+    mountHayakuSourceInput(root.querySelector('#hayakuSourceTrackingSettings'));
     if (Memory.ledgerViewer.settingsDirty && !force) {
       viewerUpdateSettingsDraftState(); viewerSetSettingsSection(Memory.ledgerViewer.settingsSection);
       return Memory.ledgerViewer.settingsBaseline;
@@ -57319,11 +57463,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
   });
   function viewerRenderSourceEditConsent() {
     const viewer=Memory.ledgerViewer,root=viewer?.root;if(!root)return;
-    getHayakuSourceInput().mountControls(root.querySelector('#hayakuSourceTrackingSettings'));
+    mountHayakuSourceInput(root.querySelector('#hayakuSourceTrackingSettings'));
     if(viewer.activeTab!=='recovery')return;
     const card=root.querySelector('#hayakuSourceEditConsent');if(!card||card.dataset.reanalysisMounted===text(viewer.scope?.key))return;
     card.dataset.reanalysisMounted=text(viewer.scope?.key);let inventory=null,busy=false,version=0;
-    card.innerHTML='<header class="card__head"><div><h2 id="hayakuSourceEditConsentTitle">직접 재분석</h2><p>저장된 턴을 선택하면 실행 시점의 현재 채팅 내용으로 다시 분석합니다. 실행 전에 대상·호출 수·기억 교체를 확인합니다. 메시지 ID가 없는 예전 채팅은 편집 후 구간 목록을 새로고침하세요.</p></div></header><button type="button" class="btn" data-reanalysis-refresh>구간 목록 새로고침</button><div data-reanalysis-ranges></div><button type="button" class="btn" data-reanalysis-run disabled>재분석 내용 확인</button><p role="status" aria-live="polite" data-reanalysis-status></p>';
+    card.innerHTML='<header class="card__head"><div><h2 id="hayakuSourceEditConsentTitle">직접 재분석</h2><p>분석 규칙을 먼저 적용한 뒤 원하는 턴을 선택하세요. 실행 시점의 현재 채팅 내용을 적용한 규칙으로 다시 분석합니다. 실행 전에 대상·호출 수·기억 교체를 확인합니다. 메시지 ID가 없는 예전 채팅은 편집 후 구간 목록을 새로고침하세요.</p></div></header><button type="button" class="btn" data-reanalysis-refresh>구간 목록 새로고침</button><div data-reanalysis-ranges></div><button type="button" class="btn" data-reanalysis-run disabled>재분석 내용 확인</button><p role="status" aria-live="polite" data-reanalysis-status></p>';
     const list=card.querySelector('[data-reanalysis-ranges]'),run=card.querySelector('[data-reanalysis-run]'),refresh=card.querySelector('[data-reanalysis-refresh]'),status=card.querySelector('[data-reanalysis-status]');
     const current=()=>Memory.ledgerViewer.root===root&&Memory.ledgerViewer.activeTab==='recovery'&&root.querySelector('#hayakuSourceEditConsent')===card;
     const selected=()=>[...list.querySelectorAll('input:checked')].map(node=>node.value);
@@ -58801,7 +58945,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
 #${LEDGER_VIEWER_ROOT_ID} #hayakuFailedRecoveryList article.row>.btn:not(.btn--sm) small{font-weight:500;opacity:.85;overflow-wrap:anywhere}
 @container app (max-width:414px){#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button [data-tray-text]{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}}</style>
       <div class="stage"><div class="frame"><div class="app" data-hayaku-mockup="1">
-        <header class="topbar"><div class="brand"><div class="brand__mark" style="font:800 20px var(--font-sans)">速</div><div><div class="brand__name">HAYAKU</div><div class="brand__ver">CONTINUITY CONTROL · v${PLUGIN_VERSION}</div></div></div><div class="scope"><b id="hayakuViewerScopeTop">현재 채팅</b><span>›</span><span id="hayakuViewerScopeMeta">현재 채팅의 원장 상태를 읽습니다.</span></div><div class="grow"></div><span id="hayakuViewerHealth" class="health health--danger"><i></i><span data-health-text>원장 확인 중</span></span><button id="hayakuNativeJobChip" class="btn btn--sm hayaku-job-button" type="button" data-idle-go="logs" aria-controls="hayakuNativeJobOverlay" aria-expanded="false" title="진행 중이거나 끝난 작업을 다시 엽니다">${hayakuMockupIcon('clock')}<span data-tray-text>작업 없음</span></button><div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기">${hayakuMockupIcon('more')}</button><div class="menu__panel"><button id="hayakuOverviewRefresh" type="button">${hayakuMockupIcon('refresh')}다시 대조</button><button id="hayakuOverviewExport" type="button">${hayakuMockupIcon('download')}디버그 JSON 내보내기</button><button id="closeHayakuViewer" type="button">${hayakuMockupIcon('x')}닫기</button></div></div></header>
+        <header class="topbar"><div class="brand"><div class="brand__mark" style="font:800 20px var(--font-sans)">速</div><div><div class="brand__name">HAYAKU</div><div class="brand__ver">CONTINUITY CONTROL · v${PLUGIN_VERSION}</div></div></div><div class="scope"><b id="hayakuViewerScopeTop">현재 채팅</b><span>›</span><span id="hayakuViewerScopeMeta">현재 채팅의 원장 상태를 읽습니다.</span></div><div class="grow"></div><span id="hayakuViewerHealth" class="health health--danger"><i></i><span data-health-text>원장 확인 중</span></span><button id="hayakuNativeJobChip" class="btn btn--sm hayaku-job-button" type="button" data-idle-go="logs" aria-controls="hayakuNativeJobOverlay" aria-expanded="false" title="진행 중이거나 끝난 작업을 다시 엽니다">${hayakuMockupIcon('clock')}<span data-tray-text>작업 없음</span></button><div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기">${hayakuMockupIcon('more')}</button><div class="menu__panel"><button id="hayakuOverviewRefresh" type="button">${hayakuMockupIcon('refresh')}다시 대조</button><button id="hayakuOverviewExport" type="button">${hayakuMockupIcon('download')}디버그 JSON 내보내기</button></div></div><button id="closeHayakuViewer" class="btn btn--icon" type="button" title="닫기" aria-label="HAYAKU 닫기">${hayakuMockupIcon('x')}</button></header>
         <div id="hayakuNativeJobOverlay" class="overlay" aria-hidden="true" hidden><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-live="polite" aria-labelledby="hayakuNativeJobTitle"><div class="split"><div><div class="eyebrow" id="hayakuNativeJobEyebrow">Other Ax</div><h2 id="hayakuNativeJobTitle">복구 작업</h2><p><span id="hayakuNativeJobState">대기</span> · 경과 <span id="hayakuNativeJobElapsed">0초</span></p></div><span class="badge badge--info"><span id="hayakuNativeJobStateCompact">대기</span> · <span id="hayakuNativeJobElapsedCompact">0초</span></span></div><div class="progress" style="margin:14px 0"><i id="hayakuNativeJobProgressBar" style="width:0%"></i></div><div class="cluster"><span>대상 <b id="hayakuNativeJobTurns">-</b></span><span>현재 <b id="hayakuNativeJobCurrent">-</b></span><span id="hayakuNativeJobProgressText" class="hint">대상 확인</span></div><p id="hayakuNativeJobMessage" class="muted">작업 상태를 확인합니다.</p><div class="steps" style="margin-top:12px"><div class="step is-active"><span class="step__no">1</span><b data-job-step="1">대조</b></div><div class="step"><span class="step__no">2</span><b data-job-step="2">분석</b></div><div class="step"><span class="step__no">3</span><b data-job-step="3">검증</b></div><div class="step"><span class="step__no">4</span><b data-job-step="4">기록</b></div></div><div class="list" data-hayaku-job-body="repair" hidden style="margin-top:12px"><div class="res-row"><b>대상</b><span id="hayakuNativeJobResultTarget">-</span></div><div class="res-row"><b>기억 저장</b><span id="hayakuNativeJobResultMemory">0/0턴</span></div><div class="res-row"><b>완전 패킷</b><span id="hayakuNativeJobResultPackets">0개</span></div><div class="res-row"><b>부분 저장</b><span id="hayakuNativeJobResultPartial">0개</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultCalls">0회</span></div></div><div class="list" data-hayaku-job-body="cold" hidden style="margin-top:12px"><div class="res-row"><b>대상 묶음</b><span id="hayakuNativeJobColdBundles">-</span></div><div class="res-row"><b>저장된 패킷</b><span id="hayakuNativeJobResultColdSaved">0개</span></div><div class="res-row"><b>실패한 묶음</b><span id="hayakuNativeJobResultColdHeld">0묶음</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultColdCalls">0회</span></div></div><div class="card" data-hayaku-job-body="regen" hidden style="margin-top:12px"><p id="hayakuNativeJobResultRegeneration" class="muted">후보 준비 상태를 확인합니다.</p><section id="hayakuNativeJobComparison" class="cmp" hidden aria-label="기존 패킷과 재생성 후보 비교"></section><div id="hayakuNativeJobChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-regeneration-choice="later">나중에 결정</button><button type="button" class="btn" data-hayaku-regeneration-choice="keep_original">기존 패킷 유지</button><button type="button" class="btn btn--primary" data-hayaku-regeneration-choice="adopt_regenerated">재생성 후보 채택</button></div></div><div class="card" data-hayaku-job-body="background" hidden style="margin-top:12px"><p>복구 저널을 유지하거나 실행 전에 확인한 대상으로 복구를 요청합니다.</p><div class="list"><div class="res-row"><b>확인된 대상</b><span id="hayakuNativeJobConfirmationTarget">-</span></div></div><div id="hayakuRecoveryConfirmationChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-recovery-confirmation="no">아니요 · 저널에 유지</button><button type="button" class="btn btn--primary" data-hayaku-recovery-confirmation="yes">예 · 자동 복구 시작</button></div></div><div class="dialog__actions"><button id="minimizeHayakuNativeJob" class="btn">최소화</button><button id="cancelHayakuNativeJob" class="btn btn--danger">작업 중단</button><button id="closeHayakuNativeJob" class="btn btn--primary" hidden>닫기</button></div></div></div>
         <nav class="sidebar" aria-label="HAYAKU 메뉴"><div class="nav-label">상태</div>${nav('Overview','연속성 관제','관제','grid')}<div class="nav-label">기억</div>${nav('Packets','패킷 · 세계선','패킷','layers', '<span id="hayakuOverviewPacketCount" class="count" hidden>0</span>')}<div class="nav-label">복구</div>${nav('Recovery','구간 점검 · 복구','복구','wrench', '<span id="hayakuOverviewRecoveryCount" class="count count--alert" hidden>0</span>')}<div class="nav-label">연결 · 설정</div>${nav('Server','서버 연결','연결','server')}${nav('Settings','설정','설정','sliders')}${nav('Logs','작동 기록','기록','log')}<div class="side-foot"><b id="hayakuSidebarAux">Other Ax · 호출 미검증</b><span>Provider와 키는 RisuAI 소유 — HAYAKU에는 저장하지 않습니다.</span></div></nav>
         <main class="main"><div class="page-body">
