@@ -1,8 +1,8 @@
 # LIBRA lens memory: story time on each note (design, 2026-10-20)
 
-Status: **implemented on `feature/custom-memory-lenses` (LIBRA 2.3.182).** It extends `LIBRA_LENS_MEMORY_DESIGN_20261020.md`.
-The existing lens handoff is implemented in LIBRA 2.3.181 / RE:TRACE 1.9.90; the time fields and
-their provenance described here still need to be added to that path.
+Status: **implemented on `feature/custom-memory-lenses` (LIBRA 2.3.184; initially 2.3.182).** It extends
+`LIBRA_LENS_MEMORY_DESIGN_20261020.md`. Time fields and their source excerpts are included in the
+existing lens handoff (RE:TRACE 1.9.90), native copy and portable backup paths.
 
 ## Problem
 
@@ -309,3 +309,20 @@ All three plan steps are in `plugins/LIBRA.js`.
 
 Model replies are controlled fixtures. These checks prove the gate and the plumbing. They do not
 measure how well a live model picks the right time for an event (see "What this gate proves").
+
+### 2.3.184 corrections
+
+- Admission and item ids include the verified time expression and its source turn, so identical
+  wording about different dated events remains separate. Equivalent whitespace variants still
+  deduplicate after verification. Only accepted items contribute to time counts.
+- Recall retains distinct stated times. It also keeps the source digest (including native message
+  identities) in the temporal identity rather than treating repeated relative expressions from
+  different source spans as one event. An identical copied history still deduplicates against its
+  inherited note, preferring the current record. Lens budgets and item caps remain unchanged.
+- NFKC comparison maps grapheme spans back to original UTF-16 positions. Stored time/name wording,
+  bounded archive excerpts and highlights use the original source, including full-width text,
+  combining sequences and compatibility expansions. Partial matches inside an expanded glyph are
+  refused. Hosts without grapheme segmentation retain literal/whitespace matching only.
+- Regression sources: `tests/libra_lens_story_identity_runtime_test.cjs` and
+  `tests/browser/libra_lens_story_source_browser_test.cjs` (Full/Min at 1280 and 390 px). The time,
+  people and identity runtime suites are part of the release builder's mandatory smoke checks.

@@ -1,6 +1,6 @@
 # LIBRA lens memory: people on each note (2026-10-20)
 
-Status: **implemented on `feature/custom-memory-lenses` (LIBRA 2.3.183).** It extends
+Status: **implemented on `feature/custom-memory-lenses` (LIBRA 2.3.184; initially 2.3.183).** It extends
 `LIBRA_LENS_MEMORY_DESIGN_20261020.md` and follows the same rules as
 `LIBRA_LENS_TIME_DESIGN_20261020.md`.
 
@@ -127,3 +127,15 @@ an excerpt, and `whoIssue`. Archives without people data stay valid.
 
 Model replies are controlled fixtures. These checks prove the gate and the plumbing, not how well a
 live model attributes facts to people.
+
+### 2.3.184 corrections
+
+- Common English object/possessive/reflexive pronouns and Japanese/Korean pronouns are excluded
+  alongside subject pronouns. They keep the note as unknown, with the existing dropped-name count.
+  Exclusion uses a complete normalized word, so names such as `Hera` remain valid.
+- Compatibility matching stores and highlights the original name rather than its NFKC spelling.
+  Time-bearing and name-bearing excerpts beyond the old source prefix survive archive readback.
+- `tests/libra_lens_story_identity_runtime_test.cjs` covers these cases through public owner APIs;
+  `tests/browser/libra_lens_story_source_browser_test.cjs` covers inherited highlights using exact
+  Full/Min bytes. These are deterministic checks of the known pronoun rules and literal matching,
+  not a general semantic name classifier.

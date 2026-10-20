@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.183
-//@version 2.3.183
+//@display-name LIBRA v2.3.184
+//@version 2.3.184
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.183';
+  const PLUGIN_VERSION = '2.3.184';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -13971,19 +13971,35 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
 
   // Finds `needle` in `haystack` ignoring whitespace differences ("3월4일" matches "3월 4일") and
   // returns the matching span of the haystack itself, so callers keep the source's own wording.
+  const lensLiteralSegmenter = typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function'
+    ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
   const lensLocateLiteral = (haystack, needle) => {
     const source = String(haystack ?? ''), wanted = String(needle ?? '').replace(/\s+/g, '');
     if (!wanted) return null;
-    for (const body of [source, source.normalize('NFKC')]) {
-      let stripped = '';
-      const map = [];
-      for (let index = 0; index < body.length; index += 1) if (!/\s/.test(body[index])) { stripped += body[index]; map.push(index); }
-      const target = body === source ? wanted : wanted.normalize('NFKC');
-      const at = target ? stripped.indexOf(target) : -1;
-      if (at >= 0) {
-        const start = map[at], end = map[at + target.length - 1] + 1;
-        return { start, end, text: body.slice(start, end), body };
+    let stripped = '';
+    const rawOffsets = [];
+    for (let index = 0; index < source.length; index += 1) if (!/\s/.test(source[index])) { stripped += source[index]; rawOffsets.push(index); }
+    const exact = stripped.indexOf(wanted);
+    if (exact >= 0) {
+      const start = rawOffsets[exact], end = rawOffsets[exact + wanted.length - 1] + 1;
+      return { start, end, text: source.slice(start, end), body: source };
+    }
+    const target = wanted.normalize('NFKC').replace(/\s+/g, '');
+    if (!target || !lensLiteralSegmenter || !source.normalize('NFKC').replace(/\s+/g, '').includes(target)) return null;
+    // Normalize whole graphemes so composition and expansion both map back to original UTF-16
+    // offsets (half-width kana + dakuten, decomposed Hangul, ligatures, full-width characters).
+    let normalized = '';
+    const starts = [], ends = [];
+    for (const { segment, index } of lensLiteralSegmenter.segment(source)) {
+      for (const unit of segment.normalize('NFKC').split('')) if (!/\s/.test(unit)) {
+        normalized += unit; starts.push(index); ends.push(index + segment.length);
       }
+    }
+    for (let at = normalized.indexOf(target); at >= 0; at = normalized.indexOf(target, at + 1)) {
+      const start = starts[at], end = ends[at + target.length - 1];
+      const original = source.slice(start, end);
+      // A substring of an expanded glyph is not a matching source span on its own.
+      if (original.normalize('NFKC').replace(/\s+/g, '') === target) return { start, end, text: original, body: source };
     }
     return null;
   };
@@ -13996,9 +14012,19 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   // speaker of a cited user or AI turn. Pronouns and group words are never names.
   const LENS_WHO_MAX = 4;
   const LENS_WHO_NAME_MAX = 60;
-  const LENS_NOT_A_NAME = new Set(['나', '저', '너', '당신', '그', '그녀', '그들', '그녀들', '우리', '저희', '너희', '둘', '둘다', '셋', '모두', '다들', '누군가', '사람', '그사람',
-    'i', 'me', 'you', 'he', 'she', 'they', 'we', 'someone', 'everyone', 'both', 'all']);
+  const LENS_NOT_A_NAME = new Set([
+    '나', '저', '너', '당신', '그', '그녀', '그들', '그녀들', '우리', '저희', '너희', '여러분', '본인', '자신', '자기',
+    '그분', '이분', '저분', '그의', '그녀의', '그들의', '자신의', '둘', '둘다', '셋', '모두', '다들', '누군가', '사람', '그사람',
+    'i', 'me', 'my', 'mine', 'myself', 'you', 'your', 'yours', 'yourself', 'yourselves', 'he', 'him', 'his', 'himself',
+    'she', 'her', 'hers', 'herself', 'it', 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themself', 'themselves',
+    'we', 'us', 'our', 'ours', 'ourselves', 'someone', 'anyone', 'anybody', 'everyone', 'everybody', 'both', 'all',
+    '私', 'わたし', 'ワタシ', 'わたくし', 'あたし', '僕', 'ぼく', 'ボク', '俺', 'おれ', 'オレ', '自分',
+    'あなた', '貴方', '君', 'きみ', 'お前', 'おまえ', '彼', 'かれ', '彼女', 'かのじょ', '彼ら', '彼等', '彼女ら',
+    '彼女たち', '彼女達', '私たち', '私達', '僕たち', '僕ら', '俺たち', '俺ら', '我々', 'われわれ', 'あなたたち',
+    '皆', 'みんな', '皆さん', '全員', '両者', '二人', '2人', 'ふたり'
+  ]);
   const lensNameKey = value => String(value ?? '').normalize('NFKC').replace(/\s+/g, '').toLocaleLowerCase();
+  const lensWhenIdentity = when => when?.text ? [lensNameKey(when.text), String(when.ref || '')] : null;
 
   const LENS_SOURCE_EXCERPT_MAX = 4000;
   const LENS_SOURCE_EXCERPT_RADIUS = 600;
@@ -76271,8 +76297,25 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             if (!who.some(row => lensNameKey(row.name) === lensNameKey(person.name))) who.push(person);
           }
         }
+        // Verify time before deduplication: identical wording can describe separate dated events.
+        // Counts are updated only after the ordinary evidence gate accepts the note.
+        let when;
+        let whenIssue = '';
+        if (lens.trackTime) {
+          when = null;
+          const whenText = lensSafeText(rawItem.when ?? rawItem.whenText ?? '', 120);
+          if (whenText.replace(/\s+/g, '').length >= 2) {
+            const whenRef = string(rawItem.whenRef || '').trim().toLowerCase();
+            for (const ref of new Set([whenRef, ...refs, ...sources.keys()])) {
+              const found = sources.has(ref) ? lensLocateLiteral(sources.get(ref).raw, whenText) : null;
+              if (found) { when = { text: lensSafeText(found.text, 120), ref }; break; }
+            }
+            if (!when) whenIssue = 'not_in_source';
+          }
+        }
         const whoKeys = who ? [who.map(row => lensNameKey(row.name)).sort()] : [];
-        const dedupeKey = digest([label, canonicalEvidenceComparable(textValue), refs.slice().sort(), ...whoKeys]);
+        const timeKeys = lens.trackTime ? [lensWhenIdentity(when)] : [];
+        const dedupeKey = digest([label, canonicalEvidenceComparable(textValue), refs.slice().sort(), ...whoKeys, ...timeKeys]);
         if (seen.has(dedupeKey)) { reject('duplicate_item', details); continue; }
         let binding = null;
         if (quote && canonicalEvidenceComparable(quote).length >= LENS_QUOTE_MIN_CHARS) {
@@ -76289,30 +76332,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (acceptedItems.length >= LENS_ITEMS_MAX_PER_RUN) { reject('item_limit_exceeded', details); continue; }
         seen.add(dedupeKey);
         if (evidenceLevel === 'quoted') quoted += 1; else interpreted += 1;
-        // Story time is a literal check against the analyzed span: the expression must be in one of
-        // its turns, and the stored text is the source's own wording. A missing or unmatched time
-        // never rejects the note; it becomes unknown.
-        let when;
-        let whenIssue = '';
         if (lens.trackTime) {
-          when = null;
-          const whenText = lensSafeText(rawItem.when ?? rawItem.whenText ?? '', 120);
-          if (whenText.replace(/\s+/g, '').length >= 2) {
-            const whenRef = string(rawItem.whenRef || '').trim().toLowerCase();
-            for (const ref of new Set([whenRef, ...refs, ...sources.keys()])) {
-              const found = sources.has(ref) ? lensLocateLiteral(sources.get(ref).raw, whenText) : null;
-              if (found) { when = { text: lensSafeText(found.text, 120), ref }; break; }
-            }
-            if (!when) { whenIssue = 'not_in_source'; timeDropped += 1; }
-          }
           if (when) timeStated += 1; else timeUnknown += 1;
+          if (whenIssue) timeDropped += 1;
         }
         if (lens.trackSubject) {
           if (who.length) subjectNamed += 1; else subjectUnknown += 1;
           if (whoIssue) subjectDropped += 1;
         }
         acceptedItems.push({
-          itemId: `li_${digest([refs, textValue, binding?.quoteHash || basis, ...whoKeys]).slice(0, 12)}`,
+          itemId: `li_${digest([refs, textValue, binding?.quoteHash || basis, ...whoKeys, ...timeKeys]).slice(0, 12)}`,
           label,
           text: textValue,
           evidenceLevel,
@@ -77454,7 +77483,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             // People recorded with the note count toward relevance (written names, the people card's
             // name and aliases) and keep same-worded notes about different people apart.
             const people = record.trackedSubject === true ? resolvePeople(item.who) : [];
-            const textKey = `${canonicalEvidenceComparable(item.text)}${people.length ? `|${people.map(person => person.key).sort().join(',')}` : ''}`;
+            const timeIdentity = record.trackedTime === true && item.when
+              ? [lensWhenIdentity(item.when), record.sourceDigest] : null;
+            const textKey = digest([canonicalEvidenceComparable(item.text), people.map(person => person.key).sort(), timeIdentity]);
             if (seenText.has(textKey)) continue;
             const peopleText = people.flatMap(person => [person.name, person.written, ...person.aliases]).join(' ');
             const itemTokens = tokenStream(`${item.label} ${item.text} ${item.quote || ''} ${item.when?.text || ''} ${peopleText} ${Object.values(item.extra || {}).join(' ')}`);
