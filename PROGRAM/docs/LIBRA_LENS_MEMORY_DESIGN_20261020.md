@@ -421,6 +421,7 @@ This section records what the code does where it refines or departs from the sec
 
 ### Done since the first version
 - Story time on each note (the date or time the source states, or "시점 불명") — `LIBRA_LENS_TIME_DESIGN_20261020.md` (2.3.182).
+- People on each note: one lens tracks several people by the names the source writes, or "인물 불명" — `LIBRA_LENS_PEOPLE_DESIGN_20261020.md` (2.3.183).
 - RE:TRACE next-session handoff and native copy carry lens notes — `LIBRA_LENS_HANDOFF_DESIGN_20261020.md` (2.3.181).
 
 ### Not yet done
