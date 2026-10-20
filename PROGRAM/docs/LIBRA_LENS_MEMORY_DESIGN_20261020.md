@@ -63,7 +63,7 @@ We adopt six battle-tested mechanisms from the reference `WorldAdditionalCore` /
 
 ### 4.1 Global Lens Registry (`libra.lens_registry.v1`)
 
-Stored in global plugin settings (`settings.lensRegistry`), with optional per-scope status/recall overrides in `…:scope:<scope>:lens:scope_state`:
+Stored in global plugin settings (runtime `lens_registry`). There are no per-scope overrides: a per-scope copy could silently shadow the global definitions.
 
 ```json
 {
@@ -108,7 +108,7 @@ Stored in global plugin settings (`settings.lensRegistry`), with optional per-sc
 
 - **Slot rule:** `lenses.filter(l => l.status === 'active' || l.status === 'paused').length <= 5`.
 - **`connection.presetName`:** `""` uses the default canonical analysis preset; otherwise binds to the named provider preset in `settings.providers`.
-- **`cadence.mode`:** `'every_batch'` (runs after every canonical 5-turn batch), `'every_n_batches'` (runs every $N \in [2, 10]$ canonical batches), or `'manual'` (runs only when triggered from the GUI).
+- **`cadence.mode`:** `'every_batch'` (runs after every canonical 5-turn batch), `'every_n_batches'` (runs every $N \in [2, 4]$ canonical batches, so one run covers at most 20 turns), or `'manual'` (runs only when triggered from the GUI).
 
 ### 4.2 Lens Output Contract (Model Response)
 
@@ -272,7 +272,7 @@ All per-scope lens keys follow the standard LIBRA scoped key convention so they 
 
 ### 7.3 Prompt Injection Block Format
 ```text
-[LIBRA LENS MEMORY — USER-DEFINED PERSPECTIVE NOTES (NON-CANONICAL)]
+[LIBRA LENS MEMORY — PERSPECTIVE NOTES (NON-CANONICAL)]
 아래 항목은 사용자가 정의한 별도 관점(렌즈) 기록입니다. 정본 기억(Canonical Memory)이나 현재 상태(State)와 충돌할 경우 언제나 정본 기억이 우선합니다.
 - [lens:떡밥·복선 추적] (T11–T15 · 단서) 그녀는 지하실 열쇠의 행방을 묻자 시선을 피하며 찻잔만 만지작거렸다. (원문: "그녀는 대답 대신 찻잔만 만지작거렸다.")
 - [lens:떡밥·복선 추적 · 해석] (T11–T15 · 의문) 열쇠의 위치를 알고 있으면서 대답을 회피하는 반응으로 보인다.
@@ -343,3 +343,82 @@ All per-scope lens keys follow the standard LIBRA scoped key convention so they 
 - **Provenance & Ring Buffer:** Verify `instructionRevision` hashing, `"이전 지침으로 생성"` badge + diff after instruction edit, and raw response eviction after $N=20$ runs.
 - **Lifecycle & Micro Invalidation:** Verify regeneration, swipe, deletion, and worldline branching invalidate affected lens records; verify 5-slot limit enforcement and Trash restore/permanent delete (local + server).
 - **Recall Boundary:** Verify lens items stay within their separate budget, carry `[lens:<name>]` / `[lens:<name> · 해석]` labels, and never leak trashed or stale-revision records.
+
+---
+
+## 10. Implementation status (LIBRA 2.3.179, RETRACE 1.9.89)
+
+This section records what the code does where it refines or departs from the sections above.
+
+### Canonical lock
+- `compileMemoryPromptProfile` always uses the built-in profile for the Librarian stage. The request, the read-only viewer and the debug APIs all compile through it.
+- Custom profiles, Easy settings, OOC guidance and the Librarian addendum stay in storage untouched. That is the read-only archive.
+- **No migration wizard.** The Lens Studio's "새 렌즈" view lists the archived texts under "이전에 쓰던 분석 지침", each with "이 지침으로 렌즈 만들기".
+- The old Librarian configuration review no longer blocks canonical analysis. Its candidates are shown in the same archive list.
+- The old Prompt Studio editor is no longer reachable. The prompt dialog hosts the Lens Studio.
+
+### Engine
+- **Provider call.** `callTask('lens_analysis', system, user, { taskKind: 'lens_analysis', presetName, maxTokens, temp, jsonMode })`. An empty lens connection uses the Librarian connection.
+- **Evidence gate.**
+  - A quote must be at least 6 characters and appear in a *referenced* turn.
+  - An item may carry `refs` as an array or a single string. Every ref must name a turn in the range.
+  - At most 12 items are stored per run.
+  - Codes beyond §5: `item_limit_exceeded`, `not_an_object` and `parse_error`. All codes have Korean labels.
+  - Duplicates within a run are rejected as `duplicate_item`.
+- **Text sanitizing.** Every stored and recalled text field is reduced to one line. Tags, `[LIBRA …]` and `[SYSTEM …]`-style headers are removed, so a note can never close the evidence wrapper or pose as an instruction.
+- **Records.**
+  - Keyed by `<worldlineId>:t<start>-t<end>`.
+  - A run that admits nothing, or fails, never replaces an existing record. The run log says `keptPreviousRecord`.
+  - At most 400 records per lens per chat; the oldest are pruned.
+  - The run log keeps 40 entries. The raw ring keeps 20 (configurable 5–50).
+- **Concurrency.** All read-modify-write of one chat's lens keys goes through a per-scope queue.
+- **Scheduling.**
+  - A canonical commit only queues lens runs. A separate queue runs them one at a time after the commit, so lenses never hold the canonical job.
+  - A lens new to a chat starts at the committed batch and does not back-fill history.
+  - A lens that missed batches catches up on at most three.
+  - A job whose chat is no longer open is dropped; the next commit in that chat catches it up.
+  - Re-committed ranges are re-run only when the source or the instruction revision changed.
+- **Registry.**
+  - Normalization is idempotent.
+  - The instruction revision is always the hash of the instruction text sent to the model.
+  - A lens beyond five active/paused slots moves to the trash (`trashReason: slot_overflow`) instead of being dropped.
+  - Create and restore refuse with `LENS_SLOTS_FULL`.
+  - Restore returns the lens paused.
+  - Permanent delete removes the lens's keys in every chat through the storage bridge (server copies included), then the definition.
+
+### Recall
+- **Budget.** `min(recallMaxChars, canonical evidence budget × 0.22)`, default cap 2,600 characters. Below 400 characters, no lens block is sent.
+- **Placement.** The lens block is appended after the canonical packet and dropped whole if the classic block would exceed its ceiling. Canonical evidence is never reduced.
+- **Relevance floor.**
+  - A note needs words in common with the current input: one for short inputs, two for longer ones.
+  - A lens whose recall mode is "recent" also sends its two most recent records.
+- **Eligible lenses.** Paused lenses with recall on are recalled; trashed lenses never are.
+- **Deadline.** The lens step runs inside the recall deadline guard.
+- **Recall viewer.** It shows whether the lens block was delivered or dropped for length.
+
+### GUI
+- **Lens Studio** (the dialog behind "맞춤 기억 렌즈"). Four views:
+  - **내 렌즈.** Cards with status, evidence, cadence, recall and this chat's counts. Actions: edit, analyze the latest 5 turns, pause/resume, trash.
+  - **새 렌즈.** A design conversation with a draft, a trial run and create; starter templates; a blank lens; the archived instructions.
+  - **휴지통.** Restore and permanent delete with confirmation.
+  - **기본 분석기.** The locked canonical prompt, read-only.
+- **Editor.** Grouped fields:
+  - basics
+  - instruction, with the version history
+  - evidence and execution
+  - recall
+  
+  A sticky action bar holds trial run, refine by conversation, revert and save. Below it are this chat's run log, the raw response and "이 구간 다시 분석".
+- **Memory › 렌즈 기억.**
+  - Lens filter, evidence filter, search and a range-run box.
+  - Item cards with label, evidence, "이전 지침으로 생성" and "원문 변경됨" badges, the quote or basis, and extra values.
+  - "근거 · 출처 보기": the source turn with the quote highlighted, model, time, canonical context, and the instruction diff.
+
+### Not yet done
+- RETRACE shows lens keys as "[렌즈 기억]" in a scope's detail. It has no separate lens category in inventory or sync summaries.
+
+### Tests
+- `tests/libra_custom_memory_lens_runtime_test.cjs`: gate, normalization, provider call shape, isolation, kept records, trial, concurrency, recall, the stale guard, slots and trash.
+- `tests/libra_custom_memory_lens_pipeline_runtime_test.cjs`: the locked canonical prompt, a pending lens call not holding the canonical job, the queued run, delivery with a valid response context, and trash exclusion.
+- `tests/browser/libra_lens_studio_browser_test.cjs`: the studio and memory tab at 1280 and 390 px, including button spacing and overflow.
+

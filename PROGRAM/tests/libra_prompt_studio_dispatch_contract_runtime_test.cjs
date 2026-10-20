@@ -62,9 +62,8 @@ const context = vm.createContext({
   btoa: globalThis.btoa
 });
 
-// Prompt Studio text is lower priority than the Librarian output contract. The contract has to be
-// in the prompt that is actually sent, not only in a compiled body nobody dispatches: a customized
-// profile ends the system prompt with an output-contract reassertion, the default profile does not.
+// The canonical (Librarian) prompt is locked: stored custom profiles and the analyzer addendum are
+// never sent. User instructions run as memory lenses with their own call instead.
 (async () => {
   vm.runInContext(source, context, { filename: pluginPath });
   const api = await waitFor(() => context.__LIBRA__);
@@ -78,13 +77,11 @@ const context = vm.createContext({
   await api.debugWritePromptOverrides({ activeMemoryProfile: 'Custom', memoryProfiles: { Custom: { name: 'Custom', version: 1,
     stages: { librarian: { sections: { relation: { mode: 'append', text: 'Write every fact as markdown prose in English.' } } } } } } });
   const custom = await api.debugComposeLibrarianSystemPrompt();
-  assert.ok(custom.includes('Write every fact as markdown prose in English.'), 'the user text is sent');
-  assert.ok(custom.trimEnd().endsWith(custom.slice(custom.indexOf(reassertion)).trimEnd()) && custom.indexOf(reassertion) > custom.indexOf('Write every fact'),
-    'a customized profile ends with the reassertion, after the user text');
+  assert.ok(!custom.includes('Write every fact as markdown prose in English.'), 'a stored custom profile is not sent');
+  assert.equal(custom, plain, 'the canonical prompt is identical with a custom profile stored');
 
-  await api.debugWritePromptOverrides({ activeMemoryProfile: 'default', memoryProfiles: {} });
   const addendumOnly = await api.debugComposeLibrarianSystemPrompt('Keep relationship labels conservative.');
-  assert.ok(addendumOnly.includes(reassertion), 'the analyzer addendum alone also counts as customization');
+  assert.equal(addendumOnly, plain, 'the analyzer addendum is not sent either');
 
   // The dispatch builds the same prompt.
   const dispatch = source.slice(source.indexOf('const executeUnifiedStage = async'), source.indexOf('const exactSource=', source.indexOf('const executeUnifiedStage = async')));
