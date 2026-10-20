@@ -346,7 +346,7 @@ All per-scope lens keys follow the standard LIBRA scoped key convention so they 
 
 ---
 
-## 10. Implementation status (LIBRA 2.3.179, RETRACE 1.9.89)
+## 10. Implementation status (LIBRA 2.3.180, RETRACE 1.9.89)
 
 This section records what the code does where it refines or departs from the sections above.
 
@@ -414,7 +414,13 @@ This section records what the code does where it refines or departs from the sec
   - Item cards with label, evidence, "이전 지침으로 생성" and "원문 변경됨" badges, the quote or basis, and extra values.
   - "근거 · 출처 보기": the source turn with the quote highlighted, model, time, canonical context, and the instruction diff.
 
+### Server storage
+- Lens records, run logs, raw responses and the per-chat head are scope keys and follow the chat's storage mode, like canonical memory. They are written to the server in server-only and mirror modes, and permanent delete removes the server copies.
+- The plugin-wide storage-mode discovery classifies `:lens:` keys as chat-scope records (2.3.180). Before this, they were reported as unresolved and blocked the switch.
+- Lens definitions live in runtime settings with the other LIBRA settings, which stay on the device.
+
 ### Not yet done
+- The RETRACE next-session handoff does not carry lens notes. The package holds canonical memory refs, lineage and Micro archives only, so a successor chat starts with no lens notes.
 - RETRACE shows lens keys as "[렌즈 기억]" in a scope's detail. It has no separate lens category in inventory or sync summaries.
 
 ### Tests

@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.179
-//@version 2.3.179
+//@display-name LIBRA v2.3.180
+//@version 2.3.180
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.179';
+  const PLUGIN_VERSION = '2.3.180';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -12218,7 +12218,7 @@ const memorySuiteLibraResolveKeyScope = async ({ key, currentScope, registry }) 
         .sort((a, b) => b.length - a.length);
       if (ids.some(id => tail === id || tail.startsWith(`${id}:`))) return { kind: 'scope', ...candidate };
     }
-    const match = tail.match(/^(.+?):(?:source-evidence:|source-edit-consent:|source-receipt:|source-receipt-head:|source-receipt-capture:|receipt-recovery:|person-span-inventory:|person-span-inventory-head:|micro-work:|micro-memory:|micro-memory-head:|micro-vector:|micro-state-admission:|manifest$|story-arc$|continuity-state$|memory:|vector:|work:|run:|predecessor:|predecessor-vector:|recall-catalog:|pending-live-boundaries:|canonical-variants:|canonical-job:|canonical-job-head:|canonical-adoption-transaction:|continuity-delta:|continuity-overrides:|candidate-work:|portable-restore-snapshot:|portable-restore-journal:|portable-import-journal:)/);
+    const match = tail.match(/^(.+?):(?:source-evidence:|source-edit-consent:|source-receipt:|source-receipt-head:|source-receipt-capture:|receipt-recovery:|person-span-inventory:|person-span-inventory-head:|micro-work:|micro-memory:|micro-memory-head:|micro-vector:|micro-state-admission:|manifest$|story-arc$|continuity-state$|memory:|vector:|work:|run:|predecessor:|predecessor-vector:|recall-catalog:|lens:|pending-live-boundaries:|canonical-variants:|canonical-job:|canonical-job-head:|canonical-adoption-transaction:|continuity-delta:|continuity-overrides:|candidate-work:|portable-restore-snapshot:|portable-restore-journal:|portable-import-journal:)/);
     const scopeId = String(match?.[1] || '').trim();
     if (scopeId) return { kind: 'scope', scopeId, scopeKey: scopeId, aliases: [scopeId], label: scopeId };
     return { kind: 'scope', scopeAlias: tail };
@@ -12626,7 +12626,7 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
     const id = JSON.stringify([scope.characterId,scope.chatId]), prior = identities.get(id);
     if (prior && prior !== scope.scopeId) issue('identity_conflict',null,prior + ':' + scope.scopeId); identities.set(id,scope.scopeId);
   }
-  const families = /^(?:manifest$|story-arc$|continuity-state$|(?:source-evidence|source-edit-consent|source-receipt|source-receipt-head|source-receipt-capture|receipt-recovery|person-span-inventory|person-span-inventory-head|micro-work|micro-memory|micro-memory-head|micro-vector|micro-state-admission|inherited-micro-state-admission|micro-handoff-archive|memory|vector|work|run|predecessor|predecessor-vector|recall-catalog|evidence-link-index|lore-link-index|lore-link-mapping|pending-live-boundaries|canonical-variants|canonical-job|canonical-job-head|canonical-adoption-transaction|continuity-delta|continuity-overrides|candidate-work|portable-restore-snapshot|portable-restore-journal|portable-import-journal|entity-registry|entity-admission|manual-state-disposition|state-observation|state-pipeline-receipt|state-corrections|state-correction-meta|state-correction-commit|state-worldline-meta|state-replay-cache|state-replay-errors|state-tracking-journal|unified-migration|planner-narrative-direction|story-arc-migration|embedding-metadata-migration):)/;
+  const families = /^(?:manifest$|story-arc$|continuity-state$|(?:source-evidence|source-edit-consent|source-receipt|source-receipt-head|source-receipt-capture|receipt-recovery|person-span-inventory|person-span-inventory-head|micro-work|micro-memory|micro-memory-head|micro-vector|micro-state-admission|inherited-micro-state-admission|micro-handoff-archive|memory|vector|work|run|predecessor|predecessor-vector|recall-catalog|lens|evidence-link-index|lore-link-index|lore-link-mapping|pending-live-boundaries|canonical-variants|canonical-job|canonical-job-head|canonical-adoption-transaction|continuity-delta|continuity-overrides|candidate-work|portable-restore-snapshot|portable-restore-journal|portable-import-journal|entity-registry|entity-admission|manual-state-disposition|state-observation|state-pipeline-receipt|state-corrections|state-correction-meta|state-correction-commit|state-worldline-meta|state-replay-cache|state-replay-errors|state-tracking-journal|unified-migration|planner-narrative-direction|story-arc-migration|embedding-metadata-migration):)/;
   for (const row of records) {
     if (['control','artifact'].includes(row.classification)) continue;
     const key = row.logicalKey, value = values.get(row);
