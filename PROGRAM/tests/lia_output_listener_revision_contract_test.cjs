@@ -212,8 +212,8 @@ async function createFixture(mode) {
     const f = await createFixture(mode);
     try {
       assert.equal(f.runtime.getLiveSyncCaptureState().backend, 'none');
-      assert.equal(f.registrations.chat, 0); assert.equal(f.registrations.script, 0);
-      assert.equal(f.outputListener, null); assert.equal(f.scriptOutputHandler, null);
+      assert.equal(f.registrations.chat, mode==='official'?1:0); assert.equal(f.registrations.script, 0);
+      assert.equal(typeof f.outputListener,mode==='official'?'function':'object'); assert.equal(f.scriptOutputHandler, null);
       for (const event of [{}, {messageIndex:-1}, {char:f.character,chat:f.liveChat,characterIndex:0,chatIndex:0,messageIndex:9}]) {
         assert.equal(f.runtime.debugProcessChatOutput(event).reason,'manual_only');
       }

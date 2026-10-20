@@ -299,9 +299,9 @@
         "bytes": 6060505
       },
       "lia": {
-        "version": "0.26.88",
-        "sha256": "1d27a06d1f92e7c06450ebccaa22957ecc974cc64de971310eb268e450d8ca0e",
-        "bytes": 1773375
+        "version": "0.26.89",
+        "sha256": "a43f186c8447700f2737203c66cad8e05dd57b35a7126a565a74c32c8fe03407",
+        "bytes": 1626066
       },
       "retrace": {
         "version": "1.9.86",

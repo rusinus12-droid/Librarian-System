@@ -134,7 +134,7 @@ const hotPathMetrics = {};
   vm.runInContext(source, context, { filename: 'LIA_Persona_Linker.js' });
   await sleep(1700); // allow startup + one-shot diagnostics to settle
   assert.equal(activeIntervals.size, 0, 'LIA starts no unconditional interval while idle');
-  assert.equal(outputListener, null, 'manual mode never registers automatic output capture');
+  assert.equal(typeof outputListener, 'function', 'output listener offers manual update notices only');
 
   const before = { ...counters };
   assert.equal(context.__lia_persona_linker_runtime_v1__.debugProcessChatOutput({}).reason, "manual_only");
@@ -143,9 +143,9 @@ const hotPathMetrics = {};
   assert.equal(counters.getChatFromIndex, before.getChatFromIndex, 'Live Sync OFF output does not reload full chat');
 
   const beforeRequest = replacers.get('beforeRequest') || (messages => messages);
-  const afterRequest = replacers.get('afterRequest');
+  const afterRequest = replacers.get('afterRequest') || (content => content);
   assert.equal(replacers.has('beforeRequest'), false, 'ordinary requests have no Live before hook');
-  assert.equal(typeof afterRequest, 'function', 'afterRequest hook registered');
+  assert.equal(replacers.has('afterRequest'), false, 'retired emotion attachment registers no afterRequest hook');
   const beforeHookCounters = { host: { ...counters }, storage: { ...storageCounters } };
   const untouchedMessages = [{ role: 'user', content: 'ordinary request' }];
   assert.equal(await beforeRequest(untouchedMessages, 'model'), untouchedMessages, 'ordinary request is byte/object preserving');

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-19T23:40:49.525Z",
+  "generatedAt": "2026-10-20T00:11:21.621Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -417,7 +417,7 @@
           "legacyCandidatesRequireLiveReconcile": true
         },
         "lia": {
-          "version": "0.26.88",
+          "version": "0.26.89",
           "fiveTurnCommitRevisionGate": true,
           "inFlightRevisionRequeue": true,
           "backendOrder": [
@@ -546,7 +546,7 @@
       ]
     },
     "liaSharedServerRestore": {
-      "version": "0.26.88",
+      "version": "0.26.89",
       "fixedSharedStores": [
         "dynamicPersonaLorebookGeneratorResultVault",
         "liaPersonaLinkerWorldBlueprintVaultV1",
@@ -1057,7 +1057,7 @@
       "computeModeArgumentExposed": false,
       "arbitraryCodeExecution": false,
       "liaWorldLorePilot": {
-        "version": "0.26.88",
+        "version": "0.26.89",
         "operation": "lia.world-lore-rerank.v2",
         "algorithmFingerprint": "cbd91cc90d01c8fc052669390badab3d0c2c7a52c4b6c314ac2ca61716fc7a75",
         "retired": true,
@@ -1426,7 +1426,7 @@
     "flashback": "1.0.121",
     "hayaku": "3.0.156",
     "libra": "2.3.175",
-    "lia": "0.26.88",
+    "lia": "0.26.89",
     "retrace": "1.9.86",
     "gradia": "0.25.92"
   },
@@ -3480,7 +3480,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "24db59c88592a9cf78ea122408b69495dbf63dbe7a020412fa6ac792a32e6118",
+      "sha256": "433d614c7176567314478d832b46af8655812a27c9bd714604491e8397dc925e",
       "bytes": 11840
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3856,7 +3856,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "a4c3904fd5aa1a1a122950343279a353868fae2fb48397dc7192c09357133275",
+      "sha256": "b0e618dbdd1e0e52112259e42874e577a92ed8bad640ffa19aa254d2f8db7303",
       "bytes": 3357
     },
     "plugins/Flashback_Memory.js": {
@@ -3872,8 +3872,8 @@
       "bytes": 3958663
     },
     "plugins/LIA_Persona_Linker.js": {
-      "sha256": "1d27a06d1f92e7c06450ebccaa22957ecc974cc64de971310eb268e450d8ca0e",
-      "bytes": 1773375
+      "sha256": "a43f186c8447700f2737203c66cad8e05dd57b35a7126a565a74c32c8fe03407",
+      "bytes": 1626066
     },
     "plugins/LIBRA.js": {
       "sha256": "03b741554cd9d921ac973b4401b71a23c2bdfe9a1908110894755699bc44477d",
@@ -4416,8 +4416,12 @@
       "bytes": 10547
     },
     "tests/browser/lia_mockup_mounted_product_browser_test.cjs": {
-      "sha256": "7cd1ef5d2e6e7e760675f38d15671369bba9de202a0e2989339643a0fcf5fef8",
-      "bytes": 71517
+      "sha256": "86b80d8850262cb510aa4355a955d413e2a8992d2e808843b2b3362e663dac79",
+      "bytes": 55588
+    },
+    "tests/browser/lia_window_manual_notice_browser_test.py": {
+      "sha256": "f5840a84f2fca1672bd67a712bfe4e081abb86f9b23c185413634f2e88f01c09",
+      "bytes": 13336
     },
     "tests/browser/libra_approved_browser.cjs": {
       "sha256": "11860a3f1510176679ad9130ff8deb43294753c8eee5b2c582ec0f80542306b2",
@@ -6876,12 +6880,12 @@
       "bytes": 4224
     },
     "tests/lia_chat_read_count_audit.cjs": {
-      "sha256": "81900b6dc355868e948e0434e4a26d4e3f25f65a3366f911771c26971d5865ba",
-      "bytes": 2422
+      "sha256": "6d08cf78d21e541e9d7a5cdfeb3f31dadec95b6962dc16178d36b17cc8a04d07",
+      "bytes": 2500
     },
     "tests/lia_durable_store_failure_runtime_test.cjs": {
-      "sha256": "83b88882a88ab02451d1133cf895cc823d933aa67a1ba5ab5cbbeaa8b03a7de4",
-      "bytes": 20521
+      "sha256": "9622421b034730e0f57ddc68b46b410d19f16f8849e5041e23980bc1db02ddc5",
+      "bytes": 20507
     },
     "tests/lia_editor_save_host_authority_mutations.cjs": {
       "sha256": "093e390264166bb28d785afd49f0ad8d4992620c524a035ae045f4b56ce29d17",
@@ -6904,8 +6908,8 @@
       "bytes": 3886
     },
     "tests/lia_idle_bridge_contract_test.cjs": {
-      "sha256": "0960f94e7d49c4f8367607f4031fc68e98fa29364cf3ba0e608d76f443f3fbfa",
-      "bytes": 9313
+      "sha256": "e21397f2881dc0129764f8f601ab905b00c2a5d4d360bd87c019edbe232a7a9b",
+      "bytes": 9381
     },
     "tests/lia_legacy_recovery_runtime_test.cjs": {
       "sha256": "97f9f1efbd01ef3bca5a15701907b6b038e3a01819aebe2031e0a6882a558045",
@@ -6920,8 +6924,8 @@
       "bytes": 11823
     },
     "tests/lia_local_routes_test.cjs": {
-      "sha256": "fa79483555170804a23ee91451d982b0d24b7128a0cad5ba0b6124034ffbf842",
-      "bytes": 1467
+      "sha256": "99a39403318eff3315c2abe68557c0ed0aabdf9717648ad2f983625fefef31f3",
+      "bytes": 1490
     },
     "tests/lia_local_storage_policy_test.cjs": {
       "sha256": "91a6c820287b6cce6c9d11cf935889b8786868cc3a3b1c06f056fe7f46dbfadf",
@@ -6932,8 +6936,8 @@
       "bytes": 4245
     },
     "tests/lia_manual_analysis_runtime_test.cjs": {
-      "sha256": "e180e7ad0db058cc4c516a8482334b49d7c2b3ec30e7f09ea966a8f491c89b35",
-      "bytes": 34084
+      "sha256": "da36e20a891a2c77e7435864f7a58ca95f0288e4ca9424bedd13b96600dbaa86",
+      "bytes": 33981
     },
     "tests/lia_manual_analysis_ui_test.cjs": {
       "sha256": "bd090dc54c1a6043b938e1cf468de81e4d2a9a1fe5b8918d92170cdcd3a408b7",
@@ -6944,32 +6948,32 @@
       "bytes": 4527
     },
     "tests/lia_manual_idle_runtime_test.cjs": {
-      "sha256": "f0fc5b13974c99c11ca70fab8e3600de1539d7c32b03aa610cf49a8c4df6b49b",
-      "bytes": 2779
+      "sha256": "789e761edd967f1895002a04038d7da95a3ce188bf6dbba6ce8cbed8bd747c8e",
+      "bytes": 2768
     },
     "tests/lia_manual_provider_cancel_test.cjs": {
       "sha256": "931f714977924c88e88ddbf7962945b91a3e8c9bd9594e326b3ff2ca0c7712ea",
       "bytes": 2354
     },
     "tests/lia_manual_release_artifact_test.cjs": {
-      "sha256": "731b11f9cb4e65e4b91bddda5e2755baef9ea431509d48f67beec9edae74f000",
+      "sha256": "daa630ff66a80dc2cd7b73114275184bc651f2f98d41a728f7df3e465d318bb6",
       "bytes": 6004
     },
     "tests/lia_mockup_product_shell_test.cjs": {
-      "sha256": "679ccd23fb3c585da1afda2cc18371d916131a81b815fc125e078469b37167a2",
-      "bytes": 7064
+      "sha256": "ddeb40fc279cc5121946608bec64a090ca86947cc099d8c2c2823118e4131acc",
+      "bytes": 4892
     },
     "tests/lia_mockup_settings_storage_test.cjs": {
-      "sha256": "dd1e33be0540ee6740f395371b16117676d59edb2848c38f9043cd7f058704fe",
-      "bytes": 2365
+      "sha256": "e1499f71187d7a986ed2e2830ff95cd5b8736e3dab5d6c8b39b28da49becf0d7",
+      "bytes": 1644
     },
     "tests/lia_native_asset_restore_authority_runtime_test.cjs": {
       "sha256": "124e2f678df5236bb3eaf9e4ff84a61166d246bf049bf9be3b4ef67685dbe46a",
       "bytes": 16676
     },
     "tests/lia_output_listener_revision_contract_test.cjs": {
-      "sha256": "9cfe3f75478b4443a5382e5e95e53362c82675baddca0880ae8ce4dcea25e1eb",
-      "bytes": 11281
+      "sha256": "a621950a30c9739cab2d97c3d7f9d5560618aadae60133f9a44290d4ae9b8238",
+      "bytes": 11340
     },
     "tests/lia_persona_binding_concurrent_rmw_test.cjs": {
       "sha256": "7541d04e20e2aebd44ba74ed18dfe7cc7f2070fdff72d6ff346f27d3862147b8",
@@ -6988,28 +6992,28 @@
       "bytes": 4935
     },
     "tests/lia_pocket_gui_runtime_test.cjs": {
-      "sha256": "6e30e9bf1cf28e37a2d681261ab3eb60c17b24943222e2826957344ca932d96d",
-      "bytes": 3830
+      "sha256": "ef330f2553fed52e5097e63b0a3dc839b0fd0eb2eebe6764f1bae3ee3af8b15e",
+      "bytes": 3920
     },
     "tests/lia_provider_timeout_runtime_test.cjs": {
       "sha256": "310d3c05e2a61ce721cdbdb725ea60c7708c3e557fa88ad14d3d53d6c97f242b",
       "bytes": 1921
     },
     "tests/lia_public_asset_server_restore_flow_test.cjs": {
-      "sha256": "a34bfc158693378b6a9c9ac14a64cdad43311be9d7636bd8b8ea705ea10f86e1",
-      "bytes": 21536
+      "sha256": "0aae64435144c60a667742d2b4f073d8aca64f1b59178967f6a58f7df71bc0df",
+      "bytes": 20355
     },
     "tests/lia_read_optimization_test.cjs": {
       "sha256": "b21321e619845a2ec41dc69971c031a4ae4e2d941d45af6b1245e20a91d844e1",
       "bytes": 2386
     },
     "tests/lia_read_view_guard_test.cjs": {
-      "sha256": "1dcf05d3343fa9adf9f51bef51d9696a9a0353f551c938b8b514e845c3c2c8cb",
-      "bytes": 2469
+      "sha256": "463b09d9322ee4e35943f44fdd16eda41697ebb4d2dcd35c20370af07e7cfb8b",
+      "bytes": 2002
     },
     "tests/lia_reopen_evolution_gui_test.cjs": {
-      "sha256": "af5b2b6a3dbf6107d91643e72e89309d92b147b36b5012363b18813fb445f04a",
-      "bytes": 1782
+      "sha256": "f3b0de728e23dd3cb23b30b448997c1ee99ef1fa792eb83accf1a5590bef566b",
+      "bytes": 1803
     },
     "tests/lia_shared_server_restore_contract_test.cjs": {
       "sha256": "381022301aa716b24d23eda79486d313e7b798701cc9a0ed5a56b0f17733b6b7",
@@ -11140,7 +11144,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "389a6617213819b0dc7688894a99ef7175e763cb612ff9e2df56f79cfba55ebe",
+      "sha256": "4c5c0268ff9096293de9b5b0fc3151a1dc0411c8ca21b7448086c4ee8659f5ee",
       "bytes": 3791
     }
   },

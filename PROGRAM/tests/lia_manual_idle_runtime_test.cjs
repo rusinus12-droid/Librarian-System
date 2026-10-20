@@ -7,7 +7,7 @@ const { createFixture } = require('./fixtures/lia_native_runtime_fixture.cjs');
     api.addRisuReplacer = async (type, handler) => { replacers.set(type, handler); return true; };
   } });
   try {
-    assert.equal(f.registrations.chat, 0, 'legacy enabled bindings do not register automatic output tracking');
+    assert.equal(f.registrations.chat, 1, 'one notification listener is registered without automatic analysis');
     assert.equal(f.registrations.script, 0, 'legacy fallback tracking is retired too');
     const personas = JSON.stringify(f.db.personas), chat = JSON.stringify(f.liveChat);
     const counters = { host: 0, reads: 0, writes: 0, model: 0 };
@@ -19,13 +19,13 @@ const { createFixture } = require('./fixtures/lia_native_runtime_fixture.cjs');
     f.api.pluginStorage.setItem = async (...args) => { counters.writes++; return set(...args); };
     f.api.nativeFetch = async () => { counters.model++; throw Error('network forbidden'); };
     const before = replacers.get('beforeRequest'), after = replacers.get('afterRequest');
-    assert.equal(typeof after, 'function', 'independent emotion asset after hook is retained');
-    await after('warm independent asset config', 'model');
+    assert.equal(after, undefined, 'emotion asset response hook is removed');
+    if(after)await after('ordinary response', 'model');
     Object.keys(counters).forEach(key => { counters[key] = 0; });
     const input = [{role:'user',content:'ordinary'}];
     for (let index=0; index<10; index++) {
       if (before) assert.equal(await before(input,'model'),input);
-      assert.equal(await after('ordinary response','model'),'ordinary response');
+      if(after)assert.equal(await after('ordinary response','model'),'ordinary response');
       assert.equal(f.runtime.debugProcessChatOutput({characterIndex:0,chatIndex:0,chat:f.liveChat,messageIndex:9}).reason,'manual_only');
       assert.equal(f.runtime.debugScheduleLiveSync({force:true}),false);
     }

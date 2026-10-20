@@ -1,8 +1,8 @@
 'use strict';
 
-// Drive callbacks registered by the unchanged plugin against a real DOM and an
-// physical local snapshot. Exposed helpers only inspect state/read owner data;
-// neither producer, backup, transport, nor restore implementation is replaced.
+// Drive retained vault/recovery callbacks against a real DOM and physical local
+// snapshots. The retired image screen has no public producer: an existing-format
+// asset fixture is created through the unchanged data importer/backup routines.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -51,7 +51,10 @@ async function waitFor(check, label, timeout = 30000) {
 const expose = source => source.replace('      getLiveSyncCaptureState:', `
       restoreFlowAudit: {
         bridge: MemorySuiteStorageBridge,
-        uploadSelection: () => ({ emotion: liaSelectedVisualAssetEmotion, personaKey: liaSelectedVisualAssetPersonaKey }),
+        importLegacyImage: bytes => getContext().then(async ctx => {
+          const target = resolvePersonaVisualTarget({...ctx, visualAssetStore: await readPersonaVisualAssetStore()});
+          return importPersonaVisualAssetImage(target, 'neutral', bytes);
+        }),
         setGeneratedResult: raw => setGeneratedOutputText(resultToOutputText(JSON.parse(String(raw)))),
         readResult: () => getLLMResultOverride(),
         refresh: () => refreshPreview({skipCapture:true}),
@@ -137,24 +140,6 @@ async function createRealm(url, diskRows, hostAssets, options = {}) {
     async close() { await fixture.dispose(); dom.window.close(); } };
 }
 
-async function manualUpload(env, bytes, expectedTone = 'ok') {
-  const document = env.dom.window.document;
-  const input = document.getElementById('lia-asset-image-file');
-  assert.ok(input, 'actual manual upload input exists');
-  // The VM uses the Node Blob constructor, so its browser-file boundary must
-  // receive that same Blob type rather than a duck-typed arrayBuffer object.
-  const file = new Blob([bytes], { type: 'image/png' });
-  Object.defineProperty(file, 'name', { value: 'marker.png' });
-  Object.defineProperty(input, 'files', { configurable: true, value: [file] });
-  const status = document.getElementById('dpg-status');
-  const previousStatus = status?.textContent || '';
-  input.dispatchEvent(new env.dom.window.Event('change', { bubbles: true }));
-  let currentStatus;
-  await waitFor(() => { currentStatus = document.getElementById('dpg-status'); return currentStatus?.textContent !== previousStatus && currentStatus?.dataset?.tone === expectedTone; }, 'manual upload handler settled');
-  assert.equal(currentStatus?.dataset?.tone, expectedTone, currentStatus?.textContent || 'upload status missing');
-  return currentStatus.textContent;
-}
-
 function immutableRows(values, backupId) {
   return [...values].filter(([key]) => key.startsWith(`${BLOBS}${backupId}::`)).sort(([a], [b]) => a.localeCompare(b));
 }
@@ -175,7 +160,7 @@ function diskSnapshot(env, directory, label) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lia-public-restore-flow-'));
   const hostAssets = fileAssets(path.join(dataDir, 'mock-host-assets'));
   const evidence = { schema: 'lia.public-asset-local-restart-flow.v2',
-    hostBoundary: 'Windows Node VM + JSDOM registered callbacks; not native Risu/browser acceptance', cases: [] };
+    hostBoundary: 'Node VM + JSDOM registered callbacks and retained legacy data importer; not native Risu acceptance', cases: [] };
   const image = markerPng('LIA public producer preserved image marker '.repeat(12000));
   const replacement = markerPng('rejected replacement marker');
   const body = 'LIA public vault body marker: original persona draft survives server restore and realm restart.';
@@ -197,10 +182,9 @@ function diskSnapshot(env, directory, label) {
     await waitFor(() => env.values.get(VAULT)?.includes(body), 'public vault producer');
     await waitFor(() => !document.querySelector('#dpg-preview-root [data-lia-editor-writer="vault"]')?.disabled, 'vault GUI readback completed');
     document.querySelector('#dpg-preview-root .sidebar [data-go="mine"]').click();
-    document.querySelector('#dpg-preview-root #pocket [data-go="assets"]').click();
-    document.querySelector('#dpg-preview-root #emo-grid button[data-open="sheet-emo"]').click();
-    document.querySelector('#dpg-preview-root #sheet-emo [data-lia-asset-upload]').click();
-    await manualUpload(env, image);
+    assert.equal(document.querySelector('[data-go="assets"], #lia-asset-image-file'), null,
+      'retired image generation/upload screen stays unavailable');
+    await env.audit.importLegacyImage(new Uint8Array(image));
     const assetRaw = env.values.get(ASSETS);
     const vaultRaw = env.values.get(VAULT);
     const assetStore = JSON.parse(assetRaw);
@@ -209,22 +193,21 @@ function diskSnapshot(env, directory, label) {
     const priorBackup = immutableRows(env.values, entry.backupId);
     assert.ok(priorBackup.length >= 3, 'actual producer emitted multi-chunk immutable backup');
     assert.deepEqual(Buffer.from((await env.audit.readPersonaVisualAssetBackup(entry.backupId)).bytes), image);
-    evidence.cases.push({ name: 'registered-GUI-producer', backupId: entry.backupId,
+    evidence.cases.push({ name: 'retained-legacy-asset-data-fixture', backupId: entry.backupId,
       backupRows: priorBackup.length, bytes: image.length, imageSha256: sha(image), vaultSha256: sha(vaultRaw) });
 
     const originalSet = env.api.pluginStorage.setItem;
     env.api.pluginStorage.setItem = async (key, value) => String(key).startsWith(BLOBS) && String(key).endsWith('::manifest')
       ? true : originalSet(key, value);
-    document.querySelector('#dpg-preview-root #emo-grid button[data-open="sheet-emo"]').click();
-    document.querySelector('#dpg-preview-root #sheet-emo [data-lia-asset-upload]').click();
-    await manualUpload(env, replacement, 'error');
+    await assert.rejects(() => env.audit.importLegacyImage(new Uint8Array(replacement)),
+      /asset_backup_write readback mismatch/);
     env.api.pluginStorage.setItem = originalSet;
     assert.equal(env.values.get(ASSETS), assetRaw, 'failed public upload preserved exact asset metadata');
     assert.equal(env.values.get(VAULT), vaultRaw, 'failed upload preserved independent body');
     assertRows(env.values, priorBackup, 'failed upload preserved immutable history');
     assert.equal([...env.values.keys()].filter(key => key.startsWith(BLOBS)).length, priorBackup.length,
       'failed new backup rolled back its partial chunks');
-    evidence.cases.push({ name: 'public-upload-dropped-manifest', displayedError: true,
+    evidence.cases.push({ name: 'legacy-import-dropped-manifest', rejected: true,
       originalMetadataUnchanged: true, immutableHistoryUnchanged: true, partialChunksRemoved: true });
 
     // Current replacement: the registered legacy preview/import callbacks read

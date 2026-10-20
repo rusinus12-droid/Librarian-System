@@ -8,7 +8,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const repo = path.resolve(__dirname, '../..');
-const evidence = path.join(repo, 'PROGRAM/docs/gui-redesign/verification/lia-20261013');
+const evidence = process.env.LIA_CAPTURE_DIR || path.join(require('node:os').tmpdir(), 'lia-reopen-mounted');
 const browserTest = path.join(__dirname, 'browser/lia_mockup_mounted_product_browser_test.cjs');
 const run = spawnSync(process.execPath, [browserTest], {
   cwd: repo,

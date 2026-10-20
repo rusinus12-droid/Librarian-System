@@ -36,8 +36,6 @@ function expose(_fixtureSource) {
   assert.ok(source.includes('    globalThis[LIA_RUNTIME_INSTANCE_KEY] = {'), 'provider replacement seam exists');
   source = source.replace('    globalThis[LIA_RUNTIME_INSTANCE_KEY] = {', `
     callIndependentProvider = (...args) => api.__manualTestProvider(...args);
-    const originalManualTestEmotionHook = handlePersonaEmotionAssetAfterRequest;
-    handlePersonaEmotionAssetAfterRequest = (...args) => { api.__manualTestEmotionCalls(); return originalManualTestEmotionHook(...args); };
     globalThis[LIA_RUNTIME_INSTANCE_KEY] = {`);
   source = source.replace('      getLiveSyncCaptureState:', `
       auditManual: typeof runManualLivePersonaAnalysis === 'function' ? expected => runManualLivePersonaAnalysis(expected) : null,
@@ -209,9 +207,9 @@ const cases = [];
 function test(name, run) { cases.push({ name, run }); }
 
 for (const mode of ['official', 'script', 'fallback']) test(`automatic capture is not registered (${mode})`, () => withFixture({ mode }, async f => {
-  assert.equal(f.registrations.chat, 0, 'manual mode must not register output chat listeners');
+  assert.equal(f.registrations.chat, typeof f.api.addRisuChatListener==='function'?1:0, 'output listener only offers a manual update notification');
   assert.equal(f.registrations.script, 0, 'manual mode must not register output script listeners');
-  assert.equal(f.outputListener, null);
+  assert.equal(typeof f.outputListener, typeof f.api.addRisuChatListener==='function'?'function':'object');
   assert.equal(f.scriptOutputHandler, null);
   assert.equal(f.calls.length, 0);
 }));
@@ -283,21 +281,21 @@ test('pending binding recovery metadata is preserved on boot and ordinary UI rea
   assert.equal(f.counters.liveWrites, 0); assert.equal(f.counters.hostWrites, 0); assert.equal(f.calls.length, 0);
 }));
 
-test('ordinary before/after events are idle; separate emotion hook is retained', () => withFixture({}, async f => {
+test('ordinary before/after events are idle and emotion hooks are retired', () => withFixture({}, async f => {
   const before = f.hooks.get('beforeRequest'), after = f.hooks.get('afterRequest');
-  assert.equal(typeof after, 'function', 'emotion afterRequest hook remains registered');
+  assert.equal(after, undefined, 'no emotion afterRequest hook remains');
   const input = [{ role: 'system', content: 'Base persona prompt' }, { role: 'user', content: 'ordinary request' }];
   if (before) assert.deepEqual(clone(await before(input, 'model')), input);
-  assert.equal(await after('Ordinary narrative response', 'model'), 'Ordinary narrative response');
+  if(after)assert.equal(await after('Ordinary narrative response', 'model'), 'Ordinary narrative response');
   await sleep(760);
   const personas = personaSnapshot(f), durable = durableSnapshot(f);
   f.resetCounters();
   for (let i = 0; i < 40; i++) {
     if (before) assert.deepEqual(clone(await before(input, 'model')), input);
-    assert.equal(await after('Ordinary narrative response', 'model'), 'Ordinary narrative response');
+    if(after)assert.equal(await after('Ordinary narrative response', 'model'), 'Ordinary narrative response');
     await f.runtime.debugProcessChatOutput({ messageIndex: 9, chat: f.liveChat, charIndex: 0, chatIndex: 0 });
   }
-  assert.equal(f.counters.emotionCalls, 40, 'emotion hook continues to receive normal responses');
+  assert.equal(f.counters.emotionCalls, 0, 'ordinary responses do not enter any emotion workflow');
   assert.equal(f.calls.length, 0); assert.equal(f.counters.hostReads, 0, 'warm ordinary events do not cross host bridge');
   assert.equal(f.counters.storageReads, 0, 'warm ordinary events do not read plugin storage');
   assert.equal(f.counters.hostWrites, 0); assert.equal(f.counters.storageWrites, 0);

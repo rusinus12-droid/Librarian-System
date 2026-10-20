@@ -29,7 +29,7 @@ const wait=async(predicate,label)=>{for(let i=0;i<100;i++){if(predicate())return
   }
   f.context.fetch=async()=>{throw Error('Network forbidden');};
   dom.window.HTMLElement.prototype.scrollIntoView=function(){};
-  assert.equal(f.registrations.chat,0);assert.equal(f.registrations.script,0);assert.equal(hooks.has('beforeRequest'),false);
+  assert.equal(f.registrations.chat,1);assert.equal(f.registrations.script,0);assert.equal(hooks.has('beforeRequest'),false);
   const sourcePersona=JSON.stringify(f.db.personas[0]),bound=f.liveChat.bindedPersona;
   assert.equal(typeof openUI,'function','use actual registered host UI entry');await openUI();
   const get=id=>dom.window.document.getElementById(id);

@@ -10,7 +10,7 @@ const expose = source => source.replace('      getLiveSyncCaptureState:', `
       auditDurable: {
         readStoredResultVault, writeStoredResultVault,
         readWorldBlueprintVault, writeWorldBlueprintVault,
-        readVisualAssetPresetStore, writeVisualAssetPresetStore, saveVisualAssetPreset,
+        readVisualAssetPresetStore, writeVisualAssetPresetStore,
         readPersonaVisualAssetStore, writePersonaVisualAssetStore, upsertPersonaVisualAsset,
         readPersonaProofStore, writePersonaProof,
         readPersonaVisualAssetBackup, writePersonaVisualAssetBackup,
@@ -123,13 +123,13 @@ for (const store of stores) {
   });
 }
 
-test('preset save rereads durable data instead of overwriting from stale GUI cache', async () => {
+test('legacy preset reader ignores a stale GUI cache', async () => {
   const key = 'liaPersonaVisualAssetPresetStoreV1';
+  const before = fixture.values.get(key);
   api.seedPresetCache({ version: 1, items: [] });
-  await api.saveVisualAssetPreset('Fresh');
-  const saved = JSON.parse(fixture.values.get(key));
+  const saved = await api.readVisualAssetPresetStore();
   assert(saved.items.some(item => item.id === 'old-preset'), 'prior preset survives');
-  assert(saved.items.some(item => item.name === 'Fresh'));
+  assert.equal(fixture.values.get(key), before, 'reading legacy presets does not rewrite them');
 });
 
 test('asset upsert aborts on read failure and preserves all prior assets', async () => {

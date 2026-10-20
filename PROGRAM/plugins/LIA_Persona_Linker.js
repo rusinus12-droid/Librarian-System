@@ -1,7 +1,7 @@
 //@name lia_persona_linker
 //@display-name LIA: Persona Linker
 //@api 3.0
-//@version 0.26.88
+//@version 0.26.89
 /* Target-only handoff storage preparation v1. Authenticated owner handlers only. */
 async function prepareMemorySuiteHandoffTargetStorage(api, storage, owner, payload) {
   const readTarget = async () => {
@@ -210,8 +210,8 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 
 (async () => {
   // Canonical LIA mockup CSS/DOM transplanted verbatim; suite.js demo behavior is intentionally excluded.
-  const LIA_MOCKUP_CSS = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n\n/* LIA 전용: \"라일락 주머니\" — 모바일 우선, 카드 1열, 큰 터치 영역, 한 화면 한 일 */\n.t-lia .page-body{max-width:760px;margin:0 auto;width:100%}\n.pocket{display:grid;grid-template-columns:64px minmax(0,1fr);gap:14px;align-items:center;padding:18px;border:1px solid var(--accent-line);border-radius:var(--r-lg);background:var(--accent-soft)}\n.avatar{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:#fff;font:800 24px var(--font-display);border:3px solid #fff}\n.avatar--sm{width:44px;height:44px;font-size:17px;border-width:2px}\n.avatar--b{background:#3d7258}.avatar--c{background:#8a5f17}.avatar--d{background:#ab3453}.avatar--n{background:#6f6580}\n.pocket h2{margin:0;font:800 20px/1.25 var(--font-display);letter-spacing:-.03em}\n.pocket p{margin:3px 0 0;font-size:13px;color:var(--text2)}\n.pocket__act{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}\n.pocket__act .btn{flex:1 1 140px}\n/* 연결 상태: 색만으로 구분하지 않도록 아이콘 + 글자를 항상 함께 */\n.bind{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:3px 10px;border-radius:99px;border:1px solid var(--border2);background:var(--surface);color:var(--text2)}\n.bind--here{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.bind--other{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.bind--none{border-style:dashed}\n.legend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:12px;color:var(--text3)}\n.pcard{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:14px 16px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}\nbutton.pcard:hover{border-color:var(--accent-line);background:var(--surface2)}\n.pcard b{display:block;font-size:14.5px}.pcard small{display:block;font-size:12.5px;color:var(--text3);margin-top:1px}\n.pcard__side{display:grid;gap:6px;justify-items:end}\n.big-choice{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:14px;align-items:center;padding:16px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}\n.big-choice:hover{border-color:var(--accent);background:var(--accent-soft)}\n.big-choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.big-choice b{display:block;font-size:15px}.big-choice span{font-size:12.5px;color:var(--text2)}\n.big-choice .row__icon{width:44px;height:44px;border-radius:50%}\n.big-choice .pick{font-size:12px;font-weight:700;color:var(--text3)}\n.big-choice.is-on .pick{color:var(--accent-ink)}\n.mode-panel{display:none}.mode-panel.is-on{display:block}\n.emo-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}\n.emo{display:grid;gap:6px;justify-items:center;padding:12px 6px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);font-size:12px;text-align:center;color:var(--text);width:100%}\nbutton.emo:hover{border-color:var(--accent-line);background:var(--surface2)}\n.emo .avatar{width:48px;height:48px;font-size:20px}\n.emo.is-done{border-color:var(--ok-line)}.emo.is-todo{border-style:dashed;color:var(--text3)}\n.emo.is-master{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}\n.emo .avatar.todo{background:var(--surface3);color:var(--text3)}\n.base-frame{display:grid;grid-template-columns:96px minmax(0,1fr);gap:16px;align-items:center}\n.base-frame .avatar{width:96px;height:96px;font-size:36px;border-radius:var(--r-md)}\n.back{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--accent-ink);font:700 13px var(--font-sans);padding:6px 0;margin-bottom:6px;min-height:36px}\n.turns{display:flex;gap:6px}.turns i{flex:1;height:10px;border-radius:99px;background:var(--surface3);border:1px solid var(--border2)}.turns i.on{background:var(--accent);border-color:var(--accent)}\n.jargon{font-size:12px;color:var(--text3)}\n.confirm-inline{display:none;margin-top:10px}.confirm-inline.is-open{display:block}\n.fld{display:grid;gap:6px;padding:12px 0;border-top:1px solid var(--border)}\n.fld:first-child{border-top:0}\n.fld__head{display:flex;justify-content:space-between;gap:10px;align-items:baseline}\n.fld__head label{font-weight:700;font-size:13px}.fld__key{font:11.5px var(--font-mono);color:var(--text3)}\n.fld__act{display:flex;gap:12px;align-items:center;flex-wrap:wrap}\n.fld__act .check{font-size:12.5px;color:var(--text2)}\n.diff-row{display:grid;grid-template-columns:90px minmax(0,1fr);gap:4px 12px;padding:10px 0;border-top:1px solid var(--border);font-size:12.5px}\n.diff-row:first-child{border-top:0}\n.diff-row del{color:var(--danger-ink);background:var(--danger-soft);text-decoration:line-through;padding:0 3px;border-radius:3px}\n.diff-row ins{color:var(--ok-ink);background:var(--ok-soft);text-decoration:none;padding:0 3px;border-radius:3px}\n.chk-chip{display:inline-flex;gap:5px;align-items:center;padding:3px 10px;border-radius:99px;border:1px solid var(--border2);font-size:12px;font-weight:650;background:var(--surface)}\n.chk-chip.ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}.chk-chip.warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.target-card{display:grid;gap:10px;padding:16px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface)}\n.target-card h3{margin:0;font-size:14.5px}\n.target-card h3 small{font-weight:500;color:var(--text3);margin-left:6px}\n.lock-card dl{margin:0}\n.ver{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border);background:var(--surface)}\n.ver:first-child{border-top:0}.ver b{font-size:13.5px}.ver small{display:block;color:var(--text3);font-size:12.5px}\n@container app (max-width:640px){.emo-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.pcard{grid-template-columns:44px minmax(0,1fr)}.pcard__side{grid-column:1/-1;justify-items:start;grid-auto-flow:column;justify-content:start}.base-frame{grid-template-columns:72px minmax(0,1fr)}.base-frame .avatar{width:72px;height:72px;font-size:28px}.big-choice{grid-template-columns:44px minmax(0,1fr)}.big-choice .pick{display:none}.diff-row{grid-template-columns:1fr}}\n@container app (max-width:640px){.topbar .brand__ver{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}\n";
-  const LIA_MOCKUP_APP_HTML = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><i data-i=\"user\" data-size=\"lg\"></i></div><div><div class=\"brand__name\">LIA</div><div class=\"brand__ver\">Persona Linker · 시안 (제품 v0.26.83 기준)</div></div></div>\n    <div class=\"scope\"><b>이 채팅</b><span>›</span><span>세라 · 북쪽 정원</span></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok\" title=\"LIA 자료는 영구 저장 정책상 이 기기(local_only)에 둡니다\"><i></i>LIA 자료 local_only</span>\n    <div class=\"menu\"><button class=\"btn btn--icon\" data-menu aria-label=\"더 보기\"><i data-i=\"more\"></i></button>\n      <div class=\"menu__panel\"><button data-toast=\"새로 읽었습니다. (시안)\"><i data-i=\"refresh\"></i>새로 읽기</button><button data-go=\"recover\"><i data-i=\"db\"></i>이전 자료 복구</button><button data-toast=\"닫기 (시안)\"><i data-i=\"x\"></i>닫기</button></div></div>\n  </header>\n\n  <nav class=\"sidebar\" aria-label=\"LIA 메뉴\">\n    <button class=\"nav-item\" data-go=\"mine\" data-short=\"내 페르소나\" data-unsaved-for=\"assets\"><i data-i=\"user\"></i><span class=\"nav-text\">내 페르소나</span></button>\n    <button class=\"nav-item\" data-go=\"make\" data-short=\"만들기\"><i data-i=\"spark\"></i><span class=\"nav-text\">만들기</span></button>\n    <button class=\"nav-item\" data-go=\"shelf\" data-short=\"보관함\" data-unsaved-for=\"edit\"><i data-i=\"shelf\"></i><span class=\"nav-text\">보관함</span><span class=\"count\" id=\"nav-shelf-n\">4</span></button>\n    <button class=\"nav-item\" data-go=\"settings\" data-short=\"설정\"><i data-i=\"sliders\"></i><span class=\"nav-text\">설정</span></button>\n    <div class=\"side-foot\"><b>용어</b><span>원본 = RisuAI Persona · Live = 이 채팅이 소유하는 갱신용 복사본</span></div>\n  </nav>\n\n  <main class=\"main\"><div class=\"page-body\">\n\n  \n  <section class=\"page is-active\" data-page=\"mine\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Now</div><h1 class=\"page-title\">내 페르소나</h1><p class=\"page-desc\">이 채팅에 연결된 Persona와 갱신 상태를 한 곳에서 봅니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"pocket\" id=\"pocket\"></div>\n\n      <div class=\"card card--tight\" id=\"upd-card\">\n        <div class=\"card__head\"><div><h2 class=\"card__title\">다음 갱신 범위</h2><p class=\"card__desc\">자동으로 바뀌지 않습니다. 마지막 처리 지점 다음의 <b>완결된 User+Assistant 5쌍</b>이 쌓이면 직접 눌러서 한 번에 분석·반영합니다.</p></div><span class=\"badge badge--warn\" id=\"upd-badge\">3 / 5쌍</span></div>\n        <div class=\"turns\" id=\"upd-dots\" aria-label=\"3 / 5쌍\"><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i></i><i></i></div>\n        <p class=\"hint\" style=\"margin-top:8px\" id=\"upd-hint\">3/5턴 · 완료된 대화 2턴이 더 필요합니다. 마지막 미완성 턴은 세지 않습니다.</p>\n      </div>\n\n      <div class=\"note\"><b>연결이 없으면</b> RisuAI의 기본 Persona가 그대로 적용됩니다. LIA는 RisuAI 기본 Persona 선택을 바꾸지 않습니다.</div>\n\n      <div>\n        <div class=\"section-title\"><h2>선택할 수 있는 Persona <span class=\"muted\" style=\"font-weight:500\">(RisuAI Persona로 채택한 것)</span></h2></div>\n        <div class=\"stack stack--sm\" id=\"mine-list\"></div>\n        <div class=\"legend\" style=\"margin-top:10px\"><span>✓ 이 채팅에 연결됨</span><span>🔒 다른 채팅이 관리 중인 Live Persona</span><span>＋ 연결 안 됨</span></div>\n      </div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"make\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Create</div><h1 class=\"page-title\">Persona 만들기</h1><p class=\"page-desc\">어떤 근거로 만들지 먼저 고릅니다. 모드마다 입력과 필요한 단계가 다릅니다.</p></div></div>\n    <div class=\"stack\" data-detail-root>\n      <div class=\"stack stack--sm\" role=\"group\" aria-label=\"생성 모드\">\n        <button class=\"big-choice is-on\" data-select-row=\"classic\"><span class=\"row__icon\"><i data-i=\"user\"></i></span><div><b>클래식 생성</b><span>기존 Source Persona를 현재 세계에 맞게 재해석</span></div><span class=\"pick\">선택</span></button>\n        <button class=\"big-choice\" data-select-row=\"random\"><span class=\"row__icon\"><i data-i=\"spark\"></i></span><div><b>랜덤 신규 생성</b><span>세계관 안에서 완전히 새로운 인물을 창작 · 후보 3개 중 선택</span></div><span class=\"pick\">선택</span></button>\n        <button class=\"big-choice\" data-select-row=\"character\"><span class=\"row__icon\"><i data-i=\"users\"></i></span><div><b>등장인물 추출</b><span>단일 캐릭터·거대 시뮬봇에서 인물을 분리해 User Persona로 변환</span></div><span class=\"pick\">선택</span></button>\n        <button class=\"big-choice\" data-select-row=\"conversation\"><span class=\"row__icon\"><i data-i=\"chat\"></i></span><div><b>대화에서 추출</b><span>현재 채팅의 사용자 작성 메시지만 분석해 실제 플레이 Persona를 추출</span></div><span class=\"pick\">선택</span></button>\n      </div>\n\n      <div class=\"card\">\n        <div class=\"mode-panel is-on\" data-detail=\"classic\"><div class=\"stack stack--sm\">\n          <div class=\"field\"><label>Source Persona</label><select class=\"select\" id=\"src-sel\" data-no-track></select><span class=\"hint\" id=\"src-hint\">성격·외모·배경의 출발점이 되는 RisuAI Persona입니다. 고른 Persona가 결과의 출발점이 됩니다.</span></div>\n          <p class=\"muted\" style=\"margin:0;font-size:13px\">선택한 Persona를 이 세계의 자연스러운 인물로 다시 배치합니다. 핵심은 보존하고 세계관에 맞게 재해석합니다.</p>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"mk-classic\" data-run-job=\"job-gen\"><i data-i=\"spark\"></i><span>Persona 만들기</span></button></div></div></div>\n        <div class=\"mode-panel\" data-detail=\"random\"><div class=\"stack stack--sm\">\n          <p class=\"muted\" style=\"margin:0;font-size:13px\">이 캐릭터와 로어의 <b>세계 규칙만</b> 참고해 새로운 유저 인물을 만듭니다. Source Persona는 쓰지 않습니다.</p>\n          <div class=\"field\"><label for=\"random-concept\">컨셉 (선택)</label><textarea class=\"textarea\" id=\"random-concept\" rows=\"2\" data-no-track placeholder=\"예) 북쪽 항구 도시의 약재상 견습생\"></textarea></div>\n          <div class=\"note\"><b>순서</b> 컨셉 → <b>후보 3개</b> → 하나 선택 → 상세 생성. 후보를 고르기 전에는 아무것도 보관되지 않습니다.</div>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"random-cand-go\" data-run-job=\"job-cand\" data-ctx='{\"variant\": \"random\", \"mode\": \"랜덤 신규 생성\"}'><i data-i=\"spark\"></i>후보 3개 만들기</button></div></div></div>\n        <div class=\"mode-panel\" data-detail=\"character\"><div class=\"stack stack--sm\">\n          <p class=\"muted\" style=\"margin:0;font-size:13px\">캐릭터 카드·로어·<b>최근 대화(Assistant/NPC 포함)</b>에서 등장인물을 분리합니다. 선택한 <b>한 인물의 직접 근거만</b> User Persona로 변환하며 다른 인물 설정은 섞지 않습니다.</p>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" data-run-job=\"job-cand\" data-ctx='{\"variant\": \"character\", \"mode\": \"등장인물 추출\"}'><i data-i=\"users\"></i>등장인물 후보 찾기</button></div></div></div>\n        <div class=\"mode-panel\" data-detail=\"conversation\"><div class=\"stack stack--sm\">\n          <div class=\"kv-line\"><dl class=\"kv\"><dt>사용자 작성 메시지</dt><dd>214개 중 최근 120개(최대 약 32,000자)를 증거로 사용</dd><dt>제외</dt><dd>AI/NPC가 유저를 묘사한 내용은 증거에서 완전히 제외</dd></dl></div>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"mk-conv\" data-run-job=\"job-gen\"><i data-i=\"chat\"></i>대화에서 추출</button></div></div></div>\n      </div>\n\n      <details class=\"card card--flat\"><summary style=\"cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center\">사용할 자료 · 세계관 분석 (고급)</summary>\n        <div class=\"stack stack--sm\" style=\"margin-top:12px\">\n          <dl class=\"kv\"><dt>Character Lore</dt><dd>ON · 항목 7개 사용</dd><dt>모듈</dt><dd>활성 모듈 2개</dd><dt>Blueprint</dt><dd>세계관 분석 완료 · 근거 검토 가능</dd></dl>\n          <div class=\"field\"><label for=\"lia-max-chars\">자료 항목별 최대 문자 수</label><input class=\"input\" id=\"lia-max-chars\" type=\"number\" min=\"240\" max=\"3000\" step=\"1\" value=\"1200\"><span class=\"hint\" id=\"lia-max-chars-hint\">캐릭터·모듈 설명과 로어 수집에 적용합니다. 범위 240~3000자. RisuAI ARG와 같은 값을 사용합니다.</span></div>\n          <label class=\"check\"><input id=\"lia-rich-profile\" type=\"checkbox\" checked><span>상세 프로필 사용 <span class=\"hint\">— 항목별 문자 한도 안에서 상세 설정을 함께 참고</span></span></label>\n          <div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"세계관을 분석합니다. (시안)\">세계관 분석</button><button class=\"btn btn--sm\" data-toast=\"세계관을 다시 분석합니다. 기존 분석은 교체됩니다. (시안)\">재분석</button><button class=\"btn btn--sm\" data-open=\"sheet-evidence\">근거 검토</button></div>\n        </div></details>\n\n      <div class=\"note\"><b>AI 제공자로 자료가 전송됩니다.</b> 캐릭터 설명·로어·선택한 대화가 설정한 AI에 보내집니다. 논리 요청 수는 보통 클래식·대화 추출 2회, 랜덤·등장인물 추출 3회이며, 캐시를 쓰면 줄고 출력 복구·재시도가 있으면 늘어납니다.</div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"shelf\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Vault</div><h1 class=\"page-title\">보관함</h1><p class=\"page-desc\">생성 직후 자동 보관된 결과 <b id=\"shelf-n\">4</b>개입니다. 열어서 검토하고, 마음에 들면 RisuAI Persona로 채택합니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"search\"><i class=\"ic\" data-i=\"search\"></i><input class=\"input\" placeholder=\"이름·특징으로 찾기\" aria-label=\"보관함 검색\"></div>\n      <div class=\"list\" id=\"shelf-list\"></div>\n      <div class=\"empty\" id=\"shelf-empty\" hidden><b>보관함이 비어 있습니다</b><span>‘만들기’에서 Persona를 만들면 자동으로 이곳에 보관됩니다.</span></div>\n      <div class=\"note\"><b>보관함 삭제 ≠ Persona 삭제.</b> 보관함 항목을 지워도 이미 채택한 RisuAI Persona와 채팅 연결은 그대로입니다. 세 가지 삭제는 각각 다른 화면에서 따로 확인합니다.</div>\n      <div class=\"banner banner--info\"><span class=\"banner__icon\"><i data-i=\"info\"></i></span><div><b>예전 버전에서 저장한 자료가 있나요?</b><p class=\"muted\" style=\"margin:2px 0 8px\">검사 결과를 먼저 보고, 충돌을 확인한 뒤 직접 가져옵니다.</p><button class=\"btn btn--sm\" data-go=\"recover\">이전 자료 복구</button></div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"settings\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Settings</div><h1 class=\"page-title\">설정</h1><p class=\"page-desc\">바꾼 값은 아래 저장 막대에서 한 번에 저장합니다. 저장 전에는 적용되지 않습니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">텍스트 AI</h2><p class=\"card__desc\">Persona 생성·갱신·검사에 쓰는 모델입니다.</p></div><span class=\"badge badge--ok\">연결됨 (표본)</span></div>\n        <div class=\"stack stack--sm\">\n          <div class=\"field\"><label>제공자</label><select class=\"select\"><option>OpenAI 호환</option><option>Anthropic</option><option>Google</option></select></div>\n          <div class=\"field\"><label>Endpoint URL</label><input class=\"input\" value=\"https://api.example.com/v1\"></div>\n          <div class=\"field\"><label>모델</label><input class=\"input\" value=\"model-name\"></div>\n          <div class=\"field\"><label>API 키</label><input class=\"input\" type=\"password\" value=\"\" placeholder=\"저장된 키가 있습니다\"></div>\n          <div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"연결 테스트 성공 (시안)\">연결 테스트</button></div>\n          <details><summary style=\"cursor:pointer;font-weight:650;min-height:36px;display:flex;align-items:center\">고급 옵션</summary><p class=\"hint\">제공자별 추가 요청 옵션이 이곳에 모입니다.</p></details>\n        </div></div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">이미지 AI</h2><p class=\"card__desc\">끄면 이미지·감정 메뉴가 숨겨집니다.</p></div></div>\n        <div class=\"stack stack--sm\">\n          <div class=\"field\"><label>이미지 제공자</label><select class=\"select\" id=\"img-provider\"><option>사용 안 함</option><option selected>워크플로 기반</option></select></div>\n          <div class=\"field\"><label>Endpoint URL</label><input class=\"input\" value=\"\" placeholder=\"https://\"></div>\n          <div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"워크플로를 검사했습니다. (시안)\">워크플로 검사</button><button class=\"btn btn--sm\" data-toast=\"이미지 연결 테스트 (시안)\">연결 테스트</button></div>\n        </div></div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">저장 위치와 전송</h2><p class=\"card__desc\">무엇이 어디에 있고, 무엇이 밖으로 나가는지 구분해서 보여줍니다.</p></div></div>\n        <dl class=\"kv\"><dt>LIA 자료</dt><dd>LIA의 영구 저장 정책은 <b>local_only</b> — 이 기기에 둡니다.</dd><dt>Persona · 원본 이미지</dt><dd>RisuAI가 관리하는 저장 규칙을 따릅니다.</dd><dt>생성할 때</dt><dd>선택한 자료가 설정한 <b>AI 제공자로 전송</b>됩니다.</dd></dl>\n        <div class=\"setting\" style=\"margin-top:12px\"><div><div class=\"setting__name\">진단</div><div class=\"setting__desc\">연결·워크플로·저장 상태를 읽기 전용으로 점검합니다. 아무것도 바꾸지 않습니다.</div></div><button class=\"btn btn--sm\" data-toast=\"진단을 마쳤습니다. (읽기 전용, 시안)\">진단 실행</button></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" data-toast=\"에셋 ZIP을 내보냈습니다. (시안)\"><i data-i=\"download\"></i>에셋 ZIP 내보내기</button><button class=\"btn\" data-toast=\"ZIP 파일을 선택하세요 (시안)\"><i data-i=\"upload\"></i>에셋 ZIP 가져오기</button><button class=\"btn\" data-toast=\"디버그 JSON을 내보냈습니다. (시안)\">디버그 JSON</button><button class=\"btn\" data-go=\"recover\"><i data-i=\"db\"></i>이전 자료 복구</button></div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"edit\" data-track id=\"edit-root\">\n    <input type=\"hidden\" id=\"ed-view-dirty\" value=\"0\" data-dirty-key=\"view-drafts\">\n    <button class=\"back\" data-go=\"mine\"><i data-i=\"back\" data-size=\"sm\"></i>내 페르소나</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Edit · <span data-fill=\"ver\">v3</span> · <span data-fill=\"mode\">클래식 생성</span></div><h1 class=\"page-title\" data-fill=\"name\">세라 하운</h1><p class=\"page-desc\">보관 결과를 검토하고, 마음에 들면 RisuAI Persona로 채택합니다. 현재 상태: <b data-fill=\"statusText\">채택됨 · 이 채팅에 연결됨</b></p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"ed\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"sum\">요약</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"all\">전체 23개 항목</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"rev\">검토</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ver\">버전·기록</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"out\">채택·연결·삭제</button></div>\n    <div class=\"stack\">\n      <div data-subpanel=\"sum\" data-group=\"ed\" class=\"is-active\"><div class=\"stack\">\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">장기 Persona 요약</h2><p class=\"card__desc\">PersonaSpec의 핵심만 보여줍니다. 모든 항목은 ‘전체 23개 항목’에서 편집합니다.</p></div></div>\n          <div class=\"stack stack--sm\">\n            <div class=\"field\"><label>이름</label><input class=\"input\" data-key=\"name\" value=\"세라 하운\"></div>\n            <div class=\"field\"><label>역할/직업</label><input class=\"input\" data-key=\"role\" value=\"왕실 기록실 사서\"></div>\n            <div class=\"field\"><label>성격</label><textarea class=\"textarea\" rows=\"2\" data-key=\"personality\">신중하지만 약속을 가볍게 여기지 않는다.</textarea></div>\n            <div class=\"field\"><label>말투</label><textarea class=\"textarea\" rows=\"2\" data-key=\"speech\">짧고 낮은 어조. 확신이 없을 때는 말을 줄인다.</textarea></div>\n          </div></div>\n        <div class=\"card card--flat\"><div class=\"card__head\"><div><h2 class=\"card__title\">현재 상태 (일시적)</h2><p class=\"card__desc\">위치·소지품 같은 일시적 상태는 장기 PersonaSpec과 분리되어 Live Persona 갱신에서 관리됩니다.</p></div></div>\n          <div id=\"live-persona-state\"><p class=\"muted\" style=\"margin:0;font-size:13px\">선택한 Persona의 Live 상태를 불러오는 중</p></div></div>\n      </div></div>\n\n      <div data-subpanel=\"all\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"seg\" id=\"ed-lang\" role=\"group\" aria-label=\"보기 언어\"><button aria-pressed=\"true\">원문</button><button aria-pressed=\"false\">번역</button></div><p class=\"hint\" id=\"ed-lang-note\" style=\"margin:0\">보관된 원문을 편집합니다.</p>\n        <p class=\"hint\">23개 항목 모두 잠그거나 항목별로 다시 만들 수 있습니다. 잠근 항목은 재생성에서 바뀌지 않습니다.</p>\n        <div class=\"card card--tight\">\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-name\">이름</label><code class=\"fld__key\">name</code></div><input class=\"input\" id=\"f-name\" data-key=\"name\" value=\"세라 하운\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"name\" aria-label=\"이름 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"name\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-gender\">성별</label><code class=\"fld__key\">gender</code></div><input class=\"input\" id=\"f-gender\" data-key=\"gender\" value=\"여성\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"gender\" aria-label=\"성별 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"gender\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-age\">나이</label><code class=\"fld__key\">age</code></div><input class=\"input\" id=\"f-age\" data-key=\"age\" value=\"29세\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"age\" aria-label=\"나이 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"age\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-speciesRace\">종족</label><code class=\"fld__key\">speciesRace</code></div><input class=\"input\" id=\"f-speciesRace\" data-key=\"speciesRace\" value=\"인간\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"speciesRace\" aria-label=\"종족 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"speciesRace\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-origin\">출신</label><code class=\"fld__key\">origin</code></div><input class=\"input\" id=\"f-origin\" data-key=\"origin\" value=\"북쪽 도서 도시 ‘하운’\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"origin\" aria-label=\"출신 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"origin\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-role\">역할/직업</label><code class=\"fld__key\">role</code></div><input class=\"input\" id=\"f-role\" data-key=\"role\" value=\"왕실 기록실 사서\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"role\" aria-label=\"역할/직업 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"role\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-appearance\">외모</label><code class=\"fld__key\">appearance</code></div><input class=\"input\" id=\"f-appearance\" data-key=\"appearance\" value=\"짙은 회색 외투, 은색 열쇠\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"appearance\" aria-label=\"외모 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"appearance\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-personality\">성격</label><code class=\"fld__key\">personality</code></div><input class=\"input\" id=\"f-personality\" data-key=\"personality\" value=\"신중하지만 약속을 가볍게 여기지 않는다\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"personality\" aria-label=\"성격 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"personality\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-visibleSide\">겉으로 보이는 면</label><code class=\"fld__key\">visibleSide</code></div><input class=\"input\" id=\"f-visibleSide\" data-key=\"visibleSide\" value=\"차분하고 예의 바름\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"visibleSide\" aria-label=\"겉으로 보이는 면 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"visibleSide\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-hiddenSide\">숨은 면</label><code class=\"fld__key\">hiddenSide</code></div><input class=\"input\" id=\"f-hiddenSide\" data-key=\"hiddenSide\" value=\"기록되지 않은 일에 대한 집착\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"hiddenSide\" aria-label=\"숨은 면 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"hiddenSide\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-internalContradiction\">내적 모순</label><code class=\"fld__key\">internalContradiction</code></div><input class=\"input\" id=\"f-internalContradiction\" data-key=\"internalContradiction\" value=\"비밀을 지키려다 진실을 외면한다\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"internalContradiction\" aria-label=\"내적 모순 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"internalContradiction\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-background\">배경</label><code class=\"fld__key\">background</code></div><input class=\"input\" id=\"f-background\" data-key=\"background\" value=\"기록실에서 자라 외부와 거리를 둠\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"background\" aria-label=\"배경 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"background\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-speech\">말투</label><code class=\"fld__key\">speech</code></div><input class=\"input\" id=\"f-speech\" data-key=\"speech\" value=\"짧고 낮은 어조\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"speech\" aria-label=\"말투 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"speech\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-motivation\">동기/욕망</label><code class=\"fld__key\">motivation</code></div><input class=\"input\" id=\"f-motivation\" data-key=\"motivation\" value=\"사라진 기록의 행방을 찾는 것\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"motivation\" aria-label=\"동기/욕망 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"motivation\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-relationshipStyle\">관계 방식</label><code class=\"fld__key\">relationshipStyle</code></div><input class=\"input\" id=\"f-relationshipStyle\" data-key=\"relationshipStyle\" value=\"거리를 두되 한번 믿으면 끝까지\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"relationshipStyle\" aria-label=\"관계 방식 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"relationshipStyle\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-relationshipToCharacter\">{{char}}와의 접점</label><code class=\"fld__key\">relationshipToCharacter</code></div><input class=\"input\" id=\"f-relationshipToCharacter\" data-key=\"relationshipToCharacter\" value=\"열쇠를 맡긴 첫 의뢰인\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"relationshipToCharacter\" aria-label=\"{{char}}와의 접점 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"relationshipToCharacter\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-preferences\">선호/취향</label><code class=\"fld__key\">preferences</code></div><input class=\"input\" id=\"f-preferences\" data-key=\"preferences\" value=\"오래된 종이 냄새, 식은 차\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"preferences\" aria-label=\"선호/취향 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"preferences\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-conflictRepair\">갈등/회복</label><code class=\"fld__key\">conflictRepair</code></div><input class=\"input\" id=\"f-conflictRepair\" data-key=\"conflictRepair\" value=\"말수가 줄었다가 사실부터 정리해 사과\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"conflictRepair\" aria-label=\"갈등/회복 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"conflictRepair\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-skills\">기술/강점</label><code class=\"fld__key\">skills</code></div><input class=\"input\" id=\"f-skills\" data-key=\"skills\" value=\"고문서 판독, 암기\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"skills\" aria-label=\"기술/강점 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"skills\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-limitations\">한계/약점</label><code class=\"fld__key\">limitations</code></div><input class=\"input\" id=\"f-limitations\" data-key=\"limitations\" value=\"몸싸움에 약함\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"limitations\" aria-label=\"한계/약점 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"limitations\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-knowledgeBoundary\">지식 경계</label><code class=\"fld__key\">knowledgeBoundary</code></div><input class=\"input\" id=\"f-knowledgeBoundary\" data-key=\"knowledgeBoundary\" value=\"왕실 외부 소식은 소문 수준\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"knowledgeBoundary\" aria-label=\"지식 경계 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"knowledgeBoundary\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-boundaries\">RP 경계</label><code class=\"fld__key\">boundaries</code></div><input class=\"input\" id=\"f-boundaries\" data-key=\"boundaries\" value=\"직접 묘사하지 않을 수위 설정은 보관 결과 기준\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"boundaries\" aria-label=\"RP 경계 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"boundaries\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-worldFitNotes\">세계관 적합 메모</label><code class=\"fld__key\">worldFitNotes</code></div><input class=\"input\" id=\"f-worldFitNotes\" data-key=\"worldFitNotes\" value=\"보름달 전 개방 금지 규칙을 인지\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"worldFitNotes\" aria-label=\"세계관 적합 메모 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"worldFitNotes\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n        </div>\n      </div></div>\n\n      <div data-subpanel=\"rev\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">검사 결과</h2><p class=\"card__desc\">생성 직후 자동 실행된 점검입니다. (표본)</p></div></div>\n          <div class=\"cluster\" id=\"rv-chips\"></div>\n          <p class=\"muted\" style=\"margin:10px 0 0;font-size:13px\" id=\"rv-note\"></p></div>\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">수정 미리보기</h2><p class=\"card__desc\">적용 전에 바뀔 내용을 확인합니다.</p></div></div>\n          <div id=\"rv-diff\"></div>\n          <div class=\"cluster\" style=\"margin-top:10px\" id=\"rv-acts\"><button class=\"btn btn--primary\" id=\"rv-apply\">초안에 적용</button><button class=\"btn\" id=\"rv-ignore\">무시</button></div></div>\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">밀도 변환</h2><p class=\"card__desc\">RisuAI Persona로 채택할 때 길이를 선택합니다. 채택 옵션이라 저장 막대와 별개이며, 바꾸면 ‘채택·연결·삭제’에서 다시 채택할 수 있습니다.</p></div></div>\n          <div class=\"choices\" id=\"ed-density\"><button class=\"choice\"><b>Full</b><span>전체 항목</span></button><button class=\"choice is-on\"><b>Standard</b><span>핵심 중심 (기본)</span></button><button class=\"choice\"><b>Compact</b><span>짧게 압축</span></button></div></div>\n      </div></div>\n\n      <div data-subpanel=\"ver\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"list\" id=\"ver-list\">\n          <div class=\"ver\"><span class=\"badge badge--ok\">현재</span><div><b>v3 · 수정 방금</b><small>수동 편집 · 항목 2개 변경</small></div><button class=\"btn btn--sm\" data-toast=\"v3를 열었습니다. (시안)\">열기</button></div>\n          <div class=\"ver\"><span class=\"badge\">v2</span><div><b>v2 · 어제</b><small>항목 재생성 · ‘성격’</small></div><button class=\"btn btn--sm\" data-toast=\"v2와 비교합니다. (시안)\">비교</button></div>\n          <div class=\"ver\"><span class=\"badge\">v1</span><div><b>v1 · 3일 전</b><small>클래식 생성 · 원본: 세라 하운</small></div><button class=\"btn btn--sm\" data-toast=\"v1에서 파생본을 만들었습니다. (시안)\">파생본 만들기</button></div>\n        </div>\n        <div class=\"cluster\"><button class=\"btn\" id=\"btn-persona-blueprint\" data-open=\"sheet-persona-blueprint\">생성 Blueprint</button><button class=\"btn\" id=\"btn-persona-json\" data-open=\"sheet-persona-json\">JSON 보기</button></div>\n      </div></div>\n\n  <div class=\"overlay overlay--bottom\" id=\"sheet-persona-blueprint\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"spb-title\"><div class=\"eyebrow\">World blueprint</div><h2 id=\"spb-title\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">생성 Blueprint</h2><p class=\"muted\" id=\"spb-target\" style=\"margin:0 0 10px;font-size:13px\"></p><div class=\"list\" id=\"spb-items\"></div><div class=\"dialog__actions\"><button class=\"btn\" data-close>닫기</button></div></div></div>\n  <div class=\"overlay overlay--bottom\" id=\"sheet-persona-json\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"spj-title\"><div class=\"eyebrow\">PersonaSpec</div><h2 id=\"spj-title\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">PersonaSpec JSON</h2><p class=\"muted\" id=\"spj-target\" style=\"margin:0 0 10px;font-size:13px\"></p><pre id=\"spj-content\" style=\"max-height:48vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px var(--font-mono)\"></pre><div class=\"dialog__actions\"><button class=\"btn\" data-close>닫기</button></div></div></div>\n\n      <div data-subpanel=\"out\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"target-card\"><h3>① LIA 보관함 <small>‘<span data-fill=\"name\">세라 하운</span>’ · 자동 보관됨</small></h3><p class=\"muted\" style=\"margin:0;font-size:13px\">생성 직후 PersonaSpec·검사 결과·버전·Blueprint 스냅샷이 자동으로 보관되었습니다. RisuAI Persona는 아직 바뀌지 않았습니다.</p>\n          <div class=\"cluster\"><button class=\"btn btn--sm btn--danger\" id=\"btn-del-vault\" data-open=\"sheet-del-vault\">보관함에서 삭제…</button></div></div>\n        <div class=\"target-card\"><h3>② RisuAI Persona로 채택 <small data-fill=\"adoptText\">채택됨 · RisuAI Persona ‘세라 하운’</small></h3>\n          <div class=\"field\"><label>채택할 내용</label><div class=\"seg\" id=\"ad-lang\" role=\"group\" aria-label=\"채택본\"><button aria-pressed=\"true\">원문</button><button aria-pressed=\"false\">번역본</button></div></div>\n          <div class=\"choices\" id=\"ad-mode\"><button class=\"choice is-on\"><b>현재 채팅 전용</b><span>이 채팅에서만 쓰는 Persona로 저장</span></button><button class=\"choice\"><b>새 Persona로 저장</b><span>RisuAI에 별도 Persona를 추가</span></button></div>\n          <dl class=\"kv\" style=\"margin:0\"><dt>밀도</dt><dd id=\"ad-density-label\">Standard</dd></dl><p class=\"hint\" style=\"margin:0\">밀도는 ‘검토’ 탭의 밀도 변환에서 바꿉니다.</p><p class=\"hint\" id=\"adopt-diff\" hidden style=\"margin:0\"></p><div class=\"note\"><b>기본 Persona는 덮어쓰지 않습니다.</b> 기본 Persona 선택도 LIA가 바꾸지 않습니다. 채택은 <b>저장된 버전</b>과 위 옵션을 기준으로 하며, 채택한 내용은 보관함 수정본과 따로 보존됩니다.</div>\n          <p class=\"hint\" id=\"hint-adopt\" hidden style=\"color:var(--danger-ink)\">저장하지 않은 변경이 있어 채택할 수 없습니다. 먼저 아래 저장 막대에서 저장하세요.</p>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"btn-adopt\" data-toast=\"‘{name}’ 채택본을 RisuAI Persona로 저장했습니다. (시안)\">채택하기</button><button class=\"btn btn--sm btn--danger\" id=\"btn-del-persona\" data-open=\"sheet-del-persona\">생성한 Persona 정리…</button></div><p class=\"hint\" id=\"hint-del-persona\" hidden>아직 채택하지 않아 정리할 RisuAI Persona가 없습니다.</p><div hidden></div></div>\n        <div class=\"target-card\"><h3>③ 현재 채팅에 연결 <small data-fill=\"bindText\">이 채팅에 연결됨</small></h3><p class=\"muted\" style=\"margin:0;font-size:13px\">연결하면 이 채팅에서 이 Persona(및 Live 복사본)가 쓰입니다. 채택 여부와 상관없이 따로 바꿀 수 있습니다.</p>\n          <div class=\"cluster\"><button class=\"btn\" id=\"btn-bind\" data-open=\"sheet-bind\"><i data-i=\"link\"></i>이 채팅에 연결…</button><button class=\"btn btn--sm btn--danger\" id=\"btn-unbind\" data-open=\"sheet-unbind\">연결 해제…</button></div><p class=\"hint\" id=\"hint-bind\" hidden>RisuAI Persona로 먼저 채택해야 채팅에 연결할 수 있습니다.</p></div>\n      </div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"update\">\n    <button class=\"back\" data-go=\"mine\"><i data-i=\"back\" data-size=\"sm\"></i>내 페르소나</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Manual update</div><h1 class=\"page-title\">수동 갱신</h1><p class=\"page-desc\">두 가지 서로 다른 검토가 있습니다. 근거와 반영 대상이 다릅니다.</p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"up\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"five\">다음 5턴 갱신</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"full\">전체 대화 변화 검토</button></div>\n    <div class=\"stack\">\n      <div data-subpanel=\"five\" data-group=\"up\" class=\"is-active\"><div class=\"stack\">\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">처리 범위</h2><p class=\"card__desc\">마지막 처리 지점 다음의 <b>완결된 5쌍</b>만 한 번 분석해 Live Persona를 갱신합니다.</p></div><span class=\"badge badge--ok\" id=\"upd2-badge\">준비됨</span></div>\n          <dl class=\"kv\"><dt>범위</dt><dd id=\"upd2-range\">TURN 6~10 · 다음 5턴만 분석합니다.</dd><dt>정책</dt><dd>자동 갱신 꺼짐 · 수동 실행만</dd><dt>대상</dt><dd id=\"upd2-target\">이 채팅 소유 Live Persona</dd></dl>\n          <div class=\"note\" style=\"margin-top:12px\">결과별 체크 승인 단계는 없습니다. 한 번 실행하면 분석 결과가 Live Persona에 반영되고, 기록에 남습니다. 실행 전 바인딩은 기록에서 <b>복원</b>할 수 있습니다.</div>\n          <p class=\"hint\" id=\"upd2-why\" hidden style=\"margin:10px 0 0\"></p><div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn btn--primary\" id=\"upd-go\" data-run-job=\"job-update\"><i data-i=\"sync\"></i>다음 5턴 갱신 실행</button></div></div>\n        <div class=\"card card--tight\"><div class=\"card__head\"><div><h2 class=\"card__title\">갱신 기록</h2></div></div>\n          <div class=\"list\" id=\"upd-hist\"></div></div>\n      </div></div>\n      <div data-subpanel=\"full\" data-group=\"up\"><div class=\"stack\">\n        <div class=\"note\"><b>다른 기능입니다.</b> 채팅 전체의 <b>User 작성 메시지</b>를 현재 PersonaSpec과 비교해 변화 후보를 찾습니다. 선택한 후보는 Live Persona가 아니라 <b>초안</b>에 반영됩니다.</div>\n        <div class=\"list\">\n          <label class=\"row\"><input type=\"checkbox\" checked class=\"chg\" data-key=\"\" data-chg-key=\"speech\" data-chg-val=\"짧고 낮은 어조. 말끝을 줄임표로 흐린다.\" data-no-track style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">말투 — 줄임표가 늘어남</div><div class=\"row__meta\">근거: User 메시지 #41, #58 · 변화 후보</div></div></label>\n          <label class=\"row\"><input type=\"checkbox\" class=\"chg\" data-chg-key=\"preferences\" data-chg-val=\"오래된 종이 냄새, 따뜻한 차\" data-no-track style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">선호 — 차를 즐기게 됨</div><div class=\"row__meta\">근거: User 메시지 #77 · 근거 1건</div></div></label>\n        </div>\n        <div class=\"cluster\"><button class=\"btn\" data-toast=\"사용자 작성 메시지 전체를 비교합니다. (시안)\">변화 후보 찾기</button><button class=\"btn btn--primary\" id=\"chg-go\">선택 후보를 초안에 반영</button><span class=\"hint\" id=\"chg-hint\"></span></div>\n      </div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"assets\" data-track>\n    <button class=\"back\" data-go=\"mine\"><i data-i=\"back\" data-size=\"sm\"></i>내 페르소나</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Persona asset studio</div><h1 class=\"page-title\">이미지 · 감정</h1><p class=\"page-desc\">기본 모습을 정하고, 다양한 표정을 더합니다.</p></div></div>\n    <div class=\"steps\" style=\"margin-bottom:16px\"><div class=\"step is-done\"><span class=\"step__no\">✓</span><b>Neutral 생성</b></div><div class=\"step is-done\"><span class=\"step__no\">✓</span><b>기준 확정</b></div><div class=\"step is-active\"><span class=\"step__no\">3</span><b>감정 묶음</b></div></div>\n    <div class=\"stack\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">대상</h2><p class=\"card__desc\">기본값은 이 채팅에 연결된 Persona입니다. 다른 Persona를 골라 그 Persona 전용 에셋을 만들 수 있습니다.</p><div class=\"banner banner--warn\" id=\"as-off\" hidden style=\"margin-top:8px\"><div><b>이미지 제공자가 ‘사용 안 함’으로 저장되어 있습니다.</b><span>설정에서 이미지 제공자를 고르고 저장해야 이미지를 만들 수 있습니다. 이미 저장된 에셋은 그대로 볼 수 있습니다.</span></div></div></div></div>\n        <div class=\"field\"><label>에셋 타겟 Persona</label><select class=\"select\" id=\"asset-target\" data-no-track></select></div>\n        <dl class=\"kv\" style=\"margin-top:10px\"><dt>저장 상태</dt><dd id=\"as-state\">9개 저장됨 · Neutral Master 있음</dd><dt>대상 요약</dt><dd id=\"as-sum\">짙은 회색 외투, 은색 열쇠를 쥔 29세 여성</dd></dl></div>\n      <div class=\"card lock-card\"><div class=\"card__head\"><div><h2 class=\"card__title\">Visual Generation Lock</h2><p class=\"card__desc\">기준은 <b>프롬프트와 생성 조건(Lock)</b>입니다. 확정 뒤에는 감정별로 바뀌지 않습니다.</p></div><span class=\"badge badge--ok\" id=\"as-lock\">확정됨</span></div>\n        <dl class=\"kv\"><dt>생성 조건</dt><dd>seed 482913 · 832×1216 · sampler 표본</dd><dt>구도</dt><dd>표준 감정 에셋 · 상반신</dd><dt>구형 Lock</dt><dd>해당 없음 — 이전 형식의 Lock이 남아 있으면 이곳에 ‘구형’으로 표시됩니다.</dd><dt>배경 규칙</dt><dd>순백색 고정 · Positive/Negative 양쪽에서 강제 · 투명/장면 배경 사용 안 함</dd></dl>\n        <div id=\"asset-lock-fields\"><div class=\"field\" style=\"margin-top:12px\"><label>구도 프리셋 <span class=\"hint\">(Neutral 기준 확정 시 Lock에 포함)</span></label>\n          <div class=\"choices\" data-dirty><button class=\"choice is-on\"><b>표준 감정 에셋 · 상반신</b><span>허리 위 · 중앙 · 손 최소</span></button><button class=\"choice\"><b>얼굴 중심 에셋 · 흉상</b><span>머리와 어깨 중심</span></button><button class=\"choice\"><b>반신 에셋 · 반신</b><span>허리~허벅지 중간까지</span></button></div></div>\n        <div class=\"field\" style=\"margin-top:12px\"><label>추가 스타일 메모</label><textarea class=\"textarea\" rows=\"2\">부드러운 수채 질감</textarea><span class=\"hint\">Neutral 생성 시 Lock 후보에 포함됩니다. 기준 확정 뒤에는 바뀌지 않습니다.</span></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" data-run-job=\"job-neutral\" data-ctx='{\"emo\": \"neutral (Visual Master)\"}'>Neutral 다시 만들기</button><button class=\"btn\" id=\"btn-confirm-visual-lock\">Neutral 기준 확정</button></div></div></div>\n      <div><div class=\"section-title\"><h2>감정 이미지 <span class=\"muted\" style=\"font-weight:500\" id=\"as-n\">9 / 12</span></h2><span class=\"hint\">눌러서 업로드·프롬프트 편집·재생성·삭제</span></div>\n        <div class=\"emo-grid\" id=\"emo-grid\">\n          <button class=\"emo is-done is-master\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"neutral (Visual Master)\"}'><div class=\"avatar\">N</div>neutral<br><span class=\"muted\">✓ Master</span></button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"gentle smile\"}'><div class=\"avatar avatar--b\">G</div>gentle smile<br><span class=\"muted\">✓ 완료</span></button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"happy\"}'><div class=\"avatar avatar--b\">H</div>happy<br><span class=\"muted\">✓ 완료</span></button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"angry\"}'><div class=\"avatar avatar--d\">A</div>angry<br><span class=\"muted\">✓ 완료</span></button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"sad\"}'><div class=\"avatar avatar--n\">S</div>sad<br><span class=\"muted\">✓ 완료</span></button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"embarrassed\"}'><div class=\"avatar avatar--c\">E</div>embarrassed<br><span class=\"muted\">✓ 완료</span></button>\n          <button class=\"emo is-todo\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"jealous\"}'><div class=\"avatar todo\">?</div>jealous<br>— 아직</button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"surprised\"}'><div class=\"avatar avatar--c\">S</div>surprised<br><span class=\"muted\">✓ 완료</span></button>\n          <button class=\"emo is-todo\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"worried\"}'><div class=\"avatar todo\">?</div>worried<br>— 아직</button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"determined\"}'><div class=\"avatar\">D</div>determined<br><span class=\"muted\">✓ 완료</span></button>\n          <button class=\"emo is-todo\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"affectionate\"}'><div class=\"avatar todo\">?</div>affectionate<br>— 아직</button>\n          <button class=\"emo is-done\" data-open=\"sheet-emo\" data-ctx='{\"emo\":\"exhausted\"}'><div class=\"avatar avatar--n\">E</div>exhausted<br><span class=\"muted\">✓ 완료</span></button>\n        </div>\n        <div class=\"field\" style=\"margin-top:12px\"><label>감정 목록 (한 줄에 하나 또는 쉼표)</label><textarea class=\"textarea\" rows=\"3\" id=\"emo-list\">neutral, gentle smile, happy, angry, sad, embarrassed, jealous, surprised, worried, determined, affectionate, exhausted</textarea><span class=\"hint\">Neutral은 Visual Master입니다. 사용자 정의 감정 추가는 Neutral 기준이 확정된 뒤에만 가능합니다.</span></div>\n      </div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">묶음 작업</h2></div></div>\n        <div class=\"note\"><b>묶음 생성은 neutral을 제외한 전체 감정을 생성·갱신합니다.</b> 이미 있는 감정도 다시 만들어질 수 있습니다. 하나만 만들려면 위에서 해당 감정을 눌러 개별 재생성하세요.</div>\n        <label class=\"check\" style=\"margin-top:10px\"><input type=\"checkbox\" checked><span>해당 감정이 없으면 neutral로 대체해 자동 첨부 <span class=\"hint\">— 런타임 neutral 대체</span></span></label>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn btn--primary\" data-run-job=\"job-emo\"><i data-i=\"spark\"></i>감정 묶음 생성·갱신</button><button class=\"btn\" data-toast=\"에셋 ZIP을 내보냈습니다. (시안)\"><i data-i=\"download\"></i>ZIP 내보내기</button><button class=\"btn\" data-toast=\"ZIP 파일을 선택하세요 (시안)\"><i data-i=\"upload\"></i>ZIP 가져오기</button><button class=\"btn btn--danger\" data-open=\"sheet-bundle-del\">묶음 폐기…</button></div></div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">감정 에셋 프리셋</h2><p class=\"card__desc\">Persona 고유 이미지와 Visual Lock은 저장하지 않습니다.</p></div></div>\n        <div class=\"cluster\"><select class=\"select\" style=\"max-width:240px\" aria-label=\"프리셋 선택\"><option>기본 수채</option></select><button class=\"btn btn--sm\" data-toast=\"프리셋을 불러왔습니다. (시안)\">불러오기</button><button class=\"btn btn--sm\" data-toast=\"프리셋을 삭제했습니다. (시안)\">삭제</button></div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"recover\">\n    <button class=\"back\" data-go=\"settings\"><i data-i=\"back\" data-size=\"sm\"></i>설정</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Recovery</div><h1 class=\"page-title\">이전 자료 복구</h1><p class=\"page-desc\">검사 → 결과·충돌 확인 → 직접 가져오기 → 읽기 확인 순서입니다. 가져오기 전까지 아무것도 바뀌지 않습니다.</p></div></div>\n    <div class=\"steps\" style=\"margin-bottom:16px\"><div class=\"step is-done\"><span class=\"step__no\">✓</span><b>검사</b></div><div class=\"step is-active\"><span class=\"step__no\">2</span><b>결과·충돌</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>가져오기</b></div><div class=\"step\"><span class=\"step__no\">4</span><b>읽기 확인</b></div></div>\n    <div class=\"stack\">\n      <div class=\"banner banner--info\"><span class=\"banner__icon\"><i data-i=\"info\"></i></span><div><b>읽기 전용 검사를 마쳤습니다.</b><p class=\"muted\" style=\"margin:2px 0 0\">목록·Live shard·이미지 조각을 검증했습니다. (표본)</p></div></div>\n      <div class=\"list\">\n        <label class=\"row\"><input type=\"checkbox\" checked class=\"rc\" data-name=\"카엘 로웬\" data-no-track style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">카엘 로웬 <span class=\"badge badge--ok\">충돌 없음</span></div><div class=\"row__meta\">Live shard 검증됨 · 이미지 조각 12/12</div></div></label>\n        <label class=\"row\"><input type=\"checkbox\" class=\"rc\" data-name=\"세라 하운\" data-conflict=\"1\" data-no-track style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">세라 하운 <span class=\"badge badge--warn\">로컬과 충돌</span></div><div class=\"row__meta\">이 기기에 더 최근 버전(v3)이 있습니다. 가져오면 덮어쓸 수 있습니다.</div></div></label>\n        <div class=\"row\"><span class=\"row__icon\"><i data-i=\"alert\"></i></span><div><div class=\"row__title\">리오넬 <span class=\"badge badge--danger\">가져올 수 없음</span></div><div class=\"row__meta\">이미지 조각 일부가 검증에 실패했습니다.</div></div></div>\n      </div>\n      <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"rc-go\">선택 항목 가져오기</button><span class=\"hint\" id=\"rc-hint\"></span><button class=\"btn\" data-go=\"settings\">취소</button></div>\n    </div>\n  </section>\n\n  </div>\n  <footer class=\"savebar\" id=\"savebar\" hidden>\n    <div class=\"savebar__copy\"><b data-save-title>모든 변경이 저장되어 있습니다</b><span data-save-desc>값을 바꾸면 이곳에서 한 번에 저장합니다.</span></div>\n    <div class=\"cluster\"><button class=\"btn\" data-revert disabled>변경 취소</button><button class=\"btn btn--primary\" data-save disabled>저장</button></div>\n  </footer>\n  </main>\n\n  <nav class=\"tabbar\" aria-label=\"LIA 하단 메뉴\"></nav>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-bind\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sb-t\">\n    <div class=\"eyebrow\">Connect</div><h2 id=\"sb-t\" style=\"margin:2px 0 4px;font:800 19px var(--font-display)\">이 채팅에서 쓸 Persona</h2>\n    <p class=\"muted\" style=\"margin:0 0 12px;font-size:13px\">‘세라 · 북쪽 정원’ 채팅의 연결만 바꿉니다. 다른 채팅의 연결에는 영향이 없습니다.</p>\n    <div class=\"stack stack--sm\" data-detail-root id=\"bind-list\"></div>\n    <p class=\"hint\" style=\"margin-top:10px\">RisuAI 기본 Persona 선택은 LIA가 바꾸지 않습니다. 연결을 풀면 기본 Persona가 그대로 적용됩니다.</p>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close>닫기</button><button class=\"btn btn--primary\" id=\"btn-bind-go\" data-close data-act=\"bind-go\" data-toast=\"‘{name}’ Persona를 이 채팅에 연결했습니다. 한 채팅에는 하나만 연결되며 다른 채팅은 그대로입니다. (시안)\">연결하기</button></div><p class=\"hint\" id=\"bind-hint\" style=\"margin:6px 0 0\" hidden></p><div hidden></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-persona\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"spm-t\">\n    <div class=\"eyebrow\">RisuAI Persona</div><h2 id=\"spm-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">‘<span data-fill=\"name\">세라 하운</span>’ 관리</h2>\n    <dl class=\"kv\" id=\"spm-kv\"></dl>\n    <p class=\"hint\" id=\"spm-note\" style=\"margin:8px 0 0\"></p>\n    <div class=\"stack stack--sm\" id=\"spm-act\" style=\"margin-top:12px\"></div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>닫기</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-unbind\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"su-t\">\n    <div class=\"eyebrow\">Unlink</div><h2 id=\"su-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">이 채팅에서 ‘<span data-fill=\"name\">세라 하운</span>’ 연결을 해제할까요?</h2>\n    <div class=\"note\"><b>삭제가 아닙니다.</b> Persona와 보관함 항목은 그대로 두고, 이 채팅의 연결과 갱신 연결만 풀립니다. 이후에는 RisuAI 기본 Persona가 적용됩니다.</div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>취소</button><button class=\"btn btn--danger\" data-close data-act=\"unbind\" data-toast=\"‘{name}’ 연결을 해제했습니다. 이제 기본 Persona가 적용됩니다. (시안)\">연결 해제</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-del-vault\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sdv-t\">\n    <div class=\"eyebrow\" style=\"color:var(--danger-ink)\">Delete vault item</div><h2 id=\"sdv-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">보관함의 ‘<span data-fill=\"name\">카엘 로웬</span>’ 항목을 삭제할까요?</h2>\n    <p class=\"muted\" style=\"margin:0 0 8px;font-size:13px\">삭제 대상: 최신 <span data-fill=\"ver\">v1</span> 포함 버전 <span data-fill=\"verCount\">1</span>개 · <span data-fill=\"mode\">랜덤 신규 생성</span> · <span data-fill=\"adoptNote\">채택 전</span></p><div class=\"note note--danger\"><b>보관 결과만 지웁니다.</b> 버전·검사 결과·Blueprint 스냅샷이 사라집니다. 이미 채택한 RisuAI Persona와 채팅 연결에는 영향이 없습니다. 되돌릴 수 없습니다.</div><p class=\"hint\" style=\"margin:8px 0 0\" data-fill=\"afterVault\"></p>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>취소</button><button class=\"btn btn--danger-solid\" data-close data-act=\"del-vault\" data-toast=\"‘{name}’ 보관함 항목을 삭제했습니다. {afterVault} (시안)\" data-then-go=\"shelf\">보관함에서 삭제</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-del-persona\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sdp-t\">\n    <div class=\"eyebrow\" style=\"color:var(--danger-ink)\">Clean up Persona</div><h2 id=\"sdp-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">LIA가 만든 RisuAI Persona ‘<span data-fill=\"name\">세라 하운</span>’ 항목을 정리할까요?</h2>\n    <div class=\"note note--danger\"><b>RisuAI의 Persona 하나가 삭제됩니다.</b> 이 채팅에 연결되어 있으면 먼저 연결이 풀립니다. <span data-fill=\"vaultAfter\">보관함 항목은 그대로 남습니다.</span> 기본 Persona와 직접 만든 Persona는 정리 대상이 아닙니다.</div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>취소</button><button class=\"btn btn--danger-solid\" data-close data-act=\"del-persona\" data-toast=\"RisuAI Persona ‘{name}’ 항목을 정리했습니다. {vaultAfter} (시안)\">Persona 정리</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-restore\" data-require=\"range\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sr-t\">\n    <div class=\"eyebrow\">Restore binding</div><h2 id=\"sr-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">갱신 전 바인딩으로 되돌릴까요?</h2>\n    <p class=\"muted\" style=\"font-size:13px\"><span data-fill=\"range\">TURN 1~5</span> 갱신 이전의 ‘<span data-fill=\"name\">세라 하운</span>’ Live Persona 상태로 복원합니다. 이후 갱신 기록은 남습니다.</p>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>취소</button><button class=\"btn btn--primary\" data-close data-act=\"upd-restore\" data-toast=\"{range} 갱신 이전 상태로 복원했습니다. 기록은 남아 있습니다. (시안)\">복원</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-emo\" data-require=\"emo\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"se-t\">\n    <div class=\"eyebrow\">Emotion asset</div><h2 id=\"se-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\" data-fill=\"emo\">happy</h2>\n    <div class=\"stack stack--sm\">\n      <button class=\"big-choice\" data-close data-toast=\"이미지 업로드 (시안)\"><span class=\"row__icon\"><i data-i=\"upload\"></i></span><div><b>이미지 업로드</b><span>직접 만든 이미지로 바꿉니다.</span></div><span class=\"pick\"></span></button>\n      <button class=\"big-choice\" data-close data-toast=\"프롬프트 편집 (시안)\"><span class=\"row__icon\"><i data-i=\"pen\"></i></span><div><b>프롬프트 편집</b><span>이 감정의 표정 지시만 고칩니다. 생성 조건(Lock)은 바뀌지 않습니다.</span></div><span class=\"pick\"></span></button>\n      <button class=\"big-choice\" data-close data-run-job=\"job-neutral\"><span class=\"row__icon\"><i data-i=\"refresh\"></i></span><div><b data-variant=\"has master\">이 감정만 재생성</b><b data-variant=\"none\" hidden>이 감정 만들기</b><span>확정된 Lock 그대로, 표정만 다시 만듭니다.</span></div><span class=\"pick\"></span></button>\n      <button class=\"big-choice\" data-variant=\"has\" data-close data-act=\"emo-del\" data-toast=\"‘{emo}’ 감정 이미지를 삭제했습니다. (시안)\"><span class=\"row__icon\"><i data-i=\"trash\"></i></span><div><b>이 이미지 삭제</b><span>다른 감정에는 영향이 없습니다.</span></div><span class=\"pick\"></span></button><p class=\"hint\" data-variant=\"master\" hidden>Visual Master(neutral)는 Lock의 기준이라 따로 삭제할 수 없습니다. 지우려면 ‘묶음 폐기’를 쓰세요.</p><p class=\"hint\" data-variant=\"none\" hidden>아직 만들지 않은 감정입니다. 재생성하거나 업로드할 수 있습니다.</p>\n    </div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close>닫기</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-bundle-del\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sbd-t\">\n    <div class=\"eyebrow\" style=\"color:var(--danger-ink)\">Discard bundle</div><h2 id=\"sbd-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">이 Persona의 감정 묶음을 폐기할까요?</h2>\n    <div class=\"note note--danger\"><b>저장된 감정 이미지 <span id=\"bd-n\">9</span>개와 Visual Lock이 폐기됩니다.</b> 다시 만들려면 Neutral부터 새로 시작해야 합니다. 먼저 ZIP으로 내보내 두는 것을 권장합니다.</div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>취소</button><button class=\"btn btn--danger-solid\" data-close data-act=\"bundle-del\" data-toast=\"감정 묶음을 폐기했습니다. Neutral부터 다시 시작할 수 있습니다. (시안)\">폐기</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-evidence\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sev-t\">\n    <div class=\"eyebrow\">World blueprint</div><h2 id=\"sev-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">세계관 분석 근거</h2>\n    <div class=\"list\"><div class=\"row\"><div><div class=\"row__title\">보름달 전 개방 금지</div><div class=\"row__meta\">Character Lore #3 · 근거 확인됨</div></div></div><div class=\"row\"><div><div class=\"row__title\">왕실 기록실 출입 규칙</div><div class=\"row__meta\">모듈 ‘왕국 연대기’ · 근거 확인됨</div></div></div></div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close>닫기</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"dlg-cand\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dc-t\">\n    <div class=\"eyebrow\">Candidates</div><h2 id=\"dc-t\" style=\"margin:2px 0 4px;font:800 19px var(--font-display)\"><span data-variant=\"default random\">새 인물 후보를 하나 고르세요</span><span data-variant=\"character\" hidden>Persona로 바꿀 등장인물을 고르세요</span></h2>\n    <p class=\"muted\" style=\"margin:0 0 12px;font-size:13px\">고르기 전에는 보관되지 않습니다. 고른 후보만 상세 생성으로 넘어갑니다.</p><p class=\"hint\" id=\"random-cand-context\" hidden style=\"margin:0 0 12px\"></p>\n    <div class=\"stack stack--sm\" data-detail-root data-variant=\"default random\">\n      <button class=\"big-choice is-on\" data-select-row=\"c1\" data-cand='{\"pid\":\"mira\",\"name\":\"미라\",\"mode\":\"랜덤 신규 생성\"}'><div class=\"avatar avatar--sm avatar--c\">약</div><div><b>약재상 견습생 ‘미라’</b><span>항구 도시에서 약초를 다루는 17세</span></div><span class=\"pick\">선택</span></button>\n      <button class=\"big-choice\" data-select-row=\"c2\" data-cand='{\"pid\":\"tobi\",\"name\":\"토비\",\"mode\":\"랜덤 신규 생성\"}'><div class=\"avatar avatar--sm avatar--b\">순</div><div><b>순회 서기 ‘토비’</b><span>성을 오가며 문서를 옮기는 서기</span></div><span class=\"pick\">선택</span></button>\n      <button class=\"big-choice\" data-select-row=\"c3\" data-cand='{\"pid\":\"har\",\"name\":\"하르\",\"mode\":\"랜덤 신규 생성\"}'><div class=\"avatar avatar--sm avatar--d\">등</div><div><b>등대지기 ‘하르’</b><span>폭풍 경보를 책임지는 은퇴 선원</span></div><span class=\"pick\">선택</span></button>\n    </div>\n    <div class=\"stack stack--sm\" data-detail-root data-variant=\"character\" hidden>\n      <button class=\"big-choice is-on\" data-select-row=\"h1\" data-cand='{\"pid\":\"rowen\",\"name\":\"정원사 로웬\",\"mode\":\"등장인물 추출\"}'><div class=\"avatar avatar--sm avatar--b\">로</div><div><b>정원사 로웬</b><span>캐릭터 카드 · 로어 2건 · 최근 대화 근거 6건</span></div><span class=\"pick\">선택</span></button>\n      <button class=\"big-choice\" data-select-row=\"h2\" data-cand='{\"pid\":\"archivist\",\"name\":\"왕실 기록관\",\"mode\":\"등장인물 추출\"}'><div class=\"avatar avatar--sm avatar--n\">기</div><div><b>왕실 기록관</b><span>로어 1건 · 직접 근거 적음</span></div><span class=\"pick\">선택</span></button>\n    </div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close>취소</button><button class=\"btn btn--primary\" id=\"btn-cand-go\" data-close data-run-job=\"job-gen\">이 후보로 상세 생성</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-cand\" aria-hidden=\"true\" data-inherit-ctx data-job-labels=\"세계관 규칙과 자료를 모으는 중|후보를 만드는 중|후보를 정리하는 중|후보가 준비됐어요. 하나를 고르세요.\">\n    <div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"jc-t\"><div class=\"eyebrow\">Working</div><h2 id=\"jc-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">후보를 만들고 있어요</h2>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg>준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>자료</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>후보 생성</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>정리</b></div></div>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel data-close>취소</button><button class=\"btn btn--primary\" data-job-done data-close hidden data-then-open=\"dlg-cand\">후보 보기</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-gen\" data-require=\"pid\" aria-hidden=\"true\" data-job-labels=\"선택한 자료를 정리하는 중|AI에게 Persona 초안을 요청하는 중|세계관·Agency 검사를 하는 중|보관함에 자동 보관하는 중|완료했어요. 보관함의 초안을 열어 검토하세요. 아직 RisuAI Persona는 바뀌지 않았습니다.\">\n    <div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"jg-t\"><div class=\"eyebrow\">Working</div><h2 id=\"jg-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">‘<span data-fill=\"name\">새 Persona</span>’ 초안을 만들고 있어요</h2><p class=\"muted\" style=\"margin:0 0 6px;font-size:12.5px\" data-fill=\"mode\">생성 모드</p>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg>준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>자료</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>생성</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>검사</b></div><div class=\"step\"><span class=\"step__no\">4</span><b>보관</b></div></div>\n      <p class=\"hint\" style=\"margin-top:10px\">요청 횟수는 모드·캐시·재시도에 따라 달라집니다. 취소해도 이미 전송된 요청은 처리 중일 수 있습니다.</p>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel data-close>취소</button><button class=\"btn btn--primary\" data-job-done data-close hidden data-then-go=\"edit\">‘<span data-fill=\"name\">새 Persona</span>’ 초안 열기</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-update\" data-cancel-until=\"3\" data-require=\"name\" data-start-from=\"upd-go\" aria-hidden=\"true\" data-job-labels=\"계획과 처리 범위를 확인하는 중|다음 5턴을 분석하는 중|Live Persona 갱신 내용을 만드는 중|기록과 바인딩을 저장하는 중|갱신을 마쳤습니다. 갱신 기록에서 이전 바인딩으로 복원할 수 있습니다.\">\n    <div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"ju-t\"><div class=\"eyebrow\">Manual update</div><h2 id=\"ju-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">TURN 6~10을 분석하고 있어요</h2>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg>준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>계획</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>분석</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>갱신안</b></div><div class=\"step\"><span class=\"step__no\">4</span><b>저장</b></div></div>\n      <p class=\"hint\" style=\"margin-top:10px\">저장이 시작되기 전까지만 취소할 수 있습니다. 저장 중에는 취소 버튼이 동작하지 않습니다.</p>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel data-close>취소</button><button class=\"btn btn--primary\" data-job-done data-close hidden data-then-go=\"mine\">내 페르소나로</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-neutral\" data-require=\"pid\" aria-hidden=\"true\" data-inherit-ctx data-job-labels=\"확정된 생성 조건(Lock)을 확인하는 중|이미지를 생성하는 중|저장 상태를 확인하는 중|이미지를 저장했습니다.\">\n    <div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"jn-t\"><div class=\"eyebrow\">Image</div><h2 id=\"jn-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">‘<span data-fill=\"name\">세라 하운</span>’ · ‘<span data-fill=\"emo\">neutral</span>’ 이미지를 만들고 있어요</h2>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg>준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>조건 확인</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>생성</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>저장</b></div></div>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel data-close>취소</button><button class=\"btn btn--primary\" data-job-done data-close hidden>닫기</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-emo\" data-require=\"pid\" aria-hidden=\"true\" data-job-labels=\"확정된 생성 조건(Lock)을 확인하는 중|neutral 외 11개 감정 이미지를 생성·갱신하는 중|저장된 이미지를 다시 읽어 확인하는 중|감정 묶음을 갱신했습니다. 실패한 감정은 개별 재생성하세요.\">\n    <div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"je-t\"><div class=\"eyebrow\">Emotion bundle</div><h2 id=\"je-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">‘<span data-fill=\"name\">세라 하운</span>’ 감정 이미지를 만들고 있어요</h2>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg>준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>Lock 확인</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>감정 생성</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>저장 확인</b></div></div>\n      <p class=\"hint\" style=\"margin-top:10px\">이미지 AI를 감정 수만큼 호출합니다. 이미 있는 감정도 다시 만들어질 수 있습니다.</p>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel data-close>중단 요청</button><button class=\"btn btn--primary\" data-job-done data-close hidden>닫기</button></div></div></div>\n\n  <div class=\"overlay overlay--bottom\" id=\"sheet-more\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-label=\"더보기\"><div data-more-list></div></div></div>\n  <div class=\"toasts\" aria-live=\"polite\"></div>\n</div>";
+  const LIA_MOCKUP_CSS = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n\n/* LIA 전용: \"라일락 주머니\" — 모바일 우선, 카드 1열, 큰 터치 영역, 한 화면 한 일 */\n.t-lia .page-body{max-width:760px;margin:0 auto;width:100%}\n.pocket{display:grid;grid-template-columns:64px minmax(0,1fr);gap:14px;align-items:center;padding:18px;border:1px solid var(--accent-line);border-radius:var(--r-lg);background:var(--accent-soft)}\n.avatar{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:#fff;font:800 24px var(--font-display);border:3px solid #fff}\n.avatar--sm{width:44px;height:44px;font-size:17px;border-width:2px}\n.avatar--b{background:#3d7258}.avatar--c{background:#8a5f17}.avatar--d{background:#ab3453}.avatar--n{background:#6f6580}\n.pocket h2{margin:0;font:800 20px/1.25 var(--font-display);letter-spacing:-.03em}\n.pocket p{margin:3px 0 0;font-size:13px;color:var(--text2)}\n.pocket__act{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}\n.pocket__act .btn{flex:1 1 140px}\n/* 연결 상태: 색만으로 구분하지 않도록 아이콘 + 글자를 항상 함께 */\n.bind{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:3px 10px;border-radius:99px;border:1px solid var(--border2);background:var(--surface);color:var(--text2)}\n.bind--here{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.bind--other{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.bind--none{border-style:dashed}\n.legend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:12px;color:var(--text3)}\n.pcard{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:14px 16px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}\nbutton.pcard:hover{border-color:var(--accent-line);background:var(--surface2)}\n.pcard b{display:block;font-size:14.5px}.pcard small{display:block;font-size:12.5px;color:var(--text3);margin-top:1px}\n.pcard__side{display:grid;gap:6px;justify-items:end}\n.big-choice{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:14px;align-items:center;padding:16px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}\n.big-choice:hover{border-color:var(--accent);background:var(--accent-soft)}\n.big-choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.big-choice b{display:block;font-size:15px}.big-choice span{font-size:12.5px;color:var(--text2)}\n.big-choice .row__icon{width:44px;height:44px;border-radius:50%}\n.big-choice .pick{font-size:12px;font-weight:700;color:var(--text3)}\n.big-choice.is-on .pick{color:var(--accent-ink)}\n.mode-panel{display:none}.mode-panel.is-on{display:block}\n.emo-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}\n.emo{display:grid;gap:6px;justify-items:center;padding:12px 6px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);font-size:12px;text-align:center;color:var(--text);width:100%}\nbutton.emo:hover{border-color:var(--accent-line);background:var(--surface2)}\n.emo .avatar{width:48px;height:48px;font-size:20px}\n.emo.is-done{border-color:var(--ok-line)}.emo.is-todo{border-style:dashed;color:var(--text3)}\n.emo.is-master{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}\n.emo .avatar.todo{background:var(--surface3);color:var(--text3)}\n.base-frame{display:grid;grid-template-columns:96px minmax(0,1fr);gap:16px;align-items:center}\n.base-frame .avatar{width:96px;height:96px;font-size:36px;border-radius:var(--r-md)}\n.back{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--accent-ink);font:700 13px var(--font-sans);padding:6px 0;margin-bottom:6px;min-height:36px}\n.turns{display:flex;gap:6px}.turns i{flex:1;height:10px;border-radius:99px;background:var(--surface3);border:1px solid var(--border2)}.turns i.on{background:var(--accent);border-color:var(--accent)}\n.jargon{font-size:12px;color:var(--text3)}\n.confirm-inline{display:none;margin-top:10px}.confirm-inline.is-open{display:block}\n.fld{display:grid;gap:6px;padding:12px 0;border-top:1px solid var(--border)}\n.fld:first-child{border-top:0}\n.fld__head{display:flex;justify-content:space-between;gap:10px;align-items:baseline}\n.fld__head label{font-weight:700;font-size:13px}.fld__key{font:11.5px var(--font-mono);color:var(--text3)}\n.fld__act{display:flex;gap:12px;align-items:center;flex-wrap:wrap}\n.fld__act .check{font-size:12.5px;color:var(--text2)}\n.diff-row{display:grid;grid-template-columns:90px minmax(0,1fr);gap:4px 12px;padding:10px 0;border-top:1px solid var(--border);font-size:12.5px}\n.diff-row:first-child{border-top:0}\n.diff-row del{color:var(--danger-ink);background:var(--danger-soft);text-decoration:line-through;padding:0 3px;border-radius:3px}\n.diff-row ins{color:var(--ok-ink);background:var(--ok-soft);text-decoration:none;padding:0 3px;border-radius:3px}\n.chk-chip{display:inline-flex;gap:5px;align-items:center;padding:3px 10px;border-radius:99px;border:1px solid var(--border2);font-size:12px;font-weight:650;background:var(--surface)}\n.chk-chip.ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}.chk-chip.warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.target-card{display:grid;gap:10px;padding:16px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface)}\n.target-card h3{margin:0;font-size:14.5px}\n.target-card h3 small{font-weight:500;color:var(--text3);margin-left:6px}\n.lock-card dl{margin:0}\n.ver{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border);background:var(--surface)}\n.ver:first-child{border-top:0}.ver b{font-size:13.5px}.ver small{display:block;color:var(--text3);font-size:12.5px}\n@container app (max-width:640px){.emo-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.pcard{grid-template-columns:44px minmax(0,1fr)}.pcard__side{grid-column:1/-1;justify-items:start;grid-auto-flow:column;justify-content:start}.base-frame{grid-template-columns:72px minmax(0,1fr)}.base-frame .avatar{width:72px;height:72px;font-size:28px}.big-choice{grid-template-columns:44px minmax(0,1fr)}.big-choice .pick{display:none}.diff-row{grid-template-columns:1fr}}\n@container app (max-width:640px){.topbar .brand__ver{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}\n\n/* Center only the painted plugin window in the fullscreen host container. */\nhtml,body{margin:0;height:100%;overflow:hidden;background:transparent!important;color-scheme:normal}\n.stage{height:100dvh;padding:16px;align-items:center;overflow:hidden;background:transparent}\n.frame{height:min(830px,100%);min-height:0}\n#bind-list .big-choice{grid-template-columns:44px minmax(0,1fr) auto;gap:12px;padding:12px;text-align:left;min-width:0;width:100%}\n#bind-list .persona-copy{min-width:0;overflow-wrap:anywhere}\n#bind-list .persona-copy small{display:block;color:var(--text3);font-size:12px}\n#bind-list .persona-preview{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:4px;line-height:1.5;font-size:12.5px}\n@container app (max-width:640px){#bind-list .big-choice{grid-template-columns:36px minmax(0,1fr);gap:10px}#bind-list .big-choice>.pick{display:block;grid-column:2}#bind-list .avatar{width:36px;height:36px}}\n";
+  const LIA_MOCKUP_APP_HTML = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><i data-i=\"user\" data-size=\"lg\"></i></div><div><div class=\"brand__name\">LIA</div><div class=\"brand__ver\">Persona Linker · 시안 (제품 v0.26.83 기준)</div></div></div>\n    <div class=\"scope\"><b>이 채팅</b><span>›</span><span>세라 · 북쪽 정원</span></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok\" title=\"LIA 자료는 영구 저장 정책상 이 기기(local_only)에 둡니다\"><i></i>LIA 자료 local_only</span>\n    <div class=\"menu\"><button class=\"btn btn--icon\" data-menu=\"\" aria-label=\"더 보기\" aria-expanded=\"false\" aria-haspopup=\"menu\"><i data-i=\"more\"></i></button>\n      <div class=\"menu__panel\"><button data-lia-refresh=\"\"><i data-i=\"refresh\"></i>새로 읽기</button><button data-go=\"recover\"><i data-i=\"db\"></i>이전 자료 복구</button><button data-lia-close=\"\"><i data-i=\"x\"></i>닫기</button></div></div>\n  <button class=\"btn btn--icon\" type=\"button\" data-lia-close=\"\" aria-label=\"LIA 닫기\" title=\"닫기\"><svg class=\"ic\" viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\"><path d=\"m6 6 12 12M18 6 6 18\"></path></svg></button></header>\n\n  <nav class=\"sidebar\" aria-label=\"LIA 메뉴\">\n    <button class=\"nav-item\" data-go=\"mine\" data-short=\"내 페르소나\" data-unsaved-for=\"assets\"><i data-i=\"user\"></i><span class=\"nav-text\">내 페르소나</span></button>\n    <button class=\"nav-item\" data-go=\"make\" data-short=\"만들기\"><i data-i=\"spark\"></i><span class=\"nav-text\">만들기</span></button>\n    <button class=\"nav-item\" data-go=\"shelf\" data-short=\"보관함\" data-unsaved-for=\"edit\"><i data-i=\"shelf\"></i><span class=\"nav-text\">보관함</span><span class=\"count\" id=\"nav-shelf-n\">4</span></button>\n    <button class=\"nav-item\" data-go=\"settings\" data-short=\"설정\"><i data-i=\"sliders\"></i><span class=\"nav-text\">설정</span></button>\n    <div class=\"side-foot\"><b>용어</b><span>원본 = RisuAI Persona · Live = 이 채팅이 소유하는 갱신용 복사본</span></div>\n  </nav>\n\n  <main class=\"main\"><div class=\"page-body\">\n\n  \n  <section class=\"page is-active\" data-page=\"mine\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Now</div><h1 class=\"page-title\">내 페르소나</h1><p class=\"page-desc\">이 채팅에 연결된 Persona와 갱신 상태를 한 곳에서 봅니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"pocket\" id=\"pocket\"></div>\n\n      <div class=\"card card--tight\" id=\"upd-card\">\n        <div class=\"card__head\"><div><h2 class=\"card__title\">다음 수동 갱신 범위</h2><p class=\"card__desc\">자동 분석·갱신은 하지 않습니다. LIA로 연결한 Persona에 마지막 처리 지점 다음의 <b>완결된 User+Assistant 5쌍</b>이 쌓이면 갱신 여부를 묻습니다. 동의할 때만 한 번 분석·반영하며, 수동 갱신 버튼으로도 실행할 수 있습니다.</p></div><span class=\"badge badge--warn\" id=\"upd-badge\">3 / 5쌍</span></div>\n        <div class=\"turns\" id=\"upd-dots\" aria-label=\"3 / 5쌍\"><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i></i><i></i></div>\n        <p class=\"hint\" style=\"margin-top:8px\" id=\"upd-hint\">3/5턴 · 완료된 대화 2턴이 더 필요합니다. 마지막 미완성 턴은 세지 않습니다.</p>\n      </div>\n\n      <div class=\"note\"><b>연결이 없으면</b> RisuAI의 기본 Persona가 그대로 적용됩니다. LIA는 RisuAI 기본 Persona 선택을 바꾸지 않습니다.</div>\n\n      <div>\n        <div class=\"section-title\"><h2>선택할 수 있는 Persona <span class=\"muted\" style=\"font-weight:500\">(RisuAI Persona로 채택한 것)</span></h2></div>\n        <div class=\"stack stack--sm\" id=\"mine-list\"></div>\n        <div class=\"legend\" style=\"margin-top:10px\"><span>✓ 이 채팅에 연결됨</span><span>🔒 다른 채팅이 관리 중인 Live Persona</span><span>＋ 연결 안 됨</span></div>\n      </div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"make\" data-track=\"\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Create</div><h1 class=\"page-title\">Persona 만들기</h1><p class=\"page-desc\">어떤 근거로 만들지 먼저 고릅니다. 모드마다 입력과 필요한 단계가 다릅니다.</p></div></div>\n    <div class=\"stack\" data-detail-root=\"\">\n      <div class=\"stack stack--sm\" role=\"group\" aria-label=\"생성 모드\">\n        <button class=\"big-choice is-on\" data-select-row=\"classic\"><span class=\"row__icon\"><i data-i=\"user\"></i></span><div><b>클래식 생성</b><span>기존 Source Persona를 현재 세계에 맞게 재해석</span></div><span class=\"pick\">선택</span></button>\n        <button class=\"big-choice\" data-select-row=\"random\"><span class=\"row__icon\"><i data-i=\"spark\"></i></span><div><b>랜덤 신규 생성</b><span>세계관 안에서 완전히 새로운 인물을 창작 · 후보 3개 중 선택</span></div><span class=\"pick\">선택</span></button>\n        <button class=\"big-choice\" data-select-row=\"character\"><span class=\"row__icon\"><i data-i=\"users\"></i></span><div><b>등장인물 추출</b><span>단일 캐릭터·거대 시뮬봇에서 인물을 분리해 User Persona로 변환</span></div><span class=\"pick\">선택</span></button>\n        <button class=\"big-choice\" data-select-row=\"conversation\"><span class=\"row__icon\"><i data-i=\"chat\"></i></span><div><b>대화에서 추출</b><span>현재 채팅의 사용자 작성 메시지만 분석해 실제 플레이 Persona를 추출</span></div><span class=\"pick\">선택</span></button>\n      </div>\n\n      <div class=\"card\">\n        <div class=\"mode-panel is-on\" data-detail=\"classic\"><div class=\"stack stack--sm\">\n          <div class=\"field\"><label>Source Persona</label><select class=\"select\" id=\"src-sel\" data-no-track=\"\"></select><span class=\"hint\" id=\"src-hint\">성격·외모·배경의 출발점이 되는 RisuAI Persona입니다. 고른 Persona가 결과의 출발점이 됩니다.</span></div>\n          <p class=\"muted\" style=\"margin:0;font-size:13px\">선택한 Persona를 이 세계의 자연스러운 인물로 다시 배치합니다. 핵심은 보존하고 세계관에 맞게 재해석합니다.</p>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"mk-classic\" data-run-job=\"job-gen\"><i data-i=\"spark\"></i><span>Persona 만들기</span></button></div></div></div>\n        <div class=\"mode-panel\" data-detail=\"random\"><div class=\"stack stack--sm\">\n          <p class=\"muted\" style=\"margin:0;font-size:13px\">이 캐릭터와 로어의 <b>세계 규칙만</b> 참고해 새로운 유저 인물을 만듭니다. Source Persona는 쓰지 않습니다.</p>\n          <div class=\"field\"><label for=\"random-concept\">컨셉 (선택)</label><textarea class=\"textarea\" id=\"random-concept\" rows=\"2\" data-no-track=\"\" placeholder=\"예) 북쪽 항구 도시의 약재상 견습생\"></textarea></div>\n          <div class=\"note\"><b>순서</b> 컨셉 → <b>후보 3개</b> → 하나 선택 → 상세 생성. 후보를 고르기 전에는 아무것도 보관되지 않습니다.</div>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"random-cand-go\" data-run-job=\"job-cand\" data-ctx=\"{&quot;variant&quot;: &quot;random&quot;, &quot;mode&quot;: &quot;랜덤 신규 생성&quot;}\"><i data-i=\"spark\"></i>후보 3개 만들기</button></div></div></div>\n        <div class=\"mode-panel\" data-detail=\"character\"><div class=\"stack stack--sm\">\n          <p class=\"muted\" style=\"margin:0;font-size:13px\">캐릭터 카드·로어·<b>최근 대화(Assistant/NPC 포함)</b>에서 등장인물을 분리합니다. 선택한 <b>한 인물의 직접 근거만</b> User Persona로 변환하며 다른 인물 설정은 섞지 않습니다.</p>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" data-run-job=\"job-cand\" data-ctx=\"{&quot;variant&quot;: &quot;character&quot;, &quot;mode&quot;: &quot;등장인물 추출&quot;}\"><i data-i=\"users\"></i>등장인물 후보 찾기</button></div></div></div>\n        <div class=\"mode-panel\" data-detail=\"conversation\"><div class=\"stack stack--sm\">\n          <div class=\"kv-line\"><dl class=\"kv\"><dt>사용자 작성 메시지</dt><dd>214개 중 최근 120개(최대 약 32,000자)를 증거로 사용</dd><dt>제외</dt><dd>AI/NPC가 유저를 묘사한 내용은 증거에서 완전히 제외</dd></dl></div>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"mk-conv\" data-run-job=\"job-gen\"><i data-i=\"chat\"></i>대화에서 추출</button></div></div></div>\n      </div>\n\n      <details class=\"card card--flat\"><summary style=\"cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center\">사용할 자료 · 세계관 분석 (고급)</summary>\n        <div class=\"stack stack--sm\" style=\"margin-top:12px\">\n          <dl class=\"kv\"><dt>Character Lore</dt><dd>ON · 항목 7개 사용</dd><dt>모듈</dt><dd>활성 모듈 2개</dd><dt>Blueprint</dt><dd>세계관 분석 완료 · 근거 검토 가능</dd></dl>\n          <div class=\"field\"><label for=\"lia-max-chars\">자료 항목별 최대 문자 수</label><input class=\"input\" id=\"lia-max-chars\" type=\"number\" min=\"240\" max=\"3000\" step=\"1\" value=\"1200\"><span class=\"hint\" id=\"lia-max-chars-hint\">캐릭터·모듈 설명과 로어 수집에 적용합니다. 범위 240~3000자. RisuAI ARG와 같은 값을 사용합니다.</span></div>\n          <label class=\"check\"><input id=\"lia-rich-profile\" type=\"checkbox\" checked=\"\"><span>상세 프로필 사용 <span class=\"hint\">— 항목별 문자 한도 안에서 상세 설정을 함께 참고</span></span></label>\n          <div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"세계관을 분석합니다. (시안)\">세계관 분석</button><button class=\"btn btn--sm\" data-toast=\"세계관을 다시 분석합니다. 기존 분석은 교체됩니다. (시안)\">재분석</button><button class=\"btn btn--sm\" data-open=\"sheet-evidence\">근거 검토</button></div>\n        </div></details>\n\n      <div class=\"note\"><b>AI 제공자로 자료가 전송됩니다.</b> 캐릭터 설명·로어·선택한 대화가 설정한 AI에 보내집니다. 논리 요청 수는 보통 클래식·대화 추출 2회, 랜덤·등장인물 추출 3회이며, 캐시를 쓰면 줄고 출력 복구·재시도가 있으면 늘어납니다.</div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"shelf\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Vault</div><h1 class=\"page-title\">보관함</h1><p class=\"page-desc\">생성 직후 자동 보관된 결과 <b id=\"shelf-n\">4</b>개입니다. 열어서 검토하고, 마음에 들면 RisuAI Persona로 채택합니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"search\"><i class=\"ic\" data-i=\"search\"></i><input class=\"input\" placeholder=\"이름·특징으로 찾기\" aria-label=\"보관함 검색\"></div>\n      <div class=\"list\" id=\"shelf-list\"></div>\n      <div class=\"empty\" id=\"shelf-empty\" hidden=\"\"><b>보관함이 비어 있습니다</b><span>‘만들기’에서 Persona를 만들면 자동으로 이곳에 보관됩니다.</span></div>\n      <div class=\"note\"><b>보관함 삭제 ≠ Persona 삭제.</b> 보관함 항목을 지워도 이미 채택한 RisuAI Persona와 채팅 연결은 그대로입니다. 세 가지 삭제는 각각 다른 화면에서 따로 확인합니다.</div>\n      <div class=\"banner banner--info\"><span class=\"banner__icon\"><i data-i=\"info\"></i></span><div><b>예전 버전에서 저장한 자료가 있나요?</b><p class=\"muted\" style=\"margin:2px 0 8px\">검사 결과를 먼저 보고, 충돌을 확인한 뒤 직접 가져옵니다.</p><button class=\"btn btn--sm\" data-go=\"recover\">이전 자료 복구</button></div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"settings\" data-track=\"\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Settings</div><h1 class=\"page-title\">설정</h1><p class=\"page-desc\">바꾼 값은 아래 저장 막대에서 한 번에 저장합니다. 저장 전에는 적용되지 않습니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">텍스트 AI</h2><p class=\"card__desc\">Persona 생성·갱신·검사에 쓰는 모델입니다.</p></div><span class=\"badge badge--ok\">연결됨 (표본)</span></div>\n        <div class=\"stack stack--sm\">\n          <div class=\"field\"><label>제공자</label><select class=\"select\"><option>OpenAI 호환</option><option>Anthropic</option><option>Google</option></select></div>\n          <div class=\"field\"><label>Endpoint URL</label><input class=\"input\" value=\"https://api.example.com/v1\"></div>\n          <div class=\"field\"><label>모델</label><input class=\"input\" value=\"model-name\"></div>\n          <div class=\"field\"><label>API 키</label><input class=\"input\" type=\"password\" value=\"\" placeholder=\"저장된 키가 있습니다\"></div>\n          <div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"연결 테스트 성공 (시안)\">연결 테스트</button></div>\n          <details><summary style=\"cursor:pointer;font-weight:650;min-height:36px;display:flex;align-items:center\">고급 옵션</summary><p class=\"hint\">제공자별 추가 요청 옵션이 이곳에 모입니다.</p></details>\n        </div></div>\n      \n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">저장 위치와 전송</h2><p class=\"card__desc\">무엇이 어디에 있고, 무엇이 밖으로 나가는지 구분해서 보여줍니다.</p></div></div>\n        <dl class=\"kv\"><dt>LIA 자료</dt><dd>LIA의 영구 저장 정책은 <b>local_only</b> — 이 기기에 둡니다.</dd><dt>Persona · 원본 이미지</dt><dd>RisuAI가 관리하는 저장 규칙을 따릅니다.</dd><dt>생성할 때</dt><dd>선택한 자료가 설정한 <b>AI 제공자로 전송</b>됩니다.</dd></dl>\n        <div class=\"setting\" style=\"margin-top:12px\"><div><div class=\"setting__name\">진단</div><div class=\"setting__desc\">연결·워크플로·저장 상태를 읽기 전용으로 점검합니다. 아무것도 바꾸지 않습니다.</div></div><button class=\"btn btn--sm\" data-toast=\"진단을 마쳤습니다. (읽기 전용, 시안)\">진단 실행</button></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" data-toast=\"에셋 ZIP을 내보냈습니다. (시안)\"><i data-i=\"download\"></i>에셋 ZIP 내보내기</button><button class=\"btn\" data-toast=\"ZIP 파일을 선택하세요 (시안)\"><i data-i=\"upload\"></i>에셋 ZIP 가져오기</button><button class=\"btn\" data-toast=\"디버그 JSON을 내보냈습니다. (시안)\">디버그 JSON</button><button class=\"btn\" data-go=\"recover\"><i data-i=\"db\"></i>이전 자료 복구</button></div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"edit\" data-track=\"\" id=\"edit-root\">\n    <input type=\"hidden\" id=\"ed-view-dirty\" value=\"0\" data-dirty-key=\"view-drafts\">\n    <button class=\"back\" data-go=\"mine\"><i data-i=\"back\" data-size=\"sm\"></i>내 페르소나</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Edit · <span data-fill=\"ver\">v3</span> · <span data-fill=\"mode\">클래식 생성</span></div><h1 class=\"page-title\" data-fill=\"name\">세라 하운</h1><p class=\"page-desc\">보관 결과를 검토하고, 마음에 들면 RisuAI Persona로 채택합니다. 현재 상태: <b data-fill=\"statusText\">채택됨 · 이 채팅에 연결됨</b></p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"ed\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"sum\">요약</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"all\">전체 23개 항목</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"rev\">검토</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ver\">버전·기록</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"out\">채택·연결·삭제</button></div>\n    <div class=\"stack\">\n      <div data-subpanel=\"sum\" data-group=\"ed\" class=\"is-active\"><div class=\"stack\">\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">장기 Persona 요약</h2><p class=\"card__desc\">PersonaSpec의 핵심만 보여줍니다. 모든 항목은 ‘전체 23개 항목’에서 편집합니다.</p></div></div>\n          <div class=\"stack stack--sm\">\n            <div class=\"field\"><label>이름</label><input class=\"input\" data-key=\"name\" value=\"세라 하운\"></div>\n            <div class=\"field\"><label>역할/직업</label><input class=\"input\" data-key=\"role\" value=\"왕실 기록실 사서\"></div>\n            <div class=\"field\"><label>성격</label><textarea class=\"textarea\" rows=\"2\" data-key=\"personality\">신중하지만 약속을 가볍게 여기지 않는다.</textarea></div>\n            <div class=\"field\"><label>말투</label><textarea class=\"textarea\" rows=\"2\" data-key=\"speech\">짧고 낮은 어조. 확신이 없을 때는 말을 줄인다.</textarea></div>\n          </div></div>\n        <div class=\"card card--flat\"><div class=\"card__head\"><div><h2 class=\"card__title\">현재 상태 (일시적)</h2><p class=\"card__desc\">위치·소지품 같은 일시적 상태는 장기 PersonaSpec과 분리되어 Live Persona 갱신에서 관리됩니다.</p></div></div>\n          <div id=\"live-persona-state\"><p class=\"muted\" style=\"margin:0;font-size:13px\">선택한 Persona의 Live 상태를 불러오는 중</p></div></div>\n      </div></div>\n\n      <div data-subpanel=\"all\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"seg\" id=\"ed-lang\" role=\"group\" aria-label=\"보기 언어\"><button aria-pressed=\"true\">원문</button><button aria-pressed=\"false\">번역</button></div><p class=\"hint\" id=\"ed-lang-note\" style=\"margin:0\">보관된 원문을 편집합니다.</p>\n        <p class=\"hint\">23개 항목 모두 잠그거나 항목별로 다시 만들 수 있습니다. 잠근 항목은 재생성에서 바뀌지 않습니다.</p>\n        <div class=\"card card--tight\">\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-name\">이름</label><code class=\"fld__key\">name</code></div><input class=\"input\" id=\"f-name\" data-key=\"name\" value=\"세라 하운\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"name\" aria-label=\"이름 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"name\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-gender\">성별</label><code class=\"fld__key\">gender</code></div><input class=\"input\" id=\"f-gender\" data-key=\"gender\" value=\"여성\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"gender\" aria-label=\"성별 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"gender\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-age\">나이</label><code class=\"fld__key\">age</code></div><input class=\"input\" id=\"f-age\" data-key=\"age\" value=\"29세\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"age\" aria-label=\"나이 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"age\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-speciesRace\">종족</label><code class=\"fld__key\">speciesRace</code></div><input class=\"input\" id=\"f-speciesRace\" data-key=\"speciesRace\" value=\"인간\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"speciesRace\" aria-label=\"종족 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"speciesRace\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-origin\">출신</label><code class=\"fld__key\">origin</code></div><input class=\"input\" id=\"f-origin\" data-key=\"origin\" value=\"북쪽 도서 도시 ‘하운’\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"origin\" aria-label=\"출신 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"origin\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-role\">역할/직업</label><code class=\"fld__key\">role</code></div><input class=\"input\" id=\"f-role\" data-key=\"role\" value=\"왕실 기록실 사서\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"role\" aria-label=\"역할/직업 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"role\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-appearance\">외모</label><code class=\"fld__key\">appearance</code></div><input class=\"input\" id=\"f-appearance\" data-key=\"appearance\" value=\"짙은 회색 외투, 은색 열쇠\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"appearance\" aria-label=\"외모 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"appearance\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-personality\">성격</label><code class=\"fld__key\">personality</code></div><input class=\"input\" id=\"f-personality\" data-key=\"personality\" value=\"신중하지만 약속을 가볍게 여기지 않는다\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"personality\" aria-label=\"성격 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"personality\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-visibleSide\">겉으로 보이는 면</label><code class=\"fld__key\">visibleSide</code></div><input class=\"input\" id=\"f-visibleSide\" data-key=\"visibleSide\" value=\"차분하고 예의 바름\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"visibleSide\" aria-label=\"겉으로 보이는 면 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"visibleSide\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-hiddenSide\">숨은 면</label><code class=\"fld__key\">hiddenSide</code></div><input class=\"input\" id=\"f-hiddenSide\" data-key=\"hiddenSide\" value=\"기록되지 않은 일에 대한 집착\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"hiddenSide\" aria-label=\"숨은 면 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"hiddenSide\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-internalContradiction\">내적 모순</label><code class=\"fld__key\">internalContradiction</code></div><input class=\"input\" id=\"f-internalContradiction\" data-key=\"internalContradiction\" value=\"비밀을 지키려다 진실을 외면한다\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"internalContradiction\" aria-label=\"내적 모순 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"internalContradiction\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-background\">배경</label><code class=\"fld__key\">background</code></div><input class=\"input\" id=\"f-background\" data-key=\"background\" value=\"기록실에서 자라 외부와 거리를 둠\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"background\" aria-label=\"배경 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"background\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-speech\">말투</label><code class=\"fld__key\">speech</code></div><input class=\"input\" id=\"f-speech\" data-key=\"speech\" value=\"짧고 낮은 어조\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"speech\" aria-label=\"말투 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"speech\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-motivation\">동기/욕망</label><code class=\"fld__key\">motivation</code></div><input class=\"input\" id=\"f-motivation\" data-key=\"motivation\" value=\"사라진 기록의 행방을 찾는 것\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"motivation\" aria-label=\"동기/욕망 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"motivation\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-relationshipStyle\">관계 방식</label><code class=\"fld__key\">relationshipStyle</code></div><input class=\"input\" id=\"f-relationshipStyle\" data-key=\"relationshipStyle\" value=\"거리를 두되 한번 믿으면 끝까지\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"relationshipStyle\" aria-label=\"관계 방식 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"relationshipStyle\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-relationshipToCharacter\">{{char}}와의 접점</label><code class=\"fld__key\">relationshipToCharacter</code></div><input class=\"input\" id=\"f-relationshipToCharacter\" data-key=\"relationshipToCharacter\" value=\"열쇠를 맡긴 첫 의뢰인\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"relationshipToCharacter\" aria-label=\"{{char}}와의 접점 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"relationshipToCharacter\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-preferences\">선호/취향</label><code class=\"fld__key\">preferences</code></div><input class=\"input\" id=\"f-preferences\" data-key=\"preferences\" value=\"오래된 종이 냄새, 식은 차\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"preferences\" aria-label=\"선호/취향 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"preferences\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-conflictRepair\">갈등/회복</label><code class=\"fld__key\">conflictRepair</code></div><input class=\"input\" id=\"f-conflictRepair\" data-key=\"conflictRepair\" value=\"말수가 줄었다가 사실부터 정리해 사과\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"conflictRepair\" aria-label=\"갈등/회복 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"conflictRepair\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-skills\">기술/강점</label><code class=\"fld__key\">skills</code></div><input class=\"input\" id=\"f-skills\" data-key=\"skills\" value=\"고문서 판독, 암기\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"skills\" aria-label=\"기술/강점 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"skills\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-limitations\">한계/약점</label><code class=\"fld__key\">limitations</code></div><input class=\"input\" id=\"f-limitations\" data-key=\"limitations\" value=\"몸싸움에 약함\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"limitations\" aria-label=\"한계/약점 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"limitations\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-knowledgeBoundary\">지식 경계</label><code class=\"fld__key\">knowledgeBoundary</code></div><input class=\"input\" id=\"f-knowledgeBoundary\" data-key=\"knowledgeBoundary\" value=\"왕실 외부 소식은 소문 수준\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"knowledgeBoundary\" aria-label=\"지식 경계 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"knowledgeBoundary\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-boundaries\">RP 경계</label><code class=\"fld__key\">boundaries</code></div><input class=\"input\" id=\"f-boundaries\" data-key=\"boundaries\" value=\"직접 묘사하지 않을 수위 설정은 보관 결과 기준\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"boundaries\" aria-label=\"RP 경계 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"boundaries\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-worldFitNotes\">세계관 적합 메모</label><code class=\"fld__key\">worldFitNotes</code></div><input class=\"input\" id=\"f-worldFitNotes\" data-key=\"worldFitNotes\" value=\"보름달 전 개방 금지 규칙을 인지\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"worldFitNotes\" aria-label=\"세계관 적합 메모 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"worldFitNotes\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n        </div>\n      </div></div>\n\n      <div data-subpanel=\"rev\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">검사 결과</h2><p class=\"card__desc\">생성 직후 자동 실행된 점검입니다. (표본)</p></div></div>\n          <div class=\"cluster\" id=\"rv-chips\"></div>\n          <p class=\"muted\" style=\"margin:10px 0 0;font-size:13px\" id=\"rv-note\"></p></div>\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">수정 미리보기</h2><p class=\"card__desc\">적용 전에 바뀔 내용을 확인합니다.</p></div></div>\n          <div id=\"rv-diff\"></div>\n          <div class=\"cluster\" style=\"margin-top:10px\" id=\"rv-acts\"><button class=\"btn btn--primary\" id=\"rv-apply\">초안에 적용</button><button class=\"btn\" id=\"rv-ignore\">무시</button></div></div>\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">밀도 변환</h2><p class=\"card__desc\">RisuAI Persona로 채택할 때 길이를 선택합니다. 채택 옵션이라 저장 막대와 별개이며, 바꾸면 ‘채택·연결·삭제’에서 다시 채택할 수 있습니다.</p></div></div>\n          <div class=\"choices\" id=\"ed-density\"><button class=\"choice\"><b>Full</b><span>전체 항목</span></button><button class=\"choice is-on\"><b>Standard</b><span>핵심 중심 (기본)</span></button><button class=\"choice\"><b>Compact</b><span>짧게 압축</span></button></div></div>\n      </div></div>\n\n      <div data-subpanel=\"ver\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"list\" id=\"ver-list\">\n          <div class=\"ver\"><span class=\"badge badge--ok\">현재</span><div><b>v3 · 수정 방금</b><small>수동 편집 · 항목 2개 변경</small></div><button class=\"btn btn--sm\" data-toast=\"v3를 열었습니다. (시안)\">열기</button></div>\n          <div class=\"ver\"><span class=\"badge\">v2</span><div><b>v2 · 어제</b><small>항목 재생성 · ‘성격’</small></div><button class=\"btn btn--sm\" data-toast=\"v2와 비교합니다. (시안)\">비교</button></div>\n          <div class=\"ver\"><span class=\"badge\">v1</span><div><b>v1 · 3일 전</b><small>클래식 생성 · 원본: 세라 하운</small></div><button class=\"btn btn--sm\" data-toast=\"v1에서 파생본을 만들었습니다. (시안)\">파생본 만들기</button></div>\n        </div>\n        <div class=\"cluster\"><button class=\"btn\" id=\"btn-persona-blueprint\" data-open=\"sheet-persona-blueprint\">생성 Blueprint</button><button class=\"btn\" id=\"btn-persona-json\" data-open=\"sheet-persona-json\">JSON 보기</button></div>\n      </div></div>\n\n  <div class=\"overlay overlay--bottom\" id=\"sheet-persona-blueprint\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"spb-title\"><div class=\"eyebrow\">World blueprint</div><h2 id=\"spb-title\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">생성 Blueprint</h2><p class=\"muted\" id=\"spb-target\" style=\"margin:0 0 10px;font-size:13px\"></p><div class=\"list\" id=\"spb-items\"></div><div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">닫기</button></div></div></div>\n  <div class=\"overlay overlay--bottom\" id=\"sheet-persona-json\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"spj-title\"><div class=\"eyebrow\">PersonaSpec</div><h2 id=\"spj-title\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">PersonaSpec JSON</h2><p class=\"muted\" id=\"spj-target\" style=\"margin:0 0 10px;font-size:13px\"></p><pre id=\"spj-content\" style=\"max-height:48vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px var(--font-mono)\"></pre><div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">닫기</button></div></div></div>\n\n      <div data-subpanel=\"out\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"target-card\"><h3>① LIA 보관함 <small>‘<span data-fill=\"name\">세라 하운</span>’ · 자동 보관됨</small></h3><p class=\"muted\" style=\"margin:0;font-size:13px\">생성 직후 PersonaSpec·검사 결과·버전·Blueprint 스냅샷이 자동으로 보관되었습니다. RisuAI Persona는 아직 바뀌지 않았습니다.</p>\n          <div class=\"cluster\"><button class=\"btn btn--sm btn--danger\" id=\"btn-del-vault\" data-open=\"sheet-del-vault\">보관함에서 삭제…</button></div></div>\n        <div class=\"target-card\"><h3>② RisuAI Persona로 채택 <small data-fill=\"adoptText\">채택됨 · RisuAI Persona ‘세라 하운’</small></h3>\n          <div class=\"field\"><label>채택할 내용</label><div class=\"seg\" id=\"ad-lang\" role=\"group\" aria-label=\"채택본\"><button aria-pressed=\"true\">원문</button><button aria-pressed=\"false\">번역본</button></div></div>\n          <div class=\"choices\" id=\"ad-mode\"><button class=\"choice is-on\"><b>현재 채팅 전용</b><span>이 채팅에서만 쓰는 Persona로 저장</span></button><button class=\"choice\"><b>새 Persona로 저장</b><span>RisuAI에 별도 Persona를 추가</span></button></div>\n          <dl class=\"kv\" style=\"margin:0\"><dt>밀도</dt><dd id=\"ad-density-label\">Standard</dd></dl><p class=\"hint\" style=\"margin:0\">밀도는 ‘검토’ 탭의 밀도 변환에서 바꿉니다.</p><p class=\"hint\" id=\"adopt-diff\" hidden=\"\" style=\"margin:0\"></p><div class=\"note\"><b>기본 Persona는 덮어쓰지 않습니다.</b> 기본 Persona 선택도 LIA가 바꾸지 않습니다. 채택은 <b>저장된 버전</b>과 위 옵션을 기준으로 하며, 채택한 내용은 보관함 수정본과 따로 보존됩니다.</div>\n          <p class=\"hint\" id=\"hint-adopt\" hidden=\"\" style=\"color:var(--danger-ink)\">저장하지 않은 변경이 있어 채택할 수 없습니다. 먼저 아래 저장 막대에서 저장하세요.</p>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"btn-adopt\" data-toast=\"‘{name}’ 채택본을 RisuAI Persona로 저장했습니다. (시안)\">채택하기</button><button class=\"btn btn--sm btn--danger\" id=\"btn-del-persona\" data-open=\"sheet-del-persona\">생성한 Persona 정리…</button></div><p class=\"hint\" id=\"hint-del-persona\" hidden=\"\">아직 채택하지 않아 정리할 RisuAI Persona가 없습니다.</p><div hidden=\"\"></div></div>\n        <div class=\"target-card\"><h3>③ 현재 채팅에 연결 <small data-fill=\"bindText\">이 채팅에 연결됨</small></h3><p class=\"muted\" style=\"margin:0;font-size:13px\">연결하면 이 채팅에서 이 Persona(및 Live 복사본)가 쓰입니다. 채택 여부와 상관없이 따로 바꿀 수 있습니다.</p>\n          <div class=\"cluster\"><button class=\"btn\" id=\"btn-bind\" data-open=\"sheet-bind\"><i data-i=\"link\"></i>이 채팅에 연결…</button><button class=\"btn btn--sm btn--danger\" id=\"btn-unbind\" data-open=\"sheet-unbind\">연결 해제…</button></div><p class=\"hint\" id=\"hint-bind\" hidden=\"\">RisuAI Persona로 먼저 채택해야 채팅에 연결할 수 있습니다.</p></div>\n      </div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"update\">\n    <button class=\"back\" data-go=\"mine\"><i data-i=\"back\" data-size=\"sm\"></i>내 페르소나</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Manual update</div><h1 class=\"page-title\">수동 갱신</h1><p class=\"page-desc\">두 가지 서로 다른 검토가 있습니다. 근거와 반영 대상이 다릅니다.</p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"up\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"five\">다음 5턴 갱신</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"full\">전체 대화 변화 검토</button></div>\n    <div class=\"stack\">\n      <div data-subpanel=\"five\" data-group=\"up\" class=\"is-active\"><div class=\"stack\">\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">처리 범위</h2><p class=\"card__desc\">마지막 처리 지점 다음의 <b>완결된 5쌍</b>만 한 번 분석해 Live Persona를 갱신합니다.</p></div><span class=\"badge badge--ok\" id=\"upd2-badge\">준비됨</span></div>\n          <dl class=\"kv\"><dt>범위</dt><dd id=\"upd2-range\">TURN 6~10 · 다음 5턴만 분석합니다.</dd><dt>정책</dt><dd>자동 갱신 꺼짐 · 수동 실행만</dd><dt>대상</dt><dd id=\"upd2-target\">이 채팅 소유 Live Persona</dd></dl>\n          <div class=\"note\" style=\"margin-top:12px\">결과별 체크 승인 단계는 없습니다. 한 번 실행하면 분석 결과가 Live Persona에 반영되고, 기록에 남습니다. 실행 전 바인딩은 기록에서 <b>복원</b>할 수 있습니다.</div>\n          <p class=\"hint\" id=\"upd2-why\" hidden=\"\" style=\"margin:10px 0 0\"></p><div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn btn--primary\" id=\"upd-go\" data-run-job=\"job-update\"><i data-i=\"sync\"></i>다음 5턴 갱신 실행</button></div></div>\n        <div class=\"card card--tight\"><div class=\"card__head\"><div><h2 class=\"card__title\">갱신 기록</h2></div></div>\n          <div class=\"list\" id=\"upd-hist\"></div></div>\n      </div></div>\n      <div data-subpanel=\"full\" data-group=\"up\"><div class=\"stack\">\n        <div class=\"note\"><b>다른 기능입니다.</b> 채팅 전체의 <b>User 작성 메시지</b>를 현재 PersonaSpec과 비교해 변화 후보를 찾습니다. 선택한 후보는 Live Persona가 아니라 <b>초안</b>에 반영됩니다.</div>\n        <div class=\"list\">\n          <label class=\"row\"><input type=\"checkbox\" checked=\"\" class=\"chg\" data-key=\"\" data-chg-key=\"speech\" data-chg-val=\"짧고 낮은 어조. 말끝을 줄임표로 흐린다.\" data-no-track=\"\" style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">말투 — 줄임표가 늘어남</div><div class=\"row__meta\">근거: User 메시지 #41, #58 · 변화 후보</div></div></label>\n          <label class=\"row\"><input type=\"checkbox\" class=\"chg\" data-chg-key=\"preferences\" data-chg-val=\"오래된 종이 냄새, 따뜻한 차\" data-no-track=\"\" style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">선호 — 차를 즐기게 됨</div><div class=\"row__meta\">근거: User 메시지 #77 · 근거 1건</div></div></label>\n        </div>\n        <div class=\"cluster\"><button class=\"btn\" data-toast=\"사용자 작성 메시지 전체를 비교합니다. (시안)\">변화 후보 찾기</button><button class=\"btn btn--primary\" id=\"chg-go\">선택 후보를 초안에 반영</button><span class=\"hint\" id=\"chg-hint\"></span></div>\n      </div></div>\n    </div>\n  </section>\n\n  \n  \n\n  \n  <section class=\"page\" data-page=\"recover\">\n    <button class=\"back\" data-go=\"settings\"><i data-i=\"back\" data-size=\"sm\"></i>설정</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Recovery</div><h1 class=\"page-title\">이전 자료 복구</h1><p class=\"page-desc\">검사 → 결과·충돌 확인 → 직접 가져오기 → 읽기 확인 순서입니다. 가져오기 전까지 아무것도 바뀌지 않습니다.</p></div></div>\n    <div class=\"steps\" style=\"margin-bottom:16px\"><div class=\"step is-done\"><span class=\"step__no\">✓</span><b>검사</b></div><div class=\"step is-active\"><span class=\"step__no\">2</span><b>결과·충돌</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>가져오기</b></div><div class=\"step\"><span class=\"step__no\">4</span><b>읽기 확인</b></div></div>\n    <div class=\"stack\">\n      <div class=\"banner banner--info\"><span class=\"banner__icon\"><i data-i=\"info\"></i></span><div><b>읽기 전용 검사를 마쳤습니다.</b><p class=\"muted\" style=\"margin:2px 0 0\">목록·Live shard·이미지 조각을 검증했습니다. (표본)</p></div></div>\n      <div class=\"list\">\n        <label class=\"row\"><input type=\"checkbox\" checked=\"\" class=\"rc\" data-name=\"카엘 로웬\" data-no-track=\"\" style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">카엘 로웬 <span class=\"badge badge--ok\">충돌 없음</span></div><div class=\"row__meta\">Live shard 검증됨 · 이미지 조각 12/12</div></div></label>\n        <label class=\"row\"><input type=\"checkbox\" class=\"rc\" data-name=\"세라 하운\" data-conflict=\"1\" data-no-track=\"\" style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">세라 하운 <span class=\"badge badge--warn\">로컬과 충돌</span></div><div class=\"row__meta\">이 기기에 더 최근 버전(v3)이 있습니다. 가져오면 덮어쓸 수 있습니다.</div></div></label>\n        <div class=\"row\"><span class=\"row__icon\"><i data-i=\"alert\"></i></span><div><div class=\"row__title\">리오넬 <span class=\"badge badge--danger\">가져올 수 없음</span></div><div class=\"row__meta\">이미지 조각 일부가 검증에 실패했습니다.</div></div></div>\n      </div>\n      <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"rc-go\">선택 항목 가져오기</button><span class=\"hint\" id=\"rc-hint\"></span><button class=\"btn\" data-go=\"settings\">취소</button></div>\n    </div>\n  </section>\n\n  </div>\n  <footer class=\"savebar\" id=\"savebar\" hidden=\"\">\n    <div class=\"savebar__copy\"><b data-save-title=\"\">모든 변경이 저장되어 있습니다</b><span data-save-desc=\"\">값을 바꾸면 이곳에서 한 번에 저장합니다.</span></div>\n    <div class=\"cluster\"><button class=\"btn\" data-revert=\"\" disabled=\"\">변경 취소</button><button class=\"btn btn--primary\" data-save=\"\" disabled=\"\">저장</button></div>\n  </footer>\n  </main>\n\n  <nav class=\"tabbar\" aria-label=\"LIA 하단 메뉴\"></nav>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-bind\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sb-t\">\n    <div class=\"eyebrow\">Connect</div><h2 id=\"sb-t\" style=\"margin:2px 0 4px;font:800 19px var(--font-display)\">이 채팅에서 쓸 Persona</h2>\n    <p class=\"muted\" style=\"margin:0 0 12px;font-size:13px\">‘세라 · 북쪽 정원’ 채팅의 연결만 바꿉니다. 다른 채팅의 연결에는 영향이 없습니다.</p>\n    <div class=\"stack stack--sm\" data-detail-root=\"\" id=\"bind-list\"></div>\n    <p class=\"hint\" style=\"margin-top:10px\">RisuAI 기본 Persona 선택은 LIA가 바꾸지 않습니다. 연결을 풀면 기본 Persona가 그대로 적용됩니다.</p>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">닫기</button><button class=\"btn btn--primary\" id=\"btn-bind-go\" data-close=\"\" data-act=\"bind-go\" data-toast=\"‘{name}’ Persona를 이 채팅에 연결했습니다. 한 채팅에는 하나만 연결되며 다른 채팅은 그대로입니다. (시안)\">연결하기</button></div><p class=\"hint\" id=\"bind-hint\" style=\"margin:6px 0 0\" hidden=\"\"></p><div hidden=\"\"></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-persona\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"spm-t\">\n    <div class=\"eyebrow\">RisuAI Persona</div><h2 id=\"spm-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">‘<span data-fill=\"name\">세라 하운</span>’ 관리</h2>\n    <dl class=\"kv\" id=\"spm-kv\"></dl>\n    <p class=\"hint\" id=\"spm-note\" style=\"margin:8px 0 0\"></p>\n    <div class=\"stack stack--sm\" id=\"spm-act\" style=\"margin-top:12px\"></div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">닫기</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-unbind\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"su-t\">\n    <div class=\"eyebrow\">Unlink</div><h2 id=\"su-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">이 채팅에서 ‘<span data-fill=\"name\">세라 하운</span>’ 연결을 해제할까요?</h2>\n    <div class=\"note\"><b>삭제가 아닙니다.</b> Persona와 보관함 항목은 그대로 두고, 이 채팅의 연결과 갱신 연결만 풀립니다. 이후에는 RisuAI 기본 Persona가 적용됩니다.</div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--danger\" data-close=\"\" data-act=\"unbind\" data-toast=\"‘{name}’ 연결을 해제했습니다. 이제 기본 Persona가 적용됩니다. (시안)\">연결 해제</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-del-vault\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sdv-t\">\n    <div class=\"eyebrow\" style=\"color:var(--danger-ink)\">Delete vault item</div><h2 id=\"sdv-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">보관함의 ‘<span data-fill=\"name\">카엘 로웬</span>’ 항목을 삭제할까요?</h2>\n    <p class=\"muted\" style=\"margin:0 0 8px;font-size:13px\">삭제 대상: 최신 <span data-fill=\"ver\">v1</span> 포함 버전 <span data-fill=\"verCount\">1</span>개 · <span data-fill=\"mode\">랜덤 신규 생성</span> · <span data-fill=\"adoptNote\">채택 전</span></p><div class=\"note note--danger\"><b>보관 결과만 지웁니다.</b> 버전·검사 결과·Blueprint 스냅샷이 사라집니다. 이미 채택한 RisuAI Persona와 채팅 연결에는 영향이 없습니다. 되돌릴 수 없습니다.</div><p class=\"hint\" style=\"margin:8px 0 0\" data-fill=\"afterVault\"></p>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--danger-solid\" data-close=\"\" data-act=\"del-vault\" data-toast=\"‘{name}’ 보관함 항목을 삭제했습니다. {afterVault} (시안)\" data-then-go=\"shelf\">보관함에서 삭제</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-del-persona\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sdp-t\">\n    <div class=\"eyebrow\" style=\"color:var(--danger-ink)\">Clean up Persona</div><h2 id=\"sdp-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">LIA가 만든 RisuAI Persona ‘<span data-fill=\"name\">세라 하운</span>’ 항목을 정리할까요?</h2>\n    <div class=\"note note--danger\"><b>RisuAI의 Persona 하나가 삭제됩니다.</b> 이 채팅에 연결되어 있으면 먼저 연결이 풀립니다. <span data-fill=\"vaultAfter\">보관함 항목은 그대로 남습니다.</span> 기본 Persona와 직접 만든 Persona는 정리 대상이 아닙니다.</div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--danger-solid\" data-close=\"\" data-act=\"del-persona\" data-toast=\"RisuAI Persona ‘{name}’ 항목을 정리했습니다. {vaultAfter} (시안)\">Persona 정리</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-restore\" data-require=\"range\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sr-t\">\n    <div class=\"eyebrow\">Restore binding</div><h2 id=\"sr-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">갱신 전 바인딩으로 되돌릴까요?</h2>\n    <p class=\"muted\" style=\"font-size:13px\"><span data-fill=\"range\">TURN 1~5</span> 갱신 이전의 ‘<span data-fill=\"name\">세라 하운</span>’ Live Persona 상태로 복원합니다. 이후 갱신 기록은 남습니다.</p>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--primary\" data-close=\"\" data-act=\"upd-restore\" data-toast=\"{range} 갱신 이전 상태로 복원했습니다. 기록은 남아 있습니다. (시안)\">복원</button></div></div></div>\n\n  \n  \n\n  \n  \n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-evidence\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sev-t\">\n    <div class=\"eyebrow\">World blueprint</div><h2 id=\"sev-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">세계관 분석 근거</h2>\n    <div class=\"list\"><div class=\"row\"><div><div class=\"row__title\">보름달 전 개방 금지</div><div class=\"row__meta\">Character Lore #3 · 근거 확인됨</div></div></div><div class=\"row\"><div><div class=\"row__title\">왕실 기록실 출입 규칙</div><div class=\"row__meta\">모듈 ‘왕국 연대기’ · 근거 확인됨</div></div></div></div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">닫기</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"dlg-cand\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dc-t\">\n    <div class=\"eyebrow\">Candidates</div><h2 id=\"dc-t\" style=\"margin:2px 0 4px;font:800 19px var(--font-display)\"><span data-variant=\"default random\">새 인물 후보를 하나 고르세요</span><span data-variant=\"character\" hidden=\"\">Persona로 바꿀 등장인물을 고르세요</span></h2>\n    <p class=\"muted\" style=\"margin:0 0 12px;font-size:13px\">고르기 전에는 보관되지 않습니다. 고른 후보만 상세 생성으로 넘어갑니다.</p><p class=\"hint\" id=\"random-cand-context\" hidden=\"\" style=\"margin:0 0 12px\"></p>\n    <div class=\"stack stack--sm\" data-detail-root=\"\" data-variant=\"default random\">\n      <button class=\"big-choice is-on\" data-select-row=\"c1\" data-cand=\"{&quot;pid&quot;:&quot;mira&quot;,&quot;name&quot;:&quot;미라&quot;,&quot;mode&quot;:&quot;랜덤 신규 생성&quot;}\"><div class=\"avatar avatar--sm avatar--c\">약</div><div><b>약재상 견습생 ‘미라’</b><span>항구 도시에서 약초를 다루는 17세</span></div><span class=\"pick\">선택</span></button>\n      <button class=\"big-choice\" data-select-row=\"c2\" data-cand=\"{&quot;pid&quot;:&quot;tobi&quot;,&quot;name&quot;:&quot;토비&quot;,&quot;mode&quot;:&quot;랜덤 신규 생성&quot;}\"><div class=\"avatar avatar--sm avatar--b\">순</div><div><b>순회 서기 ‘토비’</b><span>성을 오가며 문서를 옮기는 서기</span></div><span class=\"pick\">선택</span></button>\n      <button class=\"big-choice\" data-select-row=\"c3\" data-cand=\"{&quot;pid&quot;:&quot;har&quot;,&quot;name&quot;:&quot;하르&quot;,&quot;mode&quot;:&quot;랜덤 신규 생성&quot;}\"><div class=\"avatar avatar--sm avatar--d\">등</div><div><b>등대지기 ‘하르’</b><span>폭풍 경보를 책임지는 은퇴 선원</span></div><span class=\"pick\">선택</span></button>\n    </div>\n    <div class=\"stack stack--sm\" data-detail-root=\"\" data-variant=\"character\" hidden=\"\">\n      <button class=\"big-choice is-on\" data-select-row=\"h1\" data-cand=\"{&quot;pid&quot;:&quot;rowen&quot;,&quot;name&quot;:&quot;정원사 로웬&quot;,&quot;mode&quot;:&quot;등장인물 추출&quot;}\"><div class=\"avatar avatar--sm avatar--b\">로</div><div><b>정원사 로웬</b><span>캐릭터 카드 · 로어 2건 · 최근 대화 근거 6건</span></div><span class=\"pick\">선택</span></button>\n      <button class=\"big-choice\" data-select-row=\"h2\" data-cand=\"{&quot;pid&quot;:&quot;archivist&quot;,&quot;name&quot;:&quot;왕실 기록관&quot;,&quot;mode&quot;:&quot;등장인물 추출&quot;}\"><div class=\"avatar avatar--sm avatar--n\">기</div><div><b>왕실 기록관</b><span>로어 1건 · 직접 근거 적음</span></div><span class=\"pick\">선택</span></button>\n    </div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">취소</button><button class=\"btn btn--primary\" id=\"btn-cand-go\" data-close=\"\" data-run-job=\"job-gen\">이 후보로 상세 생성</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-cand\" aria-hidden=\"true\" data-inherit-ctx=\"\" data-job-labels=\"세계관 규칙과 자료를 모으는 중|후보를 만드는 중|후보를 정리하는 중|후보가 준비됐어요. 하나를 고르세요.\">\n    <div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"jc-t\"><div class=\"eyebrow\">Working</div><h2 id=\"jc-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">후보를 만들고 있어요</h2>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg=\"\">준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>자료</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>후보 생성</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>정리</b></div></div>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel=\"\" data-close=\"\">취소</button><button class=\"btn btn--primary\" data-job-done=\"\" data-close=\"\" hidden=\"\" data-then-open=\"dlg-cand\">후보 보기</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-gen\" data-require=\"pid\" aria-hidden=\"true\" data-job-labels=\"선택한 자료를 정리하는 중|AI에게 Persona 초안을 요청하는 중|세계관·Agency 검사를 하는 중|보관함에 자동 보관하는 중|완료했어요. 보관함의 초안을 열어 검토하세요. 아직 RisuAI Persona는 바뀌지 않았습니다.\">\n    <div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"jg-t\"><div class=\"eyebrow\">Working</div><h2 id=\"jg-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">‘<span data-fill=\"name\">새 Persona</span>’ 초안을 만들고 있어요</h2><p class=\"muted\" style=\"margin:0 0 6px;font-size:12.5px\" data-fill=\"mode\">생성 모드</p>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg=\"\">준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>자료</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>생성</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>검사</b></div><div class=\"step\"><span class=\"step__no\">4</span><b>보관</b></div></div>\n      <p class=\"hint\" style=\"margin-top:10px\">요청 횟수는 모드·캐시·재시도에 따라 달라집니다. 취소해도 이미 전송된 요청은 처리 중일 수 있습니다.</p>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel=\"\" data-close=\"\">취소</button><button class=\"btn btn--primary\" data-job-done=\"\" data-close=\"\" hidden=\"\" data-then-go=\"edit\">‘<span data-fill=\"name\">새 Persona</span>’ 초안 열기</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-update\" data-cancel-until=\"3\" data-require=\"name\" data-start-from=\"upd-go\" aria-hidden=\"true\" data-job-labels=\"계획과 처리 범위를 확인하는 중|다음 5턴을 분석하는 중|Live Persona 갱신 내용을 만드는 중|기록과 바인딩을 저장하는 중|갱신을 마쳤습니다. 갱신 기록에서 이전 바인딩으로 복원할 수 있습니다.\">\n    <div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"ju-t\"><div class=\"eyebrow\">Manual update</div><h2 id=\"ju-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">TURN 6~10을 분석하고 있어요</h2>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg=\"\">준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>계획</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>분석</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>갱신안</b></div><div class=\"step\"><span class=\"step__no\">4</span><b>저장</b></div></div>\n      <p class=\"hint\" style=\"margin-top:10px\">저장이 시작되기 전까지만 취소할 수 있습니다. 저장 중에는 취소 버튼이 동작하지 않습니다.</p>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel=\"\" data-close=\"\">취소</button><button class=\"btn btn--primary\" data-job-done=\"\" data-close=\"\" hidden=\"\" data-then-go=\"mine\">내 페르소나로</button></div></div></div>\n\n  \n  \n\n  \n  \n\n  <div class=\"overlay overlay--bottom\" id=\"sheet-more\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-label=\"더보기\"><div data-more-list=\"\"></div></div></div>\n  <div class=\"toasts\" aria-live=\"polite\"></div>\n</div>";
   const RISU_API_ALIASES = Object.freeze(["risuai", "Risuai", "risuApi", "risuAPI", "RisuAI"]);
   const resolveRisuApi = () => {
     for (const alias of RISU_API_ALIASES) {
@@ -274,7 +274,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
   const OPERATION_LOG_MAX = 300;
   const DEBUG_LOG_MAX = 600;
   const LOG_PERSIST_DEBOUNCE_MS = 1500;
-const PLUGIN_VERSION = "0.26.88";
+const PLUGIN_VERSION = "0.26.89";
   const LIA_SETTING_UI_ID = "lia-persona-linker-setting";
   const LIA_BUTTON_UI_ID = "lia-persona-linker-button";
   const PERSONA_PROOF_VERSION = 1;
@@ -369,8 +369,6 @@ const PLUGIN_VERSION = "0.26.88";
   let preservedVisualCompositionPreset = "standard_waist_up";
   let preservedVisualCompositionNotes = "";
   let preservedVisualTargetPersonaId = "__auto__";
-  let liaSelectedVisualAssetEmotion = "";
-  let liaSelectedVisualAssetPersonaKey = "";
   let preservedVisualAssetPresetStore = { version: 1, updatedAt: "", items: [] };
   let preservedVisualAssetPresetId = "";
   let visualAssetPreviewUrlCache = new Map();
@@ -13665,17 +13663,88 @@ ${revisionText}`);
     } catch (_) {}
   }
 
-  async function initializePersonaProofExperience() {
-    // Live request/proof tracking is retired. The independent emotion-asset
-    // workflow still owns its ordinary response hook.
+  // Output notifications count complete pairs only. They do not analyze chat,
+  // write Persona data, attach assets, or authorize a provider request.
+  let liaUpdateNotice = null;
+  let liaUpdateNoticeBusy = false;
+  const liaNotifiedUpdateRanges = new Set();
+
+  function cancelLiaUpdateNotice() { liaUpdateNotice?.finish(false); }
+
+  function countLiaNoticePairs(chat, stopAfter = Infinity) {
+    let pending=false,count=0;
+    for(const item of asArray(chat?.message||chat?.messages||chat?.data)) {
+      if(item?.disabled===true||item?.isComment===true||item?.isStreaming===true||item?.streaming===true||item?.status==='error'||item?.status==='streaming'||item?.error||!messageText(item))continue;
+      if(isUserAuthoredMessage(item))pending=true;
+      else if(pending&&isAssistantTurnMessage(item)){count++;pending=false;if(count>=stopAfter)return count;}
+    }
+    return count;
+  }
+
+  function liaExpectedUpdateMatches(ctx, expected) {
+    if(!expected)return true;
+    const binding=ctx.livePersonaBinding,plan=manualLivePersonaPlan(ctx,binding);
+    return livePersonaScopeKey(ctx)===expected.scopeKey
+      && String(ctx.chat?.bindedPersona||'')===expected.personaId
+      && String(binding?.livePersonaId||'')===expected.personaId
+      && Number(binding?.lastProcessedPairCount||0)===expected.processed
+      && JSON.stringify(plan.range)===JSON.stringify(expected.range);
+  }
+
+  async function showLiaUpdateNotice(expected, name) {
+    if(typeof document==='undefined'||!document.body||pluginUnloaded)return false;
+    for(const node of [document.documentElement,document.body])node.style.setProperty('background','transparent','important');
+    await api.showContainer?.('fullscreen');
+    if(pluginUnloaded)return false;
+    const shell=document.createElement('div');shell.id='lia-update-notice';
+    shell.style.cssText='position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;background:transparent';
+    const card=document.createElement('section');card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');card.setAttribute('aria-labelledby','lia-update-notice-title');
+    card.style.cssText='position:relative;width:min(480px,100%);max-height:calc(100dvh - 32px);overflow:auto;box-sizing:border-box;padding:24px;border:1px solid #c8b7e1;border-radius:20px;background:#faf8fd;color:#2a203b;box-shadow:0 14px 40px rgba(20,15,35,.2);font:14px/1.65 system-ui';
+    card.innerHTML=`<h2 id="lia-update-notice-title" style="margin:0 36px 12px 0;font-size:20px">Persona 수동 갱신 준비</h2><p><b>${htmlEscape(name||'현재 채팅 Persona')}</b>에 반영할 완료 대화 5턴이 쌓였습니다.</p><p>TURN ${expected.range[0]}~${expected.range[1]}의 User+Assistant 대화를 분석하고 이 채팅의 Persona를 갱신할까요?</p><p>동의하면 LLM을 호출하며 비용이 발생할 수 있습니다. 원본 Persona와 RisuAI 기본 Persona 선택은 유지됩니다.</p>`;
+    const actions=document.createElement('div');actions.style.cssText='display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px;margin-top:18px';
+    const later=document.createElement('button'),approve=document.createElement('button'),close=document.createElement('button');
+    later.textContent='나중에';later.dataset.liaNotice='later';approve.textContent='동의 · 수동 분석·갱신';approve.dataset.liaNotice='approve';close.textContent='×';close.dataset.liaNotice='close';close.setAttribute('aria-label','갱신 안내 닫기');
+    for(const button of [later,approve,close]){button.type='button';button.style.cssText='min-height:42px;padding:8px 14px;border:1px solid #c8b7e1;border-radius:10px;background:#fff;color:#352647;font:600 13px system-ui;cursor:pointer';}
+    approve.style.background='#7653a6';approve.style.color='white';close.style.cssText+=';position:absolute;right:12px;top:12px;padding:4px 12px;font-size:20px';
+    actions.append(later,approve);card.append(close,actions);shell.append(card);document.body.append(shell);
+    return await new Promise(resolve=>{
+      const notice={root:shell,settled:false,finish(value){if(notice.settled)return;notice.settled=true;document.removeEventListener('keydown',keys);shell.remove();if(liaUpdateNotice===notice)liaUpdateNotice=null;resolve(value);}};
+      const keys=event=>{if(event.key==='Escape'){event.preventDefault();notice.finish(false);}else if(event.key==='Tab'){const first=close,last=approve;if(event.shiftKey&&(document.activeElement===first||!card.contains(document.activeElement))){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}};
+      liaUpdateNotice=notice;later.onclick=close.onclick=()=>notice.finish(false);approve.onclick=()=>notice.finish(true);document.addEventListener('keydown',keys);later.focus();
+    });
+  }
+
+  async function maybeNotifyLiaUpdate(event) {
+    if(pluginUnloaded||liaUpdateNoticeBusy||manualLivePersonaAction||typeof document==='undefined'||!document.body)return;
+    const ci=event?.characterIndex,ti=event?.chatIndex,mi=event?.messageIndex,char=event?.char||event?.character;
+    if(!Number.isInteger(ci)||ci<0||!Number.isInteger(ti)||ti<0||!Number.isInteger(mi)||mi<0||!char||!event.chat)return;
+    const message=asArray(event.chat.message||event.chat.messages||event.chat.data)[mi];
+    if(!message||message.disabled||message.isComment||message.streaming||message.isStreaming||message.error||message.status==='error'||message.status==='streaming'||!isAssistantTurnMessage(message))return;
+    liaUpdateNoticeBusy=true;
     try {
-      let granted = true;
-      if (typeof api.requestPluginPermission === "function") granted = await api.requestPluginPermission("replacer");
-      if (granted && typeof api.addRisuReplacer === "function") {
-        personaProofAfterReplacer = (content, type) => handlePersonaEmotionAssetAfterRequest(content, type);
-        await api.addRisuReplacer("afterRequest", personaProofAfterReplacer);
-      }
-    } catch (_) {}
+      const selected=await readLiaViewSelection();
+      if(pluginUnloaded||selected.charIndex!==ci||selected.chatIndex!==ti)return;
+      const ctx={char,chat:event.chat,charIndex:ci,chatIndex:ti},scopeKey=livePersonaScopeKey(ctx);
+      const binding=await readLivePersonaBindingByScopeKey(scopeKey);
+      if(pluginUnloaded||!binding||String(event.chat.bindedPersona||'')!==String(binding.livePersonaId||''))return;
+      const processed=Number(binding.lastProcessedPairCount||0);
+      const key=JSON.stringify([scopeKey,String(binding.livePersonaId),processed]);
+      if(liaNotifiedUpdateRanges.has(key))return;
+      if(countLiaNoticePairs(event.chat,processed+LIVE_SYNC_BATCH_SIZE)-processed<LIVE_SYNC_BATCH_SIZE)return;
+      const expected={scopeKey,personaId:String(binding.livePersonaId),processed,range:[processed+1,processed+LIVE_SYNC_BATCH_SIZE]};
+      const stillSelected=await readLiaViewSelection();
+      if(pluginUnloaded||stillSelected.charIndex!==ci||stillSelected.chatIndex!==ti)return;
+      liaNotifiedUpdateRanges.add(key);if(liaNotifiedUpdateRanges.size>128)liaNotifiedUpdateRanges.delete(liaNotifiedUpdateRanges.values().next().value);
+      const approved=await showLiaUpdateNotice(expected,binding.sourcePersonaName);
+      if(!approved||pluginUnloaded){if(!pluginUnloaded&&!liaUiVisible)await api.hideContainer?.();return;}
+      const fresh=await getLiveRuntimeContext();fresh.livePersonaBinding=await readLivePersonaBindingForContext(fresh);
+      if(pluginUnloaded||!liaExpectedUpdateMatches(fresh,expected)){if(!liaUiVisible)await api.hideContainer?.();return;}
+      activeWorkspaceTab='realtime';if(liaUiVisible)await refreshPreview({skipCapture:true});else await openUI();
+      await runLiaMockupAction('update-five',document.getElementById('upd-go'),expected);
+    } finally {liaUpdateNoticeBusy=false;}
+  }
+
+  async function initializePersonaProofExperience() {
     personaProofHooksEnabled = false;
   }
 
@@ -14373,14 +14442,12 @@ ${revisionText}`);
     baseContext = refreshPersonaLoreRerank(baseContext);
     const compatibility = inferCompatibility(personaInfo.persona, char, baseContext.personaLoreSignals);
     const savedLLMConfig = await readStoredLLMConfig();
-    const savedIllustrationConfig = await readStoredIllustrationConfig();
-    const visualAssetStore = await readPersonaVisualAssetStore();
     const savedResultVault = await readStoredResultVault();
     const livePersonaBinding = await readLivePersonaBindingForContext(baseContext);
     const livePersonaBindingStatus = livePersonaBinding ? await PersonaBindingManager.inspect({ ...baseContext, db: baseContext.db || db }, livePersonaBinding, {viewOnly:true}).catch(() => ({ state: "unavailable", available: false, personaId: "", effectivePersonaName: "" })) : null;
     const personaRequestProof = await readPersonaProofForContext(baseContext);
     await assertLiaViewSelectionCurrent(baseContext);
-    return { ...baseContext, personaDatabaseReadStatus: personaDatabaseRead.status, compatibility, savedLLMConfig, savedIllustrationConfig, visualAssetStore, savedResultVault, livePersonaBinding, livePersonaBindingStatus, personaRequestProof };
+    return { ...baseContext, personaDatabaseReadStatus: personaDatabaseRead.status, compatibility, savedLLMConfig, savedResultVault, livePersonaBinding, livePersonaBindingStatus, personaRequestProof };
   }
   function normalizeStringArray(value, max = 16) {
     return unique(asArray(value).map((item) => compact(item)), max);
@@ -19682,7 +19749,7 @@ ${revisionText}`);
     const initial = name.trim().slice(0, 1).toUpperCase() || "P";
     const status = binding ? (ctx.livePersonaBindingStatus?.state === "connected" ? "Live 연결됨" : ctx.livePersonaBindingStatus?.state === "connected_paused" ? "Live · 수동 갱신" : "Live 연결 상태 확인 필요") : "Live 연결 안 됨";
     const pocket = app.querySelector("#pocket");
-    if (pocket) pocket.innerHTML = `<div class="avatar">${htmlEscape(initial)}</div><div><span class="bind ${state.dynamicId ? "bind--here" : "bind--none"}">${htmlEscape(state.dynamicId ? "이 채팅에 연결됨" : "기본 Persona 사용 중")}</span><h2 style="margin-top:6px">${htmlEscape(name)}</h2><p>${htmlEscape(String(persona?.note || "RisuAI 기본 Persona를 그대로 사용합니다.").replace(LIVE_PERSONA_NOTE_MARKER, "").trim())}</p></div><div class="pocket__act"><button class="btn btn--primary" type="button" data-lia-open-bind>${state.dynamicId ? "연결 관리" : "Persona 연결…"}</button><button class="btn" type="button" data-go="edit">초안 편집</button><button class="btn" type="button" data-go="update">수동 갱신</button><button class="btn" type="button" data-go="assets">이미지·감정</button>${binding?.previousBinding?`<button class="btn" type="button" data-lia-restore-previous-only title="이전 대상만 복원하고 현재 LIA Live 연결 기록은 유지합니다.">이전 연결만 복원…</button><button class="btn" type="button" data-lia-restore-previous title="이전 대상으로 복원하고 현재 LIA Live 연결을 정리합니다.">Live 복원·정리…</button>`:""}</div>`;
+    if (pocket) pocket.innerHTML = `<div class="avatar">${htmlEscape(initial)}</div><div><span class="bind ${state.dynamicId ? "bind--here" : "bind--none"}">${htmlEscape(state.dynamicId ? "이 채팅에 연결됨" : "기본 Persona 사용 중")}</span><h2 style="margin-top:6px">${htmlEscape(name)}</h2><p>${htmlEscape(String(persona?.note || "RisuAI 기본 Persona를 그대로 사용합니다.").replace(LIVE_PERSONA_NOTE_MARKER, "").trim())}</p></div><div class="pocket__act"><button class="btn btn--primary" type="button" data-lia-open-bind>${state.dynamicId ? "연결 관리" : "Persona 연결…"}</button><button class="btn" type="button" data-go="edit">초안 편집</button><button class="btn" type="button" data-go="update">수동 갱신</button>${binding?.previousBinding?`<button class="btn" type="button" data-lia-restore-previous-only title="이전 대상만 복원하고 현재 LIA Live 연결 기록은 유지합니다.">이전 연결만 복원…</button><button class="btn" type="button" data-lia-restore-previous title="이전 대상으로 복원하고 현재 LIA Live 연결을 정리합니다.">Live 복원·정리…</button>`:""}</div>`;
     const planBadge = app.querySelector("#upd-badge");
     const planDots = app.querySelector("#upd-dots");
     const planHint = app.querySelector("#upd-hint");
@@ -19831,7 +19898,6 @@ ${revisionText}`);
     if(recovery)recovery.innerHTML='<div id="liaMemorySuiteServerConnectionPanel" class="card"></div>';
     hydrateLiaMockupSettings(ctx,app);
     hydrateLiaMockupUpdate(ctx,app);
-    hydrateLiaMockupAssets(ctx,app);
   }
 
   function hydrateLiaMockupReview(app,result) {
@@ -19847,78 +19913,16 @@ ${revisionText}`);
       const acts=fixCard.querySelector('#rv-acts');if(acts){acts.hidden=!plan?.changes?.length;acts.innerHTML='<button class="btn btn--primary" type="button" data-lia-apply-audit-fix>선택 수정안을 초안에 적용</button>';}}
   }
 
-  function hydrateLiaMockupAssets(ctx,app) {
-    const options=listSelectablePersonaVisualTargets(ctx);const select=app.querySelector('#asset-target');
-    if(select){select.innerHTML=options.map(item=>`<option value="${htmlEscape(item.value)}">${htmlEscape(item.label)}</option>`).join('');select.value=currentVisualTargetSelectionValue();}
-    const target=resolvePersonaVisualTarget(ctx);const bundle=target.bundle||normalizeVisualAssetSet({},target.personaKey);const images=bundle.images||{};const emotionNames=Object.keys(images);const config=normalizeIllustrationConfig(ctx.savedIllustrationConfig||{});
-    const state=app.querySelector('#as-state');if(state)state.textContent=`${emotionNames.length}개 저장됨 · Neutral Master ${images.neutral?'있음':'없음'} · ${target.personaName}`;
-    const summary=app.querySelector('#as-sum');if(summary)summary.textContent=target.identitySummary||target.personaSpec?.appearance||'이 Persona에서 시각 정보를 찾지 못했습니다.';
-    const lock=normalizeVisualGenerationLock(bundle.visualLock||null,{confirmed:true});const candidate=normalizeVisualGenerationLock(bundle.visualLockCandidate||null,{confirmed:false});
-    const badge=app.querySelector('#as-lock');if(badge){badge.textContent=lock?.confirmed?'확정됨':candidate?'확정 대기':'미확정';badge.className=`badge ${lock?.confirmed?'badge--ok':'badge--warn'}`;}
-    const actualLock=lock?.confirmed?lock:candidate;
-    const lockCard=app.querySelector('.lock-card .kv');if(lockCard){const values=lockCard.querySelectorAll('dd');if(values[0])values[0].textContent=actualLock?`seed ${actualLock.seed} · ${actualLock.width}×${actualLock.height} · ${actualLock.steps} steps · ${actualLock.sampler}`:'Neutral 기준이 아직 저장되지 않았습니다.';if(values[1])values[1].textContent=actualLock?`${visualCompositionPresetDefinition(actualLock.compositionPreset).label} · ${actualLock.compositionNotes||''}`:'Neutral 생성 후 확정할 수 있습니다.';if(values[2])values[2].textContent=actualLock?.legacy?'구형 Lock':'';if(values[3])values[3].textContent=actualLock?`Positive/Negative 고정 · ${actualLock.provider||config.provider}`:'확정된 Lock 없음';}
-    const lockFields=app.querySelector('#asset-lock-fields');if(lockFields){lockFields.querySelectorAll('button,textarea').forEach(control=>{control.disabled=!!lock?.confirmed;});const note=lockFields.querySelector('textarea');if(note)note.value=String(actualLock?.stylePrompt||'');}
-    const neutral=app.querySelector('[data-page="assets"] [data-run-job="job-neutral"]');if(neutral){neutral.id='lia-generate-neutral';neutral.disabled=config.enabled===false||!target.personaPrompt&&!target.personaSpec?.appearance;neutral.removeAttribute('aria-disabled');neutral.textContent=images.neutral?'Neutral 다시 만들기':'Neutral 기준 에셋 만들기';}
-    const confirm=app.querySelector('#btn-confirm-visual-lock');if(confirm){confirm.disabled=!candidate||!!lock?.confirmed;confirm.setAttribute('aria-disabled',String(confirm.disabled));}
-    const bundleButton=app.querySelector('[data-page="assets"] [data-run-job="job-emo"]');if(bundleButton){bundleButton.id='lia-generate-bundle';bundleButton.disabled=!lock?.confirmed||config.enabled===false;bundleButton.removeAttribute('aria-disabled');}
-    const count=app.querySelector('#as-n');if(count)count.textContent=`${emotionNames.length} 저장 · ${images.neutral?'Neutral Master 있음':'Neutral Master 없음'}`;
-    const emotionDefaults=['neutral','gentle smile','happy','angry','sad','embarrassed','jealous','surprised','worried','determined','affectionate','exhausted'];
-    if(!preservedVisualEmotionText)preservedVisualEmotionText=emotionDefaults.join('\n');
-    liaVisualEmotionDraftText=preservedVisualEmotionText;
-    const configuredEmotions=unique(String(preservedVisualEmotionText||'').split(/\r?\n|,/).map(item=>item.trim()).filter(Boolean),48);
-    const assetSteps=app.querySelectorAll('[data-page="assets"] > .steps > .step');
-    if(assetSteps.length>=3){
-      const stage1=assetSteps[0],stage2=assetSteps[1],stage3=assetSteps[2];
-      const neutralReady=!!images.neutral;
-      const lockReady=!!lock?.confirmed;
-      const requestedForSteps=unique(String(preservedVisualEmotionText||'').split(/\r?\n|,/).map(item=>item.trim()).filter(Boolean),48).filter(emotion=>normalizeEmotionKey(emotion)!=='neutral');
-      const completedForSteps=requestedForSteps.filter(emotion=>!!images[emotion]).length;
-      const bundleReady=lockReady&&requestedForSteps.length>0&&completedForSteps===requestedForSteps.length;
-      const applyStep=(node,{done,active,label,number})=>{node.classList.toggle('is-done',done);node.classList.toggle('is-active',!done&&active);node.dataset.state=done?'done':active?'active':'pending';const mark=node.querySelector('.step__no');if(mark)mark.textContent=done?'✓':String(number);const title=node.querySelector('b');if(title)title.textContent=label;};
-      applyStep(stage1,{done:neutralReady,active:!neutralReady,number:1,label:neutralReady?'Neutral 생성':'Neutral 생성 필요'});
-      applyStep(stage2,{done:lockReady,active:neutralReady&&!lockReady,number:2,label:lockReady?'기준 확정됨':candidate?'Neutral 기준 확인 필요':'Neutral 기준 미확정'});
-      applyStep(stage3,{done:bundleReady,active:lockReady&&!bundleReady,number:3,label:bundleReady?'감정 묶음 완료':lockReady?`감정 묶음 · ${completedForSteps}/${requestedForSteps.length}`:'감정 묶음 잠김'});
-    }
-    const bundleSteps=app.querySelectorAll('#job-emo .steps .step b');
-    if(bundleSteps.length>=3){
-      const requested=configuredEmotions.filter(emotion=>normalizeEmotionKey(emotion)!=='neutral');
-      const saved=requested.filter(emotion=>!!images[emotion]);
-      bundleSteps[0].textContent=`Neutral 이미지 ${images.neutral?'저장됨':'없음'}`;
-      bundleSteps[1].textContent=`Visual Lock ${lock?.confirmed?'확정됨':candidate?'후보 있음':'미확정'}`;
-      bundleSteps[2].textContent=`감정 설정 ${requested.length}개 · 저장 ${saved.length}개`;
-    }
-    const visibleEmotions=unique([...configuredEmotions,...emotionNames],48);
-    const grid=app.querySelector('#emo-grid');if(grid)grid.innerHTML=visibleEmotions.length?visibleEmotions.map(emotion=>{const entry=images[emotion];const done=!!entry;return `<button class="emo ${done?'is-done':'is-todo'} ${emotion==='neutral'?'is-master':''}" type="button" data-open="sheet-emo" data-visual-asset-path="${htmlEscape(entry?.assetPath||'')}" data-visual-asset-mime="${htmlEscape(entry?.mime||'image/png')}" data-visual-asset-persona-key="${htmlEscape(target.personaKey)}" data-visual-asset-emotion="${htmlEscape(emotion)}" data-visual-asset-backup-id="${htmlEscape(entry?.backupId||'')}" aria-label="${htmlEscape(emotion)} ${done?'저장 이미지':'이미지 없음'}"><span class="avatar ${done?'':'todo'}">${done?htmlEscape(emotion.slice(0,1).toUpperCase()):'?'}</span>${htmlEscape(emotion)}<br><span class="muted">${done?(emotion==='neutral'?'Visual Master':'저장됨'):'아직 없음'}</span></button>`;}).join(''):'<div class="empty"><b>감정 목록이 비어 있습니다</b><span>감정을 추가한 뒤 대상 Persona를 확인하세요.</span></div>';
-    const emotionList=app.querySelector('#emo-list');if(emotionList)emotionList.value=configuredEmotions.join('\n');
-    const presetSelect=app.querySelector('[aria-label="프리셋 선택"]');if(presetSelect){presetSelect.id='lia-asset-preset-select';presetSelect.innerHTML='<option value="">저장된 프리셋 없음</option>';}
-    const emotionSheet=app.querySelector('#sheet-emo');
-    if(emotionSheet){const upload=emotionSheet.querySelector('button[data-toast*="업로드"]');if(upload){upload.removeAttribute('data-toast');upload.dataset.liaAssetUpload='';upload.disabled=false;}const prompt=emotionSheet.querySelector('button[data-toast*="프롬프트"]');if(prompt){prompt.removeAttribute('data-toast');prompt.dataset.liaAssetPrompt='';prompt.disabled=false;}const regenerate=emotionSheet.querySelector('button[data-run-job="job-neutral"]');if(regenerate){regenerate.removeAttribute('data-run-job');regenerate.dataset.liaAssetRegenerate='';regenerate.disabled=false;}const deleteButton=emotionSheet.querySelector('[data-act="emo-del"]');if(deleteButton){deleteButton.removeAttribute('data-toast');deleteButton.removeAttribute('data-act');deleteButton.dataset.liaAssetDelete='';deleteButton.disabled=false;}
-      let restore=emotionSheet.querySelector('[data-lia-asset-restore]');if(!restore){restore=document.createElement('button');restore.type='button';restore.className='btn';restore.dataset.liaAssetRestore='';restore.textContent='저장 이미지 검사·백업 복구';emotionSheet.querySelector('.stack')?.append(restore);}const currentImage=images[liaSelectedVisualAssetEmotion];restore.disabled=!currentImage?.backupId;restore.title=restore.disabled?'이 이미지에는 복구용 백업이 없습니다.':'';
-      if(!emotionSheet.querySelector('#lia-emotion-prompt-editor')){const editor=document.createElement('div');editor.id='lia-emotion-prompt-editor';editor.hidden=true;editor.className='stack stack--sm';editor.innerHTML='<div class="field"><label for="lia-emotion-positive">이 감정의 positive prompt</label><textarea class="textarea" id="lia-emotion-positive" rows="3"></textarea></div><div class="field"><label for="lia-emotion-negative">이 감정의 negative prompt</label><textarea class="textarea" id="lia-emotion-negative" rows="3"></textarea></div><button class="btn btn--primary" type="button" data-lia-save-emotion-prompt>프롬프트 저장</button>';emotionSheet.querySelector('.stack')?.append(editor);}}
-    if(presetSelect){const options=normalizeVisualAssetPresetStore(preservedVisualAssetPresetStore).items;presetSelect.innerHTML='<option value="">저장된 프리셋 선택</option>'+options.map(item=>`<option value="${htmlEscape(item.id)}">${htmlEscape(item.name)}</option>`).join('');presetSelect.value=preservedVisualAssetPresetId;}
-    const presetCard=presetSelect?.closest('.card');if(presetCard){const actions=presetCard.querySelectorAll('button');if(actions[0]){actions[0].removeAttribute('data-toast');actions[0].dataset.liaLoadAssetPreset='';}if(actions[1]){actions[1].removeAttribute('data-toast');actions[1].dataset.liaDeleteAssetPreset='';}if(!presetCard.querySelector('#lia-asset-preset-name')){const cluster=document.createElement('div');cluster.className='cluster';cluster.innerHTML='<input class="input" id="lia-asset-preset-name" maxlength="64" placeholder="프리셋 이름"><button class="btn btn--sm" type="button" data-lia-save-asset-preset>현재 조건 저장</button>';presetCard.querySelector('.cluster')?.after(cluster);}}
-    const zipButtons=app.querySelectorAll('[data-page="assets"] [data-toast]');zipButtons.forEach(button=>{const label=button.textContent||'';button.removeAttribute('data-toast');if(label.includes('ZIP')&&label.includes('내보내기'))button.dataset.liaExportAssets='';else if(label.includes('ZIP')&&label.includes('가져오기'))button.dataset.liaImportAssets='';else{button.disabled=true;button.setAttribute('aria-disabled','true');}});
-    const composition=app.querySelector('#asset-lock-fields .choices');if(composition){const keys=['standard_waist_up','close_portrait','three_quarter'];composition.querySelectorAll('.choice').forEach((button,index)=>{button.dataset.liaCompositionPreset=keys[index]||keys[0];button.setAttribute('aria-pressed',String((keys[index]||keys[0])===preservedVisualCompositionPreset));button.classList.toggle('is-on',(keys[index]||keys[0])===preservedVisualCompositionPreset);});}
-    const style=app.querySelector('#asset-lock-fields textarea');if(style){style.id='lia-asset-style-notes';style.value=preservedVisualStyleNotes;}
-    if(!app.querySelector('#lia-asset-composition-notes')){const note=document.createElement('div');note.className='field';note.innerHTML='<label for="lia-asset-composition-notes">구도 메모</label><textarea class="textarea" id="lia-asset-composition-notes" rows="2"></textarea>';app.querySelector('#asset-lock-fields')?.append(note);}
-    const notes=app.querySelector('#lia-asset-composition-notes');if(notes)notes.value=preservedVisualCompositionNotes;
-    const assetPage=app.querySelector('[data-page="assets"]');if(assetPage&&!assetPage.querySelector('#lia-asset-image-file')){const imageInput=document.createElement('input');imageInput.id='lia-asset-image-file';imageInput.type='file';imageInput.accept='image/png,image/jpeg,image/webp,image/gif';imageInput.hidden=true;const zipInput=document.createElement('input');zipInput.id='lia-asset-zip-file';zipInput.type='file';zipInput.accept='.zip,application/zip';zipInput.hidden=true;assetPage.append(imageInput,zipInput);}
-  }
 
   function hydrateLiaMockupSettings(ctx,app) {
     const cards=app.querySelectorAll('.page[data-page="settings"] .card');
-    const textCard=cards[0], imageCard=cards[1];
+    const textCard=cards[0];
     const textStack=textCard?.querySelector('.stack');
     const cfg=normalizeLLMConfig(ctx.savedLLMConfig||{});
     const textBadge=textCard?.querySelector('.badge');if(textBadge){textBadge.className=`badge ${cfg.apiKey||providerAllowsEmptyKey(cfg.provider)?'badge--ok':'badge--warn'}`;textBadge.textContent=cfg.apiKey||providerAllowsEmptyKey(cfg.provider)?'설정 확인됨':'인증 정보 필요';}
     const providers=[...Object.entries(LIA_DIRECT_LLM_PROVIDER_REGISTRY).map(([key,value])=>[key,value.label]),...[['openai','OpenAI'],['claude','Claude / Anthropic'],['gemini','Gemini API'],['openrouter','OpenRouter'],['deepseek','DeepSeek'],['ollama','Ollama Local'],['ollama_cloud','Ollama Cloud'],['lmstudio','LM Studio'],['nanogpt','NanoGPT'],['vertex','Vertex Gemini'],['vertex-openai','Vertex OpenAI-compatible'],['copilot','GitHub Copilot'],['custom','Custom OpenAI-compatible']]];
     if(textStack) textStack.innerHTML=`<div class="field"><label for="lia-provider">제공자</label><select class="select" id="lia-provider">${providers.map(([key,label])=>`<option value="${htmlEscape(key)}"${normalizeProviderKey(cfg.provider)===key?' selected':''}>${htmlEscape(label)}</option>`).join('')}</select></div><div class="field"><label for="lia-endpoint">Endpoint URL</label><input class="input" id="lia-endpoint" value="${htmlEscape(cfg.endpoint)}"></div><div class="field"><label for="lia-model">모델</label><input class="input" id="lia-model" list="dpg-llm-model-list" value="${htmlEscape(cfg.model)}"><datalist id="dpg-llm-model-list"></datalist></div><div class="cluster"><button class="btn btn--sm" type="button" id="dpg-refresh-models">모델 목록 새로 읽기</button><span class="hint">모델 API를 사용해 목록을 조회합니다.</span></div><div class="field"><label for="lia-api-key">API 키</label><input class="input" id="lia-api-key" type="password" value="" autocomplete="new-password" placeholder="${cfg.apiKey?'저장된 키가 있습니다 · 변경 시 새 값 입력':'필요한 경우에만 입력'}"></div><label class="check"><input id="lia-clear-api-key" type="checkbox"><span>저장된 API 키 삭제</span></label><div class="field"><label for="lia-temperature">Temperature</label><input class="input" id="lia-temperature" type="number" min="0" max="2" step="0.05" value="${htmlEscape(cfg.temp)}"></div><div class="details-block"><details><summary>요청 고급 옵션</summary><div class="stack stack--sm"><div class="field"><label for="lia-max-tokens">Max Tokens</label><input class="input" id="lia-max-tokens" type="number" min="64" value="${cfg.maxCompletionTokens}"></div><div class="field"><label for="lia-timeout">Timeout (ms)</label><input class="input" id="lia-timeout" type="number" min="5000" max="300000" value="${cfg.timeout}"></div><div class="field"><label for="lia-context-window">Context Window</label><input class="input" id="lia-context-window" type="number" min="0" value="${cfg.contextWindow}"></div><div class="field"><label for="lia-request-format">Request Format</label><select class="select" id="lia-request-format"><option value="chat_completions"${cfg.requestFormat==='chat_completions'?' selected':''}>Chat Completions</option><option value="responses"${cfg.requestFormat==='responses'?' selected':''}>Responses</option></select></div><div class="field"><label for="lia-reasoning-preset">Reasoning Preset</label><select class="select" id="lia-reasoning-preset">${Object.entries(LIA_REASONING_PRESETS).map(([key,label])=>`<option value="${htmlEscape(key)}"${cfg.reasoningPreset===key?' selected':''}>${htmlEscape(label)}</option>`).join('')}</select></div><div class="field"><label for="lia-reasoning-effort">Reasoning Effort</label><select class="select" id="lia-reasoning-effort">${['none','minimal','low','medium','high','xhigh','max'].map(key=>`<option${cfg.reasoningEffort===key?' selected':''}>${key}</option>`).join('')}</select></div><div class="field"><label for="lia-reasoning-budget">Reasoning Budget</label><input class="input" id="lia-reasoning-budget" type="number" min="-1" max="200000" value="${cfg.reasoningBudgetTokens}"></div><div class="field"><label for="lia-thinking-type">Thinking</label><select class="select" id="lia-thinking-type"><option value="enabled"${cfg.thinkingType==='enabled'?' selected':''}>Enabled</option><option value="disabled"${cfg.thinkingType==='disabled'?' selected':''}>Disabled</option></select></div><div class="field"><label for="lia-service-tier">Service Tier</label><select class="select" id="lia-service-tier">${['off','auto','default','flex','priority','scale'].map(key=>`<option${cfg.serviceTier===key?' selected':''}>${key}</option>`).join('')}</select></div><div class="field"><label for="lia-cache-mode">Prompt Cache</label><select class="select" id="lia-cache-mode">${['auto','off','explicit'].map(key=>`<option${cfg.promptCacheMode===key?' selected':''}>${key}</option>`).join('')}</select></div><label class="check"><input id="lia-stream" type="checkbox"${cfg.stream?' checked':''}><span>Streaming 응답 사용</span></label><div class="field"><label for="lia-extra-headers">Extra Headers JSON</label><textarea class="textarea" id="lia-extra-headers">${htmlEscape(cfg.extraHeadersJson)}</textarea></div><div class="field"><label for="lia-extra-body">Extra Body JSON</label><textarea class="textarea" id="lia-extra-body">${htmlEscape(cfg.extraBodyJson)}</textarea></div></div></details></div><div class="cluster"><button class="btn btn--primary" type="button" id="lia-save-provider">텍스트 AI 설정 저장</button><span class="hint" id="lia-provider-state">${cfg.apiKey?'인증 정보 저장됨':'인증 정보 없음'}</span></div><p class="hint">키 값은 화면에 다시 표시하지 않습니다. 저장은 local_only 기기 저장과 기존 pluginStorage 백업 규칙을 사용합니다.</p>`;
     if(textStack){textStack.querySelector('#lia-save-provider')?.remove();const actions=document.createElement('div');actions.className='cluster';actions.innerHTML='<button class="btn btn--primary" id="lia-save-provider" type="button">텍스트 설정 저장</button><button class="btn" id="dpg-test-llm" type="button">연결 테스트</button>';textStack.append(actions);}
-    const img=normalizeIllustrationConfig(ctx.savedIllustrationConfig||{});
-    const imageBadge=imageCard?.querySelector('.badge');if(imageBadge){imageBadge.className=`badge ${img.enabled?'badge--ok':'badge--warn'}`;imageBadge.textContent=img.enabled?`사용 · ${img.provider}`:'사용 안 함';}
-    const imageStack=imageCard?.querySelector('.stack');
-    if(imageStack) imageStack.innerHTML=`<label class="check"><input id="lia-image-enabled" type="checkbox"${img.enabled?' checked':''}><span>이미지 제공 사용</span></label><div class="field"><label for="lia-image-provider">이미지 제공자</label><select class="select" id="lia-image-provider">${[['wellspring-nai','Wellspring NAI'],['novelai','NovelAI'],['comfyui-local','ComfyUI Local'],['custom-json','Custom JSON']].map(([key,label])=>`<option value="${key}"${img.provider===key?' selected':''}>${label}</option>`).join('')}</select></div><div class="field"><label for="lia-image-endpoint">Endpoint URL</label><input class="input" id="lia-image-endpoint" value="${htmlEscape(img.endpoint)}"></div><div class="field"><label for="lia-image-model">모델</label><input class="input" id="lia-image-model" value="${htmlEscape(img.model)}"></div><div class="field"><label for="lia-image-key">API 키</label><input class="input" id="lia-image-key" type="password" value="" autocomplete="new-password" placeholder="${img.apiKey?'저장된 키가 있습니다 · 변경 시 새 값 입력':'필요한 경우에만 입력'}"></div><label class="check"><input id="lia-image-clear-api-key" type="checkbox"><span>저장된 API 키 삭제</span></label><div class="details-block"><details><summary>이미지 고급 옵션</summary><div class="stack stack--sm"><div class="field"><label for="lia-image-checkpoint">Checkpoint</label><input class="input" id="lia-image-checkpoint" value="${htmlEscape(img.checkpoint)}"></div><div class="field"><label for="lia-image-width">Width</label><input class="input" id="lia-image-width" type="number" value="${img.width}"></div><div class="field"><label for="lia-image-height">Height</label><input class="input" id="lia-image-height" type="number" value="${img.height}"></div><div class="field"><label for="lia-image-steps">Steps</label><input class="input" id="lia-image-steps" type="number" value="${img.steps}"></div><div class="field"><label for="lia-image-cfg">CFG</label><input class="input" id="lia-image-cfg" type="number" value="${img.cfg}"></div><div class="field"><label for="lia-image-sampler">Sampler</label><input class="input" id="lia-image-sampler" value="${htmlEscape(img.sampler)}"></div><div class="field"><label for="lia-image-seed">Seed (-1 = random)</label><input class="input" id="lia-image-seed" type="number" value="${img.seed}"></div><div class="field"><label for="lia-image-response-path">Response Path</label><input class="input" id="lia-image-response-path" value="${htmlEscape(img.responsePath)}"></div><div class="field"><label for="lia-image-style">Style Prompt</label><textarea class="textarea" id="lia-image-style">${htmlEscape(img.stylePrompt)}</textarea></div><div class="field"><label for="lia-image-negative">Negative Prompt</label><textarea class="textarea" id="lia-image-negative">${htmlEscape(img.negativePrompt)}</textarea></div><div class="field"><label for="lia-image-workflow">Workflow JSON</label><textarea class="textarea" id="lia-image-workflow">${htmlEscape(img.workflowJson)}</textarea></div><div class="field"><label for="lia-image-request">Custom Request Template JSON</label><textarea class="textarea" id="lia-image-request">${htmlEscape(img.requestTemplateJson)}</textarea></div><div class="field"><label for="lia-image-headers">Extra Headers JSON</label><textarea class="textarea" id="lia-image-headers">${htmlEscape(img.headersJson)}</textarea></div><div class="field"><label for="lia-image-advanced">Advanced JSON</label><textarea class="textarea" id="lia-image-advanced">${htmlEscape(img.advancedJson)}</textarea></div><label class="check"><input id="lia-image-runtime-attach" type="checkbox"${img.runtimeAttachEnabled?' checked':''}><span>생성 감정 에셋 자동 첨부</span></label><label class="check"><input id="lia-image-runtime-neutral" type="checkbox"${img.runtimeNeutralFallback?' checked':''}><span>감정 일치 없을 때 Neutral 사용</span></label><div class="field"><label for="lia-image-runtime-score">최소 매칭 점수</label><input class="input" id="lia-image-runtime-score" type="number" min="0.5" max="20" step="0.5" value="${img.runtimeMinScore}"></div></div></details></div><div class="cluster"><button class="btn btn--primary" type="button" id="lia-save-image-provider">이미지 AI 설정 저장</button><span class="hint" id="lia-image-provider-state">${img.apiKey?'인증 정보 저장됨':'인증 정보 없음'}</span></div>`;
-    if(imageStack){imageStack.querySelector('#lia-save-image-provider')?.remove();const tools=document.createElement('div');tools.className='details-block';tools.innerHTML='<div class="field"><label for="lia-image-binding-profile">ComfyUI Workflow 분석 결과</label><textarea class="textarea" id="lia-image-binding-profile" rows="6" readonly></textarea></div><div class="cluster"><button class="btn" type="button" data-lia-analyze-workflow>워크플로 분석</button><button class="btn" type="button" data-lia-test-workflow>이미지 연결 검사</button></div><span class="hint">연결 검사는 설정한 ComfyUI endpoint에 읽기 전용 사전 검사 요청을 보냅니다.</span>';imageStack.append(tools);const profile=imageStack.querySelector('#lia-image-binding-profile');if(profile)profile.value=img.workflowBindingJson||'';const actions=document.createElement('div');actions.className='cluster';actions.innerHTML='<button class="btn btn--primary" id="lia-save-image-provider" type="button">이미지 설정 저장</button>';imageStack.append(actions);syncIllustrationProviderUi();}
     const settingsPage=app.querySelector('[data-page="settings"]');const diagnostic=settingsPage?.querySelector('.setting button');if(diagnostic){diagnostic.removeAttribute('data-toast');diagnostic.removeAttribute('disabled');diagnostic.removeAttribute('aria-disabled');diagnostic.dataset.liaRunDiagnostic='';if(!settingsPage.querySelector('#lia-diagnostic-result')){const output=document.createElement('pre');output.id='lia-diagnostic-result';output.className='hint';diagnostic.closest('.setting')?.after(output);}}
     const debugButton=[...settingsPage?.querySelectorAll('button')||[]].find(button=>(button.textContent||'').includes('디버그 JSON'));if(debugButton){debugButton.removeAttribute('data-toast');debugButton.removeAttribute('disabled');debugButton.removeAttribute('aria-disabled');debugButton.id='dpg-export-debug-log';}
     if(settingsPage&&!settingsPage.querySelector('#dpg-debug-export-fallback')){const fallback=document.createElement('div');fallback.id='dpg-debug-export-fallback';fallback.className='card';fallback.hidden=true;fallback.innerHTML='<div class="field"><label for="dpg-debug-export-text">디버그 JSON</label><textarea class="textarea" id="dpg-debug-export-text" readonly rows="8"></textarea></div><button class="btn btn--sm" id="dpg-close-debug-export-text" type="button">닫기</button>';settingsPage.append(fallback);}
@@ -19968,7 +19972,7 @@ ${revisionText}`);
     template.innerHTML = LIA_MOCKUP_APP_HTML;
     const app = template.content.querySelector(".app");
     if (!app) throw new Error("canonical LIA mockup root is missing");
-    const routes = {home:"mine",generate:"make",vault:"shelf",settings:"settings",edit:"edit",realtime:"update",assets:"assets",server:"recover"};
+    const routes = {home:"mine",generate:"make",vault:"shelf",settings:"settings",edit:"edit",realtime:"update",server:"recover"};
     const route = routes[activeWorkspaceTab] || "make";
     app.querySelectorAll(".page[data-page]").forEach((page) => page.classList.toggle("is-active", page.dataset.page === route));
     app.querySelectorAll(".sidebar .nav-item[data-go]").forEach((button) => button.setAttribute("aria-current", button.dataset.go === route ? "page" : "false"));
@@ -20021,245 +20025,6 @@ ${revisionText}`);
     return "wellspring-nai";
   }
 
-  function defaultIllustrationEndpointForProvider(provider) {
-    const type = normalizeIllustrationProviderType(provider);
-    if (type === "novelai") return "https://image.novelai.net/ai/generate-image";
-    if (type === "comfyui-local") return "http://127.0.0.1:8188";
-    if (type === "custom-json") return "";
-    return "https://wellspring.encrypt.gay/v1/images/nai/generate-image";
-  }
-
-  function normalizeIllustrationConfig(config = {}) {
-    const provider = normalizeIllustrationProviderType(config.provider || config.imageApiFormat || "wellspring-nai");
-    let normalizedModel = String(config.model || (provider === "comfyui-local" ? "" : "nai-diffusion-4-5-full")).trim();
-    let normalizedWorkflowJson = String(config.workflowJson || config.workflow || "").trim();
-    if (provider === "comfyui-local" && !normalizedWorkflowJson && looksLikeComfyWorkflowText(normalizedModel)) {
-      normalizedWorkflowJson = normalizedModel;
-      normalizedModel = "";
-    }
-    const toInt = (value, fallback, min, max) => {
-      const num = Number(value);
-      if (!Number.isFinite(num)) return fallback;
-      return Math.max(min, Math.min(max, Math.floor(num)));
-    };
-    const toFloat = (value, fallback, min, max) => {
-      const num = Number(value);
-      if (!Number.isFinite(num)) return fallback;
-      return Math.max(min, Math.min(max, num));
-    };
-    return {
-      version: ILLUSTRATION_CONFIG_VERSION,
-      enabled: config.enabled !== false,
-      provider,
-      endpoint: String(config.endpoint || config.url || defaultIllustrationEndpointForProvider(provider)).trim(),
-      apiKey: String(config.apiKey || config.key || "").trim(),
-      apiKeyHeader: ["authorization-bearer", "authorization-raw", "x-api-key", "none"].includes(String(config.apiKeyHeader || "").trim()) ? String(config.apiKeyHeader || "").trim() : (provider === "comfyui-local" || provider === "custom-json" ? "none" : "authorization-bearer"),
-      model: normalizedModel,
-      checkpoint: String(config.checkpoint || "").trim(),
-      width: toInt(config.width, 832, 256, 2048),
-      height: toInt(config.height, 1216, 256, 2048),
-      steps: toInt(config.steps, 28, 1, 150),
-      cfg: toFloat(config.cfg, 5.5, 1, 30),
-      sampler: String(config.sampler || "k_euler_ancestral").trim(),
-      seed: Number.isFinite(Number(config.seed)) ? Math.floor(Number(config.seed)) : -1,
-      timeoutMs: toInt(config.timeoutMs || config.timeout, 120000, 5000, 300000),
-      responsePath: String(config.responsePath || "data.0.image").trim(),
-      requestTemplateJson: String(config.requestTemplateJson || config.requestTemplate || "").trim(),
-      workflowJson: normalizedWorkflowJson,
-      workflowBindingJson: String(config.workflowBindingJson || config.bindingProfileJson || "").trim(),
-      headersJson: String(config.headersJson || "").trim(),
-      stylePrompt: String(config.stylePrompt || "clean polished anime character portrait, high quality, single character, standalone visual novel portrait asset").trim(),
-      negativePrompt: String(config.negativePrompt || "low quality, blurry, bad anatomy, extra fingers, multiple people, cropped face, deformed hands, duplicate limbs, text, watermark, logo").trim(),
-      extraNegativePrompt: String(config.extraNegativePrompt || "scenery, room, indoor background, outdoor background, landscape, detailed background, colored background, grey background, gray background, black background, gradient background, patterned background, objects in background, background characters, complex action pose").trim(),
-      transparentBackground: false,
-      runtimeAttachEnabled: config.runtimeAttachEnabled !== false,
-      runtimeNeutralFallback: config.runtimeNeutralFallback !== false,
-      runtimeMinScore: toFloat(config.runtimeMinScore, 2.0, 0.5, 20),
-      advancedJson: String(config.advancedJson || "").trim(),
-    };
-  }
-
-  function readIllustrationConfig() {
-    const intValue = (id, fallback) => {
-      const altId=({"dpg-img-width":"lia-image-width","dpg-img-height":"lia-image-height","dpg-img-steps":"lia-image-steps","dpg-img-timeout":"lia-image-timeout","dpg-img-seed":"lia-image-seed"})[id];
-      const raw = Number(document.getElementById(id)?.value ?? (altId?document.getElementById(altId)?.value:undefined));
-      return Number.isFinite(raw) ? raw : fallback;
-    };
-    return normalizeIllustrationConfig({
-      enabled: document.getElementById("dpg-img-enabled")?.checked ?? document.getElementById("lia-image-enabled")?.checked ?? true,
-      provider: String(document.getElementById("dpg-img-provider")?.value || document.getElementById("lia-image-provider")?.value || "wellspring-nai"),
-      endpoint: String(document.getElementById("dpg-img-endpoint")?.value ?? document.getElementById("lia-image-endpoint")?.value ?? "").trim(),
-      apiKey: document.getElementById("lia-image-clear-api-key")?.checked===true?"":String(document.getElementById("dpg-img-key")?.value || document.getElementById("lia-image-key")?.value || normalizeIllustrationConfig(liaMockupContext?.savedIllustrationConfig||{}).apiKey || "").trim(),
-      apiKeyHeader: String(document.getElementById("dpg-img-key-header")?.value || normalizeIllustrationConfig(liaMockupContext?.savedIllustrationConfig||{}).apiKeyHeader || "authorization-bearer"),
-      model: String(document.getElementById("dpg-img-model")?.value ?? document.getElementById("lia-image-model")?.value ?? "").trim(),
-      checkpoint: String(document.getElementById("dpg-img-checkpoint")?.value ?? document.getElementById("lia-image-checkpoint")?.value ?? "").trim(),
-      width: intValue("dpg-img-width", 832),
-      height: intValue("dpg-img-height", 1216),
-      steps: intValue("dpg-img-steps", 28),
-      cfg: Number(document.getElementById("dpg-img-cfg")?.value ?? document.getElementById("lia-image-cfg")?.value ?? 5.5),
-      sampler: String(document.getElementById("dpg-img-sampler")?.value ?? document.getElementById("lia-image-sampler")?.value ?? "k_euler_ancestral").trim(),
-      seed: intValue("dpg-img-seed", -1),
-      timeoutMs: intValue("dpg-img-timeout", Number(normalizeIllustrationConfig(liaMockupContext?.savedIllustrationConfig||{}).timeoutMs||120000)),
-      responsePath: String(document.getElementById("dpg-img-response-path")?.value ?? document.getElementById("lia-image-response-path")?.value ?? "").trim(),
-      requestTemplateJson: String(document.getElementById("dpg-img-request-template")?.value ?? document.getElementById("lia-image-request")?.value ?? "").trim(),
-      workflowJson: String(document.getElementById("dpg-img-workflow")?.value ?? document.getElementById("lia-image-workflow")?.value ?? "").trim(),
-      workflowBindingJson: String(document.getElementById("dpg-img-binding-profile")?.value ?? document.getElementById("lia-image-binding-profile")?.value ?? normalizeIllustrationConfig(liaMockupContext?.savedIllustrationConfig||{}).workflowBindingJson ?? "").trim(),
-      headersJson: String(document.getElementById("dpg-img-headers")?.value ?? document.getElementById("lia-image-headers")?.value ?? "").trim(),
-      stylePrompt: String(document.getElementById("dpg-img-style")?.value ?? document.getElementById("lia-image-style")?.value ?? "").trim(),
-      negativePrompt: String(document.getElementById("dpg-img-negative")?.value ?? document.getElementById("lia-image-negative")?.value ?? "").trim(),
-      extraNegativePrompt: String(document.getElementById("dpg-img-extra-negative")?.value ?? normalizeIllustrationConfig(liaMockupContext?.savedIllustrationConfig||{}).extraNegativePrompt ?? "").trim(),
-      transparentBackground: false,
-      runtimeAttachEnabled: document.getElementById("dpg-img-runtime-attach")?.checked ?? document.getElementById("lia-image-runtime-attach")?.checked ?? true,
-      runtimeNeutralFallback: document.getElementById("dpg-img-runtime-neutral")?.checked ?? document.getElementById("lia-image-runtime-neutral")?.checked ?? true,
-      runtimeMinScore: Number(document.getElementById("dpg-img-runtime-score")?.value ?? document.getElementById("lia-image-runtime-score")?.value ?? 2.0),
-      advancedJson: String(document.getElementById("dpg-img-advanced")?.value ?? document.getElementById("lia-image-advanced")?.value ?? "").trim(),
-    });
-  }
-
-  async function readStoredIllustrationConfig(force = false) {
-    if (!force && cachedIllustrationConfig) return normalizeIllustrationConfig(cachedIllustrationConfig);
-    try {
-      const storage = await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
-      const raw = storage?.getItem ? await storage.getItem(ILLUSTRATION_CONFIG_STORAGE_KEY) : null;
-      const parsed = typeof raw === "string" ? JSON.parse(raw) : (raw || {});
-      cachedIllustrationConfig = normalizeIllustrationConfig(parsed);
-    } catch (_) {
-      return normalizeIllustrationConfig();
-    }
-    return normalizeIllustrationConfig(cachedIllustrationConfig);
-  }
-
-  async function writeStoredIllustrationConfig(config) {
-    const normalized = normalizeIllustrationConfig(config);
-    const storage = await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
-    if (!storage?.setItem || !storage?.getItem) throw new Error("RisuAI pluginStorage가 아직 준비되지 않았습니다.");
-    await storage.setItem(ILLUSTRATION_CONFIG_STORAGE_KEY, JSON.stringify(normalized));
-    const readbackRaw = await storage.getItem(ILLUSTRATION_CONFIG_STORAGE_KEY);
-    const readbackParsed = typeof readbackRaw === "string" ? JSON.parse(readbackRaw) : (readbackRaw || {});
-    const readback = normalizeIllustrationConfig(readbackParsed);
-    if (readback.provider !== normalized.provider || readback.model !== normalized.model || readback.apiKey !== normalized.apiKey) {
-      throw new Error("삽화 Provider 설정 pluginStorage readback 검증에 실패했습니다.");
-    }
-    cachedIllustrationConfig = readback;
-    return normalized;
-  }
-
-  function normalizeVisualAssetPreset(value = {}) {
-    const rawEmotionText = String(value.emotionText || value.emotions || "").trim();
-    const emotionItems = unique(rawEmotionText.split(/\r?\n|,/).map((item) => String(item || "").trim()).filter(Boolean), 48);
-    if (!emotionItems.some((item) => normalizeEmotionKey(item) === "neutral")) emotionItems.unshift("neutral");
-    const name = String(value.name || "").normalize("NFKC").replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 64);
-    return {
-      id: String(value.id || "").trim() || `vap-${randomId()}`,
-      name,
-      emotionText: unique(emotionItems, 48).join("\n"),
-      styleNotes: String(value.styleNotes || "").trim().slice(0, 4000),
-      compositionPreset: normalizeVisualCompositionPreset(value.compositionPreset || "standard_waist_up"),
-      compositionNotes: String(value.compositionNotes || "").trim().slice(0, 4000),
-      createdAt: String(value.createdAt || new Date().toISOString()),
-      updatedAt: String(value.updatedAt || new Date().toISOString()),
-    };
-  }
-
-  function normalizeVisualAssetPresetStore(raw = {}) {
-    const source = Array.isArray(raw?.items) ? raw.items : [];
-    const items = [];
-    const seenIds = new Set();
-    const seenNames = new Set();
-    for (const value of source) {
-      const preset = normalizeVisualAssetPreset(value);
-      if (!preset.name || seenIds.has(preset.id)) continue;
-      const nameKey = preset.name.toLocaleLowerCase("ko");
-      if (seenNames.has(nameKey)) continue;
-      seenIds.add(preset.id);
-      seenNames.add(nameKey);
-      items.push(preset);
-      if (items.length >= PERSONA_VISUAL_ASSET_PRESET_MAX) break;
-    }
-    return {
-      version: PERSONA_VISUAL_ASSET_PRESET_VERSION,
-      updatedAt: String(raw?.updatedAt || new Date().toISOString()),
-      items,
-    };
-  }
-
-  async function readVisualAssetPresetStore() {
-    try {
-      const storage = await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
-      const parsed = await readLiaDurableJson(storage, PERSONA_VISUAL_ASSET_PRESET_STORAGE_KEY, 'items');
-      return normalizeVisualAssetPresetStore(parsed || {});
-    } catch (error) {
-      appendDebugLog("persona_visual", "asset_preset_store_read_failed", { error: errorForLog(error) }, "warn");
-      throw error;
-    }
-  }
-
-  async function writeVisualAssetPresetStore(store) {
-    const normalized = normalizeVisualAssetPresetStore({ ...store, updatedAt: new Date().toISOString() });
-    const storage = await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
-    if (!storage?.setItem) throw new Error("RisuAI pluginStorage가 아직 준비되지 않았습니다.");
-    await setLiaDurableItemVerified(storage, PERSONA_VISUAL_ASSET_PRESET_STORAGE_KEY, JSON.stringify(normalized), 'visual_preset_write');
-    preservedVisualAssetPresetStore = normalized;
-    return normalized;
-  }
-
-  function currentVisualAssetPresetInput() {
-    const emotionsRaw = String(document.getElementById("dpg-asset-emotions")?.value || document.getElementById("emo-list")?.value || preservedVisualEmotionText || "").trim();
-    const emotions = unique(emotionsRaw.split(/\r?\n|,/).map((item) => String(item || "").trim()).filter(Boolean), 48);
-    if (!emotions.some((item) => normalizeEmotionKey(item) === "neutral")) emotions.unshift("neutral");
-    return {
-      emotionText: unique(emotions, 48).join("\n"),
-      styleNotes: String(document.getElementById("dpg-asset-style-notes")?.value ?? document.getElementById("lia-asset-style-notes")?.value ?? preservedVisualStyleNotes ?? "").trim(),
-      compositionPreset: normalizeVisualCompositionPreset(document.getElementById("dpg-asset-composition-preset")?.value ?? document.getElementById("lia-asset-composition")?.value ?? preservedVisualCompositionPreset ?? "standard_waist_up"),
-      compositionNotes: String(document.getElementById("dpg-asset-composition-notes")?.value ?? document.getElementById("lia-asset-composition-notes")?.value ?? preservedVisualCompositionNotes ?? "").trim(),
-    };
-  }
-
-  async function saveVisualAssetPreset(name) {
-    const normalizedName = String(name || "").normalize("NFKC").replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 64);
-    if (!normalizedName) throw new Error("프리셋 이름을 입력해 주세요.");
-    const store = await readVisualAssetPresetStore();
-    const input = currentVisualAssetPresetInput();
-    const existingIndex = store.items.findIndex((item) => String(item?.name || "").trim().toLocaleLowerCase("ko") === normalizedName.toLocaleLowerCase("ko"));
-    let preset;
-    if (existingIndex >= 0) {
-      const old = store.items[existingIndex];
-      preset = normalizeVisualAssetPreset({ ...old, ...input, name: normalizedName, id: old.id, createdAt: old.createdAt, updatedAt: new Date().toISOString() });
-      store.items[existingIndex] = preset;
-    } else {
-      if (store.items.length >= PERSONA_VISUAL_ASSET_PRESET_MAX) throw new Error(`감정 에셋 프리셋은 최대 ${PERSONA_VISUAL_ASSET_PRESET_MAX}개까지 저장할 수 있습니다.`);
-      preset = normalizeVisualAssetPreset({ ...input, name: normalizedName, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-      store.items.unshift(preset);
-    }
-    await writeVisualAssetPresetStore(store);
-    preservedVisualAssetPresetId = preset.id;
-    appendDebugLog("persona_visual", "asset_preset_saved", { presetId: preset.id, name: preset.name, emotionCount: preset.emotionText.split(/\r?\n/).filter(Boolean).length, compositionPreset: preset.compositionPreset }, "info");
-    return { preset, updated: existingIndex >= 0 };
-  }
-
-  function applyVisualAssetPreset(preset) {
-    const normalized = normalizeVisualAssetPreset(preset || {});
-    if (!normalized.name) throw new Error("불러올 프리셋을 찾지 못했습니다.");
-    preservedVisualEmotionText = normalized.emotionText;
-    preservedVisualStyleNotes = normalized.styleNotes;
-    preservedVisualCompositionPreset = normalized.compositionPreset;
-    preservedVisualCompositionNotes = normalized.compositionNotes;
-    preservedVisualAssetPresetId = normalized.id;
-    return normalized;
-  }
-
-  async function deleteVisualAssetPreset(presetId) {
-    const id = String(presetId || "").trim();
-    if (!id) throw new Error("삭제할 프리셋을 선택해 주세요.");
-    const store = await readVisualAssetPresetStore();
-    const preset = store.items.find((item) => item.id === id);
-    if (!preset) throw new Error("삭제할 프리셋을 찾지 못했습니다.");
-    store.items = store.items.filter((item) => item.id !== id);
-    await writeVisualAssetPresetStore(store);
-    if (preservedVisualAssetPresetId === id) preservedVisualAssetPresetId = "";
-    appendDebugLog("persona_visual", "asset_preset_deleted", { presetId: id, name: preset.name }, "info");
-    return preset;
-  }
 
   const VISUAL_WHITE_BACKGROUND_POSITIVE = "pure white background, plain white background, seamless white studio backdrop, isolated character on white";
   const VISUAL_WHITE_BACKGROUND_NEGATIVE = "scenery, room, indoor background, outdoor background, landscape, cityscape, detailed background, colored background, grey background, gray background, black background, gradient background, patterned background, textured background, objects in background, background characters";
@@ -20491,79 +20256,65 @@ ${revisionText}`);
     ].filter(Boolean).join(", ");
   }
 
-  function createVisualGenerationLockCandidate(target, config) {
-    const styleNotes = String(document.getElementById("dpg-asset-style-notes")?.value || preservedVisualStyleNotes || "").trim();
-    preservedVisualStyleNotes = styleNotes;
-    const compositionChoice = currentVisualCompositionChoice();
-    return normalizeVisualGenerationLock({
-      confirmed: false,
-      provider: config.provider,
-      model: config.model,
-      checkpoint: config.checkpoint,
-      width: config.width,
-      height: config.height,
-      steps: config.steps,
-      cfg: config.cfg,
-      sampler: config.sampler,
-      seed: visualGenerationLockSeed(target, config),
-      identityPrompt: buildVisualIdentityPrompt(target),
-      stylePrompt: config.stylePrompt,
-      backgroundPrompt: VISUAL_WHITE_BACKGROUND_POSITIVE,
-      negativePrompt: config.negativePrompt,
-      extraNegativePrompt: [config.extraNegativePrompt, VISUAL_WHITE_BACKGROUND_NEGATIVE].filter(Boolean).join(", "),
-      styleNotes,
-      compositionPreset: compositionChoice.preset,
-      compositionPrompt: compositionChoice.definition.prompt,
-      compositionNegativePrompt: compositionChoice.definition.negativePrompt,
-      compositionNotes: compositionChoice.notes,
-      advancedJson: config.advancedJson,
-      workflowHash: hashText(String(config.workflowJson || "")),
-      workflowTopologyHash: config.provider === "comfyui-local" ? (() => { try { const resolved = resolveComfyWorkflowSource(config); return looksLikeComfyWorkflowGraph(resolved.workflow) ? comfyWorkflowTopologyHash(resolved.workflow) : ""; } catch (_) { return ""; } })() : "",
-      bindingProfileHash: config.provider === "comfyui-local" ? (() => { try { const resolved = resolveComfyWorkflowSource(config); return looksLikeComfyWorkflowGraph(resolved.workflow) ? resolveComfyBindingProfile(config, resolved.workflow).profile.profileHash : ""; } catch (_) { return ""; } })() : "",
-      requestTemplateHash: hashText(String(config.requestTemplateJson || "")),
-      createdAt: new Date().toISOString(),
-    }, { confirmed: false });
+
+  // Data-only codecs and durable readers keep historical backup payloads readable.
+  function normalizeVisualAssetPreset(value = {}) {
+    const rawEmotionText = String(value.emotionText || value.emotions || "").trim();
+    const emotionItems = unique(rawEmotionText.split(/\r?\n|,/).map((item) => String(item || "").trim()).filter(Boolean), 48);
+    if (!emotionItems.some((item) => normalizeEmotionKey(item) === "neutral")) emotionItems.unshift("neutral");
+    const name = String(value.name || "").normalize("NFKC").replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 64);
+    return {
+      id: String(value.id || "").trim() || `vap-${randomId()}`,
+      name,
+      emotionText: unique(emotionItems, 48).join("\n"),
+      styleNotes: String(value.styleNotes || "").trim().slice(0, 4000),
+      compositionPreset: normalizeVisualCompositionPreset(value.compositionPreset || "standard_waist_up"),
+      compositionNotes: String(value.compositionNotes || "").trim().slice(0, 4000),
+      createdAt: String(value.createdAt || new Date().toISOString()),
+      updatedAt: String(value.updatedAt || new Date().toISOString()),
+    };
   }
 
-  function lockedIllustrationConfig(currentConfig, lock) {
-    const normalizedLock = normalizeVisualGenerationLock(lock, { confirmed: true });
-    if (!normalizedLock?.confirmed) throw new Error("Neutral Visual Generation Lock이 확정되지 않았습니다.");
-    const current = normalizeIllustrationConfig(currentConfig || {});
-    if (normalizeIllustrationProviderType(current.provider) !== normalizedLock.provider) {
-      throw new Error(`Neutral 기준 Provider(${normalizedLock.provider})와 현재 Provider(${current.provider})가 다릅니다. 기준을 다시 만들거나 Provider를 되돌려 주세요.`);
+  function normalizeVisualAssetPresetStore(raw = {}) {
+    const source = Array.isArray(raw?.items) ? raw.items : [];
+    const items = [];
+    const seenIds = new Set();
+    const seenNames = new Set();
+    for (const value of source) {
+      const preset = normalizeVisualAssetPreset(value);
+      if (!preset.name || seenIds.has(preset.id)) continue;
+      const nameKey = preset.name.toLocaleLowerCase("ko");
+      if (seenNames.has(nameKey)) continue;
+      seenIds.add(preset.id);
+      seenNames.add(nameKey);
+      items.push(preset);
+      if (items.length >= PERSONA_VISUAL_ASSET_PRESET_MAX) break;
     }
-    if (normalizedLock.provider === "comfyui-local") {
-      const resolved = resolveComfyWorkflowSource(current);
-      if (!looksLikeComfyWorkflowGraph(resolved.workflow)) throw new Error("현재 ComfyUI workflow를 읽지 못했습니다.");
-      const topologyHash = comfyWorkflowTopologyHash(resolved.workflow);
-      const bindingProfileHash = resolveComfyBindingProfile(current, resolved.workflow).profile.profileHash;
-      if (normalizedLock.workflowTopologyHash ? normalizedLock.workflowTopologyHash !== topologyHash : normalizedLock.workflowHash !== hashText(String(current.workflowJson || ""))) {
-        throw new Error("Neutral 기준 확정 후 ComfyUI Workflow 구조가 변경되었습니다. 동일성 유지를 위해 Neutral 기준을 다시 만들어 주세요.");
-      }
-      if (normalizedLock.bindingProfileHash && normalizedLock.bindingProfileHash !== bindingProfileHash) {
-        throw new Error("Neutral 기준 확정 후 ComfyUI Binding Profile이 변경되었습니다. Neutral 기준을 다시 만들어 주세요.");
-      }
+    return {
+      version: PERSONA_VISUAL_ASSET_PRESET_VERSION,
+      updatedAt: String(raw?.updatedAt || new Date().toISOString()),
+      items,
+    };
+  }
+
+  async function readVisualAssetPresetStore() {
+    try {
+      const storage = await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
+      const parsed = await readLiaDurableJson(storage, PERSONA_VISUAL_ASSET_PRESET_STORAGE_KEY, 'items');
+      return normalizeVisualAssetPresetStore(parsed || {});
+    } catch (error) {
+      appendDebugLog("persona_visual", "asset_preset_store_read_failed", { error: errorForLog(error) }, "warn");
+      throw error;
     }
-    if (normalizedLock.provider === "custom-json" && normalizedLock.requestTemplateHash !== hashText(String(current.requestTemplateJson || ""))) {
-      throw new Error("Neutral 기준 확정 후 Custom JSON template이 변경되었습니다. Neutral 기준을 다시 만들어 주세요.");
-    }
-    return normalizeIllustrationConfig({
-      ...current,
-      provider: normalizedLock.provider,
-      model: normalizedLock.model,
-      checkpoint: normalizedLock.checkpoint,
-      width: normalizedLock.width,
-      height: normalizedLock.height,
-      steps: normalizedLock.steps,
-      cfg: normalizedLock.cfg,
-      sampler: normalizedLock.sampler,
-      seed: normalizedLock.seed,
-      stylePrompt: normalizedLock.stylePrompt,
-      negativePrompt: normalizedLock.negativePrompt,
-      extraNegativePrompt: normalizedLock.extraNegativePrompt,
-      transparentBackground: false,
-      advancedJson: normalizedLock.advancedJson,
-    });
+  }
+
+  async function writeVisualAssetPresetStore(store) {
+    const normalized = normalizeVisualAssetPresetStore({ ...store, updatedAt: new Date().toISOString() });
+    const storage = await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
+    if (!storage?.setItem) throw new Error("RisuAI pluginStorage가 아직 준비되지 않았습니다.");
+    await setLiaDurableItemVerified(storage, PERSONA_VISUAL_ASSET_PRESET_STORAGE_KEY, JSON.stringify(normalized), 'visual_preset_write');
+    preservedVisualAssetPresetStore = normalized;
+    return normalized;
   }
 
   function normalizeVisualAssetEntry(entry = {}, fallbackEmotion = "") {
@@ -21062,229 +20813,6 @@ ${revisionText}`);
     };
   }
 
-  function visualEmotionDirections(label) {
-    const raw = String(label || "neutral").trim().toLowerCase();
-    const map = {
-      neutral: "neutral expression, calm face, relaxed eyebrows, closed relaxed mouth, straight natural mouth line, soft steady gaze, emotionally even expression",
-      "gentle smile": "small warm smile, kind eyes, soft expression",
-      happy: "bright happy smile, lively eyes, cheerful mood, same single-person portrait composition",
-      angry: "angry expression, tense brows, slightly glaring eyes",
-      sad: "sad expression, lowered gaze, fragile mood",
-      embarrassed: "embarrassed blush, shy gaze, awkward tension",
-      jealous: "jealous expression, subtle resentment, possessive eyes",
-      surprised: "surprised widened eyes, lifted brows, sudden reaction",
-      worried: "worried expression, anxious eyes, slight tension",
-      determined: "determined look, focused eyes, composed resolve",
-      affectionate: "affectionate loving expression, softened eyes, tender mood",
-      exhausted: "exhausted tired expression, drooping eyelids, low energy",
-    };
-    return map[raw] || `${label} expression, readable emotion, same character identity`;
-  }
-
-  function readVisualEmotionListFromUi() {
-    const raw = String(document.getElementById("dpg-asset-emotions")?.value || preservedVisualEmotionText || "").trim();
-    preservedVisualEmotionText = raw;
-    const items = unique(raw.split(/\r?\n|,/).map((item) => String(item || "").trim()).filter(Boolean), 24);
-    return items.length ? items : ["neutral"];
-  }
-
-  function normalizeCustomVisualEmotionLabel(value) {
-    return String(value || "")
-      .normalize("NFKC")
-      .replace(/[\r\n\t]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 64);
-  }
-
-  function rememberCustomVisualEmotionLabel(value) {
-    const label = normalizeCustomVisualEmotionLabel(value);
-    if (!label) return "";
-    const current = String(preservedVisualEmotionText || "")
-      .split(/\r?\n|,/)
-      .map((item) => normalizeCustomVisualEmotionLabel(item))
-      .filter(Boolean);
-    preservedVisualEmotionText = unique([...current, label], 48).join("\n");
-    return label;
-  }
-
-  function visualCompositionFramingGuard(preset) {
-    const key = normalizeVisualCompositionPreset(preset || "standard_waist_up");
-    if (key === "standard_waist_up") return "STRICT FRAMING: waist-up medium portrait, head and torso fill most of the frame, natural crop exactly at the waist, subject shown large and centered";
-    if (key === "half_body") return "STRICT FRAMING: half-body medium-long portrait, head through mid-thigh fills most of the frame, natural crop around mid-thigh, subject shown large and centered";
-    if (key === "bust_close") return "STRICT FRAMING: tight bust portrait, head shoulders and upper chest fill the frame, face large and centered, natural crop around the upper chest";
-    return "";
-  }
-
-  function visualCompositionFramingNegativeGuard(preset) {
-    const key = normalizeVisualCompositionPreset(preset || "standard_waist_up");
-    if (key === "standard_waist_up") return "full body, whole body, lower body, thighs, knees, lower legs, feet, shoes, standing full body, long shot, wide shot, distant subject, small subject in frame";
-    if (key === "half_body") return "full body, whole body, knees, lower legs, feet, shoes, standing full body, long shot, wide shot, distant subject, small subject in frame";
-    if (key === "bust_close") return "waist, hips, thighs, legs, feet, shoes, full body, half body, waist-up portrait, long shot, wide shot, zoomed out portrait, small face in frame";
-    return "";
-  }
-
-  function visualCompositionGenderGuard(target, preset) {
-    const genderProfile = inferVisualGenderProfile(target);
-    const key = normalizeVisualCompositionPreset(preset || "standard_waist_up");
-    if (key !== "bust_close") return "";
-    if (genderProfile.key === "male") return "clearly male close portrait, masculine facial structure, masculine neck and shoulders";
-    if (genderProfile.key === "female") return "clearly female close portrait, feminine facial structure, feminine neck and shoulders";
-    return "clear stable original gender presentation in the close portrait";
-  }
-
-  function visualCompositionNegativeGuard(target, preset) {
-    const genderProfile = inferVisualGenderProfile(target);
-    const key = normalizeVisualCompositionPreset(preset || "standard_waist_up");
-    if (key !== "bust_close") return "";
-    if (genderProfile.key === "male") return "feminized close-up portrait, soft feminine face, delicate feminine jawline, feminine close crop";
-    if (genderProfile.key === "female") return "masculinized close-up portrait, overly masculine face, masculine close crop";
-    return "gender-swapped close portrait, identity drift in close crop";
-  }
-
-  function personaVisualHasCameraProp(target) {
-    const spec = target?.personaSpec || {};
-    const facts = target?.facts || {};
-    const source = [
-      spec.appearance,
-      spec.role,
-      facts.appearanceDigest,
-      facts.skillDigest,
-      target?.personaPrompt,
-    ].filter(Boolean).join(" ").toLowerCase();
-    return /(\bcamera\b|\bdslr\b|\bslr\b|camera bag|camera strap|photograph(?:y|er|ic)?|photojournal|사진기|카메라|사진가|사진작가|촬영 장비)/i.test(source);
-  }
-
-  function visualCameraObjectNegativeGuard(target) {
-    if (personaVisualHasCameraProp(target)) return "";
-    return "camera, DSLR, SLR camera, camera object, camera icon, camera symbol, floating camera, photography equipment, camera graphic, camera pictogram, camera speech bubble, camera sticker";
-  }
-
-  function buildPersonaVisualPrompt(target, emotion, config, visualLock = null) {
-    const lock = normalizeVisualGenerationLock(visualLock, { confirmed: visualLock?.confirmed === true });
-    const identityPrompt = sanitizeAutomaticPositiveVisualPrompt(lock?.identityPrompt || buildVisualIdentityPrompt(target));
-    const stylePrompt = sanitizeAutomaticPositiveVisualPrompt(lock?.stylePrompt || config.stylePrompt);
-    const backgroundPrompt = lock?.backgroundPrompt || VISUAL_WHITE_BACKGROUND_POSITIVE;
-    const styleNotes = lock ? lock.styleNotes : String(document.getElementById("dpg-asset-style-notes")?.value || preservedVisualStyleNotes || "").trim();
-    const compositionChoice = lock ? {
-      preset: lock.compositionPreset,
-      notes: lock.compositionNotes,
-      definition: visualCompositionPresetDefinition(lock.compositionPreset),
-    } : currentVisualCompositionChoice();
-    if (!lock) preservedVisualStyleNotes = styleNotes;
-    return [
-      stylePrompt,
-      VISUAL_SINGLE_DEPICTION_POSITIVE,
-      identityPrompt,
-      compositionChoice.definition.prompt,
-      visualCompositionFramingGuard(compositionChoice.preset),
-      visualCompositionGenderGuard(target, compositionChoice.preset),
-      compositionChoice.notes,
-      `expression only: ${emotion}`,
-      visualEmotionDirections(emotion),
-      "facial-expression variation only, preserve identical identity, hairstyle, clothing, body proportions, framing, viewpoint, composition, and background",
-      styleNotes,
-      backgroundPrompt,
-      "consistent completely pure white background for every emotion variant",
-    ].filter(Boolean).join(", ");
-  }
-
-  function buildPersonaVisualNegativePrompt(config, visualLock = null, target = null, emotion = "") {
-    const lock = normalizeVisualGenerationLock(visualLock, { confirmed: visualLock?.confirmed === true });
-    const compositionChoice = lock ? { definition: visualCompositionPresetDefinition(lock.compositionPreset) } : currentVisualCompositionChoice();
-    const genderProfile = target ? inferVisualGenderProfile(target) : { negativeTags: "" };
-    return [
-      lock?.negativePrompt || config.negativePrompt,
-      lock?.extraNegativePrompt || config.extraNegativePrompt,
-      VISUAL_SINGLE_DEPICTION_NEGATIVE,
-      visualCameraObjectNegativeGuard(target),
-      lock?.compositionNegativePrompt || compositionChoice.definition.negativePrompt,
-      visualCompositionFramingNegativeGuard(lock?.compositionPreset || compositionChoice.definition.key),
-      visualCompositionNegativeGuard(target, lock?.compositionPreset || compositionChoice.definition.key),
-      genderProfile.negativeTags,
-      neutralExpressionNegativeTags(emotion),
-      VISUAL_WHITE_BACKGROUND_NEGATIVE,
-      "different character, different face, different hairstyle, different hair color, different eye color, different outfit, different clothing colors, different viewpoint, different framing, different crop, full body, multiple people",
-    ].filter(Boolean).join(", ");
-  }
-
-  function parseOptionalJsonObject(text) {
-    const raw = String(text || "").trim();
-    if (!raw) return {};
-    try {
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch (_) {
-      return {};
-    }
-  }
-
-  function renderTemplateString(text, vars) {
-    return String(text || "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => {
-      const value = vars[key];
-      if (value === null || value === undefined) return "";
-      return Array.isArray(value) ? JSON.stringify(value) : String(value);
-    });
-  }
-
-  function renderTemplateValue(value, vars) {
-    if (typeof value === "string") return renderTemplateString(value, vars);
-    if (Array.isArray(value)) return value.map((item) => renderTemplateValue(item, vars));
-    if (value && typeof value === "object") {
-      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, renderTemplateValue(item, vars)]));
-    }
-    return value;
-  }
-
-  function buildPersonaVisualTemplateVars(target, emotion, config, visualLock, prompt, negativePrompt) {
-    const lock = normalizeVisualGenerationLock(visualLock, { confirmed: visualLock?.confirmed === true });
-    const width = Number(lock?.width || config.width) || 832;
-    const height = Number(lock?.height || config.height) || 1216;
-    const baseSeed = Number.isFinite(Number(lock?.seed)) && Number(lock.seed) >= 0
-      ? Math.floor(Number(lock.seed))
-      : visualGenerationLockSeed(target, config);
-    return {
-      prompt,
-      positive_prompt: prompt,
-      negative: negativePrompt,
-      negative_prompt: negativePrompt,
-      emotion,
-      name: target.personaName,
-      width,
-      height,
-      steps: Number(lock?.steps || config.steps) || 28,
-      cfg: Number(lock?.cfg || config.cfg) || 5.5,
-      sampler: lock?.sampler || config.sampler || "k_euler_ancestral",
-      seed: baseSeed,
-      model: lock?.model || config.model || "",
-      checkpoint: lock?.checkpoint || config.checkpoint || "",
-      white_background: VISUAL_WHITE_BACKGROUND_POSITIVE,
-      transparent_background: "false",
-    };
-  }
-
-  function buildNaiPayload(config, vars) {
-    const advanced = parseOptionalJsonObject(config.advancedJson);
-    const payload = {
-      input: vars.prompt,
-      model: vars.model || undefined,
-      action: "generate",
-      parameters: {
-        ...advanced,
-        width: vars.width,
-        height: vars.height,
-        steps: vars.steps,
-        scale: vars.cfg,
-        cfg_scale: vars.cfg,
-        sampler: vars.sampler,
-        seed: vars.seed,
-        n_samples: 1,
-        negative_prompt: vars.negative,
-        uc: vars.negative,
-      },
-    };
-    return payload;
-  }
 
   function collectImageStringsFromJson(value, out = []) {
     if (!value) return out;
@@ -21574,685 +21102,6 @@ ${revisionText}`);
     }
   }
 
-  function comfyBaseUrl(endpoint) {
-    return String(endpoint || "").replace(/\/+$/, "");
-  }
-
-
-  function looksLikeComfyWorkflowGraph(value) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-    const graph = value.prompt && typeof value.prompt === "object" && !Array.isArray(value.prompt) ? value.prompt : value;
-    return Object.values(graph).some((node) => node && typeof node === "object" && typeof node.class_type === "string" && node.inputs && typeof node.inputs === "object");
-  }
-
-  function looksLikeComfyWorkflowText(value) {
-    const raw = String(value || "").trim();
-    if (!raw.startsWith("{")) return false;
-    try { return looksLikeComfyWorkflowGraph(JSON.parse(raw)); } catch (_) { return false; }
-  }
-
-  function resolveComfyWorkflowSource(config = {}) {
-    const workflowRaw = String(config?.workflowJson || "").trim();
-    if (workflowRaw) {
-      try {
-        const parsed = JSON.parse(workflowRaw);
-        if (looksLikeComfyWorkflowGraph(parsed)) return { workflow: parsed, raw: workflowRaw, source: "workflowJson" };
-      } catch (_) {}
-    }
-    const modelRaw = String(config?.model || "").trim();
-    if (looksLikeComfyWorkflowText(modelRaw)) {
-      try {
-        return { workflow: JSON.parse(modelRaw), raw: modelRaw, source: "model_field_fallback" };
-      } catch (_) {}
-    }
-    return { workflow: {}, raw: workflowRaw || modelRaw, source: workflowRaw ? "workflowJson_invalid" : "missing" };
-  }
-
-  function comfyPromptGraph(workflow) {
-    return workflow?.prompt && typeof workflow.prompt === "object" && !Array.isArray(workflow.prompt) ? workflow.prompt : workflow;
-  }
-
-  function comfyInputReferencesNode(value, nodeId) {
-    const target = String(nodeId || "");
-    if (!target) return false;
-    if (Array.isArray(value)) {
-      if (value.length >= 2 && String(value[0]) === target && Number.isFinite(Number(value[1]))) return true;
-      return value.some((item) => comfyInputReferencesNode(item, target));
-    }
-    if (value && typeof value === "object") return Object.values(value).some((item) => comfyInputReferencesNode(item, target));
-    return false;
-  }
-
-  function comfyIsNodeRef(value) {
-    return Array.isArray(value) && value.length >= 2 && String(value[0] ?? "").trim() && Number.isFinite(Number(value[1]));
-  }
-
-  function comfyGetNodeRef(value) {
-    return comfyIsNodeRef(value) ? { nodeId: String(value[0]), outputIndex: Number(value[1]) } : null;
-  }
-
-  function comfyStableValue(value) {
-    if (Array.isArray(value)) return value.map((item) => comfyStableValue(item));
-    if (!value || typeof value !== "object") return value;
-    const out = {};
-    Object.keys(value).sort().forEach((key) => { out[key] = comfyStableValue(value[key]); });
-    return out;
-  }
-
-  function comfyWorkflowTopologyObject(workflow) {
-    const graph = comfyPromptGraph(workflow) || {};
-    const nodes = {};
-    Object.keys(graph).sort().forEach((nodeId) => {
-      const node = graph[nodeId] || {};
-      const inputs = {};
-      Object.keys(node.inputs || {}).sort().forEach((key) => {
-        const value = node.inputs[key];
-        if (comfyIsNodeRef(value)) inputs[key] = [String(value[0]), Number(value[1])];
-        else if (Array.isArray(value)) inputs[key] = value.map((item) => comfyIsNodeRef(item) ? [String(item[0]), Number(item[1])] : typeof item);
-        else inputs[key] = typeof value;
-      });
-      nodes[nodeId] = { classType: String(node.class_type || ""), inputKeys: Object.keys(inputs), inputs };
-    });
-    return nodes;
-  }
-
-  function comfyWorkflowTopologyHash(workflow) {
-    return hashText(JSON.stringify(comfyStableValue(comfyWorkflowTopologyObject(workflow))));
-  }
-
-  function comfyBuildConsumers(graph) {
-    const consumers = new Map();
-    for (const [consumerId, node] of Object.entries(graph || {})) {
-      const walk = (value, path = "inputs") => {
-        if (comfyIsNodeRef(value)) {
-          const sourceId = String(value[0]);
-          if (!consumers.has(sourceId)) consumers.set(sourceId, []);
-          consumers.get(sourceId).push({ consumerId: String(consumerId), path, outputIndex: Number(value[1]) });
-          return;
-        }
-        if (Array.isArray(value)) value.forEach((item, index) => walk(item, `${path}.${index}`));
-        else if (value && typeof value === "object") Object.entries(value).forEach(([key, item]) => walk(item, `${path}.${key}`));
-      };
-      Object.entries(node?.inputs || {}).forEach(([key, value]) => walk(value, `inputs.${key}`));
-    }
-    return consumers;
-  }
-
-  function comfyCollectUpstream(graph, startRef, maxDepth = 18) {
-    const start = comfyGetNodeRef(startRef);
-    if (!start) return [];
-    const out = [];
-    const queue = [{ nodeId: start.nodeId, depth: 0 }];
-    const seen = new Set();
-    while (queue.length) {
-      const current = queue.shift();
-      if (!current || current.depth > maxDepth || seen.has(current.nodeId)) continue;
-      seen.add(current.nodeId);
-      const node = graph?.[current.nodeId];
-      if (!node) continue;
-      out.push({ nodeId: current.nodeId, node, depth: current.depth });
-      const visit = (value) => {
-        const ref = comfyGetNodeRef(value);
-        if (ref) queue.push({ nodeId: ref.nodeId, depth: current.depth + 1 });
-        else if (Array.isArray(value)) value.forEach(visit);
-        else if (value && typeof value === "object") Object.values(value).forEach(visit);
-      };
-      Object.values(node.inputs || {}).forEach(visit);
-    }
-    return out;
-  }
-
-  function comfySamplerScore(node) {
-    const inputs = node?.inputs || {};
-    let score = 0;
-    if (Object.prototype.hasOwnProperty.call(inputs, "positive")) score += 10;
-    if (Object.prototype.hasOwnProperty.call(inputs, "negative")) score += 10;
-    if (Object.prototype.hasOwnProperty.call(inputs, "model")) score += 4;
-    if (Object.prototype.hasOwnProperty.call(inputs, "latent_image") || Object.prototype.hasOwnProperty.call(inputs, "latent")) score += 4;
-    if (Object.prototype.hasOwnProperty.call(inputs, "seed") || Object.prototype.hasOwnProperty.call(inputs, "noise_seed")) score += 4;
-    if (Object.prototype.hasOwnProperty.call(inputs, "steps")) score += 2;
-    if (Object.prototype.hasOwnProperty.call(inputs, "cfg")) score += 2;
-    if (Object.prototype.hasOwnProperty.call(inputs, "sampler_name")) score += 2;
-    return score;
-  }
-
-  function comfyOutputScore(node, nodeId, consumers, graph) {
-    const inputs = node?.inputs || {};
-    let score = 0;
-    if (Object.prototype.hasOwnProperty.call(inputs, "images") || Object.prototype.hasOwnProperty.call(inputs, "image")) score += 8;
-    if (!consumers.has(String(nodeId)) || !(consumers.get(String(nodeId)) || []).length) score += 6;
-    if (/save|preview|output/i.test(String(node?.class_type || ""))) score += 4;
-    const imageRef = comfyGetNodeRef(inputs.images) || comfyGetNodeRef(inputs.image);
-    if (imageRef) {
-      const upstream = comfyCollectUpstream(graph, [imageRef.nodeId, imageRef.outputIndex]);
-      const bestSampler = upstream.reduce((best, item) => Math.max(best, comfySamplerScore(item.node)), 0);
-      score += Math.min(12, bestSampler / 2);
-    }
-    return score;
-  }
-
-  function comfyFindOutputCandidate(graph) {
-    const consumers = comfyBuildConsumers(graph);
-    const candidates = Object.entries(graph || {}).map(([nodeId, node]) => ({ nodeId: String(nodeId), node, score: comfyOutputScore(node, nodeId, consumers, graph) }))
-      .filter((item) => item.score >= 8)
-      .sort((a, b) => b.score - a.score || Number(b.nodeId) - Number(a.nodeId));
-    return candidates[0] || null;
-  }
-
-  function comfyFindSamplerForOutput(graph, output) {
-    if (!output?.node) return null;
-    const startRef = comfyGetNodeRef(output.node?.inputs?.images) || comfyGetNodeRef(output.node?.inputs?.image);
-    const roots = startRef ? comfyCollectUpstream(graph, [startRef.nodeId, startRef.outputIndex]) : [];
-    return roots.map((item) => ({ ...item, score: comfySamplerScore(item.node) - item.depth * 0.15 }))
-      .filter((item) => item.score >= 18)
-      .sort((a, b) => b.score - a.score)[0] || null;
-  }
-
-  function comfyStringCandidateScore(item, role = "positive") {
-    const value = String(item?.value || "");
-    if (!value.trim()) return -999;
-    let score = Math.min(12, value.length / 120);
-    if (/^(?:text|value|string|prompt)$/i.test(String(item?.key || ""))) score += 8;
-    if (item.depth <= 2) score += 2;
-    if (/^\s*\[[^\]\r\n]{1,64}\]/m.test(value)) score += 3;
-    const title = String(item?.node?._meta?.title || "");
-    if (role === "negative" && /negative|부정|neg\b/i.test(title)) score += 4;
-    if (role === "positive" && /positive|긍정|prompt/i.test(title) && !/negative|부정/i.test(title)) score += 2;
-    if (/^(?:true|false|-?\d+(?:\.\d+)?)$/i.test(value.trim())) score -= 20;
-    return score;
-  }
-
-  function comfyFindTextSource(graph, startRef, role) {
-    const upstream = comfyCollectUpstream(graph, startRef, 22);
-    const candidates = [];
-    for (const item of upstream) {
-      for (const [key, value] of Object.entries(item.node?.inputs || {})) {
-        if (typeof value !== "string") continue;
-        const candidate = { ...item, key, path: `inputs.${key}`, value };
-        candidate.score = comfyStringCandidateScore(candidate, role);
-        if (candidate.score > 0) candidates.push(candidate);
-      }
-    }
-    return candidates.sort((a, b) => b.score - a.score || b.value.length - a.value.length)[0] || null;
-  }
-
-  function comfyParseStructuredSections(text) {
-    const source = String(text || "");
-    const markerRegex = /^\[([^\]\r\n]{1,64})\]\s*$/gm;
-    const matches = [];
-    let match = null;
-    while ((match = markerRegex.exec(source))) matches.push({ marker: String(match[1] || "").trim(), start: match.index, after: markerRegex.lastIndex });
-    if (!matches.length) return { source, preamble: source, sections: [] };
-    const sections = matches.map((item, index) => {
-      const end = index + 1 < matches.length ? matches[index + 1].start : source.length;
-      return { ...item, end, content: source.slice(item.after, end).replace(/^\r?\n/, "").replace(/\s+$/, "") };
-    });
-    return { source, preamble: source.slice(0, matches[0].start).replace(/\s+$/, ""), sections };
-  }
-
-  function comfyStructuredSectionPromptScore(section) {
-    const value = String(section?.content || "").trim();
-    const marker = String(section?.marker || "").trim();
-    if (!value) return -4;
-    let score = 0;
-    if (value.length >= 120) score += 4;
-    if (value.length >= 300) score += 4;
-    const commaCount = (value.match(/,/g) || []).length;
-    if (commaCount >= 6) score += 2;
-    if (/[.!?]\s|\b(?:portrait|character|background|expression|hair|eyes|quality)\b/i.test(value)) score += 1;
-    if (/^[\[{].*[\]}]$/s.test(value)) score -= 6;
-    if (/^(?:true|false|-?\d+(?:\.\d+)?)$/i.test(value)) score -= 8;
-    if (/\\|\.safetensors\b|\.pt\b|\.ckpt\b|\.bin\b/i.test(value)) score -= 6;
-    if (/(?:ENABLE|ENABLED|ACTIVATE|SEED|WIDTH|HEIGHT|SIZE|PATH|DIR|CACHE|COUNT|MODEL|LORA|ADAPTER|FACE|IDENTITY|REFERENCE|CHAR(?:ACTER)?)/i.test(marker)) score -= 3;
-    return score;
-  }
-
-  function comfyStructuredGroupKey(marker) {
-    const raw = String(marker || "").trim();
-    return (raw.split(/[_:\-]/)[0] || raw).toUpperCase();
-  }
-
-  function comfyReplaceStructuredSection(parsed, marker, value) {
-    const source = String(parsed?.source || "");
-    const wanted = String(marker || "");
-    const section = (parsed?.sections || []).find((item) => item.marker === wanted);
-    if (!section) return source;
-    const replacement = String(value ?? "").trim();
-    const tail = source.slice(section.end);
-    const separator = tail && !/^\r?\n/.test(tail) ? "\n" : "";
-    return `${source.slice(0, section.after)}\n${replacement}${separator}${tail}`;
-  }
-
-  function comfyRewriteStructuredPrompt(source, prompt, role = "positive") {
-    const parsed = comfyParseStructuredSections(source);
-    const value = String(prompt || "").trim();
-    if (!parsed.sections.length) return value;
-    let rebuilt = String(parsed.source || "");
-    if (role === "negative") {
-      if (String(parsed.preamble || "").trim()) rebuilt = `${value}\n${rebuilt.slice(parsed.sections[0].start)}`;
-      const candidates = parsed.sections.filter((section) => comfyStructuredSectionPromptScore(section) >= 3);
-      for (const section of candidates) rebuilt = comfyReplaceStructuredSection(comfyParseStructuredSections(rebuilt), section.marker, value);
-      return rebuilt;
-    }
-    const scored = parsed.sections.map((section) => ({ section, score: comfyStructuredSectionPromptScore(section) }));
-    let targets = scored.filter((item) => item.score >= 5);
-    if (!targets.length) targets = scored.sort((a, b) => b.score - a.score).slice(0, 1).filter((item) => item.score > 0);
-    const shortContext = scored.filter((item) => item.score >= 0 && item.score < 5 && String(item.section.content || "").trim().length >= 12);
-    for (const target of targets) {
-      const group = comfyStructuredGroupKey(target.section.marker);
-      const prefixParts = shortContext.filter((item) => comfyStructuredGroupKey(item.section.marker) === group).map((item) => String(item.section.content || "").trim()).filter(Boolean);
-      const replacement = [...new Set(prefixParts), value].filter(Boolean).join(", ");
-      rebuilt = comfyReplaceStructuredSection(comfyParseStructuredSections(rebuilt), target.section.marker, replacement || value);
-    }
-    // Generic identity-resource sanitization. It keys off semantics and value shape, never a specific custom-node family.
-    let current = comfyParseStructuredSections(rebuilt);
-    for (const section of current.sections) {
-      const marker = String(section.marker || "");
-      const content = String(section.content || "").trim();
-      const identityResource = /(CHAR(?:ACTER)?|IDENTITY|FACE|LORA|ADAPTER|EMBED|CACHE|REFERENCE|REF|IPA)/i.test(marker);
-      if (!identityResource) continue;
-      let replacement = null;
-      if (/(ACTIVATE|ENABLE|ENABLED|USE)$/i.test(marker) && /^(?:true|false|0|1)$/i.test(content)) replacement = "false";
-      else if (/^[\[{]/.test(content)) replacement = content.trim().startsWith("[") ? "[]" : '{"list":[]}' ;
-      else if (/(?:CHAR(?:ACTER)?|IDENTITY)/i.test(marker) && content.length < 800) replacement = "";
-      else if (/\\|\/|\.safetensors\b|\.pt\b|\.ckpt\b|\.bin\b/i.test(content)) replacement = "";
-      if (replacement !== null) rebuilt = comfyReplaceStructuredSection(comfyParseStructuredSections(rebuilt), marker, replacement);
-      current = comfyParseStructuredSections(rebuilt);
-    }
-    return rebuilt;
-  }
-
-  function comfyFindTaggedScalarBinding(sourceCandidate, slot) {
-    if (!sourceCandidate?.value) return null;
-    const parsed = comfyParseStructuredSections(sourceCandidate.value);
-    if (!parsed.sections.length) return null;
-    const markerScore = (marker) => {
-      const raw = String(marker || "").toUpperCase();
-      if (slot === "width") return /WIDTH|(?:^|[_:\-])W$/.test(raw) ? 10 : 0;
-      if (slot === "height") return /HEIGHT|(?:^|[_:\-])H$/.test(raw) ? 10 : 0;
-      if (slot === "seed") return /SEED|RNG|NOISE[_:\-]?SEED/.test(raw) ? 10 : 0;
-      return 0;
-    };
-    const candidates = parsed.sections.map((section) => ({ section, score: markerScore(section.marker), numeric: Number(String(section.content || "").trim()) }))
-      .filter((item) => item.score > 0 && Number.isFinite(item.numeric))
-      .sort((a, b) => b.score - a.score);
-    if (!candidates.length) return null;
-    return { nodeId: sourceCandidate.nodeId, path: sourceCandidate.path, operation: "replace_tagged_value", marker: candidates[0].section.marker, valueType: slot === "seed" ? "integer" : "number" };
-  }
-
-  function comfySetPath(root, path, value) {
-    const parts = String(path || "").split(".").filter(Boolean);
-    if (!parts.length) return false;
-    let current = root;
-    for (let i = 0; i < parts.length - 1; i += 1) {
-      const part = parts[i];
-      if (!current || typeof current !== "object" || !(part in current)) return false;
-      current = current[part];
-    }
-    if (!current || typeof current !== "object") return false;
-    current[parts[parts.length - 1]] = value;
-    return true;
-  }
-
-  function comfyGetPath(root, path) {
-    return String(path || "").split(".").filter(Boolean).reduce((current, part) => current && typeof current === "object" ? current[part] : undefined, root);
-  }
-
-  function comfyFindDirectScalarBinding(graph, sampler, slot) {
-    const keyCandidates = slot === "seed" ? ["seed", "noise_seed"] : [slot];
-    if (slot === "steps" || slot === "cfg" || slot === "sampler_name" || slot === "scheduler") {
-      for (const key of keyCandidates) {
-        const value = sampler?.node?.inputs?.[key];
-        if ((typeof value === "number" || typeof value === "string") && !comfyIsNodeRef(value)) return { nodeId: sampler.nodeId, path: `inputs.${key}`, operation: "set_value", valueType: slot === "steps" ? "integer" : slot === "cfg" ? "number" : "string", controlled: false };
-      }
-      return null;
-    }
-    if (slot === "seed") {
-      for (const key of keyCandidates) {
-        const value = sampler?.node?.inputs?.[key];
-        if (typeof value === "number" && !comfyIsNodeRef(value)) return { nodeId: sampler.nodeId, path: `inputs.${key}`, operation: "set_value", valueType: "integer", controlled: true };
-      }
-      return null;
-    }
-    if (slot === "width" || slot === "height") {
-      const latentRef = sampler?.node?.inputs?.latent_image || sampler?.node?.inputs?.latent;
-      const upstream = comfyCollectUpstream(graph, latentRef, 10);
-      for (const item of upstream) {
-        const value = item.node?.inputs?.[slot];
-        if (typeof value === "number" && !comfyIsNodeRef(value)) return { nodeId: item.nodeId, path: `inputs.${slot}`, operation: "set_value", valueType: "integer", controlled: true };
-      }
-    }
-    return null;
-  }
-
-  function analyzeComfyWorkflowBinding(workflow) {
-    const graph = comfyPromptGraph(workflow);
-    if (!graph || typeof graph !== "object") throw new Error("ComfyUI API workflow graph를 읽을 수 없습니다.");
-    const output = comfyFindOutputCandidate(graph);
-    if (!output) throw new Error("최종 이미지 Output 후보를 찾지 못했습니다.");
-    const sampler = comfyFindSamplerForOutput(graph, output);
-    if (!sampler) throw new Error("최종 출력으로 이어지는 샘플러를 찾지 못했습니다. Positive/Negative 입력이 연결된 생성 노드가 필요합니다.");
-    const positiveRoot = sampler.node?.inputs?.positive;
-    const negativeRoot = sampler.node?.inputs?.negative;
-    const positiveSource = comfyFindTextSource(graph, positiveRoot, "positive");
-    const negativeSource = comfyFindTextSource(graph, negativeRoot, "negative");
-    if (!positiveSource) throw new Error("Positive Prompt 원본 문자열을 그래프에서 추적하지 못했습니다.");
-    if (!negativeSource) throw new Error("Negative Prompt 원본 문자열을 그래프에서 추적하지 못했습니다.");
-    const positiveStructured = comfyParseStructuredSections(positiveSource.value).sections.length > 0;
-    const negativeStructured = comfyParseStructuredSections(negativeSource.value).sections.length > 0;
-    const bindings = [
-      { slot: "positive_prompt", nodeId: positiveSource.nodeId, path: positiveSource.path, operation: positiveStructured ? "rewrite_structured_prompt" : "set_value", role: "positive", valueType: "string" },
-      { slot: "negative_prompt", nodeId: negativeSource.nodeId, path: negativeSource.path, operation: negativeStructured ? "rewrite_structured_prompt" : "set_value", role: "negative", valueType: "string" },
-    ];
-    for (const slot of ["width", "height", "seed"]) {
-      let binding = comfyFindDirectScalarBinding(graph, sampler, slot);
-      if (!binding) binding = comfyFindTaggedScalarBinding(positiveSource, slot);
-      if (binding) bindings.push({ slot, ...binding, controlled: true });
-    }
-    const effectiveReaders = {};
-    for (const slot of ["steps", "cfg", "sampler_name", "scheduler"]) {
-      const reader = comfyFindDirectScalarBinding(graph, sampler, slot);
-      if (reader) effectiveReaders[slot] = { nodeId: reader.nodeId, path: reader.path, valueType: reader.valueType };
-    }
-    for (const slot of ["width", "height", "seed"]) {
-      const binding = bindings.find((item) => item.slot === slot);
-      if (binding) effectiveReaders[slot] = { nodeId: binding.nodeId, path: binding.path, operation: binding.operation, marker: binding.marker || "", valueType: binding.valueType };
-    }
-    const warnings = [];
-    for (const slot of ["width", "height", "seed"]) if (!bindings.some((item) => item.slot === slot)) warnings.push(`${slot}는 자동 바인딩하지 못해 Workflow 고정값을 사용합니다.`);
-    const profile = {
-      schema: COMFY_BINDING_PROFILE_SCHEMA,
-      version: COMFY_BINDING_PROFILE_VERSION,
-      topologyHash: comfyWorkflowTopologyHash(workflow),
-      output: { nodeId: output.nodeId, imageIndex: 0 },
-      sampler: { nodeId: sampler.nodeId },
-      bindings,
-      effectiveReaders,
-      analysis: {
-        confidence: warnings.length ? "medium" : "high",
-        warnings,
-        positiveSource: `${positiveSource.nodeId}:${positiveSource.path}`,
-        negativeSource: `${negativeSource.nodeId}:${negativeSource.path}`,
-        outputNodeId: output.nodeId,
-        samplerNodeId: sampler.nodeId,
-      },
-    };
-    profile.profileHash = hashText(JSON.stringify(comfyStableValue({ ...profile, profileHash: undefined })));
-    return profile;
-  }
-
-  function normalizeComfyBindingProfile(value, workflow = null) {
-    if (!value || typeof value !== "object") return null;
-    if (String(value.schema || "") !== COMFY_BINDING_PROFILE_SCHEMA) return null;
-    const profile = {
-      schema: COMFY_BINDING_PROFILE_SCHEMA,
-      version: COMFY_BINDING_PROFILE_VERSION,
-      topologyHash: String(value.topologyHash || "").trim(),
-      output: { nodeId: String(value.output?.nodeId || "").trim(), imageIndex: Math.max(0, Math.floor(Number(value.output?.imageIndex || 0))) },
-      sampler: { nodeId: String(value.sampler?.nodeId || "").trim() },
-      bindings: Array.isArray(value.bindings) ? value.bindings.map((item) => ({ ...item, slot: String(item?.slot || "").trim(), nodeId: String(item?.nodeId || "").trim(), path: String(item?.path || "").trim(), operation: String(item?.operation || "set_value").trim(), marker: String(item?.marker || "").trim(), role: String(item?.role || "").trim(), valueType: String(item?.valueType || "string").trim(), controlled: item?.controlled !== false })).filter((item) => item.slot && item.nodeId && item.path) : [],
-      effectiveReaders: value.effectiveReaders && typeof value.effectiveReaders === "object" ? value.effectiveReaders : {},
-      analysis: value.analysis && typeof value.analysis === "object" ? value.analysis : {},
-    };
-    if (!profile.output.nodeId || !profile.bindings.some((item) => item.slot === "positive_prompt") || !profile.bindings.some((item) => item.slot === "negative_prompt")) return null;
-    if (workflow && profile.topologyHash && profile.topologyHash !== comfyWorkflowTopologyHash(workflow)) return null;
-    profile.profileHash = hashText(JSON.stringify(comfyStableValue({ ...profile, profileHash: undefined })));
-    return profile;
-  }
-
-  function resolveComfyBindingProfile(config, workflow) {
-    const raw = String(config?.workflowBindingJson || "").trim();
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        const normalized = normalizeComfyBindingProfile(parsed, workflow);
-        if (normalized) return { profile: normalized, source: "saved_profile" };
-      } catch (_) {}
-    }
-    const profile = analyzeComfyWorkflowBinding(workflow);
-    return { profile, source: "auto_analyzed" };
-  }
-
-  function comfyReadTaggedScalar(text, marker) {
-    const parsed = comfyParseStructuredSections(text);
-    const section = parsed.sections.find((item) => item.marker === marker);
-    if (!section) return null;
-    const value = Number(String(section.content || "").trim());
-    return Number.isFinite(value) ? value : null;
-  }
-
-  function comfyApplyBinding(graph, binding, vars) {
-    const node = graph?.[binding.nodeId];
-    if (!node) throw new Error(`Binding node ${binding.nodeId}를 Workflow에서 찾지 못했습니다.`);
-    const slotValues = {
-      positive_prompt: String(vars?.prompt || ""),
-      negative_prompt: String(vars?.negative || ""),
-      width: Number(vars?.width || 0),
-      height: Number(vars?.height || 0),
-      seed: Number.isFinite(Number(vars?.seed)) ? Math.floor(Number(vars.seed)) : 0,
-      steps: Number(vars?.steps || 0),
-      cfg: Number(vars?.cfg || 0),
-      sampler_name: String(vars?.sampler || ""),
-      scheduler: String(vars?.scheduler || ""),
-    };
-    const value = slotValues[binding.slot];
-    const current = comfyGetPath(node, binding.path);
-    if (binding.operation === "rewrite_structured_prompt") {
-      if (typeof current !== "string") throw new Error(`${binding.slot} structured binding 대상이 문자열이 아닙니다.`);
-      return comfySetPath(node, binding.path, comfyRewriteStructuredPrompt(current, value, binding.role || (binding.slot === "negative_prompt" ? "negative" : "positive")));
-    }
-    if (binding.operation === "replace_tagged_value") {
-      if (typeof current !== "string" || !binding.marker) throw new Error(`${binding.slot} tagged binding 대상 또는 marker가 올바르지 않습니다.`);
-      const parsed = comfyParseStructuredSections(current);
-      const replacement = binding.valueType === "integer" ? String(Math.floor(Number(value) || 0)) : String(Number(value) || 0);
-      return comfySetPath(node, binding.path, comfyReplaceStructuredSection(parsed, binding.marker, replacement));
-    }
-    let typed = value;
-    if (binding.valueType === "integer") typed = Math.floor(Number(value) || 0);
-    else if (binding.valueType === "number") typed = Number(value) || 0;
-    else if (binding.valueType === "boolean") typed = Boolean(value);
-    else typed = String(value ?? "");
-    return comfySetPath(node, binding.path, typed);
-  }
-
-  function comfyReadEffectiveValue(graph, reader) {
-    const node = graph?.[String(reader?.nodeId || "")];
-    if (!node) return null;
-    const current = comfyGetPath(node, String(reader?.path || ""));
-    if (reader?.operation === "replace_tagged_value" && reader?.marker && typeof current === "string") return comfyReadTaggedScalar(current, reader.marker);
-    if (reader?.valueType === "integer" || reader?.valueType === "number") {
-      const number = Number(current);
-      return Number.isFinite(number) ? number : null;
-    }
-    return current ?? null;
-  }
-
-  function compileComfyWorkflow(config, vars) {
-    const resolved = resolveComfyWorkflowSource(config);
-    if (!looksLikeComfyWorkflowGraph(resolved.workflow)) throw new Error("ComfyUI workflow JSON이 비어 있거나 API workflow 형식이 아닙니다.");
-    const cloned = JSON.parse(JSON.stringify(resolved.workflow));
-    const graph = comfyPromptGraph(cloned);
-    const profileResult = resolveComfyBindingProfile(config, cloned);
-    const profile = profileResult.profile;
-    for (const binding of profile.bindings || []) {
-      if (binding.controlled === false && !["positive_prompt", "negative_prompt"].includes(binding.slot)) continue;
-      comfyApplyBinding(graph, binding, vars);
-    }
-    const effectiveValues = {};
-    for (const [slot, reader] of Object.entries(profile.effectiveReaders || {})) effectiveValues[slot] = comfyReadEffectiveValue(graph, reader);
-    const payload = cloned.prompt ? cloned : { prompt: cloned, client_id: `lia-${Date.now().toString(36)}` };
-    if (!payload.client_id) payload.client_id = `lia-${Date.now().toString(36)}`;
-    const executionHash = hashText(JSON.stringify(comfyStableValue(graph)));
-    appendDebugLog("persona_visual", "comfy_workflow_prepared", {
-      source: resolved.source,
-      mode: "generic_binding_engine",
-      bindingSource: profileResult.source,
-      topologyHash: profile.topologyHash,
-      bindingProfileHash: profile.profileHash,
-      executionHash,
-      outputNodeId: profile.output.nodeId,
-      samplerNodeId: profile.sampler.nodeId,
-      controlledSlots: profile.bindings.filter((item) => item.controlled !== false).map((item) => item.slot),
-      effectiveValues,
-      warnings: profile.analysis?.warnings || [],
-    }, "info");
-    return { payload, profile, effectiveValues, executionHash, topologyHash: profile.topologyHash, bindingProfileHash: profile.profileHash, outputNodeId: profile.output.nodeId, bindingSource: profileResult.source };
-  }
-
-  function prepareComfyWorkflowPayload(config, vars) {
-    return compileComfyWorkflow(config, vars).payload;
-  }
-
-  async function responseToImageBytes(res, config) {
-    const contentType = String(res?.headers?.get?.("content-type") || "").toLowerCase();
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    if (contentType.startsWith("image/") || hasImageFileSignature(bytes)) return bytes;
-    if (isZipBytes(bytes) || /(?:application|multipart)\/(?:zip|x-zip-compressed)/i.test(contentType)) return await extractFirstImageFromZip(bytes);
-    const text = new TextDecoder("utf-8").decode(bytes);
-    let parsed = null;
-    try { parsed = JSON.parse(text); } catch (_) {}
-    let candidates = parsed ? collectImageStringsFromJson(config.responsePath ? getByPath(parsed, config.responsePath) : parsed) : [];
-    if (!candidates.length && parsed) candidates = collectImageStringsFromJson(parsed);
-    const first = candidates[0] || "";
-    if (!first) throw new Error(`image API response did not contain an image payload. preview=${String(text || "").slice(0, 240)}`);
-    if (/^https?:\/\//i.test(first)) {
-      const downloadRes = await fetchWithTimeout(first, { method: "GET" }, Math.min(60000, config.timeoutMs || 120000), "image download");
-      if (!downloadRes.ok) throw new Error(`image download failed ${downloadRes.status}`);
-      return new Uint8Array(await downloadRes.arrayBuffer());
-    }
-    const decoded = base64ToUint8Array(first);
-    if (!decoded) throw new Error("image base64 could not be decoded");
-    return decoded;
-  }
-
-  function validatePromptOnlyIllustrationTemplate(config) {
-    const type = normalizeIllustrationProviderType(config?.provider);
-    const requireVars = (source, label) => {
-      const text = String(source || "");
-      const hasPositive = /\{\{\s*(?:prompt|positive_prompt)\s*\}\}/i.test(text);
-      const hasNegative = /\{\{\s*(?:negative|negative_prompt)\s*\}\}/i.test(text);
-      if (!hasPositive || !hasNegative) {
-        throw new Error(`${label}에는 {{prompt}}(또는 {{positive_prompt}})와 {{negative}}(또는 {{negative_prompt}}) 변수가 모두 필요합니다. 별도 Reference 노드는 필요하지 않습니다.`);
-      }
-    };
-    if (type === "comfyui-local") {
-      const resolved = resolveComfyWorkflowSource(config);
-      if (!looksLikeComfyWorkflowGraph(resolved.workflow)) throw new Error("ComfyUI workflow JSON이 비어 있거나 API workflow 형식이 아닙니다.");
-      const profile = resolveComfyBindingProfile(config, resolved.workflow).profile;
-      if (!profile?.bindings?.some((item) => item.slot === "positive_prompt") || !profile?.bindings?.some((item) => item.slot === "negative_prompt")) {
-        throw new Error("ComfyUI Workflow에서 Positive/Negative Prompt 바인딩을 만들지 못했습니다. Workflow Binding Profile을 확인해 주세요.");
-      }
-    }
-    if (type === "custom-json") requireVars(config.requestTemplateJson, "Custom JSON request template");
-    return true;
-  }
-
-  async function requestIllustrationImage(config, target, emotion, visualLock = null, overrides = {}) {
-    validatePromptOnlyIllustrationTemplate(config);
-    const prompt = String(overrides?.promptOverride || "").trim() || buildPersonaVisualPrompt(target, emotion, config, visualLock);
-    const negativePrompt = String(overrides?.negativePromptOverride || "").trim() || buildPersonaVisualNegativePrompt(config, visualLock, target, emotion);
-    const vars = buildPersonaVisualTemplateVars(target, emotion, config, visualLock, prompt, negativePrompt);
-    if (!config.endpoint && normalizeIllustrationProviderType(config.provider) !== "comfyui-local") throw new Error("삽화 endpoint가 비어 있습니다.");
-    const type = normalizeIllustrationProviderType(config.provider);
-    const debugRequest = {
-      ...summarizeVisualTargetForDebug(target),
-      emotion: String(emotion || "").trim() || "neutral",
-      provider: String(config?.provider || "").trim(),
-      providerType: type,
-      model: String(config?.model || "").trim(),
-      checkpoint: String(config?.checkpoint || "").trim(),
-      endpoint: sanitizeLogUrl(config?.endpoint || ""),
-      width: Number(config?.width || 0) || 0,
-      height: Number(config?.height || 0) || 0,
-      steps: Number(config?.steps || 0) || 0,
-      cfg: Number(config?.cfg || 0) || 0,
-      sampler: String(config?.sampler || "").trim(),
-      seed: Number(vars?.seed || 0) || 0,
-      visualLockConfirmed: visualLock?.confirmed === true,
-      prompt: String(prompt || ""),
-      negativePrompt: String(negativePrompt || ""),
-      promptHash: hashText(String(prompt || "")),
-      negativePromptHash: hashText(String(negativePrompt || "")),
-    };
-    appendDebugLog("persona_visual", "image_generation_request", debugRequest, "info");
-    try {
-      if (type === "comfyui-local") {
-        const base = comfyBaseUrl(config.endpoint);
-        const compiled = compileComfyWorkflow(config, vars);
-        if (visualLock?.confirmed) {
-          if (visualLock.workflowTopologyHash && visualLock.workflowTopologyHash !== compiled.topologyHash) throw new Error("Neutral 기준 확정 후 ComfyUI Workflow 구조가 변경되었습니다. Neutral 기준을 다시 만들어 주세요.");
-          if (visualLock.bindingProfileHash && visualLock.bindingProfileHash !== compiled.bindingProfileHash) throw new Error("Neutral 기준 확정 후 ComfyUI Binding Profile이 변경되었습니다. Neutral 기준을 다시 만들어 주세요.");
-        }
-        const promptRes = await fetchWithTimeout(`${base}/prompt`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify(compiled.payload),
-        }, config.timeoutMs, "ComfyUI prompt");
-        if (!promptRes.ok) {
-          const errorText = await promptRes.text().catch(() => "");
-          let detail = String(errorText || "").slice(0, 1200);
-          try {
-            const parsed = JSON.parse(errorText);
-            const nodeErrors = parsed?.node_errors && typeof parsed.node_errors === "object" ? Object.entries(parsed.node_errors).map(([nodeId, value]) => `${nodeId}: ${JSON.stringify(value)}`).slice(0, 6).join(" | ") : "";
-            detail = nodeErrors || String(parsed?.error?.message || parsed?.error || detail || "");
-          } catch (_) {}
-          throw new Error(`ComfyUI prompt failed ${promptRes.status}${detail ? `: ${detail}` : ""}`);
-        }
-        const promptData = await promptRes.json();
-        const promptId = String(promptData?.prompt_id || promptData?.promptId || promptData?.id || "").trim();
-        if (!promptId) throw new Error("ComfyUI prompt_id를 받지 못했습니다.");
-        const deadline = Date.now() + config.timeoutMs;
-        while (Date.now() < deadline) {
-          const historyRes = await fetchWithTimeout(`${base}/history/${encodeURIComponent(promptId)}`, { method: "GET", headers: { Accept: "application/json" } }, Math.min(20000, Math.max(5000, deadline - Date.now())), "ComfyUI history");
-          if (historyRes.ok) {
-            const history = await historyRes.json();
-            const outputs = history?.[promptId]?.outputs || history?.outputs || {};
-            const selectedOutput = outputs?.[compiled.outputNodeId] || null;
-            const selectedImages = Array.isArray(selectedOutput?.images) ? selectedOutput.images : [];
-            const fallbackImage = Object.values(outputs).flatMap((output) => Array.isArray(output?.images) ? output.images : [])[0];
-            const image = selectedImages[Math.max(0, Number(compiled.profile?.output?.imageIndex || 0))] || fallbackImage;
-            if (image?.filename) {
-              const params = new URLSearchParams({ filename: image.filename, subfolder: image.subfolder || "", type: image.type || "output" });
-              const imageRes = await fetchWithTimeout(`${base}/view?${params.toString()}`, { method: "GET" }, Math.min(30000, Math.max(5000, deadline - Date.now())), "ComfyUI image view");
-              if (!imageRes.ok) throw new Error(`ComfyUI image view failed ${imageRes.status}`);
-              const result = { bytes: new Uint8Array(await imageRes.arrayBuffer()), prompt, negativePrompt, seed: vars.seed, comfyExecution: { topologyHash: compiled.topologyHash, bindingProfileHash: compiled.bindingProfileHash, executionHash: compiled.executionHash, outputNodeId: compiled.outputNodeId, effectiveValues: compiled.effectiveValues, controlledSlots: compiled.profile.bindings.filter((item) => item.controlled !== false).map((item) => item.slot) } };
-              appendDebugLog("persona_visual", "image_generation_result", { ...summarizeVisualTargetForDebug(target), emotion: String(emotion || "").trim() || "neutral", providerType: type, seed: vars.seed, bytes: result.bytes?.length || 0, promptHash: hashText(String(prompt || "")), negativePromptHash: hashText(String(negativePrompt || "")), promptId, outputNodeId: compiled.outputNodeId, effectiveValues: compiled.effectiveValues }, "info");
-              return result;
-            }
-          }
-          await new Promise((resolve) => setTimeout(resolve, 1200));
-        }
-        throw new Error("ComfyUI generation timed out.");
-      }
-      let payload = {};
-      if (type === "custom-json") {
-        const template = parseOptionalJsonObject(config.requestTemplateJson);
-        if (!Object.keys(template).length) throw new Error("Custom JSON request template이 비어 있습니다.");
-        payload = renderTemplateValue(template, vars);
-      } else {
-        payload = buildNaiPayload(config, vars);
-      }
-      const headers = { "Content-Type": "application/json", Accept: "application/json, image/*" };
-      Object.assign(headers, parseOptionalJsonObject(config.headersJson));
-      if (config.apiKey) {
-        if (config.apiKeyHeader === "x-api-key") headers["x-api-key"] = headers["x-api-key"] || config.apiKey;
-        else if (config.apiKeyHeader === "authorization-raw") headers.Authorization = headers.Authorization || config.apiKey;
-        else if (config.apiKeyHeader !== "none") headers.Authorization = headers.Authorization || `Bearer ${config.apiKey}`;
-      }
-      const res = await fetchWithTimeout(config.endpoint, { method: "POST", headers, body: JSON.stringify(payload) }, config.timeoutMs, "illustration generation");
-      if (!res.ok) {
-        const preview = await res.text().catch(() => "");
-        throw new Error(`삽화 API 실패 ${res.status}: ${String(preview || "").slice(0, 320)}`);
-      }
-      const bytes = await responseToImageBytes(res, config);
-      const result = { bytes, prompt, negativePrompt, seed: vars.seed };
-      appendDebugLog("persona_visual", "image_generation_result", { ...summarizeVisualTargetForDebug(target), emotion: String(emotion || "").trim() || "neutral", providerType: type, seed: vars.seed, bytes: result.bytes?.length || 0, promptHash: hashText(String(prompt || "")), negativePromptHash: hashText(String(negativePrompt || "")) }, "info");
-      return result;
-    } catch (error) {
-      appendDebugLog("persona_visual", "image_generation_failed", { ...debugRequest, error: errorForLog(error) }, "error");
-      throw error;
-    }
-  }
 
   async function upsertPersonaVisualAsset(target, entry) {
     const store = await readPersonaVisualAssetStore();
@@ -22368,152 +21217,6 @@ ${revisionText}`);
     };
   }
 
-  async function confirmPersonaVisualGenerationLock(target) {
-    const store = await readPersonaVisualAssetStore();
-    const source = store.sets?.[target.personaKey] || store.sets?.[target.legacyPersonaKey] || null;
-    const bundle = normalizeVisualAssetSet(source || {}, target.personaKey);
-    if (!bundle.images?.neutral) throw new Error("먼저 Neutral 기준 에셋을 생성해 주세요.");
-    if (!bundle.visualLockCandidate) throw new Error("현재 Neutral에는 Generation Lock 후보가 없습니다. Neutral을 다시 생성해 주세요.");
-    const confirmed = normalizeVisualGenerationLock({ ...bundle.visualLockCandidate, confirmed: true, lockedAt: new Date().toISOString() }, { confirmed: true });
-    bundle.anchorEmotion = "neutral";
-    bundle.visualLock = confirmed;
-    bundle.visualLockCandidate = normalizeVisualGenerationLock(bundle.visualLockCandidate, { confirmed: false });
-    Object.values(bundle.images).forEach((item) => {
-      item.isAnchor = item.emotion === "neutral";
-      if (item.emotion === "neutral") item.lockHash = confirmed.lockHash;
-    });
-    store.sets[target.personaKey] = bundle;
-    if (target.legacyPersonaKey && target.legacyPersonaKey !== target.personaKey) delete store.sets[target.legacyPersonaKey];
-    await writePersonaVisualAssetStore(store);
-    return bundle;
-  }
-
-  async function setPersonaVisualAnchor(target, emotion) {
-    if (String(emotion || "").trim() !== "neutral") throw new Error("Visual Master는 Neutral 에셋만 사용할 수 있습니다.");
-    return await confirmPersonaVisualGenerationLock(target);
-  }
-
-  async function generatePersonaVisualEmotion(ctx, emotion, options = {}) {
-    const currentConfig = normalizeIllustrationConfig(options.config || readIllustrationConfig());
-    if (currentConfig.enabled === false) throw new Error("삽화 기능이 비활성화되어 있습니다.");
-    const baseCtx = options.ctx || ctx || await getContext();
-    const freshCtx = { ...(baseCtx || {}), visualAssetStore: await readPersonaVisualAssetStore() };
-    const target = resolvePersonaVisualTarget(freshCtx);
-    const expectedPersonaKey=String(options.expectedPersonaKey||'').trim();const expectedSelection=String(options.expectedTargetSelection||'').trim();
-    if(expectedPersonaKey&&target.personaKey!==expectedPersonaKey)throw new Error('이미지 작업 대상 Persona가 변경되었습니다. 생성 요청을 중단했습니다.');
-    if(expectedSelection&&currentVisualTargetSelectionValue()!==expectedSelection)throw new Error('이미지 작업 중 대상 선택이 변경되었습니다. 생성 요청을 중단했습니다.');
-    if (!target.personaPrompt && !target.personaSpec?.appearance) throw new Error("현재 Persona에서 시각 정보를 찾지 못했습니다.");
-    const normalizedEmotion = String(emotion || "neutral").trim() || "neutral";
-    const bundle = target.bundle || freshCtx.visualAssetStore?.sets?.[target.personaKey] || null;
-    let visualLock = null;
-    let generationConfig = currentConfig;
-    let generationSnapshot = null;
-    if (normalizedEmotion === "neutral") {
-      generationSnapshot = createVisualGenerationLockCandidate(target, currentConfig);
-      generationConfig = normalizeIllustrationConfig({
-        ...currentConfig,
-        seed: generationSnapshot.seed,
-        width: generationSnapshot.width,
-        height: generationSnapshot.height,
-        steps: generationSnapshot.steps,
-        cfg: generationSnapshot.cfg,
-        sampler: generationSnapshot.sampler,
-        model: generationSnapshot.model,
-        checkpoint: generationSnapshot.checkpoint,
-        stylePrompt: generationSnapshot.stylePrompt,
-        negativePrompt: generationSnapshot.negativePrompt,
-        extraNegativePrompt: generationSnapshot.extraNegativePrompt,
-        advancedJson: generationSnapshot.advancedJson,
-        transparentBackground: false,
-      });
-    } else {
-      visualLock = normalizeVisualGenerationLock(bundle?.visualLock || null, { confirmed: true });
-      if (!visualLock?.confirmed) throw new Error("먼저 Neutral 이미지를 만든 뒤 ‘Neutral 기준 확정’을 눌러 주세요.");
-      generationConfig = lockedIllustrationConfig(currentConfig, visualLock);
-      generationSnapshot = visualLock;
-    }
-    const generated = await requestIllustrationImage(generationConfig, target, normalizedEmotion, visualLock, {
-      promptOverride: String(options.promptOverride || "").trim(),
-      negativePromptOverride: String(options.negativePromptOverride || "").trim(),
-    });
-    if(expectedPersonaKey&&target.personaKey!==expectedPersonaKey||expectedSelection&&currentVisualTargetSelectionValue()!==expectedSelection)throw new Error('이미지 생성 중 작업 대상이 변경되어 결과를 저장하지 않았습니다.');
-    if (normalizedEmotion === "neutral" && generated?.comfyExecution) {
-      const effective = generated.comfyExecution.effectiveValues || {};
-      generationSnapshot = normalizeVisualGenerationLock({
-        ...generationSnapshot,
-        width: Number.isFinite(Number(effective.width)) && Number(effective.width) > 0 ? Number(effective.width) : generationSnapshot.width,
-        height: Number.isFinite(Number(effective.height)) && Number(effective.height) > 0 ? Number(effective.height) : generationSnapshot.height,
-        seed: Number.isFinite(Number(effective.seed)) && Number(effective.seed) >= 0 ? Number(effective.seed) : generationSnapshot.seed,
-        steps: Number.isFinite(Number(effective.steps)) && Number(effective.steps) > 0 ? Number(effective.steps) : generationSnapshot.steps,
-        cfg: Number.isFinite(Number(effective.cfg)) && Number(effective.cfg) > 0 ? Number(effective.cfg) : generationSnapshot.cfg,
-        sampler: String(effective.sampler_name || generationSnapshot.sampler || "").trim(),
-        workflowTopologyHash: generated.comfyExecution.topologyHash,
-        workflowExecutionHash: generated.comfyExecution.executionHash,
-        bindingProfileHash: generated.comfyExecution.bindingProfileHash,
-        comfyOutputNodeId: generated.comfyExecution.outputNodeId,
-        comfyControlledSlots: generated.comfyExecution.controlledSlots || [],
-        comfyEffectiveValues: effective,
-      }, { confirmed: false });
-    }
-    if (typeof api.saveAsset !== "function") throw new Error("RisuAI saveAsset API를 사용할 수 없습니다.");
-    const sourceBytes = generated?.bytes instanceof Uint8Array
-      ? new Uint8Array(generated.bytes)
-      : await visualAssetDataToBytes(generated?.bytes);
-    if (!sourceBytes?.length || !hasImageFileSignature(sourceBytes)) throw new Error("생성된 이미지 바이트가 비어 있거나 손상되었습니다.");
-    // Tauri host calls may transfer/detach the exact Uint8Array passed to saveAsset().
-    // Never reuse that same buffer for backup, preview, or diagnostics.
-    const saveBytes = new Uint8Array(sourceBytes);
-    const saveInputBytes = saveBytes.length;
-    const assetPath = await api.saveAsset(saveBytes);
-    appendDebugLog("persona_visual", "image_asset_save_complete", {
-      personaKey: target.personaKey,
-      emotion: normalizedEmotion,
-      assetPath,
-      sourceBytes: sourceBytes.length,
-      saveInputBytes,
-      saveBufferBytesAfterHost: saveBytes.length,
-      hostDetachedInput: saveBytes.length !== saveInputBytes,
-    }, "debug");
-    revokeVisualAssetObjectUrls();
-    const ext = detectImageExtFromBytes(sourceBytes);
-    const mime = `image/${ext === "jpg" ? "jpeg" : ext}`;
-    const backupId = `${visualAssetBackupIdForKey(target.personaKey, normalizedEmotion)}-${randomId()}`;
-    let backupBytes = 0;
-    try {
-      const backupResult = await writePersonaVisualAssetBackup(backupId, sourceBytes, mime);
-      backupBytes = Number(backupResult?.bytes || 0);
-    } catch (error) {
-      appendDebugLog("persona_visual", "image_asset_backup_failed", {
-        personaKey: target.personaKey,
-        personaName: target.personaName,
-        emotion: normalizedEmotion,
-        backupId,
-        error: errorForLog(error),
-      }, "warn");
-      throw error;
-    }
-    const entry = {
-      emotion: normalizedEmotion,
-      assetPath,
-      assetName: `${target.assetPrefix}_${emotionAssetSlug(normalizedEmotion)}`,
-      prompt: generated.prompt,
-      negativePrompt: generated.negativePrompt,
-      provider: generationConfig.provider,
-      seed: generated.seed,
-      width: Number(generationSnapshot?.width || generationConfig.width),
-      height: Number(generationSnapshot?.height || generationConfig.height),
-      generatedAt: new Date().toISOString(),
-      mime,
-      backupId: backupBytes ? backupId : "",
-      backupBytes,
-      isAnchor: normalizedEmotion === "neutral",
-      previewText: normalizedEmotion,
-      lockHash: String(generationSnapshot?.lockHash || ""),
-      generationSnapshot: normalizedEmotion === "neutral" ? generationSnapshot : null,
-    };
-    const updatedBundle = await upsertPersonaVisualAsset(target, entry);
-    return { entry, target, bundle: updatedBundle };
-  }
 
   function bytesToDataUrl(bytes, mime = "image/png") {
     const chunkSize = 0x8000;
@@ -23096,7 +21799,7 @@ ${revisionText}`);
       assetName: previous.assetName || `${target.assetPrefix}_${emotionAssetSlug(normalizedEmotion)}`,
       prompt: previous.prompt || "",
       negativePrompt: previous.negativePrompt || "",
-      provider: previous.provider || normalizeIllustrationProviderType(readIllustrationConfig().provider),
+      provider: previous.provider || "imported",
       mime,
       seed: previous.seed >= 0 ? previous.seed : -1,
       width: Number(size?.width || 0) || previous.width || 0,
@@ -23214,53 +21917,6 @@ ${revisionText}`);
     return (Array.isArray(list) ? list : []).map((item) => item?.name && item?.path ? [String(item.name), String(item.path), String(item.ext || "png")] : null).filter(Boolean);
   }
 
-  async function registerPersonaEmotionAssetOnCurrentCharacter(entry, recovery = {}) {
-    if (!entry?.assetPath || !entry?.assetName) return "";
-    if (typeof api.setCharacter !== "function") return "";
-    let usableEntry = entry;
-    await recovery.assertCurrent?.();
-    try {
-      const ensured = await ensurePersonaVisualAssetAvailable(entry, {
-        personaKey: recovery?.personaKey,
-        emotion: recovery?.emotion || entry?.emotion,
-        backupId: entry?.backupId,
-        mime: entry?.mime,
-      });
-      if (ensured?.entry) usableEntry = ensured.entry;
-    } catch (error) {
-      appendDebugLog("persona_visual", "emotion_asset_runtime_restore_failed", { assetName: entry?.assetName, assetPath: entry?.assetPath, backupId: entry?.backupId || "", error: errorForLog(error) }, "warn");
-      return "";
-    }
-    await recovery.assertCurrent?.();
-    let character = null;
-    try { if (typeof api.getCharacter === "function") character = await api.getCharacter(); } catch (_) {}
-    if (!character) {
-      try {
-        const index = Number(await api.getCurrentCharacterIndex?.()) || 0;
-        character = await api.getCharacterFromIndex?.(index);
-      } catch (_) {}
-    }
-    if (!character || typeof character !== "object") return "";
-    const assets = normalizeRisuAdditionalAssets(readCharacterCompatField(character, "additionalAssets"));
-    const name = String(usableEntry.assetName).trim();
-    const path = String(usableEntry.assetPath).trim();
-    const pathExtRaw = String(path.split(".").pop() || "").replace(/^\./, "").toLowerCase();
-    const pathExt = /^(png|jpe?g|webp|gif|avif)$/.test(pathExtRaw) ? pathExtRaw.replace("jpeg", "jpg") : "";
-    const ext = pathExt || String(usableEntry.mime || "image/png").split("/").pop().replace("jpeg", "jpg") || "png";
-    const existing = assets.find((item) => item.name === name);
-    if (existing && existing.path === path) return `{{image::${name}}}`;
-    if (existing) {
-      existing.path = path;
-      existing.ext = ext;
-    } else {
-      assets.push({ name, path, ext });
-    }
-    await recovery.assertCurrent?.();
-    const next = JSON.parse(JSON.stringify(character));
-    writeCharacterCompatField(next, "additionalAssets", additionalAssetTuples(assets));
-    await api.setCharacter(next);
-    return `{{image::${name}}}`;
-  }
 
   function normalizeEmotionKey(value) {
     return String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
@@ -23281,329 +21937,12 @@ ${revisionText}`);
     neutral: [],
   });
 
-  function responseFocusForPersona(content, personaName) {
-    const text = String(content || "");
-    const name = String(personaName || "").trim();
-    const chunks = text.split(/(?<=[.!?。！？\n])\s*/).map((item) => item.trim()).filter(Boolean);
-    const anchors = [name, "{{user}}", "당신은", "당신이", "당신의", "너는", "네가", "너의", "너를"].filter(Boolean);
-    const focused = [];
-    for (const chunk of chunks) {
-      if (anchors.some((anchor) => chunk.toLowerCase().includes(String(anchor).toLowerCase()))) focused.push(chunk);
-    }
-    return focused.length ? focused.join("\n") : "";
-  }
-
-  function scoreEmotionText(emotion, text) {
-    const source = String(text || "").toLowerCase();
-    if (!source) return 0;
-    const normalized = normalizeEmotionKey(emotion);
-    let score = 0;
-    if (normalized && normalized !== "neutral" && source.includes(normalized)) score += 3.5;
-    const cueList = PERSONA_EMOTION_CUES[normalized] || [];
-    for (const [cue, weight] of cueList) {
-      if (source.includes(String(cue).toLowerCase())) score += Number(weight) || 0;
-    }
-    return score;
-  }
-
-  function choosePersonaEmotionAsset(bundle, content, personaName, config) {
-    const rawImages = bundle?.images || {};
-    const activeLockHash = bundle?.visualLock?.confirmed ? String(bundle.visualLock.lockHash || "") : "";
-    const hasPendingNeutral = Boolean(bundle?.visualLockCandidate && !bundle?.visualLock?.confirmed);
-    const images = Object.fromEntries(Object.entries(rawImages).filter(([emotion, entry]) => {
-      if (normalizeEmotionKey(emotion) === "neutral") return true;
-      if (hasPendingNeutral) return false;
-      if (!activeLockHash) return true;
-      return String(entry?.lockHash || "") === activeLockHash;
-    }));
-    const emotions = Object.keys(images);
-    if (!emotions.length) return null;
-    const focus = responseFocusForPersona(content, personaName);
-    let best = null;
-    for (const emotion of emotions) {
-      if (normalizeEmotionKey(emotion) === "neutral") continue;
-      const score = scoreEmotionText(emotion, focus);
-      if (!best || score > best.score) best = { emotion, score, entry: images[emotion] };
-    }
-    const minScore = Number(config.runtimeMinScore) || 2;
-    if (best && best.score >= minScore) return { ...best, focusFound: Boolean(focus) };
-    const neutralKey = emotions.find((emotion) => normalizeEmotionKey(emotion) === "neutral");
-    if (config.runtimeNeutralFallback !== false && neutralKey) return { emotion: neutralKey, score: 0, entry: images[neutralKey], focusFound: Boolean(focus), fallback: true };
-    return null;
-  }
-
-  async function findOrMigrateVisualBundleForPersona(persona, store, options = {}) {
-    const personaId = String(persona?.id || "").trim();
-    if (!personaId) return null;
-    const stableKey = `persona:${personaId}`;
-    if (store.sets?.[stableKey]) return normalizeVisualAssetSet(store.sets[stableKey], stableKey);
-    const sameId = Object.values(store.sets || {}).find((set) => String(set?.personaId || "").trim() === personaId);
-    if (sameId) return normalizeVisualAssetSet(sameId, sameId.personaKey || stableKey);
-    const name = String(persona?.name || "").trim().toLowerCase();
-    const candidates = Object.values(store.sets || {}).filter((set) => String(set?.personaName || "").trim().toLowerCase() === name && Object.keys(set?.images || {}).length);
-    if (candidates.length !== 1) return null;
-    const source = normalizeVisualAssetSet(candidates[0], candidates[0].personaKey || "");
-    if (options.readOnly === true) return source;
-    const migrated = { ...source, personaKey: stableKey, personaId, personaName: String(persona?.name || source.personaName || "Persona"), assetPrefix: personaAssetPrefix(persona?.name, personaId), updatedAt: new Date().toISOString() };
-    Object.values(migrated.images).forEach((entry) => { entry.assetName = `${migrated.assetPrefix}_${emotionAssetSlug(entry.emotion)}`; });
-    const sets = { ...(store.sets || {}), [stableKey]: migrated };
-    if (source.personaKey && source.personaKey !== stableKey) delete sets[source.personaKey];
-    await writePersonaVisualAssetStore({ ...store, sets, updatedAt: new Date().toISOString() });
-    return migrated;
-  }
-
-  function buildRuntimeEmotionAssetMarkup(tag) {
-    const safeTag = String(tag || "").trim();
-    if (!safeTag) return "";
-    return [
-      '<div class="lia-inline-emotion-asset" style="display:flex;justify-content:center;align-items:center;width:100%;margin:16px auto 18px;">',
-      '  <div class="lia-inline-emotion-asset-frame" style="width:min(420px,78vw);max-width:100%;padding:10px 10px 8px;border-radius:16px;background:rgba(255,255,255,.72);box-shadow:0 10px 26px rgba(0,0,0,.08);">',
-      `    ${safeTag}`,
-      '  </div>',
-      '</div>'
-    ].join('\n');
-  }
-
-  function splitNarrativeBlocks(content) {
-    return String(content || "").replace(/\r\n/g, "\n").trimEnd().split(/\n{2,}/).map((item) => String(item || "").trim()).filter(Boolean);
-  }
-
-  function splitRuntimeNarrativeEnvelope(content) {
-    const source = String(content || "");
-    if (!source) return { prefix: "", narrative: "", suffix: "", start: 0, end: 0 };
-    let start = 0;
-    const responseHeading = /(^|\n)#\s*응답\s*(?:\n|$)/i.exec(source);
-    if (responseHeading) start = responseHeading.index + responseHeading[0].length;
-    else {
-      const thoughts = /<Thoughts\b[^>]*>[\s\S]*?<\/Thoughts\s*>/i.exec(source);
-      if (thoughts && thoughts.index <= 32) start = thoughts.index + thoughts[0].length;
-    }
-    const tailPatterns = [
-      /<!--\s*HAYAKU_STATE_PACKET_START\b/i,
-      /\[LBDATA\s+START\]/i,
-      /<GT-CTRL\b/i,
-      /<lb-(?:lazy|stage|stage-marker|data)\b/i,
-    ];
-    let end = source.length;
-    const tail = source.slice(start);
-    for (const pattern of tailPatterns) {
-      const match = pattern.exec(tail);
-      if (match && start + match.index < end) end = start + match.index;
-    }
-    return {
-      prefix: source.slice(0, start),
-      narrative: source.slice(start, end),
-      suffix: source.slice(end),
-      start,
-      end,
-    };
-  }
-
-  function maskProtectedRuntimeNarrativeSections(narrative) {
-    const source = String(narrative || "");
-    const protectedSections = [];
-    const patterns = [
-      /<Thoughts\b[^>]*>[\s\S]*?<\/Thoughts\s*>/gi,
-      /<!--\s*HAYAKU_STATE_PACKET_START\b[\s\S]*?HAYAKU_STATE_PACKET_END\s*-->/gi,
-      /<!--[^]*?-->/g,
-      /\[LBDATA\s+START\][\s\S]*?\[LBDATA\s+END\]/gi,
-      /<GT-CTRL\b[^>]*\/?\s*>/gi,
-      /<lb-(?:lazy|stage|stage-marker|data)\b[^>]*\/?\s*>/gi,
-    ];
-    let masked = source;
-    for (const pattern of patterns) {
-      masked = masked.replace(pattern, (match) => {
-        const token = `__LIA_PROTECTED_${protectedSections.length}__`;
-        protectedSections.push(match);
-        return `\n\n${token}\n\n`;
-      });
-    }
-    return { masked, protectedSections };
-  }
-
-  function restoreProtectedRuntimeNarrativeSections(masked, protectedSections = []) {
-    let restored = String(masked || "");
-    for (let index = 0; index < protectedSections.length; index += 1) {
-      restored = restored.replace(`__LIA_PROTECTED_${index}__`, protectedSections[index]);
-    }
-    return restored;
-  }
-
-  function isSceneAssetCandidateBlock(block) {
-    const text = String(block || "").trim();
-    if (!text) return false;
-    if (/^#{1,6}\s/.test(text)) return false;
-    if (/^\[.*\]$/.test(text)) return false;
-    if (/^<img\s*=/.test(text)) return false;
-    if (/^\{\{image::/.test(text)) return false;
-    if (/^__LIA_PROTECTED_\d+__$/.test(text)) return false;
-    if (/^<Thoughts\b/i.test(text) || /^<!--/.test(text) || /^\[LBDATA\s+/i.test(text) || /^<GT-CTRL\b/i.test(text) || /^<lb-/i.test(text)) return false;
-    if (text.includes('HAYAKU_STATE_PACKET_START') || text.includes('HAYAKU_STATE_PACKET_END')) return false;
-    if (text.includes('lia-inline-emotion-asset')) return false;
-    return true;
-  }
-
-  function blockMentionsPersona(block, personaName) {
-    const text = String(block || "");
-    const name = String(personaName || "").trim();
-    if (!name) return false;
-    return text.toLowerCase().includes(name.toLowerCase());
-  }
-
-  function blockMayContinuePersonaScene(block, persona) {
-    const text = String(block || "").trim();
-    if (!text) return false;
-    const gender = String(persona?.gender || persona?.meta?.gender || "").trim().toLowerCase();
-    const pronouns = gender.startsWith('f') ? ['그녀', '그녀는', '그녀가', '그녀의'] : gender.startsWith('m') ? ['그는', '그가', '그의'] : [];
-    if (pronouns.some((token) => text.includes(token))) return true;
-    return /^["'“”‘’「『]|^[가-힣a-zA-Z0-9].*?["'”’]$/.test(text);
-  }
-
-  function pickSceneEmotionCandidates(blocks, bundle, persona, config) {
-    const candidates = [];
-    let lastPersonaMention = -99;
-    for (let index = 0; index < blocks.length; index += 1) {
-      const block = blocks[index];
-      if (!isSceneAssetCandidateBlock(block)) continue;
-      const mentionsPersona = blockMentionsPersona(block, persona?.name);
-      if (mentionsPersona) lastPersonaMention = index;
-      const sceneContinuation = !mentionsPersona && index - lastPersonaMention === 1 && blockMayContinuePersonaScene(block, persona);
-      if (!mentionsPersona && !sceneContinuation) continue;
-      const snippet = [blocks[index - 1], block, blocks[index + 1]].filter(Boolean).join("\n");
-      const picked = choosePersonaEmotionAsset(bundle, snippet, persona?.name, config);
-      if (!picked?.entry?.assetPath) continue;
-      const priority = Number(picked.score || 0) + (picked.fallback ? 0.15 : 1.2) + (mentionsPersona ? 0.9 : 0.2);
-      candidates.push({ index, block, picked, mentionsPersona, sceneContinuation, priority });
-    }
-    return candidates;
-  }
-
-  function selectSceneAttachmentPoints(candidates, maxAttachments) {
-    if (!candidates.length) return [];
-    const bestByIndex = new Map();
-    for (const candidate of candidates) {
-      const existing = bestByIndex.get(candidate.index);
-      if (!existing || candidate.priority > existing.priority) bestByIndex.set(candidate.index, candidate);
-    }
-    const ordered = Array.from(bestByIndex.values()).sort((a, b) => a.index - b.index);
-    const grouped = [];
-    for (const candidate of ordered) {
-      const last = grouped[grouped.length - 1];
-      if (last && candidate.index - last[last.length - 1].index <= 1) last.push(candidate);
-      else grouped.push([candidate]);
-    }
-    let selections = grouped.map((group) => group.slice().sort((a, b) => b.priority - a.priority)[0]).sort((a, b) => a.index - b.index);
-    if (selections.length <= maxAttachments) return selections;
-    const ranked = selections.slice().sort((a, b) => b.priority - a.priority).slice(0, maxAttachments);
-    const chosen = new Set(ranked.map((item) => item.index));
-    selections = selections.filter((item) => chosen.has(item.index)).sort((a, b) => a.index - b.index);
-    return selections;
-  }
-
-  async function insertRuntimeEmotionAssetsIntoScenes(content, bundle, persona, config, requestOptions = {}) {
-    const body = String(content || "");
-    if (!body.trim()) return { content: body, placements: [] };
-    if (body.includes('lia-inline-emotion-asset')) return { content: body, placements: [] };
-    const envelope = splitRuntimeNarrativeEnvelope(body);
-    if (!envelope.narrative.trim()) return { content: body, placements: [] };
-    const protectedNarrative = maskProtectedRuntimeNarrativeSections(envelope.narrative);
-    const blocks = splitNarrativeBlocks(protectedNarrative.masked);
-    if (!blocks.length) return { content: body, placements: [] };
-    const candidates = pickSceneEmotionCandidates(blocks, bundle, persona, config);
-    const maxAttachments = Math.min(4, Math.max(1, Math.floor((blocks.length + 2) / 5)));
-    const selected = selectSceneAttachmentPoints(candidates, maxAttachments);
-    if (!selected.length) return { content: body, placements: [] };
-    const byIndex = new Map();
-    const placements = [];
-    const registrations = new Map();
-    for (const item of selected) {
-      await requestOptions.assertCurrent?.();
-      const key = JSON.stringify([item.picked.entry.assetName,item.picked.entry.assetPath,item.picked.entry.backupId]);
-      if (!registrations.has(key)) registrations.set(key,registerPersonaEmotionAssetOnCurrentCharacter(item.picked.entry, { personaKey: bundle.personaKey, emotion: item.picked.emotion, assertCurrent:requestOptions.assertCurrent }));
-      const tag = await registrations.get(key);
-      await requestOptions.assertCurrent?.();
-      if (!tag) continue;
-      const attachment = buildRuntimeEmotionAssetMarkup(tag);
-      if (!attachment) continue;
-      byIndex.set(item.index, attachment);
-      placements.push({ index: item.index, emotion: item.picked.emotion, assetName: item.picked.entry.assetName, score: item.picked.score, fallback: item.picked.fallback === true, mentionsPersona: item.mentionsPersona === true });
-    }
-    if (!byIndex.size) return { content: body, placements: [] };
-    const out = [];
-    for (let index = 0; index < blocks.length; index += 1) {
-      out.push(blocks[index]);
-      if (byIndex.has(index)) out.push(byIndex.get(index));
-    }
-    const rebuiltNarrative = restoreProtectedRuntimeNarrativeSections(out.join("\n\n"), protectedNarrative.protectedSections);
-    const rebuilt = `${envelope.prefix}${rebuiltNarrative}${envelope.suffix}`;
-    return { content: rebuilt, placements, narrativeStart: envelope.start, narrativeEnd: envelope.end };
-  }
 
   let liaEmotionResponseEpoch = 0;
-  async function handlePersonaEmotionAssetAfterRequest(content, type) {
-    if (!isNarrativePersonaProofRequest(type)) return content;
-    if (typeof content !== "string" || !content.trim()) return content;
-    const responseEpoch = ++liaEmotionResponseEpoch;
-    try {
-      const config = await readStoredIllustrationConfig();
-      if (config.runtimeAttachEnabled === false) return content;
-      const store = await readPersonaVisualAssetStore(false);
-      if (!Object.keys(store.sets || {}).length) return content;
-      const selection = await PersonaSelectionManager.read(null,{viewOnly:true});
-      const assertCurrent = async () => {
-        if (responseEpoch !== liaEmotionResponseEpoch || pluginUnloaded) throw new Error('LIA_IMAGE_RESPONSE_SUPERSEDED');
-        await assertLiaViewSelectionCurrent(selection.runtimeCtx);
-        if (responseEpoch !== liaEmotionResponseEpoch || pluginUnloaded) throw new Error('LIA_IMAGE_RESPONSE_SUPERSEDED');
-      };
-      const sourcePersonaId = String(selection?.bindingState?.sourcePersonaId || "").trim();
-      const persona = sourcePersonaId
-        ? (asArray(selection?.personas).find((item) => String(item?.id || "").trim() === sourcePersonaId) || selection?.effectivePersona)
-        : selection?.effectivePersona;
-      if (!persona?.id) return content;
-      const bundle = await findOrMigrateVisualBundleForPersona(persona, store, {readOnly:true});
-      if (!bundle || !Object.keys(bundle.images || {}).length) return content;
-      await assertCurrent();
-      const inserted = await insertRuntimeEmotionAssetsIntoScenes(content, bundle, persona, config, {assertCurrent});
-      await assertCurrent();
-      if (!inserted?.placements?.length || !inserted?.content) return content;
-      appendDebugLog("persona_visual", "emotion_asset_attached", {
-        personaId: String(persona.id),
-        personaName: String(persona.name || ""),
-        attachmentCount: inserted.placements.length,
-        placements: inserted.placements.map((item) => ({ index: item.index, emotion: item.emotion, assetName: item.assetName, score: item.score, fallback: item.fallback }))
-      }, "info");
-      return inserted.content;
-    } catch (error) {
-      appendDebugLog("persona_visual", "emotion_asset_attach_failed", { error: errorForLog(error) }, "warn");
-      return content;
-    }
-  }
+
 
   // Image provider architecture and provider-specific request handling follow the implementation pattern used by Eros Tower, reused with the author's permission for LIA Persona Asset Studio. LIA's default emotion-asset path intentionally uses prompt-only generation locks and does not require reference-image/custom identity nodes.
 
-  function syncIllustrationProviderUi() {
-    const provider = normalizeIllustrationProviderType(document.getElementById("dpg-img-provider")?.value || document.getElementById("lia-image-provider")?.value || "wellspring-nai");
-    const workflow = document.getElementById("dpg-img-workflow")?.closest("label") || document.getElementById("lia-image-workflow")?.closest(".field");
-    const bindingProfile = document.getElementById("dpg-img-binding-profile")?.closest("label") || document.getElementById("lia-image-binding-profile")?.closest(".field");
-    const bindingTools = document.querySelector(".lia-comfy-binding-tools");
-    const request = document.getElementById("dpg-img-request-template")?.closest("label") || document.getElementById("lia-image-request")?.closest(".field");
-    const responsePath = document.getElementById("dpg-img-response-path")?.closest("label") || document.getElementById("lia-image-response-path")?.closest(".field");
-    if (workflow) workflow.style.display = provider === "comfyui-local" ? "grid" : "none";
-    if (bindingProfile) bindingProfile.style.display = provider === "comfyui-local" ? "grid" : "none";
-    if (bindingTools) bindingTools.style.display = provider === "comfyui-local" ? "grid" : "none";
-    if (request) request.style.display = provider === "custom-json" ? "grid" : "none";
-    if (responsePath) responsePath.style.display = provider === "custom-json" ? "grid" : "none";
-    const endpoint = document.getElementById("dpg-img-endpoint") || document.getElementById("lia-image-endpoint");
-    if (endpoint && !String(endpoint.value || "").trim()) endpoint.placeholder = defaultIllustrationEndpointForProvider(provider) || "endpoint";
-    const masterEnabled = (document.getElementById("dpg-img-enabled")?.checked ?? document.getElementById("lia-image-enabled")?.checked) !== false;
-    for (const id of ["dpg-img-runtime-attach", "dpg-img-runtime-neutral", "dpg-img-runtime-score"]) {
-      const el = document.getElementById(id);
-      if (el) el.disabled = !masterEnabled;
-    }
-    document.querySelectorAll(".lia-illustration-runtime .lia-illustration-toggle, .lia-illustration-runtime .lia-illustration-score").forEach((el) => {
-      el.classList.toggle("is-disabled", !masterEnabled);
-    });
-  }
 
   function setStatus(message, tone = "info") {
     document.getElementById("dpg-status")?.removeAttribute("data-idle");
@@ -23983,10 +22322,6 @@ ${revisionText}`);
       root.innerHTML = renderPreview(ctx);
       await refreshModulePicker(ctx.contextOptions?.selectedModuleIds || [],ctx);
       if (!current()) return null;
-      if(activeWorkspaceTab==='assets'){
-        try{preservedVisualAssetPresetStore=await readVisualAssetPresetStore();const select=document.getElementById('lia-asset-preset-select');if(select){const selected=preservedVisualAssetPresetId;select.innerHTML='<option value="">불러올 프리셋 선택</option>'+preservedVisualAssetPresetStore.items.map(item=>`<option value="${htmlEscape(item.id)}">${htmlEscape(item.name)}</option>`).join('');select.value=selected;}}
-        catch(error){setStatus(`에셋 프리셋을 읽지 못했습니다: ${error?.message||error}`,'error');}
-      }
       bindLiaMockupSettingsActions();
       if (activeWorkspaceTab === "server") mountLiaServerConnectionPanel();
       if (ctx.personaDatabaseReadStatus?.available === false) {
@@ -24139,7 +22474,6 @@ ${revisionText}`);
     root?.querySelectorAll(".tabbar button[data-go]").forEach((button) => button.setAttribute("aria-current", button.dataset.go === page ? "page" : "false"));
     if (page !== "make") preservedWorldDrawerOpen = false;
     if (page === "recover") mountLiaServerConnectionPanel();
-    if (page === "assets") void hydrateVisualAssetThumbnails();
     root?.querySelector(".page-body")?.scrollTo?.(0, 0);
   }
 
@@ -24218,6 +22552,13 @@ ${revisionText}`);
     focusable?.focus();
     return true;
   }
+  function liaPersonaPreview(persona) {
+    const prompt=String(persona?.personaPrompt||'').replace(/<!--[^]*?-->/g,'').trim();
+    const lines=prompt.split(/\r?\n/).map(line=>line.replace(/^\s*(?:#{1,6}|[-*])\s*/,'').replace(/\*\*/g,'').trim()).filter(Boolean);
+    const identity=lines.filter(line=>/^(?:Age|Gender|Species|Role|Occupation|나이|연령|성별|종족|역할|직업)\s*[:：]/i.test(line)).slice(0,3).join(' · ');
+    const detail=lines.find(line=>/^(?:Personality|Temperament|성격|기질)\s*[:：]/i.test(line))||lines.find(line=>line.length>30&&!/^(?:Name|이름)\s*[:：]/i.test(line))||lines[0]||String(persona?.note||'').replace(LIVE_PERSONA_NOTE_MARKER,'').trim();
+    return {identity:limitText(identity,160),detail:limitText(detail||'Persona 설명이 없습니다.',240)};
+  }
   function hydrateLiaPersonaDialog(id) {
     const ctx = liaMockupContext;
     const state = ctx ? buildPersonaPanelState(ctx) : null;
@@ -24237,10 +22578,13 @@ ${revisionText}`);
       if (actions) actions.innerHTML = selected ? `<button class="btn btn--primary" data-lia-persona-bind${foreignLive ? " disabled" : ""}>이 채팅에 연결…</button><button class="btn" data-open="sheet-bind">대상 선택</button>${selectedId&&selectedId===state?.dynamicId?'<button class="btn btn--danger" data-lia-persona-unbind>이 채팅 연결 해제…</button>':''}${canCleanup?'<button class="btn btn--danger" data-lia-generated-cleanup>기본 Persona 뒤 LIA 생성 Persona 정리…</button><p class="hint">현재 기본 Persona보다 뒤에 있는 LIA 생성 Persona만 정리합니다. 직접 만든 Persona와 채팅 바인딩은 보호합니다.</p>':''}` : `<div class="empty"><b>선택한 Persona를 확인할 수 없습니다.</b><span>RisuAI 목록을 다시 읽어 주세요.</span></div>`;
     }
     if (id === "sheet-bind") {
+      const intro=document.querySelector('#sheet-bind .sheet > p.muted');
+      if(intro)intro.textContent=`‘${ctx?.char?.name||'현재 캐릭터'} · ${ctx?.chat?.name||'현재 채팅'}’ 채팅의 연결만 바꿉니다. 다른 채팅의 연결에는 영향이 없습니다.`;
       const list = document.getElementById("bind-list");
       if (list) list.innerHTML = (state?.personas || []).map((item,index) => {
         const ref=personaPanelChoiceRef(item,index); const itemId=String(item?.id||""); const live=isLivePersona(item); const protectedForeign=live&&itemId!==state.dynamicId; const label=String(item?.name||`Persona ${index+1}`);
-        return `<button class="big-choice${ref===choice?" is-on":""}" type="button" data-lia-bind-choice="${htmlEscape(ref)}"${protectedForeign?" disabled":""}><span><b>${htmlEscape(label)}</b><small>${protectedForeign?"다른 채팅 소유 Live Persona · 선택 보호":itemId===state?.dynamicId?"현재 채팅에 연결됨":itemId===defaultPersonaId?"RisuAI 기본 Persona · 기본값은 변경하지 않음":"연결 가능"}</small></span><span class="pick">${ref===choice?"선택됨":"선택"}</span></button>`;
+        const preview=liaPersonaPreview(item);const stateLabel=protectedForeign?'다른 채팅 소유 · 선택 보호':itemId===state?.dynamicId?'현재 채팅 연결':itemId===defaultPersonaId?'RisuAI 기본 Persona':'연결 가능';
+        return `<button class="big-choice${ref===choice?' is-on':''}" type="button" data-lia-bind-choice="${htmlEscape(ref)}" aria-pressed="${ref===choice}"${protectedForeign?' disabled':''}><span class="avatar avatar--sm" aria-hidden="true">${htmlEscape(label.slice(0,1))}</span><span class="persona-copy"><b>${htmlEscape(label)}</b><small>${htmlEscape(stateLabel)}${preview.identity?' · '+htmlEscape(preview.identity):''}</small><span class="persona-preview">${htmlEscape(preview.detail)}</span></span><span class="pick">${ref===choice?'선택됨':'선택'}</span></button>`;
       }).join("") || '<div class="empty"><b>Persona 목록이 비어 있습니다.</b></div>';
       const confirm = document.getElementById("btn-bind-go"); if (confirm) { confirm.disabled = !choice; confirm.removeAttribute("data-toast"); confirm.setAttribute("data-lia-bind-confirm", ""); if(choice){confirm.removeAttribute('aria-disabled');confirm.removeAttribute('title');}else{confirm.setAttribute('aria-disabled','true');} }
     }
@@ -24279,7 +22623,8 @@ ${revisionText}`);
       return `<button class="big-choice${candidate.id === selectedId ? " is-on" : ""}" type="button" data-lia-candidate-id="${htmlEscape(candidate.id)}"><span class="avatar avatar--sm">${htmlEscape(name.slice(0,1))}</span><span><b>${htmlEscape(name)}</b><small>${htmlEscape(details)}</small></span><span class="pick">${candidate.id === selectedId ? "선택됨" : "선택"}</span></button>`;
     }).join("") : '<div class="empty"><b>실제 후보 결과가 없습니다.</b><span>먼저 후보 생성 작업을 완료하세요.</span></div>';
   }
-  async function runLiaMockupAction(action, trigger) {
+  async function runLiaMockupAction(action, trigger, expectedUpdate = null) {
+    if(pluginUnloaded)return false;
     const button = trigger;
     if (button) button.disabled = true;
     let activeJob=null;const openJob=id=>{activeJob=document.getElementById(id);const message=activeJob?.querySelector('[data-job-msg]');if(message)message.textContent='실제 작업을 시작했습니다. 제품 결과를 기다리는 중입니다.';showLiaMockupDialog(id,button);};const closeJob=()=>{if(activeJob){activeJob.dataset.liaJobActive='false';closeLiaMockupDialog(activeJob);activeJob=null;}};
@@ -24333,25 +22678,15 @@ ${revisionText}`);
         const result=await adoptPersonaFromPane(source);
         await refreshPreview({skipCapture:true});
         setStatus(`RisuAI Persona에 ${source==="translation"?getTranslationLanguage():"원문"} 채택본을 저장하고 Persona DB를 다시 읽었습니다: ${result.personaName}`,"ok");
-      } else if (action === "confirm-visual-lock") {
-        const ctx = await getContext(readContextOptions());
-        const target = resolvePersonaVisualTarget(ctx);
-        result = await confirmPersonaVisualGenerationLock(target);
-        await refreshPreview({skipCapture:true});
-        setStatus("Neutral 기준 Visual Lock을 실제 에셋 저장소에서 다시 읽어 확인했습니다.", "ok");
       } else if (action === "save-provider") {
         const saved=await writeStoredLLMConfig(readLLMConfig());
         const readback=await readStoredLLMConfig();
         if(readback.provider!==saved.provider||readback.model!==saved.model||readback.apiKey!==saved.apiKey)throw new Error("텍스트 AI 설정 durable readback 불일치");
         await refreshPreview({skipCapture:true});setStatus(`텍스트 AI 설정을 저장하고 다시 읽었습니다. 인증 정보 ${readback.apiKey?"보존됨":"없음"}.`,"ok");
-      } else if (action === "save-image-provider") {
-        const saved=await writeStoredIllustrationConfig(readIllustrationConfig());
-        const readback=await readStoredIllustrationConfig(true);
-        if(readback.provider!==saved.provider||readback.model!==saved.model||readback.apiKey!==saved.apiKey)throw new Error("이미지 AI 설정 readback 불일치");
-        await refreshPreview({skipCapture:true});setStatus(`이미지 AI 설정을 저장하고 다시 읽었습니다. 인증 정보 ${readback.apiKey?"보존됨":"없음"}.`,"ok");
       } else if (action === "update-five") {
         const fresh=await getLiveRuntimeContext();
         fresh.livePersonaBinding=await readLivePersonaBindingForContext(fresh);
+        if(!liaExpectedUpdateMatches(fresh,expectedUpdate))throw new Error("LIA_UPDATE_TARGET_CHANGED: 안내 후 채팅·Persona·갱신 범위가 바뀌었습니다. 다시 확인하세요.");
         const plan=manualLivePersonaPlan(fresh,fresh.livePersonaBinding);
         if(!plan.range||!fresh.livePersonaBinding)throw new Error("현재 채팅의 다음 완결 5쌍을 실행할 자격이 없습니다.");
         const job=document.getElementById("job-update");
@@ -24374,32 +22709,6 @@ ${revisionText}`);
         liaMockupEditorDraftDirty=true;
         await refreshPreview({skipCapture:true});
         setStatus(`선택한 변화 후보를 Persona 초안에 반영했습니다: ${result.fields.join(', ')||'변경 없음'}. 보관함 저장 전입니다.`,"ok");
-      } else if (action === "generate-neutral") {
-        openJob('job-neutral');const fresh=await getContext();const config=normalizeIllustrationConfig(fresh.savedIllustrationConfig||{});const store=await readPersonaVisualAssetStore();const target=resolvePersonaVisualTarget({...fresh,visualAssetStore:store});const targetSelection=currentVisualTargetSelectionValue();
-        if(config.enabled===false)throw new Error('이미지 AI 제공이 꺼져 있습니다. 설정에서 켠 뒤 저장하세요.');
-        const name=document.getElementById('job-neutral')?.querySelector('[data-fill="name"]');if(name)name.textContent=target.personaName;
-        const generated=await generatePersonaVisualEmotion(fresh,'neutral',{config,expectedPersonaKey:target.personaKey,expectedTargetSelection:targetSelection});
-        closeJob();await refreshPreview({skipCapture:true});setStatus(`Neutral 이미지를 ${generated.target.personaName} 대상으로 생성·저장하고 확인했습니다. Visual Lock은 별도로 확정해야 합니다.`,"ok");
-      } else if (action === "generate-bundle") {
-        openJob('job-emo');const fresh=await getContext();const config=normalizeIllustrationConfig(fresh.savedIllustrationConfig||{});const store=await readPersonaVisualAssetStore();const target=resolvePersonaVisualTarget({...fresh,visualAssetStore:store});const targetSelection=currentVisualTargetSelectionValue();
-        const bundle=target.bundle||normalizeVisualAssetSet({},target.personaKey);if(!bundle.visualLock?.confirmed)throw new Error('확정된 Neutral Visual Lock이 없습니다.');
-        const emotions=unique(String(document.getElementById('emo-list')?.value||'').split(/\r?\n|,/).map(item=>item.trim()).filter(Boolean),48).filter(item=>normalizeEmotionKey(item)!=='neutral');if(!emotions.length)throw new Error('생성할 감정이 없습니다.');
-        const name=activeJob?.querySelector('[data-fill="name"]');if(name)name.textContent=target.personaName;let completed=0;for(const emotion of emotions){const msg=activeJob?.querySelector('[data-job-msg]');if(msg)msg.textContent=`${emotion} 감정 이미지를 제품 API로 생성·저장하는 중입니다. (${completed+1}/${emotions.length})`;await generatePersonaVisualEmotion(fresh,emotion,{config,expectedPersonaKey:target.personaKey,expectedTargetSelection:targetSelection});completed++;}
-        closeJob();await refreshPreview({skipCapture:true});setStatus(`${target.personaName}의 neutral 외 ${completed}개 감정 이미지를 저장했습니다.`,"ok");
-      } else if (action === "delete-visual-asset") {
-        const emotion=liaSelectedVisualAssetEmotion;if(!emotion)throw new Error('삭제할 감정을 다시 선택해 주세요.');
-        const fresh=await getContext();const store=await readPersonaVisualAssetStore();const target=resolvePersonaVisualTarget({...fresh,visualAssetStore:store});
-        if(target.personaKey!==liaSelectedVisualAssetPersonaKey)throw new Error('작업 대상 Persona가 바뀌었습니다. 이미지를 다시 선택해 주세요.');
-        if(emotion==='neutral')throw new Error('Neutral Master는 감정 개별 삭제를 지원하지 않습니다. 묶음 폐기에서 별도 확인해 주세요.');
-        const entry=target.bundle?.images?.[emotion];if(!entry)throw new Error('선택한 이미지가 이미 제거되었습니다. 다시 읽어 주세요.');
-        const ok=typeof globalThis.confirm==='function'&&globalThis.confirm(`‘${target.personaName}’의 ‘${emotion}’ 이미지 하나를 삭제할까요? 다른 감정과 Persona 연결은 유지됩니다.`);if(!ok)return false;
-        await removePersonaVisualAsset(target,emotion);closeLiaMockupDialog(document.getElementById('sheet-emo'));liaSelectedVisualAssetEmotion='';await refreshPreview({skipCapture:true});setStatus(`${target.personaName}의 ${emotion} 이미지 하나를 삭제하고 저장소를 다시 읽었습니다.`,'ok');
-      } else if (action === "discard-visual-bundle") {
-        const fresh=await getContext();const store=await readPersonaVisualAssetStore();const target=resolvePersonaVisualTarget({...fresh,visualAssetStore:store});
-        if(target.personaKey!==liaSelectedVisualAssetPersonaKey && liaSelectedVisualAssetPersonaKey)throw new Error('작업 대상 Persona가 바뀌었습니다. 다시 시작해 주세요.');
-        const count=Object.keys(target.bundle?.images||{}).length;if(!count)throw new Error('폐기할 감정 에셋이 없습니다.');
-        const ok=typeof globalThis.confirm==='function'&&globalThis.confirm(`‘${target.personaName}’의 저장된 감정 이미지 ${count}개와 Visual Lock을 모두 폐기할까요?`);if(!ok)return false;
-        const result=await discardPersonaVisualAssetBundle(target);if(!result.removed)throw new Error('폐기 대상 에셋이 바뀌어 변경하지 않았습니다.');await refreshPreview({skipCapture:true});setStatus(`감정 이미지 ${result.assetCount||0}개를 폐기하고 저장소를 다시 읽었습니다.`,'ok');
       } else {
         return false;
       }
@@ -24413,49 +22722,33 @@ ${revisionText}`);
     if (event.target?.matches?.(".overlay")) { closeLiaMockupDialog(event.target); return; }
     const target = event.target?.closest?.("button,[data-go],[data-open],[data-close],input.lia-mockup-evolution,input[data-lia-audit-fix],input[data-lia-audit-recommendation]");
     if (!target) return;
+    if(target.matches('[data-menu]')){event.preventDefault();const wrapper=target.closest('.menu');const open=wrapper.classList.toggle('is-open');target.setAttribute('aria-expanded',String(open));return;}
+    closeLiaMenu();
+    if(target.matches('[data-lia-close]')){event.preventDefault();await closeLiaUi();return;}
+    if(target.matches('[data-lia-refresh]')){event.preventDefault();await refreshPreview({skipCapture:true});return;}
     if(target.matches('[data-lia-copy-prompt]')){event.preventDefault();const text=buildGenerationPromptForContext(liaMockupContext||await getContext(readContextOptions()));const area=document.getElementById('lia-prompt-inspection-text');if(area)area.value=text;try{await navigator.clipboard?.writeText(text);setStatus('현재 설정과 자료 선택을 반영한 실제 생성 프롬프트를 복사했습니다.','ok');}catch(error){if(area){area.focus();area.select();setStatus('프롬프트를 선택했습니다. Ctrl+C로 복사해 주세요.','info');}else setStatus(`프롬프트 복사 실패: ${error?.message||error}`,'error');}return;}
     if(target.matches('[data-lia-version-open]')){event.preventDefault();preservedResultVaultId=String(target.dataset.liaVersionOpen||'');void(async()=>{try{await loadVaultResult();const saved=await readStoredResultVault();if(!saved.some(item=>item.id===preservedResultVaultId))throw new Error('선택한 저장 스냅샷을 다시 읽지 못했습니다.');await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','all');setStatus('선택한 실제 보관함 스냅샷을 편집 초안으로 열었습니다. RisuAI Persona에는 쓰지 않았습니다.','ok');}catch(error){setStatus(`버전 초안 열기 실패: ${error?.message||error}`,'error');}})();return;}
     if(target.matches('[data-lia-version-compare]')){event.preventDefault();const id=String(target.dataset.liaVersionCompare||'');void(async()=>{try{const rows=await readStoredResultVault();const snapshot=rows.find(item=>item.id===id);if(!snapshot)throw new Error('비교할 보관함 스냅샷이 사라졌습니다.');const current=getLLMResultOverride()||{};const before=normalizePersonaSpec(snapshot.personaSpec)||{},after=normalizePersonaSpec(current.personaSpec)||{};const changes=PERSONA_SPEC_FIELD_DEFS.map(field=>({label:field.label||field.key,before:String(before[field.key]??''),after:String(after[field.key]??'')})).filter(row=>row.before!==row.after);if(String(snapshot.personaPrompt||'')!==String(current.personaPrompt||''))changes.push({label:'Persona Prompt',before:String(snapshot.personaPrompt||''),after:String(current.personaPrompt||'')});const box=document.querySelector('#ver-list')?.parentElement?.querySelector('#lia-version-compare');const list=box?.querySelector('.list');if(list)list.innerHTML=changes.length?changes.map(row=>`<div class="row"><div><b>${htmlEscape(row.label)}</b><small>저장본</small><span>${htmlEscape(limitText(row.before,1000)||'(비어 있음)')}</span><small>현재 초안</small><span>${htmlEscape(limitText(row.after,1000)||'(비어 있음)')}</span></div></div>`).join(''):'<div class="empty"><b>차이가 없습니다.</b><span>선택한 스냅샷과 현재 초안의 지원 필드가 같습니다.</span></div>';if(box)box.hidden=false;setStatus(`보관함 스냅샷과 현재 초안을 비교했습니다: ${changes.length}개 차이.`,'ok');}catch(error){setStatus(`버전 비교 실패: ${error?.message||error}`,'error');}})();return;}
     if(target.matches('[data-lia-refresh-blueprint]')){event.preventDefault();target.disabled=true;void(async()=>{try{captureGeneratedOutputState();const fresh=await getContext(readContextOptions());const state=await generateWorldBlueprint(fresh,{force:true,config:readLLMConfig()});await refreshPreview({skipCapture:true});setStatus(`세계관 Blueprint를 갱신했습니다. Hard Constraint ${state.blueprint?.hardConstraints?.length||0}개 · 창작 가능 범위 ${state.blueprint?.safeCreativeSpace?.length||0}개`,'ok');}catch(error){setStatus(`세계관 Blueprint 분석 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
-    if(target.matches('[data-lia-analyze-workflow],[data-lia-test-workflow]')){event.preventDefault();target.disabled=true;void(async()=>{try{const config=readIllustrationConfig();if(config.provider!=='comfyui-local')throw new Error('이미지 제공자를 ComfyUI Local로 선택해 주세요.');const resolved=resolveComfyWorkflowSource(config);if(!looksLikeComfyWorkflowGraph(resolved.workflow))throw new Error('ComfyUI API Workflow JSON을 입력해 주세요.');const profile=analyzeComfyWorkflowBinding(resolved.workflow);const area=document.getElementById('lia-image-binding-profile');if(area)area.value=JSON.stringify(profile,null,2);if(target.matches('[data-lia-test-workflow]')){const base=comfyBaseUrl(config.endpoint);const [stats,info]=await Promise.all([fetchWithTimeout(`${base}/system_stats`,{method:'GET',headers:{Accept:'application/json'}},Math.min(15000,config.timeoutMs),'ComfyUI system_stats'),fetchWithTimeout(`${base}/object_info`,{method:'GET',headers:{Accept:'application/json'}},Math.min(20000,config.timeoutMs),'ComfyUI object_info')]);if(!stats.ok||!info.ok)throw new Error(`ComfyUI 읽기 검사 실패: system_stats ${stats.status}, object_info ${info.status}`);const objectInfo=await info.json();const graph=comfyPromptGraph(resolved.workflow);const types=[...new Set(Object.values(graph||{}).map(node=>String(node?.class_type||'')).filter(Boolean))];const missing=types.filter(type=>!Object.prototype.hasOwnProperty.call(objectInfo||{},type));if(missing.length)throw new Error(`현재 ComfyUI에 없는 노드: ${missing.slice(0,8).join(', ')}`);setStatus(`ComfyUI 연결 사전 검사 완료 · 노드 종류 ${types.length}종 · Output ${profile.output.nodeId}. 생성 요청은 하지 않았습니다.`,'ok');}else{setStatus(`ComfyUI Workflow 분석 완료 · Output ${profile.output.nodeId} · Sampler ${profile.sampler.nodeId}`,'ok');}}catch(error){setStatus(`ComfyUI Workflow 확인 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
     if (target.matches("[data-go]")) { event.preventDefault(); activateTab(target.dataset.go); return; }
     if(target.matches('[data-lia-vault-id]')){event.preventDefault();preservedResultVaultId=String(target.dataset.liaVaultId||'');void (async()=>{try{await loadVaultResult();await refreshPreview({skipCapture:true});activateTab('edit');setStatus('선택한 보관 결과를 편집 화면에서 다시 읽었습니다.','ok');}catch(error){setStatus(`보관 결과 열기 실패: ${error?.message||error}`,'error');}})();return;}
     if(target.matches('[data-lia-fork-lineage]')){event.preventDefault();target.disabled=true;void (async()=>{try{const fork=await forkCurrentPersonaLineage();const vault=await readStoredResultVault();const saved=vault.find(item=>item.id===preservedResultVaultId);if(!saved)throw new Error('파생 결과를 보관함에서 다시 읽지 못했습니다.');await refreshPreview({skipCapture:true});activateTab('shelf');setStatus(`현재 초안에서 파생 계보를 만들고 보관함에 저장했습니다: ${fork.title} · revision 1`,'ok');}catch(error){setStatus(`파생 계보 저장 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
-    if(target.matches('[data-visual-asset-emotion]')){event.preventDefault();liaSelectedVisualAssetEmotion=String(target.dataset.visualAssetEmotion||'');liaSelectedVisualAssetPersonaKey=String(target.dataset.visualAssetPersonaKey||'');const title=document.querySelector('#sheet-emo [data-fill="emo"]');if(title)title.textContent=liaSelectedVisualAssetEmotion;const neutral=liaSelectedVisualAssetEmotion==='neutral',hasImage=!!String(target.dataset.visualAssetPath||'');document.querySelectorAll('#sheet-emo [data-variant]').forEach(node=>{const variants=String(node.dataset.variant||'').split(/\s+/);node.hidden=variants.includes('master')? !neutral:variants.includes('none')?hasImage:variants.includes('has')?!hasImage:false;});const actionButtons=document.querySelectorAll('#sheet-emo [data-lia-asset-delete],#sheet-emo [data-lia-asset-regenerate]');actionButtons.forEach(button=>{button.disabled=(neutral&&button.hasAttribute('data-lia-asset-delete'))||(!hasImage&&button.hasAttribute('data-lia-asset-delete'));button.title=button.disabled?(neutral?'Neutral Master는 묶음 폐기에서만 제거할 수 있습니다.':'저장된 이미지가 없습니다.'):'';});const restore=document.querySelector('#sheet-emo [data-lia-asset-restore]');if(restore){restore.disabled=!String(target.dataset.visualAssetBackupId||'');restore.title=restore.disabled?'이 이미지에는 복구용 백업이 없습니다.':'';}showLiaMockupDialog('sheet-emo',target);return;}
-    if(target.matches('[data-lia-asset-upload]')){event.preventDefault();document.getElementById('lia-asset-image-file')?.click();return;}
-    if(target.matches('[data-lia-asset-prompt]')){event.preventDefault();void (async()=>{try{const store=await readPersonaVisualAssetStore();const entry=store.sets?.[liaSelectedVisualAssetPersonaKey]?.images?.[liaSelectedVisualAssetEmotion];if(!entry)throw new Error('이미지 프롬프트를 찾지 못했습니다.');const editor=document.getElementById('lia-emotion-prompt-editor');if(editor)editor.hidden=false;const positive=document.getElementById('lia-emotion-positive');const negative=document.getElementById('lia-emotion-negative');if(positive)positive.value=String(entry.prompt||'');if(negative)negative.value=String(entry.negativePrompt||'');}catch(error){setStatus(`프롬프트 편집을 열지 못했습니다: ${error?.message||error}`,'error');}})();return;}
-    if(target.matches('[data-lia-save-emotion-prompt]')){event.preventDefault();void (async()=>{try{const key=liaSelectedVisualAssetPersonaKey,emotion=liaSelectedVisualAssetEmotion;const fresh=await getContext();const current=await readPersonaVisualAssetStore();const resolved=resolvePersonaVisualTarget({...fresh,visualAssetStore:current});if(resolved.personaKey!==key)throw new Error('작업 대상 Persona가 바뀌었습니다. 저장을 중단했습니다.');const entry=current.sets?.[key]?.images?.[emotion];if(!entry)throw new Error('이미지가 저장소에서 사라졌습니다.');current.sets[key].images[emotion]={...entry,prompt:String(document.getElementById('lia-emotion-positive')?.value||''),negativePrompt:String(document.getElementById('lia-emotion-negative')?.value||'')};await writePersonaVisualAssetStore({...current,updatedAt:new Date().toISOString()});const verified=await readPersonaVisualAssetStore();const saved=verified.sets?.[key]?.images?.[emotion];if(saved?.prompt!==current.sets[key].images[emotion].prompt||saved?.negativePrompt!==current.sets[key].images[emotion].negativePrompt)throw new Error('프롬프트 저장 readback이 일치하지 않습니다.');await refreshPreview({skipCapture:true});setStatus(`${emotion} 이미지 프롬프트를 저장하고 다시 읽었습니다.`,'ok');}catch(error){setStatus(`프롬프트 저장 실패: ${error?.message||error}`,'error');}})();return;}
     if(target.matches('[data-lia-audit-recommendation]')){const id=String(target.dataset.liaAuditRecommendation||'');if(id)target.checked?preservedPersonaAuditSelection.add(id):preservedPersonaAuditSelection.delete(id);return;}
     if(target.matches('[data-lia-audit-fix]')){const id=String(target.dataset.liaAuditFix||'');if(id)target.checked?preservedPersonaAuditFixSelection.add(id):preservedPersonaAuditFixSelection.delete(id);return;}
     if(target.matches('[data-lia-run-audit]')){event.preventDefault();target.disabled=true;void (async()=>{try{const audit=await runPersonaAudit();await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','rev');setStatus(`Persona Audit 완료: ${audit.score}/100 · ${audit.verdict.toUpperCase()}`,'ok');}catch(error){setStatus(`Persona Audit 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
     if(target.matches('[data-lia-build-selected-fix],[data-lia-build-hard-fix]')){event.preventDefault();target.disabled=true;void (async()=>{try{const mode=target.matches('[data-lia-build-hard-fix]')?'hard':'selected';const plan=await buildPersonaAuditFixPlan(mode);await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','rev');setStatus(`${mode==='hard'?'Hard Conflict 안전':''} 수정안 ${plan.changes.length}개를 만들었습니다. 적용 전 검토하세요.`,'ok');}catch(error){setStatus(`Audit 수정안 생성 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
     if(target.matches('[data-lia-apply-audit-fix]')){event.preventDefault();target.disabled=true;void (async()=>{try{const result=await applySelectedPersonaAuditFixes();liaMockupEditorDraftDirty=true;await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','all');setStatus(`선택한 Audit 수정안을 초안에 적용했습니다: ${result.fields.join(', ')}. 보관함 저장 전입니다.`,'ok');}catch(error){setStatus(`Audit 수정안 적용 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
-    if(target.matches('[data-lia-asset-regenerate]')){event.preventDefault();const emotion=liaSelectedVisualAssetEmotion;const ctx=liaMockupContext;if(!emotion||!ctx||target.disabled)return;target.disabled=true;void (async()=>{let job=null;try{const fresh=await getContext();const store=await readPersonaVisualAssetStore();const resolved=resolvePersonaVisualTarget({...fresh,visualAssetStore:store});if(resolved.personaKey!==liaSelectedVisualAssetPersonaKey)throw new Error('대상 Persona가 바뀌었습니다. 다시 선택해 주세요.');const targetSelection=currentVisualTargetSelectionValue();const cfg=await readStoredIllustrationConfig(true);if(!cfg.enabled)throw new Error('이미지 제공자가 꺼져 있습니다.');job=document.getElementById('job-neutral');const name=job?.querySelector('[data-fill="name"]');if(name)name.textContent=resolved.personaName;const emo=job?.querySelector('[data-fill="emo"]');if(emo)emo.textContent=emotion;const message=job?.querySelector('[data-job-msg]');showLiaMockupDialog('job-neutral',target);if(message)message.textContent=`${resolved.personaName} · ${emotion} · 실제 이미지 제공자 요청 중`;await generatePersonaVisualEmotion(fresh,emotion,{config:cfg,expectedPersonaKey:resolved.personaKey,expectedTargetSelection:targetSelection});job.dataset.liaJobActive='false';closeLiaMockupDialog(job);job=null;await refreshPreview({skipCapture:true});setStatus(`${emotion} 이미지 생성·저장 후 저장소 readback을 마쳤습니다.`,'ok');}catch(error){if(job){job.dataset.liaJobActive='false';closeLiaMockupDialog(job);}setStatus(`이미지 재생성 실패 또는 결과 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
-    if(target.matches('[data-lia-asset-restore]')){event.preventDefault();target.disabled=true;void(async()=>{try{const key=liaSelectedVisualAssetPersonaKey,emotion=liaSelectedVisualAssetEmotion;const fresh=await getContext();const store=await readPersonaVisualAssetStore();const resolved=resolvePersonaVisualTarget({...fresh,visualAssetStore:store});if(!key||resolved.personaKey!==key)throw new Error('선택 당시 Persona가 현재 대상과 다릅니다. 복구를 중단했습니다.');const entry=store.sets?.[key]?.images?.[emotion];if(!entry?.assetPath||!entry?.backupId)throw new Error('선택한 이미지에 복구용 백업이 없습니다.');const recovered=await ensurePersonaVisualAssetAvailable(entry,{personaKey:key,emotion,backupId:entry.backupId,mime:entry.mime});const verified=await readPersonaVisualAssetStore();const actual=verified.sets?.[key]?.images?.[emotion];if(!actual||actual.backupId!==entry.backupId||!actual.assetPath)throw new Error('이미지 복구 후 에셋 저장소 readback이 확인되지 않았습니다.');await refreshPreview({skipCapture:true});setStatus(recovered?.restored?`${emotion} 이미지를 백업에서 복구하고 RisuAI 파일 및 LIA 저장소를 다시 확인했습니다.`:`${emotion} 이미지 파일을 검사했습니다. 백업 복구는 필요하지 않았습니다.`,'ok');}catch(error){setStatus(`이미지 복구 실패 또는 결과 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
-    if(target.matches('[data-lia-asset-delete]')){event.preventDefault();void runLiaMockupAction('delete-visual-asset',target);return;}
-    if(target.matches('[data-lia-export-assets]')){event.preventDefault();void (async()=>{try{const fresh=await getContext();const target=resolvePersonaVisualTarget({...fresh,visualAssetStore:await readPersonaVisualAssetStore()});const exported=await exportPersonaVisualAssetBundleZip(target);const ok=downloadBinary(exported.fileName,exported.bytes,'application/zip');if(!ok)throw new Error('ZIP 다운로드를 시작하지 못했습니다.');setStatus(`${target.personaName} 에셋 ZIP ${exported.fileName}을 생성했습니다.`,'ok');}catch(error){setStatus(`에셋 ZIP 내보내기 실패: ${error?.message||error}`,'error');}})();return;}
-    if(target.matches('[data-lia-import-assets]')){event.preventDefault();const targetInfo=resolvePersonaVisualTarget(liaMockupContext||{});liaSelectedVisualAssetPersonaKey=targetInfo.personaKey;document.getElementById('lia-asset-zip-file')?.click();return;}
-    if(target.matches('[data-lia-discard-assets]')){event.preventDefault();const current=resolvePersonaVisualTarget(liaMockupContext||{});liaSelectedVisualAssetPersonaKey=current.personaKey;showLiaMockupDialog('sheet-bundle-del',target);return;}
-    if(target.matches('[data-lia-composition-preset]')){event.preventDefault();if(document.querySelector('#asset-lock-fields textarea')?.disabled){setStatus('확정된 Visual Lock이 있어 구도를 바꿀 수 없습니다. Neutral을 다시 생성한 뒤 새 Lock을 확인하세요.','error');return;}preservedVisualCompositionPreset=normalizeVisualCompositionPreset(target.dataset.liaCompositionPreset);target.parentElement?.querySelectorAll('[data-lia-composition-preset]').forEach(button=>{button.classList.toggle('is-on',button===target);button.setAttribute('aria-pressed',String(button===target));});return;}
-    if(target.matches('[data-lia-save-asset-preset]')){event.preventDefault();void (async()=>{try{const result=await saveVisualAssetPreset(document.getElementById('lia-asset-preset-name')?.value);const store=await readVisualAssetPresetStore();preservedVisualAssetPresetStore=store;await refreshPreview({skipCapture:true});setStatus(`이미지 프리셋을 ${result.updated?'갱신':'저장'}하고 실제 저장소에서 다시 읽었습니다: ${result.preset.name}`,'ok');}catch(error){setStatus(`프리셋 저장 실패: ${error?.message||error}`,'error');}})();return;}
-    if(target.matches('[data-lia-load-asset-preset]')){event.preventDefault();void (async()=>{try{const store=await readVisualAssetPresetStore();preservedVisualAssetPresetStore=store;const preset=store.items.find(item=>item.id===document.getElementById('lia-asset-preset-select')?.value);if(!preset)throw new Error('불러올 프리셋을 선택해 주세요.');applyVisualAssetPreset(preset);await refreshPreview({skipCapture:true});setStatus(`프리셋 조건을 불러왔습니다: ${preset.name}. 에셋 작업 전 내용을 확인하세요.`,'ok');}catch(error){setStatus(`프리셋 불러오기 실패: ${error?.message||error}`,'error');}})();return;}
-    if(target.matches('[data-lia-delete-asset-preset]')){event.preventDefault();void (async()=>{try{const id=document.getElementById('lia-asset-preset-select')?.value;if(!id)throw new Error('삭제할 프리셋을 선택해 주세요.');const store=await readVisualAssetPresetStore();const item=store.items.find(p=>p.id===id);if(!item)throw new Error('프리셋이 이미 삭제되었습니다.');if(!globalThis.confirm?.(`프리셋 ‘${item.name}’을 삭제할까요? 이미지 에셋은 변경되지 않습니다.`))return;await deleteVisualAssetPreset(id);preservedVisualAssetPresetStore=await readVisualAssetPresetStore();await refreshPreview({skipCapture:true});setStatus(`프리셋 ‘${item.name}’을 삭제하고 다시 읽었습니다.`,'ok');}catch(error){setStatus(`프리셋 삭제 실패: ${error?.message||error}`,'error');}})();return;}
-    if(target.matches('[data-act="bundle-del"]')){event.preventDefault();target.disabled=true;void runLiaMockupAction('discard-visual-bundle',target).finally(()=>{if(target.isConnected)target.disabled=false;});return;}
     if(target.matches("[data-subtab]")){activateLiaMockupSubtab(target.closest("[data-subtabs]")?.dataset?.subtabs||"",target.dataset.subtab);return;}
     if(target.closest("#ed-lang")){const language=target.dataset.language||"original";liaMockupEditorLanguage=language;const ctx=liaMockupContext;if(ctx){const app=document.getElementById("dpg-preview-root");if(app)hydrateLiaMockupApp(ctx,app);}return;}
     if(target.closest("#ad-lang")){const group=target.closest("#ad-lang");group.querySelectorAll("button").forEach(button=>button.setAttribute("aria-pressed",String(button===target)));return;}
     if (target.id === "random-cand-go" || target.matches('[data-run-job="job-cand"]')) { event.preventDefault(); void runLiaMockupAction("candidate", target); return; }
     if (["mk-classic", "mk-conv", "btn-cand-go"].includes(target.id)) { event.preventDefault(); void runLiaMockupAction("generate", target); return; }
     if (target.matches("[data-regen]")) { event.preventDefault(); void runLiaMockupAction("reroll-field", target); return; }
-    if (target.id === "btn-confirm-visual-lock") { event.preventDefault(); void runLiaMockupAction("confirm-visual-lock", target); return; }
     if(target.id==="lia-translate-persona"){event.preventDefault();void runLiaMockupAction("translate",target);return;}
     if(target.id==="lia-save-provider"){event.preventDefault();void runLiaMockupAction("save-provider",target);return;}
-    if(target.id==="lia-save-image-provider"){event.preventDefault();void runLiaMockupAction("save-image-provider",target);return;}
     if(target.id==="upd-go"){event.preventDefault();void runLiaMockupAction("update-five",target);return;}
     if(target.id==="lia-run-evolution"){event.preventDefault();void runLiaMockupAction("run-evolution",target);return;}
     if(target.id==="lia-apply-evolution"){event.preventDefault();void runLiaMockupAction("apply-evolution",target);return;}
-    if(target.id==="lia-generate-neutral"){event.preventDefault();void runLiaMockupAction("generate-neutral",target);return;}
-    if(target.id==="lia-generate-bundle"){event.preventDefault();void runLiaMockupAction("generate-bundle",target);return;}
     if(target.id==="lia-confirm-delete-vault"){event.preventDefault();target.disabled=true;void (async()=>{try{const current=await readStoredResultVault();if(!current.some(item=>item.id===preservedResultVaultId))throw new Error('삭제 대상이 이미 바뀌었거나 보관함에서 사라졌습니다. 다시 선택해 주세요.');const result=await deleteVaultResult();closeLiaMockupDialog(target.closest('.overlay'));await refreshPreview({skipCapture:true});activateTab('shelf');setStatus(`보관함 항목만 삭제했습니다: ${result.title}. 채택한 Persona와 채팅 연결은 변경하지 않았습니다.`,'ok');}catch(error){setStatus(`보관함 삭제 실패 또는 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
     if(target.matches('[data-lia-editor-writer]')){event.preventDefault();const mode=String(target.dataset.liaEditorWriter||'');target.disabled=true;void(async()=>{try{captureGeneratedOutputState();let saved;if(mode==='vault'){saved=await saveCurrentResultToVault();const rows=await readStoredResultVault();if(!rows.some(item=>item.id===preservedResultVaultId))throw new Error('저장한 초안을 보관함에서 다시 읽지 못했습니다.');liaMockupEditorDraftDirty=false;setStatus(`편집 초안을 LIA local_only 보관함에 저장하고 다시 읽었습니다: ${saved.title}`,'ok');}else if(mode==='current'){saved=await saveEditedResultToCurrentPersona();setStatus(`현재 채팅이 소유한 RisuAI Persona를 저장하고 다시 읽었습니다: ${saved.personaName}`,'ok');}else if(mode==='new'){saved=await saveEditedResultAsNewPersona();setStatus(`새 RisuAI Persona를 저장하고 다시 읽었습니다: ${saved.personaName}. 기존 Persona와 채팅 연결은 유지됩니다.`,'ok');}else throw new Error('알 수 없는 저장 대상입니다.');await refreshPreview({skipCapture:true});activateTab('edit');activateLiaMockupSubtab('ed','out');}catch(error){setStatus(`편집 저장 실패 또는 결과 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
     if(target.matches(".lia-mockup-evolution")){const id=String(target.dataset.evolutionId||"");if(id){target.checked?preservedPersonaEvolutionSelection.add(id):preservedPersonaEvolutionSelection.delete(id);const apply=document.getElementById("lia-apply-evolution");if(apply)apply.disabled=!preservedPersonaEvolutionSelection.size;}return;}
@@ -24479,7 +22772,7 @@ ${revisionText}`);
       void (async()=>{try{const runtimeCtx=await getLiveRuntimeContext();const result=await PersonaSelectionManager.applyCard(runtimeCtx,choice);closeLiaMockupDialog(target.closest(".overlay"));await refreshPreview({skipCapture:true});await refreshPersonaProofIndicator();setStatus(result.liveReconfigured?"기본 Persona는 유지하고 현재 채팅의 Live 연결을 다시 읽었습니다.":"기본 Persona는 유지하고 선택한 Persona를 현재 채팅에 연결했습니다.","ok");}catch(error){setStatus(`연결 실패 또는 확인 필요: ${error?.message||error}`,"error");}finally{if(target.isConnected)target.disabled=false;}})();
       return;
     }
-    if (target.matches("[data-open]")) { event.preventDefault();if(target.dataset.open==='sheet-bundle-del')liaSelectedVisualAssetPersonaKey=resolvePersonaVisualTarget(liaMockupContext||{}).personaKey; const active=document.querySelector("#dpg-preview-root .overlay.is-open"); if(active) closeLiaMockupDialog(active); showLiaMockupDialog(target.dataset.open, target); return; }
+    if (target.matches("[data-open]")) { event.preventDefault(); const active=document.querySelector("#dpg-preview-root .overlay.is-open"); if(active) closeLiaMockupDialog(active); showLiaMockupDialog(target.dataset.open, target); return; }
     if (target.matches("[data-job-cancel]")) { event.preventDefault();const overlay=target.closest('.overlay');if(overlay?.id==='job-update'){const cancelled=cancelManualLivePersonaAnalysis('user_cancelled');setStatus(cancelled?'갱신 취소를 요청했습니다. 결과는 반영하지 않습니다.':'저장을 마무리 중이거나 진행 중인 갱신이 없습니다.','info');}closeLiaMockupDialog(overlay);return; }
     if (target.matches("[data-close]")) { event.preventDefault(); closeLiaMockupDialog(target.closest(".overlay")); return; }
     if (target.closest(".overlay") && target === target.closest(".overlay")) { closeLiaMockupDialog(target); return; }
@@ -24501,24 +22794,17 @@ ${revisionText}`);
       setStatus("이 페이지의 저장은 제품 기능과 아직 연결되지 않았습니다.", "error");
       return;
     }
-    if(target.matches('[data-lia-run-diagnostic]')){event.preventDefault();target.disabled=true;void (async()=>{try{const rows=await Promise.allSettled([getContext(),readStoredLLMConfig(),readStoredIllustrationConfig(true),readPersonaVisualAssetStore(),readStoredResultVault()]);const [ctx,text,image,assets,vault]=rows;const result={personaDatabase:ctx.status==='fulfilled'?ctx.value.personaDatabaseReadStatus?.available===false?'읽기 실패':'읽기 확인':'읽기 실패',textProvider:text.status==='fulfilled'?`${text.value.provider} · key ${text.value.apiKey?'저장됨':'없음'}`:`읽기 실패: ${text.reason?.message||text.reason}`,imageProvider:image.status==='fulfilled'?`${image.value.enabled?'사용':'중지'} · ${image.value.provider} · key ${image.value.apiKey?'저장됨':'없음'}`:`읽기 실패: ${image.reason?.message||image.reason}`,visualAssets:assets.status==='fulfilled'?`${Object.keys(assets.value.sets||{}).length}개 대상 묶음`:`읽기 실패: ${assets.reason?.message||assets.reason}`,vault:vault.status==='fulfilled'?`${vault.value.length}개 보관 결과`:`읽기 실패: ${vault.reason?.message||vault.reason}`,storageOwner:'local_only'};const output=document.getElementById('lia-diagnostic-result');if(output)output.textContent=Object.entries(result).map(([key,value])=>`${key}: ${value}`).join('\n');setStatus(rows.some(row=>row.status==='rejected')?'LIA 진단에서 일부 저장소를 읽지 못했습니다. 상세 결과를 확인하세요.':'LIA 읽기 전용 진단 완료. 저장·삭제·모델 호출은 수행하지 않았습니다.','ok');}catch(error){setStatus(`LIA 진단 실패: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-lia-run-diagnostic]')){event.preventDefault();target.disabled=true;void(async()=>{try{const rows=await Promise.allSettled([getContext(),readStoredLLMConfig(),readStoredResultVault()]);const result={context:rows[0].status,textSettings:rows[1].status,vault:rows[2].status};const out=document.getElementById('lia-diagnostic-result');if(out)out.textContent=JSON.stringify(result,null,2);setStatus('LIA 읽기 전용 진단을 완료했습니다.','ok');}catch(error){setStatus(String(error?.message||error),'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
     if (target.hasAttribute("data-toast")) { event.preventDefault(); setStatus("이 목업 동작은 제품 기능과 연결되지 않아 실행하지 않았습니다.", "error"); }
   }
   function handleLiaMockupChange(event) {
     const field = event.target;
     if (!field) return;
     if(field.matches('#dpg-use-character-lore,#dpg-use-chat-lore,#dpg-use-module-lore,.dpg-module-choice')){void refreshPreview({skipCapture:true});return;}
-    if(field.id==='lia-image-provider'||field.id==='lia-image-enabled'){syncIllustrationProviderUi();return;}
-    if(field.id==='lia-asset-image-file'&&field.files?.[0]){const file=field.files[0],emotion=liaSelectedVisualAssetEmotion,key=liaSelectedVisualAssetPersonaKey;void (async()=>{try{if(!emotion||!key)throw new Error('업로드 대상을 먼저 선택해 주세요.');const fresh=await getContext();const target=resolvePersonaVisualTarget({...fresh,visualAssetStore:await readPersonaVisualAssetStore()});if(target.personaKey!==key)throw new Error('선택 당시의 Persona와 현재 대상이 다릅니다. 업로드를 중단했습니다.');await importPersonaVisualAssetImage(target,emotion,file);await refreshPreview({skipCapture:true});closeLiaMockupDialog(document.getElementById('sheet-emo'));setStatus(`${target.personaName} · ${emotion} 업로드 이미지를 저장하고 다시 읽었습니다.`,'ok');}catch(error){setStatus(`이미지 업로드 실패: ${error?.message||error}`,'error');}finally{field.value='';}})();return;}
-    if(field.id==='lia-asset-zip-file'&&field.files?.[0]){const file=field.files[0];void (async()=>{try{const fresh=await getContext();const target=resolvePersonaVisualTarget({...fresh,visualAssetStore:await readPersonaVisualAssetStore()});if(target.personaKey!==liaSelectedVisualAssetPersonaKey&&liaSelectedVisualAssetPersonaKey)throw new Error('선택 당시 Persona와 현재 대상이 달라져 가져오기를 중단했습니다.');const current=target.bundle||normalizeVisualAssetSet({},target.personaKey);const count=Object.keys(current.images||{}).length;if(count&&!globalThis.confirm?.(`‘${target.personaName}’의 현재 감정 에셋 ${count}개를 ZIP 내용으로 교체할까요?`))return;const imported=await importPersonaVisualAssetBundleZip(target,file);await refreshPreview({skipCapture:true});setStatus(`${target.personaName} 에셋 ${imported.assetCount}개를 ZIP에서 가져오고 저장소를 다시 읽었습니다.`,'ok');}catch(error){setStatus(`에셋 ZIP 가져오기 실패: ${error?.message||error}`,'error');}finally{field.value='';}})();return;}
     if(field.matches(".lia-mockup-evolution")){const id=String(field.dataset.evolutionId||"");if(id){field.checked?preservedPersonaEvolutionSelection.add(id):preservedPersonaEvolutionSelection.delete(id);const apply=document.getElementById("lia-apply-evolution");if(apply)apply.disabled=!preservedPersonaEvolutionSelection.size;}return;}
     if (field.id === "lia-rich-profile") { liaMockupContextOptions = { ...liaMockupContextOptions, richPersonaMode: field.checked === true }; return; }
     if (field.id === "lia-max-chars") { field.setCustomValidity(""); markLiaLoreLimitDirty(field); return; }
     if(field.id==="asset-target"){preservedVisualTargetPersonaId=String(field.value||'__auto__');void refreshPreview({skipCapture:true});return;}
-    if(field.id==='lia-asset-style-notes'){preservedVisualStyleNotes=String(field.value||'');return;}
-    if(field.id==='lia-asset-composition'){preservedVisualCompositionPreset=normalizeVisualCompositionPreset(field.value);return;}
-    if(field.id==='lia-asset-composition-notes'){preservedVisualCompositionNotes=String(field.value||'');return;}
-    if(field.id==='emo-list'){const values=unique(String(field.value||'').split(/\r?\n|,/).map(item=>item.trim()).filter(Boolean),48);if(!values.some(item=>normalizeEmotionKey(item)==='neutral'))values.unshift('neutral');const previous=unique(String(preservedVisualEmotionText||'').split(/\r?\n|,/).map(item=>item.trim()).filter(Boolean),48);const added=values.some(item=>!previous.includes(item));const selected=resolvePersonaVisualTarget(liaMockupContext||{});if(added&&!selected.bundle?.visualLock?.confirmed){field.setCustomValidity('새 감정은 Neutral Visual Lock 확정 후 추가할 수 있습니다.');field.value=previous.join('\n');liaVisualEmotionDraftText=previous.join('\n');setStatus('Neutral Visual Lock을 확정한 뒤 감정을 추가할 수 있습니다.','error');return;}field.setCustomValidity('');preservedVisualEmotionText=values.join('\n');liaVisualEmotionDraftText=preservedVisualEmotionText;return;}
     if(field.id==="lia-translation-language"){preservedTranslationLanguage=normalizeTranslationLanguage(field.value);preservedTranslationText="";const draft=document.getElementById("lia-translation-draft");if(draft)draft.value="";return;}
     if(field.id==="dpg-source-persona"){liaMockupContextOptions={...liaMockupContextOptions,selectedPersonaKey:String(field.value||"auto")};void refreshPreview({skipCapture:true});return;}
     if (field.matches('[data-lock]')) {
@@ -24534,9 +22820,6 @@ ${revisionText}`);
     if(field.id==='dpg-user-rewrite-guidance'){preservedUserRewriteGuidanceText=String(field.value||'');const preview=document.getElementById('lia-prompt-inspection-text');if(preview&&liaMockupContext)preview.value=buildGenerationPromptForContext(liaMockupContext);return;}
     if(field.id==='dpg-persona-preview'){const current=getLLMResultOverride();if(!current)return;const edited=String(field.value||'');const profile=normalizePersonaVariantProfile(current.activePersonaProfile||preservedPersonaVariantProfile);const variants=normalizePersonaVariants(current.personaVariants,current.personaPrompt);variants[profile]=edited;const next={...current,personaPrompt:edited,personaVariants:variants,activePersonaProfile:profile};setGeneratedOutputText(resultToOutputText(next));markLiaEditorDirty();syncAdoptionPreflightMetrics();return;}
     if (field.id === "random-concept") { preservedRandomConceptText = normalizeRandomConcept(field.value); return; }
-    if(field.id==='lia-asset-style-notes'){preservedVisualStyleNotes=String(field.value||'');return;}
-    if(field.id==='lia-asset-composition-notes'){preservedVisualCompositionNotes=String(field.value||'');return;}
-    if(field.id==='emo-list'){liaVisualEmotionDraftText=String(field.value||'');return;}
     if(field.id==="lia-shelf-search"){const query=String(field.value||'').trim().toLocaleLowerCase('ko');document.querySelectorAll('#shelf-list [data-lia-vault-id]').forEach(row=>{row.hidden=!!query&&!String(row.textContent||'').toLocaleLowerCase('ko').includes(query);});return;}
     if (field.id === "lia-max-chars") {
       const n = Number(field.value);
@@ -24578,7 +22861,7 @@ ${revisionText}`);
   }
   function handleLiaMockupKeydown(event) {
     const dialog = document.querySelector("#dpg-preview-root .overlay.is-open");
-    if (!dialog) return;
+    if (!dialog) { if(event.key==="Escape")closeLiaMenu(); return; }
     if (event.key === "Escape") { event.preventDefault(); closeLiaMockupDialog(dialog); return; }
     if (event.key !== "Tab") return;
     const focusable = [...dialog.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex]:not([tabindex="-1"])')]
@@ -24639,8 +22922,20 @@ ${revisionText}`);
     });
   }
 
+  function closeLiaMenu(event = null) {
+    if(event?.target?.closest?.('.menu'))return;
+    document.querySelectorAll('.menu.is-open').forEach(menu=>{menu.classList.remove('is-open');menu.querySelector('[data-menu]')?.setAttribute('aria-expanded','false');});
+  }
+  async function closeLiaUi() {
+    cancelLiaUpdateNotice();
+    liaUiVisible=false;
+    const stage=document.querySelector('.stage');if(stage){stage.hidden=true;stage.style.display='none';}
+    await api.hideContainer?.();
+  }
   async function openUI() {
+    cancelLiaUpdateNotice();
     await api.showContainer("fullscreen");
+    document.removeEventListener("click",closeLiaMenu);document.addEventListener("click",closeLiaMenu);
     if (liaUiVisible && document.querySelector(".frame .app #dpg-status")) return;
     liaUiVisible = true;
     document.body.className = "t-lia";
@@ -24660,8 +22955,11 @@ ${revisionText}`);
   async function maybeFailoverSilentLiveSyncBackend() { return false; }
   async function registerLiveSyncCaptureBackend() {
     liveSyncCaptureBackend = LIVE_SYNC_CAPTURE_BACKENDS.NONE;
-    liveSyncCaptureFallbackReason = "manual_only";
-    return false;
+    liveSyncCaptureFallbackReason = "manual_only_notification";
+    if(typeof api.addRisuChatListener!=="function")return false;
+    liveSyncOutputListener=event=>{void maybeNotifyLiaUpdate(event).catch(error=>appendDebugLog('manual_update_notice','unavailable',{error:errorForLog(error)},'warn'));};
+    try {await api.addRisuChatListener("output",liveSyncOutputListener);return true;}
+    catch(_){liveSyncOutputListener=null;return false;}
   }
 
   async function unregisterUiRegistration(handle, stableId, methodNames, fallbackArgumentLists = []) {
@@ -24720,6 +23018,8 @@ ${revisionText}`);
     cancelManualLivePersonaAnalysis("plugin_unloaded");
     liaHealthRecovery?.clear();
     pluginUnloaded = true;
+    cancelLiaUpdateNotice();
+    if(typeof document!=="undefined")document.removeEventListener?.('click',closeLiaMenu);
     liaPreviewEpoch += 1; liaEmotionResponseEpoch += 1; LiaLegacyServerRecovery.clear();
     const registeredUnloadHandler = unloadEventHandler;
     const registeredUnloadRegistration = unloadEventRegistration;
@@ -25330,7 +23630,6 @@ const createMemorySuiteLiaHealthAdapter = options => {
 
   void ensureLiaHandoffIpc();
   try { await readLogStore(); } catch (_) {}
-  try { preservedVisualAssetPresetStore = await readVisualAssetPresetStore(); } catch (_) { preservedVisualAssetPresetStore = normalizeVisualAssetPresetStore(); }
   appendOperationLog("plugin_start", `${PLUGIN_DISPLAY_NAME} v${PLUGIN_VERSION} 시작`, {}, "info");
   appendDebugLog("lifecycle", "plugin_start", { version: PLUGIN_VERSION }, "info");
   registeredSettingHandle = await api.registerSetting?.(PLUGIN_DISPLAY_NAME, openUI, PLUGIN_ICON, "html", LIA_SETTING_UI_ID);
