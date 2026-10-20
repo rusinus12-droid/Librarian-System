@@ -1,198 +1,345 @@
-# LIBRA lens memory: design (2026-10-20, draft for implementation)
+# LIBRA Lens Memory: Final Design Specification (2026-10-20)
 
-## Why
+## 1. Why & Core Principles
 
-Prompt Studio used to edit the Librarian (canonical) analysis prompt. This had two problems:
+Prompt Studio previously edited the Librarian (canonical) analysis prompt. That had two structural problems:
 
-- **Risk.** A bad instruction could stop new memory from being saved, or put plausible but wrong values into the current State and the people cards.
-- **Little effect.** Information the user asked for had to fit the canonical contract's fixed fields. It ended up inside fact text, or was lost.
+- **Risk.** A custom instruction could break canonical JSON/contract compliance, stop new memory from being saved, or inject plausible-sounding hallucinations into canonical State and people cards.
+- **Little effect.** User-requested observations that did not fit the canonical contract's fixed fields (`entities`, `facts`, `stateBindings`) were either squeezed into generic fact text or dropped during admission.
 
-The fix is to split the two. The canonical prompt is locked. User instructions run as separate **lenses**. Each lens has its own model call, its own storage and its own recall source. A lens can never write to canonical memory, State or the people cards.
+**The solution is strict separation:**
+1. **The canonical prompt is locked.** It can be viewed read-only, never edited.
+2. **User instructions run as separate lenses.** Each lens has its own model call, its own storage namespace, its own admission gate, and its own recall budget.
+3. **One-way authority flow.** A lens can never write to canonical memory, State, or people cards. Optionally, a lens may receive the same turn range's canonical facts as read-only context.
 
-## Decisions
+---
 
-| # | Question | Decision |
+## 2. Finalized Design Decisions
+
+| # | Area | Final Decision |
 |---|---|---|
-| 1 | Canonical prompt | Locked. It can be viewed, never edited. |
-| 2 | Number of lenses | Several, at most **5** per user. The GUI stays simple. |
-| 3 | Evidence | Relaxed: interpretations are allowed, but each item must name real source turns. See *Evidence levels*. |
-| 4 | Provenance | Every lens record shows how it was made. See *Provenance*. |
-| 5 | Deleting a lens | The lens and its records move to a **trash** (hidden, out of recall). They can be restored there or deleted permanently there. |
-| 6 | Raw model responses | Keep only the **most recent N runs** per lens (default 20). |
-| 7 | Records after a lens instruction changes | Keep them unchanged and mark them with a **"이전 지침으로 생성"** (made with an earlier instruction) badge. They are not re-analyzed automatically. |
+| 1 | **Canonical prompt** | **Locked (read-only).** The 19 editable sections, Easy prompt settings, and Librarian addendum are removed from execution. Any legacy custom prompt/profile is reset to the built-in canonical prompt and archived read-only (no migration wizard; Lens Memory is treated as a clean new feature). |
+| 2 | **Lens definition scope vs. record scope** | **Global definitions + Per-scope records.** Lens definitions (up to **5** active/paused slots) and their instruction revision history are stored in global plugin settings for reuse across chats (with optional per-scope enable/pause override). Generated lens records, run logs, and raw responses are stored per chat scope (`…:scope:<scope>:lens:<lensId>:…`). |
+| 3 | **Slot limit & Trash** | At most **5** lenses in `active` or `paused` status. Deleting a lens moves it to **trash (`trashed`)**, freeing the slot while hiding its records from GUI lists and recall. Trashed lenses can be **restored** (if active + paused < 5) or **permanently deleted** (local + server). |
+| 4 | **Evidence levels** | Relaxed compared to canonical memory, but **`refs` (real turns in the analyzed range) are mandatory**. Supports `quoted` (exact quote match in referenced turn), `interpreted` (valid `refs` + `basis`, stored when `evidenceMode === 'interpretive'`), and `rejected` (missing/out-of-range `refs` or mode violation). |
+| 5 | **Extra fields (`extra`)** | Any model output fields beyond `{ text, label, refs, quote, basis }` are sanitized and preserved verbatim under `item.extra`, rendered as key-value (`kv`) pairs on lens cards. |
+| 6 | **Provenance & Instruction revisions** | Every edit to `instruction` produces a new content-hashed `instructionRevision` and appends the previous instruction to `revisionHistory`. Existing records are never overwritten; records from older revisions display an **"이전 지침으로 생성"** badge and an expandable diff against the current instruction. |
+| 7 | **Raw model responses** | Kept in a bounded ring buffer of the **most recent N runs** per lens per scope (default **20**, configurable). Older raw responses are evicted while run summaries and admitted records remain. |
+| 8 | **Recall budget & Projection boundary** | Lens memory uses its own recall source kind (`lens`) and a **dedicated budget capped at 20–25% of the dynamic recall budget** (e.g., max 2,400–3,000 chars out of the 12,000-char ceiling, guaranteeing 75–80% for canonical memory), divided among recall-enabled lenses by `recall.share`. Injected blocks carry a explicit non-canonical header (`[LIBRA LENS MEMORY — PERSPECTIVE NOTES (NON-CANONICAL)]`) and per-item tags (`[lens:<name>]` or `[lens:<name> · 해석]`). |
 
-## Architecture
+---
+
+## 3. Architecture & Reference Patterns (World Additional / User DLC Integration)
 
 ```
 chat turns ─┬─▶ canonical analysis (locked prompt) ─▶ canonical memory ─▶ State, people cards
             ├─▶ Micro analysis (existing)          ─▶ Micro memory
-            └─▶ lens A, lens B, …  (one call each)  ─▶ lens memory (per lens)
+            └─▶ lens 1..5 (separate call per lens) ─▶ lens admission gate ─▶ lens memory (per scope & lens)
 
-recall search ◀── canonical · Micro · lens (own source kind, own budget)
+recall search ◀── canonical (75–80% budget) · Micro · lens (20–25% separate budget, share-weighted)
 ```
 
-- **Flow is one way.** Lenses never write to canonical memory, State or the people cards. A lens may receive the canonical facts of the same range as read-only context.
-- **Failures are isolated.** A failed lens leaves canonical analysis and the other lenses alone.
-- **Built on Micro.** Micro memory is the template: a separate provider job, its own schema and head, and its own recall kind with a lower authority label. Lens memory reuses Micro's binding to source revisions. That binding invalidates records on regeneration, swipe, deletion and worldline branching.
+We adopt six battle-tested mechanisms from the reference `WorldAdditionalCore` / `UserDlcCore` architecture:
 
-## Canonical lock
+1. **Non-Canonical Projection Boundary (`WmResultProjection` pattern)**
+   - Before injecting any lens item into the prompt, the runtime verifies that the record's `scopeKey`, `worldlineId`, and source revision (`sourceRevisionId` / `sourceDigest`) match the active chat worldline.
+   - The injected block explicitly declares that lens notes are user-defined perspective notes and **never override canonical memory or State on conflict**.
+2. **In-Flight Source Revision Guard (`lensSourceToken` + Micro binding)**
+   - Before dispatching a lens model call for a turn range, LIBRA captures a `lensSourceToken` containing `{ scopeKey, worldlineId, sessionEpoch, turnRange, sourceRevisionId, sourceDigest }`.
+   - When the async model call returns, LIBRA re-verifies the token against the current completed-turn receipts / Micro head. If the user regenerated, swiped, deleted, or branched while the call was in flight, the response is discarded (`stale_source_revision`) without touching storage.
+3. **Two-Phase Preview & Trial Run (`preview → commit` pattern)**
+   - **OOC Creation / Edit Preview:** Creating or editing a lens via OOC generates an in-memory draft showing `before → after` field diffs (`instruction`, `labels`, `evidenceMode`, `canonicalContext`) without mutating saved settings until the user clicks **Apply**.
+   - **Trial Run on Recent Range:** From the lens editor or OOC panel, the user can run a 1-call **Trial Run** on the most recent completed batch. The output passes through the real lens admission gate and renders a preview card showing `quoted`, `interpreted`, `rejected` (with reasons), and `extra` fields—without writing to storage.
+4. **Human-Readable Korean Admission & Recall Diagnostics (`REJECT_REASON_LABELS` pattern)**
+   - Every rejected item in a run record and every filtered candidate in the Recall Viewer records a machine code paired with a clear Korean diagnostic label (see Section 5 & Section 8).
+5. **Structured `extra` Key-Value Card Rendering (`udlc-kv` pattern)**
+   - User lenses often ask for custom structured facets (e.g., `clueStatus`, `subtext`, `intensity`, `counterparty`). Admitted items store these in `extra` (bounded to max 12 keys, scalar/short-array values) and render them as clean key-value rows inside the lens card.
+6. **Revision History & Inline Diff Preservation**
+   - Editing a lens increments its revision and archives the prior `{ instructionRevision, instruction, updatedAt }` entry in `revisionHistory` (up to 20 entries) so any older lens record can render an exact side-by-side/inline diff against the current instruction.
 
-- **Prompt Studio changes role.** It stops editing the Librarian prompt: the 19 sections, Easy settings and the Librarian addendum are removed. It becomes the lens manager.
-- **The canonical prompt stays visible.** "최종 프롬프트 보기" (view final prompt) shows it read-only.
-- **Migrating old custom profiles.** On first start after the change, users with a customized memory profile see a one-time question: "이 지침을 렌즈로 옮길까요?" (move this guidance into a lens?).
-  - **Yes:** a lens is created from the profile's custom text.
-  - **Either answer:** the canonical prompt returns to the built-in profile. The old profile is archived read-only.
-- **Defences kept.** The output-contract reassertion becomes unnecessary once no custom text reaches the canonical prompt. Admission vocabulary normalization (2.3.178) stays, because models drift without custom instructions too.
+---
 
-## Lens definition
+## 4. Data Schemas
 
-| Field | Meaning |
-|---|---|
-| `lensId`, name, description | e.g. "떡밥 추적" (foreshadowing tracker), "감정선" (emotional arc) |
-| instruction | The user's text, typed or built with OOC. Every edit creates a new **instruction revision**, identified by a content hash. |
-| labels (optional) | Suggested item labels, e.g. `떡밥` (foreshadowing), `회수됨` (paid off). Without them the model labels freely. |
-| evidence mode | `strict` stores only quoted items. `interpretive` also stores interpreted items. |
-| connection | An existing AI preset. The default is the canonical connection. |
-| cadence | Every canonical batch, every N batches, or manual only. |
-| canonical context | When on, the range's canonical facts are passed read-only. This helps interpretive lenses at the cost of extra tokens. |
-| recall | On or off, plus this lens's share of the lens recall budget. |
-| status | `active`, `paused`, `trashed` |
+### 4.1 Global Lens Registry (`libra.lens_registry.v1`)
 
-- **Separate calls.** Each lens is its own call. Combining lenses would be cheaper, but one failure would fail them all and provenance would blur.
-- **Limit.** At most 5 lenses, counting active and paused. Trashed lenses do not count.
-
-### Output contract (deliberately small)
+Stored in global plugin settings (`settings.lensRegistry`), with optional per-scope status/recall overrides in `…:scope:<scope>:lens:scope_state`:
 
 ```json
-{ "items": [ { "text": "…", "label": "…", "refs": ["t12-a"], "quote": "…", "basis": "…" } ] }
+{
+  "schema": "libra.lens_registry.v1",
+  "maxActivePausedSlots": 5,
+  "rawResponseRingLimit": 20,
+  "recallBudgetRatio": 0.22,
+  "recallMaxChars": 2600,
+  "lenses": [
+    {
+      "schema": "libra.lens_definition.v1",
+      "lensId": "lens_foreshadow",
+      "name": "떡밥·복선 추적",
+      "description": "미해결 단서, 수상한 사물, 나중에 회수될 발언을 기록",
+      "instruction": "장면에서 스쳐 지나간 단서, 대답을 회피한 질문, 원인이 밝혀지지 않은 이상 현상을 찾아 기록하라.",
+      "instructionRevision": "rev_9c41e02b",
+      "revisionHistory": [
+        {
+          "revision": "rev_1a00bc11",
+          "instruction": "미해결 단서와 복선을 찾아 기록하라.",
+          "updatedAt": 1760000000000
+        }
+      ],
+      "labels": ["떡밥", "단서", "회수됨", "의문"],
+      "evidenceMode": "interpretive",
+      "connection": { "presetName": "" },
+      "cadence": { "mode": "every_batch", "everyNBatches": 1 },
+      "canonicalContext": true,
+      "recall": { "enabled": true, "share": 1 },
+      "status": "active",
+      "createdAt": 1760000000000,
+      "updatedAt": 1760050000000,
+      "trashedAt": null
+    }
+  ],
+  "archivedLegacyPrompts": {
+    "archivedAt": 1760000000000,
+    "profiles": {}
+  }
+}
 ```
 
-- **Fixed fields.** Only `text` and `refs` are required.
-- **Interpreted items** must also give `basis`, a short reason.
-- **Other fields are kept, not dropped.** Any other field is stored verbatim under `extra`. Unlike canonical memory, a lens exists to hold what the user asked for.
-- **Light parsing.** The parser accepts code fences, preambles and a single wrapper object, as canonical admission now does.
+- **Slot rule:** `lenses.filter(l => l.status === 'active' || l.status === 'paused').length <= 5`.
+- **`connection.presetName`:** `""` uses the default canonical analysis preset; otherwise binds to the named provider preset in `settings.providers`.
+- **`cadence.mode`:** `'every_batch'` (runs after every canonical 5-turn batch), `'every_n_batches'` (runs every $N \in [2, 10]$ canonical batches), or `'manual'` (runs only when triggered from the GUI).
 
-## Evidence levels
+### 4.2 Lens Output Contract (Model Response)
 
-| Level | Condition | Use |
+The model is instructed to return a minimal JSON object:
+
+```json
+{
+  "items": [
+    {
+      "text": "그녀는 지하실 열쇠의 행방을 묻자 시선을 피하며 찻잔만 만지작거렸다.",
+      "label": "단서",
+      "refs": ["t12-a"],
+      "quote": "그녀는 대답 대신 찻잔만 만지작거렸다.",
+      "basis": "열쇠의 위치를 알고 있으면서 대답을 회피하는 반응",
+      "target": "엘레나",
+      "clueStatus": "미해결"
+    }
+  ]
+}
+```
+
+- **Required fields:** `text` (non-empty string) and `refs` (non-empty array of turn IDs within the analyzed range, e.g. `["t12-u", "t12-a"]`).
+- **Evidence fields:** `quote` (exact substring from one of the referenced turns) and/or `basis` (short explanation of how the referenced turns support the item).
+- **Open fields (`extra`):** Any additional keys (`target`, `clueStatus`, etc.) are extracted into `extra: { target: "엘레나", clueStatus: "미해결" }`.
+- **Tolerant wrapper parsing:** Accepts markdown code fences, preambles, or a single top-level wrapper object (e.g., `{ "lens": { "items": [...] } }`), matching canonical admission's envelope unwrapping.
+
+### 4.3 Scoped Lens Record (`libra.lens_memory.v1`)
+
+One record per `(scopeKey, lensId, turnRange)`:
+
+```json
+{
+  "schema": "libra.lens_memory.v1",
+  "recordId": "lrec_lens_foreshadow_t11_t15_r1",
+  "lensId": "lens_foreshadow",
+  "lensNameSnapshot": "떡밥·복선 추적",
+  "instructionRevision": "rev_9c41e02b",
+  "scopeKey": "memory-suite:libra:char:...",
+  "worldlineId": "wl_main",
+  "sessionEpoch": 1,
+  "turnRange": { "start": 11, "end": 15 },
+  "sourceRevisionId": "srev_...",
+  "sourceDigest": "sha256_...",
+  "canonicalContextIncluded": true,
+  "runId": "lrun_1760050012345_lens_foreshadow",
+  "createdAt": 1760050012345,
+  "items": [
+    {
+      "itemId": "litem_0",
+      "text": "그녀는 지하실 열쇠의 행방을 묻자 시선을 피하며 찻잔만 만지작거렸다.",
+      "label": "단서",
+      "evidenceLevel": "quoted",
+      "refs": ["t12-a"],
+      "quote": "그녀는 대답 대신 찻잔만 만지작거렸다.",
+      "basis": "열쇠의 위치를 알고 있으면서 대답을 회피하는 반응",
+      "extra": {
+        "target": "엘레나",
+        "clueStatus": "미해결"
+      }
+    }
+  ]
+}
+```
+
+### 4.4 Scoped Lens Run Record & Raw Ring (`libra.lens_run_log.v1`)
+
+```json
+{
+  "schema": "libra.lens_run_log.v1",
+  "runId": "lrun_1760050012345_lens_foreshadow",
+  "lensId": "lens_foreshadow",
+  "instructionRevision": "rev_9c41e02b",
+  "scopeKey": "memory-suite:libra:char:...",
+  "turnRange": { "start": 11, "end": 15 },
+  "sourceRevisionId": "srev_...",
+  "sourceDigest": "sha256_...",
+  "trigger": "scheduled_batch",
+  "provider": "openai",
+  "presetName": "RisuAI 보조 모델",
+  "model": "gpt-4.1-mini",
+  "canonicalContextIncluded": true,
+  "startedAt": 1760050010000,
+  "finishedAt": 1760050012345,
+  "elapsedMs": 2345,
+  "status": "ok",
+  "counts": {
+    "totalParsed": 3,
+    "quoted": 1,
+    "interpreted": 1,
+    "rejected": 1
+  },
+  "rejectedItems": [
+    {
+      "index": 2,
+      "textPreview": "왕국의 북부 경비대가 반란을 준비 중이다.",
+      "refs": ["t99-a"],
+      "reasonCode": "out_of_range_ref",
+      "reasonLabel": "분석 범위 밖의 턴 참조"
+    }
+  ],
+  "extraKeysPreserved": ["target", "clueStatus"],
+  "rawResponseAvailable": true
+}
+```
+
+---
+
+## 5. Evidence Gate & Diagnostic Reason Codes
+
+Every item returned by the model is classified deterministically by the Lens Admission Gate:
+
+| Evidence Level | Condition | Storage & Recall Treatment |
 |---|---|---|
-| `quoted` | `quote` matches the text of a referenced turn exactly | Normal recall |
-| `interpreted` | `refs` name real turns in the analyzed range, but there is no matching quote. `basis` is present. | Recalled with an "해석" (interpretation) mark and a lower rank. Stored only in `interpretive` mode. |
-| rejected | `refs` is missing, or names turns outside the range or that do not exist | Not stored. Listed in the run record with the reason. |
+| **`quoted`** | `refs` are non-empty and all exist in the analyzed turn range; `quote` is non-empty and matches a normalized substring of at least one referenced turn. | Stored. Eligible for normal lens recall (full evidence weight `1.0`). |
+| **`interpreted`** | `refs` are non-empty and all exist in the analyzed turn range; `quote` is absent or not an exact substring, **and** `basis` (or `quote` used as rationale) is non-empty. | Stored **only when `evidenceMode === 'interpretive'`**. Eligible for lens recall with lower rank weight (`0.78`) and explicit **`· 해석`** tag. Rejected in `strict` mode. |
+| **`rejected`** | Fails any requirement above. | **Never stored in lens memory.** Recorded in `run.rejectedItems[]` with a reason code and Korean label. |
 
-**Refs stay mandatory.** Without them a fabricated item could be recalled as memory, and its provenance could not be shown.
+### Standard Rejection & Skip Reason Labels
 
-## Storage
+| Code | Korean Label (GUI) | Trigger |
+|---|---|---|
+| `empty_text` | `내용이 비어 있음` | `item.text` is missing or whitespace-only |
+| `missing_refs` | `근거 턴(refs) 누락` | `item.refs` is missing or empty |
+| `out_of_range_ref` | `분석 범위 밖의 턴 참조` | `item.refs` names a turn ID not in the analyzed batch |
+| `strict_mode_quote_required` | `인용 전용 모드 · 원문 인용 불일치` | `evidenceMode === 'strict'` and `quote` does not match the referenced turn text |
+| `missing_basis_for_interpretation` | `해석 근거(basis) 누락` | `quote` does not match verbatim and `basis` is empty |
+| `duplicate_item` | `동일 구간 중복 항목` | Identical normalized `(label, text, refs)` in the same run |
+| `stale_source_revision` | `원문 변경으로 폐기됨` | Source turns changed while the lens model call was in flight |
 
-- **Record.** One lens record per (lens, analyzed range). It is bound to the source revision the same way Micro records are.
-- **Record fields:**
-  - `schema: libra.lens_memory.v1`
-  - `lensId`, `instructionRevision`
-  - `scopeKey`, `turnRange`, `sourceDigest`, `sourceRevisionId`
-  - `items[]`, each with an evidence level, refs, quote, basis and `extra`
-  - `run` (see *Provenance*)
-- **Instruction revisions.** Stored once per content hash, so records can always show the instruction they were made with.
-- **Keys.** `…:scope:<scope>:lens:<lensId>:…`, for the lens definition, revisions, records, the run log and raw responses. The keys sync to the server like the other scope keys. RETRACE server management lists them as "렌즈 기억" (lens memory).
-- **Raw responses.** A ring of the most recent N runs per lens (default 20, adjustable). Older raw responses are removed. Records and run summaries stay.
+---
 
-### Trash
+## 6. Storage Keys & Server Sync (RETRACE Integration)
 
-- **Deleting a lens** sets it to `trashed`. Its records are hidden from the GUI lists and excluded from recall. Nothing is erased.
-- **The trash view** lists trashed lenses with their record counts and the time they were trashed. From there a lens can be:
-  - **restored**, which brings back the lens and its records
-  - **deleted permanently**, which removes the definition, revisions, records, run log and raw responses, both locally and on the server
-- **Trash does not hold the 5-lens slots.** If restoring would exceed 5 active and paused lenses, the user must pause or trash another lens first.
+All per-scope lens keys follow the standard LIBRA scoped key convention so they automatically participate in server mirroring, server-only mode, and JSON portable backups:
 
-## Provenance
+- `…:scope:<scope>:lens:head` — Active lens catalog index & source-binding head for the scope (`libra.lens_scope_head.v1`)
+- `…:scope:<scope>:lens:<lensId>:records` — Admitted `libra.lens_memory.v1` records keyed by range (`t<start>-t<end>`)
+- `…:scope:<scope>:lens:<lensId>:runs` — Run summary log (`libra.lens_run_log.v1[]`)
+- `…:scope:<scope>:lens:<lensId>:raw` — Bounded ring buffer of the most recent $N$ (default 20) raw model responses
 
-Every lens run stores a run record. Every item links to it.
+### RETRACE Server Management & Trash Lifecycle
+- **RETRACE category:** Keys matching `:lens:` are classified and displayed as **"렌즈 기억" (Lens Memory)** in RETRACE inventory, sync status, and backup summaries.
+- **Soft Delete (Trash):** Moving a lens to trash sets `status: 'trashed'` and `trashedAt: Date.now()`. It immediately stops scheduled runs, hides its records from the Memory tab, excludes them from Recall, and frees one of the 5 active/paused slots.
+- **Restore:** Available from the Trash view when `active + paused < 5`. Restores `status: 'paused'` (or previous status) and re-exposes all existing scoped records.
+- **Permanent Delete:** Removes the lens definition from `lensRegistry` and deletes `:lens:<lensId>:records`, `:lens:<lensId>:runs`, and `:lens:<lensId>:raw` across both local storage (`pluginStorage` / `local`) and the remote server via RETRACE verified remove.
 
-- **Lens and instruction.** The lens name and the instruction revision used. If it differs from the current revision, the record shows the badge **"이전 지침으로 생성"** and a diff against the current instruction.
-- **Model.** The connection and model name, the time, and the analyzed turn range.
-- **Context.** Whether canonical context was included.
-- **Each item.** Its evidence level and refs. Quoted text is highlighted in the source turn.
-- **Admission result.** Items stored, items rejected (with reasons), and fields kept under `extra`.
-- **Raw response.** Kept while the run is within the most recent N runs. After that it shows "원문 응답 보관 기간 지남" (raw response no longer kept).
+---
 
-An instruction change does not touch existing records. They keep their revision and get the badge. Re-analysis happens only when the user asks for it, from the run log ("이 구간 다시 분석", re-analyze this range).
+## 7. Recall & Prompt Injection
 
-## GUI
+### 7.1 Indexing & Retrieval
+- Admitted lens items from active (and paused, if `recall.enabled === true`) lenses whose `sourceDigest` / `sourceRevisionId` match the active worldline are indexed under `sourceKind: 'lens'`.
+- Sparse anchor/keyword scoring and optional dense embedding scoring run alongside canonical recall, with an evidence-level multiplier (`quoted: 1.0`, `interpreted: 0.78`) and a slight tie-break preference (`+0.03`) for items matching the lens's current `instructionRevision`.
 
-**Memory screen: one "렌즈" (lens) tab.** Canonical, State and people views are unchanged.
-- **Filter.** Lens chips at the top: 전체 (all) and one per lens.
-- **List rows.** Each row shows:
-  - the item text
-  - the label
-  - the turn range
-  - an evidence icon (quoted or interpreted)
-  - the earlier-instruction badge when it applies
-- **Detail.** Selecting an item opens its provenance.
+### 7.2 Separate Budget & Share Allocation
+- Lens recall **never consumes canonical recall budget**.
+- By default, the lens recall budget ceiling is **22% of the active dynamic recall character budget** (clamped to at most **2,600 chars** when canonical budget is up to 12,000 chars).
+- Across all recall-enabled lenses with candidate matches, each lens $i$ receives a character allocation proportional to its `recall.share`:
+  $$\text{Budget}_i = \text{Budget}_{\text{lens}} \times \frac{\text{share}_i}{\sum_j \text{share}_j}$$
+- Unused budget from a lens with fewer matches redistributes to other lenses with remaining high-scoring candidates.
 
-**Lens manager (Prompt Studio).**
-- **Lens cards.** Each card shows status, the last run result, the item count and an edit button.
-- **Edit view.**
-  - instruction
-  - settings
-  - OOC conversation
-  - trial run on a recent range (one model call; the result is not saved)
-- **Run log.** One line per run: time, range, stored and rejected counts, and errors. A raw response can be opened while it is kept. Re-analyze is offered per range.
-- **Trash.** A separate view inside the manager.
-- **Final prompt.** The canonical prompt is shown read-only.
+### 7.3 Prompt Injection Block Format
+```text
+[LIBRA LENS MEMORY — USER-DEFINED PERSPECTIVE NOTES (NON-CANONICAL)]
+아래 항목은 사용자가 정의한 별도 관점(렌즈) 기록입니다. 정본 기억(Canonical Memory)이나 현재 상태(State)와 충돌할 경우 언제나 정본 기억이 우선합니다.
+- [lens:떡밥·복선 추적] (T11–T15 · 단서) 그녀는 지하실 열쇠의 행방을 묻자 시선을 피하며 찻잔만 만지작거렸다. (원문: "그녀는 대답 대신 찻잔만 만지작거렸다.")
+- [lens:떡밥·복선 추적 · 해석] (T11–T15 · 의문) 열쇠의 위치를 알고 있으면서 대답을 회피하는 반응으로 보인다.
+```
 
-## Recall
+### 7.4 Recall Viewer Diagnostics
+`buildLibraRecallViewerPanel` displays a dedicated **"렌즈 기억 리콜"** section showing:
+- Injected lens items (`lensName`, `turnRange`, `evidenceLevel`, `score`, `charCount`, `instructionRevision` status).
+- Excluded candidate diagnostics (`lens_paused`, `recall_disabled`, `share_budget_exceeded`, `stale_source_revision`, `below_score_floor`).
 
-- **Indexing.** Lens items are indexed as their own source kind, `lens`, with the existing sparse and embedding retrieval.
-- **Budget.** Lens items have a separate injection budget, divided between lenses by their recall share. Lens items never take canonical budget.
-- **Injection label.** Each injected item names its lens and evidence level, e.g. `[lens:떡밥 추적 · 해석]`. The block header says these are user-defined analyses, and that canonical memory wins on conflict.
-- **Exclusions.** Trashed lenses, paused lenses with recall off, and records with stale source revisions are never recalled.
-- **Recall viewer.** It lists the lens items injected into each request.
+---
 
-## OOC
+## 8. GUI Design
 
-- **Two entry points.** "새 렌즈 만들기" (new lens) and "이 렌즈 고치기" (edit this lens).
-- **Freer than before.** With no canonical contract to protect, OOC may suggest labels, an evidence mode, and whether canonical context is needed.
-- **Trial run.** Before saving, OOC can run a trial on a recent range. The user sees the items the lens would produce, and can judge its effect before committing.
+### 8.1 Memory Screen: "렌즈" (Lens) Tab
+- **Canonical, State, and People views remain untouched.**
+- **Top Filter Bar:**
+  - Lens chips: `전체` (All) and one chip per lens (`떡밥·복선 추적 (12)`, `감정선 (8)` …)
+  - Evidence filter: `전체` | `인용 확인만` | `해석 포함`
+- **Lens Item Card:**
+  - Header badges: Lens name, Turn range (`T11–T15`), Label (`단서`), Evidence badge (`인용 확인` in green / `해석` in amber), and **`이전 지침으로 생성`** badge if `item.instructionRevision !== lens.instructionRevision`.
+  - Body: `item.text`, followed by `extra` key-value pairs rendered in a compact grid (`target: 엘레나 · clueStatus: 미해결`).
+  - Expandable Provenance Detail (`근거 · 출처 보기`):
+    - Referenced turn IDs (`refs`), verbatim `quote` highlighted against the source turn text, or `basis` explanation.
+    - Model/preset used, run timestamp, whether canonical context was included.
+    - If created with an earlier instruction: side-by-side / inline diff between the record's instruction revision and the lens's current instruction.
 
-## Cost
+### 8.2 Lens Manager (Prompt Studio Replacement)
+1. **Header & Slot Counter:** Shows `활성·일시중지 렌즈 N / 5` and quick buttons: `+ 새 렌즈 만들기`, `템플릿에서 시작`, `휴지통 (M)`.
+2. **Lens Cards:**
+   - Status toggle (`활성` / `일시중지`), Recall toggle (`리콜 ON/OFF` + 비중), Evidence mode badge (`인용만` / `해석 허용`), Cadence (`매 배치` / `N배치마다` / `수동`), Item count, Last run status badge.
+   - Actions: `편집`, `최근 구간 지금 분석`, `실행 기록`, `휴지통으로 이동`.
+3. **Lens Editor & OOC Builder:**
+   - Fields: Name, Description, Instruction (`textarea`), Suggested Labels, Evidence Mode, AI Connection Preset, Cadence, Canonical Context toggle, Recall ON/OFF & Share.
+   - **OOC Assistant ("대화로 렌즈 만들기 / 다듬기"):** Conversational helper that proposes a complete lens draft or edits an existing lens, showing a `변경 전 → 변경 후` preview card before applying.
+   - **Trial Run ("최근 구간 시험 실행"):** Runs the current draft instruction once on the latest completed turn range and displays the exact admitted (`quoted` / `interpreted`) and `rejected` items without saving to storage.
+4. **Run Log View (per lens):**
+   - Lists the most recent runs: timestamp, turn range, model, counts (`저장 N · 제외 M`), and expandable rejection reasons.
+   - Button to view the **Raw Model Response** (for the most recent $N=20$ runs; older runs show `"원문 응답 보관 기간 지남"`).
+   - Button: **"이 구간 다시 분석"** (re-runs the lens on that specific turn range and replaces that range's record for this lens).
+5. **Trash View:**
+   - Lists trashed lenses with their trashed timestamp and stored record count in the current scope.
+   - Actions: **`복원`** (blocked with a clear notice if active + paused is already 5) and **`영구 삭제`** (deletes definition and all local + server records for that lens).
+6. **Locked Canonical Prompt Viewer:**
+   - Collapsible read-only card at the bottom: **"기본 기억 분석기 지침 보기 (잠금 · 읽기 전용)"**.
 
-- **Model calls.** One extra call per active lens per scheduled run. Cadence, pausing and a cheaper connection per lens control the cost. With no lenses, the cost is zero.
-- **Storage.** Records and run summaries are small. Raw responses are the large part, which is why only the most recent N are kept.
+---
 
-## Phases
+## 9. Implementation Phases & Verification Plan
 
-1. **Foundation.**
-   - Canonical lock and migration prompt
-   - Lens definitions and instruction revisions
-   - Lens run job, built on the Micro job and binding
-   - Output parsing and evidence levels
-   - Run records, raw-response ring, trash state
-2. **Visibility.**
-   - Lens tab with provenance detail
-   - Recall integration and recall-viewer rows
-   - RETRACE listing and permanent deletion through the server
-3. **Convenience.**
-   - Lens manager: cards, run log, trash view
-   - OOC entry points and trial run
-   - Live-model measurement with and without lenses
+### Phase 1: Foundation & Storage
+- Lock the canonical prompt in `LIBRA.js`; archive any existing custom prompt profile read-only and reset canonical analysis to the built-in contract.
+- Implement `libra.lens_registry.v1`, `libra.lens_definition.v1`, content-hashed `instructionRevision`, and `revisionHistory`.
+- Implement scoped storage keys (`:lens:head`, `:lens:<lensId>:records`, `:lens:<lensId>:runs`, `:lens:<lensId>:raw`) and register the **"렌즈 기억"** category in `RETRACE.js`.
+- Build the Lens Execution Job & Admission Gate (`quoted` / `interpreted` / `rejected` + `extra` preservation + `lensSourceToken` in-flight revision guard + 20-run raw response ring buffer).
 
-## Tests to add
+### Phase 2: Recall & Memory GUI
+- Integrate `lens` source kind into LIBRA Recall with a separate 20–25% budget pool, share weighting, non-canonical header formatting, and Recall Viewer diagnostics.
+- Add the **"렌즈"** tab to the Memory screen with lens/evidence filter chips, `extra` KV rendering, provenance detail, and instruction revision diff view.
 
-- **Lock.** No path changes the canonical system prompt, and migration resets it.
-- **Isolation.** A failing, malformed or hostile lens leaves canonical memory, State and the people cards byte-identical.
-- **Evidence levels.**
-  - quoted vs interpreted vs rejected
-  - strict mode stores quoted items only
-  - refs outside the range are rejected
-- **Provenance.**
-  - The record shows its instruction revision.
-  - The badge appears after an edit.
-  - Raw responses are evicted after N runs.
-- **Lifecycle.**
-  - Regeneration, swipe, deletion and branching invalidate lens records, as for Micro.
-  - Trash: hide, restore, and permanent delete (local and server).
-  - The 5-lens limit holds, and restoring enforces it.
-- **Recall.**
-  - Lens items stay within their own budget.
-  - Lens items are labelled.
-  - Trashed and stale records never appear.
-- **Browser.** The lens tab, provenance detail, manager, trash and OOC trial run.
+### Phase 3: Lens Studio, OOC & Trial Run
+- Replace the editable Prompt Studio sections with the **Lens Studio** (5-slot manager, starter templates, run log viewer, range re-analysis, trash restore/permanent delete, and read-only canonical prompt fold).
+- Repurpose the OOC builder for **"새 렌즈 만들기"** and **"이 렌즈 다듬기"** with `before → after` preview and 1-call **Trial Run** on the latest turn range.
+
+### Verification Suite
+- **Canonical Lock & Isolation:** Verify no code path can alter the canonical system prompt, and verify that a failing, malformed, or hostile lens output leaves canonical memory, State, and people cards byte-identical.
+- **Admission Gate:** Unit tests for `quoted` vs. `interpreted` vs. `rejected`, `strict` vs. `interpretive` mode, out-of-range `refs` rejection, and `extra` field preservation.
+- **Provenance & Ring Buffer:** Verify `instructionRevision` hashing, `"이전 지침으로 생성"` badge + diff after instruction edit, and raw response eviction after $N=20$ runs.
+- **Lifecycle & Micro Invalidation:** Verify regeneration, swipe, deletion, and worldline branching invalidate affected lens records; verify 5-slot limit enforcement and Trash restore/permanent delete (local + server).
+- **Recall Boundary:** Verify lens items stay within their separate budget, carry `[lens:<name>]` / `[lens:<name> · 해석]` labels, and never leak trashed or stale-revision records.

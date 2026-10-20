@@ -875,7 +875,8 @@ const MemorySuiteExecutionContract = (() => {
     hayaku_packet_recovery: [16384, 32768],
     hayaku_cold_start: [16384, 32768],
     hayaku_failed_analysis_resolution: [16384, 32768],
-    micro_memory: [2048, 4096]
+    micro_memory: [2048, 4096],
+    lens_analysis: [4096, 8192]
   });
   const completion = result => {
     const content = typeof result?.content === 'string' ? result.content : '';
@@ -13269,11 +13270,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       selectedModuleLoreIds: 'selected_module_lore_ids', excludedModuleLoreIds: 'excluded_module_lore_ids',
       loreActivationMode: 'lore_activation_mode',
       excludedCharacterLoreIds: 'excluded_character_lore_ids',
+      lensRegistry: 'lens_registry',
     };
     const out = {};
     for (const [key, value] of Object.entries(source || {})) out[aliases[key] || key] = value;
     if (text(out.mode).trim().toLowerCase() === 'full') out.mode = 'normal';
     if (Object.prototype.hasOwnProperty.call(out, 'ito_stage_order')) out.ito_stage_order = normalizeAideStageOrder(out.ito_stage_order);
+    if (Object.prototype.hasOwnProperty.call(out, 'lens_registry')) out.lens_registry = normalizeLensRegistry(out.lens_registry);
     delete out.excluded_hypa_record_ids;
     delete out.excludedHypaRecordIds;
     return out;
@@ -13837,9 +13840,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return normalizePromptProfilesState(stored);
   };
 
-  const compileMemoryPromptProfile = async (stageId, legacyAddendum = '') => {
-    const profiles = await resolvePromptProfilesForRuntime();
-    const profileName = profiles.activeMemoryProfile || PROMPT_PROFILE_DEFAULT_NAME;
+  const compileMemoryPromptProfile = async (stageId, legacyAddendum = '', options = {}) => {
+    const forceDefault = options?.forceDefault === true;
+    const profiles = forceDefault ? { activeMemoryProfile: PROMPT_PROFILE_DEFAULT_NAME, memoryProfiles: {} } : await resolvePromptProfilesForRuntime();
+    const profileName = forceDefault ? PROMPT_PROFILE_DEFAULT_NAME : (profiles.activeMemoryProfile || PROMPT_PROFILE_DEFAULT_NAME);
     const profile = profileName === PROMPT_PROFILE_DEFAULT_NAME ? null : profiles.memoryProfiles[profileName] || null;
     const stageOverrides = profile?.stages?.[stageId]?.sections || {};
     const sections = (MEMORY_PROMPT_SECTION_DEFS[stageId] || []).map(definition => ({
@@ -13847,7 +13851,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       label: definition.label,
       text: compilePromptSection(definition, stageOverrides[definition.id])
     }));
-    const addendum = compact(legacyAddendum, 20000);
+    const addendum = forceDefault ? '' : compact(legacyAddendum, 20000);
     if (addendum) {
       const target = sections.find(item => item.id === 'custom_addendum');
       if (target) target.text = [target.text, addendum].filter(Boolean).join('\n');
@@ -13881,6 +13885,400 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
     };
   };
+
+  const LENS_REGISTRY_SCHEMA = 'libra.lens_registry.v1';
+  const LENS_DEFINITION_SCHEMA = 'libra.lens_definition.v1';
+  const LENS_MEMORY_RECORD_SCHEMA = 'libra.lens_memory.v1';
+  const LENS_RUN_LOG_SCHEMA = 'libra.lens_run_log.v1';
+  const LENS_SCOPE_HEAD_SCHEMA = 'libra.lens_scope_head.v1';
+  const LENS_RECORD_STORE_SCHEMA = 'libra.lens_record_store.v1';
+  const LENS_RUN_STORE_SCHEMA = 'libra.lens_run_store.v1';
+  const LENS_RAW_STORE_SCHEMA = 'libra.lens_raw_store.v1';
+  const LENS_HEAD_SCHEMA = LENS_SCOPE_HEAD_SCHEMA;
+  const MAX_LENS_SLOTS = 5;
+  const LENS_RECALL_BUDGET_RATIO = 0.22;
+  const LENS_RECALL_MAX_CHARS = 2600;
+  const LENS_RAW_RING_MAX = 20;
+
+  const LENS_REJECT_REASON_LABELS = Object.freeze({
+    empty_text: '내용이 비어 있음',
+    missing_refs: '근거 턴(refs) 누락',
+    out_of_range_ref: '분석 범위 밖의 턴 참조',
+    strict_mode_quote_required: '인용 전용 모드 · 원문 인용 불일치',
+    missing_basis_for_interpretation: '해석 근거(basis) 누락',
+    duplicate_item: '동일 구간 중복 항목',
+    stale_source_revision: '원문 변경으로 폐기됨'
+  });
+
+  const LENS_RECALL_SKIP_REASON_LABELS = Object.freeze({
+    lens_paused: '렌즈 일시중지',
+    lens_trashed: '휴지통 렌즈',
+    recall_disabled: '렌즈 리콜 꺼짐',
+    share_budget_exceeded: '렌즈 리콜 예산 초과',
+    stale_source_revision: '원문 변경으로 무효화됨',
+    below_score_floor: '관련도 점수 기준 미달'
+  });
+
+  const LENS_RECALL_BLOCK_HEADER = '[CUSTOM LENS MEMORY REFERENCE — SUPPLEMENTARY NON-CANONICAL]';
+
+  const STARTER_LENS_TEMPLATES = Object.freeze([
+    Object.freeze({
+      id: 'starter_unresolved_promises',
+      lensId: 'starter_unresolved_promises',
+      templateId: 'starter_unresolved_promises',
+      name: '떡밥·복선 추적',
+      description: '미해결 단서, 수상한 사물, 나중에 회수될 발언이나 약속을 기록합니다.',
+      labels: ['떡밥', '단서', '약속', '회수됨', '의문'],
+      evidenceMode: 'interpretive',
+      cadence: { mode: 'every_batch', everyNBatches: 1 },
+      schedule: { mode: 'after_canonical_batch' },
+      canonicalContext: true,
+      context: { includeTurnCount: 5, includePrevLensRecords: 4, includeCanonicalSummary: true, includeCharacterState: false, includeLoreExcerpt: false },
+      instruction: {
+        goal: '장면에서 스쳐 지나간 단서, 대답을 회피한 질문, 성립하거나 갱신된 약속·맹세, 원인이 밝혀지지 않은 이상 현상을 찾아 기록하라.',
+        includeRules: ['인물 간에 명시적으로 주고받은 약속이나 맹세', '아직 해결되지 않은 질문·단서·조건·수상한 사물'],
+        excludeRules: ['이미 완전히 해결된 일상적 인사나 잡담', '원문 근거 대사 없이 추측한 속마음'],
+        outputHint: '누가 누구에게 어떤 약속/단서를 남겼는지 한두 문장으로 요약하고 원문 근거를 인용하세요.',
+        extraFieldsNote: 'extra 객체에 clueStatus(미해결/회수됨), holder, target 필드를 선택적으로 기록할 수 있습니다.'
+      },
+      recall: { enabled: true, mode: 'query_match', share: 35, maxItems: 3, maxChars: 900 }
+    }),
+    Object.freeze({
+      id: 'starter_emotional_aftertaste',
+      lensId: 'starter_emotional_aftertaste',
+      templateId: 'starter_emotional_aftertaste',
+      name: '감정선 · 관계 여운 기록',
+      description: '인물 사이의 미묘한 감정 변화, 말투의 온도차, 장면 끝에 남은 여운을 포착합니다.',
+      labels: ['감정선', '여운', '긴장', '호감', '거리감'],
+      evidenceMode: 'interpretive',
+      cadence: { mode: 'every_batch', everyNBatches: 1 },
+      schedule: { mode: 'after_canonical_batch' },
+      canonicalContext: true,
+      context: { includeTurnCount: 5, includePrevLensRecords: 3, includeCanonicalSummary: true, includeCharacterState: true, includeLoreExcerpt: false },
+      instruction: {
+        goal: '대사와 행동에서 드러나는 인물의 감정적 여운과 관계의 미묘한 온도 변화를 기록합니다.',
+        includeRules: ['표면 대사와 행동 사이의 긴장감이나 망설임', '장면이 끝날 때 남는 정서적 여운'],
+        excludeRules: ['원문 행동/대사 근거가 없는 독심술적 단정'],
+        outputHint: '감정 변화의 계기와 표현된 태도를 원문 인용과 함께 정리하세요.',
+        extraFieldsNote: 'extra 객체에 tone, tensionLevel, target 필드를 선택적으로 포함할 수 있습니다.'
+      },
+      recall: { enabled: true, mode: 'query_match', share: 30, maxItems: 3, maxChars: 800 }
+    }),
+    Object.freeze({
+      id: 'starter_speech_register',
+      lensId: 'starter_speech_register',
+      templateId: 'starter_speech_register',
+      name: '말투 · 호칭 변화 노트',
+      description: '호칭, 존댓말/반말 전환, 특유의 말버릇이나 금기어 변화를 추적합니다.',
+      labels: ['호칭', '말투', '어조전환', '말버릇'],
+      evidenceMode: 'strict',
+      cadence: { mode: 'every_batch', everyNBatches: 1 },
+      schedule: { mode: 'after_canonical_batch' },
+      canonicalContext: false,
+      context: { includeTurnCount: 5, includePrevLensRecords: 4, includeCanonicalSummary: false, includeCharacterState: true, includeLoreExcerpt: false },
+      instruction: {
+        goal: '인물들이 서로를 부르는 호칭, 어조(존비어), 반복되는 말버릇의 변화를 기록합니다.',
+        includeRules: ['처음 등장하거나 바뀐 호칭', '상황에 따른 어조·말투 전환'],
+        excludeRules: ['단순 오타나 무의미한 감탄사'],
+        outputHint: '화자와 청자, 사용된 호칭/말투 특징을 실제 대사 인용과 함께 남기세요.',
+        extraFieldsNote: 'extra 객체에 speaker, listener, appellation, register 필드를 선택적으로 기록할 수 있습니다.'
+      },
+      recall: { enabled: true, mode: 'pinned_recent', share: 25, maxItems: 2, maxChars: 650 }
+    }),
+    Object.freeze({
+      id: 'starter_sensory_anchors',
+      lensId: 'starter_sensory_anchors',
+      templateId: 'starter_sensory_anchors',
+      name: '분위기 · 감각 디테일 앵커',
+      description: '장면을 특징짓는 빛, 소리, 냄새, 날씨, 공간의 감각적 소품을 수집합니다.',
+      labels: ['분위기', '소품', '공간감', '계절·날씨'],
+      evidenceMode: 'interpretive',
+      cadence: { mode: 'every_batch', everyNBatches: 1 },
+      schedule: { mode: 'after_canonical_batch' },
+      canonicalContext: false,
+      context: { includeTurnCount: 5, includePrevLensRecords: 2, includeCanonicalSummary: false, includeCharacterState: false, includeLoreExcerpt: true },
+      instruction: {
+        goal: '장면의 분위기를 재현할 때 도움이 되는 시각·청각·후각·촉각 디테일과 핵심 소품을 기록합니다.',
+        includeRules: ['반복 언급되거나 상징성이 있는 소품·환경 묘사', '계절감·시간대·공기감을 보여주는 문장'],
+        excludeRules: ['일회성 배경 나열'],
+        outputHint: '장소/시간대와 핵심 감각 묘사를 원문 표현을 살려 요약하세요.',
+        extraFieldsNote: 'extra 객체에 sense, prop, atmosphere 필드를 선택적으로 기록할 수 있습니다.'
+      },
+      recall: { enabled: true, mode: 'query_match', share: 20, maxItems: 2, maxChars: 600 }
+    }),
+    Object.freeze({
+      id: 'starter_clues_red_herrings',
+      lensId: 'starter_clues_red_herrings',
+      templateId: 'starter_clues_red_herrings',
+      name: '사건 단서 · 의심 목록',
+      description: '미스터리·사건 진행 중 발견된 물증, 증언의 모순, 용의선상의 행적을 정리합니다.',
+      labels: ['물증', '증언모순', '알리바이', '의심행적'],
+      evidenceMode: 'interpretive',
+      cadence: { mode: 'every_batch', everyNBatches: 1 },
+      schedule: { mode: 'after_canonical_batch' },
+      canonicalContext: true,
+      context: { includeTurnCount: 5, includePrevLensRecords: 4, includeCanonicalSummary: true, includeCharacterState: false, includeLoreExcerpt: true },
+      instruction: {
+        goal: '사건 해결이나 진상 파악에 관련된 단서, 알리바이, 증언의 불일치를 기록합니다.',
+        includeRules: ['새로 확인된 물증이나 목격담', '이전 발언과 충돌하는 수상한 행적'],
+        excludeRules: ['근거 없는 메타 추리'],
+        outputHint: '단서의 내용과 출처 턴/발화자를 명확히 구분해 기록하세요.',
+        extraFieldsNote: 'extra 객체에 clueType, suspect, reliability 필드를 선택적으로 기록할 수 있습니다.'
+      },
+      recall: { enabled: true, mode: 'query_match', share: 35, maxItems: 3, maxChars: 900 }
+    })
+  ]);
+  const LENS_STARTER_TEMPLATES = STARTER_LENS_TEMPLATES;
+
+  const formatLensInstructionText = instruction => {
+    if (typeof instruction === 'string') return compact(instruction, 2400);
+    if (!instruction || typeof instruction !== 'object') return '';
+    const lines = [];
+    if (instruction.goal) lines.push(compact(instruction.goal, 1200));
+    const inc = (Array.isArray(instruction.includeRules) ? instruction.includeRules : []).map(x => compact(x, 400)).filter(Boolean);
+    if (inc.length) lines.push(`포함 기준: ${inc.join(' / ')}`);
+    const exc = (Array.isArray(instruction.excludeRules) ? instruction.excludeRules : []).map(x => compact(x, 400)).filter(Boolean);
+    if (exc.length) lines.push(`제외 기준: ${exc.join(' / ')}`);
+    if (instruction.outputHint) lines.push(`출력 안내: ${compact(instruction.outputHint, 800)}`);
+    if (instruction.extraFieldsNote) lines.push(`추가 필드: ${compact(instruction.extraFieldsNote, 600)}`);
+    return lines.join('\n');
+  };
+
+  const normalizeLensInstructionObject = (rawInstruction, fallbackGoal = '') => {
+    if (typeof rawInstruction === 'string') {
+      const textVal = compact(rawInstruction || fallbackGoal, 2400);
+      return {
+        text: textVal,
+        goal: textVal,
+        includeRules: [],
+        excludeRules: [],
+        outputHint: '장면의 원문 근거(refs, quote 또는 basis)와 함께 핵심 요약을 한국어로 작성하세요.',
+        extraFieldsNote: ''
+      };
+    }
+    const instSrc = rawInstruction && typeof rawInstruction === 'object' ? rawInstruction : {};
+    const includeRules = (Array.isArray(instSrc.includeRules) ? instSrc.includeRules : [])
+      .map(item => compact(item, 400)).filter(Boolean).slice(0, 12);
+    const excludeRules = (Array.isArray(instSrc.excludeRules) ? instSrc.excludeRules : [])
+      .map(item => compact(item, 400)).filter(Boolean).slice(0, 12);
+    const goal = compact(instSrc.goal || instSrc.text || fallbackGoal, 1200);
+    const outputHint = compact(instSrc.outputHint || '장면의 원문 근거와 함께 핵심 요약을 한국어로 작성하세요.', 800);
+    const extraFieldsNote = compact(instSrc.extraFieldsNote || '', 600);
+    const textVal = compact(instSrc.text || formatLensInstructionText({ goal, includeRules, excludeRules, outputHint, extraFieldsNote }), 2400);
+    return {
+      text: textVal,
+      goal,
+      includeRules,
+      excludeRules,
+      outputHint,
+      extraFieldsNote
+    };
+  };
+
+  const computeLensInstructionRevision = instruction => {
+    const clean = normalizeLensInstructionObject(instruction);
+    return `rev_${promptProfileHash({
+      text: clean.text,
+      goal: clean.goal,
+      includeRules: clean.includeRules,
+      excludeRules: clean.excludeRules,
+      outputHint: clean.outputHint,
+      extraFieldsNote: clean.extraFieldsNote
+    }).slice(0, 8)}`;
+  };
+
+  const normalizeLensDefinition = (raw = {}, index = 0) => {
+    const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const lensId = compact(src.lensId || src.id || `lens_${index + 1}`, 80).replace(/[^a-zA-Z0-9_-]/g, '_') || `lens_${index + 1}`;
+    const name = compact(src.name || `렌즈 ${index + 1}`, 80) || `렌즈 ${index + 1}`;
+    const description = compact(src.description || '', 300);
+    const rawStatus = String(src.status || '').trim();
+    const enabled = Object.prototype.hasOwnProperty.call(src, 'enabled')
+      ? src.enabled !== false
+      : rawStatus
+        ? rawStatus === 'active'
+        : true;
+    const status = rawStatus === 'trashed' ? 'trashed' : (!enabled || rawStatus === 'paused' ? 'paused' : 'active');
+    const cadenceSrc = src.cadence && typeof src.cadence === 'object' ? src.cadence : {};
+    const scheduleSrc = src.schedule && typeof src.schedule === 'object' ? src.schedule : {};
+    let cadenceMode = String(cadenceSrc.mode || '').trim();
+    if (Object.prototype.hasOwnProperty.call(src, 'autoRunOnCanonicalBatch')) {
+      cadenceMode = src.autoRunOnCanonicalBatch === false ? 'manual' : 'every_batch';
+    } else if (!['every_batch', 'every_n_batches', 'manual'].includes(cadenceMode)) {
+      if (scheduleSrc.mode === 'manual_only' || scheduleSrc.mode === 'manual') cadenceMode = 'manual';
+      else if (scheduleSrc.mode === 'every_n_batches') cadenceMode = 'every_n_batches';
+      else cadenceMode = 'every_batch';
+    }
+    const everyNBatches = cadenceMode === 'every_n_batches'
+      ? clampInt(cadenceSrc.everyNBatches ?? scheduleSrc.everyNBatches, 2, 10, 2)
+      : 1;
+    const scheduleMode = cadenceMode === 'manual'
+      ? 'manual_only'
+      : (scheduleSrc.mode === 'every_turn' ? 'every_turn' : 'after_canonical_batch');
+    const contextSrc = src.context && typeof src.context === 'object' ? src.context : {};
+    const canonicalContext = typeof src.canonicalContext === 'boolean'
+      ? src.canonicalContext
+      : contextSrc.includeCanonicalSummary !== false;
+    const context = {
+      includeTurnCount: clampInt(contextSrc.includeTurnCount, 1, 10, scheduleMode === 'every_turn' ? 2 : 5),
+      includePrevLensRecords: clampInt(contextSrc.includePrevLensRecords, 0, 10, 3),
+      includeCanonicalSummary: canonicalContext,
+      includeCharacterState: contextSrc.includeCharacterState === true,
+      includeLoreExcerpt: contextSrc.includeLoreExcerpt === true
+    };
+    const mergedRawInstruction = (() => {
+      const base = src.instruction && typeof src.instruction === 'object' ? { ...src.instruction } : (typeof src.instruction === 'string' ? { goal: src.instruction } : {});
+      if (typeof src.extractionFocus === 'string' && src.extractionFocus.trim()) base.goal = src.extractionFocus.trim();
+      if (Array.isArray(src.inclusionRules)) base.includeRules = src.inclusionRules;
+      if (Array.isArray(src.exclusionRules)) base.excludeRules = src.exclusionRules;
+      if (typeof src.customPrompt === 'string' && src.customPrompt.trim()) base.extraFieldsNote = src.customPrompt.trim();
+      return Object.keys(base).length ? base : src.instruction;
+    })();
+    const instructionObj = normalizeLensInstructionObject(
+      mergedRawInstruction,
+      description || `${name} 관점의 핵심 기록을 추출합니다.`
+    );
+    const instructionText = instructionObj.text;
+    const instructionRevision = compact(src.instructionRevision || '', 40) || computeLensInstructionRevision(instructionObj);
+    const labels = (Array.isArray(src.labels) ? src.labels : [])
+      .map(item => compact(item, 40))
+      .filter(Boolean)
+      .slice(0, 12);
+    const rawPolicy = String(src.evidencePolicy || src.evidenceMode || '').trim();
+    const evidenceMode = rawPolicy === 'strict'
+      ? 'strict'
+      : (src.allowInterpretation === false && !rawPolicy ? 'strict' : 'interpretive');
+    const evidencePolicy = rawPolicy === 'relaxed' ? 'relaxed' : (evidenceMode === 'strict' ? 'strict' : 'relaxed');
+    const recallSrc = src.recall && typeof src.recall === 'object' ? src.recall : {};
+    const rawRecallMode = String(src.recallMode || recallSrc.mode || '').trim();
+    const recallMode = rawRecallMode === 'off'
+      ? 'off'
+      : (rawRecallMode === 'always' || rawRecallMode === 'pinned_recent' ? 'pinned_recent' : 'query_match');
+    const maxItems = clampInt(src.maxItemsPerBatch ?? recallSrc.maxItems, 1, 8, 3);
+    const recall = {
+      enabled: recallSrc.enabled !== false && recallMode !== 'off',
+      mode: recallMode,
+      share: clampInt(recallSrc.share, 1, 100, 30),
+      maxItems,
+      maxChars: clampInt(recallSrc.maxChars, 200, LENS_RECALL_MAX_CHARS, 800)
+    };
+    const connSrc = src.connection && typeof src.connection === 'object' ? src.connection : {};
+    const modelSrc = src.modelBinding && typeof src.modelBinding === 'object' ? src.modelBinding : {};
+    const presetName = normalizeProviderPresetBindingName(connSrc.presetName ?? modelSrc.presetName ?? '');
+    const connection = { presetName };
+    const modelBinding = {
+      presetName,
+      maxOutputTokens: clampInt(modelSrc.maxOutputTokens, 256, 8192, 1536),
+      temperature: Math.max(0, Math.min(1, Number.isFinite(Number(modelSrc.temperature)) ? Number(modelSrc.temperature) : 0.2))
+    };
+    const historyRaw = Array.isArray(src.revisionHistory) ? src.revisionHistory : [];
+    const revisionHistory = historyRaw.slice(-20).map(entry => {
+      const entryInst = normalizeLensInstructionObject(entry?.instruction, '');
+      const rev = compact(entry?.revision || entry?.instructionRevision || '', 40) || (entryInst.text ? computeLensInstructionRevision(entryInst) : '');
+      const ts = entry?.updatedAt ?? entry?.savedAt ?? Date.now();
+      return {
+        revision: rev,
+        instructionRevision: rev,
+        updatedAt: typeof ts === 'number' ? ts : (Date.parse(String(ts)) || Date.now()),
+        savedAt: typeof ts === 'string' ? compact(ts, 40) : new Date(Number(ts) || Date.now()).toISOString(),
+        instruction: entryInst,
+        instructionText: entryInst.text
+      };
+    }).filter(entry => entry.revision && entry.instructionText);
+    if (!revisionHistory.some(entry => entry.revision === instructionRevision)) {
+      const nowMs = Date.now();
+      revisionHistory.push({
+        revision: instructionRevision,
+        instructionRevision,
+        updatedAt: nowMs,
+        savedAt: compact(src.updatedAt || src.createdAt || new Date(nowMs).toISOString(), 40),
+        instruction: safeClone(instructionObj),
+        instructionText
+      });
+    }
+    return {
+      schema: LENS_DEFINITION_SCHEMA,
+      id: lensId,
+      lensId,
+      name,
+      description,
+      enabled: status === 'active',
+      status,
+      templateId: compact(src.templateId || lensId, 80),
+      labels: labels.length ? labels : ['기록', '단서'],
+      evidenceMode,
+      evidencePolicy,
+      allowInterpretation: evidenceMode === 'interpretive',
+      autoRunOnCanonicalBatch: cadenceMode !== 'manual',
+      recallMode: recallMode === 'off' ? 'off' : (recallMode === 'pinned_recent' ? 'always' : 'query_Relevant'),
+      maxItemsPerBatch: maxItems,
+      extractionFocus: instructionObj.goal,
+      inclusionRules: instructionObj.includeRules.slice(),
+      exclusionRules: instructionObj.excludeRules.slice(),
+      customPrompt: instructionObj.extraFieldsNote,
+      connection,
+      cadence: { mode: cadenceMode, everyNBatches },
+      canonicalContext,
+      createdAt: src.createdAt || new Date().toISOString(),
+      updatedAt: src.updatedAt || new Date().toISOString(),
+      trashedAt: status === 'trashed' ? (src.trashedAt || new Date().toISOString()) : null,
+      instructionRevision,
+      schedule: { mode: scheduleMode, everyNBatches },
+      context,
+      instruction: instructionObj,
+      instructionText,
+      recall,
+      modelBinding,
+      revisionHistory: revisionHistory.slice(-20)
+    };
+  };
+  const normalizeMemoryLensDefinition = normalizeLensDefinition;
+
+  const normalizeLensRegistry = raw => {
+    const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const seen = new Set();
+    const activeLenses = [];
+    const trash = [];
+    for (const [idx, item] of (Array.isArray(src.lenses) ? src.lenses : []).entries()) {
+      const norm = normalizeLensDefinition(item, idx);
+      if (seen.has(norm.lensId)) continue;
+      seen.add(norm.lensId);
+      if (norm.status === 'trashed') {
+        trash.push(norm);
+      } else if (activeLenses.length < MAX_LENS_SLOTS) {
+        activeLenses.push(norm);
+      }
+    }
+    for (const [idx, item] of (Array.isArray(src.trash) ? src.trash : []).entries()) {
+      const norm = normalizeLensDefinition({ ...item, status: 'trashed', enabled: false }, activeLenses.length + idx);
+      if (seen.has(norm.lensId)) continue;
+      seen.add(norm.lensId);
+      trash.push(norm);
+    }
+    const maxSlots = clampInt(src.maxActivePausedSlots ?? src.maxSlots, 1, 5, MAX_LENS_SLOTS);
+    const rawResponseRingLimit = clampInt(src.rawResponseRingLimit, 5, 50, LENS_RAW_RING_MAX);
+    const recallBudgetRatio = Math.max(0.1, Math.min(0.25, Number(src.recallBudgetRatio) || LENS_RECALL_BUDGET_RATIO));
+    const recallMaxChars = clampInt(src.lensRecallBudgetChars ?? src.recallMaxChars, 200, 3000, 1200);
+    const archivedLegacyPrompts = src.archivedLegacyPrompts && typeof src.archivedLegacyPrompts === 'object'
+      ? safeClone(src.archivedLegacyPrompts)
+      : null;
+    const enabled = src.enabled !== false;
+    return {
+      schema: LENS_REGISTRY_SCHEMA,
+      enabled,
+      maxSlots,
+      maxActivePausedSlots: maxSlots,
+      rawResponseRingLimit,
+      recallBudgetRatio,
+      recallMaxChars,
+      lensRecallBudgetChars: recallMaxChars,
+      lenses: activeLenses,
+      trash: trash.slice(0, 20),
+      archivedLegacyPrompts,
+      updatedAt: compact(src.updatedAt || '', 40)
+    };
+  };
+  const normalizeMemoryLensConfig = normalizeLensRegistry;
 
   const LIBRARIAN_PROFILE_REASSERTION = [
     '[OUTPUT CONTRACT REASSERTION — outranks every analysis-profile instruction above]',
@@ -15082,9 +15480,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if(typeof review==='string')review=tryJsonParse(review,null);
     const acknowledged=review?.schema==='libra.librarian_config_review.v1' && review.sourceDigest===sourceDigest;
     return {schema:'libra.librarian_configuration_preview.v1',sourceDigest,candidates,
-      pendingReview:candidates.length>0&&!acknowledged,acknowledged,modelPreset:settings.stagePresetNames?.librarian || '',
+      pendingReview:candidates.length>0 && !acknowledged,acknowledged,archivedCustomCount:candidates.length,modelPreset:settings.stagePresetNames?.librarian || '',
       enabled:settings.enableLibrarian!==false,oldModelBindings:LEGACY_MEMORY_STAGE_DEFS.map(d=>({stage:d.id,label:d.label,preset:settings.stagePresetNames?.[d.id] || slots[d.id]?.preset || ''})),
-      contract:'내장 분야별 지침은 통합되었습니다. 기존 사용자 지침은 확인 후 선택한 내용만 가져오며, 가져오지 않은 원본도 보존합니다.'};
+      contract:'정본 기억 생성은 내장 기본 계약으로 고정되어 있으며, 기존 사용자 지침은 보관소에 안전하게 유지됩니다.'};
   };
   const getLibrarianConfigurationPreview = async () => {
     Runtime.settings=null;Runtime.settingsLoadedAt=0;
@@ -15336,6 +15734,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       beforePromptModes,
       beforeExtraPrompts,
       promptProfiles: normalizePromptProfilesState(promptOverrides),
+      lensRegistry: normalizeLensRegistry(await runtimeCfg('lens_registry', runtimeStored.lens_registry || runtimeStored.lensRegistry || null)),
       targetDraftMinChars: clampInt(await runtimeCfg('target_draft_min_chars', DEFAULT_TARGET_DRAFT_MIN_CHARS), 100, 20000, DEFAULT_TARGET_DRAFT_MIN_CHARS),
       targetDraftMaxChars: clampInt(await runtimeCfg('target_draft_max_chars', DEFAULT_TARGET_DRAFT_MAX_CHARS), 500, 60000, DEFAULT_TARGET_DRAFT_MAX_CHARS),
       backendHosting,
@@ -15433,8 +15832,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return settings;
   };
 
-  const resolvePreset = (settings, stageName) => {
-    const stagePreset = normalizeProviderPresetBindingName(settings.stagePresetNames?.[stageName] || settings.stageOptions?.[stageName]?.preset || '');
+  const resolvePreset = (settings, stageName, presetOverrideName = '') => {
+    const explicitOverride = normalizeProviderPresetBindingName(presetOverrideName);
+    const stagePreset = explicitOverride || normalizeProviderPresetBindingName(settings.stagePresetNames?.[stageName] || settings.stageOptions?.[stageName]?.preset || '');
     const defaultPresetName = normalizeProviderPresetBindingName(settings.defaultPresetName) || RISUAI_AUX_PRESET_NAME;
     const requestedName = stagePreset || defaultPresetName;
     const name = settings.presets?.[requestedName]
@@ -24678,7 +25078,7 @@ function summarizeAgentCbsTag(rawContent) {
 
   const callLLMWithPreset = async (settings, stageName, systemPrompt, userPrompt, options = {}) => {
     assertActiveMemoryRoute(stageName);
-    const taskKind=options.taskKind || (stageName===LIBRARIAN_STAGE_ID ? 'canonical_memory' : '');
+    const taskKind=options.taskKind || (stageName===LIBRARIAN_STAGE_ID ? 'canonical_memory' : stageName==='lens_analysis' ? 'lens_analysis' : '');
     if(!MemorySuiteExecutionContract.TASK_DEFAULTS[taskKind])throw new MemorySuiteExecutionContract.ContractError('UNKNOWN_TASK_KIND','Generation caller must supply a registered taskKind.');
     // No implicit stream downgrade/retry and no generation retry which changes the source.
     const generationPolicy=MemorySuiteExecutionContract.normalizeGenerationPolicy(settings?.generationPolicy);
@@ -24687,7 +25087,7 @@ function summarizeAgentCbsTag(rawContent) {
       await assertConsumerOperationReady(options.consumerOperation, stageName, options.taskKind);
       options = { ...options, maxCorrectiveRetries: 0, promptCacheUnsupportedRetry: true, thinkingUnsupportedRetry: true, nativeJsonUnsupportedRetry: true, contextRetry: true, transientRetry: true, lengthLimitRetry: true, noThinkingRetry: true };
     }
-    if (stageName===LIBRARIAN_STAGE_ID) options={...options,disablePromptCache:true,promptCacheUnsupportedRetry:true,thinkingUnsupportedRetry:true,nativeJsonUnsupportedRetry:true,contextRetry:true,transientRetry:true,lengthLimitRetry:true,noThinkingRetry:true};
+    if (stageName===LIBRARIAN_STAGE_ID || stageName==='lens_analysis') options={...options,disablePromptCache:true,promptCacheUnsupportedRetry:true,thinkingUnsupportedRetry:true,nativeJsonUnsupportedRetry:true,contextRetry:true,transientRetry:true,lengthLimitRetry:true,noThinkingRetry:true};
     if (!options.__providerRetryGovernor) options = { ...options, __providerRetryGovernor: providerRetryGovernor(options) };
     throwIfProviderAborted(options.signal);
     if (settings?.ragCbsContext) {
@@ -24699,7 +25099,7 @@ function summarizeAgentCbsTag(rawContent) {
       userPrompt = rendered.messages?.[1]?.content ?? userPrompt;
       if (settings.debugLog && rendered.warnings?.length) log('rag_cbs_warnings', rendered.warnings);
     }
-    const resolved = resolvePreset(settings, stageName);
+    const resolved = resolvePreset(settings, stageName, options.presetName || options.profile || '');
     const explicitTimeoutMs = Number(options.timeoutMs ?? options.timeout_ms ?? 0);
     const timeoutOverride = Number.isFinite(explicitTimeoutMs) && explicitTimeoutMs > 0
       ? clampInt(explicitTimeoutMs, 5000, 300000, DEFAULT_STAGE_TIMEOUT_MS)
@@ -31055,6 +31455,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
 
   const LLM_TASK_STAGE_MAP = Object.freeze({
     librarian: LIBRARIAN_STAGE_ID,
+    lens_analysis: 'lens_analysis',
     [STORY_ARC_STAGE_ID]: STORY_ARC_STAGE_ID,
     ariadne: 'ariadne',
     character_ito: 'character_ito',
@@ -31082,7 +31483,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     const settings = await loadSettings();
     const stageName = resolveTaskStage(routeKey);
     assertActiveMemoryRoute(stageName);
-    const resolved = resolvePreset(settings, stageName);
+    const resolved = resolvePreset(settings, stageName, fallbackProfile);
     return resolved.name || normalizeProviderPresetBindingName(fallbackProfile) || normalizeProviderPresetBindingName(settings.defaultPresetName) || RISUAI_AUX_PRESET_NAME;
   };
 
@@ -31092,17 +31493,17 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     const settings = taskSettingsSnapshot || await loadSettings();
     const stageName = resolveTaskStage(routeKey);
     assertActiveMemoryRoute(stageName);
-    const resolved = resolvePreset(settings, stageName);
+    const resolved = resolvePreset(settings, stageName, options.presetName || options.profile || '');
     const providerMode = modeForProvider(canonicalProvider(resolved?.preset?.provider || 'custom'));
     const rawRoute = String(routeKey || '').trim();
-    const memoryRoute = rawRoute === LIBRARIAN_STAGE_ID;
+    const memoryRoute = rawRoute === LIBRARIAN_STAGE_ID || rawRoute === 'lens_analysis';
     const stateRoute = rawRoute.startsWith('state_');
     const preferVisibleMemoryOutput = memoryRoute && (providerMode === 'gemini' || providerMode === 'vertex_gemini');
     const result = await callLLMWithPreset(settings, stageName, systemPrompt, userPrompt, {
       ...providerOptions,
       forceNoThinking: options.forceNoThinking === undefined ? preferVisibleMemoryOutput : options.forceNoThinking,
       label: options.label || `LIBRA ${routeKey}`,
-      domain: options.domain || (stateRoute ? 'libra_state' : 'libra_memory'),
+      domain: options.domain || (stateRoute ? 'libra_state' : rawRoute === 'lens_analysis' ? 'libra_lens' : 'libra_memory'),
       featureDomain: options.featureDomain || routeKey
     });
     return {
@@ -34386,6 +34787,11 @@ function createLibraReadonlySourceContext(owner) {
       loreLinkIndex: scope => `${PREFIX}:scope:${scope.scopeKey}:lore-link-index:v1`,
       loreLinkMapping: scope => `${PREFIX}:scope:${scope.scopeKey}:lore-link-mapping:v1`,
       pendingLiveBoundaries: scope => `${PREFIX}:scope:${scope.scopeKey}:pending-live-boundaries:v1`,
+      lensHead: scope => `${PREFIX}:scope:${scope.scopeKey}:lens:head`,
+      lensRecords: (scope, lensId) => `${PREFIX}:scope:${scope.scopeKey}:lens:${String(lensId || '')}:records`,
+      lensRuns: (scope, lensId) => `${PREFIX}:scope:${scope.scopeKey}:lens:${String(lensId || '')}:runs`,
+      lensRaw: (scope, lensId) => `${PREFIX}:scope:${scope.scopeKey}:lens:${String(lensId || '')}:raw`,
+      lensScopeState: scope => `${PREFIX}:scope:${scope.scopeKey}:lens-state:v1`,
       embeddingRebuild: () => EMBEDDING_REBUILD_STATE_KEY
     });
 
@@ -62141,6 +62547,14 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           warn('LIBRA Story Arc post-commit update failed open', storyArcError);
         }
 
+        // Scheduled User Lenses run asynchronously/fail-soft after canonical commit so lens errors never affect canonical durability.
+        try {
+          const lensScheduledResult = await runScheduledLensesForCommittedBatch({ context, memory });
+          run.lensScheduled = clone(lensScheduledResult);
+        } catch (lensScheduleError) {
+          warn('LIBRA scheduled lenses post-commit failed open', lensScheduleError);
+        }
+
         batchTiming.finishedAt = Date.now();
         batchTiming.totalMs = batchTiming.finishedAt - startedAt;
         batchTiming.finalizationMs = batchTiming.finishedAt - batchTiming.stateFinishedAt;
@@ -67696,7 +68110,23 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         const authority = unifiedGraphDeliveryAuthority.get(execution);
         if (!authority || !packet || execution.modelDispatchEligible !== true) throw new Error('LIBRA_GRAPH_CONSUMER_UNAVAILABLE');
         if (packet.consumer !== 'classic') throw new Error('LIBRA_GRAPH_CONSUMER_ROUTE_MISMATCH');
-        const content = [packet.renderedText, unifiedLiveTailText].filter(Boolean).join('\n');
+        let lensRecall = null;
+        try {
+          lensRecall = await recallLensMemories(
+            context,
+            queryBundle,
+            Number(packet.characterBudget || result?.diagnostics?.budgetPlan?.selectedEvidenceBudget || runtimeSettings?.recallMaxChars || 4000)
+          );
+        } catch (lensErr) {
+          warn('LIBRA lens recall failed open', lensErr);
+          lensRecall = null;
+        }
+        const baseContent = [packet.renderedText, unifiedLiveTailText].filter(Boolean).join('\n');
+        const lensRenderedBlock = string(lensRecall?.renderedBlock || '');
+        const candidateWithLens = [baseContent, lensRenderedBlock].filter(Boolean).join('\n\n');
+        const candidateBlockWithLens = candidateWithLens ? [UNIFIED_CLASSIC_HEADER, candidateWithLens, UNIFIED_CLASSIC_FOOTER].join('\n') : '';
+        const useLensBlock = Boolean(lensRenderedBlock) && candidateBlockWithLens.length <= CLASSIC_MAX_INJECTION_CHARS;
+        const content = useLensBlock ? candidateWithLens : baseContent;
         const block = content ? [UNIFIED_CLASSIC_HEADER, content, UNIFIED_CLASSIC_FOOTER].join('\n') : '';
         const receiptToken = registerConsumedDataReadSet(context.scope, [], queryBundle.receiptReadSet);
         bindConsumedDataIdentity(receiptToken, 'unified_classic_block', digest(block));
@@ -67733,6 +68163,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           servedEngine: 'unified', injectedMemories: block ? packet.admittedNodeIds.length : 0,
           dynamicChars: packet.characterLength, blockChars: block.length, finalVerification: verified,
           liveTailInjected: Boolean(unifiedLiveTailText), liveTailChars: unifiedLiveTailText.length,
+          lensRecall: lensRecall ? {
+            ...clone(lensRecall),
+            injected: useLensBlock,
+            usedChars: useLensBlock ? Number(lensRecall.usedChars || 0) : 0
+          } : null,
           sourceTurnAccounting: countMemorySuiteSourceTurns({ owner: 'libra', units: !block ? [] : null }) };
         state.lastRecallRuntime = recallGuardSnapshot(guard);
         result.diagnostics.recallRuntime = clone(state.lastRecallRuntime);
@@ -67743,6 +68178,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           scope: clone(context.scope), scopeKey: string(context.scope?.scopeKey || ''),
           chars: block.length, selectedMemories: packet.admittedNodeIds.length,
           injectedMemories: delivery.injectedMemories, injected: Boolean(block),
+          lensInjectedCount: useLensBlock ? asArray(lensRecall?.injectedItems).length : 0,
+          lensUsedChars: useLensBlock ? Number(lensRecall?.usedChars || 0) : 0,
           finalVerification: clone(verified), sourceTurnAccounting: clone(delivery.sourceTurnAccounting) };
         Runtime.lastClassicInjectionMeta = clone(Runtime.lastMemoryInjectionMeta);
         Runtime.lastInjection = block; scheduleGuiTraceRefresh();
@@ -68002,6 +68439,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         storageKey.includes(':source-evidence:v1:') || storageKey.includes(':canonical-variants:') || storageKey.includes(':canonical-job:')
         || storageKey.includes(':canonical-job-head:') || storageKey.includes(':continuity-delta:')
         || storageKey.includes(':continuity-overrides:') || storageKey.includes(':candidate-work:')
+        || storageKey.includes(':lens:') || storageKey.includes(':lens-state:')
       ));
       const sidecars = {};
       for (const storageKey of sidecarKeys) sidecars[storageKey] = await storage.getJson(storageKey, null);
@@ -75541,9 +75979,1481 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
     const retryFailed = async options => await startFailedRetry(options || {});
 
+    /* LIBRA LENS MEMORY ENGINE & ADMISSION GATE START */
+    const LENS_RESERVED_ITEM_KEYS = new Set([
+      'itemId', 'id', 'label', 'category', 'summary', 'text', 'content',
+      'refs', 'evidenceRefs', 'quote', 'evidenceQuote', 'basis', 'note',
+      'evidenceClass', 'evidenceSpans', 'extra'
+    ]);
+
+    const sanitizeLensExtraValue = (val, depth = 0) => {
+      if (val === null || val === undefined) return undefined;
+      if (typeof val === 'string') {
+        const cleaned = compact(val, 280);
+        return cleaned ? cleaned : undefined;
+      }
+      if (typeof val === 'number') return Number.isFinite(val) ? val : undefined;
+      if (typeof val === 'boolean') return val;
+      if (Array.isArray(val) && depth === 0) {
+        const arr = val.map(item => sanitizeLensExtraValue(item, 1)).filter(x => x !== undefined).slice(0, 8);
+        return arr.length ? arr : undefined;
+      }
+      if (isPlainObject(val) && depth === 0) {
+        const out = {};
+        let count = 0;
+        for (const [k, v] of Object.entries(val)) {
+          if (count >= 8) break;
+          const cleanKey = compact(k, 40).replace(/[^\p{L}\p{N}_-]/gu, '');
+          if (!cleanKey) continue;
+          const cleanVal = sanitizeLensExtraValue(v, 1);
+          if (cleanVal !== undefined) {
+            out[cleanKey] = cleanVal;
+            count += 1;
+          }
+        }
+        return count ? out : undefined;
+      }
+      return undefined;
+    };
+
+    const extractLensItemExtra = rawItem => {
+      const extraOut = {};
+      let keyCount = 0;
+      const addEntry = (rawKey, rawVal) => {
+        if (keyCount >= 12) return;
+        const cleanKey = compact(rawKey, 48).replace(/[^\p{L}\p{N}_-]/gu, '');
+        if (!cleanKey || LENS_RESERVED_ITEM_KEYS.has(cleanKey)) return;
+        const cleanVal = sanitizeLensExtraValue(rawVal, 0);
+        if (cleanVal !== undefined) {
+          extraOut[cleanKey] = cleanVal;
+          keyCount += 1;
+        }
+      };
+      if (isPlainObject(rawItem?.extra)) {
+        for (const [k, v] of Object.entries(rawItem.extra)) addEntry(k, v);
+      }
+      if (isPlainObject(rawItem)) {
+        for (const [k, v] of Object.entries(rawItem)) {
+          if (LENS_RESERVED_ITEM_KEYS.has(k)) continue;
+          addEntry(k, v);
+        }
+      }
+      return extraOut;
+    };
+
+    const unwrapLensCandidatePayload = rawOutput => {
+      if (Array.isArray(rawOutput)) {
+        return { ok: true, parsed: rawOutput, items: rawOutput };
+      }
+      if (isPlainObject(rawOutput)) {
+        const items = Array.isArray(rawOutput.items)
+          ? rawOutput.items
+          : Array.isArray(rawOutput.records)
+          ? rawOutput.records
+          : Array.isArray(rawOutput.notes)
+          ? rawOutput.notes
+          : Array.isArray(rawOutput.entries)
+          ? rawOutput.entries
+          : [];
+        return { ok: true, parsed: rawOutput, items };
+      }
+      const textRaw = String(rawOutput ?? '').trim();
+      if (!textRaw) {
+        return { ok: false, reasonCode: 'malformed_json', reasonLabel: LENS_REJECT_REASON_LABELS.malformed_json, items: [] };
+      }
+      let parsed = null;
+      try {
+        const unwrapped = unwrapLibraTypedResponse(textRaw);
+        parsed = JSON.parse(unwrapped.json);
+      } catch (_err1) {
+        try {
+          const fenced = stripFence(textRaw).trim();
+          parsed = JSON.parse(fenced);
+        } catch (_err2) {
+          const firstBrace = textRaw.indexOf('{');
+          const lastBrace = textRaw.lastIndexOf('}');
+          const firstBracket = textRaw.indexOf('[');
+          const lastBracket = textRaw.lastIndexOf(']');
+          try {
+            if (firstBrace >= 0 && lastBrace > firstBrace) {
+              parsed = JSON.parse(textRaw.slice(firstBrace, lastBrace + 1));
+            } else if (firstBracket >= 0 && lastBracket > firstBracket) {
+              parsed = JSON.parse(textRaw.slice(firstBracket, lastBracket + 1));
+            }
+          } catch (_err3) {
+            parsed = null;
+          }
+        }
+      }
+      if (!parsed || typeof parsed !== 'object') {
+        return { ok: false, reasonCode: 'malformed_json', reasonLabel: LENS_REJECT_REASON_LABELS.malformed_json, items: [] };
+      }
+      const items = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed.items)
+        ? parsed.items
+        : Array.isArray(parsed.records)
+        ? parsed.records
+        : Array.isArray(parsed.notes)
+        ? parsed.notes
+        : Array.isArray(parsed.entries)
+        ? parsed.entries
+        : [];
+      return { ok: true, parsed, items };
+    };
+
+    const evaluateLensCandidateItems = (rawOutput, paramB = [], paramC = {}) => {
+      let batch = [];
+      let lensInput = {};
+      if (Array.isArray(paramB)) {
+        batch = paramB;
+        lensInput = paramC;
+      } else if (Array.isArray(paramC)) {
+        batch = paramC;
+        lensInput = paramB;
+      } else if (paramB && typeof paramB === 'object' && (paramB.lensId || paramB.id || paramB.evidenceMode || paramB.evidencePolicy)) {
+        lensInput = paramB;
+        batch = paramC;
+      } else {
+        batch = paramB;
+        lensInput = paramC;
+      }
+      const lens = normalizeLensDefinition(lensInput, 0);
+      const unwrapped = unwrapLensCandidatePayload(rawOutput);
+      if (!unwrapped.ok) {
+        return {
+          ok: false,
+          parseError: unwrapped.reasonCode,
+          parseErrorLabel: unwrapped.reasonLabel,
+          acceptedItems: [],
+          rejectedItems: [{
+            index: 0,
+            summary: compact(String(rawOutput || ''), 180),
+            refs: [],
+            quote: '',
+            basis: '',
+            reasonCode: unwrapped.reasonCode,
+            reasonLabel: unwrapped.reasonLabel
+          }],
+          counts: { total: 0, quoted: 0, interpreted: 0, rejected: 1 }
+        };
+      }
+      const sources = canonicalEvidenceSources(batch);
+      const allowedLabels = asArray(lens.labels).map(l => compact(l, 40)).filter(Boolean);
+      const defaultLabel = allowedLabels[0] || '기록';
+      const acceptedItems = [];
+      const rejectedItems = [];
+      let quotedCount = 0;
+      let interpretedCount = 0;
+
+      for (const [idx, rawItem] of asArray(unwrapped.items).entries()) {
+        if (!isPlainObject(rawItem)) {
+          rejectedItems.push({
+            index: idx,
+            summary: compact(String(rawItem ?? ''), 180),
+            refs: [],
+            quote: '',
+            basis: '',
+            reasonCode: 'malformed_json',
+            reasonLabel: LENS_REJECT_REASON_LABELS.malformed_json
+          });
+          continue;
+        }
+        const summary = compact(rawItem.summary || rawItem.text || rawItem.content || '', 600);
+        const rawRefs = Array.isArray(rawItem.refs)
+          ? rawItem.refs
+          : Array.isArray(rawItem.evidenceRefs)
+          ? rawItem.evidenceRefs
+          : typeof rawItem.ref === 'string'
+          ? [rawItem.ref]
+          : [];
+        const refs = Array.from(new Set(rawRefs.map(r => string(r || '').trim().toLowerCase()).filter(Boolean)));
+        const quote = compact(rawItem.quote || rawItem.evidenceQuote || '', CANONICAL_EVIDENCE_QUOTE_MAX_CHARS);
+        const basis = compact(rawItem.basis || rawItem.note || '', 500);
+        const rawLabel = compact(rawItem.label || rawItem.category || '', 40);
+        const label = allowedLabels.includes(rawLabel) ? rawLabel : (rawLabel || defaultLabel);
+
+        const reject = reasonCode => {
+          rejectedItems.push({
+            index: idx,
+            label,
+            summary,
+            refs,
+            quote,
+            basis,
+            reasonCode,
+            reasonLabel: LENS_REJECT_REASON_LABELS[reasonCode] || reasonCode
+          });
+        };
+
+        if (!summary) {
+          reject('missing_summary');
+          continue;
+        }
+        if (!refs.length) {
+          reject('missing_refs');
+          continue;
+        }
+        if (refs.some(ref => !sources.has(ref))) {
+          reject('ref_out_of_range');
+          continue;
+        }
+
+        let matchedQuoteRef = '';
+        let matchedBinding = null;
+        if (quote) {
+          for (const ref of refs) {
+            const binding = canonicalEvidenceSpanBinding({ ref, quote }, sources.get(ref));
+            if (binding) {
+              matchedQuoteRef = ref;
+              matchedBinding = binding;
+              break;
+            }
+          }
+        }
+
+        const extra = extractLensItemExtra(rawItem);
+
+        if (matchedBinding) {
+          quotedCount += 1;
+          acceptedItems.push({
+            itemId: compact(rawItem.itemId || rawItem.id || `li_${idx + 1}_${digest([refs, summary, quote]).slice(0, 8)}`, 64),
+            label,
+            summary,
+            evidenceClass: 'quoted',
+            refs,
+            quote: matchedBinding.quote,
+            quoteRef: matchedQuoteRef,
+            quoteHash: matchedBinding.quoteHash,
+            basis,
+            extra
+          });
+          continue;
+        }
+
+        if (lens.evidenceMode === 'strict') {
+          reject(quote ? 'quote_not_found_in_ref' : 'strict_mode_requires_quote');
+          continue;
+        }
+
+        // Interpretive mode: allow when valid in-range refs + non-empty basis (or fallback to quote note if basis is provided)
+        if (!basis) {
+          reject(quote ? 'quote_not_found_in_ref' : 'missing_basis_for_interpretation');
+          continue;
+        }
+
+        interpretedCount += 1;
+        acceptedItems.push({
+          itemId: compact(rawItem.itemId || rawItem.id || `li_${idx + 1}_${digest([refs, summary, basis]).slice(0, 8)}`, 64),
+          label,
+          summary,
+          evidenceClass: 'interpreted',
+          refs,
+          quote: '',
+          quoteRef: '',
+          quoteHash: '',
+          basis,
+          extra
+        });
+      }
+
+      return {
+        ok: true,
+        parseError: '',
+        parseErrorLabel: '',
+        acceptedItems,
+        rejectedItems,
+        counts: {
+          total: acceptedItems.length + rejectedItems.length,
+          quoted: quotedCount,
+          interpreted: interpretedCount,
+          rejected: rejectedItems.length
+        }
+      };
+    };
+
+    const captureLensSourceToken = async (context, startTurn, endTurn) => {
+      const liveContext = context || await resolveContext();
+      const scopeKey = string(liveContext?.scope?.scopeKey || '');
+      const pairs = buildPairs(liveContext.chat, scopeKey);
+      const slice = pairs.filter(pair => Number(pair?.turn || 0) >= Number(startTurn) && Number(pair?.turn || 0) <= Number(endTurn));
+      if (!slice.length) return null;
+      const worldlineMeta = await loadStateWorldlineMeta(liveContext.scope).catch(() => ({ activeWorldlineId: 'main' }));
+      const worldlineId = string(worldlineMeta?.activeWorldlineId || 'main');
+      const batchDigest = sourceDigest(slice);
+      const revisionIds = slice.map(pair => completedTurnRevisionId(pair));
+      const sourceRevisionId = `lrev_${digest([scopeKey, worldlineId, startTurn, endTurn, batchDigest, revisionIds]).slice(0, 16)}`;
+      return {
+        scopeKey,
+        worldlineId,
+        sessionEpoch: 0,
+        turnRange: { start: Number(startTurn), end: Number(endTurn) },
+        sourceRevisionId,
+        sourceDigest: batchDigest,
+        batch: clone(slice)
+      };
+    };
+
+    const verifyLensSourceToken = async token => {
+      if (!token || !token.scopeKey || !token.turnRange) return { ok: false, reason: 'stale_source_revision' };
+      const currentContext = await resolveContext();
+      if (string(currentContext?.scope?.scopeKey || '') !== string(token.scopeKey)) {
+        return { ok: false, reason: 'stale_source_revision' };
+      }
+      const latest = await captureLensSourceToken(currentContext, token.turnRange.start, token.turnRange.end);
+      if (!latest
+        || latest.worldlineId !== token.worldlineId
+        || latest.sourceDigest !== token.sourceDigest
+        || latest.sourceRevisionId !== token.sourceRevisionId) {
+        return { ok: false, reason: 'stale_source_revision' };
+      }
+      return { ok: true, reason: '', context: currentContext, latest };
+    };
+
+    const loadLensScopeHead = async scope => {
+      const raw = await storage.getJson(key.lensHead(scope), null);
+      if (!raw || raw.schema !== LENS_SCOPE_HEAD_SCHEMA || string(raw.scopeKey || '') !== string(scope?.scopeKey || '')) {
+        return {
+          schema: LENS_SCOPE_HEAD_SCHEMA,
+          scopeKey: string(scope?.scopeKey || ''),
+          updatedAt: nowIso(),
+          completedBatchesCount: 0,
+          lenses: {}
+        };
+      }
+      return {
+        schema: LENS_SCOPE_HEAD_SCHEMA,
+        scopeKey: string(scope.scopeKey),
+        updatedAt: string(raw.updatedAt || nowIso()),
+        completedBatchesCount: Math.max(0, Number(raw.completedBatchesCount || 0)),
+        lenses: isPlainObject(raw.lenses) ? clone(raw.lenses) : {}
+      };
+    };
+
+    const saveLensScopeHead = async (scope, head) => {
+      const payload = {
+        schema: LENS_SCOPE_HEAD_SCHEMA,
+        scopeKey: string(scope?.scopeKey || ''),
+        updatedAt: nowIso(),
+        completedBatchesCount: Math.max(0, Number(head?.completedBatchesCount || 0)),
+        lenses: isPlainObject(head?.lenses) ? clone(head.lenses) : {}
+      };
+      await storage.setJson(key.lensHead(scope), payload);
+      return payload;
+    };
+
+    const loadLensRecordsMap = async (scope, lensId) => {
+      const raw = await storage.getJson(key.lensRecords(scope, lensId), null);
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+      if (raw.records && isPlainObject(raw.records)) return clone(raw.records);
+      return clone(raw);
+    };
+
+    const saveLensRecordsMap = async (scope, lensId, recordsMap) => {
+      const payload = {
+        schema: 'libra.lens_records_map.v1',
+        scopeKey: string(scope?.scopeKey || ''),
+        lensId: string(lensId || ''),
+        updatedAt: nowIso(),
+        records: isPlainObject(recordsMap) ? clone(recordsMap) : {}
+      };
+      await storage.setJson(key.lensRecords(scope, lensId), payload);
+      return payload.records;
+    };
+
+    const loadLensRunsList = async (scope, lensId) => {
+      const raw = await storage.getJson(key.lensRuns(scope, lensId), null);
+      if (Array.isArray(raw)) return clone(raw);
+      if (raw && Array.isArray(raw.runs)) return clone(raw.runs);
+      return [];
+    };
+
+    const saveLensRunsList = async (scope, lensId, runsList) => {
+      const bounded = asArray(runsList).slice(0, 40);
+      await storage.setJson(key.lensRuns(scope, lensId), bounded);
+      return bounded;
+    };
+
+    const loadLensRawRing = async (scope, lensId) => {
+      const raw = await storage.getJson(key.lensRaw(scope, lensId), null);
+      if (Array.isArray(raw)) return clone(raw);
+      if (raw && Array.isArray(raw.entries)) return clone(raw.entries);
+      return [];
+    };
+
+    const saveLensRawRing = async (scope, lensId, entries, limit = LENS_RAW_RING_MAX) => {
+      const maxEntries = clampInt(limit, 5, 50, LENS_RAW_RING_MAX);
+      const bounded = asArray(entries).slice(0, maxEntries);
+      await storage.setJson(key.lensRaw(scope, lensId), bounded);
+      return bounded;
+    };
+
+    let activeLensRegistryCache = null;
+    let activeLensRegistryCacheTime = 0;
+    const LENS_REGISTRY_CACHE_TTL_MS = 2500;
+
+    const invalidateActiveLensRegistryCache = () => {
+      activeLensRegistryCache = null;
+      activeLensRegistryCacheTime = 0;
+    };
+
+    const saveScopedLensRegistry = async (scope, registry) => {
+      if (!scope?.scopeKey) return null;
+      const normalized = normalizeLensRegistry(registry);
+      const payload = {
+        schema: LENS_REGISTRY_SCHEMA,
+        scopeKey: string(scope.scopeKey),
+        updatedAt: nowIso(),
+        lensRegistry: normalized,
+        lens_registry: normalized
+      };
+      await storage.setJson(key.lensScopeState(scope), payload);
+      invalidateActiveLensRegistryCache();
+      return payload;
+    };
+
+    const loadActiveLensRegistry = async (targetScope = null, options = {}) => {
+      const bypassCache = options?.bypassCache === true || options?.force === true;
+      const liveScope = targetScope || options?.scope || state?.lastResolvedContext?.scope || null;
+      const scopeKey = string(liveScope?.scopeKey || '');
+
+      // 1. Scope settings fallback: check scope-level stored lens state if available
+      if (liveScope && scopeKey) {
+        try {
+          const scopeStored = await storage.getJson(key.lensScopeState(liveScope), null);
+          const scopeReg = scopeStored?.lens_registry || scopeStored?.lensRegistry || (scopeStored?.lenses ? scopeStored : null);
+          if (scopeReg) {
+            return normalizeLensRegistry(scopeReg);
+          }
+        } catch (_) {}
+      }
+
+      // Check short-lived cache for non-scoped requests
+      const now = Date.now();
+      if (!bypassCache && !scopeKey && activeLensRegistryCache && (now - activeLensRegistryCacheTime < LENS_REGISTRY_CACHE_TTL_MS)) {
+        return clone(activeLensRegistryCache);
+      }
+
+      // 2. Profile settings fallback: check active profile / promptProfiles if available
+      try {
+        const activeProfiles = Gui.state?.promptProfiles || Runtime.settings?.promptProfiles;
+        const profileReg = activeProfiles?.lensRegistry || activeProfiles?.lens_registry;
+        if (profileReg) {
+          const normalized = normalizeLensRegistry(profileReg);
+          if (!scopeKey) {
+            activeLensRegistryCache = clone(normalized);
+            activeLensRegistryCacheTime = now;
+          }
+          return normalized;
+        }
+      } catch (_) {}
+
+      // 3. Workspace / global settings fallback: check runtime settings then memory settings
+      try {
+        const runtimeStored = await readRuntimeSettings();
+        if (runtimeStored?.lens_registry || runtimeStored?.lensRegistry) {
+          const normalized = normalizeLensRegistry(runtimeStored?.lens_registry || runtimeStored?.lensRegistry);
+          if (!scopeKey) {
+            activeLensRegistryCache = clone(normalized);
+            activeLensRegistryCacheTime = now;
+          }
+          return normalized;
+        }
+      } catch (_) {}
+      try {
+        const memSettings = await loadMemorySettings();
+        if (memSettings?.lens_registry || memSettings?.lensRegistry) {
+          const normalized = normalizeLensRegistry(memSettings?.lens_registry || memSettings?.lensRegistry);
+          if (!scopeKey) {
+            activeLensRegistryCache = clone(normalized);
+            activeLensRegistryCacheTime = now;
+          }
+          return normalized;
+        }
+      } catch (_) {}
+      if (Runtime.settings?.lensRegistry || Runtime.settings?.lens_registry) {
+        const normalized = normalizeLensRegistry(Runtime.settings.lensRegistry || Runtime.settings.lens_registry);
+        if (!scopeKey) {
+          activeLensRegistryCache = clone(normalized);
+          activeLensRegistryCacheTime = now;
+        }
+        return normalized;
+      }
+
+      // 4. Default presets fallback
+      const defaultReg = normalizeLensRegistry(null);
+      if (!scopeKey) {
+        activeLensRegistryCache = clone(defaultReg);
+        activeLensRegistryCacheTime = now;
+      }
+      return defaultReg;
+    };
+
+    const buildLensPromptMessages = ({ lens, batch, canonicalSummary = '', previousRecords = [] }) => {
+      const labelsText = asArray(lens.labels).join(', ') || '기록, 단서';
+      const evidenceRule = lens.evidenceMode === 'strict'
+        ? [
+            'Evidence Mode: strict (원문 인용 필수)',
+            '- Every item MUST include valid in-range `refs` (e.g. ["t1-u", "t1-a"]) AND an exact substring `quote` (2~320 chars) copied from one of those referenced turns.',
+            '- Items without an exact quote match in the referenced turns will be rejected.'
+          ].join('\n')
+        : [
+            'Evidence Mode: interpretive (인용 + 해석 허용)',
+            '- Every item MUST include valid in-range `refs` (e.g. ["t1-u", "t1-a"]).',
+            '- If an exact substring `quote` (2~320 chars) from a referenced turn is provided, the item is classified as `quoted` (인용 확인).',
+            '- If an item is an inference or synthesis without an exact quote, you MUST provide a non-empty `basis` explaining the textual basis in the referenced turns; it will be classified as `interpreted` (해석).'
+          ].join('\n');
+
+      const systemPrompt = [
+        '[LIBRA LENS ANALYZER — NON-CANONICAL PERSPECTIVE CONTRACT]',
+        'You are a specialized perspective-based memory lens analyzer for LIBRA.',
+        'Your output NEVER modifies canonical memory, Continuity State, or entity registries. It is stored in an isolated Lens Memory namespace.',
+        'Return ONLY valid JSON matching the following schema (no markdown explanation outside JSON):',
+        '{',
+        '  "items": [',
+        '    {',
+        '      "label": "one of the allowed labels",',
+        '      "summary": "concise Korean observation or note",',
+        '      "refs": ["t<N>-u" or "t<N>-a"],',
+        '      "quote": "exact quote from a referenced turn (required in strict mode; optional in interpretive mode)",',
+        '      "basis": "textual reasoning/basis (required in interpretive mode when quote is omitted)",',
+        '      "extra": { "customKey": "optional lens-specific scalar or short array metadata" }',
+        '    }',
+        '  ]',
+        '}',
+        '',
+        `[LENS IDENTITY]`,
+        `Lens Name: ${lens.name} (${lens.lensId})`,
+        `Description: ${lens.description || lens.name}`,
+        `Allowed Labels: ${labelsText}`,
+        evidenceRule,
+        '',
+        '[USER LENS INSTRUCTION]',
+        lens.instructionText || formatLensInstructionText(lens.instruction)
+      ].filter(Boolean).join('\n');
+
+      const exactTurns = [
+        '[EXACT SOURCE TURNS]',
+        ...asArray(batch).map(pair => `[t${pair.turn}-u]\n${pair?.user?.text || ''}\n\n[t${pair.turn}-a]\n${pair?.assistant?.text || ''}`)
+      ].join('\n\n');
+
+      const prevBlock = asArray(previousRecords).length
+        ? [
+            '[PREVIOUS LENS RECORDS (READ-ONLY CONTEXT)]',
+            ...asArray(previousRecords).slice(-3).map(rec => {
+              const rangeLabel = `t${rec?.turnRange?.start || 0}-t${rec?.turnRange?.end || 0}`;
+              const lines = asArray(rec?.items).slice(0, 5).map(it => `- [${it.label}] ${it.summary}`).join('\n');
+              return `Range ${rangeLabel}:\n${lines}`;
+            })
+          ].join('\n\n')
+        : '';
+
+      const canonBlock = lens.canonicalContext && canonicalSummary
+        ? `[COMMITTED CANONICAL SUMMARY FOR THIS RANGE (READ-ONLY)]\n${canonicalSummary}`
+        : '';
+
+      const userPrompt = [
+        prevBlock,
+        canonBlock,
+        exactTurns,
+        '위 원문 구간에서 렌즈 지침에 부합하는 항목만 JSON(`{"items":[...]}`)으로 추출하세요. 해당 구간에 기록할 만한 내용이 없으면 `{"items":[]}`을 반환하세요.'
+      ].filter(Boolean).join('\n\n');
+
+      return { systemPrompt, userPrompt };
+    };
+
+    const resolveLensProviderPresetName = (lens, runtimeSettings) => {
+      const explicit = normalizeProviderPresetBindingName(lens?.connection?.presetName || lens?.modelBinding?.presetName || '');
+      if (explicit) return explicit;
+      const stagePreset = normalizeProviderPresetBindingName(runtimeSettings?.stagePresetNames?.[LIBRARIAN_STAGE_ID] || '');
+      if (stagePreset) return stagePreset;
+      return normalizeProviderPresetBindingName(runtimeSettings?.defaultPresetName || RISUAI_AUX_PRESET_NAME);
+    };
+
+    const runLensForRange = async (arg1 = {}, arg2 = {}) => {
+      const opts = typeof arg1 === 'string' ? { lensId: arg1, ...(arg2 || {}) } : (arg1 || {});
+      const {
+        lensId = '',
+        draftLens = null,
+        startTurn = 0,
+        endTurn = 0,
+        trigger = 'manual_range',
+        trialRun = false,
+        context: suppliedContext = null,
+        canonicalMemory = null
+      } = opts;
+      const targetLensId = String(lensId || '').trim();
+      const context = suppliedContext || await resolveContext();
+      const registry = await loadActiveLensRegistry(context?.scope);
+      const foundLens = draftLens
+        ? normalizeLensDefinition(draftLens, 0)
+        : registry.lenses.find(item => item.lensId === targetLensId || item.id === targetLensId) || null;
+      if (!foundLens) {
+        throw new Error(`렌즈(${targetLensId})를 찾을 수 없습니다.`);
+      }
+      const pairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
+      if (!pairs.length) {
+        throw new Error('분석할 대화 원문 턴이 없습니다.');
+      }
+      let targetStart = Number(startTurn || 0);
+      let targetEnd = Number(endTurn || 0);
+      if (!targetStart || !targetEnd || targetEnd < targetStart) {
+        const span = Math.max(1, Math.min(BATCH_SIZE, pairs.length));
+        targetEnd = pairs.length;
+        targetStart = Math.max(1, targetEnd - span + 1);
+      }
+      const token = await captureLensSourceToken(context, targetStart, targetEnd);
+      if (!token || !token.batch.length) {
+        throw new Error(`TURN ${targetStart}~${targetEnd} 원문 구간을 찾을 수 없습니다.`);
+      }
+
+      const manifest = await loadManifest(context.scope, pairs.length);
+      let canonicalSummary = '';
+      if (foundLens.canonicalContext) {
+        if (canonicalMemory && Number(canonicalMemory?.turnRange?.start) === targetStart) {
+          canonicalSummary = string(canonicalMemory.text || canonicalMemory.summary || '');
+        } else {
+          const ref = manifest.memories?.[String(targetStart)] || null;
+          if (ref?.key) {
+            const loadedCanon = await loadMemoryRef(ref).catch(() => null);
+            canonicalSummary = string(loadedCanon?.text || loadedCanon?.summary || ref.summary || '');
+          }
+        }
+      }
+
+      const existingRecordsMap = await loadLensRecordsMap(context.scope, foundLens.lensId);
+      const previousRecords = Object.values(existingRecordsMap)
+        .filter(rec => rec?.schema === LENS_MEMORY_RECORD_SCHEMA
+          && rec?.worldlineId === token.worldlineId
+          && Number(rec?.turnRange?.end || 0) < targetStart)
+        .sort((a, b) => Number(a?.turnRange?.start || 0) - Number(b?.turnRange?.start || 0))
+        .slice(-Math.max(0, Number(foundLens.context?.includePrevLensRecords ?? 3)));
+
+      const { systemPrompt, userPrompt } = buildLensPromptMessages({
+        lens: foundLens,
+        batch: token.batch,
+        canonicalSummary,
+        previousRecords
+      });
+
+      const runtimeSettings = await loadMemorySettings();
+      const presetName = resolveLensProviderPresetName(foundLens, runtimeSettings);
+      const startedAt = Date.now();
+      const runId = `lrun_${startedAt}_${digest([foundLens.lensId, token.scopeKey, targetStart, targetEnd, startedAt]).slice(0, 8)}`;
+
+      let providerResult = null;
+      let providerError = null;
+      try {
+        providerResult = await LibraProviderBridge.callTask('lens_analysis', {
+          profile: presetName,
+          presetName,
+          systemPrompt,
+          userPrompt,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: Number(foundLens.modelBinding?.temperature ?? 0.2),
+          maxTokens: Number(foundLens.modelBinding?.maxOutputTokens ?? 1536),
+          jsonMode: true,
+          structuredTask: true
+        });
+      } catch (err) {
+        providerError = err;
+      }
+
+      const finishedAt = Date.now();
+      const postCheck = await verifyLensSourceToken(token);
+      if (!postCheck.ok) {
+        const staleRun = {
+          schema: LENS_RUN_LOG_SCHEMA,
+          runId,
+          lensId: foundLens.lensId,
+          lensName: foundLens.name,
+          scopeKey: token.scopeKey,
+          worldlineId: token.worldlineId,
+          trigger,
+          status: 'stale_source_revision',
+          startedAt,
+          finishedAt,
+          turnRange: clone(token.turnRange),
+          sourceRevisionId: token.sourceRevisionId,
+          sourceDigest: token.sourceDigest,
+          instructionRevision: foundLens.instructionRevision,
+          connectionPresetName: presetName,
+          model: string(providerResult?.model || ''),
+          counts: { total: 0, quoted: 0, interpreted: 0, rejected: 0 },
+          rejectedItems: [],
+          rawResponseRef: null,
+          error: LENS_REJECT_REASON_LABELS.stale_source_revision
+        };
+        if (!trialRun) {
+          const runs = await loadLensRunsList(context.scope, foundLens.lensId);
+          await saveLensRunsList(context.scope, foundLens.lensId, [staleRun, ...runs]);
+        }
+        return {
+          ok: false,
+          trialRun: Boolean(trialRun),
+          status: 'stale_source_revision',
+          reason: LENS_REJECT_REASON_LABELS.stale_source_revision,
+          run: staleRun,
+          record: null,
+          admission: { acceptedItems: [], rejectedItems: [], counts: staleRun.counts }
+        };
+      }
+
+      if (providerError || !providerResult || providerResult.ok === false) {
+        const errMsg = compact(providerError?.message || providerResult?.reason || providerResult?.error || 'lens_provider_call_failed', 500);
+        const failedRun = {
+          schema: LENS_RUN_LOG_SCHEMA,
+          runId,
+          lensId: foundLens.lensId,
+          lensName: foundLens.name,
+          scopeKey: token.scopeKey,
+          worldlineId: token.worldlineId,
+          trigger,
+          status: 'failed',
+          startedAt,
+          finishedAt,
+          turnRange: clone(token.turnRange),
+          sourceRevisionId: token.sourceRevisionId,
+          sourceDigest: token.sourceDigest,
+          instructionRevision: foundLens.instructionRevision,
+          connectionPresetName: presetName,
+          model: string(providerResult?.model || ''),
+          counts: { total: 0, quoted: 0, interpreted: 0, rejected: 0 },
+          rejectedItems: [],
+          rawResponseRef: null,
+          error: errMsg
+        };
+        if (!trialRun) {
+          const runs = await loadLensRunsList(context.scope, foundLens.lensId);
+          await saveLensRunsList(context.scope, foundLens.lensId, [failedRun, ...runs]);
+          const head = await loadLensScopeHead(context.scope);
+          head.lenses[foundLens.lensId] = {
+            ...(head.lenses[foundLens.lensId] || {}),
+            lastRunAt: finishedAt,
+            lastStatus: 'failed',
+            instructionRevision: foundLens.instructionRevision
+          };
+          await saveLensScopeHead(context.scope, head);
+        }
+        return {
+          ok: false,
+          trialRun: Boolean(trialRun),
+          status: 'failed',
+          reason: errMsg,
+          run: failedRun,
+          record: null,
+          admission: { acceptedItems: [], rejectedItems: [], counts: failedRun.counts }
+        };
+      }
+
+      const rawText = String(providerResult.rawStructuredResponse || providerResult.content || '');
+      const admission = evaluateLensCandidateItems(rawText, token.batch, foundLens);
+      const rangeKey = `t${targetStart}-t${targetEnd}`;
+      const recordId = `lrec_${foundLens.lensId}_${rangeKey}_${foundLens.instructionRevision}`;
+      const status = !admission.ok
+        ? 'failed'
+        : admission.rejectedItems.length > 0 && admission.acceptedItems.length > 0
+        ? 'partial'
+        : admission.rejectedItems.length > 0 && admission.acceptedItems.length === 0
+        ? 'rejected_all'
+        : 'succeeded';
+
+      const record = {
+        schema: LENS_MEMORY_RECORD_SCHEMA,
+        recordId,
+        lensId: foundLens.lensId,
+        lensName: foundLens.name,
+        scopeKey: token.scopeKey,
+        worldlineId: token.worldlineId,
+        sessionEpoch: token.sessionEpoch,
+        turnRange: clone(token.turnRange),
+        rangeKey,
+        sourceRevisionId: token.sourceRevisionId,
+        sourceDigest: token.sourceDigest,
+        instructionRevision: foundLens.instructionRevision,
+        evidenceMode: foundLens.evidenceMode,
+        connectionPresetName: presetName,
+        model: string(providerResult.model || ''),
+        provider: string(providerResult.provider || ''),
+        createdAt: finishedAt,
+        items: admission.acceptedItems,
+        rejectedCount: admission.rejectedItems.length
+      };
+
+      const rawSlotId = `raw_${runId}`;
+      const runLog = {
+        schema: LENS_RUN_LOG_SCHEMA,
+        runId,
+        lensId: foundLens.lensId,
+        lensName: foundLens.name,
+        scopeKey: token.scopeKey,
+        worldlineId: token.worldlineId,
+        trigger,
+        status,
+        startedAt,
+        finishedAt,
+        turnRange: clone(token.turnRange),
+        rangeKey,
+        sourceRevisionId: token.sourceRevisionId,
+        sourceDigest: token.sourceDigest,
+        instructionRevision: foundLens.instructionRevision,
+        connectionPresetName: presetName,
+        model: string(providerResult.model || ''),
+        counts: clone(admission.counts),
+        rejectedItems: clone(admission.rejectedItems),
+        rawResponseRef: trialRun ? null : { slotId: rawSlotId, Retained: true },
+        error: admission.parseErrorLabel || ''
+      };
+
+      if (!trialRun) {
+        const nextRecordsMap = await loadLensRecordsMap(context.scope, foundLens.lensId);
+        nextRecordsMap[rangeKey] = record;
+        await saveLensRecordsMap(context.scope, foundLens.lensId, nextRecordsMap);
+
+        const nextRuns = await loadLensRunsList(context.scope, foundLens.lensId);
+        await saveLensRunsList(context.scope, foundLens.lensId, [runLog, ...nextRuns]);
+
+        const nextRawRing = await loadLensRawRing(context.scope, foundLens.lensId);
+        const rawEntry = {
+          slotId: rawSlotId,
+          runId,
+          lensId: foundLens.lensId,
+          rangeKey,
+          turnRange: clone(token.turnRange),
+          instructionRevision: foundLens.instructionRevision,
+          createdAt: finishedAt,
+          rawResponse: rawText.slice(0, 32000)
+        };
+        await saveLensRawRing(
+          context.scope,
+          foundLens.lensId,
+          [rawEntry, ...nextRawRing.filter(item => item?.runId !== runId)],
+          registry.rawResponseRingLimit
+        );
+
+        const totalItemsCount = Object.values(nextRecordsMap).reduce(
+          (acc, rec) => acc + asArray(rec?.items).length,
+          0
+        );
+        const head = await loadLensScopeHead(context.scope);
+        head.lenses[foundLens.lensId] = {
+          lastAnalyzedEndTurn: Math.max(Number(head.lenses[foundLens.lensId]?.lastAnalyzedEndTurn || 0), targetEnd),
+          lastRunAt: finishedAt,
+          lastStatus: status,
+          recordCount: Object.keys(nextRecordsMap).length,
+          itemCount: totalItemsCount,
+          instructionRevision: foundLens.instructionRevision
+        };
+        await saveLensScopeHead(context.scope, head);
+        scheduleGuiTraceRefresh();
+      }
+
+      return clone({
+        ok: admission.ok,
+        lensId: foundLens.lensId || foundLens.id,
+        items: admission.acceptedItems,
+        trialRun: Boolean(trialRun),
+        status,
+        acceptedCount: admission.acceptedItems.length,
+        rejectedCount: admission.rejectedItems.length,
+        run: runLog,
+        record,
+        rawResponse: rawText.slice(0, 32000),
+        admission
+      });
+    };
+    const runLensForTurnRange = runLensForRange;
+
+    const runScheduledLensesForCommittedBatch = async ({ context, memory } = {}) => {
+      try {
+        const liveContext = context || await resolveContext();
+        const registry = await loadActiveLensRegistry(liveContext?.scope);
+        if (registry.enabled === false) return { executed: [], skipped: [] };
+        const activeLenses = registry.lenses.filter(lens => lens.status === 'active' && lens.enabled !== false);
+        const head = await loadLensScopeHead(liveContext.scope);
+        head.completedBatchesCount = Math.max(0, Number(head.completedBatchesCount || 0)) + 1;
+        await saveLensScopeHead(liveContext.scope, head);
+
+        if (!activeLenses.length) return { executed: [], skipped: [] };
+
+        const startTurn = Number(memory?.turnRange?.start || 0);
+        const endTurn = Number(memory?.turnRange?.end || 0);
+        if (!startTurn || !endTurn) return { executed: [], skipped: [] };
+
+        const executed = [];
+        const skipped = [];
+        for (const lens of activeLenses) {
+          const mode = lens.cadence?.mode || 'every_batch';
+          if (mode === 'manual') {
+            skipped.push({ lensId: lens.lensId, reason: 'manual_cadence' });
+            continue;
+          }
+          if (mode === 'every_n_batches') {
+            const everyN = Math.max(2, Number(lens.cadence?.everyNBatches || 2));
+            if (head.completedBatchesCount % everyN !== 0) {
+              skipped.push({ lensId: lens.lensId, reason: `every_${everyN}_batches_wait` });
+              continue;
+            }
+          }
+          try {
+            const outcome = await runLensForRange({
+              lensId: lens.lensId,
+              startTurn,
+              endTurn,
+              trigger: mode === 'every_n_batches' ? 'scheduled_n_batches' : 'scheduled_batch',
+              trialRun: false,
+              context: liveContext,
+              canonicalMemory: memory
+            });
+            executed.push({ lensId: lens.lensId, status: outcome.status, runId: outcome.run?.runId || '' });
+          } catch (lensErr) {
+            warn(`LIBRA scheduled lens ${lens.lensId} failed open`, lensErr);
+            skipped.push({ lensId: lens.lensId, reason: compact(lensErr?.message || lensErr, 200) });
+          }
+        }
+        return { executed, skipped };
+      } catch (err) {
+        warn('LIBRA scheduled lenses hook failed open', err);
+        return { executed: [], skipped: [] };
+      }
+    };
+
+    const inspectScopeLenses = async ({ expectedScopeKey = '' } = {}) => {
+      const context = await resolveContext();
+      if (expectedScopeKey && string(context.scope?.scopeKey || '') !== string(expectedScopeKey)) {
+        throw new Error('LENS_READER_SCOPE_CHANGED');
+      }
+      const pairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
+      const worldlineMeta = await loadStateWorldlineMeta(context.scope).catch(() => ({ activeWorldlineId: 'main' }));
+      const activeWorldlineId = string(worldlineMeta?.activeWorldlineId || 'main');
+      const registry = await loadActiveLensRegistry(context.scope);
+      const head = await loadLensScopeHead(context.scope);
+
+      const batchDigestByRange = new Map();
+      const getRangeDigest = (startTurn, endTurn) => {
+        const rangeKey = `t${startTurn}-t${endTurn}`;
+        if (batchDigestByRange.has(rangeKey)) return batchDigestByRange.get(rangeKey);
+        const slice = pairs.filter(p => Number(p?.turn || 0) >= Number(startTurn) && Number(p?.turn || 0) <= Number(endTurn));
+        const d = slice.length ? sourceDigest(slice) : '';
+        batchDigestByRange.set(rangeKey, d);
+        return d;
+      };
+
+      const lensDetails = {};
+      const flatMemories = [];
+      const flatRuns = [];
+      const allLenses = [...registry.lenses, ...registry.trash];
+      for (const lens of allLenses) {
+        const [recordsMap, runs, rawRing] = await Promise.all([
+          loadLensRecordsMap(context.scope, lens.lensId),
+          loadLensRunsList(context.scope, lens.lensId),
+          loadLensRawRing(context.scope, lens.lensId)
+        ]);
+        const rawByRunId = new Map(asArray(rawRing).map(entry => [string(entry?.runId || ''), entry]));
+        const records = Object.values(recordsMap)
+          .filter(rec => rec?.schema === LENS_MEMORY_RECORD_SCHEMA)
+          .map(rec => {
+            const expectedDigest = getRangeDigest(rec.turnRange?.start, rec.turnRange?.end);
+            const sourceCurrent = Boolean(expectedDigest && expectedDigest === rec.sourceDigest && rec.worldlineId === activeWorldlineId);
+            const instructionCurrent = rec.instructionRevision === lens.instructionRevision;
+            const revEntry = asArray(lens.revisionHistory).find(h => h.revision === rec.instructionRevision) || null;
+            for (const item of asArray(rec.items)) {
+              const firstRef = string(asArray(item.refs)[0] || item.quoteRef || '');
+              const role = firstRef.endsWith('-u') ? 'user' : 'assistant';
+              const extraTags = isPlainObject(item.extra)
+                ? Object.entries(item.extra).map(([k, v]) => `${k}:${typeof v === 'object' ? JSON.stringify(v) : v}`).slice(0, 6)
+                : [];
+              flatMemories.push({
+                id: `${rec.lensId}::${rec.rangeKey}::${item.itemId}`,
+                itemId: item.itemId,
+                recordId: rec.recordId,
+                rangeKey: rec.rangeKey,
+                lensId: rec.lensId,
+                lensName: rec.lensName || lens.name,
+                turnRange: clone(rec.turnRange),
+                createdAt: new Date(Number(rec.createdAt || Date.now())).toISOString(),
+                label: item.label,
+                summary: item.summary,
+                evidenceClass: item.evidenceClass,
+                refs: clone(asArray(item.refs)),
+                quote: string(item.quote || ''),
+                basis: string(item.basis || ''),
+                evidence: item.quote
+                  ? { exactQuote: item.quote, role, messageId: item.quoteRef || firstRef }
+                  : null,
+                tags: [item.label, ...asArray(item.refs), ...extraTags].filter(Boolean),
+                extra: clone(item.extra || {}),
+                sourceCurrent,
+                instructionCurrent
+              });
+            }
+            return {
+              ...clone(rec),
+              sourceCurrent,
+              instructionCurrent,
+              historicalInstructionText: revEntry?.instructionText || '',
+              currentInstructionText: lens.instructionText || ''
+            };
+          })
+          .sort((a, b) => Number(b?.turnRange?.start || 0) - Number(a?.turnRange?.start || 0));
+
+        const enrichedRuns = asArray(runs).map(run => {
+          const rawEntry = rawByRunId.get(string(run?.runId || '')) || null;
+          const enriched = {
+            ...clone(run),
+            acceptedCount: Number(run?.counts?.quoted || 0) + Number(run?.counts?.interpreted || 0),
+            rejectedCount: Number(run?.counts?.rejected || asArray(run?.rejectedItems).length || 0),
+            rawRetained: Boolean(rawEntry),
+            rawResponse: rawEntry ? string(rawEntry.rawResponse || '') : ''
+          };
+          flatRuns.push(enriched);
+          return enriched;
+        });
+
+        lensDetails[lens.lensId] = {
+          lens: clone(lens),
+          head: clone(head.lenses?.[lens.lensId] || null),
+          records,
+          runs: enrichedRuns,
+          rawRingCount: rawRing.length
+        };
+      }
+
+      return clone({
+        schema: 'libra.lens_scope_inspection.v1',
+        scope: context.scope,
+        scopeKey: context.scope.scopeKey,
+        activeWorldlineId,
+        pairCount: pairs.length,
+        registry,
+        config: registry,
+        head,
+        lenses: lensDetails,
+        memories: flatMemories,
+        runs: flatRuns
+      });
+    };
+
+    const deleteLensMemories = async ({ memoryId = '', lensId = '', rangeKey = '', itemId = '' } = {}) => {
+      const context = await resolveContext();
+      const scope = context.scope;
+      let targetLensId = compact(lensId, 80);
+      let targetRangeKey = compact(rangeKey, 40);
+      let targetItemId = compact(itemId, 80);
+      if (memoryId && String(memoryId).includes('::')) {
+        const parts = String(memoryId).split('::');
+        targetLensId = targetLensId || compact(parts[0] || '', 80);
+        targetRangeKey = targetRangeKey || compact(parts[1] || '', 40);
+        targetItemId = targetItemId || compact(parts.slice(2).join('::') || '', 80);
+      }
+      if (!targetLensId) return { ok: false, deleted: 0, deletedCount: 0 };
+      const recordsMap = await loadLensRecordsMap(scope, targetLensId);
+      let deleted = 0;
+      for (const [rk, rec] of Object.entries(recordsMap)) {
+        if (targetRangeKey && rk !== targetRangeKey) continue;
+        if (!rec || !Array.isArray(rec.items)) continue;
+        if (targetItemId) {
+          const beforeLen = rec.items.length;
+          rec.items = rec.items.filter(it => string(it?.itemId || '') !== targetItemId);
+          deleted += beforeLen - rec.items.length;
+          if (!rec.items.length) delete recordsMap[rk];
+        } else {
+          deleted += rec.items.length;
+          delete recordsMap[rk];
+        }
+      }
+      await saveLensRecordsMap(scope, targetLensId, recordsMap);
+      scheduleGuiTraceRefresh();
+      return { ok: true, deleted, deletedCount: deleted, lensId: targetLensId };
+    };
+
+    const generateLensDefinitionFromDescription = async (options = {}) => {
+      const description = typeof options === 'string' ? options : (options?.description || options?.prompt || '');
+      const desc = compact(description, 1200);
+      if (!desc) return { ok: false, error: '렌즈 설명이 비어 있습니다.' };
+      const slug = `custom_${promptProfileHash(desc).slice(0, 8)}`;
+      const firstClause = desc.split(/[.!?\n]/)[0].trim().slice(0, 28) || '맞춤 관점 렌즈';
+      let inferredLabels = ['맞춤기록', '핵심포착'];
+      if (/감정|호감|여운|심리|온도/.test(desc)) inferredLabels = ['감정선', '여운', '심리변화'];
+      else if (/떡밥|복선|단서|약속|맹세/.test(desc)) inferredLabels = ['단서', '복선', '약속'];
+      else if (/상처|전투|부상|상태|체력/.test(desc)) inferredLabels = ['부상', '전투흔적', '소모'];
+      else if (/비밀|거짓말|기만|숨김/.test(desc)) inferredLabels = ['비밀', '거짓말', '의심'];
+      else if (/음식|선물|취향|배려|일상/.test(desc)) inferredLabels = ['취향', '선물·배려', '반응'];
+
+      const wantsStrict = /엄격|정확한\s*(?:원문\s*)?인용|대사만|사실만/.test(desc) || (/인용|원문/.test(desc) && !/해석|분위기|심리|여운/.test(desc));
+      let baseLens = normalizeLensDefinition({
+        id: slug,
+        lensId: slug,
+        name: firstClause.length > 18 ? `${firstClause.slice(0, 18)}… 렌즈` : `${firstClause} 렌즈`,
+        description: desc,
+        enabled: true,
+        status: 'active',
+        labels: inferredLabels,
+        evidenceMode: wantsStrict ? 'strict' : 'interpretive',
+        instruction: {
+          goal: desc,
+          includeRules: [
+            `${firstClause}와 직접 관련된 대사·행동·사건 묘사`,
+            '장면 내에서 원문 근거(턴 번호 및 인용/해석 근거)가 명확히 확인되는 항목'
+          ],
+          excludeRules: [
+            '원문 근거 없이 추측한 메타 해석',
+            '관점과 무관한 일상적 배경 서술'
+          ],
+          outputHint: '원문 근거(refs, quote 또는 basis)와 함께 핵심 요약을 한국어로 간결하게 기록하세요.'
+        }
+      });
+
+      try {
+        const runtimeSettings = await loadMemorySettings();
+        const presetName = resolveLensProviderPresetName(baseLens, runtimeSettings);
+        const sys = [
+          'You are a LIBRA Custom Memory Lens schema designer.',
+          'Convert the user natural-language description into a structured JSON object with keys:',
+          '{"name":"short Korean lens name (<=20 chars)","labels":["label1","label2","label3"],"extractionFocus":"clear Korean goal","inclusionRules":["rule 1","rule 2"],"exclusionRules":["rule 1","rule 2"],"evidencePolicy":"strict|relaxed"}',
+          'Return ONLY valid JSON.'
+        ].join('\n');
+        const llmRes = await LibraProviderBridge.callTask('lens_analysis', {
+          profile: presetName,
+          presetName,
+          systemPrompt: sys,
+          userPrompt: desc,
+          messages: [
+            { role: 'system', content: sys },
+            { role: 'user', content: desc }
+          ],
+          temperature: 0.2,
+          maxTokens: 768,
+          jsonMode: true,
+          structuredTask: true
+        });
+        if (llmRes?.ok && (llmRes.rawStructuredResponse || llmRes.content)) {
+          const unwrapped = unwrapLensCandidatePayload(llmRes.rawStructuredResponse || llmRes.content);
+          const parsed = unwrapped.parsed && !Array.isArray(unwrapped.parsed) ? unwrapped.parsed : null;
+          if (parsed && (parsed.name || parsed.extractionFocus || parsed.goal)) {
+            baseLens = normalizeLensDefinition({
+              ...baseLens,
+              name: compact(parsed.name || baseLens.name, 40),
+              labels: Array.isArray(parsed.labels) && parsed.labels.length ? parsed.labels : baseLens.labels,
+              evidencePolicy: parsed.evidencePolicy === 'strict' ? 'strict' : 'relaxed',
+              extractionFocus: compact(parsed.extractionFocus || parsed.goal || desc, 800),
+              inclusionRules: Array.isArray(parsed.inclusionRules) && parsed.inclusionRules.length ? parsed.inclusionRules : baseLens.inclusionRules,
+              exclusionRules: Array.isArray(parsed.exclusionRules) && parsed.exclusionRules.length ? parsed.exclusionRules : baseLens.exclusionRules
+            });
+          }
+        }
+      } catch (_) {
+        // Fallback deterministically to structured rule synthesis when offline or provider is mocked
+      }
+      return { ok: true, lens: clone(baseLens) };
+    };
+
+    const purgeTrashedLensData = async ({ lensId = '' } = {}) => {
+      const targetId = compact(lensId, 80);
+      if (!targetId) throw new Error('삭제할 렌즈 ID가 비어 있습니다.');
+      const context = await resolveContext();
+      const scope = context.scope;
+      const keysToDelete = [
+        key.lensRecords(scope, targetId),
+        key.lensRuns(scope, targetId),
+        key.lensRaw(scope, targetId)
+      ];
+      for (const k of keysToDelete) {
+        try { await storage.remove(k); } catch (_) {}
+        try {
+          const mode = await MemorySuiteStorageBridge.getMode().catch(() => 'plugin_only');
+          if (mode !== 'plugin_only' && typeof MemorySuiteStorageBridge.serverDelete === 'function') {
+            await MemorySuiteStorageBridge.serverDelete('plugin', k).catch(() => {});
+          }
+        } catch (_) {}
+      }
+      const head = await loadLensScopeHead(scope);
+      if (head.lenses && Object.prototype.hasOwnProperty.call(head.lenses, targetId)) {
+        delete head.lenses[targetId];
+        await saveLensScopeHead(scope, head);
+      }
+      const runtimeSettings = await loadMemorySettings();
+      const registry = normalizeLensRegistry(runtimeSettings?.lensRegistry);
+      registry.lenses = registry.lenses.filter(l => l.lensId !== targetId);
+      registry.trash = registry.trash.filter(l => l.lensId !== targetId);
+      registry.updatedAt = nowIso();
+      await saveMemorySettings({
+        ...runtimeSettings,
+        lensRegistry: registry
+      });
+      scheduleGuiTraceRefresh();
+      return { ok: true, purgedLensId: targetId, deletedKeys: keysToDelete };
+    };
+
+    const recallLensMemories = async (arg1 = {}, arg2 = {}, arg3 = 4000) => {
+      let liveContext = null;
+      let liveQueryBundle = {};
+      let canonicalBudgetChars = 4000;
+
+      const isContextObj = Boolean(arg1 && (arg1.scope || arg1.chat || arg1.character || arg1.worldline));
+      if (isContextObj) {
+        liveContext = arg1;
+        liveQueryBundle = arg2 || {};
+        canonicalBudgetChars = Number(arg3 || 4000);
+      } else {
+        const opts = (arg1 && typeof arg1 === 'object') ? arg1 : {};
+        liveContext = opts.context || await resolveContext();
+        liveQueryBundle = opts.queryBundle || opts;
+        canonicalBudgetChars = Number(opts.canonicalBudgetChars || opts.maxChars || arg3 || 4000);
+      }
+      if (!liveContext) liveContext = await resolveContext();
+      const scope = liveContext?.scope || null;
+      const registry = await loadActiveLensRegistry(scope);
+      const totalBudgetChars = Math.min(
+        Number(registry.recallMaxChars || LENS_RECALL_MAX_CHARS),
+        Math.max(240, Math.floor(Number(canonicalBudgetChars || 4000) * Number(registry.recallBudgetRatio || LENS_RECALL_BUDGET_RATIO)))
+      );
+      if (registry.enabled === false) {
+        return {
+          schema: 'libra.lens_recall_delivery.v1',
+          enabled: false,
+          budgetChars: totalBudgetChars,
+          usedChars: 0,
+          renderedBlock: '',
+          injectedItems: [],
+          skippedCandidates: [],
+          perLensBudgets: []
+        };
+      }
+
+      const pairs = buildPairs(liveContext.chat, scope?.scopeKey || '');
+      const worldlineMeta = await loadStateWorldlineMeta(scope).catch(() => ({ activeWorldlineId: 'main' }));
+      const activeWorldlineId = string(worldlineMeta?.activeWorldlineId || 'main');
+      const queryText = string(liveQueryBundle?.query || liveQueryBundle?.currentText || liveQueryBundle?.queryText || liveQueryBundle?.text || '');
+      const queryTokens = new Set(tokenStream(queryText));
+
+      const batchDigestByRange = new Map();
+      const getRangeDigest = (startTurn, endTurn) => {
+        const rk = `t${startTurn}-t${endTurn}`;
+        if (batchDigestByRange.has(rk)) return batchDigestByRange.get(rk);
+        const slice = pairs.filter(p => Number(p?.turn || 0) >= Number(startTurn) && Number(p?.turn || 0) <= Number(endTurn));
+        const d = slice.length ? sourceDigest(slice) : '';
+        batchDigestByRange.set(rk, d);
+        return d;
+      };
+
+      const skippedCandidates = [];
+      const pushSkip = (lens, item, rec, reasonCode) => {
+        skippedCandidates.push({
+          lensId: string(lens?.lensId || ''),
+          lensName: string(lens?.name || ''),
+          itemId: string(item?.itemId || ''),
+          label: string(item?.label || ''),
+          summary: compact(item?.summary || '', 160),
+          turnRange: rec?.turnRange ? clone(rec.turnRange) : null,
+          reason: reasonCode,
+          reasonCode,
+          reasonLabel: LENS_RECALL_SKIP_REASON_LABELS[reasonCode] || reasonCode
+        });
+      };
+
+      const eligibleLenses = [];
+      for (const lens of registry.lenses) {
+        if (lens.status === 'trashed') {
+          pushSkip(lens, null, null, 'lens_trashed');
+          continue;
+        }
+        if (lens.status !== 'active' || lens.enabled === false) {
+          pushSkip(lens, null, null, 'lens_paused');
+          continue;
+        }
+        if (!lens.recall?.enabled || lens.recall?.mode === 'off') {
+          pushSkip(lens, null, null, 'recall_disabled');
+          continue;
+        }
+        eligibleLenses.push(lens);
+      }
+
+      if (!eligibleLenses.length) {
+        return {
+          schema: 'libra.lens_recall_delivery.v1',
+          enabled: false,
+          budgetChars: totalBudgetChars,
+          usedChars: 0,
+          renderedBlock: '',
+          injectedItems: [],
+          skippedCandidates,
+          perLensBudgets: []
+        };
+      }
+
+      const candidatesByLens = new Map();
+      for (const lens of eligibleLenses) {
+        const recordsMap = await loadLensRecordsMap(scope, lens.lensId);
+        const lensCandidates = [];
+        for (const rec of Object.values(recordsMap)) {
+          if (!rec || rec.schema !== LENS_MEMORY_RECORD_SCHEMA) continue;
+          if (string(rec.scopeKey || '') !== string(scope.scopeKey) || string(rec.worldlineId || 'main') !== activeWorldlineId) {
+            for (const it of asArray(rec.items)) pushSkip(lens, it, rec, 'worldline_mismatch');
+            continue;
+          }
+          const expectedDigest = getRangeDigest(rec.turnRange?.start, rec.turnRange?.end);
+          if (!expectedDigest || expectedDigest !== string(rec.sourceDigest || '')) {
+            for (const it of asArray(rec.items)) pushSkip(lens, it, rec, 'stale_source_revision');
+            continue;
+          }
+          const recEndTurn = Number(rec.turnRange?.end || 0);
+          const recencyScore = pairs.length > 0 ? Math.max(0, Math.min(0.25, (recEndTurn / Math.max(1, pairs.length)) * 0.25)) : 0.1;
+          const instructionBonus = rec.instructionRevision === lens.instructionRevision ? 0.03 : 0;
+
+          for (const item of asArray(rec.items)) {
+            const baseWeight = item.evidenceClass === 'quoted' ? 1.0 : 0.78;
+            const itemTokens = tokenStream(`${item.label || ''} ${item.summary || ''} ${item.quote || ''} ${item.basis || ''} ${JSON.stringify(item.extra || {})}`);
+            let overlap = 0;
+            for (const tok of itemTokens) {
+              if (queryTokens.has(tok)) overlap += 1;
+            }
+            const relevanceScore = queryTokens.size > 0
+              ? Math.min(0.6, (overlap / Math.max(1, Math.min(queryTokens.size, 8))) * 0.6)
+              : 0.15;
+            const totalScore = Math.round((baseWeight * 0.5 + relevanceScore + recencyScore + instructionBonus) * 1000) / 1000;
+            const tag = item.evidenceClass === 'interpreted'
+              ? `[lens:${lens.name} · 해석]`
+              : `[lens:${lens.name}]`;
+            const refBadge = asArray(item.refs).length ? ` (근거: ${item.refs.join(', ')})` : '';
+            const renderedLine = `- ${tag} (${item.label}) ${item.summary}${refBadge}`;
+            lensCandidates.push({
+              lensId: lens.lensId,
+              lensName: lens.name,
+              itemId: item.itemId,
+              label: item.label,
+              summary: item.summary,
+              evidenceClass: item.evidenceClass,
+              refs: clone(asArray(item.refs)),
+              turnRange: clone(rec.turnRange),
+              instructionRevision: rec.instructionRevision,
+              score: totalScore,
+              renderedLine,
+              chars: renderedLine.length
+            });
+          }
+        }
+        lensCandidates.sort((a, b) => b.score - a.score || Number(b.turnRange?.end || 0) - Number(a.turnRange?.end || 0));
+        candidatesByLens.set(lens.lensId, lensCandidates);
+      }
+
+      const activeWithCandidates = eligibleLenses.filter(lens => (candidatesByLens.get(lens.lensId) || []).length > 0);
+      if (!activeWithCandidates.length) {
+        return {
+          schema: 'libra.lens_recall_delivery.v1',
+          enabled: true,
+          budgetChars: totalBudgetChars,
+          usedChars: 0,
+          renderedBlock: '',
+          injectedItems: [],
+          skippedCandidates,
+          perLensBudgets: []
+        };
+      }
+
+      const headerLines = [
+        LENS_RECALL_BLOCK_HEADER,
+        '다음 항목은 사용자 정의 렌즈가 원문에서 추출한 보조 관점 메모입니다. 정본(Canonical) 사실이나 현재 상태(State)보다 우선하지 않으며, 서사 연출·맥락 참고용으로만 활용하세요.'
+      ];
+      const headerOverhead = headerLines.join('\n').length + 2;
+      const distributableBudget = Math.max(120, totalBudgetChars - headerOverhead);
+      const totalShare = activeWithCandidates.reduce((acc, l) => acc + Math.max(1, Number(l.recall?.share || 30)), 0);
+
+      const perLensAlloc = new Map();
+      for (const lens of activeWithCandidates) {
+        const share = Math.max(1, Number(lens.recall?.share || 30));
+        const rawAlloc = Math.floor((distributableBudget * share) / Math.max(1, totalShare));
+        const capped = Math.min(rawAlloc, Number(lens.recall?.maxChars || 800));
+        perLensAlloc.set(lens.lensId, Math.max(80, capped));
+      }
+
+      const injectedItems = [];
+      const remainingPool = [];
+      let usedBodyChars = 0;
+
+      for (const lens of activeWithCandidates) {
+        const candidates = candidatesByLens.get(lens.lensId) || [];
+        const maxItems = Math.max(1, Number(lens.recall?.maxItems || 3));
+        const lensBudget = perLensAlloc.get(lens.lensId) || 200;
+        let lensUsed = 0;
+        let lensCount = 0;
+        for (const cand of candidates) {
+          if (lensCount >= maxItems) {
+            remainingPool.push({ lens, cand, reasonIfDropped: 'share_cap_exceeded' });
+            continue;
+          }
+          if (lensUsed + cand.chars + 1 > lensBudget || usedBodyChars + cand.chars + 1 > distributableBudget) {
+            remainingPool.push({ lens, cand, reasonIfDropped: 'budget_exceeded' });
+            continue;
+          }
+          injectedItems.push(cand);
+          lensUsed += cand.chars + 1;
+          usedBodyChars += cand.chars + 1;
+          lensCount += 1;
+        }
+      }
+
+      // Unused budget redistribution pass for remaining candidates within maxItems
+      remainingPool.sort((a, b) => b.cand.score - a.cand.score);
+      const countByLens = new Map();
+      for (const item of injectedItems) {
+        countByLens.set(item.lensId, (countByLens.get(item.lensId) || 0) + 1);
+      }
+      for (const entry of remainingPool) {
+        const { lens, cand, reasonIfDropped } = entry;
+        const maxItems = Math.max(1, Number(lens.recall?.maxItems || 3));
+        const currentCount = countByLens.get(lens.lensId) || 0;
+        if (currentCount < maxItems && usedBodyChars + cand.chars + 1 <= distributableBudget) {
+          injectedItems.push(cand);
+          usedBodyChars += cand.chars + 1;
+          countByLens.set(lens.lensId, currentCount + 1);
+        } else {
+          pushSkip(lens, cand, { turnRange: cand.turnRange }, reasonIfDropped);
+        }
+      }
+
+      const renderedBlock = injectedItems.length
+        ? [...headerLines, ...injectedItems.map(it => it.renderedLine)].join('\n')
+        : '';
+
+      return clone({
+        schema: 'libra.lens_recall_delivery.v1',
+        enabled: true,
+        budgetChars: totalBudgetChars,
+        usedChars: renderedBlock.length,
+        renderedBlock,
+        injectedItems,
+        skippedCandidates,
+        perLensBudgets: activeWithCandidates.map(lens => ({
+          lensId: lens.lensId,
+          lensName: lens.name,
+          share: lens.recall?.share || 30,
+          allocatedChars: perLensAlloc.get(lens.lensId) || 0
+        }))
+      });
+    };
+    /* LIBRA LENS MEMORY ENGINE & ADMISSION GATE END */
+
     return Object.freeze({
       VERSION, BATCH_SIZE, STAGE_ORDER, STAGE_LABELS, state, providerBridge: LibraProviderBridge,
       librarianPromptContract: () => unifiedPromptContract(),
+      getLensStarterTemplates: () => clone(STARTER_LENS_TEMPLATES),
+      loadLensRegistry: async () => {
+        const settings = await readRuntimeSettings();
+        return clone(normalizeLensRegistry(settings?.lens_registry || settings?.lensRegistry));
+      },
+      saveLensRegistry: async (value = {}) => {
+        await saveLensRegistryOnly(value);
+        const settings = await readRuntimeSettings();
+        return clone(normalizeLensRegistry(settings?.lens_registry || settings?.lensRegistry));
+      },
+      evaluateLensCandidateItems, captureLensSourceToken, verifyLensSourceToken,
+      runLensForRange, runLensForTurnRange, runScheduledLensesForCommittedBatch, inspectScopeLenses,
+      deleteLensMemories, generateLensDefinitionFromDescription,
+      purgeTrashedLensData, recallLensMemories,
       PAIR_REVISION_CACHE_MAX_SCOPES, PAIR_REVISION_CACHE_MAX_ENTRIES_PER_SCOPE, PAIR_REVISION_CACHE_MAX_RETAINED_CHARS,
       recallMinDynamicChars: RECALL_BUDGET_MIN_CHARS,
       recallMaxDynamicChars: RECALL_MAX_DYNAMIC_CHARS,
@@ -76672,6 +78582,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     responseConsumerPolicy: safeClone(settings.responseConsumerPolicy || responseConsumerPolicy(settings)),
     stateTracking: cloneJson(settings.stateTracking || {}),
     librarianConfigReview: safeClone(settings.runtimeStored?.librarian_config_review || null),
+    lensRegistry: normalizeLensRegistry(settings.lensRegistry),
     debugLog: settings.debugLog,
     guiEnabled: settings.guiEnabled
   });
@@ -77047,6 +78958,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         backend_hosting_auto_detected: String(backendConfig.autoDetected === true),
         backend_hosting_last_detected_at: backendConfig.lastDetectedAt,
         backend_hosting_last_manifest: backendConfig.lastManifest ? JSON.stringify(backendConfig.lastManifest) : '',
+        lens_registry: normalizeLensRegistry(runtime.lensRegistry),
         debug_log: String(!!runtime.debugLog),
         enable_gui: String(runtime.guiEnabled !== false)
       };
@@ -77104,6 +79016,44 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         prompts: guiPromptsToStored(state.prompts, state.promptProfiles),
         removePostProcessors: false
       }, { expectedBasisHash, label: 'prompt_studio_save' });
+      Runtime.settings = null;
+      Runtime.settingsLoadedAt = 0;
+      clearRequestReuseCache();
+      Gui.settingsBasisHash = transaction.semanticHash;
+      Gui.dirty = otherChangesPending;
+      Gui.lastSettingsSaveError = '';
+      syncGuiSaveControls();
+      return transaction.ok === true;
+    } catch (error) {
+      Gui.lastSettingsSaveError = compact(error?.message || error, 500);
+      syncGuiSaveControls();
+      throw error;
+    }
+  };
+
+  const saveLensRegistryOnly = async (nextRegistry = null) => {
+    if (Gui.settingsSavePromise) await Gui.settingsSavePromise.catch(() => {});
+    const state = await ensureGuiState();
+    if (nextRegistry) {
+      state.runtime = state.runtime || {};
+      state.runtime.lensRegistry = normalizeLensRegistry({
+        ...nextRegistry,
+        updatedAt: new Date().toISOString()
+      });
+    }
+    const normalizedRegistry = normalizeLensRegistry(state.runtime?.lensRegistry);
+    const otherChangesPending = Gui.dirty === true;
+    try {
+      const expectedBasisHash = Gui.settingsBasisHash || (await readSettingsPersistenceBasis()).semanticHash;
+      const currentRuntimeStored = await readRuntimeSettings();
+      const updatedRuntime = {
+        ...currentRuntimeStored,
+        lens_registry: normalizedRegistry
+      };
+      const transaction = await persistStructuredSettingsState({
+        runtime: updatedRuntime,
+        removePostProcessors: false
+      }, { expectedBasisHash, label: 'lens_registry_save' });
       Runtime.settings = null;
       Runtime.settingsLoadedAt = 0;
       clearRequestReuseCache();
@@ -80657,6 +82607,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         ? `${Number(laneRouting.selectedBlocks?.length || laneRouting.selectedBlocks || 0)}/${Number(laneRouting.totalBlocks || 0)} 블록 · confidence ${Number(laneRouting.confidence || 0).toFixed(2)}${laneRouting.ambiguous === true ? ' · ambiguous' : ''}`
         : `fail-open · ${libraGuiText(laneRouting.reason || '전체 카탈로그 사용')}`
       : '진단 없음';
+    const lensRecall = libraGuiObject(delivery.lensRecall);
+    const lensInjectedItems = libraGuiArray(lensRecall.injectedItems);
+    const lensSkippedItems = libraGuiArray(lensRecall.skippedCandidates);
+    const lensSummaryText = lensRecall.enabled === true
+      ? lensInjectedItems.length > 0
+        ? `${lensInjectedItems.length}개 주입 · ${Number(lensRecall.usedChars || 0)}/${Number(lensRecall.budgetChars || 0)}자 (비정본 별도 예산)`
+        : `주입 없음 (별도 예산 ${Number(lensRecall.budgetChars || 0)}자)`
+      : '활성 리콜 렌즈 없음';
     const metricsItems = [
       ['선택', Number(delivery.selectedMemories ?? rows.length) || 0],
       [`${routeDef.label} 사용`, Number(delivery[`${route}Memories`] ?? usedRows.length) || 0],
@@ -80669,6 +82627,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ['Bootstrap 참조', delivery.bootstrapReferencesUsed === true ? `${Number(delivery.bootstrapReferenceItems || 0)}개 · ${Number(delivery.bootstrapReferenceChars || 0)}자` : '사용 안 함'],
       ['Unified Lore', delivery.responseLoreUsed === true ? `${Number(delivery.responseLoreSelectedCount || 0)} / ${Number(delivery.responseLoreCandidateCount || 0)}개 · ${Number(delivery.responseLorePromptChars || 0)}자` : '사용 안 함'],
       ['작가노트', delivery.authorNoteUsed === true ? `${libraGuiText(delivery.authorNoteSource || 'current chat')} · ${Number(delivery.authorNotePromptChars || 0)}자` : '사용 안 함'],
+      ['렌즈 기억 리콜', lensSummaryText],
       ['동적 리콜 예산', Number(delivery.evidenceCharCeiling || delivery.charCeiling || diagnostics?.budgetPlan?.selectedEvidenceBudget || 0)],
       ['원시 직접 주입', delivery.directRawInjection === true ? '예' : '아니오'],
       ['동적 토큰 상한', Number(delivery.tokenCeiling || diagnostics?.budgetPlan?.effectiveRecallMaxTokens || 0)],
@@ -80717,6 +82676,27 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
     const visibleUsed = compactView ? usedRows.slice(0, 3) : usedRows;
     const statusText = error ? '리콜 실패' : skipped ? '리콜 건너뜀' : routeFailed ? `${routeDef.label} 실패` : usedRows.length ? `${routeDef.label} 전달 완료` : '선택된 기억 없음';
+    const lensRecallPanel = (lensInjectedItems.length || (!compactView && lensSkippedItems.length))
+      ? guiLazyDetails({ class: 'stack', open: lensInjectedItems.length > 0 && !compactView }, guiEl('summary', { class: 'cluster' }, [
+        guiEl('span', { class: `badge ${lensInjectedItems.length ? 'good' : 'warn'}`, text: '렌즈 기억 (비정본)' }),
+        guiEl('strong', { text: `주입 ${lensInjectedItems.length}개 · 제외 ${lensSkippedItems.length}개` }),
+        guiEl('span', { class: 'hint', text: `${Number(lensRecall.usedChars || 0)} / ${Number(lensRecall.budgetChars || 0)}자` })
+      ]), () => [
+        ...lensInjectedItems.map(item => guiEl('div', { class: 'row injected stack' }, [
+          guiEl('div', { class: 'cluster' }, [
+            guiEl('span', { class: `badge ${item.evidenceClass === 'quoted' ? 'good' : 'warn'}`, text: item.evidenceClass === 'quoted' ? '인용 확인' : '해석' }),
+            guiEl('strong', { text: `[lens:${libraGuiText(item.lensName)}] ${libraGuiText(item.label)}` }),
+            guiEl('span', { class: 'hint', text: `T${Number(item.turnRange?.start || 0)}~T${Number(item.turnRange?.end || 0)} · 점수 ${Number(item.score || 0).toFixed(2)}` })
+          ]),
+          guiEl('div', { class: 'muted', text: libraGuiText(item.summary) })
+        ])),
+        !compactView && lensSkippedItems.length ? guiLazyDetails({ class: 'stack' }, guiEl('summary', { text: `렌즈 리콜 제외 항목 ${lensSkippedItems.length}개` }), () => lensSkippedItems.map(skip => guiEl('div', { class: 'row dropped cluster' }, [
+          guiEl('span', { class: 'badge warn', text: libraGuiText(skip.reasonLabel || skip.reasonCode) }),
+          guiEl('strong', { text: `[${libraGuiText(skip.lensName || skip.lensId)}]` }),
+          guiEl('span', { class: 'muted', text: libraGuiText(skip.summary || skip.label || '항목 전체 제외') })
+        ]))) : null
+      ])
+      : null;
     return guiEl('div', { class: "card stack" }, [
       guiEl('div', { class: "split cluster" }, [
         guiEl('div', {}, [guiEl('h3', { text: '이번 턴에 떠올린 기억' }), guiEl('div', { class: 'hint', text: [at ? libraFormatTime(at) : '', `mode ${routeDef.label}`, `query type ${queryType}`, `input ${inputSource} / ${inputConfidence}`].filter(Boolean).join(' · ') })]),
@@ -80729,6 +82709,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       metrics,
       visibleUsed.length ? guiEl('div', { class: "list" }, visibleUsed.map(makeRow)) : guiEl('div', { class: 'hint', text: error ? '오류 때문에 이번 요청에는 기억을 사용하지 않았습니다.' : skipped ? '현재 사용자 입력을 확정하지 못해 검색을 실행하지 않았습니다.' : `이번 요청에서 ${routeDef.label}가 사용할 정본 기억이 없습니다.` }),
       !compactView && droppedRows.length ? guiLazyDetails({ class: "stack" }, guiEl('summary', { text: `선택됐지만 ${routeDef.label}가 사용하지 않은 기억 ${droppedRows.length}개` }), () => droppedRows.map(makeRow)) : null,
+      lensRecallPanel,
       // Stage 6: the associative connection behind this turn's recall. It renders only when the stage
       // actually reached something, so an ordinary turn keeps this card exactly as it was.
       buildAssociativeRecallPanel({ hideWhenEmpty: true, compact: compactView }),
@@ -81780,6 +83761,236 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       () => renderPromptStudioOocBuilder()
     );
     memoryOocEditor.addEventListener('toggle', () => { if (memoryOocEditor.isConnected) Gui.memoryOocExpanded = memoryOocEditor.open; });
+
+    const buildLibraCustomLensStudioCard = () => {
+      const runtime = Gui.state?.runtime || (Gui.state ? (Gui.state.runtime = {}) : {});
+      const registry = normalizeMemoryLensConfig(runtime.lensRegistry || Runtime.settings?.lensRegistry || {});
+      runtime.lensRegistry = registry;
+      const lenses = guiAsArray(registry.lenses);
+      const persistRegistry = async (nextConfig, statusMessage) => {
+        try {
+          const normalized = normalizeMemoryLensConfig(nextConfig);
+          runtime.lensRegistry = normalized;
+          await saveLensRegistryOnly(normalized);
+          if (Gui.lensReader) void loadLensReaderData(true);
+          await renderSettingsGui();
+          if (statusMessage) guiSetStatus(statusMessage);
+        } catch (error) {
+          guiSetStatus(`렌즈 설정 저장 실패: ${text(error?.message || error)}`, true, true);
+        }
+      };
+      const addStarterTemplate = async tpl => {
+        const currentLenses = guiAsArray(runtime.lensRegistry?.lenses);
+        const existingIdx = currentLenses.findIndex(item => item.id === tpl.id);
+        let nextLenses;
+        if (existingIdx >= 0) {
+          nextLenses = currentLenses.slice();
+          nextLenses[existingIdx] = normalizeMemoryLensDefinition({ ...nextLenses[existingIdx], enabled: true });
+        } else {
+          nextLenses = [...currentLenses, normalizeMemoryLensDefinition({ ...tpl, enabled: true })];
+        }
+        await persistRegistry({ ...runtime.lensRegistry, enabled: true, lenses: nextLenses }, `“${tpl.name}” 렌즈 템플릿을 활성화했습니다.`);
+      };
+      const generateFromNaturalLanguage = async () => {
+        const desc = text(Gui.customLensNlDraft || '').trim();
+        if (!desc) {
+          guiSetStatus('만들고 싶은 렌즈의 관점이나 규칙을 자연어로 입력해 주세요.', true, true);
+          return;
+        }
+        if (Gui.customLensNlBusy) return;
+        Gui.customLensNlBusy = true;
+        queueGuiRender(0);
+        try {
+          const result = await LibraMemoryCore.generateLensDefinitionFromDescription({
+            description: desc
+          });
+          if (!result?.ok || !result.lens) {
+            throw new Error(result?.error || result?.reason || '렌즈 생성에 실패했습니다.');
+          }
+          const currentLenses = guiAsArray(runtime.lensRegistry?.lenses);
+          const nextLenses = [
+            ...currentLenses.filter(item => item.id !== result.lens.id),
+            normalizeMemoryLensDefinition({ ...result.lens, enabled: true })
+          ];
+          Gui.customLensNlDraft = '';
+          await persistRegistry({ ...runtime.lensRegistry, enabled: true, lenses: nextLenses }, `자연어 설명으로 “${result.lens.name}” 맞춤 렌즈를 생성하고 활성화했습니다.`);
+        } catch (error) {
+          guiSetStatus(`맞춤 렌즈 자동 생성 실패: ${text(error?.message || error)}`, true, true);
+        } finally {
+          Gui.customLensNlBusy = false;
+          queueGuiRender(0);
+        }
+      };
+
+      const lensItemCards = lenses.map((lens, idx) => {
+        const updateLensField = (patch) => {
+          const currentLenses = guiAsArray(runtime.lensRegistry?.lenses).slice();
+          currentLenses[idx] = normalizeMemoryLensDefinition({ ...currentLenses[idx], ...patch }, idx);
+          runtime.lensRegistry = normalizeMemoryLensConfig({ ...runtime.lensRegistry, lenses: currentLenses });
+        };
+        return guiEl('details', {
+          class: 'fold ps-section',
+          dataset: { customLensCard: lens.id }
+        }, [
+          guiEl('summary', {}, [
+            guiEl('span', { class: 'ps-section__name', text: `${lens.name} (${lens.id})` }),
+            guiEl('span', { class: 'cluster' }, [
+              libraStatusBadge(lens.enabled !== false ? '활성' : '비활성', lens.enabled !== false ? 'good' : ''),
+              libraStatusBadge(lens.evidencePolicy === 'strict' ? '원문 인용 필수' : '유연 검증', lens.evidencePolicy === 'strict' ? 'good' : 'warn'),
+              libraStatusBadge(lens.recallMode === 'off' ? '리콜 제외' : lens.recallMode === 'always' ? '상시 리콜' : '질의 맞춤 리콜', '')
+            ].filter(Boolean))
+          ]),
+          guiEl('div', { class: 'fold__body stack stack--sm' }, [
+            guiEl('div', { class: 'cluster' }, [
+              checkboxNode(lens.enabled !== false, '이 렌즈 활성화', val => {
+                updateLensField({ enabled: val });
+                void persistRegistry(runtime.lensRegistry, `“${lens.name}” 렌즈를 ${val ? '활성화' : '비활성화'}했습니다.`);
+              }),
+              checkboxNode(lens.autoRunOnCanonicalBatch !== false, '5턴 정본 생성 후 자동 실행', val => {
+                updateLensField({ autoRunOnCanonicalBatch: val });
+              }),
+              checkboxNode(lens.allowInterpretation === true, '인용 동반 해석(interpreted) 허용', val => {
+                updateLensField({ allowInterpretation: val });
+              })
+            ]),
+            guiEl('div', { class: 'grid g2' }, [
+              fieldNode('렌즈 이름', inputNode(lens.name || '', val => updateLensField({ name: val }))),
+              fieldNode('리콜 방식', selectNode(lens.recallMode || 'query_Relevant', [
+                ['query_Relevant', '질의/맥락 관련 시 주입 (기본)'],
+                ['always', '매 턴 우선 후보 포함'],
+                ['off', '저장만 하고 리콜 주입 안 함']
+              ], val => updateLensField({ recallMode: val }))),
+              fieldNode('근거 검증 정책', selectNode(lens.evidencePolicy || 'strict', [
+                ['strict', '엄격 (원문 정확 인용 필수 · 미확인 시 폐기)'],
+                ['relaxed', '완화 (미확인 항목도 서가에 보관하되 리콜에서는 제외)']
+              ], val => updateLensField({ evidencePolicy: val }))),
+              fieldNode('배치당 최대 추출 개수', inputNode(Number(lens.maxItemsPerBatch || 4), val => updateLensField({ maxItemsPerBatch: Number(val) }), { type: 'number', min: 1, max: 8 }))
+            ]),
+            fieldNode('추출 초점 (무엇을 포착할지)', inputNode(lens.extractionFocus || '', val => updateLensField({ extractionFocus: val }), { tag: 'textarea', rows: 2 })),
+            guiEl('div', { class: 'grid g2' }, [
+              fieldNode('포함 기준 (줄바꿈 구분)', inputNode(guiAsArray(lens.inclusionRules).join('\n'), val => updateLensField({ inclusionRules: String(val || '').split(/\n+/).map(s => s.trim()).filter(Boolean) }), { tag: 'textarea', rows: 3 })),
+              fieldNode('제외 기준 (줄바꿈 구분)', inputNode(guiAsArray(lens.exclusionRules).join('\n'), val => updateLensField({ exclusionRules: String(val || '').split(/\n+/).map(s => s.trim()).filter(Boolean) }), { tag: 'textarea', rows: 3 }))
+            ]),
+            fieldNode('추가 지침 (선택)', inputNode(lens.customPrompt || '', val => updateLensField({ customPrompt: val }), { tag: 'textarea', rows: 2, placeholder: '이 렌즈에서만 추가로 적용할 세부 지침' })),
+            guiEl('div', { class: 'cluster' }, [
+              guiEl('button', {
+                class: 'btn btn--sm btn--primary',
+                type: 'button',
+                text: '이 렌즈 설정 저장',
+                onClick: () => void persistRegistry(runtime.lensRegistry, `“${lens.name}” 렌즈 설정을 저장했습니다.`)
+              }),
+              guiEl('button', {
+                class: 'btn btn--sm',
+                type: 'button',
+                text: '최근 1~5턴 즉시 테스트 실행',
+                onClick: async () => {
+                  try {
+                    await persistRegistry(runtime.lensRegistry);
+                    const res = await LibraMemoryCore.runLensForTurnRange({ lensId: lens.id, startTurn: 1, endTurn: 5, force: true });
+                    if (Gui.lensReader) void loadLensReaderData(true);
+                    guiSetStatus(res?.ok ? `“${lens.name}” T1–T5 실행 완료 (${Number(res.acceptedCount || 0)}개 저장)` : `실행 미완료: ${text(res?.reason || res?.error || 'unknown')}`, !res?.ok, true);
+                  } catch (error) {
+                    guiSetStatus(text(error?.message || error), true, true);
+                  }
+                }
+              }),
+              guiEl('button', {
+                class: 'btn btn--sm btn--danger',
+                type: 'button',
+                text: '렌즈 삭제',
+                onClick: () => {
+                  const nextLenses = guiAsArray(runtime.lensRegistry?.lenses).filter((_, i) => i !== idx);
+                  void persistRegistry({ ...runtime.lensRegistry, lenses: nextLenses }, `“${lens.name}” 렌즈를 목록에서 삭제했습니다.`);
+                }
+              })
+            ])
+          ])
+        ]);
+      });
+
+      return guiEl('details', {
+        class: 'card',
+        id: 'ps-lenses',
+        open: Gui.customLensStudioExpanded === true || lenses.length > 0,
+        dataset: { customLensStudio: 'true' }
+      }, [
+        guiEl('summary', {}, [
+          guiEl('span', { text: '맞춤 기억 렌즈 (Custom Lens) · 비정본 보조 기억' }),
+          libraStatusBadge(lenses.filter(l => l.enabled !== false).length ? `활성 ${lenses.filter(l => l.enabled !== false).length}개` : '꺼짐', lenses.filter(l => l.enabled !== false).length ? 'good' : '')
+        ]),
+        guiEl('div', { class: 'stack', style: { marginTop: '10px' } }, [
+          guiEl('p', { class: 'hint', text: '정본 기억(사건·상태·인물·관계)을 건드리지 않고, 사용자가 원하는 특수 관점(감정선, 복선/단서, 약속/부채, 상처/전투, 비밀/거짓말 등)만 별도 저장소와 별도 리콜 예산으로 추적합니다.' }),
+          guiEl('div', { class: 'grid g2' }, [
+            fieldNode('맞춤 렌즈 시스템 전체 사용', checkboxNode(registry.enabled !== false, '활성화', val => {
+              void persistRegistry({ ...runtime.lensRegistry, enabled: val }, `맞춤 렌즈 시스템을 ${val ? '활성화' : '비활성화'}했습니다.`);
+            })),
+            fieldNode('렌즈 전용 리콜 예산(자)', inputNode(Number(registry.lensRecallBudgetChars || 1200), val => {
+              runtime.lensRegistry.lensRecallBudgetChars = clampInt(val, 200, 3000, 1200);
+            }, { type: 'number', min: 200, max: 3000 }), '정본 기억 예산을 절대 침범하지 않는 별도 보조 예산입니다 (기본 1200자, 최대 3000자).')
+          ]),
+          guiEl('div', { class: 'card stack stack--sm' }, [
+            guiEl('h4', { text: '1클릭 추천 렌즈 템플릿 추가' }),
+            guiEl('p', { class: 'hint', text: '자주 쓰이는 5가지 관점을 클릭 한 번으로 내 렌즈 목록에 추가하고 활성화합니다.' }),
+            guiEl('div', { class: 'cluster' }, LENS_STARTER_TEMPLATES.map(tpl => {
+              const active = lenses.some(item => item.id === tpl.id && item.enabled !== false);
+              return guiEl('button', {
+                class: `btn btn--sm${active ? ' btn--primary' : ''}`,
+                type: 'button',
+                dataset: { lensStarterTemplate: tpl.id },
+                text: `${active ? '✓ ' : '+ '}${tpl.name}`,
+                title: tpl.description,
+                onClick: () => void addStarterTemplate(tpl)
+              });
+            }))
+          ]),
+          guiEl('div', { class: 'card stack stack--sm' }, [
+            guiEl('h4', { text: '자연어로 새 맞춤 렌즈 만들기' }),
+            guiEl('p', { class: 'hint', text: '원하는 관점을 평소 말하듯 적으면 구조화된 렌즈 규칙(포함/제외 기준·초점)으로 자동 변환합니다.' }),
+            fieldNode('어떤 내용을 별도로 기억하고 싶나요?', inputNode(Gui.customLensNlDraft || '', val => { Gui.customLensNlDraft = val; }, {
+              tag: 'textarea',
+              rows: 2,
+              placeholder: '예: 두 사람 사이에 오간 음식·선물·취향 반응과 사소한 배려만 따로 모아서 기억해 줘'
+            })),
+            guiEl('div', { class: 'cluster' }, [
+              guiEl('button', {
+                class: 'btn btn--sm btn--primary',
+                type: 'button',
+                disabled: Gui.customLensNlBusy === true,
+                dataset: { customLensGenerateButton: 'true' },
+                text: Gui.customLensNlBusy ? '렌즈 설계 생성 중…' : '자연어로 맞춤 렌즈 생성 및 추가',
+                onClick: () => void generateFromNaturalLanguage()
+              }),
+              guiEl('button', {
+                class: 'btn btn--sm',
+                type: 'button',
+                text: '기억 서가에서 렌즈 기억 열람 →',
+                onClick: () => {
+                  closeApprovedMockupDialog('dlg-prompt');
+                  selectBookMemoryKind('lens');
+                  bookNavigate('memory');
+                }
+              })
+            ])
+          ]),
+          lenses.length ? guiEl('div', { class: 'stack stack--sm' }, [
+            guiEl('div', { class: 'split' }, [
+              guiEl('h4', { text: `등록된 맞춤 렌즈 (${lenses.length}개)` }),
+              guiEl('button', {
+                class: 'btn btn--sm',
+                type: 'button',
+                text: '렌즈 예산·전체 설정 저장',
+                onClick: () => void persistRegistry(runtime.lensRegistry, '맞춤 렌즈 전체 설정을 저장했습니다.')
+              })
+            ]),
+            ...lensItemCards
+          ]) : guiEl('p', { class: 'muted', text: '등록된 맞춤 렌즈가 없습니다. 위 템플릿 버튼을 누르거나 자연어로 새 렌즈를 만들어 보세요.' })
+        ])
+      ]);
+    };
+
+    const customLensCard = buildLibraCustomLensStudioCard();
+    customLensCard.addEventListener('toggle', () => { if (customLensCard.isConnected) Gui.customLensStudioExpanded = customLensCard.open; });
+
     easyCard.id = 'ps-easy';
     advancedEditor.id = 'ps-sections';
     const jump = (label, id, note = '') => guiEl('button', { class: 'ps-nav__item', type: 'button', onClick: event => {
@@ -81788,14 +83999,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (target.tagName === 'DETAILS') target.open = true;
       target.scrollIntoView({ block: 'start', behavior: 'smooth' });
     } }, [guiEl('b', { text: label }), note ? guiEl('span', { text: note }) : null].filter(Boolean));
+    const activeLensCount = guiAsArray(Gui.state?.runtime?.lensRegistry?.lenses).filter(l => l.enabled !== false).length;
     const nav = guiEl('nav', { class: 'ps-nav', 'aria-label': 'Prompt Studio 구역' }, [
       jump('간편 설정', 'ps-easy', activeName === EASY_PROMPT_PROFILE_NAME ? '적용 중' : ''),
+      jump('맞춤 기억 렌즈', 'ps-lenses', activeLensCount ? `활성 ${activeLensCount}개` : ''),
       jump('대화로 만들기', 'libra-memory-ooc-editor'),
       jump('구역 편집', 'ps-sections', changedCount ? `${changedCount}개 변경${draftUnsaved ? ' · 저장 전' : ''}` : draftUnsaved ? '저장 전' : ''),
       jump('최종 프롬프트 · 점검', 'ps-final', lint.length ? `주의 ${lint.length}` : '통과'),
       jump('가져오기 · 내보내기', 'ps-transfer')
     ]);
-    return guiEl('div', { class: 'stack', dataset: { memoryPromptStudio: 'true' } }, [nav, easyCard, memoryOocEditor, advancedEditor, finalPrompt, technicalTools]);
+    return guiEl('div', { class: 'stack', dataset: { memoryPromptStudio: 'true' } }, [nav, easyCard, customLensCard, memoryOocEditor, advancedEditor, finalPrompt, technicalTools]);
   };
 
 
@@ -81900,7 +84113,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
   const canonicalReaderBindingKey = value => JSON.stringify([value.scopeKey, value.worldlineId, value.openSerial]);
   const canonicalReaderViewActive = () => Gui.visible === true && (!Gui.bookPage || Gui.bookPage === 'memory')
-    && Gui.bookMemoryKind !== 'micro';
+    && (!Gui.bookMemoryKind || Gui.bookMemoryKind === 'canonical');
   const resetCanonicalReaderView = ({ preserveQuery = true } = {}) => {
     Gui.canonicalReaderGeneration = Number(Gui.canonicalReaderGeneration || 0) + 1;
     Gui.canonicalReaderBindingKey = canonicalReaderBindingKey(canonicalReaderBinding());
@@ -81914,6 +84127,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.canonicalReaderEvidence = null; Gui.canonicalReaderEvidenceLoading = false; Gui.canonicalReaderEvidenceError = '';
     Gui.bookTurnEvidence = null; Gui.canonicalReaderMicroPublicationKey = '';
     Gui.microReader = null;
+    Gui.lensReader = null;
     Gui.evidenceDrawerOpen = false; Gui.evidenceDrawerChain = null; Gui.evidenceDrawerTitle = '';
     Gui.worldManagerCanonicalMemoryFocus = null;
   };
@@ -82029,8 +84243,61 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     }
     return reader;
   };
+  const lensReaderViewActive = () => Gui.visible === true && (!Gui.bookPage || Gui.bookPage === 'memory') && Gui.bookMemoryKind === 'lens';
+  const lensReaderState = () => {
+    const binding = canonicalReaderBinding(), bindingKey = canonicalReaderBindingKey(binding);
+    if (!Gui.lensReader || Gui.lensReader.bindingKey !== bindingKey) {
+      Gui.lensReader = {
+        ...binding,
+        bindingKey,
+        loaded: false,
+        loading: false,
+        error: '',
+        data: null,
+        serial: 0,
+        filterLensId: text(Gui.lensReader?.filterLensId || 'all'),
+        filterEvidence: text(Gui.lensReader?.filterEvidence || 'all'),
+        query: text(Gui.lensReader?.query || ''),
+        runningRange: false,
+        rangeStart: '',
+        rangeEnd: ''
+      };
+    }
+    return Gui.lensReader;
+  };
+  const loadLensReaderData = async (force = false) => {
+    const reader = lensReaderState();
+    if (reader.loading && !force) return;
+    const serial = ++reader.serial;
+    reader.loading = true;
+    reader.error = '';
+    queueGuiNavigationRender();
+    try {
+      const data = await LibraMemoryCore.inspectScopeLenses();
+      if (Gui.lensReader !== reader || reader.serial !== serial) return;
+      reader.data = data;
+      reader.loaded = true;
+    } catch (error) {
+      if (Gui.lensReader === reader && reader.serial === serial) {
+        reader.error = text(error?.message || error);
+        reader.loaded = true;
+      }
+    } finally {
+      if (Gui.lensReader === reader && reader.serial === serial) {
+        reader.loading = false;
+        queueGuiNavigationRender();
+      }
+    }
+  };
+  const ensureLensReaderPage = () => {
+    const reader = lensReaderState();
+    if (lensReaderViewActive() && !reader.loading && !reader.loaded && !reader.error) {
+      void loadLensReaderData(false);
+    }
+    return reader;
+  };
   const selectBookMemoryKind = kind => {
-    const next = kind === 'micro' ? 'micro' : 'canonical';
+    const next = kind === 'micro' ? 'micro' : kind === 'lens' ? 'lens' : 'canonical';
     if (Gui.bookMemoryKind === next) return;
     resetCanonicalReaderView({preserveQuery: true});
     Gui.bookMemoryKind = next; queueGuiNavigationRender();
@@ -84649,6 +86916,195 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         analysisStatus: text(record?.analysisStatus || '')}}, [content])]);
   };
 
+  const buildBookLensReaderProjection = () => {
+    const reader = ensureLensReaderPage();
+    const refresh = () => void loadLensReaderData(true);
+    const data = reader.data || {};
+    const config = normalizeMemoryLensConfig(data.config || Gui.state?.runtime?.lensRegistry || Runtime.settings?.lensRegistry || {});
+    const lenses = guiAsArray(config.lenses);
+    const lensMap = new Map(lenses.map(item => [item.id, item]));
+    for (const tpl of LENS_STARTER_TEMPLATES) {
+      if (!lensMap.has(tpl.id)) lensMap.set(tpl.id, tpl);
+    }
+    const memories = guiAsArray(data.memories).slice().sort((a, b) => {
+      const endDiff = Number(b.turnRange?.end || 0) - Number(a.turnRange?.end || 0);
+      if (endDiff !== 0) return endDiff;
+      return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+    });
+    const runs = guiAsArray(data.runs).slice().sort((a, b) => String(b.finishedAt || b.startedAt || '').localeCompare(String(a.finishedAt || a.startedAt || '')));
+    const filterLensId = text(reader.filterLensId || 'all');
+    const filterEvidence = text(reader.filterEvidence || 'all');
+    const query = text(reader.query || '').trim().toLocaleLowerCase();
+    const filtered = memories.filter(item => {
+      if (filterLensId !== 'all' && text(item.lensId) !== filterLensId) return false;
+      if (filterEvidence !== 'all' && text(item.evidenceClass) !== filterEvidence) return false;
+      if (query) {
+        const hay = [item.lensName, item.label, item.summary, item.evidence?.exactQuote, ...guiAsArray(item.tags)].map(text).join(' ').toLocaleLowerCase();
+        if (!hay.includes(query)) return false;
+      }
+      return true;
+    });
+    const lensChoices = [['all', `전체 렌즈 (${memories.length})`], ...lenses.map(lens => [
+      lens.id,
+      `${lens.name} (${memories.filter(m => m.lensId === lens.id).length})`
+    ])];
+    const evidenceChoices = [
+      ['all', `전체 등급 (${memories.length})`],
+      ['quoted', `인용 확인 (${memories.filter(m => m.evidenceClass === 'quoted').length})`],
+      ['interpreted', `해석 · 인용 동반 (${memories.filter(m => m.evidenceClass === 'interpreted').length})`],
+      ['ungrounded', `근거 미약 · 리콜 제외 (${memories.filter(m => m.evidenceClass === 'ungrounded').length})`]
+    ];
+    const runManualRange = async () => {
+      if (reader.runningRange) return;
+      const targetLensId = filterLensId !== 'all' ? filterLensId : (lenses.find(l => l.enabled !== false)?.id || lenses[0]?.id || '');
+      if (!targetLensId) {
+        guiSetStatus('실행할 맞춤 렌즈가 없습니다. 먼저 맞춤 기억 렌즈를 추가하세요.', true, true);
+        return;
+      }
+      const startTurn = Math.max(1, Number(reader.rangeStart || 1) || 1);
+      const endTurn = Math.max(startTurn, Number(reader.rangeEnd || (startTurn + 4)) || (startTurn + 4));
+      reader.runningRange = true;
+      queueGuiNavigationRender();
+      try {
+        const result = await LibraMemoryCore.runLensForTurnRange({
+          lensId: targetLensId,
+          startTurn,
+          endTurn,
+          force: true
+        });
+        await loadLensReaderData(true);
+        if (result?.ok) {
+          guiSetStatus(`렌즈 구간 분석 완료 (T${startTurn}–T${endTurn}) · ${Number(result.acceptedCount || 0)}개 저장`);
+        } else {
+          guiSetStatus(`렌즈 구간 분석 미완료: ${text(result?.reason || result?.error || 'unknown')}`, true, true);
+        }
+      } catch (error) {
+        guiSetStatus(`렌즈 구간 분석 오류: ${text(error?.message || error)}`, true, true);
+      } finally {
+        reader.runningRange = false;
+        queueGuiNavigationRender();
+      }
+    };
+    const rail = guiEl('aside', {class: 'rail', 'aria-label': '렌즈 기억 필터 및 실행'}, [
+      guiEl('div', {class: 'rail__search'}, [
+        guiEl('strong', {text: '맞춤 렌즈 서가'}),
+        guiEl('div', {class: 'cluster'}, [
+          guiEl('button', {class: 'btn btn--sm', type: 'button', text: '렌즈 설정', onClick: () => openApprovedPromptDialog()}),
+          guiEl('button', {class: 'btn btn--sm', type: 'button', text: '새로고침', disabled: reader.loading, onClick: refresh})
+        ])
+      ]),
+      guiEl('p', {class: 'hint', text: '비정본 보조 기억 · 정본 기억 및 현재 상태를 절대 덮어쓰지 않음'}),
+      fieldNode('렌즈 선택', selectNode(filterLensId, lensChoices, val => {
+        reader.filterLensId = val;
+        queueGuiNavigationRender();
+      })),
+      fieldNode('근거 등급', selectNode(filterEvidence, evidenceChoices, val => {
+        reader.filterEvidence = val;
+        queueGuiNavigationRender();
+      })),
+      guiEl('div', {class: 'search'}, [
+        guiEl('input', {
+          class: 'input',
+          type: 'search',
+          placeholder: '렌즈 기억·인용·태그 검색',
+          'aria-label': '렌즈 기억 검색',
+          value: reader.query || '',
+          onInput: event => {
+            reader.query = event.target.value;
+            queueGuiNavigationRender();
+          }
+        })
+      ]),
+      guiEl('div', {class: 'card stack stack--sm', style: {marginTop: '10px'}}, [
+        guiEl('b', {text: '수동 구간 렌즈 실행'}),
+        guiEl('p', {class: 'hint', text: filterLensId !== 'all' ? `선택 렌즈: ${lensMap.get(filterLensId)?.name || filterLensId}` : `기본 활성 렌즈: ${lenses.find(l => l.enabled !== false)?.name || lenses[0]?.name || '없음'}`}),
+        guiEl('div', {class: 'grid g2'}, [
+          fieldNode('시작 턴', inputNode(reader.rangeStart || '1', val => { reader.rangeStart = val; }, {type: 'number', min: 1})),
+          fieldNode('끝 턴', inputNode(reader.rangeEnd || '5', val => { reader.rangeEnd = val; }, {type: 'number', min: 1}))
+        ]),
+        guiEl('button', {
+          class: 'btn btn--sm btn--primary',
+          type: 'button',
+          disabled: reader.runningRange || !lenses.length,
+          dataset: {lensRunRangeButton: 'true'},
+          text: reader.runningRange ? '구간 분석 중…' : '선택 구간 렌즈 실행',
+          onClick: () => void runManualRange()
+        })
+      ]),
+      runs.length ? guiEl('details', {class: 'fold', style: {marginTop: '10px'}}, [
+        guiEl('summary', {text: `최근 렌즈 실행 기록 (${runs.length})`}),
+        guiEl('div', {class: 'fold__body stack stack--sm'}, runs.slice(0, 8).map(run => guiEl('div', {class: 'note'}, [
+          guiEl('b', {text: `${text(run.lensName || run.lensId)} · T${Number(run.turnRange?.start || 0)}–T${Number(run.turnRange?.end || 0)}`}),
+          guiEl('small', {class: 'hint', text: `상태: ${text(run.status)} · 저장 ${Number(run.acceptedCount || 0)}개 / 제외 ${Number(run.rejectedCount || 0)}개`})
+        ])))
+      ]) : null
+    ].filter(Boolean));
+
+    const badgeForEvidence = cls => {
+      if (cls === 'quoted') return guiEl('span', {class: 'badge badge--ok', text: '인용 확인'});
+      if (cls === 'interpreted') return guiEl('span', {class: 'badge badge--info', text: '해석 · 인용 동반'});
+      return guiEl('span', {class: 'badge badge--warn', text: '근거 미약 · 리콜 제외'});
+    };
+
+    const content = guiEl('div', {class: 'stack'}, [
+      guiEl('div', {class: 'split'}, [
+        guiEl('div', {}, [
+          guiEl('div', {class: 'eyebrow', text: 'CUSTOM LENS ARCHIVE · NON-CANONICAL'}),
+          guiEl('h2', {text: '맞춤 렌즈 기억'}),
+          guiEl('p', {class: 'deck', text: `활성 렌즈 ${lenses.filter(l => l.enabled !== false).length}개 · 저장된 렌즈 기억 ${memories.length}개 · 리콜 예산 ${Number(config.lensRecallBudgetChars || 1200)}자 (정본 예산과 분리)`})
+        ]),
+        guiEl('button', {class: 'btn btn--sm btn--primary', type: 'button', text: '맞춤 렌즈 워크숍 열기', onClick: () => openApprovedPromptDialog()})
+      ]),
+      reader.error ? guiEl('div', {class: 'note note--danger', role: 'alert'}, [
+        guiEl('p', {text: `렌즈 저장소를 읽지 못했습니다: ${reader.error}`}),
+        guiEl('button', {class: 'btn btn--sm', type: 'button', text: '다시 시도', onClick: refresh})
+      ]) : null,
+      !lenses.length ? guiEl('div', {class: 'banner banner--info'}, [
+        guiEl('div', {}, [
+          guiEl('b', {text: '아직 활성화된 맞춤 기억 렌즈가 없습니다'}),
+          guiEl('p', {text: '감정선/심리, 단서/복선, 약속/부채, 전투/상처, 비밀/거짓말 등 원하는 관점의 보조 기억 렌즈를 1클릭 템플릿이나 자연어 설명으로 추가해 보세요.'})
+        ]),
+        guiEl('button', {class: 'btn btn--sm btn--primary', type: 'button', text: '맞춤 렌즈 추가하기', onClick: () => openApprovedPromptDialog()})
+      ]) : null,
+      filtered.length ? guiEl('div', {class: 'stack'}, filtered.map(item => guiEl('article', {
+        class: 'card',
+        dataset: {lensMemoryId: text(item.id), lensId: text(item.lensId), evidenceClass: text(item.evidenceClass)}
+      }, [
+        guiEl('div', {class: 'split'}, [
+          guiEl('div', {class: 'cluster'}, [
+            guiEl('span', {class: 'badge', text: `lens:${text(item.lensName || item.lensId)}`}),
+            badgeForEvidence(item.evidenceClass),
+            guiEl('span', {class: 'hint', text: `T${Number(item.turnRange?.start || 0)}–T${Number(item.turnRange?.end || 0)}`})
+          ]),
+          guiEl('button', {
+            class: 'btn btn--sm btn--danger',
+            type: 'button',
+            text: '삭제',
+            onClick: async () => {
+              await LibraMemoryCore.deleteLensMemories({memoryId: item.id});
+              await loadLensReaderData(true);
+            }
+          })
+        ]),
+        guiEl('h3', {class: 'card__title', text: text(item.label || item.lensName || '렌즈 항목')}),
+        guiEl('p', {text: text(item.summary)}),
+        item.evidence?.exactQuote ? guiEl('blockquote', {}, [
+          guiEl('p', {text: `“${text(item.evidence.exactQuote)}”`}),
+          guiEl('small', {class: 'hint', text: `${item.evidence.role === 'assistant' ? 'AI 응답' : '사용자'} · ${text(item.evidence.messageId || '원문 확인됨')}`})
+        ]) : guiEl('p', {class: 'hint', text: '확인된 원문 직접 인용이 없어 리콜 주입에서 자동 제외됩니다.'}),
+        guiAsArray(item.tags).length ? guiEl('div', {class: 'cluster'}, guiAsArray(item.tags).map(tag => guiEl('span', {class: 'chip', text: `#${text(tag)}`}))) : null
+      ].filter(Boolean)))) : guiEl('div', {class: 'empty'}, [
+        guiEl('b', {text: reader.loading ? '렌즈 기억을 불러오는 중입니다…' : memories.length ? '조건에 맞는 렌즈 기억이 없습니다.' : '저장된 렌즈 기억이 없습니다.'}),
+        guiEl('p', {text: '5턴 정본 기억이 생성될 때 자동 실행되거나, 왼쪽에서 구간을 지정해 수동으로 실행할 수 있습니다.'})
+      ])
+    ].filter(Boolean));
+
+    return guiEl('div', {class: 'grid g-side', dataset: {lensReader: 'true'}}, [
+      rail,
+      guiEl('article', {class: 'sheet-page detail-pane', style: {overflowWrap: 'anywhere', minWidth: '0'}, dataset: {lensReaderDetail: filterLensId}}, [content])
+    ]);
+  };
+
   const buildBookSaveBar = () => guiEl('footer',{class:'savebar',dataset:{bookSaveBar:'true'}},[
     guiEl('span',{class:'hint',dataset:{settingsRoomSaveStatus:'true'},role:'status','aria-live':'polite',text:Gui.settingsRoomSaveStatus||(Gui.dirty?'저장되지 않은 변경':'저장됨')}),
     guiEl('div',{class:'cluster'},[
@@ -86297,8 +88753,9 @@ advanced
       }
       const statusText = {verified:'최종 검증을 통과한 마지막 요청의 전달 기록',failed:'마지막 요청 전달 실패',skipped:'마지막 요청 리콜 건너뜀',unconfirmed:'최종 전달 확인 안 됨'}[status];
       content.append(guiEl('p',{class:status === 'verified' ? 'note' : 'note note--warn',text:statusText}));
+      const lensInjected = delivery.lensRecall?.injected === true ? libraGuiArray(delivery.lensRecall?.injectedItems) : [];
       const meta = guiEl('dl',{class:'kv'});
-      for (const [label,value] of [['전달 시각',libraFormatTime(delivery.at)],['경로','사서 모드'],['기억 근거',`${rows.length}개`],['전체 전달 문자',String(Number(delivery.blockChars || 0))],['최근 완료 대화',delivery.liveTailInjected === true ? `${Number(delivery.liveTailChars || 0)}자 포함` : '포함 안 됨']]) meta.append(guiEl('dt',{text:label}),guiEl('dd',{text:value}));
+      for (const [label,value] of [['전달 시각',libraFormatTime(delivery.at)],['경로','사서 모드'],['기억 근거',`${rows.length}개`],['렌즈 기억 (비정본)',lensInjected.length ? `${lensInjected.length}개 · ${Number(delivery.lensRecall?.usedChars || 0)}자` : '포함 안 됨'],['전체 전달 문자',String(Number(delivery.blockChars || 0))],['최근 완료 대화',delivery.liveTailInjected === true ? `${Number(delivery.liveTailChars || 0)}자 포함` : '포함 안 됨']]) meta.append(guiEl('dt',{text:label}),guiEl('dd',{text:value}));
       content.append(meta,guiEl('p',{class:'hint',text:'마지막 요청에 전달된 발췌입니다. 이후 저장된 기억이나 상태가 바뀌어도 이 기록의 내용을 다시 작성하지 않습니다.'}));
       if (status !== 'verified') {
         content.append(guiEl('p',{text:delivery.error ? `사유: ${libraGuiText(delivery.error)}` : delivery.skipReason ? `사유: ${libraGuiText(delivery.skipReason)}` : '사용된 근거로 확인할 수 있는 기록이 없습니다.'}));return;
@@ -86312,7 +88769,15 @@ advanced
           guiEl('summary',{text:[Number(row.turnRange?.start)>0 ? libraRecallTurnLabel(row) : '배경 참고 자료',row.revision != null ? `정본 버전 ${row.revision}` : ''].filter(Boolean).join(' · ')}),
           () => [guiEl('div',{class:'fold__body'},[guiEl('div',{class:'evidence-text',text:libraGuiText(row.selectedText ?? row.text) || '(발췌 본문 없음)'})])]))
       ]));
-      if (!rows.length) content.append(guiEl('p',{text:delivery.liveTailInjected ? '검색 기억 없이 최근 완료 대화만 전달했습니다.' : '전달된 기억 근거가 없습니다.'}));
+      if (lensInjected.length) {
+        content.append(guiEl('section',{class:'stack',dataset:{evidenceFamily:'렌즈 기억'}},[
+          guiEl('h3',{text:`렌즈 기억 (비정본) · ${lensInjected.length}개`}),
+          ...lensInjected.map(item => guiLazyDetails({class:'fold'},
+            guiEl('summary',{text:[item.evidenceClass === 'interpreted' ? `[lens:${libraGuiText(item.lensName)} · 해석]` : `[lens:${libraGuiText(item.lensName)}]`, libraGuiText(item.label), `T${Number(item.turnRange?.start || 0)}~T${Number(item.turnRange?.end || 0)}`].filter(Boolean).join(' · ')}),
+            () => [guiEl('div',{class:'fold__body'},[guiEl('div',{class:'evidence-text',text:libraGuiText(item.renderedLine || item.summary) || '(발췌 본문 없음)'})])]))
+        ]));
+      }
+      if (!rows.length && !lensInjected.length) content.append(guiEl('p',{text:delivery.liveTailInjected ? '검색 기억 없이 최근 완료 대화만 전달했습니다.' : '전달된 기억 근거가 없습니다.'}));
       const block = typeof Runtime.lastInjection === 'string' ? Runtime.lastInjection : '';
       const metaScope = Runtime.lastMemoryInjectionMeta?.scopeKey;
       if (block && metaScope === delivery.scopeKey && block.length === Number(delivery.blockChars)) content.append(guiLazyDetails({class:'fold'},guiEl('summary',{text:'전체 전달 본문 보기'}),() => [guiEl('div',{class:'fold__body'},[guiEl('div',{class:'evidence-text',text:block})])]));
@@ -86375,22 +88840,31 @@ advanced
   };
 
   const buildApprovedMockupMemory = () => {
-    const micro = Gui.bookMemoryKind === 'micro';
-    if (!micro) {
+    const activeKind = Gui.bookMemoryKind === 'micro' ? 'micro' : Gui.bookMemoryKind === 'lens' ? 'lens' : 'canonical';
+    if (activeKind === 'canonical') {
       ensureCanonicalReaderPage();
       if (!Gui.canonicalReaderLoaded && !Gui.canonicalReaderLoading) void loadCanonicalReaderPage(false);
     }
     const tabs = guiEl('nav', {class: 'tabs', role: 'tablist', 'aria-label': '기억 종류'}, [
-      ...[['canonical', '정본 기억'], ['micro', 'Micro 기억']].map(([kind, label]) => guiEl('button', {
-        class: `tab${(micro ? 'micro' : 'canonical') === kind ? ' is-on' : ''}`, type: 'button', role: 'tab',
-        'aria-selected': String((micro ? 'micro' : 'canonical') === kind), dataset: {memoryReaderKind: kind},
+      ...[['canonical', '정본 기억'], ['micro', 'Micro 기억'], ['lens', '렌즈 기억']].map(([kind, label]) => guiEl('button', {
+        class: `tab${activeKind === kind ? ' is-on' : ''}`, type: 'button', role: 'tab',
+        'aria-selected': String(activeKind === kind), dataset: {memoryReaderKind: kind},
         text: label, onClick: () => selectBookMemoryKind(kind)
       }))]);
-    const reader = micro ? buildBookMicroReaderProjection() : buildBookMemoryReaderProjection();
-    reader.id='memory-root'; reader.dataset.productReadback=micro ? 'micro-memory-reader' : 'canonical-memory-reader';
+    const reader = activeKind === 'micro'
+      ? buildBookMicroReaderProjection()
+      : activeKind === 'lens'
+        ? buildBookLensReaderProjection()
+        : buildBookMemoryReaderProjection();
+    reader.id='memory-root';
+    reader.dataset.productReadback = activeKind === 'micro'
+      ? 'micro-memory-reader'
+      : activeKind === 'lens'
+        ? 'lens-memory-reader'
+        : 'canonical-memory-reader';
     reader.setAttribute?.('role', 'tabpanel');
-    reader.setAttribute?.('aria-label', micro ? 'Micro 기억' : '정본 기억');
-    const manage = micro ? null : guiEl('div', { class: 'manage-block' }, [guiEl('div', { class: 'banner banner--info' }, [
+    reader.setAttribute?.('aria-label', activeKind === 'micro' ? 'Micro 기억' : activeKind === 'lens' ? '렌즈 기억' : '정본 기억');
+    const manage = activeKind !== 'canonical' ? null : guiEl('div', { class: 'manage-block' }, [guiEl('div', { class: 'banner banner--info' }, [
       guiEl('div', {}, [guiEl('b', { text: '정본 기억 관리' }), guiEl('p', { text: '재분석 후보와 수정용 복사본은 검토 후 별도 승인해야 정본에 반영됩니다.' })]),
       guiEl('div', { class: 'cluster' }, [
         guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: '기억 생성 구간 선택', onClick: () => void showCanonicalRangeDrawer('missing') }),
@@ -86778,14 +89252,16 @@ advanced
     Gui.bookPage = page;
     if (page === 'memory') {
       const header = app.querySelector('.page[data-page="memory"] .page-head');
-      const micro = Gui.bookMemoryKind === 'micro';
+      const kind = Gui.bookMemoryKind === 'micro' ? 'micro' : Gui.bookMemoryKind === 'lens' ? 'lens' : 'canonical';
       const eyebrow = header?.querySelector('.eyebrow'), description = header?.querySelector('.page-desc');
-      if (eyebrow) eyebrow.textContent = micro ? 'Micro Archive' : 'Canonical Archive';
-      if (description) description.textContent = micro
+      if (eyebrow) eyebrow.textContent = kind === 'micro' ? 'Micro Archive' : kind === 'lens' ? 'Custom Lens Archive' : 'Canonical Archive';
+      if (description) description.textContent = kind === 'micro'
         ? '완료된 각 턴의 Micro 기록과 원문 근거를 읽습니다. 정본 작성 전의 최신 턴도 확인할 수 있습니다.'
-        : '기억은 완결된 5턴 단위로 저장되는 정본입니다. 읽는 화면과 고치는 화면은 같은 자리에서 모드로만 전환합니다.';
+        : kind === 'lens'
+          ? '사용자 정의 관점(감정선, 단서, 약속, 상처, 비밀 등)으로 추출된 보조 렌즈 기억입니다. 정본 기억과 현재 상태를 절대 오염시키지 않습니다.'
+          : '기억은 완결된 5턴 단위로 저장되는 정본입니다. 읽는 화면과 고치는 화면은 같은 자리에서 모드로만 전환합니다.';
       const actions = header?.querySelector('.page-actions');
-      if (actions) actions.hidden = micro;
+      if (actions) actions.hidden = kind !== 'canonical';
     }
     const manageMode = page === 'memory' ? Gui.memoryHubSection !== 'read'
       : page === 'people' ? Gui.bookPeopleSection !== 'profile'
@@ -87944,6 +90420,19 @@ advanced
     async getCanonicalMemories() { return (await LibraMemoryCore.refreshSnapshot(undefined, { suppressGuiSchedule: true })).memories; },
     async getMemoryRuns() { return (await LibraMemoryCore.refreshSnapshot(undefined, { suppressGuiSchedule: true })).runs; },
     async deleteFailedMemoryRun(options = {}) { return await LibraMemoryCore.deleteFailedRun(options); },
+    async getLensRegistry() { return safeClone(await LibraMemoryCore.loadLensRegistry()); },
+    async saveLensRegistry(value = {}) { return safeClone(await LibraMemoryCore.saveLensRegistry(value)); },
+    getLensStarterTemplates() { return safeClone(LibraMemoryCore.getLensStarterTemplates()); },
+    async generateLensDefinitionFromDescription(prompt = '', base = {}) {
+      const input = typeof prompt === 'string' ? { description: prompt, ...base } : prompt;
+      return safeClone(await LibraMemoryCore.generateLensDefinitionFromDescription(input));
+    },
+    async runLensForRange(lensId, options = {}) { return safeClone(await LibraMemoryCore.runLensForRange(lensId, options)); },
+    async runLensForTurnRange(lensId, options = {}) { return safeClone(await LibraMemoryCore.runLensForTurnRange(lensId, options)); },
+    async inspectScopeLenses(options = {}) { return safeClone(await LibraMemoryCore.inspectScopeLenses(options)); },
+    async deleteLensMemories(options = {}) { return safeClone(await LibraMemoryCore.deleteLensMemories(options)); },
+    async recallLensMemories(options = {}) { return safeClone(await LibraMemoryCore.recallLensMemories(options)); },
+    evaluateLensCandidateItems(candidates = [], lens = {}, turnPairs = []) { return safeClone(LibraMemoryCore.evaluateLensCandidateItems(candidates, lens, turnPairs)); },
     async getStoryArc(options = {}) {
       if (options?.scopeKey) {
         const narrative = await __libraCompletionGetNarrative([options]);

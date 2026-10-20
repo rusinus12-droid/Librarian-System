@@ -14181,7 +14181,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     }
     const unknownByScope = new Map();
     for (const record of snapshot.records.filter(item => item.space === 'plugin')) {
-      const match = /^libra:v1:scope:(.+?):(?:manifest|memory:|vector:|work:|run:|predecessor:|predecessor-vector:|recall-catalog:)/.exec(record.key);
+      const match = /^libra:v1:scope:(.+?):(?:manifest|memory:|vector:|work:|run:|predecessor:|predecessor-vector:|recall-catalog:|lens:)/.exec(record.key);
       if (!match || knownScopeKeys.has(match[1])) continue;
       const members = unknownByScope.get(match[1]) || [];
       members.push(scopeManagerMember(record, false));
@@ -14911,7 +14911,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     return receipt;
   };
   const scopeManagerShowDetail = async scope => {
-    const members = scopeManagerArray(scope.members).map(member => `${member.space} · ${member.tombstone ? '[삭제됨] ' : ''}${member.key} · rev ${member.revision}`).join('\n');
+    const members = scopeManagerArray(scope.members).map(member => `${member.space} · ${member.tombstone ? '[삭제됨] ' : ''}${String(member.key || '').includes(':lens:') ? '[렌즈 기억] ' : ''}${member.key} · rev ${member.revision}`).join('\n');
     const refs = scopeManagerArray(scope.inboundReferences).map(ref => `${ref.sourceNamespace}/${ref.sourceDisplayName || ref.sourceScopeId} → ${ref.kind}`).join('\n');
     await retraceAlert([
       `${MEMORY_SUITE_NAMESPACE_LABELS[scope.namespace] || scope.namespace} · ${scope.displayName || scope.scopeId}`,
