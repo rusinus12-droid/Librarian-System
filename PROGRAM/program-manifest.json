@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-20T10:46:41.682Z",
+  "generatedAt": "2026-10-20T11:17:04.977Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -2660,8 +2660,8 @@
       "bytes": 1291
     },
     "docs/LIBRA_LENS_MEMORY_DESIGN_20261020.md": {
-      "sha256": "f68b06f0c2e187adfcf258f2f0d9600bb73acafbf56d5849dd1e1cd1506d942f",
-      "bytes": 30624
+      "sha256": "2f0c6c45135a35e47010a4d890437e9c1b2d8f8ae3ec737cf27ff443b8fddebc",
+      "bytes": 30687
     },
     "docs/LIBRA_LOCAL_CORPUS_GC_20261017.md": {
       "sha256": "cf4d721988d955738802d87a6895b8fcbb61a08041c3cac53174ef59bd6d6a96",
@@ -7350,6 +7350,10 @@
     "tests/libra_custom_memory_lens_runtime_test.cjs": {
       "sha256": "ce9d10d5565fb01961f7403cba7063bc8bd651d450e6ee41316dad8205f51c79",
       "bytes": 15623
+    },
+    "tests/libra_custom_memory_lens_server_runtime_test.cjs": {
+      "sha256": "f62285c5f50383837406e0d2ef5a8638c31b1ab63ae860512bbf108336fff6a9",
+      "bytes": 4388
     },
     "tests/libra_custom_prompt_gui_route_runtime_test.cjs": {
       "sha256": "218234da011aaeb991ff95286fe893cad90a589f82b56403d38bee748046a00a",

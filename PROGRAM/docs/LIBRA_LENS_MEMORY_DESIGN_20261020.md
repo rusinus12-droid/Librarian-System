@@ -420,7 +420,7 @@ This section records what the code does where it refines or departs from the sec
 - Lens definitions live in runtime settings with the other LIBRA settings, which stay on the device.
 
 ### Not yet done
-- The RETRACE next-session handoff does not carry lens notes. The package holds canonical memory refs, lineage and Micro archives only, so a successor chat starts with no lens notes.
+- The RE:TRACE next-session handoff does not carry lens notes yet. The package holds canonical memory refs, lineage and Micro archives only, so a successor chat starts with no lens notes. The design is in `LIBRA_LENS_HANDOFF_DESIGN_20261020.md`.
 - RETRACE shows lens keys as "[렌즈 기억]" in a scope's detail. It has no separate lens category in inventory or sync summaries.
 
 ### Tests
