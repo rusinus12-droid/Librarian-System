@@ -41,7 +41,7 @@ async function createOocGui(options={}) {
     ...(options.host||{})
   };
   const globals={document,Element:document.defaultView.Element,HTMLElement:document.defaultView.HTMLElement,Event:document.defaultView.Event,MouseEvent:document.defaultView.MouseEvent,MutationObserver:document.defaultView.MutationObserver,innerWidth:1400,innerHeight:1000,requestAnimationFrame:fn=>setTimeout(fn,0),cancelAnimationFrame:clearTimeout,getComputedStyle:()=>({display:'block',visibility:'visible',getPropertyValue:()=>''}),fetch:host.nativeFetch,addEventListener(){},removeEventListener(){},window:undefined};
-  const h=await createLibraVmHarness({enable_gui:'true',...(options.args||{})},host,{contextGlobals:globals,initialValues:options.initialValues,transformSource:options.transformSource}); h.context.window=h.context;
+  const h=await createLibraVmHarness({enable_gui:'true',...(options.args||{})},host,{contextGlobals:globals,initialValues:[['libra.firstSetupSeen.v1','1'],...(options.initialValues||[])],transformSource:options.transformSource}); h.context.window=h.context;
   const button=(label,root=document)=>root.querySelectorAll('button').find(n=>n.textContent===label);
   const disclosure=label=>document.querySelectorAll('summary').find(n=>n.textContent===label)?.parentNode;
   const ooc=()=>document.getElementById('prompt-studio-ooc-builder');

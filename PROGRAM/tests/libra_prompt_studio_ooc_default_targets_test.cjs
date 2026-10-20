@@ -68,11 +68,13 @@ const context = vm.createContext({
   const api = await waitFor(() => context.__LIBRA__);
 
   const freshTargets = api.debugPromptStudioOocTargets({});
-  assert.ok(freshTargets.length >= 60, 'fresh state exposes the built-in Prompt Studio catalog');
+  // Only the memory domain has Prompt Studio profiles; the retired Planner/SGA/Input Writer
+  // domains used to repeat the same 19 Librarian sections and fill the target cap.
+  assert.equal(freshTargets.length, 19, 'fresh state exposes the 19 Librarian sections once');
   assert.deepEqual(
     [...new Set(freshTargets.map(item => item.domain))].sort(),
-    ['input_writer', 'memory', 'planner', 'sga'],
-    'fresh target catalog covers every Prompt Studio domain'
+    ['memory'],
+    'fresh target catalog covers only the live memory domain'
   );
   assert.ok(freshTargets.every(item => item.profileName === 'default'), 'fresh targets come from the built-in default profile');
 

@@ -1,7 +1,8 @@
 // Ephemeral API boundary for the full production LIBRA browser regression.
 // No RisuAI application, user data, external model, or OS clipboard is involved.
 (() => {
- const values=new Map(), unload=[];
+ // The first-setup quick-connect popup is covered by its own tests; these hosts start past it.
+ const values=new Map([['libra.firstSetupSeen.v1','1']]), unload=[];
  const stores={action:[],hamburger:[],chat:[]};
  const chat={id:'writer-browser-chat',chatId:'writer-browser-chat',message:[{role:'user',data:'문 앞에 서서 기다린다.',chatId:'u1'},{role:'char',data:'문 너머에서 발소리가 멎는다.',chatId:'a1'}]};
  const character={id:'writer-browser-character',chaId:'writer-browser-character',name:'검증용 인물',chatPage:0,chats:[chat],globalLore:[]};

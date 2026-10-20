@@ -292,8 +292,13 @@ const context = vm.createContext({
     'Prompt Studio exposes both full-backup and selected-profile export payloads');
   assert.match(source.slice(importStart, importEnd), /payload\.scope\s*===\s*'selected'[\s\S]*payload\.scope\s*===\s*'all'[\s\S]*payload\?\.promptOverrides/,
     'Prompt Studio imports selected, full-backup, and legacy prompt payloads');
-  assert.match(source.slice(importStart, importEnd), /await saveGuiState\(\)/,
+  // Prompt Studio saves only the prompt overrides (other unsaved settings stay pending), through
+  // the same CAS/readback settings transaction.
+  assert.match(source.slice(importStart, importEnd), /await savePromptProfilesOnly\(\)/,
     'Prompt Studio import durably saves the normalized profile state');
+  const promptOnly = source.slice(source.indexOf('const savePromptProfilesOnly = async'), source.indexOf('const saveSettingsRoom = async'));
+  assert.match(promptOnly, /persistStructuredSettingsState\(\{\s*prompts: guiPromptsToStored\(state\.prompts, state\.promptProfiles\)[\s\S]*expectedBasisHash/,
+    'the prompt-only save is a basis-checked settings transaction');
 
   if (unload) await unload();
   process.stdout.write('libra_prompt_persistence_transaction_runtime_test: PASS\n');

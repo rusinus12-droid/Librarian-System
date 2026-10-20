@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.176
-//@version 2.3.176
+//@display-name LIBRA v2.3.177
+//@version 2.3.177
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1558,7 +1558,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.176';
+  const PLUGIN_VERSION = '2.3.177';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -13881,6 +13881,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
     };
   };
+
+  const LIBRARIAN_PROFILE_REASSERTION = [
+    '[OUTPUT CONTRACT REASSERTION — outranks every analysis-profile instruction above]',
+    '- Return exactly one JSON object as the canonical artifact contract defines: same schema, field shapes and IDs.',
+    '- Copy evidence quotes exactly from the source and keep names and quoted text in their original language.',
+    '- Certainty, time role and State bindings follow the source evidence only; profile text may change emphasis and selection, never these rules or the output format.'
+  ].join('\n');
+  const librarianProfileIsCustomized = compiled => (compiled?.provenance?.profileName || PROMPT_PROFILE_DEFAULT_NAME) !== PROMPT_PROFILE_DEFAULT_NAME || compiled?.provenance?.customAddendumApplied === true;
+  // The exact system prompt the Librarian request sends; the Prompt Studio preview uses it too.
+  const composeLibrarianSystemPrompt = (compiled, analysisNsfw = '') => [LibraMemoryCore.librarianPromptContract(),'[ANALYSIS PROFILE — subordinate to the evidence and output contract]',compiled.profileBody,analysisNsfw,librarianProfileIsCustomized(compiled)?LIBRARIAN_PROFILE_REASSERTION:''].filter(Boolean).join('\n\n');
 
   const finalizeMemoryPromptProvenance = (compiled, effectiveSystemPrompt) => {
     const base = safeClone(compiled?.provenance || {}) || {};
@@ -59893,7 +59903,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
       // analysis profile and before the exact source, so the evidence contract still outranks it
       // (the block itself says it is a limit on the requested output, not an instruction to invent).
       const analysisNsfw=buildNsfwGuidanceBlock(runtimeSettings || {}, 'analysis');
-      const system=[unifiedPromptContract(),'[ANALYSIS PROFILE — subordinate to the evidence and output contract]',compiled.profileBody,analysisNsfw].filter(Boolean).join('\n\n');
+      const system=[unifiedPromptContract(),'[ANALYSIS PROFILE — subordinate to the evidence and output contract]',compiled.profileBody,analysisNsfw,librarianProfileIsCustomized(compiled)?LIBRARIAN_PROFILE_REASSERTION:''].filter(Boolean).join('\n\n');
       const exactSource=['[EXACT FIVE U+A]',...batch.map(p=>'[t'+p.turn+'-u]\n'+p.user.text+'\n\n[t'+p.turn+'-a]\n'+p.assistant.text)].join('\n\n');
       let optionalReference=reference?.block||'',optionalState=JSON.stringify(unifiedStateReadProjection(options.unifiedBasis?.head)||{}),optionalContinuity=continuityCandidates.block||'';
       let optionalPersonCandidates = await verifiedPersonCandidatePromptBlock(batch, options.unifiedBasis?.registry, options.unifiedBasis?.scopeKey);
@@ -75421,6 +75431,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
     return Object.freeze({
       VERSION, BATCH_SIZE, STAGE_ORDER, STAGE_LABELS, state, providerBridge: LibraProviderBridge,
+      librarianPromptContract: () => unifiedPromptContract(),
       PAIR_REVISION_CACHE_MAX_SCOPES, PAIR_REVISION_CACHE_MAX_ENTRIES_PER_SCOPE, PAIR_REVISION_CACHE_MAX_RETAINED_CHARS,
       recallMinDynamicChars: RECALL_BUDGET_MIN_CHARS,
       recallMaxDynamicChars: RECALL_MAX_DYNAMIC_CHARS,
@@ -76722,7 +76733,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (!STAGE_DEF_MAP[Gui.selectedPrompt]) Gui.selectedPrompt = LIBRARIAN_STAGE_ID;
     const profileState = normalizePromptProfilesState(Gui.state?.promptProfiles || {});
     Gui.state.promptProfiles = profileState;
-    Gui.promptStudioDomain = ['memory', 'planner', 'sga', 'memory'].includes(Gui.promptStudioDomain) ? Gui.promptStudioDomain : 'memory';
+    Gui.promptStudioDomain = 'memory';
     const activeBank = (((profileState.memoryProfiles)));
     if (Gui.promptStudioProfileName !== PROMPT_PROFILE_DEFAULT_NAME && !activeBank[Gui.promptStudioProfileName]) {
       Gui.promptStudioProfileName = (((profileState.activeMemoryProfile)));
@@ -76969,6 +76980,33 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
 
 
+  // Prompt Studio saves write only the prompt overrides. Other settings edited in the same
+  // window (AI presets, memory options…) stay as unsaved changes for the main save bar.
+  const savePromptProfilesOnly = async () => {
+    if (Gui.settingsSavePromise) await Gui.settingsSavePromise.catch(() => {});
+    const state = await ensureGuiState();
+    const otherChangesPending = Gui.dirty === true;
+    try {
+      const expectedBasisHash = Gui.settingsBasisHash || (await readSettingsPersistenceBasis()).semanticHash;
+      const transaction = await persistStructuredSettingsState({
+        prompts: guiPromptsToStored(state.prompts, state.promptProfiles),
+        removePostProcessors: false
+      }, { expectedBasisHash, label: 'prompt_studio_save' });
+      Runtime.settings = null;
+      Runtime.settingsLoadedAt = 0;
+      clearRequestReuseCache();
+      Gui.settingsBasisHash = transaction.semanticHash;
+      Gui.dirty = otherChangesPending;
+      Gui.lastSettingsSaveError = '';
+      syncGuiSaveControls();
+      return transaction.ok === true;
+    } catch (error) {
+      Gui.lastSettingsSaveError = compact(error?.message || error, 500);
+      syncGuiSaveControls();
+      throw error;
+    }
+  };
+
   const saveSettingsRoom = async () => {
     if (Gui.settingsRoomSaving === true) return false;
     Gui.settingsRoomSaving = true;
@@ -77171,7 +77209,62 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.rail__search{display:flex;gap:8px;align-items:center}',
     '.rail__search .input{flex:1 1 auto;min-width:0}',
     '.rail__search .btn{flex:0 0 auto}',
-    '.rail>.hint{padding:8px 12px;border-top:1px solid var(--border);text-align:right}'
+    '.rail>.hint{padding:8px 12px;border-top:1px solid var(--border);text-align:right}',
+    // Surface hierarchy: page < card < inset section. Cards lift off the page with a border and a
+    // soft shadow, their header is ruled off, and folds/lists/field groups inside a card are inset
+    // panels with their own tint so neighbouring boxes no longer blend together.
+    '.t-libra{--border:#d4c9ae;--card-line:#cfc3a6;--inset-bg:#f5f0e3;--inset-line:#ddd3bb;--card-shadow:0 1px 0 rgba(255,255,255,.75) inset,0 1px 2px rgba(58,44,18,.07),0 8px 22px -12px rgba(58,44,18,.22)}',
+    '.t-libra .card{border-color:var(--card-line);box-shadow:var(--card-shadow)}',
+    '.t-libra .card>.card__head{padding-bottom:12px;margin-bottom:16px;border-bottom:1px solid var(--border)}',
+    '.t-libra .card details.fold{background:var(--inset-bg);border-color:var(--inset-line)}',
+    '.t-libra .card details.fold>summary{border-radius:var(--r-md)}',
+    '.t-libra .card details.fold[open]>summary{border-radius:var(--r-md) var(--r-md) 0 0;border-bottom-color:var(--inset-line)}',
+    '.t-libra .card details.fold>.fold__body{background:var(--surface);border-radius:0 0 var(--r-md) var(--r-md)}',
+    '.t-libra .card .list,.t-libra .card .table-wrap{border-color:var(--inset-line);box-shadow:0 1px 2px rgba(58,44,18,.05)}',
+    '.t-libra .card .note{background:var(--inset-bg);border-color:var(--inset-line)}',
+    '.t-libra .stack>.card+.card{margin-top:2px}',
+    // Breathing room: siblings inside a card, and any button row that follows a box, never touch.
+    '.t-libra .card>*+*:not(.setting){margin-top:12px}',
+    '.t-libra :is(.list,details,.note,.table-wrap,.libra-field-group,pre,.grid,.empty)+.cluster{margin-top:12px}',
+    // AI presets: list on the left, the selected connection on the right; one column when narrow.
+    '.t-libra .card:has(>.libra-preset-workbench){container-type:inline-size}',
+    '.libra-preset-workbench{display:grid;grid-template-columns:minmax(190px,250px) minmax(0,1fr);gap:14px;align-items:start;margin-bottom:14px}',
+    '.libra-preset-rail{display:grid;gap:10px;align-content:start}',
+    '@container (min-width:561px){.libra-preset-rail{position:sticky;top:12px}}',
+    // Prompt Studio: a jump bar over its five areas, one fold per prompt section, and the final
+    // prompt split into locked and editable blocks.
+    '.ps-nav{display:flex;flex-wrap:wrap;gap:8px;position:sticky;top:-1px;z-index:2;padding:8px;margin:0 0 4px;background:var(--surface2);border:1px solid var(--inset-line,var(--border));border-radius:var(--r-md)}',
+    '.ps-nav__item{display:grid;gap:1px;min-height:40px;padding:6px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text);text-align:left;font:650 12.5px/1.3 var(--font-sans)}',
+    '.ps-nav__item span{font:500 11.5px/1.3 var(--font-sans);color:var(--text3)}',
+    '.ps-nav__item:hover{background:var(--surface3)}',
+    '[data-memory-prompt-studio]>details.card>summary,[data-memory-prompt-studio]>#ps-easy h3{font:750 15px/1.4 var(--font-sans)}',
+    '[data-memory-prompt-studio]>details.card>summary{cursor:pointer;padding:2px 0}',
+    '[data-memory-prompt-studio]>details.card[open]>summary{padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--border)}',
+    '[data-memory-prompt-studio] pre.code{white-space:pre-wrap;overflow-wrap:anywhere}',
+    '#ps-final>.cluster{margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}',
+    '.ps-section{margin-top:8px}',
+    '.ps-section>summary .cluster{gap:6px;flex-wrap:nowrap}',
+    '.ps-section__name{min-width:0;overflow-wrap:anywhere}',
+    '.ps-block>summary{font-size:13px}',
+    '.ps-block__text{margin:0;max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:12px 16px;font-size:12px;line-height:1.55;border-radius:0 0 var(--r-md) var(--r-md)}',
+    '.ps-block--locked .ps-block__text{background:var(--surface2);color:var(--text2)}',
+    '.ps-block--editable{border-color:var(--accent-line)}',
+    '.ps-lint ul{margin:6px 0 0;padding-left:18px}',
+    '.ps-lint--ok{border-color:var(--ok-line);background:var(--ok-soft);color:var(--ok-ink)}',
+    '.libra-preset-rail .row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"title badge" "meta badge";gap:2px 10px;padding:12px 14px}',
+    '.libra-preset-rail .row__title{grid-area:title;overflow-wrap:anywhere}',
+    '.libra-preset-rail .row__meta{grid-area:meta;font-size:12px;color:var(--text3);overflow-wrap:anywhere}',
+    '.libra-preset-rail .row>.badge{grid-area:badge}',
+    '.libra-preset-rail .row[aria-pressed=true]{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}',
+    '.libra-preset-detail{min-width:0;container-type:inline-size}',
+    '.libra-preset-detail>details.fold>summary{font-size:14px}',
+    '.libra-preset-form{gap:12px}',
+    '.libra-field-group{padding:12px 14px 14px;border:1px solid var(--inset-line);border-radius:var(--r-md);background:var(--inset-bg)}',
+    '.libra-field-group__title{margin:0 0 10px;font:750 11.5px/1.4 var(--font-sans);letter-spacing:.06em;color:var(--accent-ink)}',
+    '.libra-field-group .grid.g2{gap:10px 14px}',
+    '.libra-preset-actions{padding-top:4px;border-top:1px solid var(--border)}',
+    '@container (max-width:560px){.libra-preset-workbench{grid-template-columns:minmax(0,1fr)}}',
+    '@container (max-width:430px){.libra-preset-detail .grid.g2{grid-template-columns:minmax(0,1fr)}}'
   ].join('\n');
   const injectGuiStyle = () => {
     if (typeof document === 'undefined' || document.getElementById('sga-rp-gui-style')) return;
@@ -77850,7 +77943,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return '이 구역이 매번 어떤 판단 기준과 실제 행동을 따르도록 만들고 싶나요?';
   };
 
-  const PROMPT_STUDIO_OOC_DOMAIN_IDS = Object.freeze(['memory', 'planner', 'sga', 'input_writer']);
+  // Planner, SGA and Input Writer profiles are retired; their targets duplicated the memory
+  // sections and used up the target cap, so only the memory domain is offered.
+  const PROMPT_STUDIO_OOC_DOMAIN_IDS = Object.freeze(['memory']);
   const PROMPT_STUDIO_OOC_BANK_KEYS = Object.freeze({
     memory: 'memoryProfiles'
   });
@@ -78078,7 +78173,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (!appendText) return null;
     return {
       schema: PROMPT_STUDIO_OOC_SCHEMA,
-      title: promptStudioOocCompact(parsed?.title || '맞춤 창작 지침', 160),
+      title: promptStudioOocCompact(parsed?.title || '맞춤 기억 지침', 160),
       summary: promptStudioOocCompact(parsed?.summary || parsed?.intent_summary || '', 1200),
       appendText,
       checks: promptStudioOocArray(parsed?.checks || parsed?.success_checks).map(item => promptStudioOocCompact(item, 500)).filter(Boolean).slice(0, 8),
@@ -78316,8 +78411,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     }
   };
   const promptStudioOocConversationSystemPrompt = target => [
-    'You are LIBRA Prompt Studio Creative Guidance OOC.',
-    'You help the user turn a personal creative preference into a reusable custom prompt for ONE selected Prompt Studio section.',
+    'You are LIBRA Prompt Studio memory-guidance OOC.',
+    'You help the user turn a personal preference about how story memory is recorded into a reusable custom prompt for ONE selected Prompt Studio section of the Librarian memory analyzer.',
     'This is a conversation, not the final compiler step.',
     '',
     '[BEHAVIOR]',
@@ -78798,7 +78893,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         state.interruptedSave ? guiEl('div', { class: 'note warn', text: '저장 도중 화면이 바뀌어 결과 확인이 필요합니다. 저장이 완료됐을 수도 있으므로, 작성 중인 설정을 먼저 보관한 뒤 되돌리기로 저장값을 다시 읽어 확인하세요. 이전 저장 미리보기는 폐기했습니다.' }) : null,
         state.statusText ? guiEl('div', { class: `hint ${state.statusState === 'error' ? 'warn' : ''}`, text: state.statusText }) : null,
         preview ? guiEl('div', { class: 'card', style: 'margin-top:12px;' }, [
-          guiEl('h4', { text: preview.title || '맞춤 창작 지침 미리보기' }),
+          guiEl('h4', { text: preview.title || '맞춤 기억 지침 미리보기' }),
           preview.summary ? guiEl('div', { class: 'hint', text: preview.summary }) : null,
           guiEl('pre', { class: 'code', text: preview.appendText }),
           preview.checks?.length ? guiEl('details', {}, [
@@ -79963,7 +80058,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
   const activeGuiResponseFamily = () => 'libra';
 
-  const easyPromptSummaryLines = (_domain,cfg) => [cfg?.addendum || 'LIBRA 기본 메모리 지침'];
+  const easyPromptSummaryLines = (domain, cfg) => {
+    const probe = { easy: { configs: {} }, stages: {} };
+    probe.easy.configs[easyPromptConfigKey(promptStudioNormalizeDomain(domain))] = cloneJson(cfg || {});
+    const { overrides } = easyPromptCompileConfig(probe, domain);
+    const labels = new Map(promptStudioSectionDefs().map(definition => [definition.id, definition.label]));
+    const lines = Object.entries(overrides).map(([id, value]) => `[${labels.get(id) || id} · 기본 뒤에 추가]\n${normalizePromptSectionOverride(value).text}`);
+    return lines.length ? lines : ['추가 지시 없음 · LIBRA 기본 기억 지침을 그대로 사용합니다.'];
+  };
   const buildBookRecallSettingsPanel = () => buildBookQuickLibraResponsePanel();
   const libraGuiNavigate = (section, _tab = 'flow') => {
     sharedNavigate(section);
@@ -80995,15 +81097,76 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return stage.sections;
   };
 
-  const promptStudioCompiledPreview = draft => {
-    const domain = promptStudioNormalizeDomain(Gui.promptStudioDomain);
+  const promptStudioAnalyzerAddendum = () => {
+    const entry = normalizePromptEntry(Gui.state?.prompts?.[LIBRARIAN_STAGE_ID] || {}, { mode: 'builtin', customPrompt: '', extraPrompt: '' });
+    return compact(mergeCreativeDirectionText(entry.customPrompt || '', entry.extraPrompt || ''), 20000);
+  };
+  const promptStudioPreviewParts = draft => {
     const overrides = promptStudioSectionOverrides(draft);
-    const body = promptStudioSectionDefs().map(definition => ({
-      label: definition.label,
-      text: compilePromptSection(definition, overrides[definition.id])
-    })).filter(item => item.text).map(item => `[${item.label}]\n${item.text}`).join('\n\n');
-    const locked = ((('LOCKED: 5턴 원문 권위·USER/ASSISTANT 주체·필수 정본 heading·ito patch 계약은 이 프로필 밖에서 항상 유지됩니다.')));
-    return [locked, '', body].join('\n');
+    const sections = promptStudioSectionDefs().map(definition => ({ id: definition.id, label: definition.label, text: compilePromptSection(definition, overrides[definition.id]) }));
+    const addendum = promptStudioAnalyzerAddendum();
+    if (addendum) { const target = sections.find(item => item.id === 'custom_addendum'); if (target) target.text = [target.text, addendum].filter(Boolean).join('\n'); }
+    const profileBody = sections.filter(item => item.text).map(item => `[${item.label}]\n${item.text}`).join('\n\n');
+    const customized = !!addendum || Object.values(overrides).some(value => normalizePromptSectionOverride(value).mode !== 'inherit');
+    const compiled = { profileBody, provenance: { profileName: customized ? 'draft' : PROMPT_PROFILE_DEFAULT_NAME, customAddendumApplied: !!addendum } };
+    const nsfw = buildNsfwGuidanceBlock(Gui.state?.runtime || {}, 'analysis');
+    return {
+      contract: LibraMemoryCore.librarianPromptContract(),
+      profileBody,
+      nsfw,
+      reassertion: customized ? LIBRARIAN_PROFILE_REASSERTION : '',
+      system: composeLibrarianSystemPrompt(compiled, nsfw),
+      customized,
+      addendum,
+      userLayout: [
+        '[참고 자료 · 이어지는 기억 후보 · 확인된 인물 후보] 있을 때만, 문맥이 부족하면 생략',
+        '[VERIFIED ORIGINAL PACKET REFS] 5턴 원문 참조',
+        '[READ-ONLY LAST-KNOWN STATE] 직전 현재 상태 (근거가 아님)',
+        '[COMPACT MEMORY OUTPUT] JSON 출력 지시 (런타임 고정)',
+        '[EXACT FIVE U+A] 분석할 5턴 원문'
+      ].join('\n')
+    };
+  };
+  const promptStudioCompiledPreview = draft => {
+    const parts = promptStudioPreviewParts(draft);
+    return ['=== 시스템 프롬프트 · 실제 전송 내용 ===', parts.system, '', '=== 사용자 메시지 구성 · 요청마다 런타임이 채움 ===', parts.userLayout].join('\n');
+  };
+
+  // Static checks for edits that can make analysis fail or skew the memory viewers. The runtime
+  // contract still outranks them; these warnings explain the risk before saving.
+  // Object particle for a Korean label: 을 after a final consonant, otherwise 를.
+  const objectParticle = word => { const code = String(word || '').trim().slice(-1).charCodeAt(0); return code >= 0xac00 && code <= 0xd7a3 && (code - 0xac00) % 28 ? '을' : '를'; };
+  const PROMPT_STUDIO_CORE_SECTIONS = Object.freeze(['role', 'source', 'actor', 'evidence', 'binding', 'uncertain', 'priority']);
+  const PROMPT_STUDIO_LINT_RULES = Object.freeze([
+    [/(markdown|마크다운|산문으로|문장으로만|줄글|prose|bullet|글머리|표로 (정리|작성))/i, '출력 형식을 바꾸라는 지시가 있습니다. 결과는 JSON 하나여야 하므로 분석이 실패해 새 기억이 저장되지 않을 수 있습니다.'],
+    [/(번역|translate|영어로|in english|한국어로 (바꿔|옮겨|번역))/i, '언어를 바꾸라는 지시가 있습니다. 근거 인용은 원문 그대로여야 하므로 기억이 거부되거나 기억 서가에 다른 언어로 보일 수 있습니다.'],
+    [/(항상|모두|전부|always).{0,12}(확정|confirmed|certain)|추측해서|추정해서 채워|빈칸 없이|guess/i, '근거 없이 확정하거나 추측해 채우라는 지시가 있습니다. 검증을 통과해도 현재 상태·인물 화면에 틀린 값이 표시될 수 있습니다.'],
+    [/(무시해|무시하고|ignore|disregard|override).{0,20}(규칙|지침|계약|rule|instruction|contract)/i, '기본 규칙을 무시하라는 지시가 있습니다. 런타임 계약이 우선하므로 효과가 없고, 모델이 혼동해 분석 품질이 떨어질 수 있습니다.'],
+    [/(이야기를 이어|다음 장면|continue the (story|scene)|롤플레이|roleplay)/i, '장면을 이어 쓰라는 지시가 있습니다. Librarian은 기록만 하므로 분석이 실패할 수 있습니다.']
+  ]);
+  const promptStudioLintDraft = draft => {
+    const overrides = promptStudioSectionOverrides(draft);
+    const labels = new Map(promptStudioSectionDefs().map(definition => [definition.id, definition.label]));
+    const warnings = [];
+    for (const [id, value] of Object.entries(overrides)) {
+      const override = normalizePromptSectionOverride(value);
+      const label = labels.get(id) || id;
+      if (override.mode === 'replace' && !text(override.text).trim()) warnings.push({ id, level: 'risk', text: `‘${label}’${objectParticle(label)} 빈 내용으로 대체해 이 규칙이 통째로 빠집니다.` });
+      else if (override.mode === 'replace' && PROMPT_STUDIO_CORE_SECTIONS.includes(id)) warnings.push({ id, level: 'risk', text: `핵심 구역 ‘${label}’${objectParticle(label)} 대체했습니다. 기본 규칙이 빠지므로 ‘기본 뒤에 추가’를 권장합니다.` });
+      if (override.mode === 'inherit' || !text(override.text).trim()) continue;
+      for (const [pattern, message] of PROMPT_STUDIO_LINT_RULES) if (pattern.test(override.text)) warnings.push({ id, level: 'risk', text: `‘${label}’: ${message}` });
+    }
+    const addendum = promptStudioAnalyzerAddendum();
+    for (const [pattern, message] of PROMPT_STUDIO_LINT_RULES) if (addendum && pattern.test(addendum)) warnings.push({ id: 'analyzer_addendum', level: 'risk', text: `‘Librarian 추가 지침’: ${message}` });
+    return warnings;
+  };
+  // A draft differs from the saved profile it was opened from (or, for default, has any change).
+  const promptStudioDraftIsUnsaved = draft => {
+    const domain = promptStudioNormalizeDomain(Gui.promptStudioDomain);
+    const name = Gui.promptStudioProfileName || PROMPT_PROFILE_DEFAULT_NAME;
+    const stored = name === PROMPT_PROFILE_DEFAULT_NAME ? null : promptStudioBankForDomain(promptStudioProfiles(), domain)[name];
+    const sectionsOf = value => Object.fromEntries(Object.entries(value?.stages?.[Gui.promptStudioStage]?.sections || {}).map(([id, item]) => [id, normalizePromptSectionOverride(item)]).filter(([, item]) => item.mode !== 'inherit' || text(item.text).trim()));
+    return JSON.stringify(sectionsOf(draft)) !== JSON.stringify(sectionsOf(stored || {}));
   };
 
   const savePromptStudioDraft = async (activate = true) => {
@@ -81025,8 +81188,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.promptStudioProfileName = name;
     Gui.promptStudioDraft = cloneJson(normalized);
     Gui.promptStudioDraftKey = `${domain}|${name}`;
-    markGuiDirty();
-    await saveGuiState();
+    await savePromptProfilesOnly();
     Gui.promptStudioDraftKey = '';
     promptStudioEnsureDraft(true);
     await renderSettingsGui();
@@ -81043,8 +81205,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.state.promptProfiles = normalizePromptProfilesState(profiles);
     Gui.promptStudioProfileName = name;
     Gui.promptStudioDraftKey = '';
-    markGuiDirty();
-    await saveGuiState();
+    await savePromptProfilesOnly();
     promptStudioEnsureDraft(true);
     await renderSettingsGui();
     guiSetStatus(`${promptStudioDomainLabel(domain)} 프롬프트 프리셋 “${name}”을 활성화했습니다.`);
@@ -81063,8 +81224,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.promptStudioProfileName = PROMPT_PROFILE_DEFAULT_NAME;
     Gui.promptStudioDraftKey = '';
     if (name === EASY_PROMPT_PROFILE_NAME) Gui.easyPromptDraftKey = '';
-    markGuiDirty();
-    await saveGuiState();
+    await savePromptProfilesOnly();
     promptStudioEnsureDraft(true);
     await renderSettingsGui();
     guiSetStatus(`${promptStudioDomainLabel(domain)} 프롬프트 프리셋 “${name}”을 삭제했습니다.`);
@@ -81113,7 +81273,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const imported=normalizePromptProfilesState(payload?.promptProfiles||payload?.promptOverrides||payload);Object.assign(next.memoryProfiles,imported.memoryProfiles);next.activeMemoryProfile=imported.activeMemoryProfile;selectedName=next.activeMemoryProfile;
  }else throw Error('Unsupported or retired prompt profile schema');
  Gui.state.promptProfiles=normalizePromptProfilesState(next);Gui.promptStudioDomain='memory';Gui.promptStudioProfileName=selectedName||PROMPT_PROFILE_DEFAULT_NAME;Gui.promptStudioStage=LIBRARIAN_STAGE_ID;Gui.promptStudioDraftKey='';
- markGuiDirty();await saveGuiState();promptStudioEnsureDraft(true);await renderSettingsGui();guiSetStatus('Memory prompt JSON imported');
+ await savePromptProfilesOnly();promptStudioEnsureDraft(true);await renderSettingsGui();guiSetStatus('Memory prompt JSON imported');
 };
 
   const easyPromptConfigKey = domainValue => {
@@ -81190,12 +81350,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     for (const id of Object.keys(overrides)) delete overrides[id];
 
     if (domain === 'memory') {
-      if (cfg.style === 'detailed') easyPromptAppend(overrides, 'capture_scope', 'Prefer a richer canonical memory when the source supports it: preserve concrete actions, meaningful dialogue clues, causality, state changes, and unresolved consequences instead of compressing them away.');
-      if (cfg.style === 'compact') easyPromptAppend(overrides, 'capture_scope', 'Prefer a compact canonical memory: keep continuity-critical facts and changes, merge redundant restatement, and omit decorative detail that will not help later recall.');
-      if (cfg.strictness === 'strict') easyPromptAppend(overrides, 'uncertainty', 'Be extra conservative about certainty. If evidence does not establish a motive, hidden feeling, relationship label, success, ownership, knowledge, or durable state, preserve it as uncertain or unresolved rather than completing it.');
-      if (cfg.emphasis.character) easyPromptAppend(overrides, 'character_relation', 'Give extra attention to meaningful character-state and relationship changes, including the evidence and transition that caused the change.');
-      if (cfg.emphasis.chronology) easyPromptAppend(overrides, 'chronology', 'Give extra attention to dates, ordering, before/after transitions, and cause-to-consequence links so later recall cannot confuse the timeline.');
-      if (cfg.emphasis.world) easyPromptAppend(overrides, 'world_scene', 'Give extra attention to locations, organizations, objects, rules, environmental constraints, and durable world-state changes that can matter later.');
+      if (cfg.style === 'detailed') easyPromptAppend(overrides, 'complete', 'Prefer a richer canonical memory when the source supports it: preserve concrete actions, meaningful dialogue clues, causality, state changes, and unresolved consequences instead of compressing them away.');
+      if (cfg.style === 'compact') easyPromptAppend(overrides, 'complete', 'Prefer a compact canonical memory: keep continuity-critical facts and changes, merge redundant restatement, and omit decorative detail that will not help later recall.');
+      if (cfg.strictness === 'strict') easyPromptAppend(overrides, 'uncertain', 'Be extra conservative about certainty. If evidence does not establish a motive, hidden feeling, relationship label, success, ownership, knowledge, or durable state, preserve it as uncertain or unresolved rather than completing it.');
+      if (cfg.emphasis.character) easyPromptAppend(overrides, 'relation', 'Give extra attention to meaningful character-state and relationship changes, including the evidence and transition that caused the change.');
+      if (cfg.emphasis.chronology) easyPromptAppend(overrides, 'time', 'Give extra attention to dates, ordering, before/after transitions, and cause-to-consequence links so later recall cannot confuse the timeline.');
+      if (cfg.emphasis.world) easyPromptAppend(overrides, 'world', 'Give extra attention to locations, organizations, objects, rules, environmental constraints, and durable world-state changes that can matter later.');
       if (cfg.emphasis.narrative) easyPromptAppend(overrides, 'narrative', 'Give extra attention to unresolved promises, questions, goals, conflicts, obligations, setup/payoff threads, and consequences that remain open at the end of the batch.');
     } else {
       const input = {
@@ -81223,8 +81383,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.state.promptProfiles = normalizePromptProfilesState(profiles);
     Gui.promptStudioProfileName = EASY_PROMPT_PROFILE_NAME;
     Gui.promptStudioDraftKey = '';
-    markGuiDirty();
-    await saveGuiState();
+    await savePromptProfilesOnly();
     Gui.easyPromptDraftKey = '';
     easyPromptEnsureDraft(domain, true);
     promptStudioEnsureDraft(true);
@@ -81239,8 +81398,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.state.promptProfiles = normalizePromptProfilesState(profiles);
     Gui.promptStudioProfileName = PROMPT_PROFILE_DEFAULT_NAME;
     Gui.promptStudioDraftKey = '';
-    markGuiDirty();
-    await saveGuiState();
+    await savePromptProfilesOnly();
     promptStudioEnsureDraft(true);
     await renderSettingsGui();
     guiSetStatus(`${promptStudioDomainLabel(domain)} 기본 프롬프트를 활성화했습니다. 저장된 간편 설정은 삭제하지 않았습니다.`);
@@ -81332,7 +81490,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         ]),
         libraStatusBadge(activeName === EASY_PROMPT_PROFILE_NAME ? '간편 설정 적용 중' : activeName === PROMPT_PROFILE_DEFAULT_NAME ? '기본값 사용 중' : `고급 프리셋: ${activeName}`, activeName === EASY_PROMPT_PROFILE_NAME ? 'good' : '')
       ]),
-      guiEl('div', { class: 'cluster' }, allowedDomains.map(domainId => guiEl('button', {
+      allowedDomains.length < 2 ? null : guiEl('div', { class: 'cluster' }, allowedDomains.map(domainId => guiEl('button', {
         class: `btn ${domain === domainId ? 'good' : ''}`,
         type: 'button',
         text: ({ memory: '기억 생성' })[domainId],
@@ -81343,7 +81501,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         guiEl('div', { class: 'hint', text: `${STAGE_DEF_MAP[Gui.promptStudioStage]?.label || Gui.promptStudioStage} 단계 추가 지시: ${activeMemoryStageAddendum ? 'ON · Profile 뒤에 함께 적용' : 'OFF'}` })
       ]) : null,
       guiEl('div', { class: 'grid g2', style: { marginTop: '12px' } }, [
-        easyTargetChoices.length ? fieldNode(easyTargetLabel, selectNode(Gui.promptStudioStage, easyTargetChoices, value => { Gui.promptStudioStage = value; Gui.promptStudioPreviewText = ''; renderSettingsGui(); })) : null,
+        easyTargetChoices.length > 1 ? fieldNode(easyTargetLabel, selectNode(Gui.promptStudioStage, easyTargetChoices, value => { Gui.promptStudioStage = value; Gui.promptStudioPreviewText = ''; renderSettingsGui(); })) : null,
         fieldNode(domain === 'memory' ? '기억 스타일' : (('입력 후보 스타일')), selectNode(easyCfg.style, easyPromptStyleOptions(domain), value => { easyCfg.style = value; queueGuiRender(0); }), easyPromptStyleDescription(domain, easyCfg.style)),
         domain === 'memory' ? fieldNode('사실 판정', selectNode(easyCfg.strictness, [['strict', '보수적으로'], ['normal', '일반']], value => { easyCfg.strictness = value; queueGuiRender(0); }), easyCfg.strictness === 'strict' ? '감정·관계명·성공 여부·지식·현재 상태를 근거 없이 확정하지 않습니다.' : '기본 LIBRA의 확정/불확실성 판정 규칙을 사용합니다.') : null
       ].filter(Boolean)),
@@ -81374,12 +81532,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const sectionDefs = promptStudioSectionDefs();
     const isDefault = Gui.promptStudioProfileName === PROMPT_PROFILE_DEFAULT_NAME;
     const isActive = activeName === Gui.promptStudioProfileName;
-    const compiledPreview = promptStudioCompiledPreview(draft);
+    const previewParts = promptStudioPreviewParts(draft);
+    const lint = promptStudioLintDraft(draft);
+    const draftUnsaved = promptStudioDraftIsUnsaved(draft);
+    const lintFor = id => lint.filter(item => item.id === id);
+    const changedCount = sectionDefs.filter(definition => normalizePromptSectionOverride(overrides[definition.id] || {}).mode !== 'inherit').length;
     const sectionCards = sectionDefs.map(definition => {
       const override = normalizePromptSectionOverride(overrides[definition.id] || {});
-      return guiEl('div', { class: 'card' }, [
-        guiEl('div', { class: 'split' }, [guiEl('h3', { text: definition.label }), libraStatusBadge(override.mode === 'inherit' ? '기본 상속' : override.mode === 'append' ? '기본 + 추가' : '구역 대체', override.mode === 'replace' ? 'warn' : 'good')]),
-        guiEl('div', { class: 'grid g2', style: { marginTop: '12px' } }, [
+      const flagged = lintFor(definition.id);
+      return guiEl('details', { class: 'fold ps-section', open: override.mode !== 'inherit' || flagged.length > 0, dataset: { promptSection: definition.id } }, [
+        guiEl('summary', {}, [guiEl('span', { class: 'ps-section__name', text: definition.label }), guiEl('span', { class: 'cluster' }, [flagged.length ? libraStatusBadge('주의', 'warn') : null, libraStatusBadge(override.mode === 'inherit' ? '기본 상속' : override.mode === 'append' ? '기본 + 추가' : '구역 대체', override.mode === 'replace' ? 'warn' : override.mode === 'append' ? 'good' : '')].filter(Boolean))]),
+        guiEl('div', { class: 'fold__body stack stack--sm' }, [
+        ...flagged.map(item => guiEl('div', { class: 'note note--warn', text: item.text })),
+        guiEl('div', { class: 'grid g2' }, [
           fieldNode('적용 방식', selectNode(override.mode, [['inherit', '기본 상속'], ['append', '기본 뒤에 추가'], ['replace', '이 구역 대체']], value => {
             overrides[definition.id] = { ...override, mode: value };
             Gui.promptStudioPreviewText = '';
@@ -81390,8 +81555,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         fieldNode('사용자 프롬프트', inputNode(override.text || '', value => {
           overrides[definition.id] = { ...normalizePromptSectionOverride(overrides[definition.id] || {}), text: value };
           Gui.promptStudioPreviewText = '';
-        }, { tag: 'textarea', class: 'stage-prompt', placeholder: override.mode === 'inherit' ? '기본 상속 중입니다. 내용을 입력한 뒤 “기본 + 추가” 또는 “대체”를 선택하세요.' : '이 구조 구역에 적용할 프롬프트를 입력하세요.' }), '고급 기능입니다. 핵심 근거·주체·출력·patch 계약은 사용자 텍스트로 제거할 수 없습니다.')
-      ]);
+        }, { tag: 'textarea', class: 'stage-prompt', placeholder: override.mode === 'inherit' ? '기본 상속 중입니다. 내용을 입력한 뒤 “기본 + 추가” 또는 “대체”를 선택하세요.' : '이 구조 구역에 적용할 프롬프트를 입력하세요.' }), '출력 형식·근거 인용·확실성 규칙은 런타임 계약이 지킵니다. 맞춤 프로필은 요청 끝에서 이 계약을 다시 확인합니다.')
+      ])]);
     });
     const stageChoices = domain === 'memory'
       ? MEMORY_PROMPT_PROFILE_STAGE_IDS.map(stage => [stage, STAGE_DEF_MAP[stage]?.label || stage])
@@ -81400,15 +81565,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const advancedEditor = guiEl('details', { class: 'card' }, [
       guiEl('summary', { text: '고급 Prompt Studio · 구역별 직접 편집' }),
       promptStudioOocDraftConflictText() ? guiEl('div', { class: 'note warn', text: promptStudioOocDraftConflictText() }) : null,
-      guiEl('div', { class: 'hint', style: { marginTop: '10px' }, text: '기존 Prompt Studio 전체 기능입니다. inherit / append / replace와 프리셋을 직접 관리하려는 경우에만 사용하세요. 간편 설정 프리셋을 여기서 수정한 뒤 다시 “간편 설정 적용”을 누르면 해당 단계는 간편 설정 내용으로 다시 컴파일됩니다.' }),
+      guiEl('div', { class: 'hint', style: { marginTop: '10px' }, text: '기본 지침을 구역별로 그대로 두거나(기본 상속), 뒤에 덧붙이거나(기본 뒤에 추가), 바꿀(이 구역 대체) 수 있습니다. 바꾼 구역만 펼쳐져 있습니다. 간편 설정 프리셋을 여기서 고친 뒤 다시 ‘간편 설정 적용’을 누르면 간편 설정 내용으로 다시 만들어집니다.' }),
       guiEl('div', { class: 'card', style: { marginTop: '12px' } }, [
         guiEl('div', { class: 'split' }, [
           guiEl('div', {}, [guiEl('h3', { text: '고급 프리셋 관리' }), guiEl('div', { class: 'hint', text: '내부 프롬프트 구역을 직접 상속·추가·대체합니다.' })]),
-          libraStatusBadge(isActive ? '활성 프리셋' : '편집 중', isActive ? 'good' : 'warn')
+          guiEl('span', { class: 'cluster' }, [
+            draftUnsaved ? libraStatusBadge('저장 안 된 변경', 'warn') : null,
+            libraStatusBadge(isActive ? '활성 프리셋' : '편집 중', isActive ? 'good' : 'warn')
+          ].filter(Boolean))
         ]),
+        guiEl('p', { class: 'hint', text: `바꾼 구역 ${changedCount}개 / 전체 ${sectionDefs.length}개${lint.length ? ` · 주의 ${lint.length}건 (아래 ‘최종 프롬프트 · 점검’ 참고)` : ''}` }),
         guiEl('div', { class: 'grid g2', style: { marginTop: '12px' } }, [
           fieldNode('프리셋', selectNode(Gui.promptStudioProfileName, names.map(name => [name, name === PROMPT_PROFILE_DEFAULT_NAME ? 'default · 내장 기본' : name]), value => { Gui.promptStudioProfileName = value; Gui.promptStudioDraftKey = ''; renderSettingsGui(); })),
-          stageChoices.length ? fieldNode((('기억 단계')), selectNode(Gui.promptStudioStage, stageChoices, value => { Gui.promptStudioStage = value; Gui.promptStudioPreviewText = ''; renderSettingsGui(); })) : null,
+          stageChoices.length > 1 ? fieldNode((('기억 단계')), selectNode(Gui.promptStudioStage, stageChoices, value => { Gui.promptStudioStage = value; Gui.promptStudioPreviewText = ''; renderSettingsGui(); })) : null,
           fieldNode('저장할 이름', inputNode(draft.name || '', value => { draft.name = value; }, { placeholder: (('예: 관계 추적 강화')) }), isDefault ? 'default를 직접 덮어쓰지 않습니다. 다른 이름으로 저장하면 새 프리셋이 됩니다.' : '같은 이름으로 저장하면 현재 프리셋을 갱신합니다.')
         ].filter(Boolean)),
         guiEl('div', { class: 'cluster' }, [
@@ -81416,15 +81585,34 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           guiEl('button', { class: 'btn', type: 'button', text: '저장만', onClick: async () => { try { await savePromptStudioDraft(false); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }),
           guiEl('button', { class: 'btn', type: 'button', text: isActive ? '현재 활성' : '이 프리셋 활성화', disabled: isActive, onClick: async () => { try { await activatePromptStudioProfile(Gui.promptStudioProfileName); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }),
           guiEl('button', { class: 'btn', type: 'button', text: '새 프리셋', onClick: () => { Gui.promptStudioProfileName = PROMPT_PROFILE_DEFAULT_NAME; Gui.promptStudioDraft = promptStudioNewProfile(domain); Gui.promptStudioDraftKey = `${domain}|${PROMPT_PROFILE_DEFAULT_NAME}`; renderSettingsGui(); } }),
+          guiEl('button', { class: 'btn', type: 'button', text: '모든 구역 기본으로', disabled: changedCount === 0, onClick: () => { for (const id of Object.keys(overrides)) delete overrides[id]; Gui.promptStudioPreviewText = ''; queueGuiRender(0); guiSetStatus('편집 중인 구역을 모두 기본 상속으로 되돌렸습니다. 저장해야 적용됩니다.'); } }),
           guiEl('button', { class: 'btn btn--danger', type: 'button', text: '삭제', disabled: isDefault, onClick: async () => { try { await deletePromptStudioProfile(); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } })
         ])
       ]),
       ...sectionCards
     ]);
 
-    const technicalTools = guiEl('details', { class: 'card' }, [
-      guiEl('summary', { text: '고급 도구 · 최종 프롬프트 / JSON' }),
-      guiEl('details', { class: 'card', style: { marginTop: '12px' } }, [guiEl('summary', { text: '컴파일된 최종 프롬프트 보기' }), guiEl('pre', { class: 'code', text: compiledPreview })]),
+    const promptBlock = (label, kind, body, open = false) => guiEl('details', { class: `fold ps-block ps-block--${kind}`, open }, [
+      guiEl('summary', {}, [guiEl('span', { text: label }), libraStatusBadge(kind === 'locked' ? '잠김 · 런타임 고정' : kind === 'editable' ? '편집 가능 · 이 프리셋' : '요청마다 채움', kind === 'locked' ? '' : kind === 'editable' ? 'good' : '')]),
+      guiEl('pre', { class: 'code ps-block__text', text: body })
+    ]);
+    const finalPrompt = guiEl('details', { class: 'card', id: 'ps-final', open: lint.length > 0 }, [
+      guiEl('summary', { text: '최종 프롬프트 · 점검' }),
+      guiEl('p', { class: 'hint', text: 'Librarian 기억 분석 요청이 실제로 보내는 순서 그대로입니다. 지금 편집 중인 내용(저장 전 포함)과 Librarian 추가 지침, 성인 내용 안내를 반영합니다.' }),
+      lint.length
+        ? guiEl('div', { class: 'note note--warn ps-lint' }, [guiEl('b', { text: `주의 ${lint.length}건 · 저장은 가능하지만 기억 분석이 실패하거나 화면에 틀린 값이 보일 수 있습니다.` }), guiEl('ul', {}, lint.map(item => guiEl('li', { text: item.text })))])
+        : guiEl('div', { class: 'note ps-lint ps-lint--ok', text: '점검 통과 · 출력 형식·언어·근거 규칙과 충돌하는 지시가 없습니다.' }),
+      guiEl('div', { class: 'stack stack--sm' }, [
+        promptBlock('1. 출력 계약 · 근거 규칙', 'locked', previewParts.contract),
+        promptBlock('2. 분석 프로필', 'editable', previewParts.profileBody || '(비어 있음)', true),
+        previewParts.nsfw ? promptBlock('3. 성인 내용 분석 안내', 'locked', previewParts.nsfw) : null,
+        previewParts.reassertion ? promptBlock(`${previewParts.nsfw ? 4 : 3}. 출력 계약 재확인 · 맞춤 프로필일 때 자동 추가`, 'locked', previewParts.reassertion) : null,
+        promptBlock('사용자 메시지 구성', 'runtime', previewParts.userLayout)
+      ].filter(Boolean)),
+      guiEl('div', { class: 'cluster' }, [guiEl('button', { class: 'btn btn--sm', type: 'button', text: '전체 프롬프트 복사', onClick: async () => { const result = await copyTextWithFallback(promptStudioCompiledPreview(draft)); guiSetStatus(result.ok ? '최종 프롬프트를 복사했습니다.' : result.error, !result.ok); } })])
+    ]);
+    const technicalTools = guiEl('details', { class: 'card', id: 'ps-transfer' }, [
+      guiEl('summary', { text: '가져오기 · 내보내기 · JSON' }),
       guiEl('div', { class: 'card', style: { marginTop: '12px' } }, [
         guiEl('h3', { text: '프롬프트 JSON 가져오기 / 내보내기' }),
         guiEl('div', { class: 'cluster' }, [
@@ -81445,7 +81633,22 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       () => renderPromptStudioOocBuilder()
     );
     memoryOocEditor.addEventListener('toggle', () => { if (memoryOocEditor.isConnected) Gui.memoryOocExpanded = memoryOocEditor.open; });
-    return guiEl('div', { class: 'stack', dataset: { memoryPromptStudio: 'true' } }, [easyCard, memoryOocEditor, advancedEditor, technicalTools]);
+    easyCard.id = 'ps-easy';
+    advancedEditor.id = 'ps-sections';
+    const jump = (label, id, note = '') => guiEl('button', { class: 'ps-nav__item', type: 'button', onClick: event => {
+      const target = event.currentTarget.closest('[data-memory-prompt-studio]')?.querySelector(`#${id}`);
+      if (!target) return;
+      if (target.tagName === 'DETAILS') target.open = true;
+      target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    } }, [guiEl('b', { text: label }), note ? guiEl('span', { text: note }) : null].filter(Boolean));
+    const nav = guiEl('nav', { class: 'ps-nav', 'aria-label': 'Prompt Studio 구역' }, [
+      jump('간편 설정', 'ps-easy', activeName === EASY_PROMPT_PROFILE_NAME ? '적용 중' : ''),
+      jump('대화로 만들기', 'libra-memory-ooc-editor'),
+      jump('구역 편집', 'ps-sections', changedCount ? `${changedCount}개 변경${draftUnsaved ? ' · 저장 전' : ''}` : draftUnsaved ? '저장 전' : ''),
+      jump('최종 프롬프트 · 점검', 'ps-final', lint.length ? `주의 ${lint.length}` : '통과'),
+      jump('가져오기 · 내보내기', 'ps-transfer')
+    ]);
+    return guiEl('div', { class: 'stack', dataset: { memoryPromptStudio: 'true' } }, [nav, easyCard, memoryOocEditor, advancedEditor, finalPrompt, technicalTools]);
   };
 
 
@@ -84772,7 +84975,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const buildApprovedAuxiliaryConnection = names => {
     const runtime=Gui.state.runtime,resolution=resolveRisuRunLlmApi();
     const probe=Runtime.risuAuxiliary.lastProbe;
-    return guiEl('details',{class:'fold'},[guiEl('summary',{text:'RisuAI 보조 모델 · 연결 상세'}),guiEl('div',{class:'fold__body stack'},[
+    return guiEl('details',{class:'fold',open:true,dataset:{providerEditor:RISUAI_AUX_PRESET_NAME}},[guiEl('summary',{text:'RisuAI 보조 모델 · 연결 상세'}),guiEl('div',{class:'fold__body stack'},[
       fieldNode('기본 연결',selectNode(runtime.defaultPresetName||'',[['','공용 기본값'],...names.map(name=>[name,presetDisplayName(name)])],value=>{runtime.defaultPresetName=value;markGuiDirty();})),
       guiEl('div',{class:'note'},[guiEl('b',{text:resolution.api?'API 사용 가능':'runLLMModel 사용 불가'}),guiEl('p',{text:`mode: otherAx · API 소스: ${resolution.source} · staticModel 지정 안 함`})]),
       guiEl('p',{class:'hint',text:'모델·출력 토큰·스트리밍·타임아웃은 RisuAI 설정을 사용합니다.'}),
@@ -85239,20 +85442,28 @@ advanced
       if(!names.includes(Gui.selectedPreset))Gui.selectedPreset=names[0]||'';
       const preset=providers[Gui.selectedPreset]||null;
       const presetField=(key,label,options={})=>field(label,guiEl(options.tag==='textarea'?'textarea':'input',{class:options.tag==='textarea'?'textarea':options.tag==='select'?'select':'input',type:options.type||'text',value:options.value??preset?.[key]??'',placeholder:options.placeholder||'',min:options.min,max:options.max,step:options.step,dataset:{providerField:key},onInput:event=>{if(!preset)return;preset[key]=options.type==='number'?Number(event.target.value):event.target.value;if(key==='model'||key==='max_tokens')preset[key]=event.target.value;markGuiDirty();}}),options.note||'');
+      // The editor groups the fields it shows; each group is a two-column grid inside the detail column.
+      const presetGroup=(title,children)=>guiEl('section',{class:'libra-field-group'},[guiEl('h4',{class:'libra-field-group__title',text:title}),guiEl('div',{class:'grid g2'},children)]);
       const editPanel=preset?(canonicalProvider(preset.provider)===RISUAI_AUX_PROVIDER?buildApprovedAuxiliaryConnection(names):guiEl('details',{class:'fold',open:true,dataset:{providerEditor:Gui.selectedPreset}},[
         guiEl('summary',{},['선택한 연결 상세 ',guiEl('span',{class:'hint',text:Gui.selectedPreset})]),
-        guiEl('div',{class:'fold__body grid g2'},[
-          field('프리셋 이름',guiEl('input',{class:'input',type:'text',value:Gui.selectedPreset,dataset:{providerField:'name'},placeholder:'프리셋 이름'})),
-          field('기본 연결',guiEl('select',{class:'select',value:runtime.defaultPresetName||'',dataset:{providerField:'defaultPresetName'},onChange:event=>{runtime.defaultPresetName=event.target.value;markGuiDirty();}},[['','공용 기본값'],...names.map(name=>[name,name])].map(([value,label])=>guiEl('option',{value,selected:value===(runtime.defaultPresetName||''),text:label})))),
-          field('프로바이더 종류',guiEl('select',{class:'select',value:preset.provider||'openai',dataset:{providerField:'provider'},onChange:event=>{const next=event.target.value,old=canonicalProvider(preset.provider);preset.provider=canonicalProvider(next);if(!preset.url||preset.url===defaultUrlForProvider(old))preset.url=defaultUrlForProvider(next);markGuiDirty();void renderSettingsGui();}},providerChoices().map(([value,label])=>guiEl('option',{value,selected:value===preset.provider,text:label})))),
-          presetField('url','API 주소 / Base URL',{placeholder:defaultUrlForProvider(preset.provider)}),
-          presetField('model','모델 이름',{placeholder:'프로바이더 모델 ID'}),
-          presetField('temp','Temperature',{type:'number',step:.01}),
-          presetField('max_tokens','최대 출력 토큰',{type:'number',min:1}),
-          presetField('timeout_ms','기본 타임아웃(ms)',{type:'number',min:1}),
+        guiEl('div',{class:'fold__body stack libra-preset-form'},[
+          presetGroup('기본 정보',[
+            field('프리셋 이름',guiEl('input',{class:'input',type:'text',value:Gui.selectedPreset,dataset:{providerField:'name'},placeholder:'프리셋 이름'})),
+            field('기본 연결',guiEl('select',{class:'select',value:runtime.defaultPresetName||'',dataset:{providerField:'defaultPresetName'},onChange:event=>{runtime.defaultPresetName=event.target.value;markGuiDirty();}},[['','공용 기본값'],...names.map(name=>[name,name])].map(([value,label])=>guiEl('option',{value,selected:value===(runtime.defaultPresetName||''),text:label}))))
+          ]),
+          presetGroup('연결',[
+            field('프로바이더 종류',guiEl('select',{class:'select',value:preset.provider||'openai',dataset:{providerField:'provider'},onChange:event=>{const next=event.target.value,old=canonicalProvider(preset.provider);preset.provider=canonicalProvider(next);if(!preset.url||preset.url===defaultUrlForProvider(old))preset.url=defaultUrlForProvider(next);markGuiDirty();void renderSettingsGui();}},providerChoices().map(([value,label])=>guiEl('option',{value,selected:value===preset.provider,text:label})))),
+            presetField('url','API 주소 / Base URL',{placeholder:defaultUrlForProvider(preset.provider)}),
+            presetField('model','모델 이름',{placeholder:'프로바이더 모델 ID'}),
+            presetField('key','API Key',{type:'password',value:'',placeholder:'새 키를 입력할 때만 저장',note:preset.key?'저장된 키가 있습니다. 값을 읽거나 표시하지 않습니다.':'키가 설정되지 않았습니다.'})
+          ]),
+          presetGroup('생성 설정',[
+            presetField('temp','Temperature',{type:'number',step:.01}),
+            presetField('max_tokens','최대 출력 토큰',{type:'number',min:1}),
+            presetField('timeout_ms','기본 타임아웃(ms)',{type:'number',min:1})
+          ]),
           buildApprovedProviderExpertFields(preset),
-          presetField('key','API Key',{type:'password',value:'',placeholder:'새 키를 입력할 때만 저장',note:preset.key?'저장된 키가 있습니다. 값을 읽거나 표시하지 않습니다.':'키가 설정되지 않았습니다.'}),
-          guiEl('div',{class:'cluster'},[
+          guiEl('div',{class:'cluster libra-preset-actions'},[
             guiEl('button',{class:'btn btn--sm',type:'button',text:'이름 변경',onClick:()=>{try{renameGuiPreset(Gui.app?.querySelector('[data-provider-field="name"]')?.value);void renderSettingsGui();}catch(error){guiSetStatus(String(error.message||error),true);}}}),
             guiEl('button',{class:'btn btn--sm',type:'button',text:'복제',disabled:canonicalProvider(preset.provider)===RISUAI_AUX_PROVIDER,onClick:()=>{const name=uniquePresetName(`${Gui.selectedPreset} 복사본`);Gui.state.providers[name]={...cloneJson(preset),preset_id:`libra-preset-${stableDraftHash(`${Date.now()}:${Math.random()}:${name}`).slice(0,20)}`};Gui.selectedPreset=name;markGuiDirty();void renderSettingsGui();}}),
             guiEl('button',{class:'btn btn--danger btn--sm',type:'button',text:'삭제…',disabled:canonicalProvider(preset.provider)===RISUAI_AUX_PROVIDER||names.length<=1,onClick:async()=>{const targetName=Gui.selectedPreset,targetId=Gui.state.providers[targetName]?.preset_id;if(!(await confirmApprovedOperation(`프리셋 ${targetName}을 삭제할까요? 참조된 연결 이름은 자동으로 바꾸지 않습니다.`,{title:'연결 프리셋 삭제',target:targetName,validate:()=>Gui.selectedPreset===targetName&&Gui.state.providers[targetName]?.preset_id===targetId})))return;try{deleteGuiPreset();void renderSettingsGui();}catch(error){guiSetStatus(String(error.message||error),true);}}})
@@ -85262,8 +85473,10 @@ advanced
       return guiEl('div',{class:'stack',dataset:{settingsCategory:'ai',settingsReadback:'provider-settings'}},[
         buildLibraQuickConnectCard({card}),
         card('생성 AI 프리셋','현재 저장된 프리셋 이름과 모델만 표시합니다. 비밀 키는 노출하지 않습니다.',[
+          guiEl('div',{class:'libra-preset-workbench'},[guiEl('div',{class:'libra-preset-rail'},[
           guiEl('div',{class:'list',id:'ai-presets'},names.length?names.map(name=>guiEl('button',{class:'row',type:'button',dataset:{providerPreset:name},'aria-pressed':String(name===Gui.selectedPreset),onClick:()=>{Gui.selectedPreset=name;void renderSettingsGui();}},[guiEl('span',{class:'row__title',text:name}),guiEl('span',{class:'row__meta',text:`${providerDisplayLabel(providers[name]?.provider)} · ${presetModelDisplay(providers[name]||{})}`}),name===defaultName?guiEl('span',{class:'badge',text:'기본'}):null])):[guiEl('div',{class:'empty',text:'저장된 생성 AI 프리셋이 없습니다.'})]),
-          guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm',type:'button',text:'프리셋 추가',onClick:()=>addGuiPreset()}),guiEl('button',{class:'btn btn--sm',type:'button',text:'프리셋 관리…',onClick:()=>{Gui.selectedPreset=Gui.selectedPreset||names[0]||'';void renderSettingsGui();}})]),defaultPanel,editPanel
+          guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm',type:'button',text:'프리셋 추가',onClick:()=>addGuiPreset()}),guiEl('button',{class:'btn btn--sm',type:'button',text:'프리셋 관리…',onClick:()=>{Gui.selectedPreset=Gui.selectedPreset||names[0]||'';void renderSettingsGui();}})])]),
+          guiEl('div',{class:'libra-preset-detail'},[editPanel])]),defaultPanel
         ]),
         card('임베딩','모델 공간과 연결 상태는 저장된 임베딩 설정에서 확인합니다.',[routeButton('임베딩 연결 설정…','embedding')])
       ]);
@@ -85880,7 +86093,7 @@ advanced
     summary.textContent=`현재 활성 프리셋 · ${activeName} · 기억 분석 설정 저장소에서 읽음`;
     const detail=document.createElement('details');detail.className='fold';detail.dataset.promptEditorDetails='true';
     detail.open=detailOpen;
-    const detailSummary=document.createElement('summary');detailSummary.textContent='상세 · 기존 Prompt Studio 전체 설정';
+    const detailSummary=document.createElement('summary');detailSummary.textContent='기억 분석 지침 편집';
     detail.append(detailSummary,panel);
     const actions = dialog.querySelector('.dialog__actions') || document.createElement('div');
     actions.className = 'dialog__actions'; actions.replaceChildren();
@@ -87686,6 +87899,8 @@ advanced
       return safeClone(compileStatePromptOverride(stageId, override));
     },
     async debugCompileMemoryPrompt(stageId = 'librarian', legacyAddendum = '') { return safeClone(await compileMemoryPromptProfile(stageId, legacyAddendum)); },
+    // The Librarian system prompt as dispatched (without the optional NSFW analysis block).
+    async debugComposeLibrarianSystemPrompt(legacyAddendum = '') { return composeLibrarianSystemPrompt(await compileMemoryPromptProfile(LIBRARIAN_STAGE_ID, legacyAddendum)); },
     async debugReadPromptOverrides() {
       const prompts = await readPromptOverrides();
       return safeClone({ prompts, semanticHash: promptOverridesSemanticHash(prompts), transaction: Runtime.lastPromptOverrideTransaction || null });
