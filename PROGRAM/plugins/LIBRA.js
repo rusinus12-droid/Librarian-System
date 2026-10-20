@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.184
-//@version 2.3.184
+//@display-name LIBRA v2.3.185
+//@version 2.3.185
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.184';
+  const PLUGIN_VERSION = '2.3.185';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -13954,6 +13954,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     stale_source_revision: '원문 변경으로 무효화됨',
     worldline_mismatch: '다른 세계선의 기록',
     below_score_floor: '현재 입력과 관련 낮음',
+    covered_by_delivered_memory: '정본·Micro 기억에 이미 같은 내용',
     budget_too_small: '리콜 예산이 너무 작음'
   });
 
@@ -14025,6 +14026,61 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   ]);
   const lensNameKey = value => String(value ?? '').normalize('NFKC').replace(/\s+/g, '').toLocaleLowerCase();
   const lensWhenIdentity = when => when?.text ? [lensNameKey(when.text), String(when.ref || '')] : null;
+
+  // Name boundaries. A person is someone the story treats as an individual: a name, a nickname, a
+  // kinship or job title used for one person ("할머니", "카페 사장님"), or a named animal. Not a
+  // person: pronouns and group or indefinite words, demonstrative descriptions ("그 아이"), places,
+  // organizations and ships ("한빛병원", "검은 장미 호"), and grammar glued to a name. The gate
+  // keeps the source wording; grouping compares the core name without honorifics.
+  const LENS_NOT_A_PERSON_WORDS = new Set(['사람들', '아이들', '아이', '애', '걔', '얘', '쟤', '아무', '아무도', '누구', '손님', '손님들', '일행', '가족', '식구',
+    '두사람', '세사람', '우리둘', '둘다', '셋다', '모두들', '여럿', '몇몇', '다른사람', '상대', '상대방', '그쪽', '이쪽', '저쪽']);
+  const LENS_DEMONSTRATIVE_PERSON = /^(?:그|이|저|어느|웬|한)(?:아이|애|사람|남자|여자|분|녀석|놈|학생|소년|소녀|아가씨|아저씨|아줌마|노인|친구|손님)$/u;
+  const LENS_PLACE_SUFFIXES = ['동물병원', '병원', '의원', '한의원', '카페', '학교', '대학교', '회사', '호텔', '식당', '공원', '마트', '센터', '은행', '교회', '성당', '시청', '경찰서',
+    '항구', '약국', '아파트', '빌딩', '도서관', '박물관', '미술관', '터미널', '공항', '극장', '서점', '편의점', '헬스장', '체육관', '연구소', '재단', '기획사'];
+  const LENS_NAME_PARTICLES = ['에게서', '한테서', '께서', '에게', '한테', '이랑', '이에게', '이는', '이가', '이를', '이의', '이도', '이만', '이와', '랑', '하고', '와', '과',
+    '가', '은', '는', '을', '를', '의', '도', '만', '께', '야', '아', '이'];
+  // [title, attached]: attached titles may follow the name without a space ("지호씨"); the others
+  // need one, so a name that merely ends in the same syllable ("준형", "지양") is left alone.
+  const LENS_NAME_TITLES = [['선생님', true], ['선생', false], ['교수님', true], ['교수', false], ['박사님', true], ['박사', false], ['사장님', true], ['사장', false],
+    ['선배님', true], ['선배', false], ['후배', false], ['언니', false], ['오빠', false], ['누나', false], ['형님', false], ['형', false], ['님', true], ['씨', true], ['군', false], ['양', false],
+    ['さん', true], ['くん', true], ['ちゃん', true], ['様', true], ['さま', true], ['先生', true]];
+  const LENS_ROLE_HEADS = new Set(['카페', '가게', '식당', '회사', '학교', '동네', '옆집', '앞집', '윗집', '아랫집', '담임', '우리', '옆반', '같은반', '편의점', '빵집', '꽃집', '하숙집', '집주인']);
+  // "서윤 선생님" → "서윤", "지호씨" → "지호"; a title alone ("선생님", "한 선생님") stays whole.
+  const lensNameCore = value => {
+    const text = String(value ?? '').trim();
+    for (const [title, attached] of LENS_NAME_TITLES) {
+      if (!text.endsWith(title)) continue;
+      const head = text.slice(0, text.length - title.length);
+      if (!attached && !/\s$/.test(head)) continue;
+      const core = head.trim();
+      // "카페 사장님", "옆집 언니": the head is a place or relation, so the title is the name.
+      if (LENS_ROLE_HEADS.has(lensNameKey(core)) || LENS_PLACE_SUFFIXES.includes(lensNameKey(core))) return text;
+      if (lensNameKey(core).length >= 2 && !/\s/.test(core)) return core;
+    }
+    return text;
+  };
+  // A model sometimes lists several people in one string ("지호와 민아", "Emma and Leo").
+  const lensSplitNames = value => {
+    const text = String(value ?? '').trim();
+    if (!text) return [];
+    const parts = text.split(/\s*(?:,|、|，|\/|&|\s및\s|\s그리고\s|\sand\s|と)\s*/u).map(part => part.trim()).filter(Boolean);
+    if (parts.length > 1) return parts;
+    const pair = /^(\S{2,}?)(?:이랑|랑|하고|와|과)\s+(\S{2,})$/u.exec(text);
+    return pair ? [pair[1], pair[2]] : [text];
+  };
+  const lensNotAPerson = value => {
+    const nameKey = lensNameKey(value);
+    if (!nameKey || LENS_NOT_A_NAME.has(nameKey) || LENS_NOT_A_PERSON_WORDS.has(nameKey) || LENS_DEMONSTRATIVE_PERSON.test(nameKey)) return 'not_a_name';
+    // A place word anywhere in the phrase ("한빛병원 응급실"), unless a person title closes it
+    // ("은하카페 사장님").
+    const tokens = String(value ?? '').trim().split(/\s+/).map(lensNameKey).filter(Boolean);
+    const titled = LENS_NAME_TITLES.some(([title]) => nameKey.endsWith(lensNameKey(title)) && nameKey.length > title.length);
+    const isPlace = token => LENS_PLACE_SUFFIXES.some(suffix => token.length > suffix.length && token.endsWith(suffix));
+    if (!titled && (isPlace(nameKey) || tokens.some(isPlace))) return 'not_a_person';
+    // A ship or vessel name: "검은 장미 호", "Black Rose호".
+    if (/\S\s+호$/u.test(String(value ?? '').trim())) return 'not_a_person';
+    return '';
+  };
 
   const LENS_SOURCE_EXCERPT_MAX = 4000;
   const LENS_SOURCE_EXCERPT_RADIUS = 600;
@@ -14269,6 +14325,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       maxSlots: MAX_LENS_SLOTS,
       recallBudgetRatio: Math.max(0.1, Math.min(0.25, Number(src.recallBudgetRatio) || LENS_RECALL_BUDGET_RATIO)),
       recallMaxChars: clampInt(src.recallMaxChars, LENS_RECALL_MIN_CHARS, LENS_RECALL_MAX_CHARS, LENS_RECALL_MAX_CHARS),
+      // Meaning-based recall through the canonical embedding settings; on unless switched off.
+      recallSemantic: src.recallSemantic !== false,
       rawResponseRingLimit: clampInt(src.rawResponseRingLimit, 5, 50, LENS_RAW_RING_MAX),
       lenses,
       trash,
@@ -34792,6 +34850,7 @@ function createLibraReadonlySourceContext(owner) {
       lensRecords: (scope, lensId) => `${PREFIX}:scope:${scope.scopeKey}:lens:${String(lensId || '')}:records`,
       lensRuns: (scope, lensId) => `${PREFIX}:scope:${scope.scopeKey}:lens:${String(lensId || '')}:runs`,
       lensRaw: (scope, lensId) => `${PREFIX}:scope:${scope.scopeKey}:lens:${String(lensId || '')}:raw`,
+      lensVectors: (scope, lensId) => `${PREFIX}:scope:${scope.scopeKey}:lens:${String(lensId || '')}:vectors`,
       embeddingRebuild: () => EMBEDDING_REBUILD_STATE_KEY
     });
 
@@ -68134,6 +68193,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         const unifiedLiveTailText = liveTailRouteEnabled(injectionMode, runtimeSettings) && liveTailAttempt?.available === true
           ? '[RECENT COMPLETED DIALOGUE]\n' + string(liveTailAttempt.transcript || '') : '';
         queryBundle.unifiedEnvelopeReserve = unifiedLiveTailText ? unifiedLiveTailText.length + 1 : 0;
+        // The lens query embedding runs alongside canonical recall; lens recall reuses it.
+        void prewarmLensQuery(context, queryBundle.currentText);
         let result = await recall(context, queryBundle, guard);
         pendingGraphExecution = result.unifiedExecution;
         if (requestOwner !== latestRecallPublicationOwner) return messages;
@@ -68150,7 +68211,8 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           lensRecall = await runRecallStep(guard, 'lens_recall', () => recallLensMemories(
             context,
             queryBundle,
-            Number(packet.characterBudget || result?.diagnostics?.budgetPlan?.selectedEvidenceBudget || runtimeSettings?.recallMaxChars || 4000)
+            Number(packet.characterBudget || result?.diagnostics?.budgetPlan?.selectedEvidenceBudget || runtimeSettings?.recallMaxChars || 4000),
+            { deliveredText: string(packet.renderedText || '') }
           ));
         } catch (lensErr) {
           warn('LIBRA lens recall failed open', lensErr);
@@ -76232,11 +76294,28 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       };
       if (nameKey === 'user' || nameKey === '{{user}}') return asRole('user');
       if (nameKey === 'char' || nameKey === '{{char}}') return asRole('char');
-      if (LENS_NOT_A_NAME.has(nameKey) || nameKey.length < 2) return false;
-      for (const ref of new Set([whoRef, ...refs, ...sources.keys()])) {
-        const found = sources.has(ref) ? lensLocateLiteral(sources.get(ref).raw, raw) : null;
-        if (found) return { name: lensSafeText(found.text, LENS_WHO_NAME_MAX), ref, role: 'named' };
+      if (nameKey.length < 2 || lensNotAPerson(raw) || lensNotAPerson(lensNameCore(raw))) return false;
+      if (subjects.nonPersonKeys?.has(nameKey)) return false;
+      const order = [...new Set([whoRef, ...refs, ...sources.keys()])].filter(ref => sources.has(ref));
+      const locate = text => { for (const ref of order) { const found = lensLocateLiteral(sources.get(ref).raw, text); if (found) return { found, ref }; } return null; };
+      // Grammar glued to a name ("민아가", "지호랑"): use the bare name when the span also writes it
+      // without that ending. A name that only ever appears with the ending ("수진이") stays whole.
+      for (const particle of LENS_NAME_PARTICLES) {
+        if (!raw.endsWith(particle)) continue;
+        const stem = raw.slice(0, raw.length - particle.length).trim();
+        if (lensNameKey(stem).length < 2 || lensNotAPerson(stem)) continue;
+        const independent = order.some(ref => {
+          const body = String(sources.get(ref).raw || '').normalize('NFKC');
+          const target = stem.normalize('NFKC');
+          for (let at = body.indexOf(target); at >= 0; at = body.indexOf(target, at + 1)) if (!body.startsWith(particle, at + target.length)) return true;
+          return false;
+        });
+        if (!independent) break;
+        const bare = locate(stem);
+        if (bare) return { name: lensSafeText(bare.found.text, LENS_WHO_NAME_MAX), ref: bare.ref, role: 'named' };
       }
+      const hit = locate(raw);
+      if (hit) return { name: lensSafeText(hit.found.text, LENS_WHO_NAME_MAX), ref: hit.ref, role: 'named' };
       if (subjects.userName && nameKey === lensNameKey(subjects.userName)) return asRole('user');
       if (subjects.charName && nameKey === lensNameKey(subjects.charName)) return asRole('char');
       return false;
@@ -76244,7 +76323,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
     const evaluateLensCandidateItems = (rawOutput, lensInput = {}, batch = [], subjectInput = {}) => {
       const lens = normalizeLensDefinition(lensInput, 0);
-      const subjects = { userName: lensSafeText(subjectInput?.userName || '', LENS_WHO_NAME_MAX), charName: lensSafeText(subjectInput?.charName || '', LENS_WHO_NAME_MAX) };
+      const subjects = { userName: lensSafeText(subjectInput?.userName || '', LENS_WHO_NAME_MAX), charName: lensSafeText(subjectInput?.charName || '', LENS_WHO_NAME_MAX),
+        nonPersonKeys: new Set(asArray(subjectInput?.nonPersonNames).map(lensNameKey).filter(Boolean)) };
       const parsed = parseLensJson(rawOutput);
       const rawItems = parsed ? lensItemsFromParsed(parsed) : null;
       if (!rawItems) {
@@ -76289,7 +76369,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           who = [];
           const given = rawItem.who ?? [];
           const whoRef = string(rawItem.whoRef || '').trim().toLowerCase();
-          for (const entry of (Array.isArray(given) ? given : String(given).split(/[,、]/)).slice(0, 12)) {
+          for (const entry of (Array.isArray(given) ? given : [given]).flatMap(lensSplitNames).slice(0, 12)) {
             if (who.length >= LENS_WHO_MAX) break;
             const person = lensVerifyWho(entry, { refs, whoRef, sources, subjects });
             if (person === null) continue;
@@ -76791,7 +76871,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // ---- prompt & provider ---------------------------------------------------------------------
     // The character's name for "char"; the user's first person is stored as "사용자" (the persona
     // name is not part of the chat context the lens reads).
-    const lensSubjectNames = context => ({ userName: '', charName: lensSafeText(context?.character?.name || '', LENS_WHO_NAME_MAX) });
+    // Names the people registry knows only as places, items or organizations are never people.
+    const lensSubjectNames = async context => {
+      const registry = await storage.getJson(key.entityRegistry(context.scope), null).catch(() => null);
+      const entities = asArray(registry?.entities);
+      const personKeys = new Set(entities.filter(entity => entity?.type === 'person').flatMap(entity => [entity.name, ...asArray(entity.aliases)]).map(lensNameKey));
+      const nonPersonNames = entities.filter(entity => entity?.type && entity.type !== 'person').flatMap(entity => [entity.name, ...asArray(entity.aliases)])
+        .map(value => string(value || '')).filter(value => value && !personKeys.has(lensNameKey(value))).slice(0, 400);
+      return { userName: '', charName: lensSafeText(context?.character?.name || '', LENS_WHO_NAME_MAX), nonPersonNames };
+    };
 
     // Groups note people when they are read, never when stored: a name or alias of exactly one
     // people card (read only) joins that card, "user"/"char" join their role, and any other name
@@ -76815,11 +76903,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         for (const person of asArray(who)) {
           const written = lensSafeText(person?.name || '', LENS_WHO_NAME_MAX);
           if (!written) continue;
-          const matches = byName.get(lensNameKey(written)) || [];
+          const core = lensNameCore(written);
+          const matches = byName.get(lensNameKey(written)) || byName.get(lensNameKey(core)) || [];
           const row = matches.length === 1
             ? { key: `entity:${matches[0].id}`, name: lensSafeText(matches[0].name, LENS_WHO_NAME_MAX) || written, aliases: asArray(matches[0].aliases).slice(0, 8).map(value => lensSafeText(value, LENS_WHO_NAME_MAX)).filter(Boolean) }
             : person?.role === 'user' || person?.role === 'char' ? { key: `role:${person.role}`, name: written, aliases: [] }
-            : { key: `name:${lensNameKey(written)}`, name: written, aliases: [] };
+            : { key: `name:${lensNameKey(core)}`, name: core, aliases: [] };
           if (!people.some(item => item.key === row.key)) people.push({ ...row, written, role: person?.role || 'named' });
         }
         return people;
@@ -76865,6 +76954,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           `- Use "user" for the user writing about themself in first person (I, 나) in a user turn, and "char" for the character speaking as itself in first person in an AI turn${subjects.charName ? ` (the character is ${subjects.charName})` : ''}.`,
           '- When several people appear, write a separate note for each person. List several names in one note only when the same fact applies to each of them.',
           '- If it is unclear whose note it is (a pronoun that could mean more than one person, "both" or "everyone" without names), leave `who` empty. Never attach a fact to a person because it seems likely.',
+          '- A person is anyone the story treats as an individual: a name or nickname, a title used for one person ("할머니", "카페 사장님"), or a named animal. Write the bare name without grammar endings or honorifics attached ("민아", not "민아가"; "서윤", not "서윤 선생님" when the source also writes "서윤").',
+          '- Not people: places, buildings, organizations, ships and objects, even when named; groups and indefinite words ("모두", "누군가", "그 아이"); someone mentioned only in a hypothetical, a wish, a comparison or unconfirmed hearsay.',
           '- Never merge different people, and never use a name the source turns do not contain.'
         ] : []),
         '- Record only what the source span supports. Return {"items":[]} when nothing fits the lens.',
@@ -76998,7 +77089,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         .filter(record => record.worldlineId === token.worldlineId && Number(record.turnRange?.end || 0) < start)
         .sort((a, b) => Number(a.turnRange.start) - Number(b.turnRange.start))
         .slice(-3);
-      const subjects = lensSubjectNames(context);
+      const subjects = await lensSubjectNames(context);
       const { systemPrompt, userPrompt } = buildLensPromptMessages({ lens, batch: token.batch, canonicalSummary, previousRecords, subjects });
       const presetName = await resolveLensPresetName(lens);
       const startedAt = Date.now();
@@ -77052,6 +77143,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         canonicalContextIncluded: Boolean(canonicalSummary), trackedTime: lens.trackTime === true, trackedSubject: lens.trackSubject === true, runId, createdAt: finishedAt,
         model: run.model, presetName: run.presetName, items: clone(admission.acceptedItems)
       } : null;
+      let vectorRefresh = null;
       if (!trialRun && status !== 'stale_source_revision') {
         await withLensScopeLock(token.scopeKey, async () => {
           const assertCurrent = async () => {
@@ -77101,6 +77193,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           }
         });
         scheduleGuiTraceRefresh();
+        // New notes get their vectors right away (fails open; recall refreshes what is missing).
+        if (record) vectorRefresh = await scheduleLensVectorRefresh(scope, lens.lensId, '', { force: true });
       } else if (!trialRun && opts.writeGeneration===lensWriteGeneration && !opts.signal?.aborted) {
         // A stale answer is never stored, but the run log still says why nothing changed.
         await withLensScopeLock(token.scopeKey, async () => {
@@ -77113,7 +77207,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       return clone({
         ok: ['succeeded', 'partial', 'empty'].includes(status), status, statusLabel: run.statusLabel, trialRun,
-        lensId: lens.lensId, reason: error, run, record,
+        lensId: lens.lensId, reason: error, run, record, vectors: vectorRefresh,
         acceptedCount: admission.acceptedItems.length, rejectedCount: admission.rejectedItems.length,
         items: admission.acceptedItems, rejectedItems: admission.rejectedItems,
         rawResponse: trialRun ? compact(provider?.content || '', 32000) : undefined
@@ -77419,13 +77513,173 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return { ok: true, lens: clone(heuristicLensDraft(description)), reply: '', source: 'heuristic' };
     };
 
+    // ---- semantic lane -------------------------------------------------------------------------
+    // Lens notes share the embedding space of canonical memory (the same embedding settings and
+    // profile). Each note's vector is stored per lens and chat as int8 with a scale (about 1.4 KB
+    // for 1024 dimensions), keyed by the note and a hash of the embedded text; a profile change or a
+    // changed text simply misses and is refreshed. Everything here fails open to lexical recall.
+    const LENS_VECTOR_STORE_SCHEMA = 'libra.lens_vector_store.v1';
+    const LENS_VECTOR_BATCH = 32;
+    const LENS_VECTOR_MAX_ENTRIES = 4000;
+    const LENS_QUERY_EMBEDDING_BUDGET_MS = 2500;
+    const lensVectorText = item => [item?.label, item?.text, ...asArray(item?.who).map(person => person?.name), item?.when?.text]
+      .map(value => string(value || '').trim()).filter(Boolean).join(' · ');
+    const lensVectorEntryKey = (record, item) => record?.inherited
+      ? `a:${record.archiveKey}:${record.recordKey}:${item.itemId}` : `r:${record.recordKey}:${item.itemId}`;
+    const lensEncodeVector = vector => {
+      const values = asArray(vector).map(Number);
+      const norm = Math.hypot(...values) || 1;
+      const unit = values.map(value => value / norm);
+      const maxAbs = Math.max(1e-9, ...unit.map(Math.abs));
+      let binary = '';
+      for (const value of unit) binary += String.fromCharCode((Math.round(value / maxAbs * 127) + 256) % 256);
+      return { q: btoa(binary), s: maxAbs / 127 };
+    };
+    const lensDecodeVector = entry => {
+      try {
+        const binary = atob(string(entry?.q || ''));
+        const out = new Float32Array(binary.length), scale = Number(entry?.s) || 0;
+        for (let index = 0; index < binary.length; index += 1) { const byte = binary.charCodeAt(index); out[index] = (byte > 127 ? byte - 256 : byte) * scale; }
+        return out;
+      } catch (_) { return null; }
+    };
+    const lensCosine = (unitQuery, vector) => {
+      if (!vector || vector.length !== unitQuery.length) return null;
+      let dot = 0, norm = 0;
+      for (let index = 0; index < vector.length; index += 1) { dot += unitQuery[index] * vector[index]; norm += vector[index] * vector[index]; }
+      return norm ? dot / Math.sqrt(norm) : null;
+    };
+    // The embedding profile depends on the vector size, which a provider may only reveal in its
+    // answer; vectors and queries are compared only when their result profiles are equal.
+    const lensEmbeddingConfig = async () => {
+      const config = normalizeEmbeddingSettings((await LibraProviderBridge.getConfig())?.embed || DEFAULT_EMBEDDING);
+      return config?.enabled ? { config } : null;
+    };
+    const lensResultProfile = (embedding, result, dimensions) => {
+      const reported = string(result?.metadata?.profileId || '');
+      if (reported) return reported;
+      try { return string(EmbeddingProviderRegistry.profileFor({ ...embedding.config, dimensions })?.profileId || ''); } catch (_) { return ''; }
+    };
+    const loadLensVectorStore = async (scope, lensId) => {
+      const store = await storage.getVerifiedJson(key.lensVectors(scope, lensId), scope, null).catch(() => null);
+      if (store?.schema !== LENS_VECTOR_STORE_SCHEMA || !isPlainObject(store.entries)) return { schema: LENS_VECTOR_STORE_SCHEMA, profileId: '', dimensions: 0, entries: {} };
+      return store;
+    };
+    // Embeds the notes of one lens (this chat's current records and its inherited archives) that
+    // have no vector for the current embedding profile, then prunes vectors of notes that are gone.
+    const refreshLensVectors = async (scope, lensId, { signal = null, profileId: expectedProfile = '' } = {}) => {
+      if (state.lensHandoffFreezeDepth) return { ok: false, reason: 'handoff_freeze' };
+      const embedding = await lensEmbeddingConfig();
+      if (!embedding) return { ok: false, reason: 'embedding_disabled' };
+      const registry = await readLensRegistry();
+      if (!registry.lenses.some(lens => lens.lensId === lensId)) return { ok: false, reason: 'lens_not_found' };
+      const records = Object.values(await loadLensRecordsMap(scope, lensId));
+      const inherited = (await loadInheritedLensArchives(scope)).rows.filter(row => row.ref.lensId === lensId)
+        .flatMap(({ ref, archive }) => archive.records.map(record => ({ ...record, inherited: true, archiveKey: ref.archiveKey })));
+      const wanted = new Map();
+      for (const record of [...records, ...inherited]) for (const item of asArray(record.items)) {
+        const text = lensVectorText(item);
+        if (text && wanted.size < LENS_VECTOR_MAX_ENTRIES) wanted.set(lensVectorEntryKey(record, item), { text, hash: digest(text).slice(0, 16) });
+      }
+      const store = await loadLensVectorStore(scope, lensId);
+      // The store holds one profile. A recall that saw a different query profile passes it here, and
+      // the first answer of this refresh confirms the current profile; stored vectors of another
+      // profile are dropped, never compared.
+      // The current settings at the stored vector size must still name the stored profile.
+      const configuredProfile = Number(store.dimensions) > 0 ? lensResultProfile(embedding, null, Number(store.dimensions)) : '';
+      let profileId = (expectedProfile && expectedProfile !== store.profileId) || (configuredProfile && configuredProfile !== store.profileId) ? '' : string(store.profileId || '');
+      let entries = profileId ? Object.fromEntries(Object.entries(store.entries).filter(([entryKey, entry]) => wanted.get(entryKey)?.hash === entry?.h)) : {};
+      let dimensions = profileId ? Number(store.dimensions || 0) : 0, embedded = 0;
+      const pending = () => [...wanted].filter(([entryKey]) => !entries[entryKey]);
+      for (let guard = 0; guard < 1 + Math.ceil(LENS_VECTOR_MAX_ENTRIES / LENS_VECTOR_BATCH); guard += 1) {
+        const batch = pending().slice(0, LENS_VECTOR_BATCH);
+        if (!batch.length || signal?.aborted || state.lensHandoffFreezeDepth) break;
+        const result = await EmbeddingProviderRegistry.embedTexts(embedding.config, batch.map(([, row]) => row.text), { purpose: 'document', signal, maxRequests: 4 });
+        const resultProfile = lensResultProfile(embedding, result, asArray(result?.vectors?.[0]).length);
+        if (!resultProfile) return { ok: false, reason: 'embedding_profile_unknown' };
+        if (resultProfile !== profileId) {
+          if (embedded) return { ok: false, reason: 'embedding_profile_changed' };
+          // First answer in a new space: every earlier vector belongs to another profile.
+          profileId = resultProfile; entries = {}; dimensions = 0;
+        }
+        batch.forEach(([entryKey, row], index) => {
+          const vector = result?.vectors?.[index];
+          if (!Array.isArray(vector) || !vector.length) return;
+          dimensions = vector.length;
+          entries[entryKey] = { h: row.hash, ...lensEncodeVector(vector) };
+          embedded += 1;
+        });
+      }
+      const changed = embedded > 0 || Object.keys(entries).length !== Object.keys(store.entries).length || store.profileId !== profileId;
+      if (changed && profileId && !state.lensHandoffFreezeDepth) {
+        await withLensScopeLock(scope.scopeKey, async () => {
+          if (state.lensHandoffFreezeDepth || !(await readLensRegistry({ force: true })).lenses.some(lens => lens.lensId === lensId)) return;
+          await storage.setVerifiedJson(key.lensVectors(scope, lensId), { schema: LENS_VECTOR_STORE_SCHEMA, scopeKey: scope.scopeKey, lensId,
+            profileId, dimensions, updatedAt: nowIso(), entries }, scope);
+        });
+      }
+      return { ok: true, profileId, embedded, total: Object.keys(entries).length, missing: Math.max(0, wanted.size - Object.keys(entries).length) };
+    };
+    const lensVectorRefreshes = new Map();
+    // A refresh that failed waits a minute before recall triggers it again.
+    const lensVectorRefreshFailedAt = new Map();
+    const LENS_VECTOR_RETRY_MS = 60000;
+    const scheduleLensVectorRefresh = (scope, lensId, profileId = '', { force = false } = {}) => {
+      const refreshKey = `${scope.scopeKey}\u0000${lensId}`;
+      if (lensVectorRefreshes.has(refreshKey)) return lensVectorRefreshes.get(refreshKey);
+      if (!force && Date.now() - Number(lensVectorRefreshFailedAt.get(refreshKey) || 0) < LENS_VECTOR_RETRY_MS) return Promise.resolve({ ok: false, reason: 'retry_cooldown' });
+      const job = refreshLensVectors(scope, lensId, { profileId }).catch(error => ({ ok: false, reason: compact(error?.message || error, 200) }))
+        .then(result => { if (result?.ok) lensVectorRefreshFailedAt.delete(refreshKey); else if (!['embedding_disabled', 'handoff_freeze', 'lens_not_found'].includes(result?.reason)) lensVectorRefreshFailedAt.set(refreshKey, Date.now()); return result; })
+        .finally(() => lensVectorRefreshes.delete(refreshKey));
+      lensVectorRefreshes.set(refreshKey, job);
+      return job;
+    };
+    // The query vector for lens recall. The query cache coalesces repeats of the same text, so a
+    // prewarm started before canonical recall is reused here.
+    const lensQueryVector = async (scope, queryText, embedding, deadlineMs = LENS_QUERY_EMBEDDING_BUDGET_MS) => {
+      const child = new AbortController();
+      const timer = setTimeout(() => child.abort(), deadlineMs);
+      try {
+        const result = await EmbeddingProviderRegistry.embedTexts(embedding.config, [queryText], { purpose: 'query', scopeKey: `lens:${scope.scopeKey}`, signal: child.signal, deadlineAt: Date.now() + deadlineMs, maxRequests: 2 });
+        const vector = asArray(result?.vectors?.[0]).map(Number);
+        const profileId = lensResultProfile(embedding, result, vector.length);
+        if (!vector.length || !profileId) return null;
+        const norm = Math.hypot(...vector) || 1;
+        return { unit: Float32Array.from(vector, value => value / norm), profileId, cached: Number(result?.metadata?.cacheHits || 0) > 0, requests: Number(result?.metadata?.requestCount || 0) };
+      } finally { clearTimeout(timer); }
+    };
+    const prewarmLensQuery = async (context, queryText) => {
+      try {
+        const text = string(queryText || '').trim();
+        if (!text || !context?.scope?.scopeKey) return;
+        const registry = await readLensRegistry();
+        if (registry.enabled === false || registry.recallSemantic === false || !registry.lenses.some(lens => lens.recall.enabled)) return;
+        const embedding = await lensEmbeddingConfig();
+        if (embedding) await lensQueryVector(context.scope, text, embedding);
+      } catch (_) {}
+    };
+    // How much of a lens note the delivered canonical/Micro text already says, by shared character
+    // bigrams of the note text (punctuation and spacing ignored).
+    const lensBigrams = value => {
+      const body = canonicalEvidenceComparable(value).replace(/[^\p{L}\p{N}]/gu, '');
+      const out = new Set();
+      for (let index = 0; index + 1 < body.length; index += 1) out.add(body.slice(index, index + 2));
+      return out;
+    };
+    const LENS_DELIVERED_COVERAGE = 0.85;
+    // Cosine bands for the semantic lane, calibrated on live embeddings (see the lens memory
+    // design doc): below FLOOR a note is not admitted on meaning alone; at HIGH it gets the full
+    // relevance share that lexical overlap can give.
+    const LENS_SEMANTIC_FLOOR = 0.42;
+    const LENS_SEMANTIC_HIGH = 0.60;
+
     // ---- recall --------------------------------------------------------------------------------
     // Lens notes get their own budget (a share of the canonical evidence budget, capped), split by
     // each lens's recall share. An item needs a word in common with the current input unless its
     // lens recalls recent notes; stale, other-worldline and trashed records never reach the prompt.
-    const recallLensMemories = async (arg1 = {}, arg2 = {}, arg3 = 4000) => {
+    const recallLensMemories = async (arg1 = {}, arg2 = {}, arg3 = 4000, arg4 = null) => {
       const contextArg = arg1 && (arg1.scope || arg1.chat) ? arg1 : null;
-      const options = contextArg ? { queryBundle: arg2 || {}, canonicalBudgetChars: arg3 } : (arg1 || {});
+      const options = contextArg ? { queryBundle: arg2 || {}, canonicalBudgetChars: arg3, ...(isPlainObject(arg4) ? arg4 : {}) } : (arg1 || {});
       const context = contextArg || options.context || await resolveContext();
       const queryBundle = options.queryBundle || options;
       const registry = await readLensRegistry();
@@ -77464,6 +77718,33 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       // Korean text is matched by character bigrams, so one shared bigram is too weak a signal for
       // a longer input.
       const minOverlap = queryTokens.size >= 6 ? 2 : 1;
+      // Semantic lane: the query vector (prewarmed before canonical recall) and each lens's stored
+      // note vectors, in the canonical embedding space. Missing vectors are refreshed in the
+      // background; this request uses what is there.
+      const semantic = { status: 'off', profileId: '', queryCached: false, queryRequests: 0, scored: 0, admittedBySemantic: 0, missingVectors: 0 };
+      let queryUnit = null;
+      const vectorStores = new Map();
+      if (registry.recallSemantic !== false && queryText.trim() && options.semantic !== false) {
+        try {
+          const embedding = options.embedding === undefined ? await lensEmbeddingConfig() : options.embedding;
+          if (!embedding) semantic.status = 'embedding_disabled';
+          else {
+            const [query, stores] = await Promise.all([
+              lensQueryVector(scope, queryText, embedding).catch(() => null),
+              Promise.all(candidatesLenses.map(lens => loadLensVectorStore(scope, lens.lensId)))
+            ]);
+            if (query) {
+              semantic.profileId = query.profileId;
+              // Only vectors of the query's profile are comparable.
+              candidatesLenses.forEach((lens, index) => vectorStores.set(lens.lensId, stores[index].profileId === query.profileId ? stores[index] : { entries: {} }));
+              queryUnit = query.unit; semantic.status = 'ready'; semantic.queryCached = query.cached; semantic.queryRequests = query.requests;
+            } else semantic.status = 'query_embedding_unavailable';
+          }
+        } catch (error) { semantic.status = 'failed'; }
+      }
+      const deliveredBigrams = options.deliveredText ? lensBigrams(options.deliveredText) : null;
+      // Calibration/diagnostics only: every scored candidate, admitted or not.
+      const scores = options.includeScores === true ? [] : null;
       const recordsByLens = await Promise.all(candidatesLenses.map(lens => loadLensRecordsMap(scope, lens.lensId).catch(() => ({}))));
       const inherited=await loadInheritedLensArchives(scope);
       for(const item of inherited.unavailable){const lens=candidatesLenses.find(row=>row.lensId===item.lensId);if(lens)skip(lens,null,null,'inherited_archive_unavailable');}
@@ -77491,9 +77772,27 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             const itemTokens = tokenStream(`${item.label} ${item.text} ${item.quote || ''} ${item.when?.text || ''} ${peopleText} ${Object.values(item.extra || {}).join(' ')}`);
             const overlap = new Set(itemTokens.filter(token => queryTokens.has(token))).size;
             const recent = !record.inherited && lens.recall.mode === 'recent' && recentKeys.has(record.recordKey);
-            if (overlap < minOverlap && !recent) { skip(lens, item, record, 'below_score_floor'); continue; }
+            let similarity = null;
+            if (queryUnit) {
+              const entry = vectorStores.get(lens.lensId)?.entries?.[lensVectorEntryKey(record, item)];
+              const text = lensVectorText(item);
+              if (entry && entry.h === digest(text).slice(0, 16)) { similarity = lensCosine(queryUnit, lensDecodeVector(entry)); semantic.scored += 1; }
+              else semantic.missingVectors += 1;
+            }
+            const semanticHit = similarity !== null && similarity >= LENS_SEMANTIC_FLOOR;
+            if (scores) scores.push({ lensId: lens.lensId, itemId: item.itemId, inherited: record.inherited === true, text: compact(item.text, 160), who: people.map(person => person.name), lexicalOverlap: overlap, similarity });
+            if (overlap < minOverlap && !recent && !semanticHit) { skip(lens, item, record, 'below_score_floor'); continue; }
+            if (deliveredBigrams?.size) {
+              const own = lensBigrams(item.text);
+              let shared = 0;
+              for (const pair of own) if (deliveredBigrams.has(pair)) shared += 1;
+              if (own.size >= 6 && shared / own.size >= LENS_DELIVERED_COVERAGE) { skip(lens, item, record, 'covered_by_delivered_memory'); continue; }
+            }
+            if (semanticHit && overlap < minOverlap && !recent) semantic.admittedBySemantic += 1;
             seenText.add(textKey);
-            const relevance = queryTokens.size ? Math.min(0.6, (overlap / Math.min(queryTokens.size, 8)) * 0.6) : 0;
+            const lexicalRelevance = queryTokens.size ? Math.min(0.6, (overlap / Math.min(queryTokens.size, 8)) * 0.6) : 0;
+            const semanticRelevance = similarity === null ? 0 : Math.max(0, Math.min(1, (similarity - LENS_SEMANTIC_FLOOR) / (LENS_SEMANTIC_HIGH - LENS_SEMANTIC_FLOOR))) * 0.6;
+            const relevance = Math.max(lexicalRelevance, semanticRelevance);
             const score = Math.round(((item.evidenceLevel === 'quoted' ? 0.5 : 0.39) + relevance + recency + (record.instructionRevision === lens.instructionRevision ? 0.03 : 0)) * 1000) / 1000;
             const tag = `[lens:${lensSafeText(lens.name,40)}${record.inherited?' · 이전 대화':''}${item.evidenceLevel==='interpreted'?' · 해석':''}]`;
             const quote = item.quote ? ` (원문: "${lensSafeText(item.quote, 120)}")` : '';
@@ -77503,14 +77802,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             const personPart = record.trackedSubject === true ? ` · ${people.length ? `인물: ${people.map(person => lensSafeText(person.name, 40)).join(', ')}` : '인물 불명'}` : '';
             const renderedLine = `- ${tag} (T${record.turnRange.start}–T${record.turnRange.end}${personPart}${timePart} · ${lensSafeText(item.label, 24)}) ${lensSafeText(item.text, 400)}${quote}`;
             list.push({ lensId: lens.lensId, lensName: lens.name, itemId: item.itemId, label: item.label, text: item.text, evidenceLevel: item.evidenceLevel,
-              turnRange: clone(record.turnRange), instructionRevision: record.instructionRevision, inherited:record.inherited===true,sourceScopeKey:record.sourceScopeKey||scope.scopeKey,archiveKey:record.archiveKey||'',score, renderedLine, chars: renderedLine.length + 1, record });
+              turnRange: clone(record.turnRange), instructionRevision: record.instructionRevision, inherited:record.inherited===true,sourceScopeKey:record.sourceScopeKey||scope.scopeKey,archiveKey:record.archiveKey||'',score,
+              lexicalOverlap: overlap, similarity: similarity === null ? null : Math.round(similarity * 1000) / 1000, renderedLine, chars: renderedLine.length + 1, record });
           }
         }
         list.sort((a, b) => b.score - a.score || Number(a.inherited)-Number(b.inherited) || Number(b.turnRange.end) - Number(a.turnRange.end));
         if (list.length) byLens.set(lens.lensId, list);
       }
+      if (queryUnit && semantic.missingVectors && options.refreshVectors !== false) for (const lens of candidatesLenses) void scheduleLensVectorRefresh(scope, lens.lensId, semantic.profileId);
       const withCandidates = candidatesLenses.filter(lens => byLens.has(lens.lensId));
-      if (!withCandidates.length) return empty({ enabled: true, skippedCandidates: skipped });
+      if (!withCandidates.length) return empty({ enabled: true, skippedCandidates: skipped, semantic, ...(scores ? { scores } : {}) });
       const header = `${LENS_RECALL_BLOCK_HEADER}\n${LENS_RECALL_BLOCK_NOTE}`;
       const bodyBudget = budgetChars - header.length - 1;
       const totalShare = withCandidates.reduce((sum, lens) => sum + lens.recall.share, 0);
@@ -77537,7 +77838,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       const renderedBlock = injected.length ? [header, ...injected.map(item => item.renderedLine)].join('\n') : '';
       return clone({
-        schema: 'libra.lens_recall_delivery.v2', enabled: true, budgetChars, usedChars: renderedBlock.length, renderedBlock,
+        schema: 'libra.lens_recall_delivery.v2', enabled: true, budgetChars, usedChars: renderedBlock.length, renderedBlock, semantic, ...(scores ? { scores } : {}),
         injectedItems: injected.map(({ record, ...item }) => item), skippedCandidates: skipped.slice(0, 60), skippedCount: skipped.length,
         perLensBudgets: withCandidates.map(lens => ({ lensId: lens.lensId, lensName: lens.name, share: lens.recall.share, allocatedChars: allocation.get(lens.lensId) || 0 }))
       });
@@ -77555,6 +77856,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       runLensForRange, runLensForTurnRange, trialRunLens, runScheduledLensesForCommittedBatch, waitForLensQueueIdle, disposeLensQueue,
       inspectScopeLenses, getLensRawResponse, deleteLensMemories, draftLensWithAssistant, generateLensDefinitionFromDescription,
       recallLensMemories,
+      refreshLensVectors: async ({ lensId = '' } = {}) => { const context = await resolveContext(); return await refreshLensVectors(context.scope, lensSlug(lensId)); },
+      prewarmLensQuery: async (text = '') => { await prewarmLensQuery(await resolveContext(), text); },
       PAIR_REVISION_CACHE_MAX_SCOPES, PAIR_REVISION_CACHE_MAX_ENTRIES_PER_SCOPE, PAIR_REVISION_CACHE_MAX_RETAINED_CHARS,
       recallMinDynamicChars: RECALL_BUDGET_MIN_CHARS,
       recallMaxDynamicChars: RECALL_MAX_DYNAMIC_CHARS,
@@ -82901,11 +83204,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         guiEl('strong', { text: lensDelivered ? `전달 ${lensInjectedItems.length}개 · 제외 ${Number(lensRecall.skippedCount ?? lensSkippedItems.length)}개` : lensInjectedItems.length ? `선택 ${lensInjectedItems.length}개 · 길이 제한으로 미전달` : `제외 ${Number(lensRecall.skippedCount ?? lensSkippedItems.length)}개` }),
         guiEl('span', { class: 'hint', text: `${lensDelivered ? Number(lensRecall.usedChars || 0) : 0} / ${Number(lensRecall.budgetChars || 0)}자` })
       ]), () => [
+        lensRecall.semantic ? guiEl('p', { class: 'hint', text: ({ ready: `의미 검색 사용 · 비교 ${Number(lensRecall.semantic.scored || 0)}개${Number(lensRecall.semantic.missingVectors || 0) ? ` · 벡터 준비 중 ${Number(lensRecall.semantic.missingVectors)}개` : ''}`,
+          embedding_disabled: '의미 검색 꺼짐 · 임베딩 설정이 없어 단어 일치로만 찾았습니다.', off: '의미 검색 꺼짐 · 렌즈 설정에서 껐습니다.',
+          query_embedding_unavailable: '의미 검색 실패 · 이번 요청은 단어 일치로만 찾았습니다.', failed: '의미 검색 실패 · 이번 요청은 단어 일치로만 찾았습니다.' })[lensRecall.semantic.status] || '' }) : null,
         ...lensInjectedItems.map(item => guiEl('div', { class: `row ${lensDelivered ? 'injected' : 'dropped'} stack` }, [
           guiEl('div', { class: 'cluster' }, [
             guiEl('span', { class: `badge ${item.evidenceLevel === 'quoted' ? 'badge--ok' : 'badge--warn'}`, text: item.evidenceLevel === 'quoted' ? '인용 확인' : '해석' }),
             guiEl('strong', { text: `${libraGuiText(item.lensName)} · ${libraGuiText(item.label)}` }),
-            guiEl('span', { class: 'hint', text: `T${Number(item.turnRange?.start || 0)}–T${Number(item.turnRange?.end || 0)} · 점수 ${Number(item.score || 0).toFixed(2)}` })
+            guiEl('span', { class: 'hint', text: `T${Number(item.turnRange?.start || 0)}–T${Number(item.turnRange?.end || 0)} · 점수 ${Number(item.score || 0).toFixed(2)}${item.similarity !== null && item.similarity !== undefined ? ` · 의미 ${Number(item.similarity).toFixed(2)}` : ''}${Number(item.lexicalOverlap || 0) ? '' : item.similarity !== null && item.similarity !== undefined ? ' · 의미로만 찾음' : ''}` })
           ]),
           guiEl('div', { class: 'muted', text: libraGuiText(item.text) })
         ])),
@@ -88781,7 +89087,10 @@ advanced
       memory && item.sourceCurrent === false ? libraStatusBadge('원문 변경됨 · 회상 제외', 'danger') : null,
       memory && item.instructionCurrent === false ? libraStatusBadge('이전 지침으로 생성', 'info') : null
     ].filter(Boolean);
-    const provenance = memory ? guiLazyDetails({ class: 'fold lens-prov' }, guiEl('summary', { text: '근거 · 출처 보기' }), () => [guiEl('div', { class: 'fold__body stack stack--sm' }, [
+    // An open provenance fold stays open when the reader re-renders (a background refresh).
+    const provKey = text(item.id || `${item.lensId}::${item.recordKey}::${item.itemId}`);
+    const openFolds = Gui.lensOpenProvenance || (Gui.lensOpenProvenance = new Set());
+    const provenance = memory ? guiLazyDetails({ class: 'fold lens-prov', open: openFolds.has(provKey) }, guiEl('summary', { text: '근거 · 출처 보기' }), () => [guiEl('div', { class: 'fold__body stack stack--sm' }, [
       ...[...new Set([...guiAsArray(item.refs), item.quoteRef, item.when?.ref, ...guiAsArray(item.who).map(person => person.ref)].filter(Boolean))].map(ref => {
         // Inherited notes read only their archived excerpts, never a same-numbered live turn.
         const excerpt = item.inherited ? item.sourceTurns?.[ref] : Gui.lensReader?.data?.sourceTurns?.[ref];
@@ -88810,7 +89119,7 @@ advanced
         lensLineDiff(item.recordInstructionText, item.currentInstructionText)
       ]) : null
     ].filter(Boolean))]) : null;
-    return guiEl('article', { class: `lens-item${item.sourceCurrent === false ? ' is-stale' : ''}`, dataset: { lensItemId: text(item.itemId || ''), lensId: text(item.lensId || ''), evidenceLevel: text(item.evidenceLevel || '') } }, [
+    const card = guiEl('article', { class: `lens-item${item.sourceCurrent === false ? ' is-stale' : ''}`, dataset: { lensItemId: text(item.itemId || ''), lensId: text(item.lensId || ''), evidenceLevel: text(item.evidenceLevel || '') } }, [
       guiEl('header', { class: 'lens-item__head' }, [guiEl('div', { class: 'lens-item__meta' }, meta), evidence]),
       personRow,
       timeRow,
@@ -88824,6 +89133,8 @@ advanced
       ].filter(Boolean)) : null,
       provenance
     ].filter(Boolean));
+    provenance?.addEventListener('toggle', () => { if (provenance.open) openFolds.add(provKey); else openFolds.delete(provKey); if (openFolds.size > 200) openFolds.delete(openFolds.values().next().value); });
+    return card;
   };
 
   const lensStudioState = () => {
@@ -88956,7 +89267,7 @@ advanced
 
   const buildLensListView = ls => {
     const registry = ls.registry || normalizeLensRegistry({});
-    const settings = ls.settingsDraft || (ls.settingsDraft = { enabled: registry.enabled, recallMaxChars: registry.recallMaxChars });
+    const settings = ls.settingsDraft || (ls.settingsDraft = { enabled: registry.enabled, recallMaxChars: registry.recallMaxChars, recallSemantic: registry.recallSemantic !== false });
     return guiEl('div', { class: 'stack' }, [
       registry.lenses.length
         ? guiEl('div', { class: 'lens-grid' }, registry.lenses.map(lens => buildLensCard(lens, ls)))
@@ -88970,12 +89281,13 @@ advanced
         guiEl('summary', { text: '렌즈 전체 설정' }),
         guiEl('div', { class: 'fold__body stack stack--sm' }, [
           lensToggle(settings.enabled !== false, '렌즈 기능 사용', value => { settings.enabled = value; }, '끄면 모든 렌즈의 자동 분석과 회상이 멈춥니다. 렌즈와 기록은 그대로 남습니다.'),
+          lensToggle(settings.recallSemantic !== false, '의미가 비슷한 렌즈 기억도 회상', value => { settings.recallSemantic = value; }, '정본 기억과 같은 임베딩 설정을 씁니다. 단어가 겹치지 않아도 뜻이 가까운 메모를 찾고, 임베딩이 꺼져 있거나 실패하면 단어 일치로만 찾습니다.'),
           lensField('렌즈 회상 최대 글자 수', lensInput(settings.recallMaxChars, value => { settings.recallMaxChars = value; }, { type: 'number', min: LENS_RECALL_MIN_CHARS, max: LENS_RECALL_MAX_CHARS, step: 100 }),
             `정본 기억 회상 예산의 ${Math.round(registry.recallBudgetRatio * 100)}%까지, 이 값을 넘지 않게 씁니다(${LENS_RECALL_MIN_CHARS}–${LENS_RECALL_MAX_CHARS}자). 정본 기억의 몫은 줄어들지 않습니다.`),
           guiEl('div', { class: 'lens-actions' }, [
             guiEl('span', { class: 'lens-actions__spacer' }),
             guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', disabled: !!ls.busy, text: '전체 설정 저장',
-              onClick: () => void lensStudioAction('settings', () => LibraMemoryCore.saveLensRegistry({ ...ls.registry, enabled: settings.enabled !== false, recallMaxChars: clampInt(settings.recallMaxChars, LENS_RECALL_MIN_CHARS, LENS_RECALL_MAX_CHARS, LENS_RECALL_MAX_CHARS) }), '렌즈 전체 설정을 저장했습니다.').then(() => { ls.settingsDraft = null; renderLensStudio(); }) })
+              onClick: () => void lensStudioAction('settings', () => LibraMemoryCore.saveLensRegistry({ ...ls.registry, enabled: settings.enabled !== false, recallSemantic: settings.recallSemantic !== false, recallMaxChars: clampInt(settings.recallMaxChars, LENS_RECALL_MIN_CHARS, LENS_RECALL_MAX_CHARS, LENS_RECALL_MAX_CHARS) }), '렌즈 전체 설정을 저장했습니다.').then(() => { ls.settingsDraft = null; renderLensStudio(); }) })
           ])
         ])
       ]),
@@ -91097,6 +91409,7 @@ advanced
     async getLensRawResponse(options = {}) { return safeClone(await LibraMemoryCore.getLensRawResponse(options)); },
     async deleteLensMemories(options = {}) { return safeClone(await LibraMemoryCore.deleteLensMemories(options)); },
     async recallLensMemories(options = {}) { return safeClone(await LibraMemoryCore.recallLensMemories(options)); },
+    async refreshLensVectors(options = {}) { return safeClone(await LibraMemoryCore.refreshLensVectors(options)); },
     evaluateLensCandidateItems(candidates = [], lens = {}, turnPairs = [], subjects = {}) { return safeClone(LibraMemoryCore.evaluateLensCandidateItems(candidates, lens, turnPairs, subjects)); },
     async getStoryArc(options = {}) {
       if (options?.scopeKey) {

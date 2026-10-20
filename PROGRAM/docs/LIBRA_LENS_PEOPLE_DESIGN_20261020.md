@@ -76,7 +76,8 @@ Records are never rewritten. When notes are read (lens tab, recall), names are g
 1. A written name that is the name or an alias of **exactly one** people card (read only) joins
    that card, which shows its card name with "원문: …" beside it.
 2. `user` and `char` group by role.
-3. Any other name groups by its written form.
+3. Any other name groups by its core name: the written form without a trailing honorific
+   ("서윤 선생님" and "서윤", "지호씨" and "지호"). See "Name boundaries" below.
 
 A name that matches two people cards is never merged. A people card added later, or a different
 successor chat, regroups old notes without changing them.
@@ -139,3 +140,32 @@ live model attributes facts to people.
   `tests/browser/libra_lens_story_source_browser_test.cjs` covers inherited highlights using exact
   Full/Min bytes. These are deterministic checks of the known pronoun rules and literal matching,
   not a general semantic name classifier.
+
+## Name boundaries (2.3.185)
+
+**Definition.** A person is anyone the story treats as an individual: a name or nickname, a
+kinship or job title used for one person ("할머니", "카페 사장님"), or a named animal ("콩이",
+"나비").
+
+**The gate accepts or rejects names as follows.** The prompt states the same rules.
+
+| Case | Example | Rule |
+|---|---|---|
+| Grammar glued to a name | "민아가", "지호랑", "지호야" | Stored as "민아" / "지호" when the span also writes the bare name with a different ending. A name only ever written with the ending ("수진이") stays whole. |
+| Several people in one string | "지호와 민아", "Emma and Leo", "민아, 지호" | Split into separate people. Each part is checked on its own. |
+| Honorifics | "서윤 선생님", "지호씨", "준형 군" | Stored as written. Grouped by the core name. Attached titles (씨, 님, 선생님, さん…) may follow without a space. One-syllable titles that are also name syllables (형, 군, 양) need a space, so "준형" stays a name. |
+| Title whose head is a place or relation | "카페 사장님", "옆집 언니" | The whole phrase is the name; it is never reduced to "카페". |
+| Pronouns, group and indefinite words | "그녀", "모두", "사람들", "누군가" | Not people. |
+| Demonstrative descriptions | "그 아이", "저 남자", "어느 손님" | Not people. |
+| Places, organizations, ships | "한빛병원", "한빛병원 응급실", "은하카페", "검은 장미 호" | Not people, unless a person title closes the phrase ("은하카페 사장님"). |
+| Registry non-people | a people-registry entity of type place/item/organization | Not a person when the registry has no person with that name. |
+| Hypothetical, wish, comparison, hearsay | "수진이었다면 …", "소문으로는 민준이 …" | Not people (prompt rule). The literal gate cannot detect these. |
+
+**Measuring with a live model.** `tools/rag_eval/libra_lens_live_eval.cjs --only names,health`
+records, per probe, the names the model returned before the gate and the names stored after it.
+The probes are in `libra_lens_live_corpus.json`. The runs on 2026-10-20 could not reach the chat
+model (HTTP 401), so these rules rest on the corpus cases and deterministic tests. The live
+section is to be repeated when a valid key is available.
+
+**Tests.** `tests/libra_lens_name_boundary_runtime_test.cjs` covers each row through the real
+plugin, plus grouping by core name and the prompt text.

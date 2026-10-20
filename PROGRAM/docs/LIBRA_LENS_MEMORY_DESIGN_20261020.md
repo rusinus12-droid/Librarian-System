@@ -395,6 +395,9 @@ This section records what the code does where it refines or departs from the sec
 - **Eligible lenses.** Paused lenses with recall on are recalled; trashed lenses never are.
 - **Deadline.** The lens step runs inside the recall deadline guard.
 - **Recall viewer.** It shows whether the lens block was delivered or dropped for length.
+- **Semantic lane and the unified engine (2.3.185).** Lens notes are also matched by meaning in
+  the canonical embedding space. A note already said by the delivered canonical/Micro text is
+  skipped. See `LIBRA_LENS_RECALL_ENGINE_20261020.md`.
 
 ### GUI
 - **Lens Studio** (the dialog behind "맞춤 기억 렌즈"). Four views:
@@ -422,6 +425,7 @@ This section records what the code does where it refines or departs from the sec
 ### Done since the first version
 - Story time on each note (the date or time the source states, or "시점 불명") — `LIBRA_LENS_TIME_DESIGN_20261020.md` (2.3.182).
 - People on each note: one lens tracks several people by the names the source writes, or "인물 불명" — `LIBRA_LENS_PEOPLE_DESIGN_20261020.md` (2.3.183).
+- Meaning-based lens recall in the canonical embedding space, the place of lens notes in the unified memory engine, and name boundaries — `LIBRA_LENS_RECALL_ENGINE_20261020.md` (2.3.185).
 - RE:TRACE next-session handoff and native copy carry lens notes — `LIBRA_LENS_HANDOFF_DESIGN_20261020.md` (2.3.181).
 
 ### Not yet done
