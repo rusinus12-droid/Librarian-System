@@ -76,3 +76,32 @@ test('the prompt states the person boundary', async () => {
     assert.match(calls[0], /without grammar endings or honorifics/);
   } finally { await f.close(); }
 });
+
+test('live-measured corrections: bare surname, near-miss quote, persona name, the fact owner', async () => {
+  const f = await lensFixture();
+  try {
+    const pairs = [{ turn: 1, user: { text: '"Emma는 두통 때문에 일찍 잤다." 간호사 김 선생은 손을 다쳐 붕대를 하고 있었다.' }, assistant: { text: '한서윤 선생님은 민아의 목을 살펴보더니 편도가 부었다고 했다.' } }];
+    const evaluate = (items, lens = LENS) => plain(f.api.evaluateLensCandidateItems({ items }, lens, pairs));
+    assert.deepEqual(evaluate([{ label: '부상', text: '손을 다쳤다.', refs: ['t1-u'], basis: '본문', who: ['김'] }]).acceptedItems[0].who.map(person => person.name), ['김 선생'],
+      'a bare surname becomes the titled phrase the span writes');
+    assert.deepEqual(evaluate([{ label: '부상', text: '다쳤다.', refs: ['t1-u'], basis: '본문', who: ['박'] }]).acceptedItems[0].who, [], 'a surname with no titled phrase is not a person');
+    const typo = evaluate([{ label: '증상', text: 'Emma는 두통 때문에 일찍 잠들었다.', refs: ['t1-u'], quote: 'Emma는 두통 때문에 일찾 잤다.', who: ['Emma'] }], { evidenceMode: 'strict', trackSubject: true });
+    assert.equal(typo.acceptedItems.length, 1, 'a one-character copy slip is repaired in strict mode');
+    assert.equal(typo.acceptedItems[0].quote.includes('일찍 잤다'), true, 'the stored quote is the source text, not the model typo');
+    assert.equal(typo.counts.quoteRepaired, 1);
+    const far = evaluate([{ label: '증상', text: 'x', refs: ['t1-u'], quote: 'Emma는 치통 때문에 늦게 깼다.', who: ['Emma'] }], { evidenceMode: 'strict', trackSubject: true });
+    assert.equal(far.acceptedItems.length, 0, 'a quote that differs in meaning is still rejected');
+
+    f.r.context.risuai.getDatabase = async () => ({ selectedPersona: 0, personas: [{ id: 'p', name: '민아' }] });
+    const calls = [];
+    f.setReply(args => { calls.push(JSON.stringify(args)); return JSON.stringify({ items: [{ label: '전달', text: '열쇠를 내밀었다.', refs: ['t2-u'], basis: '본문', who: ['user'] }, { label: '소유', text: '열쇠의 주인이다.', refs: ['t3-a'], basis: '본문', who: ['민아'] }] }); });
+    const lens = await f.api.createLens({ name: '인물', trackSubject: true, evidenceMode: 'interpretive', instruction: { goal: '상태' }, cadence: { mode: 'manual' } });
+    const run = plain(await f.api.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 }));
+    assert.deepEqual(run.items[0].who, [{ name: '민아', ref: 't2-u', role: 'user' }], 'the user role carries the persona name');
+    const people = plain(await f.api.inspectScopeLenses()).memories.map(row => row.people[0].key);
+    assert.equal(people[0], people[1], 'the user\'s first person and the persona\'s name are one person');
+    assert.match(calls[0], /the user is 민아/);
+    assert.match(calls[0], /Not the person who observed, measured, diagnosed, reported or said it/);
+    assert.match(calls[0], /Return at most 24 items/);
+  } finally { await f.close(); }
+});

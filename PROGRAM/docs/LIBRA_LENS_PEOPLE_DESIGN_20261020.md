@@ -161,11 +161,23 @@ kinship or job title used for one person ("할머니", "카페 사장님"), or a
 | Registry non-people | a people-registry entity of type place/item/organization | Not a person when the registry has no person with that name. |
 | Hypothetical, wish, comparison, hearsay | "수진이었다면 …", "소문으로는 민준이 …" | Not people (prompt rule). The literal gate cannot detect these. |
 
-**Measuring with a live model.** `tools/rag_eval/libra_lens_live_eval.cjs --only names,health`
-records, per probe, the names the model returned before the gate and the names stored after it.
-The probes are in `libra_lens_live_corpus.json`. The runs on 2026-10-20 could not reach the chat
-model (HTTP 401), so these rules rest on the corpus cases and deterministic tests. The live
-section is to be repeated when a valid key is available.
+**Measured with a live model** (`deepseek-v4.1-flash`, 4 probes × 3 runs, names returned by the
+model → names stored after the gate):
+
+| Probe | Result |
+|---|---|
+| Honorifics and particles | The model wrote bare names ("민아", "지호"), so no particle needed repair. For "간호사 김 선생" it wrote the bare surname "김" in 3/3 runs; the gate now stores "김 선생". |
+| Kinship, titles, groups | Kept "엄마", "아빠", "할머니" and once "사장님"; never kept "누군가", "사람들", "모두", "그 아이" or "우리". |
+| Places, objects, animals | Kept "나비" (a cat) and "박은재"; never kept 한빛병원, 은하카페, 동물병원 or 검은 장미 호. |
+| Hypothetical, hearsay, scripts | Kept Emma, 사쿠라 and 레오, and the cat 레오나르도 as a separate subject; never kept "수진" (hypothetical) or "민준" (hearsay). |
+
+The body-signal lens attributed all 18 facts to the right owner in 3/3 runs after the 2.3.186
+prompt and persona fixes (see `LIBRA_LENS_RECALL_ENGINE_20261020.md`).
+
+**Also added from the measurements (2.3.186).**
+- A bare surname plus the titled phrase in the span gives the stored name.
+- The user's persona name is read from the host.
+- The prompt states that `who` is the person a fact is about.
 
 **Tests.** `tests/libra_lens_name_boundary_runtime_test.cjs` covers each row through the real
 plugin, plus grouping by core name and the prompt text.

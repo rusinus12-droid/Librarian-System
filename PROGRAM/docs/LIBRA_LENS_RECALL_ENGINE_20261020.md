@@ -1,6 +1,6 @@
 # LIBRA lens memory: recall engine and the unified memory engine (2026-10-20)
 
-Status: **implemented on `feature/custom-memory-lenses` (LIBRA 2.3.185).** It extends
+Status: **implemented on `feature/custom-memory-lenses` (LIBRA 2.3.185, live-measured corrections 2.3.186).** It extends
 `LIBRA_LENS_MEMORY_DESIGN_20261020.md` §7.
 
 ## What was missing
@@ -117,10 +117,44 @@ real embeddings:
 Run it with `RAG_EVAL_LLM_URL`/`_KEY`/`_MODEL` and `RAG_EVAL_EMBED_URL`/`_KEY`/`_MODEL`. Reports
 and model logs must be written outside the repository.
 
-Status on 2026-10-20: the embedding provider answered. The chat-model key (Ollama Cloud) was
-rejected with HTTP 401, so the chat-model sections have not been measured yet. The name rules
-below are built from the corpus's boundary cases and the observed model output shapes, and are
-covered by deterministic tests until the live run is repeated.
+### Results (2026-10-20, `deepseek-v4.1-flash` via Ollama Cloud, `voyage-4-large`, temperature 0)
+
+| Feature | Result |
+|---|---|
+| Starter templates (5 × 3 runs, 2 spans each) | Every successful response parsed, and the gate rejected no notes. Some runs returned nothing because the provider took more than 120 s (see below). |
+| Strict vs interpretive (3 runs) | Strict kept 4 quoted notes each time; interpretive kept 6, all quoted. Both found the Monday appointment. |
+| Trial run | Stored nothing (3/3). |
+| Design assistant (4 requests × 3) | 12/12 set the expected `trackTime`/`trackSubject`. It also turns people on for speech and promise lenses. |
+| Body-signal lens: 18 gold facts × 3 runs | Fact recall 1.00, owner accuracy 1.00, time accuracy 1.00. No place, hypothetical person or pronoun was stored as a person. |
+| Recall on the live notes (10 queries) | Lexical 7/10, hybrid 9/10. |
+| Name probes (4 × 3 runs) | See `LIBRA_LENS_PEOPLE_DESIGN_20261020.md`. |
+
+**What the first live run found and changed (2.3.186).** Before these fixes, the body-signal lens
+scored fact recall 0.89–0.94 and owner accuracy 0.94–1.00.
+
+- **Cut notes.** A five-turn span with eight people produced 13–14 notes, and the cap of 12
+  silently cut the latest turn (the menstrual-cycle facts). The cap is now 24 per run, and the
+  prompt states it.
+- **Owner confusion.** The model sometimes recorded a symptom under the person who diagnosed it
+  ("한서윤 선생님은 … 편도가 부었다고 진단"). The prompt now defines `who` as the person the fact
+  is about, not the one who observed, measured, diagnosed, reported or said it.
+- **Persona name.** The user's first person ("나") and the persona's name ("민아") were two
+  people. The user's persona name is now read from the host (the chat's bound persona, else the
+  selected one), so "user" is stored under that name and groups with it.
+- **Copy slip in a quote.** "일찍" was copied as "일찾", which rejected a whole note. A quote within
+  10% edits of a span of a cited turn is replaced by that span, so the stored quote is still the
+  source's own text; a quote that differs in meaning is still rejected.
+- **Bare surname.** "김" for "간호사 김 선생" is stored as "김 선생" (3/3); a bare surname without a
+  titled phrase in the span is not a person.
+
+**Provider latency.** 9 of 30 template runs ended at exactly 120 s, the lens call timeout, while
+the cloud model was slow. Such a run is recorded as failed and stores nothing; canonical memory is
+unaffected. This was provider latency, not a gate or parse failure: every response that arrived
+parsed.
+
+**Limits.** This is one synthetic corpus with one model, so the numbers show the pipeline works
+end to end and the boundary rules hold. They are not a general accuracy benchmark. Grouping still
+needs a people card to join "서윤", "한서윤" and "한 선생님".
 
 ## Tests
 

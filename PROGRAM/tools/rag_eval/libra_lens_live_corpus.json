@@ -1,6 +1,6 @@
 {
   "schema": "libra.lens_live_corpus.v1",
-  "note": "Synthetic Korean roleplay chat for the memory lens live evaluation. The user plays 민아 (first person and third person mixed); the AI narrates 지호 and others. Gold rows list what a body-signal lens should record: the owner (@user = the user's own first person), keywords of the fact, and acceptable source time expressions (null = no time stated for it).",
+  "note": "Synthetic Korean roleplay chat for the memory lens live evaluation. The user plays 민아 (first person and third person mixed); the AI narrates 지호 and others. Gold rows list what a body-signal lens should record: the owner (@user = the user's own first person), keywords of the fact, and acceptable source time expressions (null = no time stated for it). Gold corrections after the first live run: 지호's 38.5도 has no time expression (\"결국\" is not a time), and 레오나르도 is a named cat that the text does describe, so it is a valid subject.",
   "characterName": "지호",
   "turns": [
     [
@@ -137,9 +137,7 @@
       "keywords": [
         "38.5"
       ],
-      "when": [
-        "결국"
-      ]
+      "when": null
     },
     {
       "id": "junho_stomach",
@@ -495,7 +493,7 @@
       ],
       "forbid": [
         "수진",
-        "레오나르도"
+        "민준"
       ]
     }
   ],
@@ -744,5 +742,6 @@
         "when": "저녁에는"
       }
     ]
-  }
+  },
+  "personaName": "민아"
 }

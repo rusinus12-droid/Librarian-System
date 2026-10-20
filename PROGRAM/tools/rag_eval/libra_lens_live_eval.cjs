@@ -75,6 +75,7 @@ const session = async ({ embeddings = Boolean(embedUrl) } = {}) => {
   await f.api.saveEmbeddingSettings(embeddings
     ? { enabled: true, provider: 'openai', url: embedUrl + '/embeddings', model: process.env.RAG_EVAL_EMBED_MODEL, key: process.env.RAG_EVAL_EMBED_KEY, maxRetries: 2 }
     : { enabled: false, provider: 'openai', url: 'https://disabled.invalid/v1/embeddings', model: 'none', key: '' });
+  f.r.context.risuai.getDatabase = async () => ({ selectedPersona: 0, personas: [{ id: 'eval-persona', name: corpus.personaName }] });
   const chat = f.target('lens live eval');
   corpus.turns.forEach(([user, assistant], index) => chat.message.push({ role: 'user', chatId: `t${index + 1}-u`, data: user }, { role: 'char', chatId: `t${index + 1}-a`, data: assistant }));
   chat.messages = chat.message;
@@ -203,7 +204,7 @@ const evalHealth = async () => {
       const forbidden = items.filter(item => (item.who || []).some(person => corpus.notPeople.some(name => norm(person.name).includes(norm(name)))));
       const modelForbidden = raws.filter(item => [].concat(item.who || []).some(name => corpus.notPeople.some(word => norm(name).includes(norm(word)))));
       const counts = runs.reduce((sum, run) => { for (const [k, v] of Object.entries(run.counts)) if (typeof v === 'number') sum[k] = (sum[k] || 0) + v; return sum; }, {});
-      rows.push({ rep, items: items.length, counts, gold: goldRows,
+      rows.push({ rep, items: items.length, counts, gold: goldRows, rejected: runs.flatMap(run => run.rejected),
         recall: goldRows.filter(row => row.found).length / goldRows.length,
         personAccuracy: goldRows.filter(row => row.found && row.personOk).length / Math.max(1, goldRows.filter(row => row.found).length),
         timeAccuracy: goldRows.filter(row => row.found && row.timeOk).length / Math.max(1, goldRows.filter(row => row.found).length),
@@ -211,6 +212,7 @@ const evalHealth = async () => {
         modelWho: raws.map(item => ({ who: item.who, whoRef: item.whoRef, when: item.when, text: String(item.text || '').slice(0, 60) })),
         stored: items.map(item => ({ text: item.text, who: item.who, when: item.when, whoIssue: item.whoIssue, whenIssue: item.whenIssue })) });
       const row = rows.at(-1);
+      log(`health rep${rep}: rejected ${JSON.stringify(row.rejected)} people ${JSON.stringify([...new Set(items.flatMap(item => (item.who || []).map(person => person.name)))])}`);
       log(`health rep${rep}: items ${row.items} recall ${row.recall.toFixed(2)} person ${row.personAccuracy.toFixed(2)} time ${row.timeAccuracy.toFixed(2)} forbidden ${row.forbiddenStored.length}/${row.forbiddenByModel.length}`);
       if (rep === 0 && only.has('recall')) report.sections.recall = await evalRecall(f, lens.lensId);
     } finally { await f.close(); }
