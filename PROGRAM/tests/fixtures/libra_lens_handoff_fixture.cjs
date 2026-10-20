@@ -7,13 +7,15 @@ async function lensFixture(options={}){
  host.getCurrentChatIndex=async()=>index;
  host.getChat=host.getCurrentChat=async()=>f.character.chats[index];
  host.getChatFromIndex=async(_c,i)=>f.character.chats[i];
+ // Optional source edits before the canonical run (e.g. a long turn for excerpt tests).
+ if(typeof options.beforeRun==='function')await options.beforeRun(f);
  await f.run();
  f.control.onCall=async args=>JSON.stringify(args).includes('LIBRA LENS ANALYZER')
   ?{type:'success',result:typeof reply==='function'?await reply(args):JSON.stringify(reply||{items:[{label:'약속',text:'지호의 은빛 열쇠 반환 약속',refs:['t2-a'],quote:'오늘 돌려주겠다고 약속했다',target:'지호'}]})}
   :{type:'success',result:JSON.stringify(f.control.artifact)};
  const api=f.r.api;
- const add=async(name='약속 렌즈',status='active')=>{
-  const lens=await api.createLens({name,status,evidenceMode:'interpretive',instruction:{goal:'은빛 열쇠와 약속을 기록한다.'},cadence:{mode:'manual'}});
+ const add=async(name='약속 렌즈',status='active',extra={})=>{
+  const lens=await api.createLens({name,status,evidenceMode:'interpretive',instruction:{goal:'은빛 열쇠와 약속을 기록한다.'},cadence:{mode:'manual'},...extra});
   await api.runLensForRange(lens.lensId,{startTurn:1,endTurn:5});return lens;
  };
  const select=i=>{index=i;f.character.chatPage=i;};

@@ -1,6 +1,6 @@
 # LIBRA lens memory: story time on each note (design, 2026-10-20)
 
-Status: **design only, not implemented.** It extends `LIBRA_LENS_MEMORY_DESIGN_20261020.md`.
+Status: **implemented on `feature/custom-memory-lenses` (LIBRA 2.3.182).** It extends `LIBRA_LENS_MEMORY_DESIGN_20261020.md`.
 The existing lens handoff is implemented in LIBRA 2.3.181 / RE:TRACE 1.9.90; the time fields and
 their provenance described here still need to be added to that path.
 
@@ -251,3 +251,61 @@ semantic correctness. This limitation applies to current and inherited notes ali
 3. **No carry-forward of earlier times or conversion of relative expressions.** Keep a relative
    expression from the current span as written. The separate reference line under "Possible later
    additions" remains outside this design.
+
+## Implementation and validation (2026-10-20)
+
+All three plan steps are in `plugins/LIBRA.js`.
+
+- **Setting.** `trackTime` is normalized to a boolean (default off). Turning it on or off does not
+  change the instruction revision.
+- **Gate.** `when`/`whenRef` (or `whenText`) are reserved item keys, so a model-given time never
+  reaches `extra`.
+  - The time text is searched in `whenRef`, then the note's refs, then every turn of the span.
+    Matching ignores whitespace, then tries NFKC.
+  - The stored `when.text` is the matched source wording and `when.ref` is the turn where it was
+    found. A ref outside the span is never read.
+  - A text that is not found becomes `when: null` with `whenIssue: 'not_in_source'`. The note is
+    still kept.
+  - Counts `timeStated`, `timeUnknown` and `timeDropped` are added only for a tracking lens.
+- **Prompt.** The "Story time" rules and the `when`/`whenRef` schema fields appear only for a
+  tracking lens.
+- **Records.** Each record stores `trackedTime`. The lens tab, recall and archives follow the
+  record's setting, never the lens's current switch.
+- **Recall.** The line reads `(T1–T5 · 시점: … · label)` or `(T1–T5 · 시점 불명 · label)`. The time
+  text joins the relevance tokens and is sanitized again when rendered.
+- **Archives.** Archived source excerpts cover the union of `refs`, `quoteRef` and `when.ref`.
+  - A turn longer than 4,000 characters keeps bounded windows (±600 characters) around every quote
+    and time mark instead of only its prefix.
+  - The archive validator checks `trackedTime`, the `when` shape and range, that the time turn has
+    an excerpt, and `whenIssue`. Archives without time data stay valid.
+  - Native copy reuses the same archive builder. Portable export/restore carries the archives
+    unchanged.
+- **GUI.**
+  - The note card has a time row: the source time with "원문 명시", or "시점 불명" with either
+    "확인된 시점 없음" or "원문에서 확인되지 않아 제외". A hint states what the badge proves.
+  - The provenance fold lists the time-bearing turn ("· 시점이 적힌 턴") and highlights both quote
+    and time. It falls back to archived excerpts for inherited notes, and says so when a mark cannot
+    be found.
+  - The studio shows a "시점 기록" chip, the editor switch "원문에 적힌 시점을 함께 기록", a "시점 불명
+    N" badge on trial results, and stated/unknown/dropped counts in the run log.
+- **Assistant.** `trackTime` is part of the draft schema and the before/after comparison. The
+  assistant turns it on for health, pregnancy, cycles, schedules and deadlines.
+
+### Validation sources
+
+- `tests/libra_lens_story_time_runtime_test.cjs`
+  - Gate cases: stated, other turn, corrected ref, whitespace, relative (also with the earlier date
+    outside the span), missing, invented, out-of-range ref, and the documented wrong-event literal
+    pass.
+  - Count invariants in trial, run and persisted log.
+  - Prompt gating, and the record setting versus the current switch.
+  - Recall line and relevance.
+  - A turn longer than 4,000 characters through handoff, a second handoff, native copy, and
+    portable export and restore after the archives are removed.
+  - Untracked archive compatibility.
+- `tests/browser/libra_lens_story_time_browser_test.cjs`: the time rows (stated, unknown,
+  dropped), the time-turn highlight, the chip and the editor switch at 1280 and 390 px, with no
+  touching buttons or horizontal overflow.
+
+Model replies are controlled fixtures. These checks prove the gate and the plumbing. They do not
+measure how well a live model picks the right time for an event (see "What this gate proves").
