@@ -294,9 +294,9 @@
         "bytes": 3975723
       },
       "libra": {
-        "version": "2.3.187",
-        "sha256": "7447489ce4f34ab3356bf4590352a3fdcdb091b1b04ca7b76ff69f7982e3c023",
-        "bytes": 6393813
+        "version": "2.3.188",
+        "sha256": "11f780e2c57b34b9813e91a331d4b5e637af2fa5db71f657bdf53e30acedf374",
+        "bytes": 6400229
       },
       "lia": {
         "version": "0.26.89",

@@ -49,10 +49,11 @@ test('a run stores compact note vectors in the canonical embedding space', async
     const storeKey = [...f.r.values.keys()].find(key => key.endsWith(`:lens:${lens.lensId}:vectors`));
     assert.ok(storeKey, 'the vector store is written after the run');
     const store = JSON.parse(f.r.values.get(storeKey));
-    assert.equal(store.schema, 'libra.lens_vector_store.v1');
-    assert.equal(Object.keys(store.entries).length, 2);
+    assert.equal(store.schema, 'libra.lens_vector_store.v2');
+    const entries = store.pages.flatMap(ref => Object.values(JSON.parse(f.r.values.get(`${storeKey}:page:${ref.id}`)).entries));
+    assert.equal(entries.length, 2);
     assert.equal(store.dimensions, DIM);
-    const entry = Object.values(store.entries)[0];
+    const entry = entries[0];
     assert.equal(Buffer.from(entry.q, 'base64').length, DIM, 'one byte per dimension');
     assert.ok(store.profileId, 'bound to the embedding profile');
     const again = plain(await f.api.refreshLensVectors({ lensId: lens.lensId }));

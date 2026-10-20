@@ -1,6 +1,6 @@
 # LIBRA lens memory: recall engine and the unified memory engine (2026-10-20)
 
-Status: **implemented on `feature/custom-memory-lenses` (LIBRA 2.3.185, live-measured corrections 2.3.186).** It extends
+Status: **implemented on `feature/custom-memory-lenses` (LIBRA 2.3.188; initially 2.3.185).** It extends
 `LIBRA_LENS_MEMORY_DESIGN_20261020.md` §7.
 
 ## What was missing
@@ -31,9 +31,13 @@ Rules that hold the layers together:
    people cards.
 3. **One embedding space.** The lens lane reads the canonical embedding settings. Vectors are
    compared only when their embedding profiles (provider, model and dimensions) are equal.
-4. **No double delivery.** A lens note whose text is at least 85% covered by the delivered
-   canonical/Micro text is skipped. The covered share is counted in character bigrams, and the
-   recall viewer shows "정본·Micro 기억에 이미 같은 내용".
+4. **Conservative duplicate delivery.** Skip only an exact note sentence already present in
+   delivered canonical/Micro text. When people/time are tracked, their verified identity must
+   also be written inside that sentence. Unknown or separately stored identity and extra values
+   keep the note eligible; body-text similarity alone cannot establish that the same event was
+   delivered. This preserves, for example, yesterday's Jiho note when today's Mina note has the
+   same symptom wording. The viewer still reports "정본·Micro 기억에 이미 같은 내용" for a verified
+   duplicate. The lens budget remains unchanged.
 5. **Shared identity.** People on lens notes are grouped through the people registry that State
    maintains (read only). Names the registry knows only as places or objects are not people.
 6. **Lifecycle.** Lens vectors are ordinary `:lens:<id>:` scope keys:
@@ -46,12 +50,21 @@ Rules that hold the layers together:
 ## Semantic lane
 
 - **Document vectors.** After a lens run stores notes, each note's text is embedded:
-  label · text · names · time. The vectors are stored at `…:lens:<lensId>:vectors`.
+  label · text · names · time. `…:lens:<lensId>:vectors` holds a `libra.lens_vector_store.v2`
+  index; immutable `:vectors:page:<digest>` values hold `libra.lens_vector_page.v1` pages.
   - Each vector is stored as int8 with a scale: about 1.4 KB for 1024 dimensions, instead of about
     20 KB as JSON floats.
   - Entries are keyed by note and by a hash of the embedded text, so an edited or re-run note is
     embedded again.
   - Inherited notes are embedded in the successor chat the same way.
+  - Index and pages are each bounded to 192 KiB of serialized UTF-8, below the storage SDK's
+    4 MiB default and 256 KiB minimum interactive-value limits. The 4,000-note logical limit
+    does not become a single oversized value.
+  - Publish a checkpoint after each complete batch of at most 32 notes, writing pages before
+    the index. A later provider/write failure retains earlier batches; retry and restart reuse
+    them. Concurrent refresh callers share one job, and purged lenses cannot publish late pages.
+  - Existing v1 single-key stores remain readable and migrate without re-embedding valid vectors.
+    Missing/corrupt pages alone are rebuilt; pruning/profile changes remove replaced pages.
 - **Query vector.** The request hook starts the lens query embedding while canonical recall runs
   (`prewarmLensQuery`). The provider's query cache coalesces the two, so lens recall waits on at
   most one embedding round trip, bounded to 2.5 s.
@@ -64,6 +77,14 @@ Rules that hold the layers together:
   and item limits are unchanged.
 - **Self-repair.** Missing vectors (a new profile, a successor chat, an older note) are refreshed
   in the background, and that request uses what is there.
+
+Pre-merge regression checks in 2.3.188 use controlled providers: different people/time, unknown
+identity, Japanese names containing と, failed-provider and failed-index checkpoints, v1 migration,
+missing-page repair, and concurrent refresh/purge. The real HTTP/SQLite server was also checked in
+`server_only` and `mirror` with 125 synthetic stored runs × 24 notes (3,000 × 1024D): the logical
+store exceeds 4 MiB while each value stays within 192 KiB, restart makes no new provider calls,
+and permanent deletion removes every page. These checks do not extend the live-model quality
+figures below to a new corpus or model.
 - **Fail-open cases.** Each of these falls back to lexical recall, and the recall viewer says so:
   - embeddings are off;
   - the query embedding fails or times out;

@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.187
-//@version 2.3.187
+//@display-name LIBRA v2.3.188
+//@version 2.3.188
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.187';
+  const PLUGIN_VERSION = '2.3.188';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -14065,7 +14065,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const lensSplitNames = value => {
     const text = String(value ?? '').trim();
     if (!text) return [];
-    const parts = text.split(/\s*(?:,|、|，|\/|&|\s및\s|\s그리고\s|\sand\s|と)\s*/u).map(part => part.trim()).filter(Boolean);
+    // と also occurs inside ordinary names (ひとみ, さとし). Japanese names must remain whole;
+    // the analyzer already has a who array for listing several people.
+    const parts = text.split(/\s*(?:,|、|，|\/|&|\s및\s|\s그리고\s|\sand\s)\s*/u).map(part => part.trim()).filter(Boolean);
     if (parts.length > 1) return parts;
     const pair = /^(\S{2,}?)(?:이랑|랑|하고|와|과)\s+(\S{2,})$/u.exec(text);
     return pair ? [pair[1], pair[2]] : [text];
@@ -77589,7 +77591,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // profile). Each note's vector is stored per lens and chat as int8 with a scale (about 1.4 KB
     // for 1024 dimensions), keyed by the note and a hash of the embedded text; a profile change or a
     // changed text simply misses and is refreshed. Everything here fails open to lexical recall.
-    const LENS_VECTOR_STORE_SCHEMA = 'libra.lens_vector_store.v1';
+    const LENS_VECTOR_STORE_SCHEMA = 'libra.lens_vector_store.v2';
+    const LENS_VECTOR_PAGE_SCHEMA = 'libra.lens_vector_page.v1';
+    // Below even the SDK's minimum configurable interactive-value limit (256 KiB).
+    const LENS_VECTOR_PAGE_BYTES = 192 * 1024;
     const LENS_VECTOR_BATCH = 32;
     const LENS_VECTOR_MAX_ENTRIES = 4000;
     const LENS_QUERY_EMBEDDING_BUDGET_MS = 2500;
@@ -77633,8 +77638,85 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
     const loadLensVectorStore = async (scope, lensId) => {
       const store = await storage.getVerifiedJson(key.lensVectors(scope, lensId), scope, null).catch(() => null);
-      if (store?.schema !== LENS_VECTOR_STORE_SCHEMA || !isPlainObject(store.entries)) return { schema: LENS_VECTOR_STORE_SCHEMA, profileId: '', dimensions: 0, entries: {} };
-      return store;
+      const empty = { schema: LENS_VECTOR_STORE_SCHEMA, profileId: '', dimensions: 0, entries: {}, pages: [] };
+      // Existing single-key stores migrate on refresh without paying to embed them again.
+      if (store?.schema === 'libra.lens_vector_store.v1' && isPlainObject(store.entries)) return { ...store, pages: [] };
+      if (store?.schema !== LENS_VECTOR_STORE_SCHEMA || store.scopeKey !== scope.scopeKey || store.lensId !== lensId
+        || !Number.isInteger(store.dimensions) || store.dimensions < 1 || store.dimensions > 65536
+        || !Array.isArray(store.pages) || store.pages.length > LENS_VECTOR_MAX_ENTRIES) return empty;
+      const entries = {}, pages = [], seen = new Set();
+      for (let offset = 0; offset < store.pages.length; offset += 4) {
+        const loaded = await Promise.all(store.pages.slice(offset, offset + 4).map(async ref => {
+          if (!/^[a-zA-Z0-9_.:-]{1,128}$/.test(ref?.id || '') || seen.has(ref.id)) return null;
+          seen.add(ref.id);
+          try {
+            const page = await storage.getVerifiedJson(`${key.lensVectors(scope, lensId)}:page:${ref.id}`, scope, null);
+            if (page?.schema !== LENS_VECTOR_PAGE_SCHEMA || page.scopeKey !== scope.scopeKey || page.lensId !== lensId
+              || page.profileId !== store.profileId || page.dimensions !== store.dimensions || !isPlainObject(page.entries)
+              || digest(page) !== ref.id || MemorySuiteExecutionContract.utf8Bytes(JSON.stringify(page)) > LENS_VECTOR_PAGE_BYTES
+              || Object.keys(page.entries).length !== ref.count) return null;
+            return { ref, page };
+          } catch (_) { return null; }
+        }));
+        for (const row of loaded) {
+          if (!row || Object.keys(entries).length + row.ref.count > LENS_VECTOR_MAX_ENTRIES) continue;
+          Object.assign(entries, row.page.entries); pages.push(row.ref);
+        }
+      }
+      return { ...store, entries, pages };
+    };
+    // Immutable, byte-bounded pages are written before their index. Each completed provider batch
+    // publishes a checkpoint, so later provider/storage failures never discard earlier paid work.
+    const publishLensVectorPages = async (scope, lensId, profileId, dimensions, rows, previousPages, signal) => {
+      const baseKey = key.lensVectors(scope, lensId);
+      const envelope = { schema: LENS_VECTOR_PAGE_SCHEMA, scopeKey: scope.scopeKey, lensId, profileId, dimensions, entries: {} };
+      const overhead = MemorySuiteExecutionContract.utf8Bytes(JSON.stringify(envelope));
+      const chunks = []; let entries = {}, bytes = overhead, count = 0;
+      const flush = () => { if (count) { const page = { ...envelope, entries }; chunks.push({ page, ref: { id: digest(page), count } }); } entries = {}; bytes = overhead; count = 0; };
+      for (const [entryKey, entry] of Object.entries(rows)) {
+        const cost = MemorySuiteExecutionContract.utf8Bytes(JSON.stringify(entryKey)) + 1 + MemorySuiteExecutionContract.utf8Bytes(JSON.stringify(entry));
+        if (overhead + cost > LENS_VECTOR_PAGE_BYTES) throw lensError('LENS_VECTOR_ENTRY_TOO_LARGE', '렌즈 벡터 하나가 저장 한도를 넘습니다.');
+        if (bytes + cost + (count ? 1 : 0) > LENS_VECTOR_PAGE_BYTES) flush();
+        entries[entryKey] = entry; bytes += cost + (count ? 1 : 0); count += 1;
+      }
+      flush();
+      const index = { schema: LENS_VECTOR_STORE_SCHEMA, scopeKey: scope.scopeKey, lensId, profileId, dimensions,
+        updatedAt: nowIso(), pages: [...previousPages, ...chunks.map(row => row.ref)] };
+      if (MemorySuiteExecutionContract.utf8Bytes(JSON.stringify(index)) > LENS_VECTOR_PAGE_BYTES) throw lensError('LENS_VECTOR_INDEX_TOO_LARGE', '렌즈 벡터 목록이 저장 한도를 넘습니다.');
+      return await withLensScopeLock(scope.scopeKey, async () => {
+        const current = async () => !signal?.aborted && !state.lensHandoffFreezeDepth
+          && (await readLensRegistry({ force: true })).lenses.some(lens => lens.lensId === lensId);
+        if (!await current()) return null;
+        const previous = await storage.getVerifiedJson(baseKey, scope, null);
+        const oldPages = previous?.schema === LENS_VECTOR_STORE_SCHEMA ? asArray(previous.pages) : [];
+        const oldIds = new Set(oldPages.map(ref => ref.id));
+        let published = false;
+        try {
+          for (const { page, ref } of chunks) {
+            if (!await current()) return null;
+            await storage.setVerifiedJson(`${baseKey}:page:${ref.id}`, page, scope);
+          }
+          if (!await current()) return null;
+          await storage.setVerifiedJson(baseKey, index, scope);
+          published = true;
+          const keep = new Set(index.pages.map(ref => ref.id));
+          for (const ref of oldPages) if (!keep.has(ref.id) && /^[a-zA-Z0-9_.:-]{1,128}$/.test(ref.id || '')) {
+            try { await storage.remove(`${baseKey}:page:${ref.id}`); } catch (error) { warn('LIBRA lens vector page cleanup failed', error); }
+          }
+          return index;
+        } finally {
+          if (!published) {
+            // A failed readback can still have committed the index. Never remove its pages.
+            const actual = await storage.getVerifiedJson(baseKey, scope, null).catch(() => undefined);
+            if (actual !== undefined) {
+              const keep = new Set(asArray(actual?.pages).map(ref => ref.id));
+              for (const { ref } of chunks) if (!oldIds.has(ref.id) && !keep.has(ref.id)) {
+                try { await storage.remove(`${baseKey}:page:${ref.id}`); } catch (_) {}
+              }
+            }
+          }
+        }
+      });
     };
     // Embeds the notes of one lens (this chat's current records and its inherited archives) that
     // have no vector for the current embedding profile, then prunes vectors of notes that are gone.
@@ -77661,6 +77743,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       let profileId = (expectedProfile && expectedProfile !== store.profileId) || (configuredProfile && configuredProfile !== store.profileId) ? '' : string(store.profileId || '');
       let entries = profileId ? Object.fromEntries(Object.entries(store.entries).filter(([entryKey, entry]) => wanted.get(entryKey)?.hash === entry?.h)) : {};
       let dimensions = profileId ? Number(store.dimensions || 0) : 0, embedded = 0;
+      let repack = store.schema !== LENS_VECTOR_STORE_SCHEMA || Object.keys(entries).length !== Object.keys(store.entries).length || store.profileId !== profileId;
+      let pages = repack ? [] : store.pages;
       const pending = () => [...wanted].filter(([entryKey]) => !entries[entryKey]);
       for (let guard = 0; guard < 1 + Math.ceil(LENS_VECTOR_MAX_ENTRIES / LENS_VECTOR_BATCH); guard += 1) {
         const batch = pending().slice(0, LENS_VECTOR_BATCH);
@@ -77671,23 +77755,26 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (resultProfile !== profileId) {
           if (embedded) return { ok: false, reason: 'embedding_profile_changed' };
           // First answer in a new space: every earlier vector belongs to another profile.
-          profileId = resultProfile; entries = {}; dimensions = 0;
+          profileId = resultProfile; entries = {}; dimensions = 0; pages = []; repack = true;
         }
+        const added = {};
         batch.forEach(([entryKey, row], index) => {
           const vector = result?.vectors?.[index];
           if (!Array.isArray(vector) || !vector.length) return;
           dimensions = vector.length;
           entries[entryKey] = { h: row.hash, ...lensEncodeVector(vector) };
+          added[entryKey] = entries[entryKey];
           embedded += 1;
         });
+        if (Object.keys(added).length) {
+          const saved = await publishLensVectorPages(scope, lensId, profileId, dimensions, repack ? entries : added, pages, signal);
+          if (!saved) return { ok: false, reason: signal?.aborted ? 'aborted' : state.lensHandoffFreezeDepth ? 'handoff_freeze' : 'lens_not_found', embedded };
+          pages = saved.pages; repack = false;
+        }
       }
-      const changed = embedded > 0 || Object.keys(entries).length !== Object.keys(store.entries).length || store.profileId !== profileId;
-      if (changed && profileId && !state.lensHandoffFreezeDepth) {
-        await withLensScopeLock(scope.scopeKey, async () => {
-          if (state.lensHandoffFreezeDepth || !(await readLensRegistry({ force: true })).lenses.some(lens => lens.lensId === lensId)) return;
-          await storage.setVerifiedJson(key.lensVectors(scope, lensId), { schema: LENS_VECTOR_STORE_SCHEMA, scopeKey: scope.scopeKey, lensId,
-            profileId, dimensions, updatedAt: nowIso(), entries }, scope);
-        });
+      if (repack && profileId) {
+        const saved = await publishLensVectorPages(scope, lensId, profileId, dimensions, entries, [], signal);
+        if (!saved) return { ok: false, reason: signal?.aborted ? 'aborted' : state.lensHandoffFreezeDepth ? 'handoff_freeze' : 'lens_not_found', embedded };
       }
       return { ok: true, profileId, embedded, total: Object.keys(entries).length, missing: Math.max(0, wanted.size - Object.keys(entries).length) };
     };
@@ -77729,15 +77816,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (embedding) await lensQueryVector(context.scope, text, embedding);
       } catch (_) {}
     };
-    // How much of a lens note the delivered canonical/Micro text already says, by shared character
-    // bigrams of the note text (punctuation and spacing ignored).
-    const lensBigrams = value => {
-      const body = canonicalEvidenceComparable(value).replace(/[^\p{L}\p{N}]/gu, '');
-      const out = new Set();
-      for (let index = 0; index + 1 < body.length; index += 1) out.add(body.slice(index, index + 2));
-      return out;
+    // Text coverage alone cannot certify that separately recorded people/time/extra values were
+    // delivered. Suppress only an exact sentence that already contains those known identities.
+    // Unknown or separately carried identity stays in the bounded lens lane.
+    const lensCoveredByDelivery = (item, record, people, deliveredText) => {
+      const text = canonicalEvidenceComparable(item.text);
+      if (text.length < 6 || Object.keys(item.extra || {}).length) return false;
+      if (record.trackedSubject === true && (!people.length || people.some(person =>
+        ![person.name, person.written].some(name => name && text.includes(canonicalEvidenceComparable(name)))))) return false;
+      if (record.trackedTime === true && (!item.when?.text || !text.includes(canonicalEvidenceComparable(item.when.text)))) return false;
+      return String(deliveredText || '').split(/\n|[。！？!?]/u).some(line => canonicalEvidenceComparable(line).includes(text));
     };
-    const LENS_DELIVERED_COVERAGE = 0.85;
     // Cosine bands for the semantic lane, calibrated on live embeddings (see the lens memory
     // design doc): below FLOOR a note is not admitted on meaning alone; at HIGH it gets the full
     // relevance share that lexical overlap can give.
@@ -77813,7 +77902,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           }
         } catch (error) { semantic.status = 'failed'; }
       }
-      const deliveredBigrams = options.deliveredText ? lensBigrams(options.deliveredText) : null;
       // Calibration/diagnostics only: every scored candidate, admitted or not.
       const scores = options.includeScores === true ? [] : null;
       const recordsByLens = await Promise.all(candidatesLenses.map(lens => loadLensRecordsMap(scope, lens.lensId).catch(() => ({}))));
@@ -77853,11 +77941,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             const semanticHit = similarity !== null && similarity >= LENS_SEMANTIC_FLOOR;
             if (scores) scores.push({ lensId: lens.lensId, itemId: item.itemId, inherited: record.inherited === true, text: compact(item.text, 160), who: people.map(person => person.name), lexicalOverlap: overlap, similarity });
             if (overlap < minOverlap && !recent && !semanticHit) { skip(lens, item, record, 'below_score_floor'); continue; }
-            if (deliveredBigrams?.size) {
-              const own = lensBigrams(item.text);
-              let shared = 0;
-              for (const pair of own) if (deliveredBigrams.has(pair)) shared += 1;
-              if (own.size >= 6 && shared / own.size >= LENS_DELIVERED_COVERAGE) { skip(lens, item, record, 'covered_by_delivered_memory'); continue; }
+            if (options.deliveredText && lensCoveredByDelivery(item, record, people, options.deliveredText)) {
+              skip(lens, item, record, 'covered_by_delivered_memory'); continue;
             }
             if (semanticHit && overlap < minOverlap && !recent) semantic.admittedBySemantic += 1;
             seenText.add(textKey);
@@ -77929,7 +78014,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       runLensForRange, runLensForTurnRange, trialRunLens, runScheduledLensesForCommittedBatch, waitForLensQueueIdle, disposeLensQueue,
       inspectScopeLenses, getLensRawResponse, deleteLensMemories, draftLensWithAssistant, generateLensDefinitionFromDescription,
       recallLensMemories,
-      refreshLensVectors: async ({ lensId = '' } = {}) => { const context = await resolveContext(); return await refreshLensVectors(context.scope, lensSlug(lensId)); },
+      refreshLensVectors: async ({ lensId = '' } = {}) => { const context = await resolveContext(); return await scheduleLensVectorRefresh(context.scope, lensSlug(lensId), '', { force: true }); },
       prewarmLensQuery: async (text = '') => { await prewarmLensQuery(await resolveContext(), text); },
       PAIR_REVISION_CACHE_MAX_SCOPES, PAIR_REVISION_CACHE_MAX_ENTRIES_PER_SCOPE, PAIR_REVISION_CACHE_MAX_RETAINED_CHARS,
       recallMinDynamicChars: RECALL_BUDGET_MIN_CHARS,

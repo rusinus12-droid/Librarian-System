@@ -96,6 +96,8 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'libra_lens_story_identity_runtime_test.cjs',
   'libra_lens_semantic_recall_runtime_test.cjs',
   'libra_lens_name_boundary_runtime_test.cjs',
+  'libra_lens_merge_regressions_runtime_test.cjs',
+  'libra_lens_vector_pages_server_runtime_test.cjs',
   'libra_lens_handoff_runtime_test.cjs',
   'libra_lens_archive_bounds_test.cjs',
   'libra_lens_handoff_server_test.cjs',

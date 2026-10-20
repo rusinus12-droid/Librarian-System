@@ -1,6 +1,6 @@
 # LIBRA lens memory: people on each note (2026-10-20)
 
-Status: **implemented on `feature/custom-memory-lenses` (LIBRA 2.3.184; initially 2.3.183).** It extends
+Status: **implemented on `feature/custom-memory-lenses` (LIBRA 2.3.188; initially 2.3.183).** It extends
 `LIBRA_LENS_MEMORY_DESIGN_20261020.md` and follows the same rules as
 `LIBRA_LENS_TIME_DESIGN_20261020.md`.
 
@@ -15,6 +15,11 @@ not want to name the people in advance, or run one lens or one model call per pe
 One lens, one model call per run, several people. Each note says whose note it is, using names
 the chat text itself writes. Otherwise it says "인물 불명". The code checks every name against the
 source and never guesses one.
+
+Japanese names retain internal と (for example `ひとみ`, `さとし`, `ことね`). It is not an
+unconditional list separator; several people are represented by the model's `who` array.
+Explicit comma-separated lists remain supported. Recall also preserves person/time metadata:
+a matching body sentence about a different person or time cannot suppress the note as delivered.
 
 ## Setting
 
