@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-20T02:10:59.302Z",
+  "generatedAt": "2026-10-20T02:12:10.271Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -2543,6 +2543,10 @@
       "sha256": "0edbf2e1e8028e48c9ccde7de3a078437c3da58489a3197feb06d386e27048da",
       "bytes": 584
     },
+    "docs/LIBRA_AI_SETTINGS_AND_PROMPT_STUDIO_20261020.md": {
+      "sha256": "eb4645f10c28ecf74ce9c75e2395f8c957cb614767ba3626b599cc95ff12dec1",
+      "bytes": 6034
+    },
     "docs/LIBRA_BOOK_UX_1TO1_AUDIT_20260904.md": {
       "sha256": "306770278e5eb099be83a48a0575af8924884ed7f6affdb27199b1b386d089c8",
       "bytes": 16567
@@ -4486,6 +4490,10 @@
     "tests/browser/libra_narrative_almanac_browser_test.cjs": {
       "sha256": "d997375b944a7fade31710f55785eb7892ae62e4b81844a594e95eff7f10cc6e",
       "bytes": 10039
+    },
+    "tests/browser/libra_prompt_studio_browser_test.cjs": {
+      "sha256": "08eaeab882051998d16febeb47876f7a6ebd1073605f9dc12c7d200b488bf17d",
+      "bytes": 5486
     },
     "tests/browser/libra_reading_desk_controls_browser_test.cjs": {
       "sha256": "fef4c4acb32612b0e169416fb8cde6cc49e09084fa76bc81c5e5e28d82cf983e",
@@ -8426,6 +8434,10 @@
     "tests/libra_prompt_priority_contract_test.cjs": {
       "sha256": "0abfbce5d4394f29044c171021d9095eadc05ac3f68ca7607784d4602ef515bf",
       "bytes": 6621
+    },
+    "tests/libra_prompt_studio_dispatch_contract_runtime_test.cjs": {
+      "sha256": "3f74a00d098e097aa400eb5b14dd5e42ac5a8cd3b3c8ff6855f0aff30a15fe0a",
+      "bytes": 4433
     },
     "tests/libra_prompt_studio_ooc_default_targets_test.cjs": {
       "sha256": "fa81eda78a644b605fca7222f1b306005f203fa1eae2b571d2755f708d1c1cd1",
