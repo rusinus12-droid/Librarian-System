@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-20T12:21:54.271Z",
+  "generatedAt": "2026-10-20T12:35:02.469Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -2668,8 +2668,8 @@
       "bytes": 30826
     },
     "docs/LIBRA_LENS_TIME_DESIGN_20261020.md": {
-      "sha256": "8d2dccbd2be65f14d0ea9d6c1029d96f3a4990cec380cf8074e5c56ba9228e6f",
-      "bytes": 10349
+      "sha256": "273c45f49290b9504d452860922641de5be876237d6f7fc2e0dc830fa38a83da",
+      "bytes": 16918
     },
     "docs/LIBRA_LOCAL_CORPUS_GC_20261017.md": {
       "sha256": "cf4d721988d955738802d87a6895b8fcbb61a08041c3cac53174ef59bd6d6a96",
