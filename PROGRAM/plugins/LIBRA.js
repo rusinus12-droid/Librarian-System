@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.186
-//@version 2.3.186
+//@display-name LIBRA v2.3.187
+//@version 2.3.187
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.186';
+  const PLUGIN_VERSION = '2.3.187';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -14083,6 +14083,17 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (/\S\s+호$/u.test(String(value ?? '').trim())) return 'not_a_person';
     return '';
   };
+
+  // Extra values keep stable machine keys (the starter templates define them); the GUI shows a
+  // Korean label. Keys measured in live runs come first; an unknown key is shown as written.
+  const LENS_EXTRA_KEY_LABELS = Object.freeze({
+    target: '대상', holder: '당사자', clueStatus: '단서 상태', clueType: '단서 종류', suspect: '의심 대상', reliability: '신뢰도',
+    sense: '감각', prop: '소품', place: '장소', tone: '어조', tension: '긴장도', speaker: '화자', listener: '청자', appellation: '호칭',
+    register: '말투', state: '상태', status: '상태', kind: '종류', value: '값', emotion: '감정', intensity: '강도', trigger: '계기',
+    mood: '분위기', cause: '원인', item: '물건', object: '물건', owner: '소유자', location: '위치', result: '결과', outcome: '결과',
+    deadline: '기한', fulfilled: '이행 여부', promiser: '약속한 사람', promisee: '약속 받은 사람', time: '시간', reason: '이유'
+  });
+  const lensExtraLabel = keyName => LENS_EXTRA_KEY_LABELS[keyName] || String(keyName || '');
 
   const LENS_SOURCE_EXCERPT_MAX = 4000;
   const LENS_SOURCE_EXCERPT_RADIUS = 600;
@@ -77863,7 +77874,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             const renderedLine = `- ${tag} (T${record.turnRange.start}–T${record.turnRange.end}${personPart}${timePart} · ${lensSafeText(item.label, 24)}) ${lensSafeText(item.text, 400)}${quote}`;
             list.push({ lensId: lens.lensId, lensName: lens.name, itemId: item.itemId, label: item.label, text: item.text, evidenceLevel: item.evidenceLevel,
               turnRange: clone(record.turnRange), instructionRevision: record.instructionRevision, inherited:record.inherited===true,sourceScopeKey:record.sourceScopeKey||scope.scopeKey,archiveKey:record.archiveKey||'',score,
-              lexicalOverlap: overlap, similarity: similarity === null ? null : Math.round(similarity * 1000) / 1000, renderedLine, chars: renderedLine.length + 1, record });
+              lexicalOverlap: overlap, similarity: similarity === null ? null : Math.round(similarity * 1000) / 1000,
+              ...(record.trackedSubject === true ? { people: people.map(person => person.name) } : {}), ...(record.trackedTime === true ? { when: item.when?.text || '' } : {}),
+              renderedLine, chars: renderedLine.length + 1, record });
           }
         }
         list.sort((a, b) => b.score - a.score || Number(a.inherited)-Number(b.inherited) || Number(b.turnRange.end) - Number(a.turnRange.end));
@@ -79886,6 +79899,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.lens-when.is-unknown{background:var(--warn-soft);border-color:var(--warn-line)}',
     '.lens-when.is-unknown b{color:var(--warn-ink)}',
     '.lens-who{background:var(--surface2);border-color:var(--border)}',
+    // The shared .row is a three-column grid; a lens recall row stacks its header and note text.
+    '.row.lens-recall-row{grid-template-columns:minmax(0,1fr);align-items:start;gap:6px}',
+    '.row.lens-recall-row>.muted{overflow-wrap:anywhere}',
     '.lens-who__names{display:flex;flex-wrap:wrap;gap:4px 14px}',
     '.lens-who__names small{margin-left:6px;color:var(--text3);font:500 12px/1.4 var(--font-sans)}',
     '.lens-people{display:flex;flex-wrap:wrap;gap:8px}',
@@ -83267,15 +83283,18 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         lensRecall.semantic ? guiEl('p', { class: 'hint', text: ({ ready: `의미 검색 사용 · 비교 ${Number(lensRecall.semantic.scored || 0)}개${Number(lensRecall.semantic.missingVectors || 0) ? ` · 벡터 준비 중 ${Number(lensRecall.semantic.missingVectors)}개` : ''}`,
           embedding_disabled: '의미 검색 꺼짐 · 임베딩 설정이 없어 단어 일치로만 찾았습니다.', off: '의미 검색 꺼짐 · 렌즈 설정에서 껐습니다.',
           query_embedding_unavailable: '의미 검색 실패 · 이번 요청은 단어 일치로만 찾았습니다.', failed: '의미 검색 실패 · 이번 요청은 단어 일치로만 찾았습니다.' })[lensRecall.semantic.status] || '' }) : null,
-        ...lensInjectedItems.map(item => guiEl('div', { class: `row ${lensDelivered ? 'injected' : 'dropped'} stack` }, [
+        ...lensInjectedItems.map(item => guiEl('div', { class: `row lens-recall-row ${lensDelivered ? 'injected' : 'dropped'} stack` }, [
           guiEl('div', { class: 'cluster' }, [
             guiEl('span', { class: `badge ${item.evidenceLevel === 'quoted' ? 'badge--ok' : 'badge--warn'}`, text: item.evidenceLevel === 'quoted' ? '인용 확인' : '해석' }),
             guiEl('strong', { text: `${libraGuiText(item.lensName)} · ${libraGuiText(item.label)}` }),
             guiEl('span', { class: 'hint', text: `T${Number(item.turnRange?.start || 0)}–T${Number(item.turnRange?.end || 0)} · 점수 ${Number(item.score || 0).toFixed(2)}${item.similarity !== null && item.similarity !== undefined ? ` · 의미 ${Number(item.similarity).toFixed(2)}` : ''}${Number(item.lexicalOverlap || 0) ? '' : item.similarity !== null && item.similarity !== undefined ? ' · 의미로만 찾음' : ''}` })
           ]),
-          guiEl('div', { class: 'muted', text: libraGuiText(item.text) })
-        ])),
-        !compactView && lensSkippedItems.length ? guiLazyDetails({ class: 'stack' }, guiEl('summary', { text: `렌즈 회상에서 제외된 항목 ${Number(lensRecall.skippedCount ?? lensSkippedItems.length)}개` }), () => lensSkippedItems.map(skip => guiEl('div', { class: 'row dropped cluster' }, [
+          guiEl('div', { class: 'muted', text: libraGuiText(item.text) }),
+          Array.isArray(item.people) || typeof item.when === 'string' ? guiEl('span', { class: 'hint', dataset: { lensRecallFacts: 'true' }, text: [
+            Array.isArray(item.people) ? `인물 ${item.people.length ? item.people.map(libraGuiText).join(', ') : '불명'}` : '',
+            typeof item.when === 'string' ? `시점 ${item.when ? libraGuiText(item.when) : '불명'}` : ''].filter(Boolean).join(' · ') }) : null
+        ].filter(Boolean))),
+        !compactView && lensSkippedItems.length ? guiLazyDetails({ class: 'stack' }, guiEl('summary', { text: `렌즈 회상에서 제외된 항목 ${Number(lensRecall.skippedCount ?? lensSkippedItems.length)}개` }), () => lensSkippedItems.map(skip => guiEl('div', { class: 'row lens-recall-row dropped cluster' }, [
           guiEl('span', { class: 'badge badge--warn', text: libraGuiText(skip.reasonLabel || skip.reasonCode) }),
           guiEl('strong', { text: libraGuiText(skip.lensName || skip.lensId) }),
           guiEl('span', { class: 'muted', text: libraGuiText(skip.text || skip.label || '렌즈 전체') })
@@ -89186,7 +89205,7 @@ advanced
       guiEl('p', { class: 'lens-item__text', text: text(item.text) }),
       item.quote ? guiEl('blockquote', { class: 'lens-quote' }, [guiEl('span', { text: `“${text(item.quote)}”` }), guiEl('small', { text: /-u$/.test(item.quoteRef || '') ? '사용자 원문' : 'AI 응답 원문' })])
         : item.basis ? guiEl('p', { class: 'lens-basis' }, [guiEl('b', { text: '해석 근거' }), guiEl('span', { text: text(item.basis) })]) : null,
-      extraEntries.length ? guiEl('div', { class: 'lens-extra', 'aria-label': '추가 값' }, extraEntries.map(([k, v]) => guiEl('span', { class: 'lens-extra__pair' }, [guiEl('b', { text: `${k} ` }), document.createTextNode(Array.isArray(v) ? v.join(', ') : String(v))]))) : null,
+      extraEntries.length ? guiEl('div', { class: 'lens-extra', 'aria-label': '추가 값' }, extraEntries.map(([k, v]) => guiEl('span', { class: 'lens-extra__pair' }, [guiEl('b', { text: `${lensExtraLabel(k)} `, title: k }), document.createTextNode(Array.isArray(v) ? v.join(', ') : String(v))]))) : null,
       states.length || (memory && !item.inherited && options.onDelete) ? guiEl('footer', { class: 'lens-item__foot' }, [
         guiEl('div', { class: 'lens-item__states' }, states),
         memory && !item.inherited && options.onDelete ? guiEl('button', { class: 'btn btn--sm btn--ghost lens-danger', type: 'button', text: '삭제', 'aria-label': `${text(item.label)} 항목 삭제`, onClick: options.onDelete }) : null

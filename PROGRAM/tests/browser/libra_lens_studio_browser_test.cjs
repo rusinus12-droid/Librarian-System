@@ -99,6 +99,7 @@ const touching = (page, scope) => page.evaluate(sel => {
       await page.waitForSelector('[data-lens-reader] .lens-item');
       assert.equal(await page.locator('[data-lens-reader] .lens-item').count(), 2);
       assert.equal(await page.locator('[data-lens-reader] .lens-item').filter({ hasText: '이전 지침으로 생성' }).count(), 2, 'records from the old instruction are marked');
+      assert.match(await page.locator('[data-lens-reader] .lens-extra__pair').first().innerText(), /^당사자 지호$/, 'a known extra key is shown with its Korean label');
       await page.locator('[data-lens-reader] .lens-prov summary').first().click();
       await page.waitForSelector('[data-lens-reader] .lens-prov .lens-source mark');
       await page.waitForSelector('[data-lens-reader] .lens-prov .lens-diff');

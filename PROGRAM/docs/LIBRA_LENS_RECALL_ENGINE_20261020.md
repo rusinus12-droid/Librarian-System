@@ -156,8 +156,55 @@ parsed.
 end to end and the boundary rules hold. They are not a general accuracy benchmark. Grouping still
 needs a people card to join "서윤", "한서윤" and "한 선생님".
 
+## Live data → GUI (2.3.187)
+
+`tools/rag_eval/libra_lens_live_gui_check.cjs` checks that what a real model writes reaches the
+screen. It works in three steps:
+
+1. **Generate.** On the test VM host, the real chat model and real embeddings write notes for a
+   body-signal lens (time and people on) and the "떡밥·복선 추적" template. The corpus chat yields
+   38–41 notes about 8 people, 13–15 of them with a stated time. A people-and-promise lens on a
+   chat with canonical memory yields 8–10 notes.
+2. **Load.** That storage is loaded into the shipped plugin in Chromium.
+3. **Compare.** Every displayed value is compared with the engine's own `inspectScopeLenses`
+   view, at 1280 and 390 px.
+
+It checks:
+
+- **Lens tab cards.** One card per note. Text, label and quote match. The person row has the
+  grouped names, the "원문: …" written form and the user badge, or shows unknown. The time row has
+  the source wording or "시점 불명".
+- **Lens tab chips and search.** Chips use the engine's grouping and counts, and each chip
+  filters to its notes. Search by a person's name finds their notes.
+- **Provenance.** Every provenance fold highlights the quote, the time and the names in the turns
+  the engine recorded.
+- **Studio.** Lens cards carry the "시점 기록" and "인물 구분" chips. Each lens's run log shows the
+  saved, time and people counts of every run.
+- **Recall.** The real request hook (`beforeRequest`) delivers the lens lines, carrying people and
+  time, with the semantic lane ready on live embeddings. The recall viewer counts and lists the
+  same notes, with score, meaning score, people and time.
+- **Layout.** No horizontal overflow, no touching buttons and no page errors.
+
+What it found and fixed:
+
+- **Squeezed text in the recall viewer.** On a 390 px screen, the lens rows in "현재 턴 리콜 상세"
+  squeezed the note text into a one-character column. The shared `.row` is a three-column grid;
+  lens recall rows now stack in one column. The check measures that no row child is narrower than
+  half the panel.
+- **English key names.** Extra values showed the templates' machine keys ("clueStatus", "holder",
+  "target"). The keys stay as stored; the card now shows Korean labels ("단서 상태", "당사자",
+  "대상"), with the key in the tooltip.
+- **People and time missing from the recall viewer.** The viewer rows now show each delivered
+  note's people and time, which the prompt line already carried.
+
+Results: 54/54 checks passed on the final run (`deepseek-v4.1-flash`, `voyage-4-large`). Two
+checks were corrected in the checker itself, not in the GUI: a name or time that lies inside the
+highlighted quote is shown by the quote's mark, and the run log lives in each lens's editor.
+
 ## Tests
 
+- `tools/rag_eval/libra_lens_live_gui_check.cjs` (live, above). The `libra_lens_studio_browser_test`
+  also checks the Korean label of a known extra key.
 - `tests/libra_lens_semantic_recall_runtime_test.cjs`:
   - the compact vector store, with no duplicate embedding of an unchanged note;
   - a paraphrase recalled by meaning only with embeddings on, unrelated input not recalled, and the
