@@ -5,8 +5,23 @@
 [![RisuAI](https://img.shields.io/badge/Host-RisuAI_Plugin_Suite-purple.svg)](https://github.com/kwaroran/RisuAI)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-red.svg)](./LICENSE)
 
-**Librarian System**은 **RisuAI** 환경을 위해 설계된 로컬 백엔드 데이터 서버 및 6종의 지능형 메모리·서사 연속성 플러그인 스위트입니다.  
-단순 요약이나 키워드 매칭을 넘어, **원문 근거 검증(Source-Bound Proof)**, **분기/월드라인(Worldline) 격리**, **실시간 상태 투영(State Projection)**, 그리고 **트랜잭션 기반의 영구 데이터 보존**을 제공합니다.
+**Librarian System**은 **RisuAI**에서 장기 기억과 서사 연속성을 안정적으로 관리하기 위한 **로컬 서버 + 플러그인 스위트**입니다.  
+핵심 목표는 "기억을 많이 저장"하는 것이 아니라, **근거가 검증된 기억만 안전하게 보존하고 현재 대화에 정확히 연결**하는 것입니다.
+
+## 🧭 프로젝트 한눈에 보기 (TL;DR)
+
+| 항목 | 내용 |
+| :--- | :--- |
+| **무엇인가요?** | RisuAI용 로컬 메모리 인프라입니다. 서버(`Librarian System Server`)와 6개 플러그인(`LIBRA`, `Flashback`, `HAYAKU`, `LIA`, `RE:TRACE`, `GRADIA`)으로 구성됩니다. |
+| **왜 필요한가요?** | 긴 대화/분기형 대화에서 기억 혼합, 근거 없는 요약, 상태 불일치 문제를 줄이기 위해서입니다. |
+| **무엇이 다른가요?** | `Source-Bound Proof`(원문 근거 검증), `Worldline`(분기 격리), `State Projection`(현재 상태 투영), `CAS + SQLite WAL`(무결성 중심 저장)을 제공합니다. |
+| **어떻게 시작하나요?** | ① Node.js 설치 → ② 서버 실행 → ③ RisuAI에 플러그인 등록 및 서버 주소(`http://127.0.0.1:47630`) 연결 |
+
+## 🔄 기본 동작 흐름
+
+1. 플러그인이 대화에서 기억 후보를 추출합니다.
+2. 로컬 서버가 스코프/리비전/CAS 규칙으로 저장 무결성을 검증합니다.
+3. 필요 시 검증된 기억만 다시 조회되어 프롬프트에 반영됩니다.
 
 ---
 
