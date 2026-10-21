@@ -88554,7 +88554,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return guiEl('details',{class:'fold',open:true,dataset:{providerEditor:RISUAI_AUX_PRESET_NAME}},[guiEl('summary',{text:'RisuAI 보조 모델 · 연결 상세'}),guiEl('div',{class:'fold__body stack'},[
       fieldNode('기본 연결',selectNode(runtime.defaultPresetName||'',[['','공용 기본값'],...names.map(name=>[name,presetDisplayName(name)])],value=>{runtime.defaultPresetName=value;markGuiDirty();})),
       guiEl('div',{class:'note'},[guiEl('b',{text:resolution.api?'API 사용 가능':'runLLMModel 사용 불가'}),guiEl('p',{text:`mode: otherAx · API 소스: ${resolution.source} · staticModel 지정 안 함`})]),
-      guiEl('p',{class:'hint',text:'모델·출력 토큰·스트리밍·타임아웃은 RisuAI 설정을 사용합니다.'}),
+      guiEl('p',{class:'hint',text:'모델·출력 토큰·스트리밍·타임아웃은 RisuAI 설정을 사용합니다. 직접 연결을 추가하면 LIBRA가 출력 토큰 예산·스트리밍·타임아웃을 직접 관리합니다.'}),
       guiEl('div',{class:'note note--warn',role:'status',hidden:!(Runtime.risuAuxiliary.unverifiedStreams > 0),dataset:{libraOtherAxStreamPending:'true'},text:HOST_STREAM_PENDING_MESSAGE}),
       checkboxNode(runtime.risuAuxAllowPlugins===true,'플러그인 제공 보조 모델 허용',value=>{runtime.risuAuxAllowPlugins=value===true;markGuiDirty();}),
       guiEl('div',{class:'note',dataset:{risuAuxiliaryCallProbe:probe?.status||'unverified'}},[guiEl('b',{text:probe?(probe.ok?'최근 호출 성공':'최근 호출 실패'):'호출 테스트 기록 없음'}),guiEl('p',{text:probe?`${probe.apiSource||'API 불명'} · ${Number(probe.elapsedMs||0)}ms · ${probe.ok?probe.responsePreview||'':probe.error||''}`:'버튼을 누를 때만 실제 보조 모델 호출을 1회 전송합니다.'})]),
