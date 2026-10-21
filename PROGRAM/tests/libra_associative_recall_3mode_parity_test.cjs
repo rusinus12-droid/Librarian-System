@@ -1,17 +1,15 @@
 'use strict';
-// Stage 5 (second requirement): associative recall must behave identically in all three storage modes.
+// Retirement contract (was: Stage 5 associative-recall 3-mode parity).
 //
-// Stage 1 and Stage 2 each proved their index is mode-independent. Stage 3/4 is the first increment that
-// CONSUMES those indexes inside a live recall, so a mode-dependent difference here would change what a
-// model actually receives — a far more consequential failure than a projection reading differently. The
-// contract is therefore the same but the stakes are higher:
+// The Stage 3/4 associative link-expansion participation was removed with the Classic retrieval path when the
+// unified memory engine replaced it (9c03c35; docs/LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT_20261014.md).
+// What stays true, and what this test now verifies in all three storage modes:
 //
-//   1. The expansion really ran in every mode (an expansion that silently failed open would report the
-//      same "nothing to add" three times and pass every equality check below).
-//   2. The OBSERVATION is mode-independent: the same reached candidate, the same outcome, the same budget
-//      verdict, the same zero provider cost.
-//   3. The delivered result is mode-independent: the same selected memory refs.
-//   4. Safety is mode-independent: no mode gains a provider call, and no mode mutates canonical or Head.
+//   1. The associative surface reports itself retired and never participates, even when the legacy
+//      associative_recall_enabled flag is set; its observation is the unified engine's access trace.
+//   2. The unified recall of the same two-batch corpus is mode-independent: the same delivered memories and the
+//      same engine access trace.
+//   3. Safety is mode-independent: no mode gains a provider call, and no mode mutates canonical or Head.
 const assert = require('node:assert/strict');
 const { serverFixture, withLorebook } = require('./fixtures/libra_server_runtime_fixture.cjs');
 
@@ -42,9 +40,11 @@ const headOf = snapshot => snapshot.getHead() || localJson(snapshot, key => HEAD
 
 // Fields that legitimately vary between runs and carry no contract: the timestamp and the measured
 // duration. Everything else must match across modes.
-const VOLATILE_OBSERVATION = new Set(['builtAt', 'buildMs']);
+// The access trace's generation, index digest, workspace and resource byte accounting are storage-keyed and
+// legitimately differ per mode; schema, authority, lane, frontier and coverage are the mode-independent contract.
+const STABLE_TRACE_FIELDS = ['schema', 'authority', 'lane', 'frontier', 'coverage'];
 const stableObservation = value => Object.fromEntries(Object.entries(value || {})
-  .filter(([key]) => !VOLATILE_OBSERVATION.has(key)));
+  .filter(([key]) => STABLE_TRACE_FIELDS.includes(key)));
 
 async function observeFor(mode) {
   const snapshot = await serverFixture({
@@ -87,8 +87,14 @@ async function observeFor(mode) {
     return {
       mode,
       participationEnabled: diagnostics.participationEnabled === true,
+      retired: diagnostics.retired === true,
+      available: diagnostics.available === true,
+      engine: diagnostics.engine,
       observation,
-      deliveredRefs: arr(recalled.memories).map(entry => String(entry?.memory?.memoryId || '')),
+      // Graph node ids hash the mode's storage keys and rank ties order by them, so the mode-independent
+      // contract is the multiset of delivered canonical memories plus the number of graph nodes.
+      deliveredRefs: arr(recalled.memories).map(entry => String(entry?.memory?.memoryId || ''))
+        .map(id => (id.startsWith('libra.node.v1:') ? 'graph-node' : id)).sort(),
       providerCallsAdded: callsAfter - callsBefore,
       canonicalUnmoved: JSON.stringify(plain(memoryOf(snapshot))) === memoryBefore,
       headUnmoved: JSON.stringify(plain(headOf(snapshot))) === headBefore
@@ -104,44 +110,38 @@ async function observeFor(mode) {
 
   console.log(JSON.stringify(observations.map(o => ({
     mode: o.mode,
-    active: o.observation.active,
-    reachedMemories: o.observation.reachedMemories,
-    added: arr(o.observation.added), agreed: arr(o.observation.agreed), omitted: arr(o.observation.omitted),
+    retired: o.retired, participationEnabled: o.participationEnabled,
+    observationKeys: Object.keys(o.observation),
     deliveredRefs: o.deliveredRefs,
     providerCallsAdded: o.providerCallsAdded,
     canonicalUnmoved: o.canonicalUnmoved, headUnmoved: o.headUnmoved
   })), null, 1));
 
-  // 1. The expansion really ran in every mode. Without this, three identical "found nothing" reports would
-  //    satisfy every equality check below while the feature was dead in all three.
+  // 1. The retired surface stays retired in every mode, regardless of the legacy flag, and says what replaced it.
   for (const o of observations) {
-    assert.equal(o.participationEnabled, true, `${o.mode}: participation is on when the flag is set`);
-    assert.equal(o.observation.active, true,
-      `${o.mode}: the expansion must reach across the shared entities: ${JSON.stringify(o.observation)}`);
-    assert.ok(Number(o.observation.reachedMemories) >= 1, `${o.mode}: at least one memory was reached`);
-    assert.ok(arr(o.observation.candidates).length >= 1, `${o.mode}: the reached candidate is reported`);
+    assert.equal(o.participationEnabled, false, `${o.mode}: associative participation is retired even when the legacy flag is set`);
+    assert.equal(o.retired, true, `${o.mode}: the associative diagnostics report retired`);
+    assert.equal(o.available, false, `${o.mode}: the associative diagnostics are not available`);
+    assert.equal(o.engine, 'unified', `${o.mode}: the replacement engine is named`);
+    assert.equal(o.observation.schema, 'libra.graph_access_trace.v1', `${o.mode}: the unified engine access trace is exposed instead`);
+    assert.equal(o.observation.authority, 'descriptive_only', `${o.mode}: the trace is descriptive, never authority`);
+    assert.ok(o.deliveredRefs.length >= 1 && o.deliveredRefs.every(Boolean), `${o.mode}: the unified recall delivers memories`);
   }
 
-  // 2. The observation is mode-independent. Storage location must never change which memory a link finds
-  //    or what the report says about it.
+  // 2. The unified recall is mode-independent: same trace, same delivered memories.
   const [first, ...rest] = observations;
   for (const o of rest) {
     assert.deepEqual(o.observation, first.observation,
-      `${o.mode}: the associative observation must match ${first.mode} (storage mode must not change it)`);
-  }
-
-  // 3. The delivered result is mode-independent — this is what a model actually receives.
-  for (const o of rest) {
+      `${o.mode}: the unified engine access trace must match ${first.mode} (storage mode must not change it)`);
     assert.deepEqual(o.deliveredRefs, first.deliveredRefs,
       `${o.mode}: the delivered recall must match ${first.mode}`);
   }
 
-  // 4. Safety is mode-independent.
+  // 3. Safety is mode-independent.
   for (const o of observations) {
-    assert.equal(o.providerCallsAdded, 0, `${o.mode}: associative admission adds no provider call`);
+    assert.equal(o.providerCallsAdded, 0, `${o.mode}: recall adds no provider call`);
     assert.equal(o.canonicalUnmoved, true, `${o.mode}: canonical bytes are unchanged by a recall`);
     assert.equal(o.headUnmoved, true, `${o.mode}: Head bytes are unchanged by a recall`);
-    assert.equal(o.observation.budgetUnchanged, true, `${o.mode}: the candidate budget is not enlarged`);
   }
 
   process.stdout.write('libra_associative_recall_3mode_parity_test: PASS\n');
