@@ -230,7 +230,7 @@ const createHost = () => {
     flashback: { pluginId: 'flashback_memory', pluginVersion: installedVersion('Flashback_Memory.js'), transport: 'flashback_plugin_ipc', peerRole: 'episodic_memory', handoffContract: 'flashback_memory.handoff_immutable_source.v2', receiptSchema: 'flashback_memory.session_handoff_adoption.v4' },
     hayaku: { pluginId: 'hayaku_locator_continuity', pluginVersion: installedVersion('HAYAKU_Locator_Continuity.js'), transport: 'hayaku_plugin_ipc', peerRole: 'packet_continuity_memory', handoffContract: 'hayaku.handoff_immutable_source.v1', receiptSchema: 'hayaku.session_handoff.receipt.v1' },
     lia: { pluginId: 'lia_persona_linker', pluginVersion: installedVersion('LIA_Persona_Linker.js'), transport: 'lia_plugin_ipc', peerRole: 'live_persona_state', handoffContract: 'lia.live_persona_handoff_immutable_source.v1', receiptSchema: 'lia.live_persona_handoff.receipt.v1' },
-    libra: { pluginId: 'libra', pluginVersion: installedVersion('LIBRA.js'), transport: 'libra_plugin_ipc', peerRole: 'canonical_long_term_memory', handoffContract: 'libra.handoff_immutable_source.v1', receiptSchema: 'libra.session_handoff.receipt.v1' }
+    libra: { pluginId: 'libra', pluginVersion: installedVersion('LIBRA.js'), transport: 'libra_plugin_ipc', peerRole: 'canonical_long_term_memory', handoffContract: 'libra.handoff_immutable_source_lenses.v2', receiptSchema: 'libra.session_handoff.receipt.v1' }
   };
 
   for (const retiredDispatcher of ['requestFlashbackIpc', 'requestHayakuIpc', 'requestLibraIpc', 'requestLiaIpc']) {

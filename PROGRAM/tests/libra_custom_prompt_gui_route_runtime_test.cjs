@@ -56,7 +56,8 @@ const run = async name => {
       relationValueIsText: typeof relation?.values?.value === 'string',
       minaLocation: JSON.stringify(head?.characters?.find(row => row.name === '민아')?.state || {}).includes('서재') || JSON.stringify(head || {}).includes('서재'),
       characters: (head?.characters || []).map(row => row.name).sort(),
-      reasserted: system.includes('OUTPUT CONTRACT REASSERTION')
+      reasserted: system.includes('OUTPUT CONTRACT REASSERTION'),
+      customSent: system.includes('호감도 점수와 감정도 함께')
     };
   } finally { await f.r.cleanup?.(); }
 };
@@ -64,7 +65,11 @@ const run = async name => {
 (async () => {
   const base = await run('plain');
   assert.equal(base.completed, 1, 'the plain-contract answer commits');
-  assert.equal(base.reasserted, true, 'the customized profile is followed by the output-contract reassertion in the request');
+  // The canonical prompt is locked (memory lenses carry user instructions): the stored custom
+  // profile never reaches the request, so no reassertion is needed. The vocabulary checks below
+  // still matter because models drift from the contract without any custom instruction too.
+  assert.equal(base.customSent, false, 'a stored custom profile never reaches the canonical request');
+  assert.equal(base.reasserted, false);
   for (const name of ['korean_vocabulary', 'wrapped_with_notes']) {
     const got = await run(name);
     assert.equal(got.completed, 1, `${name}: the batch commits`);
