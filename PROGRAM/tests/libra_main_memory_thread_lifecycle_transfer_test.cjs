@@ -144,7 +144,7 @@ const manifestRefs = manifest => [...(manifest?.inheritedMemories || []), ...Obj
     for (const [key, bytes] of branchBytes) assert.equal(f.r.values.get(key), bytes, `native replay leaves ${key} bytes unchanged`);
 
     const settings = await f.r.api.getLibraMemorySettings();
-    await f.r.api.saveLibraMemorySettings({ ...(settings?.settings || settings || {}), recallMaxMemories: 1 });
+    await f.r.api.saveLibraMemorySettings({ ...(settings?.settings || settings || {}), recallMaxMemories: 1, unifiedMaxUnits: 1 });
     const query = '오늘 열쇠를 돌려주겠다는 약속은 아직 이행되지 않았다';
     const branchRecall = await f.r.api.previewUnifiedMemoryRecall(query);
     assert.equal(branchRecall?.diagnostics?.recallContinuityClosure?.diagnostics?.closureCount, 1,
@@ -220,13 +220,13 @@ const manifestRefs = manifest => [...(manifest?.inheritedMemories || []), ...Obj
     const inheritedMicroQuery = sourceMicroT2.value.claims[0].evidence.exactQuote;
     const widerSettings = await f.r.api.getLibraMemorySettings();
     await f.r.api.saveLibraMemorySettings({ ...(widerSettings?.settings || widerSettings || {}),
-      recallMaxMemories: 8 });
+      recallMaxMemories: 8, unifiedMaxUnits: 8 });
     const inheritedMicroRecall = await f.r.api.previewUnifiedMemoryRecall(inheritedMicroQuery);
     assert.ok((inheritedMicroRecall.memories || []).some(row => row.memory?.kind === 'micro'
       && (row.memory?.sourceSpans || []).some(span => span.exactQuote === inheritedMicroQuery)),
       'handoff target can recall the source-session Micro detail as inherited evidence');
     await f.r.api.saveLibraMemorySettings({ ...(widerSettings?.settings || widerSettings || {}),
-      recallMaxMemories: 1 });
+      recallMaxMemories: 1, unifiedMaxUnits: 1 });
 
     // A handoff starts a new local turn coordinate. The old canonical target is
     // inherited at epoch -1 through turn 10; the actual next batch begins at
@@ -307,7 +307,7 @@ const manifestRefs = manifest => [...(manifest?.inheritedMemories || []), ...Obj
     }
     const postHandoffSettings = await f.r.api.getLibraMemorySettings();
     await f.r.api.saveLibraMemorySettings({ ...(postHandoffSettings?.settings || postHandoffSettings || {}),
-      recallMaxMemories: 8 });
+      recallMaxMemories: 8, unifiedMaxUnits: 8 });
     const afterSourceRemoval = await f.r.api.previewUnifiedMemoryRecall(inheritedMicroQuery);
     assert.ok((afterSourceRemoval.memories || []).some(row => row.memory?.kind === 'micro'
       && (row.memory?.sourceSpans || []).some(span => span.exactQuote === inheritedMicroQuery)),

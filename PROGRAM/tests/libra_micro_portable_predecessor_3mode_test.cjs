@@ -47,7 +47,9 @@ const retryBusy = async action => {
     tamperChat.messages = tamperChat.message;
     const character = {id: 'unified-char', chaId: 'unified-char', name: '민아', chatPage: 0,
       chats: [sourceChat, targetChat, nextChat, nativeChat, tamperChat]};
-    let currentChatIndex = 0;
+    // A real host selects the current chat through character.chatPage; the owner read context
+    // (native identity snapshot) reads that field, so every chat switch keeps both in step.
+    let currentChatIndex = character.chatPage = 0;
     let completedTurnListener = null;
     const host = {
       addRisuChatListener: async (_kind, handler) => { completedTurnListener = handler; return true; },
@@ -87,7 +89,7 @@ const retryBusy = async action => {
       let portable = f.r.context.__LIBRAPortableMemoryBackup;
       const envelope = await retryBusy(() => portable.exportCurrentScope());
       assert.ok(envelope.records.some(row => row.key === sourceMicro.recordKey));
-      currentChatIndex = 1;
+      currentChatIndex = character.chatPage = 1;
       const targetStatus = await f.r.api.getHostLineageStatus();
       await bridge.setScopeMode({scopeId: targetStatus.scopeKey, scopeKey: targetStatus.scopeKey,
         characterId: character.id, chatId: targetChat.id}, mode);
@@ -334,7 +336,7 @@ const retryBusy = async action => {
       const latestMicro = await f.r.api.debugReadActiveMicroMemory(10);
       assert.ok(continuedEnvelope.records.some(row => row.key === latestMicro.recordKey),
         `${mode}: the second export carries the target's latest Micro revision`);
-      currentChatIndex = 2;
+      currentChatIndex = character.chatPage = 2;
       const nextStatus = await f.r.api.getHostLineageStatus();
       await bridge.setScopeMode({scopeId: nextStatus.scopeKey, scopeKey: nextStatus.scopeKey,
         characterId: character.id, chatId: nextChat.id}, mode);
@@ -354,7 +356,7 @@ const retryBusy = async action => {
       assert.ok((continuedRecall.memories || []).some(row => row.memory?.kind === 'micro'
         && (row.memory.sourceSpans || []).some(span => span.exactQuote === query)),
         `${mode}: Micro remains recallable after a second portable import and restart`);
-      currentChatIndex = 3;
+      currentChatIndex = character.chatPage = 3;
       bridge = f.r.context.__fixtureStorageBridge;
       portable = f.r.context.__LIBRAPortableMemoryBackup;
       const nativeStatus = await f.r.api.getHostLineageStatus();
@@ -399,7 +401,7 @@ const retryBusy = async action => {
         && (row.memory.sourceSpans || []).some(span => span.exactQuote === query)),
         `${mode}: rebound Micro remains recallable after native copy restart`);
       if (mode === 'mirror') {
-        currentChatIndex = 4;
+        currentChatIndex = character.chatPage = 4;
         bridge = f.r.context.__fixtureStorageBridge;
         portable = f.r.context.__LIBRAPortableMemoryBackup;
         const tamperStatus = await f.r.api.getHostLineageStatus();

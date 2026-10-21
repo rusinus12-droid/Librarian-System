@@ -142,7 +142,7 @@ const threadArtifact = ({ turn, threadEntityName, summary, status, link, resolut
     assert.ok(!Object.hasOwn(closure, 'linkCandidateAlias'), 'request-local alias is discarded before canonical storage');
 
     const recallSettings = await f.r.api.getLibraMemorySettings();
-    await f.r.api.saveLibraMemorySettings({ ...(recallSettings?.settings || recallSettings || {}), recallMaxMemories: 1 });
+    await f.r.api.saveLibraMemorySettings({ ...(recallSettings?.settings || recallSettings || {}), recallMaxMemories: 1, unifiedMaxUnits: 1 });
     const recallQuery = '오늘 열쇠를 돌려주겠다는 약속은 아직 이행되지 않았다';
     const recall = await f.r.api.previewUnifiedMemoryRecall(recallQuery);
     assert.equal(recall.memories.length, 1, 'the request selects one canonical memory');

@@ -27,13 +27,24 @@ assert.match(jobSurface, /terminal && !Gui\.canonicalJobObservedIds\.has/,
 assert.match(jobSurface, /if \(!terminal \|\| launchedHere\)/,
   'active or explicitly launched jobs are tracked in the current GUI session');
 
-const workbench = between('const buildSharedAgentShellPanel =', 'const setSharedCustomPromptDomain =');
-assert.doesNotMatch(workbench, /id: 'state'|label: '상태 추적'|buildStateTrackingAvailabilityPanel/);
-assert.match(workbench, /agentHub:'memory'/);
-assert.match(workbench, /buildMemoryPipelinePanel\(\)/);
-assert.match(workbench, /buildMemoryPromptStudioDisclosure\(/);
-assert.doesNotMatch(workbench, /buildDraftWorkspacePanel\(/);
-assert.match(source, /settingsHubSection === 'state' \? buildStateTrackingAvailabilityPanel\('settings'\)/,
+// The six-product GUI retired the shared agent shell: the memory agent hub now
+// routes into the Settings "workbench" group, whose W1 "기억 분석" destination
+// mounts the single Librarian analyzer panel.
+const workbenchSections = between('const BOOK_NATIVE_SETTINGS_SECTIONS = Object.freeze([', ']);')
+  .split('\n').filter(line => /group: ?'workbench'/.test(line)).join('\n');
+assert.doesNotMatch(workbenchSections, /id: ?'state'|label: ?'상태 추적'|buildStateTrackingAvailabilityPanel/);
+assert.match(workbenchSections, /id: 'pipeline', group: 'workbench'[^\n]*label: '기억 분석'/);
+assert.match(source, /const SHARED_AGENT_HUB_SECTIONS = Object\.freeze\(\['memory'\]\)/);
+assert.match(between('const bookSettingsRoomActiveSection =', 'const selectBookSettingsRoomSection ='),
+  /Gui\.agentHubSection === 'memory' \? 'memory_pipeline'[\s\S]*Gui\.bookSettingsWorkbenchSection = 'pipeline'/,
+  'the memory agent hub opens the workbench memory-analysis destination');
+const settingsPanel = between('const buildApprovedMockupSettingsPanel =', "if(sectionId==='logs')");
+assert.match(settingsPanel, /if\(sectionId==='pipeline'\)return buildLibrarianAnalyzerPanel\(/);
+const analyzer = between('const buildLibrarianAnalyzerPanel =', 'const exportConfiguration =');
+assert.match(analyzer, /openApprovedPromptDialog\(/, 'the memory analyzer opens the memory prompt studio');
+assert.doesNotMatch(analyzer, /buildDraftWorkspacePanel\(/);
+assert.doesNotMatch(source, /buildDraftWorkspacePanel\(/);
+assert.match(source, /if\(sectionId==='state'\)return buildStateTrackingAvailabilityPanel\('settings'\)/,
   'state tracking remains available in its owning Settings section');
 assert.match(source, /\['state_pipeline','state_tracking'\]\.includes\(requested\)[\s\S]*pageId:'settings',settingsHubSection:'state'/);
 

@@ -59,7 +59,7 @@ async function caseRun(name,fn,opts={}){const r=await createHayakuRuntime({autoR
   r.setMessages(messages([1,3]));let n=0;r.setLlmResponder(async()=>({type:'success',result:++n===1?'not JSON':JSON.stringify(envelope(3))}));
   const result=await r.hayaku.recovery.repairSelected({targetTurns:[1,3]});ok(!result.ok);eq(result.completed,1);eq(r.llmCalls.length,2);eq((await coverage(r)).missingTurns,[1]);ok(result.results[0].failureId,'failed raw saved');
   r.setLlmResponder(async()=>({type:'success',result:JSON.stringify(envelope(1))}));const retry=await r.hayaku.recovery.repairSelected({targetTurns:[1]});ok(retry.ok,JSON.stringify(retry));eq(r.llmCalls.length,3);eq((await coverage(r)).missingTurns,[]);
- });
+ },{arguments:{hayaku_debug:'true'}}); // failed raw is retained only when debug details are enabled (7843201)
 
  await caseRun('a real edit in another turn cannot block an unrelated missing repair',async r=>{
   r.setMessages(messages([3]));await observe(r);r.chat.message[1].data=r.chat.message[1].data.replace(quote(1),'Alice postponed workshop task 1.');await observe(r);

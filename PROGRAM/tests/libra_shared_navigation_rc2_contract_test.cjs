@@ -70,21 +70,41 @@ vm.runInContext('this.apply=applySharedNavigationTarget;',routeContext);
 const draft=navigationGui.state;
 for(const id of ['memory','world','server','recall']){routeContext.apply(routeContext.resolveShared(id));assert.equal(navigationGui.state,draft);assert.equal(navigationGui.dirty,true);}
 
-const mobile = between('const BOOK_MOBILE_ITEMS =', 'const GUI_SCROLL_SELECTORS =');
-assert.match(mobile, /BOOK_SIDEBAR_PAGE_REGISTRY\.filter/);
-assert.match(mobile, /Gui\.bookPage/);
+// The approved shell builds the mobile tab bar from the book sidebar destinations
+// (every book page except the top-level settings entry) and marks the active
+// item from Gui.bookPage; no separate GRADIA mobile navigation exists.
+const mobile = between("const tabbar = app.querySelector('.tabbar');", 'return app;');
+assert.match(mobile, /app\.querySelectorAll\('\.sidebar \.nav-item\[data-go\]'\)/);
+assert.match(mobile, /filter\(node => node\.dataset\.tab !== 'top'\)/);
+assert.match(mobile, /tabbar\.replaceChildren\(\);[\s\S]*button\.dataset\.go=node\.dataset\.go/);
 assert.doesNotMatch(mobile, /buildGradiaMobileNavigation/);
+assert.doesNotMatch(source, /const buildGradiaMobileNavigation\s*=/);
+const appHtmlLine = source.slice(source.indexOf('const LIBRA_APPROVED_MOCKUP_APP_HTML = '), source.indexOf('\n', source.indexOf('const LIBRA_APPROVED_MOCKUP_APP_HTML = ')));
+const appHtml = JSON.parse(appHtmlLine.replace('const LIBRA_APPROVED_MOCKUP_APP_HTML = ', '').replace(/;\s*$/, ''));
+const navItems = Array.from(appHtml.matchAll(/<button class="nav-item" data-go="([a-z]+)"([^>]*)>/g), match => ({ id: match[1], top: /data-tab="top"/.test(match[2]) }));
+const bookRegistry = between('const BOOK_SIDEBAR_PAGE_REGISTRY =', 'const BOOK_PAGE_IDS =');
+const bookPageIds = Array.from(bookRegistry.matchAll(/id: '([a-z]+)'/g), match => match[1]);
+assert.deepEqual(navItems.map(item => item.id), bookPageIds, 'sidebar destinations match the book page registry');
+assert.deepEqual(navItems.filter(item => !item.top).map(item => item.id), bookPageIds.filter(id => id !== 'settings'),
+  'the mobile tab bar carries every book page except settings');
+const mobileFeedback = between('const syncGuiNavigationFeedback = () =>', 'const activeRoom=');
+assert.match(mobileFeedback, /const activePage=normalizeBookPage\(Gui\.bookPage\)/);
+assert.match(mobileFeedback, /\.tabbar button\[data-go\][\s\S]*node\.dataset\.go===activePage/);
 
 require('./helpers/libra_active_book_routes.cjs')(source);
 // Removed embedded GRADIA result routing/header switcher has no current executor.
 assert.match(source,/const normalizeResponseFamily = \(\) => 'libra'/);
-const general = between('const buildGeneralSettingsPanel =', 'const buildSharedSettingsShellPanel =');
+// The shared settings shell retired; the general panel now ends at the book state-progress helpers.
+const general = between('const buildGeneralSettingsPanel =', 'const bookStateProgress =');
 // The diagnostic section was consolidated behind a dispatcher (§34.2), so buildDebugTab() is no longer
 // called directly here. What must still hold is that the general panel OFFERS the diagnostics and that
 // the dispatcher can actually reach every panel — including buildDebugTab — so nothing was lost.
-assert.match(general, /buildDiagnosticLogPanel\(\)/, 'the general settings panel must offer diagnostics');
+// The diagnostics wrapper panel was folded into the general panel itself: it offers every
+// DIAGNOSTIC_LOG_SECTIONS category and renders the selected one through the dispatcher.
+assert.match(general, /const sections=DIAGNOSTIC_LOG_SECTIONS;/, 'the general settings panel must offer diagnostics');
+assert.match(general, /buildDiagnosticLogSection\(active\)/, 'the general settings panel must render the selected diagnostics');
 assert.doesNotMatch(general, /Gui\.settingsHubSection === 'transfer'/);
-const dispatcher = between('const buildDiagnosticLogSection = id =>', 'const buildDiagnosticLogPanel =');
+const dispatcher = between('const buildDiagnosticLogSection = id =>', 'const buildGeneralSettingsPanel =');
 for (const [id, builder] of [['health', 'buildOperationalHealthPanel'], ['swallowed', 'buildSwallowedDiagPanel'],
                              ['state_reflection', 'buildWorldManagerDiagnosticsPanel'], ['runtime', 'buildDebugTab']]) {
   assert.ok(dispatcher.includes(`id === '${id}'`) && dispatcher.includes(builder),

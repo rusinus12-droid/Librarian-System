@@ -218,6 +218,14 @@ function makeCorrections(count = 60) {
   });
 }
 
+// The scope-native projection fingerprint is created at closure setup from the
+// deployed LIBRA memory network block, so load that real block rather than a stub.
+const memoryNetworkStart = source.indexOf('// BEGIN LIBRA MEMORY NETWORK');
+const memoryNetworkEnd = source.indexOf('// END LIBRA MEMORY NETWORK', memoryNetworkStart);
+assert.ok(memoryNetworkStart >= 0 && memoryNetworkEnd > memoryNetworkStart, 'LIBRA memory network block must be locatable');
+const memoryNetworkSource = source.slice(memoryNetworkStart, memoryNetworkEnd);
+const memoryNetworkStableHash = value => crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value ?? null)).digest('hex');
+
 function buildHarness() {
   let manifest = makeManifest();
   let corrections = makeCorrections();
@@ -330,9 +338,10 @@ function buildHarness() {
     stateCorrectionFailure: (code, message = code) => Object.assign(new Error(message), { code })
   };
 
+  deps.stableHash = memoryNetworkStableHash;
   Object.assign(deps,require('./fixtures/librarian_production_bindings.cjs')(source));
   const names = Object.keys(deps);
-  const factory = Function(...names, `'use strict';\n${implementationSource}\nreturn { ${requiredCoreNames.join(', ')} };`);
+  const factory = Function(...names, `'use strict';\n${memoryNetworkSource}\n${implementationSource}\nreturn { ${requiredCoreNames.join(', ')} };`);
   const api = factory(...names.map(name => deps[name]));
 
   return {

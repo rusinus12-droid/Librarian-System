@@ -46,6 +46,9 @@ chats[3].message[11].data = 'A conflicting sixth assistant turn changes the worl
 for (const chat of chats) chat.messages = chat.message;
 const character = { id: 'libra-portable-character', chaId: 'libra-portable-character', name: 'Portable Character', chatPage: 0, chats };
 let currentChatIndex = 0;
+// A real RisuAI host keeps the character's chatPage equal to the selected chat;
+// the unified recall's readonly source context reads the selection from it.
+const selectChat = index => { currentChatIndex = index; character.chatPage = index; };
 const unloadHandlers = [];
 const host = {
   pluginStorage: storage,
@@ -424,7 +427,7 @@ const scopeManifestEntry = chatId => Array.from(values.entries()).find(([key, ra
   assert.equal(values.has(finalizeRetryCheckpointKey), false);
   assert.equal(values.has(finalizeRetryJournalKey), false);
 
-  currentChatIndex = 1;
+  selectChat(1);
   const migrationPreview = await portable.previewImport(envelope);
   assert.equal(migrationPreview.modes.restore_same_scope.available, false);
   assert.equal(migrationPreview.modes.import_as_predecessor_archive.available, true);
@@ -475,7 +478,7 @@ const scopeManifestEntry = chatId => Array.from(values.entries()).find(([key, ra
   assert.equal(migratedVectorMemory.embedding.status, 'ready', 'packed portable vectors remain ready during archive migration');
   assert.equal(parsed(migratedVectorMemory.embedding.vectorKey).scopeKey, migratedVectorMemory.scopeKey, 'archive vector is rebound to the archive memory owner');
 
-  currentChatIndex = 2;
+  selectChat(2);
   const copyPreview = await portable.previewImport(envelope);
   assert.equal(copyPreview.modes.restore_same_scope.available, false);
   assert.equal(copyPreview.modes.reconstruct_native_copy.available, true);
@@ -682,7 +685,7 @@ const scopeManifestEntry = chatId => Array.from(values.entries()).find(([key, ra
   assert.equal(values.has(copyContinuityKey), false,
     'pending legacy receipt compatibility must allow Head absence instead of rematerializing false authority');
 
-  currentChatIndex = 3;
+  selectChat(3);
   const diverged = await portable.previewImport(envelope);
   assert.deepEqual(Array.from(diverged.matchedStarts), [1]);
   assert.equal(diverged.divergenceTurn, 6);
@@ -699,12 +702,12 @@ const scopeManifestEntry = chatId => Array.from(values.entries()).find(([key, ra
   emptyEnvelope.inventory.dependencyKeys = [];
   emptyEnvelope.lineage = { ...emptyEnvelope.lineage, pairCount: 0, batches: [], fingerprint: 'empty' };
   resignEnvelope(emptyEnvelope);
-  currentChatIndex = 4;
+  selectChat(4);
   const emptyPreview = await portable.previewImport(emptyEnvelope);
   assert.equal(emptyPreview.modes.import_as_predecessor_archive.available, false);
   assert.equal(emptyPreview.modes.import_as_predecessor_archive.reason, 'source_memories_missing', 'an empty backup cannot create a meaningless predecessor archive');
 
-  currentChatIndex = 1;
+  selectChat(1);
   for (const storageKey of [...values.keys()]) {
     if (String(storageKey).startsWith(`${scopePrefix}:`)) values.delete(storageKey);
   }

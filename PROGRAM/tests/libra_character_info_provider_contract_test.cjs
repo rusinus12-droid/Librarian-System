@@ -25,7 +25,9 @@ const canonical=f=>{const {embedding,...memory}=f.getMemory();return JSON.string
   assert.match(contract,/appearance\|background\|personality\|speech\|habits\|abilities\|goal/);
   assert.match(contract,/content is one concise string/);
   assert.match(contract,/Unknown categories remain memory/);
-  assert.ok(system.length<11800,'preserve the shared extraction prompt budget including adult continuity');
+  // Budget re-pinned after the deliberate canonical output-contract additions (location/containment/access/
+  // thread/literal-name checks in a8454a4 and ID FORMAT in 9ac4f8b, ~3.4k chars); before them the prompt was ~11.7k.
+  assert.ok(system.length<15200,'preserve the shared extraction prompt budget including adult continuity: '+system.length);
   const state=()=>f.getHead().characters.find(row=>row.name==='민아').state;
   for(const [category,content] of Object.entries(categories))assert.deepEqual(state()[category],category==='goal'?content:[content]);
   const note=f.getMemory().canonicalArtifact.facts.find(row=>row.tempFactId==='provider_unclassified');
@@ -40,7 +42,7 @@ const canonical=f=>{const {embedding,...memory}=f.getMemory();return JSON.string
    assert.equal(canonical(restarted),memory);
    for(const content of [...Object.values(categories),'미분류 프로필 근거']){
     const recall=await restarted.r.api.previewUnifiedMemoryRecall('민아 '+content);
-    assert.ok(recall.memories.some(row=>row.excerpt.text.includes(content)),'provider fact reaches recall: '+content);
+    assert.ok(recall.memories.some(row=>String(row.excerpt).includes(content)),'provider fact reaches recall: '+content+' '+JSON.stringify(recall.memories.map(row=>row.excerpt)));
    }
    assert.equal(restarted.control.calls.length,0,'readback/replay/recall must not reanalyze');
   }finally{await restarted.r.cleanup();}

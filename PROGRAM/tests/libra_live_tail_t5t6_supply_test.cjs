@@ -112,10 +112,12 @@ const runArm = async (mode, liveOn, { captureT6 = true } = {}) => {
 
     // T6: one more completed turn, written after the Canonical commit. Its Micro is produced by the
     // same one-turn producer; the point is whether the dialogue itself still reaches the model.
+    // Host rows use the RisuAI message body field `data` (as the fixture's T1-T5 rows do); the native
+    // readonly source snapshot rejects a row without it as NATIVE_SOURCE_UNSUPPORTED.
     const t6 = [
       ...fullMessages,
-      { role: 'user', chatId: 't6-u', content: T6_USER },
-      { role: 'assistant', chatId: 't6-a', content: T6_ASSISTANT }
+      { role: 'user', chatId: 't6-u', data: T6_USER },
+      { role: 'assistant', chatId: 't6-a', data: T6_ASSISTANT }
     ];
     f.chat.message = t6;
     f.chat.messages = t6;
@@ -140,11 +142,19 @@ const runArm = async (mode, liveOn, { captureT6 = true } = {}) => {
     return {
       block,
       blockChars: block.length,
-      hasDialogue: block.includes('[RECENT DIALOGUE'),
+      // Unified Classic renderer header for the Live Tail block (9c03c35).
+      hasDialogue: block.includes('[RECENT COMPLETED DIALOGUE]'),
       t6UserInBlock: block.includes(T6_USER),
       t6AssistantInBlock: block.includes(T6_ASSISTANT),
       settledInBlock: [PROMISE, DELAY, FULFILL].filter(v => block.includes(v)),
-      frontier: viewer ? {
+      // The unified Classic delivery (9c03c35) lists every delivered evidence row with its family and
+      // turn range. A Micro row for T6 (verified or source_only) is the indexed evidence that may carry
+      // the T6 assistant text into the OFF arm; its absence means OFF has no indexed T6 route at all.
+      deliveredMicroTurns: viewer ? [...new Set(Array.from(viewer.rows || [])
+        .filter(row => row.family === 'micro' && row.injected === true)
+        .map(row => Number(row.turnRange?.end ?? row.turnRange?.start ?? 0))
+        .filter(turn => turn > 0))].sort((a, b) => a - b) : [],
+      frontier: viewer?.microFrontier ? {
         verifiedTurns: Array.from(viewer.microFrontier?.verifiedTurns || []).map(Number).sort((a, b) => a - b),
         sourceOnlyTurns: Array.from(viewer.microFrontier?.sourceOnlyTurns || []).map(Number).sort((a, b) => a - b),
         pending: viewer.microFrontier?.pending,
@@ -178,6 +188,7 @@ const runArm = async (mode, liveOn, { captureT6 = true } = {}) => {
       offT6: [off.t6UserInBlock, off.t6AssistantInBlock],
       onSettled: on.settledInBlock.length,
       offSettled: off.settledInBlock.length,
+      offMicroTurns: off.deliveredMicroTurns,
       frontier: off.frontier
     }));
 
@@ -199,7 +210,7 @@ const runArm = async (mode, liveOn, { captureT6 = true } = {}) => {
       `${mode}: the newest user turn reaches the block through Live Tail`);
     assert.ok(on.t6AssistantInBlock,
       `${mode}: the newest assistant turn reaches the block through Live Tail`);
-    if (off.frontier?.verifiedTurns?.includes(6) || off.frontier?.sourceOnlyTurns?.includes(6)) {
+    if (off.deliveredMicroTurns.includes(6)) {
       assert.ok(off.t6AssistantInBlock, `${mode}: an indexed Micro/source-only excerpt may retain the assistant turn`);
     } else {
       assert.ok(!off.t6AssistantInBlock, `${mode}: without indexed T6 Micro/source-only evidence, OFF cannot leak raw assistant dialogue`);
@@ -212,8 +223,7 @@ const runArm = async (mode, liveOn, { captureT6 = true } = {}) => {
   // Negative control: T6 exists in the host chat but was never captured. The
   // indexed frontier must not accidentally recover its assistant text from raw chat.
   const missing = await runArm('plugin_only', false, { captureT6: false });
-  assert.ok(!missing.frontier?.verifiedTurns?.includes(6)
-    && !missing.frontier?.sourceOnlyTurns?.includes(6), 'control has no indexed T6 evidence');
+  assert.ok(!missing.deliveredMicroTurns.includes(6), 'control has no indexed T6 evidence');
   assert.ok(!missing.t6AssistantInBlock && !missing.t6UserInBlock,
     'without a T6 receipt or Micro evidence, OFF must not read the raw host T6');
   console.log('libra_live_tail_t5t6_supply_test: PASS missing-T6 negative control');

@@ -11,6 +11,11 @@ test('composed public settings opens real input editor, applies once, previews l
   console.log('COMPOSED_EDITOR_LOAD '+JSON.stringify({path:process.env.LIBRA_TEST_PLUGIN||'source',sha256:crypto.createHash('sha256').update(f.r.source).digest('hex')}));
   await f.r.api.setSourceEditRules({version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]});
   assert.equal(await f.r.api.openSettingsGui(),true);
+  // The first LIBRA open shows the modal first-setup quick-connect dialog (it
+  // focuses its API key field, which defers renders). A user dismisses it with
+  // "나중에 하기" before navigating; it is not shown again on reopen.
+  const firstSetup=await wait(()=>doc.querySelector('[data-libra-quick-dialog]')).catch(()=>null);
+  if(firstSetup){const later=[...firstSetup.querySelectorAll('.dialog__actions button')].find(node=>node.textContent.trim()==='나중에 하기');assert.ok(later,'first-setup dialog offers 나중에 하기');later.click();assert.equal(doc.querySelector('[data-libra-quick-dialog]'),null);}
   // Post-GUI navigation: 설정 nav -> 참고 자료 subtab -> 분석할 내용(section id source_edits).
   (await wait(()=>doc.querySelector('[data-go="settings"]'))).click();
   (await wait(()=>doc.querySelector('[data-subtab="ref"]'))).click();

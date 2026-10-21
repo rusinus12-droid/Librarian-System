@@ -4,6 +4,7 @@ const path = require('node:path');
 const { test } = require('node:test');
 const { createFlashback } = require('./fixtures/embedding_contract_harness.cjs');
 const { awaitScopeRetirement } = require('./fixtures/flashback_retirement_lifecycle.cjs');
+const { checkComputeRetired } = require('./fixtures/current_ui_compute_contracts.cjs');
 const PROGRAM = path.resolve(__dirname, '..');
 const SOURCE = { sourceType: 'response', sourceId: 'model-only-source', sourceHash: 'model-only-hash',
   origin: 'live_chat', role: 'turn_pair', turnIndex: 1, pairIndex: 1,
@@ -161,7 +162,11 @@ test('the shipped plugin exposes no local hash-vector generation capability', as
     assert.equal(h.api._test.hashEmbedding, undefined);
     assert.equal(h.api._test.hashEmbeddingBatch, undefined);
     assert.equal(h.api._test.hashEmbeddingBatchLocal, undefined);
-    assert.equal(h.api._test.memorySuiteComputeStatus(), null, 'no hash-only compute adapter is registered');
+    // The Compute SDK is retired from the plugin: no compute adapter (hash-only or
+    // otherwise) can be registered, exposed or created by the shipped source.
+    assert.equal(h.api._test.memorySuiteComputeStatus, undefined, 'no compute adapter status surface remains');
+    assert.equal(h.api._test.memorySuiteComputeWhenIdle, undefined, 'no compute adapter lifecycle surface remains');
+    checkComputeRetired(require('node:fs').readFileSync(path.join(PROGRAM, 'plugins', 'Flashback_Memory.js'), 'utf8'));
   });
 });
 test('the former emergency sparse entry cannot return source text without a completed model query', async () => {

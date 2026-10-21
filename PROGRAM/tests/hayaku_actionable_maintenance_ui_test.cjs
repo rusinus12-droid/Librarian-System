@@ -21,7 +21,12 @@ c.render({rows:[row(2,'missing')]},'scope');c.render({},'scope',false,'network_f
 // current-scope range inventory. Its async selection/busy/error/scope behavior
 // is exercised by hayaku_gui_workspace_v346_runtime_test.cjs.
 const reanalysis=section('  function viewerRenderSourceEditConsent(','  const viewerRenderHostLineage =');
-assert.match(reanalysis,/listHayakuReanalysisRanges/);assert.match(reanalysis,/runHayakuSelectedReanalysis\(selection\)/);
+assert.match(reanalysis,/listHayakuReanalysisRanges/);
+// Since the cost/replacement confirmation, the selected ranges go through the explicit_reanalysis
+// preview ticket, an explicit confirm, then apply; the orchestrator's apply runs the selected reanalysis.
+assert.match(reanalysis,/const ticket=await previewSourceEdits\(selection\);[\s\S]*?if\(!await viewerConfirmSourceReanalysis\(ticket\)\)\{[^}]*return;\}[\s\S]*?await applySourceEdits\(ticket\)/);
+assert.match(source,/const previewSourceEdits=keys=>getHayakuRecoveryActions\(\)\.preview\('explicit_reanalysis',keys\);/);
+assert.match(source,/reanalysis: \{ preview: keys => selectHayakuReanalysisRanges\(keys\), apply: selection => runHayakuSelectedReanalysis\(selection\)/);
 assert.match(reanalysis,/scopeKey:inventory\.scopeKey,topology:inventory\.topology/);
 assert.doesNotMatch(reanalysis,/getHayakuSourceEdits|reviewHayakuSourceEdits|sourceEditSyncStatus/);
 console.log('PASS actionable-only rows, empty controls hidden, selection pruning, read errors, scope isolation and explicit current-range UI contract');

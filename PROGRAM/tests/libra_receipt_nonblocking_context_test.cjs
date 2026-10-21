@@ -293,15 +293,17 @@ const observations = [];
       const {f} = fx, input = [{role: 'user', content: INPUT}];
       const previous = f.r.api.getLastResponseContext()?.requestId, calls = countCalls(f.control);
       let changed = false;
+      // The unified Classic consumer (LIBRA 9c03c35+) performs its final physical
+      // receipt revalidation after this request's recall is published and before
+      // it seals/publishes the ResponseContext, so the held read is identified by
+      // this request's published recall rather than by an already-published context.
+      const previousRecallAt = f.r.api.getRuntime().lastMemoryRecall?.at;
       await withReadGate(fx, prepared.head.key, () => {
-        const context = f.r.api.getLastResponseContext();
-        return !!context?.requestId && context.requestId !== previous && context.route === 'classic'
-          && context.receiptReadSet?.refs?.some(ref => ref.turn === 5 && ref.headKey === prepared.head.key);
+        const recall = f.r.api.getRuntime().lastMemoryRecall;
+        return !!recall && recall.at !== previousRecallAt && recall.queryText === INPUT;
       }, () => f.control.hooks.beforeRequest(input, 'model'), async ({gate, entry, finish}) => {
-        const captured = f.r.api.getLastResponseContext();
-        assert.equal(entry.requestId, captured.requestId);
-        assert.match(captured.values.liveTail?.transcript || '', new RegExp(MARKER),
-          'the awaited final read follows a marker-containing sealed projection');
+        assert.equal(f.r.api.getLastResponseContext()?.requestId || null, previous || null,
+          'the held final read happens before this request publishes any context');
         if (edit) { f.chat.message[9].data += ' EDITED_AFTER_READ'; changed = true; }
         gate.release(); // Mutate/release synchronously, within the unchanged 1500ms product guard.
         const delivered = await finish();
@@ -313,6 +315,10 @@ const observations = [];
           assert.equal(f.r.api.getLastMemoryRecallViewer()?.errorCode, 'LIBRA_RECENT_RECEIPT_STALE',
             'the negative reaches current receipt rejection, not an unrelated empty recall');
         } else {
+          const captured = f.r.api.getLastResponseContext();
+          assert.notEqual(captured?.requestId, previous);
+          assert.match(captured.values.liveTail?.transcript || '', new RegExp(MARKER),
+            'the context delivered after the held final read is the marker-containing sealed projection');
           assertReady(currentSnapshot(fx, delivered, previous, INPUT));
           assert.match(textOf(delivered), /Continue the scene/, 'the same read gate permits unchanged current source');
         }

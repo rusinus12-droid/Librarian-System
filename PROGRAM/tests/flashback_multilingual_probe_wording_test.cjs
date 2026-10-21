@@ -67,7 +67,8 @@ for (const [label, pattern] of required) {
 // Table labels and the status badge.
 for (const [label, pattern] of [
   ['table 무관/차이/대조', /무관 \$\{formatProbeScore\(item\.maxNegative\)\}<\/span><span>차이 \$\{formatProbeScore\(item\.minMargin\)\}/],
-  ['badge 사용자 실행', /class="provider-tag">사용자 실행</],
+  // The approved GUI moved the former "사용자 실행" provider-tag onto the run button itself.
+  ['run button 사용자 실행', /<button id="multilingualProbeBtn" class="[^"]*" type="button" [^>]*>사용자 실행<\/button>/],
   ['meta 근거 기준', /근거 기준 \$\{formatProbeScore\(probe\.gateHighCosine\)\}/],
   ['meta 구분 여유', /구분 여유 \$\{formatProbeScore\(probe\.minMargin\)\}/]
 ]) {

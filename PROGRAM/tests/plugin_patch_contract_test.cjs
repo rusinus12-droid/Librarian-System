@@ -163,7 +163,9 @@ for (const retained of [
   'verifyDurableHayakuIncrementalRecovery'
 ]) assert.ok(retrace.includes(retained), `RE:TRACE retained owner/handoff/legacy compatibility surface: ${retained}`);
 assert.ok(retrace.includes("serverDataDetected"), 'RE:TRACE transition preview must record server data presence');
-assert.ok(retrace.includes('data-tab="serverdata"'), 'RE:TRACE server data management tab');
+// The approved GUI shell is embedded as a JSON-escaped string literal, so attribute quotes appear as \".
+assert.match(retrace, /data-tab=\\"serverdata\\"[^<]*id=\\"tab-serverdata\\"|id=\\"tab-serverdata\\"[^<]*data-tab=\\"serverdata\\"/, 'RE:TRACE server data management tab');
+assert.match(retrace, /id=\\"panel-serverdata\\"[^<]*role=\\"tabpanel\\"/, 'RE:TRACE server data management panel');
 assert.ok(retrace.includes('orphan_candidate'), 'RE:TRACE orphan candidate classification');
 assert.ok(retrace.includes('referenced_ancestor'), 'RE:TRACE ancestor protection');
 assert.ok(retrace.includes('handleServerScopeManagementClick'), 'RE:TRACE guarded scope deletion UI');
@@ -179,28 +181,43 @@ assert.ok(retrace.includes('handoffStoragePolicyFromGate'), 'RE:TRACE snapshots 
 assert.ok(retrace.includes('미설치·비활성으로 확인된 owner만 제외됩니다.'), 'RE:TRACE UI states only confirmed absent or disabled peers are excluded');
 assert.ok(!retrace.includes('//@arg memory_suite_server_mode string'), 'RE:TRACE does not expose its own storage-mode selector');
 
-assert.ok(flashback.includes('data-tab="server"'), 'Flashback server side tab');
-assert.match(flashback, /class="nav-tabs"[^>]*role="tablist"[^>]*aria-label="Flashback 설정"/, 'Flashback exposes an accessible tablist');
-for (const tab of ['overview', 'import', 'storage', 'provider', 'server', 'activity', 'advanced']) {
-  assert.ok(flashback.includes(`id="tab-${tab}"`), `Flashback ${tab} tab has a stable id`);
-  assert.ok(flashback.includes(`aria-controls="panel-${tab}"`), `Flashback ${tab} tab points to its panel`);
-  assert.ok(flashback.includes(`id="panel-${tab}"`), `Flashback ${tab} panel has a stable id`);
-  assert.ok(flashback.includes(`aria-labelledby="tab-${tab}"`), `Flashback ${tab} panel points back to its tab`);
+// The approved six-product GUI replaced Flashback's flat tab strip with a sidebar
+// route nav (data-go/aria-current pages) plus per-page role=tablist subtabs.
+// Server settings are the 'srv' subtab of the Connection page.
+assert.ok(flashback.includes("${subtab('c','srv','서버',subtabs.connect==='srv')}"), 'Flashback server side tab');
+assert.match(flashback, /id="panel-server" data-panel="server" data-subpanel="srv" data-group="c"/, 'Flashback server panel is bound to its subtab');
+assert.ok(flashback.includes('<nav class="sidebar" aria-label="Flashback 메뉴">'), 'Flashback exposes an accessible navigation landmark');
+assert.ok(flashback.includes('const subtab = (group,id,label,selected) => `<button class="tab" type="button" role="tab" data-subtab="${id}" data-group="${group}" aria-selected="${selected ? \'true\':\'false\'}">'), 'Flashback subtabs are real ARIA tabs');
+for (const group of ['v', 'c', 'l']) assert.match(flashback, new RegExp(`class="tabs" role="tablist" data-subtabs="${group}"`), `Flashback ${group} subtab group is a tablist`);
+const flashbackRouteTabs = {lab:'overview', vault:'storage', care:'import', connect:'provider', log:'activity', settings:'advanced'};
+for (const [route, tab] of Object.entries(flashbackRouteTabs)) {
+  assert.ok(flashback.includes(`data-page="${route}"`), `Flashback ${tab} page has a stable route id`);
+  assert.ok(flashback.includes(`['${route}','`), `Flashback ${tab} route is reachable from the sidebar`);
+  assert.ok(flashback.includes(`${route}:'${tab}'`), `Flashback ${route} route maps back to its ${tab} tab`);
 }
-assert.ok(flashback.includes("btn.setAttribute?.('aria-selected', isActive ? 'true' : 'false')"), 'Flashback synchronizes tab selection semantics');
-assert.ok(flashback.includes("panel.setAttribute?.('aria-hidden', isActive ? 'false' : 'true')"), 'Flashback synchronizes panel visibility semantics');
-assert.ok(flashback.includes("['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End']"), 'Flashback supports keyboard tab navigation');
+for (const tab of ['import', 'storage', 'provider', 'server']) assert.ok(flashback.includes(`id="panel-${tab}" data-panel="${tab}"`), `Flashback ${tab} panel has a stable id`);
+assert.ok(flashback.includes("button.setAttribute?.('aria-current', selected ? 'page' : 'false')"), 'Flashback synchronizes route selection semantics');
+assert.ok(flashback.includes("button.setAttribute?.('aria-selected', selected ? 'true' : 'false')"), 'Flashback synchronizes tab selection semantics');
+assert.ok(flashback.includes("page.classList?.toggle('is-active', page.getAttribute?.('data-page') === route)")
+  && flashback.includes("panel.classList?.toggle('is-active', panel.getAttribute?.('data-subpanel') === wantedSubtabs[panel.getAttribute?.('data-group')])"), 'Flashback synchronizes panel visibility semantics');
+// Subtabs use a roving tabindex (unselected tabs get tabindex=-1), so arrow/Home/End
+// handling is what keeps the other subtabs reachable from the keyboard.
+assert.ok(flashback.includes("button.setAttribute?.('tabindex', selected ? '0' : '-1')"), 'Flashback subtabs use a roving tabindex');
+assert.ok(['ArrowRight', 'ArrowLeft', 'Home', 'End'].every(key => flashback.includes(`'${key}'`) || flashback.includes(`"${key}"`)), 'Flashback supports keyboard tab navigation');
 assert.ok(flashback.includes("box.setAttribute('role', 'dialog')"), 'Flashback custom dialogs expose dialog semantics');
 assert.ok(flashback.includes("doc.addEventListener('keydown', onKey);"), 'Flashback dialog key handling remains active until cleanup');
 assert.ok(!flashback.includes("doc.addEventListener('keydown', onKey, { once: true });"), 'Flashback dialog Escape handling is not consumed by the first unrelated key');
 assert.ok(flashback.includes("previousFocus.isConnected !== false"), 'Flashback restores focus after dialog close');
-assert.ok(hayaku.includes('data-hayaku-viewer-tab="server"'), 'HAYAKU server side tab');
+assert.ok(hayaku.includes('data-hayaku-viewer-tab="${id.toLowerCase()}"') && hayaku.includes("${nav('Server','서버 연결',"), 'HAYAKU server side tab');
+assert.ok(hayaku.includes('id="hayakuViewerPanelServer" data-hayaku-viewer-panel="server"'), 'HAYAKU server side panel');
 assert.ok(libra.includes("Object.freeze({ id: 'ai', label: 'AI 연결'"), 'LIBRA registers AI Connections in the shared sidebar registry');
-assert.ok(libra.includes("{ id: 'server', label: '서버 · 저장' }"), 'LIBRA registers Server and Storage inside the Settings hub');
+assert.match(libra, /Object\.freeze\(\{ id: 'server', group: 'settings', no: '\d+', label: '서버 · 저장'/, 'LIBRA registers Server and Storage inside the Settings hub');
+assert.ok(libra.includes("{id:'server',group:'저장과 백업',label:'저장 위치 · 서버',section:'server'}"), 'LIBRA Settings hub routes Server and Storage to its section');
 require('./fixtures/current_ui_compute_contracts.cjs').checkNavigation(libra);
 assert.ok(!lia.includes('["server", "저장·서버"]'), 'LIA active server settings route is retired');
 assert.match(lia, /storagePolicy\s*:\s*['"]local_only['"]/, 'LIA keeps local-only storage and explicit legacy recovery');
-assert.ok(retrace.includes('data-tab="serverconnection"'), 'RE:TRACE server connection side tab');
+// Server connection is now the 'connection' page of the Server Control tab.
+assert.ok(retrace.includes("requested === 'serverconnection' ? 'serverdata'") && retrace.includes('data-server-page=\\"connection\\"'), 'RE:TRACE server connection side tab');
 
 // Debug-export integration must be outside the shared SDK itself, in each plugin's real export path.
 const flashbackDebugSlice = flashback.slice(flashback.indexOf('const exportDebugLogPayload = async'), flashback.indexOf('const exportDebugLogFile = async'));

@@ -9,13 +9,23 @@ const source = fs.readFileSync(sourcePath, 'utf8');
 assert.match(source, releasePattern("\\/\\/@version {hayaku}\\b", ""), 'transparent viewer patch must remain present in the current release');
 assert.match(
   source,
-  /const viewerEnsureRoot = \(\) => \{[\s\S]*?root\.style\.width = '100%';[\s\S]*?root\.style\.height = '100dvh';[\s\S]*?root\.style\.position = 'fixed';[\s\S]*?root\.style\.inset = '0';[\s\S]*?root\.style\.background = 'var\(--page-bg,#cdd5d8\)';[\s\S]*?root\.dataset\.hayakuViewerBackdrop = 'translucent';[\s\S]*?Memory\.ledgerViewer\.root = root;/,
-  'viewer root must reapply the full-screen mockup canvas on each open'
+  /const viewerEnsureRoot = \(\) => \{[\s\S]*?root\.style\.width = '100%';[\s\S]*?root\.style\.height = '100dvh';[\s\S]*?root\.style\.position = 'fixed';[\s\S]*?root\.style\.inset = '0';[\s\S]*?root\.style\.display = 'flex';[\s\S]*?root\.style\.alignItems = 'center';[\s\S]*?root\.style\.justifyContent = 'center';[\s\S]*?root\.style\.background = 'transparent';[\s\S]*?root\.style\.overflow = 'hidden';[\s\S]*?root\.dataset\.hayakuViewerBackdrop = 'transparent';[\s\S]*?Memory\.ledgerViewer\.root = root;/,
+  'viewer root must reapply the transparent full-screen canvas that centers the window on each open'
 );
 assert.doesNotMatch(
   source,
   /root\.style\.background = '#0b1020'/,
   'legacy opaque fullscreen backdrop must be removed'
+);
+assert.doesNotMatch(
+  source,
+  /root\.style\.background = 'var\(--page-bg,#cdd5d8\)'|hayakuViewerBackdrop = 'translucent'/,
+  'retired translucent page-colour backdrop must stay removed (1bd8388)'
+);
+assert.match(
+  source,
+  /#\$\{LEDGER_VIEWER_ROOT_ID\}\{position:fixed;inset:0;width:100%;height:100dvh;z-index:2147483000;background:transparent;/,
+  'the root stylesheet keeps the fullscreen canvas transparent'
 );
 assert.match(
   source,
@@ -24,8 +34,8 @@ assert.match(
 );
 assert.match(
   source,
-  /#\$\{LEDGER_VIEWER_ROOT_ID\} \.stage\{width:100%;height:100%;padding:14px;overflow:auto\}/,
-  'the canonical stage must remain scoped to the HAYAKU full-screen root'
+  /#\$\{LEDGER_VIEWER_ROOT_ID\} \.stage\{width:100%;height:100%;padding:16px;overflow:hidden;align-items:center\}/,
+  'the canonical viewport-bounded stage must remain scoped to the HAYAKU full-screen root'
 );
 assert.doesNotMatch(
   source,

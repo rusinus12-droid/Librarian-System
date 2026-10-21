@@ -62,8 +62,10 @@ async function readClassicDelivery(f, query, expectedLiveTail) {
 
 const DETAIL = '도서관 전체는 정숙 구역';
 const QUERY = '도서관의 정숙 규칙을 고려해서 이어줘.';
-const DIALOGUE_MARK = '[RECENT DIALOGUE';
-const MICRO_MARK = 'TURN EVIDENCE (MICRO)';
+// The unified Classic renderer (9c03c35, "Replace LIBRA legacy retrieval with the unified memory
+// engine") appends Live Tail under this header and labels each evidence row `(n) [family:role]`.
+const DIALOGUE_MARK = '[RECENT COMPLETED DIALOGUE]';
+const MICRO_MARK = /^\(\d+\) \[micro:[^\]]+\] /m;
 
 const measure = async (mode, combo) => {
   let listener;
@@ -142,7 +144,7 @@ const combos = [
 
     // (2) Micro does not depend on Live Tail: the extracted evidence survives with everything off.
     const off = measured.both_off.classic.delivered;
-    assert.ok(off.includes(MICRO_MARK),
+    assert.match(off, MICRO_MARK,
       `${mode}: the Micro evidence is present even with Live Tail disabled`);
     assert.ok(off.includes(DETAIL),
       `${mode}: the Micro claim text survives Live Tail being disabled`);

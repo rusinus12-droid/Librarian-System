@@ -80,7 +80,12 @@ requireText(hayaku, "reason: 'auxiliary_probe_in_progress'", 'probe and recovery
 requireText(hayaku, "outcome: 'auxiliary_probe_in_progress'", 'probe and afterRequest overlap guard');
 requireText(hayaku, "const HAYAKU_AUXILIARY_PROBE_SCHEMA = 'hayaku.otherax_call_probe.v1';", 'session-only auxiliary probe backend contract');
 requireText(hayaku, 'id="ax-test"', 'the canonical Settings page retains the one-call probe control');
-requireText(hayaku, "root.querySelector?.('#ax-test')?.addEventListener('click', async event =>", 'the canonical probe control remains bound to the existing backend');
+// The Settings probe control is bound with the other probe triggers and routed
+// through the cost-consent runner, which then calls the existing probe backend.
+requireText(hayaku, "for (const button of root.querySelectorAll?.('[data-hayaku-auxiliary-test],#testHayakuAuxiliaryModel,#ax-test') || []) {\n      button.addEventListener('click', event => { void viewerRunAuxiliaryProbe(event.currentTarget)", 'the canonical probe control remains bound to the existing backend');
+const probeRunner = section(hayaku, 'const viewerRunAuxiliaryProbe = async trigger => {', 'const resultPromise = runNativeAuxiliaryProbe();', 'consented probe runner');
+requireText(probeRunner, 'const confirmation = viewerConfirmAuxiliaryProbe(root, trigger);', 'the probe control requires cost consent before the backend call');
+requireText(probeRunner, 'if (!await confirmation || !current()) return null;', 'declined consent never reaches the backend');
 forbidText(hayaku, 'id="testHayakuAuxiliaryModel"', 'retired pre-mockup auxiliary probe button selector');
 requireText(hayaku, 'nativeOtherAxCallProbeV1: true', 'probe capability');
 

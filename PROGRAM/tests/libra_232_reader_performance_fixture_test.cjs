@@ -30,7 +30,7 @@ const refs = Array.from({ length: 64 }, (_, index) => {
 });
 assert.ok(refs.reduce((sum, ref) => sum + ref.summary.length, 0) > 48000, 'fixture must exceed 48k summary characters');
 
-const counters = { bodyHydrations: 0, catalogReads: 0, writes: 0, queries: 0 };
+const counters = { bodyHydrations: 0, catalogReads: 0, writes: 0, queries: 0, releases: 0 };
 const manifest = { schema: 'libra.manifest.v1', memories: Object.fromEntries(refs.map(ref => [String(ref.turnRange.start), clone(ref)])) };
 const contextValue = { scope: { scopeKey: 'scope:reader-performance' }, chat: { messages: Array.from({ length: 320 }, () => ({})) } };
 const isolated = {
@@ -45,6 +45,8 @@ const isolated = {
   },
   key: { recallCatalog: scope => `recall-catalog:${scope.scopeKey}` },
   executeMemoryGraphUnifiedQuery: async options => { counters.queries++; assert.equal(options.queryInput.queryText,'Chapter 42'); assert.equal(options.semanticPolicy.mode,'disabled'); return {guiSearch:{sourceKeys:[refs[41].key],complete:true,stopReason:'frontier_exhausted'}}; },
+  // The reader releases its unified-query execution lease after selecting refs.
+  releaseMemoryGraphUnifiedQuery: execution => { assert.deepEqual(execution?.guiSearch?.sourceKeys, [refs[41].key], 'reader releases the execution it ran'); counters.releases += 1; },
   statePipelineReplayRefs: value => Object.values(value.memories).sort((a, b) => Number(a.turnRange.start) - Number(b.turnRange.start)),
   resolveContext: async () => clone(contextValue),
   buildPairs: () => Array.from({ length: 320 }, () => ({})),
@@ -94,6 +96,7 @@ vm.runInContext(`${readerSource}\nthis.readerApi = { listCanonicalReaderChapters
   assert.equal(searched.items[0].memoryId, refs[41].memoryId);
   assert.equal(counters.catalogReads, 0);
   assert.equal(counters.queries, 1);
+  assert.equal(counters.releases, 1, 'GUI search releases its unified-query execution exactly once');
   assert.equal(counters.bodyHydrations, 0, 'stale catalog search must not trigger a synchronous body scan');
 
   const detail = clone(await isolated.readerApi.getCanonicalReaderChapter({ memoryId: refs[41].memoryId, revision: 1 }));

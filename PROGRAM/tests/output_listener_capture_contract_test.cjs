@@ -96,18 +96,30 @@ assert.match(flashbackAfter, /if \(Runtime\.captureBackend !== FLASHBACK_CAPTURE
 
 
 // LiA is manual-only. Its actual selected five-pair action must still guard
-// source revisions and serialized Persona mutation; no output listener starts
-// automatic Persona work. The independent emotion-asset after hook remains.
+// source revisions and serialized Persona mutation; the official output listener
+// only offers a consent notice and never starts automatic Persona work. The
+// image-AI emotion-asset afterRequest hook was retired (no replacer remains).
 const liaCaptureRegistration=between(lia,'async function registerLiveSyncCaptureBackend() {','async function unregisterUiRegistration(');
 assert.match(liaCaptureRegistration,/liveSyncCaptureBackend = LIVE_SYNC_CAPTURE_BACKENDS\.NONE/);
-assert.match(liaCaptureRegistration,/liveSyncCaptureFallbackReason = "manual_only"/);
-assert.doesNotMatch(liaCaptureRegistration,/addRisuChatListener|addRisuScriptHandler/);
+assert.match(liaCaptureRegistration,/liveSyncCaptureFallbackReason = "manual_only_notification"/);
+assert.doesNotMatch(liaCaptureRegistration,/addRisuScriptHandler|addRisuReplacer|runManualLivePersonaAnalysis|runLiaMockupAction/);
+assert.match(liaCaptureRegistration,/liveSyncOutputListener=event=>\{void maybeNotifyLiaUpdate\(event\)/);
+assert.equal((liaCaptureRegistration.match(/addRisuChatListener\(/g)||[]).length,1);
+assert.match(liaCaptureRegistration,/addRisuChatListener\("output",liveSyncOutputListener\)/);
+const liaNotice=between(lia,'async function maybeNotifyLiaUpdate(event) {','async function initializePersonaProofExperience(');
+const noticeAt=liaNotice.indexOf('const approved=await showLiaUpdateNotice(');
+const approvalGate=liaNotice.indexOf('if(!approved||pluginUnloaded)');
+const actionAt=liaNotice.indexOf("runLiaMockupAction('update-five'");
+assert(noticeAt>=0&&approvalGate>noticeAt&&actionAt>approvalGate,'manual update runs only after explicit consent');
+assert.equal((liaNotice.match(/runLiaMockupAction\(/g)||[]).length,1);
+assert.match(liaNotice,/liaExpectedUpdateMatches\(fresh,expected\)/,'consented range is rechecked before the guarded manual action');
+assert.match(lia,/removeRisuChatListener\("output", liveSyncOutputListener\)/);
 const liaManual=between(lia,'async function runManualLivePersonaAnalysis(expectedCtx = null) {','\n  function ');
 assert.match(liaManual,/livePersonaBatchRevisionSnapshot\(runtimeCtx, batch\)/);
 assert.match(liaManual,/verifyLivePersonaBatchStillCurrent\(sourceRevision\)/);
 assert.match(liaManual,/commitGuard: guard, commitSelectionGuard, commitFence/);
 assert.match(liaManual,/LIVE_SYNC_SOURCE_SUPERSEDED_CODE/);
-assert.match(lia,/handlePersonaEmotionAssetAfterRequest/);
+assert.doesNotMatch(lia,/handlePersonaEmotionAssetAfterRequest|addRisuReplacer\(\s*["']afterRequest/);
 assert.doesNotMatch(lia,/LIVE_SYNC_POLL_MS|liveSyncTimer/);
 
 // Unload/hot-reload must detach the new listener so reinstall cannot double capture.

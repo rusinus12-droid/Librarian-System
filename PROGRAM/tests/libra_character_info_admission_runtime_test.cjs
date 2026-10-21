@@ -27,7 +27,7 @@ async function run(){
   assert.ok(!facts.some(x=>x.tempFactId==='bad'));
   assert.ok(facts.some(x=>x.tempFactId==='f1'));
   const recalled=await f.r.api.previewUnifiedMemoryRecall('민아 신중 항해');
-  assert.ok(recalled.memories.some(x=>x.excerpt.text.includes('신중')));
+  assert.ok(recalled.memories.some(x=>String(x.excerpt).includes('신중')),'unclassified character_note reaches recall: '+JSON.stringify(recalled.memories.map(x=>x.excerpt)));
   assert.equal((await f.r.api.rebuildWorldManagerState()).ok,true);
   assert.equal(countCalls(f.control).canonical,1);
   const restarted=await fixture({snapshot:{chat:f.chat,values:[...f.r.values]}});

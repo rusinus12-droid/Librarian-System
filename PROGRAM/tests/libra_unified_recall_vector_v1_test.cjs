@@ -9,8 +9,15 @@ async function test(name,fn){const f=await fixture();try{await fn(f);results.pus
  await test('actual Classic beforeRequest injection includes terminal fact, no analysis extra calls',async f=>{
   await f.r.api.saveLibraProviderConfig({responseFamily:'libra',libraResponseMode:'classic'});await f.run();
   const q='민아의 은빛 열쇠 소유자와 현재 소지자는 누구야?',out=await f.control.hooks.beforeRequest([{role:'system',content:'장면을 이어가세요.'},{role:'user',content:q}],'model');
-  const block=out.find(x=>x.content?.includes('[LIBRA CLASSIC RECALL'));assert.ok(block);assert.ok(block.content.includes('지호가 열쇠를 민아에게 반환했다.'));assert.ok(block.content.includes('은빛 열쇠의 소유자는 민아다.'));assert.ok(block.content.includes('[세계와 장면]'));assert.equal(f.control.calls.length,1);
-  const recall=await f.r.api.previewUnifiedMemoryRecall(q);for(const row of recall.memories){assert.ok(row.excerpt.text.length<=row.excerpt.requestedChars);assert.ok(row.excerpt.sections.every(s=>['chronology','characters_relations','world_scene','narrative_open_threads','facts_uncertainty'].includes(s.sectionKey)));}
+  const block=out.find(x=>x.content?.includes('[LIBRA CLASSIC RECALL'));assert.ok(block);assert.ok(block.content.includes('지호가 열쇠를 민아에게 반환했다.'));assert.ok(block.content.includes('은빛 열쇠의 소유자는 민아다.'));
+  // The graph engine (N02+) delivers unit-level evidence instead of section excerpts; world/scene
+  // context still reaches Classic as current world State next to the queried canonical facts.
+  assert.match(block.content,/\[LIBRA_EVIDENCE consumer=classic scope=\S+ units=\d+ sources=\d+\]/);assert.match(block.content,/\[state:state_current\] world\.rule = 도서관은 정숙 구역/);assert.equal(f.control.calls.length,1);
+  const recall=await f.r.api.previewUnifiedMemoryRecall(q);assert.ok(recall.memories.length);
+  // Excerpts are bounded by the recall character budget and typed by the known evidence families.
+  assert.ok(recall.excerptChars<=recall.effectiveRecallMaxChars,`excerpt ${recall.excerptChars} within ${recall.effectiveRecallMaxChars}`);
+  assert.ok(recall.bundle.budget.usedCharacters<=recall.bundle.budget.maxCharacters);
+  for(const row of recall.memories){assert.equal(typeof row.excerpt,'string');assert.ok(row.excerpt.length>0&&row.excerpt.length<=recall.effectiveRecallMaxChars);assert.equal(row.excerpt,row.memory.selectedText);assert.ok(['canonical','state','micro','lore'].includes(row.family),row.family);assert.ok(block.content.includes(row.excerpt),'previewed evidence matches the injected evidence');}
  });
  await test('saved Planner alias dispatches Classic with conditional canonical evidence through T5 and no helper call',async f=>{
   await f.r.api.saveLibraProviderConfig({responseFamily:'libra',libraResponseMode:'planner'});
@@ -32,7 +39,11 @@ async function test(name,fn){const f=await fixture();try{await fn(f);results.pus
   const ref=context.canonicalRefs[0],active=manifest.memories['1'];
   for(const field of ['key','memoryId','revision','sourceDigest','artifactDigest'])assert.equal(ref[field],active[field],`request-bound canonical ${field}`);
   assert.deepEqual(f.clone(ref.turnRange),{start:1,end:5});
-  assert.ok(block.content.includes('TURN 1~5'));assert.ok(block.content.includes(`memory ${ref.memoryId} r${ref.revision}`));
+  // Classic evidence lines no longer print TURN/memory labels (graph evidence packet); the
+  // injected canonical units must still resolve to exactly this request-bound memory revision.
+  const preview=await f.r.api.previewUnifiedMemoryRecall('민아의 은빛 열쇠와 공연실의 정숙 규칙');
+  const canonicalRows=preview.memories.filter(row=>row.family==='canonical');assert.ok(canonicalRows.length>0);
+  for(const row of canonicalRows){assert.ok(block.content.includes(row.excerpt),'previewed canonical unit was injected');assert.equal(row.memory.memoryId,ref.memoryId);assert.equal(row.memory.revision,ref.revision);assert.equal(row.memory.memoryKey,ref.key);assert.equal(row.memory.sourceDigest,ref.sourceDigest);assert.equal(row.memory.artifactDigest,ref.artifactDigest);assert.deepEqual(f.clone(row.memory.turnRange),{start:1,end:5});}
   assert.equal((await f.r.api.validateResponseContext(context)).ok,true,'the injected request still has current canonical authority');
   assert.deepEqual(countCalls(f.control),{total:1,micro:0,canonical:1,other:0},'exactly one Librarian call and no retired response helper');
  });

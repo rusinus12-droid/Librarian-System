@@ -12,10 +12,15 @@ const version=source.match(/^\/\/@version (\d+\.\d+\.\d+)\s*$/m)?.[1];
 assert.ok(version, 'plugin must declare a semantic version');
 assert.ok(source.includes(`const PLUGIN_VERSION = '${version}';`), 'header and runtime versions must agree');
 assert.match(source, /\/\/@arg hayaku_memory_language string ko\|en\|ja\|zh\|source; blank uses source/);
-assert.match(source, /Auto는 Deep·정밀 복구 신호와 충분한 컨텍스트 여유가 함께 있을 때 Full, 그 외에는 Balanced/);
-assert.match(source, /대화 원문 자동 · 다국어 권장/);
-assert.match(source, /Other Ax 호출 시 RisuAI에 설정된 Provider 비용이 발생할 수 있습니다/);
-assert.match(source, /5턴 · 속도 권장/);
+// The approved mockup Settings page (5e1db38) replaced the old long-form option
+// copy with short descriptions plus a friendly value-label map; the Auto policy
+// itself is verified at runtime below.
+assert.match(source, /hayaku_prompt_mode: \{ auto: '자동', balanced: '균형 · 핵심 지시', full: '전체 · 상세 지시' \}/);
+assert.match(source, /<span class="argtag">hayaku_prompt_mode<\/span><\/div><select class="select"[^>]*><option>auto<\/option><option>balanced<\/option><option>full<\/option><\/select>/);
+assert.match(source, /hayaku_memory_language: \{ source: '대화 원문 언어', ko: '한국어', en: '영어', ja: '일본어', zh: '중국어' \}/);
+assert.match(source, /대화 원문 언어를 고르면 완료된 대화의 언어를 따릅니다\.<\/div><span class="argtag">hayaku_memory_language<\/span><\/div><select class="select"[^>]*><option>source<\/option>/);
+assert.match(source, /<b>비용 안내<\/b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다\./);
+assert.match(source, /hayaku_cold_start_batch_turns: \{ 1: '1턴씩', 5: '5턴씩', 10: '10턴씩' \}/);
 
 (async () => {
   const runtime = await createHayakuRuntime({ autoRepair: false });

@@ -177,6 +177,12 @@ const runUpgradeMode = async mode => {
 
     // --- A41: reading through the public surface is still non-generative ---
     const api = restarted.r.api;
+    // getCurrentStateHead() reads the runtime's snapshot cache. The shared fixture no longer re-saves
+    // unchanged engine settings on restart (that write used to refresh the snapshot as a side effect),
+    // so open the scope through the public read-only memory list first, as the GUI does.
+    const reopenedMemories = await api.getCanonicalMemories();
+    assert.equal(Array.from(reopenedMemories || []).length, beforeRecords.length,
+      `${mode}: the public memory list reads the preserved record after the reload`);
     const head = await api.getCurrentStateHead?.();
     assert.ok(head, `${mode}: the State Head is readable after the reload`);
     const detail = await api.getLibraMemoryDetail?.(head?.reviewedThroughCanonical?.memoryId ?? '', head?.reviewedThroughCanonical?.revision ?? 0);

@@ -95,7 +95,7 @@ const artifact = ({ turn, status, link = '', resolution = '', text }) => ({
     assert.equal(f.getHead().narrative.threads[0].status, 'open');
 
     const settings = await f.r.api.getLibraMemorySettings();
-    await f.r.api.saveLibraMemorySettings({ ...(settings?.settings || settings || {}), recallMaxMemories: 1, recallQueryMessages: 1 });
+    await f.r.api.saveLibraMemorySettings({ ...(settings?.settings || settings || {}), recallMaxMemories: 1, unifiedMaxUnits: 1, recallQueryMessages: 1 });
     const query = '열쇠 반환은 아직 확인되지 않았다';
     const recall = await f.r.api.previewUnifiedMemoryRecall(query);
     assert.equal(recall.memories.length, 1);

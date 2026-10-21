@@ -6,8 +6,11 @@
 // ACTUAL panel builder over a DOM stub and counts renders through the real render queue, so the
 // claim is checked on the path a user's click takes:
 //
-//   click a 작성실 tab -> queueGuiNavigationRender -> renderSettingsGui -> buildNarrativeDirectionPanel
-//     -> (must NOT schedule another render)
+//   click a 작성실 tab -> queueGuiNavigationRender -> renderSettingsGui -> buildApprovedMockupStory
+//     (whose "사서의 여백" margin hosts the 서사 방향 editor) -> (must NOT schedule another render)
+//
+// The standalone buildNarrativeDirectionPanel was folded into the story page's margin card; that card
+// is now the only render path that triggers loadNarrativeDirectionDraft.
 //
 // Before the fix that chain re-armed the navigation timer forever, so the click that set
 // Gui.bookWritingTab never reached a painted frame.
@@ -56,6 +59,11 @@ const buildHarness = scopeKey => {
     inputNode: () => el('input'),
     checkboxNode: () => el('input'),
     libraStatusBadge: (label, tone) => el('span', { text: label, dataset: { tone } }),
+    // The story page around the margin: an empty narrative model, so only the margin carries content.
+    worldManagerSnapshotView: () => ({}),
+    bookNarrativeHistoryState: () => ({ chapters: [], loading: false, loaded: false, hasMore: false, error: '' }),
+    bookNarrativeModel: () => ({ threads: [], events: [], arcs: [], relations: [], closed: [] }),
+    loadBookNarrativeHistory: async () => {}, bookSelectStorySection: () => {}, bookNavigate: () => {},
     Promise, JSON, Number, String, Error, console,
     __LIBRA__: {
       getNarrativeDirection: async ({ scopeKey: requested }) => ({
@@ -64,11 +72,11 @@ const buildHarness = scopeKey => {
       })
     }
   });
-  const code = `${between('const narrativeDirectionScopeKey = () =>', 'const buildNarrativeDirectionPanel =')}\n`
-    + `${between('const buildNarrativeDirectionPanel = () => {', 'const buildWorldManagerNarrativePanel =')}\n`
-    + `({ buildNarrativeDirectionPanel });`;
-  const { buildNarrativeDirectionPanel } = vm.runInContext(code, context, { filename: 'panel.js' });
-  return { state, build: buildNarrativeDirectionPanel };
+  const code = `${between('const narrativeDirectionScopeKey = () =>', 'const buildWorldManagerNarrativePanel =')}\n`
+    + `${between('const buildApprovedMockupStory = () => {', 'const buildApprovedMockupDestinationDetail =')}\n`
+    + `({ buildApprovedMockupStory });`;
+  const { buildApprovedMockupStory } = vm.runInContext(code, context, { filename: 'panel.js' });
+  return { state, build: buildApprovedMockupStory };
 };
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
@@ -87,9 +95,12 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
     assert.match(state.Gui.narrativeDirectionError, /scope/,
       'the refusal must still be recorded so the user is told why the draft is absent');
     const texts = flat(tree).map(node => node.text).filter(Boolean);
-    assert.ok(texts.includes('앞으로의 방향'), 'the panel still renders its section heading');
-    assert.ok(texts.some(t => /불러오지 못했습니다|읽는 중입니다/.test(String(t))),
+    assert.ok(texts.includes('사서의 여백'), 'the panel still renders its section heading');
+    // The margin's status line shows the recorded refusal (or the generic not-loaded text) in place
+    // of the editor, so the user sees why the draft is absent rather than a silent blank.
+    assert.ok(flat(tree).some(node => node.attrs?.role === 'status' && /불러오지 못했습니다|읽는 중입니다|scope를 확인하지 못했습니다/.test(String(node.text))),
       'the panel still shows the not-loaded state rather than a silent blank');
+    assert.ok(!flat(tree).some(node => node.dataset?.directionField), 'no editor field is rendered without a draft');
   }
 
   // ── control: with a real scope the draft loads, and the completion render is requested once ──
@@ -103,7 +114,10 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
     assert.equal(state.renders, 1, 'the completed load requests exactly one render to show the draft');
     const tree = build();
     const texts = flat(tree).map(node => node.text).filter(Boolean);
-    assert.ok(texts.includes('사용자 서사 방향'), 'the editor renders once the draft is present');
+    assert.ok(texts.includes('목표') && texts.includes('완료 조건'), 'the editor renders once the draft is present');
+    const goalField = flat(tree).find(node => node.dataset?.directionField === 'goal');
+    assert.equal(goalField?.attrs?.value, 'g', 'the editor shows the loaded draft value');
+    assert.ok(!texts.some(t => /불러오지 못했습니다|읽는 중입니다/.test(String(t))), 'the not-loaded state is gone once the draft is present');
   }
 
   console.log(JSON.stringify({ test: 'libra_narrative_direction_render_path', ok: true }));

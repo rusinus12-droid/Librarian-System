@@ -344,22 +344,27 @@ const runBranch = async (mode, outcome) => {
     const recall = await f.r.api.previewUnifiedMemoryRecall(query);
     const recallFacts = recall.diagnostics?.recallContinuityClosure?.facts || [];
     const recallSelectedRows = Array.isArray(recall.memories) ? recall.memories : [];
-    const selectedOutcomeRow = recallSelectedRows.find(row => row?.memory?.memoryId === outcomeRead.ref.memoryId
+    // Unified Recall selects individual canonical assertion units (one row per fact) rather than
+    // whole canonical records, so the exact outcome fact is the selected unit of the T6 record
+    // whose text is the outcome assertion.
+    const outcomeUnits = recallSelectedRows.filter(row => row?.memory?.memoryId === outcomeRead.ref.memoryId
       && Number(row?.memory?.revision || 0) === Number(outcomeRead.ref.revision || 0));
-    const selectedOutcomeFact = selectedOutcomeRow?.memory?.canonicalArtifact?.facts?.find(row => row.tempFactId === `promise_${outcome.id}`);
+    const selectedOutcomeRow = outcomeUnits.find(row => row?.memory?.semanticRole === 'canonical_assertion'
+      && (row?.memory?.text === expected.source || row?.excerpt === expected.source)) || outcomeUnits[0] || null;
+    const selectedOutcomeFact = selectedOutcomeRow && (selectedOutcomeRow.memory?.text === expected.source
+      || selectedOutcomeRow.excerpt === expected.source) ? selectedOutcomeRow.memory : null;
     const closureOutcome = recallFacts.find(row => row.memoryId === outcomeRead.ref.memoryId
       && Number(row.revision || 0) === Number(outcomeRead.ref.revision || 0));
     const recallReachedOutcome = Boolean(selectedOutcomeRow || closureOutcome);
     const selectedRecallRefs = recallSelectedRows.map(row => ({
       memoryId: row?.memory?.memoryId || '', revision: Number(row?.memory?.revision || 0),
-      turnRange: row?.memory?.turnRange || null, selectedCanonicalFacts: row?.memory?.canonicalArtifact?.facts?.length || 0
+      turnRange: row?.memory?.turnRange || null, semanticRole: row?.memory?.semanticRole || '', text: row?.memory?.text || ''
     }));
     const closureRecallRefs = recallFacts.map(row => ({ memoryId: row.memoryId || '', revision: Number(row.revision || 0),
       turnRange: row.turnRange || null, claimKind: row.claimKind || '', text: row.text || '' }));
     console.log(JSON.stringify({ schema: 'a13.recall_selected_and_closure.v1', mode, branch: outcome.id,
       selectedRefs: selectedRecallRefs, selectedOutcomeFact: selectedOutcomeFact ? {
-        tempFactId: selectedOutcomeFact.tempFactId, status: selectedOutcomeFact.values?.thread?.status || '',
-        resolution: selectedOutcomeFact.values?.thread?.resolution || '', evidenceSpans: selectedOutcomeFact.evidenceSpans || []
+        nodeId: selectedOutcomeFact.nodeId, text: selectedOutcomeFact.text, turnRange: selectedOutcomeFact.turnRange || null
       } : null, closureRefs: closureRecallRefs, reachedOutcome: recallReachedOutcome,
       canonicalOutcome: { memoryId: outcomeRead.ref.memoryId, revision: outcomeRead.ref.revision,
         turnRange: outcomeRead.ref.turnRange, status: finalThread?.status || '', resolution: finalThread?.resolution || '',
@@ -369,10 +374,12 @@ const runBranch = async (mode, outcome) => {
       assert.ok(recallReachedOutcome, 'public Recall either selects the T6 canonical row or reports it as a closure addition');
       if (selectedOutcomeRow) assert.ok(selectedOutcomeFact, 'direct T6 selection exposes the exact outcome fact');
       if (selectedOutcomeFact) {
-        assert.equal(selectedOutcomeFact.values?.thread?.status, expected.status);
-        assert.equal(selectedOutcomeFact.values?.thread?.resolution || '', expected.resolution);
+        // The unit carries the assertion text and its record's time; status, resolution and the
+        // evidence ref are asserted on the durable T6 canonical fact below.
         assert.equal(selectedOutcomeFact.text, expected.source);
-        assert.equal(selectedOutcomeFact.evidenceSpans?.[0]?.ref, 't6-u');
+        assert.equal(selectedOutcomeFact.memoryKey, outcomeRead.ref.key, 'the selected unit is bound to the T6 canonical record');
+        assert.ok(Number(selectedOutcomeFact.turnRange?.start || 0) <= 6 && Number(selectedOutcomeFact.turnRange?.end || 0) >= 6,
+          'the selected outcome unit retains the T6 source time');
       }
       assert.equal(finalThread?.status, expected.status, 'reached T6 canonical fact retains its exact promise status');
       assert.equal(finalThread?.resolution || '', expected.resolution, 'reached T6 canonical fact retains its exact resolution');

@@ -44,9 +44,12 @@ test('registered LIBRA confirmed empty publishes consistent complete-zero receip
  });
 });
 test('registered LIBRA unavailable Micro enumeration never reports a complete zero',async()=>{
- const transform=source=>{const anchor='() => activeMicroRecallCorpus(context, pairs, manifest, currentTurn), RECALL_STEP_BUDGET_MS,';assert.equal(source.split(anchor).length,2);return source.replace(anchor,"() => { throw Error('CONTROLLED_MICRO_INDEX_UNAVAILABLE'); }, RECALL_STEP_BUDGET_MS,");};
+ // The unified engine replaced the legacy activeMicroRecallCorpus step: Micro units are now
+ // enumerated per turn by the graph projection (readActiveMicroMemory). Report every Micro
+ // head as unavailable there; the projection records it as pending Micro evidence.
+ const transform=source=>{const anchor='            () => readActiveMicroMemory(scope, worldlineId, 0, turn));';assert.equal(source.split(anchor).length,2,'exactly one unified Micro enumeration seam');return source.replace(anchor,"            () => { globalThis.__MICRO_ENUMERATION_UNAVAILABLE__=(globalThis.__MICRO_ENUMERATION_UNAVAILABLE__||0)+1; return {status:'unavailable',reason:'controlled_micro_index_unavailable'}; });");};
  await withEmptyLibra(transform,(f,r)=>{
-   assert.equal(f.r.api.getLastMemoryRecall().diagnostics.emptyReason,'micro_recall_index_unavailable');
+   assert.ok(f.r.context.__MICRO_ENUMERATION_UNAVAILABLE__>0,'the unified Micro enumeration seam was reached');
    assert.equal(r.lastClassicInjectionMeta.injected,false);const receipt=r.lastClassicInjectionMeta.sourceTurnAccounting;
    assert.equal(receipt?.status,'unknown');assert.equal(receipt?.completeUniqueOriginalTurns,null);
    assert.deepEqual(plain(r.lastMemoryRecallViewer.sourceTurnAccounting),plain(receipt));
@@ -60,7 +63,7 @@ test('registered LIBRA changed-scope boundary rejection never publishes an empty
  // Observe the current owner-protected seam immediately before the real
  // boundary validation. Mutate the host chat itself; retain both product guards.
  const transform=source=>{
-  const anchor='        if(responseBoundary)await assertUnifiedResponseBoundary(responseBoundary);\n        if (requestOwner !== latestRecallPublicationOwner) return messages;';
+  const anchor="        if (responseBoundary) await runRecallStep(guard, 'unified_response_boundary', () => assertUnifiedResponseBoundary(responseBoundary), RECALL_STEP_BUDGET_MS);";
   assert.equal(source.split(anchor).length,2,'exactly one current pre-publication boundary seam');
   return source.replace(anchor,
    "        globalThis.__SOURCE_TURN_LATE_SCOPE_OBSERVED__=(globalThis.__SOURCE_TURN_LATE_SCOPE_OBSERVED__||0)+1;\n"+

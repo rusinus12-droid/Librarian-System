@@ -123,12 +123,14 @@ test('GRADIA source-injected recommendation rows safely show fallback paths and 
     // Exercise future recommendation changes through the real renderer without production test hooks.
     source = source.replace('const current = guiStateSnapshot(Gui.state);', `const current = guiStateSnapshot(Gui.state);
       current.runtime.futureSettings = { 'custom.with.dot': '<b>old</b>', privateKey: 'PRIVATE_BEFORE' };
-      current.runtime.backendHosting.token = 'TOKEN_BEFORE';
+      // The retired LIBRA Hosting Bridge (runtime.backendHosting) is gone; a nested
+      // connection token under a still-unmapped runtime object keeps the same coverage.
+      current.runtime.futureConnection = { token: 'TOKEN_BEFORE' };
       current.providers.default.key = 'KEY_BEFORE';
       current.providers.default.extra_headers_json = '{"Authorization":"HEADER_BEFORE"}';`);
     return source.replace("applyQuickProfileValues('balanced', runtime, agents);\n    return state;", `applyQuickProfileValues('balanced', runtime, agents);
       runtime.futureSettings = { 'custom.with.dot': '<b>new</b>', privateKey: 'PRIVATE_AFTER' };
-      runtime.backendHosting.token = 'TOKEN_AFTER';
+      runtime.futureConnection = { token: 'TOKEN_AFTER' };
       state.providers.default.key = 'KEY_AFTER';
       state.providers.default.extra_headers_json = '{"Authorization":"HEADER_AFTER"}';
       agents.shadow_act.presetName = 'custom-recommended-model';

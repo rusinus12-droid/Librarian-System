@@ -85,7 +85,19 @@ function envelope(options) {
     await setting();
     await waitFor(() => dom.window.document.querySelector('[data-receipt-recovery-scope]'), 'mounted public home recovery panel');
   }
+  // LIBRA 2.3.16x+ opens a first-run quick-connect dialog over the GUI while no
+  // embedding is configured; its focused key field defers body renders. Decline
+  // it the way a user would ("나중에 하기") before driving the desk.
+  function dismissFirstSetup() {
+    const dialog = dom.window.document.querySelector('[data-libra-quick-dialog]');
+    if (!dialog) return;
+    const later = [...dialog.querySelectorAll('.dialog__actions button')].find(row => row.textContent === '나중에 하기');
+    assert.ok(later, 'first-run quick connect can be postponed');
+    later.click();
+    assert.equal(dom.window.document.querySelector('[data-libra-quick-dialog]'), null, 'postponed first-run dialog is closed');
+  }
   async function refreshDesk() {
+    dismissFirstSetup();
     const button = [...dom.window.document.querySelectorAll('[data-receipt-recovery-scope] button')]
       .find(row => row.textContent === '상태 새로고침');
     assert.ok(button, 'actual desk status refresh exists');

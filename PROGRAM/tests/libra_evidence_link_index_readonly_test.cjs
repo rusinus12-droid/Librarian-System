@@ -28,13 +28,34 @@ const stable = value => {
 // This is a correction, not a relaxation. The earlier assertion compared whole objects and passed only
 // because the key was ABSENT in both states, so it was vacuous for the one field that could ever differ.
 // Naming the exception and asserting its value is strictly stronger than comparing two absences.
+// The unified engine (9c03c35) returns its evidence bundle with the recall. Its node/edge/basis ids
+// are content-addressed over per-run record snapshots, equal-score units are ordered by those ids, and
+// the witness/byte accounting follows that order; measured: two runs with the index OFF already differ
+// only in those respects. `runInvariant` masks the ids, sorts tie order away and drops exactly the
+// measured accounting fields below. Every delivered text, family, role, score, outcome, coverage and
+// budget field is still compared.
+const RUN_ACCOUNTING = new Set(['requestId', 'l0WorkspaceBytes', 'l0WitnessBytes', 'countedBytes', 'l0_candidate_workspace',
+  'l0_witness_bytes', 'readset_handle_state', 'retainedBytes', 'peakRetainedBytes', 'private_readset',
+  'frontierExpansionBytes', 'frontier_expansion', 'verifiedNodeCount', 'verifiedEdgeCount', 'verifiedBasisCount']);
+const RUN_ID = /libra\.(?:node|basis|edge|binding)\.v1:[0-9a-f]{64}|\b[0-9a-f]{64}\b/g;
+const runInvariant = value => {
+  if (typeof value === 'string') {
+    const masked = value.replace(RUN_ID, '<id>');
+    return masked.includes('\n') ? masked.split('\n').map(line => line.replace(/^\(\d+\) /, '')).sort().join('\n') : masked;
+  }
+  if (Array.isArray(value)) return value.map(runInvariant).map(item => [JSON.stringify(item), item]).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, item]) => item);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).filter(([key]) => !RUN_ACCOUNTING.has(key)).map(([key, item]) => [key, runInvariant(item)]));
+  }
+  return value;
+};
 const RECALL_DIAGNOSTIC_ONLY_FIELD = 'associativeRecall';
 const withoutFeatureDiagnostic = value => {
   const copy = plain(value);
   if (copy && typeof copy === 'object' && copy.diagnostics && typeof copy.diagnostics === 'object') {
     delete copy.diagnostics[RECALL_DIAGNOSTIC_ONLY_FIELD];
   }
-  return stable(copy);
+  return runInvariant(stable(copy));
 };
 // Derived embedding retry status and basis snapshot hashes can move between runs; every
 // canonical field must not.
@@ -89,17 +110,18 @@ const run = async options => {
       assert.equal(headBytes(on), offHead, 'Head bytes must be unchanged');
 
       // The one exempted field is asserted BY CONTENT in both directions, so the exception cannot hide a
-      // change: off must say the feature is disabled, on must say it ran and reached nothing here.
-      assert.equal(offDiagnostic?.mode, 'disabled', 'with the index off the diagnostic reports the feature disabled');
-      assert.equal(offDiagnostic?.reason, 'graph_recall_disabled');
-      assert.equal(offDiagnostic?.active, false);
-      assert.equal(offDiagnostic?.providerCalls, 0);
-      assert.equal(onDiagnostic?.mode, 'observation_only', 'with the index on the diagnostic reports the observation mode');
-      assert.equal(onDiagnostic?.active, false, 'this corpus reaches nothing, and the report says so rather than staying silent');
-      assert.equal(onDiagnostic?.reason, 'no_reachable_candidate');
-      assert.equal(onDiagnostic?.providerCalls, 0, 'the observation adds no provider call');
-      // Neither state may leak a memory body into the diagnostic.
-      for (const diagnostic of [offDiagnostic, onDiagnostic]) {
+      // change. Associative recall was retired with the legacy retriever (9c03c35): the recall no longer
+      // carries its diagnostic in EITHER state, and the feature API reports it retired with participation
+      // off, so the index cannot reach the recall through it.
+      assert.equal(offDiagnostic, undefined, 'with the index off the retired associative stage reports nothing into recall');
+      assert.equal(onDiagnostic, undefined, 'with the index on the retired associative stage still reports nothing into recall');
+      const associative = plain(await on.r.api.getAssociativeRecallDiagnostics());
+      assert.equal(associative.schema, 'libra.associative_recall.v1');
+      assert.equal(associative.retired, true, 'the associative stage is retired, not silently active');
+      assert.equal(associative.participationEnabled, false, 'an enabled index must not turn associative participation on');
+      assert.equal(associative.engine, 'unified');
+      // Neither state may leak a memory body into a diagnostic.
+      for (const diagnostic of [offDiagnostic, onDiagnostic, associative]) {
         const serialized = JSON.stringify(diagnostic || {});
         for (const field of ['canonicalArtifact', 'recallKeys', 'embedding', 'vectorRecord']) {
           assert.equal(serialized.includes(`"${field}"`), false,
@@ -111,7 +133,7 @@ const run = async options => {
       // the exemption above cannot mask a change in what a model receives — that is the assertion the
       // Stage 1 contract actually exists for. Compared with `stable` because a run id, a timestamp and a
       // basis digest differ between ANY two runs; measured: those four fields are the only difference.
-      assert.deepEqual(stable(recall.memories), stable(offDeliveredMemories),
+      assert.deepEqual(runInvariant(stable(recall.memories)), runInvariant(stable(offDeliveredMemories)),
         'the delivered memory set must be the same with the index on and off');
 
       const added = [...on.r.values.keys()].filter(key => INDEX_KEY.test(key));
