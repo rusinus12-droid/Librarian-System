@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-21T15:16:40.834Z",
+  "generatedAt": "2026-10-21T15:21:14.551Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -10486,6 +10486,10 @@
     "tests/updater_install_operation_lock_test.cjs": {
       "sha256": "f9384852910035d72210eb4de3da365d6468e2757f9358dd86bccd40c2212715",
       "bytes": 2672
+    },
+    "tests/updater_local_package_picker_test.cjs": {
+      "sha256": "073fe4a6c2b14a7ac85dd3efdbf0e1643b9f5a60bd93ea9e43fcd968cddf946b",
+      "bytes": 6986
     },
     "tests/updater_release_asset_selection_test.cjs": {
       "sha256": "21495bb7ba34198cf5d9fa5ffdc7aa42dfcde8b1d2280730bb75e01eb1bcc6e9",
