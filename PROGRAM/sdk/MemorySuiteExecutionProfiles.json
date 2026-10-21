@@ -9,7 +9,7 @@
     "legacy-compatible": { "remove": [], "add": {} },
     "libra": {
       "remove": ["sga_private_analysis", "sga_full_draft", "sga_patch", "sga_final_rewrite", "sga_length_rewrite"],
-      "add": { "micro_memory": [2048, 4096] }
+      "add": { "micro_memory": [2048, 4096], "lens_analysis": [4096, 8192] }
     }
   }
 }

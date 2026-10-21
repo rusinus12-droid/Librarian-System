@@ -448,8 +448,11 @@ function runNodeProcess(args = [], cwd = programDir, options = {}) {
 // The artifacts are then verified by tests/ultralight_release_runtime_test.cjs, which
 // LOADS each one in a real host boundary instead of grepping its text.
 function buildReleaseArtifacts(outDir) {
+  // Minifying six plugins takes about 80 s on an idle 4-core host and more than the default
+  // 180 s when the host is busy (e.g. a full regression run beside it); it is a build step, not a
+  // hang, so it gets a build-sized limit.
   runNode(path.join(programDir, 'tools', 'build_plugins.cjs'),
-    ['--profile', 'release', '--out', outDir]);
+    ['--profile', 'release', '--out', outDir], programDir, { timeoutMs: 600000 });
   const runtimeTest = path.join(programDir, 'tests', 'ultralight_release_runtime_test.cjs');
   runNodeProcess([runtimeTest], programDir, { timeoutMs: 240000, env: { ULTRALIGHT_ARTIFACT_DIR: outDir } });
   return { outDir, verified: true };

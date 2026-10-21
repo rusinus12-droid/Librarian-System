@@ -19,7 +19,8 @@ const standard = {
   hayaku_packet_recovery:[16384,32768],hayaku_cold_start:[16384,32768],hayaku_failed_analysis_resolution:[16384,32768]
 };
 const retired = ['sga_private_analysis','sga_full_draft','sga_patch','sga_final_rewrite','sga_length_rewrite'];
-const libra = {...standard,micro_memory:[2048,4096]}; retired.forEach(k=>delete libra[k]);
+// LIBRA adds Micro memory and memory lens analysis; the other products must reject both.
+const libra = {...standard,micro_memory:[2048,4096],lens_analysis:[4096,8192]}; retired.forEach(k=>delete libra[k]);
 const plain = x=>JSON.parse(JSON.stringify(x));
 const load = text=>vm.runInNewContext(text+';MemorySuiteExecutionContract',{URL,URLSearchParams,TextEncoder,TextDecoder,setTimeout,clearTimeout},{timeout:1000});
 const expected = file=>file==='LIBRA.js'?libra:standard;
@@ -36,7 +37,7 @@ function verify(C, defaults) {
       assert.equal(bounded.effective.outputCap,provider==='otherax'?null:600);assert.equal(bounded.maxPhysicalCalls,2);
     }
   }
-  for(const taskKind of ['', 'unknown_task', '__proto__', ...(defaults.micro_memory?retired:['micro_memory'])])
+  for(const taskKind of ['', 'unknown_task', '__proto__', ...(defaults.micro_memory?retired:['micro_memory','lens_analysis'])])
     assert.throws(()=>C.invocationPlan({taskKind,route:{}}),e=>e.code==='UNKNOWN_TASK_KIND'&&e.message===`Unregistered generation task: ${taskKind||'(missing)'}.`);
 }
 verify(load(source),standard);

@@ -122,6 +122,18 @@ def _attach_owned_windows_job(process):
             kernel32.CloseHandle(handle)
 
 REGRESSION_OWNER_ENV='LIBRARIAN_REGRESSION_OWNER'
+# Artifact verification suites check actual Full/Min builds that a release run hands them (the
+# distribution builder sets these variables). They fail by design when the input is absent, so
+# a full run without the inputs does not execute them and reports them as INPUT_REQUIRED: neither
+# a pass nor a product failure. With the variables set they run and count normally.
+EXPLICIT_INPUT_SUITES = {
+    'build_plugins_artifact_behavior_negative_control_test.cjs': ('ULTRALIGHT_ARTIFACT_DIR', 'RELEASE_PARITY_CONTROL_DIR'),
+    'build_plugins_artifact_behavior_parity_test.cjs': ('ULTRALIGHT_ARTIFACT_DIR', 'RELEASE_PARITY_CONTROL_DIR'),
+    'build_plugins_artifact_libra_readiness_test.cjs': ('ULTRALIGHT_ARTIFACT_DIR',),
+    'execution_task_profiles_artifact_test.cjs': ('EXECUTION_PROFILE_ARTIFACTS',),
+    'flashback_server_inspection_artifact_test.cjs': ('FLASHBACK_SERVER_INSPECTION_ARTIFACTS',),
+    'lia_manual_release_artifact_test.cjs': ('LIA_RELEASE_ARTIFACT',),
+}
 
 def _enable_posix_subreaper():
     """Linux: make the runner the reaper of orphaned test descendants.
@@ -406,6 +418,32 @@ manifest=json.loads((root/'program-manifest.json').read_text(encoding='utf-8'))
 plugin_versions=manifest.get('plugins',{})
 child_env=os.environ.copy()
 child_env['PYTHON']=child_env.get('PYTHON') or sys.executable
+
+def _prepare_build_support(env):
+    """Expose the locked build-support modules (jsdom, acorn, terser, fake-indexeddb) to every suite.
+
+    The distribution builder does this before its release smoke; without it a fresh checkout fails
+    DOM and minifier suites on a missing module instead of on what they test.
+    """
+    script=("const {ensureBuildSupportDependencies}=require(process.argv[1]);"
+            "const r=ensureBuildSupportDependencies({programDir:process.argv[2],installIfMissing:process.argv[3]==='1'});"
+            "process.stdout.write(String(r&&r.modulesDir||''));")
+    install='0' if env.get('MEMORY_SUITE_REGRESSION_NO_INSTALL')=='1' else '1'
+    try:
+        done=subprocess.run(['node','-e',script,str(root/'tools'/'ensure_build_support.cjs'),str(root),install],
+                            cwd=root,capture_output=True,text=True,timeout=900,env=env)
+    except Exception as exc:
+        return '', f'build-support preparation failed: {type(exc).__name__}'
+    modules=done.stdout.strip() if done.returncode==0 else ''
+    if not modules:
+        return '', 'build-support unavailable: ' + (done.stderr.strip().splitlines() or ['unknown'])[-1][:300]
+    current=[part for part in env.get('NODE_PATH','').split(os.pathsep) if part]
+    if modules not in current:
+        env['NODE_PATH']=os.pathsep.join([modules,*current])
+    env.setdefault('GRADIA_TOOLCHAIN_ROOT',modules)
+    return modules, ''
+
+build_support_dir, build_support_warning=_prepare_build_support(child_env)
 default_log_name=f'SELECTED_TEST_EXECUTION_LOG_{package_version}.txt' if filtered else f'FULL_TEST_EXECUTION_LOG_{package_version}.txt'
 log_path=pathlib.Path(os.environ.get('MEMORY_SUITE_REGRESSION_LOG', str(root.parents[1] / default_log_name)))
 output_dir_env=os.environ.get('MEMORY_SUITE_REGRESSION_OUTPUT_DIR')
@@ -428,6 +466,7 @@ with log_path.open(mode,encoding='utf-8') as log:
         if filtered:
             log.write(f'Selection: match={json.dumps(selection.match)}; exclude={json.dumps(selection.exclude)}\n\n')
         log.write(f'Timeout seconds: default=60; overrides={json.dumps(TEST_TIMEOUT_SECONDS, sort_keys=True)}\n\n')
+        log.write(f"Build support: {build_support_dir or 'UNAVAILABLE — ' + build_support_warning}\n\n")
         log.flush()
     failures=0; timeouts=0; skips=0
     posix_subreaper=False; orphan_reaper=None
@@ -439,8 +478,15 @@ with log_path.open(mode,encoding='utf-8') as log:
         if posix_subreaper: orphan_reaper=_PosixOrphanReaper()
         if filtered or start==0:
             log.write(f"POSIX cleanup: owner token + parent table; subreaper={'on' if posix_subreaper else 'off'}\n\n"); log.flush()
+    input_required=0
     for idx in selected_indices:
         test=all_tests[idx]
+        missing_inputs=[name for name in EXPLICIT_INPUT_SUITES.get(test.name,()) if not child_env.get(name)]
+        if missing_inputs:
+            input_required+=1
+            line=f'{idx+1:02d}/{len(all_tests)} {test.name}: INPUT_REQUIRED 0.00s [not run; set {", ".join(missing_inputs)}]'
+            print(line,flush=True); log.write(line+'\n'); log.flush()
+            continue
         fd, tmp_name = tempfile.mkstemp(prefix=f'librarian-regression-{os.getpid()}-{idx}-', suffix='.txt')
         os.close(fd)
         tmp=pathlib.Path(tmp_name)
@@ -579,5 +625,9 @@ with log_path.open(mode,encoding='utf-8') as log:
         summary=f'\nSuites reporting a partial skip (PASS_SKIP): {skips}. '\
                 f'These exited 0 but stated that part of their work did not run on this host; '\
                 f'they are counted as PASS for the exit code and separately here.\n'
+        print(summary,flush=True); log.write(summary); log.flush()
+    if input_required:
+        summary=f'\nArtifact suites not run (INPUT_REQUIRED): {input_required}. They verify actual release '\
+                f'builds and run when the distribution builder (or a caller) supplies their input variables.\n'
         print(summary,flush=True); log.write(summary); log.flush()
     sys.exit(1 if failures or timeouts else 0)

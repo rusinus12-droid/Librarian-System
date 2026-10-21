@@ -8,8 +8,12 @@
 //
 //   1. CHROME_PATH wins when set (explicit operator override)
 //   2. otherwise probe the well-known install locations for the host platform
-//   3. otherwise throw a message that says what to do, rather than letting spawn fail vaguely
+//   3. then Playwright-managed Chromium builds (PLAYWRIGHT_BROWSERS_PATH, else Playwright's
+//      default cache), which is how CI images and cloud containers usually ship a browser
+//   4. otherwise throw a message that says what to do, rather than letting spawn fail vaguely
 const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 // One entry per (platform, product) in preference order. Chromium-family browsers all speak the
 // Chrome DevTools Protocol these tests use, so any of them is acceptable.
@@ -57,6 +61,28 @@ function candidatesFor(platform) {
   return CANDIDATES[platform] || CANDIDATES.linux;
 }
 
+// Executables inside Playwright's browser directories, newest Chromium build first.
+const PLAYWRIGHT_EXECUTABLES = {
+  linux: ['chrome-linux/chrome', 'chrome-linux64/chrome'],
+  darwin: ['chrome-mac/Chromium.app/Contents/MacOS/Chromium', 'chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium'],
+  win32: ['chrome-win/chrome.exe', 'chrome-win64/chrome.exe']
+};
+function playwrightCandidatesFor(platform, env, home = (() => { try { return os.homedir(); } catch { return ''; } })()) {
+  const roots = [];
+  const configured = String(env.PLAYWRIGHT_BROWSERS_PATH || '').trim();
+  if (configured && configured !== '0') roots.push(configured);
+  if (platform === 'darwin' && home) roots.push(path.join(home, 'Library', 'Caches', 'ms-playwright'));
+  else if (platform === 'win32') roots.push(path.join(String(env.LOCALAPPDATA || (home ? path.join(home, 'AppData', 'Local') : '')), 'ms-playwright'));
+  else if (home) roots.push(path.join(home, '.cache', 'ms-playwright'));
+  const out = [];
+  for (const root of roots) {
+    let entries = [];
+    try { entries = fs.readdirSync(root).filter(name => /^chromium-\d+$/.test(name)).sort((a, b) => Number(b.split('-')[1]) - Number(a.split('-')[1])); } catch { continue; }
+    for (const entry of entries) for (const relative of PLAYWRIGHT_EXECUTABLES[platform] || PLAYWRIGHT_EXECUTABLES.linux) out.push(path.join(root, entry, relative));
+  }
+  return out;
+}
+
 // Returns an executable path, or throws an actionable error naming CHROME_PATH.
 function resolveChromeExecutable(options = {}) {
   const env = options.env || process.env;
@@ -73,7 +99,7 @@ function resolveChromeExecutable(options = {}) {
     );
   }
 
-  const tried = candidatesFor(platform);
+  const tried = [...candidatesFor(platform), ...playwrightCandidatesFor(platform, env)];
   for (const candidate of tried) {
     if (probe(candidate)) return candidate;
   }
@@ -83,4 +109,4 @@ function resolveChromeExecutable(options = {}) {
   );
 }
 
-module.exports = { resolveChromeExecutable, candidatesFor };
+module.exports = { resolveChromeExecutable, candidatesFor, playwrightCandidatesFor };
