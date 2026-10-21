@@ -11,14 +11,15 @@ test('source body changed after projection cannot be certified as the baseline f
     return source.replace(marker,marker+' await risuai.reviewProofBoundary();');
   }});t.after(()=>x.cleanup());
   const api=x.f.r.api,values=x.f.r.values,original=values.get(x.active.recordKey);
-  let injected=false;
+  // A normal owner commit between projection and publication is retried from a fresh frame (at most
+  // twice). A body that keeps changing under every proof is never certified, and no root is published.
+  let injections=0;
   atProof=async()=>{
-    if(injected)return;injected=true;
-    const body=JSON.parse(original);body.claims[0].text+=' changed after graph projection';
+    const body=JSON.parse(original);body.claims[0].text+=' changed after graph projection '+(++injections);
     values.set(x.active.recordKey,JSON.stringify(body));
   };
   await assert.rejects(()=>api.buildMemoryGraphCorpus({limit:1}),/SOURCE.*CHANGED|BODY_CHANGED/);
-  assert.equal(injected,true);
+  assert.ok(injections>=3,'the build retried from fresh frames before giving up: '+injections);
   assert.equal([...values.keys()].some(key=>key.includes(':corpus:root:')),false,'failed source capture must not publish a root');
   values.set(x.active.recordKey,original);atProof=async()=>{};
   const built=await api.buildMemoryGraphCorpus({limit:1});
@@ -42,6 +43,27 @@ test('source body changed after projection cannot be certified as the baseline f
   values.set(manifestKey,manifestRaw);values.set(rootKey,JSON.stringify({...root,digest,manifestKey}));
   const legacy=await api.executeMemoryGraphUnifiedQuery({corpusMode:'required',queryInput:{queryText:QUOTE},semanticPolicy:{mode:'disabled'}});
   assert.equal(legacy.modelDispatchEligible,true);assert.equal(legacy.corpusRead.nativeReprojectionRequired,true);
+});
+
+test('a single source change after projection is absorbed by one fresh-frame retry that certifies the new body',async t=>{
+  let atProof=async()=>{};
+  const x=await fixture({hostOverrides:{reviewProofBoundary:()=>atProof()},transformSource:source=>{
+    const marker='async captureSourceProof({ collected: corpusCollected, windowProofs = [], config = {}, previousOwnerProof = null, reusedOnlySourceKeys = [] }) {';
+    assert.equal(source.split(marker).length,2);
+    return source.replace(marker,marker+' await risuai.reviewProofBoundary();');
+  }});t.after(()=>x.cleanup());
+  const api=x.f.r.api,values=x.f.r.values,original=values.get(x.active.recordKey);
+  // The root certifies the NEW body's own projection.
+  let once=false;
+  atProof=async()=>{
+    if(once)return;once=true;
+    const body=JSON.parse(original);body.claims[0].text+=' changed once after graph projection';
+    values.set(x.active.recordKey,JSON.stringify(body));
+  };
+  const retried=await api.buildMemoryGraphCorpus({limit:1});
+  assert.equal(once,true);assert.equal(retried.status,'published');assert.equal(retried.sourceChangeRetries,1);
+  const root=JSON.parse(values.get([...values.keys()].find(key=>key.includes(':corpus:root:'))));
+  assert.ok(root.manifestKey);
 });
 
 for(const mode of ['plugin_only','server_only'])test(`${mode}: native GC requires an owner fence and never uses runtime maps as deletion authority`,async t=>{
