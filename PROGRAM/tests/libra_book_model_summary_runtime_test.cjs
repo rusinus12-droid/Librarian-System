@@ -13,8 +13,9 @@ c.Runtime.settings=settings();let t=texts();assert.match(t,/saved-analysis-model
 c.Runtime.settings.stagePresetNames.librarian='';assert.match(texts(),/default-model/);
 c.Runtime.settings.stagePresetNames.librarian='deleted';assert.match(texts(),/default-model/);
 c.Runtime.settings.stagePresetNames.librarian='host';t=texts();assert.match(t,/RisuAI 보조 모델/);assert.match(t,/모델명은 RisuAI 설정에서 확인/);assert.doesNotMatch(t,/HOST_PLACEHOLDER/);
-c.Runtime.settings.enableLibrarian=false;saved.embed.enabled=false;assert.equal((texts().match(/사용 안 함/g)||[]).length,2);
-c.Runtime.settings=settings();c.Runtime.settings.presets.analyzer.model='new-saved-model';saved.embed.model='new-embedding-model';t=texts();assert.match(t,/new-saved-model/);assert.match(t,/new-embedding-model/);
-saved={embed:{provider:'voyageai',model:'voyage-4-lite',enabled:true,key:''}};t=texts();assert.match(t,/임베딩 미설정/);assert.match(t,/키워드 검색만 사용 중/);assert.match(t,/빠른 연결/);
-c.Runtime.settings=null;saved=null;t=texts();assert.equal((t.match(/설정 읽는 중/g)||[]).length,2);assert.doesNotMatch(t,/voyage-4-lite|saved-analysis-model/);
+c.Runtime.settings.enableLibrarian=false;saved.embed.enabled=false;t=texts();assert.equal((t.match(/사용 안 함/g)||[]).length,2);assert.match(t,/사용 안 함 · RisuAI 보조 모델/,'disabled analysis keeps its configured binding');assert.match(t,/사용 안 함 · 키워드 검색만 사용 중/,'disabled embedding states keyword-only search');
+// Since c5dec73 the Home summary shows the embedding model only on the ready row, so re-enable it.
+c.Runtime.settings=settings();c.Runtime.settings.presets.analyzer.model='new-saved-model';saved.embed.enabled=true;saved.embed.model='new-embedding-model';t=texts();assert.match(t,/new-saved-model/);assert.match(t,/new-embedding-model/);
+saved={embed:{provider:'voyageai',model:'voyage-4-lite',enabled:true,key:''}};t=texts();assert.match(t,/키워드 검색만 사용 중 · 빠른 연결로 키 하나만 넣으면 됩니다/,'unconfigured embedding points at Quick Connect');assert.doesNotMatch(t,/voyage-4-lite/,'an unconfigured model is not presented as active');assert.match(t,/키워드 검색만 사용 중/);assert.match(t,/빠른 연결/);
+c.Runtime.settings=null;saved=null;t=texts();assert.match(t,/저장된 AI 연결을 확인합니다\./);assert.match(t,/저장된 임베딩 설정을 확인합니다\./);assert.doesNotMatch(t,/voyage-4-lite|saved-analysis-model/);
 console.log(JSON.stringify({test:'libra_book_model_summary_runtime',passed:7,method:'production renderer and preset resolver; normalization and cached-config boundaries substituted',scenarios:['saved rather than draft','default inheritance','missing preset fallback','host model not guessed','disabled retains configured model','saved updates reflected','unloaded remains unknown']}));

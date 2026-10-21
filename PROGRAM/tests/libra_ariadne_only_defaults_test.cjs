@@ -162,12 +162,18 @@ const runPlugin = async initialObjects => {
   const sharedRouter = source.slice(sharedRouterStart, sharedRouterEnd);
   assert.match(sharedRouter,/requested\.startsWith\('agent_'\)/);
   assert.match(sharedRouter,/memoryPipelineStage:LIBRA_MEMORY_PIPELINE_STAGES\.includes\(stage\)\?stage:LIBRARIAN_STAGE_ID/,'retired stage links redirect to Librarian');
-  const memoryPipelineStart = source.indexOf('const buildMemoryPipelineWorkspacePanel =');
-  const memoryPipelineEnd = source.indexOf('const buildSharedPipelineShellPanel =', memoryPipelineStart);
+  // The approved mockup Settings room (5e1db38) replaced the pipeline workspace shell:
+  // its Pipeline destination mounts the Librarian analyzer itself.
+  const memoryPipelineStart = source.indexOf('const buildApprovedMockupSettingsPanel =');
+  const memoryPipelineEnd = source.indexOf("if(sectionId==='logs')", memoryPipelineStart);
+  assert.ok(memoryPipelineStart >= 0 && memoryPipelineEnd > memoryPipelineStart, 'Settings room destination builder is present');
   const memoryPipeline = source.slice(memoryPipelineStart, memoryPipelineEnd);
   assert.ok(source.includes('const LIBRA_MEMORY_PIPELINE_STAGES = Object.freeze([LIBRARIAN_STAGE_ID])'), 'new memory execution exposes only Librarian; old slots above remain preserved');
-  assert.ok(memoryPipeline.includes('buildLibrarianAnalyzerPanel(false, true)'), 'Pipeline > Memory generation opens the selected stage detail directly');
-  assert.ok(source.includes("checkboxNode(slot.enabled!==false,'Librarian 기억 분석 사용'"), 'the dedicated stage detail exposes the Librarian enable switch');
+  assert.ok(memoryPipeline.includes("if(sectionId==='pipeline')return buildLibrarianAnalyzerPanel(false,false);"), 'Pipeline > Memory generation opens the selected stage detail directly');
+  const analyzerStart = source.indexOf('const buildLibrarianAnalyzerPanel = (compactView=false, advancedOnly=false) => {');
+  assert.ok(analyzerStart >= 0, 'Librarian analyzer stage detail is present');
+  const analyzer = source.slice(analyzerStart, source.indexOf('\n  const ', analyzerStart + 10));
+  assert.ok(analyzer.includes("text:'Librarian 기억 분석'}") && analyzer.includes("checkboxNode(slot.enabled!==false,'사용',change(value=>{slot.enabled=value;}))"), 'the dedicated stage detail exposes the Librarian enable switch');
   assert.match(source, /Object\.freeze\(\{ id: 'memory', label: '기억', icon: '◫', group: '기억과 세계' \}\)/, 'desktop sidebar exposes the shared Memory page');
   assert.ok(source.includes('SHARED_SIDEBAR_PAGE_REGISTRY.map(page => Object.freeze({'), 'mobile navigation derives from the same shared page registry');
   const memoryGateStart = source.indexOf('const memoryStageEnabledForSettings =');

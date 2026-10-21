@@ -81,7 +81,13 @@ async function run(name, fn) { await fn(); tests.push(name); }
         }
         await host.restart(); api = host.f.r.api;
         const gc = await api.collectMemoryGraphGarbage({ expectedScopeKey: host.scopeKey, candidateKeys });
-        assert.equal(gc.status, 'blocked_atomic_gc_unavailable');
+        // server_only has the owner's fenced reachability GC since 31b0a42 ("enable fenced server graph
+        // GC"); local storage still has no atomic protocol and stays blocked. Either way nothing that is
+        // reachable from the active root may be deleted.
+        if (mode === 'server_only') {
+          assert.equal(gc.status, 'completed');
+          assert.equal(gc.corpusReclamation, 'owner_atomic_reachability');
+        } else assert.equal(gc.status, 'blocked_atomic_gc_unavailable');
         assert.ok(gc.activeRoots > 0, 'complete durable inventory is read after restart');
         assert.deepEqual(Array.from(gc.deletedKeys), []);
         assert.equal((await api.getMemoryGraphDurablePage({ expectedScopeKey: host.scopeKey, pool: 'nodes' })).status, 'verified');

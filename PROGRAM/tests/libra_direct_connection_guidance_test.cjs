@@ -59,11 +59,13 @@ const PLUGIN = fs.readFileSync(path.resolve(__dirname, '..', 'plugins', 'LIBRA.j
     'the auxiliary connection card must still exist');
 
   // The card's note must carry the trade-off and the remedy, in Korean, near the card.
-  const card = PLUGIN.match(/guiEl\('h2', \{ text: 'RisuAI 보조 모델' \}\),[\s\S]{0,1400}/);
+  // The approved GUI renders this card in buildApprovedAuxiliaryConnection (the old h2/sga-note card
+  // was replaced); the card body runs to the next top-level builder.
+  const card = PLUGIN.match(/const buildApprovedAuxiliaryConnection = [\s\S]*?(?=\n  const buildApproved)/);
   assert.ok(card, 'the auxiliary card body must be locatable');
   const cardText = card[0];
 
-  assert.match(cardText, /호스트|RisuAI가|RisuAI 쪽/,
+  assert.match(cardText, /호스트|RisuAI가|RisuAI 쪽|출력 토큰[^']*RisuAI 설정을 사용/,
     'the card must attribute output parameters to the host on this route');
   assert.match(cardText, /출력|토큰|budget/i,
     'the card must name the output budget as host-owned here');

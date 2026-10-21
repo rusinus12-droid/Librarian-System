@@ -16,9 +16,16 @@ assert.match(source, /previousRegistry=replayRegistryKey\?await storage\.getJson
   'v3 Registry is part of the replay transaction rollback boundary');
 assert.doesNotMatch(source, /const buildSharedHeaderStatusPanel =|const buildSharedHomeOverviewPanel =|const buildInsightRail =/,
   'retired status dashboards must not remain in the shared GUI');
-assert.match(source, /Gui\.bookPeopleSection === 'characters'.*buildWorldManagerCharactersPanel\(\)/s);
-assert.match(source, /Gui\.bookPeopleSection === 'characters'.*buildWorldManagerRelationshipsPanel\(\)/s);
-assert.match(source, /buildBookWorldPanel[\s\S]*buildWorldManagerWorldPanel\(\)/s);
+// The approved GUI routes People/World destinations through one dispatcher; the
+// People route selects the characters/relationships World Manager panel from
+// Gui.bookPeopleSection and the World route mounts the World Manager world panel.
+const destinationStart = source.indexOf('const buildApprovedMockupDestinationDetail = page =>');
+assert.ok(destinationStart >= 0, 'approved destination dispatcher exists');
+const destinationEnd = source.indexOf("case 'story':", destinationStart);
+assert.ok(destinationEnd > destinationStart, 'approved destination dispatcher has a story route');
+const destination = source.slice(destinationStart, destinationEnd);
+assert.match(destination, /case 'people':[\s\S]*Gui\.bookPeopleSection==='relationships'\?buildWorldManagerRelationshipsPanel\(\):buildWorldManagerCharactersPanel\(\)/);
+assert.match(destination, /case 'world':[\s\S]*buildWorldManagerWorldPanel\(\)/);
 assert.match(source, /buildWorldManagerRecordBrowser\(\{[\s\S]*?domain: 'characters'/);
 assert.match(source, /buildWorldManagerRecordBrowser\(\{[\s\S]*?domain: 'relationships'/);
 assert.match(source, /buildWorldManagerRecordBrowser\(\{[\s\S]*?domain: 'world'/);

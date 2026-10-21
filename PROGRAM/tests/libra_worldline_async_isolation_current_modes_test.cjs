@@ -269,7 +269,10 @@ const worldlineScopeSnapshot = value => ({
         `${mode}: a late W0 response must not replace the observable W1 recall viewer; before=${JSON.stringify(w1BeforeRelease)} after=${JSON.stringify(afterLate)}`);
       assert.equal(afterLate.lastInjection, w1BeforeRelease.lastInjection,
         `${mode}: a late W0 response must not clear/replace W1's model injection; before=${JSON.stringify(w1BeforeRelease)} after=${JSON.stringify(afterLate)}`);
-      assert.equal(afterLate.viewerInjected, 1, `${mode}: W1 viewer remains a successful delivery after W0 completes`);
+      // The graph engine reports injected evidence units (not one per canonical memory); the W1
+      // viewer must keep exactly W1's successful delivery count after the late W0 completes.
+      assert.ok(w1BeforeRelease.viewerInjected > 0, `${mode}: W1 viewer recorded a successful delivery before release`);
+      assert.equal(afterLate.viewerInjected, w1BeforeRelease.viewerInjected, `${mode}: W1 viewer remains a successful delivery after W0 completes`);
       const currentLineageAfterRelease = await fixture.f.r.api.getHostLineageStatus();
       assert.equal(currentLineageAfterRelease.hostChatId, worlds.child.id, `${mode}: current host scope remains W1 after W0 release`);
       assert.equal(currentLineageAfterRelease.scopeKey, w1Before.manifest.scopeKey, `${mode}: observable host-lineage scope remains W1 after W0 release`);

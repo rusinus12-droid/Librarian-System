@@ -18,6 +18,27 @@ const stable = value => {
   }
   return value;
 };
+// The unified engine (9c03c35) returns its evidence bundle with the recall. Its node/edge/basis ids
+// are content-addressed over per-run record snapshots, equal-score units are ordered by those ids, and
+// the witness/byte accounting follows that order; measured: two runs with the index OFF already differ
+// only in those respects. `runInvariant` masks the ids, sorts tie order away and drops exactly the
+// measured accounting fields below. Every delivered text, family, role, score, outcome, coverage and
+// budget field is still compared.
+const RUN_ACCOUNTING = new Set(['requestId', 'l0WorkspaceBytes', 'l0WitnessBytes', 'countedBytes', 'l0_candidate_workspace',
+  'l0_witness_bytes', 'readset_handle_state', 'retainedBytes', 'peakRetainedBytes', 'private_readset',
+  'frontierExpansionBytes', 'frontier_expansion', 'verifiedNodeCount', 'verifiedEdgeCount', 'verifiedBasisCount']);
+const RUN_ID = /libra\.(?:node|basis|edge|binding)\.v1:[0-9a-f]{64}|\b[0-9a-f]{64}\b/g;
+const runInvariant = value => {
+  if (typeof value === 'string') {
+    const masked = value.replace(RUN_ID, '<id>');
+    return masked.includes('\n') ? masked.split('\n').map(line => line.replace(/^\(\d+\) /, '')).sort().join('\n') : masked;
+  }
+  if (Array.isArray(value)) return value.map(runInvariant).map(item => [JSON.stringify(item), item]).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, item]) => item);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).filter(([key]) => !RUN_ACCOUNTING.has(key)).map(([key, item]) => [key, runInvariant(item)]));
+  }
+  return value;
+};
 const recallOf = async f => stable(plain(await f.r.api.previewUnifiedMemoryRecall('도서관 공연 허가')));
 // The recall comparison ignores exactly ONE field: the feature's own diagnostic, which is expected to
 // differ because the index is on in one run and off in the other. It is not something a model receives,
@@ -27,7 +48,7 @@ const recallOf = async f => stable(plain(await f.r.api.previewUnifiedMemoryRecal
 const withoutFeatureDiagnostic = value => {
   const copy = JSON.parse(JSON.stringify(value ?? null));
   if (copy && typeof copy === 'object' && copy.diagnostics && typeof copy.diagnostics === 'object') delete copy.diagnostics.associativeRecall;
-  return stable(copy);
+  return runInvariant(stable(copy));
 };
 const recallCompared = async f => withoutFeatureDiagnostic(await f.r.api.previewUnifiedMemoryRecall('도서관 공연 허가'));
 async function complete(f) { const result = await f.run(); assert.equal(result.completed, 1, JSON.stringify(result).slice(0, 600)); }
@@ -60,13 +81,15 @@ async function test(name, options, fn) { const f = await enabled(options); try {
     f.r.values.set = original;
     assert.deepEqual(await recallCompared(f), baseline, 'recall must be unaffected by an index write failure');
 
-    // The exempted diagnostic is asserted BY CONTENT so the exception cannot hide a change: with the index
-    // enabled and reachable, the observation reports that it ran, and it still costs no provider call.
+    // The exempted diagnostic is asserted BY CONTENT so the exception cannot hide a change. Associative
+    // recall was retired with the legacy retriever (9c03c35): even with the index enabled and readable,
+    // nothing is reported into recall, and the feature API states it is retired with participation off.
     const diagnostic = plain(await f.r.api.previewUnifiedMemoryRecall('도서관 공연 허가'))?.diagnostics?.associativeRecall;
-    assert.ok(diagnostic, 'the enabled feature reports its own diagnostic');
-    assert.equal(diagnostic.active, false, 'this corpus reaches nothing, and the report says so');
-    assert.equal(diagnostic.providerCalls, 0, 'the observation adds no provider call');
-    assert.notEqual(diagnostic.mode, 'disabled', 'the index is enabled here, so the diagnostic must not report disabled');
+    assert.equal(diagnostic, undefined, 'the retired associative stage reports nothing into recall');
+    const associative = plain(await f.r.api.getAssociativeRecallDiagnostics());
+    assert.equal(associative.retired, true, 'the associative stage is retired, not silently active');
+    assert.equal(associative.participationEnabled, false, 'the enabled index must not turn associative participation on');
+    assert.equal(associative.engine, 'unified');
   });
 
   await test('one unreadable memory degrades that memory alone, not the whole index', {}, async f => {

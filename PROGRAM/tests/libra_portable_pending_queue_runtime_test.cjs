@@ -20,7 +20,7 @@ const assertEmptyMarker=value=>{
  if(value===undefined)return;
  const parsed=typeof value==='string'?JSON.parse(value):value;
  const {startedAt,finishedAt,...body}=JSON.parse(JSON.stringify(parsed));
- assert.deepEqual(body,{schema:'libra.embedding_vector_migration_marker.v1',pluginVersion:'2.3.149',targetSignature:'ec2917fe:1349',providerProfileId:'mep_a4ccc727f9674d23',reason:'embedding_startup_probe',scanned:0,candidates:0,migrated:0,alreadyCurrent:0,missingPayload:0,incompatibleSpace:0,failures:0,bytesPromoted:0,complete:true,errors:[],interrupted:false});
+ assert.deepEqual(body,{schema:'libra.embedding_vector_migration_marker.v1',pluginVersion:require('./fixtures/release_versions.cjs').releaseVersion('libra'),targetSignature:'ec2917fe:1349',providerProfileId:'mep_a4ccc727f9674d23',reason:'embedding_startup_probe',scanned:0,candidates:0,migrated:0,alreadyCurrent:0,missingPayload:0,incompatibleSpace:0,failures:0,bytesPromoted:0,complete:true,errors:[],interrupted:false});
  assert(Number.isFinite(Date.parse(startedAt)));assert(Number.isFinite(Date.parse(finishedAt)));
 };
 

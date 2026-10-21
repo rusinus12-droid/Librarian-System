@@ -5,7 +5,8 @@ let passed=0;const check=(v,m)=>{assert.ok(v,m);passed++;};
 const msg=(role,id,data)=>({role,chatId:id,id,data});
 const q='Alice opened the archive.\n\nShe found a blue ribbon.';
 function envelope(){return {schema:'hayaku.native_repair_output.v1',packet:{meta:{summary_memory:{summary:'Alice found a ribbon.'}},entity:{characters:[{name:'Alice',state:'opened the archive',status:'active'}]},world:{regions:[{name:'archive',type:'region',status:'open'}]},narrative:{scene_deltas:[{summary:'She found a blue ribbon.'}]},planner:{},importance:{}},grounding:[{path:'meta.summary_memory.summary',source:'target',evidence:['Alice opened the archive. She found a blue ribbon.']},{path:'entity.characters[0]',source:'target',evidence:['Alice opened the archive.']},{path:'world.regions[0]',source:'target',evidence:['Alice opened the archive.']},{path:'narrative.scene_deltas[0]',source:'target',evidence:['She found a blue ribbon.']}]};}
-(async()=>{const r=await createHayakuRuntime({autoRepair:false,messages:[msg('user','u1','Visit the archive.'),msg('assistant','a1',q)]});try{
+(async()=>{// Detailed failed-analysis revisions are retained only with debug enabled (7843201).
+const r=await createHayakuRuntime({autoRepair:false,arguments:{hayaku_debug:'true'},messages:[msg('user','u1','Visit the archive.'),msg('assistant','a1',q)]});try{
  const t=r.hayaku._test,e=envelope();
  check(t.validateNativeRepairGrounding(e,{targetText:q}).ok,'whitespace-only wrapping and known schema enum are not false grounding errors');
  const aliases=structuredClone(e);aliases.grounding[1].path='packet.entity.characters.0';check(t.validateNativeRepairGrounding(aliases,{targetText:q}).ok,'unambiguous packet prefix/dotted array index normalized');

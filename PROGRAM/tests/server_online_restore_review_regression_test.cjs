@@ -28,6 +28,7 @@ namespaceReset:{advanceEpochs(){}},createBackup:async()=>({ok:true,result:{id:'m
 // These remain default-off on this legacy fixture; no fake permit/readiness seam.
 Object.assign(context, {
  LEGACY_STORAGE_NAMESPACES: require('../server/server.cjs').LEGACY_STORAGE_NAMESPACES,
+ createLibraGraphLifecycle: require('../server/core/libra-graph-lifecycle.cjs'),
  authorityContracts: require('../server/authority/contracts.cjs'),
  ...require('../server/authority/control-store.cjs'),
  ...require('../server/authority/owner-store.cjs'),

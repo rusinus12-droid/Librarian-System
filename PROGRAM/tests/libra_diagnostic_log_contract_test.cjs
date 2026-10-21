@@ -33,6 +33,15 @@ const between = (a, b) => {
 const el = (tag, attrs = {}, children = []) => ({ tag, ...attrs, children: (children || []).filter(Boolean) });
 const flat = n => [n, ...(n.children || []).flatMap(flat)];
 const byClass = (node, cls) => flat(node).filter(n => String(n.class || n.attrs?.class || '').split(/\s+/).includes(cls));
+// The approved GUI (789626a) replaced the libra-diag-* classes with generic layout classes; the log's
+// parts are now identified by their accessible roles/labels, which are the stable product contract.
+const PARTS = {
+  'libra-diag-list': n => n.role === 'listbox' && n['aria-label'] === '디버그 로그 목록',
+  'libra-diag-controls': n => (n.children || []).some(c => c.tag === 'input' && c.type === 'search'),
+  'libra-diag-right': n => n.role === 'region' && n['aria-label'] === '선택한 로그 상세',
+  'libra-diag-row': n => n.tag === 'button' && n.role === 'option' && n.dataset && 'logRowId' in n.dataset
+};
+const part = (node, name) => flat(node).filter(PARTS[name]);
 
 const results = [];
 const test = (name, fn) => { fn(); results.push(name); };
@@ -98,7 +107,7 @@ const harness = () => {
     between('const traceStateInfo =', 'const traceBadgeNode =') + '\n' +
     // Starts ABOVE diagnosticLogRows: the row-identity helper and its WeakMap live just before it.
     between('  const diagnosticRowIds = new WeakMap();', 'const buildDiagnosticLogSection = id =>') + '\n' +
-    between('const buildDiagnosticLogSection = id =>', 'const buildDiagnosticLogPanel =') +
+    between('const buildDiagnosticLogSection = id =>', 'const buildGeneralSettingsPanel =') +
     ';Object.assign(globalThis,{diagnosticLogRows,buildDiagnosticLogList,buildDiagnosticLogSection});',
     context);
   return { context, state };
@@ -111,14 +120,14 @@ test('the default diagnostic section renders the unified log', () => {
   // review found had become unreachable). An unknown id falls through to the log, which is also the
   // default section.
   const node = context.buildDiagnosticLogSection('log');
-  assert.ok(byClass(node, 'libra-diag-list').length === 1, 'the log must render a list');
-  const controls = byClass(node, 'libra-diag-controls')[0];
+  assert.ok(part(node, 'libra-diag-list').length === 1, 'the log must render a list');
+  const controls = part(node, 'libra-diag-controls')[0];
   assert.ok(controls, 'the log must render controls');
   const search = flat(controls).find(n => n.type === 'search');
   const select = flat(controls).find(n => n.tag === 'select');
   assert.ok(search, 'a search box is required');
   assert.ok(select, 'a kind filter is required');
-  assert.ok(byClass(node, 'libra-diag-right').length === 1, 'a detail pane is required');
+  assert.ok(part(node, 'libra-diag-right').length === 1, 'a detail pane is required');
 });
 
 test('rows are normalised from the existing collectors', () => {
@@ -144,16 +153,16 @@ test('a snapshot is labelled as a snapshot, never as history', () => {
 // ── 2. search and filter both narrow the list ───────────────────────────────────────────────
 test('search narrows the list to matching entries', () => {
   const { context, state } = harness();
-  const all = byClass(context.buildDiagnosticLogList(), 'libra-diag-row').length;
+  const all = part(context.buildDiagnosticLogList(), 'libra-diag-row').length;
   state.Gui.diagnosticLogQuery = 'quota';
-  const narrowed = byClass(context.buildDiagnosticLogList(), 'libra-diag-row').length;
+  const narrowed = part(context.buildDiagnosticLogList(), 'libra-diag-row').length;
   assert.ok(narrowed >= 1 && narrowed < all, `search must narrow (all=${all}, narrowed=${narrowed})`);
 });
 
 test('the kind filter separates events from the snapshot', () => {
   const { context, state } = harness();
   state.Gui.diagnosticLogKind = 'snapshot';
-  const snapOnly = byClass(context.buildDiagnosticLogList(), 'libra-diag-row').length;
+  const snapOnly = part(context.buildDiagnosticLogList(), 'libra-diag-row').length;
   assert.equal(snapOnly, 1, 'filtering to snapshots must leave only the current-state row');
   state.Gui.diagnosticLogKind = 'event';
   const events = context.buildDiagnosticLogList();
@@ -170,7 +179,7 @@ test('the detail pane shows the selected entry and offers no auto-executing acti
   // distinguishable — that was a measured defect).
   state.Gui.diagnosticLogSelectedId = target.id;
   const node = context.buildDiagnosticLogList();
-  const detail = byClass(node, 'libra-diag-right')[0];
+  const detail = part(node, 'libra-diag-right')[0];
   const text = flat(detail).map(n => n.text).filter(Boolean).join(' | ');
   assert.ok(text.includes(target.title.slice(0, 12)), `the detail must show the selection (got ${text.slice(0, 120)})`);
   const buttons = flat(detail).filter(n => n.tag === 'button').map(n => String(n.text || ''));
@@ -192,13 +201,13 @@ test('two rows sharing a timestamp are separately selectable', () => {
   assert.notEqual(sameAt[0].id, sameAt[1].id, 'rows at the same millisecond must still have distinct ids');
   state.Gui.diagnosticLogSelectedId = sameAt[1].id;
   const node = context.buildDiagnosticLogList();
-  const actives = byClass(node, 'libra-diag-row').filter(n => String(n.class || n.attrs?.class || '').includes('active'));
+  const actives = part(node, 'libra-diag-row').filter(n => String(n.class || n.attrs?.class || '').includes('active'));
   assert.equal(actives.length, 1, `exactly one row may be active (got ${actives.length})`);
   const activeId = String(actives[0].dataset?.logRowId || actives[0].attrs?.dataset?.logRowId);
   assert.equal(activeId, sameAt[1].id,
     'the active row must be the one selected, not merely one with the same time');
   // And the detail must describe THAT row, not the other one at the same millisecond.
-  const detail = flat(byClass(node, 'libra-diag-right')[0]).map(n => n.text).filter(Boolean).join(' | ');
+  const detail = flat(part(node, 'libra-diag-right')[0]).map(n => n.text).filter(Boolean).join(' | ');
   assert.ok(detail.includes(sameAt[1].title.slice(0, 12)),
     `the detail must show the selected row (got ${detail.slice(0, 120)})`);
   assert.ok(!detail.includes(sameAt[0].title.slice(0, 12)) || sameAt[1].title.slice(0, 12) === sameAt[0].title.slice(0, 12),
@@ -216,7 +225,7 @@ test('two IDENTICAL rows (same kind, source and title) are still distinct', () =
   assert.notEqual(twins[0].id, twins[1].id, 'identical rows must still be separately addressable');
   state.Gui.diagnosticLogSelectedId = twins[1].id;
   const node = context.buildDiagnosticLogList();
-  const actives = byClass(node, 'libra-diag-row').filter(n => String(n.class || n.attrs?.class || '').includes('active'));
+  const actives = part(node, 'libra-diag-row').filter(n => String(n.class || n.attrs?.class || '').includes('active'));
   assert.equal(actives.length, 1, 'exactly one duplicate may be active');
   state.Runtime.warnings.pop();
 });
@@ -231,12 +240,12 @@ test('selection survives a refresh that adds a row to an earlier collector', () 
   // order-based id would shift every later row.
   state.swallowed.push({ plugin: 'RETRACE', tag: 'dialogue.parse', count: 1, lastAt: 7000, lastMessage: 'new' });
   const node = context.buildDiagnosticLogList();
-  const actives = byClass(node, 'libra-diag-row').filter(n => String(n.class || n.attrs?.class || '').includes('active'));
+  const actives = part(node, 'libra-diag-row').filter(n => String(n.class || n.attrs?.class || '').includes('active'));
   assert.equal(actives.length, 1, `exactly one row must stay active (got ${actives.length})`);
   const activeId = String(actives[0].dataset?.logRowId || actives[0].attrs?.dataset?.logRowId);
   assert.equal(activeId, target.id,
     `the SAME row must remain selected after a refresh (was ${target.id}, got ${activeId})`);
-  const detail = flat(byClass(node, 'libra-diag-right')[0]).map(n => n.text).filter(Boolean).join(' | ');
+  const detail = flat(part(node, 'libra-diag-right')[0]).map(n => n.text).filter(Boolean).join(' | ');
   assert.ok(detail.includes(target.title.slice(0, 10)),
     `the detail must still describe the selected row (got ${detail.slice(0, 120)})`);
   state.swallowed.pop();
@@ -256,7 +265,7 @@ test('a row keeps its identity when the collector refreshes the object in place'
   assert.equal(after.id, before.id,
     `an in-place refresh must keep the id (was ${before.id}, got ${after.id})`);
   const node = context.buildDiagnosticLogList();
-  const actives = byClass(node, 'libra-diag-row').filter(n => String(n.class || n.attrs?.class || '').includes('active'));
+  const actives = part(node, 'libra-diag-row').filter(n => String(n.class || n.attrs?.class || '').includes('active'));
   assert.equal(actives.length, 1, 'the selection must survive the in-place refresh');
 });
 
@@ -271,7 +280,7 @@ test('a new occurrence of the same message is a new row with its own id', () => 
   assert.notEqual(rows[0].id, rows[1].id, 'two occurrences must be separately addressable');
   assert.equal(new Set(rows.map(r => r.id)).size, rows.length, 'ids must be unique');
   const node = context.buildDiagnosticLogList();
-  const actives = byClass(node, 'libra-diag-row').filter(n => String(n.class || n.attrs?.class || '').includes('active'));
+  const actives = part(node, 'libra-diag-row').filter(n => String(n.class || n.attrs?.class || '').includes('active'));
   assert.equal(actives.length, 1, 'exactly one row may be active');
   state.Runtime.warnings.pop();
 });
@@ -292,7 +301,7 @@ test('selection survives an aggregate count growing (1회 -> 2회)', () => {
   assert.equal(after.id, before.id,
     `an aggregate must keep its id when its count changes (was ${before.id}, got ${after.id})`);
   const node = context.buildDiagnosticLogList();
-  const actives = byClass(node, 'libra-diag-row').filter(n => String(n.class || n.attrs?.class || '').includes('active'));
+  const actives = part(node, 'libra-diag-row').filter(n => String(n.class || n.attrs?.class || '').includes('active'));
   assert.equal(actives.length, 1, 'the selection must survive the count change');
   row.count -= 1;
 });
@@ -320,7 +329,7 @@ test('selection survives an older duplicate being evicted', () => {
   assert.equal(idAt(after, 1002), idAt(before, 1002), 'the newest row must keep its own id too');
   assert.notEqual(idAt(after, 1002), middle, 'the two survivors must stay distinguishable');
   const node = context.buildDiagnosticLogList();
-  const actives = byClass(node, 'libra-diag-row').filter(n => String(n.class || n.attrs?.class || '').includes('active'));
+  const actives = part(node, 'libra-diag-row').filter(n => String(n.class || n.attrs?.class || '').includes('active'));
   assert.equal(actives.length, 1, 'exactly one row must remain active');
   assert.equal(String(actives[0].dataset?.logRowId || actives[0].attrs?.dataset?.logRowId), middle,
     'the selection must not move to another occurrence of the same text');
@@ -332,7 +341,7 @@ test('the list is paged', () => {
   const { context, state } = harness();
   state.Gui.diagnosticLogLimit = 2;
   const node = context.buildDiagnosticLogList();
-  const rows = byClass(node, 'libra-diag-row').length;
+  const rows = part(node, 'libra-diag-row').length;
   assert.ok(rows <= 2, `the list must honour the page size (got ${rows})`);
 });
 

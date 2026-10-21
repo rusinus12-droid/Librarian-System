@@ -67,15 +67,14 @@ const captureRun = async mode => {
   const f = await fixture();
   try {
     // The mode must be in place before the request starts (the boundary digest is captured then).
+    // Save through the product settings path: it persists the runtime keys and invalidates the
+    // cached settings, so the next request reads the new mode. (getRuntime() is a redacted clone,
+    // so clearing its cache fields never reached the live runtime.)
     const api = f.r.api;
+    await api.saveLibraProviderConfig({ nsfwMode: mode, nsfwGuidanceEnabled: true });
     const record = await api.debugReadRuntimeSettings();
-    await api.debugWriteRuntimeSettings({
-      ...record,
-      settings: { ...(record?.settings || {}), nsfwMode: mode, nsfwGuidanceEnabled: true }
-    });
-    const runtime = api.getRuntime();
-    runtime.settingsLoadedAt = 0;
-    runtime.settings = null;
+    assert.equal(record?.settings?.nsfw_mode, mode, 'the NSFW mode is persisted');
+    assert.equal(String(record?.settings?.nsfw_guidance_enabled), 'true', 'NSFW guidance injection is persisted as enabled');
 
     f.chat.message = rows.map(r => ({ role: r.role, chatId: r.ref, id: r.ref, data: r.text, time: Date.now() }));
     f.chat.messages = f.chat.message;

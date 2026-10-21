@@ -12,9 +12,11 @@ function setup(){
  const dom=new JSDOM('<main><section id="hayakuSourceEditConsent"></section><section id="hayakuPacketAuthoring"></section><section id="hayakuHostLineage"></section></main>');
  const nodes=new Map(['#hayakuSourceEditConsent','#hayakuPacketAuthoring','#hayakuHostLineage'].map(id=>[id,dom.window.document.querySelector(id)]));
  const viewer={root:dom.window.document.querySelector('main'),scope:{key:'A',chatId:'chat-A',chatTitle:'검증용 A',confident:true},ledger:{enabled:true,worldline:{headTurnNodeId:'node-A'}},activeTab:'recovery',visible:true};
- const counts={status:0,review:0};let status={scopeKey:'A',topology:'topology-A',ranges:[]};let review=async()=>({ok:true}),read=()=>status;
- const c=vm.createContext({Memory:{ledgerViewer:viewer},document:dom.window.document,text:v=>String(v??''),ensureArray:v=>Array.isArray(v)?v:[],viewerEscapeHtml:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),viewerFormatDate:v=>`time:${v}`,getHayakuSourceInput:()=>({mountControls:()=>{}}),listHayakuReanalysisRanges:async()=>{counts.status++;return await read();},runHayakuSelectedReanalysis:async selection=>{counts.review++;return await review(selection);},RisuCompat:{currentChatScope:async()=>({key:'A',confident:true})},now:()=>Date.now()});
+ const counts={status:0,review:0,preview:0};let status={scopeKey:'A',topology:'topology-A',ranges:[]};let review=async()=>({ok:true}),read=()=>status;
+ const c=vm.createContext({Memory:{ledgerViewer:viewer},document:dom.window.document,text:v=>String(v??''),ensureArray:v=>Array.isArray(v)?v:[],viewerEscapeHtml:v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),viewerFormatDate:v=>`time:${v}`,mountHayakuSourceInput:()=>{},listHayakuReanalysisRanges:async()=>{counts.status++;return await read();},previewSourceEdits:async selection=>{counts.preview++;return {allowed:true,actionKind:'explicit_reanalysis',selection,units:selection.ranges.map(row=>({label:row.label})),warning:'controlled replacement warning'};},applySourceEdits:async ticket=>{counts.review++;return await review(ticket.selection);},clearSourceEditPreview:()=>{},RisuCompat:{currentChatScope:async()=>({key:'A',confident:true})},now:()=>Date.now()});
  vm.runInContext(lineage+'\nglobalThis.MemorySuiteHostLineage=createMemorySuiteHostLineage();',c);
+ // The reanalysis confirmation dialog uses the product's own dialog keyboard/focus binding.
+ vm.runInContext(slice('  const viewerBindConfirmDialogKeys =','  const viewerRenderHeaderHealth =')+'\nglobalThis.viewerBindConfirmDialogKeys=viewerBindConfirmDialogKeys;',c);
  vm.runInContext(slice('  const packetAuthoringViewerSnapshot =','  const viewerRenderOverview =')+'\nObject.assign(globalThis,{viewerRenderPacketAuthoring,viewerRenderSourceEditConsent,viewerRenderHostLineage});',c);
  return {c,viewer,nodes,counts,setStatus:s=>status=s,setRead:f=>read=f,setReview:f=>review=f,button:()=>nodes.get('#hayakuSourceEditConsent').querySelector('[data-reanalysis-run]')};
 }
@@ -55,7 +57,11 @@ async function test(name,fn){await fn();results.push(name);console.log('PASS '+n
   const card=x.nodes.get('#hayakuSourceEditConsent'),inputs=card.querySelectorAll('input');assert.equal(inputs.length,2);assert.equal(x.button().disabled,true);
   inputs[1].checked=true;inputs[1].onchange();assert.equal(x.button().disabled,false);
   let release,submitted;x.setReview(selection=>{submitted=selection;return new Promise(resolve=>release=resolve)});const operation=x.button().onclick();
-  assert.equal(x.button().disabled,true);assert.equal(card.querySelector('[data-reanalysis-refresh]').disabled,true);assert([...inputs].every(n=>n.disabled));
+  assert.equal(x.button().disabled,true);
+  // The product's own confirmation dialog must be accepted before anything is applied.
+  let confirm;for(let i=0;i<20&&!confirm;i++){await settle();confirm=x.viewer.root.querySelector('[data-reanalysis-confirm="apply"]');}
+  assert(confirm,'confirmation dialog shown');assert.equal(x.counts.preview,1);assert.equal(x.counts.review,0,'nothing is applied before confirmation');assert.match(x.viewer.root.querySelector('#hayakuSourceReanalysisConfirmOverlay').textContent,/T2/);
+  confirm.click();for(let i=0;i<20&&!submitted;i++)await settle();assert.equal(x.button().disabled,true);assert.equal(card.querySelector('[data-reanalysis-refresh]').disabled,true);assert([...inputs].every(n=>n.disabled));
   assert.equal(submitted.scopeKey,'A');assert.equal(submitted.topology,'topology-A');assert.deepEqual(Array.from(submitted.ranges,row=>row.key),['2']);
   release({ok:true});await operation;assert.match(card.textContent,/기억을 갱신했습니다/);assert.equal(x.counts.review,1);assert.equal(x.button().disabled,false);
  });

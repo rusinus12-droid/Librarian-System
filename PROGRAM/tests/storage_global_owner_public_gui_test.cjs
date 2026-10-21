@@ -17,7 +17,11 @@ const seedRoots=name=>Array.from({length:2},(_,i)=>{
 async function settleOwnerStore(s){let before=JSON.stringify([...s.values]),stable=0;for(let i=0;i<30;i++){await pause(100);const next=JSON.stringify([...s.values]);stable=next===before?stable+1:0;if(stable===3)return;before=next;}throw Error('owner startup store did not settle');}
 async function openPanel(s){
  await s.open();await pause(180);
- if(s.name==='LIBRA'){await s.click('[data-go="settings"]');await s.click('.setnav [data-subtab="store"]');}
+ // A real pointer click moves focus to the clicked control. jsdom's click() does not, and LIBRA's
+ // desk now opens with the quick-connect API key field focused, which (by design) defers re-renders
+ // while a text field has focus. Focus each target first so navigation behaves as in a browser.
+ const press=async selector=>{const node=s.doc.querySelector(selector);if(!node)throw Error('Missing '+selector);node.focus();await s.click(selector);};
+ if(s.name==='LIBRA'){await press('[data-go="settings"]');await until(()=>s.doc.querySelector('.setnav [data-subtab="store"]'),'LIBRA settings room rendered',10000);await press('.setnav [data-subtab="store"]');}
  else if(s.name==='HAYAKU')await s.click('[data-hayaku-viewer-goto="server"]');
  else {await s.click('[data-go="connect"]');await s.click('button[data-group="c"][data-subtab="srv"]');}
  await until(()=>s.doc.querySelector('[data-apply]'),'global panel mounted',10000);

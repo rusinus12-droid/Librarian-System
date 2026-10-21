@@ -42,12 +42,12 @@ const fiveMore=f=>{const extra=f.chat.message.slice(0,10).map((m,i)=>({...m,chat
  await test('recall preserves forgetting when unrelated later knowledge is also present',async f=>{
    add(f,{tempFactId:'f14',domain:'character',subjectTempRef:'mina',claimKind:'knowledge',values:{knowledge:['상자의 암호']},effect:'remove',text:'민아는 상자의 암호를 완전히 잊었다.'});
    add(f,{tempFactId:'f15',domain:'character',subjectTempRef:'mina',claimKind:'knowledge',values:{knowledge:['서재의 폐관 시간']},text:'민아는 서재의 폐관 시간을 알게 되었다.'});await f.run();
-   const result=await f.r.api.previewUnifiedMemoryRecall('민아 상자의 암호');assert.ok(result.memories.length);const text=result.memories.map(r=>r.excerpt.text).join('\n');assert.ok(text.includes('암호를 완전히 잊었다'),text);assert.equal(nonMicroProviderCalls(f),1);
+   const result=await f.r.api.previewUnifiedMemoryRecall('민아 상자의 암호');assert.ok(result.memories.length);const text=result.memories.map(r=>r.excerpt).join('\n');assert.ok(text.includes('암호를 완전히 잊었다'),text);assert.equal(nonMicroProviderCalls(f),1);
  });
  await test('access clear is replayable and recall-safe without inferring a denial',async f=>{
    add(f,{tempFactId:'f14',domain:'world',subjectTempRef:'study',claimKind:'access',values:{access:{personTempRef:'mina',permission:'입실',status:'granted'}},text:'민아에게 서재 입실을 허가했다.'},3);
    add(f,{tempFactId:'f15',domain:'world',subjectTempRef:'study',claimKind:'access',values:{access:null},effect:'clear',text:'서재의 기존 입실 허가가 모두 철회되었다.'});await f.run();
-   assert.equal(f.getHead().world.find(r=>r.name==='서재').state.access,undefined);assert.equal((await f.r.api.rebuildWorldManagerState()).ok,true);const recall=await f.r.api.previewUnifiedMemoryRecall('서재 입실 허가');assert.ok(recall.memories.some(r=>r.excerpt.text.includes('철회')));assert.equal(nonMicroProviderCalls(f),1);
+   assert.equal(f.getHead().world.find(r=>r.name==='서재').state.access,undefined);assert.equal((await f.r.api.rebuildWorldManagerState()).ok,true);const recall=await f.r.api.previewUnifiedMemoryRecall('서재 입실 허가');assert.ok(recall.memories.some(r=>r.excerpt.includes('철회')));assert.equal(nonMicroProviderCalls(f),1);
  });
  await test('external registry write during replay is preserved and blocks automatic resume',async f=>{
    await f.run();const storage=f.r.context.risuai.pluginStorage,old=storage.setItem;let external='',changedKey='';storage.setItem=async(k,v)=>{const x=JSON.parse(v);const result=await old(k,v);if(!external&&x.schema==='libra.continuity_state.v2'){const row=f.getRecords('libra.entity_registry.v2')[0];changedKey=row.key;row.value.externalTestRevision='external-change';external=JSON.stringify(row.value);f.r.values.set(row.key,external);}return result;};

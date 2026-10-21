@@ -101,7 +101,10 @@ const driveDomain = async ({ fixture, mode, label, apply, read, expectation, rea
       assert.ok(jiho?.id, `${mode}: 지호 is present in the Head`);
       assert.ok(promise?.id, `${mode}: the open promise thread is present`);
 
-      const readHead = async () => await fixture.r.api.getCurrentStateHead();
+      // getCurrentStateHead() returns the runtime's loaded snapshot and is not refreshed by the
+      // correction API itself (the GUI re-reads the snapshot after each correction). Every read
+      // therefore loads the durable current view first, exactly as the GUI readback does.
+      const readHead = async () => { await fixture.r.api.getWorldManagerNarrative(); return await fixture.r.api.getCurrentStateHead(); };
       const readCharacter = async id => (await readHead()).characters.find(row => row.id === id) || null;
       const readThread = async id => ((await readHead()).narrative?.threads || []).find(row => row.id === id) || null;
 

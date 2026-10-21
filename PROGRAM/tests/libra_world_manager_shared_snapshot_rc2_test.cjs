@@ -33,7 +33,9 @@ assert.doesNotMatch(memory, /continuity_state|memoryPipelineStage|buildAgentsTab
 assert.match(source, /const SHARED_EXECUTION_LOG_SECTIONS = Object\.freeze\(\['memory','state','draft','recall','embedding','rebuild'\]\)/,
   'Logs retain all six receipt kinds; Input Writer receipts were retired');
 
-const overlay = between('const worldManagerSnapshotView =', 'const buildSharedPipelineShellPanel =');
+// The retired shared pipeline shell no longer follows the World Manager overlay;
+// the overlay now ends where the operational-health settings builders begin.
+const overlay = between('const worldManagerSnapshotView =', 'const stateTrackingSettingsForGui =');
 const snapshotGetter = between('const worldManagerSnapshotView =', 'const worldManagerDomainCopy =');
 const synchronousDomainBuilders = [
   between('const buildWorldManagerCharactersCurrentPanel =', 'const buildWorldManagerRelationshipsCurrentPanel ='),

@@ -63,6 +63,14 @@ const statusSource = sourceSection(
   'const setStateWorldline ='
 );
 
+// The scope-native projection fingerprint is created at closure setup from the
+// deployed LIBRA memory network block, so load that real block rather than a stub.
+const memoryNetworkStart = source.indexOf('// BEGIN LIBRA MEMORY NETWORK');
+const memoryNetworkEnd = source.indexOf('// END LIBRA MEMORY NETWORK', memoryNetworkStart);
+assert.ok(memoryNetworkStart >= 0 && memoryNetworkEnd > memoryNetworkStart, 'LIBRA memory network block must be locatable');
+const memoryNetworkSource = source.slice(memoryNetworkStart, memoryNetworkEnd);
+const memoryNetworkStableHash = value => crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value ?? null)).digest('hex');
+
 const SCHEMAS = Object.freeze({
   correctionStore: 'libra.state.corrections.v2',
   correctionMeta: 'libra.state_correction_meta.v1',
@@ -547,6 +555,7 @@ function buildHarness({ records = [], hooks: hookValues = {}, rebuild = null, ac
     };
   }
 
+  context.stableHash = memoryNetworkStableHash;
   Object.assign(context, require('./fixtures/librarian_production_bindings.cjs')(source));
   vm.createContext(context);
   const exportsExpression = actualReplay
@@ -555,7 +564,7 @@ function buildHarness({ records = [], hooks: hookValues = {}, rebuild = null, ac
   const evaluatedSource = actualReplay
     ? `${unifiedArtifactSchemaSource}\n${supportSource}\n${replaySource}\n${exportsExpression}`
     : `${unifiedEngineVersionSource}\n${supportSource}\n${transactionSource}\n${exportsExpression}`;
-  vm.runInContext(completedTurnRevisionSource + "\n" + (actualReplay ? "" : microRefreshSource) + "\n" + evaluatedSource, context, { filename: pluginPath });
+  vm.runInContext(memoryNetworkSource + "\n" + completedTurnRevisionSource + "\n" + (actualReplay ? "" : microRefreshSource) + "\n" + evaluatedSource, context, { filename: pluginPath });
 
   return { ...context.__testExports, raw, storage, state, stats, hooks };
 }

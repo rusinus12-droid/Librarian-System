@@ -18,52 +18,71 @@ const between = (start, end) => {
 assert.match(source.slice(0, 512), releasePattern("\\/\\/@version {libra}", ""),
   'the release version must remain inside the first 512 bytes');
 
-const rail = between('const buildLibraSectionRail =', 'const canonicalReaderIdentityKey =');
-assert.match(rail, /class: 'libra-section-rail'/);
-assert.match(rail, /role: 'tablist'/);
-assert.match(rail, /title: definition\.label/,
-  'truncated navigation labels retain their full accessible hover title');
-assert.match(rail, /'aria-selected': String\(active\)/);
-assert.match(rail, /syncGuiTabSelectionFeedback\(event\.currentTarget\)[\s\S]*queueGuiNavigationRender\(\)/,
+// The approved six-product GUI retired the custom left section rail, the shared
+// custom/agent/settings shells and the hub-tab CSS. The same navigation contracts
+// now live in the shared hub tabs, the approved settings layout (.setnav groups +
+// per-group .tabs) and the original suite CSS.
+const approvedCss = (() => {
+  const marker = 'const LIBRA_APPROVED_MOCKUP_STYLE = ';
+  const at = source.indexOf(marker);
+  assert.ok(at >= 0, 'approved suite CSS is embedded');
+  return JSON.parse(source.slice(at + marker.length, source.indexOf('\n', at)).replace(/;\s*$/, ''));
+})();
+
+const tabs = between('const buildLibraHubTabs =', 'const canonicalReaderIdentityKey =');
+assert.match(tabs, /role: 'tablist'/);
+assert.match(tabs, /'aria-label': ariaLabel/);
+assert.match(tabs, /role: 'tab'/);
+assert.match(tabs, /text: definition\.label/, 'navigation tabs show their full label');
+assert.match(tabs, /'aria-selected': String\(active\)/);
+assert.match(tabs, /syncGuiTabSelectionFeedback\(event\.currentTarget\);\s*queueGuiNavigationRender\(\)/,
   'secondary navigation paints selection feedback before rebuilding the outlet');
-assert.match(rail, /class: 'libra-section-layout'[\s\S]*class: 'libra-section-content', role: 'tabpanel'/);
+const feedback = between('const syncGuiTabSelectionFeedback = button =>', 'const buildLibraHubTabs =');
+assert.match(feedback, /closest\?\.\('\[role="tablist"\]'\)/);
+assert.match(feedback, /setAttribute\('aria-selected', String\(active\)\)/);
 
-assert.match(source, /\.libra-section-layout\{display:grid;grid-template-columns:minmax\(176px,208px\) minmax\(0,1fr\)/,
-  'desktop category pages use a bounded left rail and flexible content');
-assert.match(source, /\.libra-section-rail\{position:sticky;top:0;display:flex;[\s\S]*flex-direction:column/);
-assert.match(source, /\.libra-section-rail \.sga-btn\{[\s\S]*overflow:hidden[\s\S]*text-overflow:ellipsis;white-space:nowrap/,
-  'long rail labels never protrude or wrap');
-assert.match(source, /@media\(max-width:900px\)\{\.libra-section-layout\{display:block\}[\s\S]*\.libra-section-rail\{[\s\S]*flex-direction:row;overflow-x:auto;overflow-y:hidden/,
-  'narrow layouts collapse to one horizontally scrollable row');
-assert.match(source, /\.libra-hub-tabs\{display:flex!important;[\s\S]*flex-wrap:nowrap!important[\s\S]*overflow-x:auto/,
-  'remaining contextual tabs stay on one row and scroll instead of wrapping');
-assert.match(source, /\.libra-hub-tabs \.sga-btn\{[\s\S]*min-width:0[\s\S]*text-overflow:ellipsis;white-space:nowrap/,
-  'remaining contextual labels cannot escape their tab');
+assert.match(approvedCss, /\.settings-layout\{display:grid;grid-template-columns:230px minmax\(0,1fr\)/,
+  'desktop settings use a bounded left category rail and flexible content');
+assert.match(approvedCss, /\.setnav\{display:grid;gap:3px;position:sticky;top:0\}/);
+assert.match(approvedCss, /\.setnav button\[aria-selected=true\]\{/);
+assert.match(approvedCss, /@container app \(max-width:900px\)\{[^@]*\.settings-layout\{grid-template-columns:1fr\}\.setnav\{grid-auto-flow:column;grid-auto-columns:max-content;overflow:auto;position:static\}/,
+  'narrow layouts collapse the category rail to one horizontally scrollable row');
+assert.match(approvedCss, /\.tabs\{display:flex;[^}]*overflow-x:auto/,
+  'contextual tabs stay on one row and scroll instead of wrapping');
+assert.match(approvedCss, /\.tab\{[^}]*white-space:nowrap\}/,
+  'contextual tab labels never wrap out of their tab');
 
-const custom = between('const buildSharedCustomShellPanel =', 'const executionReceiptCacheKey =');
-assert.match(custom, /migrateCustomWorkshopSelection\(\)/);
-assert.match(custom, /buildSharedAgentShellPanel\(\)/);
-const agents = between('const buildSharedAgentShellPanel =', 'const setSharedCustomPromptDomain =');
-assert.match(agents,/buildMemoryPromptStudioDisclosure\(/);
-assert.match(agents,/buildMemoryPipelinePanel\(\)/);
-assert.doesNotMatch(custom, /이번 턴 적용 결과|id: 'injection'|buildLibraSgaPanel|buildPromptInjectionPanel/,
-  'Custom is prompt authoring only and does not duplicate execution results');
-
-const logs = between('const buildSharedExecutionLogsPanel =', 'const buildGeneralSettingsPanel =');
-assert.match(logs, /buildLibraSectionLayout\(definitions, Gui\.executionLogSection/);
-for (const id of ['memory', 'state', 'draft', 'recall', 'embedding', 'rebuild']) {
-  assert.ok(logs.includes(`id: '${id}'`), `missing execution category: ${id}`);
-}
-
-const settings = between('const buildSharedSettingsShellPanel =', 'const renderActiveTab =');
-assert.match(settings, /buildLibraSectionLayout\(definitions, Gui\.settingsHubSection/);
+const settingsLayout = between('const buildApprovedMockupSettings = () =>', 'const buildApprovedMockupPeople =');
+assert.match(settingsLayout, /button\.setAttribute\('aria-selected',String\(activeGroup\.id===group\.id\)\);button\.setAttribute\('role','tab'\)/);
+assert.match(settingsLayout, /guiEl\('nav',\{class:'tabs',role:'tablist','aria-label':`\$\{activeGroup\.label\} 상세 설정`\}/);
+assert.match(settingsLayout, /'aria-selected':String\(active===id\)/);
+const settingsSections = new Set(Array.from(settingsLayout.matchAll(/sections:\[([^\]]*)\]/g))
+  .flatMap(match => Array.from(match[1].matchAll(/'([a-z_]+)'/g), item => item[1])));
 for (const id of ['references', 'memory', 'state', 'server', 'recovery', 'transfer', 'general']) {
-  assert.ok(settings.includes(`id: '${id}'`), `missing settings category: ${id}`);
+  assert.ok(settingsSections.has(id), `missing settings category: ${id}`);
 }
 
-// Embedded GRADIA category rails retired; retained Memory prompt disclosure is lazy.
-const memoryPrompts=between('const buildMemoryPromptStudioDisclosure =','const buildSharedAgentShellPanel =');
-assert.match(memoryPrompts,/guiLazyDetails/);
-assert.match(memoryPrompts,/allowedDomains: \['memory'\]/);
+// Retired custom-workshop deep links migrate to the memory analyzer route, which
+// authors analysis settings only and never duplicates execution results.
+const migration = between('const migrateCustomWorkshopSelection = () =>', 'const executionReceiptCacheKey =');
+assert.match(migration, /Gui\.bookSettingsWorkbenchSection='pipeline'/);
+const selectRoom = between('const selectBookSettingsRoomSection = id =>', 'if (id === \'agents\')');
+assert.match(selectRoom, /if \(id === 'custom'\) \{ migrateCustomWorkshopSelection\(\); id = 'pipeline'; \}/);
+const settingsPanel = between('const buildApprovedMockupSettingsPanel = (groupId, sectionId) =>', "if(groupId==='mem')");
+assert.match(settingsPanel, /if\(sectionId==='pipeline'\)return buildLibrarianAnalyzerPanel\(false,false\)/);
+assert.match(settingsPanel, /if\(sectionId==='logs'\)return buildSharedExecutionLogsPanel\(\)/);
+const analyzer = between('const buildLibrarianAnalyzerPanel =', 'const exportConfiguration =');
+assert.match(analyzer, /openApprovedPromptDialog\(\)/, 'prompt authoring opens the Lens Studio');
+assert.match(analyzer, /guiEl\('details',\{class:'fold'\}/, 'expert analyzer controls stay folded');
+assert.doesNotMatch(analyzer, /이번 턴 적용 결과|id: 'injection'|buildLibraSgaPanel|buildPromptInjectionPanel/,
+  'the analyzer route is authoring only and does not duplicate execution results');
+
+const logs = between('const buildSharedExecutionLogsPanel =', 'const buildAnalysisInputPanel =');
+assert.match(logs, /normalizeHubChoice\(Gui\.executionLogSection,SHARED_EXECUTION_LOG_SECTIONS,'memory'\)/);
+assert.match(logs, /class:'tabs',role:'tablist'/);
+assert.match(logs, /'aria-selected':String\(Gui\.executionLogSection===id\)/);
+for (const id of ['memory', 'state', 'draft', 'recall', 'embedding', 'rebuild']) {
+  assert.ok(logs.includes(`['${id}',`), `missing execution category: ${id}`);
+}
 
 process.stdout.write('libra_secondary_navigation_rail_contract_test: PASS\n');

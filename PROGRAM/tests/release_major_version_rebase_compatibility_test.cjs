@@ -29,15 +29,18 @@ assert.match(retrace, releasePattern("^\\/\\/@version {retrace}\\s*$", "m"), rel
 
 // Stable plugin identities and peer protocol: major product version bumps must not
 // become protocol/schema/storage breaks.
-for (const [name, source, pluginId, handoff] of [
-  ['LIBRA', libra, "const PLUGIN_NAME = 'libra';", "libra.handoff_immutable_source.v1"],
-  ['HAYAKU', hayaku, "const HAYAKU_PLUGIN_ID = 'hayaku_locator_continuity';", "hayaku.handoff_immutable_source.v1"],
-  ['FLASHBACK', flashback, "const PLUGIN_SLUG = 'flashback_memory';", "flashback_memory.handoff_immutable_source.v2"],
-  ['LIA', lia, "pluginId:'lia_persona_linker'", 'lia.live_persona_handoff_immutable_source.v1']
+for (const [name, source, pluginId, handoff, retraceRequired] of [
+  // LIBRA's handoff contract was deliberately bumped to the lens-carrying v2 (LIBRA 2.3.181 /
+  // RE:TRACE 1.9.90, "Complete immutable lens handoff"); RE:TRACE requires it in lockstep below.
+  ['LIBRA', libra, "const PLUGIN_NAME = 'libra';", "libra.handoff_immutable_source_lenses.v2", 'LIBRA_REQUIRED_HANDOFF_CONTRACT'],
+  ['HAYAKU', hayaku, "const HAYAKU_PLUGIN_ID = 'hayaku_locator_continuity';", "hayaku.handoff_immutable_source.v1", 'HAYAKU_REQUIRED_HANDOFF_CONTRACT'],
+  ['FLASHBACK', flashback, "const PLUGIN_SLUG = 'flashback_memory';", "flashback_memory.handoff_immutable_source.v2", 'FLASHBACK_REQUIRED_HANDOFF_CONTRACT'],
+  ['LIA', lia, "pluginId:'lia_persona_linker'", 'lia.live_persona_handoff_immutable_source.v1', 'LIA_REQUIRED_HANDOFF_CONTRACT']
 ]) {
   assert.ok(source.includes('retrace.peer_compatibility.v1'), `${name} peer schema unchanged`);
   assert.ok(source.includes('RETRACE_PEER_PROTOCOL_MAJOR = 1'), `${name} peer protocol major unchanged`);
   assert.ok(source.includes(handoff), `${name} handoff contract unchanged`);
+  assert.ok(retrace.includes(`const ${retraceRequired} = '${handoff}';`), `RE:TRACE requires the ${name} handoff contract the peer advertises`);
   assert.ok(source.includes(pluginId), `${name} stable plugin id unchanged`);
 }
 

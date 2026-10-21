@@ -81,5 +81,9 @@ assert.match(embedding, /runAutomaticLegacyVectorMigration/);
 assert.match(source, /operationalHealth:\s*\{/);
 assert.match(source, /pendingBoundaryRecovery/);
 assert.match(source, /pairRevisionCache/);
-assert.match(source, /recallCatalogUpgradeInFlight/);
+// The legacy recall catalog (and its background upgrade) was retired by the unified memory engine
+// (9c03c35); its long-running background work is now the memory-graph corpus build.
+assert.doesNotMatch(source, /recallCatalogUpgradeInFlight/, 'retired recall-catalog upgrade stays absent');
+const health = between('    operationalHealth: {', '    warnings: Runtime.warnings.slice(-20),');
+assert.match(health, /memoryGraphBuildActive: LibraMemoryCore\.state\.memoryGraphCorpus\?\.inspect\(\)\.activeBuild === true/, 'operational health reports the unified corpus build in flight');
 process.stdout.write('libra_book_ux_v514_operational_observability_contract_test: PASS\n');

@@ -6,6 +6,8 @@ const applySelection=async(f,selection)=>{try{return await f.r.api.startSelected
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./fixtures/libra_unified_runtime_fixture.cjs');
+// The marker records the running plugin release; read it from the release manifest, not a pin.
+const { releaseVersion } = require('./fixtures/release_versions.cjs');
 
 // Observe the real scheduler and queue without replacing either. Bootstrap-only
 // automatic audits are disabled so each test owns its one timer registration.
@@ -81,7 +83,7 @@ async function settledStartupMaintenance(f, core) {
     // now verified before observation instead of allowing writes under the owner.
     const { startedAt, finishedAt, ...value } = vectorMarker;
     assert.ok(Number.isFinite(Date.parse(startedAt)) && Number.isFinite(Date.parse(finishedAt)));
-    assert.deepEqual(JSON.parse(JSON.stringify(value)), {"schema": "libra.embedding_vector_migration_marker.v1", "pluginVersion": "2.3.149", "targetSignature": "ec2917fe:1349", "providerProfileId": "mep_a4ccc727f9674d23", "reason": "embedding_startup_probe", "scanned": 0, "candidates": 0, "migrated": 0, "alreadyCurrent": 0, "missingPayload": 0, "incompatibleSpace": 0, "failures": 0, "bytesPromoted": 0, "complete": true, "errors": [], "interrupted": false}, 'the genuine startup migration has the original exact empty payload');
+    assert.deepEqual(JSON.parse(JSON.stringify(value)), {"schema": "libra.embedding_vector_migration_marker.v1", "pluginVersion": releaseVersion('libra'), "targetSignature": "ec2917fe:1349", "providerProfileId": "mep_a4ccc727f9674d23", "reason": "embedding_startup_probe", "scanned": 0, "candidates": 0, "migrated": 0, "alreadyCurrent": 0, "missingPayload": 0, "incompatibleSpace": 0, "failures": 0, "bytesPromoted": 0, "complete": true, "errors": [], "interrupted": false}, 'the genuine startup migration has the original exact empty payload');
     assert.equal(core.state.embeddingMigrationPromise, null, 'migration ownership finished');
   })(), 'actual startup registration and physical migration tails settled within the original 8 seconds');
 }

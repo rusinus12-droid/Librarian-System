@@ -145,7 +145,7 @@ const runMode = async mode => {
 
     // ── constrain recall to ONE memory so the later artifact stays UNSELECTED.
     const current = await api.getLibraMemorySettings?.().catch(() => null);
-    await api.saveLibraMemorySettings({ ...(current?.settings || current || {}), recallMaxMemories: 1 })
+    await api.saveLibraMemorySettings({ ...(current?.settings || current || {}), recallMaxMemories: 1, unifiedMaxUnits: 1 })
       .catch(error => ({ error: String(error?.message || error) }));
 
     // ── (1) WHAT RECALL SELECTED -- the product's own selection, not the test's.

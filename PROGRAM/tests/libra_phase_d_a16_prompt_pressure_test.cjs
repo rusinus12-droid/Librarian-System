@@ -419,7 +419,14 @@ const persistRecord = async (server, mode, key, value) => {
       if (mode === 'mirror') assert.equal(digest(JSON.parse(durableLocalRaw)), digest(durableServerRow.value),
         'mirror: both durable copies still agree after restart');
       if (mode === 'server_only') assert.ok(durableServerRow, 'server_only: restart still reads the server memory');
+      // getCurrentStateHead() is a synchronous accessor over the runtime's loaded snapshot; a fresh
+      // runtime has none until something reads the current view. Load it through the public
+      // current-view read (it refreshes from durable storage with requireCurrentView) first.
+      assert.equal(f.r.api.getCurrentStateHead(), null, `${mode}: the fresh runtime starts without an in-memory Head`);
+      const freshNarrative = await f.r.api.getWorldManagerNarrative();
       const head = await f.r.api.getCurrentStateHead();
+      assert.ok(head, `${mode}: the fresh runtime loads the durable Head`);
+      assert.equal(JSON.stringify(freshNarrative), JSON.stringify(head.narrative), `${mode}: the public narrative read and the Head agree`);
       assert.equal(head.throughTurn, 15, `${mode}: the fresh runtime public Head reaches the pressure batch`);
       const promiseAfterPressure = head.narrative.threads.find(row => row.lifecycleId === openingFact.values.thread.lifecycleId);
       assert.equal(promiseAfterPressure?.status, baselinePromise.status,

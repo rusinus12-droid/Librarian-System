@@ -48,12 +48,13 @@ check('settings room save has an explicit feedback lifecycle', () => {
 });
 
 check('settings room button calls the feedback wrapper', () => {
-  const nativeRoom = between('const buildBookNativeSettingsRoom =', 'const buildBookSettingsPanel =');
-  const saveBar = between('const buildBookSaveBar =', 'const resetBookWriting');
-  assert.match(saveBar, /dataset: \{ settingsRoomSave: 'true' \}/);
-  assert.match(saveBar, /onClick: \(\) => void saveSettingsRoom\(\)/);
-  assert.match(saveBar, /settingsRoomSaveStatus: 'true'/);
-  assert.match(saveBar, /disabled: Gui\.settingsRoomSaving === true/,
+  // The approved settings layout replaced the native settings room; it still owns the shared save bar.
+  const nativeRoom = between('const buildApprovedMockupSettings = () =>', 'const buildApprovedMockupPeople =');
+  const saveBar = between('const buildBookSaveBar =', 'const openBookMemoryAdvancedSettings =');
+  assert.match(saveBar, /dataset:\s*\{\s*settingsRoomSave:\s*'true'\s*\}/);
+  assert.match(saveBar, /onClick:\s*\(\)\s*=>\s*void saveSettingsRoom\(\)/);
+  assert.match(saveBar, /settingsRoomSaveStatus:\s*'true'/);
+  assert.match(saveBar, /settingsRoomSave:'true'\},text:[^\n]*disabled:\s*Gui\.settingsRoomSaving\s*===\s*true,onClick/,
     'the visible settings room action is disabled only while its save is in flight');
   assert.match(nativeRoom, /buildBookSaveBar\(\)/, 'the native settings room owns the shared save bar');
   assert.doesNotMatch(saveBar, /onClick:\s*\(\)\s*=>\s*void saveGuiState\(\)/,

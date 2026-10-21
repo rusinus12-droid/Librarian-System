@@ -213,6 +213,14 @@ const hostNpmCacheRoots = () => {
       LOCALAPPDATA: path.join(buildRoot, 'no-pinned-local-appdata'),
       npm_config_cache: noPinnedCache, NPM_CONFIG_CACHE: noPinnedCache };
     delete noPinnedToolchainEnv.NODE_PATH;
+    // build_plugins also resolves the pinned toolchain from GRADIA_TOOLCHAIN_ROOT (set by
+    // ensure_build_support / the regression runner); remove that route too, or the control is not missing anything.
+    delete noPinnedToolchainEnv.GRADIA_TOOLCHAIN_ROOT;
+    // ...and ensure_build_support's last resort extracts the locked tree from os.tmpdir()
+    // (librarian-build-support-<lockhash>); point the temp dir at an empty folder for this control.
+    const noPinnedTmp = path.join(buildRoot, 'no-pinned-tmp');
+    fs.mkdirSync(noPinnedTmp, { recursive: true });
+    Object.assign(noPinnedToolchainEnv, { TMPDIR: noPinnedTmp, TMP: noPinnedTmp, TEMP: noPinnedTmp });
     delete noPinnedToolchainEnv.npm_config_prefix;
     const missingPinned = spawnSync(process.execPath,
       [path.join(ROOT, 'tools', 'build_plugins.cjs'), '--out', prerequisiteOut],
@@ -236,6 +244,11 @@ const hostNpmCacheRoots = () => {
     fs.mkdirSync(emptyCache, { recursive: true });
     const noParserEnv = { ...process.env, NODE_PATH: '', HOME: emptyProfile, USERPROFILE: emptyProfile,
       LOCALAPPDATA: path.join(emptyProfile, 'AppData', 'Local'), npm_config_cache: emptyCache, NPM_CONFIG_CACHE: emptyCache };
+    // Also close the build-support routes (GRADIA_TOOLCHAIN_ROOT and the os.tmpdir() extraction cache).
+    delete noParserEnv.GRADIA_TOOLCHAIN_ROOT;
+    const emptyParserTmp = path.join(buildRoot, 'empty-parser-tmp');
+    fs.mkdirSync(emptyParserTmp, { recursive: true });
+    Object.assign(noParserEnv, { TMPDIR: emptyParserTmp, TMP: emptyParserTmp, TEMP: emptyParserTmp });
     // Keep the strict offline and pinned-process guards while isolating parser resolution.
     const parserProbe = `const b=require(${JSON.stringify(path.join(ROOT, 'tools', 'build_plugins.cjs'))});
 if (b.resolveAcorn() !== null) throw new Error('isolated resolver unexpectedly found Acorn');

@@ -50,7 +50,7 @@ async function test(name, fn) { const f=await fixture(); try {await fn(f);result
     const read=JSON.parse(JSON.stringify(f.r.api.getUnifiedStateReadProjection(f.getHead())));
     assert.deepEqual(read.characters.find(row=>row.name==='민아').state.abilities,['배의 항로를 계산할 수 있음']);
     const recall=await f.r.api.previewUnifiedMemoryRecall('민아 항로 여행 일지');
-    assert.ok(recall.memories.some(row=>/여행 일지|항로/.test(row.excerpt.text)));
+    assert.ok(recall.memories.some(row=>/여행 일지|항로/.test(String(row.excerpt))));
     const bytes=memoryBytes(f), state=JSON.stringify(person(f).state);
     const restarted=await fixture({snapshot:{chat:f.chat,values:[...f.r.values]}});
     try {
@@ -122,7 +122,7 @@ async function test(name, fn) { const f=await fixture(); try {await fn(f);result
     add(f,'character_habit','habits',['여행 일지를 씀'],{turn:5,bind:false});
     await complete(f);assert.deepEqual(person(f).state.habits,['여행 일지를 씀']);
     const recall=await f.r.api.previewUnifiedMemoryRecall('민아 일찍 잠자리에');
-    assert.ok(recall.memories.some(row=>row.excerpt.text.includes('습관을 버렸다')));
+    assert.ok(recall.memories.some(row=>String(row.excerpt).includes('습관을 버렸다')));
   });
   await test('manual profile corrections validate types, replay and suspend', async f=>{
     add(f,'character_appearance','appearance',['갈색 눈']);await complete(f);const bytes=memoryBytes(f),id=person(f).id;

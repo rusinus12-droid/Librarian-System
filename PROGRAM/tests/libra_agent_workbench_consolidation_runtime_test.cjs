@@ -19,37 +19,39 @@ const c = vm.createContext({
   normalizePlannerOutputLanguage: v => v || 'host', normalizePlannerDetailLevel: v => v || 'normal', normalizePlannerOutputBudget: v => v || 1000,
   presetChoicesFromState: () => [], PLANNER_OUTPUT_LANGUAGES: [], PLANNER_DETAIL_LEVELS: [], PLANNER_OUTPUT_BUDGET_MIN: 1, PLANNER_OUTPUT_BUDGET_MAX: 9999,
   markGuiDirty: () => { dirtyCalls++; }, queueBookDrawerRender: () => {}, closeBookQuickSettings: () => {},
-  bookOpenQuickSettings: section => { opened = section; }, selectBookSettingsRoomSection: section => { navigated = section; },
+  selectBookSettingsRoomSection: section => { navigated = section; },
   selectNode: () => marker('select'), libraRuntimeNumberInput: () => marker('number'),
   bookQuickSection: (title, note, children) => el('section', { text: title }, children), bookQuickChoiceCard: o => el('button', { text: o.title, onClick: o.onClick }),
   bookQuickToggle: (value, label, note, onChange) => el('button', { text: label, onClick: () => onChange(!value) }),
-  openBookMemoryAdvancedSettings: () => { c.Gui.pipelineHubSection = 'memory_pipeline'; navigated = 'pipeline'; },
   bookQuickField: (label, control) => el('label', { text: label }, [control]), bookQuickActionRow: children => el('footer', {}, children),
   saveGuiState: () => { throw Error('navigation must not save'); }, revertGuiStateFromStorage: () => { throw Error('navigation must not revert'); },
   buildResponseConsumerPolicyPanel: () => marker('planner-policy'), buildGenerationPolicyPanel: () => marker('memory-budget'),
-  buildLibrarianAnalyzerPanel: (compact, advanced) => marker(compact ? 'memory-basic' : advanced ? 'memory-advanced' : 'duplicate-basic'),
+  buildLibrarianAnalyzerPanel: (compact, advanced) => marker(compact ? 'memory-basic' : advanced ? 'memory-advanced-only' : 'memory-analyzer'),
   buildLibraHubTabs: (defs, value, change) => el('nav', {}, defs.map(d => el('button', { text: d.label, onClick: () => change(d.id) }))),
   buildLibraResponseResultPanel: () => marker('results'), buildNarrativeDirectionPanel: () => marker('direction'),
   buildStateTrackingAvailabilityPanel: () => marker('local-state'), buildLibraPromptStudioPanel: () => marker('prompts'),
   setSharedCustomPromptDomain: () => {}, renderPromptStudioOocBuilder: () => marker('ooc'),
+  queueBookDrawerRender: () => { opened = c.Gui.bookQuickSection; },
+  closeCanonicalRangeDrawer: () => {}, resetCanonicalReaderView: () => {}, refreshModuleLoreCatalog: async () => {}, refreshCharacterLoreCatalog: async () => {},
+  bookSettingsRoomActiveSection: () => navigated, buildSharedExecutionLogsPanel: () => marker('logs'), buildLibraReferenceHubPanel: () => marker('references'),
+  buildAnalysisInputPanel: () => marker('source-edits'), buildTransferTab: () => marker('transfer'), buildGeneralSettingsPanel: () => marker('general'),
 });
-// Embedded response drafting was retired; the shared workbench now owns only
-// memory analysis and lazy memory prompt editing. Exercise the shipped builders.
+// Embedded response drafting was retired; the approved mockup GUI (5e1db38)
+// replaced the shared pipeline/agent shells with the quick-settings drawer
+// (response, memory_agents) and the Settings room, whose Pipeline destination
+// mounts the full memory analyzer. Exercise the shipped builders.
 c.buildLibraClassicPanel = options => el('section', {text:'classic',options});
 c.buildLibraLiveContextSettingsPanel = () => marker('recent-dialogue');
-c.buildMemoryPromptStudioDisclosure = () => marker('lazy-memory-prompts');
-// Embedded response drafting was retired; the shared workbench now owns only
-// memory analysis and lazy memory prompt editing. Exercise the shipped builders.
-c.buildLibraClassicPanel = options => el('section', {text:'classic',options});
-c.buildLibraLiveContextSettingsPanel = () => marker('recent-dialogue');
-c.buildMemoryPromptStudioDisclosure = () => marker('lazy-memory-prompts');
 vm.runInContext(
-  part('const buildAgentQuickSettingsSummary =', 'const buildSharedPipelineShellPanel =') +
-  part('const buildSharedPipelineShellPanel =', 'const buildMemoryPromptStudioDisclosure =') +
-  part('const buildSharedAgentShellPanel =', 'const setSharedCustomPromptDomain =') +
+  part('const LIBRA_REFERENCE_HUB_SECTIONS =', '\n') +
+  part('const BOOK_QUICK_SECTIONS =', '\n') +
+  part('const bookOpenQuickSettings =', 'const migrateLegacyGuiNavigationState =') +
+  part('const openBookMemoryAdvancedSettings =', '\n') +
+  part('const buildApprovedMockupSettingsPanel =', 'const bookQuickSection =') +
   part('const buildBookQuickLibraResponsePanel =', 'const buildBookQuickMemoryAgentsPanel =') +
   part('const buildBookQuickMemoryAgentsPanel =', 'const saveBookQuickSettings =') +
-  ';Object.assign(globalThis,{buildSharedPipelineShellPanel,buildBookQuickLibraResponsePanel,buildBookQuickMemoryAgentsPanel,buildAgentQuickSettingsSummary});', c);
+  part('const BOOK_EXTERNAL_SETTINGS_ITEMS =', 'const GUI_SCROLL_SELECTORS =') +
+  ';Object.assign(globalThis,{bookOpenQuickSettings,buildApprovedMockupSettingsPanel,buildBookQuickLibraResponsePanel,buildBookQuickMemoryAgentsPanel,selectBookExternalSettings});', c);
 let nodes = flat(c.buildBookQuickLibraResponsePanel());
 assert.deepEqual(nodes.slice(1).map(n=>n.text), ['classic','recent-dialogue']);
 assert.equal(nodes[1].options.compact,true);
@@ -65,15 +67,20 @@ assert.equal(dirtyCalls,1);
 nodes.find(n => n.text === '기억 분석 고급 설정 →').onClick();
 assert.equal(c.Gui.pipelineHubSection,'memory_pipeline');
 assert.equal(navigated,'pipeline');
-nodes = flat(c.buildSharedPipelineShellPanel());
-assert.equal(c.Gui.agentHubSection,'memory');
-assert.equal(c.Gui.pipelineHubSection,'memory_pipeline');
-assert.ok(nodes.some(n=>n.text==='memory-advanced'));
-assert.ok(nodes.some(n=>n.text==='lazy-memory-prompts'));
-assert.ok(!nodes.some(n=>n.text==='duplicate-basic'||n.text==='local-state'||n.text==='results'));
-flat(c.buildAgentQuickSettingsSummary()).find(n=>n.tag==='button').onClick();
+c.Gui.pipelineHubSection = 'response_generation'; navigated = '';
+c.selectBookExternalSettings('memory_analysis');
+assert.equal(c.Gui.pipelineHubSection,'memory_pipeline','Settings > memory analysis targets the memory pipeline');
+assert.equal(navigated,'pipeline');
+nodes = flat(c.buildApprovedMockupSettingsPanel('mem','pipeline'));
+assert.ok(nodes.some(n=>n.text==='memory-analyzer'),'Pipeline destination mounts the full memory analyzer');
+assert.ok(!nodes.some(n=>n.text==='memory-basic'||n.text==='memory-advanced-only'||n.text==='local-state'||n.text==='results'||n.text==='planner-policy'));
+c.bookOpenQuickSettings('memory_agents');
 assert.equal(opened,'memory_agents');
+assert.equal(c.Gui.bookQuickOpen,true);
+c.bookOpenQuickSettings('drafting');
+assert.equal(opened,'response','retired quick-settings sections fall back to response');
 assert.equal(c.Gui.state,state);
+assert.equal(c.Gui.dirty,true);
 assert.equal(dirtyCalls,1,'workbench navigation must retain the unsaved draft');
 assert.doesNotMatch(part('const BOOK_EXTERNAL_SETTINGS_ITEMS =', 'const bookExternalSettingsActive ='), /에이전트 상세/);
 console.log('libra_agent_workbench_consolidation_runtime: PASS (production UI functions with DOM boundaries; no live RisuAI)');

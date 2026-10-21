@@ -12,10 +12,12 @@ const SOURCE='서재에서 지호는 은빛 열쇠를 민아에게 반환하지 
 const evidence=process.env.LIBRA_ADMISSION_EVIDENCE||fs.mkdtempSync(path.join(os.tmpdir(),'libra-selected-admission-'));fs.mkdirSync(evidence,{recursive:true});
 const cases=['same_task','source_changed','scope_changed','provider_changed','new_request','corrupt_body','missing_body','exception_changed','policy_changed','mode_changed','data_binding_changed','missing_receipt','body_changed_after_hydration','body_changed_after_final_readback','handoff_budget_spent','manifest_scope_after_authority','derived_metadata_overlap','derived_metadata_settled','policy_changed_during_body','mode_changed_during_body','settings_write_held'];
 const transform=source=>{
+ // Current graph Classic delivery: after_hydration precedes the final response-boundary check,
+ // after_authority follows it immediately before the final block identity/receipt revalidation,
+ // and actual_local_sample observes the verified physical local read.
  const edits=[
-  ['        if(responseBoundary)await assertUnifiedResponseBoundary(responseBoundary);\n        // All routes, including Classic',"        await globalThis.risuai.selectedAdmissionSeam('after_hydration');\n        if(responseBoundary)await assertUnifiedResponseBoundary(responseBoundary);\n        // All routes, including Classic"],
-  ["        assertConsumedDataIdentity(evidencePacket.consumed_data_token, 'packet', consumedPacketIdentityDigest(evidencePacket));", "        await globalThis.risuai.selectedAdmissionSeam('after_authority');\n        assertConsumedDataIdentity(evidencePacket.consumed_data_token, 'packet', consumedPacketIdentityDigest(evidencePacket));"],
-  ["        const localRaw = needsLocal ? await MemorySuiteStorageBridge.ownerLegacyRead('plugin', storageKey) : null;", "        const localRaw = needsLocal ? await MemorySuiteStorageBridge.ownerLegacyRead('plugin', storageKey) : null;\n        await globalThis.risuai.selectedAdmissionSeam('actual_local_sample',{storageKey,localRaw});"],
+  ["        if (responseBoundary) await runRecallStep(guard, 'unified_response_boundary', () => assertUnifiedResponseBoundary(responseBoundary), RECALL_STEP_BUDGET_MS);\n        assertConsumedDataIdentity(receiptToken, 'unified_classic_block', digest(block));","        await globalThis.risuai.selectedAdmissionSeam('after_hydration');\n        if (responseBoundary) await runRecallStep(guard, 'unified_response_boundary', () => assertUnifiedResponseBoundary(responseBoundary), RECALL_STEP_BUDGET_MS);\n        await globalThis.risuai.selectedAdmissionSeam('after_authority');\n        assertConsumedDataIdentity(receiptToken, 'unified_classic_block', digest(block));"],
+  ["        const localRaw = needsLocal ? await read(() => MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey)) : null;", "        const localRaw = needsLocal ? await read(() => MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey)) : null;\n        await globalThis.risuai.selectedAdmissionSeam('actual_local_sample',{storageKey,localRaw});"],
   ['\n  const publicApi = Object.freeze({','\n  globalThis.__SELECTED_ADMISSION_STORAGE__=MemorySuiteStorageBridge;\n  const publicApi = Object.freeze({']
  ];
  for(const [before,after]of edits){assert.equal(source.split(before).length,2,'unique current observation seam');source=source.replace(before,after);}return source;
@@ -105,7 +107,9 @@ const summary=[];
     armed='';releaseRead?.();if(snapshot.heldWrite){await snapshot.heldWrite;snapshot.heldWrite=null;}
     if(originalListeners.length){snapshot.app.server.removeAllListeners('request');snapshot.app.server.on('request',originalListeners.pop());}
     const currentRows=new Map(snapshot.storedRows().map(row=>[row.key,row.value]));
-    for(const key of new Set([...storedBaseline.keys(),...currentRows.keys()])){if(JSON.stringify(currentRows.get(key))!==JSON.stringify(storedBaseline.get(key)))await snapshot.mutate(key,storedBaseline.get(key)??null,storedBaseline.has(key)?'set':'remove');}
+    // Graph lifecycle control rows are server-owned (external writes are refused with
+    // LIBRA_GRAPH_CONTROL_WRITE_FORBIDDEN); the product maintains them itself.
+    for(const key of new Set([...storedBaseline.keys(),...currentRows.keys()])){if(key.includes(':memory-graph-control:v1:'))continue;if(JSON.stringify(currentRows.get(key))!==JSON.stringify(storedBaseline.get(key)))await snapshot.mutate(key,storedBaseline.get(key)??null,storedBaseline.has(key)?'set':'remove');}
     snapshot.local.clear();for(const [key,value]of localBaseline)snapshot.local.set(key,value);
    }
   }

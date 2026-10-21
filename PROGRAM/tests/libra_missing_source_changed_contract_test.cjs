@@ -5,18 +5,18 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const source=fs.readFileSync(path.join(__dirname,'..','plugins','LIBRA.js'),'utf8');
 const between=(start,end)=>{const a=source.indexOf(start),b=source.indexOf(end,a);assert.ok(a>=0&&b>a);return source.slice(a,b);};
 const drawer=between('const showCanonicalRangeDrawer =','const buildBookMemoryModelSummary =');
-const declaration=drawer.match(/const eligible = row =>[^;]+;/)?.[0];assert.ok(declaration);
+const declaration=drawer.match(/const eligible=row=>[^;]+;/)?.[0];assert.ok(declaration);
 for(const mode of ['missing','failed','regenerate','source_edit']){
  const context=vm.createContext({currentMode:mode});vm.runInContext(declaration+'\nthis.eligible=eligible;',context);
  for(const status of ['missing','failed','saved','source_changed'])assert.equal(context.eligible({status}),
   mode==='source_edit'||status==={missing:'missing',failed:'failed',regenerate:'saved'}[mode],`${mode}/${status} drawer eligibility`);
 }
-assert.match(drawer,/value: 'source_edit', text: '선택 구간 재분석'/);
-assert.match(drawer,/성공하면 기존 기억을 바꾸고, 실패하면 기존 기억을 유지합니다/);
+assert.match(drawer,/\['source_edit','선택 구간 재분석'\]/);
+assert.match(drawer,/currentMode==='source_edit'\?'성공하면 선택한 기존 기억을 교체하고 실패하면 기존 기억을 보존합니다\.'/);
 assert.match(drawer,/모델 사용량이 발생할 수 있습니다/);
-assert.match(drawer,/identityDigest: row\.identityDigest/,'drawer carries the current source identity into the explicit selection');
+assert.match(drawer,/identityDigest:row\.identityDigest/,'drawer carries the current source identity into the explicit selection');
 assert.match(drawer,/LibraMemoryCore\.startSelectedCanonicalBatches\(request\)/);
-assert.match(drawer,/if \(result\?\.ok !== true\) throw new Error/,'failed replacement is surfaced by the drawer');
+assert.match(drawer,/if\(result\?\.ok!==true\)throw new Error/,'failed replacement is surfaced by the drawer');
 const selection=between('const startSelectedCanonicalBatchesOnce =','const startSelectedCanonicalBatches =');
 assert.match(selection,/row\.identityDigest!==actual\.identityDigest/,'edited source requires exact current range identity');
 assert.match(selection,/selected_batch_identity_changed/);

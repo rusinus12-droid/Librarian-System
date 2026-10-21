@@ -24,8 +24,14 @@ const recallLogical = recall => JSON.stringify((recall?.memories || []).map(row 
   memoryId: row?.memory?.memoryId || null,
   revision: row?.memory?.revision ?? null,
   artifactDigest: row?.memory?.artifactDigest || null,
-  facts: (row?.memory?.canonicalArtifact?.facts || []).map(f => f.text)
+  facts: (row?.memory?.canonicalArtifact?.facts || []).map(f => f.text),
+  // Unified Recall rows carry the selected evidence text as the excerpt.
+  excerpt: typeof row?.excerpt === 'string' ? row.excerpt : (row?.excerpt?.text ?? null)
 })));
+// getCurrentStateHead() is a synchronous accessor over the runtime's loaded snapshot; a freshly
+// restarted runtime has none until the current view is read. Load it through the public
+// current-view read (refreshes from durable storage with requireCurrentView) before comparing.
+const loadHead = async f => { await f.r.api.getWorldManagerNarrative(); return await f.r.api.getCurrentStateHead(); };
 // local fixture storage holds JSON text; read it as raw bytes without assuming it parses.
 const rawLocal = (snap, key) => { const value = snap.local.get(key); return typeof value === 'string' ? value : JSON.stringify(value ?? null); };
 // server_only owns canonical rows in SQLite; plugin_only owns them in pluginStorage.
@@ -46,21 +52,21 @@ const record = (id, stimulus, observed, status = 'VERIFIED', extra = {}) => {
   console.log(JSON.stringify({ schema: 'g02_g18.gate_row.v1', id, status, stimulus, observed, ...extra }));
 };
 
-const assertComputeSuccess = (observed, expectedVersion, baseline = {}) => {
-  assert.equal(observed?.state, 'ready', 'G14: consumer must observe successful Compute, not a failure');
-  assert.equal(observed?.serverVersion, expectedVersion, 'G14: consumer must observe the negotiated Compute server version');
-  assert.ok(Number(observed?.counters?.server || 0) > Number(baseline?.counters?.server || 0),
-    'G14: the real Compute operation must reach the server');
-  assert.equal(Number(observed?.counters?.fallbacks || 0), Number(baseline?.counters?.fallbacks || 0),
-    'G14: the success control must not silently pass through local fallback');
-  assert.equal(Number(observed?.counters?.remoteFailures || 0), Number(baseline?.counters?.remoteFailures || 0),
-    'G14: the success control must not contain a remote Compute failure');
+// Memory Suite Compute was retired with the unified memory engine (LIBRA legacy search
+// replacement contract): the server answers 410 COMPUTE_RETIRED and the plugin's compute status
+// reports `retired` with no operations. G14 now verifies that production Recall works through the
+// unified engine without depending on, or silently calling, the retired Compute endpoint.
+const assertComputeRetired = observed => {
+  assert.equal(observed?.status, 'retired', 'G14: the consumer reports Compute as retired, not as a working backend');
+  assert.equal(observed?.engine, 'unified', 'G14: Recall is served by the unified engine');
+  assert.deepEqual(Array.from(observed?.operations || []), [], 'G14: no Compute operation is registered');
 };
 
 const assertRecallContains = (observed, expectedText, label = 'G18') => {
   assert.ok(Array.isArray(observed?.memories), `${label}: Recall consumer must return a memories array`);
   assert.ok(observed.memories.length > 0, `${label}: Recall consumer must not accept an empty result`);
-  const excerpts = observed.memories.map(row => String(row?.text || '')).filter(Boolean);
+  // Unified Recall rows carry the selected evidence as `excerpt` (string); older rows used `text`.
+  const excerpts = observed.memories.map(row => String(row?.text || (typeof row?.excerpt === 'string' ? row.excerpt : row?.excerpt?.text) || '')).filter(Boolean);
   assert.ok(excerpts.some(text => text.includes(expectedText)),
     `${label}: Recall consumer must contain the expected source-backed fact: ${expectedText}`);
   return excerpts.find(text => text.includes(expectedText));
@@ -76,14 +82,12 @@ const expectRejectedObservation = (id, observation, assertion) => {
   negativeControls.push({ id, outcome: 'REJECTED', reason: rejection });
   console.log(JSON.stringify({ schema: 'g02_g18.negative_control.v1', id, outcome: 'REJECTED', reason: rejection }));
 };
-expectRejectedObservation('G14-bad-compute-rejected', {
-  state: 'failed', reason: 'unexpected-model', serverVersion: 'unexpected-model',
-  counters: { server: 0, fallbacks: 1, remoteFailures: 1 }
-}, value => assertComputeSuccess(value, 'expected-server-version'));
-expectRejectedObservation('G14-wrong-version-rejected', {
-  state: 'ready', reason: '', serverVersion: 'unexpected-model',
-  counters: { server: 1, fallbacks: 0, remoteFailures: 0 }
-}, value => assertComputeSuccess(value, 'expected-server-version'));
+expectRejectedObservation('G14-live-compute-rejected', {
+  state: 'ready', serverVersion: 'unexpected-model', counters: { server: 1, fallbacks: 0, remoteFailures: 0 }
+}, assertComputeRetired);
+expectRejectedObservation('G14-retired-with-operations-rejected', {
+  status: 'retired', engine: 'unified', operations: ['bm25f']
+}, assertComputeRetired);
 expectRejectedObservation('G18-empty-recall-rejected', { memories: [] },
   value => assertRecallContains(value, '민아만 상자의 암호를 들었다'));
 
@@ -215,13 +219,14 @@ expectRejectedObservation('G18-empty-recall-rejected', { memories: [] },
       const ref = firstRefOf(snap);
       assert.ok(ref?.key, 'G06: fixture must create a canonical row');
       const beforeRaw = rawCanonical(snap, ref);
-      const beforeHead = JSON.stringify(await f.r.api.getCurrentStateHead());
+      const beforeHead = JSON.stringify(await loadHead(f));
+      assert.ok(JSON.parse(beforeHead)?.schema, 'G06: the Head exists before eviction');
       const beforeRecall = recallLogical(await f.r.api.previewUnifiedMemoryRecall('민아 민트차'));
       // evict every derived cache the fixture holds, then restart the plugin itself
       const cacheKeys = [...snap.local.keys()].filter(k => /-cache|replay-cache|pair-revision|link-index/.test(k));
       for (const key of cacheKeys) snap.local.delete(key);
       f = await snap.restart();
-      const afterHead = JSON.stringify(await f.r.api.getCurrentStateHead());
+      const afterHead = JSON.stringify(await loadHead(f));
       const afterRecall = recallLogical(await f.r.api.previewUnifiedMemoryRecall('민아 민트차'));
       const afterRaw = rawCanonical(snap, ref);
       assert.equal(afterRaw, beforeRaw, 'G06: the canonical record is unchanged by cache eviction and restart');
@@ -395,23 +400,25 @@ expectRejectedObservation('G18-empty-recall-rejected', { memories: [] },
       const f = snap.f;
       await f.run();
       const before = f.r.api.getMemorySuiteComputeStatus();
+      assertComputeRetired(before);
       const bootstrap = await snap.send('POST', '/v1/compute/bootstrap', { namespace: 'libra' });
-      assert.equal(bootstrap.status, 200, `G14: read the server's advertised version: ${JSON.stringify(bootstrap)}`);
+      assert.equal(bootstrap.status, 410, `G14: the server advertises Compute as retired: ${JSON.stringify(bootstrap)}`);
+      assert.equal(bootstrap.code, 'COMPUTE_RETIRED', 'G14: the retirement is explicit, not a generic failure');
+      const requestsBefore = snap.requests.length;
       const recall = await f.r.api.previewUnifiedMemoryRecall('은빛 열쇠를 지금 누가 가지고 있어');
       const status = f.r.api.getMemorySuiteComputeStatus();
       const idle = await f.r.api.waitForMemorySuiteComputeIdle();
-      assertComputeSuccess(status, bootstrap.version, before);
+      assertComputeRetired(status);
+      assertComputeRetired(idle);
       assert.ok(recall?.memories?.length > 0, 'G14: the production Recall consumer returned a candidate');
-      assert.equal(idle?.inFlight, 0, 'G14: idle wait returns after the Compute request settles');
-      const computePaths = snap.requests.map(request => new URL(request.url).pathname)
-        .filter(route => route === '/v1/compute/bootstrap' || route === '/v1/compute/execute');
-      assert.ok(computePaths.includes('/v1/compute/execute'), 'G14: the product operation reached the server Compute endpoint');
-      record('G14', 'Run a production Recall that uses Compute and validate its negotiated server result',
-        `Recall reached Compute server ${status.serverVersion}; state ${status.state}, server calls +${status.counters.server - before.counters.server}, fallbacks +${status.counters.fallbacks - before.counters.fallbacks}`,
-        'UNVERIFIED', { positiveControl: 'production Recall Compute success', computeStatus: status,
-          idle, serverVersion: status.serverVersion, advertisedVersion: bootstrap.version,
-          computePaths, recallCount: recall.memories.length,
-          missing: 'provider failure and Compute version-mismatch responses were not injected into this product path' });
+      assert.equal(recall?.diagnostics?.memoryEngine?.mode, 'unified', 'G14: the production Recall ran on the unified engine');
+      const computePaths = snap.requests.slice(requestsBefore).map(request => new URL(request.url).pathname)
+        .filter(route => route.startsWith('/v1/compute/'));
+      assert.deepEqual(computePaths, [], 'G14: production Recall never calls the retired Compute endpoints');
+      record('G14', 'Run a production Recall with Compute retired and confirm it neither depends on nor calls Compute',
+        `Recall returned ${recall.memories.length} candidates on the unified engine; compute status ${status.status}; server bootstrap ${bootstrap.status} ${bootstrap.code}`,
+        'VERIFIED', { computeStatus: status, idle, bootstrapStatus: bootstrap.status, bootstrapCode: bootstrap.code,
+          computePaths, recallCount: recall.memories.length });
     } finally { await snap.cleanup(); }
   }
 

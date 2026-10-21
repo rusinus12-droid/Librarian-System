@@ -144,25 +144,34 @@ test('lost original and receipt remain visible as unrecoverable in current-scope
     assert.equal(x.f.control.calls.length,0);
   }finally{await x.cleanup();}
 });
+// The six-product GUI desk (buildApprovedMockupDesk) mounts the receipt/Micro
+// recovery section; its card buttons open the approved recovery dialog, which
+// re-reads status and dispatches through runBookReceiptRecoveryAction.
+const sourceBetween=(start,end)=>{
+  const a=source.indexOf(start),b=source.indexOf(end,a+start.length);
+  assert.ok(a>=0&&b>a,`missing ${start} .. ${end}`);
+  return source.slice(a,b);
+};
 function deskContext(api={}){
-  const start=source.includes('const bookReceiptRecoveryScopeKey =')
-    ?'const bookReceiptRecoveryScopeKey =':'const buildBookDeskPanel =';
-  const a=source.indexOf(start),b=source.indexOf('const buildBookMemoryPanel =',a);
-  assert.ok(a>=0&&b>a);
+  const deskSource=sourceBetween('const bookReceiptRecoveryScopeKey =','const BOOK_NATIVE_SETTINGS_SECTIONS =');
   const current={scope:{scopeKey:'scope-A',characterId:'char-A',chatId:'chat-A'}};
-  const c=vm.createContext({guiEl:el,Gui:{visible:true,bookPage:'desk',receiptDesk:null},
+  const dialogs=[];
+  const c=vm.createContext({guiEl:el,Gui:{visible:true,bookPage:'desk',receiptDesk:null},dialogs,
+    openApprovedRecoveryDialog:async(kind,row)=>{dialogs.push({kind,row});return true;},
     LibraMemoryCore:{peekSnapshot:()=>current,state:{worldManagerRuntimeMetaGeneration:0},
       getReceiptRecoveryStatus:async()=>({scopeKey:current.scope.scopeKey,receiptStages:[],microJobs:[]}),...api},
     buildBookHostLineagePanel:()=>el('div'),buildBookMemoryProgressPanel:()=>el('div'),
     buildBookDeskReaderProjection:()=>el('div'),queueGuiNavigationRender:()=>{},
     setTimeout,clearTimeout,Promise,Map,Set,Number,String,Object,Date,console});
-  vm.runInContext(source.slice(a,b)+'\nObject.assign(this,{buildBookDeskPanel,buildBookReceiptRecoveryPanel,loadBookReceiptRecoveryStatus,runBookReceiptRecoveryAction,bookReceiptRecoveryState});',c);
+  vm.runInContext(deskSource+'\nObject.assign(this,{buildBookDeskPanel:buildBookReceiptRecoveryPanel,buildBookReceiptRecoveryPanel,loadBookReceiptRecoveryStatus,runBookReceiptRecoveryAction,bookReceiptRecoveryState});',c);
   return {c,current};
 }
 test('desk renders independent receipt and Micro cards',async()=>{
+  assert.match(sourceBetween('const buildApprovedMockupDesk =','const buildApprovedMockupMemory ='),
+    /buildBookMemoryProgressPanel\(\), buildBookReceiptRecoveryPanel\(\)/,'desk mounts the receipt recovery section');
   const {c}=deskContext();
   const tree=c.buildBookDeskPanel();
-  assert.ok(flat(tree).some(n=>n.class==='libra-book-receipt-recovery'),'desk stage cards absent');
+  assert.ok(flat(tree).some(n=>n.tag==='section'&&n.dataset?.receiptRecoveryScope==='scope-A'),'desk stage cards absent');
   await tick();
 });
 test('desk renders failure, unrecoverable, OFF, unavailable and unknown with cost copy',async()=>{
@@ -180,8 +189,8 @@ test('desk renders failure, unrecoverable, OFF, unavailable and unknown with cos
     recheckReceiptRecovery:()=>{mutations++;},retryMicroAnalysis:()=>{mutations++;}});
   await c.loadBookReceiptRecoveryStatus();
   const tree=c.buildBookDeskPanel(),nodes=flat(tree),copy=nodes.map(n=>n.text||'').join(' ');
-  assert.equal(nodes.filter(n=>n.class==='libra-book-receipt-stage').length,3);
-  assert.equal(nodes.filter(n=>n.class==='libra-book-micro-stage').length,5);
+  assert.equal(nodes.filter(n=>n.dataset?.receiptTurn).length,3);
+  assert.equal(nodes.filter(n=>n.dataset?.microTurn).length,5);
   for(const phrase of ['저장 실패','원문과 영수증을 찾을 수 없음','Micro 꺼짐',
     '분석 상태 확인 불가','이전 분석 결과 불명확','모델 호출 비용이 발생할 수 있음',
     '중복 비용이 발생할 수 있음'])assert.ok(copy.includes(phrase),phrase);
@@ -198,15 +207,23 @@ test('result-ready publication repair card clicks a model-free action and joins 
   const {c}=deskContext({getReceiptRecoveryStatus:async()=>({scopeKey:'scope-A',receiptStages:[],microJobs:[row]}),
     repairMicroPublication:async()=>{repairs++;return pending;},retryMicroAnalysis:async()=>{retries++;}});
   await c.loadBookReceiptRecoveryStatus();
-  const card=flat(c.buildBookDeskPanel()).find(n=>n.class==='libra-book-micro-stage');
+  const card=flat(c.buildBookDeskPanel()).find(n=>n.dataset?.microTurn);
   const button=flat(card).find(n=>n.tag==='button');
   assert.equal(button?.disabled,false,'settled publication repair is clickable');
   assert.equal(button?.text,'Micro 발행 다시 확인');
   assert.doesNotMatch(flat(card).map(n=>n.text||'').join(' '),/비용|중복 비용/,
     'publication repair has no model cost warning');
   button.onClick();await tick();
+  assert.equal(c.dialogs.length,1,'card click opens the approved recovery dialog');
+  assert.equal(c.dialogs[0].kind,'micro');assert.equal(c.dialogs[0].row,row);
+  assert.equal(repairs+retries,0,'opening the dialog alone cannot dispatch recovery');
+  const dialog=sourceBetween('const openApprovedRecoveryDialog =','const recoveryRowIdentity =');
+  assert.match(dialog,/same\.status==='publish_ready'\?'micro_publish':'micro_retry'/,
+    'dialog dispatches publish_ready rows to the model-free publication repair');
+  assert.match(dialog,/await runBookReceiptRecoveryAction\(action,same\)/);
+  void c.runBookReceiptRecoveryAction('micro_publish',row);await tick();
   assert.equal(repairs,1);assert.equal(retries,0,'click must not start model retry');
-  const busyCard=flat(c.buildBookDeskPanel()).find(n=>n.class==='libra-book-micro-stage');
+  const busyCard=flat(c.buildBookDeskPanel()).find(n=>n.dataset?.microTurn);
   const busy=flat(busyCard).find(n=>n.tag==='button');
   assert.equal(busy?.disabled,true,'second click is disabled while repair is active');
   release({status:'verified'});await tick();await tick();

@@ -1,8 +1,24 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { executeOperation } = require('./fixtures/retired_compute_reference_kernels.cjs');
+const vm = require('node:vm');
 const { createLibraVmHarness } = require('./fixtures/libra_vm_harness.cjs');
+const createToolIndex = require('../tools/libra_memory_graph_index.cjs');
+
+// LIBRA 9c03c35 retired the BM25F recall compute (plugin-local kernel and the
+// `libra.recall-bm25f.v1` server operation). Recall is now served only by the
+// unified memory graph index, whose lexical postings are keyed by the index
+// tokenizer. The CJK parity intent is checked against that serving path: the
+// plugin-embedded index and the shipped tool module must agree, CJK sentences
+// must not collapse into one strong term, and a CJK query must reach the
+// matching CJK memory through shared lexical terms.
+const indexAdapter = { pages: { measure() { return 0; }, page() { return { items: [], nextOffset: 0 }; } }, fingerprint: () => 'a'.repeat(64) };
+const pluginIndexTokenizer = source => {
+  const start = source.indexOf('(function createMemoryGraphIndex(');
+  const end = source.indexOf('\n});\n    const createLibraMemoryGraphCorpus =', start);
+  assert.ok(start >= 0 && end > start, 'LIBRA embeds the unified memory graph index');
+  return vm.runInNewContext(source.slice(start, end + 3))(indexAdapter).tokenize;
+};
 
 const normalize = value => JSON.parse(JSON.stringify(value));
 
@@ -27,11 +43,22 @@ const normalize = value => JSON.parse(JSON.stringify(value));
       { id: 'jp:blue-mug', memory: { retrieval: { sparseFields: { summary: '事務所の青いマグカップ', recall_keys: '', characters_relations: '', narrative_open_threads: '', chronology: '', world_scene: '事務所', facts_uncertainty: '', full_text: '青いカップが机にある。' } } }, ownerMarker: { canonical: true } },
       { id: 'zh:umbrella', memory: { retrieval: { sparseFields: { summary: '车站商店里的新雨伞', recall_keys: '', characters_relations: '', narrative_open_threads: '', chronology: '', world_scene: '火车站', facts_uncertainty: '', full_text: '因为下雨买了一把雨伞。' } } }, ownerMarker: { canonical: true } }
     ];
-    const input = normalize(harness.api.debugBuildRecallBm25fInput(rows, '図書館の赤いノート'));
-    const local = normalize(harness.api.debugRunRecallBm25fComputeLocal(input));
-    const server = normalize(executeOperation('libra.recall-bm25f.v1', input));
-    assert.deepEqual(server, local);
-    assert.equal(server.scores[0].id, 'jp:red-notebook');
+    const pluginTokenize = pluginIndexTokenizer(harness.source);
+    const toolTokenize = createToolIndex(indexAdapter).tokenize;
+    const terms = text => {
+      const local = normalize(pluginTokenize(text));
+      assert.deepEqual(normalize(toolTokenize(text)), local, 'plugin and tool index must tokenize identically');
+      return local;
+    };
+    assert.equal(terms('駅で赤い傘を買った').includes('駅で赤い傘を買った'), false, 'whole CJK sentence must not become one lexical posting term');
+    const query = terms('図書館の赤いノート');
+    const scores = rows.map(row => {
+      const docTerms = new Set(Object.values(row.memory.retrieval.sparseFields).flatMap(terms));
+      return { id: row.id, evidence: query.filter(term => docTerms.has(term)).length };
+    }).sort((a, b) => b.evidence - a.evidence || a.id.localeCompare(b.id));
+    assert.ok(scores[0].evidence > 0, 'CJK query must share lexical terms with the matching memory');
+    assert.equal(scores[0].id, 'jp:red-notebook');
+    assert.ok(scores[1].evidence < scores[0].evidence);
   } finally {
     await harness.cleanup();
   }

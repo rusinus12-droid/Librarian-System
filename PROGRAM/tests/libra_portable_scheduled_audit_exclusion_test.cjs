@@ -122,13 +122,16 @@ test('only the exact empty nonarchive migration marker may differ; portable reco
   const h=await prepared({holdMigration:true});let held;
   try{
     assert.equal(h.f.r.values.has(EMPTY_MIGRATION_MARKER),false,'real startup migration is held before publishing its marker');
+    // The independent 750 ms startup world-additional cleanup publishes its own
+    // marker; let it settle first so the snapshot below cannot race it.
+    await bounded((async()=>{while(!h.f.r.values.has('libra:v1:migration:remove-world-additional:v1'))await new Promise(r=>setTimeout(r,5));})(),'startup world-additional cleanup settles');
     const before=new Map(h.f.r.values),readIndex=h.f.r.storageReads.length;
     held=await heldExport(h);
     const timer=h.migrationTimers.find(t=>!t.cleared&&!t.fired);assert(timer,'actual host-registered migration callback');timer.fired=true;timer.callback(...timer.args);
     await bounded((async()=>{while(!h.f.r.values.has(EMPTY_MIGRATION_MARKER))await new Promise(r=>setTimeout(r,5));})(),'real empty migration publishes marker');
     assert(h.portable.status().operationId,'marker was published during actual export ownership');
     held.release();const envelope=await held.result;
-    const marker=h.f.r.values.get(EMPTY_MIGRATION_MARKER),expected={schema:'libra.embedding_vector_migration_marker.v1',pluginVersion:'2.3.149',targetSignature:'ec2917fe:1349',providerProfileId:'mep_a4ccc727f9674d23',reason:'embedding_startup_probe',scanned:0,candidates:0,migrated:0,alreadyCurrent:0,missingPayload:0,incompatibleSpace:0,failures:0,bytesPromoted:0,complete:true,errors:[],interrupted:false};
+    const marker=h.f.r.values.get(EMPTY_MIGRATION_MARKER),expected={schema:'libra.embedding_vector_migration_marker.v1',pluginVersion:require('./fixtures/release_versions.cjs').releaseVersion('libra'),targetSignature:'ec2917fe:1349',providerProfileId:'mep_a4ccc727f9674d23',reason:'embedding_startup_probe',scanned:0,candidates:0,migrated:0,alreadyCurrent:0,missingPayload:0,incompatibleSpace:0,failures:0,bytesPromoted:0,complete:true,errors:[],interrupted:false};
     const {startedAt,finishedAt,...body}=JSON.parse(JSON.stringify(marker));
     assert.deepEqual(body,expected,'exception is the exact empty completion payload, not a migration prefix');assert(Number.isFinite(Date.parse(startedAt)));assert(Number.isFinite(Date.parse(finishedAt)));
     const changed=[...new Set([...before.keys(),...h.f.r.values.keys()])].filter(k=>JSON.stringify(before.get(k))!==JSON.stringify(h.f.r.values.get(k)));

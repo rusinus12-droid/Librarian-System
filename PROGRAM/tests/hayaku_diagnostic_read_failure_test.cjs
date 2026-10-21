@@ -1,7 +1,8 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {createHayakuRuntime}=require('./fixtures/hayaku_runtime_harness.cjs');
-(async()=>{const r=await createHayakuRuntime();try{
+// Failure detail artifacts are retained only when debug details are requested (7843201).
+(async()=>{const r=await createHayakuRuntime({arguments:{hayaku_debug:'true'}});try{
  const old=r.host.pluginStorage.getItem.bind(r.host.pluginStorage);
  let reads=0,writes=0;const put=r.host.pluginStorage.setItem.bind(r.host.pluginStorage);
  r.host.pluginStorage.getItem=async key=>{if(String(key).includes('failed')){reads++;throw Error('injected_index_read_failure');}return old(key);};

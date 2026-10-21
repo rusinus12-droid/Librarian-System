@@ -242,7 +242,7 @@ const candidateAlias = (rows, summary, owner, target) => rows.find(row => row.su
     }
 
     const settings = await f.r.api.getLibraMemorySettings();
-    await f.r.api.saveLibraMemorySettings({ ...(settings?.settings || settings || {}), recallMaxMemories: 1 });
+    await f.r.api.saveLibraMemorySettings({ ...(settings?.settings || settings || {}), recallMaxMemories: 1, unifiedMaxUnits: 1 });
     const query = '북쪽 온실 표식 41 지호는 민아에게 은빛 열쇠 반환 약속을 했다';
     const recall = await f.r.api.previewUnifiedMemoryRecall(query);
     assert.equal(recall.memories.length, 1);
