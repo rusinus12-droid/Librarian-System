@@ -74,6 +74,9 @@ const {clone, parent, branch, character} = require('./fixtures/native_branch_fix
     assert.equal(mode === 'plugin_only' ? fx.local.get(source.recordKey) : fx.storedRows().find(row=>row.key===source.recordKey)?.raw, sourceRaw,
       'rollback does not modify the source immutable Micro');
     const restarted = await fx.restart();
+    // The startup adoption probe is asynchronous; retry the fully rolled-back copy explicitly.
+    assert.equal((await restarted.r.api.debugNativeChatCopy({force: true})).result.verified, true,
+      'a fresh bridge retries the fully rolled-back copy successfully');
     assert.equal((await restarted.r.api.debugReadActiveMicroMemory(1)).status, 'verified',
       'a fresh bridge may retry the fully rolled-back copy and then read the completed target');
     current = root;
