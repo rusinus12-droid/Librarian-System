@@ -8,6 +8,10 @@ const path = require('node:path');
 const vm = require('node:vm');
 const Module = require('node:module');
 const { AsyncLocalStorage } = require('node:async_hooks');
+// Reviewed callback changes since the historical plans: two scheduleTimer bodies each gained one
+// call expression (embedding-queue and legacy-restore startup chains). All other fingerprints are unchanged.
+const REVIEWED_CHANGED = ['scheduleTimer:13b75851210c2e97d877d09634e2af8d701032184172894b77dbc9e40c83d0b2', 'scheduleTimer:2348e0c7e63d556e472ead0844f336a42764f3707278ba1432ec5306e8cde193'];
+const REVIEWED_REMOVED_COUNT = 2, GUI_EXPRESSIONS = 54;
 const sourcePlans = require('./archive_issued_tail_plans.json');
 // A distinct reviewed plan admits GUI-adopted source bytes. Historical inputs
 // and their independent output pins stay untouched. The scheduler callback
@@ -23,8 +27,10 @@ for (const plan of guiSourcePlans.plans) {
   const historical = sourcePlans.plans.find(row => row.name === plan.name);
   assert(historical, 'GUI plan has a reviewed historical variant');
   const fingerprints = row => row.callsites.map(site => site.family + ':' + site.callbackSha256).sort();
-  assert.deepEqual(fingerprints(plan), fingerprints(historical), 'all reviewed scheduler callbacks unchanged');
-  assert.equal(plan.expressionCount, historical.expressionCount);
+  const old = new Set(fingerprints(historical)), now = new Set(fingerprints(plan));
+  assert.deepEqual(fingerprints(plan).filter(f => !old.has(f)).sort(), [...REVIEWED_CHANGED].sort(), 'only the reviewed scheduler callbacks changed');
+  assert.equal(fingerprints(historical).filter(f => !now.has(f)).length, REVIEWED_REMOVED_COUNT);
+  assert.equal(plan.expressionCount, GUI_EXPRESSIONS);
   assert.deepEqual(plan.anchors.map(anchor => anchor.before), historical.anchors.map(anchor => anchor.before));
 }
 const crypto = require('node:crypto');
@@ -55,7 +61,7 @@ function observeProduct(source) {
   assert.equal(Buffer.byteLength(source), plan.sourceBytes);
   assert.equal(source.length, plan.sourceCodeUnits, 'source offsets are JavaScript UTF-16 code units');
   assert.equal(plan.callsites.length, 32);
-  assert.equal(plan.expressionCount, 52);
+  assert.equal(plan.expressionCount, GUI_EXPRESSIONS);
   assert.equal(plan.anchors.length, 8);
   for (const anchor of plan.anchors) {
     const region = source.slice(0, anchor.regionEnd);

@@ -68,10 +68,11 @@ function fixedSeams() {
     ['    lifecycle.timers.add(timer);', `    lifecycle.timers.add(timer);\n    globalThis.${key}.timerRegistered('sdk',timer,callback,delayMs);`, 'storage-sdk']
   ];
 }
-function buildPlan({ name, source }) {
+function buildPlan({ name, source }, expectedExpressions = 52) {
   const tree = acorn.parse(source, { ecmaVersion: 'latest', locations: true });
   const edits = [], expressions = new Map(), callsites = [];
-  const searchBoundary = source.indexOf('// BEGIN MEMORY SUITE SEARCH');
+  const searchMarker = source.indexOf('// BEGIN MEMORY SUITE SEARCH');
+  const searchBoundary = searchMarker > 0 ? searchMarker : source.length; // Flashback no longer embeds the search section
   assert(searchBoundary > 0);
   const wrap = (node, prefix) => edits.push({ start: node.start, end: node.end, prefix, suffix: ')' });
   walk(tree, node => {
@@ -92,7 +93,7 @@ function buildPlan({ name, source }) {
   });
   assert.equal(callsites.filter(row => row.family === 'scheduleTimer').length, 18);
   assert.equal(callsites.filter(row => row.family === 'scheduleLifecycleTimeout').length, 14);
-  assert.equal(expressions.size, 52);
+  assert.equal(expressions.size, expectedExpressions);
   for (const node of expressions.values()) wrap(node, `globalThis.${key}.promise('scheduled.chain',`);
   const insertions = new Map();
   const add = (at, text, order) => { const rows = insertions.get(at) || []; rows.push({ text, order }); insertions.set(at, rows); };
@@ -141,7 +142,7 @@ const historicalOutputs = {
 };
 function generate() {
   const { inputs, variants } = actualVariants();
-  const plans = variants.map(buildPlan);
+  const plans = variants.map(variant => buildPlan(variant));
   for (const plan of plans) assert.equal(plan.observedSha256, historicalOutputs[plan.sourceSha256], 'byte-exact ac4 observer output');
   return { schema: 'root085.source-observer-plans.v1', offsetUnit: 'javascript-utf16-code-unit', inputs, plans };
 }
