@@ -6784,13 +6784,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const keys=[...new Set(live.map(row=>row.logicalKey))].sort();
       const locations=[...new Set(live.map(row=>row.location))].sort();
       const plan=localScopeDataPlan(inventory,scope);
-      let dataSummary='';try{if(typeof options.scopeDataSummary==='function')dataSummary=String(options.scopeDataSummary({scope,records:live})||'').slice(0,240);}catch(_){}
+      let dataSummary='',dataMetrics={primary:null,secondary:null,updatedAt:null};
+      try{if(typeof options.scopeDataSummary==='function'){
+        const summary=options.scopeDataSummary({scope,records:live});
+        dataSummary=String(summary&&typeof summary==='object'?summary.label||'':summary||'').slice(0,240);
+        if(summary&&typeof summary==='object'){
+          for(const key of ['primary','secondary'])if(Number.isSafeInteger(summary[key])&&summary[key]>=0)dataMetrics[key]=summary[key];
+          const at=typeof summary.updatedAt==='number'?summary.updatedAt:typeof summary.updatedAt==='string'?Date.parse(summary.updatedAt):NaN;
+          if(Number.isFinite(at)&&at>0&&at<=8640000000000000)dataMetrics.updatedAt=at;
+        }
+      }}catch(_){}
       const canDelete=inventory.completeKnownScopes&&!!current?.scopeId&&activeMode===MODE_PLUGIN_ONLY&&scope.sourceMode===MODE_PLUGIN_ONLY&&!!scope.characterId&&!!scope.chatId&&current.scopeId!==scope.scopeId&&!plan.referenced&&(plan.owned.length>0||plan.registryEdits.length>0);
       const fingerprint=typeof globalThis.crypto?.subtle?.digest==='function'?await globalDigest([scope,current?.scopeId,inventory.hostScopes,records.filter(row=>!(options.scopeRegistryKeys||[]).includes(row.logicalKey)).map(row=>[globalRecordIdentity(row),row.fingerprint,row.revision,row.digest]),plan.registryEdits.map(edit=>[globalRecordIdentity(edit.row),edit.removedEntries]),issues,general]):'';
       rows.push({scopeId:scope.scopeId,scopeKey:scope.scopeKey,characterName:scope.characterName||'',chatTitle:scope.chatTitle||'',label:scope.label||scope.scopeKey,
         detached:!!(scope.canonicalCharacterId||scope.characterId)&&!!(scope.canonicalChatId||scope.chatId)&&!inventory.hostScopes.some(host=>(scope.canonicalCharacterId||scope.characterId)===host.characterId&&(scope.canonicalChatId||scope.chatId)===host.chatId),current:current?.scopeId===scope.scopeId,mode:scope.sourceMode,modeLabel:modeLabel(scope.sourceMode),
         recordCount:keys.length,ownedRecordCount:new Set(owned.map(row=>row.logicalKey)).size,ownedLocalRecords:owned.filter(row=>row.location!=='server').length,localRecords:live.filter(row=>row.location!=='server').length,serverRecords:live.filter(row=>row.location==='server').length,
-        locations,keys,issues,fingerprint,dataSummary,canDelete,deleteBlockedReason:canDelete?'':current?.scopeId===scope.scopeId?'현재 채팅은 삭제 대상에서 제외됩니다.':scope.sourceMode!==MODE_PLUGIN_ONLY||activeMode!==MODE_PLUGIN_ONLY?'플러그인 단독 모드에서만 로컬 자료를 정리합니다.':!scope.characterId||!scope.chatId?'원본 캐릭터·채팅 식별 미확인':plan.referenced?'다른 자료에서 참조 중':!inventory.completeKnownScopes?'전체 목록·참조 검사가 완료되지 않았습니다.':'정리할 로컬 자료가 없습니다.',registryEntries:plan.registryEdits.reduce((n,edit)=>n+edit.removed,0),referenced:plan.referenced,serverChecked:inventory.remoteRequired&&!!inventory.serverPin&&general.length===0,canManage:!!current?.scopeId&&owned.length>0&&issues.length===0&&general.length===0});
+        locations,keys,issues,fingerprint,dataSummary,dataMetrics,canDelete,deleteBlockedReason:canDelete?'':current?.scopeId===scope.scopeId?'현재 채팅은 삭제 대상에서 제외됩니다.':scope.sourceMode!==MODE_PLUGIN_ONLY||activeMode!==MODE_PLUGIN_ONLY?'플러그인 단독 모드에서만 로컬 자료를 정리합니다.':!scope.characterId||!scope.chatId?'원본 캐릭터·채팅 식별 미확인':plan.referenced?'다른 자료에서 참조 중':!inventory.completeKnownScopes?'전체 목록·참조 검사가 완료되지 않았습니다.':'정리할 로컬 자료가 없습니다.',registryEntries:plan.registryEdits.reduce((n,edit)=>n+edit.removed,0),referenced:plan.referenced,serverChecked:inventory.remoteRequired&&!!inventory.serverPin&&general.length===0,canManage:!!current?.scopeId&&owned.length>0&&issues.length===0&&general.length===0});
     }
     const unresolved=inventory.records.filter(row=>globalPayloadRecord(row)&&!globalRecordScopeIds(row).some(Boolean))
       .map(row=>({key:row.logicalKey,space:row.space,location:row.location,issues:blockers.filter(issue=>issue.key===row.key||issue.key===row.logicalKey)}));
@@ -6902,22 +6911,34 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const mountScopeManagementPanel = async container => {
     requireScopeManagement();
     const esc=value=>safeText(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    const countHeader=namespace==='libra'?'정본 / Micro':'패킷 / 슬롯';
     container.innerHTML=`<section class="card" data-scope-manager><style>
-      [data-scope-manager]{width:100%;min-width:0;box-sizing:border-box;background:var(--surface,#faf8f2);color:var(--text,#302b28);padding:20px;border:1px solid var(--border,#d6d0c4);border-radius:12px}
+      [data-scope-manager]{width:100%;min-width:0;box-sizing:border-box;background:var(--surface,#faf8f2);color:var(--text,#302b28);padding:16px;border:1px solid var(--border,#d6d0c4);border-radius:12px}
       [data-scope-manager] .actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0}
-      [data-scope-manager] button{font:inherit;color:inherit;background:var(--surface2,#f0ece3);border:1px solid var(--border2,#b6ad9d);border-radius:8px;padding:9px 12px;cursor:pointer}
+      [data-scope-manager] button{font:inherit;font-size:12px;color:inherit;background:var(--surface2,#f0ece3);border:1px solid var(--border2,#b6ad9d);border-radius:8px;padding:8px 10px;cursor:pointer}
       [data-scope-manager] button:disabled{opacity:.5;cursor:default}[data-scope-manager] .muted{color:var(--text2,#62594f);font-size:12px;line-height:1.65}
-      [data-scope-manager] [data-scope-action=delete]{color:var(--danger,#ad3331)}[data-scope-manager] textarea{box-sizing:border-box;color:inherit;background:var(--surface2,#f0ece3)}
+      [data-scope-manager] [data-scope-action=delete],[data-scope-manager] [data-scope-delete-one]{color:var(--danger,#ad3331);border-color:var(--danger-line,#e1aaa5);background:var(--danger-soft,#f9e2df)}
+      [data-scope-manager] textarea{box-sizing:border-box;color:inherit;background:var(--surface2,#f0ece3)}
+      [data-scope-manager] .scope-data-note{padding:10px 12px;border:1px solid var(--warn-line,#dcc487);border-radius:8px;background:var(--warn-soft,#f4e9d0);color:var(--warn-ink,#654410);font-size:12px;line-height:1.6}
+      [data-scope-manager] [data-scope-filter]{width:100%;box-sizing:border-box}[data-scope-manager] [data-scope-search]{min-width:120px;flex:1}
+      [data-scope-manager] .scope-data-table-wrap{max-width:100%;min-width:0;overflow-x:auto;border:1px solid var(--border,#d6d0c4);border-radius:10px}
+      [data-scope-manager] .scope-data-table{width:100%;min-width:600px;border-collapse:collapse;table-layout:fixed;font-size:12px}
+      [data-scope-manager] th,[data-scope-manager] td{padding:10px 7px;text-align:left;vertical-align:middle;border-bottom:1px solid var(--border,#d6d0c4);overflow-wrap:anywhere}
+      [data-scope-manager] th{background:var(--surface2,#f0ece3);font-weight:600;color:var(--text2,#62594f)}
+      [data-scope-manager] tbody tr:last-child td{border-bottom:0}[data-scope-manager] tr[data-current=true]{background:var(--accent-soft,#f1dfd8)}
+      [data-scope-manager] .scope-data-name b,[data-scope-manager] .scope-data-name span{display:block;overflow-wrap:anywhere}
+      [data-scope-manager] .scope-data-name>span{color:var(--text2,#62594f)}[data-scope-manager] .scope-data-name details{margin-top:5px}
+      [data-scope-manager] .scope-data-name details[open]{min-width:150px}[data-scope-manager] .scope-data-name pre{white-space:pre-wrap;overflow-wrap:anywhere}
+      [data-scope-manager] .scope-data-state{display:inline-block;padding:3px 6px;border:1px solid var(--border2,#b6ad9d);border-radius:12px;font-size:11px}
       </style><h3>스코프 데이터 관리</h3>
-      <p class="muted">캐릭터·채팅별 저장 자료, 고아 데이터와 빈 목록을 관리합니다. 원본 채팅이 없다는 이유로 기억을 자동 삭제하지 않습니다. LLM 호출은 없습니다.</p>
-      <div class="actions"><input data-scope-search type="search" aria-label="스코프 검색" placeholder="캐릭터 · 채팅 이름 · 스코프 키로 찾기" style="min-width:0;flex:1">
-      <select data-scope-filter aria-label="스코프 분류"><option value="all">전체</option><option value="memory">기억 저장소</option><option value="detached">고아 데이터</option><option value="empty">빈 목록 · 정리 후보</option><option value="issues">확인 필요</option><option value="server_only">서버 관리 대상</option></select><button type="button" data-scope-refresh>전체 목록 새로 읽기</button></div>
-      <p data-scope-summary role="status" aria-live="polite">목록을 확인하고 있습니다…</p>
-      <div class="actions"><label><input type="checkbox" data-scope-select-all aria-label="검색 결과의 관리 가능 스코프 모두 선택"> 검색 결과 선택</label><span data-scope-selection>선택 0개</span></div>
-      <div class="actions"><button type="button" data-scope-pick="orphan">고아 데이터 선택</button><button type="button" data-scope-pick="empty">빈 목록 선택</button><button type="button" data-scope-action="export">선택 데이터 백업</button><button type="button" data-scope-action="prune">선택 빈 목록 정리</button><button type="button" data-scope-action="delete">선택 데이터 삭제</button></div>
-      <p class="muted">삭제는 현재 채팅을 제외한 플러그인 단독 자료에만 적용합니다. 다른 스코프가 참조하거나 읽기·권한을 확인할 수 없는 자료는 보존합니다. 서버 데이터와 저장 위치 전환은 별도의 서버 관리에서 진행하세요.</p>
+      <p class="scope-data-note">삭제·정리는 실행 전에 대상과 참조 관계를 다시 검사합니다. 확인할 수 없는 자료는 보존합니다. 서버 자료와 저장 위치 전환은 별도 서버 관리에서 진행합니다.</p>
+      <select data-scope-filter aria-label="스코프 분류"><option value="all">전체</option><option value="memory">기억 저장소</option><option value="empty">빈 목록 · 정리 후보</option><option value="detached">고아 데이터</option><option value="issues">확인 필요</option><option value="server_only">서버 관리 대상</option></select>
+      <div class="actions"><input data-scope-search type="search" aria-label="스코프 검색" placeholder="캐릭터 / 채팅 이름 · 스코프 키로 찾기"><button type="button" data-scope-action="export">선택 데이터 백업</button><button type="button" data-scope-action="delete">선택 삭제</button></div>
+      <div class="actions"><button type="button" data-scope-refresh>새로고침</button><button type="button" data-scope-inspect>목록 상태 검사</button><button type="button" data-scope-pick="empty">빈 목록 선택</button><button type="button" data-scope-action="prune">선택 항목 안전 정리</button><button type="button" data-scope-pick="orphan">고아 데이터 선택</button><span class="muted" data-scope-selection>선택 0개</span></div>
+      <p class="muted" data-scope-summary role="status" aria-live="polite">목록을 확인하고 있습니다…</p>
       <div data-scope-confirm hidden style="display:none" role="alertdialog" aria-label="선택 스코프 작업 확인"><p data-scope-confirm-text></p><label data-scope-delete-ack-row hidden><input type="checkbox" data-scope-delete-ack> 필요한 데이터를 백업했으며 선택 자료의 영구 삭제에 동의합니다.</label><div class="actions"><button type="button" data-scope-cancel>취소</button><button type="button" data-scope-approve>확인하고 실행</button></div></div>
-      <div data-scope-result role="status" aria-live="polite"></div><div data-scope-rows style="display:grid;gap:8px;min-width:0"></div>
+      <div data-scope-result role="status" aria-live="polite"></div>
+      <div class="scope-data-table-wrap" tabindex="0" role="region" aria-label="스코프 데이터 목록 · 좁은 화면에서는 좌우로 스크롤"><table class="scope-data-table"><colgroup><col style="width:30px"><col><col style="width:72px"><col style="width:55px"><col style="width:85px"><col style="width:90px"><col style="width:60px"></colgroup><thead><tr><th><input type="checkbox" data-scope-select-all aria-label="검색 결과의 관리 가능 스코프 모두 선택"></th><th scope="col">캐릭터 / 채팅</th><th scope="col">${countHeader}</th><th scope="col">저장 키</th><th scope="col">상태</th><th scope="col">업데이트</th><th scope="col">관리</th></tr></thead><tbody data-scope-rows></tbody></table></div>
       <div data-scope-unresolved style="overflow-wrap:anywhere"></div><div class="actions"><button type="button" data-scope-more hidden>다음 50개</button></div>
       <details data-scope-diagnostics><summary>전체 목록 진단 · 본문과 API 키 제외</summary><textarea data-scope-diagnostics-text readonly aria-label="전체 스코프 목록 진단" style="width:100%;min-height:160px"></textarea></details></section>`;
     const root=container.querySelector('[data-scope-manager]'),q=selector=>root.querySelector(selector);
@@ -6930,22 +6951,27 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const filtered=()=>{const term=q('[data-scope-search]').value.trim().toLocaleLowerCase(),filter=q('[data-scope-filter]').value;
       return (catalog?.rows||[]).filter(row=>(!term||[row.characterName,row.chatTitle,row.scopeKey,row.scopeId].join(' ').toLocaleLowerCase().includes(term))
         &&(filter==='all'||filter==='issues'&&(row.issues.length>0||row.unavailable)||filter==='memory'&&row.ownedRecordCount>0&&!row.detached||filter==='detached'&&row.detached&&row.ownedRecordCount>0||filter==='empty'&&row.ownedRecordCount===0&&!row.unavailable&&row.issues.length===0&&catalog.completeKnownScopes||row.mode===filter));};
-    const selectable=row=>row.canDelete||row.canManage&&row.mode===MODE_PLUGIN_ONLY;
+    const selectable=row=>!row.current&&(row.canDelete||row.canManage&&row.mode===MODE_PLUGIN_ONLY);
     const updateSelection=()=>{
       const rows=filtered().filter(selectable),all=q('[data-scope-select-all]');all.disabled=busy||rows.length===0;
       all.checked=rows.length>0&&rows.every(row=>selected.has(row.scopeId));all.indeterminate=!all.checked&&rows.some(row=>selected.has(row.scopeId));
       q('[data-scope-selection]').textContent=`선택 ${selected.size}개`;
       const chosen=(catalog?.rows||[]).filter(row=>selected.has(row.scopeId));
       root.querySelectorAll('[data-scope-action]').forEach(button=>{const action=button.getAttribute('data-scope-action');button.disabled=busy||!chosen.length||chosen.some(row=>action==='export'?!selectable(row):!row.canDelete||action==='prune'&&row.ownedRecordCount>0);});
-      root.querySelectorAll('[data-scope-pick]').forEach(button=>{button.disabled=busy;});
+      root.querySelectorAll('[data-scope-pick],[data-scope-inspect]').forEach(button=>{button.disabled=busy;});
     };
     const render=()=>{
       const rows=filtered();q('[data-scope-summary]').textContent=catalog?`확인된 스코프 ${catalog.rows.length}개 · 표시 ${rows.length}개 · 미해결 ${catalog.blockers.length}개${catalog.completeKnownScopes?'':' · 전체 확인 미완료'}`:'목록을 확인하고 있습니다…';
-      q('[data-scope-rows]').innerHTML=rows.slice(0,limit).map(row=>`<article class="mscx-scope-row" data-scope-row="${esc(row.scopeId)}" style="min-width:0;overflow-wrap:anywhere;border:1px solid #526273;border-radius:10px;padding:12px;display:block">
-        <div class="actions"><input type="checkbox" data-scope-select="${esc(row.scopeId)}" aria-label="${esc(row.label)} 선택" ${selected.has(row.scopeId)?'checked':''} ${busy||!selectable(row)?'disabled':''}>
-        <div style="min-width:0;flex:1"><b style="display:block">${esc(row.characterName||row.label)}</b><span>${esc(row.chatTitle||row.scopeKey)}</span></div><span>${row.current?'현재 · ':''}${esc(row.modeLabel)}</span></div>
-        ${row.dataSummary?'<div>'+esc(row.dataSummary)+'</div>':''}<div class="muted">${row.unavailable?'이번 조회 미확인 · 이전 목록 보존':row.issues.length?'확인 필요':row.detached?'원본 채팅 없음 · 저장 자료 보존':row.ownedRecordCount?'저장 항목 확인':row.registryEntries?'목록 잔재 · 정리 후보':'저장 항목 없음'} · 소유 저장 키 ${row.ownedRecordCount}개 · 로컬 ${row.localRecords} / 서버 ${row.unavailable?'미확인':row.serverChecked?row.serverRecords:'미조회'}</div>
-        ${row.deleteBlockedReason?'<div class="muted">'+esc(row.deleteBlockedReason)+'</div>':''}${row.mode!=='plugin_only'?'<div class="muted">서버 관리 대상 · 이 화면에서 삭제하지 않습니다.</div>':''}<details><summary>스코프 키 · 저장 위치 · 진단 보기</summary><div>${esc(row.scopeKey)}</div><div>${esc(row.locations.map(location=>({plugin:'플러그인 저장소',device:'기기 저장소',server:'서버'})[location]||location).join(' · ')||'저장 항목 없음')}</div><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(row.issues.map(issue=>[issue.code,issue.key,issue.detail].filter(Boolean).join(' · ')).join('\n')||'이 스코프에서 확인된 오류 없음')}</pre><details><summary>저장 키 ${row.keys.length}개</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(row.keys.join('\n'))}</pre></details></details></article>`).join('')||'<p class="muted">표시할 스코프가 없습니다.</p>';
+      q('[data-scope-rows]').innerHTML=rows.slice(0,limit).map(row=>{
+        const status=row.unavailable?'조회 미확인':row.issues.length?'확인 필요':row.current?'현재':row.mode!==MODE_PLUGIN_ONLY?'서버 관리':row.referenced?'참조 중':row.detached&&row.ownedRecordCount?'고아 데이터':row.ownedRecordCount?'저장 자료':row.registryEntries?'목록 잔재':'자료 없음';
+        const at=row.unavailable?null:row.dataMetrics?.updatedAt;
+        const updated=at?new Date(at).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'—';
+        return `<tr data-scope-row="${esc(row.scopeId)}" data-current="${row.current?'true':'false'}">
+        <td><input type="checkbox" data-scope-select="${esc(row.scopeId)}" aria-label="${esc(row.label)} 선택" ${selected.has(row.scopeId)?'checked':''} ${busy||!selectable(row)?'disabled':''}></td>
+        <td class="scope-data-name"><b>${esc(row.characterName||row.label)}</b><span>${esc(row.chatTitle||'채팅 이름 미확인')}</span>
+        <details data-scope-detail><summary>상세</summary><div>${esc(row.scopeKey)}</div><div>${esc(row.modeLabel)}</div><div>${esc(row.dataSummary)}</div><div>${esc(row.locations.map(location=>({plugin:'플러그인 저장소',device:'기기 저장소',server:'서버'})[location]||location).join(' · ')||'저장 항목 없음')}</div><div>로컬 ${row.localRecords} / 서버 ${row.unavailable?'미확인':row.serverChecked?row.serverRecords:'미조회'}</div><div>${esc(row.deleteBlockedReason||'확인 후 선택 자료 삭제 가능')}</div><pre>${esc(row.issues.map(issue=>[issue.code,issue.key,issue.detail].filter(Boolean).join(' · ')).join('\n')||'확인된 오류 없음')}</pre><details><summary>저장 키 ${row.keys.length}개</summary><pre>${esc(row.keys.join('\n'))}</pre></details></details></td>
+        <td title="${esc(row.dataSummary)}" data-scope-counts>${row.unavailable?'—':row.dataMetrics?.primary??'—'} / ${row.unavailable?'—':row.dataMetrics?.secondary??'—'}</td><td>${row.unavailable?'—':row.ownedRecordCount}</td><td><span class="scope-data-state">${status}</span></td><td><time ${at?'datetime="'+new Date(at).toISOString()+'"':''}>${updated}</time></td><td><button type="button" data-scope-delete-one="${esc(row.scopeId)}" aria-label="${esc(row.label)} 삭제" ${busy||!row.canDelete?'disabled':''}>삭제</button></td></tr>`;
+      }).join('')||'<tr><td colspan="7" class="muted">표시할 스코프가 없습니다.</td></tr>';
       q('[data-scope-more]').hidden=rows.length<=limit;
       if(catalog){q('[data-scope-diagnostics-text]').value=JSON.stringify(catalog,null,2);
         q('[data-scope-unresolved]').innerHTML=catalog.unresolved.length?`<details open><summary>스코프 식별 미확인 자료 ${catalog.unresolved.length}개 · 자동 연결·삭제 안 함</summary>${catalog.unresolved.map(row=>`<div class="mscx-scope-row"><b>${esc(row.key)}</b><span>${esc(row.location+' · '+row.space)}</span><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(row.issues.map(issue=>[issue.code,issue.detail].filter(Boolean).join(' · ')).join('\n'))}</pre></div>`).join('')}</details>`:'';
@@ -6961,6 +6987,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       finally{if(ticket===serial&&root.isConnected)q('[data-scope-refresh]').disabled=false;}
     };
     q('[data-scope-refresh]').onclick=()=>{if(!busy)void refresh();};
+    q('[data-scope-inspect]').onclick=async()=>{if(busy)return;await refresh();q('[data-scope-diagnostics]').open=true;};
+    root.addEventListener('click',event=>{const button=event.target.closest?.('[data-scope-delete-one]');if(!button||button.disabled||busy)return;selected.clear();selected.add(button.getAttribute('data-scope-delete-one'));render();void q('[data-scope-action=delete]').onclick();});
     q('[data-scope-search]').oninput=q('[data-scope-filter]').onchange=()=>{limit=50;render();};
     q('[data-scope-more]').onclick=()=>{limit+=50;render();};
     q('[data-scope-select-all]').onchange=event=>{for(const row of filtered().filter(selectable)){if(event.target.checked)selected.add(row.scopeId);else selected.delete(row.scopeId);}render();};
@@ -6980,7 +7008,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(busy||!selected.size)return;
       const action=button.getAttribute('data-scope-action'),rows=catalog.rows.filter(row=>selected.has(row.scopeId));
       const destructive=action==='delete'||action==='prune';
-      if(rows.some(row=>destructive?(!row.canDelete||action==='prune'&&row.ownedRecordCount>0):(!row.canManage||row.mode!==MODE_PLUGIN_ONLY))){q('[data-scope-result]').textContent='선택한 자료의 삭제·백업 권한을 확인할 수 없습니다. 현재 채팅, 참조 관계, 서버 저장 모드와 오류를 확인하세요.';return;}
+      if(rows.some(row=>destructive?(!row.canDelete||action==='prune'&&row.ownedRecordCount>0):(!selectable(row)||row.mode!==MODE_PLUGIN_ONLY))){q('[data-scope-result]').textContent='선택한 자료의 삭제·백업 권한을 확인할 수 없습니다. 현재 채팅, 참조 관계, 서버 저장 모드와 오류를 확인하세요.';return;}
       q('[data-scope-delete-ack-row]').hidden=!destructive;q('[data-scope-delete-ack]').checked=false;q('[data-scope-approve]').disabled=destructive;
       busy=true;render();q('[data-scope-confirm-text]').textContent=`${button.textContent} · ${rows.length}개\n${rows.map(row=>row.label+' · '+row.scopeKey).join('\n')}\n선택한 스코프의 로컬 데이터만 처리합니다. 서버 데이터와 현재 채팅은 변경하지 않습니다.`;
       q('[data-scope-confirm]').hidden=false;q('[data-scope-confirm]').style.display='block';q('[data-scope-confirm-text]').style.whiteSpace='pre-wrap';q('[data-scope-cancel]').focus();

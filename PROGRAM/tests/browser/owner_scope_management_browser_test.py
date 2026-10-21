@@ -32,7 +32,7 @@ with sync_playwright() as p:
               for(const [characterId,chatId,name]of [['stored-character','inactive-chat','찾을 채팅'],['removed-character','orphan-chat','보존된 고아 채팅']]){
                 const scopeKey=owner==='LIBRA'?'browser-scope-'+chatId+'-long-'.repeat(15):'chat_'+h64(characterId+'\n'+chatId);
                 const key=owner==='LIBRA'?`libra:v1:scope:${scopeKey}:manifest`:'hayaku.v2.ledger.'+scopeKey;
-                const value=owner==='LIBRA'?{schema:'libra.manifest.v1',scopeKey,characterId,chatId,characterName:'보존된 캐릭터',chatTitle:name,memories:{},inheritedMemories:[],privateBody:'PRIVATE_MEMORY_BODY'}:{version:'hayaku_storage_ledger_v2',scopeKey,identity:{schema:'hayaku.scope_identity.v1',scopeKey,characterId,chatId,characterName:'보존된 캐릭터',chatTitle:name},records:[],slotHeads:[],tombstones:[],privateBody:'PRIVATE_MEMORY_BODY'};
+                const value=owner==='LIBRA'?{schema:'libra.manifest.v1',scopeKey,characterId,chatId,characterName:'보존된 캐릭터',chatTitle:name,updatedAt:'2026-10-20T12:30:00.000Z',memories:{},inheritedMemories:[],privateBody:'PRIVATE_MEMORY_BODY'}:{version:'hayaku_storage_ledger_v2',scopeKey,identity:{schema:'hayaku.scope_identity.v1',scopeKey,characterId,chatId,characterName:'보존된 캐릭터',chatTitle:name},updatedAt:'2026-10-20T12:30:00.000Z',records:[],slotHeads:[],tombstones:[],privateBody:'PRIVATE_MEMORY_BODY'};
                 window.__scopeTestKeys[chatId]=key;await risuai.pluginStorage.setItem(key,JSON.stringify(value));
               }
             }''',owner)
@@ -42,7 +42,7 @@ with sync_playwright() as p:
                 frame.wait_for_function('!!window.__LIBRA__');frame.evaluate('__LIBRA__.openSettingsGui()')
                 frame.locator('[data-memory-progress]').wait_for();frame.wait_for_timeout(200)
                 if frame.locator('[data-libra-quick-dialog]').count():frame.locator('[data-libra-quick-dialog] .dialog__actions button').click()
-                frame.locator('.topbar [data-go=settings]').click();frame.locator('.setnav [data-subtab=mem]').click();frame.get_by_role('tab',name='스코프 데이터 관리',exact=True).click()
+                frame.locator('.topbar [data-go=settings]').click();frame.locator('.setnav [data-subtab=store]').click();frame.get_by_role('tab',name='스코프 데이터 관리',exact=True).click()
             else:
                 frame.wait_for_function('!!window.HAYAKU');frame.evaluate('HAYAKU.showUi()');frame.locator('[data-hayaku-viewer-tab=scopes]').click()
             manager=frame.locator('[data-scope-manager]')
@@ -50,14 +50,18 @@ with sync_playwright() as p:
             except Exception:
                 print(owner,frame.evaluate("()=>({managers:document.querySelectorAll('[data-scope-manager]').length,rows:document.querySelectorAll('[data-scope-row]').length,summary:document.querySelector('[data-scope-summary]')?.textContent,errors:document.querySelector('[data-owner-scope-manager-host]')?.textContent,section:document.querySelector('[data-product-settings-section]')?.getAttribute('data-product-settings-section')})"),flush=True)
                 raise
+            check(owner+': compact semantic table',manager.locator('table thead th').all_text_contents()==['','캐릭터 / 채팅','정본 / Micro' if owner=='LIBRA' else '패킷 / 슬롯','저장 키','상태','업데이트','관리'] and manager.locator('tbody tr[data-scope-row]').count()==3)
+            if owner=='LIBRA':check('LIBRA: storage category has independent scope tab',frame.locator('.setnav [data-subtab=store]').get_attribute('aria-selected')=='true' and frame.get_by_role('tab',name='스코프 데이터 관리',exact=True).get_attribute('aria-selected')=='true')
             check(owner+': whole owner catalog visible','스코프 데이터 관리' in manager.inner_text())
+            check(owner+': current scope is not selectable',manager.locator('tr[data-current=true] [data-scope-select]').is_disabled())
+            check(owner+': stored update time',manager.locator('[data-scope-row] time[datetime="2026-10-20T12:30:00.000Z"]').count()==2)
             check(owner+': readable search and filter',manager.evaluate("e=>{const p=getComputedStyle(e);return [...e.querySelectorAll('input[type=search],select')].every(c=>{const s=getComputedStyle(c);return s.color===p.color&&s.backgroundColor===p.backgroundColor&&s.color!==s.backgroundColor})}"))
             check(owner+': memory body excluded','PRIVATE_MEMORY_BODY' not in manager.inner_text() and 'PRIVATE_MEMORY_BODY' not in manager.locator('[data-scope-diagnostics-text]').input_value())
             manager.locator('[data-scope-filter]').select_option('detached')
             check(owner+': orphan remains listed',manager.locator('[data-scope-row]').count()==1 and '보존된 고아 채팅' in manager.inner_text())
             manager.locator('[data-scope-filter]').select_option('all');manager.locator('[data-scope-search]').fill('찾을 채팅')
             check(owner+': inactive chat searchable',manager.locator('[data-scope-row]').count()==1)
-            manager.locator('[data-scope-select]').check();manager.locator('[data-scope-action=delete]').click()
+            manager.locator('[data-scope-delete-one]').click()
             manager.locator('[data-scope-confirm]').wait_for(state='visible')
             check(owner+': explicit selected-scope consent','1개' in manager.locator('[data-scope-confirm-text]').inner_text())
             manager.locator('[data-scope-cancel]').click();manager.locator('[data-scope-confirm]').wait_for(state='hidden')
@@ -66,11 +70,12 @@ with sync_playwright() as p:
                 manager.evaluate("e=>e.scrollIntoView({block:'nearest'})")
                 geometry=manager.evaluate('e=>{const r=e.getBoundingClientRect();return {x:r.x,right:r.right,w:r.width,overflow:e.scrollWidth-e.clientWidth}}')
                 check(f'{owner} {width}: panel fits',geometry['w']>100 and geometry['x']>=0 and geometry['right']<=width+1 and geometry['overflow']<=1,geometry)
-                manager.locator('[data-scope-row] > details').first.evaluate('e=>e.open=true')
-                check(f'{owner} {width}: key detail visible',manager.locator('[data-scope-row] > details').first.is_visible())
+                manager.locator('[data-scope-row] [data-scope-detail]').first.evaluate('e=>e.open=true')
+                check(f'{owner} {width}: key detail visible',manager.locator('[data-scope-row] [data-scope-detail]').first.is_visible())
                 if width in [1440,390]:
-                    manager.locator('[data-scope-search]').fill('');manager.locator('[data-scope-pick=orphan]').click()
-                    manager.locator('[data-scope-row] > details').first.evaluate('e=>e.open=true')
+                    manager.locator('[data-scope-search]').fill('');manager.locator('[data-scope-filter]').select_option('all')
+                    manager.locator('[data-scope-row] [data-scope-detail]').evaluate_all('nodes=>nodes.forEach(e=>e.open=false)')
+                    manager.evaluate("e=>e.scrollIntoView({block:'end'})")
                     page.screenshot(path=str(OUT/f'{owner}-{width}.png'))
             page.set_viewport_size({'width':1440,'height':1000});frame.wait_for_timeout(350)
             frame.wait_for_function("!document.querySelector('[data-scope-refresh]').disabled")
@@ -85,7 +90,7 @@ with sync_playwright() as p:
             check(owner+': deletion requires backup acknowledgement',manager.locator('[data-scope-approve]').is_disabled())
             manager.locator('[data-scope-cancel]').click();manager.locator('[data-scope-confirm]').wait_for(state='hidden')
             check(owner+': cancelled deletion preserves original',frame.evaluate("async()=>!!await risuai.pluginStorage.getItem(__scopeTestKeys['orphan-chat'])"))
-            manager.locator('[data-scope-action=delete]').click();manager.locator('[data-scope-delete-ack]').check();manager.locator('[data-scope-approve]').click()
+            manager.locator('[data-scope-delete-one]').click();manager.locator('[data-scope-delete-ack]').check();manager.locator('[data-scope-approve]').click()
             frame.wait_for_function("/완료|작업 보류/.test(document.querySelector('[data-scope-result]').textContent)")
             check(owner+': selected orphan deleted',frame.evaluate("async()=>!await risuai.pluginStorage.getItem(__scopeTestKeys['orphan-chat'])"),manager.locator('[data-scope-result]').inner_text())
             check(owner+': other inactive scope preserved',frame.evaluate("async()=>!!await risuai.pluginStorage.getItem(__scopeTestKeys['inactive-chat'])"))
