@@ -7,7 +7,7 @@ const {waitFor}=require('./fixtures/libra_vm_harness.cjs');
 const expose=source=>{
  const anchor='      getUnifiedStorageStatus,';assert(source.includes(anchor));
  return source.replace(anchor,`      retirementCurrentContext: () => Runtime.lastResponseContext,
-      retirementConsumedProbe: token => ({count:consumedDataReadSets.get(token)?.proofs.length||0,proofs:clone(consumedDataReadSets.get(token)?.proofs||[]),verify:options=>assertConsumedDataCurrent(token,options)}),
+      retirementConsumedProbe: token => ({count:consumedDataReadSets.get(token)?.proofs.length||0,graph:typeof consumedDataReadSets.get(token)?.graphVerifier==='function',proofs:clone(consumedDataReadSets.get(token)?.proofs||[]),verify:options=>assertConsumedDataCurrent(token,options)}),
       retirementResealContext: value => {value.contextDigest=digest(unifiedResponseContextBody(value));return value;},
       `+anchor).replace('    async getUnifiedStorageStatus() {',`    retirementCurrentContext: () => LibraMemoryCore.retirementCurrentContext(),
     retirementConsumedProbe: token => LibraMemoryCore.retirementConsumedProbe(token),
@@ -28,7 +28,7 @@ async function withMicro(run){
   assert(JSON.stringify(delivered).includes(detail),'actual Classic final delivery carries admitted Micro');
   assert.equal(f.control.calls.length,calls,'actual Classic makes no response provider submission');
   const context=f.r.api.getRuntime().lastResponseContext;
-  assert(context?.consumedDataToken);const proof=f.r.api.retirementConsumedProbe(context.consumedDataToken);assert(proof.count>0,'private physical consumed proof is retained');
+  assert(context?.consumedDataToken);const proof=f.r.api.retirementConsumedProbe(context.consumedDataToken);assert(proof.graph,'private graph packet verifier is retained for the consumed context');
   assert.equal((await f.r.api.validateResponseContext(context)).current,true);
   await run(f,active,context,proof);
 
@@ -36,6 +36,14 @@ async function withMicro(run){
 }
 const invalid=async(f,context,pattern)=>{const checked=await f.r.api.validateResponseContext(context);assert.equal(checked.current,false);if(pattern)assert.match(checked.reason,pattern);return checked;};
 
+// A just-finished Canonical run can still be settling its background transaction; wait for it to release.
+async function exportWhenIdle(portable){
+ for(let attempt=0;;attempt++){
+  try{return await portable.exportCurrentScope();}
+  catch(error){if(error?.code!=='LIBRA_WORLD_MANAGER_BUSY'||attempt>=100)throw error;await new Promise(resolve=>setTimeout(resolve,100));}
+ }
+}
+const asLen=value=>Array.isArray(value)?value.length:0;
 const REQUEST='도서관의 정숙 규칙을 고려해서 이어줘.';
 
 // This adapter reads the actual Classic hook's sealed request context. It does
@@ -86,7 +94,7 @@ async function prepareInherited(f, withTwo = false) {
   f.control.onCall = async () => ({ type: 'success', result: JSON.stringify(f.control.artifact) });
   assert.equal((await f.run()).completed, 1, 'portable archive requires one actual Canonical source');
   f.control.onCall = async () => {throw Error('RETIRED_HELPER_PROVIDER_SUBMISSION');};
-  const envelope = await portable.exportCurrentScope();
+  const envelope = await exportWhenIdle(portable);
   const target = { id: 'micro-inherited-target', chatId: 'micro-inherited-target', name: 'Target', message: [] };
   target.messages = target.message;
   f.character.chats.push(target); f.character.chatPage = 1;
@@ -98,10 +106,16 @@ async function prepareInherited(f, withTwo = false) {
   const prepared = await prepareClassic(f,withTwo
     ? '도서관의 정숙 규칙과 오늘 열쇠를 돌려주겠다는 약속을 참고해 이어줘.' : REQUEST);
   const micro = Object.values(prepared.evidencePacket.layers).flat().filter(row => row.kind === 'micro');
-  assert(micro.some(row => row.inheritedSessionHistory === true));
+  // Unified engine contract: inherited Micro archives are not part of the native recall projection
+  // ('inherited_micro_projection_not_yet_supported'); Classic delivers the inherited shared-archive Canonical
+  // rows, and inherited Micro reaches the model only through the continuity-state consumer (tested below).
+  assert.equal(micro.length, 0, 'inherited Micro archive rows are not Classic recall rows');
+  const inheritedCanonical = Object.values(prepared.evidencePacket.layers).flat()
+    .filter(row => row.kind === 'canonical' && row.sessionEpoch < 0 && String(row.scopeKey).startsWith('archive:'));
+  assert(inheritedCanonical.length > 0, 'inherited shared-archive Canonical rows are delivered');
   const archives = f.getRecords('libra.micro_handoff_archive.v1');
   assert.equal(archives.length, 1);
-  return { prepared, micro, archive: archives[0] };
+  return { prepared, micro, inheritedCanonical, archive: archives[0] };
 }
 async function prepareStateOnlyMicro(f) {
   f.chat.message = f.originalFixtureMessages; f.chat.messages = f.chat.message;
@@ -145,37 +159,23 @@ async function prepareStateOnlyMicro(f) {
   f.control.onCall = async () => {throw Error('RETIRED_HELPER_PROVIDER_SUBMISSION');};
   return { prepared, active, decisionKey: library.fieldEvidence.doorStatus.decisionKey };
 }
-test('inherited consumed Micro context rejects deletion of its physical archive',()=>withMicro(async f=>{
- const {prepared,archive}=await prepareInherited(f);f.r.values.delete(archive.key);await invalid(f,prepared.context,/MICRO.*ARCHIVE/);
+test('inherited consumed Classic context rejects deletion of its physical shared-archive memory',()=>withMicro(async f=>{
+ const {prepared,inheritedCanonical}=await prepareInherited(f),memoryKey=inheritedCanonical[0].memoryKey;
+ assert(memoryKey&&f.r.values.has(memoryKey));f.r.values.delete(memoryKey);await invalid(f,prepared.context,/GRAPH_CORPUS_SOURCE_CHANGED/);
 }));
-test('two inherited consumed Micro identities retain separate proofs and one physical archive read',()=>withMicro(async f=>{
- const {prepared,micro,archive}=await prepareInherited(f,true),used=[...new Set(micro.map(row=>row.analysisRevisionId))];assert.equal(used.length,2);
- const probe=f.r.api.retirementConsumedProbe(prepared.context.consumedDataToken);
- // Selected Canonical bodies now retain their own physical currentness proof.
- // Count the two inherited Micro identities by their actual archive records,
- // rather than treating the complete mixed read set as Micro-only.
- const proofs=Array.from(probe.proofs);
- const microProofs=proofs.filter(proof=>proof.archiveKey===archive.key&&proof.headKey&&proof.receiptKey);
- assert.equal(microProofs.length,2,'two separate inherited Micro proofs');
- assert.equal(new Set(microProofs.map(proof=>proof.recordKey)).size,2,'distinct physical Micro identities');
- const archivedIds=microProofs.map(proof=>{
-  const record=archive.value.records.find(row=>row.key===proof.recordKey&&row.value.schema==='libra.micro_memory.v1');
-  assert(record,'each Micro proof binds a physical archived Micro record');return record.value.analysisRevisionId;
- });
- assert.deepEqual(archivedIds.sort(),used.slice().sort(),'both selected Micro identities have separate proofs');
- const canonicalProofs=proofs.filter(proof=>proof.kind==='canonical-memory');
- assert.equal(canonicalProofs.length,1,'selected Canonical body also retains its physical proof');
- const canonical=JSON.parse(f.r.values.get(canonicalProofs[0].recordKey));
- assert.equal(canonical.schema,'libra.canonical_memory.v1');
- assert(Object.values(prepared.evidencePacket.layers).flat().some(row=>row.kind==='canonical'&&row.memoryId===canonical.memoryId&&row.revision===canonical.revision),
-  'additional proof belongs to the actually selected Canonical identity');
- assert.equal(probe.count,microProofs.length+canonicalProofs.length,'no unclassified consumed proofs');
- const storage=f.r.context.risuai.pluginStorage,get=storage.getItem;let reads=0;storage.getItem=async key=>{if(key===archive.key)reads++;return get(key);};
- try{await probe.verify();}finally{storage.getItem=get;}assert.equal(reads,1);
- const changed=JSON.parse(f.r.values.get(archive.key)),first=changed.records.find(row=>row.value.schema==='libra.micro_memory.v1'&&row.value.analysisRevisionId===used[0]);assert(first);first.value.claims[0].text='changed physical archived claim';f.r.values.set(archive.key,JSON.stringify(changed));await assert.rejects(probe.verify(),/MICRO.*ARCHIVE/);
+test('inherited Micro archive stays outside the Classic recall rows while archive currentness is still enforced',()=>withMicro(async f=>{
+ const {prepared,micro,archive}=await prepareInherited(f,true);assert.equal(micro.length,0,'two archived Micro identities are not delivered as recall rows');
+ const probe=f.r.api.retirementConsumedProbe(prepared.context.consumedDataToken);assert(probe.graph);
+ assert.equal((await f.r.api.validateResponseContext(prepared.context)).current,true);
+ const original=f.r.values.get(archive.key),changed=JSON.parse(original);changed.records.find(row=>row.value.schema==='libra.micro_memory.v1').value.claims[0].text='changed physical archived claim';f.r.values.set(archive.key,JSON.stringify(changed));
+ await invalid(f,prepared.context,/GRAPH_CORPUS_SOURCE_CHANGED/);
+ f.r.values.set(archive.key,original);assert.equal((await f.r.api.validateResponseContext(prepared.context)).current,true,'restoring the exact archive bytes restores currentness');
 }));
-test('removed inherited lineage rejects a consumed archive whose physical bytes still exist',()=>withMicro(async f=>{
- const {prepared,archive}=await prepareInherited(f,true),manifest=f.getRecords('libra.manifest.v1').find(row=>row.value.scopeKey===prepared.scope.scopeKey);assert(manifest.value.inheritedMicroArchives.some(ref=>ref.archiveKey===archive.key));manifest.value.inheritedMicroArchives=manifest.value.inheritedMicroArchives.filter(ref=>ref.archiveKey!==archive.key);f.r.values.set(manifest.key,JSON.stringify(manifest.value));assert(f.r.values.has(archive.key));await assert.rejects(f.r.api.retirementConsumedProbe(prepared.context.consumedDataToken).verify(),/CONSUMER_MICRO_ARCHIVE_UNBOUND/);
+test('removed inherited lineage rejects a consumed Classic context whose archive bytes still exist',()=>withMicro(async f=>{
+ const {prepared,inheritedCanonical}=await prepareInherited(f,true),manifest=f.getRecords('libra.manifest.v1').find(row=>row.value.scopeKey===prepared.scope.scopeKey);
+ const memoryKey=inheritedCanonical[0].memoryKey,before=asLen(manifest.value.inheritedMemories);assert(before>0&&manifest.value.inheritedMemories.some(ref=>ref.key===memoryKey));
+ manifest.value.inheritedMemories=manifest.value.inheritedMemories.filter(ref=>ref.key!==memoryKey);f.r.values.set(manifest.key,JSON.stringify(manifest.value));
+ assert(f.r.values.has(memoryKey),'physical archive memory bytes still exist');await invalid(f,prepared.context);
 }));
 test('state-only Micro mutation rejects currentness even when no raw Micro recall row was selected',()=>withMicro(async f=>{
  const {prepared,active}=await prepareStateOnlyMicro(f),changed=JSON.parse(f.r.values.get(active.recordKey));changed.claims[0].text='same-ID state-only tamper';f.r.values.set(active.recordKey,JSON.stringify(changed));await invalid(f,prepared.context,/CONSUMER_MICRO_BODY_CHANGED/);
