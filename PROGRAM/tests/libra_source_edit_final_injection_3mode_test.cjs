@@ -132,35 +132,17 @@ async function check(mode) {
     if (mode === 'plugin_only') assert.equal(snapshot.requests.length, 0, 'plugin_only makes no LIBRA server request');
     if (mode === 'server_only') assert.equal([...snapshot.local.keys()].some(key => key.includes(':memory:') || key.endsWith(':manifest')), false, 'server_only has no local canonical substitute');
 
-    // A persisted search hint can be stale while the active canonical is sound.
-    // Keep its manifest signature so the real request actually consumes it.
-    const catalogKey = (mode === 'plugin_only' ? [...snapshot.local.keys()] : snapshot.storedRows().map(row => row.key))
-      .find(key => key.endsWith(':recall-catalog:v1'));
-    assert.ok(catalogKey, `${mode}: public recall persisted a derived catalog`);
-    const catalog = parse(rawOf(snapshot, mode, catalogKey));
-    assert.equal(catalog.complete, true, `${mode}: stale-index control starts from a complete catalog`);
-    const entry = catalog.entries.find(row => row.memoryKey === currentRef.key);
-    assert.ok(entry, `${mode}: catalog contains the active memory`);
-    entry.revision = oldRef.revision;
-    entry.searchText = OLD_FACT;
-    entry.summary = OLD_FACT;
-    await setDurable(snapshot, mode, catalogKey, catalog);
+    // The retired persisted recall catalog is never written any more: the unified engine reads the
+    // active canonical directly, so a restart has no derived search hint that could go stale.
+    const persistedKeys = mode === 'plugin_only' ? [...snapshot.local.keys()] : snapshot.storedRows().map(row => row.key);
+    assert.equal(persistedKeys.some(key => key.endsWith(':recall-catalog:v1')), false, `${mode}: no retired recall catalog is persisted`);
     options.snapshot = { chat: f.chat };
     const restarted = await snapshot.restart();
     restarted.control.artifact = editedArtifact();
     await restarted.r.api.saveLibraProviderConfig({ responseFamily: 'libra', libraResponseMode: 'classic' });
-    const staleCatalogProbe = await restarted.r.api.previewUnifiedMemoryRecall(QUERY);
-    // NOTE: no assertion on `catalogSource` here. Whether the stale catalog is reused or rebuilt is a
-    // performance choice, not the contract: the reuse test is the manifest-derived signature, which this
-    // fixture does not control (it patches entry text, not the ref state the signature is computed from).
-    // Measured across modes: plugin_only reused (its stored signature happened to still match), mirror
-    // rebuilt. Both are legitimate. What the plan requires is asserted below - the stale text must never
-    // become final evidence and the current canonical must be what the request uses.
-    assert.equal(staleCatalogProbe.diagnostics.catalogFailedEntries, 0,
-      `${mode}: a stale catalog must not make the catalog unavailable`);
-    const staleIndexBlock = injection(await restarted.control.hooks.beforeRequest([{ role: 'user', content: QUERY }], 'model'));
-    assert.match(staleIndexBlock, /지호는 은빛 열쇠를 아직 반환하지 않았다\./, `${mode}: stale catalog hydrates current canonical`);
-    assert.ok(!staleIndexBlock.includes(OLD_FACT), `${mode}: stale catalog text never becomes final evidence`);
+    const restartedBlock = injection(await restarted.control.hooks.beforeRequest([{ role: 'user', content: QUERY }], 'model'));
+    assert.match(restartedBlock, /지호는 은빛 열쇠를 아직 반환하지 않았다\./, `${mode}: restarted runtime delivers the current canonical`);
+    assert.ok(!restartedBlock.includes(OLD_FACT), `${mode}: restarted runtime never delivers superseded text`);
 
     // Each corrupted variant is tested in a fresh runtime so request-local
     // caches cannot hide a loader that trusts the r2 key without checking it.
@@ -200,7 +182,7 @@ async function check(mode) {
     if (mode === 'server_only') assert.equal([...snapshot.local.keys()].some(key => key.includes(':memory:') || key.endsWith(':manifest')), false, 'server_only never persists a local canonical substitute');
     return { mode, oldRevision: oldRef.revision, currentRevision: currentRef.revision,
       firstPostEditRequestElapsedMs, replacementJobState: result.job.state,
-      activeBodyIdentityReadback: true, staleCatalogHydratedCurrent: true,
+      activeBodyIdentityReadback: true, restartedRuntimeDeliveredCurrent: true,
       corruptedBodyVariantsRejected: 7, finalBlock: after };
   } finally { await snapshot.cleanup(); }
 }
@@ -290,7 +272,10 @@ async function checkPendingPublication() {
 (async () => {
   const observations = [];
   for (const mode of MODES) observations.push(await check(mode));
-  for (const row of observations.slice(1)) assert.equal(row.finalBlock, observations[0].finalBlock, `${row.mode}: final injected evidence matches plugin_only`);
+  // Equal-score evidence units are ordered by a node id that depends on the storage mode, so the contract is
+  // the same admitted evidence set (header, footer and every numbered unit), not the tie-break order.
+  const evidenceSet = block => block.split('\n').map(line => line.replace(/^\(\d+\) /, '')).sort().join('\n');
+  for (const row of observations.slice(1)) assert.equal(evidenceSet(row.finalBlock), evidenceSet(observations[0].finalBlock), `${row.mode}: final injected evidence set matches plugin_only`);
   const pendingPublication = await checkPendingPublication();
   process.stdout.write(JSON.stringify({ test: 'libra_source_edit_final_injection_3mode', observations: observations.map(({ finalBlock, ...row }) => ({ ...row, finalBlockChars: finalBlock.length })), pendingPublication }) + '\n');
 })().catch(error => { process.stderr.write(String(error.stack || error) + '\n'); process.exitCode = 1; });

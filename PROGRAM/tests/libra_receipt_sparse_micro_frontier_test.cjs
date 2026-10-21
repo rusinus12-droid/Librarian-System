@@ -39,13 +39,16 @@ const MARKER='LATEST_MICRO_T21_UNIQUE_8651';
   }
   assert.deepEqual(callbackErrors,[],'fake Micro provider had no swallowed validation error');
   await f.r.api.saveLibraProviderConfig({responseFamily:'libra',libraResponseMode:'classic'});
-  const out=await f.control.hooks.beforeRequest([{role:'user',content:'Continue the latest scene.'}],'model');
+  const out=await f.control.hooks.beforeRequest([{role:'user',content:`Continue the latest scene about ${MARKER}.`}],'model');
   const view=f.r.api.getLastResponseContext(),frontier=f.r.api.getLastMemoryRecallViewer()?.microFrontier;
   assert.equal(view?.receiptReadSet?.requestedTurns.at(-1),21,'requested window carries real turn IDs');
   assert.ok(view.receiptReadSet.gaps.some(row=>row.turn===20),'missing T20 remains a hole');
   assert.deepEqual(Array.from(view.receiptReadSet.refs,row=>row.turn),[18,19,21]);
-  assert.ok(frontier?.verifiedTurns?.includes(21),`latest Micro must survive sparse receipt array: ${JSON.stringify(frontier)}`);
-  assert.match(out.map(row=>String(row.content||'')).join('\n'),new RegExp(MARKER),'latest Micro enters final consumer');
+  assert.equal(frontier,undefined,'retired Micro-frontier is not reported by the unified route');
+  const viewer=f.r.api.getLastMemoryRecallViewer();
+  assert.ok(viewer.rows.some(row=>row.family==='micro'&&row.turnRange?.start===21&&String(row.text).includes(MARKER)),'latest Micro T21 is a delivered row despite the sparse receipt array');
+  const injected=out.filter(row=>row.role==='system').map(row=>String(row.content||'')).join('\n');
+  assert.match(injected,new RegExp(`\\[micro:[a-z_]+\\] [^\\n]*${MARKER}`),'latest Micro enters the injected final block');
   console.log(JSON.stringify({test:'libra_receipt_sparse_micro_frontier',ready:view.receiptReadSet.refs.map(r=>r.turn),
    gaps:view.receiptReadSet.gaps.map(g=>g.turn),frontier}));
  }finally{await x.cleanup();}

@@ -61,7 +61,7 @@ function register({test,prepared,deferred,within,until}){
     if(mode==='native_identity_changed'||mode==='rollback')assert.equal(f.getManifest().memories['1'].status,'inactive');
     if(mode==='pending_replay'){assert.equal(failedWrites,1);assert.equal(completed.continuityRebuildPending,true,'failed required replay cannot publish a successful receipt');}
     if(mode==='corrupt_body'){
-     const result=await f.r.api.validateResponseContext(consumed);assert.equal(result.current,false);assert.match(result.reason,/CONSUMER_CANONICAL_BODY_CHANGED/,'actual retained body guard still rejects corrupt physical bytes');
+     const result=await f.r.api.validateResponseContext(consumed);assert.equal(result.current,false);assert.match(result.reason,/UNIFIED_REPLAY_ARTIFACT_MISMATCH/,'actual retained unified replay guard still rejects corrupt physical bytes');
     }else assert.equal(f.r.values.get(canonicalKey),canonicalBytes,'audit never rewrites canonical bytes');
     assert.equal(core.state.branchAuditInFlight.size,0);assert.equal(f.r.context.__auditError,undefined);
    }

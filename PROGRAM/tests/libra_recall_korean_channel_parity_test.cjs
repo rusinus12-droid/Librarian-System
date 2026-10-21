@@ -7,7 +7,7 @@
 // path: the plugin-embedded index and the shipped tool module must tokenize
 // identically, a particle-stripped complete Korean name is lexical evidence, a
 // longer name or Latin word that merely starts with the query is not, and CJK
-// text keeps a sparse lexical path for a contained CJK query term.
+// a CJK word is evidence only as a complete delimited term (no CJK segmentation).
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -54,10 +54,13 @@ const latin = score('Alice', [
 assert.equal(latin.partial.evidence, 0);
 assert.ok(latin.complete.evidence > 0);
 
+// The unified tokenizer does not segment CJK: a kana/kanji run delimited by punctuation or spaces is one
+// posting term. A complete CJK word is lexical evidence; a term merely contained in a longer run is not.
 const cjk = score('図書館', [
-  ['match', '図書館で赤い傘を見つけた。'], ['other', '駅で青い傘を見つけた。']
+  ['match', '図書館、赤い傘を見つけた。'], ['contained', '図書館で赤い傘を見つけた。'], ['other', '駅、青い傘を見つけた。']
 ]);
-assert.ok(cjk.match.evidence > 0, 'CJK grams retain the existing sparse evidence path');
+assert.ok(cjk.match.evidence > 0, 'a complete CJK word delimited by punctuation is lexical evidence');
+assert.equal(cjk.contained.evidence, 0, 'a CJK term inside a longer unsegmented run is not lexical evidence');
 assert.equal(cjk.other.evidence, 0);
 
 console.log('PASS libra_recall_korean_channel_parity_test');
