@@ -10,10 +10,13 @@ const { DatabaseSync } = require('node:sqlite');
 const { NAMESPACES, assertCompleted, oracleControls } = require('../namespace_reset_all5_composition_test.cjs');
 const { createDocument } = require('./retrace_gui_dom_fixture.cjs');
 const program = path.resolve(__dirname, '..', '..');
+// The executed sources (RETRACE UI, server, namespace-reset core) evolve with the product, so
+// their hashes are recorded in the evidence receipt instead of being pinned to the retired 389 baseline.
+// Candidate-pin artifacts (RESET_COMPOSITION_SOURCE_PINS) still enforce exact hashes when supplied.
 const pins = {
-  'plugins/RETRACE.js': '366fcfab5c9f1406e67ee4f815414decac57fcaee63383eb217975d62faaf6ad',
-  'server/server.cjs': '330d7d2e274a72dce47fce6af7ae7cfb0208c0be674d6fe0202cdd5472a5f852',
-  'server/core/namespace-reset.cjs': 'b1ea65c195f35fc541d955b95b26a6b64f10cae70573c259ffe318e73d08ce68'
+  'plugins/RETRACE.js': '',
+  'server/server.cjs': '',
+  'server/core/namespace-reset.cjs': ''
 };
 const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -139,11 +142,18 @@ async function publicReset(ui, { target = 'all', cancel = false, onConfirm, with
   ui.root.querySelector('#serverResetNoBackup').checked = withoutBackup;
   const action = ui.root.querySelector('#serverResetBegin');
   const completed = action.emit('click');
-  await waitFor(() => !ui.root.querySelector('#retraceDialogLayer').hidden, 'actual reset confirmation');
+  await waitFor(() => !ui.root.querySelector('#dlg-reset').hidden, 'actual reset confirmation');
   const plan = ui.trace.filter(row => row.route === '/v1/manager/reset/plan').at(-1)?.response?.result;
   assert.ok(plan?.id, 'actual plan response reaches public dialog');
   if (onConfirm) await onConfirm(plan);
-  await ui.root.querySelector(cancel ? '#retraceDialogCancel' : '#retraceDialogConfirm').emit('click');
+  const dialog = ui.root.querySelector('#dlg-reset');
+  if (!cancel) {
+    // The current dialog requires typing the typed-confirmation word before Confirm is enabled.
+    const typed = dialog.querySelector('[data-dialog-typed-input]');
+    typed.value = '초기화';
+    await typed.emit('input');
+  }
+  await dialog.querySelector(cancel ? '[data-dialog-cancel]' : '[data-dialog-confirm]').emit('click');
   await bounded(completed, 'reset action');
   assert.equal(action.disabled, false, 'public action lifetime releases busy button');
   return { plan, status: ui.root.querySelector('#serverResetStatus').textContent,
@@ -153,6 +163,17 @@ const canaryFiles = ['config/unrelated-runtime.json', 'runtime/other-owner/state
 function seed(app, dataDir) {
   for (const ns of NAMESPACES) {
     const repo = app.repositories[ns];
+    if (repo.legacyReadOnly) {
+      // Retired lia/retrace owners reject public mutations (retired_storage_owner_read_only), so their
+      // pre-existing rows are planted directly in the retired store's own database.
+      assert.throws(() => repo.mutate({ kind: 'set', space: 'plugin', key: 'reset-fixture-live', value: {}, operationId: `${ns}_all5_probe_000000`, expectedRevision: 0 }), /retired_storage_owner_read_only/);
+      const db = repo.database;
+      const put = db.prepare('INSERT INTO kv(space,key,value_json,deleted,revision,digest,updated_at) VALUES (?,?,?,?,?,?,?)');
+      for (const [space, key, deleted] of [['plugin', 'reset-fixture-live', 0], ['local', 'reset-fixture-local', 0], ['plugin', 'reset-fixture-deleted', 1]])
+        put.run(space, key, deleted ? null : JSON.stringify({ namespace: ns, space, content: 'KEEP-UNTIL-RESET' }), deleted, deleted ? 2 : 1, 'fixture-digest-' + ns, 1);
+      db.prepare('INSERT INTO operations(operation_id,fingerprint,response_json,created_at) VALUES (?,?,?,?)').run(`${ns}_all5_seed_000000`, 'fixture', '{}', 1);
+      continue;
+    }
     let id = 0;
     for (const [space, key] of [['plugin', 'reset-fixture-live'], ['local', 'reset-fixture-local'], ['plugin', 'reset-fixture-deleted']]) {
       repo.mutate({ kind: 'set', space, key, value: { namespace: ns, space, content: 'KEEP-UNTIL-RESET' }, operationId: `${ns}_all5_seed_${++id}_000000`, expectedRevision: 0 });
