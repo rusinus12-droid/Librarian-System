@@ -4,7 +4,7 @@
 const crypto=require('node:crypto');
 module.exports=function createGraphLifecycle({namespace,get,getMetadata,list,applyConditionalBatch,now=Date.now}){
  const fail=(code,statusCode=409)=>{throw Object.assign(new Error(code),{code,statusCode});};
- const scopeOf=key=>/^libra:v1:scope:([^:]+):memory-graph:v1:/.exec(String(key||''))?.[1]||'';
+ const scopeOf=key=>/^libra:v1:scope:(.+?):memory-graph:v1:/.exec(String(key||''))?.[1]||'';
  const controlKey=scope=>'libra:v1:scope:'+scope+':memory-graph-control:v1:root';
  const read=scope=>{
   const row=get('plugin',controlKey(scope));
@@ -76,7 +76,7 @@ module.exports=function createGraphLifecycle({namespace,get,getMetadata,list,app
  const command=input=>{
   if(namespace!=='libra')fail('LIBRA_GRAPH_NAMESPACE_REQUIRED',403);
   const {scopeKey,action,token}=input||{};
-  if(typeof scopeKey!=='string'||!scopeKey||scopeKey.length>160||!/^[A-Za-z0-9_.-]+$/.test(scopeKey))fail('LIBRA_GRAPH_SCOPE_INVALID',400);
+  if(typeof scopeKey!=='string'||!scopeKey||scopeKey.length>160||!/^[A-Za-z0-9_.:-]+$/.test(scopeKey))fail('LIBRA_GRAPH_SCOPE_INVALID',400);
   if(!['acquire','renew','release','assert','inventory','delete'].includes(action))fail('LIBRA_GRAPH_LIFECYCLE_ACTION_INVALID',400);
   const prefix='libra:v1:scope:'+scopeKey+':memory-graph:v1:';
   const {row,value}=read(scopeKey),leases=live(value);
@@ -109,7 +109,7 @@ module.exports=function createGraphLifecycle({namespace,get,getMetadata,list,app
    return {keys:listing.keys,records:listing.records,retainedKeys:reachable(scopeKey,listing),complete:true,fence:{schema:'libra.graph_namespace_fence.v1',scopeKey,token,expiresAt:lease.expiresAt}};
   }
   const candidate=input.candidate;
-  if(!candidate||scopeOf(candidate.key)!==scopeKey||!/^libra:v1:scope:[^:]+:memory-graph:v1:(?:generation:|page:|corpus:(?:manifest:|page:|proof:|projection:|checkpoint:|semantic-directory:|vector:)|semantic:(?:page:|manifest:))/.test(candidate.key))fail('LIBRA_GRAPH_GC_KEY_UNOWNED',403);
+  if(!candidate||scopeOf(candidate.key)!==scopeKey||!/^libra:v1:scope:.+?:memory-graph:v1:(?:generation:|page:|corpus:(?:manifest:|page:|proof:|projection:|checkpoint:|semantic-directory:|vector:)|semantic:(?:page:|manifest:))/.test(candidate.key))fail('LIBRA_GRAPH_GC_KEY_UNOWNED',403);
   // A client cannot turn this endpoint into a source/root deletion API.
   const current=get('plugin',candidate.key);
   if(!current.exists||current.revision!==candidate.revision||current.digest!==candidate.digest)fail('LIBRA_GRAPH_GC_CANDIDATE_CHANGED');

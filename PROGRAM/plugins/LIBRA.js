@@ -12011,7 +12011,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const condition=[...body.conditions,...body.mutations].find(c=>c.space===saved.space&&c.key===saved.remoteKey);
       if(!condition||condition.expectedRevision!==saved.revision||condition.expectedDigest!==saved.digest||condition.expectedExists!==saved.exists||condition.expectedTombstone!==saved.tombstone)throw conditionalBatchError('MEMORY_SUITE_BATCH_PIN_NOT_BOUND');
     }
-    const graphScope=/^libra:v1:scope:([^:]+):memory-graph:v1:/.exec(body.mutations[0]?.key||'')?.[1];
+    const graphScope=/^libra:v1:scope:(.+?):memory-graph:v1:/.exec(body.mutations[0]?.key||'')?.[1];
     if(graphScope&&body.mutations.some(m=>m.key.includes(':root:'))){
       const lease=[...graphStorageLeases.values()].find(x=>x.scopeKey===graphScope&&x.kind==='build');
       if(!lease)throw new Error('LIBRA_GRAPH_BUILD_LEASE_REQUIRED');await lease.assertCurrent();body.graphLease={scopeKey:graphScope,token:lease.token};
@@ -46450,7 +46450,7 @@ function createLibraReadonlySourceContext(owner) {
       // transaction. Its fence excludes concurrent readers and publishers.
       if(inventory.fence?.schema==='libra.graph_namespace_fence.v1'&&Array.isArray(inventory.retainedKeys)){
         const retained=new Set(inventory.retainedKeys),candidateKeys=inventory.keys.filter(key=>key.startsWith(prefix)&&(!selected||selected.has(key))&&!retained.has(key)&&
-          /^libra:v1:scope:[^:]+:memory-graph:v1:(?:generation:|page:|corpus:(?:manifest:|page:|proof:|projection:|checkpoint:|semantic-directory:|vector:)|semantic:(?:page:|manifest:))/.test(key));
+          /^libra:v1:scope:.+?:memory-graph:v1:(?:generation:|page:|corpus:(?:manifest:|page:|proof:|projection:|checkpoint:|semantic-directory:|vector:)|semantic:(?:page:|manifest:))/.test(key));
         const deletedKeys=[];let status='completed';
         if(!dryRun&&typeof owner.deleteConditional!=='function')status='blocked_atomic_gc_unavailable';
         else if(!dryRun)for(const key of candidateKeys){check(ticket,owner);if(!await owner.deleteConditional({key,inventory,fence:inventory.fence})){status='aborted_concurrent_mutation';break;}deletedKeys.push(key);counters.gcDeleted++;}
