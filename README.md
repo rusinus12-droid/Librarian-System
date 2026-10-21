@@ -42,17 +42,17 @@ flowchart TB
     subgraph Host["RisuAI 클라이언트 (Browser / WebView)"]
         direction TB
         subgraph Owners["기억 소유자 플러그인 (Storage Owners)"]
-            LIBRA["LIBRA v2.3.175<br/>(정본/Micro 기억 · 상태 투영 · 그래프 회상)"]
-            FB["Flashback v1.0.120<br/>(에피소드 기억 · 채팅 어텐션)"]
-            HAYAKU["HAYAKU v3.0.155<br/>(장소/인물 연속성 · 위치 추적)"]
-            LIA["LIA v0.26.88<br/>(페르소나 링커 · 로어북 재순위)"]
-            RETRACE["RE:TRACE v1.9.86<br/>(스코프/백업 관리 · 이력 복원)"]
+            LIBRA["LIBRA v2.3.188<br/>(정본/Micro 기억 · 상태 투영 · 그래프 회상)"]
+            FB["Flashback v1.0.122<br/>(에피소드 기억 · 채팅 어텐션)"]
+            HAYAKU["HAYAKU v3.0.157<br/>(장소/인물 연속성 · 위치 추적)"]
+            LIA["LIA v0.26.89<br/>(페르소나 링커 · 로어북 재순위)"]
+            RETRACE["RE:TRACE v1.9.90<br/>(스코프/백업 관리 · 이력 복원)"]
         end
-        GRADIA["GRADIA v0.25.91<br/>(읽기 전용 다중 기억 소비자 · 서사 보조)"]
+        GRADIA["GRADIA v0.25.92<br/>(읽기 전용 다중 기억 소비자 · 서사 보조)"]
         GRADIA -->|검증된 근거 읽기| LIBRA & FB & HAYAKU
     end
 
-    subgraph Server["Librarian System Server v0.4.1 (127.0.0.1:47630)"]
+    subgraph Server["Librarian System Data Server v0.4.1 (127.0.0.1:47630)"]
         Router["Authenticated HTTP Router<br/>(Scoped Capability Auth / CAS)"]
         Coord["Authority Coordinator & Writer Fence"]
         SQLite[("DATA/stores/*.sqlite<br/>(WAL Mode / Tombstone / Revision)")]
@@ -71,14 +71,140 @@ flowchart TB
 | 컴포넌트 | 버전 | 구분 | 주요 역할 |
 | :--- | :---: | :---: | :--- |
 | **Librarian System Server** | `0.4.1` | 로컬 서버 | SQLite 기반 KV/그래프 저장소, 스코프 카탈로그, 자동 백업 및 무결성 검증 서버 |
-| **LIBRA** | `2.3.175` | 플러그인 (Owner) | 5턴 정본(Canonical) + 매 턴 Micro 기억 추출, 현재 상태(State Head) 투영, 시맨틱/어휘 하이브리드 회상 |
-| **Flashback Memory** | `1.0.120` | 플러그인 (Owner) | 대화 맥락 장기 에피소드 기억, 벡터/키워드 검색, 제로터치 채팅 어텐션 버튼 |
-| **HAYAKU Locator Continuity** | `3.0.155` | 플러그인 (Owner) | 장면 전환·장소 이동·인물 배치 연속성 추적 및 빠른 위치 컨텍스트 복원 |
-| **LIA Persona Linker** | `0.26.88` | 플러그인 (Owner) | 페르소나 상태 델타 추적 및 월드 로어북(Lorebook) BM25F 재순위화 |
-| **RE:TRACE** | `1.9.86` | 플러그인 (Owner) | 서버/로컬 스코프 통합 조회, 고정(Pin), 삭제 보호, ZIP 백업 내보내기/복원 관리 GUI |
-| **GRADIA** | `0.25.91` | 플러그인 (Consumer) | `LIBRA`·`Flashback`·`HAYAKU`의 검증된 기억 근거를 읽기 전용으로 통합 소비하는 소설/서사 생성 보조기 |
+| **LIBRA** | `2.3.188` | 플러그인 (Owner) | 5턴 정본(Canonical) + 매 턴 Micro 기억 추출, 현재 상태(State Head) 투영, 시맨틱/어휘 하이브리드 회상 |
+| **Flashback Memory** | `1.0.122` | 플러그인 (Owner) | 대화 맥락 장기 에피소드 기억, 벡터/키워드 검색, 제로터치 채팅 어텐션 버튼 |
+| **HAYAKU Locator Continuity** | `3.0.157` | 플러그인 (Owner) | 장면 전환·장소 이동·인물 배치 연속성 추적 및 빠른 위치 컨텍스트 복원 |
+| **LIA Persona Linker** | `0.26.89` | 플러그인 (Owner) | 페르소나 상태 델타 추적 및 월드 로어북(Lorebook) BM25F 재순위화 |
+| **RE:TRACE** | `1.9.90` | 플러그인 (Owner) | 서버/로컬 스코프 통합 조회, 고정(Pin), 삭제 보호, ZIP 백업 내보내기/복원 관리 GUI |
+| **GRADIA** | `0.25.92` | 플러그인 (Consumer) | `LIBRA`·`Flashback`·`HAYAKU`의 검증된 기억 근거를 읽기 전용으로 통합 소비하는 소설/서사 생성 보조기 |
 
 > **호환 SDK**: Storage SDK `1.8.27` · Compute SDK `0.3.8`
+
+---
+
+## 🔍 플러그인 상세 구현 (코드 기준)
+
+아래 내용은 `PROGRAM/plugins/*.js`, `PROGRAM/server/server.cjs`, `PROGRAM/server/core/gradia-*-read-session.cjs`의 현재 구현을 기준으로 정리했습니다.
+
+### 1) 리브라 (Libra, `libra`)
+
+- **역할/문제**
+  - 장기 서사 메모리의 정본(canonical)·마이크로 메모리·상태 정보를 유지하고, 회상/인계 시 소스 불변(immutable-source) 규약을 지키는 핵심 Owner입니다.
+- **연결 이벤트·API·파일**
+  - 플러그인 파일: `PROGRAM/plugins/LIBRA.js`
+  - 서버 API: `POST /v1/libra/graph-lifecycle`, `POST /v1/kv/batch`, `POST /v1/flashback/writer`, `POST /v1/manager/scopes/index`
+  - RE:TRACE IPC 채널/액션: `libra_memory_bridge_request_v1` / `...response_v1`, `prepare_session_handoff`, `adopt_session_handoff`, `verify_session_handoff`, `rollback_lens_session_handoff`
+  - 출력 이벤트 캡처: `addRisuChatListener('output')` 우선, 레거시 경로 보조
+- **핵심 메커니즘/흐름**
+  1. 대화 출력 이벤트에서 U+A 증거를 수집하고 메모리/상태 후보를 구성
+  2. 스코프/리비전/다이제스트 기반 검증 후 저장 (`plugin_only` 또는 서버 라우팅)
+  3. 핸드오프 시 소스 스냅샷 무결성(fingerprint) 확인 후 대상 채팅에 채택(adopt) 및 검증(verify)
+- **사용자 기능**
+  - 정본 메모리 관리, 상태 추적, 회상 보조, RE:TRACE 연계 핸드오프
+- **설정/제약**
+  - RE:TRACE 호환 스키마: `retrace.peer_compatibility.v1`
+  - 핸드오프 계약: `libra.handoff_immutable_source_lenses.v2`
+  - 대용량 저장/검증은 Storage SDK 규약과 서버 무결성 상태에 의존
+
+### 2) 하야쿠 (Hayaku, `hayaku_locator_continuity`)
+
+- **역할/문제**
+  - 장면/위치/인물 연속성(Locator continuity)과 패킷 기반 기억을 유지하고, 회복(recovery) 및 핸드오프 시 내구성 검증을 수행합니다.
+- **연결 이벤트·API·파일**
+  - 플러그인 파일: `PROGRAM/plugins/HAYAKU_Locator_Continuity.js`
+  - 서버 API: `POST /v1/flashback/writer`, `POST /v1/manager/scopes/index`, `POST /v1/hayaku/read-session/capture`, `POST /v1/hayaku/read-session/current`
+  - RE:TRACE IPC: `hayaku_memory_bridge_request_v1` / `...response_v1`, `inspect`, `adopt_session_handoff`, `memory_suite_storage_status`
+- **핵심 메커니즘/흐름**
+  1. 출력 캡처 이벤트를 기준으로 ledger/packet 상태를 갱신
+  2. 핸드오프 시 `expectedRecords`·스코프 식별자 검증 후 채택 실행
+  3. 채택 전/후 `MemorySuiteStorageBridge.ensureHandoffReady(...)`로 저장 경로 일관성 확인
+- **사용자 기능**
+  - 위치/상황 연속성 유지, 복구/점검, RE:TRACE를 통한 안전한 세션 인계
+- **설정/제약**
+  - 핸드오프 계약: `hayaku.handoff_immutable_source.v1`
+  - 읽기 세션에서 archive/packet을 예산(`maxCorpusBytes`, raw/metadata budget) 내 검증적으로 로드
+
+### 3) 플래시백 (Flashback, `flashback_memory`)
+
+- **역할/문제**
+  - 에피소드형 대화 기억을 장기 보관하고, 현재 채팅 맥락에서 필요한 기억을 재구성하는 Owner입니다.
+- **연결 이벤트·API·파일**
+  - 플러그인 파일: `PROGRAM/plugins/Flashback_Memory.js`
+  - 서버 API: `POST /v1/flashback/writer`, `POST /v1/manager/scopes/index`, `POST /v1/flashback/read-session/capture`, `POST /v1/flashback/read-session/current`
+  - RE:TRACE IPC: `flashback_memory_bridge_request_v1` / `...response_v1`, `adopt_session_handoff`, `memory_suite_prepare_server_scope_delete`
+- **핵심 메커니즘/흐름**
+  1. 출력 이벤트 기반으로 회상 후보/세션 상태를 기록
+  2. 서버 모드에서는 writer fence 및 scope pin capability를 활용해 안전 저장
+  3. 핸드오프 채택 시 LIA 연속성 정보(있을 경우)를 함께 검증하여 반영
+- **사용자 기능**
+  - 에피소드 기억 저장/회상, 세션 인계 시 보존 검증, 서버 스코프 정리 가드
+- **설정/제약**
+  - 핸드오프 계약: `flashback_memory.handoff_immutable_source.v2`
+  - scope 삭제/복구 작업은 RE:TRACE 요청 + 서버 capability 조건을 충족해야 수행
+
+### 4) 리아 (Ria, `lia_persona_linker`)
+
+- **역할/문제**
+  - Live Persona 상태를 채팅 스코프와 연결해 페르소나 연속성을 유지하고, 로어 재순위화(BM25F 스타일)·상태 동기화를 담당합니다.
+- **연결 이벤트·API·파일**
+  - 플러그인 파일: `PROGRAM/plugins/LIA_Persona_Linker.js`
+  - 주요 IPC/스키마: `lia_persona_handoff_request_v1`, `lia.live_persona_handoff.receipt.v1`, `retrace.peer_compatibility.v1`
+  - 서버 API: `POST /v1/flashback/writer`, `POST /v1/manager/scopes/index`
+- **핵심 메커니즘/흐름**
+  1. 현재 채팅의 Live Persona binding/scope를 확인
+  2. 핸드오프 시 `adopt_chat_handoff` → 대상 chat binding 생성/검증
+  3. `verify_chat_handoff`에서 durable readback 및 lineage 일치 여부 재검증
+- **사용자 기능**
+  - Live Persona 분기/상속, 페르소나 상태 추적, 세계관 로어 정렬 보조
+- **설정/제약**
+  - 핸드오프 계약: `lia.live_persona_handoff_immutable_source.v1`
+  - 일부 연산은 현재 캐릭터/채팅 인덱스 API 가용성에 의존하며 불일치 시 fail-closed
+
+### 5) 그라디아 (Gradia, `serial_gradation_agents_for_rp`)
+
+- **역할/문제**
+  - 자체적으로 Owner 데이터를 쓰지 않고, LIBRA/HAYAKU/Flashback의 **검증된 읽기 세션**을 통합해 서사 작성 파이프라인(Shadow/AIDE 단계)을 보조하는 Consumer입니다.
+- **연결 이벤트·API·파일**
+  - 플러그인 파일: `PROGRAM/plugins/GRADIA.js`
+  - 서버 읽기 전용 API:
+    - `POST /v1/libra/read-session/capture|current`
+    - `POST /v1/hayaku/read-session/capture|current`
+    - `POST /v1/flashback/read-session/capture|current`
+  - 서버 권한 모델: `/bootstrap` 시 `x-memory-suite-read-owners`로 허용 owner 집합 선언
+- **핵심 메커니즘/흐름**
+  1. 서버에서 owner별 read-session `capture`로 증거 스냅샷 획득
+  2. `current` 호출로 reset epoch/의존성 digest가 여전히 유효한지 확인
+  3. 유효한 증거만 프롬프트 주입(읽기 전용, owner 쓰기 금지)
+- **사용자 기능**
+  - 다중 기억 근거를 결합한 장면/서사 작성 보조, 단계별 모델 프리셋/입력 보조
+- **설정/제약**
+  - `mode`, `multi_pipeline_mode`, `writing_mode`, 다수 LLM/프리셋/로어 관련 `@arg` 제공
+  - 서버는 GRADIA를 read-only principal로 제한하며 일반 쓰기/compute 경로를 차단
+
+### 6) 리트레이스 (Retrace, `flashback_hayaku_bridge`)
+
+- **역할/문제**
+  - 플러그인 간 호환성/핸드오프/서버 관리의 허브입니다. 직접 Owner 데이터를 생성하기보다, 각 Owner의 증거/상태를 검증해 안전한 세션 인계를 조정합니다.
+- **연결 이벤트·API·파일**
+  - 플러그인 파일: `PROGRAM/plugins/RETRACE.js`
+  - 허용 액션 집합(Owner별): `inspect`, `adopt_session_handoff`, `prepare_session_handoff`, `verify_session_handoff`, `memory_suite_storage_status` 등
+  - 서버 관리 API: `/v1/manager/scopes`, `/v1/manager/scope-pin`, `/v1/manager/scope-delete/*`, `/v1/manager/portable/*`
+- **핵심 메커니즘/흐름**
+  1. Owner별 compatibility contract(`retrace.peer_compatibility.v1`) 수집
+  2. 인계 전 source-immutable/durable-readback 조건 확인
+  3. 인계 후 owner receipt를 교차 검증하고, 서버 스코프 관리 작업(핀/삭제/복원)을 가드된 경로로 실행
+- **사용자 기능**
+  - 다음 세션 인계, 호환성 매트릭스, 백업/복원/스코프 관리 GUI
+- **설정/제약**
+  - 기본 서버 URL 설정 키: `memory_suite_server_url`
+  - manager 권한이 필요한 작업은 서버 capability 미충족 시 차단
+
+### 플러그인 상호작용과 시스템 내 위치
+
+1. **Owner 계층**: `LIBRA`/`Flashback`/`HAYAKU`/`LIA`가 각자 스키마로 기억/상태를 관리  
+2. **Orchestrator 계층**: `RE:TRACE`가 owner IPC를 통해 호환성·인계·관리 작업을 조정  
+3. **Consumer 계층**: `GRADIA`가 owner 데이터를 쓰지 않고 read-session API로 근거만 소비  
+4. **Server 계층**: `PROGRAM/server/server.cjs`가 플러그인 식별(`x-memory-suite-plugin`)과 capability 토큰으로 권한을 분리하고, KV/manager/admin/read-session 라우트를 제공
 
 ---
 
@@ -127,8 +253,9 @@ Librarian System은 두 가지 정식 저장 모드와 한 가지 이관용 전�
    - 브라우저 용량 제한이 없으며, 자동 백업·스냅샷 복원·정합성 검증을 완벽히 지원합니다.
 2. **`plugin_only` (플러그인 단독)**
    - 서버 없이 RisuAI 브라우저 내부 저장소(`pluginStorage` / IndexedDB)와 로컬 JS 연산만 사용합니다.
-3. **`mirror` (전환 단계)**
-   - `plugin_only`와 `server_only` 사이에서 데이터를 안전하게 이관하기 위한 과도기 모드입니다. 이관이 완료되면 단독 모드로 전환하세요.
+3. **`mirror` (레거시 전환 단계)**
+   - 현재 서버 부트스트랩 계약(`memory-suite.storage-mode-contract.v2`) 기준 운영 모드는 `plugin_only`/`server_only`이며, `mirror`는 전환 호환(legacy transition) 용도로만 유지됩니다.
+   - 신규 설정에서는 단독 모드(`plugin_only` 또는 `server_only`)를 기준으로 사용하세요.
 
 ---
 
@@ -188,6 +315,9 @@ node PROGRAM/tools/check_node.cjs
 
 # 데이터 폴더 초기화 및 레이아웃 검증
 node PROGRAM/tools/platform_launcher.cjs prepare
+
+# 전체 회귀 테스트 런처 (Linux/macOS)
+sh PROGRAM/관리도구/전체_자동시험.sh
 
 # 메타데이터 및 패키지 레이아웃 일관성 테스트
 node PROGRAM/tests/program_data_layout_test.cjs
