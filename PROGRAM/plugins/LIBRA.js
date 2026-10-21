@@ -67335,6 +67335,9 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
     const microFrontierFromDelivery = (deliveryValue, publicationValue = null, indexValue = null) => {
       const delivery = asObject(deliveryValue);
       const rows = asArray(delivery.rows).filter(row => asObject(row).kind === 'micro');
+      // Unified rows mark a source-span-only Micro with semanticRole 'source_only'; the historical
+      // evidenceAuthority field is still honoured for older rows.
+      const isSourceOnly = row => asObject(row).evidenceAuthority === 'source_only' || asObject(row).semanticRole === 'source_only';
       const turnsOf = rowsValue => [...new Set(rowsValue
         .map(row => Number(asObject(row).turnRange?.end ?? asObject(row).turnRange?.start ?? 0))
         .filter(turn => Number.isInteger(turn) && turn > 0))].sort((a, b) => a - b);
@@ -67348,10 +67351,10 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         || asArray(index.sourceOnlyTurns).length > 0 || asArray(index.pendingTurns).length > 0;
       const verifiedTurns = indexed
         ? asArray(index.verifiedTurns).map(Number).sort((a, b) => a - b)
-        : turnsOf(rows.filter(row => asObject(row).evidenceAuthority !== 'source_only'));
+        : turnsOf(rows.filter(row => !isSourceOnly(row)));
       const sourceOnlyTurns = indexed
         ? asArray(index.sourceOnlyTurns).map(Number).sort((a, b) => a - b)
-        : turnsOf(rows.filter(row => asObject(row).evidenceAuthority === 'source_only'));
+        : turnsOf(rows.filter(isSourceOnly));
       const pendingTurns = indexed ? asArray(index.pendingTurns) : [];
       const publication = publicationValue ? asObject(publicationValue) : null;
       const lastPublication = publication ? {
@@ -68822,6 +68825,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         const delivery = { schema: 'libra.unified_classic_delivery.v1', route: 'classic',
           at: Date.now(), scope: clone(context.scope), worldlineId: string(requestManifest?.activeWorldlineId || 'main'),
           scopeKey: context.scope.scopeKey, queryText: queryBundle.currentText, rows,
+          microFrontier: microFrontierFromDelivery({ rows }, state.lastMicroPublication, null),
           selectedMemories: rows.length, responseContextRequestId: responseContext.requestId,
           responseContextDigest: responseContext.contextDigest,
           servedEngine: 'unified', injectedMemories: block ? packet.admittedNodeIds.length : 0,

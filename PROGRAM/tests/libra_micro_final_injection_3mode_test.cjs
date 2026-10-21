@@ -47,7 +47,8 @@ const DETAIL = '도서관 전체는 정숙 구역';
       await f.control.hooks.beforeRequest([{role: 'user', content: '워밍업'}], 'model');
       const core = f.r.context.__libraCore;
       await waitFor(() => ![...core.state.timers.keys()].some(k => String(k).startsWith('branch_audit:'))
-        && f.r.api.getCaptureBackendState().branchAuditsInFlight === 0, 15000);
+        && f.r.api.getCaptureBackendState().branchAuditsInFlight === 0
+    && core.state.memoryGraphResources.inspect().reads === 0, 15000);
       const delivered = await f.control.hooks.beforeRequest([
         {role: 'user', content: '도서관의 정숙 규칙을 고려해서 이어줘.'}
       ], 'model');

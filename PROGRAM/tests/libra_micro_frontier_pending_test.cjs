@@ -39,13 +39,26 @@ const waitForAsync = async (predicate, timeoutMs = 15000) => {
   }
 };
 
+// The first request after a capture schedules the 750 ms bootstrap branch audit, which writes the
+// manifest and, by design, invalidates any packet issued before it lands (the request then fails open).
+// Settle it with a warm-up request so the measured request cannot race that background write.
+const exposeCore = src => src.replace('await LibraMemoryCore.readySourceRules();',
+  'globalThis.__libraCore=LibraMemoryCore;await LibraMemoryCore.readySourceRules();');
+const settleBranchAudit = async f => {
+  await f.control.hooks.beforeRequest([{ role: 'user', content: '워밍업' }], 'model');
+  const core = f.r.context.__libraCore;
+  await waitForAsync(() => ![...core.state.timers.keys()].some(k => String(k).startsWith('branch_audit:'))
+    && f.r.api.getCaptureBackendState().branchAuditsInFlight === 0
+    && core.state.memoryGraphResources.inspect().reads === 0);
+};
+
 (async () => {
   // --- Case 1: the producer never yields an analysis. The turn is still committed as source-bound
   // evidence, so consumers must be able to see that it is evidence without claims, and that the
   // analytical Micro for that turn is still pending.
   for (const mode of ['plugin_only', 'mirror', 'server_only']) {
     let listener;
-    const fx = await serverFixture({ mode, host: {
+    const fx = await serverFixture({ mode, transformSource: exposeCore, host: {
       addRisuChatListener: async (_kind, handler) => { listener = handler; return true; }
     }});
     try {
@@ -63,6 +76,7 @@ const waitForAsync = async (predicate, timeoutMs = 15000) => {
 
       await f.r.api.saveLibraProviderConfig({ responseFamily: 'libra', libraResponseMode: 'classic' });
       f.control.onCall = async () => ({ type: 'success', result: 'BRIEF' });
+      await settleBranchAudit(f);
       await f.control.hooks.beforeRequest([{ role: 'user', content: '도서관 규칙을 고려해서 이어줘.' }], 'model');
 
       const viewer = f.r.api.getLastMemoryRecallViewer();
@@ -91,7 +105,7 @@ const waitForAsync = async (predicate, timeoutMs = 15000) => {
   // as verified and no longer pending.
   for (const mode of ['plugin_only', 'mirror', 'server_only']) {
     let listener;
-    const fx = await serverFixture({ mode, host: {
+    const fx = await serverFixture({ mode, transformSource: exposeCore, host: {
       addRisuChatListener: async (_kind, handler) => { listener = handler; return true; }
     }});
     try {
@@ -109,6 +123,7 @@ const waitForAsync = async (predicate, timeoutMs = 15000) => {
 
       await f.r.api.saveLibraProviderConfig({ responseFamily: 'libra', libraResponseMode: 'classic' });
       f.control.onCall = async () => ({ type: 'success', result: 'BRIEF' });
+      await settleBranchAudit(f);
       await f.control.hooks.beforeRequest([{ role: 'user', content: '도서관 규칙을 고려해서 이어줘.' }], 'model');
 
       const frontier = frontierOf(f.r.api.getLastMemoryRecallViewer());
