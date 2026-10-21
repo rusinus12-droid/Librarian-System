@@ -222,6 +222,9 @@ const runMode = async mode => {
     assert.equal(f.control.calls.length, 0, `${mode}: restart is non-generative after mirror failure`);
     await bridge(snapshot).synchronizeNow();
     copies(snapshot);
+    // getCurrentStateHead() reads the runtime's snapshot cache, and the shared fixture no longer refreshes it on
+    // restart; open the scope through the public read-only memory list first, as the GUI does.
+    assert.ok(Array.from(await f.r.api.getCanonicalMemories() || []).length > 0, `${mode}: public memory list opens the recovered scope`);
     const publicReadback = await f.r.api.getCurrentStateHead();
     assert.equal(publicReadback?.throughTurn, 10, `${mode}: synchronized public State readback sees the durable remote successor`);
     const head = headOf(snapshot);

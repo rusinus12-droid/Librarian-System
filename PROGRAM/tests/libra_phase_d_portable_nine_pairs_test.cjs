@@ -262,6 +262,13 @@ const reconstructPair = async (sourceMode, destinationMode, envelope, sourceChat
   targetChat.messages = targetChat.message;
   const destination = await serverFixture({ destinationMode, mode: destinationMode, snapshot: { chat: targetChat } });
   try {
+    // The server graph-lifecycle endpoint only accepts colon-free scope keys, so (as in a real
+    // install) the destination chat is registered with an explicit scope instead of the legacy
+    // `<hash>_<character>:<chat>` fallback key, which the unified recall's graph lease would reject.
+    const registry = parse(destination.local.get('libra:v1:scope-registry:v1')) || {};
+    registry[`unified-char::${targetChat.chatId}`] = { scopeKey: `phase-d-scope-${sourceMode}-${destinationMode}`,
+      characterId: 'unified-char', chatId: targetChat.chatId, source: 'preexisting_explicit_user_scope' };
+    destination.local.set('libra:v1:scope-registry:v1', JSON.stringify(registry));
     const portable = await portableApi(destination);
     const preview = await retryBusy(() => portable.previewImport(envelope));
     assert.equal(preview.modes.reconstruct_native_copy.available, true,
