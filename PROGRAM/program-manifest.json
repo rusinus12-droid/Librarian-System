@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-21T22:06:38.291Z",
+  "generatedAt": "2026-10-21T22:45:37.776Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -3520,7 +3520,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "f9647d34edfe73360d086730872fe9771de0fbf7ccce18bb19e858ad8dbf7fe2",
+      "sha256": "e10876956e8e2e6db20a15ec2521fa07d9000719b1edc9b2a21e60b991070431",
       "bytes": 11840
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3920,8 +3920,8 @@
       "bytes": 1627380
     },
     "plugins/LIBRA.js": {
-      "sha256": "2e80a2d454650d42584d02849f02e7a162f3d23bb178849386369d0ea45a079f",
-      "bytes": 6457648
+      "sha256": "40cc7c17f5f8a5a574d2f40edca3bf8d434f55e5d3002e56d2ab58311bebc166",
+      "bytes": 6457650
     },
     "plugins/RETRACE.js": {
       "sha256": "9e01e59c24cecc5e88e3cbdbce262ebeeafdc61b48a0204ab9c009778cbe7c54",
@@ -10728,8 +10728,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "6c92c5ec31adb90f57e48055b363525dfb0074286c93f4185d0a922efab83f12",
-      "bytes": 55016
+      "sha256": "3dfc0da70d8abdc387ee62198d488d89f71879119d75ea5375635cace3900fd9",
+      "bytes": 55040
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",
