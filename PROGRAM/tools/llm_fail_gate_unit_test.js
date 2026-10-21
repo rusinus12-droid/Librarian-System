@@ -53,7 +53,8 @@ function sliceConst(src, name) {
 const hSrc = fs.readFileSync(HAYAKU, 'utf8');
 const lSrc = fs.readFileSync(LIBRA, 'utf8');
 
-const hFuncSrc = sliceConst(hSrc, 'nativeLlmResponseText');
+// nativeLlmResponseText delegates candidate selection to a sibling helper, sliced alongside it.
+const hFuncSrc = sliceConst(hSrc, 'nativeLlmResponseCandidates') + '\n' + sliceConst(hSrc, 'nativeLlmResponseText');
 const lFuncSrc = sliceConst(lSrc, 'risuRunLlmResponseText');
 
 // Print the exact sliced source so the report can quote it and prove byte-identity.
@@ -82,8 +83,16 @@ function buildLibra(diag) {
     return out;
   };
   globalThis.__librarianDiag = diag;
-  const factory = new Function('collectRisuRunLlmStream', lFuncSrc + '\nreturn risuRunLlmResponseText;');
-  return factory(collectRisuRunLlmStream);
+  // Current contract: provider streams are drained but never adopted; the extractor tracks the
+  // unverified stream in Runtime.risuAuxiliary and rejects with a ContractError.
+  const Runtime = { risuAuxiliary: { unverifiedStreams: 0, streamStartedAt: 0 } };
+  class ContractError extends Error { constructor(code, message) { super(message); this.code = code; } }
+  const MemorySuiteExecutionContract = { ContractError };
+  const factory = new Function('collectRisuRunLlmStream', 'Runtime', 'refreshRisuAuxiliaryStreamNotice', 'MemorySuiteExecutionContract',
+    lFuncSrc + '\nreturn risuRunLlmResponseText;');
+  const extractor = factory(collectRisuRunLlmStream, Runtime, () => undefined, MemorySuiteExecutionContract);
+  extractor.runtime = Runtime;
+  return extractor;
 }
 
 function makeStream(chunks) {
@@ -148,10 +157,17 @@ const inputs = [
 
   const assert = require('node:assert/strict');
   for (const owner of ['hayaku', 'libra']) {
-    const expected = ['정상 출력', '', '', '그냥 문자열', owner === 'libra' ? '조각1조각2' : ''];
-    results[owner].forEach((row, index) => { assert.equal(row.err, null, owner + row.id); assert.equal(row.returned, expected[index], owner + row.id); });
+    const expected = ['정상 출력', '', '', '그냥 문자열', owner === 'libra' ? undefined : ''];
+    results[owner].forEach((row, index) => {
+      // LIBRA never adopts streamed text: it rejects the unverified stream route instead.
+      const expectedError = owner === 'libra' && row.id === 'e' ? 'Host stream protocol is not verified.' : null;
+      assert.equal(row.err, expectedError, owner + row.id);
+      assert.equal(row.returned, expected[index], owner + row.id);
+    });
     assert.equal(results[owner + 'Diag'][0].count, 2);
   }
-  assert.equal(await buildLibra(makeDiag())(makeStream(['직접', '스트림'])), '직접스트림');
+  const directStreamExtractor = buildLibra(makeDiag());
+  await assert.rejects(() => directStreamExtractor(makeStream(['직접', '스트림'])), error => error.code === 'UNVERIFIED_STREAM_ROUTE');
+  assert.equal(directStreamExtractor.runtime.risuAuxiliary.unverifiedStreams, 0, 'unverified stream accounting is released');
   process.stdout.write('===UNIT_JSON_BEGIN===\n' + JSON.stringify(results, null, 2) + '\n===UNIT_JSON_END===\n');
 })().catch(error => { console.error(error); process.exitCode = 1; });
