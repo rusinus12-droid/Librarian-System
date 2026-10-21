@@ -12,13 +12,13 @@ const mockup = fs.readFileSync(path.resolve(__dirname, '..', 'docs', 'gui-redesi
 
 assert.match(source, releasePattern("^\\/\\/@version {hayaku}\\s*$", "m"));
 
-const routes = ['overview', 'packets', 'recovery', 'server', 'settings', 'logs'];
+const routes = ['overview', 'packets', 'scopes', 'recovery', 'server', 'settings', 'logs'];
 const routeIds = source.match(/const HAYAKU_VIEWER_TAB_IDS = Object\.freeze\(\[([\s\S]*?)\]\);/)?.[1] || '';
 assert.deepEqual([...routeIds.matchAll(/'([^']+)'/g)].map(match => match[1]), routes,
-  'the product must expose the approved six mockup destinations; Worldline is a Packets view');
+  'scope data management is independent from server settings; Worldline is a Packets view');
 assert.match(source, /const nav = \(id,label,short,icon,aria\) => `.*data-hayaku-viewer-tab="\$\{id\.toLowerCase\(\)\}".*role="tab"/,
   'the canonical sidebar item factory must bind route identity and accessible state');
-for (const [id, label] of [['Overview', '연속성 관제'], ['Packets', '패킷 · 세계선'], ['Recovery', '구간 점검 · 복구'], ['Server', '서버 연결'], ['Settings', '설정'], ['Logs', '작동 기록']]) {
+for (const [id, label] of [['Overview', '연속성 관제'], ['Packets', '패킷 · 세계선'], ['Scopes', '스코프 데이터 관리'], ['Recovery', '구간 점검 · 복구'], ['Server', '서버 연결'], ['Settings', '설정'], ['Logs', '작동 기록']]) {
   assert.ok(source.includes(`nav('${id}','${label}'`), `missing canonical ${id} destination`);
   assert.ok(source.includes(`data-hayaku-viewer-panel="${id.toLowerCase()}"`), `missing ${id} destination panel`);
 }

@@ -158,5 +158,28 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
  }
  const archiveEvidence='libra:v1:scope:archive:archive:source-evidence:v1:evidence';
  r=await inspect('libra',{records:[root('libra',1,{archiveRef:{archiveId:'archive',manifestKey:archive}}),row(archive,{schema:'libra.shared_archive.v1',archiveId:'archive',memoryRefs:[{key:memory,status:'committed'}]}),row(memory,{schema:'libra.canonical_memory.v1',memoryId:'one',scopeKey:'archive:archive',sourceEvidenceRef:{key:archiveEvidence}}),row(archiveEvidence,{schema:'memory-suite.source-evidence.v1',owner:'libra',binding:{scopeKey:'archive:archive'},payloadDigest:'fixture'})]});ok(r);assert.equal(r.scopes.length,1);assert.equal(r.records[3].classification,'shared');assert.ok(r.records[3].dependencyScopeIds.includes(identity('libra',1)));
+ // Real storage families reported by users must not disappear from the inventory.
+ const projectionScope=identity('libra',1);
+ const projectionKeys=['state-projection','state-projection-cache:index','state-projection-cache:cac4bb9b:457'];
+ r=await inspect('libra',{records:[root('libra',1),...projectionKeys.map(suffix=>row(`libra:v1:scope:${projectionScope}:${suffix}`,{scopeKey:projectionScope,derived:true}))]});ok(r);
+ assert.ok(r.records.every(rec=>rec.scopeId===projectionScope));
+ const legacyArchiveVector='libra:v1:scope:archive:archive:vector:arc_cd285af8:6282:r2:lep_ftk24b';
+ const archiveInputs=[root('libra',1,{archiveRef:{archiveId:'archive',manifestKey:archive}}),row(archive,{schema:'libra.shared_archive.v1',archiveId:'archive',memoryRefs:[{key:memory}]}),row(memory,{schema:'libra.canonical_memory.v1',embedding:{vectorKey:legacyArchiveVector}}),row(legacyArchiveVector,{scopeKey:'archive:archive',data:[1,2]})];
+ r=await inspect('libra',{records:archiveInputs});ok(r);assert.equal(r.scopes.length,1);assert.ok(r.records[3].dependencyScopeIds.includes(projectionScope));
+ const wrongArchive=clone(archiveInputs);wrongArchive[3].value=JSON.stringify({scopeKey:'archive:other'});
+ r=await inspect('libra',{records:wrongArchive});blocked(r,/archive_vector_identity/);
+ r=await inspect('libra',{records:[archiveInputs[3]]});blocked(r,/ownership/);
+ const removedMemory=`libra:v1:scope:${projectionScope}:memory:5:r1`,removedVector=`libra:v1:scope:${projectionScope}:vector:old:r1:p`;
+ const run=row(`libra:v1:scope:${projectionScope}:run:run_msmzudpk_362ndub`,{schema:'libra.execution_run.v1',scopeKey:projectionScope,status:'complete',commit:{status:'committed',memoryKey:removedMemory},embedding:{vectorKey:removedVector}});
+ r=await inspect('libra',{records:[root('libra',1),run]});ok(r);assert.equal(r.records[1].value,run.value);
+ r=await inspect('libra',{records:[root('libra',1,{memories:{old:{key:removedMemory}}}),run]});blocked(r,/dependency_missing/);
+ const packageRow=row('libra:v1:handoff:8f03ce61-8a52-47df-bb19-595ca155fc98',{schema:'libra.session_handoff.package.v1',source:{scope:{scopeKey:projectionScope}},archiveRef:{archiveId:'archive',manifestKey:archive},memoryRefs:[{key:memory}],continuityStateSeed:{provenance:{memoryKey:removedMemory}},storyArcSeed:{sources:[{key:removedMemory}]}});
+ r=await inspect('libra',{records:[...archiveInputs,packageRow]});ok(r);
+ r=await inspect('libra',{records:[root('libra',1),packageRow]});blocked(r,/dependency_missing/);
+ // Required Flashback shards still block and name exactly what is absent.
+ const missingShard=`vector_rag_memory:scope:${keyHash(identity('flashback',1))}:records:commit:missing:shard:0000`;
+ r=await inspect('flashback',{records:[root('flashback',1,{commitId:'missing',shardCount:1,count:1})]});blocked(r,/dependency_missing/);assert.ok(r.blockers.some(x=>x.detail===missingShard));
+ const invalidRegistry=row('vector_rag_memory:scope_registry:v2',{version:2,scopes:[{scopeKey:identity('flashback',1),storageHash:'stale',chatBody:'never print this'}]});
+ r=await inspect('flashback',{records:[invalidRegistry]});blocked(r,/native_registry_identity_invalid/);assert.ok(r.blockers[0].detail.includes('stale'));assert.ok(!JSON.stringify(r.blockers).includes('never print this'));
  console.log(`Global owner discovery adapters: PASS (${checks} scenarios)`);
 })().catch(error=>{console.error(error);process.exitCode=1;});

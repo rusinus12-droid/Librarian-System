@@ -17,7 +17,8 @@ const seedRoots=name=>Array.from({length:2},(_,i)=>{
 async function settleOwnerStore(s){let before=JSON.stringify([...s.values]),stable=0;for(let i=0;i<30;i++){await pause(100);const next=JSON.stringify([...s.values]);stable=next===before?stable+1:0;if(stable===3)return;before=next;}throw Error('owner startup store did not settle');}
 async function openPanel(s){
  await s.open();await pause(180);
- if(s.name==='LIBRA'){await s.click('[data-go="settings"]');await s.click('.setnav [data-subtab="store"]');}
+ if(s.name==='LIBRA'){await settleOwnerStore(s);const firstRun=s.doc.querySelector('[data-libra-quick-dialog] .dialog__actions button');if(firstRun)await s.click('[data-libra-quick-dialog] .dialog__actions button');}
+ if(s.name==='LIBRA'){await s.click('.topbar [data-go="settings"]');await until(()=>s.doc.querySelector('.setnav [data-subtab="store"]'),'settings room');await s.click('.setnav [data-subtab="store"]');}
  else if(s.name==='HAYAKU')await s.click('[data-hayaku-viewer-goto="server"]');
  else {await s.click('[data-go="connect"]');await s.click('button[data-group="c"][data-subtab="srv"]');}
  await until(()=>s.doc.querySelector('[data-apply]'),'global panel mounted',10000);
@@ -25,11 +26,12 @@ async function openPanel(s){
 }
 async function apply(s,mode){
  const input=s.doc.querySelector(`input[value="${mode}"]`);assert(input);input.checked=true;input.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));
- s.context.confirm=()=>true;
- const button=s.doc.querySelector('[data-apply]');await button.onclick();
+ s.context.confirm=()=>{throw Error('Native confirmation forbidden');};
+ const approve=async button=>{const pending=button.onclick();await until(()=>s.doc.querySelector('[data-mode-confirm-approve]')?.onclick||s.doc.querySelector('[data-status]')?.textContent.includes('inventory_changed_during_preview'),'migration approval or fresh preview');const node=s.doc.querySelector('[data-mode-confirm-approve]');if(node?.onclick)node.click();await pending;};
+ const button=s.doc.querySelector('[data-apply]');await approve(button);
  // A read-only preview may observe the owner's own startup schema write. Exercise
  // the documented fresh confirmation path once, never skip an unknown-data blocker.
- if(s.doc.querySelector('[data-status]').textContent.includes('inventory_changed_during_preview')){s.globalInventoryRefreshes=(s.globalInventoryRefreshes||0)+1;await settleOwnerStore(s);const selected=s.doc.querySelector(`input[value="${mode}"]`);selected.checked=true;selected.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));await s.doc.querySelector('[data-apply]').onclick();}
+ if(s.doc.querySelector('[data-status]').textContent.includes('inventory_changed_during_preview')){s.globalInventoryRefreshes=(s.globalInventoryRefreshes||0)+1;await settleOwnerStore(s);const selected=s.doc.querySelector(`input[value="${mode}"]`);selected.checked=true;selected.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));await approve(s.doc.querySelector('[data-apply]'));}
  await until(()=>s.doc.querySelector('[data-job].terminal'),'completed global job card',4000);
  const text=[s.doc.querySelector('[data-status]').textContent,s.doc.querySelector('[data-job-title]').textContent,s.doc.querySelector('[data-job-count]').textContent].join('\n');
  const diagnostics=JSON.parse(s.doc.querySelector('[data-job-diagnostics]').value);assert.equal(diagnostics.result.completeKnownScopes,true,text);assert.equal(diagnostics.result.mode,mode,text);assert.equal(diagnostics.result.verifiedScopes,3);assert.match(s.doc.querySelector('[data-job-count]').textContent,/3 \/ 3/,text);
@@ -45,6 +47,7 @@ async function apply(s,mode){
   // Freeze the actual durable source while requiring every seeded identity/data field.
   const frozenRoots=seedRoots(name).map(([key,seed])=>{const value=s.values.get(key);assert.equal(typeof value,'string');const body=JSON.parse(value);for(const [field,expected]of Object.entries(JSON.parse(seed)))assert.deepEqual(body[field],expected,'startup preserves seeded field '+key+'/'+field);return [key,value];});
   console.log('FROZEN_OWNER_ROOTS',JSON.stringify({name,kind,roots:frozenRoots.map(([key,value])=>({key,bytes:Buffer.byteLength(value),sha256:require('node:crypto').createHash('sha256').update(value).digest('hex')}))}));
+  if(name==='LIBRA'||name==='HAYAKU')assert.equal(s.doc.querySelector('[data-scope-manager]'),null,'scope data management is separate from server settings');
   const forward=await apply(s,'server_only');const forwardRefreshes=s.globalInventoryRefreshes||0;
   const rows=handler.app.repositories[namespace].database.prepare('SELECT key,value_json FROM kv WHERE deleted=0').all();
   for(const [key,value]of frozenRoots)assert(rows.some(row=>row.key===key&&JSON.parse(row.value_json)===value),'actual owner root transferred '+key);

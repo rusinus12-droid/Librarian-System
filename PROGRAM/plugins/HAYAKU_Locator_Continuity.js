@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.0.157
-//@version 3.0.157
+//@display-name HAYAKU · Locator Continuity v3.0.162
+//@version 3.0.162
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.0.157';
+  const PLUGIN_VERSION = '3.0.162';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -7211,6 +7211,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return scopes;
   };
   const collectGlobalInventory = async (target,inventoryOptions={}) => {
+    const readOnlyUnfingerprinted=inventoryOptions.readOnlyCatalog===true&&typeof globalThis.crypto?.subtle?.digest!=='function';
+    const digestInventory=value=>readOnlyUnfingerprinted?Promise.resolve(''):globalDigest(value);
     const configuredUrl=await configuredServerUrlNow(),targetUrl=normalizeServerUrl(inventoryOptions.url||configuredUrl);
     const urlChanged=targetUrl!==configuredUrl;
     let inventoryRequest=null;
@@ -7228,6 +7230,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       };
     }
     const blockers=[],records=[],registries=[],registryCopies=[];
+    if(readOnlyUnfingerprinted)blockers.push({code:'scope_catalog_read_only_crypto_unavailable'});
     let hostScopes=[];
     try{hostScopes=await globalHostCatalog();}catch(error){blockers.push({code:String(error.code || 'host_catalog_read_failed')});}
     if(typeof options.discoverGlobalScopes !== 'function')blockers.push({code:'owner_global_discovery_unavailable'});
@@ -7311,7 +7314,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const original=originalByIdentity.get(globalRecordIdentity(row));
       if(!original)continue;
       const checked={...original,...(Object.hasOwn(row,'logicalValue')?{logicalValue:row.logicalValue}:{}),classification:row.classification,scopeId:String(row.scopeId||''),dependencyScopeIds:row.dependencyScopeIds||[],dependencyKeys:row.dependencyKeys||[]};
-      checked.fingerprint=await globalDigest([checked.deleted,checked.value]);safeRecords.push(checked);
+      checked.fingerprint=await digestInventory([checked.deleted,checked.value]);safeRecords.push(checked);
     }
     for(const row of safeRecords){
       if(row.location!=='server'||row.deleted||!globalPayloadRecord(row))continue;
@@ -7321,9 +7324,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     const catalog={hostScopes,scopes:scopes.map(scope=>[scope.scopeId,scope.scopeKey,scope.characterId,scope.chatId,scope.aliases]),
       keys:[...new Set(safeRecords.filter(row=>row.classification!=='control').map(row=>globalCanonical([row.space,row.logicalKey,row.classification,row.scopeId,row.dependencyScopeIds])))].sort()};
-    const catalogFingerprint=await globalDigest(catalog);
+    const catalogFingerprint=await digestInventory(catalog);
     return {schema:'memory-suite.global-inventory.v1',namespace,targetUrl,targetMode:target,scopes:scoped,records:safeRecords,registry,registryCopies,hostScopes,
-      stores,remoteRequired,serverPin,catalogFingerprint,inventoryFingerprint:await globalDigest([catalogFingerprint,safeRecords.filter(row=>row.classification!=='control').map(row=>[globalRecordIdentity(row),row.fingerprint,row.revision,row.digest])]),
+      stores,remoteRequired,serverPin,catalogFingerprint,inventoryFingerprint:await digestInventory([catalogFingerprint,safeRecords.filter(row=>row.classification!=='control').map(row=>[globalRecordIdentity(row),row.fingerprint,row.revision,row.digest])]),
       blockers,completeKnownScopes:owner.completeKnownScopes===true&&blockers.length===0};
   };
   const globalInventorySummary = inventory => ({schema:inventory.schema,namespace,targetUrl:inventory.targetUrl,targetMode:inventory.targetMode,completeKnownScopes:inventory.completeKnownScopes,
@@ -9618,7 +9621,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const scope = normalizeScopeDescriptor(deleteOptions.scope || await resolveCurrentScope(true));
     await assertRecoveryActionAllowed(scope, 'delete_pluginstorage');
     const checked = await scopedVerifyPreservation(state.legacy.plugin, { scope });
-    await persistScopedMode(MODE_SERVER_ONLY, scope, { source:'scope_pluginstorage_delete' });
+    if(typeof deleteOptions.beforeDelete==='function')await deleteOptions.beforeDelete();
+    if(deleteOptions.preserveMode===true){
+      if((await readScopeMode(scope,true)).mode!==MODE_SERVER_ONLY)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_REQUIRES_SERVER_ONLY');
+    }else await persistScopedMode(MODE_SERVER_ONLY, scope, { source:'scope_pluginstorage_delete' });
     const result = {
       ok:true, schema:'memory-suite.scope-pluginstorage-delete.v2', namespace, scope,
       deleted:0, deletedPlugin:0, deletedLocal:0, checked:checked.checked,
@@ -9753,6 +9759,297 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return result;
   };
 
+  // BEGIN OWNER SCOPE MANAGEMENT v1
+  // Read the complete owner inventory without returning memory bodies or credentials.
+  const requireScopeManagement = () => {
+    if (!globalModeEnabled || options.scopeManagement !== true) throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_UNSUPPORTED');
+  };
+  const localScopeDataPlan = (inventory,scope) => {
+    const owned=inventory.records.filter(row=>row.location!=='server'&&!row.deleted&&row.classification==='scope'&&row.scopeId===scope.scopeId);
+    const keys=new Set(owned.flatMap(row=>[row.key,row.logicalKey]));
+    const artifacts=inventory.records.filter(row=>row.location!=='server'&&!row.deleted&&row.classification==='artifact'&&row.scopeId===scope.scopeId
+      &&owned.some(parent=>parent.key===row.artifactOwnerKey&&parent.space===row.space&&parent.location===row.location));
+    const referenced=inventory.records.some(row=>!row.deleted&&!owned.includes(row)&&!artifacts.includes(row)
+      &&(row.dependencyKeys||[]).some(key=>keys.has(key)));
+    const registryEdits=[];let registryConflict=false;
+    for(const row of inventory.records.filter(row=>row.location!=='server'&&!row.deleted&&(options.scopeRegistryKeys||[]).includes(row.logicalKey))){
+      let value;try{value=typeof row.value==='string'?JSON.parse(row.value):row.value;}catch(_){registryConflict=true;continue;}
+      if(!value||typeof value!=='object'||Array.isArray(value)){registryConflict=true;continue;}
+      const next={...value},removedEntries=[];let removed=0;
+      for(const [id,entry]of Object.entries(value))if(entry?.scopeKey===scope.scopeId){
+        if(entry.characterId!==scope.characterId||entry.chatId!==scope.chatId){registryConflict=true;continue;}
+        removedEntries.push([id,entry]);delete next[id];removed++;
+      }
+      if(removed)registryEdits.push({row,next:typeof row.value==='string'?JSON.stringify(next):next,removed,removedEntries});
+    }
+    return {owned,artifacts,registryEdits,referenced:referenced||registryConflict};
+  };
+  const inspectScopeCatalog = async () => {
+    requireScopeManagement();
+    return await scopeCatalogFromInventory(await collectGlobalInventory(MODE_PLUGIN_ONLY,{readOnlyCatalog:true}));
+  };
+  const scopeCatalogFromInventory = async inventory => {
+    const current=await resolveCurrentScope(true).catch(()=>null);
+    const activeMode=current?inventory.scopes.find(scope=>scope.scopeId===current.scopeId)?.sourceMode:null;
+    const safeIssue=row=>Object.fromEntries(['code','key','space','location','scopeId','detail','reason'].filter(key=>row[key]!=null).map(key=>[key,row[key]]));
+    const blockers=inventory.blockers.map(safeIssue);
+    const general=blockers.filter(issue=>!issue.key&&!issue.scopeId);
+    const rows=[];
+    for(const scope of inventory.scopes){
+      const records=inventory.records.filter(row=>row.classification!=='control'&&globalRecordScopeIds(row).includes(scope.scopeId));
+      const keySet=new Set(records.flatMap(row=>[row.key,row.logicalKey]));
+      const issues=[...general,...blockers.filter(issue=>issue.scopeId===scope.scopeId||issue.key&&keySet.has(issue.key))];
+      const live=records.filter(row=>!row.deleted&&row.classification!=='artifact');
+      const owned=live.filter(row=>row.classification==='scope'&&row.scopeId===scope.scopeId);
+      const keys=[...new Set(live.map(row=>row.logicalKey))].sort();
+      const locations=[...new Set(live.map(row=>row.location))].sort();
+      const plan=localScopeDataPlan(inventory,scope);
+      let dataSummary='',dataMetrics={primary:null,secondary:null,updatedAt:null};
+      try{if(typeof options.scopeDataSummary==='function'){
+        const summary=options.scopeDataSummary({scope,records:live});
+        dataSummary=String(summary&&typeof summary==='object'?summary.label||'':summary||'').slice(0,240);
+        if(summary&&typeof summary==='object'){
+          for(const key of ['primary','secondary'])if(Number.isSafeInteger(summary[key])&&summary[key]>=0)dataMetrics[key]=summary[key];
+          const at=typeof summary.updatedAt==='number'?summary.updatedAt:typeof summary.updatedAt==='string'?Date.parse(summary.updatedAt):NaN;
+          if(Number.isFinite(at)&&at>0&&at<=8640000000000000)dataMetrics.updatedAt=at;
+        }
+      }}catch(_){}
+      const canDelete=inventory.completeKnownScopes&&!!current?.scopeId&&activeMode===MODE_PLUGIN_ONLY&&scope.sourceMode===MODE_PLUGIN_ONLY&&!!scope.characterId&&!!scope.chatId&&current.scopeId!==scope.scopeId&&!plan.referenced&&(plan.owned.length>0||plan.registryEdits.length>0);
+      const fingerprint=typeof globalThis.crypto?.subtle?.digest==='function'?await globalDigest([scope,current?.scopeId,inventory.hostScopes,records.filter(row=>!(options.scopeRegistryKeys||[]).includes(row.logicalKey)).map(row=>[globalRecordIdentity(row),row.fingerprint,row.revision,row.digest]),plan.registryEdits.map(edit=>[globalRecordIdentity(edit.row),edit.removedEntries]),issues,general]):'';
+      rows.push({scopeId:scope.scopeId,scopeKey:scope.scopeKey,characterName:scope.characterName||'',chatTitle:scope.chatTitle||'',label:scope.label||scope.scopeKey,
+        detached:!!(scope.canonicalCharacterId||scope.characterId)&&!!(scope.canonicalChatId||scope.chatId)&&!inventory.hostScopes.some(host=>(scope.canonicalCharacterId||scope.characterId)===host.characterId&&(scope.canonicalChatId||scope.chatId)===host.chatId),current:current?.scopeId===scope.scopeId,mode:scope.sourceMode,modeLabel:modeLabel(scope.sourceMode),
+        recordCount:keys.length,ownedRecordCount:new Set(owned.map(row=>row.logicalKey)).size,ownedLocalRecords:owned.filter(row=>row.location!=='server').length,localRecords:live.filter(row=>row.location!=='server').length,serverRecords:live.filter(row=>row.location==='server').length,
+        locations,keys,issues,fingerprint,dataSummary,dataMetrics,canDelete,deleteBlockedReason:canDelete?'':current?.scopeId===scope.scopeId?'현재 채팅은 삭제 대상에서 제외됩니다.':scope.sourceMode!==MODE_PLUGIN_ONLY||activeMode!==MODE_PLUGIN_ONLY?'플러그인 단독 모드에서만 로컬 자료를 정리합니다.':!scope.characterId||!scope.chatId?'원본 캐릭터·채팅 식별 미확인':plan.referenced?'다른 자료에서 참조 중':!inventory.completeKnownScopes?'전체 목록·참조 검사가 완료되지 않았습니다.':'정리할 로컬 자료가 없습니다.',registryEntries:plan.registryEdits.reduce((n,edit)=>n+edit.removed,0),referenced:plan.referenced,serverChecked:inventory.remoteRequired&&!!inventory.serverPin&&general.length===0,canManage:!!current?.scopeId&&owned.length>0&&issues.length===0&&general.length===0});
+    }
+    const unresolved=inventory.records.filter(row=>globalPayloadRecord(row)&&!globalRecordScopeIds(row).some(Boolean))
+      .map(row=>({key:row.logicalKey,space:row.space,location:row.location,issues:blockers.filter(issue=>issue.key===row.key||issue.key===row.logicalKey)}));
+    return {schema:'memory-suite.scope-management-catalog.v1',namespace,checkedAt:Date.now(),completeKnownScopes:inventory.completeKnownScopes,
+      currentScopeId:current?.scopeId||'',rows,unresolved,blockers};
+  };
+  const cleanupManagedScope = async (inventory,scope) => {
+    const owned=inventory.records.filter(row=>row.location!=='server'&&!row.deleted&&row.classification==='scope'&&row.scopeId===scope.scopeId);
+    const artifacts=inventory.records.filter(row=>row.location!=='server'&&!row.deleted&&row.classification==='artifact'&&row.scopeId===scope.scopeId
+      &&owned.some(parent=>parent.key===row.artifactOwnerKey&&parent.space===row.space&&parent.location===row.location));
+    const snapshots=[];
+    for(const row of [...artifacts,...owned]){
+      const store=inventory.stores[row.space],value=await store.getItem(row.key);
+      if(globalCanonical(value)!==globalCanonical(row.value))throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
+      snapshots.push({row,store,value});
+    }
+    try{
+      const result=await scopedDeletePluginStorageAfterVerification({scope,preserveMode:true,beforeDelete:async()=>{
+        if((await resolveCurrentScope(true)).scopeId===scope.scopeId)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CLEANUP_BLOCKED');
+      }});
+      result.deletedArtifacts=0;
+      // The verified logical root covers these exact physical chunks. Shared roots
+      // and their chunks remain untouched even when this scope references them.
+      for(const row of artifacts){
+        const store=inventory.stores[row.space];
+        if(!await legacyRemoveVerified(store,row.key))throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_ARTIFACT_DELETE_FAILED');
+        result.deletedArtifacts++;result.deleted++;
+        if(row.space==='plugin')result.deletedPlugin++;else result.deletedLocal++;
+        if(result.spaces[row.space]){result.spaces[row.space].deleted++;result.spaces[row.space].examined++;}
+      }
+      return result;
+    }catch(error){
+      const failures=[];
+      // Chunks precede their roots, so a restored root never precedes its payload.
+      for(const {row,store,value}of snapshots){
+        try{const current=await store.getItem(row.key);if(globalCanonical(current)===globalCanonical(value))continue;
+          if(!isNullishStorageValue(current)||!await legacyWriteVerified(store,row.key,value))failures.push(row.key);
+        }catch(_){failures.push(row.key);}
+      }
+      error.rollback={restored:failures.length===0,failures};throw error;
+    }
+  };
+  const deleteLocalScopeData = async (inventory,scope,row,action) => {
+    const plan=localScopeDataPlan(inventory,scope);
+    if(!row.canDelete||action==='prune'&&plan.owned.length)throw globalModeError('MEMORY_SUITE_SCOPE_DATA_DELETE_BLOCKED');
+    const currentId=await resolveCurrentScope(true).then(scope=>scope.scopeId);
+    const hostBinding=globalCanonical(inventory.hostScopes),generation=dataBinding.generation;
+    const assertCurrent=async()=>{
+      if(lifecycle.disposed||resetReloadRequired||dataBinding.generation!==generation
+        ||(await resolveCurrentScope(true)).scopeId!==currentId||currentId===scope.scopeId
+        ||(await readScopeMode(scope,true)).mode!==MODE_PLUGIN_ONLY
+        ||(await readScopeMode(await resolveCurrentScope(true),true)).mode!==MODE_PLUGIN_ONLY
+        ||globalCanonical(await globalHostCatalog())!==hostBinding)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
+    };
+    const edits=[...plan.artifacts,...plan.owned].map(row=>({row,next:null})).concat(plan.registryEdits);
+    for(const edit of edits){edit.store=inventory.stores[edit.row.space];edit.before=await edit.store.getItem(edit.row.key);
+      if(globalCanonical(edit.before)!==globalCanonical(edit.row.value))throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');}
+    const applied=[];
+    try{
+      for(const edit of edits){await assertCurrent();
+        if(globalCanonical(await edit.store.getItem(edit.row.key))!==globalCanonical(edit.before))throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
+        applied.push(edit);
+        const ok=edit.next===null?await legacyRemoveVerified(edit.store,edit.row.key):await legacyWriteVerified(edit.store,edit.row.key,edit.next);
+        if(!ok)throw globalModeError('MEMORY_SUITE_SCOPE_DATA_DELETE_FAILED');
+      }
+      await assertCurrent();
+      return {ok:true,scopeId:scope.scopeId,deleted:plan.owned.length+plan.artifacts.length,registryEntriesRemoved:plan.registryEdits.reduce((n,edit)=>n+edit.removed,0)};
+    }catch(error){
+      const failures=[];
+      for(const edit of applied.slice().reverse())try{
+        const current=await edit.store.getItem(edit.row.key);
+        if(globalCanonical(current)===globalCanonical(edit.before))continue;
+        if(globalCanonical(current)!==globalCanonical(edit.next)||!await legacyWriteVerified(edit.store,edit.row.key,edit.before))failures.push(edit.row.key);
+      }catch(_){failures.push(edit.row.key);}
+      error.rollback={restored:!failures.length,failures};throw error;
+    }
+  };
+  const manageScope = async request => {
+    requireScopeManagement();
+    if(!['sync','restore','cleanup','delete','prune','export'].includes(request?.action)||!request.scopeId||!request.expectedFingerprint)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_REQUEST_INVALID');
+    return await withModeConfiguration(async()=>{
+      if(state.syncJob.creating||state.syncJob.current&&!syncJobTerminal(state.syncJob.current.status))throw transitionBusyError();
+      do{await Promise.allSettled([...ownerIOWork]);await Promise.allSettled([...mutationTails.values()]);}while(ownerIOWork.size||mutationTails.size);
+      modeConfigurationFrozen=true;
+      const inventory=await collectGlobalInventory(MODE_PLUGIN_ONLY),catalog=await scopeCatalogFromInventory(inventory);
+      const row=catalog.rows.find(row=>row.scopeId===request.scopeId),scope=inventory.scopes.find(scope=>scope.scopeId===request.scopeId);
+      if(!row||row.fingerprint!==request.expectedFingerprint||!row.fingerprint)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
+      if(['delete','prune'].includes(request.action))return await deleteLocalScopeData(inventory,scope,row,request.action);
+      if(request.action==='export'){
+        if(!catalog.completeKnownScopes||row.mode!==MODE_PLUGIN_ONLY)throw globalModeError('MEMORY_SUITE_SCOPE_DATA_EXPORT_BLOCKED');
+        const records=inventory.records.filter(item=>item.location!=='server'&&!item.deleted&&globalRecordScopeIds(item).includes(scope.scopeId)&&item.classification!=='control');
+        return {ok:true,schema:'memory-suite.scope-data-backup.v1',namespace,scope,exportedAt:Date.now(),records:records.map(item=>({space:item.space,key:item.key,value:item.value}))};
+      }
+      if(!row.canManage)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
+      if(request.action==='sync'&&row.mode===MODE_SERVER_ONLY)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_LOCAL_SOURCE_REQUIRED');
+      if(request.action!=='sync'&&(!catalog.completeKnownScopes||row.mode!==MODE_SERVER_ONLY))throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_REQUIRES_SERVER_ONLY');
+      if(request.action==='cleanup'&&(row.current||!row.ownedLocalRecords))throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CLEANUP_BLOCKED');
+      globalMigrationContext=inventory;
+      try{
+        if(request.action==='sync'){
+          const result=await scopedSynchronizeAll({scope,allowOverwrite:false,restoreMissingLocal:false});
+          await verifyGlobalScopeDestination(inventory,scope,MODE_SERVER_ONLY);return result;
+        }
+        if(request.action==='restore')return await scopedRestoreAll({scope});
+        return await cleanupManagedScope(inventory,scope);
+      }finally{globalMigrationContext=null;}
+    });
+  };
+  const mountScopeManagementPanel = async container => {
+    requireScopeManagement();
+    const esc=value=>safeText(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    const countHeader=namespace==='libra'?'정본 / Micro':'패킷 / 슬롯';
+    container.innerHTML=`<section class="card" data-scope-manager><style>
+      [data-scope-manager]{width:100%;min-width:0;box-sizing:border-box;background:var(--surface,#faf8f2);color:var(--text,#302b28);padding:16px;border:1px solid var(--border,#d6d0c4);border-radius:12px}
+      [data-scope-manager] .actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0}
+      [data-scope-manager] button{font:inherit;font-size:12px;color:inherit;background:var(--surface2,#f0ece3);border:1px solid var(--border2,#b6ad9d);border-radius:8px;padding:8px 10px;cursor:pointer}
+      [data-scope-manager] button:disabled{opacity:.5;cursor:default}[data-scope-manager] .muted{color:var(--text2,#62594f);font-size:12px;line-height:1.65}
+      [data-scope-manager] [data-scope-action=delete],[data-scope-manager] [data-scope-delete-one]{color:var(--danger,#ad3331);border-color:var(--danger-line,#e1aaa5);background:var(--danger-soft,#f9e2df)}
+      [data-scope-manager] textarea{box-sizing:border-box;color:inherit;background:var(--surface2,#f0ece3)}
+      [data-scope-manager] .scope-data-note{padding:10px 12px;border:1px solid var(--warn-line,#dcc487);border-radius:8px;background:var(--warn-soft,#f4e9d0);color:var(--warn-ink,#654410);font-size:12px;line-height:1.6}
+      [data-scope-manager] [data-scope-filter]{width:100%;box-sizing:border-box}[data-scope-manager] [data-scope-search]{min-width:120px;flex:1}
+      [data-scope-manager] .scope-data-table-wrap{max-width:100%;min-width:0;overflow-x:auto;border:1px solid var(--border,#d6d0c4);border-radius:10px}
+      [data-scope-manager] .scope-data-table{width:100%;min-width:600px;border-collapse:collapse;table-layout:fixed;font-size:12px}
+      [data-scope-manager] th,[data-scope-manager] td{padding:10px 7px;text-align:left;vertical-align:middle;border-bottom:1px solid var(--border,#d6d0c4);overflow-wrap:anywhere}
+      [data-scope-manager] th{background:var(--surface2,#f0ece3);font-weight:600;color:var(--text2,#62594f)}
+      [data-scope-manager] tbody tr:last-child td{border-bottom:0}[data-scope-manager] tr[data-current=true]{background:var(--accent-soft,#f1dfd8)}
+      [data-scope-manager] .scope-data-name b,[data-scope-manager] .scope-data-name span{display:block;overflow-wrap:anywhere}
+      [data-scope-manager] .scope-data-name>span{color:var(--text2,#62594f)}[data-scope-manager] .scope-data-name details{margin-top:5px}
+      [data-scope-manager] .scope-data-name details[open]{min-width:150px}[data-scope-manager] .scope-data-name pre{white-space:pre-wrap;overflow-wrap:anywhere}
+      [data-scope-manager] .scope-data-state{display:inline-block;padding:3px 6px;border:1px solid var(--border2,#b6ad9d);border-radius:12px;font-size:11px}
+      </style><h3>스코프 데이터 관리</h3>
+      <p class="scope-data-note">삭제·정리는 실행 전에 대상과 참조 관계를 다시 검사합니다. 확인할 수 없는 자료는 보존합니다. 서버 자료와 저장 위치 전환은 별도 서버 관리에서 진행합니다.</p>
+      <select data-scope-filter aria-label="스코프 분류"><option value="all">전체</option><option value="memory">기억 저장소</option><option value="empty">빈 목록 · 정리 후보</option><option value="detached">고아 데이터</option><option value="issues">확인 필요</option><option value="server_only">서버 관리 대상</option></select>
+      <div class="actions"><input data-scope-search type="search" aria-label="스코프 검색" placeholder="캐릭터 / 채팅 이름 · 스코프 키로 찾기"><button type="button" data-scope-action="export">선택 데이터 백업</button><button type="button" data-scope-action="delete">선택 삭제</button></div>
+      <div class="actions"><button type="button" data-scope-refresh>새로고침</button><button type="button" data-scope-inspect>목록 상태 검사</button><button type="button" data-scope-pick="empty">빈 목록 선택</button><button type="button" data-scope-action="prune">선택 항목 안전 정리</button><button type="button" data-scope-pick="orphan">고아 데이터 선택</button><span class="muted" data-scope-selection>선택 0개</span></div>
+      <p class="muted" data-scope-summary role="status" aria-live="polite">목록을 확인하고 있습니다…</p>
+      <div data-scope-confirm hidden style="display:none" role="alertdialog" aria-label="선택 스코프 작업 확인"><p data-scope-confirm-text></p><label data-scope-delete-ack-row hidden><input type="checkbox" data-scope-delete-ack> 필요한 데이터를 백업했으며 선택 자료의 영구 삭제에 동의합니다.</label><div class="actions"><button type="button" data-scope-cancel>취소</button><button type="button" data-scope-approve>확인하고 실행</button></div></div>
+      <div data-scope-result role="status" aria-live="polite"></div>
+      <div class="scope-data-table-wrap" tabindex="0" role="region" aria-label="스코프 데이터 목록 · 좁은 화면에서는 좌우로 스크롤"><table class="scope-data-table"><colgroup><col style="width:30px"><col><col style="width:72px"><col style="width:55px"><col style="width:85px"><col style="width:90px"><col style="width:60px"></colgroup><thead><tr><th><input type="checkbox" data-scope-select-all aria-label="검색 결과의 관리 가능 스코프 모두 선택"></th><th scope="col">캐릭터 / 채팅</th><th scope="col">${countHeader}</th><th scope="col">저장 키</th><th scope="col">상태</th><th scope="col">업데이트</th><th scope="col">관리</th></tr></thead><tbody data-scope-rows></tbody></table></div>
+      <div data-scope-unresolved style="overflow-wrap:anywhere"></div><div class="actions"><button type="button" data-scope-more hidden>다음 50개</button></div>
+      <details data-scope-diagnostics><summary>전체 목록 진단 · 본문과 API 키 제외</summary><textarea data-scope-diagnostics-text readonly aria-label="전체 스코프 목록 진단" style="width:100%;min-height:160px"></textarea></details></section>`;
+    const root=container.querySelector('[data-scope-manager]'),q=selector=>root.querySelector(selector);
+    const palette=typeof globalThis.getComputedStyle==='function'?globalThis.getComputedStyle(root):null;
+    for(const control of root.querySelectorAll('input[type="search"],select,option')){
+      control.style.backgroundColor=palette?.backgroundColor||'#111a2a';control.style.color=palette?.color||'#e8eefc';
+      control.style.border='1px solid #526273';control.style.borderRadius='8px';control.style.padding='10px';
+    }
+    let catalog=null,busy=false,limit=50,serial=0;const selected=new Set();
+    const filtered=()=>{const term=q('[data-scope-search]').value.trim().toLocaleLowerCase(),filter=q('[data-scope-filter]').value;
+      return (catalog?.rows||[]).filter(row=>(!term||[row.characterName,row.chatTitle,row.scopeKey,row.scopeId].join(' ').toLocaleLowerCase().includes(term))
+        &&(filter==='all'||filter==='issues'&&(row.issues.length>0||row.unavailable)||filter==='memory'&&row.ownedRecordCount>0&&!row.detached||filter==='detached'&&row.detached&&row.ownedRecordCount>0||filter==='empty'&&row.ownedRecordCount===0&&!row.unavailable&&row.issues.length===0&&catalog.completeKnownScopes||row.mode===filter));};
+    const selectable=row=>!row.current&&(row.canDelete||row.canManage&&row.mode===MODE_PLUGIN_ONLY);
+    const updateSelection=()=>{
+      const rows=filtered().filter(selectable),all=q('[data-scope-select-all]');all.disabled=busy||rows.length===0;
+      all.checked=rows.length>0&&rows.every(row=>selected.has(row.scopeId));all.indeterminate=!all.checked&&rows.some(row=>selected.has(row.scopeId));
+      q('[data-scope-selection]').textContent=`선택 ${selected.size}개`;
+      const chosen=(catalog?.rows||[]).filter(row=>selected.has(row.scopeId));
+      root.querySelectorAll('[data-scope-action]').forEach(button=>{const action=button.getAttribute('data-scope-action');button.disabled=busy||!chosen.length||chosen.some(row=>action==='export'?!selectable(row):!row.canDelete||action==='prune'&&row.ownedRecordCount>0);});
+      root.querySelectorAll('[data-scope-pick],[data-scope-inspect]').forEach(button=>{button.disabled=busy;});
+    };
+    const render=()=>{
+      const rows=filtered();q('[data-scope-summary]').textContent=catalog?`확인된 스코프 ${catalog.rows.length}개 · 표시 ${rows.length}개 · 미해결 ${catalog.blockers.length}개${catalog.completeKnownScopes?'':' · 전체 확인 미완료'}`:'목록을 확인하고 있습니다…';
+      q('[data-scope-rows]').innerHTML=rows.slice(0,limit).map(row=>{
+        const status=row.unavailable?'조회 미확인':row.issues.length?'확인 필요':row.current?'현재':row.mode!==MODE_PLUGIN_ONLY?'서버 관리':row.referenced?'참조 중':row.detached&&row.ownedRecordCount?'고아 데이터':row.ownedRecordCount?'저장 자료':row.registryEntries?'목록 잔재':'자료 없음';
+        const at=row.unavailable?null:row.dataMetrics?.updatedAt;
+        const updated=at?new Date(at).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'—';
+        return `<tr data-scope-row="${esc(row.scopeId)}" data-current="${row.current?'true':'false'}">
+        <td><input type="checkbox" data-scope-select="${esc(row.scopeId)}" aria-label="${esc(row.label)} 선택" ${selected.has(row.scopeId)?'checked':''} ${busy||!selectable(row)?'disabled':''}></td>
+        <td class="scope-data-name"><b>${esc(row.characterName||row.label)}</b><span>${esc(row.chatTitle||'채팅 이름 미확인')}</span>
+        <details data-scope-detail><summary>상세</summary><div>${esc(row.scopeKey)}</div><div>${esc(row.modeLabel)}</div><div>${esc(row.dataSummary)}</div><div>${esc(row.locations.map(location=>({plugin:'플러그인 저장소',device:'기기 저장소',server:'서버'})[location]||location).join(' · ')||'저장 항목 없음')}</div><div>로컬 ${row.localRecords} / 서버 ${row.unavailable?'미확인':row.serverChecked?row.serverRecords:'미조회'}</div><div>${esc(row.deleteBlockedReason||'확인 후 선택 자료 삭제 가능')}</div><pre>${esc(row.issues.map(issue=>[issue.code,issue.key,issue.detail].filter(Boolean).join(' · ')).join('\n')||'확인된 오류 없음')}</pre><details><summary>저장 키 ${row.keys.length}개</summary><pre>${esc(row.keys.join('\n'))}</pre></details></details></td>
+        <td title="${esc(row.dataSummary)}" data-scope-counts>${row.unavailable?'—':row.dataMetrics?.primary??'—'} / ${row.unavailable?'—':row.dataMetrics?.secondary??'—'}</td><td>${row.unavailable?'—':row.ownedRecordCount}</td><td><span class="scope-data-state">${status}</span></td><td><time ${at?'datetime="'+new Date(at).toISOString()+'"':''}>${updated}</time></td><td><button type="button" data-scope-delete-one="${esc(row.scopeId)}" aria-label="${esc(row.label)} 삭제" ${busy||!row.canDelete?'disabled':''}>삭제</button></td></tr>`;
+      }).join('')||'<tr><td colspan="7" class="muted">표시할 스코프가 없습니다.</td></tr>';
+      q('[data-scope-more]').hidden=rows.length<=limit;
+      if(catalog){q('[data-scope-diagnostics-text]').value=JSON.stringify(catalog,null,2);
+        q('[data-scope-unresolved]').innerHTML=catalog.unresolved.length?`<details open><summary>스코프 식별 미확인 자료 ${catalog.unresolved.length}개 · 자동 연결·삭제 안 함</summary>${catalog.unresolved.map(row=>`<div class="mscx-scope-row"><b>${esc(row.key)}</b><span>${esc(row.location+' · '+row.space)}</span><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(row.issues.map(issue=>[issue.code,issue.detail].filter(Boolean).join(' · ')).join('\n'))}</pre></div>`).join('')}</details>`:'';
+      }
+      updateSelection();
+    };
+    const refresh=async()=>{
+      const ticket=++serial;q('[data-scope-refresh]').disabled=true;q('[data-scope-summary]').textContent='전체 스코프와 저장 항목을 확인하고 있습니다…';
+      try{const next=await inspectScopeCatalog();if(ticket!==serial||!root.isConnected)return;
+        if(!next.completeKnownScopes&&catalog){for(const old of catalog.rows)if(!next.rows.some(row=>row.scopeId===old.scopeId))next.rows.push({...old,canManage:false,canDelete:false,unavailable:true,issues:[{code:'scope_not_observed_in_incomplete_refresh'}]});}
+        catalog=next;for(const id of selected)if(!catalog.rows.some(row=>row.scopeId===id&&selectable(row)))selected.delete(id);render();
+      }catch(error){if(ticket===serial&&root.isConnected){q('[data-scope-summary]').textContent=`목록 확인 실패 · 이전 목록을 보존합니다: ${error.code||error.message}`;if(catalog){catalog={...catalog,completeKnownScopes:false,rows:catalog.rows.map(row=>({...row,unavailable:true,canManage:false,canDelete:false}))};selected.clear();render();q('[data-scope-result]').textContent=String(error.code||error.message);}}}
+      finally{if(ticket===serial&&root.isConnected)q('[data-scope-refresh]').disabled=false;}
+    };
+    q('[data-scope-refresh]').onclick=()=>{if(!busy)void refresh();};
+    q('[data-scope-inspect]').onclick=async()=>{if(busy)return;await refresh();q('[data-scope-diagnostics]').open=true;};
+    root.addEventListener('click',event=>{const button=event.target.closest?.('[data-scope-delete-one]');if(!button||button.disabled||busy)return;selected.clear();selected.add(button.getAttribute('data-scope-delete-one'));render();void q('[data-scope-action=delete]').onclick();});
+    q('[data-scope-search]').oninput=q('[data-scope-filter]').onchange=()=>{limit=50;render();};
+    q('[data-scope-more]').onclick=()=>{limit+=50;render();};
+    q('[data-scope-select-all]').onchange=event=>{for(const row of filtered().filter(selectable)){if(event.target.checked)selected.add(row.scopeId);else selected.delete(row.scopeId);}render();};
+    root.addEventListener('change',event=>{const id=event.target.getAttribute?.('data-scope-select');if(!id)return;const row=catalog?.rows.find(row=>row.scopeId===id);if(!busy&&row&&selectable(row)){if(event.target.checked)selected.add(id);else selected.delete(id);}updateSelection();});
+    for(const button of root.querySelectorAll('[data-scope-pick]'))button.onclick=()=>{
+      if(busy)return;const orphan=button.getAttribute('data-scope-pick')==='orphan';
+      q('[data-scope-filter]').value=orphan?'detached':'empty';selected.clear();limit=50;
+      for(const row of filtered())if(row.canDelete)selected.add(row.scopeId);render();
+      q('[data-scope-result]').textContent='정리 후보를 선택했습니다. 아직 삭제하지 않았습니다.';
+    };
+    let confirmation=null;
+    const finishConfirmation=value=>{if(!confirmation)return;const resolve=confirmation;confirmation=null;q('[data-scope-confirm]').hidden=true;q('[data-scope-confirm]').style.display='none';resolve(value);};
+    q('[data-scope-delete-ack]').onchange=()=>{q('[data-scope-approve]').disabled=!q('[data-scope-delete-ack-row]').hidden&&!q('[data-scope-delete-ack]').checked;};
+    q('[data-scope-approve]').onclick=()=>{if(!q('[data-scope-approve]').disabled)finishConfirmation(true);};q('[data-scope-cancel]').onclick=()=>finishConfirmation(false);
+    root.addEventListener('keydown',event=>{if(event.key==='Escape'&&confirmation){event.preventDefault();event.stopPropagation();finishConfirmation(false);}});
+    for(const button of root.querySelectorAll('[data-scope-action]'))button.onclick=async()=>{
+      if(busy||!selected.size)return;
+      const action=button.getAttribute('data-scope-action'),rows=catalog.rows.filter(row=>selected.has(row.scopeId));
+      const destructive=action==='delete'||action==='prune';
+      if(rows.some(row=>destructive?(!row.canDelete||action==='prune'&&row.ownedRecordCount>0):(!selectable(row)||row.mode!==MODE_PLUGIN_ONLY))){q('[data-scope-result]').textContent='선택한 자료의 삭제·백업 권한을 확인할 수 없습니다. 현재 채팅, 참조 관계, 서버 저장 모드와 오류를 확인하세요.';return;}
+      q('[data-scope-delete-ack-row]').hidden=!destructive;q('[data-scope-delete-ack]').checked=false;q('[data-scope-approve]').disabled=destructive;
+      busy=true;render();q('[data-scope-confirm-text]').textContent=`${button.textContent} · ${rows.length}개\n${rows.map(row=>row.label+' · '+row.scopeKey).join('\n')}\n선택한 스코프의 로컬 데이터만 처리합니다. 서버 데이터와 현재 채팅은 변경하지 않습니다.`;
+      q('[data-scope-confirm]').hidden=false;q('[data-scope-confirm]').style.display='block';q('[data-scope-confirm-text]').style.whiteSpace='pre-wrap';q('[data-scope-cancel]').focus();
+      let monitor=null;const accepted=await new Promise(resolve=>{confirmation=resolve;monitor=setInterval(()=>{if(!root.isConnected)finishConfirmation(false);},200);try{monitor?.unref?.();}catch(_){}});clearInterval(monitor);
+      try{if(!accepted||!root.isConnected)return;let completed=0;
+        for(const row of rows){q('[data-scope-result]').textContent=`진행 ${completed}/${rows.length} · ${row.label}`;
+          const result=await manageScope({scopeId:row.scopeId,action,expectedFingerprint:row.fingerprint});
+          if(result.ok===false)throw new Error('선택 스코프 작업 미완료');
+          if(action==='export'){
+            const blob=new Blob([JSON.stringify(result,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob);
+            const link=root.ownerDocument.createElement('a');link.href=url;link.download=namespace+'-scope-backup-'+Date.now()+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+          }
+          completed++;selected.delete(row.scopeId);if(!root.isConnected)break;}
+        if(root.isConnected)q('[data-scope-result]').textContent=`완료 ${completed}/${rows.length}개`;
+      }catch(error){if(root.isConnected)q('[data-scope-result]').textContent=`작업 보류 · ${error.code||error.message}${error.rollback?.restored===false?' · 일부 값 복구 미완료: '+error.rollback.failures.join(', '):error.rollback?.restored===true?' · 변경한 값을 원래대로 복구했습니다.':''}`;}
+      finally{busy=false;if(root.isConnected)await refresh();}
+    };
+    await refresh();return true;
+  };
+  // END OWNER SCOPE MANAGEMENT v1
+
   const scopedMountConnectionPanel = async (container, panelOptions = {}) => {
     if (!container || typeof container.innerHTML === 'undefined') throw new Error('memory_suite_connection_panel_container_required');
     const initial = await scopedGetConnectionSettings({ force:true });
@@ -9794,12 +10091,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         <div class="scope" data-mode-summary hidden></div>
         <p class="muted" data-server-hint>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
         <div class="actions"><button data-test>연결 테스트</button><button class="primary" data-apply>설정 적용</button></div>
+        <section class="mscx-card" data-mode-confirm role="alertdialog" aria-label="저장 위치 전환 확인" hidden style="display:none">
+          <b>저장 위치 전환 확인</b><p data-mode-confirm-text style="white-space:pre-wrap;overflow-wrap:anywhere"></p>
+          <div class="actions"><button type="button" data-mode-confirm-cancel>취소 · 원본 유지</button><button type="button" class="primary" data-mode-confirm-approve>동의하고 이전</button></div>
+        </section>
         <details class="mscx-advanced"><summary>고급 작업 <small>동기화 · 복구 · 이전 · 초기화</small></summary><div class="mscx-advanced-body"><div class="muted">평소에는 쓰지 않아도 됩니다. 저장 위치를 옮기거나 문제를 복구할 때만 사용하세요.</div>
         <div class="actions"><button data-sync>지금 동기화</button><button data-restore>서버 → pluginStorage 복구</button></div>
         ${globalModeEnabled ? '<div class="actions"><button data-global-pause>전체 이전 중단·보존</button><button data-global-resume>미완료 전체 이전 재개</button></div>' : ''}
         <div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div>
         <div class="actions"><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div></div></details><div class="status" data-status>현재 모드: ${esc(initial.modeLabel)}
 서버 상태를 확인할 수 있습니다.</div>
+        <details data-preview-diagnostics hidden><summary>이전 검사 상세 · 대화 본문과 API 키 제외</summary><textarea data-preview-diagnostics-text aria-label="이전 검사 상세" readonly style="width:100%;min-height:180px"></textarea></details>
       </div>
       <div class="job" data-job><b data-job-title>작업 진행 중</b><div class="bar"><i data-job-bar></i></div><div class="grid"><span data-job-phase></span><span data-job-count></span><span data-job-bytes></span><span data-job-time></span><span data-job-retry></span><span data-job-key></span></div><div class="result" data-job-result></div><textarea data-job-diagnostics aria-label="저장 이전 상세 진단" readonly style="display:none"></textarea><button data-job-copy type="button">상세 진단 복사</button><div class="actions" data-job-terminal-actions style="display:none"><button data-job-dismiss type="button">결과 확인 닫기</button></div></div>
     </div>`;
@@ -9920,7 +10222,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // ── 전환 경고 ──────────────────────────────────────────────────────────────────────────────────
     // Each direction states the consequence the user is actually accepting, and a cancelled dialog
     // stops before any write. Returns true to proceed, false to cancel.
-    const confirmModeTransition = (fromMode, toMode, preview = null) => {
+    const confirmModeTransition = async (fromMode, toMode, preview = null) => {
       if (fromMode === toMode && !preview) return true;
       let question = '';
       if (fromMode === MODE_PLUGIN_ONLY && toMode === MODE_SERVER_ONLY) {
@@ -9936,26 +10238,46 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         question = '저장 모드를 전환합니다. 계속하시겠습니까?';
       }
       if(preview)question=`이 플러그인의 전체 ${preview.discoveredScopes}개 대화와 과거 개별 경로 ${preview.legacyOverrides}개를 확인했습니다.\n대상: ${modeLabel(toMode)} · ${q('[data-url]').value}\n\n${question}`;
-      try { if (typeof globalThis.confirm === 'function') return globalThis.confirm(question) === true; } catch (_) {}
-      return true;
+      // Host confirm may be asynchronous or blocked by a sandboxed/Tauri iframe.
+      // Consent stays inside the mounted panel and never defaults to approval.
+      const panel=q('[data-mode-confirm]'),approve=q('[data-mode-confirm-approve]'),cancel=q('[data-mode-confirm-cancel]'),apply=q('[data-apply]');
+      const wasDisabled=apply.disabled;
+      q('[data-mode-confirm-text]').textContent=question;
+      panel.hidden=false;panel.style.display='grid';apply.disabled=true;cancel.focus();
+      return await new Promise(resolve=>{
+        let settled=false;
+        const finish=value=>{if(settled)return;settled=true;clearInterval(detached);root.removeEventListener('keydown',keys);approve.onclick=cancel.onclick=null;panel.hidden=true;panel.style.display='none';apply.disabled=wasDisabled;if(root.isConnected)apply.focus();resolve(value);};
+        const keys=event=>{if(event.key==='Escape'){event.preventDefault();finish(false);}};
+        const detached=setInterval(()=>{if(!root.isConnected)finish(false);},200);try{detached?.unref?.();}catch(_){}
+        root.addEventListener('keydown',keys);approve.onclick=()=>finish(root.isConnected!==false);cancel.onclick=()=>finish(false);
+      });
     };
 
     q('[data-apply]').onclick = async()=>{
+      if(q('[data-apply]').disabled)return;
+      const targetUrl=q('[data-url]').value;
       const mode=root.querySelector(`input[name="${rootId}-mode"]:checked`)?.value;
+      const selectionCurrent=()=>root.isConnected!==false&&q('[data-url]').value===targetUrl&&root.querySelector(`input[name="${rootId}-mode"]:checked`)?.value===mode;
       if (!mode) { setMessage('단독 모드를 선택해 전환을 완료해 주세요.','error'); return; }
       const writeGlobal = scopeTarget === 'global';
       try{
         const writeLabel = writeGlobal ? '전역' : '현재 스코프';
         // A global write is judged against the GLOBAL mode; a scope write against this chat's.
         const fromMode = writeGlobal ? (lastSettings.global?.set === true ? lastSettings.global.mode : MODE_PLUGIN_ONLY) : lastSettings.mode;
-        if (!writeGlobal && !confirmModeTransition(fromMode, mode)) { setMessage('전환을 취소했습니다. 저장 모드는 그대로입니다.','good'); return; }
+        if (!writeGlobal && !(await confirmModeTransition(fromMode, mode))) { setMessage('전환을 취소했습니다. 저장 모드는 그대로입니다.','good'); return; }
         if (writeGlobal) {
           const button=q('[data-apply]');button.disabled=true;
           try{
+            q('[data-preview-diagnostics]').hidden=true;
             setMessage('전체 대화와 보존 자료를 확인하고 있습니다…');
             const preview=await previewGlobalMode(mode,{url:q('[data-url]').value});
-            if(!preview.completeKnownScopes){setMessage(`전체 이전을 시작할 수 없습니다. 발견 ${preview.discoveredScopes}개 · 미해결 ${preview.blockers.length}개\n${preview.blockers.slice(0,8).map(row=>[row.code,row.location,row.space,row.key].filter(Boolean).join(' · ')).join('\n')}`,'error');return;}
-            if(!confirmModeTransition(fromMode,mode,preview)){setMessage('전환을 취소했습니다. 원본과 저장 경로는 그대로입니다.','good');return;}
+            if(!preview.completeKnownScopes){
+              q('[data-preview-diagnostics-text]').value=JSON.stringify({schema:'memory-suite.migration-preview-diagnostics.v1',namespace,discoveredScopes:preview.discoveredScopes,
+                blockers:preview.blockers.map(row=>Object.fromEntries(['code','location','space','key','detail'].filter(key=>row[key]!=null).map(key=>[key,row[key]])))},null,2);
+              q('[data-preview-diagnostics]').hidden=false;
+              setMessage(`전체 이전을 시작할 수 없습니다. 발견 ${preview.discoveredScopes}개 · 미해결 ${preview.blockers.length}개\n${preview.blockers.slice(0,16).map(row=>[row.code,row.location,row.space,row.key,row.detail].filter(Boolean).join(' · ')).join('\n')}`,'error');return;}
+            if(!(await confirmModeTransition(fromMode,mode,preview))){setMessage('전환을 취소했습니다. 원본과 저장 경로는 그대로입니다.','good');return;}
+            if(!selectionCurrent()){setMessage('확인 중 대상 설정이 바뀌었습니다. 다시 적용해 주세요.','error');return;}
             setMessage(`전체 ${preview.discoveredScopes}개 대화 · 과거 개별 경로 ${preview.legacyOverrides}개\n${q('[data-url]').value}\n복사·재조회 검증 후 전역 설정을 적용합니다.`);
             const result=await withModeConfiguration(()=>persistGlobalMode(mode,{source:'user_global_setting',url:q('[data-url]').value,previewFingerprint:preview.inventoryFingerprint,refreshInventory:true}));
             await refreshPanelSettings();renderJob(getSyncJob());
@@ -9964,6 +10286,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             return;
           }finally{button.disabled=false;}
         }
+        if(!selectionCurrent()){setMessage('확인 중 대상 설정이 바뀌었습니다. 다시 적용해 주세요.','error');return;}
         if (mode === lastSettings.mode && normalizeServerUrl(q('[data-url]').value) === initial.url) { setMessage('변경할 설정이 없습니다.','good'); return; }
         const job=await scopedStartConnectionConfigurationJob({mode,url:q('[data-url]').value,scope:initial.scope});
         setMessage('설정 적용과 현재 스코프 초기 동기화를 시작했습니다.'); renderJob(job);
@@ -11101,6 +11424,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     mountConnectionPanel: scopedMountConnectionPanel,
     restoreServerSpaceToLegacy: (...args) => withOwnerIO(args[1] || 'plugin','',()=>scopedRestoreSpace(...args)),
     prepareServerScopeDeletion: scopedPrepareServerScopeDeletion,
+    inspectScopeCatalog, manageScope, mountScopeManagementPanel,
     inspectWholeDataLocalInventory,
     migrateWholeData,
     ownerLegacyKeys,
@@ -11927,6 +12251,13 @@ async function memorySuiteHayakuDiscoverGlobalScopes(input = {}) {
 
 const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   discoverGlobalScopes:memorySuiteHayakuDiscoverGlobalScopes,
+  scopeManagement:true,
+  scopeDataSummary:({scope,records})=>{
+    const row=records.find(row=>row.logicalKey==='hayaku.v2.ledger.'+scope.scopeId&&(scope.sourceMode==='server_only'?row.location==='server':row.location!=='server'));
+    if(!row)return '패킷 원장 없음';
+    const raw=row.logicalValue??row.value,value=typeof raw==='string'?JSON.parse(raw):raw;
+    return {label:`패킷 ${(value.records||[]).length}개 · 슬롯 ${(value.slotHeads||[]).length}개`,primary:(value.records||[]).length,secondary:(value.slotHeads||[]).length,updatedAt:value.updatedAt};
+  },
   namespace:'hayaku', displayName:'HAYAKU', pluginId:HAYAKU_PLUGIN_ID, pluginVersion:PLUGIN_VERSION, managementButton:false,
   pluginPrefixes:[RECOVERY_EVIDENCE_MANIFEST_KEY_PREFIX,RECOVERY_EVIDENCE_CHUNK_KEY_PREFIX,HAYAKU_RECALL_INDEX_KEY_PREFIX,SOURCE_EVIDENCE_KEY_PREFIX,SOURCE_EDIT_CONSENT_KEY_PREFIX,STORAGE_LEDGER_KEY_PREFIX,STORAGE_RECONCILIATION_JOURNAL_KEY,HAYAKU_PARTIAL_MEMORY_KEY_PREFIX,RECOVERY_VAULT_KEY_PREFIX,HAYAKU_NATIVE_REPAIR_RUN_KEY_PREFIX,HAYAKU_NATIVE_REPAIR_CANDIDATE_KEY_PREFIX,HAYAKU_NATIVE_COLD_START_RUN_KEY_PREFIX,HAYAKU_NATIVE_REGEN_RUN_KEY_PREFIX,HAYAKU_FAILED_ANALYSIS_INDEX_KEY_PREFIX,HAYAKU_FAILED_ANALYSIS_MANIFEST_KEY_PREFIX,HAYAKU_FAILED_ANALYSIS_CHUNK_KEY_PREFIX,HAYAKU_ARCHIVE_KEY_PREFIX,HAYAKU_ARCHIVE_META_KEY_PREFIX],
   currentScopeProvider:memorySuiteHayakuCurrentScope, resolveKeyScope:memorySuiteHayakuResolveKeyScope,
@@ -55574,13 +55905,31 @@ function mountMemorySuiteSourceInputControls(container, config) {
     () => viewerRenderSwallowedDiagInner(...args),
     () => viewerApplyListFilter(VIEWER_LIST_FILTERS.find(spec => spec.input === 'hayakuSwallowedDiagFilter'))
   );
+  const viewerArrangeServerConnection = host => {
+    const panel=host.querySelector('.mscx-scope-root'),card=panel?.querySelector(':scope > .mscx-card');
+    if(!card||card.dataset.hayakuServerArranged==='1')return;
+    const q=selector=>panel.querySelector(selector),doc=host.ownerDocument;
+    const section=(className,title,nodes)=>{const node=doc.createElement('section');node.className=className;
+      if(title){const heading=doc.createElement('h4');heading.textContent=title;node.appendChild(heading);}
+      for(const child of nodes)if(child)node.appendChild(child);return node;};
+    const heading=card.firstElementChild;heading.classList.add('hayaku-server-heading');
+    const context=section('hayaku-server-context','',[q('.scope:not([data-mode-summary])'),q('[data-scope-note]'),q('.scopetoggle')]);
+    const modes=section('hayaku-server-modes','저장 방식',[q('.modes'),q('[data-mirror-transition]'),q('[data-mode-summary]')]);
+    const endpoint=section('hayaku-server-endpoint','연결 설정',[q('[data-server-fields]'),q('[data-server-hint]'),card.querySelector(':scope > .actions'),q('[data-status]')]);
+    card.prepend(heading,context,modes,endpoint);
+    const local=modes.querySelector('input[value=plugin_only]')?.closest('label')?.querySelector('small');
+    const server=modes.querySelector('input[value=server_only]')?.closest('label')?.querySelector('small');
+    if(local)local.textContent='HAYAKU 전체 대화의 정본을 RisuAI pluginStorage에 저장합니다.';
+    if(server)server.textContent='HAYAKU 전체 대화의 정본을 Librarian System DATA에 저장합니다.';
+    card.dataset.hayakuServerArranged='1';
+  };
   const viewerMountServerConnection = () => {
     const storageHost = Memory.ledgerViewer.root?.querySelector?.('#hayakuMemorySuiteServerConnectionPanel');
     if (!storageHost) return false;
     if (storageHost) void MemorySuiteStorageBridge.mountConnectionPanel(storageHost, {
       title: 'HAYAKU · 저장',
       description: 'HAYAKU 전체 대화의 저장 위치를 설정합니다. 전체 자료를 검증한 뒤 적용합니다.'
-    }).catch(error => {
+    }).then(()=>{if(storageHost.isConnected)viewerArrangeServerConnection(storageHost);}).catch(error => {
       Memory.lastWarnings = [...ensureArray(Memory.lastWarnings), `server_connection_panel:${compact(error?.message || error, 180)}`].slice(-20);
     });
     return true;
@@ -57263,12 +57612,13 @@ function mountMemorySuiteSourceInputControls(container, config) {
     }
   };
   const HAYAKU_VIEWER_TAB_IDS = Object.freeze([
-    'overview', 'packets', 'recovery', 'server', 'settings', 'logs'
+    'overview', 'packets', 'scopes', 'recovery', 'server', 'settings', 'logs'
   ]);
   const HAYAKU_VIEWER_TAB_META = Object.freeze({
     overview: Object.freeze({ label: '개요', description: '' }),
     packets: Object.freeze({ label: '패킷 원장', description: '턴별 정본 패킷과 원문·결속·JSON을 조회합니다.' }),
     recovery: Object.freeze({ label: 'Recovery Journal', description: '정상 afterRequest 복구와 확인형 백그라운드 복구를 관리합니다.' }),
+    scopes: Object.freeze({label:'스코프 데이터 관리',description:'저장 자료 · 고아 데이터 · 빈 목록을 관리합니다.'}),
     server: Object.freeze({ label: '서버 연결', description: 'Storage와 Compute의 독립된 연결을 관리합니다.' }),
     settings: Object.freeze({ label: '설정', description: 'HAYAKU의 사용자 argument를 draft와 readback으로 관리합니다.' }),
     logs: Object.freeze({ label: '작동 로그', description: '현재 실행의 요청·회상·패킷·복구 기록을 확인합니다.' })
@@ -57734,6 +58084,9 @@ function mountMemorySuiteSourceInputControls(container, config) {
       viewerRenderOperationLog();
       viewerRenderDebugExportText();
       void viewerRenderNativeRecovery();
+    } else if (active === 'scopes') {
+      const host=Memory.ledgerViewer.root?.querySelector('#hayakuScopeDataManagementPanel');
+      if(host&&!host.querySelector('[data-scope-manager]'))void MemorySuiteStorageBridge.mountScopeManagementPanel(host).catch(error=>{host.textContent='스코프 목록 확인 실패: '+(error.code||error.message);});
     } else if (active === 'server') {
       viewerMountServerConnection();
     } else if (active === 'recovery') {
@@ -58853,6 +59206,58 @@ function mountMemorySuiteSourceInputControls(container, config) {
   const HAYAKU_GUI_THEME_CSS = "/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n";
   const HAYAKU_GUI_COMPONENT_CSS = "\n/* HAYAKU 전용: 관제실 / 노선도 컨셉 */\n.route{overflow-x:auto;padding:6px 4px 12px}\n.route__track{display:flex;min-width:max-content}\n.stop{position:relative;flex:1 0 82px;width:82px;display:grid;justify-items:center;gap:4px;padding:6px 4px;border:0;background:transparent;color:var(--text);border-radius:var(--r-sm)}\n.stop:hover{background:var(--surface3)}\n.stop::before{content:\"\";position:absolute;top:34px;left:-50%;width:100%;height:4px;background:var(--ok)}\n.stop:first-child::before{display:none}\n.stop b{font:700 12px var(--font-mono)}\n.stop i{position:relative;z-index:1;width:20px;height:20px;border-radius:50%;border:4px solid var(--ok);background:var(--surface)}\n.stop small{font-size:11.5px;color:var(--text2)}\n.stop--miss::before{background:repeating-linear-gradient(90deg,var(--warn) 0 7px,transparent 7px 13px)}\n.stop--miss i{border:3px dashed var(--warn);background:var(--warn-soft)}\n.stop--wait i{border-color:var(--warn);border-radius:4px;transform:rotate(45deg)}\n.stop--fail i{border-color:var(--danger);border-radius:3px;background:var(--danger-soft)}\n.stop--fail::before{background:var(--danger)}\n.stop--skip i{border-color:var(--border2);background:var(--surface3)}.stop--skip::before{background:var(--border2)}\n.stop.is-now b::before{content:\"▼ \";color:var(--accent)}\n.legend{display:flex;flex-wrap:wrap;gap:6px 18px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--text2)}\n.legend span{display:inline-flex;align-items:center;gap:6px}\n.legend i{width:11px;height:11px;border-radius:50%;border:3px solid var(--ok);display:inline-block}\n.legend .m{border:2px dashed var(--warn)}.legend .w{border-color:var(--warn);border-radius:2px;transform:rotate(45deg)}.legend .f{border-color:var(--danger);border-radius:2px}.legend .s{border-color:var(--border2)}\n.metric-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}\n.dash{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:14px}\n.rec{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:11px 0;border-top:1px solid var(--border)}\n.rec:first-child{border-top:0}\n.rec .score{font:700 12px var(--font-mono);padding:3px 8px;border-radius:5px;background:var(--accent-soft);color:var(--accent-ink)}\n.rec p{margin:0;font-size:12.5px;color:var(--text2)}\n.pk-layout{display:grid;grid-template-columns:minmax(280px,.9fr) minmax(0,1.4fr);gap:14px;align-items:start}\n.pk-list{max-height:520px;overflow:auto}\n.pk-row{display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 14px;border:0;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;color:var(--text)}\n.pk-row:first-child{border-top:0}.pk-row:hover{background:var(--surface2)}\n.pk-row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.pk-row b{font:700 13px var(--font-mono);color:var(--accent-ink)}\n.pk-row strong{display:block;font-size:13px}.pk-row small{color:var(--text3);font-size:12px}\n.axes{display:grid;grid-template-columns:1fr 1fr;gap:10px}\n.axis{padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2)}\n.axis h4{margin:0 0 6px;font-size:12.5px;color:var(--accent-ink)}.axis p{margin:0;font-size:12.5px;color:var(--text2)}\npre.json{margin:0;padding:14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:12px;line-height:1.6;overflow:auto;max-height:220px;white-space:pre-wrap}\n.cost{display:flex;gap:10px;align-items:flex-start}\n.picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}\n.picker label{display:flex;gap:9px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);cursor:pointer}\n.picker input{width:17px;height:17px;margin-top:2px;accent-color:var(--accent)}\n.picker label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}\n.picker small{display:block;color:var(--text3);font-size:11.5px}\n.st-layout{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;align-items:start}\n.st-nav{display:grid;gap:3px;position:sticky;top:0}\n.st-nav button{text-align:left;padding:10px 12px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--text)}\n.st-nav b{display:block;font-size:13.5px}.st-nav small{color:var(--text3);font-size:12px}\n.st-nav button[aria-selected=true]{background:var(--surface);border-color:var(--border2);box-shadow:inset 3px 0 0 var(--accent)}\n.lvl{display:inline-flex;margin-left:6px;padding:0 7px;border-radius:99px;font:650 11px/1.7 var(--font-sans);background:var(--surface3);color:var(--text2)}\nhtml[data-scenario=ok] [data-scenario-show]:not([data-scenario-show~=ok]),html[data-scenario=warn] [data-scenario-show]:not([data-scenario-show~=warn]),html[data-scenario=fail] [data-scenario-show]:not([data-scenario-show~=fail]),html:not([data-scenario]) [data-scenario-show]:not([data-scenario-show~=ok]){display:none!important}\n.pk-list.is-world{border-left:3px solid var(--accent);border-radius:0 var(--r-md) var(--r-md) 0;padding-left:6px}\n.pk-list.is-world .pk-row{position:relative}.pk-list.is-world .pk-row::before{content:\"\";position:absolute;left:-14px;top:50%;width:11px;height:11px;margin-top:-6px;border-radius:50%;background:var(--surface);border:3px solid var(--accent)}\n.fail-box{display:none}\nhtml[data-scenario=fail] .fail-box{display:block}\n.cost-table{display:grid;grid-template-columns:minmax(110px,160px) minmax(0,1fr);gap:6px 14px;margin:0;font-size:12.5px}.cost-table dt{color:var(--text3)}.cost-table dd{margin:0}\n.res-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 12px;border-top:1px solid var(--border);font-size:12.5px}.res-row:first-child{border-top:0}.res-row small{grid-column:1;color:var(--text3)}\n.fd-grid{display:grid;grid-template-columns:minmax(240px,.7fr) minmax(0,1.6fr);gap:14px}\n.cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px}.cmp>div{padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--surface2);font-size:12.5px}.cmp b{display:block;font-size:12px;color:var(--text3);margin-bottom:3px}\n.cmp ins{background:var(--ok-soft);color:var(--ok-ink);text-decoration:none;padding:0 3px;border-radius:3px}.cmp del{background:var(--danger-soft);color:var(--danger-ink);padding:0 3px;border-radius:3px}\n.btn[disabled]+.why{display:block}.why{display:none;font-size:12px;color:var(--danger-ink);margin-top:4px}\n.why.on{display:block}\n@container app (max-width:900px){.fd-grid,.cmp{grid-template-columns:1fr}}\n@container app (max-width:640px){.cost-table{grid-template-columns:1fr}}\n@container app (max-width:900px){\n  .metric-row{grid-template-columns:repeat(2,1fr)}.dash,.pk-layout,.axes{grid-template-columns:1fr}\n  .st-layout{grid-template-columns:1fr}.st-nav{grid-auto-flow:column;grid-auto-columns:max-content;overflow:auto;position:static}.st-nav small{display:none}\n  .pk-list{max-height:260px}\n}\n";
   // Settings easy/full view (outside the approved mockup stylesheet).
+  const HAYAKU_SERVER_CONNECTION_CSS = String.raw`
+#hayakuMemorySuiteServerConnectionPanel{container:hayaku-server / inline-size;width:100%;min-width:0}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root{font-family:inherit;color:var(--text);width:100%;min-width:0;gap:16px}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .mscx-card{color:var(--text);background:var(--surface);border-color:var(--border);border-radius:var(--r-md);padding:18px;min-width:0;gap:18px}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root>.mscx-card{grid-template-columns:minmax(0,1fr)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .muted{color:var(--text2);line-height:1.65}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .scope{display:block;white-space:normal;color:var(--text);background:var(--surface2);border-color:var(--border);min-width:0;overflow-wrap:anywhere}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .scope b{color:var(--text);display:block}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .scope span{display:block;white-space:normal;overflow:visible;max-width:none;color:var(--text2)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .scopetoggle{background:var(--surface2);border-color:var(--border);grid-column:1/-1}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .scopetoggle button{background:transparent;color:var(--text2)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .scopetoggle button[aria-pressed=true]{background:var(--accent-soft);color:var(--accent-ink);box-shadow:inset 0 0 0 1px var(--accent-line)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .scopetoggle button small{color:var(--text2)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .scopetoggle button[aria-pressed=true] small{color:var(--accent-ink)}
+#hayakuMemorySuiteServerConnectionPanel .hayaku-server-context{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:12px;grid-column:1/-1;min-width:0}
+#hayakuMemorySuiteServerConnectionPanel .hayaku-server-heading{grid-column:1/-1}
+#hayakuMemorySuiteServerConnectionPanel .hayaku-server-modes,#hayakuMemorySuiteServerConnectionPanel .hayaku-server-endpoint{display:grid;align-content:start;gap:12px;min-width:0;padding:16px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2)}
+#hayakuMemorySuiteServerConnectionPanel h4{font-size:14px;margin:0;color:var(--text)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .modes{grid-template-columns:minmax(0,1fr)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root label.mode{background:var(--surface);border-color:var(--border2);color:var(--text);min-width:0;line-height:1.6}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root label.mode:has(input:checked){background:var(--accent-soft);border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root input[type=radio]{accent-color:var(--accent);flex:0 0 auto;margin-top:5px}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root input[type=text],#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root input[type=password],#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root textarea{background:var(--surface);border:1px solid var(--border2);color:var(--text);min-width:0;font:inherit;font-size:13px;max-width:100%;width:100%}
+#hayakuMemorySuiteServerConnectionPanel [data-server-fields]{display:grid;gap:8px;min-width:0}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root button{color:var(--text);background:var(--surface);border-color:var(--border2);min-height:40px;white-space:normal;overflow-wrap:anywhere;font:inherit;font-size:12px}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root button.primary{color:var(--on-accent);background:var(--accent);border-color:var(--accent)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root button.danger{color:var(--danger-ink);background:var(--danger-soft);border-color:var(--danger-line)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root button:focus-visible,#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .actions{align-items:stretch}
+#hayakuMemorySuiteServerConnectionPanel .hayaku-server-endpoint>.actions>button{flex:1 1 120px}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .status{background:var(--surface);color:var(--text2);border-color:var(--border);overflow-wrap:anywhere}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .status[data-tone=good]{color:var(--ok-ink);background:var(--ok-soft);border-color:var(--ok-line)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .status[data-tone=error]{color:var(--danger-ink);background:var(--danger-soft);border-color:var(--danger-line)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .mscx-advanced{grid-column:1/-1;border-color:var(--border);background:var(--surface);min-width:0}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .mscx-advanced>summary small{color:var(--text2)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .mscx-advanced-body>.actions{display:grid;grid-template-columns:minmax(0,1fr)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root [data-mode-confirm],#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root [data-preview-diagnostics]{grid-column:1/-1;min-width:0}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root [data-mode-confirm]{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .scopeunset{background:var(--warn-soft);border-color:var(--warn-line)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .job,#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .result{background:var(--surface);color:var(--text);border-color:var(--border);min-width:0;overflow-wrap:anywhere}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .job.failed{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .bar{background:var(--surface3)}
+#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .bar>i{background:var(--accent)}
+@container hayaku-server (min-width:480px){
+ #hayakuMemorySuiteServerConnectionPanel .hayaku-server-context{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .modes,#hayakuMemorySuiteServerConnectionPanel .mscx-scope-root .mscx-advanced-body>.actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@container hayaku-server (min-width:760px){
+ #hayakuMemorySuiteServerConnectionPanel .mscx-scope-root>.mscx-card{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr)}
+ #hayakuMemorySuiteServerConnectionPanel .hayaku-server-modes .modes{grid-template-columns:minmax(0,1fr)}
+}
+`;
   const HAYAKU_SETTINGS_EASY_CSS = "\n/* 설정 간편 보기 */\n.hayaku-view-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 16px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\n.hayaku-view-bar>div:first-child{display:grid;gap:2px;min-width:0}.hayaku-view-bar b{font-size:13.5px}\n.hayaku-settings-easy:not(.hayaku-settings-searching) [data-hayaku-advanced]{display:none!important}\n.hayaku-settings-easy .argtag{display:none}\n.hayaku-easy-note{display:none;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;padding:10px 14px;border:1px dashed var(--border2);border-radius:var(--r-sm);font-size:var(--fs-note);color:var(--text2)}\n.hayaku-settings-easy:not(.hayaku-settings-searching) .hayaku-easy-note{display:flex}\n@container app (max-width:640px){.hayaku-view-bar,.hayaku-easy-note{flex-direction:column;align-items:stretch}}\n";
   const HAYAKU_GUI_ICONS = Object.freeze({
     grid:'<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
@@ -58907,14 +59312,15 @@ function mountMemorySuiteSourceInputControls(container, config) {
         <div class="grid g2"><div class="card"><h2 class="card__title">자동 복구</h2><p class="card__desc">설정 탭과 같은 값입니다 (한 곳에서만 편집).</p><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">정상 응답 처리 안에서 현재 누락/불가 패킷을 1회 복구합니다. 유일한 자동 복구 단계이며, 실패하거나 건너뛴 턴은 Recovery Journal에 남아 아래 수동 복구를 기다립니다.</div></div><span class="badge" id="auto-after" aria-live="polite">설정 확인 중</span></div><button class="linkbtn" id="hayakuRecoverySettingsLink" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경 →</button></div><div class="card"><h2 class="card__title">기억 복원 · Portable JSON</h2><p class="card__desc">같은 채팅은 교체 복원, 다른 채팅은 이사/복사 모드만 허용됩니다. 작업 전 대상 기억을 자동 백업합니다.</p><div data-portable-backup-host="hayaku_locator_continuity"></div></div></div>
         <details class="fold"><summary>안전 검사 도구</summary><div class="fold__body"><div class="cluster"><button id="hayakuSafeHealthInspect" class="btn" type="button">읽기 전용 검사</button><button id="hayakuSafeHealthPreview" class="btn" type="button">안전 복구 미리보기</button><button id="hayakuSafeHealthApply" class="btn" type="button" disabled>캐시 복구</button></div><p id="hayakuSafeHealthStatus" role="status">원문·정본 전체를 검사하는 기능은 아닙니다.</p></div></details>
       </div></section>`;
-    const serverPage = `<section class="page" id="hayakuViewerPanelServer" data-hayaku-viewer-panel="server" data-page="server" role="tabpanel" aria-labelledby="hayakuViewerTabServer" hidden><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">서버 연결</h1><p class="page-desc">Storage와 Compute는 독립된 연결입니다. 공용 연결 패널을 같은 토큰으로 감쌉니다.</p></div></div><div class="grid g2"><div class="card" id="hayakuMemorySuiteServerConnectionPanel"></div></div></section>`;
+    const scopePage=`<section class="page" id="hayakuViewerPanelScopes" data-hayaku-viewer-panel="scopes" data-page="scopes" role="tabpanel" aria-labelledby="hayakuViewerTabScopes" hidden><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Scope data</div><h1 class="page-title">스코프 데이터 관리</h1><p class="page-desc">채팅별 패킷 저장소와 원본 채팅이 없는 고아 데이터를 확인하고 정리합니다.</p></div></div><div id="hayakuScopeDataManagementPanel"></div></section>`;
+    const serverPage = `<section class="page" id="hayakuViewerPanelServer" data-hayaku-viewer-panel="server" data-page="server" role="tabpanel" aria-labelledby="hayakuViewerTabServer" hidden><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">서버 연결</h1><p class="page-desc">전체 대화의 저장 위치, 서버 주소와 이전 상태를 확인합니다. 저장 자료 정리는 스코프 데이터 관리에서 진행합니다.</p></div></div><div id="hayakuMemorySuiteServerConnectionPanel"></div></section>`;
     const settingsPage = HAYAKU_MOCKUP_SETTINGS_PAGE;
     const logsPage = `<section class="page" id="hayakuViewerPanelLogs" data-hayaku-viewer-panel="logs" data-page="logs" role="tabpanel" aria-labelledby="hayakuViewerTabLogs" hidden>
       <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Session log</div><h1 class="page-title">작동 기록</h1><p class="page-desc">현재 실행의 요청·회상·패킷·복구 기록입니다. 민감한 값은 제거됩니다.</p></div><div class="page-actions"><button id="copyHayakuDebug" class="btn" type="button">디버그 JSON 복사</button><button id="exportHayakuDebug" class="btn" type="button">파일로 저장</button></div></div>
       <div class="stack"><div class="search">${hayakuMockupIcon('search')}<input id="hayakuLogFilter" class="input" type="search" placeholder="로그 내용으로 찾기" aria-label="로그 검색"></div><div class="cluster"><span>로그 <b id="hayakuViewerLogCount">0</b></span><button id="refreshHayakuLog" class="btn btn--sm" type="button">새로고침</button><button id="showHayakuDebug" class="btn btn--sm" type="button">JSON 보기</button><span id="hayakuLogFilterCount" class="hint"></span></div><div id="hayakuViewerOperationLog" class="list"></div>
         <details class="fold"><summary>진단 · 내보내기 자료</summary><div class="stack"><div class="note">기본 기록에는 실패 턴·원인·호출 수만 남깁니다. 상세 분석 보관은 설정의 디버그를 켠 이후 적용됩니다.</div><label class="pk-check"><input id="hayakuIncludeAnalysisDetails" type="checkbox">내보내기에 보관된 상세 분석 포함 (원문·모델 응답)</label><details class="fold"><summary>보관된 상세 분석</summary><div class="fold__body"><button id="loadHayakuArchivedFailures" class="btn btn--sm" type="button">최근 상세 진단 읽기</button><pre id="hayakuArchivedFailures" class="json"></pre></div></details><div class="card"><div class="card__head"><div><h2 class="card__title">내부 오류 진단</h2><p class="card__desc">현재 실행에서 기록된 오류를 확인합니다.</p></div><div class="cluster"><button id="refreshHayakuSwallowedDiag" class="btn btn--sm" type="button">새로고침</button><button id="resetHayakuSwallowedDiag" class="btn btn--sm" type="button">진단 초기화</button><b id="hayakuViewerSwallowedDiagCount">0</b></div></div><div class="search">${hayakuMockupIcon('search')}<input id="hayakuSwallowedDiagFilter" class="input" type="search" placeholder="오류 검색" aria-label="오류 검색"></div><span id="hayakuSwallowedDiagFilterCount" class="hint"></span><div id="hayakuViewerSwallowedDiag" class="list"></div></div><details class="fold"><summary>복구 진단 JSON</summary><div class="fold__body"><p>현재 채팅의 복구 자격·Debt 상태를 확인하는 읽기 자료입니다.</p><dl class="kv"><dt>현재 상태</dt><dd id="hayakuNativeRecoveryState">-</dd><dt>coverage</dt><dd id="hayakuNativeCoverageSummary">-</dd><dt>Debt</dt><dd id="hayakuNativeDebtCount">-</dd><dt>복구 가능</dt><dd id="hayakuNativeRepairableCount">-</dd><dt>현재 작업</dt><dd id="hayakuNativeRepairCurrent">-</dd><dt>다음 재시도</dt><dd id="hayakuNativeNextRetry">-</dd><dt>복구 가능 턴</dt><dd id="hayakuNativeRepairableTurns">-</dd><dt>재시도 대기</dt><dd id="hayakuNativeBackoffTurns">-</dd><dt>횟수 초과</dt><dd id="hayakuNativeExhaustedTurns">-</dd><dt>다른 작업 점유</dt><dd id="hayakuNativeLeasedTurns">-</dd><dt>사용자 제외</dt><dd id="hayakuNativeSuppressedTurns">-</dd></dl><pre id="hayakuNativeRecoveryJson" class="json"></pre></div></details><section id="hayakuViewerDebugExportPanel" class="card"><div class="card__head"><div><h2 class="card__title">디버그 JSON</h2><p class="card__desc">민감한 값을 제거한 현재 실행 자료입니다.</p></div><button id="clearHayakuDebugText" class="btn btn--sm" type="button">JSON 표시 닫기</button></div><pre id="hayakuViewerDebugExportText"></pre></section></div></details>
       </div></section>`;
-    root.innerHTML = `<style>${HAYAKU_GUI_SUITE_CSS}\n${HAYAKU_GUI_THEME_CSS}\n${HAYAKU_GUI_COMPONENT_CSS}\n${HAYAKU_SETTINGS_EASY_CSS}\n#${LEDGER_VIEWER_ROOT_ID}{position:fixed;inset:0;width:100%;height:100dvh;z-index:2147483000;background:transparent;font:var(--fs-body)/1.65 var(--font-sans);color:var(--text)}#${LEDGER_VIEWER_ROOT_ID} .stage{width:100%;height:100%;padding:16px;overflow:hidden;align-items:center}#${LEDGER_VIEWER_ROOT_ID} .frame{height:min(830px,100%);min-height:0}#${LEDGER_VIEWER_ROOT_ID} #hayakuOverviewAuxiliaryStatus{display:block;margin-top:4px;color:var(--text2)}#${LEDGER_VIEWER_ROOT_ID} [data-setting-state="packet-recovery"]{margin-top:6px}#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button[hidden]{display:none!important}#${LEDGER_VIEWER_ROOT_ID} .mapping-incomplete{display:grid;gap:8px}
+    root.innerHTML = `<style>${HAYAKU_GUI_SUITE_CSS}\n${HAYAKU_GUI_THEME_CSS}\n${HAYAKU_GUI_COMPONENT_CSS}\n${HAYAKU_SETTINGS_EASY_CSS}\n${HAYAKU_SERVER_CONNECTION_CSS}\n#${LEDGER_VIEWER_ROOT_ID}{position:fixed;inset:0;width:100%;height:100dvh;z-index:2147483000;background:transparent;font:var(--fs-body)/1.65 var(--font-sans);color:var(--text)}#${LEDGER_VIEWER_ROOT_ID} .stage{width:100%;height:100%;padding:16px;overflow:hidden;align-items:center}#${LEDGER_VIEWER_ROOT_ID} .frame{height:min(830px,100%);min-height:0}#${LEDGER_VIEWER_ROOT_ID} #hayakuOverviewAuxiliaryStatus{display:block;margin-top:4px;color:var(--text2)}#${LEDGER_VIEWER_ROOT_ID} [data-setting-state="packet-recovery"]{margin-top:6px}#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button[hidden]{display:none!important}#${LEDGER_VIEWER_ROOT_ID} .mapping-incomplete{display:grid;gap:8px}
 /* Preserve the reference single-column mobile layout while allowing intrinsic content to shrink inside its panel. */
 #${LEDGER_VIEWER_ROOT_ID} .pk-layout{min-width:0}
 @container app (max-width:900px){#${LEDGER_VIEWER_ROOT_ID} .pk-layout{grid-template-columns:minmax(0,1fr)}}
@@ -58947,7 +59353,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
       <div class="stage"><div class="frame"><div class="app" data-hayaku-mockup="1">
         <header class="topbar"><div class="brand"><div class="brand__mark" style="font:800 20px var(--font-sans)">速</div><div><div class="brand__name">HAYAKU</div><div class="brand__ver">CONTINUITY CONTROL · v${PLUGIN_VERSION}</div></div></div><div class="scope"><b id="hayakuViewerScopeTop">현재 채팅</b><span>›</span><span id="hayakuViewerScopeMeta">현재 채팅의 원장 상태를 읽습니다.</span></div><div class="grow"></div><span id="hayakuViewerHealth" class="health health--danger"><i></i><span data-health-text>원장 확인 중</span></span><button id="hayakuNativeJobChip" class="btn btn--sm hayaku-job-button" type="button" data-idle-go="logs" aria-controls="hayakuNativeJobOverlay" aria-expanded="false" title="진행 중이거나 끝난 작업을 다시 엽니다">${hayakuMockupIcon('clock')}<span data-tray-text>작업 없음</span></button><div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기">${hayakuMockupIcon('more')}</button><div class="menu__panel"><button id="hayakuOverviewRefresh" type="button">${hayakuMockupIcon('refresh')}다시 대조</button><button id="hayakuOverviewExport" type="button">${hayakuMockupIcon('download')}디버그 JSON 내보내기</button></div></div><button id="closeHayakuViewer" class="btn btn--icon" type="button" title="닫기" aria-label="HAYAKU 닫기">${hayakuMockupIcon('x')}</button></header>
         <div id="hayakuNativeJobOverlay" class="overlay" aria-hidden="true" hidden><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-live="polite" aria-labelledby="hayakuNativeJobTitle"><div class="split"><div><div class="eyebrow" id="hayakuNativeJobEyebrow">Other Ax</div><h2 id="hayakuNativeJobTitle">복구 작업</h2><p><span id="hayakuNativeJobState">대기</span> · 경과 <span id="hayakuNativeJobElapsed">0초</span></p></div><span class="badge badge--info"><span id="hayakuNativeJobStateCompact">대기</span> · <span id="hayakuNativeJobElapsedCompact">0초</span></span></div><div class="progress" style="margin:14px 0"><i id="hayakuNativeJobProgressBar" style="width:0%"></i></div><div class="cluster"><span>대상 <b id="hayakuNativeJobTurns">-</b></span><span>현재 <b id="hayakuNativeJobCurrent">-</b></span><span id="hayakuNativeJobProgressText" class="hint">대상 확인</span></div><p id="hayakuNativeJobMessage" class="muted">작업 상태를 확인합니다.</p><div class="steps" style="margin-top:12px"><div class="step is-active"><span class="step__no">1</span><b data-job-step="1">대조</b></div><div class="step"><span class="step__no">2</span><b data-job-step="2">분석</b></div><div class="step"><span class="step__no">3</span><b data-job-step="3">검증</b></div><div class="step"><span class="step__no">4</span><b data-job-step="4">기록</b></div></div><div class="list" data-hayaku-job-body="repair" hidden style="margin-top:12px"><div class="res-row"><b>대상</b><span id="hayakuNativeJobResultTarget">-</span></div><div class="res-row"><b>기억 저장</b><span id="hayakuNativeJobResultMemory">0/0턴</span></div><div class="res-row"><b>완전 패킷</b><span id="hayakuNativeJobResultPackets">0개</span></div><div class="res-row"><b>부분 저장</b><span id="hayakuNativeJobResultPartial">0개</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultCalls">0회</span></div></div><div class="list" data-hayaku-job-body="cold" hidden style="margin-top:12px"><div class="res-row"><b>대상 묶음</b><span id="hayakuNativeJobColdBundles">-</span></div><div class="res-row"><b>저장된 패킷</b><span id="hayakuNativeJobResultColdSaved">0개</span></div><div class="res-row"><b>실패한 묶음</b><span id="hayakuNativeJobResultColdHeld">0묶음</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultColdCalls">0회</span></div></div><div class="card" data-hayaku-job-body="regen" hidden style="margin-top:12px"><p id="hayakuNativeJobResultRegeneration" class="muted">후보 준비 상태를 확인합니다.</p><section id="hayakuNativeJobComparison" class="cmp" hidden aria-label="기존 패킷과 재생성 후보 비교"></section><div id="hayakuNativeJobChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-regeneration-choice="later">나중에 결정</button><button type="button" class="btn" data-hayaku-regeneration-choice="keep_original">기존 패킷 유지</button><button type="button" class="btn btn--primary" data-hayaku-regeneration-choice="adopt_regenerated">재생성 후보 채택</button></div></div><div class="card" data-hayaku-job-body="background" hidden style="margin-top:12px"><p>복구 저널을 유지하거나 실행 전에 확인한 대상으로 복구를 요청합니다.</p><div class="list"><div class="res-row"><b>확인된 대상</b><span id="hayakuNativeJobConfirmationTarget">-</span></div></div><div id="hayakuRecoveryConfirmationChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-recovery-confirmation="no">아니요 · 저널에 유지</button><button type="button" class="btn btn--primary" data-hayaku-recovery-confirmation="yes">예 · 자동 복구 시작</button></div></div><div class="dialog__actions"><button id="minimizeHayakuNativeJob" class="btn">최소화</button><button id="cancelHayakuNativeJob" class="btn btn--danger">작업 중단</button><button id="closeHayakuNativeJob" class="btn btn--primary" hidden>닫기</button></div></div></div>
-        <nav class="sidebar" aria-label="HAYAKU 메뉴"><div class="nav-label">상태</div>${nav('Overview','연속성 관제','관제','grid')}<div class="nav-label">기억</div>${nav('Packets','패킷 · 세계선','패킷','layers', '<span id="hayakuOverviewPacketCount" class="count" hidden>0</span>')}<div class="nav-label">복구</div>${nav('Recovery','구간 점검 · 복구','복구','wrench', '<span id="hayakuOverviewRecoveryCount" class="count count--alert" hidden>0</span>')}<div class="nav-label">연결 · 설정</div>${nav('Server','서버 연결','연결','server')}${nav('Settings','설정','설정','sliders')}${nav('Logs','작동 기록','기록','log')}<div class="side-foot"><b id="hayakuSidebarAux">Other Ax · 호출 미검증</b><span>Provider와 키는 RisuAI 소유 — HAYAKU에는 저장하지 않습니다.</span></div></nav>
+        <nav class="sidebar" aria-label="HAYAKU 메뉴"><div class="nav-label">상태</div>${nav('Overview','연속성 관제','관제','grid')}<div class="nav-label">기억</div>${nav('Packets','패킷 · 세계선','패킷','layers', '<span id="hayakuOverviewPacketCount" class="count" hidden>0</span>')}${nav('Scopes','스코프 데이터 관리','스코프','layers')}<div class="nav-label">복구</div>${nav('Recovery','구간 점검 · 복구','복구','wrench', '<span id="hayakuOverviewRecoveryCount" class="count count--alert" hidden>0</span>')}<div class="nav-label">연결 · 설정</div>${nav('Server','서버 연결','연결','server')}${nav('Settings','설정','설정','sliders')}${nav('Logs','작동 기록','기록','log')}<div class="side-foot"><b id="hayakuSidebarAux">Other Ax · 호출 미검증</b><span>Provider와 키는 RisuAI 소유 — HAYAKU에는 저장하지 않습니다.</span></div></nav>
         <main class="main"><div class="page-body">
           <section class="page is-active" id="hayakuViewerPanelOverview" data-hayaku-viewer-panel="overview" data-page="overview" role="tabpanel" aria-labelledby="hayakuViewerTabOverview">
             <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Continuity status</div><h1 class="page-title">연속성 관제</h1><p class="page-desc">완료된 턴마다 기억 패킷이 이어져 있는지 확인합니다. Other Ax 연결 테스트는 비용 동의 후 별도로 실행합니다.</p></div><div class="page-actions"><button class="btn" data-hayaku-viewer-goto="recovery" type="button">${hayakuMockupIcon('wrench')}구간 점검</button><button id="hayakuOverviewReconcile" class="btn btn--primary" type="button">${hayakuMockupIcon('refresh')}다시 대조</button></div></div>
@@ -58958,10 +59364,10 @@ function mountMemorySuiteSourceInputControls(container, config) {
               <div class="card" id="hayakuOverviewRouteCard"><div class="card__head"><div><h2 class="card__title">연속성 노선도</h2><p class="card__desc">최근 24턴. 점을 누르면 해당 패킷(또는 점검 화면)으로 이동합니다.</p></div><button class="btn btn--sm" data-hayaku-viewer-goto="packets" type="button">전체 기록 →</button></div><div id="hayakuContinuityLine" class="route" tabindex="0" aria-label="최근 24턴 연속성 노선도"><div class="route__track" id="route"></div></div><div class="legend"><span><i></i>패킷 연결됨</span><span><i class="m"></i>누락</span><span><i class="w"></i>검토 대기</span><span><i class="f"></i>복구 실패</span><span><i class="s"></i>사용자 제외</span></div></div>
               <div class="dash" id="hayakuOverviewCards"><div class="card"><div class="card__head"><div><h2 class="card__title">이번에 떠올린 기억</h2><p class="card__desc">현재 입력에 실제로 전달된 기억</p></div><span class="badge badge--ok" id="hayakuOverviewRecallBadge">0개 · -</span></div><div id="hayakuOverviewRecallRows"><div class="empty"><span>이번 실행 회상을 확인하는 중입니다.</span></div></div></div><div class="card"><div class="card__head"><div><h2 class="card__title">최근 작동</h2><p class="card__desc">현재 실행의 주요 이벤트</p></div><button class="btn btn--sm" data-hayaku-viewer-goto="logs" type="button">전체 로그</button></div><div id="hayakuOverviewActivity"><div class="empty"><span>작업 로그를 확인하는 중입니다.</span></div></div></div></div>
             </div>
-          </section>${packetPage}${recoveryPage}${serverPage}${settingsPage}${logsPage}
+          </section>${packetPage}${scopePage}${recoveryPage}${serverPage}${settingsPage}${logsPage}
         </div><footer class="savebar" id="hayakuSettingsSavebar" hidden><div class="savebar__copy"><b id="hayakuSettingsSaveTitle" data-save-title>모든 변경이 저장되어 있습니다</b><span id="hayakuSettingsSaveDetail" data-save-desc>설정을 바꾸면 이곳에서 한 번에 저장합니다.</span><span id="hayakuSettingsMessage" role="status" aria-live="polite"></span></div><div class="cluster"><button id="cancelHayakuSettings" class="btn" data-revert type="button" disabled>변경 취소</button><button id="applyHayakuSettings" class="btn btn--primary" data-save type="button" disabled>저장</button></div></footer></main>
         <nav class="tabbar" aria-label="HAYAKU 하단 메뉴"><button type="button" data-hayaku-viewer-goto="overview" data-go="overview" aria-current="page">${hayakuMockupIcon('grid')}관제</button><button type="button" data-hayaku-viewer-goto="packets" data-go="packets">${hayakuMockupIcon('layers')}패킷</button><button type="button" data-hayaku-viewer-goto="recovery" data-go="recovery">${hayakuMockupIcon('wrench')}복구</button><button type="button" data-hayaku-viewer-goto="server" data-go="server">${hayakuMockupIcon('server')}연결</button><button type="button" data-hayaku-more="1" aria-haspopup="dialog">${hayakuMockupIcon('more')}더보기</button></nav>
-        <div id="hayakuManualRecaptureOverlay" class="overlay" role="presentation" hidden></div><div class="overlay overlay--bottom" id="hayakuMoreSheet" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list><button class="row" type="button" data-hayaku-viewer-goto="settings"><span class="row__icon">${hayakuMockupIcon('sliders')}</span><span><span class="row__title">설정</span></span>${hayakuMockupIcon('arrow').replace('class="ic"','class="ic ic--sm faint"')}</button><button class="row" type="button" data-hayaku-viewer-goto="logs"><span class="row__icon">${hayakuMockupIcon('log')}</span><span><span class="row__title">작동 기록</span></span>${hayakuMockupIcon('arrow').replace('class="ic"','class="ic ic--sm faint"')}</button></div></div></div>
+        <div id="hayakuManualRecaptureOverlay" class="overlay" role="presentation" hidden></div><div class="overlay overlay--bottom" id="hayakuMoreSheet" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list><button class="row" type="button" data-hayaku-viewer-goto="scopes"><span class="row__icon">${hayakuMockupIcon('layers')}</span><span><span class="row__title">스코프 데이터 관리</span></span></button><button class="row" type="button" data-hayaku-viewer-goto="settings"><span class="row__icon">${hayakuMockupIcon('sliders')}</span><span><span class="row__title">설정</span></span>${hayakuMockupIcon('arrow').replace('class="ic"','class="ic ic--sm faint"')}</button><button class="row" type="button" data-hayaku-viewer-goto="logs"><span class="row__icon">${hayakuMockupIcon('log')}</span><span><span class="row__title">작동 기록</span></span>${hayakuMockupIcon('arrow').replace('class="ic"','class="ic ic--sm faint"')}</button></div></div></div>
       </div></div>`;
     root.dataset.hayakuViewerMounted = '1';
     const settingsWiring = viewerWireSettingsMarkup(root);
