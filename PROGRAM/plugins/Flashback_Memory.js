@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.128
+//@display-name ⚡ FLASHBACK Memory v1.0.129
 //@api 3.0
-//@version 1.0.128
+//@version 1.0.129
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.128';
+const PLUGIN_VERSION = '1.0.129';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -4349,7 +4349,7 @@ function createMemorySuiteHostLineage() {
 /* END LIBRARIAN HOST LINEAGE SDK */
 const MemorySuiteHostLineage = createMemorySuiteHostLineage();
 
-/* LIBRARIAN SYSTEM STORAGE SDK v1.8.28
+/* LIBRARIAN SYSTEM STORAGE SDK v1.8.29
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
  * The server stores opaque values. Each plugin keeps ownership of its own data schema.
  */
@@ -11283,9 +11283,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       [data-scope-manager] .scope-data-name b,[data-scope-manager] .scope-data-name span{display:block;overflow-wrap:anywhere}
       [data-scope-manager] .scope-data-name>span{color:var(--text2,#62594f)}[data-scope-manager] .scope-data-name details{margin-top:5px}
       [data-scope-manager] .scope-data-name details[open]{min-width:150px}[data-scope-manager] .scope-data-name pre{white-space:pre-wrap;overflow-wrap:anywhere}
+      [data-scope-manager] .scope-data-reason{display:block;margin-top:4px;color:var(--text3,#7b7265);font-size:11px;line-height:1.5}
+      [data-scope-manager] [data-scope-select]:disabled{pointer-events:none}[data-scope-manager] td[data-scope-select-cell]{cursor:default}
+      [data-scope-manager] tr[data-selectable=false] td[data-scope-select-cell]{cursor:help}
       [data-scope-manager] .scope-data-state{display:inline-block;padding:3px 6px;border:1px solid var(--border2,#b6ad9d);border-radius:12px;font-size:11px}
       </style><h3>스코프 데이터 관리</h3>
       <p class="scope-data-note">삭제·정리는 실행 전에 대상과 참조 관계를 다시 검사합니다. 확인할 수 없는 자료는 보존합니다. 서버 자료와 저장 위치 전환은 별도 서버 관리에서 진행합니다.</p>
+      <p class="scope-data-note" data-scope-readonly hidden role="status">이 화면은 보안 연결이 아니어서 목록 보기만 가능합니다. 브라우저가 암호화 기능(WebCrypto)을 제공하지 않아 삭제·백업 대상을 안전하게 확인할 수 없습니다. https 또는 localhost 주소로 접속하면 선택할 수 있습니다.</p>
       <select data-scope-filter aria-label="스코프 분류"><option value="all">전체</option><option value="memory">기억 저장소</option><option value="empty">빈 목록 · 정리 후보</option><option value="detached">고아 데이터</option><option value="issues">확인 필요</option><option value="server_only">서버 관리 대상</option></select>
       <div class="actions"><input data-scope-search type="search" aria-label="스코프 검색" placeholder="캐릭터 / 채팅 이름 · 스코프 키로 찾기"><button type="button" data-scope-action="export">선택 데이터 백업</button><button type="button" data-scope-action="delete">선택 삭제</button></div>
       <div class="actions"><button type="button" data-scope-refresh>새로고침</button><button type="button" data-scope-inspect>목록 상태 검사</button><button type="button" data-scope-pick="empty">빈 목록 선택</button><button type="button" data-scope-action="prune">선택 항목 안전 정리</button><button type="button" data-scope-pick="orphan">고아 데이터 선택</button><span class="muted" data-scope-selection>선택 0개</span></div>
@@ -11306,6 +11310,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return (catalog?.rows||[]).filter(row=>(!term||[row.characterName,row.chatTitle,row.scopeKey,row.scopeId].join(' ').toLocaleLowerCase().includes(term))
         &&(filter==='all'||filter==='issues'&&(row.issues.length>0||row.unavailable)||filter==='memory'&&row.ownedRecordCount>0&&!row.detached||filter==='detached'&&row.detached&&row.ownedRecordCount>0||filter==='empty'&&row.ownedRecordCount===0&&!row.unavailable&&row.issues.length===0&&catalog.completeKnownScopes||row.mode===filter));};
     const selectable=row=>!row.current&&(row.canDelete||row.canManage&&row.mode===MODE_PLUGIN_ONLY);
+    // Why a row cannot be selected, in the user's words: a silently disabled box looks broken.
+    const readOnlyCrypto=()=>!!catalog?.blockers?.some(issue=>issue.code==='scope_catalog_read_only_crypto_unavailable');
+    const blockReason=row=>selectable(row)?'':row.current?'현재 열려 있는 채팅은 선택할 수 없습니다.'
+      :readOnlyCrypto()?'보안 연결이 아니어서 목록 보기만 가능합니다. https 또는 localhost 주소로 접속하세요.'
+      :row.unavailable?'조회하지 못해 보존합니다. 새로고침 후 다시 확인하세요.'
+      :row.issues.length?'확인이 필요한 항목이 있어 보존합니다. 상세에서 확인하세요.'
+      :row.mode!==MODE_PLUGIN_ONLY?'서버에 저장되는 스코프입니다. 서버 자료는 서버 관리에서 처리합니다.'
+      :row.referenced?'다른 스코프가 참조 중이라 선택할 수 없습니다.'
+      :!catalog?.completeKnownScopes?'전체 목록 확인이 끝나지 않았습니다. 새로고침 후 다시 확인하세요.'
+      :row.deleteBlockedReason||'정리하거나 백업할 자료가 없습니다.';
     const updateSelection=()=>{
       const rows=filtered().filter(selectable),all=q('[data-scope-select-all]');all.disabled=busy||rows.length===0;
       all.checked=rows.length>0&&rows.every(row=>selected.has(row.scopeId));all.indeterminate=!all.checked&&rows.some(row=>selected.has(row.scopeId));
@@ -11315,14 +11329,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       root.querySelectorAll('[data-scope-pick],[data-scope-inspect]').forEach(button=>{button.disabled=busy;});
     };
     const render=()=>{
-      const rows=filtered();q('[data-scope-summary]').textContent=catalog?`확인된 스코프 ${catalog.rows.length}개 · 표시 ${rows.length}개 · 미해결 ${catalog.blockers.length}개${catalog.completeKnownScopes?'':' · 전체 확인 미완료'}`:'목록을 확인하고 있습니다…';
+      const rows=filtered();q('[data-scope-readonly]').hidden=!readOnlyCrypto();q('[data-scope-summary]').textContent=catalog?`확인된 스코프 ${catalog.rows.length}개 · 표시 ${rows.length}개 · 미해결 ${catalog.blockers.length}개${catalog.completeKnownScopes?'':' · 전체 확인 미완료'}`:'목록을 확인하고 있습니다…';
       q('[data-scope-rows]').innerHTML=rows.slice(0,limit).map(row=>{
         const status=row.unavailable?'조회 미확인':row.issues.length?'확인 필요':row.current?'현재':row.mode!==MODE_PLUGIN_ONLY?'서버 관리':row.referenced?'참조 중':row.detached&&row.ownedRecordCount?'고아 데이터':row.ownedRecordCount?'저장 자료':row.registryEntries?'목록 잔재':'자료 없음';
         const at=row.unavailable?null:row.dataMetrics?.updatedAt;
         const updated=at?new Date(at).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'—';
-        return `<tr data-scope-row="${esc(row.scopeId)}" data-current="${row.current?'true':'false'}">
-        <td><input type="checkbox" data-scope-select="${esc(row.scopeId)}" aria-label="${esc(row.label)} 선택" ${selected.has(row.scopeId)?'checked':''} ${busy||!selectable(row)?'disabled':''}></td>
-        <td class="scope-data-name"><b>${esc(row.characterName||row.label)}</b><span>${esc(row.chatTitle||'채팅 이름 미확인')}</span>
+        const why=blockReason(row);
+        return `<tr data-scope-row="${esc(row.scopeId)}" data-current="${row.current?'true':'false'}" data-selectable="${why?'false':'true'}">
+        <td data-scope-select-cell ${why?`title="${esc(why)}" data-scope-why="${esc(why)}"`:''}><input type="checkbox" data-scope-select="${esc(row.scopeId)}" aria-label="${esc(row.label)} 선택${why?' · '+esc(why):''}" ${selected.has(row.scopeId)?'checked':''} ${busy||!selectable(row)?'disabled':''}></td>
+        <td class="scope-data-name"><b>${esc(row.characterName||row.label)}</b><span>${esc(row.chatTitle||'채팅 이름 미확인')}</span>${why?`<small class="scope-data-reason" data-scope-reason>${esc(why)}</small>`:''}
         <details data-scope-detail><summary>상세</summary><div>${esc(row.scopeKey)}</div><div>${esc(row.modeLabel)}</div><div>${esc(row.dataSummary)}</div><div>${esc(row.locations.map(location=>({plugin:'플러그인 저장소',device:'기기 저장소',server:'서버'})[location]||location).join(' · ')||'저장 항목 없음')}</div><div>로컬 ${row.localRecords} / 서버 ${row.unavailable?'미확인':row.serverChecked?row.serverRecords:'미조회'}</div><div>${esc(row.deleteBlockedReason||'확인 후 선택 자료 삭제 가능')}</div><pre>${esc(row.issues.map(issue=>[issue.code,issue.key,issue.detail].filter(Boolean).join(' · ')).join('\n')||'확인된 오류 없음')}</pre><details><summary>저장 키 ${row.keys.length}개</summary><pre>${esc(row.keys.join('\n'))}</pre></details></details></td>
         <td title="${esc(row.dataSummary)}" data-scope-counts>${row.unavailable?'—':row.dataMetrics?.primary??'—'} / ${row.unavailable?'—':row.dataMetrics?.secondary??'—'}</td><td>${row.unavailable?'—':row.ownedRecordCount}</td><td><span class="scope-data-state">${status}</span></td><td><time ${at?'datetime="'+new Date(at).toISOString()+'"':''}>${updated}</time></td><td><button type="button" data-scope-delete-one="${esc(row.scopeId)}" aria-label="${esc(row.label)} 삭제" ${busy||!row.canDelete?'disabled':''}>삭제</button></td></tr>`;
       }).join('')||'<tr><td colspan="7" class="muted">표시할 스코프가 없습니다.</td></tr>';
@@ -11346,6 +11361,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     q('[data-scope-search]').oninput=q('[data-scope-filter]').onchange=()=>{limit=50;render();};
     q('[data-scope-more]').onclick=()=>{limit+=50;render();};
     q('[data-scope-select-all]').onchange=event=>{for(const row of filtered().filter(selectable)){if(event.target.checked)selected.add(row.scopeId);else selected.delete(row.scopeId);}render();};
+    root.addEventListener('click',event=>{const cell=event.target.closest?.('td[data-scope-select-cell]');if(!cell||!cell.getAttribute('data-scope-why'))return;
+      q('[data-scope-result]').textContent='선택할 수 없음 · '+cell.getAttribute('data-scope-why');});
     root.addEventListener('change',event=>{const id=event.target.getAttribute?.('data-scope-select');if(!id)return;const row=catalog?.rows.find(row=>row.scopeId===id);if(!busy&&row&&selectable(row)){if(event.target.checked)selected.add(id);else selected.delete(id);}updateSelection();});
     for(const button of root.querySelectorAll('[data-scope-pick]'))button.onclick=()=>{
       if(busy)return;const orphan=button.getAttribute('data-scope-pick')==='orphan';
