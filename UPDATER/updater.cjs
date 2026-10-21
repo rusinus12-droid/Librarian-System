@@ -45,7 +45,9 @@ function parseArgs(argv = process.argv.slice(2)) {
     expectedSha256: null,
     targetRoot: null,
     installUpdater: false,
-    userUpdate: false
+    userUpdate: false,
+    localUpdate: false,
+    zipPrompt: null
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = String(argv[index] || '');
@@ -54,6 +56,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     else if (arg === '--recover') result.recover = true;
     else if (arg === '--install-updater') result.installUpdater = true;
     else if (arg === '--user-update') result.userUpdate = true;
+    else if (arg === '--local-update') result.localUpdate = true;
     else if (arg === '--target-root') {
       const value = argv[++index];
       if (!value || String(value).startsWith('--')) throw new Error('target_root_value_required');
@@ -147,6 +150,12 @@ function friendlyErrorMessage(error) {
   if (code === 'prepared_candidate_missing') {
     return '설치할 업데이트가 준비되지 않았습니다. 업데이트 메뉴에서 처음부터 다시 시작해 주세요.';
   }
+  if (code === 'release_zip_filename_contract_invalid') {
+    return '선택한 파일 이름이 공식 배포 형식(Librarian-System-버전.zip)이 아닙니다. 내려받은 원래 이름으로 되돌린 뒤 다시 선택해 주세요.';
+  }
+  if (code.startsWith('release_zip_picker_unavailable')) {
+    return '이 환경에서는 파일 선택 창을 열 수 없습니다. 메뉴에서 ZIP 경로를 직접 입력하거나 --release-zip 옵션을 사용해 주세요.';
+  }
   if (code === 'release_zip_not_found') return '선택한 업데이트 ZIP 파일을 찾지 못했습니다.';
   if (code === 'official_release_asset_missing' || code === 'official_release_asset_url_missing' || code === 'github_release_asset_digest_missing') {
     return '공식 Release에서 필요한 업데이트 파일 또는 검증 정보를 찾지 못했습니다.';
@@ -161,6 +170,42 @@ function friendlyErrorMessage(error) {
   if (code.includes('operation_lock') || code.includes('locked')) return '다른 업데이트 작업이 진행 중입니다. 기존 작업이 끝난 뒤 다시 시도해 주세요.';
   if (code.includes('candidate') && (code.includes('failed') || code.includes('start'))) return '새 버전 검증에 실패하여 기존 버전으로 안전하게 복구했습니다.';
   return `업데이트를 완료하지 못했습니다. 자세한 내용은 UPDATER/logs/latest.log를 확인해 주세요. (${code})`;
+}
+
+// Local update: the user picks an already downloaded Release ZIP (explorer
+// dialog, or --release-zip). Verification, program_only/migration_required
+// dispatch and rollback are the same code paths as the remote update.
+async function runLocalUpdate({ rootDir = ROOT, logger = logLine, zipPath = null, expectedSha256 = null, deps = {} } = {}) {
+  const root = path.resolve(rootDir);
+  const log = logger || makeLogger(root);
+  const before = currentVersion(root);
+  log('');
+  log('=== Librarian System 로컬 업데이트 ===');
+  log(`현재 버전: ${before}`);
+  let chosen = zipPath;
+  if (!chosen) {
+    const picker = require('./core/file-picker.cjs');
+    log('업데이트 ZIP을 고르는 창을 엽니다. 창이 보이지 않으면 작업 표시줄을 확인해 주세요.');
+    const picked = (deps.pickReleaseZip || picker.pickReleaseZip)({ platform: platform() });
+    if (picked.cancelled) { log('파일 선택이 취소되어 업데이트하지 않았습니다.'); return { applied: false, cancelled: true }; }
+    if (picked.unavailable) throw new Error(`release_zip_picker_unavailable:${picked.reason || 'unknown'}`);
+    chosen = picked.path;
+  }
+  chosen = path.resolve(chosen);
+  log(`선택한 파일: ${path.basename(chosen)}`);
+  log('[1/3] 내부 파일 및 DATA 안전성 확인');
+  const prepareFn = deps.prepareFromLocalZip || prepareFromLocalZip;
+  const receipt = await prepareFn({ rootDir: root, zipPath: chosen, expectedSha256 });
+  if (receipt.updatePolicy === 'manual_required') throw new Error('manual_update_required');
+  log(`[2/3] 업데이트 방식: ${receipt.updatePolicy}`);
+  if (receipt.updatePolicy === 'migration_required') log('기존 DATA를 직접 덮어쓰지 않고 새 DATA로 안전하게 이관합니다. 문제가 발생하면 PROGRAM과 DATA를 함께 복구합니다.');
+  else log('DATA는 그대로 보존하고 PROGRAM만 안전하게 교체합니다.');
+  log('[3/3] 업데이트 적용');
+  const result = await (deps.applyReceipt || applyReceipt)({ rootDir: root, receipt, logger: log });
+  log('');
+  log(`업데이트 완료: ${before} → ${receipt.targetVersion}`);
+  log('RisuAI에 설치된 플러그인은 서버 updater가 자동으로 변경하지 않습니다.');
+  return { receipt, result, applied: true };
 }
 
 async function prepareLatestRelease({ rootDir = ROOT, logger = logLine, deps = {} } = {}) {
@@ -258,6 +303,7 @@ async function runMain({ args = parseArgs(), rootDir = ROOT, logger = null } = {
   log(`Current  : ${cv}`);
 
   if (args.userUpdate) return runUserUpdate({ rootDir: root, logger: log });
+  if (args.localUpdate) return runLocalUpdate({ rootDir: root, logger: log, zipPath: args.releaseZip, expectedSha256: args.expectedSha256 });
 
   if (args.releaseZip) {
     log('[LOCAL] 표준 Release ZIP을 검사하고 PROGRAM.next를 준비합니다.');
@@ -357,6 +403,7 @@ module.exports = {
   friendlyErrorMessage,
   prepareLatestRelease,
   runUserUpdate,
+  runLocalUpdate,
   currentVersion,
   makeLogger,
   runMain,

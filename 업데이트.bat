@@ -15,6 +15,7 @@ echo  1. 이 폴더의 서버를 최신 버전으로 업데이트
 echo  2. 다른 기존 설치 폴더를 업데이트
 echo     ^(0.3.51에서 처음 업데이트할 때도 이 메뉴 사용^)
 echo  3. 미완료 업데이트 복구
+echo  4. 내려받은 업데이트 ZIP을 직접 선택해서 업데이트 ^(인터넷 불필요^)
 echo  0. 종료
 echo.
 set "MENU="
@@ -22,6 +23,7 @@ set /p "MENU=번호를 선택하세요: "
 if "%MENU%"=="1" goto :CURRENT_UPDATE
 if "%MENU%"=="2" goto :OTHER_UPDATE
 if "%MENU%"=="3" goto :RECOVER
+if "%MENU%"=="4" goto :LOCAL_UPDATE
 if "%MENU%"=="0" exit /b 0
 echo.
 echo 잘못된 선택입니다.
@@ -71,6 +73,15 @@ goto :USER_DONE
 call "%~dp0UPDATER\_find_node.bat"
 if errorlevel 1 goto :NODE_ERROR
 "%NODE_EXE%" --no-warnings "%~dp0UPDATER\updater.cjs" --recover
+set "ERR=%ERRORLEVEL%"
+goto :USER_DONE
+
+:LOCAL_UPDATE
+echo.
+echo 파일 선택 창에서 내려받은 Librarian-System-버전.zip 을 선택하세요.
+call "%~dp0UPDATER\_find_node.bat"
+if errorlevel 1 goto :NODE_ERROR
+"%NODE_EXE%" --no-warnings "%~dp0UPDATER\updater.cjs" --local-update
 set "ERR=%ERRORLEVEL%"
 goto :USER_DONE
 
