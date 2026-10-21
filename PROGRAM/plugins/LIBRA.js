@@ -45600,12 +45600,12 @@ function createLibraReadonlySourceContext(owner) {
       for (const fact of array(artifact.facts)) duplicate.set(fact.tempFactId, (duplicate.get(fact.tempFactId) || 0) + 1);
       const validFacts = array(artifact.facts).filter(fact => {
         const contract = object(snapshot.claimContracts?.[fact.claimKind]);
-        return fact.tempFactId && duplicate.get(fact.tempFactId) === 1 && contract.field && contract.domain === fact.domain;
+        return fact.tempFactId && duplicate.get(fact.tempFactId) === 1 && contract.domain && contract.domain === fact.domain;
       });
       const src = source('canonical', row.key, record.revision, { record, ref: row.ref }, row.originScope || frame.scopeKey, validFacts.length ? 1 : 0);
       array(artifact.facts).forEach((fact, index) => {
         const contract = object(snapshot.claimContracts?.[fact.claimKind]);
-        if (!fact.tempFactId || duplicate.get(fact.tempFactId) !== 1 || !contract.field || contract.domain !== fact.domain) {
+        if (!fact.tempFactId || duplicate.get(fact.tempFactId) !== 1 || !contract.domain || contract.domain !== fact.domain) {
           note('canonical', 'claim_schema_or_identity_ambiguous'); return;
         }
         const subjectId = row.entityRefs?.[fact.subjectTempRef] || '', targetIds = new Set();
@@ -45623,11 +45623,11 @@ function createLibraReadonlySourceContext(owner) {
         const anchor = span && sourceRows.length === 1 ? occurrence(sourceRows[0], role, string(span.quote),
           record.scopeKey || frame.scopeKey, record.worldlineId || frame.worldlineId, Number(record.sessionEpoch || 0)) : null;
         const correspondenceProof = fact.temporalRole === 'current_sequence' && fact.certainty === 'confirmed'
-          && !contract.refType && !contract.collection && !contract.profile && !/Ref$/.test(contract.value || '') && !targetIds.size
+          && contract.field && !contract.refType && !contract.collection && !contract.profile && !/Ref$/.test(contract.value || '') && !targetIds.size
           ? claimProof(fact.domain, subjectId, contract.field, fact.effect || 'set', fact.values?.[contract.value], anchor) : null;
-        const body = { fact, subjectId, targetIds: [...targetIds], field: contract.field, turn, correspondenceProof };
+        const body = { fact, subjectId, targetIds: [...targetIds], field: contract.field || '', turn, correspondenceProof };
         const node = meaning(src, 'canonical_fact', row.key + '#facts/' + index, body, { index, typedMeaning: body },
-          { text: string(fact.text), semanticRole: 'canonical_assertion', fact: clone(fact), subjectId, targetIds: [...targetIds], field: contract.field, turn, temporalKnown, correspondenceProof, recordKey: row.key });
+          { text: string(fact.text), semanticRole: 'canonical_assertion', fact: clone(fact), subjectId, targetIds: [...targetIds], field: contract.field || '', turn, temporalKnown, correspondenceProof, recordKey: row.key });
         if (!array(fact.evidenceSpans).length) { note('canonical', 'claim_evidence_unavailable'); return; }
         const why = basis(src, 'canonical_claim', row.key + '#basis/' + index, body, { factIndex: index, evidenceSpans: fact.evidenceSpans });
         bases.set(why.id, { ...why, turn, temporalKnown });
@@ -45639,7 +45639,7 @@ function createLibraReadonlySourceContext(owner) {
         }
         if (!entity(subjectId) && fact.domain !== 'narrative') note('canonical', 'subject_mapping_unavailable');
         canonicalFacts.set(JSON.stringify([record.memoryId, record.revision, fact.tempFactId]), { node, why, fact,
-          subjectId, targetIds: [...targetIds], field: contract.field, sourceDigest: record.sourceDigest });
+          subjectId, targetIds: [...targetIds], field: contract.field || '', sourceDigest: record.sourceDigest });
       });
     });
 
@@ -88554,7 +88554,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return guiEl('details',{class:'fold',open:true,dataset:{providerEditor:RISUAI_AUX_PRESET_NAME}},[guiEl('summary',{text:'RisuAI 보조 모델 · 연결 상세'}),guiEl('div',{class:'fold__body stack'},[
       fieldNode('기본 연결',selectNode(runtime.defaultPresetName||'',[['','공용 기본값'],...names.map(name=>[name,presetDisplayName(name)])],value=>{runtime.defaultPresetName=value;markGuiDirty();})),
       guiEl('div',{class:'note'},[guiEl('b',{text:resolution.api?'API 사용 가능':'runLLMModel 사용 불가'}),guiEl('p',{text:`mode: otherAx · API 소스: ${resolution.source} · staticModel 지정 안 함`})]),
-      guiEl('p',{class:'hint',text:'모델·출력 토큰·스트리밍·타임아웃은 RisuAI 설정을 사용합니다.'}),
+      guiEl('p',{class:'hint',text:'모델·출력 토큰·스트리밍·타임아웃은 RisuAI 설정을 사용합니다. 직접 연결을 추가하면 LIBRA가 출력 토큰 예산·스트리밍·타임아웃을 직접 관리합니다.'}),
       guiEl('div',{class:'note note--warn',role:'status',hidden:!(Runtime.risuAuxiliary.unverifiedStreams > 0),dataset:{libraOtherAxStreamPending:'true'},text:HOST_STREAM_PENDING_MESSAGE}),
       checkboxNode(runtime.risuAuxAllowPlugins===true,'플러그인 제공 보조 모델 허용',value=>{runtime.risuAuxAllowPlugins=value===true;markGuiDirty();}),
       guiEl('div',{class:'note',dataset:{risuAuxiliaryCallProbe:probe?.status||'unverified'}},[guiEl('b',{text:probe?(probe.ok?'최근 호출 성공':'최근 호출 실패'):'호출 테스트 기록 없음'}),guiEl('p',{text:probe?`${probe.apiSource||'API 불명'} · ${Number(probe.elapsedMs||0)}ms · ${probe.ok?probe.responsePreview||'':probe.error||''}`:'버튼을 누를 때만 실제 보조 모델 호출을 1회 전송합니다.'})]),
