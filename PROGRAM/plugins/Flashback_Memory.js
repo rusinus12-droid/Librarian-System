@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.127
+//@display-name ⚡ FLASHBACK Memory v1.0.128
 //@api 3.0
-//@version 1.0.127
+//@version 1.0.128
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.127';
+const PLUGIN_VERSION = '1.0.128';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -4349,7 +4349,7 @@ function createMemorySuiteHostLineage() {
 /* END LIBRARIAN HOST LINEAGE SDK */
 const MemorySuiteHostLineage = createMemorySuiteHostLineage();
 
-/* LIBRARIAN SYSTEM STORAGE SDK v1.8.27
+/* LIBRARIAN SYSTEM STORAGE SDK v1.8.28
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
  * The server stores opaque values. Each plugin keeps ownership of its own data schema.
  */
@@ -8497,6 +8497,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const globalRecordIdentity = row => [row.location,row.space,row.key].join('\u0000');
   const globalRecordScopeIds = row => row.classification === 'shared'
     ? (Array.isArray(row.dependencyScopeIds) ? row.dependencyScopeIds.map(String) : []) : [String(row.scopeId || '')];
+  // Global inventory may discover device storage before an owner wraps it.
+  // Copy and restore the exact audited adapters, including retained local vectors.
+  const globalLegacyStore = space => globalMigrationContext?.stores?.[space] || state.legacy[space];
   const globalPayloadRecord = row => ['scope','shared'].includes(row.classification) && row.artifact !== true;
   const globalScopeDescriptorOnly = row => {
     const scope=Object.fromEntries(['scopeId','scopeKey','characterId','chatId','canonicalCharacterId','canonicalChatId','canonicalScopeId','personaId','characterName','chatTitle','personaName','label','available'].map(key=>[key,row[key]]).filter(([,value])=>value !== undefined));
@@ -10172,8 +10175,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         }
       }
     };
-    await runPart(state.legacy.plugin, 'plugin');
-    await runPart(state.legacy.local, 'local');
+    await runPart(globalLegacyStore('plugin'), 'plugin');
+    await runPart(globalLegacyStore('local'), 'local');
     result.metrics = cloneScopedSyncMetrics(result.metrics);
     result.diagnostics = { schema: 'memory-suite.scope-sync-diagnostics.v1', metrics: result.metrics, failures: result.failureDetails.slice(), conflicts: result.conflicts.slice() };
     result.ok = result.failures.length === 0 && result.conflicts.length === 0;
@@ -10462,12 +10465,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       result.candidateCount = allCandidates;
       result.scopeCandidateCount = scopeCandidates;
       result.dependencyCandidateCount = pluginInventory.dependencyCandidates.length + localInventory.dependencyCandidates.length;
-      if (!state.legacy.plugin || typeof state.legacy.plugin.getItem !== 'function' || typeof state.legacy.plugin.setItem !== 'function') {
+      if (!globalLegacyStore('plugin') || typeof globalLegacyStore('plugin').getItem !== 'function' || typeof globalLegacyStore('plugin').setItem !== 'function') {
         const error = new Error('memory_suite_restore_adapter_unavailable:plugin');
         error.code = 'MEMORY_SUITE_RESTORE_ADAPTER_UNAVAILABLE'; throw error;
       }
       if ((localInventory.candidates.length || localInventory.tombstones.length)
-        && (!state.legacy.local || typeof state.legacy.local.getItem !== 'function' || typeof state.legacy.local.setItem !== 'function')) {
+        && (!globalLegacyStore('local') || typeof globalLegacyStore('local').getItem !== 'function' || typeof globalLegacyStore('local').setItem !== 'function')) {
         const error = new Error('memory_suite_restore_adapter_unavailable:local');
         error.code = 'MEMORY_SUITE_RESTORE_ADAPTER_UNAVAILABLE'; throw error;
       }
@@ -10475,11 +10478,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const error = new Error(`memory_suite_restore_snapshot_empty:${scope.scopeId}:dependencies=${result.dependencyCandidateCount},tombstones=${allTombstones}`);
         error.code = 'MEMORY_SUITE_RESTORE_SNAPSHOT_EMPTY'; throw error;
       }
-      await captureRestoreOriginals('plugin', pluginInventory, state.legacy.plugin);
-      await captureRestoreOriginals('local', localInventory, state.legacy.local);
-      result.plugin = await scopedRestoreSpace(state.legacy.plugin, 'plugin', { ...restoreOptions, scope, inventory:pluginInventory, onProgress:forward });
+      await captureRestoreOriginals('plugin', pluginInventory, globalLegacyStore('plugin'));
+      await captureRestoreOriginals('local', localInventory, globalLegacyStore('local'));
+      result.plugin = await scopedRestoreSpace(globalLegacyStore('plugin'), 'plugin', { ...restoreOptions, scope, inventory:pluginInventory, onProgress:forward });
       if (localInventory.candidates.length || localInventory.tombstones.length) {
-        result.local = await scopedRestoreSpace(state.legacy.local, 'local', { ...restoreOptions, scope, inventory:localInventory, onProgress:forward });
+        result.local = await scopedRestoreSpace(globalLegacyStore('local'), 'local', { ...restoreOptions, scope, inventory:localInventory, onProgress:forward });
       }
       for (const spaceResult of [result.plugin, result.local].filter(Boolean)) {
         result.restored += Number(spaceResult.restored || 0); result.removed += Number(spaceResult.removed || 0);
@@ -10502,7 +10505,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           ...(result.plugin?.removedKeys || []).map(key=>({space:'plugin',key})),
           ...(result.local?.removedKeys || []).map(key=>({space:'local',key}))
         ],
-        readback:async (spaceValue,key)=>await legacyRead(spaceValue==='local'?state.legacy.local:state.legacy.plugin,String(key||'')),
+        readback:async (spaceValue,key)=>await legacyRead(spaceValue==='local'?globalLegacyStore('local'):globalLegacyStore('plugin'),String(key||'')),
         result
       });
       result.metrics = result.validation?.metrics || {};
@@ -10545,7 +10548,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
   };
 
-  const scopedVerifyPreservation = async (_legacy = state.legacy.plugin, verifyOptions = {}) => {
+  const scopedVerifyPreservation = async (_legacy = globalLegacyStore('plugin'), verifyOptions = {}) => {
     const scope = normalizeScopeDescriptor(verifyOptions.scope || await resolveCurrentScope(true));
     if (!scope.scopeId) throw new Error('memory_suite_current_scope_unavailable');
     const integrity = await remoteIntegrity({ allowPluginOnly: true });
@@ -10577,8 +10580,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       result.failures.push(...spaceResult.failures.map(row => ({ ...row, space })));
       return spaceResult;
     };
-    result.spaces.plugin = await verifySpace(state.legacy.plugin, 'plugin');
-    result.spaces.local = await verifySpace(state.legacy.local, 'local');
+    result.spaces.plugin = await verifySpace(globalLegacyStore('plugin'), 'plugin');
+    result.spaces.local = await verifySpace(globalLegacyStore('local'), 'local');
     result.ok = result.failures.length === 0;
     if (!result.ok) {
       const error = new Error(`memory_suite_scope_preservation_failed:${scope.scopeId}:${result.failures.length}`);
@@ -11604,7 +11607,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             const preview=await previewGlobalMode(mode,{url:q('[data-url]').value});
             if(!preview.completeKnownScopes){
               q('[data-preview-diagnostics-text]').value=JSON.stringify({schema:'memory-suite.migration-preview-diagnostics.v1',namespace,discoveredScopes:preview.discoveredScopes,
-                blockers:preview.blockers.map(row=>Object.fromEntries(['code','location','space','key','detail'].filter(key=>row[key]!=null).map(key=>[key,row[key]])))},null,2);
+                blockers:preview.blockers.map(row=>Object.fromEntries(['code','location','space','key','detail','manifestState'].filter(key=>row[key]!=null).map(key=>[key,row[key]])))},null,2);
               q('[data-preview-diagnostics]').hidden=false;
               setMessage(`전체 이전을 시작할 수 없습니다. 발견 ${preview.discoveredScopes}개 · 미해결 ${preview.blockers.length}개\n${preview.blockers.slice(0,16).map(row=>[row.code,row.location,row.space,row.key,row.detail].filter(Boolean).join(' · ')).join('\n')}`,'error');return;}
             if(!(await confirmModeTransition(fromMode,mode,preview))){setMessage('전환을 취소했습니다. 원본과 저장 경로는 그대로입니다.','good');return;}
@@ -13026,11 +13029,30 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
     if (row.scopeId && row.scopeId !== id) issue('physical_scope_identity_conflict',row);
     row.scopeId = id; row.dependencyScopeIds = [...new Set([...row.dependencyScopeIds,id])];
   };
+  const diagnosedManifests = new Set();
   const dependency = (row,key,space = '',optional = false,archive = false) => {
     if (!key) return;
     if (key === row.logicalKey) { if (archive) issue('archive_dependency_cycle',row); return; }
     const found = (byKey.get(key) || []).filter(other => !other.deleted && !other.artifact && sameSource(row,other) && (!space || other.space === space));
-    if (!found.length) { if (!optional) issue('dependency_missing',row,key); return; }
+    if (!found.length) {
+      if (!optional) {
+        issue('dependency_missing',row,key);
+        const manifest = values.get(row);
+        if (manifest?.schema === 'vector_rag_memory.scope_manifest.v2' && !diagnosedManifests.has(row)) {
+          diagnosedManifests.add(row);
+          const prefix = `vector_rag_memory:scope:${keyHash(manifest.scopeKey || '')}:records:`;
+          const observed = records.filter(other => !other.deleted && !other.artifact && other.space === 'plugin'
+            && sameSource(row,other) && other.logicalKey.startsWith(prefix)).map(other => other.logicalKey).sort();
+          // Diagnostic metadata only: never export record bodies or credentials.
+          blockers[blockers.length - 1].manifestState = {
+            scopeKey:str(manifest.scopeKey), commitId:str(manifest.commitId), count:manifest.count,
+            shardCount:manifest.shardCount, rawPageLayout:str(manifest.rawPageLayout),
+            observedShardCount:observed.length, observedShardKeys:observed.slice(0,32)
+          };
+        }
+      }
+      return;
+    }
     row.dependencyKeys = [...new Set([...row.dependencyKeys,key])];
     for (const other of found) {
       if (other.classification === 'control') { issue('dependency_control_forbidden',row,key); continue; }
@@ -13110,7 +13132,18 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
     if (key === 'vector_rag_memory:scope_registry:v2') {
       row.ownerWide = true;
       if (!object(value) || value.version !== 2 || !Array.isArray(value.scopes)) { issue('native_registry_invalid',row); continue; }
-      for (const scope of value.scopes) addNative(scope,'native_registry',row);
+      for (const scope of value.scopes) {
+        if (object(scope) && str(scope.scopeKey).startsWith('flashback_archive_v1:')) {
+          // Old registries included archive owners. Validate them against the
+          // physical archive manifest; they are shared data, never native chats.
+          const hash = keyHash(scope.scopeKey), manifestKey = `vector_rag_memory:scope:${hash}:manifest:v2`;
+          const manifests = (byKey.get(manifestKey) || []).filter(other => !other.deleted && !other.artifact && other.space === 'plugin' && sameSource(row,other));
+          if (scope.storageHash && scope.storageHash !== hash || !manifests.length
+            || manifests.some(other => { const manifest = values.get(other); return !object(manifest) || manifest.scopeKey !== scope.scopeKey
+              || manifest.archiveOwner !== true || scope.scopeKey !== 'flashback_archive_v1:' + manifest.archiveId; })) issue('archive_registry_identity_invalid',row,scope.scopeKey);
+          else dependency(row,manifestKey,'plugin');
+        } else addNative(scope,'native_registry',row);
+      }
     } else if (/^vector_rag_memory:scope:[^:]+:manifest:v2(?::previous:v1)?$/.test(key)) {
       if (!object(value) || value.schema !== 'vector_rag_memory.scope_manifest.v2' || !str(value.scopeKey)
         || key.replace(/:previous:v1$/,'') !== `vector_rag_memory:scope:${keyHash(value.scopeKey)}:manifest:v2` || (value.storageHash && value.storageHash !== keyHash(value.scopeKey))
@@ -13174,6 +13207,14 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
               || ref.storageKey !== prefix + `records:commit:${ref.payloadCommitId}:shard:` + String(i).padStart(4,'0')
               || !/^[a-f0-9]{64}$/.test(str(ref.serializedValueDigest)) || !/^[a-f0-9]{64}$/.test(str(value.rawPageDirectoryDigest))) issue('raw_page_directory_invalid',row);
             else shardKey = ref.storageKey;
+          }
+          const present = key => (byKey.get(key) || []).some(other => !other.deleted && !other.artifact && other.space === 'plugin' && sameSource(row,other));
+          if (!present(shardKey) && value.commitId && value.rawPageLayout == null && value.rawPageReferences == null && value.rawPageDirectoryDigest == null) {
+            // Match the native reader: an old physical shard is a fallback only
+            // when its own envelope attests this exact manifest commit.
+            const legacyKey = prefix + 'records:shard:' + String(i).padStart(4,'0');
+            const legacy = (byKey.get(legacyKey) || []).filter(other => !other.deleted && !other.artifact && other.space === 'plugin' && sameSource(row,other));
+            if (legacy.length && legacy.every(other => values.get(other)?.commitId === value.commitId)) shardKey = legacyKey;
           }
           dependency(row,shardKey,'plugin');
         }

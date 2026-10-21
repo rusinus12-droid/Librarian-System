@@ -8,12 +8,39 @@ const artifactRoot=process.env.GLOBAL_MODE_ARTIFACT_ROOT;
 const kinds=artifactRoot?['Full','Min']:['Full'];
 const hash=value=>{let h=0x811c9dc5;for(const c of value)h=Math.imul(h^c.charCodeAt(0),0x01000193);return (h>>>0).toString(36);};
 const hash64=value=>{let h=0xcbf29ce484222325n;for(const c of value)h=BigInt.asUintN(64,(h^BigInt(c.charCodeAt(0)))*0x100000001b3n);return 'h64'+h.toString(36);};
-const seedRoots=name=>Array.from({length:2},(_,i)=>{
+const seedRoots=name=>{const roots=Array.from({length:2},(_,i)=>{
  const characterId='preserved-character-'+i,chatId='inactive-chat-'+i;
  if(name==='LIBRA'){const scopeKey='preserved-index-'+i;return [`libra:v1:scope:${scopeKey}:manifest`,JSON.stringify({schema:'libra.manifest.v1',scopeKey,characterId,chatId,memories:{},inheritedMemories:[],note:'exact root bytes '+i})];}
  if(name==='HAYAKU'){const scopeKey='chat_'+hash64(characterId+'\n'+chatId);return ['hayaku.v2.ledger.'+scopeKey,JSON.stringify({version:'hayaku_storage_ledger_v2',scopeKey,identity:{schema:'hayaku.scope_identity.v1',scopeKey,characterId,chatId},records:[],slotHeads:[],tombstones:[],note:'exact root bytes '+i})];}
  const scopeKey=`char:${hash(characterId)}|chat:${hash(chatId)}`,storageHash=hash(scopeKey);return [`vector_rag_memory:scope:${storageHash}:manifest:v2`,JSON.stringify({schema:'vector_rag_memory.scope_manifest.v2',version:2,scopeKey,storageHash,characterId,chatId,canonicalCharacterId:characterId,canonicalChatId:chatId,canonicalScopeId:scopeKey,shardCount:0,count:0,shardSummaries:[],note:'exact root bytes '+i})];
 });
+ if(name==='LIBRA'){
+  const archiveId='migration-regression',scopeKey='preserved-index-0',canonicalId='memory:6282',memoryId='arc_memory:6282';
+  const archive=`libra:v1:shared-archive:${archiveId}:manifest`,memory=`libra:v1:shared-archive:${archiveId}:memory:${canonicalId}:r2`;
+  const vector=`libra:v1:scope:archive:${archiveId}:vector:${memoryId}:r2:old-profile`;
+  const ref={key:memory,memoryId,revision:2,sourceDigest:'source-proof',status:'committed',vectorKey:`libra:v1:shared-archive:${archiveId}:vector:${canonicalId}:r2:retired-profile`};
+  const root=JSON.parse(roots[0][1]);root.archiveRef={archiveId,manifestKey:archive};root.inheritedMemories=[ref];roots[0][1]=JSON.stringify(root);
+  roots.push([archive,JSON.stringify({schema:'libra.shared_archive.v1',archiveId,memoryRefs:[ref]})],
+   [memory,JSON.stringify({schema:'libra.canonical_memory.v1',scopeKey:`archive:${archiveId}`,archiveId,archiveCanonicalId:canonicalId,memoryId,revision:2,sourceDigest:'source-proof',embedding:{status:'ready',vectorKey:vector}})],
+   [vector,JSON.stringify({scopeKey:`archive:${archiveId}`,memoryId,revision:2,profileId:'old-profile',entries:{global:{vector:[1,0]}}})]);
+ }
+ if(name==='Flashback'){
+  const first=JSON.parse(roots[0][1]);first.commitId='retained-commit';first.shardCount=1;first.count=1;first.stats={recordTotal:1,charTotal:7,tokenTotal:2,byType:{response:{records:1,chars:7,tokens:2}}};first.shardSummaries=[{shardIndex:0,recordCount:1}];roots[0][1]=JSON.stringify(first);
+  roots.push([`vector_rag_memory:scope:${first.storageHash}:records:shard:0000`,JSON.stringify({scopeKey:first.scopeKey,commitId:first.commitId,shard:0,records:[{id:'durable-record',scopeKey:first.scopeKey,sourceType:'response',type:'response',text:'durable',dim:4,vector:[1,0,0,0]}]})]);
+  const second=JSON.parse(roots[1][1]),archiveId='fb_135rcsu',scopeKey='flashback_archive_v1:'+archiveId,storageHash=hash(scopeKey);
+  const pointer={archiveId,archiveScopeKey:scopeKey,generation:1,depth:1,recordCount:0,digest:hash('')};second.archiveRef=pointer;roots[1][1]=JSON.stringify(second);
+  roots.push([`vector_rag_memory:scope:${storageHash}:manifest:v2`,JSON.stringify({schema:'vector_rag_memory.scope_manifest.v2',version:2,scopeKey,storageHash,archiveOwner:true,archiveId,archiveGeneration:1,archiveRecordCount:0,archiveDigest:hash(''),archiveMemberCatalogVersion:1,archiveDeltaCount:0,archiveDeltaMemberIds:[],archiveDeltaDigest:hash(''),count:0,shardCount:0,shardSummaries:[]})],
+   ['vector_rag_memory:scope_registry:v2',JSON.stringify({version:2,scopes:[{scopeKey,storageHash}]})]);
+ }
+ return roots;
+};
+const seedDevice=name=>{
+ if(name!=='LIBRA')return [];
+ const storageKey='libra:v1:scope:preserved-index-0:vector:mem_000006:r1:retired-profile';
+ const comparable=storageKey.toLowerCase().replace(/[\s.,!?…。，、！？:;'"“”‘’()[\]{}<>#*_=`~|\\/—–-]+/g,'');
+ const localKey='libra:v1:local-vector:'+parseInt(hash(comparable),36).toString(16).padStart(8,'0');
+ return [[localKey,JSON.stringify({schema:'libra.local_vector_payload.v1',localKey,storageKey,keys:['global'],lengths:[1],byteLength:4,data:'AACAPw=='})]];
+};
 async function settleOwnerStore(s){let before=JSON.stringify([...s.values]),stable=0;for(let i=0;i<30;i++){await pause(100);const next=JSON.stringify([...s.values]);stable=next===before?stable+1:0;if(stable===3)return;before=next;}throw Error('owner startup store did not settle');}
 async function openPanel(s){
  await s.open();await pause(180);
@@ -40,7 +67,7 @@ async function apply(s,mode){
 (async()=>{const results=[];for(const name of (process.env.GLOBAL_MODE_OWNER?[process.env.GLOBAL_MODE_OWNER]:Object.keys(owners)))for(const kind of kinds){
  const handler=createHandlerFixture(),namespace=owners[name],pluginPath=artifactRoot?path.join(artifactRoot,kind,META[name][0]):path.resolve(__dirname,'../plugins',META[name][0]);let s,restart;
  try{
-  s=await create(name,kind,{pluginPath,separateLocalStorage:true,initialValues:seedRoots(name),args:{memory_suite_server_url:handler.url},nativeFetch:handler.nativeFetch});
+  s=await create(name,kind,{pluginPath,separateLocalStorage:true,initialValues:seedRoots(name),initialDeviceValues:seedDevice(name),args:{memory_suite_server_url:handler.url},nativeFetch:handler.nativeFetch});
   await openPanel(s);
   const before=[...s.values.entries()].filter(([key])=>!key.startsWith('__memory_suite_'));
   // Ordinary startup may normalize a minimal legacy manifest before confirmation.
@@ -50,7 +77,7 @@ async function apply(s,mode){
   if(name==='LIBRA'||name==='HAYAKU')assert.equal(s.doc.querySelector('[data-scope-manager]'),null,'scope data management is separate from server settings');
   const forward=await apply(s,'server_only');const forwardRefreshes=s.globalInventoryRefreshes||0;
   const rows=handler.app.repositories[namespace].database.prepare('SELECT key,value_json FROM kv WHERE deleted=0').all();
-  for(const [key,value]of frozenRoots)assert(rows.some(row=>row.key===key&&JSON.parse(row.value_json)===value),'actual owner root transferred '+key);
+  for(const [key,value]of [...frozenRoots,...seedDevice(name)])assert(rows.some(row=>row.key===key&&JSON.parse(row.value_json)===value),'actual owner root transferred '+key);
   assert(rows.some(row=>row.key===`__memory_suite_scope_routes_v1__:${namespace}`),'global policy published to actual handler');
   for(const [key,value]of before)assert.equal(s.values.get(key),value,'forward preserves local source '+key);
   const saved=[...s.values],savedDevice=[...s.deviceValues];await s.close();s=null;
@@ -61,6 +88,7 @@ async function apply(s,mode){
   console.log('REVERSE_PREFLIGHT_DIAGNOSTIC',JSON.stringify({name,kind,differences:reverseRows.filter(row=>restart.values.has(row.key)&&JSON.stringify(restart.values.get(row.key))!==row.value_json).map(row=>({key:row.key,local:restart.values.get(row.key),server:JSON.parse(row.value_json)}))}));
   const reverse=await apply(restart,'plugin_only');
   for(const [key,value]of frozenRoots)assert.equal(restart.values.get(key),value,'exact pre-confirmation native root survives roundtrip '+key);
+  for(const [key,value]of seedDevice(name))assert.equal(restart.deviceValues.get(key),value,'retained local vector payload survives roundtrip '+key);
   const registry=JSON.parse(restart.values.get(`__memory_suite_internal_scope_routes_v1__:${namespace}`));assert.equal(registry.entries.__memory_suite_global__.mode,'plugin_only');
   assert(Object.values(registry.entries).filter(row=>row.scopeId!=='__memory_suite_global__').every(row=>row.origin==='inherited'));
   assert.equal(restart.wire.length,0,'no external network/model fallback');
