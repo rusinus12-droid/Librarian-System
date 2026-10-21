@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.194
-//@version 2.3.194
+//@display-name LIBRA v2.3.195
+//@version 2.3.195
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.194';
+  const PLUGIN_VERSION = '2.3.195';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -4200,7 +4200,7 @@ const inspectLibraScopeHealthSnapshot = (snapshot, options = {}) => {
 };
 /* END LIBRA READ-ONLY SCOPE HEALTH */
 
-/* LIBRARIAN SYSTEM STORAGE SDK v1.8.29
+/* LIBRARIAN SYSTEM STORAGE SDK v1.8.30
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
  * The server stores opaque values. Each plugin keeps ownership of its own data schema.
  */

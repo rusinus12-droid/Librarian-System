@@ -1,4 +1,4 @@
-/* LIBRARIAN SYSTEM STORAGE SDK v1.8.29
+/* LIBRARIAN SYSTEM STORAGE SDK v1.8.30
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
  * The server stores opaque values. Each plugin keeps ownership of its own data schema.
  */
