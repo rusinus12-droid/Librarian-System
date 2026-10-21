@@ -48,7 +48,7 @@ function completedHead(f,turn=5){
   await f.r.api.rollbackWorldManagerState({throughTurn:5});
   const context=await f.r.api.getResponseContext({currentInput:'민아의 은빛 열쇠'});assert.equal(context.cutoffTurn,5);assert.equal(context.canonicalRefs.length,1);assert.equal(context.values.currentHead.throughTurn,5);
   const recall=await f.r.api.previewUnifiedMemoryRecall('민아의 은빛 열쇠');assert.ok(recall.memories.every(r=>r.memory.turnRange.end<=5));
-  await f.r.api.saveLibraProviderConfig({responseFamily:'libra',libraResponseMode:'classic'}); const actual=await f.control.hooks.beforeRequest([{role:'user',content:'Continue the admitted current scene'}],'model'); assert.ok(actual.some(m=>m.content?.includes('[LIBRA CLASSIC RECALL')),'actual retained Classic consumes admitted recall'); const refreshed=await f.r.api.getResponseContext(); assert.equal(refreshed.cutoffTurn,5); assert.equal(refreshed.canonicalRefs.length,1); assert.equal((await f.r.api.validateResponseContext(refreshed)).ok,true);
+  await f.r.api.saveLibraProviderConfig({responseFamily:'libra',libraResponseMode:'classic'}); const actual=await f.control.hooks.beforeRequest([{role:'user',content:'민아의 은빛 열쇠'}],'model'); assert.ok(actual.some(m=>m.content?.includes('[LIBRA CLASSIC RECALL')),'actual retained Classic consumes admitted recall'); const refreshed=await f.r.api.getResponseContext(); assert.equal(refreshed.cutoffTurn,5); assert.equal(refreshed.canonicalRefs.length,1); assert.equal((await f.r.api.validateResponseContext(refreshed)).ok,true);
   const afterBytes=f.r.values.get(future.key),afterMemory=JSON.parse(afterBytes);
   const comparison=assertMemoryStableExceptEmbedding(bytes,afterBytes,'rollback preserves every canonical field except derived embedding state');
   assert.equal(afterMemory.revision,futureMemory.revision,'rollback preserves canonical revision');
@@ -59,7 +59,7 @@ function completedHead(f,turn=5){
  });
  await test('Classic consumes the same revision-bound canonical projection without raw State injection',async f=>{
   await f.r.api.saveLibraProviderConfig({responseFamily:'libra',libraResponseMode:'classic'});const out=await f.control.hooks.beforeRequest([{role:'user',content:'민아의 은빛 열쇠 소유자'}],'model');assert.ok(out.some(m=>m.content?.includes('[LIBRA CLASSIC RECALL')));
-  const context=f.r.api.getLastResponseContext();assert.equal(context.route,'classic');assert.equal(context.canonicalRefs.length,1);assert.equal(context.values.currentHead,null);assert.equal(context.values.canonicalLayers.world.length>0,true);
+  const context=f.r.api.getLastResponseContext();assert.equal(context.route,'classic');assert.equal(context.canonicalRefs.length,1);assert.equal(context.values.currentHead,null);assert.equal(context.values.canonicalLayers.memory.length>0,true);
   const providerKinds=f.control.calls.map(call=>String(call?.[0]?.messages?.[0]?.content||''));
   assert.equal(providerKinds.filter(text=>text.includes('LIBRA LONG-TERM MEMORY EXTRACTION')).length,1,'one Canonical extraction');
   assert.equal(providerKinds.every(text=>text.includes('LIBRA LONG-TERM MEMORY EXTRACTION')||text.includes('[LIBRA MICRO SOURCE CONTRACT]')),true,'Classic recall makes no extra model call');
@@ -73,15 +73,17 @@ function completedHead(f,turn=5){
 
  await test('Classic rejects a completed receipt head deleted after projection and before injection',async f=>{
   const {key}=completedHead(f);await f.r.api.saveLibraProviderConfig({responseFamily:'libra',libraResponseMode:'classic'});
-  const originalGet=f.r.values.get;let changed=false;
+  const originalGet=f.r.values.get;let changed=false,projected=false;
   f.r.values.get=function(k){
-   if(!changed && f.r.api.getLastResponseContext()?.route==='classic'){
+   // The unified route validates the receipt read set after the canonical projection (memory/evidence rows) is read.
+   if(String(k).includes(':source-evidence:'))projected=true;
+   if(!changed && projected && k===key){
     changed=true;f.r.values.delete(key);
    }
    return originalGet.call(this,k);
   };
   try{
-   const input=[{role:'user',content:'Continue the current scene'}];
+   const input=[{role:'user',content:'민아의 은빛 열쇠 소유자'}];
    const out=await f.control.hooks.beforeRequest(input,'model');
    assert.equal(changed,true,'head changed after the response context was frozen');
    assert.deepEqual(JSON.parse(JSON.stringify(out)),input,'stale Classic context must not be injected');
@@ -91,17 +93,18 @@ function completedHead(f,turn=5){
 
  await test('timed-out final receipt read leaves host prompt unchanged and writes no receipt',async f=>{
   const {key}=completedHead(f);await f.r.api.saveLibraProviderConfig({responseFamily:'libra',libraResponseMode:'classic'});
-  const originalGet=f.r.values.get;let entered=false,release;
+  const originalGet=f.r.values.get;let entered=false,projected=false,release;
   const held=new Promise(resolve=>{release=resolve;});
   f.r.values.get=function(k){
-   if(!entered && k===key && f.r.api.getLastResponseContext()?.route==='classic'){
+   if(String(k).includes(':source-evidence:'))projected=true;
+   if(!entered && projected && k===key){
     entered=true;return held.then(()=>originalGet.call(this,k));
    }
    return originalGet.call(this,k);
   };
   try{
    const before=f.r.storageWrites.filter(row=>String(row.key).includes(':source-receipt:')).length;
-   const input=[{role:'user',content:'Continue the current scene'}],out=await f.control.hooks.beforeRequest(input,'model');
+   const input=[{role:'user',content:'민아의 은빛 열쇠 소유자'}],out=await f.control.hooks.beforeRequest(input,'model');
    assert.equal(entered,true,'the final receipt read was held');
    assert.deepEqual(JSON.parse(JSON.stringify(out)),input,'final read timeout keeps the host prompt untouched');
    assert.equal(f.r.storageWrites.filter(row=>String(row.key).includes(':source-receipt:')).length,before,
