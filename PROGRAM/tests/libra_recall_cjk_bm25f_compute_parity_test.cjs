@@ -50,8 +50,13 @@ const normalize = value => JSON.parse(JSON.stringify(value));
       assert.deepEqual(normalize(toolTokenize(text)), local, 'plugin and tool index must tokenize identically');
       return local;
     };
-    assert.equal(terms('駅で赤い傘を買った').includes('駅で赤い傘を買った'), false, 'whole CJK sentence must not become one lexical posting term');
-    const query = terms('図書館の赤いノート');
+    // Contract (LIBRA_UNIFIED_SEARCH_REPLACEMENT_CONTRACT): the common lexical tokenizer keeps the
+    // original word and only adds a conservative Korean particle variant. It does not segment CJK:
+    // a run of kana/kanji between punctuation or spaces is one posting term, never a hidden ranker.
+    assert.deepEqual(terms('駅で赤い傘を買った'), ['駅で赤い傘を買った']);
+    assert.deepEqual(terms('図書館 赤いノート。2026'), ['図書館', '赤いノート', '2026']);
+    assert.deepEqual(terms('도서관에서'), ['도서관에서', '도서관']);
+    const query = terms('赤色のノートが書棚に置かれていた。');
     const scores = rows.map(row => {
       const docTerms = new Set(Object.values(row.memory.retrieval.sparseFields).flatMap(terms));
       return { id: row.id, evidence: query.filter(term => docTerms.has(term)).length };
