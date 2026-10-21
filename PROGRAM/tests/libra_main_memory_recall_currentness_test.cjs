@@ -14,8 +14,8 @@
 // than the earlier value alone. A21 requires that what could not be verified is
 // labelled last-known/unknown rather than reported as "no later change".
 //
-// RED FIRST: the assertions below are written against the REQUIRED behaviour, so
-// they are expected to fail until the cross-batch closure stage is implemented.
+// UPDATED for the unified memory engine: the cross-batch successor is returned from its own
+// committed batch and completeness is stated by the engine diagnostics (no closure layer).
 //
 // The surface driven here is the SHIPPED one: `previewUnifiedMemoryRecall(query)`
 // -> `LibraMemoryCore.recall(context, query)`. No test-only recall API is added.
@@ -88,10 +88,26 @@ const runMode = async mode => {
     assert.equal(observation.successorVisible, true,
       `${mode}: the cross-batch successor (fulfilment) is visible in recall`);
 
-    // (A21) Currentness must be stated in the payload, not inferred by the caller.
-    observation.hasCurrentnessLabel = /currentness|last-known|lastKnown|last_known/.test(text);
-    assert.equal(observation.hasCurrentnessLabel, true,
-      `${mode}: recall states the currentness of what it could verify`);
+    // (A18) Both the promise as it stood (earlier batch) and its successor (later batch) are
+    // returned from their own committed memories, so a caller can answer both questions.
+    const memoryIds = new Set(recall.memories.map(row => row.memory?.memoryId));
+    const openRows = recall.memories.filter(row => /아직 이행되지 않았다/.test(row.excerpt || ''));
+    const closedRows = recall.memories.filter(row => /약속이 이행되었다/.test(row.excerpt || ''));
+    observation.promiseAndSuccessorFromSeparateBatches = openRows.length > 0 && closedRows.length > 0
+      && openRows.every(row => !closedRows.some(other => other.memory.memoryId === row.memory.memoryId));
+    assert.equal(observation.promiseAndSuccessorFromSeparateBatches, true,
+      `${mode}: the open promise and its fulfilment come from different committed batches`);
+    assert.ok(memoryIds.size >= 2, `${mode}: recall spans both committed batches`);
+
+    // (A21) The legacy closure/last-known labelling (recallContinuityClosure) was retired with the
+    // old retrieval pipeline (9c03c35). The unified engine instead states completeness explicitly,
+    // so unverified coverage cannot be mistaken for "no later change".
+    const engine = recall.diagnostics?.unifiedMemoryEngine;
+    assert.equal(recall.diagnostics?.recallContinuityClosure, undefined, `${mode}: retired closure diagnostics are absent`);
+    observation.statesCoverage = engine?.queryComplete === true && engine?.sourceCoverageComplete === true
+      && engine?.deliveryOutcome === 'complete' && engine?.legacyRankerExecuted === false;
+    assert.equal(observation.statesCoverage, true,
+      `${mode}: recall states that its query and source coverage are complete (and no legacy ranker ran)`);
 
     // (A22) A reported/hypothetical fact must not be promoted to a verified closure.
     observation.uncertaintyNotPromoted = !/reported[^"]*"[^"]*이행되었다/.test(text);
