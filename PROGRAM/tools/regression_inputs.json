@@ -1,0 +1,8 @@
+{
+  "build_plugins_artifact_behavior_negative_control_test.cjs": ["ULTRALIGHT_ARTIFACT_DIR", "RELEASE_PARITY_CONTROL_DIR"],
+  "build_plugins_artifact_behavior_parity_test.cjs": ["ULTRALIGHT_ARTIFACT_DIR", "RELEASE_PARITY_CONTROL_DIR"],
+  "build_plugins_artifact_libra_readiness_test.cjs": ["ULTRALIGHT_ARTIFACT_DIR"],
+  "execution_task_profiles_artifact_test.cjs": ["EXECUTION_PROFILE_ARTIFACTS"],
+  "flashback_server_inspection_artifact_test.cjs": ["FLASHBACK_SERVER_INSPECTION_ARTIFACTS"],
+  "lia_manual_release_artifact_test.cjs": ["LIA_RELEASE_ARTIFACT"]
+}

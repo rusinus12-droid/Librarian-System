@@ -2,6 +2,7 @@
 chcp 65001 >nul
 setlocal
 cd /d "%~dp0.."
+set "MEMORY_SUITE_NODE_ONLY=1"
 call "%~dp0..\_common.cmd"
 if errorlevel 1 (
   pause
@@ -19,8 +20,7 @@ set "FAILED=0"
 "%NODE_EXE%" --no-warnings --check "%~dp0..\sdk\MemorySuiteStorageClient.libra.source.js" || set "FAILED=1"
 for %%F in ("%~dp0..\plugins\*.js") do "%NODE_EXE%" --no-warnings --check "%%~fF" || set "FAILED=1"
 "%NODE_EXE%" --no-warnings "%~dp0..\tools\check_sdk_sync.cjs" || set "FAILED=1"
-rem 시험 스위트(*_test.cjs, *.test.cjs)만 실행합니다. 나머지 tests\*.cjs는 인자가 필요한 보조 도구입니다.
-for %%T in ("%~dp0..\tests\*_test.cjs" "%~dp0..\tests\*.test.cjs") do "%NODE_EXE%" --no-warnings "%%~fT" || set "FAILED=1"
+"%NODE_EXE%" --no-warnings "%~dp0..\tools\run_regression_tests.cjs" %* || set "FAILED=1"
 echo.
 if "%FAILED%"=="0" echo 모든 시험을 통과했습니다.
 if not "%FAILED%"=="0" echo 일부 시험에 실패했습니다.

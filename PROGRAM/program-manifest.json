@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-21T01:52:08.097Z",
+  "generatedAt": "2026-10-21T07:55:56.152Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -3920,8 +3920,8 @@
       "bytes": 49
     },
     "run_regression_batch.py": {
-      "sha256": "ca48420f1ac020bcae4cbfdea65ef03b5dbfad71279c04682496e1f08b7c59f6",
-      "bytes": 37244
+      "sha256": "c35515d7e669bc31e2901c27f941b48f86ef15eebc20835ef325384728b57401",
+      "bytes": 37297
     },
     "sdk/FlashbackServerRepair.source.js": {
       "sha256": "891ad119690f9aa83c127448e3eeea500c10cd5e0d0732d532d25b63b90ffae5",
@@ -4394,6 +4394,10 @@
     "tests/browser_executable_resolution_test.cjs": {
       "sha256": "f47b2c6019c5267678e53c10e232d008278ce820e2a0e9a96a7834b8157e5984",
       "bytes": 4513
+    },
+    "tests/browser_resolver_cache_test.cjs": {
+      "sha256": "b919c5aa8c4b3f9672e9a6af9830ebba243b9f1afa6bf77f6d37c3ab8272a9c1",
+      "bytes": 1611
     },
     "tests/browser/chat_status_panels_browser_test.py": {
       "sha256": "a98349e55da71c95e616a291770482aae362ae4bd626a8c0007c1e2718ac9773",
@@ -9444,8 +9448,8 @@
       "bytes": 2608
     },
     "tests/portable_transfer_client_contract_test.cjs": {
-      "sha256": "59efae7dad49acc858837b2e6b3eefa8d69ca9ffbfcb0e6bb9bb11a486cc26c8",
-      "bytes": 3575
+      "sha256": "bee2bd51134310d70c5b6210f4be9563d69f0f82502f76adfec4c0d67ccc5478",
+      "bytes": 4358
     },
     "tests/portable_transfer_lifecycle_runtime_test.cjs": {
       "sha256": "3b59ace2321da208ccad735a2f06c358be0d9015d560e1e730adb606d5b4cec5",
@@ -9535,13 +9539,17 @@
       "sha256": "9de941ad94a31915722f7d71232b42c6299173177b2fbf74b62ae116cb46ebf2",
       "bytes": 3587
     },
+    "tests/regression_entrypoints_runtime_test.cjs": {
+      "sha256": "a64394987de86155a7ccea20a98d02793e5889f9537a7684f5e8b67499913ecd",
+      "bytes": 4512
+    },
     "tests/regression_owned_process_cleanup_test.cjs": {
       "sha256": "419e4c84a751ed22eb5bc0482f3f7f9b35bbceb9c0a17e53239a5300144115cb",
       "bytes": 15839
     },
     "tests/regression_skip_detection_test.cjs": {
-      "sha256": "602209a8e32f710aabd8bf167ccba5aa01be73bc7518c702136e12f72c4b5a5d",
-      "bytes": 4268
+      "sha256": "2b90bb2d4394fe8fd99a56d697ecc75bc07fd51ff32d54a7b6e01bca19556373",
+      "bytes": 5986
     },
     "tests/release_asset_contract_test.cjs": {
       "sha256": "cb234bd798d0a2a97811b8a8989817684798fb0b02ded9882a505a6ff7b55713",
@@ -10399,6 +10407,10 @@
       "sha256": "033616f04263a9e8831ebe6378bebc8a72f9064460acd3b66bbcc06d4b3b1df9",
       "bytes": 14944
     },
+    "tests/sync_read_context_composition_test.cjs": {
+      "sha256": "7d9af52cbb3ac239b17f723ee1f865da9b40669c0712abebc69e73d172f8a5b0",
+      "bytes": 2787
+    },
     "tests/termux_install_test.py": {
       "sha256": "499b82e32c757a3455fbbca22919d0adf7ed2fb536d85b49b2f3646875b60b43",
       "bytes": 1999
@@ -10668,8 +10680,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "98097206c35b9c0b3b5b60627bb92a138e5cddfc504fd9b30b552694f40acea5",
-      "bytes": 54141
+      "sha256": "b34f11ed33df2b8308b0e69b523a2af30a038e8876e586999c76e1edfda2fc6c",
+      "bytes": 54714
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",
@@ -10983,6 +10995,10 @@
       "sha256": "0a11d6247fd93585c99cfac8da88700b8a7cb375e07821abe0041e4e86045068",
       "bytes": 31575
     },
+    "tools/regression_inputs.json": {
+      "sha256": "af8436c839ed82fc6a671ea54044061888cebefbcaa5a59980dced2b9d229c67",
+      "bytes": 561
+    },
     "tools/release_asset_contract.cjs": {
       "sha256": "7741cb23d8e8b229f6990015d6223d258430387f74be0d63a4c2569145cac4cf",
       "bytes": 9353
@@ -11006,6 +11022,10 @@
     "tools/risu_plugin_harness.js": {
       "sha256": "26bcbdf15a02b1c988375a231e55b76fa597f9ae3eb63b827aac42847fad0686",
       "bytes": 10409
+    },
+    "tools/run_regression_tests.cjs": {
+      "sha256": "5cdace897e9878949655af21f62aa0c83a92cfc200694b71e250e554896f908f",
+      "bytes": 3048
     },
     "tools/runtime_release_validation.cjs": {
       "sha256": "2fd9a45bd8c7a302ee36671282ee384e7bd76203bf1b100eb07164da19a7d126",
@@ -11216,12 +11236,12 @@
       "bytes": 195
     },
     "관리도구/전체_자동시험.bat": {
-      "sha256": "8340c360da1bc30dbf2023428d465278f235ae16ee8f28a3f7ddcf9da6893309",
-      "bytes": 1558
+      "sha256": "24c171e927966a7a8b0819db20c83a46259acc593c463ceaf4af540cbc82e412",
+      "bytes": 1421
     },
     "관리도구/전체_자동시험.sh": {
-      "sha256": "42969fe2c4460980abd345f7258fcbff30cec68d666afe2ac58e1f50435ff877",
-      "bytes": 1258
+      "sha256": "838c72fe5344656292eef62315dadb7e40f2d431aa3f0a033debf63b73f11138",
+      "bytes": 752
     },
     "관리도구/지금_백업_만들기.bat": {
       "sha256": "6d51afefee97eb3ff95935c746504533ec6faad2343303c794e788c5f2895ac4",

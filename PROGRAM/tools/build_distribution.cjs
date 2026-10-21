@@ -34,6 +34,11 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'release_builder_version_input_test.cjs',
   'release_builder_profiles_test.cjs',
   'build_support_cache_runtime_test.cjs',
+  'execution_task_profiles_test.cjs',
+  'regression_entrypoints_runtime_test.cjs',
+  'sync_read_context_composition_test.cjs',
+  'browser_resolver_cache_test.cjs',
+  'portable_transfer_client_contract_test.cjs',
   'manifest_minified_declaration_binding_test.cjs',
   'libra_canonical_reasoning_off_length_runtime_test.cjs',
   'libra_recovery_result_gui_runtime_test.cjs',
@@ -604,13 +609,18 @@ function runReleaseSmokeFromSource() {
   const updaterRoot=path.join(packageRoot,'UPDATER');
   const updaterSnapshot=snapshotAllowlistedTree(updaterRoot,shouldCopyUpdater);
   runNode(path.join(programDir,'tools','check_sdk_sync.cjs'),[],programDir);
+  for (const file of ['sync_execution_contract.cjs', 'sync_libra_read_context.cjs',
+    'sync_flashback_consent_profile.cjs', 'sync_hayaku_consent_profile.cjs']) {
+    runNode(path.join(programDir, 'tools', file), ['--check'], programDir);
+  }
+  runNode(path.join(programDir, 'tools', 'sync_gradia_ranked_evidence.cjs'), [], programDir);
   const smokeEnv = {};
   const { ensureBuildSupportDependencies } = require('./ensure_build_support.cjs');
   const support = ensureBuildSupportDependencies({ programDir });
   if (!support?.modulesDir) throw new Error('distribution_build_support_unavailable');
   smokeEnv.GRADIA_TOOLCHAIN_ROOT = support.modulesDir;
   smokeEnv.NODE_PATH = process.env.NODE_PATH || support.modulesDir;
-  const smoke=runNodeProcess(['--test',...RELEASE_SMOKE_TESTS.map(name=>path.join(programDir,'tests',name))],programDir,{timeoutMs:300000,env:smokeEnv});
+  const smoke=runNodeProcess(['--test','--test-concurrency=4',...RELEASE_SMOKE_TESTS.map(name=>path.join(programDir,'tests',name))],programDir,{timeoutMs:600000,env:smokeEnv});
   assertTreeSourceUnchanged(programDir,programSnapshot,shouldCopySourceProgram,'program_source_after_smoke',true);
   assertTreeSourceUnchanged(updaterRoot,updaterSnapshot,shouldCopyUpdater,'updater_source_after_smoke');
   return smoke;

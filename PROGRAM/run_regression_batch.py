@@ -126,14 +126,9 @@ REGRESSION_OWNER_ENV='LIBRARIAN_REGRESSION_OWNER'
 # distribution builder sets these variables). They fail by design when the input is absent, so
 # a full run without the inputs does not execute them and reports them as INPUT_REQUIRED: neither
 # a pass nor a product failure. With the variables set they run and count normally.
-EXPLICIT_INPUT_SUITES = {
-    'build_plugins_artifact_behavior_negative_control_test.cjs': ('ULTRALIGHT_ARTIFACT_DIR', 'RELEASE_PARITY_CONTROL_DIR'),
-    'build_plugins_artifact_behavior_parity_test.cjs': ('ULTRALIGHT_ARTIFACT_DIR', 'RELEASE_PARITY_CONTROL_DIR'),
-    'build_plugins_artifact_libra_readiness_test.cjs': ('ULTRALIGHT_ARTIFACT_DIR',),
-    'execution_task_profiles_artifact_test.cjs': ('EXECUTION_PROFILE_ARTIFACTS',),
-    'flashback_server_inspection_artifact_test.cjs': ('FLASHBACK_SERVER_INSPECTION_ARTIFACTS',),
-    'lia_manual_release_artifact_test.cjs': ('LIA_RELEASE_ARTIFACT',),
-}
+_input_contract = pathlib.Path(__file__).resolve().parent/'tools'/'regression_inputs.json'
+# Minimal isolated runner probes deliberately copy no product tools.
+EXPLICIT_INPUT_SUITES = json.loads(_input_contract.read_text(encoding='utf-8')) if _input_contract.is_file() else {}
 
 def _enable_posix_subreaper():
     """Linux: make the runner the reaper of orphaned test descendants.
@@ -330,6 +325,9 @@ TEST_TIMEOUT_SECONDS = {
     # Nested GRADIA source/preservation suites measured 117.69s under source audit.
     # This is one discovered suite; retain its individual test deadlines unchanged.
     'gradia_suite_test.cjs': 240,
+    # Sixteen cleanup conditions include four deliberately exhausted 60-second
+    # children. The parent suite completed in ~250 seconds; default 60 cuts it off.
+    'regression_owned_process_cleanup_test.cjs': 360,
     # All three modes complete in 138.20s in the source-audit measurement;
     # preserve in-test deadlines and allow 30% aggregate scheduling margin.
     'libra_micro_inherited_t5_overlap_3mode_test.cjs': 180,
@@ -440,10 +438,13 @@ def _prepare_build_support(env):
     current=[part for part in env.get('NODE_PATH','').split(os.pathsep) if part]
     if modules not in current:
         env['NODE_PATH']=os.pathsep.join([modules,*current])
-    env.setdefault('GRADIA_TOOLCHAIN_ROOT',modules)
+    env['GRADIA_TOOLCHAIN_ROOT']=modules
     return modules, ''
 
 build_support_dir, build_support_warning=_prepare_build_support(child_env)
+if build_support_warning and (root/'tools'/'ensure_build_support.cjs').is_file():
+    print(build_support_warning,file=sys.stderr)
+    sys.exit(1)
 default_log_name=f'SELECTED_TEST_EXECUTION_LOG_{package_version}.txt' if filtered else f'FULL_TEST_EXECUTION_LOG_{package_version}.txt'
 log_path=pathlib.Path(os.environ.get('MEMORY_SUITE_REGRESSION_LOG', str(root.parents[1] / default_log_name)))
 output_dir_env=os.environ.get('MEMORY_SUITE_REGRESSION_OUTPUT_DIR')
@@ -630,4 +631,4 @@ with log_path.open(mode,encoding='utf-8') as log:
         summary=f'\nArtifact suites not run (INPUT_REQUIRED): {input_required}. They verify actual release '\
                 f'builds and run when the distribution builder (or a caller) supplies their input variables.\n'
         print(summary,flush=True); log.write(summary); log.flush()
-    sys.exit(1 if failures or timeouts else 0)
+    sys.exit(1 if failures or timeouts else 2 if input_required else 0)
