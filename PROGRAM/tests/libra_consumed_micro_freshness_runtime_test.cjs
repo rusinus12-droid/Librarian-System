@@ -23,6 +23,7 @@ const expose = source => {
     microResealContext(value) { return LibraMemoryCore.microResealContext(value); },
 ` + api);
 };
+const microRows = f => Array.from(f.r.api.getLastMemoryRecallViewer()?.rows || []).filter(row => row.family === 'micro');
 const blockOf = messages => messages.filter(row => row.role === 'system' &&
   String(row.content || '').includes('[LIBRA CLASSIC RECALL')).map(row => row.content).join('\n');
 async function prepareClassic(f, query = REQUEST) {
@@ -34,6 +35,21 @@ async function prepareClassic(f, query = REQUEST) {
   assert.equal(f.control.calls.length, calls, 'actual Classic recall has no provider call');
   assert.ok(blockOf(messages), 'the actual request contains delivered evidence');
   return context;
+}
+
+// The unified path reads the consumed Micro bytes several times while one request is prepared, verified
+// and sealed (corpus build, projection, then the final consumed-data verification). A fault injected at
+// the FIRST read happens before any proof exists and is simply the new current bytes. To cross the final
+// verification boundary the fault is armed at the last physical read that still precedes delivery: the
+// very last read of the record (measured on an identical request first) happens after the final
+// verification has completed, and a byte change after that instant is outside what a read can detect.
+async function countRecordReads(f, key, query = REQUEST) {
+  const storage = f.r.context.risuai.pluginStorage, originalGet = storage.getItem;
+  let reads = 0;
+  storage.getItem = async current => { if (current === key) reads++; return originalGet(current); };
+  try { await f.control.hooks.beforeRequest([{ role: 'user', content: query }], 'model'); } finally { storage.getItem = originalGet; }
+  assert.ok(reads >= 3, 'the request reads the consumed Micro record in preparation, final verification and a trailing read');
+  return reads - 1;
 }
 
 async function withMicro(run, args = {}) {
@@ -69,8 +85,10 @@ async function withMicro(run, args = {}) {
     f.control.onCall = async () => { throw new Error('Classic must not invoke a drafting provider'); };
     const prepare = async () => {
       const prepared = await prepareClassic(f);
-      const supplied = Object.values(prepared.values.canonicalLayers).flat().filter(row => row.kind === 'micro');
-      assert(supplied.some(row => row.analysisRevisionId === active.record.analysisRevisionId), 'the actual consumed Micro is present');
+      // The unified engine no longer copies Micro rows into the public canonicalLayers; the delivered
+      // Micro unit is visible in the Classic viewer rows and the injected block.
+      const supplied = microRows(f);
+      assert(supplied.some(row => row.selectedText.includes(DETAIL) && row.injected === true), 'the actual consumed Micro is present');
       return prepared;
     };
     await run(f, active, prepare);
@@ -116,8 +134,14 @@ async function prepareInherited(f, withTwo = false) {
   assert.equal((await portable.importAsPredecessorArchive(envelope)).ok, true);
   const prepared = await prepareClassic(f, withTwo
     ? '도서관의 정숙 규칙과 오늘 열쇠를 돌려주겠다는 약속을 참고해 이어줘.' : REQUEST);
-  const micro = Object.values(prepared.values.canonicalLayers).flat().filter(row => row.kind === 'micro');
-  assert(micro.some(row => row.inheritedSessionHistory === true));
+  // The unified engine does not read a predecessor's Micro handoff archive as a Micro source (it reports
+  // inherited Micro as unsupported coverage). The archive's inherited canonical memory is delivered, and the
+  // archive bytes remain bound into the issued context's source authority.
+  const viewerRows = Array.from(f.r.api.getLastMemoryRecallViewer()?.rows || []);
+  const micro = viewerRows.filter(row => row.family === 'micro');
+  assert.equal(micro.length, 0, 'inherited Micro is not delivered as a Micro unit');
+  assert(viewerRows.some(row => row.family === 'canonical' && String(row.scopeKey).startsWith('archive:') && row.injected === true),
+    'the predecessor archive canonical memory is actually delivered');
   const archives = f.getRecords('libra.micro_handoff_archive.v1');
   assert.equal(archives.length, 1);
   return { prepared, micro, archive: archives[0] };
@@ -195,7 +219,8 @@ for (const mutation of ['head_deleted', 'body_changed']) {
     await withMicro(async (f, active, prepare) => {
       const context = await prepare();
       if (mutation === 'head_deleted') f.r.values.delete(active.headKey); else mutateBody(f, active);
-      await invalid(f, context, /CONSUMER_MICRO/);
+      // The unified graph corpus binds the Micro bytes, so the change surfaces as a source change.
+      await invalid(f, context, /CONSUMER_MICRO|LIBRA_GRAPH_CORPUS_SOURCE_CHANGED/);
     });
   });
 }
@@ -214,12 +239,12 @@ test('unrelated Micro bytes do not invalidate the actually consumed record', asy
 for (const mutation of ['head_deleted', 'head_replaced', 'head_corrupt', 'head_read_error', 'receipt_changed', 'body_changed', 'scope_changed']) {
   test(`${mutation}: final actual Classic read leaves the host request unchanged`, async () => {
     await withMicro(async (f, active, prepare) => {
-      const prior = await prepare();
+      await prepare();
+      const finalRead = await countRecordReads(f, active.recordKey);
       const storage = f.r.context.risuai.pluginStorage, originalGet = storage.getItem;
-      let reached = false;
+      let reached = false, recordReads = 0;
       storage.getItem = async key => {
-        const current = f.r.api.getLastResponseContext();
-        if (!reached && current?.route === 'classic' && current.requestId !== prior.requestId && key === active.recordKey) {
+        if (!reached && key === active.recordKey && ++recordReads === finalRead) {
           reached = true;
           if (mutation === 'head_deleted') f.r.values.delete(active.headKey);
           else if (mutation === 'head_replaced') {
@@ -249,11 +274,13 @@ for (const mutation of ['head_deleted', 'head_replaced', 'head_corrupt', 'head_r
 
 test('a stalled final consumed-data read is bounded and its late result cannot inject', async () => {
   await withMicro(async (f, active, prepare) => {
-    const prior = await prepare(), storage = f.r.context.risuai.pluginStorage, originalGet = storage.getItem;
-    let reached = false, release;
+    await prepare();
+    const finalRead = await countRecordReads(f, active.recordKey);
+    const storage = f.r.context.risuai.pluginStorage, originalGet = storage.getItem;
+    let reached = false, release, recordReads = 0;
     const held = new Promise(resolve => { release = resolve; });
     storage.getItem = async key => {
-      if (!reached && key === active.recordKey && f.r.api.getLastResponseContext()?.requestId !== prior.requestId) {
+      if (!reached && key === active.recordKey && ++recordReads === finalRead) {
         reached = true; await held;
       }
       return originalGet(key);
@@ -262,7 +289,8 @@ test('a stalled final consumed-data read is bounded and its late result cannot i
     try {
       const output = await f.control.hooks.beforeRequest(input, 'model');
       assert.equal(reached, true);
-      assert.ok(Date.now() - started < 3000, 'final read has the current bounded recall deadline');
+      // RECALL_REQUEST_BUDGET_MS is the 30s absolute live-recall watchdog.
+      assert.ok(Date.now() - started < 35000, 'final read is bounded by the absolute recall watchdog');
       assert.deepEqual(clone(output), input);
       assert.equal(f.control.calls.length, calls);
       release(); await new Promise(resolve => setTimeout(resolve, 20));
@@ -308,7 +336,7 @@ test('same-scope logical worldline switch invalidates a prepared current context
 });
 
 for (const mutation of ['archive_deleted', 'archive_body_changed', 'active_ref_removed']) {
-  test(`${mutation}: inherited Micro authority binds physical bytes and active lineage`, async () => {
+  test(`${mutation}: inherited archive authority binds physical bytes and active lineage`, async () => {
     await withMicro(async f => {
       const { prepared, archive } = await prepareInherited(f, true);
       assert.equal((await f.r.api.validateResponseContext(prepared)).current, true);
@@ -329,21 +357,15 @@ for (const mutation of ['archive_deleted', 'archive_body_changed', 'active_ref_r
   });
 }
 
-test('two consumed inherited Micro identities retain separate proofs with one archive read', async () => {
+test('an inherited Micro handoff archive is not a consumed Micro source and creates no Micro proof', async () => {
   await withMicro(async f => {
     const { prepared, micro, archive } = await prepareInherited(f, true);
-    assert.equal(new Set(micro.map(row => row.analysisRevisionId)).size, 2);
+    assert.equal(micro.length, 0);
+    assert.ok(f.r.values.has(archive.key), 'the archive itself is still stored');
     const probe = f.r.api.microProofProbe(prepared.consumedDataToken);
-    assert.equal(probe.count, 2);
-    const storage = f.r.context.risuai.pluginStorage, originalGet = storage.getItem;
-    let archiveReads = 0;
-    storage.getItem = async key => { if (key === archive.key) archiveReads++; return originalGet(key); };
-    try { await probe.verify(); } finally { storage.getItem = originalGet; }
-    assert.equal(archiveReads, 1);
-    const changed = JSON.parse(f.r.values.get(archive.key));
-    changed.records.find(row => row.value.schema === 'libra.micro_memory.v1').value.claims[0].text = 'Changed first consumed identity';
-    f.r.values.set(archive.key, JSON.stringify(changed));
-    await assert.rejects(() => probe.verify(), /MICRO.*ARCHIVE/);
+    assert.equal(probe.count, 0, 'no Micro proof is minted for archived Micro');
+    await probe.verify();
+    assert.equal((await f.r.api.validateResponseContext(prepared)).current, true);
   });
 });
 
