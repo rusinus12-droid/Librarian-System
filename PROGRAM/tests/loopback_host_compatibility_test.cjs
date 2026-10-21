@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
+const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { createMemorySuiteServer } = require('../server/server.cjs');
@@ -44,8 +45,16 @@ async function verifyHost(host) {
   }
 }
 
+const canListenIPv6Loopback = () => new Promise(resolve => {
+  const probe = net.createServer();
+  probe.once('error', () => resolve(false));
+  probe.listen(0, '::1', () => probe.close(() => resolve(true)));
+});
+
 (async () => {
-  await verifyHost('::1');
+  if (await canListenIPv6Loopback()) await verifyHost('::1');
+  else process.stdout.write('SKIP: IPv6 loopback (::1) is not available in this environment; verifying IPv4 and localhost only\n');
+  await verifyHost('127.0.0.1');
   await verifyHost('localhost');
   process.stdout.write('loopback_host_compatibility_test: PASS\n');
 })().catch(error => {

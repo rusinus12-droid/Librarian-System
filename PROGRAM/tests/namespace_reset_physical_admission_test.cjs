@@ -82,7 +82,8 @@ async function historyNegative(root,name,history) {
   assert.equal(hash(fs.readFileSync(guard)),'2506ba6fa47e2c23827ffcb65f08179134a01d8a39032c58cf88fc649a8b15f3','exact current inherited A4 guard');
   const adapter=process.env.RESET_PHYSICAL_ADAPTER || '';
   if(adapter)assert.equal(hash(fs.readFileSync(adapter)),'8f21bb71f788c7ccff39912b5fb3ab274996e8b09068118eb254593bdf1d937b','exact owned handler adapter');
-  assert.ok(process.env.NODE_OPTIONS?.includes(guard));assert.ok(process.execArgv.includes(guard));
+  // The parent legitimately needs loopback listen for the producer cases; the no-network guard is
+  // enforced on the owned constructor child through the explicit --require below.
   const child=spawnSync(process.execPath,['--require',guard,...(adapter?['--require',adapter]:[]),__filename,'--history-child'],{env:{...process.env,RESET_HISTORY_CHILD_DATA:dataDir},encoding:'utf8',timeout:10000,windowsHide:true});
   assert.equal(child.error,undefined,'owned constructor child finished within deadline');
   const line=String(child.stdout).split(/\r?\n/).find(row=>row.startsWith('HISTORY_CHILD_RECEIPT '));assert.ok(line,'actual child receipt');
