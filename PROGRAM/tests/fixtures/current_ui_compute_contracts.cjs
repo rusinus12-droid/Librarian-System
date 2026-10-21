@@ -20,19 +20,21 @@ function checkNavigation(source){
  return true;
 }
 function checkBookHeader(source){
- const ast=parse(source),node=variable(ast,'topBar'),version=variable(ast,'PLUGIN_VERSION');
- const calls=[];
- const top=vm.runInNewContext('('+source.slice(node.init.start,node.init.end)+')',{
-  guiEl:(tag,props={},children=[])=>({tag,props,children}),PLUGIN_VERSION:version.init.value,
-  Gui:{bookQuickSection:'response'},bookNavigate:x=>calls.push(['navigate',x]),bookOpenQuickSettings:x=>calls.push(['quick',x]),hideSettingsGui:()=>calls.push(['close'])
- },{timeout:1000});
- assert.equal(top.tag,'header','Book header remains semantic header');
- const all=[];const collect=n=>{if(!n||typeof n!=='object')return;all.push(n);for(const c of n.children||[])collect(c);};collect(top);
- const byClass=c=>all.find(n=>String(n.props?.class||'').split(/\s+/).includes(c));
- for(const cls of ['libra-book-current-page','libra-book-boot-status'])assert.ok(String(byClass(cls)?.props?.text||'').trim(),'nonempty Book header status: '+cls);
- for(const [cls,expected] of [['libra-book-settings-button',['navigate','settings']],['libra-book-quick-button',['quick','response']],['libra-book-close-button',['close']]]){
-  const button=byClass(cls);assert.equal(button?.tag,'button','required Book header control: '+cls);assert.equal(typeof button.props.onClick,'function','actionable Book control: '+cls);button.props.onClick();assert.deepEqual(calls.at(-1),expected,'Book header control dispatch: '+cls);
- }
+ // The Book header is the topbar of the approved mockup app (LIBRA_APPROVED_MOCKUP_APP_HTML);
+ // its controls are wired by data attributes through the app-level click handlers.
+ const ast=parse(source),node=variable(ast,'LIBRA_APPROVED_MOCKUP_APP_HTML');
+ assert.equal(node.init.type,'Literal','approved mockup markup is a string literal');
+ const html=String(node.init.value),header=/<header class="topbar">([\s\S]*?)<\/header>/.exec(html);
+ assert.ok(header,'Book header remains a semantic header.topbar');
+ const buttons=[...header[1].matchAll(/<button\b([^>]*)>/g)].map(m=>m[1]);
+ const has=attr=>buttons.some(b=>b.includes(attr));
+ assert.ok(has('data-go="settings"'),'required Book header control: settings');
+ assert.ok(has('data-open="drawer-quick"'),'required Book header control: quick settings');
+ assert.ok(has('data-close-gui'),'required Book header control: close');
+ // Handler wiring: data-go -> bookNavigate, drawer-quick -> bookOpenQuickSettings, close -> hideSettingsGui.
+ assert.match(source,/const nav = event\.target\.closest\('\[data-go\]'\);[\s\S]{0,400}?bookNavigate\(nav\.dataset\.go\)/,'settings control dispatches bookNavigate');
+ assert.match(source,/id === 'drawer-quick'\) bookOpenQuickSettings\(Gui\.bookQuickSection \|\| 'response'\)/,'quick control opens quick settings');
+ assert.match(source,/button\.matches\('\[data-close-gui\]'\)\) \{ event\.preventDefault\(\); void hideSettingsGui\(\)/,'close control hides the GUI');
  return true;
 }
 // The Compute SDK is retired from the plugins: no owner creates a Compute bridge or search
