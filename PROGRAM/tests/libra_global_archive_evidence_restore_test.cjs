@@ -2,6 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const source=fs.readFileSync(path.resolve(__dirname,'../plugins/LIBRA.js'),'utf8'),ctx=vm.createContext({console});
 vm.runInContext(fs.readFileSync(path.resolve(__dirname,'../sdk/MemorySuiteSourceReview.source.js'),'utf8'),ctx);
+vm.runInContext(source.slice(source.indexOf('function memorySuiteLibraArchiveVectorReference'),source.indexOf('async function memorySuiteLibraDiscoverGlobalScopes')),ctx);
 vm.runInContext('const LIBRA_SHARED_ARCHIVE_SCHEMA="libra.shared_archive.v1";const LibraMemoryCore={createSourceEvidenceStore:createMemorySuiteSourceEvidence};'+source.slice(source.indexOf('const memorySuiteLibraRestoreObject'),source.indexOf('async function memorySuiteLibraResolveRestoreDependencies'))+source.slice(source.indexOf('async function memorySuiteLibraValidateRestore'),source.indexOf('const MemorySuiteConfigStorageBridge =')),ctx);
 (async()=>{for(const kind of ['valid','foreign_chat','unreferenced_archive','key_mismatch','tampered','ref_digest','ref_identity','ref_owner','memory_digest']){
  const map=new Map(),scope=kind==='foreign_chat'?'foreign':'archive:A',unit={key:'1',start:1,end:1,identity:'u+a@main',sourceDigest:'same',originalDigest:'same'};

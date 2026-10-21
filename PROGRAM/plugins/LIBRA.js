@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.192
-//@version 2.3.192
+//@display-name LIBRA v2.3.193
+//@version 2.3.193
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.192';
+  const PLUGIN_VERSION = '2.3.193';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -4200,7 +4200,7 @@ const inspectLibraScopeHealthSnapshot = (snapshot, options = {}) => {
 };
 /* END LIBRA READ-ONLY SCOPE HEALTH */
 
-/* LIBRARIAN SYSTEM STORAGE SDK v1.8.27
+/* LIBRARIAN SYSTEM STORAGE SDK v1.8.28
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
  * The server stores opaque values. Each plugin keeps ownership of its own data schema.
  */
@@ -8312,6 +8312,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const globalRecordIdentity = row => [row.location,row.space,row.key].join('\u0000');
   const globalRecordScopeIds = row => row.classification === 'shared'
     ? (Array.isArray(row.dependencyScopeIds) ? row.dependencyScopeIds.map(String) : []) : [String(row.scopeId || '')];
+  // Global inventory may discover device storage before an owner wraps it.
+  // Copy and restore the exact audited adapters, including retained local vectors.
+  const globalLegacyStore = space => globalMigrationContext?.stores?.[space] || state.legacy[space];
   const globalPayloadRecord = row => ['scope','shared'].includes(row.classification) && row.artifact !== true;
   const globalScopeDescriptorOnly = row => {
     const scope=Object.fromEntries(['scopeId','scopeKey','characterId','chatId','canonicalCharacterId','canonicalChatId','canonicalScopeId','personaId','characterName','chatTitle','personaName','label','available'].map(key=>[key,row[key]]).filter(([,value])=>value !== undefined));
@@ -9897,8 +9900,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         }
       }
     };
-    await runPart(state.legacy.plugin, 'plugin');
-    await runPart(state.legacy.local, 'local');
+    await runPart(globalLegacyStore('plugin'), 'plugin');
+    await runPart(globalLegacyStore('local'), 'local');
     result.metrics = cloneScopedSyncMetrics(result.metrics);
     result.diagnostics = { schema: 'memory_suite.scope-sync-diagnostics.v1', metrics: result.metrics, failures: result.failureDetails.slice(), conflicts: result.conflicts.slice() };
     result.ok = result.failures.length === 0 && result.conflicts.length === 0;
@@ -10187,12 +10190,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       result.candidateCount = allCandidates;
       result.scopeCandidateCount = scopeCandidates;
       result.dependencyCandidateCount = pluginInventory.dependencyCandidates.length + localInventory.dependencyCandidates.length;
-      if (!state.legacy.plugin || typeof state.legacy.plugin.getItem !== 'function' || typeof state.legacy.plugin.setItem !== 'function') {
+      if (!globalLegacyStore('plugin') || typeof globalLegacyStore('plugin').getItem !== 'function' || typeof globalLegacyStore('plugin').setItem !== 'function') {
         const error = new Error('memory_suite_restore_adapter_unavailable:plugin');
         error.code = 'MEMORY_SUITE_RESTORE_ADAPTER_UNAVAILABLE'; throw error;
       }
       if ((localInventory.candidates.length || localInventory.tombstones.length)
-        && (!state.legacy.local || typeof state.legacy.local.getItem !== 'function' || typeof state.legacy.local.setItem !== 'function')) {
+        && (!globalLegacyStore('local') || typeof globalLegacyStore('local').getItem !== 'function' || typeof globalLegacyStore('local').setItem !== 'function')) {
         const error = new Error('memory_suite_restore_adapter_unavailable:local');
         error.code = 'MEMORY_SUITE_RESTORE_ADAPTER_UNAVAILABLE'; throw error;
       }
@@ -10200,11 +10203,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const error = new Error(`memory_suite_restore_snapshot_empty:${scope.scopeId}:dependencies=${result.dependencyCandidateCount},tombstones=${allTombstones}`);
         error.code = 'MEMORY_SUITE_RESTORE_SNAPSHOT_EMPTY'; throw error;
       }
-      await captureRestoreOriginals('plugin', pluginInventory, state.legacy.plugin);
-      await captureRestoreOriginals('local', localInventory, state.legacy.local);
-      result.plugin = await scopedRestoreSpace(state.legacy.plugin, 'plugin', { ...restoreOptions, scope, inventory:pluginInventory, onProgress:forward });
+      await captureRestoreOriginals('plugin', pluginInventory, globalLegacyStore('plugin'));
+      await captureRestoreOriginals('local', localInventory, globalLegacyStore('local'));
+      result.plugin = await scopedRestoreSpace(globalLegacyStore('plugin'), 'plugin', { ...restoreOptions, scope, inventory:pluginInventory, onProgress:forward });
       if (localInventory.candidates.length || localInventory.tombstones.length) {
-        result.local = await scopedRestoreSpace(state.legacy.local, 'local', { ...restoreOptions, scope, inventory:localInventory, onProgress:forward });
+        result.local = await scopedRestoreSpace(globalLegacyStore('local'), 'local', { ...restoreOptions, scope, inventory:localInventory, onProgress:forward });
       }
       for (const spaceResult of [result.plugin, result.local].filter(Boolean)) {
         result.restored += Number(spaceResult.restored || 0); result.removed += Number(spaceResult.removed || 0);
@@ -10227,7 +10230,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           ...(result.plugin?.removedKeys || []).map(key=>({space:'plugin',key})),
           ...(result.local?.removedKeys || []).map(key=>({space:'local',key}))
         ],
-        readback:async (spaceValue,key)=>await legacyRead(spaceValue==='local'?state.legacy.local:state.legacy.plugin,String(key||'')),
+        readback:async (spaceValue,key)=>await legacyRead(spaceValue==='local'?globalLegacyStore('local'):globalLegacyStore('plugin'),String(key||'')),
         result
       });
       result.metrics = result.validation?.metrics || {};
@@ -10270,7 +10273,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
   };
 
-  const scopedVerifyPreservation = async (_legacy = state.legacy.plugin, verifyOptions = {}) => {
+  const scopedVerifyPreservation = async (_legacy = globalLegacyStore('plugin'), verifyOptions = {}) => {
     const scope = normalizeScopeDescriptor(verifyOptions.scope || await resolveCurrentScope(true));
     if (!scope.scopeId) throw new Error('memory_suite_current_scope_unavailable');
     const integrity = await remoteIntegrity({ allowPluginOnly: true });
@@ -10302,8 +10305,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       result.failures.push(...spaceResult.failures.map(row => ({ ...row, space })));
       return spaceResult;
     };
-    result.spaces.plugin = await verifySpace(state.legacy.plugin, 'plugin');
-    result.spaces.local = await verifySpace(state.legacy.local, 'local');
+    result.spaces.plugin = await verifySpace(globalLegacyStore('plugin'), 'plugin');
+    result.spaces.local = await verifySpace(globalLegacyStore('local'), 'local');
     result.ok = result.failures.length === 0;
     if (!result.ok) {
       const error = new Error(`memory_suite_scope_preservation_failed:${scope.scopeId}:${result.failures.length}`);
@@ -11381,7 +11384,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             const preview=await previewGlobalMode(mode,{url:q('[data-url]').value});
             if(!preview.completeKnownScopes){
               q('[data-preview-diagnostics-text]').value=JSON.stringify({schema:'memory-suite.migration-preview-diagnostics.v1',namespace,discoveredScopes:preview.discoveredScopes,
-                blockers:preview.blockers.map(row=>Object.fromEntries(['code','location','space','key','detail'].filter(key=>row[key]!=null).map(key=>[key,row[key]])))},null,2);
+                blockers:preview.blockers.map(row=>Object.fromEntries(['code','location','space','key','detail','manifestState'].filter(key=>row[key]!=null).map(key=>[key,row[key]])))},null,2);
               q('[data-preview-diagnostics]').hidden=false;
               setMessage(`전체 이전을 시작할 수 없습니다. 발견 ${preview.discoveredScopes}개 · 미해결 ${preview.blockers.length}개\n${preview.blockers.slice(0,16).map(row=>[row.code,row.location,row.space,row.key,row.detail].filter(Boolean).join(' · ')).join('\n')}`,'error');return;}
             if(!(await confirmModeTransition(fromMode,mode,preview))){setMessage('전환을 취소했습니다. 원본과 저장 경로는 그대로입니다.','good');return;}
@@ -12631,8 +12634,9 @@ async function memorySuiteLibraResolveRestoreDependencies(context = {}) {
     }
     for (const ref of archive.memoryRefs.filter(item => item?.key && item?.status === 'committed')) {
       addDependency({ space:'plugin', remoteKey:String(ref.key), logicalKey:String(ref.key), reason:'libra.archive.memoryRef' });
-      if (ref.vectorKey) {
-        const vectorKey = String(ref.vectorKey);
+      const memory = memorySuiteLibraRestoreObject(await context.serverRead('plugin', String(ref.key)));
+      const vectorKey = memorySuiteLibraArchiveVectorReference(ref, memory);
+      if (vectorKey) {
         addDependency({ space:'plugin', remoteKey:vectorKey, logicalKey:vectorKey, reason:'libra.archive.vectorRef' });
         const vectorRecord = memorySuiteLibraRestoreObject(await context.serverRead('plugin', vectorKey));
         const localKey = String(vectorRecord?.localVectorRef?.localKey || '');
@@ -12693,7 +12697,9 @@ async function memorySuiteLibraValidateRestore(context = {}) {
         if (String(parsed.schema || '') !== LIBRA_SHARED_ARCHIVE_SCHEMA || !Array.isArray(parsed.memoryRefs)) errors.push('libra_restore_archive_schema_invalid');
         for (const ref of Array.isArray(parsed.memoryRefs) ? parsed.memoryRefs.filter(item => item?.key && item?.status === 'committed') : []) {
           if (!candidateKeys.has(String(ref.key))) errors.push({ code:'libra_restore_archive_memory_dependency_missing', key:String(ref.key) });
-          if (ref.vectorKey && !candidateKeys.has(String(ref.vectorKey))) errors.push({ code:'libra_restore_archive_vector_dependency_missing', key:String(ref.vectorKey) });
+          const memory = candidateKeys.has(String(ref.key)) ? await physicallyRead('plugin', String(ref.key)) : null;
+          const vectorKey = memorySuiteLibraArchiveVectorReference(ref, memory);
+          if (vectorKey && !candidateKeys.has(vectorKey)) errors.push({ code:'libra_restore_archive_vector_dependency_missing', key:vectorKey });
         }
       } else if (key.includes(':memory:')) {
         if (String(parsed.schema || '') !== 'libra.canonical_memory.v1' || !String(parsed.memoryId || parsed.id || '')) errors.push({ code:'libra_restore_archive_memory_invalid', key });
@@ -12818,6 +12824,18 @@ const MemorySuiteConfigStorageBridge = createMemorySuiteStorageBridge({
 // BEGIN LIBRA GLOBAL DISCOVERY ADAPTER
 // Pure inventory interpretation: no host selection, storage, repair, cache or route writes.
 // Physical values are retained verbatim; only descriptors and dependency witnesses are added.
+function memorySuiteLibraArchiveVectorReference(ref, memory) {
+  const fallback = String(ref?.vectorKey || '');
+  if (!memory || memory.schema !== 'libra.canonical_memory.v1' || !memory.archiveId
+    || memory.scopeKey !== `archive:${memory.archiveId}`
+    || ref?.key !== `libra:v1:shared-archive:${memory.archiveId}:memory:${memory.archiveCanonicalId}:r${memory.revision}`
+    || ref.memoryId && ref.memoryId !== memory.memoryId
+    || ref.revision != null && Number(ref.revision) !== Number(memory.revision)
+    || ref.sourceDigest && ref.sourceDigest !== memory.sourceDigest) return fallback;
+  // Archive index rows are immutable snapshots. Embedding/profile migrations
+  // update the canonical memory's pointer without rewriting historical indexes.
+  return String(memory.embedding?.vectorKey || fallback);
+}
 async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
   const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
   const str = value => typeof value === 'string' ? value : '';
@@ -13010,11 +13028,23 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
       // Handoff seeds are inline historical projections. Their provenance keys
       // may predate compaction; the package's archiveRef/memoryRefs remain required.
       if(schema==='libra.session_handoff.package.v1'&&['continuityStateSeed','storyArcSeed'].includes(field))return false;
+      const memoryRows = typeof value.key === 'string' ? (byKey.get(value.key) || []).filter(other => !other.deleted && !other.artifact && sameSource(row,other) && other.space === 'plugin') : [];
+      const vectorPointers = memoryRows.map(other => memorySuiteLibraArchiveVectorReference(value,values.get(other)));
+      const vectorPointer = vectorPointers.length && vectorPointers.every(key => key === vectorPointers[0]) ? vectorPointers[0] : str(value.vectorKey);
       for (const name of ['archiveRef','parentRef','parentArchiveRef']) if (value[name] != null && !object(value[name])) issue('archive_pointer_invalid',row);
       for (const [name,body] of Object.entries(value)) {
         if (!referenceFields.has(name)) continue;
         for (const key of Array.isArray(body) ? body : [body]) if (typeof key === 'string' && key.startsWith('libra:v1:')) {
           if (inlineKeys.has(key)) continue;
+          if (name === 'storageKey' && value.schema === 'libra.local_vector_payload.v1'
+            && (row.space === 'local' && value === values.get(row) || field === 'portableVectorPayload')) continue;
+          if (name === 'vectorKey' && vectorPointer !== key) {
+            dependency(row,vectorPointer,'plugin');
+            // Retain a still-present historical vector too; never rewrite raw
+            // index bytes or their archive integrity digests during discovery.
+            dependency(row,key,'plugin',true);
+            continue;
+          }
           const completedRun=schema==='libra.execution_run.v1'&&['complete','complete_with_warnings'].includes(values.get(row).status)&&values.get(row).commit?.status==='committed';
           const optional = name === 'localKey' && values.get(row)?.vectorPayloadPortable === true
             || completedRun&&['memoryKey','vectorKey'].includes(name);
@@ -13023,6 +13053,15 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
       }
       if (row.classification === 'shared') for (const name of ['scopeKey','sourceScopeKey','targetScopeKey','ownerScopeKey']) {
         const id = str(value[name]); if (scopesById.has(id)) row.dependencyScopeIds = [...new Set([...row.dependencyScopeIds,id])];
+      }
+      if (row.space === 'local' && value === values.get(row) && value.schema === 'libra.local_vector_payload.v1') {
+        // storageKey is provenance pointing back to vector metadata, not a
+        // forward dependency. Keep old payloads even after that metadata retires.
+        const storageKey = str(value.storageKey);
+        const owners = [...scopesById.keys()].filter(id => storageKey.startsWith(`libra:v1:scope:${id}:vector:`)
+          || storageKey.startsWith(`libra:v1:scope:${id}:predecessor-vector:`));
+        if (row.logicalKey !== `libra:v1:local-vector:${stableDraftHash(storageKey)}` || value.localKey !== row.logicalKey) issue('local_vector_identity_invalid',row);
+        else if (owners.length === 1) row.dependencyScopeIds = [...new Set([...row.dependencyScopeIds,owners[0]])];
       }
     });
   }

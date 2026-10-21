@@ -178,8 +178,53 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
  r=await inspect('libra',{records:[root('libra',1),packageRow]});blocked(r,/dependency_missing/);
  // Required Flashback shards still block and name exactly what is absent.
  const missingShard=`vector_rag_memory:scope:${keyHash(identity('flashback',1))}:records:commit:missing:shard:0000`;
- r=await inspect('flashback',{records:[root('flashback',1,{commitId:'missing',shardCount:1,count:1})]});blocked(r,/dependency_missing/);assert.ok(r.blockers.some(x=>x.detail===missingShard));
+ r=await inspect('flashback',{records:[root('flashback',1,{commitId:'missing',shardCount:1,count:1})]});blocked(r,/dependency_missing/);assert.ok(r.blockers.some(x=>x.detail===missingShard));assert.equal(r.blockers.find(x=>x.detail===missingShard).manifestState.commitId,'missing');assert.deepEqual(Array.from(r.blockers.find(x=>x.detail===missingShard).manifestState.observedShardKeys),[]);
  const invalidRegistry=row('vector_rag_memory:scope_registry:v2',{version:2,scopes:[{scopeKey:identity('flashback',1),storageHash:'stale',chatBody:'never print this'}]});
  r=await inspect('flashback',{records:[invalidRegistry]});blocked(r,/native_registry_identity_invalid/);assert.ok(r.blockers[0].detail.includes('stale'));assert.ok(!JSON.stringify(r.blockers).includes('never print this'));
+ // Stale archive index vector hints must follow the verified canonical memory,
+ // including indexes embedded in handoff packages and recipient manifests.
+ const archiveId='la_021fd569',archiveKey=`libra:v1:shared-archive:${archiveId}:manifest`;
+ const canonicalId='cd285af8:6282',memoryKey=`libra:v1:shared-archive:${archiveId}:memory:${canonicalId}:r2`;
+ const staleVector=`libra:v1:shared-archive:${archiveId}:vector:${canonicalId}:r2:lep_9by1h4`;
+ const retainedVector=`libra:v1:scope:archive:${archiveId}:vector:arc_cd285af8:6282:r2:lep_ftk24b`;
+ const indexedRef={key:memoryKey,memoryId:'arc_cd285af8:6282',revision:2,status:'committed',vectorKey:staleVector,sourceDigest:'source'};
+ const indexedMemory={schema:'libra.canonical_memory.v1',memoryId:indexedRef.memoryId,revision:2,sourceDigest:'source',scopeKey:`archive:${archiveId}`,archiveId,archiveCanonicalId:canonicalId,embedding:{status:'ready',vectorKey:retainedVector}};
+ const pointer={archiveId,manifestKey:archiveKey};
+ const staleIndexInputs=[root('libra',1,{archiveRef:pointer,inheritedMemories:[indexedRef]}),row(archiveKey,{schema:'libra.shared_archive.v1',archiveId,memoryRefs:[indexedRef]}),row(memoryKey,indexedMemory),row(retainedVector,{scopeKey:`archive:${archiveId}`,memoryId:indexedRef.memoryId,revision:2,data:[1,2]}),row('libra:v1:handoff:stale-vector-index',{schema:'libra.session_handoff.package.v1',sourceScopeKey:projectionScope,archiveRef:pointer,memoryRefs:[indexedRef]})];
+ r=await inspect('libra',{records:staleIndexInputs});ok(r);assert.equal(r.scopes.length,1);
+ for(let i=0;i<staleIndexInputs.length;i++)assert.equal(r.records[i].value,staleIndexInputs[i].value,'archive/index bytes and digests are preserved');
+ for(const index of [0,1,4])assert.ok(r.records[index].dependencyKeys.includes(retainedVector));
+ r=await inspect('libra',{records:staleIndexInputs.filter(x=>x.key!==retainedVector)});blocked(r,/dependency_missing/);
+ const foreignMemory=clone(staleIndexInputs);foreignMemory[2].value=JSON.stringify({...indexedMemory,sourceDigest:'foreign'});
+ r=await inspect('libra',{records:foreignMemory});blocked(r,/dependency_missing/);
+ const missingMemory=staleIndexInputs.filter(x=>x.key!==memoryKey);
+ r=await inspect('libra',{records:missingMemory});blocked(r,/dependency_missing/);
+ // A local payload's provenance is not a dependency on retired vector metadata.
+ const retiredVector=`libra:v1:scope:${projectionScope}:vector:mem_000006:r1:lep_9by1h4`;
+ const retainedLocal=`libra:v1:local-vector:${stableDraftHash(retiredVector)}`;
+ const localPayload={schema:'libra.local_vector_payload.v1',localKey:retainedLocal,storageKey:retiredVector,keys:['global'],lengths:[1],byteLength:4,data:'AACAPw=='};
+ const retainedLocalRow=row(retainedLocal,localPayload,{space:'local',location:'device'});
+ r=await inspect('libra',{records:[root('libra',1),retainedLocalRow]});ok(r);assert.ok(r.records[1].dependencyScopeIds.includes(projectionScope));assert.equal(r.records[1].value,retainedLocalRow.value);
+ r=await inspect('libra',{records:[root('libra',1),row(`libra:v1:scope:${projectionScope}:vector:current:r1:p`,{scopeKey:projectionScope,vectorPayloadPortable:true,portableVectorPayload:localPayload})]});ok(r);
+ r=await inspect('libra',{records:[retainedLocalRow]});blocked(r,/ownership/);
+ r=await inspect('libra',{records:[root('libra',1),row(retainedLocal,{...localPayload,storageKey:retiredVector+'foreign'},{space:'local',location:'device'})]});blocked(r,/local_vector_identity/);
+ // Historical registry archive owners are verified shared manifests, not chats.
+ for(const archiveScope of ['flashback_archive_v1:fb_135rcsu','flashback_archive_v1:fb_fue0pq']) {
+  const id=archiveScope.split(':')[1],archiveRoot=`vector_rag_memory:scope:${keyHash(archiveScope)}:manifest:v2`;
+  const registry=row('vector_rag_memory:scope_registry:v2',{version:2,scopes:[{scopeKey:archiveScope,storageHash:keyHash(archiveScope)}]});
+  const inputs=[root('flashback',1,{archiveRef:{archiveId:id,archiveScopeKey:archiveScope}}),row(archiveRoot,{schema:'vector_rag_memory.scope_manifest.v2',scopeKey:archiveScope,archiveOwner:true,archiveId:id,count:0,shardCount:0,shardSummaries:[]}),registry];
+  r=await inspect('flashback',{records:inputs});ok(r);assert.equal(r.scopes.length,1);assert.equal(r.records[2].value,registry.value);
+  r=await inspect('flashback',{records:inputs.filter(x=>x.key!==archiveRoot)});blocked(r,/archive_registry_identity|dependency_missing/);
+  const corrupt=clone(inputs);corrupt[1].value=JSON.stringify({...JSON.parse(corrupt[1].value),archiveOwner:false});
+  r=await inspect('flashback',{records:corrupt});blocked(r,/archive.*identity/);
+ }
+ // Native commit-to-legacy fallback requires the exact commit on the envelope.
+ const legacyShard=`vector_rag_memory:scope:${keyHash(identity('flashback',1))}:records:shard:0000`;
+ const fallbackRoot=root('flashback',1,{commitId:'retained-commit',shardCount:1,count:1});
+ const fallbackShard=row(legacyShard,{scopeKey:identity('flashback',1),commitId:'retained-commit',records:[{id:'retained'}]});
+ r=await inspect('flashback',{records:[fallbackRoot,fallbackShard]});ok(r);assert.ok(r.records[0].dependencyKeys.includes(legacyShard));
+ r=await inspect('flashback',{records:[fallbackRoot,row(legacyShard,{scopeKey:identity('flashback',1),commitId:'foreign',records:[]})]});blocked(r,/dependency_missing/);
+ r=await inspect('flashback',{records:[fallbackRoot,{...fallbackShard,location:'server'}]});blocked(r,/dependency_missing/);
+ r=await inspect('flashback',{records:[fallbackRoot,{...fallbackShard,deleted:true,value:null}]});blocked(r,/dependency_missing/);
  console.log(`Global owner discovery adapters: PASS (${checks} scenarios)`);
 })().catch(error=>{console.error(error);process.exitCode=1;});
