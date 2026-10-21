@@ -51,6 +51,38 @@ function renderGuide(source, metadata) {
   result = result.replace(/^(- Compute Protocol [^\r\n]*Compute SDK )\d+\.\d+\.\d+(?=는 optional)/gm, (_, prefix) => prefix + metadata.computeSdkVersion);
   return result;
 }
+// The repository README states the release: badge, architecture label, component table and SDK note.
+// It is documentation of the source tree (not part of the installed package), so it is synchronized
+// with the source release metadata when the builder applies a version. Each generated place must
+// match exactly once; a README that no longer has one of them fails instead of drifting silently.
+function renderReadme(source, metadata) {
+  let result = source;
+  const once = (pattern, replacement, label) => {
+    const matches = [...result.matchAll(pattern)];
+    if (matches.length !== 1) throw new Error(`release_readme_invalid:${label}`);
+    result = result.replace(pattern, replacement);
+  };
+  once(/(img\.shields\.io\/badge\/version-)\d+\.\d+\.\d+(?=-)/g, `$1${metadata.packageVersion}`, 'badge');
+  once(/(Librarian System Data Server v)\d+\.\d+\.\d+/g, `$1${metadata.packageVersion}`, 'architecture');
+  once(/(구성 컴포넌트 \(v)\d+\.\d+\.\d+(?= 기준\))/g, `$1${metadata.packageVersion}`, 'heading');
+  once(/^(\| \*\*Librarian System Server\*\* \| `)\d+\.\d+\.\d+(?=`)/gm, `$1${metadata.packageVersion}`, 'server row');
+  for (const { label, version } of Object.values(metadata.plugins)) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    once(new RegExp(`^(\\| \\*\\*${escaped}\\*\\* \\| \`)\\d+\\.\\d+\\.\\d+(?=\`)`, 'gm'), `$1${version}`, label);
+  }
+  once(/(Storage SDK `)\d+\.\d+\.\d+(?=`)/g, `$1${metadata.storageSdkVersion}`, 'storage sdk');
+  once(/(Compute SDK `)\d+\.\d+\.\d+(?=`)/g, `$1${metadata.computeSdkVersion}`, 'compute sdk');
+  return result;
+}
+function syncRepositoryReadme(packageRoot) {
+  const absolute = path.join(packageRoot, 'README.md');
+  if (!fs.existsSync(absolute)) return { updated: false, reason: 'no_readme' };
+  const before = fs.readFileSync(absolute, 'utf8');
+  const after = renderReadme(before, readReleaseMetadata(path.join(packageRoot, 'PROGRAM')));
+  if (before !== after) fs.writeFileSync(absolute, after);
+  if (fs.readFileSync(absolute, 'utf8') !== after) throw new Error('release_readme_readback_failed');
+  return { updated: before !== after };
+}
 function syncReleaseGuides(packageRoot) {
   const metadata = readReleaseMetadata(path.join(packageRoot, 'PROGRAM'));
   const updates = GUIDES.map(file => {
@@ -64,7 +96,7 @@ function syncReleaseGuides(packageRoot) {
   }
   return metadata;
 }
-module.exports = { PLUGINS, GUIDES, readReleaseMetadata, renderGuide, syncReleaseGuides };
+module.exports = { PLUGINS, GUIDES, readReleaseMetadata, renderGuide, renderReadme, syncRepositoryReadme, syncReleaseGuides };
 if (require.main === module) {
   try { console.log(JSON.stringify(syncReleaseGuides(path.resolve(__dirname, '../..')), null, 2)); }
   catch (error) { console.error(error.message); process.exitCode = 1; }

@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { createZipFromDirectory, readZipEntries, verifyZipAgainstDirectory } = require('./zip_writer.cjs');
-const { PLUGINS, syncReleaseGuides, readReleaseMetadata, renderGuide, GUIDES } = require('./release_metadata.cjs');
+const { PLUGINS, syncReleaseGuides, syncRepositoryReadme, readReleaseMetadata, renderGuide, GUIDES } = require('./release_metadata.cjs');
 const { writeUpdateManifest, expectedAssetName, expectedSourceAssetName, readReleasePolicy } = require('./release_asset_contract.cjs');
 const { compareVersions, nextPatchVersion, validateTargetVersion, applyReleaseVersion } = require('./release_version.cjs');
 const { assertPristineDistributionData } = require('./runtime_release_validation.cjs');
@@ -826,6 +826,7 @@ const VERSION_TRANSACTION_RELATIVE_FILES = Object.freeze([
   '0_설치_안내.txt',
   'PROGRAM/처음_읽어주세요.txt',
   'PROGRAM/PACKAGE_CONTENTS.txt',
+  'README.md',
   'PROGRAM/program-manifest.json',
   'PROGRAM/docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json',
   'update-manifest.json',
@@ -849,6 +850,7 @@ function restoreVersionTransactionFiles(snapshot) {
 
 function refreshSourceReleaseMetadata(qualification) {
   syncReleaseGuides(packageRoot);
+  syncRepositoryReadme(packageRoot);
   if (fs.existsSync(path.join(packageRoot, 'update-manifest.json'))) {
     writeUpdateManifest(packageRoot, { qualification, overwrite: true });
   }
