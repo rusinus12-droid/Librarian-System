@@ -68534,16 +68534,7 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
           assertConsumedDataIdentity(value.consumedDataToken,'context',value.contextDigest);
           await assertConsumedDataCurrent(value.consumedDataToken);
           const graphVerifier = consumedDataReadSets.get(string(value.consumedDataToken))?.graphVerifier;
-          if (graphVerifier) {
-            // The retained graph packet re-reads native sources; a stalled read must reject within the
-            // same bounded revalidation window as the receipt read set instead of hanging the caller.
-            let graphTimer;
-            try {
-              await Promise.race([Promise.resolve().then(graphVerifier), new Promise((_, reject) => {
-                graphTimer = setTimeout(() => reject(consumerContractError('CONSUMER_DATA_REVALIDATION_DEADLINE')), 1500);
-              })]);
-            } finally { clearTimeout(graphTimer); }
-          }
+          if (graphVerifier) await graphVerifier();
         }else throw consumerContractError('CONSUMER_DATA_READSET_UNAVAILABLE');
         return {ok:true,current:true,contextDigest:value.contextDigest};
       }catch(e){return {ok:false,current:false,reason:e.code||String(e.message)};}
