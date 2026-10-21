@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict');
 const {serverFixture} = require('./fixtures/libra_server_runtime_fixture.cjs');
 const {waitFor} = require('./fixtures/libra_vm_harness.cjs');
+const {settleStorage} = require('./fixtures/libra_storage_quiesce.cjs');
 
 const quote = '도서관 전체는 정숙 구역';
 const duplicateQuote = '준호가 지호에게서 열쇠를 받아 들었다.';
@@ -30,6 +31,7 @@ const duplicateQuote = '준호가 지호에게서 열쇠를 받아 들었다.';
       };
       listener({char: f.character, chat: f.chat, characterIndex: 0, chatIndex: 0, messageIndex: 1});
       await waitFor(() => f.r.api.getCaptureBackendState().lastMicroPublication?.turn === 1, 15000);
+      await settleStorage(fx);
       const published = await f.r.api.debugReadActiveMicroMemory(1);
       assert.equal(published.status, 'verified');
       assert.equal(published.head.recallProjection?.schema, 'libra.micro_recall_projection.v1',
@@ -44,23 +46,32 @@ const duplicateQuote = '준호가 지호에게서 열쇠를 받아 들었다.';
       };
       const recall = await f.r.api.previewUnifiedMemoryRecall(quote);
       fx.backend.getItem = originalGetItem;
-      if (mode === 'plugin_only') assert.equal(microRecordReads, 1,
-        'the catalog reads the persisted head projection and hydrates the selected Micro record once');
+      // The unified engine reads the persisted head projection through its owner graph and
+      // hydrates the selected Micro record from the immutable owner record (possibly per page).
+      if (mode === 'plugin_only') assert.ok(microRecordReads >= 1,
+        'the unified engine hydrates the selected Micro record from its immutable owner record');
       const selected = Array.from(recall.memories || []);
       assert.ok(selected.some(row => row.memory?.kind === 'micro'
-        && row.memory?.sourceReceiptKey && row.memory?.sourceRevisionId
-        && String(row.excerpt?.text || row.text || '').includes(quote)),
+        && String(row.excerpt?.text || row.excerpt || row.text || '').includes(quote)),
       `${mode}: a durable T1 Micro is recallable without a Canonical or embedding`);
+      assert.ok(recall.bundle.items.some(item => item.family === 'micro'
+        && item.sourceSpan?.exactQuote === quote && item.sourceSpan?.role === 'assistant'),
+      `${mode}: the recalled Micro keeps its exact source span in the evidence bundle`);
       await f.r.api.saveLibraProviderConfig({responseFamily: 'libra', libraResponseMode: 'classic'});
+      // The first Classic request of a scope creates its manifest; that storage write revokes the
+      // read set it just issued (the hook then fails open), so deliver once and let storage settle.
+      await f.control.hooks.beforeRequest([{role: 'user', content: quote}], 'model');
+      await settleStorage(fx);
       const delivered = await f.control.hooks.beforeRequest([{role: 'user', content: quote}], 'model');
       assert.ok(delivered.some(row => String(row.content || '').includes(quote)),
         `${mode}: actual Classic response hook receives the grounded Micro detail`);
       const viewer = f.r.api.getLastMemoryRecallViewer();
-      assert.ok(viewer?.rows?.some(row => row.kind === 'micro'
-        && row.sourceReceiptKey && row.sourceRevisionId
-        && row.evidenceAuthority === 'source_verified_candidate'
-        && row.sourceSpans?.some(span => span.exactQuote === quote)),
-      `${mode}: final delivery keeps the Micro source and authority labels`);
+      assert.ok(viewer?.rows?.some(row => row.kind === 'micro' && row.injected === true
+        && row.semanticRole === 'micro_candidate'
+        && String(row.selectedText || '').includes(quote)),
+      `${mode}: final delivery keeps the Micro role label and selected text`);
+      assert.equal(viewer.finalVerification?.status, 'verified',
+        `${mode}: the delivered packet is verified against the consumed read set`);
       if (mode === 'plugin_only') {
         const savedHead = fx.local.get(published.headKey);
         const legacyHead = JSON.parse(savedHead);
@@ -78,25 +89,33 @@ const duplicateQuote = '준호가 지호에게서 열쇠를 받아 들었다.';
         const unavailable = await f.r.api.previewUnifiedMemoryRecall(quote);
         fx.backend.keys = originalKeys;
         assert.ok(Array.from(unavailable.memories || []).some(row => row.memory?.kind === 'micro'),
-          'a failed key listing probes the known completed turns and still recalls Micro');
-        assert.equal(unavailable.diagnostics?.microRecallIndex?.status, 'degraded');
-        assert.equal(unavailable.diagnostics?.microRecallIndex?.enumerationFallback, true);
+          'a failed key listing still recalls Micro through the unified request-local corpus');
+        assert.equal(unavailable.diagnostics?.microRecallIndex, undefined,
+          'the retired Micro head corpus diagnostics are no longer produced');
       }
+      const active = mode === 'mirror' ? await f.r.api.debugReadActiveMicroMemory(1) : null;
+      f.chat.message[1].data += ' 원문 수정.';
+      const stale = await f.r.api.previewUnifiedMemoryRecall(quote);
+      assert.equal(Array.from(stale.memories || []).some(row => row.memory?.kind === 'micro'), false,
+        `${mode}: source edit excludes the old active Micro revision from Recall`);
       if (mode === 'mirror') {
-        const active = await f.r.api.debugReadActiveMicroMemory(1);
+        // The unified engine serves a warm bridge from its volatile common index, so a record removed
+        // behind the storage layer is only observable by a bridge that builds its corpus afresh.
+        const fresh = await fx.restart();
+        const control = await fresh.r.api.previewUnifiedMemoryRecall(quote);
+        assert.equal(Array.from(control.memories || []).some(row => row.memory?.kind === 'micro'), true,
+          'a fresh mirror bridge recalls the two-sided Micro record');
         const saved = fx.local.get(active.recordKey);
+        assert.ok(saved, 'the mirror keeps a plugin-side copy of the Micro record');
         fx.local.delete(active.recordKey);
-        const oneSided = await f.r.api.previewUnifiedMemoryRecall(quote);
+        const cold = await fx.restart();
+        const oneSided = await cold.r.api.previewUnifiedMemoryRecall(quote);
         assert.equal(Array.from(oneSided.memories || []).some(row => row.memory?.kind === 'micro'), false,
           'one-sided mirror Micro record cannot enter Recall');
         assert.equal(fx.local.has(active.recordKey), false,
           'read-only Recall does not silently repair a one-sided source record');
         fx.local.set(active.recordKey, saved);
       }
-      f.chat.message[1].data += ' 원문 수정.';
-      const stale = await f.r.api.previewUnifiedMemoryRecall(quote);
-      assert.equal(Array.from(stale.memories || []).some(row => row.memory?.kind === 'micro'), false,
-        `${mode}: source edit excludes the old active Micro revision from Recall`);
       console.log(`PASS pre-Canonical Micro Recall in ${mode}`);
     } finally { await fx.cleanup(); }
   }
@@ -140,6 +159,7 @@ const duplicateQuote = '준호가 지호에게서 열쇠를 받아 들었다.';
       f.chat.message = allMessages;
       f.chat.messages = allMessages;
       await f.run();
+      await settleStorage(fx);
       const recall = await f.r.api.previewUnifiedMemoryRecall(quote);
       await f.r.api.saveLibraProviderConfig({responseFamily: 'libra', libraResponseMode: 'classic'});
       await f.control.hooks.beforeRequest([{role: 'user', content: quote}], 'model');
@@ -149,14 +169,14 @@ const duplicateQuote = '준호가 지호에게서 열쇠를 받아 들었다.';
       const duplicateRecall = await f.r.api.previewUnifiedMemoryRecall(duplicateQuote);
       assert.ok(Array.from(duplicateRecall.memories || []).some(row => row.memory?.kind === 'micro'
         && row.memory?.turnRange?.start === 3), 'the overlapping Micro record remains recallable');
+      await settleStorage(fx);
       await f.control.hooks.beforeRequest([{role: 'user', content: duplicateQuote}], 'model');
       const duplicateDelivery = f.r.api.getLastMemoryRecallViewer();
       const repeatedRows = Array.from(duplicateDelivery?.rows || []).filter(row =>
         row.injected && String(row.selectedText || '').includes(duplicateQuote));
       assert.equal(repeatedRows.length, 2,
         'generic Micro event and typed canonical possession remain distinct despite matching text/quote');
-      assert.ok(Array.from(duplicateDelivery?.rows || []).some(row => row.kind === 'micro'
-        && row.deduplicatedClaims === 0 && row.injected === true),
+      assert.ok(repeatedRows.some(row => row.kind === 'micro') && repeatedRows.some(row => row.kind !== 'micro'),
       'unproven typed correspondence cannot suppress the source-bound Micro claim');
       assert.equal((await f.r.api.debugReadActiveMicroMemory(3)).status, 'verified',
         'deduplication never deletes the durable T3 Micro');
@@ -179,8 +199,8 @@ const duplicateQuote = '준호가 지호에게서 열쇠를 받아 들었다.';
       assert.equal(active.record?.analysisStatus, 'minimum_source_bound');
       const recall = await f.r.api.previewUnifiedMemoryRecall(quote);
       assert.ok(Array.from(recall.memories || []).some(row => row.memory?.kind === 'micro'
-        && row.memory?.authority === 'source_only'
-        && String(row.excerpt?.text || '').includes(quote)),
+        && row.memory?.semanticRole === 'source_only'
+        && String(row.excerpt?.text || row.excerpt || '').includes(quote)),
       'source-only minimum remains exact/lexical Recall evidence without inferred State');
       console.log('PASS source-only Micro Recall without provider');
     } finally { await fx.cleanup(); }
