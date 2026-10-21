@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-21T23:01:28.917Z",
+  "generatedAt": "2026-10-21T23:02:04.510Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -2978,6 +2978,10 @@
     "docs/NATIVE_BRANCH_5_18_REPORT_KO.md": {
       "sha256": "681bbaf62869867f7cd1f6409bf7cf3f7ed8190ff49967a64fc0332554578adc",
       "bytes": 14427
+    },
+    "docs/OPEN_ITEMS_20261021.md": {
+      "sha256": "f378a497e30ca0976cbc05a92069624e29462d629166203fdef4d34a49d79019",
+      "bytes": 9622
     },
     "docs/OPEN280_PROCESSING_20261011.json": {
       "sha256": "932b38ad0242f8f90bd478097a18c9387768697d0bfd0d71586334607b5b6397",
