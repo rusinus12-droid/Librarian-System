@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.126
+//@display-name ⚡ FLASHBACK Memory v1.0.127
 //@api 3.0
-//@version 1.0.126
+//@version 1.0.127
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.126';
+const PLUGIN_VERSION = '1.0.127';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -45718,6 +45718,43 @@ ${cleanedText}`, 80),
   // Data presentation: turn text as user/response lines, a worldline stat grid without empty
   // cells, and turn nodes whose id and badges stay aligned.
   const FLASHBACK_GUI_DATA_STYLES = '.fb-turn-text,.frame-card__img,.frame-card__detail>p{white-space:pre-line}.fb-wl-stats{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:16px}.fb-wl-node>summary{flex-wrap:wrap}.fb-wl-node__head{display:flex;align-items:baseline;gap:10px;min-width:0;margin-right:auto}.fb-wl-node__head b{min-width:36px}.fb-wl-node__head code{font:500 12px/1.4 var(--font-mono,monospace);color:var(--text3)}.fb-wl-node>summary .cluster{gap:6px}';
+  const FLASHBACK_GUI_SERVER_STYLES = String.raw`#flashbackMemorySuiteServerConnectionPanel{width:100%;min-width:0}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root{font-family:inherit;color:var(--text);width:100%;min-width:0;gap:16px}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .mscx-card{color:var(--text);background:var(--surface);border-color:var(--border);border-radius:var(--r-md);padding:18px;min-width:0;gap:18px}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .muted{color:var(--text2);line-height:1.65}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .scope{display:block;max-width:none;white-space:normal;color:var(--text);background:var(--surface2);border-color:var(--border);min-width:0;overflow-wrap:anywhere}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .scope b{color:var(--text);display:block}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .scope span{display:block;white-space:normal;overflow:visible;max-width:none;color:var(--text2)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .scopetoggle{background:var(--surface2);border-color:var(--border);grid-column:1/-1}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .scopetoggle button{background:transparent;color:var(--text2)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .scopetoggle button[aria-pressed=true]{background:var(--accent-soft);color:var(--accent-ink);box-shadow:inset 0 0 0 1px var(--accent-line)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .scopetoggle button small{color:var(--text2)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .scopetoggle button[aria-pressed=true] small{color:var(--accent-ink)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .modes{grid-template-columns:minmax(0,1fr)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root label.mode{background:var(--surface);border-color:var(--border2);color:var(--text);min-width:0;line-height:1.6}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root label.mode:has(input:checked){background:var(--accent-soft);border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root input[type=radio]{accent-color:var(--accent);flex:0 0 auto;margin-top:5px}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root input[type=text],#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root input[type=password],#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root textarea{background:var(--surface);border:1px solid var(--border2);color:var(--text);min-width:0;font:inherit;font-size:13px;max-width:100%;width:100%}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root button{color:var(--text);background:var(--surface);border-color:var(--border2);min-height:40px;white-space:normal;overflow-wrap:anywhere;font:inherit;font-size:12px}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root button.primary{color:var(--on-accent);background:var(--accent);border-color:var(--accent)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root button.danger{color:var(--danger-ink);background:var(--danger-soft);border-color:var(--danger-line)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root button:focus-visible,#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .actions{align-items:stretch}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .status{background:var(--surface);color:var(--text2);border-color:var(--border);overflow-wrap:anywhere}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .status[data-tone=good]{color:var(--ok-ink);background:var(--ok-soft);border-color:var(--ok-line)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .status[data-tone=error]{color:var(--danger-ink);background:var(--danger-soft);border-color:var(--danger-line)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .mscx-advanced{grid-column:1/-1;border-color:var(--border);background:var(--surface);min-width:0}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .mscx-advanced>summary small{color:var(--text2)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root [data-mode-confirm],#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root [data-preview-diagnostics]{grid-column:1/-1;min-width:0}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root [data-mode-confirm]{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .scopeunset{background:var(--warn-soft);border-color:var(--warn-line)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .job,#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .result{background:var(--surface);color:var(--text);border-color:var(--border);min-width:0;overflow-wrap:anywhere}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .job.failed{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .bar{background:var(--surface3)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .bar>i{background:var(--accent)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root [data-preview-diagnostics] summary{color:var(--text2)}
+#flashbackMemorySuiteServerConnectionPanel .mscx-scope-root [data-server-fields]{display:grid;gap:8px;min-width:0}
+`;
   const FLASHBACK_GUI_WINDOW_STYLES = `
     #vector-rag-memory-root > .stage{align-items:center;padding:16px;min-height:0}
     #vector-rag-memory-root > .stage > .frame{height:min(830px,100%);min-height:0}
@@ -45810,7 +45847,7 @@ ${cleanedText}`, 80),
     const side = [['lab','eye','기억 현상실','현상실'],['vault','film','필름 보관함','보관함'],['care','wrench','기억 관리','관리'],['connect','link','임베딩 · 서버','연결'],['log','log','현상 기록','기록'],['settings','sliders','리콜 설정','설정']];
     const sidebar = `<nav class="sidebar" aria-label="Flashback 메뉴">${[['상태',[side[0]]],['기억',[side[1],side[2]]],['연결',[side[3]]],['설정 및 진단',[side[4],side[5]]]].map(([group,items])=>`<div class="nav-label">${group}</div>${items.map(([go,icon,label,short])=>`<button class="nav-item" type="button" data-go="${go}" data-short="${short}" aria-current="${pageFor===go?'page':'false'}"><i data-i="${icon}"></i><span class="nav-text">${label}</span>${go==='vault'?`<span class="count" id="nav-scope-n">${storageScopeCountLabel()}</span>`:''}${go==='log'?`<span class="count" id="nav-log-n">${formatNumber(Runtime.activityLog.length)}</span>`:''}</button>`).join('')}`).join('')}<div class="side-foot"><b id="foot-model">${escapeHtml(settings.embeddingModel || '모델 미설정')}</b><span id="foot-meta">${escapeHtml(settings.embeddingProvider || 'provider 미설정')} · ${settings.embeddingDimensions?`${formatNumber(settings.embeddingDimensions)}차원`:'차원 자동'}</span></div></nav>`;
     const root = `<div class="stage"><div class="frame" data-device="desktop"><div class="app t-flashback" data-flashback-memory="flashback_memory"><header class="topbar"><div class="brand"><div class="brand__mark"><i data-i="film" data-size="lg"></i></div><div><div class="brand__name">Flashback Memory</div><div class="brand__ver">v${escapeHtml(PLUGIN_VERSION)}</div></div></div><div class="scope"><b id="currentScopeText">${escapeHtml(current.scope?.characterName || current.scope?.characterId || '현재 채팅 없음')}</b><span>›</span><span id="currentChatText">${escapeHtml(current.scope?.chatTitle || current.scope?.chatId || '')}</span><span id="topModeBadge" class="badge ${settings.mode==='off'?'':'badge--ok'}">${settings.mode==='off'?'OFF':'ON'}</span></div><div class="grow"></div><span class="health ${healthTone}" id="sidebarHealth" title="${escapeHtml(healthDescription)}"><i aria-hidden="true"></i><span id="sidebarHealthState">${escapeHtml(flashbackHealthChipLabel(health))}</span><span id="sidebarHealthMeta"> · ${formatNumber(current.records.length)}개</span></span><div class="menu topbar-actions"><button class="btn btn--icon" id="topMoreBtn" type="button" aria-label="더 보기" aria-haspopup="menu" aria-expanded="false" aria-controls="topMoreMenu"><i data-i="more"></i></button><div id="topMoreMenu" class="menu__panel" role="menu" hidden><button id="topMenuRefreshBtn" class="menu-item" type="button" role="menuitem"><i data-i="refresh"></i>새로고침</button><button id="topMenuDebugBtn" class="menu-item" type="button" role="menuitem"><i data-i="download"></i>디버그 로그 내보내기</button><button id="topMenuCloseBtn" class="menu-item" type="button" role="menuitem">닫기</button></div></div><button id="closeBtn" class="btn btn--icon fb-window-close" type="button" aria-label="Flashback 닫기" title="닫기"><i data-i="close"></i></button></header>${sidebar}<main class="main"><div class="page-body">${pages}</div></main><nav class="tabbar" aria-label="Flashback 하단 메뉴">${side.slice(0,4).map(([go,icon,label,short])=>`<button type="button" data-go="${go}" aria-current="${pageFor===go?'page':'false'}"><svg class="ic"><use href="#i-${icon}"/></svg>${short}</button>`).join('')}<button type="button" data-more="1" aria-haspopup="dialog" aria-controls="sheet-more" aria-expanded="false"><svg class="ic"><use href="#i-more"/></svg>더보기</button></nav><div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list>${side.slice(4).map(([go,icon,label])=>`<button type="button" class="row" data-go="${go}" data-close><span class="row__icon"><svg class="ic"><use href="#i-${icon}"/></svg></span><span><span class="row__title">${label}</span></span><svg class="ic ic--sm faint"><use href="#i-arrow"/></svg></button>`).join('')}</div></div></div><div class="toasts" aria-live="polite"></div></div></div></div>`;
-    return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(PLUGIN_NAME)}</title><style>${FLASHBACK_GUI_MOCKUP_STYLES}${FLASHBACK_GUI_DATA_STYLES}${FLASHBACK_GUI_WINDOW_STYLES}</style></head><body>${root}</body></html>`;
+    return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(PLUGIN_NAME)}</title><style>${FLASHBACK_GUI_MOCKUP_STYLES}${FLASHBACK_GUI_DATA_STYLES}${FLASHBACK_GUI_SERVER_STYLES}${FLASHBACK_GUI_WINDOW_STYLES}</style></head><body>${root}</body></html>`;
   };
 
 
