@@ -45600,12 +45600,12 @@ function createLibraReadonlySourceContext(owner) {
       for (const fact of array(artifact.facts)) duplicate.set(fact.tempFactId, (duplicate.get(fact.tempFactId) || 0) + 1);
       const validFacts = array(artifact.facts).filter(fact => {
         const contract = object(snapshot.claimContracts?.[fact.claimKind]);
-        return fact.tempFactId && duplicate.get(fact.tempFactId) === 1 && contract.field && contract.domain === fact.domain;
+        return fact.tempFactId && duplicate.get(fact.tempFactId) === 1 && contract.domain && contract.domain === fact.domain;
       });
       const src = source('canonical', row.key, record.revision, { record, ref: row.ref }, row.originScope || frame.scopeKey, validFacts.length ? 1 : 0);
       array(artifact.facts).forEach((fact, index) => {
         const contract = object(snapshot.claimContracts?.[fact.claimKind]);
-        if (!fact.tempFactId || duplicate.get(fact.tempFactId) !== 1 || !contract.field || contract.domain !== fact.domain) {
+        if (!fact.tempFactId || duplicate.get(fact.tempFactId) !== 1 || !contract.domain || contract.domain !== fact.domain) {
           note('canonical', 'claim_schema_or_identity_ambiguous'); return;
         }
         const subjectId = row.entityRefs?.[fact.subjectTempRef] || '', targetIds = new Set();
@@ -45623,11 +45623,11 @@ function createLibraReadonlySourceContext(owner) {
         const anchor = span && sourceRows.length === 1 ? occurrence(sourceRows[0], role, string(span.quote),
           record.scopeKey || frame.scopeKey, record.worldlineId || frame.worldlineId, Number(record.sessionEpoch || 0)) : null;
         const correspondenceProof = fact.temporalRole === 'current_sequence' && fact.certainty === 'confirmed'
-          && !contract.refType && !contract.collection && !contract.profile && !/Ref$/.test(contract.value || '') && !targetIds.size
+          && contract.field && !contract.refType && !contract.collection && !contract.profile && !/Ref$/.test(contract.value || '') && !targetIds.size
           ? claimProof(fact.domain, subjectId, contract.field, fact.effect || 'set', fact.values?.[contract.value], anchor) : null;
-        const body = { fact, subjectId, targetIds: [...targetIds], field: contract.field, turn, correspondenceProof };
+        const body = { fact, subjectId, targetIds: [...targetIds], field: contract.field || '', turn, correspondenceProof };
         const node = meaning(src, 'canonical_fact', row.key + '#facts/' + index, body, { index, typedMeaning: body },
-          { text: string(fact.text), semanticRole: 'canonical_assertion', fact: clone(fact), subjectId, targetIds: [...targetIds], field: contract.field, turn, temporalKnown, correspondenceProof, recordKey: row.key });
+          { text: string(fact.text), semanticRole: 'canonical_assertion', fact: clone(fact), subjectId, targetIds: [...targetIds], field: contract.field || '', turn, temporalKnown, correspondenceProof, recordKey: row.key });
         if (!array(fact.evidenceSpans).length) { note('canonical', 'claim_evidence_unavailable'); return; }
         const why = basis(src, 'canonical_claim', row.key + '#basis/' + index, body, { factIndex: index, evidenceSpans: fact.evidenceSpans });
         bases.set(why.id, { ...why, turn, temporalKnown });
@@ -45639,7 +45639,7 @@ function createLibraReadonlySourceContext(owner) {
         }
         if (!entity(subjectId) && fact.domain !== 'narrative') note('canonical', 'subject_mapping_unavailable');
         canonicalFacts.set(JSON.stringify([record.memoryId, record.revision, fact.tempFactId]), { node, why, fact,
-          subjectId, targetIds: [...targetIds], field: contract.field, sourceDigest: record.sourceDigest });
+          subjectId, targetIds: [...targetIds], field: contract.field || '', sourceDigest: record.sourceDigest });
       });
     });
 
