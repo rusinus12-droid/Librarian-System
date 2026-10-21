@@ -135,7 +135,7 @@ async function pendingBeyondDiagnosticLimit(){
 }
 
 async function canonicalAbsorption(){
- let f,listener,calls=0,allowCanonical=false,offset=0;
+ let f,listener,calls=0,canonicalCalls=0,allowCanonical=false,offset=0;
  const original=sourceRows(),observations=new Map([[1,'도서관 전체는 정숙 구역'],[3,'준호가 지호에게서 열쇠를 받아 들었다'],[5,'공연 허가를 누가 내주는지는 아직 밝혀지지 않았다']]);
  try{
   f=await create('LIBRA','Full',{pluginPath:process.env.LIBRA_TEST_PLUGIN,initialChat:original.slice(0,2),host:{
@@ -143,6 +143,7 @@ async function canonicalAbsorption(){
    runLLMModel:async request=>{
     calls++;const messages=request.messages;
     if(!String(messages[0]?.content||'').includes('[LIBRA MICRO SOURCE CONTRACT]')){
+     canonicalCalls++;
      assert.equal(allowCanonical,true,'Canonical runs only at an explicit fixture step');
      const canonical=artifact();canonical.facts.find(row=>row.tempFactId==='f13').values.thread.summary=observations.get(5);
      return{type:'success',result:JSON.stringify(canonical).replace(/t([1-5])-a/g,(_,n)=>`t${Number(n)+offset}-a`)};
@@ -155,13 +156,19 @@ async function canonicalAbsorption(){
       evidence:{role:'assistant',messageId:source.assistant.messageId,startOffset,endOffset:startOffset+value.length,exactQuote:value}}]:[]}})};
    }
   }});
+  // This scenario owns Canonical steps explicitly. A default T5 automatic scan
+  // can otherwise race the manual job and leave it with zero new batches.
+  await f.api.saveLibraMemorySettings({...await f.api.getLibraMemorySettings(),autoAnalyze:false});
   await f.open();const character=await f.host.getCharacter(),chat=character.chats[0];
   for(let turn=1;turn<=5;turn++){
    chat.message=original.slice(0,turn*2);chat.messages=chat.message;
    listener({char:character,chat,characterIndex:0,chatIndex:0,messageIndex:turn*2-1});
    await until(()=>f.api.getCaptureBackendState().lastMicroPublication?.turn===turn,`T${turn} Micro`,10000);
   }
-  allowCanonical=true;assert.equal((await f.api.runManualColdStart()).completed,1);await pause(160);
+  await until(()=>{const s=f.api.getCaptureBackendState();return s.microQueuedJobs===0&&s.receiptCaptureJobs===0&&s.receiptQueueScopes===0;},'completed Micro capture before manual Canonical',10000);
+  assert.equal(canonicalCalls,0,'Micro capture never starts the fixture-owned Canonical step');
+  allowCanonical=true;const firstCanonical=await f.api.runManualColdStart();
+  assert.equal(firstCanonical.completed,1,JSON.stringify(firstCanonical));assert.equal(canonicalCalls,1);await pause(160);
   let panel=await openMicro(f,5);assert.ok(panel.querySelector('[data-micro-state-disposition="absorbed"]'));
   // Keep an older selected row open while Canonical advances without a new Micro.
   await openMicro(f,3);

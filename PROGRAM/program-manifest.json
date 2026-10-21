@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-21T07:55:56.152Z",
+  "generatedAt": "2026-10-21T08:05:14.265Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -8208,8 +8208,8 @@
       "bytes": 17751
     },
     "tests/libra_micro_state_reader_gui_runtime_test.cjs": {
-      "sha256": "a27357bbc3972370ed46f8bee1268c62a6a2f3d5e3be6e61ba2ac34b1c5b13f5",
-      "bytes": 16031
+      "sha256": "af64debb3d1ffd5776ee7355426fc1903dc4b0d9ded9af15f9f50cd1def5baf0",
+      "bytes": 16720
     },
     "tests/libra_micro_storage_3mode_test.cjs": {
       "sha256": "ba73c0be8062171f1e40a5306eddba026ee0af5d2106063ec81a2333043d2747",
