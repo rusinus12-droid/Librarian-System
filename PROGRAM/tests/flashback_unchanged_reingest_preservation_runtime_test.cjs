@@ -100,8 +100,8 @@ async function physical(x) {
   return { manifestKey, manifestRaw, manifestSha256: sha(manifestRaw), manifest, rawOwners, vectorOwners, allVectorOwners, worldlineRaw, decoded };
 }
 function persist(name, value) {
-  const dir = process.env.FLASHBACK_REINGEST_EVIDENCE;
-  assert(dir, 'external evidence directory supplied');
+  // Evidence goes to the supplied directory, or to a fresh private temp directory when none is supplied.
+  const dir = process.env.FLASHBACK_REINGEST_EVIDENCE || (persist.fallbackDir ||= fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'flashback-reingest-')));
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, name + '.json');
   assert(!fs.existsSync(file), 'evidence is never overwritten');
