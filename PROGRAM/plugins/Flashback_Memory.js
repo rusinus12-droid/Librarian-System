@@ -47594,6 +47594,21 @@ ${cleanedText}`, 80),
       });
     }
     for (const button of Array.from(root.querySelectorAll?.('button[data-subtab][data-group]') || [])) {
+      // Roving tabindex leaves only the selected subtab focusable, so arrow/Home/End move within its group.
+      button.addEventListener('keydown', event => {
+        const key = event?.key || '';
+        if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(key)) return;
+        const group = button.getAttribute?.('data-group');
+        const tabs = Array.from(root.querySelectorAll?.('button[data-subtab][data-group]') || []).filter(item => item.getAttribute?.('data-group') === group);
+        const currentIndex = Math.max(0, tabs.indexOf(button));
+        const nextIndex = key === 'Home' ? 0 : key === 'End' ? Math.max(0, tabs.length - 1)
+          : (currentIndex + (key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        const next = tabs[nextIndex];
+        if (!next) return;
+        event.preventDefault?.();
+        next.focus?.();
+        next.click?.();
+      });
       button.addEventListener('click', () => {
         const group = text(button.getAttribute?.('data-group') || '');
         const destination = text(button.getAttribute?.('data-subtab') || '');
