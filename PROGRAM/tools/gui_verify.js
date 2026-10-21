@@ -35,13 +35,14 @@ for (const name of ['worldManagerCorrectionReasonCopy', 'worldManagerCorrectionS
     'defined=' + defines(libra, name) + ' calls=' + count(libra, name + '('));
 }
 check('LIBRA: 교정 필터 기본값 all', /worldManagerCorrectionFilter:\s*'all'/.test(libra));
-check('LIBRA: 롤백 확인창 휴면 경고', /rollback할까요[\s\S]{0,240}롤백 뒤 휴면/.test(norm(libra)));
+check('LIBRA: 롤백 확인창 휴면 경고', /되돌릴까요[\s\S]{0,240}이후 교정은 휴면 상태가 됩니다/.test(norm(libra)));
 
 // ------------------------------------------------------- stage 1: Flashback log surfacing
 check('Flashback: 숨겨진 로그 래퍼 제거', !flash.includes('<div style="display:none"><div id="lastActionLog">'));
 check('Flashback: warningLog id 1회', count(flash, 'id="warningLog"') === 1, 'n=' + count(flash, 'id="warningLog"'));
 check('Flashback: lastActionLog id 1회', count(flash, 'id="lastActionLog"') === 1);
-check('Flashback: 활성 탭에 로그 인자 전달', /buildActivityLogTab\(lastActionText,\s*warningText\)/.test(flash));
+check('Flashback: 활동 로그 패널이 렌더 함수로 갱신됨',
+  defines(flash, 'renderActivityLogHtml') && /getGuiNode\('activityLogList'\)[\s\S]{0,80}innerHTML = renderActivityLogHtml\(\)/.test(norm(flash)));
 
 // -------------------------------------------------- stage 1: HAYAKU diagnostics (now wrapped)
 check('HAYAKU: 진단 렌더 함수 존재', defines(hayaku, 'viewerRenderSwallowedDiagInner'));
@@ -55,14 +56,16 @@ for (const [label, text] of [['Flashback', flash], ['HAYAKU', hayaku], ['LIBRA',
   check(label + ': getColorScheme 사용', text.includes("typeof api.getColorScheme !== 'function'"));
   check(label + ': 테마 시작 호출', /__memorySuiteTheme\?\.start\?\.\(/.test(text));
   check(label + ': 테마 정지 호출', /__memorySuiteTheme\?\.stop\?\.\(/.test(text));
-  check(label + ': data-risu-theme 매핑 CSS', text.includes('[data-risu-theme-colors="1"]'));
+  // The host-colour mapping CSS was retired with the shared Librarian Suite GUI design system:
+  // the bridge now only publishes data-risu-theme attributes, and the opt-in switch below stays.
+  check(label + ': 색 추종 속성은 opt-in일 때만 설정', /if \(this\.followColors === true\) root\.setAttribute\('data-risu-theme-colors', '1'\);\s*else root\.removeAttribute\('data-risu-theme-colors'\);/.test(norm(text)));
   // Colour following is opt-in: the mapped palette measured worse than the hand-tuned one.
   check(label + ': 색 추종은 기본 꺼짐', /followColors: false,/.test(text));
   check(label + ': 색 추종 전환 메서드', /setFollowColors\(on\) \{/.test(text));
   check(label + ': 부분 팔레트 거부', text.includes("this.lastError = 'missing colour: '"));
 }
-check('HAYAKU: OS 다크모드가 호스트 모드에 양보', hayaku.includes(':root:not([data-risu-theme-type]):not([data-risu-theme-colors="1"]) #${LEDGER_VIEWER_ROOT_ID}'));
-check('LIBRA: Book 종이 테마는 유지(강제 light 규칙 그대로)', libra.includes('color-scheme:light!important'));
+check('HAYAKU: 호스트 테마 타입을 data 속성으로 받음', hayaku.includes("root.setAttribute('data-risu-theme-type', type);"));
+check('LIBRA: Book 종이 테마는 light 색상 체계 유지', libra.includes("const bookTheme = String(panelOptions.theme || '').toLowerCase() === 'book';") && libra.includes('#${rootId}{color-scheme:light;'));
 
 // ----------------------------------------- stage 2: theme bridge actually runs and is safe
 const bridgeText = sliceFn(flash, '      const THEME_KEYS = [', '      globalThis.__memorySuiteTheme = bridge;');
@@ -153,16 +156,15 @@ check('Flashback: 재마운트가 캡처를 먼저 함',
 check('Flashback: 재마운트 뒤 복원 호출',
   /bindUiEvents\(root\);\s*restoreGuiViewState\(root, viewState\);/.test(norm(flash)));
 check('Flashback: 스크롤 대상에 4개 컨테이너 포함',
-  ['.nav-tabs', '.panel', '.manual-editor-list', '.storage-table-scroll'].every(cls => flash.includes(cls))
-  && flash.includes('GUI_SCROLL_SELECTOR'));
+  flash.includes("const GUI_SCROLL_SELECTOR = '.tabs,.list,.table-wrap,[data-manual-editor]';"));
 
 // --------------------------------------------------- stage 2: HAYAKU filters + scroll + defaults
-check('HAYAKU: 목록 필터 정의 4개', count(hayaku, "Object.freeze({ input: 'hayaku") === 4);
+check('HAYAKU: 목록 필터 정의 3개', count(hayaku, "Object.freeze({ input: 'hayaku") === 3);
 for (const id of ['hayakuWorldlineFilter', 'hayakuLogFilter', 'hayakuSwallowedDiagFilter']) {
   check('HAYAKU: ' + id + ' 입력 존재', count(hayaku, 'id="' + id + '"') === 1);
 }
 check('HAYAKU: 설정 검색', count(hayaku, 'id="hayakuSettingsFilter"') === 1 && defines(hayaku, 'viewerApplySettingsFilter'));
-check('HAYAKU: 섹션별 기본값', count(hayaku, 'id="defaultHayakuSectionSettings"') === 1 && defines(hayaku, 'viewerLoadSectionDefaults'));
+check('HAYAKU: 섹션별 기본값', count(hayaku, 'button[data-load-defaults="[data-subpanel]"]') === 1 && defines(hayaku, 'viewerLoadSectionDefaults'));
 const sectionDefaults = sliceFn(hayaku, '  const viewerLoadSectionDefaults = () => {', '    return { section, restored };');
 check('HAYAKU: 섹션 기본값 함수를 원본에서 그대로 잘라냄', !!sectionDefaults, 'len=' + (sectionDefaults || '').length);
 check('HAYAKU: 섹션 기본값은 저장하지 않음(draft만)',
@@ -173,61 +175,46 @@ check('HAYAKU: 스크롤 보존이 async 렌더를 기다림',
 check('HAYAKU: 4개 렌더 모두 래핑', count(hayaku, '=> viewerPreserveScroll(') === 4, 'n=' + count(hayaku, '=> viewerPreserveScroll('));
 check('HAYAKU: 필터 재적용이 after 콜백에서 실행', count(hayaku, '() => viewerApplyListFilter(VIEWER_LIST_FILTERS.find(') === 4);
 
-// ---------------------------------------- stage 3: shared design tokens + Korean typography
-const MARKER = 'MemorySuite shared design tokens';
-for (const [label, text] of [['Flashback', flash], ['HAYAKU', hayaku], ['LIBRA', libra]]) {
-  check(label + ': 공통 토큰 블록 1회만', count(text, MARKER) === 1, 'n=' + count(text, MARKER));
-  check(label + ': 한글 우선 글꼴 스택', /--ms-font-sans:Pretendard[^;]*"Noto Sans KR"[^;]*"Malgun Gothic"/.test(text));
-  check(label + ': 본문 줄간격 1.65', text.includes('--ms-lh-body:1.65'));
-  check(label + ': 4px 간격 그리드', text.includes('--ms-sp-1:4px') && text.includes('--ms-sp-6:32px'));
-  check(label + ': 모서리 4단계', ['--ms-r-sm:8px', '--ms-r-md:12px', '--ms-r-lg:16px', '--ms-r-xl:20px'].every(t => text.includes(t)));
-  check(label + ': 그림자 4단계', ['--ms-sh-1:', '--ms-sh-2:', '--ms-sh-3:', '--ms-sh-4:'].every(t => text.includes(t)));
-  check(label + ': 타입 스케일 5단계',
-    ['--ms-fs-eyebrow:12px', '--ms-fs-title:19px', '--ms-fs-subtitle:15px', '--ms-fs-body:13px', '--ms-fs-note:12px'].every(t => text.includes(t)));
-  // Tracking on small caps is a Latin idiom; Hangul has no case, so it only loosened the
-  // syllables. Kept as a token rather than deleted so a Latin-only surface can restore it.
-  check(label + ': 한글 라벨 자간 0', text.includes('--ms-ls-eyebrow:0;'));
-  check(label + ': 로컬 모션 fallback 사용', text.includes('--ms-motion:.2s'));
-  check(label + ': 모션 축소 설정 존중', /@media\(prefers-reduced-motion:reduce\)\{:root\{--ms-motion:0s\}\}/.test(text));
-  check(label + ': 한글 단어 중간 줄바꿈 금지', text.includes('word-break:keep-all'));
-  // keep-all alone would let a hash overflow its box; anywhere must accompany it.
-  check(label + ': 긴 토큰은 넘치지 않게 anywhere 동반', text.includes('overflow-wrap:anywhere'));
-  // Code must keep character breaking, otherwise JSON dumps get ragged.
-  // Matched line-wise because HAYAKU's root selector contains ${...} braces.
-  check(label + ': 코드 블록은 문자 단위 줄바꿈 유지',
-    norm(text).split('\n').some(line => line.includes('pre')
-      && line.includes('font-family:var(--ms-font-mono);word-break:break-all')));
-  check(label + ': 숫자 자릿수 정렬', text.includes('font-variant-numeric:tabular-nums'));
-}
-check('HAYAKU: 루트 선택자 보간 유지', hayaku.includes('#${LEDGER_VIEWER_ROOT_ID}{font-family:var(--ms-font-sans)'));
-check('LIBRA: Book 종이 서체 보존(Georgia 선언 다수)', count(libra, 'Georgia,"Noto Serif KR",serif') > 20,
-  'n=' + count(libra, 'Georgia,"Noto Serif KR",serif'));
-check('LIBRA: Book도 한글 줄바꿈 교정 대상', /\.libra-book-page,\.libra-book-drawer,\.libra-book-reading-sheet\{word-break:keep-all/.test(libra));
-
-// The token block must be identical in all three, or the suite drifts apart again.
-const tokenBlock = text => {
-  const source = norm(text);
-  const a = source.indexOf('  :root{\n    --ms-font-sans:');
+// ---------------------------------------- stage 3: shared Librarian Suite GUI design system + Korean typography
+// The retired --ms-* token block was replaced by one shared design-system stylesheet that every
+// plugin embeds verbatim; these checks pin its Korean-typography and accessibility rules.
+const DS_START = 'Librarian Suite GUI — 공용 디자인 시스템';
+const designSystem = text => {
+  const source = norm(text), a = source.indexOf(DS_START);
   if (a < 0) return '';
-  const b = source.indexOf('@media(prefers-reduced-motion:reduce)', a);
+  const b = source.indexOf('/* ---------- 시안 도구줄', a);
   return b < 0 ? '' : source.slice(a, b);
 };
-const blocks = [tokenBlock(flash), tokenBlock(hayaku), tokenBlock(libra)];
-check('세 파일의 토큰 블록이 완전히 동일', blocks[0].length > 400 && blocks[0] === blocks[1] && blocks[1] === blocks[2],
-  'len=' + blocks.map(b => b.length).join('/'));
+const systems = [designSystem(flash), designSystem(hayaku), designSystem(libra)];
+for (const [label, text, css] of [['Flashback', flash, systems[0]], ['HAYAKU', hayaku, systems[1]], ['LIBRA', libra, systems[2]]]) {
+  check(label + ': 공용 디자인 시스템 블록 1회만', count(text, DS_START) === 1 && css.length > 800, 'n=' + count(text, DS_START) + ' len=' + css.length);
+  check(label + ': 한글 우선 글꼴 스택', /--font-sans:Pretendard[^;]*"Noto Sans KR"[^;]*"Malgun Gothic"/.test(css.replace(/\\"/g, '"')));
+  check(label + ': 본문 줄간격 1.65', css.includes('font:var(--fs-body)/1.65 var(--font-sans)'));
+  check(label + ': 모서리 3단계', ['--r-sm:7px', '--r-md:11px', '--r-lg:15px'].every(t => css.includes(t)));
+  check(label + ': 타입 스케일(최소 12px 본문 계열)',
+    ['--fs-note:12px', '--fs-body:13px', '--fs-sub:15px', '--fs-title:19px', '--fs-page:27px'].every(t => css.includes(t)));
+  check(label + ': 로컬 모션 토큰 사용', css.includes('--motion:.16s'));
+  check(label + ': 모션 축소 설정 존중', css.includes('@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}'));
+  check(label + ': 한글 단어 중간 줄바꿈 금지', css.includes('word-break:keep-all'));
+  // keep-all alone would let a hash overflow its box; overflow-wrap must accompany it.
+  check(label + ': 긴 토큰은 넘치지 않게 overflow-wrap 동반', css.includes('overflow-wrap:break-word'));
+  // Code must keep character breaking, otherwise JSON dumps get ragged.
+  check(label + ': 코드 블록은 문자 단위 줄바꿈 유지', css.includes('code,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}'));
+  check(label + ': 숫자 자릿수 정렬', css.includes('font-variant-numeric:tabular-nums'));
+  check(label + ': 키보드 포커스 표시', css.includes(':focus-visible{outline:2px solid'));
+  check(label + ': 블러/반투명 큰 면 금지 규칙 준수', !/backdrop-filter\s*:/.test(css));
+}
+check('LIBRA: Book 종이 서체 보존(Georgia 세리프 선언)', count(libra, 'Georgia,"Noto Serif KR",serif') >= 1,
+  'n=' + count(libra, 'Georgia,"Noto Serif KR",serif'));
+check('세 파일의 공용 디자인 시스템 블록이 완전히 동일', systems[0].length > 800 && systems[0] === systems[1] && systems[1] === systems[2],
+  'len=' + systems.map(b => b.length).join('/'));
 
 // ------------------------------------------- elevation must not be taken from host greys
-for (const [label, text, surfaceVar] of [['Flashback', flash, '--surface'], ['HAYAKU', hayaku, '--hv-card'], ['LIBRA', libra, '--sga-surface']]) {
-  // RisuAI's \`darkbg\` is DARKER than \`bgcolor\`, so a surface mapped to it sinks below the
-  // background and every card reads as recessed. Elevation is derived from bg+text instead.
-  check(label + ': 카드 표면이 host darkbg를 쓰지 않음',
-    !new RegExp(surfaceVar.replace(/[-]/g, '\\\\-') + ':var\\\\(--risu-theme-darkbg\\\\)').test(text));
-  check(label + ': 카드 표면이 bg+text에서 파생',
-    text.includes(surfaceVar + ':color-mix(in srgb,var(--risu-theme-bgcolor)'));
+for (const [label, text] of [['Flashback', flash], ['HAYAKU', hayaku], ['LIBRA', libra]]) {
+  // RisuAI's `darkbg` is DARKER than `bgcolor`; the shared design system never maps surfaces to it.
+  check(label + ': 카드 표면이 host darkbg를 쓰지 않음', !/--surface:var\(--risu-theme-darkbg\)/.test(text));
+  check(label + ': 테마별 강조색 4종 정의', ['#126457', '#2a55c4', '#5568e8', '#7352a3'].every(color => text.includes('--accent:' + color + ';')));
 }
-check('Flashback: 강조색이 자체 색조 유지', flash.includes('--accent:color-mix(in srgb,#7ea5f8'));
-check('HAYAKU: 강조색이 자체 색조 유지', hayaku.includes('--hv-primary:color-mix(in srgb,#5568e8'));
-check('LIBRA: 강조색이 자체 색조 유지', libra.includes('--sga-accent:color-mix(in srgb,#7c9cff'));
 
 // ------------------------------------------------------------------------------------ report
 const pad = Math.max(...rows.map(r => r.label.length));
