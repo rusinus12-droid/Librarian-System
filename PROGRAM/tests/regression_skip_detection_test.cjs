@@ -67,6 +67,27 @@ require('./fixtures/regression_skip_runner_probe.cjs')(RUNNER);
     result = run(['--match', 'alpha*']);
     assert.equal(result.status, 1, result.stderr + result.stdout);
     assert.match(result.stdout, /alpha_test\.cjs: FAIL /);
+    // Python-only probes stay out of the Node-only release gate. Both runners
+    // consume the same artifact contract and reject incomplete verification.
+    fs.mkdirSync(path.join(temp, 'tools'));
+    fs.copyFileSync(path.join(PROGRAM, 'tools/regression_inputs.json'), path.join(temp, 'tools/regression_inputs.json'));
+    const support = path.join(temp, 'tools/ensure_build_support.cjs');
+    fs.writeFileSync(support, `exports.ensureBuildSupportDependencies=()=>({modulesDir:${JSON.stringify(temp)}});`);
+    const artifact = 'build_plugins_artifact_behavior_parity_test.cjs';
+    const marker = path.join(temp, 'artifact-ran');
+    fs.writeFileSync(path.join(tests, artifact), `require('node:fs').writeFileSync(${JSON.stringify(marker)},'ran');`);
+    const runArtifact = (extra = {}) => spawnSync(python, [runner, '--match', artifact], {
+      cwd: temp, encoding: 'utf8', timeout: 30000,
+      env: { ...process.env, MEMORY_SUITE_REGRESSION_LOG: log,
+        ULTRALIGHT_ARTIFACT_DIR: '', RELEASE_PARITY_CONTROL_DIR: '', ...extra }
+    });
+    result = runArtifact(); assert.equal(result.status, 2, result.stdout + result.stderr);
+    assert.match(result.stdout, /INPUT_REQUIRED/); assert.equal(fs.existsSync(marker), false);
+    result = runArtifact({ ULTRALIGHT_ARTIFACT_DIR: temp, RELEASE_PARITY_CONTROL_DIR: temp });
+    assert.equal(result.status, 0, result.stdout + result.stderr); assert.equal(fs.readFileSync(marker, 'utf8'), 'ran');
+    fs.unlinkSync(marker); fs.writeFileSync(support, 'throw Error("support unavailable");');
+    result = runArtifact({ ULTRALIGHT_ARTIFACT_DIR: temp, RELEASE_PARITY_CONTROL_DIR: temp });
+    assert.equal(result.status, 1); assert.equal(fs.existsSync(marker), false);
     console.log('PASS regression selection: full default, glob filters, stable range, read-only listing, fail/skip accounting, empty selection rejection');
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });

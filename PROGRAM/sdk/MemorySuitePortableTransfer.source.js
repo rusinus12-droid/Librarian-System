@@ -37,7 +37,7 @@ const createMemorySuitePortableTransferClient = (options = {}) => {
   };
   const startExport=async opts=>{
     check(opts?.signal);const cap=await request('capabilities',{});check(opts?.signal);
-    const s=await request('export-start',{operationId:op('portable-export')});assertServer(cap,s);progress(opts?.onProgress,s);
+    const s=await request('export-start',{operationId:op('portable-export'),mode:opts?.mode==='snapshot'?'snapshot':'migration'});assertServer(cap,s);progress(opts?.onProgress,s);
     try{return await wait(s,opts);}catch(e){if(opts?.signal?.aborted)await cancel(s).catch(()=>{});throw Object.assign(e,{transfer:s});}
   };
   const download=async(s,sink,opts={})=>{

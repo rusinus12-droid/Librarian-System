@@ -122,6 +122,13 @@ def _attach_owned_windows_job(process):
             kernel32.CloseHandle(handle)
 
 REGRESSION_OWNER_ENV='LIBRARIAN_REGRESSION_OWNER'
+# Artifact verification suites check actual Full/Min builds that a release run hands them (the
+# distribution builder sets these variables). They fail by design when the input is absent, so
+# a full run without the inputs does not execute them and reports them as INPUT_REQUIRED: neither
+# a pass nor a product failure. With the variables set they run and count normally.
+_input_contract = pathlib.Path(__file__).resolve().parent/'tools'/'regression_inputs.json'
+# Minimal isolated runner probes deliberately copy no product tools.
+EXPLICIT_INPUT_SUITES = json.loads(_input_contract.read_text(encoding='utf-8')) if _input_contract.is_file() else {}
 
 def _enable_posix_subreaper():
     """Linux: make the runner the reaper of orphaned test descendants.
@@ -318,6 +325,9 @@ TEST_TIMEOUT_SECONDS = {
     # Nested GRADIA source/preservation suites measured 117.69s under source audit.
     # This is one discovered suite; retain its individual test deadlines unchanged.
     'gradia_suite_test.cjs': 240,
+    # Sixteen cleanup conditions include four deliberately exhausted 60-second
+    # children. The parent suite completed in ~250 seconds; default 60 cuts it off.
+    'regression_owned_process_cleanup_test.cjs': 360,
     # All three modes complete in 138.20s in the source-audit measurement;
     # preserve in-test deadlines and allow 30% aggregate scheduling margin.
     'libra_micro_inherited_t5_overlap_3mode_test.cjs': 180,
@@ -406,6 +416,35 @@ manifest=json.loads((root/'program-manifest.json').read_text(encoding='utf-8'))
 plugin_versions=manifest.get('plugins',{})
 child_env=os.environ.copy()
 child_env['PYTHON']=child_env.get('PYTHON') or sys.executable
+
+def _prepare_build_support(env):
+    """Expose the locked build-support modules (jsdom, acorn, terser, fake-indexeddb) to every suite.
+
+    The distribution builder does this before its release smoke; without it a fresh checkout fails
+    DOM and minifier suites on a missing module instead of on what they test.
+    """
+    script=("const {ensureBuildSupportDependencies}=require(process.argv[1]);"
+            "const r=ensureBuildSupportDependencies({programDir:process.argv[2],installIfMissing:process.argv[3]==='1'});"
+            "process.stdout.write(String(r&&r.modulesDir||''));")
+    install='0' if env.get('MEMORY_SUITE_REGRESSION_NO_INSTALL')=='1' else '1'
+    try:
+        done=subprocess.run(['node','-e',script,str(root/'tools'/'ensure_build_support.cjs'),str(root),install],
+                            cwd=root,capture_output=True,text=True,timeout=900,env=env)
+    except Exception as exc:
+        return '', f'build-support preparation failed: {type(exc).__name__}'
+    modules=done.stdout.strip() if done.returncode==0 else ''
+    if not modules:
+        return '', 'build-support unavailable: ' + (done.stderr.strip().splitlines() or ['unknown'])[-1][:300]
+    current=[part for part in env.get('NODE_PATH','').split(os.pathsep) if part]
+    if modules not in current:
+        env['NODE_PATH']=os.pathsep.join([modules,*current])
+    env['GRADIA_TOOLCHAIN_ROOT']=modules
+    return modules, ''
+
+build_support_dir, build_support_warning=_prepare_build_support(child_env)
+if build_support_warning and (root/'tools'/'ensure_build_support.cjs').is_file():
+    print(build_support_warning,file=sys.stderr)
+    sys.exit(1)
 default_log_name=f'SELECTED_TEST_EXECUTION_LOG_{package_version}.txt' if filtered else f'FULL_TEST_EXECUTION_LOG_{package_version}.txt'
 log_path=pathlib.Path(os.environ.get('MEMORY_SUITE_REGRESSION_LOG', str(root.parents[1] / default_log_name)))
 output_dir_env=os.environ.get('MEMORY_SUITE_REGRESSION_OUTPUT_DIR')
@@ -428,6 +467,7 @@ with log_path.open(mode,encoding='utf-8') as log:
         if filtered:
             log.write(f'Selection: match={json.dumps(selection.match)}; exclude={json.dumps(selection.exclude)}\n\n')
         log.write(f'Timeout seconds: default=60; overrides={json.dumps(TEST_TIMEOUT_SECONDS, sort_keys=True)}\n\n')
+        log.write(f"Build support: {build_support_dir or 'UNAVAILABLE — ' + build_support_warning}\n\n")
         log.flush()
     failures=0; timeouts=0; skips=0
     posix_subreaper=False; orphan_reaper=None
@@ -439,8 +479,15 @@ with log_path.open(mode,encoding='utf-8') as log:
         if posix_subreaper: orphan_reaper=_PosixOrphanReaper()
         if filtered or start==0:
             log.write(f"POSIX cleanup: owner token + parent table; subreaper={'on' if posix_subreaper else 'off'}\n\n"); log.flush()
+    input_required=0
     for idx in selected_indices:
         test=all_tests[idx]
+        missing_inputs=[name for name in EXPLICIT_INPUT_SUITES.get(test.name,()) if not child_env.get(name)]
+        if missing_inputs:
+            input_required+=1
+            line=f'{idx+1:02d}/{len(all_tests)} {test.name}: INPUT_REQUIRED 0.00s [not run; set {", ".join(missing_inputs)}]'
+            print(line,flush=True); log.write(line+'\n'); log.flush()
+            continue
         fd, tmp_name = tempfile.mkstemp(prefix=f'librarian-regression-{os.getpid()}-{idx}-', suffix='.txt')
         os.close(fd)
         tmp=pathlib.Path(tmp_name)
@@ -580,4 +627,8 @@ with log_path.open(mode,encoding='utf-8') as log:
                 f'These exited 0 but stated that part of their work did not run on this host; '\
                 f'they are counted as PASS for the exit code and separately here.\n'
         print(summary,flush=True); log.write(summary); log.flush()
-    sys.exit(1 if failures or timeouts else 0)
+    if input_required:
+        summary=f'\nArtifact suites not run (INPUT_REQUIRED): {input_required}. They verify actual release '\
+                f'builds and run when the distribution builder (or a caller) supplies their input variables.\n'
+        print(summary,flush=True); log.write(summary); log.flush()
+    sys.exit(1 if failures or timeouts else 2 if input_required else 0)

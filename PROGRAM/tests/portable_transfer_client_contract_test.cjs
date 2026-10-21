@@ -8,6 +8,18 @@ const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
  const c=ctx.createClient({request:async(a,b)=>{calls.push(a);if(a==='download-chunk'){const part=bytes.subarray(b.offset,b.offset+65536);return {offset:b.offset,totalBytes:length,base64:part.toString('base64'),sha256:sha(part)};}if(a==='cancel')return {};throw Error(a);},pollMs:20});
  const chunks=[];let closed=false;const r=await c.download(state,{write:async b=>chunks.push(Buffer.from(b)),close:async()=>closed=true});assert.equal(r.clientSha256,sha(bytes));assert.deepEqual(Buffer.concat(chunks),bytes);assert.equal(closed,true);checks++;
  }
+ // A source regeneration must preserve RE:TRACE's snapshot mode rather than
+ // accidentally requesting a migration export instead of the selected snapshot.
+ for(const [mode,expected] of [['snapshot','snapshot'],['migration','migration'],[undefined,'migration']]){
+  let submitted;
+  const client=ctx.createClient({request:async(action,body)=>{
+   if(action==='capabilities')return {dataInstanceId:'A'};
+   if(action==='export-start'){submitted=body;return {dataInstanceId:'A',status:'ready',transferId:'export'};}
+   if(action==='status'){assert.equal(body.transferId,'export');return {dataInstanceId:'A',status:'ready',transferId:'export'};}
+   throw Error('unexpected action '+action);
+  }});
+  await client.startExport({mode});assert.equal(submitted.mode,expected);checks++;
+ }
  // End-to-end client upload protocol uses File.slice; whole file arrayBuffer must never be called.
  const bytes=crypto.randomBytes(700001),received=[],cap={limits:{maxArchiveBytes:2000000,chunkBytes:65536},dataInstanceId:'A'},ref={transferId:'upload',transferToken:'secret',dataInstanceId:'A',kind:'upload',status:'receiving'};
  let maxSlice=0,finishHash='',cancelled=false;
