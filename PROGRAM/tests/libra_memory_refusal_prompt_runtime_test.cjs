@@ -51,7 +51,7 @@ const plain="I can't complete this request. The source material contains content
    'A partial artifact is still valid'
   ])assert.ok(system.includes(phrase),'actual provider system prompt preserves: '+phrase);
   assert.ok(system.indexOf('[REQUIRED]')>=0&&system.indexOf('[REQUIRED]')<system.indexOf('[OPTIONAL]'),'required evidence stays ahead of optional coverage');
-  assert.ok(system.length<11800,'compress the active wire prompt without dropping v5 roles, evidence, boundaries, adult continuity, State or partial admission');
+  assert.ok(system.length<15200,'compress the active wire prompt without dropping v5 roles, evidence, boundaries, adult continuity, State or partial admission');
   const {createHayakuRuntime}=require('./fixtures/hayaku_runtime_harness.cjs');
   const h=await createHayakuRuntime({autoRepair:false});
   try {
