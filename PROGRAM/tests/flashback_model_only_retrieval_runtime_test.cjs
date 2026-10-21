@@ -310,7 +310,7 @@ for (const changed of ['', 'scope', 'credential']) test(`actual hook final manif
 });
 
 // A provider failure must not override an independently invalidated request.
-test('retirement manifest cancellation remains expired when the provider also returns HTTP503', async () => {
+test('retirement manifest cancellation is retried without evidence when the provider also returns HTTP503', async () => {
   await setup(async ({ h, scope }) => {
     const manifestKey = [...h.pluginStorage.values.keys()].find(key => key.includes(':scope:') && key.endsWith(':manifest:v2'));
     const before = JSON.parse(JSON.stringify((await h.api._test.loadScopeRecords(scope.scopeKey)).records));
@@ -342,9 +342,15 @@ test('retirement manifest cancellation remains expired when the provider also re
       const output = await within(pending);
       assert.equal(calls, 1);
       assert(!JSON.stringify(output).includes('blue ribbon'));
-      const state = (await h.api.debugState()).lastRecall;
-      assert.equal(state.reason, 'FLASHBACK_RECALL_EXPIRED');
-      assert.equal(state.skipped, true);
+      // Current contract: the expired attempt is retried inside the remaining deadline (one provider call);
+      // the retried recall reports the provider failure as a keyword fallback with no candidates, never
+      // as a skipped/expired recall, and delivers no stored evidence.
+      const debug = await h.api.debugState(), state = debug.lastRecall;
+      assert.notEqual(state?.skipped, true);
+      assert.equal(state.modelReadiness.status, 'lexical_fallback');
+      assert.equal(state.modelReadiness.reason, 'query_failed');
+      assert.equal(state.candidates, 0);
+      assert.equal(output.at(-1).content, QUERY);
       assert.deepEqual(JSON.parse(JSON.stringify((await h.api._test.loadScopeRecords(scope.scopeKey)).records)), before);
     } finally {
       releaseWrite(); releaseProvider();
