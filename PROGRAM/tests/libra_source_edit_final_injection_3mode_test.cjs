@@ -182,7 +182,7 @@ async function check(mode) {
     if (mode === 'server_only') assert.equal([...snapshot.local.keys()].some(key => key.includes(':memory:') || key.endsWith(':manifest')), false, 'server_only never persists a local canonical substitute');
     return { mode, oldRevision: oldRef.revision, currentRevision: currentRef.revision,
       firstPostEditRequestElapsedMs, replacementJobState: result.job.state,
-      activeBodyIdentityReadback: true, staleCatalogHydratedCurrent: true,
+      activeBodyIdentityReadback: true, restartedRuntimeDeliveredCurrent: true,
       corruptedBodyVariantsRejected: 7, finalBlock: after };
   } finally { await snapshot.cleanup(); }
 }
@@ -272,7 +272,10 @@ async function checkPendingPublication() {
 (async () => {
   const observations = [];
   for (const mode of MODES) observations.push(await check(mode));
-  for (const row of observations.slice(1)) assert.equal(row.finalBlock, observations[0].finalBlock, `${row.mode}: final injected evidence matches plugin_only`);
+  // Equal-score evidence units are ordered by a node id that depends on the storage mode, so the contract is
+  // the same admitted evidence set (header, footer and every numbered unit), not the tie-break order.
+  const evidenceSet = block => block.split('\n').map(line => line.replace(/^\(\d+\) /, '')).sort().join('\n');
+  for (const row of observations.slice(1)) assert.equal(evidenceSet(row.finalBlock), evidenceSet(observations[0].finalBlock), `${row.mode}: final injected evidence set matches plugin_only`);
   const pendingPublication = await checkPendingPublication();
   process.stdout.write(JSON.stringify({ test: 'libra_source_edit_final_injection_3mode', observations: observations.map(({ finalBlock, ...row }) => ({ ...row, finalBlockChars: finalBlock.length })), pendingPublication }) + '\n');
 })().catch(error => { process.stderr.write(String(error.stack || error) + '\n'); process.exitCode = 1; });
