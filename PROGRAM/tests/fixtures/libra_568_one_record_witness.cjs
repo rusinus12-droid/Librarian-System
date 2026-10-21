@@ -561,13 +561,13 @@ function assertOldRows(baseline, rows) {
 // Historical product pin ea6e638bef18340126b23a246efcf56457bb16d0bb0b9ee0bce014b931d2f180 remains in the frozen baseline receipts.
 // Prior eager-body-proof candidate LIBRA: 4b2335890dcb5f55c68edaf1312da952c0297c68048a7fdb3ab91579543c7753; current lazy snapshot proof remains privately verified.
 const SOURCE_HASHES = Object.freeze({
-  "PROGRAM/plugins/LIBRA.js": "0f45ca2b95abfbcc125c28c90191cfdfbc9e768df8d0fe22eadf422d71702306",
-  "PROGRAM/tests/fixtures/libra_server_runtime_fixture.cjs": "58dde9f825010ed764ed42492fb3f7afeb3d60b67ed0a01b437727498e8fa7dd",
-  "PROGRAM/tests/fixtures/libra_unified_runtime_fixture.cjs": "168e6a402eea9981aadceca84bdfdd80fc887d1b2d1914c1e402cffd4b3f2a52",
+  "PROGRAM/plugins/LIBRA.js": "ab2a78e35e3a334a7ce2958ba3dcc15ca4813231c8cd76096bb01a97bfc26e5e",
+  "PROGRAM/tests/fixtures/libra_server_runtime_fixture.cjs": "37737eea482a48a9ca116eb1c812ea5d1a59eafaad27a5ecb454365aa601ed0a",
+  "PROGRAM/tests/fixtures/libra_unified_runtime_fixture.cjs": "42a310863846b8f7c0c447f506dcd1e498481db66d29be753e95ba2badd8ce50",
   "PROGRAM/tests/fixtures/libra_vm_harness.cjs": "c0d619b8bb0beedb68d61168458200af7a8aa10a8e3ce33eeb8121c1c9150100",
   "PROGRAM/tests/fixtures/unified_vertical_source.json": "09f5ee4a717cb786d2c8d54f5562eb6801f5ee4c4e6c14bcaf3043fbce560ecb",
-  "PROGRAM/sdk/MemorySuiteStorageClient.libra.source.js": "af3349dbcb14bb59c92792b68ba49965cd599333343a172ecf0de8132ac91517",
-  "PROGRAM/server/server.cjs": "3b6f11cb7469ed10e7beb61d5ca8a3757566da82387447fc44d8ec2719b2b132"
+  "PROGRAM/sdk/MemorySuiteStorageClient.libra.source.js": "f35f8fd90d8b30acf29be7bb58d6f51510d2e0abb8cb34c0e1a8658945dc3a61",
+  "PROGRAM/server/server.cjs": "fb65e1e113e6747008071d7294078ddd9b3d79ce5ba5f0d528cf6e826ec29ec0"
 });
 module.exports = { VERSION, LIMITS, SOURCE_HASHES, LOCAL_STORE, LOCAL_ALIASES, encodeData, freezeCopy, typedText, storeWitness, bindingGuard, localRow, serverRow, rowId, compareRows, validateRows, canonicalAddress, LOGICAL_WORLDLINE, SCOPE_REGISTRY_KEY, FIXTURE_IDENTITY, deriveHostWorldlineId, copy, digest, evidenceDigest, branchDigest, sha256, terminalEmbedding,
   physical, verifyPublic, verifySettings, verifySettingsPair, verifyTransition, unwrapQueueOutcome, verifyQueue, oldRows, assertOldRows };
