@@ -120,10 +120,19 @@ async function test(name, options, fn) { const f = await enabled(options); try {
     // by itself. What must hold is that the index adds nothing on top: the same corruption
     // must produce the same recall with the index on and the index off.
     const corrupt = target => target.r.values.set(Object.values(target.getManifest().memories)[0].key, '{ this is not valid json');
+    // The unified engine refuses a recall whose canonical record is unreadable (docs/LIBRA_UNIFIED_SEARCH_
+    // REPLACEMENT_CONTRACT: corrupt storage is rejected, never partially served). The outcome is therefore
+    // a rejection, compared by its message, which names the corrupt physical key.
+    const outcome = async target => {
+      try { return { rejected: false, recall: await recallCompared(target) }; }
+      catch (error) { return { rejected: true, message: String(error?.message || error) }; }
+    };
     const off = await fixture({});
     let recallWithIndexOff;
-    try { await complete(off); corrupt(off); recallWithIndexOff = await recallCompared(off); }
+    try { await complete(off); corrupt(off); recallWithIndexOff = await outcome(off); }
     finally { await off.r.cleanup(); }
+    assert.equal(recallWithIndexOff.rejected, true, 'corruption alone makes the unified recall refuse');
+    assert.match(recallWithIndexOff.message, /pluginStorage JSON parse failed/);
 
     corrupt(f);
     const index = await f.r.api.getEvidenceLinkIndex({ force: true });
@@ -132,7 +141,10 @@ async function test(name, options, fn) { const f = await enabled(options); try {
     assert.equal(index.facts.length, 0, 'the unreadable memory contributes no facts');
     assert.equal(index.memories.length, 0);
     assert.equal(index.status.totalMemoryCount, 1, 'the unreadable memory is still counted in the basis');
-    assert.deepEqual(await recallCompared(f), recallWithIndexOff, 'the index must not change what the corruption already did to recall');
+    assert.deepEqual(await outcome(f), recallWithIndexOff, 'the index must not change what the corruption already did to recall');
+    // And the actual request hook stays fail-open: the host request is delivered unchanged.
+    const request = [{ role: 'user', content: '도서관 공연 허가' }];
+    assert.deepEqual(plain(await f.control.hooks.beforeRequest(request, 'model')), request);
   });
 
   await test('a bounded index reports partial instead of silently truncating', {
