@@ -452,4 +452,4 @@ The Lens Studio's "템플릿으로 시작" lists thirteen presets. The first fiv
 | 캐릭터 대사 습관 · 금기어 | strict | off | on | off |
 | 갈등 · 긴장 곡선 | interpretive | on | off | on |
 
-Only the body-condition lens has been measured with a live model (see `LIBRA_LENS_RECALL_ENGINE_20261020.md`). The other seven are checked for shape only (`libra_custom_memory_lens_runtime_test`: valid definition, switches and labels kept, create/trash/purge cycle).
+Only the body-condition lens has been measured with a live model (see `LIBRA_LENS_RECALL_ENGINE_20261020.md`). All thirteen now also pass scripted provider trials through `runLensForRange` (their own instruction and source refs, one provider call, accepted source-bound evidence), alongside definition/switch/label and create/trash/purge checks. Chromium checks all thirteen preset entries and button spacing at 1280 and 390 px. These scripted trials do not measure the other seven presets' live-model response quality.

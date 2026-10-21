@@ -47,6 +47,14 @@ const touching = (page, scope) => page.evaluate(sel => {
       assert.equal(await page.locator('#dlg-prompt .ps-nav').count(), 0, 'the old canonical prompt editor is gone');
 
       await page.locator('#dlg-prompt [data-lens-studio-view="create"]').click();
+      const templates=page.locator('#dlg-prompt [data-lens-starter-template]');
+      assert.equal(await templates.count(),13,'all thirteen presets are reachable at this viewport');
+      const ids=await templates.evaluateAll(nodes=>nodes.map(node=>node.dataset.lensStarterTemplate));
+      assert.equal(new Set(ids).size,13,'preset buttons have unique identities');
+      for(const id of ['starter_body_condition','starter_promises_schedule','starter_relationship_shift','starter_belongings','starter_secrets_knowledge','starter_world_rules','starter_speech_habits','starter_conflict_arc'])
+        assert.ok(ids.includes(id),'new preset is available: '+id);
+      assert.deepEqual(await touching(page,'#dlg-prompt'),[],'preset buttons remain separated');
+
       await page.locator('#dlg-prompt [data-lens-starter-template="starter_unresolved_promises"] button.btn--primary').click();
       await page.waitForFunction(() => __approved.Gui.lensStudio?.registry?.lenses?.length === 1 && !__approved.Gui.lensStudio.busy);
       await page.locator('#dlg-prompt [data-lens-chat-input]').fill('주고받은 선물과 반응을 모아 줘');

@@ -64,6 +64,25 @@ const rowOf=(host,id)=>host.querySelector(`[data-scope-row="${id}"]`);
    assert.match(rowOf(host,'B').querySelector('[data-scope-reason]').textContent,/보안 연결이 아니어서 목록 보기만 가능/);
    assert.ok([...host.querySelectorAll('[data-scope-select]')].every(box=>box.disabled),'nothing is selectable without a fingerprint');
   }finally{dom.window.close();await g.close();}
+  // 4) References allow selection/backup, but deletion skips the referenced
+  // row with an explicit reason while processing an independent selected row.
+  const referencedAdapter=async input=>{const result=await adapter(ns)(input);result.records=result.records.map(row=>({...row,dependencyKeys:row.logicalKey===ns+'.A'?[ns+'.B']:[]}));return result;};
+  g=await fixture(variant,{values:new Map(values),catalog,adapter:referencedAdapter,bridgeOptions:{scopeManagement:true}});dom=new JSDOM('<!doctype html><div id="host"></div>');
+  try{
+   const {host,q}=await mount(g,dom),referenced=rowOf(host,'B');
+   assert.equal(referenced.querySelector('[data-scope-select]').disabled,false,'referenced scope remains selectable');
+   assert.match(referenced.querySelector('[data-scope-reason]').textContent,/참조 중.*삭제·정리.*제외/);
+   for(const id of ['B','C']){const box=rowOf(host,id).querySelector('[data-scope-select]');box.checked=true;box.dispatchEvent(new dom.window.Event('change',{bubbles:true}));}
+   assert.equal(q('[data-scope-action=export]').disabled,false,'referenced bytes can be backed up');
+   const pending=q('[data-scope-action=delete]').onclick();
+   await until(()=>!q('[data-scope-confirm]').hidden,'mixed selection confirmation');
+   assert.match(q('[data-scope-confirm-text]').textContent,/제외 1개.*보존/s);
+   assert.match(q('[data-scope-confirm-text]').textContent,/참조 중.*삭제·정리/s);
+   const ack=q('[data-scope-delete-ack]');ack.checked=true;ack.dispatchEvent(new dom.window.Event('change',{bubbles:true}));q('[data-scope-approve]').click();await pending;
+   assert.equal(g.values.get(ns+'.B'),'B_SOURCE','referenced bytes stay untouched');
+   assert.equal(g.values.has(ns+'.C'),false,'independent selected scope is deleted');
+   assert.match(q('[data-scope-result]').textContent,/완료 1\/1개.*제외 1개/s);
+  }finally{dom.window.close();await g.close();}
   console.log('PASS '+ns+': blocked scope rows explain why; selectable rows respond');
  }
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>clearTimeout(deadline));

@@ -43,15 +43,15 @@ Windows에서는 업데이트.bat, macOS에서는 업데이트.command, Linux/Te
 
 [현재 구성]
 - Librarian System Server 0.4.1
-- Flashback Memory 1.0.130
-- HAYAKU Locator Continuity 3.0.165
-- LIBRA 2.3.195
+- Flashback Memory 1.0.131
+- HAYAKU Locator Continuity 3.0.166
+- LIBRA 2.3.196
 - LIA Persona Linker 0.26.92
 - RE:TRACE 1.9.92
 - GRADIA 0.25.94
 
 [호환 정보]
-- Storage SDK 1.8.30
+- Storage SDK 1.8.31
 - Compute SDK 0.3.8
 정식 저장 모드: plugin_only / server_only. mirror는 두 저장 위치 사이의 전환 단계입니다.
 계산 정책: plugin_only → local / server_only → prefer_server. 전환 중에는 기존 정본 모드의 정책을 유지합니다.

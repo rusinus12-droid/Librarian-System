@@ -77,12 +77,23 @@ const check = (name, fn) => Promise.resolve().then(fn).then(() => results.push(n
           assert.equal(created.evidenceMode, template.evidenceMode);
           const want = expected[template.templateId];
           if (want) for (const [key, value] of Object.entries(want)) assert.equal(created[key], value, `${template.templateId}.${key}`);
+          reply = () => JSON.stringify({items:[{label:created.labels[0],text:'푸른 열쇠를 챙기기로 약속했다.',refs:['t1-a'],quote:'푸른 열쇠를 꼭 챙겨갈게',target:'민아'}]});
+          calls.length = 0;
+          const trial = await api.runLensForRange(created.lensId,{startTurn:1,endTurn:5});
+          assert.equal(trial.status,'succeeded',template.templateId+': scripted extraction succeeds');
+          assert.equal(trial.acceptedCount,1,template.templateId+': source-bound evidence is retained');
+          assert.equal(calls.length,1,template.templateId+': one scripted provider call');
+          assert.ok(calls[0].messages[0].content.includes(template.instruction.goal),template.templateId+': its own goal reaches the provider');
+          assert.ok(calls[0].messages[1].content.includes('[t1-a]'),template.templateId+': source references reach the provider');
+
         } finally {
           await api.trashLens(created.lensId);
           await api.purgeLens(created.lensId);
         }
       }
     });
+
+    reply = () => JSON.stringify({items:[{label:'약속',text:'푸른 열쇠를 챙기기로 약속했다.',refs:['t1-a'],quote:'푸른 열쇠를 꼭 챙겨갈게',target:'민아'}]});
 
     await check('the evidence gate classifies and rejects with spec reason codes', () => {
       const strict = api.evaluateLensCandidateItems({ items: [

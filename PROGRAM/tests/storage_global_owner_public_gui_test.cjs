@@ -28,7 +28,7 @@ const seedRoots=name=>{const roots=Array.from({length:2},(_,i)=>{
   const first=JSON.parse(roots[0][1]);first.commitId='retained-commit';first.shardCount=1;first.count=1;first.stats={recordTotal:1,charTotal:7,tokenTotal:2,byType:{response:{records:1,chars:7,tokens:2}}};first.shardSummaries=[{shardIndex:0,recordCount:1}];roots[0][1]=JSON.stringify(first);
   roots.push([`vector_rag_memory:scope:${first.storageHash}:records:shard:0000`,JSON.stringify({scopeKey:first.scopeKey,commitId:first.commitId,shard:0,records:[{id:'durable-record',scopeKey:first.scopeKey,sourceType:'response',type:'response',text:'durable',dim:4,vector:[1,0,0,0]}]})]);
   const second=JSON.parse(roots[1][1]),archiveId='fb_135rcsu',scopeKey='flashback_archive_v1:'+archiveId,storageHash=hash(scopeKey);
-  const pointer={archiveId,archiveScopeKey:scopeKey,generation:1,depth:1,recordCount:0,digest:hash('')};second.archiveRef=pointer;roots[1][1]=JSON.stringify(second);
+  const pointer={schema:'flashback_memory.archive_ref.v1',archiveId,archiveScopeKey:scopeKey,generation:1,depth:1,deltaCount:0,recordCount:0,digest:hash(''),responseTurnMax:0,createdAt:'',updatedAt:'',parentRef:null};second.archiveRef=pointer;roots[1][1]=JSON.stringify(second);
   roots.push([`vector_rag_memory:scope:${storageHash}:manifest:v2`,JSON.stringify({schema:'vector_rag_memory.scope_manifest.v2',version:2,scopeKey,storageHash,archiveOwner:true,archiveId,archiveGeneration:1,archiveRecordCount:0,archiveDigest:hash(''),archiveMemberCatalogVersion:1,archiveDeltaCount:0,archiveDeltaMemberIds:[],archiveDeltaDigest:hash(''),count:0,shardCount:0,shardSummaries:[]})],
    ['vector_rag_memory:scope_registry:v2',JSON.stringify({version:2,scopes:[{scopeKey,storageHash}]})]);
  }
@@ -72,7 +72,11 @@ async function apply(s,mode){
   const before=[...s.values.entries()].filter(([key])=>!key.startsWith('__memory_suite_'));
   // Ordinary startup may normalize a minimal legacy manifest before confirmation.
   // Freeze the actual durable source while requiring every seeded identity/data field.
-  const frozenRoots=seedRoots(name).map(([key,seed])=>{const value=s.values.get(key);assert.equal(typeof value,'string');const body=JSON.parse(value);for(const [field,expected]of Object.entries(JSON.parse(seed)))assert.deepEqual(body[field],expected,'startup preserves seeded field '+key+'/'+field);return [key,value];});
+  const frozenRoots=seedRoots(name).map(([key,seed])=>{const value=s.values.get(key);assert.equal(typeof value,'string');const body=JSON.parse(value);for(const [field,expected]of Object.entries(JSON.parse(seed))){
+    if(key==='vector_rag_memory:scope_registry:v2'&&field==='scopes'){
+      for(const entry of expected){const retained=body.scopes.find(row=>row.scopeKey===entry.scopeKey);assert.ok(retained,'startup retains historical archive registry entry');for(const [name,value]of Object.entries(entry))assert.deepEqual(retained[name],value,'startup preserves historical archive identity '+name);}
+    }else assert.deepEqual(body[field],expected,'startup preserves seeded field '+key+'/'+field);
+   }return [key,value];});
   console.log('FROZEN_OWNER_ROOTS',JSON.stringify({name,kind,roots:frozenRoots.map(([key,value])=>({key,bytes:Buffer.byteLength(value),sha256:require('node:crypto').createHash('sha256').update(value).digest('hex')}))}));
   if(name==='LIBRA'||name==='HAYAKU')assert.equal(s.doc.querySelector('[data-scope-manager]'),null,'scope data management is separate from server settings');
   const forward=await apply(s,'server_only');const forwardRefreshes=s.globalInventoryRefreshes||0;

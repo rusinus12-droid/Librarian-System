@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.0.130
+//@display-name ⚡ FLASHBACK Memory v1.0.131
 //@api 3.0
-//@version 1.0.130
+//@version 1.0.131
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.0.130';
+const PLUGIN_VERSION = '1.0.131';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -4349,7 +4349,7 @@ function createMemorySuiteHostLineage() {
 /* END LIBRARIAN HOST LINEAGE SDK */
 const MemorySuiteHostLineage = createMemorySuiteHostLineage();
 
-/* LIBRARIAN SYSTEM STORAGE SDK v1.8.30
+/* LIBRARIAN SYSTEM STORAGE SDK v1.8.31
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
  * The server stores opaque values. Each plugin keeps ownership of its own data schema.
  */
@@ -11316,14 +11316,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const permitted=(row,action)=>action==='export'?actionable(row)&&row.mode===MODE_PLUGIN_ONLY:!!row.canDelete&&!row.current&&!(action==='prune'&&row.ownedRecordCount>0);
     // Why a row cannot be selected, in the user's words: a silently disabled box looks broken.
     const readOnlyCrypto=()=>!!catalog?.blockers?.some(issue=>issue.code==='scope_catalog_read_only_crypto_unavailable');
-    const blockReason=row=>actionable(row)?'':row.current?'현재 열려 있는 채팅은 선택할 수 없습니다.'
+    const blockReason=row=>row.current?'현재 열려 있는 채팅은 선택할 수 없습니다.'
       :readOnlyCrypto()?'보안 연결이 아니어서 목록 보기만 가능합니다. https 또는 localhost 주소로 접속하세요.'
       :row.unavailable?'조회하지 못해 보존합니다. 새로고침 후 다시 확인하세요.'
       :row.issues.length?'확인이 필요한 항목이 있어 보존합니다. 상세에서 확인하세요.'
       :row.mode!==MODE_PLUGIN_ONLY?'서버에 저장되는 스코프입니다. 서버 자료는 서버 관리에서 처리합니다.'
-      :row.referenced?'다른 스코프가 참조 중이라 선택할 수 없습니다.'
+      :row.referenced?'다른 스코프가 참조 중이므로 삭제·정리에서는 제외합니다. 백업은 가능합니다.'
       :!catalog?.completeKnownScopes?'전체 목록 확인이 끝나지 않았습니다. 새로고침 후 다시 확인하세요.'
-      :row.deleteBlockedReason||'정리하거나 백업할 자료가 없습니다.';
+      :actionable(row)?'':row.deleteBlockedReason||'정리하거나 백업할 자료가 없습니다.';
     const updateSelection=()=>{
       const rows=filtered().filter(selectable),all=q('[data-scope-select-all]');all.disabled=busy||rows.length===0;
       all.checked=rows.length>0&&rows.every(row=>selected.has(row.scopeId));all.indeterminate=!all.checked&&rows.some(row=>selected.has(row.scopeId));
