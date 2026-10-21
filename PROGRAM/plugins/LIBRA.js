@@ -66667,6 +66667,11 @@ function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceIn
         nextWindow: unifiedExec.nextWindow || null,
         diagnostics: {
           candidates: asArray(unifiedExec.bundle?.items).length,
+          queryMessagesRequested: Number(queryBundle.queryMessagesRequested || 0),
+          queryMessagesUsed: Number(queryBundle.queryMessagesUsed || 0),
+          queryHistoryRows: clone(asArray(queryBundle.queryHistoryRows)),
+          sceneWeight: Number(queryBundle.sceneWeight || 0),
+          promptPressure: string(queryBundle.promptPressure || 'normal'),
           unifiedMemoryEngine: {
             mode: 'unified',
             generation: unifiedExec.generation,

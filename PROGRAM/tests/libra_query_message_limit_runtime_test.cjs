@@ -23,22 +23,23 @@ async function checkCase(snapshot, name, setting, expectedLimit, input = current
     const request = [{ role: 'user', content: input }];
     const messages = await f.control.hooks.beforeRequest(request, 'model');
     const runtime = f.r.api.getRuntime();
-    const query = runtime.lastMemoryRecall?.query;
+    const recall = runtime.lastMemoryRecall;
+    const query = recall?.diagnostics; // unified recall reports the query window in diagnostics; the engine itself queries currentText only
     const available = snapshot.chat.message.map(row => ({ role: row.role, body: row.data }));
     const limit = Math.min(available.length, expectedLimit - 1);
     const history = expectedHistory || (limit > 0 ? available.slice(-limit) : []);
-    const scene = history.map(row => `${row.role.toUpperCase()}: ${row.body}`).join('\n\n');
+    const sceneRows = history.map(row => ({ role: row.role, chars: row.body.length }));
     const checks = {
       requested: query?.queryMessagesRequested === expectedLimit,
       used: query?.queryMessagesUsed === history.length + 1,
       historyCount: query?.queryHistoryRows.length === history.length,
-      chronologicalScene: query?.sceneText === scene,
-      currentQuery: query?.currentText === input,
+      chronologicalScene: JSON.stringify(query?.queryHistoryRows) === JSON.stringify(sceneRows),
+      currentQuery: recall?.queryText === input,
       currentRendered: messages.filter(row => row.role === 'user').length === 1 && messages.find(row => row.role === 'user').content === input,
       noQueryModel: f.control.calls.length === 0,
       ...(expectedLimit === 1 && input === current ? { noSceneWeight: query?.sceneWeight === 0 } : {})
     };
-    const row = { name, setting, expectedLimit, expectedHistory: history.length, checks, pass: Object.values(checks).every(Boolean), query: clone(query), messages: clone(messages), viewer: clone(runtime.lastMemoryRecallViewer), injection: clone(runtime.lastMemoryInjectionMeta) };
+    const row = { name, setting, expectedLimit, expectedHistory: history.length, checks, pass: Object.values(checks).every(Boolean), query: clone(query || null), messages: clone(messages), viewer: clone(runtime.lastMemoryRecallViewer), injection: clone(runtime.lastMemoryInjectionMeta) };
     evidence.cases.push(row);
     console.log(JSON.stringify({ name, requested: query?.queryMessagesRequested, used: query?.queryMessagesUsed, history: query?.queryHistoryRows.length, pass: row.pass, failed: Object.keys(checks).filter(key => !checks[key]) }));
   } finally { await f.r.cleanup(); }
