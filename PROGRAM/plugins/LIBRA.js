@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.190
-//@version 2.3.190
+//@display-name LIBRA v2.3.191
+//@version 2.3.191
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.190';
+  const PLUGIN_VERSION = '2.3.191';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -10810,12 +10810,33 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const requireScopeManagement = () => {
     if (!globalModeEnabled || options.scopeManagement !== true) throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_UNSUPPORTED');
   };
+  const localScopeDataPlan = (inventory,scope) => {
+    const owned=inventory.records.filter(row=>row.location!=='server'&&!row.deleted&&row.classification==='scope'&&row.scopeId===scope.scopeId);
+    const keys=new Set(owned.flatMap(row=>[row.key,row.logicalKey]));
+    const artifacts=inventory.records.filter(row=>row.location!=='server'&&!row.deleted&&row.classification==='artifact'&&row.scopeId===scope.scopeId
+      &&owned.some(parent=>parent.key===row.artifactOwnerKey&&parent.space===row.space&&parent.location===row.location));
+    const referenced=inventory.records.some(row=>!row.deleted&&!owned.includes(row)&&!artifacts.includes(row)
+      &&(row.dependencyKeys||[]).some(key=>keys.has(key)));
+    const registryEdits=[];let registryConflict=false;
+    for(const row of inventory.records.filter(row=>row.location!=='server'&&!row.deleted&&(options.scopeRegistryKeys||[]).includes(row.logicalKey))){
+      let value;try{value=typeof row.value==='string'?JSON.parse(row.value):row.value;}catch(_){registryConflict=true;continue;}
+      if(!value||typeof value!=='object'||Array.isArray(value)){registryConflict=true;continue;}
+      const next={...value},removedEntries=[];let removed=0;
+      for(const [id,entry]of Object.entries(value))if(entry?.scopeKey===scope.scopeId){
+        if(entry.characterId!==scope.characterId||entry.chatId!==scope.chatId){registryConflict=true;continue;}
+        removedEntries.push([id,entry]);delete next[id];removed++;
+      }
+      if(removed)registryEdits.push({row,next:typeof row.value==='string'?JSON.stringify(next):next,removed,removedEntries});
+    }
+    return {owned,artifacts,registryEdits,referenced:referenced||registryConflict};
+  };
   const inspectScopeCatalog = async () => {
     requireScopeManagement();
     return await scopeCatalogFromInventory(await collectGlobalInventory(MODE_PLUGIN_ONLY,{readOnlyCatalog:true}));
   };
   const scopeCatalogFromInventory = async inventory => {
     const current=await resolveCurrentScope(true).catch(()=>null);
+    const activeMode=current?inventory.scopes.find(scope=>scope.scopeId===current.scopeId)?.sourceMode:null;
     const safeIssue=row=>Object.fromEntries(['code','key','space','location','scopeId','detail','reason'].filter(key=>row[key]!=null).map(key=>[key,row[key]]));
     const blockers=inventory.blockers.map(safeIssue);
     const general=blockers.filter(issue=>!issue.key&&!issue.scopeId);
@@ -10828,11 +10849,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const owned=live.filter(row=>row.classification==='scope'&&row.scopeId===scope.scopeId);
       const keys=[...new Set(live.map(row=>row.logicalKey))].sort();
       const locations=[...new Set(live.map(row=>row.location))].sort();
-      const fingerprint=typeof globalThis.crypto?.subtle?.digest==='function'?await globalDigest([scope,records.map(row=>[globalRecordIdentity(row),row.fingerprint,row.revision,row.digest]),issues,general]):'';
+      const plan=localScopeDataPlan(inventory,scope);
+      let dataSummary='';try{if(typeof options.scopeDataSummary==='function')dataSummary=String(options.scopeDataSummary({scope,records:live})||'').slice(0,240);}catch(_){}
+      const canDelete=inventory.completeKnownScopes&&!!current?.scopeId&&activeMode===MODE_PLUGIN_ONLY&&scope.sourceMode===MODE_PLUGIN_ONLY&&!!scope.characterId&&!!scope.chatId&&current.scopeId!==scope.scopeId&&!plan.referenced&&(plan.owned.length>0||plan.registryEdits.length>0);
+      const fingerprint=typeof globalThis.crypto?.subtle?.digest==='function'?await globalDigest([scope,current?.scopeId,inventory.hostScopes,records.filter(row=>!(options.scopeRegistryKeys||[]).includes(row.logicalKey)).map(row=>[globalRecordIdentity(row),row.fingerprint,row.revision,row.digest]),plan.registryEdits.map(edit=>[globalRecordIdentity(edit.row),edit.removedEntries]),issues,general]):'';
       rows.push({scopeId:scope.scopeId,scopeKey:scope.scopeKey,characterName:scope.characterName||'',chatTitle:scope.chatTitle||'',label:scope.label||scope.scopeKey,
-        detached:!inventory.hostScopes.some(host=>(scope.canonicalCharacterId||scope.characterId)===host.characterId&&(scope.canonicalChatId||scope.chatId)===host.chatId),current:current?.scopeId===scope.scopeId,mode:scope.sourceMode,modeLabel:modeLabel(scope.sourceMode),
+        detached:!!(scope.canonicalCharacterId||scope.characterId)&&!!(scope.canonicalChatId||scope.chatId)&&!inventory.hostScopes.some(host=>(scope.canonicalCharacterId||scope.characterId)===host.characterId&&(scope.canonicalChatId||scope.chatId)===host.chatId),current:current?.scopeId===scope.scopeId,mode:scope.sourceMode,modeLabel:modeLabel(scope.sourceMode),
         recordCount:keys.length,ownedRecordCount:new Set(owned.map(row=>row.logicalKey)).size,ownedLocalRecords:owned.filter(row=>row.location!=='server').length,localRecords:live.filter(row=>row.location!=='server').length,serverRecords:live.filter(row=>row.location==='server').length,
-        locations,keys,issues,fingerprint,serverChecked:inventory.remoteRequired&&!!inventory.serverPin&&general.length===0,canManage:!!current?.scopeId&&owned.length>0&&issues.length===0&&general.length===0});
+        locations,keys,issues,fingerprint,dataSummary,canDelete,deleteBlockedReason:canDelete?'':current?.scopeId===scope.scopeId?'현재 채팅은 삭제 대상에서 제외됩니다.':scope.sourceMode!==MODE_PLUGIN_ONLY||activeMode!==MODE_PLUGIN_ONLY?'플러그인 단독 모드에서만 로컬 자료를 정리합니다.':!scope.characterId||!scope.chatId?'원본 캐릭터·채팅 식별 미확인':plan.referenced?'다른 자료에서 참조 중':!inventory.completeKnownScopes?'전체 목록·참조 검사가 완료되지 않았습니다.':'정리할 로컬 자료가 없습니다.',registryEntries:plan.registryEdits.reduce((n,edit)=>n+edit.removed,0),referenced:plan.referenced,serverChecked:inventory.remoteRequired&&!!inventory.serverPin&&general.length===0,canManage:!!current?.scopeId&&owned.length>0&&issues.length===0&&general.length===0});
     }
     const unresolved=inventory.records.filter(row=>globalPayloadRecord(row)&&!globalRecordScopeIds(row).some(Boolean))
       .map(row=>({key:row.logicalKey,space:row.space,location:row.location,issues:blockers.filter(issue=>issue.key===row.key||issue.key===row.logicalKey)}));
@@ -10875,16 +10899,58 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       error.rollback={restored:failures.length===0,failures};throw error;
     }
   };
+  const deleteLocalScopeData = async (inventory,scope,row,action) => {
+    const plan=localScopeDataPlan(inventory,scope);
+    if(!row.canDelete||action==='prune'&&plan.owned.length)throw globalModeError('MEMORY_SUITE_SCOPE_DATA_DELETE_BLOCKED');
+    const currentId=await resolveCurrentScope(true).then(scope=>scope.scopeId);
+    const hostBinding=globalCanonical(inventory.hostScopes),generation=dataBinding.generation;
+    const assertCurrent=async()=>{
+      if(lifecycle.disposed||resetReloadRequired||dataBinding.generation!==generation
+        ||(await resolveCurrentScope(true)).scopeId!==currentId||currentId===scope.scopeId
+        ||(await readScopeMode(scope,true)).mode!==MODE_PLUGIN_ONLY
+        ||(await readScopeMode(await resolveCurrentScope(true),true)).mode!==MODE_PLUGIN_ONLY
+        ||globalCanonical(await globalHostCatalog())!==hostBinding)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
+    };
+    const edits=[...plan.artifacts,...plan.owned].map(row=>({row,next:null})).concat(plan.registryEdits);
+    for(const edit of edits){edit.store=inventory.stores[edit.row.space];edit.before=await edit.store.getItem(edit.row.key);
+      if(globalCanonical(edit.before)!==globalCanonical(edit.row.value))throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');}
+    const applied=[];
+    try{
+      for(const edit of edits){await assertCurrent();
+        if(globalCanonical(await edit.store.getItem(edit.row.key))!==globalCanonical(edit.before))throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
+        applied.push(edit);
+        const ok=edit.next===null?await legacyRemoveVerified(edit.store,edit.row.key):await legacyWriteVerified(edit.store,edit.row.key,edit.next);
+        if(!ok)throw globalModeError('MEMORY_SUITE_SCOPE_DATA_DELETE_FAILED');
+      }
+      await assertCurrent();
+      return {ok:true,scopeId:scope.scopeId,deleted:plan.owned.length+plan.artifacts.length,registryEntriesRemoved:plan.registryEdits.reduce((n,edit)=>n+edit.removed,0)};
+    }catch(error){
+      const failures=[];
+      for(const edit of applied.slice().reverse())try{
+        const current=await edit.store.getItem(edit.row.key);
+        if(globalCanonical(current)===globalCanonical(edit.before))continue;
+        if(globalCanonical(current)!==globalCanonical(edit.next)||!await legacyWriteVerified(edit.store,edit.row.key,edit.before))failures.push(edit.row.key);
+      }catch(_){failures.push(edit.row.key);}
+      error.rollback={restored:!failures.length,failures};throw error;
+    }
+  };
   const manageScope = async request => {
     requireScopeManagement();
-    if(!['sync','restore','cleanup'].includes(request?.action)||!request.scopeId||!request.expectedFingerprint)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_REQUEST_INVALID');
+    if(!['sync','restore','cleanup','delete','prune','export'].includes(request?.action)||!request.scopeId||!request.expectedFingerprint)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_REQUEST_INVALID');
     return await withModeConfiguration(async()=>{
       if(state.syncJob.creating||state.syncJob.current&&!syncJobTerminal(state.syncJob.current.status))throw transitionBusyError();
       do{await Promise.allSettled([...ownerIOWork]);await Promise.allSettled([...mutationTails.values()]);}while(ownerIOWork.size||mutationTails.size);
       modeConfigurationFrozen=true;
       const inventory=await collectGlobalInventory(MODE_PLUGIN_ONLY),catalog=await scopeCatalogFromInventory(inventory);
       const row=catalog.rows.find(row=>row.scopeId===request.scopeId),scope=inventory.scopes.find(scope=>scope.scopeId===request.scopeId);
-      if(!row?.canManage||row.fingerprint!==request.expectedFingerprint)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
+      if(!row||row.fingerprint!==request.expectedFingerprint||!row.fingerprint)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
+      if(['delete','prune'].includes(request.action))return await deleteLocalScopeData(inventory,scope,row,request.action);
+      if(request.action==='export'){
+        if(!catalog.completeKnownScopes||row.mode!==MODE_PLUGIN_ONLY)throw globalModeError('MEMORY_SUITE_SCOPE_DATA_EXPORT_BLOCKED');
+        const records=inventory.records.filter(item=>item.location!=='server'&&!item.deleted&&globalRecordScopeIds(item).includes(scope.scopeId)&&item.classification!=='control');
+        return {ok:true,schema:'memory-suite.scope-data-backup.v1',namespace,scope,exportedAt:Date.now(),records:records.map(item=>({space:item.space,key:item.key,value:item.value}))};
+      }
+      if(!row.canManage)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
       if(request.action==='sync'&&row.mode===MODE_SERVER_ONLY)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_LOCAL_SOURCE_REQUIRED');
       if(request.action!=='sync'&&(!catalog.completeKnownScopes||row.mode!==MODE_SERVER_ONLY))throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_REQUIRES_SERVER_ONLY');
       if(request.action==='cleanup'&&(row.current||!row.ownedLocalRecords))throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CLEANUP_BLOCKED');
@@ -10902,15 +10968,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const mountScopeManagementPanel = async container => {
     requireScopeManagement();
     const esc=value=>safeText(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-    container.innerHTML=`<section class="mscx-card" data-scope-manager><h3>전체 스코프 관리</h3>
-      <p class="muted">현재 채팅 밖의 저장 자료와 원본 채팅이 없는 자료도 확인합니다. 목록 검사와 동기화는 LLM을 호출하지 않습니다.</p>
+    container.innerHTML=`<section class="card" data-scope-manager><style>
+      [data-scope-manager]{width:100%;min-width:0;box-sizing:border-box;background:var(--surface,#faf8f2);color:var(--text,#302b28);padding:20px;border:1px solid var(--border,#d6d0c4);border-radius:12px}
+      [data-scope-manager] .actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0}
+      [data-scope-manager] button{font:inherit;color:inherit;background:var(--surface2,#f0ece3);border:1px solid var(--border2,#b6ad9d);border-radius:8px;padding:9px 12px;cursor:pointer}
+      [data-scope-manager] button:disabled{opacity:.5;cursor:default}[data-scope-manager] .muted{color:var(--text2,#62594f);font-size:12px;line-height:1.65}
+      [data-scope-manager] [data-scope-action=delete]{color:var(--danger,#ad3331)}[data-scope-manager] textarea{box-sizing:border-box;color:inherit;background:var(--surface2,#f0ece3)}
+      </style><h3>스코프 데이터 관리</h3>
+      <p class="muted">캐릭터·채팅별 저장 자료, 고아 데이터와 빈 목록을 관리합니다. 원본 채팅이 없다는 이유로 기억을 자동 삭제하지 않습니다. LLM 호출은 없습니다.</p>
       <div class="actions"><input data-scope-search type="search" aria-label="스코프 검색" placeholder="캐릭터 · 채팅 이름 · 스코프 키로 찾기" style="min-width:0;flex:1">
-      <select data-scope-filter aria-label="스코프 분류"><option value="all">전체</option><option value="issues">확인 필요</option><option value="detached">원본 채팅 없음</option><option value="empty">저장 항목 없음</option><option value="plugin_only">플러그인 단독</option><option value="server_only">서버 단독</option></select><button type="button" data-scope-refresh>전체 목록 새로 읽기</button></div>
+      <select data-scope-filter aria-label="스코프 분류"><option value="all">전체</option><option value="memory">기억 저장소</option><option value="detached">고아 데이터</option><option value="empty">빈 목록 · 정리 후보</option><option value="issues">확인 필요</option><option value="server_only">서버 관리 대상</option></select><button type="button" data-scope-refresh>전체 목록 새로 읽기</button></div>
       <p data-scope-summary role="status" aria-live="polite">목록을 확인하고 있습니다…</p>
       <div class="actions"><label><input type="checkbox" data-scope-select-all aria-label="검색 결과의 관리 가능 스코프 모두 선택"> 검색 결과 선택</label><span data-scope-selection>선택 0개</span></div>
-      <div class="actions"><button type="button" data-scope-action="sync">로컬 → 서버 사본 동기화</button><button type="button" data-scope-action="restore">서버 → 로컬 사본 복구</button><button type="button" data-scope-action="cleanup">서버 보존된 로컬 사본 정리</button></div>
-      <p class="muted">동기화는 로컬 정본을 서버에 복사하며 저장 모드를 바꾸지 않습니다. 복구·사본 정리는 전체 검사가 완료된 서버 단독 스코프에 적용합니다. 사본 정리는 현재 스코프를 제외하고 서버 보존을 다시 검증합니다. 서버 정본 삭제는 RE:TRACE → 서버 데이터 관리에서 진행합니다.</p>
-      <div data-scope-confirm hidden style="display:none" role="alertdialog" aria-label="선택 스코프 작업 확인"><p data-scope-confirm-text></p><div class="actions"><button type="button" data-scope-cancel>취소</button><button type="button" data-scope-approve>확인하고 실행</button></div></div>
+      <div class="actions"><button type="button" data-scope-pick="orphan">고아 데이터 선택</button><button type="button" data-scope-pick="empty">빈 목록 선택</button><button type="button" data-scope-action="export">선택 데이터 백업</button><button type="button" data-scope-action="prune">선택 빈 목록 정리</button><button type="button" data-scope-action="delete">선택 데이터 삭제</button></div>
+      <p class="muted">삭제는 현재 채팅을 제외한 플러그인 단독 자료에만 적용합니다. 다른 스코프가 참조하거나 읽기·권한을 확인할 수 없는 자료는 보존합니다. 서버 데이터와 저장 위치 전환은 별도의 서버 관리에서 진행하세요.</p>
+      <div data-scope-confirm hidden style="display:none" role="alertdialog" aria-label="선택 스코프 작업 확인"><p data-scope-confirm-text></p><label data-scope-delete-ack-row hidden><input type="checkbox" data-scope-delete-ack> 필요한 데이터를 백업했으며 선택 자료의 영구 삭제에 동의합니다.</label><div class="actions"><button type="button" data-scope-cancel>취소</button><button type="button" data-scope-approve>확인하고 실행</button></div></div>
       <div data-scope-result role="status" aria-live="polite"></div><div data-scope-rows style="display:grid;gap:8px;min-width:0"></div>
       <div data-scope-unresolved style="overflow-wrap:anywhere"></div><div class="actions"><button type="button" data-scope-more hidden>다음 50개</button></div>
       <details data-scope-diagnostics><summary>전체 목록 진단 · 본문과 API 키 제외</summary><textarea data-scope-diagnostics-text readonly aria-label="전체 스코프 목록 진단" style="width:100%;min-height:160px"></textarea></details></section>`;
@@ -10923,20 +10995,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let catalog=null,busy=false,limit=50,serial=0;const selected=new Set();
     const filtered=()=>{const term=q('[data-scope-search]').value.trim().toLocaleLowerCase(),filter=q('[data-scope-filter]').value;
       return (catalog?.rows||[]).filter(row=>(!term||[row.characterName,row.chatTitle,row.scopeKey,row.scopeId].join(' ').toLocaleLowerCase().includes(term))
-        &&(filter==='all'||filter==='issues'&&(row.issues.length>0||row.unavailable)||filter==='detached'&&row.detached||filter==='empty'&&row.recordCount===0&&!row.unavailable&&row.issues.length===0&&catalog.completeKnownScopes||row.mode===filter));};
+        &&(filter==='all'||filter==='issues'&&(row.issues.length>0||row.unavailable)||filter==='memory'&&row.ownedRecordCount>0&&!row.detached||filter==='detached'&&row.detached&&row.ownedRecordCount>0||filter==='empty'&&row.ownedRecordCount===0&&!row.unavailable&&row.issues.length===0&&catalog.completeKnownScopes||row.mode===filter));};
+    const selectable=row=>row.canDelete||row.canManage&&row.mode===MODE_PLUGIN_ONLY;
     const updateSelection=()=>{
-      const rows=filtered().filter(row=>row.canManage),all=q('[data-scope-select-all]');all.disabled=busy||rows.length===0;
+      const rows=filtered().filter(selectable),all=q('[data-scope-select-all]');all.disabled=busy||rows.length===0;
       all.checked=rows.length>0&&rows.every(row=>selected.has(row.scopeId));all.indeterminate=!all.checked&&rows.some(row=>selected.has(row.scopeId));
       q('[data-scope-selection]').textContent=`선택 ${selected.size}개`;
-      root.querySelectorAll('[data-scope-action]').forEach(button=>{button.disabled=busy||!selected.size;});
+      const chosen=(catalog?.rows||[]).filter(row=>selected.has(row.scopeId));
+      root.querySelectorAll('[data-scope-action]').forEach(button=>{const action=button.getAttribute('data-scope-action');button.disabled=busy||!chosen.length||chosen.some(row=>action==='export'?!selectable(row):!row.canDelete||action==='prune'&&row.ownedRecordCount>0);});
+      root.querySelectorAll('[data-scope-pick]').forEach(button=>{button.disabled=busy;});
     };
     const render=()=>{
       const rows=filtered();q('[data-scope-summary]').textContent=catalog?`확인된 스코프 ${catalog.rows.length}개 · 표시 ${rows.length}개 · 미해결 ${catalog.blockers.length}개${catalog.completeKnownScopes?'':' · 전체 확인 미완료'}`:'목록을 확인하고 있습니다…';
       q('[data-scope-rows]').innerHTML=rows.slice(0,limit).map(row=>`<article class="mscx-scope-row" data-scope-row="${esc(row.scopeId)}" style="min-width:0;overflow-wrap:anywhere;border:1px solid #526273;border-radius:10px;padding:12px;display:block">
-        <div class="actions"><input type="checkbox" data-scope-select="${esc(row.scopeId)}" aria-label="${esc(row.label)} 선택" ${selected.has(row.scopeId)?'checked':''} ${busy||!row.canManage?'disabled':''}>
+        <div class="actions"><input type="checkbox" data-scope-select="${esc(row.scopeId)}" aria-label="${esc(row.label)} 선택" ${selected.has(row.scopeId)?'checked':''} ${busy||!selectable(row)?'disabled':''}>
         <div style="min-width:0;flex:1"><b style="display:block">${esc(row.characterName||row.label)}</b><span>${esc(row.chatTitle||row.scopeKey)}</span></div><span>${row.current?'현재 · ':''}${esc(row.modeLabel)}</span></div>
-        <div class="muted">${row.unavailable?'이번 조회 미확인 · 이전 목록 보존':row.issues.length?'확인 필요':row.detached?'원본 채팅 없음 · 저장 자료 보존':row.recordCount?'저장 항목 확인':'저장 항목 없음'} · 저장 항목 ${row.recordCount}개 · 로컬 ${row.localRecords} / 서버 ${row.unavailable?'미확인':row.serverChecked?row.serverRecords:'미조회'}</div>
-        <details><summary>스코프 키 · 저장 위치 · 진단 보기</summary><div>${esc(row.scopeKey)}</div><div>${esc(row.locations.map(location=>({plugin:'플러그인 저장소',device:'기기 저장소',server:'서버'})[location]||location).join(' · ')||'저장 항목 없음')}</div><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(row.issues.map(issue=>[issue.code,issue.key,issue.detail].filter(Boolean).join(' · ')).join('\n')||'이 스코프에서 확인된 오류 없음')}</pre><details><summary>저장 키 ${row.keys.length}개</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(row.keys.join('\n'))}</pre></details></details></article>`).join('')||'<p class="muted">표시할 스코프가 없습니다.</p>';
+        ${row.dataSummary?'<div>'+esc(row.dataSummary)+'</div>':''}<div class="muted">${row.unavailable?'이번 조회 미확인 · 이전 목록 보존':row.issues.length?'확인 필요':row.detached?'원본 채팅 없음 · 저장 자료 보존':row.ownedRecordCount?'저장 항목 확인':row.registryEntries?'목록 잔재 · 정리 후보':'저장 항목 없음'} · 소유 저장 키 ${row.ownedRecordCount}개 · 로컬 ${row.localRecords} / 서버 ${row.unavailable?'미확인':row.serverChecked?row.serverRecords:'미조회'}</div>
+        ${row.deleteBlockedReason?'<div class="muted">'+esc(row.deleteBlockedReason)+'</div>':''}${row.mode!=='plugin_only'?'<div class="muted">서버 관리 대상 · 이 화면에서 삭제하지 않습니다.</div>':''}<details><summary>스코프 키 · 저장 위치 · 진단 보기</summary><div>${esc(row.scopeKey)}</div><div>${esc(row.locations.map(location=>({plugin:'플러그인 저장소',device:'기기 저장소',server:'서버'})[location]||location).join(' · ')||'저장 항목 없음')}</div><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(row.issues.map(issue=>[issue.code,issue.key,issue.detail].filter(Boolean).join(' · ')).join('\n')||'이 스코프에서 확인된 오류 없음')}</pre><details><summary>저장 키 ${row.keys.length}개</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(row.keys.join('\n'))}</pre></details></details></article>`).join('')||'<p class="muted">표시할 스코프가 없습니다.</p>';
       q('[data-scope-more]').hidden=rows.length<=limit;
       if(catalog){q('[data-scope-diagnostics-text]').value=JSON.stringify(catalog,null,2);
         q('[data-scope-unresolved]').innerHTML=catalog.unresolved.length?`<details open><summary>스코프 식별 미확인 자료 ${catalog.unresolved.length}개 · 자동 연결·삭제 안 함</summary>${catalog.unresolved.map(row=>`<div class="mscx-scope-row"><b>${esc(row.key)}</b><span>${esc(row.location+' · '+row.space)}</span><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(row.issues.map(issue=>[issue.code,issue.detail].filter(Boolean).join(' · ')).join('\n'))}</pre></div>`).join('')}</details>`:'';
@@ -10946,34 +11021,47 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const refresh=async()=>{
       const ticket=++serial;q('[data-scope-refresh]').disabled=true;q('[data-scope-summary]').textContent='전체 스코프와 저장 항목을 확인하고 있습니다…';
       try{const next=await inspectScopeCatalog();if(ticket!==serial||!root.isConnected)return;
-        if(!next.completeKnownScopes&&catalog){for(const old of catalog.rows)if(!next.rows.some(row=>row.scopeId===old.scopeId))next.rows.push({...old,canManage:false,unavailable:true,issues:[{code:'scope_not_observed_in_incomplete_refresh'}]});}
-        catalog=next;for(const id of selected)if(!catalog.rows.some(row=>row.scopeId===id&&row.canManage))selected.delete(id);render();
-      }catch(error){if(ticket===serial&&root.isConnected){q('[data-scope-summary]').textContent=`목록 확인 실패 · 이전 목록을 보존합니다: ${error.code||error.message}`;if(catalog){catalog={...catalog,completeKnownScopes:false,rows:catalog.rows.map(row=>({...row,unavailable:true,canManage:false}))};selected.clear();render();q('[data-scope-result]').textContent=String(error.code||error.message);}}}
+        if(!next.completeKnownScopes&&catalog){for(const old of catalog.rows)if(!next.rows.some(row=>row.scopeId===old.scopeId))next.rows.push({...old,canManage:false,canDelete:false,unavailable:true,issues:[{code:'scope_not_observed_in_incomplete_refresh'}]});}
+        catalog=next;for(const id of selected)if(!catalog.rows.some(row=>row.scopeId===id&&selectable(row)))selected.delete(id);render();
+      }catch(error){if(ticket===serial&&root.isConnected){q('[data-scope-summary]').textContent=`목록 확인 실패 · 이전 목록을 보존합니다: ${error.code||error.message}`;if(catalog){catalog={...catalog,completeKnownScopes:false,rows:catalog.rows.map(row=>({...row,unavailable:true,canManage:false,canDelete:false}))};selected.clear();render();q('[data-scope-result]').textContent=String(error.code||error.message);}}}
       finally{if(ticket===serial&&root.isConnected)q('[data-scope-refresh]').disabled=false;}
     };
     q('[data-scope-refresh]').onclick=()=>{if(!busy)void refresh();};
     q('[data-scope-search]').oninput=q('[data-scope-filter]').onchange=()=>{limit=50;render();};
     q('[data-scope-more]').onclick=()=>{limit+=50;render();};
-    q('[data-scope-select-all]').onchange=event=>{for(const row of filtered().filter(row=>row.canManage)){if(event.target.checked)selected.add(row.scopeId);else selected.delete(row.scopeId);}render();};
-    root.addEventListener('change',event=>{const id=event.target.getAttribute?.('data-scope-select');if(!id)return;const row=catalog?.rows.find(row=>row.scopeId===id);if(!busy&&row?.canManage){if(event.target.checked)selected.add(id);else selected.delete(id);}updateSelection();});
+    q('[data-scope-select-all]').onchange=event=>{for(const row of filtered().filter(selectable)){if(event.target.checked)selected.add(row.scopeId);else selected.delete(row.scopeId);}render();};
+    root.addEventListener('change',event=>{const id=event.target.getAttribute?.('data-scope-select');if(!id)return;const row=catalog?.rows.find(row=>row.scopeId===id);if(!busy&&row&&selectable(row)){if(event.target.checked)selected.add(id);else selected.delete(id);}updateSelection();});
+    for(const button of root.querySelectorAll('[data-scope-pick]'))button.onclick=()=>{
+      if(busy)return;const orphan=button.getAttribute('data-scope-pick')==='orphan';
+      q('[data-scope-filter]').value=orphan?'detached':'empty';selected.clear();limit=50;
+      for(const row of filtered())if(row.canDelete)selected.add(row.scopeId);render();
+      q('[data-scope-result]').textContent='정리 후보를 선택했습니다. 아직 삭제하지 않았습니다.';
+    };
     let confirmation=null;
     const finishConfirmation=value=>{if(!confirmation)return;const resolve=confirmation;confirmation=null;q('[data-scope-confirm]').hidden=true;q('[data-scope-confirm]').style.display='none';resolve(value);};
-    q('[data-scope-approve]').onclick=()=>finishConfirmation(true);q('[data-scope-cancel]').onclick=()=>finishConfirmation(false);
+    q('[data-scope-delete-ack]').onchange=()=>{q('[data-scope-approve]').disabled=!q('[data-scope-delete-ack-row]').hidden&&!q('[data-scope-delete-ack]').checked;};
+    q('[data-scope-approve]').onclick=()=>{if(!q('[data-scope-approve]').disabled)finishConfirmation(true);};q('[data-scope-cancel]').onclick=()=>finishConfirmation(false);
     root.addEventListener('keydown',event=>{if(event.key==='Escape'&&confirmation){event.preventDefault();event.stopPropagation();finishConfirmation(false);}});
     for(const button of root.querySelectorAll('[data-scope-action]'))button.onclick=async()=>{
       if(busy||!selected.size)return;
       const action=button.getAttribute('data-scope-action'),rows=catalog.rows.filter(row=>selected.has(row.scopeId));
-      if(rows.some(row=>!row.canManage||action==='sync'&&row.mode===MODE_SERVER_ONLY||action!=='sync'&&(!catalog.completeKnownScopes||row.mode!==MODE_SERVER_ONLY)||action==='cleanup'&&(row.current||!row.ownedLocalRecords))){q('[data-scope-result]').textContent='선택한 항목에 이 작업을 적용할 수 없습니다. 저장 모드와 현재 스코프 여부를 확인해 주세요.';return;}
-      busy=true;render();q('[data-scope-confirm-text]').textContent=`${button.textContent} · ${rows.length}개\n${rows.map(row=>row.label+' · '+row.scopeKey).join('\n')}\n저장 모드와 현재 채팅은 변경하지 않습니다.`;
+      const destructive=action==='delete'||action==='prune';
+      if(rows.some(row=>destructive?(!row.canDelete||action==='prune'&&row.ownedRecordCount>0):(!row.canManage||row.mode!==MODE_PLUGIN_ONLY))){q('[data-scope-result]').textContent='선택한 자료의 삭제·백업 권한을 확인할 수 없습니다. 현재 채팅, 참조 관계, 서버 저장 모드와 오류를 확인하세요.';return;}
+      q('[data-scope-delete-ack-row]').hidden=!destructive;q('[data-scope-delete-ack]').checked=false;q('[data-scope-approve]').disabled=destructive;
+      busy=true;render();q('[data-scope-confirm-text]').textContent=`${button.textContent} · ${rows.length}개\n${rows.map(row=>row.label+' · '+row.scopeKey).join('\n')}\n선택한 스코프의 로컬 데이터만 처리합니다. 서버 데이터와 현재 채팅은 변경하지 않습니다.`;
       q('[data-scope-confirm]').hidden=false;q('[data-scope-confirm]').style.display='block';q('[data-scope-confirm-text]').style.whiteSpace='pre-wrap';q('[data-scope-cancel]').focus();
       let monitor=null;const accepted=await new Promise(resolve=>{confirmation=resolve;monitor=setInterval(()=>{if(!root.isConnected)finishConfirmation(false);},200);try{monitor?.unref?.();}catch(_){}});clearInterval(monitor);
       try{if(!accepted||!root.isConnected)return;let completed=0;
         for(const row of rows){q('[data-scope-result]').textContent=`진행 ${completed}/${rows.length} · ${row.label}`;
           const result=await manageScope({scopeId:row.scopeId,action,expectedFingerprint:row.fingerprint});
           if(result.ok===false)throw new Error('선택 스코프 작업 미완료');
+          if(action==='export'){
+            const blob=new Blob([JSON.stringify(result,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob);
+            const link=root.ownerDocument.createElement('a');link.href=url;link.download=namespace+'-scope-backup-'+Date.now()+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+          }
           completed++;selected.delete(row.scopeId);if(!root.isConnected)break;}
         if(root.isConnected)q('[data-scope-result]').textContent=`완료 ${completed}/${rows.length}개`;
-      }catch(error){if(root.isConnected)q('[data-scope-result]').textContent=`작업 보류 · ${error.code||error.message}`;}
+      }catch(error){if(root.isConnected)q('[data-scope-result]').textContent=`작업 보류 · ${error.code||error.message}${error.rollback?.restored===false?' · 일부 값 복구 미완료: '+error.rollback.failures.join(', '):error.rollback?.restored===true?' · 변경한 값을 원래대로 복구했습니다.':''}`;}
       finally{busy=false;if(root.isConnected)await refresh();}
     };
     await refresh();return true;
@@ -11081,7 +11169,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         <details data-preview-diagnostics hidden><summary>이전 검사 상세 · 대화 본문과 API 키 제외</summary><textarea data-preview-diagnostics-text aria-label="이전 검사 상세" readonly style="width:100%;min-height:180px"></textarea></details>
       </div>
       <div class="job" data-job><b data-job-title>작업 진행 중</b><div class="bar"><i data-job-bar></i></div><div class="grid"><span data-job-phase></span><span data-job-count></span><span data-job-bytes></span><span data-job-time></span><span data-job-retry></span><span data-job-key></span></div><div class="result" data-job-result></div><textarea data-job-diagnostics aria-label="저장 이전 상세 진단" readonly style="display:none"></textarea><button data-job-copy type="button">상세 진단 복사</button><div class="actions" data-job-terminal-actions style="display:none"><button data-job-dismiss type="button">결과 확인 닫기</button></div></div>
-      ${options.scopeManagement === true ? '<div data-owner-scope-manager-host></div>' : ''}
     </div>`;
     const root = container.querySelector(`#${rootId}`);
     const q = sel => root.querySelector(sel);
@@ -11304,7 +11391,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return false;
     }
     await scopedResumePendingSyncJob().catch(()=>null); renderJob(getSyncJob());
-    if(options.scopeManagement===true){const host=q('[data-owner-scope-manager-host]');void mountScopeManagementPanel(host).catch(error=>{host.textContent='전체 스코프 목록 확인 실패: '+(error.code||error.message);});}
     return true;
   };
 
@@ -12952,6 +13038,14 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
 const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   discoverGlobalScopes:memorySuiteLibraDiscoverGlobalScopes,
   scopeManagement:true,
+  scopeRegistryKeys:['libra:v1:scope-registry:v1'],
+  scopeDataSummary:({scope,records})=>{
+    const row=records.find(row=>row.logicalKey===`libra:v1:scope:${scope.scopeId}:manifest`&&(scope.sourceMode==='server_only'?row.location==='server':row.location!=='server'));
+    if(!row)return '정본 기억 목록 없음';
+    const raw=row.logicalValue??row.value,value=typeof raw==='string'?JSON.parse(raw):raw;
+    const micro=new Set(records.filter(row=>row.scopeId===scope.scopeId&&row.logicalKey.startsWith(`libra:v1:scope:${scope.scopeId}:micro-memory:`)).map(row=>row.logicalKey)).size;
+    return `정본 기억 ${Object.keys(value.memories||{}).length}개 · 승계 참조 ${(value.inheritedMemories||[]).length}개 · Micro ${micro}개`;
+  },
   namespace:'libra', displayName:PUBLIC_DISPLAY_NAME, pluginId:PLUGIN_NAME, pluginVersion:PLUGIN_VERSION, managementButton:false,
   pluginPrefixes:['libra:v1:'], localPrefixes:['libra:v1:local-vector:'],
   excludedContains:['provider-secrets','provider-config-secrets','backend-hosting-token','credential'],
@@ -82830,7 +82924,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const SHARED_MEMORY_HUB_SECTIONS = Object.freeze(['read', 'context', 'manage']);
   const SHARED_PIPELINE_HUB_SECTIONS = Object.freeze(['memory_pipeline']);
   const SHARED_AGENT_HUB_SECTIONS = Object.freeze(['memory']);
-  const SHARED_SETTINGS_HUB_SECTIONS = Object.freeze(['references','memory','state','server','ai','embedding','recovery','transfer','general','source_edits']);
+  const SHARED_SETTINGS_HUB_SECTIONS = Object.freeze(['references','memory','state','server','ai','embedding','recovery','transfer','general','source_edits','scopes']);
   const SHARED_CUSTOM_HUB_SECTIONS = Object.freeze(['memory', 'state', 'active_draft', 'ooc']);
   const SHARED_EXECUTION_LOG_SECTIONS = Object.freeze(['memory','state','draft','recall','embedding','rebuild']);
 
@@ -84693,6 +84787,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
 
 
+  const buildLibraScopeDataPanel = () => {
+    const host=guiEl('div',{id:'libraScopeDataManagementPanel'});
+    setTimeout(()=>{if(host.isConnected)void MemorySuiteStorageBridge.mountScopeManagementPanel(host).catch(error=>{host.textContent='스코프 목록 확인 실패: '+(error.code||error.message);});},0);
+    return host;
+  };
   const buildLibraServerConnectionPanel = () => {
     const bookTheme = true; // Both visible entry points belong to BOOK_UX.
     const storageHost = guiEl('div', { id: 'libraMemorySuiteServerConnectionPanel', class: 'card' }, [
@@ -88156,6 +88255,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     ]);
   };
   const BOOK_NATIVE_SETTINGS_SECTIONS = Object.freeze([
+    Object.freeze({id:'scopes',group:'settings',no:'10',label:'스코프 데이터 관리',note:'저장 자료 · 고아 데이터 · 빈 목록',eyebrow:'SCOPE DATA'}),
     Object.freeze({ id:'source_edits',group:'settings',no:'09',label:'분석할 내용',note:'선택 사항 · 분석 입력 규칙',eyebrow:'ANALYSIS INPUT' }),
     Object.freeze({ id: 'references', group: 'settings', no: '02', label: '참고 자료', note: '모듈 · 캐릭터 로어', eyebrow: 'REFERENCES' }),
     Object.freeze({ id: 'memory', group: 'settings', no: '03', label: '성능 프리셋', note: '성능 · 검색 · 최근 대화', eyebrow: 'MEMORY & RECALL' }),
@@ -88585,6 +88685,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if(sectionId==='pipeline')return buildLibrarianAnalyzerPanel(false,false);
     if(sectionId==='logs')return buildSharedExecutionLogsPanel();
     if(sectionId==='references')return buildLibraReferenceHubPanel();
+    if(sectionId==='scopes')return buildLibraScopeDataPanel();
     if(sectionId==='source_edits')return buildAnalysisInputPanel();
     if(sectionId==='state')return buildStateTrackingAvailabilityPanel('settings');
     if(sectionId==='transfer')return buildTransferTab();
@@ -88859,6 +88960,7 @@ advanced
     {id:'modules',group:'참고 자료',label:'모듈 로어',section:'references',reference:'modules'},
     {id:'character_lore_exclusions',group:'참고 자료',label:'캐릭터 로어',section:'references',reference:'character_lore_exclusions'},
     {id:'response_materials',group:'참고 자료',label:'로어 · 작가노트',section:'references',reference:'response_materials'},
+    {id:'scopes',group:'기억과 검색',label:'스코프 데이터 관리',section:'scopes'},
     {id:'server',group:'저장과 백업',label:'저장 위치 · 서버',section:'server'},
     {id:'recovery',group:'저장과 백업',label:'백업 · 복구',section:'recovery'},
     {id:'transfer',group:'저장과 백업',label:'가져오기 · 내보내기',section:'transfer'},
@@ -90237,7 +90339,7 @@ advanced
     const items = BOOK_NATIVE_SETTINGS_SECTIONS;
     const groups = [
       { id:'ai', label:'AI 연결', note:'생성 AI · 임베딩', icon:'cpu', sections:['ai','embedding'] },
-      { id:'mem', label:'기억과 검색', note:'성능 · 최근 대화 · 분석기', icon:'shelf', sections:['memory','pipeline','logs'] },
+      { id:'mem', label:'기억과 검색', note:'성능 · 최근 대화 · 분석기', icon:'shelf', sections:['memory','pipeline','scopes','logs'] },
       { id:'ref', label:'참고 자료', note:'로어 · 분석 입력 규칙', icon:'book', sections:['references','source_edits'] },
       { id:'store', label:'저장과 백업', note:'서버 · 백업 · 설정 이동', icon:'db', sections:['server','recovery','transfer'] },
       { id:'adv', label:'복구 · 진단', note:'상태 · 교정 · 재구축', icon:'wrench', sections:['state','general'] }
@@ -90272,8 +90374,8 @@ advanced
       guiEl('div', { class: 'split' }, [guiEl('h2', { class: 'card__title', text: items.find(item => item.id === active)?.label || '설정' }), guiEl('span', { class: 'badge', dataset: { dirtyBadge: 'true' }, text: Gui.dirty ? '저장되지 않은 변경' : '저장됨' })]),
       sectionTabs,
       panel,
-      buildBookSaveBar()
-    ]);
+      active==='scopes'?null:buildBookSaveBar()
+    ].filter(Boolean));
     const contentHost=layout.querySelector(':scope > .stack')||guiEl('div',{class:'stack'});
     contentHost.replaceChildren(content);
     if(!contentHost.parentElement)layout.appendChild(contentHost);
@@ -90497,6 +90599,11 @@ advanced
   };
 
   const syncApprovedMockupShell = app => {
+    const settingsDescription=app.querySelector('.page[data-page="settings"] .page-desc');
+    if(settingsDescription){
+      if(!settingsDescription.dataset.scopeDataOriginalCopy)settingsDescription.dataset.scopeDataOriginalCopy=settingsDescription.textContent;
+      settingsDescription.textContent=bookSettingsRoomActiveSection()==='scopes'?'채팅별 저장 자료와 고아 데이터를 확인합니다. 백업·정리는 각 작업의 확인창에서 실행합니다.':settingsDescription.dataset.scopeDataOriginalCopy;
+    }
     const snapshot = LibraMemoryCore.peekSnapshot() || {};
     const count = Object.values(snapshot.manifest?.memories || {}).filter(row => row?.status === 'committed').length;
     const turn = Number(snapshot.continuityState?.throughTurn || snapshot.manifest?.frontiers?.committedTurn || 0);

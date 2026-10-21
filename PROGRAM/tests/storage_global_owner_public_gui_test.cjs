@@ -23,14 +23,6 @@ async function openPanel(s){
  else {await s.click('[data-go="connect"]');await s.click('button[data-group="c"][data-subtab="srv"]');}
  await until(()=>s.doc.querySelector('[data-apply]'),'global panel mounted',10000);
  assert(!s.doc.querySelector('[data-scope-perchat]'),'public owner artifact renders global-only selection');await settleOwnerStore(s);
- if(s.name==='LIBRA'||s.name==='HAYAKU'){
-  await until(()=>s.doc.querySelector('[data-scope-row]'),'all-scope management catalog',10000);
-  const host=s.doc.querySelector('[data-scope-manager]');assert(host,'actual owner enables whole-scope management');
-  const diagnostics=JSON.parse(host.querySelector('[data-scope-diagnostics-text]').value);
-  assert.equal(diagnostics.rows.length,3);assert.equal(diagnostics.rows.filter(row=>row.detached).length,2,'stored inactive identities remain visible');
-  for(const [key]of seedRoots(s.name))assert(diagnostics.rows.some(row=>row.keys.includes(key)),'native root visible '+key);
- }
-
 }
 async function apply(s,mode){
  const input=s.doc.querySelector(`input[value="${mode}"]`);assert(input);input.checked=true;input.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));
@@ -55,17 +47,7 @@ async function apply(s,mode){
   // Freeze the actual durable source while requiring every seeded identity/data field.
   const frozenRoots=seedRoots(name).map(([key,seed])=>{const value=s.values.get(key);assert.equal(typeof value,'string');const body=JSON.parse(value);for(const [field,expected]of Object.entries(JSON.parse(seed)))assert.deepEqual(body[field],expected,'startup preserves seeded field '+key+'/'+field);return [key,value];});
   console.log('FROZEN_OWNER_ROOTS',JSON.stringify({name,kind,roots:frozenRoots.map(([key,value])=>({key,bytes:Buffer.byteLength(value),sha256:require('node:crypto').createHash('sha256').update(value).digest('hex')}))}));
-  if(name==='LIBRA'||name==='HAYAKU'){
-   const manager=s.doc.querySelector('[data-scope-manager]');const catalog=JSON.parse(manager.querySelector('[data-scope-diagnostics-text]').value);
-   const [selectedKey,selectedValue]=frozenRoots[0],target=catalog.rows.find(row=>row.keys.includes(selectedKey));
-   const checkbox=[...manager.querySelectorAll('[data-scope-select]')].find(node=>node.getAttribute('data-scope-select')===target.scopeId);assert(checkbox&&!checkbox.disabled);
-   checkbox.checked=true;checkbox.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));
-   const pending=manager.querySelector('[data-scope-action="sync"]').onclick();await until(()=>manager.querySelector('[data-scope-confirm]').hidden===false,'scope copy approval');manager.querySelector('[data-scope-approve]').click();await pending;await until(()=>/완료|작업 보류/.test(manager.querySelector('[data-scope-result]').textContent),'selected scope copy completion',10000);
-   assert.match(manager.querySelector('[data-scope-result]').textContent,/완료 1\/1/,'actual native scope copy succeeds');
-   const copied=handler.app.repositories[namespace].database.prepare('SELECT key,value_json FROM kv WHERE deleted=0').all();
-   assert(copied.some(row=>row.key===selectedKey&&JSON.parse(row.value_json)===selectedValue),'selected native scope bytes copied');
-   assert(!copied.some(row=>row.key===frozenRoots[1][0]),'unselected native scope is not copied');
-  }
+  if(name==='LIBRA'||name==='HAYAKU')assert.equal(s.doc.querySelector('[data-scope-manager]'),null,'scope data management is separate from server settings');
   const forward=await apply(s,'server_only');const forwardRefreshes=s.globalInventoryRefreshes||0;
   const rows=handler.app.repositories[namespace].database.prepare('SELECT key,value_json FROM kv WHERE deleted=0').all();
   for(const [key,value]of frozenRoots)assert(rows.some(row=>row.key===key&&JSON.parse(row.value_json)===value),'actual owner root transferred '+key);
