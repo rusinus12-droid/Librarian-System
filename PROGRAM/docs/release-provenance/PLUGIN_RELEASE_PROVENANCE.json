@@ -284,24 +284,24 @@
     "artifact": "Librarian-System-0.4.1-Source.zip",
     "plugins": {
       "flashback": {
-        "version": "1.0.122",
-        "sha256": "a7cb8ca677eb39faffc4357b7faef313357857f4f5f0ec406dd20f73b7e39646",
-        "bytes": 3326963
+        "version": "1.0.123",
+        "sha256": "418b75870b274e5d773b1c9f19e5b42b7d8f612fd0f1c7bd04aa29f5bc7bf227",
+        "bytes": 3330006
       },
       "hayaku": {
-        "version": "3.0.157",
-        "sha256": "3ffa36a848269a5d2c0c00ff9e57f7593a2d18dad3ff6599e7bac0a5df7fe088",
-        "bytes": 3975723
+        "version": "3.0.158",
+        "sha256": "220580b4df9b22e614df240eb38574b5710529da638411700b80d2706ebe5d86",
+        "bytes": 3978614
       },
       "libra": {
-        "version": "2.3.188",
-        "sha256": "11f780e2c57b34b9813e91a331d4b5e637af2fa5db71f657bdf53e30acedf374",
-        "bytes": 6400229
+        "version": "2.3.189",
+        "sha256": "09b4597c92896f0140f56a3a510b9da19e2da70a3d37ff7a09ecc1677cd4b983",
+        "bytes": 6404231
       },
       "lia": {
-        "version": "0.26.89",
-        "sha256": "a43f186c8447700f2737203c66cad8e05dd57b35a7126a565a74c32c8fe03407",
-        "bytes": 1626066
+        "version": "0.26.90",
+        "sha256": "e060ccf78941d45712f385aa08ef73e535dab798d0e602f84cf44c03977c92be",
+        "bytes": 1627380
       },
       "retrace": {
         "version": "1.9.90",

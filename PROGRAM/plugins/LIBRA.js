@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.3.188
-//@version 2.3.188
+//@display-name LIBRA v2.3.189
+//@version 2.3.189
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.3.188';
+  const PLUGIN_VERSION = '2.3.189';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -10887,12 +10887,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         <div class="scope" data-mode-summary hidden></div>
         <p class="muted" data-server-hint>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
         <div class="actions"><button data-test>연결 테스트</button><button class="primary" data-apply>설정 적용</button></div>
+        <section class="mscx-card" data-mode-confirm role="alertdialog" aria-label="저장 위치 전환 확인" hidden style="display:none">
+          <b>저장 위치 전환 확인</b><p data-mode-confirm-text style="white-space:pre-wrap;overflow-wrap:anywhere"></p>
+          <div class="actions"><button type="button" data-mode-confirm-cancel>취소 · 원본 유지</button><button type="button" class="primary" data-mode-confirm-approve>동의하고 이전</button></div>
+        </section>
         <details class="mscx-advanced"><summary>고급 작업 <small>동기화 · 복구 · 이전 · 초기화</small></summary><div class="mscx-advanced-body"><div class="muted">평소에는 쓰지 않아도 됩니다. 저장 위치를 옮기거나 문제를 복구할 때만 사용하세요.</div>
         <div class="actions"><button data-sync>지금 동기화</button><button data-restore>서버 → pluginStorage 복구</button></div>
         ${globalModeEnabled ? '<div class="actions"><button data-global-pause>전체 이전 중단·보존</button><button data-global-resume>미완료 전체 이전 재개</button></div>' : ''}
         <div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div>
         <div class="actions"><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div></div></details><div class="status" data-status>현재 모드: ${esc(initial.modeLabel)}
 서버 상태를 확인할 수 있습니다.</div>
+        <details data-preview-diagnostics hidden><summary>이전 검사 상세 · 대화 본문과 API 키 제외</summary><textarea data-preview-diagnostics-text aria-label="이전 검사 상세" readonly style="width:100%;min-height:180px"></textarea></details>
       </div>
       <div class="job" data-job><b data-job-title>작업 진행 중</b><div class="bar"><i data-job-bar></i></div><div class="grid"><span data-job-phase></span><span data-job-count></span><span data-job-bytes></span><span data-job-time></span><span data-job-retry></span><span data-job-key></span></div><div class="result" data-job-result></div><textarea data-job-diagnostics aria-label="저장 이전 상세 진단" readonly style="display:none"></textarea><button data-job-copy type="button">상세 진단 복사</button><div class="actions" data-job-terminal-actions style="display:none"><button data-job-dismiss type="button">결과 확인 닫기</button></div></div>
     </div>`;
@@ -11028,7 +11033,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // ── 전환 경고 ──────────────────────────────────────────────────────────────────────────────────
     // Each direction states the consequence the user is actually accepting, and a cancelled dialog
     // stops before any write. Returns true to proceed, false to cancel.
-    const confirmModeTransition = (fromMode, toMode, preview = null) => {
+    const confirmModeTransition = async (fromMode, toMode, preview = null) => {
       if (fromMode === toMode && !preview) return true;
       let question = '';
       if (fromMode === MODE_PLUGIN_ONLY && toMode === MODE_SERVER_ONLY) {
@@ -11044,26 +11049,46 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         question = '저장 모드를 전환합니다. 계속하시겠습니까?';
       }
       if(preview)question=`이 플러그인의 전체 ${preview.discoveredScopes}개 대화와 과거 개별 경로 ${preview.legacyOverrides}개를 확인했습니다.\n대상: ${modeLabel(toMode)} · ${q('[data-url]').value}\n\n${question}`;
-      try { if (typeof globalThis.confirm === 'function') return globalThis.confirm(question) === true; } catch (_) {}
-      return true;
+      // Host confirm may be asynchronous or blocked by a sandboxed/Tauri iframe.
+      // Consent stays inside the mounted panel and never defaults to approval.
+      const panel=q('[data-mode-confirm]'),approve=q('[data-mode-confirm-approve]'),cancel=q('[data-mode-confirm-cancel]'),apply=q('[data-apply]');
+      const wasDisabled=apply.disabled;
+      q('[data-mode-confirm-text]').textContent=question;
+      panel.hidden=false;panel.style.display='grid';apply.disabled=true;cancel.focus();
+      return await new Promise(resolve=>{
+        let settled=false;
+        const finish=value=>{if(settled)return;settled=true;clearInterval(detached);root.removeEventListener('keydown',keys);approve.onclick=cancel.onclick=null;panel.hidden=true;panel.style.display='none';apply.disabled=wasDisabled;if(root.isConnected)apply.focus();resolve(value);};
+        const keys=event=>{if(event.key==='Escape'){event.preventDefault();finish(false);}};
+        const detached=setInterval(()=>{if(!root.isConnected)finish(false);},200);try{detached?.unref?.();}catch(_){}
+        root.addEventListener('keydown',keys);approve.onclick=()=>finish(root.isConnected!==false);cancel.onclick=()=>finish(false);
+      });
     };
 
     q('[data-apply]').onclick = async()=>{
+      if(q('[data-apply]').disabled)return;
+      const targetUrl=q('[data-url]').value;
       const mode=root.querySelector(`input[name="${rootId}-mode"]:checked`)?.value;
+      const selectionCurrent=()=>root.isConnected!==false&&q('[data-url]').value===targetUrl&&root.querySelector(`input[name="${rootId}-mode"]:checked`)?.value===mode;
       if (!mode) { setMessage('단독 모드를 선택해 전환을 완료해 주세요.','error'); return; }
       const writeGlobal = scopeTarget === 'global';
       try{
         const writeLabel = writeGlobal ? '전역' : '현재 스코프';
         // A global write is judged against the GLOBAL mode; a scope write against this chat's.
         const fromMode = writeGlobal ? (lastSettings.global?.set === true ? lastSettings.global.mode : MODE_PLUGIN_ONLY) : lastSettings.mode;
-        if (!writeGlobal && !confirmModeTransition(fromMode, mode)) { setMessage('전환을 취소했습니다. 저장 모드는 그대로입니다.','good'); return; }
+        if (!writeGlobal && !(await confirmModeTransition(fromMode, mode))) { setMessage('전환을 취소했습니다. 저장 모드는 그대로입니다.','good'); return; }
         if (writeGlobal) {
           const button=q('[data-apply]');button.disabled=true;
           try{
+            q('[data-preview-diagnostics]').hidden=true;
             setMessage('전체 대화와 보존 자료를 확인하고 있습니다…');
             const preview=await previewGlobalMode(mode,{url:q('[data-url]').value});
-            if(!preview.completeKnownScopes){setMessage(`전체 이전을 시작할 수 없습니다. 발견 ${preview.discoveredScopes}개 · 미해결 ${preview.blockers.length}개\n${preview.blockers.slice(0,8).map(row=>[row.code,row.location,row.space,row.key].filter(Boolean).join(' · ')).join('\n')}`,'error');return;}
-            if(!confirmModeTransition(fromMode,mode,preview)){setMessage('전환을 취소했습니다. 원본과 저장 경로는 그대로입니다.','good');return;}
+            if(!preview.completeKnownScopes){
+              q('[data-preview-diagnostics-text]').value=JSON.stringify({schema:'memory-suite.migration-preview-diagnostics.v1',namespace,discoveredScopes:preview.discoveredScopes,
+                blockers:preview.blockers.map(row=>Object.fromEntries(['code','location','space','key','detail'].filter(key=>row[key]!=null).map(key=>[key,row[key]])))},null,2);
+              q('[data-preview-diagnostics]').hidden=false;
+              setMessage(`전체 이전을 시작할 수 없습니다. 발견 ${preview.discoveredScopes}개 · 미해결 ${preview.blockers.length}개\n${preview.blockers.slice(0,16).map(row=>[row.code,row.location,row.space,row.key,row.detail].filter(Boolean).join(' · ')).join('\n')}`,'error');return;}
+            if(!(await confirmModeTransition(fromMode,mode,preview))){setMessage('전환을 취소했습니다. 원본과 저장 경로는 그대로입니다.','good');return;}
+            if(!selectionCurrent()){setMessage('확인 중 대상 설정이 바뀌었습니다. 다시 적용해 주세요.','error');return;}
             setMessage(`전체 ${preview.discoveredScopes}개 대화 · 과거 개별 경로 ${preview.legacyOverrides}개\n${q('[data-url]').value}\n복사·재조회 검증 후 전역 설정을 적용합니다.`);
             const result=await withModeConfiguration(()=>persistGlobalMode(mode,{source:'user_global_setting',url:q('[data-url]').value,previewFingerprint:preview.inventoryFingerprint,refreshInventory:true}));
             await refreshPanelSettings();renderJob(getSyncJob());
@@ -11072,6 +11097,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             return;
           }finally{button.disabled=false;}
         }
+        if(!selectionCurrent()){setMessage('확인 중 대상 설정이 바뀌었습니다. 다시 적용해 주세요.','error');return;}
         if (mode === lastSettings.mode && normalizeServerUrl(q('[data-url]').value) === initial.url) { setMessage('변경할 설정이 없습니다.','good'); return; }
         const job=await scopedStartConnectionConfigurationJob({mode,url:q('[data-url]').value,scope:initial.scope});
         setMessage('설정 적용과 현재 스코프 초기 동기화를 시작했습니다.'); renderJob(job);
@@ -12568,7 +12594,7 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
     while (pending.length) {
       const [value,field] = pending.pop();
       if (!value || typeof value !== 'object' || seen.has(value)) continue;
-      seen.add(value); visit(value,field);
+      seen.add(value); if(visit(value,field)===false)continue;
       for (const [name,child] of Object.entries(value)) if (child && typeof child === 'object') pending.push([child,name]);
     }
   };
@@ -12636,7 +12662,7 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
     const id = JSON.stringify([scope.characterId,scope.chatId]), prior = identities.get(id);
     if (prior && prior !== scope.scopeId) issue('identity_conflict',null,prior + ':' + scope.scopeId); identities.set(id,scope.scopeId);
   }
-  const families = /^(?:manifest$|story-arc$|continuity-state$|(?:source-evidence|source-edit-consent|source-receipt|source-receipt-head|source-receipt-capture|receipt-recovery|person-span-inventory|person-span-inventory-head|micro-work|micro-memory|micro-memory-head|micro-vector|micro-state-admission|inherited-micro-state-admission|micro-handoff-archive|memory|vector|work|run|predecessor|predecessor-vector|recall-catalog|lens|evidence-link-index|lore-link-index|lore-link-mapping|pending-live-boundaries|canonical-variants|canonical-job|canonical-job-head|canonical-adoption-transaction|continuity-delta|continuity-overrides|candidate-work|portable-restore-snapshot|portable-restore-journal|portable-import-journal|entity-registry|entity-admission|manual-state-disposition|state-observation|state-pipeline-receipt|state-corrections|state-correction-meta|state-correction-commit|state-worldline-meta|state-replay-cache|state-replay-errors|state-tracking-journal|unified-migration|planner-narrative-direction|story-arc-migration|embedding-metadata-migration):)/;
+  const families = /^(?:manifest$|story-arc$|continuity-state$|state-projection$|(?:state-projection-cache|source-evidence|source-edit-consent|source-receipt|source-receipt-head|source-receipt-capture|receipt-recovery|person-span-inventory|person-span-inventory-head|micro-work|micro-memory|micro-memory-head|micro-vector|micro-state-admission|inherited-micro-state-admission|micro-handoff-archive|memory|vector|work|run|predecessor|predecessor-vector|recall-catalog|lens|evidence-link-index|lore-link-index|lore-link-mapping|pending-live-boundaries|canonical-variants|canonical-job|canonical-job-head|canonical-adoption-transaction|continuity-delta|continuity-overrides|candidate-work|portable-restore-snapshot|portable-restore-journal|portable-import-journal|entity-registry|entity-admission|manual-state-disposition|state-observation|state-pipeline-receipt|state-corrections|state-correction-meta|state-correction-commit|state-worldline-meta|state-replay-cache|state-replay-errors|state-tracking-journal|unified-migration|planner-narrative-direction|story-arc-migration|embedding-metadata-migration):)/;
   for (const row of records) {
     if (['control','artifact'].includes(row.classification)) continue;
     const key = row.logicalKey, value = values.get(row);
@@ -12644,6 +12670,12 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
     if (archiveEvidence) {
       row.classification='shared';
       if (!row.deleted && (!object(value) || value.schema !== 'memory-suite.source-evidence.v1' || value.binding?.scopeKey !== archiveEvidence[1])) issue('archive_source_evidence_invalid',row);
+    } else if (/^libra:v1:scope:archive:[^:]+:vector:.+$/.test(key)) {
+      // Older handoffs stored immutable archive vectors in a synthetic scope.
+      // They inherit ownership through the archive memory, never become a chat.
+      const archiveScope=key.match(/^libra:v1:scope:(archive:[^:]+):vector:/)[1];
+      row.classification='shared';
+      if(!row.deleted&&(!object(value)||value.scopeKey!==archiveScope))issue('archive_vector_identity_invalid',row);
     } else if (key.startsWith('libra:v1:scope:')) {
       const tail = key.slice('libra:v1:scope:'.length);
       const matches = [...scopesById.values()].filter(scope=>tail.startsWith(scope.scopeId + ':') && families.test(tail.slice(scope.scopeId.length+1)));
@@ -12676,12 +12708,18 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
       if (typeof node.key === 'string' && object(node.value)) inlineKeys.add(node.key);
     });
     walk(values.get(row),(value,field) => {
+      const schema=values.get(row)?.schema;
+      // Handoff seeds are inline historical projections. Their provenance keys
+      // may predate compaction; the package's archiveRef/memoryRefs remain required.
+      if(schema==='libra.session_handoff.package.v1'&&['continuityStateSeed','storyArcSeed'].includes(field))return false;
       for (const name of ['archiveRef','parentRef','parentArchiveRef']) if (value[name] != null && !object(value[name])) issue('archive_pointer_invalid',row);
       for (const [name,body] of Object.entries(value)) {
         if (!referenceFields.has(name)) continue;
         for (const key of Array.isArray(body) ? body : [body]) if (typeof key === 'string' && key.startsWith('libra:v1:')) {
           if (inlineKeys.has(key)) continue;
-          const optional = name === 'localKey' && values.get(row)?.vectorPayloadPortable === true;
+          const completedRun=schema==='libra.execution_run.v1'&&['complete','complete_with_warnings'].includes(values.get(row).status)&&values.get(row).commit?.status==='committed';
+          const optional = name === 'localKey' && values.get(row)?.vectorPayloadPortable === true
+            || completedRun&&['memoryKey','vectorKey'].includes(name);
           dependency(row,key,name === 'localKey' ? 'local' : '',optional);
         }
       }

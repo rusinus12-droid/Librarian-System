@@ -1,7 +1,7 @@
 //@name lia_persona_linker
 //@display-name LIA: Persona Linker
 //@api 3.0
-//@version 0.26.89
+//@version 0.26.90
 /* Target-only handoff storage preparation v1. Authenticated owner handlers only. */
 async function prepareMemorySuiteHandoffTargetStorage(api, storage, owner, payload) {
   const readTarget = async () => {
@@ -274,7 +274,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
   const OPERATION_LOG_MAX = 300;
   const DEBUG_LOG_MAX = 600;
   const LOG_PERSIST_DEBOUNCE_MS = 1500;
-const PLUGIN_VERSION = "0.26.89";
+const PLUGIN_VERSION = "0.26.90";
   const LIA_SETTING_UI_ID = "lia-persona-linker-setting";
   const LIA_BUTTON_UI_ID = "lia-persona-linker-button";
   const PERSONA_PROOF_VERSION = 1;
@@ -22307,16 +22307,26 @@ ${revisionText}`);
   function readLiaViewContext(ctx) {
     return {...ctx,manualViewPlan:manualLivePersonaPlan(ctx,ctx.livePersonaBinding)};
   }
+  function renderLiaPreviewState(root, error = null) {
+    const message=error ? `화면을 읽지 못했습니다: ${error?.message || error}` : '현재 채팅과 로컬 Persona 자료를 읽고 있습니다…';
+    root.innerHTML=`<header class="topbar"><strong>LIA · Persona Linker</strong><button type="button" class="btn" data-lia-preview-close>닫기</button></header><main class="main" style="padding:24px;overflow:auto"><h2>${error?'자료 읽기 확인 필요':'불러오는 중'}</h2><p id="dpg-status" role="${error?'alert':'status'}" style="white-space:pre-wrap;overflow-wrap:anywhere">${htmlEscape(message)}</p><p>로컬 자료와 Persona 연결은 그대로 보존됩니다.</p><button type="button" class="btn" data-lia-preview-retry${error?'':' disabled'}>다시 읽기</button></main>`;
+    root.querySelector('[data-lia-preview-close]').onclick=()=>void closeLiaUi();
+    root.querySelector('[data-lia-preview-retry]').onclick=()=>void refreshPreview({skipCapture:true});
+  }
   async function refreshPreview(options = {}) {
     const root = document.getElementById("dpg-preview-root");
     if (!root) return;
     const epoch = ++liaPreviewEpoch;
     const current = () => epoch === liaPreviewEpoch && !pluginUnloaded && document.getElementById("dpg-preview-root") === root;
-    if (options?.skipCapture !== true) captureGeneratedOutputState();
-    const currentContextOptions = readContextOptions();
-    root.innerHTML = `<div class="dpg-loading">Loading...</div>`;
+    let previewTimer=null;
     try {
-      const resolved = await getContext(currentContextOptions);
+      if (options?.skipCapture !== true) captureGeneratedOutputState();
+      const currentContextOptions = readContextOptions();
+      renderLiaPreviewState(root);
+      const resolved = await Promise.race([
+        getContext(currentContextOptions),
+        new Promise((_,reject)=>{previewTimer=setTimeout(()=>reject(new Error('LIA_PREVIEW_READ_TIMEOUT · 호스트 응답을 확인한 뒤 다시 읽어 주세요.')),12000);})
+      ]);
       if (!current()) return null;
       const ctx = readLiaViewContext(resolved);
       root.innerHTML = renderPreview(ctx);
@@ -22333,9 +22343,11 @@ ${revisionText}`);
       return ctx;
     } catch (error) {
       if (!current()) return null;
-      root.innerHTML = "";
+      renderLiaPreviewState(root,error);
       setStatus(`미리보기 실패: ${error?.message || error}`, "error");
       return null;
+    } finally {
+      if(previewTimer!==null)clearTimeout(previewTimer);
     }
   }
 
@@ -22928,7 +22940,7 @@ ${revisionText}`);
   }
   async function closeLiaUi() {
     cancelLiaUpdateNotice();
-    liaUiVisible=false;
+    liaUiVisible=false;liaPreviewEpoch+=1;
     const stage=document.querySelector('.stage');if(stage){stage.hidden=true;stage.style.display='none';}
     await api.hideContainer?.();
   }
