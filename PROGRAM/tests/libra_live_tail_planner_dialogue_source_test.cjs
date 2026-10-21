@@ -92,7 +92,7 @@ const runArm = async (mode, liveOn) => {
     return {
       hasDialogueUser: delivery.block.includes(DIALOGUE_USER),
       hasDialogueAssistant: delivery.block.includes(DIALOGUE_ASSISTANT),
-      hasRecentDialogueMarker: delivery.block.includes('RECENT DIALOGUE'),
+      hasRecentDialogueMarker: delivery.block.includes('[RECENT COMPLETED DIALOGUE]'),
       microUsed: delivery.microUsed,
       deliveredChars: delivery.delivered.length,
       requestId: delivery.requestId,

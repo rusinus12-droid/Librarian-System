@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { create, pause, until } = require('./fixtures/libra_gui_memory_dom_host.cjs');
 const pluginPath = process.argv[2] || path.resolve(__dirname, '../plugins/LIBRA.js');
+const { goSettings } = require('./helpers/libra_approved_gui_navigation.cjs');
 const results = [];
 const sessions = [];
 const field = (s, label) => [...s.doc.querySelectorAll('.page[data-page="settings"] .field,.page[data-page="settings"] .setting')]
@@ -19,9 +20,7 @@ async function boot(options = {}) {
   const s = await create('LIBRA', 'Full', { ...options, pluginPath });
   sessions.push(s);
   await s.open(); await pause(250);
-  await s.click('.sidebar [data-go="settings"]');
-  await s.click('.setnav [data-subtab="mem"]');
-  const maintenance=s.doc.querySelector('[data-memory-maintenance]');maintenance.open=true;maintenance.dispatchEvent(new s.dom.window.Event('toggle'));await pause(40);
+  await goSettings(s, 'memory');
   return s;
 }
 async function save(s, dedicated = false) {

@@ -103,41 +103,36 @@ const artifact = ({ turn, status, link = '', resolution = '', text }) => ({
     const pendingText = second.canonicalArtifact.facts[0].text;
     assert.equal(JSON.stringify(recall.memories.map(row => row.excerpt || row.text || '')).includes(pendingText), false,
       'Recall selection did not already contain the pending event');
-    const recallClosure = recall?.diagnostics?.recallContinuityClosure;
-    const closureRows = recallClosure?.facts || [];
-    assert.equal(closureRows.some(row => row.memoryId === second.memoryId), false,
-      'the pending fact is retained in Canonical/History but is not emitted as an accepted lifecycle closure');
-    assert.equal(recallClosure?.diagnostics?.closureCount, 0,
-      'the pending relation contributes no closure row');
-    assert.equal(recallClosure?.currentness, 'last-known',
-      'an unaddressed v5 event prevents Recall from claiming the selected promise is current');
-    assert.ok(recallClosure?.diagnostics?.reasons?.some(reason => reason.startsWith('thread_lifecycle_pending_not_authorized:')),
-      'the lack of lifecycle authority is disclosed in Recall diagnostics');
+    // The legacy continuity-closure layer (recallContinuityClosure, closure rows, closureCurrentness)
+    // was retired with the old retrieval pipeline (9c03c35). The boundary that remains is that the
+    // unified engine never emits the unaccepted pending event as evidence at all.
+    assert.equal(recall.diagnostics?.recallContinuityClosure, undefined, 'retired closure diagnostics are not produced');
+    assert.equal(recall.diagnostics?.unifiedMemoryEngine?.legacyRankerExecuted, false);
+    assert.equal(recall.diagnostics?.unifiedMemoryEngine?.queryComplete, true);
     const preflight = await actualClassicPacket(f, query, first.scopeKey);
-    const packetClosureRows = (preflight?.evidencePacket?.layers?.memory || []).filter(row => row.closure === true);
-    assert.equal(packetClosureRows.some(row => row.memoryId === second.memoryId), false,
-      'the actual Classic packet does not label the pending event as a lifecycle closure');
+    const layerRows = Object.values(preflight?.evidencePacket?.layers || {}).flat();
+    assert.equal(layerRows.some(row => row.memoryId === second.memoryId), false,
+      'the actual Classic packet does not carry the pending event');
+    assert.equal(layerRows.some(row => row.closure === true), false, 'no row is labelled as a lifecycle closure');
     const viewer = preflight.actualClassic.viewer;
-    const ordinaryRows = viewer.rows.filter(row => row.closure !== true);
-    assert.equal(ordinaryRows.length, 1);
-    assert.equal(ordinaryRows[0].memoryId, first.memoryId, 'the same actual request selects only the original open promise');
+    assert.equal(viewer.rows.length, 1);
+    assert.equal(viewer.rows[0].memoryId, first.memoryId, 'the same actual request selects only the original open promise');
+    assert.equal(viewer.rows[0].classicUsed, true);
+    assert.equal(viewer.rows[0].injected, true);
+    assert.equal(viewer.rows.some(row => row.memoryId === second.memoryId || row.closure === true), false);
+    assert.equal(viewer.closureCurrentness, undefined, 'retired closure fields are absent from the viewer');
+    assert.equal(viewer.closureApplied, undefined);
     assert.equal(deliveredClosureRows(preflight).length, 0, 'the returned Classic block delivers no pending closure');
-    assert.equal(viewer.closureCurrentness, 'last-known');
-    assert.equal(viewer.closureFacts, 0);
-    assert.equal(viewer.closureInjectedFacts, 0);
-    assert.equal(viewer.closureApplied, false);
-    assert.equal(viewer.closureDeliveryComplete, false);
     assertNoForbiddenClosure(preflight, [pendingText]);
-    assert.ok(preflight.actualClassic.block.includes('Canonical continuity coverage is incomplete.'));
+    assert.equal(preflight.actualClassic.block.includes(pendingText), false, 'the pending event text is not in the delivered block');
+    assert.ok(preflight.actualClassic.block.includes(first.canonicalArtifact.facts[0].text), 'the original open promise is delivered');
 
     console.log(JSON.stringify({
       test: 'libra_main_memory_candidate_boundary',
       pendingState: pending.linkPendingReason,
       stateStatus: f.getHead().narrative.threads[0].status,
       selectedMemory: first.memoryId,
-      closureCount: recallClosure?.diagnostics?.closureCount,
-      packetClosureCount: packetClosureRows.length,
-      currentness: recallClosure?.currentness
+      deliveredRows: viewer.rows.length
     }));
   } finally {
     await f.r.cleanup();

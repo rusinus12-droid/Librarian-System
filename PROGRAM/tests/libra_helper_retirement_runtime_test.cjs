@@ -49,6 +49,7 @@ test('actual settings DOM retains all six pages and memory import/save/restart w
  try{
   await r.api.openSettingsGui();assert(window.document.querySelector('#sga-rp-gui-root'),'actual settings root rendered');
   try{await waitFor(()=>window.document.querySelector('.page.is-active[data-page] [data-libra-product-detail]'),4000);}catch(error){throw Error('Actual retained book page failed: '+JSON.stringify(logs));}
+  const firstRun=window.document.querySelector('[data-libra-quick-dialog] .dialog__actions button');if(firstRun){firstRun.click();await waitFor(()=>!window.document.querySelector('[data-libra-quick-dialog]'),2000);}
   for(const page of ['desk','memory','people','world','story','settings']){
    const button=window.document.querySelector('.sidebar [data-go="'+page+'"]');assert(button,'actual retained navigation button '+page);button.click();
    try{await waitFor(()=>window.document.querySelector('.page.is-active[data-page="'+page+'"] [data-libra-product-detail="'+page+'"]'),4000);}catch(error){throw Error('Actual page '+page+' failed: '+JSON.stringify(logs));}
