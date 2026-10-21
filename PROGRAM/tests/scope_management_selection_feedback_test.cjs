@@ -31,6 +31,15 @@ const rowOf=(host,id)=>host.querySelector(`[data-scope-row="${id}"]`);
    current.querySelector('td[data-scope-select-cell]').dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));
    assert.match(q('[data-scope-result]').textContent,/선택할 수 없음 · 현재 열려 있는 채팅/,`${ns}: clicking a blocked box explains why`);
    assert.match(current.querySelector('[data-scope-select]').getAttribute('aria-label'),/현재 열려 있는 채팅/,'the reason is also the accessible name');
+   // Flashback-style: ticking is allowed; the action decides. Pruning only covers list leftovers, so a scope with data is skipped with a reason.
+   const prune=q('[data-scope-action=prune]'),del=q('[data-scope-action=delete]');
+   assert.equal(prune.disabled,true,`${ns}: prune is off while only a scope with data is ticked`);
+   assert.equal(del.disabled,false,`${ns}: delete is on for a ticked scope that can be deleted`);
+   prune.disabled=false;prune.onclick();
+   await until(()=>/실행할 수 있는 스코프가 없습니다/.test(q('[data-scope-result]').textContent),'skip explanation');
+   assert.match(q('[data-scope-result]').textContent,/자료가 있어 목록 정리 대상이 아닙니다/,`${ns}: the skip names the reason`);
+   assert.equal(q('[data-scope-confirm]').hidden,true,`${ns}: nothing to confirm when every ticked row is skipped`);
+   assert.equal(g.values.get(ns+'.B'),'B_SOURCE',`${ns}: skipped data is untouched`);
   }finally{dom.window.close();await g.close();}
   // 2) server_only: rows stored on the server are not cleaned here, and the row says so.
   g=await fixture(variant,{values:new Map(values),catalog,adapter:adapter(ns),bridgeOptions:{scopeManagement:true}});dom=new JSDOM('<!doctype html><div id="host"></div>');

@@ -11024,10 +11024,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const filtered=()=>{const term=q('[data-scope-search]').value.trim().toLocaleLowerCase(),filter=q('[data-scope-filter]').value;
       return (catalog?.rows||[]).filter(row=>(!term||[row.characterName,row.chatTitle,row.scopeKey,row.scopeId].join(' ').toLocaleLowerCase().includes(term))
         &&(filter==='all'||filter==='issues'&&(row.issues.length>0||row.unavailable)||filter==='memory'&&row.ownedRecordCount>0&&!row.detached||filter==='detached'&&row.detached&&row.ownedRecordCount>0||filter==='empty'&&row.ownedRecordCount===0&&!row.unavailable&&row.issues.length===0&&catalog.completeKnownScopes||row.mode===filter));};
-    const selectable=row=>!row.current&&(row.canDelete||row.canManage&&row.mode===MODE_PLUGIN_ONLY);
+    // Like Flashback's scope cleanup: any non-current, non-server scope can be ticked; the safety checks run
+    // when an action is started and say which rows were skipped and why.
+    const actionable=row=>!row.current&&(row.canDelete||row.canManage&&row.mode===MODE_PLUGIN_ONLY);
+    const selectable=row=>!row.current&&row.mode===MODE_PLUGIN_ONLY&&!readOnlyCrypto();
+    const permitted=(row,action)=>action==='export'?actionable(row)&&row.mode===MODE_PLUGIN_ONLY:!!row.canDelete&&!row.current&&!(action==='prune'&&row.ownedRecordCount>0);
     // Why a row cannot be selected, in the user's words: a silently disabled box looks broken.
     const readOnlyCrypto=()=>!!catalog?.blockers?.some(issue=>issue.code==='scope_catalog_read_only_crypto_unavailable');
-    const blockReason=row=>selectable(row)?'':row.current?'현재 열려 있는 채팅은 선택할 수 없습니다.'
+    const blockReason=row=>actionable(row)?'':row.current?'현재 열려 있는 채팅은 선택할 수 없습니다.'
       :readOnlyCrypto()?'보안 연결이 아니어서 목록 보기만 가능합니다. https 또는 localhost 주소로 접속하세요.'
       :row.unavailable?'조회하지 못해 보존합니다. 새로고침 후 다시 확인하세요.'
       :row.issues.length?'확인이 필요한 항목이 있어 보존합니다. 상세에서 확인하세요.'
@@ -11040,7 +11044,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       all.checked=rows.length>0&&rows.every(row=>selected.has(row.scopeId));all.indeterminate=!all.checked&&rows.some(row=>selected.has(row.scopeId));
       q('[data-scope-selection]').textContent=`선택 ${selected.size}개`;
       const chosen=(catalog?.rows||[]).filter(row=>selected.has(row.scopeId));
-      root.querySelectorAll('[data-scope-action]').forEach(button=>{const action=button.getAttribute('data-scope-action');button.disabled=busy||!chosen.length||chosen.some(row=>action==='export'?!selectable(row):!row.canDelete||action==='prune'&&row.ownedRecordCount>0);});
+      root.querySelectorAll('[data-scope-action]').forEach(button=>{const action=button.getAttribute('data-scope-action');button.disabled=busy||!chosen.length||!chosen.some(row=>permitted(row,action));});
       root.querySelectorAll('[data-scope-pick],[data-scope-inspect]').forEach(button=>{button.disabled=busy;});
     };
     const render=()=>{
@@ -11049,10 +11053,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const status=row.unavailable?'조회 미확인':row.issues.length?'확인 필요':row.current?'현재':row.mode!==MODE_PLUGIN_ONLY?'서버 관리':row.referenced?'참조 중':row.detached&&row.ownedRecordCount?'고아 데이터':row.ownedRecordCount?'저장 자료':row.registryEntries?'목록 잔재':'자료 없음';
         const at=row.unavailable?null:row.dataMetrics?.updatedAt;
         const updated=at?new Date(at).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'—';
-        const why=blockReason(row);
+        const note=blockReason(row),why=selectable(row)?'':note;
         return `<tr data-scope-row="${esc(row.scopeId)}" data-current="${row.current?'true':'false'}" data-selectable="${why?'false':'true'}">
         <td data-scope-select-cell ${why?`title="${esc(why)}" data-scope-why="${esc(why)}"`:''}><input type="checkbox" data-scope-select="${esc(row.scopeId)}" aria-label="${esc(row.label)} 선택${why?' · '+esc(why):''}" ${selected.has(row.scopeId)?'checked':''} ${busy||!selectable(row)?'disabled':''}></td>
-        <td class="scope-data-name"><b>${esc(row.characterName||row.label)}</b><span>${esc(row.chatTitle||'채팅 이름 미확인')}</span>${why?`<small class="scope-data-reason" data-scope-reason>${esc(why)}</small>`:''}
+        <td class="scope-data-name"><b>${esc(row.characterName||row.label)}</b><span>${esc(row.chatTitle||'채팅 이름 미확인')}</span>${note?`<small class="scope-data-reason" data-scope-reason>${esc(note)}</small>`:''}
         <details data-scope-detail><summary>상세</summary><div>${esc(row.scopeKey)}</div><div>${esc(row.modeLabel)}</div><div>${esc(row.dataSummary)}</div><div>${esc(row.locations.map(location=>({plugin:'플러그인 저장소',device:'기기 저장소',server:'서버'})[location]||location).join(' · ')||'저장 항목 없음')}</div><div>로컬 ${row.localRecords} / 서버 ${row.unavailable?'미확인':row.serverChecked?row.serverRecords:'미조회'}</div><div>${esc(row.deleteBlockedReason||'확인 후 선택 자료 삭제 가능')}</div><pre>${esc(row.issues.map(issue=>[issue.code,issue.key,issue.detail].filter(Boolean).join(' · ')).join('\n')||'확인된 오류 없음')}</pre><details><summary>저장 키 ${row.keys.length}개</summary><pre>${esc(row.keys.join('\n'))}</pre></details></details></td>
         <td title="${esc(row.dataSummary)}" data-scope-counts>${row.unavailable?'—':row.dataMetrics?.primary??'—'} / ${row.unavailable?'—':row.dataMetrics?.secondary??'—'}</td><td>${row.unavailable?'—':row.ownedRecordCount}</td><td><span class="scope-data-state">${status}</span></td><td><time ${at?'datetime="'+new Date(at).toISOString()+'"':''}>${updated}</time></td><td><button type="button" data-scope-delete-one="${esc(row.scopeId)}" aria-label="${esc(row.label)} 삭제" ${busy||!row.canDelete?'disabled':''}>삭제</button></td></tr>`;
       }).join('')||'<tr><td colspan="7" class="muted">표시할 스코프가 없습니다.</td></tr>';
@@ -11092,11 +11096,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     root.addEventListener('keydown',event=>{if(event.key==='Escape'&&confirmation){event.preventDefault();event.stopPropagation();finishConfirmation(false);}});
     for(const button of root.querySelectorAll('[data-scope-action]'))button.onclick=async()=>{
       if(busy||!selected.size)return;
-      const action=button.getAttribute('data-scope-action'),rows=catalog.rows.filter(row=>selected.has(row.scopeId));
+      const action=button.getAttribute('data-scope-action'),chosen=catalog.rows.filter(row=>selected.has(row.scopeId));
       const destructive=action==='delete'||action==='prune';
-      if(rows.some(row=>destructive?(!row.canDelete||action==='prune'&&row.ownedRecordCount>0):(!selectable(row)||row.mode!==MODE_PLUGIN_ONLY))){q('[data-scope-result]').textContent='선택한 자료의 삭제·백업 권한을 확인할 수 없습니다. 현재 채팅, 참조 관계, 서버 저장 모드와 오류를 확인하세요.';return;}
+      const rows=chosen.filter(row=>permitted(row,action)),skipped=chosen.filter(row=>!permitted(row,action));
+      const skipReason=row=>(action==='prune'&&row.canDelete&&row.ownedRecordCount>0?'자료가 있어 목록 정리 대상이 아닙니다. 선택 삭제를 사용하세요.':blockReason(row))||'권한을 확인할 수 없어 보존합니다.';
+      const skipText=skipped.map(row=>row.label+' · '+skipReason(row)).join('\n');
+      if(!rows.length){q('[data-scope-result]').textContent='실행할 수 있는 스코프가 없습니다.\n'+skipText;q('[data-scope-result]').style.whiteSpace='pre-wrap';return;}
       q('[data-scope-delete-ack-row]').hidden=!destructive;q('[data-scope-delete-ack]').checked=false;q('[data-scope-approve]').disabled=destructive;
-      busy=true;render();q('[data-scope-confirm-text]').textContent=`${button.textContent} · ${rows.length}개\n${rows.map(row=>row.label+' · '+row.scopeKey).join('\n')}\n선택한 스코프의 로컬 데이터만 처리합니다. 서버 데이터와 현재 채팅은 변경하지 않습니다.`;
+      busy=true;render();q('[data-scope-confirm-text]').textContent=`${button.textContent} · ${rows.length}개\n${rows.map(row=>row.label+' · '+row.scopeKey).join('\n')}\n선택한 스코프의 로컬 데이터만 처리합니다. 서버 데이터와 현재 채팅은 변경하지 않습니다.${skipped.length?`\n\n제외 ${skipped.length}개 (보존)\n${skipText}`:''}`;
       q('[data-scope-confirm]').hidden=false;q('[data-scope-confirm]').style.display='block';q('[data-scope-confirm-text]').style.whiteSpace='pre-wrap';q('[data-scope-cancel]').focus();
       let monitor=null;const accepted=await new Promise(resolve=>{confirmation=resolve;monitor=setInterval(()=>{if(!root.isConnected)finishConfirmation(false);},200);try{monitor?.unref?.();}catch(_){}});clearInterval(monitor);
       try{if(!accepted||!root.isConnected)return;let completed=0;
@@ -11108,7 +11115,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             const link=root.ownerDocument.createElement('a');link.href=url;link.download=namespace+'-scope-backup-'+Date.now()+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
           }
           completed++;selected.delete(row.scopeId);if(!root.isConnected)break;}
-        if(root.isConnected)q('[data-scope-result]').textContent=`완료 ${completed}/${rows.length}개`;
+        if(root.isConnected){q('[data-scope-result]').textContent=`완료 ${completed}/${rows.length}개${skipped.length?` · 제외 ${skipped.length}개\n${skipText}`:''}`;q('[data-scope-result]').style.whiteSpace='pre-wrap';}
       }catch(error){if(root.isConnected)q('[data-scope-result]').textContent=`작업 보류 · ${error.code||error.message}${error.rollback?.restored===false?' · 일부 값 복구 미완료: '+error.rollback.failures.join(', '):error.rollback?.restored===true?' · 변경한 값을 원래대로 복구했습니다.':''}`;}
       finally{busy=false;if(root.isConnected)await refresh();}
     };
@@ -14600,6 +14607,150 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         extraFieldsNote: 'extra에 clueType, suspect, reliability를 선택적으로 기록할 수 있습니다.'
       },
       recall: { enabled: true, mode: 'relevant', share: 35, maxItems: 3 }
+    },
+    {
+      templateId: 'starter_body_condition',
+      name: '몸 상태 · 건강 기록',
+      description: '누구의 어떤 증상·부상·컨디션이 언제 있었는지 인물별로 기록합니다.',
+      labels: ['증상', '부상', '치료', '컨디션', '회복'],
+      evidenceMode: 'strict',
+      canonicalContext: false,
+      trackTime: true,
+      trackSubject: true,
+      instruction: {
+        goal: '인물의 증상, 부상, 질병, 통증, 약 복용, 컨디션 변화, 회복을 기록하라. 사실이 속한 사람은 진단하거나 관찰하거나 말한 사람이 아니라 몸에 그 일이 있는 사람이다.',
+        includeRules: ['몸에 나타난 증상·통증·부상과 그 정도', '진단, 치료, 약 복용, 휴식 지시', '이전 증상의 호전·악화·완치'],
+        excludeRules: ['은유적 표현("가슴이 아프다"가 감정을 뜻하는 경우)', '가정이나 소문으로만 나온 병', '원문에 없는 병명·원인 추정'],
+        outputHint: '누구의 어떤 증상인지 한 문장으로 쓰고, 원문 인용을 붙이세요.',
+        extraFieldsNote: 'extra에 symptom, severity(약함/중간/심함), treatment를 선택적으로 기록할 수 있습니다.'
+      },
+      recall: { enabled: true, mode: 'relevant', share: 35, maxItems: 3 }
+    },
+    {
+      templateId: 'starter_promises_schedule',
+      name: '약속 · 일정',
+      description: '누가 누구와 언제 무엇을 하기로 했는지, 기한과 지킨 여부를 추적합니다.',
+      labels: ['약속', '일정', '기한', '이행', '파기'],
+      evidenceMode: 'strict',
+      canonicalContext: false,
+      trackTime: true,
+      trackSubject: true,
+      instruction: {
+        goal: '인물들이 정한 약속, 일정, 마감, 예정된 만남을 기록하고 지켜졌는지 바뀌었는지도 기록하라.',
+        includeRules: ['날짜·시각·기한이 있는 약속이나 예정', '약속의 변경, 취소, 연기', '약속이 지켜졌거나 어겨진 순간'],
+        excludeRules: ['막연한 희망("언젠가 보자")', '이미 끝난 일상적 인사', '원문에 없는 날짜 계산'],
+        outputHint: '누가 무엇을 하기로 했는지와 상대, 기한을 원문 인용과 함께 정리하세요.',
+        extraFieldsNote: 'extra에 promisor, promisee, deadline, status(예정/이행/변경/파기)를 선택적으로 기록할 수 있습니다.'
+      },
+      recall: { enabled: true, mode: 'relevant', share: 35, maxItems: 3 }
+    },
+    {
+      templateId: 'starter_relationship_shift',
+      name: '관계 변화 · 호감도',
+      description: '인물 사이의 신뢰, 호감, 갈등이 달라진 계기와 현재 거리를 기록합니다.',
+      labels: ['신뢰', '호감', '갈등', '화해', '거리감'],
+      evidenceMode: 'interpretive',
+      canonicalContext: true,
+      trackTime: false,
+      trackSubject: true,
+      instruction: {
+        goal: '두 인물 사이의 관계가 가까워지거나 멀어진 순간과 그 계기를 기록하라.',
+        includeRules: ['신뢰·호감·적대감이 눈에 띄게 달라진 행동이나 대사', '화해, 사과, 배신, 고백처럼 관계의 전환점', '호칭이나 태도의 뚜렷한 변화'],
+        excludeRules: ['한 번의 농담으로 끝난 장면', '행동이나 대사 근거가 없는 속마음 단정'],
+        outputHint: '누구와 누구의 관계가 어떻게 달라졌는지, 계기와 함께 쓰고 원문 근거를 붙이세요.',
+        extraFieldsNote: 'extra에 pair, direction(가까워짐/멀어짐/유지), trigger를 선택적으로 기록할 수 있습니다.'
+      },
+      recall: { enabled: true, mode: 'relevant', share: 30, maxItems: 3 }
+    },
+    {
+      templateId: 'starter_belongings',
+      name: '소지품 · 획득 · 분실',
+      description: '누가 무엇을 얻고, 건네고, 잃었는지 물건의 현재 위치를 추적합니다.',
+      labels: ['획득', '전달', '분실', '사용', '보관'],
+      evidenceMode: 'strict',
+      canonicalContext: false,
+      trackTime: true,
+      trackSubject: true,
+      instruction: {
+        goal: '이야기에서 중요한 물건이 누구 손에 있는지, 언제 얻거나 건네거나 잃었는지를 기록하라.',
+        includeRules: ['물건을 얻거나 선물받은 순간', '물건을 건네거나 맡기거나 빼앗긴 순간', '물건이 부서지거나 사라지거나 다시 발견된 순간'],
+        excludeRules: ['배경에 잠깐 언급된 흔한 사물', '주인이 불분명한 물건의 추측'],
+        outputHint: '누가 어떤 물건을 어떻게 했는지 한 문장으로 쓰고 원문 인용을 붙이세요.',
+        extraFieldsNote: 'extra에 item, holder, from, to, state(보유/전달/분실/파손)를 선택적으로 기록할 수 있습니다.'
+      },
+      recall: { enabled: true, mode: 'relevant', share: 30, maxItems: 3 }
+    },
+    {
+      templateId: 'starter_secrets_knowledge',
+      name: '비밀 · 누가 무엇을 아는가',
+      description: '어떤 정보를 누가 알고 누구는 모르는지, 비밀이 새는 순간을 기록합니다.',
+      labels: ['비밀', '인지', '고백', '누설', '오해'],
+      evidenceMode: 'interpretive',
+      canonicalContext: true,
+      trackTime: false,
+      trackSubject: true,
+      instruction: {
+        goal: '인물별로 어떤 정보를 알게 되었는지, 숨기고 있는지, 잘못 알고 있는지를 기록하라.',
+        includeRules: ['비밀을 털어놓거나 들킨 순간', '한 인물만 알고 다른 인물은 모르는 정보', '오해나 잘못된 믿음이 드러난 대사'],
+        excludeRules: ['모두가 이미 아는 공개 사실', '원문 근거 없는 "알고 있을 것이다" 추측'],
+        outputHint: '누가 무엇을 아는지(또는 모르는지)를 쓰고, 그렇게 판단한 원문 근거를 붙이세요.',
+        extraFieldsNote: 'extra에 knower, secret, hiddenFrom, status(숨김/공개/오해)를 선택적으로 기록할 수 있습니다.'
+      },
+      recall: { enabled: true, mode: 'relevant', share: 35, maxItems: 3 }
+    },
+    {
+      templateId: 'starter_world_rules',
+      name: '세계관 규칙 · 설정 점검',
+      description: '이야기에서 확정된 규칙, 제약, 능력의 한계와 서로 부딪히는 대목을 모읍니다.',
+      labels: ['규칙', '제약', '능력', '대가', '모순'],
+      evidenceMode: 'interpretive',
+      canonicalContext: true,
+      trackTime: false,
+      trackSubject: false,
+      instruction: {
+        goal: '세계관의 규칙, 마법·기술의 한계와 대가, 사회적 금기를 기록하고, 이전에 나온 규칙과 충돌하는 대목이 있으면 함께 기록하라.',
+        includeRules: ['명시적으로 설명되거나 시연된 규칙과 제약', '능력 사용의 대가나 한계', '앞서 정해진 설정과 어긋나는 묘사'],
+        excludeRules: ['분위기 묘사에 불과한 문장', '근거 없는 설정 추측'],
+        outputHint: '규칙 내용과 적용 대상을 쓰고, 충돌이면 어느 쪽 설정과 부딪히는지 밝히세요.',
+        extraFieldsNote: 'extra에 ruleType, scope, conflictsWith를 선택적으로 기록할 수 있습니다.'
+      },
+      recall: { enabled: true, mode: 'relevant', share: 30, maxItems: 3 }
+    },
+    {
+      templateId: 'starter_speech_habits',
+      name: '캐릭터 대사 습관 · 금기어',
+      description: '인물마다 반복하는 말버릇, 즐겨 쓰는 표현, 입에 올리지 않는 말을 모읍니다.',
+      labels: ['말버릇', '표현', '금기어', '말투'],
+      evidenceMode: 'strict',
+      canonicalContext: false,
+      trackTime: false,
+      trackSubject: true,
+      instruction: {
+        goal: '인물이 반복해서 쓰는 말버릇과 표현, 피하는 단어, 특징적인 말투를 기록하라.',
+        includeRules: ['같은 인물이 두 번 이상 쓴 표현이나 어미', '유독 피하거나 돌려 말하는 단어', '그 인물을 알아볼 수 있게 하는 특유의 말투'],
+        excludeRules: ['한 번 쓰인 평범한 표현', '다른 인물의 말투 흉내와 구분되지 않는 경우'],
+        outputHint: '누가 어떤 표현을 쓰는지 원문 대사를 그대로 인용하세요.',
+        extraFieldsNote: 'extra에 speaker, phrase, habitType(말버릇/금기어/어미)을 선택적으로 기록할 수 있습니다.'
+      },
+      recall: { enabled: true, mode: 'recent', share: 20, maxItems: 2 }
+    },
+    {
+      templateId: 'starter_conflict_arc',
+      name: '갈등 · 긴장 곡선',
+      description: '장면마다 긴장이 높아지고 풀린 지점과 해결되지 않은 갈등을 기록합니다.',
+      labels: ['갈등', '고조', '완화', '미해결', '전환점'],
+      evidenceMode: 'interpretive',
+      canonicalContext: true,
+      trackTime: true,
+      trackSubject: false,
+      instruction: {
+        goal: '이야기의 갈등이 시작되고, 고조되고, 풀리는 지점과 아직 해결되지 않은 갈등을 기록하라.',
+        includeRules: ['충돌이 시작되거나 격해지는 순간', '긴장이 풀리거나 타협이 이루어진 순간', '해결되지 않은 채 남은 갈등의 원인'],
+        excludeRules: ['감정 표현만 있고 충돌이 없는 장면', '원문 근거 없는 전개 예측'],
+        outputHint: '갈등의 당사자와 원인, 현재 상태(고조/완화/미해결)를 쓰고 원문 근거를 붙이세요.',
+        extraFieldsNote: 'extra에 parties, cause, tension(낮음/중간/높음), status를 선택적으로 기록할 수 있습니다.'
+      },
+      recall: { enabled: true, mode: 'relevant', share: 30, maxItems: 3 }
     }
   ].map(template => Object.freeze(template)));
   const LENS_STARTER_TEMPLATES = STARTER_LENS_TEMPLATES;

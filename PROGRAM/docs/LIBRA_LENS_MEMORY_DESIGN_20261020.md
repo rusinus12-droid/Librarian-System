@@ -436,3 +436,20 @@ This section records what the code does where it refines or departs from the sec
 - `tests/libra_custom_memory_lens_pipeline_runtime_test.cjs`: the locked canonical prompt, a pending lens call not holding the canonical job, the queued run, delivery with a valid response context, and trash exclusion.
 - `tests/browser/libra_lens_studio_browser_test.cjs`: the studio and memory tab at 1280 and 390 px, including button spacing and overflow.
 
+
+### Starter templates (13)
+
+The Lens Studio's "템플릿으로 시작" lists thirteen presets. The first five are the original ones. The next eight turn on the time and people switches where the subject needs them:
+
+| Template | Evidence | 시점 | 인물 | Canonical context |
+|---|---|---|---|---|
+| 몸 상태 · 건강 기록 | strict | on | on | off |
+| 약속 · 일정 | strict | on | on | off |
+| 관계 변화 · 호감도 | interpretive | off | on | on |
+| 소지품 · 획득 · 분실 | strict | on | on | off |
+| 비밀 · 누가 무엇을 아는가 | interpretive | off | on | on |
+| 세계관 규칙 · 설정 점검 | interpretive | off | off | on |
+| 캐릭터 대사 습관 · 금기어 | strict | off | on | off |
+| 갈등 · 긴장 곡선 | interpretive | on | off | on |
+
+Only the body-condition lens has been measured with a live model (see `LIBRA_LENS_RECALL_ENGINE_20261020.md`). The other seven are checked for shape only (`libra_custom_memory_lens_runtime_test`: valid definition, switches and labels kept, create/trash/purge cycle).

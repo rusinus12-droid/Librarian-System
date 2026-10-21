@@ -50,10 +50,38 @@ const check = (name, fn) => Promise.resolve().then(fn).then(() => results.push(n
   ];
 
   try {
-    await check('five starter templates', () => {
+    await check('thirteen starter templates, each a valid lens that keeps its time/people switches', async () => {
       const templates = api.getLensStarterTemplates();
-      assert.equal(templates.length, 5);
+      assert.equal(templates.length, 13);
+      assert.equal(new Set(templates.map(template => template.templateId)).size, 13, 'template ids are unique');
       assert.ok(templates.every(template => template.templateId && template.instruction?.goal && template.labels.length));
+      const expected = {
+        starter_body_condition: { trackTime: true, trackSubject: true, evidenceMode: 'strict' },
+        starter_promises_schedule: { trackTime: true, trackSubject: true, evidenceMode: 'strict' },
+        starter_relationship_shift: { trackTime: false, trackSubject: true, evidenceMode: 'interpretive' },
+        starter_belongings: { trackTime: true, trackSubject: true, evidenceMode: 'strict' },
+        starter_secrets_knowledge: { trackTime: false, trackSubject: true, evidenceMode: 'interpretive' },
+        starter_world_rules: { trackTime: false, trackSubject: false, evidenceMode: 'interpretive' },
+        starter_speech_habits: { trackTime: false, trackSubject: true, evidenceMode: 'strict' },
+        starter_conflict_arc: { trackTime: true, trackSubject: false, evidenceMode: 'interpretive' }
+      };
+      for (const template of templates) {
+        const created = await api.createLens({ ...template, lensId: template.templateId });
+        try {
+          assert.equal(created.templateId, template.templateId);
+          assert.equal(created.status, 'active');
+          assert.equal(created.instructionText.startsWith(template.instruction.goal), true, `${template.templateId}: the full goal reaches the model text`);
+          assert.equal(created.labels.length, template.labels.length, `${template.templateId}: no label is lost`);
+          assert.equal(created.trackTime, template.trackTime === true);
+          assert.equal(created.trackSubject, template.trackSubject === true);
+          assert.equal(created.evidenceMode, template.evidenceMode);
+          const want = expected[template.templateId];
+          if (want) for (const [key, value] of Object.entries(want)) assert.equal(created[key], value, `${template.templateId}.${key}`);
+        } finally {
+          await api.trashLens(created.lensId);
+          await api.purgeLens(created.lensId);
+        }
+      }
     });
 
     await check('the evidence gate classifies and rejects with spec reason codes', () => {
