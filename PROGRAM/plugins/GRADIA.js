@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.26.5
+//@display-name GRADIA v0.26.6
 //@api 3.0
-//@version 0.26.5
+//@version 0.26.6
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -930,7 +930,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.26.5';
+  const PLUGIN_VERSION = '0.26.6';
   
   
   
@@ -992,6 +992,10 @@
   const INPUT_ASSIST_STATIC_HANDOFF_MAX_AGE_MS = 30 * 1000;
   const INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS = 2400;
   const INPUT_ASSIST_LORE_CONTEXT_MAX_CHARS = 3200;
+  // The writer's reference packet is already selected as whole entries within
+  // INPUT_ASSIST_LORE_CONTEXT_MAX_CHARS of content; its headings come on top. Cutting the
+  // rendered block again at that size would split the last entry, so only a safety cap applies.
+  const inputAssistLoreBlock = value => compact(value, INPUT_ASSIST_LORE_CONTEXT_MAX_CHARS * 2);
   const AUTHOR_DIRECTED_INPUT_CHOICES_SCHEMA = 'gradia_author_directed_input_choices_v1';
   const AUTHOR_DIRECTED_INPUT_CHOICE_TARGET = 3;
   const NOVEL_INPUT_CHOICES_SCHEMA = 'gradia_novel_input_choices_v1';
@@ -3209,7 +3213,8 @@
     shadow_act: 'SHADOW: draw relationship history, promises, unresolved threads, and established facts from it so the first draft continues the story instead of restarting it.',
     aide_character: 'Character AIDE: check what each character knows, remembers, feels toward others, and has promised against it. Repair only contradictions inside the draft.',
     aide_world: 'World AIDE: check locations, objects, injuries, time, and world-state changes against it. Repair only contradictions inside the draft.',
-    aide_plot: 'Plot AIDE: check unresolved threads, foreshadowing, and causal consequences against it. Do not resolve or advance a remembered thread beyond this scene.'
+    aide_plot: 'Plot AIDE: check unresolved threads, foreshadowing, and causal consequences against it. Do not resolve or advance a remembered thread beyond this scene.',
+    [INPUT_ASSIST_STAGE_ID]: 'Input Manager: use it only to keep proposed inputs consistent with established relationships, promises, and facts. The terminal passage decides where the scene is now; never propose resuming a remembered scene.'
   });
   const libEvidenceStageGuidance = (stageName, settings = {}) => {
     const use = LIB_EVIDENCE_STAGE_USE[stageName];
@@ -3219,9 +3224,11 @@
       '- It is past-state memory. Current user input, the latest visible scene, and newer canon outrank it; when they differ, the memory is outdated.',
       '- Use it as background continuity. Do not replay remembered scenes, quote it, mention memory or sources, or move characters to a remembered location.',
       '- Lens notes are non-canonical reference memos. Prefer canonical memory when they disagree.',
-      isPlayerControlledDraftMode(settings)
-        ? '- In RP mode, memory never authorizes a new user-character action, line, feeling, or decision.'
-        : '- In Novel mode, memory may inform the user persona like any other cast member, but explicit author direction wins.',
+      stageName === INPUT_ASSIST_STAGE_ID
+        ? '- Memory may suggest which next inputs make sense; it is not a record of what happens now.'
+        : isPlayerControlledDraftMode(settings)
+          ? '- In RP mode, memory never authorizes a new user-character action, line, feeling, or decision.'
+          : '- In Novel mode, memory may inform the user persona like any other cast member, but explicit author direction wins.',
       `- ${use}`
     ].join('\n');
   };
@@ -3312,6 +3319,7 @@
   // and other CJK runs as character bigrams, other words whole); items with no
   // overlap keep the previous newest-first round robin. No model calls.
   const LIB_EVIDENCE_RECENT_PER_OWNER = 2;
+  const LIB_INPUT_WRITER_RECORD_EVIDENCE_CHARS = 8000;
   const libEvidenceTerms = value => {
     const terms = [];
     for (const word of String(value || '').normalize('NFKC').toLowerCase().match(/[\p{L}\p{N}]+/gu) || []) {
@@ -4791,10 +4799,6 @@
 
   
 
-  const arcInputManagerPromptBlock = (control, continuationCue, original = '') => {
-    // Permanent own-memory retirement: preserve the empty prompt compatibility contract.
-    return '';
-  };
 
   
 
@@ -19561,15 +19565,42 @@ ${passage.text || ''}`, 420));
     return content ? { role, content } : null;
   };
 
-  const inputAssistContextMessages = async (content, settings, requestMessages = [], staticSnapshot = null) => {
+  // The Input Writer runs on a settled screen, so the visible trailing reply is the live
+  // scene even when this session holds no output receipt for it (after a reload or an
+  // edit). Streaming, error, comment, disabled and empty replies stay excluded, and the
+  // draft pipeline keeps its stricter completion rule.
+  const INPUT_ASSIST_PREVIOUS_USER_MAX_CHARS = 600;
+  const INPUT_ASSIST_SHORT_TERMINAL_CHARS = 800;
+  const inputAssistLiveScene = async (content, settings, requestMessages = [], staticSnapshot = null) => {
     const source = staticSnapshot || await loadRisuStaticContextSnapshot(settings);
     const chatInfo = source.chatInfo;
     // A composer proposal is not a submitted user boundary. Collect only already
-    // closed native history or an exact output-event receipt before adding it.
+    // closed native history, an exact output-event receipt or a settled visible reply.
     const snapshot = await loadActualChatContextForRag(source.character, chatInfo, [], { text: '', confidence: 'none' }, source.persona, settings.debugLog);
-    const window = buildCompleteRecentTurnWindow(snapshot.messages, DEFAULT_INPUT_ASSIST_TURNS, '');
+    const storedMessages = Array.isArray(snapshot.messages) ? snapshot.messages : [];
+    const lastUserIndex = storedMessages.map(message => message?.role).lastIndexOf('user');
+    let settledVisibleReply = false;
+    const writerMessages = storedMessages.map((message, index) => {
+      if (lastUserIndex < 0 || index <= lastUserIndex || message?.role !== 'assistant'
+        || message.turnMeta?.verifiedCompletion === true || turnBlockReason(message)) return message;
+      settledVisibleReply = true;
+      return { ...message, turnMeta: { ...message.turnMeta, verifiedCompletion: true, settledVisibleReply: true } };
+    });
+    const window = buildCompleteRecentTurnWindow(writerMessages, 2, '');
     const terminal = window.previousTurn?.assistant || window.leadingAssistant;
     const terminalTail = extractInputAssistTerminalTail(terminal?.content || '');
+    const previousUserInput = window.previousTurn?.user
+      ? compact(window.previousTurn.user.content || '', INPUT_ASSIST_PREVIOUS_USER_MAX_CHARS)
+      : '';
+    // A short terminal reply alone rarely shows the scene, so the end of the reply before it
+    // fills the remaining terminal budget as clearly separated earlier context.
+    const earlierTurn = window.selectedTurns.length > 1 ? window.selectedTurns[window.selectedTurns.length - 2] : null;
+    const earlierSceneTail = terminalTail && terminalTail.length < INPUT_ASSIST_SHORT_TERMINAL_CHARS && earlierTurn?.assistant
+      ? extractInputAssistTerminalTail(earlierTurn.assistant.content || '', INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS - terminalTail.length)
+      : '';
+    const terminalProof = !window.previousTurn ? (terminal ? 'leading_assistant' : 'none')
+      : window.previousTurn.assistantMessages?.some(message => message.turnMeta?.settledVisibleReply === true) ? 'settled_visible_reply'
+        : window.previousTurn.proofKind;
     const cleanInput = text(content || '').trim();
     const messages = terminalTail ? [{ role: 'assistant', content: terminalTail, turnMeta: { referencePrelude: true, ref: terminal.turnMeta?.ref || nativeTurnRef(terminal) } }] : [];
     if (cleanInput) messages.push({ role: 'user', content: cleanInput, turnMeta: { currentInput: true, currentInputProven: false, unsubmittedProposal: true } });
@@ -19580,12 +19611,30 @@ ${passage.text || ''}`, 420));
       requestCarriesNewerTerminal: false, runtimeLatestAvailable: false, runtimeLatestApplied: false,
       runtimeLatestRejectedHistorical: false, runtimeLatestRejectedNewerStored: false, runtimeLatestAt: 0,
       immediateCompletedTurnCount: window.recentTurnCount, contextMessageCount: messages.length,
-      discardedHistoricalMessageCount: Math.max(0, (snapshot.messages?.length || 0) - (terminalTail ? 1 : 0)),
+      discardedHistoricalMessageCount: Math.max(0, storedMessages.length - (terminalTail ? 1 : 0)),
       terminalOnly: true, terminalTailChars: terminalTail.length, terminalAssistantHash: stableDraftHash(terminalTail),
+      terminalProof, settledVisibleReplyAccepted: settledVisibleReply && terminalProof === 'settled_visible_reply',
+      previousUserInputChars: previousUserInput.length, earlierSceneTailChars: earlierSceneTail.length,
       turnEligibility: window.turnEligibility, currentInputAdopted: false
     };
-    return messages.length ? messages : [{ role: 'user', content: cleanInput, turnMeta: { currentInput: true, currentInputProven: false, unsubmittedProposal: true } }];
+    return {
+      messages: messages.length ? messages : [{ role: 'user', content: cleanInput, turnMeta: { currentInput: true, currentInputProven: false, unsubmittedProposal: true } }],
+      previousUserInput,
+      earlierSceneTail,
+      terminalProof
+    };
   };
+  const inputAssistContextMessages = async (content, settings, requestMessages = [], staticSnapshot = null) =>
+    (await inputAssistLiveScene(content, settings, requestMessages, staticSnapshot)).messages;
+  // Chronological live-scene blocks placed before the terminal passage in both choice modes.
+  const inputAssistLiveSceneBlocks = liveScene => [
+    liveScene?.earlierSceneTail
+      ? `[EARLIER PASSAGE — READ-ONLY CONTEXT BEFORE THE TERMINAL PASSAGE]\n${liveScene.earlierSceneTail}\n`
+      : '',
+    liveScene?.previousUserInput
+      ? `[PREVIOUS USER INPUT — ALREADY HAPPENED; THE TERMINAL PASSAGE ANSWERS IT]\n${liveScene.previousUserInput}\n`
+      : ''
+  ].filter(Boolean);
 
   const parseInputAssistContinuityValidation = (value) => {
     const raw = text(value || '').trim()
@@ -19754,7 +19803,8 @@ ${passage.text || ''}`, 420));
     }
     const effectiveMode = selectEffectiveInputAssistMode(requestedMode);
     const scoped = scopedSettingsForStage(settings, INPUT_ASSIST_STAGE_ID);
-    const messages = await inputAssistContextMessages(continuationCue.contextInput || original, settings, options.requestMessages || [], inputAssistStaticSnapshot);
+    const liveScene = await inputAssistLiveScene(continuationCue.contextInput || original, settings, options.requestMessages || [], inputAssistStaticSnapshot);
+    const messages = liveScene.messages;
     Runtime.inputAssistStaticCandidate.terminalHash = Runtime.lastInputAssistContext?.terminalAssistantHash
       || Runtime.inputAssistStaticCandidate.terminalHash;
     const recent = buildRecentChat(messages, scoped);
@@ -19764,8 +19814,8 @@ ${passage.text || ''}`, 420));
       recent.previousTurnAssistant || recent.latestAssistant || ''
     );
     recent.inputAssistLoreQuery = compact(
-      [original, terminalVisibleScene].filter(Boolean).join('\n\n'),
-      INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS + 1600
+      [original, liveScene.previousUserInput, terminalVisibleScene].filter(Boolean).join('\n\n'),
+      INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS + INPUT_ASSIST_PREVIOUS_USER_MAX_CHARS + 1600
     );
     const refs = stageExecutionOptions(settings, INPUT_ASSIST_STAGE_ID).risuRefs;
     let risuContextMeta = {
@@ -19774,7 +19824,6 @@ ${passage.text || ''}`, 420));
       available: false
     };
     let inputAssistContextSnapshot = null;
-    let inputArcControl = (null);
     if (stageHasRisuReferences(settings, INPUT_ASSIST_STAGE_ID)) {
       inputAssistContextSnapshot = await loadRisuContextSnapshot(scoped, messages, recent, inputAssistStaticSnapshot);
     }
@@ -19801,19 +19850,6 @@ ${passage.text || ''}`, 420));
     if (writerEvidence) scoped[LIB_EVIDENCE_CONTEXT] = writerEvidence.run;
     if (authorDirectedDraft) {
       const startedAt = Date.now();
-      // RP author-choice generation reads the COMPLETE CURRENT continuity snapshot directly.
-      // Narrative Archive itself is still recalled only at the five-turn Arc Director boundary;
-      // this block receives only the already-filtered/rehydrated continuity state.
-      const authorChoiceContinuity = inputArcControl?.enabled
-        ? (inputArcControl, 'shadow', '')
-        : '';
-      const arcSuggestion = inputArcControl?.enabled ? [
-        `Story Arc revision: ${Math.max(0, Number(inputArcControl?.arc?.revision || 0) || 0)}`,
-        inputArcControl?.arc?.destination?.goal ? `Soft destination${inputArcControl.arc.destination.locked ? ' (USER LOCKED)' : ''}: ${compact(inputArcControl.arc.destination.goal, 1100)}` : '',
-        `Current planned beat${inputArcControl?.currentBrief?.beatType ? ` [${inputArcControl.currentBrief.beatType}]` : ''}: ${compact(inputArcControl?.currentBrief?.purpose || inputArcControl?.currentBrief?.semanticGoal || '', 900)}`,
-        inputArcControl?.currentBrief?.variation?.active ? `Controlled variation (${inputArcControl.currentBrief.variation.kind || 'none'}): ${compact(inputArcControl.currentBrief.variation.rationale || '', 600)}` : '',
-        `Optional input seed: ${compact(inputArcControl?.currentBrief?.inputSeed?.seed || '', 700)}`
-      ].filter(line => line && !/:\s*$/.test(line)).join('\n') : '';
       const playerInputVoice = playerControlledInputVoiceContext(original, scoped.ragCbsContext);
       const systemPrompt = [
         'You are GRADIA Input Manager in PLAYER-CONTROLLED RP ACTION CHOICE ADVISER mode.',
@@ -19824,6 +19860,7 @@ ${passage.text || ''}`, 420));
         'Do not include markdown, recommendation scores, a best choice, or commentary outside the JSON.'
       ].join('\n');
       const userPrompt = [
+        ...inputAssistLiveSceneBlocks(liveScene),
         '[TERMINAL PASSAGE — CURRENT LIVE SCENE]',
         terminalVisibleScene || '(No preceding assistant passage was available.)',
         '',
@@ -19831,13 +19868,7 @@ ${passage.text || ''}`, 420));
           ? `[CURRENT USER INPUT — ORIGINAL OPTION / CONSTRAINT SOURCE]\n${original}`
           : '[CURRENT USER INPUT]\n(no new user action; propose plausible player-controlled actions or an observe/wait option)',
         '',
-        recent.risuContext ? `[CONSISTENCY REFERENCES — OPTIONAL IDEA SUPPORT, NOT AUTHORITY]\n${compact(recent.risuContext, INPUT_ASSIST_LORE_CONTEXT_MAX_CHARS)}` : '',
-        authorChoiceContinuity ? [
-          '[STORY ARC — CURRENT NARRATIVE CONTINUITY / RP CHOICE GUARD]',
-          authorChoiceContinuity,
-          'CHOICE USE RULE: Treat this as continuity context only. It may shape what opportunities/actions are sensible for the user, but never pre-write NPC/world outcomes or force a dormant thread to occur. Preserve live locks and do-not-replay history.'
-        ].join('\n') : '',
-        arcSuggestion ? `[STORY ARC — OPTIONAL FUTURE SUGGESTION SOURCE ONLY]\n${arcSuggestion}` : '',
+        recent.risuContext ? `[CONSISTENCY REFERENCES — OPTIONAL IDEA SUPPORT, NOT AUTHORITY]\n${inputAssistLoreBlock(recent.risuContext)}` : '',
         '',
         '[CHOICE CONTRACT]',
         '- Each option must be materially different in the USER action/tactic, not merely different wording.',
@@ -19890,9 +19921,9 @@ ${passage.text || ''}`, 420));
           references: risuContextMeta.references,
           risuContextAvailable: risuContextMeta.available === true,
           risuContextChars: text(recent.risuContext || '').length,
-          arcContinuityAvailable: !!authorChoiceContinuity,
-          arcContinuityChars: text(authorChoiceContinuity || '').length,
-          arcSuggestionAvailable: !!arcSuggestion
+          terminalProof: liveScene.terminalProof,
+          previousUserInputChars: liveScene.previousUserInput.length,
+          earlierSceneTailChars: liveScene.earlierSceneTail.length
         }
       };
       Runtime.lastInputAssist = {
@@ -19910,8 +19941,7 @@ ${passage.text || ''}`, 420));
         terminalVisibleScene,
         references: risuContextMeta.references,
         risuContextAvailable: risuContextMeta.available === true,
-        arcContinuityAvailable: !!authorChoiceContinuity,
-        arcContinuityChars: text(authorChoiceContinuity || '').length,
+        terminalProof: liveScene.terminalProof,
         trace
       };
       recordStageTrace(trace);
@@ -19924,9 +19954,6 @@ ${passage.text || ''}`, 420));
     if (!authorDirectedDraft) {
       const startedAt = Date.now();
       const targetChoice = inputAssistTargetChoice(settings.inputAssistTargetChars);
-      const novelArcReference = inputArcControl?.enabled
-        ? arcInputManagerPromptBlock(inputArcControl, continuationCue, original)
-        : '';
       const systemPrompt = [
         'You are GRADIA Input Manager in NOVEL-MODE THREE-PERSPECTIVE CHOICE mode.',
         resolveModelBehaviorAdapterForStage(scoped, INPUT_ASSIST_STAGE_ID, 'input').prompt,
@@ -19936,6 +19963,7 @@ ${passage.text || ''}`, 420));
         'Do not include markdown, recommendation scores, a best choice, hidden analysis, or commentary outside the JSON.'
       ].join('\n');
       const userPrompt = [
+        ...inputAssistLiveSceneBlocks(liveScene),
         '[TERMINAL PASSAGE — EXACT LIVE-SCENE STARTING POINT]',
         terminalVisibleScene || '(No preceding assistant passage was available.)',
         '',
@@ -19943,8 +19971,7 @@ ${passage.text || ''}`, 420));
           ? `[CONTINUATION REQUEST]\nType: ${continuationCue.kind}\n${continuationCue.preserveSilence ? 'The source input is silence. In Novel mode this is not a player-agency lock; propose authorial continuations that respect the silence as the starting condition.' : 'Continue from the nearest unresolved motion already present.'}`
           : `[CURRENT USER INPUT — PRESERVE CORE AUTHOR INTENT ACROSS ALL THREE OPTIONS]\n${original}`,
         '',
-        recent.risuContext ? `[CONSISTENCY REFERENCES — IDENTITY/KNOWLEDGE/SETTING GUARD, NOT USER-CHOICE AUTHORITY]\n${compact(recent.risuContext, INPUT_ASSIST_LORE_CONTEXT_MAX_CHARS)}` : '',
-        novelArcReference ? `[STORY ARC — CONTINUITY + SOFT DIRECTION REFERENCE]\n${novelArcReference}` : '',
+        recent.risuContext ? `[CONSISTENCY REFERENCES — IDENTITY/KNOWLEDGE/SETTING GUARD, NOT USER-CHOICE AUTHORITY]\n${inputAssistLoreBlock(recent.risuContext)}` : '',
         '',
         '[THREE-PERSPECTIVE CONTRACT]',
         '- Candidate 1 must be perspective=user_focus.',
@@ -19952,7 +19979,6 @@ ${passage.text || ''}`, 420));
         '- Candidate 3 must be perspective=offscreen_focus.',
         '- The three candidates must be materially different in emphasis, not cosmetic paraphrases.',
         '- In normal-input mode, all three must preserve explicit author-fixed constraints/events/outcomes and named commitments. Unspecified protagonist micro-actions, dialogue, interiority, and scene execution may differ by perspective.',
-        '- Story Arc is soft reference. Current user input, terminal scene, established canon, continuity locks, and immediate causality outrank it.',
         '- Do not enact any option. The user will choose after generation.'
       ].filter(Boolean).join('\n\n');
       const maxTokens = targetChoice.chars
@@ -20007,8 +20033,9 @@ ${passage.text || ''}`, 420));
           references: risuContextMeta.references,
           risuContextAvailable: risuContextMeta.available === true,
           risuContextChars: text(recent.risuContext || '').length,
-          arcReferenceAvailable: !!novelArcReference,
-          arcReferenceChars: text(novelArcReference || '').length
+          terminalProof: liveScene.terminalProof,
+          previousUserInputChars: liveScene.previousUserInput.length,
+          earlierSceneTailChars: liveScene.earlierSceneTail.length
         }
       };
       Runtime.lastInputAssist = {
@@ -20027,8 +20054,7 @@ ${passage.text || ''}`, 420));
         continuationCue: continuationCue.active === true,
         references: risuContextMeta.references,
         risuContextAvailable: risuContextMeta.available === true,
-        arcReferenceAvailable: !!novelArcReference,
-        arcReferenceChars: text(novelArcReference || '').length,
+        terminalProof: liveScene.terminalProof,
         trace
       };
       recordStageTrace(trace);
@@ -29525,9 +29551,19 @@ function createGradiaEvidenceBudget({ digest }) {
           candidates = orderLibEvidenceCandidates(queues, allowedOwners, input.queryText);
         }
         const packer = createLibEvidencePacker('gradia.lib-server-evidence.v1', evidenceRevision, evidenceBudget);
+        // An Input Writer proposal needs only a little record-level memory beside the live
+        // scene: HAYAKU/Flashback records share a small whole-record budget (the first one is
+        // always admitted). The LIBRA owner bundle is unchanged.
+        const recordCharCap = input.proposal ? LIB_INPUT_WRITER_RECORD_EVIDENCE_CHARS : Infinity;
+        let recordChars = 0;
         for (const item of candidates) {
           if (bytes(item.content) > evidenceBudget.maxBytes) continue;
-          if (packer.tryAdd(item)) selected.push(item);
+          const record = item.owner !== 'libra';
+          if (record && recordChars > 0 && recordChars + item.content.length > recordCharCap) continue;
+          if (packer.tryAdd(item)) {
+            selected.push(item);
+            if (record) recordChars += item.content.length;
+          }
         }
         // The packer's arithmetic is checked once against the real renderer.
         if (selected.length) renderLibEvidence({ schema: 'gradia.lib-server-evidence.v1', evidenceRevision, items: selected }, evidenceBudget);

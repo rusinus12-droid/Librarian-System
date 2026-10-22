@@ -39,7 +39,10 @@ test('a smaller context packs complete owner items and rechecks every contributi
  const {pending}=await f.start();await f.select();
  const sent=JSON.stringify(f.prompts[0]),included=items.filter(x=>sent.includes(x.content));
  assert(included.length>0&&included.length<items.length);for(const item of included)assert(sent.includes(item.content));
- const measured=f.host.plugin.getLibReadOnlyStatus().modelSelection;assert.equal(measured.selectedItems,included.length);assert.equal(measured.omittedItems,items.length-included.length);
+ const status=f.host.plugin.getLibReadOnlyStatus(),measured=status.modelSelection;assert.equal(measured.selectedItems,included.length);
+ // The writer keeps HAYAKU/Flashback records within its record budget before the per-call context fit.
+ const packed=included.length+measured.omittedItems;assert(packed<items.length,'record budget trims the packet');
+ const recordChars=items.filter(x=>x.owner!=='libra'&&sent.includes(x.content)).reduce((n,x)=>n+x.content.length,0);assert(recordChars<=8000,String(recordChars));
  assert(measured.finalInputAllowance+measured.effectiveOutputReserve+measured.safetyMargin<=measured.contextLimit);
  current=false;f.button('바로 전송').click();await f.wait(()=>f.document.body.textContent.includes('검증 실패'),'source currentness');assert.equal(f.sent.length,0);
  await f.host.plugin.cancelInputAssistSend();assert.equal(await pending,false);
