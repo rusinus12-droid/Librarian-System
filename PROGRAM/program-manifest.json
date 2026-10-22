@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-22T09:41:56.637Z",
+  "generatedAt": "2026-10-22T10:10:11.121Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -1650,6 +1650,10 @@
     "docs/GRADIA_LORE_SELECTION_PERFORMANCE_20261022.md": {
       "sha256": "bcf719f6f63b8303f7af819ec24753a09e3bf2b00385541cf77d0bb71c79b713",
       "bytes": 5680
+    },
+    "docs/GRADIA_WRITING_MODE_SEPARATION_20261022.md": {
+      "sha256": "cb045ea19b0ecb1045a43ab3e52261ecbe7623416f7544132b977e6c62382d55",
+      "bytes": 2169
     },
     "docs/gradia/FEATURE-IMPLEMENTATION-20261007.md": {
       "sha256": "83459c3665a8a69d1ef02a4e717e1fcbec5a9e1a67ca5d12b50bedbc466ae9cf",
@@ -6282,6 +6286,10 @@
     "tests/gradia/turn-eligibility.test.cjs": {
       "sha256": "83cb5df93d34dc1f3ae5c5123c01cbc2d282556da2d85864afea66883007d2fb",
       "bytes": 14739
+    },
+    "tests/gradia/writing-mode-separation.test.cjs": {
+      "sha256": "080423dc6d513ffd53eaa69a1e301c793dd05abc7d1c2f3f50a25929f7cbf9af",
+      "bytes": 3864
     },
     "tests/gui_availability_patch_runtime_test.cjs": {
       "sha256": "8522a187670b5c63c78c3e473cc48d77cf8e4f22e47224544e5667d47cd547c3",
