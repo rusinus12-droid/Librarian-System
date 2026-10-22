@@ -37,6 +37,26 @@ storageMode, scopeKey, shard 번호, records 수, 전체 envelope 해시가 mani
 명시적 새 commit을 쓰는 경우에만 새 manifest에서 과거 버킷 필드를 제거한다.
 과거 버킷 원본은 남긴다.
 
+### Flashback 1.1.3 이후 실제 manifest의 요약 건수 불일치
+
+추가 오류와 실제 manifest를 대조해 초기 호환 검사의 잘못된 가정을 확인했다.
+`1hxw63t`의 저장 값은 `count: 0`, `stats.recordTotal: 45`이며 bucketCounts의
+합도 45다. commitId는 빈 문자열이고 rawPageLayout/rawPageReferences/
+rawPageDirectoryDigest는 없다. 이전 구현은 요약 count와 버킷 합이 같아야
+한다고 가정해 이 정상 버킷 후보들을 검사하기 전에 차단했다.
+
+버킷 집합의 완전성은 32개 모두의 실제 scope/index/건수/envelope hash 검증으로
+판단하도록 수정했다. 검증된 합 45는 읽기와 복원 시 메모리상의 count 기준으로만
+사용하고 저장된 count 0과 원본 바이트는 보존한다. count가 0이더라도 버킷이
+하나 없거나 변조되면 계속 차단한다. 버킷별 건수·해시의 구조 검사도 유지한다.
+
+실제로 보고된 물리 키는 `records:bucket:v1:shard:0000` 형식이었다. 이 키
+계열은 manifest 오류와 별개로 식별해 unknown_scope_key 중복 오류를 만들지
+않도록 했다. 무결성 오류는 그대로 남기고 실패 조건을 detail로 구분한다.
+portable export의 기존 일반 샤드 정리 필터도 이 키의 `:shard:0000` 접미사를
+오인하지 않도록 검증된 버킷 키 집합을 사용한다. 새 회귀 자료는 이 실제 키 형식과
+count 0 / stats 45 / missingShards 32 조합을 사용한 합성 데이터다.
+
 임베딩 프로필을 변경한 뒤 canonical-variants 인덱스에는 과거 벡터 키가 남고,
 실제 canonical memory의 `embedding.vectorKey`만 갱신될 수 있다. 기존 전체
 이전 검사는 인덱스의 과거 키까지 필수로 요구해 이전을 차단했다.
@@ -93,7 +113,7 @@ revision, sourceDigest로 검증하고, 정본이 명시적으로 `rebuild_requi
 
 ## 검증
 
-- `global_owner_discovery_adapters_test.cjs`: 165개 시나리오 통과. 오래된
+- `global_owner_discovery_adapters_test.cjs`: 174개 시나리오 통과. 오래된
   인덱스의 재현 실패를 먼저 확인한 뒤 수정했으며, 신원 불일치·현재 벡터 누락·
   서버에만 있는 사본을 잘못 인정하지 않는 경우를 검사했다.
 - `storage_global_migration_debug_export_test.cjs`: LIBRA, Flashback, HAYAKU의
@@ -101,7 +121,8 @@ revision, sourceDigest로 검증하고, 정본이 명시적으로 `rebuild_requi
   저장소 불변 및 추가 서버 호출 없음, 새 검사 결과 교체를 검사했다.
 - `flashback_bucketed_v1_storage_test.cjs`: 합성 32버킷·45기록·1024차원 벡터의
   실제 로더 읽기, 재사용 manifest 뒤 물리 데이터 변조 차단, 빈 버킷 누락과
-  중복 차단, portable 왕복과 새 commit의 codec 전환/과거 버킷 보존 통과.
+  중복 차단, count 0 헤더 보존, 실제 물리 키 형식의 portable 왕복과 새 commit의
+  codec 전환/과거 버킷 보존 통과.
 - `storage_global_owner_public_gui_test.cjs`: LIBRA, Flashback, HAYAKU의 전체 원본
   플러그인 GUI → 실제 서버 handler → 플러그인 재시작 → 기기 복원 통과.
   LIBRA의 오래된 variant 벡터 참조와 Flashback의 합성 32버킷·45기록을 포함해
@@ -132,4 +153,5 @@ LIBRA의 실제 아카이브 벡터 2개는 여전히 추가 증거 없이 존�
 준비 시 원격의 최신 변경(LIBRA 2.4.5 / Flashback 1.1.2 / HAYAKU 3.1.2)을
 받아 그 위에 수정 커밋을 rebase했다. 수정본은 LIBRA 2.4.6 / Flashback 1.1.3 /
 HAYAKU 3.1.3 / Storage SDK 1.8.32로 구분하고 소스 manifest·해시를 갱신했다.
+이후 요약 count 0의 버킷 호환 보완은 Flashback 1.1.4로 구분한다.
 사용자 호스트의 플러그인 교체나 실제 기억/벡터 재생성, 배포 ZIP 발행은 수행하지 않았다.

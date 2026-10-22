@@ -284,9 +284,9 @@
     "artifact": "Librarian-System-0.4.1-Source.zip",
     "plugins": {
       "flashback": {
-        "version": "1.1.3",
-        "sha256": "af2deca9f5816639e08f21a3aebc21c5091eb75375cdccdf1e66fdc535f9c687",
-        "bytes": 3387739
+        "version": "1.1.4",
+        "sha256": "dcb330e24cc553c3590090fcc0c5c2ad81a611fdf75e847f2206fe99a5b4cf57",
+        "bytes": 3389817
       },
       "hayaku": {
         "version": "3.1.3",

@@ -297,7 +297,7 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
  // Historical bucket envelopes bind only through scope/index/count/hash, at observed keys.
  const bucketCounts=[7,16,2,1,0,0,0,1,0,3,0,0,2,2,1,0,0,0,1,1,0,1,1,1,0,0,0,2,1,0,1,1];
  const bucketScope=identity('flashback',1),bucketPrefix=`vector_rag_memory:scope:${keyHash(bucketScope)}:`;
- const buckets=bucketCounts.map((count,shard)=>row(bucketPrefix+`records:bucket:observed-${shard}`,{
+ const buckets=bucketCounts.map((count,shard)=>row(bucketPrefix+`records:bucket:v1:shard:${String(shard).padStart(4,'0')}`,{
   version:1,storageMode:'bucketed_v1',shard,scopeKey:bucketScope,
   records:Array.from({length:count},(_,i)=>({id:`fixture-${shard}-${i}`,scopeKey:bucketScope,text:'PRIVATE_RECORD_BODY',vector:[1,0]}))
  }));
@@ -306,6 +306,16 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
  r=await inspect('flashback',{records:[bucketRoot,...buckets]});ok(r);
  assert.equal(r.records[0].dependencyKeys.length,32);assert.ok(r.records.slice(1).every(b=>b.classification==='scope'));
  assert.equal(r.records[1].value,buckets[0].value,'bucket bytes are preserved');
+ for(const count of [0,4,44]) {
+  const stale=clone(bucketRoot);stale.value=JSON.stringify({...JSON.parse(stale.value),count,stats:{recordTotal:45}});
+  r=await inspect('flashback',{records:[stale,...buckets]});ok(r);
+  assert.equal(r.records[0].value,stale.value,'stale header bytes are preserved while every bucket is verified');
+  assert.equal(r.records[0].dependencyKeys.length,32);
+  const missing=buckets.filter((_,index)=>index!==0);
+  r=await inspect('flashback',{records:[stale,...missing]});blocked(r,/bucket_dependency_missing/);
+  const tampered=clone(buckets),body=JSON.parse(tampered[0].value);body.records[0].text='tampered';tampered[0].value=JSON.stringify(body);
+  r=await inspect('flashback',{records:[stale,...tampered]});blocked(r,/bucket_dependency_missing_or_invalid/);
+ }
  r=await inspect('flashback',{records:[bucketRoot,...buckets.map(b=>({...b,location:'server'}))]});blocked(r,/bucket_dependency_missing/);
  r=await inspect('flashback',{records:[bucketRoot,...buckets.slice(1)]});blocked(r,/bucket_dependency_missing/);
  r=await inspect('flashback',{records:[bucketRoot,...buckets.filter((_,i)=>i!==4)]});blocked(r,/bucket_dependency_missing/);
@@ -315,9 +325,11 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
   r=await inspect('flashback',{records:[bucketRoot,...bad]});blocked(r,/bucket_dependency_missing_or_invalid/);
   assert.ok(!JSON.stringify(r.blockers).includes('PRIVATE_RECORD_BODY'));
  }
- for(const fields of [{bucketCount:33},{bucketVersion:2},{bucketHashes:[]},{bucketCounts:[]},{count:44},{commitId:'mixed'},{rawPageLayout:'flashback.raw_pages.v1'}]) {
+ for(const fields of [{bucketCount:33},{bucketVersion:2},{bucketHashes:[]},{bucketCounts:[]},{count:-1},{commitId:'mixed'},{rawPageLayout:'flashback.raw_pages.v1'}]) {
   const bad=clone(bucketRoot);bad.value=JSON.stringify({...JSON.parse(bad.value),...fields});
   r=await inspect('flashback',{records:[bad,...buckets]});blocked(r,/bucket_manifest_invalid/);
+  assert.ok(!r.blockers.some(issue=>issue.code==='flashback_global_unknown_scope_key'),'known bucket key family does not generate an unknown-key cascade');
+  assert.ok(r.blockers.find(issue=>issue.code==='flashback_global_bucket_manifest_invalid').detail,'bucket metadata errors include a precise reason');
  }
  // The supplied empty-envelope hashes establish the historical JSON hash codec.
  const actualScope='char:1prphff|chat:1cferkl|persona:48amyh';assert.equal(keyHash(actualScope),'1hxw63t');

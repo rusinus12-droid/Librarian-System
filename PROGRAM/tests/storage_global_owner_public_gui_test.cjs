@@ -61,7 +61,7 @@ const seedRoots=name=>{const roots=Array.from({length:2},(_,i)=>{
   roots.push([`vector_rag_memory:scope:${first.storageHash}:records:shard:0000`,JSON.stringify({scopeKey:first.scopeKey,commitId:first.commitId,shard:0,records:[{id:'durable-record',scopeKey:first.scopeKey,sourceType:'response',type:'response',text:'durable',dim:4,vector:[1,0,0,0]}]})]);
   const second=JSON.parse(roots[1][1]),archiveId='fb_135rcsu',scopeKey='flashback_archive_v1:'+archiveId,storageHash=hash(scopeKey);
   const pointer={schema:'flashback_memory.archive_ref.v1',archiveId,archiveScopeKey:scopeKey,generation:1,depth:1,deltaCount:0,recordCount:0,digest:hash(''),responseTurnMax:0,createdAt:'',updatedAt:'',parentRef:null};
-  const bucketFixture=createBucketFixture(second.scopeKey,second);second.archiveRef=pointer;
+  const bucketFixture=createBucketFixture(second.scopeKey,second,{count:0,missingShards:32});second.archiveRef=pointer;
   roots[1][1]=JSON.stringify({...bucketFixture.manifest,archiveRef:pointer});roots.push(...bucketFixture.buckets);
   roots.push([`vector_rag_memory:scope:${storageHash}:manifest:v2`,JSON.stringify({schema:'vector_rag_memory.scope_manifest.v2',version:2,scopeKey,storageHash,archiveOwner:true,archiveId,archiveGeneration:1,archiveRecordCount:0,archiveDigest:hash(''),archiveMemberCatalogVersion:1,archiveDeltaCount:0,archiveDeltaMemberIds:[],archiveDeltaDigest:hash(''),count:0,shardCount:0,shardSummaries:[]})],
    ['vector_rag_memory:scope_registry:v2',JSON.stringify({version:2,scopes:[{scopeKey,storageHash}]})]);

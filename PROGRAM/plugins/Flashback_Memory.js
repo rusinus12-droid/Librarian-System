@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.1.3
+//@display-name ⚡ FLASHBACK Memory v1.1.4
 //@api 3.0
-//@version 1.1.3
+//@version 1.1.4
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.1.3';
+const PLUGIN_VERSION = '1.1.4';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -13026,15 +13026,18 @@ function memorySuiteFlashbackBucketValid(manifest, index, value) {
 // whose envelope matches this manifest's scope, index, count and hash can bind.
 function memorySuiteFlashbackBucketCatalog(manifest, candidates) {
   const count = manifest.bucketCount, errors = [], keys = [];
-  if (manifest.bucketVersion !== 1 || !Number.isSafeInteger(count) || count < 1 || count > 100000
-    || manifest.commitId || manifest.rawPageLayout != null || manifest.rawPageReferences != null || manifest.rawPageDirectoryDigest != null
-    || !Array.isArray(manifest.bucketCounts) || manifest.bucketCounts.length !== count
-    || !Array.isArray(manifest.bucketHashes) || manifest.bucketHashes.length !== count
-    || manifest.bucketCounts.some(n => !Number.isSafeInteger(n) || n < 0)
-    || manifest.bucketHashes.some(h => typeof h !== 'string' || !/^[a-z0-9]+$/.test(h))
-    || manifest.bucketCounts.reduce((sum,n) => sum+n,0) !== manifest.count) {
-    return { keys, errors:[{code:'bucket_manifest_invalid'}] };
-  }
+  const invalid = reason => ({keys,errors:[{code:'bucket_manifest_invalid',reason}]});
+  if (manifest.bucketVersion !== 1) return invalid('bucket_version');
+  if (!Number.isSafeInteger(count) || count < 1 || count > 100000) return invalid('bucket_count');
+  if (!Number.isSafeInteger(manifest.count) || manifest.count < 0) return invalid('manifest_record_count');
+  if (manifest.commitId) return invalid('bucket_commit_layout_conflict');
+  if (manifest.rawPageLayout != null || manifest.rawPageReferences != null || manifest.rawPageDirectoryDigest != null) return invalid('bucket_raw_page_layout_conflict');
+  if (!Array.isArray(manifest.bucketCounts) || manifest.bucketCounts.length !== count) return invalid('bucket_counts_length');
+  if (!Array.isArray(manifest.bucketHashes) || manifest.bucketHashes.length !== count) return invalid('bucket_hashes_length');
+  if (manifest.bucketCounts.some(n => !Number.isSafeInteger(n) || n < 0)) return invalid('bucket_record_count');
+  if (manifest.bucketHashes.some(h => typeof h !== 'string' || !/^[a-z0-9]+$/.test(h))) return invalid('bucket_hash');
+  const recordTotal = manifest.bucketCounts.reduce((sum,n) => sum+n,0);
+  if (!Number.isSafeInteger(recordTotal) || recordTotal > 10000000) return invalid('bucket_record_total');
   const prefix = `vector_rag_memory:scope:${keyHash(manifest.scopeKey)}:`;
   const matches = new Map();
   for (const row of candidates) {
@@ -13051,7 +13054,9 @@ function memorySuiteFlashbackBucketCatalog(manifest, candidates) {
     if (found.length !== 1) errors.push({code:found.length ? 'bucket_dependency_ambiguous' : 'bucket_dependency_missing_or_invalid',index});
     else keys[index] = found[0];
   }
-  return { keys, errors };
+  // The header count can describe a filtered/older projection. Every physical
+  // bucket is independently required and verified against its count and hash.
+  return { keys, errors, recordTotal };
 }
 async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
   const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -13266,9 +13271,14 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
       || value?.schema !== 'vector_rag_memory.scope_manifest.v2' || !memorySuiteFlashbackBucketed(value)) continue;
     const catalog = memorySuiteFlashbackBucketCatalog(value,records.filter(other => other.space === 'plugin' && sameSource(row,other)));
     for (const error of catalog.errors) {
-      issue(error.code,row,error.index == null ? '' : `bucket_index:${error.index}`);
+      issue(error.code,row,error.reason || (error.index == null ? '' : `bucket_index:${error.index}`));
       blockers[blockers.length-1].manifestState = {storageMode:value.storageMode,bucketVersion:value.bucketVersion,
-        bucketCount:value.bucketCount,count:value.count};
+        bucketCount:value.bucketCount,count:value.count,
+        bucketCountsLength:Array.isArray(value.bucketCounts) ? value.bucketCounts.length : null,
+        bucketHashesLength:Array.isArray(value.bucketHashes) ? value.bucketHashes.length : null,
+        bucketRecordTotal:Array.isArray(value.bucketCounts) && value.bucketCounts.every(Number.isSafeInteger)
+          ? value.bucketCounts.reduce((sum,n)=>sum+n,0) : null,
+        commitIdPresent:!!value.commitId,rawPageFieldsPresent:['rawPageLayout','rawPageReferences','rawPageDirectoryDigest'].filter(key=>value[key]!=null)};
     }
     for (const key of catalog.keys.filter(Boolean)) { bucketKeys.add(key); dependency(row,key,'plugin'); }
   }
@@ -13279,7 +13289,7 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
     if (match) {
       const id = nativeHashes.get(match[1]), archiveId = archiveHashes.get(match[1]);
       if (!id && !archiveId) { issue('scope_identity_unresolved',row); continue; }
-      if (!bucketKeys.has(key) && !key.startsWith('vector_rag_memory:local-vector-shard:v1:') && !/^(?:manifest:v2(?::previous:v1)?$|turn_worldline:v1$|records:(?:shard:\d+|commit:.+:shard:\d+)$)/.test(match[2])) issue('unknown_scope_key',row);
+      if (!bucketKeys.has(key) && !key.startsWith('vector_rag_memory:local-vector-shard:v1:') && !/^(?:manifest:v2(?::previous:v1)?$|turn_worldline:v1$|records:(?:shard:\d+|commit:.+:shard:\d+|bucket:v1:shard:\d+)$)/.test(match[2])) issue('unknown_scope_key',row);
       if (id) { row.classification='scope'; attach(row,id); }
       if (object(value) && value.scopeKey && value.scopeKey !== (id || archiveId)) issue('payload_scope_identity_conflict',row);
     } else if (['vector_rag_memory:scope_registry:v2','vector_rag_memory:operation_log:v1','vector_rag_memory:maintenance_journal:v1','vector_rag_memory:pending_capture_journal:v1','vector_rag_memory:handoff_ledger:v2','vector_rag_memory:legacy_migration:v2'].includes(key)) {
@@ -18594,6 +18604,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (catalog.errors.length) throw Object.assign(new Error('FLASHBACK_BUCKET_DIRECTORY_INVALID'),{code:'FLASHBACK_BUCKET_DIRECTORY_INVALID'});
     manifest[FLASHBACK_BUCKET_DIRECTORY] = catalog.keys;
     manifest.shardCount = manifest.bucketCount;
+    // Read basis only; the original serialized manifest remains untouched.
+    manifest.count = catalog.recordTotal;
   };
   const loadScopeManifest = async (scopeOrKey, readOptions = {}) => {
     const scope = typeof scopeOrKey === 'string' ? { scopeKey: scopeOrKey } : (scopeOrKey || {});
@@ -51034,6 +51046,17 @@ return createReadSession;
           || !textValue(manifest.storageHash)) continue;
         const physicalPrefix = `vector_rag_memory:scope:${textValue(manifest.storageHash)}:`;
         const activeKeys = activeShardKeysByPrefix.get(physicalPrefix) || new Set();
+        if (memorySuiteFlashbackBucketed(manifest)) {
+          const candidates = [];
+          for (const candidateKey of allKeys) if (textValue(candidateKey).startsWith(physicalPrefix)) {
+            candidates.push({key:candidateKey,value:await readValue(candidateKey)});
+          }
+          const catalog = memorySuiteFlashbackBucketCatalog(manifest,candidates);
+          if (catalog.errors.length) throw new Error(`portable_backup_bucket_directory_invalid:${key}`);
+          for (const bucketKey of catalog.keys) { activeKeys.add(bucketKey); initial.add(bucketKey); }
+          activeShardKeysByPrefix.set(physicalPrefix,activeKeys);
+          continue;
+        }
         const commitId = textValue(manifest.commitId);
         const shardCount = Math.max(0, Number(manifest.shardCount || 0) || 0);
         const rawPageRefs = hasFlashbackRawPageDirectory(manifest)

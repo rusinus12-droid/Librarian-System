@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
 const {createBucketFixture}=require('./fixtures/flashback_bucketed_v1_fixture.cjs');
 (async()=>{
- const scopeKey='char:bucket-fixture|chat:inactive|persona:fixture',seed=createBucketFixture(scopeKey);
+ const scopeKey='char:bucket-fixture|chat:inactive|persona:fixture',seed=createBucketFixture(scopeKey,{}, {count:0,missingShards:32});
  const fixture=await createFixture();
  try{
   // The public API appears before asynchronous startup metadata writes settle.
@@ -31,7 +31,7 @@ const {createBucketFixture}=require('./fixtures/flashback_bucketed_v1_fixture.cj
   fixture.pluginStorage.values.set(key+'-duplicate',raw);
   const ambiguous=await api.loadScopeManifest(scopeKey);assert.equal(ambiguous.manifestCorrupt,true);
   fixture.pluginStorage.values.delete(key+'-duplicate');
-  const scope=await fixture.api.resolveCurrentScope(false),current=createBucketFixture(scope.scopeKey,scope);
+  const scope=await fixture.api.resolveCurrentScope(false),current=createBucketFixture(scope.scopeKey,scope,{count:0,missingShards:32});
   await new Promise(resolve=>setTimeout(resolve,100));
   for(const [key,value]of current.entries)fixture.pluginStorage.values.set(key,value);
   const portable=fixture.context.__FlashbackPortableMemoryBackup;
@@ -43,6 +43,6 @@ const {createBucketFixture}=require('./fixtures/flashback_bucketed_v1_fixture.cj
   assert.ok(saved.manifest.commitId);assert.equal(saved.manifest.storageMode,undefined);
   for(const field of ['bucketCount','bucketCounts','bucketHashes'])assert.equal(saved.manifest[field],undefined,'new shard commit drops old bucket metadata');
   for(const [key,value]of current.buckets)assert.equal(fixture.pluginStorage.values.get(key),value,'replacement preserves old bucket source');
-  console.log('Flashback bucketed_v1 physical storage: PASS (32 buckets, 45 records, 1024D vectors, tamper/missing/ambiguity, portable roundtrip, committed rewrite)');
+  console.log('Flashback bucketed_v1 physical storage: PASS (count 0 header, 32 physical buckets, 45 verified records, 1024D vectors, tamper/missing/ambiguity, portable roundtrip, committed rewrite)');
  }finally{await fixture.dispose();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
