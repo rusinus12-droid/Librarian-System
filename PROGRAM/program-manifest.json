@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-22T08:59:31.055Z",
+  "generatedAt": "2026-10-22T09:15:39.805Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -417,7 +417,7 @@
           "legacyCandidatesRequireLiveReconcile": true
         },
         "lia": {
-          "version": "0.27.1",
+          "version": "0.27.2",
           "fiveTurnCommitRevisionGate": true,
           "inFlightRevisionRequeue": true,
           "backendOrder": [
@@ -546,7 +546,7 @@
       ]
     },
     "liaSharedServerRestore": {
-      "version": "0.27.1",
+      "version": "0.27.2",
       "fixedSharedStores": [
         "dynamicPersonaLorebookGeneratorResultVault",
         "liaPersonaLinkerWorldBlueprintVaultV1",
@@ -1057,7 +1057,7 @@
       "computeModeArgumentExposed": false,
       "arbitraryCodeExecution": false,
       "liaWorldLorePilot": {
-        "version": "0.27.1",
+        "version": "0.27.2",
         "operation": "lia.world-lore-rerank.v2",
         "algorithmFingerprint": "cbd91cc90d01c8fc052669390badab3d0c2c7a52c4b6c314ac2ca61716fc7a75",
         "retired": true,
@@ -1426,7 +1426,7 @@
     "flashback": "1.1.0",
     "hayaku": "3.1.0",
     "libra": "2.4.2",
-    "lia": "0.27.1",
+    "lia": "0.27.2",
     "retrace": "1.10.0",
     "gradia": "0.26.7"
   },
@@ -2548,8 +2548,8 @@
       "bytes": 3248
     },
     "docs/LIA_SCOPE_PERSONA_MANAGEMENT_20261022.md": {
-      "sha256": "e5392ece3bb7ffaa31796ba75ced1a0a3777cc9ccdb32be297b7d8afc22aefe4",
-      "bytes": 2418
+      "sha256": "7f380af5697c30bef8c08e2b2bd0a9dadf27c8d93d6636a9192be9548b1b2d70",
+      "bytes": 2787
     },
     "docs/LIA-CHAT-READ-AUDIT-20261007.md": {
       "sha256": "56693bad832d3ece8fd38c34d5ff1c4b3e9dab340f9cec1338ad6c8833de828b",
@@ -2942,6 +2942,10 @@
     "docs/LOGICAL_MIGRATION_0.3.51.md": {
       "sha256": "857ac4dc08c5700e4320464261c6ae0d3ac69289294a3a5c60bb5d5c9a81cd2f",
       "bytes": 3231
+    },
+    "docs/MAIN_BRANCH_MERGE_REVIEW_20261022.md": {
+      "sha256": "8a428e918cd185b11fc932249ccfbb45c2cbebab2124ee27d1dbbf7b809d4df0",
+      "bytes": 4009
     },
     "docs/MAIN_MEMORY_BASELINE.md": {
       "sha256": "a985f741eff76a41486278a5d687d37e79fe52fb6a0337bad6ef1dfcc7c27f34",
@@ -3552,7 +3556,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "a08fd164a0071edbb4892d2970baa1125f4a71e355a175ab864fc9c34cdc067e",
+      "sha256": "c58006fd1790b1bb4f48a1dee187139ab57804ecb0b5668315a2a418c9207996",
       "bytes": 11832
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3932,7 +3936,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "3d81866555f6e182aeebdaef91c2c0d4976c377d17214beb65da1708e361d81e",
+      "sha256": "837cb6a5a77763a16daf1e118e7466e318de442b55c9fc46c13956170c8de283",
       "bytes": 3349
     },
     "plugins/Flashback_Memory.js": {
@@ -3948,8 +3952,8 @@
       "bytes": 4027026
     },
     "plugins/LIA_Persona_Linker.js": {
-      "sha256": "45711b6ff0b96426c79b18f9e445e75b9bb0b9d569c7d4205aabf3d1de26f0a4",
-      "bytes": 1647102
+      "sha256": "d68a72395072642b26eaf2ea05f1bb16c13c73731d0f56e5a1a5ee75882c5a2c",
+      "bytes": 1647506
     },
     "plugins/LIBRA.js": {
       "sha256": "d566c649563367b71c901e6a5bea12c9e584553a508cb3882de97c5b9e9a7205",
@@ -7168,8 +7172,8 @@
       "bytes": 1803
     },
     "tests/lia_scope_persona_management_runtime_test.cjs": {
-      "sha256": "538c1e1e501dd24c49bff93a9ff95ec486f093098dd40109ca53515aa4329dd5",
-      "bytes": 9030
+      "sha256": "c5285e368651ab56cef0ef99b1d11e9d18e8eb13d6919ea4443e27506a3f7b9e",
+      "bytes": 10692
     },
     "tests/lia_shared_server_restore_contract_test.cjs": {
       "sha256": "381022301aa716b24d23eda79486d313e7b798701cc9a0ed5a56b0f17733b6b7",
@@ -11424,7 +11428,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "5e190248cbc197c15adc61f15aa166410ecd664613c95929301c57a977bf417c",
+      "sha256": "53bb41d996f34ca3d408cdad9e76b0b7f5edb86a9848751b0f78bfcb28ac7675",
       "bytes": 3783
     }
   },

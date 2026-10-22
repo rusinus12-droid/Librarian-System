@@ -71,6 +71,29 @@ test('reordered host indexes are resolved from fresh IDs and rejected if the hos
  assert.equal(f.character.chats[1].bindedPersona,'lia-live-persona::fixture');
 });
 
+test('a chat reorder during the final character read cannot overwrite the other chat',async t=>{
+ const f=await setup(t),catalog=await f.runtime.getScopePersonaCatalog(),row=catalog.rows.find(r=>r.chatId==='other-chat');
+ const before=new Map(f.character.chats.map(chat=>[chat.id,JSON.stringify(chat)]));let reads=0;
+ f.api.getCharacterFromIndex=async i=>{if(++reads===2)f.character.chats.reverse();return f.db.characters[i];};
+ await assert.rejects(()=>f.runtime.changeScopePersona(request(catalog,row,'source-persona')),/LIA_BINDING_CHANGE_SCOPE_CHANGED/);
+ for(const chat of f.character.chats)assert.equal(JSON.stringify(chat),before.get(chat.id),'each chat retains its content and binding');
+});
+
+test('the final character read preserves newer chat fields and refuses a changed binding',async t=>{
+ for(const changeBinding of [false,true]){
+  const f=await setup(t),catalog=await f.runtime.getScopePersonaCatalog(),row=catalog.rows.find(r=>r.chatId==='other-chat');let reads=0;
+  f.api.getChatFromIndex=async(i,j)=>structuredClone(f.db.characters[i]?.chats[j]);
+  f.api.getCharacterFromIndex=async i=>{
+   if(++reads===2){f.character.chats[1].custom.newValue='written concurrently';if(changeBinding)f.character.chats[1].bindedPersona='';}
+   return structuredClone(f.db.characters[i]);
+  };
+  const operation=()=>f.runtime.changeScopePersona(request(catalog,row,'source-persona'));
+  if(changeBinding)await assert.rejects(operation,/LIA_BINDING_CHANGE_CONFLICT/);else await operation();
+  assert.equal(f.character.chats[1].custom.newValue,'written concurrently');
+  assert.equal(f.character.chats[1].bindedPersona,changeBinding?'':'source-persona');
+ }
+});
+
 test('partial database reads and damaged binding shards never look like an empty editable catalog',async t=>{
  const f=await setup(t),original=f.api.getDatabase;
  f.api.getDatabase=async()=>({characters:f.db.characters,personas:f.db.personas});

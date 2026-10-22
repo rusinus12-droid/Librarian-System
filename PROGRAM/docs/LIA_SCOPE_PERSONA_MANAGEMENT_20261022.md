@@ -17,4 +17,6 @@ LIA 왼쪽 메뉴와 모바일 하단 메뉴의 **스코프 · Persona**에서 �
 - `browser/lia_scope_persona_management_browser_test.cjs`: 실제 제품 UI, 31개 채팅의 검색·페이지 이동·적용, 외부 Live 제외, HTML 이스케이프, 미저장 설정 보존, 1280/820/390px 화면.
 - 기존 binding transaction, concurrent RMW, persona database guard/read UI, manual analysis, commit recovery, pocket GUI 회귀 시험.
 
-버전: LIA 0.27.1.
+저장 직전 캐릭터를 다시 읽는 동안 채팅 순서가 바뀌어도, 해당 인덱스의 실제 채팅 ID가 일치하는 경우에만 쓴다. 이때 함께 확인한 최신 채팅 필드를 보존하고, Persona 바인딩이 바뀌었으면 저장을 거부한다. 순서 변경·동시 필드 수정·동시 바인딩 변경 회귀 시험을 포함한다.
+
+버전: LIA 0.27.2.

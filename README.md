@@ -78,7 +78,7 @@ flowchart TB
 | **LIBRA** | `2.4.2` | 플러그인 (Owner) | 5턴 정본(Canonical) + 매 턴 Micro 기억 추출, 현재 상태(State Head) 투영, 시맨틱/어휘 하이브리드 회상 |
 | **Flashback Memory** | `1.1.0` | 플러그인 (Owner) | 대화 맥락 장기 에피소드 기억, 벡터/키워드 검색, 제로터치 채팅 어텐션 버튼 |
 | **HAYAKU Locator Continuity** | `3.1.0` | 플러그인 (Owner) | 장면 전환·장소 이동·인물 배치 연속성 추적 및 빠른 위치 컨텍스트 복원 |
-| **LIA Persona Linker** | `0.27.1` | 플러그인 (Local owner) | 기기 전용 페르소나 관리·수동 갱신 및 월드 로어북(Lorebook) BM25F 재순위화 |
+| **LIA Persona Linker** | `0.27.2` | 플러그인 (Local owner) | 기기 전용 페르소나 관리·수동 갱신 및 월드 로어북(Lorebook) BM25F 재순위화 |
 | **RE:TRACE** | `1.10.0` | 플러그인 (Manager) | 서버/로컬 스코프 통합 조회, 고정(Pin), 삭제 보호, ZIP 백업 내보내기/복원 관리 GUI |
 | **GRADIA** | `0.26.7` | 플러그인 (Consumer) | `LIBRA`·`Flashback`·`HAYAKU`의 검증된 기억 근거를 읽기 전용으로 통합 소비하는 소설/서사 생성 보조기 |
 

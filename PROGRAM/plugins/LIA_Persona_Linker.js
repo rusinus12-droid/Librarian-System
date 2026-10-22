@@ -1,7 +1,7 @@
 //@name lia_persona_linker
 //@display-name LIA: Persona Linker
 //@api 3.0
-//@version 0.27.1
+//@version 0.27.2
 /* Target-only handoff storage preparation v1. Authenticated owner handlers only. */
 async function prepareMemorySuiteHandoffTargetStorage(api, storage, owner, payload) {
   const readTarget = async () => {
@@ -274,7 +274,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
   const OPERATION_LOG_MAX = 300;
   const DEBUG_LOG_MAX = 600;
   const LOG_PERSIST_DEBOUNCE_MS = 1500;
-const PLUGIN_VERSION = "0.27.1";
+const PLUGIN_VERSION = "0.27.2";
   const LIA_SETTING_UI_ID = "lia-persona-linker-setting";
   const LIA_BUTTON_UI_ID = "lia-persona-linker-button";
   const PERSONA_PROOF_VERSION = 1;
@@ -13129,7 +13129,12 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
       if (!before.available) throw new Error("이 RisuAI 환경에서는 채팅 Persona 바인딩 API를 사용할 수 없습니다.");
       if (ctx?.char && ctx?.chat && typeof api.getCharacterFromIndex === 'function') {
         const actualCharacter=await api.getCharacterFromIndex(ctx.charIndex);
-        if (!actualCharacter || livePersonaScopeKey({...ctx,char:actualCharacter,chat:before.chat})!==livePersonaScopeKey(ctx)) throw Error('LIA_BINDING_CHANGE_SCOPE_CHANGED');
+        // The earlier chat read cannot prove what currently occupies this index.
+        // A reorder during the awaited character read must stop before setChatToIndex.
+        const actualChat=actualCharacter?.chats?.[ctx.chatIndex];
+        if (!actualCharacter || !actualChat || livePersonaScopeKey({...ctx,char:actualCharacter,chat:actualChat})!==livePersonaScopeKey(ctx)) throw Error('LIA_BINDING_CHANGE_SCOPE_CHANGED');
+        if (String(actualChat.bindedPersona || '').trim()!==before.personaId) throw Error('LIA_BINDING_CHANGE_CONFLICT');
+        before.chat=actualChat;
       }
       if (options.expectedBeforePersonaId !== undefined && before.personaId !== options.expectedBeforePersonaId) throw new Error('LIA_BINDING_CHANGE_CONFLICT');
       const expected = String(targetPersonaId || "").trim();
