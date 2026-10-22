@@ -25,6 +25,13 @@ test('visible NSFW selector saves, reopens, cancels and stays synchronized with 
   const enabled=f.doc.querySelector('[data-existing-response-field="nsfwGuidanceEnabled"]');enabled.click();await wait(()=>!f.doc.querySelector('#savebar [data-revert]').disabled,'NSFW toggle dirty state');await save();
   assert.equal(saved().nsfw_guidance_enabled,'false');
   await change('soft');await save();assert.equal(saved().nsfw_mode,'soft');assert.equal(saved().nsfw_guidance_enabled,'true');
+  const injectFinal=()=>f.doc.querySelector('[data-detail="main"] input[data-existing-response-field="nsfwInjectFinalRequest"]');
+  assert.equal(injectFinal().checked,false);assert.equal(injectFinal().disabled,false);
+  injectFinal().click();await wait(()=>[...f.doc.querySelectorAll('[data-existing-response-field="nsfwInjectFinalRequest"]')].every(c=>c.checked)&&!f.doc.querySelector('#savebar [data-revert]').disabled,'NSFW inject final synchronize');
+  await save();assert.equal(saved().nsfw_inject_final_request,'true');assert.equal(injectFinal().checked,true);
+  await f.plugin.closeSettingsGui();await f.plugin.openSettingsGui();assert.equal(injectFinal().checked,true);
+  injectFinal().click();f.doc.querySelector('#savebar [data-revert]').click();await wait(()=>!f.plugin.debugGuiStateInfo().dirty&&injectFinal().checked===true,'NSFW inject final cancel');
+  assert.equal(saved().nsfw_inject_final_request,'true');
   assert.equal(f.getCalls(),0);assert.deepEqual(f.errors,[]);
  }finally{await f.close();}
 });
