@@ -15,8 +15,21 @@ async function pipelineFixture(options={}){
  await h.plugin.saveProviderPreset('offline',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'synthetic',model:'offline-model',context_window:options.contextWindow??128000,max_tokens:4096,timeout_ms:5000,stream:false});
  await h.plugin.saveRuntimeSettings({mode:'normal',default_preset:'offline',input_assist_mode:'off',multi_pipeline_mode:options.heavy?'heavyweight':'lightweight',
   failure_mode:'hard',lore_activation_mode:'off',enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true,...options.runtime});
- return {h,prompts,run:()=>h.hooks.beforeRequest([{role:'user',messageId:'u-current',content:'Continue the scene.'}],'model')};
+ return {h,prompts,run:(messages=[{role:'user',messageId:'u-current',content:'Continue the scene.'}])=>h.hooks.beforeRequest(messages,'model')};
 }
+for(const writingMode of ['novel','rp'])for(const heavy of [false,true])test(writingMode+' '+(heavy?'heavy':'light')+' NSFW guidance stays in internal model calls and preserves the host prefill at final handoff',async()=>{
+ for(const [mode,enabled] of [['off',true],['soft',true],['explicit',false]]){
+  const f=await pipelineFixture({heavy,runtime:{writing_mode:writingMode,nsfw_mode:mode,nsfw_guidance_enabled:String(enabled)}});
+  const messages=[{role:'user',messageId:'u-current',content:'Continue the scene.'},{role:'assistant',content:'HOST_PREFILL_SENTINEL'}],original=JSON.stringify(messages);
+  const out=await f.run(messages);assert.equal(f.prompts.length,heavy?8:4);assert.equal(JSON.stringify(messages),original);
+  for(const body of f.prompts){
+   assert.equal((JSON.stringify(body).match(/NSFW GUIDANCE —/g)||[]).length,mode!=='off'&&enabled?1:0);
+  }
+  assert.ok(out.some(m=>m.content?.includes(draft)),'the real draft reached the final handoff');
+  assert.doesNotMatch(JSON.stringify(out),/NSFW GUIDANCE —|Activation gate: the selected mode|proposed USER input choices/);
+  assert.deepEqual(JSON.parse(JSON.stringify(out.filter(m=>m.role==='assistant'))),messages.filter(m=>m.role==='assistant'));
+ }
+});
 test('basic quality survives retired router flags and zero priorities in every stage and writing mode',async()=>{
  const h=await load();
  for(const writingMode of ['novel','rp'])for(const stage of stages){

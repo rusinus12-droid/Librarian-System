@@ -59,6 +59,21 @@ with sync_playwright() as pw:
         check('retired hosting settings do not load', 'backendHosting' not in frame.evaluate('__SerialGradationAgentsForRP.getRuntime()'))
         check('retired hosting panel removed', frame.locator('[data-backend-hosting-panel],[data-backend-action]').count() == 0)
 
+        go('pipeline')
+        frame.locator('.node[data-select-row="main"]').click()
+        fold = frame.locator('[data-detail="main"] details.fold')
+        fold.locator('summary').click()
+        nsfw = fold.locator('select[data-existing-response-field="nsfwMode"]')
+        check('NSFW scope is visible', '입력 후보와 내부 초안' in fold.inner_text() and 'RisuAI 최종 요청에는 추가하지 않습니다' in fold.inner_text())
+        for mode in ['soft', 'direct', 'explicit']:
+            nsfw.select_option(mode)
+            frame.locator('#savebar [data-save]').click()
+            frame.wait_for_function('!__SerialGradationAgentsForRP.debugGuiStateInfo().dirty')
+            check(f'NSFW {mode}: saved readback', frame.evaluate('(async()=> (await __SerialGradationAgentsForRP.getRuntimeSettings()).nsfw_mode)()') == mode)
+        frame.evaluate('__SerialGradationAgentsForRP.closeSettingsGui()')
+        frame.evaluate('__SerialGradationAgentsForRP.openSettingsGui()')
+        check('NSFW selection survives reopening', frame.locator('[data-detail="main"] select[data-existing-response-field="nsfwMode"]').input_value() == 'explicit')
+
         geometry = """()=>{const r=document.querySelector('.app').getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,overflow:document.documentElement.scrollWidth-innerWidth,bg:[document.documentElement,document.body,document.querySelector('#sga-rp-gui-root'),document.querySelector('.stage')].map(e=>getComputedStyle(e).backgroundColor)}}"""
         for width, height in [(2556,1363),(1440,1000),(900,1024),(640,900),(390,844),(320,640),(844,390)]:
             page.set_viewport_size({'width': width, 'height': height})

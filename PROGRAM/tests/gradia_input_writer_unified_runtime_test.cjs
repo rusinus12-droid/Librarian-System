@@ -1,6 +1,25 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {fixture}=require('./fixtures/gradia_input_writer_unified_fixture.cjs');
+const writerSystem=body=>body.messages.filter(m=>m.role==='system').map(m=>m.content).join('\n');
+async function setNsfw(f,mode,enabled=true){
+ await f.host.plugin.saveRuntimeSettings({...await f.host.plugin.getRuntimeSettings(),nsfw_mode:mode,nsfw_guidance_enabled:String(enabled)});
+}
+for(const writingMode of ['novel','rp'])for(const unified of [false,true])test(writingMode+' writer applies NSFW selection with '+(unified?'bound memory':'native context')+' without exporting guidance with the chosen input',async t=>{
+ const f=await fixture(t,{writingMode,unified});
+ for(const [mode,enabled] of [['off',true],['soft',true],['direct',true],['explicit',true],['explicit',false]]){
+  await setNsfw(f,mode,enabled);const before=f.prompts.length,{pending}=await f.start();await f.select();
+  assert.equal(f.prompts.length,before+1,'one choice-generation call');const system=writerSystem(f.prompts[before]);
+  if(mode==='off'||!enabled)assert.doesNotMatch(system,/NSFW GUIDANCE —/);
+  else{
+   assert.equal((system.match(/NSFW GUIDANCE —/g)||[]).length,1);
+   assert.ok(system.includes('NSFW GUIDANCE — '+mode.toUpperCase()+':'));
+   assert.match(system,/proposed USER input choices/);assert.match(system,/unsubmitted candidates/);
+  }
+  assert.equal(await f.done(pending),true);assert.match(f.sent.at(-1),/^WRITER_CHOICE_/);
+  assert.doesNotMatch(f.sent.at(-1),/NSFW GUIDANCE|proposed USER input choices/);
+ }
+});
 test('real explicit Novel writer queries once, binds edited output and delivers without retaining evidence',async t=>{
  const f=await fixture(t),{pending}=await f.start();await f.select();
  const editor=f.document.querySelector('textarea');editor.value='EDITED_WRITER_OUTPUT 은빛 열쇠를 찾는 장면으로 잇는다.';editor.dispatchEvent(new f.dom.window.Event('input',{bubbles:true}));
@@ -13,7 +32,7 @@ test('real explicit Novel writer queries once, binds edited output and delivers 
  assert.ok(!JSON.stringify([...f.values,...f.local]).includes('WRITER_CHOICE_'));
 });
 test('RP choices and translation share one read, copy exact edited text, and redact generic status',async t=>{
- const f=await fixture(t,{writingMode:'rp'}),{pending}=await f.start();const cards=await f.choices();
+ const f=await fixture(t,{writingMode:'rp'});await setNsfw(f,'direct');const {pending}=await f.start();const cards=await f.choices();
  assert.equal(f.host.plugin.getRuntime().externalEvidence,true);
  assert.ok(!JSON.stringify(f.host.plugin.getInputAssistConfirmationStatus()).includes('WRITER_CHOICE_'));
  cards[0].querySelector('[data-input-choice-translate="english"]').click();
@@ -22,13 +41,16 @@ test('RP choices and translation share one read, copy exact edited text, and red
  assert.ok(!JSON.stringify(f.host.plugin.getInputAssistSendStatus()).includes('TRANSLATED_WRITER_CHOICE'));
  assert.equal(await f.done(pending,'복사 후 직접 전송'),true);assert.deepEqual(f.copied,['COPIED_WRITER_OUTPUT 은빛 열쇠의 위치를 묻는다.']);assert.equal(f.sent.length,0);
  assert.equal(f.prompts.length,2);assert.equal(f.queries(),1);assert.ok(f.prompts.every(p=>JSON.stringify(p).includes('WRITER_OWNER_EVIDENCE')));
+ assert.match(writerSystem(f.prompts[0]),/NSFW GUIDANCE — DIRECT/);
+ assert.doesNotMatch(writerSystem(f.prompts[1]),/NSFW GUIDANCE —/,'translation stays faithful to the selected text');
 });
 test('regeneration releases the old receipt and opens a distinct proposal operation',async t=>{
- const f=await fixture(t),{pending}=await f.start();await f.choices();f.button('3가지 선택지 다시 제안').click();
+ const f=await fixture(t);await setNsfw(f,'soft');const {pending}=await f.start();await f.choices();f.button('3가지 선택지 다시 제안').click();
  await f.wait(()=>f.queries()===2&&f.document.querySelector('[data-input-choice-editor]')?.disabled===false,'regeneration');
  const requests=f.bus.messages.filter(m=>m.body.action==='capture').map(m=>m.body.payload.proposal);
  assert.notEqual(requests[0].operationId,requests[1].operationId);assert.equal(requests[0].proposalDigest,requests[1].proposalDigest);
  assert.ok(f.bus.messages.some(m=>m.body.action==='release'));await f.select();assert.equal(await f.done(pending),true);assert.equal(f.prompts.length,2);
+ for(const body of f.prompts)assert.equal((writerSystem(body).match(/NSFW GUIDANCE — SOFT/g)||[]).length,1);
 });
 test('failed regeneration cannot export the previous choices under a fresh or absent lease',async t=>{
  const f=await fixture(t),{pending}=await f.start();const cards=await f.choices();

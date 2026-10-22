@@ -4,9 +4,9 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {load}=require('./host.cjs');
-test('NSFW guidance preserves all modes, analysis/writing phases and explicit disable',async()=>{
+test('NSFW guidance preserves all modes, internal phases and explicit disable',async()=>{
  const {plugin,getCalls}=await load();
- for(const phase of ['analysis','writing'])for(const mode of ['off','soft','direct','explicit']){
+ for(const phase of ['input_writer','analysis','writing','patch'])for(const mode of ['off','soft','direct','explicit']){
   const guidance=plugin.debugNsfwGuidance(mode,phase,true);
   if(mode==='off')assert.equal(guidance,'');else assert.match(guidance,new RegExp('NSFW GUIDANCE — '+mode.toUpperCase()));
   assert.equal(plugin.debugNsfwGuidance(mode,phase,false),'','disabled guidance must not enter prompts');
@@ -17,6 +17,12 @@ test('NSFW guidance preserves all modes, analysis/writing phases and explicit di
   assert.doesNotMatch(plugin.debugResolveCreativeDirection(stage,{}, {writingMode,nsfwMode:'soft',nsfwGuidanceEnabled:false}),/NSFW GUIDANCE/);
  }
  assert.equal(getCalls(),0);
+});
+test('NSFW input guidance treats choices as unsubmitted proposals under the active writing-mode authority',async()=>{
+ const {plugin}=await load();
+ const guidance=plugin.debugNsfwGuidance('soft','input_writer',true);
+ assert.match(guidance,/proposed USER input choices/);assert.match(guidance,/unsubmitted candidates, not enacted events or an assistant response/);
+ assert.match(guidance,/RP player-control or Novel author-direction contract/);
 });
 test('RP action advice and novel three-perspective direction retain distinct locked authorities',async()=>{
  const {plugin,getCalls}=await load();
