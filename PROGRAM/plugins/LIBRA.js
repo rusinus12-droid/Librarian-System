@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.4.4
-//@version 2.4.4
+//@display-name LIBRA v2.4.5
+//@version 2.4.5
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.4.4';
+  const PLUGIN_VERSION = '2.4.5';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -73930,7 +73930,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       } };
       record.abort = () => record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
       record.timer = setTimeout(() => record.finish(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' })),
-        options.timeoutMs || (action === 'describe' ? 1500 : 25000));
+        options.timeoutMs || (action === 'describe' ? 3000 : 25000));
       pending.set(id, record); signal?.addEventListener('abort', record.abort, { once: true });
       if (signal?.aborted) { record.abort(); return; }
       void send(ids[owner], requestChannel, { schema, kind: 'request', id, action, ...body })

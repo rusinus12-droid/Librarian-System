@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.26.14
+//@display-name GRADIA v0.26.15
 //@api 3.0
-//@version 0.26.14
+//@version 0.26.15
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -936,7 +936,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.26.14';
+  const PLUGIN_VERSION = '0.26.15';
   
   
   
@@ -29754,7 +29754,7 @@ function createGradiaEvidenceBudget({ digest }) {
   };
   const createPrivateLibReadBridge = (url, assertLive, readOwners = ['libra']) => {
     const unifiedProvider = createLibraGradiaUnifiedRead({ role: 'client', check: assertLive,
-      describeTimeoutMs: 1500,
+      describeTimeoutMs: 3000,
       api: () => getLiveApi(['addPluginChannelListener','postPluginChannelMessage']),
       randomId: () => globalThis.crypto?.randomUUID?.() || Date.now() + ':' + Math.random().toString(36).slice(2) });
     const deny = () => { throw libEvidenceError('LIB_READ_WRITE_FORBIDDEN'); };
@@ -43890,7 +43890,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       } };
       record.abort = () => record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
       record.timer = setTimeout(() => record.finish(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' })),
-        options.timeoutMs || (action === 'describe' ? 1500 : 25000));
+        options.timeoutMs || (action === 'describe' ? 3000 : 25000));
       pending.set(id, record); signal?.addEventListener('abort', record.abort, { once: true });
       if (signal?.aborted) { record.abort(); return; }
       void send(ids[owner], requestChannel, { schema, kind: 'request', id, action, ...body })
