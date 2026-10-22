@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-22T02:11:47.089Z",
+  "generatedAt": "2026-10-22T02:55:48.638Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -417,7 +417,7 @@
           "legacyCandidatesRequireLiveReconcile": true
         },
         "lia": {
-          "version": "0.27.0",
+          "version": "0.27.1",
           "fiveTurnCommitRevisionGate": true,
           "inFlightRevisionRequeue": true,
           "backendOrder": [
@@ -546,7 +546,7 @@
       ]
     },
     "liaSharedServerRestore": {
-      "version": "0.27.0",
+      "version": "0.27.1",
       "fixedSharedStores": [
         "dynamicPersonaLorebookGeneratorResultVault",
         "liaPersonaLinkerWorldBlueprintVaultV1",
@@ -1057,7 +1057,7 @@
       "computeModeArgumentExposed": false,
       "arbitraryCodeExecution": false,
       "liaWorldLorePilot": {
-        "version": "0.27.0",
+        "version": "0.27.1",
         "operation": "lia.world-lore-rerank.v2",
         "algorithmFingerprint": "cbd91cc90d01c8fc052669390badab3d0c2c7a52c4b6c314ac2ca61716fc7a75",
         "retired": true,
@@ -1426,7 +1426,7 @@
     "flashback": "1.1.0",
     "hayaku": "3.1.0",
     "libra": "2.4.2",
-    "lia": "0.27.0",
+    "lia": "0.27.1",
     "retrace": "1.10.0",
     "gradia": "0.26.2"
   },
@@ -2531,6 +2531,10 @@
       "sha256": "ac98658a258bc030b5dcd44bab77370e7647f5419e082c259b3e3d1cdab6d841",
       "bytes": 3248
     },
+    "docs/LIA_SCOPE_PERSONA_MANAGEMENT_20261022.md": {
+      "sha256": "e5392ece3bb7ffaa31796ba75ced1a0a3777cc9ccdb32be297b7d8afc22aefe4",
+      "bytes": 2418
+    },
     "docs/LIA-CHAT-READ-AUDIT-20261007.md": {
       "sha256": "56693bad832d3ece8fd38c34d5ff1c4b3e9dab340f9cec1338ad6c8833de828b",
       "bytes": 6674
@@ -3532,7 +3536,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "b80769c2e620d0f37bd0b4d9380836b64aaf1a2c4626fcb529d480d19e05fd9a",
+      "sha256": "651944a176fac81e7a1c4614de3ae7939c89df9e1af2700577e5c399f052bfab",
       "bytes": 11832
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3912,7 +3916,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "b422724a45f0736817519fd5c33992b810f7c4db74142784d58b1f64dd6af3e2",
+      "sha256": "8e1916cab7506993e52e8f39c98e6521d2a64cb2e0b6ba46bee4f5a5da3f0ef1",
       "bytes": 3349
     },
     "plugins/Flashback_Memory.js": {
@@ -3928,8 +3932,8 @@
       "bytes": 4027026
     },
     "plugins/LIA_Persona_Linker.js": {
-      "sha256": "f577ee7ab43b1596e1ae11f8c182324bb3859ad00b8030570403e23aee90a3a5",
-      "bytes": 1627378
+      "sha256": "45711b6ff0b96426c79b18f9e445e75b9bb0b9d569c7d4205aabf3d1de26f0a4",
+      "bytes": 1647102
     },
     "plugins/LIBRA.js": {
       "sha256": "d566c649563367b71c901e6a5bea12c9e584553a508cb3882de97c5b9e9a7205",
@@ -4490,6 +4494,10 @@
     "tests/browser/lia_mockup_mounted_product_browser_test.cjs": {
       "sha256": "86b80d8850262cb510aa4355a955d413e2a8992d2e808843b2b3362e663dac79",
       "bytes": 55588
+    },
+    "tests/browser/lia_scope_persona_management_browser_test.cjs": {
+      "sha256": "16e2744d03f508d086311715679e4a34fe4644c2856e2ed0e824ced4c8fb54ab",
+      "bytes": 5896
     },
     "tests/browser/lia_window_manual_notice_browser_test.py": {
       "sha256": "4d1bfa42975f8ffa4936643231dfce231e9808a73cb4a534e88a6f5efd7b08ac",
@@ -7130,6 +7138,10 @@
     "tests/lia_reopen_evolution_gui_test.cjs": {
       "sha256": "f3b0de728e23dd3cb23b30b448997c1ee99ef1fa792eb83accf1a5590bef566b",
       "bytes": 1803
+    },
+    "tests/lia_scope_persona_management_runtime_test.cjs": {
+      "sha256": "538c1e1e501dd24c49bff93a9ff95ec486f093098dd40109ca53515aa4329dd5",
+      "bytes": 9030
     },
     "tests/lia_shared_server_restore_contract_test.cjs": {
       "sha256": "381022301aa716b24d23eda79486d313e7b798701cc9a0ed5a56b0f17733b6b7",
@@ -11380,7 +11392,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "63c30d89dd295ed74a6620ff4158cd9112e3cfb0a268130853f73a6c7efa9163",
+      "sha256": "f92f6251eb93c76defac1fbde7ee02c284bb30b7539216947b4821d356cb9718",
       "bytes": 3783
     }
   },

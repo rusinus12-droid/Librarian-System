@@ -1,7 +1,7 @@
 //@name lia_persona_linker
 //@display-name LIA: Persona Linker
 //@api 3.0
-//@version 0.27.0
+//@version 0.27.1
 /* Target-only handoff storage preparation v1. Authenticated owner handlers only. */
 async function prepareMemorySuiteHandoffTargetStorage(api, storage, owner, payload) {
   const readTarget = async () => {
@@ -274,7 +274,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
   const OPERATION_LOG_MAX = 300;
   const DEBUG_LOG_MAX = 600;
   const LOG_PERSIST_DEBOUNCE_MS = 1500;
-const PLUGIN_VERSION = "0.27.0";
+const PLUGIN_VERSION = "0.27.1";
   const LIA_SETTING_UI_ID = "lia-persona-linker-setting";
   const LIA_BUTTON_UI_ID = "lia-persona-linker-button";
   const PERSONA_PROOF_VERSION = 1;
@@ -13127,6 +13127,10 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
       const before = await this.read(ctx);
       appendDebugLog("binding", "write_start", { scopeKey: livePersonaScopeKey(ctx), reason: String(options.reason || "binding_write"), beforePersonaId: before?.personaId || "", targetPersonaId: String(targetPersonaId || "") });
       if (!before.available) throw new Error("이 RisuAI 환경에서는 채팅 Persona 바인딩 API를 사용할 수 없습니다.");
+      if (ctx?.char && ctx?.chat && typeof api.getCharacterFromIndex === 'function') {
+        const actualCharacter=await api.getCharacterFromIndex(ctx.charIndex);
+        if (!actualCharacter || livePersonaScopeKey({...ctx,char:actualCharacter,chat:before.chat})!==livePersonaScopeKey(ctx)) throw Error('LIA_BINDING_CHANGE_SCOPE_CHANGED');
+      }
       if (options.expectedBeforePersonaId !== undefined && before.personaId !== options.expectedBeforePersonaId) throw new Error('LIA_BINDING_CHANGE_CONFLICT');
       const expected = String(targetPersonaId || "").trim();
       const nextChat = { ...(before.chat || ctx?.chat || {}) };
@@ -13762,6 +13766,104 @@ ${revisionText}`);
     return true;
   }
 
+  // Cross-chat binding management uses stable host identities, never the selected UI chat.
+  const liaScopePersonaChanges = new Set();
+  const liaScopeCharacterId = value => String(value?.chaId || value?.id || '').trim();
+  const liaScopeChatId = value => String(value?.id || value?.chatId || '').trim();
+  const liaScopePersonaRevision = persona => hashText(JSON.stringify(persona || null));
+  async function readLiaScopePersonaCatalog() {
+    const db = await api.getDatabase?.(['characters', 'personas', 'selectedPersona']);
+    if (!Array.isArray(db?.characters) || !Array.isArray(db?.personas)) throw Error('전체 채팅과 Persona 목록을 읽을 수 없습니다. RisuAI 데이터 접근 권한을 확인하세요.');
+    const selectedIndex=normalizePersonaDatabaseSelectedIndex(db.selectedPersona,db.personas);
+    if(!Number.isInteger(selectedIndex))throw Error('기본 Persona 선택 상태를 확인할 수 없습니다. 데이터 접근 권한을 확인하세요.');
+    const storage = await waitForPluginStorage(getRuntimeApi(), {timeoutMs:4000,intervalMs:250});
+    if (!storage?.getItem) throw Error('LIA 저장소를 읽을 수 없습니다.');
+    const decode = raw => typeof raw === 'string' && raw.trim() ? JSON.parse(raw) : raw;
+    const rawIndex = decode(await storage.getItem(LIVE_PERSONA_INDEX_STORAGE_KEY));
+    if (rawIndex != null && (rawIndex.schema !== LIVE_PERSONA_INDEX_SCHEMA || !rawIndex.entries || typeof rawIndex.entries !== 'object' || Array.isArray(rawIndex.entries))) throw Error('LIA 연결 인덱스를 확인할 수 없습니다. 기존 자료를 보존합니다.');
+    const index = rawIndex?.entries || {}, bindings = new Map(), bindingErrors = new Set();
+    for (const [scopeKey, meta] of Object.entries(index)) {
+      try {
+        if (meta?.storageKey !== livePersonaScopeStorageKey(scopeKey)) throw Error('binding key');
+        const raw = await storage.getItem(meta.storageKey), parsed = decode(raw);
+        if (!parsed || parsed.scopeKey !== scopeKey || (meta.digest && hashText(typeof raw === 'string' ? raw : JSON.stringify(raw)) !== meta.digest)) throw Error('binding digest');
+        const binding = normalizeLivePersonaBinding(parsed);
+        if (!binding) throw Error('binding unavailable');
+        bindings.set(scopeKey,binding);
+      } catch (_) { bindingErrors.add(scopeKey); }
+    }
+    // Legacy records are observed without migrating or rewriting them merely to open this page.
+    const legacy = decode(await storage.getItem(LIVE_PERSONA_STORAGE_KEY));
+    if(legacy!=null&&(typeof legacy!=='object'||Array.isArray(legacy)||(legacy.bindings!==undefined&&(!legacy.bindings||typeof legacy.bindings!=='object'||Array.isArray(legacy.bindings)))))throw Error('이전 LIA 연결 기록을 확인할 수 없습니다. 기존 자료를 보존합니다.');
+    for (const [scopeKey, value] of Object.entries(legacy?.bindings || {})) {
+      if (Object.hasOwn(index,scopeKey)) continue;
+      const binding = normalizeLivePersonaBinding(value);
+      if (binding?.scopeKey === scopeKey) bindings.set(scopeKey,binding); else bindingErrors.add(scopeKey);
+    }
+    const personaCounts = new Map(), characterCounts = new Map();
+    for (const p of db.personas) if (p?.id) personaCounts.set(String(p.id),(personaCounts.get(String(p.id))||0)+1);
+    for (const c of db.characters) {const id=liaScopeCharacterId(c);if(id)characterCounts.set(id,(characterCounts.get(id)||0)+1);}
+    const personas = db.personas.filter(p=>p?.id && personaCounts.get(String(p.id))===1).map(p=>({
+      id:String(p.id),name:String(p.name||'이름 없는 Persona'),live:isLivePersona(p),revision:liaScopePersonaRevision(p),
+      preview:limitText(compact(stripLivePersonaState(p.personaPrompt||'')),160)
+    }));
+    const byPersona = new Map(personas.map(p=>[p.id,p])), rows=[], seen=new Set();
+    const selected = db.personas[selectedIndex], selectedId=String(selected?.id||'');
+    for (const [characterIndex,character] of db.characters.entries()) {
+      const characterId=liaScopeCharacterId(character), chats=asArray(character?.chats), counts=new Map();
+      for (const chat of chats) {const id=liaScopeChatId(chat);if(id)counts.set(id,(counts.get(id)||0)+1);}
+      for (const [chatIndex,chat] of chats.entries()) {
+        const chatId=liaScopeChatId(chat),scopeKey=livePersonaScopeKey({char:character,chat,charIndex:characterIndex,chatIndex});
+        seen.add(scopeKey);
+        const binding=bindings.get(scopeKey),explicitId=String(chat?.bindedPersona||''),effective=byPersona.get(explicitId||selectedId);
+        let reason=!characterId||!chatId?'채팅 식별자 없음':characterCounts.get(characterId)!==1||counts.get(chatId)!==1?'중복된 채팅 식별자':!PersonaBindingManager.capability().available?'채팅 연결 API 사용 불가':bindingErrors.has(scopeKey)?'LIA 연결 기록 확인 필요':binding?.pendingBindingChange?'미완료 연결 변경 확인 필요':'';
+        rows.push({scopeKey,characterId,chatId,characterIndex,chatIndex,characterName:String(character.name||'이름 없는 캐릭터'),chatName:String(chat.name||'이름 없는 채팅'),
+          personaId:explicitId,effectivePersonaId:explicitId||selectedId,personaName:effective?.name||(explicitId?'삭제되었거나 중복된 Persona':'기본 Persona 없음'),
+          preview:effective?.preview||'',livePersonaId:String(binding?.livePersonaId||''),sourcePersonaId:String(binding?.sourcePersonaId||''),sourcePersonaName:String(binding?.sourcePersonaName||''),
+          status:reason||(!explicitId?'기본 Persona 사용':!effective?'Persona 확인 필요':binding?.livePersonaId===explicitId?(binding.enabled?'LIA 연결됨':'LIA 갱신 일시정지'):'직접 연결'),
+          available:!reason,reason,orphan:false,
+          revision:hashText(JSON.stringify([scopeKey,explicitId,selectedId,effective?.revision,binding||null,bindingErrors.has(scopeKey)]))});
+      }
+    }
+    for (const scopeKey of new Set([...bindings.keys(),...bindingErrors])) if(!seen.has(scopeKey)) {
+      const binding=bindings.get(scopeKey),persona=byPersona.get(binding?.livePersonaId);
+      rows.push({scopeKey,characterName:'대상을 찾을 수 없는 연결 기록',chatName:scopeKey,personaName:persona?.name||binding?.livePersonaName||'Persona 확인 필요',
+        sourcePersonaName:binding?.sourcePersonaName||'',preview:persona?.preview||'',status:'채팅 없음 · 기록 보존',available:false,reason:'원본 채팅을 찾을 수 없어 변경할 수 없습니다.',orphan:true,revision:''});
+    }
+    return {rows,personas,defaultPersonaName:String(selected?.name||'기본 Persona 없음')};
+  }
+
+  async function changeLiaScopePersona(input = {}) {
+    const scopeKey=String(input.scopeKey||'');
+    if(pluginUnloaded)throw Error('LIA가 종료되었습니다.');
+    if(manualLivePersonaAction || liaScopePersonaChanges.size)throw Error('진행 중인 Persona 작업을 완료한 뒤 다시 시도하세요.');
+    liaScopePersonaChanges.add(scopeKey);
+    try {
+      const catalog=await readLiaScopePersonaCatalog(),matches=catalog.rows.filter(row=>row.scopeKey===scopeKey);
+      const row=matches[0];
+      if(matches.length!==1||!row?.available)throw Error(row?.reason||'변경할 채팅을 확인할 수 없습니다. 목록을 새로 읽어 주세요.');
+      if(!input.expectedRevision||input.expectedRevision!==row.revision)throw Error('확인 후 연결 정보가 바뀌었습니다. 목록을 새로 읽고 다시 선택하세요.');
+      if(livePersonaConfigurationScopes.has(scopeKey)||liveSyncInFlightScopes.has(scopeKey)||livePersonaBindingChanges.has(scopeKey))throw Error('이 채팅의 Persona 작업이 진행 중입니다.');
+      const ctx=await getLiveRuntimeContextForTarget({characterIndex:row.characterIndex,chatIndex:row.chatIndex},{requireFreshSource:true});
+      if(!ctx.sourceReadCurrent||liaScopeCharacterId(ctx.char)!==row.characterId||liaScopeChatId(ctx.chat)!==row.chatId||livePersonaScopeKey(ctx)!==scopeKey||String(ctx.chat.bindedPersona||'')!==row.personaId)throw Error('채팅 위치 또는 연결 정보가 바뀌었습니다. 새로고침 후 다시 시도하세요.');
+      const targetId=String(input.personaId||'');
+      let expectedId=targetId;
+      if(targetId) {
+        const persona=catalog.personas.find(p=>p.id===targetId);
+        if(!persona||persona.revision!==input.expectedPersonaRevision)throw Error('선택한 Persona가 변경되었거나 삭제되었습니다. 목록을 새로 읽어 주세요.');
+        const freshPersonas=ctx.db.personas.filter(p=>String(p?.id||'')===targetId);
+        if(freshPersonas.length!==1||liaScopePersonaRevision(freshPersonas[0])!==input.expectedPersonaRevision)throw Error('선택한 Persona가 변경되었습니다. 새로고침 후 다시 시도하세요.');
+        if(persona.live&&targetId!==row.livePersonaId)throw Error('다른 채팅의 Live Persona는 연결할 수 없습니다. 원본 Persona를 선택하세요.');
+        const result=await PersonaSelectionManager.applyCard(ctx,`id:${targetId}`);
+        expectedId=result.dynamicPersonaId||targetId;
+      } else await PersonaSelectionManager.clearDynamic(ctx);
+      const after=await readLiaScopePersonaCatalog(),saved=after.rows.find(item=>item.scopeKey===scopeKey);
+      if(!saved||saved.personaId!==expectedId)throw Error('저장 결과를 확인하지 못했습니다. 목록을 새로 읽어 확인하세요.');
+      appendOperationLog('scope_persona_binding',`채팅 Persona 연결 변경: ${row.characterName} · ${row.chatName}`,{scopeKey},'ok');
+      return saved;
+    } finally {liaScopePersonaChanges.delete(scopeKey);}
+  }
+
   const PersonaSelectionManager = Object.freeze({
     async read(ctx = null, options = {}) {
       let runtimeCtx = ctx;
@@ -14214,6 +14316,7 @@ ${revisionText}`);
   async function runManualLivePersonaAnalysis(expectedCtx = null) {
     if (pluginUnloaded) return { skipped: true, reason: "plugin_unloaded" };
     if (manualLivePersonaAction) return { skipped: true, reason: "manual_busy" };
+    if (liaScopePersonaChanges.size) return { skipped: true, reason: "binding_configuration_in_flight" };
     const action = {
       used: false, cancelled: false, committing: false,
       expectedScope: expectedCtx ? String(expectedCtx.manualScopeKey || livePersonaScopeKey(expectedCtx)) : "",
@@ -14240,7 +14343,7 @@ ${revisionText}`);
     if (!runtimeCtx.sourceReadCurrent) return { skipped: true, reason: "source_read_unavailable" };
     const scopeKey = livePersonaScopeKey(runtimeCtx);
     if (!runtimeCtx.isCurrentContext || (action.expectedScope && scopeKey !== action.expectedScope)) return { skipped: true, stale: true, reason: "scope_changed" };
-    if (livePersonaConfigurationScopes.has(scopeKey) || liveSyncInFlightScopes.has(scopeKey)) return { skipped: true, reason: "binding_configuration_in_flight" };
+    if (livePersonaConfigurationScopes.has(scopeKey) || liveSyncInFlightScopes.has(scopeKey) || liaScopePersonaChanges.has(scopeKey)) return { skipped: true, reason: "binding_configuration_in_flight" };
     liveSyncInFlightScopes.add(scopeKey);
     try {
       const original = await readLivePersonaBindingByScopeKey(scopeKey, true);
@@ -19739,6 +19842,77 @@ ${revisionText}`);
     return `<svg class="lia-pocket-icon" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.persona}</svg>`;
   }
 
+  const liaScopePersonaView = {catalog:null,error:'',busy:false,serial:0,query:'',filter:'all',page:0};
+  function installLiaScopePersonaPage(app) {
+    const settings=app.querySelector('.sidebar [data-go="settings"]');
+    const button=document.createElement('button');button.type='button';button.className='nav-item';
+    button.dataset.go='scopes';button.dataset.short='스코프 관리';
+    button.innerHTML='<i data-i="chat"></i><span class="nav-text">스코프 · Persona</span>';
+    settings?.before(button);
+    const page=document.createElement('section');page.className='page';page.dataset.page='scopes';
+    app.querySelector('.page[data-page="settings"]')?.after(page);
+    const style=document.createElement('style');style.textContent=`
+      .lia-scope-tools{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:end;margin:18px 0}
+      .lia-scope-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+      .lia-scope-card{min-width:0;display:flex;flex-direction:column;gap:10px}
+      .lia-scope-card h3,.lia-scope-card p,.lia-scope-card small{margin:0;overflow-wrap:anywhere}
+      .lia-scope-card .lia-scope-description{line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+      .lia-scope-card .field{margin-top:auto;min-width:0}.lia-scope-card select{width:100%;min-width:0;max-width:100%}
+      .lia-scope-actions{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:16px 0;flex-wrap:wrap}
+      @media(max-width:1100px){.lia-scope-grid{grid-template-columns:1fr}}
+      @media(max-width:600px){.lia-scope-tools{grid-template-columns:1fr}.tabbar{grid-template-columns:repeat(5,minmax(0,1fr))}}
+    `;app.append(style);
+    renderLiaScopePersonaPage(app);
+  }
+  function renderLiaScopePersonaPage(app=document.getElementById('dpg-preview-root')) {
+    const page=app?.querySelector('.page[data-page="scopes"]');if(!page)return;
+    const view=liaScopePersonaView,catalog=view.catalog,rows=(catalog?.rows||[]).filter(row=>{
+      if(view.filter==='bound'&&!row.personaId)return false;
+      if(view.filter==='default'&&(row.personaId||row.orphan))return false;
+      if(view.filter==='review'&&row.available)return false;
+      return !view.query||[row.characterName,row.chatName,row.personaName,row.sourcePersonaName,row.scopeKey].join(' ').toLocaleLowerCase().includes(view.query.toLocaleLowerCase());
+    });
+    const pages=Math.max(1,Math.ceil(rows.length/24));view.page=Math.min(view.page,pages-1);
+    const disabled=view.busy?' disabled':'';
+    page.innerHTML=`<header class="page-head"><div><div class="eyebrow">SCOPE PERSONAS</div><h1>스코프 · Persona</h1><p>모든 채팅의 실제 Persona 연결을 확인하고 이곳에서 바꿉니다. 변경은 선택한 채팅에만 적용됩니다.</p></div><button class="btn" type="button" data-lia-scope-refresh${disabled}>새로고침</button></header>
+      <div class="note">기본 Persona 선택과 원본은 유지됩니다. LIA 연결 중인 채팅은 전용 Live 복사본을 연결하고, 분석은 실행하지 않습니다. 다른 채팅의 Live Persona는 선택할 수 없습니다.</div>
+      <div class="lia-scope-tools"><div class="field"><label for="lia-scope-query">캐릭터 · 채팅 · Persona 찾기</label><input class="input" id="lia-scope-query" data-lia-scope-query value="${htmlEscape(view.query)}" placeholder="이름 또는 스코프 키로 검색"></div><div class="field"><label for="lia-scope-filter">보기</label><select class="select" id="lia-scope-filter" data-lia-scope-filter>${[['all','전체'],['bound','연결된 채팅'],['default','기본 Persona 사용'],['review','확인 필요']].map(([id,label])=>`<option value="${id}"${view.filter===id?' selected':''}>${label}</option>`).join('')}</select></div></div>
+      <p role="status" aria-live="polite" data-lia-scope-status>${htmlEscape(view.error|| (view.busy?'연결 정보를 확인하고 있습니다…':catalog?`전체 ${catalog.rows.length}개 · 표시 ${rows.length}개 · 기본 Persona: ${catalog.defaultPersonaName}`:'새로고침을 눌러 전체 연결을 읽어 주세요.'))}</p>
+      <div class="lia-scope-grid">${rows.slice(view.page*24,view.page*24+24).map(row=>{
+        const choices=catalog.personas.filter(p=>!p.live||p.id===row.livePersonaId);
+        let initial=row.livePersonaId===row.personaId?choices.find(p=>!p.live&&p.id===row.sourcePersonaId)?.id||row.personaId:row.personaId;
+        if(!choices.some(p=>p.id===initial))initial='';
+        const key=htmlEscape(row.scopeKey),blocked=view.busy||!row.available;
+        return `<article class="card lia-scope-card" data-lia-scope-row="${key}"><div><h3>${htmlEscape(row.characterName)}</h3><p>${htmlEscape(row.chatName)}</p></div><div class="cluster"><span class="badge">${htmlEscape(row.status)}</span></div><div><small>현재 적용 Persona</small><p><b>${htmlEscape(row.personaName)}</b>${row.personaId?'':' · 기본값'}</p>${row.sourcePersonaName?`<small>연결 원본: ${htmlEscape(row.sourcePersonaName)}</small>`:''}</div><p class="lia-scope-description">${htmlEscape(row.preview||'표시할 소개가 없습니다.')}</p><details><summary>스코프 식별자</summary><small>${key}</small></details>${row.reason?`<p class="hint">${htmlEscape(row.reason)}</p>`:''}<div class="field"><label>변경할 Persona<select class="select" data-lia-scope-choice${blocked?' disabled':''}><option value="">기본 Persona 사용 · 연결 해제</option>${choices.map(p=>`<option value="${htmlEscape(p.id)}"${p.id===initial?' selected':''}>${htmlEscape(p.name)}${p.live?' · 현재 Live':''}</option>`).join('')}</select></label></div><button class="btn" type="button" data-lia-scope-apply="${key}"${blocked?' disabled':''}>이 채팅에 적용…</button></article>`;
+      }).join('')||'<div class="empty"><b>표시할 스코프가 없습니다.</b><span>검색 조건을 바꾸거나 전체 목록을 새로 읽어 주세요.</span></div>'}</div>
+      <div class="lia-scope-actions"><button class="btn" type="button" data-lia-scope-prev${view.page===0?' disabled':''}>이전</button><span>${view.page+1} / ${pages}</span><button class="btn" type="button" data-lia-scope-next${view.page+1>=pages?' disabled':''}>다음</button></div>`;
+  }
+  async function refreshLiaScopePersonaPage() {
+    const view=liaScopePersonaView,serial=++view.serial;view.busy=true;view.error='';renderLiaScopePersonaPage();
+    try {const catalog=await readLiaScopePersonaCatalog();if(serial===view.serial&&!pluginUnloaded)view.catalog=catalog;}
+    catch(error){if(serial===view.serial){view.catalog=null;view.error=String(error?.message||error);}}
+    finally{if(serial===view.serial){view.busy=false;renderLiaScopePersonaPage();}}
+  }
+  async function applyLiaScopePersonaFromPage(button) {
+    const view=liaScopePersonaView;if(view.busy)return;
+    const row=view.catalog?.rows.find(row=>row.scopeKey===button.dataset.liaScopeApply),card=button.closest('[data-lia-scope-row]');
+    if(!row?.available)return;
+    const personaId=card.querySelector('[data-lia-scope-choice]')?.value||'',persona=view.catalog.personas.find(p=>p.id===personaId);
+    if(!globalThis.confirm?.(`${row.characterName} · ${row.chatName}\n현재: ${row.personaName}\n변경: ${persona?.name||'기본 Persona 사용'}\n이 채팅의 연결만 바꿀까요? 분석 비용은 발생하지 않습니다.`))return;
+    view.busy=true;view.error='';renderLiaScopePersonaPage();
+    try {
+      await changeLiaScopePersona({scopeKey:row.scopeKey,expectedRevision:row.revision,personaId,expectedPersonaRevision:persona?.revision});
+      setStatus('선택한 채팅의 Persona 연결을 저장하고 다시 확인했습니다.','ok');
+      view.catalog=await readLiaScopePersonaCatalog();
+      // Update the home card without rebuilding unsaved editors/settings in other pages.
+      const context=readLiaViewContext(await getContext(readContextOptions()));
+      liaMockupContext=context;
+      const app=document.getElementById('dpg-preview-root');if(app)renderMockupMine(context,app);
+      await refreshPersonaProofIndicator();
+    } catch(error){view.error=`변경하지 못했거나 결과 확인이 필요합니다: ${error?.message||error}`;setStatus(view.error,'error');}
+    finally{view.busy=false;renderLiaScopePersonaPage();}
+  }
+
   function renderMockupMine(ctx, app) {
     const state = buildPersonaPanelState(ctx);
     const binding = normalizeLivePersonaBinding(ctx.livePersonaBinding);
@@ -19972,7 +20146,8 @@ ${revisionText}`);
     template.innerHTML = LIA_MOCKUP_APP_HTML;
     const app = template.content.querySelector(".app");
     if (!app) throw new Error("canonical LIA mockup root is missing");
-    const routes = {home:"mine",generate:"make",vault:"shelf",settings:"settings",edit:"edit",realtime:"update",server:"recover"};
+    installLiaScopePersonaPage(app);
+    const routes = {home:"mine",generate:"make",vault:"shelf",settings:"settings",edit:"edit",realtime:"update",server:"recover",scopes:"scopes"};
     const route = routes[activeWorkspaceTab] || "make";
     app.querySelectorAll(".page[data-page]").forEach((page) => page.classList.toggle("is-active", page.dataset.page === route));
     app.querySelectorAll(".sidebar .nav-item[data-go]").forEach((button) => button.setAttribute("aria-current", button.dataset.go === route ? "page" : "false"));
@@ -22476,8 +22651,8 @@ ${revisionText}`);
   }
 
   function activateTab(name) {
-    const toPage = { home: "mine", generate: "make", vault: "shelf", settings: "settings", edit: "edit", realtime: "update", assets: "assets", server: "recover" };
-    const fromPage = { mine: "home", make: "generate", shelf: "vault", settings: "settings", edit: "edit", update: "realtime", assets: "assets", recover: "server" };
+    const toPage = { home: "mine", generate: "make", vault: "shelf", settings: "settings", edit: "edit", realtime: "update", assets: "assets", server: "recover", scopes: "scopes" };
+    const fromPage = { mine: "home", make: "generate", shelf: "vault", settings: "settings", edit: "edit", update: "realtime", assets: "assets", recover: "server", scopes: "scopes" };
     const page = toPage[name] ? name : fromPage[name] ? name : "generate";
     activeWorkspaceTab = fromPage[page] || "generate";
     const root = document.getElementById("dpg-preview-root");
@@ -22486,6 +22661,7 @@ ${revisionText}`);
     root?.querySelectorAll(".tabbar button[data-go]").forEach((button) => button.setAttribute("aria-current", button.dataset.go === page ? "page" : "false"));
     if (page !== "make") preservedWorldDrawerOpen = false;
     if (page === "recover") mountLiaServerConnectionPanel();
+    if (page === "scopes") void refreshLiaScopePersonaPage();
     root?.querySelector(".page-body")?.scrollTo?.(0, 0);
   }
 
@@ -22736,6 +22912,9 @@ ${revisionText}`);
     if (!target) return;
     if(target.matches('[data-menu]')){event.preventDefault();const wrapper=target.closest('.menu');const open=wrapper.classList.toggle('is-open');target.setAttribute('aria-expanded',String(open));return;}
     closeLiaMenu();
+    if(target.matches('[data-lia-scope-refresh]')){event.preventDefault();void refreshLiaScopePersonaPage();return;}
+    if(target.matches('[data-lia-scope-apply]')){event.preventDefault();void applyLiaScopePersonaFromPage(target);return;}
+    if(target.matches('[data-lia-scope-prev],[data-lia-scope-next]')){event.preventDefault();liaScopePersonaView.page+=target.hasAttribute('data-lia-scope-prev')?-1:1;renderLiaScopePersonaPage();return;}
     if(target.matches('[data-lia-close]')){event.preventDefault();await closeLiaUi();return;}
     if(target.matches('[data-lia-refresh]')){event.preventDefault();await refreshPreview({skipCapture:true});return;}
     if(target.matches('[data-lia-copy-prompt]')){event.preventDefault();const text=buildGenerationPromptForContext(liaMockupContext||await getContext(readContextOptions()));const area=document.getElementById('lia-prompt-inspection-text');if(area)area.value=text;try{await navigator.clipboard?.writeText(text);setStatus('현재 설정과 자료 선택을 반영한 실제 생성 프롬프트를 복사했습니다.','ok');}catch(error){if(area){area.focus();area.select();setStatus('프롬프트를 선택했습니다. Ctrl+C로 복사해 주세요.','info');}else setStatus(`프롬프트 복사 실패: ${error?.message||error}`,'error');}return;}
@@ -22810,6 +22989,8 @@ ${revisionText}`);
     if (target.hasAttribute("data-toast")) { event.preventDefault(); setStatus("이 목업 동작은 제품 기능과 연결되지 않아 실행하지 않았습니다.", "error"); }
   }
   function handleLiaMockupChange(event) {
+    if(event.target?.matches('[data-lia-scope-filter]')){liaScopePersonaView.filter=event.target.value;liaScopePersonaView.page=0;renderLiaScopePersonaPage();return;}
+
     const field = event.target;
     if (!field) return;
     if(field.matches('#dpg-use-character-lore,#dpg-use-chat-lore,#dpg-use-module-lore,.dpg-module-choice')){void refreshPreview({skipCapture:true});return;}
@@ -22827,6 +23008,11 @@ ${revisionText}`);
     if (field.matches('[data-key]')) handleLiaMockupInput(event);
   }
   function handleLiaMockupInput(event) {
+    if(event.target?.matches('[data-lia-scope-query]')){
+      const field=event.target,position=field.selectionStart;liaScopePersonaView.query=field.value;liaScopePersonaView.page=0;renderLiaScopePersonaPage();
+      const next=document.getElementById('lia-scope-query');next?.focus();next?.setSelectionRange(position,position);return;
+    }
+
     const field = event.target;
     if (!field) return;
     if(field.id==='dpg-user-rewrite-guidance'){preservedUserRewriteGuidanceText=String(field.value||'');const preview=document.getElementById('lia-prompt-inspection-text');if(preview&&liaMockupContext)preview.value=buildGenerationPromptForContext(liaMockupContext);return;}
@@ -23622,6 +23808,8 @@ const createMemorySuiteLiaHealthAdapter = options => {
       dispose: async () => { try { await handlePluginUnload(); } catch (_) {} },
       getHostLineageStatus: async () => { const ctx = await getLiveRuntimeContext(); const binding = await readLivePersonaBindingByScopeKey(livePersonaScopeKey(ctx)); return { ...MemorySuiteHostLineage.inspect(ctx.char, ctx.chat), owner: 'lia', scopeKey: livePersonaScopeKey(ctx), nativeBranchState: binding?.nativeBranchState || null }; },
       debugProjectNativeBranchPersonaState: (ctx, binding) => projectNativeBranchPersonaState(ctx, normalizeLivePersonaBinding(binding)),
+      getScopePersonaCatalog: readLiaScopePersonaCatalog,
+      changeScopePersona: changeLiaScopePersona,
       getLiveSyncCaptureState: () => sanitizeLogValue(liveSyncCaptureBackendSnapshot()),
       debugProcessChatOutput: (event) => processLiveSyncChatOutputEvent(event),
       debugScheduleLiveSync: (options = {}) => scheduleLivePersonaSyncCheck(0, options),
