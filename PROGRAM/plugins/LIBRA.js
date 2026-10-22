@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.4.5
-//@version 2.4.5
+//@display-name LIBRA v2.4.6
+//@version 2.4.6
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.4.5';
+  const PLUGIN_VERSION = '2.4.6';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -4200,7 +4200,7 @@ const inspectLibraScopeHealthSnapshot = (snapshot, options = {}) => {
 };
 /* END LIBRA READ-ONLY SCOPE HEALTH */
 
-/* LIBRARIAN SYSTEM STORAGE SDK v1.8.31
+/* LIBRARIAN SYSTEM STORAGE SDK v1.8.32
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
  * The server stores opaque values. Each plugin keeps ownership of its own data schema.
  */
@@ -8266,6 +8266,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const globalModeEnabled = ['libra','hayaku','flashback'].includes(namespace)
     && scopeRoutingEnabled && options.storagePolicy !== 'local_only' && options.storagePolicy !== 'manager_only';
   let globalMigrationContext = null;
+  let globalMigrationPreview = null;
   let globalJobRunning = false;
   const globalModeError = (code, details) => Object.assign(new Error(code), {code, ...(details ? {details} : {})});
   const globalCanonical = value => JSON.stringify(value, (_key,item) => item && typeof item === 'object' && !Array.isArray(item)
@@ -8482,18 +8483,31 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     discoveredScopes:inventory.scopes.length,legacyOverrides:inventory.scopes.filter(scope=>{const row=inventory.registry.entries[scope.scopeId];return row&&!['inherited','migrated'].includes(String(row.origin||''));}).length,
     directions:Object.fromEntries([MODE_PLUGIN_ONLY,MODE_SERVER_ONLY,MODE_MIRROR].map(mode=>[mode,inventory.scopes.filter(scope=>scope.sourceMode===mode).length])),
     blockers:inventory.blockers,catalogFingerprint:inventory.catalogFingerprint,inventoryFingerprint:inventory.inventoryFingerprint});
+  const withMigrationPreview = value => ({ ...value,
+    ...(globalMigrationPreview ? { migrationPreview:cloneDiagnosticValue(globalMigrationPreview) } : {}) });
+  const rememberGlobalPreview = summary => {
+    // Keep the last read-only result available to ordinary debug exports even
+    // when plugin_only skips a server probe. Never retain inventory payloads.
+    globalMigrationPreview = cloneDiagnosticValue({
+      schema:'memory-suite.migration-preview-diagnostics.v1',generatedAt:Date.now(),namespace,pluginVersion,
+      targetMode:summary.targetMode,completeKnownScopes:summary.completeKnownScopes,discoveredScopes:summary.discoveredScopes,
+      blockers:summary.blockers.map(row=>Object.fromEntries(['code','location','space','key','detail','manifestState']
+        .filter(key=>row[key]!=null).map(key=>[key,row[key]])))
+    });
+    return summary;
+  };
   const previewGlobalMode = async (mode,previewOptions={}) => {
     const target=requireOperationalMode(mode);
     if(!globalModeEnabled)throw globalModeError('MEMORY_SUITE_GLOBAL_OWNER_UNSUPPORTED');
     const url=await configuredServerUrlNow(),targetUrl=normalizeServerUrl(previewOptions.url||url);
     if(targetUrl!==url){const old=await collectGlobalInventory(MODE_PLUGIN_ONLY);
-      if(!old.completeKnownScopes)return globalInventorySummary(old);
-      if(old.scopes.some(scope=>scope.sourceMode!==MODE_PLUGIN_ONLY))return {...globalInventorySummary(old),completeKnownScopes:false,blockers:[{code:'MEMORY_SUITE_SERVER_URL_IN_USE'}]};}
+      if(!old.completeKnownScopes)return rememberGlobalPreview(globalInventorySummary(old));
+      if(old.scopes.some(scope=>scope.sourceMode!==MODE_PLUGIN_ONLY))return rememberGlobalPreview({...globalInventorySummary(old),completeKnownScopes:false,blockers:[{code:'MEMORY_SUITE_SERVER_URL_IN_USE'}]});}
     const first=await collectGlobalInventory(target,{url:targetUrl});
     if(first.completeKnownScopes){const second=await collectGlobalInventory(target,{url:targetUrl});
       if(!second.completeKnownScopes||first.catalogFingerprint!==second.catalogFingerprint||first.inventoryFingerprint!==second.inventoryFingerprint
         ||globalCanonical(first.registryCopies)!==globalCanonical(second.registryCopies)){first.completeKnownScopes=false;first.blockers.push({code:'inventory_changed_during_preview'});}}
-    return globalInventorySummary(first);
+    return rememberGlobalPreview(globalInventorySummary(first));
   };
   const globalSaveJob = async patch => {
     state.syncJob.current={...state.syncJob.current,...patch,updatedAt:Date.now(),lastActivityAt:Date.now()};
@@ -11545,7 +11559,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       status: { ...state.status }
     };
   };
-  const getCachedDiagnostics = () => cloneDiagnosticValue(state.diagnostics.value) || {
+  const getCachedDiagnostics = () => withMigrationPreview(cloneDiagnosticValue(state.diagnostics.value) || {
     schema: 'memory-suite.plugin-server-diagnostics.v1',
     generatedAt: 0,
     reachable: null,
@@ -11554,11 +11568,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     pluginVersion,
     status: { ...state.status },
     reason: 'diagnostics_not_loaded'
-  };
+  });
   const getDiagnostics = async (options = {}) => {
     const force = options.force === true;
     const maxAgeMs = Math.max(0, Math.min(10 * 60 * 1000, Number(options.maxAgeMs ?? 30000) || 0));
-    if (!force && state.diagnostics.value && Date.now() - Number(state.diagnostics.at || 0) <= maxAgeMs) return cloneDiagnosticValue(state.diagnostics.value);
+    if (!force && state.diagnostics.value && Date.now() - Number(state.diagnostics.at || 0) <= maxAgeMs) return getCachedDiagnostics();
     if (!force && state.diagnostics.pending) return await state.diagnostics.pending;
     const pending = (async () => {
       let scope = null;
@@ -11575,7 +11589,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           };
           state.diagnostics.value = result;
           state.diagnostics.at = Date.now();
-          return cloneDiagnosticValue(result);
+          return getCachedDiagnostics();
         }
         const connection = await bootstrap(force, true);
         if (connection?.capabilities?.['server-diagnostics.v1'] !== true) {
@@ -11595,7 +11609,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           };
           state.diagnostics.value = result;
           state.diagnostics.at = Date.now();
-          return cloneDiagnosticValue(result);
+          return getCachedDiagnostics();
         }
         const limit = Math.max(1, Math.min(1000, Number(options.limit || 500) || 500));
         const since = Math.max(0, Number(options.since || 0) || 0);
@@ -11621,12 +11635,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         };
         state.diagnostics.value = result;
         state.diagnostics.at = Date.now();
-        return cloneDiagnosticValue(result);
+        return getCachedDiagnostics();
       } catch (error) {
         const result = await offlineDiagnostics(error, false);
         state.diagnostics.value = result;
         state.diagnostics.at = Date.now();
-        return cloneDiagnosticValue(result);
+        return getCachedDiagnostics();
       } finally {
         state.diagnostics.pending = null;
       }
@@ -12858,7 +12872,26 @@ function memorySuiteLibraArchiveVectorReference(ref, memory) {
     || ref.sourceDigest && ref.sourceDigest !== memory.sourceDigest) return fallback;
   // Archive index rows are immutable snapshots. Embedding/profile migrations
   // update the canonical memory's pointer without rewriting historical indexes.
+  // Quarantine cleanup and portable repair explicitly leave committed memories
+  // pending with no vector. Do not resurrect an obsolete index hint in that state.
+  if (memory.status === 'committed' && ref.status === 'committed'
+    && ref.memoryId && ref.memoryId === memory.memoryId && ref.sourceDigest && ref.sourceDigest === memory.sourceDigest
+    && Number.isSafeInteger(memory.revision) && memory.revision > 0 && Number(ref.revision) === memory.revision
+    && ['rebuild_required','retry_pending'].includes(memory.embedding?.status)
+    && memory.embedding.vectorKey === '' && memory.embedding.vectorCount === 0) return '';
   return String(memory.embedding?.vectorKey || fallback);
+}
+function memorySuiteLibraVariantVectorReference(ref, memory, scopeKey) {
+  const fallback = String(ref?.vectorKey || '');
+  const startTurn = Number(memory?.turnRange?.start || 0), revision = Number(memory?.revision || 0);
+  if (!scopeKey || memory?.schema !== 'libra.canonical_memory.v1' || memory.scopeKey !== scopeKey
+    || !Number.isSafeInteger(startTurn) || startTurn < 1 || !Number.isSafeInteger(revision) || revision < 1
+    || ref?.key !== `libra:v1:scope:${scopeKey}:memory:${startTurn}:r${revision}`
+    || !ref.memoryId || ref.memoryId !== memory.memoryId || Number(ref.revision) !== revision
+    || !ref.sourceDigest || ref.sourceDigest !== memory.sourceDigest) return fallback;
+  // The same identity checks used on restore prove which body owns this index
+  // entry. Its current embedding pointer supersedes a historical profile hint.
+  return String(memory.embedding?.vectorKey || '');
 }
 async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
   const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -13044,6 +13077,13 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
   for (const row of records) {
     if (row.deleted || ['control','artifact'].includes(row.classification)) continue;
     const inlineKeys = new Set();
+    const variantRefs = new Set(), root = values.get(row);
+    if (root?.schema === 'libra.canonical_variant_index.v1' && root.scopeKey === row.scopeId
+      && row.logicalKey === `libra:v1:scope:${row.scopeId}:canonical-variants:v1` && object(root.slots)) {
+      for (const slot of Object.values(root.slots)) for (const ref of Array.isArray(slot?.variants) ? slot.variants : []) {
+        if (object(ref)) variantRefs.add(ref);
+      }
+    }
     if (values.get(row)?.schema === 'libra.micro_handoff_archive.v1') walk(values.get(row),node=> {
       if (typeof node.key === 'string' && object(node.value)) inlineKeys.add(node.key);
     });
@@ -13053,7 +13093,9 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
       // may predate compaction; the package's archiveRef/memoryRefs remain required.
       if(schema==='libra.session_handoff.package.v1'&&['continuityStateSeed','storyArcSeed'].includes(field))return false;
       const memoryRows = typeof value.key === 'string' ? (byKey.get(value.key) || []).filter(other => !other.deleted && !other.artifact && sameSource(row,other) && other.space === 'plugin') : [];
-      const vectorPointers = memoryRows.map(other => memorySuiteLibraArchiveVectorReference(value,values.get(other)));
+      const vectorPointers = memoryRows.map(other => variantRefs.has(value)
+        ? memorySuiteLibraVariantVectorReference(value,values.get(other),row.scopeId)
+        : memorySuiteLibraArchiveVectorReference(value,values.get(other)));
       const vectorPointer = vectorPointers.length && vectorPointers.every(key => key === vectorPointers[0]) ? vectorPointers[0] : str(value.vectorKey);
       for (const name of ['archiveRef','parentRef','parentArchiveRef']) if (value[name] != null && !object(value[name])) issue('archive_pointer_invalid',row);
       for (const [name,body] of Object.entries(value)) {

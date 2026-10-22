@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.1.2
+//@display-name ⚡ FLASHBACK Memory v1.1.3
 //@api 3.0
-//@version 1.1.2
+//@version 1.1.3
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.1.2';
+const PLUGIN_VERSION = '1.1.3';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -4349,7 +4349,7 @@ function createMemorySuiteHostLineage() {
 /* END LIBRARIAN HOST LINEAGE SDK */
 const MemorySuiteHostLineage = createMemorySuiteHostLineage();
 
-/* LIBRARIAN SYSTEM STORAGE SDK v1.8.31
+/* LIBRARIAN SYSTEM STORAGE SDK v1.8.32
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
  * The server stores opaque values. Each plugin keeps ownership of its own data schema.
  */
@@ -8451,6 +8451,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const globalModeEnabled = ['libra','hayaku','flashback'].includes(namespace)
     && scopeRoutingEnabled && options.storagePolicy !== 'local_only' && options.storagePolicy !== 'manager_only';
   let globalMigrationContext = null;
+  let globalMigrationPreview = null;
   let globalJobRunning = false;
   const globalModeError = (code, details) => Object.assign(new Error(code), {code, ...(details ? {details} : {})});
   const globalCanonical = value => JSON.stringify(value, (_key,item) => item && typeof item === 'object' && !Array.isArray(item)
@@ -8667,18 +8668,31 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     discoveredScopes:inventory.scopes.length,legacyOverrides:inventory.scopes.filter(scope=>{const row=inventory.registry.entries[scope.scopeId];return row&&!['inherited','migrated'].includes(String(row.origin||''));}).length,
     directions:Object.fromEntries([MODE_PLUGIN_ONLY,MODE_SERVER_ONLY,MODE_MIRROR].map(mode=>[mode,inventory.scopes.filter(scope=>scope.sourceMode===mode).length])),
     blockers:inventory.blockers,catalogFingerprint:inventory.catalogFingerprint,inventoryFingerprint:inventory.inventoryFingerprint});
+  const withMigrationPreview = value => ({ ...value,
+    ...(globalMigrationPreview ? { migrationPreview:cloneDiagnosticValue(globalMigrationPreview) } : {}) });
+  const rememberGlobalPreview = summary => {
+    // Keep the last read-only result available to ordinary debug exports even
+    // when plugin_only skips a server probe. Never retain inventory payloads.
+    globalMigrationPreview = cloneDiagnosticValue({
+      schema:'memory-suite.migration-preview-diagnostics.v1',generatedAt:Date.now(),namespace,pluginVersion,
+      targetMode:summary.targetMode,completeKnownScopes:summary.completeKnownScopes,discoveredScopes:summary.discoveredScopes,
+      blockers:summary.blockers.map(row=>Object.fromEntries(['code','location','space','key','detail','manifestState']
+        .filter(key=>row[key]!=null).map(key=>[key,row[key]])))
+    });
+    return summary;
+  };
   const previewGlobalMode = async (mode,previewOptions={}) => {
     const target=requireOperationalMode(mode);
     if(!globalModeEnabled)throw globalModeError('MEMORY_SUITE_GLOBAL_OWNER_UNSUPPORTED');
     const url=await configuredServerUrlNow(),targetUrl=normalizeServerUrl(previewOptions.url||url);
     if(targetUrl!==url){const old=await collectGlobalInventory(MODE_PLUGIN_ONLY);
-      if(!old.completeKnownScopes)return globalInventorySummary(old);
-      if(old.scopes.some(scope=>scope.sourceMode!==MODE_PLUGIN_ONLY))return {...globalInventorySummary(old),completeKnownScopes:false,blockers:[{code:'MEMORY_SUITE_SERVER_URL_IN_USE'}]};}
+      if(!old.completeKnownScopes)return rememberGlobalPreview(globalInventorySummary(old));
+      if(old.scopes.some(scope=>scope.sourceMode!==MODE_PLUGIN_ONLY))return rememberGlobalPreview({...globalInventorySummary(old),completeKnownScopes:false,blockers:[{code:'MEMORY_SUITE_SERVER_URL_IN_USE'}]});}
     const first=await collectGlobalInventory(target,{url:targetUrl});
     if(first.completeKnownScopes){const second=await collectGlobalInventory(target,{url:targetUrl});
       if(!second.completeKnownScopes||first.catalogFingerprint!==second.catalogFingerprint||first.inventoryFingerprint!==second.inventoryFingerprint
         ||globalCanonical(first.registryCopies)!==globalCanonical(second.registryCopies)){first.completeKnownScopes=false;first.blockers.push({code:'inventory_changed_during_preview'});}}
-    return globalInventorySummary(first);
+    return rememberGlobalPreview(globalInventorySummary(first));
   };
   const globalSaveJob = async patch => {
     state.syncJob.current={...state.syncJob.current,...patch,updatedAt:Date.now(),lastActivityAt:Date.now()};
@@ -11761,7 +11775,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       status: { ...state.status }
     };
   };
-  const getCachedDiagnostics = () => cloneDiagnosticValue(state.diagnostics.value) || {
+  const getCachedDiagnostics = () => withMigrationPreview(cloneDiagnosticValue(state.diagnostics.value) || {
     schema: 'memory-suite.plugin-server-diagnostics.v1',
     generatedAt: 0,
     reachable: null,
@@ -11770,11 +11784,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     pluginVersion,
     status: { ...state.status },
     reason: 'diagnostics_not_loaded'
-  };
+  });
   const getDiagnostics = async (options = {}) => {
     const force = options.force === true;
     const maxAgeMs = Math.max(0, Math.min(10 * 60 * 1000, Number(options.maxAgeMs ?? 30000) || 0));
-    if (!force && state.diagnostics.value && Date.now() - Number(state.diagnostics.at || 0) <= maxAgeMs) return cloneDiagnosticValue(state.diagnostics.value);
+    if (!force && state.diagnostics.value && Date.now() - Number(state.diagnostics.at || 0) <= maxAgeMs) return getCachedDiagnostics();
     if (!force && state.diagnostics.pending) return await state.diagnostics.pending;
     const pending = (async () => {
       let scope = null;
@@ -11791,7 +11805,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           };
           state.diagnostics.value = result;
           state.diagnostics.at = Date.now();
-          return cloneDiagnosticValue(result);
+          return getCachedDiagnostics();
         }
         const connection = await bootstrap(force, true);
         if (connection?.capabilities?.['server-diagnostics.v1'] !== true) {
@@ -11811,7 +11825,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           };
           state.diagnostics.value = result;
           state.diagnostics.at = Date.now();
-          return cloneDiagnosticValue(result);
+          return getCachedDiagnostics();
         }
         const limit = Math.max(1, Math.min(1000, Number(options.limit || 500) || 500));
         const since = Math.max(0, Number(options.since || 0) || 0);
@@ -11837,12 +11851,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         };
         state.diagnostics.value = result;
         state.diagnostics.at = Date.now();
-        return cloneDiagnosticValue(result);
+        return getCachedDiagnostics();
       } catch (error) {
         const result = await offlineDiagnostics(error, false);
         state.diagnostics.value = result;
         state.diagnostics.at = Date.now();
-        return cloneDiagnosticValue(result);
+        return getCachedDiagnostics();
       } finally {
         state.diagnostics.pending = null;
       }
@@ -12996,6 +13010,49 @@ async function memorySuiteFlashbackResolveRestoreDependencies(context = {}) {
 // BEGIN FLASHBACK GLOBAL DISCOVERY ADAPTER
 // Pure inventory interpretation: no host selection, storage, repair, cache or route writes.
 // Physical values are retained verbatim; only descriptors and dependency witnesses are added.
+const FLASHBACK_BUCKET_DIRECTORY = Symbol('flashback.bucket-directory');
+function memorySuiteFlashbackBucketed(manifest) {
+  return manifest?.storageMode === 'bucketed_v1';
+}
+function memorySuiteFlashbackBucketValid(manifest, index, value) {
+  return !!value && !Array.isArray(value) && value.version === 1 && value.storageMode === 'bucketed_v1'
+    && value.scopeKey === manifest.scopeKey && value.shard === index && Array.isArray(value.records)
+    && value.records.length === manifest.bucketCounts[index]
+    && value.records.every(record => record && typeof record === 'object' && !Array.isArray(record)
+      && record.scopeKey === manifest.scopeKey)
+    && stableHash(JSON.stringify(value)) === manifest.bucketHashes[index];
+}
+// The historical physical key convention is not assumed. Only an observed key
+// whose envelope matches this manifest's scope, index, count and hash can bind.
+function memorySuiteFlashbackBucketCatalog(manifest, candidates) {
+  const count = manifest.bucketCount, errors = [], keys = [];
+  if (manifest.bucketVersion !== 1 || !Number.isSafeInteger(count) || count < 1 || count > 100000
+    || manifest.commitId || manifest.rawPageLayout != null || manifest.rawPageReferences != null || manifest.rawPageDirectoryDigest != null
+    || !Array.isArray(manifest.bucketCounts) || manifest.bucketCounts.length !== count
+    || !Array.isArray(manifest.bucketHashes) || manifest.bucketHashes.length !== count
+    || manifest.bucketCounts.some(n => !Number.isSafeInteger(n) || n < 0)
+    || manifest.bucketHashes.some(h => typeof h !== 'string' || !/^[a-z0-9]+$/.test(h))
+    || manifest.bucketCounts.reduce((sum,n) => sum+n,0) !== manifest.count) {
+    return { keys, errors:[{code:'bucket_manifest_invalid'}] };
+  }
+  const prefix = `vector_rag_memory:scope:${keyHash(manifest.scopeKey)}:`;
+  const matches = new Map();
+  for (const row of candidates) {
+    const key = row.logicalKey || row.key;
+    if (typeof key !== 'string' || !key.startsWith(prefix) || row.deleted || row.artifact) continue;
+    let value = row.value;
+    if (typeof value === 'string') { try { value = JSON.parse(value); } catch (_) { continue; } }
+    const index = value?.shard;
+    if (!Number.isSafeInteger(index) || index < 0 || index >= count || !memorySuiteFlashbackBucketValid(manifest,index,value)) continue;
+    const found = matches.get(index) || []; found.push(key); matches.set(index,found);
+  }
+  for (let index=0;index<count;index++) {
+    const found = matches.get(index) || [];
+    if (found.length !== 1) errors.push({code:found.length ? 'bucket_dependency_ambiguous' : 'bucket_dependency_missing_or_invalid',index});
+    else keys[index] = found[0];
+  }
+  return { keys, errors };
+}
 async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
   const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
   const str = value => typeof value === 'string' ? value : '';
@@ -13202,6 +13259,19 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
     if (archiveHashes.has(hash)) issue('archive_storage_hash_collision',null,hash);
     nativeHashes.set(hash,scope.scopeId); scope.aliases = [...new Set([...scope.aliases,hash])];
   }
+  const bucketKeys = new Set();
+  for (const row of records) {
+    const value = values.get(row);
+    if (row.deleted || row.classification === 'control' || row.classification === 'artifact'
+      || value?.schema !== 'vector_rag_memory.scope_manifest.v2' || !memorySuiteFlashbackBucketed(value)) continue;
+    const catalog = memorySuiteFlashbackBucketCatalog(value,records.filter(other => other.space === 'plugin' && sameSource(row,other)));
+    for (const error of catalog.errors) {
+      issue(error.code,row,error.index == null ? '' : `bucket_index:${error.index}`);
+      blockers[blockers.length-1].manifestState = {storageMode:value.storageMode,bucketVersion:value.bucketVersion,
+        bucketCount:value.bucketCount,count:value.count};
+    }
+    for (const key of catalog.keys.filter(Boolean)) { bucketKeys.add(key); dependency(row,key,'plugin'); }
+  }
   for (const row of records) {
     if (['control','artifact'].includes(row.classification)) continue;
     const key = row.logicalKey, value = values.get(row);
@@ -13209,7 +13279,7 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
     if (match) {
       const id = nativeHashes.get(match[1]), archiveId = archiveHashes.get(match[1]);
       if (!id && !archiveId) { issue('scope_identity_unresolved',row); continue; }
-      if (!key.startsWith('vector_rag_memory:local-vector-shard:v1:') && !/^(?:manifest:v2(?::previous:v1)?$|turn_worldline:v1$|records:(?:shard:\d+|commit:.+:shard:\d+)$)/.test(match[2])) issue('unknown_scope_key',row);
+      if (!bucketKeys.has(key) && !key.startsWith('vector_rag_memory:local-vector-shard:v1:') && !/^(?:manifest:v2(?::previous:v1)?$|turn_worldline:v1$|records:(?:shard:\d+|commit:.+:shard:\d+)$)/.test(match[2])) issue('unknown_scope_key',row);
       if (id) { row.classification='scope'; attach(row,id); }
       if (object(value) && value.scopeKey && value.scopeKey !== (id || archiveId)) issue('payload_scope_identity_conflict',row);
     } else if (['vector_rag_memory:scope_registry:v2','vector_rag_memory:operation_log:v1','vector_rag_memory:maintenance_journal:v1','vector_rag_memory:pending_capture_journal:v1','vector_rag_memory:handoff_ledger:v2','vector_rag_memory:legacy_migration:v2'].includes(key)) {
@@ -13219,7 +13289,7 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
     if (row.deleted || !object(value)) continue;
     if (/:manifest:v2(?::previous:v1)?$/.test(key)) {
       const prefix = `vector_rag_memory:scope:${keyHash(value.scopeKey || '')}:`, shardCount = value.shardCount;
-      if (Number.isSafeInteger(shardCount) && shardCount >= 0) {
+      if (!memorySuiteFlashbackBucketed(value) && Number.isSafeInteger(shardCount) && shardCount >= 0) {
         // Comparing to the finite observed catalog avoids allocating attacker-sized arrays.
         if (shardCount > records.length) issue('dependency_missing',row,'manifest_shard_count_exceeds_inventory');
         else for (let i=0;i<shardCount;i++) {
@@ -13479,7 +13549,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const keys = async (options={}) => {
       try{
         const api=getLiveApi(),storage=MemorySuiteStorageBridge.createPluginStorageProxy(api?.pluginStorage);
-        if(storage?.keys){const result=await withDeadline(storage.keys(),STORAGE_IO_TIMEOUT_MS,'Librarian System/pluginStorage keys');if(Array.isArray(result))return result;}
+        const pending = options.scopeKey ? MemorySuiteStorageBridge.keys('plugin',options.prefix || '',
+          async()=>typeof api?.pluginStorage?.keys==='function' ? await api.pluginStorage.keys() : [],
+          {scope:{scopeId:options.scopeKey,scopeKey:options.scopeKey,aliases:[keyHash(options.scopeKey)]},noCache:true}) : storage?.keys?.();
+        if(pending){const result=await withDeadline(pending,STORAGE_IO_TIMEOUT_MS,'Librarian System/pluginStorage keys');if(Array.isArray(result))return result;}
         if(options.strict===true)throw new Error('FLASHBACK_SCOPE_INVENTORY_UNAVAILABLE');
       }catch(error){warn('pluginStorage.keys failed',error);if(options.strict===true)throw error;}
       return [];
@@ -18505,6 +18578,23 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   // Enumerable symbols survive object spread but never enter JSON storage.
   // Keep the exact read basis for metadata updates within one writer epoch.
   const MANIFEST_STORAGE_READ = Symbol('flashback.manifest.storage-read');
+  const prepareFlashbackBucketDirectory = async (manifest, readOptions = {}) => {
+    if (!memorySuiteFlashbackBucketed(manifest)) return;
+    const prefix = `${scopePrefix(manifest.scopeKey)}:`;
+    const inventory = readOptions.listPlugin ? await readOptions.listPlugin(prefix,manifest.scopeKey)
+      : await RisuCompat.keys({strict:true,scopeKey:manifest.scopeKey,prefix});
+    if (!Array.isArray(inventory)) throw new Error('FLASHBACK_BUCKET_INVENTORY_UNAVAILABLE');
+    const read = readOptions.readPlugin || (key=>RisuCompat.getItem(key));
+    const candidates = [];
+    for (const key of [...new Set(inventory)].filter(key=>typeof key==='string' && key.startsWith(prefix)
+      && !/:manifest:v2(?::previous:v1)?$/.test(key) && !key.includes('::chunk:v1:'))) {
+      candidates.push({key,value:await read(key,manifest.scopeKey)});
+    }
+    const catalog = memorySuiteFlashbackBucketCatalog(manifest,candidates);
+    if (catalog.errors.length) throw Object.assign(new Error('FLASHBACK_BUCKET_DIRECTORY_INVALID'),{code:'FLASHBACK_BUCKET_DIRECTORY_INVALID'});
+    manifest[FLASHBACK_BUCKET_DIRECTORY] = catalog.keys;
+    manifest.shardCount = manifest.bucketCount;
+  };
   const loadScopeManifest = async (scopeOrKey, readOptions = {}) => {
     const scope = typeof scopeOrKey === 'string' ? { scopeKey: scopeOrKey } : (scopeOrKey || {});
     if(!scope.scopeKey)return {...emptyManifest(scope),manifestRawPresent:false,available:false};
@@ -18591,6 +18681,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       turnWorldlinePendingRetirement: parsed.turnWorldlinePendingRetirement === true,
       stats: parsed.stats && typeof parsed.stats === 'object' ? parsed.stats : { byType: {} }
     };
+    if (memorySuiteFlashbackBucketed(loaded)) {
+      try { await prepareFlashbackBucketDirectory(loaded,readOptions); }
+      catch (error) { loaded.manifestCorrupt = true; loaded.bucketError = text(error?.code || error?.message); }
+    }
     if (hasFlashbackRawPageDirectory(loaded)) {
       try { await verifyFlashbackRawPageDirectory(loaded.scopeKey, loaded); }
       catch (error) {
@@ -19914,6 +20008,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
 
   const scopeShardKeyForManifest = (scopeKey, manifest, shardIndex) => {
+    if (memorySuiteFlashbackBucketed(manifest)) {
+      const key = manifest[FLASHBACK_BUCKET_DIRECTORY]?.[shardIndex];
+      if (!key || manifest.scopeKey !== scopeKey) throw new Error('FLASHBACK_BUCKET_DIRECTORY_UNAVAILABLE');
+      return key;
+    }
     const ref = flashbackRawPageReference(scopeKey, manifest, shardIndex);
     if (ref) return ref.storageKey;
     const commitId = text(manifest?.commitId || '').trim();
@@ -20982,6 +21081,9 @@ const MemorySuiteSnapshotCache = (() => {
   };
 
   const readScopeShardRecordsUnfenced = async (scopeKey, shardIndex, manifest = {}, options = {}) => {
+    if (memorySuiteFlashbackBucketed(manifest) && (!manifest[FLASHBACK_BUCKET_DIRECTORY]?.[shardIndex] || manifest.manifestCorrupt)) {
+      return {missing:true,corrupt:true,records:[]};
+    }
     // A full writer may replace a reference head while retaining its immutable
     // generations. That fallback keeps the same physical currentness contract.
     const requirePhysicalFrontier = manifest.rawPageRetentionRequired === true;
@@ -21048,7 +21150,8 @@ const MemorySuiteSnapshotCache = (() => {
     const recordCountMatches = expectedRecordCount == null || recordsPayload?.length === expectedRecordCount;
     const recordObjectsValid = Array.isArray(recordsPayload)
       && recordsPayload.every(record => record && typeof record === 'object' && !Array.isArray(record));
-    if (!recordsPayload || !recordObjectsValid || !commitMatches || !scopeMatches || !shardMatches || !checksumMatches || !recordCountMatches) {
+    const bucketMatches = !memorySuiteFlashbackBucketed(manifest) || memorySuiteFlashbackBucketValid(manifest,shardIndex,parsed);
+    if (!bucketMatches || !recordsPayload || !recordObjectsValid || !commitMatches || !scopeMatches || !shardMatches || !checksumMatches || !recordCountMatches) {
       return { missing: true, corrupt: true, records: [] };
     }
     // Storage inspection is read-only and does not need an embedding payload.
@@ -21249,7 +21352,7 @@ const MemorySuiteSnapshotCache = (() => {
       && indexes.length === manifest.shardCount
       && missingShards === 0
       && records.length + externalRecords.length !== Number(manifest.count || 0);
-    if (manifest.manifestCorrupt !== true && missingShards === 0 && !recordCountMismatch && (externalRecords.length || manifest.externalRetirementVersion < EXTERNAL_RETIREMENT_VERSION)) {
+    if (!memorySuiteFlashbackBucketed(manifest) && manifest.manifestCorrupt !== true && missingShards === 0 && !recordCountMismatch && (externalRecords.length || manifest.externalRetirementVersion < EXTERNAL_RETIREMENT_VERSION)) {
       scheduleExternalRetirement(manifest.scopeKey, { reason: 'recall_read' });
     }
     Runtime.storagePerfStats.recallLoads += 1;
@@ -21591,7 +21694,7 @@ const MemorySuiteSnapshotCache = (() => {
     const loaded = await loadScopeRecordsRaw(scopeOrKey, options);
     const retained = loaded.records.filter(isRetainedMemoryRecord);
     const removed = loaded.records.length - retained.length;
-    if (options.readOnly !== true && loaded.manifest.manifestCorrupt !== true
+    if (options.readOnly !== true && !memorySuiteFlashbackBucketed(loaded.manifest) && loaded.manifest.manifestCorrupt !== true
       && Number(loaded.manifest.missingShards || 0) === 0
       && loaded.manifest.recordCountMismatch !== true
       && (removed > 0 || loaded.manifest.externalRetirementVersion < EXTERNAL_RETIREMENT_VERSION)) {
@@ -22121,6 +22224,11 @@ const MemorySuiteSnapshotCache = (() => {
     delete manifest.rawPageLayout;
     delete manifest.rawPageReferences;
     delete manifest.rawPageDirectoryDigest;
+    // A new committed shard generation must not retain the predecessor codec.
+    if (memorySuiteFlashbackBucketed(oldManifest)) {
+      for (const field of ['storageMode','bucketVersion','bucketCount','bucketCounts','bucketHashes','bucketUpdatedAt']) delete manifest[field];
+      delete manifest[FLASHBACK_BUCKET_DIRECTORY];
+    }
     if (hasFlashbackRawPageDirectory(oldManifest) || oldManifest.rawPageRetentionRequired === true) manifest.rawPageRetentionRequired = true;
     if (rawPageAppend) {
       manifest.rawPageLayout = 'flashback.raw_pages.v1';
@@ -24751,6 +24859,16 @@ const MemorySuiteSnapshotCache = (() => {
       if (manifest.archiveRefRawPresent && !manifest.archiveRef) {
         scopeErrors.push({ code: 'flashback_archive_ref_invalid', scopeKey: wantedScopeKey });
       }
+      if (memorySuiteFlashbackBucketed(manifest)) {
+        try { await prepareFlashbackBucketDirectory(manifest,{
+          listPlugin:async()=>candidateRows.filter(row=>row.space !== 'local').map(row=>text(row.logicalKey || row.key)),
+          readPlugin:key=>physicalRead('plugin',key)
+        }); }
+        catch (_) {
+          scopeErrors.push({code:'flashback_bucket_directory_invalid',scopeKey:wantedScopeKey});
+          return {manifest,records:[],memberIds:[],errors:scopeErrors,vectorPayloads:0};
+        }
+      }
       const shardResults = await mapOrderedWithConcurrency(
         Array.from({ length: manifest.shardCount }, (_, index) => index),
         Math.min(RECALL_SHARD_READ_CONCURRENCY, 3),
@@ -24779,6 +24897,9 @@ const MemorySuiteSnapshotCache = (() => {
             ? Number(expectedSummary.recordCount)
             : null;
           const shardErrors = [];
+          if (memorySuiteFlashbackBucketed(manifest) && !memorySuiteFlashbackBucketValid(manifest,shardIndex,envelope)) {
+            shardErrors.push({code:'flashback_bucket_payload_invalid',scopeKey:wantedScopeKey,shardIndex});
+          }
           if (!Array.isArray(records) || !records.every(record => record && typeof record === 'object' && !Array.isArray(record))) {
             shardErrors.push({ code: 'flashback_shard_payload_invalid', scopeKey: wantedScopeKey, shardIndex });
           } else {
@@ -51030,6 +51151,16 @@ return createReadSession;
           throw new Error(`portable_backup_manifest_invalid:${record.key}`);
         }
         if (manifest?.schema !== 'vector_rag_memory.scope_manifest.v2') continue;
+        if (memorySuiteFlashbackBucketed(manifest)) {
+          const candidates = [...byKey].map(([key,value])=>({key,value}));
+          const catalog = memorySuiteFlashbackBucketCatalog(manifest,candidates);
+          if (catalog.errors.length) throw new Error(`portable_backup_bucket_directory_invalid:${record.key}`);
+          for (const key of catalog.keys) {
+            const value = byKey.get(key), bucket = typeof value === 'string' ? tryJsonParse(value,null) : value;
+            if (bucket.records.some(item=>!textValue(item.text).trim())) throw new Error(`portable_backup_active_bucket_invalid:${key}`);
+          }
+          continue;
+        }
         const prefix = `vector_rag_memory:scope:${textValue(manifest.storageHash)}:`;
         const count = Number(manifest.count), shardCount = Number(manifest.shardCount);
         if (!Number.isSafeInteger(count) || count < 0 || !Number.isSafeInteger(shardCount) || shardCount < 0) {
@@ -51245,6 +51376,19 @@ return createReadSession;
     };
     const portableShardRecordsByScope = async envelope => {
       const byScope = new Map();
+      const bucketScopes = new Set();
+      const candidates = (Array.isArray(envelope?.records) ? envelope.records : []).map(row=>({key:row.key,value:decodeValue(row.value)}));
+      for (const row of candidates) {
+        const manifest = typeof row.value === 'string' ? tryJsonParse(row.value,null) : row.value;
+        if (manifest?.schema !== 'vector_rag_memory.scope_manifest.v2' || !memorySuiteFlashbackBucketed(manifest)) continue;
+        const catalog = memorySuiteFlashbackBucketCatalog(manifest,candidates);
+        if (catalog.errors.length) throw portableRestoreError('FLASHBACK_PORTABLE_BUCKET_INVALID','백업 버킷의 완전성을 확인할 수 없습니다.');
+        const byKey = new Map(candidates.map(row=>[row.key,row.value]));
+        byScope.set(manifest.scopeKey,catalog.keys.flatMap(key=>{
+          const value=byKey.get(key);return (typeof value==='string'?JSON.parse(value):value).records;
+        }));
+        bucketScopes.add(manifest.scopeKey);
+      }
       for (const record of Array.isArray(envelope?.records) ? envelope.records : []) {
         const key = textValue(record?.key);
         if (!/:records:(?:commit:[^:]+:)?shard:/i.test(key)) continue;
@@ -51260,6 +51404,7 @@ return createReadSession;
         }
         const scopeKey = textValue(parsed?.scopeKey || '');
         if (!scopeKey) throw portableRestoreError('FLASHBACK_PORTABLE_SHARD_SCOPE_MISSING', `백업 shard의 scope가 없습니다: ${key}`);
+        if (bucketScopes.has(scopeKey)) continue;
         const rows = byScope.get(scopeKey) || [];
         rows.push(...records.filter(item => item && typeof item === 'object'));
         byScope.set(scopeKey, rows);

@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.1.2
-//@version 3.1.2
+//@display-name HAYAKU · Locator Continuity v3.1.3
+//@version 3.1.3
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.1.2';
+  const PLUGIN_VERSION = '3.1.3';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -3018,7 +3018,7 @@ function createMemorySuiteHostLineage() {
 /* END LIBRARIAN HOST LINEAGE SDK */
 const MemorySuiteHostLineage = createMemorySuiteHostLineage();
 
-/* LIBRARIAN SYSTEM STORAGE SDK v1.8.31
+/* LIBRARIAN SYSTEM STORAGE SDK v1.8.32
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
  * The server stores opaque values. Each plugin keeps ownership of its own data schema.
  */
@@ -7120,6 +7120,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const globalModeEnabled = ['libra','hayaku','flashback'].includes(namespace)
     && scopeRoutingEnabled && options.storagePolicy !== 'local_only' && options.storagePolicy !== 'manager_only';
   let globalMigrationContext = null;
+  let globalMigrationPreview = null;
   let globalJobRunning = false;
   const globalModeError = (code, details) => Object.assign(new Error(code), {code, ...(details ? {details} : {})});
   const globalCanonical = value => JSON.stringify(value, (_key,item) => item && typeof item === 'object' && !Array.isArray(item)
@@ -7336,18 +7337,31 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     discoveredScopes:inventory.scopes.length,legacyOverrides:inventory.scopes.filter(scope=>{const row=inventory.registry.entries[scope.scopeId];return row&&!['inherited','migrated'].includes(String(row.origin||''));}).length,
     directions:Object.fromEntries([MODE_PLUGIN_ONLY,MODE_SERVER_ONLY,MODE_MIRROR].map(mode=>[mode,inventory.scopes.filter(scope=>scope.sourceMode===mode).length])),
     blockers:inventory.blockers,catalogFingerprint:inventory.catalogFingerprint,inventoryFingerprint:inventory.inventoryFingerprint});
+  const withMigrationPreview = value => ({ ...value,
+    ...(globalMigrationPreview ? { migrationPreview:cloneDiagnosticValue(globalMigrationPreview) } : {}) });
+  const rememberGlobalPreview = summary => {
+    // Keep the last read-only result available to ordinary debug exports even
+    // when plugin_only skips a server probe. Never retain inventory payloads.
+    globalMigrationPreview = cloneDiagnosticValue({
+      schema:'memory-suite.migration-preview-diagnostics.v1',generatedAt:Date.now(),namespace,pluginVersion,
+      targetMode:summary.targetMode,completeKnownScopes:summary.completeKnownScopes,discoveredScopes:summary.discoveredScopes,
+      blockers:summary.blockers.map(row=>Object.fromEntries(['code','location','space','key','detail','manifestState']
+        .filter(key=>row[key]!=null).map(key=>[key,row[key]])))
+    });
+    return summary;
+  };
   const previewGlobalMode = async (mode,previewOptions={}) => {
     const target=requireOperationalMode(mode);
     if(!globalModeEnabled)throw globalModeError('MEMORY_SUITE_GLOBAL_OWNER_UNSUPPORTED');
     const url=await configuredServerUrlNow(),targetUrl=normalizeServerUrl(previewOptions.url||url);
     if(targetUrl!==url){const old=await collectGlobalInventory(MODE_PLUGIN_ONLY);
-      if(!old.completeKnownScopes)return globalInventorySummary(old);
-      if(old.scopes.some(scope=>scope.sourceMode!==MODE_PLUGIN_ONLY))return {...globalInventorySummary(old),completeKnownScopes:false,blockers:[{code:'MEMORY_SUITE_SERVER_URL_IN_USE'}]};}
+      if(!old.completeKnownScopes)return rememberGlobalPreview(globalInventorySummary(old));
+      if(old.scopes.some(scope=>scope.sourceMode!==MODE_PLUGIN_ONLY))return rememberGlobalPreview({...globalInventorySummary(old),completeKnownScopes:false,blockers:[{code:'MEMORY_SUITE_SERVER_URL_IN_USE'}]});}
     const first=await collectGlobalInventory(target,{url:targetUrl});
     if(first.completeKnownScopes){const second=await collectGlobalInventory(target,{url:targetUrl});
       if(!second.completeKnownScopes||first.catalogFingerprint!==second.catalogFingerprint||first.inventoryFingerprint!==second.inventoryFingerprint
         ||globalCanonical(first.registryCopies)!==globalCanonical(second.registryCopies)){first.completeKnownScopes=false;first.blockers.push({code:'inventory_changed_during_preview'});}}
-    return globalInventorySummary(first);
+    return rememberGlobalPreview(globalInventorySummary(first));
   };
   const globalSaveJob = async patch => {
     state.syncJob.current={...state.syncJob.current,...patch,updatedAt:Date.now(),lastActivityAt:Date.now()};
@@ -10430,7 +10444,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       status: { ...state.status }
     };
   };
-  const getCachedDiagnostics = () => cloneDiagnosticValue(state.diagnostics.value) || {
+  const getCachedDiagnostics = () => withMigrationPreview(cloneDiagnosticValue(state.diagnostics.value) || {
     schema: 'memory-suite.plugin-server-diagnostics.v1',
     generatedAt: 0,
     reachable: null,
@@ -10439,11 +10453,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     pluginVersion,
     status: { ...state.status },
     reason: 'diagnostics_not_loaded'
-  };
+  });
   const getDiagnostics = async (options = {}) => {
     const force = options.force === true;
     const maxAgeMs = Math.max(0, Math.min(10 * 60 * 1000, Number(options.maxAgeMs ?? 30000) || 0));
-    if (!force && state.diagnostics.value && Date.now() - Number(state.diagnostics.at || 0) <= maxAgeMs) return cloneDiagnosticValue(state.diagnostics.value);
+    if (!force && state.diagnostics.value && Date.now() - Number(state.diagnostics.at || 0) <= maxAgeMs) return getCachedDiagnostics();
     if (!force && state.diagnostics.pending) return await state.diagnostics.pending;
     const pending = (async () => {
       let scope = null;
@@ -10460,7 +10474,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           };
           state.diagnostics.value = result;
           state.diagnostics.at = Date.now();
-          return cloneDiagnosticValue(result);
+          return getCachedDiagnostics();
         }
         const connection = await bootstrap(force, true);
         if (connection?.capabilities?.['server-diagnostics.v1'] !== true) {
@@ -10480,7 +10494,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           };
           state.diagnostics.value = result;
           state.diagnostics.at = Date.now();
-          return cloneDiagnosticValue(result);
+          return getCachedDiagnostics();
         }
         const limit = Math.max(1, Math.min(1000, Number(options.limit || 500) || 500));
         const since = Math.max(0, Number(options.since || 0) || 0);
@@ -10506,12 +10520,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         };
         state.diagnostics.value = result;
         state.diagnostics.at = Date.now();
-        return cloneDiagnosticValue(result);
+        return getCachedDiagnostics();
       } catch (error) {
         const result = await offlineDiagnostics(error, false);
         state.diagnostics.value = result;
         state.diagnostics.at = Date.now();
-        return cloneDiagnosticValue(result);
+        return getCachedDiagnostics();
       } finally {
         state.diagnostics.pending = null;
       }

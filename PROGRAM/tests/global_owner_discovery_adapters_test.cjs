@@ -199,6 +199,74 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
  r=await inspect('libra',{records:foreignMemory});blocked(r,/dependency_missing/);
  const missingMemory=staleIndexInputs.filter(x=>x.key!==memoryKey);
  r=await inspect('libra',{records:missingMemory});blocked(r,/dependency_missing/);
+ // Quarantine cleanup clears the canonical pointer but historical indexes keep
+ // their old vectorKey. A proved pending memory can migrate without that vector.
+ const pendingArchiveInputs=clone(staleIndexInputs).filter(x=>x.key!==retainedVector);
+ pendingArchiveInputs[2].value=JSON.stringify({...indexedMemory,status:'committed',embedding:{status:'rebuild_required',vectorKey:'',vectorCount:0}});
+ for(const index of [0,1,3]) {
+  const value=JSON.parse(pendingArchiveInputs[index].value);
+  const refs=index===0?value.inheritedMemories:value.memoryRefs;
+  for(const ref of refs){ref.embeddingStatus='rebuild_required';ref.vectorCount=0;}
+  pendingArchiveInputs[index].value=JSON.stringify(value);
+ }
+ r=await inspect('libra',{records:pendingArchiveInputs});ok(r);
+ for(let i=0;i<pendingArchiveInputs.length;i++)assert.equal(r.records[i].value,pendingArchiveInputs[i].value,'pending archive bytes are retained');
+ assert.ok(r.records.every(rec=>!rec.dependencyKeys.includes(staleVector)),'retired vectors are not required for proved pending archives');
+ const retryArchiveInputs=clone(pendingArchiveInputs),retryMemory=JSON.parse(retryArchiveInputs[2].value);
+ retryMemory.embedding.status='retry_pending';retryArchiveInputs[2].value=JSON.stringify(retryMemory);
+ r=await inspect('libra',{records:retryArchiveInputs});ok(r);
+ for(const status of [undefined,'failed']) {
+  const inputs=clone(pendingArchiveInputs),memory=JSON.parse(inputs[2].value);memory.status=status;inputs[2].value=JSON.stringify(memory);
+  r=await inspect('libra',{records:inputs});blocked(r,/dependency_missing/);
+ }
+ const presentHistorical=[...pendingArchiveInputs,row(staleVector,{scopeKey:`archive:${archiveId}`,memoryId:indexedRef.memoryId,revision:2})];
+ r=await inspect('libra',{records:presentHistorical});ok(r);assert.ok(r.records[0].dependencyKeys.includes(staleVector),'still-present historical vector is retained');
+ for(const embedding of [{status:'ready',vectorKey:'',vectorCount:0},{status:'rebuild_required',vectorCount:0},{status:'rebuild_required',vectorKey:'',vectorCount:1},null]) {
+  const inputs=clone(pendingArchiveInputs);inputs[2].value=JSON.stringify({...indexedMemory,status:'committed',embedding});
+  r=await inspect('libra',{records:inputs});blocked(r,/dependency_missing/);
+ }
+ for(const patch of [{memoryId:'foreign'},{sourceDigest:'foreign'},{archiveCanonicalId:'foreign'},{scopeKey:'archive:foreign'},{revision:99}]) {
+  const inputs=clone(pendingArchiveInputs);inputs[2].value=JSON.stringify({...JSON.parse(inputs[2].value),...patch});
+  r=await inspect('libra',{records:inputs});blocked(r,/dependency_missing/);
+ }
+ r=await inspect('libra',{records:pendingArchiveInputs.map(x=>x.key===memoryKey?{...x,location:'server'}:x)});blocked(r,/dependency_missing/);
+ // Canonical variant indexes retain the vector profile from their creation.
+ // Re-embedding changes the verified memory body, not every historical index.
+ const variantScope=identity('libra',1),variantMemoryKey=`libra:v1:scope:${variantScope}:memory:1:r1`;
+ const variantOldVector=`libra:v1:scope:${variantScope}:vector:mem_000011:r1:lep_ftk24b`;
+ const variantCurrentVector=`libra:v1:scope:${variantScope}:vector:mem_000011:r1:current-profile`;
+ const variantRef={key:variantMemoryKey,memoryId:'mem_000011',revision:1,sourceDigest:'variant-proof',vectorKey:variantOldVector,deltaStatus:'missing_legacy'};
+ const variantMemory={schema:'libra.canonical_memory.v1',scopeKey:variantScope,memoryId:variantRef.memoryId,revision:1,sourceDigest:variantRef.sourceDigest,turnRange:{start:1,end:5},embedding:{status:'ready',vectorKey:variantCurrentVector}};
+ const variantInputs=[root('libra',1),row(`libra:v1:scope:${variantScope}:canonical-variants:v1`,{schema:'libra.canonical_variant_index.v1',scopeKey:variantScope,slots:{1:{variants:[variantRef]}}}),row(variantMemoryKey,variantMemory),row(variantCurrentVector,{scopeKey:variantScope,memoryId:variantRef.memoryId,revision:1})];
+ r=await inspect('libra',{records:variantInputs});ok(r);assert.ok(r.records[1].dependencyKeys.includes(variantCurrentVector));
+ for(let i=0;i<variantInputs.length;i++)assert.equal(r.records[i].value,variantInputs[i].value,'variant and memory bytes are preserved');
+ r=await inspect('libra',{records:[...variantInputs,row(variantOldVector,{scopeKey:variantScope})]});ok(r);assert.ok(r.records[1].dependencyKeys.includes(variantOldVector),'existing historical vectors are retained too');
+ r=await inspect('libra',{records:variantInputs.filter(x=>x.key!==variantCurrentVector)});blocked(r,/dependency_missing/);
+ for(const patch of [{memoryId:'foreign'},{revision:2},{sourceDigest:'foreign'},{scopeKey:identity('libra',2)},{turnRange:{start:6,end:10}}]) {
+  const changed=clone(variantInputs);changed[2].value=JSON.stringify({...variantMemory,...patch});
+  r=await inspect('libra',{records:changed});blocked(r,/dependency_missing/);
+ }
+ r=await inspect('libra',{records:variantInputs.filter(x=>x.key!==variantMemoryKey)});blocked(r,/dependency_missing/);
+ r=await inspect('libra',{records:variantInputs.map(x=>x.key===variantCurrentVector?{...x,location:'server'}:x)});blocked(r,/dependency_missing/);
+ r=await inspect('libra',{records:variantInputs.map(x=>x.key===variantMemoryKey?{...x,location:'server'}:x)});blocked(r,/dependency_missing/);
+ // A current scope can retain a committed canonical memory after quarantine
+ // removed its vector. The stale variant hint must not block a source transfer.
+ const pendingVariantInputs=clone(variantInputs).filter(x=>x.key!==variantCurrentVector);
+ const pendingVariantMemory={...variantMemory,status:'committed',embedding:{status:'rebuild_required',vectorKey:'',vectorCount:0,
+  profileId:'retired-profile',quarantinedProfileId:'retired-profile',provider:'voyageai',model:'voyage-4-large',dimensions:1024,
+  reason:'previous quarantined vector deleted'}};
+ const pendingManifestRef={...variantRef,status:'committed',embeddingStatus:'rebuild_required',vectorCount:0};delete pendingManifestRef.vectorKey;
+ pendingVariantInputs[0].value=JSON.stringify({...JSON.parse(pendingVariantInputs[0].value),memories:{1:pendingManifestRef}});
+ pendingVariantInputs[2].value=JSON.stringify(pendingVariantMemory);
+ r=await inspect('libra',{records:pendingVariantInputs});ok(r);
+ for(let i=0;i<pendingVariantInputs.length;i++)assert.equal(r.records[i].value,pendingVariantInputs[i].value,'quarantine-deleted current memory remains pending and unchanged');
+ assert.ok(r.records.every(rec=>!rec.dependencyKeys.includes(variantOldVector)),'pending current memory needs no retired vector');
+ r=await inspect('libra',{records:pendingVariantInputs.filter(x=>x.key!==variantMemoryKey)});blocked(r,/dependency_missing/);
+ for(const patch of [{memoryId:'foreign'},{revision:2},{sourceDigest:'foreign'},{scopeKey:identity('libra',2)}]) {
+  const inputs=clone(pendingVariantInputs);inputs[2].value=JSON.stringify({...pendingVariantMemory,...patch});
+  r=await inspect('libra',{records:inputs});blocked(r,/dependency_missing/);
+ }
+ r=await inspect('libra',{records:pendingVariantInputs.map(x=>x.key===variantMemoryKey?{...x,location:'server'}:x)});blocked(r,/dependency_missing/);
  // A local payload's provenance is not a dependency on retired vector metadata.
  const retiredVector=`libra:v1:scope:${projectionScope}:vector:mem_000006:r1:lep_9by1h4`;
  const retainedLocal=`libra:v1:local-vector:${stableDraftHash(retiredVector)}`;
@@ -226,5 +294,35 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
  r=await inspect('flashback',{records:[fallbackRoot,row(legacyShard,{scopeKey:identity('flashback',1),commitId:'foreign',records:[]})]});blocked(r,/dependency_missing/);
  r=await inspect('flashback',{records:[fallbackRoot,{...fallbackShard,location:'server'}]});blocked(r,/dependency_missing/);
  r=await inspect('flashback',{records:[fallbackRoot,{...fallbackShard,deleted:true,value:null}]});blocked(r,/dependency_missing/);
+ // Historical bucket envelopes bind only through scope/index/count/hash, at observed keys.
+ const bucketCounts=[7,16,2,1,0,0,0,1,0,3,0,0,2,2,1,0,0,0,1,1,0,1,1,1,0,0,0,2,1,0,1,1];
+ const bucketScope=identity('flashback',1),bucketPrefix=`vector_rag_memory:scope:${keyHash(bucketScope)}:`;
+ const buckets=bucketCounts.map((count,shard)=>row(bucketPrefix+`records:bucket:observed-${shard}`,{
+  version:1,storageMode:'bucketed_v1',shard,scopeKey:bucketScope,
+  records:Array.from({length:count},(_,i)=>({id:`fixture-${shard}-${i}`,scopeKey:bucketScope,text:'PRIVATE_RECORD_BODY',vector:[1,0]}))
+ }));
+ const bucketRoot=root('flashback',1,{storageMode:'bucketed_v1',bucketVersion:1,bucketCount:32,bucketCounts,
+  bucketHashes:buckets.map(b=>keyHash(b.value)),shardCount:32,count:45,nextId:840,commitId:'',shardSummaries:[]});
+ r=await inspect('flashback',{records:[bucketRoot,...buckets]});ok(r);
+ assert.equal(r.records[0].dependencyKeys.length,32);assert.ok(r.records.slice(1).every(b=>b.classification==='scope'));
+ assert.equal(r.records[1].value,buckets[0].value,'bucket bytes are preserved');
+ r=await inspect('flashback',{records:[bucketRoot,...buckets.map(b=>({...b,location:'server'}))]});blocked(r,/bucket_dependency_missing/);
+ r=await inspect('flashback',{records:[bucketRoot,...buckets.slice(1)]});blocked(r,/bucket_dependency_missing/);
+ r=await inspect('flashback',{records:[bucketRoot,...buckets.filter((_,i)=>i!==4)]});blocked(r,/bucket_dependency_missing/);
+ r=await inspect('flashback',{records:[bucketRoot,...buckets,row(bucketPrefix+'another-physical-key',buckets[1].value)]});blocked(r,/bucket_dependency_ambiguous/);
+ for(const mutate of [v=>{v.records[0].text='tampered';},v=>{v.scopeKey=identity('flashback',2);},v=>{v.shard=2;},v=>{v.version=2;},v=>{v.records.pop();}]) {
+  const bad=clone(buckets),value=JSON.parse(bad[1].value);mutate(value);bad[1].value=JSON.stringify(value);
+  r=await inspect('flashback',{records:[bucketRoot,...bad]});blocked(r,/bucket_dependency_missing_or_invalid/);
+  assert.ok(!JSON.stringify(r.blockers).includes('PRIVATE_RECORD_BODY'));
+ }
+ for(const fields of [{bucketCount:33},{bucketVersion:2},{bucketHashes:[]},{bucketCounts:[]},{count:44},{commitId:'mixed'},{rawPageLayout:'flashback.raw_pages.v1'}]) {
+  const bad=clone(bucketRoot);bad.value=JSON.stringify({...JSON.parse(bad.value),...fields});
+  r=await inspect('flashback',{records:[bad,...buckets]});blocked(r,/bucket_manifest_invalid/);
+ }
+ // The supplied empty-envelope hashes establish the historical JSON hash codec.
+ const actualScope='char:1prphff|chat:1cferkl|persona:48amyh';assert.equal(keyHash(actualScope),'1hxw63t');
+ for(const [shard,digest]of [[4,'wycscg'],[5,'1umqef'],[6,'1a5z36u'],[8,'iloit0'],[10,'ii1j15'],[11,'1am0jnu']]) {
+  assert.equal(keyHash(JSON.stringify({version:1,storageMode:'bucketed_v1',shard,scopeKey:actualScope,records:[]})),digest);
+ }
  console.log(`Global owner discovery adapters: PASS (${checks} scenarios)`);
 })().catch(error=>{console.error(error);process.exitCode=1;});

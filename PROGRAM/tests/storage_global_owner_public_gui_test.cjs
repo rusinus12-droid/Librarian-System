@@ -3,6 +3,7 @@
 const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const {create,pause,until,META}=require('./fixtures/libra_gui_memory_dom_host.cjs');
 const {createHandlerFixture}=require('./fixtures/shared_reanalysis_handler_fixture.cjs');
+const {createBucketFixture}=require('./fixtures/flashback_bucketed_v1_fixture.cjs');
 const owners={LIBRA:'libra',HAYAKU:'hayaku',Flashback:'flashback'};
 const artifactRoot=process.env.GLOBAL_MODE_ARTIFACT_ROOT;
 const kinds=artifactRoot?['Full','Min']:['Full'];
@@ -23,12 +24,45 @@ const seedRoots=name=>{const roots=Array.from({length:2},(_,i)=>{
   roots.push([archive,JSON.stringify({schema:'libra.shared_archive.v1',archiveId,memoryRefs:[ref]})],
    [memory,JSON.stringify({schema:'libra.canonical_memory.v1',scopeKey:`archive:${archiveId}`,archiveId,archiveCanonicalId:canonicalId,memoryId,revision:2,sourceDigest:'source-proof',embedding:{status:'ready',vectorKey:vector}})],
    [vector,JSON.stringify({scopeKey:`archive:${archiveId}`,memoryId,revision:2,profileId:'old-profile',entries:{global:{vector:[1,0]}}})]);
+  const variantScope='preserved-index-1',variantMemory=`libra:v1:scope:${variantScope}:memory:1:r1`;
+  const currentVector=`libra:v1:scope:${variantScope}:vector:mem_000011:r1:current-profile`;
+  const variant={key:variantMemory,memoryId:'mem_000011',revision:1,sourceDigest:'variant-proof',status:'inactive',deltaStatus:'missing_legacy',vectorKey:`libra:v1:scope:${variantScope}:vector:mem_000011:r1:lep_ftk24b`};
+  roots.push([`libra:v1:scope:${variantScope}:canonical-variants:v1`,JSON.stringify({schema:'libra.canonical_variant_index.v1',scopeKey:variantScope,slots:{1:{variants:[variant]}}})],
+   [variantMemory,JSON.stringify({schema:'libra.canonical_memory.v1',scopeKey:variantScope,memoryId:variant.memoryId,revision:1,sourceDigest:variant.sourceDigest,status:'committed',turnRange:{start:1,end:5},embedding:{status:'ready',vectorKey:currentVector}})],
+   [currentVector,JSON.stringify({scopeKey:variantScope,memoryId:variant.memoryId,revision:1,entries:{global:{vector:[1,0]}}})]);
+  // The canonical body explicitly has no vector after quarantine cleanup,
+  // while immutable inherited/archive indexes retain their old profile hint.
+  const pendingKey=`libra:v1:shared-archive:${archiveId}:memory:pending:1:r1`;
+  const pendingRef={key:pendingKey,memoryId:'arc_pending:1',revision:1,sourceDigest:'pending-proof',status:'committed',
+   embeddingStatus:'rebuild_required',vectorCount:0,vectorKey:`libra:v1:shared-archive:${archiveId}:vector:pending:1:r1:retired-profile`};
+  for(const key of [roots[0][0],archive]){
+   const entry=roots.find(row=>row[0]===key),body=JSON.parse(entry[1]);
+   (key===archive?body.memoryRefs:body.inheritedMemories).push(pendingRef);entry[1]=JSON.stringify(body);
+  }
+  roots.push([pendingKey,JSON.stringify({schema:'libra.canonical_memory.v1',scopeKey:`archive:${archiveId}`,archiveId,
+   archiveCanonicalId:'pending:1',memoryId:pendingRef.memoryId,revision:1,sourceDigest:'pending-proof',status:'committed',
+   embedding:{status:'rebuild_required',vectorKey:'',vectorCount:0}})]);
+  // Preserve the same explicit pending state for a normal current-scope memory
+  // whose canonical variant index still names the removed vector.
+  const currentPendingKey=`libra:v1:scope:${variantScope}:memory:6:r1`;
+  const currentPendingRef={key:currentPendingKey,memoryId:'mem_000006',revision:1,sourceDigest:'current-pending-proof',status:'committed',
+   embeddingStatus:'rebuild_required',vectorCount:0,deltaStatus:'missing_legacy',vectorKey:`libra:v1:scope:${variantScope}:vector:mem_000006:r1:retired-profile`};
+  const currentPendingManifestRef={...currentPendingRef};delete currentPendingManifestRef.vectorKey;
+  const currentRoot=JSON.parse(roots[1][1]);currentRoot.memories={6:currentPendingManifestRef};roots[1][1]=JSON.stringify(currentRoot);
+  const indexEntry=roots.find(row=>row[0]===`libra:v1:scope:${variantScope}:canonical-variants:v1`),indexBody=JSON.parse(indexEntry[1]);
+  indexBody.slots[6]={variants:[currentPendingRef]};indexEntry[1]=JSON.stringify(indexBody);
+  roots.push([currentPendingKey,JSON.stringify({schema:'libra.canonical_memory.v1',scopeKey:variantScope,memoryId:currentPendingRef.memoryId,
+   revision:1,sourceDigest:currentPendingRef.sourceDigest,status:'committed',turnRange:{start:6,end:10},
+   text:'synthetic retained source',embedding:{status:'rebuild_required',vectorKey:'',vectorCount:0,provider:'voyageai',model:'voyage-4-large',
+    dimensions:1024,profileId:'retired-profile',quarantinedProfileId:'retired-profile',reason:'previous quarantined vector deleted'}})]);
  }
  if(name==='Flashback'){
   const first=JSON.parse(roots[0][1]);first.commitId='retained-commit';first.shardCount=1;first.count=1;first.stats={recordTotal:1,charTotal:7,tokenTotal:2,byType:{response:{records:1,chars:7,tokens:2}}};first.shardSummaries=[{shardIndex:0,recordCount:1}];roots[0][1]=JSON.stringify(first);
   roots.push([`vector_rag_memory:scope:${first.storageHash}:records:shard:0000`,JSON.stringify({scopeKey:first.scopeKey,commitId:first.commitId,shard:0,records:[{id:'durable-record',scopeKey:first.scopeKey,sourceType:'response',type:'response',text:'durable',dim:4,vector:[1,0,0,0]}]})]);
   const second=JSON.parse(roots[1][1]),archiveId='fb_135rcsu',scopeKey='flashback_archive_v1:'+archiveId,storageHash=hash(scopeKey);
-  const pointer={schema:'flashback_memory.archive_ref.v1',archiveId,archiveScopeKey:scopeKey,generation:1,depth:1,deltaCount:0,recordCount:0,digest:hash(''),responseTurnMax:0,createdAt:'',updatedAt:'',parentRef:null};second.archiveRef=pointer;roots[1][1]=JSON.stringify(second);
+  const pointer={schema:'flashback_memory.archive_ref.v1',archiveId,archiveScopeKey:scopeKey,generation:1,depth:1,deltaCount:0,recordCount:0,digest:hash(''),responseTurnMax:0,createdAt:'',updatedAt:'',parentRef:null};
+  const bucketFixture=createBucketFixture(second.scopeKey,second);second.archiveRef=pointer;
+  roots[1][1]=JSON.stringify({...bucketFixture.manifest,archiveRef:pointer});roots.push(...bucketFixture.buckets);
   roots.push([`vector_rag_memory:scope:${storageHash}:manifest:v2`,JSON.stringify({schema:'vector_rag_memory.scope_manifest.v2',version:2,scopeKey,storageHash,archiveOwner:true,archiveId,archiveGeneration:1,archiveRecordCount:0,archiveDigest:hash(''),archiveMemberCatalogVersion:1,archiveDeltaCount:0,archiveDeltaMemberIds:[],archiveDeltaDigest:hash(''),count:0,shardCount:0,shardSummaries:[]})],
    ['vector_rag_memory:scope_registry:v2',JSON.stringify({version:2,scopes:[{scopeKey,storageHash}]})]);
  }
