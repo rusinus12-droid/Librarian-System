@@ -157,7 +157,8 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
       const abort = () => { pending.delete(requestId); finish(); reject(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
         if (action === 'capture') void request('release', { operationId: payload.operationId }).catch(() => {}); };
       const timer = setTimeout(() => { pending.delete(requestId); finish(); reject(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' }));
-        if (action === 'capture') void request('release', { operationId: payload.operationId }).catch(() => {}); }, options.timeoutMs || 10000);
+        if (action === 'capture') void request('release', { operationId: payload.operationId }).catch(() => {}); },
+        (action === 'describe' && options.describeTimeoutMs) || options.timeoutMs || 10000);
       pending.set(requestId, { resolve, reject, finish }); signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) { abort(); return; }
       Promise.resolve(api().postPluginChannelMessage(ownerId, requestChannel, { schema, kind: 'request', requestId, action, payload }))

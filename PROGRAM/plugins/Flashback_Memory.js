@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.1.0
+//@display-name ⚡ FLASHBACK Memory v1.1.2
 //@api 3.0
-//@version 1.1.0
+//@version 1.1.2
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.1.0';
+const PLUGIN_VERSION = '1.1.2';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -49337,7 +49337,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       } };
       record.abort = () => record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
       record.timer = setTimeout(() => record.finish(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' })),
-        options.timeoutMs || (action === 'describe' ? 1500 : 25000));
+        options.timeoutMs || (action === 'describe' ? 3000 : 25000));
       pending.set(id, record); signal?.addEventListener('abort', record.abort, { once: true });
       if (signal?.aborted) { record.abort(); return; }
       void send(ids[owner], requestChannel, { schema, kind: 'request', id, action, ...body })
@@ -49362,17 +49362,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {
-      const owners = Object.keys(scopes), captured = [];
+      const requestedOwners = Object.keys(scopes), captured = [];
       let closed = false, stale = false;
       const close = () => { if (closed) return; closed = true; for (const value of captured) void release(value.owner, value.receipt); };
       const assertCurrentSync = () => {
         options.check?.();
+        if (input.signal?.aborted) fail('LIB_READ_CANCELED');
         if (closed || stale || disposed) fail('LIB_READ_STALE');
         return true;
       };
       try {
         options.check?.();
-        if (!budget(input.maxCorpusBytes) || !same(scope, scopes[owners[0]])) fail('LIB_READ_REQUEST_INVALID');
+        if (!budget(input.maxCorpusBytes) || !same(scope, scopes[requestedOwners[0]])) fail('LIB_READ_REQUEST_INVALID');
+        // Availability is checked before expensive capture. Missing optional
+        // owners do not impose the capture timeout or suppress healthy peers.
+        const available = await describe(scope, requestedOwners);
+        assertCurrentSync();
+        const owners = Object.keys(available.scopes);
+        for (const owner of owners) if (!same(available.scopes[owner], scopes[owner])) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         let corpusBytes = 0;
         const items = [];
         for (const owner of owners) {
@@ -49399,6 +49406,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const assertCurrent = async () => {
           try {
             assertCurrentSync();
+            const found = await describe(scope, owners);
+            assertCurrentSync();
+            for (const owner of owners) if (!same(found.scopes[owner], scopes[owner])) fail('LIB_READ_OWNER_UNAVAILABLE');
             for (const value of captured) {
               const now = await rpc(value.owner, 'current', { receipt: value.receipt }, input.signal);
               if (now?.current !== true || now.evidenceRevision !== value.evidenceRevision) fail('LIB_READ_STALE');
