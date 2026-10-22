@@ -160,8 +160,10 @@ test('non-text native content is explicitly unavailable rather than hashing loss
 test('host-visible evidence-influenced response is not copied into generic recovery diagnostics',async()=>{
  const f=await fixture();await configureBeforeRequest(f);await f.host.hooks.beforeRequest(messages(),'model');const response='EVIDENCE_SENTINEL host-visible response';assert.equal(await f.host.hooks.afterRequest(response,'model'),response);assert.ok(!JSON.stringify(f.host.plugin.getRuntime()).includes(response));
 });
-test('model or stage-settings mutation cannot change an evidence-bound run mid-flight',async()=>{
- let f;f=await fixture({onModel:n=>{if(n===1)f.settings.presets.offline.model='other-model'}});await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));assert.equal(f.prompts.length,1);
+test('model or manual Skill settings cannot change an evidence-bound run mid-flight',async()=>{
+ for(const mutate of [s=>{s.presets.offline.model='other-model'},s=>{s.skillStageSelections={shadow_act:['physical-conflict']}},s=>{s.skillStageReferences={shadow_act:{'physical-conflict':['changed']}}},s=>{s.skillCustomLibrary={changed:{raw:'changed source'}}}]){
+  let f;f=await fixture({onModel:n=>{if(n===1)mutate(f.settings)}});await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));assert.equal(f.prompts.length,1);
+ }
 });
 test('overlapping or unattributed host replies remain redacted after an evidence handoff',async()=>{
  const f=await fixture();await configureBeforeRequest(f);await f.host.hooks.beforeRequest(messages(),'model');await f.host.hooks.beforeRequest(messages(),'model');

@@ -15,6 +15,7 @@
     "lib-read-consumer.test.cjs",
     "load-dev-dependency.test.cjs",
     "lore-activation-scale.test.cjs",
+    "manual-skills.test.cjs",
     "memory-retirement.test.cjs",
     "model-context-budget.test.cjs",
     "native-projection-v2.test.cjs",

@@ -26,15 +26,15 @@ test('GRADIA recommendation preview names exact values, Cancel is inert, and App
   const f = await gradia();
   try {
     await f.plugin.openSettingsGui(); await f.plugin.debugNavigateGui('skills', 'flow');
-    const maximum = f.doc.querySelector('[data-skill-router-top-k]');
-    assert(maximum); maximum.value = '3'; maximum.dispatchEvent(new f.w.Event('input', { bubbles: true })); maximum.dispatchEvent(new f.w.Event('change', { bubbles: true }));
+    const choice = f.doc.querySelector('[data-skill-selected="physical-conflict"]');
+    assert(choice); choice.click();
     await sleep(80); f.doc.querySelector('#savebar [data-save]').click(); await wait(() => !f.plugin.debugGuiStateInfo().dirty, 'skill save');
     await f.plugin.debugNavigateGui('quick', 'flow');
     const open = () => f.doc.querySelector('[data-open="dlg-reco"]').click();
     const stored = JSON.stringify([...f.store]); open();
     const rows = [...f.doc.querySelectorAll('[data-setting-path]')];
     assert(rows.every(n => f.w.getComputedStyle(n.querySelector('strong')).display !== 'none'), 'recommendation prior values remain visible under the adopted dialog style');
-    assert(rows.some(n => /Skill/.test(n.textContent) && /3/.test(n.textContent) && /2/.test(n.textContent)), 'preview discloses Skill maximum 3 to 2');
+    assert(rows.some(n => /Skill/.test(n.textContent) && /physical-conflict/.test(n.textContent)), 'preview discloses clearing an explicit Skill selection');
     assert(!rows.some(n => /現在|현재 값추천값/.test(n.textContent)), 'not placeholder headings');
     const layer = f.doc.querySelector('.overlay.is-open');
     [...layer.querySelectorAll('button')].find(n => n.textContent === '취소').click();
@@ -109,7 +109,8 @@ test('GRADIA recommendation review includes exact stage inclusion and timeout ch
     const after = JSON.parse(f.store.get(AGENTS));
     assert.equal(after.slots.input_assist.enabled, false); assert.equal(after.slots.input_assist.timeout_ms, 300000);
     assert.equal(after.slots.shadow_act.enabled, false); assert.equal(after.slots.shadow_act.timeout_ms, 51000);
-    assert.equal(JSON.parse(f.store.get(RUNTIME)).settings.skill_router_top_k, '2');
+    assert.deepEqual(JSON.parse(f.store.get(RUNTIME)).settings.skill_stage_selections.shadow_act, []);
+    assert.equal(JSON.parse(f.store.get(RUNTIME)).settings.skill_router_legacy_archive.skill_router_top_k, 3);
     f.doc.querySelector('[data-open="dlg-reco"]').click();
     assert.equal(f.doc.querySelectorAll('[data-setting-path]').length, 0, 'saved recommendations produce no spurious diff');
     assert([...f.doc.querySelector('.overlay.is-open').querySelectorAll('button')].find(n => n.textContent === '추천값 적용').disabled);

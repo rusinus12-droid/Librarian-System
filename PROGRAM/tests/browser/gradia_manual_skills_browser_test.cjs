@@ -1,0 +1,61 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const {chromium}=require('playwright');
+(async()=>{
+ const out=process.env.GRADIA_MANUAL_SKILL_CAPTURES||'/tmp/gradia-manual-skills';fs.mkdirSync(out,{recursive:true});
+ const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
+ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(String(e)));
+ try{
+  await page.goto('about:blank');await page.addScriptTag({content:fs.readFileSync(path.join(__dirname,'gradia_browser_host.js'),'utf8')});
+  await page.addScriptTag({content:fs.readFileSync(path.join(__dirname,'../../plugins/GRADIA.js'),'utf8')});
+  await page.waitForFunction(()=>!!window.__SerialGradationAgentsForRP);
+  await page.evaluate(async()=>{await __SerialGradationAgentsForRP.openSettingsGui();await __SerialGradationAgentsForRP.debugNavigateGui('skills','flow');});
+  await page.locator('[data-subtab="skill"]').click();
+  const panel=page.locator('[data-subpanel="skill"]');
+  assert.equal(await panel.locator('[data-skill-priority],[data-skill-router-top-k]').count(),0);
+  assert.equal(await panel.locator('[data-base-quality]').count(),1);
+  const ids=['physical-conflict','quiet-interior-beat'];
+  for(const id of ids)await panel.locator(`[data-skill-selected="${id}"]`).check();
+  const [refSkill,refId]=await page.evaluate(()=>{const id='physical-conflict',s=__SerialGradationAgentsForRP.getSkillLibrary()[id];return [id,s.references[0].id];});
+  await panel.locator(`[data-skill-selected="${refSkill}"]`).check();
+  const row=panel.locator(`[data-skill-id="${refSkill}"]`).first();await row.locator('details summary').click();
+  await row.locator(`[data-skill-reference="${refId}"]`).check();
+  await page.locator('#savebar [data-save]').click();await page.waitForFunction(()=>!__SerialGradationAgentsForRP.debugGuiStateInfo().dirty);
+  await page.evaluate(async()=>{await __SerialGradationAgentsForRP.closeSettingsGui();await __SerialGradationAgentsForRP.openSettingsGui();await __SerialGradationAgentsForRP.debugNavigateGui('skills','flow');});
+  await page.locator('[data-subtab="skill"]').click();
+  for(const id of ids)assert.equal(await panel.locator(`[data-skill-selected="${id}"]`).isChecked(),true);
+  assert.equal(await panel.locator(`[data-skill-id="${refSkill}"] [data-skill-reference="${refId}"]`).isChecked(),true);
+  const saved=await page.evaluate(()=>__SerialGradationAgentsForRP.getRuntimeSettings());
+  for(const id of ids)assert.ok(saved.skill_stage_selections.shadow_act.includes(id));
+  await page.locator('#skill-stage-filter').selectOption('aide_world');
+  assert.equal(await panel.locator('[data-skill-selected="physical-conflict"]').isChecked(),false);
+  await panel.locator('[data-skill-selected="physical-conflict"]').check();
+  await page.locator('#savebar [data-revert]').click();await page.waitForFunction(()=>!__SerialGradationAgentsForRP.debugGuiStateInfo().dirty);
+  await page.locator('#skill-stage-filter').selectOption('shadow_act');
+  const recommendations=panel.locator('[data-skill-genre-presets]');await recommendations.locator('summary').click();
+  await panel.locator('[data-skill-genre]').selectOption('mystery');
+  assert.equal(await recommendations.evaluate(el=>el.open),true,'choosing a genre keeps its preview open');
+  await panel.locator('[data-skill-genre-apply="stage"]').click();
+  assert.equal(await panel.locator('[data-skill-selected="genre-lens"]').isChecked(),true);
+  assert.equal(await panel.locator('[data-skill-reference="mystery-deduction-lens"]').isChecked(),true);
+  assert.match(await panel.locator('[data-skill-budget]').innerText(),/24,000자/);
+  await page.locator('#savebar [data-revert]').click();await page.waitForFunction(()=>!__SerialGradationAgentsForRP.debugGuiStateInfo().dirty);
+  if(await recommendations.evaluate(el=>el.open))await recommendations.locator('summary').click();
+  for(const [width,height,label] of [[1440,1000,'desktop'],[820,1000,'tablet'],[390,844,'mobile'],[320,640,'narrow'],[844,390,'landscape']]){
+   await page.setViewportSize({width,height});await panel.locator('[data-skill-selected="physical-conflict"]').scrollIntoViewIfNeeded();
+   const geometry=await panel.evaluate(el=>({width:el.clientWidth,scroll:el.scrollWidth,rows:[...el.querySelectorAll('.skill-row')].map(r=>({width:r.clientWidth,scroll:r.scrollWidth}))}));
+   assert.ok(geometry.scroll<=geometry.width+2,JSON.stringify({label,...geometry}));assert.ok(geometry.rows.every(r=>r.scroll<=r.width+2));
+   const search=await panel.locator('#skill-search').boundingBox();
+   const searchDetails=await panel.locator('#skill-search').evaluate(el=>[el,el.parentElement,el.parentElement.parentElement].map(n=>({class:n.className,width:n.getBoundingClientRect().width,display:getComputedStyle(n).display,columns:getComputedStyle(n).gridTemplateColumns,style:n.getAttribute('style')})));
+   assert.ok(search.width>=120,`${label}: usable search width ${search.width} ${JSON.stringify(searchDetails)}`);
+   if(['desktop','tablet','mobile'].includes(label))await page.screenshot({path:path.join(out,`manual-skills-${label}.png`)});
+  }
+  await page.setViewportSize({width:1440,height:1000});await recommendations.locator('summary').click();
+  await panel.locator('[data-skill-genre]').selectOption('mystery');
+  assert.equal(await recommendations.evaluate(el=>el.open),true);
+  await panel.locator('[data-base-quality]').scrollIntoViewIfNeeded();
+  await page.screenshot({path:path.join(out,'genre-presets-desktop.png')});
+  assert.equal(await page.evaluate(()=>__networkCalls),0);assert.deepEqual(errors,[]);
+  console.log(JSON.stringify({test:'gradia_manual_skills_mounted_browser',passed:true,captures:out}));
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -30,6 +30,19 @@ test('safe full settings backup includes plain custom prompts but no credential 
  assert.equal([...h.doc.querySelectorAll('label')].some(n=>n.textContent.includes('API 키 / 토큰 / Vertex JSON 포함')),false);
  assert.equal(h.getCalls(),0);
 });
+test('full settings backup and import preserve manual skill selections, references and source text',async t=>{
+ const h=await gui(t),payload=await h.exportAll();
+ const raw='---\nname: manual-backup\ndescription: A stored user procedure\n---\nEXACT_BACKUP_SKILL';
+ payload.runtime.skill_stage_selections={shadow_act:['manual-backup'],aide_world:['physical-conflict']};
+ payload.runtime.skill_stage_references={shadow_act:{'manual-backup':['child']}};
+ payload.runtime.skill_custom_library={'manual-backup':{id:'manual-backup',raw,references:[{id:'child',title:'Reference',body:'EXACT_BACKUP_REFERENCE'}]}};
+ h.input(payload);await h.importPayload();h.doc.querySelector('#savebar [data-save]').click();await wait(()=>!h.plugin.debugGuiStateInfo().dirty);
+ const restored=await h.exportAll();
+ assert.deepEqual(restored.runtime.skillStageSelections.shadow_act,['manual-backup']);
+ assert.deepEqual(restored.runtime.skillStageSelections.aide_world,['physical-conflict']);
+ assert.deepEqual(restored.runtime.skillStageReferences.shadow_act['manual-backup'],['child']);
+ assert.equal(restored.runtime.skillCustomLibrary['manual-backup'].raw,raw);assert.equal(h.getCalls(),0);
+});
 test('invalid JSON, invalid version and late invalid provider payload leave the GUI draft and stored config unchanged',async t=>{
  const h=await gui(t),before=await h.exportAll(),persisted=JSON.stringify([...h.store]);
  for(const payload of ['{', {...before,version:999}, {...before,providerPresets:{},runtime:{mode:'lite'}}]){
