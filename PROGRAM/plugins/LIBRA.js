@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.4.3
-//@version 2.4.3
+//@display-name LIBRA v2.4.4
+//@version 2.4.4
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.4.3';
+  const PLUGIN_VERSION = '2.4.4';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -73955,17 +73955,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {
-      const owners = Object.keys(scopes), captured = [];
+      const requestedOwners = Object.keys(scopes), captured = [];
       let closed = false, stale = false;
       const close = () => { if (closed) return; closed = true; for (const value of captured) void release(value.owner, value.receipt); };
       const assertCurrentSync = () => {
         options.check?.();
+        if (input.signal?.aborted) fail('LIB_READ_CANCELED');
         if (closed || stale || disposed) fail('LIB_READ_STALE');
         return true;
       };
       try {
         options.check?.();
-        if (!budget(input.maxCorpusBytes) || !same(scope, scopes[owners[0]])) fail('LIB_READ_REQUEST_INVALID');
+        if (!budget(input.maxCorpusBytes) || !same(scope, scopes[requestedOwners[0]])) fail('LIB_READ_REQUEST_INVALID');
+        // Availability is checked before expensive capture. Missing optional
+        // owners do not impose the capture timeout or suppress healthy peers.
+        const available = await describe(scope, requestedOwners);
+        assertCurrentSync();
+        const owners = Object.keys(available.scopes);
+        for (const owner of owners) if (!same(available.scopes[owner], scopes[owner])) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         let corpusBytes = 0;
         const items = [];
         for (const owner of owners) {
@@ -73992,6 +73999,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const assertCurrent = async () => {
           try {
             assertCurrentSync();
+            const found = await describe(scope, owners);
+            assertCurrentSync();
+            for (const owner of owners) if (!same(found.scopes[owner], scopes[owner])) fail('LIB_READ_OWNER_UNAVAILABLE');
             for (const value of captured) {
               const now = await rpc(value.owner, 'current', { receipt: value.receipt }, input.signal);
               if (now?.current !== true || now.evidenceRevision !== value.evidenceRevision) fail('LIB_READ_STALE');
@@ -91431,7 +91441,8 @@ advanced
       const abort = () => { pending.delete(requestId); finish(); reject(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
         if (action === 'capture') void request('release', { operationId: payload.operationId }).catch(() => {}); };
       const timer = setTimeout(() => { pending.delete(requestId); finish(); reject(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' }));
-        if (action === 'capture') void request('release', { operationId: payload.operationId }).catch(() => {}); }, options.timeoutMs || 10000);
+        if (action === 'capture') void request('release', { operationId: payload.operationId }).catch(() => {}); },
+        (action === 'describe' && options.describeTimeoutMs) || options.timeoutMs || 10000);
       pending.set(requestId, { resolve, reject, finish }); signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) { abort(); return; }
       Promise.resolve(api().postPluginChannelMessage(ownerId, requestChannel, { schema, kind: 'request', requestId, action, payload }))

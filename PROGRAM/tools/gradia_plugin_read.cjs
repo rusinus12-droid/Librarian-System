@@ -168,17 +168,24 @@ module.exports = function createGradiaPluginRead(options) {
   };
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {
-      const owners = Object.keys(scopes), captured = [];
+      const requestedOwners = Object.keys(scopes), captured = [];
       let closed = false, stale = false;
       const close = () => { if (closed) return; closed = true; for (const value of captured) void release(value.owner, value.receipt); };
       const assertCurrentSync = () => {
         options.check?.();
+        if (input.signal?.aborted) fail('LIB_READ_CANCELED');
         if (closed || stale || disposed) fail('LIB_READ_STALE');
         return true;
       };
       try {
         options.check?.();
-        if (!budget(input.maxCorpusBytes) || !same(scope, scopes[owners[0]])) fail('LIB_READ_REQUEST_INVALID');
+        if (!budget(input.maxCorpusBytes) || !same(scope, scopes[requestedOwners[0]])) fail('LIB_READ_REQUEST_INVALID');
+        // Availability is checked before expensive capture. Missing optional
+        // owners do not impose the capture timeout or suppress healthy peers.
+        const available = await describe(scope, requestedOwners);
+        assertCurrentSync();
+        const owners = Object.keys(available.scopes);
+        for (const owner of owners) if (!same(available.scopes[owner], scopes[owner])) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         let corpusBytes = 0;
         const items = [];
         for (const owner of owners) {
@@ -205,6 +212,9 @@ module.exports = function createGradiaPluginRead(options) {
         const assertCurrent = async () => {
           try {
             assertCurrentSync();
+            const found = await describe(scope, owners);
+            assertCurrentSync();
+            for (const owner of owners) if (!same(found.scopes[owner], scopes[owner])) fail('LIB_READ_OWNER_UNAVAILABLE');
             for (const value of captured) {
               const now = await rpc(value.owner, 'current', { receipt: value.receipt }, input.signal);
               if (now?.current !== true || now.evidenceRevision !== value.evidenceRevision) fail('LIB_READ_STALE');

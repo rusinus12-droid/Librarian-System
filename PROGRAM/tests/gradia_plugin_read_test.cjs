@@ -56,6 +56,24 @@ test('missing owners are explicit and proposal inputs do not become facts', asyn
   assert.deepEqual(Object.keys(found.scopes), ['hayaku']); assert.equal(found.unavailable.libra, 'LIB_READ_TIMEOUT');
   await assert.rejects(f.client.openReadSession(scope, { maxCorpusBytes: 10000, proposal: { factAdopted: true } }), /PROPOSAL_INVALID/);
 });
+test('an unloaded owner is detected by availability before the long capture timeout',async t=>{
+ const f=await setup(t);await f.owner.dispose();const started=Date.now();
+ await assert.rejects(()=>f.client.openReadSession(scope,{maxCorpusBytes:10000}),/LIB_READ_PLUGIN_OWNERS_UNAVAILABLE/);
+ assert.equal(f.state.captures,0);assert.ok(Date.now()-started<500);
+});
+test('a newly missing optional owner leaves healthy peers available for a fresh read',async t=>{
+ const f=await setup(t),peerScope={...scope,scopeKey:'flashback-scope'};
+ const peer=create({role:'owner',owner:'flashback',api:f.bus.api('flashback_memory'),primitives,
+  boundary:async()=>({scope:peerScope,mode:'plugin_only'}),capture:async()=>({items:[{id:'fb',key:'fb-key',content:'HEALTHY_PEER',source:{namespace:'flashback'}}],assertCurrent:async()=>true,close(){}})});
+ await peer.start();t.after(()=>peer.dispose());await f.owner.dispose();
+ const session=await f.reader.createClient({hayaku:scope,flashback:peerScope}).openReadSession(scope,{maxCorpusBytes:10000});
+ assert.deepEqual(Array.from(session.snapshot.owners),['flashback']);assert.equal(session.snapshot.items[0].content,'HEALTHY_PEER');
+ assert.equal(await session.assertCurrent(),true);session.close();
+});
+test('owner disappearance after a read revokes its receipt without another capture',async t=>{
+ const f=await setup(t),session=await f.client.openReadSession(scope,{maxCorpusBytes:10000});
+ await f.owner.dispose();await assert.rejects(()=>session.assertCurrent(),/LIB_READ_/);assert.equal(f.state.captures,1);
+});
 test('a receipt from a different operation is rejected and the real pending capture is released', async t => {
   const f=await setup(t);let resolve;
   f.state.gate=new Promise(r=>{resolve=r;});

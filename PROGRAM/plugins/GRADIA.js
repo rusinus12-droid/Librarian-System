@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.26.13
+//@display-name GRADIA v0.26.14
 //@api 3.0
-//@version 0.26.13
+//@version 0.26.14
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -540,6 +540,8 @@
  * v0.26.10 presents genre presets as concise cards with localized skill names and read-only detail dialogs; manual choices live in a separate fold.
  * v0.26.11 applies selected NSFW guidance to unsubmitted Novel/RP Input Writer candidates and connects the visible mode selector; final RisuAI requests stay unchanged.
  * v0.26.12 separates Novel/RP input proposal authority and synchronizes release provenance.
+ * v0.26.14 makes memory owners optional in both modes, probes availability before capture,
+ * and permits native Input Writer fallback only before accepting external evidence.
  * v0.26.13 restores user-controlled final-request NSFW forwarding and preserves mode-specific Input Writer authority.
  * v0.26.9 retires automatic Skill routing: users select procedures and child references per stage; basic quality rules always apply independently.
  * Genre recommendations are user-applied presets; complete compiled skill characters and the actual full request must fit without shrinking core draft sources.
@@ -934,7 +936,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.26.13';
+  const PLUGIN_VERSION = '0.26.14';
   
   
   
@@ -3785,6 +3787,7 @@
   const openInputWriterEvidence = async (original, settings, options, staticSnapshot, terminalScene, lease) => {
     if (!lease) return null;
     const assertLocal = () => assertInputWriterLease(lease);
+    let assertNative;
     try {
       const initialNative = inputWriterNativeView(staticSnapshot);
       const proposalDigest = await libReadSha256(original), nativeContextDigest = await libReadSha256(initialNative);
@@ -3798,6 +3801,7 @@
         const current = await guardInputWriterRead(lease, () => loadRisuStaticContextSnapshot(settings, { force: true }));
         if (inputWriterNativeView(current) !== initialNative) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
       } };
+      assertNative = context.assertCurrent;
       await context.assertCurrent();
       lease.run = await openLibEvidenceRun([], settings, { latestUser: query }, lease.operationId, context);
       assertLocal();
@@ -3806,7 +3810,20 @@
       lease.run.block = lease.run.evidencePrefix + lease.run.block;
       if (new TextEncoder().encode(lease.run.block).length > lease.run.evidenceBudget.maxBytes) throw libEvidenceError('LIB_READ_PROMPT_BUDGET_EXCEEDED');
       await lease.run.assertCurrent(); return lease;
-    } catch (error) { closeInputWriterEvidence(/^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE', lease); throw error; }
+    } catch (error) {
+      // Only an unavailable optional source BEFORE any evidence is accepted may
+      // fall back. Cancellation, native changes and a ready/consumed read stay fatal.
+      if (!options.requireEvidence && !lease.run && ['LIB_READ_TIMEOUT','LIB_READ_PLUGIN_OWNERS_UNAVAILABLE','LIB_READ_OWNER_UNAVAILABLE',
+        'LIB_READ_CONNECTION_UNAVAILABLE','LIB_READ_UNIFIED_UNAVAILABLE','LIB_READ_TRANSPORT_UNAVAILABLE'].includes(error?.code)) {
+        assertLocal();
+        await assertNative?.();
+        assertLocal();
+        closeInputWriterEvidence(error.code, lease);
+        return null;
+      }
+      closeInputWriterEvidence(/^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE', lease);
+      throw error;
+    }
   };
   const idForInputWriter = () => 'input-writer:' + Date.now() + ':' + Math.random().toString(36).slice(2);
   const assertInputWriterDelivery = async (lease, value, currentValue = () => value) => {
@@ -19643,6 +19660,7 @@ ${passage.text || ''}`, 420));
   };
 
   const runInputAssistForContent = async (content, settings, options = {}) => {
+    const requireEvidence = !!inputWriterEvidenceLease?.run;
     closeInputWriterEvidence('LIB_READ_SUPERSEDED');
     Runtime.lastInputAssistMaterialUsage = null;
     // A static snapshot belongs to exactly one delivery cycle. Regeneration may
@@ -19796,7 +19814,7 @@ ${passage.text || ''}`, 420));
       INPUT_ASSIST_STAGE_ID, recent, scoped, null, null
     );
     recent.materialsUsed = Runtime.lastInputAssistMaterialUsage;
-    const writerEvidence = await openInputWriterEvidence(original, settings, options, inputAssistStaticSnapshot, terminalVisibleScene, preparation);
+    const writerEvidence = await openInputWriterEvidence(original, settings, {...options,requireEvidence}, inputAssistStaticSnapshot, terminalVisibleScene, preparation);
     if (writerEvidence) scoped[LIB_EVIDENCE_CONTEXT] = writerEvidence.run;
     if (authorDirectedDraft) {
       const startedAt = Date.now();
@@ -29736,6 +29754,7 @@ function createGradiaEvidenceBudget({ digest }) {
   };
   const createPrivateLibReadBridge = (url, assertLive, readOwners = ['libra']) => {
     const unifiedProvider = createLibraGradiaUnifiedRead({ role: 'client', check: assertLive,
+      describeTimeoutMs: 1500,
       api: () => getLiveApi(['addPluginChannelListener','postPluginChannelMessage']),
       randomId: () => globalThis.crypto?.randomUUID?.() || Date.now() + ':' + Math.random().toString(36).slice(2) });
     const deny = () => { throw libEvidenceError('LIB_READ_WRITE_FORBIDDEN'); };
@@ -36905,7 +36924,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       openReadSession:async(scopeInput,readOptions={})=>{
         if(JSON.stringify(scopeInput)!==JSON.stringify(anchor))reject('LIB_READ_SCOPE_INVALID');
         if(!['server_logical_read','unified_engine'].includes(readOptions.source||'server_logical_read'))reject('LIB_READ_SOURCE_UNSUPPORTED');
-        if(readOptions.source==='unified_engine'&&!owners.includes('libra'))reject('LIB_READ_UNIFIED_UNAVAILABLE');
+        const proposal = readOptions.proposal === undefined ? null : JSON.parse(JSON.stringify(readOptions.proposal));
+        if (readOptions.proposal!==undefined && (!proposal || typeof proposal!=='object' || Array.isArray(proposal)
+          || Object.keys(proposal).length!==7 || proposal.schema!=='gradia.input-writer-proposal.v1'
+          || proposal.purpose!=='input_writer_proposal' || proposal.factAdopted!==false
+          || typeof proposal.operationId!=='string' || !proposal.operationId || proposal.operationId.length>160
+          || !/^[a-f0-9]{64}$/.test(proposal.proposalDigest||'') || !/^[a-f0-9]{64}$/.test(proposal.nativeContextDigest||'')
+          || typeof proposal.queryTruncated!=='boolean'))reject('LIB_READ_PROPOSAL_INVALID');
         const maxCorpusBytes=readOptions.maxCorpusBytes===undefined?4194304:readOptions.maxCorpusBytes;
         if(!Number.isSafeInteger(maxCorpusBytes)||maxCorpusBytes<1||maxCorpusBytes>33554432)reject('LIB_READ_BUDGET_INVALID');
         const connection=state.bootstrap.value,auth=connection?.authorization;
@@ -36914,8 +36939,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           ||JSON.stringify(auth.roles)!==JSON.stringify(['readonly'])||!Array.isArray(auth.readNamespaces)
           ||auth.readNamespaces.some(owner=>!allowed.includes(owner))||owners.some(owner=>!auth.readNamespaces.includes(owner))
           ||!Array.isArray(auth.writeNamespaces)||auth.writeNamespaces.length)reject('LIB_READ_PRINCIPAL_REQUIRED');
+        let selectedOwners=owners;
+        if(readOptions.source==='unified_engine' && owners.includes('libra') && typeof options.unifiedReadProvider?.describe==='function'){
+          try {
+            const capability=await options.unifiedReadProvider.describe();
+            if(capability?.source!=='unified_engine'||capability.readOnly!==true)reject('LIB_READ_UNIFIED_UNAVAILABLE');
+          }
+          catch(error){
+            if(!['LIB_READ_TIMEOUT','LIB_READ_UNIFIED_UNAVAILABLE','LIB_READ_TRANSPORT_UNAVAILABLE'].includes(error?.code))throw error;
+            selectedOwners=Object.freeze(owners.filter(owner=>owner!=='libra'));
+            if(!selectedOwners.length)throw error;
+          }
+        }
         const reads=[],items=[],revisions=[];let corpusBytes=0,metadataBytes=0,rawBytes=0,dependencyCount=0;
-        try{for(const owner of owners){
+        try{for(const owner of selectedOwners){
           const remainingCorpus=Math.max(1,maxCorpusBytes-corpusBytes);
           const remainingRaw=Math.min(7*remainingCorpus+2097152,7*maxCorpusBytes+2097152-rawBytes);
           const read=await openLibraReadSession(scopes[owner],{...readOptions,owner,
@@ -36939,10 +36976,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const evidenceRevision=Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
         assertCurrentSync();
         const snapshot=Object.freeze({schema:'memory-suite.memory-read-session.v1',readOnly:true,complete:true,
-          scope:anchor,scopes,owners,items:Object.freeze(items),evidenceRevision,corpusBytes,maxCorpusBytes,metadataBytes,rawBytes,dataInstanceId:connection.dataInstanceId});
+          scope:anchor,scopes:Object.freeze(Object.fromEntries(selectedOwners.map(owner=>[owner,scopes[owner]]))),
+          owners:selectedOwners,items:Object.freeze(items),evidenceRevision,corpusBytes,maxCorpusBytes,metadataBytes,rawBytes,dataInstanceId:connection.dataInstanceId});
         return Object.freeze({snapshot,source:readOptions.source||'server_logical_read',
           ...(readOptions.source==='unified_engine'?{engine:Object.freeze({...reads.find(read=>read.source==='unified_engine')?.engine,
-            sourceByOwner:Object.freeze(Object.fromEntries(owners.map((owner,index)=>[owner,reads[index].source])))})}:{}),
+            ...(!selectedOwners.includes('libra')?{purpose:proposal?'input_writer_proposal':'response_evidence',...(proposal?{proposal}:{})}:{}),
+            sourceByOwner:Object.freeze(Object.fromEntries(selectedOwners.map((owner,index)=>[owner,reads[index].source])))})}:{}),
           close:()=>{for(const read of reads)read.close?.();},assertCurrentSync,assertCurrent});
         }catch(error){for(const read of reads)read.close?.();throw error;}
       }
@@ -37370,8 +37409,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
 };
 /* GRADIA PRIVATE CANONICAL SDK END */
+    const checkedProvider = Object.freeze({...unifiedProvider,
+      capture:async input=>{await unifiedProvider.describe();return await unifiedProvider.capture(input);},
+      current:async input=>{await unifiedProvider.describe();return await unifiedProvider.current(input);}});
     const bridge = createMemorySuiteStorageBridge({namespace:'libra',pluginId:'serial_gradation_agents_for_rp',pluginVersion:PLUGIN_VERSION,
-      defaultUrl:url,managementButton:false,startupDiagnostics:false,autoMigratePlugin:false,autoMigrateLocal:false,unifiedReadProvider:unifiedProvider});
+      defaultUrl:url,managementButton:false,startupDiagnostics:false,autoMigratePlugin:false,autoMigrateLocal:false,unifiedReadProvider:checkedProvider});
     return Object.freeze({...bridge,describeUnifiedRead:()=>unifiedProvider.describe(),dispose:async()=>{await unifiedProvider.dispose();await bridge.dispose();}});
   };
   const readLibPluginNativeIdentity = async () => {
@@ -37393,7 +37435,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const LibReadConnection = (() => {
     let url = LIB_READ_DEFAULT_URL, state = 'disconnected', reason = '', corpus = null, explicit = false;
     let generation = 0, bridge = null, scope = null, scopeBundle = null, timer = null, disposed = false, pendingConsent = null, preferenceTail = Promise.resolve();
-    let readOwners = ['libra'], unavailable = {}, readSource = 'unified_engine';
+    let readOwners = ['libra'], unavailable = {}, excludedServerOwners = {}, readSource = 'unified_engine';
     let consentReadPending = true, consentMayBeStored = false, preferenceRevision = 0;
     const status = () => Object.freeze({state,reason,url,explicit,readSource,readOwners:Object.freeze([...readOwners]),
       activeOwners:Object.freeze(Object.keys(scopeBundle?.scopes || {})),unavailable:Object.freeze({...unavailable}),corpus:corpus ? Object.freeze({...corpus}) : null,
@@ -37450,6 +37492,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       url = next;
       void saving.catch(() => { reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; });
     };
+    const resolveServerScopes = async () => {
+      const found = await resolveLibRegisteredScopes(readOwners);
+      const scopes = Object.fromEntries(Object.entries(found.scopes).filter(([owner])=>!excludedServerOwners[owner]));
+      const scope = Object.values(scopes)[0];
+      if (!scope) throw libEvidenceError('LIB_READ_OWNER_UNAVAILABLE');
+      return {scope,scopes,unavailable:{...found.unavailable,...excludedServerOwners}};
+    };
     const assertScope = async expected => {
       if (readSource === 'plugin_ipc') {
         const current = await readLibPluginNativeIdentity();
@@ -37457,7 +37506,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         return true;
       }
       let current;
-      try { current = await resolveLibRegisteredScopes(readOwners); } catch (_) { throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED'); }
+      try { current = await resolveServerScopes(); } catch (_) { throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED'); }
       if (JSON.stringify(current.scope) !== JSON.stringify(expected)
         || scopeBundle && JSON.stringify(current) !== JSON.stringify(scopeBundle)) throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED');
       return true;
@@ -37471,7 +37520,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     };
     const connect = async (startup = false, requestedOwners = LIB_READ_OWNERS, requestedSource = 'unified_engine') => {
       if (disposed) return status();
-      invalidate(''); readOwners = [...requestedOwners]; readSource = String(requestedSource) === 'server_logical_read' ? 'unified_engine' : String(requestedSource); unavailable = {}; state = 'connecting'; refresh();
+      invalidate(''); readOwners = [...requestedOwners]; readSource = String(requestedSource) === 'server_logical_read' ? 'unified_engine' : String(requestedSource); unavailable = {}; excludedServerOwners = {}; state = 'connecting'; refresh();
       const epoch = generation, target = url;
       const check = () => { if (disposed || epoch !== generation || url !== target) throw libEvidenceError('LIB_READ_CONNECTION_CHANGED'); };
       try {
@@ -37495,16 +37544,27 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const normalized = normalizeLibReadUrl(target);
         // Input is normalized before the operation; an imported setting is never consent.
         if (normalized !== target) throw libEvidenceError('LIB_READ_SERVER_URL_INVALID');
-        const resolvedBundle = await resolveLibRegisteredScopes(readOwners), resolved = resolvedBundle.scope; check();
-        if(readSource==='unified_engine'&&!resolvedBundle.scopes.libra)throw libEvidenceError('LIB_READ_UNIFIED_UNAVAILABLE');
-        scopeBundle = resolvedBundle; unavailable = {...resolvedBundle.unavailable};
-        const next = createPrivateLibReadBridge(target,check,readOwners); bridge = next; scope = resolved;
+        let resolvedBundle = await resolveServerScopes(); check();
+        const next = createPrivateLibReadBridge(target,check,readOwners); bridge = next;
+        await next.bootstrap(); check();
+        if (resolvedBundle.scopes.libra) {
+          try {
+            const capability = await next.describeUnifiedRead(); check();
+            if (capability?.source!=='unified_engine'||capability.readOnly!==true) throw libEvidenceError('LIB_READ_UNIFIED_UNAVAILABLE');
+          } catch (error) {
+            check();
+            if (!['LIB_READ_TIMEOUT','LIB_READ_UNIFIED_UNAVAILABLE','LIB_READ_TRANSPORT_UNAVAILABLE'].includes(error?.code)) throw error;
+            excludedServerOwners.libra = error.code;
+          }
+          resolvedBundle = await resolveServerScopes(); check();
+        }
+        const resolved = resolvedBundle.scope;
+        scopeBundle = resolvedBundle; unavailable = {...resolvedBundle.unavailable}; scope = resolved;
         watch(epoch);
-        await next.bootstrap(); check(); await assertScope(resolved); check();
+        await assertScope(resolved); check();
         const client = readOwners.length === 1 && readOwners[0] === 'libra' ? next.createLibraReadOnlyClient() : next.createMemoryReadOnlyClient(resolvedBundle.scopes);
         let read = await client.openReadSession(resolved,{maxCorpusBytes:4194304}); check();
         await read.assertCurrent(); read = null; await assertScope(resolved); check();
-        if(readSource==='unified_engine'){const capability=await next.describeUnifiedRead();check();if(capability?.source!=='unified_engine'||capability.readOnly!==true)throw libEvidenceError('LIB_READ_UNIFIED_UNAVAILABLE');}
         if (!startup) {
           pendingConsent = {url:target};
           await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource}); check();
@@ -37531,7 +37591,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         let read = await binding.client.openReadSession(binding.scope,{maxCorpusBytes:binding.maxCorpusBytes});
         await read.assertCurrent(); await assertScope(binding.scope);
         if (disposed || epoch !== generation || binding !== libReadBinding) throw libEvidenceError('LIB_READ_CONNECTION_CHANGED');
-        if(binding.readSource==='unified_engine'){
+        if(binding.readSource==='unified_engine' && scopeBundle?.scopes.libra){
           const capability=await bridge.describeUnifiedRead();
           if(capability?.source!=='unified_engine'||capability.readOnly!==true)throw libEvidenceError('LIB_READ_UNIFIED_UNAVAILABLE');
           if(disposed||epoch!==generation||binding!==libReadBinding)throw libEvidenceError('LIB_READ_CONNECTION_CHANGED');
@@ -43569,7 +43629,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const abort = () => { pending.delete(requestId); finish(); reject(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
         if (action === 'capture') void request('release', { operationId: payload.operationId }).catch(() => {}); };
       const timer = setTimeout(() => { pending.delete(requestId); finish(); reject(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' }));
-        if (action === 'capture') void request('release', { operationId: payload.operationId }).catch(() => {}); }, options.timeoutMs || 10000);
+        if (action === 'capture') void request('release', { operationId: payload.operationId }).catch(() => {}); },
+        (action === 'describe' && options.describeTimeoutMs) || options.timeoutMs || 10000);
       pending.set(requestId, { resolve, reject, finish }); signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) { abort(); return; }
       Promise.resolve(api().postPluginChannelMessage(ownerId, requestChannel, { schema, kind: 'request', requestId, action, payload }))
@@ -43854,17 +43915,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {
-      const owners = Object.keys(scopes), captured = [];
+      const requestedOwners = Object.keys(scopes), captured = [];
       let closed = false, stale = false;
       const close = () => { if (closed) return; closed = true; for (const value of captured) void release(value.owner, value.receipt); };
       const assertCurrentSync = () => {
         options.check?.();
+        if (input.signal?.aborted) fail('LIB_READ_CANCELED');
         if (closed || stale || disposed) fail('LIB_READ_STALE');
         return true;
       };
       try {
         options.check?.();
-        if (!budget(input.maxCorpusBytes) || !same(scope, scopes[owners[0]])) fail('LIB_READ_REQUEST_INVALID');
+        if (!budget(input.maxCorpusBytes) || !same(scope, scopes[requestedOwners[0]])) fail('LIB_READ_REQUEST_INVALID');
+        // Availability is checked before expensive capture. Missing optional
+        // owners do not impose the capture timeout or suppress healthy peers.
+        const available = await describe(scope, requestedOwners);
+        assertCurrentSync();
+        const owners = Object.keys(available.scopes);
+        for (const owner of owners) if (!same(available.scopes[owner], scopes[owner])) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         let corpusBytes = 0;
         const items = [];
         for (const owner of owners) {
@@ -43891,6 +43959,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const assertCurrent = async () => {
           try {
             assertCurrentSync();
+            const found = await describe(scope, owners);
+            assertCurrentSync();
+            for (const owner of owners) if (!same(found.scopes[owner], scopes[owner])) fail('LIB_READ_OWNER_UNAVAILABLE');
             for (const value of captured) {
               const now = await rpc(value.owner, 'current', { receipt: value.receipt }, input.signal);
               if (now?.current !== true || now.evidenceRevision !== value.evidenceRevision) fail('LIB_READ_STALE');

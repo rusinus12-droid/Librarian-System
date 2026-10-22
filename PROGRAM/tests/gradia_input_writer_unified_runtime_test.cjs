@@ -98,6 +98,12 @@ test('an unbound writer retains its native flow and never requests a memory read
  const f=await fixture(t,{unified:false}),{pending}=await f.start();await f.select();assert.equal(await f.done(pending),true);
  assert.equal(f.queries(),0);assert.ok(!JSON.stringify(f.prompts).includes('WRITER_OWNER_EVIDENCE'));
 });
+for(const writingMode of ['novel','rp'])test(writingMode+' writer uses native context when the optional provider is unavailable before capture',async t=>{
+ const f=await fixture(t,{writingMode});f.controls.onQuery=async()=>{throw Object.assign(Error('LIB_READ_UNIFIED_UNAVAILABLE'),{code:'LIB_READ_UNIFIED_UNAVAILABLE'});};
+ const {pending}=await f.start();await f.select();assert.equal(await f.done(pending,'복사 후 직접 전송'),true);
+ assert.equal(f.copied.length,1);assert.equal(f.prompts.length,1);assert.equal(f.queries(),1);
+ assert.ok(!JSON.stringify(f.prompts).includes('WRITER_OWNER_EVIDENCE'));
+});
 
 test('empty continuation is still an unsubmitted query bound to the exact empty proposal',async t=>{
  const f=await fixture(t);

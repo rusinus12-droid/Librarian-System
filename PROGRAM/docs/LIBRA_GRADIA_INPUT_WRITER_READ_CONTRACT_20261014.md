@@ -1,6 +1,6 @@
 # GRADIA 인풋 작성기의 통합 읽기 계약
 
-- 작성일: 2026-10-14 · 갱신: 2026-10-22 · 버전: 1.3
+- 작성일: 2026-10-14 · 갱신: 2026-10-22 · 버전: 1.4
 
 GRADIA 0.25.85의 `plugin_ipc` 연결에서도 같은 미제출 제안·별도 세션·모델 예산·현재성 검사를 사용한다. 이 방식은 server_only 권한 대신 각 owner의 plugin_only native scope와 전용 읽기 채널을 확인한다. [최근 챗과 플러그인 IPC](gradia/RECENT-CHAT-AND-PLUGIN-IPC-20261015.md)를 함께 참고한다.
 - 범위: [다음 과제 N04](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md). N03의 readonly 공급자를 사용하되 작성기 세션은 별도로 발급한다.
@@ -9,7 +9,9 @@ GRADIA 0.25.85의 `plugin_ipc` 연결에서도 같은 미제출 제안·별도 �
 
 GRADIA 자료 화면에서 **LIBRA 검색 → 통합 메모리 검색 → 연결**을 선택하고 기존 **GRADIA로 인풋 작성하기** 버튼을 사용한다. 입력을 적으면 확장 제안을, 비우면 직전 장면을 참고한 이어쓰기 제안을 만든다. RP 행동 선택과 Novel 세 관점 선택을 모두 지원한다. 선택·편집·번역·복사/전송 흐름은 기존 작성 UI를 사용한다.
 
-N03과 같은 `server_only`, 실제 readonly 서버 권한, 동일 character/chat scope, 수락된 data/reset, 인증된 RisuAI plugin channel이 필요하다. owner의 describe 응답에 `input_writer_proposal` 목적이 있어야 하며 미지원 공급자를 대신 다른 검색으로 처리하지 않는다. 미연결/기존 논리 읽기 설정의 작성기는 기존처럼 새 메모리 검색 없이 실행한다.
+GRADIA 0.26.14부터 모든 기억 플러그인은 선택 사항이다. 서버 모드에서는 실제 readonly 서버 권한, 동일 character/chat scope, 수락된 data/reset으로 사용 가능한 owner만 읽는다. LIBRA가 있으면 인증된 RisuAI 채널의 통합 검색을 사용하고, 없어도 HAYAKU·Flashback의 서버 읽기를 사용할 수 있다. 플러그인 모드는 응답하는 owner의 전용 읽기 채널을 사용한다. LIBRA 공급자는 `input_writer_proposal` 지원 목적을 확인하며 다른 LIBRA 검색으로 우회하지 않는다.
+
+첫 기억 조회 전에 선택 공급자를 사용할 수 없으면 원본 대화를 다시 확인한 뒤 외부 기억 없이 작성기를 계속한다. 취소·설정/연결/스코프/원본 변경은 이 대체 경로를 허용하지 않는다. 이미 받아 사용한 기억의 검증 실패, 기억 기반 선택지 재생성 실패는 해당 선택지의 전달을 계속 차단한다. [선택적 기억 연결](GRADIA_OPTIONAL_MEMORY_20261022.md)을 참고한다.
 
 근거 포함 모델 요청은 [모델 문맥·전송 예산](gradia/MODEL-CONTEXT-BUDGET-20261015.md)에 따라 실제 stage preset의 모델·context metadata와 지원하는 텍스트 요청 형식을 검사한다. GPT4o-mini 고정 모델 및 근거 64KiB/전체 요청 128,000바이트 제한은 사용하지 않는다. 작성기에서는 허용된 일반 텍스트 요청 형식으로 JSON을 요구하고 기존 parser가 스키마·선택지 수를 검증한다. generic `json_object`나 새 structured schema를 예산 검사에서 무조건 허용하지 않는다. 모델의 잘못된 출력에 자동 재시도·근거 재포장을 추가하지 않는다. native-only 작성기의 기존 요청 형식은 유지한다.
 

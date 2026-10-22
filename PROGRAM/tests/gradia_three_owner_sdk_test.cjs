@@ -20,6 +20,17 @@ test('legacy capability and unknown or cross-native scopes fail before owner cap
 test('legacy LIBRA facade cannot be redirected through caller owner options',async t=>{const f=fixture();t.after(()=>f.bridge.dispose());const s=await f.bridge.createLibraReadOnlyClient().openReadSession(scopes.libra,{owner:'hayaku'});assert.equal(s.snapshot.schema,'memory-suite.libra-read-session.v1');assert(f.requests.every(r=>r.owner==='libra'));});
 
 test('owner facade supports several records sharing a physical ledger/shard key',async t=>{const f=fixture({sameShard:true});t.after(()=>f.bridge.dispose());const s=await f.bridge.createMemoryReadOnlyClient(scopes).openReadSession(scopes.libra);assert.equal(s.snapshot.items.length,5);});
+
+for(const selected of [['hayaku'],['flashback'],['hayaku','flashback']])test('server read and writer intent work without LIBRA: '+selected.join('+'),async t=>{
+ const f=fixture({allowed:selected});t.after(()=>f.bridge.dispose());
+ const subset=Object.fromEntries(selected.map(owner=>[owner,scopes[owner]]));
+ const proposal={schema:'gradia.input-writer-proposal.v1',purpose:'input_writer_proposal',operationId:'writer-only-peers',
+  proposalDigest:'a'.repeat(64),nativeContextDigest:'b'.repeat(64),queryTruncated:false,factAdopted:false};
+ const read=await f.bridge.createMemoryReadOnlyClient(subset).openReadSession(scopes[selected[0]],{source:'unified_engine',proposal});
+ assert.deepEqual(Array.from(read.snapshot.owners),selected);assert.equal(read.engine.purpose,'input_writer_proposal');
+ assert.deepEqual(JSON.parse(JSON.stringify(read.engine.proposal)),proposal);
+ assert.ok(f.requests.every(row=>selected.includes(row.owner)));assert.equal(await read.assertCurrent(),true);read.close();assert.equal(f.counts().writes,0);
+});
 test('composed reader passes remaining raw allocation budget before each owner capture',async t=>{const f=fixture();t.after(()=>f.bridge.dispose());await f.bridge.createMemoryReadOnlyClient(scopes).openReadSession(scopes.libra);const captures=f.requests.filter(r=>r.action==='capture');let used=0,corpus=0;for(const row of captures){assert.equal(row.body.maxRawBytes,Math.min(7*(4194304-corpus)+2097152,7*4194304+2097152-used));used+=10;corpus+=Buffer.byteLength(row.owner+' full memory');}});
 test('unaccepted reset epoch for any selected owner blocks its capture',async t=>{for(const owner of owners){const f=fixture();t.after(()=>f.bridge.dispose());f.connection.resetEpochs[owner]=1;await assert.rejects(()=>f.bridge.createMemoryReadOnlyClient(scopes).openReadSession(scopes.libra),e=>e.code==='LIB_READ_RESET_REVIEW_REQUIRED');assert(!f.requests.some(r=>r.owner===owner&&r.action==='capture'));assert.equal(f.counts().writes,0);}});
 
@@ -46,6 +57,23 @@ test('GRADIA pinned SDK selects native LIBRA evidence and retains explicit sourc
  assert.equal(read.engine.queryComplete,false);assert.equal(provider.counts().captures,1);
  assert.equal(f.requests.filter(r=>r.owner==='libra'&&r.action==='capture').length,1,'server capture obtains only an authorization witness');
  await read.assertCurrent();read.close();await Promise.resolve();assert.equal(provider.counts().releases,1);assert.equal(f.counts().writes,0);
+});
+test('a missing LIBRA provider does not suppress healthy server peers in a fresh session',async t=>{
+ const provider=unifiedProvider();provider.describe=async()=>{throw Object.assign(Error('missing'),{code:'LIB_READ_TIMEOUT'});};
+ const f=fixture({provider});t.after(()=>f.bridge.dispose());
+ const read=await f.bridge.createMemoryReadOnlyClient(scopes).openReadSession(scopes.libra,{source:'unified_engine',queryText:'current question'});
+ assert.deepEqual(Array.from(read.snapshot.owners),['hayaku','flashback']);assert.equal(provider.counts().captures,0);
+ assert.ok(f.requests.every(row=>row.owner!=='libra'));assert.equal(await read.assertCurrent(),true);read.close();
+});
+test('mismatched LIBRA owner intent is rejected rather than rewritten to match the caller',async t=>{
+ const provider=unifiedProvider(),capture=provider.capture;
+ const proposal={schema:'gradia.input-writer-proposal.v1',purpose:'input_writer_proposal',operationId:'writer-intent',
+  proposalDigest:'a'.repeat(64),nativeContextDigest:'b'.repeat(64),queryTruncated:false,factAdopted:false};
+ provider.describe=async()=>({source:'unified_engine',readOnly:true,purposes:['response_evidence','input_writer_proposal']});
+ provider.capture=async input=>{const read=await capture(input);read.engine={...read.engine,purpose:'input_writer_proposal',proposal:{...proposal,proposalDigest:'c'.repeat(64)}};return read;};
+ const f=fixture({provider});t.after(()=>f.bridge.dispose());
+ await assert.rejects(()=>f.bridge.createMemoryReadOnlyClient(scopes).openReadSession(scopes.libra,{source:'unified_engine',queryText:'current question',proposal}),/LIB_READ_UNIFIED_UNAVAILABLE/);
+ assert.ok(f.requests.every(row=>row.owner==='libra'));
 });
 test('revoking the server read principal blocks the native provider before capture and currentness',async t=>{
  let denied=false;const provider=unifiedProvider(),f=fixture({provider,deny:()=>denied});t.after(()=>f.bridge.dispose());
