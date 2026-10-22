@@ -8,6 +8,7 @@
     "evidence-budget-builder-v2.test.cjs",
     "evidence-budget-structured-v2.test.cjs",
     "evidence-budget-v2.test.cjs",
+    "evidence-stage-delivery.test.cjs",
     "hypav3-removal.test.cjs",
     "legacy-removal.test.cjs",
     "lib-read-consumer.test.cjs",
