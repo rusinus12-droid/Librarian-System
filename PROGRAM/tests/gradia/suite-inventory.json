@@ -3,15 +3,18 @@
     "."
   ],
   "files": [
+    "draft-live-scene.test.cjs",
     "draft-only.test.cjs",
     "evidence-bridge.test.cjs",
     "evidence-budget-builder-v2.test.cjs",
     "evidence-budget-structured-v2.test.cjs",
     "evidence-budget-v2.test.cjs",
+    "evidence-stage-delivery.test.cjs",
     "hypav3-removal.test.cjs",
     "legacy-removal.test.cjs",
     "lib-read-consumer.test.cjs",
     "load-dev-dependency.test.cjs",
+    "lore-activation-scale.test.cjs",
     "memory-retirement.test.cjs",
     "model-context-budget.test.cjs",
     "native-projection-v2.test.cjs",

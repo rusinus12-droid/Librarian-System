@@ -40,6 +40,12 @@ LIBRA는 공통 엔진이 선택하고 검증한 atomic 근거 묶음을 반환�
 
 Ollama의 외부 근거 경로에서는 종전 native prompt 중간 절단을 사용하지 않는다. native 텍스트는 보존하고 공통 문맥 검사에서 외부 근거 항목만 줄인다. 미연결 native 흐름은 기존 provider 동작을 따른다. 추가 model retry, 조용한 native-only 전환, 근거/초안 영속화는 도입하지 않는다.
 
+### 2026-10-22 갱신 — 요청 중복 생략과 공유 prefix 캐시
+
+- 4단계에서 남은 근거 항목 중, 공백을 정규화했을 때 본문 전체가 이미 그 요청 base에 그대로 들어 있는 항목은 해당 호출에서 뺀다. 화자 라벨 줄과 턴 구분선은 비교에서 제외하며, 40자 미만 항목은 빼지 않는다. 예를 들어 최근 대화 창에 이미 있는 턴의 Flashback 기록이 여기에 해당한다. 비교는 호출마다 따로 하므로, 같은 기록이 일부 단계 프롬프트에만 있으면 그 단계에서만 빠진다. 모든 항목이 중복이면 항목이 비어 있는 근거 블록을 보낸다. `modelSelection.duplicateItems`가 생략 수를 보고하고, `omittedItems`에는 문맥 부족으로 빠진 항목만 센다.
+- 근거가 연결된 실행에서도 공유 참조 prefix(로어·캐릭터 참조)의 prompt cache를 유지한다. 근거 블록은 항상 마지막 user 메시지 끝에 있어 모든 cache breakpoint 뒤에 놓인다. meter는 system 쪽 part에 붙은 정확한 두 표식(`cache_control: {type:"ephemeral"}`, `prompt_cache_breakpoint: {mode:"explicit"}`)만 허용하고 framing으로 계산한다. user part의 표식, 다른 값, Gemini `cachedContent`는 계속 거절한다. 근거 실행은 cache 필드를 거절당해도 다시 보낼 수 없으므로, cache 필드는 1st-party OpenAI(`api.openai.com`)와 Anthropic(`api.anthropic.com`) endpoint에만 보낸다.
+- 같은 모델의 여러 단계가 같은 shared prefix를 보내면, 단계당 호출이 한 번이어도 모든 provider에서 cache 대상으로 계획한다. 종전에는 Gemini/Vertex만 해당했다.
+
 ## 요청 형식과 토큰 추정의 범위
 
 OpenAI-compatible Chat Completions, Responses, Anthropic Messages, Gemini/Vertex Gemini 텍스트, Ollama native 텍스트 payload를 해석한다. 실제 stage 모델과 context metadata를 사용하며 GPT4o-mini 이름을 요구하지 않는다. context metadata 누락, 비정상 출력 설정, 모델/route 변경, multimodal text가 아닌 입력과 unresolved cached-content 참조는 거절한다. arbitrary extra-body override 및 backend bridge에 대한 기존 근거 경계는 유지한다.

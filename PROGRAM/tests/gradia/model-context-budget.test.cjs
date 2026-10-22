@@ -65,3 +65,13 @@ test('multimodal content and malformed text are not silently undercounted',()=>{
  assert.equal(m.inspect({...input,finalBody:JSON.stringify(body)}).status,'unavailable');
  assert.throws(()=>request({user:'\ud800'}),/unsupported_text/);
 });
+test('only the exact shared-reference cache markers on system parts are accepted',async()=>{
+ const anthropic=marker=>{const body={model:'configured-model',system:[{type:'text',text:'Shared reference',...marker},{type:'text',text:'Native system'}],messages:[{role:'user',content:'Current input'}],max_tokens:4096};return JSON.stringify(body);};
+ const chat=(systemMarker,userMarker)=>JSON.stringify({model:'configured-model',messages:[{role:'system',content:[{type:'text',text:'Shared reference',...systemMarker}]},{role:'user',content:[{type:'text',text:'Current input',...userMarker}]}],max_completion_tokens:4096});
+ const m=meter();
+ assert.ok(m.replaceEvidence(anthropic({cache_control:{type:'ephemeral'}}),'anthropic','configured-model','','Evidence'));
+ assert.ok(m.replaceEvidence(chat({prompt_cache_breakpoint:{mode:'explicit'}},{}),'chat_completions','configured-model','','Evidence'));
+ for(const [body,format] of [[anthropic({cache_control:{type:'ephemeral',ttl:'1h'}}),'anthropic'],[anthropic({cache_control:{type:'persistent'}}),'anthropic'],
+  [chat({},{prompt_cache_breakpoint:{mode:'explicit'}}),'chat_completions'],[chat({},{cache_control:{type:'ephemeral'}}),'chat_completions'],[chat({other:true},{}),'chat_completions']])
+  assert.throws(()=>m.replaceEvidence(body,format,'configured-model','','Evidence'),/payload_format_unsupported|LIB_READ|unsupported/);
+});

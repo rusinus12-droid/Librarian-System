@@ -56,13 +56,22 @@ function createGradiaModelContextBudget({ digest }) {
     if (!container || typeof container[key] !== 'string') stop('payload_format_unsupported');
     return { container, key };
   }
-  function contentSlots(message, field, partType) {
+  // The only part-level extras: the shared-reference prompt-cache markers GRADIA's own
+  // builders place on system parts. Each is an exact literal and counts as framing.
+  // User parts, which carry the evidence, never take one.
+  const SYSTEM_PART_CACHE_MARKERS = Object.freeze({
+    cache_control: JSON.stringify({ type: 'ephemeral' }),
+    prompt_cache_breakpoint: JSON.stringify({ mode: 'explicit' })
+  });
+  function contentSlots(message, field, partType, systemSide = false) {
     if (typeof message?.[field] === 'string') return [textSlot(message, field)];
     const parts = message?.[field];
     if (!Array.isArray(parts) || !parts.length) stop('payload_format_unsupported');
     return parts.map(part => {
       if (!part || typeof part !== 'object' || partType && part.type !== partType
-        || Object.keys(part).some(key => !['type', 'text'].includes(key))) stop('payload_format_unsupported');
+        || Object.keys(part).some(key => !['type', 'text'].includes(key)
+          && !(systemSide && Object.hasOwn(SYSTEM_PART_CACHE_MARKERS, key)
+            && JSON.stringify(part[key]) === SYSTEM_PART_CACHE_MARKERS[key]))) stop('payload_format_unsupported');
       return textSlot(part, 'text');
     });
   }
@@ -77,7 +86,7 @@ function createGradiaModelContextBudget({ digest }) {
       if (!Array.isArray(rows) || !rows.length || rows.length > 128) stop('payload_format_unsupported');
       for (const message of rows) {
         if (!['system','developer','user'].includes(message?.role)) stop('payload_format_unsupported');
-        const values = contentSlots(message, field, partType);
+        const values = contentSlots(message, field, partType, message.role !== 'user');
         slots.push(...values);
         if (message.role === 'user') users.push(...values);
       }
@@ -101,7 +110,7 @@ function createGradiaModelContextBudget({ digest }) {
       if (body.model !== modelId) stop('model_identity_changed');
       messages = body.messages;
       ordinaryMessages(messages, 'content', 'text');
-      if (body.system !== undefined) slots.push(...contentSlots(body,'system','text'));
+      if (body.system !== undefined) slots.push(...contentSlots(body,'system','text',true));
       output = body.max_tokens;
     } else if (format === 'gemini') {
       if (body.cachedContent) stop('payload_format_unsupported');

@@ -249,6 +249,14 @@ test('plugin mode: a stalled stage request times out and is resent once by the t
  assert.ok(!JSON.stringify(f.prompts).includes('EVIDENCE_SENTINEL'));
 });
 test('an evidence response that claims stop but is truncated is not retried',async()=>{
- const f=await fixture({modelContent:(n,body,content)=>n===2?content.slice(0,40):content});f.settings.failureMode='soft';
- await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_MODEL_INCOMPLETE');assert.equal(f.prompts.length,2);
+ const f=await fixture({mode:'heavyweight',modelContent:(n,body,content)=>n===1?content.slice(0,40):content});f.settings.failureMode='soft';
+ await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_MODEL_INCOMPLETE');assert.equal(f.prompts.length,1);
+});
+test('an unusable evidence AIDE response keeps the previous draft without a resend',async()=>{
+ for(const mode of ['lightweight','heavyweight'])for(const broken of [content=>content.slice(0,40),()=>'{broken patch',()=>'{"unrelated":true}']){
+  const target=mode==='heavyweight'?3:2;
+  const f=await fixture({mode,modelContent:(n,body,content)=>n===target?broken(content):content});f.settings.failureMode='soft';
+  const r=await f.run();assert.equal(r.ok,true);assert.equal(f.prompts.length,mode==='heavyweight'?7:4);
+  assert.match(r.injection,/DERIVED_DRAFT_SENTINEL/);assert.equal(f.recalls,1);r.closeEvidence();
+ }
 });
