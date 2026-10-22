@@ -26,7 +26,8 @@ const seedRoots=name=>{const roots=Array.from({length:2},(_,i)=>{
    [vector,JSON.stringify({scopeKey:`archive:${archiveId}`,memoryId,revision:2,profileId:'old-profile',entries:{global:{vector:[1,0]}}})]);
   const variantScope='preserved-index-1',variantMemory=`libra:v1:scope:${variantScope}:memory:1:r1`;
   const currentVector=`libra:v1:scope:${variantScope}:vector:mem_000011:r1:current-profile`;
-  const variant={key:variantMemory,memoryId:'mem_000011',revision:1,sourceDigest:'variant-proof',status:'inactive',deltaStatus:'missing_legacy',vectorKey:`libra:v1:scope:${variantScope}:vector:mem_000011:r1:lep_ftk24b`};
+  const variant={schema:'libra.canonical_memory.v1',scopeKey:variantScope,turnRange:{start:1,end:5},key:variantMemory,memoryId:'mem_000011',revision:1,sourceDigest:'variant-proof',status:'inactive',deltaStatus:'missing_legacy',
+   embedding:{status:'ready',vectorKey:`libra:v1:scope:${variantScope}:vector:mem_000011:r1:lep_ftk24b`}};
   roots.push([`libra:v1:scope:${variantScope}:canonical-variants:v1`,JSON.stringify({schema:'libra.canonical_variant_index.v1',scopeKey:variantScope,slots:{1:{variants:[variant]}}})],
    [variantMemory,JSON.stringify({schema:'libra.canonical_memory.v1',scopeKey:variantScope,memoryId:variant.memoryId,revision:1,sourceDigest:variant.sourceDigest,status:'committed',turnRange:{start:1,end:5},embedding:{status:'ready',vectorKey:currentVector}})],
    [currentVector,JSON.stringify({scopeKey:variantScope,memoryId:variant.memoryId,revision:1,entries:{global:{vector:[1,0]}}})]);
@@ -50,7 +51,10 @@ const seedRoots=name=>{const roots=Array.from({length:2},(_,i)=>{
   const currentPendingManifestRef={...currentPendingRef};delete currentPendingManifestRef.vectorKey;
   const currentRoot=JSON.parse(roots[1][1]);currentRoot.memories={6:currentPendingManifestRef};roots[1][1]=JSON.stringify(currentRoot);
   const indexEntry=roots.find(row=>row[0]===`libra:v1:scope:${variantScope}:canonical-variants:v1`),indexBody=JSON.parse(indexEntry[1]);
-  indexBody.slots[6]={variants:[currentPendingRef]};indexEntry[1]=JSON.stringify(indexBody);
+  const currentPendingSnapshot={...currentPendingRef,schema:'libra.canonical_memory.v1',scopeKey:variantScope,turnRange:{start:6,end:10},
+   embedding:{status:'ready',vectorKey:currentPendingRef.vectorKey}};
+  delete currentPendingSnapshot.vectorKey;
+  indexBody.slots[6]={variants:[currentPendingSnapshot]};indexEntry[1]=JSON.stringify(indexBody);
   roots.push([currentPendingKey,JSON.stringify({schema:'libra.canonical_memory.v1',scopeKey:variantScope,memoryId:currentPendingRef.memoryId,
    revision:1,sourceDigest:currentPendingRef.sourceDigest,status:'committed',turnRange:{start:6,end:10},
    text:'synthetic retained source',embedding:{status:'rebuild_required',vectorKey:'',vectorCount:0,provider:'voyageai',model:'voyage-4-large',

@@ -267,6 +267,51 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
   r=await inspect('libra',{records:inputs});blocked(r,/dependency_missing/);
  }
  r=await inspect('libra',{records:pendingVariantInputs.map(x=>x.key===variantMemoryKey?{...x,location:'server'}:x)});blocked(r,/dependency_missing/);
+ // registerCanonicalVariant stores {...memory, key}, and canonicalVariantEntry
+ // preserves that snapshot, including embedding.vectorKey. Exercise the stored
+ // shape as well as the older flat reference above.
+ for(const inputs of [variantInputs,pendingVariantInputs]) for(const flatHint of [false,true]) {
+  const snapshotInputs=clone(inputs),index=JSON.parse(snapshotInputs[1].value);
+  const snapshot={...variantMemory,...variantRef,status:'inactive',embedding:{status:'ready',vectorKey:variantOldVector}};
+  if(!flatHint)delete snapshot.vectorKey;
+  index.slots[1].variants=[snapshot];snapshotInputs[1].value=JSON.stringify(index);
+  r=await inspect('libra',{records:snapshotInputs});ok(r);
+  assert.equal(r.records[1].value,snapshotInputs[1].value,'nested snapshot bytes remain unchanged');
+  assert.ok(!r.records[1].dependencyKeys.includes(variantOldVector));
+  if(inputs===variantInputs)assert.ok(r.records[1].dependencyKeys.includes(variantCurrentVector));
+  r=await inspect('libra',{records:[...snapshotInputs,row(variantOldVector,{scopeKey:variantScope})]});ok(r);
+  assert.ok(r.records[1].dependencyKeys.includes(variantOldVector),'existing nested historical vector is retained');
+  r=await inspect('libra',{records:snapshotInputs.filter(x=>x.key!==variantMemoryKey)});blocked(r,/dependency_missing/);
+  r=await inspect('libra',{records:snapshotInputs.map(x=>x.key===variantMemoryKey?{...x,location:'server'}:x)});blocked(r,/dependency_missing/);
+  for(const patch of [{memoryId:'foreign'},{revision:2},{sourceDigest:'foreign'},{scopeKey:identity('libra',2)},{turnRange:{start:6,end:10}}]) {
+   const changed=clone(snapshotInputs);changed[2].value=JSON.stringify({...JSON.parse(changed[2].value),...patch});
+   r=await inspect('libra',{records:changed});blocked(r,/dependency_missing/);
+  }
+ }
+ // An embedding object outside a validated variant slot is not a historical hint.
+ const unboundSnapshot=clone(pendingVariantInputs),unboundIndex=JSON.parse(unboundSnapshot[1].value);
+ unboundIndex.embedding={vectorKey:variantOldVector};unboundSnapshot[1].value=JSON.stringify(unboundIndex);
+ r=await inspect('libra',{records:unboundSnapshot});blocked(r,/dependency_missing/);
+ // The reported three stale pointers span two colon-containing scope IDs,
+ // including an r1 variant after the manifest has advanced that slot to r2.
+ const reportedVariants=[];
+ for(const [scopeKey,starts] of [['212e5cbd_7:1',[11]],['963560b0_24:0',[1,6]]]) {
+  const manifest={...JSON.parse(root('libra',reportedVariants.length).value),scopeKey,memories:{}},slots={};
+  for(const start of starts) {
+   const memoryId='mem_'+String(start).padStart(6,'0'),key=`libra:v1:scope:${scopeKey}:memory:${start}:r1`;
+   const memory={schema:'libra.canonical_memory.v1',scopeKey,memoryId,revision:1,sourceDigest:'synthetic-'+start,status:'committed',turnRange:{start,end:start+4},embedding:{status:'rebuild_required',vectorKey:'',vectorCount:0}};
+   const snapshot={...memory,key,status:'inactive',deltaStatus:'missing_legacy',embedding:{status:'ready',vectorKey:`libra:v1:scope:${scopeKey}:vector:${memoryId}:r1:lep_ftk24b`}};
+   slots[start]={variants:[snapshot]};reportedVariants.push(row(key,memory));
+   if(start===6) {
+    const latest={...memory,revision:2,sourceDigest:'synthetic-r2'},latestKey=`libra:v1:scope:${scopeKey}:memory:${start}:r2`;
+    manifest.memories[start]={...latest,key:latestKey,history:[{key,revision:1,sourceDigest:memory.sourceDigest,status:'inactive'}]};
+    reportedVariants.push(row(latestKey,latest));
+   }else manifest.memories[start]={...memory,key};
+  }
+  reportedVariants.push(row(`libra:v1:scope:${scopeKey}:manifest`,manifest),row(`libra:v1:scope:${scopeKey}:canonical-variants:v1`,{schema:'libra.canonical_variant_index.v1',scopeKey,slots}));
+ }
+ r=await inspect('libra',{records:reportedVariants});ok(r);assert.equal(r.scopes.length,2);
+ for(let i=0;i<reportedVariants.length;i++)assert.equal(r.records[i].value,reportedVariants[i].value,'all three nested historical hints preserve source bytes');
  // A local payload's provenance is not a dependency on retired vector metadata.
  const retiredVector=`libra:v1:scope:${projectionScope}:vector:mem_000006:r1:lep_9by1h4`;
  const retainedLocal=`libra:v1:local-vector:${stableDraftHash(retiredVector)}`;

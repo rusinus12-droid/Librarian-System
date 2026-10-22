@@ -105,6 +105,28 @@ revision, sourceDigest로 검증하고, 정본이 명시적으로 `rebuild_requi
 사용 중인 임베딩 설정에서 `임베딩 벡터 재생성`으로 대기 항목을 처리해야 한다.
 이번 검증에서는 실제 임베딩 API를 호출하거나 사용자 벡터를 재생성하지 않았다.
 
+### LIBRA 2.4.6 이후 남은 canonical-variants 의존성 3개
+
+추가 보고는 두 스코프의 canonical-variants 색인에서 `mem_000011:r1`,
+`mem_000006:r1`, `mem_000001:r1`의 과거 `lep_ftk24b` 벡터를 요구했다.
+`registerCanonicalVariant`는 `{...memory, key}`를 저장하고
+`canonicalVariantEntry`는 기억 스냅샷의 embedding 객체도 보존한다. 앞선 호환
+처리와 회귀 자료는 항목 최상위의 vectorKey만 다뤄서 중첩된
+`embedding.vectorKey`가 별도의 필수 의존성으로 남았다.
+
+실제 저장 코드와 같은 중첩 스냅샷 구조의 합성 자료에서 보고와 같은
+`libra_global_dependency_missing`을 먼저 재현했다. 검증된 색인 항목의 직접
+embedding 객체도 부모 항목의 기억 신원에 연결해 현재 정본의 벡터 포인터로
+판단하도록 수정했다. 기억 키/턴 시작점, scopeKey, memoryId, revision,
+sourceDigest, 저장 원본 일치 검사는 유지한다. 색인 밖의 embedding 객체에는
+이 예외를 적용하지 않고, 실제 정본과 현재 필요한 벡터의 누락도 계속 차단한다.
+남아 있는 과거 벡터와 원래 색인 바이트를 보존한다.
+
+두 실제 형식의 스코프 ID에 중첩된 과거 참조 3개가 있고, 한 슬롯의 manifest가
+r2로 진행한 뒤 r1 변형을 보존하는 합성 사례도 검사했다. 사용자 색인 자체는
+제공되지 않았으므로 사용자 저장소의 3개 항목이 모두 이 구조인지 직접
+확인한 것은 아니다. 원문이나 벡터를 새로 요청하거나 재생성하지 않았다.
+
 일반 디버그 내보내기에는 마지막 전체 이전 검사 결과가 누락되어 있었다.
 공통 SDK에서 마지막 검사 결과의 허용된 메타데이터만 메모리에 보관하고
 `memorySuite.migrationPreview`로 내보내도록 보완했다. 플러그인 단독 모드에서
@@ -113,7 +135,7 @@ revision, sourceDigest로 검증하고, 정본이 명시적으로 `rebuild_requi
 
 ## 검증
 
-- `global_owner_discovery_adapters_test.cjs`: 174개 시나리오 통과. 오래된
+- `global_owner_discovery_adapters_test.cjs`: 212개 시나리오 통과. 오래된
   인덱스의 재현 실패를 먼저 확인한 뒤 수정했으며, 신원 불일치·현재 벡터 누락·
   서버에만 있는 사본을 잘못 인정하지 않는 경우를 검사했다.
 - `storage_global_migration_debug_export_test.cjs`: LIBRA, Flashback, HAYAKU의
@@ -131,12 +153,18 @@ revision, sourceDigest로 검증하고, 정본이 명시적으로 `rebuild_requi
   남은 아카이브 항목을 추가해 같은 왕복과 원본/대기 상태 보존을 검사했다.
   같은 스코프의 일반 기억과 canonical variant에도 과거 벡터가 삭제된 합성
   항목을 추가해 임베딩 API 호출 없이 정본/대기 상태의 왕복 보존을 검사했다.
+  2.4.7 수정에서는 variant 항목을 실제 저장 코드의 중첩 embedding 스냅샷
+  구조로 교체한 LIBRA GUI → 서버 → 재시작 → 복원을 다시 통과했다.
 - `libra_global_archive_evidence_restore_test.cjs`: 9개 시나리오 통과.
 - `storage_global_allchat_job_test.cjs`: 3개 소유자의 전체 이전과 불완전한
   호스트 목록 차단 통과.
 - `server_diagnostics_export_test.cjs`, SDK 동기화/진단 계약 검사 통과.
 - 기존 Flashback 저장 로더 55항목, raw page 참조 26개 시나리오,
   portable vector sidecar 검사 통과.
+- 추가로 실행한 `libra_canonical_variant_job_gui_contract_test.cjs`는
+  `the app keeps one independent drawer owner` 정적 검사에서 실패했다.
+  수정 전 HEAD의 LIBRA 원본으로도 같은 실패를 확인했다. 이번 수정은 GUI
+  렌더러를 변경하지 않으며 해당 기존 계약 불일치는 별도 항목으로 남긴다.
 
 테스트는 합성 데이터로 수행했다. 사용자 원본 저장소와 서버 DATA는 변경하지
 않았으며, 사용자의 실제 전체 버킷이 완전한지 검증하거나 실제 데이터 이전을
@@ -154,4 +182,5 @@ LIBRA의 실제 아카이브 벡터 2개는 여전히 추가 증거 없이 존�
 받아 그 위에 수정 커밋을 rebase했다. 수정본은 LIBRA 2.4.6 / Flashback 1.1.3 /
 HAYAKU 3.1.3 / Storage SDK 1.8.32로 구분하고 소스 manifest·해시를 갱신했다.
 이후 요약 count 0의 버킷 호환 보완은 Flashback 1.1.4로 구분한다.
+중첩 variant 벡터 참조 보완은 LIBRA 2.4.7로 구분한다.
 사용자 호스트의 플러그인 교체나 실제 기억/벡터 재생성, 배포 ZIP 발행은 수행하지 않았다.

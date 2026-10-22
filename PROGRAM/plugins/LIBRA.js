@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.4.6
-//@version 2.4.6
+//@display-name LIBRA v2.4.7
+//@version 2.4.7
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.4.6';
+  const PLUGIN_VERSION = '2.4.7';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -12881,8 +12881,7 @@ function memorySuiteLibraArchiveVectorReference(ref, memory) {
     && memory.embedding.vectorKey === '' && memory.embedding.vectorCount === 0) return '';
   return String(memory.embedding?.vectorKey || fallback);
 }
-function memorySuiteLibraVariantVectorReference(ref, memory, scopeKey) {
-  const fallback = String(ref?.vectorKey || '');
+function memorySuiteLibraVariantVectorReference(ref, memory, scopeKey, fallback = String(ref?.vectorKey || '')) {
   const startTurn = Number(memory?.turnRange?.start || 0), revision = Number(memory?.revision || 0);
   if (!scopeKey || memory?.schema !== 'libra.canonical_memory.v1' || memory.scopeKey !== scopeKey
     || !Number.isSafeInteger(startTurn) || startTurn < 1 || !Number.isSafeInteger(revision) || revision < 1
@@ -13077,11 +13076,16 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
   for (const row of records) {
     if (row.deleted || ['control','artifact'].includes(row.classification)) continue;
     const inlineKeys = new Set();
-    const variantRefs = new Set(), root = values.get(row);
+    const variantRefs = new Map(), root = values.get(row);
     if (root?.schema === 'libra.canonical_variant_index.v1' && root.scopeKey === row.scopeId
       && row.logicalKey === `libra:v1:scope:${row.scopeId}:canonical-variants:v1` && object(root.slots)) {
       for (const slot of Object.values(root.slots)) for (const ref of Array.isArray(slot?.variants) ? slot.variants : []) {
-        if (object(ref)) variantRefs.add(ref);
+        if (!object(ref)) continue;
+        variantRefs.set(ref,ref);
+        // registerCanonicalVariant preserves the memory snapshot, so its
+        // embedding object can retain an old profile pointer as well. Bind only
+        // this direct child to the same verified canonical identity.
+        if (object(ref.embedding)) variantRefs.set(ref.embedding,ref);
       }
     }
     if (values.get(row)?.schema === 'libra.micro_handoff_archive.v1') walk(values.get(row),node=> {
@@ -13092,9 +13096,10 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
       // Handoff seeds are inline historical projections. Their provenance keys
       // may predate compaction; the package's archiveRef/memoryRefs remain required.
       if(schema==='libra.session_handoff.package.v1'&&['continuityStateSeed','storyArcSeed'].includes(field))return false;
-      const memoryRows = typeof value.key === 'string' ? (byKey.get(value.key) || []).filter(other => !other.deleted && !other.artifact && sameSource(row,other) && other.space === 'plugin') : [];
+      const ref = variantRefs.get(value) || value;
+      const memoryRows = typeof ref.key === 'string' ? (byKey.get(ref.key) || []).filter(other => !other.deleted && !other.artifact && sameSource(row,other) && other.space === 'plugin') : [];
       const vectorPointers = memoryRows.map(other => variantRefs.has(value)
-        ? memorySuiteLibraVariantVectorReference(value,values.get(other),row.scopeId)
+        ? memorySuiteLibraVariantVectorReference(ref,values.get(other),row.scopeId,str(value.vectorKey))
         : memorySuiteLibraArchiveVectorReference(value,values.get(other)));
       const vectorPointer = vectorPointers.length && vectorPointers.every(key => key === vectorPointers[0]) ? vectorPointers[0] : str(value.vectorKey);
       for (const name of ['archiveRef','parentRef','parentArchiveRef']) if (value[name] != null && !object(value[name])) issue('archive_pointer_invalid',row);
