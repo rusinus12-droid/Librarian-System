@@ -3,6 +3,7 @@
     "."
   ],
   "files": [
+    "draft-live-scene.test.cjs",
     "draft-only.test.cjs",
     "evidence-bridge.test.cjs",
     "evidence-budget-builder-v2.test.cjs",

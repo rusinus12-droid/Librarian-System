@@ -309,9 +309,9 @@
         "bytes": 1235072
       },
       "gradia": {
-        "version": "0.26.6",
-        "sha256": "f8b562acb19f6683e80d5e0e7f45078eea4ac589c21cc60b954ccb2c93ed4257",
-        "bytes": 2971852
+        "version": "0.26.7",
+        "sha256": "650ee723d8a767aed400a2b8515c01a586174aef69640c0d76f3f73a74c480a2",
+        "bytes": 2975623
       }
     },
     "note": "Generated from current readable Source plugin bytes. This unpublished source candidate is not a published archive, deployment, or live-host/model execution receipt. Historical records and anomalies are preserved; prior candidate bytes are backed up separately.",

@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.26.6
+//@display-name GRADIA v0.26.7
 //@api 3.0
-//@version 0.26.6
+//@version 0.26.7
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -930,7 +930,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.26.6';
+  const PLUGIN_VERSION = '0.26.7';
   
   
   
@@ -23797,6 +23797,30 @@ Begin directly with the in-world response and finish the complete same-turn draf
     || ''
   );
 
+  // Live-scene helpers for the draft stages. The previous user input is what the terminal
+  // reply answered; older turns are kept newest first as whole turns, because continuing the
+  // story needs the turns just before the terminal scene, not the oldest one.
+  const DRAFT_PREVIOUS_USER_MAX_CHARS = 600;
+  const previousUserInputForPrompt = recent => compact(recent?.previousTurnUser || '', DRAFT_PREVIOUS_USER_MAX_CHARS);
+  const compactRecentTurnsTail = (value, maxChars) => {
+    const body = text(value || '').trim();
+    if (!body || body.length <= maxChars) return body;
+    const blocks = body.split(/\n\n(?=<TURN index=|<INITIAL_ASSISTANT_SCENE>)/);
+    const kept = [];
+    let used = 0;
+    for (let index = blocks.length - 1; index >= 0; index -= 1) {
+      const cost = blocks[index].length + (kept.length ? 2 : 0);
+      if (used + cost > maxChars) {
+        if (!kept.length) kept.push(compactMiddle(blocks[index], maxChars));
+        break;
+      }
+      kept.unshift(blocks[index]);
+      used += cost;
+    }
+    const omitted = blocks.length - kept.length;
+    return [omitted > 0 ? `(older ${omitted} turn(s) omitted)` : '', ...kept].filter(Boolean).join('\n\n');
+  };
+
   const fullDraftPromptVars = (stageName, recent, previous, settings) => {
     const previousJson = previous ? compactMiddle(JSON.stringify(previous, null, 2), settings.maxPreviousStageChars) : '';
     const terminalScene = recent?.terminalVisibleScene || recent?.inputAssistTerminalVisibleScene || recent?.sceneAnchor || '';
@@ -23805,10 +23829,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
       stage: stageName,
       stage_label: STAGE_DEF_MAP[stageName]?.label || stageName,
       system_messages: compact(recent?.systemContext || '', 4000),
-      recent_chat: compactMiddle(recent?.completeTurnsText || recent?.text || '', 5000),
-      visible_recent_chat: compactMiddle(recent?.completeTurnsText || recent?.visibleText || recent?.text || '', 5000),
+      recent_chat: compactRecentTurnsTail(recent?.completeTurnsText || recent?.text || '', 5000),
+      visible_recent_chat: compactRecentTurnsTail(recent?.completeTurnsText || recent?.visibleText || recent?.text || '', 5000),
       previous_turn: compactMiddle(terminalScene, INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS),
-      previous_turn_user: '',
+      previous_turn_user: previousUserInputForPrompt(recent),
       previous_turn_assistant: compactMiddle(terminalScene, INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS),
       others_info: compact(recent?.othersInfo || '', 3500),
       latest_user: submittedCurrentInput(recent),
@@ -23895,7 +23919,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
 
   const buildShadowActDraftUserPrompt = (recent, settings, creativeInstructions) => {
     const systemContext = compact(recent.systemContext || '', 4000) || '(별도 시스템/개발자 메시지 없음)';
-    const recentChat = compactMiddle(recent.earlierTurnsText || '', 2200) || '(그보다 앞선 완료 RP 턴 없음)';
+    const recentChat = compactRecentTurnsTail(recent.earlierTurnsText || '', 2200) || '(그보다 앞선 완료 RP 턴 없음)';
+    const previousUserInput = previousUserInputForPrompt(recent);
     const terminalScene = compactMiddle(
       recent.terminalVisibleScene || recent.inputAssistTerminalVisibleScene || recent.sceneAnchor || '',
       INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS
@@ -23929,6 +23954,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       '',
       buildAuthoritativeCommitmentGuardBlock(submittedCurrentInput(recent)),
       '',
+      previousUserInput ? `[직전 유저 입력 — 이미 일어난 일, 아래 직전 AI 응답이 이에 답했다]\n${previousUserInput}\n` : '',
       '[EXACT TERMINAL SCENE STATE — retain at prompt tail]',
       terminalScene,
       recent.inputAssistGeneratedContinuation
@@ -23951,7 +23977,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const buildAideDraftUserPrompt = (stageName, recent, previous, settings, creativeInstructions) => {
     const systemContext = compact(recent.systemContext || '', 4000) || '(별도 시스템/개발자 메시지 없음)';
     const previousDraft = stageDraft(previous) || '(직전 에이전트 초안 없음)';
-    const previousChat = compactMiddle(recent.completeTurnsText || recent.visibleText || recent.text || '', 4200) || '(이전 완료 챗 없음)';
+    const previousChat = compactRecentTurnsTail(recent.completeTurnsText || recent.visibleText || recent.text || '', 4200) || '(이전 완료 챗 없음)';
     const runId = recent?.runLineage?.runId || '';
     const currentInputHash = recent?.runLineage?.currentInputHash || stableDraftHash(submittedCurrentInput(recent));
     const inputDraftHash = stableDraftHash(previousDraft);
@@ -24326,6 +24352,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
       '',
       recent.othersInfo
         ? analysisSourceBlock('Others Info - auxiliary continuity and response context', compact(recent.othersInfo, 3500))
+        : '',
+      '',
+      previousUserInputForPrompt(recent)
+        ? analysisSourceBlock('Previous User Input - already happened; the terminal passage below answers it', previousUserInputForPrompt(recent))
         : '',
       '',
       analysisSourceBlock(
@@ -25573,6 +25603,7 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
       '',
       buildAuthoritativeCommitmentGuardBlock(submittedCurrentInput(recent), previousDraft),
       '',
+      previousUserInputForPrompt(recent) ? `[PREVIOUS USER INPUT — ALREADY HAPPENED; THE TERMINAL SCENE ANSWERS IT]\n${previousUserInputForPrompt(recent)}\n` : '',
       '[LATEST TERMINAL SCENE STATE]',
       compactMiddle(
         recent.terminalVisibleScene || recent.inputAssistTerminalVisibleScene || recent.sceneAnchor || '',
@@ -38219,6 +38250,27 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     } catch (error) { libReadSession.close(); throw error; }
   };
 
+  // RisuAI stores the user message before requesting a reply, and a reroll pops the old
+  // reply first. A stored chat that still ends with a settled reply to the very input this
+  // request would answer therefore has no new user input: an empty send, Continue, or the
+  // next speaker in a group round. Drafting would replay that answered turn, so GRADIA
+  // leaves such a request unchanged.
+  const currentInputAlreadyAnswered = async (currentTurnResolution, settings) => {
+    const currentText = text(currentTurnResolution?.text || '').trim();
+    if (!currentText) return false;
+    try {
+      const source = await loadRisuStaticContextSnapshot(settings);
+      const snapshot = await loadActualChatContextForRag(source.character, source.chatInfo, [], { text: '', confidence: 'none' }, source.persona, settings.debugLog);
+      const stored = Array.isArray(snapshot.messages) ? snapshot.messages : [];
+      const last = stored[stored.length - 1];
+      if (!last || last.role !== 'assistant' || turnBlockReason(last)) return false;
+      const lastUser = [...stored].reverse().find(message => message.role === 'user');
+      return !!lastUser && sameRagChatContent(lastUser.content, currentText);
+    } catch (_) {
+      return false;
+    }
+  };
+
   const beforeRequest = async (messages, type) => {
     if (isMainNarrativeRequest(type)) closeInputWriterEvidence('LIB_READ_SUPERSEDED');
     if (Runtime.inFlight && isMainNarrativeRequest(type)) LibReadConsumer.invalidate('LIB_READ_SUPERSEDED');
@@ -38348,6 +38400,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         await finishPipelineWorkStatus('현재 사용자 입력을 확인하지 못해 GRADIA 작업을 시작하지 않았습니다.', false, 5000, 'input_unresolved');
       }
       finishCallTelemetry('input_unresolved');
+      return messages;
+    }
+    if (isMainNarrativeRequest(type) && await currentInputAlreadyAnswered(currentTurnResolution, settings)) {
+      const reason = 'no_new_user_input_after_reply';
+      Runtime.last = { at: Date.now(), ok: true, skipped: true, reason, type: text(type || '') };
+      recordBeforeSkip(reason, { type: text(type || '') });
+      if (Runtime.pipelineWorkStatus?.busy === true) {
+        await finishPipelineWorkStatus('새 유저 입력이 없는 요청이라 GRADIA 초안 없이 그대로 전달했습니다.', true, 3000, 'bypassed');
+      }
+      log('pass-through', reason);
+      finishCallTelemetry('no_new_user_input');
       return messages;
     }
 
