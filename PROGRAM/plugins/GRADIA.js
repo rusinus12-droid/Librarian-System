@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.26.7
+//@display-name GRADIA v0.26.8
 //@api 3.0
-//@version 0.26.7
+//@version 0.26.8
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -930,7 +930,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.26.7';
+  const PLUGIN_VERSION = '0.26.8';
   
   
   
@@ -24233,7 +24233,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? 'For SHADOW ACT, analyze what the first same-turn draft should contain.'
         : 'For AIDE stages, diagnose and improve CURRENT_SAME_TURN_DRAFT only. Do not plan or write a sequel scene.'
     ].join('\n\n');
-    const roleLines = {
+    const roleLines = ({
       shadow_act: [
         'ROLE: SHADOW ACT — analysis phase before first-draft writing.',
         isAuthorDirectedDraftMode(settings)
@@ -24306,15 +24306,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
         isPlayerControlledDraftMode(settings)
           ? 'Check whether CURRENT_SAME_TURN_DRAFT responds to the input, orders beats by cause and effect, respects the COMMIT BARRIER, spends time on the important reaction, avoids optional cameos/cutaways, and leaves room for the user to act when a player-owned beat is pending.'
           : 'Check whether CURRENT_SAME_TURN_DRAFT fulfills the authorial input, orders beats by cause and effect, respects author-fixed outcomes/reservations, spends time on the important reaction, and avoids optional cameos/cutaways that dilute the intended scene.',
-        'When the PLAYER-CONTROLLED RP contract is present, perform an explicit sentence-by-sentence agency audit: after the submitted user contribution, flag every newly authored user-character action, dialogue, voluntary movement, private thought/feeling/motive, sensory conclusion, consent/refusal, or decision even if an earlier stage called it acceptable.',
-        'Also audit the final portion for AGENCY-BYPASS CLOSURE: NPC departure/goodbye, time skip, transition, reflective epilogue, summary, or resolution is a defect only when it skips or pre-answers a meaningful player-owned beat already pending. Natural model-owned closure is valid.',
+        isPlayerControlledDraftMode(settings)
+          ? 'Under the PLAYER-CONTROLLED RP contract, perform an explicit sentence-by-sentence agency audit: after the submitted user contribution, flag every newly authored user-character action, dialogue, voluntary movement, private thought/feeling/motive, sensory conclusion, consent/refusal, or decision even if an earlier stage called it acceptable.'
+          : '',
+        isPlayerControlledDraftMode(settings)
+          ? 'Also audit the final portion for AGENCY-BYPASS CLOSURE: NPC departure/goodbye, time skip, transition, reflective epilogue, summary, or resolution is a defect only when it skips or pre-answers a meaningful player-owned beat already pending. Natural model-owned closure is valid.'
+          : '',
         isPlayerControlledDraftMode(settings)
           ? 'Identify repetition, exposition drag, arbitrary escalation, premature resolution, forced reconciliation, fake cliffhangers, sequel-scene appendices, agency-bypass closure, and endings that decide the user character’s next move.'
           : 'Identify repetition, exposition drag, arbitrary escalation, premature resolution, forced reconciliation, fake cliffhangers, sequel-scene appendices, and endings that violate explicit author direction or consume a decision/outcome the author explicitly reserved.',
         'Recommend direction only inside this same response. next_turn_openings are natural remaining possibilities, not instructions to write the next scene now.',
         'Do not write or revise the response draft. Return precise plot notes and direct rewrite actions.'
       ]
-    }[stageName] || ['ROLE: analysis phase.'];
+    }[stageName] || ['ROLE: analysis phase.']).filter(Boolean);
     const creativeInstruction = settings.beforeCustomPrompts?.[stageName]
       ? renderDirectionGuidanceBlock(settings.beforeCustomPrompts[stageName], fullDraftPromptVars(stageName, recent, previous, settings), 'USER CREATIVE INSTRUCTION')
       : '';
@@ -25398,7 +25402,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       'Do not manufacture a hook, escalation, or payoff without a depicted setup and present bridge, and do not repeat a recent anticipation/cliffhanger device without new causality. A quiet or open ending may be correct.',
       'Own why each admitted beat appears now and where this response stops; preserve established character voice and world rules while changing only the local ordering, emphasis, bridge, or ending required by scene purpose.',
       'Patch only paragraphs that materially need plot-domain compression, reordering by local replacement, development, or removal. Preserve every unaffected block exactly.',
-      'When a PLAYER-CONTROLLED RP contract is present, the inherited ending is NOT protected if it puppets the user or uses closure/transition to bypass a pending player-owned beat. Remove/rewrite from the first agency crossing or agency-bypass closure; preserve natural model-owned closure and stop before the next actual player contribution.',
+      isPlayerControlledDraftMode(settings)
+        ? 'Under the PLAYER-CONTROLLED RP contract, the inherited ending is NOT protected if it puppets the user or uses closure/transition to bypass a pending player-owned beat. Remove/rewrite from the first agency crossing or agency-bypass closure; preserve natural model-owned closure and stop before the next actual player contribution.'
+        : '',
       isPlayerControlledDraftMode(settings)
         ? 'Do not append a sequel scene, revive an older thread without a present bridge, or decide the user character’s next action.'
         : 'Do not append a sequel scene or revive an older thread without a present bridge. Novel mode may author the user persona’s next action inside the current scene when it serves the authorial brief and does not violate an explicit reservation.'
@@ -25406,7 +25412,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   }[stageName] || [
     'ROLE: serial same-turn draft patch editor.',
     'Patch only material defects inside your assigned domain and preserve every unaffected block exactly.'
-  ]).join('\n');
+  ]).filter(Boolean).join('\n');
 
   const aideShadowDesignReadOnlyContract = (stageName, settings = {}) => {
     if (isPlayerControlledDraftMode(settings)) return [

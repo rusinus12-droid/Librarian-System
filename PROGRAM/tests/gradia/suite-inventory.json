@@ -27,6 +27,7 @@
     "server-read-adapter.test.cjs",
     "server-read-public.test.cjs",
     "settings-backup.test.cjs",
-    "turn-eligibility.test.cjs"
+    "turn-eligibility.test.cjs",
+    "writing-mode-separation.test.cjs"
   ]
 }
