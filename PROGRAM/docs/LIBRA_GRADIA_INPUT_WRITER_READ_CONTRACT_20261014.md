@@ -1,6 +1,6 @@
 # GRADIA 인풋 작성기의 통합 읽기 계약
 
-- 작성일: 2026-10-14 · 갱신: 2026-10-15 · 버전: 1.2
+- 작성일: 2026-10-14 · 갱신: 2026-10-22 · 버전: 1.3
 
 GRADIA 0.25.85의 `plugin_ipc` 연결에서도 같은 미제출 제안·별도 세션·모델 예산·현재성 검사를 사용한다. 이 방식은 server_only 권한 대신 각 owner의 plugin_only native scope와 전용 읽기 채널을 확인한다. [최근 챗과 플러그인 IPC](gradia/RECENT-CHAT-AND-PLUGIN-IPC-20261015.md)를 함께 참고한다.
 - 범위: [다음 과제 N04](LIBRA_UNIFIED_MEMORY_ENGINE_NEXT_TASKS_20261014.md). N03의 readonly 공급자를 사용하되 작성기 세션은 별도로 발급한다.
@@ -35,6 +35,8 @@ copy 직전 검증의 비동기 대기가 브라우저 clipboard activation을 �
 
 ## 저장·재사용과 예산
 
+LIBRA 2.4.3부터 검증된 `input_writer_proposal` 요청은 정본·렌즈 기억과 렌더링 문구를 합쳐 최대 3,000자(기존 compiler의 UTF-16 문자열 길이)로 선별한다. `plugin_only`·`server_only` 모두 적용하며, GRADIA가 받은 묶음을 다시 절단하지 않는다. 일반 응답용 요청의 12,000자 상한과 다른 owner가 공유하는 전송 바이트 한도는 유지한다. 더 작은 전송 예산이 있으면 기존 바이트 검사도 함께 적용한다.
+
 선택지/편집 UI를 위한 private 작업 메모리만 결과를 유지한다. generic runtime/confirmation/send 진단은 근거 포함 작업을 가리고, 종료·실패 시 근거·파생 선택지/입력·provider trace·static handoff를 폐기한다. generic checkpoint/response 재사용 저장소에 근거와 파생 입력을 쓰지 않는다. 모델 payload·실제 출력 예약·인용 근거를 최종 모델 문맥에 합산하고 완전한 항목 단위로 포장한다. readonly corpus/raw/metadata 한도와 최종 현재성 검사를 유지한다.
 
 한 세션은 생성 및 명시적 번역을 포함해 최대 16회 모델 호출을 허용한다. 영수증은 기존 채널의 10분 한도와 개별 요청 제한을 따른다. 사용자 선택창을 무제한 오래 유지할 수 있다고 보장하지 않는다. 현재성 검사에는 추가 서버 read/current와 fresh native context 읽기 비용이 들며, 전체 heap 상한이나 실제 호스트 지연 인증은 아니다.
@@ -43,6 +45,7 @@ copy 직전 검증의 비동기 대기가 브라우저 clipboard activation을 �
 
 - `node PROGRAM/tests/gradia_input_writer_unified_runtime_test.cjs`: **22 PASS**. 실제 작성 UI의 RP/Novel·번역·정확한 편집본 복사/전송·재생성/실패·취소/늦은 응답·native/scope/원본/권한/설정/연결 변경·미연결 native 흐름·빈 이어쓰기·초기 준비 취소 검사. 공급자의 query/verify는 제어된 fixture다.
 - `node PROGRAM/tests/libra_input_writer_unified_native_runtime_test.cjs`: 실제 LIBRA producer/kernel·SQLite·GRADIA 공개 연결 API·작성 버튼·선택/복사/전송 흐름을 결합한다. 읽기만으로 원본/분석 모델 호출이 늘지 않는지, 전송 권한 확인 중 정본을 교체하면 handoff가 거부되는지 검사한다.
+- `node --test PROGRAM/tests/libra_input_writer_budget_ipc_runtime_test.cjs`: upstream RisuAI 채널 함수와 실제 LIBRA producer/kernel을 사용해 두 저장 모드의 작성기 3,000자 상한, 정본·렌즈의 동시 전달, 완전한 정본 항목, 일반 응답 예산 유지, 읽기 무변경·렌즈 변경 시 무효화를 검사한다. 서버 모드는 실제 SQLite 서버를 사용한다.
 - `node PROGRAM/tests/libra_gradia_unified_read_owner_test.cjs`: 실제 채널 factory의 제안 목적/shape·비채택·영수증·위조·현재성·취소/해제 검사.
 - `gradia_three_owner_sdk_test.cjs`: 실제 고정 SDK의 지원 목적 협상·readonly 권한·source/route gate 검사. 기존 evidence bridge는 미연결 작성기가 셰도우 근거를 빌리지 않음을 계속 검사한다.
 

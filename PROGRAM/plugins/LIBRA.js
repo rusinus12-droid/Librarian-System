@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.4.2
-//@version 2.4.2
+//@display-name LIBRA v2.4.3
+//@version 2.4.3
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.4.2';
+  const PLUGIN_VERSION = '2.4.3';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -74028,6 +74028,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // includes every fresh compiler revalidation, unlike one Classic query.
     const GRADIA_OWNER_SESSION_MAX_READS = 32768;
     const GRADIA_OWNER_SESSION_MAX_SOURCE_BYTES = 256 * 1024 * 1024;
+    const GRADIA_RESPONSE_EVIDENCE_MAX_CHARS = 12000;
+    const GRADIA_INPUT_WRITER_EVIDENCE_MAX_CHARS = 3000;
     // One private read binds the graph-issued packet and the separately sourced, noncanonical
     // lens notes. Only the original graph packet is passed back to the compiler for validation.
     const gradiaMemoryEvidence = new WeakMap();
@@ -74086,7 +74088,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
     const captureGradiaMemoryEvidence = async (request, authority) => {
       const before = await gradiaLensReadSnapshot(request);
-      const maxChars = Math.min(12000,Math.max(32,Math.floor(request.maxCorpusBytes/4)));
+      // Both owner channels validate the proposal before reaching this reader.
+      // Reserve canonical and lens memory together without reducing peer owners' byte budget.
+      const characterCap = request.proposal?.purpose === 'input_writer_proposal'
+        ? GRADIA_INPUT_WRITER_EVIDENCE_MAX_CHARS : GRADIA_RESPONSE_EVIDENCE_MAX_CHARS;
+      const maxChars = Math.min(characterCap,Math.max(32,Math.floor(request.maxCorpusBytes/4)));
       const allowance = before.enabled ? Math.min(before.registry.recallMaxChars,Math.floor(maxChars*before.registry.recallBudgetRatio)) : 0;
       const lensAllowance = allowance >= LENS_RECALL_MIN_CHARS && maxChars-allowance-2>=32 ? allowance : 0;
       let graph, result;

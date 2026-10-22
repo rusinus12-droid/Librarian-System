@@ -13,6 +13,7 @@ test('actual LIBRA kernel and SQLite feed the explicit writer; canonical replace
  assert.equal(result.engine.corpusRead.mode,'durable_common_index');assert.equal(result.engine.corpusRead.indexBuildsDuringQuery,0);
  assert.equal(result.engine.corpusRead.storage.storageAccess,'selective_durable_pages');assert.ok(result.engine.corpusRead.storage.pagesRead>0);
  assert.equal(capture.proposal.purpose,'input_writer_proposal');assert.equal(capture.proposal.factAdopted,false);
+ assert.ok(result.items.reduce((total,item)=>total+item.content.length,0)<=3000,'real writer receives the owner-selected 3000-character bundle');
  assert.equal(owner.f.control.calls.length,calls);assert.deepEqual(owner.server.storedRows().filter(row=>!row.key.includes(':memory-graph-control:v1:')),rows,'writer reading must not mutate memory');
  ({pending}=await f.start('은빛 열쇠를 다시 찾는 미전송 입력을 제안해 줘.'));await f.select();
  f.controls.onPermission=async()=>{const memory=owner.server.getMemory(),key=owner.server.getManifest().memories['1'].key;
