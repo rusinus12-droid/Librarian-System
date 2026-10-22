@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-22T02:11:47.089Z",
+  "generatedAt": "2026-10-22T03:11:11.521Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -1312,7 +1312,7 @@
       "sourceAuthorityUntilCutover": true
     },
     "gradiaThreeOwnerRead": {
-      "pluginVersion": "0.26.2",
+      "pluginVersion": "0.26.3",
       "principal": "serial_gradation_agents_for_rp",
       "readers": [
         "libra",
@@ -1428,7 +1428,7 @@
     "libra": "2.4.2",
     "lia": "0.27.0",
     "retrace": "1.10.0",
-    "gradia": "0.26.2"
+    "gradia": "0.26.3"
   },
   "files": {
     "_common.cmd": {
@@ -3532,7 +3532,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "b80769c2e620d0f37bd0b4d9380836b64aaf1a2c4626fcb529d480d19e05fd9a",
+      "sha256": "25befe49e26e42a5a793bb6e0345cccab23fc020749e6e329f6b7b15dd9f1346",
       "bytes": 11832
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3912,7 +3912,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "b422724a45f0736817519fd5c33992b810f7c4db74142784d58b1f64dd6af3e2",
+      "sha256": "14a293abc1fb971ffe3a3110533965d2f8cb3aab3f60f99bba185d4d5a8cf13e",
       "bytes": 3349
     },
     "plugins/Flashback_Memory.js": {
@@ -3920,8 +3920,8 @@
       "bytes": 3377193
     },
     "plugins/GRADIA.js": {
-      "sha256": "6623338ba0bfe60554cb171b46446ecb71adecf0385895593323613834ff5faf",
-      "bytes": 2958569
+      "sha256": "e0cbec00b86510bc3aa08c2a9953fb67b08091886e84cac3a22fb5519f19ba7c",
+      "bytes": 2961793
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "cb4d326f024a141557e3a33d2b3a2079c048df2633e787f9b8ebe423d2a7a792",
@@ -6132,8 +6132,8 @@
       "bytes": 5262
     },
     "tests/gradia/evidence-bridge.test.cjs": {
-      "sha256": "444f0cb06608b010c22ea92c32398f624f178c35222effeef4ec2998624fd3e4",
-      "bytes": 35994
+      "sha256": "d6c80cdd77044c27d2e620709c19c8334025351c834157a5e2d7c774dd4fc8cf",
+      "bytes": 36635
     },
     "tests/gradia/evidence-budget-builder-v2.test.cjs": {
       "sha256": "b9140cb4b64afd6e525e3ee0e4ab06a0e6af4fa0333f39a162412f1560830e40",
@@ -11380,7 +11380,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "63c30d89dd295ed74a6620ff4158cd9112e3cfb0a268130853f73a6c7efa9163",
+      "sha256": "30e1557c12beda1d99ddb6612b95ed976fba4183018c5c2e0adeddc4182ca37a",
       "bytes": 3783
     }
   },

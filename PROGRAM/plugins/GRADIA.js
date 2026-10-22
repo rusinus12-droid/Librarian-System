@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.26.2
+//@display-name GRADIA v0.26.3
 //@api 3.0
-//@version 0.26.2
+//@version 0.26.3
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -930,7 +930,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.26.2';
+  const PLUGIN_VERSION = '0.26.3';
   
   
   
@@ -3202,6 +3202,29 @@
   const evidenceDerivedEntry = entry => !!entry && (entry.externalEvidence === true
     || entry.finalDraftMeta?.externalEvidence === true || hasLibEvidenceMarker(entry.injection));
   const libEvidencePrompt = settings => settings?.[LIB_EVIDENCE_CONTEXT]?.block || '';
+  // System-side reading guide for the GRADIA EXTERNAL EVIDENCE block. Each draft stage
+  // reads the same packet for its own job, so SHADOW and the AIDEs do not all redo
+  // the same continuity work.
+  const LIB_EVIDENCE_STAGE_USE = Object.freeze({
+    shadow_act: 'SHADOW: draw relationship history, promises, unresolved threads, and established facts from it so the first draft continues the story instead of restarting it.',
+    aide_character: 'Character AIDE: check what each character knows, remembers, feels toward others, and has promised against it. Repair only contradictions inside the draft.',
+    aide_world: 'World AIDE: check locations, objects, injuries, time, and world-state changes against it. Repair only contradictions inside the draft.',
+    aide_plot: 'Plot AIDE: check unresolved threads, foreshadowing, and causal consequences against it. Do not resolve or advance a remembered thread beyond this scene.'
+  });
+  const libEvidenceStageGuidance = (stageName, settings = {}) => {
+    const use = LIB_EVIDENCE_STAGE_USE[stageName];
+    if (!use) return '';
+    return [
+      'EXTERNAL MEMORY EVIDENCE USE (LIBRA / HAYAKU / Flashback block at the end of the user message):',
+      '- It is past-state memory. Current user input, the latest visible scene, and newer canon outrank it; when they differ, the memory is outdated.',
+      '- Use it as background continuity. Do not replay remembered scenes, quote it, mention memory or sources, or move characters to a remembered location.',
+      '- Lens notes are non-canonical reference memos. Prefer canonical memory when they disagree.',
+      isPlayerControlledDraftMode(settings)
+        ? '- In RP mode, memory never authorizes a new user-character action, line, feeling, or decision.'
+        : '- In Novel mode, memory may inform the user persona like any other cast member, but explicit author direction wins.',
+      `- ${use}`
+    ].join('\n');
+  };
   const appendLibEvidence = (value, settings) => {
     const block = libEvidencePrompt(settings);
     return block ? `${value}\n\n${block}` : value;
@@ -18623,6 +18646,13 @@ ${passage.text || ''}`, 420));
     const evidenceRun = settings?.[LIB_EVIDENCE_CONTEXT];
     if (evidenceRun) {
       await evidenceRun.assertCurrent();
+      // An evidence run sends no repair request. The draft-pipeline caller handles
+      // the refusal like a failed repair, so SHADOW fails closed and an AIDE keeps
+      // the previous draft, without invalidating the evidence session.
+      if (isDraftPipelineStage(stageName)
+        && normalizePromptExecutionPhase(options.promptPhase || options.phase || (options.jsonMode ? 'analysis' : 'draft')) === 'repair') {
+        return { ok: false, skipped: true, reason: 'evidence_repair_disabled', presetName: '' };
+      }
       const suffix = `\n\n${evidenceRun.block}`;
       if (userPrompt.endsWith(suffix)) userPrompt = userPrompt.slice(0, -suffix.length);
     }
@@ -18697,6 +18727,8 @@ ${passage.text || ''}`, 420));
     if (evidenceRun) {
       evidenceRun.setBudgetProfile?.(preset, name);
       await evidenceRun.beforeModel(stageName, promptPhase, options.evidenceRecovery || '');
+      const evidenceGuidance = libEvidenceStageGuidance(stageName, settings);
+      if (evidenceGuidance && !systemPrompt.includes(evidenceGuidance)) systemPrompt = `${systemPrompt}\n\n${evidenceGuidance}`;
       userPrompt = appendLibEvidence(userPrompt, settings);
       evidenceRun.expectedUser = userPrompt;
       evidenceRun.expectedSystem = systemPrompt;
@@ -18924,7 +18956,20 @@ ${passage.text || ''}`, 420));
           });
         }
       }
-      if (lengthLimit || !result.content) throw evidenceRun.fail('LIB_READ_MODEL_INCOMPLETE');
+      if (lengthLimit || !result.content) {
+        // An incomplete AIDE response is discarded without a resend; the AIDE keeps
+        // the previous same-turn draft. SHADOW has no previous draft and fails closed.
+        if (!CORE_AIDE_STAGE_IDS.includes(stageName)) throw evidenceRun.fail('LIB_READ_MODEL_INCOMPLETE');
+        finishTelemetryLogicalCall(telemetryLogicalCallId, 'failed_truncated');
+        return {
+          ok: false,
+          reason: 'evidence_model_incomplete',
+          presetName: name,
+          provider,
+          model: result.model || preset.model,
+          finishReason: result.finishReason || ''
+        };
+      }
     }
     if (result.content && lengthLimit && !options.lengthLimitRetry) {
       const configuredCap = clampInt(preset?.max_tokens, 64, 200000, DEFAULT_MAX_STAGE_TOKENS);
