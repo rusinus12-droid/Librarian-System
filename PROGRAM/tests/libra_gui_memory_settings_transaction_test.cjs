@@ -23,11 +23,8 @@ async function boot(options = {}) {
   await goSettings(s, 'memory');
   return s;
 }
-async function save(s, dedicated = false) {
-  if (dedicated) {
-    const button = [...s.doc.querySelectorAll('button')].find(n => n.textContent === '리콜 · 최근 대화 설정 저장');
-    assert.ok(button, 'dedicated save remains reachable'); button.click();
-  } else s.doc.querySelector('[data-settings-room-save]').click();
+async function save(s) {
+  s.doc.querySelector('[data-settings-room-save]').click();
   await until(() => !s.doc.querySelector('[data-settings-room-save]').disabled, 'save settles');
   await pause(100);
 }
@@ -58,14 +55,14 @@ async function test(name, fn) {
     assert.equal([...s.doc.querySelectorAll('label')].find(n => n.textContent === '새 LIBRA 사용').querySelector('input').checked, true);
     assert.equal(s.api.debugGuiSettingsState().dirty, false);
   });
-  for (const dedicated of [false, true]) await test(`${dedicated ? 'dedicated' : 'global'} save persists memory and runtime together across restart`, async () => {
+  await test('common save persists memory across restart with raw-dialogue injection disabled', async () => {
     const s = await boot();
-    await input(s, '통합 검색 최대 근거 수', 17); await input(s, '최근 대화 최대 턴', 3);
-    await save(s, dedicated);
+    await input(s, '통합 검색 최대 근거 수', 17);
+    await save(s);
     assert.equal(s.api.debugGuiSettingsState().dirty, false);
     const restarted = await boot({ initialValues: [...s.values] });
     assert.equal(field(restarted, '통합 검색 최대 근거 수').value, '17');
-    assert.equal(field(restarted, '최근 대화 최대 턴').value, '3');
+    assert.equal((await restarted.api.getLibraProviderConfig()).liveContext.enabled,false);
   });
   await test('a memory draft survives navigation and saves from a different settings section', async () => {
     const s = await boot(); await input(s, '통합 검색 최대 근거 수', 17);
@@ -78,7 +75,7 @@ async function test(name, fn) {
     const matches = k => String(k) === (failure === 'runtime' ? 'libra:v1:runtime-settings' : 'libra:v1:memory-settings');
     const s = await boot({ failWrites: k => enabled && failure !== 'dropped_memory' && matches(k), dropWrites: k => enabled && failure === 'dropped_memory' && matches(k) });
     const before = [...s.values];
-    await input(s, '통합 검색 최대 근거 수', 17); await input(s, '최근 대화 최대 턴', 3);
+    await input(s, '통합 검색 최대 근거 수', 17);
     enabled = true; await save(s); enabled = false;
     assert.equal(s.api.debugGuiSettingsState().dirty, true, 'failed save remains dirty');
     assert.match(s.doc.querySelector('[data-settings-room-save-status]').textContent,
@@ -87,7 +84,7 @@ async function test(name, fn) {
     assert.equal((await s.api.getLibraMemorySettings()).unifiedMaxUnits, 24, 'failed write does not change live runtime');
     const restarted = await boot({ initialValues: [...s.values] });
     assert.equal(field(restarted, '통합 검색 최대 근거 수').value, '24');
-    assert.equal(field(restarted, '최근 대화 최대 턴').value, '4');
+    assert.equal((await restarted.api.getLibraProviderConfig()).liveContext.enabled,false);
     await save(s);
     assert.equal(s.api.debugGuiSettingsState().dirty, false);
     assert.equal((await s.api.getLibraMemorySettings()).unifiedMaxUnits, 17);
@@ -113,11 +110,11 @@ async function test(name, fn) {
     await s.click('[data-settings-room-revert]');
     assert.equal(field(s, '통합 검색 최대 근거 수').value, '14');
   });
-  await test('global and dedicated buttons share one in-flight save', async () => {
+  await test('repeated common-save clicks share one in-flight save', async () => {
     const s = await boot(); await input(s, '통합 검색 최대 근거 수', 17);
     const before = s.writes.filter(w => w.key === 'libra:v1:memory-settings').length;
-    const dedicated = [...s.doc.querySelectorAll('button')].find(n => n.textContent === '리콜 · 최근 대화 설정 저장');
-    s.doc.querySelector('[data-settings-room-save]').click(); dedicated.click(); dedicated.click();
+    const common = s.doc.querySelector('[data-settings-room-save]');
+    common.click(); common.click(); common.click();
     await until(() => !s.doc.querySelector('[data-settings-room-save]').disabled, 'shared save settles');
     assert.equal(s.writes.filter(w => w.key === 'libra:v1:memory-settings').length - before, 1);
     assert.equal(s.api.debugGuiSettingsState().dirty, false);
@@ -131,7 +128,7 @@ async function test(name, fn) {
     await save(s);
     const beforeMemory = s.values.get('libra:v1:memory-settings');
     const beforeRuntime = s.values.get('libra:v1:runtime-settings');
-    await input(s, '통합 검색 최대 근거 수', 17); await input(s, '최근 대화 최대 턴', 3);
+    await input(s, '통합 검색 최대 근거 수', 17);
     failOnce = true; await save(s);
     assert.equal(s.api.debugGuiSettingsState().dirty, true);
     assert.equal(s.values.get('libra:v1:memory-settings'), beforeMemory, 'owner restores exact prior bytes');
@@ -143,7 +140,7 @@ async function test(name, fn) {
   await test('visible field labels provide names and notes are separate descriptions', async () => {
     const s = await boot();
     const controls = [...s.doc.querySelectorAll('.page[data-page="settings"] .field input,.page[data-page="settings"] .field select,.page[data-page="settings"] .field textarea')];
-    assert.ok(controls.length >= 6);
+    assert.ok(controls.includes(field(s, '통합 검색 최대 근거 수')), 'retained memory controls are covered');
     for (const n of controls) {
       const visual = n.closest('.field').querySelector('label')?.textContent;
       if (!visual) continue;

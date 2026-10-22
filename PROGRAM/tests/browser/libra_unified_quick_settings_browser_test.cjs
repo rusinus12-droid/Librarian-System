@@ -1,5 +1,34 @@
 'use strict';
-// Original two-tab drawer owns one save pair. Retired producer/InputWriter cases
-// are mapped to their independently owned GRADIA contract in regression migration.
-const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{boot,quick,settings,clean}=require('./libra_approved_browser.cjs');
-(async()=>{const{browser,page,errors}=await boot();try{const source=fs.readFileSync(path.join(__dirname,'../../plugins/LIBRA.js'),'utf8');assert.doesNotMatch(source,/const showLibraInputWriterComposer\s*=|const buildBookQuickGradiaPanel\s*=/);let drawer=await quick(page);assert.deepEqual(await drawer.getByRole('tab').allTextContents(),['응답','기억']);assert.equal(await drawer.locator('[data-gui-save-label]').count(),1);assert.equal(await drawer.locator('[data-book-quick-revert]').count(),1);const details=drawer.locator('#libra-live-context-settings');await details.locator('summary').click();const turns=details.locator('.field').filter({has:page.getByText('최근 대화 최대 턴',{exact:true})}).locator('input');await turns.fill('3');await drawer.locator('[data-gui-save-label]').click();await page.waitForFunction(()=>!__approved.Gui.bookQuickSaving&&!__approved.Gui.dirty);assert.equal(await page.evaluate(async()=>(await __approved.loadSettings()).liveTailMaxTurns),3);if(!(await details.evaluate(n=>n.open)))await details.locator('summary').click();await turns.fill('2');await drawer.locator('[data-book-quick-revert]').click();await page.waitForFunction(()=>!__approved.Gui.dirty&&__approved.Gui.state.runtime.liveTailMaxTurns===3);drawer=page.locator('#drawer-quick');if(!(await drawer.locator('#libra-live-context-settings').evaluate(n=>n.open)))await drawer.locator('#libra-live-context-settings > summary').click();const field=drawer.locator('.field').filter({has:page.getByText('최근 대화 최대 턴',{exact:true})}).locator('input');await field.fill('4');await drawer.locator('[data-book-quick-close]').click();await page.waitForFunction(()=>!__approved.Gui.bookQuickOpen);assert.ok(await page.evaluate(()=>__approved.Gui.dirty));drawer=await quick(page);assert.equal(await page.evaluate(()=>__approved.Gui.state.runtime.liveTailMaxTurns),4,'dirty close retains actual draft');await drawer.locator('[data-book-quick-revert]').click();await page.waitForFunction(()=>!__approved.Gui.dirty&&__approved.Gui.state.runtime.liveTailMaxTurns===3);await drawer.getByRole('tab',{name:'기억',exact:true}).click();await drawer.locator('[data-book-quick-native="memory-agents"]').waitFor();await drawer.getByRole('button',{name:'기억 분석 고급 설정 →',exact:true}).click();await page.waitForFunction(()=>!__approved.Gui.bookQuickOpen);const pipeline=page.locator('[data-product-settings-section="pipeline"]');await pipeline.waitFor();assert.equal(await pipeline.locator('[data-librarian-analyzer="single"]').count(),1);for(const width of [1440,390]){await page.setViewportSize({width,height:844});drawer=await quick(page,'memory');assert.ok(await drawer.evaluate(n=>n.scrollWidth<=n.clientWidth+1));const button=drawer.locator('.drawer__foot [data-gui-save-label]');await page.waitForFunction(()=>!__approved.Gui.renderFrame);await button.waitFor({state:'attached'});await button.scrollIntoViewIfNeeded();assert.ok(await button.evaluate(n=>{const r=n.getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('button')===n;}));await page.keyboard.press('Escape');await drawer.waitFor({state:'detached'});drawer=await quick(page);await page.keyboard.press('Escape');await drawer.waitFor({state:'detached'});}await clean(page,errors);console.log('PASS: original tabs/single-save, actual consecutive save/revert readback, dirty-close retention, advanced memory route, mobile footer reachability and immediate Escape');}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
+const assert=require('node:assert/strict');
+const {boot,clean}=require('./libra_approved_browser.cjs');
+(async()=>{
+ const {browser,page,errors}=await boot();
+ try{
+  assert.equal(await page.locator('[data-open="drawer-quick"],#drawer-quick,[data-libra-quick-dialog]').count(),0);
+  await page.evaluate(()=>__approved.selectBookSettingsRoomSection('ai'));
+  await page.locator('[data-product-settings-section="ai"]').waitFor();
+  assert.equal(await page.locator('[data-libra-quick-connect]').count(),0,'duplicate setup form is gone');
+  await page.getByRole('button',{name:'프리셋 추가',exact:true}).click();
+  const model=page.locator('[data-provider-field="model"]');await model.waitFor();
+  await model.fill('retained-preset-test-model');
+  await page.locator('[data-settings-room-save]').click();
+  await page.waitForFunction(()=>!__approved.Gui.settingsRoomSaving&&!__approved.Gui.dirty);
+  const config=await page.evaluate(()=>__LIBRA__.getLibraProviderConfig());
+  assert.ok(Object.values(config.providerPresets).some(p=>p.model==='retained-preset-test-model'),'retained preset editor saves without connecting');
+  await page.evaluate(()=>__approved.selectBookSettingsRoomSection('memory'));
+  await page.locator('[data-product-settings-section="memory"]').waitFor();
+  assert.equal(await page.locator('#libra-live-context-settings').count(),0,'retired recent-dialogue settings are gone');
+  await page.evaluate(()=>__approved.selectBookSettingsRoomSection('embedding'));
+  const enabled=page.getByRole('checkbox',{name:'임베딩 사용',exact:true});await enabled.uncheck();
+  await page.evaluate(()=>__approved.selectBookSettingsRoomSection('ai'));
+  await page.locator('[data-settings-room-save]').click();
+  await page.waitForFunction(()=>!__approved.Gui.settingsRoomSaving&&!__approved.Gui.dirty);
+  assert.equal(await page.evaluate(async()=>(await __LIBRA__.getLibraProviderConfig()).embedding.enabled),false);
+  for(const width of [1280,900,390]){
+   await page.setViewportSize({width,height:900});await page.waitForFunction(()=>!__approved.Gui.renderFrame);
+   assert.ok(await page.locator('.app').evaluate(n=>n.scrollWidth<=n.clientWidth+1));
+  }
+  await clean(page,errors);
+  console.log('PASS: redundant forms and recent-dialogue UI absent; preset edit/save and cross-tab embedding save preserved; 3 widths; no model calls');
+ }finally{await browser.close();}
+})().catch(error=>{console.error(error);process.exitCode=1;});

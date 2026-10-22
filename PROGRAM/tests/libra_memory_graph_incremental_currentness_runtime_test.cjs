@@ -121,3 +121,24 @@ test('N01-A runtime: incremental owner proofs skip unconsumed historical body re
   const splitAudit=await api.verifyMemoryGraphCorpus();
   assert.equal(splitAudit.status,'verified');
 });
+
+test('shared manifest byte changes revoke a restored corpus and a fresh build binds its new physical basis', {timeout:120000}, async t=>{
+  const x=await fixture({mode:'plugin_only'});t.after(()=>x.cleanup());
+  const api=x.f.r.api;
+  assert.equal((await api.buildMemoryGraphCorpus({limit:2})).status,'published');
+  const storageKey='libra:v1:scope:'+x.scopeKey+':manifest';
+  const manifest=JSON.parse(x.f.r.values.get(storageKey));
+  // The semantic record inventory is unchanged, but the old physical hash must
+  // never be relabelled as current or carried through incremental window reuse.
+  manifest.stats.recalls=Number(manifest.stats.recalls||0)+1;
+  x.f.r.values.set(storageKey,JSON.stringify(manifest));
+  const options={queryInput:{queryText:'민아 은빛 열쇠의 보관자'},semanticPolicy:{mode:'disabled'}};
+  await assert.rejects(()=>api.executeMemoryGraphUnifiedQuery({...options,corpusMode:'required'}),e=>e.reason==='stale_generation');
+  const fresh=await api.executeMemoryGraphUnifiedQuery(options);
+  assert.equal(fresh.modelDispatchEligible,true);
+  assert.ok(fresh.bundle.items.some(item=>item.family==='micro'&&item.text===QUOTE));
+  assert.equal((await api.buildMemoryGraphCorpus({limit:2})).status,'published');
+  const restored=await api.executeMemoryGraphUnifiedQuery({...options,corpusMode:'required'});
+  assert.equal(restored.modelDispatchEligible,true);
+  assert.equal(restored.corpusRead.mode,'durable_common_index');
+});

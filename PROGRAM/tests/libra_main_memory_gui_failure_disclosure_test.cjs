@@ -28,23 +28,23 @@ const source = fs.readFileSync(pluginPath, 'utf8');
 
 // ── The shipped GUI save path, executed with its real dependencies (the technique the
 //    settings-room save-feedback suites use), for the duplicate-click and display halves.
-const start = source.indexOf('const saveBookQuickSettings = async () => {');
-const end = source.indexOf('const buildBookQuickSettingsDrawer =', start);
-assert.ok(start >= 0 && end > start, 'the shipped saveBookQuickSettings and its follow-on marker are present');
+const start = source.indexOf('const saveSettingsRoom = async () => {');
+const end = source.indexOf('const clearStructuredSettings =', start);
+assert.ok(start >= 0 && end > start, 'the shipped saveSettingsRoom and its follow-on marker are present');
 const saveSource = source.slice(start, end);
 
 const harness = ({ saveGuiState }) => {
   const events = [];
-  const Gui = { bookQuickSaving: false, bookQuickSaveStatus: '', bookQuickSaveError: false };
+  const Gui = { settingsRoomSaving: false, settingsRoomSaveStatus: '', settingsRoomSaveError: false };
   const context = {
     Gui,
-    saveGuiState,
+    saveGuiState, renderSettingsGui: async () => {}, guiSetStatus: () => {},
     syncGuiSaveControls: () => events.push('sync'),
     compact: (value, max = 300) => String(value ?? '').slice(0, max),
     events
   };
   vm.createContext(context);
-  new vm.Script(`${saveSource}\nthis.saveBookQuickSettings = saveBookQuickSettings;`).runInContext(context);
+  new vm.Script(`${saveSource}\nthis.saveSettingsRoom = saveSettingsRoom;`).runInContext(context);
   return { context, events, Gui };
 };
 
@@ -212,8 +212,8 @@ const run = async () => {
     let release;
     const pending = new Promise(resolve => { release = resolve; });
     const h = harness({ saveGuiState: async () => { mutations += 1; await pending; return true; } });
-    const first = h.context.saveBookQuickSettings();
-    const second = await h.context.saveBookQuickSettings();
+    const first = h.context.saveSettingsRoom();
+    const second = await h.context.saveSettingsRoom();
     observations.duplicateSecondRefused = second === false;
     observations.mutationsDuringFlight = mutations;
     assert.equal(observations.duplicateSecondRefused, true, 'the duplicate click is refused');
@@ -227,13 +227,13 @@ const run = async () => {
   // ── (5) WRITE FAILURE AND THE DISPLAY CONTRACT ───────────────────────────────────────
   {
     const h = harness({ saveGuiState: async () => { throw new Error('INJECTED_WRITE_FAILURE'); } });
-    const returned = await h.context.saveBookQuickSettings();
+    const returned = await h.context.saveSettingsRoom();
     observations.writeFailureReturnsFalse = returned === false;
-    observations.writeFailureReportsError = h.Gui.bookQuickSaveError === true;
-    observations.writeFailureNoSuccessWording = !h.Gui.bookQuickSaveStatus.includes('변경한 설정을 저장했습니다');
-    observations.writeFailureKeepsChanges = /변경 내용은 유지/.test(h.Gui.bookQuickSaveStatus);
-    observations.writeFailureReasonPropagated = /INJECTED_WRITE_FAILURE/.test(h.Gui.bookQuickSaveStatus);
-    observations.savingFlagClearedAfterFailure = h.Gui.bookQuickSaving === false;
+    observations.writeFailureReportsError = h.Gui.settingsRoomSaveError === true;
+    observations.writeFailureNoSuccessWording = !h.Gui.settingsRoomSaveStatus.includes('변경한 설정을 저장했습니다');
+    observations.writeFailureKeepsChanges = /변경 내용은 유지/.test(h.Gui.settingsRoomSaveStatus);
+    observations.writeFailureReasonPropagated = /INJECTED_WRITE_FAILURE/.test(h.Gui.settingsRoomSaveStatus);
+    observations.savingFlagClearedAfterFailure = h.Gui.settingsRoomSaving === false;
     assert.equal(observations.writeFailureReturnsFalse, true, 'a failed write reports false');
     assert.equal(observations.writeFailureNoSuccessWording, true, 'no success wording is shown for a failed write');
     assert.equal(observations.writeFailureReportsError, true, 'the failure is marked as an error');
@@ -245,12 +245,12 @@ const run = async () => {
   // ── (6) THE POSITIVE CONTROL FOR THE DISPLAY ─────────────────────────────────────────
   {
     const h = harness({ saveGuiState: async () => true });
-    const returned = await h.context.saveBookQuickSettings();
+    const returned = await h.context.saveSettingsRoom();
     observations.successReturnsTrue = returned === true;
-    observations.successStatusText = h.Gui.bookQuickSaveStatus;
-    observations.successNoErrorFlag = h.Gui.bookQuickSaveError === false;
+    observations.successStatusText = h.Gui.settingsRoomSaveStatus;
+    observations.successNoErrorFlag = h.Gui.settingsRoomSaveError === false;
     assert.equal(observations.successReturnsTrue, true, 'a durable-confirmed save reports success');
-    assert.equal(observations.successStatusText, '변경한 설정을 저장했습니다.', 'the success wording is the shipped one');
+    assert.equal(observations.successStatusText, '설정을 저장했습니다.', 'the success wording is the shipped one');
     assert.equal(observations.successNoErrorFlag, true, 'a durable-confirmed save carries no error flag');
   }
 

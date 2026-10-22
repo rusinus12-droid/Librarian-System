@@ -18,7 +18,10 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
     if (!record) return;
     record.active = false;
     if (record.timer) clearTimeout(record.timer); record.timer = null;
-    receipts.delete(record.id); operations.delete(record.operationId);
+    // A canceled query may settle after a new query reused its operation ID.
+    // Cleanup owns only its exact record, never the newer map entry.
+    if (receipts.get(record.id) === record) receipts.delete(record.id);
+    if (operations.get(record.operationId) === record) operations.delete(record.operationId);
     // This also runs when a query finishes after cancellation/disposal.
     if (record.execution) { const execution = record.execution; record.execution = null; options.release?.(execution); }
   };
@@ -93,6 +96,7 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
       const execution = record.execution, content = execution.packet.renderedText;
       if (execution.modelDispatchEligible !== true) fail('LIB_READ_UNIFIED_UNAVAILABLE');
       const engine = { source: 'unified_engine', generation: execution.bundle.generation,
+        ...(execution.lensEvidence ? {lensEvidence:copy(execution.lensEvidence)} : {}),
         purpose: payload.proposal ? 'input_writer_proposal' : 'response_evidence',
         ...(payload.proposal ? { proposal: copy(payload.proposal) } : {}),
         queryComplete: execution.queryComplete === true, deliveryOutcome: execution.deliveryOutcome,

@@ -24,9 +24,9 @@ const {createLibraVmHarness}=require('./fixtures/libra_vm_harness.cjs');
    assert.equal(n.bookSettingsRoomActiveSection(),'pipeline',legacy+' resolves to memory analysis');
    assert.equal(n.Gui.pipelineHubSection,'memory_pipeline');
   }
-  n.selectBookExternalSettings('ai');n.Gui.bookQuickSaving=true;n.selectBookExternalSettings('modules');
+  n.selectBookExternalSettings('ai');n.Gui.settingsRoomSaving=true;n.selectBookExternalSettings('modules');
   assert.equal(n.bookSettingsRoomActiveSection(),'ai','saving prevents navigation');
-  n.Gui.bookQuickSaving=false;n.selectBookExternalSettings('unknown-retired-section');
+  n.Gui.settingsRoomSaving=false;n.selectBookExternalSettings('unknown-retired-section');
   assert.equal(n.bookSettingsRoomActiveSection(),'ai','unknown IDs leave the selected section alone');
   console.log('libra_external_settings_sidebar_runtime_test: PASS (15 live routes, 2 legacy aliases, draft preservation and save fence)');
  }finally{await f.cleanup();}

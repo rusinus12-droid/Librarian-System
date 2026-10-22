@@ -90,3 +90,23 @@ test('a response budget rejection releases the completed query authority',async 
  await assert.rejects(()=>f.client.capture({...f.input,maxCorpusBytes:512}),/LIB_READ_CORPUS_BUDGET_EXCEEDED/);
  assert.equal(f.releases(),1);
 });
+
+test('late cleanup of a canceled operation cannot remove a newer operation with the same ID',async t=>{
+ let enteredA,enteredB,finishA,finishB,count=0;
+ const readyA=new Promise(r=>{enteredA=r;}),readyB=new Promise(r=>{enteredB=r;});
+ const f=await fixture(t,{onQuery:async()=>{
+   if(++count===1){enteredA();await new Promise(r=>{finishA=r;});}
+   else{enteredB();await new Promise(r=>{finishB=r;});}
+ }});
+ const a=new AbortController(),b=new AbortController(),operationId='reused-operation';
+ const first=f.client.capture({...f.input,operationId,signal:a.signal});
+ const rejectedA=assert.rejects(first,e=>e.code==='LIB_READ_CANCELED');
+ await readyA;a.abort();await rejectedA;
+ const second=f.client.capture({...f.input,operationId,signal:b.signal});
+ const rejectedB=assert.rejects(second,e=>e.code==='LIB_READ_CANCELED');
+ await readyB;finishA();await new Promise(r=>setTimeout(r,10));
+ assert.equal(f.releases(),1);
+ b.abort();await rejectedB;finishB();await new Promise(r=>setTimeout(r,10));
+ assert.equal(f.releases(),2,'the newer canceled query must also release its execution');
+ assert.throws(()=>f.authority().verifyReceipt({}),/LIB_READ_STALE/);
+});

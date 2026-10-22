@@ -1,5 +1,30 @@
 'use strict';
-// Baseline98ba851 retired mixed producer workspace. Approved pipeline keeps one
-// Librarian model, advanced budgets and prompt entry, with shared draft/save owner.
-const assert=require('node:assert/strict'),{boot,quick,settings,clean}=require('./libra_approved_browser.cjs');
-(async()=>{const{browser,page,errors}=await boot();try{let pipeline=await settings(page,'pipeline');assert.equal(await pipeline.locator('[data-librarian-analyzer="single"]').count(),1);assert.equal(await page.locator('.libra-agent-workspace,[data-book-gradia-advanced]').count(),0);assert.equal(await pipeline.getByRole('button',{name:'렌즈 스튜디오 열기',exact:true}).count(),1);let drawer=await quick(page,'memory');assert.equal(await drawer.locator('select').count(),1);assert.equal(await drawer.locator('[data-generation-policy]').count(),0,'expert budget remains in approved advanced fold');const select=drawer.locator('select'),before=await select.inputValue(),next=await select.evaluate(n=>[...n.options].find(o=>o.value!==n.value)?.value);assert.notEqual(next,undefined);await select.selectOption(next);assert.ok(await page.evaluate(()=>__approved.Gui.dirty));await drawer.getByRole('button',{name:'기억 분석 고급 설정 →',exact:true}).click();pipeline=page.locator('[data-product-settings-section="pipeline"]');await pipeline.waitFor();await page.waitForFunction(value=>document.querySelector('[data-product-settings-section="pipeline"] [data-analyzer-field="presetName"]')?.value===value,next);assert.equal(await pipeline.locator('[data-analyzer-field="presetName"]').inputValue(),next,'navigation shares unsaved current binding');assert.ok(await page.evaluate(()=>__approved.Gui.dirty));const fold=pipeline.locator('[data-librarian-analyzer] > details');await fold.locator(':scope > summary').click();assert.equal(await fold.locator('[data-generation-policy]').count(),1);assert.equal(await fold.locator('[data-analyzer-field="maxChars"]').count(),1);await page.evaluate(()=>__approved.saveBookQuickSettings());await page.waitForFunction(()=>!__approved.Gui.dirty);await page.evaluate(()=>__approved.revertGuiStateFromStorage());assert.equal(await page.evaluate(()=>__approved.Gui.state.agents.librarian.presetName),next);await page.evaluate(()=>__approved.selectBookSettingsRoomSection('agents'));await page.locator('[data-product-settings-section="pipeline"]').waitFor();assert.equal(await page.locator('[data-librarian-analyzer="single"]').count(),1,'legacy route reaches actual approved workbench');for(const width of [1440,390]){await page.setViewportSize({width,height:1100});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));}await clean(page,errors);console.log('PASS: single Librarian owner, real preset/advanced budget/prompt controls, unsaved navigation, shared save/reload and legacy route at desktop/mobile');}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
+const assert=require('node:assert/strict');
+const {boot,clean}=require('./libra_approved_browser.cjs');
+(async()=>{
+ const {browser,page,errors}=await boot();
+ try{
+  await page.evaluate(()=>__approved.selectBookSettingsRoomSection('pipeline'));
+  const pipeline=page.locator('[data-product-settings-section="pipeline"]');await pipeline.waitFor();
+  assert.equal(await pipeline.locator('[data-librarian-analyzer="single"]').count(),1);
+  assert.equal(await page.locator('#drawer-quick,.libra-agent-workspace,[data-book-gradia-advanced]').count(),0);
+  const select=pipeline.locator('[data-analyzer-field="presetName"]');
+  const value=await select.inputValue();
+  await select.selectOption(value);
+  await page.evaluate(()=>__approved.selectBookSettingsRoomSection('memory'));
+  await page.locator('[data-product-settings-section="memory"]').waitFor();
+  assert.equal(await page.locator('#libra-live-context-settings').count(),0);
+  await page.evaluate(()=>__approved.selectBookSettingsRoomSection('pipeline'));
+  await select.waitFor();assert.equal(await select.inputValue(),value,'formal navigation keeps the same analyzer binding');
+  const fold=pipeline.locator('[data-librarian-analyzer] > details');await fold.locator(':scope > summary').click();
+  assert.equal(await fold.locator('[data-generation-policy]').count(),1);
+  assert.equal(await fold.locator('[data-analyzer-field="maxChars"]').count(),1);
+  await page.evaluate(()=>__approved.saveSettingsRoom());
+  await page.waitForFunction(()=>!__approved.Gui.dirty);
+  await page.evaluate(()=>__approved.selectBookSettingsRoomSection('agents'));
+  await pipeline.waitFor();
+  assert.equal(await pipeline.locator('[data-librarian-analyzer="single"]').count(),1,'legacy route still reaches the formal analyzer');
+  await clean(page,errors);
+  console.log('PASS: one formal analyzer, retained advanced controls, draft navigation, common save and legacy route');
+ }finally{await browser.close();}
+})().catch(error=>{console.error(error);process.exitCode=1;});

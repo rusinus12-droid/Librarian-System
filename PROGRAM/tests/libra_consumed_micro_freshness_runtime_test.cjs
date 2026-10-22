@@ -34,6 +34,8 @@ async function prepareClassic(f, query = REQUEST) {
   assert.equal((await f.r.api.validateResponseContext(context)).current, true);
   assert.equal(f.control.calls.length, calls, 'actual Classic recall has no provider call');
   assert.ok(blockOf(messages), 'the actual request contains delivered evidence');
+  assert.doesNotMatch(blockOf(messages), /\[RECENT COMPLETED DIALOGUE\]/, 'Classic injects memory evidence without a separate raw-dialogue tail');
+  assert.equal(f.r.api.getLastMemoryRecallViewer().liveTailInjected, false);
   return context;
 }
 
@@ -206,6 +208,7 @@ const invalid = async (f, context, pattern) => {
 
 test('unchanged consumed Micro is delivered by Classic and a cloned context validates', async () => {
   await withMicro(async (f, active, prepare) => {
+    await f.r.api.saveLibraProviderConfig({liveContext:{enabled:true,classicEnabled:true}});
     const context = await prepare();
     assert.equal((await f.r.api.validateResponseContext(clone(context))).current, true);
     assert.equal((await f.r.api.debugReadActiveMicroMemory(1)).record.analysisRevisionId, active.record.analysisRevisionId);

@@ -29,11 +29,10 @@ function checkBookHeader(source){
  const buttons=[...header[1].matchAll(/<button\b([^>]*)>/g)].map(m=>m[1]);
  const has=attr=>buttons.some(b=>b.includes(attr));
  assert.ok(has('data-go="settings"'),'required Book header control: settings');
- assert.ok(has('data-open="drawer-quick"'),'required Book header control: quick settings');
+ assert.ok(!has('data-open="drawer-quick"'),'retired quick settings entry is absent');
  assert.ok(has('data-close-gui'),'required Book header control: close');
  // Handler wiring: data-go -> bookNavigate, drawer-quick -> bookOpenQuickSettings, close -> hideSettingsGui.
  assert.match(source,/const nav = event\.target\.closest\('\[data-go\]'\);[\s\S]{0,400}?bookNavigate\(nav\.dataset\.go\)/,'settings control dispatches bookNavigate');
- assert.match(source,/id === 'drawer-quick'\) bookOpenQuickSettings\(Gui\.bookQuickSection \|\| 'response'\)/,'quick control opens quick settings');
  assert.match(source,/button\.matches\('\[data-close-gui\]'\)\) \{ event\.preventDefault\(\); void hideSettingsGui\(\)/,'close control hides the GUI');
  return true;
 }
