@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-22T04:35:27.217Z",
+  "generatedAt": "2026-10-22T05:42:57.188Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -1312,7 +1312,7 @@
       "sourceAuthorityUntilCutover": true
     },
     "gradiaThreeOwnerRead": {
-      "pluginVersion": "0.26.4",
+      "pluginVersion": "0.26.5",
       "principal": "serial_gradation_agents_for_rp",
       "readers": [
         "libra",
@@ -1428,7 +1428,7 @@
     "libra": "2.4.2",
     "lia": "0.27.0",
     "retrace": "1.10.0",
-    "gradia": "0.26.4"
+    "gradia": "0.26.5"
   },
   "files": {
     "_common.cmd": {
@@ -3536,7 +3536,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "037d0d87f6309be3cbc1c16df6495489a9adf1f4e2263c8de30ed70a679c7a1e",
+      "sha256": "909013f0737124f6037114cd1ae635cb2962c384d52cc53508caf6b0eac0bf82",
       "bytes": 11832
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3916,7 +3916,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "fb759fbaaed70fb5fdea64178f3dc703496660a7e4aefedf80b82f61a21a79d9",
+      "sha256": "cdb5b0d934959bd76bcadf3af20155321082a4cc38f1d45e7d73fad663cce6e1",
       "bytes": 3349
     },
     "plugins/Flashback_Memory.js": {
@@ -3924,8 +3924,8 @@
       "bytes": 3377193
     },
     "plugins/GRADIA.js": {
-      "sha256": "c3ae7a9b70889bce1fe26b39a6f900144e859532b0c4244eee27b7ae0babd75c",
-      "bytes": 2965532
+      "sha256": "15c6d912454e080c5b6e19869f90e2fa6d67931bb1e6d2f7bb73e419463e69b9",
+      "bytes": 2969863
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "cb4d326f024a141557e3a33d2b3a2079c048df2633e787f9b8ebe423d2a7a792",
@@ -6151,6 +6151,10 @@
       "sha256": "0015ad35806da84c92ea34162b72fe41159ea827da64e3d280a1c0c6c028e625",
       "bytes": 12505
     },
+    "tests/gradia/evidence-stage-delivery.test.cjs": {
+      "sha256": "ceebe21ea85a04e84314b9a307bde00d3aeb196d92fa6a7805ea42b4e3a953ef",
+      "bytes": 7891
+    },
     "tests/gradia/fixtures/baselines/frozen-G2-GRADIA.js": {
       "sha256": "281d0ca7c8c3fd7d39239387b3f8a0b5d6fcadd217a968b2e1ff5b3fc374a99c",
       "bytes": 2967781
@@ -6252,8 +6256,8 @@
       "bytes": 7641
     },
     "tests/gradia/suite-inventory.json": {
-      "sha256": "0204a538f2c5f7f847be7241ea433c7cf1be4bb3295f589c19f39f6c029d1d17",
-      "bytes": 863
+      "sha256": "3aba234b6944544abdeff63897a66d10a51f5fb797114da4d3ba672aaa2af0e3",
+      "bytes": 901
     },
     "tests/gradia/turn-eligibility.test.cjs": {
       "sha256": "83cb5df93d34dc1f3ae5c5123c01cbc2d282556da2d85864afea66883007d2fb",
@@ -11384,7 +11388,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "fb366721663ad56930586b45d2b73dadb076a68787312985d4c48c372baff375",
+      "sha256": "18fdedd0b6de16a000a042c77f13863f7ec47735bb20749d072631f17368fe8a",
       "bytes": 3783
     }
   },

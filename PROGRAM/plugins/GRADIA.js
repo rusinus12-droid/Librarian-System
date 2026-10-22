@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.26.4
+//@display-name GRADIA v0.26.5
 //@api 3.0
-//@version 0.26.4
+//@version 0.26.5
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -930,7 +930,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.26.4';
+  const PLUGIN_VERSION = '0.26.5';
   
   
   
@@ -8971,6 +8971,23 @@ function mergeAgentCbsWarnings(...warningLists) {
     };
   };
 
+  // A plain key can occur in a message only if every adjacent character pair of its
+  // space-free form occurs in the message's space-free data or prompt. Each searchable
+  // message keeps that pair set (built on first use), so most non-matching keys are
+  // rejected without a substring scan.
+  const lorePairSet = value => {
+    const pairs = new Set();
+    for (let index = 0; index + 1 < value.length; index += 1) pairs.add(value.slice(index, index + 2));
+    return pairs;
+  };
+  const loreMessagePairs = message => {
+    if (!message.pairs) {
+      message.pairs = lorePairSet(message.compactData);
+      for (const pair of lorePairSet(message.prompt.replace(/ /g, ''))) message.pairs.add(pair);
+    }
+    return message.pairs;
+  };
+
   const loreKeyMatchesSearchMessages = (keys, messages, options = {}) => {
     const cleanKeys = splitLoreKeys(keys).map(key => key.trim()).filter(Boolean);
     if (!cleanKeys.length) return false;
@@ -8980,19 +8997,26 @@ function mergeAgentCbsWarnings(...warningLists) {
     let allMatched = true;
     for (const key of cleanKeys) {
       if (!key) continue;
+      const regexKey = useRegex || /^\/.+\/[a-z]*$/i.test(key);
+      const regex = regexKey ? makeLoreRegex(key) : null;
+      const normalizedKey = regexKey ? '' : normalizeForLoreMatch(key);
+      const compactKey = normalizedKey.replace(/ /g, '');
+      const keyPairs = !regexKey && !fullWord && compactKey.length >= 2 ? [...lorePairSet(compactKey)] : null;
       let matched = false;
       for (const message of messages) {
-        if (useRegex || /^\/.+\/[a-z]*$/i.test(key)) {
-          const regex = makeLoreRegex(key);
+        if (regexKey) {
           if (regex) {
             regex.lastIndex = 0;
             matched = regex.test(message.data);
           }
         } else if (fullWord) {
-          matched = message.splitWords.has(normalizeForLoreMatch(key));
+          matched = message.splitWords.has(normalizedKey);
         } else {
-          const normalizedKey = normalizeForLoreMatch(key);
-          matched = message.compactData.includes(normalizedKey.replace(/ /g, ''))
+          if (keyPairs) {
+            const pairs = loreMessagePairs(message);
+            if (!keyPairs.every(pair => pairs.has(pair))) continue;
+          }
+          matched = message.compactData.includes(compactKey)
             || message.data.includes(normalizedKey)
             || message.prompt.includes(normalizedKey);
         }
@@ -9086,6 +9110,10 @@ function mergeAgentCbsWarnings(...warningLists) {
     const defaultRecursiveScanning = settings?.loreRecursiveScanning !== false;
     const windowCache = new Map();
     const staticRouteCache = new Map();
+    // Recursive messages only accumulate. A candidate whose primary keys missed every
+    // recursive message so far searches only the ones added since; one that matched but
+    // failed its conditional keys is re-checked from the same point, as before.
+    const recursiveSearched = new Map();
 
     const windowsForDepth = scanDepth => {
       if (windowCache.has(scanDepth)) return windowCache.get(scanDepth);
@@ -9152,9 +9180,11 @@ function mergeAgentCbsWarnings(...warningLists) {
                   : '';
             staticRouteCache.set(i, staticRoute);
           }
-          const recursiveMatched = !staticRoute && recursiveForCandidate.length
-            ? matchKeys(primaryKeys, recursiveForCandidate)
+          const recursiveFrom = recursiveSearched.get(i) || 0;
+          const recursiveMatched = !staticRoute && recursiveForCandidate.length > recursiveFrom
+            ? matchKeys(primaryKeys, recursiveFrom ? recursiveForCandidate.slice(recursiveFrom) : recursiveForCandidate)
             : false;
+          if (!staticRoute && !recursiveMatched) recursiveSearched.set(i, recursiveForCandidate.length);
           isActive = !!staticRoute || recursiveMatched;
           activationRoute = staticRoute || (recursiveMatched ? 'recursive' : '');
           if (!isActive) continue;
@@ -9917,7 +9947,31 @@ function mergeAgentCbsWarnings(...warningLists) {
     return raw;
   };
 
+  // Pairs grow with lorebook size (query tokens x entry identity tokens), so the pair cache
+  // is sized for large lorebooks; a token's n-gram key set depends only on the token. Both
+  // are pure memos and are cleared whole at their limit: evicting the oldest key one at a
+  // time leaves deleted slots that every later keys().next() has to skip.
+  const LORE_JACCARD_SIMILARITY_CACHE_LIMIT = 200000;
+  const LORE_JACCARD_GRAM_CACHE_LIMIT = 50000;
   const LoreJaccardTokenSimilarityCache = new Map();
+  const LoreJaccardGramKeyCache = new Map();
+  const loreJaccardGramKeys = token => {
+    let keys = LoreJaccardGramKeyCache.get(token);
+    if (!keys) {
+      keys = new Set(loreJaccardCharNgrams(token, 48).map(loreJaccardNormalizeKey).filter(Boolean));
+      if (LoreJaccardGramKeyCache.size >= LORE_JACCARD_GRAM_CACHE_LIMIT) LoreJaccardGramKeyCache.clear();
+      LoreJaccardGramKeyCache.set(token, keys);
+    }
+    return keys;
+  };
+  const loreJaccardGramJaccard = (left, right) => {
+    const leftKeys = loreJaccardGramKeys(left), rightKeys = loreJaccardGramKeys(right);
+    if (!leftKeys.size || !rightKeys.size) return 0;
+    let overlap = 0;
+    leftKeys.forEach(key => { if (rightKeys.has(key)) overlap += 1; });
+    const union = leftKeys.size + rightKeys.size - overlap;
+    return union > 0 ? overlap / union : 0;
+  };
   const loreJaccardTokenSimilarity = (leftValue, rightValue) => {
     const left = loreJaccardNormalizeKey(leftValue);
     const right = loreJaccardNormalizeKey(rightValue);
@@ -9934,16 +9988,13 @@ function mergeAgentCbsWarnings(...warningLists) {
       if (leftStem.length >= 3 && rightStem.length >= 3 && leftStem === rightStem) {
         similarity = LORE_JACCARD_TUNING.stemMatchSimilarity;
       } else {
-        const grams = loreJaccardLexicalStats(loreJaccardCharNgrams(left, 48), loreJaccardCharNgrams(right, 48));
-        similarity = grams.jaccard >= LORE_JACCARD_TUNING.ngramMatchFloor
-          ? clampNumber(grams.jaccard * LORE_JACCARD_TUNING.ngramMatchScale, 0, LORE_JACCARD_TUNING.ngramMatchCap, 0)
+        const gramJaccard = loreJaccardGramJaccard(left, right);
+        similarity = gramJaccard >= LORE_JACCARD_TUNING.ngramMatchFloor
+          ? clampNumber(gramJaccard * LORE_JACCARD_TUNING.ngramMatchScale, 0, LORE_JACCARD_TUNING.ngramMatchCap, 0)
           : 0;
       }
     }
-    if (LoreJaccardTokenSimilarityCache.size >= 5000) {
-      const oldest = LoreJaccardTokenSimilarityCache.keys().next().value;
-      if (oldest !== undefined) LoreJaccardTokenSimilarityCache.delete(oldest);
-    }
+    if (LoreJaccardTokenSimilarityCache.size >= LORE_JACCARD_SIMILARITY_CACHE_LIMIT) LoreJaccardTokenSimilarityCache.clear();
     LoreJaccardTokenSimilarityCache.set(cacheKey, similarity);
     return similarity;
   };
@@ -11492,6 +11543,7 @@ ${passage.text || ''}`, 420));
     });
     const selected = [];
     const selectedFeatures = [];
+    const mmrSimilaritySeen = new Map();
     const covered = new Set();
     const expansionReasons = new Set();
     let usedChars = 0;
@@ -11576,8 +11628,14 @@ ${passage.text || ''}`, 420));
         for (let index = 0; index < remaining.length; index += 1) {
           const item = remaining[index];
           const gainTokens = Array.from(item.coverage).filter(token => !covered.has(token));
-          let maxSimilarity = 0;
-          for (const prior of selectedFeatures) maxSimilarity = Math.max(maxSimilarity, loreMmrFeatureSimilarity(item.feature, prior.feature));
+          // selectedFeatures only grows, so each item compares only with the features
+          // selected since its previous evaluation.
+          const seen = mmrSimilaritySeen.get(item) || { count: 0, max: 0 };
+          let maxSimilarity = seen.max;
+          for (let prior = seen.count; prior < selectedFeatures.length; prior += 1) {
+            maxSimilarity = Math.max(maxSimilarity, loreMmrFeatureSimilarity(item.feature, selectedFeatures[prior].feature));
+          }
+          mmrSimilaritySeen.set(item, { count: selectedFeatures.length, max: maxSimilarity });
           const ratio = bestRelevance > 0 ? item.relevance / bestRelevance : 0;
           const gap = Math.max(0, lastSelectedRelevance - item.relevance);
           const confidenceSupportsCluster = item.confidence >= Math.max(
@@ -11763,20 +11821,25 @@ ${passage.text || ''}`, 420));
     }));
     const selected = [];
     const selectedFeatures = preparedSeeds.slice();
+    const mmrSimilaritySeen = new Map();
     while (remaining.length && selected.length < limit) {
       let bestIndex = -1;
       let best = null;
       for (let index = 0; index < remaining.length; index += 1) {
         const candidate = remaining[index];
-        let maxSimilarity = 0;
-        let similarTo = '';
-        for (const prior of selectedFeatures) {
+        // selectedFeatures only grows; resume from the features this candidate already saw.
+        const seen = mmrSimilaritySeen.get(candidate) || { count: 0, max: 0, similarTo: '' };
+        let maxSimilarity = seen.max;
+        let similarTo = seen.similarTo;
+        for (let priorIndex = seen.count; priorIndex < selectedFeatures.length; priorIndex += 1) {
+          const prior = selectedFeatures[priorIndex];
           const similarity = loreMmrFeatureSimilarity(candidate.feature, prior.feature);
           if (similarity > maxSimilarity) {
             maxSimilarity = similarity;
             similarTo = prior.key;
           }
         }
+        mmrSimilaritySeen.set(candidate, { count: selectedFeatures.length, max: maxSimilarity, similarTo });
         const mmrScore = lambda * candidate.relevance - (1 - lambda) * maxSimilarity;
         const evaluated = { ...candidate, mmrScore, maxSimilarity, similarTo };
         if (
@@ -37594,6 +37657,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const sharedContextStartedAt = Date.now();
     Runtime.pipelineTimings.sharedContext.startedAt = sharedContextStartedAt;
     let sharedRisuContext = null;
+    // The cache-plan projection below materializes each stage's view from the same messages,
+    // stage settings and references prepareStage would use; prepareStage adopts it once.
+    const stageViewPreviews = new Map();
     const reusableInputAssistStaticSnapshot = await consumeInputAssistStaticHandoff(messages, baseRecent, settings);
     if (hasSharedContextConsumer) {
       const sharedContextSettings = scopedSettingsForStage(settings, 'shadow_act');
@@ -37648,9 +37714,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const previewSettings = scopedSettingsForStage(settings, entry.stageName);
         const previewRecent = attachInputAssistContinuityState(buildRecentChat(messages, previewSettings), settings);
         previewRecent.runLineage = runLineage;
+        previewRecent.arcDirector = arcControl;
         try {
           const previewRefs = stageRisuRefsByStage[entry.stageName] || sharedRisuRefs;
+          const previewStartedAt = Date.now();
           const previewView = materializeSharedRisuContext(sharedRisuContext, previewRecent, previewSettings, previewRefs);
+          stageViewPreviews.set(entry.stageName, { recent: previewRecent, view: previewView, elapsedMs: Date.now() - previewStartedAt });
           cacheViewProjections.push({
             ...entry,
             sharedPrefixHash: previewView.referencePacketHash || '',
@@ -37710,14 +37779,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const scopedSettings = scopedSettingsForStage(settings, stageName);
       if (usesLibEvidence) scopedSettings[LIB_EVIDENCE_CONTEXT] = libReadSession;
       scopedSettings.sharedReferencePromptCacheEnabled = promptCachePlan[stageName]?.enabled === true;
-      const recent = attachInputAssistContinuityState(buildRecentChat(messages, scopedSettings), settings);
+      const preview = sharedRisuContext ? stageViewPreviews.get(stageName) : null;
+      stageViewPreviews.delete(stageName);
+      const recent = preview?.recent || attachInputAssistContinuityState(buildRecentChat(messages, scopedSettings), settings);
       recent.runLineage = runLineage;
       recent.arcDirector = arcControl;
       const refs = stageRisuRefsByStage[stageName] || sharedRisuRefs;
       if (sharedRisuContext) {
         const contextStartedAt = Date.now();
-        const risuContext = materializeSharedRisuContext(sharedRisuContext, recent, scopedSettings, refs);
-        const contextElapsedMs = Date.now() - contextStartedAt;
+        const risuContext = preview?.view || materializeSharedRisuContext(sharedRisuContext, recent, scopedSettings, refs);
+        const contextElapsedMs = preview ? preview.elapsedMs : Date.now() - contextStartedAt;
         risuSnapshot = risuContext.snapshot || risuSnapshot;
         const stageReferenceRetryState = makeStageReferenceRetryState(risuContext);
         stageReferenceRetryStates[stageName] = stageReferenceRetryState;
