@@ -15,6 +15,13 @@ for(const writingMode of ['novel','rp'])for(const unified of [false,true])test(w
    assert.equal((system.match(/NSFW GUIDANCE —/g)||[]).length,1);
    assert.ok(system.includes('NSFW GUIDANCE — '+mode.toUpperCase()+':'));
    assert.match(system,/proposed USER input choices/);assert.match(system,/unsubmitted candidates/);
+   if(writingMode==='novel'){
+    assert.match(system,/NOVEL AUTHOR INPUTS/);assert.match(system,/NPC initiative and reactions/);assert.match(system,/offscreen world movement/);
+    assert.doesNotMatch(system,/keep every candidate strictly on the user\/player side|never script the NPC response/i);
+   }else{
+    assert.match(system,/PLAYER-CONTROLLED RP INPUTS/);assert.match(system,/never script the NPC response/);
+    assert.doesNotMatch(system,/NOVEL AUTHOR INPUTS/);
+   }
   }
   assert.equal(await f.done(pending),true);assert.match(f.sent.at(-1),/^WRITER_CHOICE_/);
   assert.doesNotMatch(f.sent.at(-1),/NSFW GUIDANCE|proposed USER input choices/);

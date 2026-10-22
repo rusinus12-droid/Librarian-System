@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-22T14:14:07.368Z",
+  "generatedAt": "2026-10-22T14:48:54.090Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -1312,7 +1312,7 @@
       "sourceAuthorityUntilCutover": true
     },
     "gradiaThreeOwnerRead": {
-      "pluginVersion": "0.26.11",
+      "pluginVersion": "0.26.12",
       "principal": "serial_gradation_agents_for_rp",
       "readers": [
         "libra",
@@ -1428,7 +1428,7 @@
     "libra": "2.4.2",
     "lia": "0.27.2",
     "retrace": "1.10.0",
-    "gradia": "0.26.11"
+    "gradia": "0.26.12"
   },
   "files": {
     "_common.cmd": {
@@ -1640,8 +1640,8 @@
       "bytes": 5722
     },
     "docs/GRADIA_INPUT_WRITER_CONTEXT_20261022.md": {
-      "sha256": "978efd3630604bbf4a1bd017592f4b1e3dbb3a9438ade00f5e4010fa62cfbe4e",
-      "bytes": 5150
+      "sha256": "7b2e60b02afe53e594855669a5af7752cf6f51faae73d3e2b6b1dd23df01bd1f",
+      "bytes": 5276
     },
     "docs/GRADIA_LIBRA_LENS_READ_20261022.md": {
       "sha256": "da7945d513c1688e0aad47dc9eb3561dc361e3a74d3efd43c7c07f5f411ad2e3",
@@ -1756,8 +1756,8 @@
       "bytes": 12837
     },
     "docs/gui-redesign/gradia.html": {
-      "sha256": "7466157624086d0adb7a5f2667adddcfb20d30903662e4ad230f4ccbe448cf70",
-      "bytes": 99689
+      "sha256": "e06e5ee699585e29e0001e2a1af48854dba111d7fad2647a99f055cf8786c4d1",
+      "bytes": 99120
     },
     "docs/gui-redesign/GUI-APPLICATION.md": {
       "sha256": "f25df59987446b7d2e808fc34dedd776f74cb6557b6a560de89d17371d4d1b13",
@@ -3568,7 +3568,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "d5359a65f4799452d74c1a27bbb78345aa9b128ef839ccef5eb89e3204e40d07",
+      "sha256": "1b54860f48c62b6d53f80251c315c7d0d6c65c055289f874ace220fab74df259",
       "bytes": 11833
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3948,7 +3948,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "52abd338eb58c865da6d56fc1038653ec5844651fb84396a7160c423899cde84",
+      "sha256": "7f945e72c3dcccff69158ed80e511a50a72bb8da9411181ae3422b10840687df",
       "bytes": 3350
     },
     "plugins/Flashback_Memory.js": {
@@ -3956,8 +3956,8 @@
       "bytes": 3377193
     },
     "plugins/GRADIA.js": {
-      "sha256": "710401dfa0db28d6be841c986f1eda41f672624b68558509582d7bb7e90064f0",
-      "bytes": 2993794
+      "sha256": "5f01f3849958ff99fc926fd49edf265b85a5e3365eed6215236619e7208a2218",
+      "bytes": 2990957
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "cb4d326f024a141557e3a33d2b3a2079c048df2633e787f9b8ebe423d2a7a792",
@@ -6096,8 +6096,8 @@
       "bytes": 17118
     },
     "tests/gradia_input_writer_unified_runtime_test.cjs": {
-      "sha256": "9e748388914b86e7b81df4b20a5c8df50be82ea8cc96a37f981e9889b4a2ccab",
-      "bytes": 17304
+      "sha256": "d8db7c930c7a27b2e8f4ff11edd97977ea76a9830f1ac9b010da925a1873f8d9",
+      "bytes": 17782
     },
     "tests/gradia_legacy_hosting_retirement_test.cjs": {
       "sha256": "112a451b396ab02f7e6ba11dc675db5ee90d5608d249710853d2e43889318479",
@@ -6108,8 +6108,8 @@
       "bytes": 7280
     },
     "tests/gradia_nsfw_gui_runtime_test.cjs": {
-      "sha256": "6d69b050f8fbd6d15a21b234b138150b2b57bb8884844c5353b84b71371cb170",
-      "bytes": 3305
+      "sha256": "4742b7a9da71a6c65f07717f90dc73c9941b5ed4dda126c0dab8190959629252",
+      "bytes": 2748
     },
     "tests/gradia_plugin_integration_test.cjs": {
       "sha256": "55c478dd437545f98692b030a206c5e852df6f5486e40ed30e31bf5fe05e7414",
@@ -6264,8 +6264,8 @@
       "bytes": 2487
     },
     "tests/gradia/manual-skills.test.cjs": {
-      "sha256": "3640bdb5dc0515e4a936b39c0ba5c5a56b28b20af3941adcb06e94e914b94e67",
-      "bytes": 23726
+      "sha256": "139045203b6ba88f4a68896b7a819b1fc3aee78376a19a6d7e08bbbfdbee1f45",
+      "bytes": 20716
     },
     "tests/gradia/memory-retirement.test.cjs": {
       "sha256": "8a11d182a681b21a1ae0c9d33bee2c4b94f4b3ea23d4003c4317dba272bdf3b9",
@@ -11468,7 +11468,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "c72c8f9536530b5efb539678e9ec139163341981043505c141ad71dd30e079e1",
+      "sha256": "3e7ce696dd72bcc178355b9081b19fc3d8bfa15b4a28d9c526a0099de0e61564",
       "bytes": 3784
     }
   },

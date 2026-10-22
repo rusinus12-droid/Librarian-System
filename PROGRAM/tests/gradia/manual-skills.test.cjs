@@ -18,8 +18,8 @@ async function pipelineFixture(options={}){
  return {h,prompts,run:(messages=[{role:'user',messageId:'u-current',content:'Continue the scene.'}])=>h.hooks.beforeRequest(messages,'model')};
 }
 for(const writingMode of ['novel','rp'])for(const heavy of [false,true])test(writingMode+' '+(heavy?'heavy':'light')+' NSFW guidance stays in internal model calls and preserves the host prefill at final handoff',async()=>{
- for(const [mode,enabled] of [['off',true],['soft',true],['explicit',false]]){
-  const f=await pipelineFixture({heavy,runtime:{writing_mode:writingMode,nsfw_mode:mode,nsfw_guidance_enabled:String(enabled)}});
+ for(const [mode,enabled] of [['off',true],['soft',true],['explicit',true],['explicit',false]]){
+  const f=await pipelineFixture({heavy,runtime:{writing_mode:writingMode,nsfw_mode:mode,nsfw_guidance_enabled:String(enabled),nsfw_inject_final_request:'true',nsfwInjectFinalRequest:true}});
   const messages=[{role:'user',messageId:'u-current',content:'Continue the scene.'},{role:'assistant',content:'HOST_PREFILL_SENTINEL'}],original=JSON.stringify(messages);
   const out=await f.run(messages);assert.equal(f.prompts.length,heavy?8:4);assert.equal(JSON.stringify(messages),original);
   for(const body of f.prompts){
@@ -30,78 +30,30 @@ for(const writingMode of ['novel','rp'])for(const heavy of [false,true])test(wri
   assert.deepEqual(JSON.parse(JSON.stringify(out.filter(m=>m.role==='assistant'))),messages.filter(m=>m.role==='assistant'));
  }
 });
-for(const writingMode of ['novel','rp'])test(writingMode+' nsfwInjectFinalRequest injects adult scene preservation guidance into final request',async()=>{
- for(const mode of ['soft','direct','explicit']){
-  const f=await pipelineFixture({heavy:false,runtime:{writing_mode:writingMode,nsfw_mode:mode,nsfw_guidance_enabled:'true',nsfw_inject_final_request:'true'}});
-  const messages=[{role:'user',messageId:'u-current',content:'Continue the scene.'},{role:'assistant',content:'HOST_PREFILL_SENTINEL'}];
-  const out=await f.run(messages);
-  const outStr=JSON.stringify(out);
-  assert.ok(outStr.includes(`NSFW GUIDANCE — ${mode.toUpperCase()}:`), `final request must include ${mode} guidance`);
-  assert.ok(outStr.includes('In final candidate finishing, preserve mature scenes and intimacy'), 'preservation instructions must be present in final request');
- }
-});
-test('debugNsfwGuidance covers all modes, phases, and injectFinal switch',async()=>{
+test('NSFW guidance covers internal phases and stays absent from final overlays despite retired flags',async()=>{
  const h=await load();
- assert.equal(h.plugin.debugNsfwGuidance('off','writing',true,false),'');
- assert.equal(h.plugin.debugNsfwGuidance('off','final',true,true),'');
- assert.equal(h.plugin.debugNsfwGuidance('explicit','writing',false,false),'');
- assert.equal(h.plugin.debugNsfwGuidance('explicit','final',false,true),'');
- for(const mode of ['soft','direct','explicit']){
-  const writingBlock=h.plugin.debugNsfwGuidance(mode,'writing',true,false);
-  assert.ok(writingBlock.startsWith(`NSFW GUIDANCE — ${mode.toUpperCase()}:`));
-  assert.ok(writingBlock.includes('Apply this mode to the actual prose only when supported'));
-  assert.ok(!writingBlock.includes(`NSFW guidance is enabled in ${mode.toUpperCase()} mode`),'no redundant mode header line');
-  const patchBlock=h.plugin.debugNsfwGuidance(mode,'patch',true,false);
-  assert.ok(patchBlock.includes('Apply this mode only through domain-relevant edits to the current same-turn draft.'));
-  const analysisBlock=h.plugin.debugNsfwGuidance(mode,'analysis',true,false);
-  assert.ok(analysisBlock.includes('In private analysis, convert this mode into evidence-aware portrayal criteria'));
-  assert.ok(!analysisBlock.includes('use aftermath or aftercare inside the current scene'),'analysis phase avoids prose drafting rules');
-  const inputWriterBlock=h.plugin.debugNsfwGuidance(mode,'input_writer',true,false);
-  assert.ok(inputWriterBlock.includes('Apply this mode only to proposed USER input choices supported by the current scene.'));
-  assert.ok(!inputWriterBlock.includes('never script an unperformed player reaction'),'input_writer phase avoids conflicting prose-only player-reaction ban');
+ for(const writingMode of ['novel','rp'])for(const mode of ['off','soft','direct','explicit']){
+  for(const phase of ['input_writer','analysis','writing','patch']){
+   const block=h.plugin.debugNsfwGuidance(mode,phase,true,writingMode);
+   assert.equal(block.startsWith('NSFW GUIDANCE — '+mode.toUpperCase()+':'),mode!=='off');
+   assert.equal(h.plugin.debugNsfwGuidance(mode,phase,false,writingMode),'');
+  }
+  assert.equal(h.plugin.debugNsfwGuidance(mode,'final',true,writingMode),'');
+  const overlay=h.plugin.debugBuildFinalOverlay('Candidate draft',{latestUser:'Continue.'},{writingMode,nsfwMode:mode,nsfwGuidanceEnabled:true,nsfwInjectFinalRequest:true,nsfw_inject_final_request:true});
+  assert.doesNotMatch(overlay,/NSFW GUIDANCE —/);
  }
- for(const mode of ['soft','direct','explicit']){
-  assert.equal(h.plugin.debugNsfwGuidance(mode,'final',true,false),'');
- }
- for(const mode of ['soft','direct','explicit']){
-  const block=h.plugin.debugNsfwGuidance(mode,'final',true,true);
-  assert.ok(block.startsWith(`NSFW GUIDANCE — ${mode.toUpperCase()}:`));
-  assert.ok(block.includes('In final candidate finishing, preserve mature scenes and intimacy already established'));
-  assert.ok(!block.includes('use aftermath or aftercare inside the current scene'),'final guidance uses concise finishing rules instead of internal drafting rules');
- }
- const finalOverlayOff=h.plugin.debugBuildFinalOverlay('Candidate draft',{latestUser:'Continue.'},{writingMode:'novel',nsfwMode:'explicit',nsfwGuidanceEnabled:true,nsfwInjectFinalRequest:false});
- assert.ok(!finalOverlayOff.includes('NSFW GUIDANCE — EXPLICIT:'));
- const finalOverlayOn=h.plugin.debugBuildFinalOverlay('Candidate draft',{latestUser:'Continue.'},{writingMode:'novel',nsfwMode:'explicit',nsfwGuidanceEnabled:true,nsfwInjectFinalRequest:true});
- assert.ok(finalOverlayOn.includes('NSFW GUIDANCE — EXPLICIT:'));
 });
-test('NSFW runtime settings serialize, deserialize, and persist cleanly across GUI state roundtrips',async()=>{
+test('retired final-request NSFW flags are discarded on runtime and GUI setting roundtrips',async()=>{
  const probe={};
- const h=await load({
-  testGlobals:{__nsfwGuiProbe:probe},
-  transformSource:s=>s.replace('  const publicApi = Object.freeze({','  Object.assign(globalThis.__nsfwGuiProbe,{ensureGuiState,saveGuiState,settingsForGuiPreview,applyRecommendedSettingsToState,Gui});\n  const publicApi = Object.freeze({')
- });
- await h.plugin.saveRuntimeSettings({
-  nsfw_mode:'direct',
-  nsfw_guidance_enabled:'true',
-  nsfw_inject_final_request:'true'
- });
- const stored=await h.plugin.getRuntimeSettings();
- assert.equal(stored.nsfw_mode,'direct');
- assert.equal(stored.nsfw_guidance_enabled,'true');
- assert.equal(stored.nsfw_inject_final_request,'true');
- const guiState=await probe.ensureGuiState(true);
- assert.equal(guiState.runtime.nsfwMode,'direct');
- assert.equal(guiState.runtime.nsfwGuidanceEnabled,true);
- assert.equal(guiState.runtime.nsfwInjectFinalRequest,true);
- await probe.saveGuiState();
- assert.equal(probe.Gui.state.runtime.nsfwInjectFinalRequest,true);
- assert.equal((await h.plugin.getRuntimeSettings()).nsfw_inject_final_request,'true');
- probe.Gui.state.runtime.nsfwInjectFinalRequest=false;
- assert.equal(probe.settingsForGuiPreview().nsfwInjectFinalRequest,false);
- probe.Gui.state.runtime.nsfwInjectFinalRequest=true;
- assert.equal(probe.settingsForGuiPreview().nsfwInjectFinalRequest,true);
- probe.applyRecommendedSettingsToState(probe.Gui.state);
- assert.equal(probe.Gui.state.runtime.nsfwInjectFinalRequest,false);
+ const h=await load({testGlobals:{__nsfwGuiProbe:probe},
+  transformSource:s=>s.replace('  const publicApi = Object.freeze({','  Object.assign(globalThis.__nsfwGuiProbe,{ensureGuiState,saveGuiState,settingsForGuiPreview,Gui});\n  const publicApi = Object.freeze({')});
+ await h.plugin.saveRuntimeSettings({nsfw_mode:'direct',nsfw_guidance_enabled:'true',nsfw_inject_final_request:'true',nsfwInjectFinalRequest:true});
+ const absent=value=>{assert.equal(Object.hasOwn(value,'nsfw_inject_final_request'),false);assert.equal(Object.hasOwn(value,'nsfwInjectFinalRequest'),false);};
+ let stored=await h.plugin.getRuntimeSettings();assert.equal(stored.nsfw_mode,'direct');assert.equal(stored.nsfw_guidance_enabled,'true');absent(stored);
+ const state=await probe.ensureGuiState(true);assert.equal(state.runtime.nsfwMode,'direct');assert.equal(state.runtime.nsfwGuidanceEnabled,true);absent(state.runtime);
+ absent(probe.settingsForGuiPreview());
+ await probe.saveGuiState();stored=await h.plugin.getRuntimeSettings();assert.equal(stored.nsfw_mode,'direct');absent(stored);
+ absent(h.plugin.debugImportedRuntimeToGui({nsfw_mode:'soft',nsfw_inject_final_request:'true',nsfwInjectFinalRequest:true}));
 });
 test('basic quality survives retired router flags and zero priorities in every stage and writing mode',async()=>{
  const h=await load();
