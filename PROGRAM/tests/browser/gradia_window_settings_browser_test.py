@@ -69,6 +69,8 @@ with sync_playwright() as pw:
             check(f'{width}x{height}: transparent exterior', all(c=='rgba(0, 0, 0, 0)' for c in g['bg']))
             go('references')
             frame.locator('[data-subtab=skill]').click()
+            if not frame.locator('[data-skill-customize]').evaluate('e=>e.open'):
+                frame.locator('[data-skill-customize] > summary').click()
             choice = frame.locator('[data-skill-selected]').first
             skill_id = choice.get_attribute('data-skill-selected')
             choice.scroll_into_view_if_needed()
