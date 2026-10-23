@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-23T04:40:35.412Z",
+  "generatedAt": "2026-10-23T06:37:07.107Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -3572,7 +3572,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "d28efe899cced3ea189b6f103538ae73eb0c7de5abbb150c8a50938ee9f4de88",
+      "sha256": "0e639a6866fbc0413f30ff26eaddb54db83ff99220d3018d05eb2493356bf5c3",
       "bytes": 11833
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3964,24 +3964,24 @@
       "bytes": 3350
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "300b9438e671e7ea3d3bf23389288fbfdcc0a0632494779881cef52f58334fdf",
-      "bytes": 3398130
+      "sha256": "68a06ecfde7818eaa7dada37c0ae78603496dedef833be4cac432443bc46803a",
+      "bytes": 3405750
     },
     "plugins/GRADIA.js": {
       "sha256": "d658e0f1de531383759e1a5e89973dd484886bc06c9d04a47ef3c827cbfa1561",
       "bytes": 2999024
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "935d4278a1e2ccbd59bfe423248270a6979941bc08b10aafc4b3b4ffcf29ed8c",
-      "bytes": 4032506
+      "sha256": "4d87500d565b5183d15fc35dbc9ee74f49bf6f4020d936824a0783e47412e7c6",
+      "bytes": 4041182
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "d68a72395072642b26eaf2ea05f1bb16c13c73731d0f56e5a1a5ee75882c5a2c",
       "bytes": 1647506
     },
     "plugins/LIBRA.js": {
-      "sha256": "9c81b839ed34a9a7d1e54d079fca582c93e5222a7d7f77494193423456a7bfca",
-      "bytes": 6442176
+      "sha256": "c37fddc70726ff349afe2e9abaff0aec8cfd5491418c5fd335bfbcce56f89a87",
+      "bytes": 6451811
     },
     "plugins/RETRACE.js": {
       "sha256": "330b4b142d5ecc43c8b88afe38c30c0533bc02c1e283ba066487abc426c46ffe",
@@ -10591,6 +10591,10 @@
       "sha256": "9fb3c99ac6372edb62b96fbf4881d4ba1ba8a6037cd2c51516e4c60472b1965f",
       "bytes": 2080
     },
+    "tests/storage_transition_gui_recovery_test.cjs": {
+      "sha256": "c64f0e5010d68a98616daf126480804eccef44fbbb7744ba39227ae3da2526fe",
+      "bytes": 15883
+    },
     "tests/storage-compute-mode-contract-v2.test.cjs": {
       "sha256": "e19d2e89466c95ba15e30b97699ca25515925d8aa19e8bc32a42bff6022259d2",
       "bytes": 2701
@@ -10880,8 +10884,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "44ce0ce5f81e3e70e87f51a68562cfc1a5f981aae5e8fd4bc92375303a355a2e",
-      "bytes": 55324
+      "sha256": "690ac4d56369dd9eb74dcffe2122d4bedaa0d0c139abf64ccc7c7c70afa07596",
+      "bytes": 55370
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",

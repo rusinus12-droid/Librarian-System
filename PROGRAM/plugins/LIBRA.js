@@ -13340,18 +13340,54 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         if (relayAbort) upstreamSignal?.removeEventListener?.('abort', relayAbort);
       }
     };
+    const LIBRA_SYNC_JOB_STORAGE_KEY = '__memory_suite_internal_sync_job_v1__:libra';
+    const createConfigSafePluginStorage = rawStorage => {
+      if (!rawStorage || typeof rawStorage !== 'object') return rawStorage;
+      return {
+        getItem: async (targetKey, ...rest) => {
+          if (String(targetKey || '') === LIBRA_SYNC_JOB_STORAGE_KEY) return null;
+          return typeof rawStorage.getItem === 'function' ? await rawStorage.getItem(targetKey, ...rest) : null;
+        },
+        setItem: typeof rawStorage.setItem === 'function' ? rawStorage.setItem.bind(rawStorage) : undefined,
+        removeItem: typeof rawStorage.removeItem === 'function' ? rawStorage.removeItem.bind(rawStorage) : undefined,
+        keys: typeof rawStorage.keys === 'function' ? rawStorage.keys.bind(rawStorage) : undefined,
+        clear: typeof rawStorage.clear === 'function' ? rawStorage.clear.bind(rawStorage) : undefined,
+      };
+    };
+    const assertLibraConfigStorageTransitionReady = async (rawStorage, targetKey) => {
+      if (!MemorySuiteConfigStorageBridge.shouldRoute('plugin', targetKey)) return;
+      try {
+        const mainProxy = MemorySuiteStorageBridge.createPluginStorageProxy(rawStorage);
+        if (typeof mainProxy?.getItem === 'function') {
+          await mainProxy.getItem('libra:v1:settings:source-tracking:v1');
+        }
+      } catch (error) {
+        const code = String(error?.code || error?.cause?.code || '').trim();
+        const msg = String(error?.message || error || '');
+        if (code === 'MEMORY_SUITE_STORAGE_TRANSITION_IN_PROGRESS' || msg.includes('memory_suite_storage_transition_in_progress')) {
+          throw error;
+        }
+      }
+    };
     const getItem = async (key) => {
       try {
         const liveApi = storageApi();
-        const storage = MemorySuiteConfigStorageBridge.createPluginStorageProxy(liveApi?.pluginStorage);
+        await assertLibraConfigStorageTransitionReady(liveApi?.pluginStorage, key);
+        const storage = MemorySuiteConfigStorageBridge.createPluginStorageProxy(createConfigSafePluginStorage(liveApi?.pluginStorage));
         if (typeof storage?.getItem === 'function') return await storage.getItem(key);
-      } catch (error) { throw new Error(`pluginStorage read failed: ${key}: ${compact(error?.message || error, 300)}`); }
+      } catch (error) {
+        const wrapped = new Error(`pluginStorage read failed: ${key}: ${compact(error?.message || error, 300)}`);
+        if (error?.code) wrapped.code = error.code;
+        wrapped.cause = error;
+        throw wrapped;
+      }
       return null;
     };
     const setItem = async (key, value) => {
       try {
         const liveApi = storageApi();
-        const storage = MemorySuiteConfigStorageBridge.createPluginStorageProxy(liveApi?.pluginStorage);
+        await assertLibraConfigStorageTransitionReady(liveApi?.pluginStorage, key);
+        const storage = MemorySuiteConfigStorageBridge.createPluginStorageProxy(createConfigSafePluginStorage(liveApi?.pluginStorage));
         if (typeof storage?.setItem === 'function') {
           await storage.setItem(key, value);
           return true;
@@ -13364,7 +13400,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const removeItem = async (key) => {
       try {
         const liveApi = storageApi();
-        const storage = MemorySuiteConfigStorageBridge.createPluginStorageProxy(liveApi?.pluginStorage);
+        await assertLibraConfigStorageTransitionReady(liveApi?.pluginStorage, key);
+        const storage = MemorySuiteConfigStorageBridge.createPluginStorageProxy(createConfigSafePluginStorage(liveApi?.pluginStorage));
         if (typeof storage?.removeItem === 'function') {
           await storage.removeItem(key);
           return true;
@@ -80097,13 +80134,60 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return Gui.state;
   };
 
+  let retryLibraStorageInitialization = async () => ({ ok: false, pending: true });
+  let ensureLibraStorageTransitionWatcher = () => {};
+
+  const isLibraStorageTransitionError = error => {
+    const code = String(error?.code || error?.cause?.code || '').trim();
+    const message = String(error?.message || error || '');
+    return code === 'MEMORY_SUITE_STORAGE_TRANSITION_IN_PROGRESS'
+      || message.includes('memory_suite_storage_transition_in_progress');
+  };
+
+  const isLibraStorageTransitionActive = () => {
+    try {
+      const job = MemorySuiteStorageBridge.getSyncJob?.() || MemorySuiteStorageBridge.getSyncJobState?.();
+      if (job && (job.kind === 'global_mode' || job.scopeId === 'global_mode') && !['completed', 'failed', 'cancelled'].includes(String(job.status || ''))) {
+        return true;
+      }
+    } catch (_) {}
+    return Runtime.storageTransitionPending === true;
+  };
+
+  const routeLibraGuiToStorageRecovery = () => {
+    Gui.bookPage = 'settings';
+    Gui.bookSettingsWorkbenchSection = 'settings';
+    Gui.settingsHubSection = 'server';
+    Gui.section = 'settings';
+    Gui.tab = 'flow';
+  };
+
   const ensureGuiState = async (force = false) => {
     if (!Gui.state || force) {
       const editRevision = Gui.settingsEditRevision;
-      const settings = await loadSettings();
-      const basis = await readSettingsPersistenceBasis();
-      if (Gui.state && Gui.settingsEditRevision !== editRevision) { Gui.settingsBasisHash = basis.semanticHash; return Gui.state; }
-      applyGuiSettingsState(settings, { basisHash: basis.semanticHash });
+      try {
+        const settings = await loadSettings();
+        const basis = await readSettingsPersistenceBasis();
+        Runtime.storageTransitionPending = false;
+        if (Gui.state && Gui.settingsEditRevision !== editRevision) { Gui.settingsBasisHash = basis.semanticHash; return Gui.state; }
+        applyGuiSettingsState(settings, { basisHash: basis.semanticHash });
+      } catch (error) {
+        if (isLibraStorageTransitionError(error)) {
+          Runtime.storageTransitionPending = true;
+          Runtime.storageTransitionError = compact(error?.message || error, 240);
+          ensureLibraStorageTransitionWatcher();
+          routeLibraGuiToStorageRecovery();
+          if (!Gui.state) {
+            const fallbackSettings = Runtime.settings || {};
+            applyGuiSettingsState(fallbackSettings, { basisHash: '' });
+          }
+          return Gui.state;
+        }
+        throw error;
+      }
+    }
+    if (isLibraStorageTransitionActive() && Gui.bookPage === 'desk') {
+      routeLibraGuiToStorageRecovery();
     }
     return Gui.state;
   };
@@ -85145,6 +85229,25 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
   const buildLibraServerConnectionPanel = () => {
     const bookTheme = true; // Both visible entry points belong to BOOK_UX.
+    const transitionActive = isLibraStorageTransitionActive();
+    const transitionBanner = transitionActive ? guiEl('div', {
+      class: 'card',
+      dataset: { libraStorageTransitionNotice: 'true' }
+    }, [
+      guiEl('div', { class: 'split' }, [
+        guiEl('div', {}, [
+          guiEl('strong', { text: '저장소 이전 대기 또는 진행 중' }),
+          guiEl('p', { class: 'muted', text: '데이터 보호를 위해 이전이 완료될 때까지 정본 기억 및 설정 읽기가 잠겨 있습니다. 아래 저장 연결 패널에서 이전을 완료하거나 초기화를 다시 시도하세요.' })
+        ]),
+        guiEl('button', {
+          class: 'btn',
+          type: 'button',
+          dataset: { libraStorageRetry: 'true' },
+          text: '초기화 다시 시도',
+          onClick: () => { void retryLibraStorageInitialization({ fromGui: true }); }
+        })
+      ])
+    ]) : null;
     const storageHost = guiEl('div', { id: 'libraMemorySuiteServerConnectionPanel', class: 'card' }, [
       guiEl('strong', { text: '저장 설정을 불러오는 중…' })
     ]);
@@ -85156,7 +85259,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         theme: bookTheme ? 'book' : 'default'
       }).catch(error => guiSetStatus(`서버 연결 화면 오류: ${error?.message || error}`, true, true));
     }, 0);
-    return guiEl('div', { class: 'stack' }, [storageHost]);
+    return guiEl('div', { class: 'stack' }, [transitionBanner, storageHost].filter(Boolean));
   };
 
   const scheduleLibraPortableMemoryBackupMount = host => {
@@ -91010,12 +91113,19 @@ advanced
 
       const settled = await Promise.allSettled([settingsTask, embeddingTask, snapshotTask]);
       const rejected = settled.find(item => item.status === 'rejected');
+      const transitionRejected = settled.find(item => item.status === 'rejected' && isLibraStorageTransitionError(item.reason));
+      if (transitionRejected) {
+        Runtime.storageTransitionPending = true;
+        Runtime.storageTransitionError = compact(transitionRejected.reason?.message || transitionRejected.reason, 240);
+        ensureLibraStorageTransitionWatcher();
+        routeLibraGuiToStorageRecovery();
+      }
       if (rejected) perf.lastError = compact(rejected.reason?.message || rejected.reason, 500);
       if (!Gui.visible || openSerial !== Gui.openSerial || LibraMemoryCore.state.disposed) return false;
       // A user may start editing while background reads are in flight. Rendering is safe
       // because applyGuiSettingsState() refuses to replace a dirty draft.
       await renderSettingsGui();
-      guiSetStatus(rejected ? `일부 백그라운드 갱신 실패: ${perf.lastError}` : '최신 LIBRA 데이터를 확인했습니다.', !!rejected, false);
+      guiSetStatus(transitionRejected ? '저장소 이전 작업이 진행 중입니다. 저장 연결 패널에서 상태를 확인해 주세요.' : (rejected ? `일부 백그라운드 갱신 실패: ${perf.lastError}` : '최신 LIBRA 데이터를 확인했습니다.'), !!rejected, false);
       perf.hydratedAt = Date.now();
       // Native-copy completeness checking can scan sibling chat lineage. Keep it entirely
       // outside the opening critical path, then refresh only if it actually writes target data.
@@ -92725,12 +92835,16 @@ advanced
       }
     } catch (error) { warn('LIBRA recall delimiter display cleanup unavailable.', error); }
     await registerOutputListener();
-    await LibraMemoryCore.readySourceRules();
     try { LibraMemoryCore.prewarmVolatileMemoryGraphCorpus(); } catch (error) { warn('LIBRA runtime recall index prewarm unavailable.', error); }
+
+    let libraStorageStartupPromise = null;
+    let libraStorageTransitionUnsubscribe = null;
 
     const unload = async () => {
       // Retire the runtime before touching host APIs. Any failed/unavailable removal then
       // leaves only inert callbacks, and local timers cannot repopulate UI or storage.
+      try { libraStorageTransitionUnsubscribe?.(); } catch (_) {}
+      libraStorageTransitionUnsubscribe = null;
       LibraMemoryCore.state.disposed = true;
       LibraMemoryCore.disposeLensQueue();
       void stopLibraAttention();
@@ -92919,96 +93033,184 @@ advanced
       else if (typeof API.addEventListener === 'function') { await API.addEventListener('unload', unload); Runtime.hookStatus.unload = true; }
     } catch (_) {}
 
+    const completeLibraStorageStartup = async () => {
+      if (LibraMemoryCore.state.disposed) return false;
+      if (Runtime.storageStartupCompleted === true) return true;
+      if (libraStorageStartupPromise) return await libraStorageStartupPromise;
+      libraStorageStartupPromise = (async () => {
+        await LibraMemoryCore.readySourceRules();
+        await LibraProviderBridge.getConfig();
+        await LibraMemoryCore.loadSettings({ force: true });
+        await LibraMemoryCore.loadEmbeddingSettings({ force: true });
+        const settings = await loadSettings();
+        const basis = await readSettingsPersistenceBasis();
+        Runtime.storageTransitionPending = false;
+        Runtime.storageTransitionError = '';
+        Runtime.storageStartupCompleted = true;
+        if (!Gui.dirty) {
+          applyGuiSettingsState(settings, { preserveDirty: true, basisHash: basis.semanticHash });
+        }
+        void refreshHostRuntimeInfo();
+        setTimeout(async () => {
+          if (LibraMemoryCore.state.disposed) return;
+          try {
+            const recovered = await LibraMemoryCore.recoverCanonicalJobAtStartup();
+            if (recovered?.state === 'adopting') await LibraMemoryCore.resolveCanonicalCandidate({ jobId: recovered.jobId, decision: 'adopt' });
+          } catch (error) {
+            warn('LIBRA canonical job startup recovery deferred', error);
+          }
+        }, 450);
+        const pendingBoundaryStartupRetryDelays = [300, 1000, 2400, 4800];
+        const schedulePendingBoundaryStartupRecovery = (attempt = 0) => {
+          if (attempt >= pendingBoundaryStartupRetryDelays.length || LibraMemoryCore.state.disposed) return;
+          const timerKey = 'pending_boundary_startup_retry';
+          const delay = pendingBoundaryStartupRetryDelays[attempt];
+          const previous = LibraMemoryCore.state.timers.get(timerKey);
+          if (previous) clearTimeout(previous);
+          const timer = setTimeout(async () => {
+            if (LibraMemoryCore.state.timers.get(timerKey) === timer) LibraMemoryCore.state.timers.delete(timerKey);
+            if (LibraMemoryCore.state.disposed) return;
+            try {
+              const startupContext = await LibraMemoryCore.resolveContext();
+              const result = await LibraMemoryCore.recoverPendingLiveBoundaryAtStartup(startupContext);
+              if (result?.retryable === true && attempt + 1 < pendingBoundaryStartupRetryDelays.length) {
+                schedulePendingBoundaryStartupRecovery(attempt + 1);
+              }
+            } catch (error) {
+              const finalAttempt = attempt + 1 >= pendingBoundaryStartupRetryDelays.length;
+              LibraMemoryCore.state.lastPendingBoundaryRecovery = {
+                schema: 'libra.pending_live_boundary_store.v1',
+                at: Date.now(), phase: 'startup_recovery', reason: finalAttempt ? 'startup_context_unavailable' : 'startup_context_retry_pending',
+                attempt: attempt + 1, error: compact(error?.message || error, 500), retryable: !finalAttempt
+              };
+              if (!finalAttempt) schedulePendingBoundaryStartupRecovery(attempt + 1);
+            }
+          }, delay);
+          LibraMemoryCore.state.timers.set(timerKey, timer);
+        };
+        schedulePendingBoundaryStartupRecovery(0);
+        setTimeout(() => {
+          if (LibraMemoryCore.state.disposed) return;
+          void LibraMemoryCore.purgeLegacyWorldAdditionalData().catch(error => warn('LIBRA legacy world-candidate cleanup failed', error));
+        }, 750);
+        const nativeCopyStartupRetryDelays = [300, 900, 1800];
+        const scheduleNativeCopyStartupRetry = (attempt = 0) => {
+          if (attempt >= nativeCopyStartupRetryDelays.length || LibraMemoryCore.state.disposed) return;
+          const timerKey = 'native_copy_startup_retry';
+          const delay = nativeCopyStartupRetryDelays[attempt];
+          const previous = LibraMemoryCore.state.timers.get(timerKey);
+          if (previous) clearTimeout(previous);
+          const timer = setTimeout(async () => {
+            if (LibraMemoryCore.state.timers.get(timerKey) === timer) LibraMemoryCore.state.timers.delete(timerKey);
+            if (LibraMemoryCore.state.disposed) return;
+            try {
+              const startupContext = await LibraMemoryCore.resolveContext();
+              await LibraMemoryCore.ensureNativeChatCopyAdopted(startupContext, { force: true });
+            } catch (error) {
+              const finalAttempt = attempt + 1 >= nativeCopyStartupRetryDelays.length;
+              Runtime.lastNativeChatCopyCheck = {
+                at: Date.now(), phase: 'startup_retry', attempt: attempt + 1,
+                reason: finalAttempt ? 'native_copy_startup_context_deferred' : 'native_copy_startup_retry_pending',
+                error: compact(error?.message || error, 500),
+                benign: finalAttempt
+              };
+              if (!finalAttempt) scheduleNativeCopyStartupRetry(attempt + 1);
+            }
+          }, delay);
+          LibraMemoryCore.state.timers.set(timerKey, timer);
+        };
+        try {
+          const startupContext = await LibraMemoryCore.resolveContext();
+          await LibraMemoryCore.ensureNativeChatCopyAdopted(startupContext);
+        } catch (error) {
+          Runtime.lastNativeChatCopyCheck = {
+            at: Date.now(), phase: 'startup', reason: 'native_copy_startup_probe_retrying',
+            error: compact(error?.message || error, 500)
+          };
+          scheduleNativeCopyStartupRetry(0);
+        }
+        return true;
+      })().finally(() => {
+        libraStorageStartupPromise = null;
+      });
+      return await libraStorageStartupPromise;
+    };
+
+    retryLibraStorageInitialization = async (options = {}) => {
+      if (LibraMemoryCore.state.disposed) return { ok: false, reason: 'disposed' };
+      try {
+        await completeLibraStorageStartup();
+        await registerPluginUi().catch(() => null);
+        if (Gui.visible) {
+          if (Gui.bookPage === 'settings' && Gui.settingsHubSection === 'server') {
+            Gui.bookPage = 'desk';
+          }
+          await LibraMemoryCore.refreshSnapshot(undefined, {
+            cloneResult: false,
+            suppressGuiSchedule: true,
+            skipNativeCopyAdoption: true,
+            limits: guiSnapshotLimits(),
+            trackGuiLimits: true,
+            summaryOnly: true
+          }).catch(() => null);
+          Gui.invalidations.add('all');
+          await renderSettingsGui();
+        }
+        return { ok: true, pending: false };
+      } catch (error) {
+        if (isLibraStorageTransitionError(error)) {
+          Runtime.storageTransitionPending = true;
+          Runtime.storageTransitionError = compact(error?.message || error, 240);
+          ensureLibraStorageTransitionWatcher();
+          if (options.fromGui && Gui.visible) {
+            routeLibraGuiToStorageRecovery();
+            Gui.invalidations.add('all');
+            await renderSettingsGui();
+          }
+          return { ok: false, pending: true, error: Runtime.storageTransitionError };
+        }
+        warn('LIBRA storage initialization retry failed', error);
+        return { ok: false, pending: false, error: compact(error?.message || error, 240) };
+      }
+    };
+
+    ensureLibraStorageTransitionWatcher = () => {
+      if (libraStorageTransitionUnsubscribe || typeof MemorySuiteStorageBridge.subscribeSyncJob !== 'function') return;
+      libraStorageTransitionUnsubscribe = MemorySuiteStorageBridge.subscribeSyncJob(job => {
+        if (LibraMemoryCore.state.disposed) return;
+        const active = job && (job.kind === 'global_mode' || job.scopeId === 'global_mode') && !['completed', 'failed', 'cancelled'].includes(String(job.status || ''));
+        if (active) {
+          Runtime.storageTransitionPending = true;
+          return;
+        }
+        if (Runtime.storageTransitionPending || Runtime.storageStartupCompleted !== true) {
+          Runtime.storageTransitionPending = false;
+          setTimeout(() => {
+            if (LibraMemoryCore.state.disposed) return;
+            void retryLibraStorageInitialization().then(res => {
+              if (res?.pending && !isLibraStorageTransitionActive() && !LibraMemoryCore.state.disposed) {
+                setTimeout(() => { void retryLibraStorageInitialization(); }, 80);
+              }
+            });
+          }, 25);
+        }
+      });
+    };
+
     try { globalThis.__LIBRA__ = publicApi; } catch (_) {}
     await registerPluginUi();
-    await LibraProviderBridge.getConfig();
-    await LibraMemoryCore.loadSettings();
-    await LibraMemoryCore.loadEmbeddingSettings();
-    void refreshHostRuntimeInfo();
-    setTimeout(async () => {
-      if (LibraMemoryCore.state.disposed) return;
-      try {
-        const recovered = await LibraMemoryCore.recoverCanonicalJobAtStartup();
-        if (recovered?.state === 'adopting') await LibraMemoryCore.resolveCanonicalCandidate({ jobId: recovered.jobId, decision: 'adopt' });
-      } catch (error) {
-        warn('LIBRA canonical job startup recovery deferred', error);
-      }
-    }, 450);
-    const pendingBoundaryStartupRetryDelays = [300, 1000, 2400, 4800];
-    const schedulePendingBoundaryStartupRecovery = (attempt = 0) => {
-      if (attempt >= pendingBoundaryStartupRetryDelays.length || LibraMemoryCore.state.disposed) return;
-      const timerKey = 'pending_boundary_startup_retry';
-      const delay = pendingBoundaryStartupRetryDelays[attempt];
-      const previous = LibraMemoryCore.state.timers.get(timerKey);
-      if (previous) clearTimeout(previous);
-      const timer = setTimeout(async () => {
-        if (LibraMemoryCore.state.timers.get(timerKey) === timer) LibraMemoryCore.state.timers.delete(timerKey);
-        if (LibraMemoryCore.state.disposed) return;
-        try {
-          const startupContext = await LibraMemoryCore.resolveContext();
-          const result = await LibraMemoryCore.recoverPendingLiveBoundaryAtStartup(startupContext);
-          if (result?.retryable === true && attempt + 1 < pendingBoundaryStartupRetryDelays.length) {
-            schedulePendingBoundaryStartupRecovery(attempt + 1);
-          }
-        } catch (error) {
-          const finalAttempt = attempt + 1 >= pendingBoundaryStartupRetryDelays.length;
-          LibraMemoryCore.state.lastPendingBoundaryRecovery = {
-            schema: 'libra.pending_live_boundary_store.v1',
-            at: Date.now(), phase: 'startup_recovery', reason: finalAttempt ? 'startup_context_unavailable' : 'startup_context_retry_pending',
-            attempt: attempt + 1, error: compact(error?.message || error, 500), retryable: !finalAttempt
-          };
-          if (!finalAttempt) schedulePendingBoundaryStartupRecovery(attempt + 1);
-        }
-      }, delay);
-      LibraMemoryCore.state.timers.set(timerKey, timer);
-    };
-    schedulePendingBoundaryStartupRecovery(0);
-    // Legacy World Additional cleanup stays off the startup critical path. It is
-    // fail-soft and never calls an LLM/embedding provider or mutates canonical
-    // memories/vectors. Retired State Projection data is intentionally ignored.
-    setTimeout(() => {
-      if (LibraMemoryCore.state.disposed) return;
-      void LibraMemoryCore.purgeLegacyWorldAdditionalData().catch(error => warn('LIBRA legacy world-candidate cleanup failed', error));
-    }, 750);
-    // Native RisuAI chat-copy adoption is not historical cold-start. It only clones
-    // transcript-verified records from an already-existing LIBRA scope into an empty
-    // copied chat scope. Some hosts expose the current chat shortly after plugin load,
-    // so a missing startup context gets a small bounded retry window.
-    const nativeCopyStartupRetryDelays = [300, 900, 1800];
-    const scheduleNativeCopyStartupRetry = (attempt = 0) => {
-      if (attempt >= nativeCopyStartupRetryDelays.length || LibraMemoryCore.state.disposed) return;
-      const timerKey = 'native_copy_startup_retry';
-      const delay = nativeCopyStartupRetryDelays[attempt];
-      const previous = LibraMemoryCore.state.timers.get(timerKey);
-      if (previous) clearTimeout(previous);
-      const timer = setTimeout(async () => {
-        if (LibraMemoryCore.state.timers.get(timerKey) === timer) LibraMemoryCore.state.timers.delete(timerKey);
-        if (LibraMemoryCore.state.disposed) return;
-        try {
-          const startupContext = await LibraMemoryCore.resolveContext();
-          await LibraMemoryCore.ensureNativeChatCopyAdopted(startupContext, { force: true });
-        } catch (error) {
-          const finalAttempt = attempt + 1 >= nativeCopyStartupRetryDelays.length;
-          Runtime.lastNativeChatCopyCheck = {
-            at: Date.now(), phase: 'startup_retry', attempt: attempt + 1,
-            reason: finalAttempt ? 'native_copy_startup_context_deferred' : 'native_copy_startup_retry_pending',
-            error: compact(error?.message || error, 500),
-            benign: finalAttempt
-          };
-          if (!finalAttempt) scheduleNativeCopyStartupRetry(attempt + 1);
-        }
-      }, delay);
-      LibraMemoryCore.state.timers.set(timerKey, timer);
-    };
     try {
-      const startupContext = await LibraMemoryCore.resolveContext();
-      await LibraMemoryCore.ensureNativeChatCopyAdopted(startupContext);
+      await completeLibraStorageStartup();
     } catch (error) {
-      Runtime.lastNativeChatCopyCheck = {
-        at: Date.now(), phase: 'startup', reason: 'native_copy_startup_probe_retrying',
-        error: compact(error?.message || error, 500)
-      };
-      scheduleNativeCopyStartupRetry(0);
+      if (isLibraStorageTransitionError(error)) {
+        Runtime.storageTransitionPending = true;
+        Runtime.storageTransitionError = compact(error?.message || error, 240);
+        routeLibraGuiToStorageRecovery();
+        ensureLibraStorageTransitionWatcher();
+        warn('Storage transition in progress; deferring LIBRA storage initialization and keeping settings recovery GUI available.', error);
+      } else {
+        throw error;
+      }
     }
     // dev.16: never backfill an existing session at plugin startup. Historical
     // batches are built only by an explicit manual cold-start action.

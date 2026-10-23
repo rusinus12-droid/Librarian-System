@@ -46007,9 +46007,39 @@ ${cleanedText}`, 80),
     </div>`;
   };
 
-  const buildServerConnectionTab = () => `<div class="stack"><div class="card"><div class="card__head"><div><h2 class="card__title">FLASHBACK · 저장</h2><p class="card__desc">연결 전환은 공용 SDK 검증 절차로만 진행됩니다. 여기서 직접 모드를 바꾸지 않습니다.</p></div><span id="flashbackServerModeBadge" class="badge">현재 설정 읽기 중</span></div><div id="flashbackMemorySuiteServerConnectionPanel"><div class="empty"><span>저장 설정을 불러오는 중…</span></div></div></div></div>`;
+  const isFlashbackStorageTransitionError = error => {
+    const code = String(error?.code || error?.cause?.code || '').trim();
+    const message = String(error?.message || error || '');
+    return code === 'MEMORY_SUITE_STORAGE_TRANSITION_IN_PROGRESS'
+      || message.includes('memory_suite_storage_transition_in_progress');
+  };
+
+  const isFlashbackStorageTransitionActive = () => {
+    try {
+      const job = MemorySuiteStorageBridge.getSyncJob?.() || MemorySuiteStorageBridge.getSyncJobState?.();
+      if (job && (job.kind === 'global_mode' || job.scopeId === 'global_mode') && !['completed', 'failed', 'cancelled'].includes(String(job.status || ''))) {
+        return true;
+      }
+    } catch (_) {}
+    return Runtime.storageTransitionPending === true;
+  };
+
+  const buildServerConnectionTab = () => {
+    const transitionActive = isFlashbackStorageTransitionActive();
+    const transitionNotice = `<div id="flashbackStorageTransitionNotice" class="note note--warn" role="status" aria-live="polite" ${transitionActive ? '' : 'hidden'}><div class="split"><div><b>저장소 이전 대기 또는 진행 중</b><p class="muted">데이터 보호를 위해 이전이 완료될 때까지 기억·설정 읽기가 잠겨 있습니다. 아래 저장 연결 패널에서 이전을 재개·완료하거나 초기화를 다시 시도하세요.</p></div><button id="flashbackRetryStorageInitBtn" class="btn" type="button">초기화 다시 시도</button></div></div>`;
+    return `<div class="stack">${transitionNotice}<div class="card"><div class="card__head"><div><h2 class="card__title">FLASHBACK · 저장</h2><p class="card__desc">연결 전환은 공용 SDK 검증 절차로만 진행됩니다. 여기서 직접 모드를 바꾸지 않습니다.</p></div><span id="flashbackServerModeBadge" class="badge">${transitionActive ? '이전 작업 확인 필요' : '현재 설정 읽기 중'}</span></div><div id="flashbackMemorySuiteServerConnectionPanel"><div class="empty"><span>저장 설정을 불러오는 중…</span></div></div></div></div>`;
+  };
+
+  const syncFlashbackStorageTransitionNotice = () => {
+    const active = isFlashbackStorageTransitionActive();
+    const notice = getGuiNode('flashbackStorageTransitionNotice');
+    if (notice) notice.hidden = !active;
+    const badge = getGuiNode('flashbackServerModeBadge');
+    if (badge && active) badge.textContent = '이전 작업 확인 필요';
+  };
 
   const mountFlashbackServerConnectionPanel = () => {
+    syncFlashbackStorageTransitionNotice();
     const storageHost = getGuiNode('flashbackMemorySuiteServerConnectionPanel');
     if (!storageHost) return false;
     if (storageHost) void MemorySuiteStorageBridge.mountConnectionPanel(storageHost, {
@@ -46079,7 +46109,22 @@ ${cleanedText}`, 80),
   const FLASHBACK_GUI_MOCKUP_STYLES = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n\n\n/* Flashback 전용: 현상실 / 필름 / 프레임 컨셉 (현행 구현의 시각 언어를 유지하고 구조만 정리) */\n.lab{padding:24px 26px;background:#2c2d2b;color:#f3ece1;border-radius:var(--r-sm);position:relative}\n.lab .eyebrow{color:#cfc6b6;letter-spacing:.17em}\n.lab__q{margin:10px 0 0;font-size:16px;line-height:1.85;color:#f3ece1;max-width:60ch}\n.lab__meta{margin-top:10px;font-size:12px;color:#cfc6b6}\n.lab__chips{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}\n.lab__chips .badge{background:#45483f;border-color:#747469;color:#f0e9d9}\n.frames{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:18px}\n.frame-card{background:#fffdf7;border:1px solid var(--border);border-radius:2px;padding:10px;box-shadow:0 3px 8px #34291709}\n.frame-card[open]{grid-column:1/-1;border-color:var(--accent)}\n.frame-card>summary{list-style:none;cursor:pointer;display:block}\n.frame-card>summary::-webkit-details-marker{display:none}\n.frame-card__img{min-height:108px;padding:18px 16px;font-size:13px;line-height:1.8;margin-bottom:12px}\n.fc1{background:#d7e0da;color:#36483f}.fc2{background:#e8d9c6;color:#574737}.fc3{background:#d8dfe2;color:#374951}.fc4{background:#e4e1d1;color:#534e38}\n.frame-card__row{display:flex;justify-content:space-between;gap:10px;align-items:baseline}\n.frame-card__type{font:11.5px var(--font-mono);color:var(--text3)}\n.frame-card__title{font-size:14px;font-weight:700;margin:2px 0 4px}\n.frame-card__score{font:12px var(--font-mono);padding:3px 8px;background:var(--surface2);border-radius:2px;white-space:nowrap}\n.frame-card__more{color:var(--accent-ink);font-size:12px}\n.frame-card__more::after{content:\"기억 펼치기 ↗\"}.frame-card[open] .frame-card__more::after{content:\"기억 접기 −\"}\n.frame-card__detail{padding:16px 6px 6px;font-size:14px;line-height:1.9}\n.meter{display:grid;gap:6px;padding:12px;background:var(--surface2);border-radius:5px;margin-bottom:14px;font:12px var(--font-mono)}\n.meter meter{width:100%;height:12px;accent-color:var(--accent)}\n.film{display:flex;gap:9px;overflow-x:auto;margin:20px 0 4px;padding:12px;background:#2c2d2b;border-top:5px dashed #a99f8b;border-bottom:5px dashed #a99f8b}\n.film a{flex:0 0 auto;min-height:40px;display:grid;place-items:center;padding:6px 13px;background:#45483f;border:1px solid #747469;color:#f0e9d9;font:11.5px var(--font-mono);text-decoration:none}\n.film a:hover{background:#76594b}\n.inj{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;margin-top:14px}\n.inj>div{background:var(--surface);padding:12px 14px}.inj b{display:block;font:800 22px var(--font-mono)}.inj span{font-size:12px;color:var(--text2)}\n.rec-split{display:grid;grid-template-columns:1fr 1fr;gap:14px}\n.work{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:16px 18px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\n.work__no{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:800 14px var(--font-sans);background:var(--surface3)}\n.work+.work{margin-top:10px}\n.scopes tr.is-cur td{background:var(--accent-soft)}\n.tbl-act{display:flex;gap:6px;justify-content:flex-end}\n.matrix{display:grid;grid-template-columns:auto repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);font-size:12px;text-align:center}\n.matrix>*{background:var(--surface);padding:8px}.matrix .h{background:var(--surface2);font-weight:700}\n.ok-c{color:var(--ok-ink);font-weight:700}.bad-c{color:var(--danger-ink);font-weight:700}\n.plan-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.plan-grid>div{padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);font-size:12.5px}.plan-grid b{display:block;font-size:12px;color:var(--text3);margin-bottom:2px}\n.cost-table{display:grid;grid-template-columns:minmax(120px,170px) minmax(0,1fr);gap:6px 14px;margin:0;font-size:12.5px}.cost-table dt{color:var(--text3)}.cost-table dd{margin:0}\n.res-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 12px;border-top:1px solid var(--border);font-size:12.5px}.res-row:first-child{border-top:0}.res-row small{grid-column:1;color:var(--text3)}\n.mode-opt{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:12px 14px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}\n.mode-opt.is-on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:var(--accent-soft)}\n.mode-opt[disabled]{opacity:.62;cursor:not-allowed;background:var(--surface2)}\n.mode-opt b{font-size:14px}.mode-opt small{grid-column:1/-1;font-size:12.5px;color:var(--text2)}.mode-opt .why{grid-column:1/-1;font-size:12px;color:var(--danger-ink)}\n.film a.is-on{background:var(--accent);color:var(--on-accent)}\n.frame-card.is-cut .frame-card__img{opacity:.78}\n.cut-tag{font-size:11.5px;padding:1px 8px;border-radius:99px;border:1px dashed var(--border2);color:var(--text3)}\n.btn[disabled]+.why-d{display:block}.why-d{display:none;font-size:12px;color:var(--danger-ink);margin-top:4px}\n@container app (max-width:900px){.plan-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}\n@container app (max-width:640px){.cost-table{grid-template-columns:1fr}}\n@container app (max-width:900px){.rec-split,.inj{grid-template-columns:1fr}.frames{grid-template-columns:1fr}.work{grid-template-columns:auto 1fr}.work>.btn,.work>.cluster{grid-column:1/-1}}\n\n/* 설정 행: 이름과 설명을 두 줄로 분리 */\nlabel.setting>span:first-child{display:grid;gap:3px;min-width:0}\nlabel.setting .setting__name,label.setting .setting__desc{display:block}\n";
 
   const buildUiHtml = async () => {
-    const settings = await loadSettings();
+    let settings = Runtime.settings || DEFAULTS;
+    try {
+      settings = await loadSettings();
+      Runtime.storageTransitionPending = false;
+    } catch (error) {
+      if (isFlashbackStorageTransitionError(error)) {
+        Runtime.storageTransitionPending = true;
+        Runtime.storageTransitionError = formatErrorMessage(error, 240);
+        ensureFlashbackStorageTransitionWatcher();
+        Runtime.guiTab = 'server';
+        Runtime.guiConnectSubtab = 'srv';
+        settings = Runtime.settings || { ...DEFAULTS };
+      } else {
+        throw error;
+      }
+    }
     const activeTab = normalizeFlashbackGuiTab(Runtime.guiTab);
     const placeholderScope = Runtime.currentScope && typeof Runtime.currentScope === 'object'
       ? Runtime.currentScope
@@ -47050,8 +47095,30 @@ ${cleanedText}`, 80),
   const updateGuiSummary = async (options = {}) => {
     const startedAt = Date.now();
     const refreshToken = Number(options.refreshToken || 0) || 0;
-    const settings = await loadSettings();
-    const current = await currentScopeStats({ force: options.force === true });
+    let settings = Runtime.settings || DEFAULTS;
+    let current = null;
+    try {
+      settings = await loadSettings();
+      current = await currentScopeStats({ force: options.force === true });
+      Runtime.storageTransitionPending = false;
+      syncFlashbackStorageTransitionNotice();
+    } catch (error) {
+      if (isFlashbackStorageTransitionError(error)) {
+        Runtime.storageTransitionPending = true;
+        Runtime.storageTransitionError = formatErrorMessage(error, 240);
+        ensureFlashbackStorageTransitionWatcher();
+        syncFlashbackStorageTransitionNotice();
+        if (guiVisible && Runtime.guiTab !== 'server') {
+          Runtime.guiTab = 'server';
+          Runtime.guiConnectSubtab = 'srv';
+          setActiveGuiTab('server');
+        } else if (guiVisible) {
+          mountFlashbackServerConnectionPanel();
+        }
+        return null;
+      }
+      throw error;
+    }
     if (refreshToken && refreshToken !== Runtime.guiRefreshToken) return null;
     if (!isGuiRenderActive()) return null;
     Runtime.guiPerf.summaryRefreshes += 1;
@@ -47440,14 +47507,22 @@ ${cleanedText}`, 80),
       return false;
     }
     const refreshToken = Number(options.refreshToken || 0) || (Runtime.guiRefreshToken += 1);
-    const activeTab = normalizeFlashbackGuiTab(tab);
+    const requestedTab = isFlashbackStorageTransitionActive() && (!tab || tab === 'overview') ? 'server' : tab;
+    const activeTab = normalizeFlashbackGuiTab(requestedTab);
     cancelFlashbackSourceReanalysis();
     Runtime.guiTab = activeTab;
+    if (activeTab === 'server') Runtime.guiConnectSubtab = 'srv';
     if (options.forceData === true) invalidateGuiDataCache('all');
     const mounted = await mountGuiRoot({ force: options.force === true, refreshToken });
     if (refreshToken !== Runtime.guiRefreshToken) return false;
     if (!mounted) return false;
-    setActiveGuiTab(activeTab);
+    const effectiveTab = normalizeFlashbackGuiTab(Runtime.guiTab || activeTab);
+    setActiveGuiTab(effectiveTab);
+    if (isFlashbackStorageTransitionActive()) {
+      syncFlashbackStorageTransitionNotice();
+      applyBusyState();
+      return true;
+    }
     let current = Runtime.guiCurrentStatsCache?.value || null;
     if (options.summary !== false) {
       const summary = await updateGuiSummary({ refreshToken });
@@ -48478,6 +48553,9 @@ ${cleanedText}`, 80),
       catch (error) { await guiError('삭제 실패', error); }
       finally { setBusy(false); }
     });
+    getGuiNode('flashbackRetryStorageInitBtn')?.addEventListener('click', () => {
+      void retryFlashbackStorageInitialization({ fromGui: true });
+    });
     bindManualEditorEvents(root);
     bindStorageDeleteEvents();
     applyArgumentOverrideControlState();
@@ -48507,6 +48585,10 @@ ${cleanedText}`, 80),
       await nextRenderFrame().catch(() => {});
     }
     guiVisible = true;
+    if (isFlashbackStorageTransitionActive() && (!Runtime.guiTab || Runtime.guiTab === 'overview')) {
+      Runtime.guiTab = 'server';
+      Runtime.guiConnectSubtab = 'srv';
+    }
     const rendered = await refreshUi(Runtime.guiTab || 'overview', { summary: false, deferHeavy: true, forceData: !canReuseRoot, storage: Runtime.guiTab === 'storage' });
     const summaryToken = Runtime.guiRefreshToken;
     // Yield two frames so fullscreen/container layout and the static shell are
@@ -50316,139 +50398,208 @@ return createReadSession;
   globalThis.__FlashbackMemory = publicApi;
   globalThis.__VectorRagMemory = publicApi;
 
-  try {
-    // RisuAI can expose only apiVersion fields for a short time while plugin
-    // channel methods are still hydrating.  Begin the idempotent retry before
-    // storage/settings recovery so RE:TRACE discovery is not startup-order bound.
-    const earlyBridgeReady = await registerMemoryBridgeIpc().catch(() => false);
-    if (!earlyBridgeReady) scheduleMemoryBridgeIpcRetry();
-    Runtime.settings = await loadSettings(true);
-    Runtime.effectiveSettings = Runtime.settings;
-    syncFlashbackRuntimeState(Runtime.settings, Runtime.currentScope || null);
-    void refreshHostRuntimeInfo();
-    await recoverMaintenanceJournal();
-    const bridgeReady = earlyBridgeReady || await registerMemoryBridgeIpc().catch(error => {
-      warn('Memory Bridge IPC registration failed', error);
-      return false;
-    });
-    if (!bridgeReady) scheduleMemoryBridgeIpcRetry();
-    pushActivityLog('plugin_started', `${PLUGIN_NAME}가 시작되었습니다.`, {
-      version: PLUGIN_VERSION,
-      mode: Runtime.settings.mode,
-      captureAfterRequest: Runtime.settings.captureAfterRequest,
-      operationLogEnabled: Runtime.settings.operationLogEnabled
-    });
-    // Ordinary chat copies should be adopted before the first model request. The
-    // observer performs only lightweight host identity reads until a real scope
-    // change is detected, then reuses the existing verified clone path.
-    startNativeCopyObserver();
-    await readEmbeddingKey({ force: true }).catch(error => warn('embedding key persistence load failed', error));
-    await inspectEmbeddingKeyPersistence({ includeArgument: true }).catch(error => warn('embedding key persistence inspection failed', error));
-    // Web hosts may remount pluginStorage shortly after a plugin update. Recheck
-    // twice so a delayed synchronized credential can repair argument/local mirrors
-    // before the next bulk embedding operation.
-    for (const retryDelay of [2200, 8000]) {
-      scheduleTimer(() => {
-        readEmbeddingKey({ force: true })
-          .catch(error => warn('delayed embedding credential reconciliation failed', error));
-      }, retryDelay);
-    }
-    if (!Runtime.settings.operationLogEnabled) {
-      Runtime.operationLogCache = null;
-      await RisuCompat.removeItem(STORAGE.operationLog).catch(() => false);
-    }
+  let flashbackStartupCompletionPromise = null;
+  let flashbackStorageTransitionUnsubscribe = null;
 
-    // Register the GUI opener first and independently.  Replacer permission or
-    // hook failures must not remove the user's manual way back into the GUI.
-    registerUi(Runtime.settings).catch(error => warn('registerUi async failed', error));
-    scheduleTimer(() => { registerUi(Runtime.settings).catch(error => warn('late registerUi retry failed', error)); }, 2500);
-    // Keep startup responsive: legacy external-source shards are retired in the
-    // background, one known scope at a time, after hooks/UI have had time to load.
-    scheduleTimer(() => {
-      retireExternalRecordsAcrossKnownScopes({ reason: 'startup_response_only_upgrade' })
-        .catch(error => warn('external source retirement sweep failed', error));
-    }, 1800);
-    scheduleTimer(() => {
-      recoverPendingCapturesFromJournal(Runtime.settings)
-        .catch(error => {
-          Runtime.lastPendingCaptureRecovery = {
-            at: Date.now(),
-            recovered: 0,
-            reason: 'recovery_failed',
-            error: formatErrorMessage(error, 500)
-          };
-          warn('pending capture recovery failed', error);
-        });
-    }, 2600);
-    scheduleTimer(() => {
-      Promise.resolve().then(async () => {
-        const snapshot = await loadRisuSnapshot(false);
-        const scope = applyCurrentScope(resolveScopeFromSnapshot(snapshot));
-        const legacyRestore = await restoreLegacyCompactedSourceScope(scope, {
-          settings: Runtime.settings,
-          finalize: false
-        }).catch(error => {
-          warn('legacy compacted source automatic recovery failed', error);
-          return null;
-        });
-        if (legacyRestore?.restored) {
-          await finalizeLegacyCompactionRestore(scope, Runtime.settings, legacyRestore, { snapshot });
-        } else {
-          const pendingFinalize = Runtime.legacyRestoreFinalizeInFlight.get(scope.scopeKey);
-          if (pendingFinalize) {
-            await pendingFinalize;
+  const completeFlashbackStartup = async (options = {}) => {
+    if (Runtime.unloaded) return false;
+    if (Runtime.startupCompleted === true && options.force !== true) return true;
+    if (flashbackStartupCompletionPromise) return await flashbackStartupCompletionPromise;
+    flashbackStartupCompletionPromise = (async () => {
+      Runtime.settings = await loadSettings(true);
+      Runtime.effectiveSettings = Runtime.settings;
+      Runtime.storageTransitionPending = false;
+      Runtime.storageTransitionError = '';
+      syncFlashbackStorageTransitionNotice();
+      syncFlashbackRuntimeState(Runtime.settings, Runtime.currentScope || null);
+      if (guiVisible && Runtime.guiTab === 'server') {
+        Runtime.guiTab = 'overview';
+        setActiveGuiTab('overview');
+        void updateGuiSummary({ force: true }).catch(() => null);
+      }
+      void refreshHostRuntimeInfo();
+      await recoverMaintenanceJournal();
+      const bridgeReady = memoryBridgeIpcRegistered || await registerMemoryBridgeIpc().catch(error => {
+        warn('Memory Bridge IPC registration failed', error);
+        return false;
+      });
+      if (!bridgeReady) scheduleMemoryBridgeIpcRetry();
+      pushActivityLog('plugin_started', `${PLUGIN_NAME}가 시작되었습니다.`, {
+        version: PLUGIN_VERSION,
+        mode: Runtime.settings.mode,
+        captureAfterRequest: Runtime.settings.captureAfterRequest,
+        operationLogEnabled: Runtime.settings.operationLogEnabled
+      });
+      startNativeCopyObserver();
+      await readEmbeddingKey({ force: true }).catch(error => warn('embedding key persistence load failed', error));
+      await inspectEmbeddingKeyPersistence({ includeArgument: true }).catch(error => warn('embedding key persistence inspection failed', error));
+      for (const retryDelay of [2200, 8000]) {
+        scheduleTimer(() => {
+          readEmbeddingKey({ force: true })
+            .catch(error => warn('delayed embedding credential reconciliation failed', error));
+        }, retryDelay);
+      }
+      if (!Runtime.settings.operationLogEnabled) {
+        Runtime.operationLogCache = null;
+        await RisuCompat.removeItem(STORAGE.operationLog).catch(() => false);
+      }
+      registerUi(Runtime.settings).catch(error => warn('registerUi async failed', error));
+      scheduleTimer(() => {
+        retireExternalRecordsAcrossKnownScopes({ reason: 'startup_response_only_upgrade' })
+          .catch(error => warn('external source retirement sweep failed', error));
+      }, 1800);
+      scheduleTimer(() => {
+        recoverPendingCapturesFromJournal(Runtime.settings)
+          .catch(error => {
+            Runtime.lastPendingCaptureRecovery = {
+              at: Date.now(),
+              recovered: 0,
+              reason: 'recovery_failed',
+              error: formatErrorMessage(error, 500)
+            };
+            warn('pending capture recovery failed', error);
+          });
+      }, 2600);
+      scheduleTimer(() => {
+        Promise.resolve().then(async () => {
+          const snapshot = await loadRisuSnapshot(false);
+          const scope = applyCurrentScope(resolveScopeFromSnapshot(snapshot));
+          const legacyRestore = await restoreLegacyCompactedSourceScope(scope, {
+            settings: Runtime.settings,
+            finalize: false
+          }).catch(error => {
+            warn('legacy compacted source automatic recovery failed', error);
+            return null;
+          });
+          if (legacyRestore?.restored) {
+            await finalizeLegacyCompactionRestore(scope, Runtime.settings, legacyRestore, { snapshot });
           } else {
-            const live = liveChatReadState(snapshot.chat || {}, scope.scopeKey);
-            if (live.known && live.normalized.length) {
-              const liveState = liveChatStateFromNormalized(live.normalized);
-              const restored = await synchronizeFlashbackTurnWorldline(scope, liveState, Runtime.settings, {
-                allowRetirement: false,
-                forceReconcile: true,
-                reason: 'startup_restore_only'
-              });
-              if (Number(restored?.restoredRecords || 0) > 0) {
-                pushActivityLog('worldline_startup_restored', '보관된 이전 기억 중 현재 대화와 정확히 일치하는 기억을 다시 연결했습니다.', {
-                  scopeKey: scope.scopeKey,
-                  stored: Number(restored.restoredRecords || 0) || 0,
-                  reason: 'startup_exact_restore_only'
-                }, 'success');
+            const pendingFinalize = Runtime.legacyRestoreFinalizeInFlight.get(scope.scopeKey);
+            if (pendingFinalize) {
+              await pendingFinalize;
+            } else {
+              const live = liveChatReadState(snapshot.chat || {}, scope.scopeKey);
+              if (live.known && live.normalized.length) {
+                const liveState = liveChatStateFromNormalized(live.normalized);
+                const restored = await synchronizeFlashbackTurnWorldline(scope, liveState, Runtime.settings, {
+                  allowRetirement: false,
+                  forceReconcile: true,
+                  reason: 'startup_restore_only'
+                });
+                if (Number(restored?.restoredRecords || 0) > 0) {
+                  pushActivityLog('worldline_startup_restored', '보관된 이전 기억 중 현재 대화와 정확히 일치하는 기억을 다시 연결했습니다.', {
+                    scopeKey: scope.scopeKey,
+                    stored: Number(restored.restoredRecords || 0) || 0,
+                    reason: 'startup_exact_restore_only'
+                  }, 'success');
+                }
               }
             }
           }
+          await scheduleLegacyGlobalMigration(scope, Runtime.settings);
+          schedulePendingEmbeddingWork(scope.scopeKey, { reason: 'startup_resume' });
+        }).catch(error => warn('startup worldline restore / legacy migration scheduling failed', error));
+      }, 4500);
+      Runtime.registered.before = beforeRequest;
+      await getFlashbackSourceInput().ready();
+      Runtime.registered.after = afterRequest;
+      let requestHooksReady = false;
+      for (let attempt = 0; attempt < 3 && !requestHooksReady; attempt += 1) {
+        try {
+          requestHooksReady = await registerRequestHooksOnce(attempt === 0 ? 12000 : 1500);
+        } catch (error) {
+          warn(`Risu replacer registration attempt ${attempt + 1} failed.`, error);
         }
-        await scheduleLegacyGlobalMigration(scope, Runtime.settings);
-        schedulePendingEmbeddingWork(scope.scopeKey, { reason: 'startup_resume' });
-      }).catch(error => warn('startup worldline restore / legacy migration scheduling failed', error));
-    }, 4500);
-
-    Runtime.registered.before = beforeRequest;
-    await getFlashbackSourceInput().ready();
-    Runtime.registered.after = afterRequest;
-    let requestHooksReady = false;
-    for (let attempt = 0; attempt < 3 && !requestHooksReady; attempt += 1) {
-      try {
-        requestHooksReady = await registerRequestHooksOnce(attempt === 0 ? 12000 : 1500);
-      } catch (error) {
-        warn(`Risu replacer registration attempt ${attempt + 1} failed.`, error);
+        if (!requestHooksReady && attempt < 2) await delay(250 * (attempt + 1));
       }
-      if (!requestHooksReady && attempt < 2) await delay(250 * (attempt + 1));
-    }
-    if (!requestHooksReady) {
-      warn('Memory injection/capture hooks were not registered after retries. GUI remains available.');
-      scheduleRequestHookRetry();
-    }
-    await registerCaptureBackendOnce(5000).catch(error => {
-      Runtime.captureBackend = Runtime.replacersRegistered.after ? FLASHBACK_CAPTURE_BACKENDS.AFTER_REQUEST_RECONCILE : FLASHBACK_CAPTURE_BACKENDS.NONE;
-      Runtime.captureBackendRegistered = Runtime.captureBackend !== FLASHBACK_CAPTURE_BACKENDS.NONE;
-      Runtime.captureBackendFallbackReason += `${Runtime.captureBackendFallbackReason ? ';' : ''}capture_backend_registration_failed:${formatErrorMessage(error, 180)}`;
-      warn('Capture backend registration failed; retaining the safest available fallback.', error);
-      return false;
+      if (!requestHooksReady) {
+        warn('Memory injection/capture hooks were not registered after retries. GUI remains available.');
+        scheduleRequestHookRetry();
+      }
+      await registerCaptureBackendOnce(5000).catch(error => {
+        Runtime.captureBackend = Runtime.replacersRegistered.after ? FLASHBACK_CAPTURE_BACKENDS.AFTER_REQUEST_RECONCILE : FLASHBACK_CAPTURE_BACKENDS.NONE;
+        Runtime.captureBackendRegistered = Runtime.captureBackend !== FLASHBACK_CAPTURE_BACKENDS.NONE;
+        Runtime.captureBackendFallbackReason += `${Runtime.captureBackendFallbackReason ? ';' : ''}capture_backend_registration_failed:${formatErrorMessage(error, 180)}`;
+        warn('Capture backend registration failed; retaining the safest available fallback.', error);
+        return false;
+      });
+      Runtime.startupCompleted = true;
+      return true;
+    })().finally(() => {
+      flashbackStartupCompletionPromise = null;
     });
+    return await flashbackStartupCompletionPromise;
+  };
+
+  const retryFlashbackStorageInitialization = async (options = {}) => {
+    if (Runtime.unloaded) return { ok: false, reason: 'unloaded' };
+    try {
+      await completeFlashbackStartup();
+      syncFlashbackStorageTransitionNotice();
+      if (guiVisible) {
+        const nextTab = Runtime.guiTab === 'server' ? 'overview' : (Runtime.guiTab || 'overview');
+        Runtime.guiTab = nextTab;
+        setActiveGuiTab(nextTab);
+        await refreshUi(nextTab, { forceData: true });
+        await updateGuiSummary({ force: true }).catch(() => null);
+      }
+      return { ok: true, pending: false };
+    } catch (error) {
+      if (isFlashbackStorageTransitionError(error)) {
+        Runtime.storageTransitionPending = true;
+        Runtime.storageTransitionError = formatErrorMessage(error, 240);
+        syncFlashbackStorageTransitionNotice();
+        if (options.fromGui && guiVisible) {
+          Runtime.guiTab = 'server';
+          Runtime.guiConnectSubtab = 'srv';
+          setActiveGuiTab('server');
+        }
+        return { ok: false, pending: true, error: Runtime.storageTransitionError };
+      }
+      warn('Flashback storage initialization retry failed', error);
+      return { ok: false, pending: false, error: formatErrorMessage(error, 240) };
+    }
+  };
+
+  function ensureFlashbackStorageTransitionWatcher() {
+    if (flashbackStorageTransitionUnsubscribe || typeof MemorySuiteStorageBridge.subscribeSyncJob !== 'function') return;
+    flashbackStorageTransitionUnsubscribe = MemorySuiteStorageBridge.subscribeSyncJob(job => {
+      if (Runtime.unloaded) return;
+      const active = job && (job.kind === 'global_mode' || job.scopeId === 'global_mode') && !['completed', 'failed', 'cancelled'].includes(String(job.status || ''));
+      if (active) {
+        Runtime.storageTransitionPending = true;
+        syncFlashbackStorageTransitionNotice();
+        return;
+      }
+      if (Runtime.storageTransitionPending || Runtime.startupCompleted !== true) {
+        Runtime.storageTransitionPending = false;
+        scheduleTimer(() => {
+          void retryFlashbackStorageInitialization().then(res => {
+            if (res?.pending && !isFlashbackStorageTransitionActive()) {
+              scheduleTimer(() => { void retryFlashbackStorageInitialization(); }, 80);
+            }
+          });
+        }, 25);
+      }
+    });
+  }
+
+  publicApi._test.retryStorageInitialization = retryFlashbackStorageInitialization;
+
+  try {
+    const earlyBridgeReady = await registerMemoryBridgeIpc().catch(() => false);
+    if (!earlyBridgeReady) scheduleMemoryBridgeIpcRetry();
+    // Register the GUI opener and unload handler before storage reads so a
+    // pending storage transition never removes the user's way into the recovery screen.
+    registerUi(Runtime.settings || DEFAULTS).catch(error => warn('registerUi async failed', error));
+    scheduleTimer(() => { registerUi(Runtime.settings || DEFAULTS).catch(error => warn('late registerUi retry failed', error)); }, 2500);
 
     const unloadApiRef = await waitForApiMethods(['onUnload'], 2500);
     const unloadApi = unloadApiRef.api;
     if (unloadApi && typeof unloadApi.onUnload === 'function') {
       await unloadApi.onUnload(async () => {
+        try { flashbackStorageTransitionUnsubscribe?.(); } catch (_) {}
+        flashbackStorageTransitionUnsubscribe = null;
         Runtime.sourceEditDisposed=true; flashbackArchiveRecovery.clear(); flashbackSourceInput?.dispose();
         Runtime.unloaded = true;
         flashbackRecallCacheEpoch += 1;
@@ -50580,7 +50731,23 @@ return createReadSession;
         try { if (globalThis.__VectorRagMemory === publicApi) delete globalThis.__VectorRagMemory; } catch (_) {}
       });
     }
-    console.log(`[${PLUGIN_NAME}] v${PLUGIN_VERSION} loaded. provider=${Runtime.settings.embeddingProvider} mode=${Runtime.settings.mode}`);
+
+    try {
+      await completeFlashbackStartup();
+    } catch (error) {
+      if (isFlashbackStorageTransitionError(error)) {
+        Runtime.storageTransitionPending = true;
+        Runtime.storageTransitionError = formatErrorMessage(error, 240);
+        Runtime.guiTab = 'server';
+        Runtime.guiConnectSubtab = 'srv';
+        ensureFlashbackStorageTransitionWatcher();
+        warn('Storage transition in progress; deferring Flashback memory initialization and keeping recovery GUI available.', error);
+      } else {
+        throw error;
+      }
+    }
+    const loadedSettings = Runtime.settings || DEFAULTS;
+    console.log(`[${PLUGIN_NAME}] v${PLUGIN_VERSION} loaded. provider=${loadedSettings.embeddingProvider} mode=${loadedSettings.mode}`);
   } catch (error) {
     console.error(`[${PLUGIN_NAME}] initialization failed`, error);
   }

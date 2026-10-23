@@ -40368,8 +40368,22 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const key = storageLedgerStorageKey(scope);
     if (!key) return { ...emptyStorageLedger(scope), enabled: false, reason: 'scope_unavailable' };
     if (!RisuCompat.hasPluginStorage()) return { ...emptyStorageLedger(scope), enabled: false, reason: 'plugin_storage_unavailable' };
-    const stored = await RisuCompat.getStorageItem(key, null);
+    const storedOutcome = typeof RisuCompat.getStorageItemOutcome === 'function'
+      ? await RisuCompat.getStorageItemOutcome(key, HOST_API_CALL_TIMEOUT_MS)
+      : { state: 'fulfilled', value: await RisuCompat.getStorageItem(key, null) };
     if (Memory.unloaded || !ownsRuntime()) return inactive();
+    if (storedOutcome.state !== 'fulfilled') {
+      return {
+        ...emptyStorageLedger(scope),
+        enabled: false,
+        reason: compact(storedOutcome.error || storedOutcome.reason || 'storage_unavailable', 240),
+        code: compact(storedOutcome.code || '', 96),
+        storageKey: key,
+        recordsIncluded: false,
+        logicalRecordCount: 0
+      };
+    }
+    const stored = storedOutcome.value ?? null;
     const hydratedRaw = await hydrateCapturedLedgerRaw(stored,scope);
     if (Memory.unloaded || !ownsRuntime()) return inactive();
     const ledger = normalizeStorageLedger(hydratedRaw, scope);
@@ -40457,7 +40471,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const key = storageLedgerStorageKey(scope);
     if (!key) return { ...emptyStorageLedger(scope), enabled: false, reason: 'scope_unavailable', recordsIncluded: false, logicalRecordCount: 0 };
     if (!RisuCompat.hasPluginStorage()) return { ...emptyStorageLedger(scope), enabled: false, reason: 'plugin_storage_unavailable', recordsIncluded: false, logicalRecordCount: 0 };
-    const stored = await RisuCompat.getStorageItem(key, null);
+    const storedOutcome = typeof RisuCompat.getStorageItemOutcome === 'function' ? await RisuCompat.getStorageItemOutcome(key, HOST_API_CALL_TIMEOUT_MS) : { state: 'fulfilled', value: await RisuCompat.getStorageItem(key, null) };
+    if (storedOutcome.state !== 'fulfilled') return { ...emptyStorageLedger(scope), enabled: false, reason: compact(storedOutcome.error || storedOutcome.reason || 'storage_unavailable', 240), code: compact(storedOutcome.code || '', 96), storageKey: key, recordsIncluded: false, logicalRecordCount: 0 };
+    const stored = storedOutcome.value ?? null;
     const ledger = normalizeStorageLedger(await hydrateCapturedLedgerRaw(stored,scope), scope);
     const archiveRef = normalizeHayakuArchiveRef(ledger.archiveRef);
     return {
@@ -56020,7 +56036,109 @@ function mountMemorySuiteSourceInputControls(container, config) {
     if(server)server.textContent='HAYAKU 전체 대화의 정본을 Librarian System DATA에 저장합니다.';
     card.dataset.hayakuServerArranged='1';
   };
+  let hayakuStorageTransitionUnsubscribe = null;
+
+  const isHayakuStorageTransitionError = error => {
+    const code = String(error?.code || error?.cause?.code || '').trim();
+    const message = String(error?.message || error?.reason || error || '');
+    return code === 'MEMORY_SUITE_STORAGE_TRANSITION_IN_PROGRESS'
+      || message.includes('memory_suite_storage_transition_in_progress');
+  };
+
+  const isHayakuStorageTransitionActive = () => {
+    try {
+      const job = MemorySuiteStorageBridge.getSyncJob?.() || MemorySuiteStorageBridge.getSyncJobState?.();
+      if (job && (job.kind === 'global_mode' || job.scopeId === 'global_mode') && !['completed', 'failed', 'cancelled'].includes(String(job.status || ''))) {
+        return true;
+      }
+    } catch (_) {}
+    return Memory.storageTransitionPending === true;
+  };
+
+  const syncHayakuStorageTransitionNotice = () => {
+    const root = Memory.ledgerViewer?.root;
+    if (!root || typeof document === 'undefined') return;
+    const storageHost = root.querySelector?.('#hayakuMemorySuiteServerConnectionPanel');
+    if (!storageHost || !storageHost.parentElement) return;
+    const active = isHayakuStorageTransitionActive();
+    let notice = root.querySelector?.('#hayakuStorageTransitionNotice');
+    if (!notice && active) {
+      notice = document.createElement('div');
+      notice.id = 'hayakuStorageTransitionNotice';
+      notice.className = 'note note--warn';
+      notice.setAttribute('role', 'status');
+      notice.setAttribute('aria-live', 'polite');
+      notice.innerHTML = '<div class="split"><div><b>저장소 이전 대기 또는 진행 중</b><p class="muted">데이터 보호를 위해 이전이 완료될 때까지 패킷 원장 읽기가 잠겨 있습니다. 아래 저장 연결 패널에서 이전을 완료하거나 다시 시도하세요.</p></div><button id="hayakuRetryStorageInitBtn" class="btn" type="button">초기화 다시 시도</button></div>';
+      storageHost.parentElement.insertBefore(notice, storageHost);
+      notice.querySelector?.('#hayakuRetryStorageInitBtn')?.addEventListener('click', () => {
+        void retryHayakuStorageInitialization({ fromGui: true });
+      });
+    }
+    if (notice) notice.hidden = !active;
+  };
+
+  const retryHayakuStorageInitialization = async (options = {}) => {
+    if (Memory.unloaded || !ownsRuntime()) return { ok: false, reason: 'unloaded' };
+    try {
+      await ensureHayakuSourceInputReady('storage_transition_retry');
+      const scope = await RisuCompat.currentChatScope();
+      if (scope?.confident) {
+        const summary = await loadStorageLedgerSummary(scope);
+        if (summary?.enabled === false && isHayakuStorageTransitionError(summary)) {
+          const err = new Error(summary.reason || 'memory_suite_storage_transition_in_progress');
+          err.code = summary.code || 'MEMORY_SUITE_STORAGE_TRANSITION_IN_PROGRESS';
+          throw err;
+        }
+      }
+      Memory.storageTransitionPending = false;
+      syncHayakuStorageTransitionNotice();
+      if (Memory.ledgerViewer?.visible && Memory.ledgerViewer?.root) {
+        if (Memory.ledgerViewer.activeTab === 'server') {
+          viewerSetTab('overview');
+        }
+        await refreshLedgerViewer();
+      }
+      return { ok: true, pending: false };
+    } catch (error) {
+      if (isHayakuStorageTransitionError(error)) {
+        Memory.storageTransitionPending = true;
+        ensureHayakuStorageTransitionWatcher();
+        syncHayakuStorageTransitionNotice();
+        if (options.fromGui && Memory.ledgerViewer?.visible && Memory.ledgerViewer?.root) {
+          viewerSetTab('server');
+        }
+        return { ok: false, pending: true, error: compact(error?.message || error, 240) };
+      }
+      return { ok: false, pending: false, error: compact(error?.message || error, 240) };
+    }
+  };
+
+  const ensureHayakuStorageTransitionWatcher = () => {
+    if (hayakuStorageTransitionUnsubscribe || typeof MemorySuiteStorageBridge.subscribeSyncJob !== 'function') return;
+    hayakuStorageTransitionUnsubscribe = MemorySuiteStorageBridge.subscribeSyncJob(job => {
+      if (Memory.unloaded || !ownsRuntime()) return;
+      const active = job && (job.kind === 'global_mode' || job.scopeId === 'global_mode') && !['completed', 'failed', 'cancelled'].includes(String(job.status || ''));
+      if (active) {
+        Memory.storageTransitionPending = true;
+        syncHayakuStorageTransitionNotice();
+        return;
+      }
+      if (Memory.storageTransitionPending) {
+        Memory.storageTransitionPending = false;
+        setTimeout(() => {
+          if (Memory.unloaded || !ownsRuntime()) return;
+          void retryHayakuStorageInitialization().then(res => {
+            if (res?.pending && !isHayakuStorageTransitionActive() && !Memory.unloaded && ownsRuntime()) {
+              setTimeout(() => { void retryHayakuStorageInitialization(); }, 80);
+            }
+          });
+        }, 25);
+      }
+    });
+  };
+
   const viewerMountServerConnection = () => {
+    syncHayakuStorageTransitionNotice();
     const storageHost = Memory.ledgerViewer.root?.querySelector?.('#hayakuMemorySuiteServerConnectionPanel');
     if (!storageHost) return false;
     if (storageHost) void MemorySuiteStorageBridge.mountConnectionPanel(storageHost, {
@@ -58506,6 +58624,25 @@ function mountMemorySuiteSourceInputControls(container, config) {
         ? { enabled: false, reason: scope?.reason || 'scope_unavailable', records: [] }
         : await loadStorageLedger(scope);
       if (!stillOpen()) return null;
+      const transitionLocked = (ledger?.enabled === false && typeof isHayakuStorageTransitionError === 'function' && isHayakuStorageTransitionError(ledger))
+        || (typeof isHayakuStorageTransitionActive === 'function' && isHayakuStorageTransitionActive());
+      if (transitionLocked) {
+        Memory.storageTransitionPending = true;
+        if (typeof ensureHayakuStorageTransitionWatcher === 'function') ensureHayakuStorageTransitionWatcher();
+        viewer.scope = scope;
+        viewer.partialRecords = [];
+        viewer.ledger = ledger;
+        if (!viewer.activeTab || viewer.activeTab === 'overview') {
+          if (typeof viewerSetTab === 'function') viewerSetTab('server');
+          else viewer.activeTab = 'server';
+        }
+        if (typeof syncHayakuStorageTransitionNotice === 'function') syncHayakuStorageTransitionNotice();
+        if (typeof viewerMountServerConnection === 'function') viewerMountServerConnection();
+        if (status) status.textContent = '저장소 이전 대기 · 서버 연결 탭에서 상태를 확인하세요.';
+        return clone({ scope, ledger }, null);
+      }
+      Memory.storageTransitionPending = false;
+      if (typeof syncHayakuStorageTransitionNotice === 'function') syncHayakuStorageTransitionNotice();
       if (scope?.confident) {
         const current = await RisuCompat.currentChatScope({ observerFast: true });
         if (!stillOpen()) return null;
@@ -58543,6 +58680,16 @@ function mountMemorySuiteSourceInputControls(container, config) {
       if (!stillOpen()) return null;
       viewer.scope = null;
       viewer.ledger = { enabled: false, reason: compact(error?.message || error, 180), records: [] };
+      if (typeof isHayakuStorageTransitionError === 'function' && isHayakuStorageTransitionError(error)) {
+        Memory.storageTransitionPending = true;
+        if (typeof ensureHayakuStorageTransitionWatcher === 'function') ensureHayakuStorageTransitionWatcher();
+        if (typeof viewerSetTab === 'function') viewerSetTab('server');
+        else viewer.activeTab = 'server';
+        if (typeof syncHayakuStorageTransitionNotice === 'function') syncHayakuStorageTransitionNotice();
+        if (typeof viewerMountServerConnection === 'function') viewerMountServerConnection();
+        if (status) status.textContent = '저장소 이전 대기 · 서버 연결 탭에서 상태를 확인하세요.';
+        return null;
+      }
       viewerRenderData();
       if (status) status.textContent = `조회 실패 · ${viewer.ledger.reason}`;
       return null;
@@ -59523,6 +59670,9 @@ function mountMemorySuiteSourceInputControls(container, config) {
   };
   const showLedgerViewer = async () => {
     Memory.ledgerViewer.visible = true;
+    if (isHayakuStorageTransitionActive() && (!Memory.ledgerViewer.activeTab || Memory.ledgerViewer.activeTab === 'overview')) {
+      Memory.ledgerViewer.activeTab = 'server';
+    }
     // Follow the host colour scheme while the viewer is on screen.
     try {
       globalThis.__memorySuiteTheme?.start?.('hayaku', () => apiCandidates().find(candidate => typeof candidate?.getColorScheme === 'function'), 2000);
@@ -61005,6 +61155,11 @@ function mountMemorySuiteSourceInputControls(container, config) {
       await loadSettings(true);
       await loadAuxProbeCache();
       await ensureHayakuSourceInputReady('install');
+      if (hayakuSourceInputReadyError && isHayakuStorageTransitionError(hayakuSourceInputReadyError)) {
+        Memory.storageTransitionPending = true;
+        Memory.ledgerViewer.activeTab = 'server';
+        ensureHayakuStorageTransitionWatcher();
+      }
       const legacyStorage = await RisuCompat.purgeLegacyHayakuStorage();
       if (!ownsRuntime()) return;
       debugLog('install:legacy_storage', legacyStorage);
@@ -61167,6 +61322,8 @@ function mountMemorySuiteSourceInputControls(container, config) {
       }
       scheduleFailedAutoRecovery();
       await RisuCompat.onUnload(async () => {
+        try { hayakuStorageTransitionUnsubscribe?.(); } catch (_) {}
+        hayakuStorageTransitionUnsubscribe = null;
         Memory.unloaded = true;
         clearSourceEditPreview();
         if (ledgerViewerUiRetryTimer !== null) clearTimeout(ledgerViewerUiRetryTimer);
