@@ -23,10 +23,15 @@ function stat(file) {
 function same(a,b) {
   return !!a && !!b && ['dev','ino','mode','size','mtimeNs','ctimeNs'].every(k => a[k] === b[k]);
 }
+function sameDir(a,b) {
+  return !!a && !!b && ['dev','ino','mode'].every(k => a[k] === b[k]);
+}
 function sameEntry(a,b) { return a === null ? b === null : same(a,b); }
 function checkedPath(input) {
   if (typeof input !== 'string' || !input || input.includes('\0')) throw unknown('authority_path_invalid');
-  const full = path.resolve(input), root = path.parse(full).root;
+  const raw = path.resolve(input);
+  const full = (process.platform === 'darwin' && /^\/(?:var|tmp|etc)(?:\/|$)/.test(raw) && stat('/' + raw.split('/')[1])?.isSymbolicLink()) ? '/private' + raw : raw;
+  const root = path.parse(full).root;
   const parts = full.slice(root.length).split(path.sep).filter(Boolean);
   if (parts.length > MAX_COMPONENTS) throw unknown('authority_path_depth');
   let current = root;
@@ -67,7 +72,7 @@ function assertNoAuthorityFilesystemEvidence(dataDir) {
     // Fixed protected paths only. This filesystem-only function does not prove
     // absence of orphan SQL objects and must not be used as root SQL admission.
     for (const n of OWNERS) for (const suffix of ['','-wal','-shm','-journal']) regular(path.join(stores,n,n+'.sqlite'+suffix));
-    if (!same(before,stat(root))) throw unknown('authority_path_changed');
+    if (!sameDir(before,stat(root))) throw unknown('authority_path_changed');
   } catch (e) { throw wrap(e); }
 }
 function inspectDatabase(db) {

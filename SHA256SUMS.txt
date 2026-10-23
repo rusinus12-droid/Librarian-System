@@ -653,7 +653,7 @@ d658e0f1de531383759e1a5e89973dd484886bc06c9d04a47ef3c827cbfa1561  ./PROGRAM/plug
 d68a72395072642b26eaf2ea05f1bb16c13c73731d0f56e5a1a5ee75882c5a2c  ./PROGRAM/plugins/LIA_Persona_Linker.js
 996e52f3027300850197d9e338d39175c84ba9cca206647d8f0d0717b4fce720  ./PROGRAM/plugins/LIBRA.js
 ba7e41a07e257c9148c61e9cce0d7923fc1db0c16aa7335e95bac424c4c74e70  ./PROGRAM/plugins/RETRACE.js
-37e3383e156712dc06c661d708063efffd9daf22bf3729892ed4aaee5f148b6a  ./PROGRAM/program-manifest.json
+e11343b6dc340ad794349018cbc7c923d93f4653fba28ec5916d7a62424615fb  ./PROGRAM/program-manifest.json
 dd876b2e56bc534c78fdc873914d846175c9d1234cfa926da7736f2447af5206  ./PROGRAM/release-policy.json
 38f798a00ebc9fe69e474d7342bad540350dc07e106ae1c4fdceb6c9e299b751  ./PROGRAM/RisuAI_플러그인_폴더_열기.bat
 c35515d7e669bc31e2901c27f941b48f86ef15eebc20835ef325384728b57401  ./PROGRAM/run_regression_batch.py
@@ -703,7 +703,7 @@ e2066528e15094e562fee9cbc466e2fc6d70f305729ab003eb40a951ce0c882a  ./PROGRAM/serv
 4daec197c4819bcb146d379160640779075d74044faac9f9b267789659ba619f  ./PROGRAM/server/authority/libra-source-proof.cjs
 cbf4b6ac2f5a9771ad9cbd8a1e7c437529ebff0d30d4db916e64c0c46d11ca4e  ./PROGRAM/server/authority/libra-typed-codec.cjs
 e6be080caae8b4cd898df75901354ec8fe0f4bfe9f25e9c345b548c24a4185e1  ./PROGRAM/server/authority/libra-typed-source.cjs
-5fd11ae14b21069d9751462783be702c538aeccd4a23f68bc61677273c4c2e41  ./PROGRAM/server/authority/maintenance-admission.cjs
+6d4459a1ef4afb80c4b40a340471abc0586fa633497194d77686b68b4ecde3d2  ./PROGRAM/server/authority/maintenance-admission.cjs
 078d8aae2b7fae5c0941a6183ad5f5df15fe269e6dcb1405913969d6cf97fe87  ./PROGRAM/server/authority/observation-io.cjs
 4ba5cc598bd2adb72e8f07ebaba30f0c133301e059da7d33c6c61623667969aa  ./PROGRAM/server/authority/observation-json.cjs
 c20147bac20838d159a1ed6a9c1061ef1a102e194276e55a2d5b56b151640599  ./PROGRAM/server/authority/observation.cjs
@@ -844,7 +844,7 @@ a75d31432de7ebaabcd6212799e1f15120521645f153fa81127b89f5f61be8a5  ./PROGRAM/test
 63372dc24e40277e07fc87906b3fcac194aee0fbf6b9fdefada8550a2750e68a  ./PROGRAM/tests/build_plugins_property_key_pool_test.cjs
 92d4ee97c629f03040a6bb0eb2744d28dac6abf9dc839351cd28f0b413c74ba7  ./PROGRAM/tests/build_plugins_refusal_exit_test.cjs
 fd8436fc4da70fc634596e60c052f0e9a56f6b4bec491478ef2096d087535742  ./PROGRAM/tests/build_plugins_string_value_pool_test.cjs
-90c450a404ca7c3f4772eb479c9588a529e9501006b111d2c46fd492b17ae3c5  ./PROGRAM/tests/build_support_cache_runtime_test.cjs
+d4b93e49eb77cdc67dd1fa2d8a69056edf2d81af15ce37efac98955d79f360cb  ./PROGRAM/tests/build_support_cache_runtime_test.cjs
 893fbbc7b5952fade327a9474f3225f58f293a21621bd9aabf1bbcd7c2bb681b  ./PROGRAM/tests/capture_backend_compatibility_contract_test.cjs
 f2beca4473a4ae503452bd04e3822a3b2626f174fb9b9555af01380440d1da58  ./PROGRAM/tests/chat_status_runtime_test.cjs
 e012802f0335b2246cfacb4165dd0779e329e0aa38f3b3bd3fed976da4e275ad  ./PROGRAM/tests/checksum_generator_worktree_metadata_test.cjs
@@ -1238,7 +1238,7 @@ bf7522e1b35299241055d74a7149eadc2f8419d09daed51c3209c442878e8597  ./PROGRAM/test
 ba3b8e221d9831ab7b41c1f0f56e1f38fdc549288c0a0deccf73e7ef91cf4102  ./PROGRAM/tests/gradia/read-v2-credit.test.cjs
 2197b84fe73945a5a58f90b151652aea43dc9e2d8e666f6e566f61ca570b5497  ./PROGRAM/tests/gradia/read-v2-frames.test.cjs
 49264d6e12af3366531e04e82dbe32d3916e82a6dff0b54b8e2eebb4939697c4  ./PROGRAM/tests/gradia/read-v2-protocol.test.cjs
-8d8a6f84b739a6366d501e9e33aeef02cdd0928e112538085717190334a053e3  ./PROGRAM/tests/gradia/readonly-connection.test.cjs
+be4eb5486c163e8ddcdbf271b8f0e3235ce7e6d545b1189dcdcea1962db90e06  ./PROGRAM/tests/gradia/readonly-connection.test.cjs
 ee15f1162430623c7dd58917392dfb58dd44f70830aac727145e7363af2609f9  ./PROGRAM/tests/gradia/server-read-adapter.test.cjs
 65f04e9a2f50093cfd1d78ff6a9f65d6b7e3e80aefaa7e76bfe70bfaacb8c785  ./PROGRAM/tests/gradia/server-read-public.test.cjs
 ad8a0e832935bce5be4c3b3bee94febc85c4474dd5c8b00e08c125d81f8aedc7  ./PROGRAM/tests/gradia/settings-backup.test.cjs

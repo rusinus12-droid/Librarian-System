@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-23T00:48:31.400Z",
+  "generatedAt": "2026-10-23T02:02:42.236Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -4180,8 +4180,8 @@
       "bytes": 13933
     },
     "server/authority/maintenance-admission.cjs": {
-      "sha256": "5fd11ae14b21069d9751462783be702c538aeccd4a23f68bc61677273c4c2e41",
-      "bytes": 7492
+      "sha256": "6d4459a1ef4afb80c4b40a340471abc0586fa633497194d77686b68b4ecde3d2",
+      "bytes": 7765
     },
     "server/authority/observation-io.cjs": {
       "sha256": "078d8aae2b7fae5c0941a6183ad5f5df15fe269e6dcb1405913969d6cf97fe87",
@@ -4744,8 +4744,8 @@
       "bytes": 9699
     },
     "tests/build_support_cache_runtime_test.cjs": {
-      "sha256": "90c450a404ca7c3f4772eb479c9588a529e9501006b111d2c46fd492b17ae3c5",
-      "bytes": 8432
+      "sha256": "d4b93e49eb77cdc67dd1fa2d8a69056edf2d81af15ce37efac98955d79f360cb",
+      "bytes": 8793
     },
     "tests/capture_backend_compatibility_contract_test.cjs": {
       "sha256": "893fbbc7b5952fade327a9474f3225f58f293a21621bd9aabf1bbcd7c2bb681b",
@@ -6320,8 +6320,8 @@
       "bytes": 6636
     },
     "tests/gradia/readonly-connection.test.cjs": {
-      "sha256": "8d8a6f84b739a6366d501e9e33aeef02cdd0928e112538085717190334a053e3",
-      "bytes": 23262
+      "sha256": "be4eb5486c163e8ddcdbf271b8f0e3235ce7e6d545b1189dcdcea1962db90e06",
+      "bytes": 23774
     },
     "tests/gradia/server-read-adapter.test.cjs": {
       "sha256": "ee15f1162430623c7dd58917392dfb58dd44f70830aac727145e7363af2609f9",

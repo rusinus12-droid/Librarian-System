@@ -167,7 +167,13 @@ test('old saved read-source choices migrate to the unified engine and the old se
 });
 test('missing unified owner support cannot fall back to server logical memory',async t=>{
  const h=await fixture(t,{ownerUnavailable:true});assert.equal((await h.connect()).connection.state,'error');
- assert.match(h.status().connection.reason,/LIB_READ_UNIFIED_UNAVAILABLE/);assert.notEqual(h.status().status,'bound');
+ // Memory owners are optional (GRADIA 0.26.15): a missing plugin channel leaves no owner
+ // scope to resolve, so the connect reports the absent owner (LIB_READ_OWNER_UNAVAILABLE)
+ // instead of a LIBRA engine. Neither code may become a server logical read: the only request
+ // this path may make is GRADIA's own storage bootstrap, never a memory capture/current read.
+ assert.match(h.status().connection.reason,/LIB_READ_(?:UNIFIED|OWNER)_UNAVAILABLE/);
+ assert.equal(h.requests.filter(r=>/\/(capture|current)$/.test(r.url)).length,0,'no memory read may replace the missing owner');
+ assert.notEqual(h.status().status,'bound');
 });
 
 test('settings applies the server mode through the real read-only connection and saves verified consent',async t=>{

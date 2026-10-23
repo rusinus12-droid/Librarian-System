@@ -5,6 +5,10 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),cryp
 const {spawnSync}=require('node:child_process');
 const helper=path.resolve(__dirname,'../tools/ensure_build_support.cjs');
 const names=['jsdom','acorn','terser','fake-indexeddb','fixture-child'];
+// The child process require()s the helper by path, and Node resolves symlinks in module
+// paths, so macOS reports /private/var for a tmpdir handed over as /var. Compare the
+// physical directories on both sides instead of one raw and one resolved string.
+const real=value=>{try{return fs.realpathSync(value);}catch(_){return value;}};
 
 function fixture(t){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'build-support-cache-test-'));
@@ -81,7 +85,7 @@ test('a damaged tarball is refused and a subsequent intact cache can recover',t=
 
 test('standard build-support npm ci installation is discovered without NODE_PATH',t=>{
  const x=fixture(t);const modules=path.join(x.program,'build-support/node_modules');x.unpackLegacy(names,modules);
- const result=x.run();assertReady(result);assert.equal(result.support.modulesDir,modules);assert.equal(result.support.source,'build_support_node_modules');
+ const result=x.run();assertReady(result);assert.equal(real(result.support.modulesDir),real(modules));assert.equal(result.support.source,'build_support_node_modules');
 });
 
 test('opt-in npm bootstrap uses pinned ci with dev packages, no shell, and reuses the verified generation',t=>{
@@ -89,7 +93,7 @@ test('opt-in npm bootstrap uses pinned ci with dev packages, no shell, and reuse
  assert.equal(first.support.source,'npm_ci');
  const calls=fs.readFileSync(npm.calls,'utf8').trim().split('\n').map(JSON.parse);assert.equal(calls.length,1);
  assert.deepEqual(calls[0].slice(0,6),['ci','--include=dev','--ignore-scripts','--no-audit','--no-fund','--prefix']);
- assert.ok(!first.support.modulesDir.startsWith(x.program));
+ assert.ok(!real(first.support.modulesDir).startsWith(real(x.program)));
  fs.unlinkSync(npm.cli);const second=x.run({installIfMissing:true,npmCliPath:npm.cli});assertReady(second);
  assert.equal(second.support.modulesDir,first.support.modulesDir);assert.equal(fs.readFileSync(npm.calls,'utf8').trim().split('\n').length,1);
 });
