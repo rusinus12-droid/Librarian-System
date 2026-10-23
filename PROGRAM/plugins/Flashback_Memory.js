@@ -8723,16 +8723,97 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     discoveredScopes:inventory.scopes.length,legacyOverrides:inventory.scopes.filter(scope=>{const row=inventory.registry.entries[scope.scopeId];return row&&!['inherited','migrated'].includes(String(row.origin||''));}).length,
     directions:Object.fromEntries([MODE_PLUGIN_ONLY,MODE_SERVER_ONLY,MODE_MIRROR].map(mode=>[mode,inventory.scopes.filter(scope=>scope.sourceMode===mode).length])),
     blockers:inventory.blockers,...globalWarningMetadata(inventory),catalogFingerprint:inventory.catalogFingerprint,inventoryFingerprint:inventory.inventoryFingerprint});
+  const syncJobActionGuidance = (error, details, job) => {
+    const errCode = String(error || '').trim();
+    const rawDetails = typeof details === 'string' ? details : (details?.preview || JSON.stringify(details || ''));
+    const jobRaw = job ? JSON.stringify(job) : '';
+    const hasResetBlocker = rawDetails.includes('서버 자료가 초기화 또는 복원되었습니다')
+      || rawDetails.includes('server_reset_epoch_mismatch')
+      || jobRaw.includes('서버 자료가 초기화 또는 복원되었습니다');
+
+    if (errCode === 'MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED' || hasResetBlocker) {
+      if (hasResetBlocker) {
+        return {
+          blockerReason: '서버 자료 복원 또는 초기화가 감지되어 데이터 덮어쓰기 방지 잠금이 활성화되었습니다.',
+          actionRequired: '고급 작업 메뉴에서 [서버 자료 사용] 또는 [로컬 기억 다시 업로드]를 선택한 뒤 브라우저를 새로고침(F5)하고 재개하세요.',
+          remedySteps: [
+            '1. 로컬 Librarian 서버가 켜져 있는지 확인',
+            '2. 플러그인 설정 > [고급 작업] 메뉴 열기',
+            '3. [서버 자료 사용 · 로컬 업로드 안 함] (권장) 또는 [초기화 후 로컬 기억 다시 업로드] 클릭',
+            '4. RisuAI 브라우저 창 새로고침 (F5)',
+            '5. 다시 [고급 작업] > [미완료 전체 이전 재개] 클릭'
+          ]
+        };
+      }
+      return {
+        blockerReason: '전체 대화 목록 또는 스코프 인벤토리의 변경이 감지되어 재검색이 필요합니다.',
+        actionRequired: '서버 연결 상태를 확인하고 설정을 다시 적용하거나 브라우저를 새로고침한 뒤 재개하세요.',
+        remedySteps: [
+          '1. [연결 테스트] 버튼으로 서버 정상 응답 확인',
+          '2. RisuAI 새로고침(F5) 후 재개 시도'
+        ]
+      };
+    }
+    if (errCode === 'MEMORY_SUITE_SERVER_UNAVAILABLE' || errCode === 'MEMORY_SUITE_SERVER_NOT_FOUND') {
+      return {
+        blockerReason: 'Librarian System 서버에 연결할 수 없습니다.',
+        actionRequired: 'PROGRAM/1_서버_실행.bat을 실행하여 로컬 서버를 켜고 포트(47630) 연결을 확인하세요.',
+        remedySteps: [
+          '1. PROGRAM/1_서버_실행.bat 실행',
+          '2. [연결 테스트] 버튼으로 연결 확인',
+          '3. 작업 재시도'
+        ]
+      };
+    }
+    if (errCode === 'MEMORY_SUITE_JOB_SERVER_PIN_CHANGED') {
+      return {
+        blockerReason: '이전을 시작했던 서버 주소와 현재 설정된 서버 주소가 다릅니다.',
+        actionRequired: '작업 시작 시 사용한 원래 서버 주소를 입력하거나 작업을 취소 후 다시 시작하세요.',
+        remedySteps: [
+          '1. 원래 서버 주소(URL) 확인 및 입력',
+          '2. 필요 시 [이전 작업 취소] 후 새 서버 주소로 다시 시작'
+        ]
+      };
+    }
+    if (errCode === 'MEMORY_SUITE_GLOBAL_SOURCE_CHANGED') {
+      return {
+        blockerReason: '이전 준비 중 로컬 대화 기록에 변경사항이 발생했습니다.',
+        actionRequired: 'RisuAI를 새로고침하고 전체 이전 설정을 다시 적용하세요.',
+        remedySteps: [
+          '1. 브라우저 새로고침(F5)',
+          '2. 서버 모드 설정 다시 적용'
+        ]
+      };
+    }
+    if (errCode) {
+      return {
+        blockerReason: `작업 중 오류 발생: ${errCode}`,
+        actionRequired: '상세 진단을 복사하여 확인하거나 필요 시 작업을 일시 중지 후 재시도하세요.',
+        remedySteps: [
+          '1. [상세 진단 복사] 버튼을 눌러 로그 확인',
+          '2. 브라우저 새로고침(F5) 후 재시도'
+        ]
+      };
+    }
+    return null;
+  };
   const syncJobDiagnostics = job => {
     if (!job) return null;
     const result=job.result&&typeof job.result==='object'?job.result:{};
+    const guidance = syncJobActionGuidance(job.error, job.errorDetails, job);
     // Export operation evidence, never the admitted source inventory or server pins.
     return cloneSyncJob({schema:'memory-suite.scope-sync-diagnostics.v1',namespace,pluginVersion,
       jobId:job.jobId,kind:job.kind,status:job.status,phase:job.phase,failedPhase:job.failedPhase||'',
       requestedMode:job.requestedMode||job.targetMode||'',effectiveMode:job.effectiveMode||job.sourceMode||'',
       currentScopeId:job.currentScopeId||job.scopeId||'',currentSpace:job.currentSpace||'',currentKey:job.currentKey||'',currentAction:job.currentAction||'',
       discoveredScopes:job.discoveredScopes,verifiedScopes:job.verifiedScopes,startedAt:job.startedAt,updatedAt:job.updatedAt,lastActivityAt:job.lastActivityAt,
-      error:job.error||'',details:job.errorDetails||null,recoveryRequired:job.recoveryRequired===true,
+      error:job.error||'',details:job.errorDetails||null,
+      ...(guidance ? {
+        blockerReason: guidance.blockerReason,
+        actionRequired: guidance.actionRequired,
+        remedySteps: guidance.remedySteps
+      } : {}),
+      recoveryRequired:job.recoveryRequired===true,
       failures:job.failureDetails||result.failures||[],validation:job.validation||result.validation||null,
       metrics:job.metrics||result.metrics||{},currentProgress:job.currentProgress||null,result});
   };
@@ -8925,12 +9006,18 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       state.config={...state.config,mode:job.targetMode,at:Date.now()};state.scopeRouting.routeCache.clear();
       return result;
     }catch(error){
-      try{await globalSaveJob({status:'paused',phase:state.syncJob.current?.phase==='commit_pending'?'commit_pending':'recovery_pending',error:String(error.code||error.message),
+      const errCode = String(error.code || error.message);
+      const guidance = syncJobActionGuidance(errCode, error.details, state.syncJob.current);
+      const failureMsg = guidance
+        ? `미완료 · ${guidance.blockerReason} [대처] ${guidance.actionRequired}`
+        : '미완료 · 원본과 실제 경로를 보존했습니다. 문제를 확인한 뒤 이어서 진행하세요.';
+      try{await globalSaveJob({status:'paused',phase:state.syncJob.current?.phase==='commit_pending'?'commit_pending':'recovery_pending',error:errCode,
         failedPhase:state.syncJob.current?.phase||'',errorDetails:compactRestoreEvidence(error.details||null),
+        actionRequired:guidance?.actionRequired||null,blockerReason:guidance?.blockerReason||null,remedySteps:guidance?.remedySteps||null,
         result:compactRestoreEvidence(error.result||null),failureDetails:compactRestoreEvidence(error.result?.failures||[]),
         metrics:compactRestoreEvidence(error.metrics||error.result?.metrics||null),validation:compactRestoreEvidence(error.validation||error.result?.validation||null),
         recoveryRequired:!!error.recoveryLock,failures:Math.max(1,Number(error.result?.failures?.length||0)),
-        message:'미완료 · 원본과 실제 경로를 보존했습니다. 문제를 확인한 뒤 이어서 진행하세요.'});}catch(_){}
+        message:failureMsg});}catch(_){}
       error.job=getSyncJob();throw error;
     }finally{globalMigrationContext=null;globalJobRunning=false;}
   };
@@ -11543,6 +11630,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       #${rootId} .scopetoggle button[aria-pressed="true"] small{color:#cdd9f2}
       #${rootId} .scopetoggle button:only-child{grid-column:1/-1}
       #${rootId} .mscx-advanced{border:1px solid #34425b;border-radius:10px;padding:0 12px} #${rootId} .mscx-advanced>summary{cursor:pointer;padding:11px 0;font-weight:700;font-size:13px} #${rootId} .mscx-advanced>summary small{font-weight:400;color:#9eacc3;margin-left:6px} #${rootId} .mscx-advanced-body{display:grid;gap:8px;padding-bottom:12px}
+      #${rootId} .mscx-group{display:grid;gap:6px;border:1px solid var(--border,#34425b);border-radius:9px;padding:10px;min-width:0} #${rootId} .mscx-group>b{font-size:13px} #${rootId} .mscx-group>.muted{font-size:12px;line-height:1.55;overflow-wrap:anywhere} #${rootId} .mscx-group.danger{border-color:#b77c71;border-style:dashed}
       #${rootId} .scopeunset{border-color:#f0b65c;background:#241d10}
       #${rootId} .modes{display:grid;gap:8px} #${rootId} label.mode{display:flex;gap:9px;align-items:flex-start;border:1px solid #34425b;border-radius:10px;padding:10px;cursor:pointer}
       #${rootId} input[type=text],#${rootId} input[type=password]{width:100%;padding:10px 11px;border-radius:9px;border:1px solid #465a79;background:#0b1321;color:#fff}
@@ -11571,11 +11659,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           <b>저장 위치 전환 확인</b><p data-mode-confirm-text style="white-space:pre-wrap;overflow-wrap:anywhere"></p>
           <div class="actions"><button type="button" data-mode-confirm-cancel>취소 · 원본 유지</button><button type="button" class="primary" data-mode-confirm-approve>동의하고 이전</button></div>
         </section>
-        <details class="mscx-advanced"><summary>고급 작업 <small>동기화 · 복구 · 이전 · 초기화</small></summary><div class="mscx-advanced-body"><div class="muted">평소에는 쓰지 않아도 됩니다. 저장 위치를 옮기거나 문제를 복구할 때만 사용하세요.</div>
-        <div class="actions"><button data-sync>지금 동기화</button><button data-restore>서버 → pluginStorage 복구</button></div>
-        ${globalModeEnabled ? '<div class="actions"><button data-global-pause>전체 이전 중단·보존</button><button data-global-resume>미완료 전체 이전 재개</button></div>' : ''}
-        <div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div>
-        <div class="actions"><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div></div></details><div class="status" data-status>현재 모드: ${esc(initial.modeLabel)}
+        <details class="mscx-advanced"><summary>고급 작업 <small>상황별 관리 도구</small></summary><div class="mscx-advanced-body"><div class="muted">평소에는 쓰지 않아도 됩니다. 지금 겪는 상황과 맞는 항목만 사용하세요.</div>
+        <section class="mscx-group" data-advanced-group="sync"><b>🔄 서버와 기기 내용 맞추기</b><div class="muted">언제: 서버와 이 기기의 기억이 서로 다르게 보이거나, 최근 내용이 제대로 저장됐는지 확인하고 싶을 때</div><div class="actions"><button data-sync>지금 동기화</button></div></section>
+        ${globalModeEnabled ? '<section class="mscx-group" data-advanced-group="migration"><b>🚚 전체 이전 관리</b><div class="muted">언제: 저장 위치 전체 이전이 진행 중이거나 중간에 멈췄을 때<br>· 중단·보존: 진행 중인 이전을 안전하게 멈춥니다. 원본은 그대로 남습니다.<br>· 재개: 멈춘 이전을 이어서 진행합니다.</div><div class="actions"><button data-global-pause>전체 이전 중단·보존</button><button data-global-resume>미완료 전체 이전 재개</button></div></section>' : ''}
+        <section class="mscx-group" data-advanced-group="restore"><b>🛟 기기 기억 복구</b><div class="muted">언제: 이 기기(RisuAI pluginStorage)의 기억이 사라지거나 손상됐을 때. 서버에 보존된 정본으로 현재 스코프를 되살립니다.</div><div class="actions"><button data-restore>서버 → pluginStorage 복구</button></div></section>
+        <section class="mscx-group" data-advanced-group="reset"><b>♻️ 서버 초기화·복원 이후 선택</b><div class="muted">언제: "서버 자료가 초기화 또는 복원되었습니다" 안내가 떴을 때만 사용합니다. 둘 중 하나를 고른 뒤 RisuAI를 새로고침하세요.<br>· 서버 자료 사용(권장): 복원된 서버 기억을 그대로 씁니다.<br>· 로컬 기억 다시 업로드: 이 기기의 기억으로 서버를 다시 채웁니다.</div><div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div></section>
+        <section class="mscx-group danger" data-advanced-group="cleanup"><b>🗑️ 기기 저장 공간 정리 · 주의</b><div class="muted">언제: 현재 스코프를 서버 단독으로 옮긴 뒤 이 기기의 중복 사본을 지우고 싶을 때. 서버 보존을 먼저 검증하고, 한 번 더 눌러야 삭제됩니다.</div><div class="actions"><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div></section></div></details><div class="status" data-status>현재 모드: ${esc(initial.modeLabel)}
 서버 상태를 확인할 수 있습니다.</div>
         <details data-preview-diagnostics hidden><summary>이전 검사 상세 · 대화 본문과 API 키 제외</summary><textarea data-preview-diagnostics-text aria-label="이전 검사 상세" readonly style="width:100%;min-height:180px"></textarea></details>
       </div>
@@ -11662,9 +11751,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       const terminalActions=q('[data-job-terminal-actions]'); terminalActions.style.display=terminal?'flex':'none';
       const result=job.result&&typeof job.result==='object'?job.result:{};
+      const guidance=syncJobActionGuidance(job.error,job.errorDetails,job);
       q('[data-job-result]').style.display=showResult?'block':'none';
       q('[data-job-result]').textContent=showResult
-        ? [job.status==='completed'?'완료 결과':job.status==='paused'?'작업 보류':'실패 결과',`요청 모드: ${modeLabel(job.requestedMode || job.targetMode || initial.mode)}`,`현재 적용 모드: ${modeLabel(job.effectiveMode || result.effectiveMode || job.sourceMode || initial.mode)}`,job.status==='failed'?'전환 미완료 · 현재 적용 모드를 확인하세요.':'',`복원 ${Number(job.restored||result.restored||0)} · 업로드 ${Number(job.uploaded||result.uploaded||0)} · 일치 ${Number(job.matched||result.matched||0)}`,`삭제 표식 ${Number(job.removedByTombstone||result.removed||0)} · 검증 ${Number(result.verified||0)}`,job.recoveryRequired?'복구 필수 잠금: 활성 · 서버 단독 유지':'복구 필수 잠금: 없음',job.error?`오류: ${job.error}`:''].filter(Boolean).join('\n')
+        ? [job.status==='completed'?'완료 결과':job.status==='paused'?'작업 보류':'실패 결과',`요청 모드: ${modeLabel(job.requestedMode || job.targetMode || initial.mode)}`,`현재 적용 모드: ${modeLabel(job.effectiveMode || result.effectiveMode || job.sourceMode || initial.mode)}`,job.status==='failed'?'전환 미완료 · 현재 적용 모드를 확인하세요.':'',`복원 ${Number(job.restored||result.restored||0)} · 업로드 ${Number(job.uploaded||result.uploaded||0)} · 일치 ${Number(job.matched||result.matched||0)}`,`삭제 표식 ${Number(job.removedByTombstone||result.removed||0)} · 검증 ${Number(result.verified||0)}`,job.recoveryRequired?'복구 필수 잠금: 활성 · 서버 단독 유지':'복구 필수 잠금: 없음',job.error?`오류: ${job.error}`:'',guidance?`사유: ${guidance.blockerReason}\n대처 방법: ${guidance.actionRequired}`:''].filter(Boolean).join('\n')
         : '';
       if(terminal&&globalWarningText(result))q('[data-job-result]').textContent+='\n'+globalWarningText(result);
       const diagnosticText = JSON.stringify(syncJobDiagnostics(job),null,2);
@@ -11825,7 +11915,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     };
     if(globalModeEnabled){
       q('[data-global-pause]').onclick=async()=>{try{await pauseGlobalModeJob();setMessage('중단을 요청했습니다. 진행 중인 복사 검증을 마친 뒤 원본과 현재 경로를 보존합니다.');renderJob(getSyncJob());}catch(error){setMessage(error.code || error.message,'error');}};
-      q('[data-global-resume]').onclick=async()=>{try{const job=getSyncJob();if(job?.kind!=='global_mode'||syncJobTerminal(job.status)){setMessage('재개할 전체 이전이 없습니다.');return;}await withModeConfiguration(()=>persistGlobalModeAllChats(job.targetMode,{url:q('[data-url]').value}));await refreshPanelSettings();renderJob(getSyncJob());}catch(error){setMessage(`전체 이전 재개 보류\n${error.code || error.message}`,'error');}};
+      q('[data-global-resume]').onclick=async()=>{try{const job=getSyncJob();if(job?.kind!=='global_mode'||syncJobTerminal(job.status)){setMessage('재개할 전체 이전이 없습니다.');return;}await withModeConfiguration(()=>persistGlobalModeAllChats(job.targetMode,{url:q('[data-url]').value}));await refreshPanelSettings();renderJob(getSyncJob());}catch(error){const guidance=syncJobActionGuidance(error.code||error.message,error.details,getSyncJob());setMessage(guidance?`전체 이전 재개 보류\n${guidance.blockerReason}\n▶ 대처: ${guidance.actionRequired}`:`전체 이전 재개 보류\n${error.code || error.message}`,'error');}};
     }
     refreshScopeNote();
     q('[data-sync]').onclick = async()=>{ try{const job=await scopedStartSynchronizationJob({scope:initial.scope});setMessage('현재 스코프 동기화를 시작했습니다.');renderJob(job);}catch(error){setMessage(`동기화 시작 실패\n${error?.userMessage||error?.message||error}`,'error');} };
