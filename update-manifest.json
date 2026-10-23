@@ -17,9 +17,9 @@
   },
   "components": {
     "backend": "0.4.1",
-    "libra": "2.4.9",
-    "hayaku": "3.1.5",
-    "flashback": "1.1.8",
+    "libra": "2.4.10",
+    "hayaku": "3.1.6",
+    "flashback": "1.1.9",
     "lia": "0.27.2",
     "retrace": "1.10.1",
     "gradia": "0.26.15",
