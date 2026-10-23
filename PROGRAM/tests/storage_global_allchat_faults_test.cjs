@@ -118,4 +118,22 @@ test('aggregate pin tampering and changed URL cannot silently resume',async v=>{
 test('valid detached scope is migrated without selecting it',async v=>{
  const f=await fixture(v,{current:''});try{const reg=JSON.parse(f.values.get(f.registryKey));reg.entries.D={scopeId:'D',scopeKey:'D',characterId:'removed-character',chatId:'removed-chat',mode:'plugin_only',origin:'user_explicit'};f.values.set(f.registryKey,JSON.stringify(reg));f.values.set(v[0]+'.D','DETACHED');const result=await f.bridge.setGlobalMode('server_only');assert.equal(result.discoveredScopes,4);assert.equal(result.verifiedScopes,4);assert.equal((await f.bridge.getScopeMode({scopeId:'D'})).mode,'server_only');assert.equal(f.values.get(v[0]+'.D'),'DETACHED');}finally{await f.close();}
 });
+test('cancel with non-registry scopes correctly tombstones routes and succeeds readback',async v=>{
+ const f=await fixture(v);
+ const reg=JSON.parse(f.values.get(f.registryKey));
+ delete reg.entries.A; delete reg.entries.B; delete reg.entries.__memory_suite_global__;
+ f.values.set(f.registryKey,JSON.stringify(reg));
+ let requested=false;const stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.A){requested=true;void f.bridge.cancelSyncJob();}});
+ try{
+  const result=await f.bridge.setGlobalMode('server_only');
+  assert.equal(result.status,'cancelled');
+  assert.equal(result.rollbackComplete,true);
+  assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');
+  assert.equal((await f.bridge.getScopeMode({scopeId:'A'})).mode,'plugin_only');
+  assert.equal((await f.bridge.getScopeMode({scopeId:'B'})).mode,'plugin_only');
+  const finalReg=JSON.parse(f.values.get(f.registryKey));
+  assert.equal(finalReg.entries.A?.removed,true);
+  assert.equal(finalReg.entries.B,undefined);
+ }finally{stop();await f.close();}
+});
 (async()=>{let passed=0;const failures=[];for(const v of variants)for(const [name,fn]of tests){try{await fn(v);passed++;console.log('PASS '+v[0]+' '+name);}catch(error){failures.push({owner:v[0],name,code:error.code,message:error.message,stack:error.stack});console.error('FAIL '+v[0]+' '+name+' '+error.message);}}console.log(JSON.stringify({passed,owners:3,scenariosPerOwner:tests.length,failures},null,2));if(failures.length)process.exitCode=1;})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.1.7
-//@version 3.1.7
+//@display-name HAYAKU · Locator Continuity v3.1.8
+//@version 3.1.8
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.1.7';
+  const PLUGIN_VERSION = '3.1.8';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -6662,7 +6662,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const scope = ['libra','hayaku','flashback'].includes(namespace)&&scopeRoutingEnabled&&options.storagePolicy!=='local_only'
         ? strictOwnerScopeDescriptor(row,scopeIdRaw) : normalizeScopeDescriptor(row, scopeIdRaw);
       if (!scope.scopeId) continue;
-      entries[scope.scopeId] = { ...scope, mode: normalizeMode(row.mode), updatedAt: Math.max(0, Number(row.updatedAt || 0) || 0), source: String(row.source || 'registry').slice(0, 100) };
+      entries[scope.scopeId] = {
+        ...scope,
+        mode: normalizeMode(row.mode),
+        updatedAt: Math.max(0, Number(row.updatedAt || 0) || 0),
+        source: String(row.source || 'registry').slice(0, 100),
+        ...(row.removed === true ? { removed: true } : {}),
+        ...(typeof row.origin === 'string' ? { origin: row.origin.slice(0, 100) } : {}),
+        ...(row.pendingTargetMode && VALID_MODES.has(row.pendingTargetMode) ? { pendingTargetMode: row.pendingTargetMode } : {}),
+        ...(typeof row.globalMigrationJobId === 'string' ? { globalMigrationJobId: row.globalMigrationJobId.slice(0, 100) } : {}),
+        ...(row.recoveryRequired ? { recoveryRequired: row.recoveryRequired } : {}),
+        ...(typeof row.recoveryState === 'string' ? { recoveryState: row.recoveryState.slice(0, 50) } : {}),
+        ...(typeof row.recoveryReason === 'string' ? { recoveryReason: row.recoveryReason.slice(0, 200) } : {})
+      };
     }
     return {
       ...source,
@@ -7465,6 +7477,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ]
       };
     }
+    if (errCode.startsWith('MEMORY_SUITE_GLOBAL_ROLLBACK_')) {
+      return {
+        blockerReason: '취소 중 이전 저장 경로 복구 검증에 실패했습니다.',
+        actionRequired: '원본 데이터는 안전하게 보존되어 있습니다. [고급 작업] > [이전 작업 취소 · 기존 경로 복구]를 다시 클릭하거나 브라우저 새로고침(F5) 후 재시도하세요.',
+        remedySteps: [
+          '1. [상세 진단 복사]로 오류 상세 정보 확인',
+          '2. RisuAI 브라우저 새로고침(F5)',
+          '3. [고급 작업] > [이전 작업 취소 · 기존 경로 복구] 다시 클릭'
+        ]
+      };
+    }
     if (errCode) {
       return {
         blockerReason: `작업 중 오류 발생: ${errCode}`,
@@ -7717,7 +7740,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       await assertDurableJobAdmission(pending);
       if(operationOptions.refreshInventory===true&&operationOptions.previewFingerprint
         &&['MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED','MEMORY_SUITE_GLOBAL_SOURCE_CHANGED'].includes(pending.error))superseded=pending;
-      else {await globalSaveJob({pauseRequested:false});return await runGlobalModeJob(state.syncJob.current);}
+      else {state.syncJob.current.cancelRequested=false;await globalSaveJob({pauseRequested:false,cancelRequested:false});return await runGlobalModeJob(state.syncJob.current);}
     }
     // Accepted owner operations may re-enter the proxy. Finish them before the
     // prepared journal closes aggregate I/O, then freeze without an idle gap.
@@ -7774,7 +7797,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const rollbackScopes=[...job.globalPlan.scopes,globalScopeDescriptor()];
     for(const scope of rollbackScopes.slice().reverse()){
       const current=registry.entries[scope.scopeId]||null,original=originalEntries[scope.scopeId]||null;
-      if(current?.globalMigrationJobId===job.jobId&&current.mode===job.targetMode){
+      if((current?.globalMigrationJobId===job.jobId&&current.mode===job.targetMode)||(current?.removed===true&&current?.source==='global_allchat_cancel_rollback')){
         const restoredRow=original?structuredClone(original):{...current,removed:true,source:'global_allchat_cancel_rollback'};
         restoredRow.updatedAt=Math.max(Date.now(),Number(current.updatedAt||0)+1);
         registry.entries[scope.scopeId]=restoredRow;
@@ -7786,7 +7809,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     registry.legacyGlobalModeImported=registry.legacyGlobalModeImported||job.globalPlan.registry.legacyGlobalModeImported===true;
     const saved=await writeScopeRegistryLocal(registry);
-    if(globalCanonical(parseScopeRegistry(saved).entries)!==globalCanonical(registry.entries))throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED');
+    if(globalCanonical(parseScopeRegistry(saved).entries)!==globalCanonical(parseScopeRegistry(registry).entries))throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED');
     if(job.globalPlan.remoteRequired){
       if(!await synchronizeScopeRegistryToServer(saved))throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_PENDING');
       const remote=await remoteGet('plugin',SCOPE_ROUTING_SERVER_KEY,{allowPluginOnly:true});
@@ -7794,11 +7817,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     state.scopeRouting.routeCache.clear();
     const previousGlobalMode=normalizeMode(liveGlobalRow(job.globalPlan.registry)?.mode||job.effectiveMode||MODE_PLUGIN_ONLY);
+    state.config={...state.config,at:0,mode:previousGlobalMode};
     if((await readScopeMode(globalScopeDescriptor(),true)).mode!==previousGlobalMode)throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED',{scopeId:GLOBAL_SCOPE_ID});
     for(const scope of job.globalPlan.scopes){
       if((await readScopeMode(scope,true)).mode!==scope.sourceMode)throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED',{scopeId:scope.scopeId});
     }
-    state.config={...state.config,at:0,mode:previousGlobalMode};
+
     return await globalSaveJob({status:'cancelled',phase:'cancelled_rolled_back',rollbackComplete:true,finishedAt:Date.now(),currentScopeId:'',message:'취소했습니다. 변경된 저장 경로를 이전 설정으로 복구했고 원본 데이터는 보존했습니다.'});
   };
   // END CORE3 GLOBAL ALL-CHAT MIGRATION v1
@@ -9863,7 +9887,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(globalJobRunning||modeConfigurationBusy)return getSyncJob();
       return await withModeConfiguration(async()=>{
         try{return await rollbackGlobalModeRoutes(state.syncJob.current);}
-        catch(error){await globalSaveJob({status:'paused',phase:'recovery_pending',error:String(error.code||error.message||error),message:'취소 중 경로 복구가 완료되지 않았습니다. 복구 정보를 보존했습니다.'});throw error;}
+        catch(error){
+          const guidance=syncJobActionGuidance(error.code||error.message||error,error.details,state.syncJob.current);
+          await globalSaveJob({
+            status:'paused',
+            phase:'recovery_pending',
+            error:String(error.code||error.message||error),
+            failedPhase:state.syncJob.current?.phase||'recovery_pending',
+            errorDetails:compactRestoreEvidence(error.details||null),
+            actionRequired:guidance?.actionRequired||null,
+            blockerReason:guidance?.blockerReason||null,
+            remedySteps:guidance?.remedySteps||null,
+            message:'취소 중 경로 복구가 완료되지 않았습니다. 복구 정보를 보존했습니다.'
+          });
+          throw error;
+        }
       });
     }
     updateSyncJob({
