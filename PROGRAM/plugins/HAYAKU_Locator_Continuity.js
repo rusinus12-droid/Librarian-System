@@ -3237,7 +3237,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       local: { state: 'idle', scanned: 0, migrated: 0, skipped: 0, failed: 0, at: 0, reason: '' }
     },
     warned: new Set(),
-    legacy: { plugin: null, local: null },
+    legacy: { plugin: options.pluginStorage || null, local: options.localStorage || null },
     management: { registered: false, registering: false, handle: null, timer: null, root: null, lastResult: null },
     syncJob: { current: null, promise: null, retryTimer: null, persistTimer: null, loaded: false, listeners: new Set() },
     transientMode: '',
@@ -6033,7 +6033,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           <div class="mscx-card"><span class="mscx-card-title">서버 주소</span><div class="mscx-url-row"><input data-mscx-url type="url" spellcheck="false" value="${htmlEscape(config.url || defaultUrl)}"><button data-mscx-test type="button">연결 테스트</button></div><div class="mscx-note" style="margin-top:8px">별도 key 입력 없이 localhost·127.0.0.1·::1의 로컬 서버에 연결합니다. 기본 주소는 http://127.0.0.1:47630 입니다.</div></div>
           <div class="mscx-info"><div><span>현재 모드</span><strong data-mscx-mode-label>${htmlEscape(modeLabel(config.mode || MODE_PLUGIN_ONLY))}</strong></div><div><span>서버 버전</span><strong data-mscx-version>-</strong></div><div><span>프로토콜</span><strong data-mscx-protocol>-</strong></div><div><span>서버 데이터</span><strong data-mscx-records>-</strong></div><div><span>namespace</span><strong>${htmlEscape(namespace)}</strong></div></div>
           <div class="mscx-actions"><button data-mscx-apply class="primary" type="button">설정 적용</button><button data-mscx-sync type="button">지금 동기화</button><button data-mscx-restore type="button">서버 → pluginStorage 복구</button><button data-mscx-delete class="danger" type="button">플러그인 스토리지 삭제</button></div>
-          <div class="mscx-card mscx-job" data-mscx-job hidden><div class="mscx-job-head"><strong data-mscx-job-title>초기 서버 동기화</strong><span class="mscx-job-badge" data-mscx-job-badge>작업 중</span></div><div class="mscx-progress" data-mscx-progress><i></i></div><div><div class="mscx-job-phase" data-mscx-job-phase>작업 준비</div><div class="mscx-job-message" data-mscx-job-message></div></div><div class="mscx-job-stats"><div class="mscx-job-stat"><span>진행</span><b data-mscx-job-items>-</b></div><div class="mscx-job-stat"><span>처리 용량</span><b data-mscx-job-bytes>-</b></div><div class="mscx-job-stat"><span>전송·복구</span><b data-mscx-job-transfer>-</b></div><div class="mscx-job-stat"><span>경과 시간</span><b data-mscx-job-elapsed>-</b></div><div class="mscx-job-stat"><span>마지막 활동</span><b data-mscx-job-activity>-</b></div><div class="mscx-job-stat"><span>재시도 / 실패</span><b data-mscx-job-retry>-</b></div></div><div class="mscx-job-current" data-mscx-job-current>현재 작업을 준비하고 있습니다.</div><div class="mscx-note">이 화면을 닫아도 작업은 계속됩니다. 새로고침 후에는 저장된 작업 영수증을 읽고 이미 서버에 일치하는 항목을 다시 전송하지 않고 이어서 확인합니다.</div></div>
+          <div class="mscx-card mscx-job" data-mscx-job hidden><div class="mscx-job-head"><strong data-mscx-job-title>초기 서버 동기화</strong><span class="mscx-job-badge" data-mscx-job-badge>작업 중</span></div><div class="mscx-progress" data-mscx-progress><i></i></div><div><div class="mscx-job-phase" data-mscx-job-phase>작업 준비</div><div class="mscx-job-message" data-mscx-job-message></div></div><div class="mscx-job-stats"><div class="mscx-job-stat"><span>진행</span><b data-mscx-job-items>-</b></div><div class="mscx-job-stat"><span>처리 용량</span><b data-mscx-job-bytes>-</b></div><div class="mscx-job-stat"><span>전송·복구</span><b data-mscx-job-transfer>-</b></div><div class="mscx-job-stat"><span>경과 시간</span><b data-mscx-job-elapsed>-</b></div><div class="mscx-job-stat"><span>마지막 활동</span><b data-mscx-job-activity>-</b></div><div class="mscx-job-stat"><span>재시도 / 실패</span><b data-mscx-job-retry>-</b></div></div><div class="mscx-job-current" data-mscx-job-current>현재 작업을 준비하고 있습니다.</div><div class="mscx-actions" style="margin-top:6px;display:flex;gap:8px"><button data-mscx-job-retry class="primary" type="button" style="display:none">즉시 재시도</button><button data-mscx-job-cancel class="danger" type="button" style="display:none">작업 취소 · 원래 모드 복구</button></div><div class="mscx-note">이 화면을 닫아도 작업은 계속됩니다. 새로고침 후에는 저장된 작업 영수증을 읽고 이미 서버에 일치하는 항목을 다시 전송하지 않고 이어서 확인합니다.</div></div>
           <div class="mscx-message" data-mscx-message>${htmlEscape(config.error ? `설정 읽기 실패: ${config.error}` : `현재 모드: ${modeLabel(config.mode || MODE_PLUGIN_ONLY)}`)}</div>
         </div>
       </section>`;
@@ -6073,6 +6073,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (!job) { node.hidden = true; return; }
       node.hidden = false;
       const terminal = syncJobTerminal(job.status);
+      const isPaused = job.status === 'paused';
+      const isFailed = job.status === 'failed';
       const total = Math.max(0, Number(job.totalItems || 0) || 0);
       const processed = Math.max(0, Number(job.processedItems || 0) || 0);
       const percent = total > 0 ? Math.max(0, Math.min(100, processed / total * 100)) : 0;
@@ -6082,7 +6084,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const bar = progressNode.querySelector('i'); if (bar && total > 0) bar.style.width = `${percent.toFixed(2)}%`; else if (bar && terminal) bar.style.width = job.status === 'completed' ? '100%' : '0%';
       }
       q('[data-mscx-job-title]').textContent = jobTitle(job);
-      q('[data-mscx-job-badge]').textContent = job.status === 'completed' ? '완료' : (job.status === 'failed' ? '실패' : (job.status === 'paused' ? '일시 중지 · 자동 재시도' : (total > 0 ? `${percent.toFixed(1)}%` : '작업 중')));
+      q('[data-mscx-job-badge]').textContent = job.status === 'completed' ? '완료' : (job.status === 'failed' ? '실패' : (job.status === 'paused' ? '일시 중지 · 대기' : (total > 0 ? `${percent.toFixed(1)}%` : '작업 중')));
       q('[data-mscx-job-phase]').textContent = phaseLabel(job.phase);
       q('[data-mscx-job-message]').textContent = job.message || (job.error ? job.error : '');
       q('[data-mscx-job-items]').textContent = total > 0 ? `${processed.toLocaleString()} / ${total.toLocaleString()}건` : `${processed.toLocaleString()}건 확인`;
@@ -6092,6 +6094,37 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const activityAge = Math.max(0, Date.now() - Number(job.lastActivityAt || job.updatedAt || Date.now())); q('[data-mscx-job-activity]').textContent = activityAge < 1500 ? '방금 전' : `${fmtDuration(activityAge)} 전`;
       q('[data-mscx-job-retry]').textContent = `${Number(job.retryCount || 0)} / ${Number(job.failures || 0)}`;
       const currentBits = [job.currentAction, job.currentSpace ? `[${job.currentSpace}]` : '', job.currentKey].filter(Boolean); q('[data-mscx-job-current]').textContent = currentBits.join(' · ') || (terminal ? (job.status === 'completed' ? '모든 검증이 완료되었습니다.' : (job.error || '작업이 중단되었습니다.')) : '현재 작업을 준비하고 있습니다.');
+      const retryBtn = q('button[data-mscx-job-retry]');
+      const cancelBtn = q('button[data-mscx-job-cancel]');
+      if (retryBtn) {
+        retryBtn.style.display = isPaused ? 'inline-block' : 'none';
+        retryBtn.onclick = async () => {
+          retryBtn.disabled = true;
+          setMessage('작업 재시도를 시작합니다…');
+          try {
+            await scopedResumePendingSyncJob();
+            await refreshActionState();
+          } catch (error) {
+            setMessage(`재시도 시작 실패: ${error?.message || error}`, 'error');
+            retryBtn.disabled = false;
+          }
+        };
+      }
+      if (cancelBtn) {
+        cancelBtn.style.display = (isPaused || isFailed) ? 'inline-block' : 'none';
+        cancelBtn.onclick = async () => {
+          cancelBtn.disabled = true;
+          setMessage('작업을 취소하고 원래 모드로 복구하고 있습니다…');
+          try {
+            await scopedCancelSyncJob();
+            await refreshActionState();
+            setMessage('이전 작업이 취소되었습니다. 기존 모드가 유지됩니다.', 'good');
+          } catch (error) {
+            setMessage(`취소 실패: ${error?.message || error}`, 'error');
+            cancelBtn.disabled = false;
+          }
+        };
+      }
       const active = !terminal;
       if (active && stateNode) {
         stateNode.className = job.status === 'paused' ? 'mscx-state warn' : 'mscx-state warn';
@@ -6107,14 +6140,27 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     };
     const refreshActionState = async () => {
       const current = await readConfig(true).catch(() => currentConfig); currentConfig = { ...current };
-      const job = getSyncJob(); const activeJob = !!job && !syncJobTerminal(job.status);
+      const job = getSyncJob();
+      const terminal = !job || syncJobTerminal(job.status);
+      const isPaused = !!job && job.status === 'paused';
+      const activeRunningJob = !!job && !terminal && !isPaused;
       const modeLabelNode = q('[data-mscx-mode-label]'); if (modeLabelNode) modeLabelNode.textContent = modeLabel(current.mode);
-      q('[data-mscx-apply]').disabled = activeJob;
-      q('[data-mscx-sync]').disabled = activeJob || current.mode !== MODE_MIRROR;
-      q('[data-mscx-restore]').disabled = activeJob || current.mode !== MODE_SERVER_ONLY;
-      q('[data-mscx-delete]').disabled = activeJob || current.mode === MODE_PLUGIN_ONLY;
-      modeInputs().forEach(input => { input.disabled = activeJob; input.checked = input.value === (activeJob ? (job.targetMode || current.mode) : current.mode); }); updateModeSelectionStyles();
-      const url = q('[data-mscx-url]'); if (url) { url.disabled = activeJob; if (typeof document === 'undefined' || document.activeElement !== url) url.value = activeJob ? (job.targetUrl || current.url) : current.url; }
+      q('[data-mscx-apply]').disabled = activeRunningJob;
+      q('[data-mscx-sync]').disabled = activeRunningJob || current.mode !== MODE_MIRROR;
+      q('[data-mscx-restore]').disabled = activeRunningJob || current.mode !== MODE_SERVER_ONLY;
+      q('[data-mscx-delete]').disabled = activeRunningJob || current.mode === MODE_PLUGIN_ONLY;
+      modeInputs().forEach(input => {
+        input.disabled = activeRunningJob;
+        input.checked = input.value === (activeRunningJob ? (job.targetMode || current.mode) : current.mode);
+      });
+      updateModeSelectionStyles();
+      const url = q('[data-mscx-url]');
+      if (url) {
+        url.disabled = activeRunningJob;
+        if (typeof document === 'undefined' || document.activeElement !== url) {
+          url.value = activeRunningJob ? (job.targetUrl || current.url) : current.url;
+        }
+      }
       renderJob(job);
       return current;
     };
@@ -9643,6 +9689,35 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     void scopedExecuteBackgroundJob().catch(() => {});
     return getSyncJob();
   };
+  const scopedCancelSyncJob = (...args) => withOwnerOperation({kind:'job_admission',operation:'scopedCancelSyncJob'}, () => scopedCancelSyncJobImpl(...args));
+  const scopedCancelSyncJobImpl = async () => {
+    if (state.syncJob.retryTimer) {
+      clearLifecycleTimeout(state.syncJob.retryTimer);
+      state.syncJob.retryTimer = null;
+    }
+    await loadPersistedSyncJob();
+    const job = state.syncJob.current;
+    if (!job || syncJobTerminal(job?.status)) {
+      await clearPersistedSyncJob();
+      notifySyncJob();
+      return job;
+    }
+    state.syncJob.creating = false;
+    if (job.kind === 'global_mode') {
+      state.syncJob.current.pauseRequested = true;
+    }
+    updateSyncJob({
+      status: 'cancelled',
+      phase: 'cancelled_by_user',
+      currentAction: '사용자 요청으로 취소됨',
+      message: '이전 작업을 취소했습니다. 기존 저장 모드와 원본 데이터가 안전하게 유지됩니다.',
+      nextRetryAt: 0,
+      finishedAt: Date.now()
+    }, { persist: 'immediate' });
+    await clearPersistedSyncJob();
+    notifySyncJob();
+    return getSyncJob();
+  };
   const scopedWaitForSyncJob = async (jobId = '', timeoutMs = 15 * 60 * 1000) => {
     const wanted = String(jobId || state.syncJob.current?.jobId || state.syncJob.current?.id || '');
     if (!wanted) return null;
@@ -10173,7 +10248,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 서버 상태를 확인할 수 있습니다.</div>
         <details data-preview-diagnostics hidden><summary>이전 검사 상세 · 대화 본문과 API 키 제외</summary><textarea data-preview-diagnostics-text aria-label="이전 검사 상세" readonly style="width:100%;min-height:180px"></textarea></details>
       </div>
-      <div class="job" data-job><b data-job-title>작업 진행 중</b><div class="bar"><i data-job-bar></i></div><div class="grid"><span data-job-phase></span><span data-job-count></span><span data-job-bytes></span><span data-job-time></span><span data-job-retry></span><span data-job-key></span></div><div class="result" data-job-result></div><textarea data-job-diagnostics aria-label="저장 이전 상세 진단" readonly style="display:none"></textarea><button data-job-copy type="button">상세 진단 복사</button><div class="actions" data-job-terminal-actions style="display:none"><button data-job-dismiss type="button">결과 확인 닫기</button></div></div>
+      <div class="job" data-job><b data-job-title>작업 진행 중</b><div class="bar"><i data-job-bar></i></div><div class="grid"><span data-job-phase></span><span data-job-count></span><span data-job-bytes></span><span data-job-time></span><span data-job-retry></span><span data-job-key></span></div><div class="result" data-job-result></div><textarea data-job-diagnostics aria-label="저장 이전 상세 진단" readonly style="display:none"></textarea><button data-job-copy type="button">상세 진단 복사</button><div class="actions" data-job-stalled-actions style="display:none;margin-top:6px;gap:8px"><button data-job-retry class="primary" type="button">즉시 재시도</button><button data-job-cancel class="danger" type="button">이전 작업 취소 · 기존 모드 유지</button></div><div class="actions" data-job-terminal-actions style="display:none"><button data-job-dismiss type="button">결과 확인 닫기</button></div></div>
     </div>`;
     const root = container.querySelector(`#${rootId}`);
     const q = sel => root.querySelector(sel);
@@ -10216,6 +10291,44 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       q('[data-job-phase]').textContent=`현재 단계: ${job.phase || '준비'}`; q('[data-job-count]').textContent=`진행: ${done.toLocaleString()} / ${total || terminal ? total.toLocaleString() : '조사 중'}${job.status==='completed' && total===0 ? ' · 이동할 데이터 없음' : ''}`;
       q('[data-job-bytes]').textContent=`처리: ${formatBytes(job.processedBytes)} · 전송: ${formatBytes(job.transferredBytes)}`; q('[data-job-time]').textContent=`경과: ${Math.max(0,Math.floor((Date.now()-Number(job.startedAt||Date.now()))/1000))}초`;
       q('[data-job-retry]').textContent=`재시도 ${Number(job.retryCount||0)} · 실패 ${Number(job.failures||0)}`; q('[data-job-key]').textContent=`현재: ${job.currentKey || job.currentAction || '-'}`;
+      const stalledActions = q('[data-job-stalled-actions]');
+      const isPaused = job.status === 'paused';
+      const isFailed = job.status === 'failed';
+      if (stalledActions) {
+        stalledActions.style.display = (isPaused || isFailed) ? 'flex' : 'none';
+      }
+      const retryBtn = q('button[data-job-retry]');
+      if (retryBtn && !retryBtn.dataset.bound) {
+        retryBtn.dataset.bound = '1';
+        retryBtn.onclick = async () => {
+          retryBtn.disabled = true;
+          setMessage('작업 재시도를 시작합니다…');
+          try {
+            await scopedResumePendingSyncJob();
+            renderJob(getSyncJob());
+          } catch (error) {
+            setMessage(`재시도 시작 실패: ${error?.message || error}`, 'error');
+            retryBtn.disabled = false;
+          }
+        };
+      }
+      const cancelBtn = q('button[data-job-cancel]');
+      if (cancelBtn && !cancelBtn.dataset.bound) {
+        cancelBtn.dataset.bound = '1';
+        cancelBtn.onclick = async () => {
+          cancelBtn.disabled = true;
+          setMessage('작업을 취소하고 원래 상태로 복구하고 있습니다…');
+          try {
+            await scopedCancelSyncJob();
+            await refreshPanelSettings();
+            renderJob(getSyncJob());
+            setMessage('이전 작업을 취소했습니다. 기존 모드와 원본 데이터가 유지됩니다.', 'good');
+          } catch (error) {
+            setMessage(`취소 실패: ${error?.message || error}`, 'error');
+            cancelBtn.disabled = false;
+          }
+        };
+      }
       const terminalActions=q('[data-job-terminal-actions]'); terminalActions.style.display=terminal?'flex':'none';
       const result=job.result&&typeof job.result==='object'?job.result:{};
       q('[data-job-result]').style.display=showResult?'block':'none';
@@ -11499,6 +11612,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     startConnectionConfigurationJob: scopedStartConnectionConfigurationJob,
     startRestoreJob: scopedStartRestoreJob,
     resumePendingSyncJob: scopedResumePendingSyncJob,
+    cancelSyncJob: scopedCancelSyncJob,
     waitForSyncJob: scopedWaitForSyncJob,
     getSyncJob,
     subscribeSyncJob,
