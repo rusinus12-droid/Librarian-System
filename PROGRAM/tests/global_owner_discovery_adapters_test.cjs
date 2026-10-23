@@ -396,6 +396,51 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
  });
  r=await inspect('flashback',{records:[bucketRoot,...buckets,worldlineWithPruned]});ok(r);
  assert.equal(r.records.find(rec=>rec.key===worldlineWithPruned.key).classification,'scope');
+ // An immutable archive layer stores copies of a live chat's records and keeps
+ // their vector refs verbatim. Once the source chat retires that commit the
+ // payload exists nowhere: the copy is still complete and the reader hydrates it
+ // keyword-only, so an absent payload is a counted warning, never a dependency.
+ const fbArchiveId='fb_fixturearchive',fbArchiveScope=`flashback_archive_v1:${fbArchiveId}`,fbArchiveHash=keyHash(fbArchiveScope);
+ const fbArchiveSource=identity('flashback',9),fbRetiredVector=`vector_rag_memory:local-vector-shard:v1:${keyHash(fbArchiveSource)}:1retired:0000`;
+ const fbArchiveManifest=row(`vector_rag_memory:scope:${fbArchiveHash}:manifest:v2`,{schema:'vector_rag_memory.scope_manifest.v2',version:2,
+  scopeKey:fbArchiveScope,storageHash:fbArchiveHash,archiveId:fbArchiveId,archiveOwner:true,commitId:'1arc',count:2,shardCount:1,
+  shardSummaries:[{shardIndex:0,recordCount:2}],vectorSidecarCount:0});
+ const fbInheritedRecord=id=>({schema:'vector_rag_memory.record.v2',id,scopeKey:fbArchiveSource,vector:[],dim:0,vectorPayloadMissing:true,
+  inheritedFromScopeKey:fbArchiveSource,vectorRef:{schema:'flashback_memory.local_vector_ref.v1',storage:'local',
+   storageKey:fbRetiredVector,recordId:id,offset:0,length:1024,digest:'fixture',mode:'local_float32_shard_v1'}});
+ const fbArchiveShard=row(`vector_rag_memory:scope:${fbArchiveHash}:records:commit:1arc:shard:0000`,{version:2,shard:0,scopeKey:fbArchiveScope,
+  commitId:'1arc',checksum:'fixture',records:[fbInheritedRecord('fb_archive_a'),fbInheritedRecord('fb_archive_b')]});
+ const fbArchiveSourceRoot=root('flashback',9,{commitId:'1current',count:0,shardCount:0,vectorSidecarCount:0});
+ r=await inspect('flashback',{records:[fbArchiveManifest,fbArchiveShard,fbArchiveSourceRoot]});
+ assert.equal(r.warningCount,2);
+ assert.equal(r.warnings.length,2);
+ assert.equal(r.warnings[0].code,'flashback_global_vector_payload_absent');
+ assert.equal(r.warnings[0].detail,fbRetiredVector);
+ assert.ok(!r.blockers.some(b=>b.detail===fbRetiredVector),JSON.stringify(r.blockers));
+ // The same rule covers a live scope whose own records reference a payload that
+ // no longer exists anywhere (retired commit, pruned sidecar): the shard is intact.
+ const fbOwnVector=`vector_rag_memory:local-vector-shard:v1:${keyHash(identity('flashback',11))}:1gone:0000`;
+ const fbOwnRoot=root('flashback',11,{commitId:'1live',count:2,shardCount:1,vectorSidecarCount:0});
+ const fbOwnShard=row(`vector_rag_memory:scope:${keyHash(identity('flashback',11))}:records:commit:1live:shard:0000`,{version:2,shard:0,
+  scopeKey:identity('flashback',11),commitId:'1live',checksum:'fixture',records:[
+   {schema:'vector_rag_memory.record.v2',id:'live_a',scopeKey:identity('flashback',11),vector:[],dim:0,vectorPayloadMissing:true,
+    vectorRef:{schema:'flashback_memory.local_vector_ref.v1',storage:'local',storageKey:fbOwnVector,recordId:'live_a',offset:0,length:1024,digest:'fixture',mode:'local_float32_shard_v1'}},
+   {schema:'vector_rag_memory.record.v2',id:'live_b',scopeKey:identity('flashback',11),vector:[],dim:0,vectorPayloadMissing:true}]});
+ r=await inspect('flashback',{records:[fbOwnRoot,fbOwnShard]});
+ ok(r);assert.equal(r.warningCount,1);assert.equal(r.warnings[0].detail,fbOwnVector);
+ // The same ref stays fatal when the payload still exists for another storage
+ // source: copying the archive row would drop reachability that is still real.
+ const fbServerArchiveManifest={...fbArchiveManifest,location:'server'},fbServerArchiveShard={...fbArchiveShard,location:'server'};
+ const fbDeviceOnlyPayload=row(fbRetiredVector,{schema:'flashback_memory.local_vector_shard.v1',scopeKey:fbArchiveSource,
+  commitId:'1retired',shardIndex:0,items:[],data:''},{space:'local',location:'device'});
+ r=await inspect('flashback',{records:[fbServerArchiveManifest,fbServerArchiveShard,fbArchiveSourceRoot,fbDeviceOnlyPayload]});
+ blocked(r,/dependency.*missing/);
+ assert.equal(r.warningCount,0);
+ // A manifest that does declare vector sidecars for its own commit still gates:
+ // a declared-but-absent sidecar count is not covered by the payload warning.
+ const fbDeclaredSidecarRoot=root('flashback',10,{commitId:'1declared',count:1,shardCount:1,vectorSidecarCount:1});
+ r=await inspect('flashback',{records:[fbDeclaredSidecarRoot]});
+ blocked(r,/vector.*dependency.*count|count.*invalid/);
  // The supplied empty-envelope hashes establish the historical JSON hash codec.
  const actualScope='char:1prphff|chat:1cferkl|persona:48amyh';assert.equal(keyHash(actualScope),'1hxw63t');
  for(const [shard,digest]of [[4,'wycscg'],[5,'1umqef'],[6,'1a5z36u'],[8,'iloit0'],[10,'ii1j15'],[11,'1am0jnu']]) {

@@ -194,3 +194,19 @@ HAYAKU 3.1.3 / Storage SDK 1.8.32로 구분하고 소스 manifest·해시를 갱
 3. 삭제된 대화의 잔여물로 매니페스트가 없는 기기(`device`) 로컬 벡터 샤드(`local-vector-shard`)는 전체 이전을 차단하는 치명적 에러(`scope_identity_unresolved`) 대신 관리 대상 외 캐시(`control`)로 분류하여 안전하게 건너뛰도록 했다.
 4. `turn_worldline:v1`의 은퇴 기록(`retiredRecords`)에 남아 있는 과거 커밋의 로컬 벡터 샤드 참조는 최신 커밋에서 이미 로컬 정리(cleanup)되었을 수 있으므로 필수 의존성 대신 선택적 참조(`optional`)로 처리하여 `dependency_missing` 차단을 해제했다.
 
+### Flashback 1.1.6 벡터 페이로드 부재를 차단 대신 경고로 분리
+
+추가 진단 자료(113건, 고유 6쌍)에서 모든 차단이 `flashback_global_dependency_missing` 하나였고, 스코프 해시를 재계산해 대상 스코프를 특정했다.
+- `1vabi2e` = 아카이브 `flashback_archive_v1:fb_135rcsu`(106기록), `1thjetr` = 원본 라이브 채팅 `oyks7b`, `q3qsuf` = 라이브 채팅 `yz7uak`.
+- 113건 = 아카이브 레코드 106건(전부) + 라이브 스코프 레코드 7건. 아카이브 샤드 0을 해제하면 레코드 64개 전부가 `vectorRef.storageKey = local-vector-shard:v1:1thjetr:<과거 commit>`을 보존하고 `vectorPayloadMissing: true`, `inheritedFromScopeKey = oyks7b`를 함께 기록한다.
+- 아카이브 생성 경로(`archiveAndCompactFlashbackSourceScope`)는 원본 레코드를 `...record`로 복사하고 신원 필드만 바꾸므로 벡터 참조는 원본 라이브 스코프의 물리 키 그대로 남는다. 아카이브 자신은 사이드카를 소유하지 않아 매니페스트의 `vectorSidecarCount`는 0이다.
+- 라이브 채팅이 commit을 전진하면 이전 commit의 레코드 샤드와 벡터 샤드를 함께 지우므로(`removeCommitShardSet`) 참조 대상이 사라진다.
+
+전역 이전 검사는 레코드 샤드 본문의 참조 필드에 나온 로컬 벡터 샤드 키를 그 행의 필수 의존성으로 요구했다. 이전은 참조와 원본 바이트를 그대로 복사하고, 런타임은 페이로드가 없으면 `vector: []`로 키워드 전용 회상으로 동작하므로(`hydrateFlashbackVectorRecords`), 없는 페이로드를 요구하는 것은 이미 없는 데이터의 복사만 막는 셈이었다.
+
+이제 저장소 어디에도 존재하지 않는 로컬 벡터 샤드 참조는 **경고**(`flashback_global_vector_payload_absent`, `warnings`/`warningCount`로 집계)로 분리하고 차단은 하지 않는다. 같은 키가 다른 저장 원본(기기/서버)에는 존재하면 그 행의 복사가 도달 가능성을 잃으므로 계속 차단하고, 매니페스트가 자신의 commit에 대해 `vectorSidecarCount`를 선언했는데 사이드카가 없으면 기존 `vector_dependency_count_invalid`가 계속 차단한다. 매니페스트·레코드 샤드·아카이브 같은 구조 의존성은 그대로 필수다. 남아 있는 벡터와 원본 바이트는 변경하지 않는다.
+
+검증은 실제 제공된 아카이브 샤드 0을 그대로 넣어 수행했다. 수정 전에는 `shard:0000`에서 `162k7zd:0000` 34건·`162k7zd:0001` 30건이 재현되어 제공된 113건과 건수까지 일치했고, 수정 후 같은 입력에서 해당 의존성 차단이 사라지고 `warningCount` 64가 집계되었다. 참조된 사이드카를 인벤토리에 넣으면 경고도 0이 되고, 다른 저장 원본에만 존재하는 경우와 선언된 사이드카가 없는 경우는 회귀 검사에서 계속 차단됨을 확인했다. `global_owner_discovery_adapters_test.cjs`(220 시나리오)와 이전·진단·GUI 회귀를 통과했다.
+
+이 수정은 이전을 막던 차단만 해제하며, 이미 사라진 벡터 페이로드를 복구하지 않는다. 해당 113건은 이전 후에도 키워드 전용으로 남으며 벡터 회상에 다시 쓰려면 임베딩 재생성이 필요하다. 사용자 저장소의 실제 113건이 모두 이 경로인지(특히 라이브 스코프 7건은 자기 commit의 사이드카를 가리킨다)는 각 시점 매니페스트의 `vectorSidecarCount`로 확인해야 한다.
+

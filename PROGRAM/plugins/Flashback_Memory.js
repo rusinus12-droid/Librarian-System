@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.1.5
+//@display-name ⚡ FLASHBACK Memory v1.1.6
 //@api 3.0
-//@version 1.1.5
+//@version 1.1.6
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.1.5';
+const PLUGIN_VERSION = '1.1.6';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -13116,12 +13116,29 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
     row.scopeId = id; row.dependencyScopeIds = [...new Set([...row.dependencyScopeIds,id])];
   };
   const diagnosedManifests = new Set();
+  // A vector payload (local sidecar) that exists nowhere in the inventory was
+  // already missing in the source: the owning record persists vectorPayloadMissing,
+  // the copy preserves its reference byte-for-byte, and the reader hydrates it as
+  // keyword-only. Requiring such a key can only block the copy of data that is
+  // already gone, so it is counted as a warning instead of a blocker. A payload
+  // that does exist somewhere (another storage source, deleted, artifact) stays a
+  // hard dependency: dropping it would break reachability that still exists.
+  const VECTOR_PAYLOAD_PREFIX = 'vector_rag_memory:local-vector-shard:v1:';
+  const vectorPayloadAbsent = { count: 0, warnings: [] };
   const dependency = (row,key,space = '',optional = false,archive = false) => {
     if (!key) return;
     if (key === row.logicalKey) { if (archive) issue('archive_dependency_cycle',row); return; }
     const found = (byKey.get(key) || []).filter(other => !other.deleted && !other.artifact && sameSource(row,other) && (!space || other.space === space));
     if (!found.length) {
       if (!optional) {
+        const payloadPresentElsewhere = key.startsWith(VECTOR_PAYLOAD_PREFIX)
+          && (byKey.get(key) || []).some(other => !other.deleted && !other.artifact);
+        if (key.startsWith(VECTOR_PAYLOAD_PREFIX) && !payloadPresentElsewhere) {
+          vectorPayloadAbsent.count += 1;
+          if (vectorPayloadAbsent.warnings.length < 256) vectorPayloadAbsent.warnings.push({
+            code:'flashback_global_vector_payload_absent', key:str(row.logicalKey || row.key), detail:key });
+          return;
+        }
         issue('dependency_missing',row,key);
         const manifest = values.get(row);
         if (manifest?.schema === 'vector_rag_memory.scope_manifest.v2' && !diagnosedManifests.has(row)) {
@@ -13409,7 +13426,10 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
   }
   const scopes = [...scopesById.values()].sort((a,b)=>a.scopeId.localeCompare(b.scopeId));
   for (const scope of scopes) scope.aliases.sort();
-  return { scopes, records, blockers, completeKnownScopes:blockers.length === 0 };
+  // Warnings are informational and never gate the copy; they name the vector
+  // payloads that stay keyword-only because no copy of them exists anywhere.
+  return { scopes, records, blockers, warnings:vectorPayloadAbsent.warnings, warningCount:vectorPayloadAbsent.count,
+    completeKnownScopes:blockers.length === 0 };
 }
 // END FLASHBACK GLOBAL DISCOVERY ADAPTER
 
