@@ -143,7 +143,8 @@ const sources = [
     console.log(`PASS ${target.name}: retry/cancel buttons active on paused job, and cancel unlocks controls`);
 
     // A global migration can have published transition-pending scope routes.
-    // Cancel must pause and retain its journal so recovery remains possible.
+    // A legacy/corrupt job without its original routing plan cannot be rolled
+    // back safely. Refuse cancellation and retain its recovery journal.
     const globalValues = new Map();
     const globalJobKey = `__memory_suite_internal_sync_job_v1__:${target.namespace}`;
     const globalJob = {
@@ -171,12 +172,12 @@ const sources = [
     });
     vm.runInContext(`${sourceCode} globalThis.bridge = createMemorySuiteStorageBridge({namespace:'${target.namespace}',pluginId:'${target.namespace}_memory',pluginVersion:'1.0.0',pluginStorage:mockPluginStorage,defaultUrl:'http://127.0.0.1:47630'});`, globalContext);
     const globalBridge = globalContext.bridge;
-    const pausedGlobal = await globalBridge.cancelSyncJob();
-    assert.equal(pausedGlobal?.status, 'paused', `${target.name}: global cancel pauses an incomplete migration`);
+    await assert.rejects(() => globalBridge.cancelSyncJob(), error => error.code === 'MEMORY_SUITE_GLOBAL_ROLLBACK_PLAN_INVALID');
+    assert.equal(globalBridge.getSyncJob()?.status, 'paused', `${target.name}: invalid-plan cancellation remains paused`);
     assert.equal(globalValues.has(globalJobKey), true, `${target.name}: global migration recovery journal remains persisted`);
     assert.equal(JSON.parse(globalValues.get(globalJobKey)).pauseRequested, true, `${target.name}: global migration records the stop request`);
     assert.equal(globalValues.get('owner-record-preserved'), 'source-data', `${target.name}: source data remains intact`);
-    console.log(`PASS ${target.name}: global migration stop preserves its recovery journal and source data`);
+    console.log(`PASS ${target.name}: cancellation with no routing plan refuses rollback and preserves recovery evidence`);
   }
   console.log('ALL STORAGE JOB CANCELLATION TESTS PASSED');
 })().catch(error => {

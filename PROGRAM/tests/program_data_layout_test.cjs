@@ -70,6 +70,9 @@ function assertPackageRoot(root, { allowSourceInput = false } = {}) {
     const provenance = JSON.parse(fs.readFileSync(path.join(root, 'PUBLICATION-PROVENANCE.json'), 'utf8'));
     assert.equal(provenance.schema, 'librarian.six-plugin-checkpoint-publication.v2');
     expectedRootEntries.push('LICENSE', 'PUBLICATION-PROVENANCE.json');
+    // GitHub Download ZIP also includes this file without a .git directory.
+    // Only verified readable source inputs may carry repository metadata.
+    if (fs.existsSync(path.join(root, '.gitignore'))) expectedRootEntries.push('.gitignore');
     if (fs.existsSync(path.join(root, 'README.md'))) expectedRootEntries.push('README.md');
   }
   assert.deepEqual(rootEntries, expectedRootEntries.sort(), 'Bundle root contains only PROGRAM/DATA, updater, and verified release artifacts.');
@@ -84,7 +87,7 @@ function main() {
       else fs.writeFileSync(path.join(rootControl, name), '');
     }
     assertPackageRoot(rootControl);
-    for (const name of ['unaccounted.bin', 'LICENSE', 'PUBLICATION-PROVENANCE.json', '.git']) {
+    for (const name of ['unaccounted.bin', 'LICENSE', 'PUBLICATION-PROVENANCE.json', '.git', '.gitignore']) {
       fs.writeFileSync(path.join(rootControl, name), '');
       assert.throws(() => assertPackageRoot(rootControl), assert.AssertionError, `packaged roots reject ${name}`);
       fs.unlinkSync(path.join(rootControl, name));
@@ -99,6 +102,7 @@ function main() {
     fs.writeFileSync(path.join(rootControl, 'README.md'), 'source readme');
     const provenancePath = path.join(rootControl, 'PUBLICATION-PROVENANCE.json');
     fs.writeFileSync(provenancePath, JSON.stringify({ schema: 'librarian.six-plugin-checkpoint-publication.v2' }));
+    fs.writeFileSync(path.join(rootControl, '.gitignore'), 'node_modules/\n');
     assertPackageRoot(rootControl, { allowSourceInput: true });
     assert.throws(() => assertPackageRoot(rootControl), assert.AssertionError, 'source metadata is not a runtime bundle exemption');
     fs.writeFileSync(provenancePath, JSON.stringify({ schema: 'wrong' }));

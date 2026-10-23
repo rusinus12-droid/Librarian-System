@@ -25,6 +25,7 @@ const makeElement = (tag = 'div') => {
 const makePanelDom = () => {
   const nodesById = new Map();
   const nodesByAttr = new Map();
+  const buttonAttributes = new Set();
   const radios = [];
 
   const container = makeElement('div');
@@ -32,9 +33,10 @@ const makePanelDom = () => {
     get() { return container._html || ''; },
     set(markup) {
       container._html = String(markup);
-      nodesById.clear(); nodesByAttr.clear(); radios.length = 0;
+      nodesById.clear(); nodesByAttr.clear(); buttonAttributes.clear(); radios.length = 0;
       for (const match of String(markup).matchAll(/id="([^"]+)"/g)) nodesById.set(match[1], makeElement('div'));
       for (const match of String(markup).matchAll(/(data-[a-z-]+)/g)) if (!nodesByAttr.has(match[1])) nodesByAttr.set(match[1], makeElement('div'));
+      for (const button of String(markup).matchAll(/<button\b[^>]*>/g)) for (const attribute of button[0].matchAll(/\b(data-[a-z-]+)/g)) buttonAttributes.add(attribute[1]);
       for (const value of ['plugin_only', 'mirror', 'server_only']) {
         if (String(markup).includes(`value="${value}"`)) radios.push(Object.assign(makeElement('input'), { value, checked: false }));
       }
@@ -54,6 +56,8 @@ const makePanelDom = () => {
 
   const query = selector => {
     const sel = String(selector);
+    const buttonAttribute = sel.match(/^button\[(data-[a-z-]+)\]$/);
+    if (buttonAttribute && buttonAttributes.has(buttonAttribute[1])) return nodesByAttr.get(buttonAttribute[1]);
     for (const [attribute, element] of nodesByAttr) if (sel === `[${attribute}]`) return element;
     // `input[name="…-mode"][value="…"]` — the panel restores the checked radio on mount.
     const radioMatch = sel.match(/^input\[name="[^"]*-mode"\]\[value="([^"]+)"\]$/);

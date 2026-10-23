@@ -81,6 +81,15 @@ const seedDevice=name=>{
  return [[localKey,JSON.stringify({schema:'libra.local_vector_payload.v1',localKey,storageKey,keys:['global'],lengths:[1],byteLength:4,data:'AACAPw=='})]];
 };
 async function settleOwnerStore(s){let before=JSON.stringify([...s.values]),stable=0;for(let i=0;i<30;i++){await pause(100);const next=JSON.stringify([...s.values]);stable=next===before?stable+1:0;if(stable===3)return;before=next;}throw Error('owner startup store did not settle');}
+function captureSeededRoots(s,name){return seedRoots(name).map(([key,seed])=>{
+ const value=s.values.get(key);assert.equal(typeof value,'string');const body=JSON.parse(value);
+ for(const [field,expected]of Object.entries(JSON.parse(seed))){
+  if(key==='vector_rag_memory:scope_registry:v2'&&field==='scopes'){
+   for(const entry of expected){const retained=body.scopes.find(row=>row.scopeKey===entry.scopeKey);assert.ok(retained,'startup retains historical archive registry entry');for(const [name,value]of Object.entries(entry))assert.deepEqual(retained[name],value,'startup preserves historical archive identity '+name);}
+  }else assert.deepEqual(body[field],expected,'startup preserves seeded field '+key+'/'+field);
+ }
+ return [key,value];
+});}
 async function openPanel(s){
  await s.open();await pause(180);
  if(s.name==='LIBRA'){await settleOwnerStore(s);const firstRun=s.doc.querySelector('[data-libra-quick-dialog] .dialog__actions button');if(firstRun)await s.click('[data-libra-quick-dialog] .dialog__actions button');}
@@ -88,7 +97,17 @@ async function openPanel(s){
  else if(s.name==='HAYAKU')await s.click('[data-hayaku-viewer-goto="server"]');
  else {await s.click('[data-go="connect"]');await s.click('button[data-group="c"][data-subtab="srv"]');}
  await until(()=>s.doc.querySelector('[data-apply]'),'global panel mounted',10000);
- assert(!s.doc.querySelector('[data-scope-perchat]'),'public owner artifact renders global-only selection');await settleOwnerStore(s);
+ assert(!s.doc.querySelector('[data-scope-perchat]'),'public owner artifact renders global-only selection');
+ if(s.name==='Flashback'){
+  // Await the real owner upgrade instead of assuming a brief quiet interval
+  // means its deferred startup sweep has finished. Otherwise a reload can
+  // legitimately upgrade only the authoritative server copy before reversal.
+  for(const [key,value]of seedRoots(s.name))if(/:manifest:v2$/.test(key)){
+   const manifest=JSON.parse(value);
+   if(manifest.storageMode!=='bucketed_v1')await s.api.retireExternalSources(manifest.scopeKey);
+  }
+ }
+ await settleOwnerStore(s);
 }
 async function apply(s,mode){
  let approvedWarningCount=0;
@@ -114,21 +133,26 @@ async function apply(s,mode){
  return text;
 }
 (async()=>{const results=[];for(const name of (process.env.GLOBAL_MODE_OWNER?[process.env.GLOBAL_MODE_OWNER]:Object.keys(owners)))for(const kind of kinds){
- const handler=createHandlerFixture(),namespace=owners[name],pluginPath=artifactRoot?path.join(artifactRoot,kind,META[name][0]):path.resolve(__dirname,'../plugins',META[name][0]);let s,restart;
+ const handler=createHandlerFixture(),namespace=owners[name],pluginPath=artifactRoot?path.join(artifactRoot,kind,META[name][0]):path.resolve(__dirname,'../plugins',META[name][0]);let s,restart,admittedSource;
  try{
-  s=await create(name,kind,{pluginPath,separateLocalStorage:true,initialValues:seedRoots(name),initialDeviceValues:seedDevice(name),args:{memory_suite_server_url:handler.url},nativeFetch:handler.nativeFetch});
+  s=await create(name,kind,{pluginPath,separateLocalStorage:true,initialValues:seedRoots(name),initialDeviceValues:seedDevice(name),args:{memory_suite_server_url:handler.url},nativeFetch:handler.nativeFetch,beforeWrite:async(key,value)=>{
+   if(!admittedSource&&s&&key===`__memory_suite_internal_sync_job_v1__:${namespace}`&&typeof value==='string'){
+    const job=JSON.parse(value);
+    // The prepared journal follows the owner writer drain and closes admission.
+    // Startup normalization before that boundary is not a migration mutation.
+    if(job.kind==='global_mode'&&job.phase==='prepared'&&job.status==='queued'&&job.targetMode==='server_only')admittedSource={roots:captureSeededRoots(s,name),values:[...s.values.entries()].filter(([key])=>!key.startsWith('__memory_suite_'))};
+   }
+  }});
   await openPanel(s);
-  const before=[...s.values.entries()].filter(([key])=>!key.startsWith('__memory_suite_'));
+  let before=[...s.values.entries()].filter(([key])=>!key.startsWith('__memory_suite_'));
   // Ordinary startup may normalize a minimal legacy manifest before confirmation.
   // Freeze the actual durable source while requiring every seeded identity/data field.
-  const frozenRoots=seedRoots(name).map(([key,seed])=>{const value=s.values.get(key);assert.equal(typeof value,'string');const body=JSON.parse(value);for(const [field,expected]of Object.entries(JSON.parse(seed))){
-    if(key==='vector_rag_memory:scope_registry:v2'&&field==='scopes'){
-      for(const entry of expected){const retained=body.scopes.find(row=>row.scopeKey===entry.scopeKey);assert.ok(retained,'startup retains historical archive registry entry');for(const [name,value]of Object.entries(entry))assert.deepEqual(retained[name],value,'startup preserves historical archive identity '+name);}
-    }else assert.deepEqual(body[field],expected,'startup preserves seeded field '+key+'/'+field);
-   }return [key,value];});
-  console.log('FROZEN_OWNER_ROOTS',JSON.stringify({name,kind,roots:frozenRoots.map(([key,value])=>({key,bytes:Buffer.byteLength(value),sha256:require('node:crypto').createHash('sha256').update(value).digest('hex')}))}));
+  let frozenRoots=captureSeededRoots(s,name);
   if(name==='LIBRA'||name==='HAYAKU')assert.equal(s.doc.querySelector('[data-scope-manager]'),null,'scope data management is separate from server settings');
   const forward=await apply(s,'server_only');const forwardRefreshes=s.globalInventoryRefreshes||0;
+  assert.ok(admittedSource,'the public migration persisted its prepared journal before copying');
+  frozenRoots=admittedSource.roots;before=admittedSource.values;
+  console.log('FROZEN_OWNER_ROOTS',JSON.stringify({name,kind,roots:frozenRoots.map(([key,value])=>({key,bytes:Buffer.byteLength(value),sha256:require('node:crypto').createHash('sha256').update(value).digest('hex')}))}));
   const rows=handler.app.repositories[namespace].database.prepare('SELECT key,value_json FROM kv WHERE deleted=0').all();
   for(const [key,value]of [...frozenRoots,...seedDevice(name)])assert(rows.some(row=>row.key===key&&JSON.parse(row.value_json)===value),'actual owner root transferred '+key);
   assert(rows.some(row=>row.key===`__memory_suite_scope_routes_v1__:${namespace}`),'global policy published to actual handler');

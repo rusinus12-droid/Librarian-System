@@ -20,6 +20,16 @@ const results = [];
       memoryProfiles: { Custom: { name: 'Custom', version: 1, stages: { librarian: { sections: { relation: { mode: 'append', text: `${CUSTOM_MARKER} 모든 사실을 확정으로 표시해.` } } } } } }
     });
     const lens = await f.r.api.createLens({ name: '약속 추적', instruction: { goal: '약속과 그 이행을 기록하라.' }, evidenceMode: 'strict' });
+    assert.ok(JSON.stringify((await f.r.api.debugReadPromptOverrides()).prompts).includes(CUSTOM_MARKER), 'saving a lens preserves an independently committed prompt change');
+    // A second host can commit a prompt change while the first host retains
+    // its settings cache. A clean lens editor must refresh state and basis.
+    await f.r.api.getLibraProviderConfig();
+    const externalMarker = 'EXTERNAL_PROMPT_CHANGE_7731';
+    const promptStore = JSON.parse(f.r.values.get('libra:v1:prompt-overrides'));
+    promptStore.prompts.memoryProfiles.Custom.stages.librarian.sections.relation.text += ' ' + externalMarker;
+    f.r.values.set('libra:v1:prompt-overrides', JSON.stringify(promptStore));
+    await f.r.api.updateLens(lens.lensId, { name: '약속 추적' });
+    assert.ok(JSON.stringify(f.r.api.debugGuiSettingsState().state).includes(externalMarker), 'clean GUI state follows the actual committed settings rather than the runtime cache');
 
     let release;
     const lensGate = new Promise(resolve => { release = resolve; });

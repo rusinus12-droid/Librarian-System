@@ -2,6 +2,8 @@
 const assert=require('node:assert/strict'),path=require('node:path');
 const {fixture,variants}=require('./storage_global_allchat_job_test.cjs');
 const {makePanelDom}=require('./helpers/global-allchat-panel-dom.cjs');
+const selectorControl=makePanelDom();selectorControl.container.innerHTML='<span data-job-retry></span>';
+assert.throws(()=>selectorControl.root.querySelector('button[data-job-retry]').onclick,/panel_selector_missing/,'a stats span must not substitute for a missing action button');
 (async()=>{for(const variant of variants){
  const f=await fixture(variant,{sdkSource:process.env.BASELINE_SDK_DIR?path.join(process.env.BASELINE_SDK_DIR,variant[2]):undefined});
  const dom=makePanelDom();

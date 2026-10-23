@@ -3080,17 +3080,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (cancelBtn) {
         const globalJob = job.kind === 'global_mode';
         cancelBtn.style.display = (isPaused || (isFailed && !globalJob)) ? 'inline-block' : 'none';
-        cancelBtn.textContent = globalJob ? '중단 요청 · 원본 보존' : '작업 취소 · 원래 모드 복구';
+        cancelBtn.textContent = globalJob ? '취소 · 이전 경로 복구' : '작업 취소 · 원래 모드 복구';
         cancelBtn.onclick = async () => {
           cancelBtn.disabled = true;
-          setMessage(globalJob ? '전체 이전을 멈추고 확인된 경로와 원본을 보존합니다…' : '작업을 취소하고 원래 모드로 복구하고 있습니다…');
+          setMessage(globalJob ? '전체 이전을 멈추고 변경된 저장 경로를 복구합니다…' : '작업을 취소하고 원래 모드로 복구하고 있습니다…');
           try {
             const result = await scopedCancelSyncJob();
             await refreshActionState();
             if (globalJob) {
-              setMessage(result?.status === 'cancelled'
-                ? '효과가 발생하기 전에 전체 이전을 취소했습니다.'
-                : '전체 이전을 멈췄습니다. 원본과 확인된 경로를 보존했고, 나중에 이어서 진행할 수 있습니다.', 'good');
+              setMessage(result?.rollbackComplete
+                ? '전체 이전을 취소하고 변경된 저장 경로를 이전 설정으로 복구했습니다.'
+                : result?.status === 'cancelled'
+                  ? '효과가 발생하기 전에 전체 이전을 취소했습니다.'
+                  : '취소 요청을 받았습니다. 현재 스코프 처리가 끝나면 저장 경로를 복구합니다.', 'good');
             } else {
               setMessage('이전 작업이 취소되었습니다. 기존 모드가 유지됩니다.', 'good');
             }
@@ -3944,7 +3946,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     let registry = await loadScopeRegistry(force, false);
     if (!globalModeEnabled && (!scopeInput || scope.scopeId === state.scopeRouting.current?.scopeId)) registry = await maybeImportLegacyGlobalMode(scope, registry);
-    const stored = registry.entries[scope.scopeId];
+    const storedRow = registry.entries[scope.scopeId];
+    const stored = isRemovedScopeRow(storedRow) ? null : storedRow;
     const transient = state.scopeRouting.transientModes.get(scope.scopeId);
     const choice=await qualifyResetChoiceForScope(scope);
     if (resetPreferenceMatches(choice, state.bootstrap.value) && (choice?.choice==='empty' || deletedScopesForResetChoice(choice).includes(scope.scopeId))) return { scope: stored ? normalizeScopeDescriptor(stored, scope.scopeId) : scope, mode: MODE_SERVER_ONLY, modeLabel: modeLabel(MODE_SERVER_ONLY), explicit: false, modeOrigin: choice.choice==='empty' ? '' : 'deleted_scope' };
@@ -4551,7 +4554,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const old=await collectGlobalInventory(MODE_PLUGIN_ONLY);
         if(!old.completeKnownScopes||old.scopes.some(scope=>scope.sourceMode!==MODE_PLUGIN_ONLY))throw globalModeError('MEMORY_SUITE_SERVER_URL_IN_USE');
         if(old.inventoryFingerprint!==job.globalPlan.previousInventoryFingerprint)throw globalModeError('MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED');
-        if(state.syncJob.current.pauseRequested)return await globalSaveJob({status:'cancelled',phase:'cancelled_before_effects'});
+        if(state.syncJob.current.pauseRequested)return state.syncJob.current.cancelRequested===true
+          ?await rollbackGlobalModeRoutes(job):await globalSaveJob({status:'cancelled',phase:'cancelled_before_effects'});
         await assertGlobalPlanCurrent(job,inventory,true);
         globalMigrationContext=inventory;await globalPreflightDestinations({...inventory,scopes:job.globalPlan.scopes});globalMigrationContext=null;
         await globalSaveJob({phase:'configure_url',effectsStarted:true});
@@ -4565,6 +4569,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         message:'전체 대화 데이터를 검증하고 옮기고 있습니다.'});
       for(const scope of job.globalPlan.scopes){
         if(state.syncJob.current.pauseRequested){
+          if(state.syncJob.current.cancelRequested===true)return await rollbackGlobalModeRoutes(job);
           const touched=Object.keys(state.syncJob.current.checkpoints||{}).length>0||state.syncJob.current.effectsStarted;
           return await globalSaveJob({status:touched?'paused':'cancelled',phase:touched?'paused_resumable':'cancelled_before_effects',message:touched?'미완료 · 원본과 현재 경로를 보존했습니다. 이어서 진행할 수 있습니다.':'효과 발생 전에 취소했습니다.'});
         }
@@ -4585,7 +4590,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if(sameMode||completed||!hasRecords)await persistScopedMode(job.targetMode,scope,{origin:'transition_pending',source:'global_allchat_verified',globalMigrationJobId:job.jobId});
         await globalSaveJob({checkpoints:{...state.syncJob.current.checkpoints,[scope.scopeId]:evidence},verifiedScopes:Object.keys({...state.syncJob.current.checkpoints,[scope.scopeId]:evidence}).length});
       }
-      if(state.syncJob.current.pauseRequested)return await globalSaveJob({status:'paused',phase:'paused_resumable',message:'미완료 · 검증된 경로와 원본을 보존했습니다. 전체 적용은 재개 후 완료합니다.'});
+      if(state.syncJob.current.pauseRequested){if(state.syncJob.current.cancelRequested===true)return await rollbackGlobalModeRoutes(job);return await globalSaveJob({status:'paused',phase:'paused_resumable',message:'미완료 · 검증된 경로와 원본을 보존했습니다. 전체 적용은 재개 후 완료합니다.'});}
       inventory=await collectGlobalInventory(job.targetMode);
       await assertGlobalPlanCurrent(job,inventory);
       globalMigrationContext=inventory;
@@ -4627,6 +4632,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       state.config={...state.config,mode:job.targetMode,at:Date.now()};state.scopeRouting.routeCache.clear();
       return result;
     }catch(error){
+      if(state.syncJob.current?.cancelRequested===true&&state.syncJob.current?.phase!=='rollback_routes'){
+        try{return await rollbackGlobalModeRoutes(job);}catch(rollbackError){error=rollbackError;}
+      }
       const errCode = String(error.code || error.message);
       const guidance = syncJobActionGuidance(errCode, error.details, state.syncJob.current);
       const failureMsg = guidance
@@ -4688,7 +4696,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       sourceMode:inventory.remoteRequired?MODE_SERVER_ONLY:MODE_PLUGIN_ONLY,sourceUrl:targetUrl,targetMode:target,targetUrl,requestedMode:target,
       effectiveMode:normalizeMode(liveGlobalRow(inventory.registry)?.mode||MODE_PLUGIN_ONLY),serverPins:{source:inventory.serverPin,target:target!==MODE_PLUGIN_ONLY?inventory.serverPin:null},
       globalPlan,globalPlanDigest:await globalDigest(globalPlan),checkpoints:{},verifiedScopes:0,discoveredScopes:inventory.scopes.length,
-      status:'queued',phase:'prepared',startedAt:now,updatedAt:now,lastActivityAt:now,pauseRequested:false,effectsStarted:false};
+      status:'queued',phase:'prepared',startedAt:now,updatedAt:now,lastActivityAt:now,pauseRequested:false,cancelRequested:false,effectsStarted:false};
     try{await globalSaveJob({});}catch(error){state.syncJob.current=superseded||state.syncJob.current;state.syncJob.loaded=false;throw error;}
     return await runGlobalModeJob(state.syncJob.current,inventory);
   };
@@ -4698,6 +4706,44 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     state.syncJob.current.pauseRequested=true;
     if(!globalJobRunning&&!modeConfigurationBusy)return await globalSaveJob({status:job.effectsStarted?'paused':'cancelled',phase:job.effectsStarted?'paused_resumable':'cancelled_before_effects'});
     return getSyncJob();
+  };
+  const rollbackGlobalModeRoutes = async job => {
+    if(!job?.globalPlan?.registry?.entries||!Array.isArray(job.globalPlan.scopes))throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_PLAN_INVALID');
+    await globalSaveJob({status:'paused',phase:'rollback_routes',message:'취소 요청 · 변경된 저장 경로를 원래 설정으로 복구하고 있습니다.'});
+    const registry=parseScopeRegistry(await loadScopeRegistry(true,false));
+    const originalEntries=job.globalPlan.registry.entries;
+    let restored=0;
+    // Final publication may already have changed the global entry before a
+    // server/readback failure. Restore it along with the individual routes.
+    const rollbackScopes=[...job.globalPlan.scopes,globalScopeDescriptor()];
+    for(const scope of rollbackScopes.slice().reverse()){
+      const current=registry.entries[scope.scopeId]||null,original=originalEntries[scope.scopeId]||null;
+      if(current?.globalMigrationJobId===job.jobId&&current.mode===job.targetMode){
+        const restoredRow=original?structuredClone(original):{...current,removed:true,source:'global_allchat_cancel_rollback'};
+        restoredRow.updatedAt=Math.max(Date.now(),Number(current.updatedAt||0)+1);
+        registry.entries[scope.scopeId]=restoredRow;
+        restored++;
+      }else if(original?current?.mode!==original.mode||current?.origin!==original.origin:!!current&&current.removed!==true){
+        throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_ROUTE_CONFLICT',{scopeId:scope.scopeId});
+      }
+      await globalSaveJob({rollbackProgress:{restoredScopes:restored,totalScopes:rollbackScopes.length,currentScopeId:scope.scopeId}});
+    }
+    registry.legacyGlobalModeImported=registry.legacyGlobalModeImported||job.globalPlan.registry.legacyGlobalModeImported===true;
+    const saved=await writeScopeRegistryLocal(registry);
+    if(globalCanonical(parseScopeRegistry(saved).entries)!==globalCanonical(registry.entries))throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED');
+    if(job.globalPlan.remoteRequired){
+      if(!await synchronizeScopeRegistryToServer(saved))throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_PENDING');
+      const remote=await remoteGet('plugin',SCOPE_ROUTING_SERVER_KEY,{allowPluginOnly:true});
+      if(remote.exists!==true||globalCanonical(parseScopeRegistry(remote.value))!==globalCanonical(parseScopeRegistry(saved)))throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_READBACK_FAILED');
+    }
+    state.scopeRouting.routeCache.clear();
+    const previousGlobalMode=normalizeMode(liveGlobalRow(job.globalPlan.registry)?.mode||job.effectiveMode||MODE_PLUGIN_ONLY);
+    if((await readScopeMode(globalScopeDescriptor(),true)).mode!==previousGlobalMode)throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED',{scopeId:GLOBAL_SCOPE_ID});
+    for(const scope of job.globalPlan.scopes){
+      if((await readScopeMode(scope,true)).mode!==scope.sourceMode)throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED',{scopeId:scope.scopeId});
+    }
+    state.config={...state.config,at:0,mode:previousGlobalMode};
+    return await globalSaveJob({status:'cancelled',phase:'cancelled_rolled_back',rollbackComplete:true,finishedAt:Date.now(),currentScopeId:'',message:'취소했습니다. 변경된 저장 경로를 이전 설정으로 복구했고 원본 데이터는 보존했습니다.'});
   };
   // END CORE3 GLOBAL ALL-CHAT MIGRATION v1
 
@@ -6630,8 +6676,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     void scopedExecuteBackgroundJob().catch(() => {});
     return getSyncJob();
   };
-  const scopedCancelSyncJob = (...args) => withOwnerOperation({kind:'job_admission',operation:'scopedCancelSyncJob'}, () => scopedCancelSyncJobImpl(...args));
+  const scopedCancelSyncJob = (...args) => state.syncJob.current?.kind==='global_mode'&&globalJobRunning
+    ?scopedCancelSyncJobImpl(...args):withOwnerOperation({kind:'job_admission',operation:'scopedCancelSyncJob'}, () => scopedCancelSyncJobImpl(...args));
   const scopedCancelSyncJobImpl = async () => {
+    if(state.syncJob.current?.kind==='global_mode'&&globalJobRunning){state.syncJob.current.cancelRequested=true;state.syncJob.current.pauseRequested=true;notifySyncJob();return getSyncJob();}
     if (state.syncJob.retryTimer) {
       clearLifecycleTimeout(state.syncJob.retryTimer);
       state.syncJob.retryTimer = null;
@@ -6646,6 +6694,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (syncJobTerminal(job.status)) {
       const incompleteGlobal = job.kind === 'global_mode'
         && job.status !== 'completed'
+        && job.rollbackComplete !== true
         && (job.effectsStarted === true || Object.keys(job.checkpoints || {}).length > 0);
       if (incompleteGlobal) return job;
       await clearPersistedSyncJob();
@@ -6654,15 +6703,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     state.syncJob.creating = false;
     if (job.kind === 'global_mode') {
-      // A global migration may already have changed verified scope routes. It
-      // cannot be rolled back by deleting its journal: pause it and retain the
-      // recovery plan so owner reads remain guarded and the job can be resumed.
-      const stopped = await pauseGlobalModeJob();
-      if (stopped?.status === 'cancelled' && stopped.effectsStarted !== true && !globalJobRunning && !modeConfigurationBusy) {
-        await clearPersistedSyncJob();
-        notifySyncJob();
-      }
-      return stopped;
+      state.syncJob.current.cancelRequested=true;
+      state.syncJob.current.pauseRequested=true;
+      await globalSaveJob({message:'취소 요청 · 안전한 지점에서 변경된 저장 경로를 복구합니다.'});
+      if(globalJobRunning||modeConfigurationBusy)return getSyncJob();
+      return await withModeConfiguration(async()=>{
+        try{return await rollbackGlobalModeRoutes(state.syncJob.current);}
+        catch(error){await globalSaveJob({status:'paused',phase:'recovery_pending',error:String(error.code||error.message||error),message:'취소 중 경로 복구가 완료되지 않았습니다. 복구 정보를 보존했습니다.'});throw error;}
+      });
     }
     updateSyncJob({
       status: 'cancelled',

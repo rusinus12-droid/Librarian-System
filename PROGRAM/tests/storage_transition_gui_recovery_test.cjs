@@ -115,6 +115,14 @@ async function openServerPanelNormally(s) {
     await s.click('button[data-group="c"][data-subtab="srv"]');
   }
   await until(() => s.doc.querySelector('[data-apply]'), `${s.name} server panel mounted`, 10000);
+  if (s.name === 'Flashback') {
+    // Finish the real startup upgrade before capturing a recoverable job. A
+    // short quiet interval can precede Flashback's deferred retirement sweep;
+    // mixing a pre-upgrade plan with post-upgrade source bytes is not a reload.
+    for (const [key, value] of seedOwnerRoots(s.name)) {
+      if (/:manifest:v2$/.test(key)) await s.api.retireExternalSources(JSON.parse(value).scopeKey);
+    }
+  }
   await settleOwnerStore(s);
 }
 
@@ -129,19 +137,23 @@ async function createPausedGlobalTransitionSnapshot(name, kind, pluginPath, hand
     nativeFetch: handler.nativeFetch,
     beforeWrite: async (key, value) => {
       if (key === jobKey && typeof value === 'string') {
+        let parsed;
         try {
-          const parsed = JSON.parse(value);
-          if (parsed?.kind === 'global_mode' && parsed.phase === 'copy_verify' && !capturedPausedJob) {
-            capturedPausedJob = JSON.stringify({
-              ...parsed,
-              status: 'paused',
-              phase: 'recovery_pending',
-              effectsStarted: true,
-              error: 'simulated_reload_during_global_transition',
-              message: '미완료 · 원본과 실제 경로를 보존했습니다. 문제를 확인한 뒤 이어서 진행하세요.'
-            });
-          }
+          parsed = JSON.parse(value);
         } catch (_) {}
+        if (parsed?.kind === 'global_mode' && parsed.phase === 'copy_verify' && !capturedPausedJob) {
+          capturedPausedJob = JSON.stringify({
+            ...parsed,
+            status: 'paused',
+            phase: 'recovery_pending',
+            effectsStarted: true,
+            error: 'simulated_reload_during_global_transition',
+            message: '미완료 · 원본과 실제 경로를 보존했습니다. 문제를 확인한 뒤 이어서 진행하세요.'
+          });
+          // Stop the actual run at the captured boundary. Letting it finish
+          // and replacing only its journal combines different storage times.
+          throw new Error('simulated_reload_during_global_transition');
+        }
       }
     }
   });
@@ -172,10 +184,13 @@ async function createPausedGlobalTransitionSnapshot(name, kind, pluginPath, hand
       await approveApply();
     }
     assert.ok(capturedPausedJob, `${name}: must capture in-flight global_mode sync job journal`);
-    const snapshotEntries = [...s.values.entries()].filter(([k]) => !k.startsWith('__memory_suite_internal_scope_routes_v1__'));
+    const stoppedJob = JSON.parse(s.values.get(jobKey));
+    assert.equal(stoppedJob.status, 'paused', `${name}: the original migration must actually stop before the reload`);
+    assert.equal(Object.keys(stoppedJob.checkpoints || {}).length, 0, `${name}: interruption occurs before scope completion`);
+    const snapshotEntries = [...s.values.entries()];
     const map = new Map(snapshotEntries);
     map.set(jobKey, capturedPausedJob);
-    return { entries: [...map.entries()], jobKey };
+    return { entries: [...map.entries()], deviceEntries: [...s.deviceValues.entries()], jobKey };
   } finally {
     await s.close();
   }
@@ -243,6 +258,7 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
           pluginPath,
           separateLocalStorage: true,
           initialValues: snapshot.entries,
+          initialDeviceValues: snapshot.deviceEntries,
           args: { memory_suite_server_url: handler.url },
           nativeFetch: gatedFetch
         });
@@ -325,8 +341,14 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
             }
           },
           `${name} (${kind}): transition job completed`,
-          8000
-        );
+          // The release gate runs beside CPU-heavy plugin parsing suites. Keep
+          // waiting for actual durable completion, with bounded failure evidence.
+          30000
+        ).catch(error => {
+          let job;try {job=JSON.parse(s.values.get(snapshot.jobKey)||'null');}catch(_) {}
+          error.message += ' · '+JSON.stringify({status:job?.status,phase:job?.phase,error:job?.error,details:job?.errorDetails,currentScopeId:job?.currentScopeId});
+          throw error;
+        });
 
         // Memory read must now succeed after transition completion.
         await assertOwnerMemoryReadUnlocked(s, name, kind);
