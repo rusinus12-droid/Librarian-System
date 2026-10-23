@@ -52,7 +52,7 @@ Windows에서는 업데이트.bat, macOS에서는 업데이트.command, Linux/Te
 - HAYAKU Locator Continuity 3.1.5
 - LIBRA 2.4.9
 - LIA Persona Linker 0.27.2
-- RE:TRACE 1.10.0
+- RE:TRACE 1.10.1
 - GRADIA 0.26.15
 
 [호환 정보]

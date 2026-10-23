@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-23T04:01:53.978Z",
+  "generatedAt": "2026-10-23T04:40:35.412Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -1427,7 +1427,7 @@
     "hayaku": "3.1.5",
     "libra": "2.4.9",
     "lia": "0.27.2",
-    "retrace": "1.10.0",
+    "retrace": "1.10.1",
     "gradia": "0.26.15"
   },
   "files": {
@@ -3572,7 +3572,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "665cdee2edf45bef16132a95728e5a9b67c6e7d2d846699e786342993d1bc966",
+      "sha256": "d28efe899cced3ea189b6f103538ae73eb0c7de5abbb150c8a50938ee9f4de88",
       "bytes": 11833
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3582,6 +3582,10 @@
     "docs/REMOTE_UPDATE_RELEASE_ASSET_CONTRACT_v1.md": {
       "sha256": "0714c53d89a42351651a27b17b28e25c5a35fd291992e4f3dff52262b15ec279",
       "bytes": 2169
+    },
+    "docs/RETRACE_BACKUP_FINALIZATION_20261023.md": {
+      "sha256": "ec71957b2632493e665397571ea32795dc7da6e7aa097f91af3ca31a46a02f7b",
+      "bytes": 3201
     },
     "docs/RETRACE_GUI_UX_Prototype.html": {
       "sha256": "bf795536aeeea0e8c56298468372647760a172459730f48919ad806bb6925c3a",
@@ -3956,7 +3960,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "09b2c91f626f01e56255d50cf0226be9866dafda57aee7a0b46c1ce34b2da388",
+      "sha256": "888d21f01b72a5421978cd9e8f643c2f0344d4913c89d5eeeee5d5d447fbd6d0",
       "bytes": 3350
     },
     "plugins/Flashback_Memory.js": {
@@ -3980,8 +3984,8 @@
       "bytes": 6442176
     },
     "plugins/RETRACE.js": {
-      "sha256": "ba7e41a07e257c9148c61e9cce0d7923fc1db0c16aa7335e95bac424c4c74e70",
-      "bytes": 1235072
+      "sha256": "330b4b142d5ecc43c8b88afe38c30c0533bc02c1e283ba066487abc426c46ffe",
+      "bytes": 1237740
     },
     "release-policy.json": {
       "sha256": "dd876b2e56bc534c78fdc873914d846175c9d1234cfa926da7736f2447af5206",
@@ -4084,8 +4088,8 @@
       "bytes": 7613
     },
     "sdk/MemorySuitePortableTransfer.source.js": {
-      "sha256": "7877de51cf7e426f984f29409745616665ae65617c028f2a6ad29b0b2351f0f3",
-      "bytes": 8945
+      "sha256": "e893b3147c1df8a8cd75e38f49d15cb9644982e1d3935e5091d2fd695ef76bda",
+      "bytes": 10396
     },
     "sdk/MemorySuiteRetraceHealth.source.js": {
       "sha256": "d8387aa107f67b9bb019a845bd3942d90921858313b3e9149c397f24fdf8bde9",
@@ -9615,6 +9619,10 @@
       "sha256": "bee2bd51134310d70c5b6210f4be9563d69f0f82502f76adfec4c0d67ccc5478",
       "bytes": 4358
     },
+    "tests/portable_transfer_finalization_test.cjs": {
+      "sha256": "acbf098f826e28dba6800c87190b569ea4e75a428e020c7f335f3246d71d921f",
+      "bytes": 4194
+    },
     "tests/portable_transfer_lifecycle_runtime_test.cjs": {
       "sha256": "3b59ace2321da208ccad735a2f06c358be0d9015d560e1e730adb606d5b4cec5",
       "bytes": 3614
@@ -9974,6 +9982,10 @@
     "tests/retrace_pending_handoff_revalidation_runtime_test.cjs": {
       "sha256": "6827173003f577e18d88bfa37b9e85afc4b58afe04761ba8b59ed340228ab287",
       "bytes": 9962
+    },
+    "tests/retrace_portable_finalization_gui_test.cjs": {
+      "sha256": "0c5e2070f231faaba571c0a68b202bba6e6606a79bc144517c1d3749441ad3f8",
+      "bytes": 5131
     },
     "tests/retrace_retired_surface_runtime_test.cjs": {
       "sha256": "e4eea7380e26dab2f4034028c7985f49a17e54774014942ab5494a1495d655fa",
@@ -10868,8 +10880,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "4f29abd15c9ab79a237a322795aadb9dbeda13c1b5d532a34f039a6c0c6e6940",
-      "bytes": 55231
+      "sha256": "44ce0ce5f81e3e70e87f51a68562cfc1a5f981aae5e8fd4bc92375303a355a2e",
+      "bytes": 55324
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",
@@ -11504,7 +11516,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "9ac0b0bc992ddfd1c6b5d7493c2090d8e18f229e09ca2a6157520c18ac20f8c1",
+      "sha256": "ab0c3b6d2113978ef374c77ba1d33c496a5717629c12c375e52b4ff106246e2c",
       "bytes": 3784
     }
   },

@@ -1,10 +1,20 @@
-/* LIBRARIAN PORTABLE TRANSFER SDK v1.0.0 */
+/* LIBRARIAN PORTABLE TRANSFER SDK v1.0.1 */
 // File bytes never become pluginStorage, prompt text, or debug-log payloads.
 const createMemorySuitePortableTransferClient = (options = {}) => {
   if(typeof options.request!=='function')throw Error('portable_request_adapter_required');
   const request=options.request,pollMs=Math.max(20,Number(options.pollMs)||350);
   const pause=ms=>new Promise(r=>setTimeout(r,ms));
-  const check=signal=>{if(signal?.aborted)throw Object.assign(Error('portable_cancelled'),{code:'PORTABLE_CANCELLED'});};
+  const cancelled=()=>Object.assign(Error('portable_cancelled'),{name:'AbortError',code:'PORTABLE_CANCELLED'});
+  const check=signal=>{if(signal?.aborted)throw cancelled();};
+  const fileOperationTimeoutMs=Math.max(10,Number(options.fileOperationTimeoutMs)||120000);
+  const operation=async(fn,signal,file=false)=>{
+    check(signal);let timer,onAbort;
+    try{return await Promise.race([
+      Promise.resolve().then(()=>{check(signal);return fn();}),
+      new Promise((_,reject)=>{onAbort=()=>reject(cancelled());signal?.addEventListener('abort',onAbort,{once:true});
+        if(file)timer=setTimeout(()=>reject(Object.assign(Error('portable_file_save_timeout_check_downloads'),{code:'PORTABLE_FILE_SAVE_TIMEOUT'})),fileOperationTimeoutMs);})
+    ]);}finally{if(timer)clearTimeout(timer);if(onAbort)signal?.removeEventListener('abort',onAbort);}
+  };
   const ref=s=>({transferId:s.transferId,transferToken:s.transferToken});
   const progress=(cb,value)=>{try{cb?.(value);}catch(_){};};
   const assertServer=(s,r)=>{if(r?.dataInstanceId&&s?.dataInstanceId&&r.dataInstanceId!==s.dataInstanceId)throw Error('portable_server_changed');return r;};
@@ -28,7 +38,7 @@ const createMemorySuitePortableTransferClient = (options = {}) => {
   const cancel=async s=>{if(s?.transferId)return request('cancel',ref(s));};
   const wait=async(s,{signal,onProgress,target='ready'}={})=>{
     const start=Date.now();
-    while(Date.now()-start<20*60*1000){check(signal);const r=assertServer(s,await request('status',ref(s)));progress(onProgress,r);
+    while(Date.now()-start<20*60*1000){check(signal);const r=assertServer(s,await operation(()=>request('status',ref(s)),signal));progress(onProgress,r);
       if(r.status===target)return r;
       if(['failed','cancelled'].includes(r.status))throw Object.assign(Error(r.error||'portable_'+r.status),{transfer:s,code:r.error||r.status});
       await pause(pollMs);
@@ -36,23 +46,29 @@ const createMemorySuitePortableTransferClient = (options = {}) => {
     throw Object.assign(Error('portable_status_timeout_check_history'),{transfer:s});
   };
   const startExport=async opts=>{
-    check(opts?.signal);const cap=await request('capabilities',{});check(opts?.signal);
-    const s=await request('export-start',{operationId:op('portable-export'),mode:opts?.mode==='snapshot'?'snapshot':'migration'});assertServer(cap,s);progress(opts?.onProgress,s);
-    try{return await wait(s,opts);}catch(e){if(opts?.signal?.aborted)await cancel(s).catch(()=>{});throw Object.assign(e,{transfer:s});}
+    check(opts?.signal);const cap=await operation(()=>request('capabilities',{}),opts?.signal);check(opts?.signal);
+    const pending=Promise.resolve().then(()=>{check(opts?.signal);return request('export-start',{operationId:op('portable-export'),mode:opts?.mode==='snapshot'?'snapshot':'migration'});});
+    void pending.then(s=>{if(opts?.signal?.aborted)void cancel(s).catch(()=>{});}).catch(()=>{});
+    const s=await operation(()=>pending,opts?.signal);assertServer(cap,s);progress(opts?.onProgress,s);
+    try{return await wait(s,opts);}catch(e){if(opts?.signal?.aborted)void cancel(s).catch(()=>{});throw Object.assign(e,{transfer:s});}
   };
   const download=async(s,sink,opts={})=>{
     if(s?.status!=='ready'||s.kind!=='export'||!Number.isSafeInteger(s.totalBytes)||s.totalBytes<=0)throw Error('portable_export_not_ready');
     try{
-      await sink.prepare?.(s);let offset=0,verifiedChunks=0;const wholeHash=sha256Stream();
-      while(offset<s.totalBytes){check(opts.signal);const part=await request('download-chunk',{...ref(s),offset});
+      await operation(()=>sink.prepare?.(s),opts.signal,true);let offset=0,verifiedChunks=0;const wholeHash=sha256Stream();
+      while(offset<s.totalBytes){check(opts.signal);const part=await operation(()=>request('download-chunk',{...ref(s),offset}),opts.signal);
         if(part.offset!==offset||part.totalBytes!==s.totalBytes)throw Error('portable_download_changed');const bytes=b64decode(part.base64);
         if(!bytes.length||bytes.length>Math.min(s.chunkBytes||262144,s.totalBytes-offset))throw Error('portable_download_bounds');
         const local=await digest(bytes);if(local&&local!==part.sha256)throw Error('portable_download_digest');if(local)verifiedChunks++;
-        check(opts.signal);wholeHash.update(bytes);await sink.write(bytes);offset+=bytes.length;progress(opts.onProgress,{...s,phase:'download',bytes:offset,totalBytes:s.totalBytes});
+        check(opts.signal);wholeHash.update(bytes);await operation(()=>sink.write(bytes),opts.signal,true);offset+=bytes.length;progress(opts.onProgress,{...s,phase:'download',bytes:offset,totalBytes:s.totalBytes});
       }
-      check(opts.signal);const clientSha256=wholeHash.hex();if(clientSha256!==s.sha256)throw Error('portable_download_whole_digest');await sink.close(s);await cancel(s).catch(()=>{});
+      check(opts.signal);progress(opts.onProgress,{...s,phase:'verifying',bytes:offset});
+      const clientSha256=wholeHash.hex();if(clientSha256!==s.sha256)throw Error('portable_download_whole_digest');
+      progress(opts.onProgress,{...s,phase:'saving',bytes:offset});await operation(()=>sink.close(s),opts.signal,true);check(opts.signal);
+      // The saved, verified artifact does not depend on temporary-session cleanup.
+      void cancel(s).catch(()=>{});progress(opts.onProgress,{...s,phase:'complete',bytes:offset});
       return {ok:true,bytes:offset,serverSha256:s.sha256,clientSha256,verifiedChunks,sink:sink.kind||'provided',downloadStarted:sink.browserDownload===true};
-    }catch(e){try{await sink.abort?.();}catch(_){}if(opts.signal?.aborted)await cancel(s).catch(()=>{});throw Object.assign(e,{transfer:s});}
+    }catch(e){void Promise.resolve().then(()=>sink.abort?.()).catch(()=>{});if(opts.signal?.aborted)void cancel(s).catch(()=>{});throw Object.assign(e,{transfer:s});}
   };
   const upload=async(file,opts={})=>{
     if(!file||typeof file.slice!=='function'||!Number.isSafeInteger(file.size))throw Error('portable_file_required');
