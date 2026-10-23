@@ -62,10 +62,11 @@ const seedRoots=name=>{const roots=Array.from({length:2},(_,i)=>{
  }
  if(name==='Flashback'){
   const first=JSON.parse(roots[0][1]);first.commitId='retained-commit';first.shardCount=1;first.count=1;first.stats={recordTotal:1,charTotal:7,tokenTotal:2,byType:{response:{records:1,chars:7,tokens:2}}};first.shardSummaries=[{shardIndex:0,recordCount:1}];roots[0][1]=JSON.stringify(first);
-  roots.push([`vector_rag_memory:scope:${first.storageHash}:records:shard:0000`,JSON.stringify({scopeKey:first.scopeKey,commitId:first.commitId,shard:0,records:[{id:'durable-record',scopeKey:first.scopeKey,sourceType:'response',type:'response',text:'durable',dim:4,vector:[1,0,0,0]}]})]);
+  roots.push([`vector_rag_memory:scope:${first.storageHash}:records:shard:0000`,JSON.stringify({scopeKey:first.scopeKey,commitId:first.commitId,shard:0,records:[{id:'durable-record',scopeKey:first.scopeKey,sourceType:'response',type:'response',text:'durable',dim:4,vector:[],vectorPayloadMissing:true,
+   vectorRef:{schema:'flashback_memory.local_vector_ref.v1',storage:'local',storageKey:`vector_rag_memory:local-vector-shard:v1:${first.storageHash}:retired:0000`,recordId:'durable-record',offset:0,length:4,digest:'fixture',mode:'local_float32_shard_v1'}}]})]);
   const second=JSON.parse(roots[1][1]),archiveId='fb_135rcsu',scopeKey='flashback_archive_v1:'+archiveId,storageHash=hash(scopeKey);
   const pointer={schema:'flashback_memory.archive_ref.v1',archiveId,archiveScopeKey:scopeKey,generation:1,depth:1,deltaCount:0,recordCount:0,digest:hash(''),responseTurnMax:0,createdAt:'',updatedAt:'',parentRef:null};
-  const bucketFixture=createBucketFixture(second.scopeKey,second,{count:0,missingShards:32});second.archiveRef=pointer;
+  const bucketFixture=createBucketFixture(second.scopeKey,second,{count:0,missingShards:32,commitId:'historical-label'});second.archiveRef=pointer;
   roots[1][1]=JSON.stringify({...bucketFixture.manifest,archiveRef:pointer});roots.push(...bucketFixture.buckets);
   roots.push([`vector_rag_memory:scope:${storageHash}:manifest:v2`,JSON.stringify({schema:'vector_rag_memory.scope_manifest.v2',version:2,scopeKey,storageHash,archiveOwner:true,archiveId,archiveGeneration:1,archiveRecordCount:0,archiveDigest:hash(''),archiveMemberCatalogVersion:1,archiveDeltaCount:0,archiveDeltaMemberIds:[],archiveDeltaDigest:hash(''),count:0,shardCount:0,shardSummaries:[]})],
    ['vector_rag_memory:scope_registry:v2',JSON.stringify({version:2,scopes:[{scopeKey,storageHash}]})]);
@@ -90,9 +91,17 @@ async function openPanel(s){
  assert(!s.doc.querySelector('[data-scope-perchat]'),'public owner artifact renders global-only selection');await settleOwnerStore(s);
 }
 async function apply(s,mode){
+ let approvedWarningCount=0;
  const input=s.doc.querySelector(`input[value="${mode}"]`);assert(input);input.checked=true;input.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));
  s.context.confirm=()=>{throw Error('Native confirmation forbidden');};
- const approve=async button=>{const pending=button.onclick();await until(()=>s.doc.querySelector('[data-mode-confirm-approve]')?.onclick||s.doc.querySelector('[data-status]')?.textContent.includes('inventory_changed_during_preview'),'migration approval or fresh preview');const node=s.doc.querySelector('[data-mode-confirm-approve]');if(node?.onclick)node.click();await pending;};
+ const approve=async button=>{const pending=button.onclick();await until(()=>s.doc.querySelector('[data-mode-confirm-approve]')?.onclick||s.doc.querySelector('[data-status]')?.textContent.includes('inventory_changed_during_preview'),'migration approval or fresh preview');const node=s.doc.querySelector('[data-mode-confirm-approve]');if(node?.onclick){
+  if(s.name==='Flashback'){
+   const preview=JSON.parse(s.doc.querySelector('[data-preview-diagnostics-text]').value);approvedWarningCount=preview.warningCount;
+   assert.ok(approvedWarningCount>0);assert.equal(preview.warnings[0].code,'flashback_global_vector_payload_absent');
+   assert.equal(s.doc.querySelector('[data-preview-diagnostics]').hidden,false);
+   assert.match(s.doc.querySelector('[data-mode-confirm-text]').textContent,/경고 .*건.*키워드/);
+  }
+  node.click();}await pending;};
  const button=s.doc.querySelector('[data-apply]');await approve(button);
  // A read-only preview may observe the owner's own startup schema write. Exercise
  // the documented fresh confirmation path once, never skip an unknown-data blocker.
@@ -100,6 +109,8 @@ async function apply(s,mode){
  await until(()=>s.doc.querySelector('[data-job].terminal'),'completed global job card',4000);
  const text=[s.doc.querySelector('[data-status]').textContent,s.doc.querySelector('[data-job-title]').textContent,s.doc.querySelector('[data-job-count]').textContent].join('\n');
  const diagnostics=JSON.parse(s.doc.querySelector('[data-job-diagnostics]').value);assert.equal(diagnostics.result.completeKnownScopes,true,text);assert.equal(diagnostics.result.mode,mode,text);assert.equal(diagnostics.result.verifiedScopes,3);assert.match(s.doc.querySelector('[data-job-count]').textContent,/3 \/ 3/,text);
+ assert.equal(diagnostics.result.warningCount,approvedWarningCount,'completion retains the approved warning count');
+ if(s.name==='Flashback'){assert.match(text,/경고 .*건.*키워드/);assert.match(s.doc.querySelector('[data-job-result]').textContent,/경고 .*건.*키워드/);}
  return text;
 }
 (async()=>{const results=[];for(const name of (process.env.GLOBAL_MODE_OWNER?[process.env.GLOBAL_MODE_OWNER]:Object.keys(owners)))for(const kind of kinds){
@@ -125,6 +136,7 @@ async function apply(s,mode){
   const saved=[...s.values],savedDevice=[...s.deviceValues];await s.close();s=null;
   restart=await create(name,kind,{pluginPath,separateLocalStorage:true,initialValues:saved,initialDeviceValues:savedDevice,args:{memory_suite_server_url:handler.url},nativeFetch:handler.nativeFetch});
   await openPanel(restart);
+  if(name==='Flashback')assert.match(restart.doc.querySelector('[data-job-result]').textContent,/경고 .*건.*키워드/,'completed warnings survive plugin restart');
   assert.equal(restart.doc.querySelector('input[value="server_only"]').checked,true,'restart sees committed global policy');
   const reverseRows=handler.app.repositories[namespace].database.prepare('SELECT key,value_json FROM kv WHERE deleted=0').all();
   console.log('REVERSE_PREFLIGHT_DIAGNOSTIC',JSON.stringify({name,kind,differences:reverseRows.filter(row=>restart.values.has(row.key)&&JSON.stringify(restart.values.get(row.key))!==row.value_json).map(row=>({key:row.key,local:restart.values.get(row.key),server:JSON.parse(row.value_json)}))}));

@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.1.3
-//@version 3.1.3
+//@display-name HAYAKU · Locator Continuity v3.1.4
+//@version 3.1.4
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.1.3';
+  const PLUGIN_VERSION = '3.1.4';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -3018,7 +3018,7 @@ function createMemorySuiteHostLineage() {
 /* END LIBRARIAN HOST LINEAGE SDK */
 const MemorySuiteHostLineage = createMemorySuiteHostLineage();
 
-/* LIBRARIAN SYSTEM STORAGE SDK v1.8.32
+/* LIBRARIAN SYSTEM STORAGE SDK v1.8.33
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
  * The server stores opaque values. Each plugin keeps ownership of its own data schema.
  */
@@ -7121,6 +7121,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     && scopeRoutingEnabled && options.storagePolicy !== 'local_only' && options.storagePolicy !== 'manager_only';
   let globalMigrationContext = null;
   let globalMigrationPreview = null;
+  const globalIssueMetadata = row => Object.fromEntries(['code','location','space','key','detail','manifestState']
+    .filter(key=>row[key]!=null).map(key=>[key,row[key]]));
+  const globalWarningMetadata = value => {
+    const warnings=(Array.isArray(value?.warnings)?value.warnings:[])
+      .filter(row=>row&&typeof row==='object'&&!Array.isArray(row)).slice(0,256).map(globalIssueMetadata);
+    return {warnings,warningCount:Number.isSafeInteger(value?.warningCount)&&value.warningCount>=warnings.length?value.warningCount:warnings.length};
+  };
+  const globalWarningText = value => value?.warningCount > 0
+    ? `경고 ${value.warningCount}건 · ${value.warnings?.some(row=>row.code==='flashback_global_vector_payload_absent')?'벡터가 없는 기억은 키워드로 검색됩니다.':'상세 진단을 확인해 주세요.'}` : '';
   let globalJobRunning = false;
   const globalModeError = (code, details) => Object.assign(new Error(code), {code, ...(details ? {details} : {})});
   const globalCanonical = value => JSON.stringify(value, (_key,item) => item && typeof item === 'object' && !Array.isArray(item)
@@ -7331,12 +7340,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const catalogFingerprint=await digestInventory(catalog);
     return {schema:'memory-suite.global-inventory.v1',namespace,targetUrl,targetMode:target,scopes:scoped,records:safeRecords,registry,registryCopies,hostScopes,
       stores,remoteRequired,serverPin,catalogFingerprint,inventoryFingerprint:await digestInventory([catalogFingerprint,safeRecords.filter(row=>row.classification!=='control').map(row=>[globalRecordIdentity(row),row.fingerprint,row.revision,row.digest])]),
-      blockers,completeKnownScopes:owner.completeKnownScopes===true&&blockers.length===0};
+      blockers,...globalWarningMetadata(owner),completeKnownScopes:owner.completeKnownScopes===true&&blockers.length===0};
   };
   const globalInventorySummary = inventory => ({schema:inventory.schema,namespace,targetUrl:inventory.targetUrl,targetMode:inventory.targetMode,completeKnownScopes:inventory.completeKnownScopes,
     discoveredScopes:inventory.scopes.length,legacyOverrides:inventory.scopes.filter(scope=>{const row=inventory.registry.entries[scope.scopeId];return row&&!['inherited','migrated'].includes(String(row.origin||''));}).length,
     directions:Object.fromEntries([MODE_PLUGIN_ONLY,MODE_SERVER_ONLY,MODE_MIRROR].map(mode=>[mode,inventory.scopes.filter(scope=>scope.sourceMode===mode).length])),
-    blockers:inventory.blockers,catalogFingerprint:inventory.catalogFingerprint,inventoryFingerprint:inventory.inventoryFingerprint});
+    blockers:inventory.blockers,...globalWarningMetadata(inventory),catalogFingerprint:inventory.catalogFingerprint,inventoryFingerprint:inventory.inventoryFingerprint});
   const withMigrationPreview = value => ({ ...value,
     ...(globalMigrationPreview ? { migrationPreview:cloneDiagnosticValue(globalMigrationPreview) } : {}) });
   const rememberGlobalPreview = summary => {
@@ -7345,8 +7354,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     globalMigrationPreview = cloneDiagnosticValue({
       schema:'memory-suite.migration-preview-diagnostics.v1',generatedAt:Date.now(),namespace,pluginVersion,
       targetMode:summary.targetMode,completeKnownScopes:summary.completeKnownScopes,discoveredScopes:summary.discoveredScopes,
-      blockers:summary.blockers.map(row=>Object.fromEntries(['code','location','space','key','detail','manifestState']
-        .filter(key=>row[key]!=null).map(key=>[key,row[key]])))
+      blockers:summary.blockers.map(globalIssueMetadata),...globalWarningMetadata(summary)
     });
     return summary;
   };
@@ -7518,7 +7526,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if(remote.exists!==true||globalCanonical(parseScopeRegistry(remote.value))!==globalCanonical(parseScopeRegistry(saved)))throw globalModeError('MEMORY_SUITE_GLOBAL_PUBLICATION_READBACK_FAILED');
       }
       const result={scope:globalScopeDescriptor(),mode:job.targetMode,effectiveMode:job.targetMode,requestedMode:job.targetMode,modeLabel:modeLabel(job.targetMode),
-        completeKnownScopes:true,discoveredScopes:job.globalPlan.scopes.length,verifiedScopes:job.globalPlan.scopes.length,migrated:job.globalPlan.scopes.map(scope=>scope.scopeId),failed:[],registry:saved};
+        completeKnownScopes:true,discoveredScopes:job.globalPlan.scopes.length,verifiedScopes:job.globalPlan.scopes.length,migrated:job.globalPlan.scopes.map(scope=>scope.scopeId),failed:[],
+        ...globalWarningMetadata(job.globalPlan.warnings?job.globalPlan:inventory),registry:saved};
       await globalSaveJob({status:'completed',phase:'completed',effectiveMode:job.targetMode,result,finishedAt:Date.now(),message:'전체 대화 이전과 전역 설정 적용이 완료되었습니다.'});
       state.config={...state.config,mode:job.targetMode,at:Date.now()};state.scopeRouting.routeCache.clear();
       return result;
@@ -7563,7 +7572,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     globalMigrationContext=inventory;
     try{await globalPreflightDestinations(inventory);}finally{globalMigrationContext=null;}
     const now=Date.now(),jobId=operationId('global');
-    const globalPlan={schema:'memory-suite.global-mode-plan.v1',namespace,targetMode:target,scopes:inventory.scopes,
+    const globalPlan={schema:'memory-suite.global-mode-plan.v1',namespace,targetMode:target,scopes:inventory.scopes,...globalWarningMetadata(inventory),
       registry:inventory.registry,registryCopies:inventory.registryCopies,catalogFingerprint:inventory.catalogFingerprint,
       inventoryFingerprint:inventory.inventoryFingerprint,sources:globalSourceWitness(inventory),remoteRequired:inventory.remoteRequired,
       previousUrl:previousInventory?url:null,previousInventoryFingerprint:previousInventory?.inventoryFingerprint||null,
@@ -10192,6 +10201,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       q('[data-job-result]').textContent=terminal
         ? [job.status==='completed'?'완료 결과':'실패 결과',`요청 모드: ${modeLabel(job.requestedMode || job.targetMode || initial.mode)}`,`현재 적용 모드: ${modeLabel(job.effectiveMode || result.effectiveMode || job.sourceMode || initial.mode)}`,job.status==='failed'?'전환 미완료 · 현재 적용 모드를 확인하세요.':'',`복원 ${Number(job.restored||result.restored||0)} · 업로드 ${Number(job.uploaded||result.uploaded||0)} · 일치 ${Number(job.matched||result.matched||0)}`,`삭제 표식 ${Number(job.removedByTombstone||result.removed||0)} · 검증 ${Number(result.verified||0)}`,job.recoveryRequired?'복구 필수 잠금: 활성 · 서버 단독 유지':'복구 필수 잠금: 없음',job.error?`오류: ${job.error}`:''].filter(Boolean).join('\n')
         : '';
+      if(terminal&&globalWarningText(result))q('[data-job-result]').textContent+='\n'+globalWarningText(result);
       const diagnosticText = terminal ? JSON.stringify({ schema:'memory-suite.scope-sync-diagnostics.v1', requestedMode:job.requestedMode || job.targetMode || '', effectiveMode:job.effectiveMode || job.sourceMode || '', failures:result.failures || [], metrics:result.metrics || {}, result }, null, 2) : '';
       const diagnosticBox = q('[data-job-diagnostics]'); if (diagnosticBox) { diagnosticBox.value = diagnosticText; diagnosticBox.style.display = terminal && diagnosticText ? 'block' : 'none'; }
       const copyButton = q('[data-job-copy]'); if (copyButton && !copyButton.dataset.bound) { copyButton.dataset.bound = '1'; copyButton.onclick = async () => { try { const value = q('[data-job-diagnostics]')?.value || ''; if (navigator?.clipboard?.writeText) await navigator.clipboard.writeText(value); else { q('[data-job-diagnostics]')?.select?.(); document.execCommand?.('copy'); } setMessage('Detailed diagnostics copied','good'); } catch (error) { setMessage('Detailed diagnostics copy failed\n' + (error?.message || error),'error'); } }; }
@@ -10278,7 +10288,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       } else {
         question = '저장 모드를 전환합니다. 계속하시겠습니까?';
       }
-      if(preview)question=`이 플러그인의 전체 ${preview.discoveredScopes}개 대화와 과거 개별 경로 ${preview.legacyOverrides}개를 확인했습니다.\n대상: ${modeLabel(toMode)} · ${q('[data-url]').value}\n\n${question}`;
+      if(preview)question=[`이 플러그인의 전체 ${preview.discoveredScopes}개 대화와 과거 개별 경로 ${preview.legacyOverrides}개를 확인했습니다.\n대상: ${modeLabel(toMode)} · ${q('[data-url]').value}`,globalWarningText(preview),question].filter(Boolean).join('\n\n');
       // Host confirm may be asynchronous or blocked by a sandboxed/Tauri iframe.
       // Consent stays inside the mounted panel and never defaults to approval.
       const panel=q('[data-mode-confirm]'),approve=q('[data-mode-confirm-approve]'),cancel=q('[data-mode-confirm-cancel]'),apply=q('[data-apply]');
@@ -10312,17 +10322,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             q('[data-preview-diagnostics]').hidden=true;
             setMessage('전체 대화와 보존 자료를 확인하고 있습니다…');
             const preview=await previewGlobalMode(mode,{url:q('[data-url]').value});
-            if(!preview.completeKnownScopes){
+            if(!preview.completeKnownScopes||preview.warningCount>0){
               q('[data-preview-diagnostics-text]').value=JSON.stringify({schema:'memory-suite.migration-preview-diagnostics.v1',namespace,discoveredScopes:preview.discoveredScopes,
-                blockers:preview.blockers.map(row=>Object.fromEntries(['code','location','space','key','detail','manifestState'].filter(key=>row[key]!=null).map(key=>[key,row[key]])))},null,2);
+                blockers:preview.blockers.map(globalIssueMetadata),...globalWarningMetadata(preview)},null,2);
               q('[data-preview-diagnostics]').hidden=false;
+            }
+            if(!preview.completeKnownScopes){
               setMessage(`전체 이전을 시작할 수 없습니다. 발견 ${preview.discoveredScopes}개 · 미해결 ${preview.blockers.length}개\n${preview.blockers.slice(0,16).map(row=>[row.code,row.location,row.space,row.key,row.detail].filter(Boolean).join(' · ')).join('\n')}`,'error');return;}
             if(!(await confirmModeTransition(fromMode,mode,preview))){setMessage('전환을 취소했습니다. 원본과 저장 경로는 그대로입니다.','good');return;}
             if(!selectionCurrent()){setMessage('확인 중 대상 설정이 바뀌었습니다. 다시 적용해 주세요.','error');return;}
-            setMessage(`전체 ${preview.discoveredScopes}개 대화 · 과거 개별 경로 ${preview.legacyOverrides}개\n${q('[data-url]').value}\n복사·재조회 검증 후 전역 설정을 적용합니다.`);
+            setMessage([`전체 ${preview.discoveredScopes}개 대화 · 과거 개별 경로 ${preview.legacyOverrides}개\n${q('[data-url]').value}\n복사·재조회 검증 후 전역 설정을 적용합니다.`,globalWarningText(preview)].filter(Boolean).join('\n'));
             const result=await withModeConfiguration(()=>persistGlobalMode(mode,{source:'user_global_setting',url:q('[data-url]').value,previewFingerprint:preview.inventoryFingerprint,refreshInventory:true}));
             await refreshPanelSettings();renderJob(getSyncJob());
-            if(result.completeKnownScopes===true)setMessage(`전역 설정 적용 완료 · ${modeLabel(mode)}\n전체 ${result.verifiedScopes}/${result.discoveredScopes}개 대화 검증 완료. 새 대화도 이 설정을 따릅니다.`,'good');
+            if(result.completeKnownScopes===true)setMessage([`전역 설정 적용 완료 · ${modeLabel(mode)}\n전체 ${result.verifiedScopes}/${result.discoveredScopes}개 대화 검증 완료. 새 대화도 이 설정을 따릅니다.`,globalWarningText(result)].filter(Boolean).join('\n'),'good');
             else setMessage('미완료 · 원본과 현재 경로를 보존했습니다. 이어서 진행할 수 있습니다.','error');
             return;
           }finally{button.disabled=false;}

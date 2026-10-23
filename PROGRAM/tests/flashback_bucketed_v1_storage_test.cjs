@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs');
 const {createBucketFixture}=require('./fixtures/flashback_bucketed_v1_fixture.cjs');
 (async()=>{
- const scopeKey='char:bucket-fixture|chat:inactive|persona:fixture',seed=createBucketFixture(scopeKey,{}, {count:0,missingShards:32});
+ const scopeKey='char:bucket-fixture|chat:inactive|persona:fixture',seed=createBucketFixture(scopeKey,{}, {count:0,missingShards:32,commitId:'historical-label'});
  const fixture=await createFixture();
  try{
   // The public API appears before asynchronous startup metadata writes settle.
@@ -16,6 +16,8 @@ const {createBucketFixture}=require('./fixtures/flashback_bucketed_v1_fixture.cj
   assert.equal(loaded.manifest.missingShards,0);assert.equal(loaded.manifest.recordCountMismatch,false);
   assert.equal(loaded.records.length,4);assert.equal(loaded.manifest.externalRetirementPending,41);
   assert.deepEqual(JSON.parse(JSON.stringify(loaded.records.map(r=>r.vector))),seed.records.slice(0,4).map(r=>r.vector));
+  const validation=await fixture.api.validatePluginStorageRestore({phase:'complete',scope:{scopeKey},serverCandidates:seed.entries.map(([logicalKey])=>({space:'plugin',logicalKey})),readback:async(space,key)=>space==='plugin'?fixture.pluginStorage.values.get(key)??null:null});
+  assert.equal(validation.ok,true,JSON.stringify(validation.errors));
   for(const [key,value]of before)assert.equal(fixture.pluginStorage.values.get(key),value,'read preserves historical source bytes');
   // Fresh physical reads detect edits after a manifest has already been read.
   const [key,raw]=seed.buckets[0],bad=JSON.parse(raw);bad.records[0].text='tampered';fixture.pluginStorage.values.set(key,JSON.stringify(bad));
@@ -31,7 +33,7 @@ const {createBucketFixture}=require('./fixtures/flashback_bucketed_v1_fixture.cj
   fixture.pluginStorage.values.set(key+'-duplicate',raw);
   const ambiguous=await api.loadScopeManifest(scopeKey);assert.equal(ambiguous.manifestCorrupt,true);
   fixture.pluginStorage.values.delete(key+'-duplicate');
-  const scope=await fixture.api.resolveCurrentScope(false),current=createBucketFixture(scope.scopeKey,scope,{count:0,missingShards:32});
+  const scope=await fixture.api.resolveCurrentScope(false),current=createBucketFixture(scope.scopeKey,scope,{count:0,missingShards:32,commitId:'historical-label'});
   await new Promise(resolve=>setTimeout(resolve,100));
   for(const [key,value]of current.entries)fixture.pluginStorage.values.set(key,value);
   const portable=fixture.context.__FlashbackPortableMemoryBackup;
