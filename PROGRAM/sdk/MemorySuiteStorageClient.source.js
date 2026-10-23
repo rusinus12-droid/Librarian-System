@@ -3091,14 +3091,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         };
       }
       if (cancelBtn) {
-        cancelBtn.style.display = (isPaused || isFailed) ? 'inline-block' : 'none';
+        const globalJob = job.kind === 'global_mode';
+        cancelBtn.style.display = (isPaused || (isFailed && !globalJob)) ? 'inline-block' : 'none';
+        cancelBtn.textContent = globalJob ? '중단 요청 · 원본 보존' : '작업 취소 · 원래 모드 복구';
         cancelBtn.onclick = async () => {
           cancelBtn.disabled = true;
-          setMessage('작업을 취소하고 원래 모드로 복구하고 있습니다…');
+          setMessage(globalJob ? '전체 이전을 멈추고 확인된 경로와 원본을 보존합니다…' : '작업을 취소하고 원래 모드로 복구하고 있습니다…');
           try {
-            await scopedCancelSyncJob();
+            const result = await scopedCancelSyncJob();
             await refreshActionState();
-            setMessage('이전 작업이 취소되었습니다. 기존 모드가 유지됩니다.', 'good');
+            if (globalJob) {
+              setMessage(result?.status === 'cancelled'
+                ? '효과가 발생하기 전에 전체 이전을 취소했습니다.'
+                : '전체 이전을 멈췄습니다. 원본과 확인된 경로를 보존했고, 나중에 이어서 진행할 수 있습니다.', 'good');
+            } else {
+              setMessage('이전 작업이 취소되었습니다. 기존 모드가 유지됩니다.', 'good');
+            }
           } catch (error) {
             setMessage(`취소 실패: ${error?.message || error}`, 'error');
             cancelBtn.disabled = false;
@@ -6764,14 +6772,31 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     await loadPersistedSyncJob();
     const job = state.syncJob.current;
-    if (!job || syncJobTerminal(job?.status)) {
+    if (!job) {
+      await clearPersistedSyncJob();
+      notifySyncJob();
+      return job;
+    }
+    if (syncJobTerminal(job.status)) {
+      const incompleteGlobal = job.kind === 'global_mode'
+        && job.status !== 'completed'
+        && (job.effectsStarted === true || Object.keys(job.checkpoints || {}).length > 0);
+      if (incompleteGlobal) return job;
       await clearPersistedSyncJob();
       notifySyncJob();
       return job;
     }
     state.syncJob.creating = false;
     if (job.kind === 'global_mode') {
-      state.syncJob.current.pauseRequested = true;
+      // A global migration may already have changed verified scope routes. It
+      // cannot be rolled back by deleting its journal: pause it and retain the
+      // recovery plan so owner reads remain guarded and the job can be resumed.
+      const stopped = await pauseGlobalModeJob();
+      if (stopped?.status === 'cancelled' && stopped.effectsStarted !== true && !globalJobRunning && !modeConfigurationBusy) {
+        await clearPersistedSyncJob();
+        notifySyncJob();
+      }
+      return stopped;
     }
     updateSyncJob({
       status: 'cancelled',

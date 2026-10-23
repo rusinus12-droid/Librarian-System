@@ -141,6 +141,42 @@ const sources = [
     assert.equal(applyBtn.disabled, false, `${target.name}: apply button should be enabled after cancelling job`);
 
     console.log(`PASS ${target.name}: retry/cancel buttons active on paused job, and cancel unlocks controls`);
+
+    // A global migration can have published transition-pending scope routes.
+    // Cancel must pause and retain its journal so recovery remains possible.
+    const globalValues = new Map();
+    const globalJobKey = `__memory_suite_internal_sync_job_v1__:${target.namespace}`;
+    const globalJob = {
+      schema: 'memory-suite.sync-job.v1', namespace: target.namespace,
+      pluginId: `${target.namespace}_memory`, pluginVersion: '1.0.0',
+      jobId: `job_${target.namespace}_global_cancel`, kind: 'global_mode', scopeId: '__global__',
+      status: 'paused', phase: 'paused_resumable', effectsStarted: true,
+      checkpoints: { scope_a: { verified: true } }, pauseRequested: false,
+      startedAt: Date.now() - 30000, updatedAt: Date.now() - 1000, lastActivityAt: Date.now() - 1000
+    };
+    globalValues.set(globalJobKey, JSON.stringify(globalJob));
+    globalValues.set('owner-record-preserved', 'source-data');
+    const globalStorage = {
+      getItem: async key => globalValues.get(String(key)) ?? null,
+      setItem: async (key, value) => { globalValues.set(String(key), value); return true; },
+      removeItem: async key => { globalValues.delete(String(key)); return true; },
+      keys: async () => [...globalValues.keys()]
+    };
+    const globalContext = vm.createContext({
+      mockPluginStorage: globalStorage, document: doc, window: dom.window,
+      navigator: dom.window.navigator, HTMLElement: dom.window.HTMLElement,
+      HTMLInputElement: dom.window.HTMLInputElement, setTimeout, clearTimeout,
+      setInterval, clearInterval, Date, Math, Number, String, Boolean, Array,
+      Object, JSON, Set, Map, Promise, Error, URL, TextEncoder, TextDecoder, console
+    });
+    vm.runInContext(`${sourceCode} globalThis.bridge = createMemorySuiteStorageBridge({namespace:'${target.namespace}',pluginId:'${target.namespace}_memory',pluginVersion:'1.0.0',pluginStorage:mockPluginStorage,defaultUrl:'http://127.0.0.1:47630'});`, globalContext);
+    const globalBridge = globalContext.bridge;
+    const pausedGlobal = await globalBridge.cancelSyncJob();
+    assert.equal(pausedGlobal?.status, 'paused', `${target.name}: global cancel pauses an incomplete migration`);
+    assert.equal(globalValues.has(globalJobKey), true, `${target.name}: global migration recovery journal remains persisted`);
+    assert.equal(JSON.parse(globalValues.get(globalJobKey)).pauseRequested, true, `${target.name}: global migration records the stop request`);
+    assert.equal(globalValues.get('owner-record-preserved'), 'source-data', `${target.name}: source data remains intact`);
+    console.log(`PASS ${target.name}: global migration stop preserves its recovery journal and source data`);
   }
   console.log('ALL STORAGE JOB CANCELLATION TESTS PASSED');
 })().catch(error => {
