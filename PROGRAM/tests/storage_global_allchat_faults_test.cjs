@@ -136,4 +136,71 @@ test('cancel with non-registry scopes correctly tombstones routes and succeeds r
   assert.equal(finalReg.entries.B,undefined);
  }finally{stop();await f.close();}
 });
+test('removed server routes use the same local source in discovery and ordinary reads',async v=>{
+ const f=await fixture(v);let stop;
+ try{
+  const registry=JSON.parse(f.values.get(f.registryKey));delete registry.entries.__memory_suite_global__;
+  registry.entries.C={scopeId:'C',scopeKey:'C',characterId:'two',chatId:'C',mode:'server_only',origin:'transition_pending',removed:true,source:'global_allchat_cancel_rollback',updatedAt:1};
+  f.values.set(f.registryKey,JSON.stringify(registry));f.values.set(v[0]+'.C','C_LOCAL');
+  assert.equal((await f.bridge.getScopeMode({scopeId:'C'})).mode,'plugin_only');
+  let requested=false;stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.A){requested=true;void f.bridge.pauseGlobalModeJob();}});
+  await f.bridge.setGlobalMode('server_only');
+  assert.equal(f.bridge.getSyncJob().globalPlan.scopes.find(s=>s.scopeId==='C').sourceMode,'plugin_only');
+  const result=await f.bridge.cancelSyncJob();assert.equal(result.rollbackComplete,true);
+  const calls=f.calls.length;await f.proxy.setItem(v[0]+'.C','C_AFTER_CANCEL');assert.equal(f.values.get(v[0]+'.C'),'C_AFTER_CANCEL');assert.equal(f.calls.length,calls);
+ }finally{stop?.();await f.close();}
+});
+test('legacy rollback retry verifies saved settings with obsolete or missing sourceMode',async v=>{
+ for(const legacyForm of ['removed_route','missing_source_mode'])for(const action of ['cancelSyncJob','resumePendingSyncJob','setGlobalMode']){
+  const f=await fixture(v);let stop,fresh;
+  try{
+   const registry=JSON.parse(f.values.get(f.registryKey));delete registry.entries.__memory_suite_global__;
+   if(legacyForm==='removed_route')registry.entries.C={scopeId:'C',scopeKey:'C',characterId:'two',chatId:'C',mode:'server_only',origin:'transition_pending',removed:true,source:'global_allchat_cancel_rollback',updatedAt:1};
+   f.values.set(f.registryKey,JSON.stringify(registry));f.values.set(v[0]+'.C','C_LOCAL');
+   let requested=false;stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.A){requested=true;void f.bridge.pauseGlobalModeJob();}});
+   await f.bridge.setGlobalMode('server_only');await f.bridge.dispose();
+   // A valid historical journal produced by the old discovery rule. Its digest
+   // binds that old plan; recovery must not rewrite the plan to make it pass.
+   const job=JSON.parse(f.values.get(journalKey(v[0])));delete job.globalPlan.legacyMode;
+   if(legacyForm==='removed_route')job.globalPlan.scopes.find(s=>s.scopeId==='C').sourceMode='server_only';
+   else delete job.globalPlan.scopes.find(s=>s.scopeId==='C').sourceMode;
+   const canonical=JSON.stringify(job.globalPlan,(_k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.fromEntries(Object.keys(x).sort().map(k=>[k,x[k]])):x);
+   job.globalPlanDigest=require('node:crypto').createHash('sha256').update(canonical).digest('hex');
+   Object.assign(job,{status:'paused',phase:'recovery_pending',failedPhase:'rollback_routes',cancelRequested:true,pauseRequested:true,error:'MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED',errorDetails:{scopeId:'C'}});
+   f.values.set(journalKey(v[0]),JSON.stringify(job));
+   fresh=await fixture(v,{app:f.app,values:f.values,current:'B'});
+   const result=action==='setGlobalMode'?await fresh.bridge.setGlobalMode('server_only'):await fresh.bridge[action]();
+   assert.equal(result.status,'cancelled',action);assert.equal(result.rollbackComplete,true,action);
+   const saved=JSON.parse(f.values.get(journalKey(v[0])));assert.deepEqual(saved.globalPlan,job.globalPlan);assert.equal(saved.globalPlanDigest,job.globalPlanDigest);
+   assert.equal(saved.error,'');assert.equal(saved.failedPhase,'');assert.equal(saved.errorDetails,null);
+   for(const id of ['A','B','C'])assert.equal((await fresh.bridge.getScopeMode({scopeId:id})).mode,'plugin_only');
+   const calls=fresh.calls.length;await fresh.proxy.setItem(v[0]+'.C','C_RESTORED');assert.equal(f.values.get(v[0]+'.C'),'C_RESTORED');assert.equal(fresh.calls.length,calls);
+   assert.equal(f.values.get(v[0]+'.A'),'A_SOURCE');
+  }finally{stop?.();if(fresh)await fresh.close();await f.close();}
+ }
+});
+test('rollback refuses a modified plan without changing any route',async v=>{
+ const f=await fixture(v);let stop,fresh;
+ try{
+  let requested=false;stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.A){requested=true;void f.bridge.pauseGlobalModeJob();}});
+  await f.bridge.setGlobalMode('server_only');await f.bridge.dispose();
+  const job=JSON.parse(f.values.get(journalKey(v[0])));job.globalPlan.scopes[0].sourceMode='mirror';f.values.set(journalKey(v[0]),JSON.stringify(job));
+  const before=f.values.get(f.registryKey);fresh=await fixture(v,{app:f.app,values:f.values});
+  await assert.rejects(()=>fresh.bridge.cancelSyncJob(),e=>e.code==='MEMORY_SUITE_JOB_PIN_PERSIST_FAILED');assert.equal(f.values.get(f.registryKey),before);
+  assert.equal(JSON.parse(f.values.get(journalKey(v[0]))).status,'paused');
+ }finally{stop?.();if(fresh)await fresh.close();await f.close();}
+});
+test('rollback reconnect refuses a replacement server before publishing routes',async v=>{
+ let replacementTransport=null;
+ const f=await fixture(v,{transportFactory:base=>(...args)=>(replacementTransport||base)(...args)});let stop,replacement;
+ try{
+  let requested=false;stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.A){requested=true;void f.bridge.pauseGlobalModeJob();}});
+  await f.bridge.setGlobalMode('server_only');
+  replacement=await fixture(v);replacementTransport=replacement.host.nativeFetch;
+  await assert.rejects(()=>f.bridge.cancelSyncJob(),e=>e.code==='MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_PENDING'&&/DATA_INSTANCE|SERVER_PIN|binding/i.test(e.details?.cause));
+  assert(!replacement.calls.some(c=>c.path==='/v1/kv/set'),'no routes are sent to the replacement server');
+  assert.equal(f.bridge.getSyncJob().status,'paused');assert.notEqual(f.bridge.getSyncJob().rollbackComplete,true);
+  assert.equal(f.values.get(v[0]+'.A'),'A_SOURCE');
+ }finally{stop?.();if(replacement)await replacement.close();await f.close();}
+});
 (async()=>{let passed=0;const failures=[];for(const v of variants)for(const [name,fn]of tests){try{await fn(v);passed++;console.log('PASS '+v[0]+' '+name);}catch(error){failures.push({owner:v[0],name,code:error.code,message:error.message,stack:error.stack});console.error('FAIL '+v[0]+' '+name+' '+error.message);}}console.log(JSON.stringify({passed,owners:3,scenariosPerOwner:tests.length,failures},null,2));if(failures.length)process.exitCode=1;})().catch(e=>{console.error(e);process.exitCode=1;});

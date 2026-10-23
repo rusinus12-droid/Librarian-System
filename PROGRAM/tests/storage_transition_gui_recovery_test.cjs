@@ -238,7 +238,7 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
 (async () => {
   const results = [];
   for (const [name] of Object.entries(owners)) {
-    for (const kind of kinds) {
+    for (const kind of kinds) for (const recoveryKind of ['migration', 'legacy_rollback', 'legacy_rollback_resume']) {
       const handler = createHandlerFixture();
       const pluginPath = artifactRoot
         ? path.join(artifactRoot, kind, META[name][0])
@@ -246,6 +246,20 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
       let s;
       try {
         const snapshot = await createPausedGlobalTransitionSnapshot(name, kind, pluginPath, handler);
+        if (recoveryKind !== 'migration') {
+          const values = new Map(snapshot.entries);
+          const job = JSON.parse(values.get(snapshot.jobKey));
+          // Historical jobs can predate per-scope sourceMode. The original
+          // routing snapshot still binds the settings that cancellation restores.
+          for (const scope of job.globalPlan.scopes) delete scope.sourceMode;
+          delete job.globalPlan.legacyMode;
+          const canonical = JSON.stringify(job.globalPlan, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
+            ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+          job.globalPlanDigest = require('node:crypto').createHash('sha256').update(canonical).digest('hex');
+          Object.assign(job, { cancelRequested:true, pauseRequested:true, failedPhase:'rollback_routes', error:'MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED' });
+          values.set(snapshot.jobKey, JSON.stringify(job));
+          snapshot.entries = [...values.entries()];
+        }
         let allowServer = false;
         const gatedFetch = async (...args) => {
           if (!allowServer) {
@@ -326,8 +340,9 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
 
         // 4. Re-enable server and resume the global transition from the mounted recovery panel, then verify normal screen recovery.
         allowServer = true;
-        const resumeBtn = s.doc.querySelector('[data-global-resume]');
+        const resumeBtn = s.doc.querySelector(recoveryKind === 'legacy_rollback' ? '[data-global-cancel]' : '[data-global-resume]');
         assert.ok(resumeBtn && typeof resumeBtn.onclick === 'function', `${name} (${kind}): global resume button must be interactive`);
+        if (recoveryKind === 'legacy_rollback') assert.equal(resumeBtn.textContent, '이전 작업 취소 · 기존 경로 복구');
         await resumeBtn.onclick();
         await until(
           () => {
@@ -335,7 +350,9 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
             if (!rawJob) return false;
             try {
               const parsed = JSON.parse(rawJob);
-              return parsed.status === 'completed' && parsed.phase === 'completed';
+              return recoveryKind !== 'migration'
+                ? parsed.status === 'cancelled' && parsed.rollbackComplete === true && !parsed.error
+                : parsed.status === 'completed' && parsed.phase === 'completed';
             } catch (_) {
               return false;
             }
@@ -377,15 +394,15 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
           assert.ok(!notice || notice.hidden === true, 'HAYAKU hides transition notice after recovery');
         }
 
-        results.push({ name, kind, status: 'PASS' });
-        console.log(`PASS ${name} (${kind}): GUI button registered, memory read protected, recovery panel mounted, and normal screen restored`);
+        results.push({ name, kind, recoveryKind, status: 'PASS' });
+        console.log(`PASS ${name} (${kind}, ${recoveryKind}): GUI button registered, memory read protected, recovery action completed, and normal screen restored`);
       } finally {
         try { await s?.close?.(); } catch (_) {}
         try { await handler.close(); } catch (_) {}
       }
     }
   }
-  assert.equal(results.length, Object.keys(owners).length * kinds.length);
+  assert.equal(results.length, Object.keys(owners).length * kinds.length * 3);
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
