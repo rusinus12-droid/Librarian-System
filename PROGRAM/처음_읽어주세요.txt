@@ -50,15 +50,15 @@ Windows에서는 업데이트.bat, macOS에서는 업데이트.command, Linux/Te
 
 [현재 구성]
 - Librarian System Server 0.4.1
-- Flashback Memory 1.1.7
-- HAYAKU Locator Continuity 3.1.4
-- LIBRA 2.4.8
+- Flashback Memory 1.1.8
+- HAYAKU Locator Continuity 3.1.5
+- LIBRA 2.4.9
 - LIA Persona Linker 0.27.2
 - RE:TRACE 1.10.0
 - GRADIA 0.26.15
 
 [호환 정보]
-- Storage SDK 1.8.33
+- Storage SDK 1.8.34
 - Compute SDK 0.3.8
 plugin_only에서는 기존 JS kernel을 사용하며 서버 연산에 의존하지 않습니다.
 

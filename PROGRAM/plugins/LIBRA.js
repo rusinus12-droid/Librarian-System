@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.4.8
-//@version 2.4.8
+//@display-name LIBRA v2.4.9
+//@version 2.4.9
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.4.8';
+  const PLUGIN_VERSION = '2.4.9';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -4200,7 +4200,7 @@ const inspectLibraScopeHealthSnapshot = (snapshot, options = {}) => {
 };
 /* END LIBRA READ-ONLY SCOPE HEALTH */
 
-/* LIBRARIAN SYSTEM STORAGE SDK v1.8.33
+/* LIBRARIAN SYSTEM STORAGE SDK v1.8.34
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
  * The server stores opaque values. Each plugin keeps ownership of its own data schema.
  */
@@ -8492,8 +8492,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     discoveredScopes:inventory.scopes.length,legacyOverrides:inventory.scopes.filter(scope=>{const row=inventory.registry.entries[scope.scopeId];return row&&!['inherited','migrated'].includes(String(row.origin||''));}).length,
     directions:Object.fromEntries([MODE_PLUGIN_ONLY,MODE_SERVER_ONLY,MODE_MIRROR].map(mode=>[mode,inventory.scopes.filter(scope=>scope.sourceMode===mode).length])),
     blockers:inventory.blockers,...globalWarningMetadata(inventory),catalogFingerprint:inventory.catalogFingerprint,inventoryFingerprint:inventory.inventoryFingerprint});
+  const syncJobDiagnostics = job => {
+    if (!job) return null;
+    const result=job.result&&typeof job.result==='object'?job.result:{};
+    // Export operation evidence, never the admitted source inventory or server pins.
+    return cloneSyncJob({schema:'memory-suite.scope-sync-diagnostics.v1',namespace,pluginVersion,
+      jobId:job.jobId,kind:job.kind,status:job.status,phase:job.phase,failedPhase:job.failedPhase||'',
+      requestedMode:job.requestedMode||job.targetMode||'',effectiveMode:job.effectiveMode||job.sourceMode||'',
+      currentScopeId:job.currentScopeId||job.scopeId||'',currentSpace:job.currentSpace||'',currentKey:job.currentKey||'',currentAction:job.currentAction||'',
+      discoveredScopes:job.discoveredScopes,verifiedScopes:job.verifiedScopes,startedAt:job.startedAt,updatedAt:job.updatedAt,lastActivityAt:job.lastActivityAt,
+      error:job.error||'',details:job.errorDetails||null,recoveryRequired:job.recoveryRequired===true,
+      failures:job.failureDetails||result.failures||[],validation:job.validation||result.validation||null,
+      metrics:job.metrics||result.metrics||{},currentProgress:job.currentProgress||null,result});
+  };
   const withMigrationPreview = value => ({ ...value,
-    ...(globalMigrationPreview ? { migrationPreview:cloneDiagnosticValue(globalMigrationPreview) } : {}) });
+    ...(globalMigrationPreview ? { migrationPreview:cloneDiagnosticValue(globalMigrationPreview) } : {}),
+    ...(state.syncJob.current ? {syncJob:syncJobDiagnostics(state.syncJob.current)} : {}) });
   const rememberGlobalPreview = summary => {
     // Keep the last read-only result available to ordinary debug exports even
     // when plugin_only skips a server probe. Never retain inventory payloads.
@@ -8614,7 +8628,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       await assertGlobalPlanCurrent(job,inventory);
       globalMigrationContext=inventory;
       await globalPreflightDestinations({...inventory,scopes:job.globalPlan.scopes});
-      await globalSaveJob({status:'running',phase:'copy_verify',message:'전체 대화 데이터를 검증하고 옮기고 있습니다.'});
+      await globalSaveJob({status:'running',phase:'copy_verify',error:'',failedPhase:'',errorDetails:null,failureDetails:[],failures:0,result:null,metrics:null,
+        message:'전체 대화 데이터를 검증하고 옮기고 있습니다.'});
       for(const scope of job.globalPlan.scopes){
         if(state.syncJob.current.pauseRequested){
           const touched=Object.keys(state.syncJob.current.checkpoints||{}).length>0||state.syncJob.current.effectsStarted;
@@ -8630,7 +8645,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if(!sameMode&&!completed&&hasRecords){
           await scopedSetModeSafely(job.targetMode,{scope,source:'global_allchat_transition',origin:'transition_pending',recordExplicit:false,
             globalMigrationJobId:job.jobId,allowEmptyRestore:!hasLiveScopeRecords,assertServerPins:()=>assertDurableJobAdmission(job),
-            onProgress:progress=>{state.syncJob.current={...state.syncJob.current,currentSpace:progress.space,currentKey:progress.currentKey||'',currentAction:progress.currentAction||''};notifySyncJob();}});
+            onProgress:progress=>{state.syncJob.current={...state.syncJob.current,currentSpace:progress.space,currentKey:progress.currentKey||'',currentAction:progress.currentAction||'',
+              currentProgress:Object.fromEntries(['phase','space','totalItems','processedItems','processedBytes','transferredBytes','failureCount','conflictCount'].filter(key=>progress[key]!=null).map(key=>[key,progress[key]]))};notifySyncJob();}});
         }
         const evidence=await verifyGlobalScopeDestination(inventory,scope,job.targetMode);
         if(sameMode||completed||!hasRecords)await persistScopedMode(job.targetMode,scope,{origin:'transition_pending',source:'global_allchat_verified',globalMigrationJobId:job.jobId});
@@ -8679,6 +8695,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return result;
     }catch(error){
       try{await globalSaveJob({status:'paused',phase:state.syncJob.current?.phase==='commit_pending'?'commit_pending':'recovery_pending',error:String(error.code||error.message),
+        failedPhase:state.syncJob.current?.phase||'',errorDetails:compactRestoreEvidence(error.details||null),
+        result:compactRestoreEvidence(error.result||null),failureDetails:compactRestoreEvidence(error.result?.failures||[]),
+        metrics:compactRestoreEvidence(error.metrics||error.result?.metrics||null),validation:compactRestoreEvidence(error.validation||error.result?.validation||null),
+        recoveryRequired:!!error.recoveryLock,failures:Math.max(1,Number(error.result?.failures?.length||0)),
         message:'미완료 · 원본과 실제 경로를 보존했습니다. 문제를 확인한 뒤 이어서 진행하세요.'});}catch(_){}
       error.job=getSyncJob();throw error;
     }finally{globalMigrationContext=null;globalJobRunning=false;}
@@ -11297,7 +11317,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const renderJob = job => {
       const card=q('[data-job]');
       if (!job || (job.kind !== 'global_mode' && job.scopeId !== initial.scopeId) || job.jobId === dismissedJobId) { card.classList.remove('show','terminal','failed'); return; }
-      const terminal=syncJobTerminal(job.status);
+      const terminal=syncJobTerminal(job.status),showResult=terminal||job.status==='paused';
       card.classList.add('show'); const total=Math.max(0,Number(job.kind==='global_mode'?job.discoveredScopes||0:job.totalItems||0)), done=Math.max(0,Number(job.kind==='global_mode'?job.verifiedScopes||0:job.processedItems||0)); const percent=total?Math.min(100,Math.round(done/total*100)):0;
       card.classList.toggle('terminal',terminal); card.classList.toggle('failed',job.status==='failed');
       q('[data-job-title]').textContent = `${job.message || (terminal?'작업 결과':'작업 진행 중')}${total ? ` · ${terminal&&job.status==='completed'?100:percent}%` : ''}`; q('[data-job-bar]').style.width=`${terminal&&job.status==='completed'?100:percent}%`;
@@ -11306,13 +11326,27 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       q('[data-job-retry]').textContent=`재시도 ${Number(job.retryCount||0)} · 실패 ${Number(job.failures||0)}`; q('[data-job-key]').textContent=`현재: ${job.currentKey || job.currentAction || '-'}`;
       const terminalActions=q('[data-job-terminal-actions]'); terminalActions.style.display=terminal?'flex':'none';
       const result=job.result&&typeof job.result==='object'?job.result:{};
-      q('[data-job-result]').textContent=terminal
-        ? [job.status==='completed'?'완료 결과':'실패 결과',`요청 모드: ${modeLabel(job.requestedMode || job.targetMode || initial.mode)}`,`현재 적용 모드: ${modeLabel(job.effectiveMode || result.effectiveMode || job.sourceMode || initial.mode)}`,job.status==='failed'?'전환 미완료 · 현재 적용 모드를 확인하세요.':'',`복원 ${Number(job.restored||result.restored||0)} · 업로드 ${Number(job.uploaded||result.uploaded||0)} · 일치 ${Number(job.matched||result.matched||0)}`,`삭제 표식 ${Number(job.removedByTombstone||result.removed||0)} · 검증 ${Number(result.verified||0)}`,job.recoveryRequired?'복구 필수 잠금: 활성 · 서버 단독 유지':'복구 필수 잠금: 없음',job.error?`오류: ${job.error}`:''].filter(Boolean).join('\n')
+      q('[data-job-result]').style.display=showResult?'block':'none';
+      q('[data-job-result]').textContent=showResult
+        ? [job.status==='completed'?'완료 결과':job.status==='paused'?'작업 보류':'실패 결과',`요청 모드: ${modeLabel(job.requestedMode || job.targetMode || initial.mode)}`,`현재 적용 모드: ${modeLabel(job.effectiveMode || result.effectiveMode || job.sourceMode || initial.mode)}`,job.status==='failed'?'전환 미완료 · 현재 적용 모드를 확인하세요.':'',`복원 ${Number(job.restored||result.restored||0)} · 업로드 ${Number(job.uploaded||result.uploaded||0)} · 일치 ${Number(job.matched||result.matched||0)}`,`삭제 표식 ${Number(job.removedByTombstone||result.removed||0)} · 검증 ${Number(result.verified||0)}`,job.recoveryRequired?'복구 필수 잠금: 활성 · 서버 단독 유지':'복구 필수 잠금: 없음',job.error?`오류: ${job.error}`:''].filter(Boolean).join('\n')
         : '';
       if(terminal&&globalWarningText(result))q('[data-job-result]').textContent+='\n'+globalWarningText(result);
-      const diagnosticText = terminal ? JSON.stringify({ schema:'memory-suite.scope-sync-diagnostics.v1', requestedMode:job.requestedMode || job.targetMode || '', effectiveMode:job.effectiveMode || job.sourceMode || '', failures:result.failures || [], metrics:result.metrics || {}, result }, null, 2) : '';
-      const diagnosticBox = q('[data-job-diagnostics]'); if (diagnosticBox) { diagnosticBox.value = diagnosticText; diagnosticBox.style.display = terminal && diagnosticText ? 'block' : 'none'; }
-      const copyButton = q('[data-job-copy]'); if (copyButton && !copyButton.dataset.bound) { copyButton.dataset.bound = '1'; copyButton.onclick = async () => { try { const value = q('[data-job-diagnostics]')?.value || ''; if (navigator?.clipboard?.writeText) await navigator.clipboard.writeText(value); else { q('[data-job-diagnostics]')?.select?.(); document.execCommand?.('copy'); } setMessage('Detailed diagnostics copied','good'); } catch (error) { setMessage('Detailed diagnostics copy failed\n' + (error?.message || error),'error'); } }; }
+      const diagnosticText = JSON.stringify(syncJobDiagnostics(job),null,2);
+      const diagnosticBox = q('[data-job-diagnostics]');
+      if(diagnosticBox){
+        if(diagnosticBox.ownerDocument?.activeElement!==diagnosticBox)diagnosticBox.value=diagnosticText;
+        diagnosticBox.style.display=showResult||diagnosticBox.dataset.revealed==='1'?'block':'none';
+      }
+      const copyButton=q('[data-job-copy]');
+      if(copyButton&&!copyButton.dataset.bound){copyButton.dataset.bound='1';copyButton.onclick=async()=>{
+        const box=q('[data-job-diagnostics]');if(!box)return;
+        box.value=JSON.stringify(syncJobDiagnostics(getSyncJob()),null,2);box.dataset.revealed='1';box.style.display='block';
+        let copied=false;
+        try{if(typeof navigator!=='undefined'&&navigator.clipboard?.writeText){await navigator.clipboard.writeText(box.value);copied=true;}}catch(_){}
+        if(!copied){try{box.focus();box.select();box.setSelectionRange?.(0,box.value.length);copied=(box.ownerDocument||document).execCommand?.('copy')===true;}catch(_){}}
+        if(copied)setMessage('상세 진단을 복사했습니다.','good');
+        else{setMessage('자동 복사를 사용할 수 없습니다. 아래 진단이 선택되어 있습니다. Ctrl+C 또는 ⌘C로 복사해 주세요.');box.focus();box.select();box.setSelectionRange?.(0,box.value.length);}
+      };}
       if(terminal&&job.jobId!==terminalRefreshId){terminalRefreshId=job.jobId;scheduleLifecycleTimeout(()=>{void scopedGetConnectionSettings({scope:initial.scope,force:true}).then(settings=>applyRecoveryGuard(settings.recoveryRequired)).catch(()=>{});},0);}
     };
     for(const [selector,choice] of [['[data-reset-empty]','empty'],['[data-reset-upload]','upload']]){
