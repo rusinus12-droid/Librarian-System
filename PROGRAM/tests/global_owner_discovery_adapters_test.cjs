@@ -370,12 +370,32 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
   r=await inspect('flashback',{records:[bucketRoot,...bad]});blocked(r,/bucket_dependency_missing_or_invalid/);
   assert.ok(!JSON.stringify(r.blockers).includes('PRIVATE_RECORD_BODY'));
  }
- for(const fields of [{bucketCount:33},{bucketVersion:2},{bucketHashes:[]},{bucketCounts:[]},{count:-1},{commitId:'mixed'},{rawPageLayout:'flashback.raw_pages.v1'}]) {
+ for(const fields of [{bucketCount:33},{bucketVersion:2},{bucketHashes:[]},{bucketCounts:[]},{count:-1},{commitId:12345},{rawPageLayout:'flashback.raw_pages.v1'}]) {
   const bad=clone(bucketRoot);bad.value=JSON.stringify({...JSON.parse(bad.value),...fields});
   r=await inspect('flashback',{records:[bad,...buckets]});blocked(r,/bucket_manifest_invalid/);
   assert.ok(!r.blockers.some(issue=>issue.code==='flashback_global_unknown_scope_key'),'known bucket key family does not generate an unknown-key cascade');
   assert.ok(r.blockers.find(issue=>issue.code==='flashback_global_bucket_manifest_invalid').detail,'bucket metadata errors include a precise reason');
  }
+ // Historical bucketed manifests with real-world commitId (e.g. '1r51uax') are accepted.
+ const commitBucketRoot=clone(bucketRoot);commitBucketRoot.value=JSON.stringify({...JSON.parse(commitBucketRoot.value),commitId:'1r51uax'});
+ r=await inspect('flashback',{records:[commitBucketRoot,...buckets]});ok(r);
+ assert.equal(r.records[0].dependencyKeys.length,32);
+ // source-edit-consent:v1 is recognized as a valid scope key, not an unknown key.
+ const consentRow=row(bucketPrefix+'source-edit-consent:v1',{schema:'memory-suite.source-edit-consent.v1',scopeKey:bucketScope});
+ r=await inspect('flashback',{records:[bucketRoot,...buckets,consentRow]});ok(r);
+ assert.equal(r.records.find(rec=>rec.key===consentRow.key).classification,'scope');
+ // Orphaned device-local vector shards from deleted chats do not block migration.
+ const orphanedLocal=row('vector_rag_memory:local-vector-shard:v1:94fgob:2jx9g1:0000',{schema:'flashback_memory.local_vector_shard.v1',scopeKey:'char:1csfo4d|chat:1ws59r4|persona:8ai3ik'},{space:'local',location:'device'});
+ r=await inspect('flashback',{records:[bucketRoot,...buckets,orphanedLocal]});ok(r);
+ assert.equal(r.records.find(rec=>rec.key===orphanedLocal.key).classification,'control');
+ // turn_worldline:v1 retiredRecords referencing pruned past local vector shards do not block migration.
+ const prunedLocalShard='vector_rag_memory:local-vector-shard:v1:1kcca9g:1mu6jof:0006';
+ const worldlineWithPruned=row(bucketPrefix+'turn_worldline:v1',{
+  version:'flashback_turn_worldline_v1',scopeKey:bucketScope,revision:1,liveHash:'fixture',headTurnNodeId:'',nodes:[],
+  retiredRecords:[{id:'retired_1',hash:'ret_1',sourceType:'response',text:'archived branch turn',vector:[1,0],vectorRef:{storageKey:prunedLocalShard}}]
+ });
+ r=await inspect('flashback',{records:[bucketRoot,...buckets,worldlineWithPruned]});ok(r);
+ assert.equal(r.records.find(rec=>rec.key===worldlineWithPruned.key).classification,'scope');
  // The supplied empty-envelope hashes establish the historical JSON hash codec.
  const actualScope='char:1prphff|chat:1cferkl|persona:48amyh';assert.equal(keyHash(actualScope),'1hxw63t');
  for(const [shard,digest]of [[4,'wycscg'],[5,'1umqef'],[6,'1a5z36u'],[8,'iloit0'],[10,'ii1j15'],[11,'1am0jnu']]) {

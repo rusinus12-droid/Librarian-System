@@ -183,4 +183,14 @@ LIBRA의 실제 아카이브 벡터 2개는 여전히 추가 증거 없이 존�
 HAYAKU 3.1.3 / Storage SDK 1.8.32로 구분하고 소스 manifest·해시를 갱신했다.
 이후 요약 count 0의 버킷 호환 보완은 Flashback 1.1.4로 구분한다.
 중첩 variant 벡터 참조 보완은 LIBRA 2.4.7로 구분한다.
+버킷 commitId·원문 동의 키·고아 기기 캐시·은퇴 벡터 참조 보완은 Flashback 1.1.5로 구분한다.
 사용자 호스트의 플러그인 교체나 실제 기억/벡터 재생성, 배포 ZIP 발행은 수행하지 않았다.
+
+### Flashback 1.1.5 버킷 commitId·원문 동의 키·고아 기기 캐시·은퇴 벡터 참조 보완
+
+추가 제공된 사용자 진단 자료(`1od9931`, `1tkn3ku`, `1jlom60`, `1plkmlu`, `94fgob`, `151zkpo`/`1kcca9g`)에서 4가지 차단 요소를 확인하고 수정했다.
+1. `bucketed_v1` 형식의 매니페스트(`1tkn3ku`, `1od9931`)에 존재하는 `commitId`가 레이아웃 충돌(`bucket_commit_layout_conflict`)로 오인되던 규칙을 완화했다. 버킷 32개의 해시/건수 무결성이 일치하면 commitId 문자열 유무와 관계없이 정상 승인한다.
+2. 스코프 키 화이트리스트에 `source-edit-consent:v1`을 추가하여 정상적인 원문 수정 동의 키가 `unknown_scope_key`로 오인되지 않도록 했다. 페르소나 변경 이력이 있는 스코프의 별칭(aliases)도 정상 신원으로 인정한다.
+3. 삭제된 대화의 잔여물로 매니페스트가 없는 기기(`device`) 로컬 벡터 샤드(`local-vector-shard`)는 전체 이전을 차단하는 치명적 에러(`scope_identity_unresolved`) 대신 관리 대상 외 캐시(`control`)로 분류하여 안전하게 건너뛰도록 했다.
+4. `turn_worldline:v1`의 은퇴 기록(`retiredRecords`)에 남아 있는 과거 커밋의 로컬 벡터 샤드 참조는 최신 커밋에서 이미 로컬 정리(cleanup)되었을 수 있으므로 필수 의존성 대신 선택적 참조(`optional`)로 처리하여 `dependency_missing` 차단을 해제했다.
+

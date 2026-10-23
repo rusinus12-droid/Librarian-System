@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.1.4
+//@display-name ⚡ FLASHBACK Memory v1.1.5
 //@api 3.0
-//@version 1.1.4
+//@version 1.1.5
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.1.4';
+const PLUGIN_VERSION = '1.1.5';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -13030,7 +13030,7 @@ function memorySuiteFlashbackBucketCatalog(manifest, candidates) {
   if (manifest.bucketVersion !== 1) return invalid('bucket_version');
   if (!Number.isSafeInteger(count) || count < 1 || count > 100000) return invalid('bucket_count');
   if (!Number.isSafeInteger(manifest.count) || manifest.count < 0) return invalid('manifest_record_count');
-  if (manifest.commitId) return invalid('bucket_commit_layout_conflict');
+  if (manifest.commitId != null && typeof manifest.commitId !== 'string') return invalid('bucket_commit_id_invalid');
   if (manifest.rawPageLayout != null || manifest.rawPageReferences != null || manifest.rawPageDirectoryDigest != null) return invalid('bucket_raw_page_layout_conflict');
   if (!Array.isArray(manifest.bucketCounts) || manifest.bucketCounts.length !== count) return invalid('bucket_counts_length');
   if (!Array.isArray(manifest.bucketHashes) || manifest.bucketHashes.length !== count) return invalid('bucket_hashes_length');
@@ -13288,10 +13288,20 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
     const match = key.match(/^vector_rag_memory:scope:([^:]+):(.+)$/) || key.match(/^vector_rag_memory:local-vector-shard:v1:([^:]+):(.+)$/);
     if (match) {
       const id = nativeHashes.get(match[1]), archiveId = archiveHashes.get(match[1]);
-      if (!id && !archiveId) { issue('scope_identity_unresolved',row); continue; }
-      if (!bucketKeys.has(key) && !key.startsWith('vector_rag_memory:local-vector-shard:v1:') && !/^(?:manifest:v2(?::previous:v1)?$|turn_worldline:v1$|records:(?:shard:\d+|commit:.+:shard:\d+|bucket:v1:shard:\d+)$)/.test(match[2])) issue('unknown_scope_key',row);
+      if (!id && !archiveId) {
+        if (row.space === 'local' && key.startsWith('vector_rag_memory:local-vector-shard:v1:')) {
+          row.classification = 'control';
+          continue;
+        }
+        issue('scope_identity_unresolved',row);
+        continue;
+      }
+      if (!bucketKeys.has(key) && !key.startsWith('vector_rag_memory:local-vector-shard:v1:') && !/^(?:manifest:v2(?::previous:v1)?$|turn_worldline:v1$|source-edit-consent:v1$|records:(?:shard:\d+|commit:.+:shard:\d+|bucket:v1:shard:\d+)$)/.test(match[2])) issue('unknown_scope_key',row);
       if (id) { row.classification='scope'; attach(row,id); }
-      if (object(value) && value.scopeKey && value.scopeKey !== (id || archiveId)) issue('payload_scope_identity_conflict',row);
+      if (object(value) && value.scopeKey && value.scopeKey !== (id || archiveId)) {
+        const scope = id ? scopesById.get(id) : null;
+        if (!scope?.aliases?.includes(value.scopeKey)) issue('payload_scope_identity_conflict',row);
+      }
     } else if (['vector_rag_memory:scope_registry:v2','vector_rag_memory:operation_log:v1','vector_rag_memory:maintenance_journal:v1','vector_rag_memory:pending_capture_journal:v1','vector_rag_memory:handoff_ledger:v2','vector_rag_memory:legacy_migration:v2'].includes(key)) {
       row.ownerWide = true; row.dependencyScopeIds = [...scopesById.keys()];
     } else if (key === 'vector_rag_memory:manifest:v1' || key.startsWith('vector_rag_memory:records:shard:')) issue('legacy_owner_identity_unresolved',row);
@@ -13356,7 +13366,8 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
         if (!referenceFields.has(name)) continue;
         for (const key of Array.isArray(body) ? body : [body]) if (typeof key === 'string' && key.startsWith('vector_rag_memory:')) {
           if (inlineKeys.has(key)) continue;
-          const optional = false;
+          const optional = (row.logicalKey.endsWith(':turn_worldline:v1') || row.logicalKey.includes(':turn_worldline:'))
+            && key.startsWith('vector_rag_memory:local-vector-shard:v1:');
           dependency(row,key,name === 'localKey' ? 'local' : '',optional);
         }
       }
