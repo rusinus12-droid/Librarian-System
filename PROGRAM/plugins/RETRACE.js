@@ -14807,6 +14807,8 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     const pageStart = page * SERVER_SCOPE_MANAGER_PAGE_SIZE;
     const pageEnd = Math.min(orderedScopes.length, pageStart + SERVER_SCOPE_MANAGER_PAGE_SIZE);
     const pageScopes = orderedScopes.slice(pageStart, pageEnd);
+    const visibleKeys = pageScopes.map(scopeManagerSelectionKey);
+    const allVisibleSelected = visibleKeys.length > 0 && visibleKeys.every(k => selected.has(k));
     const groups = MEMORY_SUITE_SCOPE_STATUS_ORDER.map(status => ({
       status,
       total: orderedScopes.filter(scope => scope.classification === status).length,
@@ -14814,7 +14816,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     }));
     const inventoryHtml = `<div class="banner ${inventory.stable ? 'banner--ok' : 'banner--warn'}"><div><strong>${inventory.stable ? '채팅 목록 안정 확인' : '채팅 목록 확인 불완전'}</strong><span>${inventory.stable ? `현재 캐릭터의 채팅 ${formatNumber(inventory.chatCount || 0)}개와 비교했습니다.` : '고아 판정과 삭제가 보수적으로 차단됩니다.'}</span></div><em>${scopeManagerFormatTime(catalog.at)}</em></div>`;
     const ownerFilters=`<div class="cluster" role="group" aria-label="Owner별 서버 자료">${[['','전체'],['libra','LIBRA'],['hayaku','HAYAKU'],['flashback','Flashback']].map(([value,label])=>`<button class="btn btn--sm" data-server-owner-filter="${value}" aria-pressed="${String(value===ownerFilter)}">${label} <span class="n">${formatNumber(scopes.filter(row=>!value||row.namespace===value).length)}</span></button>`).join('')}</div>`;
-    const toolbarHtml = `<div class="toolbar"><div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px"><strong>다중 작업</strong><span>선택 ${formatNumber(selectedRows.length)}개 · 삭제 적격 ${formatNumber(selectedScopes.length)}개</span>${selectedRows.length > 0 && selectedScopes.length === 0 ? '<small class="muted" style="color:var(--danger-ink,#e5484d);font-size:12px">(선택된 항목은 참조 중인 승계 조상 또는 확인 불가 보호 데이터로 일괄 삭제할 수 없습니다)</small>' : ''}</div><div class="cluster"><button class="btn" data-server-scope-select-all ${eligible.length ? '' : 'disabled'}>삭제 후보 전체 선택</button><button class="btn" data-server-scope-select-clear ${selected.size ? '' : 'disabled'}>선택 해제</button><button class="btn btn--danger" data-server-scope-delete-selected ${selectedScopes.length ? '' : 'disabled'}>선택한 서버 사본 삭제</button></div></div>${ownerFilters}`;
+    const toolbarHtml = `<div class="toolbar"><div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px"><strong>다중 작업</strong><span>선택 ${formatNumber(selectedRows.length)}개 · 삭제 적격 ${formatNumber(selectedScopes.length)}개</span>${selectedRows.length > 0 && selectedScopes.length === 0 ? '<small class="muted" style="color:var(--danger-ink,#e5484d);font-size:12px">(선택된 항목은 참조 중인 승계 조상 또는 확인 불가 보호 데이터로 일괄 삭제할 수 없습니다)</small>' : ''}</div><div class="cluster"><button class="btn" data-server-scope-select-visible ${visibleKeys.length ? '' : 'disabled'}>${allVisibleSelected ? '모두 해제' : '모두 선택'}</button><button class="btn" data-server-scope-select-all ${eligible.length ? '' : 'disabled'}>삭제 후보 전체 선택</button><button class="btn" data-server-scope-select-clear ${selected.size ? '' : 'disabled'}>선택 해제</button><button class="btn btn--danger" data-server-scope-delete-selected ${selectedScopes.length ? '' : 'disabled'}>선택한 서버 사본 삭제</button></div></div>${ownerFilters}`;
     const paginationHtml = orderedScopes.length > SERVER_SCOPE_MANAGER_PAGE_SIZE
       ? `<div class="cluster"><button class="btn" data-server-scope-page="prev" ${page <= 0 ? 'disabled' : ''}>이전</button><span>${formatNumber(pageStart + 1)}–${formatNumber(pageEnd)} / ${formatNumber(orderedScopes.length)} · ${formatNumber(page + 1)} / ${formatNumber(totalPages)} 페이지</span><button class="btn" data-server-scope-page="next" ${page + 1 >= totalPages ? 'disabled' : ''}>다음</button></div>`
       : '';
@@ -15206,6 +15208,19 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     }
     const ownerFilterButton=event.target?.closest?.('[data-server-owner-filter]');
     if(ownerFilterButton){Runtime.serverScopeOwnerFilter=ownerFilterButton.getAttribute('data-server-owner-filter')||'';Runtime.serverScopeManagerPage=0;renderServerScopeManagement();return;}
+    if (event.target?.closest?.('[data-server-scope-select-visible]')) {
+      const inputs = Array.from(Runtime.root?.querySelectorAll?.('input[data-server-scope-select]:not(:disabled)') || []);
+      const keys = inputs.map(input => input.getAttribute('data-server-scope-select')).filter(Boolean);
+      if (!Runtime.serverScopeSelection) Runtime.serverScopeSelection = new Set();
+      const allSelected = keys.length > 0 && keys.every(k => Runtime.serverScopeSelection.has(k));
+      if (allSelected) {
+        keys.forEach(k => Runtime.serverScopeSelection.delete(k));
+      } else {
+        keys.forEach(k => Runtime.serverScopeSelection.add(k));
+      }
+      renderServerScopeManagement();
+      return;
+    }
     if (event.target?.closest?.('[data-server-scope-select-all]')) {
       Runtime.serverScopeSelection = new Set(scopeManagerArray(Runtime.serverScopeCatalog?.scopes)
         .filter(scopeManagerBulkSelectable).map(scopeManagerSelectionKey));

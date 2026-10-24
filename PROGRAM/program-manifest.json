@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-24T12:54:03.377Z",
+  "generatedAt": "2026-10-24T13:08:33.141Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -3984,8 +3984,8 @@
       "bytes": 6635150
     },
     "plugins/RETRACE.js": {
-      "sha256": "dfdc3467c81dff72e522e7b20f1890120b2cb064df10a78a53f81ab4536d9d37",
-      "bytes": 1264613
+      "sha256": "2a2b17e7c736962b36dde0e68a8296c310b9cf7fececa41aa7b6b2a92d8e3f3a",
+      "bytes": 1265654
     },
     "release-policy.json": {
       "sha256": "dd876b2e56bc534c78fdc873914d846175c9d1234cfa926da7736f2447af5206",
@@ -10004,8 +10004,8 @@
       "bytes": 20562
     },
     "tests/retrace_scope_manager_contract_test.cjs": {
-      "sha256": "0d4ee9f27344a2d76213dd1bf0ffa94e62cb50a9c2c3ca55ac3fbabddee6a3ff",
-      "bytes": 5828
+      "sha256": "b80194a18bb7c98ed50201c05119ab15a4367186c11546f1f151629bec778dde",
+      "bytes": 5864
     },
     "tests/retrace_scope_refresh_cache_test.cjs": {
       "sha256": "34f1377538e56296a75c52e11ed1a64db2e95427da8fe152aebf99bc3f9973a6",

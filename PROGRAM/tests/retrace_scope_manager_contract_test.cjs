@@ -18,7 +18,7 @@ for (const marker of [
   'referenced_ancestor', 'scopeManagerStableHostInventory', 'scopeManagerDeleteBlockedReason',
   'scopeManagerOwnerProof', 'handleServerScopeManagementClick', 'managerReplaceScopeIndex',
   'managerListScopes', 'managerSetScopePinned', 'data-server-scope-detail', 'data-server-scope-delete',
-  'data-server-scope-select', 'data-server-scope-delete-selected', 'data-server-scope-pair',
+  'data-server-scope-select', 'data-server-scope-select-visible', 'data-server-scope-delete-selected', 'data-server-scope-pair',
   'scopeManagerSetRecoveryPairing', 'scopeManagerClearRecoveryPairing', 'scopeManagerCreatePlans',
   'MEMORY_SUITE_SCOPED_REMOTE_KEY_MARKER', 'scopeManagerScopedRemoteKeyInfo',
   'scopeManagerRecordsForLogicalKey', 'source.info.scoped'
