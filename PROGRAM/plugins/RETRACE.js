@@ -15210,7 +15210,12 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     if(ownerFilterButton){Runtime.serverScopeOwnerFilter=ownerFilterButton.getAttribute('data-server-owner-filter')||'';Runtime.serverScopeManagerPage=0;renderServerScopeManagement();return;}
     if (event.target?.closest?.('[data-server-scope-select-visible]')) {
       const inputs = Array.from(Runtime.root?.querySelectorAll?.('input[data-server-scope-select]:not(:disabled)') || []);
-      const keys = inputs.map(input => input.getAttribute('data-server-scope-select')).filter(Boolean);
+      const keys = inputs.map(input => {
+        const raw = scopeManagerText(input.getAttribute('data-server-scope-select'));
+        const separator = raw.indexOf('|');
+        if (separator <= 0) return null;
+        return scopeManagerRecipeKey(raw.slice(0, separator), raw.slice(separator + 1));
+      }).filter(Boolean);
       if (!Runtime.serverScopeSelection) Runtime.serverScopeSelection = new Set();
       const allSelected = keys.length > 0 && keys.every(k => Runtime.serverScopeSelection.has(k));
       if (allSelected) {
