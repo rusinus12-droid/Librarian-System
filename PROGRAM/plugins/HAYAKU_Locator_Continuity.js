@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.2
-//@version 3.3.2
+//@display-name HAYAKU · Locator Continuity v3.3.3
+//@version 3.3.3
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.2';
+  const PLUGIN_VERSION = '3.3.3';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -10407,10 +10407,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       error.userMessage = error.message;
       throw error;
     }
-    const integrity = await remoteIntegrity({ allowPluginOnly: false }).catch(err => {
+    // The live global/per-scope registry above is the mode authority. The legacy
+    // mode argument intentionally stays plugin_only after global migration, so
+    // it must not veto these observational server reads. DATA binding, reset
+    // review, integrity and per-key preservation checks still apply.
+    const integrity = await remoteIntegrity({ allowPluginOnly: true }).catch(err => {
       const error = new Error(`서버 연결 및 무결성 확인 실패: ${err?.message || err}`);
       error.code = normalizeServerAvailabilityError(err)?.code || 'MEMORY_SUITE_SERVER_VERIFICATION_FAILED';
-      error.userMessage = '서버 연결 또는 저장소 검증에 실패했습니다. 오류 상세와 연결 설정을 확인해 주세요.';
+      error.cause = err;
+      error.userMessage = error.message;
       throw error;
     });
     if (integrity?.ok !== true) {
@@ -10476,12 +10481,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const batchKeys = remoteKeys.slice(i, i + 512);
         let batch;
         try {
-          batch = await remoteGetMany(space, batchKeys, { allowPluginOnly: false });
+          batch = await remoteGetMany(space, batchKeys, { allowPluginOnly: true });
         } catch (e) {
           batch = { values: {} };
           for (const rk of batchKeys) {
             try {
-              batch.values[rk] = await remoteGet(space, rk, { allowPluginOnly: false });
+              batch.values[rk] = await remoteGet(space, rk, { allowPluginOnly: true });
             } catch (err) {
               spaceFailures.push({ remoteKey: rk, error: compact(err?.message || err, 240) });
             }
@@ -10567,7 +10572,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           if (route.kind !== 'scope' || route.scopeId !== cand.route.scopeId || route.remoteKey !== cand.route.remoteKey)
             throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED', {key:cand.key});
           const current = await routeProjectValue(route, await legacyRead(legacy, cand.key));
-          const remote = await remoteGet(space, route.remoteKey, { allowPluginOnly: false });
+          const remote = await remoteGet(space, route.remoteKey, { allowPluginOnly: true });
           if (!remote.exists || remote.tombstone
             || (await globalDigest(normalizeJsonVal(current))) !== cand.localFingerprint
             || (await globalDigest(normalizeJsonVal(remote.value))) !== cand.localFingerprint)

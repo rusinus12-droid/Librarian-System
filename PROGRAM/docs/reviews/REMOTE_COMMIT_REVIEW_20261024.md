@@ -18,3 +18,7 @@ Regression coverage exercises actual production function declarations, real HTTP
 Existing GUI lifecycle, storage-dismissal, connection panel, SDK synchronization, LIA GUI, and owner read-session regression checks were also run. Full and Min plugin artifacts are built with the repository release builder. Historical artifact size baselines are reporting-only; the build log reports size warnings separately from build/syntax success.
 
 Actual RisuAI browser connectivity on the user's machine is not reproduced by these synthetic hosts. A running server can still be unreachable from a host/container; the updated warning distinguishes failed access from a stopped process.
+
+## Follow-up — 2026-10-25
+
+The cleanup transport still consulted the legacy mode argument after the global registry had certified `server_only`. That argument intentionally remains `plugin_only`, causing `memory_suite_server_not_enabled` even against a responsive server. Global verification and its final readback now use the same observational transport permission as scope verification, after enforcing the effective global/per-scope modes. Server identity, reset review, integrity and copy-equality gates remain enforced. Transport/integrity errors preserve their underlying reason in the visible diagnostic. The new global-mode cleanup regression drives the real two-click panel without an active chat and checks that server records remain byte-for-byte unchanged for all three owners.
