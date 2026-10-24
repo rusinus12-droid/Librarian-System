@@ -1,7 +1,7 @@
 //@name lia_persona_linker
 //@display-name LIA: Persona Linker
 //@api 3.0
-//@version 0.27.3
+//@version 0.27.4
 /* Target-only handoff storage preparation v1. Authenticated owner handlers only. */
 async function prepareMemorySuiteHandoffTargetStorage(api, storage, owner, payload) {
   const readTarget = async () => {
@@ -274,7 +274,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
   const OPERATION_LOG_MAX = 300;
   const DEBUG_LOG_MAX = 600;
   const LOG_PERSIST_DEBOUNCE_MS = 1500;
-const PLUGIN_VERSION = "0.27.3";
+const PLUGIN_VERSION = "0.27.4";
   const LIA_SETTING_UI_ID = "lia-persona-linker-setting";
   const LIA_BUTTON_UI_ID = "lia-persona-linker-button";
   const PERSONA_PROOF_VERSION = 1;
@@ -13758,11 +13758,22 @@ ${revisionText}`);
   }
 
   async function readLiaViewSelection() {
-    const [charIndex, chatIndex] = await Promise.all([
+    const [rawCharIndex, rawChatIndex] = await Promise.all([
       boundedLiaHostContextCall('getCurrentCharacterIndex', () => api.getCurrentCharacterIndex?.(), null),
       boundedLiaHostContextCall('getCurrentChatIndex', () => api.getCurrentChatIndex?.(), null)
     ]);
-    if (!Number.isInteger(charIndex) || charIndex < 0 || !Number.isInteger(chatIndex) || chatIndex < 0) throw new Error('LIA_VIEW_SELECTION_UNAVAILABLE');
+    // Host indices may be serialized numeric strings. Never coerce missing,
+    // blank or boolean values to the first chat during selection verification.
+    const index = value => (typeof value === 'number' || (typeof value === 'string' && value.trim() !== ''))
+      && Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+    const charIndex = index(rawCharIndex);
+    let chatIndex = index(rawChatIndex);
+    if (charIndex !== null && rawChatIndex == null) {
+      // Older hosts expose the selection on the freshly read character instead.
+      const character = await boundedLiaHostContextCall('getCharacterFromIndex', () => api.getCharacterFromIndex?.(charIndex), null);
+      chatIndex = index(character?.chatPage);
+    }
+    if (charIndex === null || chatIndex === null) throw new Error('LIA_VIEW_SELECTION_UNAVAILABLE');
     return {charIndex,chatIndex};
   }
   async function assertLiaViewSelectionCurrent(ctx) {
@@ -22489,7 +22500,7 @@ ${revisionText}`);
   }
   function renderLiaPreviewState(root, error = null) {
     const message=error ? `화면을 읽지 못했습니다: ${error?.message || error}` : '현재 채팅과 로컬 Persona 자료를 읽고 있습니다…';
-    root.innerHTML=`<header class="topbar"><strong>LIA · Persona Linker</strong><button type="button" class="btn" data-lia-preview-close>닫기</button></header><main class="main" style="padding:24px;overflow:auto"><h2>${error?'자료 읽기 확인 필요':'불러오는 중'}</h2><p id="dpg-status" role="${error?'alert':'status'}" style="white-space:pre-wrap;overflow-wrap:anywhere">${htmlEscape(message)}</p><p>로컬 자료와 Persona 연결은 그대로 보존됩니다.</p><button type="button" class="btn" data-lia-preview-retry${error?'':' disabled'}>다시 읽기</button></main>`;
+    root.innerHTML=`<header class="topbar"><strong>LIA · Persona Linker</strong><button type="button" class="btn" data-lia-preview-close>닫기</button></header><main class="main" style="grid-column:1/-1;grid-row:2;min-width:0;padding:24px;overflow:auto;font-size:14px;line-height:1.6"><h2>${error?'자료 읽기 확인 필요':'불러오는 중'}</h2><p id="dpg-status" role="${error?'alert':'status'}" style="white-space:pre-wrap;overflow-wrap:anywhere">${htmlEscape(message)}</p><p>로컬 자료와 Persona 연결은 그대로 보존됩니다.</p><button type="button" class="btn" data-lia-preview-retry${error?'':' disabled'}>다시 읽기</button></main>`;
     root.querySelector('[data-lia-preview-close]').onclick=()=>void closeLiaUi();
     root.querySelector('[data-lia-preview-retry]').onclick=()=>void refreshPreview({skipCapture:true});
   }

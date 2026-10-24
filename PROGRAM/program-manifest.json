@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-24T08:31:04.427Z",
+  "generatedAt": "2026-10-24T09:03:19.945Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -417,7 +417,7 @@
           "legacyCandidatesRequireLiveReconcile": true
         },
         "lia": {
-          "version": "0.27.3",
+          "version": "0.27.4",
           "fiveTurnCommitRevisionGate": true,
           "inFlightRevisionRequeue": true,
           "backendOrder": [
@@ -546,7 +546,7 @@
       ]
     },
     "liaSharedServerRestore": {
-      "version": "0.27.3",
+      "version": "0.27.4",
       "fixedSharedStores": [
         "dynamicPersonaLorebookGeneratorResultVault",
         "liaPersonaLinkerWorldBlueprintVaultV1",
@@ -1057,7 +1057,7 @@
       "computeModeArgumentExposed": false,
       "arbitraryCodeExecution": false,
       "liaWorldLorePilot": {
-        "version": "0.27.3",
+        "version": "0.27.4",
         "operation": "lia.world-lore-rerank.v2",
         "algorithmFingerprint": "cbd91cc90d01c8fc052669390badab3d0c2c7a52c4b6c314ac2ca61716fc7a75",
         "retired": true,
@@ -1426,7 +1426,7 @@
     "flashback": "1.1.21",
     "hayaku": "3.1.18",
     "libra": "2.4.22",
-    "lia": "0.27.3",
+    "lia": "0.27.4",
     "retrace": "1.10.3",
     "gradia": "0.26.16"
   },
@@ -3572,7 +3572,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "0f9dec1cee02c78f21d26568f951b48c99d90fae35cb0bb8d561441db69cb2d1",
+      "sha256": "0fc3fe161a198110e4c30c735c6fe00bb725ae02c0a8e322cdcb582c84ff2391",
       "bytes": 11836
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3960,7 +3960,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "8b33942b28f0061ae1a6e210d4a5479ca1960ac3abeb8e6c1fee4324eceb0592",
+      "sha256": "a561364917567615e186decb57345c948c3ed39c307b4bcc4022dc19594af60f",
       "bytes": 3353
     },
     "plugins/Flashback_Memory.js": {
@@ -3976,8 +3976,8 @@
       "bytes": 4115195
     },
     "plugins/LIA_Persona_Linker.js": {
-      "sha256": "2c4e789042768af792772961e33c4b856483f746bb233c1eb8a14b0042a66b47",
-      "bytes": 1647506
+      "sha256": "49f1b89e541bc21513a56eb090c34aa967872e492e9c94ab289083a4a55e1529",
+      "bytes": 1648291
     },
     "plugins/LIBRA.js": {
       "sha256": "262ce69a27fde96a43234e23ca775d75fdceccafa79508db28bd9c7c0950101d",
@@ -11548,7 +11548,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "4bf71cbd7c5ad059319fa63c15e655315311d01e06d498ee2714dc06ffd81972",
+      "sha256": "f8fa42e87b9e51e2f06b941b278eb261d64d1558620f7d38292d0ba787d10f3f",
       "bytes": 3787
     }
   },
