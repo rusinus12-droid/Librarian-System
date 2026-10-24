@@ -6,6 +6,7 @@ const jobKey=namespace=>`__memory_suite_internal_sync_job_v1__:${namespace}`;
 async function replaced(variant,options={}){
  const original=await fixture(variant);let replacement,active,stop;
  try{
+  if(options.remoteScopeMode){const registry=JSON.parse(original.values.get(original.registryKey));Object.assign(registry.entries.B,{mode:options.remoteScopeMode,origin:'user_explicit'});original.values.set(original.registryKey,JSON.stringify(registry));}
   if(options.remoteSource)await original.bridge.setGlobalMode('server_only');
   let requested=false;stop=original.bridge.subscribeSyncJob(job=>{if(!requested&&job?.status!=='completed'&&job?.checkpoints?.A){requested=true;void original.bridge.pauseGlobalModeJob();}});
   await original.bridge.setGlobalMode(options.remoteSource?'plugin_only':'server_only');stop();await original.bridge.dispose();
@@ -17,6 +18,26 @@ async function replaced(variant,options={}){
  }catch(error){await active?.close();await replacement?.close();await original.close();throw error;}finally{stop?.();}
 }
 const rows=f=>f.replacement.app.repositories[f.active.bridge.namespace].database.prepare('SELECT * FROM kv ORDER BY space,key').all();
+async function historicalWitness(f,variant,localStatus='matching'){
+ const namespace=variant[0],key=jobKey(namespace),job=JSON.parse(f.original.values.get(key));
+ let remoteKey=f.original.app.repositories[namespace].database.prepare('SELECT key FROM kv WHERE key LIKE ?').all(namespace+'.A%')[0].key;
+ let source=job.globalPlan.sources.find(item=>item.identity==='plugin\u0000plugin\u0000'+namespace+'.A');
+ if(localStatus==='missing')remoteKey=remoteKey.replace(namespace+'.A',namespace+'.ABSENT');
+ if(localStatus==='chunk'){
+  const suffix='::chunk:v1:historical:0',value='EXACT_LOCAL_CHUNK';
+  f.original.values.set(namespace+'.A'+suffix,value);remoteKey+=suffix;
+  source={fingerprint:require('node:crypto').createHash('sha256').update(JSON.stringify([false,value])).digest('hex')};
+ }
+ job.globalPlan.sources.push({identity:'server\u0000plugin\u0000'+remoteKey,
+  fingerprint:localStatus==='different'?'d'.repeat(64):source.fingerprint,revision:1,digest:'historical-server-digest'});
+ for(const scope of job.globalPlan.scopes)delete scope.sourceMode;
+ delete job.globalPlan.legacyMode;
+ const canonical=JSON.stringify(job.globalPlan,(_key,value)=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.keys(value).sort().map(k=>[k,value[k]])):value);
+ job.globalPlanDigest=require('node:crypto').createHash('sha256').update(canonical).digest('hex');
+ f.original.values.set(key,JSON.stringify(job));await f.active.bridge.dispose();
+ const fresh=await fixture(variant,{app:f.original.app,values:f.original.values,transport:f.replacement.host.nativeFetch});
+ return {fresh,remoteKey,job};
+}
 for(const variant of variants){
  const namespace=variant[0];
  test(`${namespace}: reviewed cancellation uses exact local originals and never writes to restored server`,{timeout:30000},async()=>{
@@ -57,9 +78,46 @@ for(const variant of variants){
  test(`${namespace}: original server-only routes cannot be unlocked using retained local copies`,{timeout:30000},async()=>{
   const f=await replaced(variant,{remoteSource:true});
   try{
-   await assert.rejects(()=>f.active.bridge.previewLocalCancellation(),error=>error.code==='MEMORY_SUITE_LOCAL_CANCEL_REMOTE_SOURCE_REQUIRED');
+   await assert.rejects(()=>f.active.bridge.previewLocalCancellation(),error=>error.code==='MEMORY_SUITE_LOCAL_CANCEL_REMOTE_SOURCE_REQUIRED'&&error.details?.reason==='original_global_mode');
    assert.equal(f.active.bridge.getSyncJob().status,'paused');
   }finally{await f.close();}
+ });
+ test(`${namespace}: remote per-chat mode identifies the exact blocking original route`,{timeout:30000},async()=>{
+  const f=await replaced(variant,{remoteScopeMode:'mirror'});
+  try{
+   await assert.rejects(()=>f.active.bridge.previewLocalCancellation(),error=>error.code==='MEMORY_SUITE_LOCAL_CANCEL_REMOTE_SOURCE_REQUIRED'
+    &&error.details?.reason==='original_scope_mode'&&error.details.scopeId==='B'&&error.details.mode==='mirror'&&error.details.origin==='user_explicit');
+  }finally{await f.close();}
+ });
+ for(const localStatus of ['matching','chunk'])test(`${namespace}: ${localStatus} local counterpart satisfies a historical server witness without rebinding the new server`,{timeout:30000},async()=>{
+  const f=await replaced(variant);let fresh;
+  try{
+   const historical=await historicalWitness(f,variant,localStatus);fresh=historical.fresh;
+   const before=rows(f),requests=f.replacement.calls.length;
+   const preview=await fresh.bridge.previewLocalCancellation();
+   assert.equal(preview.localSourceRecords,localStatus==='chunk'?3:2,'count physical originals rather than repeated witnesses');
+   const result=await fresh.bridge.cancelSyncJob({localOnly:true,previewFingerprint:preview.fingerprint});
+   assert.equal(result.status,'cancelled');assert.equal(result.rollbackComplete,true);
+   assert.deepEqual(JSON.parse(JSON.stringify(result.globalPlan)),historical.job.globalPlan);assert.equal(result.globalPlanDigest,historical.job.globalPlanDigest);
+   assert.deepEqual(JSON.parse(JSON.stringify(result.serverPins)),historical.job.serverPins);
+   assert.deepEqual(rows(f),before);assert.equal(f.replacement.calls.length,requests);
+   assert.equal(await fresh.proxy.getItem(namespace+'.A'),'A_SOURCE');
+  }finally{await fresh?.close();await f.close();}
+ });
+ for(const localStatus of ['missing','different'])test(`${namespace}: ${localStatus} local counterpart identifies the blocked server witness without claiming local memory is absent`,{timeout:30000},async()=>{
+  const f=await replaced(variant);let fresh,dom;
+  try{
+   const historical=await historicalWitness(f,variant,localStatus);fresh=historical.fresh;
+   const {remoteKey}=historical,requests=f.replacement.calls.length,before=rows(f);
+   await assert.rejects(()=>fresh.bridge.previewLocalCancellation(),error=>error.code==='MEMORY_SUITE_LOCAL_CANCEL_REMOTE_SOURCE_REQUIRED'
+    &&error.details?.reason==='server_source_witness'&&error.details.key===remoteKey&&error.details.space==='plugin'&&error.details.localStatus===localStatus);
+   dom=makePanelDom();await fresh.bridge.mountConnectionPanel(dom.container);dom.byAttr('data-url').value='http://127.0.0.1:47631';
+   await dom.byAttr('data-job-retry').onclick();
+   const diagnostic=JSON.parse(dom.byAttr('data-job-diagnostics').value);
+   assert.equal(diagnostic.details.reason,'server_source_witness');assert.equal(diagnostic.details.key,remoteKey);assert.equal(diagnostic.details.localStatus,localStatus);
+   assert.match(diagnostic.blockerReason,/서버 저장 키/);assert.match(diagnostic.actionRequired,/기기 원본이 없다는 뜻은 아니며/);
+   assert.equal(f.replacement.calls.length,requests);assert.equal(f.original.values.get(namespace+'.A'),'A_SOURCE');assert.deepEqual(rows(f),before);
+  }finally{if(dom)dom.root.isConnected=false;await fresh?.close();await f.close();}
  });
  test(`${namespace}: proof changes during review block execution before local preference removal`,{timeout:30000},async()=>{
   const f=await replaced(variant);

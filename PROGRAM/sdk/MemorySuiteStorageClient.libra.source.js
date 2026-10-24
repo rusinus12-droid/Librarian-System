@@ -4242,16 +4242,28 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(await globalDigest(job.globalPlan)!==job.globalPlanDigest)throw durableServerPinError('MEMORY_SUITE_JOB_PIN_PERSIST_FAILED');
     const legacyMode=job.globalPlan.legacyMode??await getArgumentValue(modeArguments,MODE_PLUGIN_ONLY);
     const original=job.globalPlan.registry;
-    if(normalizeMode(liveGlobalRow(original)?.mode||MODE_PLUGIN_ONLY)!==MODE_PLUGIN_ONLY
-      ||[...job.globalPlan.scopes.map(scope=>scope.scopeId),...Object.keys(original.entries).filter(id=>id!==GLOBAL_SCOPE_ID)]
-        .some(id=>registryScopeMode(original,id,legacyMode)!==MODE_PLUGIN_ONLY))throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_REMOTE_SOURCE_REQUIRED');
-    const stores={plugin:rawPluginStorage()},keysBySpace=new Map(),verified=[];
+    const globalMode=normalizeMode(liveGlobalRow(original)?.mode||MODE_PLUGIN_ONLY);
+    if(globalMode!==MODE_PLUGIN_ONLY)throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_REMOTE_SOURCE_REQUIRED',{reason:'original_global_mode',scopeId:GLOBAL_SCOPE_ID,mode:globalMode});
+    const remoteScope=[...job.globalPlan.scopes.map(scope=>scope.scopeId),...Object.keys(original.entries).filter(id=>id!==GLOBAL_SCOPE_ID)]
+      .find(id=>registryScopeMode(original,id,legacyMode)!==MODE_PLUGIN_ONLY);
+    if(remoteScope)throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_REMOTE_SOURCE_REQUIRED',{
+      reason:'original_scope_mode',scopeId:remoteScope,mode:registryScopeMode(original,remoteScope,legacyMode),origin:String(original.entries[remoteScope]?.origin||'')
+    });
+    const stores={plugin:rawPluginStorage()},keysBySpace=new Map(),verified=[],verifiedLocalKeys=new Set();
     for(const source of job.globalPlan.sources){
       const parts=String(source.identity||'').split('\u0000');
       const [location,space,key]=parts;
-      if(parts.length!==3||!key||!['plugin','local'].includes(space)||location!==(space==='plugin'?'plugin':'device'))throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_REMOTE_SOURCE_REQUIRED');
-      const artifactOwnerKey=chunkOwnerKey(key),decoded=scopedRemoteKeyInfo(artifactOwnerKey||key);
-      if(!matchesRoute(space,artifactOwnerKey||key)&&!matchesRoute(space,decoded.logicalKey))throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_UNVERIFIED',{space,key});
+      if(parts.length!==3||!key||!['plugin','local'].includes(space)||!['server',space==='plugin'?'plugin':'device'].includes(location))throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_REMOTE_SOURCE_REQUIRED',{
+        reason:'source_location_unverified',location,space,key
+      });
+      // Old plans can retain server witnesses even when the saved routing says
+      // every original scope was local. Accept only an exact physical local
+      // counterpart; never discard that witness or assume its payload exists.
+      const remoteOwnerKey=chunkOwnerKey(key);
+      const localKey=location!=='server'?key:remoteOwnerKey
+        ?scopedRemoteKeyInfo(remoteOwnerKey).logicalKey+key.slice(remoteOwnerKey.length):scopedRemoteKeyInfo(key).logicalKey;
+      const artifactOwnerKey=chunkOwnerKey(localKey),decoded=scopedRemoteKeyInfo(artifactOwnerKey||localKey);
+      if(!matchesRoute(space,artifactOwnerKey||localKey)&&!matchesRoute(space,decoded.logicalKey))throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_UNVERIFIED',{space,key});
       if(!stores[space])stores[space]=await rawDeviceStorage({strict:true});
       const store=stores[space];
       if(!keysBySpace.has(space)){
@@ -4259,14 +4271,18 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if(!Array.isArray(keys)||keys.some(value=>typeof value!=='string')||new Set(keys).size!==keys.length)throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_UNVERIFIED',{space});
         keysBySpace.set(space,new Set(keys));
       }
-      if(!keysBySpace.get(space).has(key))throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_MISSING',{space,key});
-      let value;try{value=JSON.parse(globalExactJson(await store.getItem(key)));}catch(_){throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_UNVERIFIED',{space,key});}
-      if(await globalDigest([false,value])!==source.fingerprint)throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_CHANGED',{space,key});
+      const remoteWitnessError=localStatus=>globalModeError('MEMORY_SUITE_LOCAL_CANCEL_REMOTE_SOURCE_REQUIRED',{
+        reason:'server_source_witness',location,space,key,localKey,localStatus
+      });
+      if(!keysBySpace.get(space).has(localKey))throw location==='server'?remoteWitnessError('missing'):globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_MISSING',{space,key});
+      let value;try{value=JSON.parse(globalExactJson(await store.getItem(localKey)));}catch(_){throw location==='server'?remoteWitnessError('unreadable'):globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_UNVERIFIED',{space,key});}
+      if(await globalDigest([false,value])!==source.fingerprint)throw location==='server'?remoteWitnessError('different'):globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_CHANGED',{space,key});
       verified.push([source.identity,source.fingerprint]);
+      verifiedLocalKeys.add(JSON.stringify([space,localKey]));
     }
     const sourceFingerprint=await globalDigest([job.jobId,job.globalPlanDigest,verified]);
     const resetPreferenceRaw=await stores.plugin.getItem(resetChoiceKey)??null;
-    return {sourceFingerprint,resetPreferenceRaw,localSourceRecords:verified.length,
+    return {sourceFingerprint,resetPreferenceRaw,localSourceRecords:verifiedLocalKeys.size,
       fingerprint:await globalDigest([sourceFingerprint,resetPreferenceRaw])};
   };
   const assertLocalCancellationIntent = async job => {
@@ -4491,6 +4507,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(job?.kind==='global_mode'&&!syncJobTerminal(job.status)&&(errCode||hasResetBlocker)){
       const label=globalResumeLabel(job),next=`진행 화면의 [${label}]를 누르세요.`;
       const finish=blockerReason=>({blockerReason,actionRequired:next,remedySteps:['1. 상세 진단과 연결 상태에서 원인 확인',`2. ${next}`]});
+      if(errCode==='MEMORY_SUITE_LOCAL_CANCEL_REMOTE_SOURCE_REQUIRED')return {
+        blockerReason:details?.reason==='original_global_mode'?'이전 시작 당시 전역 설정이 서버를 사용하는 모드였습니다.'
+          :details?.reason==='original_scope_mode'?`이전 시작 당시 서버를 사용하던 대화가 있습니다: ${details.scopeId}`
+          :details?.reason==='server_source_witness'?`예전 원본 목록에 서버 저장 키가 있습니다: ${details.key}`
+          :'원래 저장 모드 또는 원본 목록에 서버 자료가 포함되어 있어 기기만으로 취소할 수 없습니다.',
+        actionRequired:'상세 진단의 reason·scopeId·저장 키로 원래 저장 모드와 서버 원본을 확인해야 합니다. 기기 원본이 없다는 뜻은 아니며, 작업 기록과 현재 서버는 보존됩니다.',
+        remedySteps:['1. 상세 진단에서 reason·scopeId·저장 키 확인','2. 원래 서버 자료와 복원된 현재 서버 자료의 일치 여부 확인']};
       if(errCode.startsWith('MEMORY_SUITE_LOCAL_CANCEL_'))return {
         blockerReason:'기기 원본만으로 이전 취소를 완료할 수 있는지 확인하지 못했습니다.',
         actionRequired:'상세 진단의 부족하거나 변경된 저장 키를 확인해 원래 기기 기억을 복구해야 합니다. 작업 기록과 현재 서버는 보존됩니다.',

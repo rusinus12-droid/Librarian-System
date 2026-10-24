@@ -17,6 +17,7 @@ const owners = {
 
 const artifactRoot = process.env.GLOBAL_MODE_ARTIFACT_ROOT;
 const kinds = artifactRoot ? ['Full', 'Min'] : ['Full'];
+const recoveryKinds=['migration', 'legacy_rollback', 'legacy_rollback_resume', 'expired_rollback', 'restored_server', 'restored_witness'];
 
 const hash = value => {
   let h = 0x811c9dc5;
@@ -239,7 +240,8 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
 test('owner GUI resumes through one progress action and recovers legacy and expired cancellation', {timeout:240000}, async () => {
   const results = [];
   for (const [name] of Object.entries(owners)) {
-    for (const kind of kinds) for (const recoveryKind of ['migration', 'legacy_rollback', 'legacy_rollback_resume', 'expired_rollback', 'restored_server']) {
+    for (const kind of kinds) for (const recoveryKind of recoveryKinds) {
+      const restoredServer=recoveryKind.startsWith('restored_');
       const handler = createHandlerFixture();
       const pluginPath = artifactRoot
         ? path.join(artifactRoot, kind, META[name][0])
@@ -254,6 +256,13 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
           // routing snapshot still binds the settings that cancellation restores.
           for (const scope of job.globalPlan.scopes) delete scope.sourceMode;
           delete job.globalPlan.legacyMode;
+          if(recoveryKind==='restored_witness'){
+            const source=job.globalPlan.sources.find(row=>row.identity.startsWith('plugin\u0000plugin\u0000'));
+            assert(source,'the historical server witness must have an actual local physical original');
+            const localKey=source.identity.split('\u0000')[2];
+            job.globalPlan.sources.push({identity:'server\u0000plugin\u0000'+localKey+'::memory-suite-scope:v1:'+encodeURIComponent(job.globalPlan.scopes[0].scopeId),
+              fingerprint:source.fingerprint,revision:1,digest:'historical-server-witness'});
+          }
           const canonical = JSON.stringify(job.globalPlan, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
             ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
           job.globalPlanDigest = require('node:crypto').createHash('sha256').update(canonical).digest('hex');
@@ -264,7 +273,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
             error:'MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_PENDING',
             errorDetails:{cause:'MEMORY_SUITE_JOB_RESUME_EXPIRED'}
           });
-          if(recoveryKind==='restored_server'){
+          if(restoredServer){
             Object.assign(job,{error:'MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_PENDING',errorDetails:{cause:'MEMORY_SUITE_JOB_SERVER_PIN_CHANGED'}});
             restoredHandler=createHandlerFixture();
             restoredHandler.app.repositories[owners[name]].mutate({kind:'set',space:'plugin',key:'restored.sentinel',value:'PRESERVE_RESTORED_SERVER',operationId:'seed_restored'});
@@ -357,7 +366,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
         allowServer = true;
         const resumeBtn = s.doc.querySelector('button[data-job-retry]');
         assert.ok(resumeBtn && typeof resumeBtn.onclick === 'function', `${name} (${kind}): global resume button must be interactive`);
-        assert.equal(resumeBtn.textContent, recoveryKind==='restored_server'?'기기 원본 확인 후 취소':recoveryKind === 'migration' ? '중단한 이전 재개' : '취소 복구 계속');
+        assert.equal(resumeBtn.textContent, restoredServer?'기기 원본 확인 후 취소':recoveryKind === 'migration' ? '중단한 이전 재개' : '취소 복구 계속');
         const jump = s.doc.querySelector('[data-global-resume]');
         assert.equal(jump.textContent, '진행 화면으로 이동');
         if (recoveryKind === 'legacy_rollback_resume') {
@@ -369,7 +378,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
         await until(()=>resumed||typeof s.doc.querySelector('[data-mode-confirm-approve]')?.onclick==='function', `${name}: resume or recheck consent`, 12000);
         const approval=s.doc.querySelector('[data-mode-confirm-approve]');
         if(typeof approval?.onclick==='function'){
-          if(recoveryKind==='restored_server'){
+          if(restoredServer){
             assert.equal(approval.textContent,'기기 경로 복구로 취소');
             assert.match(s.doc.querySelector('[data-mode-confirm-text]').textContent,/현재 서버.*변경하지|현재 서버에 자료를 전송/);
           }else{
@@ -450,5 +459,5 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
       }
     }
   }
-  assert.equal(results.length, Object.keys(owners).length * kinds.length * 5);
+  assert.equal(results.length, Object.keys(owners).length * kinds.length * recoveryKinds.length);
 });
