@@ -393,6 +393,13 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
 
         // Memory read must now succeed after transition completion.
         await assertOwnerMemoryReadUnlocked(s, name, kind);
+        if(recoveryKind!=='migration'){
+          assert.match(s.doc.querySelector('[data-job-title]').textContent,/취소 복구 완료.*100%/);
+          assert.match(s.doc.querySelector('[data-job-time]').textContent,/복구 소요: \d+초/);
+          const diagnostics=JSON.parse(s.doc.querySelector('[data-job-diagnostics]').value);
+          assert.equal(diagnostics.recoveryState,'complete');
+          assert.equal(diagnostics.rollbackProgress.verifiedScopes,diagnostics.rollbackProgress.totalScopes);
+        }
 
         if (name === 'Flashback') {
           await until(

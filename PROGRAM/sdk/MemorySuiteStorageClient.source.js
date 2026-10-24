@@ -4197,6 +4197,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const globalRollbackPending = job => job?.kind === 'global_mode' && job.rollbackComplete !== true
     && (job.cancelRequested === true || job.phase === 'rollback_routes' || job.failedPhase === 'rollback_routes' || String(job.error||'').startsWith('MEMORY_SUITE_GLOBAL_ROLLBACK_'));
   const globalResumeLabel = job => globalRollbackPending(job)?'취소 복구 계속':'중단한 이전 재개';
+  const globalRollbackView = job => {
+    if(job?.kind!=='global_mode'||!globalRollbackPending(job)&&job.rollbackComplete!==true)return null;
+    const progress=job.rollbackProgress||{},total=Math.max(0,Number(progress.totalScopes||Number(job.discoveredScopes||0)+1));
+    const checked=Math.min(total,Math.max(0,Number(progress.checkedScopes||0))),verified=Math.min(total,Math.max(0,Number(progress.verifiedScopes||0)));
+    const complete=job.rollbackComplete===true,active=job.status==='running'&&job.phase==='rollback_routes';
+    const stage={prepare_routes:'원래 저장 경로 확인',write_routes:'기기의 저장 경로 복구',publish_routes:'원래 서버 응답·적용 확인',verify_routes:'복구한 저장 경로 검증',complete:'저장 경로 복구 완료'}[progress.stage]||'복구 준비';
+    const started=Number(job.attemptStartedAt||0),now=Date.now(),end=Number(job.attemptFinishedAt||(active?now:job.updatedAt)||now);
+    const elapsed=Math.max(0,Math.floor((end-started)/1000)),idle=Math.max(0,Math.floor((now-Number(job.lastActivityAt||now))/1000));
+    return {active,complete,checked,verified,total,stage,percent:complete?100:total?Math.min(99,Math.round((checked+verified)/(2*total)*100)):0,
+      title:complete?'취소 복구 완료':active?'취소 복구 실행 중':'취소 복구 중단 · 조치 필요',
+      phase:complete?stage:active?`복구 중 · ${stage}`:`조치 대기 · ${stage}에서 중단`,
+      count:complete?'저장 경로 복구 완료 · 이전 설정으로 돌아왔습니다.':`경로 확인: ${checked.toLocaleString()} / ${total.toLocaleString()} · 복구 검증: ${verified.toLocaleString()} / ${total.toLocaleString()}`,
+      time:!started?'이번 복구 시간: 기록 없음':complete?`복구 소요: ${elapsed}초`:active?`이번 복구: ${elapsed}초 · 마지막 진행 ${idle}초 전`:`이번 복구 시도: ${elapsed}초 · 중단됨`};
+  };
   const focusSyncJobPanel = container => {
     const card=container?.querySelector?.('[data-job]');
     if(!card){container?.scrollIntoView?.({behavior:'smooth',block:'nearest'});return false;}
@@ -4561,6 +4575,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!job) return null;
     const result=job.result&&typeof job.result==='object'?job.result:{};
     const guidance = syncJobActionGuidance(job.error, job.errorDetails, job);
+    const rollback=globalRollbackView(job);
     // Export operation evidence, never the admitted source inventory or server pins.
     return cloneSyncJob({schema:'memory-suite.scope-sync-diagnostics.v1',namespace,pluginVersion,
       jobId:job.jobId,kind:job.kind,status:job.status,phase:job.phase,failedPhase:job.failedPhase||'',
@@ -4568,6 +4583,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       currentScopeId:job.currentScopeId||job.scopeId||'',currentSpace:job.currentSpace||'',currentKey:job.currentKey||'',currentAction:job.currentAction||'',
       ...(job.kind==='global_mode'?{workflow:globalJobWorkflow(job)}:{}),
       discoveredScopes:job.discoveredScopes,verifiedScopes:job.verifiedScopes,startedAt:job.startedAt,updatedAt:job.updatedAt,lastActivityAt:job.lastActivityAt,
+      ...(rollback?{attemptStartedAt:job.attemptStartedAt||0,attemptFinishedAt:job.attemptFinishedAt||0,rollbackProgress:job.rollbackProgress||null,
+        recoveryState:rollback.complete?'complete':rollback.active?'running':'action_required',waitingForUser:!rollback.active&&!rollback.complete}:{}),
       error:job.error||'',details:job.errorDetails||null,
       ...(guidance ? {
         blockerReason: guidance.blockerReason,
@@ -4782,6 +4799,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ? `미완료 · ${guidance.blockerReason} [대처] ${guidance.actionRequired}`
         : '미완료 · 원본과 실제 경로를 보존했습니다. 문제를 확인한 뒤 이어서 진행하세요.';
       try{await globalSaveJob({status:'paused',phase:state.syncJob.current?.phase==='commit_pending'?'commit_pending':'recovery_pending',error:errCode,
+        ...(globalRollbackPending(state.syncJob.current)?{attemptFinishedAt:Date.now()}:{}),
         failedPhase:state.syncJob.current?.phase||'',errorDetails:compactRestoreEvidence(error.details||null),
         actionRequired:guidance?.actionRequired||null,blockerReason:guidance?.blockerReason||null,remedySteps:guidance?.remedySteps||null,
         result:compactRestoreEvidence(error.result||null),failureDetails:compactRestoreEvidence(error.result?.failures||[]),
@@ -4853,13 +4871,30 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(!job?.globalPlan?.registry?.entries||!Array.isArray(job.globalPlan.scopes))throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_PLAN_INVALID');
     await assertStoredDurableJobMetadata(job);
     if(await globalDigest(job.globalPlan)!==job.globalPlanDigest)throw durableServerPinError('MEMORY_SUITE_JOB_PIN_PERSIST_FAILED');
-    await globalSaveJob({status:'paused',phase:'rollback_routes',message:'취소 요청 · 변경된 저장 경로를 원래 설정으로 복구하고 있습니다.'});
+    const rollbackScopes=[...job.globalPlan.scopes,globalScopeDescriptor()];
+    let progress={stage:'prepare_routes',checkedScopes:0,restoredScopes:0,verifiedScopes:0,totalScopes:rollbackScopes.length};
+    await globalSaveJob({status:'running',phase:'rollback_routes',attemptStartedAt:Date.now(),attemptFinishedAt:0,
+      rollbackProgress:progress,currentScopeId:'',currentSpace:'plugin',currentKey:'',currentAction:'원래 저장 경로 확인',currentProgress:null,
+      error:'',failedPhase:'',errorDetails:null,failures:0,failureDetails:[],result:null,metrics:null,validation:null,
+      message:'취소 복구 실행 중 · 원래 저장 경로를 확인하고 있습니다.'});
+    let notifiedAt=Date.now();
+    const reportProgress=async (patch,scopeId='')=>{
+      progress={...progress,...patch};
+      const now=Date.now();
+      // Scanning edits only the in-memory registry. The original immutable plan
+      // can replay it after a crash; progress is not a durable per-route commit.
+      Object.assign(state.syncJob.current,{rollbackProgress:progress,currentScopeId:scopeId,updatedAt:now,lastActivityAt:now});
+      if(now-notifiedAt>=100||progress.checkedScopes===progress.totalScopes&&progress.stage==='prepare_routes'
+        ||progress.verifiedScopes===progress.totalScopes){
+        notifiedAt=now;notifySyncJob();
+        await new Promise(resolve=>setTimeout(resolve,0));
+      }
+    };
     const registry=parseScopeRegistry(await loadScopeRegistry(true,false));
     const originalEntries=job.globalPlan.registry.entries;
     let restored=0;
     // Final publication may already have changed the global entry before a
     // server/readback failure. Restore it along with the individual routes.
-    const rollbackScopes=[...job.globalPlan.scopes,globalScopeDescriptor()];
     for(const scope of rollbackScopes.slice().reverse()){
       const current=registry.entries[scope.scopeId]||null,original=originalEntries[scope.scopeId]||null;
       if((current?.globalMigrationJobId===job.jobId&&current.mode===job.targetMode)||(current?.removed===true&&current?.source==='global_allchat_cancel_rollback')){
@@ -4870,13 +4905,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }else if(original?current?.mode!==original.mode||current?.origin!==original.origin:!!current&&current.removed!==true){
         throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_ROUTE_CONFLICT',{scopeId:scope.scopeId});
       }
-      await globalSaveJob({rollbackProgress:{restoredScopes:restored,totalScopes:rollbackScopes.length,currentScopeId:scope.scopeId}});
+      await reportProgress({checkedScopes:progress.checkedScopes+1,restoredScopes:restored},scope.scopeId);
     }
     registry.legacyGlobalModeImported=registry.legacyGlobalModeImported||job.globalPlan.registry.legacyGlobalModeImported===true;
+    progress={...progress,stage:'write_routes'};
+    await globalSaveJob({rollbackProgress:progress,currentScopeId:'',currentAction:'기기의 저장 경로 복구',message:'취소 복구 실행 중 · 기기의 저장 경로를 복구하고 있습니다.'});
     const saved=await writeScopeRegistryLocal(registry);
     if(globalCanonical(parseScopeRegistry(saved).entries)!==globalCanonical(parseScopeRegistry(registry).entries))throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED');
     if(job.globalPlan.remoteRequired){
       try{
+        progress={...progress,stage:'publish_routes'};
+        await globalSaveJob({rollbackProgress:progress,currentAction:'원래 서버 연결 및 저장 경로 적용 확인',message:'취소 복구 실행 중 · 원래 서버의 응답과 저장 경로 적용을 확인하고 있습니다.'});
         // Recovery is an explicit retry: do not reuse a startup/offline failure.
         // Rebind to a fresh response and verify the admitted server before writes.
         // Transfer admission can expire, but restoring the original routes must
@@ -4889,10 +4928,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const remote=await remoteGet('plugin',SCOPE_ROUTING_SERVER_KEY,{allowPluginOnly:true});
       if(remote.exists!==true||globalCanonical(parseScopeRegistry(remote.value))!==globalCanonical(parseScopeRegistry(saved)))throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_READBACK_FAILED');
     }
+    progress={...progress,stage:'verify_routes'};
+    await globalSaveJob({rollbackProgress:progress,currentAction:'복구한 저장 경로 검증',message:'취소 복구 실행 중 · 복구한 저장 경로를 검증하고 있습니다.'});
     state.scopeRouting.routeCache.clear();
     const previousGlobalMode=normalizeMode(liveGlobalRow(job.globalPlan.registry)?.mode||job.effectiveMode||MODE_PLUGIN_ONLY);
     state.config={...state.config,at:0,mode:previousGlobalMode};
     if((await readScopeMode(globalScopeDescriptor(),true)).mode!==previousGlobalMode)throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED',{scopeId:GLOBAL_SCOPE_ID});
+    await reportProgress({verifiedScopes:1},GLOBAL_SCOPE_ID);
     const originalLegacyMode=job.globalPlan.legacyMode ?? await getArgumentValue(modeArguments,MODE_PLUGIN_ONLY);
     for(const scope of job.globalPlan.scopes){
       // Older admitted plans counted removed server rows as live sources. Restore
@@ -4903,9 +4945,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(actual.mode!==expectedMode)throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED',{
         scopeId:scope.scopeId,expectedMode,actualMode:actual.mode,recordedSourceMode:scope.sourceMode,modeOrigin:actual.modeOrigin
       });
+      await reportProgress({verifiedScopes:progress.verifiedScopes+1},scope.scopeId);
     }
 
-    return await globalSaveJob({status:'cancelled',phase:'cancelled_rolled_back',rollbackComplete:true,finishedAt:Date.now(),currentScopeId:'',currentKey:'',currentAction:'이전 저장 경로 복구 완료',error:'',errorDetails:null,failedPhase:'',failures:0,recoveryRequired:false,message:'취소했습니다. 변경된 저장 경로를 이전 설정으로 복구했고 원본 데이터는 보존했습니다.'});
+    return await globalSaveJob({status:'cancelled',phase:'cancelled_rolled_back',rollbackComplete:true,finishedAt:Date.now(),attemptFinishedAt:Date.now(),rollbackProgress:{...progress,stage:'complete'},currentScopeId:'',currentKey:'',currentAction:'이전 저장 경로 복구 완료',error:'',errorDetails:null,failedPhase:'',failures:0,recoveryRequired:false,message:'취소했습니다. 변경된 저장 경로를 이전 설정으로 복구했고 원본 데이터는 보존했습니다.'});
   };
   // END CORE3 GLOBAL ALL-CHAT MIGRATION v1
 
@@ -6978,13 +7021,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           await globalSaveJob({
             status:'paused',
             phase:'recovery_pending',
+            attemptFinishedAt:Date.now(),
             error:String(error.code||error.message||error),
             failedPhase:state.syncJob.current?.phase||'recovery_pending',
             errorDetails:compactRestoreEvidence(error.details||null),
             actionRequired:guidance?.actionRequired||null,
             blockerReason:guidance?.blockerReason||null,
             remedySteps:guidance?.remedySteps||null,
-            message:'취소 중 경로 복구가 완료되지 않았습니다. 복구 정보를 보존했습니다.'
+            message:'취소 복구 중단 · 조치 필요. 복구 정보를 보존했습니다. 원인을 확인한 뒤 [취소 복구 계속]를 누르세요.'
           });
           throw error;
         }
@@ -7579,6 +7623,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       if (!job || (job.kind !== 'global_mode' && job.scopeId !== initial.scopeId) || job.jobId === dismissedJobId) { card.classList.remove('show','terminal','failed'); return; }
       const terminal=syncJobTerminal(job.status),showResult=terminal||job.status==='paused';
+      const rollback=globalRollbackView(job),waiting=job.status==='paused'&&job.phase==='recovery_pending';
       const workflow=job.kind==='global_mode'?globalWorkflowView(globalJobWorkflow(job)):null;
       q('[data-job-workflow]').textContent=workflow?`${workflow.title}\n${workflow.detail}\n현재 전체 설정: ${modeLabel(job.effectiveMode||job.sourceMode)}${globalRollbackPending(job)||job.rollbackComplete?'':` · 목표 설정: ${modeLabel(job.targetMode)}\n진행률은 대화 검증 기준이며, 이미 옮긴 자료 재조회도 포함합니다.`}`:'';
       const progress=job.currentProgress;
@@ -7586,14 +7631,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       q('[data-job-transfer]').textContent=job.kind==='global_mode'&&!globalRollbackPending(job)&&!job.rollbackComplete
         ? progress?.dryRun?'현재 대화: 전송 전 비교 검사 중 · 실제 전송 전':hasCopyCounts?`현재 대화: 일치 확인 ${Number(progress.matched||0).toLocaleString()}건 · 새 전송 ${Number(progress.uploaded||0).toLocaleString()}건 · 기기 복원 ${Number(progress.restored||0).toLocaleString()}건`:'대화 검증 진행률입니다. 기존 자료 조회도 포함하며, 일치하는 기억 자료는 다시 업로드하지 않습니다.'
         :'';
-      card.classList.add('show'); const total=Math.max(0,Number(job.kind==='global_mode'?job.discoveredScopes||0:job.totalItems||0)), done=Math.max(0,Number(job.kind==='global_mode'?job.verifiedScopes||0:job.processedItems||0)); const percent=job.rollbackComplete===true?100:total?Math.min(100,Math.round(done/total*100)):0;
+      card.classList.add('show'); const total=Math.max(0,Number(job.kind==='global_mode'?job.discoveredScopes||0:job.totalItems||0)), done=Math.max(0,Number(job.kind==='global_mode'?job.verifiedScopes||0:job.processedItems||0)); const percent=rollback?rollback.percent:total?Math.min(100,Math.round(done/total*100)):0;
       card.classList.toggle('terminal',terminal); card.classList.toggle('failed',job.status==='failed');
-      q('[data-job-title]').textContent = `${job.message || (terminal?'작업 결과':'작업 진행 중')}${total ? ` · ${terminal&&job.status==='completed'?100:percent}%` : ''}`; q('[data-job-bar]').style.width=`${terminal&&job.status==='completed'?100:percent}%`;
-      q('[data-job-phase]').textContent=`현재 단계: ${job.phase || '준비'}`; q('[data-job-count]').textContent=job.rollbackComplete===true?'저장 경로 복구 완료 · 이전 설정으로 돌아왔습니다.':`${job.kind==='global_mode'?'대화 검증':'진행'}: ${done.toLocaleString()} / ${total || terminal ? total.toLocaleString() : '조사 중'}${job.status==='completed' && total===0 ? ' · 이동할 데이터 없음' : ''}`;
-      q('[data-job-bytes]').textContent=job.kind==='global_mode'
+      q('[data-job-title]').textContent = `${rollback?rollback.title:waiting?'이전 중단 · 조치 필요':job.message || (terminal?'작업 결과':'작업 진행 중')}${total ? ` · ${terminal&&job.status==='completed'?100:percent}%` : ''}`; q('[data-job-bar]').style.width=`${terminal&&job.status==='completed'?100:percent}%`;
+      q('[data-job-phase]').textContent=`현재 단계: ${rollback?rollback.phase:waiting?'조치 대기 · 자동 진행하지 않음':job.phase || '준비'}`; q('[data-job-count]').textContent=rollback?rollback.count:`${job.kind==='global_mode'?'대화 검증':'진행'}: ${done.toLocaleString()} / ${total || terminal ? total.toLocaleString() : '조사 중'}${job.status==='completed' && total===0 ? ' · 이동할 데이터 없음' : ''}`;
+      q('[data-job-bytes]').textContent=rollback?`복구 대상 경로: ${Number(job.rollbackProgress?.restoredScopes||0).toLocaleString()}개 · 전체 설정 포함 · 원본과 서버 사본 보존`:job.kind==='global_mode'
         ? job.rollbackComplete?'저장 경로 복구 완료':job.status==='completed'?'전체 대화 검증 완료':terminal?'이전 작업 종료 · 결과를 확인하세요.':progress?.dryRun?'전송 전 비교 검사 중':progress&&Object.hasOwn(progress,'transferredBytes')?`현재 대화 확인: ${formatBytes(progress.processedBytes)} · 현재 대화 전송: ${formatBytes(progress.transferredBytes)}`:'기존 자료를 조회·검증하고 있습니다. 전송량은 대화별로 표시합니다.'
-        :`처리: ${formatBytes(job.processedBytes)} · 전송: ${formatBytes(job.transferredBytes)}`; q('[data-job-time]').textContent=`경과: ${Math.max(0,Math.floor((Date.now()-Number(job.startedAt||Date.now()))/1000))}초`;
-      q('[data-job-retry]').textContent=`재시도 ${Number(job.retryCount||0)} · 실패 ${Number(job.failures||0)}`; q('[data-job-key]').textContent=`현재: ${job.currentKey || job.currentAction || '-'}`;
+        :`처리: ${formatBytes(job.processedBytes)} · 전송: ${formatBytes(job.transferredBytes)}`; q('[data-job-time]').textContent=rollback?rollback.time:`${waiting?'중단까지':'경과'}: ${Math.max(0,Math.floor(((waiting?Number(job.updatedAt):Date.now())-Number(job.startedAt||Date.now()))/1000))}초`;
+      q('[data-job-retry]').textContent=`재시도 ${Number(job.retryCount||0)} · 실패 ${Number(job.failures||0)}`; q('[data-job-key]').textContent=rollback?`현재: ${rollback.stage}${job.currentScopeId?' · '+job.currentScopeId:''}`:`현재: ${job.currentKey || job.currentAction || '-'}`;
       const stalledActions = q('[data-job-stalled-actions]');
       const isPaused = job.status === 'paused';
       const isFailed = job.status === 'failed';
@@ -7640,7 +7685,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const guidance=syncJobActionGuidance(job.error,job.errorDetails,job);
       q('[data-job-result]').style.display=showResult?'block':'none';
       q('[data-job-result]').textContent=showResult
-        ? [job.status==='completed'?'완료 결과':job.status==='paused'?'작업 보류':'실패 결과',`요청 모드: ${modeLabel(job.requestedMode || job.targetMode || initial.mode)}`,`현재 적용 모드: ${modeLabel(job.effectiveMode || result.effectiveMode || job.sourceMode || initial.mode)}`,job.status==='failed'?'전환 미완료 · 현재 적용 모드를 확인하세요.':'',job.kind==='global_mode'?`대화 검증 ${Number(job.verifiedScopes||0)} / ${Number(job.discoveredScopes||0)} · 일치 자료는 재전송 없이 확인`:`복원 ${Number(job.restored||result.restored||0)} · 업로드 ${Number(job.uploaded||result.uploaded||0)} · 일치 ${Number(job.matched||result.matched||0)}`,job.kind==='global_mode'?'':`삭제 표식 ${Number(job.removedByTombstone||result.removed||0)} · 검증 ${Number(result.verified||0)}`,job.kind==='global_mode'&&!terminal?`전체 이전 보호: 활성 · ${globalRollbackPending(job)?'취소 복구':'이전'}가 끝나면 기억 읽기·쓰기가 재개됩니다.`:job.recoveryRequired?'복구 필수 잠금: 활성 · 서버 단독 유지':'복구 필수 잠금: 없음',job.error?`오류: ${job.error}`:'',guidance?`사유: ${guidance.blockerReason}\n대처 방법: ${guidance.actionRequired}`:''].filter(Boolean).join('\n')
+        ? [rollback?rollback.title:job.status==='completed'?'완료 결과':job.status==='paused'?'작업 보류':'실패 결과',`요청 모드: ${modeLabel(job.requestedMode || job.targetMode || initial.mode)}`,`현재 적용 모드: ${modeLabel(job.effectiveMode || result.effectiveMode || job.sourceMode || initial.mode)}`,job.status==='failed'?'전환 미완료 · 현재 적용 모드를 확인하세요.':'',rollback?rollback.count:job.kind==='global_mode'?`대화 검증 ${Number(job.verifiedScopes||0)} / ${Number(job.discoveredScopes||0)} · 일치 자료는 재전송 없이 확인`:`복원 ${Number(job.restored||result.restored||0)} · 업로드 ${Number(job.uploaded||result.uploaded||0)} · 일치 ${Number(job.matched||result.matched||0)}`,job.kind==='global_mode'?'':`삭제 표식 ${Number(job.removedByTombstone||result.removed||0)} · 검증 ${Number(result.verified||0)}`,job.kind==='global_mode'&&!terminal?`전체 이전 보호: 활성 · ${globalRollbackPending(job)?'취소 복구':'이전'}가 끝나면 기억 읽기·쓰기가 재개됩니다.`:job.recoveryRequired?'복구 필수 잠금: 활성 · 서버 단독 유지':'복구 필수 잠금: 없음',job.error?`오류: ${job.error}`:'',guidance?`사유: ${guidance.blockerReason}\n대처 방법: ${guidance.actionRequired}`:''].filter(Boolean).join('\n')
         : '';
       if(terminal&&globalWarningText(result))q('[data-job-result]').textContent+='\n'+globalWarningText(result);
       const diagnosticText = JSON.stringify(syncJobDiagnostics(job),null,2);
