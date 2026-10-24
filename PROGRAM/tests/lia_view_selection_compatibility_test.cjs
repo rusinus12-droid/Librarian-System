@@ -19,6 +19,12 @@ const {createFixture} = require('./fixtures/lia_native_runtime_fixture.cjs');
   assert.equal((await f.runtime.viewSelection()).chatIndex,0);
   f.api.getCurrentCharacterIndex=async()=>null;
   await assert.rejects(f.runtime.viewSelection(),/LIA_VIEW_SELECTION_UNAVAILABLE/);
+  // When host selection cannot be verified, viewing context must not crash the product GUI.
+  f.api.getCurrentCharacterIndex=async()=> -1;
+  f.api.getCurrentChatIndex=async()=> -1;
+  const unverifiedCtx = await f.runtime.fullViewContext();
+  assert.equal(unverifiedCtx.chatIndex, 0);
+  assert.equal(unverifiedCtx.viewSelectionVerified, false);
   console.log('PASS LIA view selection: serialized indices, legacy selection, invalid indices and changed chat');
  } finally {await f.dispose();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

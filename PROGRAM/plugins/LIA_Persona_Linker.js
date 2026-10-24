@@ -14525,16 +14525,17 @@ ${revisionText}`);
   async function getContext(contextOptionsOverride = null) {
     let personaDatabaseRead = await readPersonaDatabaseForContext();
     let db = personaDatabaseRead.db;
-    const charIndex = Number(await api.getCurrentCharacterIndex?.()) || 0;
+    const rawCi = Number(await api.getCurrentCharacterIndex?.());
+    const charIndex = Number.isInteger(rawCi) && rawCi >= 0 ? rawCi : 0;
     let char = await api.getCharacterFromIndex?.(charIndex);
     if (!char) char = await api.getCharacter?.();
     let chatIndex = 0;
     try {
-      chatIndex = Number(await api.getCurrentChatIndex?.());
+      const rawTi = Number(await api.getCurrentChatIndex?.());
+      chatIndex = Number.isInteger(rawTi) && rawTi >= 0 ? rawTi : (Number(char?.chatPage || 0) || 0);
     } catch (_) {
-      chatIndex = Number(char?.chatPage || 0);
+      chatIndex = Number(char?.chatPage || 0) || 0;
     }
-    if (!Number.isInteger(chatIndex) || chatIndex < 0) chatIndex = Number(char?.chatPage || 0) || 0;
     let chat = await api.getChatFromIndex?.(charIndex, chatIndex);
     if (!chat) chat = asArray(char?.chats)[chatIndex] || { name: "Chat", message: [], localLore: [] };
     // Viewing context is read-only: inherited/pending bindings are handled
@@ -14565,8 +14566,14 @@ ${revisionText}`);
     const livePersonaBinding = await readLivePersonaBindingForContext(baseContext);
     const livePersonaBindingStatus = livePersonaBinding ? await PersonaBindingManager.inspect({ ...baseContext, db: baseContext.db || db }, livePersonaBinding, {viewOnly:true}).catch(() => ({ state: "unavailable", available: false, personaId: "", effectivePersonaName: "" })) : null;
     const personaRequestProof = await readPersonaProofForContext(baseContext);
-    await assertLiaViewSelectionCurrent(baseContext);
-    return { ...baseContext, personaDatabaseReadStatus: personaDatabaseRead.status, compatibility, savedLLMConfig, savedResultVault, livePersonaBinding, livePersonaBindingStatus, personaRequestProof };
+    let viewSelectionVerified = false;
+    try {
+      await assertLiaViewSelectionCurrent(baseContext);
+      viewSelectionVerified = true;
+    } catch (e) {
+      appendDebugLog("view_selection", "preview_selection_unverified", { error: errorForLog(e) }, "info");
+    }
+    return { ...baseContext, personaDatabaseReadStatus: personaDatabaseRead.status, compatibility, savedLLMConfig, savedResultVault, livePersonaBinding, livePersonaBindingStatus, personaRequestProof, viewSelectionVerified };
   }
   function normalizeStringArray(value, max = 16) {
     return unique(asArray(value).map((item) => compact(item)), max);
@@ -22501,8 +22508,10 @@ ${revisionText}`);
   function renderLiaPreviewState(root, error = null) {
     const message=error ? `화면을 읽지 못했습니다: ${error?.message || error}` : '현재 채팅과 로컬 Persona 자료를 읽고 있습니다…';
     root.innerHTML=`<header class="topbar"><strong>LIA · Persona Linker</strong><button type="button" class="btn" data-lia-preview-close>닫기</button></header><main class="main" style="grid-column:1/-1;grid-row:2;min-width:0;padding:24px;overflow:auto;font-size:14px;line-height:1.6"><h2>${error?'자료 읽기 확인 필요':'불러오는 중'}</h2><p id="dpg-status" role="${error?'alert':'status'}" style="white-space:pre-wrap;overflow-wrap:anywhere">${htmlEscape(message)}</p><p>로컬 자료와 Persona 연결은 그대로 보존됩니다.</p><button type="button" class="btn" data-lia-preview-retry${error?'':' disabled'}>다시 읽기</button></main>`;
-    root.querySelector('[data-lia-preview-close]').onclick=()=>void closeLiaUi();
-    root.querySelector('[data-lia-preview-retry]').onclick=()=>void refreshPreview({skipCapture:true});
+    const closeBtn = typeof root.querySelector === 'function' ? root.querySelector('[data-lia-preview-close]') : null;
+    if (closeBtn) closeBtn.onclick=()=>void closeLiaUi();
+    const retryBtn = typeof root.querySelector === 'function' ? root.querySelector('[data-lia-preview-retry]') : null;
+    if (retryBtn) retryBtn.onclick=()=>void refreshPreview({skipCapture:true});
   }
   async function refreshPreview(options = {}) {
     const root = document.getElementById("dpg-preview-root");
@@ -22526,10 +22535,12 @@ ${revisionText}`);
       bindLiaMockupSettingsActions();
       if (activeWorkspaceTab === "server") mountLiaServerConnectionPanel();
       if (ctx.personaDatabaseReadStatus?.available === false) {
-        setStatus(personaDatabaseReadFailureMessage(), "error");
-      } else {
-        setStatus(`준비 완료: 로어 후보 ${asArray(ctx.loreCandidates).length}개 → Persona 채택 ${asArray(ctx.personaLoreSignals).length}개 · 보호 ${ctx.personaLoreRerank?.protectedCount || 0}개`, "ok");
-      }
+              setStatus(personaDatabaseReadFailureMessage(), "error");
+            } else if (ctx.viewSelectionVerified === false) {
+              setStatus("현재 화면 선택을 호스트에서 직접 확인하지 못해 기본 대화 보기로 표시 중입니다.", "warn");
+            } else {
+              setStatus(`준비 완료: 로어 후보 ${asArray(ctx.loreCandidates).length}개 → Persona 채택 ${asArray(ctx.personaLoreSignals).length}개 · 보호 ${ctx.personaLoreRerank?.protectedCount || 0}개`, "ok");
+            }
       document.getElementById("dpg-status")?.setAttribute("data-idle", "true");
       return ctx;
     } catch (error) {
