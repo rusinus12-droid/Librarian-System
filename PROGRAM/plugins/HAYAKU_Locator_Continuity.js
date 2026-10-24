@@ -9860,6 +9860,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const scopedVerifyPreservation = async (_legacy = globalLegacyStore('plugin'), verifyOptions = {}) => {
+    if (verifyOptions?.global === true) return await globalVerifyPreservation(verifyOptions);
     const scope = normalizeScopeDescriptor(verifyOptions.scope || await resolveCurrentScope(true));
     if (!scope.scopeId) throw new Error('memory_suite_current_scope_unavailable');
     const integrity = await remoteIntegrity({ allowPluginOnly: true });
@@ -10348,6 +10349,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const scopedDeletePluginStorageAfterVerification = async (deleteOptions = {}) => {
+    if (deleteOptions?.global === true) return await globalDeletePluginStorageAfterVerification(deleteOptions);
     const scope = normalizeScopeDescriptor(deleteOptions.scope || await resolveCurrentScope(true));
     await assertRecoveryActionAllowed(scope, 'delete_pluginstorage');
     const checked = await scopedVerifyPreservation(state.legacy.plugin, { scope });
@@ -10392,6 +10394,207 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     result.deleted = result.deletedPlugin + result.deletedLocal;
     return result;
   };
+
+  const normalizeJsonVal = val => {
+    if (typeof val === 'string') {
+      try { return JSON.parse(val); } catch (_) { return val; }
+    }
+    return val;
+  };
+
+  const globalVerifyPreservation = async (verifyOptions = {}) => {
+    const config = await readConfig(true);
+    const registry = await loadScopeRegistry(false, false);
+    const globalMode = registry?.entries?.[GLOBAL_SCOPE_ID]?.mode || config.mode;
+    if (globalMode !== MODE_SERVER_ONLY && config.mode !== MODE_SERVER_ONLY) {
+      const error = new Error('기기 중복 데이터 삭제는 서버 단독 모드에서만 실행할 수 있습니다. 먼저 전역 설정을 서버 단독으로 적용해 주세요.');
+      error.code = 'MEMORY_SUITE_DELETE_REQUIRES_SERVER_MODE';
+      error.userMessage = error.message;
+      throw error;
+    }
+    const integrity = await remoteIntegrity({ allowPluginOnly: false }).catch(err => {
+      const error = new Error(`서버 연결 및 무결성 확인 실패: ${err?.message || err}`);
+      error.code = 'MEMORY_SUITE_SERVER_UNAVAILABLE';
+      error.userMessage = '서버(server.cjs)가 실행 중이지 않거나 연결할 수 없습니다. 서버를 먼저 실행해 주세요.';
+      throw error;
+    });
+    if (integrity?.ok !== true) {
+      const error = new Error(`서버 무결성 검증 실패: ${integrity?.result || 'unknown'}`);
+      error.code = 'MEMORY_SUITE_SERVER_INTEGRITY_FAILED';
+      error.userMessage = error.message;
+      throw error;
+    }
+    for (const scopeRow of Object.values(registry?.entries || {})) {
+      const lock = await recoveryLockForScope(scopeRow);
+      if (lock) throw recoveryRequiredError(scopeRow, lock, 'delete_pluginstorage');
+    }
+
+    const result = {
+      schema: 'memory-suite.global-preservation.v1',
+      namespace,
+      checked: 0,
+      candidates: [],
+      failures: [],
+      spaces: { plugin: null, local: null }
+    };
+
+    const verifySpace = async (legacy, space) => {
+      if (!legacy || typeof legacy.keys !== 'function' || typeof legacy.getItem !== 'function') return null;
+      const allKeys = await listRoutedLegacyKeys(legacy, space, true);
+      const spaceCandidates = [];
+      const spaceFailures = [];
+
+      for (const key of allKeys) {
+        if (key === SCOPE_ROUTING_LOCAL_KEY || key.startsWith('__memory_suite_')) continue;
+        if (isOwnedChunkArtifact(space, key)) continue;
+
+        const route = await resolveScopedRoute(space, key, { noCache: true });
+        if (route.kind !== 'scope' || !route.scopeId) continue;
+
+        const scopeMode = registryScopeMode(registry, route.scopeId, globalMode);
+        if (scopeMode === MODE_PLUGIN_ONLY) continue;
+
+        let localValue;
+        try {
+          localValue = await legacyRead(legacy, key);
+        } catch (e) {
+          spaceFailures.push({ key, error: compact(e?.message || e, 240) });
+          continue;
+        }
+        if (isNullishStorageValue(localValue)) continue;
+
+        let projected;
+        try {
+          projected = await routeProjectValue(route, localValue);
+        } catch (e) {
+          spaceFailures.push({ key, error: compact(e?.message || e, 240) });
+          continue;
+        }
+        if (isNullishStorageValue(projected)) continue;
+
+        spaceCandidates.push({ space, key, route, projected });
+      }
+
+      const remoteKeys = spaceCandidates.map(c => c.route.remoteKey);
+      for (let i = 0; i < remoteKeys.length; i += 512) {
+        const batchKeys = remoteKeys.slice(i, i + 512);
+        let batch;
+        try {
+          batch = await remoteGetMany(space, batchKeys, { allowPluginOnly: false });
+        } catch (e) {
+          batch = { values: {} };
+          for (const rk of batchKeys) {
+            try {
+              batch.values[rk] = await remoteGet(space, rk, { allowPluginOnly: false });
+            } catch (err) {
+              spaceFailures.push({ remoteKey: rk, error: compact(err?.message || err, 240) });
+            }
+          }
+        }
+
+        const candidateSlice = spaceCandidates.slice(i, i + 512);
+        for (const cand of candidateSlice) {
+          const remote = batch.values[cand.route.remoteKey];
+          if (!remote || remote.exists !== true || remote.tombstone === true) {
+            spaceFailures.push({
+              key: cand.key,
+              remoteKey: cand.route.remoteKey,
+              reason: remote?.tombstone ? 'server_tombstone' : 'server_missing'
+            });
+          } else if (jsonComparable(normalizeJsonVal(remote.value)) !== jsonComparable(normalizeJsonVal(cand.projected))) {
+            spaceFailures.push({
+              key: cand.key,
+              remoteKey: cand.route.remoteKey,
+              reason: 'value_mismatch'
+            });
+          }
+        }
+      }
+
+      result.checked += spaceCandidates.length;
+      result.candidates.push(...spaceCandidates.map(c => ({ space: c.space, key: c.key, route: c.route })));
+      result.failures.push(...spaceFailures);
+      return { space, checked: spaceCandidates.length, failures: spaceFailures };
+    };
+
+    result.spaces.plugin = await verifySpace(globalLegacyStore('plugin'), 'plugin');
+    result.spaces.local = await verifySpace(globalLegacyStore('local'), 'local');
+    result.ok = result.failures.length === 0;
+
+    if (!result.ok) {
+      const error = new Error(`memory_suite_global_preservation_failed:${result.failures.length}`);
+      error.code = 'MEMORY_SUITE_GLOBAL_PRESERVATION_FAILED';
+      error.userMessage = `서버 보존 검증 실패: ${result.failures.length}개 항목이 서버와 일치하지 않거나 누락되었습니다.\n데이터 손실 방지를 위해 삭제가 차단되었습니다.`;
+      error.result = result;
+      throw error;
+    }
+    return result;
+  };
+
+  const globalDeletePluginStorageAfterVerification = async (deleteOptions = {}) => {
+    const verified = await globalVerifyPreservation(deleteOptions);
+    if (!verified.ok || verified.failures.length > 0) {
+      throw new Error('memory_suite_global_preservation_not_passed');
+    }
+    if (verified.candidates.length === 0) {
+      return { ok: true, deleted: 0, checked: 0 };
+    }
+
+    let deleted = 0;
+    const failures = [];
+
+    const deleteFromSpace = async (space, candidates) => {
+      const legacy = globalLegacyStore(space);
+      if (!legacy || typeof legacy.keys !== 'function') return;
+      const allKeys = await listRoutedLegacyKeys(legacy, space, true);
+
+      for (const cand of candidates) {
+        try {
+          const ok = await routeRemoveLocal(
+            cand.route,
+            async () => legacyRead(legacy, cand.key),
+            async next => legacyWriteVerified(legacy, cand.key, next),
+            async () => legacyRemoveVerified(legacy, cand.key)
+          );
+          if (!ok) throw new Error('global_local_delete_readback_failed');
+          deleted += 1;
+
+          const artifacts = allKeys.filter(k => isOwnedChunkArtifact(space, k) && chunkOwnerKey(k) === cand.key);
+          for (const artKey of artifacts) {
+            try {
+              const artOk = await legacyRemoveVerified(legacy, artKey);
+              if (artOk) deleted += 1;
+            } catch (_) {}
+          }
+        } catch (error) {
+          failures.push({ key: cand.key, error: compact(error?.message || error, 240) });
+        }
+      }
+    };
+
+    const pluginCandidates = verified.candidates.filter(c => c.space === 'plugin');
+    const localCandidates = verified.candidates.filter(c => c.space === 'local');
+
+    await deleteFromSpace('plugin', pluginCandidates);
+    await deleteFromSpace('local', localCandidates);
+
+    if (failures.length > 0) {
+      const error = new Error(`memory_suite_global_delete_incomplete:${failures.length}`);
+      error.code = 'MEMORY_SUITE_GLOBAL_DELETE_INCOMPLETE';
+      error.userMessage = `일부 데이터 삭제 중 오류가 발생했습니다 (${failures.length}개 실패).`;
+      error.failures = failures;
+      throw error;
+    }
+
+    return {
+      ok: true,
+      schema: 'memory-suite.global-pluginstorage-delete.v1',
+      namespace,
+      deleted,
+      checked: verified.checked
+    };
+  };
+
 
   const scopedPrepareServerScopeDeletion = (...args) => withOwnerOperation({kind:'storage_operation',operation:'scopedPrepareServerScopeDeletion'}, () => scopedPrepareServerScopeDeletionImpl(...args));
   const scopedPrepareServerScopeDeletionImpl = async (deleteOptions = {}) => {
@@ -10855,7 +11058,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ${globalModeEnabled ? '<section class="mscx-group" data-advanced-group="migration"><b>🚚 전체 이전 관리</b><div class="muted">언제: 저장 위치 전체 이전이 진행 중이거나 중간에 멈췄을 때<br>· 중단·보존: 진행 중인 이전을 안전하게 멈춥니다. 원본은 그대로 남습니다.<br>· 재개: 진행 화면의 [중단한 이전 재개] 버튼을 사용합니다. 취소 복구는 [취소 복구 계속]으로 표시됩니다.<br>· 취소·경로 복구: 이미 바뀐 저장 경로를 이전 설정으로 돌립니다. 원본과 서버 사본은 지우지 않습니다.</div><div class="actions"><button data-global-pause>전체 이전 중단·보존</button><button data-global-resume>진행 화면으로 이동</button><button data-global-cancel class="danger" disabled>이전 작업 취소 · 기존 경로 복구</button></div></section>' : ''}
         <section class="mscx-group" data-advanced-group="restore"><b>🛟 기기 기억 복구</b><div class="muted">언제: 이 기기(RisuAI pluginStorage)의 기억이 사라지거나 손상됐을 때. 서버에 보존된 정본으로 현재 스코프를 되살립니다.</div><div class="actions"><button data-restore>서버 → pluginStorage 복구</button></div></section>
         <section class="mscx-group" data-advanced-group="reset"><b>♻️ 서버 초기화·복원 이후 선택</b><div class="muted">언제: "서버 자료가 초기화 또는 복원되었습니다" 안내가 떴을 때만 사용합니다. 둘 중 하나를 고른 뒤 RisuAI를 새로고침하세요.<br>· 서버 자료 사용(권장): 복원된 서버 기억을 그대로 씁니다.<br>· 로컬 기억 다시 업로드: 이 기기의 기억으로 서버를 다시 채웁니다.</div><div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div></section>
-        <section class="mscx-group danger" data-advanced-group="cleanup"><b>🗑️ 기기 저장 공간 정리 · 주의</b><div class="muted">언제: 현재 스코프를 서버 단독으로 옮긴 뒤 이 기기의 중복 사본을 지우고 싶을 때. 서버 보존을 먼저 검증하고, 한 번 더 눌러야 삭제됩니다.</div><div class="actions"><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div></section></div></details><div class="status"><div data-current-mode></div><div data-status>서버 상태를 확인할 수 있습니다.</div></div>
+        <section class="mscx-group danger" data-advanced-group="cleanup"><b>🗑️ 기기 저장 공간 정리 · 주의</b><div class="muted">${globalModeEnabled ? '언제: 서버 단독으로 옮긴 뒤 이 기기에 남은 중복 pluginStorage 사본을 지우고 싶을 때. 서버 보존을 먼저 검증하고, 한 번 더 눌러야 삭제됩니다.' : '언제: 현재 스코프를 서버 단독으로 옮긴 뒤 이 기기의 중복 사본을 지우고 싶을 때. 서버 보존을 먼저 검증하고, 한 번 더 눌러야 삭제됩니다.'}</div><div class="actions"><button class="danger" data-delete>${globalModeEnabled ? '중복 pluginStorage 전체 삭제' : '현재 스코프 pluginStorage 삭제'}</button></div></section></div></details><div class="status"><div data-current-mode></div><div data-status>서버 상태를 확인할 수 있습니다.</div></div>
         <details data-preview-diagnostics hidden><summary>이전 검사 상세 · 대화 본문과 API 키 제외</summary><textarea data-preview-diagnostics-text aria-label="이전 검사 상세" readonly style="width:100%;min-height:180px"></textarea></details>
       </div>
       <div class="job" data-job><b data-job-title>작업 진행 중</b><div class="bar"><i data-job-bar></i></div><div class="grid"><span data-job-phase></span><span data-job-count></span><span data-job-bytes></span><span data-job-time></span><span data-job-retry></span><span data-job-key></span></div><div class="muted" data-job-workflow style="white-space:pre-wrap;margin:8px 0"></div><div class="muted" data-job-transfer style="white-space:pre-wrap;margin:8px 0"></div><div class="result" data-job-result></div><textarea data-job-diagnostics aria-label="저장 이전 상세 진단" readonly style="display:none"></textarea><button data-job-copy type="button">상세 진단 복사</button><div class="actions" data-job-stalled-actions style="display:none;margin-top:6px;gap:8px"><button data-job-retry class="primary" type="button">즉시 재시도</button><button data-job-cancel class="danger" type="button">이전 작업 취소 · 기존 모드 유지</button></div><div class="actions" data-job-terminal-actions style="display:none"><button data-job-dismiss type="button">결과 확인 닫기</button></div></div>
@@ -11237,8 +11440,63 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     refreshScopeNote();
     q('[data-sync]').onclick = async()=>{ try{const job=await scopedStartSynchronizationJob({scope:initial.scope});setMessage('현재 스코프 동기화를 시작했습니다.');renderJob(job);}catch(error){setMessage(`동기화 시작 실패\n${error?.userMessage||error?.message||error}`,'error');} };
     q('[data-restore]').onclick = async()=>{ try{const job=await scopedStartRestoreJob({scope:initial.scope});setMessage('현재 스코프 복구를 시작했습니다.');renderJob(job);}catch(error){setMessage(`복구 시작 실패\n${error?.userMessage||error?.message||error}`,'error');} };
-    let armedUntil=0;
-    q('[data-delete]').onclick = async()=>{ const button=q('[data-delete]'); if(Date.now()>armedUntil){button.disabled=true;setMessage('현재 스코프가 서버에 안전하게 보존됐는지 확인하고 있습니다…');try{await assertRecoveryActionAllowed(initial.scope,'delete_pluginstorage');const checked=await scopedVerifyPreservation(state.legacy.plugin,{scope:initial.scope});armedUntil=Date.now()+30000;button.textContent='검증 완료 · 다시 눌러 삭제';setMessage(`보존 검증 완료 · ${checked.checked}개\n30초 안에 다시 누르면 현재 스코프의 payload만 삭제합니다.`,'good');}catch(error){armedUntil=0;setMessage(`삭제 차단\n${error?.userMessage||error?.message||error}`,'error');}finally{button.disabled=false;}return;} armedUntil=0;button.disabled=true;try{const result=await scopedDeletePluginStorageAfterVerification({scope:initial.scope});button.textContent='현재 스코프 pluginStorage 삭제';setMessage(`삭제 완료 · ${result.deleted}개\n현재 스코프는 서버 단독입니다.`,'good');}catch(error){setMessage(`삭제 실패\n${error?.userMessage||error?.message||error}`,'error');}finally{button.disabled=false;} };
+        let armedUntil=0;
+    const defaultDeleteLabel = globalModeEnabled ? '중복 pluginStorage 전체 삭제' : '현재 스코프 pluginStorage 삭제';
+    q('[data-delete]').onclick = async()=>{
+      const button=q('[data-delete]');
+      if(Date.now()>armedUntil){
+        button.disabled=true;
+        setMessage(globalModeEnabled
+          ? '기기 중복 데이터가 서버에 안전하게 보관되어 있는지 검증하고 있습니다…'
+          : '현재 스코프가 서버에 안전하게 보존됐는지 확인하고 있습니다…');
+        try{
+          if (globalModeEnabled) {
+            const checked = await globalVerifyPreservation();
+            if (checked.checked === 0) {
+              armedUntil = 0;
+              button.textContent = defaultDeleteLabel;
+              setMessage('정리할 중복 pluginStorage 데이터가 없습니다. (이미 정리되었거나 서버 단독 상태)', 'good');
+              return;
+            }
+            armedUntil = Date.now() + 30000;
+            button.textContent = '검증 완료 · 다시 눌러 전체 삭제';
+            setMessage(`서버 보존 검증 완료 · ${checked.checked}개 항목 안전 확인\n30초 안에 다시 누르면 기기의 중복 pluginStorage 사본을 삭제합니다.`, 'good');
+          } else {
+            await assertRecoveryActionAllowed(initial.scope, 'delete_pluginstorage');
+            const checked = await scopedVerifyPreservation(state.legacy.plugin, { scope: initial.scope });
+            armedUntil = Date.now() + 30000;
+            button.textContent = '검증 완료 · 다시 눌러 삭제';
+            setMessage(`보존 검증 완료 · ${checked.checked}개\n30초 안에 다시 누르면 현재 스코프의 payload만 삭제합니다.`, 'good');
+          }
+        }catch(error){
+          armedUntil=0;
+          button.textContent = defaultDeleteLabel;
+          setMessage(`삭제 차단\n${error?.userMessage || error?.message || error}`, 'error');
+        }finally{
+          button.disabled=false;
+        }
+        return;
+      }
+      armedUntil=0;
+      button.disabled=true;
+      try{
+        if (globalModeEnabled) {
+          setMessage('기기 중복 데이터를 삭제하고 있습니다…');
+          const result = await globalDeletePluginStorageAfterVerification();
+          button.textContent = defaultDeleteLabel;
+          setMessage(`삭제 완료 · ${result.deleted}개 정리됨\n모든 대화 데이터는 서버에서 안전하게 유지됩니다.`, 'good');
+        } else {
+          const result = await scopedDeletePluginStorageAfterVerification({ scope: initial.scope });
+          button.textContent = defaultDeleteLabel;
+          setMessage(`삭제 완료 · ${result.deleted}개\n현재 스코프는 서버 단독입니다.`, 'good');
+        }
+      }catch(error){
+        button.textContent = defaultDeleteLabel;
+        setMessage(`삭제 실패\n${error?.userMessage || error?.message || error}`, 'error');
+      }finally{
+        button.disabled=false;
+      }
+    };
     q('[data-job-dismiss]').onclick=()=>{const job=getSyncJob();if(job&&syncJobTerminal(job.status)){dismissedJobId=job.jobId;state.syncJob.dismissedJobId=job.jobId;try{updateSyncJob({dismissed:true},{persist:'immediate'});}catch(_){}renderJob(job);}};
     const unsubscribe=subscribeSyncJob(renderJob); const tick=setInterval(()=>{if(!root.isConnected){clearInterval(tick);unsubscribe();return;}renderJob(getSyncJob());},1000); try{tick?.unref?.();}catch(_){}
     await scopedResumePendingSyncJob().catch(()=>null); renderJob(getSyncJob());
@@ -12377,6 +12635,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     ownerLegacyWrite: (...args) => withOwnerIO(args[0],args[1],()=>ownerLegacyWrite(...args)),
     ownerLegacyRemove: (...args) => withOwnerIO(args[0],args[1],()=>ownerLegacyRemove(...args)),
     deletePluginStorageAfterServerVerification: (...args) => withModeConfiguration(()=>withOwnerIO('plugin','',()=>scopedDeletePluginStorageAfterVerification(...args))),
+    globalVerifyPreservation: (...args) => withModeConfiguration(()=>withOwnerIO('plugin','',()=>globalVerifyPreservation(...args))),
+    globalDeletePluginStorageAfterVerification: (...args) => withModeConfiguration(()=>withOwnerIO('plugin','',()=>globalDeletePluginStorageAfterVerification(...args))),
     setMode: (...args) => withModeConfiguration(()=>scopedSetModeSafely(...args)),
     getMode: async () => (await readScopeMode(null, true)).mode,
     getStorageModeContract: () => STORAGE_MODE_CONTRACT,
