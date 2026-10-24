@@ -15683,19 +15683,27 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       ['확인 불가',catalog?formatNumber(unknownCount):'—',catalog?'삭제 차단 · 자동 정리 안 함':'목록 미조회'],
       ['마지막 백업',backupValue,backupMeta]
     ].map(([label,value,meta],index)=>`<div class="stat"><div class="stat__label">${escapeHtml(label)}</div><div class="stat__value"${index===3?' style="font-size:22px"':''}>${escapeHtml(value)}</div><div class="stat__meta">${escapeHtml(meta)}</div></div>`).join('');
-    const showCleanup=cleanupCount>0||unknownCount>0||Runtime.overviewError;
-    const warningTitle=Runtime.overviewError?'개요 갱신에 실패했습니다. 이전 결과는 최신 상태로 간주하지 않습니다.':catalog?`정리 후보 ${formatNumber(cleanupCount)}개, 확인 불가 ${formatNumber(unknownCount)}개가 있습니다.`:'서버 사본 목록은 아직 조회하지 않았습니다.';
-    const warningBody=catalog?'확인 불가 사본은 삭제할 수 없습니다. 후보의 참조·Owner 보존 증거를 확인한 뒤에만 적격 작업을 진행하세요.':'서버 스코프 조회는 자동으로 실행하지 않습니다. 서버 관리에서 사용자가 직접 목록을 요청하세요.';
+    const isContextMissing = Boolean(Runtime.overviewError && /캐릭터.*불러올 수 없습니다|character/i.test(Runtime.overviewError));
+    const isCriticalOverviewError = Boolean(Runtime.overviewError && !isContextMissing);
+    const showCleanup=cleanupCount>0||unknownCount>0||isCriticalOverviewError;
+    const warningTitle=isCriticalOverviewError?'개요 갱신에 실패했습니다. 이전 결과는 최신 상태로 간주하지 않습니다.':isContextMissing?'현재 열려 있는 캐릭터 대화방이 없습니다.':catalog?`정리 후보 ${formatNumber(cleanupCount)}개, 확인 불가 ${formatNumber(unknownCount)}개가 있습니다.`:'서버 사본 목록은 아직 조회하지 않았습니다.';
+    const warningBody=isCriticalOverviewError?'이전 개요는 최신 상태로 유지되지 않습니다. 다시 확인하세요.':isContextMissing?'캐릭터 대화방을 열면 실시간 인계 개요와 저장 소유자 상태가 자동으로 갱신됩니다.':catalog?'확인 불가 사본은 삭제할 수 없습니다. 후보의 참조·Owner 보존 증거를 확인한 뒤에만 적격 작업을 진행하세요.':'서버 스코프 조회는 자동으로 실행하지 않습니다. 서버 관리에서 사용자가 직접 목록을 요청하세요.';
     const globalStatus=Runtime.root?.querySelector?.('#globalStatus'),globalCount=Runtime.root?.querySelector?.('#globalStatusCount'),globalText=Runtime.root?.querySelector?.('#globalStatusText');
-    if(globalStatus&&!globalStatus.dataset.errorPopupBound){globalStatus.dataset.errorPopupBound='1';globalStatus.addEventListener('click',()=>openRetraceErrorLog());globalStatus.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openRetraceErrorLog();}});}if(globalStatus){globalStatus.classList.remove('health--ok','health--warn','health--danger');globalStatus.classList.add(Runtime.overviewError||gate?.ready===false?'health--danger':gate?.ready===true?'health--ok':'health--warn');globalStatus.title=Runtime.overviewError?'개요 갱신 실패':catalog?`${formatNumber(cleanupCount)}개 정리 적격 · ${formatNumber(unknownCount)}개 확인 불가`: '서버 사본은 사용자가 조회를 요청하기 전까지 자동 검사하지 않습니다.';}
-    const globalDetail=(catalog?`정리 적격 ${formatNumber(cleanupCount)} · 확인 불가 ${formatNumber(unknownCount)}`:'서버 검사 대기')+' · '+(Runtime.overviewError?'새로고침 필요':state.loading?'실시간 확인 중':gate?.ready===true?'승계 Gate 준비':gate?.ready===false?'승계 차단':state.checked?'상태 확인됨':'검증 대기');
+    if(globalStatus&&!globalStatus.dataset.errorPopupBound){globalStatus.dataset.errorPopupBound='1';globalStatus.addEventListener('click',()=>openRetraceErrorLog());globalStatus.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openRetraceErrorLog();}});}if(globalStatus){
+      globalStatus.classList.remove('health--ok','health--warn','health--danger');
+      globalStatus.classList.add((isCriticalOverviewError||gate?.ready===false)?'health--danger':(isContextMissing||!gate?.ready)?'health--warn':'health--ok');
+      globalStatus.title=isCriticalOverviewError?'개요 갱신 실패':isContextMissing?'대화방 선택 대기 · 캐릭터 대화방을 열면 개요가 자동으로 갱신됩니다':catalog?`${formatNumber(cleanupCount)}개 정리 적격 · ${formatNumber(unknownCount)}개 확인 불가`: '서버 사본은 사용자가 조회를 요청하기 전까지 자동 검사하지 않습니다.';
+    }
+    const globalDetail=(catalog?`정리 적격 ${formatNumber(cleanupCount)} · 확인 불가 ${formatNumber(unknownCount)}`:'서버 검사 대기')+' · '+(isCriticalOverviewError?'새로고침 필요':isContextMissing?'대화방 선택 대기':state.loading?'실시간 확인 중':gate?.ready===true?'승계 Gate 준비':gate?.ready===false?'승계 차단':state.checked?'상태 확인됨':'검증 대기');
     if(globalStatus){globalStatus.title=globalDetail;globalStatus.setAttribute('aria-label',globalDetail);globalStatus.setAttribute('role','button');globalStatus.setAttribute('aria-haspopup','dialog');globalStatus.setAttribute('aria-label',`${globalDetail} · 누르면 오류와 확인 로그 보기`);globalStatus.tabIndex=0;}
     if(globalCount)globalCount.textContent=catalog?(unknownCount?`확인 필요 ${formatNumber(unknownCount)}`:`정리 후보 ${formatNumber(cleanupCount)}`):'검사 대기';
-    if(globalText)globalText.textContent=Runtime.overviewError?'오류 로그 보기':unknownCount?'오류·확인 로그 보기':state.loading?'확인 중':gate?.ready===true?'준비됨':gate?.ready===false?'차단 상세':state.checked?'정상 확인':'검사 대기';
-    const errorHtml = Runtime.overviewError
+    if(globalText)globalText.textContent=isCriticalOverviewError?'오류 로그 보기':isContextMissing?'대화방 미선택':unknownCount?'오류·확인 로그 보기':state.loading?'확인 중':gate?.ready===true?'준비됨':gate?.ready===false?'차단 상세':state.checked?'정상 확인':'검사 대기';
+    const errorHtml = isCriticalOverviewError
       ? `<div class="banner banner--danger"><strong>개요 갱신 실패</strong><span>${escapeHtml(Runtime.overviewError)}</span></div>`
-      : '';
-    host.innerHTML = `${errorHtml}${Runtime.remoteUpdate?.available?`<div class="banner banner--info"><strong>Librarian System 업데이트 있음 · ${escapeHtml(Runtime.remoteUpdate.latestVersion)}</strong><span>RE:TRACE는 업데이트를 실행하지 않습니다. 운영체제별 업데이트 런처를 사용하세요.</span></div>`:''}<div class="stack"><div class="relay" aria-label="인계 흐름">${flowHtml}</div><div class="stats">${statsHtml}</div><div class="card card--tight"><div class="card__head"><div><h2 class="card__title">저장 소유자</h2><p class="card__desc">저장·읽기·관리 역할과 현재 확인 상태입니다. LIA는 로컬 전용, RE:TRACE는 manager_only입니다.</p></div></div><div class="list">${ownerCards}</div></div><div class="banner ${Runtime.overviewError?'banner--danger':showCleanup?'banner--warn':'banner--info'}"><span class="banner__icon"><i data-i="${showCleanup?'alert':'info'}"></i></span><div><b>${escapeHtml(warningTitle)}</b><p class="muted" style="margin:2px 0 8px">${escapeHtml(warningBody)}</p><button class="btn btn--sm btn--primary" type="button" data-retrace-goto="serverdata" data-server-subgoto="data">서버 데이터 관리로 이동</button></div></div></div>`;
+      : isContextMissing
+        ? `<div class="banner banner--info"><strong>대화방 선택 대기</strong><span>${escapeHtml(Runtime.overviewError)} 대화방에 입장하면 실시간 인계 개요가 자동으로 활성화됩니다.</span></div>`
+        : '';
+    host.innerHTML = `${errorHtml}${Runtime.remoteUpdate?.available?`<div class="banner banner--info"><strong>Librarian System 업데이트 있음 · ${escapeHtml(Runtime.remoteUpdate.latestVersion)}</strong><span>RE:TRACE는 업데이트를 실행하지 않습니다. 운영체제별 업데이트 런처를 사용하세요.</span></div>`:''}<div class="stack"><div class="relay" aria-label="인계 흐름">${flowHtml}</div><div class="stats">${statsHtml}</div><div class="card card--tight"><div class="card__head"><div><h2 class="card__title">저장 소유자</h2><p class="card__desc">저장·읽기·관리 역할과 현재 확인 상태입니다. LIA는 로컬 전용, RE:TRACE는 manager_only입니다.</p></div></div><div class="list">${ownerCards}</div></div><div class="banner ${isCriticalOverviewError?'banner--danger':isContextMissing?'banner--info':showCleanup?'banner--warn':'banner--info'}"><span class="banner__icon"><i data-i="${isCriticalOverviewError||showCleanup?'alert':'info'}"></i></span><div><b>${escapeHtml(warningTitle)}</b><p class="muted" style="margin:2px 0 8px">${escapeHtml(warningBody)}</p><button class="btn btn--sm btn--primary" type="button" data-retrace-goto="serverdata" data-server-subgoto="data">서버 데이터 관리로 이동</button></div></div></div>`;
     hydrateRetraceIcons(host);
     bindOverviewControls();
   };
@@ -15903,7 +15911,14 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       message: `${MEMORY_SUITE_NAMESPACE_LABELS[owner] || owner} 서버 목록 검사 보류`,
       detail
     }));
-    const entries = [...Runtime.warnings.map(w => ({ ...w, owner: '' })), ...scanEntries];
+    const isContextMissing = Boolean(Runtime.overviewError && /캐릭터.*불러올 수 없습니다|character/i.test(Runtime.overviewError));
+    const overviewEntries = Runtime.overviewError ? [{
+      at: Date.now(),
+      owner: 'retrace',
+      message: isContextMissing ? '캐릭터 대화방 미선택 (대기)' : '개요 및 컨텍스트 갱신 오류',
+      detail: Runtime.overviewError
+    }] : [];
+    const entries = [...overviewEntries, ...Runtime.warnings.map(w => ({ ...w, owner: '' })), ...scanEntries];
     const summary = overlay.querySelector('[data-error-log-summary]');
     if (summary) {
       summary.textContent = `오류 ${entries.length}건 · 경고 ${Runtime.warnings.length}건 · 색인 실패 ${Object.keys(scanErrors).length}개. 확인 불가 자료는 자동 삭제하지 않았습니다.`;
@@ -15934,7 +15949,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       }
     }
     overlay.dataset.fullLogText = entries.length
-      ? entries.map(row => `${scopeManagerFormatTime(row.at)} · ${row.message}${row.detail ? `\n${row.detail}` : ''}`).join('\n\n')
+      ? entries.map(row => `${scopeManagerFormatTime(row.at)} · [${row.owner || '경고'}] ${row.message}${row.detail ? `\n${row.detail}` : ''}`).join('\n\n')
       : '현재 보관된 오류가 없습니다.';
     overlay.hidden = false;
     overlay.setAttribute('aria-hidden', 'false');
