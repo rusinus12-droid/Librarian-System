@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.6.5
-//@version 2.6.5
+//@display-name LIBRA v2.6.6
+//@version 2.6.6
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.6.5';
+  const PLUGIN_VERSION = '2.6.6';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -91990,21 +91990,41 @@ advanced
     const foot = app?.querySelector('.side-foot');
     if (!foot) return;
     if (!foot.querySelector('[data-current-status]')) {
-      foot.replaceChildren(guiEl('b', { text: '현재 상태' }),
+      foot.classList.add('current-status-panel');
+      foot.setAttribute('aria-label', '현재 상태 및 설정 바로가기');
+      const body = guiEl('div', { class: 'current-status-body' }, [
         ...[['storage', '저장', 'server'], ['analysis', '분석', 'memory_analysis'], ['search', '검색', 'embedding']].map(([id, label, target]) =>
           guiEl('button', { type: 'button', class: 'current-status-row', dataset: { currentStatus: id },
             text: `${label}: 확인 중`, title: `${label} 설정으로 이동`,
             onClick: () => selectBookExternalSettings(target) })),
-        guiEl('small', { class: 'current-status-help', text: '각 항목을 눌러 설정 변경' }));
+        guiEl('button', { type: 'button', class: 'current-status-row current-status-refresh', text: '상태 다시 확인', dataset: { currentStatusRefresh: 'true' },
+          onClick: async event => {
+            const button = event.currentTarget, openSerial = Gui.openSerial;
+            button.disabled = true;
+            try {
+              const config = await MemorySuiteStorageBridge.getConnectionSettings();
+              if (config.mode === 'plugin_only') await hydrateSettingsGuiAfterOpen(openSerial);
+              else await retryLibraServerAvailability();
+              if (Gui.visible && Gui.openSerial === openSerial && Gui.mockupApp === app) syncBookCurrentStatus(app);
+            } catch (error) {
+              if (Gui.visible && Gui.openSerial === openSerial) guiSetStatus(`상태 확인 실패: ${error?.message || error}`, true, false);
+            } finally { button.disabled = false; }
+          } }),
+        guiEl('small', { class: 'current-status-help', text: '각 항목을 눌러 설정 변경' })
+      ]);
+      foot.replaceChildren(guiEl('b', { text: '현재 상태' }), body);
       const style = guiEl('style', { text: `
+        .side-foot.current-status-panel{position:sticky;bottom:0;flex-shrink:0;margin-top:auto;padding:10px 12px;background:var(--side-foot-bg,var(--surface,#fff));color:var(--side-text,var(--text,#252321));border:1px solid var(--side-line,var(--border2,#ccc))}
+        .current-status-body{margin-top:5px}
         .side-foot .current-status-row{display:block;width:100%;min-width:0;margin:3px 0;padding:4px 2px;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;text-align:left;line-height:1.5;white-space:normal;overflow-wrap:anywhere;cursor:pointer}
         .side-foot .current-status-row:hover{background:var(--side-line,var(--border));text-decoration:underline}
         .side-foot .current-status-row:focus-visible{outline:2px solid currentColor;outline-offset:1px}
-        .side-foot .current-status-help{display:block;margin-top:5px;font-size:11px;line-height:1.5;color:inherit}
+        .side-foot small{display:block;font-size:11px;line-height:1.5}
+        .side-foot .current-status-refresh{font-size:11px;text-decoration:underline}
       ` });
       foot.appendChild(style);
     }
-    const setRow = (id, value, isWarn = false) => { const row = foot.querySelector(`[data-current-status="${id}"]`); if (row) { row.textContent = value; if (id === 'storage') { row.style.color = isWarn ? '#ef4444' : ''; row.style.fontWeight = isWarn ? '700' : ''; } } };
+    const setRow = (id, value, isWarn = false) => { const row = foot.querySelector(`[data-current-status="${id}"]`); if (row) { row.textContent = value; if (id === 'storage') { row.style.color = isWarn ? 'var(--warn-ink, #a05415)' : ''; row.style.background = isWarn ? 'var(--warn-soft, #fbeccb)' : ''; row.style.fontWeight = isWarn ? '700' : ''; } } };
     const saved = Runtime.settings;
     if (!saved) setRow('analysis', '분석: 확인 중');
     else {

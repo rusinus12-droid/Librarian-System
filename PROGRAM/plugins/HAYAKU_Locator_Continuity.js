@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.5
-//@version 3.3.5
+//@display-name HAYAKU · Locator Continuity v3.3.6
+//@version 3.3.6
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.5';
+  const PLUGIN_VERSION = '3.3.6';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -59833,9 +59833,8 @@ function mountMemorySuiteSourceInputControls(container, config) {
     row.dataset.warning = String(warning);
     row.title = [detail, '저장 설정으로 이동'].filter(Boolean).join(' · ');
     row.style.color = warning ? 'var(--warn-ink, #a05415)' : '';
+    row.style.background = warning ? 'var(--warn-soft, #fbeccb)' : '';
     row.style.fontWeight = warning ? '700' : '';
-    const summary = foot.querySelector('[data-current-status-summary]');
-    if (summary) { summary.textContent = text; summary.style.color = row.style.color; }
   };
   const mount = root => {
     const foot = root.querySelector('.side-foot');
@@ -59843,15 +59842,11 @@ function mountMemorySuiteSourceInputControls(container, config) {
     if (!foot.querySelector('[data-current-status]')) {
       const doc = foot.ownerDocument;
       const node = (tag, text) => { const el = doc.createElement(tag); el.textContent = text; return el; };
-      // Keep the status visible when narrow layouts hide the sidebar. The card
-      // belongs to the GUI app, not the host chat, and can be folded out of the way.
-      (root.querySelector('.app') || root).appendChild(foot);
+      // Retain the owner's sidebar footer, like LIBRA. It stays expanded and
+      // participates in sidebar layout rather than covering the main content.
       foot.classList.add('current-status-panel');
-      const fold = node('details', ''), heading = node('summary', '현재 상태 · '), summary = node('span', '확인 중');
-      fold.open = doc.defaultView?.innerWidth >= 900;
-      summary.dataset.currentStatusSummary = 'true'; heading.appendChild(summary); fold.appendChild(heading);
-      const body = node('div', ''); body.className = 'current-status-body'; fold.appendChild(body);
-      foot.replaceChildren(fold);
+      const body = node('div', ''); body.className = 'current-status-body';
+      foot.replaceChildren(node('b', '현재 상태'), body);
       foot.setAttribute('aria-label', '현재 상태 및 설정 바로가기');
       for (const row of [{ id:'storage', text:'저장: 확인 중', target:'server' }, ...options.getRows()]) {
         const button = node('button', row.text);
@@ -59867,16 +59862,13 @@ function mountMemorySuiteSourceInputControls(container, config) {
       refresh.addEventListener('click', () => { cache = null; void refreshStatus(true); });
       body.append(refresh, node('small', '각 항목을 눌러 설정 변경'));
       const style = node('style', `
-        .side-foot.current-status-panel{position:absolute;right:12px;bottom:12px;z-index:10;width:min(270px,calc(100% - 24px));max-height:45%;overflow:auto;margin:0;padding:10px 12px;background:var(--surface,#fff);color:var(--text,#252321);border:1px solid var(--border2,#ccc);box-shadow:0 3px 16px rgba(0,0,0,.14)}
-        .current-status-panel summary{cursor:pointer;overflow-wrap:anywhere;line-height:1.5;font-weight:700}
-        .current-status-panel summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+        .side-foot.current-status-panel{position:sticky;bottom:0;flex-shrink:0;margin-top:auto;padding:10px 12px;background:var(--side-foot-bg,var(--surface,#fff));color:var(--side-text,var(--text,#252321));border:1px solid var(--side-line,var(--border2,#ccc))}
         .current-status-body{margin-top:5px}
         .side-foot .current-status-row{display:block;width:100%;min-width:0;margin:3px 0;padding:4px 2px;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;text-align:left;line-height:1.5;white-space:normal;overflow-wrap:anywhere;cursor:pointer}
         .side-foot .current-status-row:hover{background:var(--side-line,var(--border));text-decoration:underline}
         .side-foot .current-status-row:focus-visible{outline:2px solid currentColor;outline-offset:1px}
         .side-foot small{display:block;font-size:11px;line-height:1.5}
         .side-foot .current-status-refresh{font-size:11px;text-decoration:underline}
-        @container app (max-width:640px){.side-foot.current-status-panel{bottom:calc(72px + env(safe-area-inset-bottom,0px));max-height:40%}}
       `);
       foot.appendChild(style);
     }

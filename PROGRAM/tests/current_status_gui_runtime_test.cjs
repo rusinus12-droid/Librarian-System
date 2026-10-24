@@ -93,8 +93,7 @@ test('manual refresh really probes even after a recent successful settings-page 
     s.setProbe(async()=>({ok:false,error:'connection_refused'}));
     s.dom.window.document.querySelector('[data-current-status-refresh]').click();
     await until(()=>s.row()?.textContent.includes('연결 미완료'),'fresh explicit read');assert.equal(s.counts().probes,1);
-    const fold=s.dom.window.document.querySelector('.current-status-panel details');fold.open=false;
-    assert.match(fold.querySelector('summary').textContent,/서버 연결 미완료/,'folded window retains the warning');
+    assert.equal(s.dom.window.document.querySelector('.current-status-panel details'),null,'status stays expanded without a fold control');
   }finally{s.close();}
 });
 
@@ -102,7 +101,8 @@ for(const name of ['HAYAKU','Flashback']) test(name+' full GUI mounts status and
   const s=await create(name,process.env.CURRENT_STATUS_VARIANT || 'Full');try{
     await s.open();await until(()=>s.doc.querySelector('[data-current-status="storage"]')?.textContent==='저장: 플러그인 모드','owner status',12000);
     assert.equal(s.doc.querySelectorAll('.side-foot [data-current-status]').length,3);
-    assert.equal(s.doc.querySelector('.current-status-panel').parentElement.classList.contains('app'),true,'status is docked inside the GUI app, outside the mobile-hidden sidebar');
+    assert.equal(s.doc.querySelector('.current-status-panel').parentElement.classList.contains('sidebar'),true,'status stays in the left sidebar footer');
+    assert.equal(s.doc.querySelector('.current-status-panel details'),null,'status cannot be collapsed');
     const networkBefore=s.wire.length;
     await s.click('[data-current-status="storage"]');
     if(name==='HAYAKU')assert.equal(s.doc.querySelector('[data-page="server"]').hidden,false);
@@ -118,6 +118,18 @@ for(const name of ['HAYAKU','Flashback']) test(name+' full GUI mounts status and
     if(name==='HAYAKU')assert.ok(s.doc.querySelector('[data-page="overview"]').classList.contains('is-active'));
     else assert.ok(s.doc.querySelector('[data-group="c"][data-subpanel="emb"]').classList.contains('is-active'));
     assert.equal(s.wire.length,networkBefore,'navigation and local status do not make server/model calls');
+    assert.deepEqual(s.errors,[]);
+  }finally{await s.close();}
+});
+
+ test('LIBRA uses the same expanded left status design and local refresh without server calls', async()=>{
+  const s=await create('LIBRA',process.env.CURRENT_STATUS_VARIANT || 'Full');try{
+    await s.open();await until(()=>s.doc.querySelector('[data-current-status="storage"]')?.textContent==='저장: 플러그인 모드','LIBRA status',12000);
+    const panel=s.doc.querySelector('.current-status-panel');
+    assert.ok(panel.parentElement.classList.contains('sidebar'));
+    assert.equal(panel.querySelectorAll('[data-current-status]').length,3);assert.equal(panel.querySelector('details'),null);
+    const calls=s.wire.length;await s.click('[data-current-status-refresh]');
+    assert.equal(s.wire.length,calls,'plugin-only refresh does not probe a server or model');
     assert.deepEqual(s.errors,[]);
   }finally{await s.close();}
 });
