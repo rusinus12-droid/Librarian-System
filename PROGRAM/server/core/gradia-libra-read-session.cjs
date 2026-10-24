@@ -91,8 +91,15 @@ function selectedRefs(manifest) {
 }
 function validateDependency(value, index, scope) {
   if (!object(value) || value.namespace !== 'libra' || value.space !== 'plugin'
-    || (index === 0 ? value.key !== manifestKeyFor(scope) : !memoryLocation(value.key))
-    || value.exists !== true || value.tombstone !== false
+    || (index === 0 ? value.key !== manifestKeyFor(scope) : !memoryLocation(value.key))) fail('gradia_read_dependencies_invalid', 400);
+  if (index === 0 && value.exists === false) {
+    if (value.tombstone !== false || value.revision !== 0 || value.digest !== '' || value.updatedAt !== 0 || value.valueBytes !== 0) {
+      fail('gradia_read_dependencies_invalid', 400);
+    }
+    return { namespace: 'libra', space: 'plugin', key: value.key, exists: false, tombstone: false,
+      revision: 0, digest: '', updatedAt: 0, valueBytes: 0 };
+  }
+  if (value.exists !== true || value.tombstone !== false
     || !Number.isSafeInteger(value.revision) || value.revision < 1
     || typeof value.digest !== 'string' || !/^[a-f0-9]{64}$/.test(value.digest)
     || !Number.isSafeInteger(value.updatedAt) || value.updatedAt < 0
@@ -124,6 +131,12 @@ function createReadSession({ getRepository, dataInstanceId, epochs, canRead }) {
     const rawLimit = rawLimitOf(body?.maxRawBytes, maxCorpusBytes);
     return readUnit(repository => {
       const readIdentity = identity(scope), manifestMetadata = metadataOf(repository, manifestKeyFor(scope));
+      if (!manifestMetadata.exists || manifestMetadata.tombstone) {
+        const dependencies = [manifestMetadata];
+        return { schema: 'memory-suite.libra-read-session.v1', readOnly: true, complete: true, scope, items: [], dependencies,
+          evidenceRevision: hash(dependencies), corpusBytes: 0, maxCorpusBytes, maxRawBytes: rawLimit, metadataBytes: 0, rawBytes: manifestMetadata.valueBytes || 0, dataInstanceId,
+          resetEpoch: readIdentity.resetEpoch, readIdentity };
+      }
       const manifest = boundedRead(repository, manifestMetadata, Math.min(LIMITS.manifestBytes, rawLimit));
       if (manifest.schema !== 'libra.manifest.v1' || !['scopeKey', 'characterId', 'chatId'].every(key => manifest[key] === scope[key])) fail('gradia_read_manifest_scope_mismatch');
       const refs = selectedRefs(manifest), dependencies = [manifestMetadata], items = [], seen = new Set();

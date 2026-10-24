@@ -29769,10 +29769,16 @@ function createGradiaEvidenceBudget({ digest }) {
         if (parsed.origin !== url || !(path === '/bootstrap' && init.method === 'GET'
             || LIB_READ_OWNERS.some(owner => readOwners.includes(owner) && [`/v1/${owner}/read-session/capture`,`/v1/${owner}/read-session/current`].includes(path)) && init.method === 'POST')
             || init.headers?.['X-Memory-Suite-Plugin'] !== 'serial_gradation_agents_for_rp') deny();
-        const transport = API.nativeFetch || API.risuFetch;
+        const liveCandidate = getLiveApi(['nativeFetch']) || getLiveApi(['risuFetch']) || API;
+        let transport = null;
+        if (typeof liveCandidate?.nativeFetch === 'function') transport = liveCandidate.nativeFetch.bind(liveCandidate);
+        else if (typeof liveCandidate?.risuFetch === 'function') transport = liveCandidate.risuFetch.bind(liveCandidate);
+        else if (typeof API?.nativeFetch === 'function') transport = API.nativeFetch.bind(API);
+        else if (typeof API?.risuFetch === 'function') transport = API.risuFetch.bind(API);
+        else if (typeof globalThis.fetch === 'function') transport = globalThis.fetch.bind(globalThis);
         if (typeof transport !== 'function') throw libEvidenceError('LIB_READ_TRANSPORT_UNAVAILABLE');
         if (path === '/bootstrap') init = {...init,headers:{...init.headers,'X-Memory-Suite-Read-Owners':JSON.stringify(readOwners)}};
-        return await transport.call(API,target,init);
+        return await transport(target,init);
       }
     });
 /* GRADIA PRIVATE CANONICAL SDK BEGIN */
@@ -36823,8 +36829,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       },'Memory read-only session',requestTimeoutMs,null,true,action==='capture'?6*maxCorpusBytes+8388608:1048576);
       }catch(error){checkAbort();
         const refusals={gradia_read_corpus_budget_exceeded:'LIB_READ_CORPUS_BUDGET_EXCEEDED',gradia_read_storage_budget_exceeded:'LIB_READ_STORAGE_BUDGET_EXCEEDED',
-          gradia_read_metadata_budget_exceeded:'LIB_READ_METADATA_BUDGET_EXCEEDED',gradia_read_reference_limit_exceeded:'LIB_READ_REFERENCE_LIMIT_EXCEEDED',gradia_read_dependency_unavailable:'LIB_READ_SOURCE_UNAVAILABLE'};
-        reject(error?.code==='LIB_READ_RESPONSE_BUDGET_EXCEEDED'||error?.code==='LIB_READ_BOUNDED_TRANSPORT_UNAVAILABLE'?error.code:refusals[error?.payload?.error]||'LIB_READ_UNAVAILABLE');}
+          gradia_read_metadata_budget_exceeded:'LIB_READ_METADATA_BUDGET_EXCEEDED',gradia_read_reference_limit_exceeded:'LIB_READ_REFERENCE_LIMIT_EXCEEDED',gradia_read_dependency_unavailable:'LIB_READ_SOURCE_UNAVAILABLE',
+          gradia_read_scope_changed:'LIB_READ_SCOPE_INVALID',gradia_read_manifest_scope_mismatch:'LIB_READ_SCOPE_INVALID',gradia_read_dependencies_invalid:'LIB_READ_EVIDENCE_INVALID',gradia_read_evidence_revision_invalid:'LIB_READ_EVIDENCE_INVALID',
+          gradia_read_maintenance:'LIB_READ_SERVER_MAINTENANCE',MEMORY_SUITE_RESET_RECONNECT_REQUIRED:'LIB_READ_RESET_REVIEW_REQUIRED',gradia_readonly_route_forbidden:'LIB_READ_PRINCIPAL_REQUIRED'};
+        reject(error?.code==='LIB_READ_RESPONSE_BUDGET_EXCEEDED'||error?.code==='LIB_READ_BOUNDED_TRANSPORT_UNAVAILABLE'?error.code:refusals[error?.payload?.error]||refusals[error?.code]||'LIB_READ_UNAVAILABLE');}
       await assertRoute();
       if(payload?.dataInstanceId!==connection.dataInstanceId)reject('LIB_READ_DATA_CHANGED');
       return payload.result;

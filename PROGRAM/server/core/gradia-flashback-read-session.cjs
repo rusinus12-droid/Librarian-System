@@ -71,8 +71,15 @@ function metadataOf(repository, key) {
 }
 function validateDependency(value, index, scope) {
   if (!object(value) || value.namespace !== 'flashback' || value.space !== 'plugin'
-    || (index === 0 ? value.key !== manifestKeyFor(scope.scopeKey) : !allowedKey(value.key))
-    || value.exists !== true || value.tombstone !== false
+    || (index === 0 ? value.key !== manifestKeyFor(scope.scopeKey) : !allowedKey(value.key))) fail('gradia_read_dependencies_invalid', 400);
+  if (index === 0 && value.exists === false) {
+    if (value.tombstone !== false || value.revision !== 0 || value.digest !== '' || value.updatedAt !== 0 || value.valueBytes !== 0) {
+      fail('gradia_read_dependencies_invalid', 400);
+    }
+    return { namespace: 'flashback', space: 'plugin', key: value.key, exists: false, tombstone: false,
+      revision: 0, digest: '', updatedAt: 0, valueBytes: 0 };
+  }
+  if (value.exists !== true || value.tombstone !== false
     || !Number.isSafeInteger(value.revision) || value.revision < 1 || !digest64(value.digest)
     || !Number.isSafeInteger(value.updatedAt) || value.updatedAt < 0
     || !Number.isSafeInteger(value.valueBytes) || value.valueBytes < 0) fail('gradia_read_dependencies_invalid', 400);
@@ -149,6 +156,14 @@ function createReadSession({ getRepository, dataInstanceId, epochs, canRead }) {
     const rawLimit = rawLimitOf(body?.maxRawBytes, maxCorpusBytes);
     return readUnit(repository => {
       const readIdentity = identity(scope), dependencies = [], seen = new Set();
+      const rootKey = manifestKeyFor(scope.scopeKey);
+      const rootMetadata = metadataOf(repository, rootKey);
+      if (!rootMetadata.exists || rootMetadata.tombstone) {
+        const rootDeps = [rootMetadata];
+        return { schema: 'memory-suite.flashback-read-session.v1', readOnly: true, complete: true, scope, items: [], dependencies: rootDeps,
+          evidenceRevision: hash(rootDeps), corpusBytes: 0, maxCorpusBytes, maxRawBytes: rawLimit, metadataBytes: 0, rawBytes: rootMetadata.valueBytes || 0, dataInstanceId,
+          resetEpoch: readIdentity.resetEpoch, readIdentity };
+      }
       let rawBytes = 0, metadataBytes = 0, recordCount = 0;
       // A repository value can wrap JSON in one additional string; NUL costs
       // seven bytes there. Gzip expansion is separately bounded before parsing.

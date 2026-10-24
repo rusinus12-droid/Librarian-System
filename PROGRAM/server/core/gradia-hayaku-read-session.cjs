@@ -65,8 +65,15 @@ function allowedKey(key, scope, index) {
     || /^hayaku\.v2\.shared_archive(?:_meta)?\.[A-Za-z0-9_-]{1,128}$/.test(key);
 }
 function validMetadata(value, scope, index) {
-  if (!object(value) || value.namespace !== 'hayaku' || value.space !== 'plugin' || !allowedKey(value.key, scope, index)
-    || value.exists !== true || value.tombstone !== false || !int(value.revision) || value.revision < 1
+  if (!object(value) || value.namespace !== 'hayaku' || value.space !== 'plugin' || !allowedKey(value.key, scope, index)) fail('gradia_read_dependencies_invalid', 400);
+  if (index === 0 && value.exists === false) {
+    if (value.tombstone !== false || value.revision !== 0 || value.digest !== '' || value.updatedAt !== 0 || value.valueBytes !== 0) {
+      fail('gradia_read_dependencies_invalid', 400);
+    }
+    return { namespace: 'hayaku', space: 'plugin', key: value.key, exists: false, tombstone: false,
+      revision: 0, digest: '', updatedAt: 0, valueBytes: 0 };
+  }
+  if (value.exists !== true || value.tombstone !== false || !int(value.revision) || value.revision < 1
     || !/^[a-f0-9]{64}$/.test(value.digest || '') || !int(value.updatedAt) || !int(value.valueBytes)) fail('gradia_read_dependencies_invalid', 400);
   return { namespace: 'hayaku', space: 'plugin', key: value.key, exists: true, tombstone: false,
     revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
@@ -132,6 +139,13 @@ function createReadSession({ getRepository, dataInstanceId, epochs, canRead }) {
     const rawLimit = rawLimitOf(body?.maxRawBytes, maxCorpusBytes);
     return readUnit(repository => {
       const readIdentity = identity(scope), dependencies = [], cache = new Map();
+      const rootKey = ledgerKeyFor(scope);
+      const rootMetadata = metadataOf(repository, rootKey);
+      if (!rootMetadata.exists || rootMetadata.tombstone) {
+        const rootDeps = [rootMetadata];
+        return { schema: 'memory-suite.hayaku-read-session.v1', readOnly: true, complete: true, scope, items: [], dependencies: rootDeps,
+          evidenceRevision: hash(rootDeps), corpusBytes: 0, maxCorpusBytes, maxRawBytes: rawLimit, metadataBytes: 0, rawBytes: rootMetadata.valueBytes || 0, dataInstanceId, resetEpoch: readIdentity.resetEpoch, readIdentity };
+      }
       let rawBytes = 0, decodedBytes = 0, metadataBytes = 0, corpusBytes = 0, recordCount = 0, packetRefs = 0;
       const chargedReceipts = new Set();
       // Inline packets live inside the ledger itself. Its body limit must be a

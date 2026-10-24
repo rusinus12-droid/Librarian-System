@@ -63,7 +63,7 @@ before(async () => {
   app = createMemorySuiteServer({ dataDir: dir, port: 0, autoBackup: false, computeEnabled: false, token: 'offline-synthetic-gradia-token' });
   const reply = await request('/bootstrap'); bootstrap = reply.body; token = bootstrap.token;
 });
-after(async () => { await app?.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+after(async () => { await app?.close(); try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {} });
 
 test('GRADIA bootstrap grants only a dedicated read-only LIBRA principal', () => {
   assert.equal(bootstrap.ok, true, JSON.stringify(bootstrap));
