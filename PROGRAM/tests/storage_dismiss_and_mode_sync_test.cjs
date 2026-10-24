@@ -24,6 +24,9 @@ for (const variant of variants) {
 
       // 2. Mount panel 1
       await f.bridge.mountConnectionPanel(dom1.container);
+      assert.doesNotMatch(dom1.root.innerHTML, /data-sync|서버와 기기 내용 맞추기|지금 동기화/,
+        'manual mirror synchronization is absent from the operational mode panel');
+      assert.equal(typeof dom1.byAttr('data-restore').onclick, 'function', 'explicit recovery stays available');
       const jobCard1 = dom1.byAttr('data-job');
       assert.equal(jobCard1.classList.contains('show'), true, 'initial completed job must be shown before user dismisses');
 

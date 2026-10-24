@@ -3037,7 +3037,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           </div></div>
           <div class="mscx-card"><span class="mscx-card-title">서버 주소</span><div class="mscx-url-row"><input data-mscx-url type="url" spellcheck="false" value="${htmlEscape(config.url || defaultUrl)}"><button data-mscx-test type="button">연결 테스트</button></div><div class="mscx-note" style="margin-top:8px">별도 key 입력 없이 localhost·127.0.0.1·::1의 로컬 서버에 연결합니다. 기본 주소는 http://127.0.0.1:47630 입니다.</div></div>
           <div class="mscx-info"><div><span>현재 모드</span><strong data-mscx-mode-label>${htmlEscape(modeLabel(config.mode || MODE_PLUGIN_ONLY))}</strong></div><div><span>서버 버전</span><strong data-mscx-version>-</strong></div><div><span>프로토콜</span><strong data-mscx-protocol>-</strong></div><div><span>서버 데이터</span><strong data-mscx-records>-</strong></div><div><span>namespace</span><strong>${htmlEscape(namespace)}</strong></div></div>
-          <div class="mscx-actions"><button data-mscx-apply class="primary" type="button">설정 적용</button><button data-mscx-sync type="button">지금 동기화</button><button data-mscx-restore type="button">서버 → pluginStorage 복구</button><button data-mscx-delete class="danger" type="button">플러그인 스토리지 삭제</button></div>
+          <div class="mscx-actions"><button data-mscx-apply class="primary" type="button">설정 적용</button><button data-mscx-restore type="button">서버 → pluginStorage 복구</button><button data-mscx-delete class="danger" type="button">플러그인 스토리지 삭제</button></div>
           <div class="mscx-card mscx-job" data-mscx-job hidden><div class="mscx-job-head"><strong data-mscx-job-title>초기 서버 동기화</strong><span class="mscx-job-badge" data-mscx-job-badge>작업 중</span></div><div class="mscx-progress" data-mscx-progress><i></i></div><div><div class="mscx-job-phase" data-mscx-job-phase>작업 준비</div><div class="mscx-job-message" data-mscx-job-message></div></div><div class="mscx-job-stats"><div class="mscx-job-stat"><span>진행</span><b data-mscx-job-items>-</b></div><div class="mscx-job-stat"><span>처리 용량</span><b data-mscx-job-bytes>-</b></div><div class="mscx-job-stat"><span>전송·복구</span><b data-mscx-job-transfer>-</b></div><div class="mscx-job-stat"><span>경과 시간</span><b data-mscx-job-elapsed>-</b></div><div class="mscx-job-stat"><span>마지막 활동</span><b data-mscx-job-activity>-</b></div><div class="mscx-job-stat"><span>재시도 / 실패</span><b data-mscx-job-retry>-</b></div></div><div class="mscx-job-current" data-mscx-job-current>현재 작업을 준비하고 있습니다.</div><div class="mscx-actions" style="margin-top:6px;display:flex;gap:8px"><button data-mscx-job-retry class="primary" type="button" style="display:none">즉시 재시도</button><button data-mscx-job-cancel class="danger" type="button" style="display:none">작업 취소 · 원래 모드 복구</button></div><div class="mscx-note">이 화면을 닫아도 작업은 계속됩니다. 새로고침 후에는 저장된 작업 영수증을 읽고 이미 서버에 일치하는 항목을 다시 전송하지 않고 이어서 확인합니다.</div></div>
           <div class="mscx-message" data-mscx-message>${htmlEscape(config.error ? `설정 읽기 실패: ${config.error}` : `현재 모드: ${modeLabel(config.mode || MODE_PLUGIN_ONLY)}`)}</div>
         </div>
@@ -3161,7 +3161,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const activeRunningJob = !!job && !terminal && !isPaused;
       const modeLabelNode = q('[data-mscx-mode-label]'); if (modeLabelNode) modeLabelNode.textContent = modeLabel(current.mode);
       q('[data-mscx-apply]').disabled = activeRunningJob;
-      q('[data-mscx-sync]').disabled = activeRunningJob || current.mode !== MODE_MIRROR;
       q('[data-mscx-restore]').disabled = activeRunningJob || current.mode !== MODE_SERVER_ONLY;
       q('[data-mscx-delete]').disabled = activeRunningJob || current.mode === MODE_PLUGIN_ONLY;
       modeInputs().forEach(input => {
@@ -3208,10 +3207,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       } catch (error) { setMessage(`설정 적용 시작 실패\n${error?.message || error}`, 'error'); await refreshActionState(); }
     };
 
-    q('[data-mscx-sync]').onclick = async () => {
-      try { const job = await startSynchronizationJob(); setMessage('수동 동기화를 백그라운드에서 시작했습니다. 이 화면을 닫아도 계속됩니다.', 'good'); renderJob(job); await refreshActionState(); }
-      catch (error) { setMessage(`동기화 시작 실패\n${error?.message || error}`, 'error'); }
-    };
     q('[data-mscx-restore]').onclick = async () => {
       try { const job = await startRestoreJob(); setMessage('서버 DATA 복구를 백그라운드에서 시작했습니다. 진행 상황은 아래에 계속 표시됩니다.', 'good'); renderJob(job); await refreshActionState(); }
       catch (error) { setMessage(`복구 시작 실패\n${error?.message || error}`, 'error'); }
@@ -8068,7 +8063,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           <div class="actions"><button type="button" data-mode-confirm-cancel>취소 · 원본 유지</button><button type="button" class="primary" data-mode-confirm-approve>동의하고 이전</button></div>
         </section>
         <details class="mscx-advanced"><summary>고급 작업 <small>상황별 관리 도구</small></summary><div class="mscx-advanced-body"><div class="muted">평소에는 쓰지 않아도 됩니다. 지금 겪는 상황과 맞는 항목만 사용하세요.</div>
-        <section class="mscx-group" data-advanced-group="sync"><b>🔄 서버와 기기 내용 맞추기</b><div class="muted">언제: 서버와 이 기기의 기억이 서로 다르게 보이거나, 최근 내용이 제대로 저장됐는지 확인하고 싶을 때</div><div class="actions"><button data-sync>지금 동기화</button></div></section>
         ${globalModeEnabled ? '<section class="mscx-group" data-advanced-group="migration"><b>🚚 전체 이전 관리</b><div class="muted">언제: 저장 위치 전체 이전이 진행 중이거나 중간에 멈췄을 때<br>· 중단·보존: 진행 중인 이전을 안전하게 멈춥니다. 원본은 그대로 남습니다.<br>· 재개: 진행 화면의 [중단한 이전 재개] 버튼을 사용합니다. 취소 복구는 [취소 복구 계속]으로 표시됩니다.<br>· 취소·경로 복구: 이미 바뀐 저장 경로를 이전 설정으로 돌립니다. 원본과 서버 사본은 지우지 않습니다.</div><div class="actions"><button data-global-pause>전체 이전 중단·보존</button><button data-global-resume>진행 화면으로 이동</button><button data-global-cancel class="danger" disabled>이전 작업 취소 · 기존 경로 복구</button></div></section>' : ''}
         <section class="mscx-group" data-advanced-group="restore"><b>🛟 기기 기억 복구</b><div class="muted">언제: 이 기기(RisuAI pluginStorage)의 기억이 사라지거나 손상됐을 때. 서버에 보존된 정본으로 현재 스코프를 되살립니다.</div><div class="actions"><button data-restore>서버 → pluginStorage 복구</button></div></section>
         <section class="mscx-group" data-advanced-group="reset"><b>♻️ 서버 초기화·복원 이후 선택</b><div class="muted">언제: "서버 자료가 초기화 또는 복원되었습니다" 안내가 떴을 때만 사용합니다. 둘 중 하나를 고른 뒤 RisuAI를 새로고침하세요.<br>· 서버 자료 사용(권장): 복원된 서버 기억을 그대로 씁니다.<br>· 로컬 기억 다시 업로드: 이 기기의 기억으로 서버를 다시 채웁니다.</div><div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div></section>
@@ -8110,7 +8104,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const applyRecoveryGuard = lock => {
       const active=!!lock;
       for(const input of root.querySelectorAll(`input[name="${rootId}-mode"]`)) input.disabled=active&&input.value!==MODE_SERVER_ONLY;
-      q('[data-sync]').disabled=active; q('[data-delete]').disabled=active;
+      q('[data-delete]').disabled=active;
       if(active){const serverOnly=root.querySelector(`input[name="${rootId}-mode"][value="server_only"]`);if(serverOnly)serverOnly.checked=true;}
       syncModePresentation();
     };
@@ -8452,7 +8446,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       q('[data-global-resume]').onclick=showPendingJob;
     }
     refreshScopeNote();
-    q('[data-sync]').onclick = async()=>{ try{const job=await scopedStartSynchronizationJob({scope:initial.scope});setMessage('현재 스코프 동기화를 시작했습니다.');renderJob(job);}catch(error){setMessage(`동기화 시작 실패\n${error?.userMessage||error?.message||error}`,'error');} };
     q('[data-restore]').onclick = async()=>{ try{const job=await scopedStartRestoreJob({scope:initial.scope});setMessage('현재 스코프 복구를 시작했습니다.');renderJob(job);}catch(error){setMessage(`복구 시작 실패\n${error?.userMessage||error?.message||error}`,'error');} };
         let armedUntil=0;
     const defaultDeleteLabel = globalModeEnabled ? '중복 pluginStorage 전체 삭제' : '현재 스코프 pluginStorage 삭제';
