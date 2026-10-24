@@ -871,8 +871,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       throw durableServerPinError('MEMORY_SUITE_JOB_PIN_PERSIST_FAILED');
     for (const role of durableJobPinRoles(job)) if (role.required) durableServerPinShape(job.serverPins?.[role.role],role.url);
   };
-  const assertDurableJobAdmission = async job => {
-    if (job.resumeExpired === true) throw durableServerPinError('MEMORY_SUITE_JOB_RESUME_EXPIRED');
+  const assertDurableJobIdentity = async job => {
     await assertStoredDurableJobMetadata(job);
     if(job.kind==='global_mode' && await globalDigest(job.globalPlan)!==job.globalPlanDigest)throw durableServerPinError('MEMORY_SUITE_JOB_PIN_PERSIST_FAILED');
     for (const role of durableJobPinRoles(job)) if (role.required) {
@@ -880,6 +879,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const actual=await captureDurableServerPin(role.url);
       if (jsonComparable(expected)!==jsonComparable(actual)) throw durableServerPinError('MEMORY_SUITE_JOB_SERVER_PIN_CHANGED');
     }
+  };
+  const assertDurableJobAdmission = async job => {
+    if (job.resumeExpired === true) throw durableServerPinError('MEMORY_SUITE_JOB_RESUME_EXPIRED');
+    await assertDurableJobIdentity(job);
   };
   const pauseSyncJobForServerPin = async error => {
     if (state.syncJob.retryTimer) {clearLifecycleTimeout(state.syncJob.retryTimer);state.syncJob.retryTimer=null;}
@@ -4876,8 +4879,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       try{
         // Recovery is an explicit retry: do not reuse a startup/offline failure.
         // Rebind to a fresh response and verify the admitted server before writes.
+        // Transfer admission can expire, but restoring the original routes must
+        // remain possible. Keep plan and physical DATA checks without renewing it.
         await bootstrap(true,true);
-        await assertDurableJobAdmission(job);
+        await assertDurableJobIdentity(job);
         await synchronizeScopeRegistryToServer(saved,{strict:true});
       }
       catch(error){throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_PENDING',{cause:String(error.code||error.message||error)});}

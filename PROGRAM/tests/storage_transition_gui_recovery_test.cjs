@@ -236,10 +236,10 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
   }
 }
 
-test('owner GUI resumes through one progress action and recovers legacy cancellation', {timeout:180000}, async () => {
+test('owner GUI resumes through one progress action and recovers legacy and expired cancellation', {timeout:240000}, async () => {
   const results = [];
   for (const [name] of Object.entries(owners)) {
-    for (const kind of kinds) for (const recoveryKind of ['migration', 'legacy_rollback', 'legacy_rollback_resume']) {
+    for (const kind of kinds) for (const recoveryKind of ['migration', 'legacy_rollback', 'legacy_rollback_resume', 'expired_rollback']) {
       const handler = createHandlerFixture();
       const pluginPath = artifactRoot
         ? path.join(artifactRoot, kind, META[name][0])
@@ -258,6 +258,12 @@ test('owner GUI resumes through one progress action and recovers legacy cancella
             ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
           job.globalPlanDigest = require('node:crypto').createHash('sha256').update(canonical).digest('hex');
           Object.assign(job, { cancelRequested:true, pauseRequested:true, failedPhase:'rollback_routes', error:'MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED' });
+          if (recoveryKind === 'expired_rollback') Object.assign(job, {
+            updatedAt:Date.now() - 12 * 60 * 60 * 1000,
+            resumeExpired:true,
+            error:'MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_PENDING',
+            errorDetails:{cause:'MEMORY_SUITE_JOB_RESUME_EXPIRED'}
+          });
           values.set(snapshot.jobKey, JSON.stringify(job));
           snapshot.entries = [...values.entries()];
         }
@@ -420,5 +426,5 @@ test('owner GUI resumes through one progress action and recovers legacy cancella
       }
     }
   }
-  assert.equal(results.length, Object.keys(owners).length * kinds.length * 3);
+  assert.equal(results.length, Object.keys(owners).length * kinds.length * 4);
 });
