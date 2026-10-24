@@ -284,33 +284,33 @@
     "artifact": "Librarian-System-0.4.1-Source.zip",
     "plugins": {
       "flashback": {
-        "version": "1.2.0",
-        "sha256": "e38e57bce72cd8dbfb30dec87dec80cb67cd9993d7c544039a56e7216bc8aaa6",
-        "bytes": 3544920
+        "version": "1.3.0",
+        "sha256": "3524d09aa6ceee55c825dd9c6eafd74f66be3e1b5f24abc0a6d95434b7f494ca",
+        "bytes": 3545129
       },
       "hayaku": {
-        "version": "3.2.0",
-        "sha256": "f77c60f6c359d5f0f11b71caf96f36af2cc5e4b701387c97656a4a65fcc075fb",
-        "bytes": 4191261
+        "version": "3.3.0",
+        "sha256": "079f9c1c0330f84867014ef78067075f85aaf1614195e0d58493926474b20e08",
+        "bytes": 4204773
       },
       "libra": {
-        "version": "2.5.0",
-        "sha256": "a48756cea6dc4b95293a7006927329ef831616de17f1ba7141429a387d7a0a0e",
-        "bytes": 6634055
+        "version": "2.6.0",
+        "sha256": "c1ed16c7c909595b79b6d1869bfeeea9cd781ed42166d121db969403fb1d39ab",
+        "bytes": 6635150
       },
       "lia": {
-        "version": "0.28.0",
-        "sha256": "98297cb6c2d08b9372a093e5b8b5658a3c83fdbd0251edd55a14e1f2d58cf667",
+        "version": "0.29.0",
+        "sha256": "54dc4954ee7a68eb14834af9f8cc6595a305001c7331de14af5724aae309f478",
         "bytes": 1672913
       },
       "retrace": {
-        "version": "1.11.0",
-        "sha256": "dfdc3467c81dff72e522e7b20f1890120b2cb064df10a78a53f81ab4536d9d37",
-        "bytes": 1264613
+        "version": "1.12.0",
+        "sha256": "41382a87cd1e3ef5267c6b100fea1424dfd5e4c2832fa24c2b75e9068220e916",
+        "bytes": 1267434
       },
       "gradia": {
-        "version": "0.27.0",
-        "sha256": "27c2d79bafdd4c1f95eab814529b070b953d251ae83d78f0b7f4a7f59097c6ef",
+        "version": "0.28.0",
+        "sha256": "3f80f1e828e516fe93805d835a72ffb1abebbf8a8600c7857d851c9b8672e369",
         "bytes": 3046043
       }
     },
