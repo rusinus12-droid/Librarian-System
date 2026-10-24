@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.1.13
-//@version 3.1.13
+//@display-name HAYAKU · Locator Continuity v3.1.14
+//@version 3.1.14
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.1.13';
+  const PLUGIN_VERSION = '3.1.14';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -7216,7 +7216,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   let globalJobRunning = false;
   const globalRollbackPending = job => job?.kind === 'global_mode' && job.rollbackComplete !== true
     && (job.cancelRequested === true || job.phase === 'rollback_routes' || job.failedPhase === 'rollback_routes' || String(job.error||'').startsWith('MEMORY_SUITE_GLOBAL_ROLLBACK_'));
-  const globalResumeLabel = job => globalRollbackPending(job)?'취소 복구 계속':'중단한 이전 재개';
+  const globalLocalCancellationNeeded = job => job?.kind==='global_mode'&&!syncJobTerminal(job.status)
+    && (job.localCancellationIntent || ['MEMORY_SUITE_JOB_SERVER_PIN_CHANGED','MEMORY_SUITE_DATA_INSTANCE_CHANGED'].includes(String(job.errorDetails?.cause||job.error||'')));
+  const globalResumeLabel = job => globalLocalCancellationNeeded(job)&&!job.localCancellationIntent?'기기 원본 확인 후 취소':globalRollbackPending(job)?'취소 복구 계속':'중단한 이전 재개';
   const globalRollbackView = job => {
     if(job?.kind!=='global_mode'||!globalRollbackPending(job)&&job.rollbackComplete!==true)return null;
     const progress=job.rollbackProgress||{},total=Math.max(0,Number(progress.totalScopes||Number(job.discoveredScopes||0)+1));
@@ -7290,6 +7292,54 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   // Copy and restore the exact audited adapters, including retained local vectors.
   const globalLegacyStore = space => globalMigrationContext?.stores?.[space] || state.legacy[space];
   const globalPayloadRecord = row => ['scope','shared'].includes(row.classification) && row.artifact !== true;
+  const inspectLocalCancellation = async job => {
+    if(!job?.globalPlan?.registry?.entries||!Array.isArray(job.globalPlan.scopes)||!Array.isArray(job.globalPlan.sources))throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_PLAN_INVALID');
+    await assertStoredDurableJobMetadata(job);
+    if(await globalDigest(job.globalPlan)!==job.globalPlanDigest)throw durableServerPinError('MEMORY_SUITE_JOB_PIN_PERSIST_FAILED');
+    const legacyMode=job.globalPlan.legacyMode??await getArgumentValue(modeArguments,MODE_PLUGIN_ONLY);
+    const original=job.globalPlan.registry;
+    if(normalizeMode(liveGlobalRow(original)?.mode||MODE_PLUGIN_ONLY)!==MODE_PLUGIN_ONLY
+      ||[...job.globalPlan.scopes.map(scope=>scope.scopeId),...Object.keys(original.entries).filter(id=>id!==GLOBAL_SCOPE_ID)]
+        .some(id=>registryScopeMode(original,id,legacyMode)!==MODE_PLUGIN_ONLY))throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_REMOTE_SOURCE_REQUIRED');
+    const stores={plugin:rawPluginStorage()},keysBySpace=new Map(),verified=[];
+    for(const source of job.globalPlan.sources){
+      const parts=String(source.identity||'').split('\u0000');
+      const [location,space,key]=parts;
+      if(parts.length!==3||!key||!['plugin','local'].includes(space)||location!==(space==='plugin'?'plugin':'device'))throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_REMOTE_SOURCE_REQUIRED');
+      const artifactOwnerKey=chunkOwnerKey(key),decoded=scopedRemoteKeyInfo(artifactOwnerKey||key);
+      if(!matchesRoute(space,artifactOwnerKey||key)&&!matchesRoute(space,decoded.logicalKey))throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_UNVERIFIED',{space,key});
+      if(!stores[space])stores[space]=await rawDeviceStorage({strict:true});
+      const store=stores[space];
+      if(!keysBySpace.has(space)){
+        const keys=await store?.keys?.();
+        if(!Array.isArray(keys)||keys.some(value=>typeof value!=='string')||new Set(keys).size!==keys.length)throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_UNVERIFIED',{space});
+        keysBySpace.set(space,new Set(keys));
+      }
+      if(!keysBySpace.get(space).has(key))throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_MISSING',{space,key});
+      let value;try{value=JSON.parse(globalExactJson(await store.getItem(key)));}catch(_){throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_UNVERIFIED',{space,key});}
+      if(await globalDigest([false,value])!==source.fingerprint)throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_CHANGED',{space,key});
+      verified.push([source.identity,source.fingerprint]);
+    }
+    const sourceFingerprint=await globalDigest([job.jobId,job.globalPlanDigest,verified]);
+    const resetPreferenceRaw=await stores.plugin.getItem(resetChoiceKey)??null;
+    return {sourceFingerprint,resetPreferenceRaw,localSourceRecords:verified.length,
+      fingerprint:await globalDigest([sourceFingerprint,resetPreferenceRaw])};
+  };
+  const assertLocalCancellationIntent = async job => {
+    const proof=await inspectLocalCancellation(job),intent=job.localCancellationIntent;
+    if(!intent||intent.sourceFingerprint!==proof.sourceFingerprint
+      ||globalCanonical(proof.resetPreferenceRaw)!==globalCanonical(intent.resetPreferenceRaw)&&proof.resetPreferenceRaw!==null)
+      throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_CHANGED');
+    return proof;
+  };
+  const previewLocalCancellation = async () => {
+    await loadPersistedSyncJob();const job=getSyncJob();
+    if(!globalLocalCancellationNeeded(job))throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_REVIEW_REQUIRED');
+    const proof=await inspectLocalCancellation(job);
+    return {schema:'memory-suite.local-cancellation-preview.v1',jobId:job.jobId,fingerprint:proof.fingerprint,
+      discoveredScopes:job.globalPlan.scopes.length,localSourceRecords:proof.localSourceRecords,
+      workflow:{kind:'local_cancel',targetMode:MODE_PLUGIN_ONLY,localSourceRecords:proof.localSourceRecords}};
+  };
   const globalScopeDescriptorOnly = row => {
     const scope=Object.fromEntries(['scopeId','scopeKey','characterId','chatId','canonicalCharacterId','canonicalChatId','canonicalScopeId','personaId','characterName','chatTitle','personaName','label','available'].map(key=>[key,row[key]]).filter(([,value])=>value !== undefined));
     scope.scopeKey=scope.scopeKey||scope.scopeId;
@@ -7470,6 +7520,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
   const globalWorkflowView = workflow => {
     const destination=workflow.targetMode===MODE_PLUGIN_ONLY?'기기':'서버';
+    if(workflow.kind==='local_cancel')return {title:'새 서버를 보존하고 이전 취소',approve:'기기 경로 복구로 취소',
+      detail:`이전 시작 때의 기기 원본 ${Number(workflow.localSourceRecords||0).toLocaleString()}개가 그대로 남아 있는지 확인했습니다. 원래 기기 저장 경로로 돌아가며, 복원된 현재 서버의 기억과 저장 경로는 변경하지 않습니다. 기존 서버 초기화 이후 선택은 해제합니다.`};
     if(workflow.kind==='rollback_complete')return {title:'이전 취소 · 저장 경로 복구 완료',approve:'복구 완료',detail:'이전 저장 위치로 복구했습니다. 서버 사본은 그대로 보존했습니다.'};
     if(workflow.kind==='rollback')return {title:'이전 취소 · 저장 경로 복구',approve:'저장 경로 복구 계속',
       detail:'원래 저장 위치로 복구하는 작업입니다. 서버 사본은 보존됩니다. 서버 이전은 경로 복구가 끝난 뒤 다시 적용할 수 있습니다.'};
@@ -7495,6 +7547,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(job?.kind==='global_mode'&&!syncJobTerminal(job.status)&&(errCode||hasResetBlocker)){
       const label=globalResumeLabel(job),next=`진행 화면의 [${label}]를 누르세요.`;
       const finish=blockerReason=>({blockerReason,actionRequired:next,remedySteps:['1. 상세 진단과 연결 상태에서 원인 확인',`2. ${next}`]});
+      if(errCode.startsWith('MEMORY_SUITE_LOCAL_CANCEL_'))return {
+        blockerReason:'기기 원본만으로 이전 취소를 완료할 수 있는지 확인하지 못했습니다.',
+        actionRequired:'상세 진단의 부족하거나 변경된 저장 키를 확인해 원래 기기 기억을 복구해야 합니다. 작업 기록과 현재 서버는 보존됩니다.',
+        remedySteps:['1. 상세 진단의 오류와 저장 키 확인','2. 원래 기기 기억 또는 원래 서버 DATA에서 부족한 원본 복구']};
+      if(globalLocalCancellationNeeded(job))return {
+        blockerReason:'서버 복원·초기화 또는 DATA 교체로 이전 작업의 서버 식별 정보가 달라졌습니다.',
+        actionRequired:`진행 화면의 [${label}]에서 기기 원본을 검증하고 취소 방법을 확인하세요. 현재 서버는 변경하지 않습니다.`,
+        remedySteps:[`1. 진행 화면의 [${label}] 선택`,'2. 기기 원본 검증 결과와 현재 서버 보존 안내 확인']};
       if(globalRollbackPending(job)||errCode.startsWith('MEMORY_SUITE_GLOBAL_ROLLBACK_'))return {
         blockerReason:'이전 취소 후 저장 경로 복구가 아직 완료되지 않았습니다.',
         actionRequired:`이전을 시작했던 서버가 실행 중인지 확인한 뒤 ${next} 기억 원본과 서버 사본은 보존됩니다.`,
@@ -7605,6 +7665,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       discoveredScopes:job.discoveredScopes,verifiedScopes:job.verifiedScopes,startedAt:job.startedAt,updatedAt:job.updatedAt,lastActivityAt:job.lastActivityAt,
       ...(rollback?{attemptStartedAt:job.attemptStartedAt||0,attemptFinishedAt:job.attemptFinishedAt||0,rollbackProgress:job.rollbackProgress||null,
         recoveryState:rollback.complete?'complete':rollback.active?'running':'action_required',waitingForUser:!rollback.active&&!rollback.complete}:{}),
+      ...(job.rollbackPublication?{rollbackPublication:job.rollbackPublication}:{}),
       error:job.error||'',details:job.errorDetails||null,
       ...(guidance ? {
         blockerReason: guidance.blockerReason,
@@ -7891,6 +7952,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(!job?.globalPlan?.registry?.entries||!Array.isArray(job.globalPlan.scopes))throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_PLAN_INVALID');
     await assertStoredDurableJobMetadata(job);
     if(await globalDigest(job.globalPlan)!==job.globalPlanDigest)throw durableServerPinError('MEMORY_SUITE_JOB_PIN_PERSIST_FAILED');
+    const localOnly=!!job.localCancellationIntent;
+    if(localOnly)await assertLocalCancellationIntent(job);
     const rollbackScopes=[...job.globalPlan.scopes,globalScopeDescriptor()];
     let progress={stage:'prepare_routes',checkedScopes:0,restoredScopes:0,verifiedScopes:0,totalScopes:rollbackScopes.length};
     await globalSaveJob({status:'running',phase:'rollback_routes',attemptStartedAt:Date.now(),attemptFinishedAt:0,
@@ -7928,11 +7991,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       await reportProgress({checkedScopes:progress.checkedScopes+1,restoredScopes:restored},scope.scopeId);
     }
     registry.legacyGlobalModeImported=registry.legacyGlobalModeImported||job.globalPlan.registry.legacyGlobalModeImported===true;
+    if(localOnly)await assertLocalCancellationIntent(job);
     progress={...progress,stage:'write_routes'};
     await globalSaveJob({rollbackProgress:progress,currentScopeId:'',currentAction:'기기의 저장 경로 복구',message:'취소 복구 실행 중 · 기기의 저장 경로를 복구하고 있습니다.'});
     const saved=await writeScopeRegistryLocal(registry);
     if(globalCanonical(parseScopeRegistry(saved).entries)!==globalCanonical(parseScopeRegistry(registry).entries))throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED');
-    if(job.globalPlan.remoteRequired){
+    if(job.globalPlan.remoteRequired&&!localOnly){
       try{
         progress={...progress,stage:'publish_routes'};
         await globalSaveJob({rollbackProgress:progress,currentAction:'원래 서버 연결 및 저장 경로 적용 확인',message:'취소 복구 실행 중 · 원래 서버의 응답과 저장 경로 적용을 확인하고 있습니다.'});
@@ -7947,6 +8011,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       catch(error){throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_PENDING',{cause:String(error.code||error.message||error)});}
       const remote=await remoteGet('plugin',SCOPE_ROUTING_SERVER_KEY,{allowPluginOnly:true});
       if(remote.exists!==true||globalCanonical(parseScopeRegistry(remote.value))!==globalCanonical(parseScopeRegistry(saved)))throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_READBACK_FAILED');
+    }
+    if(localOnly){
+      const proof=await assertLocalCancellationIntent(job);
+      if(proof.resetPreferenceRaw!==null&&!await legacyRemoveVerified(rawPluginStorage(),resetChoiceKey))throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_RESET_PREFERENCE_FAILED');
+      resetChoice=null;resetReloadRequired=false;
+      for(const scope of rollbackScopes)state.scopeRouting.transientModes.delete(scope.scopeId);
+      await globalSaveJob({rollbackPublication:{status:'skipped_changed_server',reason:'local_sources_verified',localSourceRecords:proof.localSourceRecords},
+        currentAction:'기기 원본 검증 완료 · 현재 서버 보존',message:'기기 원본을 검증했습니다. 복원된 현재 서버는 변경하지 않고 이전을 취소하고 있습니다.'});
     }
     progress={...progress,stage:'verify_routes'};
     await globalSaveJob({rollbackProgress:progress,currentAction:'복구한 저장 경로 검증',message:'취소 복구 실행 중 · 복구한 저장 경로를 검증하고 있습니다.'});
@@ -7967,6 +8039,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       });
       await reportProgress({verifiedScopes:progress.verifiedScopes+1},scope.scopeId);
     }
+    if(localOnly)await assertLocalCancellationIntent(state.syncJob.current);
 
     return await globalSaveJob({status:'cancelled',phase:'cancelled_rolled_back',rollbackComplete:true,finishedAt:Date.now(),attemptFinishedAt:Date.now(),rollbackProgress:{...progress,stage:'complete'},currentScopeId:'',currentKey:'',currentAction:'이전 저장 경로 복구 완료',error:'',errorDetails:null,failedPhase:'',failures:0,recoveryRequired:false,message:'취소했습니다. 변경된 저장 경로를 이전 설정으로 복구했고 원본 데이터는 보존했습니다.'});
   };
@@ -9991,6 +10064,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const job = getSyncJob();
     if (!job || syncJobTerminal(job.status) || state.syncJob.promise) return job;
     if(job.kind==='global_mode'){
+      if(globalLocalCancellationNeeded(job)&&!job.localCancellationIntent)return job;
       if(globalRollbackPending(job))return await scopedCancelSyncJobImpl();
       // A changed inventory needs explicit in-panel review before a new plan.
       if(['MEMORY_SUITE_GLOBAL_SOURCE_CHANGED','MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED'].includes(job.error))return job;
@@ -10005,7 +10079,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
   const scopedCancelSyncJob = (...args) => state.syncJob.current?.kind==='global_mode'&&globalJobRunning
     ?scopedCancelSyncJobImpl(...args):withOwnerOperation({kind:'job_admission',operation:'scopedCancelSyncJob'}, () => scopedCancelSyncJobImpl(...args));
-  const scopedCancelSyncJobImpl = async () => {
+  const scopedCancelSyncJobImpl = async (cancelOptions={}) => {
     if(state.syncJob.current?.kind==='global_mode'&&globalJobRunning){state.syncJob.current.cancelRequested=true;state.syncJob.current.pauseRequested=true;notifySyncJob();return getSyncJob();}
     if (state.syncJob.retryTimer) {
       clearLifecycleTimeout(state.syncJob.retryTimer);
@@ -10035,7 +10109,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       await globalSaveJob({message:'취소 요청 · 안전한 지점에서 변경된 저장 경로를 복구합니다.'});
       if(globalJobRunning||modeConfigurationBusy)return getSyncJob();
       return await withModeConfiguration(async()=>{
-        try{return await rollbackGlobalModeRoutes(state.syncJob.current);}
+        try{
+          if(cancelOptions.localOnly===true&&!state.syncJob.current.localCancellationIntent){
+            if(!globalLocalCancellationNeeded(state.syncJob.current)||!cancelOptions.previewFingerprint)throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_REVIEW_REQUIRED');
+            const proof=await inspectLocalCancellation(state.syncJob.current);
+            if(proof.fingerprint!==cancelOptions.previewFingerprint)throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_CHANGED');
+            const store=rawPluginStorage(),backupKey=SYNC_JOB_STORAGE_KEY+':local-cancel:'+job.jobId;
+            const existing=await store.getItem(backupKey);
+            if(existing==null){
+              if(!await legacyWriteVerified(store,backupKey,JSON.stringify({schema:'memory-suite.local-cancellation-backup.v1',job:getSyncJob(),resetPreferenceRaw:proof.resetPreferenceRaw})))throw globalModeError('MEMORY_SUITE_GLOBAL_JOURNAL_UNAVAILABLE');
+            }else{
+              let backup;try{backup=typeof existing==='string'?JSON.parse(existing):existing;}catch(_){}
+              if(backup?.schema!=='memory-suite.local-cancellation-backup.v1'||backup.job?.jobId!==job.jobId||backup.job?.globalPlanDigest!==job.globalPlanDigest)throw globalModeError('MEMORY_SUITE_GLOBAL_JOURNAL_UNAVAILABLE');
+            }
+            await globalSaveJob({localCancellationIntent:{sourceFingerprint:proof.sourceFingerprint,resetPreferenceRaw:proof.resetPreferenceRaw,approvedAt:Date.now()}});
+          }
+          return await rollbackGlobalModeRoutes(state.syncJob.current);
+        }
         catch(error){
           const guidance=syncJobActionGuidance(error.code||error.message||error,error.details,state.syncJob.current);
           await globalSaveJob({
@@ -10048,7 +10138,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             actionRequired:guidance?.actionRequired||null,
             blockerReason:guidance?.blockerReason||null,
             remedySteps:guidance?.remedySteps||null,
-            message:'취소 복구 중단 · 조치 필요. 복구 정보를 보존했습니다. 원인을 확인한 뒤 [취소 복구 계속]를 누르세요.'
+            message:'취소 복구 중단 · 조치 필요. 복구 정보를 보존했습니다. 원인을 확인한 뒤 진행 화면의 복구 버튼을 사용하세요.'
           });
           throw error;
         }
@@ -10816,9 +10906,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         question = '저장 모드를 전환합니다. 계속하시겠습니까?';
       }
       const workflow=preview?.workflow?globalWorkflowView(preview.workflow):null;
-      if(preview?.workflow?.kind==='rollback')question='기억 원본과 서버 사본을 보존한 채 저장 경로 복구를 계속하시겠습니까?';
+      if(preview?.workflow?.kind==='local_cancel')question='예전 이전 작업을 취소하고 원래 기기 저장 경로로 돌아가시겠습니까? 현재 서버에 자료를 전송하거나 서버 자료를 바꾸지 않습니다.';
+      else if(preview?.workflow?.kind==='rollback')question='기억 원본과 서버 사본을 보존한 채 저장 경로 복구를 계속하시겠습니까?';
       else if(workflow&&preview.workflow.kind!=='initial')question=`검증이 모두 끝나면 ${modeLabel(toMode)} 설정이 적용됩니다. 계속하시겠습니까?`;
-      if(preview)question=[workflow?.detail,`이 플러그인의 전체 ${preview.discoveredScopes}개 대화와 과거 개별 경로 ${preview.legacyOverrides}개를 확인했습니다.\n대상: ${modeLabel(toMode)} · ${q('[data-url]').value}`,globalWarningText(preview),question].filter(Boolean).join('\n\n');
+      if(preview)question=[workflow?.detail,preview.workflow?.kind==='local_cancel'?`기기 원본 ${preview.localSourceRecords}개 · 대화 ${preview.discoveredScopes}개\n적용할 저장 위치: 플러그인 단독`:`이 플러그인의 전체 ${preview.discoveredScopes}개 대화와 과거 개별 경로 ${preview.legacyOverrides}개를 확인했습니다.\n대상: ${modeLabel(toMode)} · ${q('[data-url]').value}`,globalWarningText(preview),question].filter(Boolean).join('\n\n');
       // Host confirm may be asynchronous or blocked by a sandboxed/Tauri iframe.
       // Consent stays inside the mounted panel and never defaults to approval.
       const panel=q('[data-mode-confirm]'),approve=q('[data-mode-confirm-approve]'),cancel=q('[data-mode-confirm-cancel]'),apply=q('[data-apply]');
@@ -10826,7 +10917,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       q('[data-mode-confirm-title]').textContent=workflow?.title||'저장 위치 전환 확인';
       panel.setAttribute('aria-label',workflow?.title||'저장 위치 전환 확인');
       approve.textContent=workflow?.approve||'동의하고 이전';
-      cancel.textContent=(['resume','rollback'].includes(preview?.workflow?.kind)||preview?.workflow?.newCheckRequired)?'닫기 · 미완료 작업 유지':'취소 · 원본 유지';
+      cancel.textContent=(['resume','rollback','local_cancel'].includes(preview?.workflow?.kind)||preview?.workflow?.newCheckRequired)?'닫기 · 미완료 작업 유지':'취소 · 원본 유지';
       q('[data-mode-confirm-text]').textContent=question;
       panel.hidden=false;panel.style.display='grid';apply.disabled=true;cancel.focus();
       return await new Promise(resolve=>{
@@ -10856,7 +10947,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           if(normalizeServerUrl(q('[data-url]').value)!==job.targetUrl)throw globalModeError('MEMORY_SUITE_JOB_SERVER_PIN_CHANGED');
           setMessage(`[${label}] · 기록된 작업과 서버를 확인하고 있습니다…`);
           let result;
-          if(globalRollbackPending(job))result=await scopedCancelSyncJob();
+          if(globalLocalCancellationNeeded(job)&&!job.localCancellationIntent){
+            setMessage('기기에 남은 이전 원본을 검증하고 있습니다. 현재 서버는 변경하지 않습니다.');
+            const preview=await previewLocalCancellation();
+            if(!await confirmModeTransition(MODE_PLUGIN_ONLY,MODE_PLUGIN_ONLY,preview)){setMessage('확인창을 닫았습니다. 미완료 작업과 현재 서버는 유지됩니다.');return getSyncJob();}
+            if(!root.isConnected||getSyncJob()?.jobId!==job.jobId||syncJobTerminal(getSyncJob()?.status)||normalizeServerUrl(q('[data-url]').value)!==job.targetUrl)throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_CHANGED');
+            result=await scopedCancelSyncJob({localOnly:true,previewFingerprint:preview.fingerprint});
+          }
+          else if(globalRollbackPending(job))result=await scopedCancelSyncJob();
           else{
             // Every explicit resume gets a fresh connection, including after an
             // offline startup. The admitted server pin still guards all writes.
@@ -10890,6 +10988,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           setMessage(result?.rollbackComplete?'취소 복구 완료 · 이전 저장 경로로 돌아왔습니다. 서버 사본은 보존했습니다.':result?.completeKnownScopes?'중단된 이전을 재개하여 전체 검증을 완료했습니다.':`미완료 작업을 보존했습니다. 진행 화면의 [${globalResumeLabel(getSyncJob())}]에서 계속할 수 있습니다.`,result?.rollbackComplete||result?.completeKnownScopes?'good':'');
           return result;
         }catch(error){
+          if(String(error.code||'').startsWith('MEMORY_SUITE_LOCAL_CANCEL_')&&getSyncJob()?.kind==='global_mode'&&!syncJobTerminal(getSyncJob().status)){
+            await globalSaveJob({error:error.code,errorDetails:{...error.details,cause:'MEMORY_SUITE_JOB_SERVER_PIN_CHANGED'},status:'paused',phase:'recovery_pending'});
+            renderJob(getSyncJob());
+          }
           const job=getSyncJob(),guidance=syncJobActionGuidance(error.code||error.message,error.details,job);
           setMessage(guidance?`${guidance.blockerReason}\n${guidance.actionRequired}`:`재개 보류 · ${error.code||error.message}`,'error');
           return job;
@@ -12107,6 +12209,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // Other consumers preserve their legacy behavior. `getGlobalMode` reports the saved choice
     // (`set:false` means no governance, which is the pre-global behaviour).
     previewGlobalMode,
+    previewLocalCancellation,
     pauseGlobalModeJob,
     getGlobalMode: async (force = true) => await readGlobalMode(force),
     setGlobalMode: async (mode, modeOptions = {}) => { requireOperationalMode(mode); return await withModeConfiguration(()=>persistGlobalMode(mode, modeOptions && typeof modeOptions === 'object' ? modeOptions : {})); },

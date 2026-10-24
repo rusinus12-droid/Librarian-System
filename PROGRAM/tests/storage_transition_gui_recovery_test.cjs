@@ -239,12 +239,12 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
 test('owner GUI resumes through one progress action and recovers legacy and expired cancellation', {timeout:240000}, async () => {
   const results = [];
   for (const [name] of Object.entries(owners)) {
-    for (const kind of kinds) for (const recoveryKind of ['migration', 'legacy_rollback', 'legacy_rollback_resume', 'expired_rollback']) {
+    for (const kind of kinds) for (const recoveryKind of ['migration', 'legacy_rollback', 'legacy_rollback_resume', 'expired_rollback', 'restored_server']) {
       const handler = createHandlerFixture();
       const pluginPath = artifactRoot
         ? path.join(artifactRoot, kind, META[name][0])
         : path.resolve(__dirname, '../plugins', META[name][0]);
-      let s;
+      let s,restoredHandler,restoredRows;
       try {
         const snapshot = await createPausedGlobalTransitionSnapshot(name, kind, pluginPath, handler);
         if (recoveryKind !== 'migration') {
@@ -264,6 +264,12 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
             error:'MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_PENDING',
             errorDetails:{cause:'MEMORY_SUITE_JOB_RESUME_EXPIRED'}
           });
+          if(recoveryKind==='restored_server'){
+            Object.assign(job,{error:'MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_PENDING',errorDetails:{cause:'MEMORY_SUITE_JOB_SERVER_PIN_CHANGED'}});
+            restoredHandler=createHandlerFixture();
+            restoredHandler.app.repositories[owners[name]].mutate({kind:'set',space:'plugin',key:'restored.sentinel',value:'PRESERVE_RESTORED_SERVER',operationId:'seed_restored'});
+            restoredRows=restoredHandler.app.repositories[owners[name]].database.prepare('SELECT * FROM kv ORDER BY space,key').all();
+          }
           values.set(snapshot.jobKey, JSON.stringify(job));
           snapshot.entries = [...values.entries()];
         }
@@ -272,7 +278,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
           if (!allowServer) {
             throw new Error('simulated_server_offline_on_reload');
           }
-          return await handler.nativeFetch(...args);
+          return await (restoredHandler||handler).nativeFetch(...args);
         };
 
         s = await create(name, kind, {
@@ -351,7 +357,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
         allowServer = true;
         const resumeBtn = s.doc.querySelector('button[data-job-retry]');
         assert.ok(resumeBtn && typeof resumeBtn.onclick === 'function', `${name} (${kind}): global resume button must be interactive`);
-        assert.equal(resumeBtn.textContent, recoveryKind === 'migration' ? '중단한 이전 재개' : '취소 복구 계속');
+        assert.equal(resumeBtn.textContent, recoveryKind==='restored_server'?'기기 원본 확인 후 취소':recoveryKind === 'migration' ? '중단한 이전 재개' : '취소 복구 계속');
         const jump = s.doc.querySelector('[data-global-resume]');
         assert.equal(jump.textContent, '진행 화면으로 이동');
         if (recoveryKind === 'legacy_rollback_resume') {
@@ -363,8 +369,13 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
         await until(()=>resumed||typeof s.doc.querySelector('[data-mode-confirm-approve]')?.onclick==='function', `${name}: resume or recheck consent`, 12000);
         const approval=s.doc.querySelector('[data-mode-confirm-approve]');
         if(typeof approval?.onclick==='function'){
-          assert.equal(recoveryKind,'migration','continuing cancellation must not ask to restart server migration');
-          assert.match(s.doc.querySelector('[data-mode-confirm-text]').textContent,/새 검사|자료가 변경/);
+          if(recoveryKind==='restored_server'){
+            assert.equal(approval.textContent,'기기 경로 복구로 취소');
+            assert.match(s.doc.querySelector('[data-mode-confirm-text]').textContent,/현재 서버.*변경하지|현재 서버에 자료를 전송/);
+          }else{
+            assert.equal(recoveryKind,'migration','continuing cancellation must not ask to restart server migration');
+            assert.match(s.doc.querySelector('[data-mode-confirm-text]').textContent,/새 검사|자료가 변경/);
+          }
           approval.click();
         }
         await resuming;
@@ -399,6 +410,11 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
           const diagnostics=JSON.parse(s.doc.querySelector('[data-job-diagnostics]').value);
           assert.equal(diagnostics.recoveryState,'complete');
           assert.equal(diagnostics.rollbackProgress.verifiedScopes,diagnostics.rollbackProgress.totalScopes);
+          if(restoredHandler){
+            assert.equal(diagnostics.rollbackPublication.status,'skipped_changed_server');
+            assert.deepEqual(restoredHandler.app.repositories[owners[name]].database.prepare('SELECT * FROM kv ORDER BY space,key').all(),restoredRows);
+            assert(!restoredHandler.trace.some(row=>row.method!=='GET'),'restored server receives no mutating request');
+          }
         }
 
         if (name === 'Flashback') {
@@ -430,8 +446,9 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
       } finally {
         try { await s?.close?.(); } catch (_) {}
         try { await handler.close(); } catch (_) {}
+        try { await restoredHandler?.close(); } catch (_) {}
       }
     }
   }
-  assert.equal(results.length, Object.keys(owners).length * kinds.length * 4);
+  assert.equal(results.length, Object.keys(owners).length * kinds.length * 5);
 });
