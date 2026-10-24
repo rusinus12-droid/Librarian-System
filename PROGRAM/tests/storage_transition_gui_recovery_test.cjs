@@ -4,6 +4,7 @@
 // real GUI directly on the server/storage recovery panel, and transitioning back to the normal view
 // once the storage transition completes.
 const assert = require('node:assert/strict');
+const test = require('node:test');
 const path = require('node:path');
 const { create, pause, until, META } = require('./fixtures/libra_gui_memory_dom_host.cjs');
 const { createHandlerFixture } = require('./fixtures/shared_reanalysis_handler_fixture.cjs');
@@ -235,7 +236,7 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
   }
 }
 
-(async () => {
+test('owner GUI resumes through one progress action and recovers legacy cancellation', {timeout:180000}, async () => {
   const results = [];
   for (const [name] of Object.entries(owners)) {
     for (const kind of kinds) for (const recoveryKind of ['migration', 'legacy_rollback', 'legacy_rollback_resume']) {
@@ -303,6 +304,7 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
           assert.ok(notice && notice.hidden === false, 'Flashback displays storage transition notice');
           const retryBtn = s.doc.querySelector('#flashbackRetryStorageInitBtn');
           assert.ok(retryBtn, 'Flashback renders manual retry button');
+          assert.equal(retryBtn.textContent, '진행 화면으로 이동');
           retryBtn.click();
           await pause(120);
           assert.ok(
@@ -319,6 +321,7 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
           assert.ok(settingsPage?.classList.contains('is-active'), 'LIBRA opens directly on settings page during transition');
           const retryBtn = s.doc.querySelector('[data-libra-storage-retry]');
           assert.ok(retryBtn, 'LIBRA renders manual storage retry button');
+          assert.equal(retryBtn.textContent, '진행 화면으로 이동');
           retryBtn.click();
           await pause(120);
           assert.ok(
@@ -340,10 +343,25 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
 
         // 4. Re-enable server and resume the global transition from the mounted recovery panel, then verify normal screen recovery.
         allowServer = true;
-        const resumeBtn = s.doc.querySelector(recoveryKind === 'legacy_rollback' ? '[data-global-cancel]' : '[data-global-resume]');
+        const resumeBtn = s.doc.querySelector('button[data-job-retry]');
         assert.ok(resumeBtn && typeof resumeBtn.onclick === 'function', `${name} (${kind}): global resume button must be interactive`);
-        if (recoveryKind === 'legacy_rollback') assert.equal(resumeBtn.textContent, '이전 작업 취소 · 기존 경로 복구');
-        await resumeBtn.onclick();
+        assert.equal(resumeBtn.textContent, recoveryKind === 'migration' ? '중단한 이전 재개' : '취소 복구 계속');
+        const jump = s.doc.querySelector('[data-global-resume]');
+        assert.equal(jump.textContent, '진행 화면으로 이동');
+        if (recoveryKind === 'legacy_rollback_resume') {
+          await jump.onclick();
+          assert.equal(s.doc.activeElement, resumeBtn, 'the advanced route focuses the single primary action');
+        }
+        let resumed=false;
+        const resuming=Promise.resolve(resumeBtn.onclick()).finally(()=>{resumed=true;});
+        await until(()=>resumed||typeof s.doc.querySelector('[data-mode-confirm-approve]')?.onclick==='function', `${name}: resume or recheck consent`, 12000);
+        const approval=s.doc.querySelector('[data-mode-confirm-approve]');
+        if(typeof approval?.onclick==='function'){
+          assert.equal(recoveryKind,'migration','continuing cancellation must not ask to restart server migration');
+          assert.match(s.doc.querySelector('[data-mode-confirm-text]').textContent,/새 검사|자료가 변경/);
+          approval.click();
+        }
+        await resuming;
         await until(
           () => {
             const rawJob = s.values.get(snapshot.jobKey);
@@ -403,7 +421,4 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
     }
   }
   assert.equal(results.length, Object.keys(owners).length * kinds.length * 3);
-})().catch(error => {
-  console.error(error);
-  process.exitCode = 1;
 });

@@ -151,7 +151,7 @@ test('removed server routes use the same local source in discovery and ordinary 
  }finally{stop?.();await f.close();}
 });
 test('legacy rollback retry verifies saved settings with obsolete or missing sourceMode',async v=>{
- for(const legacyForm of ['removed_route','missing_source_mode'])for(const action of ['cancelSyncJob','resumePendingSyncJob','setGlobalMode']){
+ for(const legacyForm of ['removed_route','missing_source_mode','missing_rollback_flags'])for(const action of ['cancelSyncJob','resumePendingSyncJob','setGlobalMode']){
   const f=await fixture(v);let stop,fresh;
   try{
    const registry=JSON.parse(f.values.get(f.registryKey));delete registry.entries.__memory_suite_global__;
@@ -167,6 +167,7 @@ test('legacy rollback retry verifies saved settings with obsolete or missing sou
    const canonical=JSON.stringify(job.globalPlan,(_k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.fromEntries(Object.keys(x).sort().map(k=>[k,x[k]])):x);
    job.globalPlanDigest=require('node:crypto').createHash('sha256').update(canonical).digest('hex');
    Object.assign(job,{status:'paused',phase:'recovery_pending',failedPhase:'rollback_routes',cancelRequested:true,pauseRequested:true,error:'MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED',errorDetails:{scopeId:'C'}});
+   if(legacyForm==='missing_rollback_flags'){delete job.cancelRequested;delete job.failedPhase;}
    f.values.set(journalKey(v[0]),JSON.stringify(job));
    fresh=await fixture(v,{app:f.app,values:f.values,current:'B'});
    const result=action==='setGlobalMode'?await fresh.bridge.setGlobalMode('server_only'):await fresh.bridge[action]();

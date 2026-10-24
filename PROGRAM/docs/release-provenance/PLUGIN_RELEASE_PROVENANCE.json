@@ -284,19 +284,19 @@
     "artifact": "Librarian-System-0.4.1-Source.zip",
     "plugins": {
       "flashback": {
-        "version": "1.1.13",
-        "sha256": "3cb8cd0db9deaeb0d4dffa60245bf8ecdb78d5dc663250bc600a029e67d470a2",
-        "bytes": 3438609
+        "version": "1.1.14",
+        "sha256": "54d290da7aded8d5012df5cb117e3b239f8c32c7e4e89db31f1a495391606f74",
+        "bytes": 3447858
       },
       "hayaku": {
-        "version": "3.1.10",
-        "sha256": "4d124ba20ca8fec1dcaf6565dfd12d3b3d286472369ea06a641b46d4da8d88e3",
-        "bytes": 4074041
+        "version": "3.1.11",
+        "sha256": "475e8d55af194a71f79b654f813790a12d49d84842d0752e3152be5ab240e68b",
+        "bytes": 4083299
       },
       "libra": {
-        "version": "2.4.14",
-        "sha256": "3be7887a54e28d684099d68f084867b77e146e7456f094ed50041e77627b331b",
-        "bytes": 6484997
+        "version": "2.4.15",
+        "sha256": "0bc5ad1031e3b4b90306a908a2d8ea0c75ea76a0cdcd8f082b49baf0f1abee6a",
+        "bytes": 6494191
       },
       "lia": {
         "version": "0.27.3",
