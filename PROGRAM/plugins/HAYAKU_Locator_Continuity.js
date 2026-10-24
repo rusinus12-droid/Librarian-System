@@ -56676,6 +56676,180 @@ function mountMemorySuiteSourceInputControls(container, config) {
     };
   };
   // Render only changing text on the existing header indicator; never block chat.
+  const openHayakuStatusLog = () => {
+    const root = Memory.ledgerViewer.root;
+    if (!root) return;
+    const doc = root.ownerDocument || document;
+    let overlay = root.querySelector?.('#hayakuStatusLogOverlay');
+    if (!overlay) {
+      overlay = doc.createElement('div');
+      overlay.className = 'overlay';
+      overlay.id = 'hayakuStatusLogOverlay';
+      overlay.setAttribute('aria-hidden', 'true');
+      overlay.hidden = true;
+      overlay.innerHTML = `<div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="hayakuStatusLogTitle" style="max-height:88vh;display:flex;flex-direction:column;gap:14px;padding:22px 26px">
+        <div class="split" style="flex-wrap:wrap;align-items:flex-start;margin-bottom:2px">
+          <div>
+            <div class="eyebrow" style="color:var(--accent,#3b82f6)">System Diagnostics</div>
+            <h2 id="hayakuStatusLogTitle" style="margin:2px 0 0;font:800 20px/1.3 var(--font-display)">HAYAKU 상태 및 진단 로그</h2>
+          </div>
+          <div class="cluster" style="gap:8px">
+            <button class="btn btn--sm" type="button" data-status-log-copy><span>로그 복사</span></button>
+            <button class="btn btn--sm btn--icon" type="button" data-status-log-close aria-label="닫기">✕</button>
+          </div>
+        </div>
+        <div class="banner banner--ok" data-status-log-banner style="margin:0">
+          <div>
+            <strong data-status-log-summary></strong>
+            <p class="muted" style="margin:2px 0 0;font-size:12px" data-status-log-subsummary></p>
+          </div>
+        </div>
+        <div data-status-log-list style="flex:1;min-height:0;max-height:52vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px"></div>
+        <div class="dialog__actions" style="margin-top:6px">
+          <button class="btn btn--primary" type="button" data-status-log-close>확인 및 닫기</button>
+        </div>
+      </div>`;
+      root.appendChild(overlay);
+      const closeOverlay = () => {
+        overlay.classList.remove('is-open');
+        overlay.hidden = true;
+        overlay.setAttribute('aria-hidden', 'true');
+      };
+      overlay.querySelectorAll('[data-status-log-close]').forEach(btn => { btn.onclick = closeOverlay; });
+      overlay.addEventListener('click', e => { if (e.target === overlay) closeOverlay(); });
+      overlay.addEventListener('keydown', e => { if (e.key === 'Escape') closeOverlay(); });
+      const copyBtn = overlay.querySelector('[data-status-log-copy]');
+      if (copyBtn) {
+        copyBtn.onclick = async () => {
+          const text = overlay.dataset.fullLogText || '';
+          try {
+            await navigator.clipboard.writeText(text);
+            const orig = copyBtn.innerHTML;
+            copyBtn.innerHTML = '<span>복사 완료!</span>';
+            setTimeout(() => { copyBtn.innerHTML = orig; }, 1800);
+          } catch (_) {
+            prompt('상태 로그 전체:', text);
+          }
+        };
+      }
+    }
+
+    const scope = Memory.ledgerViewer.scope;
+    const ledger = Memory.ledgerViewer.ledger;
+    const isContextMissing = !scope?.confident;
+    const records = ensureArray(ledger?.records);
+    const activeRecords = records.filter(r => ['active', 'historical'].includes(r?.recordState)).length;
+    const health = Memory.ledgerViewer.workHealth || { label: '정상 작동', error: false, warning: false };
+    const coverage = Memory.ledgerViewer.recoveryCoverage || Memory.ledgerViewer.continuitySnapshot?.coverage;
+    const completedTurns = Math.max(0, Number(coverage?.completedTurns || 0) || 0);
+    const coveredTurns = ensureArray(coverage?.coveredTurns).length;
+    const missingTurns = ensureArray(coverage?.missingTurns).length;
+    const debtCount = Number(coverage?.activeDebtCount || 0);
+    const probe = nativeAuxiliaryProbeSnapshot();
+
+    const banner = overlay.querySelector('[data-status-log-banner]');
+    const summary = overlay.querySelector('[data-status-log-summary]');
+    const subsummary = overlay.querySelector('[data-status-log-subsummary]');
+    if (banner && summary && subsummary) {
+      if (health.error) {
+        banner.className = 'banner banner--danger';
+        summary.textContent = '상태 확인 필요 · 원장 및 연속성 점검 필요';
+        subsummary.textContent = '저장소 또는 호스트 호출에 오류가 감지되었습니다. 아래 세부 진단 항목을 확인하세요.';
+      } else if (health.warning) {
+        banner.className = 'banner banner--warn';
+        summary.textContent = '복구 검토 필요 · 누락 턴 또는 복구 저널 감지';
+        subsummary.textContent = `누락된 기억 턴 ${missingTurns}개 또는 복구 대기 저널 ${debtCount}건이 있습니다.`;
+      } else if (isContextMissing) {
+        banner.className = 'banner banner--info';
+        summary.textContent = '정상 작동 · 캐릭터 대화방 선택 대기 중';
+        subsummary.textContent = '현재 열려 있는 대화방이 없습니다. 대화방에 들어가면 패킷 원장과 연속성 분석이 실시간으로 활성화됩니다.';
+      } else {
+        banner.className = 'banner banner--ok';
+        summary.textContent = '정상 작동 · 모든 연속성 제어 및 원장 정상';
+        subsummary.textContent = '현재 활성 채팅의 패킷 원장과 세계선이 안정적으로 연결되어 있습니다.';
+      }
+    }
+
+    const entries = [];
+    if (isContextMissing) {
+      entries.push({
+        owner: '스코프',
+        badge: 'badge--info',
+        badgeText: '대기 중',
+        title: '현재 열려 있는 캐릭터 대화방 없음',
+        detail: `상태: 유휴 (Idle)\n사유: ${compact(scope?.reason || 'current_chat_indexes_invalid', 120)}\n안내: RisuAI에서 캐릭터 대화방을 선택하면 실시간 연속성 관제가 시작됩니다.`
+      });
+    } else {
+      entries.push({
+        owner: '스코프',
+        badge: 'badge--ok',
+        badgeText: '확인됨',
+        title: `현재 채팅: ${scope.characterName || scope.characterId || '캐릭터'} · ${scope.chatTitle || scope.chatId || '채팅'}`,
+        detail: `스코프 키: ${scope.key}\n완료 U+A 턴: ${completedTurns}턴 · 커버된 턴: ${coveredTurns}턴`
+      });
+    }
+
+    entries.push({
+      owner: '원장',
+      badge: ledger?.enabled ? 'badge--ok' : 'badge--info',
+      badgeText: ledger?.enabled ? '활성화' : '대기',
+      title: `패킷 저장소 (${Memory.settings?.storageMode || 'plugin_only'})`,
+      detail: `보관된 패킷: 총 ${records.length}개 (활성 ${activeRecords}개, 비활성 ${records.length - activeRecords}개)\n세계선 노드: ${ensureArray(ledger?.worldline?.nodes).length}개 · 슬롯 헤드: ${ensureArray(ledger?.slotHeads).length}개`
+    });
+
+    entries.push({
+      owner: '연속성',
+      badge: missingTurns > 0 || debtCount > 0 ? 'badge--warn' : 'badge--ok',
+      badgeText: missingTurns > 0 || debtCount > 0 ? '확인 필요' : '정상',
+      title: '연속성 및 복구 상태',
+      detail: `누락 턴: ${missingTurns}개 · 대기 중인 복구 저널(Debt): ${debtCount}건\n자동 복구(afterRequest): ${Memory.settings?.afterRequestAutoRepair !== false ? '켜짐' : '꺼짐'}`
+    });
+
+    entries.push({
+      owner: 'Other Ax',
+      badge: probe.available ? 'badge--ok' : 'badge--info',
+      badgeText: probe.available ? '연결 가능' : '미검증',
+      title: 'Other Ax (runLLMModel) 보조 도구',
+      detail: `상태: ${probe.inFlight ? '테스트 실행 중' : probe.available ? '호출 가능' : '호출 미검증 (보조 복구용)'}\n안내: Provider와 키는 RisuAI 소유이며, 비용 동의 후 테스트를 통해 복구에 활용됩니다.`
+    });
+
+    const recentLogs = ensureArray(Memory.activityLog).slice(-10).reverse();
+    const errorLogs = recentLogs.filter(log => log?.level === 'error' || log?.level === 'warn');
+    if (errorLogs.length) {
+      for (const log of errorLogs.slice(0, 3)) {
+        entries.push({
+          owner: '오류/경고',
+          badge: log.level === 'error' ? 'badge--danger' : 'badge--warn',
+          badgeText: log.level === 'error' ? '오류' : '경고',
+          title: `${log.event} (${viewerFormatDate(log.at)})`,
+          detail: typeof log.detail === 'object' ? JSON.stringify(log.detail, null, 2) : String(log.detail || '')
+        });
+      }
+    }
+
+    const listNode = overlay.querySelector('[data-status-log-list]');
+    if (listNode) {
+      listNode.innerHTML = entries.map(row => {
+        return `<div class="card card--tight" style="border-left:3px solid var(--accent,#3b82f6);background:var(--surface)">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span class="badge ${row.badge}">${viewerEscapeHtml(row.badgeText)}</span>
+              <strong style="font-size:13px">${viewerEscapeHtml(row.title)}</strong>
+            </div>
+            <small class="muted" style="font-size:11px">${viewerEscapeHtml(row.owner)}</small>
+          </div>
+          ${row.detail ? `<div style="background:var(--surface2,rgba(0,0,0,0.03));border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.5;color:var(--text);word-break:break-all;white-space:pre-wrap">${viewerEscapeHtml(row.detail)}</div>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    overlay.dataset.fullLogText = `[HAYAKU 상태 및 진단 로그]\n생성 시각: ${new Date().toLocaleString()}\n진단 상태: ${health.label}\n\n` + entries.map(row => `[${row.owner} / ${row.badgeText}] ${row.title}\n${row.detail}`).join('\n\n');
+    overlay.hidden = false;
+    overlay.setAttribute('aria-hidden', 'false');
+    overlay.classList.add('is-open');
+    overlay.querySelector('[data-status-log-close]')?.focus();
+  };
+
   const viewerRenderHeaderHealth = () => {
     const root=Memory.ledgerViewer.root;
     const host=root?.querySelector?.('#hayakuViewerHealth');
@@ -56691,13 +56865,27 @@ function mountMemorySuiteSourceInputControls(container, config) {
     host.classList.toggle('health--warn',!error&&warning);
     host.classList.toggle('health--ok',!error&&!warning);
     host.classList.remove('error','warning');
+    host.style.cursor='pointer';
+    host.setAttribute('role','button');
+    host.setAttribute('tabindex','0');
+    host.setAttribute('aria-haspopup','dialog');
+    if (!host.dataset.statusLogBound) {
+      host.dataset.statusLogBound = '1';
+      host.addEventListener('click', () => openHayakuStatusLog());
+      host.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openHayakuStatusLog();
+        }
+      });
+    }
     const textNode=host.querySelector?.('[data-health-text]');
     if(textNode) textNode.textContent=visibleJob
       ? (error?'복구 실패':terminal?'복구 완료':'복구 진행 중')
       : text(health.label||'정상 작동');
     host.title=visibleJob
       ? `${viewerNativeJobKindLabel(visibleJob.kind)} · ${viewerNativeJobStateLabel(visibleJob.state)}`
-      : text(health.label||'정상 작동');
+      : text(health.label||'정상 작동') + ' · 누르면 상태 및 진단 로그 보기';
   };
   const viewerRenderNativeJob = () => {
     viewerRenderHeaderHealth();
@@ -58479,9 +58667,10 @@ function mountMemorySuiteSourceInputControls(container, config) {
         const node = root.querySelector?.(selector);
         if (node) node.textContent = text(value);
       };
+      const isContextMissing = Boolean(status.available !== true && /current_chat_indexes_invalid|scope_unavailable/i.test(status.reason || Memory.ledgerViewer.scope?.reason || ''));
       setText('#hayakuNativeRecoveryState', status.available !== true
-        ? '채팅 범위 미확인'
-        : !status.runLLMModelAvailable ? 'Other Ax API 사용 불가'
+        ? (isContextMissing ? '대화방 선택 대기' : '채팅 범위 미확인')
+        : !status.runLLMModelAvailable ? '호출 가능 · 모델 연결 미확인'
         : coldInFlight ? 'Cold Start 실행 중' : repairInFlight ? '누락 복구 실행 중'
         : Memory.nativeRecovery.lastManualBatchResult?.ok === false && Memory.nativeRecovery.lastManualBatchResult?.scopeKey === renderScopeKey ? '최근 복구 중단' : '호출 가능 · 모델 연결 미확인');
       setText('#hayakuNativeAutoRepairText', afterRequestAutoEnabled ? '켜짐 · afterRequest 1회' : '꺼짐');
@@ -58513,13 +58702,19 @@ function mountMemorySuiteSourceInputControls(container, config) {
         : '즉시 복구할 항목 없음');
       const topHealth = root.querySelector?.('#hayakuViewerHealth');
       if (topHealth) {
-        const unavailable = status.available !== true || !status.runLLMModelAvailable;
+        const isCtxMissing = Boolean(status.available !== true && /current_chat_indexes_invalid|scope_unavailable/i.test(status.reason || Memory.ledgerViewer.scope?.reason || ''));
+        const realError = status.available !== true && !isCtxMissing;
         const attention = missingTurns.length > 0 || Number(coverage?.activeDebtCount ?? debt?.totalActiveDebts ?? 0) > 0;
-        topHealth.classList.toggle('health--danger', unavailable);
-        topHealth.classList.toggle('health--warn', !unavailable && attention);
-        topHealth.classList.toggle('health--ok', !unavailable && !attention);
+        topHealth.classList.toggle('health--danger', realError);
+        topHealth.classList.toggle('health--warn', !realError && attention);
+        topHealth.classList.toggle('health--ok', !realError && !attention);
         topHealth.classList.remove('warning','error');
-        Memory.ledgerViewer.workHealth={label:unavailable?'상태 확인 필요':attention?'복구 검토':'정상 작동',error:unavailable,warning:!unavailable&&attention};
+        Memory.ledgerViewer.workHealth={
+          label: realError ? '상태 확인 필요' : attention ? '복구 검토' : '정상 작동',
+          error: realError,
+          warning: !realError && attention,
+          contextMissing: isCtxMissing
+        };
         viewerRenderHeaderHealth();
       }
       setText('#hayakuNativeMissingTurns', `${missingTurns.length.toLocaleString()}개 누락`);
@@ -59245,6 +59440,21 @@ function mountMemorySuiteSourceInputControls(container, config) {
     const copy = root.querySelector?.('#hayakuOverviewHealthCopy');
     const badge = root.querySelector?.('#hayakuOverviewCoverageBadge');
     if (model.unavailable) {
+      const isContextMissing = Boolean(/current_chat_indexes_invalid|scope_unavailable/i.test(viewer.ledger?.reason || viewer.scope?.reason || ''));
+      if (isContextMissing) {
+        if (health) health.className='banner banner--info';
+        if (title) title.textContent='현재 열려 있는 채팅방이 없습니다.';
+        if (copy) copy.textContent='캐릭터 대화방에 입장하면 실시간 패킷 원장과 연속성 노선도가 자동으로 활성화됩니다.';
+        if (badge) {
+          badge.textContent='대화방 선택 대기';
+          badge.classList.remove('badge--ok', 'badge--warn');
+          badge.classList.add('badge--info');
+        }
+        const bannerIcon = root.querySelector?.('#hayakuOverviewHealth .banner__icon');
+        if (bannerIcon) bannerIcon.innerHTML = hayakuMockupIcon('info');
+        host.innerHTML='<div class="empty"><b>대화방 선택 대기</b><span>캐릭터 대화방을 열면 완료 턴과 연속성 노선도가 표시됩니다.</span></div>';
+        return;
+      }
       if (health) health.className='banner banner--danger';
       if (title) title.textContent='현재 채팅 원장을 읽지 못했습니다.';
       if (copy) copy.textContent=compact(viewer.ledger?.reason || 'storage_unavailable',180);
@@ -59303,7 +59513,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     if(packetCountNode) packetCountNode.hidden=active<=0;
     setText('#hayakuOverviewPacketsDenominator',records.length.toLocaleString());
     setText('#hayakuViewerScopeTop',Memory.ledgerViewer.scope?.chatTitle || '현재 채팅');
-    setText('#hayakuViewerScopeMeta',`세계선 원장 · 기록 ${records.length.toLocaleString()}개`);
+    setText('#hayakuViewerScopeMeta',Memory.ledgerViewer.scope?.confident ? `세계선 원장 · 기록 ${records.length.toLocaleString()}개` : '대화방 미선택 (대기)');
     const coverageSnapshot=Memory.ledgerViewer.continuitySnapshot?.coverage;
     if(Array.isArray(coverageSnapshot?.rows)){
       const completed=Math.max(0,Number(coverageSnapshot.completedTurns||0)||0);
@@ -60252,6 +60462,21 @@ function mountMemorySuiteSourceInputControls(container, config) {
     const root = Memory.ledgerViewer.root;
     if (!root) return;
     viewerBindManualRecaptureUi(root);
+    const healthNode = root.querySelector?.('#hayakuViewerHealth');
+    if (healthNode && !healthNode.dataset.statusLogBound) {
+      healthNode.dataset.statusLogBound = '1';
+      healthNode.style.cursor = 'pointer';
+      healthNode.setAttribute('role', 'button');
+      healthNode.setAttribute('tabindex', '0');
+      healthNode.setAttribute('aria-haspopup', 'dialog');
+      healthNode.addEventListener('click', () => openHayakuStatusLog());
+      healthNode.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openHayakuStatusLog();
+        }
+      });
+    }
     root.querySelector?.('#closeHayakuViewer')?.addEventListener('click', () => closeLedgerViewer());
     root.querySelector?.('#refreshHayakuViewer')?.addEventListener('click', () => refreshLedgerViewer());
     root.querySelector?.('#refreshHayakuWorldline')?.addEventListener('click', () => refreshLedgerViewer());
@@ -60709,7 +60934,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
 #${LEDGER_VIEWER_ROOT_ID} #hayakuFailedRecoveryList article.row>.btn:not(.btn--sm) small{font-weight:500;opacity:.85;overflow-wrap:anywhere}
 @container app (max-width:414px){#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button [data-tray-text]{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}}</style>
       <div class="stage"><div class="frame"><div class="app" data-hayaku-mockup="1">
-        <header class="topbar"><div class="brand"><div class="brand__mark" style="font:800 20px var(--font-sans)">速</div><div><div class="brand__name">HAYAKU</div><div class="brand__ver">CONTINUITY CONTROL · v${PLUGIN_VERSION}</div></div></div><div class="scope"><b id="hayakuViewerScopeTop">현재 채팅</b><span>›</span><span id="hayakuViewerScopeMeta">현재 채팅의 원장 상태를 읽습니다.</span></div><div class="grow"></div><span id="hayakuViewerHealth" class="health health--danger"><i></i><span data-health-text>원장 확인 중</span></span><button id="hayakuNativeJobChip" class="btn btn--sm hayaku-job-button" type="button" data-idle-go="logs" aria-controls="hayakuNativeJobOverlay" aria-expanded="false" title="진행 중이거나 끝난 작업을 다시 엽니다">${hayakuMockupIcon('clock')}<span data-tray-text>작업 없음</span></button><div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기">${hayakuMockupIcon('more')}</button><div class="menu__panel"><button id="hayakuOverviewRefresh" type="button">${hayakuMockupIcon('refresh')}다시 대조</button><button id="hayakuOverviewExport" type="button">${hayakuMockupIcon('download')}디버그 JSON 내보내기</button></div></div><button id="closeHayakuViewer" class="btn btn--icon" type="button" title="닫기" aria-label="HAYAKU 닫기">${hayakuMockupIcon('x')}</button></header>
+        <header class="topbar"><div class="brand"><div class="brand__mark" style="font:800 20px var(--font-sans)">速</div><div><div class="brand__name">HAYAKU</div><div class="brand__ver">CONTINUITY CONTROL · v${PLUGIN_VERSION}</div></div></div><div class="scope"><b id="hayakuViewerScopeTop">현재 채팅</b><span>›</span><span id="hayakuViewerScopeMeta">현재 채팅의 원장 상태를 읽습니다.</span></div><div class="grow"></div><span id="hayakuViewerHealth" class="health health--ok" role="button" tabindex="0" aria-haspopup="dialog" style="cursor:pointer" title="누르면 상태 및 진단 로그 보기"><i></i><span data-health-text>정상 작동</span></span><button id="hayakuNativeJobChip" class="btn btn--sm hayaku-job-button" type="button" data-idle-go="logs" aria-controls="hayakuNativeJobOverlay" aria-expanded="false" title="진행 중이거나 끝난 작업을 다시 엽니다">${hayakuMockupIcon('clock')}<span data-tray-text>작업 없음</span></button><div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기">${hayakuMockupIcon('more')}</button><div class="menu__panel"><button id="hayakuOverviewRefresh" type="button">${hayakuMockupIcon('refresh')}다시 대조</button><button id="hayakuOverviewExport" type="button">${hayakuMockupIcon('download')}디버그 JSON 내보내기</button></div></div><button id="closeHayakuViewer" class="btn btn--icon" type="button" title="닫기" aria-label="HAYAKU 닫기">${hayakuMockupIcon('x')}</button></header>
         <div id="hayakuNativeJobOverlay" class="overlay" aria-hidden="true" hidden><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-live="polite" aria-labelledby="hayakuNativeJobTitle"><div class="split"><div><div class="eyebrow" id="hayakuNativeJobEyebrow">Other Ax</div><h2 id="hayakuNativeJobTitle">복구 작업</h2><p><span id="hayakuNativeJobState">대기</span> · 경과 <span id="hayakuNativeJobElapsed">0초</span></p></div><span class="badge badge--info"><span id="hayakuNativeJobStateCompact">대기</span> · <span id="hayakuNativeJobElapsedCompact">0초</span></span></div><div class="progress" style="margin:14px 0"><i id="hayakuNativeJobProgressBar" style="width:0%"></i></div><div class="cluster"><span>대상 <b id="hayakuNativeJobTurns">-</b></span><span>현재 <b id="hayakuNativeJobCurrent">-</b></span><span id="hayakuNativeJobProgressText" class="hint">대상 확인</span></div><p id="hayakuNativeJobMessage" class="muted">작업 상태를 확인합니다.</p><div class="steps" style="margin-top:12px"><div class="step is-active"><span class="step__no">1</span><b data-job-step="1">대조</b></div><div class="step"><span class="step__no">2</span><b data-job-step="2">분석</b></div><div class="step"><span class="step__no">3</span><b data-job-step="3">검증</b></div><div class="step"><span class="step__no">4</span><b data-job-step="4">기록</b></div></div><div class="list" data-hayaku-job-body="repair" hidden style="margin-top:12px"><div class="res-row"><b>대상</b><span id="hayakuNativeJobResultTarget">-</span></div><div class="res-row"><b>기억 저장</b><span id="hayakuNativeJobResultMemory">0/0턴</span></div><div class="res-row"><b>완전 패킷</b><span id="hayakuNativeJobResultPackets">0개</span></div><div class="res-row"><b>부분 저장</b><span id="hayakuNativeJobResultPartial">0개</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultCalls">0회</span></div></div><div class="list" data-hayaku-job-body="cold" hidden style="margin-top:12px"><div class="res-row"><b>대상 묶음</b><span id="hayakuNativeJobColdBundles">-</span></div><div class="res-row"><b>저장된 패킷</b><span id="hayakuNativeJobResultColdSaved">0개</span></div><div class="res-row"><b>실패한 묶음</b><span id="hayakuNativeJobResultColdHeld">0묶음</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultColdCalls">0회</span></div></div><div class="card" data-hayaku-job-body="regen" hidden style="margin-top:12px"><p id="hayakuNativeJobResultRegeneration" class="muted">후보 준비 상태를 확인합니다.</p><section id="hayakuNativeJobComparison" class="cmp" hidden aria-label="기존 패킷과 재생성 후보 비교"></section><div id="hayakuNativeJobChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-regeneration-choice="later">나중에 결정</button><button type="button" class="btn" data-hayaku-regeneration-choice="keep_original">기존 패킷 유지</button><button type="button" class="btn btn--primary" data-hayaku-regeneration-choice="adopt_regenerated">재생성 후보 채택</button></div></div><div class="card" data-hayaku-job-body="background" hidden style="margin-top:12px"><p>복구 저널을 유지하거나 실행 전에 확인한 대상으로 복구를 요청합니다.</p><div class="list"><div class="res-row"><b>확인된 대상</b><span id="hayakuNativeJobConfirmationTarget">-</span></div></div><div id="hayakuRecoveryConfirmationChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-recovery-confirmation="no">아니요 · 저널에 유지</button><button type="button" class="btn btn--primary" data-hayaku-recovery-confirmation="yes">예 · 자동 복구 시작</button></div></div><div class="dialog__actions"><button id="minimizeHayakuNativeJob" class="btn">최소화</button><button id="cancelHayakuNativeJob" class="btn btn--danger">작업 중단</button><button id="closeHayakuNativeJob" class="btn btn--primary" hidden>닫기</button></div></div></div>
         <nav class="sidebar" aria-label="HAYAKU 메뉴"><div class="nav-label">상태</div>${nav('Overview','연속성 관제','관제','grid')}<div class="nav-label">기억</div>${nav('Packets','패킷 · 세계선','패킷','layers', '<span id="hayakuOverviewPacketCount" class="count" hidden>0</span>')}${nav('Scopes','스코프 데이터 관리','스코프','layers')}<div class="nav-label">복구</div>${nav('Recovery','구간 점검 · 복구','복구','wrench', '<span id="hayakuOverviewRecoveryCount" class="count count--alert" hidden>0</span>')}<div class="nav-label">연결 · 설정</div>${nav('Server','서버 연결','연결','server')}${nav('Settings','설정','설정','sliders')}${nav('Logs','작동 기록','기록','log')}<div class="side-foot"><b id="hayakuSidebarAux">Other Ax · 호출 미검증</b><span>Provider와 키는 RisuAI 소유 — HAYAKU에는 저장하지 않습니다.</span></div></nav>
         <main class="main"><div class="page-body">
