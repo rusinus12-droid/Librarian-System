@@ -304,9 +304,9 @@
         "bytes": 1649278
       },
       "retrace": {
-        "version": "1.12.1",
-        "sha256": "97af59533674b9c4fb674afa9a361f80fa1dd5704f66634f801e5516efbc2422",
-        "bytes": 1250904
+        "version": "1.12.2",
+        "sha256": "96dc02362715368aa41af3fd92e9aec908dd060029c36b0a3d6035f8589d358e",
+        "bytes": 1255574
       },
       "gradia": {
         "version": "0.28.0",

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-24T15:24:53.335Z",
+  "generatedAt": "2026-10-24T15:36:36.510Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -1427,7 +1427,7 @@
     "hayaku": "3.3.3",
     "libra": "2.6.3",
     "lia": "0.29.1",
-    "retrace": "1.12.1",
+    "retrace": "1.12.2",
     "gradia": "0.28.0"
   },
   "files": {
@@ -3572,7 +3572,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "a8f12bdad3cac550087febc9d621722921276352b88f5dd151e2d857b7b4cd1f",
+      "sha256": "9c151d09e7c9774119104cd4ee43ebdadd82dd28a2db0baa1f3a639b8b4c4e0c",
       "bytes": 11832
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3964,7 +3964,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "b5c1778c7606693f429a93c7df01528792bc10f56cc1b847afd394701d24b185",
+      "sha256": "7c0ca7eff50e060a32265e5205b136324edbc3198af6df59e69020e5e7e49ad6",
       "bytes": 3349
     },
     "plugins/Flashback_Memory.js": {
@@ -3988,8 +3988,8 @@
       "bytes": 6543503
     },
     "plugins/RETRACE.js": {
-      "sha256": "97af59533674b9c4fb674afa9a361f80fa1dd5704f66634f801e5516efbc2422",
-      "bytes": 1250904
+      "sha256": "96dc02362715368aa41af3fd92e9aec908dd060029c36b0a3d6035f8589d358e",
+      "bytes": 1255574
     },
     "release-policy.json": {
       "sha256": "dd876b2e56bc534c78fdc873914d846175c9d1234cfa926da7736f2447af5206",
@@ -9916,8 +9916,12 @@
       "bytes": 6402
     },
     "tests/retrace_diagnostic_counts_gui_test.cjs": {
-      "sha256": "6b90cb32e08f46c10a8dfb55e82ab8fc9869a09fa4c7166abb0f189e91e6659a",
-      "bytes": 4132
+      "sha256": "1980c0ce4643b0c8033400faf98e6b3201026f16c4e291ced4522678666ecb57",
+      "bytes": 4318
+    },
+    "tests/retrace_diagnostics_direct_compatibility_gui_test.cjs": {
+      "sha256": "9302927c2e4378e0e908d05b75760a019dfb32c5f56d425119e624669c2291ec",
+      "bytes": 5369
     },
     "tests/retrace_dialog_lifecycle_gui_test.cjs": {
       "sha256": "1873f1c3fc3ba94a75e576ba0e0f438ea1513dd3ac1456c0beebdf23b2695d06",
@@ -9992,8 +9996,8 @@
       "bytes": 2602
     },
     "tests/retrace_original_body_and_job_lifecycle_contract_test.cjs": {
-      "sha256": "b5e76485696c01c1bd902478861f9a4acce425abb3d812af3a68990d1a40d35c",
-      "bytes": 2561
+      "sha256": "8c1c64f0bd93ae80f3dd60562a8ab966c9d1a33f12ab91e6c6e9ae7dcc234d87",
+      "bytes": 2565
     },
     "tests/retrace_owner_contract_retention_test.cjs": {
       "sha256": "90624b08f5da5e8c131aca48cb6d2f8c3386ea71ef438888cffccdf102175c1f",
@@ -10004,8 +10008,8 @@
       "bytes": 2100
     },
     "tests/retrace_peer_runtime_compatibility_test.cjs": {
-      "sha256": "fa0701826c829c192522a2c1afab6f6b9f73fed244bb22fee226b9015fcc5978",
-      "bytes": 13959
+      "sha256": "ae6a98c8f445198cca0a9f6ace11ba1bc9037bf2dfabf507f2b57999480911de",
+      "bytes": 14727
     },
     "tests/retrace_pending_handoff_revalidation_runtime_test.cjs": {
       "sha256": "6827173003f577e18d88bfa37b9e85afc4b58afe04761ba8b59ed340228ab287",
@@ -11580,7 +11584,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "7b41423ed34a6c56ecfc81dc641bd06c17cc9969c83801b9a11537e7e643c12a",
+      "sha256": "d6350cea38fa9e1f57b39dafc957189b433dc696adcd018f281619f2b46dbb63",
       "bytes": 3783
     }
   },

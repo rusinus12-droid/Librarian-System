@@ -284,6 +284,18 @@ const createHost = () => {
     }
   }
 
+  // Diagnostic capabilities work even when the host has no selected character.
+  const getCharacter = host.getCharacter, getCharacterFromIndex = host.getCharacterFromIndex;
+  host.getCharacter = host.getCharacterFromIndex = async () => null;
+  try {
+    const standalone = await retrace.inspectCompatibility(null, { protocolOnly: true, forceProbe: true, timeoutMs: 3000 });
+    assert.equal(standalone.protocolOnly, true);
+    assert.equal(standalone.complete, true);
+    assert.equal(standalone.respondingPeers, 4);
+    assert.equal(standalone.compatible, true);
+    assert.equal(standalone.handoffAllowed, false, 'no-chat diagnostics never authorizes handoff');
+  } finally { host.getCharacter = getCharacter; host.getCharacterFromIndex = getCharacterFromIndex; }
+
   for (const handler of host.unloadHandlers.slice().reverse()) {
     try { await handler(); } catch (_) {}
   }

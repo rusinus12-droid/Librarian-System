@@ -34,5 +34,6 @@ try{
  assert.doesNotMatch(overlay.textContent,/모든 플러그인과 서버 스토리지가 정상/,'no logs does not certify unqueried services');
  Runtime.warnings.push({message:'new warning since last overview'});
  root.querySelector('#globalStatus').click();assert.equal(header(),'오류 0 · 경고 1');assert.equal(summary(),'오류 0건 · 경고 1건 · 안내 0건');
+ Runtime.diagnosticsError='probe failed';Runtime.diagnosticsErrorAt=456;api.sync();assert.match(summary(),/오류 1건/);assert.match(overlay.textContent,/호환 계약 검사 실패/);
  console.log('PASS RE:TRACE header/dialog/copy share severity counts; standby and 132 protected scopes are separate; live update and escaping');
 }finally{dom.window.close();}

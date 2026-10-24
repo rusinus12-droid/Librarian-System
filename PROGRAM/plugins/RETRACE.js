@@ -1,7 +1,7 @@
 //@name flashback_hayaku_bridge
 //@display-name RE:TRACE
 //@api 3.0
-//@version 1.12.1
+//@version 1.12.2
 /* v1.9.86 verifies server backup/deletion and portable transfer completion, protects active scopes from bulk selection, and exposes current timestamps, owner contacts and requested server previews. */
 /* v1.9.85 revalidates every required owner's durable target and current LIA Persona binding before reconciling a pending next-session handoff as completed. Reconciliation remains read-only for owner data. */
 /* Retired standalone owner viewers, packet deletion/navigation, and HAYAKU ledger-backup APIs are removed. Legacy capsule reads support handoff only; existing stored artifacts remain available to guarded server management. */
@@ -7669,7 +7669,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 };
 
   const PLUGIN_NAME = 'RE:TRACE';
-const PLUGIN_VERSION = '1.12.1';
+const PLUGIN_VERSION = '1.12.2';
   const RETRACE_SETTING_UI_ID = 'retrace-main-setting';
   const RETRACE_HAMBURGER_UI_ID = 'retrace-main-hamburger';
   const HANDOFF_SCHEMA = 'memory-session-bridge-v2';
@@ -11859,8 +11859,9 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
   const inspectCompatibilitySuite = async (previewValue = null, options = {}) => {
     const releaseHealthAdmission = typeof retraceHealthRecovery !== 'undefined' && retraceHealthRecovery ? retraceHealthRecovery.enterMutation() : () => {};
     try {
-    const preview = previewValue || Runtime.lastPreview || await inspectTransition();
-    const required = compatibilityRequiredForPreview(preview);
+    const protocolOnly = options.protocolOnly === true;
+    const preview = protocolOnly ? null : (previewValue || Runtime.lastPreview || await inspectTransition());
+    const required = protocolOnly ? {} : compatibilityRequiredForPreview(preview);
     const entries = await Promise.all(ACTIVE_RETRACE_PEER_KEYS.map(key => (
       probeUniversalPeerCompatibility(key, {
         required: required[key] === true,
@@ -11903,8 +11904,22 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       required,
       checkedAt: Date.now()
     };
-    Runtime.compatibilitySuite = suite;
-    Runtime.compatibilityCheckedAt = suite.checkedAt;
+    if (protocolOnly) {
+      const observed = entries.filter(peer => peer.ownerReachable === true);
+      const issues = entries.filter(peer => peer.installed === true && peer.compatible !== true);
+      Object.assign(suite, {
+        protocolOnly: true, handoffAllowed: false,
+        compatible: observed.length > 0 && issues.length === 0,
+        complete: observed.length === entries.length,
+        respondingPeers: observed.length, expectedPeers: entries.length,
+        contractIssues: issues.length
+      });
+      // A context-free capability probe never replaces session handoff evidence.
+      Runtime.compatibilityDiagnostics = suite;
+    } else {
+      Runtime.compatibilitySuite = suite;
+      Runtime.compatibilityCheckedAt = suite.checkedAt;
+    }
     return suite;
     } finally { releaseHealthAdmission(); }
   };
@@ -15640,6 +15655,8 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       ...(overviewError ? [{ at: Runtime.overviewErrorAt || Date.now(), owner: 'retrace',
         level: isContextMissing ? 'info' : 'error',
         message: isContextMissing ? '캐릭터 대화방 미선택 (대기)' : '개요 및 컨텍스트 갱신 오류', detail: overviewError }] : []),
+      ...(Runtime.diagnosticsError ? [{ at: Runtime.diagnosticsErrorAt || Date.now(), owner: 'retrace', level: 'error',
+        message: '호환 계약 검사 실패', detail: Runtime.diagnosticsError }] : []),
       ...scopeManagerArray(Runtime.warnings).map(row => ({ ...row, owner: row.owner || '', level: 'warning' })),
       ...Object.entries(scanErrors).map(([owner, detail]) => ({ at: Runtime.serverScopeCatalog?.at || Date.now(),
         owner, level: 'error', message: `${MEMORY_SUITE_NAMESPACE_LABELS[owner] || owner} 서버 목록 검사 보류`, detail }))
@@ -15818,41 +15835,79 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     } finally { releaseHealthAdmission(); }
   };
 
-  const refreshRetraceDiagnostics = async () => {
-    const diagnose=Runtime.root?.querySelector?.('[data-server-control="diagnose"]');
-    await Promise.allSettled([refreshOverview(),diagnose?handleServerControl({target:diagnose}):refreshServerControl()]);
+  const refreshRetraceDiagnostics = async (options = {}) => {
+    if (Runtime.diagnosticsPending) return await Runtime.diagnosticsPending;
+    Runtime.diagnosticsChecking = true;
+    Runtime.diagnosticsError = '';
+    Runtime.compatibilityDiagnostics = null;
     renderDiagnosticsPanel();
+    const task = (async () => {
+      const diagnose = Runtime.root?.querySelector?.('[data-server-control="diagnose"]');
+      const results = await Promise.allSettled([
+        inspectCompatibilitySuite(null, { protocolOnly: true, forceProbe: true, timeoutMs: 3200 }),
+        ...(options.compatibilityOnly === true ? [] : [refreshOverview(),
+          diagnose ? handleServerControl({ target: diagnose }) : refreshServerControl()])
+      ]);
+      if (results[0].status === 'rejected') {
+        Runtime.diagnosticsError = compact(results[0].reason?.message || results[0].reason, 320);
+        Runtime.diagnosticsErrorAt = Date.now();
+      }
+      return results;
+    })();
+    Runtime.diagnosticsPending = task;
+    try { return await task; }
+    finally {
+      if (Runtime.diagnosticsPending === task) {
+        Runtime.diagnosticsPending = null;
+        Runtime.diagnosticsChecking = false;
+        renderDiagnosticsPanel();
+      }
+    }
   };
   const renderDiagnosticsPanel = () => {
     const host = Runtime.root?.querySelector?.('#diagnosticsBody');
     if (!host) return;
-    const suite = Runtime.compatibilitySuite;
-    const gate = Runtime.memorySuiteOwnerStorage?.gate || Runtime.memorySuiteOwnerStorageGate;
+    const checking = Runtime.diagnosticsChecking === true;
+    const suite = Runtime.compatibilityDiagnostics || Runtime.compatibilitySuite;
+    const protocolOnly = suite?.protocolOnly === true;
+    const peers = scopeManagerArray(suite?.peers).filter(peer => peer.key !== 'retrace');
+    const peerByKey = new Map(peers.map(peer => [peer.key, peer]));
+    const gate = Runtime.lastPreview && !Runtime.overviewError && !Runtime.overviewLoading
+      ? Runtime.memorySuiteOwnerStorage?.gate || Runtime.memorySuiteOwnerStorageGate : null;
     const ipcRows = [
-      { key: 'flashback', label: 'Flashback', registered: Runtime.flashbackIpcRegistered, pending: Runtime.flashbackIpcPending?.size || 0, error: Runtime.flashbackIpcLastError },
-      { key: 'hayaku', label: 'HAYAKU', registered: Runtime.hayakuIpcRegistered, pending: Runtime.hayakuIpcPending?.size || 0, error: Runtime.hayakuOwnerGate?.ready === false ? Runtime.hayakuOwnerGate?.reason : '' },
-      { key: 'libra', label: 'LIBRA', registered: Runtime.libraIpcRegistered, pending: Runtime.libraIpcPending?.size || 0, error: Runtime.libraIpcLastError },
-      { key: 'lia', label: 'LIA', registered: Runtime.liaIpcRegistered, pending: Runtime.liaIpcPending?.size || 0, error: Runtime.liaIpcLastError }
+      { key: 'flashback', label: 'Flashback', registered: Runtime.flashbackIpcRegistered, pending: Runtime.flashbackIpcPending?.size || 0 },
+      { key: 'hayaku', label: 'HAYAKU', registered: Runtime.hayakuIpcRegistered, pending: Runtime.hayakuIpcPending?.size || 0 },
+      { key: 'libra', label: 'LIBRA', registered: Runtime.libraIpcRegistered, pending: Runtime.libraIpcPending?.size || 0 },
+      { key: 'lia', label: 'LIA', registered: Runtime.liaIpcRegistered, pending: Runtime.liaIpcPending?.size || 0 }
     ];
-    const ownerRows=retraceOverviewState().rows;
-    const serverStatus=Runtime.serverControl?.status;
-    const serverKnown=!!serverStatus;
-    const scopeCount=Runtime.serverScopeCatalog?scopeManagerArray(Runtime.serverScopeCatalog.scopes).length:null;
-    const blocking=Math.max(0,Number(suite?.blocking?.length||0)||0), warnings=Math.max(0,Number(Runtime.warnings?.length||0)||0);
-    const serverLabel=serverKnown?(serverStatus.maintenanceMode?'관리 작업 중':'응답 확인됨'):'확인 전';
-    const serverDetail=serverKnown?`마지막 manager 응답 ${scopeManagerFormatTime(serverStatus.checkedAt)}`:'진단을 실행하거나 서버 관리에서 새로고침하세요.';
-    const ownerOk=ownerRows.length>0&&ownerRows.every(row=>row?.connected===true&&row?.supported===true);
-    const peerLabel=!suite?'검사 전':suite.compatible?(suite.warnings?.length?'호환 · 경고':'호환'):`승계 차단 ${formatNumber(blocking)}개`;
-    const scopeText=scopeCount===null?'사용자 조회 전 · 자동 스캔 안 함':`${formatNumber(scopeCount)}개 사본 · 서버 관리에서 상세 확인`;
-    const rowsHtml=`<div class="check-item ${serverKnown?'ok':'warn'}"><span class="dot">${serverKnown?'✓':'!'}</span><div><b>서버 연결</b><small>${escapeHtml(serverDetail)}</small></div><span class="badge ${serverKnown?'badge--ok':'badge--warn'}">${escapeHtml(serverLabel)}</span></div>
-      <div class="check-item ${ownerOk?'ok':'warn'}"><span class="dot">${ownerOk?'✓':'!'}</span><div><b>플러그인 응답 (Owner IPC)</b><small>${ipcRows.map(row=>`${row.label}: ${row.error?'오류':row.registered?'리스너 등록':'미등록'} · 대기 ${formatNumber(row.pending)}`).join(' · ')}</small></div><span class="badge ${ownerOk?'badge--ok':'badge--warn'}">${ownerOk?'응답 확인됨':'일부 미확인'}</span></div>
-      <div class="check-item ${suite?.compatible?'ok':'warn'}"><span class="dot">${suite?.compatible?'✓':'!'}</span><div><b>호환 계약</b><small>${escapeHtml(peerLabel)} · 저장 Gate ${!gate?'미검사':gate.ready?'통과':`차단 (${text(gate.reason||'원인 미확인')})`}</small></div><span class="badge ${suite?.compatible?'badge--ok':'badge--warn'}">${suite?.compatible?'확인됨':'검사 필요'}</span></div>
-      <div class="check-item ${scopeCount===null?'':'warn'}"><span class="dot">${scopeCount===null?'i':'!'}</span><div><b>서버 사본</b><small>${escapeHtml(scopeText)} · 런타임 경고 ${formatNumber(warnings)}건</small></div><button class="btn btn--sm" type="button" data-retrace-goto="serverdata" data-server-subgoto="data">서버 관리</button></div>`;
-    const summaryLines=[`server=${serverKnown?'checked':'not_checked'}`,`owner_ipc=${ipcRows.map(row=>`${row.key}:${row.registered?'registered':'unregistered'}${row.error?':error':''}`).join(',')}`,`compatibility=${suite?suite.compatible?'compatible':'blocked':'not_checked'}`,`storage_gate=${gate?gate.ready?'ready':'blocked':'not_checked'}`,`server_scope_catalog=${scopeCount===null?'not_scanned':scopeCount}`,`runtime_warning_count=${warnings}`,`blocking_contract_count=${formatNumber(blocking)}`].join('\n');
-    host.innerHTML=`<div class="stack"><div class="cluster"><button class="btn btn--primary" type="button" data-diagnose-now>지금 점검</button></div><div class="list">${rowsHtml}</div><details class="card card--flat"><summary style="cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center">진단 원문 (고급 · 개인정보 제거)</summary><pre class="mono" style="margin:10px 0 0;white-space:pre-wrap">${escapeHtml(summaryLines)}</pre><p class="hint">디버그 파일은 자격 증명을 제거하고, 대화·페르소나·스코프 식별자는 해시하며, 원문 기억과 긴 본문은 포함하지 않습니다. 서버 데이터 전체 스캔은 ‘서버 데이터 관리’ 탭을 사용자가 열었을 때만 수행합니다.</p><button id="exportRetraceDebugDiagnostics" class="btn btn--primary" type="button">정제된 디버그 로그 내보내기</button></details></div>`;
+    const serverStatus = Runtime.serverControl?.status;
+    const serverKnown = !!serverStatus;
+    const scopeCount = Runtime.serverScopeCatalog ? scopeManagerArray(Runtime.serverScopeCatalog.scopes).length : null;
+    const warnings = scopeManagerArray(Runtime.warnings).length;
+    const blocking = scopeManagerArray(suite?.blocking).length;
+    const ownerOk = peers.length > 0 && peers.every(peer => peer.ownerReachable === true);
+    const contractOk = !checking && !Runtime.diagnosticsError && !!suite && suite.compatible && (!protocolOnly || suite.complete);
+    const peerLabel = checking ? 'IPC 호환 계약 검사 중'
+      : Runtime.diagnosticsError ? `검사 실패: ${Runtime.diagnosticsError}`
+      : !suite ? '아직 검사하지 않았습니다.'
+      : protocolOnly ? `응답 ${formatNumber(suite.respondingPeers)} / ${formatNumber(suite.expectedPeers)} · 계약 불일치 ${formatNumber(suite.contractIssues)}개 · ${scopeManagerFormatTime(suite.checkedAt)}`
+      : suite.compatible ? '채팅별 호환 검사 완료' : `채팅별 승계 차단 ${formatNumber(blocking)}개`;
+    const scopeText = scopeCount === null ? '사용자 조회 전 · 자동 스캔 안 함' : `${formatNumber(scopeCount)}개 사본 · 서버 관리에서 상세 확인`;
+    const rowsHtml = `<div class="check-item ${serverKnown ? 'ok' : 'warn'}"><span class="dot">${serverKnown ? '✓' : '!'}</span><div><b>서버 연결</b><small>${serverKnown ? `마지막 manager 응답 ${scopeManagerFormatTime(serverStatus.checkedAt)}` : '진단을 실행하거나 서버 관리에서 새로고침하세요.'}</small></div><span class="badge ${serverKnown ? 'badge--ok' : 'badge--warn'}">${serverKnown ? '응답 확인됨' : '확인 전'}</span></div>
+      <div class="check-item ${ownerOk ? 'ok' : 'warn'}"><span class="dot">${ownerOk ? '✓' : '!'}</span><div><b>플러그인 응답 (Owner IPC)</b><small>${ipcRows.map(row => `${row.label}: ${peerByKey.get(row.key)?.ownerReachable ? '응답 확인' : row.registered ? '리스너 등록 · 응답 미확인' : '미확인'} · 대기 ${formatNumber(row.pending)}`).join(' · ')}</small></div><span class="badge ${ownerOk ? 'badge--ok' : 'badge--warn'}">${ownerOk ? '응답 확인됨' : '일부 미확인'}</span></div>
+      <div class="check-item ${contractOk ? 'ok' : 'warn'}" data-diagnostics-contract><span class="dot">${contractOk ? '✓' : '!'}</span><div><b>호환 계약</b><small>${escapeHtml(peerLabel)}</small></div><button class="btn btn--sm" type="button" data-diagnose-compatibility ${checking ? 'disabled' : ''}>${checking ? '검사 중…' : '호환 계약 검사'}</button></div>
+      <div class="check-item ${gate?.ready ? 'ok' : ''}" data-diagnostics-storage-gate><span class="dot">${gate?.ready ? '✓' : 'i'}</span><div><b>저장 Gate · 현재 채팅</b><small>${!gate ? '대화방을 선택한 뒤 점검하면 채팅별 저장 준비 상태를 확인합니다.' : gate.ready ? '현재 채팅의 저장 Gate 통과' : escapeHtml(`차단: ${text(gate.reason || '원인 미확인')}`)}</small></div><span class="badge ${gate?.ready ? 'badge--ok' : 'badge--info'}">${!gate ? '미검사' : gate.ready ? '통과' : '확인 필요'}</span></div>
+      <div class="check-item ${scopeCount === null ? '' : 'warn'}"><span class="dot">${scopeCount === null ? 'i' : '!'}</span><div><b>서버 사본</b><small>${escapeHtml(scopeText)} · 런타임 경고 ${formatNumber(warnings)}건</small></div><button class="btn btn--sm" type="button" data-retrace-goto="serverdata" data-server-subgoto="data">서버 관리</button></div>`;
+    const peerDetails = protocolOnly ? `<section class="card card--flat" data-diagnostics-peer-results><h3 class="card__title">플러그인별 호환 계약 검사 결과</h3><p class="hint">대화방 선택 없이 응답과 프로토콜을 검사했습니다. 미응답 플러그인은 설치·활성화 상태를 확인하세요. 채팅별 승계 가능 여부는 다음 세션 화면에서 다시 검사합니다.</p><div class="list">${peers.map(peer => `<article class="res"><div><strong>${escapeHtml(peer.label || peer.key)}</strong><small>${escapeHtml(peer.pluginVersion ? `v${peer.pluginVersion}` : '버전 미확인')} · ${escapeHtml(peer.reason || peer.error || '')}</small></div><span class="badge ${!peer.ownerReachable ? 'badge--info' : peer.compatible ? 'badge--ok' : 'badge--danger'}">${!peer.ownerReachable ? '응답 미확인' : peer.compatible ? '호환' : '계약 불일치'}</span></article>`).join('')}</div></section>` : '';
+    const summaryLines = [`server=${serverKnown ? 'checked' : 'not_checked'}`, `compatibility=${checking ? 'checking' : !suite ? 'not_checked' : contractOk ? 'compatible' : 'needs_review'}`,
+      `compatibility_scope=${protocolOnly ? 'protocol_only' : suite ? 'session' : 'not_checked'}`, `compatibility_error=${Runtime.diagnosticsError || ''}`,
+      `owner_ipc=${ipcRows.map(row => `${row.key}:${peerByKey.get(row.key)?.ownerReachable ? 'responded' : 'unconfirmed'}`).join(',')}`,
+      `storage_gate=${gate ? gate.ready ? 'ready' : 'blocked' : 'not_checked'}`, `server_scope_catalog=${scopeCount === null ? 'not_scanned' : scopeCount}`, `runtime_warning_count=${warnings}`, `blocking_contract_count=${blocking}`].join('\n');
+    host.innerHTML = `<div class="stack"><div class="cluster"><button class="btn btn--primary" type="button" data-diagnose-now ${checking ? 'disabled' : ''}>${checking ? '점검 중…' : '지금 점검'}</button></div><div class="list">${rowsHtml}</div>${peerDetails}<details class="card card--flat"><summary style="cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center">진단 원문 (고급 · 개인정보 제거)</summary><pre class="mono" style="margin:10px 0 0;white-space:pre-wrap">${escapeHtml(summaryLines)}</pre><p class="hint">디버그 파일은 자격 증명을 제거하고, 대화·페르소나·스코프 식별자는 해시하며, 원문 기억과 긴 본문은 포함하지 않습니다. 서버 데이터 전체 스캔은 ‘서버 데이터 관리’ 탭을 사용자가 열었을 때만 수행합니다.</p><button id="exportRetraceDebugDiagnostics" class="btn btn--primary" type="button">정제된 디버그 로그 내보내기</button></details></div>`;
     bindOverviewControls();
-    host.querySelector('[data-diagnose-now]')?.addEventListener('click',()=>void refreshRetraceDiagnostics());
+    for (const button of host.querySelectorAll('[data-diagnose-now],[data-diagnose-compatibility]')) button.addEventListener('click', () => void refreshRetraceDiagnostics({ compatibilityOnly: button.hasAttribute('data-diagnose-compatibility') }));
     bindDebugExportButton(host.querySelector('#exportRetraceDebugDiagnostics'));
+    syncRetraceDiagnosticIndicator(retraceOverviewState());
   };
 
   const setActiveRetraceTab = (tabValue, options = {}) => {
@@ -16633,6 +16688,8 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         pendingIncrementalRecovery: pendingIncremental ? { available: pendingIncremental.available === true, reason: text(pendingIncremental.reason || ''), packetCount: Array.isArray(pendingIncremental.packets) ? pendingIncremental.packets.length : 0, recoveryId: text(pendingIncremental.capsule?.recoveryId || ''), sourceHash: text(pendingIncremental.capsule?.sourceHash || ''), scope: pendingIncremental.scope } : null
       },
       compatibility: Runtime.compatibilitySuite,
+      compatibilityDiagnostics: Runtime.compatibilityDiagnostics || null,
+      compatibilityDiagnosticsError: Runtime.diagnosticsError || '',
       recent: {
 
       }
