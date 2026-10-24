@@ -6,7 +6,8 @@ const {createLibraVmHarness}=require('./fixtures/libra_vm_harness.cjs');
 test('final delivery GUI uses only the current receipt and never promotes selection to delivery',async()=>{
  const dom=new JSDOM('<div class="app"></div>'),document=dom.window.document;
  const seam='  const publicApi = Object.freeze({\n    getHostLineageStatus: () => LibraMemoryCore';
- const f=await createLibraVmHarness({}, {},{contextGlobals:{document,MutationObserver:dom.window.MutationObserver},transformSource:source=>{
+ const f=await createLibraVmHarness({}, {},{contextGlobals:{document,MutationObserver:dom.window.MutationObserver},transformSource:rawSource=>{
+  const source=rawSource.replace(/\r\n/g, '\n');
   assert.equal(source.split(seam).length,2);return source.replace(seam,'  globalThis.__deliveryUi={Gui,Runtime,LibraMemoryCore,bookFinalDeliveryView,openBookFinalEvidenceDialog};\n'+seam);
  }});
  try{

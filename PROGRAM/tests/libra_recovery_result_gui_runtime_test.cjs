@@ -4,7 +4,7 @@ const {create,until}=require('./fixtures/libra_gui_memory_dom_host.cjs');
 (async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'libra-recovery-result-')),pluginPath=path.join(dir,'LIBRA.js');let f;
  try{
-  const source=fs.readFileSync(path.join(__dirname,'../plugins/LIBRA.js'),'utf8'),marker='  const publicApi = Object.freeze({\n    getHostLineageStatus:';
+  const source=fs.readFileSync(path.join(__dirname,'../plugins/LIBRA.js'),'utf8').replace(/\r\n/g, '\n'),marker='  const publicApi = Object.freeze({\n    getHostLineageStatus:';
   assert.ok(source.includes(marker));fs.writeFileSync(pluginPath,source.replace(marker,'  globalThis.__recoveryResultTest={bookRecoveryResult,openApprovedRecoveryJob};\n'+marker));
   f=await create('LIBRA','Full',{pluginPath});await f.open();await until(()=>f.doc.querySelector('.sidebar'),'GUI shell');const api=f.context.__recoveryResultTest;
   const cases=[

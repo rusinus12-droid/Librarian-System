@@ -4,7 +4,7 @@ const program=process.env.REGRESSION_PROGRAM||path.resolve(__dirname,'..');
 const actions=['status','backups','history','backup-create','backup-check','restore-plan','restore-execute'];
 for(const file of ['MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js']){
  test(file+': removed independent owner action rejects before connection while retained manager actions preserve dispatch',async()=>{
-  const source=fs.readFileSync(path.join(program,'sdk',file),'utf8');
+  const source=fs.readFileSync(path.join(program,'sdk',file),'utf8').replace(/\r\n/g, '\n');
   const matches=[...source.matchAll(/managerControl: (async \(action, body = \{\}\) => \{[\s\S]*?\n    \}),\n    managerGetDiagnostics,/g)];
   assert.equal(matches.length,1,'unambiguous actual managerControl method');
   let connections=0;const requests=[];

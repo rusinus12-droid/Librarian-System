@@ -6,7 +6,7 @@ const MODE='plugin_only'; // LIA owns local persona state only.
 (async()=>{
  let backendCalls=0;
  const transformSource=source=>source
-  .replace('\n\n  async function waitForPluginStorage', '\n  globalThis.__fixtureStorageBridge = MemorySuiteStorageBridge;\n\n  async function waitForPluginStorage')
+  .replace(/\r?\n\r?\n  async function waitForPluginStorage/, '\n  globalThis.__fixtureStorageBridge = MemorySuiteStorageBridge;\n\n  async function waitForPluginStorage')
   .replace('debugProjectNativeBranchPersonaState: (ctx, binding) =>', 'debugEnsureInheritedLivePersona: async (ctx = null) => sanitizeLogValue(await ensureInheritedLivePersonaForCurrentChat(ctx, { force:true })),\n      debugProjectNativeBranchPersonaState: (ctx, binding) =>');
  const f=await createFixture('official',{transformSource,configureApi(api){api.getArgument=async name=>String(name).includes('memory_suite_server_url')?'http://127.0.0.1:1':(String(name).includes('memory_suite_server_mode')?'plugin_only':String(name).includes('enable_gui')?'false':'');api.getArg=api.getArgument;api.nativeFetch=async()=>{backendCalls++;throw Error('local-only LIA must not call server');};}});
  try{

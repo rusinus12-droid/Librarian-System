@@ -157,11 +157,23 @@ function hasMeaningfulData(root) {
   return false;
 }
 
+function exactDirectoryName(dirPath) {
+  try {
+    const parent = path.dirname(dirPath);
+    const base = path.basename(dirPath).toLowerCase();
+    const match = fs.readdirSync(parent).find(e => e.toLowerCase() === base);
+    return match || path.basename(dirPath);
+  } catch {
+    return path.basename(dirPath);
+  }
+}
+
 function uniqueExistingDirectories(values) {
   const seen = new Set();
   const out = [];
   for (const value of values) {
     if (!value || !fs.existsSync(value) || !fs.statSync(value).isDirectory()) continue;
+    if (path.basename(value).toLowerCase() === 'data' && exactDirectoryName(value) !== 'data') continue;
     const key = normalizedPath(value);
     if (seen.has(key)) continue;
     seen.add(key);

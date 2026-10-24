@@ -17,12 +17,12 @@
   },
   "components": {
     "backend": "0.4.1",
-    "libra": "2.5.0",
-    "hayaku": "3.2.0",
-    "flashback": "1.2.0",
-    "lia": "0.28.0",
-    "retrace": "1.11.0",
-    "gradia": "0.27.0",
+    "libra": "2.6.0",
+    "hayaku": "3.3.0",
+    "flashback": "1.3.0",
+    "lia": "0.29.0",
+    "retrace": "1.12.0",
+    "gradia": "0.28.0",
     "storageSdk": "1.8.35",
     "computeSdk": "0.3.8"
   },
