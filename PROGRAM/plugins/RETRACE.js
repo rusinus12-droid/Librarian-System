@@ -1,7 +1,7 @@
 //@name flashback_hayaku_bridge
 //@display-name RE:TRACE
 //@api 3.0
-//@version 1.12.0
+//@version 1.12.1
 /* v1.9.86 verifies server backup/deletion and portable transfer completion, protects active scopes from bulk selection, and exposes current timestamps, owner contacts and requested server previews. */
 /* v1.9.85 revalidates every required owner's durable target and current LIA Persona binding before reconciling a pending next-session handoff as completed. Reconciliation remains read-only for owner data. */
 /* Retired standalone owner viewers, packet deletion/navigation, and HAYAKU ledger-backup APIs are removed. Legacy capsule reads support handoff only; existing stored artifacts remain available to guarded server management. */
@@ -7669,7 +7669,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 };
 
   const PLUGIN_NAME = 'RE:TRACE';
-const PLUGIN_VERSION = '1.12.0';
+const PLUGIN_VERSION = '1.12.1';
   const RETRACE_SETTING_UI_ID = 'retrace-main-setting';
   const RETRACE_HAMBURGER_UI_ID = 'retrace-main-hamburger';
   const HANDOFF_SCHEMA = 'memory-session-bridge-v2';
@@ -7840,6 +7840,7 @@ const PLUGIN_VERSION = '1.12.0';
     serverControlRefreshToken: 0,
     overviewLoading: false,
     overviewError: '',
+    overviewErrorAt: 0,
     remoteUpdate: { state: 'idle', available: false, latestVersion: '', htmlUrl: '', error: '', checkedAt: 0 },
     busy: false,
     registered: { setting: null, hamburger: null },
@@ -15631,6 +15632,55 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         ? '확인 중'
         : '검증 대기';
 
+  const retraceDiagnosticSnapshot = () => {
+    const overviewError = text(Runtime.overviewError).trim();
+    const isContextMissing = /^현재 캐릭터를 불러올 수 없습니다[.!]?$/.test(overviewError);
+    const scanErrors = Runtime.serverScopeCatalog?.scanErrors || {};
+    const entries = [
+      ...(overviewError ? [{ at: Runtime.overviewErrorAt || Date.now(), owner: 'retrace',
+        level: isContextMissing ? 'info' : 'error',
+        message: isContextMissing ? '캐릭터 대화방 미선택 (대기)' : '개요 및 컨텍스트 갱신 오류', detail: overviewError }] : []),
+      ...scopeManagerArray(Runtime.warnings).map(row => ({ ...row, owner: row.owner || '', level: 'warning' })),
+      ...Object.entries(scanErrors).map(([owner, detail]) => ({ at: Runtime.serverScopeCatalog?.at || Date.now(),
+        owner, level: 'error', message: `${MEMORY_SUITE_NAMESPACE_LABELS[owner] || owner} 서버 목록 검사 보류`, detail }))
+    ];
+    const scopes = scopeManagerArray(Runtime.serverScopeCatalog?.scopes);
+    return { entries, isContextMissing,
+      errors: entries.filter(row => row.level === 'error').length,
+      warnings: entries.filter(row => row.level === 'warning').length,
+      information: entries.filter(row => row.level === 'info').length,
+      catalogChecked: !!Runtime.serverScopeCatalog,
+      unverifiedScopes: scopes.filter(row => row.classification === 'unverified').length,
+      cleanupCandidates: scopes.filter(row => row.classification === 'orphan_candidate' && !scopeManagerDeleteBlockedReason(row)).length,
+      scanFailures: Object.keys(scanErrors).length };
+  };
+
+  const syncRetraceDiagnosticIndicator = (state, diagnostics = retraceDiagnosticSnapshot()) => {
+    const status = Runtime.root?.querySelector?.('#globalStatus');
+    const count = Runtime.root?.querySelector?.('#globalStatusCount');
+    const label = Runtime.root?.querySelector?.('#globalStatusText');
+    const { gate } = state;
+    if (status && !status.dataset.errorPopupBound) {
+      status.dataset.errorPopupBound = '1';
+      status.addEventListener('click', () => openRetraceErrorLog());
+      status.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openRetraceErrorLog(); } });
+    }
+    const summary = `오류 ${formatNumber(diagnostics.errors)} · 경고 ${formatNumber(diagnostics.warnings)}`;
+    const stateLabel = diagnostics.isContextMissing ? '대화방 미선택' : state.loading ? '확인 중'
+      : gate?.ready === true ? '준비됨' : gate?.ready === false ? '승계 확인 필요' : state.checked ? '상태 확인됨' : '검사 대기';
+    if (status) {
+      status.classList.remove('health--ok', 'health--warn', 'health--danger');
+      status.classList.add(diagnostics.errors ? 'health--danger' : diagnostics.warnings || gate?.ready === false ? 'health--warn' : gate?.ready ? 'health--ok' : 'health--warn');
+      status.title = `${summary} · 안내 ${formatNumber(diagnostics.information)} · ${stateLabel}`;
+      status.setAttribute('aria-label', `${status.title} · 누르면 오류와 확인 로그 보기`);
+      status.setAttribute('role', 'button'); status.setAttribute('aria-haspopup', 'dialog'); status.tabIndex = 0;
+    }
+    if (count) count.textContent = summary;
+    if (label) label.textContent = stateLabel;
+    const overlay = Runtime.root?.querySelector?.('#retraceErrorLogOverlay');
+    if (overlay?.classList.contains('is-open')) renderRetraceErrorLogContents(overlay, diagnostics);
+  };
+
   const renderOverviewPanel = () => {
     const host = Runtime.root?.querySelector?.('#overviewBody');
     if (!host) return;
@@ -15688,21 +15738,13 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       ['확인 불가',catalog?formatNumber(unknownCount):'—',catalog?'삭제 차단 · 자동 정리 안 함':'목록 미조회'],
       ['마지막 백업',backupValue,backupMeta]
     ].map(([label,value,meta],index)=>`<div class="stat"><div class="stat__label">${escapeHtml(label)}</div><div class="stat__value"${index===3?' style="font-size:22px"':''}>${escapeHtml(value)}</div><div class="stat__meta">${escapeHtml(meta)}</div></div>`).join('');
-    const isContextMissing = Boolean(Runtime.overviewError && /캐릭터.*불러올 수 없습니다|character/i.test(Runtime.overviewError));
+    const diagnostics = retraceDiagnosticSnapshot();
+    const isContextMissing = diagnostics.isContextMissing;
     const isCriticalOverviewError = Boolean(Runtime.overviewError && !isContextMissing);
     const showCleanup=cleanupCount>0||unknownCount>0||isCriticalOverviewError;
     const warningTitle=isCriticalOverviewError?'개요 갱신에 실패했습니다. 이전 결과는 최신 상태로 간주하지 않습니다.':isContextMissing?'현재 열려 있는 캐릭터 대화방이 없습니다.':catalog?`정리 후보 ${formatNumber(cleanupCount)}개, 확인 불가 ${formatNumber(unknownCount)}개가 있습니다.`:'서버 사본 목록은 아직 조회하지 않았습니다.';
     const warningBody=isCriticalOverviewError?'이전 개요는 최신 상태로 유지되지 않습니다. 다시 확인하세요.':isContextMissing?'캐릭터 대화방을 열면 실시간 인계 개요와 저장 소유자 상태가 자동으로 갱신됩니다.':catalog?'확인 불가 사본은 삭제할 수 없습니다. 후보의 참조·Owner 보존 증거를 확인한 뒤에만 적격 작업을 진행하세요.':'서버 스코프 조회는 자동으로 실행하지 않습니다. 서버 관리에서 사용자가 직접 목록을 요청하세요.';
-    const globalStatus=Runtime.root?.querySelector?.('#globalStatus'),globalCount=Runtime.root?.querySelector?.('#globalStatusCount'),globalText=Runtime.root?.querySelector?.('#globalStatusText');
-    if(globalStatus&&!globalStatus.dataset.errorPopupBound){globalStatus.dataset.errorPopupBound='1';globalStatus.addEventListener('click',()=>openRetraceErrorLog());globalStatus.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openRetraceErrorLog();}});}if(globalStatus){
-      globalStatus.classList.remove('health--ok','health--warn','health--danger');
-      globalStatus.classList.add((isCriticalOverviewError||gate?.ready===false)?'health--danger':(isContextMissing||!gate?.ready)?'health--warn':'health--ok');
-      globalStatus.title=isCriticalOverviewError?'개요 갱신 실패':isContextMissing?'대화방 선택 대기 · 캐릭터 대화방을 열면 개요가 자동으로 갱신됩니다':catalog?`${formatNumber(cleanupCount)}개 정리 적격 · ${formatNumber(unknownCount)}개 확인 불가`: '서버 사본은 사용자가 조회를 요청하기 전까지 자동 검사하지 않습니다.';
-    }
-    const globalDetail=(catalog?`정리 적격 ${formatNumber(cleanupCount)} · 확인 불가 ${formatNumber(unknownCount)}`:'서버 검사 대기')+' · '+(isCriticalOverviewError?'새로고침 필요':isContextMissing?'대화방 선택 대기':state.loading?'실시간 확인 중':gate?.ready===true?'승계 Gate 준비':gate?.ready===false?'승계 차단':state.checked?'상태 확인됨':'검증 대기');
-    if(globalStatus){globalStatus.title=globalDetail;globalStatus.setAttribute('aria-label',globalDetail);globalStatus.setAttribute('role','button');globalStatus.setAttribute('aria-haspopup','dialog');globalStatus.setAttribute('aria-label',`${globalDetail} · 누르면 오류와 확인 로그 보기`);globalStatus.tabIndex=0;}
-    if(globalCount)globalCount.textContent=catalog?(unknownCount?`확인 필요 ${formatNumber(unknownCount)}`:`정리 후보 ${formatNumber(cleanupCount)}`):'검사 대기';
-    if(globalText)globalText.textContent=isCriticalOverviewError?'오류 로그 보기':isContextMissing?'대화방 미선택':unknownCount?'오류·확인 로그 보기':state.loading?'확인 중':gate?.ready===true?'준비됨':gate?.ready===false?'차단 상세':state.checked?'정상 확인':'검사 대기';
+    syncRetraceDiagnosticIndicator(state, diagnostics);
     const errorHtml = isCriticalOverviewError
       ? `<div class="banner banner--danger"><strong>개요 갱신 실패</strong><span>${escapeHtml(Runtime.overviewError)}</span></div>`
       : isContextMissing
@@ -15742,6 +15784,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     const token = ++Runtime.overviewRefreshToken;
     Runtime.overviewLoading = true;
     Runtime.overviewError = '';
+    Runtime.overviewErrorAt = 0;
     renderOverviewPanel();
     try {
       const [preview] = await Promise.all([
@@ -15763,7 +15806,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       }
       return preview;
     } catch (error) {
-      if (token === Runtime.overviewRefreshToken) Runtime.overviewError = compact(error?.message || error, 320);
+      if (token === Runtime.overviewRefreshToken) { Runtime.overviewError = compact(error?.message || error, 320); Runtime.overviewErrorAt = Date.now(); }
       return null;
     } finally {
       if (token === Runtime.overviewRefreshToken) {
@@ -15854,6 +15897,48 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     return null;
   };
 
+  const renderRetraceErrorLogContents = (overlay, diagnostics) => {
+    const { entries } = diagnostics;
+    const levels = { error: '오류', warning: '경고', info: '안내' };
+    const summaryText = `오류 ${diagnostics.errors}건 · 경고 ${diagnostics.warnings}건 · 안내 ${diagnostics.information}건`;
+    const inventoryText = diagnostics.catalogChecked
+      ? `서버 자료 분류: 확인 불가 ${diagnostics.unverifiedScopes}개 · 정리 후보 ${diagnostics.cleanupCandidates}개 · 색인 실패 ${diagnostics.scanFailures}개. 서버 사본 수는 오류 로그 건수와 별도로 표시합니다.`
+      : '서버 사본 목록은 아직 조회하지 않았습니다.';
+    const summary = overlay.querySelector('[data-error-log-summary]');
+    if (summary) {
+      summary.textContent = summaryText;
+    }
+    const catalog = overlay.querySelector('[data-error-log-catalog]');
+    if (catalog) catalog.textContent = inventoryText;
+    const banner = overlay.querySelector('[data-error-log-banner]');
+    if (banner) {
+      banner.className = `banner ${diagnostics.errors ? 'banner--danger' : diagnostics.warnings ? 'banner--warn' : 'banner--info'}`;
+    }
+    const listNode = overlay.querySelector('[data-error-log-list]');
+    if (listNode) {
+      if (!entries.length) {
+        listNode.innerHTML = '<div class="empty" style="padding:36px 16px"><strong>기록된 오류·경고·안내가 없습니다</strong><span>검사 결과는 서버 관리에서 확인하세요.</span></div>';
+      } else {
+        listNode.innerHTML = entries.map(row => {
+          const label = row.owner ? (MEMORY_SUITE_NAMESPACE_LABELS[row.owner] || row.owner) : 'RE:TRACE';
+          const badgeClass = row.level === 'error' ? 'badge--danger' : row.level === 'warning' ? 'badge--warn' : 'badge--info';
+          return `<div class="card card--tight" style="border-left:3px solid var(--accent,#3b82f6);background:var(--surface)">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">
+              <div style="display:flex;align-items:center;gap:6px">
+                <span class="badge ${badgeClass}">${levels[row.level]} · ${escapeHtml(label)}</span>
+                <strong style="font-size:13px">${escapeHtml(row.message)}</strong>
+              </div>
+              <small class="muted mono" style="font-size:11px">${scopeManagerFormatTime(row.at)}</small>
+            </div>
+            ${row.detail ? `<div style="background:var(--surface2,rgba(0,0,0,0.03));border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.5;color:var(--text);word-break:break-all;white-space:pre-wrap">${escapeHtml(row.detail)}</div>` : ''}
+          </div>`;
+        }).join('');
+      }
+    }
+    overlay.dataset.fullLogText = [summaryText, inventoryText, ...entries.map(row =>
+      `${scopeManagerFormatTime(row.at)} · [${levels[row.level]}] [${row.owner || 'RE:TRACE'}] ${row.message}${row.detail ? `\n${row.detail}` : ''}`)].join('\n\n');
+  };
+
   const openRetraceErrorLog = () => {
     const doc = Runtime.root?.ownerDocument || document;
     let overlay = Runtime.root?.querySelector?.('#retraceErrorLogOverlay');
@@ -15877,7 +15962,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         <div class="banner banner--warn" data-error-log-banner style="margin:0">
           <div>
             <strong data-error-log-summary></strong>
-            <p class="muted" style="margin:2px 0 0;font-size:12px">확인 불가 자료 및 참조 중인 승계 조상은 데이터 유실 방지를 위해 자동 삭제하지 않고 보존합니다.</p>
+            <p class="muted" data-error-log-catalog style="margin:2px 0 0;font-size:12px"></p>
           </div>
         </div>
         <div data-error-log-list style="flex:1;min-height:0;max-height:52vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px"></div>
@@ -15909,53 +15994,9 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         };
       }
     }
-    const scanErrors = Runtime.serverScopeCatalog?.scanErrors || {};
-    const scanEntries = Object.entries(scanErrors).map(([owner, detail]) => ({
-      at: Runtime.serverScopeCatalog?.at || Date.now(),
-      owner,
-      message: `${MEMORY_SUITE_NAMESPACE_LABELS[owner] || owner} 서버 목록 검사 보류`,
-      detail
-    }));
-    const isContextMissing = Boolean(Runtime.overviewError && /캐릭터.*불러올 수 없습니다|character/i.test(Runtime.overviewError));
-    const overviewEntries = Runtime.overviewError ? [{
-      at: Date.now(),
-      owner: 'retrace',
-      message: isContextMissing ? '캐릭터 대화방 미선택 (대기)' : '개요 및 컨텍스트 갱신 오류',
-      detail: Runtime.overviewError
-    }] : [];
-    const entries = [...overviewEntries, ...Runtime.warnings.map(w => ({ ...w, owner: '' })), ...scanEntries];
-    const summary = overlay.querySelector('[data-error-log-summary]');
-    if (summary) {
-      summary.textContent = `오류 ${entries.length}건 · 경고 ${Runtime.warnings.length}건 · 색인 실패 ${Object.keys(scanErrors).length}개. 확인 불가 자료는 자동 삭제하지 않았습니다.`;
-    }
-    const banner = overlay.querySelector('[data-error-log-banner]');
-    if (banner) {
-      banner.className = `banner ${entries.length ? 'banner--warn' : 'banner--ok'}`;
-    }
-    const listNode = overlay.querySelector('[data-error-log-list]');
-    if (listNode) {
-      if (!entries.length) {
-        listNode.innerHTML = '<div class="empty" style="padding:36px 16px"><strong>기록된 오류가 없습니다</strong><span>모든 플러그인과 서버 스토리지가 정상 동작하고 있습니다.</span></div>';
-      } else {
-        listNode.innerHTML = entries.map(row => {
-          const label = row.owner ? (MEMORY_SUITE_NAMESPACE_LABELS[row.owner] || row.owner) : '경고';
-          const badgeClass = row.owner ? 'badge--warn' : 'badge--info';
-          return `<div class="card card--tight" style="border-left:3px solid var(--accent,#3b82f6);background:var(--surface)">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">
-              <div style="display:flex;align-items:center;gap:6px">
-                <span class="badge ${badgeClass}">${escapeHtml(label)}</span>
-                <strong style="font-size:13px">${escapeHtml(row.message)}</strong>
-              </div>
-              <small class="muted mono" style="font-size:11px">${scopeManagerFormatTime(row.at)}</small>
-            </div>
-            ${row.detail ? `<div style="background:var(--surface2,rgba(0,0,0,0.03));border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;margin-top:6px;font-size:12px;line-height:1.5;color:var(--text);word-break:break-all;white-space:pre-wrap">${escapeHtml(row.detail)}</div>` : ''}
-          </div>`;
-        }).join('');
-      }
-    }
-    overlay.dataset.fullLogText = entries.length
-      ? entries.map(row => `${scopeManagerFormatTime(row.at)} · [${row.owner || '경고'}] ${row.message}${row.detail ? `\n${row.detail}` : ''}`).join('\n\n')
-      : '현재 보관된 오류가 없습니다.';
+    const diagnostics = retraceDiagnosticSnapshot();
+    renderRetraceErrorLogContents(overlay, diagnostics);
+    syncRetraceDiagnosticIndicator(retraceOverviewState(), diagnostics);
     overlay.hidden = false;
     overlay.setAttribute('aria-hidden', 'false');
     overlay.classList.add('is-open');

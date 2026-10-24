@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.4.1",
-  "generatedAt": "2026-10-24T15:11:09.872Z",
+  "generatedAt": "2026-10-24T15:24:53.335Z",
   "server": {
     "version": "0.4.1",
     "protocol": {
@@ -1427,7 +1427,7 @@
     "hayaku": "3.3.3",
     "libra": "2.6.3",
     "lia": "0.29.1",
-    "retrace": "1.12.0",
+    "retrace": "1.12.1",
     "gradia": "0.28.0"
   },
   "files": {
@@ -3572,7 +3572,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "c24d8871489672b327370ca2beaddd759e370fed7dfd9121e2aeaeffab8f6a2f",
+      "sha256": "a8f12bdad3cac550087febc9d621722921276352b88f5dd151e2d857b7b4cd1f",
       "bytes": 11832
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -3964,7 +3964,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "df68a2a412a5307dd5c717153b5adb3196a7f9e0f675b61465e01b540c8e3a99",
+      "sha256": "b5c1778c7606693f429a93c7df01528792bc10f56cc1b847afd394701d24b185",
       "bytes": 3349
     },
     "plugins/Flashback_Memory.js": {
@@ -3988,8 +3988,8 @@
       "bytes": 6543503
     },
     "plugins/RETRACE.js": {
-      "sha256": "a23e24acc8c691d94dd66825453c6222a2145abb201ff2efbcaba0a16d3bff79",
-      "bytes": 1249658
+      "sha256": "97af59533674b9c4fb674afa9a361f80fa1dd5704f66634f801e5516efbc2422",
+      "bytes": 1250904
     },
     "release-policy.json": {
       "sha256": "dd876b2e56bc534c78fdc873914d846175c9d1234cfa926da7736f2447af5206",
@@ -9915,6 +9915,10 @@
       "sha256": "7bf967ceae14ecc57c148d42e9c96ea1c610934abcb14ba31aaddf3153c65c3e",
       "bytes": 6402
     },
+    "tests/retrace_diagnostic_counts_gui_test.cjs": {
+      "sha256": "6b90cb32e08f46c10a8dfb55e82ab8fc9869a09fa4c7166abb0f189e91e6659a",
+      "bytes": 4132
+    },
     "tests/retrace_dialog_lifecycle_gui_test.cjs": {
       "sha256": "1873f1c3fc3ba94a75e576ba0e0f438ea1513dd3ac1456c0beebdf23b2695d06",
       "bytes": 4442
@@ -11576,7 +11580,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "e75714e4bcc9534a6f21ddf05b84a0252e0aac74f2b90117deedfef6cf0ca2bb",
+      "sha256": "7b41423ed34a6c56ecfc81dc641bd06c17cc9969c83801b9a11537e7e643c12a",
       "bytes": 3783
     }
   },
