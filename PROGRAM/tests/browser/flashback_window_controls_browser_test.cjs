@@ -108,10 +108,11 @@ const watchdog = setTimeout(() => { child.kill('SIGKILL'); process.exitCode = 1;
   }
   await inside('__FlashbackMemory.showUi()');
   await click('#topMoreBtn');
-  const beforeMenuClose = await inside('calls.hide');
-  await click('#topMenuCloseBtn');
+  assert.equal(await inside('document.querySelector("#topMenuCloseBtn") === null'), true, 'menu close button is removed from topMoreMenu');
+  const beforeClose = await inside('calls.hide');
+  await click('#closeBtn');
   await wait(() => ev('document.querySelector("#plugin").style.display==="none"'));
-  assert.equal(await inside('calls.hide'), beforeMenuClose + 1, 'existing menu close also hides the container');
+  assert.equal(await inside('calls.hide'), beforeClose + 1, 'dedicated close hides the container');
   assert.equal(await inside('calls.models'), 0);
   await inside('(async()=>{for(const fn of unloads)await fn()})()');
   console.log('PASS real Chromium: transparent fullscreen iframe; centered window and rendered menu/refresh/outside/Escape/dedicated close/reopen at 8 viewport sizes; zero model/network calls; evidence ' + out);
