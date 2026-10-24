@@ -17,7 +17,7 @@ const owners = {
 
 const artifactRoot = process.env.GLOBAL_MODE_ARTIFACT_ROOT;
 const kinds = artifactRoot ? ['Full', 'Min'] : ['Full'];
-const recoveryKinds=['migration', 'legacy_rollback', 'legacy_rollback_resume', 'expired_rollback', 'restored_server', 'restored_witness'];
+const recoveryKinds=['migration', 'legacy_rollback', 'legacy_rollback_resume', 'expired_rollback', 'restored_server', 'restored_witness', 'missing_destination'];
 
 const hash = value => {
   let h = 0x811c9dc5;
@@ -242,6 +242,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
   for (const [name] of Object.entries(owners)) {
     for (const kind of kinds) for (const recoveryKind of recoveryKinds) {
       const restoredServer=recoveryKind.startsWith('restored_');
+      const resumeMigration=['migration','missing_destination'].includes(recoveryKind);
       const handler = createHandlerFixture();
       const pluginPath = artifactRoot
         ? path.join(artifactRoot, kind, META[name][0])
@@ -249,7 +250,19 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
       let s,restoredHandler,restoredRows;
       try {
         const snapshot = await createPausedGlobalTransitionSnapshot(name, kind, pluginPath, handler);
-        if (recoveryKind !== 'migration') {
+        if (recoveryKind === 'missing_destination') {
+          const values=new Map(snapshot.entries),job=JSON.parse(values.get(snapshot.jobKey));
+          const registryKey=`__memory_suite_internal_scope_routes_v1__:${owners[name]}`;
+          const registry=JSON.parse(values.get(registryKey)||JSON.stringify(job.globalPlan.registry));
+          const scope=job.globalPlan.scopes.find(row=>job.globalPlan.sources.some(source=>{
+            const [location,,key]=source.identity.split('\u0000');
+            return location!=='server'&&/manifest|ledger/.test(key)&&[row.scopeId,...row.aliases].some(alias=>alias&&key.includes(alias));
+          }));
+          assert(scope,'a source-backed scope must be available');
+          registry.entries[scope.scopeId]={...(registry.entries[scope.scopeId]||{}),...scope,mode:'server_only',origin:'transition_pending',globalMigrationJobId:job.jobId,updatedAt:Date.now()};
+          values.set(registryKey,JSON.stringify(registry));snapshot.entries=[...values];
+        }
+        if (!resumeMigration) {
           const values = new Map(snapshot.entries);
           const job = JSON.parse(values.get(snapshot.jobKey));
           // Historical jobs can predate per-scope sourceMode. The original
@@ -366,7 +379,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
         allowServer = true;
         const resumeBtn = s.doc.querySelector('button[data-job-retry]');
         assert.ok(resumeBtn && typeof resumeBtn.onclick === 'function', `${name} (${kind}): global resume button must be interactive`);
-        assert.equal(resumeBtn.textContent, restoredServer?'기기 원본 확인 후 취소':recoveryKind === 'migration' ? '중단한 이전 재개' : '취소 복구 계속');
+        assert.equal(resumeBtn.textContent, restoredServer?'기기 원본 확인 후 취소':resumeMigration ? '중단한 이전 재개' : '취소 복구 계속');
         const jump = s.doc.querySelector('[data-global-resume]');
         assert.equal(jump.textContent, '진행 화면으로 이동');
         if (recoveryKind === 'legacy_rollback_resume') {
@@ -382,7 +395,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
             assert.equal(approval.textContent,'기기 경로 복구로 취소');
             assert.match(s.doc.querySelector('[data-mode-confirm-text]').textContent,/현재 서버.*변경하지|현재 서버에 자료를 전송/);
           }else{
-            assert.equal(recoveryKind,'migration','continuing cancellation must not ask to restart server migration');
+            assert(resumeMigration,'continuing cancellation must not ask to restart server migration');
             assert.match(s.doc.querySelector('[data-mode-confirm-text]').textContent,/새 검사|자료가 변경/);
           }
           approval.click();
@@ -394,7 +407,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
             if (!rawJob) return false;
             try {
               const parsed = JSON.parse(rawJob);
-              return recoveryKind !== 'migration'
+              return !resumeMigration
                 ? parsed.status === 'cancelled' && parsed.rollbackComplete === true && !parsed.error
                 : parsed.status === 'completed' && parsed.phase === 'completed';
             } catch (_) {
@@ -413,7 +426,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
 
         // Memory read must now succeed after transition completion.
         await assertOwnerMemoryReadUnlocked(s, name, kind);
-        if(recoveryKind!=='migration'){
+        if(!resumeMigration){
           assert.match(s.doc.querySelector('[data-job-title]').textContent,/취소 복구 완료.*100%/);
           assert.match(s.doc.querySelector('[data-job-time]').textContent,/복구 소요: \d+초/);
           const diagnostics=JSON.parse(s.doc.querySelector('[data-job-diagnostics]').value);
@@ -424,6 +437,10 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
             assert.deepEqual(restoredHandler.app.repositories[owners[name]].database.prepare('SELECT * FROM kv ORDER BY space,key').all(),restoredRows);
             assert(!restoredHandler.trace.some(row=>row.method!=='GET'),'restored server receives no mutating request');
           }
+        }
+        if(recoveryKind==='missing_destination'){
+          const job=JSON.parse(s.values.get(snapshot.jobKey));
+          assert(Object.values(job.checkpoints).some(row=>row.copiedMissingRecords>0),'resume must fill the absent payload behind the already-saved server route');
         }
 
         if (name === 'Flashback') {

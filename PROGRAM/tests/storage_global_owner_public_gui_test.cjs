@@ -124,7 +124,12 @@ async function apply(s,mode){
  const button=s.doc.querySelector('[data-apply]');await approve(button);
  // A read-only preview may observe the owner's own startup schema write. Exercise
  // the documented fresh confirmation path once, never skip an unknown-data blocker.
- if(s.doc.querySelector('[data-status]').textContent.includes('inventory_changed_during_preview')){s.globalInventoryRefreshes=(s.globalInventoryRefreshes||0)+1;await settleOwnerStore(s);const selected=s.doc.querySelector(`input[value="${mode}"]`);selected.checked=true;selected.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));await approve(s.doc.querySelector('[data-apply]'));}
+ if(s.doc.querySelector('[data-status]')?.textContent.includes('inventory_changed_during_preview')){s.globalInventoryRefreshes=(s.globalInventoryRefreshes||0)+1;await settleOwnerStore(s);const selected=s.doc.querySelector(`input[value="${mode}"]`);selected.checked=true;selected.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));await approve(s.doc.querySelector('[data-apply]'));}
+ // Successful recovery may return the owner to its ordinary screen before the
+ // awaiting click handler returns. Observe durable completion, then reopen the
+ // real server panel rather than asserting against an already-removed view.
+ await until(()=>{try{const job=JSON.parse(s.values.get(`__memory_suite_internal_sync_job_v1__:${owners[s.name]}`));return job?.status==='completed'&&job.targetMode===mode;}catch(_){return false;}},'durable global job completion',10000);
+ if(!s.doc.querySelector('[data-status]'))await openPanel(s);
  await until(()=>s.doc.querySelector('[data-job].terminal'),'completed global job card',4000);
  const text=[s.doc.querySelector('[data-status]').textContent,s.doc.querySelector('[data-job-title]').textContent,s.doc.querySelector('[data-job-count]').textContent].join('\n');
  const diagnostics=JSON.parse(s.doc.querySelector('[data-job-diagnostics]').value);assert.equal(diagnostics.result.completeKnownScopes,true,text);assert.equal(diagnostics.result.mode,mode,text);assert.equal(diagnostics.result.verifiedScopes,3);assert.match(s.doc.querySelector('[data-job-count]').textContent,/3 \/ 3/,text);

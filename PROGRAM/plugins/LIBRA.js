@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.4.19
-//@version 2.4.19
+//@display-name LIBRA v2.4.20
+//@version 2.4.20
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.4.19';
+  const PLUGIN_VERSION = '2.4.20';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -8398,6 +8398,26 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const digest=await globalThis.crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));
     return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
   };
+  const globalValueDifferenceMetadata = (expected,actual) => {
+    const object=value=>value!==null&&typeof value==='object';
+    const decode=value=>{if(typeof value==='string'){try{return JSON.parse(value);}catch(_){return null;}}return value;};
+    const left=decode(expected),right=decode(actual);
+    if(!object(left)||!object(right))return {};
+    const jsonEquivalent=globalCanonical(left)===globalCanonical(right);
+    if(Array.isArray(left)||Array.isArray(right))return {jsonEquivalent};
+    const different=[...new Set([...Object.keys(left),...Object.keys(right)])].sort()
+      .filter(key=>globalCanonical(left[key])!==globalCanonical(right[key]));
+    // Known structural field names only. Values and arbitrary user-authored
+    // dictionary keys must never appear in the exported diagnostics.
+    const fields=new Set(('schema version pluginVersion scopeKey storageHash characterId chatId personaId characterName chatTitle personaName '
+      +'chatMessageCount chatFingerprint chatTailHash createdAt updatedAt count shardCount shardSize shardIndexVersion shardSummaries nextId stats '
+      +'responseTurnMax responseTurnCount copiedFromScopeKey copiedFromChatId copiedFromChatTitle copiedAt copyAdoptedCompleteAt copyAdoptedComplete '
+      +'copyAdoptionMode externalRetirementVersion externalRetiredAt externalRetiredRecords externalRetiredByType episodeSourceDigest episodeIndexedAt '
+      +'episodeCount episodeChildCount turnWorldlineLiveHash turnWorldlineRevision archiveRef archiveOwner archiveId archiveGeneration archiveDigest '
+      +'vectorStorageMode vectorStorageBackend vectorSidecarCount vectorSidecarBytes vectorSidecarMissing commitId records memories entries text summary vector vectors metadata').split(' '));
+    return {jsonEquivalent,differingTopLevelFieldCount:different.length,
+      differingTopLevelFields:different.filter(key=>fields.has(key)).slice(0,32)};
+  };
   const globalExactJson = value => {
     const seen = new Set();
     const walk = item => {
@@ -8735,6 +8755,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(['MEMORY_SUITE_GLOBAL_SOURCE_CHANGED','MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED'].includes(errCode))return {
         blockerReason:'자료와 대화 목록을 다시 확인해야 합니다.',actionRequired:`${next} 추가 확인창이 나오면 내용을 확인해 승인하면 됩니다.`,
         remedySteps:[`1. ${next}`,'2. 재검사 결과 확인 및 승인 · 기존에 일치하는 자료는 재전송하지 않음']};
+      if(['MEMORY_SUITE_GLOBAL_DESTINATION_UNVERIFIED','MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT'].includes(errCode))return {
+        blockerReason:details?.reason==='destination_tombstone'?'이전 대상에 삭제 기록이 있어 원본 복사를 중단했습니다.'
+          :details?.reason==='destination_value_mismatch'?'이전 대상의 값이 원본과 달라 검증을 중단했습니다.'
+          :details?.reason==='destination_missing'?'이전 대상에서 원본과 같은 저장 항목을 확인하지 못했습니다.'
+          :'이전 대상의 저장 항목을 검증하지 못했습니다.',
+        actionRequired:'상세 진단의 space·key·reason과 원본·대상의 지문을 확인해야 합니다. 현재 대화의 원본과 대상 사본은 보존되며, 값 차이나 삭제 기록을 자동으로 덮어쓰지 않습니다.',
+        remedySteps:['1. 상세 진단에서 저장 공간·키·검증 실패 이유 확인','2. 원본과 대상의 차이를 확인한 뒤 자료 선택 또는 복구 방법 결정']};
       if(['MEMORY_SUITE_SERVER_UNAVAILABLE','MEMORY_SUITE_SERVER_NOT_FOUND'].includes(errCode))return {
         blockerReason:'이전을 시작했던 서버에 연결할 수 없습니다.',actionRequired:`서버를 실행하고 연결 테스트를 통과한 뒤 ${next}`,
         remedySteps:['1. 원래 서버 실행 및 주소 확인','2. 연결 테스트',`3. ${next}`]};
@@ -8919,29 +8946,74 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if(!destination)continue;
         const sourceValue=Object.hasOwn(row,'logicalValue')?row.logicalValue:row.value;
         const projected=sourceRemote?sourceValue:await routeProjectValue(route,sourceValue);
-        if(row.deleted!==destination.deleted||await globalDigest([row.deleted,projected])!==await globalDigest([destination.deleted,Object.hasOwn(destination,'logicalValue')?destination.logicalValue:destination.value]))
-          throw globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT',{scopeId:scope.scopeId,space:row.space,key:row.logicalKey});
+        const actual=Object.hasOwn(destination,'logicalValue')?destination.logicalValue:destination.value;
+        const expectedFingerprint=await globalDigest([row.deleted,projected]),actualFingerprint=await globalDigest([destination.deleted,actual]);
+        if(row.deleted!==destination.deleted||expectedFingerprint!==actualFingerprint)
+          throw globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT',{
+            scopeId:scope.scopeId,space:row.space,key:row.logicalKey,...(!sourceRemote?{remoteKey:route.remoteKey}:{}),targetMode:inventory.targetMode,sourceLocation:row.location,
+            reason:destination.deleted&&!row.deleted?'destination_tombstone':'destination_value_mismatch',repairable:false,sourceMode:scope.sourceMode,
+            actualExists:!destination.deleted,actualTombstone:destination.deleted,actualRevision:Number(destination.revision||0),
+            expectedValueType:Array.isArray(projected)?'array':projected===null?'null':typeof projected,
+            actualValueType:destination.deleted?'absent':Array.isArray(actual)?'array':actual===null?'null':typeof actual,
+            expectedFingerprint,actualFingerprint,...globalValueDifferenceMetadata(projected,actual)
+          });
       }
     }
   };
-  const verifyGlobalScopeDestination = async (inventory,scope,target) => {
-    let verified=0;
+  const verifyGlobalScopeDestination = async (inventory,scope,target,verifyOptions={}) => {
+    let verified=0,copiedMissingRecords=0,notifiedAt=0;
     const rows=inventory.records.filter(row=>globalPayloadRecord(row)&&globalRecordScopeIds(row).includes(scope.scopeId)
       &&(scope.sourceMode===MODE_SERVER_ONLY?row.location==='server':row.location!=='server'));
     for(const row of rows){
+      if(verifyOptions.job){
+        const now=Date.now();Object.assign(state.syncJob.current,{currentSpace:row.space,currentKey:row.logicalKey,currentAction:target===MODE_SERVER_ONLY?'서버 저장 항목 재조회·검증':'기기 저장 항목 재조회·검증',updatedAt:now,lastActivityAt:now});
+        // Large plans are cloned for listeners; keep readback progress visible
+        // without cloning the full journal for every record.
+        if(now-notifiedAt>=200){notifiedAt=now;notifySyncJob();}
+      }
       const route=await globalRouteForRecord(row,scope);
       if(target===MODE_SERVER_ONLY){
-        const remote=await remoteGet(row.space,route.remoteKey,{allowPluginOnly:true});
+        let remote=await remoteGet(row.space,route.remoteKey,{allowPluginOnly:true});
         const logical=Object.hasOwn(row,'logicalValue')?row.logicalValue:row.value;
         const expected=row.location==='server'?logical:await routeProjectValue(route,logical);
-        if(row.deleted?remote.tombstone!==true:remote.exists!==true||globalCanonical(remote.value)!==globalCanonical(expected))throw globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_UNVERIFIED',{scopeId:scope.scopeId,key:row.logicalKey});
+        const job=verifyOptions.job;
+        const source=job?.globalPlan?.sources?.find(source=>source.identity===globalRecordIdentity(row));
+        const originalMode=job?registryScopeMode(job.globalPlan.registry,scope.scopeId,job.globalPlan.legacyMode??MODE_PLUGIN_ONLY):scope.sourceMode;
+        // A route/checkpoint can survive an interrupted copy or a partial logical
+        // restore. It proves routing progress, never the presence of each value.
+        // Fill only an absent slot from an unchanged admitted physical source.
+        // A server tombstone or a different value always remains a conflict.
+        const canFill=!!job&&job.targetMode===target&&originalMode!==MODE_SERVER_ONLY&&row.location!=='server'
+          &&!row.deleted&&source?.fingerprint===row.fingerprint;
+        if(canFill&&remote.exists===false&&remote.tombstone===false&&remote.revision===0){
+          await assertDurableJobAdmission(job);
+          let value;try{value=JSON.parse(globalExactJson(await inventory.stores[row.space]?.getItem(row.key)));}
+          catch(_){throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space:row.space,key:row.logicalKey,reason:'source_readback_unavailable'});}
+          if(await globalDigest([false,value])!==source.fingerprint)throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space:row.space,key:row.logicalKey});
+          Object.assign(state.syncJob.current,{currentSpace:row.space,currentKey:row.logicalKey,currentAction:'누락된 서버 항목 복사·검증'});notifySyncJob();
+          await remoteMutate('set',row.space,route.remoteKey,expected,{allowPluginOnly:true,expectedRevision:0});
+          await assertDurableJobAdmission(job);
+          remote=await remoteGet(row.space,route.remoteKey,{allowPluginOnly:true});copiedMissingRecords++;
+        }
+        if(row.deleted?remote.tombstone!==true:remote.exists!==true||globalCanonical(remote.value)!==globalCanonical(expected))throw globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_UNVERIFIED',{
+          scopeId:scope.scopeId,space:row.space,key:row.logicalKey,remoteKey:route.remoteKey,targetMode:target,sourceLocation:row.location,
+          reason:remote.tombstone===true&&!row.deleted?'destination_tombstone':remote.exists!==true&&!row.deleted?'destination_missing':'destination_value_mismatch',
+          repairable:false,sourceMode:originalMode,currentMode:route.mode,actualExists:remote.exists===true,actualTombstone:remote.tombstone===true,
+          actualRevision:Number(remote.revision||0),expectedValueType:Array.isArray(expected)?'array':expected===null?'null':typeof expected,
+          actualValueType:remote.exists!==true?'absent':Array.isArray(remote.value)?'array':remote.value===null?'null':typeof remote.value,
+          expectedFingerprint:await globalDigest([row.deleted,expected]),actualFingerprint:await globalDigest([remote.tombstone===true,remote.exists===true?remote.value:null]),
+          ...(remote.exists===true?globalValueDifferenceMetadata(expected,remote.value):{})
+        });
       }else{
         const store=inventory.stores[row.space],value=await legacyRead(store,row.logicalKey);
-        if(row.deleted?!isNullishStorageValue(value):globalCanonical(await routeProjectValue(route,value))!==globalCanonical(Object.hasOwn(row,'logicalValue')?row.logicalValue:row.value))throw globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_UNVERIFIED',{scopeId:scope.scopeId,key:row.logicalKey});
+        if(row.deleted?!isNullishStorageValue(value):globalCanonical(await routeProjectValue(route,value))!==globalCanonical(Object.hasOwn(row,'logicalValue')?row.logicalValue:row.value))throw globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_UNVERIFIED',{
+          scopeId:scope.scopeId,space:row.space,key:row.logicalKey,targetMode:target,sourceLocation:row.location,
+          reason:!row.deleted&&isNullishStorageValue(value)?'destination_missing':'destination_value_mismatch',repairable:false
+        });
       }
       verified++;
     }
-    return {scopeId:scope.scopeId,verifiedRecords:verified};
+    return {scopeId:scope.scopeId,verifiedRecords:verified,...(copiedMissingRecords?{copiedMissingRecords}:{})};
   };
   const runGlobalModeJob = async (job,initialInventory=null) => {
     if(globalJobRunning)throw transitionBusyError();
@@ -8994,7 +9066,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             onProgress:progress=>{state.syncJob.current={...state.syncJob.current,currentSpace:progress.space,currentKey:progress.currentKey||'',currentAction:progress.currentAction||'',
               currentProgress:Object.fromEntries(['phase','space','totalItems','processedItems','processedBytes','transferredBytes','uploaded','restored','matched','dryRun','failureCount','conflictCount'].filter(key=>progress[key]!=null).map(key=>[key,progress[key]]))};notifySyncJob();}});
         }
-        const evidence=await verifyGlobalScopeDestination(inventory,scope,job.targetMode);
+        const evidence=await verifyGlobalScopeDestination(inventory,scope,job.targetMode,{job});
         if(sameMode||completed||!hasRecords)await persistScopedMode(job.targetMode,scope,{origin:'transition_pending',source:'global_allchat_verified',globalMigrationJobId:job.jobId});
         await globalSaveJob({checkpoints:{...state.syncJob.current.checkpoints,[scope.scopeId]:evidence},verifiedScopes:Object.keys({...state.syncJob.current.checkpoints,[scope.scopeId]:evidence}).length});
       }
@@ -9002,7 +9074,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       inventory=await collectGlobalInventory(job.targetMode);
       await assertGlobalPlanCurrent(job,inventory);
       globalMigrationContext=inventory;
-      for(const scope of job.globalPlan.scopes)await verifyGlobalScopeDestination(inventory,scope,job.targetMode);
+      for(const scope of job.globalPlan.scopes)await verifyGlobalScopeDestination(inventory,scope,job.targetMode,{job});
       await globalSaveJob({phase:'commit_pending',message:'모든 대화 검증 완료 · 전역 설정을 게시하고 있습니다.'});
       const registry=parseScopeRegistry(await loadScopeRegistry(true,false));
       for(const scope of job.globalPlan.scopes){const old=registry.entries[scope.scopeId]||{};
