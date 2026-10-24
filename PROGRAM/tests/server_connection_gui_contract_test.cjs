@@ -18,7 +18,7 @@ const pluginDir = path.join(root, 'plugins');
 const plugins = [
   ['Flashback_Memory.js', ['data-go="${go}"', "['connect','link','임베딩 · 서버','연결']", "subtab('c','srv','서버'"], 'flashbackMemorySuiteServerConnectionPanel'],
   ['HAYAKU_Locator_Continuity.js', ['data-hayaku-viewer-goto="server"'], 'hayakuMemorySuiteServerConnectionPanel'],
-  ['LIBRA.js', ['data-go="settings"', 'data-subtab="store"', "sections:['server','recovery','transfer']"], 'libraMemorySuiteServerConnectionPanel'],
+  ['LIBRA.js', ['data-go="server"'], 'libraMemorySuiteServerConnectionPanel'],
   ['LIA_Persona_Linker.js', ['data-go="recover"'], 'liaMemorySuiteServerConnectionPanel'],
   ['RETRACE.js', ['data-tab="serverdata"', 'data-server-page="connection"'], 'retraceMemorySuiteServerConnectionPanel']
 ];
