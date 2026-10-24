@@ -32,7 +32,8 @@ for (const [name, {variant,embedsCompute}] of Object.entries(STORAGE_VARIANTS)) 
   if (['LIBRA.js','Flashback_Memory.js','HAYAKU_Locator_Continuity.js'].includes(name)) {
     const consentFile = 'MemorySuiteSourceInput.libra.source.js';
     const consentSource = fs.readFileSync(path.join(root,'sdk',consentFile),'utf8').trimEnd();
-    consentOk = text.split(consentSource).length - 1 === 1;
+    const norm = s => String(s || '').replace(/\r\n/g, '\n');
+    consentOk = norm(text).split(norm(consentSource)).length - 1 === 1;
     process.stdout.write(`${name}: consentProfile=${consentOk ? 'OK' : 'MISMATCH'}:${consentFile}\n`);
   }
   if (!ok || !computeOk || !lineageOk || !consentOk) failed = true;

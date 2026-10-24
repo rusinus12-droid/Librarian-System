@@ -4,7 +4,7 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const preservedConsumerSha256='93711f7bb78faaf46d18bda64da7108710b37b0865a44a67fbbd2e831fb004bb';
 // Reviewed manager-only health delta; local-only consumers retain their pin.
-const managerOnlyConsumerSha256='8a74a8a9045f1821c238e1e14652fc44b4efb44c63ca13bfca5aa7c78b434cf4';
+const managerOnlyConsumerSha256='3090192a9e1160983fa485ada60887075f08122d048c3fa5787485098d382c16';
 // Explicit GRADIA-only read extension; other preserved consumers keep their prior pin.
 const gradiaReadOnlyConsumerSha256='248f4f4a3702c0a042c3890c7c8557c8ba07662616bd4b4f12dcf6328019661c';
 const STORAGE_VARIANTS=Object.freeze({
@@ -16,7 +16,7 @@ const STORAGE_VARIANTS=Object.freeze({
  'GRADIA.js':Object.freeze({variant:'preserved-readonly-three-owner',embeddedSha256:gradiaReadOnlyConsumerSha256,embedsCompute:false})
 });
 const storagePattern=()=>/\/\* LIBRARIAN SYSTEM STORAGE SDK v[^\r\n]+[\s\S]*?\r?\n  return bridge;\r?\n\r?\n};/g;
-const sha=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
+const sha=bytes=>crypto.createHash('sha256').update(String(bytes).replace(/\r\n/g,'\n')).digest('hex');
 function extractStorageSdk(text,name){
  const blocks=[...text.matchAll(storagePattern())];
  const markers=(text.match(/\/\* LIBRARIAN SYSTEM STORAGE SDK v/g)||[]).length;

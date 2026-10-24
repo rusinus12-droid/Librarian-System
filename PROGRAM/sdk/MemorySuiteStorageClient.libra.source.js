@@ -4,6 +4,7 @@
  */
 const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const options = rawOptions && typeof rawOptions === 'object' ? rawOptions : {};
+  const managerOnly = options.storagePolicy === 'manager_only';
   const namespace = String(options.namespace || '').trim().toLowerCase();
   const pluginId = String(options.pluginId || namespace || 'plugin').trim();
   const pluginVersion = String(options.pluginVersion || '').trim();
@@ -216,7 +217,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     warned: new Set(),
     legacy: { plugin: options.pluginStorage || null, local: options.localStorage || null },
     management: { registered: false, registering: false, handle: null, timer: null, root: null, lastResult: null },
-    syncJob: { current: null, promise: null, retryTimer: null, persistTimer: null, loaded: false, listeners: new Set() },
+    syncJob: { current: null, promise: null, retryTimer: null, persistTimer: null, loaded: false, listeners: new Set(), dismissedJobId: '' },
     transientMode: '',
     diagnostics: { value: null, at: 0, pending: null, timer: null },
     scopeRouting: {
@@ -484,6 +485,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           parsed.message = '이전 동기화 작업을 다시 연결하고 있습니다.';
           parsed.nextRetryAt = 0;
         }
+        if (parsed.dismissed === true) { state.syncJob.dismissedJobId = String(parsed.jobId || ''); }
         state.syncJob.current = parsed;
         state.syncJob.loaded = true;
         notifySyncJob();
@@ -1347,7 +1349,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const bindingGeneration = requestOptions.bindingGeneration ?? dataBinding.generation;
     await assertConnectionCurrent(connection, bindingGeneration);
     const resetEpoch=Number(connection.resetEpochs?.[namespace]||0);
-    if(resetEpoch && !route.startsWith('/v1/manager/')){
+    const isManagerOperation = managerOnly || route.startsWith('/v1/manager/') || requestOptions.extraHeaders?.['X-Memory-Suite-Manager'] === 'retrace';
+    if(resetEpoch && !isManagerOperation){
       const choice=await readResetChoice(connection);
       if(resetReloadRequired || choice?.epoch!==resetEpoch || choice?.url!==(connection.requestedUrl||connection.url)){
         throw new Error('서버 자료가 초기화 또는 복원되었습니다. 서버 연결 설정에서 서버 자료 사용 또는 로컬 기억 다시 업로드를 선택한 뒤 RisuAI를 새로고침하세요.');
@@ -2416,6 +2419,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       result: null,
       error: ''
     };
+    state.syncJob.dismissedJobId = '';
     state.syncJob.current = job;
     state.syncJob.loaded = true;
     notifySyncJob();
@@ -5044,6 +5048,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       supersedesJobId:superseded?.jobId||null};
     if(superseded){const key=SYNC_JOB_STORAGE_KEY+':superseded:'+superseded.jobId;
       if(!await legacyWriteVerified(state.legacy.plugin,key,JSON.stringify(superseded)))throw globalModeError('MEMORY_SUITE_GLOBAL_JOURNAL_UNAVAILABLE');}
+    state.syncJob.dismissedJobId = '';
     state.syncJob.current={schema:SYNC_JOB_SCHEMA,namespace,pluginId,pluginVersion,jobId,id:jobId,kind:'global_mode',scopeId:GLOBAL_SCOPE_ID,
       sourceMode:inventory.remoteRequired?MODE_SERVER_ONLY:MODE_PLUGIN_ONLY,sourceUrl:targetUrl,targetMode:target,targetUrl,requestedMode:target,
       effectiveMode:normalizeMode(liveGlobalRow(inventory.registry)?.mode||MODE_PLUGIN_ONLY),serverPins:{source:inventory.serverPin,target:target!==MODE_PLUGIN_ONLY?inventory.serverPin:null},
@@ -6934,6 +6939,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const currentUrl = normalizeServerUrl(await getArgumentValue(urlArguments, defaultUrl));
     const targetUrl = target.url ? normalizeServerUrl(target.url) : currentUrl;
     const serverPins = await captureDurableJobServerPins({sourceMode:currentMode,sourceUrl:currentUrl,targetMode:requestedMode,targetUrl});
+    state.syncJob.dismissedJobId = '';
     state.syncJob.current = {
       schema: SYNC_JOB_SCHEMA, namespace, pluginId, pluginVersion,
       jobId, id: jobId, kind: String(kind || 'manual_sync'),
@@ -7647,28 +7653,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const scopedMountConnectionPanel = async (container, panelOptions = {}) => {
     if (!container || typeof container.innerHTML === 'undefined') throw new Error('memory_suite_connection_panel_container_required');
     const bookTheme = String(panelOptions.theme || '').toLowerCase() === 'book';
-    const cachedScope = normalizeScopeDescriptor(state.scopeRouting.current || null);
-    const cachedRegistryMode = cachedScope.scopeId
-      ? state.scopeRouting.registry?.entries?.[cachedScope.scopeId]?.mode
-      : '';
-    const cachedMode = normalizeMode(state.scopeRouting.transientModes.get(cachedScope.scopeId) || cachedRegistryMode || state.config.mode || MODE_PLUGIN_ONLY);
-    let initial = {
-      namespace,
-      pluginId,
-      pluginVersion,
-      scope: cachedScope,
-      scopeId: cachedScope.scopeId,
-      scopeLabel: cachedScope.scopeId ? cachedScope.label : '현재 스코프 확인 중…',
-      mode: cachedMode,
-      modeLabel: modeLabel(cachedMode),
-      executionPolicy: scopeExecutionPolicyFromModeState({ scope:cachedScope, mode:cachedMode }),
-      url: normalizeServerUrl(state.config.url || defaultUrl),
-      defaultMode: MODE_PLUGIN_ONLY,
-      recoveryRequired: false,
-      status: { ...state.status, mode:cachedMode, scopeId:cachedScope.scopeId, scopeLabel:cachedScope.label, recoveryRequired:false },
-      connection: null,
-      syncJob: getSyncJob()
-    };
+    const initial = await scopedGetConnectionSettings({ force:true });
     const rootId = `memory-suite-scope-connection-${namespace}-${Math.random().toString(36).slice(2,8)}`;
     const esc = value => safeText(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     container.innerHTML = `<div id="${rootId}" class="mscx-scope-root"><style>
@@ -7751,9 +7736,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const root = container.querySelector(`#${rootId}`);
     const q = sel => root.querySelector(sel);
     const renderAppliedMode = settings => {
-      q('[data-current-mode]').textContent=globalModeEnabled
-        ? `현재 전역 모드: ${settings.global ? modeLabel(settings.global.mode || MODE_PLUGIN_ONLY) : '확인 중…'}`
-        : `현재 모드: ${settings.scopeId ? settings.modeLabel : '현재 스코프 확인 불가'}`;
+      const mode = globalModeEnabled
+        ? (settings?.global?.mode || MODE_PLUGIN_ONLY)
+        : (settings?.scopeId ? settings.mode : (settings?.mode || MODE_PLUGIN_ONLY));
+      q('[data-current-mode]').textContent = globalModeEnabled
+        ? `현재 전역 모드: ${modeLabel(mode)}`
+        : `현재 모드: ${settings?.scopeId ? settings.modeLabel : '현재 스코프 확인 불가'}`;
     };
     renderAppliedMode(initial);
     const panelJobDiagnostics = job => ({...syncJobDiagnostics(job),
@@ -7785,32 +7773,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     applyRecoveryGuard(initial.recoveryRequired);
     for(const input of root.querySelectorAll(`input[name="${rootId}-mode"]`)) input.addEventListener('change',syncModePresentation);
     syncModePresentation();
-    const readinessControls = [...root.querySelectorAll(`input[name="${rootId}-mode"]`), q('[data-url]'), q('[data-test]'), q('[data-apply]'), q('[data-sync]'), q('[data-restore]'), q('[data-delete]')].filter(Boolean);
-    const setControlsReady = ready => { for (const control of readinessControls) control.disabled = !ready; };
-    const renderConnectionSettings = settings => {
-      initial = settings;
-      renderAppliedMode(settings);
-      lastSettings = {
-        mode: normalizeMode(settings.mode),
-        modeExplicit: settings.modeExplicit === true,
-        inheritedFromGlobal: settings.inheritedFromGlobal === true,
-        global: settings.global || { set:false, mode:MODE_PLUGIN_ONLY }
-      };
-      q('[data-scope-label]').textContent = settings.scopeLabel || '확인 불가';
-      q('[data-scope-id]').textContent = settings.scopeId || '';
-      q('[data-url]').value = settings.url || defaultUrl;
-      const appliedMode=globalModeEnabled ? settings.global?.mode || MODE_PLUGIN_ONLY : settings.mode;
-      const nextRadio = root.querySelector(`input[name="${rootId}-mode"][value="${appliedMode}"]`) || root.querySelector(`input[name="${rootId}-mode"][value="plugin_only"]`);
-      if (nextRadio) nextRadio.checked = true;
-      setControlsReady(true);
-      applyRecoveryGuard(settings.recoveryRequired);
-      refreshScopeNote();
-      setMessage('서버 상태를 확인할 수 있습니다.');
-    };
-    setControlsReady(false);
-    setMessage('현재 스코프의 저장 설정을 확인하고 있습니다…');
     const formatBytes = bytes => { const n=Math.max(0,Number(bytes||0)); if(n<1024)return `${n} B`; if(n<1048576)return `${(n/1024).toFixed(1)} KB`; if(n<1073741824)return `${(n/1048576).toFixed(1)} MB`; return `${(n/1073741824).toFixed(2)} GB`; };
-    let dismissedJobId='',terminalRefreshId='',manualResumePromise=null;
+    let dismissedJobId=state.syncJob.dismissedJobId || (getSyncJob()?.dismissed ? getSyncJob().jobId : ''),terminalRefreshId='',manualResumePromise=null;
     const renderJob = job => {
       const card=q('[data-job]');
       if(globalModeEnabled){
@@ -7821,7 +7785,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         q('[data-global-cancel]').textContent=globalRollbackPending(job)?'취소 복구 진행 화면 보기':'이전 작업 취소 · 기존 경로 복구';
         q('[data-global-cancel]').disabled=q('[data-global-cancel]').disabled||!!manualResumePromise;
       }
-      if (!job || (job.kind !== 'global_mode' && job.scopeId !== initial.scopeId) || job.jobId === dismissedJobId) { card.classList.remove('show','terminal','failed'); return; }
+      if (!job || (job.kind !== 'global_mode' && job.scopeId !== initial.scopeId) || job.jobId === dismissedJobId || job.jobId === state.syncJob.dismissedJobId || job.dismissed === true) { card.classList.remove('show','terminal','failed'); return; }
       const terminal=syncJobTerminal(job.status),showResult=terminal||job.status==='paused';
       const rollback=globalRollbackView(job),waiting=job.status==='paused'&&job.phase==='recovery_pending';
       const workflow=job.kind==='global_mode'?globalWorkflowView(globalJobWorkflow(job)):null;
@@ -8148,15 +8112,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     q('[data-restore]').onclick = async()=>{ try{const job=await scopedStartRestoreJob({scope:initial.scope});setMessage('현재 스코프 복구를 시작했습니다.');renderJob(job);}catch(error){setMessage(`복구 시작 실패\n${error?.userMessage||error?.message||error}`,'error');} };
     let armedUntil=0;
     q('[data-delete]').onclick = async()=>{ const button=q('[data-delete]'); if(Date.now()>armedUntil){button.disabled=true;setMessage('현재 스코프가 서버에 안전하게 보존됐는지 확인하고 있습니다…');try{await assertRecoveryActionAllowed(initial.scope,'delete_pluginstorage');const checked=await scopedVerifyPreservation(state.legacy.plugin,{scope:initial.scope});armedUntil=Date.now()+30000;button.textContent='검증 완료 · 다시 눌러 삭제';setMessage(`보존 검증 완료 · ${checked.checked}개\n30초 안에 다시 누르면 현재 스코프의 payload만 삭제합니다.`,'good');}catch(error){armedUntil=0;setMessage(`삭제 차단\n${error?.userMessage||error?.message||error}`,'error');}finally{button.disabled=false;}return;} armedUntil=0;button.disabled=true;try{const result=await scopedDeletePluginStorageAfterVerification({scope:initial.scope});button.textContent='현재 스코프 pluginStorage 삭제';setMessage(`삭제 완료 · ${result.deleted}개\n현재 스코프는 서버 단독입니다.`,'good');}catch(error){setMessage(`삭제 실패\n${error?.userMessage||error?.message||error}`,'error');}finally{button.disabled=false;} };
-    q('[data-job-dismiss]').onclick=()=>{const job=getSyncJob();if(job&&syncJobTerminal(job.status)){dismissedJobId=job.jobId;renderJob(job);}};
+    q('[data-job-dismiss]').onclick=()=>{const job=getSyncJob();if(job&&syncJobTerminal(job.status)){dismissedJobId=job.jobId;state.syncJob.dismissedJobId=job.jobId;try{updateSyncJob({dismissed:true},{persist:'immediate'});}catch(_){}renderJob(job);}};
     const unsubscribe=subscribeSyncJob(renderJob); const tick=setInterval(()=>{if(!root.isConnected){clearInterval(tick);unsubscribe();return;}renderJob(getSyncJob());},1000); try{tick?.unref?.();}catch(_){}
-    try {
-      renderConnectionSettings(await scopedGetConnectionSettings({ force:true }));
-    } catch (error) {
-      setControlsReady(false);
-      setMessage(`설정 불러오기 실패\n${error?.message || error}`, 'error');
-      return false;
-    }
     await scopedResumePendingSyncJob().catch(()=>null); renderJob(getSyncJob());
     return true;
   };
