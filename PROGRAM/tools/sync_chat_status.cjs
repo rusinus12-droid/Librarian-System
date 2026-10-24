@@ -3,6 +3,7 @@ const fs = require('node:fs'), path = require('node:path');
 const factory = require('./memory_suite_chat_status.cjs');
 const begin = '  /* MEMORY SUITE CHAT STATUS START */', end = '  /* MEMORY SUITE CHAT STATUS END */';
 const block = `${begin}\n  const createMemorySuiteChatStatus = (${factory.toString()});\n${end}`;
+const norm = s => String(s || '').replace(/\r\n/g, '\n');
 const sync = ({ root = path.resolve(__dirname, '..'), check = false, plugins = ['LIBRA.js','GRADIA.js'] } = {}) => {
   let changed = false;
   for (const name of plugins) {
@@ -16,9 +17,15 @@ const sync = ({ root = path.resolve(__dirname, '..'), check = false, plugins = [
       output = source.replace(anchor, `${block}\n\n${anchor}`);
     } else {
       if (stop < start) throw new Error(`chat_status_block_invalid:${name}`);
-      output = source.slice(0, start) + block + source.slice(stop + end.length);
+      const existing = source.slice(start, stop + end.length);
+      const eol = existing.includes('\r\n') ? '\r\n' : '\n';
+      const replacement = block.replace(/\r?\n/g, eol);
+      output = source.slice(0, start) + replacement + source.slice(stop + end.length);
     }
-    if (source !== output) { changed = true; if (!check) fs.writeFileSync(file, output); }
+    if (norm(source) !== norm(output)) {
+      changed = true;
+      if (!check) fs.writeFileSync(file, output);
+    }
   }
   if (changed && check) throw new Error('chat_status_embed_stale');
   return { changed, checked:check };

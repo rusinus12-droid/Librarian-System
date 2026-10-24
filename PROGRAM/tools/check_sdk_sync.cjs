@@ -6,6 +6,7 @@ const root = path.resolve(__dirname, '..');
 const {STORAGE_VARIANTS,extractStorageSdk,expectedStorageSdk}=require('./lib/sdk_variants.cjs');
 const computeSdk = fs.readFileSync(path.join(root, 'sdk', 'MemorySuiteComputeClient.source.js'), 'utf8').trimEnd();
 const hostLineageSdk = fs.readFileSync(path.join(root, 'sdk', 'MemorySuiteHostLineage.source.js'), 'utf8').trimEnd();
+const norm = s => String(s || '').replace(/\r\n/g, '\n');
 let failed = false;
 for (const [name, {variant,embedsCompute}] of Object.entries(STORAGE_VARIANTS)) {
   const file = path.join(root, 'plugins', name);
@@ -26,13 +27,12 @@ for (const [name, {variant,embedsCompute}] of Object.entries(STORAGE_VARIANTS)) 
     ? (computeOk ? `OK:${expectedCompute.slice(0,12)}` : `MISMATCH(source=${computeCount},markers=${computeMarkerCount})`)
     : (computeOk ? 'NOT_EMBEDDED' : `UNEXPECTED(source=${computeCount},markers=${computeMarkerCount})`);
   process.stdout.write(`${name}: plugin=${version} namespace=${namespace} sdk=${ok ? 'OK' : `MISMATCH(count=${count})`} compute=${computeLabel} variant=${variant} sha256=${expected.slice(0,12)}\n`);
-  const lineageOk = text.split(hostLineageSdk).length - 1 === 1;
+  const lineageOk = norm(text).split(norm(hostLineageSdk)).length - 1 === 1;
   process.stdout.write(`${name}: hostLineage=${lineageOk ? 'OK' : 'MISMATCH'}\n`);
   let consentOk = true;
   if (['LIBRA.js','Flashback_Memory.js','HAYAKU_Locator_Continuity.js'].includes(name)) {
     const consentFile = 'MemorySuiteSourceInput.libra.source.js';
     const consentSource = fs.readFileSync(path.join(root,'sdk',consentFile),'utf8').trimEnd();
-    const norm = s => String(s || '').replace(/\r\n/g, '\n');
     consentOk = norm(text).split(norm(consentSource)).length - 1 === 1;
     process.stdout.write(`${name}: consentProfile=${consentOk ? 'OK' : 'MISMATCH'}:${consentFile}\n`);
   }
