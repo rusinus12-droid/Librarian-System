@@ -3351,6 +3351,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           ...(authorityRuntime ? {authorityRuntime:authorityRuntime.status()} : {}),
           capabilities: Object.fromEntries((authorityRuntime ? authorityRuntime.capabilities : [
             'storage-mode-contract.v2',
+            'duplicate-cleanup.v1',
             'data-instance-binding.v1',
             'flashback-scope-health.v1',
             'libra-read-session.v1',
@@ -3615,6 +3616,75 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         const result=await ownerScopeDelete(principal,url.pathname.endsWith('/plan')?'plan':'execute',body,
           decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id']));
         return sendJson(request,response,200,{ok:true,result});
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/owner/duplicate-cleanup') {
+        // This removes redundant physical copies after a verified move, not an
+        // owner scope. In particular it must not create tombstones which would
+        // later propagate back onto the retained plugin copy.
+        assertLegacyAuthorityUnavailable({dataDir});
+        const body=await readBody(request,1024*1024,'duplicate_cleanup_body_limit');
+        const namespace=validateNamespace(body.namespace);
+        assertNamespaceAccess(principal,namespace,'write');
+        if (!hasRole(principal,'owner') || principal.namespace!==namespace
+          || request.headers['x-memory-suite-storage-mode']!=='plugin_only' || body.localVerified!==true)
+          throw Object.assign(new Error('duplicate_cleanup_local_mode_proof_required'),{statusCode:409});
+        if (!namespaceReset.allows(namespace,request.headers['x-memory-suite-reset-epochs']))
+          throw Object.assign(new Error('MEMORY_SUITE_RESET_RECONNECT_REQUIRED'),{statusCode:409});
+        const repository=repositories[namespace],operationId=validateOperationId(body.operationId);
+        const cleanupId=String(body.cleanupId||'');deletionStatePath(cleanupId);
+        const registryKey=`__memory_suite_scope_routes_v1__:${namespace}`,condition=body.registryCondition,mutations=body.mutations;
+        const exact=item=>item && ['plugin','local'].includes(item.space) && typeof item.key==='string'
+          && Number.isSafeInteger(item.expectedRevision) && item.expectedRevision>0
+          && /^[a-f0-9]{64}$/.test(item.expectedDigest||'') && item.expectedExists===true && item.expectedTombstone===false;
+        if (!exact(condition) || condition.space!=='plugin' || condition.key!==registryKey
+          || !Array.isArray(mutations) || !mutations.length || mutations.length>4096
+          || mutations.some(mutation=>!exact(mutation)||mutation.key.startsWith('__memory_suite_'))
+          || new Set(mutations.map(row=>`${row.space}\n${row.key}`)).size!==mutations.length
+          || Object.keys(condition).some(key=>!['space','key','expectedRevision','expectedDigest','expectedExists','expectedTombstone'].includes(key))
+          || mutations.some(mutation=>Object.keys(mutation).some(key=>!['space','key','expectedRevision','expectedDigest','expectedExists','expectedTombstone'].includes(key))))
+          throw Object.assign(new Error('duplicate_cleanup_exact_conditions_required'),{statusCode:400});
+        const snapshot=body.snapshot;
+        const exactSnapshot=item=>item && ['plugin','local'].includes(item.space) && typeof item.key==='string'
+          && Number.isSafeInteger(item.expectedRevision) && item.expectedRevision>=0
+          && typeof item.expectedExists==='boolean' && typeof item.expectedTombstone==='boolean'
+          && !(item.expectedExists&&item.expectedTombstone)
+          && (item.expectedRevision===0 ? item.expectedDigest===''&&!item.expectedExists&&!item.expectedTombstone
+            : /^[a-f0-9]{64}$/.test(item.expectedDigest||'')&&(item.expectedExists||item.expectedTombstone));
+        if(!Array.isArray(snapshot)||!snapshot.length||snapshot.length>4096||!snapshot.every(exactSnapshot)
+          ||new Set(snapshot.map(row=>`${row.space}\n${row.key}`)).size!==snapshot.length)
+          throw Object.assign(new Error('duplicate_cleanup_namespace_snapshot_required'),{statusCode:400});
+        const same=(left,right)=>['space','key','expectedRevision','expectedDigest','expectedExists','expectedTombstone'].every(key=>left?.[key]===right?.[key]);
+        if(!snapshot.some(row=>same(row,condition))||mutations.some(mutation=>!snapshot.some(row=>same(row,mutation))))
+          throw Object.assign(new Error('duplicate_cleanup_snapshot_conditions_changed'),{statusCode:409});
+        const removing=new Set(mutations.map(row=>`${row.space}\n${row.key}`));
+        const items=[...snapshot.filter(row=>!removing.has(`${row.space}\n${row.key}`)).map(row=>({...row,kind:'check'})),...mutations.map(row=>({...row,kind:'purge'}))];
+        const prior=repository.operation(operationId);
+        if (prior) {
+          // applyConditionalBatch validates the operation's original payload
+          // before replaying the durable receipt, even after physical purge.
+          const replay=repository.applyConditionalBatch(items,{operationId,maintenance:true});
+          const backupId=readJsonFile(deletionStatePath(cleanupId),null)?.namespaces?.[namespace]?.backup?.id;
+          return sendJson(request,response,200,{ok:true,result:{...replay.result,verified:true,replayed:true,...(backupId?{backupId}:{})}});
+        }
+        const current=repository.get('plugin',registryKey);
+        let registry=current.value;if(typeof registry==='string'){try{registry=JSON.parse(registry);}catch(_){registry=null;}}
+        const global=registry?.entries?.__memory_suite_global__;
+        if (registry?.schema!=='memory-suite.scope-routing.v1' || registry?.namespace!==namespace || global?.removed || global?.mode!=='plugin_only'
+          || Object.values(registry.entries||{}).some(row=>!row || row.scopeId!=='__memory_suite_global__'&&!row.removed&&!['inherited','migrated'].includes(String(row.origin||''))&&row.mode!=='plugin_only'))
+          throw Object.assign(new Error('duplicate_cleanup_server_routes_not_local'),{statusCode:409});
+        const assertSnapshotCurrent=()=>{
+          if(repository.database.prepare('SELECT COUNT(*) AS n FROM kv').get().n!==snapshot.filter(row=>row.expectedRevision>0).length)
+            throw Object.assign(new Error('duplicate_cleanup_namespace_changed'),{statusCode:409});
+        };
+        assertSnapshotCurrent();repository.verifyConditionalBatch(items);
+        if(globalScopeCatalog().some(scope=>scope.namespace===namespace&&scope.pinned===true&&scope.members.some(member=>removing.has(`${member.space}\n${member.key}`))))
+          throw Object.assign(new Error('duplicate_cleanup_pinned_copy'),{statusCode:409});
+        const scope={scopeId:'__duplicates__',scopeKey:'__duplicates__',displayName:'플러그인 이동 후 서버 사본 정리',classification:'duplicate_copy'};
+        const backup=prepareJobBackup(cleanupId,namespace,scope,items);
+        const receipt=repository.applyConditionalBatch(items,{operationId,maintenance:true,assertTransactionCurrent:assertSnapshotCurrent});
+        advanceDeleteJob({jobId:cleanupId,namespace},true);
+        scheduleChangeSettledBackup();
+        return sendJson(request,response,200,{ok:true,result:{...receipt.result,verified:true,backupId:backup.id}});
       }
       if (request.method === 'POST' && url.pathname === '/v1/kv/batch') {
         const body = await readBody(request, KV_CONDITIONAL_BATCH_BODY_BYTES, 'conditional_batch_body_too_large');

@@ -7,6 +7,7 @@ const {createBucketFixture}=require('./fixtures/flashback_bucketed_v1_fixture.cj
 const owners={LIBRA:'libra',HAYAKU:'hayaku',Flashback:'flashback'};
 const artifactRoot=process.env.GLOBAL_MODE_ARTIFACT_ROOT;
 const kinds=artifactRoot?['Full','Min']:['Full'];
+const cleanupOperation=async task=>{let timer;try{return await Promise.race([task,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('cleanup GUI operation timed out')),20000);})]);}finally{clearTimeout(timer);}};
 const hash=value=>{let h=0x811c9dc5;for(const c of value)h=Math.imul(h^c.charCodeAt(0),0x01000193);return (h>>>0).toString(36);};
 const hash64=value=>{let h=0xcbf29ce484222325n;for(const c of value)h=BigInt.asUintN(64,(h^BigInt(c.charCodeAt(0)))*0x100000001b3n);return 'h64'+h.toString(36);};
 const seedRoots=name=>{const roots=Array.from({length:2},(_,i)=>{
@@ -174,6 +175,20 @@ async function apply(s,mode){
   for(const [key,value]of seedDevice(name))assert.equal(restart.deviceValues.get(key),value,'retained local vector payload survives roundtrip '+key);
   const registry=JSON.parse(restart.values.get(`__memory_suite_internal_scope_routes_v1__:${namespace}`));assert.equal(registry.entries.__memory_suite_global__.mode,'plugin_only');
   assert(Object.values(registry.entries).filter(row=>row.scopeId!=='__memory_suite_global__').every(row=>row.origin==='inherited'));
+  // Exercise the real owner resolvers and shared archive/index classification,
+  // not only synthetic per-scope keys. The GUI may refresh while this runs.
+  await pause(100);
+  await cleanupOperation(restart.doc.querySelector('[data-server-delete]').onclick());
+  assert.equal(restart.doc.querySelector('[data-cleanup-dialog]').hidden,false,'the review survives owner GUI hydration');
+  assert.equal(restart.doc.querySelector('[data-cleanup-continue]').disabled,false,'verified shared and scoped payloads can be selected after moving back');
+  const tombstonesBefore=handler.app.repositories[namespace].database.prepare('SELECT COUNT(*) AS n FROM kv WHERE deleted=1').get().n;
+  await cleanupOperation(restart.doc.querySelector('[data-cleanup-continue]').onclick());
+  const cleanupSummary=restart.doc.querySelector('[data-cleanup-summary]').textContent;
+  assert.match(cleanupSummary,/정리 완료 · [1-9]\d*개 항목 삭제/);
+  assert.match(cleanupSummary,/서버 삭제 전 백업:/);
+  assert.equal(handler.app.repositories[namespace].database.prepare('SELECT COUNT(*) AS n FROM kv WHERE deleted=1').get().n,tombstonesBefore,'physical replica cleanup cannot introduce tombstones');
+  for(const [key,value]of frozenRoots)assert.equal(restart.values.get(key),value,'server cleanup retains the actual native plugin root '+key);
+  for(const [key,value]of seedDevice(name))assert.equal(restart.deviceValues.get(key),value,'server cleanup retains device vectors '+key);
   assert.equal(restart.wire.length,0,'no external network/model fallback');
   const result={name,kind,sourceSha256:restart.sourceSha256,status:'PASS',forward,reverse,handlerRequests:handler.trace.length,readOnlyPreviewRefreshes:forwardRefreshes+(restart.globalInventoryRefreshes||0)};results.push(result);console.log(JSON.stringify(result));
  }catch(error){const active=restart||s;if(active)console.error(JSON.stringify({name,kind,keys:[...active.values.keys()],localValues:[...active.values],deviceValues:[...active.deviceValues],serverRows:handler.app.repositories[namespace].database.prepare('SELECT key,value_json FROM kv WHERE deleted=0').all(),journal:active.values.get(`__memory_suite_internal_sync_job_v1__:${namespace}`),registry:active.values.get(`__memory_suite_internal_scope_routes_v1__:${namespace}`),status:active.doc.querySelector('[data-status]')?.textContent,errors:active.errors,logs:active.logs.slice(-8)},null,2));throw error;}

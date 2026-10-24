@@ -1,7 +1,7 @@
 //@name flashback_hayaku_bridge
 //@display-name RE:TRACE
 //@api 3.0
-//@version 1.12.2
+//@version 1.12.4
 /* v1.9.86 verifies server backup/deletion and portable transfer completion, protects active scopes from bulk selection, and exposes current timestamps, owner contacts and requested server previews. */
 /* v1.9.85 revalidates every required owner's durable target and current LIA Persona binding before reconciling a pending next-session handoff as completed. Reconciliation remains read-only for owner data. */
 /* Retired standalone owner viewers, packet deletion/navigation, and HAYAKU ledger-backup APIs are removed. Legacy capsule reads support handoff only; existing stored artifacts remain available to guarded server management. */
@@ -7669,7 +7669,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 };
 
   const PLUGIN_NAME = 'RE:TRACE';
-const PLUGIN_VERSION = '1.12.2';
+const PLUGIN_VERSION = '1.12.4';
   const RETRACE_SETTING_UI_ID = 'retrace-main-setting';
   const RETRACE_HAMBURGER_UI_ID = 'retrace-main-hamburger';
   const HANDOFF_SCHEMA = 'memory-session-bridge-v2';
@@ -7839,6 +7839,7 @@ const PLUGIN_VERSION = '1.12.2';
     overviewRefreshToken: 0,
     serverControlRefreshToken: 0,
     overviewLoading: false,
+    overviewStorageGate: null,
     overviewError: '',
     overviewErrorAt: 0,
     remoteUpdate: { state: 'idle', available: false, latestVersion: '', htmlUrl: '', error: '', checkedAt: 0 },
@@ -15800,11 +15801,13 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     try {
     const token = ++Runtime.overviewRefreshToken;
     Runtime.overviewLoading = true;
+    Runtime.overviewStorageGate = null;
     Runtime.overviewError = '';
     Runtime.overviewErrorAt = 0;
     renderOverviewPanel();
     try {
-      const [preview] = await Promise.all([
+      const ownerStorageWasLoading = Runtime.memorySuiteOwnerStorageLoading === true;
+      const [preview, ownerStorage] = await Promise.all([
         inspectTransition(),
         refreshMemorySuiteOwnerStorageDashboard()
       ]);
@@ -15821,6 +15824,12 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         Runtime.lastPreview = null; Runtime.compatibilitySuite = null;
         throw new Error('현재 채팅 또는 원문이 바뀌어 이전 분기의 개요 결과를 표시하지 않았습니다.');
       }
+      // Keep the gate paired with the exact preview revalidated above. Other
+      // panels can refresh the shared owner dashboard for a different chat.
+      if (!ownerStorageWasLoading && ownerStorage?.gate) Runtime.overviewStorageGate = {
+        preview, gate: clone(ownerStorage.gate, null), checkedAt: Date.now(),
+        chatTitle: text(current.chat?.name || current.chat?.title || '이름 없는 대화방')
+      };
       return preview;
     } catch (error) {
       if (token === Runtime.overviewRefreshToken) { Runtime.overviewError = compact(error?.message || error, 320); Runtime.overviewErrorAt = Date.now(); }
@@ -15872,8 +15881,11 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     const protocolOnly = suite?.protocolOnly === true;
     const peers = scopeManagerArray(suite?.peers).filter(peer => peer.key !== 'retrace');
     const peerByKey = new Map(peers.map(peer => [peer.key, peer]));
-    const gate = Runtime.lastPreview && !Runtime.overviewError && !Runtime.overviewLoading
-      ? Runtime.memorySuiteOwnerStorage?.gate || Runtime.memorySuiteOwnerStorageGate : null;
+    const gateCheck = Runtime.overviewStorageGate;
+    const gate = gateCheck?.preview === Runtime.lastPreview && !Runtime.overviewError && !Runtime.overviewLoading
+      ? gateCheck?.gate : null;
+    const gateLabel = !gate ? '대화방을 선택한 뒤 [지금 점검]을 누르세요.'
+      : `${gateCheck.chatTitle} · ${scopeManagerFormatTime(gateCheck.checkedAt)} · ${gate.ready ? '저장 Gate 통과' : `차단: ${text(gate.reason || '원인 미확인')}`}. 채팅을 바꿨다면 [지금 점검]으로 다시 확인하세요.`;
     const ipcRows = [
       { key: 'flashback', label: 'Flashback', registered: Runtime.flashbackIpcRegistered, pending: Runtime.flashbackIpcPending?.size || 0 },
       { key: 'hayaku', label: 'HAYAKU', registered: Runtime.hayakuIpcRegistered, pending: Runtime.hayakuIpcPending?.size || 0 },
@@ -15896,7 +15908,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     const rowsHtml = `<div class="check-item ${serverKnown ? 'ok' : 'warn'}"><span class="dot">${serverKnown ? '✓' : '!'}</span><div><b>서버 연결</b><small>${serverKnown ? `마지막 manager 응답 ${scopeManagerFormatTime(serverStatus.checkedAt)}` : '진단을 실행하거나 서버 관리에서 새로고침하세요.'}</small></div><span class="badge ${serverKnown ? 'badge--ok' : 'badge--warn'}">${serverKnown ? '응답 확인됨' : '확인 전'}</span></div>
       <div class="check-item ${ownerOk ? 'ok' : 'warn'}"><span class="dot">${ownerOk ? '✓' : '!'}</span><div><b>플러그인 응답 (Owner IPC)</b><small>${ipcRows.map(row => `${row.label}: ${peerByKey.get(row.key)?.ownerReachable ? '응답 확인' : row.registered ? '리스너 등록 · 응답 미확인' : '미확인'} · 대기 ${formatNumber(row.pending)}`).join(' · ')}</small></div><span class="badge ${ownerOk ? 'badge--ok' : 'badge--warn'}">${ownerOk ? '응답 확인됨' : '일부 미확인'}</span></div>
       <div class="check-item ${contractOk ? 'ok' : 'warn'}" data-diagnostics-contract><span class="dot">${contractOk ? '✓' : '!'}</span><div><b>호환 계약</b><small>${escapeHtml(peerLabel)}</small></div><button class="btn btn--sm" type="button" data-diagnose-compatibility ${checking ? 'disabled' : ''}>${checking ? '검사 중…' : '호환 계약 검사'}</button></div>
-      <div class="check-item ${gate?.ready ? 'ok' : ''}" data-diagnostics-storage-gate><span class="dot">${gate?.ready ? '✓' : 'i'}</span><div><b>저장 Gate · 현재 채팅</b><small>${!gate ? '대화방을 선택한 뒤 점검하면 채팅별 저장 준비 상태를 확인합니다.' : gate.ready ? '현재 채팅의 저장 Gate 통과' : escapeHtml(`차단: ${text(gate.reason || '원인 미확인')}`)}</small></div><span class="badge ${gate?.ready ? 'badge--ok' : 'badge--info'}">${!gate ? '미검사' : gate.ready ? '통과' : '확인 필요'}</span></div>
+      <div class="check-item ${gate?.ready ? 'ok' : ''}" data-diagnostics-storage-gate><span class="dot">${gate?.ready ? '✓' : 'i'}</span><div><b>저장 Gate · 마지막 채팅 점검</b><small>${escapeHtml(gateLabel)}</small></div><span class="badge ${gate?.ready ? 'badge--ok' : 'badge--info'}">${!gate ? '미검사' : gate.ready ? '통과' : '확인 필요'}</span></div>
       <div class="check-item ${scopeCount === null ? '' : 'warn'}"><span class="dot">${scopeCount === null ? 'i' : '!'}</span><div><b>서버 사본</b><small>${escapeHtml(scopeText)} · 런타임 경고 ${formatNumber(warnings)}건</small></div><button class="btn btn--sm" type="button" data-retrace-goto="serverdata" data-server-subgoto="data">서버 관리</button></div>`;
     const peerDetails = protocolOnly ? `<section class="card card--flat" data-diagnostics-peer-results><h3 class="card__title">플러그인별 호환 계약 검사 결과</h3><p class="hint">대화방 선택 없이 응답과 프로토콜을 검사했습니다. 미응답 플러그인은 설치·활성화 상태를 확인하세요. 채팅별 승계 가능 여부는 다음 세션 화면에서 다시 검사합니다.</p><div class="list">${peers.map(peer => `<article class="res"><div><strong>${escapeHtml(peer.label || peer.key)}</strong><small>${escapeHtml(peer.pluginVersion ? `v${peer.pluginVersion}` : '버전 미확인')} · ${escapeHtml(peer.reason || peer.error || '')}</small></div><span class="badge ${!peer.ownerReachable ? 'badge--info' : peer.compatible ? 'badge--ok' : 'badge--danger'}">${!peer.ownerReachable ? '응답 미확인' : peer.compatible ? '호환' : '계약 불일치'}</span></article>`).join('')}</div></section>` : '';
     const summaryLines = [`server=${serverKnown ? 'checked' : 'not_checked'}`, `compatibility=${checking ? 'checking' : !suite ? 'not_checked' : contractOk ? 'compatible' : 'needs_review'}`,

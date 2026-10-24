@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.6.3
-//@version 2.6.3
+//@display-name LIBRA v2.6.5
+//@version 2.6.5
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.6.3';
+  const PLUGIN_VERSION = '2.6.5';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -4232,6 +4232,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     transitionPhase:MODE_MIRROR, legacyMirrorReadable:true, mirrorSelectable:false
   });
   let storageTransition = null;
+  let cleanupDialogController = null;
   let modeConfigurationBusy = false;
   let modeConfigurationFrozen = false;
   let deferredGlobalTerminalNotification = false;
@@ -11447,238 +11448,384 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return val;
   };
 
-  const globalVerifyPreservation = async (verifyOptions = {}) => {
-    const config = await readConfig(true);
-    const registry = await loadScopeRegistry(true, false);
-    const globalMode = normalizeMode(liveGlobalRow(registry)?.mode || config.mode);
-    if (globalMode !== MODE_SERVER_ONLY) {
-      const error = new Error('기기 중복 데이터 삭제는 서버 단독 모드에서만 실행할 수 있습니다. 먼저 전역 설정을 서버 단독으로 적용해 주세요.');
-      error.code = 'MEMORY_SUITE_DELETE_REQUIRES_SERVER_MODE';
-      error.userMessage = error.message;
-      throw error;
+  const readCleanupLocalValue = async (legacy, key) => {
+    const raw = await legacyRead(legacy, key);
+    const manifest = normalizeJsonVal(raw);
+    if (namespace !== 'libra' || manifest?.__libraChunkedStorageV1 !== true) return raw;
+    // The registered legacy store may be the raw host adapter. Compare the
+    // logical payload saved on the server, while retaining the physical root
+    // and its chunks until all preservation checks have passed.
+    const size = 512 * 1024, chunks = manifest.chunks, length = manifest.length;
+    const prefix = `${key}::chunk:v1:`;
+    const first = Array.isArray(chunks) ? chunks[0] : null;
+    const stamp = typeof first === 'string' && first.startsWith(prefix) && first.endsWith(':0000')
+      ? first.slice(prefix.length, -5) : '';
+    if (manifest.schemaVersion !== 1 || manifest.key !== key || !Number.isSafeInteger(length) || length <= size
+      || !Array.isArray(chunks) || chunks.length !== Math.ceil(length / size) || !stamp
+      || chunks.some((chunk, index) => chunk !== `${prefix}${stamp}:${String(index).padStart(4, '0')}`))
+      throw globalModeError('MEMORY_SUITE_LOCAL_CHUNK_INVALID', { key });
+    const bodies = [];
+    for (let index = 0; index < chunks.length; index++) {
+      const body = await legacy.getItem(chunks[index]);
+      if (typeof body !== 'string' || body.length !== Math.min(size, length - index * size))
+        throw globalModeError('MEMORY_SUITE_LOCAL_CHUNK_INCOMPLETE', { key, chunkKey: chunks[index] });
+      bodies.push(body);
     }
-    // The live global/per-scope registry above is the mode authority. The legacy
-    // mode argument intentionally stays plugin_only after global migration, so
-    // it must not veto these observational server reads. DATA binding, reset
-    // review, integrity and per-key preservation checks still apply.
-    const integrity = await remoteIntegrity({ allowPluginOnly: true }).catch(err => {
-      const error = new Error(`서버 연결 및 무결성 확인 실패: ${err?.message || err}`);
-      error.code = normalizeServerAvailabilityError(err)?.code || 'MEMORY_SUITE_SERVER_VERIFICATION_FAILED';
-      error.cause = err;
-      error.userMessage = error.message;
-      throw error;
-    });
-    if (integrity?.ok !== true) {
-      const error = new Error(`서버 무결성 검증 실패: ${integrity?.result || 'unknown'}`);
-      error.code = 'MEMORY_SUITE_SERVER_INTEGRITY_FAILED';
-      error.userMessage = error.message;
-      throw error;
-    }
-    for (const scopeRow of Object.values(registry?.entries || {})) {
-      const lock = await recoveryLockForScope(scopeRow);
-      if (lock) throw recoveryRequiredError(scopeRow, lock, 'delete_pluginstorage');
-    }
-
-    const result = {
-      schema: 'memory-suite.global-preservation.v1',
-      namespace,
-      checked: 0,
-      candidates: [],
-      failures: [],
-      spaces: { plugin: null, local: null }
-    };
-
-    const verifySpace = async (legacy, space) => {
-      if (!legacy || typeof legacy.keys !== 'function' || typeof legacy.getItem !== 'function') return null;
-      const allKeys = await listRoutedLegacyKeys(legacy, space, true);
-      const spaceCandidates = [];
-      const spaceFailures = [];
-
-      for (const key of allKeys) {
-        if (key === SCOPE_ROUTING_LOCAL_KEY || key.startsWith('__memory_suite_')) continue;
-        if (isOwnedChunkArtifact(space, key)) continue;
-
-        const route = await resolveScopedRoute(space, key, { noCache: true });
-        if (route.kind !== 'scope' || !route.scopeId) continue;
-
-        const scopeMode = registryScopeMode(registry, route.scopeId, globalMode);
-        if (scopeMode !== MODE_SERVER_ONLY) continue;
-        await assertStorageTransitionComplete(route.scope, { mode: scopeMode });
-
-        let localValue;
-        try {
-          localValue = await legacyRead(legacy, key);
-        } catch (e) {
-          spaceFailures.push({ key, error: compact(e?.message || e, 240) });
-          continue;
-        }
-        if (isNullishStorageValue(localValue)) continue;
-
-        let projected;
-        try {
-          projected = await routeProjectValue(route, localValue);
-        } catch (e) {
-          spaceFailures.push({ key, error: compact(e?.message || e, 240) });
-          continue;
-        }
-        if (isNullishStorageValue(projected)) continue;
-
-        spaceCandidates.push({ space, key, route, projected, localFingerprint: await globalDigest(normalizeJsonVal(projected)) });
-      }
-
-      const remoteKeys = spaceCandidates.map(c => c.route.remoteKey);
-      for (let i = 0; i < remoteKeys.length; i += 512) {
-        const batchKeys = remoteKeys.slice(i, i + 512);
-        let batch;
-        try {
-          batch = await remoteGetMany(space, batchKeys, { allowPluginOnly: true });
-        } catch (e) {
-          batch = { values: {} };
-          for (const rk of batchKeys) {
-            try {
-              batch.values[rk] = await remoteGet(space, rk, { allowPluginOnly: true });
-            } catch (err) {
-              spaceFailures.push({ remoteKey: rk, error: compact(err?.message || err, 240) });
-            }
-          }
-        }
-
-        const candidateSlice = spaceCandidates.slice(i, i + 512);
-        for (const cand of candidateSlice) {
-          const remote = batch.values[cand.route.remoteKey];
-          if (!remote || remote.exists !== true || remote.tombstone === true) {
-            spaceFailures.push({
-              key: cand.key,
-              remoteKey: cand.route.remoteKey,
-              reason: remote?.tombstone ? 'server_tombstone' : 'server_missing'
-            });
-          } else if (jsonComparable(normalizeJsonVal(remote.value)) !== jsonComparable(normalizeJsonVal(cand.projected))) {
-            spaceFailures.push({
-              key: cand.key,
-              remoteKey: cand.route.remoteKey,
-              reason: 'value_mismatch'
-            });
-          }
-        }
-      }
-
-      result.checked += spaceCandidates.length;
-      result.candidates.push(...spaceCandidates.map(c => ({ space: c.space, key: c.key, route: c.route, localFingerprint: c.localFingerprint })));
-      result.failures.push(...spaceFailures);
-      return { space, checked: spaceCandidates.length, failures: spaceFailures };
-    };
-
-    result.spaces.plugin = await verifySpace(globalLegacyStore('plugin'), 'plugin');
-    result.spaces.local = await verifySpace(globalLegacyStore('local'), 'local');
-    result.ok = result.failures.length === 0;
-
-    if (!result.ok) {
-      const error = new Error(`memory_suite_global_preservation_failed:${result.failures.length}`);
-      error.code = 'MEMORY_SUITE_GLOBAL_PRESERVATION_FAILED';
-      error.userMessage = `서버 보존 검증 실패: ${result.failures.length}개 항목이 서버와 일치하지 않거나 누락되었습니다.\n데이터 손실 방지를 위해 삭제가 차단되었습니다.`;
-      error.result = result;
-      throw error;
-    }
-    return result;
+    if (jsonComparable(await legacy.getItem(key)) !== jsonComparable(raw))
+      throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED', { key });
+    return bodies.join('');
   };
 
-  const globalDeletePluginStorageAfterVerification = (...args) => withModeConfiguration(() => globalDeletePluginStorageAfterVerificationImpl(...args));
-  const globalDeletePluginStorageAfterVerificationImpl = async (deleteOptions = {}) => {
-    // Quiesce existing owner writes before verification, then prevent new proxy
-    // writes until the physical cleanup completes. Do not include this operation
-    // in ownerIOWork: waiting for our own promise would deadlock.
+  const cleanupProgress = async (options, phase, fields = {}) => {
+    if (options.signal?.aborted) throw globalModeError('MEMORY_SUITE_CLEANUP_CANCELLED');
+    try { options.onProgress?.({ phase, ...fields }); } catch (_) {}
+    // Yield to paint even when host storage reads resolve synchronously.
+    if ((fields.current || 0) % 25 === 0) await new Promise(resolve => setTimeout(resolve, 0));
+  };
+  const cleanupRemoteFingerprint = async remote => await globalDigest([
+    remote?.exists === true, remote?.tombstone === true, remote?.revision || 0,
+    remote?.digest || '', remote?.exists ? normalizeJsonVal(remote.value) : null
+  ]);
+  const cleanupCondition = (space, key, remote) => ({ space, key,
+    expectedRevision: remote.revision, expectedDigest: remote.digest,
+    expectedExists: remote.exists === true, expectedTombstone: remote.tombstone === true });
+  const inspectDuplicateCleanup = async (verifyOptions = {}) => {
+    const direction = verifyOptions.direction === 'server' ? 'server' : 'local';
+    await cleanupProgress(verifyOptions, 'connecting');
+    const config = await readConfig(true), registry = await loadScopeRegistry(true, false);
+    const globalMode = normalizeMode(liveGlobalRow(registry)?.mode || config.mode);
+    const requiredMode = direction === 'server' ? MODE_PLUGIN_ONLY : MODE_SERVER_ONLY;
+    if (globalMode !== requiredMode) {
+      const error = globalModeError(direction === 'server' ? 'MEMORY_SUITE_DELETE_REQUIRES_PLUGIN_MODE' : 'MEMORY_SUITE_DELETE_REQUIRES_SERVER_MODE');
+      error.userMessage = direction === 'server'
+        ? '먼저 플러그인 단독을 선택하고 설정 적용으로 전체 자료 이동을 완료하세요. 이동 후 서버 사본을 정리할 수 있습니다.'
+        : '기기 중복 데이터 삭제는 서버 단독 모드에서만 실행할 수 있습니다. 먼저 전역 설정을 서버 단독으로 적용해 주세요.';
+      throw error;
+    }
+    for (const row of Object.values(registry.entries || {})) {
+      if (row.removed) continue;
+      const lock = await recoveryLockForScope(row);
+      if (lock) throw recoveryRequiredError(row, lock, 'delete_pluginstorage');
+      if (direction === 'server' && registryScopeMode(registry, row.scopeId, globalMode) !== MODE_PLUGIN_ONLY)
+        throw globalModeError('MEMORY_SUITE_DELETE_REQUIRES_PLUGIN_MODE', { scopeId: row.scopeId });
+    }
+    const integrity = await remoteIntegrity({ allowPluginOnly: true }).catch(cause => {
+      const error = globalModeError(normalizeServerAvailabilityError(cause)?.code || 'MEMORY_SUITE_SERVER_VERIFICATION_FAILED');
+      error.cause = cause; error.userMessage = `서버 연결 및 무결성 확인 실패: ${cause?.message || cause}`; throw error;
+    });
+    if (integrity?.ok !== true) throw globalModeError('MEMORY_SUITE_SERVER_INTEGRITY_FAILED');
+    if (direction === 'server' && (await bootstrap(false, true)).capabilities?.['duplicate-cleanup.v1'] !== true) {
+      const error = globalModeError('MEMORY_SUITE_DUPLICATE_CLEANUP_SERVER_UPDATE_REQUIRED');
+      error.userMessage = '서버 사본 정리를 지원하는 새 server.cjs로 서버를 업데이트한 뒤 다시 시도하세요.'; throw error;
+    }
+    const result = { schema:'memory-suite.global-preservation.v1', namespace, direction,
+      checked:0, items:[], candidates:[], failures:[], serverSnapshot:[], retainedDependencies:[], spaces:{plugin:null,local:null} };
+    const inventory=direction==='server'?await collectGlobalInventory(MODE_PLUGIN_ONLY,{readOnlyCatalog:true}):null;
+    const stores=inventory?.stores||{plugin:rawPluginStorage(),local:await rawDeviceStorage({strict:true})};
+    // Adapters remain internal. A serializable review never contains a storage
+    // object or memory body, but execution must use the discovered physical stores.
+    Object.defineProperty(result,'stores',{value:stores});
+    for (const space of ['plugin','local']) {
+      const legacy = stores[space];
+      if (direction === 'local' && (!legacy || typeof legacy.keys !== 'function')) continue;
+      const listing=direction==='server'?await remoteKeys(space,'',{allowPluginOnly:true,strictInventory:true}):null;
+      if(listing)result.serverSnapshot.push(...listing.records.map(row=>({space,key:row.key,expectedRevision:row.revision,expectedDigest:row.digest,expectedExists:!listing.tombstones.includes(row.key),expectedTombstone:listing.tombstones.includes(row.key)})));
+      const keys=listing?listing.keys:await listRoutedLegacyKeys(legacy,space,true);
+      const spaceItems = [];
+      for (let index=0; index<keys.length; index++) {
+        const physicalKey = keys[index];
+        await cleanupProgress(verifyOptions,'verify',{space,key:physicalKey,current:index,total:keys.length});
+        const decoded = direction === 'server' ? scopedRemoteKeyInfo(physicalKey) : null;
+        const key = decoded?.logicalKey || physicalKey;
+        if (key.startsWith('__memory_suite_') || isOwnedChunkArtifact(space,key) || !matchesRoute(space,key)) continue;
+        let route = await resolveScopedRoute(space,key,{noCache:true,...(decoded?.scopeId?{scope:registry.entries[decoded.scopeId]||{scopeId:decoded.scopeId,scopeKey:decoded.scopeId}}:{})});
+        const wholeRecord=direction==='server'&&['global','shared'].includes(route.kind)&&inventory.records.some(row=>row.location==='server'&&row.space===space&&row.key===physicalKey&&globalPayloadRecord(row));
+        // Native shared archives and memory indexes are payloads too. Settings
+        // remain excluded by the owner's audited inventory classification.
+        if(wholeRecord)route={...route,kind:'scope',scopeId:GLOBAL_SCOPE_ID,scope:globalScopeDescriptor()};
+        if (route.kind !== 'scope' || !route.scopeId || direction === 'server' && route.remoteKey !== physicalKey) continue;
+        if (registryScopeMode(registry,route.scopeId,globalMode) !== requiredMode) continue;
+        await assertStorageTransitionComplete(route.scope,{mode:requiredMode});
+        const descriptor=registry.entries[route.scopeId]||route.scope||{};
+        const item = { id:JSON.stringify([space,key]),space,key,remoteKey:route.remoteKey,scopeId:route.scopeId,
+          label:descriptor.label||[descriptor.characterName,descriptor.chatTitle].filter(Boolean).join(' / ')||route.scopeId,
+          dataLabel:/manifest/i.test(key)?'기억 목록':/(?:local[-_:]vector|:vector:|:embedding:|vector-shard)/i.test(key)?'벡터 자료':/(?:shard|:memory:|records|ledger|canonical)/i.test(key)?'기억 자료':'저장 자료',
+          status:'unverified',canDelete:false,wholeRecord,route };
+        let local, projected, remote;
+        try {
+          local = await readCleanupLocalValue(legacy,key);
+          if (direction === 'local' && isNullishStorageValue(local)) continue;
+          projected = isNullishStorageValue(local) ? null : await routeProjectValue(route,local);
+          if (direction === 'local' && isNullishStorageValue(projected)) continue;
+          item.localSize=isNullishStorageValue(projected)?0:(typeof projected==='string'?projected:JSON.stringify(projected)).length;
+          item.localFingerprint = await globalDigest(normalizeJsonVal(projected));
+        } catch(error) { item.reason='local_unreadable'; item.error=compact(error?.message||error,240); }
+        try {
+          remote = await remoteGet(space,route.remoteKey,{allowPluginOnly:true});
+          item.remoteSize=remote?.exists?(typeof remote.value==='string'?remote.value:JSON.stringify(remote.value)).length:0;
+          item.remoteFingerprint = await cleanupRemoteFingerprint(remote);
+          item.remoteCondition = cleanupCondition(space,route.remoteKey,remote);
+        } catch(error) { item.reason='server_unavailable'; item.error=compact(error?.message||error,240); }
+        if (!item.reason) {
+          item.reason = !remote?.exists || remote.tombstone ? (remote?.tombstone?'server_tombstone':'server_missing')
+            : isNullishStorageValue(projected) ? 'local_missing'
+            : jsonComparable(normalizeJsonVal(remote.value)) === jsonComparable(normalizeJsonVal(projected)) ? 'matched' : 'value_mismatch';
+          item.status = item.reason === 'matched' ? 'matched' : 'unverified';
+          // Only explicit local deletion can discard an unpreserved copy.
+          item.canDelete = direction === 'local' || item.status === 'matched';
+        }
+        item.fingerprint = await globalDigest([direction,item.id,item.scopeId,item.remoteKey,item.localFingerprint||'',item.remoteFingerprint||'',item.reason]);
+        spaceItems.push(item);result.items.push(item);
+        if (item.status === 'matched') result.candidates.push(item);
+        else result.failures.push({space,key,remoteKey:route.remoteKey,scopeId:route.scopeId,reason:item.reason,...(item.error?{error:item.error}:{})});
+      }
+      result.spaces[space]={space,checked:spaceItems.length,failures:result.failures.filter(row=>row.space===space)};
+      result.checked+=spaceItems.length;
+    }
+    if(direction==='server') {
+      const records=inventory.records.filter(row=>row.location==='server'&&!row.deleted&&globalPayloadRecord(row));
+      const byKey=new Map(result.items.map(item=>[JSON.stringify([item.space,item.remoteKey]),item]));
+      for(const row of records) {
+        const evidence={space:row.space,key:row.logicalKey,scopeId:row.scopeId,dependencyKeys:row.dependencyKeys||[],dependencyScopeIds:row.dependencyScopeIds||[]};
+        const item=byKey.get(JSON.stringify([row.space,row.key]));
+        if(item)Object.assign(item,evidence,{key:item.key,scopeId:item.scopeId});else result.retainedDependencies.push(evidence);
+      }
+      if(!inventory.completeKnownScopes||inventory.blockers.length)for(const item of result.items){item.canDelete=false;if(item.status==='matched'){item.reason='inventory_unverified';item.status='unverified';}}
+      for(const item of result.items)item.fingerprint=await globalDigest([item.fingerprint,item.canDelete,item.reason,item.dependencyKeys||[],item.dependencyScopeIds||[]]);
+      result.candidates=result.items.filter(item=>item.status==='matched');
+      result.failures=result.items.filter(item=>item.status!=='matched').map(item=>({space:item.space,key:item.key,reason:item.reason}));
+    }
+    result.ok=result.failures.length===0;
+    await cleanupProgress(verifyOptions,'review',{current:result.checked,total:result.checked,verified:result.candidates.length,unverified:result.failures.length});
+    return result;
+  };
+  const cleanupSelectionItems = (review,selection) => {
+    const selected=new Set(review.items.filter(item=>item.canDelete&&(selection?selection[item.id]?.action==='delete':item.status==='matched')));
+    if(review.direction==='server') {
+      let changed;
+      do {changed=false;const retained=[...review.retainedDependencies,...review.items.filter(item=>!selected.has(item))];
+        for(const item of selected)if(retained.some(row=>row.scopeId===item.scopeId
+          ||(row.dependencyScopeIds||[]).includes(item.scopeId)
+          ||row.space===item.space&&(row.dependencyKeys||[]).some(key=>key===item.key||key===item.remoteKey))){selected.delete(item);changed=true;}
+      }while(changed);
+    }
+    return [...selected];
+  };
+  const cleanupVerificationError = result => {
+    const error = globalModeError('MEMORY_SUITE_GLOBAL_PRESERVATION_FAILED');
+    error.result=result;error.userMessage=`보존 검증에서 ${result.failures.length}개 항목을 확인하지 못했습니다. 항목별 목록에서 보존·제외·삭제를 선택하세요.`;
+    return error;
+  };
+  const globalVerifyPreservation = async (options = {}) => {
+    const result=await inspectDuplicateCleanup({...options,direction:'local'});
+    if (!result.ok && options.review !== true) throw cleanupVerificationError(result);
+    return result;
+  };
+  const globalDeletePluginStorageAfterVerification = (...args) => withModeConfiguration(()=>executeDuplicateCleanup({...args[0],direction:'local'}));
+  const globalDeleteServerDuplicates = (...args) => withModeConfiguration(()=>executeDuplicateCleanup({...args[0],direction:'server'}));
+  const executeDuplicateCleanup = async (deleteOptions = {}) => {
+    await cleanupProgress(deleteOptions,'draining',{current:0,total:0});
     do {
       await Promise.allSettled([...ownerIOWork]);
       if (typeof whenFlashbackWritersIdle === 'function') await whenFlashbackWritersIdle();
       await Promise.allSettled([...mutationTails.values()]);
     } while (ownerIOWork.size || mutationTails.size);
-    modeConfigurationFrozen = true;
-    const verified = await globalVerifyPreservation(deleteOptions);
-    if (!verified.ok || verified.failures.length > 0) {
-      throw new Error('memory_suite_global_preservation_not_passed');
+    modeConfigurationFrozen=true;
+    const review=await inspectDuplicateCleanup(deleteOptions), selection=deleteOptions.selection;
+    if (!selection && !review.ok) throw cleanupVerificationError(review);
+    const itemsById=new Map(review.items.map(item=>[item.id,item]));
+    if (selection) for (const [id,choice] of Object.entries(selection)) {
+      if (!['keep','exclude','delete'].includes(choice?.action)) throw globalModeError('MEMORY_SUITE_CLEANUP_SELECTION_INVALID');
+      if (choice.action!=='delete') continue;
+      const item=itemsById.get(id);
+      if (!item || choice.fingerprint!==item.fingerprint) throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{key:item?.key});
+      if (!item.canDelete || item.status!=='matched' && deleteOptions.allowUnpreserved!==true)
+        throw globalModeError('MEMORY_SUITE_CLEANUP_UNPRESERVED_CONFIRMATION_REQUIRED',{key:item.key});
     }
-    if (verified.candidates.length === 0) {
-      return { ok: true, deleted: 0, checked: 0 };
-    }
-
-    if (typeof deleteOptions.beforeDelete === 'function') await deleteOptions.beforeDelete();
-    let deleted = 0;
-    const failures = [];
-
-    const deleteFromSpace = async (space, candidates) => {
-      const legacy = globalLegacyStore(space);
-      if (!legacy || typeof legacy.keys !== 'function') return;
-      const allKeys = await listRoutedLegacyKeys(legacy, space, true);
-
-      for (const cand of candidates) {
-        try {
-          // Preview evidence is not deletion authority: recheck live routes,
-          // recovery locks and both copies before consuming a local duplicate.
-          const mode = await readScopeMode(cand.route.scope, true);
-          if (mode.mode !== MODE_SERVER_ONLY) throw globalModeError('MEMORY_SUITE_DELETE_REQUIRES_SERVER_MODE');
-          await assertStorageTransitionComplete(cand.route.scope, mode);
-          await assertRecoveryActionAllowed(cand.route.scope, 'delete_pluginstorage');
-          const route = await resolveScopedRoute(space, cand.key, { noCache: true });
-          if (route.kind !== 'scope' || route.scopeId !== cand.route.scopeId || route.remoteKey !== cand.route.remoteKey)
-            throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED', {key:cand.key});
-          const current = await routeProjectValue(route, await legacyRead(legacy, cand.key));
-          const remote = await remoteGet(space, route.remoteKey, { allowPluginOnly: true });
-          if (!remote.exists || remote.tombstone
-            || (await globalDigest(normalizeJsonVal(current))) !== cand.localFingerprint
-            || (await globalDigest(normalizeJsonVal(remote.value))) !== cand.localFingerprint)
-            throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED', {key:cand.key});
-          const assertLocalCurrent = async () => {
-            const value = await legacyRead(legacy, cand.key);
-            if ((await globalDigest(normalizeJsonVal(await routeProjectValue(route, value)))) !== cand.localFingerprint)
-              throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED', {key:cand.key});
-            return value;
-          };
-          const ok = await routeRemoveLocal(
-            route, assertLocalCurrent,
-            async next => { await assertLocalCurrent(); return await legacyWriteVerified(legacy, cand.key, next); },
-            async () => { await assertLocalCurrent(); return await legacyRemoveVerified(legacy, cand.key); }
-          );
-          if (!ok) throw new Error('global_local_delete_readback_failed');
-          deleted += 1;
-
-          // A projected removal can retain other scopes in the same root.
-          if (!isNullishStorageValue(await legacyRead(legacy, cand.key))) continue;
-          const artifacts = allKeys.filter(k => isOwnedChunkArtifact(space, k) && chunkOwnerKey(k) === cand.key);
-          for (const artKey of artifacts) {
-            try {
-              const artOk = await legacyRemoveVerified(legacy, artKey);
-              if (artOk) deleted += 1;
-            } catch (_) {}
+    const selected=cleanupSelectionItems(review,selection);
+    const result={ok:true,schema:'memory-suite.duplicate-cleanup-result.v1',namespace,direction:review.direction,
+      checked:review.checked,deleted:0,deletedItems:0,kept:review.items.filter(item=>!selection||selection[item.id]?.action!=='exclude').length-selected.length,
+      excluded:review.items.filter(item=>selection?.[item.id]?.action==='exclude').length,failures:[],backupIds:[]};
+    const serverMutations=[];
+    const cleanupId=operationId('duplicates').replace(/[^A-Za-z0-9_-]/g,'_').slice(0,150);
+    if (typeof deleteOptions.beforeDelete==='function') await deleteOptions.beforeDelete();
+    for (let index=0;index<selected.length;index++) {
+      const item=selected[index],legacy=review.stores[item.space];
+      try {
+        await cleanupProgress(deleteOptions,'delete',{current:index,total:selected.length,key:item.key,deleted:result.deleted,kept:result.kept,excluded:result.excluded});
+        const mode=await readScopeMode(item.route.scope,true),required=review.direction==='server'?MODE_PLUGIN_ONLY:MODE_SERVER_ONLY;
+        if (mode.mode!==required) throw globalModeError('MEMORY_SUITE_CLEANUP_MODE_CHANGED');
+        await assertStorageTransitionComplete(item.route.scope,mode);
+        await assertRecoveryActionAllowed(item.route.scope,'delete_pluginstorage');
+        let route=await resolveScopedRoute(item.space,item.key,{noCache:true,scope:item.route.scope});
+        if(item.wholeRecord&&['global','shared'].includes(route.kind))route={...route,kind:'scope',scopeId:GLOBAL_SCOPE_ID,scope:globalScopeDescriptor()};
+        if (route.kind!=='scope'||route.scopeId!==item.scopeId||route.remoteKey!==item.remoteKey) throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED');
+        const readCurrent=async()=>{
+          const value=await readCleanupLocalValue(legacy,item.key), projected=await routeProjectValue(route,value);
+          if (await globalDigest(normalizeJsonVal(projected))!==item.localFingerprint) throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{key:item.key});
+          return value;
+        };
+        await readCurrent();
+        const remote=await remoteGet(item.space,item.remoteKey,{allowPluginOnly:true});
+        if (await cleanupRemoteFingerprint(remote)!==item.remoteFingerprint) throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{key:item.key});
+        if (review.direction==='server') {
+          await readCurrent();
+          serverMutations.push(cleanupCondition(item.space,item.remoteKey,remote));
+        } else {
+          const ok=await routeRemoveLocal(route,readCurrent,
+            async next=>{await readCurrent();return await legacyWriteVerified(legacy,item.key,next);},
+            async()=>{await readCurrent();return await legacyRemoveVerified(legacy,item.key);});
+          if(!ok)throw new Error('global_local_delete_readback_failed');
+          result.deleted++;
+          if(isNullishStorageValue(await legacyRead(legacy,item.key))) {
+            for(const chunk of await listRoutedLegacyKeys(legacy,item.space,true))if(isOwnedChunkArtifact(item.space,chunk)&&chunkOwnerKey(chunk)===item.key){
+              if(!await legacyRemoveVerified(legacy,chunk))throw new Error('global_chunk_delete_readback_failed');
+              result.deleted++;
+            }
           }
-        } catch (error) {
-          failures.push({ key: cand.key, error: compact(error?.message || error, 240) });
         }
+        if(review.direction==='local')result.deletedItems++;
+      }catch(error){
+        if (error.code==='MEMORY_SUITE_CLEANUP_CANCELLED') {error.result=result;throw error;}
+        result.failures.push({space:item.space,key:item.key,error:compact(error?.message||error,240)});
       }
-    };
-
-    const pluginCandidates = verified.candidates.filter(c => c.space === 'plugin');
-    const localCandidates = verified.candidates.filter(c => c.space === 'local');
-
-    await deleteFromSpace('plugin', pluginCandidates);
-    await deleteFromSpace('local', localCandidates);
-
-    if (failures.length > 0) {
-      const error = new Error(`memory_suite_global_delete_incomplete:${failures.length}`);
-      error.code = 'MEMORY_SUITE_GLOBAL_DELETE_INCOMPLETE';
-      error.userMessage = `일부 데이터 삭제 중 오류가 발생했습니다 (${failures.length}개 실패).`;
-      error.failures = failures;
-      throw error;
     }
-
-    return {
-      ok: true,
-      schema: 'memory-suite.global-pluginstorage-delete.v1',
-      namespace,
-      deleted,
-      checked: verified.checked
-    };
+    if(review.direction==='server'&&selected.length&&result.failures.length===0) {
+      try {
+        // Recheck every destination after the complete read pass. One exact
+        // namespace transaction then removes the selected server copies together.
+        for(const item of selected){
+          const value=await readCleanupLocalValue(review.stores[item.space],item.key);
+          if(await globalDigest(normalizeJsonVal(await routeProjectValue(item.route,value)))!==item.localFingerprint)
+            throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{key:item.key});
+        }
+        await cleanupProgress(deleteOptions,'server_commit',{current:0,total:selected.length});
+        const condition=await remoteGet('plugin',SCOPE_ROUTING_SERVER_KEY,{allowPluginOnly:true});
+        const id=operationId('duplicate-cleanup');
+        let response;
+        try {
+          response=await request('POST','/v1/owner/duplicate-cleanup',{
+            namespace,cleanupId,operationId:id,snapshot:review.serverSnapshot,
+            registryCondition:cleanupCondition('plugin',SCOPE_ROUTING_SERVER_KEY,condition),mutations:serverMutations,localVerified:true
+          },{allowPluginOnly:true,storageMode:MODE_PLUGIN_ONLY});
+        }catch(error){
+          // A lost response must not turn a committed purge into a second job.
+          // Only this operation's durable receipt can resolve the uncertainty.
+          response=await statusReadback(id,{allowPluginOnly:true,storageMode:MODE_PLUGIN_ONLY,forceBootstrap:true}).catch(()=>null);
+          if(!response?.result)throw error;
+        }
+        const receipt=response?.result,purged=receipt?.receipts?.filter(row=>row.kind==='purge')||[];
+        if(!receipt?.verified||!receipt.durable||receipt.operationId!==id||receipt.namespace!==namespace
+          ||purged.length!==selected.length||new Set(purged.map(row=>JSON.stringify([row.space,row.key]))).size!==selected.length
+          ||purged.some(row=>!selected.some(item=>item.space===row.space&&item.remoteKey===row.key)))
+          throw globalModeError('MEMORY_SUITE_CLEANUP_SERVER_RECEIPT_UNVERIFIED');
+        if(receipt.backupId)result.backupIds.push(receipt.backupId);
+        result.deleted=result.deletedItems=selected.length;
+      }catch(error){if(error.code==='MEMORY_SUITE_CLEANUP_CANCELLED'){error.result=result;throw error;}result.failures.push({key:'server',error:compact(error?.message||error,240)});}
+    }
+    result.ok=result.failures.length===0;
+    await cleanupProgress({...deleteOptions,signal:null},'complete',{current:selected.length,total:selected.length,...result});
+    if (!result.ok) {
+      const error=globalModeError('MEMORY_SUITE_GLOBAL_DELETE_INCOMPLETE');error.message=`memory_suite_global_delete_incomplete:${result.failures.length}`;error.failures=result.failures;error.result=result;
+      error.userMessage=`정리 ${result.deletedItems}개 · 보존 ${result.kept}개 · 제외 ${result.excluded}개 · 실패 ${result.failures.length}개. 실패한 항목을 확인한 뒤 다시 시도하세요.`;throw error;
+    }
+    return result;
   };
 
+  const bindDuplicateCleanupDialog = (root, { setMessage, refreshPanelSettings }) => {
+    const inline=root.querySelector('[data-cleanup-dialog]'),body=root.ownerDocument?.body;
+    if(body&&cleanupDialogController){inline.remove();cleanupDialogController.rebind(root,{setMessage,refreshPanelSettings});return cleanupDialogController;}
+    const dialog=inline,q=selector=>dialog.querySelector(selector)||root.querySelector(selector);
+    if(body)body.appendChild(dialog);
+    let review=null,busy=false,controller=null,previousFocus=null;
+    const labels={matched:'일치 · 중복 사본',value_mismatch:'두 사본의 내용이 다름',server_missing:'서버 사본 없음',server_tombstone:'서버 삭제 표식 있음',local_missing:'플러그인 사본 없음',local_unreadable:'기기 자료를 읽을 수 없음',server_unavailable:'서버 자료 확인 실패',inventory_unverified:'자료 목록·참조 관계 확인 필요'};
+    const esc=value=>safeText(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    const setBusy=value=>{
+      busy=value;q('[data-cleanup-continue]').disabled=value||!review;
+      q('[data-cleanup-close]').disabled=value;q('[data-cleanup-stop]').hidden=!value;
+    };
+    const progress=event=>{
+      const phases={draining:'진행 중인 저장 작업 마무리 대기',connecting:'서버 연결·저장 위치 확인',verify:'사본 내용 비교',review:'항목별 선택 대기',delete:'선택한 사본 정리',server_commit:'서버 백업 생성·사본 삭제 확인',complete:'정리 완료'};
+      q('[data-cleanup-phase]').textContent=phases[event.phase]||event.phase;
+      q('[data-cleanup-stop]').disabled=event.phase==='server_commit';
+      const current=Number(event.current||0),total=Number(event.total||0);
+      q('[data-cleanup-progress]').max=Math.max(1,total);q('[data-cleanup-progress]').value=current;
+      q('[data-cleanup-count]').textContent=`${current} / ${total} · 정리 ${event.deleted||0} · 보존 ${event.kept||0} · 제외 ${event.excluded||0}`;
+      q('[data-cleanup-current]').textContent=event.key||'';
+    };
+    const selection=()=>{
+      const choices=new Map([...dialog.querySelectorAll('[data-cleanup-choice]')].map(node=>[Number(node.getAttribute('data-cleanup-choice')),node.value]));
+      return Object.fromEntries((review?.items||[]).map((item,index)=>[item.id,{
+        fingerprint:item.fingerprint,action:choices.get(index)||(item.status==='matched'?'delete':'keep')
+      }]));
+    };
+    const syncChoices=()=>{
+      if(!review||busy)return;
+      const choices=selection(),deleting=cleanupSelectionItems(review,choices);
+      if(review.direction==='server') {
+        const selectedIds=new Set(deleting.map(item=>item.id));
+        for(const node of dialog.querySelectorAll('[data-cleanup-choice]')){const item=review.items[Number(node.getAttribute('data-cleanup-choice'))];if(node.value==='delete'&&!selectedIds.has(item.id))node.value='keep';}
+      }
+      const unpreserved=deleting.filter(item=>item.status!=='matched').length;
+      q('[data-cleanup-ack-row]').hidden=unpreserved===0;
+      q('[data-cleanup-continue]').disabled=deleting.length===0||unpreserved>0&&!q('[data-cleanup-ack]').checked;
+      q('[data-cleanup-continue]').textContent=`선택한 ${deleting.length}개 사본 삭제`;
+      q('[data-cleanup-summary]').textContent=`전체 ${review.checked}개 · 일치 ${review.candidates.length}개 · 확인 필요 ${review.failures.length}개 · 삭제 선택 ${deleting.length}개${unpreserved?` (서버 미보존 ${unpreserved}개 포함)`:''}`;
+    };
+    const finishError=error=>{
+      const partial=error.result;
+      q('[data-cleanup-phase]').textContent=error.code==='MEMORY_SUITE_CLEANUP_CANCELLED'?'중단됨 · 남은 사본 보존':'작업 확인 필요';
+      q('[data-cleanup-summary]').textContent=`${error.userMessage||error.message||error}${partial?`\n정리 ${partial.deleted||0}개 · 보존 ${partial.kept||0}개 · 실패 ${partial.failures?.length||0}개`:''}`;
+      if(partial?.failures?.length)q('[data-cleanup-errors]').textContent=partial.failures.map(row=>`${row.key}: ${labels[row.reason]||row.error||row.reason}`).join('\n');
+      review=null;setMessage(q('[data-cleanup-summary]').textContent,'error');
+    };
+    const execute=async()=>{
+      if(busy||!review)return;
+      syncChoices();if(q('[data-cleanup-continue]').disabled)return;
+      const plan=review, choices=selection();controller=new AbortController();setBusy(true);
+      q('[data-cleanup-items]').hidden=true;
+      try{
+        const options={selection:choices,allowUnpreserved:q('[data-cleanup-ack]').checked,signal:controller.signal,onProgress:progress};
+        const result=await (plan.direction==='server'?globalDeleteServerDuplicates(options):globalDeletePluginStorageAfterVerification(options));
+        const message=`정리 완료 · ${result.deletedItems}개 항목 삭제 · ${result.kept}개 보존 · ${result.excluded}개 제외${result.backupIds.length?`\n서버 삭제 전 백업: ${result.backupIds.join(', ')}`:''}`;
+        q('[data-cleanup-summary]').textContent=message;setMessage(message,'good');review=null;
+        await refreshPanelSettings();
+      }catch(error){finishError(error);}finally{setBusy(false);q('[data-delete]').textContent='중복 pluginStorage 전체 삭제';q('[data-cleanup-close]').focus?.();}
+    };
+    const open=async(direction='local')=>{
+      if(busy)return;
+      previousFocus=root.ownerDocument?.activeElement;review=null;controller=new AbortController();
+      dialog.hidden=false;dialog.style.display='flex';q('[data-cleanup-ack]').checked=false;
+      q('[data-cleanup-errors]').textContent='';q('[data-cleanup-items]').innerHTML='';q('[data-cleanup-items]').hidden=false;
+      q('[data-cleanup-title]').textContent=direction==='server'?'이동 완료한 서버 사본 정리':'기기의 중복 플러그인 데이터 정리';
+      q('[data-cleanup-summary]').textContent='사본을 비교하고 있습니다. 확인이 끝나면 항목별로 보존·제외·삭제를 선택하세요.';
+      setBusy(true);q('[data-cleanup-stop]').focus?.();
+      try{
+        review=await withModeConfiguration(()=>inspectDuplicateCleanup({direction,signal:controller.signal,onProgress:progress}));
+        q('[data-cleanup-items]').innerHTML=review.items.map((item,index)=>`<article class="mscx-cleanup-item"><div><b>${esc(item.label)} · ${esc(item.dataLabel)}</b><small>${esc(labels[item.reason]||item.reason)} · ${esc(item.space==='local'?'기기 저장소':'플러그인 저장소')} · 기기 ${item.localSize??'미확인'}자 / 서버 ${item.remoteSize??'미확인'}자</small><details><summary>저장 키 확인</summary><code>${esc(item.key)}</code>${item.error?`<p>${esc(item.error)}</p>`:''}</details></div><label>처리<select data-cleanup-choice="${index}" ${item.canDelete?'':'disabled'} aria-label="${esc(item.label)} 처리"><option value="keep" ${item.status==='matched'?'':'selected'}>사본 보존</option><option value="exclude">이번 정리에서 제외</option><option value="delete" ${item.status==='matched'?'selected':''} ${item.canDelete?'':'disabled'}>${item.status==='matched'?'중복 사본 삭제':'로컬 사본 삭제'}</option></select></label></article>`).join('')||'<p>정리할 사본이 없습니다.</p>';
+        q('[data-delete]').textContent='검증 완료 · 선택 검토 후 삭제';
+      }catch(error){finishError(error);}finally{setBusy(false);syncChoices();q(q('[data-cleanup-continue]').disabled?'[data-cleanup-close]':'[data-cleanup-continue]').focus?.();}
+    };
+    q('[data-cleanup-items]').addEventListener?.('change',()=>{q('[data-cleanup-ack]').checked=false;syncChoices();});
+    q('[data-cleanup-ack]').onchange=syncChoices;
+    q('[data-cleanup-continue]').onclick=execute;
+    q('[data-cleanup-stop]').onclick=()=>{controller?.abort();q('[data-cleanup-phase]').textContent='중단 요청됨 · 현재 항목 처리가 끝나면 멈춥니다.';};
+    q('[data-cleanup-close]').onclick=()=>{if(busy)return;review=null;dialog.hidden=true;dialog.style.display='none';q('[data-delete]').textContent='중복 pluginStorage 전체 삭제';(previousFocus?.isConnected?previousFocus:q('[data-delete]'))?.focus?.();};
+    dialog.addEventListener?.('keydown',event=>{
+      if(event.key==='Escape'){event.preventDefault();if(busy)q('[data-cleanup-stop]').onclick();else q('[data-cleanup-close]').onclick();}
+      if(event.key==='Tab'){
+        const controls=[...dialog.querySelectorAll('button:not([disabled]):not([hidden]),select:not([disabled]),input:not([disabled])')].filter(node=>!node.closest('[hidden]'));
+        const first=controls[0],last=controls.at(-1),active=root.ownerDocument?.activeElement;
+        if(event.shiftKey&&active===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&active===last){event.preventDefault();first?.focus();}
+      }
+    });
+    const api={open,execute,hasReview:()=>!!review,
+      rebind(nextRoot,callbacks){root=nextRoot;setMessage=callbacks.setMessage;refreshPanelSettings=callbacks.refreshPanelSettings;if(!dialog.isConnected)root.ownerDocument.body.appendChild(dialog);},
+      dispose(){controller?.abort();dialog.remove();}
+    };
+    if(body)cleanupDialogController=api;
+    return api;
+  };
 
   const scopedPrepareServerScopeDeletion = (...args) => withOwnerOperation({kind:'storage_operation',operation:'scopedPrepareServerScopeDeletion'}, () => scopedPrepareServerScopeDeletionImpl(...args));
   const scopedPrepareServerScopeDeletionImpl = async (deleteOptions = {}) => {
@@ -12166,9 +12313,29 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ${globalModeEnabled ? '<section class="mscx-group" data-advanced-group="migration"><b>🚚 전체 이전 관리</b><div class="muted">언제: 저장 위치 전체 이전이 진행 중이거나 중간에 멈췄을 때<br>· 중단·보존: 진행 중인 이전을 안전하게 멈춥니다. 원본은 그대로 남습니다.<br>· 재개: 진행 화면의 [중단한 이전 재개] 버튼을 사용합니다. 취소 복구는 [취소 복구 계속]으로 표시됩니다.<br>· 취소·경로 복구: 이미 바뀐 저장 경로를 이전 설정으로 돌립니다. 원본과 서버 사본은 지우지 않습니다.</div><div class="actions"><button data-global-pause>전체 이전 중단·보존</button><button data-global-resume>진행 화면으로 이동</button><button data-global-cancel class="danger" disabled>이전 작업 취소 · 기존 경로 복구</button></div></section>' : ''}
         <section class="mscx-group" data-advanced-group="restore"><b>🛟 기기 기억 복구</b><div class="muted">언제: 이 기기(RisuAI pluginStorage)의 기억이 사라지거나 손상됐을 때. 서버에 보존된 정본으로 현재 스코프를 되살립니다.</div><div class="actions"><button data-restore>서버 → pluginStorage 복구</button></div></section>
         <section class="mscx-group" data-advanced-group="reset"><b>♻️ 서버 초기화·복원 이후 선택</b><div class="muted">언제: "서버 자료가 초기화 또는 복원되었습니다" 안내가 떴을 때만 사용합니다. 둘 중 하나를 고른 뒤 RisuAI를 새로고침하세요.<br>· 서버 자료 사용(권장): 복원된 서버 기억을 그대로 씁니다.<br>· 로컬 기억 다시 업로드: 이 기기의 기억으로 서버를 다시 채웁니다.</div><div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div></section>
+        ${globalModeEnabled ? '<section class="mscx-group" data-advanced-group="server-cleanup"><b>📦 플러그인으로 이동한 서버 사본 정리</b><div class="muted">먼저 플러그인 단독을 선택하고 설정 적용으로 전체 자료 이동을 완료하세요. 이동 후 플러그인 사본과 일치하는 서버 자료를 확인하고 삭제합니다. 삭제 전 서버 백업을 만듭니다.</div><div class="actions"><button type="button" data-server-delete>이동 완료한 서버 사본 검토 · 삭제</button></div></section>' : ''}
         <section class="mscx-group danger" data-advanced-group="cleanup"><b>🗑️ 기기 저장 공간 정리 · 주의</b><div class="muted">${globalModeEnabled ? '언제: 서버 단독으로 옮긴 뒤 이 기기에 남은 중복 pluginStorage 사본을 지우고 싶을 때. 서버 보존을 먼저 검증하고, 한 번 더 눌러야 삭제됩니다.' : '언제: 현재 스코프를 서버 단독으로 옮긴 뒤 이 기기의 중복 사본을 지우고 싶을 때. 서버 보존을 먼저 검증하고, 한 번 더 눌러야 삭제됩니다.'}</div><div class="actions"><button class="danger" data-delete>${globalModeEnabled ? '중복 pluginStorage 전체 삭제' : '현재 스코프 pluginStorage 삭제'}</button></div></section></div></details><div class="status"><div data-current-mode></div><div data-status>서버 상태를 확인할 수 있습니다.</div></div>
         <details data-preview-diagnostics hidden><summary>이전 검사 상세 · 대화 본문과 API 키 제외</summary><textarea data-preview-diagnostics-text aria-label="이전 검사 상세" readonly style="width:100%;min-height:180px"></textarea></details>
       </div>
+      <section id="${rootId}-cleanup" data-cleanup-dialog hidden role="dialog" aria-modal="true" aria-label="사본 정리 진행" style="display:none;position:fixed;inset:0;z-index:2147483000;background:#0009;align-items:center;justify-content:center;padding:12px">
+        <style>
+          #${rootId}-cleanup .mscx-cleanup-box{background:${bookTheme?'#fffaf2':'#111a2a'};color:${bookTheme?'#392b20':'#e8eefc'};font-family:system-ui,sans-serif;border:1px solid #8190a5;border-radius:16px;padding:20px;width:min(900px,100%);max-height:94vh;overflow:auto;display:grid;gap:12px;box-sizing:border-box}
+          #${rootId}-cleanup .mscx-cleanup-item{display:flex;align-items:start;justify-content:space-between;gap:16px;border-top:1px solid #8190a566;padding:12px 0;min-width:0}
+          #${rootId}-cleanup .mscx-cleanup-item>div{min-width:0;flex:1;overflow-wrap:anywhere} #${rootId}-cleanup .mscx-cleanup-item small{display:block;margin:6px 0}
+          #${rootId}-cleanup .mscx-cleanup-item select{max-width:100%;padding:8px;background:${bookTheme?'#fffaf2':'#172236'};color:${bookTheme?'#392b20':'#e8eefc'};font-family:system-ui,sans-serif;border:1px solid #8190a5;border-radius:8px}
+          #${rootId}-cleanup [data-cleanup-items]{max-height:48vh;overflow:auto} #${rootId}-cleanup [data-cleanup-current],#${rootId}-cleanup [data-cleanup-errors]{overflow-wrap:anywhere;white-space:pre-wrap}
+          #${rootId}-cleanup [data-cleanup-summary]{white-space:pre-wrap} #${rootId}-cleanup [data-cleanup-progress]{width:100%;height:14px}
+          @media(max-width:600px){#${rootId}-cleanup .mscx-cleanup-item{flex-direction:column;gap:6px}}
+          #${rootId}-cleanup .actions{display:flex;flex-wrap:wrap;gap:8px} #${rootId}-cleanup button{padding:10px 14px;border:1px solid #8190a5;border-radius:8px;color:inherit;background:${bookTheme?'#f5ebdc':'#172236'};cursor:pointer} #${rootId}-cleanup button:disabled{opacity:.5;cursor:default}
+        </style>
+        <div class="mscx-cleanup-box"><h3 data-cleanup-title>사본 정리</h3>
+          <b data-cleanup-phase role="status" aria-live="polite"></b><progress data-cleanup-progress max="1" value="0"></progress>
+          <div data-cleanup-count></div><small data-cleanup-current></small><p data-cleanup-summary></p>
+          <p class="muted">보존·제외한 항목은 이번 작업에서 삭제하지 않습니다. 일치하는 사본만 삭제 대상으로 기본 선택됩니다. 서버 자료는 보존한 대화에서 참조하는 자료도 함께 보존됩니다.</p>
+          <div data-cleanup-items></div><label data-cleanup-ack-row hidden><input type="checkbox" data-cleanup-ack> 서버에 보존되지 않은 로컬 사본도 삭제하도록 직접 선택했으며, 해당 기기 자료가 사라지는 데 동의합니다.</label>
+          <pre data-cleanup-errors></pre><div class="actions"><button type="button" data-cleanup-close>닫기</button><button type="button" data-cleanup-stop hidden>중단 요청</button><button type="button" class="danger" data-cleanup-continue disabled>선택한 사본 삭제</button></div>
+        </div>
+      </section>
       <div class="job" data-job><b data-job-title>작업 진행 중</b><div class="bar"><i data-job-bar></i></div><div class="grid"><span data-job-phase></span><span data-job-count></span><span data-job-bytes></span><span data-job-time></span><span data-job-retry></span><span data-job-key></span></div><div class="muted" data-job-workflow style="white-space:pre-wrap;margin:8px 0"></div><div class="muted" data-job-transfer style="white-space:pre-wrap;margin:8px 0"></div><div class="result" data-job-result></div><textarea data-job-diagnostics aria-label="저장 이전 상세 진단" readonly style="display:none"></textarea><button data-job-copy type="button">상세 진단 복사</button><div class="actions" data-job-stalled-actions style="display:none;margin-top:6px;gap:8px"><button data-job-retry class="primary" type="button">즉시 재시도</button><button data-job-cancel class="danger" type="button">이전 작업 취소 · 기존 모드 유지</button></div><div class="actions" data-job-terminal-actions style="display:none"><button data-job-dismiss type="button">결과 확인 닫기</button></div></div>
     </div>`;
     const root = container.querySelector(`#${rootId}`);
@@ -12205,6 +12372,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const active=!!lock;
       for(const input of root.querySelectorAll(`input[name="${rootId}-mode"]`)) input.disabled=active&&input.value!==MODE_SERVER_ONLY;
       q('[data-delete]').disabled=active;
+      if(globalModeEnabled)q('[data-server-delete]').disabled=active;
       if(active){const serverOnly=root.querySelector(`input[name="${rootId}-mode"][value="server_only"]`);if(serverOnly)serverOnly.checked=true;}
       syncModePresentation();
     };
@@ -12547,62 +12715,24 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     refreshScopeNote();
     q('[data-restore]').onclick = async()=>{ try{const job=await scopedStartRestoreJob({scope:initial.scope});setMessage('현재 스코프 복구를 시작했습니다.');renderJob(job);}catch(error){setMessage(`복구 시작 실패\n${error?.userMessage||error?.message||error}`,'error');} };
-        let armedUntil=0;
-    const defaultDeleteLabel = globalModeEnabled ? '중복 pluginStorage 전체 삭제' : '현재 스코프 pluginStorage 삭제';
-    q('[data-delete]').onclick = async()=>{
-      const button=q('[data-delete]');
-      if(Date.now()>armedUntil){
-        button.disabled=true;
-        setMessage(globalModeEnabled
-          ? '기기 중복 데이터가 서버에 안전하게 보관되어 있는지 검증하고 있습니다…'
-          : '현재 스코프가 서버에 안전하게 보존됐는지 확인하고 있습니다…');
-        try{
-          if (globalModeEnabled) {
-            const checked = await globalVerifyPreservation();
-            if (checked.checked === 0) {
-              armedUntil = 0;
-              button.textContent = defaultDeleteLabel;
-              setMessage('정리할 중복 pluginStorage 데이터가 없습니다. (이미 정리되었거나 서버 단독 상태)', 'good');
-              return;
-            }
-            armedUntil = Date.now() + 30000;
-            button.textContent = '검증 완료 · 다시 눌러 전체 삭제';
-            setMessage(`서버 보존 검증 완료 · ${checked.checked}개 항목 안전 확인\n30초 안에 다시 누르면 기기의 중복 pluginStorage 사본을 삭제합니다.`, 'good');
-          } else {
-            await assertRecoveryActionAllowed(initial.scope, 'delete_pluginstorage');
-            const checked = await scopedVerifyPreservation(state.legacy.plugin, { scope: initial.scope });
-            armedUntil = Date.now() + 30000;
-            button.textContent = '검증 완료 · 다시 눌러 삭제';
-            setMessage(`보존 검증 완료 · ${checked.checked}개\n30초 안에 다시 누르면 현재 스코프의 payload만 삭제합니다.`, 'good');
-          }
-        }catch(error){
-          armedUntil=0;
-          button.textContent = defaultDeleteLabel;
-          setMessage(`삭제 차단\n${error?.userMessage || error?.message || error}`, 'error');
-        }finally{
-          button.disabled=false;
-        }
-        return;
-      }
-      armedUntil=0;
-      button.disabled=true;
+    const cleanupDialog=globalModeEnabled?bindDuplicateCleanupDialog(root,{setMessage,refreshPanelSettings}):null;
+    if(globalModeEnabled)q('[data-server-delete]').onclick=()=>cleanupDialog.open('server');
+    let armedUntil=0;
+    q('[data-delete]').onclick=async()=>{
+      if(globalModeEnabled)return cleanupDialog.hasReview()?await cleanupDialog.execute():await cleanupDialog.open('local');
+      const button=q('[data-delete]');button.disabled=true;
       try{
-        if (globalModeEnabled) {
-          setMessage('기기 중복 데이터를 삭제하고 있습니다…');
-          const result = await globalDeletePluginStorageAfterVerification();
-          button.textContent = defaultDeleteLabel;
-          setMessage(`삭제 완료 · ${result.deleted}개 정리됨\n모든 대화 데이터는 서버에서 안전하게 유지됩니다.`, 'good');
-        } else {
-          const result = await scopedDeletePluginStorageAfterVerification({ scope: initial.scope });
-          button.textContent = defaultDeleteLabel;
-          setMessage(`삭제 완료 · ${result.deleted}개\n현재 스코프는 서버 단독입니다.`, 'good');
+        if(Date.now()>armedUntil){
+          await assertRecoveryActionAllowed(initial.scope,'delete_pluginstorage');
+          const checked=await scopedVerifyPreservation(state.legacy.plugin,{scope:initial.scope});
+          armedUntil=Date.now()+30000;button.textContent='검증 완료 · 다시 눌러 삭제';
+          setMessage(`보존 검증 완료 · ${checked.checked}개\n30초 안에 다시 누르면 현재 스코프의 payload만 삭제합니다.`,'good');return;
         }
-      }catch(error){
-        button.textContent = defaultDeleteLabel;
-        setMessage(`삭제 실패\n${error?.userMessage || error?.message || error}`, 'error');
-      }finally{
-        button.disabled=false;
-      }
+        armedUntil=0;
+        const result=await scopedDeletePluginStorageAfterVerification({scope:initial.scope});
+        button.textContent='현재 스코프 pluginStorage 삭제';setMessage(`삭제 완료 · ${result.deleted}개\n현재 스코프는 서버 단독입니다.`,'good');
+      }catch(error){armedUntil=0;button.textContent='현재 스코프 pluginStorage 삭제';setMessage(`삭제 차단\n${error?.userMessage||error?.message||error}`,'error');}
+      finally{button.disabled=false;}
     };
     q('[data-job-dismiss]').onclick=()=>{const job=getSyncJob();if(job&&syncJobTerminal(job.status)){dismissedJobId=job.jobId;state.syncJob.dismissedJobId=job.jobId;try{updateSyncJob({dismissed:true},{persist:'immediate'});}catch(_){}renderJob(job);}};
     const unsubscribe=subscribeSyncJob(renderJob); const tick=setInterval(()=>{if(!root.isConnected){clearInterval(tick);unsubscribe();return;}renderJob(getSyncJob());},1000); try{tick?.unref?.();}catch(_){}
@@ -12999,6 +13129,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (lifecycle.disposed) return false;
     for(const lease of graphStorageLeases.values())void lease.release();
     lifecycle.disposed = true;
+    cleanupDialogController?.dispose();cleanupDialogController=null;
     for (const timer of [...lifecycle.timers]) clearTimeout(timer);
     lifecycle.timers.clear();
     for (const controller of [...lifecycle.abortControllers]) {
@@ -13549,6 +13680,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     deletePluginStorageAfterServerVerification: (...args) => args[0]?.global === true ? globalDeletePluginStorageAfterVerification(...args) : withModeConfiguration(()=>withOwnerIO('plugin','',()=>scopedDeletePluginStorageAfterVerification(...args))),
     globalVerifyPreservation: (...args) => withModeConfiguration(()=>withOwnerIO('plugin','',()=>globalVerifyPreservation(...args))),
     globalDeletePluginStorageAfterVerification,
+    previewDuplicateCleanup: (...args) => withModeConfiguration(()=>inspectDuplicateCleanup(...args)),
+    globalDeleteServerDuplicates,
     setMode: (...args) => withModeConfiguration(()=>scopedSetModeSafely(...args)),
     getMode: async () => (await readScopeMode(null, true)).mode,
     getStorageModeContract: () => STORAGE_MODE_CONTRACT,
@@ -92287,7 +92420,7 @@ advanced
           if (Runtime.serverUnavailable && Runtime.storageStartupCompleted !== true) {
             await retryLibraStorageInitialization({ refreshGui: false });
           }
-          return await LibraMemoryCore.refreshSnapshot(undefined, {
+          const snapshot = await LibraMemoryCore.refreshSnapshot(undefined, {
             cloneResult: false,
             suppressGuiSchedule: true,
             skipNativeCopyAdoption: true,
@@ -92295,6 +92428,10 @@ advanced
             trackGuiLimits: true,
             summaryOnly: true
           });
+          // The core preserves the last snapshot and returns its error on failed
+          // reads. A fulfilled promise alone is not evidence of server recovery.
+          if (snapshot?.error) throw new Error(snapshot.error);
+          return snapshot;
         } finally { perf.snapshotMs = Math.max(0, Math.round(mark() - started)); }
       })();
 

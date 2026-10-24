@@ -5,7 +5,7 @@ const source=fs.readFileSync(path.join(__dirname,'../plugins/RETRACE.js'),'utf8'
 (async()=>{
  const dom=new JSDOM('<div id="root"><div id="diagnosticsBody"></div></div>');
  const oldSessionSuite={compatible:false,blocking:[{}],peers:[]};
- const Runtime={root:dom.window.document.querySelector('#root'),compatibilitySuite:oldSessionSuite,lastPreview:{includeLibra:true},overviewError:'현재 캐릭터를 불러올 수 없습니다.',memorySuiteOwnerStorageGate:{ready:true},warnings:[]};
+ const Runtime={root:dom.window.document.querySelector('#root'),compatibilitySuite:oldSessionSuite,lastPreview:{includeLibra:true,identity:{chatId:'old-chat-A'}},overviewError:'',memorySuiteOwnerStorageGate:{ready:true},warnings:[]};
  let probes=[],contexts=0,servers=0,unreachable=false,mismatch=false,rejectProbe=false;
  const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const ctx={Runtime,Date,Promise,text:v=>String(v??''),compact:v=>String(v),scopeManagerArray:v=>Array.isArray(v)?v:[],formatNumber:String,scopeManagerFormatTime:String,escapeHtml,
