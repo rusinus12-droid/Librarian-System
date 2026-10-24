@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.6.0
-//@version 2.6.0
+//@display-name LIBRA v2.6.1
+//@version 2.6.1
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.6.0';
+  const PLUGIN_VERSION = '2.6.1';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -11454,9 +11454,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const globalVerifyPreservation = async (verifyOptions = {}) => {
     const config = await readConfig(true);
-    const registry = await loadScopeRegistry(false, false);
-    const globalMode = registry?.entries?.[GLOBAL_SCOPE_ID]?.mode || config.mode;
-    if (globalMode !== MODE_SERVER_ONLY && config.mode !== MODE_SERVER_ONLY) {
+    const registry = await loadScopeRegistry(true, false);
+    const globalMode = normalizeMode(liveGlobalRow(registry)?.mode || config.mode);
+    if (globalMode !== MODE_SERVER_ONLY) {
       const error = new Error('기기 중복 데이터 삭제는 서버 단독 모드에서만 실행할 수 있습니다. 먼저 전역 설정을 서버 단독으로 적용해 주세요.');
       error.code = 'MEMORY_SUITE_DELETE_REQUIRES_SERVER_MODE';
       error.userMessage = error.message;
@@ -11464,8 +11464,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     const integrity = await remoteIntegrity({ allowPluginOnly: false }).catch(err => {
       const error = new Error(`서버 연결 및 무결성 확인 실패: ${err?.message || err}`);
-      error.code = 'MEMORY_SUITE_SERVER_UNAVAILABLE';
-      error.userMessage = '서버(server.cjs)가 실행 중이지 않거나 연결할 수 없습니다. 서버를 먼저 실행해 주세요.';
+      error.code = normalizeServerAvailabilityError(err)?.code || 'MEMORY_SUITE_SERVER_VERIFICATION_FAILED';
+      error.userMessage = '서버 연결 또는 저장소 검증에 실패했습니다. 오류 상세와 연결 설정을 확인해 주세요.';
       throw error;
     });
     if (integrity?.ok !== true) {
@@ -11502,7 +11502,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (route.kind !== 'scope' || !route.scopeId) continue;
 
         const scopeMode = registryScopeMode(registry, route.scopeId, globalMode);
-        if (scopeMode === MODE_PLUGIN_ONLY) continue;
+        if (scopeMode !== MODE_SERVER_ONLY) continue;
+        await assertStorageTransitionComplete(route.scope, { mode: scopeMode });
 
         let localValue;
         try {
@@ -11522,7 +11523,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         }
         if (isNullishStorageValue(projected)) continue;
 
-        spaceCandidates.push({ space, key, route, projected });
+        spaceCandidates.push({ space, key, route, projected, localFingerprint: await globalDigest(normalizeJsonVal(projected)) });
       }
 
       const remoteKeys = spaceCandidates.map(c => c.route.remoteKey);
@@ -11562,7 +11563,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
 
       result.checked += spaceCandidates.length;
-      result.candidates.push(...spaceCandidates.map(c => ({ space: c.space, key: c.key, route: c.route })));
+      result.candidates.push(...spaceCandidates.map(c => ({ space: c.space, key: c.key, route: c.route, localFingerprint: c.localFingerprint })));
       result.failures.push(...spaceFailures);
       return { space, checked: spaceCandidates.length, failures: spaceFailures };
     };
@@ -11581,7 +11582,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return result;
   };
 
-  const globalDeletePluginStorageAfterVerification = async (deleteOptions = {}) => {
+  const globalDeletePluginStorageAfterVerification = (...args) => withModeConfiguration(() => globalDeletePluginStorageAfterVerificationImpl(...args));
+  const globalDeletePluginStorageAfterVerificationImpl = async (deleteOptions = {}) => {
+    // Quiesce existing owner writes before verification, then prevent new proxy
+    // writes until the physical cleanup completes. Do not include this operation
+    // in ownerIOWork: waiting for our own promise would deadlock.
+    do {
+      await Promise.allSettled([...ownerIOWork]);
+      if (typeof whenFlashbackWritersIdle === 'function') await whenFlashbackWritersIdle();
+      await Promise.allSettled([...mutationTails.values()]);
+    } while (ownerIOWork.size || mutationTails.size);
+    modeConfigurationFrozen = true;
     const verified = await globalVerifyPreservation(deleteOptions);
     if (!verified.ok || verified.failures.length > 0) {
       throw new Error('memory_suite_global_preservation_not_passed');
@@ -11590,6 +11601,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return { ok: true, deleted: 0, checked: 0 };
     }
 
+    if (typeof deleteOptions.beforeDelete === 'function') await deleteOptions.beforeDelete();
     let deleted = 0;
     const failures = [];
 
@@ -11600,15 +11612,37 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
       for (const cand of candidates) {
         try {
+          // Preview evidence is not deletion authority: recheck live routes,
+          // recovery locks and both copies before consuming a local duplicate.
+          const mode = await readScopeMode(cand.route.scope, true);
+          if (mode.mode !== MODE_SERVER_ONLY) throw globalModeError('MEMORY_SUITE_DELETE_REQUIRES_SERVER_MODE');
+          await assertStorageTransitionComplete(cand.route.scope, mode);
+          await assertRecoveryActionAllowed(cand.route.scope, 'delete_pluginstorage');
+          const route = await resolveScopedRoute(space, cand.key, { noCache: true });
+          if (route.kind !== 'scope' || route.scopeId !== cand.route.scopeId || route.remoteKey !== cand.route.remoteKey)
+            throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED', {key:cand.key});
+          const current = await routeProjectValue(route, await legacyRead(legacy, cand.key));
+          const remote = await remoteGet(space, route.remoteKey, { allowPluginOnly: false });
+          if (!remote.exists || remote.tombstone
+            || (await globalDigest(normalizeJsonVal(current))) !== cand.localFingerprint
+            || (await globalDigest(normalizeJsonVal(remote.value))) !== cand.localFingerprint)
+            throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED', {key:cand.key});
+          const assertLocalCurrent = async () => {
+            const value = await legacyRead(legacy, cand.key);
+            if ((await globalDigest(normalizeJsonVal(await routeProjectValue(route, value)))) !== cand.localFingerprint)
+              throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED', {key:cand.key});
+            return value;
+          };
           const ok = await routeRemoveLocal(
-            cand.route,
-            async () => legacyRead(legacy, cand.key),
-            async next => legacyWriteVerified(legacy, cand.key, next),
-            async () => legacyRemoveVerified(legacy, cand.key)
+            route, assertLocalCurrent,
+            async next => { await assertLocalCurrent(); return await legacyWriteVerified(legacy, cand.key, next); },
+            async () => { await assertLocalCurrent(); return await legacyRemoveVerified(legacy, cand.key); }
           );
           if (!ok) throw new Error('global_local_delete_readback_failed');
           deleted += 1;
 
+          // A projected removal can retain other scopes in the same root.
+          if (!isNullishStorageValue(await legacyRead(legacy, cand.key))) continue;
           const artifacts = allKeys.filter(k => isOwnedChunkArtifact(space, k) && chunkOwnerKey(k) === cand.key);
           for (const artKey of artifacts) {
             try {
@@ -13514,9 +13548,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     inspectLocalHealthSnapshot,
     ownerLegacyWrite: (...args) => withOwnerIO(args[0],args[1],()=>ownerLegacyWrite(...args)),
     ownerLegacyRemove: (...args) => withOwnerIO(args[0],args[1],()=>ownerLegacyRemove(...args)),
-    deletePluginStorageAfterServerVerification: (...args) => withModeConfiguration(()=>withOwnerIO('plugin','',()=>scopedDeletePluginStorageAfterVerification(...args))),
+    deletePluginStorageAfterServerVerification: (...args) => args[0]?.global === true ? globalDeletePluginStorageAfterVerification(...args) : withModeConfiguration(()=>withOwnerIO('plugin','',()=>scopedDeletePluginStorageAfterVerification(...args))),
     globalVerifyPreservation: (...args) => withModeConfiguration(()=>withOwnerIO('plugin','',()=>globalVerifyPreservation(...args))),
-    globalDeletePluginStorageAfterVerification: (...args) => withModeConfiguration(()=>withOwnerIO('plugin','',()=>globalDeletePluginStorageAfterVerification(...args))),
+    globalDeletePluginStorageAfterVerification,
     setMode: (...args) => withModeConfiguration(()=>scopedSetModeSafely(...args)),
     getMode: async () => (await readScopeMode(null, true)).mode,
     getStorageModeContract: () => STORAGE_MODE_CONTRACT,
@@ -81218,6 +81252,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       || message.includes('memory_suite_server_unavailable')
       || message.includes('server_unavailable');
   };
+  const clearLibraServerUnavailable = () => {
+    Runtime.serverUnavailable = false;
+    Runtime.serverUnavailableError = '';
+  };
+
+  const retryLibraServerAvailability = async () => {
+    // Probe the configured URL directly: scope settings may themselves require
+    // an unavailable server and must not block the recovery probe.
+    // Do not adopt a changed server identity or modify storage routes here.
+    const result = await MemorySuiteStorageBridge.testConnection();
+    if (!result.ok) throw new Error(result.error || 'memory_suite_server_unavailable');
+    clearLibraServerUnavailable();
+    const initialized = await retryLibraStorageInitialization({ refreshGui: false });
+    if (!initialized.ok) throw new Error(initialized.error || 'LIBRA_STORAGE_INITIALIZATION_PENDING');
+    if (Gui.visible) await hydrateSettingsGuiAfterOpen(Gui.openSerial);
+    return !Runtime.serverUnavailable;
+  };
+
   const isLibraStorageTransitionError = error => {
     const code = String(error?.code || error?.cause?.code || '').trim();
     const message = String(error?.message || error || '');
@@ -81236,7 +81288,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
 
   const routeLibraGuiToStorageRecovery = () => {
-    Gui.bookPage = 'settings';
+    Gui.bookPage = 'server';
     Gui.bookSettingsWorkbenchSection = 'settings';
     Gui.settingsHubSection = 'server';
     Gui.section = 'settings';
@@ -86343,6 +86395,29 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         })
       ])
     ]) : null;
+    const availabilityBanner = Runtime.serverUnavailable ? guiEl('div', {
+      class: 'card', dataset: { libraServerAvailabilityNotice: 'true' }
+    }, [
+      guiEl('strong', { text: '서버 연결 확인 필요' }),
+      guiEl('p', { class: 'muted', text: '최근 서버 자료 요청에 실패했습니다. 서버 실행 여부를 단정할 수 없습니다. 실행 중이라면 서버 주소와 접근 경로를 확인한 뒤 다시 연결하세요.' }),
+      guiEl('p', { class: 'hint', text: Runtime.serverUnavailableError || '연결 상태 미확인' }),
+      guiEl('button', {
+        class: 'btn', type: 'button', text: '서버 연결 다시 확인', dataset: { libraServerAvailabilityRetry: 'true' },
+        onClick: async event => {
+          const button = event.currentTarget;
+          button.disabled = true;
+          guiSetStatus('서버 연결과 LIBRA 자료를 다시 확인하고 있습니다.', false, false);
+          try { await retryLibraServerAvailability(); }
+          catch (error) {
+            if (isLibraServerUnavailableError(error)) {
+              Runtime.serverUnavailable = true;
+              Runtime.serverUnavailableError = compact(error?.message || error, 240);
+            }
+            guiSetStatus(`서버 연결 또는 자료 확인 실패: ${error?.message || error}`, true, false);
+          } finally { if (button.isConnected) button.disabled = false; }
+        }
+      })
+    ]) : null;
     const storageHost = guiEl('div', { id: 'libraMemorySuiteServerConnectionPanel', class: 'card' }, [
       guiEl('strong', { text: '저장 설정을 불러오는 중…' })
     ]);
@@ -86354,7 +86429,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         theme: bookTheme ? 'book' : 'default'
       }).catch(error => guiSetStatus(`서버 연결 화면 오류: ${error?.message || error}`, true, true));
     }, 0);
-    return guiEl('div', { class: 'stack' }, [transitionBanner, storageHost].filter(Boolean));
+    return guiEl('div', { class: 'stack' }, [transitionBanner, availabilityBanner, storageHost].filter(Boolean));
   };
 
   const scheduleLibraPortableMemoryBackupMount = host => {
@@ -91813,27 +91888,25 @@ advanced
     // Every refresh invalidates earlier replies, including replies from a previous chat/open.
     const serial = ++bookCurrentStatus.serial, openSerial = Gui.openSerial;
     setRow('storage', '저장: 확인 중');
-    if (Runtime.serverUnavailable) {
-      setRow('storage', '저장: 서버 미실행 (서버 실행 필요)', true);
-      const help = foot.querySelector('.current-status-help');
-      if (help) help.textContent = '서버를 실행해야 저장 자료를 읽을 수 있습니다';
-    } else if (scopeKey) {
+    const help = foot.querySelector('.current-status-help');
+    if (help) help.textContent = '각 항목을 눌러 설정 변경';
+    if (scopeKey) {
       void MemorySuiteStorageBridge.getScopeMode(scope).then(value => {
         if (serial !== bookCurrentStatus.serial || openSerial !== Gui.openSerial || Gui.mockupApp !== app
             || LibraMemoryCore.peekSnapshot()?.scope?.scopeKey !== scopeKey) return;
+        const unavailable = Runtime.serverUnavailable && value.mode !== 'plugin_only';
         const label = value.transition || value.migrationRequired ? '전환 확인 필요'
+          : unavailable ? '서버 연결 확인 필요'
           : value.mode === 'server_only' ? '서버 모드' : value.mode === 'plugin_only' ? '플러그인 모드' : '확인 필요';
-        setRow('storage', `저장: ${label}`);
+        setRow('storage', `저장: ${label}`, unavailable);
       }).catch(err => {
         if (serial === bookCurrentStatus.serial && openSerial === Gui.openSerial && Gui.mockupApp === app) {
-          const isServerUnavail = isLibraServerUnavailableError(err);
-          setRow('storage', isServerUnavail ? '저장: 서버 미실행 (서버 실행 필요)' : '저장: 확인 필요', isServerUnavail);
-          if (isServerUnavail) {
-            const help = foot.querySelector('.current-status-help');
-            if (help) help.textContent = '서버를 실행해야 저장 자료를 읽을 수 있습니다';
-          }
+          const unavailable = isLibraServerUnavailableError(err);
+          setRow('storage', unavailable ? '저장: 서버 연결 확인 필요' : '저장: 확인 필요', unavailable);
         }
       });
+    } else if (Runtime.serverUnavailable) {
+      setRow('storage', '저장: 서버 연결 확인 필요', true);
     }
     if (!bookCurrentStatus.subscribed) {
       bookCurrentStatus.subscribed = true;
@@ -92213,6 +92286,9 @@ advanced
       const snapshotTask = (async () => {
         const started = mark();
         try {
+          if (Runtime.serverUnavailable && Runtime.storageStartupCompleted !== true) {
+            await retryLibraStorageInitialization({ refreshGui: false });
+          }
           return await LibraMemoryCore.refreshSnapshot(undefined, {
             cloneResult: false,
             suppressGuiSchedule: true,
@@ -92225,6 +92301,7 @@ advanced
       })();
 
       const settled = await Promise.allSettled([settingsTask, embeddingTask, snapshotTask]);
+      if (!Gui.visible || openSerial !== Gui.openSerial || LibraMemoryCore.state.disposed) return false;
       const rejected = settled.find(item => item.status === 'rejected');
       const transitionRejected = settled.find(item => item.status === 'rejected' && isLibraStorageTransitionError(item.reason));
       const serverRejected = settled.find(item => item.status === 'rejected' && isLibraServerUnavailableError(item.reason));
@@ -92239,6 +92316,7 @@ advanced
         Runtime.serverUnavailableError = compact(serverRejected.reason?.message || serverRejected.reason, 240);
         routeLibraGuiToStorageRecovery();
       }
+      if (!serverRejected && settled[2].status === 'fulfilled') clearLibraServerUnavailable();
       if (rejected) perf.lastError = compact(rejected.reason?.message || rejected.reason, 500);
       if (!Gui.visible || openSerial !== Gui.openSerial || LibraMemoryCore.state.disposed) return false;
       // A user may start editing while background reads are in flight. Rendering is safe
@@ -92247,7 +92325,7 @@ advanced
       const statusText = transitionRejected
         ? '저장소 이전 작업이 진행 중입니다. 저장 연결 패널에서 상태를 확인해 주세요.'
         : (serverRejected
-          ? '서버가 실행되지 않았습니다. 서버(server.cjs)를 실행해야 데이터를 읽고 쓸 수 있습니다.'
+          ? '서버 자료 요청에 실패했습니다. 서버가 실행 중이면 주소와 접근 경로를 확인한 뒤 [서버 연결 다시 확인]을 누르세요.'
           : (rejected ? `일부 백그라운드 갱신 실패: ${perf.lastError}` : '최신 LIBRA 데이터를 확인했습니다.'));
       guiSetStatus(statusText, Boolean(rejected || serverRejected), false);
       perf.hydratedAt = Date.now();
@@ -94265,8 +94343,8 @@ advanced
       try {
         await completeLibraStorageStartup();
         await registerPluginUi().catch(() => null);
-        if (Gui.visible) {
-          if (Gui.bookPage === 'settings' && Gui.settingsHubSection === 'server') {
+        if (Gui.visible && options.refreshGui !== false) {
+          if (Gui.bookPage === 'server' || (Gui.bookPage === 'settings' && Gui.settingsHubSection === 'server')) {
             Gui.bookPage = 'desk';
           }
           await LibraMemoryCore.refreshSnapshot(undefined, {

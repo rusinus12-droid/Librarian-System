@@ -67,11 +67,14 @@ function allowedKey(key, scope, index) {
 function validMetadata(value, scope, index) {
   if (!object(value) || value.namespace !== 'hayaku' || value.space !== 'plugin' || !allowedKey(value.key, scope, index)) fail('gradia_read_dependencies_invalid', 400);
   if (index === 0 && value.exists === false) {
-    if (value.tombstone !== false || value.revision !== 0 || value.digest !== '' || value.updatedAt !== 0 || value.valueBytes !== 0) {
-      fail('gradia_read_dependencies_invalid', 400);
-    }
-    return { namespace: 'hayaku', space: 'plugin', key: value.key, exists: false, tombstone: false,
-      revision: 0, digest: '', updatedAt: 0, valueBytes: 0 };
+    const absent = value.tombstone === false && value.revision === 0 && value.digest === ''
+      && value.updatedAt === 0 && value.valueBytes === 0;
+    const deleted = value.tombstone === true && Number.isSafeInteger(value.revision) && value.revision > 0
+      && /^[a-f0-9]{64}$/.test(value.digest || '') && Number.isSafeInteger(value.updatedAt) && value.updatedAt >= 0
+      && Number.isSafeInteger(value.valueBytes) && value.valueBytes >= 0;
+    if (!absent && !deleted) fail('gradia_read_dependencies_invalid', 400);
+    return { namespace: 'hayaku', space: 'plugin', key: value.key, exists: false, tombstone: value.tombstone,
+      revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
   }
   if (value.exists !== true || value.tombstone !== false || !int(value.revision) || value.revision < 1
     || !/^[a-f0-9]{64}$/.test(value.digest || '') || !int(value.updatedAt) || !int(value.valueBytes)) fail('gradia_read_dependencies_invalid', 400);

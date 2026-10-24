@@ -1,7 +1,7 @@
 //@name lia_persona_linker
 //@display-name LIA: Persona Linker
 //@api 3.0
-//@version 0.29.0
+//@version 0.29.1
 /* Target-only handoff storage preparation v1. Authenticated owner handlers only. */
 async function prepareMemorySuiteHandoffTargetStorage(api, storage, owner, payload) {
   const readTarget = async () => {
@@ -274,7 +274,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
   const OPERATION_LOG_MAX = 300;
   const DEBUG_LOG_MAX = 600;
   const LOG_PERSIST_DEBOUNCE_MS = 1500;
-const PLUGIN_VERSION = "0.29.0";
+const PLUGIN_VERSION = "0.29.1";
   const LIA_SETTING_UI_ID = "lia-persona-linker-setting";
   const LIA_BUTTON_UI_ID = "lia-persona-linker-button";
   const PERSONA_PROOF_VERSION = 1;
@@ -14571,6 +14571,9 @@ ${revisionText}`);
       await assertLiaViewSelectionCurrent(baseContext);
       viewSelectionVerified = true;
     } catch (e) {
+      // An unavailable selection can use the read-only standby view. A changed
+      // selection invalidates this snapshot; never show the previous chat as current.
+      if (String(e?.message || e).includes('LIA_VIEW_SELECTION_CHANGED')) throw e;
       appendDebugLog("view_selection", "preview_selection_unverified", { error: errorForLog(e) }, "info");
     }
     return { ...baseContext, personaDatabaseReadStatus: personaDatabaseRead.status, compatibility, savedLLMConfig, savedResultVault, livePersonaBinding, livePersonaBindingStatus, personaRequestProof, viewSelectionVerified };

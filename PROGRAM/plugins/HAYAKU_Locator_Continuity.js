@@ -1,6 +1,6 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.0
-//@version 3.3.0
+//@display-name HAYAKU · Locator Continuity v3.3.1
+//@version 3.3.1
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.0';
+  const PLUGIN_VERSION = '3.3.1';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -10404,9 +10404,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const globalVerifyPreservation = async (verifyOptions = {}) => {
     const config = await readConfig(true);
-    const registry = await loadScopeRegistry(false, false);
-    const globalMode = registry?.entries?.[GLOBAL_SCOPE_ID]?.mode || config.mode;
-    if (globalMode !== MODE_SERVER_ONLY && config.mode !== MODE_SERVER_ONLY) {
+    const registry = await loadScopeRegistry(true, false);
+    const globalMode = normalizeMode(liveGlobalRow(registry)?.mode || config.mode);
+    if (globalMode !== MODE_SERVER_ONLY) {
       const error = new Error('기기 중복 데이터 삭제는 서버 단독 모드에서만 실행할 수 있습니다. 먼저 전역 설정을 서버 단독으로 적용해 주세요.');
       error.code = 'MEMORY_SUITE_DELETE_REQUIRES_SERVER_MODE';
       error.userMessage = error.message;
@@ -10414,8 +10414,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     const integrity = await remoteIntegrity({ allowPluginOnly: false }).catch(err => {
       const error = new Error(`서버 연결 및 무결성 확인 실패: ${err?.message || err}`);
-      error.code = 'MEMORY_SUITE_SERVER_UNAVAILABLE';
-      error.userMessage = '서버(server.cjs)가 실행 중이지 않거나 연결할 수 없습니다. 서버를 먼저 실행해 주세요.';
+      error.code = normalizeServerAvailabilityError(err)?.code || 'MEMORY_SUITE_SERVER_VERIFICATION_FAILED';
+      error.userMessage = '서버 연결 또는 저장소 검증에 실패했습니다. 오류 상세와 연결 설정을 확인해 주세요.';
       throw error;
     });
     if (integrity?.ok !== true) {
@@ -10452,7 +10452,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (route.kind !== 'scope' || !route.scopeId) continue;
 
         const scopeMode = registryScopeMode(registry, route.scopeId, globalMode);
-        if (scopeMode === MODE_PLUGIN_ONLY) continue;
+        if (scopeMode !== MODE_SERVER_ONLY) continue;
+        await assertStorageTransitionComplete(route.scope, { mode: scopeMode });
 
         let localValue;
         try {
@@ -10472,7 +10473,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         }
         if (isNullishStorageValue(projected)) continue;
 
-        spaceCandidates.push({ space, key, route, projected });
+        spaceCandidates.push({ space, key, route, projected, localFingerprint: await globalDigest(normalizeJsonVal(projected)) });
       }
 
       const remoteKeys = spaceCandidates.map(c => c.route.remoteKey);
@@ -10512,7 +10513,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
 
       result.checked += spaceCandidates.length;
-      result.candidates.push(...spaceCandidates.map(c => ({ space: c.space, key: c.key, route: c.route })));
+      result.candidates.push(...spaceCandidates.map(c => ({ space: c.space, key: c.key, route: c.route, localFingerprint: c.localFingerprint })));
       result.failures.push(...spaceFailures);
       return { space, checked: spaceCandidates.length, failures: spaceFailures };
     };
@@ -10531,7 +10532,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return result;
   };
 
-  const globalDeletePluginStorageAfterVerification = async (deleteOptions = {}) => {
+  const globalDeletePluginStorageAfterVerification = (...args) => withModeConfiguration(() => globalDeletePluginStorageAfterVerificationImpl(...args));
+  const globalDeletePluginStorageAfterVerificationImpl = async (deleteOptions = {}) => {
+    // Quiesce existing owner writes before verification, then prevent new proxy
+    // writes until the physical cleanup completes. Do not include this operation
+    // in ownerIOWork: waiting for our own promise would deadlock.
+    do {
+      await Promise.allSettled([...ownerIOWork]);
+      if (typeof whenFlashbackWritersIdle === 'function') await whenFlashbackWritersIdle();
+      await Promise.allSettled([...mutationTails.values()]);
+    } while (ownerIOWork.size || mutationTails.size);
+    modeConfigurationFrozen = true;
     const verified = await globalVerifyPreservation(deleteOptions);
     if (!verified.ok || verified.failures.length > 0) {
       throw new Error('memory_suite_global_preservation_not_passed');
@@ -10540,6 +10551,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return { ok: true, deleted: 0, checked: 0 };
     }
 
+    if (typeof deleteOptions.beforeDelete === 'function') await deleteOptions.beforeDelete();
     let deleted = 0;
     const failures = [];
 
@@ -10550,15 +10562,37 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
       for (const cand of candidates) {
         try {
+          // Preview evidence is not deletion authority: recheck live routes,
+          // recovery locks and both copies before consuming a local duplicate.
+          const mode = await readScopeMode(cand.route.scope, true);
+          if (mode.mode !== MODE_SERVER_ONLY) throw globalModeError('MEMORY_SUITE_DELETE_REQUIRES_SERVER_MODE');
+          await assertStorageTransitionComplete(cand.route.scope, mode);
+          await assertRecoveryActionAllowed(cand.route.scope, 'delete_pluginstorage');
+          const route = await resolveScopedRoute(space, cand.key, { noCache: true });
+          if (route.kind !== 'scope' || route.scopeId !== cand.route.scopeId || route.remoteKey !== cand.route.remoteKey)
+            throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED', {key:cand.key});
+          const current = await routeProjectValue(route, await legacyRead(legacy, cand.key));
+          const remote = await remoteGet(space, route.remoteKey, { allowPluginOnly: false });
+          if (!remote.exists || remote.tombstone
+            || (await globalDigest(normalizeJsonVal(current))) !== cand.localFingerprint
+            || (await globalDigest(normalizeJsonVal(remote.value))) !== cand.localFingerprint)
+            throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED', {key:cand.key});
+          const assertLocalCurrent = async () => {
+            const value = await legacyRead(legacy, cand.key);
+            if ((await globalDigest(normalizeJsonVal(await routeProjectValue(route, value)))) !== cand.localFingerprint)
+              throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED', {key:cand.key});
+            return value;
+          };
           const ok = await routeRemoveLocal(
-            cand.route,
-            async () => legacyRead(legacy, cand.key),
-            async next => legacyWriteVerified(legacy, cand.key, next),
-            async () => legacyRemoveVerified(legacy, cand.key)
+            route, assertLocalCurrent,
+            async next => { await assertLocalCurrent(); return await legacyWriteVerified(legacy, cand.key, next); },
+            async () => { await assertLocalCurrent(); return await legacyRemoveVerified(legacy, cand.key); }
           );
           if (!ok) throw new Error('global_local_delete_readback_failed');
           deleted += 1;
 
+          // A projected removal can retain other scopes in the same root.
+          if (!isNullishStorageValue(await legacyRead(legacy, cand.key))) continue;
           const artifacts = allKeys.filter(k => isOwnedChunkArtifact(space, k) && chunkOwnerKey(k) === cand.key);
           for (const artKey of artifacts) {
             try {
@@ -12634,9 +12668,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     inspectFlashbackGlobalSettingsSnapshot,
     ownerLegacyWrite: (...args) => withOwnerIO(args[0],args[1],()=>ownerLegacyWrite(...args)),
     ownerLegacyRemove: (...args) => withOwnerIO(args[0],args[1],()=>ownerLegacyRemove(...args)),
-    deletePluginStorageAfterServerVerification: (...args) => withModeConfiguration(()=>withOwnerIO('plugin','',()=>scopedDeletePluginStorageAfterVerification(...args))),
+    deletePluginStorageAfterServerVerification: (...args) => args[0]?.global === true ? globalDeletePluginStorageAfterVerification(...args) : withModeConfiguration(()=>withOwnerIO('plugin','',()=>scopedDeletePluginStorageAfterVerification(...args))),
     globalVerifyPreservation: (...args) => withModeConfiguration(()=>withOwnerIO('plugin','',()=>globalVerifyPreservation(...args))),
-    globalDeletePluginStorageAfterVerification: (...args) => withModeConfiguration(()=>withOwnerIO('plugin','',()=>globalDeletePluginStorageAfterVerification(...args))),
+    globalDeletePluginStorageAfterVerification,
     setMode: (...args) => withModeConfiguration(()=>scopedSetModeSafely(...args)),
     getMode: async () => (await readScopeMode(null, true)).mode,
     getStorageModeContract: () => STORAGE_MODE_CONTRACT,

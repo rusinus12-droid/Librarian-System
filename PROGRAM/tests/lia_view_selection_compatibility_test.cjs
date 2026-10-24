@@ -19,6 +19,10 @@ const {createFixture} = require('./fixtures/lia_native_runtime_fixture.cjs');
   assert.equal((await f.runtime.viewSelection()).chatIndex,0);
   f.api.getCurrentCharacterIndex=async()=>null;
   await assert.rejects(f.runtime.viewSelection(),/LIA_VIEW_SELECTION_UNAVAILABLE/);
+  f.api.getCurrentCharacterIndex=async()=>0;
+  let selectionReads=0;
+  f.api.getCurrentChatIndex=async()=>selectionReads++ === 0 ? 0 : 1;
+  await assert.rejects(f.runtime.fullViewContext(),/LIA_VIEW_SELECTION_CHANGED/);
   // When host selection cannot be verified, viewing context must not crash the product GUI.
   f.api.getCurrentCharacterIndex=async()=> -1;
   f.api.getCurrentChatIndex=async()=> -1;

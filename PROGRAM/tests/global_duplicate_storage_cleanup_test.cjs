@@ -65,6 +65,7 @@ test('Global duplicate storage cleanup test for LIBRA, HAYAKU, and Flashback', a
 
       let currentScope = null; // simulate settings panel opened from RisuAI plugins menu with NO active chat!
 
+      let preserveShared=false;
       const bridge = createBridge({
         namespace: ns,
         pluginId: ns,
@@ -72,12 +73,15 @@ test('Global duplicate storage cleanup test for LIBRA, HAYAKU, and Flashback', a
         pluginPrefixes: [ns === 'libra' ? 'libra:v1:' : (ns === 'flashback' ? 'vector_rag_memory:' : 'hayaku_recall::')],
         currentScopeProvider: async () => currentScope,
         resolveKeyScope: async ({ key }) => {
-          if (key.includes(scope1.scopeId)) return { kind: 'scope', ...scope1 };
+          if (key.includes(scope1.scopeId)) return { kind: 'scope', ...scope1, ...(preserveShared ? {
+            projectValue:raw=>(typeof raw==='string'?JSON.parse(raw):raw)?.memory,
+            removeValue:raw=>JSON.stringify({other:(typeof raw==='string'?JSON.parse(raw):raw).other})
+          } : {}) };
           if (key.includes(scope2.scopeId)) return { kind: 'scope', ...scope2 };
           return { kind: 'global' };
         }
       });
-      bridge.createPluginStorageProxy(legacyStore);
+      const proxy=bridge.createPluginStorageProxy(legacyStore);
 
       // Connect to server
       await bridge.setServerUrl(baseUrl);
@@ -116,6 +120,25 @@ test('Global duplicate storage cleanup test for LIBRA, HAYAKU, and Flashback', a
       assert.equal(verifyResult.ok, true, `${ns}: verify should pass when server has exact data`);
       assert.equal(verifyResult.checked, 2, `${ns}: should have checked both scope records`);
 
+      // Legacy mirror overrides must keep their local half even under a global server default.
+      const routeKey=`__memory_suite_internal_scope_routes_v1__:${ns}`;
+      storeMap.set(routeKey,{schema:'memory-suite.scope-routing.v1',version:1,namespace:ns,defaultMode:'plugin_only',entries:{
+        '__memory_suite_global__':{scopeId:'__memory_suite_global__',mode:'server_only',updatedAt:1},
+        [scope2.scopeId]:{...scope2,mode:'mirror',origin:'explicit_user_scope',updatedAt:2}
+      }});
+      const mirrorCheck=await bridge.globalVerifyPreservation();
+      assert.equal(mirrorCheck.checked,1,`${ns}: mirror scope must not be a duplicate cleanup candidate`);
+      storeMap.delete(routeKey);
+
+      // A new local revision after bulk verification must not be discarded.
+      await assert.rejects(bridge.globalDeletePluginStorageAfterVerification({beforeDelete: async () => {
+        await assert.rejects(proxy.setItem(key2,'writer update'),/storage_transition_in_progress/);
+        storeMap.set(key2, {content:'newer local memory',v:3});
+      }}), /memory_suite_global_delete_incomplete/);
+      assert.equal(storeMap.get(key2).v,3,`${ns}: changed local memory survives cleanup`);
+      storeMap.set(key1,{content:'memory of chat alpha',v:1});
+      storeMap.set(key2,{content:'memory of chat beta',v:2});
+
       // Case 3: Execute global deletion
       const deleteResult = await bridge.globalDeletePluginStorageAfterVerification();
       assert.equal(deleteResult.ok, true, `${ns}: delete must succeed`);
@@ -133,6 +156,14 @@ test('Global duplicate storage cleanup test for LIBRA, HAYAKU, and Flashback', a
       assert.equal(verifyAfter.ok, true, `${ns}: verify after delete should be ok`);
       assert.equal(verifyAfter.checked, 0, `${ns}: checked count should be 0 when already cleaned`);
 
+      // A projected deletion must keep chunks belonging to retained root data.
+      preserveShared=true;
+      storeMap.set(key1,{memory:{content:'memory of chat alpha',v:1},other:'other scope'});
+      const retainedChunk=key1+'::chunk:v1:fixture:0';
+      storeMap.set(retainedChunk,'retained bytes');
+      await bridge.globalDeletePluginStorageAfterVerification();
+      assert.equal(storeMap.get(key1).other,'other scope');
+      assert.equal(storeMap.has(retainedChunk),true,`${ns}: shared-root chunks survive projected cleanup`);
       bridge.dispose?.();
     }
   } finally {
