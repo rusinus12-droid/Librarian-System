@@ -27,7 +27,7 @@ const { assertLegacyAuthorityUnavailable } = require('./authority/legacy-admissi
 const { openCore3ServerRuntime } = require('./authority/core3-runtime.cjs');
 
 const SERVER_NAME = 'Librarian System Data Server';
-const SERVER_VERSION = '0.4.1';
+const SERVER_VERSION = '0.5.0';
 const PROTOCOL_MAJOR = 1;
 const PROTOCOL_MINOR = 9;
 const DATABASE_SCHEMA_VERSION = 1;

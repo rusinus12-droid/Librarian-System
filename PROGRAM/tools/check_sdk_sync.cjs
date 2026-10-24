@@ -42,4 +42,5 @@ if (failed) process.exitCode = 1;
 
 require('node:child_process').execFileSync(process.execPath,[require('node:path').join(__dirname,'sync_source_review.cjs'),'--check'],{stdio:'inherit'});
 require('./sync_chat_status.cjs').sync({ check:true });
+require('./sync_current_status.cjs').sync({ check:true });
 require('./sync_source_input_controls.cjs').sync({ check:true });

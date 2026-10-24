@@ -18,6 +18,7 @@ const REQUIRED_ROOT_FILE = '0_설치_안내.txt';
 const ACTIVE_NAMESPACES = Object.freeze(['flashback', 'hayaku', 'libra', 'lia', 'retrace']);
 const REQUIRED_PLUGIN_IDS = new Set(Object.values(PLUGINS).map(([, , id]) => id));
 const RELEASE_SMOKE_TESTS = Object.freeze([
+  'current_status_gui_runtime_test.cjs',
   'plugin_catalog_separation_test.cjs',
   'sdk_wm_separation_test.cjs',
   'retrace_wm_separation_test.cjs',

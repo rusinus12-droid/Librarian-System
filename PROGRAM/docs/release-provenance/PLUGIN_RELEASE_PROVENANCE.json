@@ -280,18 +280,18 @@
     }
   ],
   "currentRelease": {
-    "packageVersion": "0.4.1",
-    "artifact": "Librarian-System-0.4.1-Source.zip",
+    "packageVersion": "0.5.0",
+    "artifact": "Librarian-System-0.5.0-Source.zip",
     "plugins": {
       "flashback": {
-        "version": "1.3.4",
-        "sha256": "a90e3bec1a286f706cfa2155c7d957e17b1c4c53a5e34c1747881c18908976ae",
-        "bytes": 3515482
+        "version": "1.3.5",
+        "sha256": "41aed4a5ed2d76b7d7ea02027197a52e9ff1e882c82904bc871868b9714c08ad",
+        "bytes": 3525204
       },
       "hayaku": {
-        "version": "3.3.4",
-        "sha256": "3f1e7376b5fdcef2716625cb8dd810ecb5ff30938f190a71bd2e2c509a2e73bc",
-        "bytes": 4164000
+        "version": "3.3.5",
+        "sha256": "2f774ae414e7be0c80d1deef4f4040fa30dc56e693223333ce53afa8bc0380f2",
+        "bytes": 4173934
       },
       "libra": {
         "version": "2.6.5",

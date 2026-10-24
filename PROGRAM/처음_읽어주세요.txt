@@ -1,6 +1,6 @@
 정식 저장 모드는 플러그인 단독과 서버 단독입니다. 미러는 두 저장 위치 사이의 전환 단계이며, 기존 미러 설정은 단독 모드를 선택해 전환을 완료하세요. 상세: docs/STORAGE_MODE_TRANSITION_CONTRACT.md
 
-Librarian System Server 0.4.1
+Librarian System Server 0.5.0
 
 [처음 사용하는 분]
 먼저 Node.js 22.13.0 이상을 설치하세요. 현재 LTS 버전을 권장합니다.
@@ -49,9 +49,9 @@ Windows에서는 업데이트.bat, macOS에서는 업데이트.command, Linux/Te
 4. DATA 폴더를 임의로 삭제하거나 빈 DATA로 덮어쓰지 마세요.
 
 [현재 구성]
-- Librarian System Server 0.4.1
-- Flashback Memory 1.3.4
-- HAYAKU Locator Continuity 3.3.4
+- Librarian System Server 0.5.0
+- Flashback Memory 1.3.5
+- HAYAKU Locator Continuity 3.3.5
 - LIBRA 2.6.5
 - LIA Persona Linker 0.29.2
 - RE:TRACE 1.12.4

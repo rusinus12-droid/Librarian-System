@@ -8,7 +8,7 @@ const {Worker}=require('node:worker_threads');
 const {LIMITS,sha256File}=require('./stream_archive.cjs');
 const REPLACE_WARNING='기존에 사용하던 데이터가 있습니다. 복원 작업을 진행시 기존 데이터는 복원된 데이터로 대체됩니다. 데이터 폴더를 미리 보존하신 후 사용을 권장합니다. 복원을 시작하시겠습니까?';
 const fail=(code,statusCode=409)=>{throw Object.assign(Error(code),{statusCode});};
-module.exports=function createPortableTransfers({dataDir,dataInstanceId,namespaces,databaseSchemaVersion,serverVersion='0.4.1',protocol={major:1,minor:9},createBackup,listBackups,managerControl,targetState,canStart}){
+module.exports=function createPortableTransfers({dataDir,dataInstanceId,namespaces,databaseSchemaVersion,serverVersion='0.5.0',protocol={major:1,minor:9},createBackup,listBackups,managerControl,targetState,canStart}){
  const root=path.join(dataDir,'runtime','portable-transfers'),sessions=new Map(),operations=new Map();let closed=false,workerBusy=false;
  fs.mkdirSync(root,{recursive:true,mode:0o700});
  // No in-memory transfer/confirmation authority survives a process restart.
