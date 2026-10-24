@@ -17,13 +17,13 @@
   },
   "components": {
     "backend": "0.4.1",
-    "libra": "2.4.21",
-    "hayaku": "3.1.17",
-    "flashback": "1.1.20",
+    "libra": "2.4.22",
+    "hayaku": "3.1.18",
+    "flashback": "1.1.21",
     "lia": "0.27.3",
     "retrace": "1.10.2",
     "gradia": "0.26.16",
-    "storageSdk": "1.8.34",
+    "storageSdk": "1.8.35",
     "computeSdk": "0.3.8"
   },
   "layout": {

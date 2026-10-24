@@ -17,7 +17,9 @@ const owners = {
 
 const artifactRoot = process.env.GLOBAL_MODE_ARTIFACT_ROOT;
 const kinds = artifactRoot ? ['Full', 'Min'] : ['Full'];
-const recoveryKinds=['migration', 'legacy_rollback', 'legacy_rollback_resume', 'expired_rollback', 'restored_server', 'restored_witness', 'missing_destination', 'maintenance'];
+const ownerEntries=Object.entries(owners).filter(([name])=>!process.env.GLOBAL_MODE_OWNER||name===process.env.GLOBAL_MODE_OWNER);
+const recoveryKinds=['migration', 'legacy_rollback', 'legacy_rollback_resume', 'expired_rollback', 'restored_server', 'restored_witness', 'missing_destination', 'maintenance', 'slow_completion']
+  .filter(kind=>!process.env.GLOBAL_MODE_RECOVERY_CASE||kind===process.env.GLOBAL_MODE_RECOVERY_CASE);
 
 const hash = value => {
   let h = 0x811c9dc5;
@@ -239,10 +241,11 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
 
 test('owner GUI resumes through one progress action and recovers legacy and expired cancellation', {timeout:240000}, async () => {
   const results = [];
-  for (const [name] of Object.entries(owners)) {
+  assert(ownerEntries.length&&recoveryKinds.length,'requested recovery case and owner must exist');
+  for (const [name] of ownerEntries) {
     for (const kind of kinds) for (const recoveryKind of recoveryKinds) {
       const restoredServer=recoveryKind.startsWith('restored_');
-      const resumeMigration=['migration','missing_destination','maintenance'].includes(recoveryKind);
+      const resumeMigration=['migration','missing_destination','maintenance','slow_completion'].includes(recoveryKind);
       const handler = createHandlerFixture();
       const pluginPath = artifactRoot
         ? path.join(artifactRoot, kind, META[name][0])
@@ -316,6 +319,9 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
           initialValues: snapshot.entries,
           initialDeviceValues: snapshot.deviceEntries,
           args: { memory_suite_server_url: handler.url },
+          beforeWrite:async(key,value)=>{
+            if(recoveryKind==='slow_completion'&&key===snapshot.jobKey&&JSON.parse(value)?.status==='completed')await pause(300);
+          },
           nativeFetch: gatedFetch
         });
         await pause(320);
@@ -487,5 +493,5 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
       }
     }
   }
-  assert.equal(results.length, Object.keys(owners).length * kinds.length * recoveryKinds.length);
+  assert.equal(results.length, ownerEntries.length * kinds.length * recoveryKinds.length);
 });

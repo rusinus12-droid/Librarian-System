@@ -49,6 +49,7 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'storage_mode_confirmation_runtime_test.cjs',
   'owner_scope_management_runtime_test.cjs',
   'storage_global_allchat_panel_test.cjs',
+  'storage_global_completion_lifecycle_test.cjs',
   'storage_global_allchat_faults_test.cjs',
   'storage_expired_global_rollback_test.cjs',
   'storage_global_rollback_progress_test.cjs',
