@@ -80951,6 +80951,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   let retryLibraStorageInitialization = async () => ({ ok: false, pending: true });
   let ensureLibraStorageTransitionWatcher = () => {};
 
+  const isLibraServerUnavailableError = error => {
+    const code = String(error?.code || error?.cause?.code || '').trim();
+    const message = String(error?.message || error || '').toLowerCase();
+    return code === 'MEMORY_SUITE_SERVER_UNAVAILABLE'
+      || message.includes('memory_suite_server_unavailable')
+      || message.includes('server_unavailable');
+  };
   const isLibraStorageTransitionError = error => {
     const code = String(error?.code || error?.cause?.code || '').trim();
     const message = String(error?.message || error || '');
@@ -80997,10 +81004,20 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           }
           return Gui.state;
         }
+        if (isLibraServerUnavailableError(error)) {
+          Runtime.serverUnavailable = true;
+          Runtime.serverUnavailableError = compact(error?.message || error, 240);
+          routeLibraGuiToStorageRecovery();
+          if (!Gui.state) {
+            const fallbackSettings = Runtime.settings || {};
+            applyGuiSettingsState(fallbackSettings, { basisHash: '' });
+          }
+          return Gui.state;
+        }
         throw error;
       }
     }
-    if (isLibraStorageTransitionActive() && Gui.bookPage === 'desk') {
+    if ((isLibraStorageTransitionActive() || Runtime.serverUnavailable) && Gui.bookPage === 'desk') {
       routeLibraGuiToStorageRecovery();
     }
     return Gui.state;
@@ -91515,7 +91532,7 @@ advanced
       ` });
       foot.appendChild(style);
     }
-    const setRow = (id, value) => { const row = foot.querySelector(`[data-current-status="${id}"]`); if (row) row.textContent = value; };
+    const setRow = (id, value, isWarn = false) => { const row = foot.querySelector(`[data-current-status="${id}"]`); if (row) { row.textContent = value; if (id === 'storage') { row.style.color = isWarn ? '#ef4444' : ''; row.style.fontWeight = isWarn ? '700' : ''; } } };
     const saved = Runtime.settings;
     if (!saved) setRow('analysis', '분석: 확인 중');
     else {
@@ -91530,15 +91547,28 @@ advanced
     // Every refresh invalidates earlier replies, including replies from a previous chat/open.
     const serial = ++bookCurrentStatus.serial, openSerial = Gui.openSerial;
     setRow('storage', '저장: 확인 중');
-    if (scopeKey) void MemorySuiteStorageBridge.getScopeMode(scope).then(value => {
-      if (serial !== bookCurrentStatus.serial || openSerial !== Gui.openSerial || Gui.mockupApp !== app
-          || LibraMemoryCore.peekSnapshot()?.scope?.scopeKey !== scopeKey) return;
-      const label = value.transition || value.migrationRequired ? '전환 확인 필요'
-        : value.mode === 'server_only' ? '서버 모드' : value.mode === 'plugin_only' ? '플러그인 모드' : '확인 필요';
-      setRow('storage', `저장: ${label}`);
-    }).catch(() => {
-      if (serial === bookCurrentStatus.serial && openSerial === Gui.openSerial && Gui.mockupApp === app) setRow('storage', '저장: 확인 필요');
-    });
+    if (Runtime.serverUnavailable) {
+      setRow('storage', '저장: 서버 미실행 (서버 실행 필요)', true);
+      const help = foot.querySelector('.current-status-help');
+      if (help) help.textContent = '서버를 실행해야 저장 자료를 읽을 수 있습니다';
+    } else if (scopeKey) {
+      void MemorySuiteStorageBridge.getScopeMode(scope).then(value => {
+        if (serial !== bookCurrentStatus.serial || openSerial !== Gui.openSerial || Gui.mockupApp !== app
+            || LibraMemoryCore.peekSnapshot()?.scope?.scopeKey !== scopeKey) return;
+        const label = value.transition || value.migrationRequired ? '전환 확인 필요'
+          : value.mode === 'server_only' ? '서버 모드' : value.mode === 'plugin_only' ? '플러그인 모드' : '확인 필요';
+        setRow('storage', `저장: ${label}`);
+      }).catch(err => {
+        if (serial === bookCurrentStatus.serial && openSerial === Gui.openSerial && Gui.mockupApp === app) {
+          const isServerUnavail = isLibraServerUnavailableError(err);
+          setRow('storage', isServerUnavail ? '저장: 서버 미실행 (서버 실행 필요)' : '저장: 확인 필요', isServerUnavail);
+          if (isServerUnavail) {
+            const help = foot.querySelector('.current-status-help');
+            if (help) help.textContent = '서버를 실행해야 저장 자료를 읽을 수 있습니다';
+          }
+        }
+      });
+    }
     if (!bookCurrentStatus.subscribed) {
       bookCurrentStatus.subscribed = true;
       MemorySuiteStorageBridge.subscribeSyncJob(() => {
@@ -91841,9 +91871,10 @@ advanced
     forceTransparentGuiSurface();
     const shell = guiEl('div', {
       style: {
-        width: 'min(520px,calc(100vw - 32px))', margin: 'min(24vh,190px) auto 0', padding: '28px',
+        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+        width: 'min(520px,calc(100vw - 32px))', margin: '0', padding: '28px',
         border: '1px solid rgba(182,153,111,.24)', borderRadius: '22px', background: '#15130f',
-        color: '#f2eadc', boxShadow: '0 24px 70px rgba(0,0,0,.36)', fontFamily: 'Georgia,"Noto Serif KR",serif', textAlign: 'center'
+        color: '#f2eadc', boxShadow: '0 24px 70px rgba(0,0,0,.36)', fontFamily: 'Georgia,"Noto Serif KR",serif', textAlign: 'center', zIndex: '1000'
       }
     }, [
       guiEl('div', { style: { fontSize: '24px', fontWeight: '700', letterSpacing: '.08em' }, text: PUBLIC_DISPLAY_NAME }),
@@ -91930,10 +91961,16 @@ advanced
       const settled = await Promise.allSettled([settingsTask, embeddingTask, snapshotTask]);
       const rejected = settled.find(item => item.status === 'rejected');
       const transitionRejected = settled.find(item => item.status === 'rejected' && isLibraStorageTransitionError(item.reason));
+      const serverRejected = settled.find(item => item.status === 'rejected' && isLibraServerUnavailableError(item.reason));
       if (transitionRejected) {
         Runtime.storageTransitionPending = true;
         Runtime.storageTransitionError = compact(transitionRejected.reason?.message || transitionRejected.reason, 240);
         ensureLibraStorageTransitionWatcher();
+        routeLibraGuiToStorageRecovery();
+      }
+      if (serverRejected) {
+        Runtime.serverUnavailable = true;
+        Runtime.serverUnavailableError = compact(serverRejected.reason?.message || serverRejected.reason, 240);
         routeLibraGuiToStorageRecovery();
       }
       if (rejected) perf.lastError = compact(rejected.reason?.message || rejected.reason, 500);
@@ -91941,7 +91978,12 @@ advanced
       // A user may start editing while background reads are in flight. Rendering is safe
       // because applyGuiSettingsState() refuses to replace a dirty draft.
       await renderSettingsGui();
-      guiSetStatus(transitionRejected ? '저장소 이전 작업이 진행 중입니다. 저장 연결 패널에서 상태를 확인해 주세요.' : (rejected ? `일부 백그라운드 갱신 실패: ${perf.lastError}` : '최신 LIBRA 데이터를 확인했습니다.'), !!rejected, false);
+      const statusText = transitionRejected
+        ? '저장소 이전 작업이 진행 중입니다. 저장 연결 패널에서 상태를 확인해 주세요.'
+        : (serverRejected
+          ? '서버가 실행되지 않았습니다. 서버(server.cjs)를 실행해야 데이터를 읽고 쓸 수 있습니다.'
+          : (rejected ? `일부 백그라운드 갱신 실패: ${perf.lastError}` : '최신 LIBRA 데이터를 확인했습니다.'));
+      guiSetStatus(statusText, Boolean(rejected || serverRejected), false);
       perf.hydratedAt = Date.now();
       // Native-copy completeness checking can scan sibling chat lineage. Keep it entirely
       // outside the opening critical path, then refresh only if it actually writes target data.
@@ -94024,6 +94066,11 @@ advanced
         routeLibraGuiToStorageRecovery();
         ensureLibraStorageTransitionWatcher();
         warn('Storage transition in progress; deferring LIBRA storage initialization and keeping settings recovery GUI available.', error);
+      } else if (isLibraServerUnavailableError(error)) {
+        Runtime.serverUnavailable = true;
+        Runtime.serverUnavailableError = compact(error?.message || error, 240);
+        routeLibraGuiToStorageRecovery();
+        warn('Storage server unavailable; deferring LIBRA storage initialization and keeping settings GUI available.', error);
       } else {
         throw error;
       }
