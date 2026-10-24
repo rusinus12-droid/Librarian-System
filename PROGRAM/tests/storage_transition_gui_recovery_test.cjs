@@ -17,7 +17,7 @@ const owners = {
 
 const artifactRoot = process.env.GLOBAL_MODE_ARTIFACT_ROOT;
 const kinds = artifactRoot ? ['Full', 'Min'] : ['Full'];
-const recoveryKinds=['migration', 'legacy_rollback', 'legacy_rollback_resume', 'expired_rollback', 'restored_server', 'restored_witness', 'missing_destination'];
+const recoveryKinds=['migration', 'legacy_rollback', 'legacy_rollback_resume', 'expired_rollback', 'restored_server', 'restored_witness', 'missing_destination', 'maintenance'];
 
 const hash = value => {
   let h = 0x811c9dc5;
@@ -242,12 +242,12 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
   for (const [name] of Object.entries(owners)) {
     for (const kind of kinds) for (const recoveryKind of recoveryKinds) {
       const restoredServer=recoveryKind.startsWith('restored_');
-      const resumeMigration=['migration','missing_destination'].includes(recoveryKind);
+      const resumeMigration=['migration','missing_destination','maintenance'].includes(recoveryKind);
       const handler = createHandlerFixture();
       const pluginPath = artifactRoot
         ? path.join(artifactRoot, kind, META[name][0])
         : path.resolve(__dirname, '../plugins', META[name][0]);
-      let s,restoredHandler,restoredRows;
+      let s,restoredHandler,restoredRows,maintenanceObserved=false,maintenancePhase='',maintenanceTimer;
       try {
         const snapshot = await createPausedGlobalTransitionSnapshot(name, kind, pluginPath, handler);
         if (recoveryKind === 'missing_destination') {
@@ -299,6 +299,13 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
         const gatedFetch = async (...args) => {
           if (!allowServer) {
             throw new Error('simulated_server_offline_on_reload');
+          }
+          if(recoveryKind==='maintenance'&&!maintenanceObserved&&new URL(args[0]).pathname==='/v1/kv/get'
+              &&JSON.parse(s.values.get(snapshot.jobKey)||'null')?.phase==='final_verify'
+              &&!new URL(args[0]).searchParams.get('key').startsWith('__memory_suite_')){
+            maintenanceObserved=true;
+            maintenanceTimer=setTimeout(()=>{maintenancePhase=s.doc.querySelector('[data-job-phase]')?.textContent||'';},100);
+            return new Response(JSON.stringify({ok:false,error:'server_maintenance_in_progress'}),{status:503});
           }
           return await (restoredHandler||handler).nativeFetch(...args);
         };
@@ -442,6 +449,9 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
           const job=JSON.parse(s.values.get(snapshot.jobKey));
           assert(Object.values(job.checkpoints).some(row=>row.copiedMissingRecords>0),'resume must fill the absent payload behind the already-saved server route');
         }
+        if(recoveryKind==='maintenance'){
+          assert.equal(maintenanceObserved,true);assert.match(maintenancePhase,/서버 작업 종료 대기/);
+        }
 
         if (name === 'Flashback') {
           await until(
@@ -470,6 +480,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
         results.push({ name, kind, recoveryKind, status: 'PASS' });
         console.log(`PASS ${name} (${kind}, ${recoveryKind}): GUI button registered, memory read protected, recovery action completed, and normal screen restored`);
       } finally {
+        clearTimeout(maintenanceTimer);
         try { await s?.close?.(); } catch (_) {}
         try { await handler.close(); } catch (_) {}
         try { await restoredHandler?.close(); } catch (_) {}

@@ -4578,6 +4578,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         blockerReason:'서버 복원·초기화 또는 DATA 교체로 이전 작업의 서버 식별 정보가 달라졌습니다.',
         actionRequired:`진행 화면의 [${label}]에서 기기 원본을 검증하고 취소 방법을 확인하세요. 현재 서버는 변경하지 않습니다.`,
         remedySteps:[`1. 진행 화면의 [${label}] 선택`,'2. 기기 원본 검증 결과와 현재 서버 보존 안내 확인']};
+      if([errCode,details?.cause].some(code=>['server_maintenance_in_progress','maintenance_in_progress','MEMORY_SUITE_SERVER_MAINTENANCE'].includes(code)))return {
+        blockerReason:'서버가 백업·복원·업데이트 작업으로 잠겨 있어 작업을 잠시 중단했습니다.',
+        actionRequired:`서버 또는 RE:TRACE의 진행 중인 작업이 끝난 뒤 ${next} 진행 기록과 기억 원본은 유지됩니다. ${globalRollbackPending(job)?'원래 저장 경로 복구가 끝나면 취소가 완료됩니다.':'대화 검증이 모두 끝났어도 최종 서버 확인과 전체 설정 적용이 남아 있을 수 있습니다.'}`,
+        remedySteps:['1. 서버 또는 RE:TRACE에서 백업·복원·업데이트 작업 상태 확인',`2. 해당 작업 완료 후 ${next}`]};
       if(globalRollbackPending(job)||errCode.startsWith('MEMORY_SUITE_GLOBAL_ROLLBACK_'))return {
         blockerReason:'이전 취소 후 저장 경로 복구가 아직 완료되지 않았습니다.',
         actionRequired:`이전을 시작했던 서버가 실행 중인지 확인한 뒤 ${next} 기억 원본과 서버 사본은 보존됩니다.`,
@@ -4696,6 +4700,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       ...(rollback?{attemptStartedAt:job.attemptStartedAt||0,attemptFinishedAt:job.attemptFinishedAt||0,rollbackProgress:job.rollbackProgress||null,
         recoveryState:rollback.complete?'complete':rollback.active?'running':'action_required',waitingForUser:!rollback.active&&!rollback.complete}:{}),
       ...(job.rollbackPublication?{rollbackPublication:job.rollbackPublication}:{}),
+      ...(job.serverWait?{serverWait:job.serverWait,
+        ...(job.serverWait.active&&job.status==='running'?{recoveryState:'waiting_server',waitingForUser:false}
+          :job.error==='MEMORY_SUITE_SERVER_MAINTENANCE'?{recoveryState:'action_required',waitingForUser:true}:{})}:{}),
       error:job.error||'',details:job.errorDetails||null,
       ...(guidance ? {
         blockerReason: guidance.blockerReason,
@@ -4794,6 +4801,44 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
     }
   };
+  const readGlobalDestination = async (space,key,job) => {
+    const maxRetries=5,originalAction=state.syncJob.current?.currentAction,originalMessage=state.syncJob.current?.message;
+    let waited=false;
+    try{
+      for(let attempt=0;;attempt++){
+        try{
+          if(waited){await bootstrap(true,true);await assertDurableJobAdmission(job);}
+          return await remoteGet(space,key,{allowPluginOnly:true});
+        }catch(error){
+          if(!job||error?.status!==503||error?.payload?.error!=='server_maintenance_in_progress')throw error;
+          if(lifecycle.disposed||state.syncJob.current?.jobId!==job.jobId)throw connectionStaleError();
+          if(state.syncJob.current.pauseRequested||state.syncJob.current.cancelRequested)throw globalModeError('MEMORY_SUITE_GLOBAL_WAIT_INTERRUPTED');
+          if(attempt===maxRetries)throw globalModeError('MEMORY_SUITE_SERVER_MAINTENANCE',{
+            reason:'server_maintenance_in_progress',space,key,readOnly:true,retries:attempt,maxRetries
+          });
+          waited=true;
+          const delay=(attempt+1)*500;
+          const now=Date.now();
+          // The durable final-verify checkpoint already exists. Keep transient
+          // waits in memory so delayed timer writes cannot replace completion.
+          Object.assign(state.syncJob.current,{serverWait:{reason:'maintenance',active:true,retry:attempt+1,maxRetries,nextRetryAt:now+delay},
+            currentSpace:space,currentKey:key,currentAction:`서버 점검 종료 대기 · ${attempt+1} / ${maxRetries}`,
+            message:'서버의 백업·복원·업데이트 작업 종료를 잠시 기다리고 있습니다. 대화 검증 기록은 유지됩니다.',updatedAt:now,lastActivityAt:now});
+          notifySyncJob();
+          // Only this exact read is retried. No writes or whole-job replay;
+          // restored/replaced DATA must pass the original admission again.
+          await new Promise(resolve=>setTimeout(resolve,delay));
+          if(lifecycle.disposed||state.syncJob.current?.jobId!==job.jobId)throw connectionStaleError();
+          if(state.syncJob.current.pauseRequested||state.syncJob.current.cancelRequested)throw globalModeError('MEMORY_SUITE_GLOBAL_WAIT_INTERRUPTED');
+        }
+      }
+    }finally{
+      if(waited&&state.syncJob.current?.jobId===job.jobId){
+        Object.assign(state.syncJob.current,{serverWait:{...state.syncJob.current.serverWait,active:false,nextRetryAt:0},currentAction:originalAction,message:originalMessage});
+        notifySyncJob();
+      }
+    }
+  };
   const verifyGlobalScopeDestination = async (inventory,scope,target,verifyOptions={}) => {
     let verified=0,copiedMissingRecords=0,notifiedAt=0;
     const rows=inventory.records.filter(row=>globalPayloadRecord(row)&&globalRecordScopeIds(row).includes(scope.scopeId)
@@ -4807,7 +4852,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       const route=await globalRouteForRecord(row,scope);
       if(target===MODE_SERVER_ONLY){
-        let remote=await remoteGet(row.space,route.remoteKey,{allowPluginOnly:true});
+        let remote=await readGlobalDestination(row.space,route.remoteKey,verifyOptions.job);
         const logical=Object.hasOwn(row,'logicalValue')?row.logicalValue:row.value;
         const expected=row.location==='server'?logical:await routeProjectValue(route,logical);
         const job=verifyOptions.job;
@@ -4827,7 +4872,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           Object.assign(state.syncJob.current,{currentSpace:row.space,currentKey:row.logicalKey,currentAction:'누락된 서버 항목 복사·검증'});notifySyncJob();
           await remoteMutate('set',row.space,route.remoteKey,expected,{allowPluginOnly:true,expectedRevision:0});
           await assertDurableJobAdmission(job);
-          remote=await remoteGet(row.space,route.remoteKey,{allowPluginOnly:true});copiedMissingRecords++;
+          remote=await readGlobalDestination(row.space,route.remoteKey,job);copiedMissingRecords++;
         }
         if(row.deleted?remote.tombstone!==true:remote.exists!==true||globalCanonical(remote.value)!==globalCanonical(expected))throw globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_UNVERIFIED',{
           scopeId:scope.scopeId,space:row.space,key:row.logicalKey,remoteKey:route.remoteKey,targetMode:target,sourceLocation:row.location,
@@ -4879,7 +4924,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       await globalPreflightDestinations({...inventory,scopes:job.globalPlan.scopes});
       const firstPass=job.status==='queued'&&job.phase==='prepared';
       const workflow={...globalWorkflowSummary(inventory,firstPass?null:job),...(!firstPass?{kind:'resume',newCheckRequired:false}:job.workflow?.newCheckRequired?{kind:'reuse',newCheckRequired:true}:{})};
-      await globalSaveJob({status:'running',phase:'copy_verify',workflow,error:'',failedPhase:'',errorDetails:null,failureDetails:[],failures:0,result:null,metrics:null,
+      await globalSaveJob({status:'running',phase:'copy_verify',workflow,error:'',failedPhase:'',errorDetails:null,failureDetails:[],failures:0,result:null,metrics:null,serverWait:null,
         message:globalWorkflowView(workflow).title+' · 대화별 자료를 검증하고 있습니다.'});
       for(const scope of job.globalPlan.scopes){
         if(state.syncJob.current.pauseRequested){
@@ -4905,6 +4950,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         await globalSaveJob({checkpoints:{...state.syncJob.current.checkpoints,[scope.scopeId]:evidence},verifiedScopes:Object.keys({...state.syncJob.current.checkpoints,[scope.scopeId]:evidence}).length});
       }
       if(state.syncJob.current.pauseRequested){if(state.syncJob.current.cancelRequested===true)return await rollbackGlobalModeRoutes(job);return await globalSaveJob({status:'paused',phase:'paused_resumable',message:'미완료 · 검증된 경로와 원본을 보존했습니다. 전체 적용은 재개 후 완료합니다.'});}
+      await globalSaveJob({phase:'final_verify',currentAction:'최종 저장 상태 재검증 준비',message:'대화별 검증 완료 · 최종 저장 상태 재검증과 전체 설정 적용을 진행하고 있습니다.'});
       inventory=await collectGlobalInventory(job.targetMode);
       await assertGlobalPlanCurrent(job,inventory);
       globalMigrationContext=inventory;
@@ -4946,6 +4992,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       state.config={...state.config,mode:job.targetMode,at:Date.now()};state.scopeRouting.routeCache.clear();
       return result;
     }catch(error){
+      if(error.code==='MEMORY_SUITE_GLOBAL_WAIT_INTERRUPTED'&&state.syncJob.current?.pauseRequested&&!state.syncJob.current?.cancelRequested){
+        return await globalSaveJob({status:'paused',phase:'paused_resumable',error:'',errorDetails:null,currentAction:'사용자 요청으로 중단·보존',message:'요청에 따라 이전을 멈췄습니다. 대화 검증 기록과 원본은 유지되며 이어서 진행할 수 있습니다.'});
+      }
       if(state.syncJob.current?.cancelRequested===true&&state.syncJob.current?.phase!=='rollback_routes'){
         try{return await rollbackGlobalModeRoutes(job);}catch(rollbackError){error=rollbackError;}
       }
@@ -7819,7 +7868,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       card.classList.add('show'); const total=Math.max(0,Number(job.kind==='global_mode'?job.discoveredScopes||0:job.totalItems||0)), done=Math.max(0,Number(job.kind==='global_mode'?job.verifiedScopes||0:job.processedItems||0)); const percent=rollback?rollback.percent:total?Math.min(100,Math.round(done/total*100)):0;
       card.classList.toggle('terminal',terminal); card.classList.toggle('failed',job.status==='failed');
       q('[data-job-title]').textContent = `${rollback?rollback.title:waiting?'이전 중단 · 조치 필요':job.message || (terminal?'작업 결과':'작업 진행 중')}${total ? ` · ${terminal&&job.status==='completed'?100:percent}%` : ''}`; q('[data-job-bar]').style.width=`${terminal&&job.status==='completed'?100:percent}%`;
-      q('[data-job-phase]').textContent=`현재 단계: ${rollback?rollback.phase:waiting?'조치 대기 · 자동 진행하지 않음':job.phase || '준비'}`; q('[data-job-count]').textContent=rollback?rollback.count:`${job.kind==='global_mode'?'대화 검증':'진행'}: ${done.toLocaleString()} / ${total || terminal ? total.toLocaleString() : '조사 중'}${job.status==='completed' && total===0 ? ' · 이동할 데이터 없음' : ''}`;
+      const phaseLabel=job.serverWait?.active&&job.status==='running'?'서버 작업 종료 대기':job.phase==='final_verify'?'최종 저장 상태 검증':job.phase||'준비';
+      q('[data-job-phase]').textContent=`현재 단계: ${rollback?rollback.phase:waiting?'조치 대기 · 자동 진행하지 않음':phaseLabel}`; q('[data-job-count]').textContent=rollback?rollback.count:`${job.kind==='global_mode'?'대화 검증':'진행'}: ${done.toLocaleString()} / ${total || terminal ? total.toLocaleString() : '조사 중'}${job.status==='completed' && total===0 ? ' · 이동할 데이터 없음' : ''}`;
       q('[data-job-bytes]').textContent=rollback?`복구 대상 경로: ${Number(job.rollbackProgress?.restoredScopes||0).toLocaleString()}개 · 전체 설정 포함 · 원본과 서버 사본 보존`:job.kind==='global_mode'
         ? job.rollbackComplete?'저장 경로 복구 완료':job.status==='completed'?'전체 대화 검증 완료':terminal?'이전 작업 종료 · 결과를 확인하세요.':progress?.dryRun?'전송 전 비교 검사 중':progress&&Object.hasOwn(progress,'transferredBytes')?`현재 대화 확인: ${formatBytes(progress.processedBytes)} · 현재 대화 전송: ${formatBytes(progress.transferredBytes)}`:'기존 자료를 조회·검증하고 있습니다. 전송량은 대화별로 표시합니다.'
         :`처리: ${formatBytes(job.processedBytes)} · 전송: ${formatBytes(job.transferredBytes)}`; q('[data-job-time]').textContent=rollback?rollback.time:`${waiting?'중단까지':'경과'}: ${Math.max(0,Math.floor(((waiting?Number(job.updatedAt):Date.now())-Number(job.startedAt||Date.now()))/1000))}초`;
