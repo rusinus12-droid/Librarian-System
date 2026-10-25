@@ -31279,7 +31279,8 @@ const MemorySuiteHealthRecovery = (() => {
         const readback=await loadScopeRecords(scopeKey);assertCompleteScopeLoad(readback,'explicit reanalysis readback');
         if(diffLiveChatSourcesAgainstRecords(sources,readback.records).unchanged.length!==sources.length)throw Error('SOURCE_EDIT_RAW_READBACK_FAILED');
         invalidateRecallShardCache(scopeKey);
-        const done={ok:true,committed:true,scopeKey,rawSaved:true,remoteEmbeddingQueued:false,chunks:result.chunks,turns:units.map(u=>u.start)};
+        const remoteEmbeddingQueued=schedulePendingEmbeddingWork(scopeKey,{reason:'explicit_reanalysis_published'});
+        const done={ok:true,committed:true,scopeKey,rawSaved:true,remoteEmbeddingQueued,chunks:result.chunks,turns:units.map(u=>u.start)};
         flashbackReanalysisStatus={scopeKey,running:false,error:'',lastResult:done};return done;
       }catch(error){const reason=String(error?.message||error);flashbackReanalysisStatus={scopeKey,running:false,error:reason,lastResult:null};return {ok:false,reason};}
       finally{end?.();if(!ownerLease)lease.release();if(flashbackReanalysisRunning===operation)flashbackReanalysisRunning=null;}
@@ -31407,7 +31408,8 @@ const MemorySuiteHealthRecovery = (() => {
     const finalManifestRaw = await RisuCompat.getItem(scopeKeys.manifest(scope.scopeKey));
     if (finalManifestRaw !== publication.manifestRaw || Runtime.embeddingGeneration !== publication.boundary.generation
       || !sameRawPublicationOwner(publication.boundary.owner, rawPublicationOwner())) return null;
-    schedulePendingEmbeddingWork(scope.scopeKey, { reason: 'raw_source_published' });
+    // Explicit reanalysis schedules only after its final selected-source readback.
+    if (options.sourceEditReplacement !== true) schedulePendingEmbeddingWork(scope.scopeKey, { reason: 'raw_source_published' });
     return { embeddedVectors: 0, embeddedBatches: 0, reusedVectors: 0, embeddedTurns: 0,
       embeddingPending: selected.length, embeddingComplete: false,
       embeddingWork: { reembedded: 0, physicalRequests: 0, reason: 'raw_publication_pending_only',
@@ -31428,7 +31430,7 @@ const MemorySuiteHealthRecovery = (() => {
     let work = { reembedded: 0, physicalRequests: 0, reason: 'raw_embedding_deferred' };
     if (sourceGroups.length && options.deferEmbedding !== true && !Runtime.inBefore) {
       work = await runDurableLocalEmbeddingMaintenance(scope, settings, { ...options, all: true, sourceGroups });
-    } else if (sourceGroups.length) schedulePendingEmbeddingWork(scope.scopeKey, { reason: 'raw_source_published' });
+    } else if (sourceGroups.length && options.sourceEditReplacement !== true) schedulePendingEmbeddingWork(scope.scopeKey, { reason: 'raw_source_published' });
     const current = await loadScopeRecordsRaw(scope.scopeKey);
     assertCompleteScopeLoad(current, 'published raw embedding readback');
     const currentSettings = await loadSettings(true);
@@ -47053,15 +47055,21 @@ ${cleanedText}`, 80),
   let flashbackSourceEditUiToken = 0;
   let flashbackSourceReanalysisCancel = null;
   const cancelFlashbackSourceReanalysis=()=>{flashbackSourceReanalysisCancel?.(false);};
+  const flashbackSourceReanalysisEmbeddingNotice=()=>{
+    if(Runtime.settings?.embeddingEnabled===false)return '임베딩 사용이 꺼져 있습니다. 검색용 임베딩은 원문 저장 후 임베딩을 활성화하고 임베딩 작업 화면에서 준비해 주세요.';
+    if(Runtime.settings?.embeddingAutoProcess===false)return '자동 임베딩이 꺼져 있습니다. 검색용 임베딩은 원문 저장 후 임베딩 작업 화면에서 별도로 준비해 주세요.';
+    if(!configuredModelEmbedding(Runtime.settings))return '사용할 임베딩 모델이 설정되어 있지 않습니다. 검색용 임베딩은 원문 저장 후 모델을 설정하고 임베딩 작업 화면에서 준비해 주세요.';
+    return '원문 저장 후 검색용 임베딩이 자동 예약됩니다. 후속 작업에서 모델 사용량이 발생할 수 있으며, 진행 결과는 임베딩 작업 화면에서 확인할 수 있습니다.';
+  };
   const confirmFlashbackSourceReanalysis=async ticket=>{
     cancelFlashbackSourceReanalysis();
     let cancel;
-    try{return await guiDialog(`선택한 구간: ${ticket.units.map(unit=>unit.label).join(', ')} (${ticket.units.length}턴)\n저장된 원문을 현재 U+A 원문과 적용한 분석 규칙으로 교체합니다. 채팅 원문은 변경하지 않습니다.\n이 작업의 LLM·임베딩 호출은 0회입니다. 검색용 임베딩은 원문 저장 후 별도로 준비해야 합니다.\n계속할까요?`,{
+    try{return await guiDialog(`선택한 구간: ${ticket.units.map(unit=>unit.label).join(', ')} (${ticket.units.length}턴)\n저장된 원문을 현재 U+A 원문과 적용한 분석 규칙으로 교체합니다. 채팅 원문은 변경하지 않습니다.\nLLM 호출은 없으며, 원문 저장 단계의 임베딩 호출은 0회입니다. ${flashbackSourceReanalysisEmbeddingNotice()}\n계속할까요?`,{
       title:'원문 재분석 확인',confirm:true,okText:'선택한 원문 교체',initialFocus:'cancel',
       onOpened:cleanup=>{cancel=()=>{getFlashbackRecoveryActions().clear();cleanup(false);};flashbackSourceReanalysisCancel=cancel;}
     });}finally{if(flashbackSourceReanalysisCancel===cancel)flashbackSourceReanalysisCancel=null;}
   };
-  const buildFlashbackSourceEditCard=()=>`<details class="card fold" data-reanalysis-fold><summary id="fbSourceEditTitle">직접 원문 재분석</summary><div class="fold__body"><p class="card__desc">단일 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. LLM·임베딩 호출은 없으며 검색용 임베딩 준비는 별도입니다.</p><div class="cluster"><button type="button" class="btn" id="fbReanalysisRefresh">구간 목록 새로고침</button><button type="button" class="btn btn--primary" id="fbReanalysisRun" disabled>바로 재분석</button><button type="button" class="btn" id="fbReanalysisReview" hidden>확인 후 재분석</button></div><div id="fbReanalysisRanges" class="stack stack--sm"></div><div id="fbReanalysisReviewPanel"></div><div id="fbSourceEditStatus" class="hint" role="status" aria-live="polite"></div><details class="fold"><summary>분석 태그 규칙 설정</summary><div id="fbSourceTrackingSettings" class="stack stack--sm"></div></details></div></details>`;
+  const buildFlashbackSourceEditCard=()=>`<details class="card fold" data-reanalysis-fold><summary id="fbSourceEditTitle">직접 원문 재분석</summary><div class="fold__body"><p class="card__desc">단일 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. LLM 호출은 없습니다. 검색용 임베딩은 자동 처리가 켜져 있고 모델이 설정되어 있으면 저장 후 자동 예약되며, 후속 작업에서 모델 사용량이 발생할 수 있습니다.</p><div class="cluster"><button type="button" class="btn" id="fbReanalysisRefresh">구간 목록 새로고침</button><button type="button" class="btn btn--primary" id="fbReanalysisRun" disabled>바로 재분석</button><button type="button" class="btn" id="fbReanalysisReview" hidden>확인 후 재분석</button></div><div id="fbReanalysisRanges" class="stack stack--sm"></div><div id="fbReanalysisReviewPanel"></div><div id="fbSourceEditStatus" class="hint" role="status" aria-live="polite"></div><details class="fold"><summary>분석 태그 규칙 설정</summary><div id="fbSourceTrackingSettings" class="stack stack--sm"></div></details></div></details>`;
   const renderFlashbackSourceEditStatus=(status,message='')=>`<p class="hint">${escapeHtml(message||status?.error||'원하는 구간을 선택하세요.')}</p>`;
   const refreshFlashbackSourceEditPanel=async(message='')=>{
     if(!['import','source-edits'].includes(Runtime.guiTab))return false;
@@ -47087,7 +47095,7 @@ ${cleanedText}`, 80),
         if(validate)await validate();if(!current())return;
         submitted=true;setNodeText('fbSourceEditStatus','선택한 구간을 다시 저장하는 중…');
         const result=await actions.apply(ticket);
-        if(current())setNodeText('fbSourceEditStatus',result.ok?'선택한 구간의 원문을 저장했습니다. 검색용 임베딩은 별도로 준비해 주세요.':'재분석 중단: '+(result.reason||'결과를 확인하세요.'));
+        if(current())setNodeText('fbSourceEditStatus',result.ok?'선택한 구간의 원문을 저장했습니다. '+(result.remoteEmbeddingQueued?'검색용 임베딩을 자동 예약했습니다. 진행 결과는 임베딩 작업 화면에서 확인해 주세요.':'자동 임베딩은 예약되지 않았습니다. 검색용 임베딩은 임베딩 작업 화면에서 별도로 준비해 주세요.'):'재분석 중단: '+(result.reason||'결과를 확인하세요.'));
       }catch(error){if(current())setNodeText('fbSourceEditStatus','재분석 중단: '+String(error?.message||error));}
       finally{if(!submitted&&token===flashbackSourceEditUiToken)flashbackRecoveryActions?.clear();busy=false;if(current()){sync();run.focus?.();}}
     };

@@ -25,7 +25,8 @@ const out=process.env.SOURCE_INPUT_BROWSER_OUTPUT||path.join(os.tmpdir(),'source
   }
   await page.setViewportSize({width:390,height:844});
   if(owner==='hayaku'){await page.locator('.tabbar [data-go="recovery"]').click();await page.locator('[data-recovery-view="reanalysis"]').click();}
-  else await page.locator('.tabbar [data-go="care"]').click();
+  else{await page.locator('.tabbar [data-go="care"]').click();await page.locator('#fbSourceEditTitle').click();}
+  await page.getByText('분석 태그 규칙 설정',{exact:true}).click();
   const controls=page.locator('[data-source-input-controls]:visible');await controls.locator('[data-source-input-add]').waitFor();await controls.locator('[data-source-input-add]').isEnabled();
   const before=await page.evaluate(()=>({...__hostCalls,raw:JSON.stringify(__chat)}));
   async function add(value,action){await controls.locator('[data-source-input-add]').click();const input=page.locator('[data-rule-value]:focus');await input.fill(value);const row=input.locator('xpath=ancestor::*[@data-source-input-row]');await row.locator('select').selectOption(action);return row;}
@@ -43,12 +44,12 @@ const out=process.env.SOURCE_INPUT_BROWSER_OUTPUT||path.join(os.tmpdir(),'source
    await page.evaluate(async()=>{await product.saveSettings({...await product.loadSettings(),embeddingProvider:'hash',embeddingModel:'hash-v1',embeddingEnabled:true,autoEpisodeIndex:false});await product.ingestLiveChatColdStart({scope:'current',canonical:true});});
    await page.locator('#fbReanalysisRefresh').click();const range=page.locator('#fbReanalysisRanges input');await range.waitFor();await range.check();
    await page.locator('#fbReanalysisRun').click();let dialog=page.getByRole('dialog').filter({hasText:'원문 재분석 확인'});await dialog.waitFor();
-   assert.match(await dialog.innerText(),/LLM·임베딩 호출은 0회/);assert.ok(await dialog.getByRole('button',{name:'취소',exact:true}).evaluate(n=>document.activeElement===n));
+   assert.match(await dialog.innerText(),/원문 저장 단계의 임베딩 호출은 0회/);assert.match(await dialog.innerText(),/사용할 임베딩 모델이 설정되어 있지 않습니다/);assert.ok(await dialog.getByRole('button',{name:'취소',exact:true}).evaluate(n=>document.activeElement===n));
    await page.screenshot({path:path.join(out,'flashback-reanalysis-confirm-mobile.png'),fullPage:true});
    await dialog.getByRole('button',{name:'취소',exact:true}).click();await dialog.waitFor({state:'detached'});assert.match(await page.locator('#fbSourceEditStatus').innerText(),/취소/);
    await page.evaluate(()=>{__chat.message[1].data='Current original after explicit edit.';window.beforeReanalysisCalls={...__hostCalls};});
    await page.locator('#fbReanalysisRun').click();dialog=page.getByRole('dialog').filter({hasText:'원문 재분석 확인'});await dialog.waitFor();await dialog.getByRole('button',{name:'선택한 원문 교체',exact:true}).click();
-   await page.waitForFunction(()=>/원문을 저장했습니다/.test(document.querySelector('#fbSourceEditStatus').textContent));assert.match(await page.locator('#fbSourceEditStatus').innerText(),/임베딩은 별도/);
+   await page.waitForFunction(()=>/원문을 저장했습니다/.test(document.querySelector('#fbSourceEditStatus').textContent));assert.match(await page.locator('#fbSourceEditStatus').innerText(),/자동 임베딩은 예약되지 않았습니다.*별도로 준비/);
    assert.ok(await page.evaluate(()=>__hostCalls.llm===beforeReanalysisCalls.llm&&__hostCalls.network===beforeReanalysisCalls.network));
   }
   const more=page.locator(owner==='hayaku'?'.topbar [data-menu]':'#topMoreBtn');await more.click();assert.ok(await page.locator('.topbar .menu__panel').isVisible());await more.click();
