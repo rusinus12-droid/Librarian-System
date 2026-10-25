@@ -18,6 +18,8 @@ test('LIBRA provides canonical, Micro and lens internal pages, initially folded 
     assert.equal(s.root.querySelectorAll('[data-reanalysis-ranges] input').length,0);
     const tab=s.root.querySelector('[data-reanalysis-kind=canonical]');tab.dispatchEvent(new s.dom.window.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
     await wait(()=>s.root.querySelectorAll('[data-reanalysis-ranges] input').length===3);
+    assert.deepEqual([...s.root.querySelectorAll('[data-reanalysis-ranges] strong')].map(row=>row.textContent),['T1','T2','T3']);
+    assert.ok([...s.root.querySelectorAll('[data-reanalysis-ranges] .ms-reanalysis-turn p:first-of-type')].every(row=>row.textContent.startsWith('미크로 ·')));
     assert.equal(s.root.querySelector('[data-reanalysis-kind=micro]').getAttribute('aria-selected'),'true');assert.equal(s.document.activeElement,s.root.querySelector('[data-reanalysis-kind=micro]'));
     assert.match(s.root.querySelector('[data-reanalysis-introduction]').textContent,/1턴마다/);s.select(2);assert.match(s.root.querySelector('#range-calls').textContent,/1턴당 1회/);assert.equal(s.root.querySelector('[data-reanalysis-review]').hidden,false);
     await page(s,'lens');assert.match(s.root.querySelector('[data-reanalysis-status]').textContent,/저장된 렌즈가 없습니다/);assert.equal(s.root.querySelector('[data-reanalysis-run]').disabled,true);assert.equal(s.f.control.calls.length,0);
@@ -25,7 +27,7 @@ test('LIBRA provides canonical, Micro and lens internal pages, initially folded 
 });
 test('switching internal pages clears selected turns and an unsaved source review',async()=>{
   const s=await setup();try{
-    s.f.chat.message[1].data+='<drop>Private</drop>';s.select(1);s.root.querySelector('[data-reanalysis-review]').click();await wait(()=>s.root.querySelector('[data-review-apply]')?.disabled===false);
+    s.f.chat.message[1].data+='<drop>Private</drop>';s.select('1-5');s.root.querySelector('[data-reanalysis-review]').click();await wait(()=>s.root.querySelector('[data-review-apply]')?.disabled===false);
     await page(s,'micro');assert.equal(s.root.querySelector('[data-source-reanalysis-review]'),null);assert.equal(s.root.querySelectorAll('[data-reanalysis-ranges] input:checked').length,0);
     s.select(2);await page(s,'canonical');assert.equal(s.root.querySelectorAll('[data-reanalysis-ranges] input:checked').length,0);assert.equal(s.root.querySelector('[data-reanalysis-run]').disabled,true);assert.equal(s.f.r.api.getSourceEditRules().ignoredTags.includes('drop'),false);
   }finally{await s.dispose();}
@@ -71,5 +73,15 @@ test('refresh replaces a deleted lens choice and invalidates its unsaved review'
     const a=await createLens(s.f,'삭제할 렌즈'),b=await createLens(s.f,'남은 렌즈');await page(s,'lens');s.select('1-1');s.root.querySelector('[data-reanalysis-review]').click();await wait(()=>s.root.querySelector('[data-review-apply]')?.disabled===false);
     await s.f.r.api.trashLens(a.lensId);s.root.querySelectorAll('[data-reanalysis-fold] button')[0].click();await wait(()=>s.root.querySelector('[data-reanalysis-lens]').value===b.lensId);
     assert.equal(s.root.querySelector('[data-source-reanalysis-review]'),null);assert.equal(s.root.querySelectorAll('[data-reanalysis-ranges] input:checked').length,0);assert.match(s.root.querySelector('[data-reanalysis-ranges]').textContent,/남은 렌즈/);assert.equal(s.f.control.calls.length,0);
+  }finally{await s.dispose();}
+});
+test('lens page shows its ten-turn cadence separately from saved and incomplete record lengths',async()=>{
+  const s=await setup();try{
+    const base=s.f.chat.message.slice();s.f.chat.message.push(...Array.from({length:2},(_,batch)=>base.map((row,i)=>({...row,chatId:`t${batch*5+6+Math.floor(i/2)}-${i%2?'a':'u'}`}))).flat());
+    const lens=await createLens(s.f);await s.f.r.api.updateLens(lens.lensId,{cadence:{mode:'every_n_batches',everyNBatches:2}});s.f.control.onCall=()=>lensReply(s.f);
+    assert.equal((await s.f.r.api.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:2})).ok,true);await page(s,'lens');
+    assert.match(s.root.querySelector('[data-reanalysis-lens-cadence]').textContent,/자동 분석 묶음: 10턴/);
+    assert.deepEqual([...s.root.querySelectorAll('[data-reanalysis-ranges] strong')].map(row=>row.textContent),['T1–T2','T3–T12','T13–T15']);
+    s.select('1-2');s.select('3-12');assert.match(s.root.querySelector('#range-calls').textContent,/^2회/);
   }finally{await s.dispose();}
 });

@@ -12,7 +12,7 @@ function fixture(options={}){
   const core=options.core||{peekSnapshot:()=>({scope:{scopeKey:options.scope?.()||'scope-a'},manifest:{memories:{1:{status:'committed'}}}}),
     listReanalysisRanges:async()=>options.inventory?options.inventory():inventory,
     reanalyzeSelectedRanges:async input=>{calls.push(JSON.parse(JSON.stringify(input)));return options.run?options.run(input):{ok:true};},mountSourceInputControls:()=>{}};
-  const context=vm.createContext({document,Gui,guiEl,MutationObserver:dom.window.MutationObserver,queueMicrotask,text:value=>String(value??''),LIBRA_APPROVED_RANGE_DIALOG_HTML:literal(source,'LIBRA_APPROVED_RANGE_DIALOG_HTML'),LibraMemoryCore:core,
+  const context=vm.createContext({document,Gui,guiEl,MutationObserver:dom.window.MutationObserver,queueMicrotask,text:value=>String(value??''),LIBRA_APPROVED_RANGE_DIALOG_HTML:literal(source,'LIBRA_APPROVED_RANGE_DIALOG_HTML'),LENS_RUN_MAX_TURNS:literal(source,'LENS_RUN_MAX_TURNS'),LibraMemoryCore:core,
     runCanonicalGuiCommand:async(_message,fn)=>fn(),libraMemoryFailureDiagnostic:error=>({title:'error',message:String(error)})});
   if(!options.core){
     const sdk=['MemorySuiteSourceInput.libra.source.js','MemorySuiteSourceInputControls.source.js'].map(file=>fs.readFileSync(path.join(__dirname,'../../sdk',file),'utf8')).join('\n');vm.runInContext(sdk,context);

@@ -24,3 +24,12 @@ for(const mode of ['plugin_only','mirror','server_only'])test('explicit lens rea
     assert.equal((await f.r.api.getCanonicalMemories()).length,0);assert.equal((await f.r.api.debugReadActiveMicroMemory(1)).status,'missing');
   }finally{await fx.cleanup();}
 });
+for(const mode of ['plugin_only','mirror','server_only'])test('ten-turn lens cadence retains its first observed baseline across restart through '+mode,async()=>{
+  const fx=await serverFixture({mode,transformSource});try{
+    let f=fx.f;const lens=await f.r.api.createLens({name:'10턴 주기',instruction:{goal:'사건을 기록한다.'},cadence:{mode:'every_n_batches',everyNBatches:2},evidenceMode:'strict'});
+    let core=f.r.context.__reanalysisKindsCore,context=await core.resolveContext();const first=await core.runScheduledLensesForCommittedBatch({context,memory:{turnRange:{start:1,end:5}}});assert.equal(first.queued.length,0);assert.equal(f.control.calls.length,0);
+    f=await fx.restart();f.chat.message.push(...f.chat.message.slice().map((message,i)=>({...message,chatId:`t${6+Math.floor(i/2)}-${i%2?'a':'u'}`})));f.control.onCall=()=>lensReply(f);
+    core=f.r.context.__reanalysisKindsCore;context=await core.resolveContext();const second=await core.runScheduledLensesForCommittedBatch({context,memory:{turnRange:{start:6,end:10}}});assert.equal(second.queued.length,1);await core.waitForLensQueueIdle();
+    assert.equal(f.control.calls.length,1);const data=await f.r.api.inspectScopeLenses();assert.equal(data.lenses[lens.lensId].recordCount,1);assert.equal(data.memories[0].turnRange.start,1);assert.equal(data.memories[0].turnRange.end,10);
+  }finally{await fx.cleanup();}
+});

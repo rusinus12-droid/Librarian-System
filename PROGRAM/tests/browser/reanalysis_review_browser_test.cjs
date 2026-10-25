@@ -80,8 +80,8 @@ const watchdog=setTimeout(()=>{chrome.kill('SIGKILL');process.exit(1);},90000);
     if(owner==='libra'){
       assert.deepEqual(await ev("[...document.querySelectorAll('[data-reanalysis-kind]')].map(node=>node.textContent)"),['정본','미크로','렌즈']);
       await click('[data-reanalysis-select-all]');
-      assert.equal(await ev("document.querySelectorAll('[data-reanalysis-ranges] input:checked').length"),5);
-      assert.equal(await ev("document.querySelector('[data-reanalysis-review]').hidden"),true);
+      assert.equal(await ev("document.querySelectorAll('[data-reanalysis-ranges] input:checked').length"),1);
+      assert.equal(await ev("document.querySelector('[data-reanalysis-review]').hidden"),false);
       assert.match(await ev("document.querySelector('#range-calls').textContent"),/^1회/);
       const capturePage=async kind=>{
         await call('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false});
@@ -94,13 +94,13 @@ const watchdog=setTimeout(()=>{chrome.kill('SIGKILL');process.exit(1);},90000);
         await call('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false});
       };
       await capturePage('canonical');
-      await click('[data-reanalysis-kind=micro]');await wait("document.querySelector('[data-reanalysis-ranges]')?.textContent.includes('1턴 미크로')");
+      await click('[data-reanalysis-kind=micro]');await wait("document.querySelector('[data-reanalysis-ranges]')?.textContent.includes('미크로 ·')");
       assert.equal(await ev("document.querySelector('[data-reanalysis-fold]').open"),true);await click('[data-reanalysis-select-all]');
       assert.match(await ev("document.querySelector('#range-calls').textContent"),/^5회/);assert.equal(await ev("document.querySelector('[data-reanalysis-review]').hidden"),true);await capturePage('micro');
       await click('[data-reanalysis-kind=lens]');await wait("document.querySelector('[data-reanalysis-ranges]')?.textContent.includes('세계 설정과 사건')");
       assert.equal(await ev("document.querySelectorAll('[data-reanalysis-ranges] input').length"),2);await click('[data-reanalysis-ranges] input[value="1-2"]');
       assert.equal(await ev("document.querySelector('[data-reanalysis-review]').hidden"),true);await capturePage('lens');
-      await click('[data-reanalysis-kind=canonical]');await wait("document.querySelector('[data-reanalysis-ranges] input[value=\"1\"]')");
+      await click('[data-reanalysis-kind=canonical]');await wait("document.querySelector('[data-reanalysis-ranges] input[value=\"1-5\"]')");
       await click('[data-reanalysis-clear-selection]');
       assert.equal(await ev("document.querySelectorAll('[data-reanalysis-ranges] input:checked').length"),0);
       assert.equal(await ev("document.querySelector('[data-reanalysis-run]').disabled"),true);

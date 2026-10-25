@@ -7,13 +7,15 @@ This isolated candidate removes LIBRA's source-edit tracker, task journal, track
 1. Open “원문 재분석”. The selection area starts collapsed.
 2. Choose an internal page: **정본**, **미크로**, or **렌즈**.
 3. Inspect stored summaries and open “원문 보기” to read the current source. Choose turns or record ranges; select-all and clear-selection apply only to the current page.
-4. Use “바로 재분석”. A single U+A turn also offers “확인 후 재분석”, with source selection, tag extraction/editing, input preview, and verified rule persistence before dispatch. Multiple turns and multi-turn lens ranges offer direct reanalysis only.
+4. Use “바로 재분석”. A single U+A turn also offers “확인 후 재분석”, with source selection, tag extraction/editing, input preview, and verified rule persistence before dispatch. A single canonical batch offers a turn picker for reviewing one of its five source turns; execution still replaces that whole batch. Multiple canonical batches, multiple Micro turns and multi-turn lens ranges offer direct reanalysis only.
 
 | Page | Selection / actual analysis unit | Publication |
 | --- | --- | --- |
-| 정본 | Source turns within complete five-turn batches. Selected batches are deduplicated. | Existing canonical pipeline, one base call per five-turn batch. Missing and failed slots are selectable. |
+| 정본 | One card per complete five-turn batch, labeled T1–T5, T6–T10, etc. Source inspection includes all five turns. | Existing canonical pipeline, one base call per selected five-turn batch. Missing and failed slots are selectable. |
 | 미크로 | One completed U+A turn, including turns before a five-turn canonical batch is complete. | Explicitly analyzes and replaces the selected Micro; this is separate from failure recovery and works on already verified Micro. |
-| 렌즈 | Choose a lens, then its exact stored record ranges. Failed ranges and uncovered source ranges are also selectable. | Existing lens pipeline replaces the same record key. An empty response preserves its prior record. Uncovered ranges use up to five consecutive turns per call. |
+| 렌즈 | Choose a lens, then its exact stored record ranges. Failed ranges and uncovered source ranges are also selectable. | Existing lens pipeline replaces the same record key. An empty response preserves its prior record. Uncovered ranges follow the lens cadence (5, 10, 15 or 20 turns); manual-only lenses default to five-turn display groups. |
+
+Lens automatic cadence defaults to five turns and supports every 2/3/4 canonical batches (10/15/20 turns). The native manual range API accepts 1–20 completed turns; existing records retain whatever range was actually analyzed. The page shows the selected cadence separately from each record's actual length. N-batch scheduling persists its first observed batch baseline and uses consecutive complete spans, so its first run can accumulate across commits/restarts and an in-flight result does not shift the next range. A new lens does not automatically backfill turns before its first observed batch.
 
 The selected analysis ranges and estimated base calls appear above the run actions. Additional provider retries or derived work can increase usage. Micro and lens actions do not launch a canonical job or explicitly reanalyze each other's memories. Canonical analysis retains its existing follow-up behavior, including scheduled lenses.
 

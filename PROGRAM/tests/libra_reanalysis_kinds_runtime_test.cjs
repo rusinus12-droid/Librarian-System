@@ -92,6 +92,50 @@ test('lens selection runs only the selected lens and rejects changed instruction
     const calls=f.control.calls.length,result=await f.r.api.reanalyzeSelectedRanges(inventory);assert.equal(result.ok,false);assert.equal(f.control.calls.length,calls);
   }finally{await f.r.cleanup();}
 });
+for(const span of [5,10,15,20])test('lens '+span+'-turn cadence accumulates from its first observed batch and preserves exact stored ranges',async()=>{
+  const f=await setup();try{
+    const original=f.chat.message.slice();f.chat.message.splice(0,f.chat.message.length,...Array.from({length:8},(_,batch)=>original.map((message,i)=>({...message,chatId:`t${batch*5+Math.floor(i/2)+1}-${i%2?'a':'u'}`}))).flat());
+    const lens=await f.r.api.createLens({name:span+'턴 렌즈',instruction:{goal:'사건을 기록한다.'},cadence:span===5?{mode:'every_batch'}:{mode:'every_n_batches',everyNBatches:span/5},evidenceMode:'strict'});
+    let inventory=await f.r.api.listReanalysisRanges({kind:'lens',lensId:lens.lensId});
+    assert.equal(inventory.lenses[0].analysisSpan,span);assert.equal(inventory.ranges[0].end,span);assert.equal(inventory.ranges[0].start,1);
+    f.control.onCall=args=>{const user=args[0].messages.find(row=>row.role==='user').content,turn=Number(user.match(/\[t(\d+)-a\]/)?.[1]||1);return lensReply(f,turn);};
+    const context=await f.core.resolveContext();
+    for(let end=5;end<=span*2;end+=5){
+      await f.core.runScheduledLensesForCommittedBatch({context,memory:{turnRange:{start:end-4,end}}});await f.core.waitForLensQueueIdle();
+      assert.equal(f.control.calls.length,Math.floor(end/span),'provider calls at T'+end);
+    }
+    const data=await f.r.api.inspectScopeLenses();assert.deepEqual(plain(data.memories.map(row=>[row.turnRange.start,row.turnRange.end]).sort((a,b)=>a[0]-b[0])),[[1,span],[span+1,span*2]]);
+    inventory=await f.r.api.listReanalysisRanges({kind:'lens',lensId:lens.lensId});assert.equal(inventory.ranges[0].start,1);assert.equal(inventory.ranges[0].end,span);assert.equal(inventory.ranges[0].status,'saved');
+  }finally{await f.r.cleanup();}
+});
+test('manual lens ranges can be one through twenty turns and retain their original lengths in reanalysis',async()=>{
+  const f=await setup();try{
+    const original=f.chat.message.slice();f.chat.message.splice(0,f.chat.message.length,...Array.from({length:5},(_,batch)=>original.map((message,i)=>({...message,chatId:`t${batch*5+Math.floor(i/2)+1}-${i%2?'a':'u'}`}))).flat());
+    const lens=await f.r.api.createLens({name:'수동 렌즈',instruction:{goal:'사건을 기록한다.'},cadence:{mode:'manual'},evidenceMode:'strict'});f.control.onCall=()=>lensReply(f);
+    assert.equal((await f.r.api.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:20})).ok,true);
+    const inventory=await f.r.api.listReanalysisRanges({kind:'lens',lensId:lens.lensId});assert.equal(inventory.ranges[0].end,20);assert.equal(inventory.lenses[0].cadence.mode,'manual');
+    const calls=f.control.calls.length;await assert.rejects(f.r.api.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:21}),/최대 20턴/);assert.equal(f.control.calls.length,calls);
+  }finally{await f.r.cleanup();}
+});
+test('a ten-turn lens first observed at T11 starts at T11 and does not backfill older turns',async()=>{
+  const f=await setup();try{
+    const original=f.chat.message.slice();f.chat.message.splice(0,f.chat.message.length,...Array.from({length:4},(_,batch)=>original.map((message,i)=>({...message,chatId:`t${batch*5+Math.floor(i/2)+1}-${i%2?'a':'u'}`}))).flat());
+    const lens=await f.r.api.createLens({name:'새 렌즈',instruction:{goal:'사건을 기록한다.'},cadence:{mode:'every_n_batches',everyNBatches:2},evidenceMode:'strict'}),context=await f.core.resolveContext();f.control.onCall=()=>lensReply(f,11);
+    assert.equal((await f.core.runScheduledLensesForCommittedBatch({context,memory:{turnRange:{start:11,end:15}}})).queued.length,0);
+    await f.core.runScheduledLensesForCommittedBatch({context,memory:{turnRange:{start:16,end:20}}});await f.core.waitForLensQueueIdle();
+    assert.equal(f.control.calls.length,1);const data=await f.r.api.inspectScopeLenses();assert.deepEqual(plain(data.memories[0].turnRange),{start:11,end:20});assert.equal(data.lenses[lens.lensId].recordCount,1);
+  }finally{await f.r.cleanup();}
+});
+test('a pending ten-turn lens run keeps its original boundaries when another canonical batch completes',async()=>{
+  const f=await setup();let release;try{
+    const original=f.chat.message.slice();f.chat.message.splice(0,f.chat.message.length,...Array.from({length:3},(_,batch)=>original.map((message,i)=>({...message,chatId:`t${batch*5+Math.floor(i/2)+1}-${i%2?'a':'u'}`}))).flat());
+    await f.r.api.createLens({name:'느린 렌즈',instruction:{goal:'사건을 기록한다.'},cadence:{mode:'every_n_batches',everyNBatches:2},evidenceMode:'strict'});
+    const context=await f.core.resolveContext(),gate=new Promise(resolve=>release=resolve);let started=false;f.control.onCall=async()=>{started=true;await gate;return lensReply(f);};
+    await f.core.runScheduledLensesForCommittedBatch({context,memory:{turnRange:{start:1,end:5}}});await f.core.runScheduledLensesForCommittedBatch({context,memory:{turnRange:{start:6,end:10}}});await waitFor(()=>started);
+    const next=await f.core.runScheduledLensesForCommittedBatch({context,memory:{turnRange:{start:11,end:15}}});assert.ok(next.queued.every(row=>row.startTurn===1&&row.endTurn===10));
+    release();await f.core.waitForLensQueueIdle();assert.equal(f.control.calls.length,1);const data=await f.r.api.inspectScopeLenses();assert.equal(data.memories.length,1);assert.deepEqual(plain(data.memories[0].turnRange),{start:1,end:10});
+  }finally{release?.();await f.r.cleanup();}
+});
 for(const kind of ['micro','lens'])for(const mutation of ['raw','rules','identity'])test(kind+' discards a response after '+mutation+' changes during analysis',async()=>{
   const f=await setup(1);try{
     const lens=kind==='lens'?await createLens(f):null;f.chat.message[1].data+='<drop>private</drop>';await f.r.api.setSourceEditRules({version:1,ignoredTags:['drop'],unwrapTags:[],sourceTags:[],controls:[]});
