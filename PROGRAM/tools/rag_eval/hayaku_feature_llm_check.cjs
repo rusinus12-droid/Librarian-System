@@ -14,7 +14,7 @@
 //   autoprobe  scheduleHayakuAutoProbe (fires 30 s after the first observed chat output).
 //   testcall   recovery.auxiliaryModel.testCall.
 //   coldstart  recovery.coldStart over packet-less history (batched), then
-//   regen      recovery.regenerateTurns(+replacementRecordIds) + resolveRegenerationChoice('adopt_regenerated').
+//   regen      listReanalysisRanges + reanalyzeSelectedRanges for the packet's entire saved range.
 //   missing    recovery.repairSelected on transcript gaps; recovery.repairNow on afterRequest-failure debt;
 //              recovery.failedAnalysis surface.
 //
@@ -313,16 +313,15 @@ const runColdStartAndRegen = async () => {
       const coldRecs = records.filter(x => x.captureSource === 'bridge_cold_start' && x.recordState === 'historical');
       const target = coldRecs.find(x => Number(h.hayaku._test.storageRecordTurnRange(x).turnStart) === 2) || coldRecs[0];
       const regenTurn = target ? Number(h.hayaku._test.storageRecordTurnRange(target).turnStart) : 0;
-      if (!target) { record('regen', 'regenerateTurns', false, { error: 'no cold-start record for turn 2 (coldstart did not run or failed)' }); return; }
-      let r; try { r = await h.hayaku.recovery.regenerateTurns({ targetTurns: [regenTurn], replacementRecordIds: [target.recordId], replaceExisting: true }); } catch (e) { r = { ok: false, error: String(e?.message || e) }; }
-      let adopt = null;
-      if (r.awaitingChoice) adopt = await h.hayaku.recovery.resolveRegenerationChoice('adopt_regenerated', { runId: r.runId });
+      if (!target) { record('regen', 'reanalyzeSelectedRanges', false, { error: 'no cold-start record for turn 2 (coldstart did not run or failed)' }); return; }
+      const range=h.hayaku._test.storageRecordTurnRange(target),inventory=await h.hayaku.listReanalysisRanges();
+      let r;try{r=await h.hayaku.reanalyzeSelectedRanges({...inventory,ranges:inventory.ranges.filter(row=>row.start>=range.turnStart&&row.end<=range.turnEnd)});}catch(e){r={ok:false,error:String(e?.message||e)};}
       const after = await ledgerRecords(h);
       const old = after.find(x => x.recordId === target.recordId);
       const replacement = after.find(x => x.packetType === 'recovery_snapshot' && x.recordState === 'active' && Number(x.targetPairIndex || 0) === regenTurn);
-      record('regen', `regenerateTurns({targetTurns:[${regenTurn}],replacementRecordIds}) + resolveRegenerationChoice(adopt_regenerated)`,
-        r.ok === true && r.awaitingChoice === true && adopt?.ok === true && old?.recordState === 'tombstoned' && !!replacement, {
-          regen: { ok: r.ok, awaitingChoice: r.awaitingChoice, reason: r.reason, error: r.error }, adopt: adopt && { ok: adopt.ok, outcome: adopt.outcome, reason: adopt.reason },
+      record('regen', `reanalyzeSelectedRanges(T${range.turnStart}–T${range.turnEnd})`,
+        r.ok === true && r.committed === true && old?.recordState === 'tombstoned' && !!replacement, {
+          reanalysis: {ok:r.ok,committed:r.committed,reason:r.reason,error:r.error},
           oldRecordState: old?.recordState, replacementSummary: short(summaryOf(replacement || {}), 140)
         }, { raw: short(r, 1500) });
     }
@@ -367,11 +366,11 @@ const runMissing = async () => {
 
     currentFeature = 'failedanalysis';
     const list = await h.hayaku.recovery.failedAnalysis.list().catch(e => ({ error: String(e?.message || e) }));
-    const resolve = await h.hayaku.recovery.failedAnalysis.resolve('any', 'llm', {}).catch(e => ({ error: String(e?.message || e) }));
-    record('failedanalysis', 'recovery.failedAnalysis.list / resolve(llm)', resolve?.reason === 'failed_recovery_retired_use_missing_turn_generation', {
-      entries: Array.isArray(list?.entries) ? list.entries.length : short(list, 200), resolveReason: resolve?.reason,
-      note: 'retry of failed analysis is retired in this plugin version; the replacement path is repairSelected (missing-turn generation), checked above'
-    });
+    record('failedanalysis', 'removed failure retry API; archived diagnostics are readable',
+      h.hayaku.recovery.failedAnalysis.resolve === undefined && h.hayaku.recovery.failedAnalysis.automationStatus === undefined, {
+        entries:Array.isArray(list?.entries)?list.entries.length:short(list,200),
+        note:'Failure retries and automation have been removed; missing-turn generation uses fresh source.'
+      });
   } finally { await h.dispose(); }
 };
 

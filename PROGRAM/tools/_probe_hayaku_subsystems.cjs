@@ -90,7 +90,7 @@ const parseMaybe = value => { try { return typeof value === 'string' ? JSON.pars
 
     // 3. RE-ANALYSIS — repair/regenerate surfaces.
     out.reAnalysis = {};
-    for (const name of ['repairNow', 'repairSelected', 'regenerateTurns', 'resolveRegenerationChoice', 'failedAnalysis']) {
+    for (const name of ['repairNow', 'repairSelected', 'resolveRegenerationChoice']) {
       if (typeof recovery[name] !== 'function') { out.reAnalysis[name] = { missing: true }; continue; }
       const run = await attempt(() => recovery[name]({}), name);
       out.reAnalysis[name] = run.ok ? { returned: brief(run.value) } : { error: run.error };

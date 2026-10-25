@@ -11,10 +11,10 @@ const msg=(role,id,data)=>({role,id,chatId:id,data});
 const r=await createHayakuRuntime({arguments:{hayaku_debug:'true'},autoRepair:false,failedRecoveryAutomation:'retry_once',messages:[msg('user','u1','Enter.'),msg('assistant','a1',hiddenPacketMessage('Alice entered.',createValidPacket({turn:1}))),msg('user','u2','Open the chest.'),msg('assistant','a2',summary)],llmResponder:async()=>({type:'success',result:'FAILED_RAW_SENTINEL'})});
 try{
  const first=await r.hayaku.recovery.repairNow();assert.equal(first.ok,false);assert.equal(first.reason,'no_storable_memory');assert.equal(first.awaitingUserReview,false);assert.equal(r.llmCalls.length,1);
- assert.equal(r.hayaku.recovery.failedAnalysis.automationStatus().mode,'off');
+ assert.equal(r.hayaku.recovery.failedAnalysis.automationStatus,undefined);
  const list=await r.hayaku.recovery.failedAnalysis.list();assert.ok(list.entries.length);const id=list.entries[0].failureId;
  const before=await r.hayaku.recovery.failedAnalysis.read(id);assert.equal(before.durable,true);
- const retired=await r.hayaku.recovery.failedAnalysis.resolve(id,'llm');assert.equal(retired.reason,'failed_recovery_retired_use_missing_turn_generation');assert.equal(r.llmCalls.length,1);
+ assert.equal(r.hayaku.recovery.failedAnalysis.resolve,undefined);assert.equal(r.llmCalls.length,1);
  const status=await r.hayaku.recovery.status({includeDebts:true,refreshDebts:true});assert.ok(status.debt.coverage.repairableTurns.includes(2));
  r.setLlmResponder(async call=>{assert.ok(!JSON.stringify(call.messages).includes('FAILED_RAW_SENTINEL'));return {type:'success',result:JSON.stringify(envelope)};});
  const second=await r.hayaku.recovery.repairNow();assert.equal(second.repaired,true,JSON.stringify(second));assert.equal(r.llmCalls.length,2);

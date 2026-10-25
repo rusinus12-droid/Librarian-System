@@ -138,6 +138,22 @@ const watchdog=setTimeout(()=>{chrome.kill('SIGKILL');process.exit(1);},90000);
     const after=await ev('({...__hostCalls,writeKeys:__reanalysisWriteKeys,chat:JSON.stringify(__chat)})');assert.equal(after.llm,before.llm);assert.equal(after.network,before.network);assert.equal(after.writes,before.writes,JSON.stringify(after.writeKeys.slice(before.writeKeys)));assert.equal(after.chat,before.chat);
     await ev("document.querySelector('[data-review-candidates] [data-review-rule]').scrollIntoView({block:'center'})");
     const screenshot=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(out,owner+'-review-mobile.png'),Buffer.from(screenshot.data,'base64'));
+    if(owner==='hayaku'){
+      await call('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false});
+      await click('#hayakuViewerTabPackets');await wait("!!document.querySelector('[data-hayaku-reanalyze-record]')");
+      assert.equal(await ev("!!document.querySelector('[data-hayaku-regenerate-record]')"),false);
+      await ev("document.querySelector('[data-hayaku-reanalyze-record]').scrollIntoView({block:'center'})");
+      let shot=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(out,'hayaku-packet-reanalysis-entry.png'),Buffer.from(shot.data,'base64'));
+      const calls=await ev('__hostCalls.llm');await click('[data-hayaku-reanalyze-record]');
+      await wait("document.querySelector('[data-reanalysis-ranges] input:checked')?.value==='1'");
+      assert.equal(await ev("document.querySelector('[data-reanalysis-fold]').open"),true);assert.equal(await ev('__hostCalls.llm'),calls);
+      await ev("document.querySelector('#hayakuSourceEditConsent').scrollIntoView({block:'start'})");
+      shot=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(out,'hayaku-linked-source-reanalysis.png'),Buffer.from(shot.data,'base64'));
+      await click('[data-reanalysis-run]');await wait("!!document.querySelector('[data-reanalysis-confirm=apply]')");assert.equal(await ev('__hostCalls.llm'),calls);
+      shot=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(out,'hayaku-linked-reanalysis-confirmation.png'),Buffer.from(shot.data,'base64'));
+      await click('[data-reanalysis-confirm=cancel]');
+      assert.deepEqual(await ev("[typeof product.recovery.regenerateTurns,typeof product.recovery.failedAnalysis.resolve,typeof product.recovery.failedAnalysis.automationStatus]"),['undefined','undefined','undefined']);
+    }
     if(owner==='libra'){
       await click('[data-canonical-range-drawer] .dialog__actions button');
       for(const kind of ['micro','lens']){

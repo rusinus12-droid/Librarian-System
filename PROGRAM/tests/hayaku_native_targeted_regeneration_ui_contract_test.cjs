@@ -7,14 +7,15 @@ const path = require('node:path');
 const pluginPath = path.resolve(__dirname, '..', 'plugins', 'HAYAKU_Locator_Continuity.js');
 const source = fs.readFileSync(pluginPath, 'utf8');
 
-assert.match(source, /const viewerRecordRegenerationPlan = record =>/);
-assert.match(source, /storageRecordTurnRange\(record\)/);
-assert.match(source, /data-hayaku-regenerate-record=/);
-assert.match(source, /const viewerConfirmRecordRegeneration = \(record, plan\) =>/);
-assert.match(source, /const viewerRegenerateRecord = async recordIdInput =>/);
-assert.match(source, /runNativeTargetedRegeneration\(\{[\s\S]*replacementRecordIds: \[plan\.recordId\][\s\S]*replaceExisting: true/);
-assert.match(source, /분석과 검증이 끝나도 기존 패킷은 아직 교체되지 않습니다\.<\/b> 후보를 기존 패킷과 비교한 뒤 직접 고릅니다\. 이전 패킷은 다시 채택할 수 있게 보존됩니다/,
-  'the canonical confirmation keeps the old packet until the user compares and chooses a candidate');
+assert.match(source, /const viewerRecordReanalysisPlan = record =>/);
+assert.match(source, /const openHayakuSourceReanalysis = async/);
+assert.match(source, /data-hayaku-reanalyze-record=/);
+assert.ok(!source.includes('data-hayaku-regenerate-record'));
+assert.ok(!source.includes('const viewerRegenerateRecord ='));
+assert.ok(!source.includes('const viewerConfirmRecordRegeneration ='));
+assert.ok(!source.includes('regenerateTurns: async'));
+assert.match(source, /expandHayakuReanalysisKeys/);
+assert.match(source, /sourceEditValidate:assertCurrent/);
 assert.match(source, /native_recovery:targeted_regeneration_completed/);
 assert.match(source, /hayakuNativeJobOverlay/);
 assert.match(source, /hayakuNativeJobChip/);
