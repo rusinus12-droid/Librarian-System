@@ -96795,8 +96795,11 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       const recovery = await recoverInterruptedPortableRestore();
       if (recovery.failed) console.warn('[LIBRA]', 'portable restore startup recovery failed', recovery);
     } catch (error) {
-      runtime.lastError = compactValue(error?.message || error, 800);
-      console.warn('[LIBRA]', 'portable restore startup recovery probe failed', error?.message || error);
+      const msg = String(error?.message || error);
+      if (!msg.includes('현재 캐릭터와 채팅을 읽을 수 없습니다')) {
+        runtime.lastError = compactValue(msg, 800);
+        console.warn('[LIBRA]', 'portable restore startup recovery probe failed', msg);
+      }
     }
     ensureUi();
     const unloadApi = findHost(['onUnload']);

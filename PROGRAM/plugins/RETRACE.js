@@ -9082,7 +9082,10 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         if (typeof api?.[method] === 'function') { await api[method](channel, handler); return true; }
       }
     } catch (error) {
-      warn(`IPC listener cleanup failed: ${channel}`, error);
+      const msg = String(error?.message || error);
+      if (!msg.includes('removePluginChannelListener not found')) {
+        warn(`IPC listener cleanup failed: ${channel}`, error);
+      }
     }
     return false;
   };
@@ -15061,31 +15064,19 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       return;
     }
     const catalog = Runtime.serverScopeCatalog;
-    Runtime.root.querySelectorAll('[data-server-scope-filter]').forEach(button => {
-      const value = button.getAttribute('data-server-scope-filter');
-      button.setAttribute('aria-pressed', String(value === (Runtime.serverScopeFilter || '')));
-      const count = button.querySelector('.n');
-      if (count) {
-        if (!catalog) {
-          count.textContent = '—';
-        } else if (value === 'current_chat') {
-          count.textContent = formatNumber(scopes.filter(isScopeCurrentChat).length);
-        } else {
-          count.textContent = formatNumber(scopes.filter(scope => !value || scope.classification === value).length);
-        }
-      }
-    });
     if (!catalog) {
+      Runtime.root.querySelectorAll('[data-server-scope-filter]').forEach(button => {
+        const value = button.getAttribute('data-server-scope-filter');
+        button.setAttribute('aria-pressed', String(value === (Runtime.serverScopeFilter || '')));
+        const count = button.querySelector('.n');
+        if (count) count.textContent = '—';
+      });
       body.innerHTML = '<div class="empty"><strong>서버 데이터 조회 대기</strong><span>새로고침을 누르면 스코프별 서버 데이터를 검사합니다.</span></div>';
       return;
     }
     const inventory = catalog.hostInventory || {};
     const errors = Object.entries(catalog.scanErrors || {});
     const scopes = scopeManagerArray(catalog.scopes);
-    const eligible = scopes.filter(scopeManagerBulkSelectable);
-    const selected = Runtime.serverScopeSelection || new Set();
-    const selectedRows = scopes.filter(scope => selected.has(scopeManagerSelectionKey(scope)) && scopeManagerSelectable(scope));
-    const selectedScopes = selectedRows.filter(scopeManagerBulkSelectable);
     const isScopeCurrentChat = scope => {
       if (scope?.isCurrentChat === true) return true;
       const charId = scope?.characterId || scope?.descriptor?.characterId;
@@ -15099,6 +15090,22 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       ].filter(Boolean));
       return isChar && (currentChatAliases.has(chatId) || (canonicalChatId && currentChatAliases.has(canonicalChatId)));
     };
+    Runtime.root.querySelectorAll('[data-server-scope-filter]').forEach(button => {
+      const value = button.getAttribute('data-server-scope-filter');
+      button.setAttribute('aria-pressed', String(value === (Runtime.serverScopeFilter || '')));
+      const count = button.querySelector('.n');
+      if (count) {
+        if (value === 'current_chat') {
+          count.textContent = formatNumber(scopes.filter(isScopeCurrentChat).length);
+        } else {
+          count.textContent = formatNumber(scopes.filter(scope => !value || scope.classification === value).length);
+        }
+      }
+    });
+    const eligible = scopes.filter(scopeManagerBulkSelectable);
+    const selected = Runtime.serverScopeSelection || new Set();
+    const selectedRows = scopes.filter(scope => selected.has(scopeManagerSelectionKey(scope)) && scopeManagerSelectable(scope));
+    const selectedScopes = selectedRows.filter(scopeManagerBulkSelectable);
     const statusOrder = new Map(MEMORY_SUITE_SCOPE_STATUS_ORDER.map((status, index) => [status, index]));
     const search=scopeManagerText(Runtime.serverScopeSearch).toLowerCase(),filter=scopeManagerText(Runtime.serverScopeFilter),ownerFilter=scopeManagerText(Runtime.serverScopeOwnerFilter);
     const orderedScopes = scopes.filter(scope => {
@@ -15937,6 +15944,9 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     return 0;
   };
   const refreshRemoteUpdateNotice = async () => {
+    if (typeof location !== 'undefined' && (location.protocol === 'about:' || location.href === 'about:srcdoc')) {
+      return Runtime.remoteUpdate;
+    }
     Runtime.remoteUpdate = { ...Runtime.remoteUpdate, state: 'checking', error: '' };
     try {
       const response = await globalThis.fetch?.('https://api.github.com/repos/rusinus12-droid/Librarian-System/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
@@ -16281,7 +16291,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     const levels = { error: '오류', warning: '경고', info: '안내' };
     const summaryText = `오류 ${diagnostics.errors}건 · 경고 ${diagnostics.warnings}건 · 안내 ${diagnostics.information}건`;
     const inventoryText = diagnostics.catalogChecked
-      ? `서버 자료 분류: 확인 불가 ${diagnostics.unverifiedScopes}개 · 정리 후보 ${diagnostics.cleanupCandidates}개 · 색인 실패 ${diagnostics.scanFailures}개. 서버 사본 수는 오류 로그 건수와 별도로 표시합니다.`
+      ? `서버 자료 분류: 보존·보호 ${diagnostics.unverifiedScopes}개 (다른 캐릭터/미선택) · 정리 대상 후보 ${diagnostics.cleanupCandidates}개 · 색인 실패 ${diagnostics.scanFailures}개. 서버 사본 수는 오류 로그 건수와 별도로 표시합니다.`
       : '서버 사본 목록은 아직 조회하지 않았습니다.';
     const summary = overlay.querySelector('[data-error-log-summary]');
     if (summary) {

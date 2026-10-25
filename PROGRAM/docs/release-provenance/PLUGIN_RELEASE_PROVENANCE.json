@@ -295,8 +295,8 @@
       },
       "libra": {
         "version": "2.6.7",
-        "sha256": "a843602f13e18a22668c44e9eb46ba3f3971ba6afca14dd90e401e5530e3f900",
-        "bytes": 6666048
+        "sha256": "5895243d574611e6d687b936558b7395897cc54a9fb582dccab0fd36c61049eb",
+        "bytes": 6717794
       },
       "lia": {
         "version": "0.29.2",
@@ -305,8 +305,8 @@
       },
       "retrace": {
         "version": "1.12.5",
-        "sha256": "2f1228aae26b860e9e1e22afa717ec30f4f8b52873db76efcf90a5703d5f7e91",
-        "bytes": 1291714
+        "sha256": "5543fabe1b94bbae87d750631ab2177de0c51346b4d6ed83dc16309316f16f43",
+        "bytes": 1292339
       },
       "gradia": {
         "version": "0.28.1",
