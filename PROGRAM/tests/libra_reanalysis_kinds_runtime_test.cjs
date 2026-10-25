@@ -74,7 +74,7 @@ test('Micro source changes after its work write preserve the previous publicatio
 test('lens inventory retains exact stored ranges and adds only uncovered source ranges',async()=>{
   const f=await setup();try{
     const lens=await createLens(f);f.control.onCall=()=>lensReply(f);
-    assert.equal((await f.r.api.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:2})).ok,true);
+    assert.equal((await f.r.core.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:2})).ok,true);
     const inventory=await f.r.api.listReanalysisRanges({kind:'lens',lensId:lens.lensId});assert.deepEqual(plain(inventory.ranges.map(row=>[row.start,row.end,row.status])),[[1,2,'saved'],[3,5,'missing']]);
     const sample=await f.core.readReanalysisTurn(inventory,inventory.ranges[0]);assert.match(sample.user,/\[T1\]/);assert.match(sample.assistant,/\[T2\]/);
     const before=await f.r.api.inspectScopeLenses(),calls=f.control.calls.length;f.control.onCall=()=>lensReply(f,1,'교체한 렌즈 기록');
@@ -95,7 +95,7 @@ test('lens selection runs only the selected lens and rejects changed instruction
 test('reviewing one turn in a lens range binds the entire source range and retains its record key',async()=>{
   const f=await setup();try{
     const lens=await createLens(f);f.chat.message[3].data+='<drop>Private module.</drop>';f.control.onCall=()=>lensReply(f);
-    assert.equal((await f.r.api.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:2})).ok,true);
+    assert.equal((await f.r.core.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:2})).ok,true);
     const before=await f.r.api.inspectScopeLenses(),original=await f.r.api.listReanalysisRanges({kind:'lens',lensId:lens.lensId}),range=original.ranges[0],sample=await f.core.readReanalysisTurn(original,range,{turn:2}),full=await f.core.readReanalysisTurn(original,range);
     assert.equal(sample.label,'T2');assert.equal(sample.user,f.chat.message[2].data);assert.equal(sample.assistant,f.chat.message[3].data);assert.equal(sample.rawDigest,full.rawDigest);
     await f.r.api.setSourceEditRules({version:1,ignoredTags:['drop'],unwrapTags:[],sourceTags:[],controls:[]});const fresh=await f.r.api.listReanalysisRanges({kind:'lens',lensId:lens.lensId}),calls=f.control.calls.length;
@@ -111,7 +111,7 @@ test('reviewing one turn in a lens range binds the entire source range and retai
 test('a lens response is discarded if a sibling of the reviewed turn changes during generation',async()=>{
   const f=await setup();try{
     const lens=await createLens(f);f.chat.message[1].data+='<drop>private</drop>';await f.r.api.setSourceEditRules({version:1,ignoredTags:['drop'],unwrapTags:[],sourceTags:[],controls:[]});f.control.onCall=()=>lensReply(f);
-    assert.equal((await f.r.api.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:2})).ok,true);const before=await f.r.api.inspectScopeLenses(),inventory=await f.r.api.listReanalysisRanges({kind:'lens',lensId:lens.lensId}),range=inventory.ranges[0],sample=await f.core.readReanalysisTurn(inventory,range,{turn:2});
+    assert.equal((await f.r.core.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:2})).ok,true);const before=await f.r.api.inspectScopeLenses(),inventory=await f.r.api.listReanalysisRanges({kind:'lens',lensId:lens.lensId}),range=inventory.ranges[0],sample=await f.core.readReanalysisTurn(inventory,range,{turn:2});
     f.control.onCall=()=>{f.chat.message[1].data=f.chat.message[1].data.replace('private','changed');return lensReply(f,2);};
     const result=await f.r.api.reanalyzeSelectedRanges({...select(inventory,'1-2'),reviewedSource:{key:'1-2',turn:2,rawDigest:sample.rawDigest,rulesKey:f.core.sourceReanalysisRulesKey()}});assert.equal(result.ok,false);
     const after=await f.r.api.inspectScopeLenses();assert.equal(after.memories.length,before.memories.length);assert.equal(after.memories[0].recordId,before.memories[0].recordId);
@@ -137,9 +137,9 @@ test('manual lens ranges can be one through twenty turns and retain their origin
   const f=await setup();try{
     const original=f.chat.message.slice();f.chat.message.splice(0,f.chat.message.length,...Array.from({length:5},(_,batch)=>original.map((message,i)=>({...message,chatId:`t${batch*5+Math.floor(i/2)+1}-${i%2?'a':'u'}`}))).flat());
     const lens=await f.r.api.createLens({name:'수동 렌즈',instruction:{goal:'사건을 기록한다.'},cadence:{mode:'manual'},evidenceMode:'strict'});f.control.onCall=()=>lensReply(f);
-    assert.equal((await f.r.api.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:20})).ok,true);
+    assert.equal((await f.r.core.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:20})).ok,true);
     const inventory=await f.r.api.listReanalysisRanges({kind:'lens',lensId:lens.lensId});assert.equal(inventory.ranges[0].end,20);assert.equal(inventory.lenses[0].cadence.mode,'manual');
-    const calls=f.control.calls.length;await assert.rejects(f.r.api.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:21}),/최대 20턴/);assert.equal(f.control.calls.length,calls);
+    const calls=f.control.calls.length;await assert.rejects(f.r.core.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:21}),/최대 20턴/);assert.equal(f.control.calls.length,calls);
   }finally{await f.r.cleanup();}
 });
 test('a ten-turn lens first observed at T11 starts at T11 and does not backfill older turns',async()=>{

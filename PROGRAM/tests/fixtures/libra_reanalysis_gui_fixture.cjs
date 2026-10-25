@@ -13,13 +13,13 @@ function fixture(options={}){
     listReanalysisRanges:async()=>options.inventory?options.inventory():inventory,
     reanalyzeSelectedRanges:async input=>{calls.push(JSON.parse(JSON.stringify(input)));return options.run?options.run(input):{ok:true};},mountSourceInputControls:()=>{}};
   const context=vm.createContext({document,Gui,guiEl,MutationObserver:dom.window.MutationObserver,queueMicrotask,text:value=>String(value??''),LIBRA_APPROVED_RANGE_DIALOG_HTML:literal(source,'LIBRA_APPROVED_RANGE_DIALOG_HTML'),LENS_RUN_MAX_TURNS:literal(source,'LENS_RUN_MAX_TURNS'),LibraMemoryCore:core,
-    runCanonicalGuiCommand:async(_message,fn)=>fn(),libraMemoryFailureDiagnostic:error=>({title:'error',message:String(error)})});
+    guiSetStatus:message=>calls.push({status:message}),runCanonicalGuiCommand:async(_message,fn)=>fn(),libraMemoryFailureDiagnostic:error=>({title:'error',message:String(error)})});
   if(!options.core){
     const sdk=['MemorySuiteSourceInput.libra.source.js','MemorySuiteSourceInputControls.source.js'].map(file=>fs.readFileSync(path.join(__dirname,'../../sdk',file),'utf8')).join('\n');vm.runInContext(sdk,context);
     core.appendReanalysisRange=(...args)=>context.appendMemorySuiteReanalysisRange(...args);
   }
-  vm.runInContext(dependencies+'\n'+code+'\nglobalThis.show=showCanonicalRangeDrawer;',context);
+  vm.runInContext(dependencies+'\n'+code+'\nglobalThis.show=showCanonicalRangeDrawer;globalThis.showSource=showLibraSourceReanalysisDrawer;',context);
   const select=(turn,checked=true)=>{const input=root.querySelector('[data-reanalysis-ranges] input[value="'+turn+'"]');if(!input)throw Error('Turn not available');input.checked=checked;input.dispatchEvent(new dom.window.Event('change',{bubbles:true}));};
-  return {dom,document,Gui,root,calls,select,show:()=>context.show('source_edit'),close:()=>{Gui.canonicalRangeDrawerClose?.();dom.window.close();}};
+  return {dom,document,Gui,root,calls,select,show:options=>options?context.showSource(options):context.show('source_edit'),showGeneration:()=>context.show('missing'),close:()=>{Gui.canonicalRangeDrawerClose?.();dom.window.close();}};
 }
 module.exports={fixture,source};

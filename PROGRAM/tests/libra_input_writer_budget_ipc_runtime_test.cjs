@@ -37,7 +37,7 @@ for(const mode of ['plugin_only','server_only'])test(`${mode}: Input Writer rece
   const lensText='WRITER_LENS_NOTE: 도서관의 정숙 규칙과 은빛 열쇠의 보관은 민아의 선택에 긴장을 준다.';
   const quote=f.chat.message.find(row=>row.chatId==='t1-a').data.slice(0,60);
   f.control.onCall=async()=>({type:'success',result:JSON.stringify({items:[{label:'분위기',text:lensText,quote,refs:['t1-a'],extra:{focus:'비정본 관점'}}]})});
-  assert.equal((await api.runLensForRange(lens.lensId,{startTurn:1,endTurn:5})).acceptedCount,1);
+  assert.equal((await f.r.core.runLensForRange(lens.lensId,{startTurn:1,endTurn:5})).acceptedCount,1);
   const registry=await api.getLensRegistry();await api.saveLensRegistry({...registry,recallSemantic:false});
   f.control.onCall=async()=>{throw Error('evidence reads must not analyze memory');};
   await api.buildMemoryGraphCorpus({limit:2});

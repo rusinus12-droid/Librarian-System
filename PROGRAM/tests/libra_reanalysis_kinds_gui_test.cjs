@@ -62,7 +62,7 @@ for(const kind of ['micro','lens'])test(kind+' single-turn review saves exclusio
 test('lens page displays the chosen lens and offers review for one multi-turn range',async()=>{
   const s=await setup();try{
     const a=await createLens(s.f,'관점 A'),b=await createLens(s.f,'관점 B');s.f.control.onCall=()=>lensReply(s.f);
-    assert.equal((await s.f.r.api.runLensForRange({lensId:a.lensId,startTurn:1,endTurn:2})).ok,true);
+    assert.equal((await s.f.r.core.runLensForRange({lensId:a.lensId,startTurn:1,endTurn:2})).ok,true);
     await page(s,'lens');assert.match(s.root.textContent,/T1–T2/);s.select('1-2');assert.equal(s.root.querySelector('[data-reanalysis-review]').hidden,false);
     const choice=s.root.querySelector('[data-reanalysis-lens]');choice.value=b.lensId;choice.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));await wait(()=>s.root.querySelector('[data-reanalysis-ranges]').textContent.includes('관점 B'));
     assert.equal(s.root.querySelectorAll('[data-reanalysis-ranges] input:checked').length,0);s.select('1-5');s.root.querySelector('[data-reanalysis-run]').click();await wait(()=>!s.root.querySelector('[data-canonical-range-drawer]'));
@@ -80,7 +80,7 @@ test('lens page shows its ten-turn cadence separately from saved and incomplete 
   const s=await setup();try{
     const base=s.f.chat.message.slice();s.f.chat.message.push(...Array.from({length:2},(_,batch)=>base.map((row,i)=>({...row,chatId:`t${batch*5+6+Math.floor(i/2)}-${i%2?'a':'u'}`}))).flat());
     const lens=await createLens(s.f);await s.f.r.api.updateLens(lens.lensId,{cadence:{mode:'every_n_batches',everyNBatches:2}});s.f.control.onCall=()=>lensReply(s.f);
-    assert.equal((await s.f.r.api.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:2})).ok,true);await page(s,'lens');
+    assert.equal((await s.f.r.core.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:2})).ok,true);await page(s,'lens');
     assert.match(s.root.querySelector('[data-reanalysis-lens-cadence]').textContent,/자동 분석 묶음: 10턴/);
     assert.deepEqual([...s.root.querySelectorAll('[data-reanalysis-ranges] strong')].map(row=>row.textContent),['T1–T2','T3–T12','T13–T15']);
     s.select('1-2');s.select('3-12');assert.match(s.root.querySelector('#range-calls').textContent,/^2회/);

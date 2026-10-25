@@ -54,21 +54,25 @@ const watchdog=setTimeout(()=>{chrome.kill('SIGKILL');process.exit(1);},90000);
       };`);
     }
     let pluginSource=fs.readFileSync(path.join(__dirname,'../../plugins',file),'utf8');
-    if(owner==='libra')pluginSource=pluginSource.replace('  const buildBookMemoryModelSummary = () => {','  globalThis.__openLibraReview=()=>showCanonicalRangeDrawer(\'source_edit\');globalThis.__libraReanalysisUiState=()=>({canonicalPending:Gui.canonicalJobLaunchPending});globalThis.__libraReviewHydrated=()=>Gui.openPerf?.hydratedAt>0;globalThis.__libraReviewDiagnostics=async()=>({scope:(await LibraMemoryCore.resolveContext()).scope,receipt:LibraMemoryCore.state.lastSourceReceiptReconcile});\n  const buildBookMemoryModelSummary = () => {');
+    if(owner==='libra'){
+      pluginSource=pluginSource.replace('  const buildBookMemoryModelSummary = () => {','  globalThis.__libraReviewStartupIdle=()=>{const s=LibraMemoryCore.state;return Boolean(s.embeddingMigrationCheckedSignature)&&!s.embeddingMigrationPromise&&!s.embeddingMigrationScheduled;};\n  const buildBookMemoryModelSummary = () => {');
+      pluginSource=pluginSource.replace('  const showLibraSourceReanalysisDrawer = async (options={}) => {','  const showLibraSourceReanalysisDrawer = async (options={}) => { (globalThis.__routeOpenCalls||=[]).push({...options,binding:canonicalReaderBinding()});');
+      pluginSource=pluginSource.replace('  const buildBookMemoryModelSummary = () => {','  globalThis.__nativeLensFixture=options=>LibraMemoryCore.runLensForRange(options);globalThis.__openLibraReview=()=>showCanonicalRangeDrawer(\'source_edit\');globalThis.__libraReanalysisUiState=()=>({canonicalPending:Gui.canonicalJobLaunchPending,scope:canonicalReaderBinding(),kind:Gui.bookMemoryKind,lensScope:Gui.lensReader?.scopeKey});globalThis.__libraReviewHydrated=()=>Gui.openPerf?.hydratedAt>0;globalThis.__libraReviewDiagnostics=async()=>({scope:(await LibraMemoryCore.resolveContext()).scope,receipt:LibraMemoryCore.state.lastSourceReceiptReconcile});\n  const buildBookMemoryModelSummary = () => {');
+    }
     await ev(pluginSource);await wait('!!window.'+api);await ev('window.product=window.'+api);
     if(owner==='flashback'){
       await ev("(async()=>{await product.saveSettings({...await product.loadSettings(),embeddingProvider:'hash',embeddingModel:'hash-v1',embeddingEnabled:true,autoEpisodeIndex:false});await product.ingestLiveChatColdStart({scope:'current',canonical:true});})()");
     }else if(owner==='libra'){
       await wait("__replacers.has('beforeRequest')&&__replacers.has('afterRequest')");
       const seeded=await ev("(async()=>{const settings=await product.getLibraMemorySettings();await product.saveLibraMemorySettings({...settings,memoryEngine:'unified'});const job=await product.runManualColdStart();await product.retryPendingUnifiedVectors();return {job,diagnostics:await __libraReviewDiagnostics(),inventory:await product.listReanalysisRanges()};})()");assert.equal(seeded.inventory.ranges.length,5,JSON.stringify(seeded));
-      const additional=await ev("(async()=>{const inventory=await product.listReanalysisRanges({kind:'micro'});const micro=await product.reanalyzeSelectedRanges({...inventory,ranges:[inventory.ranges[0]]});const lens=await product.createLens({name:'세계 설정과 사건',instruction:{goal:'대화에 나온 세계 설정과 사건을 기록한다.'},evidenceMode:'strict'});const run=await product.runLensForRange({lensId:lens.lensId,startTurn:1,endTurn:2});return {micro,run};})()");assert.equal(additional.micro.ok,true,JSON.stringify(additional));assert.equal(additional.run.ok,true,JSON.stringify(additional));
+      const additional=await ev("(async()=>{const inventory=await product.listReanalysisRanges({kind:'micro'});const micro=await product.reanalyzeSelectedRanges({...inventory,ranges:[inventory.ranges[0]]});const lens=await product.createLens({name:'세계 설정과 사건',instruction:{goal:'대화에 나온 세계 설정과 사건을 기록한다.'},evidenceMode:'strict'});const run=await __nativeLensFixture({lensId:lens.lensId,startTurn:1,endTurn:2});return {micro,run};})()");assert.equal(additional.micro.ok,true,JSON.stringify(additional));assert.equal(additional.run.ok,true,JSON.stringify(additional));
       // Let the real startup cleanup finish before measuring write-free inspection.
       await wait("__reanalysisWriteKeys.includes('libra:v1:migration:remove-world-additional:v1')");
     }else{
       await wait("__replacers.has('beforeRequest')&&__replacers.has('afterRequest')");
       await ev("(async()=>{await __replacers.get('beforeRequest')([{role:'user',content:'Recall.'}],'model');await __replacers.get('afterRequest')('','model');})()");
     }
-    if(owner==='libra'){await ev('product.openSettingsGui()');await wait('__libraReviewHydrated()');}
+    if(owner==='libra'){await ev('product.openSettingsGui()');await wait('__libraReviewHydrated()&&__libraReviewStartupIdle()');}
     await ev(owner==='libra'?'__openLibraReview()':'product.showUi()');await wait("!!document.querySelector('.app')");
     if(owner==='flashback')await click('.tabbar [data-go="care"]');
     else if(owner==='hayaku'){await click('.tabbar [data-go="recovery"]');await click('[data-recovery-view="reanalysis"]');}
@@ -143,8 +147,26 @@ const watchdog=setTimeout(()=>{chrome.kill('SIGKILL');process.exit(1);},90000);
         await click('[data-review-run]');await wait("!document.querySelector('[data-canonical-range-drawer]')");assert.equal(await ev('__hostCalls.llm'),calls+1);assert.equal(await ev('__libraReanalysisUiState().canonicalPending'),false);
         if(kind==='micro')assert.equal(await ev('(async()=>{const active=await product.debugReadActiveMicroMemory(2);return active.status;})()'),'verified');
       }
+      await call('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false});
+      await click('.sidebar [data-go="memory"]');await wait("!!document.querySelector('[data-canonical-reader-reanalysis]')");
+      const verifyRoute=async(kind,key,selector,capture=kind)=>{
+        await wait("document.querySelector('.app')?.dataset.navigationPending!=='true'");
+        const calls=await ev('__hostCalls.llm');await click(selector);await wait(`document.querySelector('[data-reanalysis-page]')?.dataset.reanalysisPage===${JSON.stringify(kind)}${key?`&&[...document.querySelectorAll('[data-reanalysis-ranges] input:checked')].some(input=>input.value===${JSON.stringify(key)})`:''}`);
+        assert.equal(await ev('__hostCalls.llm'),calls,'opening '+kind+' cannot invoke a model');
+        await ev("document.querySelector('#dlg-libra-source-reanalysis .dialog').scrollTop=0");const shot=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(out,'libra-route-'+capture+'.png'),Buffer.from(shot.data,'base64'));
+        await click('#dlg-libra-source-reanalysis .dialog__actions button');
+      };
+      await verifyRoute('canonical','1-5','[data-canonical-reader-reanalysis]');
+      await click('[data-memory-reader-kind=micro]');await wait("!!document.querySelector('[data-micro-reader-turn=\"2\"]')");await click('[data-micro-reader-turn="2"]');await wait("!!document.querySelector('[data-micro-reader-detail=\"2\"] [data-micro-reader-claim]')");
+      await verifyRoute('micro','2','[data-micro-reader-reanalysis]');
+      await click('[data-memory-reader-kind=lens]');await wait("!!document.querySelector('[data-lens-item-reanalysis]')");assert.equal(await ev("!!document.querySelector('[data-lens-run-range-button]')"),false);
+      await verifyRoute('lens','1-2','[data-lens-item-reanalysis]');
+      await click('.lens-rail__head .cluster button:nth-child(2)');await wait("!!document.querySelector('[data-lens-studio-reanalysis]')");
+      await verifyRoute('lens',null,'[data-lens-studio-reanalysis]','lens-studio');assert.equal(await ev("document.querySelector('#dlg-prompt').classList.contains('is-open')"),false);
+      const beforeRetired=await ev('__hostCalls.llm');
+      assert.deepEqual(await ev("(async()=>{const results=[];for(const name of ['runLensForRange','runLensForTurnRange','retryMicroAnalysis','regenerateCanonicalMemory','retryFailedMemoryAnalysis','rebuildSelectedLegacyMemories']){try{await product[name]({});results.push('unexpected_success');}catch(error){results.push(error.code);}}return results;})()"),Array(6).fill('LIBRA_REANALYSIS_ENTRY_RETIRED'));assert.equal(await ev('__hostCalls.llm'),beforeRetired);
     }
     results.push({owner,layout,noModelCalls:true,noWritesDuringPreview:true});await ev('__dispose()');await call('Target.closeTarget',{targetId},null);sessionId=null;
   }
   assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'results.json'),JSON.stringify(results,null,2));console.log('PASS real Chromium: collapsed UI, single-turn actions, XML selection, preview, desktop/mobile layout; '+out);
-})().catch(async error=>{console.error(error);try{console.error(await ev("({statuses:[...document.querySelectorAll('[data-reanalysis-status]')].map(n=>n.textContent),drawer:!!document.querySelector('[data-canonical-range-drawer]'),lastText:document.body.innerText.slice(-800)})"));}catch{}process.exitCode=1;}).finally(async()=>{clearTimeout(watchdog);originServer?.close();chrome.kill();await pause(150);fs.rmSync(profile,{recursive:true,force:true,maxRetries:10,retryDelay:100});});
+})().catch(async error=>{console.error(error);try{console.error(await ev("({routes:window.__routeOpenCalls?.slice(-4),ui:window.__libraReanalysisUiState?.(),guiStatus:[...document.querySelectorAll('[data-gui-status]')].map(n=>n.textContent),statuses:[...document.querySelectorAll('[data-reanalysis-status]')].map(n=>n.textContent),drawer:!!document.querySelector('[data-canonical-range-drawer]'),lastText:document.body.innerText.slice(-500)})"));}catch{}process.exitCode=1;}).finally(async()=>{clearTimeout(watchdog);originServer?.close();chrome.kill();await pause(150);fs.rmSync(profile,{recursive:true,force:true,maxRetries:10,retryDelay:100});});

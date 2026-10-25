@@ -48,12 +48,12 @@ test('delivery coverage preserves separately tracked people/time and unknown ide
       assert.equal((await recall(text)).injectedItems.length, 1, 'a bare note body does not certify delivery of its separately stored identity');
     }
     f.setReply({ items: [{ label: '증상', text: sentence, refs: ['t1-u'], quote: sentence, who: ['지호'], when: '어제' }] });
-    await f.api.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 });
+    await f.r.core.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 });
     assert.equal((await recall(`[정본] ${sentence}`)).injectedItems.length, 0, 'a complete exact sentence containing the same identity is redundant');
     assert.equal((await recall(`오늘 지호는 ${body}`)).injectedItems.length, 1);
     assert.equal((await recall(`어제 지호는 ${body.replace('어렵다', '어렵지 않다')}`)).injectedItems.length, 1, 'near-identical opposite meaning is not coverage');
     f.setReply({ items: [{ label: '증상', text: sentence, refs: ['t1-u'], quote: sentence }] });
-    await f.api.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 });
+    await f.r.core.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 });
     assert.equal((await recall(sentence)).injectedItems.length, 1, 'unknown person/time cannot certify the same event');
   } finally { await f.close(); }
 });

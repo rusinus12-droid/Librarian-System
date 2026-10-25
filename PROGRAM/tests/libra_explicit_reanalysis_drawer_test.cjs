@@ -4,7 +4,7 @@ const {fixture,source}=require('./fixtures/libra_reanalysis_gui_fixture.cjs');
 const flush=()=>new Promise(resolve=>setTimeout(resolve,0));
 test('reading desk exposes the common reanalysis drawer',()=>{
   const panel=source.slice(source.indexOf('  const buildBookMemoryProgressPanel ='),source.indexOf('  const buildCanonicalActionPanel ='));
-  assert.match(panel,/bookMemoryReanalyze/);assert.match(panel,/showCanonicalRangeDrawer\('source_edit'\)/);
+  assert.match(panel,/bookMemoryReanalyze/);assert.match(panel,/showLibraSourceReanalysisDrawer/);
 });
 test('canonical selection folds initially and groups five source turns into one card',async()=>{
   const f=fixture();try{

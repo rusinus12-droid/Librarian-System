@@ -6,13 +6,10 @@ const source=fs.readFileSync(path.join(__dirname,'..','plugins','LIBRA.js'),'utf
 const between=(start,end)=>{const a=source.indexOf(start),b=source.indexOf(end,a);assert.ok(a>=0&&b>a);return source.slice(a,b);};
 const drawer=between('const showCanonicalRangeDrawer =','const buildBookMemoryModelSummary =');
 const declaration=drawer.match(/const eligible=row=>[^;]+;/)?.[0];assert.ok(declaration);
-for(const mode of ['missing','failed','regenerate']){
- const context=vm.createContext({currentMode:mode});vm.runInContext(declaration+'\nthis.eligible=eligible;',context);
- for(const status of ['missing','failed','saved','source_changed'])assert.equal(context.eligible({status}),
-  status==={missing:'missing',failed:'failed',regenerate:'saved'}[mode],`${mode}/${status} drawer eligibility`);
-}
-assert.match(drawer,/\['source_edit','선택 구간 재분석'\]/);
-assert.match(drawer,/if\(mode==='source_edit'\)return showLibraSourceReanalysisDrawer\(\)/);
+const context=vm.createContext({});vm.runInContext(declaration+'\nthis.eligible=eligible;',context);
+for(const status of ['missing','failed','saved','source_changed'])assert.equal(context.eligible({status}),status==='missing',`${status} first-generation eligibility`);
+assert.match(drawer,/\['source_edit','regenerate','failed'\]\.includes\(mode\)\)return showLibraSourceReanalysisDrawer/);
+assert.match(drawer,/choices\.closest\('\.field'\)\.replaceWith\(status\)/,'the generation chooser cannot expose retired reanalysis modes');
 const reviewDrawer=between('const showLibraSourceReanalysisDrawer =','const showCanonicalRangeDrawer =');
 assert.match(reviewDrawer,/LibraMemoryCore\.reanalyzeSelectedRanges\(selection\)/);
 assert.match(reviewDrawer,/성공 시 교체하고 실패 시 기존 기억을 보존합니다/);
@@ -25,6 +22,7 @@ assert.match(selection,/row\.identityDigest!==actual\.identityDigest/,'edited so
 assert.match(selection,/selected_batch_identity_changed/);
 assert.match(selection,/sourceDigest\(current\)!==source/,'provider-wait source changes cannot activate stale results');
 assert.match(selection,/selected_batch_source_changed/);
+assert.match(selection,/\['missing','source_edit'\]\.includes\(selection\.mode\|\|'missing'\)/,'only generation and unified source reanalysis can dispatch');
 assert.match(selection,/freshTerminalAttempt:true/,'explicit replacement gets a new operation budget');
 assert.match(selection,/Number\(ref\.revision\)>Number\(row\.revision\|\|0\)/,'success is backed by a newer durable revision');
 assert.match(selection,/ref\.sourceDigest===row\.sourceDigest&&ref\.sourceEditBasis===basis/,'success binds exact source and replacement basis');

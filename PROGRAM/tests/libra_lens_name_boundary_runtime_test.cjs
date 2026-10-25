@@ -53,7 +53,7 @@ test('grouping uses the core name without honorifics; the record keeps the sourc
       { label: '증상', text: '감기에 걸렸다.', refs: ['t2-a'], basis: '본문', who: ['카페 사장님'] }
     ] });
     const lens = await f.api.createLens({ name: '경계', evidenceMode: 'interpretive', trackSubject: true, instruction: { goal: '상태' }, cadence: { mode: 'manual' } });
-    const run = plain(await f.api.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 2 }));
+    const run = plain(await f.r.core.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 2 }));
     assert.equal(run.status, 'succeeded', JSON.stringify(run.rejectedItems));
     const view = plain(await f.api.inspectScopeLenses()).memories;
     const key = text => view.find(row => row.text === text).people[0];
@@ -70,7 +70,7 @@ test('the prompt states the person boundary', async () => {
     const calls = [];
     f.setReply(args => { calls.push(JSON.stringify(args)); return '{"items":[]}'; });
     const lens = await f.api.createLens({ name: '인물', trackSubject: true, instruction: { goal: '상태' }, cadence: { mode: 'manual' } });
-    await f.api.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 });
+    await f.r.core.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 });
     assert.match(calls[0], /named animal/);
     assert.match(calls[0], /hypothetical, a wish, a comparison or unconfirmed hearsay/);
     assert.match(calls[0], /without grammar endings or honorifics/);
@@ -96,7 +96,7 @@ test('live-measured corrections: bare surname, near-miss quote, persona name, th
     const calls = [];
     f.setReply(args => { calls.push(JSON.stringify(args)); return JSON.stringify({ items: [{ label: '전달', text: '열쇠를 내밀었다.', refs: ['t2-u'], basis: '본문', who: ['user'] }, { label: '소유', text: '열쇠의 주인이다.', refs: ['t3-a'], basis: '본문', who: ['민아'] }] }); });
     const lens = await f.api.createLens({ name: '인물', trackSubject: true, evidenceMode: 'interpretive', instruction: { goal: '상태' }, cadence: { mode: 'manual' } });
-    const run = plain(await f.api.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 }));
+    const run = plain(await f.r.core.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 }));
     assert.deepEqual(run.items[0].who, [{ name: '민아', ref: 't2-u', role: 'user' }], 'the user role carries the persona name');
     const people = plain(await f.api.inspectScopeLenses()).memories.map(row => row.people[0].key);
     assert.equal(people[0], people[1], 'the user\'s first person and the persona\'s name are one person');

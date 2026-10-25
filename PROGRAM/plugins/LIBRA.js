@@ -28391,7 +28391,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       ['LEGACY_WORK_STORAGE', /LEGACY_JOB_(?:ARCHIVE|NEW_RUN_READBACK|NEW_WORK_READBACK|ROLLBACK)/i, '이전 작업 보관·복구 확인 필요', '이전 작업의 보관 또는 새 작업 저장을 확인하지 못해 AI 호출을 중단했습니다. 상세 진단에서 저장 상태를 확인해 주세요.'],
       ['LEGACY_WORK_REVIEW', /LEGACY_JOB_(?:REVIEW_REQUIRED|ENGINE_UNSUPPORTED|IDENTITY_MISMATCH|RUN_IDENTITY_MISMATCH|NOT_TERMINAL|CANONICAL_PROTECTED)/i, '새 분석 필요', '구형 작업은 이어서 실행하지 않습니다. 해당 구간을 수동 분석하면 이전 임시 작업을 폐기하고 처음부터 분석합니다.'],
       ['PREVIOUS_BATCH', /UNIFIED_HISTORICAL_OR_GAP_STATE_BLOCKED/i, '앞 구간 처리 필요', '앞선 5턴 구간의 기억과 상태가 준비되지 않았습니다. 가장 이른 실패 구간부터 복구해 주세요.'],
-      ['OPERATION_BUDGET', /canonical_provider_budget_already_exhausted/i, '이전 작업 예산 소진', '이 분석 작업의 내부 호출 예산이 소진됐습니다. 실패 구간 새 분석로 새 작업을 시작해 주세요.'],
+      ['OPERATION_BUDGET', /canonical_provider_budget_already_exhausted/i, '이전 작업 예산 소진', '이 분석 작업의 내부 호출 예산이 소진됐습니다. 원문 재분석에서 해당 구간을 선택해 새 작업을 시작해 주세요.'],
       ['MODEL_DECLINED', /MODEL_DECLINED|refusal|refused|content[_ -]?filter|safety|prohibited/i, '모델 응답 거절', '모델이 이 구간의 분석을 거절했습니다. 해당 구간은 생성되지 않았으며, 기존에 저장된 기억은 유지됩니다.'],
       ['SOURCE_CHANGED', /scope.*changed|source.*changed|source_digest|stale|selected_batch.*changed/i, '대화가 바뀜', '선택 당시와 채팅 또는 원문이 달라져 저장하지 않았습니다. 구간을 다시 확인해 주세요.'],
       ['OUTPUT_LIMIT', /truncat|length_limit|max_tokens|output.*(?:budget|limit)|total_token_budget/i, '응답 길이 한도', '응답이 끝나기 전에 길이 한도에 도달했습니다. 모델의 출력 한도를 확인해 주세요.'],
@@ -61895,53 +61895,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const memory=await unifiedLegacyMemoryCheck(ref),source=await readUnifiedLegacyEvidence(memory);
       return {scopeKey:preview.scopeKey,key:memoryKey,rows:source.batch.map(p=>({turn:p.turn,userText:p.user.text,assistantText:p.assistant.text})),sourceDigest:memory.sourceDigest};
     };
-    const rebuildSelectedUnifiedLegacy=async({previewDigest='',expectedScopeKey='',selectedKeys=[]}={})=>{
-      const preview=await previewUnifiedLegacyRebuild();
-      unifiedAssert(preview.scopeKey===expectedScopeKey&&preview.previewDigest===previewDigest,'UNIFIED_LEGACY_REBUILD_PREVIEW_CHANGED');
-      unifiedAssert(Array.isArray(selectedKeys)&&selectedKeys.length>0&&selectedKeys.length<=32&&new Set(selectedKeys).size===selectedKeys.length,'UNIFIED_LEGACY_REBUILD_SELECTION_REQUIRED');
-      const selected=selectedKeys.map(k=>{const row=preview.rows.find(r=>r.key===k);unifiedAssert(row?.available,'UNIFIED_LEGACY_REBUILD_EVIDENCE_REQUIRED');return row;}).sort((a,b)=>a.turnRange.start-b.turnRange.start);
-      unifiedAssert((await loadMemorySettings()).memoryEngine!=='legacy','UNIFIED_LEGACY_REBUILD_SELECT_UNIFIED_ENGINE');
-      const context=await resolveContext(),selectionId=id('legacy_selected'),basis=digest({schema:'libra.legacy_rebuild_grant.v1',previewDigest,selectedKeys,selectionId});
-      const manifest=await loadManifest(context.scope,buildPairs(context.chat,context.scope.scopeKey).length),originalRefs=fullContinuityRefs(manifest).map(unifiedMigrationRef);
-      // Persist the data-format boundary, never a reusable permission or model job.
-      await enqueue(expectedScopeKey,async()=>{
-        assertPortableMemoryIdle();unifiedAssert(!state.canonicalJobPromise&&!Runtime.inFlight,'UNIFIED_LEGACY_REBUILD_BUSY');
-        unifiedAssert((await previewUnifiedLegacyRebuild()).previewDigest===previewDigest,'UNIFIED_LEGACY_REBUILD_PREVIEW_CHANGED');
-        const keyValue=unifiedMigrationKey(context.scope),before=await storage.getJson(keyValue,null);
-        if(before)unifiedAssert(before.schema===UNIFIED_MIGRATION_SCHEMA&&before.recordDigest===unifiedMigrationDigest(before),'UNIFIED_LEGACY_BOUNDARY_CHANGED');
-        const record={...(before||{}),schema:UNIFIED_MIGRATION_SCHEMA,scopeKey:expectedScopeKey,mode:'preserve_legacy_readonly',
-          legacyRefs:preview.rows.map(unifiedMigrationRef),missingEvidenceKeys:preview.rows.filter(r=>!r.available).map(r=>r.key),
-          historicalState:'not_reconstructed',selectionPolicy:UNIFIED_SELECTED_LEGACY_POLICY,automaticReanalysis:false,consentTransferred:false,createdAt:before?.createdAt||nowIso()};
-        record.recordDigest=unifiedMigrationDigest(record);
-        try{await storage.setJson(keyValue,record);unifiedAssert(digest(await storage.getJson(keyValue,null))===digest(record),'UNIFIED_LEGACY_BOUNDARY_READBACK');}
-        catch(error){const after=await storage.getJson(keyValue,null);if(digest(after)===digest(record)){if(before==null)await storage.remove(keyValue);else await storage.setJson(keyValue,before);}throw error;}
-      });
-      const validate=async()=>{
-        const live=await resolveContext();unifiedAssert(live.scope.scopeKey===expectedScopeKey,'UNIFIED_LEGACY_REBUILD_SCOPE_CHANGED');
-        unifiedAssert(digest(await loadSettings())===preview.policyDigest,'UNIFIED_LEGACY_REBUILD_POLICY_CHANGED');
-        const pairs=buildPairs(live.chat,live.scope.scopeKey),latest=await loadManifest(live.scope,pairs.length),refs=fullContinuityRefs(latest);
-        unifiedAssert(refs.length===originalRefs.length,'UNIFIED_LEGACY_REBUILD_CHAIN_CHANGED');
-        for(const old of originalRefs){
-          const current=refs.find(r=>r.key===old.key||(!unifiedInheritedRef(r)&&r.memoryId===old.memoryId&&r.turnRange.start===old.turnRange.start));
-          const isSelected=selected.some(r=>r.key===old.key);
-          unifiedAssert(current&&(digest(unifiedMigrationRef(current))===digest(old)||(isSelected&&unifiedRefIsReadableUnified(current)&&current.sourceDigest===old.sourceDigest&&current.sourceEditBasis===basis&&current.revision===old.revision+1)),'UNIFIED_LEGACY_REBUILD_CHAIN_CHANGED');
-        }
-        for(const row of selected){
-          unifiedAssert(sourceDigest(batchForStart(pairs,row.turnRange.start))===row.sourceDigest,'UNIFIED_LEGACY_SOURCE_REVIEW_REQUIRED');
-          const old=await storage.getJson(row.key,null);unifiedAssert(old&&old.memoryId===row.memoryId&&old.revision===row.revision,'UNIFIED_LEGACY_REBUILD_HISTORY_CHANGED');
-          const source=await readUnifiedLegacyEvidence(old);unifiedAssert(source.ref.payloadDigest===row.evidenceDigest,'UNIFIED_LEGACY_EVIDENCE_CHANGED');
-        }
-      };
-      await validate();
-      const job=await runManagedScan('source_edit',{expectedScopeKey,startTurns:selected.map(r=>r.turnRange.start),maxBatches:selected.length,
-        forceRegenerate:true,freshTerminalAttempt:true,sourceEditBasis:basis,sourceEditValidate:validate,
-        selectionBindings:selected.map(r=>({startTurn:r.turnRange.start,sourceDigest:r.sourceDigest}))});
-      const latest=await loadManifest(context.scope,buildPairs(context.chat,context.scope.scopeKey).length);
-      const results=selected.map(row=>{const ref=memoryRefForStart(latest,row.turnRange.start);return {key:row.key,startTurn:row.turnRange.start,endTurn:row.turnRange.end,
-        converted:unifiedRefIsReadableUnified(ref)&&ref?.sourceEditBasis===basis,activeRevision:ref?.revision||row.revision};});
-      return {ok:results.every(r=>r.converted),selectionId,scopeKey:expectedScopeKey,results,completed:results.filter(r=>r.converted).length,
-        remaining:results.filter(r=>!r.converted).length,job:clone(job),automaticReanalysis:false,unselectedRetained:true};
-    };
+    const rebuildSelectedUnifiedLegacy = async () => retiredManualReanalysis();
 
     // On-demand owner-local retention audit. Canonical history, approved evidence,
     // corrections and immutable archives are NEVER deletion candidates in this release.
@@ -65500,38 +65454,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       return {status:'stale',reason:'receipt_not_active'};
     };
-    const resumeNeverStartedMicro = async request => {
-      const check=await microStageRequest(request);
-      if(check.status!=='current')return check;
-      if(state.microJobs.has(check.jobKey))return state.microJobs.get(check.jobKey);
-      const stage=await readMicroStageStatus(check.scope,check.active);
-      if(state.microJobs.has(check.jobKey))return state.microJobs.get(check.jobKey);
-      if(stage.status!=='never_started')return {status:stage.status,reason:'not_proven_never_started'};
-      const receipt=check.active.receipt;
-      return scheduleMicroForTurn(check.scope,receipt.worldlineId,receipt.sessionEpoch,
-        receipt.turn,receipt.revisionId,{expectedGeneration:request.expectedGeneration});
-    };
-    const retryMicroAnalysis = async request => {
-      const check=await microStageRequest(request);
-      if(check.status!=='current')return check;
-      if(state.microJobs.has(check.jobKey))return state.microJobs.get(check.jobKey);
-      const recent=state.microManualRecent.get(check.jobKey);
-      if(recent && Date.now()-recent.at<1500)return recent.promise;
-      const stage=await readMicroStageStatus(check.scope,check.active);
-      if(state.microJobs.has(check.jobKey))return state.microJobs.get(check.jobKey);
-      if(stage.status==='never_started')return {status:'never_started',reason:'use_never_started_resume'};
-      if(!['failed','unknown','queued'].includes(stage.status))return {status:stage.status,reason:'manual_retry_unavailable'};
-      const receipt=check.active.receipt;
-      const promise=scheduleMicroForTurn(check.scope,receipt.worldlineId,receipt.sessionEpoch,
-        receipt.turn,receipt.revisionId,{manual:true,expectedGeneration:request.expectedGeneration});
-      state.microManualRecent.set(check.jobKey,{at:Date.now(),promise});
-      void promise.then(result=>{
-        if(result?.status==='pending_reconciliation' && state.microManualRecent.get(check.jobKey)?.promise===promise)
-          state.microManualRecent.delete(check.jobKey);
-      },()=>{if(state.microManualRecent.get(check.jobKey)?.promise===promise)
-        state.microManualRecent.delete(check.jobKey);});
-      return promise;
-    };
+    const resumeNeverStartedMicro = async () => retiredManualReanalysis();
+    const retryMicroAnalysis = async () => retiredManualReanalysis();
     const repairMicroPublication = async request => {
       const check=await microStageRequest(request);
       if(check.status!=='current')return check;
@@ -72147,6 +72071,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if(!['canonical','micro','lens'].includes(kind))throw Error('재분석할 기억 종류를 확인하세요.');
       return kind;
     };
+    const retiredManualReanalysis = () => {
+      throw Object.assign(new Error('별도 재분석 경로는 폐기되었습니다. 원문 재분석 화면에서 종류와 구간을 선택하세요.'),{code:'LIBRA_REANALYSIS_ENTRY_RETIRED'});
+    };
     const listReanalysisRanges = async (options={}) => {
       const kind=libraReanalysisKind(options);
       if(kind==='canonical')return listCanonicalReanalysisRanges();
@@ -72280,6 +72207,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
 
     const startSelectedCanonicalBatchesOnce = async (selection = {}) => {
+      if(!['missing','source_edit'].includes(selection.mode||'missing'))return retiredManualReanalysis();
       if (!selection.scopeKey) throw new Error('selected_batch_scope_changed');
       const requested = asArray(selection.ranges);
       if (!requested.length) throw new Error('no_selected_batches');
@@ -72292,7 +72220,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if(selection.mode==='source_edit'){
           if(!row.identityDigest||row.identityDigest!==actual.identityDigest)throw Error('selected_batch_identity_changed');
         }else if(!row.sourceDigest||row.sourceDigest!==actual.sourceDigest)throw Error('selected_batch_source_changed');
-        const expectedStatus = selection.mode === 'regenerate' ? 'saved' : selection.mode === 'failed' ? 'failed' : 'missing';
+        const expectedStatus = 'missing';
         if (selection.mode!=='source_edit'&&actual.status !== expectedStatus) throw new Error('selected_batch_status_changed');
         if (!selected.some(item => item.startTurn === actual.startTurn)) selected.push(actual);
       }
@@ -72338,19 +72266,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
           reason:ok?'':job.error||'EXPLICIT_REANALYSIS_INCOMPLETE'};
       }
       {
-        if (selection.mode === 'regenerate') {
-          const jobs = [];
-          for (const row of selected) {
-            if (row.status !== 'saved') throw new Error('selected_batch_regeneration_requires_saved_memory');
-            const fresh = await listCanonicalBatchRanges({ expectedScopeKey: selection.scopeKey });
-            if (fresh.ranges.find(item => item.startTurn === row.startTurn)?.sourceDigest !== row.sourceDigest) throw new Error('selected_batch_source_changed');
-            const job = await regenerateCanonicalMemory({ startTurn: row.startTurn, memoryId: row.memoryId, revision: row.revision, expectedScopeKey: selection.scopeKey });
-            jobs.push(job);
-            // Candidates remain inactive. Every choice is persisted and visible in the job list.
-            if (job?.state !== 'awaiting_choice') break;
-          }
-          return { ok: jobs.length === selected.length && jobs.every(job => job.state === 'awaiting_choice'), awaitingChoice: true, jobs };
-        }
         if (selected.some(row => row.status === 'saved')) throw new Error('selected_batch_saved_requires_regenerate');
         return await runManagedScan('manual_scan', { expectedScopeKey: selection.scopeKey,
           startTurns: selected.map(row => row.startTurn), selectionBindings: selected, freshTerminalAttempt: true });
@@ -72364,89 +72279,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
       finally { state.selectedBatchBusy = false; }
     };
 
-    const startManualColdStart = async options => await runManagedScan('cold_start', options);
-    const startManualCanonicalScan = async options => await runManagedScan('manual_scan', options);
-    const startFailedRetry = async options => {
-      const context = await resolveContext();
-      const manifest = await loadManifest(context.scope, buildPairs(context.chat, context?.scope?.scopeKey || '').length);
-      const explicit = asArray(options?.startTurns).map(Number).filter(Boolean);
-      const persistedFailures = asArray(state.canonicalJob?.failures).map(item => Number(item?.startTurn || 0)).filter(Boolean);
-      const indexedFailures = Object.values(normalizeFailedCanonicalBatches(manifest.failedBatches)).map(item => Number(item?.startTurn || 0)).filter(Boolean);
-      const inFlight = string(manifest?.inFlight?.status || '') === 'failed' ? [Number(manifest.inFlight.startTurn || 0)] : [];
-      return await runManagedScan('failed_retry', { ...options, freshTerminalAttempt: true, startTurns: Array.from(new Set(Object.prototype.hasOwnProperty.call(options || {}, 'startTurns') ? explicit : [...persistedFailures, ...indexedFailures, ...inFlight])).filter(Boolean) });
-    };
+    const startManualColdStart = async options => options?.forceRegenerate ? retiredManualReanalysis() : await runManagedScan('cold_start', options);
+    const startManualCanonicalScan = async () => retiredManualReanalysis();
+    const startFailedRetry = async () => retiredManualReanalysis();
 
-    const regenerateCanonicalMemory = async identity => {
-      assertPortableMemoryIdle();
-      const resumeJobId = string(identity?.resumeJobId || '');
-      const context = await resolveContext();
-      const pairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
-      // LIBRA saveManifest (35229) is a WHOLE-DOCUMENT overwrite: it restamps
-      // updatedAt and writes the passed object to key.manifest(scope) with no
-      // merge and no CAS, and storage.setJson -> fencedMemoryStorageSet only bumps
-      // a fence revision — every writer proceeds. So any writer that reads the
-      // manifest and later saves it can silently revert whatever another writer
-      // committed in between (independent fields such as inFlight, stats,
-      // failedBatches, branchGuard are lost, not corrupted).
-      //
-      // The batch pipeline below (processBatch at 56494) contains seven unlocked
-      // saveManifest sites. scan() already runs processBatch while holding
-      // enqueue(context.scope.scopeKey) (lock block 45967-46224 covers the
-      // processBatch call at 46143), so holding the same per-scope lock across the
-      // regeneration batch is the shipped, regression-covered design — this path
-      // was simply the one caller that never took it.
-      //
-      // Verified before wrapping: enqueue is NON-REENTRANT (it chains on a Promise
-      // in state.queues keyed by scope), and all three callers of this function
-      // (56434, 56781, 74783) are outside every enqueue block with zero overlapping
-      // lock blocks, so there is no same-key re-entry. The callee closure contains
-      // exactly one enqueue (flushUnifiedDerivedVectors at 45876), which is only
-      // reached through a setTimeout(0) + void, i.e. never awaited with the lock held.
-      return await enqueue(context.scope.scopeKey, async () => {
-      const manifest = await loadManifest(context.scope, pairs.length);
-      const target = await resolveCanonicalTarget(context, manifest, identity);
-      const batch = batchForStart(pairs, target.startTurn);
-      if (batch.length !== BATCH_SIZE || sourceDigest(batch) !== target.memory.sourceDigest) throw new Error('canonical_source_digest_changed');
-      const index = await loadCanonicalVariantIndex(context.scope, manifest);
-      const unresolved = asArray(index?.slots?.[String(target.startTurn)]?.variants).find(item => item.status === 'candidate');
-      if (unresolved && (!resumeJobId || string(unresolved.jobId || '') !== resumeJobId)) throw new Error('canonical_candidate_already_pending');
-      if (await findPendingCanonicalChoice(context.scope, { startTurn: target.startTurn, excludeJobId: resumeJobId })) throw new Error('canonical_candidate_already_pending');
-      let job;
-      if (resumeJobId) {
-        job = await loadCanonicalJob(context.scope, resumeJobId);
-        if (!job || job.state !== 'interrupted') throw new Error('canonical_job_not_resumable');
-        state.canonicalJobAbortController = typeof AbortController === 'function' ? new AbortController() : null;
-        job = await updateCanonicalJob(context.scope, { state: 'preparing', phase: 'preparing', cancelRequested: false, cancellable: true, message: '중단된 재생성 작업을 이어서 준비합니다.' });
-      } else {
-        job = await beginCanonicalJob(context.scope, 'regenerate', { startTurns: [target.startTurn], total: 1, message: '재생성 후보를 준비합니다.' });
-      }
-      job = await updateCanonicalJob(context.scope, { targetMemory: { memoryId: target.memory.memoryId, revision: target.memory.revision, startTurn: target.startTurn } });
-      const task = (async () => {
-        try {
-          await updateCanonicalJob(context.scope, { state: 'running', phase: 'pipeline', currentStart: target.startTurn, message: `TURN ${target.startTurn}~${target.startTurn + BATCH_SIZE - 1} 재생성 중` });
-          const candidate = unresolved
-            ? { ...(await storage.getJson(unresolved.key, null)), key: unresolved.key, variantId: unresolved.variantId, deltaKey: unresolved.deltaKey }
-            : await processBatch(context, manifest, pairs, target.startTurn, {
-                candidateOnly: true, forceRegenerate: true, candidateOrigin: 'regeneration', mode: 'regenerate', jobId: job.jobId,
-                parentVariantId: canonicalVariantId({ ...target.ref, scopeKey: context.scope.scopeKey }), signal: state.canonicalJobAbortController?.signal
-              });
-          if (!candidate?.memoryId) throw new Error('canonical_resume_candidate_missing');
-          const found = await findCanonicalVariant(context.scope, candidate.variantId, manifest);
-          const comparison = await buildCanonicalComparison({ context, manifest, activeRef: target.ref, activeMemory: target.memory, candidateMemory: candidate, candidateVariant: found.variant });
-          state.canonicalComparisonCache.set(job.jobId, clone(comparison));
-          return await updateCanonicalJob(context.scope, { state: 'awaiting_choice', phase: 'compare', candidateId: candidate.variantId, completed: 1, cancellable: false, comparison, message: '기존 정본과 재생성 후보를 비교한 뒤 채택 여부를 선택하세요.' });
-        } catch (error) {
-          const cancelled = error?.name === 'AbortError' || state.canonicalJob?.cancelRequested === true;
-          return await updateCanonicalJob(context.scope, { state: cancelled ? 'cancelled' : 'failed', phase: cancelled ? 'cancelled' : 'failed', cancellable: false, error: compact(error?.message || error, 700), message: cancelled ? '재생성을 취소했습니다. 활성 정본은 변경되지 않았습니다.' : `재생성 실패: ${compact(error?.message || error, 300)}` });
-        } finally {
-          state.canonicalJobPromise = null;
-          state.canonicalJobAbortController = null;
-        }
-      })();
-      state.canonicalJobPromise = task;
-      return await task;
-      });
-    };
+    const regenerateCanonicalMemory = async () => retiredManualReanalysis();
 
     const createCanonicalEditDraft = async identity => {
       assertPortableMemoryIdle();
@@ -72714,7 +72551,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (!job) throw new Error('canonical_job_not_resumable');
       if (job.state === 'adopting') return await resolveCanonicalCandidate({ jobId: job.jobId, decision: 'adopt' });
       if (job.state !== 'interrupted') throw new Error('canonical_job_not_resumable');
-      if (job.kind === 'regenerate') return await regenerateCanonicalMemory({ ...asObject(job.targetMemory), resumeJobId: job.jobId });
+      if (job.kind !== 'cold_start')return retiredManualReanalysis();
       return await runManagedScan(job.kind, { startTurns: job.targetStarts, resumeJobId: job.jobId });
     };
     const recoverCanonicalJobAtStartup = async () => {
@@ -80587,7 +80424,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       readonlySourceContext,
       resolveContext, buildPairs, pairRevisionProjection, pairRevisionCacheKeyForChat, sourceDigest, transcript, buildAriadneReferenceContext, buildItoLoreReferenceContext, rerankMemoryLoreForStage, executeStage, scan, scheduleScan, scheduleLegacyOutputBoundaryScan, beforeRequest, afterRequest,
       recoverPendingStateTrackingJournal, flushUnifiedDerivedVectors, unifiedStateReadProjection, unifiedWorldReadContext,
-      listReanalysisRanges,readReanalysisTurn,reanalyzeSelectedRanges,
+      listReanalysisRanges,readReanalysisTurn,reanalyzeSelectedRanges,retiredManualReanalysis,
       listCanonicalBatchRanges, startSelectedCanonicalBatches, failureDiagnostic: libraMemoryFailureDiagnostic, unwrapTypedResponse: unwrapLibraTypedResponse,
       startManualColdStart, startManualCanonicalScan, startFailedRetry, deleteFailedRun, getCanonicalJobStatus, listCanonicalJobs, cancelCanonicalJob, resumeCanonicalJob, recoverCanonicalJobAtStartup,
       listCanonicalVariants, regenerateCanonicalMemory, createCanonicalEditDraft, saveCanonicalEditDraft,
@@ -86049,10 +85886,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
 
   const closeCanonicalRangeDrawer = () => { try { Gui.canonicalRangeDrawerClose?.(); } catch (_) {} };
-  const showLibraSourceReanalysisDrawer = async () => {
-    closeCanonicalRangeDrawer();if(!Gui.root||!Gui.visible)return;
+  const showLibraSourceReanalysisDrawer = async (options={}) => {
+    if(!Gui.root||!Gui.visible)return;
     const binding=canonicalReaderBinding(),bindingKey=canonicalReaderBindingKey(binding),selected=new Set();
-    let alive=true,busy=false,reviewSaving=false,inventory=null,reviewVersion=0,loadVersion=0,kind='canonical',lensId='',reviewTurnChoice=null;
+    if(options.scopeKey&&options.scopeKey!==binding.scopeKey){guiSetStatus('채팅이 변경되었습니다. 현재 화면에서 다시 재분석을 선택하세요.',true);return;}
+    closeCanonicalRangeDrawer();
+    const studio=Gui.app.querySelector('#dlg-prompt');
+    if(studio?.classList.contains('is-open')){studio.classList.remove('is-open');studio.setAttribute('aria-hidden','true');}
+    let alive=true,busy=false,reviewSaving=false,inventory=null,reviewVersion=0,loadVersion=0,kind=['canonical','micro','lens'].includes(options.kind)?options.kind:'canonical',lensId=String(options.lensId||''),reviewTurnChoice=null,navigationPending=true;
     const kinds=[['canonical','정본'],['micro','미크로'],['lens','렌즈']];
     const tabs=guiEl('div',{class:'tabs',role:'tablist','aria-label':'재분석할 기억 종류',dataset:{reanalysisPages:'true'}},kinds.map(([value,label])=>guiEl('button',{class:'tab',type:'button',role:'tab',id:'reanalysis-tab-'+value,'aria-controls':'reanalysis-page','aria-selected':String(value===kind),tabindex:value===kind?0:-1,text:label,dataset:{reanalysisKind:value}})));
     const lensChoice=guiEl('select',{class:'input','aria-label':'재분석할 렌즈',dataset:{reanalysisLens:'true'}});
@@ -86078,6 +85919,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         guiEl('div',{class:'cluster'},[refresh,run,review]),actionHint,guiEl('div',{class:'cluster'},[selectAll,clearSelection]),list,reviewPanel,status
       ])
     ]);
+    fold.open=Boolean(options.startTurn||options.startTurns?.length||options.status);
     const cancel=guiEl('button',{class:'btn',type:'button',text:'닫기'});
     const overlay=guiEl('div',{class:'overlay is-open',id:'dlg-libra-source-reanalysis','aria-hidden':'false',dataset:{canonicalRangeDrawer:'true',canonicalRangeScope:binding.scopeKey}},[
       guiEl('section',{class:'dialog dialog--wide',role:'dialog','aria-modal':'true','aria-labelledby':'libraSourceReanalysisTitle'},[
@@ -86104,7 +85946,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       actionHint.textContent=units.length>1?'여러 '+selectionName+' 선택 시 바로 재분석만 제공합니다. 확인 후 재분석은 한 '+selectionName+'을 선택하세요.':single?'바로 재분석하거나 확인 후 재분석을 선택할 수 있습니다.':'한 '+selectionName+'을 선택하면 바로 재분석과 확인 후 재분석을 제공합니다.';
       lensCadence.hidden=kind!=='lens';
       const lens=inventory?.lenses?.find(row=>row.lensId===inventory.lensId);
-      lensCadence.textContent=lens?(lens.cadence.mode==='manual'?'자동 분석 없음 · 미분석 부분은 최대 '+lens.analysisSpan+'턴씩 표시합니다.':'자동 분석 묶음: '+lens.analysisSpan+'턴 · 미분석 부분도 이 단위로 표시합니다.')+' 기존 기록은 실제 저장 구간 그대로 재분석합니다. 수동 분석은 1~'+LENS_RUN_MAX_TURNS+'턴을 지정할 수 있습니다.':'';
+      lensCadence.textContent=lens?(lens.cadence.mode==='manual'?'자동 분석 없음 · 미분석 부분은 최대 '+lens.analysisSpan+'턴씩 표시합니다.':'자동 분석 묶음: '+lens.analysisSpan+'턴 · 미분석 부분도 이 단위로 표시합니다.')+' 기존 기록은 실제 저장 구간 그대로 재분석합니다. 한 구간은 최대 '+LENS_RUN_MAX_TURNS+'턴까지 분석합니다.':'';
       selectAll.disabled=locked||!inventory?.ranges.length;clearSelection.disabled=locked||!units.length;
       list.querySelectorAll('input').forEach(input=>{input.disabled=locked;});
       selectAll.textContent=({canonical:'가능한 묶음 전체 선택',micro:'가능한 턴 전체 선택',lens:'가능한 구간 전체 선택'})[kind];
@@ -86114,6 +85956,21 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const changed=()=>{reviewVersion++;reviewTurnChoice=null;reviewPanel.replaceChildren();selected.clear();list.querySelectorAll('input:checked').forEach(input=>selected.add(input.value));sync();};
     const execute=async(selection,guard=null)=>{
       if(busy||!valid())return;busy=true;sync();
+      const refreshReader=async()=>{
+        if(!valid())return;
+        try{
+        if(kind==='lens'&&Gui.lensReader?.scopeKey===selection.scopeKey){Gui.lensReader.loaded=false;Gui.lensReader.loading=false;Gui.lensReader.serial++;}
+        const active=Gui.bookPage==='memory'&&(Gui.bookMemoryKind||'canonical')===kind;
+        if(kind==='canonical'&&Gui.canonicalReaderLoaded&&!active)resetCanonicalReaderView({preserveQuery:true});
+        if(!active)return;
+        if(kind==='lens')await loadLensReaderData(true);
+        else if(kind==='micro')await loadMicroReaderPage(false);
+        else{
+          const old=Gui.canonicalReaderDetail;await loadCanonicalReaderPage(false);
+          if(valid()&&old?.memoryId){const latest=await LibraMemoryCore.listCanonicalBatchRanges({expectedScopeKey:selection.scopeKey}),row=latest.ranges.find(item=>item.startTurn===Number(old.turnRange?.start)&&item.status==='saved');if(row)await loadCanonicalReaderDetail({memoryId:row.memoryId,revision:row.revision,worldlineId:old.worldlineId,scopeKey:selection.scopeKey});}
+        }
+        }catch(error){if(valid())status.textContent='분석 결과는 저장했습니다. 기억 목록을 새로고침해 확인하세요.';}
+      };
       try{
         if(guard)await guard();if(!valid())return;
         await runCanonicalGuiCommand(({canonical:'선택한 턴이 속한 5턴 정본 구간',micro:'선택한 1턴 미크로',lens:'선택한 렌즈의 기록 구간'})[kind]+'을 다시 분석합니다.',async()=>{
@@ -86121,8 +85978,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           const result=await LibraMemoryCore.reanalyzeSelectedRanges(selection);
           if(result?.ok!==true){
             for(const done of result?.results||[])if(done.ok){selected.delete(done.key);for(const input of list.querySelectorAll('input'))if(input.value===done.key)input.checked=false;}
+            if(result?.processed)await refreshReader();
             throw Error((result?.processed?'완료 '+result.processed+'개. 남은 선택만 다시 실행합니다. ':'')+(result?.reason||'재분석을 완료하지 못했습니다.'));
-          }return result;
+          }
+          await refreshReader();
+          return result;
         },{canonicalJob:kind==='canonical'});
         if(alive)close();
       }catch(error){if(valid())status.textContent='재분석 중단: '+String(error?.message||error);}
@@ -86136,6 +85996,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         catch(error){
           if(!valid()||version!==loadVersion)return;
           if(kind!=='lens'||error?.code!=='LENS_NOT_FOUND')throw error;
+          if(navigationPending&&options.lensId)throw error;
           lensId='';value=await LibraMemoryCore.listReanalysisRanges({kind});
         }
         if(!valid()||version!==loadVersion)return;
@@ -86156,17 +86017,26 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           return {label:range.label,...Object.fromEntries(['user','assistant'].map(role=>[role,samples.map(sample=>'['+sample.label+']\n'+sample[role]).join('\n\n')]))};
         }});
         status.textContent=inventory.ranges.length?'원하는 '+({canonical:'묶음',micro:'턴',lens:'구간'})[kind]+'을 선택하세요. 원문 보기에서 실제 내용을 확인할 수 있습니다.':{canonical:'분석할 완성 구간이 없습니다. 완성된 U+A 5턴 구간이 필요합니다.',micro:'분석할 완료된 U+A 턴이 없습니다.',lens:value.lenses?.length?'분석할 완료된 U+A 턴이 없습니다.':'저장된 렌즈가 없습니다. 렌즈 스튜디오에서 먼저 렌즈를 만드세요.'}[kind];sync();
+        if(navigationPending){
+          navigationPending=false;
+          const starts=new Set((options.startTurns||[options.startTurn]).map(Number).filter(turn=>Number.isSafeInteger(turn)&&turn>0));
+          const matches=inventory.ranges.filter(row=>(starts.size?starts.has(row.start):Boolean(options.status))&&(!options.status||row.status===options.status)&&(options.endTurn===undefined||row.end===Number(options.endTurn)));
+          const found=new Set(matches.map(row=>row.start));
+          if(starts.size&&[...starts].some(start=>!found.has(start)))status.textContent='선택한 구간을 현재 채팅에서 찾지 못했습니다. 원문과 구간 목록을 확인한 뒤 다시 선택하세요.';
+          else for(const row of matches)selected.add(row.key);
+          list.querySelectorAll('input').forEach(input=>{input.checked=selected.has(input.value);});sync();
+        }
       }catch(error){if(valid()&&version===loadVersion)status.textContent='목록 조회 실패: '+String(error?.message||error);}
     };
-    refresh.addEventListener('click',()=>void load());
-    const switchPage=value=>{if(busy||reviewSaving||kind===value)return;kind=value;void load();};
+    refresh.addEventListener('click',()=>{navigationPending=false;void load();});
+    const switchPage=value=>{if(busy||reviewSaving||kind===value)return;navigationPending=false;kind=value;void load();};
     tabs.addEventListener('click',event=>{const tab=event.target.closest('[data-reanalysis-kind]');if(tab)switchPage(tab.dataset.reanalysisKind);});
     tabs.addEventListener('keydown',event=>{
       if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)||busy||reviewSaving)return;
       event.preventDefault();const index=kinds.findIndex(([value])=>value===kind),next=event.key==='Home'?0:event.key==='End'?2:(index+(event.key==='ArrowRight'?1:2))%3;
       switchPage(kinds[next][0]);tabs.children[next].focus();
     });
-    lensChoice.addEventListener('change',()=>{if(busy||reviewSaving)return;lensId=lensChoice.value;void load();});
+    lensChoice.addEventListener('change',()=>{if(busy||reviewSaving)return;navigationPending=false;lensId=lensChoice.value;void load();});
     const selectEveryTurn=checked=>{
       if(busy||reviewSaving||!inventory)return;
       list.querySelectorAll('input').forEach(input=>{input.checked=checked;});changed();
@@ -86203,46 +86073,46 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,close);LibraMemoryCore.mountSourceInputControls(advanced);await load();if(valid())cancel.focus();
   };
   const showCanonicalRangeDrawer = async (mode='missing') => {
-    if(mode==='source_edit')return showLibraSourceReanalysisDrawer();
+    if(['source_edit','regenerate','failed'].includes(mode))return showLibraSourceReanalysisDrawer({kind:'canonical',...(mode==='failed'?{status:'failed'}:{})});
     closeCanonicalRangeDrawer();if(!Gui.root||!Gui.visible)return;
     const binding=canonicalReaderBinding(),bindingKey=canonicalReaderBindingKey(binding);
     const template=document.createElement('template');template.innerHTML=LIBRA_APPROVED_RANGE_DIALOG_HTML;
     const overlay=template.content.firstElementChild;overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');overlay.dataset.canonicalRangeDrawer='true';overlay.dataset.canonicalRangeScope=binding.scopeKey;
     const panel=overlay.querySelector('.dialog');panel.setAttribute('aria-label','기억 생성 구간 선택');
     const list=overlay.querySelector('#seglist');list.replaceChildren();
-    const choices=overlay.querySelector('#kind-sel');choices.setAttribute('aria-label','기억 작업 종류');choices.replaceChildren(...optionNodes([['missing','누락 구간 생성 (기본)'],['failed','실패 구간 새 분석'],['source_edit','선택 구간 재분석'],['regenerate','기존 기억 재생성']],mode==='latest'?'missing':mode));
+    const choices=overlay.querySelector('#kind-sel');
     const submit=overlay.querySelector('#range-go'),status=overlay.querySelector('#kind-hint'),count=overlay.querySelector('#range-n'),calls=overlay.querySelector('#range-calls'),effect=overlay.querySelector('#range-effect');
+    choices.closest('.field').replaceWith(status);overlay.querySelector('#regen-one').remove();
     submit.removeAttribute('data-close');submit.removeAttribute('data-run-job');submit.removeAttribute('data-ctx');
-    let inventory=null,alive=true,running=false,currentMode=mode==='latest'||mode==='missing_all'?'missing':mode;const selected=new Set();
+    let inventory=null,alive=true,running=false;const selected=new Set();
     const valid=()=>alive&&bindingKey===canonicalReaderBindingKey(canonicalReaderBinding())&&overlay.dataset.canonicalRangeScope===binding.scopeKey;
     const close=()=>{if(!alive)return;alive=false;document.removeEventListener('keydown',escape,true);overlay.remove();if(Gui.canonicalRangeDrawerClose===close)Gui.canonicalRangeDrawerClose=null;};
     const escape=event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();}};Gui.canonicalRangeDrawerClose=close;
-    const eligible=row=>currentMode==='regenerate'?row.status==='saved':currentMode==='failed'?row.status==='failed':row.status==='missing';
+    const eligible=row=>row.status==='missing';
     const paint=()=>{
       if(!alive||!inventory)return;
       for(const start of [...selected])if(!inventory.ranges.some(row=>row.startTurn===start&&eligible(row)))selected.delete(start);
       const labels={saved:'저장됨',missing:'미생성 · 누락 구간',failed:'미완료 · 새 분석 가능',source_changed:'원문 수정 · 선택 재분석 대기'};
       list.replaceChildren(...inventory.ranges.map(row=>guiEl('label',{class:'segrow','aria-disabled':String(running||!eligible(row)),dataset:{startTurn:String(row.startTurn),rangeStatus:row.status}},[
-        guiEl('input',{type:'checkbox',checked:selected.has(row.startTurn),disabled:running||!eligible(row),'aria-label':`T${row.startTurn}–T${row.endTurn} 선택`,onChange:event=>{if(event.target.checked){if(currentMode==='regenerate')selected.clear();selected.add(row.startTurn);}else selected.delete(row.startTurn);paint();}}),
+        guiEl('input',{type:'checkbox',checked:selected.has(row.startTurn),disabled:running||!eligible(row),'aria-label':`T${row.startTurn}–T${row.endTurn} 선택`,onChange:event=>{if(event.target.checked)selected.add(row.startTurn);else selected.delete(row.startTurn);paint();}}),
         guiEl('div',{},[guiEl('b',{text:`T${row.startTurn}–T${row.endTurn}`}),guiEl('small',{text:labels[row.status]||row.status})]),libraStatusBadge(labels[row.status]||row.status,row.status==='saved'?'good':row.status==='failed'?'danger':'warn')
       ])));
       if(Number(inventory.pendingTurns)>0)list.prepend(guiEl('label',{class:'segrow','aria-disabled':'true'},[
         guiEl('input',{type:'checkbox',disabled:true,'aria-label':'마지막 미완성 턴 선택 불가'}),guiEl('div',{},[guiEl('b',{text:`T${Number(inventory.completeBatches)*5+1}–T${inventory.observedTurns}`}),guiEl('small',{text:'미완료 · 5턴이 채워지지 않아 선택할 수 없음'})]),guiEl('span',{class:'badge',text:'대기'})
       ]));
       count.textContent=String(selected.size);calls.textContent=`${selected.size}회 (구간당 정상 생성 1회 · 모델 사용량이 발생할 수 있습니다)`;
-      const explanation=currentMode==='regenerate'?'기존 정본을 보존하고 비활성 후보를 만듭니다. 비교 후 별도 채택해야 정본이 됩니다.':currentMode==='failed'?'실패 구간을 새로 분석하며 이미 저장된 정본은 보존합니다.':'완료된 5턴 누락 구간의 정본을 새로 저장합니다.';
-      status.textContent=explanation;effect.textContent=explanation;overlay.querySelector('#regen-one').hidden=currentMode!=='regenerate';
-      choices.disabled=running;submit.disabled=running||!selected.size;submit.textContent=currentMode==='regenerate'?'선택한 기억의 재생성 후보 만들기':'선택한 구간 생성';
+      const explanation='완료된 5턴 누락 구간의 정본을 새로 저장합니다. 기존 기억이나 실패 구간을 다시 분석하려면 원문 재분석을 사용하세요.';
+      status.textContent=explanation;effect.textContent=explanation;
+      submit.disabled=running||!selected.size;submit.textContent='선택한 구간 생성';
       overlay.querySelector('#seg-all').disabled=running;overlay.querySelector('#seg-none').disabled=running;
     };
-    choices.addEventListener('change',event=>{if(event.target.value==='source_edit'){close();void showLibraSourceReanalysisDrawer();return;}currentMode=event.target.value;selected.clear();paint();});
-    overlay.querySelector('#seg-all').addEventListener('click',()=>{const rows=inventory?.ranges.filter(eligible)||[];selected.clear();for(const row of currentMode==='regenerate'?rows.slice(0,1):rows)selected.add(row.startTurn);paint();});
+    overlay.querySelector('#seg-all').addEventListener('click',()=>{const rows=inventory?.ranges.filter(eligible)||[];selected.clear();for(const row of rows)selected.add(row.startTurn);paint();});
     overlay.querySelector('#seg-none').addEventListener('click',()=>{selected.clear();paint();});
     overlay.querySelector('.dialog__actions [data-close]').addEventListener('click',close);overlay.addEventListener('click',event=>{if(event.target===overlay)close();});
     submit.addEventListener('click',async()=>{
       if(!valid()||!inventory||inventory.scopeKey!==binding.scopeKey){status.textContent='채팅·분기·scope가 바뀌었습니다. 구간 목록을 다시 열어 확인하세요.';submit.disabled=true;return;}
       if(running||!selected.size)return;
-      const request={scopeKey:inventory.scopeKey,mode:currentMode,ranges:inventory.ranges.filter(row=>selected.has(row.startTurn)&&eligible(row)).map(row=>({startTurn:row.startTurn,sourceDigest:row.sourceDigest,identityDigest:row.identityDigest}))};
+      const request={scopeKey:inventory.scopeKey,mode:'missing',ranges:inventory.ranges.filter(row=>selected.has(row.startTurn)&&eligible(row)).map(row=>({startTurn:row.startTurn,sourceDigest:row.sourceDigest,identityDigest:row.identityDigest}))};
       if(!request.ranges.length)return;running=true;paint();
       close();void runCanonicalGuiCommand('선택한 구간의 기억을 처리합니다.',()=>LibraMemoryCore.startSelectedCanonicalBatches(request)).catch(()=>null);
     });
@@ -86252,7 +86122,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if(inventory.scopeKey!==binding.scopeKey)throw new Error('CANONICAL_READER_SCOPE_CHANGED');
       panel.querySelector('#dg-t').textContent=Object.values(LibraMemoryCore.peekSnapshot()?.manifest?.memories||{}).some(row=>row.status==='committed')?'기억 생성 구간 선택':'수동 콜드스타트 · 기억 생성 구간 선택';
       status.textContent=`현재 ${inventory.observedTurns} U+A턴 · 완성 구간 ${inventory.completeBatches}개`;
-      if(mode==='latest'){const row=inventory.ranges.filter(eligible).at(-1);if(row)selected.add(row.startTurn);}if(mode==='failed'||mode==='missing_all')inventory.ranges.filter(eligible).forEach(row=>selected.add(row.startTurn));paint();
+      if(mode==='latest'){const row=inventory.ranges.filter(eligible).at(-1);if(row)selected.add(row.startTurn);}if(mode==='missing_all')inventory.ranges.filter(eligible).forEach(row=>selected.add(row.startTurn));paint();
       if(!inventory.ranges.length)status.textContent='아직 완성된 U+A 5턴 구간이 없습니다. 사용자 입력과 완료된 AI 응답 한 쌍을 1턴으로 계산합니다.';
     }catch(error){status.textContent=String(error.message||error);submit.disabled=true;}
   };
@@ -86330,7 +86200,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       buildBookMemoryModelSummary(),
       guiEl('div', { class: 'cluster' }, [
         guiEl('button', { class: 'btn btn--primary', type: 'button', text: '기억 생성', dataset:{bookMemoryCreate:'true'}, disabled:!available, onClick: () => void showCanonicalRangeDrawer('missing') }),
-        guiEl('button', { class: 'btn', type: 'button', text: '재분석', dataset:{bookMemoryReanalyze:'true'}, disabled:!available||complete===0, onClick: () => void showCanonicalRangeDrawer('source_edit') })
+        guiEl('button', { class: 'btn', type: 'button', text: '재분석', dataset:{bookMemoryReanalyze:'true'}, disabled:!available||!turns, onClick: () => void showLibraSourceReanalysisDrawer({kind:Gui.bookPage==='memory'?Gui.bookMemoryKind||'canonical':'canonical',scopeKey:snapshot.scope.scopeKey}) })
       ]),
       guiEl('div',{dataset:{bookDeskJob:'true'}},[buildBookJobSummary()]),
       diagnostic ? guiEl('div', { class: "note danger banner banner--warn", role: 'status', dataset: { memoryFailureNotice: 'true' } }, [
@@ -86354,12 +86224,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
   const buildCanonicalActionPanel = () => guiEl('section', { class: 'card canonical-action-panel' }, [
     guiEl('h3', { text: '정본 수동 작업' }),
-    guiEl('button', { class: 'btn btn--primary', type: 'button', text: '5턴 구간 선택 · 다중 분석', onClick: () => void showCanonicalRangeDrawer('missing') }),
-    guiEl('div', { class: 'hint', text: '모든 작업은 중앙 작업창에 실제 단계와 배치 수를 표시합니다. 창을 최소화하면 헤더 진행 칩으로 계속 추적할 수 있습니다.' }),
-    guiEl('div', { class: 'cluster', style: { marginTop: '10px' } }, [
-      guiEl('button', { class: 'btn btn--primary', type: 'button', text: '수동 콜드스타트', onClick: () => { void runLibraColdStartWithConfirm().catch(() => null); } }),
-      guiEl('button', { class: 'btn btn--primary', type: 'button', text: '현재 5턴 분석', onClick: () => { void runCanonicalGuiCommand('현재 완성된 5턴을 분석합니다.', () => LibraMemoryCore.startManualCanonicalScan({})).catch(() => null); } }),
-      guiEl('button', { class: 'btn', type: 'button', text: '실패 구간 새 분석', onClick: () => { void runCanonicalGuiCommand('실패 배치를 다시 처리합니다.', () => LibraMemoryCore.startFailedRetry({})).catch(() => null); } })
+    guiEl('div', { class: 'cluster' }, [
+      guiEl('button', { class: 'btn btn--primary', type: 'button', text: '기억 생성 구간 선택', onClick: () => void showCanonicalRangeDrawer('missing') }),
+      guiEl('button', { class: 'btn', type: 'button', text: '재분석', onClick: () => void showLibraSourceReanalysisDrawer({kind:'canonical'}) }),
+      guiEl('button', { class: 'btn', type: 'button', text: '수동 콜드스타트', onClick: () => { void runLibraColdStartWithConfirm().catch(() => null); } })
     ])
   ]);
 
@@ -86455,7 +86323,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         guiEl('pre', { class: 'code', text: memory.text }),
         guiLazyDetails({}, guiEl('summary', { text: '검색 영역·anchor·원문 U+A' }), () => guiEl('pre', { class: 'code', text: JSON.stringify({ sourcePairs: memory.sourcePairs, promptProvenance: memory.promptProvenance || null, recallKeys: memory.recallKeys, sections: memory.sections, anchors: memory.anchors, retrieval: memory.retrieval, embedding: memory.embedding }, null, 2) })),
         guiEl('div', { class: 'cluster' }, [
-          guiEl('button', { class: 'btn btn--primary', type: 'button', text: '재생성', onClick: () => { void runCanonicalGuiCommand('정본 재생성 후보를 만듭니다.', () => LibraMemoryCore.regenerateCanonicalMemory({ memoryId: memory.memoryId, revision: memory.revision })).catch(() => null); } }),
+          guiEl('button', { class: 'btn btn--primary', type: 'button', text: '재분석',dataset:{canonicalReanalysis:'true'}, onClick: () => void showLibraSourceReanalysisDrawer({kind:'canonical',scopeKey:memory.scopeKey,startTurn:Number(memory.turnRange.start),endTurn:Number(memory.turnRange.end)}) }),
           guiEl('button', { class: 'btn', type: 'button', text: '수정', onClick: () => { void runCanonicalGuiCommand('정본 수정용 복사본을 만듭니다.', () => LibraMemoryCore.createCanonicalEditDraft({ memoryId: memory.memoryId, revision: memory.revision })).catch(() => null); } }),
           guiEl('button', { class: 'btn', type: 'button', text: '버전 기록', onClick: () => { void showCanonicalVariantDialog(Number(memory.turnRange.start)).catch(error => guiSetStatus(error.message || String(error), true, true)); } }),
           guiEl('button', { class: 'btn', type: 'button', text: '실행 기록', onClick: () => { Gui.libraSelectedRunId = memory.runId; libraGuiNavigate('runs'); } })
@@ -88364,32 +88232,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     });
   };
 
-  const buildUnifiedLegacySelectionPanel = () => guiUnifiedScopedReviewForm('legacy','current',createUnifiedLegacySelectionPanel);
-  const createUnifiedLegacySelectionPanel = () => guiLazyDetails({class:'fold',dataset:{unifiedLegacyRebuild:'true'}},guiEl('summary',{text:'과거 기억 선택 전환'}),()=>{
-    let preview=null,busy=false;const selected=new Set();
-    const status=guiEl('div',{class:'hint',text:'승인 원문 증거가 있는 구형 구간만 선택해 재분석합니다. 선택하지 않은 기억과 이전 버전은 보존합니다.'});
-    const rows=guiEl('div',{style:{display:'grid',gap:'8px',maxHeight:'440px',overflow:'auto'}});
-    const reasons={UNIFIED_LEGACY_REBUILD_SOURCE_SESSION_REQUIRED:'원본 세션에서 전환 필요',UNIFIED_LEGACY_SOURCE_REVIEW_REQUIRED:'변경된 원문 확인 필요',UNIFIED_LEGACY_EVIDENCE_MISSING:'승인 원문 증거 없음',UNIFIED_LEGACY_EVIDENCE_MISMATCH:'원문 증거 불일치'};
-    const update=()=>{apply.disabled=busy||!selected.size;if(preview)status.textContent=`전환 가능 ${preview.rows.filter(r=>r.available).length}개 · 선택 ${selected.size}/32개 · 선택한 구간의 모델·임베딩 요청이 발생합니다.`;};
-    const review=guiEl('button',{class:'btn',type:'button',text:'구간과 원문 증거 확인',onClick:async()=>{
-      if(busy)return;busy=true;review.disabled=true;apply.disabled=true;
-      try{preview=await globalThis.__LIBRA__.previewLegacyMemoryRebuild();selected.clear();rows.replaceChildren();
-        for(const row of preview.rows){
-          const choice=guiEl('input',{type:'checkbox',disabled:!row.available,'aria-label':`T${row.turnRange.start}–${row.turnRange.end} 전환`,dataset:{legacyRebuildKey:row.key},onChange:e=>{if(e.target.checked&&selected.size>=32){e.target.checked=false;return;}if(e.target.checked)selected.add(row.key);else selected.delete(row.key);update();}});
-          const evidence=guiEl('div',{style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}});
-          const details=guiEl('details',{},[guiEl('summary',{text:'저장된 승인 원문'}),evidence]);let loaded=false;
-          details.addEventListener('toggle',async()=>{if(!details.open||loaded||!row.available)return;loaded=true;evidence.textContent='원문을 확인하고 있습니다.';try{const result=await globalThis.__LIBRA__.getLegacyMemoryRebuildEvidence({expectedScopeKey:preview.scopeKey,previewDigest:preview.previewDigest,key:row.key});evidence.textContent=result.rows.map(r=>`T${r.turn} · 사용자\n${r.userText}\n\nT${r.turn} · 응답\n${r.assistantText}`).join('\n\n');}catch(e){loaded=false;evidence.textContent=String(e.code||e.message||e);}});
-          rows.appendChild(guiEl('div',{class:'card',style:{minWidth:'0'}},[guiEl('label',{style:{display:'flex',gap:'8px',alignItems:'center'}},[choice,guiEl('span',{text:`T${row.turnRange.start}–${row.turnRange.end} · ${row.available?'전환 가능':reasons[row.reason]||row.reason}`})]),row.available?details:null]));
-        }update();if(!preview.rows.length)status.textContent='전환할 구형 기억이 없습니다.';
-      }catch(e){preview=null;status.textContent=String(e.code||'')+' '+String(e.message||e);}finally{busy=false;review.disabled=false;apply.disabled=!selected.size;}
-    }});
-    const apply=guiEl('button',{class:'btn btn--primary',type:'button',text:'선택 구간의 재분석 승인·실행',disabled:true,onClick:async()=>{
-      if(busy||!preview||!selected.size)return;busy=true;review.disabled=true;apply.disabled=true;
-      try{const out=await globalThis.__LIBRA__.rebuildSelectedLegacyMemories({expectedScopeKey:preview.scopeKey,previewDigest:preview.previewDigest,selectedKeys:[...selected]});status.textContent=`전환 ${out.completed}개 완료 · ${out.remaining}개 미완료. 기존 정본은 보존했습니다.`;selected.clear();preview=null;rows.replaceChildren();await refreshGuiSnapshot(false);}
-      catch(e){status.textContent=String(e.code||'')+' '+String(e.message||e);}finally{busy=false;review.disabled=false;apply.disabled=true;}
-    }});
-    return guiEl('div',{class:'fold__body stack'},[status,guiEl('div',{class:'cluster'},[review,apply]),rows]);
-  });
+
+
 
   const buildUnifiedRetentionPanel = () => guiUnifiedScopedReviewForm('retention','current',createUnifiedRetentionPanel);
   const createUnifiedRetentionPanel = () => guiLazyDetails({class:'fold',dataset:{unifiedRetention:'true'}},guiEl('summary',{text:'보관 자료 점검·임시 자료 정리'}),()=>{
@@ -89563,7 +89407,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ]),
       ...(jobs.length ? jobs.map(job => {
         const stateValue = text(job.state || 'pending');
-        const canResume = ['interrupted','adopting'].includes(stateValue);
+        const canResume=stateValue==='adopting'||stateValue==='interrupted'&&job.kind==='cold_start';
+        const canReanalyze=['interrupted','failed','cancelled','completed_with_warnings'].includes(stateValue)&&!canResume;
         const canCancel = job.cancellable === true && ['preparing','running'].includes(stateValue);
         return guiEl('section', { class: 'card', dataset: { canonicalJobArchiveId: text(job.jobId || '') } }, [
           guiEl('div', { class: 'split' }, [
@@ -89576,8 +89421,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             guiEl('dt', { text: '메시지' }), guiEl('dd', { text: text(job.message || job.error || '-') })
           ]),
           guiEl('div', { class: 'cluster' }, [
-            canResume ? guiEl('button', { class: 'btn btn--primary', type: 'button', text: stateValue === 'adopting' ? '채택 복구' : job.kind === 'regenerate' ? '작업 재개' : '새 분석', onClick: async () => { try { await LibraMemoryCore.resumeCanonicalJob({ jobId: job.jobId }); await loadCanonicalJobsPage(); guiSetStatus('정본 작업 처리를 마쳤습니다.'); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }) : null,
+            canResume ? guiEl('button', { class: 'btn btn--primary', type: 'button', text: stateValue === 'adopting' ? '채택 복구' : '작업 재개', onClick: async () => { try { await LibraMemoryCore.resumeCanonicalJob({ jobId: job.jobId }); await loadCanonicalJobsPage(); guiSetStatus('정본 작업 처리를 마쳤습니다.'); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }) : null,
             canCancel ? guiEl('button', { class: 'btn btn--danger', type: 'button', text: '취소 요청', onClick: async () => { if (!(await confirmApprovedOperation('현재 정본 작업을 취소할까요? 이미 완료된 항목은 유지됩니다.',{title:'정본 작업 취소',target:job.jobId}))) return; try { await LibraMemoryCore.cancelCanonicalJob({ jobId: job.jobId }); await loadCanonicalJobsPage(); guiSetStatus('정본 작업 취소를 요청했습니다.'); } catch (error) { guiSetStatus(error?.message || String(error), true, true); } } }) : null,
+            canReanalyze?guiEl('button',{class:'btn',type:'button',text:'재분석',dataset:{canonicalJobReanalysis:'true'},onClick:()=>void showLibraSourceReanalysisDrawer({kind:'canonical',scopeKey:job.scopeKey,startTurns:guiAsArray(job.failures).length?job.failures.map(row=>Number(row.startTurn)):guiAsArray(job.targetStarts)})}):null,
             guiEl('button', { class: 'btn', type: 'button', text: '원본 JSON', onClick: async () => { Gui.debugExportText = JSON.stringify(await LibraMemoryCore.getCanonicalJobStatus({ jobId: job.jobId }), null, 2); Gui.bookSettingsWorkbenchSection = 'settings'; Gui.settingsHubSection = 'general'; await renderSettingsGui(); guiSetStatus('선택한 Canonical job JSON을 일반 · 진단에 표시했습니다.'); } })
           ].filter(Boolean))
         ]);
@@ -90013,6 +89859,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
   const buildBookMemoryReadingSheet = () => {
     const detail=guiAsObject(Gui.canonicalReaderDetail);
+    const reanalysisScope=canonicalReaderBinding().scopeKey;
     const empty=(title,message,dataset)=>guiEl('article',{class:'sheet-page detail-pane',dataset},[guiEl('div',{class:'empty'},[guiEl('b',{text:title}),guiEl('p',{text:message})])]);
     if(Gui.canonicalReaderDetailLoading)return empty('기억을 펼치는 중입니다','선택한 정본 기억을 읽고 있습니다.',{bookMemoryLoading:'true'});
     if(Gui.canonicalReaderDetailError)return guiEl('div',{class:'stack'},[empty('기억을 열지 못했습니다',Gui.canonicalReaderDetailError,{bookMemoryError:'true'}),guiEl('button',{class:'btn btn--sm',type:'button',text:'기억 다시 읽기',onClick:()=>void loadCanonicalReaderDetail(Gui.canonicalReaderSelected)})]);
@@ -90023,10 +89870,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       guiEl('div',{class:'eyebrow',text:`Chapter ${String(Number(detail.chapterNumber||0)).padStart(2,'0')} · ${text(detail.memoryId)} · T${start}–T${end}`}),
       guiEl('h2',{text:text(detail.title||'제목 없는 기억')}),
       guiEl('p',{class:'deck',text:`revision ${Number(detail.revision||0)} · ${text(detail.worldlineId||'main')}`}),
+      guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm',type:'button',text:'재분석',dataset:{canonicalReaderReanalysis:'true'},onClick:()=>void showLibraSourceReanalysisDrawer({kind:'canonical',scopeKey:reanalysisScope,startTurn:start,endTurn:end})})]),
       guiEl('div',{class:'prose'},[guiEl('p',{text:text(detail.text||detail.summary||'이 기억에는 표시할 본문이 없습니다.')})]),
       guiEl('div',{class:'manage-only cluster'},[
         guiEl('button',{class:'btn btn--sm',type:'button',text:'수정용 복사본으로 교정',onClick:()=>void openCanonicalReaderCorrection()}),
-        guiEl('button',{class:'btn btn--sm',type:'button',text:'재생성 후보 만들기…',onClick:()=>void showCanonicalRangeDrawer('regenerate')}),
         guiEl('button',{class:'btn btn--sm',type:'button',text:'버전 · 실행 기록',onClick:()=>void showCanonicalVariantDialog(start)}),
         guiEl('span',{class:'hint',text:'원문과 정본은 보존됩니다. 수정용 복사본과 후보는 별도로 검토하고 승인합니다.'})
       ]),
@@ -90086,7 +89933,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const retry = () => void loadMicroReaderPage(false);
     const rail = guiEl('aside', {class: 'rail', 'aria-label': 'Micro 기억 목록'}, [
       guiEl('div', {class: 'rail__search'}, [guiEl('strong', {text: '턴별 Micro'}),
-        guiEl('button', {class: 'btn btn--sm', type: 'button', text: '새로고침', disabled: reader.loading, onClick: retry})]),
+        guiEl('button', {class: 'btn btn--sm', type: 'button', text: '새로고침', disabled: reader.loading, onClick: retry}),
+        guiEl('button', {class:'btn btn--sm',type:'button',text:'재분석',dataset:{microReaderReanalysis:'true'},disabled:!reader.scopeKey||!reader.totalTurns,onClick:()=>void showLibraSourceReanalysisDrawer({kind:'micro',scopeKey:reader.scopeKey,...(reader.selectedTurn?{startTurn:reader.selectedTurn,endTurn:reader.selectedTurn}:{})})})]),
       guiEl('p', {class: 'hint', text: '최신 턴부터 · 20턴씩 표시'}),
       reader.error ? guiEl('div', {class: 'note note--danger', role: 'alert'}, [
         guiEl('p', {text: `목록을 읽지 못했습니다. ${reader.items.length ? '마지막으로 확인한 목록을 표시합니다. ' : ''}${reader.error}`}),
@@ -90173,26 +90021,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (!query) return true;
       return [item.lensName, item.label, item.text, item.quote, item.basis, ...guiAsArray(item.people).flatMap(person => [person.name, person.written]), ...Object.values(item.extra || {})].map(value => text(value)).join(' ').toLocaleLowerCase().includes(query);
     });
-    const latest = data.latestCompletedRange || null;
-    const runLens = lenses.find(lens => lens.lensId === (reader.runLensId || (filterLensId !== 'all' ? filterLensId : ''))) || lenses.find(lens => lens.status === 'active') || lenses[0] || null;
-    if (reader.rangeStart === '' && latest) { reader.rangeStart = String(latest.start); reader.rangeEnd = String(latest.end); }
-    const runManualRange = async () => {
-      if (reader.runningRange || !runLens) return;
-      const startTurn = Math.max(1, Math.floor(Number(reader.rangeStart) || 0));
-      const endTurn = Math.max(startTurn, Math.floor(Number(reader.rangeEnd) || startTurn));
-      reader.runningRange = true; reader.runMessage = null;
-      queueGuiNavigationRender();
-      try {
-        const result = await LibraMemoryCore.runLensForRange({ lensId: runLens.lensId, startTurn, endTurn });
-        reader.runMessage = { kind: result?.ok ? 'ok' : 'warn', text: `“${runLens.name}” T${startTurn}–T${endTurn}: ${text(result?.statusLabel || result?.status)} · 저장 ${Number(result?.acceptedCount || 0)}개 · 제외 ${Number(result?.rejectedCount || 0)}개${result?.run?.keptPreviousRecord ? ' · 새 항목이 없어 기존 기록 유지' : ''}${result?.reason ? ` · ${text(result.reason)}` : ''}` };
-        await loadLensReaderData(true);
-      } catch (error) {
-        reader.runMessage = { kind: 'danger', text: text(error?.message || error) };
-      } finally {
-        reader.runningRange = false;
-        queueGuiNavigationRender();
-      }
-    };
+    const runLens=lenses.find(lens=>lens.lensId===filterLensId)||lenses.find(lens=>lens.status==='active')||lenses[0]||null;
     const countFor = lensId => memories.filter(item => item.lensId === lensId).length;
     const evidenceCount = level => byLens.filter(item => item.evidenceLevel === level).length;
     const rail = guiEl('aside', { class: 'rail lens-rail', 'aria-label': '렌즈 기억 필터' }, [
@@ -90222,23 +90051,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         guiEl('input', { class: 'input', type: 'search', placeholder: '내용·인용·라벨·인물 검색', 'aria-label': '렌즈 기억 검색', value: reader.query || '',
           onInput: event => { reader.query = event.target.value; queueGuiNavigationRender(); } })
       ]),
-      lenses.length ? guiEl('details', { class: 'lens-rail__section lens-run-box', open: reader.runBoxOpen === true || reader.runningRange === true || !!reader.runMessage }, [
-        guiEl('summary', { class: 'lens-rail__label', text: '구간 직접 분석' }),
-        lensSelect(runLens?.lensId || '', lenses.map(lens => [lens.lensId, `${lens.name}${lens.status === 'paused' ? ' (일시정지)' : ''}`]), value => { reader.runLensId = value; queueGuiNavigationRender(); }),
-        guiEl('div', { class: 'lens-run-box__range' }, [
-          lensInput(reader.rangeStart, value => { reader.rangeStart = value; }, { type: 'number', min: 1, placeholder: '시작' }),
-          guiEl('span', { text: '–' }),
-          lensInput(reader.rangeEnd, value => { reader.rangeEnd = value; }, { type: 'number', min: 1, placeholder: '끝' })
-        ]),
-        guiEl('small', { class: 'hint', text: `완료된 턴 ${Number(data.pairCount || 0)}개 · 한 번에 최대 ${LENS_RUN_MAX_TURNS}턴` }),
-        guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', disabled: reader.runningRange || !runLens, dataset: { lensRunRangeButton: 'true' },
-          text: reader.runningRange ? '분석 중…' : '이 구간 분석', onClick: () => void runManualRange() }),
-        reader.runMessage ? guiEl('p', { class: `note${reader.runMessage.kind === 'danger' ? ' note--danger' : reader.runMessage.kind === 'warn' ? ' note--warn' : ' note--ok'}`, role: 'status' }, [guiEl('span', { text: reader.runMessage.text })]) : null,
-        guiAsArray(data.queue).length ? guiEl('small', { class: 'hint', text: `자동 분석 대기 ${guiAsArray(data.queue).length}건` }) : null
-      ].filter(Boolean)) : null
+      lenses.length?guiEl('div',{class:'lens-rail__section'},[
+        guiEl('button',{class:'btn btn--sm btn--primary',type:'button',text:'재분석',dataset:{lensReaderReanalysis:'true'},disabled:!runLens||!Number(data.pairCount),onClick:()=>void showLibraSourceReanalysisDrawer({kind:'lens',scopeKey:reader.scopeKey,lensId:runLens.lensId})}),
+        guiEl('small',{class:'hint',text:'원문 재분석에서 렌즈와 구간을 확인한 뒤 실행합니다.'})
+      ]):null
     ].filter(Boolean));
 
-    rail.querySelector('.lens-run-box')?.addEventListener('toggle', event => { reader.runBoxOpen = event.currentTarget.open; });
     const stale = memories.filter(item => item.sourceCurrent === false).length;
     const oldInstruction = memories.filter(item => item.instructionCurrent === false).length;
     const content = guiEl('div', { class: 'stack' }, [
@@ -90262,7 +90080,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ]) : filtered.length ? guiEl('div', { class:'stack lens-items' }, [
         filtered.some(item=>!item.inherited) ? guiEl('section',{class:'stack',dataset:{lensCurrentGroup:'true'}},[
           guiEl('h3',{text:'이 대화의 기록'}),...filtered.filter(item=>!item.inherited).map(item=>lensItemCard(item,{
-            memory:true,showLens:filterLensId==='all',
+            memory:true,showLens:filterLensId==='all',onReanalyze:()=>void showLibraSourceReanalysisDrawer({kind:'lens',scopeKey:reader.scopeKey,lensId:item.lensId,startTurn:item.turnRange.start,endTurn:item.turnRange.end}),
         onDelete: async () => {
           if (!(await confirmApprovedOperation(`이 렌즈 항목을 삭제할까요?\n${text(item.text).slice(0, 80)}`, { title: '렌즈 항목 삭제', target: item.label, kind: '삭제', cost: '모델 요청을 보내지 않습니다.', actionLabel: '삭제' }))) return;
           try { await LibraMemoryCore.deleteLensMemories({ memoryId: item.id }); } catch (error) { guiSetStatus(text(error?.message || error), true, true); }
@@ -90273,7 +90091,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           guiEl('h3',{text:'이전 대화에서 넘어온 기록'}),...filtered.filter(item=>item.inherited).map(item=>lensItemCard(item,{memory:true,showLens:filterLensId==='all'}))]) : null
       ].filter(Boolean)) : guiEl('div', { class: 'empty' }, [
         guiEl('b', { text: reader.loading ? '렌즈 기억을 불러오는 중…' : memories.length ? '조건에 맞는 항목이 없습니다.' : '아직 이 대화의 렌즈 기억이 없습니다.' }),
-        reader.loading ? null : guiEl('p', { text: memories.length ? '필터나 검색어를 바꿔 보세요.' : '켜진 렌즈는 다음 5턴이 정본으로 저장될 때 자동으로 분석합니다. 왼쪽에서 구간을 골라 바로 분석할 수도 있습니다.' })
+        reader.loading ? null : guiEl('p', { text: memories.length ? '필터나 검색어를 바꿔 보세요.' : '켜진 렌즈는 다음 5턴이 정본으로 저장될 때 자동으로 분석합니다. 재분석 버튼으로 원문 재분석 화면에서 구간을 선택할 수 있습니다.' })
       ].filter(Boolean))
     ].filter(Boolean));
 
@@ -90617,6 +90435,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const state=bookReceiptRecoveryState(),scope=LibraMemoryCore.peekSnapshot()?.scope;
     if(!scope || !state.scopeKey || scope.scopeKey!==state.scopeKey
       || row?.scopeKey!==state.scopeKey)return Promise.resolve(null);
+    if(kind!=='receipt'&&kind!=='micro_publish')return showLibraSourceReanalysisDrawer({kind:'micro',scopeKey:row.scopeKey,startTurn:Number(row.turn),endTurn:Number(row.turn)});
     const actionKey=kind+':'+Number(row?.turn||0);
     if(state.busy[actionKey])return state.busy[actionKey];
     const key=state.scopeKey;
@@ -90624,8 +90443,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       try {
         const result=kind==='receipt'
           ? await LibraMemoryCore.recheckReceiptRecovery({scope,turn:row.turn})
-          : await (kind==='micro_resume'?LibraMemoryCore.resumeNeverStartedMicro
-            :kind==='micro_publish'?LibraMemoryCore.repairMicroPublication:LibraMemoryCore.retryMicroAnalysis)({
+          : await LibraMemoryCore.repairMicroPublication({
             scope,receiptRef:row.receiptRef,revision:row.revisionId,digest:row.sourceDigest,
             expectedGeneration:Number(LibraMemoryCore.state.worldManagerRuntimeMetaGeneration||0)});
         if(bookReceiptRecoveryScopeKey()!==key || Gui.receiptDesk!==state)return result;
@@ -90681,7 +90499,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         retryable||row.status==='queued'||row.status==='publish_ready'?guiEl('button',{type:'button',disabled:busy||row.status==='queued',
           text:row.status==='publish_ready'?(busy?'발행 확인 중':'Micro 발행 다시 확인')
             :busy||row.status==='queued'?'분석 진행 중'
-            :row.status==='never_started'?'Micro 분석 계속':'Micro 분석 다시 시도',
+            :'재분석',
           onClick:()=>void openApprovedRecoveryDialog('micro',row)}):null
       ]);
     };
@@ -90892,7 +90710,7 @@ guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}},guiEl('summary'
             guiEl('button',{class:'btn btn--sm',type:'button',text:'통합 상태 적용 재시도',onClick:async()=>{try{const result=await LibraMemoryCore.recoverPendingStateTrackingJournal(await LibraMemoryCore.resolveContext(),{force:true,unifiedOnly:true});guiSetStatus(`상태 재시도 ${result.recovered||0}개 완료 · ${result.remaining||0}개 보류`,!result.ok);}catch(error){guiSetStatus(String(error.message||error),true);}}}),
             guiEl('button',{class:'btn btn--sm',type:'button',text:'통합 임베딩 후처리 재시도',onClick:async()=>{try{const result=await LibraMemoryCore.flushUnifiedDerivedVectors(await LibraMemoryCore.resolveContext(),{retry:true});guiSetStatus(`임베딩 ${result.completed||0}/${result.attempted||0} 처리`,!result.ok);}catch(error){guiSetStatus(String(error.message||error),true);}}})
           ]),
-          buildUnifiedLegacySelectionPanel(),buildUnifiedRetentionPanel(),buildLibraServerScopeHealthPanel(),
+          buildUnifiedRetentionPanel(),buildLibraServerScopeHealthPanel(),
           guiEl('button',{class:'btn btn--danger btn--sm',type:'button',text:'현재 채팅 LIBRA 데이터 삭제',onClick:async()=>{const deletionBinding=canonicalReaderBinding();if(!(await confirmApprovedOperation('현재 채팅의 LIBRA 메모리·벡터·실행 기록을 모두 삭제할까요?',{title:'현재 채팅 데이터 삭제',target:deletionBinding.scopeKey})))return;try{const result=await LibraMemoryCore.deleteCurrentScope({expectedScopeKey:deletionBinding.scopeKey,suppressGuiSchedule:true,snapshotLimits:guiSnapshotLimits(),trackGuiLimits:true});if(result?.reloadRequired){guiSetStatus('서버 자료를 삭제하고 백업을 보존했습니다. RisuAI를 새로고침해 주세요.',false,true);return;}await renderSettingsGui();}catch(error){guiSetStatus(String(error.message||error),true,true);}}})
         ])),
 guiEl('details',{class:'fold'},[guiEl('summary',{text:'기억 분석 · 검색 작동 상세'}),guiEl('div',{class:'fold__body stack'},[
@@ -91340,11 +91158,12 @@ advanced
     if(kind==='correction')return openApprovedCorrectionsDialog();
     const binding=canonicalReaderBinding(),bindingKey=canonicalReaderBindingKey(binding);
     Gui.app?.querySelector('#dlg-recover')?.remove();
+    if(kind==='micro'&&row?.status!=='publish_ready')return showLibraSourceReanalysisDrawer({kind:'micro',scopeKey:row?.scopeKey,...(row?.turn?{startTurn:Number(row.turn),endTurn:Number(row.turn)}:{})});
     const overlay=createApprovedRecoveryOverlay('dlg-recover');overlay.dataset.recoveryKind=kind;overlay.dataset.recoveryScope=binding.scopeKey;overlay.dataset.recoveryWorldline=binding.worldlineId;
-    const defs={state:['현재 상태 다시 적용','상태 반영','모델 호출 0회 · 저장된 정본과 교정으로 현재 상태를 다시 구성합니다.'],rebuild:['5턴 경계로 rollback 후 상태 재구축','분기 · 재구축','모델 호출 0회 · 선택한 정본 5턴 경계 이후의 상태를 되돌립니다. 기억 원문은 보존합니다.'],receipt:['원문 저장 영수증 복구','영수증 복구','모델 호출 0회 · 영수증과 일치하는 원문 저장을 다시 확인합니다.'],micro:['Micro 재시도','Micro 재시도','분석 재시도는 모델 사용량이 발생할 수 있습니다. 이전 결과가 unknown이면 중복 비용이 발생할 수 있습니다.']};
+    const defs={state:['현재 상태 다시 적용','상태 반영','모델 호출 0회 · 저장된 정본과 교정으로 현재 상태를 다시 구성합니다.'],rebuild:['5턴 경계로 rollback 후 상태 재구축','분기 · 재구축','모델 호출 0회 · 선택한 정본 5턴 경계 이후의 상태를 되돌립니다. 기억 원문은 보존합니다.'],receipt:['원문 저장 영수증 복구','영수증 복구','모델 호출 0회 · 영수증과 일치하는 원문 저장을 다시 확인합니다.'],micro:['Micro 발행 확인','Micro 발행 확인','모델 호출 0회 · 저장된 분석 결과의 발행을 다시 확인합니다.']};
     if(!defs[kind])return false;
     const [title,label,impact]=defs[kind];overlay.querySelector('#drc-t').textContent=title;overlay.querySelector('[data-fill="kind"]').textContent=label;overlay.querySelector('[data-fill="impact"]').textContent=impact;
-    overlay.querySelector('[data-fill="cost"]').textContent=kind==='micro'?'선택한 실제 작업의 상태에 따라 표시합니다.':'모델 호출 0회';
+    overlay.querySelector('[data-fill="cost"]').textContent='모델 호출 0회';
     const status=guiEl('p',{class:'hint',role:'status',dataset:{recoveryStatus:'true'},text:`현재 범위 · ${binding.scopeKey||'미확인'} · 분기 ${binding.worldlineId}`});
     overlay.querySelector('.cost-table').after(status);
     let closed=false,busy=false,selected=null,options=[];
@@ -91357,7 +91176,7 @@ advanced
       selected=options.find(item=>item.key===selector.value)||null;
       execute.disabled=busy||!binding.scopeKey||(kind!=='state'&&!selected);
       overlay.dataset.recoveryTarget=selected?.key||binding.worldlineId;
-      if(kind==='micro'&&selected)overlay.querySelector('[data-fill="cost"]').textContent=selected.row.status==='publish_ready'?'발행 확인 · 모델 호출 0회':`모델 호출 발생 가능${selected.row.status==='unknown'?' · 이전 결과 불명확, 중복 비용 가능':''}`;
+      if(kind==='micro'&&selected)overlay.querySelector('[data-fill="cost"]').textContent='발행 확인 · 모델 호출 0회';
     };
     const execute=guiEl('button',{class:kind==='micro'?'btn btn--danger':'btn btn--primary',type:'button',text:'실행',disabled:true,dataset:{recoveryExecute:'true'},onClick:async()=>{
       if(busy)return;
@@ -91371,7 +91190,7 @@ advanced
           const current=bookReceiptRecoveryState();const rows=kind==='receipt'?guiAsArray(current.status?.receiptStages):guiAsArray(current.status?.microJobs);
           const same=rows.find(item=>recoveryRowIdentity(kind,item)===selected.key);
           if(current.scopeKey!==binding.scopeKey||!same||same.status!==selected.row.status)throw new Error('복구 작업의 상태나 대상이 바뀌었습니다. 다시 읽어 확인하세요.');
-          const action=kind==='receipt'?'receipt':same.status==='never_started'?'micro_resume':same.status==='publish_ready'?'micro_publish':'micro_retry';
+          const action=kind==='receipt'?'receipt':'micro_publish';
           const result=await runBookReceiptRecoveryAction(action,same);
           if(!valid())return;
           const presentation=bookRecoveryResult(kind,result);outcome=presentation.outcome;status.textContent=presentation.message;
@@ -91386,7 +91205,7 @@ advanced
       if(kind==='receipt'||kind==='micro'){
         await loadBookReceiptRecoveryStatus(true);if(!valid())return;
         const state=bookReceiptRecoveryState(),rows=kind==='receipt'?guiAsArray(state.status?.receiptStages):guiAsArray(state.status?.microJobs);
-        const eligible=item=>item.scopeKey===binding.scopeKey&&(kind==='receipt'?['missing','failed','pending_write','queued','paused','unavailable'].includes(item.status)&&item.reason!=='journal_read_unavailable':['never_started','failed','unknown','publish_ready'].includes(item.status));
+        const eligible=item=>item.scopeKey===binding.scopeKey&&(kind==='receipt'?['missing','failed','pending_write','queued','paused','unavailable'].includes(item.status)&&item.reason!=='journal_read_unavailable':item.status==='publish_ready');
         options=rows.filter(eligible).filter(item=>!row||recoveryRowIdentity(kind,item)===recoveryRowIdentity(kind,row)).map(item=>({key:recoveryRowIdentity(kind,item),row:cloneJson(item),label:`T${Number(item.turn||0)} · ${item.status}`}));
       }else if(kind==='rebuild'){
         const snap=LibraMemoryCore.peekSnapshot()||{};options=Object.values(snap.manifest?.memories||{}).filter(item=>item.status==='committed'&&Number(item.turnRange?.end)>0&&Number(item.turnRange?.end)%LibraMemoryCore.BATCH_SIZE===0).map(item=>({key:String(item.turnRange.end),turn:Number(item.turnRange.end),label:`T${item.turnRange.end}까지`}));
@@ -91409,8 +91228,8 @@ advanced
     overlay.addEventListener('click',event=>{if(event.target===overlay){overlay.remove();return;}if(event.target.closest('button:not([data-corrections-close])')&&(canonicalReaderBindingKey(canonicalReaderBinding())!==canonicalReaderBindingKey(binding)||overlay.dataset.correctionsScope!==binding.scopeKey||overlay.dataset.correctionsWorldline!==binding.worldlineId)){event.preventDefault();event.stopImmediatePropagation();overlay.querySelector('#corr-list').replaceChildren(guiEl('p',{class:'note note--danger',text:'채팅 또는 scope가 바뀌었습니다. 다시 열어 확인하세요.'}));}},true);
     Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,()=>overlay.remove());return overlay;
   };
-  const buildApprovedRecoveryActions = () => guiEl('div',{class:'stack',dataset:{recoveryKinds:'five'}},[
-    ...[['state','현재 상태 다시 적용','저장된 정본을 현재 상태에 반영합니다. 정본은 바뀌지 않습니다.'],['correction','교정 관리','적용 중 · 재검토 · 휴면 · 대체 · 삭제 상태를 확인합니다.'],['rebuild','분기 · 재구축','저장이 완료된 5턴 경계로 상태를 되돌립니다. 원문은 보존합니다.'],['receipt','원문 저장 영수증 복구','실제 영수증과 일치하는 원문 저장을 확인합니다. 모델 호출 0회입니다.'],['micro','Micro 재시도','모델 사용량이 발생할 수 있으며 unknown 결과에는 중복 비용이 발생할 수 있습니다.']].map(([kind,title,description])=>guiEl('div',{class:'act-card'},[guiEl('div',{},[guiEl('b',{text:title}),guiEl('small',{text:description})]),guiEl('button',{class:kind==='micro'?'btn btn--sm btn--danger':'btn btn--sm',type:'button',text:kind==='correction'?'교정 목록 열기':'실행…',dataset:{recoveryKind:kind},onClick:()=>void openApprovedRecoveryDialog(kind)})]))
+  const buildApprovedRecoveryActions = () => guiEl('div',{class:'stack',dataset:{recoveryKinds:'four'}},[
+    ...[['state','현재 상태 다시 적용','저장된 정본을 현재 상태에 반영합니다. 정본은 바뀌지 않습니다.'],['correction','교정 관리','적용 중 · 재검토 · 휴면 · 대체 · 삭제 상태를 확인합니다.'],['rebuild','분기 · 재구축','저장이 완료된 5턴 경계로 상태를 되돌립니다. 원문은 보존합니다.'],['receipt','원문 저장 영수증 복구','실제 영수증과 일치하는 원문 저장을 확인합니다. 모델 호출 0회입니다.']].map(([kind,title,description])=>guiEl('div',{class:'act-card'},[guiEl('div',{},[guiEl('b',{text:title}),guiEl('small',{text:description})]),guiEl('button',{class:kind==='micro'?'btn btn--sm btn--danger':'btn btn--sm',type:'button',text:kind==='correction'?'교정 목록 열기':'실행…',dataset:{recoveryKind:kind},onClick:()=>void openApprovedRecoveryDialog(kind)})]))
   ]);
 
   const createApprovedMockupApp = () => {
@@ -91687,8 +91506,9 @@ advanced
       item.quote ? guiEl('blockquote', { class: 'lens-quote' }, [guiEl('span', { text: `“${text(item.quote)}”` }), guiEl('small', { text: /-u$/.test(item.quoteRef || '') ? '사용자 원문' : 'AI 응답 원문' })])
         : item.basis ? guiEl('p', { class: 'lens-basis' }, [guiEl('b', { text: '해석 근거' }), guiEl('span', { text: text(item.basis) })]) : null,
       extraEntries.length ? guiEl('div', { class: 'lens-extra', 'aria-label': '추가 값' }, extraEntries.map(([k, v]) => guiEl('span', { class: 'lens-extra__pair' }, [guiEl('b', { text: `${lensExtraLabel(k)} `, title: k }), document.createTextNode(Array.isArray(v) ? v.join(', ') : String(v))]))) : null,
-      states.length || (memory && !item.inherited && options.onDelete) ? guiEl('footer', { class: 'lens-item__foot' }, [
+      states.length || (memory && !item.inherited && (options.onDelete||options.onReanalyze)) ? guiEl('footer', { class: 'lens-item__foot' }, [
         guiEl('div', { class: 'lens-item__states' }, states),
+        memory&&!item.inherited&&options.onReanalyze?guiEl('button',{class:'btn btn--sm',type:'button',text:'재분석',dataset:{lensItemReanalysis:'true'},onClick:options.onReanalyze}):null,
         memory && !item.inherited && options.onDelete ? guiEl('button', { class: 'btn btn--sm btn--ghost lens-danger', type: 'button', text: '삭제', 'aria-label': `${text(item.label)} 항목 삭제`, onClick: options.onDelete }) : null
       ].filter(Boolean)) : null,
       provenance
@@ -91812,10 +91632,7 @@ advanced
       ]),
       guiEl('div', { class: 'lens-actions' }, [
         guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: '편집', disabled: busy, onClick: () => openLensEditor(lens) }),
-        guiEl('button', { class: 'btn btn--sm', type: 'button', disabled: busy || paused, title: paused ? '일시정지한 렌즈는 먼저 켜야 실행할 수 있습니다.' : '', text: ls.busy === `run:${lens.lensId}` ? '분석 중…' : '최근 5턴 분석',
-          onClick: () => void lensStudioAction(`run:${lens.lensId}`, () => LibraMemoryCore.runLensForRange({ lensId: lens.lensId }), result => result?.ok
-            ? `“${lens.name}” ${lensRangeLabel(result.run?.turnRange)} 분석: 저장 ${Number(result.acceptedCount || 0)}개 · 제외 ${Number(result.rejectedCount || 0)}개${result.run?.keptPreviousRecord ? ' (기존 기록 유지)' : ''}`
-            : `“${lens.name}” 분석 결과: ${result?.statusLabel || ''} ${result?.reason || ''}`.trim()) }),
+        guiEl('button',{class:'btn btn--sm',type:'button',disabled:busy,text:'재분석',dataset:{lensStudioReanalysis:'true'},onClick:()=>void showLibraSourceReanalysisDrawer({kind:'lens',scopeKey:ls.inspect?.scopeKey,lensId:lens.lensId})}),
         guiEl('button', { class: 'btn btn--sm', type: 'button', disabled: busy, text: paused ? '다시 켜기' : '일시정지',
           onClick: () => void lensStudioAction(`status:${lens.lensId}`, () => LibraMemoryCore.setLensStatus(lens.lensId, paused ? 'active' : 'paused'), `“${lens.name}”을(를) ${paused ? '다시 켰습니다' : '일시정지했습니다'}.`) }),
         guiEl('span', { class: 'lens-actions__spacer' }),
@@ -91908,9 +91725,7 @@ advanced
               renderLensStudio();
             } }) : !run.rawRetained ? guiEl('span', { class: 'hint', text: '원문 응답 보관 기간 지남' }) : null,
             guiEl('span', { class: 'lens-actions__spacer' }),
-            run.turnRange && lens.status === 'active' ? guiEl('button', { class: 'btn btn--sm', type: 'button', disabled: !!ls.busy, text: '이 구간 다시 분석',
-              onClick: () => void lensStudioAction(`rerun:${run.runId}`, () => LibraMemoryCore.runLensForRange({ lensId: lens.lensId, startTurn: run.turnRange.start, endTurn: run.turnRange.end }),
-                result => `${lensRangeLabel(result?.run?.turnRange)} 다시 분석: ${result?.statusLabel || ''} · 저장 ${Number(result?.acceptedCount || 0)}개${result?.run?.keptPreviousRecord ? ' (새로 저장할 항목이 없어 기존 기록 유지)' : ''}`) }) : null
+            run.turnRange?guiEl('button',{class:'btn btn--sm',type:'button',disabled:!!ls.busy,text:'재분석',dataset:{lensRunReanalysis:'true'},onClick:()=>void showLibraSourceReanalysisDrawer({kind:'lens',scopeKey:run.scopeKey,lensId:lens.lensId,startTurn:run.turnRange.start,endTurn:run.turnRange.end})}):null
           ].filter(Boolean))
         ].filter(Boolean))
       ]);
@@ -92395,7 +92210,7 @@ advanced
     reader.setAttribute?.('role', 'tabpanel');
     reader.setAttribute?.('aria-label', activeKind === 'micro' ? 'Micro 기억' : activeKind === 'lens' ? '렌즈 기억' : '정본 기억');
     const manage = activeKind !== 'canonical' ? null : guiEl('div', { class: 'manage-block' }, [guiEl('div', { class: 'banner banner--info' }, [
-      guiEl('div', {}, [guiEl('b', { text: '정본 기억 관리' }), guiEl('p', { text: '재분석 후보와 수정용 복사본은 검토 후 별도 승인해야 정본에 반영됩니다.' })]),
+      guiEl('div', {}, [guiEl('b', { text: '정본 기억 관리' }), guiEl('p', { text: '재분석은 원문 재분석 화면에서 실행합니다. 교정용 복사본과 기존 후보는 검토 후 별도 승인합니다.' })]),
       guiEl('div', { class: 'cluster' }, [
         guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: '기억 생성 구간 선택', onClick: () => void showCanonicalRangeDrawer('missing') }),
         guiEl('button', { class: 'btn btn--sm', type: 'button', text: '버전 · 실행 기록', onClick: () => { Gui.worldManagerCanonicalMemoryFocus = null; void showCanonicalVariantDialog(Number(Gui.canonicalReaderSelected?.turnRange?.start || 0)); } }),
@@ -93738,6 +93553,12 @@ advanced
     stageOrder: LibraMemoryCore.STAGE_ORDER.slice(),
     stageLabels: { ...LibraMemoryCore.STAGE_LABELS },
     async openSettingsGui() { return await showSettingsGui(); },
+    async openSourceReanalysis(options = {}) {
+      if(!Gui.visible&&!(await showSettingsGui()))return false;
+      await LibraMemoryCore.refreshSnapshot(undefined,{suppressGuiSchedule:true,limits:LibraMemoryCore.state.guiSnapshotLimits||LIBRA_SNAPSHOT_PAGE_LIMITS});
+      if(!Gui.visible)return false;
+      return await showLibraSourceReanalysisDrawer(options);
+    },
     async closeSettingsGui() { return await hideSettingsGui(); },
     getRuntime() { return redactPublicSecrets(safeClone(Runtime)); },
     getStageTrace() { return safeClone(Runtime.stageTrace || []); },
@@ -94070,8 +93891,8 @@ advanced
     async purgeLens(lensId) { return safeClone(await LibraMemoryCore.purgeTrashedLensData({ lensId })); },
     async draftLensWithAssistant(options = {}) { return safeClone(await LibraMemoryCore.draftLensWithAssistant(options)); },
     async generateLensDefinitionFromDescription(prompt = '') { return safeClone(await LibraMemoryCore.generateLensDefinitionFromDescription(prompt)); },
-    async runLensForRange(lensId, options = {}) { return safeClone(await LibraMemoryCore.runLensForRange(lensId, options)); },
-    async runLensForTurnRange(lensId, options = {}) { return safeClone(await LibraMemoryCore.runLensForTurnRange(lensId, options)); },
+    async runLensForRange(lensId, options = {}) { return LibraMemoryCore.retiredManualReanalysis(); },
+    async runLensForTurnRange(lensId, options = {}) { return LibraMemoryCore.retiredManualReanalysis(); },
     async trialRunLens(options = {}) { return safeClone(await LibraMemoryCore.trialRunLens(options)); },
     async waitForLensQueueIdle() { return await LibraMemoryCore.waitForLensQueueIdle(); },
     async inspectScopeLenses(options = {}) { return safeClone(await LibraMemoryCore.inspectScopeLenses(options)); },

@@ -8,7 +8,8 @@ require('./fixtures/retrace_u1_owner_writer_fixture.cjs').run({scenario:'differe
   host.runLLMModel=async()=>({type:'success',result:JSON.stringify({items:[{label:'약속',text:'지호는 은빛 열쇠를 오늘 반환하기로 약속했다.',refs:['t2-a'],quote:'오늘 돌려주겠다고 약속했다'}]})});
   for(const status of ['active','paused']){
     const lens=await libra.createLens({name:'승계 '+status,instruction:{goal:'열쇠와 약속'},status,cadence:{mode:'manual'}});
-    assert.equal((await libra.runLensForRange(lens.lensId,{startTurn:1,endTurn:5})).ok,true);
+    const selection=await libra.listReanalysisRanges({kind:'lens',lensId:lens.lensId});
+    assert.equal((await libra.reanalyzeSelectedRanges({...selection,ranges:selection.ranges.filter(row=>row.start===1&&row.end===5)})).ok,true);
   }
   host.runLLMModel=savedModel;
   const stableRows = rows =>`);

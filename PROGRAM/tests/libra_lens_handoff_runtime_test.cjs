@@ -69,14 +69,14 @@ test('source changes during the final lens storage publication cannot persist st
   const lens=await f.add();const key=[...f.r.values.keys()].find(k=>k.endsWith(`:lens:${lens.lensId}:records`)),before=f.r.values.get(key);
   const store=f.r.context.risuai.pluginStorage,set=store.setItem.bind(store);let hit=false;
   store.setItem=async(k,value)=>{const result=await set(k,value);if(k===key&&!hit){hit=true;f.chat.message[3].data+=' Changed source after write.';}return result;};
-  await assert.rejects(f.api.runLensForRange(lens.lensId,{startTurn:1,endTurn:5}),/원문 변경/);assert.equal(hit,true);assert.equal(f.r.values.get(key),before);
+  await assert.rejects(f.r.core.runLensForRange(lens.lensId,{startTurn:1,endTurn:5}),/원문 변경/);assert.equal(hit,true);assert.equal(f.r.values.get(key),before);
  }finally{await f.close();}
 });
 test('an in-flight lens cannot recreate data after permanent delete',async()=>{
  const f=await lensFixture();let release=()=>{};try{
   const lens=await f.add();let started;const entered=new Promise(resolve=>started=resolve),gate=new Promise(resolve=>release=resolve);
   f.setReply(async()=>{started();await gate;return JSON.stringify({items:[{text:'late lens',refs:['t2-a'],basis:'a late response'}]});});
-  const run=f.api.runLensForRange(lens.lensId,{startTurn:1,endTurn:5});await entered;await f.api.trashLens(lens.lensId);await f.api.purgeLens(lens.lensId);release();
+  const run=f.r.core.runLensForRange(lens.lensId,{startTurn:1,endTurn:5});await entered;await f.api.trashLens(lens.lensId);await f.api.purgeLens(lens.lensId);release();
   await assert.rejects(run,/렌즈가 변경되거나 삭제/);assert.equal([...f.r.values.keys()].some(key=>key.includes(`:lens:${lens.lensId}:`)),false);
  }finally{release();await f.close();}
 });
@@ -87,7 +87,7 @@ test('permanent deletion waits for a suspended storage write and its rollback',a
   const store=f.r.context.risuai.pluginStorage,set=store.setItem.bind(store);let hit=false,entered;
   const started=new Promise(resolve=>entered=resolve),gate=new Promise(resolve=>release=resolve);
   store.setItem=async(k,value)=>{if(k===key&&!hit){hit=true;entered();await gate;}return await set(k,value);};
-  const running=f.api.runLensForRange(lens.lensId,{startTurn:1,endTurn:5}).then(value=>({value}),error=>({error}));
+  const running=f.r.core.runLensForRange(lens.lensId,{startTurn:1,endTurn:5}).then(value=>({value}),error=>({error}));
   await started;await f.api.trashLens(lens.lensId);let deleted=false;
   purging=f.api.purgeLens(lens.lensId).then(value=>{deleted=true;return value;});
   await new Promise(resolve=>setTimeout(resolve,30));assert.equal(deleted,false,'delete cannot finish while the write can still restore old records');
@@ -110,11 +110,11 @@ test('prepare settles a running lens and retains its freeze until adoption finis
  const f=await lensFixture();let release=()=>{};try{
   const lens=await f.add();let entered;const started=new Promise(resolve=>entered=resolve),gate=new Promise(resolve=>release=resolve);
   f.setReply(async()=>{entered();await gate;return JSON.stringify({items:[{text:'은빛 열쇠 약속의 최신 기록',refs:['t2-a'],basis:'약속의 말'}]});});
-  const run=f.api.runLensForRange(lens.lensId,{startTurn:1,endTurn:5});await started;let settled=false;
+  const run=f.r.core.runLensForRange(lens.lensId,{startTurn:1,endTurn:5});await started;let settled=false;
   const preparing=f.api.prepareSessionHandoff({transferId:'freeze'}).then(value=>{settled=true;return value;});
   await new Promise(resolve=>setTimeout(resolve,50));assert.equal(settled,false);release();await run;
   const prepared=await preparing;assert.equal(prepared.expectedLensRecords,1);
-  await assert.rejects(f.api.runLensForRange(lens.lensId,{startTurn:1,endTurn:5}),/승계 준비 중/);
+  await assert.rejects(f.r.core.runLensForRange(lens.lensId,{startTurn:1,endTurn:5}),/승계 준비 중/);
   const target=f.target();const result=await f.api.adoptSessionHandoff({transferId:'freeze',targetChatId:target.id});assert.equal(result.verified,true);
   assert.match((await f.api.inspectScopeLenses()).memories[0].text,/최신/);
  }finally{release();await f.close();}
@@ -124,7 +124,7 @@ test('cancel before adoption releases the freeze and deletes owned lens archives
   const lens=await f.add();const prepared=await f.api.prepareSessionHandoff({transferId:'cancel'});
   assert.equal((await f.api.rollbackLensSessionHandoff({transferId:'cancel'})).deletedArchives,1);
   assert.equal(f.r.values.has(prepared.lensArchiveRefs[0].archiveKey),false);
-  assert.equal((await f.api.runLensForRange(lens.lensId,{startTurn:1,endTurn:5})).ok,true);
+  assert.equal((await f.r.core.runLensForRange(lens.lensId,{startTurn:1,endTurn:5})).ok,true);
  }finally{await f.close();}
 });
 test('lens rollback removes successor refs and owned archives without touching canonical data',async()=>{
@@ -170,7 +170,7 @@ test('portable export follows inherited lens archive dependencies',async()=>{
 test('own current notes precede equal previous-chat text and never expand the lens budget',async()=>{
  const f=await lensFixture();try{
   const lens=await f.add();const {target}=await transfer(f);target.message=f.clone(f.chat.message);target.messages=target.message;
-  await f.api.runLensForRange(lens.lensId,{startTurn:1,endTurn:5});
+  await f.r.core.runLensForRange(lens.lensId,{startTurn:1,endTurn:5});
   const result=await f.api.recallLensMemories({query:'지호 은빛 열쇠 약속',canonicalBudgetChars:12000});
   assert.equal(result.injectedItems[0].inherited,false);assert.ok(result.usedChars<=2600);
  }finally{await f.close();}
@@ -187,7 +187,7 @@ test('a provider that ignores cancellation cannot publish after prepare discards
  const f=await lensFixture();let release=()=>{};try{
   const lens=await f.add();let entered;const started=new Promise(resolve=>entered=resolve),gate=new Promise(resolve=>release=resolve);
   f.setReply(async()=>{entered();await gate;return JSON.stringify({items:[{text:'late discarded note',refs:['t2-a'],basis:'late'}]});});
-  const run=f.api.runLensForRange(lens.lensId,{startTurn:1,endTurn:5});const outcome=run.then(value=>({value}),error=>({error}));await started;
+  const run=f.r.core.runLensForRange(lens.lensId,{startTurn:1,endTurn:5});const outcome=run.then(value=>({value}),error=>({error}));await started;
   const prepared=await f.api.prepareSessionHandoff({transferId:'ignored-abort'});assert.equal(prepared.expectedLensRecords,1);
   release();const result=await outcome;assert.ok(result.error||result.value?.status==='stale_source_revision');
   const target=f.target();assert.equal((await f.api.adoptSessionHandoff({transferId:'ignored-abort',targetChatId:target.id})).verified,true);

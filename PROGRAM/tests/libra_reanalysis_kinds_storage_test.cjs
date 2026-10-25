@@ -17,7 +17,7 @@ for(const mode of ['plugin_only','mirror','server_only'])test('explicit Micro re
 for(const mode of ['plugin_only','mirror','server_only'])test('reviewed lens reanalysis keeps its saved range and selected lens through '+mode,async()=>{
   const fx=await serverFixture({mode,transformSource});try{
     let f=fx.f;const a=await createLens(f,'기존 관점'),b=await createLens(f,'선택한 관점');f.control.onCall=()=>lensReply(f,1,'첫 렌즈 기록');
-    assert.equal((await f.r.api.runLensForRange({lensId:b.lensId,startTurn:1,endTurn:2})).ok,true);
+    assert.equal((await f.r.core.runLensForRange({lensId:b.lensId,startTurn:1,endTurn:2})).ok,true);
     const inventory=await f.r.api.listReanalysisRanges({kind:'lens',lensId:b.lensId}),before=await f.r.api.inspectScopeLenses();f.control.onCall=()=>lensReply(f,1,'교체된 렌즈 기록');
     const core=f.r.context.__reanalysisKindsCore,sample=await core.readReanalysisTurn(inventory,inventory.ranges[0],{turn:2});
     const result=await f.r.api.reanalyzeSelectedRanges({...select(inventory,'1-2'),reviewedSource:{key:'1-2',turn:2,rawDigest:sample.rawDigest,rulesKey:core.sourceReanalysisRulesKey()}});assert.equal(result.ok,true,JSON.stringify(result));

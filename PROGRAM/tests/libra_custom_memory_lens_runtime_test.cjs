@@ -79,7 +79,7 @@ const check = (name, fn) => Promise.resolve().then(fn).then(() => results.push(n
           if (want) for (const [key, value] of Object.entries(want)) assert.equal(created[key], value, `${template.templateId}.${key}`);
           reply = () => JSON.stringify({items:[{label:created.labels[0],text:'푸른 열쇠를 챙기기로 약속했다.',refs:['t1-a'],quote:'푸른 열쇠를 꼭 챙겨갈게',target:'민아'}]});
           calls.length = 0;
-          const trial = await api.runLensForRange(created.lensId,{startTurn:1,endTurn:5});
+          const trial = await harness.core.runLensForRange(created.lensId,{startTurn:1,endTurn:5});
           assert.equal(trial.status,'succeeded',template.templateId+': scripted extraction succeeds');
           assert.equal(trial.acceptedCount,1,template.templateId+': source-bound evidence is retained');
           assert.equal(calls.length,1,template.templateId+': one scripted provider call');
@@ -155,7 +155,7 @@ const check = (name, fn) => Promise.resolve().then(fn).then(() => results.push(n
 
     await check('the provider call carries the lens prompt as system and the source as user', async () => {
       calls.length = 0;
-      const run = await api.runLensForRange(lensId, { startTurn: 1, endTurn: 5 });
+      const run = await harness.core.runLensForRange(lensId, { startTurn: 1, endTurn: 5 });
       assert.equal(run.status, 'succeeded');
       assert.equal(run.acceptedCount, 1);
       const messages = calls[0].messages;
@@ -169,7 +169,7 @@ const check = (name, fn) => Promise.resolve().then(fn).then(() => results.push(n
     await check('lens runs never touch canonical memory or State', async () => {
       const canonicalBefore = JSON.stringify(await api.getCanonicalMemories());
       const headBefore = JSON.stringify(api.getCurrentStateHead());
-      await api.runLensForRange(lensId, { startTurn: 1, endTurn: 5 });
+      await harness.core.runLensForRange(lensId, { startTurn: 1, endTurn: 5 });
       assert.equal(JSON.stringify(await api.getCanonicalMemories()), canonicalBefore);
       assert.equal(JSON.stringify(api.getCurrentStateHead()), headBefore);
       assert.ok(lensKeys().every(key => /:lens:(head|[\w-]+:(records|runs|raw))$/.test(key)), lensKeys().join(', '));
@@ -177,11 +177,11 @@ const check = (name, fn) => Promise.resolve().then(fn).then(() => results.push(n
 
     await check('a failed or empty re-run keeps the stored record', async () => {
       reply = () => '죄송하지만 지금은 할 수 없어요.';
-      const failed = await api.runLensForRange(lensId, { startTurn: 1, endTurn: 5 });
+      const failed = await harness.core.runLensForRange(lensId, { startTurn: 1, endTurn: 5 });
       assert.equal(failed.status, 'failed');
       assert.equal(failed.run.keptPreviousRecord, true);
       reply = () => '{"items":[]}';
-      const empty = await api.runLensForRange(lensId, { startTurn: 1, endTurn: 5 });
+      const empty = await harness.core.runLensForRange(lensId, { startTurn: 1, endTurn: 5 });
       assert.equal(empty.status, 'empty');
       const inspected = await api.inspectScopeLenses();
       assert.equal(inspected.memories.length, 1, 'the earlier item is still there');
@@ -201,7 +201,7 @@ const check = (name, fn) => Promise.resolve().then(fn).then(() => results.push(n
     await check('concurrent runs do not lose run log entries', async () => {
       reply = () => JSON.stringify({ items: [{ text: '동시 실행', refs: ['t1-a'], quote: '푸른 열쇠를 꼭 챙겨갈게' }] });
       const before = (await api.inspectScopeLenses()).runs.length;
-      await Promise.all([api.runLensForRange(lensId, { startTurn: 1, endTurn: 5 }), api.runLensForRange(lensId, { startTurn: 1, endTurn: 2 }), api.runLensForRange(lensId, { startTurn: 3, endTurn: 5 })]);
+      await Promise.all([harness.core.runLensForRange(lensId, { startTurn: 1, endTurn: 5 }), harness.core.runLensForRange(lensId, { startTurn: 1, endTurn: 2 }), harness.core.runLensForRange(lensId, { startTurn: 3, endTurn: 5 })]);
       const after = await api.inspectScopeLenses();
       assert.equal(after.runs.length, before + 3);
       assert.equal(Object.keys(after.lenses[lensId].runs).length > 0, true);
@@ -230,7 +230,7 @@ const check = (name, fn) => Promise.resolve().then(fn).then(() => results.push(n
     await check('a stale answer is discarded when the source changes during the call', async () => {
       let release;
       gate = new Promise(resolve => { release = resolve; });
-      const pending = api.runLensForRange(lensId, { startTurn: 1, endTurn: 5 });
+      const pending = harness.core.runLensForRange(lensId, { startTurn: 1, endTurn: 5 });
       await new Promise(resolve => setTimeout(resolve, 50));
       root.message[3].data = '편집된 응답입니다.';
       release(); gate = null;

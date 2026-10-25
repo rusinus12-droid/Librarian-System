@@ -18,6 +18,9 @@ const createLibraVmHarness = async (argumentOverrides = {}, hostOverrides = {}, 
   const program = path.resolve(__dirname, '..', '..');
   let source = fs.readFileSync(process.env.LIBRA_TEST_PLUGIN ? path.resolve(process.env.LIBRA_TEST_PLUGIN) : path.join(program, 'plugins', 'LIBRA.js'), 'utf8');
   if(typeof testOptions.transformSource==='function')source=testOptions.transformSource(source);
+  // Native producer tests can seed historical records without reviving retired
+  // public manual-analysis entry points. This export exists only in the fixture.
+  source=source.replace('const memoryStageEnabledForSettings =','globalThis.__fixtureNativeMemoryCore=LibraMemoryCore;\n  const memoryStageEnabledForSettings =');
   const values = new Map(testOptions.initialValues || []);
   const storageReads = [];
   const storageWrites = [];
@@ -85,6 +88,7 @@ const createLibraVmHarness = async (argumentOverrides = {}, hostOverrides = {}, 
   const api = await waitFor(() => context.__LIBRA__?.version && typeof context.__LIBRA__?.getRuntime === 'function' ? context.__LIBRA__ : null);
   return {
     api,
+    core:context.__fixtureNativeMemoryCore,
     context,
     source,
     values,
