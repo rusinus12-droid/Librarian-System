@@ -59235,6 +59235,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (!active || active.receiptKey !== receiptKey) return { status: 'stale_source' };
       const scope = microScope(receipt);
       const claimCurrent=async()=>{
+        if(publishClaim.validate)await publishClaim.validate();
          if(Number(state.microRestoreGeneration||0)!==publishClaim.restoreGeneration)return false;
         const raw=await readVerifiedCompletedTurnRawPacket(receipt,receiptKey);
         if(raw.status!=='verified' || !analysis.rawPacketRef || JSON.stringify(raw.rawPacketRef)!==JSON.stringify(analysis.rawPacketRef))return false;
@@ -65356,6 +65357,57 @@ function mountMemorySuiteReanalysisReview(container,config) {
           status: 'pending_reconciliation', reason: compact(error?.message || error, 300) };
       });
     };
+    // Explicit replacement keeps the published work/head readable while the provider runs.
+    // Only a validated successful result replaces them; failed publication restores both.
+    const reanalyzeMicroSource = async (scope,worldlineId,sessionEpoch,turn,revisionId,request) => {
+      const validate=request.validate;
+      await validate();
+      if((await loadMemorySettings()).enabled===false)throw Error('리브라 기억 분석이 꺼져 있습니다.');
+      const context=await resolveContext(),pair=buildPairs(context.chat,scope.scopeKey)[turn-1];
+      if(!pair||completedTurnRevisionId(pair)!==revisionId)throw Error('미크로 원문이 변경되었습니다.');
+      await persistCompletedTurnReceipt(context,pair,'explicit_reanalysis',{deferInventory:true,beforeWrite:validate});
+      await validate();
+      const active=await readActiveCompletedTurnReceipt(scope,worldlineId,sessionEpoch,turn);
+      if(active.status!=='verified')throw Error('미크로 원문을 확인하지 못했습니다: '+active.status);
+      const receipt=active.receipt,claim=await prepareMicroStageClaim(scope,receipt),restoreGeneration=Number(state.microRestoreGeneration||0);
+      if(!claim)throw Error('미크로 분석 경계가 변경되었습니다.');
+      const check=async()=>{
+        await validate();
+        if(Number(state.microRestoreGeneration||0)!==restoreGeneration||(await validateReceiptRecoveryClaim(claim)).status!=='current')throw Error('미크로 저장 경계가 변경되었습니다. 다시 선택하세요.');
+      };
+      const workKey=key.microWork(scope,worldlineId,sessionEpoch,turn,receipt.revisionId,microProducerVersion),headKey=key.microMemoryHead(scope,worldlineId,sessionEpoch,turn);
+      const priorWork=await storage.getVerifiedJson(workKey,scope,null),priorHead=await storage.getVerifiedJson(headKey,scope,null);
+      const raw=await readVerifiedCompletedTurnRawPacket(receipt,active.receiptKey);
+      if(raw.status!=='verified')throw Error('미크로 원문 보존본을 확인하지 못했습니다.');
+      const inventory=await readPersonSpanInventory(scope,worldlineId,sessionEpoch,turn);
+      await check();
+      const analysis={...await analyzeCompletedReceipt({...receipt,receiptKey:active.receiptKey},inventory.inventory,await loadSettings(),null,{expectedRawPacketRef:raw.rawPacketRef}),rawPacketRef:clone(raw.rawPacketRef)};
+      await check();
+      if(analysis.micro?.status!=='source_bound_candidate')return {status:'failed',reason:analysis.reason||'미크로 분석 결과를 검증하지 못했습니다. 기존 기억을 유지합니다.'};
+      if(digest(await storage.getVerifiedJson(workKey,scope,null))!==digest(priorWork)||digest(await storage.getVerifiedJson(headKey,scope,null))!==digest(priorHead))throw Error('미크로 기억이 다른 작업으로 갱신되었습니다. 다시 선택하세요.');
+      const attemptId='micro_'+digest([workKey,Date.now(),Math.random()]),calls=Math.min(2,Math.max(1,Number(analysis.provider?.execution?.requestCount)||1));
+      const work={schema:'libra.micro_work.v1',scopeKey:scope.scopeKey,worldlineId,sessionEpoch,turn,sourceRevisionId:receipt.revisionId,sourceDigest:receipt.sourceDigest,receiptKey:active.receiptKey,producerVersion:microProducerVersion,
+        status:'result_ready',phase:'explicit_reanalysis',attemptId,logicalAttempts:Number(priorWork?.logicalAttempts||0)+1,physicalAttemptsUsed:calls,
+        attemptHistory:[...asArray(priorWork?.attemptHistory),{attemptId,status:'succeeded',physicalAttemptsUsed:calls,resultDigest:digest(analysis)}],
+        priorResults:[...asArray(priorWork?.priorResults),...(priorWork?.result?[{result:priorWork.result,resultDigest:priorWork.resultDigest,logicalAttempts:priorWork.logicalAttempts}]:[])],result:analysis,resultDigest:digest(analysis)};
+      await check();
+      try{
+        await storage.setVerifiedJson(workKey,work,scope);await check();
+        const result=await persistMicroRevision(receipt,active.receiptKey,analysis,workKey,{attemptId,workDigest:digest(work),restoreGeneration,validate:check});
+        if(result.status!=='verified')throw Error(result.reason||result.status);
+        if(analysis.personInventory?.status==='classified_candidates'){
+          try{await persistClassifiedPersonSpanInventory(receipt,active.receiptKey,analysis.personInventory,workKey);}catch(_){/* Optional inventory can be repaired independently. */}
+        }
+        return result;
+      }catch(error){
+        const currentHead=await storage.getVerifiedJson(headKey,scope,null),currentWork=await storage.getVerifiedJson(workKey,scope,null);
+        if(digest(currentWork)===digest(work)&&(digest(currentHead)===digest(priorHead)||currentHead?.attemptId===attemptId)){
+          if(priorWork===null)await storage.remove(workKey);else await storage.setVerifiedJson(workKey,priorWork,scope);
+          if(currentHead?.attemptId===attemptId){if(priorHead===null)await storage.remove(headKey);else await storage.setVerifiedJson(headKey,priorHead,scope);}
+        }
+        throw error;
+      }
+    };
     const scheduleMicroForTurn = (scope, worldlineId, sessionEpoch, turn, revisionId, request={}) => {
       if (state.disposed) return Promise.resolve({ status: 'pending', reason: 'runtime_disposed' });
       if (state.deletingScopes.has(scope.scopeKey)) return Promise.resolve({ status: 'paused', reason: 'scope_deleting' });
@@ -65382,7 +65434,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
           }
           if (state.deletingScopes.has(scope.scopeKey)) return { status: 'paused', reason: 'scope_deleting' };
           assertPortableMemoryIdle();
-          return produceMicroForTurn(scope, worldlineId, sessionEpoch, turn, revisionId, request);
+          return request.sourceReanalysis===true
+            ? reanalyzeMicroSource(scope,worldlineId,sessionEpoch,turn,revisionId,request)
+            : produceMicroForTurn(scope, worldlineId, sessionEpoch, turn, revisionId, request);
         })
         .then(async result => result?.status === 'verified' && !state.disposed
           ? { ...result, stateAdmission: await admitPublishedMicroStateClaims(scope, worldlineId, sessionEpoch, turn) }
@@ -72073,7 +72127,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if(!last)throw Error('selected_batch_range_invalid');
       return digest(rawChatMessages(context.chat).slice(0,libraReanalysisRawEnd(context,last)).map((row,index)=>[index,messageIdentity(row,index),messageRole(row),libraReanalysisRawText(row)]));
     };
-    const listReanalysisRanges = async () => {
+    const listCanonicalReanalysisRanges = async () => {
       await libraSourceInput.ready();
       const context=await resolveContext(),pairs=buildPairs(context.chat,context.scope.scopeKey),manifest=await loadManifest(context.scope,pairs.length),failures=normalizeFailedCanonicalBatches(manifest.failedBatches),ranges=[];
       for(const startTurn of completeBatchStarts(pairs)){
@@ -72086,18 +72140,84 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       const live=await resolveContext();
       if(!sameSnapshotScope(live.scope,context.scope)||libraReanalysisTopology(buildPairs(live.chat,live.scope.scopeKey))!==libraReanalysisTopology(pairs))throw Error('selected_batch_identity_changed');
-      return {owner:'libra',scopeKey:context.scope.scopeKey,topology:libraReanalysisTopology(pairs),ranges,observedTurns:pairs.length,pendingTurns:pairs.length%BATCH_SIZE};
+      return {owner:'libra',kind:'canonical',scopeKey:context.scope.scopeKey,topology:libraReanalysisTopology(pairs),ranges,observedTurns:pairs.length,pendingTurns:pairs.length%BATCH_SIZE};
+    };
+    const libraReanalysisKind = options => {
+      const kind=String(options?.kind||'canonical');
+      if(!['canonical','micro','lens'].includes(kind))throw Error('재분석할 기억 종류를 확인하세요.');
+      return kind;
+    };
+    const listReanalysisRanges = async (options={}) => {
+      const kind=libraReanalysisKind(options);
+      if(kind==='canonical')return listCanonicalReanalysisRanges();
+      await libraSourceInput.ready();
+      const context=await resolveContext(),pairs=buildPairs(context.chat,context.scope.scopeKey),ranges=[];
+      const scope=context.scope;let worldlineId=hostWorldlineIdForScope(scope);
+      let lenses=[],lensId='',lensRevision=0;
+      const identity=(start,end)=>digest(pairs.slice(start-1,end).map(libraReanalysisIdentity));
+      if(kind==='micro'){
+        for(const pair of pairs){
+          const active=await readActiveMicroMemory(scope,worldlineId,0,pair.turn);
+          const status=active.status==='verified'&&active.record.analysisStatus==='verified'?'saved':'missing';
+          ranges.push({key:String(pair.turn),start:pair.turn,end:pair.turn,label:'T'+pair.turn,identity:identity(pair.turn,pair.turn),status,
+            description:'1턴 미크로 · '+(status==='saved'?'저장됨':'기억 없음 또는 미완료 · 분석 가능'),
+            summary:active.status==='verified'?compact(asArray(active.record.claims).map(claim=>claim.text).join(' · '),160):''});
+        }
+      }else{
+        const registry=await readLensRegistry({force:true});
+        lenses=registry.lenses.map(lens=>({lensId:lens.lensId,name:lens.name,status:lens.status}));
+        lensId=String(options.lensId||lenses.find(lens=>lens.status==='active')?.lensId||lenses[0]?.lensId||'');
+        const lens=registry.lenses.find(lens=>lens.lensId===lensId);
+        if(lensId&&!lens)throw lensError('LENS_NOT_FOUND','렌즈가 변경되거나 삭제되었습니다. 다시 선택하세요.');
+        if(lens){
+          lensRevision=lens.instructionRevision;
+          const meta=await loadStateWorldlineMeta(scope),lensWorldline=String(meta?.activeWorldlineId||'main');
+          worldlineId=lensWorldline;
+          const endLimit=Math.min(pairs.length,Number(meta?.worldlines?.[lensWorldline]?.cutoffTurn??pairs.length));
+          const records=await loadLensRecordsMap(scope,lensId),runs=await loadLensRunsList(scope,lensId),covered=new Set(),units=new Map();
+          const add=(start,end,status,summary='')=>{
+            if(!Number.isInteger(start)||!Number.isInteger(end)||start<1||end<start||end>endLimit)return;
+            const key=start+'-'+end;if(units.has(key))return;
+            units.set(key,{key,start,end,label:start===end?'T'+start:`T${start}–T${end}`,identity:identity(start,end),status,
+              description:lens.name+' · '+({saved:'저장됨',failed:'이전 분석 실패 · 다시 분석 가능',missing:'기억 없음 · 분석 가능'})[status],summary});
+            for(let turn=start;turn<=end;turn++)covered.add(turn);
+          };
+          for(const record of Object.values(records))if(record.worldlineId===lensWorldline)add(Number(record.turnRange?.start),Number(record.turnRange?.end),'saved',compact(asArray(record.items).map(item=>item.text).join(' · '),160));
+          for(const run of runs)if(run.worldlineId===lensWorldline&&run.status==='failed')add(Number(run.turnRange?.start),Number(run.turnRange?.end),'failed');
+          for(let start=1;start<=endLimit;){
+            if(covered.has(start)){start++;continue;}
+            let end=start;while(end<endLimit&&end-start+1<BATCH_SIZE&&!covered.has(end+1))end++;
+            add(start,end,'missing');start=end+1;
+          }
+          ranges.push(...[...units.values()].sort((a,b)=>a.start-b.start||a.end-b.end));
+        }
+      }
+      const live=await resolveContext();
+      if(!sameSnapshotScope(live.scope,scope)||libraReanalysisTopology(buildPairs(live.chat,live.scope.scopeKey))!==libraReanalysisTopology(pairs))throw Error('선택할 원문 위치가 변경되었습니다. 새로고침하세요.');
+      return {owner:'libra',kind,scopeKey:scope.scopeKey,worldlineId,topology:libraReanalysisTopology(pairs),ranges,observedTurns:pairs.length,lenses,lensId,lensRevision};
     };
     const readReanalysisTurn = async (inventory,range) => {
       await libraSourceInput.ready();const context=await resolveContext(),pairs=buildPairs(context.chat,context.scope.scopeKey);
       if(context.scope.scopeKey!==inventory.scopeKey||libraReanalysisTopology(pairs)!==inventory.topology)throw Error('채팅 또는 턴 구성이 변경되었습니다. 목록을 새로고침하세요.');
-      const pair=pairs.find(pair=>String(pair.turn)===range.key);
-      if(!pair||libraReanalysisIdentity(pair)!==range.identity)throw Error('원문 위치가 변경되었습니다. 목록을 새로고침하세요.');
+      const kind=libraReanalysisKind(inventory);
+      if(kind!=='canonical'){
+        const worldlineId=kind==='micro'?hostWorldlineIdForScope(context.scope):await lensActiveWorldlineId(context.scope);
+        if(worldlineId!==inventory.worldlineId)throw Error('기억의 세계선이 변경되었습니다. 다시 선택하세요.');
+        if(kind==='lens'){
+          const registry=await readLensRegistry({force:true}),lens=registry.lenses.find(row=>row.lensId===inventory.lensId);
+          if(!lens||lens.instructionRevision!==inventory.lensRevision)throw Error('검토할 렌즈의 지침이 변경되었습니다. 다시 선택하세요.');
+        }
+      }
+      const selected=pairs.slice(range.start-1,range.end),pair=selected[0];
+      const identity=libraReanalysisKind(inventory)==='canonical'?libraReanalysisIdentity(pair):digest(selected.map(libraReanalysisIdentity));
+      if(!pair||selected.length!==range.end-range.start+1||identity!==range.identity)throw Error('원문 위치가 변경되었습니다. 목록을 새로고침하세요.');
       const rows=rawChatMessages(context.chat),rawFor=(start,end,role)=>rows.slice(start,end).filter(row=>messageRole(row)===role).map(libraReanalysisRawText).join('\n\n');
-      return {label:range.label,user:rawFor(pair.user.index,pair.user.endIndex+1,'user'),assistant:rawFor(pair.user.endIndex+1,libraReanalysisRawEnd(context,pair),'assistant'),rawDigest:libraReanalysisRawDigest(context,pairs,range.batchEnd)};
+      const roleText=role=>selected.map(item=>(selected.length>1?'[T'+item.turn+']\n':'')+(role==='user'?rawFor(item.user.index,item.user.endIndex+1,role):rawFor(item.user.endIndex+1,libraReanalysisRawEnd(context,item),role))).join('\n\n');
+      return {label:range.label,user:roleText('user'),assistant:roleText('assistant'),rawDigest:libraReanalysisRawDigest(context,pairs,range.batchEnd||range.end)};
     };
     const reanalyzeSelectedRanges = async (selection={}) => {
       try{
+        if(libraReanalysisKind(selection)!=='canonical')return await reanalyzeAuxiliaryRanges(selection);
         const inventory=await listReanalysisRanges(),rows=asArray(selection.ranges),keys=new Set(rows.map(row=>String(row.key))),units=inventory.ranges.filter(row=>keys.has(row.key));
         if(!keys.size||units.length!==keys.size)throw Error('선택한 턴을 확인할 수 없습니다. 목록을 새로고침하세요.');
         if(selection.scopeKey!==inventory.scopeKey||selection.topology!==inventory.topology||rows.some(row=>units.find(unit=>unit.key===String(row.key))?.identity!==row.identity))throw Error('선택한 턴의 위치가 바뀌었습니다. 목록을 새로고침하세요.');
@@ -72109,6 +72229,46 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const batches=[...new Map(units.map(unit=>[unit.batchStart,{startTurn:unit.batchStart,identityDigest:unit.batchIdentity}])).values()];
         return await startSelectedCanonicalBatches({scopeKey:inventory.scopeKey,mode:'source_edit',ranges:batches,...(reviewed?{reviewedSource:{key:reviewed.key,rawDigest:reviewed.rawDigest,rulesKey:reviewed.rulesKey}}:{})});
       }catch(error){return {ok:false,reason:String(error?.message||error)};}
+    };
+
+    let auxiliaryReanalysisRunning=false;
+    const reanalyzeAuxiliaryRanges = async selection => {
+      if(auxiliaryReanalysisRunning)return {ok:false,reason:'다른 미크로·렌즈 재분석이 진행 중입니다.'};
+      auxiliaryReanalysisRunning=true;
+      const results=[];
+      try{
+        const inventory=await listReanalysisRanges(selection),rows=asArray(selection.ranges),keys=new Set(rows.map(row=>String(row.key))),units=inventory.ranges.filter(row=>keys.has(row.key));
+        if(!keys.size||units.length!==keys.size||selection.scopeKey!==inventory.scopeKey||selection.worldlineId!==inventory.worldlineId||selection.topology!==inventory.topology
+          ||rows.some(row=>units.find(unit=>unit.key===String(row.key))?.identity!==row.identity))throw Error('선택한 원문 위치가 변경되었습니다. 목록을 새로고침하세요.');
+        if(inventory.kind==='lens'&&(selection.lensId!==inventory.lensId||selection.lensRevision!==inventory.lensRevision))throw Error('선택한 렌즈의 지침이 변경되었습니다. 다시 선택하세요.');
+        const reviewed=selection.reviewedSource;
+        if(reviewed&&(units.length!==1||units[0].start!==units[0].end||reviewed.key!==units[0].key||reviewed.rulesKey!==memorySuiteSourceTagKey('libra')))throw Error('검토한 턴 또는 태그 규칙이 변경되었습니다.');
+        const rulesKey=memorySuiteSourceTagKey('libra'),generation=Number(state.worldManagerRuntimeMetaGeneration||0);
+        const samples=new Map();for(const unit of units)samples.set(unit.key,await readReanalysisTurn(inventory,unit));
+        if(reviewed&&samples.get(units[0].key).rawDigest!==reviewed.rawDigest)throw Error('검토한 원문이 변경되었습니다. 다시 확인하세요.');
+        const validate=async unit=>{
+          if(state.disposed||state.deletingScopes.has(inventory.scopeKey)||state.portableMemoryActiveOperationId)throw Error('기억 작업 경계가 변경되었습니다. 다시 선택하세요.');
+          if(Number(state.worldManagerRuntimeMetaGeneration||0)!==generation||memorySuiteSourceTagKey('libra')!==rulesKey)throw Error('분석 태그 또는 저장 경계가 변경되었습니다.');
+          if((await readReanalysisTurn(inventory,unit)).rawDigest!==samples.get(unit.key).rawDigest)throw Error('분석할 원문이 변경되었습니다. 다시 선택하세요.');
+        };
+        // Validate the whole selection before starting any paid work.
+        for(const unit of units)await validate(unit);
+        for(const unit of units){
+          await validate(unit);let result;
+          if(inventory.kind==='micro'){
+            const context=await resolveContext(),pair=buildPairs(context.chat,context.scope.scopeKey)[unit.start-1],worldlineId=hostWorldlineIdForScope(context.scope),revisionId=completedTurnRevisionId(pair);
+            const jobKey=[context.scope.scopeKey,worldlineId,0,pair.turn,revisionId].join(':');
+            if(state.microJobs.has(jobKey))await state.microJobs.get(jobKey);
+            await validate(unit);
+            result=await scheduleMicroForTurn(context.scope,worldlineId,0,pair.turn,revisionId,{sourceReanalysis:true,validate:()=>validate(unit)});
+            result={...result,ok:result.status==='verified'&&result.record?.analysisStatus==='verified'};
+          }else result=await runLensForRange({lensId:inventory.lensId,startTurn:unit.start,endTurn:unit.end,trigger:'explicit_reanalysis',sourceReanalysisValidate:()=>validate(unit)});
+          results.push({key:unit.key,ok:result.ok===true,status:result.status,reason:result.reason||'',keptPreviousRecord:result.run?.keptPreviousRecord===true});
+          if(!result.ok)throw Error(result.reason||result.status||'분석에 실패했습니다.');
+        }
+        return {ok:true,kind:inventory.kind,processed:results.length,results};
+      }catch(error){return {ok:false,processed:results.filter(result=>result.ok).length,results,reason:String(error?.message||error)};}
+      finally{auxiliaryReanalysisRunning=false;}
     };
 
     const startSelectedCanonicalBatchesOnce = async (selection = {}) => {
@@ -79538,6 +79698,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const subjects = await lensSubjectNames(context);
       const { systemPrompt, userPrompt } = buildLensPromptMessages({ lens, batch: token.batch, canonicalSummary, previousRecords, subjects });
       const presetName = await resolveLensPresetName(lens);
+      if(opts.sourceReanalysisValidate)await opts.sourceReanalysisValidate();
       const startedAt = Date.now();
       const runId = `lrun_${startedAt}_${digest([lens.lensId, token.scopeKey, start, end, Math.random()]).slice(0, 8)}`;
       const runBase = {
@@ -79560,6 +79721,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       const finishedAt = Date.now();
       const verified = await verifyLensSourceToken(token);
+      if(opts.sourceReanalysisValidate)await opts.sourceReanalysisValidate();
       let status;
       let admission = { ok: false, acceptedItems: [], rejectedItems: [], counts: { total: 0, quoted: 0, interpreted: 0, rejected: 0 } };
       let error = '';
@@ -79593,6 +79755,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (!trialRun && status !== 'stale_source_revision') {
         await withLensScopeLock(token.scopeKey, async () => {
           const assertCurrent = async () => {
+            if(opts.sourceReanalysisValidate)await opts.sourceReanalysisValidate();
             if(opts.writeGeneration!==lensWriteGeneration || opts.signal?.aborted)throw lensError('LENS_RUN_CANCELLED','승계 또는 취소로 렌즈 응답을 폐기했습니다.');
             const saved=await readLensRegistry({force:true}), current=saved.lenses.find(row=>row.lensId===lens.lensId);
             if(!current || current.instructionRevision!==lens.instructionRevision || (opts.requireActive===true && current.status!=='active'))throw lensError('LENS_DEFINITION_CHANGED','렌즈가 변경되거나 삭제되어 응답을 폐기했습니다.');
@@ -85827,20 +85990,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     queueGuiRender(0, 'body');
   };
 
-  const runCanonicalGuiCommand = async (message, command) => {
+  const runCanonicalGuiCommand = async (message, command, options={}) => {
+    const canonicalJob=options.canonicalJob!==false;
     try {
       dismissBookMemoryFailureNotice();
-      Gui.canonicalJobMinimized = false;
-      Gui.canonicalJobDismissedId = '';
-      Gui.canonicalJobLaunchPreviousId = String(LibraMemoryCore.state.canonicalJob?.jobId || '');
-      Gui.canonicalJobLaunchPending = true;
+      if(canonicalJob){
+        Gui.canonicalJobMinimized = false;
+        Gui.canonicalJobDismissedId = '';
+        Gui.canonicalJobLaunchPreviousId = String(LibraMemoryCore.state.canonicalJob?.jobId || '');
+        Gui.canonicalJobLaunchPending = true;
+      }
       guiSetStatus(message, false, true);
       const result = await command();
       await LibraMemoryCore.refreshSnapshot(undefined, { suppressGuiSchedule: true, limits: LibraMemoryCore.state.guiSnapshotLimits || LIBRA_SNAPSHOT_PAGE_LIMITS });
       queueGuiRender(0, 'canonical-job-complete');
+      if(!canonicalJob)guiSetStatus('선택한 기억의 재분석을 완료했습니다.'+(result?.results?.some(row=>row.keptPreviousRecord)?' 새 항목이 없는 렌즈 구간은 기존 기록을 유지했습니다.':''),false,true);
       return result;
     } catch (error) {
-      Gui.canonicalJobLaunchPending = false;
+      if(canonicalJob)Gui.canonicalJobLaunchPending = false;
       const diagnosis = libraMemoryFailureDiagnostic(error);
       guiSetStatus(`${diagnosis.title} · ${diagnosis.message}`, true, true);
       throw error;
@@ -85867,7 +86034,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const showLibraSourceReanalysisDrawer = async () => {
     closeCanonicalRangeDrawer();if(!Gui.root||!Gui.visible)return;
     const binding=canonicalReaderBinding(),bindingKey=canonicalReaderBindingKey(binding),selected=new Set();
-    let alive=true,busy=false,reviewSaving=false,inventory=null,reviewVersion=0,loadVersion=0;
+    let alive=true,busy=false,reviewSaving=false,inventory=null,reviewVersion=0,loadVersion=0,kind='canonical',lensId='';
+    const kinds=[['canonical','정본'],['micro','미크로'],['lens','렌즈']];
+    const tabs=guiEl('div',{class:'tabs',role:'tablist','aria-label':'재분석할 기억 종류',dataset:{reanalysisPages:'true'}},kinds.map(([value,label])=>guiEl('button',{class:'tab',type:'button',role:'tab',id:'reanalysis-tab-'+value,'aria-controls':'reanalysis-page','aria-selected':String(value===kind),tabindex:value===kind?0:-1,text:label,dataset:{reanalysisKind:value}})));
+    const lensChoice=guiEl('select',{class:'input','aria-label':'재분석할 렌즈',dataset:{reanalysisLens:'true'}});
+    const lensField=guiEl('label',{hidden:true},[document.createTextNode('렌즈 선택 '),lensChoice]);
+    const introduction=guiEl('p',{class:'hint',dataset:{reanalysisIntroduction:'true'}});
+    const page=guiEl('div',{role:'tabpanel',id:'reanalysis-page','aria-labelledby':'reanalysis-tab-canonical'});
     const status=guiEl('p',{class:'hint',role:'status','aria-live':'polite',dataset:{reanalysisStatus:'true'}});
     const list=guiEl('div',{id:'seglist',class:'stack stack--sm',dataset:{reanalysisRanges:'true'}});
     const reviewPanel=guiEl('div',{dataset:{reanalysisReviewPanel:'true'}});
@@ -85880,54 +86053,81 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const advanced=guiEl('div');
     const fold=guiEl('details',{class:'fold',dataset:{reanalysisFold:'true'}},[
       guiEl('summary',{text:'직접 원문 재분석 · 턴 선택',tabindex:'0'}),guiEl('div',{class:'fold__body'},[
-        guiEl('p',{class:'hint',text:'한 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. 리브라는 선택한 턴이 속한 5턴 구간을 분석합니다. 저장된 기억은 성공 시 교체하고, 누락·실패 구간은 새로 분석합니다. 같은 구간의 턴은 한 번만 분석합니다.'}),
-        guiEl('div',{class:'cluster'},[refresh,run,review]),guiEl('div',{class:'cluster'},[selectAll,clearSelection]),list,
-        guiEl('p',{class:'hint'},[count,document.createTextNode('턴 선택 · 예상 기본 호출 '),calls]),scopeNote,reviewPanel,status
+        introduction,lensField,
+        guiEl('p',{class:'hint'},[count,document.createTextNode('개 선택 · 예상 기본 호출 '),calls]),scopeNote,
+        guiEl('div',{class:'cluster'},[refresh,run,review]),guiEl('div',{class:'cluster'},[selectAll,clearSelection]),list,reviewPanel,status
       ])
     ]);
     const cancel=guiEl('button',{class:'btn',type:'button',text:'닫기'});
     const overlay=guiEl('div',{class:'overlay is-open',id:'dlg-libra-source-reanalysis','aria-hidden':'false',dataset:{canonicalRangeDrawer:'true',canonicalRangeScope:binding.scopeKey}},[
       guiEl('section',{class:'dialog dialog--wide',role:'dialog','aria-modal':'true','aria-labelledby':'libraSourceReanalysisTitle'},[
-        guiEl('h2',{id:'libraSourceReanalysisTitle',text:'원문 재분석'}),fold,
+        guiEl('h2',{id:'libraSourceReanalysisTitle',text:'원문 재분석'}),tabs,page,
         guiEl('details',{class:'fold'},[guiEl('summary',{text:'분석 태그 규칙 설정',tabindex:'0'}),advanced]),
         guiEl('div',{class:'dialog__actions'},[cancel])
       ])
     ]);
+    page.append(fold);
     const valid=()=>alive&&bindingKey===canonicalReaderBindingKey(canonicalReaderBinding())&&overlay.isConnected;
     const close=()=>{if(!alive)return;alive=false;reviewVersion++;loadVersion++;overlay.remove();if(Gui.canonicalRangeDrawerClose===close)Gui.canonicalRangeDrawerClose=null;};
     Gui.canonicalRangeDrawerClose=close;cancel.addEventListener('click',close);overlay.addEventListener('click',event=>{if(event.target===overlay)close();});
     const sync=()=>{
-      const locked=busy||reviewSaving,units=(inventory?.ranges||[]).filter(row=>selected.has(row.key)),batches=[...new Map(units.map(row=>[row.batchStart,row])).values()];
-      run.disabled=locked||!units.length;review.hidden=units.length!==1;review.disabled=locked||units.length!==1;refresh.disabled=locked;
+      const locked=busy||reviewSaving,units=(inventory?.ranges||[]).filter(row=>selected.has(row.key)),batches=kind==='canonical'?[...new Map(units.map(row=>[row.batchStart,row])).values()]:units;
+      const single=units.length===1&&units[0].start===units[0].end;
+      run.disabled=locked||!units.length;review.hidden=!single;review.disabled=locked||!single;refresh.disabled=locked;lensChoice.disabled=locked;
+      for(const tab of tabs.children){tab.disabled=locked;tab.classList.toggle('is-on',tab.dataset.reanalysisKind===kind);tab.setAttribute('aria-selected',String(tab.dataset.reanalysisKind===kind));tab.tabIndex=tab.dataset.reanalysisKind===kind?0:-1;}
+      page.setAttribute('aria-labelledby','reanalysis-tab-'+kind);lensField.hidden=kind!=='lens';
+      page.dataset.reanalysisPage=kind;
+      fold.querySelector('summary').textContent=({canonical:'정본 재분석 · 턴 선택 (5턴 구간 단위)',micro:'미크로 재분석 · 1턴 선택',lens:'렌즈 재분석 · 기록 구간 선택'})[kind];
+      introduction.textContent={canonical:'정본은 선택한 턴이 속한 5턴 구간 전체를 분석합니다. 같은 구간은 한 번만 호출하며, 성공 시 기존 정본을 교체합니다. 누락·실패 구간도 선택할 수 있습니다.',micro:'미크로는 선택한 U+A 1턴마다 다시 분석합니다. 성공한 턴의 미크로만 교체하며, 실패한 턴의 기존 기억은 유지합니다. 정본과 렌즈를 재분석하지 않습니다.',lens:'선택한 렌즈로 각 기록 구간을 다시 분석합니다. 저장된 기록은 원래 구간을 유지하고, 기록이 없는 부분도 분석할 수 있습니다. 정본과 미크로를 재분석하지 않습니다.'}[kind]+' 한 턴만 선택하면 원문과 제외할 태그를 확인한 뒤 분석할 수도 있습니다. 저장한 태그 규칙은 정본·미크로·렌즈의 이후 분석에도 적용됩니다.';
       selectAll.disabled=locked||!inventory?.ranges.length;clearSelection.disabled=locked||!units.length;
       list.querySelectorAll('input').forEach(input=>{input.disabled=locked;});
-      count.textContent=String(units.length);calls.textContent=batches.length+'회 (5턴 구간당 1회 · 추가 처리에 따라 사용량이 늘 수 있습니다)';
-      scopeNote.textContent=batches.length?'분석할 구간: '+batches.map(row=>'T'+row.batchStart+'–T'+row.batchEnd).join(', ')+' · 성공 시 교체하고 실패 시 기존 기억을 보존합니다. 누락·실패 구간은 새로 분석합니다.':'완성된 5턴 구간의 턴을 선택하세요. 저장·누락·실패 구간을 모두 분석할 수 있습니다.';
+      selectAll.textContent=kind==='lens'?'가능한 구간 전체 선택':'가능한 턴 전체 선택';
+      count.textContent=String(units.length);calls.textContent=batches.length+'회 ('+({canonical:'5턴 구간당 1회',micro:'1턴당 1회',lens:'선택한 렌즈의 구간당 1회'})[kind]+' · 추가 처리에 따라 사용량이 늘 수 있습니다)';
+      scopeNote.textContent=batches.length?'분석할 구간: '+batches.map(row=>kind==='canonical'?'T'+row.batchStart+'–T'+row.batchEnd:row.label).join(', ')+' · 성공 시 교체하고 실패 시 기존 기억을 보존합니다.'+(kind==='lens'?' 새 항목이 없는 구간은 기존 렌즈 기록을 유지합니다.':' 누락·실패 구간은 새로 분석합니다.'):{canonical:'완성된 5턴 구간의 턴을 선택하세요. 저장·누락·실패 구간을 모두 분석할 수 있습니다.',micro:'완료된 U+A 턴을 선택하세요. 정본 5턴이 완성되기 전에도 분석할 수 있습니다.',lens:'렌즈와 기록 구간을 선택하세요. 원문 보기에서 구간 전체를 확인할 수 있습니다.'}[kind];
     };
     const changed=()=>{reviewVersion++;reviewPanel.replaceChildren();selected.clear();list.querySelectorAll('input:checked').forEach(input=>selected.add(input.value));sync();};
     const execute=async(selection,guard=null)=>{
       if(busy||!valid())return;busy=true;sync();
       try{
         if(guard)await guard();if(!valid())return;
-        await runCanonicalGuiCommand('선택한 턴이 속한 5턴 구간을 다시 분석합니다.',async()=>{
+        await runCanonicalGuiCommand(({canonical:'선택한 턴이 속한 5턴 정본 구간',micro:'선택한 1턴 미크로',lens:'선택한 렌즈의 기록 구간'})[kind]+'을 다시 분석합니다.',async()=>{
           if(guard)await guard();if(!valid())throw Error('재분석 화면이 닫혔습니다. 다시 선택하세요.');
           const result=await LibraMemoryCore.reanalyzeSelectedRanges(selection);
-          if(result?.ok!==true)throw Error(result?.reason||'재분석을 완료하지 못했습니다.');return result;
-        });
+          if(result?.ok!==true){
+            for(const done of result?.results||[])if(done.ok){selected.delete(done.key);for(const input of list.querySelectorAll('input'))if(input.value===done.key)input.checked=false;}
+            throw Error((result?.processed?'완료 '+result.processed+'개. 남은 선택만 다시 실행합니다. ':'')+(result?.reason||'재분석을 완료하지 못했습니다.'));
+          }return result;
+        },{canonicalJob:kind==='canonical'});
         if(alive)close();
       }catch(error){if(valid())status.textContent='재분석 중단: '+String(error?.message||error);}
       finally{busy=false;if(alive)sync();}
     };
     const load=async()=>{
-      if(busy||reviewSaving)return;const version=++loadVersion;reviewVersion++;selected.clear();inventory=null;list.replaceChildren();reviewPanel.replaceChildren();sync();status.textContent='분석할 턴을 읽는 중…';
+      if(busy||reviewSaving)return;const version=++loadVersion;reviewVersion++;selected.clear();inventory=null;list.replaceChildren();reviewPanel.replaceChildren();sync();status.textContent='분석할 기억을 읽는 중…';
       try{
-        const value=await LibraMemoryCore.listReanalysisRanges();if(!valid()||version!==loadVersion)return;
+        let value;
+        try{value=await LibraMemoryCore.listReanalysisRanges({kind,lensId});}
+        catch(error){
+          if(!valid()||version!==loadVersion)return;
+          if(kind!=='lens'||error?.code!=='LENS_NOT_FOUND')throw error;
+          lensId='';value=await LibraMemoryCore.listReanalysisRanges({kind});
+        }
+        if(!valid()||version!==loadVersion)return;
         if(value.scopeKey!==binding.scopeKey)throw Error('채팅이 변경되었습니다. 다시 열어 주세요.');inventory=value;
+        if(kind==='lens'){lensId=value.lensId;lensChoice.replaceChildren(...optionNodes((value.lenses||[]).map(lens=>[lens.lensId,lens.name+(lens.status==='paused'?' (일시정지 · 수동 실행 가능)':'')]),lensId));}
         for(const range of value.ranges)LibraMemoryCore.appendReanalysisRange(list,range,{changed,current:()=>valid()&&version===loadVersion,read:()=>LibraMemoryCore.readReanalysisTurn(value,range)});
-        status.textContent=value.ranges.length?'원하는 턴을 선택하세요. 원문 보기에서 실제 내용을 확인할 수 있습니다.':'분석할 완성 구간이 없습니다. 완성된 U+A 5턴 구간이 필요합니다.';sync();
+        status.textContent=value.ranges.length?'원하는 '+(kind==='lens'?'구간':'턴')+'을 선택하세요. 원문 보기에서 실제 내용을 확인할 수 있습니다.':{canonical:'분석할 완성 구간이 없습니다. 완성된 U+A 5턴 구간이 필요합니다.',micro:'분석할 완료된 U+A 턴이 없습니다.',lens:value.lenses?.length?'분석할 완료된 U+A 턴이 없습니다.':'저장된 렌즈가 없습니다. 렌즈 스튜디오에서 먼저 렌즈를 만드세요.'}[kind];sync();
       }catch(error){if(valid()&&version===loadVersion)status.textContent='목록 조회 실패: '+String(error?.message||error);}
     };
     refresh.addEventListener('click',()=>void load());
+    const switchPage=value=>{if(busy||reviewSaving||kind===value)return;kind=value;void load();};
+    tabs.addEventListener('click',event=>{const tab=event.target.closest('[data-reanalysis-kind]');if(tab)switchPage(tab.dataset.reanalysisKind);});
+    tabs.addEventListener('keydown',event=>{
+      if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)||busy||reviewSaving)return;
+      event.preventDefault();const index=kinds.findIndex(([value])=>value===kind),next=event.key==='Home'?0:event.key==='End'?2:(index+(event.key==='ArrowRight'?1:2))%3;
+      switchPage(kinds[next][0]);tabs.children[next].focus();
+    });
+    lensChoice.addEventListener('change',()=>{if(busy||reviewSaving)return;lensId=lensChoice.value;void load();});
     const selectEveryTurn=checked=>{
       if(busy||reviewSaving||!inventory)return;
       list.querySelectorAll('input').forEach(input=>{input.checked=checked;});changed();
@@ -85939,9 +86139,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const reviewCurrent=()=>valid()&&version===reviewVersion&&selected.size===1&&selected.has(key);busy=true;sync();
       try{
         const sample=await LibraMemoryCore.readReanalysisTurn(original,range);if(!reviewCurrent())return;
-        const validate=async()=>{const fresh=await LibraMemoryCore.readReanalysisTurn(original,range);if(!reviewCurrent()||JSON.stringify(sample)!==JSON.stringify(fresh))throw Error('검토한 원문 또는 같은 5턴 구간의 원문이 변경되었습니다. 다시 확인하세요.');};
+        const validate=async()=>{const fresh=await LibraMemoryCore.readReanalysisTurn(original,range);if(!reviewCurrent()||JSON.stringify(sample)!==JSON.stringify(fresh))throw Error('검토한 원문 또는 분석에 필요한 원문이 변경되었습니다. 다시 확인하세요.');};
         LibraMemoryCore.mountSourceReanalysisReview(reviewPanel,{sample,current:reviewCurrent,validate,onBusy:value=>{reviewSaving=value;if(alive)sync();},onRun:async guard=>{
-          await guard();const latest=await LibraMemoryCore.listReanalysisRanges();await guard();
+          await guard();const latest=await LibraMemoryCore.listReanalysisRanges({kind,lensId});await guard();
           await execute({...latest,ranges:latest.ranges.filter(row=>row.key===key),reviewedSource:{key,rawDigest:sample.rawDigest,rulesKey:LibraMemoryCore.sourceReanalysisRulesKey()}},guard);
         }});
       }catch(error){if(reviewCurrent())status.textContent='원문 조회 실패: '+String(error?.message||error);}
@@ -93655,7 +93855,7 @@ advanced
     async runManualColdStart(options = {}) {
       return await LibraMemoryCore.startManualColdStart(options);
     },
-    async listReanalysisRanges() { return safeClone(await LibraMemoryCore.listReanalysisRanges()); },
+    async listReanalysisRanges(options = {}) { return safeClone(await LibraMemoryCore.listReanalysisRanges(options)); },
     async reanalyzeSelectedRanges(options = {}) { return await LibraMemoryCore.reanalyzeSelectedRanges(options); },
     async listCanonicalBatchRanges(options = {}) { return safeClone(await LibraMemoryCore.listCanonicalBatchRanges(options)); },
     async startSelectedCanonicalBatches(options = {}) { return await LibraMemoryCore.startSelectedCanonicalBatches(options); },

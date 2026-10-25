@@ -19,7 +19,7 @@ assert.match(reviewDrawer,/성공 시 교체하고 실패 시 기존 기억을 �
 assert.match(drawer,/모델 사용량이 발생할 수 있습니다/);
 assert.match(drawer,/identityDigest:row\.identityDigest/,'drawer carries the current source identity into the explicit selection');
 assert.match(drawer,/LibraMemoryCore\.startSelectedCanonicalBatches\(request\)/);
-assert.match(reviewDrawer,/if\(result\?\.ok!==true\)throw Error/,'failed replacement is surfaced by the drawer');
+assert.match(reviewDrawer,/if\(result\?\.ok!==true\)\{[\s\S]*?throw Error/,'failed replacement is surfaced by the drawer');
 const selection=between('const startSelectedCanonicalBatchesOnce =','const startSelectedCanonicalBatches =');
 assert.match(selection,/row\.identityDigest!==actual\.identityDigest/,'edited source requires exact current range identity');
 assert.match(selection,/selected_batch_identity_changed/);
