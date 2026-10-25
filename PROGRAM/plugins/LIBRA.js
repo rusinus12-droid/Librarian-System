@@ -1,6 +1,6 @@
 //@name libra
-//@display-name LIBRA v2.6.6
-//@version 2.6.6
+//@display-name LIBRA v2.6.7
+//@version 2.6.7
 //@allowed-ipc serial_gradation_agents_for_rp
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.6.6';
+  const PLUGIN_VERSION = '2.6.7';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -92003,7 +92003,8 @@ advanced
             button.disabled = true;
             try {
               const config = await MemorySuiteStorageBridge.getConnectionSettings();
-              if (config.mode === 'plugin_only') await hydrateSettingsGuiAfterOpen(openSerial);
+              const effectiveMode = config.scopeId ? config.mode : (config.global?.set ? config.global.mode : config.mode);
+              if (effectiveMode === 'plugin_only') await hydrateSettingsGuiAfterOpen(openSerial);
               else await retryLibraServerAvailability();
               if (Gui.visible && Gui.openSerial === openSerial && Gui.mockupApp === app) syncBookCurrentStatus(app);
             } catch (error) {
@@ -92048,7 +92049,8 @@ advanced
         const unavailable = Runtime.serverUnavailable && value.mode !== 'plugin_only';
         const label = value.transition || value.migrationRequired ? '전환 확인 필요'
           : unavailable ? '서버 연결 확인 필요'
-          : value.mode === 'server_only' ? '서버 모드' : value.mode === 'plugin_only' ? '플러그인 모드' : '확인 필요';
+          : value.mode === 'server_only' ? '서버 모드'
+          : value.mode === 'plugin_only' ? '플러그인 모드' : '확인 필요';
         setRow('storage', `저장: ${label}`, unavailable);
       }).catch(err => {
         if (serial === bookCurrentStatus.serial && openSerial === Gui.openSerial && Gui.mockupApp === app) {
@@ -92056,8 +92058,30 @@ advanced
           setRow('storage', unavailable ? '저장: 서버 연결 확인 필요' : '저장: 확인 필요', unavailable);
         }
       });
-    } else if (Runtime.serverUnavailable) {
-      setRow('storage', '저장: 서버 연결 확인 필요', true);
+    } else {
+      void MemorySuiteStorageBridge.getConnectionSettings().then(config => {
+        if (serial !== bookCurrentStatus.serial || openSerial !== Gui.openSerial || Gui.mockupApp !== app
+            || LibraMemoryCore.peekSnapshot()?.scope?.scopeKey) return;
+        const isGlobal = Boolean(config.global?.set);
+        const globalMode = config.global?.mode || config.mode || 'plugin_only';
+        const unavailable = Runtime.serverUnavailable && globalMode !== 'plugin_only';
+        let label = '';
+        if (config.transition || config.migrationRequired) {
+          label = '저장: 전환 확인 필요';
+        } else if (unavailable) {
+          label = '저장: 서버 연결 확인 필요';
+        } else if (globalMode === 'server_only') {
+          label = isGlobal ? '전역 저장: 서버 모드' : '저장: 서버 모드';
+        } else {
+          label = isGlobal ? '전역 저장: 플러그인 모드' : '저장: 플러그인 모드';
+        }
+        setRow('storage', label, unavailable);
+      }).catch(err => {
+        if (serial === bookCurrentStatus.serial && openSerial === Gui.openSerial && Gui.mockupApp === app) {
+          const unavailable = isLibraServerUnavailableError(err);
+          setRow('storage', unavailable ? '저장: 서버 연결 확인 필요' : '저장: 확인 필요', unavailable);
+        }
+      });
     }
     if (!bookCurrentStatus.subscribed) {
       bookCurrentStatus.subscribed = true;

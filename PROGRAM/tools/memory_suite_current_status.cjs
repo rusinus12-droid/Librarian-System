@@ -7,11 +7,12 @@ module.exports = function createMemorySuiteCurrentStatus(options) {
   let serial = 0, timer = null, unsubscribe = null, cache = null, pending = null;
   const visible = () => options.isVisible() && options.getRoot()?.isConnected;
   const signature = config => JSON.stringify([config.mode, config.url, config.scopeId,
+    config.global?.set, config.global?.mode,
     config.transition, config.migrationRequired, config.recoveryRequired]);
   const setStorage = (foot, text, warning = false, detail = '') => {
     const row = foot.querySelector('[data-current-status="storage"]');
     if (!row) return;
-    row.textContent = `저장: ${text}`;
+    row.textContent = text.startsWith('저장:') || text.startsWith('전역 저장:') ? text : `저장: ${text}`;
     row.dataset.warning = String(warning);
     row.title = [detail, '저장 설정으로 이동'].filter(Boolean).join(' · ');
     row.style.color = warning ? 'var(--warn-ink, #a05415)' : '';
@@ -76,8 +77,17 @@ module.exports = function createMemorySuiteCurrentStatus(options) {
         setStorage(foot, '이전 완료 확인 필요', true); return;
       }
       if (config.recoveryRequired) { setStorage(foot, '초기화·복원 확인 필요', true); return; }
-      if (config.mode === 'plugin_only') { setStorage(foot, '플러그인 모드'); return; }
-      if (!['server_only','mirror'].includes(config.mode)) { setStorage(foot, '설정 확인 필요', true); return; }
+
+      const hasScope = Boolean(config.scopeId);
+      const isGlobalSet = Boolean(config.global?.set);
+      const globalMode = config.global?.mode || 'plugin_only';
+      const effectiveMode = hasScope ? config.mode : (isGlobalSet ? globalMode : config.mode);
+
+      if (effectiveMode === 'plugin_only') {
+        setStorage(foot, (!hasScope && isGlobalSet) ? '전역 저장: 플러그인 모드' : '플러그인 모드');
+        return;
+      }
+      if (!['server_only','mirror'].includes(effectiveMode)) { setStorage(foot, '설정 확인 필요', true); return; }
       const key = signature(config);
       // Reuse a recent successful connection-page probe. A fresh settings read
       // alone is not evidence that the server answered.
@@ -105,8 +115,20 @@ module.exports = function createMemorySuiteCurrentStatus(options) {
         cache = { key, at: Date.now(), result };
       }
       const result = cache.result;
-      setStorage(foot, result?.ok ? (config.mode === 'server_only' ? '서버 모드 · 연결됨' : '이전 설정 · 전환 필요')
-        : '서버 연결 미완료', !result?.ok || config.mode === 'mirror', result?.ok ? '' : String(result?.error || '서버 응답을 확인하지 못했습니다.'));
+      let label = '';
+      if (result?.ok) {
+        if (effectiveMode === 'mirror') {
+          label = '이전 설정 · 전환 필요';
+        } else if (!hasScope && isGlobalSet) {
+          label = '전역 저장: 서버 모드 · 연결됨';
+        } else {
+          label = '서버 모드 · 연결됨';
+        }
+      } else {
+        label = (!hasScope && isGlobalSet) ? '전역 저장: 서버 연결 미완료' : '서버 연결 미완료';
+      }
+      setStorage(foot, label, !result?.ok || effectiveMode === 'mirror',
+        result?.ok ? '' : String(result?.error || '서버 응답을 확인하지 못했습니다.'));
     } catch (error) {
       if (current()) setStorage(foot, '확인 필요', true, String(error?.message || error));
     }
@@ -122,6 +144,7 @@ module.exports = function createMemorySuiteCurrentStatus(options) {
       if (!visible()) { stop(); return; }
       void refreshStatus(); schedule();
     }, 15000);
+    try { timer?.unref?.(); } catch (_) {}
   };
   const sync = () => {
     if (!visible()) return;
