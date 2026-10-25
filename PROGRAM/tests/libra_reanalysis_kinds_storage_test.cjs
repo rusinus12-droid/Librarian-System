@@ -14,12 +14,13 @@ for(const mode of ['plugin_only','mirror','server_only'])test('explicit Micro re
     assert.equal((await f.r.api.getCanonicalMemories()).length,0);assert.equal((await f.r.api.inspectScopeLenses()).memories.length,0);
   }finally{await fx.cleanup();}
 });
-for(const mode of ['plugin_only','mirror','server_only'])test('explicit lens reanalysis keeps its saved range and selected lens through '+mode,async()=>{
+for(const mode of ['plugin_only','mirror','server_only'])test('reviewed lens reanalysis keeps its saved range and selected lens through '+mode,async()=>{
   const fx=await serverFixture({mode,transformSource});try{
     let f=fx.f;const a=await createLens(f,'기존 관점'),b=await createLens(f,'선택한 관점');f.control.onCall=()=>lensReply(f,1,'첫 렌즈 기록');
     assert.equal((await f.r.api.runLensForRange({lensId:b.lensId,startTurn:1,endTurn:2})).ok,true);
     const inventory=await f.r.api.listReanalysisRanges({kind:'lens',lensId:b.lensId}),before=await f.r.api.inspectScopeLenses();f.control.onCall=()=>lensReply(f,1,'교체된 렌즈 기록');
-    const result=await f.r.api.reanalyzeSelectedRanges(select(inventory,'1-2'));assert.equal(result.ok,true,JSON.stringify(result));
+    const core=f.r.context.__reanalysisKindsCore,sample=await core.readReanalysisTurn(inventory,inventory.ranges[0],{turn:2});
+    const result=await f.r.api.reanalyzeSelectedRanges({...select(inventory,'1-2'),reviewedSource:{key:'1-2',turn:2,rawDigest:sample.rawDigest,rulesKey:core.sourceReanalysisRulesKey()}});assert.equal(result.ok,true,JSON.stringify(result));
     f=await fx.restart();const after=await f.r.api.inspectScopeLenses();assert.equal(after.lenses[a.lensId].recordCount,0);assert.equal(after.lenses[b.lensId].recordCount,1);assert.equal(after.memories[0].recordKey,before.memories[0].recordKey);assert.equal(after.memories[0].text,'교체된 렌즈 기록');
     assert.equal((await f.r.api.getCanonicalMemories()).length,0);assert.equal((await f.r.api.debugReadActiveMicroMemory(1)).status,'missing');
   }finally{await fx.cleanup();}

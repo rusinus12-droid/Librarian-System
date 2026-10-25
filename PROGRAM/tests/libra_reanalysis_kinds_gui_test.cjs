@@ -36,6 +36,7 @@ test('Micro multi-turn direct reanalysis invokes only Micro and disables navigat
   const s=await setup(3);let release;try{
     await page(s,'micro');const gate=new Promise(resolve=>release=resolve);s.f.control.onCall=async args=>{await gate;return microReply(args);};s.select(1);s.select(3);
     assert.equal(s.root.querySelector('[data-reanalysis-review]').hidden,true);assert.match(s.root.querySelector('#range-calls').textContent,/^2회/);
+    assert.match(s.root.querySelector('[data-reanalysis-action-hint]').textContent,/여러 턴 선택 시 바로 재분석만/);
     s.root.querySelector('[data-reanalysis-run]').click();await wait(()=>s.f.control.calls.length>0);
     assert.ok([...s.root.querySelectorAll('[data-reanalysis-kind]')].every(tab=>tab.disabled));release();await wait(()=>!s.root.querySelector('[data-canonical-range-drawer]'));
     assert.equal(s.f.control.calls.length,2);assert.equal((await s.f.r.api.debugReadActiveMicroMemory(1)).status,'verified');assert.equal((await s.f.r.api.debugReadActiveMicroMemory(3)).status,'verified');assert.equal(s.f.getRecords('libra.canonical_memory.v1').length,0);
@@ -58,11 +59,11 @@ for(const kind of ['micro','lens'])test(kind+' single-turn review saves exclusio
     if(kind==='micro')assert.equal((await s.f.r.api.debugReadActiveMicroMemory(1)).status,'verified');else assert.equal((await s.f.r.api.inspectScopeLenses()).memories.length,1);
   }finally{await s.dispose();}
 });
-test('lens page displays the chosen lens and actual record ranges; multi-turn ranges offer direct reanalysis',async()=>{
+test('lens page displays the chosen lens and offers review for one multi-turn range',async()=>{
   const s=await setup();try{
     const a=await createLens(s.f,'관점 A'),b=await createLens(s.f,'관점 B');s.f.control.onCall=()=>lensReply(s.f);
     assert.equal((await s.f.r.api.runLensForRange({lensId:a.lensId,startTurn:1,endTurn:2})).ok,true);
-    await page(s,'lens');assert.match(s.root.textContent,/T1–T2/);s.select('1-2');assert.equal(s.root.querySelector('[data-reanalysis-review]').hidden,true);
+    await page(s,'lens');assert.match(s.root.textContent,/T1–T2/);s.select('1-2');assert.equal(s.root.querySelector('[data-reanalysis-review]').hidden,false);
     const choice=s.root.querySelector('[data-reanalysis-lens]');choice.value=b.lensId;choice.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));await wait(()=>s.root.querySelector('[data-reanalysis-ranges]').textContent.includes('관점 B'));
     assert.equal(s.root.querySelectorAll('[data-reanalysis-ranges] input:checked').length,0);s.select('1-5');s.root.querySelector('[data-reanalysis-run]').click();await wait(()=>!s.root.querySelector('[data-canonical-range-drawer]'));
     const data=await s.f.r.api.inspectScopeLenses();assert.equal(data.lenses[a.lensId].recordCount,1);assert.equal(data.lenses[b.lensId].recordCount,1);
@@ -83,5 +84,25 @@ test('lens page shows its ten-turn cadence separately from saved and incomplete 
     assert.match(s.root.querySelector('[data-reanalysis-lens-cadence]').textContent,/자동 분석 묶음: 10턴/);
     assert.deepEqual([...s.root.querySelectorAll('[data-reanalysis-ranges] strong')].map(row=>row.textContent),['T1–T2','T3–T12','T13–T15']);
     s.select('1-2');s.select('3-12');assert.match(s.root.querySelector('#range-calls').textContent,/^2회/);
+    assert.equal(s.root.querySelector('[data-reanalysis-review]').hidden,true);assert.match(s.root.querySelector('[data-reanalysis-action-hint]').textContent,/여러 구간 선택 시 바로 재분석만/);
+  }finally{await s.dispose();}
+});
+test('lens review selects T2 within a five-turn range, saves tags and reanalyzes the full range once',async()=>{
+  const s=await setup();try{
+    await createLens(s.f);s.f.chat.message[3].data+='<drop>Private second-turn module.</drop>';s.f.control.onCall=()=>lensReply(s.f,2,'검토 후 렌즈 기억');
+    await page(s,'lens');s.select('1-5');assert.equal(s.root.querySelector('[data-reanalysis-review]').hidden,false);s.root.querySelector('[data-reanalysis-review]').click();await wait(()=>s.root.querySelector('[data-review-apply]')?.disabled===false);
+    const choice=s.root.querySelector('[data-reanalysis-review-turn]');assert.deepEqual([...choice.options].map(option=>option.textContent),['T1','T2','T3','T4','T5']);assert.match(s.root.querySelector('[data-reanalysis-review-panel]').textContent,/재분석 범위는 T1–T5 전체/);
+    choice.value='2';choice.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));await wait(()=>s.root.querySelector('[data-review-source=assistant]')?.value.includes('Private second-turn'));
+    const review=s.root.querySelector('[data-source-reanalysis-review]'),area=review.querySelector('[data-review-source=assistant]'),start=area.value.indexOf('Private'),calls=s.f.control.calls.length;area.setSelectionRange(start,start+7);area.onselect();review.querySelector('[data-review-extract]').click();await review.querySelector('[data-review-apply]').onclick();await review.querySelector('[data-review-run]').onclick();
+    assert.equal(s.root.querySelector('[data-canonical-range-drawer]'),null);assert.equal(s.f.control.calls.length,calls+1);assert.equal(JSON.stringify(s.f.control.calls.at(-1)).includes('Private second-turn'),false);assert.equal(s.f.r.api.getSourceEditRules().ignoredTags.includes('drop'),true);
+    const data=await s.f.r.api.inspectScopeLenses();assert.equal(data.memories.length,1);assert.equal(data.memories[0].turnRange.start,1);assert.equal(data.memories[0].turnRange.end,5);
+  }finally{await s.dispose();}
+});
+test('lens review rejects an edit in a different turn before saving tags',async()=>{
+  const s=await setup();try{
+    await createLens(s.f);s.f.chat.message[3].data+='<drop>Private second-turn module.</drop>';await page(s,'lens');s.select('1-5');s.root.querySelector('[data-reanalysis-review]').click();await wait(()=>s.root.querySelector('[data-review-apply]')?.disabled===false);
+    const choice=s.root.querySelector('[data-reanalysis-review-turn]');choice.value='2';choice.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));await wait(()=>s.root.querySelector('[data-review-source=assistant]')?.value.includes('Private second-turn'));
+    const review=s.root.querySelector('[data-source-reanalysis-review]'),area=review.querySelector('[data-review-source=assistant]'),start=area.value.indexOf('Private'),calls=s.f.control.calls.length;area.setSelectionRange(start,start+7);area.onselect();review.querySelector('[data-review-extract]').click();await review.querySelector('[data-review-apply]').onclick();
+    s.f.chat.message[9].data+=' Changed fifth turn.';await review.querySelector('[data-review-run]').onclick();assert.match(review.querySelector('[data-review-status]').textContent,/재분석 중단/);assert.equal(s.f.control.calls.length,calls);assert.equal(s.f.r.api.getSourceEditRules().ignoredTags.includes('drop'),false);
   }finally{await s.dispose();}
 });

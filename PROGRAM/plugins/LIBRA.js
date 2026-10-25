@@ -72197,7 +72197,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if(!sameSnapshotScope(live.scope,scope)||libraReanalysisTopology(buildPairs(live.chat,live.scope.scopeKey))!==libraReanalysisTopology(pairs))throw Error('선택할 원문 위치가 변경되었습니다. 새로고침하세요.');
       return {owner:'libra',kind,scopeKey:scope.scopeKey,worldlineId,topology:libraReanalysisTopology(pairs),ranges,observedTurns:pairs.length,lenses,lensId,lensRevision};
     };
-    const readReanalysisTurn = async (inventory,range) => {
+    const readReanalysisTurn = async (inventory,range,options={}) => {
       await libraSourceInput.ready();const context=await resolveContext(),pairs=buildPairs(context.chat,context.scope.scopeKey);
       if(context.scope.scopeKey!==inventory.scopeKey||libraReanalysisTopology(pairs)!==inventory.topology)throw Error('채팅 또는 턴 구성이 변경되었습니다. 목록을 새로고침하세요.');
       const kind=libraReanalysisKind(inventory);
@@ -72209,12 +72209,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
           if(!lens||lens.instructionRevision!==inventory.lensRevision)throw Error('검토할 렌즈의 지침이 변경되었습니다. 다시 선택하세요.');
         }
       }
-      const selected=pairs.slice(range.start-1,range.end),pair=selected[0];
+      let selected=pairs.slice(range.start-1,range.end);const pair=selected[0];
       const identity=libraReanalysisKind(inventory)==='canonical'?libraReanalysisIdentity(pair):digest(selected.map(libraReanalysisIdentity));
       if(!pair||selected.length!==range.end-range.start+1||identity!==range.identity)throw Error('원문 위치가 변경되었습니다. 목록을 새로고침하세요.');
+      if(options.turn!==undefined){
+        if(!Number.isSafeInteger(options.turn)||options.turn<range.start||options.turn>range.end)throw Error('검토할 턴이 선택한 구간에 없습니다.');
+        selected=selected.filter(row=>row.turn===options.turn);
+      }
       const rows=rawChatMessages(context.chat),rawFor=(start,end,role)=>rows.slice(start,end).filter(row=>messageRole(row)===role).map(libraReanalysisRawText).join('\n\n');
       const roleText=role=>selected.map(item=>(selected.length>1?'[T'+item.turn+']\n':'')+(role==='user'?rawFor(item.user.index,item.user.endIndex+1,role):rawFor(item.user.endIndex+1,libraReanalysisRawEnd(context,item),role))).join('\n\n');
-      return {label:range.label,user:roleText('user'),assistant:roleText('assistant'),rawDigest:libraReanalysisRawDigest(context,pairs,range.batchEnd||range.end)};
+      return {label:options.turn===undefined?range.label:'T'+options.turn,user:roleText('user'),assistant:roleText('assistant'),rawDigest:libraReanalysisRawDigest(context,pairs,range.batchEnd||range.end)};
     };
     const reanalyzeSelectedRanges = async (selection={}) => {
       try{
@@ -72243,7 +72247,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
           ||rows.some(row=>units.find(unit=>unit.key===String(row.key))?.identity!==row.identity))throw Error('선택한 원문 위치가 변경되었습니다. 목록을 새로고침하세요.');
         if(inventory.kind==='lens'&&(selection.lensId!==inventory.lensId||selection.lensRevision!==inventory.lensRevision))throw Error('선택한 렌즈의 지침이 변경되었습니다. 다시 선택하세요.');
         const reviewed=selection.reviewedSource;
-        if(reviewed&&(units.length!==1||units[0].start!==units[0].end||reviewed.key!==units[0].key||reviewed.rulesKey!==memorySuiteSourceTagKey('libra')))throw Error('검토한 턴 또는 태그 규칙이 변경되었습니다.');
+        if(reviewed){
+          const turn=reviewed.turn??(units.length===1&&units[0].start===units[0].end?units[0].start:null);
+          if(units.length!==1||!Number.isSafeInteger(turn)||turn<units[0].start||turn>units[0].end||reviewed.key!==units[0].key||reviewed.rulesKey!==memorySuiteSourceTagKey('libra'))throw Error('검토한 턴 또는 태그 규칙이 변경되었습니다.');
+        }
         const rulesKey=memorySuiteSourceTagKey('libra'),generation=Number(state.worldManagerRuntimeMetaGeneration||0);
         const samples=new Map();for(const unit of units)samples.set(unit.key,await readReanalysisTurn(inventory,unit));
         if(reviewed&&samples.get(units[0].key).rawDigest!==reviewed.rawDigest)throw Error('검토한 원문이 변경되었습니다. 다시 확인하세요.');
@@ -86056,6 +86063,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const status=guiEl('p',{class:'hint',role:'status','aria-live':'polite',dataset:{reanalysisStatus:'true'}});
     const list=guiEl('div',{id:'seglist',class:'stack stack--sm',dataset:{reanalysisRanges:'true'}});
     const reviewPanel=guiEl('div',{dataset:{reanalysisReviewPanel:'true'}});
+    const actionHint=guiEl('p',{class:'hint',dataset:{reanalysisActionHint:'true'}});
     const refresh=guiEl('button',{class:'btn',type:'button',text:'구간 목록 새로고침'});
     const selectAll=guiEl('button',{class:'btn',type:'button',text:'가능한 턴 전체 선택',dataset:{reanalysisSelectAll:'true'}});
     const clearSelection=guiEl('button',{class:'btn',type:'button',text:'전체 해제',dataset:{reanalysisClearSelection:'true'}});
@@ -86067,7 +86075,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       guiEl('summary',{text:'직접 원문 재분석 · 턴 선택',tabindex:'0'}),guiEl('div',{class:'fold__body'},[
         introduction,lensField,lensCadence,
         guiEl('p',{class:'hint'},[count,document.createTextNode('개 선택 · 예상 기본 호출 '),calls]),scopeNote,
-        guiEl('div',{class:'cluster'},[refresh,run,review]),guiEl('div',{class:'cluster'},[selectAll,clearSelection]),list,reviewPanel,status
+        guiEl('div',{class:'cluster'},[refresh,run,review]),actionHint,guiEl('div',{class:'cluster'},[selectAll,clearSelection]),list,reviewPanel,status
       ])
     ]);
     const cancel=guiEl('button',{class:'btn',type:'button',text:'닫기'});
@@ -86084,14 +86092,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.canonicalRangeDrawerClose=close;cancel.addEventListener('click',close);overlay.addEventListener('click',event=>{if(event.target===overlay)close();});
     const sync=()=>{
       const locked=busy||reviewSaving,units=(inventory?.ranges||[]).filter(row=>selected.has(row.key)),batches=kind==='canonical'?[...new Map(units.map(row=>[row.batchStart,row])).values()]:units;
-      const single=units.length===1&&(kind==='canonical'||units[0].start===units[0].end);
+      const single=units.length===1;
       run.disabled=locked||!units.length;review.hidden=!single;review.disabled=locked||!single;refresh.disabled=locked;lensChoice.disabled=locked;
       if(reviewTurnChoice)reviewTurnChoice.disabled=locked;
       for(const tab of tabs.children){tab.disabled=locked;tab.classList.toggle('is-on',tab.dataset.reanalysisKind===kind);tab.setAttribute('aria-selected',String(tab.dataset.reanalysisKind===kind));tab.tabIndex=tab.dataset.reanalysisKind===kind?0:-1;}
       page.setAttribute('aria-labelledby','reanalysis-tab-'+kind);lensField.hidden=kind!=='lens';
       page.dataset.reanalysisPage=kind;
       fold.querySelector('summary').textContent=({canonical:'정본 재분석 · 5턴 묶음 선택',micro:'미크로 재분석 · 턴별 선택',lens:'렌즈 재분석 · 기록 구간 선택'})[kind];
-      introduction.textContent={canonical:'정본은 T1–T5처럼 5턴 묶음으로 선택하고 재분석합니다. 성공 시 기존 정본을 교체하며, 누락·실패 묶음도 선택할 수 있습니다. 한 묶음의 원문을 검토하려면 그 안의 턴을 선택하세요.',micro:'미크로는 선택한 U+A 1턴마다 다시 분석합니다. 성공한 턴의 미크로만 교체하며, 실패한 턴의 기존 기억은 유지합니다. 정본과 렌즈를 재분석하지 않습니다.',lens:'선택한 렌즈로 각 기록 구간을 다시 분석합니다. 저장된 기록은 원래 구간을 유지하고, 기록이 없는 부분도 분석할 수 있습니다. 정본과 미크로를 재분석하지 않습니다.'}[kind]+(kind==='canonical'?'':' 한 턴만 선택하면 원문과 제외할 태그를 확인한 뒤 분석할 수도 있습니다.')+' 저장한 태그 규칙은 정본·미크로·렌즈의 이후 분석에도 적용됩니다.';
+      introduction.textContent={canonical:'정본은 T1–T5처럼 5턴 묶음으로 선택하고 재분석합니다. 성공 시 기존 정본을 교체하며, 누락·실패 묶음도 선택할 수 있습니다. 한 묶음의 원문을 검토하려면 그 안의 턴을 선택하세요.',micro:'미크로는 선택한 U+A 1턴마다 다시 분석합니다. 성공한 턴의 미크로만 교체하며, 실패한 턴의 기존 기억은 유지합니다. 한 턴을 선택하면 원문과 제외할 태그를 확인한 뒤 분석할 수도 있습니다. 정본과 렌즈를 재분석하지 않습니다.',lens:'선택한 렌즈로 각 기록 구간을 다시 분석합니다. 저장된 기록은 원래 구간을 유지하고, 기록이 없는 부분도 분석할 수 있습니다. 한 구간을 선택하면 그 안의 턴을 골라 원문과 태그를 검토한 뒤 구간 전체를 재분석할 수 있습니다. 정본과 미크로를 재분석하지 않습니다.'}[kind]+' 저장한 태그 규칙은 정본·미크로·렌즈의 이후 분석에도 적용됩니다.';
+      const selectionName=({canonical:'묶음',micro:'턴',lens:'구간'})[kind];
+      actionHint.textContent=units.length>1?'여러 '+selectionName+' 선택 시 바로 재분석만 제공합니다. 확인 후 재분석은 한 '+selectionName+'을 선택하세요.':single?'바로 재분석하거나 확인 후 재분석을 선택할 수 있습니다.':'한 '+selectionName+'을 선택하면 바로 재분석과 확인 후 재분석을 제공합니다.';
       lensCadence.hidden=kind!=='lens';
       const lens=inventory?.lenses?.find(row=>row.lensId===inventory.lensId);
       lensCadence.textContent=lens?(lens.cadence.mode==='manual'?'자동 분석 없음 · 미분석 부분은 최대 '+lens.analysisSpan+'턴씩 표시합니다.':'자동 분석 묶음: '+lens.analysisSpan+'턴 · 미분석 부분도 이 단위로 표시합니다.')+' 기존 기록은 실제 저장 구간 그대로 재분석합니다. 수동 분석은 1~'+LENS_RUN_MAX_TURNS+'턴을 지정할 수 있습니다.':'';
@@ -86165,23 +86175,26 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     run.addEventListener('click',()=>{if(reviewSaving||!inventory)return;void execute({...inventory,ranges:inventory.ranges.filter(row=>selected.has(row.key)).map(row=>row.sourceTurns?.[0]||row)});});
     review.addEventListener('click',async()=>{
       if(busy||reviewSaving||selected.size!==1||!inventory)return;
-      const key=[...selected][0],group=inventory.ranges.find(row=>row.key===key),original=inventory,turns=group.sourceTurns||[group],host=guiEl('div');
+      const key=[...selected][0],group=inventory.ranges.find(row=>row.key===key),original=inventory,host=guiEl('div');
+      const turns=group.sourceTurns||(kind==='lens'&&group.end>group.start?Array.from({length:group.end-group.start+1},(_,index)=>{const turn=group.start+index;return {key:String(turn),label:'T'+turn,turn};}):[group]);
       reviewPanel.replaceChildren();reviewTurnChoice=null;
       const mountTurn=async range=>{
         if(busy||reviewSaving)return;const version=++reviewVersion;
         const reviewCurrent=()=>valid()&&version===reviewVersion&&selected.size===1&&selected.has(key);busy=true;sync();host.replaceChildren();
         try{
-          const sample=await LibraMemoryCore.readReanalysisTurn(original,range);if(!reviewCurrent())return;
-          const validate=async()=>{const fresh=await LibraMemoryCore.readReanalysisTurn(original,range);if(!reviewCurrent()||JSON.stringify(sample)!==JSON.stringify(fresh))throw Error('검토한 원문 또는 분석에 필요한 원문이 변경되었습니다. 다시 확인하세요.');};
+          const read=()=>LibraMemoryCore.readReanalysisTurn(original,range.turn===undefined?range:group,range.turn===undefined?{}:{turn:range.turn});
+          const sample=await read();if(!reviewCurrent())return;
+          const validate=async()=>{const fresh=await read();if(!reviewCurrent()||JSON.stringify(sample)!==JSON.stringify(fresh))throw Error('검토한 원문 또는 분석에 필요한 원문이 변경되었습니다. 다시 확인하세요.');};
           LibraMemoryCore.mountSourceReanalysisReview(host,{sample,current:reviewCurrent,validate,onBusy:value=>{reviewSaving=value;if(alive)sync();},onRun:async guard=>{
             await guard();const latest=await LibraMemoryCore.listReanalysisRanges({kind,lensId});await guard();
-            await execute({...latest,ranges:latest.ranges.filter(row=>row.key===range.key),reviewedSource:{key:range.key,rawDigest:sample.rawDigest,rulesKey:LibraMemoryCore.sourceReanalysisRulesKey()}},guard);
+            const sourceKey=range.turn===undefined?range.key:group.key;
+            await execute({...latest,ranges:latest.ranges.filter(row=>row.key===sourceKey),reviewedSource:{key:sourceKey,...(range.turn===undefined?{}:{turn:range.turn}),rawDigest:sample.rawDigest,rulesKey:LibraMemoryCore.sourceReanalysisRulesKey()}},guard);
           }});
         }catch(error){if(reviewCurrent())status.textContent='원문 조회 실패: '+String(error?.message||error);}
         finally{busy=false;if(alive)sync();}
       };
-      if(group.sourceTurns){
-        reviewTurnChoice=guiEl('select',{class:'input','aria-label':'정본 묶음에서 검토할 턴',dataset:{reanalysisReviewTurn:'true'}},optionNodes(turns.map(turn=>[turn.key,turn.label]),turns[0].key));
+      if(turns.length>1){
+        reviewTurnChoice=guiEl('select',{class:'input','aria-label':kind==='lens'?'렌즈 구간에서 검토할 턴':'정본 묶음에서 검토할 턴',dataset:{reanalysisReviewTurn:'true'}},optionNodes(turns.map(turn=>[turn.key,turn.label]),turns[0].key));
         reviewTurnChoice.addEventListener('change',()=>void mountTurn(turns.find(turn=>turn.key===reviewTurnChoice.value)));
         reviewPanel.append(guiEl('label',{},[document.createTextNode(group.label+' 중 검토할 턴 '),reviewTurnChoice]),guiEl('p',{class:'hint',text:'선택한 턴에서 태그를 검토합니다. 재분석 범위는 '+group.label+' 전체입니다.'}));
       }

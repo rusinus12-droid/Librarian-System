@@ -93,13 +93,25 @@ const watchdog=setTimeout(()=>{chrome.kill('SIGKILL');process.exit(1);},90000);
         }
         await call('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false});
       };
+      const captureReview=async kind=>{
+        await ev("document.querySelector('[data-source-reanalysis-review]').scrollIntoView({block:'start'})");
+        const shot=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(out,'libra-'+kind+'-confirm-review.png'),Buffer.from(shot.data,'base64'));
+      };
       await capturePage('canonical');
       await click('[data-reanalysis-kind=micro]');await wait("document.querySelector('[data-reanalysis-ranges]')?.textContent.includes('미크로 ·')");
       assert.equal(await ev("document.querySelector('[data-reanalysis-fold]').open"),true);await click('[data-reanalysis-select-all]');
-      assert.match(await ev("document.querySelector('#range-calls').textContent"),/^5회/);assert.equal(await ev("document.querySelector('[data-reanalysis-review]').hidden"),true);await capturePage('micro');
+      assert.match(await ev("document.querySelector('#range-calls').textContent"),/^5회/);assert.equal(await ev("document.querySelector('[data-reanalysis-review]').hidden"),true);
+      assert.match(await ev("document.querySelector('[data-reanalysis-action-hint]').textContent"),/여러 턴 선택/);await click('[data-reanalysis-clear-selection]');await click('[data-reanalysis-ranges] input[value="1"]');
+      assert.equal(await ev("document.querySelector('[data-reanalysis-review]').hidden"),false);await capturePage('micro');
+      await click('[data-reanalysis-review]');await wait("document.querySelector('[data-review-apply]')?.disabled===false");await captureReview('micro');
       await click('[data-reanalysis-kind=lens]');await wait("document.querySelector('[data-reanalysis-ranges]')?.textContent.includes('세계 설정과 사건')");
       assert.equal(await ev("document.querySelectorAll('[data-reanalysis-ranges] input').length"),2);await click('[data-reanalysis-ranges] input[value="1-2"]');
-      assert.equal(await ev("document.querySelector('[data-reanalysis-review]').hidden"),true);await capturePage('lens');
+      assert.equal(await ev("document.querySelector('[data-reanalysis-review]').hidden"),false);await capturePage('lens');
+      await click('[data-reanalysis-review]');await wait("document.querySelector('[data-review-apply]')?.disabled===false");
+      assert.deepEqual(await ev("[...document.querySelector('[data-reanalysis-review-turn]').options].map(row=>row.textContent)"),['T1','T2']);
+      await ev("(()=>{const choice=document.querySelector('[data-reanalysis-review-turn]');choice.value='2';choice.dispatchEvent(new Event('change',{bubbles:true}));})()");
+      await wait("document.querySelector('[data-source-reanalysis-review] h3')?.textContent.startsWith('T2')");await captureReview('lens');
+      await click('[data-reanalysis-ranges] input[value="3-5"]');assert.equal(await ev("document.querySelector('[data-reanalysis-review]').hidden"),true);
       await click('[data-reanalysis-kind=canonical]');await wait("document.querySelector('[data-reanalysis-ranges] input[value=\"1-5\"]')");
       await click('[data-reanalysis-clear-selection]');
       assert.equal(await ev("document.querySelectorAll('[data-reanalysis-ranges] input:checked').length"),0);
@@ -127,7 +139,8 @@ const watchdog=setTimeout(()=>{chrome.kill('SIGKILL');process.exit(1);},90000);
       for(const kind of ['micro','lens']){
         await ev('__openLibraReview()');await click('[data-reanalysis-kind='+kind+']');await wait("!document.querySelector('[data-reanalysis-status]').textContent.includes('읽는 중')");await click('[data-reanalysis-fold]>summary');
         const value=kind==='micro'?'2':'1-2';await click('[data-reanalysis-ranges] input[value="'+value+'"]');const calls=await ev('__hostCalls.llm');
-        await click('[data-reanalysis-run]');await wait("!document.querySelector('[data-canonical-range-drawer]')");assert.equal(await ev('__hostCalls.llm'),calls+1);assert.equal(await ev('__libraReanalysisUiState().canonicalPending'),false);
+        await click('[data-reanalysis-review]');await wait("document.querySelector('[data-review-apply]')?.disabled===false");await click('[data-review-apply]');await wait("document.querySelector('[data-review-run]')?.disabled===false");
+        await click('[data-review-run]');await wait("!document.querySelector('[data-canonical-range-drawer]')");assert.equal(await ev('__hostCalls.llm'),calls+1);assert.equal(await ev('__libraReanalysisUiState().canonicalPending'),false);
         if(kind==='micro')assert.equal(await ev('(async()=>{const active=await product.debugReadActiveMicroMemory(2);return active.status;})()'),'verified');
       }
     }
