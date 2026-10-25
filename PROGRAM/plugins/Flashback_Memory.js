@@ -30486,6 +30486,7 @@ function appendMemorySuiteReanalysisRange(list,range,config) {
   row.className='ms-reanalysis-turn';row.style.cssText='display:grid;gap:8px;padding:14px;border:1px solid #8885;border-radius:12px;min-width:0';
   label.style.cssText='display:flex;align-items:center;gap:10px';input.type='checkbox';input.value=range.key;input.setAttribute('aria-label',range.label+' 재분석 선택');input.onchange=config.changed;
   label.append(input,make('strong',range.label));row.append(label);
+  if(range.description){const description=make('p',range.description);description.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(description);}
   if(range.summary){const excerpt=make('p','저장된 내용 · '+range.summary);excerpt.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(excerpt);}
   output.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto';details.append(summary,output);row.append(details);list.append(row);
   let serial=0;
@@ -30600,7 +30601,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       if(!valid())return;await config.validate();if(!valid())return;
       status.textContent='태그 저장을 확인했습니다. 재분석을 준비합니다.';
-      const guard=async()=>{await config.validate();if(JSON.stringify(config.policy.sourceRules())!==JSON.stringify(draft))throw Error('저장된 태그 규칙이 변경되었습니다. 다시 확인하세요.');};
+      const guard=async()=>{await config.validate();if(policyKey()!==JSON.stringify(draft))throw Error('저장된 태그 규칙이 변경되었습니다. 다시 확인하세요.');};
       await config.onRun(guard);
     }catch(error){if(valid())status.textContent='재분석 중단: '+String(error?.message||error);}
     finally{config.onBusy?.(false);if(valid())lock(false);}

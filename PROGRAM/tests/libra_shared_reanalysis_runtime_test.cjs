@@ -67,3 +67,40 @@ test('reviewed raw mutation during LIBRA generation preserves the old canonical 
     const result=await f.r.api.reanalyzeSelectedRanges(request);assert.equal(result.ok,false);assert.equal(f.getManifest().memories['1'].key,old.key);assert.equal(f.r.values.get(old.key),bytes);
   }finally{await f.r.cleanup();}
 });
+
+for(const initialStatus of ['missing','failed'])test('LIBRA '+initialStatus+' batches support turn inspection and reviewed reanalysis',async()=>{
+  const f=await fixture({transformSource:source=>source.replace('const memoryStageEnabledForSettings =','globalThis.__sharedReanalysisCore=LibraMemoryCore;\n  const memoryStageEnabledForSettings =')});
+  try{
+    f.core=f.r.context.__sharedReanalysisCore;
+    if(initialStatus==='failed'){f.control.modelFails=true;const job=await f.run();assert.ok(job.failed>0);f.control.modelFails=false;}
+    const inventory=await f.r.api.listReanalysisRanges();assert.equal(inventory.ranges.length,5);assert.ok(inventory.ranges.every(row=>row.status===initialStatus));
+    assert.ok(inventory.ranges.every(row=>row.summary===''&&row.description.includes(initialStatus==='missing'?'기억 없음':'이전 분석 실패')));
+    const sample=await f.core.readReanalysisTurn(inventory,inventory.ranges[0]);assert.equal(sample.user,f.chat.message[0].data);assert.equal(sample.assistant,f.chat.message[1].data);
+    const calls=f.control.calls.length,result=await f.r.api.reanalyzeSelectedRanges(await reviewed(f));
+    assert.equal(result.ok,true,JSON.stringify(result));assert.equal(f.control.calls.length,calls+1);assert.equal(f.getManifest().memories['1'].status,'committed');
+    assert.ok((await f.r.api.listReanalysisRanges()).ranges.every(row=>row.status==='saved'));
+  }finally{await f.r.cleanup();}
+});
+test('LIBRA can select saved and missing batches together and analyzes each batch once',async()=>{
+  const f=await setup();try{
+    f.chat.message.push(...f.chat.message.slice().map((message,i)=>({...message,chatId:`t${6+Math.floor(i/2)}-${i%2?'a':'u'}`})));
+    f.control.onCall=async args=>{const value=artifact();if(JSON.stringify(args).includes('[t6-u]'))for(const row of [...value.entities,...value.facts])for(const span of row.evidenceSpans)span.ref=span.ref.replace(/^t(\d+)/,(_,n)=>'t'+(+n+5));return {type:'success',result:JSON.stringify(value)};};
+    const inventory=await f.r.api.listReanalysisRanges(),old={...f.getManifest().memories['1']},calls=f.control.calls.length;
+    assert.equal(inventory.ranges.length,10);assert.equal(inventory.ranges[0].status,'saved');assert.equal(inventory.ranges[5].status,'missing');
+    const result=await f.r.api.reanalyzeSelectedRanges(select(inventory,['1','2','6','7']));assert.equal(result.ok,true,JSON.stringify(result));
+    assert.equal(f.control.calls.length,calls+2);assert.ok(f.getManifest().memories['1'].revision>old.revision);assert.equal(f.getManifest().memories['6'].status,'committed');
+  }finally{await f.r.cleanup();}
+});
+test('more than 128 LIBRA turns reach the real managed job with batch deduplication and remain cancellable',{timeout:20000},async()=>{
+  const f=await fixture({transformSource:source=>source.replace('const memoryStageEnabledForSettings =','globalThis.__sharedReanalysisCore=LibraMemoryCore;\n  const memoryStageEnabledForSettings =')});
+  let release;try{
+    const base=f.chat.message.slice();f.chat.message.splice(0,f.chat.message.length,...Array.from({length:26},(_,batch)=>base.map((message,i)=>({...message,chatId:`t${batch*5+Math.floor(i/2)+1}-${i%2?'a':'u'}`}))).flat());
+    f.core=f.r.context.__sharedReanalysisCore;const inventory=await f.r.api.listReanalysisRanges();assert.equal(inventory.ranges.length,130);
+    const gate=new Promise(resolve=>release=resolve);f.control.onCall=async()=>{await gate;return {type:'success',result:JSON.stringify(f.control.artifact)};};
+    const execution=f.r.api.reanalyzeSelectedRanges(inventory),{waitFor}=require('./fixtures/libra_vm_harness.cjs');
+    await waitFor(()=>f.core.state.canonicalJob?.kind==='source_edit'&&f.core.state.canonicalJob?.state==='running');
+    const job=f.core.state.canonicalJob;assert.equal(job.total,26);assert.equal(job.targetStarts.length,26);
+    const cancellation=f.r.api.cancelCanonicalJob({jobId:job.jobId});release();assert.equal((await cancellation).ok,true);const result=await execution;
+    assert.equal(result.ok,false);assert.equal(result.job.state,'cancelled');assert.equal(f.control.calls.length<=1,true);
+  }finally{release?.();await f.r.cleanup();}
+});

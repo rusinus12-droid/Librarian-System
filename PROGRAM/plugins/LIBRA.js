@@ -57789,6 +57789,7 @@ function appendMemorySuiteReanalysisRange(list,range,config) {
   row.className='ms-reanalysis-turn';row.style.cssText='display:grid;gap:8px;padding:14px;border:1px solid #8885;border-radius:12px;min-width:0';
   label.style.cssText='display:flex;align-items:center;gap:10px';input.type='checkbox';input.value=range.key;input.setAttribute('aria-label',range.label+' 재분석 선택');input.onchange=config.changed;
   label.append(input,make('strong',range.label));row.append(label);
+  if(range.description){const description=make('p',range.description);description.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(description);}
   if(range.summary){const excerpt=make('p','저장된 내용 · '+range.summary);excerpt.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(excerpt);}
   output.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto';details.append(summary,output);row.append(details);list.append(row);
   let serial=0;
@@ -57903,7 +57904,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       if(!valid())return;await config.validate();if(!valid())return;
       status.textContent='태그 저장을 확인했습니다. 재분석을 준비합니다.';
-      const guard=async()=>{await config.validate();if(JSON.stringify(config.policy.sourceRules())!==JSON.stringify(draft))throw Error('저장된 태그 규칙이 변경되었습니다. 다시 확인하세요.');};
+      const guard=async()=>{await config.validate();if(policyKey()!==JSON.stringify(draft))throw Error('저장된 태그 규칙이 변경되었습니다. 다시 확인하세요.');};
       await config.onRun(guard);
     }catch(error){if(valid())status.textContent='재분석 중단: '+String(error?.message||error);}
     finally{config.onBusy?.(false);if(valid())lock(false);}
@@ -72074,12 +72075,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     const listReanalysisRanges = async () => {
       await libraSourceInput.ready();
-      const context=await resolveContext(),pairs=buildPairs(context.chat,context.scope.scopeKey),manifest=await loadManifest(context.scope,pairs.length),ranges=[];
+      const context=await resolveContext(),pairs=buildPairs(context.chat,context.scope.scopeKey),manifest=await loadManifest(context.scope,pairs.length),failures=normalizeFailedCanonicalBatches(manifest.failedBatches),ranges=[];
       for(const startTurn of completeBatchStarts(pairs)){
-        const ref=memoryRefForStart(manifest,startTurn);if(ref?.status!=='committed')continue;
-        const memory=await loadMemoryRef(ref,context.scope),batch=batchForStart(pairs,startTurn),summary=compact(memory?.summary||memory?.text||ref.summary||'저장된 정본',160);
+        const ref=memoryRefForStart(manifest,startTurn),status=ref?.status==='committed'?'saved':failures[String(startTurn)]?'failed':'missing';
+        const memory=status==='saved'?await loadMemoryRef(ref,context.scope):null,batch=batchForStart(pairs,startTurn);
+        const summary=status==='saved'?compact(memory?.summary||memory?.text||ref.summary||'저장된 정본',160):'';
+        const description=`T${startTurn}–T${startTurn+BATCH_SIZE-1} · `+({saved:'저장됨',missing:'기억 없음 · 분석 가능',failed:'이전 분석 실패 · 다시 분석 가능'})[status];
         for(const pair of batch)ranges.push({key:String(pair.turn),start:pair.turn,end:pair.turn,label:'T'+pair.turn,identity:libraReanalysisIdentity(pair),
-          batchStart:startTurn,batchEnd:startTurn+BATCH_SIZE-1,batchIdentity:branchBatchQuickSignature(batch),summary:`T${startTurn}–T${startTurn+BATCH_SIZE-1} 기억 · ${summary}`});
+          batchStart:startTurn,batchEnd:startTurn+BATCH_SIZE-1,batchIdentity:branchBatchQuickSignature(batch),status,description,summary});
       }
       const live=await resolveContext();
       if(!sameSnapshotScope(live.scope,context.scope)||libraReanalysisTopology(buildPairs(live.chat,live.scope.scopeKey))!==libraReanalysisTopology(pairs))throw Error('selected_batch_identity_changed');
@@ -72096,7 +72099,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const reanalyzeSelectedRanges = async (selection={}) => {
       try{
         const inventory=await listReanalysisRanges(),rows=asArray(selection.ranges),keys=new Set(rows.map(row=>String(row.key))),units=inventory.ranges.filter(row=>keys.has(row.key));
-        if(!keys.size||keys.size>128||units.length!==keys.size)throw Error('선택한 턴을 확인할 수 없습니다. 목록을 새로고침하세요.');
+        if(!keys.size||units.length!==keys.size)throw Error('선택한 턴을 확인할 수 없습니다. 목록을 새로고침하세요.');
         if(selection.scopeKey!==inventory.scopeKey||selection.topology!==inventory.topology||rows.some(row=>units.find(unit=>unit.key===String(row.key))?.identity!==row.identity))throw Error('선택한 턴의 위치가 바뀌었습니다. 목록을 새로고침하세요.');
         const reviewed=selection.reviewedSource;
         if(reviewed){
@@ -85869,14 +85872,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const list=guiEl('div',{id:'seglist',class:'stack stack--sm',dataset:{reanalysisRanges:'true'}});
     const reviewPanel=guiEl('div',{dataset:{reanalysisReviewPanel:'true'}});
     const refresh=guiEl('button',{class:'btn',type:'button',text:'구간 목록 새로고침'});
+    const selectAll=guiEl('button',{class:'btn',type:'button',text:'가능한 턴 전체 선택',dataset:{reanalysisSelectAll:'true'}});
+    const clearSelection=guiEl('button',{class:'btn',type:'button',text:'전체 해제',dataset:{reanalysisClearSelection:'true'}});
     const run=guiEl('button',{id:'range-go',class:'btn btn--primary',type:'button',text:'바로 재분석',disabled:true,dataset:{reanalysisRun:'true'}});
     const review=guiEl('button',{class:'btn',type:'button',text:'확인 후 재분석',hidden:true,dataset:{reanalysisReview:'true'}});
     const count=guiEl('b',{id:'range-n',text:'0'}),calls=guiEl('span',{id:'range-calls',text:'0회'}),scopeNote=guiEl('p',{class:'hint'});
     const advanced=guiEl('div');
     const fold=guiEl('details',{class:'fold',dataset:{reanalysisFold:'true'}},[
       guiEl('summary',{text:'직접 원문 재분석 · 턴 선택',tabindex:'0'}),guiEl('div',{class:'fold__body'},[
-        guiEl('p',{class:'hint',text:'한 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. 리브라는 선택한 턴이 속한 5턴 기억 전체를 교체합니다. 같은 구간의 턴은 한 번만 분석합니다.'}),
-        guiEl('div',{class:'cluster'},[refresh,run,review]),list,
+        guiEl('p',{class:'hint',text:'한 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. 리브라는 선택한 턴이 속한 5턴 구간을 분석합니다. 저장된 기억은 성공 시 교체하고, 누락·실패 구간은 새로 분석합니다. 같은 구간의 턴은 한 번만 분석합니다.'}),
+        guiEl('div',{class:'cluster'},[refresh,run,review]),guiEl('div',{class:'cluster'},[selectAll,clearSelection]),list,
         guiEl('p',{class:'hint'},[count,document.createTextNode('턴 선택 · 예상 기본 호출 '),calls]),scopeNote,reviewPanel,status
       ])
     ]);
@@ -85894,16 +85899,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const sync=()=>{
       const locked=busy||reviewSaving,units=(inventory?.ranges||[]).filter(row=>selected.has(row.key)),batches=[...new Map(units.map(row=>[row.batchStart,row])).values()];
       run.disabled=locked||!units.length;review.hidden=units.length!==1;review.disabled=locked||units.length!==1;refresh.disabled=locked;
+      selectAll.disabled=locked||!inventory?.ranges.length;clearSelection.disabled=locked||!units.length;
       list.querySelectorAll('input').forEach(input=>{input.disabled=locked;});
       count.textContent=String(units.length);calls.textContent=batches.length+'회 (5턴 구간당 1회 · 추가 처리에 따라 사용량이 늘 수 있습니다)';
-      scopeNote.textContent=batches.length?'교체할 기억: '+batches.map(row=>'T'+row.batchStart+'–T'+row.batchEnd).join(', ')+' · 성공 시 교체하고 실패 시 기존 기억을 보존합니다.':'완성된 5턴 구간에 저장된 기억이 있는 턴을 선택하세요.';
+      scopeNote.textContent=batches.length?'분석할 구간: '+batches.map(row=>'T'+row.batchStart+'–T'+row.batchEnd).join(', ')+' · 성공 시 교체하고 실패 시 기존 기억을 보존합니다. 누락·실패 구간은 새로 분석합니다.':'완성된 5턴 구간의 턴을 선택하세요. 저장·누락·실패 구간을 모두 분석할 수 있습니다.';
     };
     const changed=()=>{reviewVersion++;reviewPanel.replaceChildren();selected.clear();list.querySelectorAll('input:checked').forEach(input=>selected.add(input.value));sync();};
     const execute=async(selection,guard=null)=>{
       if(busy||!valid())return;busy=true;sync();
       try{
         if(guard)await guard();if(!valid())return;
-        await runCanonicalGuiCommand('선택한 턴이 속한 5턴 기억을 재분석합니다.',async()=>{
+        await runCanonicalGuiCommand('선택한 턴이 속한 5턴 구간을 다시 분석합니다.',async()=>{
           if(guard)await guard();if(!valid())throw Error('재분석 화면이 닫혔습니다. 다시 선택하세요.');
           const result=await LibraMemoryCore.reanalyzeSelectedRanges(selection);
           if(result?.ok!==true)throw Error(result?.reason||'재분석을 완료하지 못했습니다.');return result;
@@ -85913,15 +85919,20 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       finally{busy=false;if(alive)sync();}
     };
     const load=async()=>{
-      if(busy||reviewSaving)return;const version=++loadVersion;reviewVersion++;selected.clear();inventory=null;list.replaceChildren();reviewPanel.replaceChildren();sync();status.textContent='저장된 턴을 읽는 중…';
+      if(busy||reviewSaving)return;const version=++loadVersion;reviewVersion++;selected.clear();inventory=null;list.replaceChildren();reviewPanel.replaceChildren();sync();status.textContent='분석할 턴을 읽는 중…';
       try{
         const value=await LibraMemoryCore.listReanalysisRanges();if(!valid()||version!==loadVersion)return;
         if(value.scopeKey!==binding.scopeKey)throw Error('채팅이 변경되었습니다. 다시 열어 주세요.');inventory=value;
         for(const range of value.ranges)LibraMemoryCore.appendReanalysisRange(list,range,{changed,current:()=>valid()&&version===loadVersion,read:()=>LibraMemoryCore.readReanalysisTurn(value,range)});
-        status.textContent=value.ranges.length?'원하는 턴을 선택하세요. 원문 보기에서 실제 내용을 확인할 수 있습니다.':'재분석할 저장 구간이 없습니다. 완성된 U+A 5턴 기억이 필요합니다.';sync();
+        status.textContent=value.ranges.length?'원하는 턴을 선택하세요. 원문 보기에서 실제 내용을 확인할 수 있습니다.':'분석할 완성 구간이 없습니다. 완성된 U+A 5턴 구간이 필요합니다.';sync();
       }catch(error){if(valid()&&version===loadVersion)status.textContent='목록 조회 실패: '+String(error?.message||error);}
     };
     refresh.addEventListener('click',()=>void load());
+    const selectEveryTurn=checked=>{
+      if(busy||reviewSaving||!inventory)return;
+      list.querySelectorAll('input').forEach(input=>{input.checked=checked;});changed();
+    };
+    selectAll.addEventListener('click',()=>selectEveryTurn(true));clearSelection.addEventListener('click',()=>selectEveryTurn(false));
     run.addEventListener('click',()=>{if(reviewSaving||!inventory)return;void execute({...inventory,ranges:inventory.ranges.filter(row=>selected.has(row.key))});});
     review.addEventListener('click',async()=>{
       if(busy||reviewSaving||selected.size!==1||!inventory)return;const version=++reviewVersion,key=[...selected][0],range=inventory.ranges.find(row=>row.key===key),original=inventory;

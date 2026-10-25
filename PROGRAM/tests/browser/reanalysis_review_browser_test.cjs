@@ -64,7 +64,17 @@ const watchdog=setTimeout(()=>{chrome.kill('SIGKILL');process.exit(1);},90000);
     await wait(`document.querySelector(${JSON.stringify(ranges+' input')})`);
     assert.equal(await ev("document.querySelector('[data-reanalysis-fold]').open"),false);
     const before=await ev('({...__hostCalls,chat:JSON.stringify(__chat)})');
-    await click('[data-reanalysis-fold]>summary');await click(ranges+' input');
+    await click('[data-reanalysis-fold]>summary');
+    if(owner==='libra'){
+      await click('[data-reanalysis-select-all]');
+      assert.equal(await ev("document.querySelectorAll('[data-reanalysis-ranges] input:checked').length"),5);
+      assert.equal(await ev("document.querySelector('[data-reanalysis-review]').hidden"),true);
+      assert.match(await ev("document.querySelector('#range-calls').textContent"),/^1회/);
+      await click('[data-reanalysis-clear-selection]');
+      assert.equal(await ev("document.querySelectorAll('[data-reanalysis-ranges] input:checked').length"),0);
+      assert.equal(await ev("document.querySelector('[data-reanalysis-run]').disabled"),true);
+    }
+    await click(ranges+' input');
     assert.equal(await ev(`document.querySelector(${JSON.stringify(review)}).hidden`),false);assert.equal(await ev(`document.querySelector(${JSON.stringify(run)}).disabled`),false);
     await click(review);await wait("document.querySelector('[data-review-apply]')?.disabled===false");
     const layout=[];

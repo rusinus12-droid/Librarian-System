@@ -16,14 +16,14 @@ test('unbalanced tags, plain prose, empty selections and Suite protocol tags nev
   assert.deepEqual(extract('ordinary prose','prose'),[]);assert.deepEqual(extract('<a>A</a>',''),[]);
   assert.deepEqual(extract('<hayaku_packet_contract>private</hayaku_packet_contract>','private'),[]);
 });
-async function setup(){
+async function setup(options={}){
   const dom=new JSDOM('<main></main>'),ctx=vm.createContext({});vm.runInContext(code,ctx);
-  let stored='',writes=0,runs=0;const policy=ctx.createMemorySuiteSourceInputPolicy({owner:'flashback',read:async()=>stored,write:async value=>{stored=value;writes++;return true;}});
+  const owner=options.owner||'flashback';let stored=options.preferences?JSON.stringify(options.preferences):'',writes=0,runs=0;const policy=ctx.createMemorySuiteSourceInputPolicy({owner,read:async()=>stored,write:async value=>{stored=value;writes++;return true;}});
   await policy.ready();const root=dom.window.document.querySelector('main');
-  ctx.mountMemorySuiteReanalysisReview(root,{owner:'flashback',policy,sample:{label:'T1',user:'Question',assistant:'<drop>private</drop> Kept narrative'},current:()=>true,validate:async()=>true,
-    projectLegacySample:sample=>sample.text,onRun:async guard=>{await guard();runs++;}});
+  ctx.mountMemorySuiteReanalysisReview(root,{owner,policy,sample:{label:'T1',user:'Question',assistant:'<drop>private</drop> Kept narrative'},current:()=>true,validate:async()=>true,
+    projectLegacySample:sample=>sample.text,onRun:async guard=>{await options.beforeDispatch?.(policy);await guard();runs++;}});
   for(let i=0;i<8;i++)await Promise.resolve();
-  return {root,ctx,policy,dom,get writes(){return writes;},get runs(){return runs;},close:()=>{policy.dispose();dom.window.close();}};
+  return {root,ctx,policy,dom,get stored(){return JSON.parse(stored);},get writes(){return writes;},get runs(){return runs;},close:()=>{policy.dispose();dom.window.close();}};
 }
 test('saved built-in controls are editable, and an empty analysis cannot be submitted',async()=>{
   const f=await setup();try{
@@ -47,5 +47,26 @@ test('editing tags invalidates Apply and external policy changes cannot be overw
     await f.policy.setSourceRules({version:1,ignoredTags:['external'],unwrapTags:[],sourceTags:[],controls:[]});
     await apply.onclick();assert.equal(run.disabled,true);assert.match(f.root.querySelector('[data-review-status]').textContent,/검토를 다시 열어/);
     assert.deepEqual(plain(f.policy.sourceRules().ignoredTags),['external']);assert.equal(f.writes,1);
+  }finally{f.close();}
+});
+
+const extendedPreferences=()=>({externalRulesVersion:1,unrelated:{keep:true},sourceRules:{version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[],futureRule:{keep:true,revision:3}}});
+for(const owner of ['libra','hayaku','flashback'])for(const edit of [false,true])test(owner+' review preserves extra settings metadata with '+(edit?'edited':'unchanged')+' rules',async()=>{
+  const f=await setup({owner,preferences:extendedPreferences()});let reloaded;try{
+    if(edit){const area=f.root.querySelector('[data-review-source="assistant"]');area.setSelectionRange(6,13);area.onselect();f.root.querySelector('[data-review-extract]').click();}
+    await f.root.querySelector('[data-review-apply]').onclick();assert.equal(f.root.querySelector('[data-review-run]').disabled,false);
+    await f.root.querySelector('[data-review-run]').onclick();
+    assert.equal(f.runs,1,f.root.querySelector('[data-review-status]').textContent);assert.equal(f.writes,edit?1:0);
+    assert.deepEqual(f.stored.unrelated,{keep:true});assert.deepEqual(f.stored.sourceRules.futureRule,{keep:true,revision:3});
+    assert.equal(f.stored.sourceRules.ignoredTags.includes('drop'),edit);
+    reloaded=f.ctx.createMemorySuiteSourceInputPolicy({owner,read:async()=>JSON.stringify(f.stored),write:async()=>{throw Error('Reload must not write');}});
+    await reloaded.ready();assert.deepEqual(plain(reloaded.sourceRules().futureRule),{keep:true,revision:3});assert.equal(reloaded.sourceRules().ignoredTags.includes('drop'),edit);
+  }finally{reloaded?.dispose();f.close();}
+});
+test('normalized metadata comparison still refuses actual rule changes immediately before dispatch',async()=>{
+  const f=await setup({preferences:extendedPreferences(),beforeDispatch:policy=>policy.setSourceRules({version:1,ignoredTags:['changed'],unwrapTags:[],sourceTags:[],controls:[]})});try{
+    await f.root.querySelector('[data-review-apply]').onclick();await f.root.querySelector('[data-review-run]').onclick();
+    assert.equal(f.runs,0);assert.match(f.root.querySelector('[data-review-status]').textContent,/규칙이 변경되었습니다/);
+    assert.deepEqual(f.stored.sourceRules.futureRule,{keep:true,revision:3});
   }finally{f.close();}
 });

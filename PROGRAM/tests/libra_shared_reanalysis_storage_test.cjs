@@ -16,3 +16,17 @@ for(const mode of ['mirror','server_only'])test('shared LIBRA review persists ru
     assert.ok(fx.requests.length>0,'actual owner storage bridge reached the local HTTP server');
   }finally{await fx.cleanup();}
 });
+for(const mode of ['mirror','server_only'])for(const initialStatus of ['missing','failed'])test('LIBRA '+initialStatus+' turn selection creates a canonical memory through '+mode,async()=>{
+  const fx=await serverFixture({mode});try{
+    const f=fx.f;if(initialStatus==='failed'){f.control.modelFails=true;const job=await f.run();assert.ok(job.failed>0);f.control.modelFails=false;}
+    const batchInventory=await f.r.api.listCanonicalBatchRanges(),inventory=await f.r.api.listReanalysisRanges();assert.equal(inventory.ranges.length,5);
+    // The server can retain a provider failure in the job journal while leaving
+    // the canonical slot missing. Match the existing range classification and
+    // verify that both states stay selectable through the restored turn UI.
+    assert.ok(inventory.ranges.every(row=>row.status===batchInventory.ranges[0].status));
+    assert.ok(['missing','failed'].includes(batchInventory.ranges[0].status));
+    const calls=f.control.calls.length,result=await f.r.api.reanalyzeSelectedRanges({...inventory,ranges:[inventory.ranges[0],inventory.ranges[4]]});
+    assert.equal(result.ok,true,JSON.stringify(result));assert.equal(f.control.calls.length,calls+1);assert.equal(fx.getManifest().memories['1'].status,'committed');
+    assert.ok(fx.storedRows().some(row=>row.value?.schema==='libra.canonical_memory.v1'&&row.value.status==='committed'));
+  }finally{await fx.cleanup();}
+});

@@ -3,9 +3,14 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const {fixture:runtimeFixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
 const {fixture:guiFixture}=require('./fixtures/libra_reanalysis_gui_fixture.cjs');
 const wait=async fn=>{for(let i=0;i<400;i++){if(fn())return;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('LIBRA review timed out');};
-async function setup(){
+async function setup(initialStatus='saved'){
   const f=await runtimeFixture({transformSource:source=>source.replace('const memoryStageEnabledForSettings =','globalThis.__reviewCore=LibraMemoryCore;\n  const memoryStageEnabledForSettings =')});
-  assert.equal((await f.run()).completed,1);await f.r.api.retryPendingUnifiedVectors();const core=f.r.context.__reviewCore;await core.refreshSnapshot();
+  if(initialStatus!=='missing'){
+    f.control.modelFails=initialStatus==='failed';const job=await f.run();
+    if(initialStatus==='failed')assert.ok(job.failed>0);else assert.equal(job.completed,1);
+    f.control.modelFails=false;await f.r.api.retryPendingUnifiedVectors();
+  }
+  const core=f.r.context.__reviewCore;await core.refreshSnapshot();
   const ui=guiFixture({core});await ui.show();return {f,core,...ui,dispose:async()=>{ui.close();await f.r.cleanup();}};
 }
 async function open(s){s.select(1);s.root.querySelector('[data-reanalysis-review]').click();await wait(()=>s.root.querySelector('[data-review-apply]')?.disabled===false);return s.root.querySelector('[data-source-reanalysis-review]');}
@@ -37,5 +42,13 @@ test('LIBRA failed tag persistence never dispatches a canonical replacement',asy
     s.f.chat.message[1].data+='<drop>Private module output.</drop>';const calls=s.f.control.calls.length,review=await open(s);extract(s,review);await review.querySelector('[data-review-apply]').onclick();
     const storage=s.f.r.context.risuai.pluginStorage,set=storage.setItem.bind(storage);storage.setItem=async(k,v)=>String(k).endsWith(':settings:source-tracking:v1')?false:set(k,v);
     await review.querySelector('[data-review-run]').onclick();assert.match(review.querySelector('[data-review-status]').textContent,/재분석 중단/);assert.equal(s.f.control.calls.length,calls);
+  }finally{await s.dispose();}
+});
+for(const initialStatus of ['missing','failed'])test('LIBRA '+initialStatus+' turn cards can be reviewed and analyzed without leaving the drawer',async()=>{
+  const s=await setup(initialStatus);try{
+    const first=s.root.querySelector('[data-reanalysis-ranges] .ms-reanalysis-turn');assert.match(first.textContent,initialStatus==='missing'?/기억 없음 · 분석 가능/:/이전 분석 실패 · 다시 분석 가능/);
+    assert.equal(first.textContent.includes('저장된 내용'),false);
+    const review=await open(s),calls=s.f.control.calls.length;await review.querySelector('[data-review-apply]').onclick();await review.querySelector('[data-review-run]').onclick();
+    assert.equal(s.f.control.calls.length,calls+1);assert.equal(s.f.getManifest().memories['1'].status,'committed');assert.equal(s.root.querySelector('[data-canonical-range-drawer]'),null);
   }finally{await s.dispose();}
 });
