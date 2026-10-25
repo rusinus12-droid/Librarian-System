@@ -284,34 +284,34 @@
     "artifact": "Librarian-System-0.5.0-Source.zip",
     "plugins": {
       "flashback": {
-        "version": "1.3.7",
-        "sha256": "828b63b80be7170b7ddffa6acbf43be6d9ce791c77cf7b66cd45240c4541f1d5",
-        "bytes": 3579492
+        "version": "1.3.8",
+        "sha256": "e662e0ccf68b1a05285a3c5453ba54efc172ec8f5925be8127e9f2de0ad05c98",
+        "bytes": 3599030
       },
       "hayaku": {
-        "version": "3.3.7",
-        "sha256": "7b3622686613e615aee89bb6580d043d8515c5ecad2b7ddbb0651363430c6e65",
-        "bytes": 4239351
+        "version": "3.3.8",
+        "sha256": "c71105f6eb824c7f72bad7e69b18136e53f96ac526b50ff9dab364fb539f15a9",
+        "bytes": 4165463
       },
       "libra": {
-        "version": "2.6.7",
-        "sha256": "5895243d574611e6d687b936558b7395897cc54a9fb582dccab0fd36c61049eb",
-        "bytes": 6717794
+        "version": "2.6.8",
+        "sha256": "19b1509929f493af9509af2d07f305100c863c21387b3bf4f34d8e7a0c30aabb",
+        "bytes": 6725064
       },
       "lia": {
-        "version": "0.29.2",
-        "sha256": "f80a056f45f385491f7af3cd45f4bde2df65d6cea58ccc4cb32fd6806be7cb71",
-        "bytes": 1649278
+        "version": "0.29.3",
+        "sha256": "dba2ddd7696462b1fbdf69108b94a5266638d5121541b04249b11f38fe12042e",
+        "bytes": 1673166
       },
       "retrace": {
-        "version": "1.12.5",
-        "sha256": "5543fabe1b94bbae87d750631ab2177de0c51346b4d6ed83dc16309316f16f43",
+        "version": "1.12.6",
+        "sha256": "47fb857cf0a086a682592ac6ce0dcabecb16aa974c79af7f9a1be29798b3f5de",
         "bytes": 1292339
       },
       "gradia": {
-        "version": "0.28.1",
-        "sha256": "2d1fa7532aac11190cef0e51d9d8abf4af5a53294582fc1817c51260fa444e5e",
-        "bytes": 3000083
+        "version": "0.28.2",
+        "sha256": "b7d7a9a05f5d7a54f92883eb49d830c7dae6de35de40615d2fef994f3c23dd67",
+        "bytes": 3046051
       }
     },
     "note": "Generated from current readable Source plugin bytes. This unpublished source candidate is not a published archive, deployment, or live-host/model execution receipt. Historical records and anomalies are preserved; prior candidate bytes are backed up separately.",
