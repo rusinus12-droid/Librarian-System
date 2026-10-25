@@ -55165,7 +55165,7 @@ function createMemorySuiteSourceInputPolicy(config) {
 function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceInputPolicy({...config,owner:'libra'}); }
 /* END LIBRA SOURCE INPUT POLICY */
 /* MEMORY SUITE SOURCE INPUT CONTROLS v1 BEGIN */
-// View-only extension of the existing owner input policy. No model or raw-source write.
+// Owner input-rule controls and explicit review UI. Reanalysis stays in owner callbacks.
 function mountMemorySuiteSourceInputControls(container, config) {
     const {owner,policy}=config,loadPreferences=()=>policy.ready(),sourceRules=()=>policy.sourceRules(),setSourceRules=rules=>policy.setSourceRules(rules);
     const disposed=()=>config.isDisposed?.()===true;
@@ -55305,6 +55305,143 @@ function mountMemorySuiteSourceInputControls(container, config) {
     status.textContent='저장된 규칙을 읽는 중…';
     loadPreferences().then(()=>{if(disposed())return;loaded=true;fill();status.textContent='';if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!disposed())status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
   }
+
+// One card per turn keeps checkboxes aligned and allows source inspection without dispatch.
+function appendMemorySuiteReanalysisRange(list,range,config) {
+  const doc=list.ownerDocument,make=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
+  const row=make('section'),label=make('label'),input=make('input'),details=make('details'),summary=make('summary','원문 보기'),output=make('pre');
+  row.className='ms-reanalysis-turn';row.style.cssText='display:grid;gap:8px;padding:14px;border:1px solid #8885;border-radius:12px;min-width:0';
+  label.style.cssText='display:flex;align-items:center;gap:10px';input.type='checkbox';input.value=range.key;input.setAttribute('aria-label',range.label+' 재분석 선택');input.onchange=config.changed;
+  label.append(input,make('strong',range.label));row.append(label);
+  if(range.summary){const excerpt=make('p','저장된 내용 · '+range.summary);excerpt.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(excerpt);}
+  output.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto';details.append(summary,output);row.append(details);list.append(row);
+  let serial=0;
+  details.ontoggle=async()=>{
+    if(!details.open){serial++;return;}
+    const token=++serial;output.textContent='원문을 읽는 중…';
+    try{const sample=await config.read();if(!row.isConnected||!config.current()||token!==serial)return;
+      output.textContent='사용자 원문\n'+memorySuiteStripInternalSource(sample.user)+'\n\nAI 응답 원문\n'+memorySuiteStripInternalSource(sample.assistant);
+    }catch(error){if(row.isConnected&&config.current()&&token===serial)output.textContent='원문 조회 실패: '+String(error?.message||error);}
+  };
+}
+
+// Source text stays in the mounted view. Only user-confirmed tag rules are saved.
+function memorySuiteExtractSelectedSourceTags(body,start,end) {
+  if(!Number.isInteger(start)||!Number.isInteger(end)||start<0||end<=start||end>body.length)return [];
+  const names=[...new Set([...body.matchAll(/<\/?([a-z][a-z0-9:_-]*)(?=[\s/>])/gi)].map(m=>m[1].toLowerCase()))];
+  const candidates=[];
+  for(const name of names){
+    if(memorySuiteIsInternalSourceRule(name))continue;
+    const parsed=memorySuiteSourceTagRanges(body,[name]);
+    if(parsed.invalid)continue;
+    for(const range of parsed.ranges)if((range.start>=start&&range.end<=end)||(range.start<=start&&range.end>=end))
+      candidates.push({entry:name,start:range.start,end:range.end});
+  }
+  // Literal module delimiters are editable too; never infer a rule from ordinary prose.
+  const literals=[{open:'<!--',close:'-->'},...[...body.matchAll(/\[([^\]\r\n]{1,100}) START\]/g)].map(m=>({open:m[0],close:'['+m[1]+' END]'}))];
+  for(const entry of literals){const parsed=memorySuiteLiteralRanges(body,[entry]);if(parsed.invalid)continue;
+    for(const range of parsed.ranges)if((range.start>=start&&range.end<=end)||(range.start<=start&&range.end>=end))candidates.push({entry,start:range.start,end:range.end});}
+  const inside=candidates.filter(r=>r.start>=start&&r.end<=end);
+  const chosen=inside.length?inside:candidates.sort((a,b)=>(a.end-a.start)-(b.end-b.start)).slice(0,1);
+  return [...new Map(chosen.map(r=>[JSON.stringify(r.entry),r.entry])).values()].slice(0,128);
+}
+
+function mountMemorySuiteReanalysisReview(container,config) {
+  const doc=container.ownerDocument,make=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
+  const box=make('section');box.className='ms-source-settings';box.dataset.sourceReanalysisReview='';container.replaceChildren(box);
+  const style=make('style');style.textContent=`
+[data-source-reanalysis-review]{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;min-width:0;padding:12px;border:1px solid #8885;border-radius:12px}
+[data-source-reanalysis-review]>*{min-width:0;overflow-wrap:anywhere}
+[data-source-reanalysis-review] label{grid-template-columns:minmax(0,1fr)}
+[data-source-reanalysis-review] textarea{width:100%;min-height:180px;resize:vertical;font:13px/1.6 ui-monospace,monospace;white-space:pre}
+[data-source-reanalysis-review] pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto}
+[data-source-reanalysis-review] [data-review-rule]{display:flex;gap:8px;flex-wrap:wrap;align-items:center;border:1px solid #8885;padding:10px;border-radius:10px}
+[data-source-reanalysis-review] input{min-width:0;max-width:100%}[data-source-reanalysis-review] button{cursor:pointer;min-height:40px}
+[data-source-reanalysis-review] [hidden]{display:none!important}
+`;
+  const status=make('p');status.dataset.reviewStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+  box.append(style,make('h3',config.sample.label+' · 확인 후 재분석'),make('p','원문에서 제외할 부분을 드래그한 뒤 태그를 추출하세요. 추출한 태그를 확인·편집하고 적용 결과를 확인할 수 있습니다. 저장한 태그 규칙은 이 플러그인의 앞으로의 분석에도 적용됩니다. 채팅 원문은 바꾸지 않습니다.'));
+  const sources=[];let active=null,busy=false,applied=null,baseline=null;
+  const valid=()=>box.isConnected&&config.current();
+  const list=make('div'),preview=make('div'),extract=make('button','선택 영역에서 태그 추출'),add=make('button','태그 직접 추가'),apply=make('button','태그 적용'),run=make('button','태그 저장 후 재분석'),cancel=make('button','검토 닫기');
+  extract.type=add.type=apply.type=run.type=cancel.type='button';extract.dataset.reviewExtract='';apply.dataset.reviewApply='';run.dataset.reviewRun='';run.disabled=true;
+  const saved=make('details'),savedSummary=make('summary'),savedList=make('div');saved.append(savedSummary,savedList);list.dataset.reviewCandidates='';
+  const updateSavedCount=()=>{savedSummary.textContent='저장된 태그 규칙 '+savedList.children.length+'개 · 확인·편집';};
+  const rules=[];let applyVersion=0,expectedPolicy='';
+  const policyKey=()=>JSON.stringify(memorySuiteNormalizeSourceRules(config.policy.sourceRules()));
+  const assertPolicy=()=>{if(policyKey()!==expectedPolicy)throw Error('저장된 태그 규칙이 변경되었습니다. 검토를 다시 열어 주세요.');};
+  function dirty(){applyVersion++;applied=null;run.disabled=true;preview.replaceChildren();status.textContent='태그를 적용해 분석할 내용을 먼저 확인하세요.';}
+  function addRule(entry={open:'',close:''},key='ignoredTags',control=null,target=list){
+    const row=make('div'),open=make('input'),close=make('input'),action=make('select'),remove=make('button','삭제');row.dataset.reviewRule='';
+    const form=memorySuiteSourceRuleForm(entry);open.value=form.open;close.value=form.close;open.maxLength=close.maxLength=256;
+    open.setAttribute('aria-label','여는 태그');close.setAttribute('aria-label','닫는 태그');
+    for(const [value,label]of [['ignoredTags','내용 전체 제외'],['unwrapTags','태그만 제거'],['sourceTags','이 안만 분석']]){const option=make('option',label);option.value=value;action.append(option);}action.value=key;action.setAttribute('aria-label','태그 처리 방법');
+    remove.type='button';const value={row,open,close,action,control};rules.push(value);
+    open.oninput=close.oninput=action.onchange=dirty;remove.onclick=()=>{if(busy)return;rules.splice(rules.indexOf(value),1);row.remove();updateSavedCount();dirty();};row.append(open,close,action,remove);target.append(row);updateSavedCount();return value;
+  }
+  function read(){const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
+    for(const row of rules){if(!row.open.value.trim()&&!row.close.value.trim())continue;const entry={open:row.open.value,close:row.close.value},form=row.control&&memorySuiteSourceRuleForm('@'+row.control);if(form&&row.action.value==='ignoredTags'&&entry.open===form.open&&entry.close===form.close)draft.controls.push(row.control);else draft[row.action.value].push(entry);}
+    return memorySuiteNormalizeSourceRules(draft);
+  }
+  function lock(value){busy=value;for(const n of box.querySelectorAll('input,select,button'))n.disabled=value;run.disabled=value||!applied;}
+  for(const [role,label]of [['user','사용자 원문'],['assistant','AI 응답 원문']]){
+    const wrap=make('label',label),input=make('textarea');input.readOnly=true;input.value=memorySuiteStripInternalSource(config.sample[role]||'');input.setAttribute('aria-label',label);input.dataset.reviewSource=role;
+    const select=()=>{active=input;};input.onselect=input.onmouseup=input.onkeyup=select;wrap.append(input);box.append(wrap);sources.push({role,input});
+  }
+  const actions=make('div');actions.className='cluster';actions.append(extract,add);box.append(actions,make('h3','앞으로 적용할 태그 규칙'),saved,list,apply,preview,run,cancel,status);
+  extract.onclick=()=>{
+    if(busy)return;if(!active){status.textContent='원문에서 제외할 영역을 먼저 선택하세요.';return;}const entries=memorySuiteExtractSelectedSourceTags(active.value,active.selectionStart,active.selectionEnd);
+    if(!entries.length){status.textContent='선택 영역에서 짝이 맞는 태그를 찾지 못했습니다. 태그를 포함해 선택하거나 직접 추가하세요.';return;}
+    let first;
+    for(const entry of entries){const form=memorySuiteSourceRuleForm(entry),existing=rules.find(r=>r.open.value===form.open&&r.close.value===form.close);const row=existing||addRule(entry);if(existing&&savedList.contains(existing.row))saved.open=true;first||=row;}
+    dirty();status.textContent='추출한 태그를 확인·편집한 뒤 태그 적용을 누르세요.';
+    first?.row.scrollIntoView?.({block:'nearest'});
+  };
+  add.onclick=()=>{if(busy)return;addRule();dirty();rules.at(-1).open.focus();};
+  apply.onclick=async()=>{
+    if(busy||!baseline||!valid())return;const version=++applyVersion;
+    try{
+      assertPolicy();const draft=read();preview.replaceChildren();let warned=false;
+      const same=JSON.stringify(draft)===JSON.stringify(baseline.rules);
+      for(const {role,input}of sources){
+        const raw=config.sample[role]||'';
+        const result=baseline.legacy&&same?{text:await config.projectLegacySample({text:raw,role}),warnings:[]}:memorySuiteProjectSourceRules(input.value,draft);
+        if(!valid()||version!==applyVersion)return;
+        if(!String(result.text||'').trim())throw Error('분석할 '+(role==='user'?'사용자 내용':'AI 응답')+'이 비어 있습니다. 제외 규칙을 확인하세요.');
+        const output=make('pre',result.text);output.dataset.reviewOutput=role;preview.append(make('h3',role==='user'?'분석할 사용자 내용':'분석할 AI 응답'),output);
+        for(const warning of result.warnings){preview.append(make('p',warning));warned=true;}
+      }
+      applied=JSON.stringify(draft);run.disabled=false;status.textContent=warned?'경고와 실제 분석 입력을 확인하세요. 저장 후 재분석할 수 있습니다.':'적용 결과를 확인했습니다. 태그를 저장한 뒤 재분석할 수 있습니다.';
+    }catch(error){dirty();status.textContent='태그 적용 실패: '+String(error?.message||error);}
+  };
+  run.onclick=async()=>{
+    if(busy||!applied||!valid())return;lock(true);config.onBusy?.(true);
+    try{
+      // Validate before the settings write and again before dispatching. A review
+      // cannot silently apply to edited text or to a different chat/selection.
+      await config.validate();if(!valid())return;assertPolicy();
+      const draft=read();if(JSON.stringify(draft)!==applied)throw Error('태그 적용 결과가 만료되었습니다. 다시 적용하세요.');
+      if(JSON.stringify(draft)!==JSON.stringify(baseline.rules)){
+        await config.policy.setSourceRules(draft);expectedPolicy=JSON.stringify(draft);
+        baseline={rules:draft,legacy:false};
+      }
+      if(!valid())return;await config.validate();if(!valid())return;
+      status.textContent='태그 저장을 확인했습니다. 재분석을 준비합니다.';
+      const guard=async()=>{await config.validate();if(JSON.stringify(config.policy.sourceRules())!==JSON.stringify(draft))throw Error('저장된 태그 규칙이 변경되었습니다. 다시 확인하세요.');};
+      await config.onRun(guard);
+    }catch(error){if(valid())status.textContent='재분석 중단: '+String(error?.message||error);}
+    finally{config.onBusy?.(false);if(valid())lock(false);}
+  };
+  cancel.onclick=()=>{if(!busy){container.replaceChildren();config.onClose?.();}};
+  lock(true);
+  config.policy.ready().then(prefs=>{
+    if(!valid())return;const draft=config.policy.sourceRules();baseline={rules:memorySuiteNormalizeSourceRules(draft),legacy:!prefs.sourceRules};expectedPolicy=policyKey();
+    for(const key of ['ignoredTags','unwrapTags','sourceTags'])for(const entry of draft[key])addRule(entry,key,null,savedList);
+    for(const control of draft.controls)addRule(memorySuiteSourceRuleForm('@'+control),'ignoredTags',control,savedList);
+    lock(false);status.textContent='제외할 영역을 선택하거나 저장된 규칙을 적용해 원문을 확인하세요.';
+  }).catch(error=>{if(valid())status.textContent='규칙 조회 실패: '+String(error?.message||error);});
+  return box;
+}
 /* MEMORY SUITE SOURCE INPUT CONTROLS v1 END */
 
 
@@ -55424,13 +55561,23 @@ function mountMemorySuiteSourceInputControls(container, config) {
       if(!records.length||!pair.userHash||!pair.assistantVisibleHash)continue;
       const legacyIdentity=pair.userMessageIdentityStable!==true||pair.assistantMessageIdentityStable!==true;
       const identity=stableHash64(JSON.stringify([scope.key,turn,pair.userMessageIndex,pair.assistantMessageIndex,pair.userMessageIdHash,pair.assistantMessageIdHash,legacyIdentity?sourceDigest:'native']));
-      units.push({key:String(turn),start:turn,end:turn,identity,legacyIdentity,label:`T${turn}`,sourceDigest,basis:stableHash64(prefix.join('\u0001'))});
+      units.push({key:String(turn),start:turn,end:turn,identity,legacyIdentity,reviewIdentity:stableHash64(JSON.stringify([scope.key,turn,pair.userMessageIndex,pair.assistantMessageIndex,pair.userMessageIdHash,pair.assistantMessageIdHash])),summary:viewerPacketSummary(records[0]).slice(0,160),rawDigest:hayakuRawSourceDigest(hayakuReviewRows(scope,pair)),label:`T${turn}`,sourceDigest,basis:stableHash64(prefix.join('\u0001'))});
     }
     return {scopeKey:scope.key,topology,units,completedTurnIds:pairs.map(p=>p.userMessageIdHash)};
   };
   const listHayakuReanalysisRanges=async()=>{
     const value=await hayakuSourceEditSnapshot();
     return {scopeKey:value.scopeKey,topology:value.topology,ranges:value.units.map(({sourceDigest,basis,...unit})=>unit)};
+  };
+  const readHayakuReanalysisTurn=async(inventory,range)=>{
+    const scope=await RisuCompat.currentChatScope();
+    if(!scope?.confident||scope.key!==inventory.scopeKey||scope.chatMessagesAvailable!==true)throw Error('채팅이 변경되었습니다. 구간 목록을 새로고침하세요.');
+    const pairs=ensureArray(authoritativeChatSnapshot(scope.chatMessages,scope).conversationPairs);
+    const topology=stableHash64(JSON.stringify(pairs.map(p=>[p.pairIndex,p.userMessageIndex,p.assistantMessageIndex,p.userMessageIdHash,p.assistantMessageIdHash])));
+    const pair=pairs.find(p=>String(p.pairIndex)===range.key);
+    const identity=pair?stableHash64(JSON.stringify([scope.key,Number(pair.pairIndex),pair.userMessageIndex,pair.assistantMessageIndex,pair.userMessageIdHash,pair.assistantMessageIdHash])):'';
+    if(!pair||topology!==inventory.topology||identity!==range.reviewIdentity)throw Error('원문 위치가 변경되었습니다. 구간 목록을 새로고침하세요.');
+    const row=hayakuReviewRows(scope,pair)[0];return {label:range.label,user:row.userRaw,assistant:row.assistantRaw};
   };
   const selectHayakuReanalysisRanges=async selection=>{
     const inventory=await listHayakuReanalysisRanges(),rows=Array.isArray(selection)?selection:ensureArray(selection?.ranges);
@@ -55443,8 +55590,10 @@ function mountMemorySuiteSourceInputControls(container, config) {
       if(selection?.scopeKey!==inventory.scopeKey||selection?.topology!==inventory.topology)return {allowed:false,reason:'selected_source_changed_refresh_required'};
       if(rows.some(row=>!objectish(row)||units.find(unit=>unit.key===String(row.key))?.identity!==row.identity))return {allowed:false,reason:'selected_source_changed_refresh_required'};
     }
+    const reviewed=selection?.reviewedSource;
+    if(reviewed&&(units.length!==1||reviewed.key!==units[0].key||reviewed.rawDigest!==units[0].rawDigest||reviewed.rulesKey!==memorySuiteSourceTagKey('hayaku')))return {allowed:false,reason:'reviewed_source_changed'};
     const extraCalls=(await loadSettings()).recoveryExtraCalls===1?1:0;
-    return {allowed:true,owner:'hayaku',scopeKey:inventory.scopeKey,topology:inventory.topology,units,extraCalls,model:true,
+    return {allowed:true,owner:'hayaku',scopeKey:inventory.scopeKey,topology:inventory.topology,units,...(reviewed?{reviewedSource:{key:reviewed.key,rawDigest:reviewed.rawDigest,rulesKey:reviewed.rulesKey}}:{}),extraCalls,model:true,
       warning:`Other Ax 기본 ${units.length}회(턴당 1회), 구조 복구 추가 허용은 턴당 최대 ${extraCalls}회로 전체 최대 ${units.length*(1+extraCalls)}회입니다. Provider 비용이 발생할 수 있습니다. 검증과 저장 확인에 성공하면 선택한 턴의 기존 기억을 새 기억으로 자동 교체합니다. 채팅 원문은 변경하지 않습니다.`};
   };
   const runHayakuSelectedReanalysis=selection=>{
@@ -55461,6 +55610,9 @@ function mountMemorySuiteSourceInputControls(container, config) {
         const keys=new Set(requested.map(r=>String(r.key)));
         if(!keys.size||keys.size!==requested.length||keys.size>128)throw Error('SOURCE_EDIT_SELECTION_INVALID');
         const units=requested.map(row=>{const unit=initial.units.find(u=>u.key===String(row.key));if(!unit||unit.identity!==row.identity)throw Error(row.legacyIdentity===true?'SOURCE_REANALYSIS_LEGACY_REFRESH_REQUIRED: 메시지 ID가 없는 예전 채팅은 본문을 고친 뒤 구간 목록을 새로고침하고 다시 선택하세요.':'SOURCE_EDIT_IDENTITY_CHANGED');return unit;}).sort((a,b)=>a.start-b.start);
+        const reviewed=selection.reviewedSource;
+        const assertReviewed=unit=>{if(reviewed&&(units.length!==1||unit?.key!==reviewed.key||unit.rawDigest!==reviewed.rawDigest||memorySuiteSourceTagKey('hayaku')!==reviewed.rulesKey))throw Error('SOURCE_EDIT_REVIEW_CHANGED');};
+        if(reviewed)assertReviewed(units[0]);
         // Persist and pin immutable raw before any model call. A later cosmetic
         // host capture can share the projection, but cannot replace consumed bytes.
         const consumedScope=await RisuCompat.currentChatScope(),consumedSnapshot=authoritativeChatSnapshot(consumedScope.chatMessages,consumedScope),consumed=[];
@@ -55475,6 +55627,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
         for(const unit of units){const pair=ensureArray(consumedSnapshot.conversationPairs).find(p=>Number(p.pairIndex)===unit.start);
           if(!pair||hayakuSourceEditDigest(pair)!==unit.sourceDigest)throw Error('SOURCE_EDIT_SOURCE_CHANGED');
           const evidenceUnit=hayakuReviewUnit(consumedScope,pair),rows=hayakuReviewRows(consumedScope,pair);
+          if(reviewed)assertReviewed({key:unit.key,rawDigest:hayakuRawSourceDigest(rows)});
           const ref=await getHayakuSourceEvidence().put(scopeKey,evidenceUnit,rows,{normalizationVersion:memorySuiteSourceRules('hayaku')?'hayaku-visible:source-rules-v1:'+stableHash64(memorySuiteSourceTagKey('hayaku')):'hayaku-visible:illustration-v1'});
           consumed.push({unit:evidenceUnit,ref});
           operation.consumed=consumed;operation.scopeKey=scopeKey;
@@ -55484,7 +55637,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
           const latest=await hayakuSourceEditSnapshot();
           if(hayakuReanalysisLifetime!==lifetime||latest.scopeKey!==scopeKey||latest.topology!==initial.topology)throw Error('SOURCE_EDIT_SCOPE_OR_TOPOLOGY_CHANGED');
           for(const expected of units){const current=latest.units.find(u=>u.key===expected.key);
-            if(!current||current.identity!==expected.identity||current.sourceDigest!==expected.sourceDigest||current.basis!==expected.basis)throw Error('SOURCE_EDIT_SOURCE_CHANGED');}
+            if(!current||current.identity!==expected.identity||current.sourceDigest!==expected.sourceDigest||current.basis!==expected.basis)throw Error('SOURCE_EDIT_SOURCE_CHANGED');if(reviewed)assertReviewed(current);}
           for(const expected of consumed){const readback=await getHayakuSourceEvidence().get(scopeKey,expected.unit,{original:false});
             if(!readback.available||readback.ref.key!==expected.ref.key||readback.ref.payloadDigest!==expected.ref.payloadDigest)throw Error('SOURCE_EVIDENCE_READBACK_FAILED');}
           // Storage/evidence readback above may itself yield to a host edit.
@@ -55497,6 +55650,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
             const pair=finalPairs.find(p=>Number(p.pairIndex)===expected.start);
             const basis=stableHash64(finalPairs.filter(p=>Number(p.pairIndex)<=expected.start).map(hayakuSourceEditDigest).join('\u0001'));
             if(!pair||hayakuSourceEditDigest(pair)!==expected.sourceDigest||basis!==expected.basis)throw Error('SOURCE_EDIT_SOURCE_CHANGED');
+            if(reviewed)assertReviewed({key:expected.key,rawDigest:hayakuRawSourceDigest(hayakuReviewRows(finalScope,pair))});
           }
           if(hayakuReanalysisLifetime!==lifetime||Memory.unloaded||!ownsRuntime())throw Error('SOURCE_EDIT_CANCELLED');
         };
@@ -59508,30 +59662,46 @@ function mountMemorySuiteSourceInputControls(container, config) {
     mountHayakuSourceInput(root.querySelector('#hayakuSourceTrackingSettings'));
     if(viewer.activeTab!=='recovery')return;
     const card=root.querySelector('#hayakuSourceEditConsent');if(!card||card.dataset.reanalysisMounted===text(viewer.scope?.key))return;
-    card.dataset.reanalysisMounted=text(viewer.scope?.key);let inventory=null,busy=false,version=0;
-    card.innerHTML='<header class="card__head"><div><h2 id="hayakuSourceEditConsentTitle">직접 재분석</h2><p>분석 규칙을 먼저 적용한 뒤 원하는 턴을 선택하세요. 실행 시점의 현재 채팅 내용을 적용한 규칙으로 다시 분석합니다. 실행 전에 대상·호출 수·기억 교체를 확인합니다. 메시지 ID가 없는 예전 채팅은 편집 후 구간 목록을 새로고침하세요.</p></div></header><button type="button" class="btn" data-reanalysis-refresh>구간 목록 새로고침</button><div data-reanalysis-ranges></div><button type="button" class="btn" data-reanalysis-run disabled>재분석 내용 확인</button><p role="status" aria-live="polite" data-reanalysis-status></p>';
-    const list=card.querySelector('[data-reanalysis-ranges]'),run=card.querySelector('[data-reanalysis-run]'),refresh=card.querySelector('[data-reanalysis-refresh]'),status=card.querySelector('[data-reanalysis-status]');
+    card.dataset.reanalysisMounted=text(viewer.scope?.key);let inventory=null,busy=false,reviewSaving=false,version=0,reviewVersion=0;
+    card.innerHTML='<details class="fold" data-reanalysis-fold><summary id="hayakuSourceEditConsentTitle">직접 재분석</summary><div class="fold__body"><p>단일 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. Other Ax 비용과 기억 교체 대상을 실행 전에 확인합니다.</p><button type="button" class="btn" data-reanalysis-refresh>구간 목록 새로고침</button><div data-reanalysis-ranges class="stack"></div><div class="cluster"><button type="button" class="btn" data-reanalysis-run disabled>바로 재분석</button><button type="button" class="btn" data-reanalysis-review hidden>확인 후 재분석</button></div><div data-reanalysis-review-panel></div><p role="status" aria-live="polite" data-reanalysis-status></p></div></details>';
+    const list=card.querySelector('[data-reanalysis-ranges]'),run=card.querySelector('[data-reanalysis-run]'),refresh=card.querySelector('[data-reanalysis-refresh]'),status=card.querySelector('[data-reanalysis-status]'),review=card.querySelector('[data-reanalysis-review]'),panel=card.querySelector('[data-reanalysis-review-panel]');
     const current=()=>Memory.ledgerViewer.root===root&&Memory.ledgerViewer.activeTab==='recovery'&&root.querySelector('#hayakuSourceEditConsent')===card;
     const selected=()=>[...list.querySelectorAll('input:checked')].map(node=>node.value);
-    const sync=()=>{run.disabled=busy||!selected().length;refresh.disabled=busy;for(const input of list.querySelectorAll('input'))input.disabled=busy;};
-    const load=async()=>{if(busy)return;const token=++version;inventory=null;list.replaceChildren();run.disabled=true;status.textContent='구간을 읽는 중…';
-      try{const result=await listHayakuReanalysisRanges();if(token!==version||!current())return;inventory=result;
-        for(const range of result.ranges){const label=card.ownerDocument.createElement('label'),input=card.ownerDocument.createElement('input');input.type='checkbox';input.value=range.key;input.onchange=sync;label.append(input,card.ownerDocument.createTextNode(range.label));list.append(label);}
-        status.textContent=result.ranges.length?'원하는 구간을 선택하세요.':'재분석할 저장 구간이 없습니다.';sync();
-      }catch(error){if(token===version&&current())status.textContent='목록 조회 실패: '+text(error?.message||error);}};
-    refresh.onclick=load;run.onclick=async()=>{if(busy||!inventory)return;const keys=new Set(selected());if(!keys.size)return;
-      const selection={scopeKey:inventory.scopeKey,topology:inventory.topology,ranges:inventory.ranges.filter(r=>keys.has(r.key))};busy=true;sync();status.textContent='실행할 내용을 확인하는 중…';
+    const sync=()=>{const locked=busy||reviewSaving,n=selected().length;run.disabled=locked||!n;review.hidden=n!==1;review.disabled=locked||n!==1;refresh.disabled=locked;for(const input of list.querySelectorAll('input'))input.disabled=locked;};
+    const changed=()=>{reviewVersion++;panel.replaceChildren();sync();};
+    const execute=async(selection,validate=null)=>{
+      if(busy||!current())return;busy=true;sync();status.textContent='실행할 내용을 확인하는 중…';
       try{
         const ticket=await previewSourceEdits(selection);
         if(!current()){clearSourceEditPreview();return;}
         if(ticket.allowed!==true){status.textContent='대상을 확인할 수 없습니다. 구간 목록을 새로고침한 뒤 다시 선택하세요.';return;}
         if(!await viewerConfirmSourceReanalysis(ticket)){clearSourceEditPreview();status.textContent='재분석을 취소했습니다. 기존 기억을 유지합니다.';return;}
         if(!current()){clearSourceEditPreview();return;}
+        if(validate)await validate();if(!current()){clearSourceEditPreview();return;}
         status.textContent='선택한 구간을 재분석하는 중…';
         const result=await applySourceEdits(ticket);
         if(current())status.textContent=result.ok?'선택한 구간의 기억을 갱신했습니다.':'재분석 중단: '+(result.reason||'결과를 확인하세요.');
       }catch(error){clearSourceEditPreview();if(current())status.textContent='재분석 중단: '+text(error?.message||error);}
-      finally{busy=false;sync();if(current()&&!run.disabled)run.focus?.();}};
+      finally{busy=false;sync();if(current()&&!run.disabled)run.focus?.();}
+    };
+    const load=async()=>{if(busy||reviewSaving)return;const token=++version;reviewVersion++;inventory=null;list.replaceChildren();panel.replaceChildren();run.disabled=review.disabled=true;review.hidden=true;status.textContent='구간을 읽는 중…';
+      try{const result=await listHayakuReanalysisRanges();if(token!==version||!current())return;inventory=result;
+        for(const range of result.ranges)appendMemorySuiteReanalysisRange(list,range,{changed,current,read:()=>readHayakuReanalysisTurn(inventory,range)});
+        status.textContent=result.ranges.length?'원하는 턴을 선택하세요. 원문 보기에서 내용을 확인할 수 있습니다.':'재분석할 저장 구간이 없습니다.';sync();
+      }catch(error){if(token===version&&current())status.textContent='목록 조회 실패: '+text(error?.message||error);}};
+    refresh.onclick=load;run.onclick=()=>{if(!inventory||reviewSaving)return;const keys=new Set(selected());if(!keys.size)return;return execute({scopeKey:inventory.scopeKey,topology:inventory.topology,ranges:inventory.ranges.filter(r=>keys.has(r.key))});};
+    review.onclick=async()=>{
+      if(busy||reviewSaving||!inventory||selected().length!==1)return;const token=++reviewVersion,key=selected()[0],range=inventory.ranges.find(r=>r.key===key);
+      const reviewCurrent=()=>current()&&token===reviewVersion&&selected().length===1&&selected()[0]===key;
+      busy=true;sync();
+      try{
+        const sample=await readHayakuReanalysisTurn(inventory,range);if(!reviewCurrent())return;
+        const validate=async()=>{const fresh=await readHayakuReanalysisTurn(inventory,range);if(!reviewCurrent()||JSON.stringify(fresh)!==JSON.stringify(sample))throw Error('확인한 원문이 변경되었습니다. 원문을 다시 확인하세요.');};
+        mountMemorySuiteReanalysisReview(panel,{owner:'hayaku',policy:getHayakuSourceInput(),sample,current:reviewCurrent,validate,projectLegacySample:hayakuSourceInputConfig.projectLegacySample,
+          onBusy:value=>{reviewSaving=value;if(current())sync();},onRun:async guard=>{await guard();const latest=await listHayakuReanalysisRanges();await guard();await execute({scopeKey:latest.scopeKey,topology:latest.topology,ranges:latest.ranges.filter(r=>r.key===key),reviewedSource:{key,rawDigest:hayakuRawSourceDigest([{rawAvailable:true,userRaw:sample.user,assistantRaw:sample.assistant}]),rulesKey:memorySuiteSourceTagKey('hayaku')}},guard);}});
+      }catch(error){if(current())status.textContent='원문 조회 실패: '+text(error?.message||error);}
+      finally{busy=false;if(current())sync();}
+    };
     void load();
   }
   const viewerRenderHostLineage = () => {
@@ -61216,7 +61386,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
             <dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>누락 복구</dd><dt>대상 턴</dt><dd id="hayakuNativeRepairTargets">선택한 항목을 확인합니다.</dd><dt>선택 묶음</dt><dd id="hayakuNativeRepairBatch">-</dd><dt>예상 기본 호출</dt><dd id="hayakuNativeRepairCalls">-</dd><dt>추가 복구 허용량</dt><dd><span class="x-extra">설정에서 정의한 작업별 제한</span> — <button class="linkbtn" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경</button></dd><dt>실제 호출 수</dt><dd>완료 후 결과에 표시됩니다.</dd></dl>
             <div class="cluster" style="margin-top:14px"><button id="runHayakuNativeRepair" class="btn btn--primary" type="button">선택한 턴 복구…</button></div><div id="hayakuNativeRepairOutcome" class="stack"></div>
           </div></div></section>
-        <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 누락 복구와 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><div id="hayakuSourceTrackingSettings" class="stack"></div><div id="hayakuSourceEditConsent" class="stack"></div></div></section>
+        <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 누락 복구와 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><div id="hayakuSourceEditConsent" class="stack"></div><details class="fold"><summary>분석 태그 규칙 설정</summary><div id="hayakuSourceTrackingSettings" class="stack"></div></details></div></section>
         <section data-recovery-panel="cold" data-subpanel="cold" data-group="rc" hidden><div class="stack"><div class="card fail-box" hidden><div class="empty"><b>원장을 읽지 못해 복구 대상을 계산하지 않습니다.</b><span>AI 작업은 시작할 수 없습니다. 현재 채팅 범위를 다시 확인하세요.</span></div></div><div class="card"><h2 class="card__title">Cold Start</h2><p class="card__desc">기록이 없는 채팅의 완료 턴을 묶음 단위로 분석합니다.</p><div class="cluster"><span class="badge" id="hayakuNativeColdStartState">대기</span><span id="hayakuNativeColdStartProgress">-</span><span>Cold Start 대상 <b id="hayakuNativeColdStartTurns">-</b></span></div><div class="field" style="margin-top:12px"><label for="hayakuColdStartBatchTurns">호출당 U+A</label><select id="hayakuColdStartBatchTurns" class="select" data-no-track aria-label="Cold Start 호출당 U+A"><option value="1">1턴</option><option value="5">5턴</option><option value="10">10턴</option></select><span class="hint">이번 실행에만 적용됩니다. 기본값은 설정 › 복구·안전의 Cold Start 묶음입니다 (저장된 값 <b id="hayakuColdStartSavedValue">-</b>).</span></div><dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>Cold Start</dd><dt>대상 턴</dt><dd id="hayakuColdStartTargetRows">완료된 턴 수는 현재 원장에서 계산합니다.</dd><dt>선택 묶음</dt><dd id="hayakuColdStartBundleCount">-</dd><dt>예상 기본 호출</dt><dd id="hayakuColdStartCallCount">-</dd><dt>추가 복구 허용량</dt><dd>설정에 따른 묶음별 제한</dd></dl><div class="cluster" style="margin-top:12px"><button id="runHayakuNativeColdStart" class="btn btn--primary" type="button">Cold Start 실행…</button><button id="cancelHayakuNativeColdStart" class="btn" type="button">중단 요청</button></div></div></div></section>
         <div class="grid g2"><div class="card"><h2 class="card__title">자동 복구</h2><p class="card__desc">설정 탭과 같은 값입니다 (한 곳에서만 편집).</p><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">정상 응답 처리 안에서 현재 누락/불가 패킷을 1회 복구합니다. 유일한 자동 복구 단계이며, 실패하거나 건너뛴 턴은 Recovery Journal에 남아 아래 수동 복구를 기다립니다.</div></div><span class="badge" id="auto-after" aria-live="polite">설정 확인 중</span></div><button class="linkbtn" id="hayakuRecoverySettingsLink" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경 →</button></div><div class="card"><h2 class="card__title">기억 복원 · Portable JSON</h2><p class="card__desc">같은 채팅은 교체 복원, 다른 채팅은 이사/복사 모드만 허용됩니다. 작업 전 대상 기억을 자동 백업합니다.</p><div data-portable-backup-host="hayaku_locator_continuity"></div></div></div>
         <details class="fold"><summary>안전 검사 도구</summary><div class="fold__body"><div class="cluster"><button id="hayakuSafeHealthInspect" class="btn" type="button">읽기 전용 검사</button><button id="hayakuSafeHealthPreview" class="btn" type="button">안전 복구 미리보기</button><button id="hayakuSafeHealthApply" class="btn" type="button" disabled>캐시 복구</button></div><p id="hayakuSafeHealthStatus" role="status">원문·정본 전체를 검사하는 기능은 아닙니다.</p></div></details>
