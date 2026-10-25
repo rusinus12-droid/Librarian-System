@@ -39015,7 +39015,11 @@ function createLibraReadonlySourceContext(owner) {
     const testEmbeddingConnection = async patch => {
       // A connection trial must not replace an unsaved embedding draft.
       const saved = (await LibraProviderBridge.getConfig())?.embed || DEFAULT_EMBEDDING;
-      const config = normalizeEmbeddingSettings({ ...saved, ...asObject(patch) });
+      const incoming = asObject(patch);
+      const effectiveKey = typeof incoming.key === 'string' && incoming.key.trim().length > 0
+        ? incoming.key.trim()
+        : (saved.key || '');
+      const config = normalizeEmbeddingSettings({ ...saved, ...incoming, key: effectiveKey });
       const gateHighCosine = Math.max(-1, Math.min(1, Number(state.settings?.gateHighCosine ?? 0.42)));
       const result = await LibraProviderBridge.testEmbedding(config, { multilingualProbe: true, gateHighCosine });
       state.lastMultilingualEmbeddingProbe = clone(result?.multilingualProbe || {
@@ -82765,12 +82769,25 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
 
   const guiSetStatus = (message, isError = false, sticky = false) => {
-    const node = Gui.app?.querySelector('[data-gui-status]');
-    if (!node) return;
-    node.textContent = message || '';
-    node.classList.toggle('err', !!isError);
+    const nodes = Gui.app?.querySelectorAll('[data-gui-status],[data-settings-room-save-status]') || [];
+    for (const node of nodes) {
+      node.textContent = message || '';
+      node.classList.toggle('err', !!isError);
+      if (node.dataset.settingsRoomSaveStatus) {
+        Gui.settingsRoomSaveStatus = message || '';
+      }
+    }
     if (Gui.statusTimer) clearTimeout(Gui.statusTimer);
-    if (!sticky && message) Gui.statusTimer = setTimeout(() => { node.textContent = ''; node.classList.remove('err'); }, 6500);
+    if (!sticky && message) Gui.statusTimer = setTimeout(() => {
+      for (const node of (Gui.app?.querySelectorAll('[data-gui-status],[data-settings-room-save-status]') || [])) {
+        if (!node.dataset.settingsRoomSaveStatus) {
+          node.textContent = '';
+        } else {
+          node.textContent = Gui.dirty ? '저장되지 않은 변경' : '저장됨';
+        }
+        node.classList.remove('err');
+      }
+    }, 6500);
   };
 
   const copyTextWithFallback = async (value) => {
@@ -90207,7 +90224,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
 
   const buildBookSaveBar = () => guiEl('footer',{class:'savebar',dataset:{bookSaveBar:'true'}},[
-    guiEl('span',{class:'hint',dataset:{settingsRoomSaveStatus:'true'},role:'status','aria-live':'polite',text:Gui.settingsRoomSaveStatus||(Gui.dirty?'저장되지 않은 변경':'저장됨')}),
+    guiEl('span',{class:'hint',dataset:{settingsRoomSaveStatus:'true',guiStatus:'true'},role:'status','aria-live':'polite',text:Gui.settingsRoomSaveStatus||(Gui.dirty?'저장되지 않은 변경':'저장됨')}),
     guiEl('div',{class:'cluster'},[
       guiEl('button',{class:'btn',type:'button',dataset:{settingsRoomRevert:'true'},text:'되돌리기',disabled:Gui.settingsRoomSaving===true||!Gui.dirty,onClick:()=>void revertGuiStateFromStorage()}),
       guiEl('button',{class:'btn btn--primary',type:'button',dataset:{settingsRoomSave:'true'},text:Gui.settingsRoomSaving?'저장 중…':'설정 저장',disabled:Gui.settingsRoomSaving===true,onClick:()=>void saveSettingsRoom()})
@@ -90860,12 +90877,64 @@ advanced
         const providerSelect=guiEl('select',{class:'select',value:cfg.provider,dataset:{embeddingField:'provider'},onChange:event=>{Gui.embeddingSettingsBasisHash ||= settingsSemanticHash(LibraProviderBridge.peekConfig()?.embed);LibraMemoryCore.resetEmbeddingProviderDefaults(event.target.value);markGuiDirty();void renderSettingsGui();}},providers.map(item=>guiEl('option',{value:item.provider,selected:item.provider===cfg.provider,text:item.label})));
         return guiEl('div',{class:'stack',dataset:{settingsCategory:'ai',settingsReadback:'embedding-settings'}},[
           card('임베딩','검색에 쓰는 실제 vector provider·model 공간을 설정합니다.',[
-            guiEl('div',{class:'grid g2'},[field('임베딩 사용',toggle(cfg.enabled!==false,'임베딩 사용',value=>updateEmbedding({enabled:value}))),embeddingField('model','임베딩 모델',{placeholder:'provider model ID'}),field('Provider',providerSelect),embeddingField('url','Endpoint URL',{placeholder:'기본값'})]),
+            guiEl('div',{class:'grid g2'},[
+              field('임베딩 사용',toggle(cfg.enabled!==false,'임베딩 사용',value=>updateEmbedding({enabled:value}))),
+              embeddingField('model','임베딩 모델',{placeholder:'provider model ID'}),
+              field('Provider',providerSelect),
+              embeddingField('key','API Key',{type:'password',value:'',placeholder:'새 키를 입력할 때만 저장',note:cfg.key?'저장된 키가 있습니다. 값을 읽거나 표시하지 않습니다.':'키가 설정되지 않았습니다.'}),
+              embeddingField('url','Endpoint URL',{placeholder:'기본값'})
+            ]),
             guiEl('div',{class:'three-status'},[guiEl('div',{},[guiEl('b',{text:'작업'}),status]),guiEl('div',{},[guiEl('b',{text:'이전'}),guiEl('span',{dataset:{embeddingMigrationStatus:'true'},text:Gui.embeddingMigrationStatus||'같은 공간 이전 가능 여부 확인 전'})]),guiEl('div',{},[guiEl('b',{text:'격리 벡터'}),guiEl('span',{text:String(embedState.counts?.quarantined||0)+'개 · 읽기 전용'})])]),
-            guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm',type:'button',text:'연결 테스트',onClick:async()=>{try{const result=await LibraMemoryCore.testEmbeddingConnection(LibraMemoryCore.state.embeddingSettings||cfg);guiSetStatus(`임베딩 연결 결과 · ${text(result?.status||'응답 확인')}`,result?.ok===false);}catch(error){guiSetStatus(String(error.message||error),true);}}}),guiEl('button',{class:'btn btn--sm',type:'button',text:'작업 상태',onClick:()=>{Gui.embeddingMigrationStatus=`${embedState.status||'unknown'} · ${JSON.stringify(embedState.counts||{})}`;void renderSettingsGui();}}),guiEl('button',{class:'btn btn--sm',type:'button',text:'격리 벡터 진단',onClick:()=>{Gui.embeddingMigrationStatus=`읽기 전용 진단 · ${Number(embedState.counts?.quarantined||0)}개 격리`;void renderSettingsGui();}})])
+            guiEl('div',{class:'cluster'},[
+              guiEl('button',{class:'btn btn--sm',type:'button',text:'연결 테스트',onClick:async event=>{
+                const btn=event?.currentTarget;
+                if(btn)btn.disabled=true;
+                try{
+                  Gui.embeddingTestResult='임베딩 연결 테스트 중…';
+                  guiSetStatus('임베딩 연결 테스트 중…');
+                  void renderSettingsGui();
+                  const currentDraft=LibraMemoryCore.state.embeddingSettings||cfg;
+                  const result=await LibraMemoryCore.testEmbeddingConnection(currentDraft);
+                  if(!result?.ok){
+                    const err=result?.error||result?.errorType||'연결 실패';
+                    const msg=`임베딩 연결 실패 · ${err}`;
+                    Gui.embeddingTestResult=msg;
+                    guiSetStatus(msg,true,true);
+                  }else{
+                    const dims=result.dimensions?` · ${result.dimensions}차원`:'';
+                    const ms=result.durationMs?` · ${result.durationMs}ms`:'';
+                    const msg=`임베딩 연결 성공 · ${result.provider||currentDraft.provider} / ${result.model||currentDraft.model}${dims}${ms}`;
+                    Gui.embeddingTestResult=msg;
+                    guiSetStatus(msg,false);
+                  }
+                }catch(error){
+                  const msg=`임베딩 연결 오류 · ${error?.message||error}`;
+                  Gui.embeddingTestResult=msg;
+                  guiSetStatus(msg,true,true);
+                }finally{
+                  if(btn)btn.disabled=false;
+                  void renderSettingsGui();
+                }
+              }}),
+              guiEl('button',{class:'btn btn--sm',type:'button',text:'작업 상태',onClick:()=>{Gui.embeddingMigrationStatus=`${embedState.status||'unknown'} · ${JSON.stringify(embedState.counts||{})}`;void renderSettingsGui();}}),
+              guiEl('button',{class:'btn btn--sm',type:'button',text:'격리 벡터 진단',onClick:()=>{Gui.embeddingMigrationStatus=`읽기 전용 진단 · ${Number(embedState.counts?.quarantined||0)}개 격리`;void renderSettingsGui();}}),
+              Gui.embeddingTestResult?guiEl('span',{class:'hint'+(Gui.embeddingTestResult.includes('실패')||Gui.embeddingTestResult.includes('오류')?' err':''),dataset:{embeddingTestResult:'true',guiStatus:'true'},text:Gui.embeddingTestResult}):null
+            ].filter(Boolean))
           ]),
           guiEl('details',{class:'fold'},[guiEl('summary',{},['임베딩 상세 설정 ',guiEl('span',{class:'hint',text:'task·차원·저장 옵션'})]),guiEl('div',{class:'fold__body grid g2'},[
-            embeddingField('key','API Key',{type:'password',value:'',placeholder:'새 키를 입력할 때만 저장'}),embeddingField('dimensions','Dimensions',{placeholder:'auto'}),embeddingField('batchSize','Batch size'),embeddingField('timeoutMs','Timeout ms',{type:'number'}),embeddingField('queryTask','Query task'),embeddingField('documentTask','Document task'),embeddingField('queryPrefix','Query prefix'),embeddingField('documentPrefix','Document prefix'),embeddingField('customMethod','Custom method'),embeddingField('customResponsePath','Response vector path'),embeddingField('customErrorPath','Error path'),embeddingField('customHeaders','Custom headers JSON',{tag:'textarea',value:JSON.stringify(cfg.customHeaders||{},null,2)}),embeddingField('customRequestTemplate','Custom request template',{tag:'textarea'}),field('벡터 정규화',toggle(cfg.normalizeVectors!==false,'벡터 정규화',value=>updateEmbedding({normalizeVectors:value})))
+            embeddingField('dimensions','Dimensions',{placeholder:'auto'}),
+            embeddingField('batchSize','Batch size'),
+            embeddingField('timeoutMs','Timeout ms',{type:'number'}),
+            embeddingField('queryTask','Query task'),
+            embeddingField('documentTask','Document task'),
+            embeddingField('queryPrefix','Query prefix'),
+            embeddingField('documentPrefix','Document prefix'),
+            embeddingField('customMethod','Custom method'),
+            embeddingField('customResponsePath','Response vector path'),
+            embeddingField('customErrorPath','Error path'),
+            embeddingField('customHeaders','Custom headers JSON',{tag:'textarea',value:JSON.stringify(cfg.customHeaders||{},null,2)}),
+            embeddingField('customRequestTemplate','Custom request template',{tag:'textarea'}),
+            field('벡터 정규화',toggle(cfg.normalizeVectors!==false,'벡터 정규화',value=>updateEmbedding({normalizeVectors:value})))
           ])]),
           buildApprovedEmbeddingOperations(cfg)
         ]);
