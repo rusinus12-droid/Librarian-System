@@ -33,9 +33,9 @@ test('recall retains an earlier dated event with identical wording before and af
   try {
     const lens = await f.api.createLens({ ...datedLens, name: '날짜별 건강', instruction: { goal: '인물별 날짜별 증상' }, cadence: { mode: 'manual' }, recall: { mode: 'recent', maxItems: 8 } });
     f.setReply({ items: [{ ...symptom, when: '3월 4일', whenRef: 't1-u' }] });
-    await f.api.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 2 });
+    await f.r.core.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 2 });
     f.setReply({ items: [{ ...symptom, refs: ['t4-u'], when: '3월 5일', whenRef: 't4-u' }] });
-    await f.api.runLensForRange(lens.lensId, { startTurn: 3, endTurn: 5 });
+    await f.r.core.runLensForRange(lens.lensId, { startTurn: 3, endTurn: 5 });
     assert.equal((await f.api.inspectScopeLenses()).memories.length, 2);
     const recall = await f.api.recallLensMemories({ query: '3월 4일 지호의 증상', canonicalBudgetChars: 12000 });
     assert.match(recall.renderedBlock, /시점: 3월 4일/);
@@ -84,7 +84,7 @@ test('current timed notes still deduplicate inherited notes of an identical copi
     const chat = f.target();
     assert.equal((await f.api.adoptSessionHandoff({ transferId: 'copied-timed-history', targetChatId: chat.id })).verified, true);
     chat.message = f.clone(f.chat.message); chat.messages = chat.message;
-    await f.api.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 });
+    await f.r.core.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 });
     const recall = await f.api.recallLensMemories({ query: '지호 오늘 증상', canonicalBudgetChars: 12000 });
     assert.equal(recall.injectedItems.length, 1);
     assert.equal(recall.injectedItems[0].inherited, false, 'current notes retain priority without repeating the inherited event');

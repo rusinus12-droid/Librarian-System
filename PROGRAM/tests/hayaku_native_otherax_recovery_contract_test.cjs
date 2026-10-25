@@ -26,7 +26,7 @@ const section = (source, start, end, label) => {
 const version=hayaku.match(/^\/\/@version (\d+\.\d+\.\d+)\s*$/m)?.[1];
 assert.ok(version, 'HAYAKU semantic version');
 requireText(hayaku, `const PLUGIN_VERSION = '${version}';`, 'HAYAKU header/runtime version parity');
-requireText(hayaku, "? '채팅 범위 미확인'", 'compact unavailable-chat status text');
+requireText(hayaku, "options.scopeKey&&options.scopeKey!==inventory.scopeKey", 'contextual reanalysis rejects another chat');
 requireText(hayaku, 'data-hayaku-viewer-panel="recovery"', 'canonical Recovery destination');
 requireText(hayaku, 'data-recovery-view="missing"', 'canonical missing-turn subview');
 requireText(hayaku, 'id="runHayakuNativeRepair" class="btn btn--primary"', 'manual repair action uses the canonical button component');

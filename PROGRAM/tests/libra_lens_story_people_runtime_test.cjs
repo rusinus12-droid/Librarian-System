@@ -86,8 +86,8 @@ test('gate and prompt through the real plugin', async () => {
     f.setReply(args => { calls.push(JSON.stringify(args)); return '{"items":[]}'; });
     const tracking = await api.createLens({ name: '생체 추적', trackSubject: true, instruction: { goal: '몸 상태' }, cadence: { mode: 'manual' } });
     const quiet = await api.createLens({ name: '분위기', instruction: { goal: '분위기' }, cadence: { mode: 'manual' } });
-    await api.runLensForRange(tracking.lensId, { startTurn: 1, endTurn: 5 });
-    await api.runLensForRange(quiet.lensId, { startTurn: 1, endTurn: 5 });
+    await f.r.core.runLensForRange(tracking.lensId, { startTurn: 1, endTurn: 5 });
+    await f.r.core.runLensForRange(quiet.lensId, { startTurn: 1, endTurn: 5 });
     assert.match(calls[0], /write a separate note for each person/);
     assert.match(calls[0], /whoRef/);
     assert.match(calls[0], /the character is 민아/, 'the prompt names the character for "char"');

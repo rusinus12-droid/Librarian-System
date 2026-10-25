@@ -11,7 +11,7 @@ for (const mode of ['server_only', 'mirror']) test(`${mode}: 3000 1024D vectors 
     let f = s.f;
     f.control.onCall = async () => ({ type: 'success', result: JSON.stringify({ items: [{ label: '약속', text: '열쇠를 오늘 돌려주기로 했다.', refs: ['t2-a'], quote: '오늘 돌려주겠다고 약속했다' }] }) });
     const lens = await f.r.api.createLens({ name: '장기 채팅', instruction: { goal: '약속을 기록한다.' }, cadence: { mode: 'manual' } });
-    await f.r.api.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 });
+    await f.r.core.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 });
     const row = s.storedRows().find(row => row.key.endsWith(`:lens:${lens.lensId}:records`));
     const records = structuredClone(row.value), template = Object.values(records.records)[0];
     records.records = {};

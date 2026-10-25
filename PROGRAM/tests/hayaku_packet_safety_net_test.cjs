@@ -21,8 +21,8 @@ const context = (settings = {}) => {
 
 test('afterRequest repair is the only automatic recovery stage', () => {
   assert.match(H, /const scheduleNativeRecoveryDebtRepair = \(\) => false;/, 'background Recovery Journal repair never starts by itself');
-  assert.match(H, /const scheduleFailedAutoRecovery = \(\) => false;/, 'Failed Recovery automation stays retired');
-  assert.match(H, /const failedAutoMode = \(\) => 'off';/);
+  assert.ok(!H.includes('scheduleFailedAutoRecovery'),'Failed Recovery worker is removed');
+  assert.ok(!H.includes('failedAutoMode'),'Failed Recovery setting is removed');
   assert.match(H, /const recoveryJournalAutoApproved = \(\) => false;/, 'nothing is auto-approved, so the durable approval fences stay closed');
   assert.ok(!H.includes('id="auto-bg"') && !H.includes('id="st-bg"'), 'no background toggle in the GUI');
   assert.ok(!H.includes("'hayaku_background_auto_repair', 'hayaku_cold_start_batch_turns'"), 'not an essential setting');

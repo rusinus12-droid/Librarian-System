@@ -1,6 +1,7 @@
 'use strict';
 const fs=require('fs'),path=require('path'),assert=require('node:assert/strict');const s=fs.readFileSync(path.join(__dirname,'../plugins/HAYAKU_Locator_Continuity.js'),'utf8');
 for(const fragment of ['data-hayaku-viewer-panel="failed_recovery"','id="hayakuViewerTabFailedRecovery"','name="hayaku_failed_recovery_automation"','data-recovery-view="failed"','data-recovery-panel="failed"','id="autoRepairHayakuFailedAnalysis"','id="adoptHayakuFailedAnalysis"','id="editHayakuFailedAnalysis"','id="saveHayakuFailedAnalysisEdit"'])assert.ok(!s.includes(fragment),fragment);
+for(const fragment of ['FailedAutoRecovery','failedAutoMode','resolveFailedAnalysisArtifact','failedRecoveryAutomation','hayaku_failed_recovery_automation','viewerResolveFailedRecovery','viewerRenderFailedRecovery'])assert.ok(!s.includes(fragment),fragment);
 for(const fragment of ['id="loadHayakuArchivedFailures"','id="hayakuArchivedFailures"'])assert.ok(s.includes(fragment),fragment);
 // The background repair dialog (기억 생성 / 나중에) is retired with background repair.
 for(const fragment of ["makeButton('기억 생성', true)","makeButton('나중에')"])assert.ok(!s.includes(fragment),fragment);

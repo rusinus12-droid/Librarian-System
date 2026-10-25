@@ -55,10 +55,9 @@ const input = require('./fixtures/unified_vertical_source.json');
       await pause(20);
     }
     assert.equal(active.status, 'verified');
-    const publication = await api.retryMicroAnalysis({scope: core.peekSnapshot().scope,
-      receiptRef: active.receiptKey, revision: active.receipt.revisionId, digest: active.receipt.sourceDigest,
-      expectedGeneration: Number(core.state.worldManagerRuntimeMetaGeneration || 0)});
-    assert.equal(publication.status, 'verified');
+    const selection=await api.listReanalysisRanges({kind:'micro'});
+    const publication=await api.reanalyzeSelectedRanges({...selection,ranges:selection.ranges.filter(row=>row.start===5)});
+    assert.equal(publication.ok,true);
     assert.equal((await api.readActiveMicroMemoryForTurn(5, 'other-scope')).status, 'scope_mismatch');
     const stored = await api.readActiveMicroMemoryForTurn(5, core.peekSnapshot().scope.scopeKey);
     assert.equal(stored.status, 'verified');

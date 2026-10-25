@@ -30338,7 +30338,7 @@ function createMemorySuiteSourceInputPolicy(config) {
 function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceInputPolicy({...config,owner:'libra'}); }
 /* END LIBRA SOURCE INPUT POLICY */
 /* MEMORY SUITE SOURCE INPUT CONTROLS v1 BEGIN */
-// View-only extension of the existing owner input policy. No model or raw-source write.
+// Owner input-rule controls and explicit review UI. Reanalysis stays in owner callbacks.
 function mountMemorySuiteSourceInputControls(container, config) {
     const {owner,policy}=config,loadPreferences=()=>policy.ready(),sourceRules=()=>policy.sourceRules(),setSourceRules=rules=>policy.setSourceRules(rules);
     const disposed=()=>config.isDisposed?.()===true;
@@ -30478,6 +30478,144 @@ function mountMemorySuiteSourceInputControls(container, config) {
     status.textContent='저장된 규칙을 읽는 중…';
     loadPreferences().then(()=>{if(disposed())return;loaded=true;fill();status.textContent='';if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!disposed())status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
   }
+
+// One card per turn keeps checkboxes aligned and allows source inspection without dispatch.
+function appendMemorySuiteReanalysisRange(list,range,config) {
+  const doc=list.ownerDocument,make=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
+  const row=make('section'),label=make('label'),input=make('input'),details=make('details'),summary=make('summary','원문 보기'),output=make('pre');
+  row.className='ms-reanalysis-turn';row.style.cssText='display:grid;gap:8px;padding:14px;border:1px solid #8885;border-radius:12px;min-width:0';
+  label.style.cssText='display:flex;align-items:center;gap:10px';input.type='checkbox';input.value=range.key;input.setAttribute('aria-label',range.label+' 재분석 선택');input.onchange=config.changed;
+  label.append(input,make('strong',range.label));row.append(label);
+  if(range.description){const description=make('p',range.description);description.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(description);}
+  if(range.summary){const excerpt=make('p','저장된 내용 · '+range.summary);excerpt.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(excerpt);}
+  output.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto';details.append(summary,output);row.append(details);list.append(row);
+  let serial=0;
+  details.ontoggle=async()=>{
+    if(!details.open){serial++;return;}
+    const token=++serial;output.textContent='원문을 읽는 중…';
+    try{const sample=await config.read();if(!row.isConnected||!config.current()||token!==serial)return;
+      output.textContent='사용자 원문\n'+memorySuiteStripInternalSource(sample.user)+'\n\nAI 응답 원문\n'+memorySuiteStripInternalSource(sample.assistant);
+    }catch(error){if(row.isConnected&&config.current()&&token===serial)output.textContent='원문 조회 실패: '+String(error?.message||error);}
+  };
+}
+
+// Source text stays in the mounted view. Only user-confirmed tag rules are saved.
+function memorySuiteExtractSelectedSourceTags(body,start,end) {
+  if(!Number.isInteger(start)||!Number.isInteger(end)||start<0||end<=start||end>body.length)return [];
+  const names=[...new Set([...body.matchAll(/<\/?([a-z][a-z0-9:_-]*)(?=[\s/>])/gi)].map(m=>m[1].toLowerCase()))];
+  const candidates=[];
+  for(const name of names){
+    if(memorySuiteIsInternalSourceRule(name))continue;
+    const parsed=memorySuiteSourceTagRanges(body,[name]);
+    if(parsed.invalid)continue;
+    for(const range of parsed.ranges)if((range.start>=start&&range.end<=end)||(range.start<=start&&range.end>=end))
+      candidates.push({entry:name,start:range.start,end:range.end});
+  }
+  // Literal module delimiters are editable too; never infer a rule from ordinary prose.
+  const literals=[{open:'<!--',close:'-->'},...[...body.matchAll(/\[([^\]\r\n]{1,100}) START\]/g)].map(m=>({open:m[0],close:'['+m[1]+' END]'}))];
+  for(const entry of literals){const parsed=memorySuiteLiteralRanges(body,[entry]);if(parsed.invalid)continue;
+    for(const range of parsed.ranges)if((range.start>=start&&range.end<=end)||(range.start<=start&&range.end>=end))candidates.push({entry,start:range.start,end:range.end});}
+  const inside=candidates.filter(r=>r.start>=start&&r.end<=end);
+  const chosen=inside.length?inside:candidates.sort((a,b)=>(a.end-a.start)-(b.end-b.start)).slice(0,1);
+  return [...new Map(chosen.map(r=>[JSON.stringify(r.entry),r.entry])).values()].slice(0,128);
+}
+
+function mountMemorySuiteReanalysisReview(container,config) {
+  const doc=container.ownerDocument,make=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
+  const box=make('section');box.className='ms-source-settings';box.dataset.sourceReanalysisReview='';container.replaceChildren(box);
+  const style=make('style');style.textContent=`
+[data-source-reanalysis-review]{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;min-width:0;padding:12px;border:1px solid #8885;border-radius:12px}
+[data-source-reanalysis-review]>*{min-width:0;overflow-wrap:anywhere}
+[data-source-reanalysis-review] label{grid-template-columns:minmax(0,1fr)}
+[data-source-reanalysis-review] textarea{width:100%;min-height:180px;resize:vertical;font:13px/1.6 ui-monospace,monospace;white-space:pre}
+[data-source-reanalysis-review] pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto}
+[data-source-reanalysis-review] [data-review-rule]{display:flex;gap:8px;flex-wrap:wrap;align-items:center;border:1px solid #8885;padding:10px;border-radius:10px}
+[data-source-reanalysis-review] input{min-width:0;max-width:100%}[data-source-reanalysis-review] button{cursor:pointer;min-height:40px}
+[data-source-reanalysis-review] [hidden]{display:none!important}
+`;
+  const status=make('p');status.dataset.reviewStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+  box.append(style,make('h3',config.sample.label+' · 확인 후 재분석'),make('p','원문에서 제외할 부분을 드래그한 뒤 태그를 추출하세요. 추출한 태그를 확인·편집하고 적용 결과를 확인할 수 있습니다. 저장한 태그 규칙은 이 플러그인의 앞으로의 분석에도 적용됩니다. 채팅 원문은 바꾸지 않습니다.'));
+  const sources=[];let active=null,busy=false,applied=null,baseline=null;
+  const valid=()=>box.isConnected&&config.current();
+  const list=make('div'),preview=make('div'),extract=make('button','선택 영역에서 태그 추출'),add=make('button','태그 직접 추가'),apply=make('button','태그 적용'),run=make('button','태그 저장 후 재분석'),cancel=make('button','검토 닫기');
+  extract.type=add.type=apply.type=run.type=cancel.type='button';extract.dataset.reviewExtract='';apply.dataset.reviewApply='';run.dataset.reviewRun='';run.disabled=true;
+  const saved=make('details'),savedSummary=make('summary'),savedList=make('div');saved.append(savedSummary,savedList);list.dataset.reviewCandidates='';
+  const updateSavedCount=()=>{savedSummary.textContent='저장된 태그 규칙 '+savedList.children.length+'개 · 확인·편집';};
+  const rules=[];let applyVersion=0,expectedPolicy='';
+  const policyKey=()=>JSON.stringify(memorySuiteNormalizeSourceRules(config.policy.sourceRules()));
+  const assertPolicy=()=>{if(policyKey()!==expectedPolicy)throw Error('저장된 태그 규칙이 변경되었습니다. 검토를 다시 열어 주세요.');};
+  function dirty(){applyVersion++;applied=null;run.disabled=true;preview.replaceChildren();status.textContent='태그를 적용해 분석할 내용을 먼저 확인하세요.';}
+  function addRule(entry={open:'',close:''},key='ignoredTags',control=null,target=list){
+    const row=make('div'),open=make('input'),close=make('input'),action=make('select'),remove=make('button','삭제');row.dataset.reviewRule='';
+    const form=memorySuiteSourceRuleForm(entry);open.value=form.open;close.value=form.close;open.maxLength=close.maxLength=256;
+    open.setAttribute('aria-label','여는 태그');close.setAttribute('aria-label','닫는 태그');
+    for(const [value,label]of [['ignoredTags','내용 전체 제외'],['unwrapTags','태그만 제거'],['sourceTags','이 안만 분석']]){const option=make('option',label);option.value=value;action.append(option);}action.value=key;action.setAttribute('aria-label','태그 처리 방법');
+    remove.type='button';const value={row,open,close,action,control};rules.push(value);
+    open.oninput=close.oninput=action.onchange=dirty;remove.onclick=()=>{if(busy)return;rules.splice(rules.indexOf(value),1);row.remove();updateSavedCount();dirty();};row.append(open,close,action,remove);target.append(row);updateSavedCount();return value;
+  }
+  function read(){const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
+    for(const row of rules){if(!row.open.value.trim()&&!row.close.value.trim())continue;const entry={open:row.open.value,close:row.close.value},form=row.control&&memorySuiteSourceRuleForm('@'+row.control);if(form&&row.action.value==='ignoredTags'&&entry.open===form.open&&entry.close===form.close)draft.controls.push(row.control);else draft[row.action.value].push(entry);}
+    return memorySuiteNormalizeSourceRules(draft);
+  }
+  function lock(value){busy=value;for(const n of box.querySelectorAll('input,select,button'))n.disabled=value;run.disabled=value||!applied;}
+  for(const [role,label]of [['user','사용자 원문'],['assistant','AI 응답 원문']]){
+    const wrap=make('label',label),input=make('textarea');input.readOnly=true;input.value=memorySuiteStripInternalSource(config.sample[role]||'');input.setAttribute('aria-label',label);input.dataset.reviewSource=role;
+    const select=()=>{active=input;};input.onselect=input.onmouseup=input.onkeyup=select;wrap.append(input);box.append(wrap);sources.push({role,input});
+  }
+  const actions=make('div');actions.className='cluster';actions.append(extract,add);box.append(actions,make('h3','앞으로 적용할 태그 규칙'),saved,list,apply,preview,run,cancel,status);
+  extract.onclick=()=>{
+    if(busy)return;if(!active){status.textContent='원문에서 제외할 영역을 먼저 선택하세요.';return;}const entries=memorySuiteExtractSelectedSourceTags(active.value,active.selectionStart,active.selectionEnd);
+    if(!entries.length){status.textContent='선택 영역에서 짝이 맞는 태그를 찾지 못했습니다. 태그를 포함해 선택하거나 직접 추가하세요.';return;}
+    let first;
+    for(const entry of entries){const form=memorySuiteSourceRuleForm(entry),existing=rules.find(r=>r.open.value===form.open&&r.close.value===form.close);const row=existing||addRule(entry);if(existing&&savedList.contains(existing.row))saved.open=true;first||=row;}
+    dirty();status.textContent='추출한 태그를 확인·편집한 뒤 태그 적용을 누르세요.';
+    first?.row.scrollIntoView?.({block:'nearest'});
+  };
+  add.onclick=()=>{if(busy)return;addRule();dirty();rules.at(-1).open.focus();};
+  apply.onclick=async()=>{
+    if(busy||!baseline||!valid())return;const version=++applyVersion;
+    try{
+      assertPolicy();const draft=read();preview.replaceChildren();let warned=false;
+      const same=JSON.stringify(draft)===JSON.stringify(baseline.rules);
+      for(const {role,input}of sources){
+        const raw=config.sample[role]||'';
+        const result=baseline.legacy&&same?{text:await config.projectLegacySample({text:raw,role}),warnings:[]}:memorySuiteProjectSourceRules(input.value,draft);
+        if(!valid()||version!==applyVersion)return;
+        if(!String(result.text||'').trim())throw Error('분석할 '+(role==='user'?'사용자 내용':'AI 응답')+'이 비어 있습니다. 제외 규칙을 확인하세요.');
+        const output=make('pre',result.text);output.dataset.reviewOutput=role;preview.append(make('h3',role==='user'?'분석할 사용자 내용':'분석할 AI 응답'),output);
+        for(const warning of result.warnings){preview.append(make('p',warning));warned=true;}
+      }
+      applied=JSON.stringify(draft);run.disabled=false;status.textContent=warned?'경고와 실제 분석 입력을 확인하세요. 저장 후 재분석할 수 있습니다.':'적용 결과를 확인했습니다. 태그를 저장한 뒤 재분석할 수 있습니다.';
+    }catch(error){dirty();status.textContent='태그 적용 실패: '+String(error?.message||error);}
+  };
+  run.onclick=async()=>{
+    if(busy||!applied||!valid())return;lock(true);config.onBusy?.(true);
+    try{
+      // Validate before the settings write and again before dispatching. A review
+      // cannot silently apply to edited text or to a different chat/selection.
+      await config.validate();if(!valid())return;assertPolicy();
+      const draft=read();if(JSON.stringify(draft)!==applied)throw Error('태그 적용 결과가 만료되었습니다. 다시 적용하세요.');
+      if(JSON.stringify(draft)!==JSON.stringify(baseline.rules)){
+        await config.policy.setSourceRules(draft);expectedPolicy=JSON.stringify(draft);
+        baseline={rules:draft,legacy:false};
+      }
+      if(!valid())return;await config.validate();if(!valid())return;
+      status.textContent='태그 저장을 확인했습니다. 재분석을 준비합니다.';
+      const guard=async()=>{await config.validate();if(policyKey()!==JSON.stringify(draft))throw Error('저장된 태그 규칙이 변경되었습니다. 다시 확인하세요.');};
+      await config.onRun(guard);
+    }catch(error){if(valid())status.textContent='재분석 중단: '+String(error?.message||error);}
+    finally{config.onBusy?.(false);if(valid())lock(false);}
+  };
+  cancel.onclick=()=>{if(!busy){container.replaceChildren();config.onClose?.();}};
+  lock(true);
+  config.policy.ready().then(prefs=>{
+    if(!valid())return;const draft=config.policy.sourceRules();baseline={rules:memorySuiteNormalizeSourceRules(draft),legacy:!prefs.sourceRules};expectedPolicy=policyKey();
+    for(const key of ['ignoredTags','unwrapTags','sourceTags'])for(const entry of draft[key])addRule(entry,key,null,savedList);
+    for(const control of draft.controls)addRule(memorySuiteSourceRuleForm('@'+control),'ignoredTags',control,savedList);
+    lock(false);status.textContent='제외할 영역을 선택하거나 저장된 규칙을 적용해 원문을 확인하세요.';
+  }).catch(error=>{if(valid())status.textContent='규칙 조회 실패: '+String(error?.message||error);});
+  return box;
+}
 /* MEMORY SUITE SOURCE INPUT CONTROLS v1 END */
 
 
@@ -30614,7 +30752,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     const groups=responseGroupsForWorldline(loadedRecords.filter(r=>!isInheritedScopeMemoryRecord(r,scope.scopeKey)&&!INACTIVE_RECALL_LIFECYCLES.has(text(r.lifecycleStatus||'active'))));
     return (live.pairs||[]).filter(pair=>pair.userText&&pair.assistantText&&groups.some(g=>Number(g.turnIndex)===Number(pair.pairIndex)
       &&flashbackReanalysisGroupMatchesIdentity(g,pair)))
-      .map(pair=>({key:String(pair.pairIndex),start:Number(pair.pairIndex),end:Number(pair.pairIndex),identity:flashbackReanalysisIdentity(scope,pair),legacyIdentity:!flashbackReanalysisNativeIdentity(pair),sourceDigest:flashbackSourceEditDigest(pair),label:`T${pair.pairIndex}`}));
+      .map(pair=>({key:String(pair.pairIndex),start:Number(pair.pairIndex),end:Number(pair.pairIndex),identity:flashbackReanalysisIdentity(scope,pair),legacyIdentity:!flashbackReanalysisNativeIdentity(pair),sourceDigest:flashbackSourceEditDigest(pair),rawDigest:flashbackSourceEditRawDigest(pair),reviewIdentity:flashbackReanalysisIdentity(scope,pair,false),summary:groups.find(g=>Number(g.turnIndex)===Number(pair.pairIndex)&&flashbackReanalysisGroupMatchesIdentity(g,pair))?.assistantText?.slice(0,160)||'저장된 원문',label:`T${pair.pairIndex}`}));
   };
   const flashbackSourceEditSnapshot=async(bundleValue=null,recordsValue=null,worldlineValue=null)=>{
     const bundle=bundleValue||await resolveCurrentScopeIdentityBundle(false),scope=bundle?.scope;
@@ -31063,6 +31201,15 @@ const MemorySuiteHealthRecovery = (() => {
     if(!snapshot)throw Error('SOURCE_EDIT_SCOPE_UNAVAILABLE');
     return {scopeKey:snapshot.scopeKey,topology:snapshot.topology,ranges:snapshot.units.map(({sourceDigest,...unit})=>unit)};
   };
+  const readFlashbackReanalysisTurn=async(inventory,range)=>{
+    const bundle=await resolveCurrentScopeIdentityBundle(false),scope=bundle.scope;
+    if(!scope?.scopeKey||scope.scopeKey!==inventory.scopeKey)throw Error('채팅이 변경되었습니다. 구간 목록을 새로고침하세요.');
+    const live=liveChatReadState(bundle.snapshot?.chat,scope.scopeKey),state=live.known?liveChatStateFromNormalized(live.normalized):null;
+    const topology=state?stableHash(JSON.stringify(state.pairs.map(pair=>flashbackReanalysisIdentity(scope,pair,false)))):'';
+    const pair=state?.pairs.find(pair=>String(pair.pairIndex)===range.key);
+    if(!pair||topology!==inventory.topology||flashbackReanalysisIdentity(scope,pair,false)!==range.reviewIdentity)throw Error('원문 위치가 변경되었습니다. 구간 목록을 새로고침하세요.');
+    return {label:range.label,user:pair.userRawText??pair.userText,assistant:pair.assistantRawText??pair.assistantText};
+  };
   const flashbackReanalysisBusy=()=>flashbackReanalysisRunning||Runtime.unloaded||Runtime.sourceEditDisposed||flashbackInputRequestActive||Runtime.inBefore===true||Runtime.inAfter===true||Runtime.maintenanceActiveOperationId||Runtime.finalizedCaptureInFlight?.size>0;
   const selectFlashbackReanalysisRanges=async selection=>{
     if(Runtime.settings?.mode==='off')return {allowed:false,reason:'owner_disabled'};
@@ -31077,7 +31224,9 @@ const MemorySuiteHealthRecovery = (() => {
     if(!Array.isArray(selection)){
       if(selection?.scopeKey!==inventory.scopeKey||selection?.topology!==inventory.topology||rows.some(row=>!row||typeof row!=='object'||units.find(unit=>unit.key===String(row.key))?.identity!==row.identity))return {allowed:false,reason:'selected_source_changed_refresh_required'};
     }
-    return {allowed:true,owner:'flashback',scopeKey:inventory.scopeKey,topology:inventory.topology,units,model:false,warning:'선택한 턴의 현재 U+A 원문을 다시 저장합니다. 요약 LLM은 호출하지 않습니다.'};
+    const reviewed=selection?.reviewedSource;
+    if(reviewed&&(units.length!==1||reviewed.key!==units[0].key||reviewed.rawDigest!==units[0].rawDigest||reviewed.rulesKey!==memorySuiteSourceTagKey('flashback')))return {allowed:false,reason:'reviewed_source_changed'};
+    return {allowed:true,owner:'flashback',scopeKey:inventory.scopeKey,topology:inventory.topology,units,...(reviewed?{reviewedSource:{key:reviewed.key,rawDigest:reviewed.rawDigest,rulesKey:reviewed.rulesKey}}:{}),model:false,warning:'선택한 턴의 현재 U+A 원문을 다시 저장합니다. 요약 LLM은 호출하지 않습니다.'};
   };
   const runFlashbackSelectedReanalysis=(selection,ownerLease=null)=>{
     if(flashbackReanalysisRunning?.selection===selection)return flashbackReanalysisRunning.promise;
@@ -31097,12 +31246,15 @@ const MemorySuiteHealthRecovery = (() => {
         const keys=new Set(requested.map(r=>String(r.key)));
         if(!keys.size||keys.size!==requested.length||keys.size>128)throw Error('SOURCE_EDIT_SELECTION_INVALID');
         const units=requested.map(row=>{const unit=initial.units.find(u=>u.key===String(row.key));if(!unit||unit.identity!==row.identity)throw Error(row.legacyIdentity===true?'SOURCE_REANALYSIS_LEGACY_REFRESH_REQUIRED: 메시지 ID가 없는 예전 채팅은 본문을 고친 뒤 구간 목록을 새로고침하고 다시 선택하세요.':'SOURCE_EDIT_IDENTITY_CHANGED');return unit;}).sort((a,b)=>a.start-b.start);
+        const reviewed=selection.reviewedSource;
+        const assertReviewed=unit=>{if(reviewed&&(units.length!==1||unit?.key!==reviewed.key||unit.rawDigest!==reviewed.rawDigest||memorySuiteSourceTagKey('flashback')!==reviewed.rulesKey))throw Error('SOURCE_EDIT_REVIEW_CHANGED');};
+        if(reviewed)assertReviewed(units[0]);
         const assertCurrent=async()=>{
           if(!lease.current()||flashbackReanalysisLifetime!==lifetime||Runtime.unloaded||Runtime.sourceEditDisposed)throw Error('SOURCE_EDIT_CANCELLED');
           const latest=await flashbackSourceEditSnapshot();
           if(!lease.current()||flashbackReanalysisLifetime!==lifetime||!latest||latest.scopeKey!==scopeKey||latest.topology!==initial.topology)throw Error('SOURCE_EDIT_SCOPE_OR_TOPOLOGY_CHANGED');
           for(const expected of units){const current=latest.units.find(u=>u.key===expected.key);
-            if(!current||current.identity!==expected.identity||current.sourceDigest!==expected.sourceDigest)throw Error('SOURCE_EDIT_SOURCE_CHANGED');}
+            if(!current||current.identity!==expected.identity||current.sourceDigest!==expected.sourceDigest)throw Error('SOURCE_EDIT_SOURCE_CHANGED');if(reviewed)assertReviewed(current);}
           // End the guard after a fresh host observation, not after an awaited
           // storage/worldline read that can race the source snapshot above.
           const finalBundle=await resolveCurrentScopeIdentityBundle(false),finalScope=finalBundle.scope;
@@ -31111,7 +31263,7 @@ const MemorySuiteHealthRecovery = (() => {
           const finalTopology=finalState?stableHash(JSON.stringify((finalState.pairs||[]).map(pair=>flashbackReanalysisIdentity(finalScope,pair,false)))):'';
           if(!lease.current()||flashbackReanalysisLifetime!==lifetime||!finalState||finalScope.scopeKey!==scopeKey||finalTopology!==initial.topology)throw Error('SOURCE_EDIT_SCOPE_OR_TOPOLOGY_CHANGED');
           for(const expected of units){const pair=finalState.pairs.find(p=>String(p.pairIndex)===expected.key);
-            if(!pair||flashbackReanalysisIdentity(finalScope,pair)!==expected.identity||flashbackSourceEditDigest(pair)!==expected.sourceDigest)throw Error('SOURCE_EDIT_SOURCE_CHANGED');}
+            if(!pair||flashbackReanalysisIdentity(finalScope,pair)!==expected.identity||flashbackSourceEditDigest(pair)!==expected.sourceDigest)throw Error('SOURCE_EDIT_SOURCE_CHANGED');if(reviewed)assertReviewed({key:expected.key,rawDigest:flashbackSourceEditRawDigest(pair)});}
         };
         await assertCurrent();
         const bundle=await resolveCurrentScopeIdentityBundle(false),scope=bundle.scope;
@@ -31127,7 +31279,8 @@ const MemorySuiteHealthRecovery = (() => {
         const readback=await loadScopeRecords(scopeKey);assertCompleteScopeLoad(readback,'explicit reanalysis readback');
         if(diffLiveChatSourcesAgainstRecords(sources,readback.records).unchanged.length!==sources.length)throw Error('SOURCE_EDIT_RAW_READBACK_FAILED');
         invalidateRecallShardCache(scopeKey);
-        const done={ok:true,committed:true,scopeKey,rawSaved:true,remoteEmbeddingQueued:false,chunks:result.chunks,turns:units.map(u=>u.start)};
+        const remoteEmbeddingQueued=schedulePendingEmbeddingWork(scopeKey,{reason:'explicit_reanalysis_published'});
+        const done={ok:true,committed:true,scopeKey,rawSaved:true,remoteEmbeddingQueued,chunks:result.chunks,turns:units.map(u=>u.start)};
         flashbackReanalysisStatus={scopeKey,running:false,error:'',lastResult:done};return done;
       }catch(error){const reason=String(error?.message||error);flashbackReanalysisStatus={scopeKey,running:false,error:reason,lastResult:null};return {ok:false,reason};}
       finally{end?.();if(!ownerLease)lease.release();if(flashbackReanalysisRunning===operation)flashbackReanalysisRunning=null;}
@@ -31255,7 +31408,8 @@ const MemorySuiteHealthRecovery = (() => {
     const finalManifestRaw = await RisuCompat.getItem(scopeKeys.manifest(scope.scopeKey));
     if (finalManifestRaw !== publication.manifestRaw || Runtime.embeddingGeneration !== publication.boundary.generation
       || !sameRawPublicationOwner(publication.boundary.owner, rawPublicationOwner())) return null;
-    schedulePendingEmbeddingWork(scope.scopeKey, { reason: 'raw_source_published' });
+    // Explicit reanalysis schedules only after its final selected-source readback.
+    if (options.sourceEditReplacement !== true) schedulePendingEmbeddingWork(scope.scopeKey, { reason: 'raw_source_published' });
     return { embeddedVectors: 0, embeddedBatches: 0, reusedVectors: 0, embeddedTurns: 0,
       embeddingPending: selected.length, embeddingComplete: false,
       embeddingWork: { reembedded: 0, physicalRequests: 0, reason: 'raw_publication_pending_only',
@@ -31276,7 +31430,7 @@ const MemorySuiteHealthRecovery = (() => {
     let work = { reembedded: 0, physicalRequests: 0, reason: 'raw_embedding_deferred' };
     if (sourceGroups.length && options.deferEmbedding !== true && !Runtime.inBefore) {
       work = await runDurableLocalEmbeddingMaintenance(scope, settings, { ...options, all: true, sourceGroups });
-    } else if (sourceGroups.length) schedulePendingEmbeddingWork(scope.scopeKey, { reason: 'raw_source_published' });
+    } else if (sourceGroups.length && options.sourceEditReplacement !== true) schedulePendingEmbeddingWork(scope.scopeKey, { reason: 'raw_source_published' });
     const current = await loadScopeRecordsRaw(scope.scopeKey);
     assertCompleteScopeLoad(current, 'published raw embedding readback');
     const currentSettings = await loadSettings(true);
@@ -46901,45 +47055,67 @@ ${cleanedText}`, 80),
   let flashbackSourceEditUiToken = 0;
   let flashbackSourceReanalysisCancel = null;
   const cancelFlashbackSourceReanalysis=()=>{flashbackSourceReanalysisCancel?.(false);};
+  const flashbackSourceReanalysisEmbeddingNotice=()=>{
+    if(Runtime.settings?.embeddingEnabled===false)return '임베딩 사용이 꺼져 있습니다. 검색용 임베딩은 원문 저장 후 임베딩을 활성화하고 임베딩 작업 화면에서 준비해 주세요.';
+    if(Runtime.settings?.embeddingAutoProcess===false)return '자동 임베딩이 꺼져 있습니다. 검색용 임베딩은 원문 저장 후 임베딩 작업 화면에서 별도로 준비해 주세요.';
+    if(!configuredModelEmbedding(Runtime.settings))return '사용할 임베딩 모델이 설정되어 있지 않습니다. 검색용 임베딩은 원문 저장 후 모델을 설정하고 임베딩 작업 화면에서 준비해 주세요.';
+    return '원문 저장 후 검색용 임베딩이 자동 예약됩니다. 후속 작업에서 모델 사용량이 발생할 수 있으며, 진행 결과는 임베딩 작업 화면에서 확인할 수 있습니다.';
+  };
   const confirmFlashbackSourceReanalysis=async ticket=>{
     cancelFlashbackSourceReanalysis();
     let cancel;
-    try{return await guiDialog(`선택한 구간: ${ticket.units.map(unit=>unit.label).join(', ')} (${ticket.units.length}턴)\n저장된 원문을 현재 U+A 원문과 적용한 분석 규칙으로 교체합니다. 채팅 원문은 변경하지 않습니다.\n이 작업의 LLM·임베딩 호출은 0회입니다. 검색용 임베딩은 원문 저장 후 별도로 준비해야 합니다.\n계속할까요?`,{
+    try{return await guiDialog(`선택한 구간: ${ticket.units.map(unit=>unit.label).join(', ')} (${ticket.units.length}턴)\n저장된 원문을 현재 U+A 원문과 적용한 분석 규칙으로 교체합니다. 채팅 원문은 변경하지 않습니다.\nLLM 호출은 없으며, 원문 저장 단계의 임베딩 호출은 0회입니다. ${flashbackSourceReanalysisEmbeddingNotice()}\n계속할까요?`,{
       title:'원문 재분석 확인',confirm:true,okText:'선택한 원문 교체',initialFocus:'cancel',
       onOpened:cleanup=>{cancel=()=>{getFlashbackRecoveryActions().clear();cleanup(false);};flashbackSourceReanalysisCancel=cancel;}
     });}finally{if(flashbackSourceReanalysisCancel===cancel)flashbackSourceReanalysisCancel=null;}
   };
-  const buildFlashbackSourceEditCard=()=>`<section class="card" aria-labelledby="fbSourceEditTitle"><div class="card__head"><div><h2 id="fbSourceEditTitle" class="card__title">직접 원문 재분석</h2><p class="card__desc">분석 규칙을 먼저 적용한 뒤 원하는 턴을 선택하세요. 확인 후 현재 U+A 원문으로 다시 저장합니다. LLM·임베딩은 호출하지 않으며 검색용 임베딩 준비는 별도입니다. 메시지 ID가 없는 예전 채팅은 편집 후 구간 목록을 새로고침하세요.</p></div></div><div class="cluster"><button type="button" class="btn" id="fbReanalysisRefresh">구간 목록 새로고침</button><button type="button" class="btn btn--primary" id="fbReanalysisRun" disabled>선택한 구간 재분석</button></div><div id="fbReanalysisRanges" class="stack stack--sm"></div><div id="fbSourceEditStatus" class="hint" role="status" aria-live="polite"></div><div id="fbSourceTrackingSettings" class="stack stack--sm"></div></section>`;
+  const buildFlashbackSourceEditCard=()=>`<details class="card fold" data-reanalysis-fold><summary id="fbSourceEditTitle">직접 원문 재분석</summary><div class="fold__body"><p class="card__desc">단일 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. LLM 호출은 없습니다. 검색용 임베딩은 자동 처리가 켜져 있고 모델이 설정되어 있으면 저장 후 자동 예약되며, 후속 작업에서 모델 사용량이 발생할 수 있습니다.</p><div class="cluster"><button type="button" class="btn" id="fbReanalysisRefresh">구간 목록 새로고침</button><button type="button" class="btn btn--primary" id="fbReanalysisRun" disabled>바로 재분석</button><button type="button" class="btn" id="fbReanalysisReview" hidden>확인 후 재분석</button></div><div id="fbReanalysisRanges" class="stack stack--sm"></div><div id="fbReanalysisReviewPanel"></div><div id="fbSourceEditStatus" class="hint" role="status" aria-live="polite"></div><details class="fold"><summary>분석 태그 규칙 설정</summary><div id="fbSourceTrackingSettings" class="stack stack--sm"></div></details></div></details>`;
   const renderFlashbackSourceEditStatus=(status,message='')=>`<p class="hint">${escapeHtml(message||status?.error||'원하는 구간을 선택하세요.')}</p>`;
   const refreshFlashbackSourceEditPanel=async(message='')=>{
     if(!['import','source-edits'].includes(Runtime.guiTab))return false;
     cancelFlashbackSourceReanalysis();
     const token=++flashbackSourceEditUiToken,refreshToken=Runtime.guiRefreshToken;
-    const list=getGuiNode('fbReanalysisRanges'),run=getGuiNode('fbReanalysisRun'),refresh=getGuiNode('fbReanalysisRefresh');
-    if(!list||!run||!refresh)return false;
+    const list=getGuiNode('fbReanalysisRanges'),run=getGuiNode('fbReanalysisRun'),refresh=getGuiNode('fbReanalysisRefresh'),review=getGuiNode('fbReanalysisReview'),panel=getGuiNode('fbReanalysisReviewPanel');
+    if(!list||!run||!refresh||!review||!panel)return false;
     const current=()=>token===flashbackSourceEditUiToken&&refreshToken===Runtime.guiRefreshToken&&['import','source-edits'].includes(Runtime.guiTab)&&isGuiRenderActive();
-    let busy=false,inventory=null;
+    let busy=false,reviewSaving=false,inventory=null,reviewVersion=0;
     const selected=()=>[...list.querySelectorAll('input:checked')].map(node=>node.value);
-    const sync=()=>{run.disabled=busy||!selected().length;refresh.disabled=busy;for(const input of list.querySelectorAll('input'))input.disabled=busy;};
-    list.replaceChildren();run.disabled=true;setNodeText('fbSourceEditStatus','구간을 읽는 중…');mountFlashbackSourceInput(getGuiNode('fbSourceTrackingSettings'));
-    refresh.onclick=()=>{if(!busy)void refreshFlashbackSourceEditPanel();};
+    const sync=()=>{const locked=busy||reviewSaving,n=selected().length;run.disabled=locked||!n;review.hidden=n!==1;review.disabled=locked||n!==1;refresh.disabled=locked;for(const input of list.querySelectorAll('input'))input.disabled=locked;};
+    const changed=()=>{reviewVersion++;panel.replaceChildren();sync();};
+    list.replaceChildren();panel.replaceChildren();run.disabled=true;setNodeText('fbSourceEditStatus','구간을 읽는 중…');mountFlashbackSourceInput(getGuiNode('fbSourceTrackingSettings'));
+    refresh.onclick=()=>{if(!busy&&!reviewSaving)void refreshFlashbackSourceEditPanel();};
+    const execute=async(selection,validate=null)=>{
+      if(busy||!current())return;busy=true;sync();setNodeText('fbSourceEditStatus','선택한 구간을 확인하는 중…');let submitted=false;
+      try{
+        const actions=getFlashbackRecoveryActions(),ticket=await actions.preview('explicit_reanalysis',selection);
+        if(!current())return;
+        if(!ticket?.allowed)throw Error((ticket?.reason||'SOURCE_EDIT_PREVIEW_UNAVAILABLE')+' · 구간 목록을 새로고침하고 다시 선택하세요.');
+        if(!await confirmFlashbackSourceReanalysis(ticket)){if(current())setNodeText('fbSourceEditStatus','재분석을 취소했습니다. 기존 기억을 유지합니다.');return;}
+        if(!current())return;
+        if(validate)await validate();if(!current())return;
+        submitted=true;setNodeText('fbSourceEditStatus','선택한 구간을 다시 저장하는 중…');
+        const result=await actions.apply(ticket);
+        if(current())setNodeText('fbSourceEditStatus',result.ok?'선택한 구간의 원문을 저장했습니다. '+(result.remoteEmbeddingQueued?'검색용 임베딩을 자동 예약했습니다. 진행 결과는 임베딩 작업 화면에서 확인해 주세요.':'자동 임베딩은 예약되지 않았습니다. 검색용 임베딩은 임베딩 작업 화면에서 별도로 준비해 주세요.'):'재분석 중단: '+(result.reason||'결과를 확인하세요.'));
+      }catch(error){if(current())setNodeText('fbSourceEditStatus','재분석 중단: '+String(error?.message||error));}
+      finally{if(!submitted&&token===flashbackSourceEditUiToken)flashbackRecoveryActions?.clear();busy=false;if(current()){sync();run.focus?.();}}
+    };
     try{
       inventory=await listFlashbackReanalysisRanges();if(!current())return false;flashbackSourceEditView=inventory;
-      for(const range of inventory.ranges){const label=list.ownerDocument.createElement('label'),input=list.ownerDocument.createElement('input');input.type='checkbox';input.value=range.key;input.onchange=sync;label.append(input,list.ownerDocument.createTextNode(range.label));list.append(label);}
-      setNodeText('fbSourceEditStatus',message||(inventory.ranges.length?'원하는 구간을 선택하세요.':'재분석할 저장 구간이 없습니다.'));sync();
-      run.onclick=async()=>{if(busy||!inventory)return;const keys=new Set(selected());if(!keys.size)return;busy=true;sync();setNodeText('fbSourceEditStatus','선택한 구간을 확인하는 중…');
-        let submitted=false;
+      for(const range of inventory.ranges)appendMemorySuiteReanalysisRange(list,range,{changed,current,read:()=>readFlashbackReanalysisTurn(inventory,range)});
+      setNodeText('fbSourceEditStatus',message||(inventory.ranges.length?'원하는 턴을 선택하세요. 원문 보기에서 내용을 확인할 수 있습니다.':'재분석할 저장 구간이 없습니다.'));sync();
+      run.onclick=()=>{if(reviewSaving)return;const keys=new Set(selected());if(!keys.size)return;return execute({scopeKey:inventory.scopeKey,topology:inventory.topology,ranges:inventory.ranges.filter(row=>keys.has(row.key))});};
+      review.onclick=async()=>{
+        if(busy||reviewSaving||selected().length!==1)return;const version=++reviewVersion,key=selected()[0],range=inventory.ranges.find(r=>r.key===key);
+        const reviewCurrent=()=>current()&&version===reviewVersion&&selected().length===1&&selected()[0]===key;
+        busy=true;sync();
         try{
-          const actions=getFlashbackRecoveryActions(),ticket=await actions.preview('explicit_reanalysis',{scopeKey:inventory.scopeKey,topology:inventory.topology,ranges:inventory.ranges.filter(row=>keys.has(row.key))});
-          if(!current())return;
-          if(!ticket?.allowed)throw Error((ticket?.reason||'SOURCE_EDIT_PREVIEW_UNAVAILABLE')+' · 구간 목록을 새로고침하고 다시 선택하세요.');
-          if(!await confirmFlashbackSourceReanalysis(ticket)){if(current())setNodeText('fbSourceEditStatus','재분석을 취소했습니다. 기존 기억을 유지합니다.');return;}
-          if(!current())return;
-          submitted=true;setNodeText('fbSourceEditStatus','선택한 구간을 다시 저장하는 중…');
-          const result=await actions.apply(ticket);
-          if(current())setNodeText('fbSourceEditStatus',result.ok?'선택한 구간의 원문을 저장했습니다. 검색용 임베딩은 별도로 준비해 주세요.':'재분석 중단: '+(result.reason||'결과를 확인하세요.'));
-        }catch(error){if(current())setNodeText('fbSourceEditStatus','재분석 중단: '+String(error?.message||error));}
-        finally{if(!submitted&&token===flashbackSourceEditUiToken)flashbackRecoveryActions?.clear();busy=false;if(current()){sync();run.focus?.();}}};return true;
+          const sample=await readFlashbackReanalysisTurn(inventory,range);if(!reviewCurrent())return;
+          const validate=async()=>{const fresh=await readFlashbackReanalysisTurn(inventory,range);if(!reviewCurrent()||JSON.stringify(fresh)!==JSON.stringify(sample))throw Error('확인한 원문이 변경되었습니다. 원문을 다시 확인하세요.');};
+          mountMemorySuiteReanalysisReview(panel,{owner:'flashback',policy:getFlashbackSourceInput(),sample,current:reviewCurrent,validate,projectLegacySample:flashbackSourceInputConfig.projectLegacySample,
+            onBusy:value=>{reviewSaving=value;if(current())sync();},onRun:async guard=>{await guard();const latest=await listFlashbackReanalysisRanges();await guard();await execute({scopeKey:latest.scopeKey,topology:latest.topology,ranges:latest.ranges.filter(r=>r.key===key),reviewedSource:{key,rawDigest:flashbackSourceEditRawDigest({userRawText:sample.user,assistantRawText:sample.assistant}),rulesKey:memorySuiteSourceTagKey('flashback')}},guard);}});
+        }catch(error){if(current())setNodeText('fbSourceEditStatus','원문 조회 실패: '+String(error?.message||error));}
+        finally{busy=false;if(current())sync();}
+      };return true;
     }catch(error){if(current())setNodeText('fbSourceEditStatus','목록 조회 실패: '+String(error?.message||error));return false;}
   };
   const multilingualProbeStateForSettings = (settings = DEFAULTS, probe = Runtime.multilingualEmbeddingProbe) => {

@@ -30,7 +30,7 @@ const discoveryAdapter = () => {
         ? { type: 'success', result: JSON.stringify({ items: [{ label: '약속', text: '열쇠를 오늘 돌려주기로 했다.', refs: ['t2-a'], quote: '오늘 돌려주겠다고 약속했다' }] }) }
         : { type: 'success', result: JSON.stringify(f.control.artifact) };
       const lens = await f.r.api.createLens({ name: '약속', instruction: { goal: '약속을 기록하라.' } });
-      assert.equal((await f.r.api.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 })).status, 'succeeded');
+      assert.equal((await f.r.core.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 })).status, 'succeeded');
       const serverKeys = s.storedRows().map(row => row.key).filter(key => key.includes(':lens:'));
       for (const suffix of ['records', 'runs', 'raw']) assert.ok(serverKeys.some(key => key.endsWith(`:lens:${lens.lensId}:${suffix}`)), `${mode}: ${suffix} reach the server`);
       assert.ok(serverKeys.some(key => key.endsWith(':lens:head')), `${mode}: the lens head reaches the server`);

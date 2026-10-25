@@ -51,6 +51,13 @@ const initialMessages = () => [
   })))
 ];
 
+const reanalyze = async (runtime, options) => {
+  if(!runtime.reanalysisSeeded){await runtime.callBeforeRequest([{role:'user',content:'Read stored packets before explicit reanalysis.'}],'model');await runtime.callAfterRequest('','model');runtime.reanalysisSeeded=true;}
+  const inventory=await runtime.hayaku.listReanalysisRanges(),keys=new Set(options.targetTurns.map(String));
+  const ranges=inventory.ranges.filter(row=>keys.has(row.key));
+  assert.equal(ranges.length,keys.size,JSON.stringify(inventory));
+  return runtime.hayaku.reanalyzeSelectedRanges({...inventory,ranges});
+};
 (async () => {
   const runtime = await createHayakuRuntime({ autoRepair: false, messages: initialMessages() });
   try {
@@ -65,8 +72,8 @@ const initialMessages = () => [
       return { type: 'success', result: JSON.stringify(groundedEnvelope(packet, quote)) };
     });
 
-    const result = await runtime.hayaku.recovery.regenerateTurns({ targetTurns: [2] });
-    assert.equal(result.ok, true);
+    const result = await reanalyze(runtime, { targetTurns: [2] });
+    assert.equal(result.ok, true,JSON.stringify(result));
     assert.equal(result.regenerated, 1);
     assert.equal(runtime.llmCalls.length, 1, 'one targeted turn must make one Other Ax call');
     assert.equal(runtime.llmCalls[0].mode, 'otherAx');
@@ -81,7 +88,7 @@ const initialMessages = () => [
     assert.equal(oldCurrent.recordState, 'tombstoned', 'existing packet must be explicitly replaced, not silently overwritten');
     assert.ok(replacement, 'regenerated packet must be active');
     assert.ok(String(replacement.raw || '').includes('silver key'));
-    assert.ok(Array.isArray(result.results?.[0]?.replacementRecordIds) && result.results[0].replacementRecordIds.includes(oldCurrent.recordId));
+    assert.ok(result.replacementRecordIds.includes(oldCurrent.recordId));
 
   } finally {
     await runtime.dispose();
@@ -139,22 +146,17 @@ const initialMessages = () => [
       });
       return { type: 'success', result: JSON.stringify(groundedEnvelope(packet, quote)) };
     });
-    const replaced = await rangeRuntime.hayaku.recovery.regenerateTurns({
+    const replaced = await reanalyze(rangeRuntime, {
       targetTurns: [1, 2],
       replacementRecordIds: [oldRange.recordId],
       replaceExisting: true
     });
-    assert.equal(replaced.ok, true);
+    assert.equal(replaced.ok, true,JSON.stringify(replaced));
     assert.equal(replaced.regenerated, 2);
-    assert.equal(replaced.awaitingChoice, true);
-    assert.equal(replaced.replacedRecords, 0);
+    assert.equal(replaced.committed, true);
+    assert.ok(replaced.replacedRecords >= 1);
     assert.equal(rangeRuntime.llmCalls.length, 2, 'a two-turn range replacement must make one Other Ax call per target turn');
 
-    ledger = await rangeRuntime.hayaku.ledger.inspect({ includeRecords: true });
-    assert.equal(ledger.records.find(row => row.recordId === oldRange.recordId)?.recordState, 'active', 'range candidate must be staged without changing the old range');
-    const rangeAdopted = await rangeRuntime.hayaku.recovery.resolveRegenerationChoice('adopt_regenerated', { runId: replaced.runId });
-    assert.equal(rangeAdopted.ok, true);
-    assert.equal(rangeAdopted.replacedRecords, 1);
     ledger = await rangeRuntime.hayaku.ledger.inspect({ includeRecords: true });
     const oldAfter = ledger.records.find(row => row.recordId === oldRange.recordId);
     assert.equal(oldAfter?.recordState, 'tombstoned', 'old range record must be tombstoned only after atomic adoption');
@@ -176,24 +178,6 @@ const initialMessages = () => [
     ledger = await rangeRuntime.hayaku.ledger.inspect({ includeRecords: true });
     assert.equal(ledger.records.find(row => row.recordId === oldRange.recordId)?.recordState, 'tombstoned');
     assert.ok(regeneratedRecords.every(row => ledger.records.find(item => item.recordId === row.recordId)?.recordState === 'active'));
-    const recordIdsBeforeDecline = ledger.records.map(row => row.recordId).sort();
-    rangeRuntime.setLlmResponder(async () => {
-      const quote = 'Alice entered the workshop.';
-      const packet = createValidPacket({ turn: 1, packetType: 'recovery_snapshot', subject: 'Alice', scene: 'workshop', summary: quote });
-      return { type: 'success', result: JSON.stringify(groundedEnvelope(packet, quote)) };
-    });
-    const declinedCandidate = await rangeRuntime.hayaku.recovery.regenerateTurns({
-      targetTurns: [1],
-      replacementRecordIds: [regeneratedRecords.find(row => Number(row.targetPairIndex || 0) === 1).recordId],
-      replaceExisting: true
-    });
-    assert.equal(declinedCandidate.awaitingChoice, true);
-    const kept = await rangeRuntime.hayaku.recovery.resolveRegenerationChoice('keep_original', { runId: declinedCandidate.runId });
-    assert.equal(kept.ok, true);
-    assert.equal(kept.keptOriginal, true);
-    ledger = await rangeRuntime.hayaku.ledger.inspect({ includeRecords: true });
-    assert.equal(ledger.records.find(row => row.recordId === regeneratedRecords.find(item => Number(item.targetPairIndex || 0) === 1).recordId)?.recordState, 'active', 'keep_original must leave the ledger unchanged');
-    assert.deepEqual(ledger.records.map(row => row.recordId).sort(), recordIdsBeforeDecline, 'keep_original must not add a staged candidate to the ledger');
   } finally {
     await rangeRuntime.dispose();
   }
@@ -226,18 +210,14 @@ const initialMessages = () => [
       const packet = createValidPacket({ turn: 1, packetType: 'recovery_snapshot', subject: 'Alice', scene: 'workshop', summary: quote });
       return { type: 'success', result: JSON.stringify(groundedEnvelope(packet, quote)) };
     });
-    const regeneratedCold = await coldRuntime.hayaku.recovery.regenerateTurns({
+    const regeneratedCold = await reanalyze(coldRuntime, {
       targetTurns: [1],
       replacementRecordIds: [coldRecord.recordId],
       replaceExisting: true
     });
-    assert.equal(regeneratedCold.ok, true);
-    assert.equal(regeneratedCold.awaitingChoice, true);
+    assert.equal(regeneratedCold.ok, true,JSON.stringify(regeneratedCold));
+    assert.equal(regeneratedCold.committed, true);
     assert.equal(coldRuntime.llmCalls.length - callsBefore, 1);
-    ledger = await coldRuntime.hayaku.ledger.inspect({ includeRecords: true });
-    assert.equal(ledger.records.find(row => row.recordId === coldRecord.recordId)?.recordState, 'historical');
-    const coldAdopted = await coldRuntime.hayaku.recovery.resolveRegenerationChoice('adopt_regenerated', { runId: regeneratedCold.runId });
-    assert.equal(coldAdopted.ok, true);
     ledger = await coldRuntime.hayaku.ledger.inspect({ includeRecords: true });
     assert.equal(ledger.records.find(row => row.recordId === coldRecord.recordId)?.recordState, 'tombstoned');
     assert.ok(ledger.records.some(row => row.packetType === 'recovery_snapshot' && row.recordState === 'active' && Number(row.targetPairIndex || 0) === 1));
@@ -257,13 +237,13 @@ const initialMessages = () => [
         resolve({ type: 'success', result: JSON.stringify(groundedEnvelope(packet, quote)) });
       };
     }));
-    const pendingCancelled = cancelRuntime.hayaku.recovery.regenerateTurns({ targetTurns: [2] });
+    const pendingCancelled = reanalyze(cancelRuntime, { targetTurns: [2] });
     await waitFor(() => cancelRuntime.llmCalls.length === 1 && typeof releaseCancelledLlm === 'function', 'cancellable Other Ax call');
-    assert.equal(cancelRuntime.hayaku.recovery.cancelJob(), true);
+    cancelRuntime.hayaku.clearSourceEditPreview();
     releaseCancelledLlm();
     const cancelled = await pendingCancelled;
     assert.equal(cancelled.ok, false);
-    assert.equal(cancelled.reason, 'native_regeneration_cancelled');
+    assert.equal(cancelled.reason, 'SOURCE_EDIT_CANCELLED');
     const ledger = await cancelRuntime.hayaku.ledger.inspect({ includeRecords: true });
     assert.equal(ledger.records.some(row => row.packetType === 'recovery_snapshot' && Number(row.targetPairIndex || 0) === 2), false);
   } finally {
@@ -288,12 +268,11 @@ const initialMessages = () => [
       };
     }));
 
-    const pending = raceRuntime.hayaku.recovery.regenerateTurns({ targetTurns: [2] });
+    const pending = reanalyze(raceRuntime, { targetTurns: [2] });
     await waitFor(() => raceRuntime.llmCalls.length === 1 && typeof releaseLlm === 'function', 'targeted Other Ax call');
-    const concurrent = await raceRuntime.hayaku.recovery.regenerateTurns({ targetTurns: [2] });
+    const concurrent = await reanalyze(raceRuntime, { targetTurns: [2] });
     assert.equal(concurrent.ok, false);
-    assert.equal(concurrent.skipped, true);
-    assert.equal(concurrent.reason, 'native_recovery_busy', 'targeted regeneration must serialize with the native repair worker');
+    assert.equal(concurrent.reason, 'reanalysis_busy', 'targeted regeneration must serialize with the native repair worker');
     assert.equal(raceRuntime.llmCalls.length, 1, 'busy rejection must not start a duplicate Other Ax call');
 
     raceRuntime.setMessages([
@@ -309,8 +288,7 @@ const initialMessages = () => [
     releaseLlm();
     const raced = await pending;
     assert.equal(raced.ok, false);
-    assert.equal(Number(raced.failedTurn), 2);
-    assert.equal(raced.reason, 'target_changed_before_adoption');
+    assert.match(raced.reason, /SOURCE_EDIT_(SCOPE_OR_TOPOLOGY_CHANGED|SOURCE_CHANGED)/);
 
     const ledger = await raceRuntime.hayaku.ledger.inspect({ includeRecords: true });
     const staleRecovery = ledger.records.filter(row => (

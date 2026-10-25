@@ -76,8 +76,8 @@ test('gate and prompt through the real plugin', async () => {
     f.setReply(args => { calls.push(JSON.stringify(args)); return '{"items":[]}'; });
     const tracking = await api.createLens({ name: '시점 렌즈', trackTime: true, instruction: { goal: '건강' }, cadence: { mode: 'manual' } });
     const quiet = await api.createLens({ name: '분위기 렌즈', instruction: { goal: '분위기' }, cadence: { mode: 'manual' } });
-    await api.runLensForRange(tracking.lensId, { startTurn: 1, endTurn: 5 });
-    await api.runLensForRange(quiet.lensId, { startTurn: 1, endTurn: 5 });
+    await f.r.core.runLensForRange(tracking.lensId, { startTurn: 1, endTurn: 5 });
+    await f.r.core.runLensForRange(quiet.lensId, { startTurn: 1, endTurn: 5 });
     assert.match(calls[0], /Never calculate, convert, complete or guess a date or time/);
     assert.match(calls[0], /whenRef/);
     assert.doesNotMatch(calls[1], /whenRef|Story time/, 'the time rules appear only for a tracking lens');
@@ -94,7 +94,7 @@ test('records keep their own setting; counts persist; recall states the time', a
       { label: '약속', text: '지호가 열쇠를 오늘 돌려주기로 했다.', refs: ['t2-a'], quote: '오늘 돌려주겠다고 약속했다', when: '오늘', whenRef: 't2-a' },
       { label: '보관', text: '준호가 열쇠를 들었다.', refs: ['t3-a'], quote: '준호가 지호에게서 열쇠를 받아 들었다' }
     ] });
-    const run = await api.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 });
+    const run = await f.r.core.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 });
     assert.deepEqual({ s: run.run.counts.timeStated, u: run.run.counts.timeUnknown, d: run.run.counts.timeDropped }, { s: 1, u: 1, d: 0 });
     const logged = (await api.inspectScopeLenses()).lenses[lens.lensId].runs[0].counts;
     assert.equal(logged.timeStated + logged.timeUnknown, logged.quoted + logged.interpreted, 'persisted run log keeps the invariant');
@@ -154,7 +154,7 @@ test('handoff, a second handoff, native copy and portable round trip keep time p
     const api = f.api;
     const lens = await api.createLens({ name: '시점 렌즈', trackTime: true, evidenceMode: 'interpretive', instruction: { goal: '약속과 시점' }, cadence: { mode: 'manual' } });
     f.setReply(timeReply);
-    assert.equal((await api.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 })).acceptedCount, 3);
+    assert.equal((await f.r.core.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 })).acceptedCount, 3);
     const live = (await api.inspectScopeLenses()).memories.filter(row => !row.inherited);
     assert.ok((await api.inspectScopeLenses()).sourceTurns['t3-u'].includes('그날 밤 열 시'), 'the live reader excerpt holds a time past 4,000 characters');
     assert.equal(live.length, 3);
@@ -204,7 +204,7 @@ test('a native branch copy keeps stated times and their source excerpts', async 
   try {
     const lens = await f.api.createLens({ name: '시점 렌즈', trackTime: true, evidenceMode: 'interpretive', instruction: { goal: '약속과 시점' }, cadence: { mode: 'manual' } });
     f.setReply(timeReply);
-    await f.api.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 });
+    await f.r.core.runLensForRange(lens.lensId, { startTurn: 1, endTurn: 5 });
     f.target('분기', true);
     const result = await f.api.debugNativeChatCopy({ force: true });
     assert.equal(result.result?.ok, true, JSON.stringify(result));

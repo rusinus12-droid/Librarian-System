@@ -395,7 +395,6 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 //@arg hayaku_packet_recovery string true|false
 //@arg hayaku_after_request_auto_repair string true|false; repair the current missing/unusable packet once inside the normal afterRequest pipeline; blank uses true
 //@arg hayaku_recovery_extra_calls string 0|1; explicit structural recovery allowance per operation; default 0
-//@arg hayaku_failed_recovery_automation string deprecated compatibility argument; ignored; failed-output automation is always off
 //@arg hayaku_background_auto_repair string true|false; retired and ignored; afterRequest repair is the only automatic stage
 //@arg hayaku_native_auto_repair string true|false; retired and ignored
 //@arg risuai_aux_allow_plugins string true|false; allow a plugin-provided RisuAI auxiliary model; blank uses true
@@ -1505,7 +1504,6 @@ const MemorySuiteExecutionContract = (() => {
     afterRequestAutoRepair: true,
     backgroundAutoRepair: true,
     recoveryExtraCalls: 0,
-    failedRecoveryAutomation: 'off',
     nativeAutoRepair: true,
     risuAuxAllowPlugins: true,
     coldStartBatchTurns: 1,
@@ -19044,7 +19042,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const temporalRecallPolicy=hayakuTemporalPolicy(Object.fromEntries(await Promise.all(HAYAKU_TEMPORAL_ARGUMENTS.map(async key=>[key,await readArg(key,'')]))));
     const configuredSettings = {
       ...DEFAULT_SETTINGS,
-      failedRecoveryAutomation: 'off',
+
       recoveryExtraCalls: Number(await readArg('hayaku_recovery_extra_calls','0'))===1?1:0,
       enabled: falsySetting(enabledRaw) ? false : true,
       mode: ['auto', 'fast', 'balanced', 'deep'].includes(text(modeRaw).trim()) ? text(modeRaw).trim() : DEFAULT_SETTINGS.mode,
@@ -39338,7 +39336,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const expectedColdRecords = finiteNonNegativeInteger(ledger?.coldStart?.recordCount, 0);
     const coldGroupRecords = ledgerRecords.filter(record => (
       record?.captureSource === 'bridge_cold_start'
-      && record?.recordState === 'historical'
+      && (record?.recordState === 'historical' || record?.recordState === 'tombstoned'
+        && ensureArray(ledger?.tombstones).some(t=>t.active===true&&t.intent==='replacement'&&t.slotId===storageRecordSlotId(record)&&t.variantHash===record.hash))
       && (!activeColdStartEpochId
         || compact(record?.coldStartEpochId || '', 128) === activeColdStartEpochId)
     ));
@@ -42984,7 +42983,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     if(sourcePublication){
       try{
-        await options.sourceEditValidate();
+        await options.sourceEditValidate({publishedLedger:storageState==='confirmed'?next:null});
       }catch(error){
         // A late source change may happen inside the host write itself. Restore
         // only our exact settled head under the existing owner/write fence.
@@ -44170,7 +44169,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       title: found?.[2] || '분석 확인 필요', detail: found?.[3] || '분석 결과를 기억으로 저장하지 못했습니다.',
       nextStep: found?.[4] || '내용을 확인하고 다시 분석하거나 직접 수정해 주세요.', raw: message || code || 'analysis_failed' };
   };
-  const failedAnalysisStateLabel = state => ({pending_review:'확인 대기',storage_incomplete:'저장 확인 필요',resolution_candidate:'후보 준비됨',resolved:'채택 완료',resolved_checkpointed:'구간 저장 완료',resolved_by_retry:'재시도로 완료'}[state] || '확인 필요');
   // Dedicated background/maintenance I/O budget. Timeouts are unknown, not absence.
   // A pending write is never duplicated or labelled durable before exact readback.
   const readFailedAnalysisStored = async key => {
@@ -45365,6 +45363,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }, {});
   };
   const runNativeAuxiliaryProbe = async (options = {}) => {
+    if(hayakuReanalysisRunning)return {ok:false,reason:'source_reanalysis_in_progress'};
     const probe = Memory.nativeRecovery.auxiliaryProbe || (Memory.nativeRecovery.auxiliaryProbe = { inFlight: false, last: null });
     const settings = await loadSettings(options.automatic === true);
     if (options.automatic === true && (settings?.enabled === false || Memory.unloaded || !ownsRuntime())) return { ok: false, status: 'cancelled', submitted: false };
@@ -46940,26 +46939,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     sourceEvidenceHash: compact(debt?.sourceEvidenceHash || '', 96),
     observedWorldlineRevision: Math.max(0, Number(debt?.observedWorldlineRevision || 0) || 0)
   });
-  const nativeTargetedReplacementRecords = (ledger, pairIndex, explicitIds = []) => {
-    const ids = uniq(ensureArray(explicitIds).map(value => compact(value || '', 196)).filter(Boolean), 512);
-    const active = ensureArray(ledger?.records).filter(record => (
-      ['active', 'unbound'].includes(record?.recordState)
-      && record?.memoryClass !== 'historical'
-      && record?.inheritedSessionHistory !== true
-      && !isPermanentHistoricalStorageRecord(record)
-      && Number(record?.targetPairIndex || 0) === Number(pairIndex || 0)
-      && ['current_snapshot', 'recovery_snapshot'].includes(compact(record?.packetType || '', 48).toLowerCase())
-    ));
-    if (!ids.length) return { records: active, ids: active.map(record => compact(record.recordId || '', 196)).filter(Boolean), explicit: false };
-    const resolved = ids.map(id => ensureArray(ledger?.records).find(record => record?.recordId === id) || null);
-    if (resolved.some(record => !record)) return { records: [], ids: [], explicit: true, valid: false };
-    if (resolved.some(record => isPermanentHistoricalStorageRecord(record) || record?.inheritedSessionHistory === true)) {
-      return { records: [], ids: [], explicit: true, valid: false, protected: true };
-    }
-    const records = resolved.filter(record => Number(record?.targetPairIndex || 0) === Number(pairIndex || 0));
-    const turnIds = records.map(record => compact(record?.recordId || '', 196)).filter(Boolean);
-    return { records, ids: turnIds, explicit: true, valid: true, globalIds: ids };
-  };
   const nativeRepairTargetForPair = (scope, pair, owner, worldline, evidence, marker = 'targeted') => ({
     contract: RECOVERY_DEBT_WORLDLINE_VERSION,
     debtId: `${marker}:${Math.max(1, Number(pair?.pairIndex || 1) || 1)}:${compact(owner?.turnNodeId || pair?.assistantMessageIdHash || '', 96)}`,
@@ -46981,109 +46960,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     observedWorldlineRevision: Math.max(0, Number(worldline?.revision || 0) || 0),
     targetedRegeneration: true
   });
-  const executeNativeTargetedRegenerationTurn = async (scope, pairIndexInput, options = {}) => {
-    const pairIndex = Math.max(1, Number(pairIndexInput || 1) || 1);
-    await options.sourceEditValidate?.();
-    const snapshot = authoritativeChatSnapshot(scope.chatMessages, scope);
-    let ledger = await loadStorageLedger(scope, { hydrateArchive: false });
-    if (ledger.enabled !== true) return { ok: false, skipped: true, reason: ledger.reason || 'storage_unavailable', pairIndex };
-    // Targeted regeneration may be invoked before the normal background mirror
-    // has copied the live chat packet into pluginStorage. Mirror the authoritative
-    // chat slot first so replacement always targets a durable record rather than
-    // trying to override a chat-only packet from a secondary store.
-    const mirrored = importChatPacketsIntoStorageLedger(ledger, snapshot, scope, { updateMigration: true, pairIndexes: [pairIndex] });
-    if (mirrored.changed) {
-      const mirrorWorldline = reconcileTurnWorldline(mirrored.ledger.worldline, snapshot, scope);
-      const mirrorBinding = bindStorageLedgerToSnapshot(mirrored.ledger, snapshot, mirrorWorldline);
-      const mirrorLedger={...mirrorBinding.ledger,chatTopologyHash:compact(turnTopologySnapshotHash(snapshot),96),worldline:mirrorWorldline};
-      if(options.sourceEditValidate){
-        // Explicit replacement stages current inline carriers in memory. Failure
-        // before verified adoption cannot publish a different canonical packet.
-        ledger=mirrorLedger;
-      }else{
-        const mirrorCommit=await writeStorageLedgerDirect(scope,mirrorLedger,'native_targeted_regeneration_pre_mirror');
-        if(mirrorCommit.durable!==true)return {ok:false,skipped:true,reason:mirrorCommit.reason||'target_pre_mirror_failed',pairIndex};
-        ledger=mirrorCommit.ledger;
-      }
-    }
-    const worldline = reconcileTurnWorldline(ledger.worldline, snapshot, scope);
-    const pair = ensureArray(snapshot?.conversationPairs).find(row => Number(row?.pairIndex || 0) === pairIndex) || null;
-    if (!pair) return { ok: false, skipped: true, reason: 'target_pair_not_found', pairIndex };
-    const owner = activeWorldlineNodeForPair(worldline, pair);
-    if (!owner || owner.status !== 'active') return { ok: false, skipped: true, reason: 'target_worldline_not_active', pairIndex, targetWorldlineStatus: owner?.status || 'absent' };
-    const evidence = recoveryEvidenceForAuthoritativePair(scope, pair);
-    if (!evidence) return { ok: false, skipped: true, reason: 'target_evidence_unavailable', pairIndex };
-    const replacements = nativeTargetedReplacementRecords(ledger, pairIndex, options?.replacementRecordIds || []);
-    if (replacements.explicit && replacements.valid !== true) return { ok: false, skipped: true, reason: 'replacement_target_invalid', pairIndex };
-    if (!replacements.ids.length && options?.allowMissing !== true) return { ok: false, skipped: true, reason: 'replacement_target_absent', pairIndex };
-    const repairTarget = nativeRepairTargetForPair(scope, pair, owner, worldline, evidence, 'targeted_regeneration');
-    const targetText = `[Turn ${pairIndex}]\n[User attempt]\n${evidence.userText}\n\n[Assistant outcome]\n${evidence.assistantText}`;
-    const coldEvidence = collectNativeColdStartEvidence(scope);
-    const contextOnly = [coldEvidence.systemContextText, nativePriorTurnContext(coldEvidence.units, pairIndex, 2)]
-      .filter(Boolean).join('\n\n---\n\n').slice(-HAYAKU_NATIVE_CONTEXT_MAX_CHARS);
-    const chunkHash = stableHash64([repairTarget.sourceEvidenceHash, targetText, contextOnly, replacements.ids.join('|')].join('\u0001'));
-    const chunk = { ordinal: 1, kind: 'completed_turn', turn: pairIndex, startTurn: pairIndex, endTurn: pairIndex, targetPairIndex: pairIndex, messageIndexes: [evidence.userMessageIndex, evidence.assistantMessageIndex].filter(Number.isFinite), text: targetText, chunkHash };
-    pushOperationLog('native_recovery:targeted_model_started',{turn:pairIndex,sourceEvidenceHash:repairTarget.sourceEvidenceHash},'debug');
-    const analyzed = await executeNativeAnalysisAttempt('incremental_recovery', chunk, { scopeKey: scope.key, sourceEvidenceHash: repairTarget.sourceEvidenceHash, repairTarget, contextOnly, failureFlow: 'targeted_regeneration', replacementRecordIds: replacements.ids, extraCalls: options.extraCalls });
-    pushOperationLog('native_recovery:targeted_model_completed',{turn:pairIndex,packetHash:analyzed.packetHash},'debug');
-    if (Memory.unloaded || !ownsRuntime()) throw new Error('native_regeneration_runtime_replaced_before_commit');
-    if (Memory.nativeRecovery.repairCancelRequested) {
-      return { ok: false, skipped: true, cancelled: true, reason: 'native_regeneration_cancelled', pairIndex };
-    }
-    const latestScope = await RisuCompat.currentChatScope();
-    if (!latestScope?.confident || latestScope.key !== scope.key || latestScope.chatMessagesAvailable !== true) return { ok: false, skipped: true, reason: 'target_scope_changed_before_adoption', pairIndex };
-    const latestSnapshot = authoritativeChatSnapshot(latestScope.chatMessages, latestScope);
-    ledger = await loadStorageLedger(latestScope, { hydrateArchive: false });
-    const latestWorldline = reconcileTurnWorldline(ledger.worldline, latestSnapshot, latestScope);
-    const latestPair = ensureArray(latestSnapshot?.conversationPairs).find(row => Number(row?.pairIndex || 0) === pairIndex) || null;
-    const latestOwner = latestPair ? activeWorldlineNodeForPair(latestWorldline, latestPair) : null;
-    const latestEvidence = latestPair ? recoveryEvidenceForAuthoritativePair(latestScope, latestPair) : null;
-    const latestTarget = latestPair && latestOwner && latestEvidence ? nativeRepairTargetForPair(latestScope, latestPair, latestOwner, latestWorldline, latestEvidence, 'targeted_regeneration') : null;
-    if (!latestTarget || nativeRepairTargetFingerprint(latestTarget) !== nativeRepairTargetFingerprint(repairTarget)) {
-      return { ok: false, skipped: true, cancelled: true, reason: 'target_changed_before_adoption', pairIndex };
-    }
-    const completedAt = now();
-    const candidateWrite = await writeNativeRepairCandidate({
-      scopeKey: scope.key,
-      debtId: repairTarget.debtId,
-      runId: `hayaku-native-regen-${stableHash64([scope.key, pairIndex, completedAt].join('\u0001'))}`,
-      recoveryId: `hayaku-native-regen-${stableHash64([scope.key, pairIndex, repairTarget.sourceEvidenceHash, completedAt].join('\u0001'))}`,
-      sourceHash: repairTarget.sourceEvidenceHash,
-      chunkHash,
-      startTurn: pairIndex,
-      endTurn: pairIndex,
-      targetPairIndex: pairIndex,
-      repairTarget,
-      targetFingerprint: nativeRepairTargetFingerprint(repairTarget),
-      replacementRecordIds: replacements.ids,
-      body: analyzed.body,
-      packetHash: analyzed.packetHash,
-      promptContractHash: analyzed.promptContractHash,
-      analysisMode: analyzed.mode,
-      groundingReceipt: analyzed.groundingReceipt,
-      state: 'candidate_verified',
-      createdAt: completedAt
-    });
-    if (candidateWrite.durable !== true) throw new Error(candidateWrite.reason || 'native_regeneration_candidate_write_failed');
-    pushOperationLog('native_recovery:targeted_candidate_saved',{turn:pairIndex,packetHash:analyzed.packetHash,durable:true},'debug');
-    await options.sourceEditValidate?.();
-    const capsule = nativeRepairCapsuleFromCandidate(candidateWrite.candidate);
-    const adoption = await adoptBridgeIncrementalRecoveryCapsule(capsule,{sourceEditValidate:options.sourceEditValidate});
-    const outcome = classifyNativeRepairAdoption(adoption);
-    if (outcome === 'completed' || outcome === 'cancelled') await removeNativeRepairCandidate(scope.key, repairTarget.debtId).catch(() => null);
-    return {
-      ok: outcome === 'completed',
-      regenerated: outcome === 'completed',
-      outcome,
-      reason: adoption?.reason || outcome,
-      pairIndex,
-      replacementRecordIds: replacements.ids,
-      replacedRecords: Math.max(0, Number(adoption?.replacedRecords || replacements.ids.length) || 0),
-      packetHash: analyzed.packetHash,
-      analysisMode: analyzed.mode,
-      adoption: clone(adoption, {})
-    };
-  };
   const nativeRegenerationChunkReusable = (entry, plan, contractHash) => {
     if (!entry || entry.status !== 'verified') return false;
     if (compact(entry.chunkHash || '', 96) !== compact(plan?.chunkHash || '', 96)) return false;
@@ -47126,7 +47002,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return { ok: false, skipped: true, reason: 'replacement_target_not_active' };
     }
     const requestedTurns = uniq(ensureArray(options?.targetTurns || [options?.targetPairIndex])
-      .map(Number).filter(value => Number.isInteger(value) && value > 0), 256).map(Number).sort((a, b) => a - b);
+      .map(Number).filter(value => Number.isInteger(value) && value > 0), 512).map(Number).sort((a, b) => a - b);
     const derivedTurns = uniq(replacementRecords.flatMap(record => {
       const range = storageRecordTurnRange(record);
       const start = Math.max(1, Number(range.turnStart || range.targetPairIndex || 1) || 1);
@@ -47355,7 +47231,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       repairTarget: clone(plans[index].repairTarget, {})
     }));
     if (packets.some(packet => !packet.body || !packet.packetHash)) throw new Error('targeted_regeneration_packet_set_incomplete');
-    // Explicit multi-selection already authorizes replacement. Keep its staged
+    // Explicit reanalysis already authorizes replacement. Keep its staged
     // run out of the unguarded ordinary choice UI after interruption/restart.
     run.state = options.sourceEditValidate ? 'adopting' : 'awaiting_choice';
     run.recoveryId = recoveryId;
@@ -47471,13 +47347,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return result;
   };
   const runNativeTargetedRegeneration = async (options = {}) => {
+    if(typeof options.sourceEditValidate!=='function')return {ok:false,reason:'explicit_reanalysis_required'};
     const state = Memory.nativeRecovery;
     if (state.manualBatchInFlight) return { ok:false, reason:'manual_repair_batch_in_flight' };
     if (state.auxiliaryProbe?.inFlight) return { ok: false, skipped: true, reason: 'auxiliary_probe_in_progress' };
     if (state.coldStartInFlight || state.repairInFlight) return { ok: false, skipped: true, reason: 'native_recovery_busy' };
     const replacementRecordIds = uniq(ensureArray(options?.replacementRecordIds)
       .map(value => compact(value || '', 196)).filter(Boolean), 512);
-    const turns = uniq(ensureArray(options?.targetTurns || [options?.targetPairIndex]).map(Number).filter(value => Number.isInteger(value) && value > 0), 128).map(Number).sort((a, b) => a - b);
+    const turns = uniq(ensureArray(options?.targetTurns || [options?.targetPairIndex]).map(Number).filter(value => Number.isInteger(value) && value > 0), 512).map(Number).sort((a, b) => a - b);
     if (!turns.length && !replacementRecordIds.length) return { ok: false, skipped: true, reason: 'target_turns_required' };
     const scope = await RisuCompat.currentChatScope();
     if (!scope?.confident || !scope?.key || scope.chatMessagesAvailable !== true) return { ok: false, skipped: true, reason: scope?.reason || 'authoritative_chat_unavailable' };
@@ -47487,58 +47364,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     state.repairDebtId = replacementRecordIds.length ? `replace:${replacementRecordIds.length}` : `targeted:${turns.join(',')}`;
     state.lastRepairError = '';
     try {
-      if (replacementRecordIds.length) {
-        const result = await runNativeAtomicReplacementRegenerationLocked(scope, { ...options, targetTurns: turns, replacementRecordIds });
-        state.repairRunId = compact(result?.runId || '', 128);
-        if (result?.awaitingChoice === true) {
-          state.lastRepairError = '';
-          pushOperationLog('native_recovery:targeted_regeneration_candidate_ready', clone(result, {}), 'success');
-        } else if (result?.ok === true) {
-          state.repairSuccesses += 1;
-          state.lastRepairError = '';
-          pushOperationLog('native_recovery:targeted_regeneration_completed', clone(result, {}), 'success');
-        } else if (result?.skipped !== true) {
-          state.repairFailures += 1;
-          state.lastRepairError = compact(result?.reason || 'targeted_regeneration_failed', 320);
-          pushOperationLog('native_recovery:targeted_regeneration_failed', clone(result, {}), 'warn');
-        }
-        state.lastRepairResult = clone(result, {});
-        return result;
-      }
-      const run = { schema: HAYAKU_NATIVE_REGEN_RUN_SCHEMA, version: HAYAKU_NATIVE_REGEN_VERSION, runId: `hayaku-native-regen-run-${stableHash64([scope.key, turns.join(','), now()].join('\u0001'))}`, scopeKey: scope.key, targetTurns: turns, state: 'running', createdAt: now(), updatedAt: now(), results: [] };
-      state.repairRunId = run.runId;
-      await writeNativeRunRecord(HAYAKU_NATIVE_REGEN_RUN_KEY_PREFIX, scope.key, run);
-      for (const turn of turns) {
-        await options.sourceEditValidate?.();
-        if(options.sourceEditValidate && Memory.nativeRecovery.job?.kind==='source_edit')updateNativeJob({currentTurn:turn,state:'analyzing',message:`T${turn} · 모델 분석 및 원문 근거 검사`});
-        const result = await executeNativeTargetedRegenerationTurn(scope, turn, { replacementRecordIds: [], allowMissing: options?.allowMissing === true, sourceEditValidate:options.sourceEditValidate, extraCalls:options.extraCalls });
-        if(options.sourceEditValidate && Memory.nativeRecovery.job?.kind==='source_edit')updateNativeJob({state:result.ok?'adopting':'analyzing',message:result.ok?`T${turn} · 저장 확인 완료, 명시적 작업 기록 저장 중`:`T${turn} · 분석 결과 확인 필요`});
-        run.results.push(clone(result, {}));
-        run.updatedAt = now();
-        await writeNativeRunRecord(HAYAKU_NATIVE_REGEN_RUN_KEY_PREFIX, scope.key, run);
-        if (result.ok !== true) {
-          run.state = result.cancelled ? 'cancelled' : 'failed';
-          run.error = compact(result.reason || 'targeted_regeneration_failed', 320);
-          run.finishedAt = now();
-          await writeNativeRunRecord(HAYAKU_NATIVE_REGEN_RUN_KEY_PREFIX, scope.key, run);
-          const failed = { ok: false, regenerated: run.results.filter(row => row?.ok === true).length, failedTurn: turn, reason: run.error, runId: run.runId, results: clone(run.results, []) };
-          state.repairFailures += 1;
-          state.lastRepairResult = clone(failed, {});
-          state.lastRepairError = run.error;
-          pushOperationLog('native_recovery:targeted_regeneration_failed', clone(failed, {}), 'warn');
-          return failed;
-        }
-      }
-      run.state = 'completed';
-      run.finishedAt = now();
-      run.updatedAt = now();
-      await writeNativeRunRecord(HAYAKU_NATIVE_REGEN_RUN_KEY_PREFIX, scope.key, run);
-      const completed = { ok: true, regenerated: run.results.length, targetTurns: turns, runId: run.runId, results: clone(run.results, []) };
-      state.repairSuccesses += 1;
-      state.lastRepairResult = clone(completed, {});
-      state.lastRepairError = '';
-      pushOperationLog('native_recovery:targeted_regeneration_completed', clone(completed, {}), 'success');
-      return completed;
+      if(!replacementRecordIds.length)return {ok:false,reason:'replacement_record_ids_required'};
+      const result=await runNativeAtomicReplacementRegenerationLocked(scope,{...options,targetTurns:turns,replacementRecordIds});
+      state.lastRepairResult=clone(result,{});
+      state.lastRepairError=result.ok?'':compact(result.reason||'source_reanalysis_failed',320);
+      if(!result.ok)state.repairFailures++;
+      return result;
     } catch (error) {
       if(hayakuRecoveryBlocked(error)){const result={ok:false,skipped:true,suspended:true,reason:text(error?.message||error)};state.lastRepairResult=result;state.lastRepairError=result.reason;throw error;}
       state.repairFailures += 1;
@@ -48188,7 +48019,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return { attempted: true, adopted: adoption?.verified === true && adoption?.durable === true, reason: adoption?.reason || 'legacy_takeover_attempted', packets: packets.length, adoption: clone(adoption, {}) };
   };
   const runNativeRepairSweep = async (options = {}) => {
-    if (FailedAutoRecovery.running) return { ok: false, reason: 'automatic_recovery_busy' };
+    if(hayakuReanalysisRunning)return {ok:false,reason:'source_reanalysis_in_progress'};
     const state = Memory.nativeRecovery;
     if(state.manualBatchInFlight && options.batchToken!==state.manualBatchToken)return {ok:false,skipped:true,reason:'manual_repair_batch_in_flight'};
     await loadSettings(false);
@@ -48198,9 +48029,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (state.auxiliaryProbe?.inFlight) return { ok: false, skipped: true, reason: 'auxiliary_probe_in_progress' };
     if (state.coldStartInFlight) return { ok: false, skipped: true, reason: 'cold_start_in_progress' };
     if (state.repairInFlight) return { ok: false, skipped: true, reason: 'native_repair_in_flight' };
-    if (options?.replaceExisting === true || ensureArray(options?.replacementRecordIds).length > 0) {
-      return await runNativeTargetedRegeneration(options);
-    }
+    if(options?.replaceExisting===true||ensureArray(options?.replacementRecordIds).length)return {ok:false,reason:'explicit_reanalysis_required'};
     state.repairInFlight = true;
     state.repairCancelRequested = false;
     state.repairRuns += 1;
@@ -48320,7 +48149,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       pushOperationLog('native_recovery:selected_missing_rejected',result,'warn');
       return result;
     };
-    if(FailedAutoRecovery.running||state.manualBatchInFlight||state.repairInFlight||state.coldStartInFlight||state.auxiliaryProbe?.inFlight)return reject('native_recovery_busy');
+    if(hayakuReanalysisRunning||state.manualBatchInFlight||state.repairInFlight||state.coldStartInFlight||state.auxiliaryProbe?.inFlight)return reject('native_recovery_busy');
     if(!targets.length)return reject('no_turns_selected');
     // Lock and create the job before the first host/storage await.
     const token={};state.manualBatchInFlight=true;state.manualBatchToken=token;state.manualBatchCancelRequested=false;
@@ -48451,7 +48280,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     };
   };
   const startNativeColdStart = async (options = {}) => {
-    if (FailedAutoRecovery.running && options.automaticRecoveryContinuation !== true) return { ok: false, reason: 'automatic_recovery_busy' };
+    if(hayakuReanalysisRunning)return {ok:false,reason:'source_reanalysis_in_progress'};
     const state = Memory.nativeRecovery;
     if (state.manualBatchInFlight) return { ok:false, reason:'manual_repair_batch_in_flight' };
     if (state.auxiliaryProbe?.inFlight) return { ok: false, skipped: true, reason: 'auxiliary_probe_in_progress' };
@@ -48841,633 +48670,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       state.coldStartInFlight = false;
       state.coldStartCancelRequested = false;
     }
-  };
-  const findRecoveryVaultRecordForFailedAnalysis = async (payload, scope) => {
-    const scopeKey = compact(scope?.key || payload?.scopeKey || '', 196);
-    if (!scopeKey || !scope?.confident || scope.chatMessagesAvailable !== true) return null;
-    const source = payload?.source || {};
-    const pairIndex = Math.max(1, Number(source?.targetPairIndex ?? source?.turn ?? 0) || 1);
-    const vault = await loadRecoveryVault(scopeKey, { force: true });
-    const rows = ensureArray(vault?.records).filter(record => (
-      record?.inheritedSessionHistory !== true
-      && Number(record?.pairIndex || 0) === pairIndex
-      && record?.worldlineStatus === 'active'
-    ));
-    const byFailure = rows.find(record => compact(record?.failedAnalysisId || '', 160) === compact(payload?.failureId || '', 160));
-    const byIdentity = rows.find(record => (
-      (!source?.ownerTurnNodeId || record.ownerTurnNodeId === source.ownerTurnNodeId)
-      && (!source?.variantId || record.variantId === source.variantId)
-      && (!source?.userHash || record.userHash === source.userHash)
-      && (!source?.assistantHash || record.assistantHash === source.assistantHash)
-    ));
-    return byFailure || byIdentity || (rows.length === 1 ? rows[0] : null);
-  };
-  const recoverFailedAnalysisRepairTarget = async (payload, scope) => {
-    const record = await findRecoveryVaultRecordForFailedAnalysis(payload, scope);
-    return record ? recoveryDebtRepairTarget(record) : null;
-  };
-  const prepareFailedAnalysisResolutionContext = async (artifact, scope) => {
-    const payload = artifact?.payload || {};
-    const context = clone(payload.context || {}, {});
-    if (payload.kind !== 'incremental_recovery') return context;
-    const vaultRecord = await findRecoveryVaultRecordForFailedAnalysis(payload, scope);
-    const existing = objectish(context.repairTarget) && compact(context.repairTarget.debtId || '', 196)
-      ? context.repairTarget
-      : vaultRecord ? recoveryDebtRepairTarget(vaultRecord) : null;
-    if (vaultRecord) {
-      // Older artifacts may retain only a lazy-load marker in source.text even
-      // though the Recovery Vault has the authoritative U+A sidecar. Hydrate
-      // the artifact view and the next repair request from that sidecar.
-      const current = objectish(payload.source) ? payload.source : {};
-      const live = liveRecoveryEvidenceForRecord(vaultRecord, scope);
-      const userText = text(live?.userText || vaultRecord?.user?.text || '').trim();
-      const assistantText = text(live?.assistantText || vaultRecord?.assistant?.text || '').trim();
-      const currentText = text(current.text || '');
-      const lazyMarker = /<lb-lazy\b|\[LBDATA\s+START\]/i.test(currentText);
-      if (userText || assistantText) {
-        payload.source = {
-          ...current,
-          userText: text(current.userText || '').trim() || userText,
-          assistantText: text(current.assistantText || '').trim() || assistantText,
-          user: objectish(current.user) && text(current.user.text || '').trim() ? current.user : { text: userText },
-          assistant: objectish(current.assistant) && text(current.assistant.text || '').trim() ? current.assistant : { text: assistantText },
-          text: !currentText || lazyMarker
-            ? `[Turn ${Math.max(1, Number(vaultRecord.pairIndex || 1) || 1)}]\n[User attempt]\n${userText}\n\n[Assistant outcome]\n${assistantText}`
-            : currentText,
-          sourceChars: Math.max(Number(current.sourceChars || 0) || 0, userText.length + assistantText.length)
-        };
-      }
-    }
-    if (!existing) return context;
-    return {
-      ...context,
-      debtId: compact(context.debtId || existing.debtId || '', 196),
-      repairTarget: clone(existing, {}),
-      sourceEvidenceHash: compact(context.sourceEvidenceHash || existing.sourceEvidenceHash || '', 96)
-    };
-  };
-  const FailedAutoRecovery = { running: false, timer: null, lastResult: null, lastError: '' };
-  const failedAutoMode = () => 'off'; // Retired: no paid retry of failed outputs, including legacy settings.
-  const failedAutoJournalKey = (scopeKey, incidentKey) => `hayaku.v2.failed_auto_recovery.${scopeKey}::${stableHash64(incidentKey)}`;
-  const failedAutoJournalHash = value => stableHash64(JSON.stringify({ ...value, journalHash: undefined }));
-  const failedAutoBusy = () => Memory.nativeRecovery.manualBatchInFlight || Memory.nativeRecovery.repairInFlight
-    || Memory.nativeRecovery.coldStartInFlight || Memory.nativeRecovery.auxiliaryProbe?.inFlight
-    || FailedAnalysisResolutionInFlight.size > 0 || Memory.finalizedCaptureInFlight?.size > 0
-    || Memory.finalizedBindingInFlight?.size > 0
-    || (Memory.nativeRecovery.job && !NATIVE_JOB_TERMINAL_STATES.has(Memory.nativeRecovery.job.state));
-  const prepareAutomaticFailedEvidence = async (artifact, scope) => {
-    if (!scope?.confident || !scope.chatMessagesAvailable || scope.key !== artifact.payload.scopeKey) throw new Error('failed_analysis_scope_changed');
-    const payload = artifact.payload;
-    if (failedAnalysisReasonExplanation(payload.failure, payload).diagnosisCode === 'MODEL_DECLINED') throw new Error('model_refusal_not_adoptable');
-    await assertHayakuSourceScope(scope.key, Number(payload.source?.startTurn || payload.source?.turn || 0), Number(payload.source?.endTurn || payload.source?.turn || 0));
-    const context = await prepareFailedAnalysisResolutionContext(artifact, scope);
-    if (payload.kind === 'incremental_recovery') {
-      const record = await findRecoveryVaultRecordForFailedAnalysis(payload, scope);
-      if (!record || !context.repairTarget) throw new Error('failed_analysis_repair_target_missing');
-      const verified = await readVerifiedRecoveryEvidence(record, scope, context.repairTarget, { rehydrate: false });
-      if (!verified.ok) throw new Error(verified.reason || 'recovery_evidence_unverified');
-      payload.source = { ...payload.source, userText: verified.user, assistantText: verified.assistant,
-        user: { text: verified.user }, assistant: { text: verified.assistant }, text: [verified.user, verified.assistant].join('\n') };
-    } else if (payload.kind === 'cold_start') {
-      const evidence = collectNativeColdStartEvidence(scope);
-      const unit = evidence.units.find(row => row.chunkHash === payload.source?.chunkHash && Number(row.turn) === Number(payload.source?.turn)
-        && nativeIndexSetsEqual(row.indexes || [], payload.source?.messageIndexes || payload.source?.indexes || []));
-      if (!unit) throw new Error('failed_analysis_cold_start_source_changed');
-      payload.source = { ...payload.source, ...unit };
-    } else throw new Error('failed_analysis_automatic_kind_unsupported');
-    return { ...context, scopeKey: scope.key, automaticFailureRecovery: true,
-      isCurrent: () => !Memory.unloaded && ownsRuntime() && failedAutoMode() !== 'off' };
-  };
-  const revalidateAutomaticFailedCandidate = (artifact) => {
-    const payload = artifact.payload, source = payload.source;
-    // Revalidate the actual stored model envelope; never manufacture citations or user approval.
-    const attempt = ensureArray(payload.attempts).slice().reverse().find(row => text(row.rawResponse || '').trim());
-    const envelope = extractNativeJsonObject(text(attempt?.rawResponse || ''));
-    const shape = validateNativeRepairEnvelopeShape(envelope);
-    if (!shape.ok) throw new Error('failed_analysis_automatic_candidate_unverified');
-    const grounding = validateNativeRepairGrounding(envelope, { targetText: source.text, user: source.userText, assistant: source.assistantText });
-    if (!grounding.ok) throw new Error(`native_repair_grounding_failed:${grounding.reason}`);
-    const normalized = normalizeNativeAnalysisPacket(shape.packet, payload.kind, source, payload.context);
-    const coverage = validateNativeRepairCoverage(normalized.packet, { targetText: source.text });
-    if (!coverage.ok) throw new Error(`native_repair_coverage_failed:${coverage.reason}`);
-    return { action: 'verify', automatic: true, candidate: envelope, normalized, revisionId: '', groundingReceipt: {
-      ...grounding, verified: true, workerVersion: HAYAKU_NATIVE_REPAIR_WORKER_VERSION, classification: 'direct_grounded', packetHash: normalized.packetHash,
-      envelopeHash: stableHash64(JSON.stringify(envelope)), targetEvidenceHash: stableHash64(normalizeNativeGroundingText(source.text)),
-      sourceEvidenceHash: payload.context.sourceEvidenceHash || '', coverage: clone(coverage.coverage, {}), verifiedAt: now()
-    } };
-  };
-  const runFailedAutoRecovery = async () => {
-    if (FailedAutoRecovery.running || Memory.unloaded || !ownsRuntime() || failedAutoBusy()) return { ok: false, skipped: true, reason: 'automatic_recovery_busy' };
-    FailedAutoRecovery.running = true;
-    FailedAutoRecovery.lastError = '';
-    const results = [];
-    try {
-      await loadSettings(false);
-      if (failedAutoMode() === 'off' || Memory.settings.enabled === false) return { ok: true, skipped: true, reason: 'automatic_recovery_disabled' };
-      const scope = await RisuCompat.currentChatScope();
-      if (!scope?.confident || !scope.chatMessagesAvailable) return { ok: false, skipped: true, reason: 'scope_unavailable' };
-      const listed = await listFailedAnalysisArtifacts(scope.key);
-      const pending = ensureArray(listed.cases).filter(row => !['resolved', 'resolved_checkpointed', 'resolved_by_retry'].includes(row.state));
-      for (const incident of pending.slice().reverse()) {
-        if (results.length >= 2 || Memory.unloaded || failedAutoMode() === 'off' || failedAutoBusy()) break;
-        const key = failedAutoJournalKey(scope.key, incident.incidentKey || incident.failureId);
-        const raw = await readFailedAnalysisStored(key);
-        const stored = typeof raw === 'string' ? safeJsonParse(raw, null) : raw;
-        if (raw != null && (!objectish(stored) || stored.schema !== 'hayaku.failed_auto_recovery.v1' || stored.scopeKey !== scope.key
-          || stored.incidentKey !== (incident.incidentKey || incident.failureId)
-          || ![0, 1].includes(stored.aiAttempts) || !Number.isInteger(stored.checks) || stored.checks < 0 || stored.checks > 3
-          || stored.journalHash !== failedAutoJournalHash(stored))) continue;
-        let journal = stored || { schema: 'hayaku.failed_auto_recovery.v1', scopeKey: scope.key, incidentKey: incident.incidentKey || incident.failureId, aiAttempts: 0, checks: 0 };
-        // Enabling paid recovery after verify-only may use the still-unused allowance.
-        // This never resets a previously claimed physical call.
-        if (journal.reason === 'automatic_recovery_review_required' && journal.aiAttempts === 0 && failedAutoMode() === 'retry_once') {
-          journal = { ...journal, checks: 0, nextAt: 0 };
-        }
-        if (['completed', 'checkpointed'].includes(journal.state) || Number(journal.checks) >= 3 || Number(journal.nextAt || 0) > now()) continue;
-        const persist = async patch => {
-          journal = { ...journal, ...patch, failureId: incident.failureId, updatedAt: now() };
-          journal.journalHash = failedAutoJournalHash(journal);
-          const write = await writeFailedAnalysisJsonExact(key, journal, 'automatic_recovery_journal_write_failed');
-          if (write.durable !== true) throw new Error(write.reason || 'automatic_recovery_journal_unverified');
-        };
-        // Persist the local attempt before work. A crashed/uncertain paid claim is never replayed.
-        await persist({ checks: Number(journal.checks || 0) + 1, state: 'checking', nextAt: now() + 30000 });
-        let result;
-        try {
-          let artifact = await readFailedAnalysisArtifact(scope.key, incident.failureId);
-          if (artifact.available && !artifact.durable && artifact.payload) {
-            const saved = await saveFailedAnalysisArtifact({ ...artifact.payload, chunk: artifact.payload.source });
-            if (!saved.durable) throw new Error(saved.reason || 'failed_analysis_not_durable');
-            artifact = await readFailedAnalysisArtifact(scope.key, incident.failureId, { includeVolatile: false });
-          }
-          if (!artifact.durable) throw new Error(artifact.reason || 'failed_analysis_not_durable');
-          artifact.payload.context = await prepareAutomaticFailedEvidence(artifact, await RisuCompat.currentChatScope());
-          let reusable = false;
-          try { revalidateAutomaticFailedCandidate(artifact); reusable = true; } catch (_) {}
-          let action = 'verify';
-          if (!reusable) {
-            if (failedAutoMode() !== 'retry_once' || Number(journal.aiAttempts || 0) >= 1) {
-              result = { ok: false, reason: 'automatic_recovery_review_required' };
-            } else {
-              action = 'llm';
-              await persist({ aiAttempts: 1, state: 'ai_claimed' });
-            }
-          }
-          if (!result) result = await resolveFailedAnalysisArtifact(incident.failureId, action, { automatic: true, expectedScopeKey: scope.key });
-        } catch (error) { result = { ok: false, reason: compact(error?.message || error, 320) }; }
-        const complete = result.ok === true && result.manifestDurable === true;
-        await persist({ state: complete ? (result.promotion?.checkpointed ? 'checkpointed' : 'completed') : 'review_required', reason: result.reason || result.promotion?.reason || '',
-          checks: !complete && result.reason === 'automatic_recovery_review_required' ? 3 : journal.checks });
-        await updateFailedAnalysisManifest(scope.key, incident.failureId, { automation: { state: journal.state, aiAttempts: journal.aiAttempts,
-          reason: journal.reason, updatedAt: journal.updatedAt } });
-        const summary = { scopeKey: scope.key, failureId: incident.failureId, resolutionId: result.resolutionId || '', state: journal.state, aiAttempts: journal.aiAttempts, reason: journal.reason };
-        results.push(summary);
-        pushOperationLog('failed_recovery:automatic_result', summary, complete ? 'info' : 'warn');
-      }
-      return { ok: true, results };
-    } catch (error) {
-      FailedAutoRecovery.lastError = compact(error?.message || error, 320);
-      pushOperationLog('failed_recovery:automatic_stopped', { reason: FailedAutoRecovery.lastError }, 'warn');
-      return { ok: false, reason: FailedAutoRecovery.lastError, results };
-    }
-    finally {
-      FailedAutoRecovery.running = false;
-      FailedAutoRecovery.lastResult = { at: now(), reason: FailedAutoRecovery.lastError, results };
-      if (results.length && Memory.ledgerViewer.visible && Memory.ledgerViewer.activeTab === 'failed_recovery') {
-        const selected = results.find(row => row.failureId === Memory.ledgerViewer.failedAnalysisSelectedId);
-        void viewerRenderFailedRecovery(selected?.resolutionId || '');
-      }
-    }
-  };
-  const scheduleFailedAutoRecovery = () => false; // Retired compatibility entry; never starts a timer.
-
-  const failedAnalysisResolutionAttempt = async (artifact, action, manualBody = '', contextOverride = null) => {
-    const payload = artifact?.payload || {};
-    const source = clone(payload.source || {}, {});
-    const context = clone(contextOverride || payload.context || {}, {});
-    const kind = payload.kind === 'incremental_recovery' ? 'incremental_recovery' : 'cold_start';
-    const requiresGrounding = kind === 'incremental_recovery' || context.automaticFailureRecovery === true;
-    await assertHayakuSourceScope(payload.scopeKey || context.scopeKey || '', Number(source.startTurn || source.turn || context.repairTarget?.pairIndex || 0), Number(source.endTurn || source.turn || context.repairTarget?.pairIndex || 0));
-    if (action === 'verify') {
-      if (!context.automaticFailureRecovery) throw new Error('automatic_recovery_context_required');
-      return revalidateAutomaticFailedCandidate(artifact);
-    }
-    if (action === 'adopt') {
-      const candidate = clone(payload.proposedCanonical || null, null);
-      if (!objectish(candidate)) throw new Error('failed_analysis_canonical_preview_unavailable');
-      const normalized = normalizeNativeAnalysisPacket(candidate, kind, source, context);
-      const groundingReceipt = ensureArray(payload.attempts).slice().reverse().find(attempt => objectish(attempt?.groundingReceipt))?.groundingReceipt || null;
-      return { action, candidate, normalized, groundingReceipt: clone(groundingReceipt, null), revisionId: '' };
-    }
-    if (action === 'manual') {
-      const rawManual = text(manualBody || '').trim();
-      const parsedManual = safeJsonParse(rawManual, null) || extractNativeJsonObject(rawManual);
-      const candidate = objectish(parsedManual) && parsedManual.schema === HAYAKU_NATIVE_REPAIR_OUTPUT_SCHEMA && objectish(parsedManual.packet)
-        ? parsedManual.packet
-        : parsedManual;
-      if (!objectish(candidate)) throw new Error('failed_analysis_manual_json_invalid');
-      const normalized = normalizeNativeAnalysisPacket(candidate, kind, source, context);
-      const attempt = {
-        mode: 'manual',
-        requestMessages: [],
-        rawResponse: rawManual,
-        rawChars: rawManual.length,
-        rawHash: stableHash64(rawManual),
-        responseMetadata: { type: 'user_manual_edit', finishReason: '', stopReason: '', model: '', usage: null },
-        parsedCandidate: clone(parsedManual, null),
-        canonicalPreview: clone(normalized.packet, null),
-        canonicalPreviewHash: normalized.packetHash,
-        error: null,
-        failedAt: 0
-      };
-      const revision = await saveFailedAnalysisArtifact({
-        parentFailureId: payload.failureId,
-        scopeKey: payload.scopeKey,
-        kind,
-        flow: 'failed_analysis_manual_resolution',
-        state: 'resolution_candidate',
-        chunk: source,
-        context,
-        promptContract: payload.promptContract,
-        attempts: [attempt],
-        proposedCanonical: normalized.packet,
-        canAdopt: true,
-        failure: { code: 'HAYAKU_FAILED_ANALYSIS_MANUAL_REVISION', message: '사용자 직접 수정본' }
-      });
-      if (revision.durable !== true) throw new Error(`failed_analysis_manual_revision_write_failed:${revision.reason || 'unknown'}`);
-      return { action, candidate, normalized, revisionId: revision.failureId };
-    }
-    if (action !== 'llm') throw new Error(`failed_analysis_resolution_action_invalid:${action}`);
-    const base = nativePacketAuthoringPrompt(kind, Memory.settings || DEFAULT_SETTINGS);
-    const failureReason = viewerPrettyJson(payload.failure || artifact?.manifest?.reason || 'analysis_failed');
-    const failedRaw = ensureArray(payload.attempts).map((attempt, index) => [
-      `[FAILED RESPONSE ${index + 1} · ${compact(attempt?.mode || 'unknown', 32)}]`,
-      text(attempt?.rawResponse || ''),
-      `[/FAILED RESPONSE ${index + 1}]`
-    ].join('\n')).join('\n\n');
-    const system = [
-      base.repair,
-      '',
-      '[FAILED ANALYSIS USER-REQUESTED RECOVERY]',
-      'Repair the packet using the exact source evidence and the local failure report below.',
-      'Do not omit data merely because the prior response exceeded a local limit or failed validation.',
-      requiresGrounding
-        ? `Return one ${HAYAKU_NATIVE_REPAIR_OUTPUT_SCHEMA} envelope only: {"schema":"${HAYAKU_NATIVE_REPAIR_OUTPUT_SCHEMA}","packet":{...},"grounding":[...]}.`
-        : 'Return one canonical HAYAKU JSON packet only.',
-      '[/FAILED ANALYSIS USER-REQUESTED RECOVERY]'
-    ].join('\n');
-    const user = [
-      nativeAnalysisUserPrompt({...source, nativeOutputSchema:requiresGrounding?HAYAKU_NATIVE_REPAIR_OUTPUT_SCHEMA:source.nativeOutputSchema}, context?.contextOnly || ''),
-      `[LOCAL FAILURE REPORT]\n${failureReason}\n[/LOCAL FAILURE REPORT]`,
-      failedRaw
-    ].filter(Boolean).join('\n\n');
-    const requestMessages = [{ role: 'system', content: system }, { role: 'user', content: user }];
-    let llm = null;
-    let candidate = null;
-    try {
-      const extraCalls=context.automaticFailureRecovery ? 0 : ((await loadSettings()).recoveryExtraCalls===1?1:0);
-      const operationLedger=MemorySuiteExecutionContract.createLedger({maxRequests:1+extraCalls,signal:context.signal,deadlineAt:context.deadlineAt,isCurrent:context.isCurrent});
-      for(let index=0;index<=extraCalls;index++){
-        await assertHayakuSourceScope(context.scopeKey||payload.scopeKey||'',Number(source.startTurn||source.turn||0),Number(source.endTurn||source.turn||0));
-        llm=await runNativeOtherAx(requestMessages,{taskKind:'hayaku_failed_analysis_resolution',extraCalls,operationLedger,signal:context.signal,deadlineAt:context.deadlineAt,isCurrent:context.isCurrent});
-        candidate=parseNativeJsonObject(llm.content);
-        const structural=candidate && (!requiresGrounding||validateNativeRepairEnvelopeShape(candidate).ok===true);
-        if(structural || llm.completionEnvelope?.state!=='complete')break;
-      }
-      if (!candidate) throw new Error('failed_analysis_llm_json_not_found');
-      let packetCandidate = candidate;
-      let groundingReceipt = null;
-      if (requiresGrounding) {
-        const shape = validateNativeRepairEnvelopeShape(candidate);
-        if (shape.ok !== true) {
-          const shapeError = new Error(`native_repair_envelope_invalid:${shape.reason}`);
-          shapeError.code = 'HAYAKU_NATIVE_REPAIR_ENVELOPE_INVALID';
-          shapeError.validation = shape;
-          throw shapeError;
-        }
-        const sourceUser = text(source?.userText || source?.user?.text || source?.user || '').trim();
-        const sourceAssistant = text(source?.assistantText || source?.assistant?.text || source?.assistant || '').trim();
-        const grounding = validateNativeRepairGrounding(candidate, {
-          targetText: text(source?.text || [sourceUser, sourceAssistant].filter(Boolean).join('\n')),
-          user: sourceUser,
-          assistant: sourceAssistant
-        });
-        if (grounding.ok !== true) {
-          const groundingError = new Error(`native_repair_grounding_failed:${grounding.reason}`);
-          groundingError.code = grounding.reason === 'native_repair_interpretive_or_ambiguous'
-            ? 'HAYAKU_NATIVE_REPAIR_AMBIGUOUS'
-            : 'HAYAKU_NATIVE_REPAIR_GROUNDING_INVALID';
-          groundingError.validation = grounding;
-          groundingError.canonicalPreview = clone(shape.packet, null);
-          groundingError.canonicalBody = JSON.stringify(shape.packet);
-          throw groundingError;
-        }
-        packetCandidate = shape.packet;
-        groundingReceipt = {
-          ...grounding,
-          verified: true,
-          workerVersion: HAYAKU_NATIVE_REPAIR_WORKER_VERSION,
-          envelopeHash: stableHash64(JSON.stringify(candidate)),
-          sourceEvidenceHash: compact(context?.sourceEvidenceHash || source?.sourceHash || '', 96),
-          verifiedAt: now()
-        };
-      }
-      const normalized = normalizeNativeAnalysisPacket(packetCandidate, kind, source, context);
-      if (requiresGrounding) {
-        const coverageTargetText = text(source?.text || [source?.userText || source?.user?.text || source?.user || '', source?.assistantText || source?.assistant?.text || source?.assistant || ''].filter(Boolean).join('\n'));
-        const coverage = validateNativeRepairCoverage(normalized.packet, { targetText: coverageTargetText });
-        if (coverage.ok !== true) {
-          const coverageError = new Error(`native_repair_coverage_failed:${coverage.reason}`);
-          coverageError.code = 'HAYAKU_NATIVE_REPAIR_COVERAGE_INCOMPLETE';
-          coverageError.validation = coverage;
-          coverageError.canonicalPreview = normalized.packet;
-          throw coverageError;
-        }
-        groundingReceipt = {
-          ...groundingReceipt,
-          packetHash: normalized.packetHash,
-          targetEvidenceHash: groundingReceipt?.targetEvidenceHash || stableHash64(normalizeNativeGroundingText(coverageTargetText)),
-          coverage: clone(coverage.coverage, {}),
-          classification: 'direct_grounded'
-        };
-      }
-      const attempt = {
-        mode: 'llm_user_repair',
-        requestMessages,
-        rawResponse: llm.content,
-        rawChars: llm.content.length,
-        rawHash: stableHash64(llm.content),
-        responseMetadata: clone(llm.responseMetadata || null, null),
-        parsedCandidate: clone(candidate, null),
-        canonicalPreview: clone(normalized.packet, null),
-        canonicalPreviewHash: normalized.packetHash,
-        groundingReceipt: clone(groundingReceipt, null),
-        error: null,
-        failedAt: 0
-      };
-      const revision = await saveFailedAnalysisArtifact({
-        parentFailureId: payload.failureId,
-        scopeKey: payload.scopeKey,
-        kind,
-        flow: 'failed_analysis_llm_resolution',
-        state: 'resolution_candidate',
-        chunk: source,
-        context,
-        promptContract: { workerVersion: base.workerVersion, contractHash: base.contractHash },
-        attempts: [attempt],
-        proposedCanonical: normalized.packet,
-        canAdopt: true,
-        failure: { code: 'HAYAKU_FAILED_ANALYSIS_LLM_REVISION', message: '사용자가 요청한 LLM 자동 복구 후보' }
-      });
-      if (revision.durable !== true) throw new Error(`failed_analysis_llm_revision_write_failed:${revision.reason || 'unknown'}`);
-      return { action, automatic: context.automaticFailureRecovery === true, candidate, normalized, groundingReceipt: clone(groundingReceipt, null), revisionId: revision.failureId };
-    } catch (error) {
-      const preview = clone(error?.canonicalPreview || candidate || nativeFailureCanonicalTemplate(kind, source, context), null);
-      const child = await saveFailedAnalysisArtifact({
-        parentFailureId: payload.failureId,
-        scopeKey: payload.scopeKey,
-        kind,
-        flow: 'failed_analysis_llm_resolution',
-        chunk: source,
-        context,
-        promptContract: { workerVersion: base.workerVersion, contractHash: base.contractHash },
-        attempts: [{
-          mode: 'llm_user_repair', requestMessages,
-          rawResponse: text(llm?.content || ''), rawChars: text(llm?.content || '').length,
-          rawHash: llm?.content ? stableHash64(llm.content) : '',
-          responseMetadata: clone(llm?.responseMetadata || error?.responseMetadata || null, null),
-          parsedCandidate: clone(candidate, null),
-          canonicalPreview: clone(error?.canonicalPreview || null, null),
-          canonicalPreviewHash: error?.canonicalPreview ? stableHash64(JSON.stringify(error.canonicalPreview)) : '',
-          error: failedAnalysisErrorDetail(error), failedAt: now()
-        }],
-        proposedCanonical: preview,
-        canAdopt: nativeCanonicalPreviewAdoptable(preview, kind),
-        failure: failedAnalysisErrorDetail(error)
-      });
-      error.failedAnalysisId = child.failureId;
-      throw error;
-    }
-  };
-  const promoteFailedAnalysisPacket = async (artifact, resolution) => {
-    const payload = artifact?.payload || {};
-    const source = payload.source || {};
-    const context = payload.context || {};
-    const scopeKey = compact(payload.scopeKey || '', 196);
-    const latestScope = await RisuCompat.currentChatScope();
-    if (!latestScope?.confident || latestScope.key !== scopeKey || latestScope.chatMessagesAvailable !== true) throw new Error('failed_analysis_scope_changed');
-    const normalized = resolution.normalized;
-    if (!normalized?.body || normalized.packetHash !== stableHash64(normalized.body)) throw new Error('failed_analysis_resolution_packet_invalid');
-    if (payload.kind === 'cold_start') {
-      const evidence = collectNativeColdStartEvidence(latestScope);
-      const unit = evidence.units.find(row => compact(row.chunkHash || '', 96) === compact(source.chunkHash || '', 96)
-        && Number(row.turn || 0) === Number(source.turn || 0)
-        && nativeIndexSetsEqual(row.indexes || [], source.messageIndexes || source.indexes || []));
-      if (!unit) throw new Error('failed_analysis_cold_start_source_changed');
-      const runState = await readNativeRunRecord(HAYAKU_NATIVE_COLD_START_RUN_KEY_PREFIX, scopeKey, HAYAKU_NATIVE_COLD_START_RUN_SCHEMA);
-      if (!runState.available || !runState.run) throw new Error('failed_analysis_cold_start_run_missing');
-      const run = runState.run;
-      const compatibility = nativeColdStartEvidenceCompatibility(run, evidence);
-      if (!compatibility.compatible) throw new Error(`failed_analysis_cold_start_source_changed:${compatibility.reason}`);
-      const entry = ensureArray(run.chunks).find(row => compact(row?.chunkHash || '', 96) === compact(unit.chunkHash || '', 96));
-      if (!entry) throw new Error('failed_analysis_cold_start_chunk_missing');
-      entry.status = 'verified';
-      entry.body = normalized.body;
-      entry.packetHash = normalized.packetHash;
-      entry.analysisMode = `failed_recovery_${resolution.action}`;
-      entry.promptContractHash = compact(nativePacketAuthoringPrompt('cold_start', Memory.settings || DEFAULT_SETTINGS).contractHash, 96);
-      entry.contractHash = entry.promptContractHash;
-      entry.failedAnalysisId = '';
-      entry.error = '';
-      entry.resolvedAt = now();
-      run.state = 'building';
-      run.error = '';
-      run.finishedAt = 0;
-      const checkpoint = await writeNativeRunRecord(HAYAKU_NATIVE_COLD_START_RUN_KEY_PREFIX, scopeKey, run);
-      if (checkpoint.durable !== true) throw new Error(checkpoint.reason || 'failed_analysis_cold_start_checkpoint_failed');
-      let resumed = null;
-      try {
-        resumed = await startNativeColdStart({ resume: true, batchTurns: normalizeColdStartBatchTurns(run.analysisBatchTurns || 1), noNewCalls: resolution.automatic === true, automaticRecoveryContinuation: resolution.automatic === true });
-      } catch (error) {
-        resumed = { ok: false, reason: compact(error?.message || error, 320), checkpointPreserved: true };
-      }
-      return {
-        ok: true,
-        verified: true,
-        durable: true,
-        canonical: resumed?.ok === true,
-        checkpointed: resumed?.ok !== true,
-        reason: resumed?.ok === true ? 'failed_analysis_cold_start_adopted' : 'failed_analysis_cold_start_checkpointed',
-        packetHash: normalized.packetHash,
-        checkpoint,
-        resumed
-      };
-    }
-    const repairTarget = clone(context?.repairTarget || {}, {});
-    if (!objectish(repairTarget) || compact(repairTarget.scopeKey || '', 196) !== scopeKey || !compact(repairTarget.debtId || '', 196)) throw new Error('failed_analysis_repair_target_missing');
-    const completedAt = now();
-    const promptContractHash = compact(nativePacketAuthoringPrompt('incremental_recovery', Memory.settings || DEFAULT_SETTINGS).contractHash, 96);
-    const groundingReceipt = clone(
-      resolution?.groundingReceipt
-        || ensureArray(payload.attempts).slice().reverse().find(attempt => objectish(attempt?.groundingReceipt))?.groundingReceipt
-        || null,
-      null
-    );
-    // LLM recovery remains automatic only when its target-grounded receipt was
-    // verified. Manual edits are explicitly user-authorized and still pass the
-    // local canonical schema gate above.
-    const automaticGrounded = (resolution.action === 'llm' || resolution.action === 'verify') && groundingReceipt?.verified === true;
-    const candidateWrite = await writeNativeRepairCandidate({
-      scopeKey,
-      debtId: repairTarget.debtId,
-      runId: `hayaku-failed-resolution-${stableHash64([payload.failureId, resolution.action, completedAt].join('\u0001'))}`,
-      recoveryId: `hayaku-failed-resolution-${stableHash64([scopeKey, repairTarget.debtId, normalized.packetHash, completedAt].join('\u0001'))}`,
-      sourceHash: compact(context?.sourceEvidenceHash || repairTarget.sourceEvidenceHash || '', 96),
-      chunkHash: compact(source.chunkHash || '', 96),
-      startTurn: Number(source.startTurn ?? source.turn ?? repairTarget.pairIndex ?? 1),
-      endTurn: Number(source.endTurn ?? source.turn ?? repairTarget.pairIndex ?? 1),
-      targetPairIndex: Number(source.targetPairIndex ?? source.turn ?? repairTarget.pairIndex ?? 1),
-      repairTarget,
-      targetFingerprint: nativeRepairTargetFingerprint(repairTarget),
-      replacementRecordIds: ensureArray(context?.replacementRecordIds),
-      body: normalized.body,
-      packetHash: normalized.packetHash,
-      promptContractHash,
-      analysisMode: `failed_recovery_${resolution.action}`,
-      groundingReceipt,
-      userApproved: resolution.action === 'manual' || !automaticGrounded,
-      state: 'candidate_verified',
-      createdAt: completedAt
-    });
-    if (candidateWrite.durable !== true) throw new Error(candidateWrite.reason || 'failed_analysis_candidate_write_failed');
-    const adoption = await adoptBridgeIncrementalRecoveryCapsule(nativeRepairCapsuleFromCandidate(candidateWrite.candidate));
-    const outcome = classifyNativeRepairAdoption(adoption);
-    if (outcome === 'completed' || outcome === 'cancelled') await removeNativeRepairCandidate(scopeKey, repairTarget.debtId).catch(() => null);
-    if (outcome !== 'completed') throw new Error(`failed_analysis_adoption_failed:${adoption?.reason || outcome}`);
-    return { ok: true, verified: true, durable: true, canonical: true, checkpointed: false, reason: adoption.reason || 'failed_analysis_adopted', packetHash: normalized.packetHash, adoption: clone(adoption, {}) };
-  };
-  const failedAnalysisAdoptionBinding = artifact => ({
-    scopeKey: text(artifact.payload?.scopeKey || ''), failureId: text(artifact.payload?.failureId || ''),
-    payloadHash: text(artifact.manifest?.payloadHash || ''),
-    previewHash: stableHash64(JSON.stringify(artifact.payload?.proposedCanonical || null)),
-    sourceHash: stableHash64(JSON.stringify([artifact.payload?.source || {}, artifact.payload?.context?.repairTarget || null]))
-  });
-  const inspectFailedAnalysisAdoption = async failureId => {
-    const scope = await RisuCompat.currentChatScope();
-    if (!scope?.confident || !scope.key) return { ok:false, reason:'scope_unavailable' };
-    try {
-      const artifact = await readFailedAnalysisArtifact(scope.key, compact(failureId,160));
-      if (!artifact.available || !artifact.durable) return { ok:false, reason:artifact.available ? 'failed_analysis_not_durable' : artifact.reason };
-      if (['resolved','resolved_checkpointed','resolved_by_retry'].includes(artifact.manifest.state)) return {ok:false,reason:'failed_analysis_already_resolved'};
-      const diagnosis = failedAnalysisReasonExplanation(artifact.payload?.failure || {message:artifact.manifest?.reason}, artifact.payload);
-      if (diagnosis.diagnosisCode === 'MODEL_DECLINED') return {ok:false,reason:'model_refusal_not_adoptable',explanation:diagnosis};
-      const context = await prepareFailedAnalysisResolutionContext(artifact, scope);
-      artifact.payload.context = context;
-      if (artifact.payload.kind === 'incremental_recovery' && !context?.repairTarget?.debtId) return {ok:false,reason:'failed_analysis_repair_target_missing'};
-      const current = await RisuCompat.currentChatScope();
-      if (!current?.confident || current.key !== scope.key) return {ok:false,reason:'failed_analysis_scope_changed'};
-      await assertHayakuSourceScope(scope.key, Number(artifact.payload.source?.startTurn || artifact.payload.source?.turn || context.repairTarget?.pairIndex || 0), Number(artifact.payload.source?.endTurn || artifact.payload.source?.turn || context.repairTarget?.pairIndex || 0));
-      normalizeNativeAnalysisPacket(artifact.payload.proposedCanonical, artifact.payload.kind, artifact.payload.source, context);
-      return {ok:true,scopeKey:scope.key, failureId, confirmation:failedAnalysisAdoptionBinding(artifact), diagnosis,
-        warning:artifact.manifest.canAdopt !== true || ['EVIDENCE_MISSING','EVIDENCE_MISMATCH','INTERPRETATION_REVIEW','COVERAGE_MISSING'].includes(diagnosis.diagnosisCode)};
-    } catch(error) { return {ok:false,reason:text(error?.message||error),explanation:failedAnalysisReasonExplanation(error)}; }
-  };
-  const FailedAnalysisResolutionInFlight = new Set();
-  const resolveFailedAnalysisArtifactOnce = async (failureIdInput, actionInput, options = {}) => {
-    const scope = await RisuCompat.currentChatScope();
-    if (!scope?.confident || !scope?.key) return { ok: false, reason: scope?.reason || 'scope_unavailable' };
-    const failureId = compact(failureIdInput || '', 160);
-    const action = compact(actionInput || '', 32).toLowerCase();
-    const artifact = await readFailedAnalysisArtifact(scope.key, failureId);
-    if (artifact.available !== true) return { ok: false, reason: artifact.reason || 'failed_analysis_not_found', failureId };
-    if (artifact.durable !== true) return { ok: false, reason: 'failed_analysis_not_durable', failureId, volatile: artifact.volatile === true };
-    try {
-      if (['resolved','resolved_checkpointed','resolved_by_retry'].includes(artifact.manifest.state)) return {ok:false,reason:'failed_analysis_already_resolved',failureId};
-      if (options.expectedScopeKey && options.expectedScopeKey !== scope.key) return {ok:false,reason:'failed_analysis_scope_changed',failureId};
-      const resolutionContext = options.automatic === true
-        ? await prepareAutomaticFailedEvidence(artifact, scope)
-        : await prepareFailedAnalysisResolutionContext(artifact, scope);
-      if (artifact.payload?.kind === 'incremental_recovery' && (!objectish(resolutionContext?.repairTarget) || !compact(resolutionContext?.repairTarget?.debtId || '', 196))) {
-        return { ok: false, failureId, action, reason: 'failed_analysis_repair_target_missing' };
-      }
-      artifact.payload.context = resolutionContext;
-      if (options.automatic !== true) delete resolutionContext.automaticFailureRecovery;
-      if (options.automatic === true) {
-        resolutionContext.isCurrent = () => !Memory.unloaded && ownsRuntime() && failedAutoMode() !== 'off'
-          && (action !== 'llm' || failedAutoMode() === 'retry_once');
-        if (!resolutionContext.isCurrent()) return { ok: false, reason: 'automatic_recovery_disabled', failureId };
-      }
-      if (action === 'adopt') {
-        const diagnosis = failedAnalysisReasonExplanation(artifact.payload.failure || {}, artifact.payload);
-        if (diagnosis.diagnosisCode === 'MODEL_DECLINED') return {ok:false, reason:'model_refusal_not_adoptable', failureId, explanation:diagnosis};
-        // Valid shape alone never waives source, branch, or durable-storage checks.
-        normalizeNativeAnalysisPacket(artifact.payload.proposedCanonical, artifact.payload.kind, artifact.payload.source, resolutionContext);
-        const binding = failedAnalysisAdoptionBinding(artifact);
-        const needsConfirmation = artifact.manifest.canAdopt !== true || ['EVIDENCE_MISSING','EVIDENCE_MISMATCH','INTERPRETATION_REVIEW','COVERAGE_MISSING'].includes(diagnosis.diagnosisCode);
-        if ((needsConfirmation || options.confirmation) && (options.confirmed !== true || JSON.stringify(binding) !== JSON.stringify(options.confirmation))) {
-          return {ok:false,reason:'failed_analysis_confirmation_required',failureId,explanation:diagnosis};
-        }
-      }
-      const resolution = await failedAnalysisResolutionAttempt(artifact, action, options?.manualBody || '', resolutionContext);
-      if (options.automatic === true && !resolutionContext.isCurrent()) return { ok: false, reason: 'automatic_recovery_disabled', failureId };
-      const promotion = await promoteFailedAnalysisPacket(artifact, resolution);
-      const state = promotion.canonical === true ? 'resolved' : 'resolved_checkpointed';
-      const manifestUpdate = await updateFailedAnalysisManifest(scope.key, failureId, {
-        state,
-        resolution: {
-          action,
-          userConfirmation: action === 'adopt' ? clone(options.confirmation || null, null) : null,
-          revisionId: compact(resolution.revisionId || '', 160),
-          packetHash: promotion.packetHash,
-          canonical: promotion.canonical === true,
-          checkpointed: promotion.checkpointed === true,
-          durable: promotion.durable === true,
-          reason: promotion.reason,
-          receipt: clone(promotion.adoption || promotion.checkpoint || null, null),
-          resolvedAt: now()
-        }
-      });
-      let childDurable=true;
-      if(resolution.revisionId && resolution.revisionId!==failureId) {
-        const child=await updateFailedAnalysisManifest(scope.key,resolution.revisionId,{state,resolution:{action,packetHash:promotion.packetHash,canonical:promotion.canonical===true,durable:promotion.durable===true,reason:promotion.reason,resolvedAt:now(),parentFailureId:failureId}});
-        childDurable=child.durable===true;
-      }
-      return { ok: true, failureId, state, action, resolutionId: resolution.revisionId || '', promotion, manifestDurable: manifestUpdate.durable === true && childDurable };
-    } catch (error) {
-      const detail = failedAnalysisErrorDetail(error);
-      return {
-        ok: false,
-        failureId,
-        action,
-        reason: compact(error?.message || error, 500),
-        code: detail.code,
-        validation: clone(detail.validation || null, null),
-        normalizationLosses: clone(detail.normalizationLosses || [], []),
-        explanation: failedAnalysisReasonExplanation(detail, artifact.payload || {}),
-        childFailureId: compact(error?.failedAnalysisId || '', 160)
-      };
-    }
-  };
-  const resolveFailedAnalysisArtifact = async (failureId, action, options = {}) => {
-    return {ok:false,reason:'failed_recovery_retired_use_missing_turn_generation'}; // Existing records remain readable.
-    const key = text(failureId);
-    if (FailedAutoRecovery.running && options.automatic !== true) return {ok:false,reason:'automatic_recovery_busy',failureId:key};
-    if (Memory.nativeRecovery.manualBatchInFlight) return {ok:false,reason:'native_recovery_busy',failureId:key};
-    if (FailedAnalysisResolutionInFlight.has(key)) return {ok:false,reason:'failed_analysis_busy',failureId:key};
-    if(Memory.nativeRecovery.job&&!NATIVE_JOB_TERMINAL_STATES.has(Memory.nativeRecovery.job.state))return {ok:false,reason:'native_recovery_busy',failureId:key};
-    FailedAnalysisResolutionInFlight.add(key);
-    let jobId='';
-    try {
-      const scope=await RisuCompat.currentChatScope();
-      const record=await readFailedAnalysisArtifact(scope?.key||'',failureId);
-      const turn=Number(record.payload?.source?.turn||record.payload?.source?.startTurn||0);
-      jobId=beginNativeJob('failure_repair',{scopeKey:scope?.key||'',targetTurns:turn?[turn]:[],total:1,currentTurn:turn,state:action==='adopt'?'adopting':'analyzing',minimized:true,cancellable:false,message:options.automatic===true?'실패한 기억을 자동으로 검증하고 복구합니다.':action==='llm'?'원문 근거로 새 복구 후보를 작성합니다.':'사용자가 검토한 후보를 검사하고 저장합니다.'}).jobId;
-      const result=await resolveFailedAnalysisArtifactOnce(failureId, action, options);
-      if(Memory.nativeRecovery.job?.jobId===jobId){if(result.ok)updateNativeJob({completed:1});finishNativeJob(result.ok?'completed':'failed',result,result.ok?'':result.explanation?.detail||result.reason);}
-      return result;
-    }
-    catch (error) { if(jobId && Memory.nativeRecovery.job?.jobId===jobId)finishNativeJob('failed',null,text(error?.message||error));return {ok:false,reason:text(error?.message||error),failureId:key,explanation:failedAnalysisReasonExplanation(error)}; }
-    finally { FailedAnalysisResolutionInFlight.delete(key); }
   };
 /* MEMORY SUITE HEALTH RECOVERY v1.0.0
  * Pure summary and bounded derived-cache repair policy. No storage, model,
@@ -49938,7 +49140,7 @@ const MemorySuiteHealthRecovery = (() => {
       repairRun,
       coldStartRun,
       regenerationRun,
-      failedAnalysis: { retired: true, entries: [], pending: 0, summaries: analysisFailureSummaries(scope.key) },
+      failureDiagnostics: {summaries:analysisFailureSummaries(scope.key)},
       coldStartBatchTurns: normalizeColdStartBatchTurns(Memory.settings?.coldStartBatchTurns || 1),
       job: nativeJobSnapshot(),
       legacyTakeover: {
@@ -55165,7 +54367,7 @@ function createMemorySuiteSourceInputPolicy(config) {
 function createLibraSourceInputPolicy(config) { return createMemorySuiteSourceInputPolicy({...config,owner:'libra'}); }
 /* END LIBRA SOURCE INPUT POLICY */
 /* MEMORY SUITE SOURCE INPUT CONTROLS v1 BEGIN */
-// View-only extension of the existing owner input policy. No model or raw-source write.
+// Owner input-rule controls and explicit review UI. Reanalysis stays in owner callbacks.
 function mountMemorySuiteSourceInputControls(container, config) {
     const {owner,policy}=config,loadPreferences=()=>policy.ready(),sourceRules=()=>policy.sourceRules(),setSourceRules=rules=>policy.setSourceRules(rules);
     const disposed=()=>config.isDisposed?.()===true;
@@ -55305,6 +54507,144 @@ function mountMemorySuiteSourceInputControls(container, config) {
     status.textContent='저장된 규칙을 읽는 중…';
     loadPreferences().then(()=>{if(disposed())return;loaded=true;fill();status.textContent='';if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!disposed())status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
   }
+
+// One card per turn keeps checkboxes aligned and allows source inspection without dispatch.
+function appendMemorySuiteReanalysisRange(list,range,config) {
+  const doc=list.ownerDocument,make=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
+  const row=make('section'),label=make('label'),input=make('input'),details=make('details'),summary=make('summary','원문 보기'),output=make('pre');
+  row.className='ms-reanalysis-turn';row.style.cssText='display:grid;gap:8px;padding:14px;border:1px solid #8885;border-radius:12px;min-width:0';
+  label.style.cssText='display:flex;align-items:center;gap:10px';input.type='checkbox';input.value=range.key;input.setAttribute('aria-label',range.label+' 재분석 선택');input.onchange=config.changed;
+  label.append(input,make('strong',range.label));row.append(label);
+  if(range.description){const description=make('p',range.description);description.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(description);}
+  if(range.summary){const excerpt=make('p','저장된 내용 · '+range.summary);excerpt.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(excerpt);}
+  output.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto';details.append(summary,output);row.append(details);list.append(row);
+  let serial=0;
+  details.ontoggle=async()=>{
+    if(!details.open){serial++;return;}
+    const token=++serial;output.textContent='원문을 읽는 중…';
+    try{const sample=await config.read();if(!row.isConnected||!config.current()||token!==serial)return;
+      output.textContent='사용자 원문\n'+memorySuiteStripInternalSource(sample.user)+'\n\nAI 응답 원문\n'+memorySuiteStripInternalSource(sample.assistant);
+    }catch(error){if(row.isConnected&&config.current()&&token===serial)output.textContent='원문 조회 실패: '+String(error?.message||error);}
+  };
+}
+
+// Source text stays in the mounted view. Only user-confirmed tag rules are saved.
+function memorySuiteExtractSelectedSourceTags(body,start,end) {
+  if(!Number.isInteger(start)||!Number.isInteger(end)||start<0||end<=start||end>body.length)return [];
+  const names=[...new Set([...body.matchAll(/<\/?([a-z][a-z0-9:_-]*)(?=[\s/>])/gi)].map(m=>m[1].toLowerCase()))];
+  const candidates=[];
+  for(const name of names){
+    if(memorySuiteIsInternalSourceRule(name))continue;
+    const parsed=memorySuiteSourceTagRanges(body,[name]);
+    if(parsed.invalid)continue;
+    for(const range of parsed.ranges)if((range.start>=start&&range.end<=end)||(range.start<=start&&range.end>=end))
+      candidates.push({entry:name,start:range.start,end:range.end});
+  }
+  // Literal module delimiters are editable too; never infer a rule from ordinary prose.
+  const literals=[{open:'<!--',close:'-->'},...[...body.matchAll(/\[([^\]\r\n]{1,100}) START\]/g)].map(m=>({open:m[0],close:'['+m[1]+' END]'}))];
+  for(const entry of literals){const parsed=memorySuiteLiteralRanges(body,[entry]);if(parsed.invalid)continue;
+    for(const range of parsed.ranges)if((range.start>=start&&range.end<=end)||(range.start<=start&&range.end>=end))candidates.push({entry,start:range.start,end:range.end});}
+  const inside=candidates.filter(r=>r.start>=start&&r.end<=end);
+  const chosen=inside.length?inside:candidates.sort((a,b)=>(a.end-a.start)-(b.end-b.start)).slice(0,1);
+  return [...new Map(chosen.map(r=>[JSON.stringify(r.entry),r.entry])).values()].slice(0,128);
+}
+
+function mountMemorySuiteReanalysisReview(container,config) {
+  const doc=container.ownerDocument,make=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
+  const box=make('section');box.className='ms-source-settings';box.dataset.sourceReanalysisReview='';container.replaceChildren(box);
+  const style=make('style');style.textContent=`
+[data-source-reanalysis-review]{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;min-width:0;padding:12px;border:1px solid #8885;border-radius:12px}
+[data-source-reanalysis-review]>*{min-width:0;overflow-wrap:anywhere}
+[data-source-reanalysis-review] label{grid-template-columns:minmax(0,1fr)}
+[data-source-reanalysis-review] textarea{width:100%;min-height:180px;resize:vertical;font:13px/1.6 ui-monospace,monospace;white-space:pre}
+[data-source-reanalysis-review] pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto}
+[data-source-reanalysis-review] [data-review-rule]{display:flex;gap:8px;flex-wrap:wrap;align-items:center;border:1px solid #8885;padding:10px;border-radius:10px}
+[data-source-reanalysis-review] input{min-width:0;max-width:100%}[data-source-reanalysis-review] button{cursor:pointer;min-height:40px}
+[data-source-reanalysis-review] [hidden]{display:none!important}
+`;
+  const status=make('p');status.dataset.reviewStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+  box.append(style,make('h3',config.sample.label+' · 확인 후 재분석'),make('p','원문에서 제외할 부분을 드래그한 뒤 태그를 추출하세요. 추출한 태그를 확인·편집하고 적용 결과를 확인할 수 있습니다. 저장한 태그 규칙은 이 플러그인의 앞으로의 분석에도 적용됩니다. 채팅 원문은 바꾸지 않습니다.'));
+  const sources=[];let active=null,busy=false,applied=null,baseline=null;
+  const valid=()=>box.isConnected&&config.current();
+  const list=make('div'),preview=make('div'),extract=make('button','선택 영역에서 태그 추출'),add=make('button','태그 직접 추가'),apply=make('button','태그 적용'),run=make('button','태그 저장 후 재분석'),cancel=make('button','검토 닫기');
+  extract.type=add.type=apply.type=run.type=cancel.type='button';extract.dataset.reviewExtract='';apply.dataset.reviewApply='';run.dataset.reviewRun='';run.disabled=true;
+  const saved=make('details'),savedSummary=make('summary'),savedList=make('div');saved.append(savedSummary,savedList);list.dataset.reviewCandidates='';
+  const updateSavedCount=()=>{savedSummary.textContent='저장된 태그 규칙 '+savedList.children.length+'개 · 확인·편집';};
+  const rules=[];let applyVersion=0,expectedPolicy='';
+  const policyKey=()=>JSON.stringify(memorySuiteNormalizeSourceRules(config.policy.sourceRules()));
+  const assertPolicy=()=>{if(policyKey()!==expectedPolicy)throw Error('저장된 태그 규칙이 변경되었습니다. 검토를 다시 열어 주세요.');};
+  function dirty(){applyVersion++;applied=null;run.disabled=true;preview.replaceChildren();status.textContent='태그를 적용해 분석할 내용을 먼저 확인하세요.';}
+  function addRule(entry={open:'',close:''},key='ignoredTags',control=null,target=list){
+    const row=make('div'),open=make('input'),close=make('input'),action=make('select'),remove=make('button','삭제');row.dataset.reviewRule='';
+    const form=memorySuiteSourceRuleForm(entry);open.value=form.open;close.value=form.close;open.maxLength=close.maxLength=256;
+    open.setAttribute('aria-label','여는 태그');close.setAttribute('aria-label','닫는 태그');
+    for(const [value,label]of [['ignoredTags','내용 전체 제외'],['unwrapTags','태그만 제거'],['sourceTags','이 안만 분석']]){const option=make('option',label);option.value=value;action.append(option);}action.value=key;action.setAttribute('aria-label','태그 처리 방법');
+    remove.type='button';const value={row,open,close,action,control};rules.push(value);
+    open.oninput=close.oninput=action.onchange=dirty;remove.onclick=()=>{if(busy)return;rules.splice(rules.indexOf(value),1);row.remove();updateSavedCount();dirty();};row.append(open,close,action,remove);target.append(row);updateSavedCount();return value;
+  }
+  function read(){const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
+    for(const row of rules){if(!row.open.value.trim()&&!row.close.value.trim())continue;const entry={open:row.open.value,close:row.close.value},form=row.control&&memorySuiteSourceRuleForm('@'+row.control);if(form&&row.action.value==='ignoredTags'&&entry.open===form.open&&entry.close===form.close)draft.controls.push(row.control);else draft[row.action.value].push(entry);}
+    return memorySuiteNormalizeSourceRules(draft);
+  }
+  function lock(value){busy=value;for(const n of box.querySelectorAll('input,select,button'))n.disabled=value;run.disabled=value||!applied;}
+  for(const [role,label]of [['user','사용자 원문'],['assistant','AI 응답 원문']]){
+    const wrap=make('label',label),input=make('textarea');input.readOnly=true;input.value=memorySuiteStripInternalSource(config.sample[role]||'');input.setAttribute('aria-label',label);input.dataset.reviewSource=role;
+    const select=()=>{active=input;};input.onselect=input.onmouseup=input.onkeyup=select;wrap.append(input);box.append(wrap);sources.push({role,input});
+  }
+  const actions=make('div');actions.className='cluster';actions.append(extract,add);box.append(actions,make('h3','앞으로 적용할 태그 규칙'),saved,list,apply,preview,run,cancel,status);
+  extract.onclick=()=>{
+    if(busy)return;if(!active){status.textContent='원문에서 제외할 영역을 먼저 선택하세요.';return;}const entries=memorySuiteExtractSelectedSourceTags(active.value,active.selectionStart,active.selectionEnd);
+    if(!entries.length){status.textContent='선택 영역에서 짝이 맞는 태그를 찾지 못했습니다. 태그를 포함해 선택하거나 직접 추가하세요.';return;}
+    let first;
+    for(const entry of entries){const form=memorySuiteSourceRuleForm(entry),existing=rules.find(r=>r.open.value===form.open&&r.close.value===form.close);const row=existing||addRule(entry);if(existing&&savedList.contains(existing.row))saved.open=true;first||=row;}
+    dirty();status.textContent='추출한 태그를 확인·편집한 뒤 태그 적용을 누르세요.';
+    first?.row.scrollIntoView?.({block:'nearest'});
+  };
+  add.onclick=()=>{if(busy)return;addRule();dirty();rules.at(-1).open.focus();};
+  apply.onclick=async()=>{
+    if(busy||!baseline||!valid())return;const version=++applyVersion;
+    try{
+      assertPolicy();const draft=read();preview.replaceChildren();let warned=false;
+      const same=JSON.stringify(draft)===JSON.stringify(baseline.rules);
+      for(const {role,input}of sources){
+        const raw=config.sample[role]||'';
+        const result=baseline.legacy&&same?{text:await config.projectLegacySample({text:raw,role}),warnings:[]}:memorySuiteProjectSourceRules(input.value,draft);
+        if(!valid()||version!==applyVersion)return;
+        if(!String(result.text||'').trim())throw Error('분석할 '+(role==='user'?'사용자 내용':'AI 응답')+'이 비어 있습니다. 제외 규칙을 확인하세요.');
+        const output=make('pre',result.text);output.dataset.reviewOutput=role;preview.append(make('h3',role==='user'?'분석할 사용자 내용':'분석할 AI 응답'),output);
+        for(const warning of result.warnings){preview.append(make('p',warning));warned=true;}
+      }
+      applied=JSON.stringify(draft);run.disabled=false;status.textContent=warned?'경고와 실제 분석 입력을 확인하세요. 저장 후 재분석할 수 있습니다.':'적용 결과를 확인했습니다. 태그를 저장한 뒤 재분석할 수 있습니다.';
+    }catch(error){dirty();status.textContent='태그 적용 실패: '+String(error?.message||error);}
+  };
+  run.onclick=async()=>{
+    if(busy||!applied||!valid())return;lock(true);config.onBusy?.(true);
+    try{
+      // Validate before the settings write and again before dispatching. A review
+      // cannot silently apply to edited text or to a different chat/selection.
+      await config.validate();if(!valid())return;assertPolicy();
+      const draft=read();if(JSON.stringify(draft)!==applied)throw Error('태그 적용 결과가 만료되었습니다. 다시 적용하세요.');
+      if(JSON.stringify(draft)!==JSON.stringify(baseline.rules)){
+        await config.policy.setSourceRules(draft);expectedPolicy=JSON.stringify(draft);
+        baseline={rules:draft,legacy:false};
+      }
+      if(!valid())return;await config.validate();if(!valid())return;
+      status.textContent='태그 저장을 확인했습니다. 재분석을 준비합니다.';
+      const guard=async()=>{await config.validate();if(policyKey()!==JSON.stringify(draft))throw Error('저장된 태그 규칙이 변경되었습니다. 다시 확인하세요.');};
+      await config.onRun(guard);
+    }catch(error){if(valid())status.textContent='재분석 중단: '+String(error?.message||error);}
+    finally{config.onBusy?.(false);if(valid())lock(false);}
+  };
+  cancel.onclick=()=>{if(!busy){container.replaceChildren();config.onClose?.();}};
+  lock(true);
+  config.policy.ready().then(prefs=>{
+    if(!valid())return;const draft=config.policy.sourceRules();baseline={rules:memorySuiteNormalizeSourceRules(draft),legacy:!prefs.sourceRules};expectedPolicy=policyKey();
+    for(const key of ['ignoredTags','unwrapTags','sourceTags'])for(const entry of draft[key])addRule(entry,key,null,savedList);
+    for(const control of draft.controls)addRule(memorySuiteSourceRuleForm('@'+control),'ignoredTags',control,savedList);
+    lock(false);status.textContent='제외할 영역을 선택하거나 저장된 규칙을 적용해 원문을 확인하세요.';
+  }).catch(error=>{if(valid())status.textContent='규칙 조회 실패: '+String(error?.message||error);});
+  return box;
+}
 /* MEMORY SUITE SOURCE INPUT CONTROLS v1 END */
 
 
@@ -55408,7 +54748,36 @@ function mountMemorySuiteSourceInputControls(container, config) {
   };
   const getHayakuSourceInput=()=>hayakuSourceInput||(hayakuSourceInput=createMemorySuiteSourceInputPolicy(hayakuSourceInputConfig));
   const mountHayakuSourceInput=container=>mountMemorySuiteSourceInputControls(container,{...hayakuSourceInputConfig,policy:getHayakuSourceInput(),isDisposed:()=>Memory.unloaded});
-  // Selection binds scope and topology only. Text is deliberately read on Apply.
+  // Selection pins packet revisions and source topology. Text is read again on Apply.
+  const HAYAKU_REANALYSIS_MAX_TURNS = 512;
+  const hayakuReanalysisRecordBinding = (record, scopeKey) => {
+    if (!record?.recordId || !record.raw || record.hash !== stableHash64(text(record.raw).trim())
+      || record.auditRetained || isPermanentHistoricalStorageRecord(record)) return null;
+    const localCold = record.captureSource === 'bridge_cold_start' && record.recordState === 'historical'
+      && record.inheritedFromScopeKey === `cold_start:${scopeKey}` && record.inheritedViaScopeKey === scopeKey;
+    if (!localCold && (record.inheritedSessionHistory || record.memoryClass === 'historical'
+      || !['active','unbound'].includes(record.recordState))) return null;
+    const range = storageRecordTurnRange(record);
+    if (!Number.isSafeInteger(range.turnStart) || !Number.isSafeInteger(range.turnEnd)
+      || range.turnStart < 1 || range.turnEnd < range.turnStart
+      || range.turnEnd - range.turnStart + 1 > HAYAKU_REANALYSIS_MAX_TURNS) return null;
+    return {recordId:record.recordId,hash:record.hash,start:range.turnStart,end:range.turnEnd,
+      state:record.recordState,slotId:storageRecordSlotId(record),owner:record.ownerTurnNodeId||'',
+      origin:record.inheritedFromScopeKey||'',sourceRevisionBasis:record.sourceRevisionBasis||''};
+  };
+  const expandHayakuReanalysisKeys = (inventory, keys) => {
+    const selected = new Set(keys.map(String));
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const unit of inventory.ranges || inventory.units || []) if (selected.has(unit.key)) {
+        for (const record of unit.replacementBindings || []) for (let turn=record.start;turn<=record.end;turn++) {
+          if (!selected.has(String(turn))) { selected.add(String(turn)); changed=true; }
+        }
+      }
+    }
+    return selected;
+  };
   const hayakuSourceEditSnapshot=async(scopeValue=null,snapshotValue=null,ledgerValue=null)=>{
     await getHayakuSourceInput().ready();
     const scope=scopeValue||await RisuCompat.currentChatScope();
@@ -55417,14 +54786,23 @@ function mountMemorySuiteSourceInputControls(container, config) {
     const ledger=ledgerValue||await loadStorageLedger(scope,{hydrateArchive:false});
     if(ledger.enabled!==true)throw Error(ledger.reason||'SOURCE_EDIT_LEDGER_UNAVAILABLE');
     const pairs=ensureArray(snapshot.conversationPairs),prefix=[],units=[];
+    const recordsByTurn = new Map();
+    for (const record of ensureArray(ledger.records)) {
+      const binding=hayakuReanalysisRecordBinding(record,scope.key);
+      if (!binding || binding.end>pairs.length) continue;
+      for(let turn=binding.start;turn<=binding.end;turn++) {
+        if(!recordsByTurn.has(turn))recordsByTurn.set(turn,[]);
+        recordsByTurn.get(turn).push({record,binding});
+      }
+    }
     const topology=stableHash64(JSON.stringify(pairs.map(p=>[p.pairIndex,p.userMessageIndex,p.assistantMessageIndex,p.userMessageIdHash,p.assistantMessageIdHash])));
     for(const pair of pairs){
       const turn=Number(pair.pairIndex),sourceDigest=hayakuSourceEditDigest(pair);prefix.push(sourceDigest);
-      const records=ensureArray(ledger.records).filter(r=>Number(r.targetPairIndex)===turn&&!r.inheritedSessionHistory&&!isPermanentHistoricalStorageRecord(r)&&!['tombstoned','quarantined','detached','orphaned'].includes(r.recordState));
+      const entries=recordsByTurn.get(turn)||[],records=entries.map(entry=>entry.record),replacementBindings=entries.map(entry=>entry.binding).sort((a,b)=>a.recordId.localeCompare(b.recordId));
       if(!records.length||!pair.userHash||!pair.assistantVisibleHash)continue;
       const legacyIdentity=pair.userMessageIdentityStable!==true||pair.assistantMessageIdentityStable!==true;
       const identity=stableHash64(JSON.stringify([scope.key,turn,pair.userMessageIndex,pair.assistantMessageIndex,pair.userMessageIdHash,pair.assistantMessageIdHash,legacyIdentity?sourceDigest:'native']));
-      units.push({key:String(turn),start:turn,end:turn,identity,legacyIdentity,label:`T${turn}`,sourceDigest,basis:stableHash64(prefix.join('\u0001'))});
+      units.push({key:String(turn),start:turn,end:turn,identity,legacyIdentity,replacementBindings,replacementDigest:stableHash64(JSON.stringify(replacementBindings)),reviewIdentity:stableHash64(JSON.stringify([scope.key,turn,pair.userMessageIndex,pair.assistantMessageIndex,pair.userMessageIdHash,pair.assistantMessageIdHash])),summary:viewerPacketSummary(records[0]).slice(0,160),rawDigest:hayakuRawSourceDigest(hayakuReviewRows(scope,pair)),label:`T${turn}`,sourceDigest,basis:stableHash64(prefix.join('\u0001'))});
     }
     return {scopeKey:scope.key,topology,units,completedTurnIds:pairs.map(p=>p.userMessageIdHash)};
   };
@@ -55432,19 +54810,32 @@ function mountMemorySuiteSourceInputControls(container, config) {
     const value=await hayakuSourceEditSnapshot();
     return {scopeKey:value.scopeKey,topology:value.topology,ranges:value.units.map(({sourceDigest,basis,...unit})=>unit)};
   };
+  const readHayakuReanalysisTurn=async(inventory,range)=>{
+    const scope=await RisuCompat.currentChatScope();
+    if(!scope?.confident||scope.key!==inventory.scopeKey||scope.chatMessagesAvailable!==true)throw Error('채팅이 변경되었습니다. 구간 목록을 새로고침하세요.');
+    const pairs=ensureArray(authoritativeChatSnapshot(scope.chatMessages,scope).conversationPairs);
+    const topology=stableHash64(JSON.stringify(pairs.map(p=>[p.pairIndex,p.userMessageIndex,p.assistantMessageIndex,p.userMessageIdHash,p.assistantMessageIdHash])));
+    const pair=pairs.find(p=>String(p.pairIndex)===range.key);
+    const identity=pair?stableHash64(JSON.stringify([scope.key,Number(pair.pairIndex),pair.userMessageIndex,pair.assistantMessageIndex,pair.userMessageIdHash,pair.assistantMessageIdHash])):'';
+    if(!pair||topology!==inventory.topology||identity!==range.reviewIdentity)throw Error('원문 위치가 변경되었습니다. 구간 목록을 새로고침하세요.');
+    const row=hayakuReviewRows(scope,pair)[0];return {label:range.label,user:row.userRaw,assistant:row.assistantRaw};
+  };
   const selectHayakuReanalysisRanges=async selection=>{
     const inventory=await listHayakuReanalysisRanges(),rows=Array.isArray(selection)?selection:ensureArray(selection?.ranges);
     const wanted=new Set(rows.map(row=>String(objectish(row)?row.key:row)));
     const units=inventory.ranges.filter(unit=>wanted.has(unit.key));
-    if(!wanted.size||wanted.size>128||wanted.size!==units.length)return {allowed:false,reason:'selected_source_unavailable'};
+    if(!wanted.size||wanted.size>HAYAKU_REANALYSIS_MAX_TURNS||wanted.size!==units.length)return {allowed:false,reason:'selected_source_unavailable'};
     // GUI selections retain the displayed identities. Never silently retarget a
     // stale checkbox to a different message or chat while preparing its ticket.
     if(!Array.isArray(selection)){
       if(selection?.scopeKey!==inventory.scopeKey||selection?.topology!==inventory.topology)return {allowed:false,reason:'selected_source_changed_refresh_required'};
-      if(rows.some(row=>!objectish(row)||units.find(unit=>unit.key===String(row.key))?.identity!==row.identity))return {allowed:false,reason:'selected_source_changed_refresh_required'};
+      if(rows.some(row=>!objectish(row)||units.find(unit=>unit.key===String(row.key))?.identity!==row.identity||units.find(unit=>unit.key===String(row.key))?.replacementDigest!==row.replacementDigest))return {allowed:false,reason:'selected_source_changed_refresh_required'};
     }
+    if(expandHayakuReanalysisKeys(inventory,[...wanted]).size!==wanted.size)return {allowed:false,reason:'selected_packet_range_incomplete'};
+    const reviewed=selection?.reviewedSource;
+    if(reviewed&&(units.length!==1||reviewed.key!==units[0].key||reviewed.rawDigest!==units[0].rawDigest||reviewed.rulesKey!==memorySuiteSourceTagKey('hayaku')))return {allowed:false,reason:'reviewed_source_changed'};
     const extraCalls=(await loadSettings()).recoveryExtraCalls===1?1:0;
-    return {allowed:true,owner:'hayaku',scopeKey:inventory.scopeKey,topology:inventory.topology,units,extraCalls,model:true,
+    return {allowed:true,owner:'hayaku',scopeKey:inventory.scopeKey,topology:inventory.topology,units,...(reviewed?{reviewedSource:{key:reviewed.key,rawDigest:reviewed.rawDigest,rulesKey:reviewed.rulesKey}}:{}),extraCalls,model:true,
       warning:`Other Ax 기본 ${units.length}회(턴당 1회), 구조 복구 추가 허용은 턴당 최대 ${extraCalls}회로 전체 최대 ${units.length*(1+extraCalls)}회입니다. Provider 비용이 발생할 수 있습니다. 검증과 저장 확인에 성공하면 선택한 턴의 기존 기억을 새 기억으로 자동 교체합니다. 채팅 원문은 변경하지 않습니다.`};
   };
   const runHayakuSelectedReanalysis=selection=>{
@@ -55459,8 +54850,12 @@ function mountMemorySuiteSourceInputControls(container, config) {
         scopeKey=initial.scopeKey;
         if(selection?.scopeKey!==scopeKey||selection?.topology!==initial.topology)throw Error('SOURCE_EDIT_SCOPE_OR_TOPOLOGY_CHANGED');
         const keys=new Set(requested.map(r=>String(r.key)));
-        if(!keys.size||keys.size!==requested.length||keys.size>128)throw Error('SOURCE_EDIT_SELECTION_INVALID');
-        const units=requested.map(row=>{const unit=initial.units.find(u=>u.key===String(row.key));if(!unit||unit.identity!==row.identity)throw Error(row.legacyIdentity===true?'SOURCE_REANALYSIS_LEGACY_REFRESH_REQUIRED: 메시지 ID가 없는 예전 채팅은 본문을 고친 뒤 구간 목록을 새로고침하고 다시 선택하세요.':'SOURCE_EDIT_IDENTITY_CHANGED');return unit;}).sort((a,b)=>a.start-b.start);
+        if(!keys.size||keys.size!==requested.length||keys.size>HAYAKU_REANALYSIS_MAX_TURNS)throw Error('SOURCE_EDIT_SELECTION_INVALID');
+        const units=requested.map(row=>{const unit=initial.units.find(u=>u.key===String(row.key));if(!unit||unit.identity!==row.identity||unit.replacementDigest!==row.replacementDigest)throw Error(row.legacyIdentity===true?'SOURCE_REANALYSIS_LEGACY_REFRESH_REQUIRED: 메시지 ID가 없는 예전 채팅은 본문을 고친 뒤 구간 목록을 새로고침하고 다시 선택하세요.':'SOURCE_EDIT_IDENTITY_CHANGED');return unit;}).sort((a,b)=>a.start-b.start);
+        if(expandHayakuReanalysisKeys({units:initial.units},[...keys]).size!==keys.size)throw Error('SOURCE_EDIT_SELECTION_COVERAGE_INCOMPLETE');
+        const reviewed=selection.reviewedSource;
+        const assertReviewed=unit=>{if(reviewed&&(units.length!==1||unit?.key!==reviewed.key||unit.rawDigest!==reviewed.rawDigest||memorySuiteSourceTagKey('hayaku')!==reviewed.rulesKey))throw Error('SOURCE_EDIT_REVIEW_CHANGED');};
+        if(reviewed)assertReviewed(units[0]);
         // Persist and pin immutable raw before any model call. A later cosmetic
         // host capture can share the projection, but cannot replace consumed bytes.
         const consumedScope=await RisuCompat.currentChatScope(),consumedSnapshot=authoritativeChatSnapshot(consumedScope.chatMessages,consumedScope),consumed=[];
@@ -55475,16 +54870,22 @@ function mountMemorySuiteSourceInputControls(container, config) {
         for(const unit of units){const pair=ensureArray(consumedSnapshot.conversationPairs).find(p=>Number(p.pairIndex)===unit.start);
           if(!pair||hayakuSourceEditDigest(pair)!==unit.sourceDigest)throw Error('SOURCE_EDIT_SOURCE_CHANGED');
           const evidenceUnit=hayakuReviewUnit(consumedScope,pair),rows=hayakuReviewRows(consumedScope,pair);
+          if(reviewed)assertReviewed({key:unit.key,rawDigest:hayakuRawSourceDigest(rows)});
           const ref=await getHayakuSourceEvidence().put(scopeKey,evidenceUnit,rows,{normalizationVersion:memorySuiteSourceRules('hayaku')?'hayaku-visible:source-rules-v1:'+stableHash64(memorySuiteSourceTagKey('hayaku')):'hayaku-visible:illustration-v1'});
           consumed.push({unit:evidenceUnit,ref});
           operation.consumed=consumed;operation.scopeKey=scopeKey;
         }
-        const assertCurrent=async()=>{
+        const assertCurrent=async(publication={})=>{
           if(hayakuReanalysisLifetime!==lifetime||Memory.unloaded||!ownsRuntime())throw Error('SOURCE_EDIT_CANCELLED');
           const latest=await hayakuSourceEditSnapshot();
           if(hayakuReanalysisLifetime!==lifetime||latest.scopeKey!==scopeKey||latest.topology!==initial.topology)throw Error('SOURCE_EDIT_SCOPE_OR_TOPOLOGY_CHANGED');
           for(const expected of units){const current=latest.units.find(u=>u.key===expected.key);
-            if(!current||current.identity!==expected.identity||current.sourceDigest!==expected.sourceDigest||current.basis!==expected.basis)throw Error('SOURCE_EDIT_SOURCE_CHANGED');}
+            if(!current||current.identity!==expected.identity||current.sourceDigest!==expected.sourceDigest||current.basis!==expected.basis)throw Error('SOURCE_EDIT_SOURCE_CHANGED');
+            const bindings=publication.publishedLedger?ensureArray(publication.publishedLedger.records)
+              .map(record=>hayakuReanalysisRecordBinding(record,scopeKey)).filter(record=>record&&record.start<=expected.start&&record.end>=expected.start)
+              .sort((a,b)=>a.recordId.localeCompare(b.recordId)):expected.replacementBindings;
+            if(current.replacementDigest!==stableHash64(JSON.stringify(bindings)))throw Error('SOURCE_EDIT_REPLACEMENT_CHANGED');
+            if(reviewed)assertReviewed(current);}
           for(const expected of consumed){const readback=await getHayakuSourceEvidence().get(scopeKey,expected.unit,{original:false});
             if(!readback.available||readback.ref.key!==expected.ref.key||readback.ref.payloadDigest!==expected.ref.payloadDigest)throw Error('SOURCE_EVIDENCE_READBACK_FAILED');}
           // Storage/evidence readback above may itself yield to a host edit.
@@ -55497,6 +54898,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
             const pair=finalPairs.find(p=>Number(p.pairIndex)===expected.start);
             const basis=stableHash64(finalPairs.filter(p=>Number(p.pairIndex)<=expected.start).map(hayakuSourceEditDigest).join('\u0001'));
             if(!pair||hayakuSourceEditDigest(pair)!==expected.sourceDigest||basis!==expected.basis)throw Error('SOURCE_EDIT_SOURCE_CHANGED');
+            if(reviewed)assertReviewed({key:expected.key,rawDigest:hayakuRawSourceDigest(hayakuReviewRows(finalScope,pair))});
           }
           if(hayakuReanalysisLifetime!==lifetime||Memory.unloaded||!ownsRuntime())throw Error('SOURCE_EDIT_CANCELLED');
         };
@@ -55504,20 +54906,12 @@ function mountMemorySuiteSourceInputControls(container, config) {
         hayakuReanalysisStatus={scopeKey,running:true,error:'',lastResult:null};
         beginNativeJob('source_edit',{scopeKey,targetTurns:units.map(u=>u.start),total:units.length,state:'analyzing',minimized:true,cancellable:false,message:'선택한 턴의 현재 채팅 내용을 재분석합니다.'});
         // The native replacement engine already stages a complete packet set
-        // and publishes one ledger. Use it for multi-turn explicit selections so
+        // and publishes one ledger. Use it for every explicit selection so
         // an earlier turn cannot retire a still-pending selected turn's canon.
-        let replacementRecordIds=[];
-        if(units.length>1){
-          const targets=ensureArray(preservedLedger.records).filter(record=>keys.has(String(record.targetPairIndex))
-            &&['active','unbound'].includes(record.recordState)&&!record.auditRetained&&!record.inheritedSessionHistory&&!isPermanentHistoricalStorageRecord(record));
-          if(units.some(unit=>!targets.some(record=>Number(record.targetPairIndex)===unit.start)))throw Error('SOURCE_EDIT_REPLACEMENT_RECORDS_UNAVAILABLE');
-          for(const record of targets){const range=storageRecordTurnRange(record);
-            for(let turn=Number(range.turnStart||record.targetPairIndex);turn<=Number(range.turnEnd||record.targetPairIndex);turn++)
-              if(!keys.has(String(turn)))throw Error('SOURCE_EDIT_SELECTION_COVERAGE_INCOMPLETE');}
-          replacementRecordIds=targets.map(record=>record.recordId);
-        }
+        const replacementRecordIds=[...new Set(units.flatMap(unit=>unit.replacementBindings.map(record=>record.recordId)))];
+        if(!replacementRecordIds.length)throw Error('SOURCE_EDIT_REPLACEMENT_RECORDS_UNAVAILABLE');
         let result=await runNativeTargetedRegeneration({targetTurns:units.map(u=>u.start),replacementRecordIds,allowMissing:true,sourceEditValidate:assertCurrent,sourceEditScope:scopeKey,extraCalls:selection?.extraCalls});
-        if(units.length>1&&result.ok===true){
+        if(result.ok===true){
           if(result.awaitingChoice!==true)throw Error('SOURCE_EDIT_ATOMIC_STAGE_INCOMPLETE');
           operation.atomicRunId=result.runId;
           await assertCurrent();
@@ -56427,7 +55821,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
       recoveryCoverage: Memory.nativeRecovery?.lastCoverage || null,
       recoveryExecution: {
         schema:'hayaku.recovery_execution_debug.v1',
-        automaticFailureRecovery:{mode:failedAutoMode(),running:FailedAutoRecovery.running,lastResult:clone(FailedAutoRecovery.lastResult,null)},
+
         manualBatchInFlight:Memory.nativeRecovery.manualBatchInFlight===true,
         diagnostic:clone(Memory.nativeRecovery.manualBatchDiagnostic,null),
         lastManualBatchResult:clone(Memory.nativeRecovery.lastManualBatchResult,null),
@@ -56738,7 +56132,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
   };
   const viewerNativeJobKindLabel = kind => ({
     manual_missing_batch: '선택한 누락 턴 복구',
-    source_edit:'원문 수정 재분석', failure_repair:'실패 기억 복구',
+    source_edit:'원문 재분석',
     manual_repair: '수동 누락 복구',
     background_repair_confirmation: '백그라운드 복구 확인',
     background_repair: '백그라운드 누락 복구',
@@ -57928,11 +57322,6 @@ function mountMemorySuiteSourceInputControls(container, config) {
           Memory.nativeRecovery.repairTimerDueAt = 0;
         }
       }
-      if (beforeSettings.failedRecoveryAutomation !== appliedSettings.failedRecoveryAutomation) {
-        if (FailedAutoRecovery.timer != null) clearTimeout(FailedAutoRecovery.timer);
-        FailedAutoRecovery.timer = null;
-        scheduleFailedAutoRecovery();
-      }
       pushOperationLog('settings:transaction_applied', { changed, readbackVerified: true }, 'success');
       return { ok: true, changed, readbackVerified: true, settings: applied };
     } catch (cause) {
@@ -58290,394 +57679,6 @@ function mountMemorySuiteSourceInputControls(container, config) {
     if (!node) return;
     node.textContent = text(message || '');
     node.classList.toggle('error', isError === true);
-  };
-  const viewerFailedRecoveryMessage = (message, isError = false) => {
-    const node = Memory.ledgerViewer.root?.querySelector?.('#hayakuFailedRecoveryMessage');
-    if (!node) return;
-    node.textContent = text(message || '');
-    node.classList.toggle('error', isError === true);
-  };
-  const viewerUpdateFailureSelection = () => {
-    const viewer = Memory.ledgerViewer, root = viewer.root;
-    const selected = viewer.failedDeleteSelection || new Set();
-    const count = root?.querySelector?.('#hayakuFailureSelectionCount');
-    if (count) count.textContent = '선택 ' + selected.size + '개';
-    const button = root?.querySelector?.('#deleteHayakuSelectedFailures');
-    if (button) button.disabled = !selected.size || viewer.failedDeleteBusy === true;
-    root?.querySelectorAll?.('#selectAllHayakuFailures,#clearHayakuFailureSelection,[data-hayaku-delete-failure-id]')?.forEach(node => { node.disabled = viewer.failedDeleteBusy === true; });
-    root?.querySelectorAll?.('[data-hayaku-select-failure-id]')?.forEach(node => {
-      node.checked = selected.has(node.getAttribute('data-hayaku-select-failure-id'));
-      node.disabled = viewer.failedDeleteBusy === true;
-    });
-  };
-  const viewerFailureDeleteMessage = (message, isError = false) => {
-    const node = Memory.ledgerViewer.root?.querySelector?.('#hayakuFailureDeleteResult');
-    if (node) { node.textContent = text(message); node.hidden = !message; node.classList.toggle('error', isError); }
-    viewerFailedRecoveryMessage(message, isError);
-  };
-  const viewerRenderFailedRecoveryInner = async (preferredFailureId = '') => {
-    const ticket = (Memory.ledgerViewer.failedRenderTicket || 0) + 1;
-    Memory.ledgerViewer.failedRenderTicket = ticket;
-    const current = () => Memory.ledgerViewer.failedRenderTicket === ticket && Memory.ledgerViewer.root === root;
-    const root = Memory.ledgerViewer.root;
-    if (!root) return null;
-    const listNode = root.querySelector?.('#hayakuFailedRecoveryList');
-    const emptyNode = root.querySelector?.('#hayakuFailedRecoveryEmpty');
-    try {
-      const scope = await RisuCompat.currentChatScope();
-      if (!scope?.confident || !scope?.key) throw new Error(scope?.reason || 'scope_unavailable');
-      const listing = await listFailedAnalysisArtifacts(scope.key);
-      const automationNode = root.querySelector?.('#hayakuFailedAutomationStatus');
-      if (automationNode) automationNode.textContent = (failedAutoMode() === 'retry_once'
-        ? '자동 검증 · 실패 건당 AI 재분석 최대 1회' : failedAutoMode() === 'verify'
-          ? '자동 검증만 사용 · 추가 AI 호출 없음' : '자동 처리 꺼짐') + ' · 설정에서 변경';
-      if (!current()) return null;
-      const listedScope = await RisuCompat.currentChatScope();
-      if (!current() || listedScope?.key !== scope.key) return null;
-      const entries = listing.cases || listing.entries;
-      const viewer = Memory.ledgerViewer;
-      // A failed turn that a later repair filled is no longer waiting: the ledger now holds a
-      // live record for it. The artifact stays for audit; only its presentation changes.
-      const coveredTurns = new Set(ensureArray(viewer.ledger?.records)
-        .filter(record => ['active', 'historical'].includes(record?.recordState) && record?.auditRetained !== true)
-        .map(record => viewerRecordTurn(record)).filter(turn => turn > 0));
-      const coveredLater = entry => entry?.kind !== 'cold_start' && ['pending_review', 'storage_incomplete'].includes(entry?.state)
-        && coveredTurns.has(Number(entry?.turn ?? entry?.startTurn ?? 0));
-      const entryStateLabel = entry => coveredLater(entry) ? '이후 복구됨' : failedAnalysisStateLabel(entry?.state);
-      viewer.failedCoveredLater = coveredLater;
-      if (viewer.failedDeleteScope !== scope.key || viewer.failedDeleteRoot !== root) {
-        viewer.failedDeleteSelection = new Set();
-        if (!viewer.failedDeleteBusy) {
-          const outcome = root.querySelector?.('#hayakuFailureDeleteResult');
-          if (outcome) { outcome.textContent = ''; outcome.hidden = true; }
-        }
-      }
-      viewer.failedDeleteScope = scope.key;
-      viewer.failedDeleteRoot = root;
-      viewer.failedDeleteEntries = entries;
-      viewer.failedDeleteSelection = new Set([...(viewer.failedDeleteSelection || [])].filter(id => entries.some(entry => entry.failureId === id)));
-      const badge = root.querySelector?.('#hayakuFailedRecoveryCountNav');
-      if (badge) badge.textContent = String(Math.max(0, Number(listing.pending || 0) - entries.filter(coveredLater).length));
-      if (listNode) {
-        listNode.innerHTML = entries.length ? entries.map(entry => {
-          const failureId = viewerEscapeHtml(entry.failureId);
-          const title = `${entry.kind === 'cold_start' ? '지난 대화 기억' : '턴 기억 복구'} · T${entry.turn ?? entry.startTurn ?? '-'}`;
-          const diagnosis = failedAnalysisReasonExplanation({message:entry.reason},entry);
-          return `<article class="row"><input type="checkbox" data-hayaku-select-failure-id="${failureId}" aria-label="${viewerEscapeHtml(title)} 삭제 선택"><button type="button" class="btn ${entry.failureId === Memory.ledgerViewer.failedAnalysisSelectedId ? 'btn--primary' : ''}" data-hayaku-failure-id="${failureId}"><span><b>${viewerEscapeHtml(title)}</b><small>${viewerEscapeHtml(diagnosis.title)} · ${viewerEscapeHtml(entryStateLabel(entry))} · ${Number(entry.revisionCount||1)}개 이력${Number(entry.attemptCount||1)>Number(entry.revisionCount||1)?` · 동일 제출 ${Number(entry.attemptCount)-Number(entry.revisionCount||1)}회`:''}</small></span></button><button type="button" class="btn btn--sm" data-hayaku-delete-failure-id="${failureId}" aria-label="${viewerEscapeHtml(title)} 실패 기록 삭제" title="실패 기록 삭제">삭제</button></article>`;
-        }).join('') : '';
-      }
-      viewerUpdateFailureSelection();
-      if (emptyNode) {
-        const showEmptyState = entries.length === 0;
-        emptyNode.hidden = !showEmptyState;
-        emptyNode.setAttribute?.('aria-hidden', showEmptyState ? 'false' : 'true');
-        emptyNode.style?.setProperty?.('display', showEmptyState ? 'flex' : 'none', 'important');
-      }
-      let selectedId = compact(preferredFailureId || Memory.ledgerViewer.failedAnalysisSelectedId || entries.find(entry => ['pending_review', 'storage_incomplete'].includes(entry.state) && !coveredLater(entry))?.failureId || entries[0]?.failureId || '', 160);
-      if (selectedId && !listing.entries.some(entry => entry.failureId === selectedId)) selectedId = entries[0]?.failureId || '';
-      Memory.ledgerViewer.failedAnalysisSelectedId = selectedId;
-      root.querySelectorAll?.('[data-hayaku-failure-id]')?.forEach(node => node.classList.toggle('active', node.getAttribute('data-hayaku-failure-id') === selectedId));
-      const detail = selectedId ? await readFailedAnalysisArtifact(scope.key, selectedId) : null;
-      if (detail?.available === true && detail.payload?.kind === 'incremental_recovery') {
-        // Hydrate legacy/lazy source views from the durable Recovery Vault before
-        // rendering so the inspector never shows a marker in place of U+A.
-        await prepareFailedAnalysisResolutionContext(detail, scope).catch(() => null);
-      }
-      const detailScope = await RisuCompat.currentChatScope();
-      if (!current() || detailScope?.key !== scope.key) return null;
-      const detailPanel = root.querySelector?.('#hayakuFailedRecoveryDetail');
-      if (detailPanel) detailPanel.hidden = !detail?.available;
-      if (!detail?.available) {
-        viewerFailedRecoveryMessage(entries.length ? `실패 자료를 읽지 못했습니다 · ${detail?.reason || 'unknown'}` : '보관된 실패 분석이 없습니다.', entries.length > 0);
-        return listing;
-      }
-      const payload = detail.payload || {};
-      const manifest = detail.manifest || {};
-      const setText = (selector, value) => { const node = root.querySelector?.(selector); if (node) node.textContent = text(value); };
-      const selectedCase=entries.find(entry=>entry.failureId===selectedId||entry.revisions?.some(revision=>revision.failureId===selectedId));
-      const autoRaw = await readFailedAnalysisStored(failedAutoJournalKey(scope.key, selectedCase?.incidentKey || manifest.incidentKey || selectedId)).catch(() => null);
-      if (!current()) return null;
-      const automatic = typeof autoRaw === 'string' ? safeJsonParse(autoRaw, null) : autoRaw;
-      setText('#hayakuFailedRecoveryAutomationDetail', automatic
-        ? `${automatic.state === 'completed' ? '자동 처리 완료' : automatic.state === 'checkpointed' ? '자동 구간 저장 완료 · 전체 반영 대기' : automatic.state === 'review_required' ? '자동 처리 후 검토 필요' : '자동 처리 중'} · 자동 AI 재분석 한도 ${Number(automatic.aiAttempts || 0)}/1회 사용${automatic.state === 'review_required' && automatic.reason ? ' · ' + failedAnalysisReasonExplanation({ message: automatic.reason }).title : ''}`
-        : failedAutoMode() === 'off' ? '자동 처리 꺼짐' : '자동 처리 대기');
-      const historyNode = root.querySelector?.('#hayakuFailureCaseHistory');
-      if (historyNode) historyNode.innerHTML = ensureArray(selectedCase?.revisions || [manifest]).map(row => `<button type="button" class="row" data-hayaku-failure-id="${viewerEscapeHtml(row.failureId)}"><span class="row__title">${viewerEscapeHtml(viewerFormatDate(row.createdAt))}</span><span class="row__meta">${viewerEscapeHtml(failedAnalysisStateLabel(row.state))}${row.flow?.includes('manual') ? ' · 직접 수정' : row.flow?.includes('llm') ? ' · AI 재시도' : ''}</span></button>`).join('') || '<p class="hint">처리 이력이 없습니다.</p>';
-
-      setText('#hayakuFailedRecoveryTitle', `${payload.kind === 'cold_start' ? '지난 대화 기억' : '턴 기억 복구'} · T${payload.source?.turn ?? payload.source?.startTurn ?? '-'}`);
-      const selectedCovered = Memory.ledgerViewer.failedCoveredLater?.({ kind: payload.kind, state: manifest.state || payload.state || 'pending_review', turn: payload.source?.turn ?? payload.source?.startTurn });
-      setText('#hayakuFailedRecoveryState', selectedCovered ? '이후 복구됨' : failedAnalysisStateLabel(manifest.state || payload.state || 'pending_review'));
-      const failureExplanation = failedAnalysisReasonExplanation(payload.failure || { message: manifest.reason || '' }, payload);
-      setText('#hayakuFailedRecoveryReason', failureExplanation.title);
-      const previouslyResolved = ['resolved','resolved_checkpointed','resolved_by_retry'].includes(manifest.state);
-      setText('#hayakuFailedRecoveryExplanation', selectedCovered ? '이 턴은 이후 누락 복구 등으로 원장에 활성 기억이 저장되었습니다. 아래는 당시 실패의 진단 기록입니다.' : previouslyResolved ? `처리 완료 · ${failedAnalysisStateLabel(manifest.state)}. 아래에는 당시의 후보와 진단 기록을 보관합니다.` : `${failureExplanation.title} · ${failureExplanation.detail}`);
-      setText('#hayakuFailedRecoverySummary', text(payload.proposedCanonical?.meta?.summary_memory?.summary || '').trim() || '저장할 기억 본문이 아직 없습니다.');
-      setText('#hayakuFailedRecoveryHashes', `raw ${ensureArray(payload.attempts).map(attempt => attempt.rawHash).filter(Boolean).join(', ') || '-'} · preview ${payload.proposedCanonicalHash || '-'} · payload ${manifest.payloadHash || '-'}`);
-      const evidenceCompleteness = payload.context?.evidenceCompleteness || payload.source?.evidenceCompleteness || (payload.context?.evidenceManifest || payload.source?.evidenceManifest ? 'complete_sidecar' : 'legacy_inline_or_unknown');
-      const evidenceManifest = payload.context?.evidenceManifest || payload.source?.evidenceManifest || null;
-      const requestBudget = payload.context?.requestBudget || null;
-      const lastAttempt = ensureArray(payload.attempts).at(-1) || null;
-      const lastValidation = ensureArray(payload.attempts).map(attempt => attempt?.error?.validation).filter(Boolean).at(-1) || payload.failure?.validation || null;
-      setText('#hayakuFailedRecoveryEvidenceStatus', `${evidenceCompleteness} · U ${Number(text(payload.source?.userText || payload.source?.user?.text || (typeof payload.source?.user === 'string' ? payload.source.user : '')).length || payload.source?.userChars || 0).toLocaleString()}자 · A ${Number(text(payload.source?.assistantText || payload.source?.assistant?.text || (typeof payload.source?.assistant === 'string' ? payload.source.assistant : '')).length || payload.source?.assistantChars || 0).toLocaleString()}자 · manifest ${evidenceManifest?.manifestHash || '-'}`);
-      setText('#hayakuFailedRecoveryRequestStatus', requestBudget
-        ? `${requestBudget.llmCalled === false ? '호출 안 함' : '호출됨'} · ${Number(requestBudget.requestChars || 0).toLocaleString()} / ${Number(requestBudget.maxRequestChars || 0).toLocaleString()}자`
-        : `${ensureArray(payload.attempts).length ? `${ensureArray(payload.attempts).length}개 처리 시도 기록 · 수정·검사 포함` : '처리 시도 기록 없음'}`);
-      const groundingNode = root.querySelector?.('#hayakuFailedRecoveryGroundingStatus');
-      if (groundingNode) groundingNode.textContent = viewerPrettyJson({
-        reason: lastValidation?.reason || payload.failure?.code || manifest.reason || 'analysis_failed',
-        errors: lastValidation?.errors || [],
-        missingPaths: lastValidation?.missingPaths || [],
-        ambiguous: lastValidation?.ambiguous || [],
-        coverage: lastValidation?.coverage || lastValidation?.semantic?.coverage || null,
-        semanticStats: lastValidation?.semanticStats || lastValidation?.semantic?.stats || {},
-        lastAttemptError: lastAttempt?.error || null
-      });
-      const sourceNode = root.querySelector?.('#hayakuFailedRecoverySource');
-      if (sourceNode) {
-        const sourceText = text(payload.source?.text || '');
-        const sourceUser = text(payload.source?.userText || payload.source?.user?.text || payload.source?.user || '').trim();
-        const sourceAssistant = text(payload.source?.assistantText || payload.source?.assistant?.text || payload.source?.assistant || '').trim();
-        const lazySource = /<lb-lazy\b|\[LBDATA\s+START\]/i.test(sourceText);
-        sourceNode.textContent = (!sourceText || lazySource) && (sourceUser || sourceAssistant)
-          ? `[Turn ${Math.max(1, Number(payload.source?.targetPairIndex ?? payload.source?.turn ?? 1) || 1)}]\n[User attempt]\n${sourceUser}\n\n[Assistant outcome]\n${sourceAssistant}`
-          : sourceText || viewerPrettyJson(payload.source || {});
-      }
-      const rawNode = root.querySelector?.('#hayakuFailedRecoveryRaw');
-      if (rawNode) rawNode.textContent = ensureArray(payload.attempts).map((attempt, index) => [
-        `=== ${index + 1}. ${attempt?.mode || 'attempt'} ===`,
-        `error: ${attempt?.error?.code || ''} ${attempt?.error?.message || ''}`,
-        `raw hash: ${attempt?.rawHash || '-'} · chars: ${Number(attempt?.rawChars || 0).toLocaleString()}`,
-        text(attempt?.rawResponse || '')
-      ].join('\n')).join('\n\n');
-      const previewNode = root.querySelector?.('#hayakuFailedRecoveryPreview');
-      const editorNode = root.querySelector?.('#hayakuFailedRecoveryEditor');
-      const previewText = viewerPrettyJson(payload.proposedCanonical || nativeFailureCanonicalTemplate(payload.kind, payload.source, payload.context));
-      if (previewNode) previewNode.textContent = previewText;
-      if (editorNode) { editorNode.hidden = !Memory.ledgerViewer.failedAnalysisManualEdit; if (Memory.ledgerViewer.failedAnalysisManualEdit) editorNode.value = previewText; }
-      if (Memory.ledgerViewer.failedAnalysisManualEdit) {
-        const tabs = root.querySelectorAll?.('[data-subtabs="hayakuFailureDetail"] [data-subtab]') || [];
-        tabs.forEach(tab => { const selected = tab.dataset.subtab === 'cand'; tab.setAttribute('aria-selected', String(selected)); tab.classList.toggle('is-active', selected); });
-        root.querySelectorAll?.('[data-group="hayakuFailureDetail"][data-subpanel]')?.forEach(panel => { const selected = panel.dataset.subpanel === 'cand'; panel.hidden = !selected; panel.classList.toggle('is-active', selected); });
-      }
-      const resolved = ['resolved', 'resolved_checkpointed', 'resolved_by_retry'].includes(compact(manifest.state || '', 48));
-      const adopt = root.querySelector?.('#adoptHayakuFailedAnalysis');
-      const auto = root.querySelector?.('#autoRepairHayakuFailedAnalysis');
-      const edit = root.querySelector?.('#editHayakuFailedAnalysis');
-      const save = root.querySelector?.('#saveHayakuFailedAnalysisEdit');
-      let previewAdoptable = false;
-      let previewIssue = '';
-      try { normalizeNativeAnalysisPacket(payload.proposedCanonical, payload.kind, payload.source, payload.context || {}); previewAdoptable = true; }
-      catch(error) { previewIssue = text(error?.message || error); }
-      if (failureExplanation.diagnosisCode === 'MODEL_DECLINED') { previewAdoptable = false; previewIssue = 'model_refusal_not_adoptable'; }
-      const adoptBlockedReason = detail.durable !== true
-        ? '저장소 readback이 끝나기 전에는 채택할 수 없습니다.'
-        : resolved
-          ? '이미 처리된 실패 기록입니다.'
-          : !previewAdoptable
-            ? (() => { const diagnosis = failedAnalysisReasonExplanation({message:previewIssue || 'failed_analysis_canonical_preview_not_adoptable'}); return `${diagnosis.title} · ${diagnosis.detail}`; })()
-            : '';
-      if (adopt) {
-        adopt.disabled = Boolean(adoptBlockedReason);
-        adopt.title = adoptBlockedReason || '진단과 기억 내용을 확인한 뒤 직접 채택합니다.';
-      }
-      if (auto) auto.disabled = resolved || detail.durable !== true || !nativeLlmApi();
-      if (edit) { edit.disabled = resolved || detail.durable !== true; edit.hidden = Memory.ledgerViewer.failedAnalysisManualEdit; }
-      if (save) { save.disabled = resolved || detail.durable !== true; save.hidden = !Memory.ledgerViewer.failedAnalysisManualEdit; }
-      setText('#hayakuFailedRecoveryActionHint', adoptBlockedReason
-        ? `채택할 수 없음 · ${adoptBlockedReason}`
-        : '그대로 채택은 추가 AI 호출 없이 이 후보를 저장합니다. 자동 검증과 사용자 확인은 따로 기록합니다.');
-      viewerFailedRecoveryMessage(detail.durable === true
-        ? (resolved ? '처리 완료 · 원본과 처리 기록을 보관하고 있습니다.' : '아래 진단과 기억 내용을 확인하고 처리 방법을 선택하세요.')
-        : '저장 확인 실패 · 이 결과는 아직 현재 실행에만 남아 있습니다. 저장 확인 전에는 채택하지 않습니다.', detail.durable !== true);
-      return { ...listing, selected: detail };
-    } catch (error) {
-      viewerFailedRecoveryMessage(`실패 복구 조회 실패 · ${compact(error?.message || error, 240)}`, true);
-      return null;
-    }
-  };
-  // Scroll offset, open <details> and the active text filter survive this render.
-  const viewerRenderFailedRecovery = (...args) => viewerPreserveScroll(
-    'hayakuFailedRecoveryList',
-    () => viewerRenderFailedRecoveryInner(...args),
-    () => viewerApplyListFilter(VIEWER_LIST_FILTERS.find(spec => spec.input === 'hayakuFailedRecoveryFilter'))
-  );
-  const viewerConfirmFailedAnalysisDelete = entry => new Promise(resolve => {
-    const root = Memory.ledgerViewer.root;
-    let doc = null;
-    try { doc = root?.ownerDocument || globalThis.document || null; } catch (_) { doc = null; }
-    const host = root?.querySelector?.('.app') || root;
-    if (!root || !host || typeof doc?.createElement !== 'function') { resolve(false); return; }
-    try { root.querySelector?.('#hayakuFailedAnalysisDeleteConfirmOverlay')?.remove?.(); } catch (_) {}
-    const overlay = doc.createElement('div');
-    overlay.id = 'hayakuFailedAnalysisDeleteConfirmOverlay';
-    overlay.className = 'overlay is-open';
-    overlay.setAttribute('role', 'presentation');
-    const dialog = doc.createElement('section');
-    dialog.className = 'dialog';
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    dialog.setAttribute('aria-labelledby', 'hayakuFailedAnalysisDeleteConfirmTitle');
-    const eyebrow = doc.createElement('small');
-    eyebrow.className = 'eyebrow';
-    eyebrow.textContent = 'FAILED RECOVERY RECORD';
-    const title = doc.createElement('h2');
-    title.id = 'hayakuFailedAnalysisDeleteConfirmTitle';
-    title.textContent = entry?.caseCount ? `선택한 ${entry.caseCount}개 문제의 실패 기록과 처리 이력 ${entry.revisionCount}개를 삭제할까요?` : `이 문제의 실패 기록과 처리 이력 ${Number(entry?.revisionCount||1)}개를 삭제할까요?`;
-    const summary = doc.createElement('p');
-    summary.textContent = entry?.caseCount ? entry.summary : `${entry?.kind || 'analysis'} · T${entry?.turn ?? entry?.startTurn ?? '-'} · ${entry?.state || 'pending_review'}`;
-    const note = doc.createElement('div');
-    note.className = 'note';
-    note.innerHTML = '<b>남는 것</b> Recovery Journal 원문과 복구 부채는 그대로라 수동·자동 복구를 다시 시도할 수 있습니다.<br><b>사라지는 것</b> 삭제한 실패 기록 자체는 되돌릴 수 없습니다.';
-    const actions = doc.createElement('div');
-    actions.className = 'dialog__actions';
-    const cancel = doc.createElement('button');
-    cancel.className = 'btn';
-    cancel.type = 'button';
-    cancel.textContent = '취소';
-    const confirm = doc.createElement('button');
-    confirm.className = 'btn btn--danger';
-    confirm.type = 'button';
-    confirm.textContent = '기록 삭제';
-    actions.append(cancel, confirm);
-    const explanation = doc.createElement('p');
-    explanation.textContent = '이 항목의 분석 결과·진단·승격 미리보기만 삭제합니다.';
-    dialog.append(eyebrow, title, explanation, summary, note, actions);
-    overlay.appendChild(dialog);
-    let settled = false;
-    let teardownDialog = () => {};
-    const finish = value => {
-      if (settled) return;
-      settled = true;
-      try { overlay.remove(); } catch (_) {}
-      teardownDialog();
-      resolve(value === true);
-    };
-    cancel.addEventListener('click', () => finish(false));
-    confirm.addEventListener('click', () => finish(true));
-    overlay.addEventListener('click', event => { if (event?.target === overlay) finish(false); });
-    host.append(overlay);
-    teardownDialog = viewerBindConfirmDialogKeys(overlay, dialog, () => finish(false));
-  });
-  const viewerDeleteFailedRecovery = async failureIdInput => {
-    const viewer = Memory.ledgerViewer, root = viewer.root;
-    const ids = [...new Set(ensureArray(Array.isArray(failureIdInput) ? failureIdInput : [failureIdInput]).map(id => compact(id || '', 160)).filter(Boolean))];
-    if (!ids.length || viewer.busy || viewer.failedDeleteBusy) return { ok:false, reason:'viewer_busy_or_no_selection' };
-    // Capture the displayed scope before awaiting anything; an old selection must
-    // never become permission to delete records in a newly selected chat.
-    const expectedScope = viewer.failedDeleteScope;
-    viewer.failedDeleteBusy = true;
-    viewer.busy = true;
-    viewerUpdateFailureSelection();
-    let deletedCases = 0, deletedRevisions = 0;
-    try {
-      const scope = await RisuCompat.currentChatScope();
-      const current = async () => {
-        const observed = await RisuCompat.currentChatScope();
-        return viewer.root === root && observed?.confident === true && observed.key === scope.key;
-      };
-      if (!scope?.confident || !scope.key || scope.key !== expectedScope || viewer.root !== root) throw new Error('scope_changed');
-      const listing = await listFailedAnalysisArtifacts(scope.key);
-      const entries = ensureArray(listing.cases || listing.entries).filter(entry => ids.includes(entry.failureId) || entry.revisions?.some(row => ids.includes(row.failureId)));
-      if (!entries.length) throw new Error('failed_analysis_not_found');
-      const revisions = entries.flatMap(entry => ensureArray(entry.revisions || [entry]));
-      if (!await current()) throw new Error('scope_changed');
-      const description = entries.length === 1 ? entries[0] : {
-        caseCount: entries.length, revisionCount: revisions.length,
-        summary: entries.map(entry => 'T' + (entry.turn ?? entry.startTurn ?? '-')).join(' · ')
-      };
-      if (!await viewerConfirmFailedAnalysisDelete(description)) {
-        viewerFailureDeleteMessage('실패 기록 삭제를 취소했습니다.');
-        return { ok:false, cancelled:true, reason:'user_cancelled' };
-      }
-      viewerFailureDeleteMessage('실패 기록을 삭제하고 저장소 readback을 확인합니다.');
-      for (const entry of entries) {
-        for (const revision of ensureArray(entry.revisions || [entry])) {
-          if (!await current()) throw new Error('scope_changed');
-          const result = await deleteFailedAnalysisArtifact(scope.key,revision.failureId);
-          if (result.ok !== true || result.durable !== true) throw new Error(result.reason || 'delete_unconfirmed');
-          deletedRevisions++;
-        }
-        deletedCases++;
-        viewer.failedDeleteSelection?.delete(entry.failureId);
-      }
-      viewer.failedAnalysisSelectedId = '';
-      viewer.failedAnalysisManualEdit = false;
-      viewer.busy = false;
-      await refreshLedgerViewer();
-      await viewerRenderFailedRecovery();
-      viewerFailureDeleteMessage('실패 기록 ' + deletedCases + '개 문제 · ' + deletedRevisions + '개 이력을 삭제했습니다. Recovery Journal 원문과 복구 부채는 유지됩니다.');
-      return { ok:true, durable:true, deleted:true, deletedCases, deletedRevisions };
-    } catch (error) {
-      if (viewer.root === root) {
-        await viewerRenderFailedRecovery();
-        viewerFailureDeleteMessage('삭제 중단 · ' + deletedCases + '개 문제 / ' + deletedRevisions + '개 이력 삭제 확인. 남은 기록을 확인해 주세요. ' + compact(error?.message || error, 240), true);
-      }
-      return { ok:false, reason:compact(error?.message || error, 240), deletedCases, deletedRevisions };
-    } finally {
-      viewer.failedDeleteBusy = false;
-      viewer.busy = false;
-      viewerUpdateFailureSelection();
-    }
-  };
-  const viewerConfirmFailedAnalysisAdoption = inspection => new Promise(resolve => {
-    const root = Memory.ledgerViewer.root;
-    const doc = root?.ownerDocument;
-    if (!root || !doc?.createElement) { resolve(false); return; }
-    const overlay = doc.createElement('div'); overlay.id = 'hayakuAdoptConfirm'; overlay.className = 'overlay is-open';
-    const dialog = doc.createElement('section'); dialog.className = 'dialog'; dialog.setAttribute('role','dialog'); dialog.setAttribute('aria-modal','true'); dialog.setAttribute('aria-labelledby','hayakuAdoptConfirmTitle');
-    const title = doc.createElement('h2'); title.id = 'hayakuAdoptConfirmTitle'; title.textContent = '그래도 채택하시겠습니까?';
-    const diagnostic = doc.createElement('p'); diagnostic.textContent = `${inspection.diagnosis?.title || '기억 내용 확인'} · ${inspection.diagnosis?.detail || '현재 후보의 내용을 확인해 주세요.'}`;
-    const note = doc.createElement('div'); note.className = 'note'; note.textContent = inspection.warning
-      ? '자동 검증을 통과하지 못한 부분이 있습니다. 채택하면 사용자 확인으로 저장하며 자동 검증 완료로 표시하지 않습니다. 원문·채팅 불일치나 저장 오류는 이 확인으로 우회할 수 없습니다.'
-      : '화면의 후보를 추가 AI 호출 없이 저장합니다. 다른 채팅이나 수정된 원문에는 적용하지 않습니다.';
-    const actions = doc.createElement('div'); actions.className = 'dialog__actions';
-    const cancel = doc.createElement('button'); cancel.type='button'; cancel.className='btn'; cancel.textContent='취소';
-    const yes = doc.createElement('button'); yes.type='button'; yes.className='btn btn--primary'; yes.textContent='확인하고 채택';
-    actions.append(cancel,yes); dialog.append(title,diagnostic,note,actions); overlay.append(dialog);
-    let done=false; let teardownDialog=()=>{};
-    const finish = accepted => { if(done)return;done=true;overlay.remove();teardownDialog();Memory.ledgerViewer.adoptionConfirmCleanup=null;resolve(accepted===true); };
-    Memory.ledgerViewer.adoptionConfirmCleanup=()=>finish(false);
-    cancel.addEventListener('click',()=>finish(false));yes.addEventListener('click',()=>finish(true));
-    overlay.addEventListener('click',event=>{if(event.target===overlay)finish(false);});
-    (root.querySelector('.app')||root).append(overlay);teardownDialog=viewerBindConfirmDialogKeys(overlay,dialog,()=>finish(false));
-  });
-  const viewerResolveFailedRecovery = async (action, manualBody = '') => {
-    const failureId = Memory.ledgerViewer.failedAnalysisSelectedId;
-    if (!failureId || Memory.ledgerViewer.busy || Memory.ledgerViewer.failedDeleteBusy) return null;
-    Memory.ledgerViewer.busy = true;
-    const root = Memory.ledgerViewer.root;
-    const scope = await RisuCompat.currentChatScope().catch(() => null);
-    try {
-      let inspection = null;
-      if (action === 'adopt') {
-        inspection = await inspectFailedAnalysisAdoption(failureId);
-        if (inspection.ok !== true) {
-          const diagnosis = inspection.explanation || failedAnalysisReasonExplanation({message:inspection.reason});
-          viewerFailedRecoveryMessage(`채택할 수 없음 · ${diagnosis.title} · ${diagnosis.detail}`,true);
-          return inspection;
-        }
-        if (!await viewerConfirmFailedAnalysisAdoption(inspection)) { viewerFailedRecoveryMessage('채택을 취소했습니다. 원본과 후보는 그대로 유지합니다.'); return {ok:false,cancelled:true,reason:'user_cancelled'}; }
-      }
-      viewerFailedRecoveryMessage(action === 'llm' ? 'AI가 원문을 다시 분석하고 있습니다.' : '기억을 확인하고 저장하고 있습니다.');
-      const result = await resolveFailedAnalysisArtifact(failureId, action, {manualBody, expectedScopeKey:scope?.key,
-        ...(inspection ? {confirmed:true,confirmation:inspection.confirmation} : {})});
-      const fresh = await RisuCompat.currentChatScope();
-      if (root !== Memory.ledgerViewer.root || fresh?.key !== scope?.key) return result;
-      if (result?.ok) Memory.ledgerViewer.failedAnalysisManualEdit = false;
-      Memory.ledgerViewer.busy = false;
-      await refreshLedgerViewer();
-      await viewerRenderFailedRecovery(result?.childFailureId || failureId);
-      // Refresh first, then retain the actual action result instead of erasing it with a generic hint.
-      const explanation = result?.explanation || failedAnalysisReasonExplanation({code:result?.code,message:result?.reason},{});
-      viewerFailedRecoveryMessage(result?.ok ? `처리 완료 · ${failedAnalysisStateLabel(result.state)}` : `처리 실패 · ${explanation.title} · ${explanation.detail}`,result?.ok !== true);
-      const hint=root?.querySelector?.('#hayakuFailedRecoveryActionHint');
-      if (hint && !result?.ok) hint.textContent=`${explanation.title} · ${explanation.nextStep}`;
-      return result;
-    } catch(error) {
-      const explanation=failedAnalysisReasonExplanation(error);
-      if(root===Memory.ledgerViewer.root) viewerFailedRecoveryMessage(`${explanation.title} · ${explanation.detail}`,true);
-      return {ok:false,reason:text(error?.message||error),explanation};
-    } finally { Memory.ledgerViewer.busy=false; }
   };
   const viewerRenderAuxiliaryProbe = () => {
     const root = Memory.ledgerViewer.root;
@@ -59100,40 +58101,10 @@ function mountMemorySuiteSourceInputControls(container, config) {
       return null;
     }
   };
-  const viewerRecordRegenerationPlan = record => {
-    const recordId = compact(record?.recordId || '', 196);
-    if (!recordId) return { eligible: false, reason: 'record_id_unavailable', recordId: '', turns: [] };
-    if (isPermanentHistoricalStorageRecord(record)) return { eligible: false, reason: 'permanent_session_history_protected', recordId, turns: [] };
-    const captureSource = compact(record?.captureSource || '', 64);
-    const coldStartHistorical = captureSource === 'bridge_cold_start';
-    if ((record?.inheritedSessionHistory === true || record?.memoryClass === 'historical') && !coldStartHistorical) {
-      return { eligible: false, reason: 'inherited_history_protected', recordId, turns: [] };
-    }
-    const state = compact(record?.recordState || '', 48).toLowerCase();
-    if (!coldStartHistorical && !['active', 'unbound'].includes(state)) {
-      return { eligible: false, reason: `record_state_${state || 'unknown'}`, recordId, turns: [] };
-    }
-    if (coldStartHistorical && state !== 'historical') {
-      return { eligible: false, reason: `cold_start_state_${state || 'unknown'}`, recordId, turns: [] };
-    }
-    const range = storageRecordTurnRange(record);
-    const start = Math.max(1, Number(range?.turnStart || range?.targetPairIndex || 0) || 0);
-    const end = Math.max(start, Number(range?.turnEnd || range?.targetPairIndex || start) || start);
-    if (!start || !end || end < start || end - start + 1 > 512) {
-      return { eligible: false, reason: 'record_turn_range_unavailable', recordId, turns: [], range };
-    }
-    const turns = Array.from({ length: end - start + 1 }, (_, index) => start + index);
-    return {
-      eligible: true,
-      reason: 'eligible',
-      recordId,
-      turns,
-      startTurn: start,
-      endTurn: end,
-      coldStartHistorical,
-      packetType: compact(record?.packetType || range?.packetType || '', 48),
-      state
-    };
+  const viewerRecordReanalysisPlan = record => {
+    const binding=hayakuReanalysisRecordBinding(record,text(Memory.ledgerViewer.scope?.key||''));
+    return binding?{eligible:true,recordId:binding.recordId,startTurn:binding.start,endTurn:binding.end}
+      :{eligible:false,recordId:record?.recordId||'',reason:'현재 채팅의 원문으로 교체할 수 있는 패킷이 아닙니다.'};
   };
   const viewerReplacementVariantPlan = (record, ledger = Memory.ledgerViewer.ledger) => {
     const recordId = compact(record?.recordId || '', 196);
@@ -59192,116 +58163,6 @@ function mountMemorySuiteSourceInputControls(container, config) {
       : `이전 패킷 재선택 실패 · ${result?.reason || 'unknown'}`, result?.ok !== true);
     await refreshLedgerViewer();
     return result;
-  };
-  const viewerConfirmRecordRegeneration = (record, plan) => new Promise(resolve => {
-    const root = Memory.ledgerViewer.root;
-    let doc = null;
-    try { doc = root?.ownerDocument || globalThis.document || null; } catch (_) { doc = null; }
-    const host = root?.querySelector?.('.app') || root;
-    if (!root || !host || typeof doc?.createElement !== 'function') { resolve(false); return; }
-    try { root.querySelector?.('#hayakuRegenerateConfirmOverlay')?.remove?.(); } catch (_) {}
-    const overlay = doc.createElement('div');
-    overlay.id = 'hayakuRegenerateConfirmOverlay';
-    overlay.className = 'overlay is-open';
-    const dialog = doc.createElement('section');
-    dialog.className = 'dialog';
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    const eyebrow = doc.createElement('small');
-    eyebrow.className = 'eyebrow';
-    eyebrow.textContent = 'OTHER AX TARGETED REGENERATION';
-    const title = doc.createElement('h2');
-    title.textContent = '이 패킷의 재생성 후보를 만들까요?';
-    const summary = doc.createElement('p');
-    summary.textContent = `대상 턴 ${plan.turns.join(', ')} · ${compact(record?.packetType || 'packet', 48)} · 기존 레코드 1개`;
-    const note = doc.createElement('div');
-    note.className = 'note';
-    note.innerHTML = '<b>분석과 검증이 끝나도 기존 패킷은 아직 교체되지 않습니다.</b> 후보를 기존 패킷과 비교한 뒤 직접 고릅니다. 이전 패킷은 다시 채택할 수 있게 보존됩니다. 각 대상 턴은 현재 채팅 원문과 재검증하며, 원문이 바뀌면 채택하지 않습니다. Provider 비용이 발생할 수 있습니다(기본 1회).';
-    const steps = doc.createElement('div');
-    steps.className = 'steps';
-    steps.style.margin = '10px 0';
-    steps.innerHTML = '<div class="step is-active"><span class="step__no">1</span><b>생성 승인</b></div><div class="step"><span class="step__no">2</span><b>분석·검증</b></div><div class="step"><span class="step__no">3</span><b>후보 비교</b></div><div class="step"><span class="step__no">4</span><b>내가 결정</b></div>';
-    const actions = doc.createElement('div');
-    actions.className = 'dialog__actions';
-    const cancel = doc.createElement('button');
-    cancel.className = 'btn';
-    cancel.type = 'button';
-    cancel.textContent = '취소';
-    const confirm = doc.createElement('button');
-    confirm.className = 'btn btn--primary';
-    confirm.type = 'button';
-    confirm.textContent = '후보 만들기';
-    let settled = false;
-    let teardownDialog = () => {};
-    const finish = value => {
-      if (settled) return;
-      settled = true;
-      try { overlay.remove(); } catch (_) {}
-      teardownDialog();
-      resolve(value === true);
-    };
-    cancel.addEventListener('click', () => finish(false));
-    confirm.addEventListener('click', () => finish(true));
-    overlay.addEventListener('click', event => { if (event?.target === overlay) finish(false); });
-    actions.append(cancel, confirm);
-    dialog.append(eyebrow, title, summary, steps, note, actions);
-    overlay.append(dialog);
-    host.append(overlay);
-    teardownDialog = viewerBindConfirmDialogKeys(overlay, dialog, () => finish(false));
-  });
-  const viewerRegenerateRecord = async recordIdInput => {
-    const recordId = compact(recordIdInput || '', 196);
-    const ledger = Memory.ledgerViewer.ledger;
-    const record = ensureArray(ledger?.records).find(item => compact(item?.recordId || '', 196) === recordId) || null;
-    if (!record) {
-      viewerSetStatusMessage('재생성할 패킷을 현재 원장에서 찾지 못했습니다.', true);
-      return { ok: false, skipped: true, reason: 'record_not_found' };
-    }
-    const plan = viewerRecordRegenerationPlan(record);
-    if (!plan.eligible) {
-      viewerSetStatusMessage(`이 패킷은 재생성할 수 없습니다 · ${plan.reason}`, true);
-      return { ok: false, skipped: true, reason: plan.reason };
-    }
-    const confirmed = await viewerConfirmRecordRegeneration(record, plan);
-    if (!confirmed) {
-      viewerSetStatusMessage('패킷 재생성을 취소했습니다.');
-      return { ok: false, cancelled: true, reason: 'user_cancelled' };
-    }
-    const root = Memory.ledgerViewer.root;
-    if (Memory.ledgerViewer.busy) return { ok: false, skipped: true, reason: 'viewer_busy' };
-    Memory.ledgerViewer.busy = true;
-    beginNativeJob('targeted_regeneration', {
-      state: 'preparing',
-      targetTurns: plan.turns,
-      total: plan.turns.length,
-      message: '교체 대상 패킷과 현재 세계선을 검증합니다.'
-    });
-    viewerSetStatusMessage(`T${plan.startTurn}${plan.endTurn !== plan.startTurn ? `–T${plan.endTurn}` : ''} 패킷을 Other Ax로 재생성하는 중입니다.`);
-    try {
-      const result = await runNativeTargetedRegeneration({
-        targetTurns: plan.turns,
-        replacementRecordIds: [plan.recordId],
-        replaceExisting: true,
-        reason: 'ledger_viewer_record_regeneration'
-      });
-      viewerSetStatusMessage(result?.ok
-        ? (result?.awaitingChoice
-          ? `패킷 재생성 후보 준비 완료 · ${Number(result.regenerated || plan.turns.length).toLocaleString()}턴 · 최종 채택을 선택하세요.`
-          : `패킷 재생성 완료 · ${Number(result.regenerated || plan.turns.length).toLocaleString()}턴 · 기존 ${Number(result.replacedRecords || 1).toLocaleString()}개 교체`)
-        : `패킷 재생성 실패 · ${result?.reason || 'unknown'}`, result?.ok !== true);
-      if (result?.awaitingChoice !== true && !NATIVE_JOB_TERMINAL_STATES.has(Memory.nativeRecovery.job?.state)) {
-        finishNativeJob(result?.ok ? 'completed' : (result?.cancelled ? 'cancelled' : 'failed'), result, result?.ok ? '' : result?.reason);
-      }
-      return result;
-    } catch (error) {
-      finishNativeJob('failed', null, compact(error?.message || error, 320));
-      viewerSetStatusMessage(`패킷 재생성 실패 · ${compact(error?.message || error, 180)}`, true);
-      return { ok: false, reason: 'targeted_regeneration_failed', error: compact(error?.message || error, 320) };
-    } finally {
-      Memory.ledgerViewer.busy = false;
-      await refreshLedgerViewer();
-      await viewerRenderNativeRecovery();
-    }
   };
   const HAYAKU_VIEWER_TAB_IDS = Object.freeze([
     'overview', 'packets', 'scopes', 'recovery', 'server', 'settings', 'logs'
@@ -59470,6 +58331,38 @@ function mountMemorySuiteSourceInputControls(container, config) {
     if (summary.repairSkipped) advice.push('자동 복구가 건너뛴 턴은 백그라운드 복구 대기열로 넘어갑니다.');
     return advice;
   };
+  let ledgerViewerHydration=null;
+  const openHayakuSourceReanalysis = async (options={}) => {
+    try {
+      const inventory=await listHayakuReanalysisRanges();
+      if(options.scopeKey&&options.scopeKey!==inventory.scopeKey)throw Error('채팅이 변경되었습니다. 현재 화면에서 다시 선택하세요.');
+      let keys=[];
+      if(options.recordId){
+        const record=inventory.ranges.flatMap(row=>row.replacementBindings).find(row=>row.recordId===options.recordId);
+        if(!record||(options.recordHash&&record.hash!==options.recordHash))throw Error('선택한 패킷이 변경되거나 원문을 찾을 수 없습니다. 패킷 목록을 새로고침하세요.');
+        keys=Array.from({length:record.end-record.start+1},(_,i)=>String(record.start+i));
+      }else if(options.startTurn!==undefined){
+        const start=Number(options.startTurn),end=Number(options.endTurn??start);
+        if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<1||end<start||end-start+1>HAYAKU_REANALYSIS_MAX_TURNS)throw Error('재분석할 범위를 확인하세요.');
+        keys=Array.from({length:end-start+1},(_,i)=>String(start+i));
+      }
+      const expanded=expandHayakuReanalysisKeys(inventory,keys);
+      if(expanded.size>HAYAKU_REANALYSIS_MAX_TURNS||[...expanded].some(key=>!inventory.ranges.some(row=>row.key===key)))throw Error('선택한 패킷의 전체 원문 범위를 확인할 수 없습니다.');
+      if(!Memory.ledgerViewer.visible){
+        if(!(await showLedgerViewer()))return {ok:false,reason:'viewer_unavailable'};
+        await ledgerViewerHydration;
+      }
+      const viewer=Memory.ledgerViewer,scope=await RisuCompat.currentChatScope();
+      if(scope?.key!==inventory.scopeKey||viewer.scope?.key!==inventory.scopeKey)throw Error('채팅이 변경되었습니다. 현재 화면에서 다시 선택하세요.');
+      viewer.pendingSourceReanalysis={scopeKey:inventory.scopeKey,topology:inventory.topology,
+        rows:inventory.ranges.filter(row=>expanded.has(row.key)).map(row=>({key:row.key,identity:row.identity,replacementDigest:row.replacementDigest}))};
+      const card=viewer.root?.querySelector('#hayakuSourceEditConsent');if(card)delete card.dataset.reanalysisMounted;
+      viewerSetTab('recovery');
+      viewer.root?.querySelector('[data-recovery-view="reanalysis"]')?.click();
+      viewerRenderSourceEditConsent();
+      return {ok:true,targetTurns:[...expanded].map(Number).sort((a,b)=>a-b)};
+    }catch(error){viewerSetStatusMessage(text(error?.message||error),true);return {ok:false,reason:text(error?.message||error)};}
+  };
   const viewerConfirmSourceReanalysis = ticket => new Promise(resolve => {
     const viewer=Memory.ledgerViewer,root=viewer.root,doc=root?.ownerDocument;
     const host=root?.querySelector('.app')||root;
@@ -59506,32 +58399,68 @@ function mountMemorySuiteSourceInputControls(container, config) {
   function viewerRenderSourceEditConsent() {
     const viewer=Memory.ledgerViewer,root=viewer?.root;if(!root)return;
     mountHayakuSourceInput(root.querySelector('#hayakuSourceTrackingSettings'));
-    if(viewer.activeTab!=='recovery')return;
+    if(viewer.activeTab!=='recovery'||root.querySelector('[data-recovery-panel="reanalysis"]')?.hidden===true)return;
     const card=root.querySelector('#hayakuSourceEditConsent');if(!card||card.dataset.reanalysisMounted===text(viewer.scope?.key))return;
-    card.dataset.reanalysisMounted=text(viewer.scope?.key);let inventory=null,busy=false,version=0;
-    card.innerHTML='<header class="card__head"><div><h2 id="hayakuSourceEditConsentTitle">직접 재분석</h2><p>분석 규칙을 먼저 적용한 뒤 원하는 턴을 선택하세요. 실행 시점의 현재 채팅 내용을 적용한 규칙으로 다시 분석합니다. 실행 전에 대상·호출 수·기억 교체를 확인합니다. 메시지 ID가 없는 예전 채팅은 편집 후 구간 목록을 새로고침하세요.</p></div></header><button type="button" class="btn" data-reanalysis-refresh>구간 목록 새로고침</button><div data-reanalysis-ranges></div><button type="button" class="btn" data-reanalysis-run disabled>재분석 내용 확인</button><p role="status" aria-live="polite" data-reanalysis-status></p>';
-    const list=card.querySelector('[data-reanalysis-ranges]'),run=card.querySelector('[data-reanalysis-run]'),refresh=card.querySelector('[data-reanalysis-refresh]'),status=card.querySelector('[data-reanalysis-status]');
-    const current=()=>Memory.ledgerViewer.root===root&&Memory.ledgerViewer.activeTab==='recovery'&&root.querySelector('#hayakuSourceEditConsent')===card;
+    let navigation=viewer.pendingSourceReanalysis;delete viewer.pendingSourceReanalysis;
+    card.dataset.reanalysisMounted=text(viewer.scope?.key);let inventory=null,busy=false,reviewSaving=false,version=0,reviewVersion=0;
+    card.innerHTML='<details class="fold" data-reanalysis-fold><summary id="hayakuSourceEditConsentTitle">직접 재분석</summary><div class="fold__body"><p>단일 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. Other Ax 비용과 기억 교체 대상을 실행 전에 확인합니다.</p><button type="button" class="btn" data-reanalysis-refresh>구간 목록 새로고침</button><div data-reanalysis-ranges class="stack"></div><div class="cluster"><button type="button" class="btn" data-reanalysis-run disabled>바로 재분석</button><button type="button" class="btn" data-reanalysis-review hidden>확인 후 재분석</button></div><div data-reanalysis-review-panel></div><p role="status" aria-live="polite" data-reanalysis-status></p></div></details>';
+    const list=card.querySelector('[data-reanalysis-ranges]'),run=card.querySelector('[data-reanalysis-run]'),refresh=card.querySelector('[data-reanalysis-refresh]'),status=card.querySelector('[data-reanalysis-status]'),review=card.querySelector('[data-reanalysis-review]'),panel=card.querySelector('[data-reanalysis-review-panel]');
+    const current=()=>Memory.ledgerViewer.root===root&&Memory.ledgerViewer.activeTab==='recovery'&&root.querySelector('#hayakuSourceEditConsent')===card&&card.contains(list)&&root.querySelector('[data-recovery-panel="reanalysis"]')?.hidden!==true;
     const selected=()=>[...list.querySelectorAll('input:checked')].map(node=>node.value);
-    const sync=()=>{run.disabled=busy||!selected().length;refresh.disabled=busy;for(const input of list.querySelectorAll('input'))input.disabled=busy;};
-    const load=async()=>{if(busy)return;const token=++version;inventory=null;list.replaceChildren();run.disabled=true;status.textContent='구간을 읽는 중…';
-      try{const result=await listHayakuReanalysisRanges();if(token!==version||!current())return;inventory=result;
-        for(const range of result.ranges){const label=card.ownerDocument.createElement('label'),input=card.ownerDocument.createElement('input');input.type='checkbox';input.value=range.key;input.onchange=sync;label.append(input,card.ownerDocument.createTextNode(range.label));list.append(label);}
-        status.textContent=result.ranges.length?'원하는 구간을 선택하세요.':'재분석할 저장 구간이 없습니다.';sync();
-      }catch(error){if(token===version&&current())status.textContent='목록 조회 실패: '+text(error?.message||error);}};
-    refresh.onclick=load;run.onclick=async()=>{if(busy||!inventory)return;const keys=new Set(selected());if(!keys.size)return;
-      const selection={scopeKey:inventory.scopeKey,topology:inventory.topology,ranges:inventory.ranges.filter(r=>keys.has(r.key))};busy=true;sync();status.textContent='실행할 내용을 확인하는 중…';
+    const sync=()=>{const locked=busy||reviewSaving,n=selected().length;run.disabled=locked||!n;review.hidden=n!==1;review.disabled=locked||n!==1;refresh.disabled=locked;for(const input of list.querySelectorAll('input'))input.disabled=locked;};
+    const changed=event=>{
+      reviewVersion++;panel.replaceChildren();
+      if(inventory&&event?.target){
+        const linked=expandHayakuReanalysisKeys(inventory,[event.target.value]);
+        const wanted=event.target.checked?expandHayakuReanalysisKeys(inventory,selected()):new Set(selected().filter(key=>!linked.has(key)));
+        list.querySelectorAll('input').forEach(node=>{node.checked=wanted.has(node.value);});
+        if(linked.size>1)status.textContent='여러 턴을 담은 패킷은 전체 범위를 함께 선택합니다: '+[...linked].map(key=>'T'+key).join(', ');
+      }
+      sync();
+    };
+    const execute=async(selection,validate=null)=>{
+      if(busy||!current())return;busy=true;sync();status.textContent='실행할 내용을 확인하는 중…';
       try{
         const ticket=await previewSourceEdits(selection);
         if(!current()){clearSourceEditPreview();return;}
         if(ticket.allowed!==true){status.textContent='대상을 확인할 수 없습니다. 구간 목록을 새로고침한 뒤 다시 선택하세요.';return;}
         if(!await viewerConfirmSourceReanalysis(ticket)){clearSourceEditPreview();status.textContent='재분석을 취소했습니다. 기존 기억을 유지합니다.';return;}
         if(!current()){clearSourceEditPreview();return;}
+        if(validate)await validate();if(!current()){clearSourceEditPreview();return;}
         status.textContent='선택한 구간을 재분석하는 중…';
         const result=await applySourceEdits(ticket);
+        if(result.ok){await refreshLedgerViewer();if(current())await load(true);}
         if(current())status.textContent=result.ok?'선택한 구간의 기억을 갱신했습니다.':'재분석 중단: '+(result.reason||'결과를 확인하세요.');
       }catch(error){clearSourceEditPreview();if(current())status.textContent='재분석 중단: '+text(error?.message||error);}
-      finally{busy=false;sync();if(current()&&!run.disabled)run.focus?.();}};
+      finally{busy=false;sync();if(current()&&!run.disabled)run.focus?.();}
+    };
+    const load=async(force=false)=>{if((busy||reviewSaving)&&force!==true)return;const token=++version;reviewVersion++;inventory=null;list.replaceChildren();panel.replaceChildren();run.disabled=review.disabled=true;review.hidden=true;status.textContent='구간을 읽는 중…';
+      try{const result=await listHayakuReanalysisRanges();if(token!==version||!current())return;inventory=result;
+        for(const range of result.ranges)appendMemorySuiteReanalysisRange(list,range,{changed,current,read:()=>readHayakuReanalysisTurn(inventory,range)});
+        status.textContent=result.ranges.length?'원하는 턴을 선택하세요. 원문 보기에서 내용을 확인할 수 있습니다.':'재분석할 저장 구간이 없습니다.';
+        if(navigation){
+          const target=navigation;navigation=null;
+          card.querySelector('[data-reanalysis-fold]').open=target.rows.length>0;
+          const matches=target.scopeKey===result.scopeKey&&target.topology===result.topology
+            &&target.rows.every(expected=>result.ranges.some(row=>row.key===expected.key&&row.identity===expected.identity&&row.replacementDigest===expected.replacementDigest));
+          if(matches){const keys=new Set(target.rows.map(row=>row.key));list.querySelectorAll('input').forEach(node=>{node.checked=keys.has(node.value);});}
+          else status.textContent='선택한 패킷 또는 채팅이 변경되었습니다. 목록을 확인한 뒤 다시 선택하세요.';
+        }
+        sync();
+      }catch(error){if(token===version&&current())status.textContent='목록 조회 실패: '+text(error?.message||error);}};
+    refresh.onclick=load;run.onclick=()=>{if(!inventory||reviewSaving)return;const keys=new Set(selected());if(!keys.size)return;return execute({scopeKey:inventory.scopeKey,topology:inventory.topology,ranges:inventory.ranges.filter(r=>keys.has(r.key))});};
+    review.onclick=async()=>{
+      if(busy||reviewSaving||!inventory||selected().length!==1)return;const token=++reviewVersion,key=selected()[0],range=inventory.ranges.find(r=>r.key===key);
+      const reviewCurrent=()=>current()&&token===reviewVersion&&selected().length===1&&selected()[0]===key;
+      busy=true;sync();
+      try{
+        const sample=await readHayakuReanalysisTurn(inventory,range);if(!reviewCurrent())return;
+        const validate=async()=>{const fresh=await readHayakuReanalysisTurn(inventory,range);if(!reviewCurrent()||JSON.stringify(fresh)!==JSON.stringify(sample))throw Error('확인한 원문이 변경되었습니다. 원문을 다시 확인하세요.');};
+        mountMemorySuiteReanalysisReview(panel,{owner:'hayaku',policy:getHayakuSourceInput(),sample,current:reviewCurrent,validate,projectLegacySample:hayakuSourceInputConfig.projectLegacySample,
+          onBusy:value=>{reviewSaving=value;if(current())sync();},onRun:async guard=>{await guard();const latest=await listHayakuReanalysisRanges();await guard();await execute({scopeKey:latest.scopeKey,topology:latest.topology,ranges:latest.ranges.filter(r=>r.key===key),reviewedSource:{key,rawDigest:hayakuRawSourceDigest([{rawAvailable:true,userRaw:sample.user,assistantRaw:sample.assistant}]),rulesKey:memorySuiteSourceTagKey('hayaku')}},guard);}});
+      }catch(error){if(current())status.textContent='원문 조회 실패: '+text(error?.message||error);}
+      finally{busy=false;if(current())sync();}
+    };
     void load();
   }
   const viewerRenderHostLineage = () => {
@@ -60000,7 +58929,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
   const viewerSetTab = tab => {
     const root = Memory.ledgerViewer.root;
     if (!root) return;
-    const active = tab === 'failed_recovery' ? 'recovery' : tab === 'worldline' ? 'packets' : HAYAKU_VIEWER_TAB_IDS.includes(tab) ? tab : 'overview';
+    const active = tab === 'worldline' ? 'packets' : HAYAKU_VIEWER_TAB_IDS.includes(tab) ? tab : 'overview';
     if(active!==Memory.ledgerViewer.activeTab){clearSourceEditPreview();Memory.ledgerViewer.auxiliaryProbeConfirmationCancel?.();}
     Memory.ledgerViewer.activeTab = active;
     const settingsSavebar = root.querySelector?.('#hayakuSettingsSavebar');
@@ -60135,7 +59064,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     const activeTab = ['summary', 'axes', 'binding', 'json'].includes(Memory.ledgerViewer.selectedRecordDetailTab)
       ? Memory.ledgerViewer.selectedRecordDetailTab
       : 'summary';
-    const regeneration = viewerRecordRegenerationPlan(record);
+    const regeneration = viewerRecordReanalysisPlan(record);
     const reselection = viewerReplacementVariantPlan(record, ledger);
     const tags = [record?.captureSource, record?.memoryClass, record?.ledgerSource, record?.auditRetained === true ? '감사 사본' : '', record?.inheritedSessionHistory === true ? '영구 과거' : '', record?.coldStartEpochId ? '콜드스타트' : ''].filter(Boolean);
     const detailTags = tags.length ? `<dt>분류</dt><dd>${viewerEscapeHtml(tags.join(' · '))}</dd>` : '';
@@ -60148,15 +59077,15 @@ function mountMemorySuiteSourceInputControls(container, config) {
           ? `<dl class="kv"><dt>Record state</dt><dd>${viewerEscapeHtml(state)}</dd><dt>Slot ID</dt><dd class="mono">${viewerEscapeHtml(record?.slotId || '-')}</dd><dt>Request nonce</dt><dd class="mono">${viewerEscapeHtml(compact(record?.requestNonce || '-', 120))}</dd><dt>Parent hash</dt><dd class="mono">${viewerEscapeHtml(compact(record?.parentHash || record?.parent || '-', 120))}</dd><dt>Worldline source</dt><dd>${viewerEscapeHtml(record?.ledgerSource || '-')}</dd><dt>Readback</dt><dd>${viewerEscapeHtml(viewerRecordWriteStatus(record))}</dd><dt>회상 자격</dt><dd>${viewerEscapeHtml(viewerRecordAvailability(record, ledger))}</dd><dt>Confidence</dt><dd>${Number(packet?.meta?.confidence ?? packet?.confidence ?? 0).toFixed(2)}</dd><dt>Packet hash</dt><dd class="mono">${viewerEscapeHtml(compact(record?.hash || '-', 96))}</dd><dt>Capture source</dt><dd>${viewerEscapeHtml(record?.captureSource || '-')}</dd><dt>Memory class</dt><dd>${viewerEscapeHtml(record?.memoryClass || '-')}</dd><dt>Source time</dt><dd>${viewerEscapeHtml(viewerRecordPairLabel(record))}</dd><dt>Raw packet size</dt><dd>${text(record?.raw || '').length.toLocaleString()}자</dd><dt>Summary anchors</dt><dd>${viewerEscapeHtml(viewerPrettyJson(packet?.meta?.summary_memory?.recallAnchors || packet?.meta?.summaryMemory?.recallAnchors || []))}</dd>${detailTags}</dl>`
           : `<div class="stack"><details open><summary>Canonical packet JSON</summary><pre class="json">${viewerEscapeHtml(packet ? viewerPrettyJson(packet) : text(record?.raw || ''))}</pre></details><details><summary>원장 메타데이터</summary><pre class="json">${viewerEscapeHtml(viewerPrettyJson({ ...record, raw: undefined }))}</pre></details></div>`;
     const regenerationTitle = regeneration.eligible
-      ? `Other Ax로 ${regeneration.startTurn === regeneration.endTurn ? `T${regeneration.startTurn}` : `T${regeneration.startTurn}–T${regeneration.endTurn}`}을 다시 분석하고 검증 후 이 레코드를 원자적으로 교체합니다.`
-      : `재생성 불가 · ${regeneration.reason}`;
+      ? `원문 재분석에서 ${regeneration.startTurn === regeneration.endTurn ? `T${regeneration.startTurn}` : `T${regeneration.startTurn}–T${regeneration.endTurn}`}을 선택해 분석하고 성공하면 기존 기억을 교체합니다.`
+      : `재분석 불가 · ${regeneration.reason}`;
     const reselectTitle = reselection.eligible
       ? `T${reselection.targetPairIndex}의 현재 활성 교체본 대신 이 tombstone 패킷을 다시 채택합니다.`
       : `재선택 불가 · ${reselection.reason}`;
     const preservationNote = reselection.eligible
       ? `<div class="note" style="margin-top:12px"><b>이전 패킷 보존</b> ${viewerEscapeHtml(reselection.revisionLabel || '이전 교체 패킷')}이 보존되어 있습니다. <button class="btn btn--sm" type="button" data-hayaku-select-variant="${viewerEscapeHtml(reselection.recordId)}" title="${viewerEscapeHtml(reselectTitle)}" style="margin-left:6px">이전 패킷 다시 채택…</button></div>`
       : '';
-    detail.innerHTML = `<div class="card__head"><div><div class="eyebrow">Memory packet</div><h2 class="card__title" style="font-size:19px">${viewerEscapeHtml(viewerRecordPairLabel(record))} · ${viewerEscapeHtml(viewerPacketTypeLabel(record?.packetType))}</h2><p class="card__desc">${viewerRecordOriginBadge(record)}${viewerEscapeHtml(viewerFormatDate(record?.capturedAt))}</p></div><span class="badge ${['active','historical'].includes(state)?'badge--ok':''}">${viewerEscapeHtml(viewerRecordStateLabel(state))}</span></div><div class="tabs" role="tablist" aria-label="패킷 상세"><button type="button" role="tab" aria-selected="${activeTab === 'summary'}" data-hayaku-record-detail-tab="summary" class="tab ${activeTab === 'summary' ? 'is-active' : ''}">요약</button><button type="button" role="tab" aria-selected="${activeTab === 'axes'}" data-hayaku-record-detail-tab="axes" class="tab ${activeTab === 'axes' ? 'is-active' : ''}">기억 축</button><button type="button" role="tab" aria-selected="${activeTab === 'binding'}" data-hayaku-record-detail-tab="binding" class="tab ${activeTab === 'binding' ? 'is-active' : ''}">결속</button><button type="button" role="tab" aria-selected="${activeTab === 'json'}" data-hayaku-record-detail-tab="json" class="tab ${activeTab === 'json' ? 'is-active' : ''}">원본 JSON</button></div><div class="stack">${tabBody}</div>${preservationNote}<div class="cluster" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"><button type="button" class="btn" data-hayaku-regenerate-record="${viewerEscapeHtml(regeneration.recordId || '')}" ${regeneration.eligible ? '' : 'disabled'} title="${viewerEscapeHtml(regenerationTitle)}"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>Other Ax로 재생성</button>${reselection.eligible ? `<button type="button" class="btn" data-hayaku-select-variant="${viewerEscapeHtml(reselection.recordId)}" title="${viewerEscapeHtml(reselectTitle)}">이 버전 다시 채택</button>` : ''}<button type="button" class="btn btn--ghost" data-hayaku-copy-record="${viewerEscapeHtml(text(record?.recordId || record?.slotId || record?.hash || ''))}">패킷 복사</button></div>`;
+    detail.innerHTML = `<div class="card__head"><div><div class="eyebrow">Memory packet</div><h2 class="card__title" style="font-size:19px">${viewerEscapeHtml(viewerRecordPairLabel(record))} · ${viewerEscapeHtml(viewerPacketTypeLabel(record?.packetType))}</h2><p class="card__desc">${viewerRecordOriginBadge(record)}${viewerEscapeHtml(viewerFormatDate(record?.capturedAt))}</p></div><span class="badge ${['active','historical'].includes(state)?'badge--ok':''}">${viewerEscapeHtml(viewerRecordStateLabel(state))}</span></div><div class="tabs" role="tablist" aria-label="패킷 상세"><button type="button" role="tab" aria-selected="${activeTab === 'summary'}" data-hayaku-record-detail-tab="summary" class="tab ${activeTab === 'summary' ? 'is-active' : ''}">요약</button><button type="button" role="tab" aria-selected="${activeTab === 'axes'}" data-hayaku-record-detail-tab="axes" class="tab ${activeTab === 'axes' ? 'is-active' : ''}">기억 축</button><button type="button" role="tab" aria-selected="${activeTab === 'binding'}" data-hayaku-record-detail-tab="binding" class="tab ${activeTab === 'binding' ? 'is-active' : ''}">결속</button><button type="button" role="tab" aria-selected="${activeTab === 'json'}" data-hayaku-record-detail-tab="json" class="tab ${activeTab === 'json' ? 'is-active' : ''}">원본 JSON</button></div><div class="stack">${tabBody}</div>${preservationNote}<div class="cluster" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"><button type="button" class="btn" data-hayaku-reanalyze-record="${viewerEscapeHtml(regeneration.recordId || '')}" data-reanalysis-record-hash="${viewerEscapeHtml(record.hash||'')}" data-reanalysis-scope="${viewerEscapeHtml(Memory.ledgerViewer.scope?.key||'')}" ${regeneration.eligible ? '' : 'disabled'} title="${viewerEscapeHtml(regenerationTitle)}"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>재분석</button>${reselection.eligible ? `<button type="button" class="btn" data-hayaku-select-variant="${viewerEscapeHtml(reselection.recordId)}" title="${viewerEscapeHtml(reselectTitle)}">이 버전 다시 채택</button>` : ''}<button type="button" class="btn btn--ghost" data-hayaku-copy-record="${viewerEscapeHtml(text(record?.recordId || record?.slotId || record?.hash || ''))}">패킷 복사</button></div>`;
   };
   const viewerRenderRecords = () => {
     const root = Memory.ledgerViewer.root;
@@ -60830,7 +59759,6 @@ function mountMemorySuiteSourceInputControls(container, config) {
     root.querySelector?.('#refreshHayakuViewer')?.addEventListener('click', () => refreshLedgerViewer());
     root.querySelector?.('#refreshHayakuWorldline')?.addEventListener('click', () => refreshLedgerViewer());
     root.querySelector?.('#refreshHayakuRecovery')?.addEventListener('click', () => viewerRenderNativeRecovery());
-    root.querySelector?.('#refreshHayakuFailedRecovery')?.addEventListener('click', () => viewerRenderFailedRecovery());
     let safeHealthTicket = null, safeHealthBusy = false;
     const safeHealthOutput = message => { const node = root.querySelector('#hayakuSafeHealthStatus'); if (node && root === Memory.ledgerViewer.root) node.textContent = message; };
     root.querySelector('#hayakuSafeHealthInspect')?.addEventListener('click', async () => {
@@ -60924,9 +59852,9 @@ function mountMemorySuiteSourceInputControls(container, config) {
         if (detailNode && listNode && detailNode.getBoundingClientRect?.().top >= listNode.getBoundingClientRect?.().bottom - 1) detailNode.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
         return;
       }
-      const regenerate = event?.target?.closest?.('[data-hayaku-regenerate-record]');
-      if (regenerate && !regenerate.disabled) {
-        void viewerRegenerateRecord(regenerate.getAttribute('data-hayaku-regenerate-record'));
+      const reanalyze = event?.target?.closest?.('[data-hayaku-reanalyze-record]');
+      if (reanalyze && !reanalyze.disabled) {
+        void openHayakuSourceReanalysis({recordId:reanalyze.getAttribute('data-hayaku-reanalyze-record'),recordHash:reanalyze.dataset.reanalysisRecordHash,scopeKey:reanalyze.dataset.reanalysisScope});
         return;
       }
       const select = event?.target?.closest?.('[data-hayaku-select-variant]');
@@ -60952,9 +59880,9 @@ function mountMemorySuiteSourceInputControls(container, config) {
         viewerRenderRecordDetail(record);
         return;
       }
-      const regenerate = event?.target?.closest?.('[data-hayaku-regenerate-record]');
-      if (regenerate && !regenerate.disabled) {
-        void viewerRegenerateRecord(regenerate.getAttribute('data-hayaku-regenerate-record'));
+      const reanalyze = event?.target?.closest?.('[data-hayaku-reanalyze-record]');
+      if (reanalyze && !reanalyze.disabled) {
+        void openHayakuSourceReanalysis({recordId:reanalyze.getAttribute('data-hayaku-reanalyze-record'),recordHash:reanalyze.dataset.reanalysisRecordHash,scopeKey:reanalyze.dataset.reanalysisScope});
         return;
       }
       const select = event?.target?.closest?.('[data-hayaku-select-variant]');
@@ -61239,7 +60167,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
             <dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>누락 복구</dd><dt>대상 턴</dt><dd id="hayakuNativeRepairTargets">선택한 항목을 확인합니다.</dd><dt>선택 묶음</dt><dd id="hayakuNativeRepairBatch">-</dd><dt>예상 기본 호출</dt><dd id="hayakuNativeRepairCalls">-</dd><dt>추가 복구 허용량</dt><dd><span class="x-extra">설정에서 정의한 작업별 제한</span> — <button class="linkbtn" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경</button></dd><dt>실제 호출 수</dt><dd>완료 후 결과에 표시됩니다.</dd></dl>
             <div class="cluster" style="margin-top:14px"><button id="runHayakuNativeRepair" class="btn btn--primary" type="button">선택한 턴 복구…</button></div><div id="hayakuNativeRepairOutcome" class="stack"></div>
           </div></div></section>
-        <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 누락 복구와 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><div id="hayakuSourceTrackingSettings" class="stack"></div><div id="hayakuSourceEditConsent" class="stack"></div></div></section>
+        <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 누락 복구와 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><div id="hayakuSourceEditConsent" class="stack"></div><details class="fold"><summary>분석 태그 규칙 설정</summary><div id="hayakuSourceTrackingSettings" class="stack"></div></details></div></section>
         <section data-recovery-panel="cold" data-subpanel="cold" data-group="rc" hidden><div class="stack"><div class="card fail-box" hidden><div class="empty"><b>원장을 읽지 못해 복구 대상을 계산하지 않습니다.</b><span>AI 작업은 시작할 수 없습니다. 현재 채팅 범위를 다시 확인하세요.</span></div></div><div class="card"><h2 class="card__title">Cold Start</h2><p class="card__desc">기록이 없는 채팅의 완료 턴을 묶음 단위로 분석합니다.</p><div class="cluster"><span class="badge" id="hayakuNativeColdStartState">대기</span><span id="hayakuNativeColdStartProgress">-</span><span>Cold Start 대상 <b id="hayakuNativeColdStartTurns">-</b></span></div><div class="field" style="margin-top:12px"><label for="hayakuColdStartBatchTurns">호출당 U+A</label><select id="hayakuColdStartBatchTurns" class="select" data-no-track aria-label="Cold Start 호출당 U+A"><option value="1">1턴</option><option value="5">5턴</option><option value="10">10턴</option></select><span class="hint">이번 실행에만 적용됩니다. 기본값은 설정 › 복구·안전의 Cold Start 묶음입니다 (저장된 값 <b id="hayakuColdStartSavedValue">-</b>).</span></div><dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>Cold Start</dd><dt>대상 턴</dt><dd id="hayakuColdStartTargetRows">완료된 턴 수는 현재 원장에서 계산합니다.</dd><dt>선택 묶음</dt><dd id="hayakuColdStartBundleCount">-</dd><dt>예상 기본 호출</dt><dd id="hayakuColdStartCallCount">-</dd><dt>추가 복구 허용량</dt><dd>설정에 따른 묶음별 제한</dd></dl><div class="cluster" style="margin-top:12px"><button id="runHayakuNativeColdStart" class="btn btn--primary" type="button">Cold Start 실행…</button><button id="cancelHayakuNativeColdStart" class="btn" type="button">중단 요청</button></div></div></div></section>
         <div class="grid g2"><div class="card"><h2 class="card__title">자동 복구</h2><p class="card__desc">설정 탭과 같은 값입니다 (한 곳에서만 편집).</p><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">정상 응답 처리 안에서 현재 누락/불가 패킷을 1회 복구합니다. 유일한 자동 복구 단계이며, 실패하거나 건너뛴 턴은 Recovery Journal에 남아 아래 수동 복구를 기다립니다.</div></div><span class="badge" id="auto-after" aria-live="polite">설정 확인 중</span></div><button class="linkbtn" id="hayakuRecoverySettingsLink" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경 →</button></div><div class="card"><h2 class="card__title">기억 복원 · Portable JSON</h2><p class="card__desc">같은 채팅은 교체 복원, 다른 채팅은 이사/복사 모드만 허용됩니다. 작업 전 대상 기억을 자동 백업합니다.</p><div data-portable-backup-host="hayaku_locator_continuity"></div></div></div>
         <details class="fold"><summary>안전 검사 도구</summary><div class="fold__body"><div class="cluster"><button id="hayakuSafeHealthInspect" class="btn" type="button">읽기 전용 검사</button><button id="hayakuSafeHealthPreview" class="btn" type="button">안전 복구 미리보기</button><button id="hayakuSafeHealthApply" class="btn" type="button" disabled>캐시 복구</button></div><p id="hayakuSafeHealthStatus" role="status">원문·정본 전체를 검사하는 기능은 아닙니다.</p></div></details>
@@ -61377,7 +60305,8 @@ function mountMemorySuiteSourceInputControls(container, config) {
     // The host fullscreen RPC and durable ledger hydration are not part of the
     // first-paint or navigation-input critical path.
     void showPromise;
-    void refreshLedgerViewer().catch(error => {
+    ledgerViewerHydration=refreshLedgerViewer();
+    void ledgerViewerHydration.catch(error => {
       Memory.lastWarnings = [...ensureArray(Memory.lastWarnings), `ledger_viewer_refresh_failed:${compact(error?.message || error, 120)}`].slice(-20);
     });
     return true;
@@ -62013,6 +60942,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     getReanalysisStatus:()=>({...hayakuReanalysisStatus}),
     listReanalysisRanges:listHayakuReanalysisRanges,
     reanalyzeSelectedRanges:runHayakuSelectedReanalysis,
+    openSourceReanalysis:openHayakuSourceReanalysis,
       setSourceEditIgnoredTags: tags => getHayakuSourceInput().setIgnoredTags(tags),
       getSourceEditIgnoredTags: () => getHayakuSourceInput().ignoredTags(),
       setSourceEditRules: rules => getHayakuSourceInput().setSourceRules(rules),
@@ -62090,7 +61020,6 @@ function mountMemorySuiteSourceInputControls(container, config) {
         },
         repairSelected: async options => clone(await runNativeMissingTurnBatch(options || {}), {}),
         repairNow: async options => clone(await runNativeRepairSweep({ ...(options || {}), force: true, explicitRetry: true, reason: options?.reason || 'public_api' }), {}),
-        regenerateTurns: async options => clone(await runNativeTargetedRegeneration({ ...(options || {}), replaceExisting: true }), {}),
         resolveRegenerationChoice: async (decision, options) => clone(await resolveNativeRegenerationChoice(decision, options || {}), {}),
         jobStatus: () => nativeJobSnapshot(),
         cancelJob: () => cancelNativeJob(),
@@ -62111,9 +61040,6 @@ function mountMemorySuiteSourceInputControls(container, config) {
             const scope = await RisuCompat.currentChatScope();
             return scope?.confident ? clone(await deleteFailedAnalysisArtifact(scope.key, failureId), {}) : { ok: false, durable: false, deleted: false, reason: scope?.reason || 'scope_unavailable' };
           },
-          inspectAdoption: async failureId => clone(await inspectFailedAnalysisAdoption(failureId), {}),
-          automationStatus: () => clone({ mode: failedAutoMode(), running: FailedAutoRecovery.running, lastResult: FailedAutoRecovery.lastResult }, {}),
-          resolve: async (failureId, action, options) => clone(await resolveFailedAnalysisArtifact(failureId, action, options || {}), {})
         }
       },
       packet: HayakuPacketRuntimeApi,
@@ -62410,7 +61336,6 @@ function mountMemorySuiteSourceInputControls(container, config) {
         validateNativeRepairEnvelopeShape,
         hayakuAttentionDecision, computeHayakuAttention, refreshHayakuAttention, hayakuAuxiliaryReadiness, HayakuAttention,
         startHayakuAttention, stopHayakuAttention, openHayakuAttention, hayakuPlacementWarningLabel,
-        runFailedAutoRecovery, scheduleFailedAutoRecovery, failedAutoJournalKey, failedAutoJournalHash,
         validateNativeRepairGrounding,
         validateNativeRepairCoverage,
         nativeLlmResponseText,
@@ -62435,7 +61360,6 @@ function mountMemorySuiteSourceInputControls(container, config) {
         runNativeMissingTurnBatch,
         hayakuRecoverySourceRowMatches,
         runNativeTargetedRegeneration,
-        executeNativeTargetedRegenerationTurn,
         adoptLegacyRetraceIncrementalCheckpoint,
         legacyColdStartReusableChunkForUnit,
         startNativeColdStart,
@@ -62449,13 +61373,8 @@ function mountMemorySuiteSourceInputControls(container, config) {
         listFailedAnalysisArtifacts,
         deleteFailedAnalysisArtifact,
         updateFailedAnalysisManifest,
-        resolveFailedAnalysisArtifact,
-        viewerRenderFailedRecovery,
-        viewerResolveFailedRecovery,
         viewerRenderNativeJob,
         failedAnalysisReasonExplanation,
-        inspectFailedAnalysisAdoption,
-        failedAnalysisAdoptionBinding,
         readLegacyRetraceRun,
         readLegacyRetraceAutoRepairArtifact,
         nativeRepairCandidateKey,
@@ -63008,7 +61927,6 @@ function mountMemorySuiteSourceInputControls(container, config) {
         Memory.displayHandler.registered = false;
         Memory.displayHandler.registerError = 'disabled_by_setting';
       }
-      scheduleFailedAutoRecovery();
       await RisuCompat.onUnload(async () => {
         try { hayakuStorageTransitionUnsubscribe?.(); } catch (_) {}
         hayakuStorageTransitionUnsubscribe = null;
@@ -63017,8 +61935,6 @@ function mountMemorySuiteSourceInputControls(container, config) {
         clearSourceEditPreview();
         if (ledgerViewerUiRetryTimer !== null) clearTimeout(ledgerViewerUiRetryTimer);
         ledgerViewerUiRetryTimer = null;
-        if (FailedAutoRecovery.timer != null) clearTimeout(FailedAutoRecovery.timer);
-        FailedAutoRecovery.timer = null;
         
         for(const timer of (Memory.nativeRecovery.confirmationTimers?.values()||[]))if(timer)clearTimeout(timer);
         Memory.nativeRecovery.confirmationTimers?.clear();

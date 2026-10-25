@@ -21,7 +21,7 @@ for(const owner of ['hayaku','flashback'])test(owner+' actual range drawer runs 
   const confirmSelector=owner==='hayaku'?'#hayakuSourceReanalysisConfirmOverlay [data-reanalysis-confirm="apply"]':'.overlay.is-open .dialog__actions .btn--primary';
   await waitFor(()=>dom.window.document.querySelector(confirmSelector));
   const dialog=dom.window.document.querySelector(confirmSelector).closest('[role="dialog"]');assert.ok(dialog,'confirmation is an accessible dialog');
-  assert.match(dialog.textContent,owner==='hayaku'?/1턴[\s\S]*Other Ax 1회/:/\(1턴\)[\s\S]*LLM·임베딩 호출은 0회/);
+  assert.match(dialog.textContent,owner==='hayaku'?/1턴[\s\S]*Other Ax 1회/:/\(1턴\)[\s\S]*원문 저장 단계의 임베딩 호출은 0회/);
   assert.equal(f.calls(),0,'nothing runs before the confirmation is accepted');
   dom.window.document.querySelector(confirmSelector).click();await Promise.all([first,second]);
   assert.equal(f.calls(),owner==='hayaku'?1:0);assert.ok((await f.records()).some(r=>JSON.stringify(r).includes(NEW)));

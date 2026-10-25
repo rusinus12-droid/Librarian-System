@@ -16,7 +16,7 @@ async function lensFixture(options={}){
  const api=f.r.api;
  const add=async(name='약속 렌즈',status='active',extra={})=>{
   const lens=await api.createLens({name,status,evidenceMode:'interpretive',instruction:{goal:'은빛 열쇠와 약속을 기록한다.'},cadence:{mode:'manual'},...extra});
-  await api.runLensForRange(lens.lensId,{startTurn:1,endTurn:5});return lens;
+  await f.r.core.runLensForRange(lens.lensId,{startTurn:1,endTurn:5});return lens;
  };
  const select=i=>{index=i;f.character.chatPage=i;};
  const target=(name='다음 대화',native=false)=>{

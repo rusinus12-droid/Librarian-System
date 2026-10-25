@@ -27,7 +27,7 @@ for(const mode of ['plugin_only','server_only'])test(`${mode}: actual RisuAI cha
  const lens=await f.r.api.createLens({name:'IPC 렌즈',instruction:{goal:'도서관의 분위기 기록'},evidenceMode:'strict',recall:{enabled:true,mode:'recent',maxItems:2,share:100}});
  const quote=chat.message.find(row=>row.chatId==='t1-a').data.slice(0,60);
  f.control.onCall=async()=>({type:'success',result:JSON.stringify({items:[{label:'단서',text:'LENS_IPC_ONLY: 도서관의 정숙 규칙은 인물의 선택에 긴장을 준다.',quote,refs:['t1-a'],extra:{focus:'비정본 관점'}}]})});
- assert.equal((await f.r.api.runLensForRange(lens.lensId,{startTurn:1,endTurn:5})).acceptedCount,1);
+ assert.equal((await f.r.core.runLensForRange(lens.lensId,{startTurn:1,endTurn:5})).acceptedCount,1);
  const registry=await f.r.api.getLensRegistry();await f.r.api.saveLensRegistry({...registry,recallSemantic:false});
  f.control.onCall=async()=>{throw Error('read must not analyze memory');};
  chat.message.push({role:'user',chatId:'t7-u',data:'민아 은빛 열쇠의 현재 보관자는?'});chat.messages=chat.message;

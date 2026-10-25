@@ -12,7 +12,7 @@ for(const mode of ['server_only','mirror'])test(mode+': native copy lens archive
    ?{type:'success',result:JSON.stringify({items:[{text:'지호의 은빛 열쇠 약속',refs:['t2-a'],quote:'오늘 돌려주겠다고 약속했다'}]})}
    :{type:'success',result:JSON.stringify(f.control.artifact)};
   const lens=await api.createLens({name:'서버 렌즈',instruction:{goal:'은빛 열쇠 기록'},cadence:{mode:'manual'}});
-  await api.runLensForRange(lens.lensId,{startTurn:1,endTurn:5});
+  await f.r.core.runLensForRange(lens.lensId,{startTurn:1,endTurn:5});
   const child=branch(f.chat,5,'lens-server-'+mode);f.character.chats.push(child);index=1;f.character.chatPage=1;
   const result=await api.debugNativeChatCopy({force:true});assert.equal(result.result?.ok,true,JSON.stringify(result));assert.equal(result.result.verifiedLensArchives,1);
   assert.equal((await api.inspectScopeLenses()).memories.filter(item=>item.inherited).length,1);
