@@ -33,7 +33,7 @@ const deadline=setTimeout(()=>{throw Error('scope management regression timeout'
    c=await f.bridge.inspectScopeCatalog();const restored=await f.bridge.manageScope(request(c,'B','restore'));assert.equal(restored.restored,1);assert.equal(f.values.get(key),'B_SOURCE');
    assert.equal((await f.bridge.getScopeMode({scopeId:'B'})).mode,'server_only');
 
-   c=await f.bridge.inspectScopeCatalog();await assert.rejects(()=>f.bridge.manageScope(request(c,'B','delete')),/SCOPE_DATA_DELETE_BLOCKED/);
+   c=await f.bridge.inspectScopeCatalog();assert.equal(c.rows.find(row=>row.scopeId==='B').canDelete,true);
    await f.bridge.setGlobalMode('plugin_only');c=await f.bridge.inspectScopeCatalog();
    const localRequest=request(c,'B','delete');assert.equal(c.rows.find(row=>row.scopeId==='B').canDelete,true);
    const originalRemove=f.store.removeItem.bind(f.store);f.store.removeItem=async name=>name===key?false:originalRemove(name);

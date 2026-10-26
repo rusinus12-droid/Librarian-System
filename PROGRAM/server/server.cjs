@@ -102,6 +102,7 @@ const REQUIRED_CAPABILITIES = Object.freeze([
   'scope-reference-graph.v1',
   'scope-delete-plan.v1',
   'scope-delete-preview.v1',
+  'owner-scope-copy-delete.v1',
   'scope-delete-commit.v1',
   'scope-delete-job.v1',
   'manager-control.v1',
@@ -3629,6 +3630,30 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         const result=await ownerScopeDelete(principal,url.pathname.endsWith('/plan')?'plan':'execute',body,
           decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id']));
         return sendJson(request,response,200,{ok:true,result});
+      }
+      if(request.method==='POST'&&['/v1/owner/scope-copy-delete/plan','/v1/owner/scope-copy-delete/execute'].includes(url.pathname)){
+        assertLegacyAuthorityUnavailable({dataDir});
+        const namespace=principal.namespace;
+        if(!['hayaku','libra'].includes(namespace)||!hasRole(principal,'owner'))throw Object.assign(Error('owner_scope_copy_delete_forbidden'),{statusCode:403});
+        assertNamespaceAccess(principal,namespace,'write');
+        if(!namespaceReset.allows(namespace,request.headers['x-memory-suite-reset-epochs']))throw Object.assign(Error('MEMORY_SUITE_RESET_RECONNECT_REQUIRED'),{statusCode:409});
+        const body=await readBody(request);
+        if(url.pathname.endsWith('/plan')){
+          if(body.namespace!==namespace||decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id'])!==body.scopeId)throw Object.assign(Error('owner_scope_copy_delete_scope_mismatch'),{statusCode:409});
+          const catalog=readScopeCatalog(),rows=catalog.namespaces?.[namespace]||[],old=rows.find(row=>row.scopeId===body.scopeId);
+          if(scopeCatalogDegraded)throw Object.assign(Error('scope_catalog_degraded_delete_blocked'),{statusCode:409});
+          const selectedKeys=new Set((body.mutations||[]).map(row=>row.space+'\n'+row.key));
+          if(rows.some(row=>row.scopeId!==body.scopeId&&(row.members||[]).some(member=>selectedKeys.has(member.space+'\n'+member.key))))throw Object.assign(Error('owner_scope_copy_delete_overlapping_catalog'),{statusCode:409});
+          // Preserve every existing scope, pin and reference edge. Owners may
+          // register only their selected scope's exact conditional members.
+          const indexed={...(old||{}),scopeId:body.scopeId,scopeKey:body.scopeKey||body.scopeId,baseClassification:'active',coverageComplete:true,
+            members:(body.mutations||[]).map(row=>({space:row.space,key:row.key})),links:old?.links||[]};
+          replaceNamespaceScopeIndex(namespace,rows.filter(row=>row.scopeId!==body.scopeId).concat(indexed));
+          return sendJson(request,response,200,createScopeDeletePlan({...body,namespace}));
+        }
+        const plan=loadDeletePlan(String(body.planId||''));
+        if(!plan||plan.namespace!==namespace||decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id'])!==plan.scopeId)throw Object.assign(Error('owner_scope_copy_delete_plan_mismatch'),{statusCode:409});
+        return sendJson(request,response,200,executeScopeDeletePlan(body));
       }
       if (request.method === 'POST' && url.pathname === '/v1/owner/duplicate-cleanup') {
         // This removes redundant physical copies after a verified move, not an
