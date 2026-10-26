@@ -13429,7 +13429,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const readReadonlyRoute=async (identity, ownerRead=false)=>{
     const fence=readonlyRouteFence(),plugin=rawPluginStorage(),device=await rawDeviceStorage({strict:true});
     if(typeof plugin?.getItem!=='function')readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');
-    const rawScope=await plugin.getItem('libra:v1:scope-registry:v1'),registry=readonlyRouteObject(rawScope);
+    const rawScope=(await plugin.getItem('libra:v1:scope-registry:v1'))||(await device?.getItem?.('libra:v1:scope-registry:v1')),registry=readonlyRouteObject(rawScope);
     const key=identity.characterId+'::'+identity.chatId,row=Object.hasOwn(registry,key)?registry[key]:null;
     if(!row||row.characterId!==identity.characterId||row.chatId!==identity.chatId)readonlyRouteFail('READ_ROUTE_SCOPE_UNAVAILABLE');
     const scope={characterId:identity.characterId,chatId:identity.chatId,scopeKey:readonlyRouteId(row.scopeKey)};
@@ -19045,12 +19045,35 @@ ${text(paired.leadingAssistant.content || '')}
   };
 
   const collectionFrom = (value, source = '') => {
-    if (Array.isArray(value)) return value
-      .map((item, index) => item && typeof item === 'object' ? { ...item, __collectionKey: text(item.__collectionKey || index), __collectionSource: source } : null)
-      .filter(Boolean);
-    if (value && typeof value === 'object') {
+    if (!value) return [];
+    if (Array.isArray(value)) {
+      return value
+        .flatMap((item, index) => {
+          if (!item || typeof item !== 'object') return [];
+          const nested = item.entries || item.items || item.lore;
+          if (Array.isArray(nested) && nested.length > 0 && !loreContent(item)) {
+            return collectionFrom(nested, source || text(item.name || item.comment || item.id || index));
+          }
+          return [{
+            ...item,
+            __collectionKey: text(item.__collectionKey || item.id || item.uid || item.key || index),
+            __collectionSource: source
+          }];
+        })
+        .filter(Boolean);
+    }
+    if (typeof value === 'object') {
+      const nested = value.entries || value.items || value.lore || (Array.isArray(value.data) ? value.data : null);
+      if (nested && (Array.isArray(nested) || typeof nested === 'object')) {
+        const unwrapped = collectionFrom(nested, source || text(value.name || value.id || ''));
+        if (unwrapped.length > 0) return unwrapped;
+      }
       return Object.entries(value)
-        .map(([key, item]) => item && typeof item === 'object' ? { ...item, __collectionKey: key, __collectionSource: source } : null)
+        .map(([key, item]) => item && typeof item === 'object' ? {
+          ...item,
+          __collectionKey: text(item.__collectionKey || item.id || item.uid || item.key || key),
+          __collectionSource: source
+        } : null)
         .filter(Boolean);
     }
     return [];
@@ -19074,7 +19097,19 @@ ${text(paired.leadingAssistant.content || '')}
     try { return new RegExp(raw.slice(1, lastSlash), raw.slice(lastSlash + 1)); } catch (_) { return null; }
   };
 
-  const loreContent = lore => firstFilled(lore?.content, lore?.prompt, lore?.text, lore?.entry, lore?.data, lore?.value, lore?.body);
+  const loreContent = lore => firstFilled(
+    lore?.content,
+    lore?.prompt,
+    lore?.text,
+    lore?.entry,
+    lore?.data?.content,
+    lore?.data?.prompt,
+    lore?.data?.text,
+    lore?.data?.entry,
+    typeof lore?.data === 'string' ? lore.data : '',
+    typeof lore?.value === 'string' ? lore.value : '',
+    typeof lore?.body === 'string' ? lore.body : ''
+  );
 
   const isLibraManagedLore = (lore) => {
     if (!lore || typeof lore !== 'object') return false;
@@ -19106,15 +19141,38 @@ ${text(paired.leadingAssistant.content || '')}
   };
 
   const loadCurrentCharacterForRisuContext = async (debugLog = false) => {
-    const directApi = getLiveApi(['getCharacter']);
-    const direct = typeof directApi?.getCharacter === 'function' ? await safeApi('getCharacter', () => directApi.getCharacter(), debugLog) : null;
+    const directApi = getLiveApi(['getCharacter']) || getLiveApi(['getChar']);
+    const directGetter = typeof directApi?.getCharacter === 'function' ? directApi.getCharacter.bind(directApi) : (typeof directApi?.getChar === 'function' ? directApi.getChar.bind(directApi) : null);
+    const directRaw = directGetter ? await safeApi('getCharacter', directGetter, debugLog) : null;
+    const direct = (directRaw && typeof directRaw === 'object' && directRaw.character && typeof directRaw.character === 'object') ? directRaw.character : directRaw;
     if (direct) return { character: direct, source: 'getCharacter' };
-    const indexApi = getLiveApi(['getCurrentCharacterIndex', 'getCharacterFromIndex']);
-    if (typeof indexApi?.getCurrentCharacterIndex === 'function' && typeof indexApi?.getCharacterFromIndex === 'function') {
-      const charIndex = await safeApi('getCurrentCharacterIndex', () => indexApi.getCurrentCharacterIndex(), debugLog);
-      if (Number.isFinite(Number(charIndex))) {
-        const byIndex = await safeApi('getCharacterFromIndex', () => indexApi.getCharacterFromIndex(parseInt(charIndex, 10)), debugLog);
-        if (byIndex) return { character: byIndex, source: 'getCharacterFromIndex' };
+    const indexApi = getLiveApi(['getCurrentCharacterIndex', 'getCharacterFromIndex']) || getLiveApi(['getCurrentCharacterIndex']);
+    if (typeof indexApi?.getCurrentCharacterIndex === 'function') {
+      const charIndexRaw = await safeApi('getCurrentCharacterIndex', () => indexApi.getCurrentCharacterIndex(), debugLog);
+      const charIndex = parseInt(charIndexRaw, 10);
+      if (Number.isInteger(charIndex) && charIndex >= 0) {
+        if (typeof indexApi?.getCharacterFromIndex === 'function') {
+          const byIndex = await safeApi('getCharacterFromIndex', () => indexApi.getCharacterFromIndex(charIndex), debugLog);
+          const unwrapped = (byIndex && typeof byIndex === 'object' && byIndex.character && typeof byIndex.character === 'object') ? byIndex.character : byIndex;
+          if (unwrapped) return { character: unwrapped, source: 'getCharacterFromIndex' };
+        }
+        const dbApi = getLiveApi(['getDatabase']);
+        if (typeof dbApi?.getDatabase === 'function' || typeof API?.getDatabase === 'function') {
+          const getter = typeof dbApi?.getDatabase === 'function' ? dbApi.getDatabase.bind(dbApi) : API.getDatabase.bind(API);
+          const db = await safeApi('getDatabase.characters', () => getter(['characters']), debugLog);
+          if (Array.isArray(db?.characters) && db.characters[charIndex]) {
+            return { character: db.characters[charIndex], source: 'getDatabase.characters' };
+          }
+        }
+      }
+    }
+    const fallbackDbApi = getLiveApi(['getDatabase']);
+    if (typeof fallbackDbApi?.getDatabase === 'function' || typeof API?.getDatabase === 'function') {
+      const getter = typeof fallbackDbApi?.getDatabase === 'function' ? fallbackDbApi.getDatabase.bind(fallbackDbApi) : API.getDatabase.bind(API);
+      const db = await safeApi('getDatabase.selectedCharacter', () => getter(['selectedCharacter', 'characters']), debugLog);
+      const selIdx = parseInt(db?.selectedCharacter, 10);
+      if (Number.isInteger(selIdx) && selIdx >= 0 && Array.isArray(db?.characters) && db.characters[selIdx]) {
+        return { character: db.characters[selIdx], source: 'getDatabase.selectedCharacter' };
       }
     }
     return { character: null, source: 'missing' };
@@ -20165,6 +20223,9 @@ function agentCbsMatcher(rawContent, cbsContext, state) {
       return String(args[0] || '').replace(/[^0-9.\-]/g, '');
     case 'length':
       return String(args[0] || '').length.toString();
+    case 'annotation':
+    case 'ruby':
+      return String(args[0] ?? '');
     case 'hiddenkey':
     case 'blank':
     case 'none':
@@ -20336,7 +20397,7 @@ function isAgentCbsSupportedFunction(name) {
     'getvar', 'getglobalvar', 'calc',
     'equal', 'notequal', 'greater', 'less', 'greaterequal', 'lessequal',
     'contains', 'startswith', 'endswith', 'replace', 'trim', 'lower', 'upper', 'capitalize', 'reverse', 'tonumber', 'length',
-    'hiddenkey', 'blank', 'none', 'br', 'newline', 'bo', 'bc', 'ddecbo', 'ddecbc', 'decbo', 'decbc',
+    'hiddenkey', 'blank', 'none', 'annotation', 'ruby', 'br', 'newline', 'bo', 'bc', 'ddecbo', 'ddecbc', 'decbo', 'decbc',
     'pick', 'rollp', 'rollpick', 'and', 'or', 'not',
   ].includes(name);
 }
@@ -20647,15 +20708,23 @@ function summarizeAgentCbsTag(rawContent) {
   const moduleIsEnabled = (module, enabledRefs) => {
     if (!module || typeof module !== 'object') return false;
     if (module.enabled === false || module.disabled === true || module.disable === true) return false;
-    if (!enabledRefs.size) return module.enabled === true || module.active === true || module.isEnabled === true;
+    if (module.enabled === true || module.active === true || module.isEnabled === true) return true;
+    if (!enabledRefs || !enabledRefs.size) return false;
     return identityValues(module).some(id => enabledRefs.has(id));
   };
 
   const moduleLoreSources = module => [
-    module?.lore, module?.lorebook, module?.loreBook, module?.lorebooks, module?.entries,
+    module?.lore, module?.lorebook, module?.loreBook, module?.lorebooks, module?.entries, module?.items,
+    module?.characterBook, module?.character_book,
+    module?.characterBook?.entries, module?.character_book?.entries,
+    module?.characterBook?.items, module?.character_book?.items,
     module?.data?.lore, module?.data?.lorebook, module?.data?.loreBook, module?.data?.lorebooks,
+    module?.data?.entries, module?.data?.items,
+    module?.data?.characterBook, module?.data?.character_book,
     module?.data?.characterBook?.entries, module?.data?.character_book?.entries,
-    module?.extensions?.characterBook?.entries, module?.extensions?.character_book?.entries
+    module?.data?.characterBook?.items, module?.data?.character_book?.items,
+    module?.extensions?.characterBook?.entries, module?.extensions?.character_book?.entries,
+    module?.extensions?.world_info, module?.extensions?.worldInfo
   ];
 
   const selectableModuleLoreEntries = (module, sourceMeta = {}) => {
@@ -20709,6 +20778,10 @@ function summarizeAgentCbsTag(rawContent) {
       });
     };
     collectionFrom(db?.modules, 'modules').forEach(module => add(module, false));
+    collectionFrom(db?.installedModules, 'installedModules').forEach(module => add(module, false));
+    collectionFrom(db?.customModules, 'customModules').forEach(module => add(module, false));
+    collectionFrom(character?.modules, 'characterModules').forEach(module => add(module, false));
+    collectionFrom(currentChat?.modules, 'chatModules').forEach(module => add(module, false));
     [persona?.embeddedModule, ...(Array.isArray(persona?.embeddedModules) ? persona.embeddedModules : [])].filter(Boolean).forEach(module => add(module, true));
     return catalog.sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
   };
@@ -20784,10 +20857,21 @@ function summarizeAgentCbsTag(rawContent) {
     };
     const characterSources = [
       character?.globalLore, character?.lore, character?.lorebook, character?.loreBook, character?.lorebooks,
+      character?.entries, character?.items,
+      character?.characterBook, character?.character_book,
       character?.characterBook?.entries, character?.character_book?.entries,
+      character?.characterBook?.items, character?.character_book?.items,
+      character?.data?.globalLore, character?.data?.localLore, character?.data?.lore, character?.data?.lorebook, character?.data?.loreBook, character?.data?.lorebooks,
+      character?.data?.entries, character?.data?.items,
+      character?.data?.characterBook, character?.data?.character_book,
       character?.data?.characterBook?.entries, character?.data?.character_book?.entries,
+      character?.data?.characterBook?.items, character?.data?.character_book?.items,
+      character?.extensions?.characterBook, character?.extensions?.character_book,
       character?.extensions?.characterBook?.entries, character?.extensions?.character_book?.entries,
-      character?.data?.extensions?.characterBook?.entries, character?.data?.extensions?.character_book?.entries
+      character?.extensions?.world_info, character?.extensions?.worldInfo,
+      character?.data?.extensions?.characterBook, character?.data?.extensions?.character_book,
+      character?.data?.extensions?.characterBook?.entries, character?.data?.extensions?.character_book?.entries,
+      character?.data?.extensions?.world_info, character?.data?.extensions?.worldInfo
     ];
     characterSources.forEach((source, idx) => addLoreCollection(add, source, '캐릭터 로어북', 'character', idx * 1000));
 
@@ -20798,9 +20882,19 @@ function summarizeAgentCbsTag(rawContent) {
     // by those child links.
 
     const enabledRefs = enabledModuleReferenceSet(db, character, currentChat, persona);
-    for (const module of collectionFrom(db?.modules, 'modules')) {
+    const allModules = [
+      ...collectionFrom(db?.modules, 'modules'),
+      ...collectionFrom(db?.installedModules, 'installedModules'),
+      ...collectionFrom(db?.customModules, 'customModules'),
+      ...collectionFrom(character?.modules, 'characterModules'),
+      ...collectionFrom(currentChat?.modules, 'chatModules')
+    ];
+    const seenModuleKeys = new Set();
+    for (const module of allModules) {
       if (!moduleIsEnabled(module, enabledRefs) || !moduleSelectedForLore(module, selectedModules)) continue;
       const moduleKey = moduleSelectionKey(module);
+      if (!moduleKey || seenModuleKeys.has(moduleKey)) continue;
+      seenModuleKeys.add(moduleKey);
       const moduleName = firstFilled(module?.name, module?.displayName, module?.id, module?.namespace, 'unknown');
       const moduleLabel = `모듈 로어북: ${moduleName}`;
       const sourceMeta = { moduleId: module?.id || '', moduleName, moduleNamespace: module?.namespace || '', moduleKey };
@@ -21390,8 +21484,10 @@ function summarizeAgentCbsTag(rawContent) {
     const characterInfo = await loadCurrentCharacterForRisuContext(settings.debugLog);
     const character = characterInfo.character;
     // plugins.md is authoritative: request only documented database keys.
-    const baseDb = typeof API.getDatabase === 'function'
-      ? await safeApi('getDatabase', () => API.getDatabase(['personas', 'selectedPersona', 'modules', 'enabledModules', 'moduleIntergration']), settings.debugLog)
+    const liveDbApi = getLiveApi(['getDatabase']);
+    const dbGetter = typeof liveDbApi?.getDatabase === 'function' ? liveDbApi.getDatabase.bind(liveDbApi) : (typeof API?.getDatabase === 'function' ? API.getDatabase.bind(API) : null);
+    const baseDb = dbGetter
+      ? await safeApi('getDatabase', () => dbGetter(['personas', 'selectedPersona', 'modules', 'installedModules', 'customModules', 'enabledModules', 'moduleIntergration']), settings.debugLog)
       : null;
     // API v3 does not expose globalChatVariables through getDatabase(). CBS
     // depending on those values is preserved verbatim instead of being treated
@@ -27522,6 +27618,14 @@ function summarizeAgentCbsTag(rawContent) {
         const button = await root?.getElementById?.(closeId);
         if (!current(version)) return;
         if (button && typeof button.addEventListener === 'function') {
+          try {
+            const hostSection = await (root?.querySelector ? root.querySelector(`section[data-plugin-chat-panel="${id}"]`) : null);
+            if (hostSection?.style) {
+              hostSection.style.padding = '0';
+              hostSection.style.border = '0';
+              hostSection.style.background = 'transparent';
+            }
+          } catch (_) {}
           const listener = await button.addEventListener('click', async event => {
             if (!current(version)) return;
             // Older SafeElement hosts delegate clicks through the document and
@@ -27553,27 +27657,31 @@ function summarizeAgentCbsTag(rawContent) {
     const state = ['done','error','cancelled'].includes(view.state) ? view.state : 'working';
     const label = { working:'진행 중', done:'완료', error:'확인 필요', cancelled:'취소됨' }[state];
     const accent = { working:'#a8b9ff', done:'#79d8b2', error:'#ffacb4', cancelled:'#c7b6ef' }[state];
-    const result = view.result && view.result !== view.message ? `<pre>${escape(view.result)}</pre>` : '';
-    const cancel = view.cancelId ? `<button id="${escape(view.cancelId)}" class="mscs-cancel" type="button" aria-label="${brand} 전송 취소">전송 취소</button>` : '';
+    const result = view.result && view.result !== view.message
+      ? `<pre style="white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 0;font:11px/1.6 ui-monospace,monospace;color:#c8d3e8">${escape(view.result)}</pre>`
+      : '';
+    const cancel = view.cancelId
+      ? `<button id="${escape(view.cancelId)}" class="mscs-cancel" type="button" aria-label="${brand} 전송 취소" style="box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:28px;border-radius:6px;font:inherit;cursor:pointer;padding:0 7px;border:1px solid rgba(255,172,180,.3);background:rgba(255,172,180,.06);color:#ffbec5;font-size:11px;flex:none">전송 취소</button>`
+      : '';
     // Only the owning host section is restyled. No shared container, chat input
     // or other plugin panel is selected, reordered or positioned by this CSS.
-    return `<div id="${rootId}" style="--mscs-accent:${accent}"><style>
+    return `<div id="${rootId}" style="--mscs-accent:${accent};box-sizing:border-box;width:100%;max-width:100%;border:1px solid rgba(136,155,188,.24);border-radius:10px;background:linear-gradient(115deg,rgba(25,34,51,.97),rgba(16,23,36,.96));color:#dce5f5;font:12px/1.5 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.10);overflow:hidden"><style>
 section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;background:transparent!important}
-#${rootId}{box-sizing:border-box;width:100%;border:1px solid rgba(136,155,188,.24);border-radius:10px;background:linear-gradient(115deg,rgba(25,34,51,.97),rgba(16,23,36,.96));color:#dce5f5;font:12px/1.5 system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.10)}
-#${rootId} .mscs-bar{display:flex;align-items:flex-start;gap:9px;min-height:38px;padding:5px 8px;box-sizing:border-box}
+#${rootId}{box-sizing:border-box;width:100%;max-width:100%;border:1px solid rgba(136,155,188,.24);border-radius:10px;background:linear-gradient(115deg,rgba(25,34,51,.97),rgba(16,23,36,.96));color:#dce5f5;font:12px/1.5 system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.10);overflow:hidden}
+#${rootId} .mscs-bar{display:flex;align-items:flex-start;gap:9px;min-height:38px;padding:5px 8px;box-sizing:border-box;width:100%}
 #${rootId} .mscs-brand{display:flex;align-items:center;gap:7px;flex:none;height:28px;font-size:10px;font-weight:750;letter-spacing:.07em;color:#dce5f5}
-#${rootId} .mscs-dot{width:6px;height:6px;border-radius:50%;background:var(--mscs-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--mscs-accent) 10%,transparent)}
+#${rootId} .mscs-dot{width:6px;height:6px;border-radius:50%;background:var(--mscs-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--mscs-accent) 10%,transparent);flex:none;display:inline-block}
 #${rootId} .mscs-state{flex:none;line-height:28px;font-size:10px;color:var(--mscs-accent)}
-#${rootId} details{flex:1 1 auto;min-width:0}
-#${rootId} summary{display:flex;align-items:center;gap:5px;min-height:28px;cursor:pointer;list-style:none;border-radius:5px;color:#c8d3e8}
+#${rootId} details{flex:1 1 auto;min-width:0;margin:0;padding:0;border:0}
+#${rootId} summary{display:flex;align-items:center;gap:5px;min-height:28px;cursor:pointer;list-style:none;border-radius:5px;color:#c8d3e8;outline:none}
 #${rootId} summary::-webkit-details-marker{display:none}
 #${rootId} .mscs-preview{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
-#${rootId} .mscs-chevron{width:12px;height:12px;flex:none;opacity:.55;transition:transform .15s}
+#${rootId} .mscs-chevron{width:12px;height:12px;min-width:12px;min-height:12px;max-width:12px;max-height:12px;flex:none;display:inline-block;vertical-align:middle;opacity:.55;transition:transform .15s}
 #${rootId} details[open] .mscs-chevron{transform:rotate(180deg)}
 #${rootId} .mscs-body{margin:4px 0 3px;padding:8px 0 2px;border-top:1px solid rgba(136,155,188,.16);white-space:pre-wrap;overflow-wrap:anywhere;color:#c8d3e8;max-height:160px;overflow:auto}
 #${rootId} pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 0;font:11px/1.6 ui-monospace,monospace}
-#${rootId} .mscs-actions{display:flex;gap:4px;flex:none}
-#${rootId} button{box-sizing:border-box;display:flex;align-items:center;justify-content:center;min-height:28px;border-radius:6px;font:inherit;cursor:pointer;transition:background .15s,color .15s}
+#${rootId} .mscs-actions{display:flex;gap:4px;flex:none;align-items:center}
+#${rootId} button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:28px;border-radius:6px;font:inherit;cursor:pointer;transition:background .15s,color .15s}
 #${rootId} .mscs-close{width:28px;border:0;background:transparent;color:#94a4c1;font-size:19px;line-height:1}
 #${rootId} .mscs-close:hover{background:rgba(167,185,220,.12);color:#fff}
 #${rootId} .mscs-cancel{padding:0 7px;border:1px solid rgba(255,172,180,.3);background:rgba(255,172,180,.06);color:#ffbec5;font-size:11px}
@@ -27581,7 +27689,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
 #${rootId} button:focus-visible,#${rootId} summary:focus-visible{outline:2px solid var(--mscs-accent);outline-offset:2px}
 @media(max-width:520px){#${rootId} .mscs-bar{gap:6px;padding:4px 6px;min-height:40px}#${rootId} .mscs-brand{height:32px;gap:5px;font-size:9px}#${rootId} .mscs-state{line-height:32px;font-size:9px}#${rootId} summary{min-height:32px}#${rootId} button{min-height:32px}#${rootId} .mscs-close{width:32px}#${rootId} .mscs-cancel{font-size:10px;padding:0 5px}}
 @media(prefers-reduced-motion:reduce){#${rootId} button,#${rootId} .mscs-chevron{transition:none}}
-</style><div class="mscs-bar"><span class="mscs-brand"><span class="mscs-dot" aria-hidden="true"></span>${brand}</span><span class="mscs-state" role="status">${label}</span><details><summary title="${message}" aria-label="${brand} 작업 상세 펼치기"><span class="mscs-preview">${message}</span><svg class="mscs-chevron" aria-hidden="true" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="mscs-body">${message}${result}</div></details><div class="mscs-actions">${cancel}<button id="${closeId}" class="mscs-close" type="button" title="상태 표시 닫기 · 작업은 계속됩니다" aria-label="${brand} 상태 표시 닫기">×</button></div></div></div>`;
+</style><div class="mscs-bar" style="display:flex;align-items:flex-start;gap:9px;min-height:38px;padding:5px 8px;box-sizing:border-box;width:100%"><span class="mscs-brand" style="display:flex;align-items:center;gap:7px;flex:none;height:28px;font-size:10px;font-weight:750;letter-spacing:.07em;color:#dce5f5"><span class="mscs-dot" aria-hidden="true" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${accent};box-shadow:0 0 0 3px color-mix(in srgb,${accent} 10%,transparent);flex:none"></span>${brand}</span><span class="mscs-state" role="status" style="flex:none;line-height:28px;font-size:10px;color:${accent};font-weight:600">${label}</span><details style="flex:1 1 auto;min-width:0;margin:0;padding:0;border:0"><summary title="${message}" aria-label="${brand} 작업 상세 펼치기" style="display:flex;align-items:center;gap:5px;min-height:28px;cursor:pointer;list-style:none;border-radius:5px;color:#c8d3e8;outline:none"><span class="mscs-preview" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;font-size:11px;line-height:28px">${message}</span><svg class="mscs-chevron" aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" style="width:12px;height:12px;min-width:12px;min-height:12px;max-width:12px;max-height:12px;flex:none;display:inline-block;vertical-align:middle;opacity:.55;transition:transform .15s"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="mscs-body" style="margin:4px 0 3px;padding:8px 0 2px;border-top:1px solid rgba(136,155,188,.16);white-space:pre-wrap;overflow-wrap:anywhere;color:#c8d3e8;max-height:160px;overflow:auto">${message}${result}</div></details><div class="mscs-actions" style="display:flex;gap:4px;flex:none;align-items:center">${cancel}<button id="${closeId}" class="mscs-close" type="button" title="상태 표시 닫기 · 작업은 계속됩니다" aria-label="${brand} 상태 표시 닫기" style="box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:28px;width:28px;border-radius:6px;font:inherit;cursor:pointer;border:0;background:transparent;color:#94a4c1;font-size:19px;line-height:1">×</button></div></div></div>`;
   };
   const show = async view => {
     const version = ++epoch;
@@ -39075,6 +39183,7 @@ function createLibraReadonlySourceContext(owner) {
           const current = asObject(await storage.getJson(registryKey, {}));
           current[registryId] = { scopeKey: existingScope, characterId: string(characterId), chatId: string(chatId), adoptedAt: nowIso(), source: 'existing_manifest' };
           await storage.setJson(registryKey, current);
+          try { await RisuCompat.localSetItem(registryKey, JSON.stringify(current)); } catch (_) {}
           return existingScope;
         }
       }
@@ -39085,6 +39194,7 @@ function createLibraReadonlySourceContext(owner) {
       const current = asObject(await storage.getJson(registryKey, {}));
       current[registryId] = { scopeKey: createdScope, characterId: string(characterId), chatId: string(chatId), adoptedAt: nowIso(), source: 'created' };
       await storage.setJson(registryKey, current);
+      try { await RisuCompat.localSetItem(registryKey, JSON.stringify(current)); } catch (_) {}
       return createdScope;
       });
       scopeRegistryMutationTail = task.then(() => undefined, () => undefined);
@@ -42995,6 +43105,7 @@ function createLibraReadonlySourceContext(owner) {
         nativeCopySuppressed: true, nativeCopySuppressedAt: nowIso(), nativeCopySuppressedReason: string(reason)
       };
       await storage.setVerifiedJson(registryKey, registry, scope);
+      try { await RisuCompat.localSetItem(registryKey, JSON.stringify(registry)); } catch (_) {}
       const confirmed = asObject(await storage.getVerifiedJson(registryKey, scope, {}));
       if (digest(confirmed) !== digest(registry)
         || confirmed[registryId]?.nativeCopySuppressed !== true
@@ -81978,11 +82089,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     try {
       const characterInfo = await loadCurrentCharacterForRisuContext(false);
       const character = characterInfo.character;
-      const db = typeof API.getDatabase === 'function'
-        ? await safeApi('getDatabase.moduleCatalog', () => API.getDatabase(['personas', 'selectedPersona', 'modules', 'enabledModules', 'moduleIntergration']), false)
+      const liveDbApi = getLiveApi(['getDatabase']);
+      const dbGetter = typeof liveDbApi?.getDatabase === 'function' ? liveDbApi.getDatabase.bind(liveDbApi) : (typeof API?.getDatabase === 'function' ? API.getDatabase.bind(API) : null);
+      const db = dbGetter
+        ? await safeApi('getDatabase.moduleCatalog', () => dbGetter(['personas', 'selectedPersona', 'modules', 'installedModules', 'customModules', 'enabledModules', 'moduleIntergration']), false)
         : null;
       const chatInfo = await loadCurrentChatForRisuContext(character, false);
       const persona = selectedPersonaFromDb(db || {}, chatInfo.chat);
+      const charName = firstFilled(character?.name, character?.data?.name, character?.displayName, character?.chaId, character?.id, '');
+      const chatName = firstFilled(chatInfo?.chat?.name, chatInfo?.chat?.title, chatInfo?.chat?.id, '');
+      const scopeParts = [charName, chatName].filter(Boolean);
+      if (scopeParts.length) Runtime.currentChatScope = scopeParts.join(' / ');
       Gui.moduleCatalog = buildSelectableModuleCatalog(db || {}, character, chatInfo.chat, persona);
       Gui.moduleCatalogLoadedAt = Date.now();
       return Gui.moduleCatalog;
@@ -82012,6 +82129,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         return Gui.characterLoreCatalog;
       }
       const chatInfo = await loadCurrentChatForRisuContext(character, false);
+      const charName = firstFilled(character?.name, character?.data?.name, character?.displayName, character?.chaId, character?.id, '');
+      const chatName = firstFilled(chatInfo?.chat?.name, chatInfo?.chat?.title, chatInfo?.chat?.id, '');
+      const scopeParts = [charName, chatName].filter(Boolean);
+      if (scopeParts.length) Runtime.currentChatScope = scopeParts.join(' / ');
       Gui.characterLoreCatalog = buildSelectableCharacterLoreCatalog(character, chatInfo.chat);
       Gui.characterLoreCatalogScope = scope;
       Gui.characterLoreCatalogLoadedAt = Date.now();

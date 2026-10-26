@@ -295,8 +295,8 @@
       },
       "libra": {
         "version": "2.6.8",
-        "sha256": "5e02f94458d20c77bb14860935ae147c3bfb168571e772e40f3cee3b7c84291d",
-        "bytes": 6727839
+        "sha256": "6ecc981aea29ec02df4d09da38c4db484fc74f2044f2cad0584212bb8afdb35f",
+        "bytes": 6737797
       },
       "lia": {
         "version": "0.29.3",
@@ -310,8 +310,8 @@
       },
       "gradia": {
         "version": "0.28.2",
-        "sha256": "b7d7a9a05f5d7a54f92883eb49d830c7dae6de35de40615d2fef994f3c23dd67",
-        "bytes": 3046051
+        "sha256": "3db3358b4abfc8b7ac8e848c2415794ae8e486757dee9d41d4d50c355d391efe",
+        "bytes": 3061430
       }
     },
     "note": "Generated from current readable Source plugin bytes. This unpublished source candidate is not a published archive, deployment, or live-host/model execution receipt. Historical records and anomalies are preserved; prior candidate bytes are backed up separately.",

@@ -1593,11 +1593,60 @@
     compileExtraSkillsForStage(selection,stageName,phase,settings)
   ].filter(Boolean).join('\n\n');
 
+  const estimateModelContextTokens = (preset = {}) => {
+    const rawModel = text(preset?.model || '').toLowerCase().trim();
+    const provider = canonicalProvider(preset?.provider || '');
+    if (provider === 'novelai' || /kayra|clio|erato|euterpe|krake/.test(rawModel)) {
+      return 8192;
+    }
+    if (!rawModel) {
+      if (provider === 'anthropic') return 200000;
+      if (provider === 'google' || provider === 'gemini') return 1000000;
+      if (provider === 'deepseek') return 64000;
+      if (provider === 'openai') return 128000;
+      return 0;
+    }
+    const ctxSuffix = rawModel.match(/[:\-_](\d+)(k|m)\b/i);
+    if (ctxSuffix) {
+      const num = parseInt(ctxSuffix[1], 10);
+      const unit = ctxSuffix[2].toLowerCase();
+      if (unit === 'm') return num * 1000000;
+      if (unit === 'k') return num * 1024;
+    }
+    if (/claude-3|claude-2/i.test(rawModel)) return 200000;
+    if (/gemini-(?:1\.5|2\.0|2\.5)-pro/i.test(rawModel)) return 2000000;
+    if (/gemini/i.test(rawModel)) return 1000000;
+    if (/gpt-4o|chatgpt-4o|\bo1\b|\bo3\b/i.test(rawModel)) return 128000;
+    if (/gpt-4-(?:turbo|1106|0125)/i.test(rawModel)) return 128000;
+    if (/gpt-4-32k/i.test(rawModel)) return 32768;
+    if (/gpt-4\b/i.test(rawModel)) return 8192;
+    if (/gpt-3\.5-turbo-16k/i.test(rawModel)) return 16384;
+    if (/gpt-3\.5/i.test(rawModel)) return 4096;
+    if (/deepseek/i.test(rawModel)) return 64000;
+    if (/qwen.*(?:128k|1m)/i.test(rawModel)) return 131072;
+    if (/qwen-?2\.5|qwen2\.5/i.test(rawModel)) return 32768;
+    if (/qwen/i.test(rawModel)) return 32768;
+    if (/llama-?3\.[123]/i.test(rawModel)) return 128000;
+    if (/llama-?3\b/i.test(rawModel)) return 8192;
+    if (/llama-?2-70b/i.test(rawModel)) return 4096;
+    if (/llama/i.test(rawModel)) return 8192;
+    if (/mistral-large|codestral/i.test(rawModel)) return 128000;
+    if (/mistral|mixtral/i.test(rawModel)) return 32768;
+    if (/command-r/i.test(rawModel)) return 128000;
+    if (/gemma-2/i.test(rawModel)) return 8192;
+    if (/solar/i.test(rawModel)) return 4096;
+    if (/glm-4/i.test(rawModel)) return 128000;
+    return 0;
+  };
+
   const manualSkillCapacity = (stage,settings={},presetOverride=null,outputOverride=null) => {
     const preset=presetOverride||resolvePreset(settings,stage).preset||{};
     const matches=!preset.metadata_model_id||preset.metadata_model_id===preset.model;
-    const contextTokens=Number(preset.context_window||0)||(matches?Number(preset.catalog_context_window||0):0)
-      ||(canonicalProvider(preset.provider)==='ollama'?ollamaContextWindowTokens(preset):0);
+    const manualContext=Number(preset.context_window||0);
+    const catalogContext=matches?Number(preset.catalog_context_window||0):0;
+    const ollamaContext=canonicalProvider(preset.provider)==='ollama'?ollamaContextWindowTokens(preset):0;
+    const estimatedContext=estimateModelContextTokens(preset);
+    const contextTokens=manualContext||catalogContext||ollamaContext||estimatedContext;
     // Same dated 2.4 chars/token estimate used by context recovery. Reserve the full
     // configured completion envelope (including thinking), 10% margin and framing.
     const outputTokens=Number(outputOverride??preset.max_tokens)||DEFAULT_MAX_STAGE_TOKENS;
@@ -1624,10 +1673,15 @@
     if(!SKILL_STAGE_IDS.includes(stage))return null;
     const selection=selectManualSkillsForStage(stage,settings);if(!selection.selected.length)return null;
     const capacity=manualSkillCapacity(stage,settings,preset,outputTokens);
-    if(!capacity.verified)throw Object.assign(new Error(`${stage}: 추가 Skill의 문맥 여유를 확인하려면 AI 프리셋에서 모델 문맥 크기를 설정하거나 모델 목록을 갱신하세요.`),{code:'GRADIA_SKILL_MODEL_CONTEXT_REQUIRED'});
+    if(!capacity.verified){
+      if(settings.failureMode==='hard'){
+        throw Object.assign(new Error(`${stage}: 추가 Skill의 문맥 여유를 확인하려면 AI 프리셋에서 모델 문맥 크기를 설정하거나 모델 목록을 갱신하세요.`),{code:'GRADIA_SKILL_MODEL_CONTEXT_REQUIRED'});
+      }
+      warn(`skill_context_unverified:${stage}`, '문맥 크기를 확인할 수 없어 프로필 기본 한도로 스킬을 제한합니다.');
+    }
     const budget=assertManualSkillBudget(selection,stage,settings,capacity);
     const inputChars=text(systemPrompt).length+text(userPrompt).length+text(sharedPromptPrefix).length;
-    if(inputChars>capacity.maxInputChars)throw Object.assign(new Error(`${stage}: 전체 입력 ${inputChars.toLocaleString()}자 / 안전 입력 한도 ${capacity.maxInputChars.toLocaleString()}자. 대화·분석·연속성·로어북은 줄이지 않았습니다. 추가 Skill 선택을 줄이거나 문맥이 더 큰 모델을 선택하세요.`),{code:'GRADIA_SKILL_PROTECTED_CONTEXT_EXCEEDED'});
+    if(capacity.maxInputChars&&inputChars>capacity.maxInputChars)throw Object.assign(new Error(`${stage}: 전체 입력 ${inputChars.toLocaleString()}자 / 안전 입력 한도 ${capacity.maxInputChars.toLocaleString()}자. 대화·분석·연속성·로어북은 줄이지 않았습니다. 추가 Skill 선택을 줄이거나 문맥이 더 큰 모델을 선택하세요.`),{code:'GRADIA_SKILL_PROTECTED_CONTEXT_EXCEEDED'});
     return {...budget,inputChars};
   };
 
@@ -7262,12 +7316,35 @@ ${text(paired.leadingAssistant.content || '')}
   };
 
   const collectionFrom = (value, source = '') => {
-    if (Array.isArray(value)) return value
-      .map((item, index) => item && typeof item === 'object' ? { ...item, __collectionKey: text(item.__collectionKey || index), __collectionSource: source } : null)
-      .filter(Boolean);
-    if (value && typeof value === 'object') {
+    if (!value) return [];
+    if (Array.isArray(value)) {
+      return value
+        .flatMap((item, index) => {
+          if (!item || typeof item !== 'object') return [];
+          const nested = item.entries || item.items || item.lore;
+          if (Array.isArray(nested) && nested.length > 0 && !loreContent(item)) {
+            return collectionFrom(nested, source || text(item.name || item.comment || item.id || index));
+          }
+          return [{
+            ...item,
+            __collectionKey: text(item.__collectionKey || item.id || item.uid || item.key || index),
+            __collectionSource: source
+          }];
+        })
+        .filter(Boolean);
+    }
+    if (typeof value === 'object') {
+      const nested = value.entries || value.items || value.lore || (Array.isArray(value.data) ? value.data : null);
+      if (nested && (Array.isArray(nested) || typeof nested === 'object')) {
+        const unwrapped = collectionFrom(nested, source || text(value.name || value.id || ''));
+        if (unwrapped.length > 0) return unwrapped;
+      }
       return Object.entries(value)
-        .map(([key, item]) => item && typeof item === 'object' ? { ...item, __collectionKey: key, __collectionSource: source } : null)
+        .map(([key, item]) => item && typeof item === 'object' ? {
+          ...item,
+          __collectionKey: text(item.__collectionKey || item.id || item.uid || item.key || key),
+          __collectionSource: source
+        } : null)
         .filter(Boolean);
     }
     return [];
@@ -7307,7 +7384,19 @@ ${text(paired.leadingAssistant.content || '')}
     try { return new RegExp(raw.slice(1, lastSlash), raw.slice(lastSlash + 1)); } catch (_) { return null; }
   };
 
-  const loreContent = lore => firstFilled(lore?.content, lore?.prompt, lore?.text, lore?.entry, lore?.data, lore?.value, lore?.body);
+  const loreContent = lore => firstFilled(
+    lore?.content,
+    lore?.prompt,
+    lore?.text,
+    lore?.entry,
+    lore?.data?.content,
+    lore?.data?.prompt,
+    lore?.data?.text,
+    lore?.data?.entry,
+    typeof lore?.data === 'string' ? lore.data : '',
+    typeof lore?.value === 'string' ? lore.value : '',
+    typeof lore?.body === 'string' ? lore.body : ''
+  );
 
   const isLibraManagedLore = (lore) => {
     if (!lore || typeof lore !== 'object') return false;
@@ -7339,15 +7428,38 @@ ${text(paired.leadingAssistant.content || '')}
   };
 
   const loadCurrentCharacterForRisuContext = async (debugLog = false) => {
-    const directApi = getLiveApi(['getCharacter']);
-    const direct = typeof directApi?.getCharacter === 'function' ? await safeApi('getCharacter', () => directApi.getCharacter(), debugLog) : null;
+    const directApi = getLiveApi(['getCharacter']) || getLiveApi(['getChar']);
+    const directGetter = typeof directApi?.getCharacter === 'function' ? directApi.getCharacter.bind(directApi) : (typeof directApi?.getChar === 'function' ? directApi.getChar.bind(directApi) : null);
+    const directRaw = directGetter ? await safeApi('getCharacter', directGetter, debugLog) : null;
+    const direct = (directRaw && typeof directRaw === 'object' && directRaw.character && typeof directRaw.character === 'object') ? directRaw.character : directRaw;
     if (direct) return { character: direct, source: 'getCharacter' };
-    const indexApi = getLiveApi(['getCurrentCharacterIndex', 'getCharacterFromIndex']);
-    if (typeof indexApi?.getCurrentCharacterIndex === 'function' && typeof indexApi?.getCharacterFromIndex === 'function') {
-      const charIndex = await safeApi('getCurrentCharacterIndex', () => indexApi.getCurrentCharacterIndex(), debugLog);
-      if (Number.isFinite(Number(charIndex))) {
-        const byIndex = await safeApi('getCharacterFromIndex', () => indexApi.getCharacterFromIndex(parseInt(charIndex, 10)), debugLog);
-        if (byIndex) return { character: byIndex, source: 'getCharacterFromIndex' };
+    const indexApi = getLiveApi(['getCurrentCharacterIndex', 'getCharacterFromIndex']) || getLiveApi(['getCurrentCharacterIndex']);
+    if (typeof indexApi?.getCurrentCharacterIndex === 'function') {
+      const charIndexRaw = await safeApi('getCurrentCharacterIndex', () => indexApi.getCurrentCharacterIndex(), debugLog);
+      const charIndex = parseInt(charIndexRaw, 10);
+      if (Number.isInteger(charIndex) && charIndex >= 0) {
+        if (typeof indexApi?.getCharacterFromIndex === 'function') {
+          const byIndex = await safeApi('getCharacterFromIndex', () => indexApi.getCharacterFromIndex(charIndex), debugLog);
+          const unwrapped = (byIndex && typeof byIndex === 'object' && byIndex.character && typeof byIndex.character === 'object') ? byIndex.character : byIndex;
+          if (unwrapped) return { character: unwrapped, source: 'getCharacterFromIndex' };
+        }
+        const dbApi = getLiveApi(['getDatabase']);
+        if (typeof dbApi?.getDatabase === 'function' || typeof API?.getDatabase === 'function') {
+          const getter = typeof dbApi?.getDatabase === 'function' ? dbApi.getDatabase.bind(dbApi) : API.getDatabase.bind(API);
+          const db = await safeApi('getDatabase.characters', () => getter(['characters']), debugLog);
+          if (Array.isArray(db?.characters) && db.characters[charIndex]) {
+            return { character: db.characters[charIndex], source: 'getDatabase.characters' };
+          }
+        }
+      }
+    }
+    const fallbackDbApi = getLiveApi(['getDatabase']);
+    if (typeof fallbackDbApi?.getDatabase === 'function' || typeof API?.getDatabase === 'function') {
+      const getter = typeof fallbackDbApi?.getDatabase === 'function' ? fallbackDbApi.getDatabase.bind(fallbackDbApi) : API.getDatabase.bind(API);
+      const db = await safeApi('getDatabase.selectedCharacter', () => getter(['selectedCharacter', 'characters']), debugLog);
+      const selIdx = parseInt(db?.selectedCharacter, 10);
+      if (Number.isInteger(selIdx) && selIdx >= 0 && Array.isArray(db?.characters) && db.characters[selIdx]) {
+        return { character: db.characters[selIdx], source: 'getDatabase.selectedCharacter' };
       }
     }
     return { character: null, source: 'missing' };
@@ -8411,6 +8523,9 @@ function agentCbsMatcher(rawContent, cbsContext, state) {
       return String(args[0] || '').replace(/[^0-9.\-]/g, '');
     case 'length':
       return String(args[0] || '').length.toString();
+    case 'annotation':
+    case 'ruby':
+      return String(args[0] ?? '');
     case 'hiddenkey':
     case 'blank':
     case 'none':
@@ -8582,7 +8697,7 @@ function isAgentCbsSupportedFunction(name) {
     'getvar', 'getglobalvar', 'calc',
     'equal', 'notequal', 'greater', 'less', 'greaterequal', 'lessequal',
     'contains', 'startswith', 'endswith', 'replace', 'trim', 'lower', 'upper', 'capitalize', 'reverse', 'tonumber', 'length',
-    'hiddenkey', 'blank', 'none', 'br', 'newline', 'bo', 'bc', 'ddecbo', 'ddecbc', 'decbo', 'decbc',
+    'hiddenkey', 'blank', 'none', 'annotation', 'ruby', 'br', 'newline', 'bo', 'bc', 'ddecbo', 'ddecbc', 'decbo', 'decbc',
     'pick', 'rollp', 'rollpick', 'and', 'or', 'not',
   ].includes(name);
 }
@@ -8909,15 +9024,23 @@ function mergeAgentCbsWarnings(...warningLists) {
   const moduleIsEnabled = (module, enabledRefs) => {
     if (!module || typeof module !== 'object') return false;
     if (module.enabled === false || module.disabled === true || module.disable === true) return false;
-    if (!enabledRefs.size) return module.enabled === true || module.active === true || module.isEnabled === true;
+    if (module.enabled === true || module.active === true || module.isEnabled === true) return true;
+    if (!enabledRefs || !enabledRefs.size) return false;
     return identityValues(module).some(id => enabledRefs.has(id));
   };
 
   const moduleLoreSources = module => [
-    module?.lore, module?.lorebook, module?.loreBook, module?.lorebooks, module?.entries,
+    module?.lore, module?.lorebook, module?.loreBook, module?.lorebooks, module?.entries, module?.items,
+    module?.characterBook, module?.character_book,
+    module?.characterBook?.entries, module?.character_book?.entries,
+    module?.characterBook?.items, module?.character_book?.items,
     module?.data?.lore, module?.data?.lorebook, module?.data?.loreBook, module?.data?.lorebooks,
+    module?.data?.entries, module?.data?.items,
+    module?.data?.characterBook, module?.data?.character_book,
     module?.data?.characterBook?.entries, module?.data?.character_book?.entries,
-    module?.extensions?.characterBook?.entries, module?.extensions?.character_book?.entries
+    module?.data?.characterBook?.items, module?.data?.character_book?.items,
+    module?.extensions?.characterBook?.entries, module?.extensions?.character_book?.entries,
+    module?.extensions?.world_info, module?.extensions?.worldInfo
   ];
 
   const selectableModuleLoreEntries = (module, sourceMeta = {}) => {
@@ -8971,6 +9094,10 @@ function mergeAgentCbsWarnings(...warningLists) {
       });
     };
     collectionFrom(db?.modules, 'modules').forEach(module => add(module, false));
+    collectionFrom(db?.installedModules, 'installedModules').forEach(module => add(module, false));
+    collectionFrom(db?.customModules, 'customModules').forEach(module => add(module, false));
+    collectionFrom(character?.modules, 'characterModules').forEach(module => add(module, false));
+    collectionFrom(currentChat?.modules, 'chatModules').forEach(module => add(module, false));
     [persona?.embeddedModule, ...(Array.isArray(persona?.embeddedModules) ? persona.embeddedModules : [])].filter(Boolean).forEach(module => add(module, true));
     return catalog.sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
   };
@@ -9046,10 +9173,21 @@ function mergeAgentCbsWarnings(...warningLists) {
     };
     const characterSources = [
       character?.globalLore, character?.lore, character?.lorebook, character?.loreBook, character?.lorebooks,
+      character?.entries, character?.items,
+      character?.characterBook, character?.character_book,
       character?.characterBook?.entries, character?.character_book?.entries,
+      character?.characterBook?.items, character?.character_book?.items,
+      character?.data?.globalLore, character?.data?.localLore, character?.data?.lore, character?.data?.lorebook, character?.data?.loreBook, character?.data?.lorebooks,
+      character?.data?.entries, character?.data?.items,
+      character?.data?.characterBook, character?.data?.character_book,
       character?.data?.characterBook?.entries, character?.data?.character_book?.entries,
+      character?.data?.characterBook?.items, character?.data?.character_book?.items,
+      character?.extensions?.characterBook, character?.extensions?.character_book,
       character?.extensions?.characterBook?.entries, character?.extensions?.character_book?.entries,
-      character?.data?.extensions?.characterBook?.entries, character?.data?.extensions?.character_book?.entries
+      character?.extensions?.world_info, character?.extensions?.worldInfo,
+      character?.data?.extensions?.characterBook, character?.data?.extensions?.character_book,
+      character?.data?.extensions?.characterBook?.entries, character?.data?.extensions?.character_book?.entries,
+      character?.data?.extensions?.world_info, character?.data?.extensions?.worldInfo
     ];
     characterSources.forEach((source, idx) => addLoreCollection(add, source, '캐릭터 로어북', 'character', idx * 1000));
 
@@ -9060,9 +9198,19 @@ function mergeAgentCbsWarnings(...warningLists) {
     // by those child links.
 
     const enabledRefs = enabledModuleReferenceSet(db, character, currentChat, persona);
-    for (const module of collectionFrom(db?.modules, 'modules')) {
+    const allModules = [
+      ...collectionFrom(db?.modules, 'modules'),
+      ...collectionFrom(db?.installedModules, 'installedModules'),
+      ...collectionFrom(db?.customModules, 'customModules'),
+      ...collectionFrom(character?.modules, 'characterModules'),
+      ...collectionFrom(currentChat?.modules, 'chatModules')
+    ];
+    const seenModuleKeys = new Set();
+    for (const module of allModules) {
       if (!moduleIsEnabled(module, enabledRefs) || !moduleSelectedForLore(module, selectedModules)) continue;
       const moduleKey = moduleSelectionKey(module);
+      if (!moduleKey || seenModuleKeys.has(moduleKey)) continue;
+      seenModuleKeys.add(moduleKey);
       const moduleName = firstFilled(module?.name, module?.displayName, module?.id, module?.namespace, 'unknown');
       const moduleLabel = `모듈 로어북: ${moduleName}`;
       const sourceMeta = { moduleId: module?.id || '', moduleName, moduleNamespace: module?.namespace || '', moduleKey };
@@ -9736,8 +9884,10 @@ function mergeAgentCbsWarnings(...warningLists) {
       // globalChatVariables is intentionally not exposed to plugins. Conditional
       // lore therefore uses host-formatted request evidence instead of treating
       // an unavailable global toggle as false.
-      const baseDb = typeof API.getDatabase === 'function'
-        ? await safeApi('getDatabase', () => API.getDatabase(['personas', 'selectedPersona', 'modules', 'enabledModules', 'moduleIntergration']), settings.debugLog)
+      const liveDbApi = getLiveApi(['getDatabase']);
+      const dbGetter = typeof liveDbApi?.getDatabase === 'function' ? liveDbApi.getDatabase.bind(liveDbApi) : (typeof API?.getDatabase === 'function' ? API.getDatabase.bind(API) : null);
+      const baseDb = dbGetter
+        ? await safeApi('getDatabase', () => dbGetter(['personas', 'selectedPersona', 'modules', 'installedModules', 'customModules', 'enabledModules', 'moduleIntergration']), settings.debugLog)
         : null;
       const db = { ...(baseDb || {}) };
       const chatInfo = await loadCurrentChatForRisuContext(character, settings.debugLog);
@@ -15713,7 +15863,8 @@ ${passage.text || ''}`, 420));
       const ollamaContext = canonicalProvider(preset.provider) === 'ollama'
         ? ollamaContextWindowTokens(preset)
         : 0;
-      const contextTokens = manualContext || catalogContext || ollamaContext;
+      const estimatedContext = estimateModelContextTokens(preset);
+      const contextTokens = manualContext || catalogContext || ollamaContext || estimatedContext;
       const outputTokens = clampInt(
         metadataMatches && preset.catalog_max_output_tokens
           ? Math.min(preset.max_tokens || DEFAULT_MAX_STAGE_TOKENS, preset.catalog_max_output_tokens)
@@ -15737,7 +15888,9 @@ ${passage.text || ''}`, 420));
             ? 'catalog'
             : ollamaContext
               ? 'provider_default'
-              : 'profile_fallback',
+              : estimatedContext
+                ? 'model_heuristic'
+                : 'profile_fallback',
         reservedOutputTokens,
         safeReferenceChars: Math.min(REFERENCE_BUDGET_CUSTOM_MAX_CHARS, safeChars)
       });
@@ -20300,6 +20453,14 @@ ${passage.text || ''}`, 420));
         const button = await root?.getElementById?.(closeId);
         if (!current(version)) return;
         if (button && typeof button.addEventListener === 'function') {
+          try {
+            const hostSection = await (root?.querySelector ? root.querySelector(`section[data-plugin-chat-panel="${id}"]`) : null);
+            if (hostSection?.style) {
+              hostSection.style.padding = '0';
+              hostSection.style.border = '0';
+              hostSection.style.background = 'transparent';
+            }
+          } catch (_) {}
           const listener = await button.addEventListener('click', async event => {
             if (!current(version)) return;
             // Older SafeElement hosts delegate clicks through the document and
@@ -20331,27 +20492,31 @@ ${passage.text || ''}`, 420));
     const state = ['done','error','cancelled'].includes(view.state) ? view.state : 'working';
     const label = { working:'진행 중', done:'완료', error:'확인 필요', cancelled:'취소됨' }[state];
     const accent = { working:'#a8b9ff', done:'#79d8b2', error:'#ffacb4', cancelled:'#c7b6ef' }[state];
-    const result = view.result && view.result !== view.message ? `<pre>${escape(view.result)}</pre>` : '';
-    const cancel = view.cancelId ? `<button id="${escape(view.cancelId)}" class="mscs-cancel" type="button" aria-label="${brand} 전송 취소">전송 취소</button>` : '';
+    const result = view.result && view.result !== view.message
+      ? `<pre style="white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 0;font:11px/1.6 ui-monospace,monospace;color:#c8d3e8">${escape(view.result)}</pre>`
+      : '';
+    const cancel = view.cancelId
+      ? `<button id="${escape(view.cancelId)}" class="mscs-cancel" type="button" aria-label="${brand} 전송 취소" style="box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:28px;border-radius:6px;font:inherit;cursor:pointer;padding:0 7px;border:1px solid rgba(255,172,180,.3);background:rgba(255,172,180,.06);color:#ffbec5;font-size:11px;flex:none">전송 취소</button>`
+      : '';
     // Only the owning host section is restyled. No shared container, chat input
     // or other plugin panel is selected, reordered or positioned by this CSS.
-    return `<div id="${rootId}" style="--mscs-accent:${accent}"><style>
+    return `<div id="${rootId}" style="--mscs-accent:${accent};box-sizing:border-box;width:100%;max-width:100%;border:1px solid rgba(136,155,188,.24);border-radius:10px;background:linear-gradient(115deg,rgba(25,34,51,.97),rgba(16,23,36,.96));color:#dce5f5;font:12px/1.5 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.10);overflow:hidden"><style>
 section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;background:transparent!important}
-#${rootId}{box-sizing:border-box;width:100%;border:1px solid rgba(136,155,188,.24);border-radius:10px;background:linear-gradient(115deg,rgba(25,34,51,.97),rgba(16,23,36,.96));color:#dce5f5;font:12px/1.5 system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.10)}
-#${rootId} .mscs-bar{display:flex;align-items:flex-start;gap:9px;min-height:38px;padding:5px 8px;box-sizing:border-box}
+#${rootId}{box-sizing:border-box;width:100%;max-width:100%;border:1px solid rgba(136,155,188,.24);border-radius:10px;background:linear-gradient(115deg,rgba(25,34,51,.97),rgba(16,23,36,.96));color:#dce5f5;font:12px/1.5 system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.10);overflow:hidden}
+#${rootId} .mscs-bar{display:flex;align-items:flex-start;gap:9px;min-height:38px;padding:5px 8px;box-sizing:border-box;width:100%}
 #${rootId} .mscs-brand{display:flex;align-items:center;gap:7px;flex:none;height:28px;font-size:10px;font-weight:750;letter-spacing:.07em;color:#dce5f5}
-#${rootId} .mscs-dot{width:6px;height:6px;border-radius:50%;background:var(--mscs-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--mscs-accent) 10%,transparent)}
+#${rootId} .mscs-dot{width:6px;height:6px;border-radius:50%;background:var(--mscs-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--mscs-accent) 10%,transparent);flex:none;display:inline-block}
 #${rootId} .mscs-state{flex:none;line-height:28px;font-size:10px;color:var(--mscs-accent)}
-#${rootId} details{flex:1 1 auto;min-width:0}
-#${rootId} summary{display:flex;align-items:center;gap:5px;min-height:28px;cursor:pointer;list-style:none;border-radius:5px;color:#c8d3e8}
+#${rootId} details{flex:1 1 auto;min-width:0;margin:0;padding:0;border:0}
+#${rootId} summary{display:flex;align-items:center;gap:5px;min-height:28px;cursor:pointer;list-style:none;border-radius:5px;color:#c8d3e8;outline:none}
 #${rootId} summary::-webkit-details-marker{display:none}
 #${rootId} .mscs-preview{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
-#${rootId} .mscs-chevron{width:12px;height:12px;flex:none;opacity:.55;transition:transform .15s}
+#${rootId} .mscs-chevron{width:12px;height:12px;min-width:12px;min-height:12px;max-width:12px;max-height:12px;flex:none;display:inline-block;vertical-align:middle;opacity:.55;transition:transform .15s}
 #${rootId} details[open] .mscs-chevron{transform:rotate(180deg)}
 #${rootId} .mscs-body{margin:4px 0 3px;padding:8px 0 2px;border-top:1px solid rgba(136,155,188,.16);white-space:pre-wrap;overflow-wrap:anywhere;color:#c8d3e8;max-height:160px;overflow:auto}
 #${rootId} pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 0;font:11px/1.6 ui-monospace,monospace}
-#${rootId} .mscs-actions{display:flex;gap:4px;flex:none}
-#${rootId} button{box-sizing:border-box;display:flex;align-items:center;justify-content:center;min-height:28px;border-radius:6px;font:inherit;cursor:pointer;transition:background .15s,color .15s}
+#${rootId} .mscs-actions{display:flex;gap:4px;flex:none;align-items:center}
+#${rootId} button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:28px;border-radius:6px;font:inherit;cursor:pointer;transition:background .15s,color .15s}
 #${rootId} .mscs-close{width:28px;border:0;background:transparent;color:#94a4c1;font-size:19px;line-height:1}
 #${rootId} .mscs-close:hover{background:rgba(167,185,220,.12);color:#fff}
 #${rootId} .mscs-cancel{padding:0 7px;border:1px solid rgba(255,172,180,.3);background:rgba(255,172,180,.06);color:#ffbec5;font-size:11px}
@@ -20359,7 +20524,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
 #${rootId} button:focus-visible,#${rootId} summary:focus-visible{outline:2px solid var(--mscs-accent);outline-offset:2px}
 @media(max-width:520px){#${rootId} .mscs-bar{gap:6px;padding:4px 6px;min-height:40px}#${rootId} .mscs-brand{height:32px;gap:5px;font-size:9px}#${rootId} .mscs-state{line-height:32px;font-size:9px}#${rootId} summary{min-height:32px}#${rootId} button{min-height:32px}#${rootId} .mscs-close{width:32px}#${rootId} .mscs-cancel{font-size:10px;padding:0 5px}}
 @media(prefers-reduced-motion:reduce){#${rootId} button,#${rootId} .mscs-chevron{transition:none}}
-</style><div class="mscs-bar"><span class="mscs-brand"><span class="mscs-dot" aria-hidden="true"></span>${brand}</span><span class="mscs-state" role="status">${label}</span><details><summary title="${message}" aria-label="${brand} 작업 상세 펼치기"><span class="mscs-preview">${message}</span><svg class="mscs-chevron" aria-hidden="true" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="mscs-body">${message}${result}</div></details><div class="mscs-actions">${cancel}<button id="${closeId}" class="mscs-close" type="button" title="상태 표시 닫기 · 작업은 계속됩니다" aria-label="${brand} 상태 표시 닫기">×</button></div></div></div>`;
+</style><div class="mscs-bar" style="display:flex;align-items:flex-start;gap:9px;min-height:38px;padding:5px 8px;box-sizing:border-box;width:100%"><span class="mscs-brand" style="display:flex;align-items:center;gap:7px;flex:none;height:28px;font-size:10px;font-weight:750;letter-spacing:.07em;color:#dce5f5"><span class="mscs-dot" aria-hidden="true" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${accent};box-shadow:0 0 0 3px color-mix(in srgb,${accent} 10%,transparent);flex:none"></span>${brand}</span><span class="mscs-state" role="status" style="flex:none;line-height:28px;font-size:10px;color:${accent};font-weight:600">${label}</span><details style="flex:1 1 auto;min-width:0;margin:0;padding:0;border:0"><summary title="${message}" aria-label="${brand} 작업 상세 펼치기" style="display:flex;align-items:center;gap:5px;min-height:28px;cursor:pointer;list-style:none;border-radius:5px;color:#c8d3e8;outline:none"><span class="mscs-preview" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;font-size:11px;line-height:28px">${message}</span><svg class="mscs-chevron" aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" style="width:12px;height:12px;min-width:12px;min-height:12px;max-width:12px;max-height:12px;flex:none;display:inline-block;vertical-align:middle;opacity:.55;transition:transform .15s"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary><div class="mscs-body" style="margin:4px 0 3px;padding:8px 0 2px;border-top:1px solid rgba(136,155,188,.16);white-space:pre-wrap;overflow-wrap:anywhere;color:#c8d3e8;max-height:160px;overflow:auto">${message}${result}</div></details><div class="mscs-actions" style="display:flex;gap:4px;flex:none;align-items:center">${cancel}<button id="${closeId}" class="mscs-close" type="button" title="상태 표시 닫기 · 작업은 계속됩니다" aria-label="${brand} 상태 표시 닫기" style="box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:28px;width:28px;border-radius:6px;font:inherit;cursor:pointer;border:0;background:transparent;color:#94a4c1;font-size:19px;line-height:1">×</button></div></div></div>`;
   };
   const show = async view => {
     const version = ++epoch;
@@ -27094,7 +27259,8 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
     const ollamaContext = canonicalProvider(preset.provider) === 'ollama'
       ? ollamaContextWindowTokens(preset)
       : 0;
-    const contextTokens = manualContext || catalogContext || ollamaContext;
+    const estimatedContext = estimateModelContextTokens(preset);
+    const contextTokens = manualContext || catalogContext || ollamaContext || estimatedContext;
     const outputTokens = risuEngineOutputTokenBudget(settings);
     const profileId = normalizeChoice(settings?.quickProfile || 'balanced', QUICK_PROFILE_IDS, 'balanced');
     const fallbackChars = Math.min(
@@ -27105,7 +27271,7 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
       ? Math.max(6000, Math.floor(contextTokens * 3.2 * 0.78 - outputTokens * 3.2 - 5000))
       : fallbackChars;
     return {
-      source: contextTokens ? (manualContext ? 'manual' : catalogContext ? 'catalog' : 'ollama') : 'profile_fallback',
+      source: contextTokens ? (manualContext ? 'manual' : catalogContext ? 'catalog' : ollamaContext ? 'ollama' : estimatedContext ? 'model_heuristic' : 'profile_fallback') : 'profile_fallback',
       presetName: resolved?.name || presetStageName,
       model: preset.model || '',
       contextTokens,
@@ -29670,10 +29836,13 @@ function createGradiaEvidenceBudget({ digest }) {
     const before = await indexes();
     if (!before.every(value => Number.isInteger(value) && value >= 0)) throw libEvidenceError('LIB_READ_SCOPE_UNAVAILABLE');
     const character = await api.getCharacterFromIndex(before[0]), chat = await api.getChatFromIndex(...before);
-    const characterIds = [...new Set([character?.id, character?.chaId].filter(value => typeof value === 'string' && value.trim()))];
-    const chatId = chat?.id;
-    if (characterIds.length !== 1 || typeof chatId !== 'string' || !chatId.trim()) throw libEvidenceError('LIB_READ_SCOPE_UNAVAILABLE');
-    const characterId = characterIds[0];
+    const characterId = text(character?.chaId || character?.id || character?.characterId || character?.uuid || character?.name || '').trim();
+    const chatId = text(chat?.id || chat?.chatId || chat?.uuid || '').trim();
+    if (!characterId || !chatId) throw libEvidenceError('LIB_READ_SCOPE_UNAVAILABLE');
+    const charName = firstFilled(character?.name, character?.data?.name, character?.displayName, character?.chaId, character?.id, characterId);
+    const chatName = firstFilled(chat?.name, chat?.title, chat?.id, chatId);
+    const scopeParts = [charName, chatName].filter(Boolean);
+    if (scopeParts.length) Runtime.currentChatScope = scopeParts.join(' / ');
     const legacy = readOwners.length === 1 && readOwners[0] === 'libra';
     const scopes = {}, unavailable = {};
     const parse = raw => {
@@ -29683,25 +29852,28 @@ function createGradiaEvidenceBudget({ digest }) {
       catch (_) { throw libEvidenceError('LIB_READ_SCOPE_REGISTRY_UNAVAILABLE'); }
     };
     const device = await API.getLocalPluginStorage?.();
-    const matchNative = row => (row?.canonicalCharacterId || row?.characterId) === characterId
-      && (row?.canonicalChatId || row?.chatId) === chatId;
+    const matchNative = row => (
+      ((row?.canonicalCharacterId || row?.characterId) === characterId || (character?.id && (row?.canonicalCharacterId || row?.characterId) === character.id) || (character?.chaId && (row?.canonicalCharacterId || row?.characterId) === character.chaId))
+      && ((row?.canonicalChatId || row?.chatId) === chatId || (chat?.id && (row?.canonicalChatId || row?.chatId) === chat.id) || (chat?.chatId && (row?.canonicalChatId || row?.chatId) === chat.chatId))
+    );
     for (const owner of readOwners) {
       let candidate;
       if (owner === 'libra') {
         let registry;
-        try { registry = parse(await API.pluginStorage.getItem('libra:v1:scope-registry:v1')); }
-        catch (_) { throw libEvidenceError('LIB_READ_SCOPE_REGISTRY_UNAVAILABLE'); }
-        if (!registry || typeof registry !== 'object' || Array.isArray(registry)) {
-          if (legacy) throw libEvidenceError('LIB_READ_SCOPE_REGISTRY_UNAVAILABLE');
-          unavailable[owner] = 'scope_unregistered'; continue;
+        try {
+          const raw = await API.pluginStorage.getItem('libra:v1:scope-registry:v1') || await device?.getItem?.('libra:v1:scope-registry:v1');
+          registry = parse(raw);
+        } catch (_) { throw libEvidenceError('LIB_READ_SCOPE_REGISTRY_UNAVAILABLE'); }
+        if (registry && typeof registry === 'object' && !Array.isArray(registry)) {
+          const matches = Object.entries(registry).filter(([,row]) =>
+            ((row?.characterId === characterId || row?.canonicalCharacterId === characterId) || (character?.id && (row?.characterId === character.id || row?.canonicalCharacterId === character.id)) || (character?.chaId && (row?.characterId === character.chaId || row?.canonicalCharacterId === character.chaId)))
+            && ((row?.chatId === chatId || row?.canonicalChatId === chatId) || (chat?.id && (row?.chatId === chat.id || row?.canonicalChatId === chat.id)) || (chat?.chatId && (row?.chatId === chat.chatId || row?.canonicalChatId === chat.chatId)))
+          );
+          if (matches.length > 1 || (matches.length === 1 && matches[0][0] !== `${characterId}::${chatId}` && matches[0][0] !== `${matches[0][1].characterId}::${matches[0][1].chatId}`)) throw libEvidenceError('LIB_READ_SCOPE_REGISTRY_UNVERIFIED');
+          if (matches.length === 1) {
+            candidate = {scopeKey:matches[0][1].scopeKey,characterId,chatId};
+          }
         }
-        const matches = Object.entries(registry).filter(([,row]) => row?.characterId === characterId && row?.chatId === chatId);
-        if (matches.length > 1 || matches.length === 1 && matches[0][0] !== `${characterId}::${chatId}`) throw libEvidenceError('LIB_READ_SCOPE_REGISTRY_UNVERIFIED');
-        if (!matches.length) {
-          if (legacy) throw libEvidenceError('LIB_READ_SCOPE_REGISTRY_UNVERIFIED');
-          unavailable[owner] = 'scope_unregistered'; continue;
-        }
-        candidate = {scopeKey:matches[0][1].scopeKey,characterId,chatId};
       }
       const key = '__memory_suite_internal_scope_routes_v1__:'+owner;
       const raws = [parse(await API.pluginStorage.getItem(key)),parse(await device?.getItem?.(key))];
@@ -29724,14 +29896,18 @@ function createGradiaEvidenceBudget({ digest }) {
           if (row.scopeKey && row.scopeKey !== id) throw libEvidenceError('LIB_READ_SCOPE_REGISTRY_UNVERIFIED');
           candidate = {scopeKey:id,characterId,chatId};
         } else if (owner === 'flashback') {
-          const registry = parse(await API.pluginStorage.getItem('vector_rag_memory:scope_registry:v2'));
+          const registry = parse(await API.pluginStorage.getItem('vector_rag_memory:scope_registry:v2') || await device?.getItem?.('vector_rag_memory:scope_registry:v2'));
           if (registry != null && (registry.version !== 2 || !Array.isArray(registry.scopes))) throw libEvidenceError('LIB_READ_SCOPE_REGISTRY_UNVERIFIED');
           const matches = (registry?.scopes || []).filter(matchNative);
           if (matches.length > 1) throw libEvidenceError('LIB_READ_SCOPE_REGISTRY_UNVERIFIED');
           if (matches.length === 1) candidate = {scopeKey:matches[0].scopeKey,characterId,chatId};
         }
       }
-      if (!candidate) { unavailable[owner] = 'scope_unregistered'; continue; }
+      if (!candidate) {
+        if (legacy) throw libEvidenceError('LIB_READ_SCOPE_REGISTRY_UNAVAILABLE');
+        unavailable[owner] = 'scope_unregistered';
+        continue;
+      }
       if (Object.values(candidate).some(value => typeof value !== 'string' || !value.trim() || value.length > 512 || /[\r\n\0]/.test(value))) throw libEvidenceError('LIB_READ_SCOPE_UNAVAILABLE');
       const stored = entries[candidate.scopeKey], global = entries.__memory_suite_global__?.removed === true ? null : entries.__memory_suite_global__;
       if (stored?.origin === 'transition_pending') throw libEvidenceError('LIB_READ_STORAGE_TRANSITION_UNVERIFIED');
@@ -37431,9 +37607,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!before.every(value => Number.isInteger(value) && value >= 0)) throw libEvidenceError('LIB_READ_SCOPE_UNAVAILABLE');
     const load = async () => {
       const character = await api.getCharacterFromIndex(before[0]), chat = await api.getChatFromIndex(...before);
-      const ids = [...new Set([character?.id, character?.chaId].filter(value => typeof value === 'string' && value.trim()))];
-      if (ids.length !== 1 || typeof chat?.id !== 'string' || !chat.id.trim()) throw libEvidenceError('LIB_READ_SCOPE_UNAVAILABLE');
-      return {characterId:ids[0],chatId:chat.id};
+      const characterId = text(character?.chaId || character?.id || character?.characterId || character?.uuid || character?.name || '').trim();
+      const chatId = text(chat?.id || chat?.chatId || chat?.uuid || '').trim();
+      if (!characterId || !chatId) throw libEvidenceError('LIB_READ_SCOPE_UNAVAILABLE');
+      const charName = firstFilled(character?.name, character?.data?.name, character?.displayName, character?.chaId, character?.id, characterId);
+      const chatName = firstFilled(chat?.name, chat?.title, chat?.id, chatId);
+      const scopeParts = [charName, chatName].filter(Boolean);
+      if (scopeParts.length) Runtime.currentChatScope = scopeParts.join(' / ');
+      return {characterId,chatId};
     };
     const native = await load();
     if (JSON.stringify(before) !== JSON.stringify(await indexes()) || JSON.stringify(native) !== JSON.stringify(await load())
@@ -39275,17 +39456,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!force && Gui.moduleCatalogLoadedAt && Date.now() - Gui.moduleCatalogLoadedAt < 60000) return Gui.moduleCatalog;
     Gui.moduleCatalogLoading = true;
     Gui.moduleCatalogError = '';
-    const requestEpoch = Gui.renderEpoch;
-    const discardWhenStale = Gui.visible && Gui.pageId === 'references' && Gui.pageSubview === 'modules';
     try {
       const characterInfo = await loadCurrentCharacterForRisuContext(false);
       const character = characterInfo.character;
-      const db = typeof API.getDatabase === 'function'
-        ? await safeApi('getDatabase.moduleCatalog', () => API.getDatabase(['personas', 'selectedPersona', 'modules', 'enabledModules', 'moduleIntergration']), false)
+      const liveDbApi = getLiveApi(['getDatabase']);
+      const dbGetter = typeof liveDbApi?.getDatabase === 'function' ? liveDbApi.getDatabase.bind(liveDbApi) : (typeof API?.getDatabase === 'function' ? API.getDatabase.bind(API) : null);
+      const db = dbGetter
+        ? await safeApi('getDatabase.moduleCatalog', () => dbGetter(['personas', 'selectedPersona', 'modules', 'installedModules', 'customModules', 'enabledModules', 'moduleIntergration']), false)
         : null;
       const chatInfo = await loadCurrentChatForRisuContext(character, false);
       const persona = selectedPersonaFromDb(db || {}, chatInfo.chat);
-      if (discardWhenStale && (requestEpoch !== Gui.renderEpoch || Gui.pageId !== 'references' || Gui.pageSubview !== 'modules')) return Gui.moduleCatalog;
+      const charName = firstFilled(character?.name, character?.data?.name, character?.displayName, character?.chaId, character?.id, '');
+      const chatName = firstFilled(chatInfo?.chat?.name, chatInfo?.chat?.title, chatInfo?.chat?.id, '');
+      const scopeParts = [charName, chatName].filter(Boolean);
+      if (scopeParts.length) Runtime.currentChatScope = scopeParts.join(' / ');
       Gui.moduleCatalog = buildSelectableModuleCatalog(db || {}, character, chatInfo.chat, persona);
       const activeModules = Gui.moduleCatalog.filter(item => item.active && item.loreCount > 0);
       if (!activeModules.some(item => item.key === Gui.moduleCatalogFocusedKey)) {
@@ -39296,11 +39480,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       Gui.moduleCatalogLoadedAt = Date.now();
       return Gui.moduleCatalog;
     } catch (error) {
-      if (!discardWhenStale || (requestEpoch === Gui.renderEpoch && Gui.pageId === 'references' && Gui.pageSubview === 'modules')) Gui.moduleCatalogError = compact(error?.message || error, 500);
+      Gui.moduleCatalogError = compact(error?.message || error, 500);
       return Gui.moduleCatalog;
     } finally {
       Gui.moduleCatalogLoading = false;
-      if (Gui.visible && Gui.pageId === 'references' && ['modules', 'selection'].includes(Gui.pageSubview)) queueGuiRender(0);
+      if (Gui.visible) queueGuiRender(0);
     }
   };
 
@@ -39308,8 +39492,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (Gui.characterLoreCatalogLoading) return Gui.characterLoreCatalog;
     Gui.characterLoreCatalogLoading = true;
     Gui.characterLoreCatalogError = '';
-    const requestEpoch = Gui.renderEpoch;
-    const discardWhenStale = Gui.visible && Gui.pageId === 'references' && Gui.pageSubview === 'character_lore_exclusions';
     try {
       const characterInfo = await loadCurrentCharacterForRisuContext(false);
       const character = characterInfo.character;
@@ -39323,17 +39505,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         return Gui.characterLoreCatalog;
       }
       const chatInfo = await loadCurrentChatForRisuContext(character, false);
-      if (discardWhenStale && (requestEpoch !== Gui.renderEpoch || Gui.pageId !== 'references' || Gui.pageSubview !== 'character_lore_exclusions')) return Gui.characterLoreCatalog;
+      const charName = firstFilled(character?.name, character?.data?.name, character?.displayName, character?.chaId, character?.id, '');
+      const chatName = firstFilled(chatInfo?.chat?.name, chatInfo?.chat?.title, chatInfo?.chat?.id, '');
+      const scopeParts = [charName, chatName].filter(Boolean);
+      if (scopeParts.length) Runtime.currentChatScope = scopeParts.join(' / ');
       Gui.characterLoreCatalog = buildSelectableCharacterLoreCatalog(character, chatInfo.chat);
       Gui.characterLoreCatalogScope = scope;
       Gui.characterLoreCatalogLoadedAt = Date.now();
       return Gui.characterLoreCatalog;
     } catch (error) {
-      if (!discardWhenStale || (requestEpoch === Gui.renderEpoch && Gui.pageId === 'references' && Gui.pageSubview === 'character_lore_exclusions')) Gui.characterLoreCatalogError = compact(error?.message || error, 500);
+      Gui.characterLoreCatalogError = compact(error?.message || error, 500);
       return Gui.characterLoreCatalog;
     } finally {
       Gui.characterLoreCatalogLoading = false;
-      if (Gui.visible && Gui.pageId === 'references' && ['character_lore_exclusions', 'selection'].includes(Gui.pageSubview)) queueGuiRender(0);
+      if (Gui.visible) queueGuiRender(0);
     }
   };
 
@@ -42489,7 +42674,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (go.closest('#sheet-more')) mockupCloseMoreSheet();
         const page = go.dataset.go;
         if (page === 'home') { Gui.pageId = 'overview'; Gui.pageSubview = ''; }
-        else if (page === 'sources') { Gui.pageId = 'references'; Gui.pageSubview = 'selection'; }
+        else if (page === 'sources') {
+          Gui.pageId = 'references';
+          Gui.pageSubview = 'selection';
+          void refreshCharacterLoreCatalog(false);
+          void refreshModuleLoreCatalog(false);
+        }
         else if (page === 'manage') { Gui.pageId = 'management'; Gui.pageSubview = 'transfer'; }
         else if (page === 'pipeline') { Gui.pageId = 'pipeline'; Gui.pageSubview = go.dataset.goSub || 'shadow_act'; }
         else if (page === 'providers') { Gui.pageId = 'providers'; Gui.pageSubview = ''; }
@@ -42533,6 +42723,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const tabs = tab.closest('[data-subtabs]'), group = tabs?.dataset.subtabs;
         tabs?.querySelectorAll('[data-subtab]').forEach(item => item.setAttribute('aria-selected', String(item === tab)));
         app.querySelectorAll('[data-group="' + group + '"]').forEach(panel => panel.classList.toggle('is-active', panel.dataset.subpanel === tab.dataset.subtab));
+        if (tab.dataset.subtab === 'char') void refreshCharacterLoreCatalog(false);
+        if (tab.dataset.subtab === 'mod') void refreshModuleLoreCatalog(false);
         return;
       }
       const move=target.closest('[data-skill-move]');
@@ -43135,14 +43327,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(!options.preserveUrlDraft)input.value=status.url;input.dataset.savedUrl=status.url;
     });
     const serverField=Gui.app.querySelector('[data-lib-server-field]');if(serverField)serverField.hidden=selectedSource==='plugin_ipc';
+    const reasonHint = code => {
+      if (code === 'LIB_READ_SCOPE_REGISTRY_UNAVAILABLE') return '채팅 scope 미등록 · IPC 모드로 연결하거나 LIBRA에서 기억을 먼저 생성하세요';
+      if (code === 'LIB_READ_SERVER_MODE_REQUIRED') return '서버 모드 필요 · [기억 읽기]를 [플러그인 IPC]로 전환해 보세요';
+      if (code === 'LIB_READ_TRANSPORT_UNAVAILABLE' || code === 'LIB_READ_TIMEOUT') return '백엔드 서버 미응답 · [플러그인 IPC]로 전환해 보세요';
+      if (code === 'LIB_READ_PLUGIN_MODE_REQUIRED') return 'LIBRA 플러그인 전용 모드 필요';
+      if (code === 'LIB_READ_SCOPE_UNAVAILABLE') return '현재 캐릭터/채팅 scope 미확인';
+      return '';
+    };
+    const hint = reasonHint(status.reason);
     const modeStatus=Gui.app.querySelector('[data-lib-mode-status]');
     if(modeStatus)modeStatus.textContent=(status.state==='connected'?'현재 적용: '+modeLabel(status.readSource):status.state==='connecting'?'연결 검증 중: '+modeLabel(status.readSource):'현재 적용: 연결 없음')
-      +(selectedSource!==status.readSource?' · 선택: '+modeLabel(selectedSource)+' (연결·적용 필요)':'')+(status.reason?' · '+status.reason:'');
+      +(selectedSource!==status.readSource?' · 선택: '+modeLabel(selectedSource)+' (연결·적용 필요)':'')+(status.reason?' · '+status.reason+(hint?' ('+hint+')':''):'');
     Gui.app.querySelectorAll('[data-lib-read-action]').forEach(button=>{
       button.disabled=button.dataset.libReadAction==='check'?status.state!=='connected':button.dataset.libReadAction==='connect'&&status.state==='connecting';
     });
     const chip=page.querySelector('#lib-chip');if(chip){chip.className='health '+(status.state==='connected'?'health--ok':'health--warn');const textNode=chip.querySelector('span');if(textNode)textNode.textContent=status.state==='connected'?'읽기 전용 연결됨':'읽기 연결 '+status.state;}
-    const state=page.querySelector('#lib-state');if(state)state.textContent=status.state+(status.reason?' · '+status.reason:'');
+    const state=page.querySelector('#lib-state');if(state)state.textContent=status.state+(status.reason?' · '+status.reason+(hint?' ('+hint+')':''):'');
     const inspect=page.querySelector('#lib-check');if(inspect)inspect.disabled=status.state!=='connected';
     const connect=page.querySelector('#lib-connect');if(connect)connect.disabled=status.state==='connecting';
     const corpus=page.querySelector('.kv dd:last-child');if(corpus)corpus.textContent=status.corpus?.source==='plugin_ipc'?'플러그인 IPC 연결 확인 · 실행 순서와 무관하게 읽습니다':status.corpus?.source==='unified_engine'?'통합 검색 연결 확인 · 질문은 실행 시 전달됩니다':status.corpus?status.corpus.items+'개 / '+status.corpus.bytes+' bytes (한도 4 MiB)':'연결 뒤 실제 읽기 검증 전';
@@ -43152,8 +43353,51 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(names[2])names[2].replaceChildren(mockupNode('b','','현재 채팅 scope'),document.createTextNode(Runtime.currentChatScope||'현재 채팅 scope 미확인'));
     if(names[3])names[3].replaceChildren(mockupNode('b','','단계 모델 호환'),document.createTextNode('모델·문맥 설정 기준 · 입력 토큰 추정'));
     const note=page.querySelector('.note--warn');if(note)note.textContent='기억 연결은 읽기 전용입니다. 플러그인 IPC는 각 플러그인의 현재 채팅 기억을 직접 읽습니다. 서버 모드는 기존 통합 읽기를 사용합니다. 방식 변경 후 연결 버튼을 눌러 적용하세요.';
-    const charList=page.querySelector('#lib-char');if(charList){charList.replaceChildren();(Gui.characterLoreCatalog||[]).forEach(item=>{const row=mockupNode('label','row');const check=document.createElement('input');check.type='checkbox';check.checked=!new Set(normalizeExcludedCharacterLoreIds(mockupRuntime().excludedCharacterLoreIds)).has(item.key);check.dataset.characterLoreKey=item.key;const copy=mockupNode('div','');copy.append(mockupNode('div','row__title',item.name||item.key),mockupNode('div','row__meta',item.key));row.append(check,copy,mockupNode('span','badge',check.checked?'사용':'제외'));charList.append(row);});}
-    const modList=page.querySelector('#lib-mod');if(modList){modList.replaceChildren();(Gui.moduleCatalog||[]).filter(item=>item.active).forEach(item=>{const row=mockupNode('label','row');const check=document.createElement('input');check.type='checkbox';check.checked=normalizeSelectedModuleLoreIds(mockupRuntime().selectedModuleLoreIds).includes(item.key);check.dataset.moduleLoreKey=item.key;const copy=mockupNode('div','');copy.append(mockupNode('div','row__title',item.name||item.key),mockupNode('div','row__meta',String(item.loreEntries?.length||0)+'개 항목'));row.append(check,copy,mockupNode('span','badge',check.checked?'사용':'제외'));modList.append(row);});}
+    if(!Gui.characterLoreCatalogLoadedAt&&!Gui.characterLoreCatalogLoading)void refreshCharacterLoreCatalog(false);
+    if(!Gui.moduleCatalogLoadedAt&&!Gui.moduleCatalogLoading)void refreshModuleLoreCatalog(false);
+    const charList=page.querySelector('#lib-char');
+    if(charList){
+      charList.replaceChildren();
+      if(Gui.characterLoreCatalogLoading){
+        charList.append(mockupNode('div','empty','캐릭터 로어북을 불러오는 중...'));
+      }else if(!Gui.characterLoreCatalog||Gui.characterLoreCatalog.length===0){
+        charList.append(mockupNode('div','empty',Gui.characterLoreCatalogError||'읽어온 캐릭터 로어가 없습니다.'));
+      }else{
+        Gui.characterLoreCatalog.forEach(item=>{
+          const row=mockupNode('label','row');
+          const check=document.createElement('input');
+          check.type='checkbox';
+          check.checked=!new Set(normalizeExcludedCharacterLoreIds(mockupRuntime().excludedCharacterLoreIds)).has(item.key);
+          check.dataset.characterLoreKey=item.key;
+          const copy=mockupNode('div','');
+          copy.append(mockupNode('div','row__title',item.name||item.key),mockupNode('div','row__meta',item.key));
+          row.append(check,copy,mockupNode('span','badge',check.checked?'사용':'제외'));
+          charList.append(row);
+        });
+      }
+    }
+    const modList=page.querySelector('#lib-mod');
+    if(modList){
+      modList.replaceChildren();
+      const activeModules=(Gui.moduleCatalog||[]).filter(item=>item.active);
+      if(Gui.moduleCatalogLoading){
+        modList.append(mockupNode('div','empty','모듈 로어를 불러오는 중...'));
+      }else if(activeModules.length===0){
+        modList.append(mockupNode('div','empty',Gui.moduleCatalogError||'활성화된 모듈 로어가 없습니다.'));
+      }else{
+        activeModules.forEach(item=>{
+          const row=mockupNode('label','row');
+          const check=document.createElement('input');
+          check.type='checkbox';
+          check.checked=normalizeSelectedModuleLoreIds(mockupRuntime().selectedModuleLoreIds).includes(item.key);
+          check.dataset.moduleLoreKey=item.key;
+          const copy=mockupNode('div','');
+          copy.append(mockupNode('div','row__title',item.name||item.key),mockupNode('div','row__meta',String(item.loreEntries?.length||0)+'개 항목'));
+          row.append(check,copy,mockupNode('span','badge',check.checked?'사용':'제외'));
+          modList.append(row);
+        });
+      }
+    }
     const charSummary=page.querySelector('#sum-char');if(charSummary){const rows=[...charList.querySelectorAll('input[type="checkbox"]')];charSummary.textContent=rows.filter(row=>row.checked).length+' / '+rows.length+' 사용';}
     const modSummary=page.querySelector('#sum-mod');if(modSummary){const modules=(Gui.moduleCatalog||[]).filter(item=>item.active),selected=new Set(normalizeSelectedModuleLoreIds(mockupRuntime().selectedModuleLoreIds));const chosen=modules.filter(item=>selected.has(item.key));const count=rows=>rows.reduce((total,item)=>total+(item.loreEntries?.length||0),0);modSummary.textContent=chosen.length+'개 모듈 · '+count(chosen)+' / '+count(modules)+' 로어 사용';}
     const loreSummary=page.querySelector('[data-subpanel="sum"] .choice:last-child span');if(loreSummary)loreSummary.textContent='자동 · 시작 '+(mockupRuntime().loreRerankerTopK??DEFAULT_STAGE_LORE_RERANK_TOP_K)+'개 · 필요 시 확장';
@@ -43430,8 +43674,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     await renderSettingsGui();
     ;
     if (Gui.pageId === 'references') {
-      if (Gui.pageSubview === 'modules') void refreshModuleLoreCatalog(false);
-      if (Gui.pageSubview === 'character_lore_exclusions') void refreshCharacterLoreCatalog(false);
+      void refreshModuleLoreCatalog(false);
+      void refreshCharacterLoreCatalog(false);
     }
     forceTransparentGuiSurface();
     return true;
