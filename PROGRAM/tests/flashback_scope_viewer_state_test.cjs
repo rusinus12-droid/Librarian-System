@@ -57,7 +57,7 @@ test('failed forced refresh retains confirmed rows/counts, disables deletion, an
   assert.equal(countRows(f), 3);
   counts(f, 3);
   assert(!f.doc.querySelector('#storageRows').textContent.includes('저장된 스코프가 없습니다.'));
-  assert([...f.doc.querySelectorAll('#storageRows button, #storageRows input, #deleteSelectedScopesBtn, #cleanupSelectedScopesBtn, #deleteCurrentScopeBtn')].every(node => node.disabled));
+  assert([...f.doc.querySelectorAll('#storageRows button, #storageRows input, #deleteSelectedScopesBtn, #cleanupSelectedScopesBtn')].every(node => node.disabled));
   await f.change('#storageManagementView', 'all');
   assert.equal(countRows(f), 3, 'changing view retains the stale snapshot');
   counts(f, 3);
@@ -67,7 +67,7 @@ test('failed forced refresh retains confirmed rows/counts, disables deletion, an
   await until(() => status.hidden, 'successful retry clears error');
   assert.equal(countRows(f), 3);
   counts(f, 3);
-  assert(!f.doc.querySelector('#deleteCurrentScopeBtn').disabled);
+  assert([...f.doc.querySelectorAll('#storageRows button[data-delete-scope]')].some(node => !node.disabled));
   assert.equal(f.wire.length, 0);
 });
 test('first-load failure is unknown, never an empty store or a fabricated zero', async t => {

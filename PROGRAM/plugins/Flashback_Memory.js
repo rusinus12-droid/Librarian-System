@@ -8812,10 +8812,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     const localRegistry=mergeScopeRegistries(...registries);
     const legacyMode=normalizeMode(await getArgumentValue(modeArguments,MODE_PLUGIN_ONLY));
-    const remoteRequired=!inventoryOptions.localManagement&&(urlChanged || target!==MODE_PLUGIN_ONLY || legacyMode!==MODE_PLUGIN_ONLY || !!dataBinding.dataInstanceId
+    const remoteRequired=urlChanged || target!==MODE_PLUGIN_ONLY || legacyMode!==MODE_PLUGIN_ONLY || !!dataBinding.dataInstanceId
       || registryCopies.some(copy=>copy.raw != null && Object.values(globalReadRegistry(copy.raw,copy.location,[]).entries).some(row=>!isRemovedScopeRow(row)&&normalizeMode(row.mode)!==MODE_PLUGIN_ONLY))
       || registries.some(registry=>registry.globalMigrationRemoteHistory===true)
-      || registryCopies.some(copy=>copy.raw!=null)&&registries.some(registry=>registry.globalMigrationRemoteHistory!==false&&Object.keys(registry.entries).length>0));
+      || registryCopies.some(copy=>copy.raw!=null)&&registries.some(registry=>registry.globalMigrationRemoteHistory!==false&&Object.keys(registry.entries).length>0);
     let serverPin=null;
     // Missing host/adapter is a blocker before any connection or durable effect.
     if(remoteRequired && !blockers.some(row=>/host_|owner_global/.test(row.code))){
@@ -8841,7 +8841,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             }
           }
         }
-      }catch(error){blockers.push({code:String(error.code || error.message || 'remote_inventory_unavailable')});}
+      }catch(error){
+        if(inventoryOptions.allowServerOffline===true||inventoryOptions.localManagement===true){
+          // Server offline during local management must not block local scope operations
+        }else{
+          blockers.push({code:String(error.code || error.message || 'remote_inventory_unavailable')});
+        }
+      }
     }
     let owner={scopes:[],records:[],blockers:[],completeKnownScopes:false};
     if(typeof options.discoverGlobalScopes==='function'){
@@ -12235,7 +12241,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const serverScopeDataPlan = (inventory,scope) => scopeDataPlan(inventory,scope,true);
   const inspectScopeCatalog = async (inspectOptions = {}) => {
     requireScopeManagement();
-    return await scopeCatalogFromInventory(await collectGlobalInventory(inspectOptions.includeServer===true||['server','both'].includes(inspectOptions.deleteTarget)?MODE_SERVER_ONLY:MODE_PLUGIN_ONLY,{readOnlyCatalog:true,serverManagement:inspectOptions.includeServer===true||['server','both'].includes(inspectOptions.deleteTarget),localManagement:inspectOptions.deleteTarget==='local'}));
+    return await scopeCatalogFromInventory(await collectGlobalInventory(
+      ['server','both'].includes(inspectOptions.deleteTarget)?MODE_SERVER_ONLY:MODE_PLUGIN_ONLY,
+      {
+        readOnlyCatalog:true,
+        serverManagement:true,
+        localManagement:inspectOptions.deleteTarget==='local',
+        allowServerOffline:inspectOptions.deleteTarget==='local'
+      }
+    ));
   };
   const scopeCatalogFromInventory = async inventory => {
     const current=await resolveCurrentScope(true).catch(()=>null);
@@ -12413,7 +12427,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(state.syncJob.creating||state.syncJob.current&&!syncJobTerminal(state.syncJob.current.status))throw transitionBusyError();
       do{await Promise.allSettled([...ownerIOWork]);await Promise.allSettled([...mutationTails.values()]);}while(ownerIOWork.size||mutationTails.size);
       modeConfigurationFrozen=true;
-      const inventory=await collectGlobalInventory(['server','both'].includes(scopeRequest.deleteTarget)?MODE_SERVER_ONLY:MODE_PLUGIN_ONLY,{serverManagement:['server','both'].includes(scopeRequest.deleteTarget),localManagement:scopeRequest.deleteTarget==='local'}),catalog=await scopeCatalogFromInventory(inventory);
+      const inventory=await collectGlobalInventory(
+        ['server','both'].includes(scopeRequest.deleteTarget)?MODE_SERVER_ONLY:MODE_PLUGIN_ONLY,
+        {
+          serverManagement:true,
+          localManagement:scopeRequest.deleteTarget==='local',
+          allowServerOffline:scopeRequest.deleteTarget==='local'
+        }
+      ),catalog=await scopeCatalogFromInventory(inventory);
       const row=catalog.rows.find(row=>row.scopeId===scopeRequest.scopeId),scope=inventory.scopes.find(scope=>scope.scopeId===scopeRequest.scopeId);
       if(!row||row.fingerprint!==scopeRequest.expectedFingerprint||!row.fingerprint)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
       if(scopeRequest.action==='delete'){
@@ -47021,11 +47042,12 @@ ${cleanedText}`, 80),
     Runtime.guiStorageLastConfirmedRows = rows.slice();
     Runtime.guiStorageScopeCount = new Set(rows.map(row => text(row?.scopeKey || '').trim()).filter(Boolean)).size;
     setNodeText('tab-scope-n', storageScopeCountLabel());
+    setNodeText('nav-scope-n', storageScopeCountLabel());
   };
 
   const selectableStorageScopeKeys = (scopeStats = [], currentScopeKey = '') => (Array.isArray(scopeStats) ? scopeStats : [])
     .map(item => text(item?.scopeKey || '').trim())
-    .filter(scopeKey => scopeKey && scopeKey !== currentScopeKey);
+    .filter(Boolean);
 
   const syncStorageSelectionUi = (scopeStats = null, currentScopeKey = '') => {
     // All entry points use the same visible classification. In particular,
@@ -47043,7 +47065,7 @@ ${cleanedText}`, 80),
     for (const checkbox of guiQueryAll('input[data-select-scope]')) {
       const scopeKey = text(checkbox.getAttribute?.('data-select-scope') || '').trim();
       if (!scopeKey) continue;
-      const canSelect = !Runtime.guiStorageListUnavailable && scopeKey !== activeScopeKey && selectableSet.has(scopeKey);
+      const canSelect = !Runtime.guiStorageListUnavailable && selectableSet.has(scopeKey);
       checkbox.disabled = !canSelect;
       checkbox.checked = canSelect && selected.has(scopeKey);
     }
@@ -47054,7 +47076,7 @@ ${cleanedText}`, 80),
     const cleanupBtn=getGuiNode('cleanupSelectedScopesBtn');if(cleanupBtn)cleanupBtn.disabled=selectedCount<1||Runtime.guiBusyDepth>0;
     const deleteBtn = getGuiNode('deleteSelectedScopesBtn');
     if (deleteBtn) deleteBtn.disabled = Runtime.guiStorageListUnavailable || selectedCount < 1 || Runtime.guiBusyDepth > 0;
-    for (const id of ['cleanupSelectedScopesBtn','selectCleanupCandidatesBtn','selectOrphanScopesBtn','repairScopeRegistryBtn','deleteCurrentScopeBtn','storageDeleteTarget']) {
+    for (const id of ['cleanupSelectedScopesBtn','selectCleanupCandidatesBtn','selectOrphanScopesBtn','repairScopeRegistryBtn','storageDeleteTarget']) {
       const button = getGuiNode(id);
       if (button) button.disabled = Runtime.guiStorageListUnavailable || Runtime.guiBusyDepth > 0 || (id === 'cleanupSelectedScopesBtn' && selectedCount < 1);
     }
@@ -47068,7 +47090,7 @@ ${cleanedText}`, 80),
       allBox.disabled = Runtime.guiStorageListUnavailable || visibleKeys.length < 1 || Runtime.guiBusyDepth > 0;
       allBox.checked = allSelected;
       allBox.indeterminate = someSelected && !allSelected;
-      allBox.title = visibleKeys.length ? `현재 표시된 ${formatNumber(visibleKeys.length)}개 선택` : '선택 가능한 다른 스코프가 없습니다.';
+      allBox.title = visibleKeys.length ? `현재 표시된 ${formatNumber(visibleKeys.length)}개 선택` : '선택 가능한 스코프가 없습니다.';
     }
     return { selectedCount, selectableCount: selectable.length, selected: Array.from(selected) };
   };
@@ -47084,7 +47106,7 @@ ${cleanedText}`, 80),
       const verificationStatus = text(item.storageVerificationStatus || SCOPE_STORAGE_VERIFICATION.PENDING);
       const manifestVerified = verificationStatus === SCOPE_STORAGE_VERIFICATION.MANIFEST_VERIFIED;
       const registryOnlyVerified = verificationStatus === SCOPE_STORAGE_VERIFICATION.REGISTRY_ONLY_VERIFIED;
-      const canSelect = !Runtime.guiStorageListUnavailable && !isCurrent && !!scopeKey;
+      const canSelect = !Runtime.guiStorageListUnavailable && !!scopeKey;
       const fallbackName = verificationStatus === SCOPE_STORAGE_VERIFICATION.UNAVAILABLE
         ? '서버 확인 보류'
         : registryOnlyVerified
@@ -47109,7 +47131,7 @@ ${cleanedText}`, 80),
                   : 'manifest 확인 대기';
       const copied = item.copiedFromScopeKey ? `<div class="hint">copied from ${escapeHtml(item.copiedFromScopeKey.slice(0, 36))}</div>` : '';
       const selector = scopeKey
-        ? `<input class="storage-scope-select" type="checkbox" data-select-scope="${escapeHtml(scopeKey)}" ${canSelect && selected.has(scopeKey) ? 'checked' : ''} ${canSelect ? '' : 'disabled'} aria-label="${escapeHtml(isCurrent ? '현재 스코프는 선택 삭제에서 제외됩니다.' : '스코프 선택 · 실행할 때 안전 검증')}" />`
+        ? `<input class="storage-scope-select" type="checkbox" data-select-scope="${escapeHtml(scopeKey)}" ${canSelect && selected.has(scopeKey) ? 'checked' : ''} ${canSelect ? '' : 'disabled'} aria-label="${escapeHtml(isCurrent ? '현재 스코프 선택 · 실행할 때 안전 검증' : '스코프 선택 · 실행할 때 안전 검증')}" />`
         : '';
       const disabled = Runtime.guiStorageListUnavailable ? ' disabled' : '';
       const action = item.deletionPreview
@@ -48425,7 +48447,7 @@ ${cleanedText}`, 80),
     const healthDescription = `${health.title} · ${health.meta}`;
     const routeTabKey = {lab:'overview',vault:'storage',care:'import',connect:'provider',log:'activity',settings:'advanced'};
     const subtab = (group,id,label,selected) => `<button class="tab" type="button" role="tab" data-subtab="${id}" data-group="${group}" aria-selected="${selected ? 'true':'false'}">${label}</button>`;
-    const storageMarkup = `<section id="panel-storage" data-panel="storage"><div class="tabs" role="tablist" data-subtabs="v">${subtab('v','resp','응답 원문',subtabs.vault==='resp')}${subtab('v','wl','세계선',subtabs.vault==='wl')}${subtab('v','scopes',`스코프 정리 <span class="count" id="tab-scope-n">${storageScopeCountLabel()}</span>`,subtabs.vault==='scopes')}</div><div data-subpanel="resp" data-group="v" class="${subtabs.vault==='resp'?'is-active':''}"><div id="manualEditorPanel">${renderManualEditorPanelHtml(null)}</div></div><div id="panel-worldline" data-panel="worldline" data-subpanel="wl" data-group="v" class="${subtabs.vault==='wl'?'is-active':''}"><div class="stack"><div class="cluster"><button type="button" class="btn" id="fbWorldlineRefresh">세계선 새로고침</button><button type="button" class="btn" data-open-manual-editor="response">저장 원문 보기</button></div><div id="fbWorldlineContent" aria-live="polite">${renderFlashbackWorldlineView(null)}</div></div></div><div data-subpanel="scopes" data-group="v" class="${subtabs.vault==='scopes'?'is-active':''}"><div class="stack"><div class="note note--warn">삭제·정리는 선택 항목을 실행 시점에 다시 확인합니다. 확인할 수 없는 데이터는 자동 정리하지 않습니다. 저장 모드와 별개로 로컬 데이터 삭제, 서버 데이터 삭제, 둘 다 삭제를 선택할 수 있습니다. 서버 삭제 전에는 백업하며 저장 모드는 바꾸지 않습니다.</div><div id="storageScopeLoadStatus" class="note note--warn" role="status" aria-live="polite" hidden></div><div class="cluster"><select id="storageManagementView" class="select" aria-label="저장소 분류">${[['memory','기억 저장소'],['cleanup','정리 후보'],['orphan','고아 기억'],['all','전체']].map(([value,label])=>`<option value="${value}" ${(Runtime.guiStorageManagementView||'memory')===value?'selected':''}>${label}</option>`).join('')}</select><div class="search grow"><i data-i="search" data-size="sm"></i><input id="storageScopeFilter" class="input" type="search" placeholder="캐릭터 / 채팅 이름으로 찾기" aria-label="스코프 검색"></div><label>삭제 대상 <select id="storageDeleteTarget" class="select" aria-label="스코프 삭제 대상">${[['local','로컬 데이터 삭제'],['server','서버 데이터 삭제'],['both','둘 다 삭제']].map(([value,label])=>`<option value="${value}" ${flashbackScopeDeleteTarget()===value?'selected':''}>${label}</option>`).join('')}</select></label><button id="deleteSelectedScopesBtn" class="btn btn--danger" disabled>선택 삭제</button><button id="deleteCurrentScopeBtn" class="btn btn--danger">현재 스코프 삭제</button></div><div class="cluster"><button id="refreshStorageBtn" class="btn">새로고침</button><button id="repairScopeRegistryBtn" class="btn">목록 상태 검사</button><button id="selectCleanupCandidatesBtn" class="btn">빈 목록·저장소 선택</button><button id="cleanupSelectedScopesBtn" class="btn" disabled>선택 항목 로컬 정리</button><button id="selectOrphanScopesBtn" class="btn">고아 기억 선택</button><span id="selectedScopeCount" class="hint">선택 0개</span><span id="storageScopeFilterCount" class="hint"></span></div><div class="table-wrap"><table class="table scopes"><thead><tr><th><input id="selectAllScopes" class="storage-scope-select" type="checkbox" aria-label="현재 스코프를 제외한 모든 스코프 선택"></th><th>캐릭터 / 채팅</th><th>토큰</th><th>기억 청크</th><th>샤드 / 보관</th><th>업데이트</th><th></th></tr></thead><tbody id="storageRows"><tr><td colspan="7" class="muted">저장소 목록을 불러오는 중…</td></tr></tbody></table></div></div></div></section>`;
+    const storageMarkup = `<section id="panel-storage" data-panel="storage"><div class="tabs" role="tablist" data-subtabs="v">${subtab('v','resp','응답 원문',subtabs.vault==='resp')}${subtab('v','wl','세계선',subtabs.vault==='wl')}${subtab('v','scopes',`스코프 정리 <span class="count" id="tab-scope-n">${storageScopeCountLabel()}</span>`,subtabs.vault==='scopes')}</div><div data-subpanel="resp" data-group="v" class="${subtabs.vault==='resp'?'is-active':''}"><div id="manualEditorPanel">${renderManualEditorPanelHtml(null)}</div></div><div id="panel-worldline" data-panel="worldline" data-subpanel="wl" data-group="v" class="${subtabs.vault==='wl'?'is-active':''}"><div class="stack"><div class="cluster"><button type="button" class="btn" id="fbWorldlineRefresh">세계선 새로고침</button><button type="button" class="btn" data-open-manual-editor="response">저장 원문 보기</button></div><div id="fbWorldlineContent" aria-live="polite">${renderFlashbackWorldlineView(null)}</div></div></div><div data-subpanel="scopes" data-group="v" class="${subtabs.vault==='scopes'?'is-active':''}"><div class="stack"><div class="note note--warn">삭제·정리는 선택 항목을 실행 시점에 다시 확인합니다. 확인할 수 없는 데이터는 자동 정리하지 않습니다. 저장 모드와 별개로 로컬 데이터 삭제, 서버 데이터 삭제, 둘 다 삭제를 선택할 수 있습니다. 서버 삭제 전에는 백업하며 저장 모드는 바꾸지 않습니다.</div><div id="storageScopeLoadStatus" class="note note--warn" role="status" aria-live="polite" hidden></div><div class="cluster"><select id="storageManagementView" class="select" aria-label="저장소 분류">${[['memory','기억 저장소'],['cleanup','정리 후보'],['orphan','고아 기억'],['all','전체']].map(([value,label])=>`<option value="${value}" ${(Runtime.guiStorageManagementView||'memory')===value?'selected':''}>${label}</option>`).join('')}</select><div class="search grow"><i data-i="search" data-size="sm"></i><input id="storageScopeFilter" class="input" type="search" placeholder="캐릭터 / 채팅 이름으로 찾기" aria-label="스코프 검색"></div><label>삭제 대상 <select id="storageDeleteTarget" class="select" aria-label="스코프 삭제 대상">${[['local','로컬 데이터 삭제'],['server','서버 데이터 삭제'],['both','둘 다 삭제']].map(([value,label])=>`<option value="${value}" ${flashbackScopeDeleteTarget()===value?'selected':''}>${label}</option>`).join('')}</select></label><button id="deleteSelectedScopesBtn" class="btn btn--danger" disabled>선택 삭제</button></div><div class="cluster"><button id="refreshStorageBtn" class="btn">새로고침</button><button id="repairScopeRegistryBtn" class="btn">목록 상태 검사</button><button id="selectCleanupCandidatesBtn" class="btn">빈 목록·저장소 선택</button><button id="cleanupSelectedScopesBtn" class="btn" disabled>선택 항목 로컬 정리</button><button id="selectOrphanScopesBtn" class="btn">고아 기억 선택</button><span id="selectedScopeCount" class="hint">선택 0개</span><span id="storageScopeFilterCount" class="hint"></span></div><div class="table-wrap"><table class="table scopes"><thead><tr><th><input id="selectAllScopes" class="storage-scope-select" type="checkbox" aria-label="모든 스코프 선택"></th><th>캐릭터 / 채팅</th><th>토큰</th><th>기억 청크</th><th>샤드 / 보관</th><th>업데이트</th><th></th></tr></thead><tbody id="storageRows"><tr><td colspan="7" class="muted">저장소 목록을 불러오는 중…</td></tr></tbody></table></div></div></div></section>`;
     const careBody = buildImportTab() + `<section id="panel-source-edits" data-panel="source-edits"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Source edits</div><h2 class="section-title">원문 수정 동기화</h2><p class="page-desc">제품 원문 변경을 확인하고 선택한 범위만 현재 원문으로 재분석합니다.</p></div></div>${buildFlashbackSourceEditCard()}</section><section id="panel-restore" data-panel="restore"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Memory restore</div><h2 class="section-title">백업 · 복원 · 이사</h2><p class="page-desc">파일을 검사하고 대상과 복원 방식을 확인한 뒤 적용합니다.</p></div></div><div class="card"><div class="card__head"><div><h2 class="card__title">JSON 백업 및 복원</h2><p class="card__desc">대화 원문과 비공개 기억이 포함될 수 있습니다. 안전한 곳에 보관하세요.</p></div><span class="badge">JSON</span></div><div data-portable-backup-host="flashback_memory" aria-label="JSON 기억 백업 및 복원"></div><p class="hint">같은 채팅 복원·새 채팅 이사·복사된 채팅 복구는 검사된 파일의 허용 조건을 따릅니다.</p></div></section>`;
     const providerBody = buildProviderTab(settings, current.stats);
     const serverBody = buildServerConnectionTab();
@@ -48443,7 +48465,7 @@ ${cleanedText}`, 80),
     ].join('');
     const pageKey = routeTabKey[pageFor] || 'overview';
     const side = [['lab','eye','기억 현상실','현상실'],['vault','film','필름 보관함','보관함'],['care','wrench','기억 관리','관리'],['connect','link','임베딩 · 서버','연결'],['log','log','현상 기록','기록'],['settings','sliders','리콜 설정','설정']];
-    const sidebar = `<nav class="sidebar" aria-label="Flashback 메뉴">${[['상태',[side[0]]],['기억',[side[1],side[2]]],['연결',[side[3]]],['설정 및 진단',[side[4],side[5]]]].map(([group,items])=>`<div class="nav-label">${group}</div>${items.map(([go,icon,label,short])=>`<button class="nav-item" type="button" data-go="${go}" data-short="${short}" aria-current="${pageFor===go?'page':'false'}"><i data-i="${icon}"></i><span class="nav-text">${label}</span>${go==='vault'?`<span class="count" id="nav-scope-n">${formatNumber(current.records.length)}</span>`:''}${go==='log'?`<span class="count" id="nav-log-n">${formatNumber(Runtime.activityLog.length)}</span>`:''}</button>`).join('')}`).join('')}<div class="side-foot"><b id="foot-model">${escapeHtml(settings.embeddingModel || '모델 미설정')}</b><span id="foot-meta">${escapeHtml(settings.embeddingProvider || 'provider 미설정')} · ${settings.embeddingDimensions?`${formatNumber(settings.embeddingDimensions)}차원`:'차원 자동'}</span></div></nav>`;
+    const sidebar = `<nav class="sidebar" aria-label="Flashback 메뉴">${[['상태',[side[0]]],['기억',[side[1],side[2]]],['연결',[side[3]]],['설정 및 진단',[side[4],side[5]]]].map(([group,items])=>`<div class="nav-label">${group}</div>${items.map(([go,icon,label,short])=>`<button class="nav-item" type="button" data-go="${go}" data-short="${short}" aria-current="${pageFor===go?'page':'false'}"><i data-i="${icon}"></i><span class="nav-text">${label}</span>${go==='vault'?`<span class="count" id="nav-scope-n">${storageScopeCountLabel()}</span>`:''}${go==='log'?`<span class="count" id="nav-log-n">${formatNumber(Runtime.activityLog.length)}</span>`:''}</button>`).join('')}`).join('')}<div class="side-foot"><b id="foot-model">${escapeHtml(settings.embeddingModel || '모델 미설정')}</b><span id="foot-meta">${escapeHtml(settings.embeddingProvider || 'provider 미설정')} · ${settings.embeddingDimensions?`${formatNumber(settings.embeddingDimensions)}차원`:'차원 자동'}</span></div></nav>`;
     const root = `<div class="stage"><div class="frame" data-device="desktop"><div class="app t-flashback" data-flashback-memory="flashback_memory"><header class="topbar"><div class="brand"><div class="brand__mark"><i data-i="film" data-size="lg"></i></div><div><div class="brand__name">Flashback Memory</div><div class="brand__ver">v${escapeHtml(PLUGIN_VERSION)}</div></div></div><div class="scope"><b id="currentScopeText">${escapeHtml(current.scope?.characterName || current.scope?.characterId || '현재 채팅 없음')}</b><span>›</span><span id="currentChatText">${escapeHtml(current.scope?.chatTitle || current.scope?.chatId || '')}</span><span id="topModeBadge" class="badge ${settings.mode==='off'?'':'badge--ok'}">${settings.mode==='off'?'OFF':'ON'}</span></div><div class="grow"></div><span class="health ${healthTone}" id="sidebarHealth" title="${escapeHtml(healthDescription)}"><i aria-hidden="true"></i><span id="sidebarHealthState">${escapeHtml(flashbackHealthChipLabel(health))}</span><span id="sidebarHealthMeta"> · ${formatNumber(current.records.length)}개</span></span><div class="menu topbar-actions"><button class="btn btn--icon" id="topMoreBtn" type="button" aria-label="더 보기" aria-haspopup="menu" aria-expanded="false" aria-controls="topMoreMenu"><i data-i="more"></i></button><div id="topMoreMenu" class="menu__panel" role="menu" hidden><button id="topMenuRefreshBtn" class="menu-item" type="button" role="menuitem"><i data-i="refresh"></i>새로고침</button><button id="topMenuDebugBtn" class="menu-item" type="button" role="menuitem"><i data-i="download"></i>디버그 로그 내보내기</button></div></div><button id="closeBtn" class="btn btn--icon fb-window-close" type="button" aria-label="Flashback 닫기" title="닫기"><i data-i="close"></i></button></header>${sidebar}<main class="main"><div class="page-body">${pages}</div></main><nav class="tabbar" aria-label="Flashback 하단 메뉴">${side.slice(0,4).map(([go,icon,label,short])=>`<button type="button" data-go="${go}" aria-current="${pageFor===go?'page':'false'}"><svg class="ic"><use href="#i-${icon}"/></svg>${short}</button>`).join('')}<button type="button" data-more="1" aria-haspopup="dialog" aria-controls="sheet-more" aria-expanded="false"><svg class="ic"><use href="#i-more"/></svg>더보기</button></nav><div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list>${side.slice(4).map(([go,icon,label])=>`<button type="button" class="row" data-go="${go}" data-close><span class="row__icon"><svg class="ic"><use href="#i-${icon}"/></svg></span><span><span class="row__title">${label}</span></span><svg class="ic ic--sm faint"><use href="#i-arrow"/></svg></button>`).join('')}</div></div></div><div class="toasts" aria-live="polite"></div></div></div></div>`;
     return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(PLUGIN_NAME)}</title><style>${FLASHBACK_GUI_MOCKUP_STYLES}${FLASHBACK_GUI_DATA_STYLES}${FLASHBACK_GUI_SERVER_STYLES}${FLASHBACK_GUI_WINDOW_STYLES}</style></head><body>${root}</body></html>`;
   };
@@ -49844,7 +49866,7 @@ ${cleanedText}`, 80),
     setNodeText('metricTokenLabel', statsPartial ? '토큰 추정 (부분)' : '토큰 추정');
     setNodeText('metricTokenTotal', formatNumber(current.stats.tokenTotal));
     setNodeText('metricChunkTotal', formatNumber(current.records.length));
-    setNodeText('nav-scope-n', formatNumber(current.records.length));
+    setNodeText('nav-scope-n', storageScopeCountLabel());
     const currentShardCount = Math.max(0, Number(current.manifest?.shardCount || 0) || 0);
     const currentShardSize = Math.max(1, Number(current.manifest?.shardSize || DEFAULTS.shardSize) || DEFAULTS.shardSize);
     setNodeText('storageShardCountNav', formatNumber(currentShardCount));
@@ -49891,7 +49913,7 @@ ${cleanedText}`, 80),
       const checkbox = event?.target?.closest?.('input[data-select-scope]');
       if (!checkbox || !node.contains?.(checkbox) || checkbox.disabled) return;
       const scopeKey = text(checkbox.getAttribute('data-select-scope') || '').trim();
-      if (!scopeKey || scopeKey === text(Runtime.currentScope?.scopeKey || '')) return;
+      if (!scopeKey) return;
       const selected = storageScopeSelection();
       if (checkbox.checked) selected.add(scopeKey);
       else selected.delete(scopeKey);
@@ -49924,10 +49946,11 @@ ${cleanedText}`, 80),
       if (!scopeKey) return;
 
       const deleteTarget=flashbackScopeDeleteTarget();
-      if (!await guiConfirm(`선택한 챗 스코프: ${flashbackScopeDeleteLabel(deleteTarget)}를 실행할까요?\n저장 모드는 바꾸지 않습니다.`)) return;
+      const isCurrent = scopeKey === text(Runtime.currentScope?.scopeKey || '');
+      if (!await guiConfirm(`선택한 챗 스코프${isCurrent ? '(현재 활성 채팅)' : ''}: ${flashbackScopeDeleteLabel(deleteTarget)}를 실행할까요?\n저장 모드는 바꾸지 않습니다.`)) return;
       setBusy(true, '스코프 삭제');
       try {
-        const result=await deleteSelectedScopeStorages([scopeKey],{deleteTarget});
+        const result=await deleteSelectedScopeStorages([scopeKey],{deleteTarget,allowCurrent:true});
         await guiAlert(`${flashbackScopeDeleteLabel(deleteTarget)} · 삭제 ${result.deleted}개 · 보호 ${result.protected}개 · 실패 ${result.failed}개${result.partial?' · 부분 완료 '+result.partial+'개':''}\n${(result.outcomes||[]).map(flashbackScopeDeleteResultText).join('\n')}\n${[...new Set([...(result.protectedReasons||[]),...(result.failures||[]).map(item=>item.reason)])].slice(0,3).join('\n')}`,'삭제 결과');
         if (result?.deleted) storageScopeSelection().delete(scopeKey);
         await refreshUi('storage', { storage: true, forceData: true });
@@ -49942,7 +49965,7 @@ ${cleanedText}`, 80),
     if(options.deleteTarget!==undefined&&!['local','server','both'].includes(options.deleteTarget))throw Error('FLASHBACK_SCOPE_DELETE_TARGET_INVALID');
     const currentScopeKey = text(options.currentScopeKey || Runtime.currentScope?.scopeKey || '').trim();
     const uniqueKeys = Array.from(new Set((scopeKeys || []).map(scopeKey => text(scopeKey).trim()).filter(Boolean)))
-      .filter(scopeKey => scopeKey !== currentScopeKey);
+      .filter(scopeKey => options.allowCurrent === true || scopeKey !== currentScopeKey);
     const result = { outcomes:[],partial:0,requested: uniqueKeys.length, deleted: 0, protected: 0, failed: 0, skippedCurrent: Math.max(0, new Set((scopeKeys || []).map(scopeKey => text(scopeKey).trim()).filter(Boolean)).size - uniqueKeys.length), deletedScopeKeys: [], protectedScopeKeys: [], protectedReasons: [], failures: [] };
     for (let index = 0; index < uniqueKeys.length; index += 1) {
       const scopeKey = uniqueKeys[index];
@@ -49950,12 +49973,13 @@ ${cleanedText}`, 80),
       applyBusyState();
       try {
         const state=options.deleteTarget?{kind:'explicit'}:await classifyScopeForManagement(scopeKey);
-        if(scopeKey===Runtime.currentScope?.scopeKey||scopeHasProtectedActivity(scopeKey)||['unavailable','corrupt','physical_without_manifest'].includes(state.kind)){
+        if((options.allowCurrent !== true && (scopeKey===Runtime.currentScope?.scopeKey || scopeKey===currentScopeKey))||scopeHasProtectedActivity(scopeKey)||['unavailable','corrupt','physical_without_manifest'].includes(state.kind)){
           if(state.kind==='unavailable'){result.failed++;result.failures.push({scopeKey,reason:state.reason});}
           else{result.protected++;result.protectedScopeKeys.push(scopeKey);if(state.reason)result.protectedReasons.push(state.reason);}continue;
         }
         const cleaned=state.kind==='registry_only'?await removeVerifiedRegistryOnlyScope(scopeKey):null;
-        const deletion=cleaned?{...cleaned,deleted:cleaned.removed}:await deleteScopeStorage(scopeKey,{protectCurrent:true,...(options.deleteTarget?{deleteTarget:options.deleteTarget}:{})});
+        const isCurrent = scopeKey === currentScopeKey || scopeKey === Runtime.currentScope?.scopeKey;
+        const deletion=cleaned?{...cleaned,deleted:cleaned.removed}:await deleteScopeStorage(scopeKey,{protectCurrent:!options.allowCurrent&&isCurrent,...(options.deleteTarget?{deleteTarget:options.deleteTarget}:{})});
         if(options.deleteTarget)result.outcomes.push(deletion);
         if (deletion?.deleted) {
           result.deleted += 1;
@@ -49995,12 +50019,20 @@ ${cleanedText}`, 80),
       const key=text(manifest?.scopeKey||'').trim();if(!key)return;
       let row=rows.get(key);
       if(!row){
-        row=verified?guiStorageRowFromManifest({...manifest,manifestRawPresent:true},manifest):{...manifest,scopeKey:key,count:0,stats:statsForRecords([]),guiSummaryComplete:true};
+        row=verified?guiStorageRowFromManifest({...manifest,manifestRawPresent:true},manifest):guiStorageRowFromRegistryMeta(manifest);
         row={...row,deletionPreview:true,localPreviewCount:null,serverPreviewCount:null,deletionLocations:[]};rows.set(key,row);
+      } else if(verified){
+        const hydrated=guiStorageRowFromManifest({...manifest,manifestRawPresent:true},manifest);
+        Object.assign(row,hydrated);
+        row.deletionPreview=true;
       }
       if(!row.deletionLocations.includes(location))row.deletionLocations.push(location);
-      if(verified){row[location==='local'?'localPreviewCount':'serverPreviewCount']=Number(manifest.count||0);row.managementKind='memory';}
-      else if(!row.managementKind)row.managementKind='registry_only';
+      if(verified){
+        row[location==='local'?'localPreviewCount':'serverPreviewCount']=Number(manifest.count||0);
+        row.managementKind='memory';
+      } else if(!row.managementKind){
+        row.managementKind='registry_only';
+      }
       return row;
     };
     const collect=async(location,keys,read)=>{
@@ -50014,17 +50046,40 @@ ${cleanedText}`, 80),
       if(raw!=null&&(!registry||!Array.isArray(registry.scopes)))throw Error('FLASHBACK_SCOPE_DELETE_REGISTRY_UNVERIFIED');
       for(const meta of registry?.scopes||[])add(meta,location,false);
     };
+    let localChecked=false,serverChecked=false;
     if(deleteTarget!=='server'){
-      const store=getLiveApi()?.pluginStorage;if(!store?.keys||!store?.getItem)throw Error('FLASHBACK_SCOPE_DELETE_LOCAL_STORAGE_UNAVAILABLE');
-      await collect('local',await store.keys(),key=>store.getItem(key));
+      try{
+        const store=getLiveApi()?.pluginStorage;
+        if(store?.keys&&store?.getItem){
+          await collect('local',await store.keys(),key=>store.getItem(key));
+          localChecked=true;
+        }
+      }catch(error){
+        throw error;
+      }
     }
-    if(deleteTarget!=='local'){
-      const listing=await MemorySuiteStorageBridge.serverKeys('plugin',PLUGIN_STORAGE_ID+':scope:',{serverManagement:true});
-      if(listing?.page?.complete!==true||!Array.isArray(listing.keys))throw Error('FLASHBACK_SCOPE_DELETE_SERVER_INVENTORY_UNVERIFIED');
-      await collect('server',listing.keys,async key=>{
-        const value=await MemorySuiteStorageBridge.serverGet('plugin',key,{serverManagement:true});
-        return value?.exists&&!value.tombstone?value.value:null;
-      });
+    const shouldQueryServer = deleteTarget!=='local'||(typeof MemorySuiteStorageBridge?.getMode==='function'&&await MemorySuiteStorageBridge.getMode()!=='plugin_only');
+    if(shouldQueryServer){
+      try{
+        const listing=await MemorySuiteStorageBridge.serverKeys('plugin',PLUGIN_STORAGE_ID+':scope:',{serverManagement:true});
+        if(listing?.page?.complete===true&&Array.isArray(listing.keys)){
+          await collect('server',listing.keys,async key=>{
+            const value=await MemorySuiteStorageBridge.serverGet('plugin',key,{serverManagement:true});
+            return value?.exists&&!value.tombstone?value.value:null;
+          });
+          serverChecked=true;
+        }
+      }catch(error){
+        if(deleteTarget==='server')throw error;
+      }
+    }
+    for(const row of rows.values()){
+      if(localChecked&&row.localPreviewCount==null)row.localPreviewCount=0;
+      if(serverChecked&&row.serverPreviewCount==null)row.serverPreviewCount=0;
+      if(row.count===0&&row.serverPreviewCount>0){
+        row.count=row.serverPreviewCount;
+        if(row.stats)row.stats.recordTotal=row.count;
+      }
     }
     return [...rows.values()];
   };
@@ -51441,16 +51496,18 @@ ${cleanedText}`, 80),
     getGuiNode('storageDeleteTarget')?.addEventListener('change',event=>{Runtime.guiStorageDeleteTarget=event.target.value;storageScopeSelection().clear();const refreshToken=++Runtime.guiRefreshToken;refreshStoragePanel('',{force:true,manualEditor:false,refreshToken}).catch(error=>warn('scope delete preview failed',error));});
     getGuiNode('deleteSelectedScopesBtn')?.addEventListener('click', async () => {
       const currentScopeKey = text(Runtime.guiCurrentStatsCache?.value?.scope?.scopeKey || Runtime.currentScope?.scopeKey || '').trim();
-      const selectedKeys = Array.from(storageScopeSelection()).filter(scopeKey => scopeKey && scopeKey !== currentScopeKey);
+      const selectedKeys = Array.from(storageScopeSelection()).filter(Boolean);
       if (!selectedKeys.length) {
         syncStorageSelectionUi();
         return;
       }
       const deleteTarget=flashbackScopeDeleteTarget();
-      if (!await guiConfirm(`현재 스코프를 제외한 선택 스코프 ${formatNumber(selectedKeys.length)}개: ${flashbackScopeDeleteLabel(deleteTarget)}를 실행할까요?\n선택한 위치의 기억·샤드·벡터가 삭제됩니다. 서버 삭제 전에는 백업하며 저장 모드는 바꾸지 않습니다.`, '선택 스코프 삭제')) return;
+      const hasCurrent = selectedKeys.includes(currentScopeKey);
+      const prompt = `선택 스코프 ${formatNumber(selectedKeys.length)}개${hasCurrent ? '(현재 활성 스코프 포함)' : ''}: ${flashbackScopeDeleteLabel(deleteTarget)}를 실행할까요?\n선택한 위치의 기억·샤드·벡터가 삭제됩니다. 서버 삭제 전에는 백업하며 저장 모드는 바꾸지 않습니다.`;
+      if (!await guiConfirm(prompt, '선택 스코프 삭제')) return;
       setBusy(true, `선택 스코프 삭제 0/${selectedKeys.length}`);
       try {
-        const result = await deleteSelectedScopeStorages(selectedKeys, { currentScopeKey,deleteTarget });
+        const result = await deleteSelectedScopeStorages(selectedKeys, { currentScopeKey,deleteTarget,allowCurrent:true });
         setBusy(false);
         await refreshUi('storage', { storage: true, forceData: true });
         syncStorageSelectionUi();
@@ -51493,16 +51550,6 @@ ${cleanedText}`, 80),
       } finally {
         setBusy(false);
       }
-    });
-    getGuiNode('deleteCurrentScopeBtn')?.addEventListener('click', async () => {
-      const scope = await resolveCurrentScope(false);
-      if(!scope?.scopeKey){await guiAlert('현재 활성 채팅이 없습니다.');return;}
-      const deleteTarget=flashbackScopeDeleteTarget();
-      if (!await guiConfirm(`현재 챗 스코프: ${flashbackScopeDeleteLabel(deleteTarget)}를 실행할까요?\n저장 모드는 바꾸지 않습니다.`)) return;
-      setBusy(true, '현재 스코프 삭제');
-      try { const result=await deleteScopeStorage(scope.scopeKey,{deleteTarget,protectCurrent:false}); await guiAlert(result.protected?'보호되어 유지했습니다. '+(result.reason||''):flashbackScopeDeleteResultText(result),'삭제 결과'); await refreshUi('storage', { storage: true, forceData: true }); syncStorageSelectionUi(); }
-      catch (error) { if(error.deletionResult?.partial)await guiAlert('부분 완료 · '+flashbackScopeDeleteResultText(error.deletionResult),'삭제 결과');else await guiError('삭제 실패', error); }
-      finally { setBusy(false); }
     });
     getGuiNode('flashbackRetryStorageInitBtn')?.addEventListener('click', () => {
       const host=getGuiNode('flashbackMemorySuiteServerConnectionPanel');

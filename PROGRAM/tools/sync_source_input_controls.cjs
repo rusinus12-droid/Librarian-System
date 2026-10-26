@@ -1,5 +1,6 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path');
+const norm=s=>String(s||'').replace(/\r\n/g,'\n');
 function sync({check=false}={}){
  const root=path.resolve(__dirname,'..');
  const source=fs.readFileSync(path.join(root,'sdk/MemorySuiteSourceInputControls.source.js'),'utf8').trimEnd();
@@ -13,7 +14,11 @@ function sync({check=false}={}){
    fs.writeFileSync(file,before.replace(anchor,()=>anchor+'\n'+source));continue;
   }
   if(a<0||b<end.length||before.indexOf(start,a+1)>=0)throw Error('source_input_controls_embed_ambiguous:'+name);
-  if(before.slice(a,b)!==source){if(check)throw Error('source_input_controls_embed_diverged:'+name);fs.writeFileSync(file,before.slice(0,a)+source+before.slice(b));}
+  if(norm(before.slice(a,b))!==norm(source)){
+   if(check)throw Error('source_input_controls_embed_diverged:'+name);
+   const replacement=before.includes('\r\n')?source.replace(/\r?\n/g,'\r\n'):norm(source);
+   fs.writeFileSync(file,before.slice(0,a)+replacement+before.slice(b));
+  }
  }
 }
 module.exports={sync};

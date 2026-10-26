@@ -7482,10 +7482,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     const localRegistry=mergeScopeRegistries(...registries);
     const legacyMode=normalizeMode(await getArgumentValue(modeArguments,MODE_PLUGIN_ONLY));
-    const remoteRequired=!inventoryOptions.localManagement&&(urlChanged || target!==MODE_PLUGIN_ONLY || legacyMode!==MODE_PLUGIN_ONLY || !!dataBinding.dataInstanceId
+    const remoteRequired=urlChanged || target!==MODE_PLUGIN_ONLY || legacyMode!==MODE_PLUGIN_ONLY || !!dataBinding.dataInstanceId
       || registryCopies.some(copy=>copy.raw != null && Object.values(globalReadRegistry(copy.raw,copy.location,[]).entries).some(row=>!isRemovedScopeRow(row)&&normalizeMode(row.mode)!==MODE_PLUGIN_ONLY))
       || registries.some(registry=>registry.globalMigrationRemoteHistory===true)
-      || registryCopies.some(copy=>copy.raw!=null)&&registries.some(registry=>registry.globalMigrationRemoteHistory!==false&&Object.keys(registry.entries).length>0));
+      || registryCopies.some(copy=>copy.raw!=null)&&registries.some(registry=>registry.globalMigrationRemoteHistory!==false&&Object.keys(registry.entries).length>0);
     let serverPin=null;
     // Missing host/adapter is a blocker before any connection or durable effect.
     if(remoteRequired && !blockers.some(row=>/host_|owner_global/.test(row.code))){
@@ -7511,7 +7511,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             }
           }
         }
-      }catch(error){blockers.push({code:String(error.code || error.message || 'remote_inventory_unavailable')});}
+      }catch(error){
+        if(inventoryOptions.allowServerOffline===true||inventoryOptions.localManagement===true){
+          // Server offline during local management must not block local scope operations
+        }else{
+          blockers.push({code:String(error.code || error.message || 'remote_inventory_unavailable')});
+        }
+      }
     }
     let owner={scopes:[],records:[],blockers:[],completeKnownScopes:false};
     if(typeof options.discoverGlobalScopes==='function'){
@@ -10905,7 +10911,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const serverScopeDataPlan = (inventory,scope) => scopeDataPlan(inventory,scope,true);
   const inspectScopeCatalog = async (inspectOptions = {}) => {
     requireScopeManagement();
-    return await scopeCatalogFromInventory(await collectGlobalInventory(inspectOptions.includeServer===true||['server','both'].includes(inspectOptions.deleteTarget)?MODE_SERVER_ONLY:MODE_PLUGIN_ONLY,{readOnlyCatalog:true,serverManagement:inspectOptions.includeServer===true||['server','both'].includes(inspectOptions.deleteTarget),localManagement:inspectOptions.deleteTarget==='local'}));
+    return await scopeCatalogFromInventory(await collectGlobalInventory(
+      ['server','both'].includes(inspectOptions.deleteTarget)?MODE_SERVER_ONLY:MODE_PLUGIN_ONLY,
+      {
+        readOnlyCatalog:true,
+        serverManagement:true,
+        localManagement:inspectOptions.deleteTarget==='local',
+        allowServerOffline:inspectOptions.deleteTarget==='local'
+      }
+    ));
   };
   const scopeCatalogFromInventory = async inventory => {
     const current=await resolveCurrentScope(true).catch(()=>null);
@@ -11083,7 +11097,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(state.syncJob.creating||state.syncJob.current&&!syncJobTerminal(state.syncJob.current.status))throw transitionBusyError();
       do{await Promise.allSettled([...ownerIOWork]);await Promise.allSettled([...mutationTails.values()]);}while(ownerIOWork.size||mutationTails.size);
       modeConfigurationFrozen=true;
-      const inventory=await collectGlobalInventory(['server','both'].includes(scopeRequest.deleteTarget)?MODE_SERVER_ONLY:MODE_PLUGIN_ONLY,{serverManagement:['server','both'].includes(scopeRequest.deleteTarget),localManagement:scopeRequest.deleteTarget==='local'}),catalog=await scopeCatalogFromInventory(inventory);
+      const inventory=await collectGlobalInventory(
+        ['server','both'].includes(scopeRequest.deleteTarget)?MODE_SERVER_ONLY:MODE_PLUGIN_ONLY,
+        {
+          serverManagement:true,
+          localManagement:scopeRequest.deleteTarget==='local',
+          allowServerOffline:scopeRequest.deleteTarget==='local'
+        }
+      ),catalog=await scopeCatalogFromInventory(inventory);
       const row=catalog.rows.find(row=>row.scopeId===scopeRequest.scopeId),scope=inventory.scopes.find(scope=>scope.scopeId===scopeRequest.scopeId);
       if(!row||row.fingerprint!==scopeRequest.expectedFingerprint||!row.fingerprint)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
       if(scopeRequest.action==='delete'){
