@@ -1614,12 +1614,14 @@
       if (unit === 'k') return num * 1024;
     }
     if (/claude-3|claude-2/i.test(rawModel)) return 200000;
-    if (/gemini-(?:1\.5|2\.0|2\.5)-pro/i.test(rawModel)) return 2000000;
+    if (/gemini-(?:1\.5|2\.0)-pro/i.test(rawModel)) return 2000000;
     if (/gemini/i.test(rawModel)) return 1000000;
+    // A dot is a regex word boundary: GPT-4.1 must be resolved before legacy GPT-4.
+    if (/gpt-4\.1(?:[-:]|$)/i.test(rawModel)) return 1047576;
     if (/gpt-4o|chatgpt-4o|\bo1\b|\bo3\b/i.test(rawModel)) return 128000;
     if (/gpt-4-(?:turbo|1106|0125)/i.test(rawModel)) return 128000;
     if (/gpt-4-32k/i.test(rawModel)) return 32768;
-    if (/gpt-4\b/i.test(rawModel)) return 8192;
+    if (/gpt-4(?:$|-(?:0314|0613)$)/i.test(rawModel)) return 8192;
     if (/gpt-3\.5-turbo-16k/i.test(rawModel)) return 16384;
     if (/gpt-3\.5/i.test(rawModel)) return 4096;
     if (/deepseek/i.test(rawModel)) return 64000;
@@ -7315,7 +7317,21 @@ ${text(paired.leadingAssistant.content || '')}
     return text(value || '').split(/[,;\n]/).map(key => key.trim()).filter(Boolean);
   };
 
+  // Modules and personas are entities: their nested lore belongs to the entity.
+  // Only lore collections may unwrap book containers into individual entries.
   const collectionFrom = (value, source = '') => {
+    const entries = Array.isArray(value)
+      ? value.map((item, index) => [index, item])
+      : value && typeof value === 'object' ? Object.entries(value) : [];
+    return entries.filter(([, item]) => item && typeof item === 'object')
+      .map(([key, item]) => ({
+        ...item,
+        __collectionKey: text(item.__collectionKey || item.id || item.uid || item.key || key),
+        __collectionSource: source
+      }));
+  };
+
+  const loreCollectionFrom = (value, source = '') => {
     if (!value) return [];
     if (Array.isArray(value)) {
       return value
@@ -7323,7 +7339,7 @@ ${text(paired.leadingAssistant.content || '')}
           if (!item || typeof item !== 'object') return [];
           const nested = item.entries || item.items || item.lore;
           if (Array.isArray(nested) && nested.length > 0 && !loreContent(item)) {
-            return collectionFrom(nested, source || text(item.name || item.comment || item.id || index));
+            return loreCollectionFrom(nested, source || text(item.name || item.comment || item.id || index));
           }
           return [{
             ...item,
@@ -7336,7 +7352,7 @@ ${text(paired.leadingAssistant.content || '')}
     if (typeof value === 'object') {
       const nested = value.entries || value.items || value.lore || (Array.isArray(value.data) ? value.data : null);
       if (nested && (Array.isArray(nested) || typeof nested === 'object')) {
-        const unwrapped = collectionFrom(nested, source || text(value.name || value.id || ''));
+        const unwrapped = loreCollectionFrom(nested, source || text(value.name || value.id || ''));
         if (unwrapped.length > 0) return unwrapped;
       }
       return Object.entries(value)
@@ -8967,7 +8983,7 @@ function mergeAgentCbsWarnings(...warningLists) {
       add(value, label, sourceType, sourceOrderBase, sourceMeta);
       return;
     }
-    collectionFrom(value, label).forEach((lore, idx) => add(lore, label, sourceType, sourceOrderBase + idx, sourceMeta));
+    loreCollectionFrom(value, label).forEach((lore, idx) => add(lore, label, sourceType, sourceOrderBase + idx, sourceMeta));
   };
 
   const enabledModuleReferenceSet = (db, character = null, currentChat = null, persona = null) => {
@@ -9135,7 +9151,7 @@ function mergeAgentCbsWarnings(...warningLists) {
     ];
     const locallyActivatedParentIds = new Set();
     chatSources.forEach((source, sourceIndex) => {
-      collectionFrom(source, `chat-local-activation-${sourceIndex}`).forEach(lore => {
+      loreCollectionFrom(source, `chat-local-activation-${sourceIndex}`).forEach(lore => {
         if (!lore || isLoreDisabled(lore) || isLibraManagedLore(lore)) return;
         if (text(lore?.mode || '').toLowerCase() !== 'child') return;
         const parentId = text(lore?.id || '').trim();

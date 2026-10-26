@@ -18,6 +18,7 @@
     "manual-skills.test.cjs",
     "memory-retirement.test.cjs",
     "model-context-budget.test.cjs",
+    "model-context-heuristic.test.cjs",
     "native-projection-v2.test.cjs",
     "producer-owner-migration.test.cjs",
     "ranked-evidence-basic.test.cjs",
