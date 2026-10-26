@@ -5,7 +5,7 @@ const crypto = require('node:crypto');
 const { createFixture } = require('./fixtures/flashback_native_runtime_fixture.cjs');
 const createSnapshot = require('../server/core/flashback-scope-health.cjs');
 
-const source = fs.readFileSync(require.resolve('../plugins/Flashback_Memory.js'), 'utf8');
+const source = fs.readFileSync(process.env.FLASHBACK_TEST_PLUGIN || require.resolve('../plugins/Flashback_Memory.js'), 'utf8');
 const makeStore = values => ({
   values: new Map(values),
   async getItem(k) { return this.values.get(k) ?? null; },
@@ -33,7 +33,8 @@ async function serverModeFixture(options = {}) {
   const f = await createFixture({
     source: source
       .replace('  const bridge = Object.freeze({', `  globalThis.__inspectionFixture={state,dataBinding,routeKey:SCOPE_ROUTING_LOCAL_KEY,resetChoiceKey,withModeConfiguration};\n  const bridge = Object.freeze({`)
-      .replace('  globalThis.__FlashbackMemory = publicApi;', `  globalThis.__inspectionFixtureText={plan:maintenancePlanText,judgement:maintenanceJudgementText};\n  globalThis.__FlashbackMemory = publicApi;`),
+      .replace('  globalThis.__FlashbackMemory = publicApi;', `  globalThis.__inspectionFixtureText={plan:maintenancePlanText,judgement:maintenanceJudgementText};\n  globalThis.__FlashbackMemory = publicApi;`)
+      .replace('_test: { maintenanceResultText,', '_test: { repairScopeRegistryMetadata, classifyScopeForManagement, maintenanceResultText,'),
     chat: { message: initialChat }
   });
 
@@ -42,7 +43,8 @@ async function serverModeFixture(options = {}) {
     embeddingProvider: 'hash',
     embeddingModel: 'hash-v1',
     embeddingEnabled: true,
-    autoEpisodeIndex: false
+    embeddingAutoProcess: false,
+    episodeIndexEnabled: false
   });
 
   const scope = await f.api.resolveCurrentScope(false);
@@ -380,7 +382,7 @@ async function serverModeFixture(options = {}) {
   return { ...f, scope, serverRows, endpoint };
 }
 
-(async () => {
+if (require.main === module) (async () => {
   console.log('Testing Server Mode Recovery and Missing Turn Sync...');
 
   // Test 1: Uninitialized scope routing registry falls back to server_only argument
@@ -508,3 +510,5 @@ async function serverModeFixture(options = {}) {
   console.error('TEST FAILED:', err);
   process.exit(1);
 });
+
+module.exports = {serverModeFixture};

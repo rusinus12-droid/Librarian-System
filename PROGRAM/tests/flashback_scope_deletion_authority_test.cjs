@@ -30,21 +30,23 @@ async function fixture(t,activeMode='server_only'){
   };
   return {f,b,a,tb,app,dir,wire,manager,target,active,manifestKey};
 }
-for(const mode of ['server_only','plugin_only'])test('all owner deletion entries preserve server target with active '+mode,async t=>{
+for(const mode of ['server_only','plugin_only'])test('inspection preserves server target; explicit owner deletion succeeds with active '+mode,async t=>{
   const {a,tb,b,target,manifestKey,wire,app,f}=await fixture(t,mode);
   const before=app.repositories.flashback.get('plugin',manifestKey),registry=await f.pluginStorage.getItem(registryKey),at=wire.length;
   const classified=await tb.classifyScopeForManagement(target.scopeKey);
   assert.equal(classified.kind,'server_managed');assert.equal(classified.storageMode,'server_only');
-  const result=await a.deleteSelectedScopeStorages([target.scopeKey]);
-  assert.equal(result.deleted,0);assert.equal(result.protected,1);assert.match(result.protectedReasons.join(' '),/RE:TRACE.*서버 데이터 관리/);
-  await assert.rejects(()=>a.deleteScopeStorage(target.scopeKey),/FLASHBACK_SERVER_SCOPE_MANAGEMENT_REQUIRED/);
   await assert.rejects(()=>a.removeVerifiedRegistryOnlyScope(target.scopeKey),/FLASHBACK_SERVER_SCOPE_MANAGEMENT_REQUIRED/);
   assert.equal((await tb.cleanupSelectedScopeStorages([target.scopeKey])).cleaned,0);
   assert.equal(app.repositories.flashback.get('plugin',manifestKey).digest,before.digest);
-  assert.equal(app.repositories.flashback.get('plugin',manifestKey).revision,before.revision);
-  assert.equal(await f.pluginStorage.getItem(registryKey),registry,'local list remains intact');
+  assert.equal(await f.pluginStorage.getItem(registryKey),registry,'inspection and empty-list cleanup preserve data');
+  assert(!wire.slice(at).some(row=>row.method==='POST'&&/^\/v1\/(kv|flashback\/writer)/.test(row.route)),'inspection never mutates server data');
+  const result=await a.deleteSelectedScopeStorages([target.scopeKey]);
+  assert.equal(result.deleted,1,JSON.stringify(result));assert.equal(result.failed,0);
+  assert.equal(app.repositories.flashback.get('plugin',manifestKey).tombstone,true);
+  assert.equal(await f.pluginStorage.getItem(manifestKey),null);
   assert.equal((await b.getScopeMode({scopeId:target.scopeKey})).mode,'server_only');
-  assert(!wire.slice(at).some(row=>row.method==='POST'&&/^\/v1\/(kv|flashback\/writer)/.test(row.route)),'no server mutation');
+  assert(wire.some(row=>row.route==='/v1/flashback/scope-delete/execute'),'uses Flashback owner deletion');
+  assert(!wire.some(row=>row.route==='/v1/manager/scope-delete/execute'),'does not borrow manager authority');
 });
 test('manager pin/reference guards cannot be bypassed through the owner API',async t=>{
   const {manager,target,active,manifestKey,app,a}=await fixture(t);
@@ -56,9 +58,10 @@ test('manager pin/reference guards cannot be bypassed through the owner API',asy
   const pinned=await manager('POST','/v1/manager/scope-delete/plan',body);assert.equal(pinned.status,409);assert.match(pinned.payload.error,/pinned/);
   await manager('POST','/v1/manager/scope-pin',{namespace:'flashback',scopeId:target.scopeKey,pinned:false});
   const referenced=await manager('POST','/v1/manager/scope-delete/plan',body);assert.equal(referenced.status,409);assert.match(referenced.payload.error,/referenced_ancestor/);
+  await assert.rejects(()=>a.deleteScopeStorage(target.scopeKey),/FLASHBACK_SCOPE_DELETE_PROTECTED/);
   await manager('POST','/v1/manager/scope-pin',{namespace:'flashback',scopeId:target.scopeKey,pinned:true});
   assert.equal((await a.deleteSelectedScopeStorages([target.scopeKey])).deleted,0);
-  await assert.rejects(()=>a.deleteScopeStorage(target.scopeKey),/FLASHBACK_SERVER_SCOPE_MANAGEMENT_REQUIRED/);
+  await assert.rejects(()=>a.deleteScopeStorage(target.scopeKey),/FLASHBACK_SCOPE_DELETE_PROTECTED/);
   assert.equal(app.repositories.flashback.get('plugin',manifestKey).digest,before.digest);
   const row=(await manager('GET','/v1/manager/scopes')).payload.result.scopes.find(row=>row.scopeId===target.scopeKey);
   assert.equal(row.pinned,true);assert.equal(row.referenceCount,1);

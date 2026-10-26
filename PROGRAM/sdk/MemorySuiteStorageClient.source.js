@@ -9524,6 +9524,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!scope?.scopeId || scope.scopeId.length > 512 || /[\r\n\0]/.test(scope.scopeId)) reject('HEALTH_SCOPE_UNVERIFIED');
     const connection = state.bootstrap.value, generation = dataBinding.generation;
     const connectionWitness = JSON.stringify(connection);
+    const executionIdentity = value => JSON.stringify([value?.url,value?.dataInstanceId,value?.dataIdentityContract,value?.resetEpochs?.flashback ?? 0]);
+    const executionIdentityWitness = executionIdentity(connection);
     const readCurrentUrl = async () => {
       let readable = false;
       for (const name of urlArguments) for (const api of apiCandidates()) {
@@ -9539,24 +9541,26 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (!readable) reject('HEALTH_SERVER_URL_UNVERIFIED');
       return normalizeServerUrl(defaultUrl);
     };
-    const assertConnectionState = currentUrl => {
+    const assertConnectionState = (currentUrl, allowConnectionRefresh = false) => {
+      const current = allowConnectionRefresh ? state.bootstrap.value : connection;
       if (lifecycle.disposed || modeConfigurationFrozen || storageTransition || resetReloadRequired || state.bootstrap.pending
-          || !connection || state.bootstrap.value !== connection || JSON.stringify(connection) !== connectionWitness
-          || !connection.token || connection.dataIdentityCertified !== true || connection.resetEpochCertified !== true
-          || connection.dataIdentityContract !== 'memory-suite.physical-data-identity.v1'
+          || !connection || !current || !allowConnectionRefresh && (state.bootstrap.value !== connection || JSON.stringify(connection) !== connectionWitness)
+          || !current.token || current.dataIdentityCertified !== true || current.resetEpochCertified !== true
+          || current.dataIdentityContract !== 'memory-suite.physical-data-identity.v1'
+          || executionIdentity(current) !== executionIdentityWitness
           || dataBinding.rejected || !dataBinding.certified || dataBinding.dataInstanceId !== connection.dataInstanceId
           || dataBinding.dataIdentityContract !== connection.dataIdentityContract || dataBinding.generation !== generation
           || dataBinding.url !== connection.url || state.bootstrap.baseUrl !== connection.url
           || currentUrl !== connection.url) reject('HEALTH_SERVER_CONNECTION_REQUIRED');
-      if (connection.capabilities?.['flashback-scope-health.v1'] !== true) reject('HEALTH_SERVER_CAPABILITY_REQUIRED');
+      if (current.capabilities?.['flashback-scope-health.v1'] !== true) reject('HEALTH_SERVER_CAPABILITY_REQUIRED');
     };
     const assertConnection = async () => assertConnectionState(await readCurrentUrl());
     await assertConnection();
     const epoch = connection.resetEpochs?.flashback ?? 0;
     if (!Number.isSafeInteger(epoch) || epoch < 0) reject('HEALTH_RESET_UNVERIFIED');
-    const routeWitness = async () => {
+    const routeWitness = async (allowConnectionRefresh = false) => {
       const currentUrl = await readCurrentUrl();
-      assertConnectionState(currentUrl);
+      assertConnectionState(currentUrl, allowConnectionRefresh);
       const plugin = rawPluginStorage(), device = await rawDeviceStorage({strict:true});
       if (!plugin?.getItem || !device?.getItem) reject('HEALTH_ROUTE_UNVERIFIED');
       const raws = [await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY),await device.getItem(SCOPE_ROUTING_LOCAL_KEY)];
@@ -9591,7 +9595,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const resetRaw = await plugin.getItem(resetChoiceKey);
       let reset; try { reset = typeof resetRaw === 'string' ? JSON.parse(resetRaw) : resetRaw; } catch (_) { reject('HEALTH_RESET_REVIEW_REQUIRED'); }
       if (resetRaw != null && resetRaw !== '' ? !resetPreferenceMatches(reset,connection) : false) reject('HEALTH_RESET_REVIEW_REQUIRED');
-      assertConnectionState(currentUrl);
+      assertConnectionState(currentUrl, allowConnectionRefresh);
       return JSON.stringify([raws,resetRaw ?? null,generation]);
     };
     let initialRoute;
@@ -9599,8 +9603,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let hash = 0x811c9dc5;
     for (let i=0;i<scope.scopeId.length;i++) { hash ^= scope.scopeId.charCodeAt(i); hash = Math.imul(hash,0x01000193); }
     const alias = (hash >>> 0).toString(36);
-    const assertRoute = async () => {
-      let witness; try { witness = await routeWitness(); } catch (error) { reject(/^HEALTH_[A-Z_]+$/.test(error?.message || '') ? error.message : 'HEALTH_ROUTE_UNVERIFIED'); }
+    const assertRoute = async (allowConnectionRefresh = false) => {
+      let witness; try { witness = await routeWitness(allowConnectionRefresh); } catch (error) { reject(/^HEALTH_[A-Z_]+$/.test(error?.message || '') ? error.message : 'HEALTH_ROUTE_UNVERIFIED'); }
       if (witness !== initialRoute) reject('HEALTH_ROUTE_CHANGED');
     };
     const read = async expectedFingerprint => {
@@ -9637,7 +9641,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return {mode:MODE_SERVER_ONLY,snapshot,binding:JSON.stringify([namespace,scope.scopeId,connection.dataInstanceId,epoch,generation,fingerprint]),
       // Closure retains its own proof, regardless of caller edits to the result.
       assertCurrentSync:()=>{authorityFence.assertCurrent();assertConnectionState(connection.url);return true;},
-      assertRouteCurrent:async()=>{await assertRoute();authorityFence.assertCurrent();return true;},
+      // A long-running writer may refresh bootstrap credentials. Its DATA,
+      // reset epoch and route must still match the inspected authority.
+      assertRouteCurrent:async(options={})=>{await assertRoute(options.allowConnectionRefresh===true);authorityFence.assertCurrent();return true;},
       assertCurrent:async () => { await read(fingerprint);authorityFence.assertCurrent();return true; }};
   };
 
@@ -9676,6 +9682,40 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       assertCurrentSync:assertState,
       assertCurrent:async()=>{const current=await read();assertState();if(current!==witness)reject('HEALTH_SETTINGS_CHANGED');return true;}};
   };
+
+  const deleteFlashbackServerScope = async (scopeInput, deleteOptions = {}) => withOwnerOperation({kind:'storage_operation',operation:'deleteFlashbackServerScope'},async()=>{
+    if(namespace!=='flashback')throw Error('FLASHBACK_SCOPE_DELETE_OWNER_REQUIRED');
+    const scope=normalizeScopeDescriptor(scopeInput),active=await resolveCurrentScope(false);
+    if(!scope.scopeId||scope.scopeId===active.scopeId)throw Error('FLASHBACK_SCOPE_DELETE_ACTIVE_SCOPE');
+    const mode=await readScopeMode(scope,false);
+    if(mode.mode!==MODE_SERVER_ONLY||mode.transition||mode.migrationRequired)throw Error('FLASHBACK_SCOPE_DELETE_ROUTE_UNVERIFIED');
+    const connection=await bootstrap(false,true),generation=dataBinding.generation;
+    if(connection?.capabilities?.['flashback-scope-delete.v1']!==true)throw Error('FLASHBACK_SCOPE_DELETE_SERVER_UPDATE_REQUIRED');
+    const identity=value=>JSON.stringify([value?.url,value?.dataInstanceId,value?.dataIdentityContract,value?.resetEpochs?.flashback??0]);
+    const witness=identity(connection),fence=captureReadOnlyAuthorityFence();
+    const validate=async()=>{
+      await deleteOptions.assertCurrent?.();fence.assertCurrent();
+      const current=await readScopeMode(scope,false);
+      if((await resolveCurrentScope(false)).scopeId!==active.scopeId||current.mode!==mode.mode||current.transition||current.migrationRequired
+        ||dataBinding.generation!==generation||identity(state.bootstrap.value)!==witness)throw Error('FLASHBACK_SCOPE_DELETE_AUTHORITY_CHANGED');
+      fence.assertCurrent();
+    };
+    let hash=0x811c9dc5;for(let i=0;i<scope.scopeId.length;i++)hash=Math.imul(hash^scope.scopeId.charCodeAt(i),0x01000193);
+    const manifestKey=`vector_rag_memory:scope:${(hash>>>0).toString(36)}:manifest:v2`;
+    return await withFlashbackWriter(manifestKey,async()=>{
+    const body={scopeKey:scope.scopeId,dataInstanceId:connection.dataInstanceId,epoch:connection.resetEpochs?.flashback??0,fence:await usableFlashbackFence(manifestKey)};
+    await validate();
+    const plan=(await request('POST','/v1/flashback/scope-delete/plan',body,{allowPluginOnly:true,scope,storageMode:mode.mode})).result;
+    if(plan?.schema!=='flashback.scope-delete-plan.v1'||plan.scopeKey!==scope.scopeId||plan.dataInstanceId!==body.dataInstanceId
+      ||plan.epoch!==body.epoch||!plan.planId||!/^[a-f0-9]{64}$/.test(plan.fingerprint||''))throw Error('FLASHBACK_SCOPE_DELETE_PLAN_UNVERIFIED');
+    await validate();
+    const receipt=(await request('POST','/v1/flashback/scope-delete/execute',{...body,planId:plan.planId,fingerprint:plan.fingerprint},
+      {allowPluginOnly:true,scope,storageMode:mode.mode})).result;
+    if(receipt?.schema!=='flashback.scope-delete-receipt.v1'||receipt.ok!==true||receipt.durable!==true||receipt.verified!==true
+      ||receipt.scopeKey!==scope.scopeId||receipt.dataInstanceId!==body.dataInstanceId||receipt.epoch!==body.epoch||!receipt.backupId)throw Error('FLASHBACK_SCOPE_DELETE_RECEIPT_UNVERIFIED');
+    return receipt;
+    },{forceServer:true});
+  });
 
   /* END READ ONLY LOCAL HEALTH */
 
@@ -9810,6 +9850,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     captureReadOnlyAuthorityFence,
     inspectLocalHealthSnapshot,
     inspectFlashbackServerHealthSnapshot,
+    deleteFlashbackServerScope,
     createLibraReadOnlyClient,
     inspectFlashbackGlobalSettingsSnapshot,
     ownerLegacyWrite: (...args) => withOwnerIO(args[0],args[1],()=>ownerLegacyWrite(...args)),

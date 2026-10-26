@@ -13875,6 +13875,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!scope?.scopeId || scope.scopeId.length > 512 || /[\r\n\0]/.test(scope.scopeId)) reject('HEALTH_SCOPE_UNVERIFIED');
     const connection = state.bootstrap.value, generation = dataBinding.generation;
     const connectionWitness = JSON.stringify(connection);
+    const executionIdentity = value => JSON.stringify([value?.url,value?.dataInstanceId,value?.dataIdentityContract,value?.resetEpochs?.flashback ?? 0]);
+    const executionIdentityWitness = executionIdentity(connection);
     const readCurrentUrl = async () => {
       let readable = false;
       for (const name of urlArguments) for (const api of apiCandidates()) {
@@ -13890,24 +13892,26 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (!readable) reject('HEALTH_SERVER_URL_UNVERIFIED');
       return normalizeServerUrl(defaultUrl);
     };
-    const assertConnectionState = currentUrl => {
+    const assertConnectionState = (currentUrl, allowConnectionRefresh = false) => {
+      const current = allowConnectionRefresh ? state.bootstrap.value : connection;
       if (lifecycle.disposed || modeConfigurationFrozen || storageTransition || resetReloadRequired || state.bootstrap.pending
-          || !connection || state.bootstrap.value !== connection || JSON.stringify(connection) !== connectionWitness
-          || !connection.token || connection.dataIdentityCertified !== true || connection.resetEpochCertified !== true
-          || connection.dataIdentityContract !== 'memory-suite.physical-data-identity.v1'
+          || !connection || !current || !allowConnectionRefresh && (state.bootstrap.value !== connection || JSON.stringify(connection) !== connectionWitness)
+          || !current.token || current.dataIdentityCertified !== true || current.resetEpochCertified !== true
+          || current.dataIdentityContract !== 'memory-suite.physical-data-identity.v1'
+          || executionIdentity(current) !== executionIdentityWitness
           || dataBinding.rejected || !dataBinding.certified || dataBinding.dataInstanceId !== connection.dataInstanceId
           || dataBinding.dataIdentityContract !== connection.dataIdentityContract || dataBinding.generation !== generation
           || dataBinding.url !== connection.url || state.bootstrap.baseUrl !== connection.url
           || currentUrl !== connection.url) reject('HEALTH_SERVER_CONNECTION_REQUIRED');
-      if (connection.capabilities?.['flashback-scope-health.v1'] !== true) reject('HEALTH_SERVER_CAPABILITY_REQUIRED');
+      if (current.capabilities?.['flashback-scope-health.v1'] !== true) reject('HEALTH_SERVER_CAPABILITY_REQUIRED');
     };
     const assertConnection = async () => assertConnectionState(await readCurrentUrl());
     await assertConnection();
     const epoch = connection.resetEpochs?.flashback ?? 0;
     if (!Number.isSafeInteger(epoch) || epoch < 0) reject('HEALTH_RESET_UNVERIFIED');
-    const routeWitness = async () => {
+    const routeWitness = async (allowConnectionRefresh = false) => {
       const currentUrl = await readCurrentUrl();
-      assertConnectionState(currentUrl);
+      assertConnectionState(currentUrl, allowConnectionRefresh);
       const plugin = rawPluginStorage(), device = await rawDeviceStorage({strict:true});
       if (!plugin?.getItem || !device?.getItem) reject('HEALTH_ROUTE_UNVERIFIED');
       const raws = [await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY),await device.getItem(SCOPE_ROUTING_LOCAL_KEY)];
@@ -13942,7 +13946,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const resetRaw = await plugin.getItem(resetChoiceKey);
       let reset; try { reset = typeof resetRaw === 'string' ? JSON.parse(resetRaw) : resetRaw; } catch (_) { reject('HEALTH_RESET_REVIEW_REQUIRED'); }
       if (resetRaw != null && resetRaw !== '' ? !resetPreferenceMatches(reset,connection) : false) reject('HEALTH_RESET_REVIEW_REQUIRED');
-      assertConnectionState(currentUrl);
+      assertConnectionState(currentUrl, allowConnectionRefresh);
       return JSON.stringify([raws,resetRaw ?? null,generation]);
     };
     let initialRoute;
@@ -13950,8 +13954,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let hash = 0x811c9dc5;
     for (let i=0;i<scope.scopeId.length;i++) { hash ^= scope.scopeId.charCodeAt(i); hash = Math.imul(hash,0x01000193); }
     const alias = (hash >>> 0).toString(36);
-    const assertRoute = async () => {
-      let witness; try { witness = await routeWitness(); } catch (error) { reject(/^HEALTH_[A-Z_]+$/.test(error?.message || '') ? error.message : 'HEALTH_ROUTE_UNVERIFIED'); }
+    const assertRoute = async (allowConnectionRefresh = false) => {
+      let witness; try { witness = await routeWitness(allowConnectionRefresh); } catch (error) { reject(/^HEALTH_[A-Z_]+$/.test(error?.message || '') ? error.message : 'HEALTH_ROUTE_UNVERIFIED'); }
       if (witness !== initialRoute) reject('HEALTH_ROUTE_CHANGED');
     };
     const read = async expectedFingerprint => {
@@ -13988,7 +13992,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return {mode:MODE_SERVER_ONLY,snapshot,binding:JSON.stringify([namespace,scope.scopeId,connection.dataInstanceId,epoch,generation,fingerprint]),
       // Closure retains its own proof, regardless of caller edits to the result.
       assertCurrentSync:()=>{authorityFence.assertCurrent();assertConnectionState(connection.url);return true;},
-      assertRouteCurrent:async()=>{await assertRoute();authorityFence.assertCurrent();return true;},
+      // A long-running writer may refresh bootstrap credentials. Its DATA,
+      // reset epoch and route must still match the inspected authority.
+      assertRouteCurrent:async(options={})=>{await assertRoute(options.allowConnectionRefresh===true);authorityFence.assertCurrent();return true;},
       assertCurrent:async () => { await read(fingerprint);authorityFence.assertCurrent();return true; }};
   };
 
@@ -14027,6 +14033,40 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       assertCurrentSync:assertState,
       assertCurrent:async()=>{const current=await read();assertState();if(current!==witness)reject('HEALTH_SETTINGS_CHANGED');return true;}};
   };
+
+  const deleteFlashbackServerScope = async (scopeInput, deleteOptions = {}) => withOwnerOperation({kind:'storage_operation',operation:'deleteFlashbackServerScope'},async()=>{
+    if(namespace!=='flashback')throw Error('FLASHBACK_SCOPE_DELETE_OWNER_REQUIRED');
+    const scope=normalizeScopeDescriptor(scopeInput),active=await resolveCurrentScope(false);
+    if(!scope.scopeId||scope.scopeId===active.scopeId)throw Error('FLASHBACK_SCOPE_DELETE_ACTIVE_SCOPE');
+    const mode=await readScopeMode(scope,false);
+    if(mode.mode!==MODE_SERVER_ONLY||mode.transition||mode.migrationRequired)throw Error('FLASHBACK_SCOPE_DELETE_ROUTE_UNVERIFIED');
+    const connection=await bootstrap(false,true),generation=dataBinding.generation;
+    if(connection?.capabilities?.['flashback-scope-delete.v1']!==true)throw Error('FLASHBACK_SCOPE_DELETE_SERVER_UPDATE_REQUIRED');
+    const identity=value=>JSON.stringify([value?.url,value?.dataInstanceId,value?.dataIdentityContract,value?.resetEpochs?.flashback??0]);
+    const witness=identity(connection),fence=captureReadOnlyAuthorityFence();
+    const validate=async()=>{
+      await deleteOptions.assertCurrent?.();fence.assertCurrent();
+      const current=await readScopeMode(scope,false);
+      if((await resolveCurrentScope(false)).scopeId!==active.scopeId||current.mode!==mode.mode||current.transition||current.migrationRequired
+        ||dataBinding.generation!==generation||identity(state.bootstrap.value)!==witness)throw Error('FLASHBACK_SCOPE_DELETE_AUTHORITY_CHANGED');
+      fence.assertCurrent();
+    };
+    let hash=0x811c9dc5;for(let i=0;i<scope.scopeId.length;i++)hash=Math.imul(hash^scope.scopeId.charCodeAt(i),0x01000193);
+    const manifestKey=`vector_rag_memory:scope:${(hash>>>0).toString(36)}:manifest:v2`;
+    return await withFlashbackWriter(manifestKey,async()=>{
+    const body={scopeKey:scope.scopeId,dataInstanceId:connection.dataInstanceId,epoch:connection.resetEpochs?.flashback??0,fence:await usableFlashbackFence(manifestKey)};
+    await validate();
+    const plan=(await request('POST','/v1/flashback/scope-delete/plan',body,{allowPluginOnly:true,scope,storageMode:mode.mode})).result;
+    if(plan?.schema!=='flashback.scope-delete-plan.v1'||plan.scopeKey!==scope.scopeId||plan.dataInstanceId!==body.dataInstanceId
+      ||plan.epoch!==body.epoch||!plan.planId||!/^[a-f0-9]{64}$/.test(plan.fingerprint||''))throw Error('FLASHBACK_SCOPE_DELETE_PLAN_UNVERIFIED');
+    await validate();
+    const receipt=(await request('POST','/v1/flashback/scope-delete/execute',{...body,planId:plan.planId,fingerprint:plan.fingerprint},
+      {allowPluginOnly:true,scope,storageMode:mode.mode})).result;
+    if(receipt?.schema!=='flashback.scope-delete-receipt.v1'||receipt.ok!==true||receipt.durable!==true||receipt.verified!==true
+      ||receipt.scopeKey!==scope.scopeId||receipt.dataInstanceId!==body.dataInstanceId||receipt.epoch!==body.epoch||!receipt.backupId)throw Error('FLASHBACK_SCOPE_DELETE_RECEIPT_UNVERIFIED');
+    return receipt;
+    },{forceServer:true});
+  });
 
   /* END READ ONLY LOCAL HEALTH */
 
@@ -14161,6 +14201,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     captureReadOnlyAuthorityFence,
     inspectLocalHealthSnapshot,
     inspectFlashbackServerHealthSnapshot,
+    deleteFlashbackServerScope,
     createLibraReadOnlyClient,
     inspectFlashbackGlobalSettingsSnapshot,
     ownerLegacyWrite: (...args) => withOwnerIO(args[0],args[1],()=>ownerLegacyWrite(...args)),
@@ -23877,6 +23918,8 @@ const MemorySuiteSnapshotCache = (() => {
 
   const deleteScopeStorage = async (scopeKey,options={}) => {
     if(!text(scopeKey).trim())throw new Error('FLASHBACK_NO_ACTIVE_SCOPE');
+    const target = await MemorySuiteStorageBridge.getScopeMode({scopeId:scopeKey,scopeKey});
+    if (target.mode !== 'plugin_only') return await deleteServerScopeStorage(scopeKey,options);
     const authority = await assertLocalScopeManagement(scopeKey);
     return await withScopeWriteLock(scopeKey,async()=>{
       await authority.assertCurrent();
@@ -28255,6 +28298,7 @@ const MemorySuiteSnapshotCache = (() => {
       const loaded = await loadScopeRecords(scope.scopeKey);
       assertCompleteScopeLoad(loaded, 'memory upsert');
       await options.sourceEditValidate?.();
+      await options.maintenanceSourceValidate?.();
       if (options.sourceEditReplacement === true) return await commitFlashbackSourceReplacement(scope, loaded, incoming, cfg, options);
     const map = new Map();
     const duplicateBuckets = new Map();
@@ -28293,7 +28337,7 @@ const MemorySuiteSnapshotCache = (() => {
       .map(finiteTurnIndex)
       .filter(turn => turn > 0));
     const replacement = replacementTurns.size
-      ? await prepareFlashbackWorldlineReplacement(scope, loaded.records, incoming, replacementTurns)
+      ? await prepareFlashbackWorldlineReplacement(scope, loaded.records, incoming, replacementTurns, { assertCurrent: options.maintenanceSourceValidate })
       : { changed: false, records: loaded.records, incoming, replacedRecords: 0, invalidatedEpisodeIndexes: 0 };
     incoming = replacement.incoming;
     let replacedRecords = replacement.replacedRecords;
@@ -28366,9 +28410,9 @@ const MemorySuiteSnapshotCache = (() => {
       }
     }
     const saved = await saveScopeRecords(scope, Array.from(map.values()), cfg, scope,
-      { publicationSourceHashes: options.publicationSourceHashes });
+      { publicationSourceHashes: options.publicationSourceHashes, assertCurrent: options.maintenanceSourceValidate });
     const manifest = replacementTurns.size
-      ? await saveScopeManifest({ ...saved.manifest, turnWorldlineLiveHash: '', turnWorldlineRevision: replacement.worldline?.revision || saved.manifest.turnWorldlineRevision || 0 }, scope)
+      ? await saveScopeManifest({ ...saved.manifest, turnWorldlineLiveHash: '', turnWorldlineRevision: replacement.worldline?.revision || saved.manifest.turnWorldlineRevision || 0 }, scope, { assertCurrent: options.maintenanceSourceValidate })
       : saved.manifest;
     if (replacedRecords > 0) {
       pushActivityLog('orphan_memory_cleaned', '고아 메모리를 정리했습니다.', {
@@ -28986,6 +29030,7 @@ const MemorySuiteSnapshotCache = (() => {
   };
   const synchronizeFlashbackTurnWorldline = async (scope, liveState = {}, settings = null, options = {}) => {
     if (!scope?.scopeKey) return { changed: false, reason: 'no_scope' };
+    await options.assertCurrent?.();
     const startupRestore = options.reason === 'startup_restore_only' && options.allowRetirement === false;
     const startupAttempt = startupRestore ? flashbackRecallRequests.active : null;
     const startupBranch = startupAttempt?.branch;
@@ -29293,9 +29338,9 @@ const MemorySuiteSnapshotCache = (() => {
       if (responseChanged) {
         const nonResponse = loaded.records.filter(record => !isResponseMemoryRecord(record) && !(record.autoEpisode || record.sourceType === 'episode_index'));
         saved = await saveScopeRecords(scope, [...nonResponse, ...inheritedResponses, ...provisionalResponses, ...nextResponses], cfg, scope,
-          { metadataOnly: options.preserveRawRecords === true });
+          { metadataOnly: options.preserveRawRecords === true, assertCurrent: options.assertCurrent });
       }
-      const worldline = await saveTurnWorldline(scope.scopeKey, nextWorldline);
+      const worldline = await saveTurnWorldline(scope.scopeKey, nextWorldline, { assertCurrent: options.assertCurrent });
       const savedManifest = await saveScopeManifest({
         ...saved.manifest,
         sourceConsentPolicyVersion:2,
@@ -29303,7 +29348,7 @@ const MemorySuiteSnapshotCache = (() => {
         turnWorldlineRevision: worldline.revision,
         turnWorldlineBindingPolicyVersion: TURN_WORLDLINE_BINDING_POLICY_VERSION,
         turnWorldlinePendingRetirement: worldline.nodes.some(node => node.status === 'quarantined')
-      }, scope);
+      }, scope, { assertCurrent: options.assertCurrent });
       return {
         changed: true,
         reason: responseChanged ? 'worldline_records_reconciled' : 'worldline_metadata_reconciled',
@@ -29379,7 +29424,7 @@ const MemorySuiteSnapshotCache = (() => {
     }
     return result;
   };
-  const prepareFlashbackWorldlineReplacement = async (scope, existingRecords = [], incomingRecords = [], replacementTurns = new Set()) => {
+  const prepareFlashbackWorldlineReplacement = async (scope, existingRecords = [], incomingRecords = [], replacementTurns = new Set(), options = {}) => {
     const activeGroups = responseGroupsForWorldline(
       existingRecords.filter(record => !isInheritedScopeMemoryRecord(record, scope.scopeKey))
     );
@@ -29470,7 +29515,7 @@ const MemorySuiteSnapshotCache = (() => {
       headTurnNodeId: nodes.filter(node => node.status === 'active').sort((a, b) => b.pairIndex - a.pairIndex)[0]?.turnNodeId || '',
       nodes,
       retiredRecords: nextRetired
-    });
+    }, { assertCurrent: options.assertCurrent });
     return { changed: true, records: kept, incoming: annotatedIncoming, replacedRecords, invalidatedEpisodeIndexes, worldline };
   };
 
@@ -31373,7 +31418,7 @@ const MemorySuiteHealthRecovery = (() => {
     };
   };
 
-  const updateIndependentMetadataForScope = async (scope, changes = [], settings = Runtime.settings || DEFAULTS) => {
+  const updateIndependentMetadataForScope = async (scope, changes = [], settings = Runtime.settings || DEFAULTS, options = {}) => {
     if (!scope?.scopeKey || !Array.isArray(changes) || !changes.length) return { updatedTurns: 0, updatedRecords: 0, embedded: 0 };
     return await withScopeWriteLock(scope.scopeKey, async () => {
       const loaded = await loadScopeRecords(scope.scopeKey);
@@ -31407,7 +31452,7 @@ const MemorySuiteHealthRecovery = (() => {
         };
       });
       if (!updatedRecords) return { updatedTurns: 0, updatedRecords: 0, embedded: 0 };
-      await saveScopeRecords(scope, next, settings, scope);
+      await saveScopeRecords(scope, next, settings, scope, { assertCurrent: options.assertCurrent });
       return { updatedTurns: updatedGroups.size, updatedRecords, embedded: 0 };
     });
   };
@@ -31529,7 +31574,7 @@ const MemorySuiteHealthRecovery = (() => {
     const publicationSourceHashes = options.deferEmbedding === true && !options.sourceEditReplacement
       && !options.sourceEditValidate && !options.maintenanceSourceValidate && !options.operationLedger
       ? new Set(records.map(record => record.sourceHash).filter(Boolean)) : null;
-    const result = await upsertRecords(records, cfg, scope, { replaceTurnPair: options.replaceTurnPair === true, deferEmbedding: true, sourceEditValidate:options.sourceEditValidate, sourceEditReplacement:options.sourceEditReplacement === true, publicationSourceHashes });
+    const result = await upsertRecords(records, cfg, scope, { replaceTurnPair: options.replaceTurnPair === true, deferEmbedding: true, sourceEditValidate:options.sourceEditValidate, sourceEditReplacement:options.sourceEditReplacement === true, maintenanceSourceValidate:options.maintenanceSourceValidate, publicationSourceHashes });
     if (options.deferEmbedding !== true && !options.skipEpisodeRebuild && records.some(record => (record.sourceType === 'chat_turn' ? 'response' : record.sourceType) === 'response')) {
       scheduleEpisodeIndexRebuild(scope, cfg, { reason: 'ingestSources' });
     }
@@ -31576,7 +31621,9 @@ const MemorySuiteHealthRecovery = (() => {
     const cold = normalizeColdStartOptions(settings, options);
     const snapshot = options.snapshot || await loadRisuSnapshot(true);
     const currentScope = resolveScopeFromSnapshot(snapshot);
+    await options.maintenanceSourceValidate?.();
     await ensureScopeStorageReady(currentScope, settings);
+    await options.maintenanceSourceValidate?.();
     const chatSnapshots = await loadLiveChatSnapshotsForColdStart(snapshot, cold);
     const coldStartSettings = { ...settings, maxResponseItems: Number.MAX_SAFE_INTEGER };
     const incremental = options.incremental !== false;
@@ -31606,19 +31653,21 @@ const MemorySuiteHealthRecovery = (() => {
       // into the currently open chat's storage.
       const itemScope = cold.scope === 'all' ? resolveScopeFromSnapshot(item) : currentScope;
       if (!itemScope?.scopeKey) continue;
+      await options.maintenanceSourceValidate?.();
       await ensureScopeStorageReady(itemScope, coldStartSettings);
+      await options.maintenanceSourceValidate?.();
       const sources = collectLiveChatSourcesFromSnapshot(item, cold);
       if (!sources.length) continue;
       const liveState = liveChatStateFromSnapshot(item);
       const loadedBeforeSync = await loadScopeRecords(itemScope.scopeKey);
       const diff = diffLiveChatSourcesAgainstRecords(sources, loadedBeforeSync.records);
-      await synchronizeFlashbackTurnWorldline(itemScope, liveState, coldStartSettings);
+      await synchronizeFlashbackTurnWorldline(itemScope, liveState, coldStartSettings, { assertCurrent: options.maintenanceSourceValidate });
       // A rollback may restore the exact response from the retired branch, so
       // decide actual embedding work from the post-reconciliation records.
       const loadedAfterSync = await loadScopeRecords(itemScope.scopeKey);
       const effectiveDiff = diffLiveChatSourcesAgainstRecords(sources, loadedAfterSync.records);
       const metadataUpdate = incremental && effectiveDiff.metadataChanged.length
-        ? await updateIndependentMetadataForScope(itemScope, effectiveDiff.metadataChanged, coldStartSettings)
+        ? await updateIndependentMetadataForScope(itemScope, effectiveDiff.metadataChanged, coldStartSettings, { assertCurrent: options.maintenanceSourceValidate })
         : { updatedTurns: 0, updatedRecords: 0, embedded: 0 };
       const selectedSources = incremental ? effectiveDiff.selected : sources;
       let batch = selectedSources.length
@@ -31640,7 +31689,7 @@ const MemorySuiteHealthRecovery = (() => {
         // a failure here and report a false-success cold start: the durable
         // records remain committed, while the caller receives a repairable
         // error instead of proceeding with an inconsistent worldline.
-        await synchronizeFlashbackTurnWorldline(itemScope, liveState, coldStartSettings);
+        await synchronizeFlashbackTurnWorldline(itemScope, liveState, coldStartSettings, { assertCurrent: options.maintenanceSourceValidate });
         const published = await loadScopeRecordsRaw(itemScope.scopeKey);
         const hashes = new Set(selectedSources.map(source => source.sourceHash));
         const completion = await finishPublishedRawEmbedding(itemScope, coldStartSettings, published.records.filter(record => hashes.has(record.sourceHash)), options);
@@ -31673,7 +31722,8 @@ const MemorySuiteHealthRecovery = (() => {
       for (const itemScope of touchedScopes.values()) {
         await maybeRebuildEpisodeIndex(itemScope, coldStartSettings, null, {
           force: result.missingTurns > 0 || result.changedTurns > 0 || result.staleStoredTurns > 0,
-          reason: incremental ? 'incremental_chat_sync' : 'cold_start'
+          reason: incremental ? 'incremental_chat_sync' : 'cold_start',
+          assertCurrent: options.maintenanceSourceValidate
         });
       }
     }
@@ -32388,14 +32438,14 @@ const MemorySuiteHealthRecovery = (() => {
       const finalEpisodes = latestDigest === digest ? episodes : buildEpisodeIndexRecords(latestBase, cfg, scope);
       const allEpisodes = [...latestInheritedEpisodes, ...finalEpisodes];
       return await backgroundFlashbackWrite(scope.scopeKey, async () => {
-        const savedInner = await saveScopeRecords(scope, [...latestBase, ...allEpisodes], cfg, scope);
+        const savedInner = await saveScopeRecords(scope, [...latestBase, ...allEpisodes], cfg, scope, { assertCurrent: options.assertCurrent });
         const manifestInner = await saveScopeManifest({
           ...savedInner.manifest,
           episodeSourceDigest: latestDigest,
           episodeIndexedAt: indexedAt,
           episodeCount: allEpisodes.length,
           episodeChildCount: allEpisodes.reduce((sum, record) => sum + Number(record.childCount || 0), 0)
-        }, scope);
+        }, scope, { assertCurrent: options.assertCurrent });
         return { latestDigest, finalEpisodes: allEpisodes, manifest: manifestInner };
       });
     });
@@ -43402,7 +43452,7 @@ ${cleanedText}`, 80),
       :code==='HEALTH_SCOPE_OR_SOURCE_CHANGED'?'점검 중 대화 범위나 채팅 원문이 변경되었습니다. 다시 시도해 주세요.'
       :code==='HEALTH_SETTINGS_CHANGED'?'점검 중 설정이 변경되었습니다. 다시 시도해 주세요.'
       :code==='HEALTH_STORAGE_UNAVAILABLE'?'저장소에 접근할 수 없습니다.'
-      :code==='HEALTH_SERVER_CONNECTION_REQUIRED'?'서버 연결 또는 인증 상태를 확인할 수 없습니다.'
+      :code==='HEALTH_SERVER_CONNECTION_REQUIRED'?'서버 연결 또는 인증 상태를 확인할 수 없어 정상 여부는 미검증입니다.'
       :code==='HEALTH_SERVER_URL_UNVERIFIED'?'서버 URL을 확인할 수 없습니다.'
       :code==='HEALTH_SERVER_CAPABILITY_REQUIRED'?'서버가 플래시백 점검 기능을 지원하지 않습니다.'
       :code.startsWith('HEALTH_SERVER_')?'서버 연결 또는 읽기 권한 증거를 확인하지 못해 정상 여부는 미검증입니다. 연결 갱신·저장소 변경은 실행하지 않았습니다.'
@@ -43490,19 +43540,24 @@ ${cleanedText}`, 80),
       const snapshot=JSON.parse(JSON.stringify(options.snapshot||await loadRisuCaptureSnapshot())),scope=resolveScopeFromSnapshot(snapshot);
       if(!scope?.available||!scope.scopeKey||options.scope?.scopeKey&&options.scope.scopeKey!==scope.scopeKey)throw Error('HEALTH_SCOPE_UNVERIFIED');
       const hostBinding=value=>JSON.stringify([resolveScopeFromSnapshot(value).scopeKey,MemorySuiteHostLineage.inspect(value.character,value.chat),value.chat?.bindedPersona||'',value.chat?.message||value.chat?.messages||[]]);
-      const hostWitness=hostBinding(snapshot),generation=Runtime.embeddingGeneration;let lastHostSnapshot=snapshot;
-      const assertHostSync=()=>{if(hostBinding(lastHostSnapshot)!==hostWitness)throw Error('HEALTH_SCOPE_OR_SOURCE_CHANGED');if(Runtime.embeddingGeneration!==generation)throw Error('HEALTH_SETTINGS_CHANGED');};
-      const assertHost=async()=>{lastHostSnapshot=await loadRisuCaptureSnapshot();assertHostSync();};
+      const hostWitness=hostBinding(snapshot),generation=Runtime.embeddingGeneration,sessionKey=Runtime.sessionEmbeddingKey;let lastHostSnapshot=snapshot;
+      const assertHostSync=(inspectGeneration=true)=>{if(hostBinding(lastHostSnapshot)!==hostWitness)throw Error('HEALTH_SCOPE_OR_SOURCE_CHANGED');if(Runtime.sessionEmbeddingKey!==sessionKey||inspectGeneration&&Runtime.embeddingGeneration!==generation)throw Error('HEALTH_SETTINGS_CHANGED');};
+      const assertHost=async(inspectGeneration=true)=>{lastHostSnapshot=await loadRisuCaptureSnapshot();assertHostSync(inspectGeneration);};
       await assertHost();
       const observed=await MemorySuiteStorageBridge.inspectFlashbackServerHealthSnapshot({scopeId:scope.scopeKey,scopeKey:scope.scopeKey});
       await assertHost();
       const captured=JSON.parse(JSON.stringify(observed.snapshot));
       let settingsState=null,argumentWitness='',settings=null,settingsUnavailable='';
+      // Execution changes the corpus and may invalidate embedding jobs itself.
+      // Keep checking the actual source, settings and route after that change.
+      const assertSourceCurrent=async()=>{
+        await assertHost(false);
+        if(settingsState){await settingsState.assertCurrent();await assertHost(false);
+          const args=await readArgumentSettings({strictReadOnly:true});await assertHost(false);if(JSON.stringify(args)!==argumentWitness)throw Error('HEALTH_SETTINGS_CHANGED');}
+        await observed.assertRouteCurrent({allowConnectionRefresh:true});assertHostSync(false);settingsState?.assertCurrentSync();
+      };
       const assertCurrent=async()=>{
-        await assertHost();await observed.assertCurrent();await assertHost();
-        if(settingsState){await settingsState.assertCurrent();await assertHost();
-          const args=await readArgumentSettings({strictReadOnly:true});await assertHost();if(JSON.stringify(args)!==argumentWitness)throw Error('HEALTH_SETTINGS_CHANGED');}
-        await observed.assertRouteCurrent();assertCurrentSync();
+        await assertHost();await assertSourceCurrent();await observed.assertCurrent();await assertSourceCurrent();assertHostSync();
       };
       const assertCurrentSync=()=>{assertHostSync();settingsState?.assertCurrentSync();observed.assertCurrentSync();};
       const inspection={readOnly:true,coverage:'server_snapshot',snapshotComplete:captured.complete===true,snapshotHealthVerified:false,
@@ -43539,7 +43594,7 @@ ${cleanedText}`, 80),
       inspection.complete=true;inspection.storageSourceComplete=true;
       const readers={strictReadOnly:true,useCache:false,readPlugin:(key,target)=>readValue('plugin',key,target),readLocal:(key,target)=>readValue('local',key,target)};
       await assertCurrent();
-      return {snapshot,scope,settings,readers,inspection,serverInspection:true,assertCurrent,assertCurrentSync,
+      return {snapshot,scope,settings,readers,inspection,serverInspection:true,assertCurrent,assertCurrentSync,assertSourceCurrent,
         credentialStatus:{known:false,keyPresent:false,conflict:false,effectiveSource:'not_inspected',reason:'server_inspection_credentials_not_read'},
         readBinding:MemorySuiteExecutionContract.hash([observed.binding,settingsState.binding,argumentWitness,generation,hostWitness])};
     }catch(error){throw maintenanceInspectionUnavailable(error?.inspectionReason||error?.message);}
@@ -44806,6 +44861,14 @@ ${cleanedText}`, 80),
       if (!executionScope?.available || !executionScope.scopeKey) {
         throw maintenanceInspectionUnavailable('HEALTH_SCOPE_UNVERIFIED');
       }
+      // Our corpus may change during sync; source/settings/route authority may not.
+      const admission = await createMaintenanceServerInspectionContext({snapshot:executionSnapshot,scope:executionScope});
+      if (!admission.inspection.complete) throw maintenanceInspectionUnavailable('HEALTH_STORAGE_UNAVAILABLE');
+      if (preflight._approvalBinding !== maintenanceApprovalBinding(preflight) || context.readBinding !== admission.readBinding
+          || embeddingRequestSettingsFingerprint(sharedSettings || admission.settings) !== embeddingRequestSettingsFingerprint(admission.settings)) {
+        throw new EmbeddingAdapterError('STALE_SOURCE', '유지보수 미리보기 후 설정이 변경되었습니다. 다시 점검해 주세요.');
+      }
+      await admission.assertCurrent();
       if (flashbackRecoveryActions?.isBusy()) throw Error('FLASHBACK_REPAIR_ACTION_BUSY');
       if (physicalRepairUnresolved()) throw Error('FLASHBACK_PHYSICAL_OUTCOME_UNRESOLVED');
       if (Runtime.portableMemoryActiveOperationId) throw Error('FLASHBACK_PORTABLE_MEMORY_BUSY');
@@ -44822,11 +44885,14 @@ ${cleanedText}`, 80),
       try {
         const operationSettings = {
           maintenanceOperationId: operationId,
-          maintenanceSourceValidate: async () => {},
+          maintenanceSourceValidate: async () => {
+            if (Runtime.maintenanceController?.signal.aborted || parentSignal?.aborted) throw new EmbeddingAdapterError('ABORTED', 'Maintenance cancelled.');
+            await admission.assertSourceCurrent();
+          },
           deadlineAt: Date.now() + 120000,
           activityKind: 'maintenance_sync',
           signal: Runtime.maintenanceController?.signal || parentSignal,
-          settings: sharedSettings || await loadSettings(),
+          settings: admission.settings,
           snapshot: executionSnapshot
         };
         const syncOperation = await ingestLiveChatColdStart({
@@ -44835,6 +44901,7 @@ ${cleanedText}`, 80),
           incremental: true,
           ...operationSettings
         });
+        await operationSettings.maintenanceSourceValidate();
         const after = await inspectMemoryMaintenance({
           requestPermission: false,
           settings: sharedSettings || await loadSettings(),
@@ -44906,6 +44973,8 @@ ${cleanedText}`, 80),
         renderMaintenanceExecution();
         return result;
       } finally {
+        parentSignal?.removeEventListener?.('abort', abortMaintenance);
+        Runtime.maintenanceController = null;
         Runtime.maintenanceActiveOperationId = null;
         renderMaintenanceExecution();
       }
@@ -45786,63 +45855,17 @@ ${cleanedText}`, 80),
   const scopeManagementError = (code, storageMode = '') => Object.assign(new Error(code), {
     code, storageMode,
     userMessage: code === 'FLASHBACK_SERVER_SCOPE_MANAGEMENT_REQUIRED'
-      ? '서버를 사용하는 스코프는 RE:TRACE → 서버 데이터 관리에서 삭제하세요. 로컬 보존·보존 고정·참조 관계·백업을 확인하는 서버 사본 삭제 절차가 필요합니다.'
+      ? '서버 저장 스코프입니다. 삭제를 실행하면 서버 백업과 대상 검증 후 서버·로컬 사본을 삭제합니다.'
       : '대상의 로컬 저장 권한이나 현재 채팅을 확인하지 못했습니다. 플러그인 단독 채팅에서 새로고침한 뒤 다시 시도하세요.'
   });
   // Ordinary owner proxies follow the active chat. Prove the target and active
-  // route are local; RE:TRACE exclusively owns server preservation/backup plans.
-  const cleanupFlashbackServerScopeStorage = async (scopeKey, descriptor = {}) => {
-    const key = text(scopeKey || descriptor.scopeKey || descriptor.scopeId || '').trim();
-    if (!key) return { ok: false, reason: 'no_scope_key' };
-    const hash = text(descriptor.storageHash || keyHash(key));
-    const pluginPrefix = `${PLUGIN_STORAGE_ID}:scope:${hash}:`;
-    const localPrefix = `${FLASHBACK_VECTOR_STORAGE_PREFIX}${hash}:`;
-    try {
-      if (typeof MemorySuiteStorageBridge.managerPlanScopeDeletion === 'function' && typeof MemorySuiteStorageBridge.managerExecuteScopeDeletion === 'function') {
-        const plan = await MemorySuiteStorageBridge.managerPlanScopeDeletion(key, 'flashback').catch(() => null);
-        if (plan?.planId && plan?.mutationFingerprint) {
-          await MemorySuiteStorageBridge.managerExecuteScopeDeletion(plan.planId, plan.mutationFingerprint).catch(() => null);
-          return { ok: true, managed: true };
-        }
-      }
-    } catch (_) {}
-    try {
-      const [pluginRemote, localRemote] = await Promise.all([
-        MemorySuiteStorageBridge.serverKeys('plugin', pluginPrefix).catch(() => ({ keys: [] })),
-        MemorySuiteStorageBridge.serverKeys('local', localPrefix).catch(() => ({ keys: [] }))
-      ]);
-      const pKeys = emptyServerShellListingKeys(pluginRemote).filter(k => k.startsWith(pluginPrefix));
-      const lKeys = emptyServerShellListingKeys(localRemote).filter(k => k.startsWith(localPrefix));
-      await withScopeWriteLock(SCOPE_REGISTRY_WRITE_LOCK, async () => {
-        const regRemote = await MemorySuiteStorageBridge.serverGet('plugin', STORAGE.registry).catch(() => null);
-        if (regRemote?.exists && regRemote?.value) {
-          const parsed = typeof regRemote.value === 'string' ? tryJsonParse(regRemote.value, null) : regRemote.value;
-          if (parsed && Array.isArray(parsed.scopes)) {
-            const remaining = parsed.scopes.filter(item => text(item?.scopeKey || '').trim() !== key);
-            if (remaining.length !== parsed.scopes.length) {
-              const updated = { ...parsed, scopes: remaining, updatedAt: Date.now() };
-              await MemorySuiteStorageBridge.commitFlashbackManifest?.(STORAGE.registry, updated).catch(() => {});
-            }
-          }
-        }
-      }).catch(() => {});
-      return { ok: true, pluginKeys: pKeys.length, localKeys: lKeys.length };
-    } catch (error) {
-      warn('cleanupFlashbackServerScopeStorage error', error);
-      return { ok: false, error: compact(error?.message || error, 200) };
-    }
-  };
-
+  // route are local. Server deletion has a separate explicit owner transaction.
   const assertLocalScopeManagement = async scopeKey => {
     const key = text(scopeKey || '').trim();
     if (!key) throw scopeManagementError('FLASHBACK_SCOPE_MANAGEMENT_UNVERIFIED');
     const descriptor = {scopeId:key, scopeKey:key, aliases:[keyHash(key)]};
     const target = await MemorySuiteStorageBridge.getScopeMode(descriptor);
-    if (target.mode !== 'plugin_only') {
-      // 플래시백 내 서버 스코프 관리 지원: 서버 스코프 정리 후 로컬 정리 연계
-      await cleanupFlashbackServerScopeStorage(key, descriptor);
-      await MemorySuiteStorageBridge.setScopeMode(descriptor, 'plugin_only').catch(() => {});
-    }
+    if (target.mode !== 'plugin_only') throw scopeManagementError('FLASHBACK_SERVER_SCOPE_MANAGEMENT_REQUIRED', target.mode);
     if (target.transition || target.migrationRequired) throw scopeManagementError('FLASHBACK_SCOPE_MANAGEMENT_UNVERIFIED');
     const active = await MemorySuiteStorageBridge.getScopeMode();
     if (!active.scope?.scopeId || active.mode !== 'plugin_only' || active.transition || active.migrationRequired) throw scopeManagementError('FLASHBACK_SCOPE_MANAGEMENT_UNVERIFIED');
@@ -45862,6 +45885,55 @@ ${cleanedText}`, 80),
     if (['server_managed','unavailable'].includes(Runtime.scopeManagementClassification?.get(key)?.kind)) Runtime.scopeManagementClassification.delete(key);
     return {assertCurrent};
   };
+  const deleteServerScopeStorage = async (scopeKey, options = {}) => withScopeWriteLock(scopeKey,async()=>{
+    const initial = resolveScopeFromSnapshot(await loadRisuCaptureSnapshot());
+    const assertHost = async()=>{
+      const current=resolveScopeFromSnapshot(await loadRisuCaptureSnapshot());
+      if(current.scopeKey!==initial.scopeKey||current.scopeKey===scopeKey||scopeHasProtectedActivity(scopeKey))throw Error('FLASHBACK_SCOPE_DELETE_ACTIVE_SCOPE');
+    };
+    await assertHost();
+    if(options.onlyIfEmpty)return {deleted:false,protected:true,reason:'server_scope_requires_explicit_delete'};
+    const api=getLiveApi(),localApi=getLiveApi(['getLocalPluginStorage'])||api;
+    const stores=[['plugin',api?.pluginStorage,scopePrefix(scopeKey)+':'],
+      ['local',typeof localApi?.getLocalPluginStorage==='function'?await localApi.getLocalPluginStorage():api?.safeLocalStorage,FLASHBACK_VECTOR_STORAGE_PREFIX+keyHash(scopeKey)+':']];
+    const snapshots=[];
+    for(const [space,store,prefix]of stores){
+      if(!store?.keys||!store?.getItem||!store?.removeItem)throw Error('FLASHBACK_SCOPE_DELETE_LOCAL_STORAGE_UNAVAILABLE');
+      const keys=await store.keys();if(!Array.isArray(keys))throw Error('FLASHBACK_SCOPE_DELETE_LOCAL_INVENTORY_UNVERIFIED');
+      for(const key of keys.filter(key=>String(key).startsWith(prefix))){
+        const value=await store.getItem(key),parsed=typeof value==='string'?tryJsonParse(value,null):value;
+        if(!parsed||parsed.scopeKey!==scopeKey)throw Error('FLASHBACK_SCOPE_DELETE_LOCAL_OWNER_UNVERIFIED');
+        if([...(parsed.records||[]),...(parsed.retiredRecords||[])].some(isPermanentSessionHistoryRecord))return {deleted:false,protected:true,reason:'permanent_session_history_protected'};
+        snapshots.push({space,store,key,value});
+      }
+    }
+    const validate=async()=>{
+      await assertHost();
+      for(const [space,store,prefix]of stores){
+        const keys=await store.keys();
+        if(!Array.isArray(keys)||safeStringify(keys.filter(key=>String(key).startsWith(prefix)).sort())!==safeStringify(snapshots.filter(row=>row.space===space).map(row=>row.key).sort()))throw Error('FLASHBACK_SCOPE_DELETE_LOCAL_SOURCE_CHANGED');
+      }
+      for(const row of snapshots)if(safeStringify(await row.store.getItem(row.key))!==safeStringify(row.value))throw Error('FLASHBACK_SCOPE_DELETE_LOCAL_SOURCE_CHANGED');
+    };
+    const receipt=await MemorySuiteStorageBridge.deleteFlashbackServerScope({scopeId:scopeKey,scopeKey},{assertCurrent:validate});
+    await validate();
+    for(const row of snapshots){await assertHost();await row.store.removeItem(row.key);if(await row.store.getItem(row.key)!=null)throw Error('FLASHBACK_SCOPE_DELETE_LOCAL_READBACK_FAILED');}
+    for(const [,store,prefix]of stores)if((await store.keys()).some(key=>String(key).startsWith(prefix)))throw Error('FLASHBACK_SCOPE_DELETE_LOCAL_READBACK_FAILED');
+    invalidateScopeRegistryRetries(scopeKey);
+    await withScopeWriteLock(SCOPE_REGISTRY_WRITE_LOCK,async()=>{
+      const store=api.pluginStorage,raw=await store.getItem(STORAGE.registry),registry=typeof raw==='string'?tryJsonParse(raw,null):raw;
+      if(registry&&Array.isArray(registry.scopes)&&registry.scopes.some(row=>row.scopeKey===scopeKey)){
+        await assertHost();const next={...registry,scopes:registry.scopes.filter(row=>row.scopeKey!==scopeKey)};
+        await store.setItem(STORAGE.registry,typeof raw==='string'?safeStringify(next):next);
+        const readback=await store.getItem(STORAGE.registry);
+        if(safeStringify(readback)!==safeStringify(typeof raw==='string'?safeStringify(next):next))throw Error('FLASHBACK_SCOPE_DELETE_REGISTRY_READBACK_FAILED');
+      }
+    });
+    clearRuntimeScopeState(scopeKey);Runtime.guiScopeReadyByKey.delete(scopeKey);Runtime.guiStorageVerificationByScope.delete(scopeKey);Runtime.scopeManagementClassification?.delete(scopeKey);
+    Runtime.lastStorageAction={at:Date.now(),deletedScopeKey:scopeKey,serverReceipt:receipt};invalidateGuiDataCache('all');
+    return {...Runtime.lastStorageAction,deleted:true,protected:false};
+  });
+
   const scopeManagementClassificationError = (scopeKey, error) => {
     const state = {scopeKey, kind:error?.code === 'FLASHBACK_SERVER_SCOPE_MANAGEMENT_REQUIRED' ? 'server_managed' : 'unavailable', storageMode:error?.storageMode || '', reason:error?.userMessage || '대상 저장소의 읽기 또는 권한 검증에 실패했습니다. 새로고침 후 다시 확인해 주세요.'};
     if (!(Runtime.scopeManagementClassification instanceof Map)) Runtime.scopeManagementClassification = new Map();
@@ -46558,10 +46630,12 @@ ${cleanedText}`, 80),
     const sourceType = MANUAL_EDITOR_SOURCE_TYPE;
     const search = compact(options.search ?? state.search ?? '', 160);
     const sort = ['newest', 'oldest', 'longest'].includes(options.sort || state.sort) ? (options.sort || state.sort) : 'newest';
+    const requestedTurn = Number(options.selectedTurn === undefined ? state.selectedTurn : options.selectedTurn);
+    const selectedTurn = Number.isInteger(requestedTurn) && requestedTurn > 0 ? requestedTurn : null;
     const limit = clampInt(options.limit ?? state.limit, MANUAL_EDITOR_PAGE_SIZE, MANUAL_EDITOR_MAX_VISIBLE, MANUAL_EDITOR_PAGE_SIZE);
     const needle = search.trim().toLocaleLowerCase();
     const shouldCancel = typeof options.shouldCancel === 'function' ? options.shouldCancel : () => false;
-    const cacheKey = [scope.scopeKey, manifest.commitId || manifest.updatedAt || '', manifest.count || 0, sourceType, search, sort, limit].join('\u0000');
+    const cacheKey = [scope.scopeKey, manifest.commitId || manifest.updatedAt || '', manifest.count || 0, sourceType, search, sort, limit, selectedTurn || ''].join('\u0000');
     if (options.force !== true && Runtime.guiManualEditorDataCache?.key === cacheKey) {
       Runtime.guiPerf.manualCacheHits += 1;
       return { ...Runtime.guiManualEditorDataCache.value, pendingDeleteKeys: ensureManualEditorState().pendingDeleteKeys.slice() };
@@ -46570,10 +46644,10 @@ ${cleanedText}`, 80),
     const issues = [];
     let scannedCount = 0;
     const groupTotal = Math.max(0, Number(groups.find(group => group.type === sourceType)?.records || 0) || 0);
-    let total = needle ? 0 : groupTotal;
+    let total = needle || selectedTurn ? 0 : groupTotal;
     const trimLimit = Math.max(limit, MANUAL_EDITOR_PAGE_SIZE);
     let shardIndexes = manualEditorShardIndexes(manifest, sourceType);
-    const directionalPaging = !needle && (sort === 'newest' || sort === 'oldest');
+    const directionalPaging = !needle && !selectedTurn && (sort === 'newest' || sort === 'oldest');
     if (directionalPaging && sort === 'newest') shardIndexes = shardIndexes.slice().reverse();
     Runtime.guiPerf.manualShardSkips += Math.max(0, Number(manifest.shardCount || 0) - shardIndexes.length);
 
@@ -46610,8 +46684,10 @@ ${cleanedText}`, 80),
           if (shard.missing || shard.corrupt) { issues.push({ shardIndex: index, reason: shard.corrupt ? '손상/정합성 오류' : '원문 파일 누락' }); continue; }
           for (const record of shard.records || []) {
             if (!manualEditorRecordMatches(record, sourceType, needle)) continue;
+            const summary = summarizeManualEditorRecord(record);
+            if (selectedTurn && Number(summary.turnIndex) !== selectedTurn) continue;
             total += 1;
-            summaries.push({ ...summarizeManualEditorRecord(record), shardIndex: index, status: manualEditorRecordStatus(record) });
+            summaries.push({ ...summary, shardIndex: index, status: manualEditorRecordStatus(record) });
           }
           if (summaries.length > trimLimit * 3) summaries = sortManualEditorRecords(summaries, sort).slice(0, trimLimit * 2);
         }
@@ -46623,7 +46699,7 @@ ${cleanedText}`, 80),
     if (shouldCancel()) return { cancelled: true, scope, manifest, groups, sourceType, sourceLabel: sourceTypeLabel(sourceType), search, sort, limit, total, records: summaries, pendingDeleteKeys: ensureManualEditorState().pendingDeleteKeys.slice() };
     const scanComplete = scannedCount === shardIndexes.length;
     const observed = directionalPaging ? summaries.length : total;
-    const countMismatch = !needle && scanComplete && observed !== groupTotal;
+    const countMismatch = !needle && !selectedTurn && scanComplete && observed !== groupTotal;
     if (scanComplete) total = observed;
     else total = Math.max(total, observed);
     const afterManifest = await loadScopeManifest(scope.scopeKey);
@@ -46640,6 +46716,7 @@ ${cleanedText}`, 80),
       search,
       sort,
       limit,
+      selectedTurn,
       total,
       records: sorted,
       expectedTotal: groupTotal,
@@ -46810,11 +46887,11 @@ ${cleanedText}`, 80),
       const scopeKey = text(item.scopeKey || '').trim();
       const isCurrent = scopeKey === currentScopeKey;
       const kind=storageManagementKind(item),live=isCurrent&&Runtime.currentScope?.scopeKey===scopeKey?Runtime.currentScope:{};
-      const label={server_managed:'서버 저장소 · 선택 시 서버 및 로컬 동시 정리',empty:'빈 저장소 · 정리 후보',registry_only:'목록 잔재 · 기억 데이터 삭제 없이 정리',orphan:'원본 채팅 없음 · 기억은 보존됨',corrupt:'손상 확인 · 데이터 유지',unavailable:'연결 확인 보류 · 데이터 유지'}[kind];
+      const label={server_managed:'서버 저장 · 검증 후 삭제 가능',empty:'빈 저장소 · 정리 후보',registry_only:'목록 잔재 · 기억 데이터 삭제 없이 정리',orphan:'원본 채팅 없음 · 기억은 보존됨',corrupt:'손상 확인 · 데이터 유지',unavailable:'연결 확인 보류 · 데이터 유지'}[kind];
       const verificationStatus = text(item.storageVerificationStatus || SCOPE_STORAGE_VERIFICATION.PENDING);
       const manifestVerified = verificationStatus === SCOPE_STORAGE_VERIFICATION.MANIFEST_VERIFIED;
       const registryOnlyVerified = verificationStatus === SCOPE_STORAGE_VERIFICATION.REGISTRY_ONLY_VERIFIED;
-      const canSelect = !Runtime.guiStorageListUnavailable && kind !== 'server_managed' && !isCurrent && !!scopeKey;
+      const canSelect = !Runtime.guiStorageListUnavailable && !isCurrent && !!scopeKey;
       const fallbackName = verificationStatus === SCOPE_STORAGE_VERIFICATION.UNAVAILABLE
         ? '서버 확인 보류'
         : registryOnlyVerified
@@ -46843,7 +46920,7 @@ ${cleanedText}`, 80),
         : '';
       const disabled = Runtime.guiStorageListUnavailable ? ' disabled' : '';
       const action = kind === 'server_managed'
-        ? '<span class="hint">RE:TRACE에서 관리</span>'
+        ? `<button class="btn btn--danger btn--sm" data-delete-scope="${escapeHtml(scopeKey)}"${disabled}>서버 포함 삭제</button>`
         : manifestVerified
         ? `<button class="btn btn--danger btn--sm" data-delete-scope="${escapeHtml(scopeKey)}"${disabled}>삭제</button>`
         : registryOnlyVerified
@@ -46941,7 +47018,7 @@ ${cleanedText}`, 80),
       const recordTitle = record.displayTitle || record.title || (record.turnIndex ? `T${formatNumber(record.turnIndex)} · ${sourceTypeLabel(record.sourceType)}` : sourceTypeLabel(record.sourceType));
       return `<article class="card card--tight" data-manual-record-key="${escapeHtml(record.key)}"><div class="split"><b>${escapeHtml(text(recordTitle || record.id || 'Untitled').replace(/^라이브챗 콜드스타트:/, '채팅 응답:'))}</b><span class="badge ${record.deletionProtected ? 'badge--ok' : selected ? 'badge--warn' : ''}">${escapeHtml(record.deletionProtected ? '영구 기록 보호' : `${record.status?.label || '상태 미확인'} · ${formatNumber(record.chars)}자`)}</span></div><p class="muted fb-turn-text">${escapeHtml(turnPairDisplayText(record.preview || ''))}</p><div class="cluster"><button class="btn btn--sm" type="button" data-manual-open-text="${escapeHtml(record.key)}" aria-expanded="false">원문 펼치기</button><button class="btn btn--sm ${record.deletionProtected ? '' : 'btn--danger'}" type="button" data-manual-toggle-delete="${escapeHtml(record.key)}" ${record.deletionProtected ? 'disabled' : ''}>${record.deletionProtected ? '영구 기록 보호' : selected ? '대기 취소' : '삭제 후보에 추가'}</button></div><pre data-full-record class="mono" hidden></pre><details class="fold"><summary>원문 메타데이터</summary><div class="fold__body hint">${escapeHtml([record.sourceLabel, record.title && record.title !== record.displayTitle ? `저장 제목 ${record.title}` : '', record.id || '', time, metaLine].filter(Boolean).join(' · '))}</div></details></article>`;
     }).join('');
-    const more = data.hasMore === true && !selectedTurn
+    const more = data.hasMore === true
       ? `<button id="manualEditorMoreBtn" class="btn" type="button" data-manual-load-more="1">더 보기 ${formatNumber(visible)} / ${formatNumber(total)}</button>`
       : '';
     return `<div class="grid g-side" data-manual-editor>
@@ -47011,6 +47088,7 @@ ${cleanedText}`, 80),
         search: state.search,
         sort: state.sort,
         limit: state.limit,
+        selectedTurn: state.selectedTurn,
         force: options.force === true,
         shouldCancel: cancelled
       });
@@ -47336,7 +47414,9 @@ ${cleanedText}`, 80),
     const activeNodes = view.nodes.filter(node => node.status === 'active');
     const storedActiveNodes = activeNodes.filter(node => node.memory === 'stored');
     const missingActiveTurns = [...new Set(activeNodes.filter(node => node.memory === 'none').map(node => Number(node.pairIndex)).filter(t => t > 0))].sort((a,b) => a - b);
-    const excluded = view.nodes.filter(node => ['inactive_variant','detached_branch'].includes(node.status));
+    const unknownActiveNodes = activeNodes.filter(node => node.memory !== 'stored' && node.memory !== 'none');
+    const allStored = activeNodes.length > 0 && storedActiveNodes.length === activeNodes.length;
+    const excluded = view.nodes.filter(node => ['quarantined','inactive_variant','detached_branch','orphaned'].includes(node.status));
 
     // 노선도 정렬 (T1 -> T_max 오름차순)
     const chronologicalActive = activeNodes.slice().sort((a, b) => a.pairIndex - b.pairIndex);
@@ -47353,16 +47433,16 @@ ${cleanedText}`, 80),
     const selectedNode = activeNodes.find(n => n.pairIndex === selectedTurn) || view.nodes.find(n => n.pairIndex === selectedTurn) || view.nodes[0] || null;
 
     // 1. HAYAKU 스타일 연속성 배너 (Banner)
-    const bannerHtml = `<div class="banner ${missingActiveTurns.length > 0 ? 'banner--warn' : 'banner--ok'}">
+    const bannerHtml = `<div class="banner ${allStored ? 'banner--ok' : 'banner--warn'}">
       <div class="banner__icon">
-        ${missingActiveTurns.length > 0 ? '<svg class="ic" viewBox="0 0 24 24"><path d="m10.3 2.5 8.7 15A2 2 0 0 1 17.3 20.5H2.7a2 2 0 0 1-1.7-3l8.7-15a2 2 0 0 1 3.5 0zM12 9v4M12 17h.01"></path></svg>' : '<svg class="ic" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"></path></svg>'}
+        ${!allStored ? '<svg class="ic" viewBox="0 0 24 24"><path d="m10.3 2.5 8.7 15A2 2 0 0 1 17.3 20.5H2.7a2 2 0 0 1-1.7-3l8.7-15a2 2 0 0 1 3.5 0zM12 9v4M12 17h.01"></path></svg>' : '<svg class="ic" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"></path></svg>'}
       </div>
       <div>
-        <b>${missingActiveTurns.length > 0 ? `누락 ${missingActiveTurns.length}턴의 기억이 확인되지 않았습니다.` : '현재 세계선의 턴 기억이 모두 연결되어 있습니다.'}</b>
+        <b>${unknownActiveNodes.length ? `기억 저장 상태를 확인할 수 없는 턴이 ${unknownActiveNodes.length}개 있습니다.` : missingActiveTurns.length > 0 ? `누락 ${missingActiveTurns.length}턴의 기억이 확인되지 않았습니다.` : allStored ? '현재 세계선의 턴 기억이 모두 연결되어 있습니다.' : '표시할 활성 턴이 없습니다.'}</b>
         <span>완료 U+A ${formatNumber(activeNodes.length)}턴 · 보관된 기억 ${formatNumber(storedActiveNodes.length)}턴 · 원장 Revision r${view.revision} (결속: ${view.headTurnNodeId ? compact(view.headTurnNodeId, 16) : '없음'})</span>
       </div>
-      <span class="badge ${missingActiveTurns.length > 0 ? 'badge--warn' : 'badge--ok'}">
-        ${missingActiveTurns.length === 0 ? '기억 연결률 100%' : `누락 ${missingActiveTurns.length}턴`}
+      <span class="badge ${allStored ? 'badge--ok' : 'badge--warn'}">
+        ${allStored ? '기억 연결률 100%' : [missingActiveTurns.length ? `누락 ${missingActiveTurns.length}턴` : '', unknownActiveNodes.length ? `미확인 ${unknownActiveNodes.length}턴` : ''].filter(Boolean).join(' · ') || '활성 턴 없음'}
       </span>
     </div>`;
 
@@ -47370,9 +47450,10 @@ ${cleanedText}`, 80),
     const routeTrackHtml = chronologicalActive.length ? `<div class="route__track">${chronologicalActive.map(node => {
       const t = node.pairIndex;
       const isMissing = node.memory === 'none';
+      const isUnknown = node.memory !== 'stored' && !isMissing;
       const isNow = t === selectedTurn;
-      const stateClass = isMissing ? 'stop--miss' : '';
-      const stateLabel = isMissing ? '누락' : '보관됨';
+      const stateClass = isUnknown ? 'stop--wait' : isMissing ? 'stop--miss' : '';
+      const stateLabel = isUnknown ? '미확인' : isMissing ? '누락' : '보관됨';
       return `<button type="button" class="stop ${stateClass}${isNow ? ' is-now' : ''}" data-fb-worldline-turn="${t}" aria-label="T${t} · ${stateLabel}">
         <b>T${t}</b>
         <i aria-hidden="true"></i>
@@ -47386,13 +47467,13 @@ ${cleanedText}`, 80),
           <h2 class="card__title">턴 연속성 노선도</h2>
           <p class="card__desc">대화 턴의 순차 결속과 기억 보관 상태를 정거장 노선도로 한눈에 확인합니다. 턴을 누르면 아래 상세가 전환됩니다.</p>
         </div>
-        <span class="badge badge--ok">${formatNumber(activeNodes.length)}턴 연결됨</span>
+        <span class="badge ${allStored ? 'badge--ok' : 'badge--warn'}">${formatNumber(storedActiveNodes.length)} / ${formatNumber(activeNodes.length)}턴 기억 확인</span>
       </div>
       <div class="route">${routeTrackHtml}</div>
       <div class="legend">
         <span><i></i> 기억 보관됨</span>
         <span class="m"><i class="m"></i> 기억 없음 (누락)</span>
-        <span class="w"><i class="w"></i> 결속 대기</span>
+        <span class="w"><i class="w"></i> 기억 상태 미확인</span>
       </div>
     </section>`;
 
@@ -47407,10 +47488,10 @@ ${cleanedText}`, 80),
         <b>T${formatNumber(node.pairIndex)}</b>
         <div>
           <strong style="color:var(--text);font-size:13px">${escapeHtml(node.turnNodeId)}</strong>
-          <small style="color:var(--text3);font-size:11.5px">${isStored ? '기억 정상 보관' : '기억 미보관'} · ${escapeHtml(flashbackWorldlineLabels[node.status] || node.status)}</small>
+          <small style="color:var(--text3);font-size:11.5px">${isStored ? '기억 정상 보관' : node.memory === 'none' ? '기억 미보관' : '기억 상태 미확인'} · ${escapeHtml(flashbackWorldlineLabels[node.status] || node.status)}</small>
         </div>
         <span class="badge ${isStored ? 'badge--ok' : 'badge--warn'}" style="font-size:11px">
-          ${isStored ? '보관됨' : '누락'}
+          ${isStored ? '보관됨' : node.memory === 'none' ? '누락' : '미확인'}
         </span>
       </button>`;
     }).join('');
@@ -47422,12 +47503,12 @@ ${cleanedText}`, 80),
           <p class="card__desc">세계선 원장 결속 노드 세부 사양 및 원문 해시</p>
         </div>
         <span class="badge ${selectedNode.memory === 'stored' ? 'badge--ok' : 'badge--warn'}">
-          ${selectedNode.memory === 'stored' ? '기억 보관됨' : '기억 없음'}
+          ${selectedNode.memory === 'stored' ? '기억 보관됨' : selectedNode.memory === 'none' ? '기억 없음' : '기억 상태 미확인'}
         </span>
       </div>
       <div class="kv">
         <dt>결속 상태</dt><dd><b>${escapeHtml(flashbackWorldlineLabels[selectedNode.status] || selectedNode.status)}</b></dd>
-        <dt>저장된 기억</dt><dd>${selectedNode.memory === 'stored' ? '<span class="badge badge--ok">있음 · 원문 청크 정상 보관</span>' : '<span class="badge badge--warn">없음 · 삭제되었거나 아직 저장되지 않음</span>'}</dd>
+        <dt>저장된 기억</dt><dd>${selectedNode.memory === 'stored' ? '<span class="badge badge--ok">있음 · 원문 청크 정상 보관</span>' : selectedNode.memory === 'none' ? '<span class="badge badge--warn">없음 · 삭제되었거나 아직 저장되지 않음</span>' : '<span class="badge badge--warn">확인 불가 · 저장소 연결을 확인한 뒤 다시 조회해 주세요.</span>'}</dd>
         <dt>상위 노드</dt><dd class="mono">${escapeHtml(selectedNode.parentTurnNodeId || '없음 (첫 번째 턴)')}</dd>
         <dt>논리 턴 ID</dt><dd class="mono">${escapeHtml(selectedNode.logicalTurnId || '—')}</dd>
         <dt>응답 버전</dt><dd class="mono">${escapeHtml(selectedNode.variantId || '—')}</dd>
@@ -47479,13 +47560,13 @@ ${cleanedText}`, 80),
     const excludedFold = excluded.length ? `<details class="fold">
       <summary><b>현재 대화에서 제외된 기록 · ${formatNumber(excluded.length)}개</b></summary>
       <div class="fold__body">
-        <p class="hint">선택되지 않은 응답 버전과 현재 흐름에서 벗어난 턴입니다. 삭제하지 않고 보존하며, 현재 리콜에는 사용하지 않습니다.</p>
+        <p class="hint">결속 확인이 필요한 턴, 선택되지 않은 응답 버전과 현재 흐름에서 벗어난 턴입니다. 삭제하지 않고 보존하며, 현재 리콜에는 사용하지 않습니다.</p>
         <div class="list" style="max-height:320px;overflow:auto">
           ${excluded.slice(0, visible).map(node => `<div class="row">
             <b class="mono" style="color:var(--text3)">T${node.pairIndex}</b>
             <div>
               <div class="row__title mono" style="font-size:12px">${escapeHtml(node.turnNodeId)}</div>
-              <div class="row__meta">${escapeHtml(flashbackWorldlineLabels[node.status] || node.status)} · ${node.memory === 'stored' ? '기억 있음' : '기억 없음'}</div>
+              <div class="row__meta">${escapeHtml(flashbackWorldlineLabels[node.status] || node.status)} · ${node.memory === 'stored' ? '기억 있음' : node.memory === 'none' ? '기억 없음' : '기억 상태 미확인'}</div>
             </div>
             <span class="badge badge--warn" style="font-size:11px">제외</span>
           </div>`).join('')}
@@ -49672,7 +49753,7 @@ ${cleanedText}`, 80),
       applyBusyState();
       try {
         const state=await classifyScopeForManagement(scopeKey);
-        if(scopeKey===Runtime.currentScope?.scopeKey||scopeHasProtectedActivity(scopeKey)||['server_managed','unavailable','corrupt','physical_without_manifest'].includes(state.kind)){
+        if(scopeKey===Runtime.currentScope?.scopeKey||scopeHasProtectedActivity(scopeKey)||['unavailable','corrupt','physical_without_manifest'].includes(state.kind)){
           if(state.kind==='unavailable'){result.failed++;result.failures.push({scopeKey,reason:state.reason});}
           else{result.protected++;result.protectedScopeKeys.push(scopeKey);if(state.reason)result.protectedReasons.push(state.reason);}continue;
         }
@@ -50157,10 +50238,8 @@ ${cleanedText}`, 80),
         const state = ensureManualEditorState();
         if (val === 'all' || !val) state.selectedTurn = null;
         else state.selectedTurn = Number(val) || null;
-        const panel = getGuiNode('manualEditorPanel');
-        if (panel?.__manualEditorData) {
-          panel.innerHTML = renderManualEditorPanelHtml(panel.__manualEditorData);
-        }
+        state.limit = MANUAL_EDITOR_PAGE_SIZE;
+        refreshManualEditorPanel().catch(error => warn('manual editor turn selection failed', error));
         return;
       }
       const turnSearchBtn = event?.target?.closest?.('#manualTurnSearchBtn');
@@ -50168,10 +50247,8 @@ ${cleanedText}`, 80),
         const val = Number(getGuiNode('manualTurnSearchInput')?.value || 0);
         const state = ensureManualEditorState();
         state.selectedTurn = val > 0 ? val : null;
-        const panel = getGuiNode('manualEditorPanel');
-        if (panel?.__manualEditorData) {
-          panel.innerHTML = renderManualEditorPanelHtml(panel.__manualEditorData);
-        }
+        state.limit = MANUAL_EDITOR_PAGE_SIZE;
+        refreshManualEditorPanel().catch(error => warn('manual editor turn search failed', error));
         return;
       }
       const searchBtn = event?.target?.closest?.('#manualEditorSearchBtn');
@@ -50242,10 +50319,8 @@ ${cleanedText}`, 80),
         const val = Number(event.target?.value || 0);
         const state = ensureManualEditorState();
         state.selectedTurn = val > 0 ? val : null;
-        const panel = getGuiNode('manualEditorPanel');
-        if (panel?.__manualEditorData) {
-          panel.innerHTML = renderManualEditorPanelHtml(panel.__manualEditorData);
-        }
+        state.limit = MANUAL_EDITOR_PAGE_SIZE;
+        refreshManualEditorPanel().catch(error => warn('manual editor turn search failed', error));
         return;
       }
       if (event?.key !== 'Enter' || event?.target?.id !== 'manualEditorSearch') return;

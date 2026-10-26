@@ -96,6 +96,7 @@ const REQUIRED_CAPABILITIES = Object.freeze([
   'libra-graph-lifecycle.v1',
   'libra-graph-projection-pages.v1',
   'flashback-writer-fence.v1',
+  'flashback-scope-delete.v1',
   'scope-index.v1',
   'scope-catalog.v1',
   'scope-reference-graph.v1',
@@ -2499,6 +2500,9 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   };
 
   const flashbackScopeHealth = require('./core/flashback-scope-health.cjs')({getRepository:()=>repositories.flashback,dataInstanceId,epochs:()=>namespaceReset.epochs(),canRead:()=>!maintenanceMode&&!namespaceReset.active()});
+  const flashbackScopeDelete = require('./core/flashback-scope-delete.cjs')({snapshot:flashbackScopeHealth,getRepository:()=>repositories.flashback,
+    backup:createBackup,canStart:()=>!maintenanceMode&&!namespaceReset.active(),getProtection:scopeKey=>{readScopeCatalog();if(scopeCatalogDegraded)throw Error('FLASHBACK_SCOPE_DELETE_CATALOG_UNVERIFIED');return findCatalogScope('flashback',scopeKey);},
+    onDeleted:scopeKey=>removeCatalogScope('flashback',scopeKey)});
   const flashbackVectorProof = require('./core/flashback-server-vector-proof.cjs')({resolveBackupById:resolveRepairBackupById,backupRoot:backupDir,dataInstanceId,dataIdentityContract,epochs:()=>namespaceReset.epochs(),readIdentity:()=>readDataInstanceIdentity(dataDir)});
   const flashbackServerRepair = require('./core/flashback-server-repair.cjs')({getRepository:()=>repositories.flashback,dataInstanceId,epochs:()=>namespaceReset.epochs(),canWrite:()=>!maintenanceMode&&!namespaceReset.active(),strongProofProvider:flashbackVectorProof});
   const ownerScopeHealth = require('./core/owner-scope-health.cjs')({getRepository:()=>repositories.libra,dataInstanceId,epochs:()=>namespaceReset.epochs(),canRead:()=>!maintenanceMode&&!namespaceReset.active()});
@@ -3596,6 +3600,15 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         const result = flashbackServerRepair(principal,action,body);
         if(!['preview','status'].includes(action))scheduleChangeSettledBackup();
         return sendJson(request,response,200,{ok:true,result});
+      }
+      if (request.method === 'POST' && ['/v1/flashback/scope-delete/plan','/v1/flashback/scope-delete/execute'].includes(url.pathname)) {
+        assertLegacyAuthorityUnavailable({dataDir});
+        assertNamespaceAccess(principal,'flashback','write');
+        if(!namespaceReset.allows('flashback',request.headers['x-memory-suite-reset-epochs']))return sendJson(request,response,409,{ok:false,error:'MEMORY_SUITE_RESET_RECONNECT_REQUIRED'});
+        if(request.headers['x-memory-suite-storage-mode']!=='server_only')throw Object.assign(new Error('FLASHBACK_SCOPE_DELETE_SERVER_MODE_REQUIRED'),{statusCode:409});
+        const body=await readBody(request,8192,'scope_delete_body_limit');
+        return sendJson(request,response,200,{ok:true,result:await flashbackScopeDelete(principal,url.pathname.endsWith('/plan')?'plan':'execute',body,
+          decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id']))});
       }
       if (request.method === 'POST' && url.pathname === '/v1/flashback/scope-health') {
         assertNamespaceAccess(principal,'flashback','read');
