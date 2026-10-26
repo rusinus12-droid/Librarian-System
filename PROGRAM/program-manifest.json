@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-26T13:18:11.601Z",
+  "generatedAt": "2026-10-26T13:28:23.867Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4020,8 +4020,8 @@
       "bytes": 1649278
     },
     "plugins/LIBRA.js": {
-      "sha256": "5155154e7b5b476e6db25ba5dec297854d44bb73cbfac44747872f694f956a3b",
-      "bytes": 6655756
+      "sha256": "97bc0776367d24a04756bfb447a1e89cbf2eb6a6cf79329d09fef7dd5b53a2d1",
+      "bytes": 6656715
     },
     "plugins/RETRACE.js": {
       "sha256": "04f3a6defddab22b6f544acbb229012cd442672acdb44cb4f3a5aaf79ced4979",
@@ -7758,6 +7758,10 @@
     "tests/libra_evidence_link_index_revision_history_test.cjs": {
       "sha256": "2027d0ad1b2815d0c4e3106fbc27c0f4beb35f56b30dcaaf77df1d42804ce552",
       "bytes": 10245
+    },
+    "tests/libra_execution_log_tabs_interactive_test.cjs": {
+      "sha256": "f1d4b113bb070309ddb0f1023f6da464ed1a1c8646ad5d17f6ad84bf65c6c5ae",
+      "bytes": 8498
     },
     "tests/libra_explicit_embedding_lifecycle_test.cjs": {
       "sha256": "d36396b05e511284c47eec18e610c8a5ffdb8a1e5c30e0f2c9f892ef078568b4",

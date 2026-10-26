@@ -89875,13 +89875,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const buildSharedExecutionLogsPanel = () => {
     Gui.executionLogSection=normalizeHubChoice(Gui.executionLogSection,SHARED_EXECUTION_LOG_SECTIONS,'memory');
     const kinds=[['memory','기억 작성'],['state','상태 추적'],['draft','LIBRA 응답'],['recall','리콜'],['embedding','임베딩'],['rebuild','재구축']];
-    return guiEl('div',{class:'stack',dataset:{executionLogs:Gui.executionLogSection}},[
+    let panel=null;
+    const renderContent=()=>[
       guiEl('div',{class:'card'},[guiEl('div',{class:'card__head'},[guiEl('div',{},[guiEl('h2',{class:'card__title',text:'실행 기록'}),guiEl('p',{class:'card__desc',text:'현재 채팅의 저장된 실행 영수증을 확인합니다.'})])]),
-        guiEl('div',{class:'tabs',role:'tablist','aria-label':'실행 기록 종류'},kinds.map(([id,label])=>guiEl('button',{class:`tab${Gui.executionLogSection===id?' is-on':''}`,type:'button',role:'tab','aria-selected':String(Gui.executionLogSection===id),dataset:{executionKind:id},text:label,onClick:()=>{Gui.executionLogSection=id;queueGuiNavigationRender();}})))
+        guiEl('div',{class:'tabs',role:'tablist','aria-label':'실행 기록 종류'},kinds.map(([id,label])=>guiEl('button',{class:`tab${Gui.executionLogSection===id?' is-on':''}`,type:'button',role:'tab','aria-selected':String(Gui.executionLogSection===id),dataset:{executionKind:id},text:label,onClick:()=>{
+          if (Gui.executionLogSection === id) return;
+          Gui.executionLogSection=id;
+          if (panel && panel.isConnected) {
+            panel.dataset.executionLogs=id;
+            panel.replaceChildren(...renderContent());
+          }
+          queueGuiNavigationRender();
+        }})))
       ]),
       Gui.executionLogSection==='recall'?guiLazyDetails({class:'fold'},guiEl('summary',{text:'현재 턴 리콜 상세'}),()=>guiEl('div',{class:'fold__body'},[buildLibraRecallPanel({hideWhenEmpty:true})])):null,
       buildExecutionReceiptPanel(Gui.executionLogSection)
-    ]);
+    ];
+    panel=guiEl('div',{class:'stack',dataset:{executionLogs:Gui.executionLogSection}},renderContent());
+    return panel;
   };
 
   const buildAnalysisInputPanel = () => {
@@ -93217,6 +93228,15 @@ advanced
     current.appendChild(measureRegion('main',()=>buildApprovedMockupDestinationDetail(page)));
     const correctionList=app.querySelector('#dlg-corr-life.is-open #corr-list');
     if(correctionList&&correctionList.closest('.overlay').dataset.correctionsScope===canonicalReaderBinding().scopeKey)correctionList.replaceChildren(buildWorldManagerCorrectionsPanel());
+    const variantDrawer=app.querySelector('[data-canonical-variant-dialog].is-open, #drawer-versions.is-open');
+    if(variantDrawer&&variantDrawer.dataset.variantScope===canonicalReaderBinding().scopeKey){
+      const runRows=variantDrawer.querySelector('#run-rows');
+      if(runRows){
+        const openSummaries=[...runRows.querySelectorAll('details[open] > summary')].map(s=>s.textContent);
+        runRows.replaceChildren(buildSharedExecutionLogsPanel());
+        if(openSummaries.length)runRows.querySelectorAll('details > summary').forEach(s=>{if(openSummaries.includes(s.textContent))s.parentElement.open=true;});
+      }
+    }
     syncApprovedMockupShell(app);
     if(app.querySelector('#dlg-prompt.is-open'))openApprovedPromptDialog({refresh:true});
     renderCanonicalJobSurface(LibraMemoryCore.state.canonicalJob);
