@@ -86,6 +86,41 @@ test('a superseded probe is not reported as an offline server',async()=>{
   }finally{s.close();}
 });
 
+test('same-context refresh retains the verified status through slow settings and probes',async()=>{
+  const s=setup();try{
+    s.setConfig({mode:'server_only',url:'http://A',scopeId:'A'});
+    s.status.sync();await until(()=>s.row()?.textContent.includes('연결됨'),'initial connection');
+    const connected=s.row().textContent, read=s.bridge.getConnectionSettings;
+    let releaseSettings;
+    s.bridge.getConnectionSettings=()=>new Promise(resolve=>{releaseSettings=async()=>resolve(await read());});
+    s.status.sync();await until(()=>releaseSettings,'delayed settings');
+    assert.equal(s.row().textContent,connected,'ordinary render must not erase a confirmed connection');
+    s.bridge.getConnectionSettings=read;await releaseSettings();
+    let releaseProbe;s.setProbe(()=>new Promise(resolve=>{releaseProbe=resolve;}));
+    s.dom.window.document.querySelector('[data-current-status-refresh]').click();
+    await until(()=>releaseProbe,'refresh probe');
+    assert.equal(s.row().textContent,connected,'pending probe is not a disconnection');
+    releaseProbe({ok:false,error:'MEMORY_SUITE_CONNECTION_STALE'});await pause(20);
+    assert.equal(s.row().textContent,connected,'superseded probe keeps same-context evidence');
+    s.setProbe(async()=>({ok:false,error:'connection_refused'}));
+    s.dom.window.document.querySelector('[data-current-status-refresh]').click();
+    await until(()=>s.row()?.textContent.includes('연결 미완료'),'real outage');
+    assert.equal(s.row().dataset.warning,'true','real failures still replace the old status');
+  }finally{s.close();}
+});
+
+test('a changed settings context clears the old connected display before a new probe',async()=>{
+  const s=setup();try{
+    s.setConfig({mode:'server_only',url:'http://A',scopeId:'A'});
+    s.status.sync();await until(()=>s.row()?.textContent.includes('연결됨'),'server A');
+    let resolve;s.setProbe(()=>new Promise(r=>{resolve=r;}));
+    s.setConfig({mode:'server_only',url:'http://B',scopeId:'B'});s.status.sync();
+    await until(()=>resolve,'server B pending');
+    assert.equal(s.row().textContent,'저장: 확인 중','old URL evidence cannot describe a new URL');
+    resolve({ok:true});await until(()=>s.row()?.textContent.includes('연결됨'),'server B');
+  }finally{s.close();}
+});
+
 test('manual refresh really probes even after a recent successful settings-page check',async()=>{
   const s=setup();try{
     s.setConfig({mode:'server_only',url:'http://A',scopeId:'A',status:{state:'connected',url:'http://A',at:Date.now()}});

@@ -13469,11 +13469,24 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       selected={mode:MODE_PLUGIN_ONLY,origin:'owner_observed_local_default'};ownerLocalWitness=local.binding;
     }
     if(!selected||selected.removed||selected.mode===MODE_MIRROR&&!ownerRead||selected.origin==='transition_pending')readonlyRouteFail('READ_ROUTE_MODE_UNAVAILABLE');
-    const reset=await plugin.getItem(resetChoiceKey);if(reset!=null&&reset!=='')readonlyRouteFail('READ_ROUTE_RESET_UNAVAILABLE');
+    const reset=await plugin.getItem(resetChoiceKey);let resetWitness=null;
+    if(reset!=null&&reset!==''){
+      // A saved, already accepted reset choice is not a pending reset. Only the
+      // native owner may reuse its certified server binding; observing a route
+      // must never bootstrap, accept a reset or expose a retained local copy.
+      const connection=state.bootstrap.value;
+      let candidate;try{candidate=typeof reset==='string'?JSON.parse(reset):reset;}catch(_){}
+      if(!ownerRead||selected.mode===MODE_PLUGIN_ONLY||!resetPreferenceMatches(candidate,connection)
+        ||dataBinding.certified!==true||dataBinding.dataInstanceId!==connection.dataInstanceId
+        ||dataBinding.url!==(connection.requestedUrl||connection.url)
+        ||normalizeServerUrl(await getArgumentValue(urlArguments,defaultUrl))!==(connection.requestedUrl||connection.url)
+        ||deletedScopesForResetChoice(candidate).includes(scope.scopeKey))readonlyRouteFail('READ_ROUTE_RESET_UNAVAILABLE');
+      resetWitness=JSON.stringify(candidate);
+    }
     const currentDevice=await rawDeviceStorage({strict:true});
     if(readonlyRouteFence()!==fence||rawPluginStorage()!==plugin||currentDevice!==device)readonlyRouteFail('READ_ROUTE_CHANGED');
     // Includes only relevant routing rows; unrelated registry entries are harmless.
-    return {scope,mode:selected.mode,scopeRow:stored,globalRow:explicit?null:global,modePublication,fence,plugin,device,ownerLocalWitness};
+    return {scope,mode:selected.mode,scopeRow:stored,globalRow:explicit?null:global,modePublication,fence,plugin,device,ownerLocalWitness,resetWitness};
   };
   const readonlyRouteState=input=>{
     readonlyRouteExact(input,['handle','requestId']);const s=readonlyRouteHandles.get(input.handle);
@@ -13499,7 +13512,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const observeOwnerReadonlyRoute=input=>observeReadRoute(input,true);
   const assertReadonlyRouteCurrent=async input=>{
     const s=readonlyRouteState(input);if(s.pending)readonlyRouteFail('READ_ROUTE_BUSY');s.pending=true;
-    try{const current=await readReadonlyRoute(s.identity,s.ownerRead);readonlyRouteState(input);const binding=v=>JSON.stringify([v.scope,v.mode,v.scopeRow,v.globalRow,v.modePublication,v.fence,v.ownerLocalWitness]);
+    try{const current=await readReadonlyRoute(s.identity,s.ownerRead);readonlyRouteState(input);const binding=v=>JSON.stringify([v.scope,v.mode,v.scopeRow,v.globalRow,v.modePublication,v.fence,v.ownerLocalWitness,v.resetWitness]);
       if(current.plugin!==s.value.plugin||current.device!==s.value.device||binding(current)!==binding(s.value))readonlyRouteFail('READ_ROUTE_CHANGED');
       return Object.freeze({status:'request-local-current',semanticModeEpoch:null});
     }catch(error){s.active=false;readonlyRouteActive.delete(s);throw error;}finally{s.pending=false;}
@@ -61852,10 +61865,25 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const source=await reader.get(memory.scopeKey,{key:String(memory.turnRange.start),start:memory.turnRange.start,end:memory.turnRange.end,identity:er.identity,originalDigest:memory.sourceDigest});
       unifiedAssert(source.available && source.ref.key===er.key && source.ref.payloadDigest===er.payloadDigest,'UNIFIED_REPLAY_EVIDENCE_MISMATCH');
       const batch=source.rows.map(r=>({turn:r.turn,user:{chatId:r.userMessageId,text:r.userText},assistant:{chatId:r.assistantMessageId,text:r.assistantText}}));
-      unifiedAssert(batch.length===BATCH_SIZE && sourceDigest(batch)===memory.sourceDigest
-        && digest(sourcePairs(batch))===digest(memory.sourcePairs)
-        && validateUnifiedArtifact(memory.canonicalArtifact,batch,{allowLegacyProfileStrings:true}).ok
-        && renderUnifiedArtifact(memory.canonicalArtifact)===memory.text,'UNIFIED_REPLAY_ARTIFACT_MISMATCH');
+      const checks={};
+      const replayCheck=(name,ok,issues=[])=>{
+        checks[name]=ok;
+        if(!ok){
+          // Keep the guard strict, but distinguish source identity, typed schema
+          // and rendered-text failures without exporting the private source.
+          state.lastUnifiedReplayValidation={schema:'libra.unified_replay_validation.v1',at:nowIso(),ok:false,
+            scopeKey:memory.scopeKey,memoryId:memory.memoryId,revision:memory.revision,
+            turnRange:clone(memory.turnRange),failedCheck:name,checks:clone(checks),
+            issues:asArray(issues).map(issue=>compact(issue,180))};
+          unifiedAssert(false,'UNIFIED_REPLAY_ARTIFACT_MISMATCH:'+name);
+        }
+      };
+      replayCheck('pairCount',batch.length===BATCH_SIZE);
+      replayCheck('sourceDigest',sourceDigest(batch)===memory.sourceDigest);
+      replayCheck('sourcePairs',digest(sourcePairs(batch))===digest(memory.sourcePairs));
+      const validation=validateUnifiedArtifact(memory.canonicalArtifact,batch,{allowLegacyProfileStrings:true});
+      replayCheck('artifactValidation',validation.ok,validation.issues);
+      replayCheck('renderedText',renderUnifiedArtifact(memory.canonicalArtifact)===memory.text);
       return {memory,batch,rows:source.rows,ref:source.ref};
     };
     const validateUnifiedTransferRefs = async (refs,{read=null,memoryForRef=null}={}) => {
@@ -85053,6 +85081,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     warnings: Runtime.warnings.slice(-20),
     lastGenerationInvocation: safeClone(Runtime.lastGenerationInvocation || null),
     lastMemoryAnalysisDiagnostic: safeClone(Runtime.lastMemoryAnalysisDiagnostic || null),
+    lastUnifiedReplayValidation: safeClone(LibraMemoryCore.state.lastUnifiedReplayValidation || null),
     lastMemoryCandidatePreparation: safeClone(Runtime.lastMemoryCandidatePreparation || null),
     lastProviderRequest: Runtime.lastProviderRequest,
     lastProviderResponse: Runtime.lastProviderResponse,
@@ -92795,7 +92824,7 @@ advanced
   };
 
   // Read applied settings only: editing a draft must not change the status summary.
-  const bookCurrentStatus = { serial: 0, subscribed: false };
+  const bookCurrentStatus = { serial: 0, subscribed: false, display: null };
   const syncBookCurrentStatus = app => {
     const foot = app?.querySelector('.side-foot');
     if (!foot) return;
@@ -92849,13 +92878,18 @@ advanced
     const scopeKey = scope?.scopeKey || '';
     // Every refresh invalidates earlier replies, including replies from a previous chat/open.
     const serial = ++bookCurrentStatus.serial, openSerial = Gui.openSerial;
-    setRow('storage', '저장: 확인 중');
+    const backend = JSON.stringify(MemorySuiteStorageBridge.serverBinding?.() || null);
+    const previous = bookCurrentStatus.display;
+    if (!previous || previous.app !== app || previous.foot !== foot || previous.openSerial !== openSerial
+        || previous.scopeKey !== scopeKey || previous.backend !== backend) setRow('storage', '저장: 확인 중');
+    bookCurrentStatus.display = { app, foot, openSerial, scopeKey, backend };
+    const current = () => serial === bookCurrentStatus.serial && openSerial === Gui.openSerial
+      && Gui.visible && Gui.mockupApp === app && (LibraMemoryCore.peekSnapshot()?.scope?.scopeKey || '') === scopeKey;
     const help = foot.querySelector('.current-status-help');
     if (help) help.textContent = '각 항목을 눌러 설정 변경';
     if (scopeKey) {
       void MemorySuiteStorageBridge.getScopeMode(scope).then(value => {
-        if (serial !== bookCurrentStatus.serial || openSerial !== Gui.openSerial || Gui.mockupApp !== app
-            || LibraMemoryCore.peekSnapshot()?.scope?.scopeKey !== scopeKey) return;
+        if (!current()) return;
         const unavailable = Runtime.serverUnavailable && value.mode !== 'plugin_only';
         const label = value.transition || value.migrationRequired ? '전환 확인 필요'
           : unavailable ? '서버 연결 확인 필요'
@@ -92863,15 +92897,15 @@ advanced
           : value.mode === 'plugin_only' ? '플러그인 모드' : '확인 필요';
         setRow('storage', `저장: ${label}`, unavailable);
       }).catch(err => {
-        if (serial === bookCurrentStatus.serial && openSerial === Gui.openSerial && Gui.mockupApp === app) {
+        if (current()) {
+          if (err?.code === 'MEMORY_SUITE_CONNECTION_STALE' || /MEMORY_SUITE_CONNECTION_STALE/.test(String(err?.message || ''))) return;
           const unavailable = isLibraServerUnavailableError(err);
           setRow('storage', unavailable ? '저장: 서버 연결 확인 필요' : '저장: 확인 필요', unavailable);
         }
       });
     } else {
       void MemorySuiteStorageBridge.getConnectionSettings().then(config => {
-        if (serial !== bookCurrentStatus.serial || openSerial !== Gui.openSerial || Gui.mockupApp !== app
-            || LibraMemoryCore.peekSnapshot()?.scope?.scopeKey) return;
+        if (!current()) return;
         const isGlobal = Boolean(config.global?.set);
         const globalMode = config.global?.mode || config.mode || 'plugin_only';
         const unavailable = Runtime.serverUnavailable && globalMode !== 'plugin_only';
@@ -92887,7 +92921,8 @@ advanced
         }
         setRow('storage', label, unavailable);
       }).catch(err => {
-        if (serial === bookCurrentStatus.serial && openSerial === Gui.openSerial && Gui.mockupApp === app) {
+        if (current()) {
+          if (err?.code === 'MEMORY_SUITE_CONNECTION_STALE' || /MEMORY_SUITE_CONNECTION_STALE/.test(String(err?.message || ''))) return;
           const unavailable = isLibraServerUnavailableError(err);
           setRow('storage', unavailable ? '저장: 서버 연결 확인 필요' : '저장: 확인 필요', unavailable);
         }

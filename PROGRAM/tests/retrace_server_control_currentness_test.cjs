@@ -65,6 +65,21 @@ function fixture() {
 }
 
 (async () => {
+  {
+    const f=fixture();
+    f.Runtime.serverControl.status={version:'last-good'};
+    const pending=f.refresh();await f.started(1);
+    assert.equal(f.Runtime.serverControl.loading,true);
+    assert.equal(f.Runtime.serverControl.status.version,'last-good','pending refresh keeps the last server result');
+    f.finish(f.batches[0],'current');await pending;
+    assert.equal(f.Runtime.serverControl.status.version,'current');
+    const broken=fixture();broken.Runtime.serverControl.status={version:'current'};
+    const failed=broken.refresh().catch(error=>error);await broken.started(1);
+    assert.equal(broken.Runtime.serverControl.status.version,'current');
+    broken.finish(broken.batches[0],'real transport failure',true);await failed;
+    assert.equal(broken.Runtime.serverControl.status,undefined,'a real current failure clears old success');
+    assert.match(broken.Runtime.serverControl.errors.join(' '),/real transport failure/);
+  }
   for (const failure of [false, true]) {
     const f = fixture();
     const old = f.refresh().catch(error => error);

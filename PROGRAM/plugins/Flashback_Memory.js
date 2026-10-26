@@ -48501,7 +48501,7 @@ ${cleanedText}`, 80),
   /* MEMORY SUITE CURRENT STATUS START */
   const createMemorySuiteCurrentStatus = (function createMemorySuiteCurrentStatus(options) {
   const bridge = options.bridge;
-  let serial = 0, timer = null, unsubscribe = null, cache = null, pending = null;
+  let serial = 0, timer = null, unsubscribe = null, cache = null, pending = null, display = null;
   const visible = () => options.isVisible() && options.getRoot()?.isConnected;
   const signature = config => JSON.stringify([config.mode, config.url, config.scopeId,
     config.global?.set, config.global?.mode,
@@ -48565,12 +48565,21 @@ ${cleanedText}`, 80),
     const attempt = ++serial, identity = options.getIdentity();
     const current = () => attempt === serial && visible() && root === options.getRoot()
       && identity === options.getIdentity() && foot.isConnected;
-    setStorage(foot, '확인 중');
+    const sameDisplay = () => display?.root === root && display?.foot === foot && display?.identity === identity;
+    if (!sameDisplay()) setStorage(foot, '확인 중');
     try {
       const config = await bridge.getConnectionSettings();
       if (!current()) return;
+      const key = signature(config);
+      // Polling the same context must not erase its last observed result while
+      // the host/SDK answers. A different URL, scope or mode needs fresh evidence.
+      if (!sameDisplay() || display.key !== key) {
+        setStorage(foot, '확인 중');
+        display = { root, foot, identity, key, verified:false };
+      }
       const job = bridge.getSyncJob?.();
       if (config.transition || config.migrationRequired || (job && !['completed','cancelled','failed'].includes(job.status))) {
+        display.verified = false;
         setStorage(foot, '이전 완료 확인 필요', true); return;
       }
       if (config.recoveryRequired) { setStorage(foot, '초기화·복원 확인 필요', true); return; }
@@ -48585,7 +48594,6 @@ ${cleanedText}`, 80),
         return;
       }
       if (!['server_only','mirror'].includes(effectiveMode)) { setStorage(foot, '설정 확인 필요', true); return; }
-      const key = signature(config);
       // Reuse a recent successful connection-page probe. A fresh settings read
       // alone is not evidence that the server answered.
       if (!force && config.status?.state === 'connected' && config.status.url === config.url
@@ -48607,7 +48615,9 @@ ${cleanedText}`, 80),
         if (/connection_stale/i.test(String(result?.error || ''))) {
           // Another settings/probe operation superseded this read. It is not
           // proof of an offline server, and must not become a red warning.
-          cache = null; setStorage(foot, '연결 확인 중'); return;
+          cache = null;
+          if (!display.verified) setStorage(foot, '연결 확인 중');
+          return;
         }
         cache = { key, at: Date.now(), result };
       }
@@ -48626,12 +48636,16 @@ ${cleanedText}`, 80),
       }
       setStorage(foot, label, !result?.ok || effectiveMode === 'mirror',
         result?.ok ? '' : String(result?.error || '서버 응답을 확인하지 못했습니다.'));
+      display.verified = result?.ok === true;
     } catch (error) {
-      if (current()) setStorage(foot, '확인 필요', true, String(error?.message || error));
+      if (current()) {
+        display = null;
+        setStorage(foot, '확인 필요', true, String(error?.message || error));
+      }
     }
   };
   const stop = () => {
-    ++serial; clearTimeout(timer); timer = null; cache = null;
+    ++serial; clearTimeout(timer); timer = null; cache = null; display = null;
     try { unsubscribe?.(); } catch (_) {} unsubscribe = null;
   };
   const schedule = () => {

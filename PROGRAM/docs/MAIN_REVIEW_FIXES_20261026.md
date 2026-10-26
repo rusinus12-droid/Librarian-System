@@ -45,6 +45,6 @@ Passed test files:
 - `plugin_version_provenance_contract_test.cjs`
 
 SDK synchronization and plugin syntax checks also pass. Tests use synthetic/offline
-fixtures; actual-host verification and deployment are not included. Earlier
-HAYAKU recovery/connection and LIBRA recall fixes remain on the separate
-`investigate/hayaku-connection-recovery-20261026` branch.
+fixtures; actual-host verification and deployment are not included. These fixes
+and the earlier HAYAKU recovery/connection and LIBRA recall changes are combined
+in the main integration documented in `MAIN_INTEGRATION_20261026.md`.
