@@ -7914,7 +7914,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           if(Number.isFinite(at)&&at>0&&at<=8640000000000000)dataMetrics.updatedAt=at;
         }
       }}catch(_){}
-      const canDelete=inventory.completeKnownScopes&&!!current?.scopeId&&((activeMode===MODE_PLUGIN_ONLY&&scope.sourceMode===MODE_PLUGIN_ONLY)||(['hayaku','libra'].includes(namespace)&&scope.sourceMode===MODE_SERVER_ONLY))&&!!scope.characterId&&!!scope.chatId&&current.scopeId!==scope.scopeId&&!plan.referenced&&(plan.owned.length>0||plan.registryEdits.length>0||scope.sourceMode===MODE_SERVER_ONLY&&owned.some(row=>row.location==='server'));
+      const canDelete=inventory.completeKnownScopes&&!!current?.scopeId&&((activeMode===MODE_PLUGIN_ONLY&&scope.sourceMode===MODE_PLUGIN_ONLY)||(['hayaku','libra'].includes(namespace)&&scope.sourceMode===MODE_SERVER_ONLY))&&!!scope.characterId&&!!scope.chatId&&current.scopeId!==scope.scopeId&&!plan.referenced&&(scope.sourceMode===MODE_SERVER_ONLY?owned.some(row=>row.location==='server'):plan.owned.length>0||plan.registryEdits.length>0);
       const fingerprint=typeof globalThis.crypto?.subtle?.digest==='function'?await globalDigest([scope,current?.scopeId,inventory.hostScopes,records.filter(row=>!(options.scopeRegistryKeys||[]).includes(row.logicalKey)).map(row=>[globalRecordIdentity(row),row.fingerprint,row.revision,row.digest]),plan.registryEdits.map(edit=>[globalRecordIdentity(edit.row),edit.removedEntries]),issues,general]):'';
       rows.push({scopeId:scope.scopeId,scopeKey:scope.scopeKey,characterName:scope.characterName||'',chatTitle:scope.chatTitle||'',label:scope.label||scope.scopeKey,
         detached:!!(scope.canonicalCharacterId||scope.characterId)&&!!(scope.canonicalChatId||scope.chatId)&&!inventory.hostScopes.some(host=>(scope.canonicalCharacterId||scope.characterId)===host.characterId&&(scope.canonicalChatId||scope.chatId)===host.chatId),current:current?.scopeId===scope.scopeId,mode:scope.sourceMode,modeLabel:modeLabel(scope.sourceMode),
@@ -7997,6 +7997,53 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       error.rollback={restored:!failures.length,failures};throw error;
     }
   };
+  const deleteOwnedServerScope = async (inventory, scope, row) => {
+    if (!row.canDelete) throw globalModeError('MEMORY_SUITE_SCOPE_DATA_DELETE_BLOCKED');
+    const connection = await bootstrap(false, true);
+    if (connection.capabilities?.['owner-server-scope-delete.v1'] !== true) throw Error('서버 스코프 직접 삭제를 지원하는 버전으로 서버를 업데이트해 주세요.');
+    const owned = inventory.records.filter(item => item.location === 'server' && !item.deleted
+      && item.scopeId === scope.scopeId && ['scope', 'artifact'].includes(item.classification));
+    if (!owned.length) throw Error('owner_scope_copy_delete_empty_inventory');
+    const mutations = owned.map(item => ({ kind:'remove', space:item.space, key:item.key, expectedRevision:item.revision,
+      expectedDigest:item.digest, expectedExists:true, expectedTombstone:false }));
+    const currentId = (await resolveCurrentScope(false)).scopeId;
+    const hostWitness = globalCanonical(inventory.hostScopes), generation = dataBinding.generation, authorityEpoch = wholeDataInventoryEpoch;
+    const assertCurrent = async () => {
+      if (lifecycle.disposed || resetReloadRequired || dataBinding.generation !== generation || wholeDataInventoryEpoch !== authorityEpoch
+        || (await resolveCurrentScope(false)).scopeId !== currentId || currentId === scope.scopeId) throw Error('owner_scope_copy_delete_context_changed');
+      for (const copy of inventory.registryCopies.filter(copy => copy.location !== 'server')) {
+        const store = inventory.stores[copy.location === 'plugin' ? 'plugin' : 'local'];
+        if (globalCanonical(await store.getItem(SCOPE_ROUTING_LOCAL_KEY)) !== globalCanonical(copy.raw)) throw Error('owner_scope_copy_delete_context_changed');
+      }
+      const mode = await readScopeMode(scope, true);
+      if (mode.mode !== MODE_SERVER_ONLY || mode.transition || mode.migrationRequired
+        || globalCanonical(await globalHostCatalog()) !== hostWitness
+        || normalizeServerUrl(await configuredServerUrlNow()) !== inventory.targetUrl
+        || globalCanonical(durableServerPinFromConnection(state.bootstrap.value, inventory.targetUrl)) !== globalCanonical(inventory.serverPin)) throw Error('owner_scope_copy_delete_context_changed');
+      if ((await resolveCurrentScope(false)).scopeId !== currentId || dataBinding.generation !== generation || wholeDataInventoryEpoch !== authorityEpoch) throw Error('owner_scope_copy_delete_context_changed');
+    };
+    await assertCurrent();
+    const requestOptions = { allowPluginOnly:true, scope, storageMode:MODE_SERVER_ONLY };
+    const plan = (await request('POST', '/v1/owner/scope-copy-delete/plan', {
+      namespace, scopeId:scope.scopeId, scopeKey:scope.scopeKey, directServerDelete:true, mutations
+    }, requestOptions)).result;
+    if (plan?.schema !== 'memory-suite.scope-delete-plan.v1' || plan.ownerServerDelete !== true
+      || plan.namespace !== namespace || plan.scopeId !== scope.scopeId || !plan.planId || !plan.backupId
+      || !plan.conditionsVerified || !/^[a-f0-9]{64}$/.test(plan.mutationFingerprint || '')) throw Error('owner_scope_copy_delete_plan_unverified');
+    // A backup/confirmation can outlive the inventory used to select this
+    // scope. Recheck ownership and references without restoring any local data.
+    const fresh = await collectGlobalInventory(MODE_PLUGIN_ONLY, {readOnlyCatalog:true});
+    if (!fresh.completeKnownScopes || fresh.inventoryFingerprint !== inventory.inventoryFingerprint
+      || globalCanonical(fresh.registryCopies) !== globalCanonical(inventory.registryCopies)) throw Error('owner_scope_copy_delete_context_changed');
+    await assertCurrent();
+    const result = (await request('POST', '/v1/owner/scope-copy-delete/execute', {
+      planId:plan.planId, mutationFingerprint:plan.mutationFingerprint
+    }, requestOptions)).result;
+    if (result?.schema !== 'memory-suite.scope-delete-receipt.v1' || result.namespace !== namespace || result.scopeId !== scope.scopeId
+      || result.planId !== plan.planId || result.backupId !== plan.backupId || result.verified !== true || result.durable !== true
+      || result.ownerServerDelete !== true) throw Error('owner_scope_copy_delete_receipt_unverified');
+    return { ...result, ok:true, serverOnly:true, localRestoreRequired:false };
+  };
   const manageScope = async scopeRequest => {
     requireScopeManagement();
     if(!['sync','restore','cleanup','delete','prune','export'].includes(scopeRequest?.action)||!scopeRequest.scopeId||!scopeRequest.expectedFingerprint)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_REQUEST_INVALID');
@@ -8007,26 +8054,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const inventory=await collectGlobalInventory(MODE_PLUGIN_ONLY),catalog=await scopeCatalogFromInventory(inventory);
       const row=catalog.rows.find(row=>row.scopeId===scopeRequest.scopeId),scope=inventory.scopes.find(scope=>scope.scopeId===scopeRequest.scopeId);
       if(!row||row.fingerprint!==scopeRequest.expectedFingerprint||!row.fingerprint)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
-      if(scopeRequest.action==='delete'&&row.mode===MODE_SERVER_ONLY&&['hayaku','libra'].includes(namespace)){
-        if(!row.canDelete)throw globalModeError('MEMORY_SUITE_SCOPE_DATA_DELETE_BLOCKED');
-        const connection=await bootstrap(false,true);
-        if(connection.capabilities?.['owner-scope-copy-delete.v1']!==true)throw Error('서버 스코프 관리를 지원하는 버전으로 서버를 업데이트해 주세요.');
-        const owned=inventory.records.filter(item=>item.location==='server'&&!item.deleted&&item.scopeId===scope.scopeId&&['scope','artifact'].includes(item.classification));
-        if(!owned.length)throw Error('owner_scope_copy_delete_empty_inventory');
-        const mutations=owned.map(item=>({kind:'remove',space:item.space,key:item.key,expectedRevision:item.revision,expectedDigest:item.digest,expectedExists:true,expectedTombstone:false}));
-        const currentId=(await resolveCurrentScope(false)).scopeId;
-        globalMigrationContext=inventory;
-        let proof;
-        try{proof=await scopedPrepareServerScopeDeletionImpl({scope,scopeId:scope.scopeId});}finally{globalMigrationContext=null;}
-        if((await resolveCurrentScope(false)).scopeId!==currentId||currentId===scope.scopeId)throw Error('owner_scope_copy_delete_context_changed');
-        const plan=(await request('POST','/v1/owner/scope-copy-delete/plan',{namespace,scopeId:scope.scopeId,scopeKey:scope.scopeKey,modeProof:proof,mutations},
-          {allowPluginOnly:true,scope,storageMode:MODE_PLUGIN_ONLY})).result;
-        if((await resolveCurrentScope(false)).scopeId!==currentId)throw Error('owner_scope_copy_delete_context_changed');
-        const result=(await request('POST','/v1/owner/scope-copy-delete/execute',{planId:plan.planId,mutationFingerprint:plan.mutationFingerprint},
-          {allowPluginOnly:true,scope,storageMode:MODE_PLUGIN_ONLY})).result;
-        if(!result?.backupId)throw Error('owner_scope_copy_delete_receipt_unverified');
-        return {...result,ok:true,localPreserved:true};
-      }
+      if(scopeRequest.action==='delete'&&row.mode===MODE_SERVER_ONLY&&['hayaku','libra'].includes(namespace))return await deleteOwnedServerScope(inventory,scope,row);
       if(['delete','prune'].includes(scopeRequest.action))return await deleteLocalScopeData(inventory,scope,row,scopeRequest.action);
       if(scopeRequest.action==='export'){
         if(!catalog.completeKnownScopes||row.mode!==MODE_PLUGIN_ONLY)throw globalModeError('MEMORY_SUITE_SCOPE_DATA_EXPORT_BLOCKED');
@@ -8074,7 +8102,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       [data-scope-manager] tr[data-selectable=false] td[data-scope-select-cell]{cursor:help}
       [data-scope-manager] .scope-data-state{display:inline-block;padding:3px 6px;border:1px solid var(--border2,#b6ad9d);border-radius:12px;font-size:11px}
       </style><h3>스코프 데이터 관리</h3>
-      <p class="scope-data-note">삭제·정리는 실행 전에 대상과 참조 관계를 다시 검사합니다. 확인할 수 없는 자료는 보존합니다. 서버 사본 삭제는 로컬 복구 검증과 서버 백업 후 진행하며 로컬 자료를 보존합니다.</p>
+      <p class="scope-data-note">삭제·정리는 실행 전에 대상과 참조 관계를 다시 검사합니다. 확인할 수 없는 자료는 보존합니다. 서버 자료는 로컬 복구 없이 서버 백업과 대상 검증 후 직접 삭제합니다. 저장 모드와 기존 로컬 사본은 변경하지 않습니다.</p>
       <p class="scope-data-note" data-scope-readonly hidden role="status">이 화면은 보안 연결이 아니어서 목록 보기만 가능합니다. 브라우저가 암호화 기능(WebCrypto)을 제공하지 않아 삭제·백업 대상을 안전하게 확인할 수 없습니다. https 또는 localhost 주소로 접속하면 선택할 수 있습니다.</p>
       <select data-scope-filter aria-label="스코프 분류"><option value="all">전체</option><option value="memory">기억 저장소</option><option value="empty">빈 목록 · 정리 후보</option><option value="detached">고아 데이터</option><option value="issues">확인 필요</option><option value="server_only">서버 관리 대상</option></select>
       <div class="actions"><input data-scope-search type="search" aria-label="스코프 검색" placeholder="캐릭터 / 채팅 이름 · 스코프 키로 찾기"><button type="button" data-scope-action="export">선택 데이터 백업</button><button type="button" data-scope-action="delete">선택 삭제</button></div>
@@ -8106,7 +8134,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       :readOnlyCrypto()?'보안 연결이 아니어서 목록 보기만 가능합니다. https 또는 localhost 주소로 접속하세요.'
       :row.unavailable?'조회하지 못해 보존합니다. 새로고침 후 다시 확인하세요.'
       :row.issues.length?'확인이 필요한 항목이 있어 보존합니다. 상세에서 확인하세요.'
-      :row.mode!==MODE_PLUGIN_ONLY?(row.canDelete?'서버 사본 삭제 가능 · 로컬 복구 검증 및 백업 후 진행합니다.':'서버 자료의 소유권·참조 확인이 필요합니다.')
+      :row.mode!==MODE_PLUGIN_ONLY?(row.canDelete?'서버 직접 삭제 가능 · 서버 백업 및 대상 검증 후 진행합니다.':'서버 자료의 소유권·참조 확인이 필요합니다.')
       :row.referenced?'다른 스코프가 참조 중이므로 삭제·정리에서는 제외합니다. 백업은 가능합니다.'
       :!catalog?.completeKnownScopes?'전체 목록 확인이 끝나지 않았습니다. 새로고침 후 다시 확인하세요.'
       :actionable(row)?'':row.deleteBlockedReason||'정리하거나 백업할 자료가 없습니다.';
@@ -8174,7 +8202,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const skipText=skipped.map(row=>row.label+' · '+skipReason(row)).join('\n');
       if(!rows.length){q('[data-scope-result]').textContent='실행할 수 있는 스코프가 없습니다.\n'+skipText;q('[data-scope-result]').style.whiteSpace='pre-wrap';return;}
       q('[data-scope-delete-ack-row]').hidden=!destructive;q('[data-scope-delete-ack]').checked=false;q('[data-scope-approve]').disabled=destructive;
-      busy=true;render();q('[data-scope-confirm-text]').textContent=`${button.textContent} · ${rows.length}개\n${rows.map(row=>row.label+' · '+row.scopeKey).join('\n')}\n${action==='delete'&&rows.some(row=>row.mode===MODE_SERVER_ONLY)?'서버 저장 스코프는 로컬 복구를 검증한 뒤 서버 사본을 백업·삭제합니다. 복구한 로컬 자료는 보존됩니다.':'선택한 스코프의 로컬 데이터만 처리합니다. 서버 데이터는 변경하지 않습니다.'} 현재 채팅은 변경하지 않습니다.${skipped.length?`\n\n제외 ${skipped.length}개 (보존)\n${skipText}`:''}`;
+      busy=true;render();q('[data-scope-confirm-text]').textContent=`${button.textContent} · ${rows.length}개\n${rows.map(row=>row.label+' · '+row.scopeKey).join('\n')}\n${action==='delete'&&rows.some(row=>row.mode===MODE_SERVER_ONLY)?'서버 저장 스코프는 서버 사본을 백업한 뒤 직접 삭제합니다. 로컬 복구는 하지 않으며 기존 로컬 사본과 저장 모드는 변경하지 않습니다.':'선택한 스코프의 로컬 데이터만 처리합니다. 서버 데이터는 변경하지 않습니다.'} 현재 채팅은 변경하지 않습니다.${skipped.length?`\n\n제외 ${skipped.length}개 (보존)\n${skipText}`:''}`;
       q('[data-scope-confirm]').hidden=false;q('[data-scope-confirm]').style.display='block';q('[data-scope-confirm-text]').style.whiteSpace='pre-wrap';q('[data-scope-cancel]').focus();
       let monitor=null;const accepted=await new Promise(resolve=>{confirmation=resolve;monitor=setInterval(()=>{if(!root.isConnected)finishConfirmation(false);},200);try{monitor?.unref?.();}catch(_){}});clearInterval(monitor);
       try{if(!accepted||!root.isConnected)return;let completed=0;

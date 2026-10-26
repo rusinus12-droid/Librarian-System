@@ -103,6 +103,7 @@ const REQUIRED_CAPABILITIES = Object.freeze([
   'scope-delete-plan.v1',
   'scope-delete-preview.v1',
   'owner-scope-copy-delete.v1',
+  'owner-server-scope-delete.v1',
   'scope-delete-commit.v1',
   'scope-delete-job.v1',
   'manager-control.v1',
@@ -3004,7 +3005,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     const timestamp = now();
     for (const [id, plan] of managerPlans.entries()) if (Number(plan.expiresAt || 0) <= timestamp) managerPlans.delete(id);
   };
-  const createScopeDeletePlan = body => {
+  const createScopeDeletePlan = (body, ownerOptions = {}) => {
     assertLegacyAuthorityUnavailable({dataDir});
     pruneManagerPlans();
     readScopeCatalog();
@@ -3020,11 +3021,17 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     if (scope.classification === 'unverified') throw Object.assign(new Error('scope_delete_unverified_scope_blocked'), { statusCode: 409 });
     if (!['active', 'orphan_candidate'].includes(scope.classification)) throw Object.assign(new Error(`scope_delete_classification_blocked:${scope.classification}`), { statusCode: 409 });
     if (scope.coverageComplete !== true) throw Object.assign(new Error('scope_delete_scope_coverage_incomplete'), { statusCode: 409 });
-    const modeProof = source.modeProof && typeof source.modeProof === 'object' ? source.modeProof : {};
-    if (modeProof.verified !== true
+    // Only the authenticated owner route can authorize direct server deletion.
+    // Manager calls retain their local preservation proof requirement.
+    const ownerServerDelete = ownerOptions.namespace === namespace && ['hayaku','libra'].includes(namespace)
+      && ownerOptions.storageMode === 'server_only';
+    const modeProof = ownerServerDelete
+      ? {schema:'memory-suite.owner-server-delete-route.v1',namespace,scopeId,storageMode:'server_only',localRestoreRequired:false}
+      : source.modeProof && typeof source.modeProof === 'object' ? source.modeProof : {};
+    if (!ownerServerDelete && (modeProof.verified !== true
       || String(modeProof.modeAfter || '') !== 'plugin_only'
       || String(modeProof.namespace || '') !== namespace
-      || (modeProof.scopeId && String(modeProof.scopeId) !== scopeId)) {
+      || (modeProof.scopeId && String(modeProof.scopeId) !== scopeId))) {
       throw Object.assign(new Error('scope_delete_plugin_only_mode_proof_required'), { statusCode: 409 });
     }
     const inventoryProof = source.inventoryProof && typeof source.inventoryProof === 'object' ? source.inventoryProof : {};
@@ -3062,7 +3069,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     const createdAt = now();
     const planId = `scope-delete-${crypto.randomBytes(18).toString('base64url')}`;
     const mutationFingerprint = sha256Text(JSON.stringify(prepared.mutations.map(item => ({ kind: item.kind, space: item.space, key: item.key, expectedRevision: item.expectedRevision, expectedDigest: item.expectedDigest, expectedExists: item.expectedExists, expectedTombstone: item.expectedTombstone, valueDigest: item.kind === 'set' ? sha256Text(item.valueJson) : '' }))));
-    const plan = { schema: 'memory-suite.scope-delete-plan.v1', planId, createdAt, expiresAt: createdAt + MANAGER_PLAN_TTL_MS, namespace, scopeId, scopeKey: scope.scopeKey, displayName: scope.displayName, classification: scope.classification, modeProof, inventoryProof, metadata: source.metadata || {}, mutations: prepared.mutations, mutationFingerprint, backupId: backup.id, backupPath: backup.path, counts: { total: mutations.length, purge: mutations.filter(item => item.kind === 'purge').length, rewrite: mutations.filter(item => item.kind === 'set').length, tombstone: mutations.filter(item => item.kind === 'remove').length } };
+    const plan = { schema: 'memory-suite.scope-delete-plan.v1', planId, createdAt, expiresAt: createdAt + MANAGER_PLAN_TTL_MS, namespace, scopeId, scopeKey: scope.scopeKey, displayName: scope.displayName, classification: scope.classification, ownerServerDelete, modeProof, inventoryProof, metadata: source.metadata || {}, mutations: prepared.mutations, mutationFingerprint, backupId: backup.id, backupPath: backup.path, counts: { total: mutations.length, purge: mutations.filter(item => item.kind === 'purge').length, rewrite: mutations.filter(item => item.kind === 'set').length, tombstone: mutations.filter(item => item.kind === 'remove').length } };
     plan.backupFingerprint = namespaceContentFingerprint(namespace);
     plan.jobId = source.jobId || '';
     plan.generation = deletionGeneration(namespace);
@@ -3087,7 +3094,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       const current=findCatalogScope(plan.namespace,plan.scopeId);
       const unchanged=(!current || (!current.pinned && !current.referenceCount && current.members.every(m=>plan.mutations.some(p=>p.space===m.space && p.key===m.key)))) && plan.mutations.every(m=>{const row=repositories[plan.namespace].get(m.space,m.key);return m.kind==='purge'?!row.exists&&!row.tombstone:m.kind==='remove'?row.tombstone && row.revision===Number(m.expectedRevision)+1:m.kind==='set'?row.revision===Number(m.expectedRevision)+1 && row.digest===sha256Text(JSON.stringify(m.value)):true;});
       if(current && unchanged)removeCatalogScope(plan.namespace,plan.scopeId);
-      const receipt={schema:'memory-suite.scope-delete-receipt.v1',planId,namespace:plan.namespace,scopeId:plan.scopeId,backupId:plan.backupId,counts:plan.counts,recovered:true,catalogChanged:!!current&&!unchanged,receipts:JSON.parse(priorCommit.response_json).receipts};
+      const receipt={schema:'memory-suite.scope-delete-receipt.v1',planId,namespace:plan.namespace,scopeId:plan.scopeId,backupId:plan.backupId,counts:plan.counts,...(plan.ownerServerDelete?{ownerServerDelete:true,verified:true,durable:true}:{}),recovered:true,catalogChanged:!!current&&!unchanged,receipts:JSON.parse(priorCommit.response_json).receipts};
       plan.receipt=receipt;saveDeletePlan(plan);return {ok:true,result:receipt};
     }
     if(now()>=plan.expiresAt)throw Object.assign(new Error('scope_delete_plan_expired'),{statusCode:409});
@@ -3116,7 +3123,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     advanceDeleteJob(plan, backupCovered);
     managerPlans.delete(planId);
     scheduleChangeSettledBackup();
-    const receipt = { schema: 'memory-suite.scope-delete-receipt.v1', planId, namespace: plan.namespace, scopeId: plan.scopeId, scopeKey: plan.scopeKey, displayName: plan.displayName, classification: plan.classification, mutationFingerprint: plan.mutationFingerprint, backupId: plan.backupId, deletedAt: new Date().toISOString(), deletedAtMs: now(), counts: plan.counts, receipts: batch.receipts, integrityBefore, integrityAfter, modeProof: plan.modeProof, inventoryProof: plan.inventoryProof, metadata: plan.metadata };
+    const receipt = { schema: 'memory-suite.scope-delete-receipt.v1', planId, namespace: plan.namespace, scopeId: plan.scopeId, scopeKey: plan.scopeKey, displayName: plan.displayName, classification: plan.classification, mutationFingerprint: plan.mutationFingerprint, backupId: plan.backupId, deletedAt: new Date().toISOString(), deletedAtMs: now(), counts: plan.counts, ...(plan.ownerServerDelete?{ownerServerDelete:true,verified:true,durable:true}:{}), receipts: batch.receipts, integrityBefore, integrityAfter, modeProof: plan.modeProof, inventoryProof: plan.inventoryProof, metadata: plan.metadata };
     plan.receipt=receipt;saveDeletePlan(plan);
     const receiptName = `scope-delete-${new Date().toISOString().replace(/[:.]/g, '-')}-${safeFilePart(plan.namespace)}-${safeFilePart(plan.scopeId)}.json`;
     atomicWrite(path.join(dataDir, 'migrations', receiptName), `${JSON.stringify(receipt, null, 2)}\n`);
@@ -3640,6 +3647,8 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         const body=await readBody(request);
         if(url.pathname.endsWith('/plan')){
           if(body.namespace!==namespace||decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id'])!==body.scopeId)throw Object.assign(Error('owner_scope_copy_delete_scope_mismatch'),{statusCode:409});
+          const directServerDelete=body.directServerDelete===true;
+          if(directServerDelete&&request.headers['x-memory-suite-storage-mode']!=='server_only')throw Object.assign(Error('owner_scope_copy_delete_server_mode_required'),{statusCode:409});
           const catalog=readScopeCatalog(),rows=catalog.namespaces?.[namespace]||[],old=rows.find(row=>row.scopeId===body.scopeId);
           if(scopeCatalogDegraded)throw Object.assign(Error('scope_catalog_degraded_delete_blocked'),{statusCode:409});
           const selectedKeys=new Set((body.mutations||[]).map(row=>row.space+'\n'+row.key));
@@ -3649,10 +3658,11 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           const indexed={...(old||{}),scopeId:body.scopeId,scopeKey:body.scopeKey||body.scopeId,baseClassification:'active',coverageComplete:true,
             members:(body.mutations||[]).map(row=>({space:row.space,key:row.key})),links:old?.links||[]};
           replaceNamespaceScopeIndex(namespace,rows.filter(row=>row.scopeId!==body.scopeId).concat(indexed));
-          return sendJson(request,response,200,createScopeDeletePlan({...body,namespace}));
+          return sendJson(request,response,200,createScopeDeletePlan({...body,namespace},directServerDelete?{namespace,storageMode:'server_only'}:{}));
         }
         const plan=loadDeletePlan(String(body.planId||''));
         if(!plan||plan.namespace!==namespace||decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id'])!==plan.scopeId)throw Object.assign(Error('owner_scope_copy_delete_plan_mismatch'),{statusCode:409});
+        if(plan.ownerServerDelete&&request.headers['x-memory-suite-storage-mode']!=='server_only')throw Object.assign(Error('owner_scope_copy_delete_server_mode_required'),{statusCode:409});
         return sendJson(request,response,200,executeScopeDeletePlan(body));
       }
       if (request.method === 'POST' && url.pathname === '/v1/owner/duplicate-cleanup') {

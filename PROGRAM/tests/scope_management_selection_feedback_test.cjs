@@ -41,7 +41,7 @@ const rowOf=(host,id)=>host.querySelector(`[data-scope-row="${id}"]`);
    assert.equal(q('[data-scope-confirm]').hidden,true,`${ns}: nothing to confirm when every ticked row is skipped`);
    assert.equal(g.values.get(ns+'.B'),'B_SOURCE',`${ns}: skipped data is untouched`);
   }finally{dom.window.close();await g.close();}
-  // 2) server_only: rows stored on the server are not cleaned here, and the row says so.
+  // 2) A server route without verified server records stays unselectable and explains why.
   g=await fixture(variant,{values:new Map(values),catalog,adapter:adapter(ns),bridgeOptions:{scopeManagement:true}});dom=new JSDOM('<!doctype html><div id="host"></div>');
   try{
    g.values.set(g.registryKey,JSON.stringify({schema:'memory-suite.scope-routing.v1',namespace:ns,legacyGlobalModeImported:true,globalMigrationRemoteHistory:false,entries:{
@@ -49,10 +49,10 @@ const rowOf=(host,id)=>host.querySelector(`[data-scope-row="${id}"]`);
      B:{scopeId:'B',scopeKey:'B',characterId:'one',chatId:'B',mode:'server_only',origin:'user_explicit'}}}));
    const {host,q}=await mount(g,dom);
    const row=rowOf(host,'B');
-   assert.equal(row.getAttribute('data-selectable'),'false',`${ns}: server-stored scope is not selectable in this panel`);
-   assert.match(row.querySelector('[data-scope-reason]').textContent,/서버에 저장되는 스코프/);
+   assert.equal(row.getAttribute('data-selectable'),'false',`${ns}: unverified server source remains unselectable`);
+   assert.match(row.querySelector('[data-scope-reason]').textContent,/서버 자료.*소유권·참조 확인/);
    row.querySelector('td[data-scope-select-cell]').dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));
-   assert.match(q('[data-scope-result]').textContent,/서버 관리/);
+   assert.match(q('[data-scope-result]').textContent,/서버 자료.*확인/);
   }finally{dom.window.close();await g.close();}
   // 3) no WebCrypto (http / insecure context): the catalog is view-only and the panel says so.
   g=await fixture(variant,{values:new Map(values),catalog,adapter:adapter(ns),bridgeOptions:{scopeManagement:true}});dom=new JSDOM('<!doctype html><div id="host"></div>');

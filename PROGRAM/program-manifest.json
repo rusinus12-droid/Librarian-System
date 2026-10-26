@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-26T10:37:10.217Z",
+  "generatedAt": "2026-10-26T10:47:53.812Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3608,7 +3608,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "3de4e30904371ac2c1619568d25379b7340d4f0430570318f2c9f40907fd3ebf",
+      "sha256": "877400ad285400223383c3e1f0bb56dc50a96547484ad2aa357c38958b4c7e64",
       "bytes": 11832
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4004,24 +4004,24 @@
       "bytes": 3349
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "e00b94c22ef05b22c5eda3e6d042117d018881a82818c9efc41569f68d09ac29",
-      "bytes": 3613204
+      "sha256": "2025abd2354528728ada1cf568850f2cd459a73967e60fa19ad60b731fc684b5",
+      "bytes": 3615758
     },
     "plugins/GRADIA.js": {
       "sha256": "bdf1b00901152b6a3446381f83db3c26e5695820809919d0b060f49819c9cfc7",
       "bytes": 3016043
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "47040bdbe91eba320307cb063a65ec853b49029f19ccd76b529235ffadce8d3b",
-      "bytes": 4112174
+      "sha256": "c0c09af7703e5899dd99e5aeba0ddd741a0e2c9184d0556e7c824ef41c313e7a",
+      "bytes": 4114728
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "3fda2ec012c86d969855130e785a2759ecc20c0be60d811feb9ca5c4b92f3b28",
       "bytes": 1649278
     },
     "plugins/LIBRA.js": {
-      "sha256": "24089fda625b799b4085dd387ea5dcf17f2da8883df114c3da2ea51cc908cfe5",
-      "bytes": 6646274
+      "sha256": "bb73923e3ade525cc90dbb573c3cc8eac100c2c3b3c0940bfa52eaa150604879",
+      "bytes": 6648828
     },
     "plugins/RETRACE.js": {
       "sha256": "04f3a6defddab22b6f544acbb229012cd442672acdb44cb4f3a5aaf79ced4979",
@@ -4168,12 +4168,12 @@
       "bytes": 4596
     },
     "sdk/MemorySuiteStorageClient.libra.source.js": {
-      "sha256": "0b29ad282678eb3ff4815c67661d17913137a4ab28f9085cdff7fc689eaa5a46",
-      "bytes": 707184
+      "sha256": "b8d1c4e15cd003332519e6745153580ce0e1d044c9a9241d1b25363e9bde5bdc",
+      "bytes": 709738
     },
     "sdk/MemorySuiteStorageClient.source.js": {
-      "sha256": "357fda500edefdc569b0349b97fa622a97b1e0e6664f9d217060ab041cfa9103",
-      "bytes": 721393
+      "sha256": "b9d7d83396a063c0b2bb284af00526c2f42a527eded50c9058e3da30556b66f5",
+      "bytes": 723947
     },
     "server/admin.cjs": {
       "sha256": "a67f5877523fa6460b986888aeb659ba84a2fda4ee384101ffc0fed222482480",
@@ -4376,8 +4376,8 @@
       "bytes": 1027
     },
     "server/server.cjs": {
-      "sha256": "f9a5a8feae4d7037eb42cdc663b840543f48d57d1d86c2b41204c2358dded44c",
-      "bytes": 233808
+      "sha256": "9a13e7a65c4a06712714df9f7fc2f2f35580f7382a5307a723ffcbd1c030b1d1",
+      "bytes": 235052
     },
     "tests/_libra_rc2_commit9_repro.js": {
       "sha256": "af0bdc824624db567215d82dcfc280a516e316dbb38d9bb2f171f1b4a9686ad7",
@@ -9708,8 +9708,8 @@
       "bytes": 13566
     },
     "tests/owner_server_scope_management_test.cjs": {
-      "sha256": "f3a033e9042e1309a7a0fca762127f7e8d54b1ced5308ca1a0ad7759af947ec5",
-      "bytes": 3287
+      "sha256": "461a06a79384bda5a12c35afa4ef47b93dd36389f5bb10a717f7eff15317ca74",
+      "bytes": 8823
     },
     "tests/peer_journal_recall_isolation_test.cjs": {
       "sha256": "ce77dd7ccf53ff7d2bb7f62a6d7e590836d05f7e179602b21c0fbdbd7c3d4e16",
@@ -10280,8 +10280,8 @@
       "bytes": 5052
     },
     "tests/scope_management_selection_feedback_test.cjs": {
-      "sha256": "6141e9c396bd7692dbecd463f67d8b14a0f92d987f3e54bf220d66c7b545fcf3",
-      "bytes": 8312
+      "sha256": "a3ee8ed7cea4b1b1728af916ca7aa1f7b9c6d97b41dd9db120a76b027883f51e",
+      "bytes": 8323
     },
     "tests/scope_routing_test.cjs": {
       "sha256": "c25cbc2ff89883db5f7765839dfa4ef488106b9e5a80d6a1e1d6266c4fcc3a1b",
@@ -11866,19 +11866,19 @@
     "Flashback_Memory.js": {
       "variant": "core3-standard-flashback",
       "source": "sdk/MemorySuiteStorageClient.source.js",
-      "sha256": "24bb2f8e0db75f2471647106bb54ba580fa672b91743d051609efb06ff192181",
+      "sha256": "6cb6ad812d5763d6e75ad3993e7f8de757dc4a1858bd2ad42902320cfeb50dc8",
       "synchronization": "canonical-variant"
     },
     "HAYAKU_Locator_Continuity.js": {
       "variant": "core3-standard-hayaku",
       "source": "sdk/MemorySuiteStorageClient.source.js",
-      "sha256": "24bb2f8e0db75f2471647106bb54ba580fa672b91743d051609efb06ff192181",
+      "sha256": "6cb6ad812d5763d6e75ad3993e7f8de757dc4a1858bd2ad42902320cfeb50dc8",
       "synchronization": "canonical-variant"
     },
     "LIBRA.js": {
       "variant": "libra-control-plane-preroute",
       "source": "sdk/MemorySuiteStorageClient.libra.source.js",
-      "sha256": "b2efa0e9a1516afd1ffff81b82844d032545f3b0d00e2f2258039296b6d9866a",
+      "sha256": "613ac36f4e7e5cd40d0420c0511f2d6e116386fa55eb174b42a0fc190d3ff964",
       "synchronization": "canonical-variant"
     },
     "LIA_Persona_Linker.js": {
