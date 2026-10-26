@@ -124,12 +124,12 @@
   <!-- ===== 열람대 ===== -->
   <section class="page is-active" data-page="desk">
     <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Reading Desk</div><h1 class="page-title">현재 열람대</h1><p class="page-desc">이번 턴에 읽은 기록과 다음 응답에 전달되는 자료를 한 펼침면에서 봅니다.</p></div>
-      <div class="page-actions"><button class="btn btn--primary" data-open="dlg-range"><i data-i="pen"></i>기억 생성 구간 선택</button></div></div>
+      <div class="page-actions"><button class="btn" data-action="maintenance" data-open="dlg-maintenance"><i data-i="shield" data-size="sm"></i>상태 점검 및 자동 복구</button><button class="btn btn--primary" data-open="dlg-range"><i data-i="pen"></i>기억 생성 구간 선택</button></div></div>
 
     <div class="stack">
       <div class="banner banner--ok"><div class="banner__icon"><i data-i="check"></i></div>
         <div><b><span data-status-committed-turn>125</span>턴까지 기억이 저장되고 상태에 반영되었습니다.</b><span><span data-status-pending-range>126–128</span>턴(<span data-status-pending-turns>3</span>턴)은 5턴이 채워질 때까지 대기 중 · 저장된 기억 <b id="desk-mem-n">25</b>개 · 부분 저장 <span data-status-partial>0</span> · 반영 대기 <span data-status-awaiting>0</span></span></div>
-        <button class="btn btn--sm" data-open="dialog-state">상태 자세히</button></div>
+        <div class="cluster"><button class="btn btn--sm btn--primary" data-action="maintenance" data-open="dlg-maintenance">상태 점검 및 자동 복구</button><button class="btn btn--sm" data-open="dialog-state">상태 자세히</button></div></div>
 
       <div class="spread">
         <article class="leaf">

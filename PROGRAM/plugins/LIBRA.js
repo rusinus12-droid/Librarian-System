@@ -82690,7 +82690,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // SVG path data only for the mockup icons; no suite.js behavior is loaded.
   const LIBRA_APPROVED_ICON_PATHS = {"home": "<path d=\"M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z\"/>", "grid": "<rect x=\"4\" y=\"4\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"13\" y=\"4\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"4\" y=\"13\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"13\" y=\"13\" width=\"7\" height=\"7\" rx=\"1.5\"/>", "book": "<path d=\"M5 5.5A1.5 1.5 0 0 1 6.5 4H19v14H6.5A1.5 1.5 0 0 0 5 19.5z\"/><path d=\"M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3\"/><path d=\"M9 8h6M9 11.5h6\"/>", "shelf": "<path d=\"M5 4h3v16H5zM10 4h3v16h-3z\"/><path d=\"m15.2 5.2 2.8-.8 3.2 14.6-2.8.8z\"/>", "user": "<circle cx=\"12\" cy=\"8\" r=\"3.6\"/><path d=\"M5 20c.6-3.7 3.4-5.6 7-5.6s6.4 1.9 7 5.6\"/>", "users": "<circle cx=\"9\" cy=\"8.5\" r=\"3.2\"/><circle cx=\"17\" cy=\"9.5\" r=\"2.5\"/><path d=\"M3 19c.5-3.3 3-5 6-5s5.5 1.7 6 5M16 14.2c2.6 0 4.5 1.4 5 4.3\"/>", "globe": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M3.5 12h17M12 3.5c2.6 2.5 3.8 5.3 3.8 8.5S14.6 18 12 20.5C9.4 18 8.2 15.2 8.2 12S9.4 6 12 3.5z\"/>", "timeline": "<path d=\"M5 6h9M5 12h14M5 18h7\"/><circle cx=\"17\" cy=\"6\" r=\"2\"/><circle cx=\"9\" cy=\"18\" r=\"2\"/>", "gear": "<circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M19 12a7 7 0 0 0-.1-1.3l2-1.5-2-3.4-2.3.9a7 7 0 0 0-2.2-1.3L14 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.3-.9-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .9.1 1.3l-2 1.5 2 3.4 2.3-.9a7 7 0 0 0 2.2 1.3L10 21h4l.4-2.4a7 7 0 0 0 2.2-1.3l2.3.9 2-3.4-2-1.5c.1-.4.1-.9.1-1.3z\"/>", "sliders": "<path d=\"M4 7h9M17 7h3M4 17h3M11 17h9\"/><circle cx=\"15\" cy=\"7\" r=\"2\"/><circle cx=\"9\" cy=\"17\" r=\"2\"/>", "check": "<path d=\"m5 12.5 4.5 4.5L19 7.5\"/>", "alert": "<path d=\"M12 8v5M12 16.6v.1\"/><path d=\"M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z\"/>", "info": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 11v5M12 8v.1\"/>", "x": "<path d=\"m6 6 12 12M18 6 6 18\"/>", "more": "<circle cx=\"5.5\" cy=\"12\" r=\"1.2\"/><circle cx=\"12\" cy=\"12\" r=\"1.2\"/><circle cx=\"18.5\" cy=\"12\" r=\"1.2\"/>", "refresh": "<path d=\"M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m16 16 4 4\"/>", "save": "<path d=\"M5 4h11l3 3v13H5z\"/><path d=\"M8 4v5h7V4M8 20v-6h8v6\"/>", "db": "<ellipse cx=\"12\" cy=\"6\" rx=\"7.5\" ry=\"3\"/><path d=\"M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6\"/>", "server": "<rect x=\"3.5\" y=\"4\" width=\"17\" height=\"6.5\" rx=\"2\"/><rect x=\"3.5\" y=\"13.5\" width=\"17\" height=\"6.5\" rx=\"2\"/><path d=\"M7.5 7.2v.1M7.5 16.8v.1\"/>", "link": "<path d=\"M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1\"/><path d=\"M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1\"/>", "shield": "<path d=\"M12 3.5 5 6v5.5c0 4.2 2.9 7.3 7 9 4.1-1.7 7-4.8 7-9V6z\"/><path d=\"m9 12 2.2 2.2L15.2 10\"/>", "bolt": "<path d=\"M13 3 5 13.5h6L10 21l9-11h-6z\"/>", "film": "<rect x=\"4\" y=\"5\" width=\"16\" height=\"14\" rx=\"2\"/><path d=\"M8 5v14M16 5v14M4 9.5h4M4 14.5h4M16 9.5h4M16 14.5h4\"/>", "clock": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 7.5V12l3 2\"/>", "wrench": "<path d=\"M14.5 6.5a4 4 0 0 0 4.9 5L21 9.8 18 7l1.5-1.5a4 4 0 0 0-5 1z\"/><path d=\"m13.5 12.5-8 8-2-2 8-8\"/>", "spark": "<path d=\"m12 3 2 6 6 2-6 2-2 6-2-6-6-2 6-2z\"/>", "layers": "<path d=\"m12 4 8.5 4.5L12 13 3.5 8.5z\"/><path d=\"m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.5 12 21l8.5-4.5\"/>", "pen": "<path d=\"m15 5 4 4M4 20l1-4.5L16.5 4a2.1 2.1 0 0 1 3 3L8 18.5z\"/>", "image": "<rect x=\"3.5\" y=\"4.5\" width=\"17\" height=\"15\" rx=\"3\"/><circle cx=\"9\" cy=\"10\" r=\"1.8\"/><path d=\"m4 17 5-4.5 3.5 3L16 12l4.5 5\"/>", "sync": "<path d=\"M19 8a7.5 7.5 0 0 0-13-1.5L4 9m0-4.5V9h4.5M5 16a7.5 7.5 0 0 0 13 1.5L20 15m0 4.5V15h-4.5\"/>", "chat": "<path d=\"M4 5h16v11H9.5L4.5 20z\"/><path d=\"M8 9h8M8 12.5h5\"/>", "arrow": "<path d=\"m9 5 7 7-7 7\"/>", "back": "<path d=\"m15 5-7 7 7 7\"/>", "plus": "<path d=\"M12 5v14M5 12h14\"/>", "trash": "<path d=\"M5 7h14M10 7V4.5h4V7M7 7l.8 12.5h8.4L17 7\"/>", "download": "<path d=\"M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14\"/>", "upload": "<path d=\"M12 16V5M7.5 9.5 12 5l4.5 4.5M5 20h14\"/>", "route": "<circle cx=\"6\" cy=\"17\" r=\"2.2\"/><circle cx=\"18\" cy=\"7\" r=\"2.2\"/><path d=\"M8.2 17H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.8\"/>", "pin": "<path d=\"m14 4 6 6-3 1-4 4-1 4-2.5-2.5L5 20l3.5-3.5L6 14l4-1 4-4z\"/>", "log": "<path d=\"M6 4h12v16H6z\"/><path d=\"M9 8.5h6M9 12h6M9 15.5h3.5\"/>", "cpu": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M9.5 3.5v2.5M14.5 3.5v2.5M9.5 18v2.5M14.5 18v2.5M3.5 9.5H6M3.5 14.5H6M18 9.5h2.5M18 14.5h2.5\"/>", "flag": "<path d=\"M6 21V4M6 5h11l-2 4 2 4H6\"/>", "eye": "<path d=\"M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z\"/><circle cx=\"12\" cy=\"12\" r=\"2.8\"/>", "lock": "<rect x=\"5\" y=\"10.5\" width=\"14\" height=\"9.5\" rx=\"2\"/><path d=\"M8 10.5V8a4 4 0 0 1 8 0v2.5\"/>", "bookmark": "<path d=\"M7 4h10v16l-5-3.5L7 20z\"/>", "lamp": "<path d=\"M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.7.6 1 1.3 1 2.1h5c0-.8.3-1.5 1-2.1A6 6 0 0 0 12 3z\"/>"};
   // Exact approved LIBRA app structure; its demo handlers/data are never loaded.
-  const LIBRA_APPROVED_MOCKUP_APP_HTML = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><i data-i=\"bookmark\" data-size=\"lg\"></i></div>\n      <div><div class=\"brand__name\">LIBRA</div><div class=\"brand__ver\">사서 · v2.3.149</div></div></div>\n    <div class=\"scope\"><b>현재 채팅</b><span>›</span><span></span></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok hide-narrow\" title=\"기억이 저장되고 현재 상태까지 반영되었습니다.\"><i></i>기억 정상 · T<span data-status-committed-turn></span> 저장</span>\n\n    <button class=\"btn btn--icon\" data-go=\"settings\" aria-label=\"설정\"><i data-i=\"gear\"></i></button>\n    <div class=\"menu\"><button class=\"btn btn--icon\" data-menu aria-label=\"더 보기\"><i data-i=\"more\"></i></button>\n      <div class=\"menu__panel\"><button><i data-i=\"refresh\"></i>새로고침</button><button><i data-i=\"download\"></i>디버그 로그 내보내기</button></div></div>\n    <button class=\"btn btn--icon\" type=\"button\" data-close-gui aria-label=\"LIBRA 닫기\" title=\"닫기\"><i data-i=\"x\"></i></button>\n  </header>\n\n  <nav class=\"sidebar\" aria-label=\"LIBRA 메뉴\">\n    <div class=\"nav-label\">서고</div>\n    <button class=\"nav-item\" data-go=\"desk\" data-short=\"열람대\"><i data-i=\"lamp\"></i><span class=\"nav-text\">현재 열람대</span></button>\n    <button class=\"nav-item\" data-go=\"memory\" data-short=\"서가\"><i data-i=\"shelf\"></i><span class=\"nav-text\">기억 서가</span><span class=\"count\" id=\"nav-mem-n\"></span></button>\n    <button class=\"nav-item\" data-go=\"people\" data-short=\"인물\"><i data-i=\"users\"></i><span class=\"nav-text\">인물 카드함</span></button>\n    <button class=\"nav-item\" data-go=\"world\" data-short=\"세계\"><i data-i=\"globe\"></i><span class=\"nav-text\">세계 도감</span></button>\n    <button class=\"nav-item\" data-go=\"story\" data-short=\"서사\"><i data-i=\"timeline\"></i><span class=\"nav-text\">서사 연감</span></button>\n    <div class=\"nav-label\">관리</div>\n    <button class=\"nav-item\" data-go=\"server\" data-short=\"서버\"><i data-i=\"server\"></i><span class=\"nav-text\">서버 연결</span></button>\n    <button class=\"nav-item\" data-go=\"settings\" data-tab=\"top\"><i data-i=\"gear\"></i><span class=\"nav-text\">설정</span></button>\n    <div class=\"side-foot\"><b>사서 모드</b><span id=\"foot-delivery\"></span></div>\n  </nav>\n\n  <main class=\"main\"><div class=\"page-body\">\n\n  <!-- ===== 열람대 ===== -->\n  <section class=\"page is-active\" data-page=\"desk\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Reading Desk</div><h1 class=\"page-title\">현재 열람대</h1><p class=\"page-desc\">이번 턴에 읽은 기록과 다음 응답에 전달되는 자료를 한 펼침면에서 봅니다.</p></div>\n      <div class=\"page-actions\"><button class=\"btn btn--primary\" data-open=\"dlg-range\"><i data-i=\"pen\"></i>기억 생성 구간 선택</button></div></div>\n\n    </section>\n\n  <!-- ===== 기억 서가 ===== -->\n  <section class=\"page\" data-page=\"memory\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Canonical Archive</div><h1 class=\"page-title\">기억 서가</h1><p class=\"page-desc\">기억은 완결된 5턴 단위로 저장되는 정본입니다. 읽는 화면과 고치는 화면은 같은 자리에서 모드로만 전환합니다.</p></div>\n      <div class=\"page-actions\"><div class=\"seg\" id=\"seg-mode\" data-target=\"mode-x\" role=\"group\" aria-label=\"읽기 관리 모드\"><button data-val=\"read\" aria-pressed=\"true\">읽기</button><button data-val=\"manage\" aria-pressed=\"false\">관리</button></div></div></div>\n    </section>\n\n  <!-- ===== 인물 카드함 ===== -->\n  <section class=\"page\" data-page=\"people\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Character Introduction</div><h1 class=\"page-title\">인물 카드함</h1><p class=\"page-desc\">인물을 고르면 소개·선호·경계·현재 상황·관계·지식·소속을 한 장에서 봅니다.</p></div>\n      <div class=\"page-actions\"><div class=\"seg\" data-target=\"mode-x\" role=\"group\" aria-label=\"읽기 관리 모드\"><button data-val=\"read\" aria-pressed=\"true\">읽기</button><button data-val=\"manage\" aria-pressed=\"false\">관리</button></div></div></div>\n    </section>\n\n  <!-- ===== 세계 도감 ===== -->\n  <section class=\"page\" data-page=\"world\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">World Reference</div><h1 class=\"page-title\">세계 도감</h1><p class=\"page-desc\">지금 장면에 작동하는 장소·세력·규칙·사물·환경·조건을 세계관 소개 페이지처럼 읽고, 서로 연결된 항목으로 이동합니다.</p></div>\n      <div class=\"page-actions\"><div class=\"seg\" data-target=\"mode-x\" role=\"group\" aria-label=\"읽기 관리 모드\"><button data-val=\"read\" aria-pressed=\"true\">읽기</button><button data-val=\"manage\" aria-pressed=\"false\">관리</button></div></div></div>\n    </section>\n\n  <!-- ===== 서사 연감 ===== -->\n  <section class=\"page\" data-page=\"story\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Narrative Almanac</div><h1 class=\"page-title\">서사 연감</h1><p class=\"page-desc\">확인된 사건과 아직 남은 과제를 구분해 목차처럼 읽습니다. 방향 정보는 현재 사실이 아닙니다.</p></div></div>\n    </section>\n\n  <!-- ===== 서버 연결 ===== -->\n  <section class=\"page\" data-page=\"server\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Server Connection</div><h1 class=\"page-title\">서버 연결</h1><p class=\"page-desc\">저장 방식, 서버 주소, 연결 상태와 복구·삭제 작업을 관리합니다.</p></div></div>\n    </section>\n\n  <!-- ===== 설정 ===== -->\n  <section class=\"page\" data-page=\"settings\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Settings Room</div><h1 class=\"page-title\">설정</h1><p class=\"page-desc\">목록은 하나, 저장 버튼도 하나입니다. 바꾼 값은 아래 바에서 한 번에 저장합니다.</p></div></div>\n    </section>\n\n  </div>\n\n  <footer class=\"savebar\" id=\"savebar-settings\" hidden>\n    <div class=\"savebar__copy\"><b data-save-title>모든 변경이 저장되어 있습니다</b><span data-save-desc>설정을 바꾸면 이곳에서 한 번에 저장합니다.</span></div>\n    <div class=\"cluster\"><button class=\"btn\" data-revert disabled>되돌리기</button><button class=\"btn btn--primary\" data-save disabled>설정 저장</button></div>\n  </footer>\n  </main>\n\n  <nav class=\"tabbar\" aria-label=\"LIBRA 하단 메뉴\"></nav>\n\n  <!-- 빠른 설정 드로어: 탭 2개(응답/기억), 저장 1곳 -->\n  <!-- 근거 서랍: 원문 → 정본 사실 → 상태 연결 → 로컬 적용 영수증 → 현재 필드 -->\n  <!-- 버전 · 실행 기록 -->\n  </div>\n\n  "
+  const LIBRA_APPROVED_MOCKUP_APP_HTML = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><i data-i=\"bookmark\" data-size=\"lg\"></i></div>\n      <div><div class=\"brand__name\">LIBRA</div><div class=\"brand__ver\">사서 · v2.3.149</div></div></div>\n    <div class=\"scope\"><b>현재 채팅</b><span>›</span><span></span></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok hide-narrow\" data-open=\"dialog-state\" role=\"button\" tabindex=\"0\" style=\"cursor:pointer\" title=\"기억이 저장되고 현재 상태까지 반영되었습니다.\"><i></i>기억 정상 · T<span data-status-committed-turn></span> 저장</span>\n\n    <button class=\"btn btn--icon\" data-go=\"settings\" aria-label=\"설정\"><i data-i=\"gear\"></i></button>\n    <div class=\"menu\"><button class=\"btn btn--icon\" data-menu aria-label=\"더 보기\"><i data-i=\"more\"></i></button>\n      <div class=\"menu__panel\"><button><i data-i=\"refresh\"></i>새로고침</button><button><i data-i=\"download\"></i>디버그 로그 내보내기</button></div></div>\n    <button class=\"btn btn--icon\" type=\"button\" data-close-gui aria-label=\"LIBRA 닫기\" title=\"닫기\"><i data-i=\"x\"></i></button>\n  </header>\n\n  <nav class=\"sidebar\" aria-label=\"LIBRA 메뉴\">\n    <div class=\"nav-label\">서고</div>\n    <button class=\"nav-item\" data-go=\"desk\" data-short=\"열람대\"><i data-i=\"lamp\"></i><span class=\"nav-text\">현재 열람대</span></button>\n    <button class=\"nav-item\" data-go=\"memory\" data-short=\"서가\"><i data-i=\"shelf\"></i><span class=\"nav-text\">기억 서가</span><span class=\"count\" id=\"nav-mem-n\"></span></button>\n    <button class=\"nav-item\" data-go=\"people\" data-short=\"인물\"><i data-i=\"users\"></i><span class=\"nav-text\">인물 카드함</span></button>\n    <button class=\"nav-item\" data-go=\"world\" data-short=\"세계\"><i data-i=\"globe\"></i><span class=\"nav-text\">세계 도감</span></button>\n    <button class=\"nav-item\" data-go=\"story\" data-short=\"서사\"><i data-i=\"timeline\"></i><span class=\"nav-text\">서사 연감</span></button>\n    <div class=\"nav-label\">관리</div>\n    <button class=\"nav-item\" data-go=\"server\" data-short=\"서버\"><i data-i=\"server\"></i><span class=\"nav-text\">서버 연결</span></button>\n    <button class=\"nav-item\" data-go=\"settings\" data-tab=\"top\"><i data-i=\"gear\"></i><span class=\"nav-text\">설정</span></button>\n    <div class=\"side-foot\"><b>사서 모드</b><span id=\"foot-delivery\"></span></div>\n  </nav>\n\n  <main class=\"main\"><div class=\"page-body\">\n\n  <!-- ===== 열람대 ===== -->\n  <section class=\"page is-active\" data-page=\"desk\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Reading Desk</div><h1 class=\"page-title\">현재 열람대</h1><p class=\"page-desc\">이번 턴에 읽은 기록과 다음 응답에 전달되는 자료를 한 펼침면에서 봅니다.</p></div>\n      <div class=\"page-actions\"><button class=\"btn\" data-action=\"maintenance\" data-open=\"dlg-maintenance\"><i data-i=\"shield\" data-size=\"sm\"></i>상태 점검 및 자동 복구</button><button class=\"btn btn--primary\" data-open=\"dlg-range\"><i data-i=\"pen\"></i>기억 생성 구간 선택</button></div></div>\n\n    </section>\n\n  <!-- ===== 기억 서가 ===== -->\n  <section class=\"page\" data-page=\"memory\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Canonical Archive</div><h1 class=\"page-title\">기억 서가</h1><p class=\"page-desc\">기억은 완결된 5턴 단위로 저장되는 정본입니다. 읽는 화면과 고치는 화면은 같은 자리에서 모드로만 전환합니다.</p></div>\n      <div class=\"page-actions\"><div class=\"seg\" id=\"seg-mode\" data-target=\"mode-x\" role=\"group\" aria-label=\"읽기 관리 모드\"><button data-val=\"read\" aria-pressed=\"true\">읽기</button><button data-val=\"manage\" aria-pressed=\"false\">관리</button></div></div></div>\n    </section>\n\n  <!-- ===== 인물 카드함 ===== -->\n  <section class=\"page\" data-page=\"people\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Character Introduction</div><h1 class=\"page-title\">인물 카드함</h1><p class=\"page-desc\">인물을 고르면 소개·선호·경계·현재 상황·관계·지식·소속을 한 장에서 봅니다.</p></div>\n      <div class=\"page-actions\"><div class=\"seg\" data-target=\"mode-x\" role=\"group\" aria-label=\"읽기 관리 모드\"><button data-val=\"read\" aria-pressed=\"true\">읽기</button><button data-val=\"manage\" aria-pressed=\"false\">관리</button></div></div></div>\n    </section>\n\n  <!-- ===== 세계 도감 ===== -->\n  <section class=\"page\" data-page=\"world\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">World Reference</div><h1 class=\"page-title\">세계 도감</h1><p class=\"page-desc\">지금 장면에 작동하는 장소·세력·규칙·사물·환경·조건을 세계관 소개 페이지처럼 읽고, 서로 연결된 항목으로 이동합니다.</p></div>\n      <div class=\"page-actions\"><div class=\"seg\" data-target=\"mode-x\" role=\"group\" aria-label=\"읽기 관리 모드\"><button data-val=\"read\" aria-pressed=\"true\">읽기</button><button data-val=\"manage\" aria-pressed=\"false\">관리</button></div></div></div>\n    </section>\n\n  <!-- ===== 서사 연감 ===== -->\n  <section class=\"page\" data-page=\"story\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Narrative Almanac</div><h1 class=\"page-title\">서사 연감</h1><p class=\"page-desc\">확인된 사건과 아직 남은 과제를 구분해 목차처럼 읽습니다. 방향 정보는 현재 사실이 아닙니다.</p></div></div>\n    </section>\n\n  <!-- ===== 서버 연결 ===== -->\n  <section class=\"page\" data-page=\"server\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Server Connection</div><h1 class=\"page-title\">서버 연결</h1><p class=\"page-desc\">저장 방식, 서버 주소, 연결 상태와 복구·삭제 작업을 관리합니다.</p></div></div>\n    </section>\n\n  <!-- ===== 설정 ===== -->\n  <section class=\"page\" data-page=\"settings\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Settings Room</div><h1 class=\"page-title\">설정</h1><p class=\"page-desc\">목록은 하나, 저장 버튼도 하나입니다. 바꾼 값은 아래 바에서 한 번에 저장합니다.</p></div></div>\n    </section>\n\n  </div>\n\n  <footer class=\"savebar\" id=\"savebar-settings\" hidden>\n    <div class=\"savebar__copy\"><b data-save-title>모든 변경이 저장되어 있습니다</b><span data-save-desc>설정을 바꾸면 이곳에서 한 번에 저장합니다.</span></div>\n    <div class=\"cluster\"><button class=\"btn\" data-revert disabled>되돌리기</button><button class=\"btn btn--primary\" data-save disabled>설정 저장</button></div>\n  </footer>\n  </main>\n\n  <nav class=\"tabbar\" aria-label=\"LIBRA 하단 메뉴\"></nav>\n\n  <!-- 빠른 설정 드로어: 탭 2개(응답/기억), 저장 1곳 -->\n  <!-- 근거 서랍: 원문 → 정본 사실 → 상태 연결 → 로컬 적용 영수증 → 현재 필드 -->\n  <!-- 버전 · 실행 기록 -->\n  </div>\n\n  "
 
   // Exact source styles from the approved LIBRA mockup (suite.css, themes.css, and libra.html).
   const LIBRA_APPROVED_MOCKUP_STYLE = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n\n\n/* LIBRA 전용: 책 컨셉 (페이지 / 책갈피 / 주석 / 색인) — 모두 불투명 면 + 1px 선 */\n.spread{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);border:1px solid var(--border2);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.leaf{padding:26px 28px 28px;min-width:0}\n.leaf+.leaf{border-left:1px solid var(--border2);background:linear-gradient(90deg,var(--surface3) 0,var(--surface) 22px)}\n.leaf h2{margin:4px 0 12px;font:700 23px/1.35 var(--font-display)}\n.leaf .lead{font:15px/1.9 var(--font-display);color:var(--text)}\n.leaf .lead.muted{color:var(--text2)}\n.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:18px 0}\n.fact{padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2)}\n.fact b{display:block;font:700 22px/1.2 var(--font-display);color:var(--accent-ink)}\n.fact span{font-size:12px;color:var(--text2)}\n.anno{padding:14px 16px;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:var(--r-sm);background:var(--surface2)}\n.anno+.anno{margin-top:12px}\n.anno__head{display:flex;justify-content:space-between;gap:10px;align-items:baseline}\n.anno__kicker{font:700 11.5px/1 var(--font-mono);letter-spacing:.12em;color:var(--accent)}\n.anno h3{margin:4px 0 6px;font:700 15px/1.4 var(--font-display)}\n.anno p{margin:0;font-size:13px;color:var(--text2)}\n.anno--final{border-left-color:var(--ok)}\n.linkbtn{border:0;background:none;color:var(--accent-ink);font:650 12.5px var(--font-sans);text-decoration:underline;text-underline-offset:3px;padding:2px 0}\n.bookmark{display:inline-block;width:11px;height:20px;background:#8c3b32;clip-path:polygon(0 0,100% 0,100% 100%,50% 76%,0 100%);vertical-align:-4px;margin-right:6px}\n.rail{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);overflow:hidden;min-height:0}\n.rail__search{padding:10px;border-bottom:1px solid var(--border)}\n.rail__list{overflow:auto;padding:8px;display:grid;gap:3px;align-content:start;max-height:520px}\n.rail__ep{padding:10px 8px 4px;font:700 11.5px var(--font-mono);letter-spacing:.14em;color:var(--text3)}\n.chapter{display:grid;gap:2px;padding:10px 12px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;text-align:left;color:var(--text)}\n.chapter:hover{background:var(--surface2)}\n.chapter.is-on{background:var(--accent-soft);border-color:var(--accent-line);box-shadow:inset 3px 0 0 var(--accent)}\n.chapter small{font:11.5px var(--font-mono);color:var(--accent-ink)}\n.chapter b{font:650 13px/1.5 var(--font-display)}\n.chapter span{font-size:12px;color:var(--text3)}\n.sheet-page{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);padding:30px clamp(20px,4vw,48px)}\n.sheet-page h2{margin:6px 0 4px;font:700 28px/1.4 var(--font-display)}\n.sheet-page .deck{font:italic 14px/1.8 var(--font-display);color:var(--text2);margin:0 0 20px}\n.sheet-page .prose{font:15.5px/2 var(--font-display);max-width:46em}\n.margin-notes{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:26px;padding-top:18px;border-top:1px solid var(--border)}\n.margin-notes h3{margin:0 0 8px;font:700 11.5px var(--font-mono);letter-spacing:.1em;color:var(--accent)}\n.pager{display:flex;justify-content:space-between;align-items:center;margin-top:24px;padding-top:16px;border-top:1px solid var(--border);color:var(--text3);font-size:12px}\n.manage-only{display:none}[data-mode=manage] .manage-only{display:flex}[data-mode=manage] .read-only{display:none}\n.profile dt{font-weight:650;color:var(--accent-ink)}\n.rel{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2)}\n.rel__arrow{color:var(--accent);font-weight:800}\n.settings-layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:22px;align-items:start}\n.setnav{display:grid;gap:3px;position:sticky;top:0}\n.setnav button{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;align-items:center;text-align:left;padding:10px 12px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--text)}\n.setnav button .ic{grid-row:span 2;color:var(--text3)}\n.setnav button b{font-size:13.5px}.setnav button small{font-size:12px;color:var(--text3)}\n.setnav button[aria-selected=true]{background:var(--surface);border-color:var(--border2);box-shadow:inset 3px 0 0 var(--accent)}\n.setnav button[aria-selected=true] .ic{color:var(--accent)}\n.preset-meter{display:flex;gap:3px;margin-top:6px}.preset-meter i{width:18px;height:6px;border-radius:3px;background:var(--border2)}.choice.is-on .preset-meter i.on{background:var(--accent)}.preset-meter i.on{background:var(--text3)}\n@container app (max-width:900px){\n  .spread{grid-template-columns:1fr}.leaf+.leaf{border-left:0;border-top:1px solid var(--border2);background:var(--surface)}\n  .facts{grid-template-columns:repeat(2,1fr)}\n  .settings-layout{grid-template-columns:1fr}.setnav{grid-auto-flow:column;grid-auto-columns:max-content;overflow:auto;position:static}\n  .setnav button small{display:none}.setnav button{grid-template-columns:auto}.setnav button .ic{grid-row:auto;display:none}\n  .margin-notes{grid-template-columns:1fr}\n  .rail__list{max-height:230px}\n}\n.manage-block{display:none}[data-mode=manage] .manage-block{display:block}\n.detail-pane[hidden]{display:none}\n.seglist{display:grid;gap:0;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.segrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border)}\n.segrow:first-child{border-top:0}.segrow b{font-size:13.5px}.segrow small{display:block;color:var(--text3);font-size:12.5px}\n.segrow input{width:20px;height:20px;accent-color:var(--accent)}\n.segrow[aria-disabled=true]{background:var(--surface2);color:var(--text3)}\n.cost-table{display:grid;grid-template-columns:minmax(120px,170px) minmax(0,1fr);gap:6px 14px;margin:0;font-size:12.5px}.cost-table dt{color:var(--text3)}.cost-table dd{margin:0}\n.res-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 12px;border-top:1px solid var(--border);font-size:12.5px}.res-row:first-child{border-top:0}.res-row small{grid-column:1;color:var(--text3)}\n.chain{display:grid;gap:0;border-left:3px solid var(--accent);margin-left:8px}\n.chain>div{position:relative;padding:8px 0 8px 16px}.chain>div::before{content:\"\";position:absolute;left:-8px;top:14px;width:11px;height:11px;border-radius:50%;background:var(--surface);border:3px solid var(--accent)}\n.chain b{font-size:13px}.chain small{display:block;color:var(--text3);font-size:12.5px}\n.three-status{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.three-status>div{padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);font-size:12.5px}.three-status b{display:block;font-size:12px;color:var(--text3);margin-bottom:2px}\n.act-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:center;padding:14px 16px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\n.act-card b{font-size:14px}.act-card small{display:block;color:var(--text3);font-size:12.5px;margin-top:2px}\n.cardlet.is-focus{outline:3px solid var(--accent);outline-offset:2px}\n.margin-form{display:grid;gap:10px}\n@container app (max-width:640px){.three-status{grid-template-columns:1fr}.cost-table{grid-template-columns:1fr}.act-card{grid-template-columns:1fr}}\n";
@@ -91581,6 +91581,412 @@ advanced
     if(!pending.length)list.appendChild(guiEl('p',{class:'muted',text:'현재 항목에서 해결할 수 있는 보류 근거가 없습니다.'}));
     overlay.querySelector('.dialog__actions').replaceChildren(guiEl('button',{class:'btn',type:'button',text:'닫기',onClick:()=>overlay.remove()}),apply);overlay.addEventListener('click',event=>{if(event.target===overlay)overlay.remove();});Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,()=>overlay.remove());return overlay;
   };
+  const inspectLibraMemoryMaintenance = async () => {
+    const context = await LibraMemoryCore.resolveContext().catch(() => ({ scope: {} }));
+    const scopeKey = text(context?.scope?.scopeKey || '');
+    const storageMode = await MemorySuiteStorageBridge.getMode().catch(() => 'plugin_only');
+    const isServer = storageMode !== 'plugin_only';
+
+    let batchInventory = { observedTurns: 0, completeBatches: 0, pendingTurns: 0, ranges: [] };
+    try { batchInventory = await LibraMemoryCore.listCanonicalBatchRanges(); } catch (_) {}
+    const liveTurns = Number(batchInventory?.observedTurns || 0);
+    const completeBatches = Number(batchInventory?.completeBatches || 0);
+    const pendingTurns = Number(batchInventory?.pendingTurns || 0);
+    const ranges = guiAsArray(batchInventory?.ranges);
+
+    const savedRanges = ranges.filter(r => r.status === 'saved');
+    const missingRanges = ranges.filter(r => r.status === 'missing');
+    const failedRanges = ranges.filter(r => r.status === 'failed');
+    const lastCommittedTurn = Math.max(0, ...savedRanges.map(r => Number(r.endTurn || 0)));
+
+    const snapshot = LibraMemoryCore.peekSnapshot() || {};
+    const view = worldManagerSnapshotView();
+    const stateThroughTurn = Number(view.throughTurn || 0);
+    const stateLagging = lastCommittedTurn > stateThroughTurn;
+    const unappliedCount = savedRanges.filter(r => Number(r.endTurn || 0) > stateThroughTurn).length;
+
+    let embedConfig = { enabled: false };
+    try { embedConfig = await LibraMemoryCore.loadEmbeddingSettings(); } catch (_) {}
+    const embedSummary = libraEmbeddingStatusSummary();
+    const rebuild = LibraMemoryCore.getEmbeddingRebuildState() || {};
+    const rebuildCounts = rebuild.counts || {};
+    const vectorTotal = Number(rebuildCounts.total || 0);
+    const vectorCompleted = Number(rebuildCounts.completed || 0);
+    const vectorPending = Number(rebuildCounts.pending || 0);
+    const vectorFailed = Number(rebuildCounts.failed || 0);
+    const vectorQuarantined = Number(rebuildCounts.quarantined || 0);
+
+    let derivedInspect = { complete: true, status: 'no_detected_issue' };
+    try { derivedInspect = libraHealthRecovery.inspect(); } catch (_) {}
+    const derivedNeedRefresh = !derivedInspect.complete || derivedInspect.status === 'attention';
+
+    let serverHealth = null;
+    let serverPendingTx = 0;
+    let serverMissingRefs = 0;
+    let serverReplayErrors = 0;
+    if (isServer) {
+      try {
+        serverHealth = await LibraMemoryCore.getServerScopeHealth();
+        serverPendingTx = Number(serverHealth?.counts?.pendingState || 0)
+          + Number(serverHealth?.counts?.pendingVectors || 0)
+          + Number(serverHealth?.counts?.pendingReplay || 0);
+        serverMissingRefs = Number(serverHealth?.counts?.missingCanonicalRefs || 0);
+        serverReplayErrors = Number(serverHealth?.counts?.replayErrors || 0);
+      } catch (_) {}
+    }
+
+    const issues = [];
+    if (missingRanges.length > 0) issues.push({ code: 'CANONICAL_BATCHES_MISSING', count: missingRanges.length, text: `누락된 정본 5턴 구간 ${missingRanges.length}개` });
+    if (failedRanges.length > 0) issues.push({ code: 'CANONICAL_BATCHES_FAILED', count: failedRanges.length, text: `생성 실패한 정본 구간 ${failedRanges.length}개` });
+    if (stateLagging) issues.push({ code: 'STATE_HEAD_LAGGING', count: unappliedCount, text: `상태 반영 지연 (정본 T${lastCommittedTurn} vs 현재 상태 T${stateThroughTurn})` });
+    if (vectorFailed > 0) issues.push({ code: 'EMBEDDING_VECTORS_FAILED', count: vectorFailed, text: `임베딩 벡터 생성 실패 ${vectorFailed}건` });
+    if (embedConfig.enabled && vectorPending > 0) issues.push({ code: 'EMBEDDING_VECTORS_PENDING', count: vectorPending, text: `임베딩 대기 벡터 ${vectorPending}건` });
+    if (serverPendingTx > 0) issues.push({ code: 'SERVER_PENDING_TX', count: serverPendingTx, text: `미완료 서버 트랜잭션 ${serverPendingTx}건` });
+    if (serverMissingRefs > 0) issues.push({ code: 'SERVER_MISSING_CANONICAL_REFS', count: serverMissingRefs, text: `서버 정본 참조 누락 ${serverMissingRefs}건` });
+    if (derivedNeedRefresh) issues.push({ code: 'DERIVED_CACHE_STALE', count: 1, text: '파생 캐시 및 그래프 페이지 갱신 필요' });
+
+    const healthy = issues.length === 0;
+
+    return {
+      schema: 'libra.memory_maintenance_plan.v1',
+      scopeKey,
+      storageMode,
+      isServer,
+      healthy,
+      liveTurns,
+      completeBatches,
+      pendingTurns,
+      savedRangesCount: savedRanges.length,
+      missingRangesCount: missingRanges.length,
+      failedRangesCount: failedRanges.length,
+      lastCommittedTurn,
+      stateThroughTurn,
+      stateLagging,
+      unappliedCount,
+      embedSummary,
+      vectorTotal,
+      vectorCompleted,
+      vectorPending,
+      vectorFailed,
+      vectorQuarantined,
+      serverHealth,
+      serverPendingTx,
+      serverMissingRefs,
+      serverReplayErrors,
+      derivedNeedRefresh,
+      issues
+    };
+  };
+
+  const runLibraMemoryMaintenance = async (mode = 'auto', options = {}) => {
+    const startedAt = Date.now();
+    let preflight = options.preflight || await inspectLibraMemoryMaintenance();
+    const context = await LibraMemoryCore.resolveContext();
+    const scopeKey = text(context.scope?.scopeKey || '');
+    const actionsTaken = [];
+
+    if (preflight.stateLagging || preflight.unappliedCount > 0) {
+      try {
+        await runStateReplayMaintenance({
+          kind: 'rebuild',
+          scopeKey,
+          worldlineId: 'main'
+        });
+        actionsTaken.push(`상태 재생 완료: T${preflight.stateThroughTurn} → T${preflight.lastCommittedTurn} (추가 모델 호출 0회)`);
+      } catch (err) {
+        actionsTaken.push(`상태 재생 경고: ${err.message || err}`);
+      }
+    }
+
+    try {
+      const preview = libraHealthRecovery.preview();
+      if (preview.allowed) {
+        await libraHealthRecovery.repair(preview);
+        actionsTaken.push('파생 캐시 및 메모리 그래프 무결성 갱신 완료');
+      } else {
+        libraHealthRecovery.clear();
+        actionsTaken.push('파생 캐시 및 그래프 페이지 초기화 완료');
+      }
+    } catch (err) {
+      actionsTaken.push(`캐시 갱신 경고: ${err.message || err}`);
+    }
+
+    if (preflight.embedSummary?.state === 'ready') {
+      if (preflight.vectorFailed > 0) {
+        try {
+          await LibraMemoryCore.retryFailedEmbeddingRebuild();
+          actionsTaken.push(`실패한 임베딩 벡터 ${preflight.vectorFailed}건 재생성 요청`);
+        } catch (err) {
+          actionsTaken.push(`임베딩 재시도 경고: ${err.message || err}`);
+        }
+      } else if (preflight.vectorPending > 0) {
+        try {
+          await LibraMemoryCore.startEmbeddingRebuild();
+          actionsTaken.push(`대기 중인 임베딩 벡터 ${preflight.vectorPending}건 재생성 요청`);
+        } catch (err) {
+          actionsTaken.push(`임베딩 재생성 경고: ${err.message || err}`);
+        }
+      }
+    }
+
+    try { await refreshGuiSnapshot(false); } catch (_) {}
+
+    const after = await inspectLibraMemoryMaintenance();
+    const durationMs = Math.max(0, Date.now() - startedAt);
+
+    return {
+      schema: 'libra.memory_maintenance_result.v1',
+      scopeKey,
+      status: 'completed',
+      healthy: after.healthy,
+      durationMs,
+      before: preflight,
+      after,
+      actionsTaken
+    };
+  };
+
+  const openLibraMemoryMaintenanceDialog = async () => {
+    Gui.app?.querySelector('#dlg-maintenance')?.remove();
+    const binding = canonicalReaderBinding();
+    const bindingKey = canonicalReaderBindingKey(binding);
+
+    const overlay = guiEl('div', {
+      class: 'overlay is-open',
+      id: 'dlg-maintenance',
+      dataset: { maintenanceScope: binding.scopeKey }
+    });
+
+    const dialog = guiEl('div', {
+      class: 'dialog dialog--wide',
+      role: 'dialog',
+      'aria-modal': 'true',
+      style: { maxWidth: '620px' }
+    });
+    overlay.appendChild(dialog);
+
+    const close = () => {
+      document.removeEventListener('keydown', escape, true);
+      overlay.remove();
+    };
+    const escape = event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      }
+    };
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) close();
+    });
+    bindApprovedOverlayKeyboard(overlay, close);
+    (Gui.app || document.body).appendChild(overlay);
+
+    dialog.replaceChildren(
+      guiEl('div', { class: 'eyebrow', text: 'Memory Health & Recovery' }),
+      guiEl('h2', { text: '기억 상태 점검' }),
+      guiEl('p', { class: 'hint', text: '정본 기억, 현재 상태 파이프라인, 임베딩 및 캐시 무결성을 안전하게 점검하고 있습니다…' })
+    );
+
+    let plan = null;
+    try {
+      plan = await inspectLibraMemoryMaintenance();
+    } catch (error) {
+      dialog.replaceChildren(
+        guiEl('div', { class: 'eyebrow', text: 'Memory Health & Recovery' }),
+        guiEl('h2', { text: '기억 상태 점검 실패' }),
+        guiEl('p', { class: 'note note--danger', text: String(error?.message || error) }),
+        guiEl('div', { class: 'dialog__actions' }, [
+          guiEl('button', { class: 'btn btn--primary', type: 'button', text: '닫기', onClick: close })
+        ])
+      );
+      return overlay;
+    }
+
+    if (canonicalReaderBindingKey(canonicalReaderBinding()) !== bindingKey) {
+      close();
+      return overlay;
+    }
+
+    renderInspectionPlan(plan);
+
+    function renderInspectionPlan(p) {
+      const header = guiEl('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' } }, [
+        guiEl('div', {}, [
+          guiEl('div', { class: 'eyebrow', text: 'Memory Health & Recovery' }),
+          guiEl('h2', { style: { margin: '2px 0 0' }, text: '기억 상태 점검 및 자동 복구' })
+        ]),
+        guiEl('div', {}, [
+          p.healthy
+            ? guiEl('span', { class: 'badge badge--ok', text: '정상 상태' })
+            : guiEl('span', { class: 'badge badge--warn', text: `복구 권장 (${p.issues.length}건)` })
+        ])
+      ]);
+
+      const banner = p.healthy
+        ? guiEl('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 14px', borderRadius: 'var(--r-md, 10px)', background: 'var(--ok-soft, rgba(46,175,125,0.08))', border: '1px solid var(--ok-ink, #2eaf7d)', margin: '12px 0' } }, [
+            guiEl('span', { style: { fontSize: '20px', lineHeight: '1', marginTop: '1px' }, text: '✅' }),
+            guiEl('div', { style: { fontSize: '13px', lineHeight: '1.55', minWidth: '0' } }, [
+              guiEl('b', { style: { color: 'var(--text)', display: 'block', marginBottom: '2px' }, text: '모든 정본 기억과 상태가 완벽하게 일치합니다' }),
+              guiEl('span', { style: { color: 'var(--text2)' }, text: `현재 대화(총 ${p.liveTurns}턴)와 정본 기억(T${p.lastCommittedTurn}까지), 현재 상태(T${p.stateThroughTurn})가 정상이며, 파생 캐시와 임베딩 무결성이 확인되었습니다.` })
+            ])
+          ])
+        : guiEl('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 14px', borderRadius: 'var(--r-md, 10px)', background: 'var(--accent-soft, rgba(234,153,34,0.08))', border: '1px solid var(--accent, #ea9922)', margin: '12px 0' } }, [
+            guiEl('span', { style: { fontSize: '20px', lineHeight: '1', marginTop: '1px' }, text: '⚠️' }),
+            guiEl('div', { style: { fontSize: '13px', lineHeight: '1.55', minWidth: '0' } }, [
+              guiEl('b', { style: { color: 'var(--text)', display: 'block', marginBottom: '2px' }, text: '점검 결과, 동기화 및 자동 복구가 가능한 항목이 있습니다' }),
+              guiEl('span', { style: { color: 'var(--text2)' }, text: p.issues.map(item => item.text).join(' · ') })
+            ])
+          ]);
+
+      const metrics = guiEl('div', { class: 'three-status', style: { gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', marginBottom: '14px' } }, [
+        guiEl('div', {}, [
+          guiEl('b', { text: '현재 대화' }),
+          guiEl('span', { class: 'mono', style: { fontSize: '15px', fontWeight: '700' }, text: `${p.liveTurns}턴` }),
+          guiEl('small', { style: { display: 'block', color: 'var(--text3)', fontSize: '11.5px', marginTop: '2px' }, text: `대기 ${p.pendingTurns}턴` })
+        ]),
+        guiEl('div', {}, [
+          guiEl('b', { text: '정본 기억' }),
+          guiEl('span', { class: 'mono', style: { fontSize: '15px', fontWeight: '700' }, text: `T${p.lastCommittedTurn}` }),
+          guiEl('small', { style: { display: 'block', color: 'var(--text3)', fontSize: '11.5px', marginTop: '2px' }, text: `${p.savedRangesCount}개 저장됨` })
+        ]),
+        guiEl('div', {}, [
+          guiEl('b', { text: '현재 상태' }),
+          guiEl('span', { class: 'mono', style: { fontSize: '15px', fontWeight: '700', color: p.stateLagging ? 'var(--warn-ink, #ea9922)' : 'var(--text)' }, text: `T${p.stateThroughTurn}` }),
+          guiEl('small', { style: { display: 'block', color: p.stateLagging ? 'var(--warn-ink, #ea9922)' : 'var(--ok-ink, #2eaf7d)', fontSize: '11.5px', marginTop: '2px' }, text: p.stateLagging ? '정본 반영 지연' : '정본과 일치' })
+        ]),
+        guiEl('div', {}, [
+          guiEl('b', { text: '임베딩 벡터' }),
+          guiEl('span', { class: 'mono', style: { fontSize: '15px', fontWeight: '700', color: p.vectorFailed > 0 ? 'var(--danger-ink, #e05252)' : 'var(--text)' }, text: `${p.vectorCompleted}/${p.vectorTotal}` }),
+          guiEl('small', { style: { display: 'block', color: p.vectorFailed > 0 ? 'var(--danger-ink, #e05252)' : 'var(--text3)', fontSize: '11.5px', marginTop: '2px' }, text: p.vectorFailed > 0 ? `실패 ${p.vectorFailed}건` : p.vectorPending > 0 ? `대기 ${p.vectorPending}건` : '최신 유지' })
+        ])
+      ]);
+
+      const detailRows = [
+        ['저장 모드', p.isServer ? '🌐 서버 모드 (Librarian System)' : '💻 로컬 플러그인 모드'],
+        ['상태 추적 파이프라인', p.stateLagging ? `T${p.lastCommittedTurn} 상태로 자동 재정렬 필요 (추가 AI 호출 0회)` : '최신 정본까지 완전히 반영됨'],
+        ['미생성 5턴 구간', p.missingRangesCount > 0 ? `${p.missingRangesCount}개 구간 미완료 (선택 생성 가능)` : '누락된 5턴 구간 없음'],
+        ['임베딩 모델 및 준비도', p.embedSummary.text],
+        ['파생 캐시 무결성', p.derivedNeedRefresh ? '메모리 그래프 및 리콜 인덱스 갱신 필요' : '정상 (캐시 일치)']
+      ];
+      if (p.isServer) {
+        detailRows.push(['서버 트랜잭션 무결성', p.serverPendingTx > 0 ? `미완료 TX ${p.serverPendingTx}건 감지` : '정상 (미완료 TX 0건)']);
+      }
+
+      const detailsBox = guiEl('div', {
+        style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md, 10px)', padding: '13px 15px', display: 'grid', gap: '8px', fontSize: '12.5px', marginBottom: '16px' }
+      }, detailRows.map(([lbl, val], idx) => guiEl('div', {
+        style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: idx < detailRows.length - 1 ? '1px solid var(--border2)' : 'none', paddingBottom: idx < detailRows.length - 1 ? '7px' : '0' }
+      }, [
+        guiEl('span', { style: { color: 'var(--text3)' }, text: lbl }),
+        guiEl('span', { style: { color: 'var(--text)', fontWeight: '600' }, text: val })
+      ])));
+
+      const actions = guiEl('div', { class: 'dialog__actions' });
+      actions.appendChild(guiEl('button', { class: 'btn', type: 'button', text: '닫기', onClick: close }));
+
+      if (p.missingRangesCount > 0) {
+        actions.appendChild(guiEl('button', {
+          class: 'btn',
+          type: 'button',
+          text: '미생성 기억 구간 열기',
+          onClick: () => {
+            close();
+            void showCanonicalRangeDrawer('missing');
+          }
+        }));
+      }
+
+      const autoBtn = guiEl('button', {
+        class: 'btn btn--primary',
+        type: 'button',
+        text: '⚡ 자동 점검·복구 실행',
+        onClick: async () => {
+          autoBtn.disabled = true;
+          autoBtn.textContent = '복구 실행 중…';
+          try {
+            const result = await runLibraMemoryMaintenance('auto', { preflight: p });
+            renderCompletion(result);
+          } catch (err) {
+            dialog.replaceChildren(
+              guiEl('div', { class: 'eyebrow', text: 'Memory Health & Recovery' }),
+              guiEl('h2', { text: '자동 점검·복구 실패' }),
+              guiEl('p', { class: 'note note--danger', text: String(err?.message || err) }),
+              guiEl('div', { class: 'dialog__actions' }, [
+                guiEl('button', { class: 'btn btn--primary', type: 'button', text: '닫기', onClick: close })
+              ])
+            );
+          }
+        }
+      });
+      actions.appendChild(autoBtn);
+
+      dialog.replaceChildren(header, banner, metrics, detailsBox, actions);
+    }
+
+    function renderCompletion(result) {
+      const durationSec = Math.max(0.1, (result.durationMs / 1000)).toFixed(1);
+      const after = result.after;
+
+      const header = guiEl('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' } }, [
+        guiEl('div', {}, [
+          guiEl('div', { class: 'eyebrow', text: 'Memory Health & Recovery' }),
+          guiEl('h2', { style: { margin: '2px 0 0' }, text: '상태 점검 및 자동 복구 완료' })
+        ]),
+        guiEl('div', {}, [
+          result.healthy
+            ? guiEl('span', { class: 'badge badge--ok', text: '완료 · 정상' })
+            : guiEl('span', { class: 'badge badge--warn', text: '완료 · 일부 확인' })
+        ])
+      ]);
+
+      const banner = guiEl('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 14px', borderRadius: 'var(--r-md, 10px)', background: 'var(--ok-soft, rgba(46,175,125,0.08))', border: '1px solid var(--ok-ink, #2eaf7d)', margin: '12px 0' } }, [
+        guiEl('span', { style: { fontSize: '20px', lineHeight: '1', marginTop: '1px' }, text: '🎉' }),
+        guiEl('div', { style: { fontSize: '13px', lineHeight: '1.55', minWidth: '0' } }, [
+          guiEl('b', { style: { color: 'var(--text)', display: 'block', marginBottom: '2px' }, text: '기억 및 상태 자동 점검·복구가 성공적으로 완료되었습니다' }),
+          guiEl('span', { style: { color: 'var(--text2)' }, text: `소요 시간 ${durationSec}초 · 최신 저장소 및 상태 readback 검증을 마쳤습니다.` })
+        ])
+      ]);
+
+      const actionsBox = guiEl('div', {
+        style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md, 10px)', padding: '13px 15px', display: 'grid', gap: '8px', fontSize: '12.5px', marginBottom: '14px' }
+      }, result.actionsTaken.length ? result.actionsTaken.map(act => guiEl('div', {
+        style: { display: 'flex', alignItems: 'center', gap: '8px' }
+      }, [
+        guiEl('span', { style: { color: 'var(--ok-ink, #2eaf7d)', fontWeight: '700' }, text: '✓' }),
+        guiEl('span', { text: act })
+      ])) : [guiEl('div', { style: { color: 'var(--text2)' }, text: '조치가 필요한 비정상 상태가 발견되지 않아 즉시 정상 확정되었습니다.' })]);
+
+      const summaryGrid = guiEl('div', { class: 'three-status', style: { gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', marginBottom: '16px' } }, [
+        guiEl('div', {}, [
+          guiEl('b', { text: '정본 저장' }),
+          guiEl('span', { class: 'mono', style: { fontSize: '15px', fontWeight: '700' }, text: `T${after.lastCommittedTurn}` }),
+          guiEl('small', { style: { display: 'block', color: 'var(--text3)', fontSize: '11.5px', marginTop: '2px' }, text: `${after.savedRangesCount}개 구간 완료` })
+        ]),
+        guiEl('div', {}, [
+          guiEl('b', { text: '현재 상태' }),
+          guiEl('span', { class: 'mono', style: { fontSize: '15px', fontWeight: '700', color: 'var(--ok-ink, #2eaf7d)' }, text: `T${after.stateThroughTurn}` }),
+          guiEl('small', { style: { display: 'block', color: 'var(--ok-ink, #2eaf7d)', fontSize: '11.5px', marginTop: '2px' }, text: after.stateThroughTurn >= after.lastCommittedTurn ? '최신 정본과 일치' : '반영 대기' })
+        ]),
+        guiEl('div', {}, [
+          guiEl('b', { text: '임베딩 벡터' }),
+          guiEl('span', { class: 'mono', style: { fontSize: '15px', fontWeight: '700' }, text: `${after.vectorCompleted}/${after.vectorTotal}` }),
+          guiEl('small', { style: { display: 'block', color: 'var(--text3)', fontSize: '11.5px', marginTop: '2px' }, text: after.vectorPending > 0 ? `대기 ${after.vectorPending}개` : '정상' })
+        ])
+      ]);
+
+      const actions = guiEl('div', { class: 'dialog__actions' }, [
+        guiEl('button', { class: 'btn btn--primary', type: 'button', text: '확인', onClick: close })
+      ]);
+
+      dialog.replaceChildren(header, banner, actionsBox, summaryGrid, actions);
+    }
+
+    return overlay;
+  };
+  LibraMemoryCore.inspectMemoryMaintenance = inspectLibraMemoryMaintenance;
+  LibraMemoryCore.runMemoryMaintenance = runLibraMemoryMaintenance;
+  LibraMemoryCore.openMemoryMaintenanceDialog = openLibraMemoryMaintenanceDialog;
   const openApprovedStateDialog = () => {
     Gui.app.querySelector('#dialog-state')?.remove();const binding=canonicalReaderBinding();
     const template=document.createElement('template');template.innerHTML=LIBRA_APPROVED_STATE_DIALOG_HTML;const overlay=template.content.firstElementChild;overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');
@@ -91598,7 +92004,7 @@ advanced
       }
     };
     overlay.libraRefreshState();
-    const actions=overlay.querySelector('.dialog__actions');actions.replaceChildren(guiEl('button',{class:'btn',type:'button',text:'전체 상태 확인',onClick:()=>{if(canonicalReaderBindingKey(binding)!==canonicalReaderBindingKey(canonicalReaderBinding()))return;void refreshGuiSnapshot(false).then(()=>openApprovedStateDialog());}}),guiEl('button',{class:'btn btn--primary',type:'button',text:'닫기',onClick:()=>overlay.remove()}));
+    const actions=overlay.querySelector('.dialog__actions');actions.replaceChildren(guiEl('button',{class:'btn btn--primary',type:'button',text:'⚡ 상태 점검 및 자동 복구',onClick:()=>{overlay.remove();void openLibraMemoryMaintenanceDialog();}}),guiEl('button',{class:'btn',type:'button',text:'전체 상태 확인',onClick:()=>{if(canonicalReaderBindingKey(binding)!==canonicalReaderBindingKey(canonicalReaderBinding()))return;void refreshGuiSnapshot(false).then(()=>openApprovedStateDialog());}}),guiEl('button',{class:'btn',type:'button',text:'닫기',onClick:()=>overlay.remove()}));
     overlay.addEventListener('click',event=>{if(event.target===overlay)overlay.remove();});Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,()=>overlay.remove());return overlay;
   };
   const bookRecoveryResult = (kind,result) => {
@@ -91708,6 +92114,13 @@ advanced
     Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,()=>overlay.remove());return overlay;
   };
   const buildApprovedRecoveryActions = () => guiEl('div',{class:'stack',dataset:{recoveryKinds:'four'}},[
+    guiEl('div',{class:'act-card'},[
+      guiEl('div',{},[
+        guiEl('b',{text:'⚡ 원스톱 상태 점검 및 자동 복구'}),
+        guiEl('small',{text:'정본 연속성 · 상태 반영 · 임베딩 · 캐시 무결성을 일괄 점검하고 원클릭으로 자동 복구합니다.'})
+      ]),
+      guiEl('button',{class:'btn btn--sm btn--primary',type:'button',text:'점검 및 복구…',dataset:{recoveryKind:'maintenance'},onClick:()=>void openLibraMemoryMaintenanceDialog()})
+    ]),
     ...[['state','현재 상태 다시 적용','저장된 정본을 현재 상태에 반영합니다. 정본은 바뀌지 않습니다.'],['correction','교정 관리','적용 중 · 재검토 · 휴면 · 대체 · 삭제 상태를 확인합니다.'],['rebuild','분기 · 재구축','저장이 완료된 5턴 경계로 상태를 되돌립니다. 원문은 보존합니다.'],['receipt','원문 저장 영수증 복구','실제 영수증과 일치하는 원문 저장을 확인합니다. 모델 호출 0회입니다.']].map(([kind,title,description])=>guiEl('div',{class:'act-card'},[guiEl('div',{},[guiEl('b',{text:title}),guiEl('small',{text:description})]),guiEl('button',{class:kind==='micro'?'btn btn--sm btn--danger':'btn btn--sm',type:'button',text:kind==='correction'?'교정 목록 열기':'실행…',dataset:{recoveryKind:kind},onClick:()=>void openApprovedRecoveryDialog(kind)})]))
   ]);
 
@@ -92641,7 +93054,10 @@ advanced
       guiEl('div', { class: committedTurn > 0 ? 'banner banner--ok' : 'banner banner--warn', dataset: { productReadback: 'desk-status' } }, [
         guiEl('div', { class: 'banner__icon', text: committedTurn > 0 ? '✓' : '!' }),
         guiEl('div', {}, [guiEl('b', { text: statusLabel }), guiEl('span', { text: `${currentTurn == null ? '현재 대화 턴 확인 불가' : `현재 ${currentTurn}턴 · 저장 대기 ${pending}턴`} · 정본 기억 ${refs.length}개` })]),
-        guiEl('button', { class: 'btn btn--sm', type: 'button', text: '상태 자세히', onClick: () => { openApprovedStateDialog(); } })
+        guiEl('div', { class: 'cluster' }, [
+          guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: '상태 점검 및 자동 복구', onClick: () => { void openLibraMemoryMaintenanceDialog(); } }),
+          guiEl('button', { class: 'btn btn--sm', type: 'button', text: '상태 자세히', onClick: () => { openApprovedStateDialog(); } })
+        ])
       ]),
       guiEl('div', { class: 'spread' }, [
         guiEl('article', { class: 'leaf' }, [
@@ -92692,6 +93108,7 @@ advanced
       guiEl('div', {}, [guiEl('b', { text: '정본 기억 관리' }), guiEl('p', { text: '재분석은 원문 재분석 화면에서 실행합니다. 교정용 복사본과 기존 후보는 검토 후 별도 승인합니다.' })]),
       guiEl('div', { class: 'cluster' }, [
         guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: '기억 생성 구간 선택', onClick: () => void showCanonicalRangeDrawer('missing') }),
+        guiEl('button', { class: 'btn btn--sm', type: 'button', text: '상태 점검 및 자동 복구', onClick: () => void openLibraMemoryMaintenanceDialog() }),
         guiEl('button', { class: 'btn btn--sm', type: 'button', text: '버전 · 실행 기록', onClick: () => { Gui.worldManagerCanonicalMemoryFocus = null; void showCanonicalVariantDialog(Number(Gui.canonicalReaderSelected?.turnRange?.start || 0)); } }),
         guiEl('button', { class: 'btn btn--sm', type: 'button', text: '복구 · 재구축', onClick: () => selectBookSettingsRoomSection('recovery') })
       ])
@@ -93160,11 +93577,12 @@ advanced
           if (targetPage === 'people') { event.preventDefault(); bookSelectPeopleSection(manage ? 'characters' : 'profile'); return; }
           if (targetPage === 'world') { event.preventDefault(); bookSelectWorldSection(manage ? 'details' : 'guide'); return; }
         }
-        const action = event.target.closest('.topbar [data-open],.page-head [data-open]');
+        const action = event.target.closest('.topbar [data-open],.page-head [data-open],[data-open="dlg-maintenance"],[data-action="maintenance"]');
         if (!action) return;
         event.preventDefault();
-        const id = action.dataset.open;
-        if (id === 'dlg-range') void showCanonicalRangeDrawer('missing');
+        const id = action.dataset.open || (action.dataset.action === 'maintenance' ? 'dlg-maintenance' : '');
+        if (id === 'dlg-maintenance') void openLibraMemoryMaintenanceDialog();
+        else if (id === 'dlg-range') void showCanonicalRangeDrawer('missing');
         else if (id === 'drawer-versions') { Gui.worldManagerCanonicalMemoryFocus = null;void showCanonicalVariantDialog(Number(Gui.canonicalReaderSelected?.turnRange?.start||0)); }
         else if (id === 'drawer-evidence') bookSelectMemorySection('context');
         else if(id==='dialog-state')openApprovedStateDialog();
@@ -94502,6 +94920,9 @@ advanced
     async stopEmbeddingVectorRebuild() { return await LibraMemoryCore.stopEmbeddingRebuild(); },
     async retryFailedEmbeddingVectors() { return await LibraMemoryCore.retryFailedEmbeddingRebuild(); },
     async deleteQuarantinedEmbeddingVectors() { return await LibraMemoryCore.cleanupQuarantinedVectors(true); },
+    async inspectMemoryMaintenance() { return await inspectLibraMemoryMaintenance(); },
+    async runMemoryMaintenance(mode = 'auto', options = {}) { return await runLibraMemoryMaintenance(mode, options); },
+    async openMemoryMaintenanceDialog() { return await openLibraMemoryMaintenanceDialog(); },
     async retryFailedMemoryAnalysis(options = {}) { return await LibraMemoryCore.startFailedRetry(options); },
     async exportLibraScope() { return await LibraMemoryCore.exportCurrentScope(); },
     async deleteLibraScope() { return await LibraMemoryCore.deleteCurrentScope(); },
