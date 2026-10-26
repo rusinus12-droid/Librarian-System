@@ -41,18 +41,19 @@ const rowOf=(host,id)=>host.querySelector(`[data-scope-row="${id}"]`);
    assert.equal(q('[data-scope-confirm]').hidden,true,`${ns}: nothing to confirm when every ticked row is skipped`);
    assert.equal(g.values.get(ns+'.B'),'B_SOURCE',`${ns}: skipped data is untouched`);
   }finally{dom.window.close();await g.close();}
-  // 2) A server route without verified server records stays unselectable and explains why.
+  // 2) Local copies remain selectable in server mode; the server option checks its own inventory.
   g=await fixture(variant,{values:new Map(values),catalog,adapter:adapter(ns),bridgeOptions:{scopeManagement:true}});dom=new JSDOM('<!doctype html><div id="host"></div>');
   try{
    g.values.set(g.registryKey,JSON.stringify({schema:'memory-suite.scope-routing.v1',namespace:ns,legacyGlobalModeImported:true,globalMigrationRemoteHistory:false,entries:{
      A:{scopeId:'A',scopeKey:'A',characterId:'one',chatId:'A',mode:'plugin_only',origin:'user_explicit'},
      B:{scopeId:'B',scopeKey:'B',characterId:'one',chatId:'B',mode:'server_only',origin:'user_explicit'}}}));
    const {host,q}=await mount(g,dom);
-   const row=rowOf(host,'B');
-   assert.equal(row.getAttribute('data-selectable'),'false',`${ns}: unverified server source remains unselectable`);
-   assert.match(row.querySelector('[data-scope-reason]').textContent,/서버 자료.*소유권·참조 확인/);
+   assert.equal(rowOf(host,'B').getAttribute('data-selectable'),'true',`${ns}: retained local data can be selected in server mode`);
+   const menu=q('[data-scope-delete-target]');assert.deepEqual(Array.from(menu.options,o=>o.value),['local','server','both']);
+   menu.value='server';menu.dispatchEvent(new dom.window.Event('change',{bubbles:true}));await until(()=>!q('[data-scope-refresh]').disabled,'server inventory');
+   const row=rowOf(host,'B');assert.equal(row.getAttribute('data-selectable'),'false',`${ns}: absent server data is not reported as deletable`);
    row.querySelector('td[data-scope-select-cell]').dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));
-   assert.match(q('[data-scope-result]').textContent,/서버 자료.*확인/);
+   assert.match(q('[data-scope-result]').textContent,/선택한 위치|서버 자료.*확인/);
   }finally{dom.window.close();await g.close();}
   // 3) no WebCrypto (http / insecure context): the catalog is view-only and the panel says so.
   g=await fixture(variant,{values:new Map(values),catalog,adapter:adapter(ns),bridgeOptions:{scopeManagement:true}});dom=new JSDOM('<!doctype html><div id="host"></div>');

@@ -10,7 +10,13 @@ module.exports = ({ snapshot, getRepository, backup, canStart, getProtection, on
   let busy = false;
   const inspect = async (principal, body) => {
     const view = await snapshot(principal, { scopeKey:body.scopeKey, dataInstanceId:body.dataInstanceId, epoch:body.epoch });
-    if (!view.complete || !view.inventoryComplete || !view.scopeVerified) fail('FLASHBACK_SCOPE_DELETE_INCOMPLETE');
+    if (!view.complete || !view.inventoryComplete || !view.scopeVerified) {
+      // Absence must come from a complete physical live-key inventory, not a
+      // failed manifest read. It still permits pruning this scope's registry row.
+      const repo=getRepository(),prefix=`vector_rag_memory:scope:${view.scopeHash}:`,vectorPrefix=`vector_rag_memory:local-vector-shard:v1:${view.scopeHash}:`;
+      if(repo.list('plugin',prefix,{liveOnly:true}).records.length||repo.list('local',vectorPrefix,{liveOnly:true}).records.length)fail('FLASHBACK_SCOPE_DELETE_INCOMPLETE');
+      view.records=[];
+    }
     const protection = getProtection(body.scopeKey);
     if (protection?.pinned || protection?.referenceCount > 0 || protection?.classification === 'referenced_ancestor') fail('FLASHBACK_SCOPE_DELETE_PROTECTED');
     const repo = getRepository();
@@ -50,7 +56,7 @@ module.exports = ({ snapshot, getRepository, backup, canStart, getProtection, on
     try {
       let current = await inspect(principal, body);
       if (current.fingerprint !== plan.fingerprint) fail('FLASHBACK_SCOPE_DELETE_SOURCE_CHANGED_BEFORE_BACKUP');
-      const key = current.view.records.find(r => r.name === 'manifest:v2').key;
+      const key = `vector_rag_memory:scope:${current.view.scopeHash}:manifest:v2`;
       repo.writerFence.verify(key, body.fence);
       const saved = await backup('manual', 'pre-flashback-scope-delete');
       if (saved?.ok !== true || !saved.result?.id) fail('FLASHBACK_SCOPE_DELETE_BACKUP_UNVERIFIED');
@@ -63,7 +69,7 @@ module.exports = ({ snapshot, getRepository, backup, canStart, getProtection, on
         mutations.push({ kind:'set', space:'plugin', key:registryKey, value:typeof current.registry.value === 'string' ? JSON.stringify(value) : value,
           expectedRevision:current.registry.revision, expectedDigest:current.registry.digest, expectedExists:true, expectedTombstone:false });
       }
-      repo.applyConditionalBatch(mutations, { fence:body.fence, operationId:'flashback-scope-delete:' + plan.planId,
+      if(mutations.length)repo.applyConditionalBatch(mutations, { fence:body.fence, operationId:'flashback-scope-delete:' + plan.planId,
         assertTransactionCurrent:()=>repo.writerFence.verify(key,body.fence) });
       if (current.view.records.some(r => { const value = repo.get(r.space,r.key); return value.exists || !value.tombstone; })) fail('FLASHBACK_SCOPE_DELETE_READBACK_FAILED');
       onDeleted(plan.scopeKey);

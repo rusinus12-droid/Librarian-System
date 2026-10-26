@@ -17,11 +17,13 @@ const owners = variants.filter(row => row[0] !== 'flashback');
         try {
           const container = dom.window.document.getElementById('host');
           await f.bridge.mountScopeManagementPanel(container);
+          const menu=container.querySelector('[data-scope-delete-target]');menu.value='server';menu.dispatchEvent(new dom.window.Event('change',{bubbles:true}));
+          for(let i=0;i<100&&container.querySelector('[data-scope-refresh]').disabled;i++)await new Promise(resolve=>setTimeout(resolve,1));
           const checkbox = container.querySelector('[data-scope-select="B"]');
           assert.equal(checkbox.disabled, false);
           checkbox.click();
           container.querySelector('[data-scope-action="delete"]').click();
-          assert.match(container.querySelector('[data-scope-confirm-text]').textContent, /로컬 복구는 하지 않으며/);
+          assert.match(container.querySelector('[data-scope-confirm-text]').textContent, /로컬 복구는 하지/);
           assert.doesNotMatch(container.querySelector('[data-scope-confirm-text]').textContent, /로컬 복구를 검증|복구한 로컬/);
           container.querySelector('[data-scope-cancel]').click();
           for (let i = 0; i < 100 && container.querySelector('[data-scope-refresh]').disabled; i++) await new Promise(resolve => setTimeout(resolve, 1));

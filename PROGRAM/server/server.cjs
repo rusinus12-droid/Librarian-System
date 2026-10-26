@@ -3652,11 +3652,11 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           const catalog=readScopeCatalog(),rows=catalog.namespaces?.[namespace]||[],old=rows.find(row=>row.scopeId===body.scopeId);
           if(scopeCatalogDegraded)throw Object.assign(Error('scope_catalog_degraded_delete_blocked'),{statusCode:409});
           const selectedKeys=new Set((body.mutations||[]).map(row=>row.space+'\n'+row.key));
-          if(rows.some(row=>row.scopeId!==body.scopeId&&(row.members||[]).some(member=>selectedKeys.has(member.space+'\n'+member.key))))throw Object.assign(Error('owner_scope_copy_delete_overlapping_catalog'),{statusCode:409});
+          if(rows.some(row=>row.scopeId!==body.scopeId&&(row.members||[]).some(member=>selectedKeys.has(member.space+'\n'+member.key)&&!(member.sharedRecord===true&&(body.mutations||[]).some(m=>m.space===member.space&&m.key===member.key&&m.kind==='set')))))throw Object.assign(Error('owner_scope_copy_delete_overlapping_catalog'),{statusCode:409});
           // Preserve every existing scope, pin and reference edge. Owners may
           // register only their selected scope's exact conditional members.
           const indexed={...(old||{}),scopeId:body.scopeId,scopeKey:body.scopeKey||body.scopeId,baseClassification:'active',coverageComplete:true,
-            members:(body.mutations||[]).map(row=>({space:row.space,key:row.key})),links:old?.links||[]};
+            members:(body.mutations||[]).map(row=>({space:row.space,key:row.key,sharedRecord:row.kind==='set'})),links:old?.links||[]};
           replaceNamespaceScopeIndex(namespace,rows.filter(row=>row.scopeId!==body.scopeId).concat(indexed));
           return sendJson(request,response,200,createScopeDeletePlan({...body,namespace},directServerDelete?{namespace,storageMode:'server_only'}:{}));
         }
