@@ -4,7 +4,10 @@
  */
 const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const options = rawOptions && typeof rawOptions === 'object' ? rawOptions : {};
+  const localOnlyOwner = options.storagePolicy === 'local_only';
   const managerOnly = options.storagePolicy === 'manager_only';
+  const managerOnlyError = () => Object.assign(new Error('MEMORY_SUITE_MANAGER_ONLY_POLICY'), {code:'MEMORY_SUITE_MANAGER_ONLY_POLICY'});
+  const localOnlyError = () => Object.assign(new Error('MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY'), {code:'MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY'});
   const namespace = String(options.namespace || '').trim().toLowerCase();
   const pluginId = String(options.pluginId || namespace || 'plugin').trim();
   const pluginVersion = String(options.pluginVersion || '').trim();
@@ -182,8 +185,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     clearTimeout(timer);
     lifecycle.timers.delete(timer);
   };
-  const autoMigratePlugin = options.autoMigratePlugin !== false;
-  const autoMigrateLocal = options.autoMigrateLocal !== false;
+  const autoMigratePlugin = !localOnlyOwner && !managerOnly && options.autoMigratePlugin !== false;
+  const autoMigrateLocal = !localOnlyOwner && !managerOnly && options.autoMigrateLocal !== false;
   const migrationConcurrency = Math.max(1, Math.min(4, Number(options.migrationConcurrency || 2) || 2));
   const migrationRetryMs = Math.max(5000, Math.min(10 * 60 * 1000, Number(options.migrationRetryMs || 30000) || 30000));
   const currentScopeProvider = typeof options.currentScopeProvider === 'function' ? options.currentScopeProvider : null;
@@ -193,8 +196,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   // Opt-in only: the plugin's resolver must be able to classify global/shared
   // keys and explicit scope-key records correctly when currentScope is null.
   const preResolveKeyScope = options.preResolveKeyScope === true;
-  const scopeRoutingEnabled = options.scopeRouting !== false;
-  const startupDiagnosticsEnabled = options.startupDiagnostics !== false;
+  const scopeRoutingEnabled = !managerOnly && options.scopeRouting !== false;
+  const startupDiagnosticsEnabled = !localOnlyOwner && !managerOnly && options.startupDiagnostics !== false;
   const scopeCacheMs = Math.max(0, Math.min(10000, Number(options.scopeCacheMs || 0) || 0));
   const sharedRouteModeRaw = String(options.sharedRouteMode || MODE_MIRROR);
   // Optional owner semantic validation runs only after the SDK has restored and
@@ -924,7 +927,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!force && state.transientMode && VALID_MODES.has(state.transientMode)) return { ...state.config, mode: state.transientMode };
     if (!force && Date.now() - Number(state.config.at || 0) < configCacheMs) return state.config;
     const rawMode = (await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY)).trim().toLowerCase();
-    const mode = state.transientMode && VALID_MODES.has(state.transientMode) ? state.transientMode : normalizeMode(rawMode);
+    const mode = localOnlyOwner || managerOnly ? MODE_PLUGIN_ONLY : state.transientMode && VALID_MODES.has(state.transientMode) ? state.transientMode : normalizeMode(rawMode);
     const rawUrl = await getArgumentValue(urlArguments, defaultUrl);
     const url = normalizeServerUrl(rawUrl);
     if (state.config.url !== url) resetBootstrapCache();
@@ -1345,6 +1348,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const request = (...args) => withOwnerOperation({kind:'storage_operation',operation:'request'}, () => requestImpl(...args));
   const requestImpl = async (method, route, body = null, requestOptions = {}) => {
+    if (localOnlyOwner && !(method === 'GET' && (route.startsWith('/v1/kv/get?') || route.startsWith('/v1/kv/keys?') || route.startsWith('/v1/integrity?')))) throw localOnlyError();
     const connection = await bootstrap(requestOptions.forceBootstrap === true, requestOptions.allowPluginOnly === true);
     if (!connection) throw new Error('memory_suite_server_not_enabled');
     const bindingGeneration = requestOptions.bindingGeneration ?? dataBinding.generation;
@@ -3982,6 +3986,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
   const readScopeModeValue = async (scopeInput = null, force = false) => {
     const scope = normalizeScopeDescriptor(scopeInput || await resolveCurrentScope(force));
+    if (localOnlyOwner) return { scope, mode: MODE_PLUGIN_ONLY, modeLabel: modeLabel(MODE_PLUGIN_ONLY), explicit: true, modeOrigin: 'owner_policy', storagePolicy: 'local_only', localOnly: true };
     if (!scope.scopeId) return { scope, mode: MODE_PLUGIN_ONLY, modeLabel: modeLabel(MODE_PLUGIN_ONLY), explicit: false };
     // The global entry itself is read directly, never through inheritance.
     if (isGlobalScopeId(scope.scopeId)) {
@@ -5314,6 +5319,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const anyServerScopedMode = async () => {
+    if (localOnlyOwner) return false;
     const registry = await loadScopeRegistry(false, false);
     if (Object.values(registry.entries || {}).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY)) return true;
     // Scoped reads already admit an unconsumed legacy global argument. Shared
@@ -5554,6 +5560,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (!String(key).startsWith(prefix) || !/^[^:]+:e\d+:t[1-9]\d*:[a-z0-9]+$/i.test(String(key).slice(prefix.length)))
         throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_ROUTE_DENIED');
     }
+    if (localOnlyOwner) { return typeof legacyGet === 'function' ? await legacyGet() : null; }
     const currentMode = (await readScopeMode(operationScope, false)).mode;
     if (captureRepair != null && currentMode !== MODE_MIRROR) throw new Error('MEMORY_SUITE_CAPTURE_REPAIR_ROUTE_DENIED');
     if (currentMode === MODE_PLUGIN_ONLY) return typeof legacyGet === 'function' ? await legacyGet() : null;
@@ -5689,6 +5696,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const scopedSetImpl = async (space, key, value, legacySet = null, operationOptions = {}) => {
+    if (localOnlyOwner) { return typeof legacySet === 'function' ? await legacySet(value) : false; }
     const operationScope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false));
     const currentMode = (await readScopeMode(operationScope, false)).mode;
     if (currentMode === MODE_PLUGIN_ONLY) return typeof legacySet === 'function' ? await legacySet(value) : false;
@@ -5721,6 +5729,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const scopedRemoveImpl = async (space, key, legacyGet = null, legacySet = null, legacyRemove = null, operationOptions = {}) => {
+    if (localOnlyOwner) { return typeof legacyRemove === 'function' ? await legacyRemove() : false; }
     const operationScope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false));
     const currentMode = (await readScopeMode(operationScope, false)).mode;
     if (currentMode === MODE_PLUGIN_ONLY) return typeof legacyRemove === 'function' ? await legacyRemove() : false;
@@ -5745,6 +5754,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const scopedKeysImpl = async (space, prefix = '', legacyKeysFn = null, operationOptions = {}) => {
+    if (localOnlyOwner) {
+      const rows = typeof legacyKeysFn === 'function' ? await legacyKeysFn() : [];
+      const keys = [...new Set((Array.isArray(rows) ? rows : []).map(String).filter(key=>key && key.startsWith(String(prefix || ''))))];
+      return keys;
+    }
     const currentScope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false));
     const currentMode = (await readScopeMode(currentScope, false)).mode;
     const legacy = typeof legacyKeysFn === 'function' ? await legacyKeysFn() : [];
@@ -7642,6 +7656,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const assertStorageTransitionComplete = async (scope, modeState) => {
     if (storageTransition || modeState?.transition || modeState?.migrationRequired) throw transitionBusyError();
+    if (localOnlyOwner) return;
     await loadPersistedSyncJob();
     const job = getSyncJob();
     // An aggregate migration owns every scope, including scopes discovered
@@ -9252,11 +9267,24 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       selected={mode:MODE_PLUGIN_ONLY,origin:'owner_observed_local_default'};ownerLocalWitness=local.binding;
     }
     if(!selected||selected.removed||selected.mode===MODE_MIRROR&&!ownerRead||selected.origin==='transition_pending')readonlyRouteFail('READ_ROUTE_MODE_UNAVAILABLE');
-    const reset=await plugin.getItem(resetChoiceKey);if(reset!=null&&reset!=='')readonlyRouteFail('READ_ROUTE_RESET_UNAVAILABLE');
+    const reset=await plugin.getItem(resetChoiceKey);let resetWitness=null;
+    if(reset!=null&&reset!==''){
+      // A saved, already accepted reset choice is not a pending reset. Only the
+      // native owner may reuse its certified server binding; observing a route
+      // must never bootstrap, accept a reset or expose a retained local copy.
+      const connection=state.bootstrap.value;
+      let candidate;try{candidate=typeof reset==='string'?JSON.parse(reset):reset;}catch(_){}
+      if(!ownerRead||selected.mode===MODE_PLUGIN_ONLY||!resetPreferenceMatches(candidate,connection)
+        ||dataBinding.certified!==true||dataBinding.dataInstanceId!==connection.dataInstanceId
+        ||dataBinding.url!==(connection.requestedUrl||connection.url)
+        ||normalizeServerUrl(await getArgumentValue(urlArguments,defaultUrl))!==(connection.requestedUrl||connection.url)
+        ||deletedScopesForResetChoice(candidate).includes(scope.scopeKey))readonlyRouteFail('READ_ROUTE_RESET_UNAVAILABLE');
+      resetWitness=JSON.stringify(candidate);
+    }
     const currentDevice=await rawDeviceStorage({strict:true});
     if(readonlyRouteFence()!==fence||rawPluginStorage()!==plugin||currentDevice!==device)readonlyRouteFail('READ_ROUTE_CHANGED');
     // Includes only relevant routing rows; unrelated registry entries are harmless.
-    return {scope,mode:selected.mode,scopeRow:stored,globalRow:explicit?null:global,modePublication,fence,plugin,device,ownerLocalWitness};
+    return {scope,mode:selected.mode,scopeRow:stored,globalRow:explicit?null:global,modePublication,fence,plugin,device,ownerLocalWitness,resetWitness};
   };
   const readonlyRouteState=input=>{
     readonlyRouteExact(input,['handle','requestId']);const s=readonlyRouteHandles.get(input.handle);
@@ -9282,7 +9310,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const observeOwnerReadonlyRoute=input=>observeReadRoute(input,true);
   const assertReadonlyRouteCurrent=async input=>{
     const s=readonlyRouteState(input);if(s.pending)readonlyRouteFail('READ_ROUTE_BUSY');s.pending=true;
-    try{const current=await readReadonlyRoute(s.identity,s.ownerRead);readonlyRouteState(input);const binding=v=>JSON.stringify([v.scope,v.mode,v.scopeRow,v.globalRow,v.modePublication,v.fence,v.ownerLocalWitness]);
+    try{const current=await readReadonlyRoute(s.identity,s.ownerRead);readonlyRouteState(input);const binding=v=>JSON.stringify([v.scope,v.mode,v.scopeRow,v.globalRow,v.modePublication,v.fence,v.ownerLocalWitness,v.resetWitness]);
       if(current.plugin!==s.value.plugin||current.device!==s.value.device||binding(current)!==binding(s.value))readonlyRouteFail('READ_ROUTE_CHANGED');
       return Object.freeze({status:'request-local-current',semanticModeEpoch:null});
     }catch(error){s.active=false;readonlyRouteActive.delete(s);throw error;}finally{s.pending=false;}
@@ -9400,6 +9428,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return { mode, raw, binding: JSON.stringify([scope.scopeId, stored || null, global || null, dataBinding.generation, ...(freshLocalAuthority ? ['fresh_local',freshLocalAuthority.witness] : [])]) };
   };
   /* END READ ONLY LOCAL HEALTH */
+
+  const rejectLocalOwnerManagement = () => withOwnerOperation({kind:'local_only_policy'},async()=>{throw localOnlyError();});
+  const localOwnerMode = async scope => ({scope:normalizeScopeDescriptor(scope || await resolveCurrentScope(true)),mode:MODE_PLUGIN_ONLY,modeLabel:modeLabel(MODE_PLUGIN_ONLY),explicit:true,modeOrigin:'owner_policy',localOnly:true,storagePolicy:'local_only'});
+  const localOwnerSetMode = async mode => {if(mode !== MODE_PLUGIN_ONLY)throw localOnlyError();return {changed:false,from:MODE_PLUGIN_ONLY,to:MODE_PLUGIN_ONLY,effectiveMode:MODE_PLUGIN_ONLY};};
+  const localOwnerConnection = async options => {const row=await localOwnerMode(options?.scope);return {...row,namespace,pluginId,supportedStorageModes:[MODE_PLUGIN_ONLY],serverStorage:false,recoveryRequired:false,transition:null,migrationRequired:false,syncJob:null,executionPolicy:scopeExecutionPolicyFromModeState(row),status:{state:'local_only',mode:MODE_PLUGIN_ONLY,localOnly:true,recoveryRequired:false}};};
 
   const bridge = Object.freeze({
     namespace,
@@ -9588,7 +9621,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       lastManagementResult: state.management.lastResult,
       migration: { plugin: { ...state.migration.plugin }, local: { ...state.migration.local } },
       syncJob: getSyncJob()
-    })
+    }),
+    ...(localOnlyOwner ? {
+      storagePolicy:'local_only', localOnly:true, supportedStorageModes:Object.freeze([MODE_PLUGIN_ONLY]), serverStorage:false,
+      getStorageModeContract:()=>Object.freeze({schema:'memory-suite.storage-mode-contract.v2',operationalModes:Object.freeze([MODE_PLUGIN_ONLY]),storagePolicy:'local_only',localOnly:true,legacyMirrorReadable:false,mirrorSelectable:false}),
+      getMode:async()=>MODE_PLUGIN_ONLY,getScopeMode:localOwnerMode,getConnectionSettings:localOwnerConnection,
+      getGlobalMode:async()=>({set:false,mode:MODE_PLUGIN_ONLY,storagePolicy:'local_only'}),
+      setMode:localOwnerSetMode,setScopeMode:async(_scope,mode)=>localOwnerSetMode(mode),setGlobalMode:localOwnerSetMode,clearGlobalMode:rejectLocalOwnerManagement,
+      synchronizeNow:rejectLocalOwnerManagement,startSynchronizationJob:rejectLocalOwnerManagement,startConnectionConfigurationJob:rejectLocalOwnerManagement,startRestoreJob:rejectLocalOwnerManagement,
+      resumePendingSyncJob:async()=>({skipped:true,reason:'local_only_owner_policy'}),getSyncJob:()=>null,
+      restorePluginStorage:rejectLocalOwnerManagement,restoreServerSpaceToLegacy:rejectLocalOwnerManagement,
+      configureConnection:rejectLocalOwnerManagement,setServerUrl:rejectLocalOwnerManagement,
+      prepareServerScopeDeletion:rejectLocalOwnerManagement,deletePluginStorageAfterServerVerification:rejectLocalOwnerManagement,
+      migrateWholeData:rejectLocalOwnerManagement,retireNativeBranchLocalTargetData:rejectLocalOwnerManagement,acceptServerReset:rejectLocalOwnerManagement,
+      mountConnectionPanel:rejectLocalOwnerManagement,openManagementDialog:rejectLocalOwnerManagement,
+      status:()=>({state:'local_only',mode:MODE_PLUGIN_ONLY,localOnly:true,storagePolicy:'local_only',serverStorage:false,syncJob:null,transition:null,migrationRequired:false})
+    } : {})
   });
   scheduleManagementRegistration();
   if (startupDiagnosticsEnabled) {

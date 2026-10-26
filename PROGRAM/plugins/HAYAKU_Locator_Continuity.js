@@ -14908,7 +14908,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         character = await strict('character',()=> (direct.getCharacter||direct.getChar).call(direct));
         selection = [Number(character.chatPage)||0]; chat = character.chats?.[selection[0]] || character.chats?.[0] || character.chat;
       }
-      const database = await strict('database',()=>databaseHost.getDatabase());
+      // getDatabase() also includes plugin persistence. Our own verified writes
+      // and independent plugins change that data during recall. Bind the host
+      // inputs used by recall, while retaining the complete selected transcript
+      // and character below. Storage/settings authority is bound separately.
+      const databaseFields=['aiModel','subModel','maxContext','maxResponse','selectedPersona','personas'];
+      const databaseValue = await strict('database',()=>databaseHost.getDatabase(databaseFields));
+      const database = Object.fromEntries(databaseFields.map(key=>[key,databaseValue[key]??null]));
       if (!character?.chaId || !chat?.id || !Array.isArray(chat.message)) throw Error('HAYAKU_READSET_HOST_UNAVAILABLE');
       if(indexed){const verified=await Promise.all([strict('verifyCharacterIndex',()=>indexed.getCurrentCharacterIndex()),strict('verifyChatIndex',()=>indexed.getCurrentChatIndex())]);
         if(JSON.stringify(selection)!==JSON.stringify(verified))throw Error('HAYAKU_READSET_SCOPE_CHANGED');}
