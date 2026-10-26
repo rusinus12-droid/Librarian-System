@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-26T14:03:06.005Z",
+  "generatedAt": "2026-10-26T14:17:37.297Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4020,8 +4020,8 @@
       "bytes": 1649278
     },
     "plugins/LIBRA.js": {
-      "sha256": "3e429a077abab523c2c2da6277de20dc8b22e989974acdb7998d772705c5182c",
-      "bytes": 6681446
+      "sha256": "1e99a8bfbba5e183ad47c43d0cfd3b191845b1b9f1a8a0178706872261fa69c5",
+      "bytes": 6681583
     },
     "plugins/RETRACE.js": {
       "sha256": "04f3a6defddab22b6f544acbb229012cd442672acdb44cb4f3a5aaf79ced4979",
@@ -7970,6 +7970,10 @@
     "tests/libra_lens_name_boundary_runtime_test.cjs": {
       "sha256": "9c188b3778261ee47a4bb02b162e2e17b75b8f5a840386d6b4f26a6f7a6e36dd",
       "bytes": 9343
+    },
+    "tests/libra_lens_preflight_allowance_test.cjs": {
+      "sha256": "ad419ad4f0fc0a8d9ffd5ac626245d4d0af5a3defcb9761fce75692803fd8f61",
+      "bytes": 4534
     },
     "tests/libra_lens_semantic_recall_runtime_test.cjs": {
       "sha256": "501da6766196d4b4470a00b56eef5377d6a9ee352d953b31c52b829a453b5557",

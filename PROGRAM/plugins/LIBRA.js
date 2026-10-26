@@ -27464,15 +27464,16 @@ function summarizeAgentCbsTag(rawContent) {
     const inputByteBound=MemorySuiteExecutionContract.tokenBound(inputText);
     const inputTokensEstimated=Math.ceil(estimateContextTokensFromText(inputText));
     // A byte upper bound is not proof that this model's tokenizer exceeds its context.
-    const contextRemaining=taskKind==='canonical_memory' ? null : modelContextLimit>0?Math.max(0,modelContextLimit-inputByteBound-256):null;
+    const isMemoryTask=['canonical_memory','lens_analysis','micro_memory'].includes(taskKind);
+    const contextRemaining=isMemoryTask ? null : modelContextLimit>0?Math.max(0,modelContextLimit-Math.max(inputTokensEstimated,Math.ceil(inputByteBound/4))-256):null;
     const preflight={schema:'libra.generation_preflight.v1',stage:stageName,provider,model:preset.model,presetName:name,
       contextWindow:modelContextLimit||null,contextSource:mode===RISUAI_AUX_MODE?'host_managed':Number(preset.context_window)>0?'user_configured':metadataCurrent&&Number(preset.catalog_context_window)>0?'model_catalog':'unknown',
       inputChars:inputText.length,inputByteBound,inputTokensEstimated,inputTokensMeasured:null,inputEstimateAuthority:'estimate_only',
       requestedOutputTokens:Number(effectiveOptions.maxTokens),modelOutputLimit,contextRemaining,
-      status:taskKind==='canonical_memory'&&modelContextLimit>0&&inputTokensEstimated+Number(effectiveOptions.maxTokens)+256>modelContextLimit?'estimated_context_pressure':'ready'};
+      status:isMemoryTask&&modelContextLimit>0&&inputTokensEstimated+Number(effectiveOptions.maxTokens)+256>modelContextLimit?'estimated_context_pressure':'ready'};
     Runtime.lastGenerationInvocation={runId:options.runId||'',phase:'preflight',submitted:false,preflight,at:Date.now()};
     const appliedBounds=[Number(effectiveOptions.maxTokens)];
-    if(taskKind==='canonical_memory' && Number(preset.max_tokens)>0)appliedBounds.push(Number(preset.max_tokens));
+    if(isMemoryTask && Number(preset.max_tokens)>0)appliedBounds.push(Number(preset.max_tokens));
     if(modelOutputLimit!=null)appliedBounds.push(modelOutputLimit);
     if(contextRemaining!=null)appliedBounds.push(contextRemaining);
     effectiveOptions.maxTokens=Math.floor(Math.min(...appliedBounds));
@@ -27595,7 +27596,7 @@ function summarizeAgentCbsTag(rawContent) {
       };
     }
     if (!result.content) {
-      const thinkingReason = taskKind==='canonical_memory' && result.completionEnvelope?.state==='truncated' ? 'output_limit_before_final' : result.reasoningOnly ? 'reasoning_only' : thinkingOnlyReason(result.raw);
+      const thinkingReason = isMemoryTask && result.completionEnvelope?.state==='truncated' ? 'output_limit_before_final' : result.reasoningOnly ? 'reasoning_only' : thinkingOnlyReason(result.raw);
       rememberProviderError(
         { stageName, presetName: name, provider, model: preset.model },
         thinkingReason || 'empty_completion'
@@ -95017,6 +95018,7 @@ advanced
     debugGuiSettingsState() {
       return redactPublicSecrets(safeClone({ state: Gui.state, dirty: Gui.dirty, basisHash: Gui.settingsBasisHash, lastError: Gui.lastSettingsSaveError || '' }));
     },
+    debugRuntimeForDisplay: () => safeClone(runtimeForDisplay()),
     async debugUnifiedLoreMaterial({ candidates = [], activeLore = [], currentInput = '', terminalScene = '', supportText = '', consumers = ['response_recall'], settings = {} } = {}) {
       const snapshot = {
         candidates: Array.isArray(candidates) ? candidates : [],
