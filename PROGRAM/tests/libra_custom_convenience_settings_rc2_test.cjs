@@ -157,7 +157,7 @@ check('General diagnostics loads analysis history only after disclosure opens', 
 });
 
 check('Retired composer remains absent while canonical Book memory settings stay reachable',()=>{
- require('./helpers/libra_active_book_routes.cjs')(source);const settings=extract(source,'buildApprovedMockupSettingsPanel');assert.match(settings,/if\(groupId==='mem'\)/);assert.match(settings,/LibraMemoryCore\.getSettings\(\)/);assert.match(settings,/settingsReadback:'LibraMemoryCore'/);assert.match(settings,/memorySetting:key/);assert.match(settings,/saveSettingsRoom\(\)/);assert.doesNotMatch(source,/const showLibraInputWriterComposer\s*=/);
+ require('./helpers/libra_active_book_routes.cjs')(source);const settings=extract(source,'buildApprovedMockupSettingsPanel');assert.match(settings,/if\(groupId==='mem'\)/);assert.match(settings,/LibraMemoryCore\.getSettings\(\)/);assert.match(settings,/settingsReadback:'LibraMemoryCore'/);assert.match(settings,/memorySetting:key/);assert.match(source,/saveSettingsRoom\(\)/);assert.doesNotMatch(source,/const showLibraInputWriterComposer\s*=/);
 });
 
 check('Settings retains references, memory, storage, recovery, state and diagnostics in original destinations',()=>{

@@ -58,9 +58,19 @@ assert.match(settingsLayout, /guiEl\('nav',\{class:'tabs',role:'tablist','aria-l
 assert.match(settingsLayout, /'aria-selected':String\(active===id\)/);
 const settingsSections = new Set(Array.from(settingsLayout.matchAll(/sections:\[([^\]]*)\]/g))
   .flatMap(match => Array.from(match[1].matchAll(/'([a-z_]+)'/g), item => item[1])));
-for (const id of ['references', 'memory', 'state', 'server', 'recovery', 'transfer', 'general']) {
+for (const id of ['references', 'memory', 'state', 'scopes', 'recovery', 'transfer', 'general']) {
   assert.ok(settingsSections.has(id), `missing settings category: ${id}`);
 }
+assert.equal(settingsSections.has('server'), false,
+  'Settings storage category removes duplicate server entry button; dedicated sidebar server navigation remains authoritative');
+assert.match(settingsLayout, /sections:\['scopes','recovery','transfer'\]/,
+  'Settings store category opens scope management by default and keeps user inside settings');
+
+const navFeedback = between('const syncGuiNavigationFeedback = () =>', 'const cancelQueuedGuiFrame =');
+assert.match(navFeedback, /scopes:'store'/, 'navigation feedback maps scopes to store settings tab');
+
+const sidebarPages = between('const BOOK_SIDEBAR_PAGE_REGISTRY =', 'const BOOK_PAGE_IDS =');
+assert.match(sidebarPages, /id:\s*'server'/, 'dedicated sidebar server connection page remains registered');
 
 // Retired custom-workshop deep links migrate to the memory analyzer route, which
 // authors analysis settings only and never duplicates execution results.
