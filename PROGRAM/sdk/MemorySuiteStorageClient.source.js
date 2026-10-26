@@ -1366,14 +1366,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!connection) throw new Error('memory_suite_server_not_enabled');
     const bindingGeneration = requestOptions.bindingGeneration ?? dataBinding.generation;
     await assertConnectionCurrent(connection, bindingGeneration);
-    const resetEpoch=Number(connection.resetEpochs?.[namespace]||0);
-    const isManagerOperation = managerOnly || route.startsWith('/v1/manager/') || requestOptions.extraHeaders?.['X-Memory-Suite-Manager'] === 'retrace';
-    if(resetEpoch && !isManagerOperation){
-      const choice=await readResetChoice(connection);
-      if(resetReloadRequired || choice?.epoch!==resetEpoch || choice?.url!==(connection.requestedUrl||connection.url)){
-        throw new Error('서버 자료가 초기화 또는 복원되었습니다. 서버 연결 설정에서 서버 자료 사용 또는 로컬 기억 다시 업로드를 선택한 뒤 RisuAI를 새로고침하세요.');
-      }
-    }
     const requestScope = requestOptions.scope && typeof requestOptions.scope === 'object'
       ? requestOptions.scope
       : state.scopeRouting.current;
@@ -1381,6 +1373,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const registeredMode = requestScopeId ? state.scopeRouting.registry?.entries?.[requestScopeId]?.mode : '';
     const transientMode = requestScopeId ? state.scopeRouting.transientModes.get(requestScopeId) : '';
     const requestMode = normalizeMode(requestOptions.storageMode || transientMode || registeredMode || state.config.mode || MODE_PLUGIN_ONLY);
+    const resetEpoch=Number(connection.resetEpochs?.[namespace]||0);
+    const isManagerOperation = managerOnly || route.startsWith('/v1/manager/') || requestOptions.extraHeaders?.['X-Memory-Suite-Manager'] === 'retrace';
+    if(resetEpoch && !isManagerOperation){
+      const choice=await readResetChoice(connection);
+      const serverOnlyPass = requestMode === MODE_SERVER_ONLY && !choice && !resetReloadRequired;
+      if(!serverOnlyPass && (resetReloadRequired || choice?.epoch!==resetEpoch || choice?.url!==(connection.requestedUrl||connection.url))){
+        throw new Error('서버 자료가 초기화 또는 복원되었습니다. 서버 연결 설정에서 서버 자료 사용 또는 로컬 기억 다시 업로드를 선택한 뒤 RisuAI를 새로고침하세요.');
+      }
+    }
     const init = {
       method,
       headers: {
@@ -3542,12 +3543,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const rows = ids.map(scopeId => {
       const row = registry.entries[scopeId];
       if (!scopeId || scopeId.length > 700 || !row || typeof row !== 'object' || Array.isArray(row)
-          || !VALID_MODES.has(row.mode) || row.scopeId !== undefined && row.scopeId !== scopeId
+          || (row.removed ? (row.mode !== undefined && !VALID_MODES.has(row.mode)) : !VALID_MODES.has(row.mode)) || row.scopeId !== undefined && row.scopeId !== scopeId
           || row.scopeKey !== undefined && (typeof row.scopeKey !== 'string' || row.scopeKey.length > 700)
           || row.origin !== undefined && (typeof row.origin !== 'string' || row.origin.length > 100)
           || row.removed !== undefined && typeof row.removed !== 'boolean'
           || row.pendingTargetMode !== undefined && row.pendingTargetMode !== null && !VALID_MODES.has(row.pendingTargetMode)) modePublicationFail('MODE_PUBLICATION_MALFORMED');
-      return [scopeId,row.scopeKey ?? scopeId,row.mode,row.origin ?? '',row.removed === true,
+      return [scopeId,row.scopeKey ?? scopeId,row.mode ?? '',row.origin ?? '',row.removed === true,
         row.pendingTargetMode ?? null,Boolean(row.recoveryRequired)];
     });
     const projection = JSON.stringify([namespace,registry.legacyGlobalModeImported === true,rows]);
@@ -4392,7 +4393,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       blockers.push({code:'routing_registry_malformed',location});return parseScopeRegistry(null);
     }
     for(const [id,row] of Object.entries(value.entries))if(!id || !row || typeof row !== 'object' || Array.isArray(row)
-      || row.scopeId && row.scopeId !== id || !VALID_MODES.has(row.mode))blockers.push({code:'routing_entry_malformed',location,scopeId:id});
+      || row.scopeId && row.scopeId !== id || (row.removed ? (row.mode !== undefined && !VALID_MODES.has(row.mode)) : !VALID_MODES.has(row.mode)))blockers.push({code:'routing_entry_malformed',location,scopeId:id});
     for(const [id,row]of Object.entries(value.entries))try{strictOwnerScopeDescriptor(row,id);}catch(_){blockers.push({code:'routing_entry_identity_malformed',location,scopeId:id});}
     if(blockers.some(row=>row.location===location&&/^routing_/.test(row.code)))return parseScopeRegistry(null);
     return {...value,entries:Object.fromEntries(Object.entries(value.entries).map(([id,row])=>[id,{...row,scopeId:row.scopeId||id}]))};
@@ -9251,15 +9252,24 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // authority for a read-only health check.
       for (const [id, row] of Object.entries(parsed.entries)) {
         if (!id.trim() || !row || typeof row !== 'object' || Array.isArray(row)
-            || typeof row.mode !== 'string' || !VALID_MODES.has(row.mode)
+            || (row.removed ? (row.mode !== undefined && !VALID_MODES.has(row.mode)) : (typeof row.mode !== 'string' || !VALID_MODES.has(row.mode)))
             || (row.scopeId !== undefined && (typeof row.scopeId !== 'string' || row.scopeId !== id))
             || (row.origin !== undefined && typeof row.origin !== 'string')
             || (row.removed !== undefined && typeof row.removed !== 'boolean')) throw new Error('HEALTH_ROUTE_UNVERIFIED');
       }
     }
     const registry = mergeScopeRegistries(null, pluginRaw, deviceRaw);
-    const stored = registry.entries?.[scope.scopeId], global = liveGlobalRow(registry);
-    if (isRemovedScopeRow(stored)) throw new Error('HEALTH_SCOPE_REMOVED');
+    const rawStored = registry.entries?.[scope.scopeId];
+    const stored = isRemovedScopeRow(rawStored) ? null : rawStored;
+    const global = liveGlobalRow(registry);
+    if (state.scopeRouting.transientModes.has(scope.scopeId)) throw new Error('HEALTH_STORAGE_TRANSITION_UNVERIFIED');
+    if (storageTransition || modeConfigurationBusy || (state.syncJob.current && !syncJobTerminal(state.syncJob.current.status))) throw new Error('HEALTH_STORAGE_TRANSITION_UNVERIFIED');
+    if (stored?.origin === 'transition_pending') {
+      if (stored.pendingTargetMode === MODE_SERVER_ONLY || global?.mode === MODE_SERVER_ONLY) {
+        throw new Error('HEALTH_LOCAL_MODE_REQUIRED');
+      }
+      throw new Error('HEALTH_STORAGE_TRANSITION_UNVERIFIED');
+    }
     // Core3 no longer imports/reset-writes legacy mode during ordinary startup.
     // Prove its fresh local default observationally; never default failed or
     // unknown argument reads to local authority, or initialize a registry here.
@@ -9328,6 +9338,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (reset != null && reset !== '') throw new Error('HEALTH_RESET_REVIEW_REQUIRED');
     const explicit = stored && !['inherited','migrated'].includes(String(stored.origin || ''));
     let mode = explicit ? stored.mode : global ? global.mode : stored ? stored.mode : MODE_PLUGIN_ONLY;
+    if (!stored && !global) {
+      const argMode = globalModeEnabled ? normalizeMode(String(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY))) : null;
+      if (argMode === MODE_SERVER_ONLY) throw new Error('HEALTH_LOCAL_MODE_REQUIRED');
+    }
     // A retained manager host argument must not certify a remote copy as local.
     if (managerOnly && !registry.legacyGlobalModeImported && !stored && !global) mode = String(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY));
     if (!VALID_MODES.has(mode) || mode !== MODE_PLUGIN_ONLY) throw new Error('HEALTH_LOCAL_MODE_REQUIRED');
@@ -9405,21 +9419,32 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (parsed?.schema !== SCOPE_ROUTING_SCHEMA || !parsed.entries || typeof parsed.entries !== 'object' || Array.isArray(parsed.entries)
             || parsed.namespace !== namespace) reject('LIB_READ_ROUTE_UNVERIFIED');
         for (const [id,row] of Object.entries(parsed.entries)) {
-          if (!id.trim() || !row || typeof row !== 'object' || Array.isArray(row) || !VALID_MODES.has(row.mode)
+          if (!id.trim() || !row || typeof row !== 'object' || Array.isArray(row) || (row.removed ? (row.mode !== undefined && !VALID_MODES.has(row.mode)) : (!row.mode || !VALID_MODES.has(row.mode)))
               || row.scopeId !== undefined && row.scopeId !== id
               || row.origin !== undefined && typeof row.origin !== 'string'
               || row.removed !== undefined && typeof row.removed !== 'boolean') reject('LIB_READ_ROUTE_UNVERIFIED');
         }
       }
-      const registry = mergeScopeRegistries(null,...raws), stored = registry.entries?.[scope.scopeId], global = liveGlobalRow(registry);
-      if (isRemovedScopeRow(stored) || state.scopeRouting.transientModes.has(scope.scopeId) || stored?.origin === 'transition_pending') reject('LIB_READ_STORAGE_TRANSITION_UNVERIFIED');
-      if (!registry.legacyGlobalModeImported && !stored && !global) reject('LIB_READ_ROUTE_UNINITIALIZED');
+      const registry = mergeScopeRegistries(null,...raws);
+      const rawStored = registry.entries?.[scope.scopeId];
+      let stored = isRemovedScopeRow(rawStored) ? null : rawStored;
+      let global = liveGlobalRow(registry);
+      if (state.scopeRouting.transientModes.has(scope.scopeId)) reject('LIB_READ_STORAGE_TRANSITION_UNVERIFIED');
+      if (storageTransition || modeConfigurationBusy || (state.syncJob.current && !syncJobTerminal(state.syncJob.current.status))) reject('LIB_READ_STORAGE_TRANSITION_UNVERIFIED');
+      if (!stored && !global) {
+        const argMode = globalModeEnabled ? normalizeMode(String(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY))) : null;
+        if (argMode === MODE_SERVER_ONLY) {
+          global = { scopeId: GLOBAL_SCOPE_ID, mode: MODE_SERVER_ONLY, origin: 'argument_fallback' };
+        } else if (!registry.legacyGlobalModeImported) {
+          reject('LIB_READ_ROUTE_UNINITIALIZED');
+        }
+      }
       const explicit = stored && !['inherited','migrated'].includes(String(stored.origin || ''));
-      const mode = explicit ? stored.mode : global ? global.mode : stored ? stored.mode : MODE_PLUGIN_ONLY;
+      const mode = explicit ? (stored.origin === 'transition_pending' && stored.pendingTargetMode ? stored.pendingTargetMode : stored.mode) : global ? global.mode : stored ? stored.mode : MODE_PLUGIN_ONLY;
       if (mode !== MODE_SERVER_ONLY) reject('LIB_READ_SERVER_MODE_REQUIRED');
       const resetRaw = await plugin.getItem(resetChoiceKey);
       let reset; try { reset = typeof resetRaw === 'string' ? JSON.parse(resetRaw) : resetRaw; } catch (_) { reject('LIB_READ_RESET_REVIEW_REQUIRED'); }
-      if (epoch > 0 ? !resetPreferenceMatches(reset,connection) : resetRaw != null && resetRaw !== '') reject('LIB_READ_RESET_REVIEW_REQUIRED');
+      if (resetRaw != null && resetRaw !== '' ? !resetPreferenceMatches(reset,connection) : false) reject('LIB_READ_RESET_REVIEW_REQUIRED');
       assertConnectionState(currentUrl);
       return JSON.stringify([raws,resetRaw ?? null,generation]);
     };
@@ -9540,21 +9565,32 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (parsed?.schema !== SCOPE_ROUTING_SCHEMA || !parsed.entries || typeof parsed.entries !== 'object' || Array.isArray(parsed.entries)
             || parsed.namespace !== namespace) reject('HEALTH_ROUTE_UNVERIFIED');
         for (const [id,row] of Object.entries(parsed.entries)) {
-          if (!id.trim() || !row || typeof row !== 'object' || Array.isArray(row) || !VALID_MODES.has(row.mode)
+          if (!id.trim() || !row || typeof row !== 'object' || Array.isArray(row) || (row.removed ? (row.mode !== undefined && !VALID_MODES.has(row.mode)) : (!row.mode || !VALID_MODES.has(row.mode)))
               || row.scopeId !== undefined && row.scopeId !== id
               || row.origin !== undefined && typeof row.origin !== 'string'
               || row.removed !== undefined && typeof row.removed !== 'boolean') reject('HEALTH_ROUTE_UNVERIFIED');
         }
       }
-      const registry = mergeScopeRegistries(null,...raws), stored = registry.entries?.[scope.scopeId], global = liveGlobalRow(registry);
-      if (isRemovedScopeRow(stored) || state.scopeRouting.transientModes.has(scope.scopeId) || stored?.origin === 'transition_pending') reject('HEALTH_STORAGE_TRANSITION_UNVERIFIED');
-      if (!registry.legacyGlobalModeImported && !stored && !global) reject('HEALTH_ROUTE_UNINITIALIZED');
+      const registry = mergeScopeRegistries(null,...raws);
+      const rawStored = registry.entries?.[scope.scopeId];
+      let stored = isRemovedScopeRow(rawStored) ? null : rawStored;
+      let global = liveGlobalRow(registry);
+      if (state.scopeRouting.transientModes.has(scope.scopeId)) reject('HEALTH_STORAGE_TRANSITION_UNVERIFIED');
+      if (storageTransition || modeConfigurationBusy || (state.syncJob.current && !syncJobTerminal(state.syncJob.current.status))) reject('HEALTH_STORAGE_TRANSITION_UNVERIFIED');
+      if (!stored && !global) {
+        const argMode = globalModeEnabled ? normalizeMode(String(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY))) : null;
+        if (argMode === MODE_SERVER_ONLY) {
+          global = { scopeId: GLOBAL_SCOPE_ID, mode: MODE_SERVER_ONLY, origin: 'argument_fallback' };
+        } else if (!registry.legacyGlobalModeImported) {
+          reject('HEALTH_ROUTE_UNINITIALIZED');
+        }
+      }
       const explicit = stored && !['inherited','migrated'].includes(String(stored.origin || ''));
-      const mode = explicit ? stored.mode : global ? global.mode : stored ? stored.mode : MODE_PLUGIN_ONLY;
+      const mode = explicit ? (stored.origin === 'transition_pending' && stored.pendingTargetMode ? stored.pendingTargetMode : stored.mode) : global ? global.mode : stored ? stored.mode : MODE_PLUGIN_ONLY;
       if (mode !== MODE_SERVER_ONLY) reject('HEALTH_SERVER_MODE_REQUIRED');
       const resetRaw = await plugin.getItem(resetChoiceKey);
       let reset; try { reset = typeof resetRaw === 'string' ? JSON.parse(resetRaw) : resetRaw; } catch (_) { reject('HEALTH_RESET_REVIEW_REQUIRED'); }
-      if (epoch > 0 ? !resetPreferenceMatches(reset,connection) : resetRaw != null && resetRaw !== '') reject('HEALTH_RESET_REVIEW_REQUIRED');
+      if (resetRaw != null && resetRaw !== '' ? !resetPreferenceMatches(reset,connection) : false) reject('HEALTH_RESET_REVIEW_REQUIRED');
       assertConnectionState(currentUrl);
       return JSON.stringify([raws,resetRaw ?? null,generation]);
     };

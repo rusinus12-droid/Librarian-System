@@ -5717,14 +5717,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!connection) throw new Error('memory_suite_server_not_enabled');
     const bindingGeneration = requestOptions.bindingGeneration ?? dataBinding.generation;
     await assertConnectionCurrent(connection, bindingGeneration);
-    const resetEpoch=Number(connection.resetEpochs?.[namespace]||0);
-    const isManagerOperation = managerOnly || route.startsWith('/v1/manager/') || requestOptions.extraHeaders?.['X-Memory-Suite-Manager'] === 'retrace';
-    if(resetEpoch && !isManagerOperation){
-      const choice=await readResetChoice(connection);
-      if(resetReloadRequired || choice?.epoch!==resetEpoch || choice?.url!==(connection.requestedUrl||connection.url)){
-        throw new Error('서버 자료가 초기화 또는 복원되었습니다. 서버 연결 설정에서 서버 자료 사용 또는 로컬 기억 다시 업로드를 선택한 뒤 RisuAI를 새로고침하세요.');
-      }
-    }
     const requestScope = requestOptions.scope && typeof requestOptions.scope === 'object'
       ? requestOptions.scope
       : state.scopeRouting.current;
@@ -5732,6 +5724,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const registeredMode = requestScopeId ? state.scopeRouting.registry?.entries?.[requestScopeId]?.mode : '';
     const transientMode = requestScopeId ? state.scopeRouting.transientModes.get(requestScopeId) : '';
     const requestMode = normalizeMode(requestOptions.storageMode || transientMode || registeredMode || state.config.mode || MODE_PLUGIN_ONLY);
+    const resetEpoch=Number(connection.resetEpochs?.[namespace]||0);
+    const isManagerOperation = managerOnly || route.startsWith('/v1/manager/') || requestOptions.extraHeaders?.['X-Memory-Suite-Manager'] === 'retrace';
+    if(resetEpoch && !isManagerOperation){
+      const choice=await readResetChoice(connection);
+      const serverOnlyPass = requestMode === MODE_SERVER_ONLY && !choice && !resetReloadRequired;
+      if(!serverOnlyPass && (resetReloadRequired || choice?.epoch!==resetEpoch || choice?.url!==(connection.requestedUrl||connection.url))){
+        throw new Error('서버 자료가 초기화 또는 복원되었습니다. 서버 연결 설정에서 서버 자료 사용 또는 로컬 기억 다시 업로드를 선택한 뒤 RisuAI를 새로고침하세요.');
+      }
+    }
     const init = {
       method,
       headers: {
@@ -7893,12 +7894,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const rows = ids.map(scopeId => {
       const row = registry.entries[scopeId];
       if (!scopeId || scopeId.length > 700 || !row || typeof row !== 'object' || Array.isArray(row)
-          || !VALID_MODES.has(row.mode) || row.scopeId !== undefined && row.scopeId !== scopeId
+          || (row.removed ? (row.mode !== undefined && !VALID_MODES.has(row.mode)) : !VALID_MODES.has(row.mode)) || row.scopeId !== undefined && row.scopeId !== scopeId
           || row.scopeKey !== undefined && (typeof row.scopeKey !== 'string' || row.scopeKey.length > 700)
           || row.origin !== undefined && (typeof row.origin !== 'string' || row.origin.length > 100)
           || row.removed !== undefined && typeof row.removed !== 'boolean'
           || row.pendingTargetMode !== undefined && row.pendingTargetMode !== null && !VALID_MODES.has(row.pendingTargetMode)) modePublicationFail('MODE_PUBLICATION_MALFORMED');
-      return [scopeId,row.scopeKey ?? scopeId,row.mode,row.origin ?? '',row.removed === true,
+      return [scopeId,row.scopeKey ?? scopeId,row.mode ?? '',row.origin ?? '',row.removed === true,
         row.pendingTargetMode ?? null,Boolean(row.recoveryRequired)];
     });
     const projection = JSON.stringify([namespace,registry.legacyGlobalModeImported === true,rows]);
@@ -8743,7 +8744,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       blockers.push({code:'routing_registry_malformed',location});return parseScopeRegistry(null);
     }
     for(const [id,row] of Object.entries(value.entries))if(!id || !row || typeof row !== 'object' || Array.isArray(row)
-      || row.scopeId && row.scopeId !== id || !VALID_MODES.has(row.mode))blockers.push({code:'routing_entry_malformed',location,scopeId:id});
+      || row.scopeId && row.scopeId !== id || (row.removed ? (row.mode !== undefined && !VALID_MODES.has(row.mode)) : !VALID_MODES.has(row.mode)))blockers.push({code:'routing_entry_malformed',location,scopeId:id});
     for(const [id,row]of Object.entries(value.entries))try{strictOwnerScopeDescriptor(row,id);}catch(_){blockers.push({code:'routing_entry_identity_malformed',location,scopeId:id});}
     if(blockers.some(row=>row.location===location&&/^routing_/.test(row.code)))return parseScopeRegistry(null);
     return {...value,entries:Object.fromEntries(Object.entries(value.entries).map(([id,row])=>[id,{...row,scopeId:row.scopeId||id}]))};
@@ -13602,15 +13603,24 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // authority for a read-only health check.
       for (const [id, row] of Object.entries(parsed.entries)) {
         if (!id.trim() || !row || typeof row !== 'object' || Array.isArray(row)
-            || typeof row.mode !== 'string' || !VALID_MODES.has(row.mode)
+            || (row.removed ? (row.mode !== undefined && !VALID_MODES.has(row.mode)) : (typeof row.mode !== 'string' || !VALID_MODES.has(row.mode)))
             || (row.scopeId !== undefined && (typeof row.scopeId !== 'string' || row.scopeId !== id))
             || (row.origin !== undefined && typeof row.origin !== 'string')
             || (row.removed !== undefined && typeof row.removed !== 'boolean')) throw new Error('HEALTH_ROUTE_UNVERIFIED');
       }
     }
     const registry = mergeScopeRegistries(null, pluginRaw, deviceRaw);
-    const stored = registry.entries?.[scope.scopeId], global = liveGlobalRow(registry);
-    if (isRemovedScopeRow(stored)) throw new Error('HEALTH_SCOPE_REMOVED');
+    const rawStored = registry.entries?.[scope.scopeId];
+    const stored = isRemovedScopeRow(rawStored) ? null : rawStored;
+    const global = liveGlobalRow(registry);
+    if (state.scopeRouting.transientModes.has(scope.scopeId)) throw new Error('HEALTH_STORAGE_TRANSITION_UNVERIFIED');
+    if (storageTransition || modeConfigurationBusy || (state.syncJob.current && !syncJobTerminal(state.syncJob.current.status))) throw new Error('HEALTH_STORAGE_TRANSITION_UNVERIFIED');
+    if (stored?.origin === 'transition_pending') {
+      if (stored.pendingTargetMode === MODE_SERVER_ONLY || global?.mode === MODE_SERVER_ONLY) {
+        throw new Error('HEALTH_LOCAL_MODE_REQUIRED');
+      }
+      throw new Error('HEALTH_STORAGE_TRANSITION_UNVERIFIED');
+    }
     // Core3 no longer imports/reset-writes legacy mode during ordinary startup.
     // Prove its fresh local default observationally; never default failed or
     // unknown argument reads to local authority, or initialize a registry here.
@@ -13679,6 +13689,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (reset != null && reset !== '') throw new Error('HEALTH_RESET_REVIEW_REQUIRED');
     const explicit = stored && !['inherited','migrated'].includes(String(stored.origin || ''));
     let mode = explicit ? stored.mode : global ? global.mode : stored ? stored.mode : MODE_PLUGIN_ONLY;
+    if (!stored && !global) {
+      const argMode = globalModeEnabled ? normalizeMode(String(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY))) : null;
+      if (argMode === MODE_SERVER_ONLY) throw new Error('HEALTH_LOCAL_MODE_REQUIRED');
+    }
     // A retained manager host argument must not certify a remote copy as local.
     if (managerOnly && !registry.legacyGlobalModeImported && !stored && !global) mode = String(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY));
     if (!VALID_MODES.has(mode) || mode !== MODE_PLUGIN_ONLY) throw new Error('HEALTH_LOCAL_MODE_REQUIRED');
@@ -13756,21 +13770,32 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (parsed?.schema !== SCOPE_ROUTING_SCHEMA || !parsed.entries || typeof parsed.entries !== 'object' || Array.isArray(parsed.entries)
             || parsed.namespace !== namespace) reject('LIB_READ_ROUTE_UNVERIFIED');
         for (const [id,row] of Object.entries(parsed.entries)) {
-          if (!id.trim() || !row || typeof row !== 'object' || Array.isArray(row) || !VALID_MODES.has(row.mode)
+          if (!id.trim() || !row || typeof row !== 'object' || Array.isArray(row) || (row.removed ? (row.mode !== undefined && !VALID_MODES.has(row.mode)) : (!row.mode || !VALID_MODES.has(row.mode)))
               || row.scopeId !== undefined && row.scopeId !== id
               || row.origin !== undefined && typeof row.origin !== 'string'
               || row.removed !== undefined && typeof row.removed !== 'boolean') reject('LIB_READ_ROUTE_UNVERIFIED');
         }
       }
-      const registry = mergeScopeRegistries(null,...raws), stored = registry.entries?.[scope.scopeId], global = liveGlobalRow(registry);
-      if (isRemovedScopeRow(stored) || state.scopeRouting.transientModes.has(scope.scopeId) || stored?.origin === 'transition_pending') reject('LIB_READ_STORAGE_TRANSITION_UNVERIFIED');
-      if (!registry.legacyGlobalModeImported && !stored && !global) reject('LIB_READ_ROUTE_UNINITIALIZED');
+      const registry = mergeScopeRegistries(null,...raws);
+      const rawStored = registry.entries?.[scope.scopeId];
+      let stored = isRemovedScopeRow(rawStored) ? null : rawStored;
+      let global = liveGlobalRow(registry);
+      if (state.scopeRouting.transientModes.has(scope.scopeId)) reject('LIB_READ_STORAGE_TRANSITION_UNVERIFIED');
+      if (storageTransition || modeConfigurationBusy || (state.syncJob.current && !syncJobTerminal(state.syncJob.current.status))) reject('LIB_READ_STORAGE_TRANSITION_UNVERIFIED');
+      if (!stored && !global) {
+        const argMode = globalModeEnabled ? normalizeMode(String(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY))) : null;
+        if (argMode === MODE_SERVER_ONLY) {
+          global = { scopeId: GLOBAL_SCOPE_ID, mode: MODE_SERVER_ONLY, origin: 'argument_fallback' };
+        } else if (!registry.legacyGlobalModeImported) {
+          reject('LIB_READ_ROUTE_UNINITIALIZED');
+        }
+      }
       const explicit = stored && !['inherited','migrated'].includes(String(stored.origin || ''));
-      const mode = explicit ? stored.mode : global ? global.mode : stored ? stored.mode : MODE_PLUGIN_ONLY;
+      const mode = explicit ? (stored.origin === 'transition_pending' && stored.pendingTargetMode ? stored.pendingTargetMode : stored.mode) : global ? global.mode : stored ? stored.mode : MODE_PLUGIN_ONLY;
       if (mode !== MODE_SERVER_ONLY) reject('LIB_READ_SERVER_MODE_REQUIRED');
       const resetRaw = await plugin.getItem(resetChoiceKey);
       let reset; try { reset = typeof resetRaw === 'string' ? JSON.parse(resetRaw) : resetRaw; } catch (_) { reject('LIB_READ_RESET_REVIEW_REQUIRED'); }
-      if (epoch > 0 ? !resetPreferenceMatches(reset,connection) : resetRaw != null && resetRaw !== '') reject('LIB_READ_RESET_REVIEW_REQUIRED');
+      if (resetRaw != null && resetRaw !== '' ? !resetPreferenceMatches(reset,connection) : false) reject('LIB_READ_RESET_REVIEW_REQUIRED');
       assertConnectionState(currentUrl);
       return JSON.stringify([raws,resetRaw ?? null,generation]);
     };
@@ -13891,21 +13916,32 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (parsed?.schema !== SCOPE_ROUTING_SCHEMA || !parsed.entries || typeof parsed.entries !== 'object' || Array.isArray(parsed.entries)
             || parsed.namespace !== namespace) reject('HEALTH_ROUTE_UNVERIFIED');
         for (const [id,row] of Object.entries(parsed.entries)) {
-          if (!id.trim() || !row || typeof row !== 'object' || Array.isArray(row) || !VALID_MODES.has(row.mode)
+          if (!id.trim() || !row || typeof row !== 'object' || Array.isArray(row) || (row.removed ? (row.mode !== undefined && !VALID_MODES.has(row.mode)) : (!row.mode || !VALID_MODES.has(row.mode)))
               || row.scopeId !== undefined && row.scopeId !== id
               || row.origin !== undefined && typeof row.origin !== 'string'
               || row.removed !== undefined && typeof row.removed !== 'boolean') reject('HEALTH_ROUTE_UNVERIFIED');
         }
       }
-      const registry = mergeScopeRegistries(null,...raws), stored = registry.entries?.[scope.scopeId], global = liveGlobalRow(registry);
-      if (isRemovedScopeRow(stored) || state.scopeRouting.transientModes.has(scope.scopeId) || stored?.origin === 'transition_pending') reject('HEALTH_STORAGE_TRANSITION_UNVERIFIED');
-      if (!registry.legacyGlobalModeImported && !stored && !global) reject('HEALTH_ROUTE_UNINITIALIZED');
+      const registry = mergeScopeRegistries(null,...raws);
+      const rawStored = registry.entries?.[scope.scopeId];
+      let stored = isRemovedScopeRow(rawStored) ? null : rawStored;
+      let global = liveGlobalRow(registry);
+      if (state.scopeRouting.transientModes.has(scope.scopeId)) reject('HEALTH_STORAGE_TRANSITION_UNVERIFIED');
+      if (storageTransition || modeConfigurationBusy || (state.syncJob.current && !syncJobTerminal(state.syncJob.current.status))) reject('HEALTH_STORAGE_TRANSITION_UNVERIFIED');
+      if (!stored && !global) {
+        const argMode = globalModeEnabled ? normalizeMode(String(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY))) : null;
+        if (argMode === MODE_SERVER_ONLY) {
+          global = { scopeId: GLOBAL_SCOPE_ID, mode: MODE_SERVER_ONLY, origin: 'argument_fallback' };
+        } else if (!registry.legacyGlobalModeImported) {
+          reject('HEALTH_ROUTE_UNINITIALIZED');
+        }
+      }
       const explicit = stored && !['inherited','migrated'].includes(String(stored.origin || ''));
-      const mode = explicit ? stored.mode : global ? global.mode : stored ? stored.mode : MODE_PLUGIN_ONLY;
+      const mode = explicit ? (stored.origin === 'transition_pending' && stored.pendingTargetMode ? stored.pendingTargetMode : stored.mode) : global ? global.mode : stored ? stored.mode : MODE_PLUGIN_ONLY;
       if (mode !== MODE_SERVER_ONLY) reject('HEALTH_SERVER_MODE_REQUIRED');
       const resetRaw = await plugin.getItem(resetChoiceKey);
       let reset; try { reset = typeof resetRaw === 'string' ? JSON.parse(resetRaw) : resetRaw; } catch (_) { reject('HEALTH_RESET_REVIEW_REQUIRED'); }
-      if (epoch > 0 ? !resetPreferenceMatches(reset,connection) : resetRaw != null && resetRaw !== '') reject('HEALTH_RESET_REVIEW_REQUIRED');
+      if (resetRaw != null && resetRaw !== '' ? !resetPreferenceMatches(reset,connection) : false) reject('HEALTH_RESET_REVIEW_REQUIRED');
       assertConnectionState(currentUrl);
       return JSON.stringify([raws,resetRaw ?? null,generation]);
     };
@@ -43358,8 +43394,19 @@ ${cleanedText}`, 80),
     const rawCode=String(reason||'');const code=/^HEALTH_[A-Z0-9_]+$/.test(rawCode)?rawCode:'HEALTH_READ_UNAVAILABLE';
     const error=new Error(code==='HEALTH_LOCAL_MODE_REQUIRED'
       ?'이 작업은 검증된 로컬 저장 방식에서만 가능합니다. 서버 점검은 읽기 전용입니다.'
+      :code==='HEALTH_SERVER_MODE_REQUIRED'?'서버 전용 모드로 설정되어 있지 않습니다.'
+      :code==='HEALTH_ROUTE_UNINITIALIZED'?'저장소 라우팅이 초기화되지 않았습니다.'
+      :code==='HEALTH_SCOPE_UNVERIFIED'?'현재 채팅의 범위 식별자(Scope)를 확인할 수 없습니다.'
+      :code==='HEALTH_STORAGE_TRANSITION_UNVERIFIED'?'저장소 전환 작업이 진행 중이거나 확인되지 않았습니다.'
+      :code==='HEALTH_RESET_REVIEW_REQUIRED'?'서버 초기화 상태 검토가 필요합니다. 설정에서 서버 초기화 결정을 확인해 주세요.'
+      :code==='HEALTH_SCOPE_OR_SOURCE_CHANGED'?'점검 중 대화 범위나 채팅 원문이 변경되었습니다. 다시 시도해 주세요.'
+      :code==='HEALTH_SETTINGS_CHANGED'?'점검 중 설정이 변경되었습니다. 다시 시도해 주세요.'
+      :code==='HEALTH_STORAGE_UNAVAILABLE'?'저장소에 접근할 수 없습니다.'
+      :code==='HEALTH_SERVER_CONNECTION_REQUIRED'?'서버 연결 또는 인증 상태를 확인할 수 없습니다.'
+      :code==='HEALTH_SERVER_URL_UNVERIFIED'?'서버 URL을 확인할 수 없습니다.'
+      :code==='HEALTH_SERVER_CAPABILITY_REQUIRED'?'서버가 플래시백 점검 기능을 지원하지 않습니다.'
       :code.startsWith('HEALTH_SERVER_')?'서버 연결 또는 읽기 권한 증거를 확인하지 못해 정상 여부는 미검증입니다. 연결 갱신·저장소 변경은 실행하지 않았습니다.'
-      :'현재 범위의 읽기 전용 점검을 완료하지 못했습니다. 저장소 준비·이관·자격 증명 동기화는 실행하지 않았습니다.');
+      :`현재 범위의 읽기 전용 점검을 완료하지 못했습니다. (${rawCode || '원인 미상'}) 저장소 준비·이관·자격 증명 동기화는 실행하지 않았습니다.`);
     error.code='FLASHBACK_MAINTENANCE_INSPECTION_UNAVAILABLE';error.inspectionReason=code;return error;
   };
   const createMaintenanceReadOnlyContext = async (options = {}) => {
@@ -44434,7 +44481,25 @@ ${cleanedText}`, 80),
     if(!plan.inspection.complete)plan.healthy=false;
     plan.automatic = plan.inspection.complete?automaticMaintenanceStrategyForPlan(plan)
       :{strategy:'storage_preparation_required',stages:[],blocked:true,reason:'inspection_incomplete'};
-    if(readContext.serverInspection)plan.automatic={strategy:'server_inspection_only',stages:[],blocked:true,reason:'server_physical_repair_disabled'};
+    if (readContext.serverInspection) {
+      const autoPlan = plan.inspection.complete ? automaticMaintenanceStrategyForPlan(plan) : null;
+      const needsSync = Number(plan.missingTurns || 0) > 0 || Number(plan.changedTurns || 0) > 0 || (autoPlan?.stages || []).includes('sync');
+      if (needsSync && !plan.requiresFullRebuild) {
+        plan.automatic = {
+          strategy: 'server_turn_sync',
+          stages: ['sync'],
+          blocked: false,
+          reason: 'server_turn_sync_available'
+        };
+      } else {
+        plan.automatic = {
+          strategy: 'server_inspection_only',
+          stages: [],
+          blocked: true,
+          reason: plan.healthy ? 'server_physical_repair_disabled' : (autoPlan?.reason || 'server_physical_repair_disabled')
+        };
+      }
+    }
     try{await readContext.assertCurrent();}catch(error){throw maintenanceInspectionUnavailable(error?.message);}
     readContext.assertCurrentSync?.();
     Object.defineProperty(plan, '_maintenanceContext', {
@@ -44717,14 +44782,134 @@ ${cleanedText}`, 80),
       throw error;
     }
     const normalizedMode = normalizeChoice(mode, ['auto', 'sync', 'rebuild', 'reembed'], 'auto');
-    const preflight = options.preflight && typeof options.preflight === 'object' ? options.preflight : null;
+    let preflight = options.preflight && typeof options.preflight === 'object' ? options.preflight : null;
+    if (!preflight) {
+      try { preflight = await inspectMemoryMaintenance({ requestPermission: false }); } catch (_) {}
+    }
     const context = preflight?._maintenanceContext && typeof preflight._maintenanceContext === 'object'
       ? preflight._maintenanceContext
       : {};
     const sharedSettings = context.settings || options.settings || null;
     const sharedSnapshot = context.snapshot || options.snapshot || null;
     const sharedScope = context.scope?.scopeKey ? context.scope : null;
-    if(preflight?.inspection?.coverage==='server_snapshot')throw maintenanceInspectionUnavailable('HEALTH_LOCAL_MODE_REQUIRED');
+
+    if (preflight?.inspection?.coverage === 'server_snapshot') {
+      const allowsServerSync = (normalizedMode === 'sync' || normalizedMode === 'auto')
+        && ((preflight.automatic?.stages || []).includes('sync')
+            || Number(preflight.missingTurns || 0) > 0
+            || Number(preflight.changedTurns || 0) > 0);
+      if (!allowsServerSync) {
+        throw maintenanceInspectionUnavailable('HEALTH_LOCAL_MODE_REQUIRED');
+      }
+      const executionSnapshot = sharedSnapshot || await loadRisuCaptureSnapshot();
+      const executionScope = sharedScope || resolveScopeFromSnapshot(executionSnapshot);
+      if (!executionScope?.available || !executionScope.scopeKey) {
+        throw maintenanceInspectionUnavailable('HEALTH_SCOPE_UNVERIFIED');
+      }
+      if (flashbackRecoveryActions?.isBusy()) throw Error('FLASHBACK_REPAIR_ACTION_BUSY');
+      if (physicalRepairUnresolved()) throw Error('FLASHBACK_PHYSICAL_OUTCOME_UNRESOLVED');
+      if (Runtime.portableMemoryActiveOperationId) throw Error('FLASHBACK_PORTABLE_MEMORY_BUSY');
+      if (Runtime.maintenanceActiveOperationId) throw Error('FLASHBACK_MAINTENANCE_BUSY');
+      const operationId = `server_sync_${stableHash(`${Date.now()}|${Math.random()}`).slice(0, 20)}`;
+      const startedAt = Date.now();
+      Runtime.maintenanceController = typeof AbortController === 'function' ? new AbortController() : null;
+      const parentSignal = options.signal;
+      const abortMaintenance = () => Runtime.maintenanceController?.abort();
+      if (parentSignal?.aborted) abortMaintenance();
+      else parentSignal?.addEventListener?.('abort', abortMaintenance, { once: true });
+      Runtime.maintenanceActiveOperationId = operationId;
+      renderMaintenanceExecution();
+      try {
+        const operationSettings = {
+          maintenanceOperationId: operationId,
+          maintenanceSourceValidate: async () => {},
+          deadlineAt: Date.now() + 120000,
+          activityKind: 'maintenance_sync',
+          signal: Runtime.maintenanceController?.signal || parentSignal,
+          settings: sharedSettings || await loadSettings(),
+          snapshot: executionSnapshot
+        };
+        const syncOperation = await ingestLiveChatColdStart({
+          scope: 'current',
+          historyLimit: 0,
+          incremental: true,
+          ...operationSettings
+        });
+        const after = await inspectMemoryMaintenance({
+          requestPermission: false,
+          settings: sharedSettings || await loadSettings(),
+          snapshot: executionSnapshot,
+          scope: executionScope
+        });
+        const result = {
+          operationId,
+          scopeKey: executionScope.scopeKey,
+          maintenanceMode: 'sync',
+          status: 'completed',
+          durationMs: Math.max(0, Date.now() - startedAt),
+          before: preflight,
+          after,
+          planMatchesAfter: after.healthy === true,
+          healthy: after.healthy === true,
+          operation: {
+            strategy: 'server_turn_sync',
+            stages: ['sync'],
+            sync: syncOperation
+          },
+          totals: {
+            sources: syncOperation.sources || 0,
+            chunks: syncOperation.chunks || 0,
+            inserted: syncOperation.inserted || 0,
+            updated: syncOperation.updated || 0,
+            deduped: syncOperation.deduped || 0,
+            total: syncOperation.total || 0,
+            missingTurns: syncOperation.missingTurns || 0,
+            changedTurns: syncOperation.changedTurns || 0,
+            embeddedTurns: syncOperation.embeddedTurns || 0
+          }
+        };
+        if (executionScope?.scopeKey) {
+          try {
+            const api = getLiveApi();
+            const routeKey = '__memory_suite_internal_scope_routes_v1__:flashback';
+            const localApi = getLiveApi(['getLocalPluginStorage']) || api;
+            const stores = [
+              api?.pluginStorage,
+              typeof localApi?.getLocalPluginStorage === 'function' ? await localApi.getLocalPluginStorage() : api?.safeLocalStorage
+            ].filter(st => st && typeof st.getItem === 'function' && typeof st.setItem === 'function');
+            for (const store of stores) {
+              const regRaw = await store.getItem(routeKey);
+              if (regRaw) {
+                const reg = typeof regRaw === 'string' ? JSON.parse(regRaw) : regRaw;
+                const existing = reg?.entries?.[executionScope.scopeKey];
+                if (existing?.origin === 'transition_pending') {
+                  reg.entries[executionScope.scopeKey] = {
+                    ...existing,
+                    mode: existing.pendingTargetMode || 'server_only',
+                    origin: 'user_scope_setting',
+                    pendingTargetMode: null,
+                    updatedAt: Date.now(),
+                    source: 'server_turn_sync_completed'
+                  };
+                  await store.setItem(routeKey, JSON.stringify(reg));
+                }
+              }
+            }
+          } catch (_) {}
+        }
+        Runtime.lastMaintenanceOutcome = result;
+        pushActivityLog('server_sync_completed', `서버 모드 대화 기억 동기화를 완료했습니다. (신규: ${syncOperation.inserted || 0}턴, 갱신: ${syncOperation.updated || 0}턴)`, {
+          scopeKey: executionScope.scopeKey,
+          inserted: syncOperation.inserted || 0,
+          updated: syncOperation.updated || 0
+        }, 'success');
+        renderMaintenanceExecution();
+        return result;
+      } finally {
+        Runtime.maintenanceActiveOperationId = null;
+        renderMaintenanceExecution();
+      }
+    }
     const executionSnapshot=await loadRisuCaptureSnapshot(),executionScope=resolveScopeFromSnapshot(executionSnapshot);
     if(!executionScope?.available||!executionScope.scopeKey)throw maintenanceInspectionUnavailable('HEALTH_SCOPE_UNVERIFIED');
     try{const observed=await MemorySuiteStorageBridge.inspectLocalHealthSnapshot({scopeId:executionScope.scopeKey,scopeKey:executionScope.scopeKey},scopeKeys.manifest(executionScope.scopeKey),{space:'plugin',strictPhysical:true});assertFlashbackArchiveOwnerResolved(typeof observed.raw==='string'?tryJsonParse(observed.raw,null):observed.raw);}
@@ -45200,6 +45385,7 @@ ${cleanedText}`, 80),
       full_rebuild: '현재 채팅 전체 재구축',
       live_source_required: '현재 채팅 원문 필요',
       scope_collision: '저장 범위 충돌 — 자동 변경 차단',
+      server_turn_sync: '서버 누락·변경 턴 동기화',
       server_inspection_only: '서버 읽기 전용 · 실제 복구 차단',
       credential_required: '임베딩 API 키 필요 — 기존 벡터 보존',
       protected_history_missing: '영구 이전 세션 기록 보호 — 자동 변경 차단',
@@ -45233,6 +45419,9 @@ ${cleanedText}`, 80),
   const maintenanceJudgementText = (plan = {}) => {
     if(plan.inspection?.coverage==='server_snapshot'){
       if(!plan.inspection.complete)return '판정: 서버 스냅샷 점검 미완료 · 정상 여부 미검증입니다. 제외·누락된 자료를 로컬 사본으로 대체하지 않았습니다.';
+      if (plan.automatic?.strategy === 'server_turn_sync') {
+        return `판정: 서버 스냅샷 대조 완료 · 누락 ${formatNumber(plan.missingTurns)}개, 변경 ${formatNumber(plan.changedTurns)}개 턴 동기화 가능.`;
+      }
       return `판정: 서버 스냅샷 기준 원문·저장 무결성 ${plan.storageSourceHealthy?'점검 통과':'확인할 항목 있음'}. 자격 증명 ${plan.inspection.credentialStatus==='not_required'?'불필요한 설정':'미검증'} · 제공자 준비 상태 미검증. 실시간 상태 보장이나 서버 복구 권한이 아닙니다.`;
     }
     if(plan.inspection?.complete===false)return '판정: 저장소 준비 여부를 확인하지 못해 점검 미완료입니다. 점검 중 자동 이관·복구는 실행하지 않았습니다.';
@@ -45368,6 +45557,22 @@ ${cleanedText}`, 80),
     ? '실패한 임베딩 작업이 남아 있습니다. 설정과 오류를 확인한 뒤 임베딩 작업의 [실패 작업 재시도]를 선택해 주세요. 자동 점검은 실패 작업을 다시 요청하지 않습니다.' : '';
 
   const maintenanceResultText = (result = {}) => {
+    if (result.operation?.strategy === 'server_turn_sync') {
+      const sync = result.operation.sync || {};
+      const inserted = Number(sync.inserted || 0);
+      const updated = Number(sync.updated || 0);
+      const total = inserted + updated;
+      return [
+        `[서버 모드] 기억 동기화 완료`,
+        `작업 ID: ${result.operationId || '-'} · 소요: ${formatNumber(Math.round(Number(result.durationMs || 0) / 1000))}초`,
+        `동기화 결과: 총 ${formatNumber(total)}개 턴 반영 (신규: ${formatNumber(inserted)}개, 갱신: ${formatNumber(updated)}개)`,
+        `동기화 전: 누락 ${formatNumber(result.before?.missingTurns)}개 · 변경 ${formatNumber(result.before?.changedTurns)}개`,
+        `동기화 후: 누락 ${formatNumber(result.after?.missingTurns)}개 · 변경 ${formatNumber(result.after?.changedTurns)}개`,
+        result.healthy === true || (result.after?.missingTurns === 0 && result.after?.changedTurns === 0)
+          ? '최종 판정: 서버 기억과 현재 대화 원문이 완전히 일치합니다 (정상).'
+          : '최종 판정: 동기화 후 상태 점검을 확인하세요.'
+      ].join('\n');
+    }
     const totals = maintenanceOperationTotals(result.operation || {});
     return [
     `${maintenanceCompletionTitle(result)} · 모드 ${result.maintenanceMode || '-'}`,
@@ -45586,12 +45791,58 @@ ${cleanedText}`, 80),
   });
   // Ordinary owner proxies follow the active chat. Prove the target and active
   // route are local; RE:TRACE exclusively owns server preservation/backup plans.
+  const cleanupFlashbackServerScopeStorage = async (scopeKey, descriptor = {}) => {
+    const key = text(scopeKey || descriptor.scopeKey || descriptor.scopeId || '').trim();
+    if (!key) return { ok: false, reason: 'no_scope_key' };
+    const hash = text(descriptor.storageHash || keyHash(key));
+    const pluginPrefix = `${PLUGIN_STORAGE_ID}:scope:${hash}:`;
+    const localPrefix = `${FLASHBACK_VECTOR_STORAGE_PREFIX}${hash}:`;
+    try {
+      if (typeof MemorySuiteStorageBridge.managerPlanScopeDeletion === 'function' && typeof MemorySuiteStorageBridge.managerExecuteScopeDeletion === 'function') {
+        const plan = await MemorySuiteStorageBridge.managerPlanScopeDeletion(key, 'flashback').catch(() => null);
+        if (plan?.planId && plan?.mutationFingerprint) {
+          await MemorySuiteStorageBridge.managerExecuteScopeDeletion(plan.planId, plan.mutationFingerprint).catch(() => null);
+          return { ok: true, managed: true };
+        }
+      }
+    } catch (_) {}
+    try {
+      const [pluginRemote, localRemote] = await Promise.all([
+        MemorySuiteStorageBridge.serverKeys('plugin', pluginPrefix).catch(() => ({ keys: [] })),
+        MemorySuiteStorageBridge.serverKeys('local', localPrefix).catch(() => ({ keys: [] }))
+      ]);
+      const pKeys = emptyServerShellListingKeys(pluginRemote).filter(k => k.startsWith(pluginPrefix));
+      const lKeys = emptyServerShellListingKeys(localRemote).filter(k => k.startsWith(localPrefix));
+      await withScopeWriteLock(SCOPE_REGISTRY_WRITE_LOCK, async () => {
+        const regRemote = await MemorySuiteStorageBridge.serverGet('plugin', STORAGE.registry).catch(() => null);
+        if (regRemote?.exists && regRemote?.value) {
+          const parsed = typeof regRemote.value === 'string' ? tryJsonParse(regRemote.value, null) : regRemote.value;
+          if (parsed && Array.isArray(parsed.scopes)) {
+            const remaining = parsed.scopes.filter(item => text(item?.scopeKey || '').trim() !== key);
+            if (remaining.length !== parsed.scopes.length) {
+              const updated = { ...parsed, scopes: remaining, updatedAt: Date.now() };
+              await MemorySuiteStorageBridge.commitFlashbackManifest?.(STORAGE.registry, updated).catch(() => {});
+            }
+          }
+        }
+      }).catch(() => {});
+      return { ok: true, pluginKeys: pKeys.length, localKeys: lKeys.length };
+    } catch (error) {
+      warn('cleanupFlashbackServerScopeStorage error', error);
+      return { ok: false, error: compact(error?.message || error, 200) };
+    }
+  };
+
   const assertLocalScopeManagement = async scopeKey => {
     const key = text(scopeKey || '').trim();
     if (!key) throw scopeManagementError('FLASHBACK_SCOPE_MANAGEMENT_UNVERIFIED');
     const descriptor = {scopeId:key, scopeKey:key, aliases:[keyHash(key)]};
     const target = await MemorySuiteStorageBridge.getScopeMode(descriptor);
-    if (target.mode !== 'plugin_only') throw scopeManagementError('FLASHBACK_SERVER_SCOPE_MANAGEMENT_REQUIRED', target.mode);
+    if (target.mode !== 'plugin_only') {
+      // 플래시백 내 서버 스코프 관리 지원: 서버 스코프 정리 후 로컬 정리 연계
+      await cleanupFlashbackServerScopeStorage(key, descriptor);
+      await MemorySuiteStorageBridge.setScopeMode(descriptor, 'plugin_only').catch(() => {});
+    }
     if (target.transition || target.migrationRequired) throw scopeManagementError('FLASHBACK_SCOPE_MANAGEMENT_UNVERIFIED');
     const active = await MemorySuiteStorageBridge.getScopeMode();
     if (!active.scope?.scopeId || active.mode !== 'plugin_only' || active.transition || active.migrationRequired) throw scopeManagementError('FLASHBACK_SCOPE_MANAGEMENT_UNVERIFIED');
@@ -46175,6 +46426,7 @@ ${cleanedText}`, 80),
     const rawSourceType = text(current.sourceType || '').trim();
     Runtime.guiManualEditor = {
       sourceType: rawSourceType ? normalizeDisplaySourceType(rawSourceType) : '',
+      selectedTurn: Number.isInteger(current.selectedTurn) && current.selectedTurn > 0 ? current.selectedTurn : null,
       search: compact(current.search || '', 160),
       sort: ['newest', 'oldest', 'longest'].includes(current.sort) ? current.sort : 'newest',
       limit: clampInt(current.limit, MANUAL_EDITOR_PAGE_SIZE, MANUAL_EDITOR_MAX_VISIBLE, MANUAL_EDITOR_PAGE_SIZE),
@@ -46198,6 +46450,12 @@ ${cleanedText}`, 80),
   const summarizeManualEditorRecord = (record = {}) => {
     const body = text(record.text || '');
     const type = normalizedRecordSourceType(record);
+    const directTurn = Number(record.turnIndex || record.pairIndex || finiteTurnIndex(record) || record.turn || 0);
+    let resolvedTurn = Number.isFinite(directTurn) && directTurn > 0 ? directTurn : 0;
+    if (!resolvedTurn) {
+      const m = String(record.title || '').match(/#(\d+)/) || String(record.sourceId || '').match(/:(\d+)(?:-|$)/);
+      if (m && Number(m[1]) > 0) resolvedTurn = Number(m[1]);
+    }
     return {
       key: manualRecordDeleteKey(record),
       id: compact(record.id || record.hash || '', 80),
@@ -46208,7 +46466,7 @@ ${cleanedText}`, 80),
       role: compact(record.role || '', 40),
       origin: compact(record.origin || '', 80),
       createdAt: record.createdAt || record.updatedAt || '',
-      turnIndex: Number(record.turnIndex || 0) || 0,
+      turnIndex: resolvedTurn,
       chunkIndex: Number(record.chunkIndex || 0) || 0,
       chunkCount: Number(record.chunkCount || 0) || 0,
       dim: Number(record.dim || (Array.isArray(record.vector) ? record.vector.length : 0)) || 0,
@@ -46494,11 +46752,9 @@ ${cleanedText}`, 80),
     Runtime.guiStorageLastConfirmedRows = rows.slice();
     Runtime.guiStorageScopeCount = new Set(rows.map(row => text(row?.scopeKey || '').trim()).filter(Boolean)).size;
     setNodeText('tab-scope-n', storageScopeCountLabel());
-    setNodeText('nav-scope-n', storageScopeCountLabel());
   };
 
   const selectableStorageScopeKeys = (scopeStats = [], currentScopeKey = '') => (Array.isArray(scopeStats) ? scopeStats : [])
-    .filter(item => storageManagementKind(item) !== 'server_managed')
     .map(item => text(item?.scopeKey || '').trim())
     .filter(scopeKey => scopeKey && scopeKey !== currentScopeKey);
 
@@ -46554,7 +46810,7 @@ ${cleanedText}`, 80),
       const scopeKey = text(item.scopeKey || '').trim();
       const isCurrent = scopeKey === currentScopeKey;
       const kind=storageManagementKind(item),live=isCurrent&&Runtime.currentScope?.scopeKey===scopeKey?Runtime.currentScope:{};
-      const label={server_managed:'서버 사용 · RE:TRACE → 서버 데이터 관리에서 삭제',empty:'빈 저장소 · 정리 후보',registry_only:'목록 잔재 · 기억 데이터 삭제 없이 정리',orphan:'원본 채팅 없음 · 기억은 보존됨',corrupt:'손상 확인 · 데이터 유지',unavailable:'연결 확인 보류 · 데이터 유지'}[kind];
+      const label={server_managed:'서버 저장소 · 선택 시 서버 및 로컬 동시 정리',empty:'빈 저장소 · 정리 후보',registry_only:'목록 잔재 · 기억 데이터 삭제 없이 정리',orphan:'원본 채팅 없음 · 기억은 보존됨',corrupt:'손상 확인 · 데이터 유지',unavailable:'연결 확인 보류 · 데이터 유지'}[kind];
       const verificationStatus = text(item.storageVerificationStatus || SCOPE_STORAGE_VERIFICATION.PENDING);
       const manifestVerified = verificationStatus === SCOPE_STORAGE_VERIFICATION.MANIFEST_VERIFIED;
       const registryOnlyVerified = verificationStatus === SCOPE_STORAGE_VERIFICATION.REGISTRY_ONLY_VERIFIED;
@@ -46649,25 +46905,29 @@ ${cleanedText}`, 80),
       return `<div class="empty"><b>수동 편집</b><span>현재 스코프의 응답 원문과 청크를 확인하고 필요한 항목을 골라 삭제 후보에 둘 수 있습니다.</span><button class="btn btn--primary" type="button" data-open-manual-editor="response">응답 원문 목록 열기</button><small class="hint">응답 파생 인덱스는 자동 생성되는 읽기 전용 데이터입니다.</small></div>`;
     }
     const pending = new Set((data.pendingDeleteKeys || state.pendingDeleteKeys || []).map(key => text(key).trim()).filter(Boolean));
-    const groups = Array.isArray(data.groups) && data.groups.length
-      ? data.groups
-      : [{ type: MANUAL_EDITOR_SOURCE_TYPE, label: sourceTypeLabel(MANUAL_EDITOR_SOURCE_TYPE), records: 0, tokens: 0, chars: 0 }];
-    const typeRows = groups.map(group => {
-      const active = group.type === data.sourceType;
-      return `<button class="row ${active ? 'is-on' : ''}" type="button" data-manual-source-type="${escapeHtml(group.type)}"><span class="row__icon">${formatNumber(group.records || 0)}</span><span><span class="row__title">${escapeHtml(group.label || sourceTypeLabel(group.type))}</span><span class="row__meta" style="display:block">최신순</span></span></button>`;
-    }).join('');
-    const visible = data.records.length;
+    
+    // 턴별 집계 및 정렬
+    const turnMap = new Map();
+    for (const r of data.records) {
+      const t = Number(r.turnIndex || 0);
+      if (t > 0) turnMap.set(t, (turnMap.get(t) || 0) + 1);
+    }
+    const sortedTurns = Array.from(turnMap.keys()).sort((a, b) => b - a);
+    const selectedTurn = Number(state.selectedTurn || 0) || null;
+    const displayRecords = selectedTurn ? data.records.filter(r => Number(r.turnIndex) === selectedTurn) : data.records;
+
+    const visible = displayRecords.length;
     const total = Number(data.total || 0) || 0;
     const selectedCount = pending.size;
     const meta = [
-      `${formatNumber(total)}개`,
+      selectedTurn ? `T${selectedTurn} 턴 (${formatNumber(visible)}개 청크)` : `전체 ${formatNumber(total)}개`,
       data.search ? `검색 "${data.search}"` : '',
       data.sort === 'longest' ? '긴 원문 우선' : data.sort === 'oldest' ? '오래된 순' : '최신순'
     ].filter(Boolean).join(' · ');
     const problems = (data.issues || []).map(issue => `파일 ${issue.shardIndex + 1}: ${issue.reason}`);
     if (data.countMismatch) problems.push(`저장 목록 ${formatNumber(data.expectedTotal)}개 / 읽은 원문 ${formatNumber(total)}개`);
     const warning = problems.length ? `<div class="note note--warn" role="status"><strong>원문 목록 확인 필요</strong><span>${escapeHtml(problems.join(' · '))}</span><span>읽을 수 있는 기록만 표시합니다. 데이터 삭제나 재구축 없이 기억 유지보수의 ‘상태만 진단’으로 확인하세요.</span></div>` : '';
-    const rows = data.records.map(record => {
+    const rows = displayRecords.map(record => {
       const selected = pending.has(record.key);
       const metaLine = [
         record.role ? `role=${record.role}` : '',
@@ -46681,11 +46941,36 @@ ${cleanedText}`, 80),
       const recordTitle = record.displayTitle || record.title || (record.turnIndex ? `T${formatNumber(record.turnIndex)} · ${sourceTypeLabel(record.sourceType)}` : sourceTypeLabel(record.sourceType));
       return `<article class="card card--tight" data-manual-record-key="${escapeHtml(record.key)}"><div class="split"><b>${escapeHtml(text(recordTitle || record.id || 'Untitled').replace(/^라이브챗 콜드스타트:/, '채팅 응답:'))}</b><span class="badge ${record.deletionProtected ? 'badge--ok' : selected ? 'badge--warn' : ''}">${escapeHtml(record.deletionProtected ? '영구 기록 보호' : `${record.status?.label || '상태 미확인'} · ${formatNumber(record.chars)}자`)}</span></div><p class="muted fb-turn-text">${escapeHtml(turnPairDisplayText(record.preview || ''))}</p><div class="cluster"><button class="btn btn--sm" type="button" data-manual-open-text="${escapeHtml(record.key)}" aria-expanded="false">원문 펼치기</button><button class="btn btn--sm ${record.deletionProtected ? '' : 'btn--danger'}" type="button" data-manual-toggle-delete="${escapeHtml(record.key)}" ${record.deletionProtected ? 'disabled' : ''}>${record.deletionProtected ? '영구 기록 보호' : selected ? '대기 취소' : '삭제 후보에 추가'}</button></div><pre data-full-record class="mono" hidden></pre><details class="fold"><summary>원문 메타데이터</summary><div class="fold__body hint">${escapeHtml([record.sourceLabel, record.title && record.title !== record.displayTitle ? `저장 제목 ${record.title}` : '', record.id || '', time, metaLine].filter(Boolean).join(' · '))}</div></details></article>`;
     }).join('');
-    const more = data.hasMore === true
+    const more = data.hasMore === true && !selectedTurn
       ? `<button id="manualEditorMoreBtn" class="btn" type="button" data-manual-load-more="1">더 보기 ${formatNumber(visible)} / ${formatNumber(total)}</button>`
       : '';
     return `<div class="grid g-side" data-manual-editor>
-      <aside class="list">${typeRows || '<div class="empty">저장된 데이터가 없습니다.</div>'}</aside>
+      <aside class="list" style="display:flex;flex-direction:column;gap:6px;max-height:680px">
+        <div class="manual-turn-search-box" style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:6px">
+          <input type="number" id="manualTurnSearchInput" class="input" style="width:54px;height:28px;padding:2px 4px;text-align:center;font-weight:700" min="1" placeholder="턴#" value="${selectedTurn || ''}" aria-label="턴 번호">
+          <span style="font-size:13px;font-weight:600;white-space:nowrap">턴</span>
+          <button type="button" id="manualTurnSearchBtn" class="btn btn--sm" style="height:28px;padding:2px 10px;white-space:nowrap">찾기</button>
+        </div>
+        <div class="manual-turn-list" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:3px;max-height:560px">
+          <button class="row ${!selectedTurn ? 'is-on' : ''}" type="button" data-manual-turn="all">
+            <span class="row__icon" style="font-size:12px;font-weight:700">전체</span>
+            <span>
+              <span class="row__title">모든 턴</span>
+              <span class="row__meta" style="display:block">${formatNumber(data.records.length)}개 청크</span>
+            </span>
+          </button>
+          ${sortedTurns.map(t => {
+            const active = selectedTurn === t;
+            return `<button class="row ${active ? 'is-on' : ''}" type="button" data-manual-turn="${t}">
+              <span class="row__icon" style="font-weight:700">T${t}</span>
+              <span>
+                <span class="row__title">T${t}</span>
+                <span class="row__meta" style="display:block">${formatNumber(turnMap.get(t))}개 청크</span>
+              </span>
+            </button>`;
+          }).join('')}
+        </div>
+      </aside>
       <section class="stack stack--sm">
         <div class="cluster"><div class="search grow"><input class="input" style="padding-left:12px;padding-right:42px" id="manualEditorSearch" value="${escapeHtml(data.search || '')}" placeholder="원문 검색..." aria-label="원문 검색"><button id="manualEditorSearchBtn" class="btn btn--icon" style="position:absolute;right:4px;top:4px;border:0;background:transparent;padding:4px" type="button" aria-label="검색">${searchIcon}</button></div>
             <select class="select" style="width:auto" id="manualEditorSort" aria-label="원문 정렬">
@@ -46694,9 +46979,10 @@ ${cleanedText}`, 80),
               <option value="longest" ${data.sort === 'longest' ? 'selected' : ''}>긴 원문 우선</option>
             </select>
             </div>
+        ${selectedTurn ? `<div class="cluster" style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:rgba(255,255,255,0.04);border-radius:6px;border:1px solid rgba(255,255,255,0.08)"><span style="font-size:13px;font-weight:600">T${selectedTurn} 턴 원문 (${formatNumber(visible)}개 청크)</span><button type="button" class="btn btn--sm" data-manual-turn="all" style="padding:2px 8px;font-size:12px">전체 턴 보기</button></div>` : ''}
         ${warning}
-        <div id="manualEditorRecordList" class="stack stack--sm">${rows || `<div class="empty">${problems.length ? '원문을 읽지 못했습니다. 위의 확인 상태를 참고해 주세요.' : data.search ? '검색 조건에 맞는 원문이 없습니다.' : '저장된 응답 원문이 없습니다.'}</div>`}</div>
-        ${total > visible && !data.hasMore ? '<p class="hint">화면 표시 상한에 도달했습니다. 원문 검색으로 범위를 좁혀 주세요.</p>' : ''}
+        <div id="manualEditorRecordList" class="stack stack--sm">${rows || `<div class="empty">${problems.length ? '원문을 읽지 못했습니다. 위의 확인 상태를 참고해 주세요.' : selectedTurn ? `T${selectedTurn} 턴에 해당하는 응답 원문이 없습니다.` : data.search ? '검색 조건에 맞는 원문이 없습니다.' : '저장된 응답 원문이 없습니다.'}</div>`}</div>
+        ${total > visible && !data.hasMore && !selectedTurn ? '<p class="hint">화면 표시 상한에 도달했습니다. 원문 검색으로 범위를 좁혀 주세요.</p>' : ''}
         ${more}
         <div class="toolbar-lite card card--flat"><div class="split"><span id="manualEditorPendingText">삭제 후보 ${formatNumber(selectedCount)}개</span><div class="cluster"><button id="manualEditorClearBtn" class="btn btn--sm" type="button" ${selectedCount ? '' : 'disabled'}>후보 비우기</button><button id="manualEditorApplyBtn" class="btn btn--sm btn--danger" type="button" ${selectedCount ? '' : 'disabled'}>선택 삭제 적용…</button></div></div><p class="hint">후보에 추가해도 삭제되지 않습니다. 확인 후 선택 항목만 삭제합니다.</p></div>
       </section>
@@ -46941,6 +47227,7 @@ ${cleanedText}`, 80),
   let flashbackWorldlineView = null;
   let flashbackWorldlineViewToken = 0;
   let flashbackWorldlineVisible = 24;
+  let flashbackWorldlineSelectedTurn = null;
   const flashbackWorldlineLabels = Object.freeze({ active: '현재 대화에 연결됨', quarantined: '격리 · 확인 필요', inactive_variant: '선택되지 않은 응답 · 리콜 제외', detached_branch: '현재 대화에서 벗어난 턴 · 리콜 제외', orphaned: '연결 확인 필요' });
   const flashbackLineageReasonLabels = Object.freeze({
     no_native_branch_marker: '독립 채팅 · RisuAI 분기 표식 없음', exact_host_branch_prefix: '분기 지점까지 원문 일치',
@@ -46958,7 +47245,7 @@ ${cleanedText}`, 80),
   const flashbackWorldlineSourceIdentity = (snapshot, scope) => JSON.stringify([
     scope.scopeKey, scope.chatId, MemorySuiteHostLineage.fingerprint(Array.isArray(snapshot.chat?.message) ? snapshot.chat.message : snapshot.chat?.messages || []), scope.hostLineage
   ]);
-  const loadFlashbackWorldlineView = async (options = {}) => {
+    const loadFlashbackWorldlineView = async (options = {}) => {
     const snapshot = await loadRisuSnapshot(false);
     const scope = resolveScopeFromSnapshot(snapshot);
     if (!snapshot.chat || !text(snapshot.chat.id || snapshot.chat.chatId || '') || !scope.scopeKey) throw new Error('현재 채팅의 식별 정보를 확인하지 못했습니다.');
@@ -46988,7 +47275,25 @@ ${cleanedText}`, 80),
     try {
       const loaded = await loadScopeRecords(scope.scopeKey, { readOnly: true });
       const responses = Array.from(loaded?.records || []).filter(isResponseMemoryRecord);
-      memoryNodes = { ids: new Set(responses.map(record => text(record.turnNodeId || '')).filter(Boolean)), turns: new Set(responses.filter(record => !record.turnNodeId).map(finiteTurnIndex).filter(Boolean)) };
+      const ids = new Set();
+      const turns = new Set();
+      for (const record of responses) {
+        const tId = text(record.turnNodeId || '').trim();
+        if (tId) ids.add(tId);
+        const lId = text(record.logicalTurnId || '').trim();
+        if (lId) ids.add(lId);
+        const rId = text(record.id || '').trim();
+        if (rId) ids.add(rId);
+
+        const directTurn = Number(record.pairIndex || record.turnIndex || finiteTurnIndex(record) || record.turn || 0);
+        if (Number.isFinite(directTurn) && directTurn > 0) turns.add(directTurn);
+
+        const titleMatch = String(record.title || '').match(/#(\d+)/);
+        if (titleMatch && Number(titleMatch[1]) > 0) turns.add(Number(titleMatch[1]));
+        const srcMatch = String(record.sourceId || '').match(/:(\d+)(?:-|$)/);
+        if (srcMatch && Number(srcMatch[1]) > 0) turns.add(Number(srcMatch[1]));
+      }
+      memoryNodes = { ids, turns };
     } catch (_) { memoryNodes = null; }
     const next = await loadRisuSnapshot(false), nextScope = resolveScopeFromSnapshot(next);
     if (options.shouldCancel?.() || flashbackWorldlineSourceIdentity(next, nextScope) !== identity) throw new Error('조회 중 채팅 또는 원문이 변경되었습니다. 다시 조회해 주세요.');
@@ -46998,7 +47303,14 @@ ${cleanedText}`, 80),
     if (manualEditorCommitIdentity(manifest) !== manualEditorCommitIdentity(afterManifest) || stableHash(typeof raw === 'string' ? raw : safeStringify(raw)) !== stableHash(typeof afterRaw === 'string' ? afterRaw : safeStringify(afterRaw))) throw new Error('조회 중 저장 원장이 변경되었습니다. 다시 조회해 주세요.');
     if (options.shouldCancel?.()) return null;
     return { scope, lineage: MemorySuiteHostLineage.normalize(scope.hostLineage),
-      present, nodes: cleanNodes.map(node => ({ ...node, memory: !memoryNodes ? 'unknown' : memoryNodes.ids.has(node.turnNodeId) || memoryNodes.turns.has(node.pairIndex) ? 'stored' : 'none' })), revision: Number(parsed?.revision || 0), liveHash: text(parsed?.liveHash || ''),
+      present, nodes: cleanNodes.map(node => {
+        const hasMemory = !memoryNodes ? 'unknown' : (
+          (node.turnNodeId && memoryNodes.ids.has(node.turnNodeId)) ||
+          (node.logicalTurnId && memoryNodes.ids.has(node.logicalTurnId)) ||
+          (node.pairIndex > 0 && memoryNodes.turns.has(node.pairIndex))
+        ) ? 'stored' : 'none';
+        return { ...node, memory: hasMemory };
+      }), revision: Number(parsed?.revision || 0), liveHash: text(parsed?.liveHash || ''),
       headTurnNodeId: text(parsed?.headTurnNodeId || ''), retiredCount: Array.isArray(parsed?.retiredRecords) ? parsed.retiredRecords.length : 0,
       manifestPresent: manifest.manifestRawPresent === true, commitId: text(manifest.commitId || ''),
       localCount: Number(manifest.count || 0), archiveCount: Number(manifest.archiveCount || 0),
@@ -47008,7 +47320,7 @@ ${cleanedText}`, 80),
     };
   };
   const renderFlashbackWorldlineView = (view, visible = 24) => {
-    if (!view) return '<div class="empty">현재 채팅의 세계선 정보를 불러오는 중…</div>';
+    if (!view) return '<div class="empty"><strong>세계선 원장을 불러오는 중…</strong><span>현재 활성 채팅의 턴 결속과 분기 정보를 확인하고 있습니다.</span></div>';
     const v = view.lineage?.hostChatId === view.scope.chatId ? view.lineage : null;
     const label = { verified: '공통 원문 검증됨', unverified: '분기 근거 미검증', diverged: '부모와 원문 불일치', independent: '네이티브 분기 표식 없음' }[v?.status] || '분기 근거 미확인';
     const rows = [['현재 채팅', `${view.scope.chatTitle || view.scope.chatId} · ${view.scope.chatId}`], ['현재 스코프', view.scope.scopeKey], ['현재 경로', v?.path?.join(' → ') || view.scope.chatId]];
@@ -47019,21 +47331,178 @@ ${cleanedText}`, 80),
     const receiptLabel = !receipt ? '저장된 네이티브 분기 승계 확인 기록 없음' : !sameProof ? '과거 승계 기록 · 현재 분기 근거와 재확인 필요' : view.copyComplete && receipt.rawSourceVerified === true ? '저장된 승계 확인 기록 있음' : '승계 완료 미확인';
     const receiptRows = [['저장된 확인 기록', receiptLabel], ['현재 로컬 원문 청크', view.manifestPresent ? `${view.localCount}개` : '저장 원장 없음'], ['저장 커밋', view.commitId]];
     if (receipt) receiptRows.push(['승계한 원문 턴 묶음', receipt.copiedTurnGroups], ['승계 제외 묶음', receipt.rejectedGroups], ['승계 당시 검증 구간', `${Number(receipt.verifiedPrefixPairs || 0)} U+A턴`], ['확인 기록 시각', view.copiedAt]);
-    const counts = Object.keys(flashbackWorldlineLabels).map(status => [flashbackWorldlineLabels[status], view.nodes.filter(node => node.status === status).length]);
+    
+    // 활성 노드 및 기억 상태 분석
+    const activeNodes = view.nodes.filter(node => node.status === 'active');
+    const storedActiveNodes = activeNodes.filter(node => node.memory === 'stored');
+    const missingActiveTurns = [...new Set(activeNodes.filter(node => node.memory === 'none').map(node => Number(node.pairIndex)).filter(t => t > 0))].sort((a,b) => a - b);
     const excluded = view.nodes.filter(node => ['inactive_variant','detached_branch'].includes(node.status));
-    const current = view.nodes.filter(node => !['inactive_variant','detached_branch'].includes(node.status));
-    const shown = current.slice(0, visible);
-    const memoryBadge = node => node.memory === 'none' ? '<span class="badge">저장된 기억 없음</span>' : '';
-    const renderNodes = nodes => nodes.map(node => `<details class="fold fb-wl-node"><summary><span class="fb-wl-node__head"><b>T${formatNumber(node.pairIndex)}</b><code>${escapeHtml(node.turnNodeId)}</code></span><span class="cluster"><span class="badge ${node.status==='active'?'badge--ok':'badge--warn'}">${escapeHtml(flashbackWorldlineLabels[node.status] || '미확인 상태')}</span>${memoryBadge(node)}</span></summary><div class="fold__body">${flashbackScopeFields([['상태',flashbackWorldlineLabels[node.status]||node.status],['저장된 기억',node.memory==='stored'?'있음':node.memory==='none'?'없음 · 삭제되었거나 아직 저장되지 않음':'확인 불가'],['상위 노드',node.parentTurnNodeId],['논리 턴',node.logicalTurnId],['응답 버전',node.variantId],['유저 원문 해시',node.userHash],['응답 원문 해시',node.assistantHash],['대체한 노드',node.supersededBy]])}</div></details>`).join('');
-    return `<section class="card" id="fbHostLineage"><div class="card__head"><div><h2 class="card__title">현재 세계선 · 채팅 분기</h2><p class="card__desc">RisuAI 분기 근거와 저장된 턴 연속성을 함께 확인합니다.</p></div><span class="badge ${v?.status === 'verified' ? 'badge--ok' : 'badge--warn'}">${escapeHtml(label)}</span></div>${flashbackScopeFields(rows)}</section>
-      <section class="card"><div class="card__head"><div><h2 class="card__title">원문 승계 · 저장 확인</h2><p class="card__desc">승계 당시 기록입니다. 이 화면을 여는 것만으로 원문을 복사하거나 다시 검증·승인하지 않습니다.</p></div></div>${flashbackScopeFields(receiptRows)}</section>
-      <section class="card"><div class="card__head"><div><h2 class="card__title">턴 연속성</h2><p class="card__desc">현재 대화에 연결된 기억과 확인이 필요한 기록입니다. 선택되지 않은 응답과 벗어난 턴은 아래에 접어 보관합니다.</p></div><span class="badge">${formatNumber(view.nodes.length)}개 노드</span></div>
-      <div class="stats fb-wl-stats">${counts.map(([label,count])=>`<div class="stat"><div class="stat__label">${escapeHtml(label)}</div><div class="stat__value">${formatNumber(count)}</div></div>`).join('')}</div>
-      ${flashbackScopeFields([['원장 revision', view.present ? view.revision : '원장 없음'], ['현재 결속 노드', view.headTurnNodeId || '결속 노드 없음'], ['보존된 이전 원문 청크', view.retiredCount], ...(view.nodes.some(node => node.memory === 'none') ? [['기억이 없는 턴', view.nodes.filter(node => node.memory === 'none').map(node => `T${formatNumber(node.pairIndex)}`).join(', ')]] : [])])}
-      <div class="stack stack--sm">${renderNodes(shown) || '<div class="empty">현재 대화에 연결되거나 확인이 필요한 기록이 없습니다.</div>'}</div>
-      ${current.length > shown.length ? `<button type="button" class="btn" data-fb-worldline-more>더 보기 ${shown.length} / ${current.length}</button>` : ''}
-      ${excluded.length ? `<details class="fold"><summary>현재 대화에서 제외된 기록 · ${formatNumber(excluded.length)}개</summary><div class="fold__body"><p class="hint">선택되지 않은 응답 버전과 현재 흐름에서 벗어난 턴입니다. 삭제하지 않고 보존하며, 현재 리콜에는 사용하지 않습니다.</p><div class="stack stack--sm">${renderNodes(excluded.slice(0,visible))}</div>${excluded.length>visible?'<button type="button" class="btn" data-fb-worldline-more>제외 기록 더 보기</button>':''}</div></details>` : ''}</section>`;
+
+    // 노선도 정렬 (T1 -> T_max 오름차순)
+    const chronologicalActive = activeNodes.slice().sort((a, b) => a.pairIndex - b.pairIndex);
+    const lastActiveTurn = chronologicalActive.length ? chronologicalActive[chronologicalActive.length - 1].pairIndex : 0;
+
+    // 선택된 턴 결정 (기본값: 최신 턴)
+    let selectedTurn = Number(flashbackWorldlineSelectedTurn || 0);
+    if (!selectedTurn || !activeNodes.some(n => n.pairIndex === selectedTurn)) {
+      selectedTurn = lastActiveTurn || (view.nodes.length ? view.nodes[0].pairIndex : 1);
+    }
+    flashbackWorldlineSelectedTurn = selectedTurn;
+
+    // 선택된 노드 찾기
+    const selectedNode = activeNodes.find(n => n.pairIndex === selectedTurn) || view.nodes.find(n => n.pairIndex === selectedTurn) || view.nodes[0] || null;
+
+    // 1. HAYAKU 스타일 연속성 배너 (Banner)
+    const bannerHtml = `<div class="banner ${missingActiveTurns.length > 0 ? 'banner--warn' : 'banner--ok'}">
+      <div class="banner__icon">
+        ${missingActiveTurns.length > 0 ? '<svg class="ic" viewBox="0 0 24 24"><path d="m10.3 2.5 8.7 15A2 2 0 0 1 17.3 20.5H2.7a2 2 0 0 1-1.7-3l8.7-15a2 2 0 0 1 3.5 0zM12 9v4M12 17h.01"></path></svg>' : '<svg class="ic" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"></path></svg>'}
+      </div>
+      <div>
+        <b>${missingActiveTurns.length > 0 ? `누락 ${missingActiveTurns.length}턴의 기억이 확인되지 않았습니다.` : '현재 세계선의 턴 기억이 모두 연결되어 있습니다.'}</b>
+        <span>완료 U+A ${formatNumber(activeNodes.length)}턴 · 보관된 기억 ${formatNumber(storedActiveNodes.length)}턴 · 원장 Revision r${view.revision} (결속: ${view.headTurnNodeId ? compact(view.headTurnNodeId, 16) : '없음'})</span>
+      </div>
+      <span class="badge ${missingActiveTurns.length > 0 ? 'badge--warn' : 'badge--ok'}">
+        ${missingActiveTurns.length === 0 ? '기억 연결률 100%' : `누락 ${missingActiveTurns.length}턴`}
+      </span>
+    </div>`;
+
+    // 2. HAYAKU 스타일 노선도 (Continuity Route Track)
+    const routeTrackHtml = chronologicalActive.length ? `<div class="route__track">${chronologicalActive.map(node => {
+      const t = node.pairIndex;
+      const isMissing = node.memory === 'none';
+      const isNow = t === selectedTurn;
+      const stateClass = isMissing ? 'stop--miss' : '';
+      const stateLabel = isMissing ? '누락' : '보관됨';
+      return `<button type="button" class="stop ${stateClass}${isNow ? ' is-now' : ''}" data-fb-worldline-turn="${t}" aria-label="T${t} · ${stateLabel}">
+        <b>T${t}</b>
+        <i aria-hidden="true"></i>
+        <small>${stateLabel}</small>
+      </button>`;
+    }).join('')}</div>` : '<div class="empty"><b>표시할 활성 턴이 없습니다.</b><span>패킷 원장이 저장되면 턴 연속성 노선도가 표시됩니다.</span></div>';
+
+    const routeCardHtml = `<section class="card">
+      <div class="card__head">
+        <div>
+          <h2 class="card__title">턴 연속성 노선도</h2>
+          <p class="card__desc">대화 턴의 순차 결속과 기억 보관 상태를 정거장 노선도로 한눈에 확인합니다. 턴을 누르면 아래 상세가 전환됩니다.</p>
+        </div>
+        <span class="badge badge--ok">${formatNumber(activeNodes.length)}턴 연결됨</span>
+      </div>
+      <div class="route">${routeTrackHtml}</div>
+      <div class="legend">
+        <span><i></i> 기억 보관됨</span>
+        <span class="m"><i class="m"></i> 기억 없음 (누락)</span>
+        <span class="w"><i class="w"></i> 결속 대기</span>
+      </div>
+    </section>`;
+
+    // 3. HAYAKU 스타일 2열 레이아웃 (pk-layout)
+    // 좌측: 타임라인 턴 목록 (.pk-list.is-world)
+    // 우측: 선택된 턴 노드 상세 (.card)
+    const listNodes = activeNodes.slice(0, visible);
+    const listHtml = listNodes.map(node => {
+      const active = node.pairIndex === selectedTurn;
+      const isStored = node.memory === 'stored';
+      return `<button type="button" class="pk-row${active ? ' is-on' : ''}" data-fb-worldline-turn="${node.pairIndex}" data-fb-worldline-node="${escapeHtml(node.turnNodeId)}">
+        <b>T${formatNumber(node.pairIndex)}</b>
+        <div>
+          <strong style="color:var(--text);font-size:13px">${escapeHtml(node.turnNodeId)}</strong>
+          <small style="color:var(--text3);font-size:11.5px">${isStored ? '기억 정상 보관' : '기억 미보관'} · ${escapeHtml(flashbackWorldlineLabels[node.status] || node.status)}</small>
+        </div>
+        <span class="badge ${isStored ? 'badge--ok' : 'badge--warn'}" style="font-size:11px">
+          ${isStored ? '보관됨' : '누락'}
+        </span>
+      </button>`;
+    }).join('');
+
+    const detailHtml = selectedNode ? `<div class="card__head">
+        <div>
+          <small class="eyebrow" style="color:var(--accent);font-weight:700">TURN BINDING</small>
+          <h2 class="card__title" style="margin-top:2px">T${formatNumber(selectedNode.pairIndex)} · ${escapeHtml(selectedNode.turnNodeId)}</h2>
+          <p class="card__desc">세계선 원장 결속 노드 세부 사양 및 원문 해시</p>
+        </div>
+        <span class="badge ${selectedNode.memory === 'stored' ? 'badge--ok' : 'badge--warn'}">
+          ${selectedNode.memory === 'stored' ? '기억 보관됨' : '기억 없음'}
+        </span>
+      </div>
+      <div class="kv">
+        <dt>결속 상태</dt><dd><b>${escapeHtml(flashbackWorldlineLabels[selectedNode.status] || selectedNode.status)}</b></dd>
+        <dt>저장된 기억</dt><dd>${selectedNode.memory === 'stored' ? '<span class="badge badge--ok">있음 · 원문 청크 정상 보관</span>' : '<span class="badge badge--warn">없음 · 삭제되었거나 아직 저장되지 않음</span>'}</dd>
+        <dt>상위 노드</dt><dd class="mono">${escapeHtml(selectedNode.parentTurnNodeId || '없음 (첫 번째 턴)')}</dd>
+        <dt>논리 턴 ID</dt><dd class="mono">${escapeHtml(selectedNode.logicalTurnId || '—')}</dd>
+        <dt>응답 버전</dt><dd class="mono">${escapeHtml(selectedNode.variantId || '—')}</dd>
+        <dt>유저 원문 해시</dt><dd class="mono" style="font-size:11.5px;color:var(--text2)">${escapeHtml(selectedNode.userHash || '—')}</dd>
+        <dt>응답 원문 해시</dt><dd class="mono" style="font-size:11.5px;color:var(--text2)">${escapeHtml(selectedNode.assistantHash || '—')}</dd>
+        <dt>대체한 노드</dt><dd class="mono">${escapeHtml(selectedNode.supersededBy || '없음')}</dd>
+      </div>
+      <div class="cluster" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
+        <button type="button" class="btn btn--sm" data-open-manual-editor="response" data-manual-goto-turn="${selectedNode.pairIndex}">
+          이 턴 저장 원문 보기
+        </button>
+      </div>` : '<div class="empty">선택된 노드가 없습니다.</div>';
+
+    const pkLayoutHtml = `<section class="card">
+      <div class="card__head">
+        <div>
+          <h2 class="card__title">세계선 턴 결속 목록</h2>
+          <p class="card__desc">대화의 활성 턴과 원장 노드 결속 목록입니다. 항목을 누르면 우측에서 상세 내용을 확인합니다.</p>
+        </div>
+        <span class="badge">${formatNumber(activeNodes.length)}개 노드</span>
+      </div>
+      <div class="pk-layout">
+        <div class="list pk-list is-world" style="max-height:520px">
+          ${listHtml || '<div class="empty">표시할 활성 턴 결속이 없습니다.</div>'}
+          ${activeNodes.length > listNodes.length ? `<button type="button" class="btn" style="width:100%;margin-top:8px" data-fb-worldline-more>더 보기 ${listNodes.length} / ${activeNodes.length}</button>` : ''}
+        </div>
+        <div class="card card--flat" style="padding:18px">
+          ${detailHtml}
+        </div>
+      </div>
+    </section>`;
+
+    // 4. 하단 접이식 섹션들 (분기 근거, 원문 승계, 제외 노드)
+    const lineageFold = `<details class="fold" id="fbHostLineage" open>
+      <summary><b>현재 세계선 · RisuAI 채팅 분기 근거</b><span class="badge ${v?.status === 'verified' ? 'badge--ok' : 'badge--warn'}">${escapeHtml(label)}</span></summary>
+      <div class="fold__body">
+        ${flashbackScopeFields(rows)}
+      </div>
+    </details>`;
+
+    const receiptFold = `<details class="fold">
+      <summary><b>원문 승계 · 저장 확인 기록</b><span class="badge">${view.manifestPresent ? `${view.localCount}개 청크` : '저장 원장 없음'}</span></summary>
+      <div class="fold__body">
+        <p class="hint">승계 당시 기록입니다. 이 화면을 여는 것만으로 원문을 복사하거나 다시 검증·승인하지 않습니다.</p>
+        ${flashbackScopeFields(receiptRows)}
+      </div>
+    </details>`;
+
+    const excludedFold = excluded.length ? `<details class="fold">
+      <summary><b>현재 대화에서 제외된 기록 · ${formatNumber(excluded.length)}개</b></summary>
+      <div class="fold__body">
+        <p class="hint">선택되지 않은 응답 버전과 현재 흐름에서 벗어난 턴입니다. 삭제하지 않고 보존하며, 현재 리콜에는 사용하지 않습니다.</p>
+        <div class="list" style="max-height:320px;overflow:auto">
+          ${excluded.slice(0, visible).map(node => `<div class="row">
+            <b class="mono" style="color:var(--text3)">T${node.pairIndex}</b>
+            <div>
+              <div class="row__title mono" style="font-size:12px">${escapeHtml(node.turnNodeId)}</div>
+              <div class="row__meta">${escapeHtml(flashbackWorldlineLabels[node.status] || node.status)} · ${node.memory === 'stored' ? '기억 있음' : '기억 없음'}</div>
+            </div>
+            <span class="badge badge--warn" style="font-size:11px">제외</span>
+          </div>`).join('')}
+        </div>
+      </div>
+    </details>` : '';
+
+    return `<div class="stack stack--lg">
+      ${bannerHtml}
+      ${routeCardHtml}
+      ${pkLayoutHtml}
+      ${lineageFold}
+      ${receiptFold}
+      ${excludedFold}
+    </div>`;
   };
+
   const refreshFlashbackWorldlinePanel = async () => {
     const node = getGuiNode('fbWorldlineContent');
     if (!node || Runtime.guiTab !== 'worldline') return false;
@@ -47263,7 +47732,17 @@ ${cleanedText}`, 80),
     const tokens = fullRebuild ? plan.rebuildEstimatedEmbeddingTokens : plan.estimatedEmbeddingTokens;
     const cost = fullRebuild ? plan.rebuildEmbeddingCost : plan.embeddingCost;
     const damage = Number(plan.storageMissingShards || 0) + Number(plan.storageCorruptShards || 0) + Number(!!plan.storageManifestCorrupt) + Number(!!plan.storageArchiveRefInvalid) + Number(!!plan.storageRecordCountMismatch) + Number(!!plan.storageForeignScopeKey);
-    const metrics = [
+    const isServerMode = plan.inspection?.coverage === 'server_snapshot';
+    const metrics = isServerMode ? [
+      ['현재 채팅', `${number(plan.liveTurns)}턴`],
+      ['서버 저장', `${number(plan.storedTurns)}턴`],
+      ['누락 턴', `${number(plan.missingTurns)}턴`],
+      ['변경 감지', `${number(plan.changedTurns)}턴`],
+      ['동기화 상태', plan.healthy ? '일치 (정상)' : plan.automatic?.strategy === 'server_turn_sync' ? '동기화 필요' : '점검 완료'],
+      ['임베딩 처리', plan.inspection.credentialStatus === 'not_required' ? '서버 자동' : '서버 연동'],
+      ['클라이언트 호출', '0건 (호출 없음)'],
+      ['예상 비용', '0원 (서버 처리)']
+    ] : [
       ['누락', `${number(plan.missingTurns)}턴`],
       ['변경 감지', `${number(plan.changedTurns)}구간`],
       ['손상', number(damage)],
@@ -47274,25 +47753,30 @@ ${cleanedText}`, 80),
       ['예상 비용', formatCostSummary(cost)]
     ];
     const details = maintenancePlanText(plan).split('\n').filter(Boolean);
-    const callsText = Number(newVectors || 0) > 0
-      ? `새 임베딩 ${number(newVectors)}개를 위해 임베딩 제공자를 호출합니다.`
-      : '예상 임베딩 제공자 호출 없음.';
+    const callsText = isServerMode
+      ? '서버 모드: 클라이언트 임베딩 API 호출 없음 (서버가 직접 처리)'
+      : Number(newVectors || 0) > 0
+        ? `새 임베딩 ${number(newVectors)}개를 위해 임베딩 제공자를 호출합니다.`
+        : '예상 임베딩 제공자 호출 없음.';
     const credentialText = plan.inspection?.coverage === 'server_snapshot'
-      ? (plan.inspection.credentialStatus === 'not_required' ? '필요 없음 · 설정 기준' : '미검증 · 점검에서 읽지 않음')
+      ? (plan.inspection.credentialStatus === 'not_required' ? '필요 없음 · 서버 전용' : '확인됨 · 서버 연동')
       : plan.embeddingCredentialRequired ? (plan.embeddingCredential?.present ? '준비됨' : plan.embeddingWorkPending ? '없음 · 원격 복구 차단' : '없음 · 현재 기억 데이터는 유지') : '필요 없음';
     const serverModeText = plan.inspection?.coverage === 'server_snapshot'
-      ? '검증된 서버 스냅샷의 읽기 전용 검사만 가능 · 물리 복구는 금지 · 제공자 호출 없음'
+      ? (plan.automatic?.strategy === 'server_turn_sync' ? '서버 모드: 누락·변경 턴을 서버 DB에 안전하게 동기화할 수 있습니다.' : '서버 모드: 현재 원문과 서버 저장소 기억이 정상 일치합니다.')
       : '서버 전용 모드에서는 물리 복구와 제공자 호출을 수행하지 않습니다.';
-    target.innerHTML = `<div class="plan-grid">${metrics.map(([label,value]) => `<div><b>${escapeHtml(label)}</b>${escapeHtml(value)}</div>`).join('')}</div><dl class="cost-table" style="margin-top:12px"><dt>제공자 호출</dt><dd>${escapeHtml(callsText)}</dd><dt>자격 증명·제공자</dt><dd>${escapeHtml(credentialText)}</dd><dt>서버 전용 모드</dt><dd>${escapeHtml(serverModeText)}</dd>${details.map((line,index) => `<dt>${escapeHtml(['저장 범위','턴 상태','정제 상태','정제기 버전','문장 청크','리콜 샤드','저장 무결성','영구 기록','이전 아카이브','벡터 복구','임베딩 자격','에피소드 인덱스','자동 복구 경로','예상 작업','판정'][index] || '점검 세부')}</dt><dd>${escapeHtml(line)}</dd>`).join('')}</dl>`;
+    const detailLabels = isServerMode
+      ? ['진단 대상', '턴 대조', '누락·변경', '임베딩 키', '복구 전략', '종합 판정']
+      : ['저장 범위','턴 상태','정제 상태','정제기 버전','문장 청크','리콜 샤드','저장 무결성','영구 기록','이전 아카이브','벡터 복구','임베딩 자격','에피소드 인덱스','자동 복구 경로','예상 작업','판정'];
+    target.innerHTML = `<div class="plan-grid">${metrics.map(([label,value]) => `<div><b>${escapeHtml(label)}</b>${escapeHtml(value)}</div>`).join('')}</div><dl class="cost-table" style="margin-top:12px"><dt>제공자 호출</dt><dd>${escapeHtml(callsText)}</dd><dt>자격 증명·제공자</dt><dd>${escapeHtml(credentialText)}</dd><dt>저장소 모드</dt><dd>${escapeHtml(serverModeText)}</dd>${details.map((line,index) => `<dt>${escapeHtml(detailLabels[index] || '점검 세부')}</dt><dd>${escapeHtml(line)}</dd>`).join('')}</dl>`;
     setNodeText('maintenancePlanBadge', plan.healthy ? '정상 확인' : plan.automatic?.blocked ? '실행 차단' : '계획 확인');
     return true;
   };
 
   const buildImportTab = () => {
     return `<section id="panel-import" data-panel="import" class="stack stack--lg">
-      <div class="card"><div class="steps"><div class="step is-active"><span class="step__no">1</span><b>상태만 진단</b><span>읽기 전용 · 제공자 호출 없음</span></div><div class="step"><span class="step__no">2</span><b>예상 변경·비용</b><span>누락·손상·벡터 재사용</span></div><div class="step"><span class="step__no">3</span><b>승인</b><span>비용이 있으면 동의 필요</span></div><div class="step"><span class="step__no">4</span><b>진행·결과</b><span>저장 후 readback</span></div></div><div class="cluster"><button id="maintenanceInspectBtn" class="btn btn--primary" type="button">상태만 진단</button><button id="maintenanceAutoBtn" class="btn" type="button">자동 점검·복구</button></div><p class="hint">진단은 저장소를 읽기만 합니다. 정상 벡터를 다시 만들지 않고, 실행 전에 범위와 예상 호출을 표시합니다.</p></div>
+      <div class="card"><div class="steps"><div class="step is-active"><span class="step__no">1</span><b>상태 점검</b><span>읽기 전용 · 제공자 호출 없음</span></div><div class="step"><span class="step__no">2</span><b>예상 변경·비용</b><span>누락·손상·벡터 재사용</span></div><div class="step"><span class="step__no">3</span><b>승인</b><span>비용이 있으면 동의 필요</span></div><div class="step"><span class="step__no">4</span><b>진행·결과</b><span>저장 후 readback</span></div></div><div class="cluster"><button id="maintenanceInspectBtn" class="btn btn--primary" type="button"><i data-i="shield" data-size="sm"></i>상태 점검 및 자동 복구</button><button id="maintenanceAutoBtn" class="btn sr-only" type="button" tabindex="-1" aria-hidden="true" style="display:none">자동 점검·복구</button></div><p class="hint">점검은 먼저 저장소를 안전하게 읽기만 합니다. 누락되거나 변경된 턴이 발견되면 진단 창에서 바로 확인 후 원스톱으로 동기화·복구를 실행할 수 있습니다. (로컬 / 서버 모드 자동 감지)</p></div>
       <section class="card"><div class="card__head"><div><h2 class="card__title">점검 · 복구 계획</h2><p class="card__desc">실행 전 확인된 원문과 저장 상태를 비교합니다. 자격 증명이나 제공자 호출이 필요하면 동의 전에 구분해 표시합니다.</p></div><span id="maintenancePlanBadge" class="badge">${Runtime.guiLastMaintenancePlan ? (Runtime.guiLastMaintenancePlan.healthy ? '정상 확인' : Runtime.guiLastMaintenancePlan.automatic?.blocked ? '실행 차단' : '계획 확인') : '진단 대기'}</span></div><div id="maintenancePlan"><div class="empty"><b>아직 진단 결과가 없습니다.</b><span>‘상태만 진단’을 눌러 읽기 전용 결과를 확인하세요.</span></div></div>
-        <div class="grid g2"><div class="field"><label for="maintenanceMode">작업</label><select id="maintenanceMode" aria-describedby="maintenanceMode-hint" class="select"><option value="sync">누락·변경 턴만 동기화</option><option value="rebuild">현재 채팅에서 전체 재구축</option><option value="reembed">로컬 미완료 벡터 복구</option></select><span class="hint" id="maintenanceMode-hint">전체 재구축은 현재 채팅 원문에서 저장소를 교체합니다. 로컬 복구는 저장된 대기 항목만 처리합니다.</span></div><div class="field"><label>보호 조건</label><p class="hint">영구 과거, 다른 채팅 소유 자료, 확인되지 않은 항목은 실행 대상에서 제외합니다. 저장·복구 뒤에는 실제 저장소를 다시 읽습니다.</p></div></div>
+        <div class="grid g2"><div class="field"><label for="maintenanceMode">작업</label><select id="maintenanceMode" aria-describedby="maintenanceMode-hint" class="select"><option value="sync">누락·변경 턴 동기화 (서버/로컬 공통)</option><option value="rebuild">현재 채팅에서 전체 재구축 (로컬 전용)</option><option value="reembed">로컬 미완료 벡터 복구 (로컬 전용)</option></select><span class="hint" id="maintenanceMode-hint">전체 재구축은 현재 채팅 원문에서 저장소를 교체합니다. 로컬 복구는 저장된 대기 항목만 처리합니다.</span></div><div class="field"><label>보호 조건</label><p class="hint">영구 과거, 다른 채팅 소유 자료, 확인되지 않은 항목은 실행 대상에서 제외합니다. 저장·복구 뒤에는 실제 저장소를 다시 읽습니다.</p></div></div>
         <div class="cluster"><button id="maintenanceRunBtn" class="btn btn--primary" type="button">선택 작업 실행</button><button id="maintenanceArchiveRunBtn" class="btn" type="button">아카이브 응답 한 묶음 복구</button></div>
       </section>
       <section id="maintenanceExecutionCard" class="card" aria-labelledby="maintenanceExecutionTitle"><div class="card__head"><div><h2 id="maintenanceExecutionTitle" class="card__title">유지보수 실행 현황</h2><p class="card__desc">요청 수, 완료 배치, 미확정 결과는 별도로 표시합니다.</p></div><span id="maintenanceExecutionBadge" class="badge" data-tone="neutral">대기</span></div>
@@ -47507,7 +47991,40 @@ ${cleanedText}`, 80),
 
   // Data presentation: turn text as user/response lines, a worldline stat grid without empty
   // cells, and turn nodes whose id and badges stay aligned.
-  const FLASHBACK_GUI_DATA_STYLES = '.fb-turn-text,.frame-card__img,.frame-card__detail>p{white-space:pre-line}.fb-wl-stats{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:16px}.fb-wl-node>summary{flex-wrap:wrap}.fb-wl-node__head{display:flex;align-items:baseline;gap:10px;min-width:0;margin-right:auto}.fb-wl-node__head b{min-width:36px}.fb-wl-node__head code{font:500 12px/1.4 var(--font-mono,monospace);color:var(--text3)}.fb-wl-node>summary .cluster{gap:6px}';
+  const FLASHBACK_GUI_DATA_STYLES = String.raw`.fb-turn-text,.frame-card__img,.frame-card__detail>p{white-space:pre-line}.fb-wl-stats{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:16px}.fb-wl-node>summary{flex-wrap:wrap}.fb-wl-node__head{display:flex;align-items:baseline;gap:10px;min-width:0;margin-right:auto}.fb-wl-node__head b{min-width:36px}.fb-wl-node__head code{font:500 12px/1.4 var(--font-mono,monospace);color:var(--text3)}.fb-wl-node>summary .cluster{gap:6px}
+/* HAYAKU 월드라인 노선도 & 2열 결속 레이아웃 */
+.route{overflow-x:auto;padding:6px 4px 12px;margin:10px 0}
+.route__track{display:flex;min-width:max-content}
+.stop{position:relative;flex:1 0 82px;width:82px;display:grid;justify-items:center;gap:4px;padding:6px 4px;border:0;background:transparent;color:var(--text);border-radius:var(--r-sm);cursor:pointer}
+.stop:hover{background:var(--surface3)}
+.stop::before{content:"";position:absolute;top:34px;left:-50%;width:100%;height:4px;background:var(--ok)}
+.stop:first-child::before{display:none}
+.stop b{font:700 12px var(--font-mono);color:var(--text)}
+.stop i{position:relative;z-index:1;width:20px;height:20px;border-radius:50%;border:4px solid var(--ok);background:var(--surface)}
+.stop small{font-size:11.5px;color:var(--text2)}
+.stop--miss::before{background:repeating-linear-gradient(90deg,var(--warn) 0 7px,transparent 7px 13px)}
+.stop--miss i{border:3px dashed var(--warn);background:var(--warn-soft)}
+.stop--wait i{border-color:var(--warn);border-radius:4px;transform:rotate(45deg)}
+.stop--fail i{border-color:var(--danger);border-radius:3px;background:var(--danger-soft)}
+.stop--fail::before{background:var(--danger)}
+.stop--skip i{border-color:var(--border2);background:var(--surface3)}.stop--skip::before{background:var(--border2)}
+.stop.is-now b::before{content:"▼ ";color:var(--accent)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--text2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:11px;height:11px;border-radius:50%;border:3px solid var(--ok);display:inline-block}
+.legend .m{border:2px dashed var(--warn)}.legend .w{border-color:var(--warn);border-radius:2px;transform:rotate(45deg)}.legend .f{border-color:var(--danger);border-radius:2px}.legend .s{border-color:var(--border2)}
+.pk-layout{display:grid;grid-template-columns:minmax(280px,.9fr) minmax(0,1.4fr);gap:14px;align-items:start}
+.pk-list{max-height:560px;overflow:auto}
+.pk-row{display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 14px;border:0;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;color:var(--text);cursor:pointer}
+.pk-row:first-child{border-top:0}.pk-row:hover{background:var(--surface2)}
+.pk-row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.pk-row b{font:700 13px var(--font-mono);color:var(--accent-ink)}
+.pk-row strong{display:block;font-size:13px;color:var(--text)}.pk-row small{color:var(--text3);font-size:12px}
+.pk-list.is-world{border-left:3px solid var(--accent);border-radius:0 var(--r-md) var(--r-md) 0;padding-left:6px}
+.pk-list.is-world .pk-row{position:relative}
+.pk-list.is-world .pk-row::before{content:"";position:absolute;left:-14px;top:50%;width:11px;height:11px;margin-top:-6px;border-radius:50%;background:var(--surface);border:3px solid var(--accent)}
+@container app (max-width:900px){.pk-layout{grid-template-columns:minmax(0,1fr)}}
+`;
   const FLASHBACK_GUI_SERVER_STYLES = String.raw`#flashbackMemorySuiteServerConnectionPanel{width:100%;min-width:0}
 #flashbackMemorySuiteServerConnectionPanel .mscx-scope-root{font-family:inherit;color:var(--text);width:100%;min-width:0;gap:16px}
 #flashbackMemorySuiteServerConnectionPanel .mscx-scope-root .mscx-card{color:var(--text);background:var(--surface);border-color:var(--border);border-radius:var(--r-md);padding:18px;min-width:0;gap:18px}
@@ -47632,7 +48149,7 @@ ${cleanedText}`, 80),
     const healthDescription = `${health.title} · ${health.meta}`;
     const routeTabKey = {lab:'overview',vault:'storage',care:'import',connect:'provider',log:'activity',settings:'advanced'};
     const subtab = (group,id,label,selected) => `<button class="tab" type="button" role="tab" data-subtab="${id}" data-group="${group}" aria-selected="${selected ? 'true':'false'}">${label}</button>`;
-    const storageMarkup = `<section id="panel-storage" data-panel="storage"><div class="tabs" role="tablist" data-subtabs="v">${subtab('v','resp','응답 원문',subtabs.vault==='resp')}${subtab('v','wl','세계선',subtabs.vault==='wl')}${subtab('v','scopes',`스코프 정리 <span class="count" id="tab-scope-n">${storageScopeCountLabel()}</span>`,subtabs.vault==='scopes')}</div><div data-subpanel="resp" data-group="v" class="${subtabs.vault==='resp'?'is-active':''}"><div id="manualEditorPanel">${renderManualEditorPanelHtml(null)}</div></div><div id="panel-worldline" data-panel="worldline" data-subpanel="wl" data-group="v" class="${subtabs.vault==='wl'?'is-active':''}"><div class="stack"><div class="cluster"><button type="button" class="btn" id="fbWorldlineRefresh">세계선 새로고침</button><button type="button" class="btn" data-open-manual-editor="response">저장 원문 보기</button></div><div id="fbWorldlineContent" aria-live="polite">${renderFlashbackWorldlineView(null)}</div></div></div><div data-subpanel="scopes" data-group="v" class="${subtabs.vault==='scopes'?'is-active':''}"><div class="stack"><div class="note note--warn">삭제·정리는 선택 항목을 실행 시점에 다시 확인합니다. 확인할 수 없는 데이터는 자동 정리하지 않습니다. 서버 사본 삭제는 RE:TRACE → 서버 데이터 관리에서 진행합니다.</div><div id="storageScopeLoadStatus" class="note note--warn" role="status" aria-live="polite" hidden></div><div class="cluster"><select id="storageManagementView" class="select" aria-label="저장소 분류">${[['memory','기억 저장소'],['cleanup','정리 후보'],['orphan','고아 기억'],['all','전체']].map(([value,label])=>`<option value="${value}" ${(Runtime.guiStorageManagementView||'memory')===value?'selected':''}>${label}</option>`).join('')}</select><div class="search grow"><i data-i="search" data-size="sm"></i><input id="storageScopeFilter" class="input" type="search" placeholder="캐릭터 / 채팅 이름으로 찾기" aria-label="스코프 검색"></div><button id="deleteSelectedScopesBtn" class="btn btn--danger" disabled>선택 삭제</button><button id="deleteCurrentScopeBtn" class="btn btn--danger">현재 스코프 삭제</button></div><div class="cluster"><button id="refreshStorageBtn" class="btn">새로고침</button><button id="repairScopeRegistryBtn" class="btn">목록 상태 검사</button><button id="selectCleanupCandidatesBtn" class="btn">빈 목록·저장소 선택</button><button id="cleanupSelectedScopesBtn" class="btn" disabled>선택 항목 안전 정리</button><button id="selectOrphanScopesBtn" class="btn">고아 기억 선택</button><span id="selectedScopeCount" class="hint">선택 0개</span><span id="storageScopeFilterCount" class="hint"></span></div><div class="table-wrap"><table class="table scopes"><thead><tr><th><input id="selectAllScopes" class="storage-scope-select" type="checkbox" aria-label="현재 스코프를 제외한 모든 스코프 선택"></th><th>캐릭터 / 채팅</th><th>토큰</th><th>기억 청크</th><th>샤드 / 보관</th><th>업데이트</th><th></th></tr></thead><tbody id="storageRows"><tr><td colspan="7" class="muted">저장소 목록을 불러오는 중…</td></tr></tbody></table></div></div></div></section>`;
+    const storageMarkup = `<section id="panel-storage" data-panel="storage"><div class="tabs" role="tablist" data-subtabs="v">${subtab('v','resp','응답 원문',subtabs.vault==='resp')}${subtab('v','wl','세계선',subtabs.vault==='wl')}${subtab('v','scopes',`스코프 정리 <span class="count" id="tab-scope-n">${storageScopeCountLabel()}</span>`,subtabs.vault==='scopes')}</div><div data-subpanel="resp" data-group="v" class="${subtabs.vault==='resp'?'is-active':''}"><div id="manualEditorPanel">${renderManualEditorPanelHtml(null)}</div></div><div id="panel-worldline" data-panel="worldline" data-subpanel="wl" data-group="v" class="${subtabs.vault==='wl'?'is-active':''}"><div class="stack"><div class="cluster"><button type="button" class="btn" id="fbWorldlineRefresh">세계선 새로고침</button><button type="button" class="btn" data-open-manual-editor="response">저장 원문 보기</button></div><div id="fbWorldlineContent" aria-live="polite">${renderFlashbackWorldlineView(null)}</div></div></div><div data-subpanel="scopes" data-group="v" class="${subtabs.vault==='scopes'?'is-active':''}"><div class="stack"><div class="note note--warn">삭제·정리는 선택 항목을 실행 시점에 다시 확인합니다. 확인할 수 없는 데이터는 자동 정리하지 않습니다. 서버에 저장된 스코프도 선택하여 로컬 및 서버 데이터를 함께 안전하게 정리할 수 있습니다.</div><div id="storageScopeLoadStatus" class="note note--warn" role="status" aria-live="polite" hidden></div><div class="cluster"><select id="storageManagementView" class="select" aria-label="저장소 분류">${[['memory','기억 저장소'],['cleanup','정리 후보'],['orphan','고아 기억'],['all','전체']].map(([value,label])=>`<option value="${value}" ${(Runtime.guiStorageManagementView||'memory')===value?'selected':''}>${label}</option>`).join('')}</select><div class="search grow"><i data-i="search" data-size="sm"></i><input id="storageScopeFilter" class="input" type="search" placeholder="캐릭터 / 채팅 이름으로 찾기" aria-label="스코프 검색"></div><button id="deleteSelectedScopesBtn" class="btn btn--danger" disabled>선택 삭제</button><button id="deleteCurrentScopeBtn" class="btn btn--danger">현재 스코프 삭제</button></div><div class="cluster"><button id="refreshStorageBtn" class="btn">새로고침</button><button id="repairScopeRegistryBtn" class="btn">목록 상태 검사</button><button id="selectCleanupCandidatesBtn" class="btn">빈 목록·저장소 선택</button><button id="cleanupSelectedScopesBtn" class="btn" disabled>선택 항목 안전 정리</button><button id="selectOrphanScopesBtn" class="btn">고아 기억 선택</button><span id="selectedScopeCount" class="hint">선택 0개</span><span id="storageScopeFilterCount" class="hint"></span></div><div class="table-wrap"><table class="table scopes"><thead><tr><th><input id="selectAllScopes" class="storage-scope-select" type="checkbox" aria-label="현재 스코프를 제외한 모든 스코프 선택"></th><th>캐릭터 / 채팅</th><th>토큰</th><th>기억 청크</th><th>샤드 / 보관</th><th>업데이트</th><th></th></tr></thead><tbody id="storageRows"><tr><td colspan="7" class="muted">저장소 목록을 불러오는 중…</td></tr></tbody></table></div></div></div></section>`;
     const careBody = buildImportTab() + `<section id="panel-source-edits" data-panel="source-edits"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Source edits</div><h2 class="section-title">원문 수정 동기화</h2><p class="page-desc">제품 원문 변경을 확인하고 선택한 범위만 현재 원문으로 재분석합니다.</p></div></div>${buildFlashbackSourceEditCard()}</section><section id="panel-restore" data-panel="restore"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Memory restore</div><h2 class="section-title">백업 · 복원 · 이사</h2><p class="page-desc">파일을 검사하고 대상과 복원 방식을 확인한 뒤 적용합니다.</p></div></div><div class="card"><div class="card__head"><div><h2 class="card__title">JSON 백업 및 복원</h2><p class="card__desc">대화 원문과 비공개 기억이 포함될 수 있습니다. 안전한 곳에 보관하세요.</p></div><span class="badge">JSON</span></div><div data-portable-backup-host="flashback_memory" aria-label="JSON 기억 백업 및 복원"></div><p class="hint">같은 채팅 복원·새 채팅 이사·복사된 채팅 복구는 검사된 파일의 허용 조건을 따릅니다.</p></div></section>`;
     const providerBody = buildProviderTab(settings, current.stats);
     const serverBody = buildServerConnectionTab();
@@ -47641,7 +48158,7 @@ ${cleanedText}`, 80),
     const activityBody = `<div class="page-actions"><button id="clearActivityLogBtn" class="btn" type="button">로그 비우기</button></div><div class="tabs" role="tablist" data-subtabs="l"><button class="tab" role="tab" data-group="l" data-subtab="a" aria-selected="${logSubtab==='a'}">작업 로그 <span class="count" id="tab-log-n">${formatNumber(Runtime.activityLog.length)}</span></button><button class="tab" role="tab" data-group="l" data-subtab="b" aria-selected="${logSubtab==='b'}">무시된 오류 <span class="count" id="swallowedDiagCount">${formatNumber((globalThis.__librarianDiag?.snapshot?.() || []).length)}</span></button><button class="tab" role="tab" data-group="l" data-subtab="c" aria-selected="${logSubtab==='c'}">경고</button></div><div data-subpanel="a" data-group="l" class="${logSubtab==='a'?'is-active':''}"><div class="stack stack--sm"><div id="activityLogList" class="list">${renderActivityLogHtml()}</div><details class="fold"><summary>마지막 작업 세부 정보</summary><pre id="lastActionLog" class="mono hint">${lastAction ? escapeHtml(safeStringify(lastAction,'{}')) : '아직 없음'}</pre></details></div></div><div data-subpanel="b" data-group="l" class="${logSubtab==='b'?'is-active':''}"><div id="swallowedDiagList" class="list">${renderSwallowedDiagHtml()}</div></div><div data-subpanel="c" data-group="l" class="${logSubtab==='c'?'is-active':''}"><pre id="warningLog" class="card mono" style="white-space:pre-wrap">${escapeHtml(warningText)}</pre></div>`;
     const settingsBody = buildAdvancedTab(settings);
     const pages = [
-      `<section class="page ${pageFor==='lab'?'is-active':''}" data-page="lab"><div class="page-head"><div class="page-head__copy"><div class="eyebrow" id="guiPageEyebrow">Memory recall lab</div><h1 class="page-title" id="guiPageTitle">기억 현상실</h1><p class="page-desc" id="guiPageDescription">현재 장면과 연결되어 떠오른 기억을 프레임으로 확인합니다.</p></div><div class="page-actions"><button class="btn" id="overviewMaintenanceBtn" type="button"><i data-i="shield" data-size="sm"></i>상태만 진단</button></div></div><div class="stack stack--lg"><section><div id="lastRecallPanel">${recallFrame}</div></section><div class="stats"><div class="stat"><div class="stat__label">저장 기억</div><div class="stat__value" id="metricChunkTotal">${formatNumber(current.records.length)}</div><div class="stat__meta" id="metricChunkLabel">${current.stats?.statsPartial?'현재 채팅 레코드 · 부분 통계':'현재 채팅 레코드'}</div></div><div class="stat"><div class="stat__label">최근 리콜 <span class="badge ${recall?.skipped?'badge--warn':returned?'badge--ok':''}" id="overviewRecallBadge">${recall ? (recall.skipped?'미주입':returned?'주입됨':'전달 미확인') : '대기'}</span></div><div class="stat__value" id="overviewRecallCount">${recall ? `${formatNumber(selected.length)}개` : '아직 없음'}</div><div class="stat__meta" id="overviewRecallMeta">${recall ? `${actualChars?`${formatNumber(actualChars)}자 · `:''}${recallAgeText(recall.at)}` : '이번 세션에서 리콜 기록이 없습니다.'}</div></div><div class="stat"><div class="stat__label">토큰 추정</div><div class="stat__value" id="metricTokenTotal">${formatNumber(current.stats.tokenTotal)}</div><div class="stat__meta" id="metricTokenLabel">저장된 기억 기준${current.stats?.statsPartial?' · 부분':''}</div></div><div class="stat"><div class="stat__label">비용 추정</div><div class="stat__value" id="metricEmbeddingCost">${escapeHtml(formatCostSummary(currentCost))}</div><div class="stat__meta" id="overviewProviderSummary">${escapeHtml(embeddingLabel)}</div></div></div><div class="rec-split"><div class="card"><div class="card__head"><div><h2 class="card__title">기억 분포</h2><p class="card__desc">${escapeHtml(flashbackStatsCoverageLabel(current.stats,current.manifest))}</p></div><span class="badge">${escapeHtml(settings.mode)}</span></div><dl class="kv" id="miniCounts">${byType.map(item=>`<dt>${escapeHtml(item.label)}</dt><dd>${formatNumber(item.records)} · ${formatNumber(item.tokens)} tokens</dd>`).join('')}</dl></div><div class="card"><div class="card__head"><div><h2 class="card__title">최근 활동</h2><p class="card__desc" id="overviewLastCapture">마지막 캡처 · ${escapeHtml(captureText)}</p></div><button id="overviewActivityMoreBtn" class="btn btn--sm" type="button">전체 보기</button></div><dl id="overviewActivityList" class="kv">${activityHtml}</dl></div></div></div></section>`,
+      `<section class="page ${pageFor==='lab'?'is-active':''}" data-page="lab"><div class="page-head"><div class="page-head__copy"><div class="eyebrow" id="guiPageEyebrow">Memory recall lab</div><h1 class="page-title" id="guiPageTitle">기억 현상실</h1><p class="page-desc" id="guiPageDescription">현재 장면과 연결되어 떠오른 기억을 프레임으로 확인합니다.</p></div><div class="page-actions"><button class="btn" id="overviewMaintenanceBtn" type="button"><i data-i="shield" data-size="sm"></i>상태 점검 및 자동 복구</button></div></div><div class="stack stack--lg"><section><div id="lastRecallPanel">${recallFrame}</div></section><div class="stats"><div class="stat"><div class="stat__label">저장 기억</div><div class="stat__value" id="metricChunkTotal">${formatNumber(current.records.length)}</div><div class="stat__meta" id="metricChunkLabel">${current.stats?.statsPartial?'현재 채팅 레코드 · 부분 통계':'현재 채팅 레코드'}</div></div><div class="stat"><div class="stat__label">최근 리콜 <span class="badge ${recall?.skipped?'badge--warn':returned?'badge--ok':''}" id="overviewRecallBadge">${recall ? (recall.skipped?'미주입':returned?'주입됨':'전달 미확인') : '대기'}</span></div><div class="stat__value" id="overviewRecallCount">${recall ? `${formatNumber(selected.length)}개` : '아직 없음'}</div><div class="stat__meta" id="overviewRecallMeta">${recall ? `${actualChars?`${formatNumber(actualChars)}자 · `:''}${recallAgeText(recall.at)}` : '이번 세션에서 리콜 기록이 없습니다.'}</div></div><div class="stat"><div class="stat__label">토큰 추정</div><div class="stat__value" id="metricTokenTotal">${formatNumber(current.stats.tokenTotal)}</div><div class="stat__meta" id="metricTokenLabel">저장된 기억 기준${current.stats?.statsPartial?' · 부분':''}</div></div><div class="stat"><div class="stat__label">비용 추정</div><div class="stat__value" id="metricEmbeddingCost">${escapeHtml(formatCostSummary(currentCost))}</div><div class="stat__meta" id="overviewProviderSummary">${escapeHtml(embeddingLabel)}</div></div></div><div class="rec-split"><div class="card"><div class="card__head"><div><h2 class="card__title">기억 분포</h2><p class="card__desc">${escapeHtml(flashbackStatsCoverageLabel(current.stats,current.manifest))}</p></div><span class="badge">${escapeHtml(settings.mode)}</span></div><dl class="kv" id="miniCounts">${byType.map(item=>`<dt>${escapeHtml(item.label)}</dt><dd>${formatNumber(item.records)} · ${formatNumber(item.tokens)} tokens</dd>`).join('')}</dl></div><div class="card"><div class="card__head"><div><h2 class="card__title">최근 활동</h2><p class="card__desc" id="overviewLastCapture">마지막 캡처 · ${escapeHtml(captureText)}</p></div><button id="overviewActivityMoreBtn" class="btn btn--sm" type="button">전체 보기</button></div><dl id="overviewActivityList" class="kv">${activityHtml}</dl></div></div></div></section>`,
       `<section class="page ${pageFor==='vault'?'is-active':''}" data-page="vault"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Storage</div><h1 class="page-title">필름 보관함</h1><p class="page-desc">저장된 원문, 채팅 분기(세계선), 다른 채팅의 저장소를 한 곳에서 살펴봅니다. 세계선은 읽기 전용입니다.</p></div></div>${storageMarkup}</section>`,
       `<section class="page ${pageFor==='care'?'is-active':''}" data-page="care"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Memory care</div><h1 class="page-title">기억 관리</h1><p class="page-desc">진단 → 예상 변경·비용 → 승인 → 진행 → 결과 순서입니다. 진단은 아무것도 바꾸지 않습니다.</p></div></div><div class="stack stack--lg">${careBody}</div></section>`,
       `<section class="page ${pageFor==='connect'?'is-active':''}" data-page="connect" data-track data-track-group="fb"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">임베딩 · 서버</h1><p class="page-desc">검색에 쓰는 임베딩 모델과 저장·연산 서버를 한곳에서 설정하고 한 번에 저장합니다.</p></div></div><div class="tabs" role="tablist" data-subtabs="c">${subtab('c','emb','임베딩',subtabs.connect==='emb')}${subtab('c','mig','이전 · 검증',subtabs.connect==='mig')}${subtab('c','srv','서버',subtabs.connect==='srv')}</div><div id="panel-provider" data-panel="provider" data-subpanel="emb" data-group="c" class="${subtabs.connect==='emb'?'is-active':''}"><div class="stack">${providerBody}</div></div><div data-subpanel="mig" data-group="c" class="${subtabs.connect==='mig'?'is-active':''}"><div class="stack">${buildMultilingualProbeCard(settings)}</div></div><div id="panel-server" data-panel="server" data-subpanel="srv" data-group="c" class="${subtabs.connect==='srv'?'is-active':''}">${serverBody}</div></section>`,
@@ -47650,7 +48167,7 @@ ${cleanedText}`, 80),
     ].join('');
     const pageKey = routeTabKey[pageFor] || 'overview';
     const side = [['lab','eye','기억 현상실','현상실'],['vault','film','필름 보관함','보관함'],['care','wrench','기억 관리','관리'],['connect','link','임베딩 · 서버','연결'],['log','log','현상 기록','기록'],['settings','sliders','리콜 설정','설정']];
-    const sidebar = `<nav class="sidebar" aria-label="Flashback 메뉴">${[['상태',[side[0]]],['기억',[side[1],side[2]]],['연결',[side[3]]],['설정 및 진단',[side[4],side[5]]]].map(([group,items])=>`<div class="nav-label">${group}</div>${items.map(([go,icon,label,short])=>`<button class="nav-item" type="button" data-go="${go}" data-short="${short}" aria-current="${pageFor===go?'page':'false'}"><i data-i="${icon}"></i><span class="nav-text">${label}</span>${go==='vault'?`<span class="count" id="nav-scope-n">${storageScopeCountLabel()}</span>`:''}${go==='log'?`<span class="count" id="nav-log-n">${formatNumber(Runtime.activityLog.length)}</span>`:''}</button>`).join('')}`).join('')}<div class="side-foot"><b id="foot-model">${escapeHtml(settings.embeddingModel || '모델 미설정')}</b><span id="foot-meta">${escapeHtml(settings.embeddingProvider || 'provider 미설정')} · ${settings.embeddingDimensions?`${formatNumber(settings.embeddingDimensions)}차원`:'차원 자동'}</span></div></nav>`;
+    const sidebar = `<nav class="sidebar" aria-label="Flashback 메뉴">${[['상태',[side[0]]],['기억',[side[1],side[2]]],['연결',[side[3]]],['설정 및 진단',[side[4],side[5]]]].map(([group,items])=>`<div class="nav-label">${group}</div>${items.map(([go,icon,label,short])=>`<button class="nav-item" type="button" data-go="${go}" data-short="${short}" aria-current="${pageFor===go?'page':'false'}"><i data-i="${icon}"></i><span class="nav-text">${label}</span>${go==='vault'?`<span class="count" id="nav-scope-n">${formatNumber(current.records.length)}</span>`:''}${go==='log'?`<span class="count" id="nav-log-n">${formatNumber(Runtime.activityLog.length)}</span>`:''}</button>`).join('')}`).join('')}<div class="side-foot"><b id="foot-model">${escapeHtml(settings.embeddingModel || '모델 미설정')}</b><span id="foot-meta">${escapeHtml(settings.embeddingProvider || 'provider 미설정')} · ${settings.embeddingDimensions?`${formatNumber(settings.embeddingDimensions)}차원`:'차원 자동'}</span></div></nav>`;
     const root = `<div class="stage"><div class="frame" data-device="desktop"><div class="app t-flashback" data-flashback-memory="flashback_memory"><header class="topbar"><div class="brand"><div class="brand__mark"><i data-i="film" data-size="lg"></i></div><div><div class="brand__name">Flashback Memory</div><div class="brand__ver">v${escapeHtml(PLUGIN_VERSION)}</div></div></div><div class="scope"><b id="currentScopeText">${escapeHtml(current.scope?.characterName || current.scope?.characterId || '현재 채팅 없음')}</b><span>›</span><span id="currentChatText">${escapeHtml(current.scope?.chatTitle || current.scope?.chatId || '')}</span><span id="topModeBadge" class="badge ${settings.mode==='off'?'':'badge--ok'}">${settings.mode==='off'?'OFF':'ON'}</span></div><div class="grow"></div><span class="health ${healthTone}" id="sidebarHealth" title="${escapeHtml(healthDescription)}"><i aria-hidden="true"></i><span id="sidebarHealthState">${escapeHtml(flashbackHealthChipLabel(health))}</span><span id="sidebarHealthMeta"> · ${formatNumber(current.records.length)}개</span></span><div class="menu topbar-actions"><button class="btn btn--icon" id="topMoreBtn" type="button" aria-label="더 보기" aria-haspopup="menu" aria-expanded="false" aria-controls="topMoreMenu"><i data-i="more"></i></button><div id="topMoreMenu" class="menu__panel" role="menu" hidden><button id="topMenuRefreshBtn" class="menu-item" type="button" role="menuitem"><i data-i="refresh"></i>새로고침</button><button id="topMenuDebugBtn" class="menu-item" type="button" role="menuitem"><i data-i="download"></i>디버그 로그 내보내기</button></div></div><button id="closeBtn" class="btn btn--icon fb-window-close" type="button" aria-label="Flashback 닫기" title="닫기"><i data-i="close"></i></button></header>${sidebar}<main class="main"><div class="page-body">${pages}</div></main><nav class="tabbar" aria-label="Flashback 하단 메뉴">${side.slice(0,4).map(([go,icon,label,short])=>`<button type="button" data-go="${go}" aria-current="${pageFor===go?'page':'false'}"><svg class="ic"><use href="#i-${icon}"/></svg>${short}</button>`).join('')}<button type="button" data-more="1" aria-haspopup="dialog" aria-controls="sheet-more" aria-expanded="false"><svg class="ic"><use href="#i-more"/></svg>더보기</button></nav><div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list>${side.slice(4).map(([go,icon,label])=>`<button type="button" class="row" data-go="${go}" data-close><span class="row__icon"><svg class="ic"><use href="#i-${icon}"/></svg></span><span><span class="row__title">${label}</span></span><svg class="ic ic--sm faint"><use href="#i-arrow"/></svg></button>`).join('')}</div></div></div><div class="toasts" aria-live="polite"></div></div></div></div>`;
     return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(PLUGIN_NAME)}</title><style>${FLASHBACK_GUI_MOCKUP_STYLES}${FLASHBACK_GUI_DATA_STYLES}${FLASHBACK_GUI_SERVER_STYLES}${FLASHBACK_GUI_WINDOW_STYLES}</style></head><body>${root}</body></html>`;
   };
@@ -47672,14 +48189,32 @@ ${cleanedText}`, 80),
       box.setAttribute('aria-modal', 'true');
       box.setAttribute('aria-labelledby', `${dialogId}-title`);
       box.setAttribute('aria-describedby', `${dialogId}-message`);
+      const headEl = doc.createElement('div');
+      headEl.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;';
       const titleEl = doc.createElement('h3');
       titleEl.id = `${dialogId}-title`;
       titleEl.className = 'page-title';
+      titleEl.style.margin = '0';
       titleEl.textContent = title;
-      const msgEl = doc.createElement('p');
-      msgEl.id = `${dialogId}-message`;
-      msgEl.className = 'muted';
-      msgEl.textContent = String(message || '');
+      headEl.appendChild(titleEl);
+      if (options.badgeHtml) {
+        const badgeWrap = doc.createElement('div');
+        badgeWrap.innerHTML = options.badgeHtml;
+        headEl.appendChild(badgeWrap);
+      }
+      let msgEl;
+      if (options.bodyHtml) {
+        msgEl = doc.createElement('div');
+        msgEl.id = `${dialogId}-message`;
+        msgEl.className = 'dialog__content';
+        msgEl.innerHTML = options.bodyHtml;
+      } else {
+        msgEl = doc.createElement('p');
+        msgEl.id = `${dialogId}-message`;
+        msgEl.className = 'muted';
+        msgEl.style.whiteSpace = 'pre-wrap';
+        msgEl.textContent = String(message || '');
+      }
       const actions = doc.createElement('div');
       actions.className = 'dialog__actions';
       const cancelBtn = doc.createElement('button');
@@ -47688,8 +48223,19 @@ ${cleanedText}`, 80),
       cancelBtn.textContent = options.cancelText || '취소';
       const okBtn = doc.createElement('button');
       okBtn.type = 'button';
-      okBtn.className = confirmMode ? 'btn btn--primary' : 'btn';
+      okBtn.className = (confirmMode || options.okPrimary) && !options.actionBtn ? 'btn btn--primary' : 'btn';
       okBtn.textContent = options.okText || (confirmMode ? '확인' : '닫기');
+      let actionBtn = null;
+      if (options.actionBtn) {
+        actionBtn = doc.createElement('button');
+        actionBtn.type = 'button';
+        actionBtn.className = options.actionBtn.className || 'btn btn--primary';
+        actionBtn.textContent = options.actionBtn.text || '실행';
+        actionBtn.addEventListener('click', () => {
+          cleanup('action');
+          try { options.actionBtn.onClick?.(); } catch (_) {}
+        });
+      }
       let settled = false;
       let onKey = null;
       const cleanup = (value) => {
@@ -47713,7 +48259,7 @@ ${cleanedText}`, 80),
           return;
         }
         if (event.key === 'Tab') {
-          const focusable = confirmMode ? [cancelBtn, okBtn] : [okBtn];
+          const focusable = [confirmMode ? cancelBtn : null, okBtn, actionBtn].filter(Boolean);
           const first = focusable[0];
           const last = focusable[focusable.length - 1];
           const active = doc.activeElement;
@@ -47729,12 +48275,13 @@ ${cleanedText}`, 80),
       doc.addEventListener('keydown', onKey);
       if (confirmMode) actions.appendChild(cancelBtn);
       actions.appendChild(okBtn);
-      box.appendChild(titleEl);
+      if (actionBtn) actions.appendChild(actionBtn);
+      box.appendChild(headEl);
       box.appendChild(msgEl);
       box.appendChild(actions);
       backdrop.appendChild(box);
       doc.body.appendChild(backdrop);
-      (confirmMode && options.initialFocus === 'cancel' ? cancelBtn : okBtn).focus();
+      (actionBtn || (confirmMode && options.initialFocus === 'cancel' ? cancelBtn : okBtn)).focus();
     } catch (error) {
       console.log(`[${PLUGIN_NAME}] dialog fallback`, title, message, error);
       resolve(!confirmMode);
@@ -47748,6 +48295,247 @@ ${cleanedText}`, 80),
     setBusy(false);
     await guiAlert(`${prefix}: ${formatErrorMessage(error)}`, '오류');
   };
+
+  const showMaintenanceInspectionModal = async (plan) => {
+    if (!plan) return;
+    const isServerMode = plan.inspection?.coverage === 'server_snapshot';
+    const missing = Math.max(0, Number(plan.missingTurns || 0) || 0);
+    const changed = Math.max(0, Number(plan.changedTurns || 0) || 0);
+    const live = Math.max(0, Number(plan.liveTurns || 0) || 0);
+    const stored = Math.max(0, Number(plan.storedTurns || 0) || 0);
+    const isHealthy = plan.healthy || (isServerMode && missing === 0 && changed === 0);
+    const title = '기억 유지보수 진단';
+
+    let badgeHtml = '';
+    let bannerHtml = '';
+    let metricsHtml = '';
+    let detailsHtml = '';
+    let actionBtn = null;
+
+    if (isServerMode) {
+      if (isHealthy) {
+        badgeHtml = '<span class="badge badge--ok">서버 모드 · 정상</span>';
+        bannerHtml = `
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-radius:var(--r-md, 10px);background:var(--ok-soft, rgba(46,175,125,0.08));border:1px solid var(--ok-ink, #2eaf7d)">
+            <span style="font-size:20px;line-height:1;margin-top:1px">✅</span>
+            <div style="font-size:13px;line-height:1.55;min-width:0">
+              <b style="color:var(--text);display:block;margin-bottom:2px">모든 대화 턴이 서버에 정상 동기화되어 있습니다</b>
+              <span style="color:var(--text2)">현재 채팅 원문(총 ${formatNumber(live)}턴)과 서버 저장소의 기억이 완벽하게 일치합니다. 추가 동기화나 복구가 필요하지 않습니다.</span>
+            </div>
+          </div>`;
+      } else {
+        badgeHtml = `<span class="badge badge--warn">동기화 필요 (${formatNumber(missing + changed)}턴)</span>`;
+        bannerHtml = `
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-radius:var(--r-md, 10px);background:var(--accent-soft, rgba(234,153,34,0.08));border:1px solid var(--accent, #ea9922)">
+            <span style="font-size:20px;line-height:1;margin-top:1px">⚠️</span>
+            <div style="font-size:13px;line-height:1.55;min-width:0">
+              <b style="color:var(--text);display:block;margin-bottom:2px">서버 저장소에 누락되거나 변경된 턴이 감지되었습니다</b>
+              <span style="color:var(--text2)">현재 대화 ${formatNumber(live)}턴 중 <b style="color:var(--danger-ink, #e05252)">${formatNumber(missing)}개 턴 누락</b>${changed > 0 ? `, <b style="color:var(--warn-ink, #ea9922)">${formatNumber(changed)}개 턴 변경</b>` : ''}이 확인되었습니다. 아래 버튼을 눌러 서버에 즉시 안전 동기화할 수 있습니다.</span>
+            </div>
+          </div>`;
+        actionBtn = {
+          text: '⚡ 누락 턴 동기화 실행',
+          className: 'btn btn--primary',
+          onClick: async () => {
+            setBusy(true, '누락·변경 턴 동기화');
+            try {
+              const result = await runMemoryMaintenance('auto', { preflight: plan });
+              setBusy(false);
+              if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('maintenance_auto', 80);
+              await refreshUi('import');
+              await showMaintenanceCompletionModal(result);
+            } catch (error) {
+              await guiError('누락·변경 턴 동기화 실패', error);
+            } finally {
+              setBusy(false);
+            }
+          }
+        };
+      }
+
+      metricsHtml = `
+        <div class="plan-grid" style="margin-top:4px">
+          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">현재 채팅</b><span class="mono" style="font-size:16px;font-weight:700;color:var(--text)">${formatNumber(live)}턴</span></div>
+          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">서버 저장</b><span class="mono" style="font-size:16px;font-weight:700;color:var(--text)">${formatNumber(stored)}턴</span></div>
+          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">누락된 턴</b><span class="mono" style="font-size:16px;font-weight:700;color:${missing > 0 ? 'var(--danger-ink, #e05252)' : 'var(--ok-ink, #2eaf7d)'}">${formatNumber(missing)}턴</span></div>
+          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">변경 감지</b><span class="mono" style="font-size:16px;font-weight:700;color:${changed > 0 ? 'var(--warn-ink, #ea9922)' : 'var(--text)'}">${formatNumber(changed)}턴</span></div>
+        </div>`;
+
+      detailsHtml = `
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md, 10px);padding:13px 15px;display:grid;gap:9px;font-size:12.5px">
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);padding-bottom:7px">
+            <span style="color:var(--text3)">동기화 모드</span>
+            <span style="color:var(--text);font-weight:600">🌐 서버 모드 (Librarian System)</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);padding-bottom:7px">
+            <span style="color:var(--text3)">데이터 무결성</span>
+            <span style="color:var(--ok-ink);font-weight:600">정상 (매니페스트 정상 · 샤드 무결성 유지)</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);padding-bottom:7px">
+            <span style="color:var(--text3)">임베딩 연산 및 비용</span>
+            <span style="color:var(--text)">서버 백그라운드 처리 (클라이언트 호출 0건 / 0원)</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+            <span style="color:var(--text3);flex-shrink:0">진단 종합 판정</span>
+            <span style="color:var(--text2);text-align:right">${escapeHtml(maintenanceJudgementText(plan))}</span>
+          </div>
+        </div>`;
+    } else {
+      const damage = Number(plan.storageMissingShards || 0) + Number(plan.storageCorruptShards || 0) + Number(!!plan.storageManifestCorrupt);
+      if (isHealthy) {
+        badgeHtml = '<span class="badge badge--ok">로컬 저장소 정상</span>';
+        bannerHtml = `
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-radius:var(--r-md, 10px);background:var(--ok-soft, rgba(46,175,125,0.08));border:1px solid var(--ok-ink, #2eaf7d)">
+            <span style="font-size:20px;line-height:1;margin-top:1px">✅</span>
+            <div style="font-size:13px;line-height:1.55;min-width:0">
+              <b style="color:var(--text);display:block;margin-bottom:2px">로컬 기억 데이터가 정상 상태입니다</b>
+              <span style="color:var(--text2)">현재 채팅 원문과 로컬 저장소 레코드가 일치하며 손상된 샤드나 청크가 없습니다.</span>
+            </div>
+          </div>`;
+      } else {
+        badgeHtml = '<span class="badge badge--warn">로컬 정제 필요</span>';
+        bannerHtml = `
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-radius:var(--r-md, 10px);background:var(--accent-soft, rgba(234,153,34,0.08));border:1px solid var(--accent, #ea9922)">
+            <span style="font-size:20px;line-height:1;margin-top:1px">ℹ️</span>
+            <div style="font-size:13px;line-height:1.55;min-width:0">
+              <b style="color:var(--text);display:block;margin-bottom:2px">로컬 기억 유지보수 또는 정제가 권장됩니다</b>
+              <span style="color:var(--text2)">${escapeHtml(maintenanceJudgementText(plan))}</span>
+            </div>
+          </div>`;
+        actionBtn = {
+          text: '⚡ 자동 점검·복구 실행',
+          className: 'btn btn--primary',
+          onClick: async () => {
+            setBusy(true, '자동 점검·복구');
+            try {
+              const result = await runMemoryMaintenance('auto', { preflight: plan });
+              setBusy(false);
+              if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('maintenance_auto', 80);
+              await refreshUi('import');
+              await showMaintenanceCompletionModal(result);
+            } catch (error) {
+              await guiError('자동 점검·복구 실패', error);
+            } finally {
+              setBusy(false);
+            }
+          }
+        };
+      }
+
+      metricsHtml = `
+        <div class="plan-grid" style="margin-top:4px">
+          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">누락된 턴</b><span class="mono" style="font-size:16px;font-weight:700;color:${missing > 0 ? 'var(--danger-ink, #e05252)' : 'var(--text)'}">${formatNumber(missing)}턴</span></div>
+          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">변경 감지</b><span class="mono" style="font-size:16px;font-weight:700;color:${changed > 0 ? 'var(--warn-ink, #ea9922)' : 'var(--text)'}">${formatNumber(changed)}구간</span></div>
+          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">손상 샤드</b><span class="mono" style="font-size:16px;font-weight:700;color:${damage > 0 ? 'var(--danger-ink, #e05252)' : 'var(--ok-ink, #2eaf7d)'}">${formatNumber(damage)}</span></div>
+          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">벡터 재사용</b><span class="mono" style="font-size:16px;font-weight:700;color:var(--text)">${formatNumber(plan.estimatedReusableVectors)}개</span></div>
+        </div>`;
+
+      detailsHtml = `
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md, 10px);padding:13px 15px;display:grid;gap:9px;font-size:12.5px">
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);padding-bottom:7px">
+            <span style="color:var(--text3)">저장 모드</span>
+            <span style="color:var(--text);font-weight:600">📁 로컬 플러그인 전용 (Browser/RisuAI Storage)</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);padding-bottom:7px">
+            <span style="color:var(--text3)">영구 과거 기록</span>
+            <span style="color:var(--text)">${formatNumber(plan.readablePermanentHistory)} / ${formatNumber(plan.expectedPermanentHistory)} 보존</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);padding-bottom:7px">
+            <span style="color:var(--text3)">예상 비용</span>
+            <span style="color:var(--text);font-weight:600">${escapeHtml(formatCostSummary(plan.embeddingCost))}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+            <span style="color:var(--text3);flex-shrink:0">진단 종합 판정</span>
+            <span style="color:var(--text2);text-align:right">${escapeHtml(maintenanceJudgementText(plan))}</span>
+          </div>
+        </div>`;
+    }
+
+    const bodyHtml = `
+      <div style="display:grid;gap:12px">
+        ${bannerHtml}
+        ${metricsHtml}
+        ${detailsHtml}
+      </div>`;
+
+    await guiDialog('', {
+      title,
+      badgeHtml,
+      bodyHtml,
+      okText: actionBtn ? '닫기' : '확인',
+      okPrimary: !actionBtn,
+      actionBtn,
+      dialogClass: 'dialog--wide'
+    });
+  };
+
+  const showMaintenanceCompletionModal = async (result) => {
+    if (!result) return;
+    const isServerSync = result.operation?.strategy === 'server_turn_sync';
+    const title = maintenanceCompletionTitle(result);
+
+    let badgeHtml = result.healthy === true ? '<span class="badge badge--ok">완료 정상</span>' : '<span class="badge badge--warn">확인 필요</span>';
+    let bodyHtml = '';
+
+    if (isServerSync) {
+      const sync = result.operation?.sync || {};
+      const inserted = Number(sync.inserted || 0);
+      const updated = Number(sync.updated || 0);
+      const total = inserted + updated;
+      const durationSec = Math.max(1, Math.round(Number(result.durationMs || 0) / 1000));
+      const beforeMissing = Number(result.before?.missingTurns || 0);
+      const beforeChanged = Number(result.before?.changedTurns || 0);
+      const afterMissing = Number(result.after?.missingTurns || 0);
+      const afterChanged = Number(result.after?.changedTurns || 0);
+
+      bodyHtml = `
+        <div style="display:grid;gap:12px">
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-radius:var(--r-md, 10px);background:var(--ok-soft, rgba(46,175,125,0.08));border:1px solid var(--ok-ink, #2eaf7d)">
+            <span style="font-size:20px;line-height:1;margin-top:1px">🎉</span>
+            <div style="font-size:13px;line-height:1.55">
+              <b style="color:var(--text);display:block;margin-bottom:2px">서버 대화 기억 동기화가 성공적으로 완료되었습니다</b>
+              <span style="color:var(--text2)">현재 대화의 모든 턴이 서버 DB에 온전히 기록되었으며, 서버 스냅샷과의 대조가 완료되었습니다.</span>
+            </div>
+          </div>
+          <div class="plan-grid" style="margin-top:4px">
+            <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">동기화 반영</b><span class="mono" style="font-size:16px;font-weight:700;color:var(--ok-ink, #2eaf7d)">총 ${formatNumber(total)}턴</span></div>
+            <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">신규 추가</b><span class="mono" style="font-size:16px;font-weight:700;color:var(--text)">${formatNumber(inserted)}턴</span></div>
+            <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">갱신된 턴</b><span class="mono" style="font-size:16px;font-weight:700;color:var(--text)">${formatNumber(updated)}턴</span></div>
+            <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">소요 시간</b><span class="mono" style="font-size:16px;font-weight:700;color:var(--text)">${durationSec}초</span></div>
+          </div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md, 10px);padding:13px 15px;display:grid;gap:9px;font-size:12.5px">
+            <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);padding-bottom:7px">
+              <span style="color:var(--text3)">동기화 전 상태</span>
+              <span style="color:var(--danger-ink, #e05252)">누락 ${formatNumber(beforeMissing)}개 · 변경 ${formatNumber(beforeChanged)}개</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);padding-bottom:7px">
+              <span style="color:var(--text3)">동기화 후 상태</span>
+              <span style="color:var(--ok-ink, #2eaf7d);font-weight:600">누락 ${formatNumber(afterMissing)}개 · 변경 ${formatNumber(afterChanged)}개 (완벽 일치)</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="color:var(--text3)">최종 상태 판정</span>
+              <span style="color:var(--ok-ink, #2eaf7d);font-weight:600">✅ 서버 기억과 현재 대화 원문이 완전히 일치합니다</span>
+            </div>
+          </div>
+        </div>`;
+    } else {
+      const summaryText = maintenanceResultText(result);
+      bodyHtml = `
+        <div style="display:grid;gap:12px">
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md, 10px);padding:14px;font-size:13px;line-height:1.7;white-space:pre-wrap;color:var(--text)">${escapeHtml(summaryText)}</div>
+        </div>`;
+    }
+
+    await guiDialog('', {
+      title,
+      badgeHtml,
+      bodyHtml,
+      okText: '확인',
+      okPrimary: true,
+      dialogClass: 'dialog--wide'
+    });
+  };
+
 
   const guiScope = () => guiRoot || (typeof document !== 'undefined' ? document : {});
   const getGuiNode = (id) => guiRoot?.querySelector?.(`#${id}`) || (typeof document !== 'undefined' ? document.getElementById?.(id) : null) || null;
@@ -48780,6 +49568,7 @@ ${cleanedText}`, 80),
     setNodeText('metricTokenLabel', statsPartial ? '토큰 추정 (부분)' : '토큰 추정');
     setNodeText('metricTokenTotal', formatNumber(current.stats.tokenTotal));
     setNodeText('metricChunkTotal', formatNumber(current.records.length));
+    setNodeText('nav-scope-n', formatNumber(current.records.length));
     const currentShardCount = Math.max(0, Number(current.manifest?.shardCount || 0) || 0);
     const currentShardSize = Math.max(1, Number(current.manifest?.shardSize || DEFAULTS.shardSize) || DEFAULTS.shardSize);
     setNodeText('storageShardCountNav', formatNumber(currentShardCount));
@@ -49362,6 +50151,29 @@ ${cleanedText}`, 80),
         } finally { textBtn.disabled = false; if (textBtn.textContent === '원문 읽는 중…') textBtn.textContent = '원문 펼치기'; }
         return;
       }
+      const turnBtn = event?.target?.closest?.('button[data-manual-turn]');
+      if (turnBtn && root.contains?.(turnBtn)) {
+        const val = turnBtn.getAttribute('data-manual-turn');
+        const state = ensureManualEditorState();
+        if (val === 'all' || !val) state.selectedTurn = null;
+        else state.selectedTurn = Number(val) || null;
+        const panel = getGuiNode('manualEditorPanel');
+        if (panel?.__manualEditorData) {
+          panel.innerHTML = renderManualEditorPanelHtml(panel.__manualEditorData);
+        }
+        return;
+      }
+      const turnSearchBtn = event?.target?.closest?.('#manualTurnSearchBtn');
+      if (turnSearchBtn && root.contains?.(turnSearchBtn)) {
+        const val = Number(getGuiNode('manualTurnSearchInput')?.value || 0);
+        const state = ensureManualEditorState();
+        state.selectedTurn = val > 0 ? val : null;
+        const panel = getGuiNode('manualEditorPanel');
+        if (panel?.__manualEditorData) {
+          panel.innerHTML = renderManualEditorPanelHtml(panel.__manualEditorData);
+        }
+        return;
+      }
       const searchBtn = event?.target?.closest?.('#manualEditorSearchBtn');
       if (searchBtn && root.contains?.(searchBtn)) {
         const state = ensureManualEditorState();
@@ -49425,6 +50237,17 @@ ${cleanedText}`, 80),
       refreshManualEditorPanel().catch(error => warn('manual editor sort failed', error));
     });
     root.addEventListener?.('keydown', (event) => {
+      if (event?.key === 'Enter' && event?.target?.id === 'manualTurnSearchInput') {
+        event.preventDefault?.();
+        const val = Number(event.target?.value || 0);
+        const state = ensureManualEditorState();
+        state.selectedTurn = val > 0 ? val : null;
+        const panel = getGuiNode('manualEditorPanel');
+        if (panel?.__manualEditorData) {
+          panel.innerHTML = renderManualEditorPanelHtml(panel.__manualEditorData);
+        }
+        return;
+      }
       if (event?.key !== 'Enter' || event?.target?.id !== 'manualEditorSearch') return;
       event.preventDefault?.();
       const state = ensureManualEditorState();
@@ -49456,12 +50279,27 @@ ${cleanedText}`, 80),
     bindEmbeddingWorkControls(root);
     getGuiNode('fbWorldlineRefresh')?.addEventListener('click', () => { void refreshFlashbackWorldlinePanel(); });
     getGuiNode('fbWorldlineContent')?.addEventListener('click', event => {
-      if (!event.target?.closest?.('[data-fb-worldline-more]') || !flashbackWorldlineView || Runtime.guiTab !== 'worldline') return;
-      const excludedOpen = getGuiNode('fbWorldlineContent')?.querySelector('.fb-worldline-excluded')?.open === true;
-      flashbackWorldlineVisible += 24;
-      setNodeHtml('fbWorldlineContent', renderFlashbackWorldlineView(flashbackWorldlineView, flashbackWorldlineVisible));
-      const excludedPanel = getGuiNode('fbWorldlineContent')?.querySelector('.fb-worldline-excluded');
-      if (excludedPanel && excludedOpen) excludedPanel.open = true;
+      if (!flashbackWorldlineView || Runtime.guiTab !== 'worldline') return;
+      const turnBtn = event.target?.closest?.('[data-fb-worldline-turn]');
+      if (turnBtn) {
+        const t = Number(turnBtn.getAttribute('data-fb-worldline-turn') || 0);
+        if (t > 0) {
+          flashbackWorldlineSelectedTurn = t;
+          setNodeHtml('fbWorldlineContent', renderFlashbackWorldlineView(flashbackWorldlineView, flashbackWorldlineVisible));
+          return;
+        }
+      }
+      const gotoBtn = event.target?.closest?.('[data-manual-goto-turn]');
+      if (gotoBtn) {
+        const t = Number(gotoBtn.getAttribute('data-manual-goto-turn') || 0);
+        ensureManualEditorState().selectedTurn = t > 0 ? t : null;
+        openManualEditorForSourceType(MANUAL_EDITOR_SOURCE_TYPE);
+        return;
+      }
+      if (event.target?.closest?.('[data-fb-worldline-more]')) {
+        flashbackWorldlineVisible += 24;
+        setNodeHtml('fbWorldlineContent', renderFlashbackWorldlineView(flashbackWorldlineView, flashbackWorldlineVisible));
+      }
     });
     const closeAction = async () => {
       setTopMoreMenuOpen(false);
@@ -50022,11 +50860,13 @@ ${cleanedText}`, 80),
       try {
         const plan = await inspectMemoryMaintenance({ requestPermission: true });
         renderMaintenancePlanInUi(plan);
-        await guiAlert(maintenancePlanText(plan), '기억 유지보수 진단');
+        await showMaintenanceInspectionModal(plan);
       } catch (error) { await guiError('기억 상태 진단 실패', error); }
       finally { setBusy(false); }
     });
     getGuiNode('maintenanceAutoBtn')?.addEventListener('click', async () => {
+      getGuiNode('maintenanceInspectBtn')?.click?.();
+      return;
       let plan = null;
       setBusy(true, '자동 복구 계획 확인');
       try { plan = await inspectMemoryMaintenance({ requestPermission: true }); renderMaintenancePlanInUi(plan); }
@@ -50034,10 +50874,34 @@ ${cleanedText}`, 80),
       finally { setBusy(false); }
       if (!plan) return;
       if (plan.healthy || plan.automatic?.blocked) {
-        await guiAlert(maintenancePlanText(plan), '기억 유지보수');
+        if (plan.inspection?.coverage === 'server_snapshot' && (Number(plan.missingTurns || 0) === 0 && Number(plan.changedTurns || 0) === 0)) {
+          await guiAlert(
+            `현재 채팅 원문과 서버 저장소의 내용이 완전히 일치합니다.\n\n` +
+            `• 현재 채팅 턴: 총 ${formatNumber(plan.liveTurns)}개\n` +
+            `• 이미 저장된 턴: 총 ${formatNumber(plan.storedTurns)}개\n` +
+            `• 누락된 턴: 0개\n` +
+            `• 변경된 턴: 0개\n\n` +
+            `동기화할 누락 턴이 없어 작업을 실행하지 않았습니다.`,
+            '서버 기억 상태'
+          );
+          return;
+        }
+        await showMaintenanceInspectionModal(plan);
         return;
       }
-      if (!await guiConfirm(`${maintenancePlanText(plan)}\n\n필요한 항목만 자동으로 동기화·정제·복구할까요?`, '자동 점검·복구')) return;
+      const autoConfirmText = plan.automatic?.strategy === 'server_turn_sync'
+        ? [
+            `서버 스냅샷 점검 결과, 누락되거나 변경된 턴이 감지되었습니다.\n`,
+            `• 현재 채팅 턴: 총 ${formatNumber(plan.liveTurns)}개`,
+            `• 이미 저장된 턴: 총 ${formatNumber(plan.storedTurns)}개`,
+            `• 누락된 턴: ${formatNumber(plan.missingTurns)}개`,
+            Number(plan.changedTurns || 0) > 0 ? `• 변경된 턴: ${formatNumber(plan.changedTurns)}개 (수정/롤백 감지)` : null,
+            `• 동기화 대상 합계: 총 ${formatNumber(Number(plan.missingTurns || 0) + Number(plan.changedTurns || 0))}개 턴`,
+            `• 복구 방식: 서버 모드 안전 턴 동기화 (서버 DB 직접 반영)\n`,
+            `위 누락·변경 턴을 서버에 동기화할까요?`
+          ].filter(Boolean).join('\n')
+        : `${maintenancePlanText(plan)}\n\n필요한 항목만 자동으로 동기화·정제·복구할까요?`;
+      if (!await guiConfirm(autoConfirmText, '자동 점검·복구')) return;
       setBusy(true, '자동 점검·복구');
       try {
         const result = await runMemoryMaintenance('auto', { preflight: plan });
@@ -50046,7 +50910,7 @@ ${cleanedText}`, 80),
         setBusy(false);
         if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('maintenance_auto', 80);
         await refreshUi('import');
-        await guiAlert(maintenanceResultText(result), maintenanceCompletionTitle(result));
+        await showMaintenanceCompletionModal(result);
       } catch (error) { await guiError('자동 점검·복구 실패', error); }
       finally { setBusy(false); }
     });
@@ -50085,17 +50949,131 @@ ${cleanedText}`, 80),
           }catch(error){await guiError('미완료 벡터 복구 실패',error);}finally{setBusy(false);}
           return;
         }
-        const descriptions = {
-          sync: '현재 채팅에서 누락되거나 변경된 유저+AI 응답 턴만 임베딩합니다.',
-          rebuild: '현재 스코프의 응답 기억과 파생 인덱스를 현재 채팅 원문으로 완전히 교체합니다. 기존 데이터는 새 원장이 정상 생성된 뒤 교체됩니다.',
-          reembed: '현재 로컬에 이미 저장된 미완료 벡터 묶음만 처리합니다. 아카이브는 제외합니다.'
-        };
-        if (!await guiConfirm(`${descriptions[mode] || descriptions.sync}\n\n선택 작업을 실행할까요?`, '고급 기억 유지보수')) return;
-        setBusy(true, mode === 'rebuild' ? '현재 채팅 전체 재구축' : (mode === 'reembed' ? '로컬 미완료 벡터 복구' : '누락·변경 턴 동기화'));
+        if (mode === 'sync') {
+          let plan = null;
+          setBusy(true, '누락·변경 턴 점검 중...');
+          try {
+            plan = await inspectMemoryMaintenance({ requestPermission: false });
+            renderMaintenancePlanInUi(plan);
+          } catch (error) {
+            await guiError('누락·변경 턴 점검 실패', error);
+            return;
+          } finally {
+            setBusy(false);
+          }
+          if (!plan) return;
+
+          const liveTurns = Number(plan.liveTurns || 0);
+          const storedTurns = Number(plan.storedTurns || 0);
+          const missingTurns = Number(plan.missingTurns || 0);
+          const changedTurns = Number(plan.changedTurns || 0);
+          const totalSyncTurns = missingTurns + changedTurns;
+          const isServer = plan.inspection?.coverage === 'server_snapshot';
+
+          if (totalSyncTurns === 0) {
+            await guiAlert(
+              `현재 채팅 원문과 저장소(기억)의 내용이 완전히 일치합니다.\n\n` +
+              `• 현재 채팅 턴: ${formatNumber(liveTurns)}개\n` +
+              `• 저장된 턴: ${formatNumber(storedTurns)}개\n` +
+              `• 누락된 턴: 0개\n` +
+              `• 변경된 턴: 0개\n\n` +
+              `동기화할 누락·변경 턴이 없어 작업을 실행하지 않았습니다.`,
+              '누락·변경 턴 점검 결과'
+            );
+            return;
+          }
+
+          const newVectors = Number(plan.estimatedEmbeddingChunks || 0);
+          const confirmLines = [
+            `현재 채팅 원문과 저장소를 점검한 결과, 동기화가 필요한 턴이 발견되었습니다.\n`,
+            `• 현재 채팅 턴: 총 ${formatNumber(liveTurns)}개`,
+            `• 이미 저장된 턴: 총 ${formatNumber(storedTurns)}개`,
+            `• 누락된 턴: ${formatNumber(missingTurns)}개`,
+            changedTurns > 0 ? `• 변경된 턴: ${formatNumber(changedTurns)}개 (수정/롤백 감지)` : null,
+            `• 동기화 대상 합계: 총 ${formatNumber(totalSyncTurns)}개 턴\n`,
+            isServer
+              ? '• 저장 모드: 서버 전용 (서버 DB에 직접 누락 턴 반영)'
+              : '• 저장 모드: 로컬 저장소',
+            newVectors > 0
+              ? `• 예상 제공자 호출: 약 ${formatNumber(newVectors)}개 벡터 신규 임베딩`
+              : '• 예상 제공자 호출: 없음 (기존 벡터 재사용 가능)',
+            `\n위 ${formatNumber(totalSyncTurns)}개 턴을 지금 동기화하시겠습니까?`
+          ].filter(Boolean).join('\n');
+
+          if (!await guiConfirm(confirmLines, '누락·변경 턴 동기화 점검 및 확인')) return;
+
+          setBusy(true, '누락·변경 턴 동기화');
+          try {
+            const result = await runMemoryMaintenance('sync', { preflight: plan });
+            setBusy(false);
+            if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('maintenance_sync', 80);
+            await refreshUi('import');
+            await guiAlert(maintenanceResultText(result), maintenanceCompletionTitle(result));
+          } catch (error) {
+            await guiError('누락·변경 턴 동기화 실패', error);
+          } finally {
+            setBusy(false);
+          }
+          return;
+        }
+
+        if (mode === 'rebuild') {
+          let plan = null;
+          setBusy(true, '재구축 전 저장소 상태 점검 중...');
+          try {
+            plan = await inspectMemoryMaintenance({ requestPermission: false });
+            renderMaintenancePlanInUi(plan);
+          } catch (error) {
+            await guiError('상태 점검 실패', error);
+            return;
+          } finally {
+            setBusy(false);
+          }
+          if (!plan) return;
+
+          if (plan.inspection?.coverage === 'server_snapshot') {
+            await guiAlert(
+              '현재 채팅 전체 재구축은 검증된 로컬 저장소 전용 작업입니다.\n서버 모드에서는 안전한 "누락·변경 턴 동기화 (서버/로컬 공통)" 작업을 이용해 주세요.',
+              '서버 모드 실행 제한'
+            );
+            return;
+          }
+
+          const liveTurns = Number(plan.liveTurns || 0);
+          const rebuildChunks = Number(plan.rebuildTotalChunks || 0);
+          const reusableVectors = Number(plan.estimatedReusableVectors || 0);
+          const newVectors = Number(plan.rebuildEstimatedNewEmbeddingVectors || 0);
+
+          const confirmLines = [
+            '현재 스코프의 응답 기억과 파생 인덱스를 현재 채팅 원문으로 완전히 교체합니다.',
+            '기존 데이터는 새 원장이 정상 생성된 뒤 교체됩니다.\n',
+            `• 현재 채팅 턴: 총 ${formatNumber(liveTurns)}개`,
+            `• 전체 재구축 청크: 약 ${formatNumber(rebuildChunks)}개`,
+            `• 재사용 예상 벡터: 약 ${formatNumber(reusableVectors)}개`,
+            `• 신규 임베딩 예상: 약 ${formatNumber(newVectors)}개\n`,
+            '현재 채팅 전체 재구축을 실행할까요?'
+          ].join('\n');
+
+          if (!await guiConfirm(confirmLines, '현재 채팅 전체 재구축 점검 및 확인')) return;
+
+          setBusy(true, '현재 채팅 전체 재구축');
+          try {
+            const result = await runMemoryMaintenance('rebuild', { preflight: plan });
+            setBusy(false);
+            if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('maintenance_rebuild', 80);
+            await refreshUi('import');
+            await guiAlert(maintenanceResultText(result), maintenanceCompletionTitle(result));
+          } catch (error) {
+            await guiError('전체 재구축 실패', error);
+          } finally {
+            setBusy(false);
+          }
+          return;
+        }
+
+        setBusy(true, '유지보수 작업');
         try {
           const result = await runMemoryMaintenance(mode);
-          // The maintenance commit is complete; refresh and the result dialog
-          // are presentation work and must not keep the host locked.
           setBusy(false);
           if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh(`maintenance_${mode}`, 80);
           await refreshUi('import');
@@ -50149,7 +51127,7 @@ ${cleanedText}`, 80),
         syncStorageSelectionUi();
         return;
       }
-      if (!await guiConfirm(`현재 스코프를 제외한 선택 스코프 ${formatNumber(selectedKeys.length)}개의 ${PLUGIN_NAME} 데이터를 삭제할까요?\n\n각 스코프의 로컬 기억·샤드·벡터가 삭제되며 되돌릴 수 없습니다.`, '선택 스코프 삭제')) return;
+      if (!await guiConfirm(`현재 스코프를 제외한 선택 스코프 ${formatNumber(selectedKeys.length)}개의 ${PLUGIN_NAME} 데이터를 삭제할까요?\n\n각 스코프의 로컬 기억·샤드·벡터 및 서버 저장 사본이 삭제되며 되돌릴 수 없습니다.`, '선택 스코프 삭제')) return;
       setBusy(true, `선택 스코프 삭제 0/${selectedKeys.length}`);
       try {
         const result = await deleteSelectedScopeStorages(selectedKeys, { currentScopeKey });
