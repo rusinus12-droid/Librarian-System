@@ -1031,6 +1031,9 @@ const MemorySuiteExecutionContract = (() => {
   const RECOVERY_VAULT_SCHEMA = 'hayaku.recovery_vault.v1';
   const RECOVERY_VAULT_VERSION = 2;
   const RECOVERY_VAULT_KEY_PREFIX = 'hayaku.v2.recovery_vault.';
+  // Vault writes include SDK routing, durable receipt and exact readback. They
+  // must not inherit the 1.5s deadline for a single interactive host RPC.
+  const RECOVERY_VAULT_STORAGE_TIMEOUT_MS = 15_000;
   const RECOVERY_VAULT_MAX_RECORDS = 1024;
   const RECOVERY_VAULT_MAX_TOTAL_CHARS = 12_000_000;
   const RECOVERY_VAULT_MAX_TURN_CHARS = 240_000;
@@ -24466,12 +24469,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const recoveryStorageFailureMessage = failure => {
     const cause = String(failure?.code || '') + ' ' + String(failure?.error || failure?.reason || '');
     if (/TOO_LARGE/.test(cause)) return '복구 자료가 단일 저장 항목 한도를 초과했습니다. 기존 원문과 기억은 유지됩니다.';
+    if (/storage_(?:write|readback)_timeout/i.test(cause)) return '복구 자료의 저장 결과를 제한 시간 안에 확인하지 못했습니다. 처리가 계속 진행 중일 수 있으니 잠시 후 다시 확인해 주세요.';
     if (/OFFLINE|TIMEOUT|CONNECTION|NETWORK|fetch failed/i.test(cause)) return '복구 자료 저장소에 연결하지 못했습니다. 연결 상태와 중단 단계를 확인한 뒤 다시 시도해 주세요.';
     if (/recovery_vault|recovery_debt|STORAGE/.test(cause)) return '복구 자료를 저장하거나 저장 결과를 확인하지 못했습니다. 기존 원문과 기억은 유지됩니다.';
     return '';
   };
   const readRecoveryVaultValue = async key => {
-    const outcome = await RisuCompat.getStorageItemOutcome(key);
+    const outcome = await RisuCompat.getStorageItemOutcome(key, RECOVERY_VAULT_STORAGE_TIMEOUT_MS);
     if (outcome.state !== 'fulfilled') throw recoveryVaultFailure(outcome, 'recovery_vault_read', key);
     if (outcome.value == null || outcome.value === '') return null;
     const parsed = typeof outcome.value === 'string' ? safeJsonParse(outcome.value, null) : outcome.value;
@@ -24499,7 +24503,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const serialized = JSON.stringify(value);
     // Include double JSON encoding used by pluginStorage inside the HTTP envelope.
     if (recoveryEvidenceUtf8Length(JSON.stringify(serialized)) > 3 * 1024 * 1024) throw Object.assign(new Error('Recovery Vault debt exceeds single-record limit'), { code:'HAYAKU_RECOVERY_DEBT_TOO_LARGE', stage:'recovery_vault_write' });
-    const outcome = await RisuCompat.setStorageItemOutcome(key, serialized);
+    const outcome = await RisuCompat.setStorageItemOutcome(key, serialized, RECOVERY_VAULT_STORAGE_TIMEOUT_MS);
     if (outcome.state !== 'fulfilled') throw recoveryVaultFailure(outcome, 'recovery_vault_write', key);
     if (JSON.stringify(await readRecoveryVaultValue(key)) !== serialized) throw new Error('recovery_vault_readback_mismatch:' + key);
   };
@@ -58751,7 +58755,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
   /* MEMORY SUITE CURRENT STATUS START */
   const createMemorySuiteCurrentStatus = (function createMemorySuiteCurrentStatus(options) {
   const bridge = options.bridge;
-  let serial = 0, timer = null, unsubscribe = null, cache = null, pending = null;
+  let serial = 0, timer = null, unsubscribe = null, cache = null, pending = null, display = null;
   const visible = () => options.isVisible() && options.getRoot()?.isConnected;
   const signature = config => JSON.stringify([config.mode, config.url, config.scopeId,
     config.global?.set, config.global?.mode,
@@ -58815,12 +58819,21 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const attempt = ++serial, identity = options.getIdentity();
     const current = () => attempt === serial && visible() && root === options.getRoot()
       && identity === options.getIdentity() && foot.isConnected;
-    setStorage(foot, '확인 중');
+    const sameDisplay = () => display?.root === root && display?.foot === foot && display?.identity === identity;
+    if (!sameDisplay()) setStorage(foot, '확인 중');
     try {
       const config = await bridge.getConnectionSettings();
       if (!current()) return;
+      const key = signature(config);
+      // Polling the same context must not erase its last observed result while
+      // the host/SDK answers. A different URL, scope or mode needs fresh evidence.
+      if (!sameDisplay() || display.key !== key) {
+        setStorage(foot, '확인 중');
+        display = { root, foot, identity, key, verified:false };
+      }
       const job = bridge.getSyncJob?.();
       if (config.transition || config.migrationRequired || (job && !['completed','cancelled','failed'].includes(job.status))) {
+        display.verified = false;
         setStorage(foot, '이전 완료 확인 필요', true); return;
       }
       if (config.recoveryRequired) { setStorage(foot, '초기화·복원 확인 필요', true); return; }
@@ -58835,7 +58848,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
         return;
       }
       if (!['server_only','mirror'].includes(effectiveMode)) { setStorage(foot, '설정 확인 필요', true); return; }
-      const key = signature(config);
       // Reuse a recent successful connection-page probe. A fresh settings read
       // alone is not evidence that the server answered.
       if (!force && config.status?.state === 'connected' && config.status.url === config.url
@@ -58857,7 +58869,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if (/connection_stale/i.test(String(result?.error || ''))) {
           // Another settings/probe operation superseded this read. It is not
           // proof of an offline server, and must not become a red warning.
-          cache = null; setStorage(foot, '연결 확인 중'); return;
+          cache = null;
+          if (!display.verified) setStorage(foot, '연결 확인 중');
+          return;
         }
         cache = { key, at: Date.now(), result };
       }
@@ -58876,12 +58890,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       setStorage(foot, label, !result?.ok || effectiveMode === 'mirror',
         result?.ok ? '' : String(result?.error || '서버 응답을 확인하지 못했습니다.'));
+      display.verified = result?.ok === true;
     } catch (error) {
-      if (current()) setStorage(foot, '확인 필요', true, String(error?.message || error));
+      if (current()) {
+        display = null;
+        setStorage(foot, '확인 필요', true, String(error?.message || error));
+      }
     }
   };
   const stop = () => {
-    ++serial; clearTimeout(timer); timer = null; cache = null;
+    ++serial; clearTimeout(timer); timer = null; cache = null; display = null;
     try { unsubscribe?.(); } catch (_) {} unsubscribe = null;
   };
   const schedule = () => {
