@@ -8,7 +8,7 @@ const drawer=between('const showCanonicalRangeDrawer =','const buildBookMemoryMo
 const declaration=drawer.match(/const eligible=row=>[^;]+;/)?.[0];assert.ok(declaration);
 const context=vm.createContext({});vm.runInContext(declaration+'\nthis.eligible=eligible;',context);
 for(const status of ['missing','failed','saved','source_changed'])assert.equal(context.eligible({status}),status==='missing',`${status} first-generation eligibility`);
-assert.match(drawer,/\['source_edit','regenerate','failed'\]\.includes\(mode\)\)return showLibraSourceReanalysisDrawer/);
+assert.match(drawer,/\['source_edit','regenerate','failed'\]\.includes\(mode\)\)return showLibraSourceReanalysisDrawer/);assert.match(drawer,/reanalyzeTurn:String\(row\.startTurn\)/,'each range row provides a reanalyze button target');assert.match(drawer,/showLibraSourceReanalysisDrawer\(\{kind:'canonical',startTurn:row\.startTurn,endTurn:row\.endTurn\}\)/,'row reanalyze button opens source reanalysis for that exact 5-turn range');assert.match(drawer,/#seg-reana/,'range drawer provides bottom reanalysis entry');
 assert.match(drawer,/choices\.closest\('\.field'\)\.replaceWith\(status\)/,'the generation chooser cannot expose retired reanalysis modes');
 const reviewDrawer=between('const showLibraSourceReanalysisDrawer =','const showCanonicalRangeDrawer =');
 assert.match(reviewDrawer,/LibraMemoryCore\.reanalyzeSelectedRanges\(selection\)/);

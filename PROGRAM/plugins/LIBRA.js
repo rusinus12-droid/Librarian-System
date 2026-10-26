@@ -86511,7 +86511,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const labels={saved:'저장됨',missing:'미생성 · 누락 구간',failed:'미완료 · 새 분석 가능',source_changed:'원문 수정 · 선택 재분석 대기'};
       list.replaceChildren(...inventory.ranges.map(row=>guiEl('label',{class:'segrow','aria-disabled':String(running||!eligible(row)),dataset:{startTurn:String(row.startTurn),rangeStatus:row.status}},[
         guiEl('input',{type:'checkbox',checked:selected.has(row.startTurn),disabled:running||!eligible(row),'aria-label':`T${row.startTurn}–T${row.endTurn} 선택`,onChange:event=>{if(event.target.checked)selected.add(row.startTurn);else selected.delete(row.startTurn);paint();}}),
-        guiEl('div',{},[guiEl('b',{text:`T${row.startTurn}–T${row.endTurn}`}),guiEl('small',{text:labels[row.status]||row.status})]),libraStatusBadge(labels[row.status]||row.status,row.status==='saved'?'good':row.status==='failed'?'danger':'warn')
+        guiEl('div',{},[guiEl('b',{text:`T${row.startTurn}–T${row.endTurn}`}),guiEl('small',{text:labels[row.status]||row.status})]),
+        guiEl('div',{class:'cluster',style:{marginLeft:'auto',gap:'8px',flexWrap:'nowrap'}},[
+          libraStatusBadge(labels[row.status]||row.status,row.status==='saved'?'good':row.status==='failed'?'danger':'warn'),
+          guiEl('button',{class:'btn btn--sm',type:'button',text:'재분석',dataset:{reanalyzeTurn:String(row.startTurn),action:'reanalyze'},disabled:running,onClick:event=>{
+            event.preventDefault();event.stopPropagation();close();
+            void showLibraSourceReanalysisDrawer({kind:'canonical',startTurn:row.startTurn,endTurn:row.endTurn});
+          }})
+        ])
       ])));
       if(Number(inventory.pendingTurns)>0)list.prepend(guiEl('label',{class:'segrow','aria-disabled':'true'},[
         guiEl('input',{type:'checkbox',disabled:true,'aria-label':'마지막 미완성 턴 선택 불가'}),guiEl('div',{},[guiEl('b',{text:`T${Number(inventory.completeBatches)*5+1}–T${inventory.observedTurns}`}),guiEl('small',{text:'미완료 · 5턴이 채워지지 않아 선택할 수 없음'})]),guiEl('span',{class:'badge',text:'대기'})
@@ -86521,9 +86528,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       status.textContent=explanation;effect.textContent=explanation;
       submit.disabled=running||!selected.size;submit.textContent='선택한 구간 생성';
       overlay.querySelector('#seg-all').disabled=running;overlay.querySelector('#seg-none').disabled=running;
+      const reanaBtn=overlay.querySelector('#seg-reana');if(reanaBtn){reanaBtn.disabled=running;reanaBtn.textContent=selected.size>0?`선택 구간 재분석 (${selected.size}개)`:'원문 재분석';}
     };
     overlay.querySelector('#seg-all').addEventListener('click',()=>{const rows=inventory?.ranges.filter(eligible)||[];selected.clear();for(const row of rows)selected.add(row.startTurn);paint();});
     overlay.querySelector('#seg-none').addEventListener('click',()=>{selected.clear();paint();});
+    const segCluster=overlay.querySelector('#seg-none')?.closest('.cluster');
+    if(segCluster&&!overlay.querySelector('#seg-reana')){
+      const reanaBtn=guiEl('button',{class:'btn btn--sm',id:'seg-reana',type:'button',text:'원문 재분석',onClick:()=>{
+        const targetStarts=[...selected];
+        close();
+        void showLibraSourceReanalysisDrawer({kind:'canonical',...(targetStarts.length===1?{startTurn:targetStarts[0]}:targetStarts.length>1?{startTurns:targetStarts}:{})});
+      }});
+      overlay.querySelector('#seg-none')?.after(reanaBtn);
+    }
     overlay.querySelector('.dialog__actions [data-close]').addEventListener('click',close);overlay.addEventListener('click',event=>{if(event.target===overlay)close();});
     submit.addEventListener('click',async()=>{
       if(!valid()||!inventory||inventory.scopeKey!==binding.scopeKey){status.textContent='채팅·분기·scope가 바뀌었습니다. 구간 목록을 다시 열어 확인하세요.';submit.disabled=true;return;}
