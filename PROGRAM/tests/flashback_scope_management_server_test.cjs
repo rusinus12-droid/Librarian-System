@@ -32,6 +32,10 @@ const { createFixture } = require('./fixtures/flashback_native_runtime_fixture.c
       await t.saveAllRecords([{ id:'m', hash:'m', type:'response', sourceType:'response', text:'Real SQLite memory', dim:4, vector:[1,0,0,0] }], null, target);
       const key = t.scopeKeys.manifest(target.scopeKey), routeKey = '__memory_suite_internal_scope_routes_v1__:flashback';
       assert.equal(JSON.parse(app.repositories.flashback.get('plugin', key).value).count, 1);
+      const prefix=key.slice(0,-'manifest:v2'.length),alias=key.split(':')[2];
+      for(const localKey of [...f.pluginStorage.values.keys()])if(localKey.startsWith(prefix))f.pluginStorage.values.delete(localKey);
+      for(const localKey of [...f.host.safeLocalStorage.values.keys()])if(localKey.startsWith('vector_rag_memory:local-vector-shard:v1:'+alias+':'))f.host.safeLocalStorage.values.delete(localKey);
+      assert.equal(await f.pluginStorage.getItem(key),null,'server is the sole memory source');
       const route = await f.pluginStorage.getItem(routeKey);
       await t.repairScopeRegistryMetadata();
       assert.equal(await f.pluginStorage.getItem(routeKey), route, 'inspection preserves server mode');

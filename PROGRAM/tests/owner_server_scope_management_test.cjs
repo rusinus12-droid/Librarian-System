@@ -6,6 +6,7 @@ const {fixture,variants}=require('./storage_global_allchat_job_test.cjs');
   const f=await fixture(variant,{bridgeOptions:{scopeManagement:true}}),ns=variant[0];
   try{
    await f.bridge.setGlobalMode('server_only');
+   f.values.delete(ns+'.B');assert.equal(f.values.has(ns+'.B'),false,'server is the sole source before management');
    const before=await f.bridge.inspectScopeCatalog(),row=before.rows.find(r=>r.scopeId==='B');
    assert.equal(row.canDelete,true);
    const result=await f.bridge.manageScope({scopeId:'B',action:'delete',expectedFingerprint:row.fingerprint});
