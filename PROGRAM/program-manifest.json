@@ -5963,6 +5963,10 @@
       "sha256": "a7dfb7fa48a42ca84a0b2c248266506f962189d7d3872933ad33de7a992e50f9",
       "bytes": 8200
     },
+    "tests/flashback_scope_delete_targets_test.cjs": {
+      "sha256": "34b4c95d5a48aa67a3919a9102cf342d5eb2c340cf176ae6ea2f36ee6422b38f",
+      "bytes": 7927
+    },
     "tests/flashback_scope_deletion_authority_test.cjs": {
       "sha256": "fa03605dc12b545ed42a08abfd2bf5929b3e0f24d22b627907600f3979f7a033",
       "bytes": 11722
@@ -9702,6 +9706,10 @@
     "tests/owner_ipc_offline_context_contract_test.cjs": {
       "sha256": "1f1bd0214522a34d539c1ca9c4193069a3426f4e81f325b9a7723bfcdf019b55",
       "bytes": 2702
+    },
+    "tests/owner_scope_delete_targets_test.cjs": {
+      "sha256": "5d5e3baaf81c9dea6347e183c96e8a313ce8eb136ab79757e6b0accde3a0a9a2",
+      "bytes": 6362
     },
     "tests/owner_scope_management_runtime_test.cjs": {
       "sha256": "3fd435692b4c6c46c591a80addc270ea1ffacf0e7cc78416c59c3bcde60c73b9",
