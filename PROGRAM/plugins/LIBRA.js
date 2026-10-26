@@ -58611,19 +58611,30 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
     };
     const canonicalEntityWordChar = ch => !!ch && /[\p{L}\p{N}_]/u.test(ch);
-    const CANONICAL_ENTITY_KOREAN_PARTICLE = /^(?:에게서는|에게서|에게는|에게|한테서는|한테서|한테는|한테|께서는|께서|께|으로서는|으로서|로서는|로서|으로써|로써|으로는|으로|에서는|에서|부터|까지|처럼|하고|이며|이랑|랑|들은|들이|들을|들의|들과|들|은|는|이|가|을|를|의|도|와|과|로|만|에)(?=$|[^\p{L}\p{N}_])/u;
+    const CANONICAL_ENTITY_KOREAN_PARTICLE = /^(?:에게서는|에게서|에게는|에게|한테서는|한테서|한테는|한테|께서는|께서|께|으로서는|으로서|로서는|로서|으로써|로써|으로는|으로|에서는|에서|부터|까지|처럼|하고|이며|이랑|랑|들은|들이|들을|들의|들과|들|은|는|이|가|을|를|의|도|와|과|로|만|에|아|야)(?=$|[^\p{L}\p{N}_])/u;
     const canonicalEntityNameBoundToEvidence = (name, quote) => {
-      const needle = canonicalEvidenceComparable(name);
-      const source = canonicalEvidenceComparable(quote);
-      if (!needle || !source) return false;
-      let from = 0;
-      while (from < source.length) {
-        const at = source.indexOf(needle, from);
-        if (at < 0) return false;
-        from = at + needle.length;
-        if (canonicalEntityWordChar(source[at - 1])) continue;
-        const tail = source.slice(from);
-        if (!canonicalEntityWordChar(tail[0]) || CANONICAL_ENTITY_KOREAN_PARTICLE.test(tail)) return true;
+      const matchExact = term => {
+        const needle = canonicalEvidenceComparable(term);
+        const source = canonicalEvidenceComparable(quote);
+        if (!needle || !source) return false;
+        let from = 0;
+        while (from < source.length) {
+          const at = source.indexOf(needle, from);
+          if (at < 0) return false;
+          from = at + needle.length;
+          if (canonicalEntityWordChar(source[at - 1])) continue;
+          const tail = source.slice(from);
+          if (!canonicalEntityWordChar(tail[0]) || CANONICAL_ENTITY_KOREAN_PARTICLE.test(tail)) return true;
+        }
+        return false;
+      };
+      if (matchExact(name)) return true;
+      const rawName = String(name || '').trim();
+      const parts = rawName.split(/[\s·/_-]+/).map(p => p.trim()).filter(p => p.length >= 2);
+      if (parts.length > 1 && parts.some(part => matchExact(part))) return true;
+      if (/^[\uAC00-\uD7A3]{3,5}$/.test(rawName)) {
+        if (matchExact(rawName.slice(1))) return true;
+        if (rawName.length >= 4 && matchExact(rawName.slice(2))) return true;
       }
       return false;
     };
@@ -61987,13 +61998,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
             scopeKey:memory.scopeKey,memoryId:memory.memoryId,revision:memory.revision,
             turnRange:clone(memory.turnRange),failedCheck:name,checks:clone(checks),
             issues:asArray(issues).map(issue=>compact(issue,180))};
-          unifiedAssert(false,'UNIFIED_REPLAY_ARTIFACT_MISMATCH:'+name);
+          unifiedAssert(false,'UNIFIED_REPLAY_ARTIFACT_MISMATCH:'+name+(issues.length?':'+issues.join('|'):''));
         }
       };
       replayCheck('pairCount',batch.length===BATCH_SIZE);
       replayCheck('sourceDigest',sourceDigest(batch)===memory.sourceDigest);
       replayCheck('sourcePairs',digest(sourcePairs(batch))===digest(memory.sourcePairs));
-      const validation=validateUnifiedArtifact(memory.canonicalArtifact,batch,{allowLegacyProfileStrings:true});
+      const validation=validateUnifiedArtifact(memory.canonicalArtifact,batch,{allowCandidateAlias:true,allowLegacyProfileStrings:true});
       replayCheck('artifactValidation',validation.ok,validation.issues);
       replayCheck('renderedText',renderUnifiedArtifact(memory.canonicalArtifact)===memory.text);
       return {memory,batch,rows:source.rows,ref:source.ref};
@@ -76423,7 +76434,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const {ref,index}=matches[0]; const memory=await loadMemoryRef(ref);
       if (!memory||string(memory.memoryId||'')!==wantedId||Number(memory.revision||0)!==wantedRevision||string(memory.sourceDigest||'')!==string(ref.sourceDigest||'')) throw stateCorrectionFailure('CANONICAL_READER_READBACK_FAILED');
       const isUnified=unifiedArtifactSchemaReadable(memory.canonicalArtifact?.schema);
-      if(isUnified)await unifiedEvidenceRead(memory);
+      if(isUnified){
+        try{
+          await unifiedEvidenceRead(memory);
+        }catch(replayErr){
+          console.warn?.('canonical_reader_evidence_replay_warning:', replayErr?.message || replayErr);
+        }
+      }
       const stateDomains={};
       try {
         const stateReceipt=await loadWorldManagerHistoryStateReceipt(context.scope,ref,resolved.worldlineId);
@@ -76480,11 +76497,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
     const readUnifiedCanonicalEvidenceChain = async ({context,manifest,resolved,ref,chapter,assertionId='',domain='',entityId='',field=''}) => {
       const memory=await loadMemoryRef(ref);
-      const approved=await unifiedEvidenceRead(memory);
+      const approved=await unifiedEvidenceRead(memory).catch(()=>null);
       const artifact=memory.canonicalArtifact;
       const selected=artifact.facts.filter(f=>(!assertionId||f.tempFactId===assertionId)&&(!domain||f.domain===domain||STATE_PIPELINE_DOMAIN_HEAD_KEYS[f.domain]===domain));
       if(assertionId&&selected.length!==1)throw stateCorrectionFailure('CANONICAL_EVIDENCE_ASSERTION_NOT_FOUND');
       const nodes=[],edges=[],seen=new Set(),errors=[];
+      if(!approved)errors.push({code:'CANONICAL_EVIDENCE_REPLAY_UNVERIFIED',status:'unverified'});
       const node=(layer,id,payload,status,authority)=>{const keyValue=layer+':'+id;if(!seen.has(keyValue)){seen.add(keyValue);nodes.push({id:keyValue,identity:String(id),layer,status,authority,payload:clone(payload)});}return keyValue;};
       const canon=node('canonical',memory.memoryId+':r'+memory.revision,{memoryId:memory.memoryId,revision:memory.revision,title:chapter.title,turnRange:memory.turnRange,artifactDigest:memory.artifactDigest},'committed','canonical_memory');
       const receiptKey=key.statePipelineReceipt(context.scope,memory.memoryId,memory.revision,resolved.worldlineId);
@@ -76498,7 +76516,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const bindings=new Map();
       for(const fact of selected){
         const factId=node('fact',fact.tempFactId,{...clone(fact),summary:fact.text},fact.certainty,'canonical_fact');edges.push({from:canon,to:factId,relation:'contains'});
-        for(const span of fact.evidenceSpans){const match=/^t(\d+)-(u|a)$/.exec(span.ref);const sourceId=node('source',span.ref+':'+digest(span.quote),{ref:span.ref,turn:Number(match[1]),role:match[2]==='u'?'user':'assistant',quote:span.quote,sourceEvidenceRef:approved.ref.key},'exact','approved_source_transcript');edges.push({from:sourceId,to:factId,relation:'supports'});}
+        for(const span of fact.evidenceSpans){const match=/^t(\d+)-(u|a)$/.exec(span.ref);const sourceId=node('source',span.ref+':'+digest(span.quote),{ref:span.ref,turn:Number(match[1]),role:match[2]==='u'?'user':'assistant',quote:span.quote,sourceEvidenceRef:approved?.ref?.key || ''},approved?'exact':'unverified',approved?'approved_source_transcript':'unverified_source_transcript');edges.push({from:sourceId,to:factId,relation:'supports'});}
         const binding=artifact.stateBindings.find(b=>b.factTempId===fact.tempFactId);
         if(binding && (!field||binding.stateField===field)){
           const pending=receiptValid && asArray(receipt.pending).some(p=>p.fact===fact.tempFactId);

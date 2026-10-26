@@ -99,19 +99,30 @@ const hostWorldlineIdForScope = scope => {
     };
     
 const canonicalEntityWordChar = ch => !!ch && /[\p{L}\p{N}_]/u.test(ch);
-    const CANONICAL_ENTITY_KOREAN_PARTICLE = /^(?:에게서는|에게서|에게는|에게|한테서는|한테서|한테는|한테|께서는|께서|께|으로서는|으로서|로서는|로서|으로써|로써|으로는|으로|에서는|에서|부터|까지|처럼|하고|이며|이랑|랑|들은|들이|들을|들의|들과|들|은|는|이|가|을|를|의|도|와|과|로|만|에)(?=$|[^\p{L}\p{N}_])/u;
+    const CANONICAL_ENTITY_KOREAN_PARTICLE = /^(?:에게서는|에게서|에게는|에게|한테서는|한테서|한테는|한테|께서는|께서|께|으로서는|으로서|로서는|로서|으로써|로써|으로는|으로|에서는|에서|부터|까지|처럼|하고|이며|이랑|랑|들은|들이|들을|들의|들과|들|은|는|이|가|을|를|의|도|와|과|로|만|에|아|야)(?=$|[^\p{L}\p{N}_])/u;
     const canonicalEntityNameBoundToEvidence = (name, quote) => {
-      const needle = canonicalEvidenceComparable(name);
-      const source = canonicalEvidenceComparable(quote);
-      if (!needle || !source) return false;
-      let from = 0;
-      while (from < source.length) {
-        const at = source.indexOf(needle, from);
-        if (at < 0) return false;
-        from = at + needle.length;
-        if (canonicalEntityWordChar(source[at - 1])) continue;
-        const tail = source.slice(from);
-        if (!canonicalEntityWordChar(tail[0]) || CANONICAL_ENTITY_KOREAN_PARTICLE.test(tail)) return true;
+      const matchExact = term => {
+        const needle = canonicalEvidenceComparable(term);
+        const source = canonicalEvidenceComparable(quote);
+        if (!needle || !source) return false;
+        let from = 0;
+        while (from < source.length) {
+          const at = source.indexOf(needle, from);
+          if (at < 0) return false;
+          from = at + needle.length;
+          if (canonicalEntityWordChar(source[at - 1])) continue;
+          const tail = source.slice(from);
+          if (!canonicalEntityWordChar(tail[0]) || CANONICAL_ENTITY_KOREAN_PARTICLE.test(tail)) return true;
+        }
+        return false;
+      };
+      if (matchExact(name)) return true;
+      const rawName = String(name || '').trim();
+      const parts = rawName.split(/[\s·/_-]+/).map(p => p.trim()).filter(p => p.length >= 2);
+      if (parts.length > 1 && parts.some(part => matchExact(part))) return true;
+      if (/^[\uAC00-\uD7A3]{3,5}$/.test(rawName)) {
+        if (matchExact(rawName.slice(1))) return true;
+        if (rawName.length >= 4 && matchExact(rawName.slice(2))) return true;
       }
       return false;
     };
