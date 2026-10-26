@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-26T10:19:16.577Z",
+  "generatedAt": "2026-10-26T10:22:45.903Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -11348,8 +11348,8 @@
       "bytes": 10400
     },
     "tools/prepare_data.cjs": {
-      "sha256": "3869525ff384d7d19d00c8add091138b032abd21e9898907fb04394e06a923f7",
-      "bytes": 23248
+      "sha256": "a50aa3d6de3564edf69a0f58e3aec77ab5362dbf524e99973bb2f4239d28565b",
+      "bytes": 23334
     },
     "tools/rag_eval/flashback_gui_browser_render.cjs": {
       "sha256": "2d0278da2dd1b3e022e3f2d176f4ecddd029d30186d68e3bc6b1208759f37b05",

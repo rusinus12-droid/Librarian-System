@@ -161,7 +161,9 @@ function exactDirectoryName(dirPath) {
   try {
     const parent = path.dirname(dirPath);
     const base = path.basename(dirPath).toLowerCase();
-    const match = fs.readdirSync(parent).find(e => e.toLowerCase() === base);
+    const entries = fs.readdirSync(parent);
+    const match = entries.find(e => e === path.basename(dirPath))
+      || entries.find(e => e.toLowerCase() === base);
     return match || path.basename(dirPath);
   } catch {
     return path.basename(dirPath);
