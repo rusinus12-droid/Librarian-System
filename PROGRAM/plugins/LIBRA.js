@@ -92689,7 +92689,7 @@ advanced
   };
 
   // Read applied settings only: editing a draft must not change the status summary.
-  const bookCurrentStatus = { serial: 0, subscribed: false };
+  const bookCurrentStatus = { serial: 0, subscribed: false, display: null };
   const syncBookCurrentStatus = app => {
     const foot = app?.querySelector('.side-foot');
     if (!foot) return;
@@ -92743,13 +92743,18 @@ advanced
     const scopeKey = scope?.scopeKey || '';
     // Every refresh invalidates earlier replies, including replies from a previous chat/open.
     const serial = ++bookCurrentStatus.serial, openSerial = Gui.openSerial;
-    setRow('storage', '저장: 확인 중');
+    const backend = JSON.stringify(MemorySuiteStorageBridge.serverBinding?.() || null);
+    const previous = bookCurrentStatus.display;
+    if (!previous || previous.app !== app || previous.foot !== foot || previous.openSerial !== openSerial
+        || previous.scopeKey !== scopeKey || previous.backend !== backend) setRow('storage', '저장: 확인 중');
+    bookCurrentStatus.display = { app, foot, openSerial, scopeKey, backend };
+    const current = () => serial === bookCurrentStatus.serial && openSerial === Gui.openSerial
+      && Gui.visible && Gui.mockupApp === app && (LibraMemoryCore.peekSnapshot()?.scope?.scopeKey || '') === scopeKey;
     const help = foot.querySelector('.current-status-help');
     if (help) help.textContent = '각 항목을 눌러 설정 변경';
     if (scopeKey) {
       void MemorySuiteStorageBridge.getScopeMode(scope).then(value => {
-        if (serial !== bookCurrentStatus.serial || openSerial !== Gui.openSerial || Gui.mockupApp !== app
-            || LibraMemoryCore.peekSnapshot()?.scope?.scopeKey !== scopeKey) return;
+        if (!current()) return;
         const unavailable = Runtime.serverUnavailable && value.mode !== 'plugin_only';
         const label = value.transition || value.migrationRequired ? '전환 확인 필요'
           : unavailable ? '서버 연결 확인 필요'
@@ -92757,15 +92762,15 @@ advanced
           : value.mode === 'plugin_only' ? '플러그인 모드' : '확인 필요';
         setRow('storage', `저장: ${label}`, unavailable);
       }).catch(err => {
-        if (serial === bookCurrentStatus.serial && openSerial === Gui.openSerial && Gui.mockupApp === app) {
+        if (current()) {
+          if (err?.code === 'MEMORY_SUITE_CONNECTION_STALE' || /MEMORY_SUITE_CONNECTION_STALE/.test(String(err?.message || ''))) return;
           const unavailable = isLibraServerUnavailableError(err);
           setRow('storage', unavailable ? '저장: 서버 연결 확인 필요' : '저장: 확인 필요', unavailable);
         }
       });
     } else {
       void MemorySuiteStorageBridge.getConnectionSettings().then(config => {
-        if (serial !== bookCurrentStatus.serial || openSerial !== Gui.openSerial || Gui.mockupApp !== app
-            || LibraMemoryCore.peekSnapshot()?.scope?.scopeKey) return;
+        if (!current()) return;
         const isGlobal = Boolean(config.global?.set);
         const globalMode = config.global?.mode || config.mode || 'plugin_only';
         const unavailable = Runtime.serverUnavailable && globalMode !== 'plugin_only';
@@ -92781,7 +92786,8 @@ advanced
         }
         setRow('storage', label, unavailable);
       }).catch(err => {
-        if (serial === bookCurrentStatus.serial && openSerial === Gui.openSerial && Gui.mockupApp === app) {
+        if (current()) {
+          if (err?.code === 'MEMORY_SUITE_CONNECTION_STALE' || /MEMORY_SUITE_CONNECTION_STALE/.test(String(err?.message || ''))) return;
           const unavailable = isLibraServerUnavailableError(err);
           setRow('storage', unavailable ? '저장: 서버 연결 확인 필요' : '저장: 확인 필요', unavailable);
         }
