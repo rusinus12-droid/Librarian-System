@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-27T07:55:41.331Z",
+  "generatedAt": "2026-10-27T09:14:57.257Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4016,24 +4016,24 @@
       "bytes": 3416
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "7e4855fded01640f4b16980ca53f9c8e34856c34884623d1f5ed7367f427b87f",
-      "bytes": 3688704
+      "sha256": "18425667d69e0d52dc0386b9ad07e534c474a3ebb300733edb9fe59ab31db475",
+      "bytes": 3688767
     },
     "plugins/GRADIA.js": {
       "sha256": "4e43c6b81ceb21d0d2faf3ed198f0a7ca2b6657e8c71f27cf2e290a0b49545f4",
       "bytes": 3019277
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "294446055dbce512d3585abdb7e5a742c783232f230474b0db0d8ee5ab493c4d",
-      "bytes": 4164103
+      "sha256": "c6b8aec036e423bba4166b47a7c6fa05309bf9f47cca1d5fa1103159f1199158",
+      "bytes": 4164166
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "3fda2ec012c86d969855130e785a2759ecc20c0be60d811feb9ca5c4b92f3b28",
       "bytes": 1649278
     },
     "plugins/LIBRA.js": {
-      "sha256": "347b2fe5b219de563f17235ef4dc2badac6bb1c3f15869b87b09bf5628f47504",
-      "bytes": 6742611
+      "sha256": "cd349f537d7da4d324ced56738b4b04f8fe04866622605a377bd99cc000d16e6",
+      "bytes": 6777041
     },
     "plugins/RETRACE.js": {
       "sha256": "04f3a6defddab22b6f544acbb229012cd442672acdb44cb4f3a5aaf79ced4979",
@@ -4180,12 +4180,12 @@
       "bytes": 4596
     },
     "sdk/MemorySuiteStorageClient.libra.source.js": {
-      "sha256": "27269a5fe9c83b9769c7ed99fab9f892702ef5590d65faa7a506912e6204e1a5",
-      "bytes": 716290
+      "sha256": "b5b44a9ec514075a0fe898b69f06076ab279ac516e47d28e7e4e8219cc6c0869",
+      "bytes": 716353
     },
     "sdk/MemorySuiteStorageClient.source.js": {
-      "sha256": "835ed76abb6bff22f6ce929dfae3e5d62666b084cc4995dd6c9a17da34e2b356",
-      "bytes": 730598
+      "sha256": "4ecdf1f5a8a7278780c1f4150335ab2f1c1a6ec692ac17e0f5d4027e0fa4ff7c",
+      "bytes": 730661
     },
     "server/admin.cjs": {
       "sha256": "a67f5877523fa6460b986888aeb659ba84a2fda4ee384101ffc0fed222482480",
@@ -7516,8 +7516,8 @@
       "bytes": 6808
     },
     "tests/libra_book_model_summary_runtime_test.cjs": {
-      "sha256": "abba4d43856dbf1a4e48a16708ed7dab0e7fb2c3559dea9372bc688564867aac",
-      "bytes": 4187
+      "sha256": "1c7d423c48a6a5db509008c8672fd932a0e4a695bbe9ec0147202e5daa91f81b",
+      "bytes": 4197
     },
     "tests/libra_book_narrative_turn_groups_test.cjs": {
       "sha256": "2c55e849c630b52120cc39bb3c0d1b45702db06d64e6b06a50cac051f278fb38",
@@ -7844,8 +7844,8 @@
       "bytes": 3632
     },
     "tests/libra_explicit_reanalysis_drawer_test.cjs": {
-      "sha256": "928fe504bf30d0d938044f9b55a60380ba86863340a45e33c1b3b8f506a5d898",
-      "bytes": 5288
+      "sha256": "bba7eb4d69809f2bed20f6cdd0c7d2de856470129d420b0291c0e0f5a6ea6930",
+      "bytes": 5823
     },
     "tests/libra_explicit_reanalysis_simplification_test.cjs": {
       "sha256": "9e1714b8965c52833896c143ee4145a7855f62d49cdfd0644d6e5bb3436122fa",
@@ -8472,8 +8472,8 @@
       "bytes": 8135
     },
     "tests/libra_memory_maintenance_auto_recovery_test.cjs": {
-      "sha256": "0e4fe0c164f110a72822b5d169b41ac9a8c1d705e51444bed692a3cf30c914ef",
-      "bytes": 6368
+      "sha256": "07ac73699c2df20d8755bbcd58ba9db5a2126f683f5e58f5023bd38e4dbbc6d4",
+      "bytes": 8760
     },
     "tests/libra_memory_maintenance_intelligent_scenarios_test.cjs": {
       "sha256": "2b84afcc27fcce736aeffa923e767a3a9508763bb526e47eeca4e63f77148ae4",
@@ -9128,8 +9128,8 @@
       "bytes": 7899
     },
     "tests/libra_receipt_recovery_desk_contract_test.cjs": {
-      "sha256": "892c540518bd18582b95f005695dd8a54e090ef5f650465c70f6a3fada48daaa",
-      "bytes": 19855
+      "sha256": "1d0c1d19bb6fd4d68d2d9903f4729aa44d455c3b21cfc2c6f16dd27f9bd94b42",
+      "bytes": 22514
     },
     "tests/libra_receipt_sparse_micro_frontier_test.cjs": {
       "sha256": "7c98e4a882efd05b9ab31100446cb532ff202a7180f6b1871baacedd5c836338",
@@ -9512,8 +9512,8 @@
       "bytes": 18084
     },
     "tests/libra_unified_worldline_storage_board_test.cjs": {
-      "sha256": "6c104e82b7a8d21e03aa13b2a3c97e8cc956cafc2622d67f7fb577db50ba7490",
-      "bytes": 8872
+      "sha256": "67e6d169629d2eff375255d13e0121581d9be0b63afb08ac9e2ffdd889332980",
+      "bytes": 8892
     },
     "tests/libra_volatile_corpus_index_runtime_test.cjs": {
       "sha256": "b0496fa0c06e6d218f9fdb413cb58f50b92846ea9c02f32775f3a0224c8ef0c5",
@@ -9812,8 +9812,8 @@
       "bytes": 6319
     },
     "tests/owner_scope_management_runtime_test.cjs": {
-      "sha256": "3fd435692b4c6c46c591a80addc270ea1ffacf0e7cc78416c59c3bcde60c73b9",
-      "bytes": 13566
+      "sha256": "984cefaf3fcd9ac9b7402ddcb6b25a06471323cfd235d69bdb23e33518b8853c",
+      "bytes": 13759
     },
     "tests/owner_server_scope_management_test.cjs": {
       "sha256": "8ff39f8d1664937ad082307405755e5ef47572c07211a6bb3cf542dffdba5114",
@@ -11978,19 +11978,19 @@
     "Flashback_Memory.js": {
       "variant": "core3-standard-flashback",
       "source": "sdk/MemorySuiteStorageClient.source.js",
-      "sha256": "1569ee77845f0a440d19cb2b5aa08a07b99b5d5bdbb19ad6ab0fccdf56fdedc9",
+      "sha256": "1d572a74fc3f2ecb19ce5f0e4d40e8f943b73f83afc9cc82bc3bef6f1a955f0e",
       "synchronization": "canonical-variant"
     },
     "HAYAKU_Locator_Continuity.js": {
       "variant": "core3-standard-hayaku",
       "source": "sdk/MemorySuiteStorageClient.source.js",
-      "sha256": "1569ee77845f0a440d19cb2b5aa08a07b99b5d5bdbb19ad6ab0fccdf56fdedc9",
+      "sha256": "1d572a74fc3f2ecb19ce5f0e4d40e8f943b73f83afc9cc82bc3bef6f1a955f0e",
       "synchronization": "canonical-variant"
     },
     "LIBRA.js": {
       "variant": "libra-control-plane-preroute",
       "source": "sdk/MemorySuiteStorageClient.libra.source.js",
-      "sha256": "8c16b6ab1528badd47e5d5d661fdb40009c2929a19d73f782d4a69d7eacfcc24",
+      "sha256": "91f958f79ebcf5eb427514f541e3df473eac61ad08b92ce29c5f16c71ee37a26",
       "synchronization": "canonical-variant"
     },
     "LIA_Persona_Linker.js": {
