@@ -12775,7 +12775,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           || typeof result.complete !== 'boolean' || typeof result.inventoryComplete !== 'boolean' || typeof result.scopeVerified !== 'boolean'
           || !/^[a-f0-9]{64}$/.test(result.fingerprint) || !Array.isArray(result.records) || !Array.isArray(result.values)
           || !Array.isArray(result.skipped) || result.records.length > 8192 || result.values.length > 8192
-          || storageValueBytes(result) > 12 * 1024 ** 2) reject('HEALTH_SERVER_SNAPSHOT_UNVERIFIED');
+          || storageValueBytes(result) > 40 * 1024 ** 2) reject('HEALTH_SERVER_SNAPSHOT_UNVERIFIED');
       const prefixes = {plugin:`vector_rag_memory:scope:${alias}:`,local:`vector_rag_memory:local-vector-shard:v1:${alias}:`};
       if ([...result.records,...result.values].some(row => !prefixes[row?.space] || typeof row.key !== 'string' || !row.key.startsWith(prefixes[row.space]))) reject('HEALTH_SERVER_SNAPSHOT_UNVERIFIED');
       if (expectedFingerprint && result.fingerprint !== expectedFingerprint) reject('HEALTH_SNAPSHOT_CHANGED');

@@ -1,6 +1,8 @@
 'use strict';
 const crypto = require('node:crypto');
-const MAX_ITEMS = 1000, MAX_VALUE_BYTES = 2 * 1024 ** 2, MAX_TOTAL_BYTES = 8 * 1024 ** 2;
+// Shards whose records still carry inline vectors (pending re-embedding) reach
+// ~2.5 MB; a smaller cap made the whole inspection incomplete exactly then.
+const MAX_ITEMS = 1000, MAX_VALUE_BYTES = 8 * 1024 ** 2, MAX_TOTAL_BYTES = 32 * 1024 ** 2;
 const scopeHash = value => {
   let hash = 0x811c9dc5;
   for (let i = 0; i < value.length; i++) { hash ^= value.charCodeAt(i); hash = Math.imul(hash, 0x01000193); }

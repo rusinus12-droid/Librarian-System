@@ -51,3 +51,16 @@ test('LIBRA branch reconcile stays a hard gate with a cold-start sized step limi
  const source=read('LIBRA.js'),i=source.indexOf("'before_branch_reconcile',");
  assert.ok(i>0);assert.match(source.slice(i,i+600),/\n\s*6000\n\s*\);/);
 });
+
+test('Flashback maintenance never reads an incomplete inspection or missing chunks as healthy',()=>{
+ const source=read('Flashback_Memory.js');
+ assert.match(source,/const isHealthy = inspectionComplete && \(plan\.healthy/);
+ assert.match(source,/const directExact = direct && direct\.complete !== false/);
+ assert.match(source,/group\.complete !== false && sameMaintenanceTurnText\(/);
+ assert.match(source,/const embeddingQueue = configuredModelEmbedding\(admission\.settings\)/,'server sync also drains pending embedding');
+ assert.match(source,/uncapturedTurns, headTurnNodeId:/,'uncaptured live turns are reported beside the stored ledger');
+ assert.match(source,/\.\.\.uncapturedTurns\.map\(pairIndex => \(\{ pairIndex, memory: 'none', uncaptured: true \}\)\)/,'and drawn on the route');
+ assert.match(source,/\.legend i\.w\{border-color:var\(--warn\);border-radius:2px;transform:rotate\(45deg\)\}/,'only the marker rotates');
+ const server=fs.readFileSync(path.join(__dirname,'..','server','core','flashback-scope-health.cjs'),'utf8');
+ assert.match(server,/MAX_VALUE_BYTES = 8 \* 1024 \*\* 2, MAX_TOTAL_BYTES = 32 \* 1024 \*\* 2/);
+});

@@ -14109,7 +14109,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           || typeof result.complete !== 'boolean' || typeof result.inventoryComplete !== 'boolean' || typeof result.scopeVerified !== 'boolean'
           || !/^[a-f0-9]{64}$/.test(result.fingerprint) || !Array.isArray(result.records) || !Array.isArray(result.values)
           || !Array.isArray(result.skipped) || result.records.length > 8192 || result.values.length > 8192
-          || storageValueBytes(result) > 12 * 1024 ** 2) reject('HEALTH_SERVER_SNAPSHOT_UNVERIFIED');
+          || storageValueBytes(result) > 40 * 1024 ** 2) reject('HEALTH_SERVER_SNAPSHOT_UNVERIFIED');
       const prefixes = {plugin:`vector_rag_memory:scope:${alias}:`,local:`vector_rag_memory:local-vector-shard:v1:${alias}:`};
       if ([...result.records,...result.values].some(row => !prefixes[row?.space] || typeof row.key !== 'string' || !row.key.startsWith(prefixes[row.space]))) reject('HEALTH_SERVER_SNAPSHOT_UNVERIFIED');
       if (expectedFingerprint && result.fingerprint !== expectedFingerprint) reject('HEALTH_SNAPSHOT_CHANGED');
@@ -28889,6 +28889,12 @@ const MemorySuiteSnapshotCache = (() => {
       group.variantId = text(group.records[0]?.variantId || '');
       group.turnNodeId = text(group.records[0]?.turnNodeId || '');
       group.hasPeerDerivedMetadata = group.records.some(record => hasLegacyPeerDerivedMetadata(record?.metadata));
+      // A group missing any chunk (e.g. chunk 0 holding the user turn) cannot stand
+      // for the live turn even if the rebuilt text happens to compare equal.
+      const chunkCount = Number(group.records[0]?.chunkCount);
+      const chunkIndexes = new Set(group.records.map(record => Number(record.chunkIndex)));
+      group.complete = !Number.isInteger(chunkCount) || chunkCount < 1
+        || (chunkIndexes.size === chunkCount && [...chunkIndexes].every(index => Number.isInteger(index) && index >= 0 && index < chunkCount));
     }
     return Array.from(groups.values());
   };
@@ -31517,11 +31523,11 @@ const MemorySuiteHealthRecovery = (() => {
       const pair = responsePairFromMaintenanceSource(source);
       const direct = pair.sourceHash ? groupsBySourceHash.get(pair.sourceHash) : null;
       const pairCandidates = groupsByPair.get(pair.pairIndex) || [];
-      const directExact = direct
+      const directExact = direct && direct.complete !== false
         && sameMaintenanceTurnText(direct.assistantText, pair.assistantText)
         && (!pair.userText || !direct.userText || samePairUserText(direct.userText, pair.userText));
       const exact = directExact ? direct : pairCandidates.find(group => (
-        sameMaintenanceTurnText(group.assistantText, pair.assistantText)
+        group.complete !== false && sameMaintenanceTurnText(group.assistantText, pair.assistantText)
         && (!pair.userText || !group.userText || samePairUserText(group.userText, pair.userText))
       ));
       if (exact) {
@@ -44998,6 +45004,18 @@ ${cleanedText}`, 80),
   // Auto recovery for open re-embedding jobs only. Runs the ordinary pending queue
   // (same writer as background progress) until it is empty or a pass makes no
   // progress, then re-inspects. Failed jobs are retried; uncertain ones are not.
+  const drainPendingEmbeddingQueue = async (scopeKey, signal, maxPasses = 20) => {
+    const passes = [];
+    let ready = 0, failed = 0, uncertain = 0;
+    for (let pass = 0; pass < maxPasses; pass++) {
+      if (signal?.aborted) throw new EmbeddingAdapterError('ABORTED', 'Maintenance cancelled.');
+      const queue = await processPendingEmbeddingQueue({ scopeKey, retryFailed: true, signal });
+      passes.push({ ready: Number(queue.ready || 0), failed: Number(queue.failed || 0), pendingSources: Number(queue.pendingSources || 0), reason: queue.reason || '' });
+      ready += Number(queue.ready || 0); failed += Number(queue.failed || 0); uncertain += Number(queue.uncertainRecords || 0);
+      if (!Number(queue.ready || 0) || !Number(queue.pendingSources || 0)) break;
+    }
+    return { passes, ready, failed, uncertain, stopReason: passes[passes.length - 1]?.reason || '' };
+  };
   const runMaintenanceEmbeddingQueue = async (preflight, options = {}) => {
     const scope = preflight?._maintenanceContext?.scope;
     if (!scope?.scopeKey) throw maintenanceInspectionUnavailable('HEALTH_SCOPE_UNVERIFIED');
@@ -45019,17 +45037,10 @@ ${cleanedText}`, 80),
     Runtime.maintenanceActiveOperationId = operationId;
     renderMaintenanceExecution();
     try {
-      const passes = [];
-      let ready = 0, failed = 0, uncertain = 0;
-      for (let pass = 0; pass < 20; pass++) {
-        if (signal?.aborted) throw new EmbeddingAdapterError('ABORTED', 'Maintenance cancelled.');
-        const queue = await processPendingEmbeddingQueue({ scopeKey: scope.scopeKey, retryFailed: true, signal });
-        passes.push({ ready: Number(queue.ready || 0), failed: Number(queue.failed || 0), pendingSources: Number(queue.pendingSources || 0), reason: queue.reason || '' });
-        ready += Number(queue.ready || 0); failed += Number(queue.failed || 0); uncertain += Number(queue.uncertainRecords || 0);
-        if (!Number(queue.ready || 0) || !Number(queue.pendingSources || 0)) break;
-      }
+      const drained = await drainPendingEmbeddingQueue(scope.scopeKey, signal);
+      const { passes, ready, failed, uncertain } = drained;
       const after = await inspectMemoryMaintenance({ requestPermission: false });
-      const last = passes[passes.length - 1] || {};
+      const last = { reason: drained.stopReason };
       const result = {
         operationId, scopeKey: scope.scopeKey, maintenanceMode: 'auto', status: 'completed',
         durationMs: Math.max(0, Date.now() - startedAt), before: preflight, after,
@@ -45138,6 +45149,11 @@ ${cleanedText}`, 80),
           ...operationSettings
         });
         await operationSettings.maintenanceSourceValidate();
+        // Synced turns are stored raw-first; finish their (and any older) pending
+        // embedding in the same run so one automatic recovery leaves nothing queued.
+        const embeddingQueue = configuredModelEmbedding(admission.settings)
+          ? await drainPendingEmbeddingQueue(executionScope.scopeKey, operationSettings.signal)
+          : null;
         const after = await inspectMemoryMaintenance({
           requestPermission: false,
           settings: sharedSettings || await loadSettings(),
@@ -45156,8 +45172,9 @@ ${cleanedText}`, 80),
           healthy: after.healthy === true,
           operation: {
             strategy: 'server_turn_sync',
-            stages: ['sync'],
-            sync: syncOperation
+            stages: embeddingQueue ? ['sync', 'embedding_queue'] : ['sync'],
+            sync: syncOperation,
+            queue: embeddingQueue
           },
           totals: {
             sources: syncOperation.sources || 0,
@@ -45897,6 +45914,7 @@ ${cleanedText}`, 80),
         `동기화 결과: 총 ${formatNumber(total)}개 턴 반영 (신규: ${formatNumber(inserted)}개, 갱신: ${formatNumber(updated)}개)`,
         `동기화 전: 누락 ${formatNumber(result.before?.missingTurns)}개 · 변경 ${formatNumber(result.before?.changedTurns)}개`,
         `동기화 후: 누락 ${formatNumber(result.after?.missingTurns)}개 · 변경 ${formatNumber(result.after?.changedTurns)}개`,
+        ...(result.operation.queue ? [`재임베딩: 완료 ${formatNumber(result.operation.queue.ready)}개 · 실패 ${formatNumber(result.operation.queue.failed)}개 · 남은 미완료 ${formatNumber(result.after?.embeddingWorkIncompleteRecords)}개`] : []),
         result.healthy === true || (result.after?.missingTurns === 0 && result.after?.changedTurns === 0)
           ? '최종 판정: 서버 기억과 현재 대화 원문이 완전히 일치합니다 (정상).'
           : '최종 판정: 동기화 후 상태 점검을 확인하세요.'
@@ -47749,6 +47767,18 @@ ${cleanedText}`, 80),
     const afterRaw = await RisuCompat.getItem(scopeKeys.worldline(scope.scopeKey));
     if (manualEditorCommitIdentity(manifest) !== manualEditorCommitIdentity(afterManifest) || stableHash(typeof raw === 'string' ? raw : safeStringify(raw)) !== stableHash(typeof afterRaw === 'string' ? afterRaw : safeStringify(afterRaw))) throw new Error('조회 중 저장 원장이 변경되었습니다. 다시 조회해 주세요.');
     if (options.shouldCancel?.()) return null;
+    // A completed live turn that was never captured has no worldline node at all.
+    // Report it beside the stored ledger (never as an invented node) so the route
+    // does not silently end early.
+    const uncapturedTurns = [];
+    try {
+      const live = liveChatReadState(snapshot.chat || {}, scope.scopeKey);
+      const activeTurns = new Set(cleanNodes.filter(node => node.status === 'active').map(node => node.pairIndex));
+      for (const pair of (live.known && present && nodes.length ? liveChatStateFromNormalized(live.normalized).pairs || [] : [])) {
+        const pairIndex = Number(pair?.pairIndex || 0);
+        if (pairIndex > 0 && pair.userText && pair.assistantText && !activeTurns.has(pairIndex) && !uncapturedTurns.includes(pairIndex)) uncapturedTurns.push(pairIndex);
+      }
+    } catch (_) { /* live projection is advisory; stored nodes still render */ }
     return { scope, lineage: MemorySuiteHostLineage.normalize(scope.hostLineage),
       present, nodes: cleanNodes.map(node => {
         const hasMemory = !memoryNodes ? 'unknown' : (
@@ -47758,7 +47788,7 @@ ${cleanedText}`, 80),
         ) ? 'stored' : 'none';
         return { ...node, memory: hasMemory };
       }), revision: Number(parsed?.revision || 0), liveHash: text(parsed?.liveHash || ''),
-      headTurnNodeId: text(parsed?.headTurnNodeId || ''), retiredCount: Array.isArray(parsed?.retiredRecords) ? parsed.retiredRecords.length : 0,
+      uncapturedTurns, headTurnNodeId: text(parsed?.headTurnNodeId || ''), retiredCount: Array.isArray(parsed?.retiredRecords) ? parsed.retiredRecords.length : 0,
       manifestPresent: manifest.manifestRawPresent === true, commitId: text(manifest.commitId || ''),
       localCount: Number(manifest.count || 0), archiveCount: Number(manifest.archiveCount || 0),
       receipt: manifest.nativeBranchCopy ? { ...manifest.nativeBranchCopy } : null,
@@ -47782,13 +47812,15 @@ ${cleanedText}`, 80),
     // 활성 노드 및 기억 상태 분석
     const activeNodes = view.nodes.filter(node => node.status === 'active');
     const storedActiveNodes = activeNodes.filter(node => node.memory === 'stored');
-    const missingActiveTurns = [...new Set(activeNodes.filter(node => node.memory === 'none').map(node => Number(node.pairIndex)).filter(t => t > 0))].sort((a,b) => a - b);
+    const uncapturedTurns = Array.isArray(view.uncapturedTurns) ? view.uncapturedTurns : [];
+    const missingActiveTurns = [...new Set([...activeNodes.filter(node => node.memory === 'none').map(node => Number(node.pairIndex)), ...uncapturedTurns].filter(t => t > 0))].sort((a,b) => a - b);
     const unknownActiveNodes = activeNodes.filter(node => node.memory !== 'stored' && node.memory !== 'none');
-    const allStored = activeNodes.length > 0 && storedActiveNodes.length === activeNodes.length;
+    const allStored = activeNodes.length > 0 && storedActiveNodes.length === activeNodes.length && !uncapturedTurns.length;
     const excluded = view.nodes.filter(node => ['quarantined','inactive_variant','detached_branch','orphaned'].includes(node.status));
 
     // 노선도 정렬 (T1 -> T_max 오름차순)
-    const chronologicalActive = activeNodes.slice().sort((a, b) => a.pairIndex - b.pairIndex);
+    const chronologicalActive = [...activeNodes, ...uncapturedTurns.map(pairIndex => ({ pairIndex, memory: 'none', uncaptured: true }))]
+      .sort((a, b) => a.pairIndex - b.pairIndex);
     const lastActiveTurn = chronologicalActive.length ? chronologicalActive[chronologicalActive.length - 1].pairIndex : 0;
 
     // 선택된 턴 결정 (기본값: 최신 턴)
@@ -47822,7 +47854,7 @@ ${cleanedText}`, 80),
       const isUnknown = node.memory !== 'stored' && !isMissing;
       const isNow = t === selectedTurn;
       const stateClass = isUnknown ? 'stop--wait' : isMissing ? 'stop--miss' : '';
-      const stateLabel = isUnknown ? '미확인' : isMissing ? '누락' : '보관됨';
+      const stateLabel = isUnknown ? '미확인' : node.uncaptured ? '미수집' : isMissing ? '누락' : '보관됨';
       return `<button type="button" class="stop ${stateClass}${isNow ? ' is-now' : ''}" data-fb-worldline-turn="${t}" aria-label="T${t} · ${stateLabel}">
         <b>T${t}</b>
         <i aria-hidden="true"></i>
@@ -48462,7 +48494,7 @@ ${cleanedText}`, 80),
 .legend{display:flex;flex-wrap:wrap;gap:6px 18px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--text2)}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .legend i{width:11px;height:11px;border-radius:50%;border:3px solid var(--ok);display:inline-block}
-.legend .m{border:2px dashed var(--warn)}.legend .w{border-color:var(--warn);border-radius:2px;transform:rotate(45deg)}.legend .f{border-color:var(--danger);border-radius:2px}.legend .s{border-color:var(--border2)}
+.legend i.m{border:2px dashed var(--warn)}.legend i.w{border-color:var(--warn);border-radius:2px;transform:rotate(45deg)}.legend i.f{border-color:var(--danger);border-radius:2px}.legend i.s{border-color:var(--border2)}
 .pk-layout{display:grid;grid-template-columns:minmax(280px,.9fr) minmax(0,1.4fr);gap:14px;align-items:start}
 .pk-list{max-height:560px;overflow:auto}
 .pk-row{display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 14px;border:0;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;color:var(--text);cursor:pointer}
@@ -48755,7 +48787,9 @@ ${cleanedText}`, 80),
     const stored = Math.max(0, Number(plan.storedTurns || 0) || 0);
     // Matching turns alone are not health: open re-embedding jobs leave recall degraded.
     const embeddingIncomplete = Math.max(0, Number(plan.embeddingWorkIncompleteRecords || 0) || 0);
-    const isHealthy = plan.healthy || (isServerMode && missing === 0 && changed === 0 && !embeddingIncomplete);
+    // An incomplete inspection reports zero turns; it must never read as healthy.
+    const inspectionComplete = plan.inspection?.complete !== false;
+    const isHealthy = inspectionComplete && (plan.healthy || (isServerMode && missing === 0 && changed === 0 && !embeddingIncomplete));
     const title = '기억 유지보수 진단';
 
     let badgeHtml = '';
@@ -48765,7 +48799,17 @@ ${cleanedText}`, 80),
     let actionBtn = null;
 
     if (isServerMode) {
-      if (isHealthy) {
+      if (!inspectionComplete) {
+        badgeHtml = '<span class="badge badge--warn">점검 미완료</span>';
+        bannerHtml = `
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-radius:var(--r-md, 10px);background:var(--accent-soft, rgba(234,153,34,0.08));border:1px solid var(--accent, #ea9922)">
+            <span style="font-size:20px;line-height:1;margin-top:1px">⚠️</span>
+            <div style="font-size:13px;line-height:1.55;min-width:0">
+              <b style="color:var(--text);display:block;margin-bottom:2px">서버 저장소 점검을 끝내지 못해 정상 여부를 판정하지 않았습니다</b>
+              <span style="color:var(--text2)">${escapeHtml((plan.inspection?.reasons || []).map(maintenanceServerInspectionReasonText).join(' · ') || '점검 증거 미검증')}. 아래 턴 수는 확인되지 않은 값입니다.</span>
+            </div>
+          </div>`;
+      } else if (isHealthy) {
         badgeHtml = '<span class="badge badge--ok">서버 모드 · 정상</span>';
         bannerHtml = `
           <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-radius:var(--r-md, 10px);background:var(--ok-soft, rgba(46,175,125,0.08));border:1px solid var(--ok-ink, #2eaf7d)">
@@ -48846,11 +48890,11 @@ ${cleanedText}`, 80),
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);padding-bottom:7px">
             <span style="color:var(--text3)">데이터 무결성</span>
-            <span style="color:${plan.storageSourceHealthy === false ? 'var(--warn-ink, #ea9922)' : 'var(--ok-ink)'};font-weight:600">${plan.storageSourceHealthy === false ? '확인할 항목 있음' : '정상 (매니페스트 정상 · 샤드 무결성 유지)'}</span>
+            <span style="color:${!inspectionComplete || plan.storageSourceHealthy === false ? 'var(--warn-ink, #ea9922)' : 'var(--ok-ink)'};font-weight:600">${!inspectionComplete ? '미확인 (점검 미완료)' : plan.storageSourceHealthy === false ? '확인할 항목 있음' : '정상 (매니페스트 정상 · 샤드 무결성 유지)'}</span>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);padding-bottom:7px">
             <span style="color:var(--text3)">재임베딩 상태</span>
-            <span style="color:${embeddingIncomplete ? 'var(--warn-ink, #ea9922)' : 'var(--ok-ink)'};font-weight:600">${escapeHtml(embeddingIncomplete ? maintenanceEmbeddingWorkText(plan) : '완료')}</span>
+            <span style="color:${!inspectionComplete || embeddingIncomplete ? 'var(--warn-ink, #ea9922)' : 'var(--ok-ink)'};font-weight:600">${escapeHtml(!inspectionComplete ? '미확인 (점검 미완료)' : embeddingIncomplete ? maintenanceEmbeddingWorkText(plan) : '완료')}</span>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);padding-bottom:7px">
             <span style="color:var(--text3)">임베딩 연산 및 비용</span>
