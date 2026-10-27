@@ -46,6 +46,11 @@ assert(
 
 // Check UI integration points
 assert(
+  source.includes("text: '⚡ 상태 점검·복구', dataset:{bookMemoryMaintenance:'true'}"),
+  'Memory progress panel must provide ⚡ 상태 점검·복구 button'
+);
+
+assert(
   source.includes("text: '상태 점검 및 자동 복구', onClick: () => { void openLibraMemoryMaintenanceDialog(); }"),
   'Desk banner must provide 상태 점검 및 자동 복구 button'
 );
@@ -85,6 +90,11 @@ async function run() {
     assert.equal(typeof plan.healthy, 'boolean');
     assert.equal(typeof plan.liveTurns, 'number');
     assert.equal(typeof plan.stateThroughTurn, 'number');
+    assert.equal(typeof plan.remainingTurns, 'number');
+    assert.equal(typeof plan.savedRangesCount, 'number');
+    assert.equal(typeof plan.missingRangesCount, 'number');
+    assert.equal(typeof plan.failedRangesCount, 'number');
+    assert.equal(typeof plan.coldStartNeeded, 'boolean');
     assert.ok(Array.isArray(plan.issues));
 
     const result = await host.api.runMemoryMaintenance('auto', { preflight: plan });
@@ -111,6 +121,17 @@ async function run() {
     const title = overlay.querySelector('h2');
     assert(title && title.textContent.includes('기억 상태 점검'), 'Dialog must have maintenance title');
 
+    // Verify integrated memory model summary
+    const modelSummary = overlay.querySelector('[aria-label="기억 작성 모델 설정"], [data-memory-model="analysis"]');
+    assert(modelSummary, 'Dialog must integrate memory model summary');
+
+    // Verify integrated navigation buttons
+    const buttons = Array.from(overlay.querySelectorAll('button'));
+    const hasRangeBtn = buttons.some(b => b.textContent.includes('기억 생성 구간 선택'));
+    const hasReanalysisBtn = buttons.some(b => b.textContent.includes('원문 재분석'));
+    assert(hasRangeBtn, 'Dialog must contain entry to 기억 생성 구간 선택');
+    assert(hasReanalysisBtn, 'Dialog must contain entry to 원문 재분석');
+
     const autoBtn = overlay.querySelector('button.btn--primary');
     assert(autoBtn, 'Auto recovery button must exist in dialog');
 
@@ -121,6 +142,11 @@ async function run() {
     // After recovery, completion view is rendered
     const completionTitle = overlay.querySelector('h2');
     assert(completionTitle.textContent.includes('완료'), 'Completion view must show completion title');
+
+    // Verify completion actions provide entry points
+    const completionButtons = Array.from(overlay.querySelectorAll('button'));
+    assert(completionButtons.some(b => b.textContent.includes('기억 생성 구간 선택')), 'Completion must offer range selection button');
+    assert(completionButtons.some(b => b.textContent.includes('원문 재분석')), 'Completion must offer reanalysis button');
 
     console.log('libra_memory_maintenance_auto_recovery_test: PASS');
   } finally {

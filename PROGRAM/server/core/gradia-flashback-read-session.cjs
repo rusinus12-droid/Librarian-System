@@ -9,7 +9,8 @@ const CAPTURE_ROUTE = '/v1/flashback/read-session/capture';
 const CURRENT_ROUTE = '/v1/flashback/read-session/current';
 const MiB = 1024 ** 2;
 const LIMITS = Object.freeze({ defaultCorpusBytes: 4 * MiB, maxCorpusBytes: 32 * MiB,
-  manifestBytes: MiB, itemMetadataBytes: 64 * 1024, totalMetadataBytes: MiB,
+  // 4096 refs at a few KiB of non-text metadata each; raw bytes stay separately bounded.
+  manifestBytes: MiB, itemMetadataBytes: 64 * 1024, totalMetadataBytes: 8 * MiB, rawOverheadBytes: 2 * MiB,
   maxRefs: 4096, currentRequestBytes: 4 * MiB, maxArchiveDepth: 256 });
 const fail = (message, statusCode = 409) => { throw Object.assign(new Error(message), { statusCode }); };
 const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -136,7 +137,7 @@ function archivePointer(value) {
 }
 // A composed reader can only tighten this owner's existing raw-read ceiling.
 function rawLimitOf(value, maxCorpusBytes) {
-  const maximum = 7 * maxCorpusBytes + 2 * LIMITS.totalMetadataBytes;
+  const maximum = 7 * maxCorpusBytes + LIMITS.rawOverheadBytes;
   if (value === undefined) return maximum;
   if (!Number.isSafeInteger(value) || value < 0 || value > maximum) fail('gradia_read_storage_limit_invalid', 400);
   return value;
@@ -261,7 +262,9 @@ function createReadSession({ getRepository, dataInstanceId, epochs, canRead }) {
             if (++recordCount > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
             loadedCount++;
             if (record.scopeKey !== scopeKey || typeof record.text !== 'string') fail('gradia_read_memory_scope_mismatch');
-            chargeMetadata({ ...record, text: '' }, true);
+            // Inline embedding vectors are payload already counted in rawBytes,
+            // not metadata; a few hundred 1024-d records would exhaust the budget.
+            chargeMetadata({ ...record, text: '', vector: undefined }, true);
             if (retained(record)) records.push({ record, key, scopeKey, commitId, inherited: !isCurrent || inheritedHistory(record), archiveShared: !isCurrent });
           }
         }

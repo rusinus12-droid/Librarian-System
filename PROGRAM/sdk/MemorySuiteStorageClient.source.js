@@ -3397,12 +3397,24 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return null;
   };
 
+  // RisuAI API v3 returns a fresh remote proxy from every getLocalPluginStorage()
+  // call. Reuse the first proxy per host API so storage identity fences compare
+  // the same provider instead of failing on every real-host re-read.
+  const localPluginStorageByApi = new WeakMap();
+  const stableLocalPluginStorage = async api => {
+    if (localPluginStorageByApi.has(api)) return localPluginStorageByApi.get(api);
+    const store = await api.getLocalPluginStorage();
+    if (localPluginStorageByApi.has(api)) return localPluginStorageByApi.get(api);
+    if (store?.getItem && store?.setItem) localPluginStorageByApi.set(api, store);
+    return store;
+  };
+
   const rawDeviceStorage = async (readOptions = {}) => {
     if (state.legacy.local?.getItem && state.legacy.local?.setItem) return state.legacy.local;
     for (const api of apiCandidates()) {
       try {
         if (typeof api?.getLocalPluginStorage === 'function') {
-          const store = await api.getLocalPluginStorage();
+          const store = await stableLocalPluginStorage(api);
           if (store?.getItem && store?.setItem) return store;
         }
         if (api?.safeLocalStorage?.getItem && api?.safeLocalStorage?.setItem) return api.safeLocalStorage;

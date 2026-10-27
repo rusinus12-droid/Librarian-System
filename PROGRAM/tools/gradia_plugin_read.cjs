@@ -163,7 +163,9 @@ module.exports = function createGradiaPluginRead(options) {
     if (disposed) fail('LIB_READ_CANCELED');
     // Stable owner order is part of binding identity, independent of RPC order.
     const ordered = Object.fromEntries(Object.keys(ids).filter(owner => scopes[owner]).map(owner => [owner, scopes[owner]]));
-    if (!Object.keys(ordered).length) fail('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE');
+    // Keep each owner's refusal (e.g. LIB_READ_PLUGIN_MODE_REQUIRED for server-only
+    // stores) so diagnostics can tell "use server read mode" from "owner missing".
+    if (!Object.keys(ordered).length) throw Object.assign(new Error('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE'), { code: 'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE', unavailable });
     return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
   };
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,

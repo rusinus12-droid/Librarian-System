@@ -6418,12 +6418,24 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return null;
   };
 
+  // RisuAI API v3 returns a fresh remote proxy from every getLocalPluginStorage()
+  // call. Reuse the first proxy per host API so storage identity fences compare
+  // the same provider instead of failing on every real-host re-read.
+  const localPluginStorageByApi = new WeakMap();
+  const stableLocalPluginStorage = async api => {
+    if (localPluginStorageByApi.has(api)) return localPluginStorageByApi.get(api);
+    const store = await api.getLocalPluginStorage();
+    if (localPluginStorageByApi.has(api)) return localPluginStorageByApi.get(api);
+    if (store?.getItem && store?.setItem) localPluginStorageByApi.set(api, store);
+    return store;
+  };
+
   const rawDeviceStorage = async (readOptions = {}) => {
     if (state.legacy.local?.getItem && state.legacy.local?.setItem) return state.legacy.local;
     for (const api of apiCandidates()) {
       try {
         if (typeof api?.getLocalPluginStorage === 'function') {
-          const store = await api.getLocalPluginStorage();
+          const store = await stableLocalPluginStorage(api);
           if (store?.getItem && store?.setItem) return store;
         }
         if (api?.safeLocalStorage?.getItem && api?.safeLocalStorage?.setItem) return api.safeLocalStorage;
@@ -15112,11 +15124,17 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         ||JSON.stringify(chat.message)!==transcript)throw Error('HAYAKU_READSET_SOURCE_CHANGED');
       return JSON.stringify({ selection, character, chat, database });
     };
+    // API v3 hands out a new remote proxy per getLocalPluginStorage() call; the
+    // readset compares providers by identity, so keep the first one per host.
+    const literalDeviceProviders=new WeakMap();
     const literalDeviceStorageAuthority = async keys => {
       const missing={},current=host('getLocalPluginStorage');
-      const provider=typeof current?.getLocalPluginStorage==='function'
-        ? await boundedHostCall('readset:deviceStorage',()=>current.getLocalPluginStorage(),missing)
+      let provider=typeof current?.getLocalPluginStorage==='function'
+        ? literalDeviceProviders.has(current)?literalDeviceProviders.get(current):await boundedHostCall('readset:deviceStorage',()=>current.getLocalPluginStorage(),missing)
         : candidates().find(candidate=>candidate?.safeLocalStorage)?.safeLocalStorage||null;
+      if(typeof current?.getLocalPluginStorage==='function'&&provider!==missing&&typeof provider?.getItem==='function'){
+        if(literalDeviceProviders.has(current))provider=literalDeviceProviders.get(current);else literalDeviceProviders.set(current,provider);
+      }
       if(provider===missing || provider&&typeof provider.getItem!=='function')throw Error('HAYAKU_READSET_STORAGE_UNAVAILABLE');
       const values=provider?await Promise.all(keys.map(key=>boundedHostCall('readset:deviceMetadata',()=>provider.getItem(key),missing))):[];
       if(values.includes(missing))throw Error('HAYAKU_READSET_STORAGE_UNAVAILABLE');
@@ -23263,20 +23281,38 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         && declaredLineage
         && finalizedPairIdentity
         && (declaredParentMismatch || declaredLogicalMismatch);
+      const safeCascadedParentRebase = declaredParentMismatch
+        && finalizedPairIdentity
+        && Boolean(declaredParentTurnNodeId)
+        && (() => {
+          let curr = nodes.find(n => n.turnNodeId === declaredParentTurnNodeId);
+          let depth = 0;
+          while (curr && curr.supersededBy && depth < 32) {
+            if (curr.supersededBy === parentTurnNodeId) return true;
+            curr = nodes.find(n => n.turnNodeId === curr.supersededBy);
+            depth += 1;
+          }
+          return false;
+        })();
       const lineageRebased = safeProvisionalLogicalRebase
         || safeDeclaredParentRebase
-        || safeNativeCopyLineageRebase;
+        || safeNativeCopyLineageRebase
+        || safeCascadedParentRebase;
       const lineageRepairReason = safeNativeCopyLineageRebase
         ? 'verified_native_copy_scope_rebase'
         : safeDeclaredParentRebase
           ? 'verified_parent_field_drift'
-          : (safeProvisionalLogicalRebase ? 'verified_final_pair_identity_drift' : '');
+          : safeCascadedParentRebase
+            ? 'verified_upstream_cascade_rebase'
+            : (safeProvisionalLogicalRebase ? 'verified_final_pair_identity_drift' : '');
       const declaredMismatch = (declaredParentMismatch
           && !safeDeclaredParentRebase
-          && !safeNativeCopyLineageRebase)
+          && !safeNativeCopyLineageRebase
+          && !safeCascadedParentRebase)
         || (declaredLogicalMismatch
           && !safeProvisionalLogicalRebase
-          && !safeNativeCopyLineageRebase);
+          && !safeNativeCopyLineageRebase
+          && !safeCascadedParentRebase);
       const storedParentMismatch = node && node.parentTurnNodeId !== parentTurnNodeId;
       const activates = chainOpen && !storedParentMismatch;
       const finalizedBindingRejections = normalizeFinalizedBindingRejections(node?.finalizedBindingRejections);
@@ -23311,10 +23347,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const packetLineageReason = declaredParentMismatch
         && !safeDeclaredParentRebase
         && !safeNativeCopyLineageRebase
+        && !safeCascadedParentRebase
         ? 'declared_parent_mismatch'
         : (declaredLogicalMismatch
             && !safeProvisionalLogicalRebase
-            && !safeNativeCopyLineageRebase)
+            && !safeNativeCopyLineageRebase
+            && !safeCascadedParentRebase)
           ? 'declared_logical_turn_mismatch'
           : observedRejectedPacketHashes.length
             ? 'finalized_binding_request_nonce_mismatch'
@@ -49773,7 +49811,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (disposed) fail('LIB_READ_CANCELED');
     // Stable owner order is part of binding identity, independent of RPC order.
     const ordered = Object.fromEntries(Object.keys(ids).filter(owner => scopes[owner]).map(owner => [owner, scopes[owner]]));
-    if (!Object.keys(ordered).length) fail('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE');
+    // Keep each owner's refusal (e.g. LIB_READ_PLUGIN_MODE_REQUIRED for server-only
+    // stores) so diagnostics can tell "use server read mode" from "owner missing".
+    if (!Object.keys(ordered).length) throw Object.assign(new Error('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE'), { code: 'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE', unavailable });
     return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
   };
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
@@ -49986,8 +50026,18 @@ function allowedKey(key, scope, index) {
     || /^hayaku\.v2\.shared_archive(?:_meta)?\.[A-Za-z0-9_-]{1,128}$/.test(key);
 }
 function validMetadata(value, scope, index) {
-  if (!object(value) || value.namespace !== 'hayaku' || value.space !== 'plugin' || !allowedKey(value.key, scope, index)
-    || value.exists !== true || value.tombstone !== false || !int(value.revision) || value.revision < 1
+  if (!object(value) || value.namespace !== 'hayaku' || value.space !== 'plugin' || !allowedKey(value.key, scope, index)) fail('gradia_read_dependencies_invalid', 400);
+  if (index === 0 && value.exists === false) {
+    const absent = value.tombstone === false && value.revision === 0 && value.digest === ''
+      && value.updatedAt === 0 && value.valueBytes === 0;
+    const deleted = value.tombstone === true && Number.isSafeInteger(value.revision) && value.revision > 0
+      && /^[a-f0-9]{64}$/.test(value.digest || '') && Number.isSafeInteger(value.updatedAt) && value.updatedAt >= 0
+      && Number.isSafeInteger(value.valueBytes) && value.valueBytes >= 0;
+    if (!absent && !deleted) fail('gradia_read_dependencies_invalid', 400);
+    return { namespace: 'hayaku', space: 'plugin', key: value.key, exists: false, tombstone: value.tombstone,
+      revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
+  }
+  if (value.exists !== true || value.tombstone !== false || !int(value.revision) || value.revision < 1
     || !/^[a-f0-9]{64}$/.test(value.digest || '') || !int(value.updatedAt) || !int(value.valueBytes)) fail('gradia_read_dependencies_invalid', 400);
   return { namespace: 'hayaku', space: 'plugin', key: value.key, exists: true, tombstone: false,
     revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
@@ -50053,6 +50103,13 @@ function createReadSession({ getRepository, dataInstanceId, epochs, canRead }) {
     const rawLimit = rawLimitOf(body?.maxRawBytes, maxCorpusBytes);
     return readUnit(async repository => {
       const readIdentity = identity(scope), dependencies = [], cache = new Map();
+      const rootKey = ledgerKeyFor(scope);
+      const rootMetadata = metadataOf(repository, rootKey);
+      if (!rootMetadata.exists || rootMetadata.tombstone) {
+        const rootDeps = [rootMetadata];
+        return { schema: 'memory-suite.hayaku-read-session.v1', readOnly: true, complete: true, scope, items: [], dependencies: rootDeps,
+          evidenceRevision: hash(rootDeps), corpusBytes: 0, maxCorpusBytes, maxRawBytes: rawLimit, metadataBytes: 0, rawBytes: rootMetadata.valueBytes || 0, dataInstanceId, resetEpoch: readIdentity.resetEpoch, readIdentity };
+      }
       let rawBytes = 0, decodedBytes = 0, metadataBytes = 0, corpusBytes = 0, recordCount = 0, packetRefs = 0;
       const chargedReceipts = new Set();
       // Inline packets live inside the ledger itself. Its body limit must be a
@@ -53390,8 +53447,6 @@ return createReadSession;
           && rows.findIndex(candidate => candidate?.hash === packet.hash) === index
         ));
       for (const packet of usablePackets) {
-        const staleSource=ensureArray(ledger?.records).some(r=>r.hash===packet.hash&&!r.inheritedSessionHistory&&Number(r.targetPairIndex)===Number(pair.pairIndex)&&r.userHash&&r.assistantVisibleHash&&(r.userHash!==pair.userHash||r.assistantVisibleHash!==pair.assistantVisibleHash));
-        if(staleSource)continue;
         const record = liveChatLedgerRecordFromPacket(packet, pair, scope);
         if (!record) continue;
         const previous = byId.get(record.recordId);
@@ -53916,6 +53971,15 @@ return createReadSession;
         // could attach the new packet body to the retired response variant.
         owner = null;
         staleOwnerDetections += 1;
+      }
+      if (owner && owner.status !== 'active') {
+        const activeOwner = selectStorageRecordOwnerNode(
+          record,
+          (nodesByPairIndex.get(Number(record?.targetPairIndex || 0)) || []).filter(node => node.status === 'active')
+        );
+        if (activeOwner) {
+          owner = activeOwner;
+        }
       }
       if (!owner) {
         owner = selectStorageRecordOwnerNode(
@@ -62077,6 +62141,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
             requestType: text(requestType || 'model'),
             observedRunsAtAfter: Number(Memory.captureBackendObservedRuns || 0)
           };
+          // Listeners run sequentially in the host; a starved listener must not
+          // leave this turn uncaptured until the next request's health check.
+          const pendingHealth = Memory.captureBackendHealthPending;
+          setTimeout(() => {
+            if (Memory.unloaded || Memory.captureBackendHealthPending !== pendingHealth) return;
+            if (Memory.captureBackendObservedRuns > Number(pendingHealth.observedRunsAtAfter || 0)) { Memory.captureBackendHealthPending = null; return; }
+            Memory.captureBackendHealthChecks += 1;
+            failoverSilentChatOutputBackend(clone(pendingHealth, {})).catch(() => false);
+          }, 30000);
         }
         const repairedContent = await repairCurrentPacketInsideAfterRequest(content, requestType);
         if (Memory.captureBackend !== HAYAKU_CAPTURE_BACKENDS.AFTER_REQUEST_RECONCILE) {

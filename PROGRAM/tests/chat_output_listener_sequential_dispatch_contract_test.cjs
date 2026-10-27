@@ -1,0 +1,53 @@
+'use strict';
+// RisuAI runs every plugin's chat-output listener with `await` in one loop. A
+// listener that awaits host work starves later plugins; owners must also not
+// wait for the next request to notice a starved listener.
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const read=name=>fs.readFileSync(path.join(__dirname,'..','plugins',name),'utf8');
+
+test('GRADIA registers a synchronous output listener and detaches its host lookup',()=>{
+ const source=read('GRADIA.js');
+ assert.match(source,/const recordCommittedOutput = event => \{ void recordCommittedOutputReceipt\(event\)\.catch\(\(\) => \{\}\); \};/);
+ assert.match(source,/addRisuChatListener\('output', recordCommittedOutput\)/);
+ assert.match(source,/if \(!eventOwnsChat && Number\.isInteger\(event\.characterIndex\)/,'one-on-one events skip the full-character host snapshot');
+});
+
+test('LIBRA and HAYAKU fail over a starved chat-output listener on a timer after afterRequest',()=>{
+ const libra=read('LIBRA.js'),hayaku=read('HAYAKU_Locator_Continuity.js');
+ assert.match(libra,/const CHAT_OUTPUT_HEALTH_GRACE_MS = \d+;/);
+ assert.match(libra,/failover\('chat_output_silent_after_request', clone\(pendingHealth\)\)/);
+ assert.match(hayaku,/failoverSilentChatOutputBackend\(clone\(pendingHealth, \{\}\)\)\.catch\(\(\) => false\);/);
+});
+
+test('Flashback binds output events and v2 resolution by the request user message id',()=>{
+ const source=read('Flashback_Memory.js');
+ assert.match(source,/const idBound = !!boundId && text\(eventPair\.userMessageIdHash \|\| ''\) === boundId;/);
+ assert.match(source,/return \(idBound \|\| !wanted \|\| wanted === eventUserHash\)/);
+ assert.match(source,/const idBound=!awaiting&&!!pending\.requestUserMessageIdHash&&pair\.userMessageIdHash===pending\.requestUserMessageIdHash;/);
+});
+
+test('Flashback keyword recall covers stored records whose vectors await re-embedding',()=>{
+ const source=read('Flashback_Memory.js');
+ assert.match(source,/lexicalFallback = \{ status: 'vectors_pending'/);
+ assert.match(source,/if \(!compatibility\.comparable && !keywordOnly\) continue;/);
+});
+
+test('Flashback request-local recall reads use their own budget, separate from cache residency',()=>{
+ const source=read('Flashback_Memory.js');
+ assert.match(source,/const RECALL_SHARD_CACHE_MAX_BYTES = 16 \* 1024 \* 1024;/);
+ assert.match(source,/const RECALL_REQUEST_READ_MAX_BYTES = 64 \* 1024 \* 1024;/);
+ assert.match(source,/if \(readSet\.bytes \+ bytes > RECALL_REQUEST_READ_MAX_BYTES\)/);
+ assert.match(source,/reserveBytes > RECALL_REQUEST_READ_MAX_BYTES\) throw uncachedProjectionBudgetError\('decode'\)/);
+ assert.match(source,/if \(estimatedBytes > RECALL_SHARD_CACHE_MAX_BYTES\) \{/,'cache residency keeps its own cap');
+});
+
+test('Flashback returns never-sent embedding attempts to pending instead of uncertain',()=>{
+ const source=read('Flashback_Memory.js');
+ assert.match(source,/const neverSent = \/before wire submission\/\.test\(text\(error\?\.message \|\| ''\)\) && !proof\?\.submissionAttempted/);
+ assert.match(source,/deferred \? \{ \.\.\.work, status: 'pending'/);
+});
+
+test('LIBRA branch reconcile stays a hard gate with a cold-start sized step limit',()=>{
+ const source=read('LIBRA.js'),i=source.indexOf("'before_branch_reconcile',");
+ assert.ok(i>0);assert.match(source.slice(i,i+600),/\n\s*6000\n\s*\);/);
+});

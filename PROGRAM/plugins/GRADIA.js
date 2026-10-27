@@ -1668,7 +1668,7 @@
   };
   const assertManualSkillBudget = (selection,stage,settings={},capacity) => {
     const budget=manualSkillBudget(selection,stage,settings,capacity);
-    if(!budget.fits)throw Object.assign(new Error(`${stage}: 추가 Skill ${budget.chars.toLocaleString()}자 / 한도 ${budget.maxSkillChars.toLocaleString()}자. 대화·분석·연속성·로어북 공간을 보존하려면 스킬이나 참고 문서 선택을 줄이세요.`),{code:'GRADIA_SKILL_CHAR_BUDGET_EXCEEDED'});
+    if(!budget.fits)throw Object.assign(new Error(`${stage}: 추가 Skill ${budget.chars.toLocaleString()}자 / 한도 ${budget.maxSkillChars.toLocaleString()}자. 대화·분석·연속성·로어북 공간을 보존하려면 자료 · Skill에서 스타일 적용을 해제하거나 스킬·참고 문서 선택을 줄이세요.`),{code:'GRADIA_SKILL_CHAR_BUDGET_EXCEEDED'});
     return budget;
   };
   const checkManualSkillPromptBudget = (stage,settings,systemPrompt,userPrompt,sharedPromptPrefix='',preset=null,outputTokens=null) => {
@@ -3870,7 +3870,10 @@
       // Only an unavailable optional source BEFORE any evidence is accepted may
       // fall back. Cancellation, native changes and a ready/consumed read stay fatal.
       if (!options.requireEvidence && !lease.run && ['LIB_READ_TIMEOUT','LIB_READ_PLUGIN_OWNERS_UNAVAILABLE','LIB_READ_OWNER_UNAVAILABLE',
-        'LIB_READ_CONNECTION_UNAVAILABLE','LIB_READ_UNIFIED_UNAVAILABLE','LIB_READ_TRANSPORT_UNAVAILABLE'].includes(error?.code)) {
+        'LIB_READ_CONNECTION_UNAVAILABLE','LIB_READ_UNIFIED_UNAVAILABLE','LIB_READ_TRANSPORT_UNAVAILABLE',
+        // An oversized owner store is an unavailable optional source, not a writer failure.
+        'LIB_READ_METADATA_BUDGET_EXCEEDED','LIB_READ_REFERENCE_LIMIT_EXCEEDED','LIB_READ_STORAGE_BUDGET_EXCEEDED',
+        'LIB_READ_CORPUS_BUDGET_EXCEEDED','LIB_READ_BUDGET_EXCEEDED'].includes(error?.code)) {
         assertLocal();
         await assertNative?.();
         assertLocal();
@@ -6336,14 +6339,21 @@
     const receipt = CompletionReceipts.get(receiptKeyFor(scope, ref));
     return !!receipt && receipt.generationId === ref.generationId && receipt.contentHash === ref.contentHash && receipt.speakerId === ref.speakerId && receipt.speakerName === ref.speakerName;
   };
-  const recordCommittedOutput = async event => {
+  // RisuAI awaits every plugin's output listener in sequence. Return at once so
+  // the host-side character lookup below never delays LIBRA/HAYAKU/Flashback capture.
+  const recordCommittedOutput = event => { void recordCommittedOutputReceipt(event).catch(() => {}); };
+  const recordCommittedOutputReceipt = async event => {
     const message = event?.chat?.message?.[event?.messageIndex];
     if (!message || currentTurnRole(message) !== 'assistant' || event.chat.isStreaming === true) return;
     // Group output events carry the speaking character, not the owning room.
     // Resolve only the event's captured index and require matching chat ownership;
     // never follow the currently selected UI character or invent a room identity.
     let owner = event.char;
-    if (Number.isInteger(event.characterIndex) && event.characterIndex >= 0 && typeof API.getCharacterFromIndex === 'function') {
+    // A one-on-one chat event already carries its owner; only group rooms need
+    // the (full-character snapshot) host lookup below.
+    const eventOwnsChat = !!text(event.chat?.id || '').trim() && Array.isArray(event.char?.chats)
+      && event.char.chats.some(chat => text(chat?.id || '').trim() === text(event.chat.id).trim());
+    if (!eventOwnsChat && Number.isInteger(event.characterIndex) && event.characterIndex >= 0 && typeof API.getCharacterFromIndex === 'function') {
       try {
         const candidate = await API.getCharacterFromIndex(event.characterIndex);
         const eventChatId = text(event.chat.id || '').trim();
@@ -33405,12 +33415,24 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return null;
   };
 
+  // RisuAI API v3 returns a fresh remote proxy from every getLocalPluginStorage()
+  // call. Reuse the first proxy per host API so storage identity fences compare
+  // the same provider instead of failing on every real-host re-read.
+  const localPluginStorageByApi = new WeakMap();
+  const stableLocalPluginStorage = async api => {
+    if (localPluginStorageByApi.has(api)) return localPluginStorageByApi.get(api);
+    const store = await api.getLocalPluginStorage();
+    if (localPluginStorageByApi.has(api)) return localPluginStorageByApi.get(api);
+    if (store?.getItem && store?.setItem) localPluginStorageByApi.set(api, store);
+    return store;
+  };
+
   const rawDeviceStorage = async (readOptions = {}) => {
     if (state.legacy.local?.getItem && state.legacy.local?.setItem) return state.legacy.local;
     for (const api of apiCandidates()) {
       try {
         if (typeof api?.getLocalPluginStorage === 'function') {
-          const store = await api.getLocalPluginStorage();
+          const store = await stableLocalPluginStorage(api);
           if (store?.getItem && store?.setItem) return store;
         }
         if (api?.safeLocalStorage?.getItem && api?.safeLocalStorage?.setItem) return api.safeLocalStorage;
@@ -37162,7 +37184,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           if(corpusBytes>maxCorpusBytes)reject('LIB_READ_CORPUS_BUDGET_EXCEEDED');
           if(!Number.isSafeInteger(packet.metadataBytes)||packet.metadataBytes<0||!Number.isSafeInteger(packet.rawBytes)||packet.rawBytes<0)reject('LIB_READ_RESPONSE_INVALID');
           metadataBytes+=packet.metadataBytes;rawBytes+=packet.rawBytes;dependencyCount+=packet.dependencies.length;
-          if(metadataBytes>1048576||rawBytes>7*maxCorpusBytes+2097152||dependencyCount>4096+owners.length)reject('LIB_READ_METADATA_BUDGET_EXCEEDED');
+          // Sum of per-owner server caps (LIBRA 1 MiB, HAYAKU 1 MiB, Flashback 8 MiB).
+          if(metadataBytes>10485760||rawBytes>7*maxCorpusBytes+2097152||dependencyCount>4096+owners.length)reject('LIB_READ_METADATA_BUDGET_EXCEEDED');
           if(packet.dataInstanceId!==connection.dataInstanceId)reject('LIB_READ_DATA_CHANGED');
           for(const item of packet.items){if(item.source.namespace!==owner)reject('LIB_READ_RESPONSE_INVALID');items.push(Object.freeze({...item,owner}));}
           if(items.length>4096)reject('LIB_READ_REFERENCE_LIMIT_EXCEEDED');
@@ -43157,6 +43180,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return tryManualSkillGuiChange({skillStageSelections:selections,skillStageReferences:references},stages);
   };
 
+  // Removing skills can only shrink the prompt, so no budget check is needed.
+  const clearSkillGenreFromGui = () => {
+    const runtime=mockupRuntime(),selections=normalizeSkillStageSelections(runtime.skillStageSelections),references=normalizeSkillStageReferences(runtime.skillStageReferences);
+    for(const stage of SKILL_STAGE_IDS){selections[stage]=[];references[stage]={};}
+    runtime.skillStageSelections=selections;runtime.skillStageReferences=references;
+    markGuiDirty();mockupRefreshStatus();mockupRenderSkills();
+  };
+
   const skillGenreMatches = (preset,runtime) => {
     const selections=normalizeSkillStageSelections(runtime.skillStageSelections),references=normalizeSkillStageReferences(runtime.skillStageReferences);
     return SKILL_STAGE_IDS.every(stage=>JSON.stringify(selections[stage])===JSON.stringify(preset.selections[stage])
@@ -43238,6 +43269,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     head.append(copy,customize);hub.append(head);
 
     const genres=mockupNode('div','skill-presets-grid');genres.dataset.skillGenrePresets='true';
+    let activeGenreFits=true;
+    try{for(const target of SKILL_STAGE_IDS)assertManualSkillBudget(selectManualSkillsForStage(target,settings),target,settings);}catch(_){activeGenreFits=false;}
     for(const entry of SKILL_GENRE_PRESETS){
       const preset=skillGenrePreset(entry.id),presentation=SKILL_GENRE_PRESENTATION[entry.id],active=skillGenreMatches(preset,runtime);
       const card=mockupNode('article','genre-card'+(active?' is-selected':''));card.dataset.skillGenreCard=entry.id;card.style.setProperty('--genre-color',presentation.color);
@@ -43247,10 +43280,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const names=mockupNode('div','genre-card__skills');names.setAttribute('aria-label','포함된 스킬');
       for(const skillId of [...new Set(SKILL_STAGE_IDS.flatMap(target=>preset.selections[target]))])names.append(mockupNode('span','',skillDisplayName(skillId,library[skillId])));
       card.append(names);
+      if(active&&!activeGenreFits)card.append(mockupNode('p','skill-selection-warning','현재 AI의 스킬 한도를 넘어 초안 작성이 중단됩니다. 적용 해제하거나 문맥이 더 큰 AI를 선택해 주세요.'));
       const actions=mockupNode('div','genre-card__actions');
-      const apply=mockupNode('button',active?'btn btn--sm':'btn btn--sm btn--primary',active?'선택한 스타일':'이 스타일 적용');
-      apply.type='button';apply.dataset.skillGenreApply='all';apply.dataset.skillGenreId=entry.id;apply.disabled=active;apply.setAttribute('aria-pressed',String(active));
-      apply.addEventListener('click',()=>{if(applySkillGenreToGui(entry.id))guiSetStatus(`${entry.label} 스타일을 골랐습니다. 저장하면 적용됩니다.`);});
+      const apply=mockupNode('button',active?'btn btn--sm':'btn btn--sm btn--primary',active?'적용 해제':'이 스타일 적용');
+      apply.type='button';apply.dataset.skillGenreId=entry.id;apply.setAttribute('aria-pressed',String(active));
+      if(active){
+        apply.dataset.skillGenreClear='all';apply.setAttribute('aria-label',entry.label+' 스타일 적용 해제');
+        apply.addEventListener('click',()=>{clearSkillGenreFromGui();guiSetStatus(`${entry.label} 스타일을 해제했습니다. 저장하면 적용됩니다.`);});
+      }else{
+        apply.dataset.skillGenreApply='all';
+        apply.addEventListener('click',()=>{if(applySkillGenreToGui(entry.id))guiSetStatus(`${entry.label} 스타일을 골랐습니다. 저장하면 적용됩니다.`);});
+      }
       const detail=mockupNode('button','genre-card__detail','자세히 보기 →');detail.type='button';detail.dataset.skillGenreDetails=entry.id;detail.setAttribute('aria-label',entry.label+' 자세히 보기');
       detail.addEventListener('click',()=>openSkillGenreDetails(entry.id));actions.append(apply,detail);card.append(actions);genres.append(card);
     }
@@ -44178,7 +44218,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (disposed) fail('LIB_READ_CANCELED');
     // Stable owner order is part of binding identity, independent of RPC order.
     const ordered = Object.fromEntries(Object.keys(ids).filter(owner => scopes[owner]).map(owner => [owner, scopes[owner]]));
-    if (!Object.keys(ordered).length) fail('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE');
+    // Keep each owner's refusal (e.g. LIB_READ_PLUGIN_MODE_REQUIRED for server-only
+    // stores) so diagnostics can tell "use server read mode" from "owner missing".
+    if (!Object.keys(ordered).length) throw Object.assign(new Error('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE'), { code: 'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE', unavailable });
     return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
   };
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,

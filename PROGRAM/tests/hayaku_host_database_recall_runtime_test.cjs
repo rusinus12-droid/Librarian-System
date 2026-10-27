@@ -24,3 +24,19 @@ test('host database plugin persistence does not invalidate its own unchanged rec
   assert.equal(runtime.llmCalls.length,0);
  }finally{await runtime.dispose();}
 });
+
+test('recall readset survives an API v3 host that returns a new local storage proxy per call',async()=>{
+ let calls=0;
+ const runtime=await createHayakuRuntime({messages,autoRepair:false,hostOverrides:{async getLocalPluginStorage(){
+  calls++;const store=this.safeLocalStorage;
+  // Same backing store, new object identity each call (RisuAI remote instance).
+  return new Proxy({},{get:(_,prop)=>prop==='then'?undefined:typeof store[prop]==='function'?(...args)=>store[prop](...args):store[prop]});
+ }}});
+ try{
+  const output=await runtime.callBeforeRequest([{role:'user',content:'What is inside the Aurora vault?'}],'model');
+  const debug=runtime.hayaku.lastDebug();
+  assert.notEqual(debug.lastBeforeRequest?.reason,'HAYAKU_READSET_AUTHORITY_CHANGED',JSON.stringify(debug.lastBeforeRequest));
+  assert.ok(output.some(row=>row.memo==='hayaku-runtime-context-v3'&&String(row.content).includes('silver spindle')));
+  assert.ok(calls>=1);
+ }finally{await runtime.dispose();}
+});
