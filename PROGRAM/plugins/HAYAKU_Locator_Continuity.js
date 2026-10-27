@@ -1590,6 +1590,9 @@ const MemorySuiteExecutionContract = (() => {
   // Bound every non-interactive host/storage call so a stalled adapter cannot
   // hold the main model request open indefinitely.
   const HOST_API_CALL_TIMEOUT_MS = 1500;
+  // Viewer-initiated full-ledger reads are not on a request hook; a large inline
+  // ledger can need several seconds through the host transport.
+  const HAYAKU_VIEWER_LEDGER_READ_TIMEOUT_MS = 10000;
   const HOST_REQUEST_DEADLINE_MS = 30000;
   const COPIED_CHAT_SOURCE_CACHE_POSITIVE_TTL_MS = 60000;
   const COPIED_CHAT_SOURCE_CACHE_NEGATIVE_TTL_MS = 5000;
@@ -2659,6 +2662,7 @@ const MODE_PROFILES = Object.freeze({
       lateStorageWriteRepairFailures: 0,
       storageWriteTimeouts: 0,
       storageReadTimeouts: 0,
+      coalescedStorageReads: 0,
       lastTimeout: '',
       lastFailure: '',
       lastSoftMiss: '',
@@ -13854,6 +13858,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const host = name => candidates().find(candidate => typeof candidate?.[name] === 'function') || api();
     const storageHost = () => candidates().find(candidate => candidate?.pluginStorage) || api();
     const storageWriteSequences = new Map();
+    const storageReadFlights = new Map();
     const storageWriteFence = (() => {
       const fenceKey = '__HAYAKU_STORAGE_WRITE_FENCE_V1__';
       try {
@@ -14053,7 +14058,27 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const requestedTimeout = Math.max(100, Number(timeoutMs) || HOST_API_CALL_TIMEOUT_MS);
       const timeoutMarker = {};
       let timer = null;
-      const operation = Promise.resolve().then(maintenanceStorageRead(key) || (() => storage.getItem(key)));
+      // Same-key reads share one physical transfer while no own write has begun
+      // since it started. Duplicate full-ledger reads otherwise pile up on the
+      // host transport and push every caller past its deadline.
+      const authority = Memory.maintenanceReadAuthority || null;
+      const fence = storageWriteFence.get(key);
+      const writeToken = `${storageWriteSequences.get(key) || 0}:${Number(fence?.revision || 0) || 0}`;
+      const flight = storageReadFlights.get(key);
+      const joined = Boolean(flight && flight.storage === storage && flight.authority === authority
+        && flight.writeToken === writeToken && !(Number(fence?.pending || 0) > 0));
+      let operation;
+      if (joined) {
+        Memory.compatCallStats.coalescedStorageReads += 1;
+        operation = flight.operation.then(value => value !== null && typeof value === 'object' ? clone(value, value) : value);
+      } else {
+        operation = Promise.resolve().then(maintenanceStorageRead(key) || (() => storage.getItem(key)));
+        if (!(Number(fence?.pending || 0) > 0)) {
+          const entry = { storage, authority, writeToken, operation };
+          storageReadFlights.set(key, entry);
+          operation.then(() => {}, () => {}).then(() => { if (storageReadFlights.get(key) === entry) storageReadFlights.delete(key); });
+        }
+      }
       try {
         const settled = await Promise.race([
           operation.then(
@@ -41906,7 +41931,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!key) return { ...emptyStorageLedger(scope), enabled: false, reason: 'scope_unavailable' };
     if (!RisuCompat.hasPluginStorage()) return { ...emptyStorageLedger(scope), enabled: false, reason: 'plugin_storage_unavailable' };
     const storedOutcome = typeof RisuCompat.getStorageItemOutcome === 'function'
-      ? await RisuCompat.getStorageItemOutcome(key, HOST_API_CALL_TIMEOUT_MS)
+      ? await RisuCompat.getStorageItemOutcome(key, options.readTimeoutMs || HOST_API_CALL_TIMEOUT_MS)
       : { state: 'fulfilled', value: await RisuCompat.getStorageItem(key, null) };
     if (Memory.unloaded || !ownsRuntime()) return inactive();
     if (storedOutcome.state !== 'fulfilled') {
@@ -42004,11 +42029,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   // Full loadStorageLedger() intentionally performs copy/adoption maintenance;
   // doing that for includeRecords:false made a simple status check traverse the
   // archive and sometimes rewrite the ledger before the GUI could render.
-  const loadStorageLedgerSummary = async scope => {
+  const loadStorageLedgerSummary = async (scope, options = {}) => {
     const key = storageLedgerStorageKey(scope);
     if (!key) return { ...emptyStorageLedger(scope), enabled: false, reason: 'scope_unavailable', recordsIncluded: false, logicalRecordCount: 0 };
     if (!RisuCompat.hasPluginStorage()) return { ...emptyStorageLedger(scope), enabled: false, reason: 'plugin_storage_unavailable', recordsIncluded: false, logicalRecordCount: 0 };
-    const storedOutcome = typeof RisuCompat.getStorageItemOutcome === 'function' ? await RisuCompat.getStorageItemOutcome(key, HOST_API_CALL_TIMEOUT_MS) : { state: 'fulfilled', value: await RisuCompat.getStorageItem(key, null) };
+    const storedOutcome = typeof RisuCompat.getStorageItemOutcome === 'function' ? await RisuCompat.getStorageItemOutcome(key, options.readTimeoutMs || HOST_API_CALL_TIMEOUT_MS) : { state: 'fulfilled', value: await RisuCompat.getStorageItem(key, null) };
     if (storedOutcome.state !== 'fulfilled') return { ...emptyStorageLedger(scope), enabled: false, reason: compact(storedOutcome.error || storedOutcome.reason || 'storage_unavailable', 240), code: compact(storedOutcome.code || '', 96), storageKey: key, recordsIncluded: false, logicalRecordCount: 0 };
     const stored = storedOutcome.value ?? null;
     const ledger = normalizeStorageLedger(await hydrateCapturedLedgerRaw(stored,scope), scope);
@@ -54889,21 +54914,31 @@ function mountMemorySuiteSourceInputControls(container, config) {
     box.dataset.sourceInputControls=owner;box.className='ms-source-settings';container.prepend(box);
     const make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
     const style=make('style');style.textContent=`
-.ms-source-settings{font:14px/1.6 system-ui,-apple-system,'Malgun Gothic',sans-serif;display:grid;gap:14px;width:100%;max-width:960px;margin:0 auto 24px;color:inherit}
-.ms-source-settings *{box-sizing:border-box}.ms-source-settings p,.ms-source-settings h3{margin:0}.ms-source-settings h3{font-size:18px}.ms-source-settings label{display:grid;gap:5px;font-size:13px}.ms-source-settings small{opacity:.8}
-.ms-source-settings button,.ms-source-settings input,.ms-source-settings textarea,.ms-source-settings select{font:inherit;color:inherit;border:1px solid #8887;border-radius:9px;background:transparent;min-width:0;padding:8px 10px}.ms-source-settings textarea{width:100%;resize:vertical;min-height:42px}.ms-source-settings button{cursor:pointer;min-height:40px}.ms-source-settings button:disabled{opacity:.5;cursor:default}.ms-source-settings :is(button,input,textarea,select):focus-visible{outline:2px solid currentColor;outline-offset:2px}
-.ms-source-settings .ms-input-list{display:grid;gap:10px}.ms-source-settings .ms-input-row{border:1px solid #8885;border-radius:12px;padding:14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,230px) auto;gap:10px;align-items:start}.ms-source-settings .ms-input-fields{display:grid;gap:8px}.ms-source-settings .ms-custom-toggle{display:flex;align-items:center;gap:8px}.ms-source-settings .ms-custom-toggle input{margin:0}.ms-source-settings .ms-custom-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ms-source-settings [hidden]{display:none!important}
-.ms-source-settings .ms-input-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.ms-source-settings .ms-input-apply{background:#79522d;color:white;border-color:#79522d;font-weight:700}.ms-source-settings .ms-input-status{min-height:24px}.ms-source-settings .ms-input-preview{border-top:1px solid #8885;padding-top:14px;display:grid;gap:10px}.ms-source-settings pre{font:13px/1.6 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid #8885;border-radius:10px;padding:14px;max-height:360px;overflow:auto;margin:0}.ms-source-settings .ms-input-warning{border-left:3px solid #b9802e;padding-left:10px}.ms-source-settings details{font-size:13px}.ms-source-settings summary{cursor:pointer}
-@media(max-width:600px){.ms-source-settings .ms-input-row{grid-template-columns:minmax(0,1fr) auto}.ms-source-settings .ms-input-fields{grid-column:1/-1}.ms-source-settings .ms-custom-fields{grid-template-columns:1fr}.ms-source-settings .ms-input-actions button{flex:1}}
+.ms-source-settings{display:grid;gap:12px;width:100%;min-width:0;color:inherit;font:inherit;font-size:var(--fs-body,13px);line-height:1.55}
+.ms-source-settings *{box-sizing:border-box}.ms-source-settings p,.ms-source-settings h3{margin:0}.ms-source-settings h3{font-size:15px}.ms-source-settings label{display:grid;gap:5px;font-size:12.5px}.ms-source-settings small{opacity:.8}
+.ms-source-settings button,.ms-source-settings input,.ms-source-settings textarea,.ms-source-settings select{font:inherit;font-size:13px;color:inherit;border:1px solid var(--border2,#8887);border-radius:var(--r-sm,8px);background:var(--input-bg,var(--surface,transparent));min-width:0;min-height:38px;padding:7px 10px}.ms-source-settings textarea{width:100%;resize:vertical;line-height:1.5}.ms-source-settings button{cursor:pointer;padding:7px 14px;font-weight:650;background:var(--surface,transparent)}.ms-source-settings button:hover:not(:disabled){background:var(--surface3,#8881)}.ms-source-settings button:disabled{opacity:.5;cursor:default}.ms-source-settings :is(button,input,textarea,select):focus-visible{outline:2px solid var(--accent,currentColor);outline-offset:1px}
+.ms-source-settings [hidden]{display:none!important}.ms-source-settings .ms-sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.ms-source-settings .ms-input-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-input-toolbar .ms-input-apply{margin-right:auto;min-width:88px}
+.ms-source-settings .ms-input-apply{background:var(--accent,#79522d);color:var(--on-accent,#fff);border-color:var(--accent,#79522d)}.ms-source-settings .ms-input-apply:hover:not(:disabled){background:var(--accent-hover,var(--accent,#79522d))}
+.ms-source-settings .ms-input-status:empty{display:none}.ms-source-settings .ms-input-status{font-weight:650}.ms-source-settings .ms-input-hint{font-size:12px;color:var(--text2,inherit)}
+.ms-source-settings .ms-input-head,.ms-source-settings .ms-input-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(128px,160px) 110px 62px;gap:8px;align-items:center}
+.ms-source-settings .ms-input-head{padding:0 11px;font-size:11.5px;font-weight:700;color:var(--text3,inherit)}
+.ms-source-settings .ms-input-list{display:grid;gap:6px}.ms-source-settings .ms-input-row{padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface,transparent)}
+.ms-source-settings .ms-input-row textarea{min-height:38px;height:38px;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;resize:none}.ms-source-settings .ms-input-row select{width:100%}.ms-source-settings .ms-input-row [data-rule-delete]{padding:7px 8px}
+.ms-source-settings .ms-input-fields{display:grid;gap:4px;min-width:0}.ms-source-settings .ms-custom-toggle{display:flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap;cursor:pointer}.ms-source-settings .ms-custom-toggle input{margin:0;min-height:0;width:16px;height:16px;accent-color:var(--accent,currentColor)}.ms-source-settings .ms-custom-fields{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.ms-source-settings .ms-input-chip{justify-self:start;padding:0 8px;border:1px solid var(--border2,#8886);border-radius:99px;font-size:11px;opacity:1;color:var(--text2,inherit)}
+.ms-source-settings .ms-input-preview{border-top:1px solid var(--border,#8885);padding-top:12px;display:grid;gap:8px}.ms-source-settings .ms-input-preview>button{justify-self:start}.ms-source-settings pre{font:12.5px/1.6 var(--font-mono,ui-monospace,monospace);white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border,#8885);border-radius:var(--r-sm,8px);background:var(--surface2,transparent);padding:12px;max-height:360px;overflow:auto;margin:0}.ms-source-settings .ms-input-warning{border-left:3px solid var(--warn,#b9802e);padding-left:10px}.ms-source-settings details{font-size:12.5px}.ms-source-settings summary{cursor:pointer}
+@media(max-width:600px){.ms-source-settings .ms-input-head{display:none}.ms-source-settings .ms-input-row{grid-template-columns:minmax(0,1fr) auto auto}.ms-source-settings .ms-input-fields{grid-column:1/-1}.ms-source-settings .ms-custom-fields{grid-template-columns:1fr}.ms-source-settings .ms-input-toolbar{display:grid;grid-template-columns:1fr 1fr}.ms-source-settings .ms-input-toolbar button{white-space:nowrap;padding:7px 8px}.ms-source-settings .ms-input-toolbar .ms-input-apply{margin-right:0}}
 `;
-    box.append(style,make('h3','분석할 내용'),make('p','설정 없이 바로 사용할 수 있습니다. 알 수 없는 외부 태그와 내용은 그대로 둡니다. 필요한 경우에만 아래 규칙을 바꾸세요.'));
-    const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';box.append(list);
-    const actions=make('div'),apply=make('button','적용'),status=make('p');actions.className='ms-input-actions';apply.type='button';apply.className='ms-input-apply';apply.dataset.sourceInputApply='';apply.disabled=true;
+    const toolbar=make('div'),apply=make('button','적용'),add=make('button','태그 추가'),undo=make('button','삭제 되돌리기'),defaults=make('button','기본 규칙 복원'),status=make('p');
+    toolbar.className='ms-input-toolbar';apply.className='ms-input-apply';apply.dataset.sourceInputApply='';
+    for(const button of [apply,add,undo,defaults]){button.type='button';button.disabled=true;}
+    add.dataset.sourceInputAdd='';undo.dataset.sourceInputUndo='';defaults.dataset.sourceInputDefaults='';toolbar.append(apply,add,undo,defaults);
     status.dataset.sourceInputStatus='';status.className='ms-input-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
-    const toolbar=make('div'),add=make('button','태그 추가'),undo=make('button','삭제 되돌리기'),defaults=make('button','기본 규칙 복원');toolbar.className='ms-input-actions';
-    for(const button of [add,undo,defaults]){button.type='button';button.disabled=true;}
-    add.dataset.sourceInputAdd='';undo.dataset.sourceInputUndo='';defaults.dataset.sourceInputDefaults='';toolbar.append(add,undo,defaults);box.insertBefore(toolbar,list);
-    actions.append(apply);box.append(actions,status,make('p','규칙은 적용을 눌러야 저장됩니다. 기본 규칙 복원도 초안만 바꿉니다. 기존 기억은 그대로 유지되며, 바꾸려면 원하는 구간을 직접 재분석하세요.'));
+    const hint=make('p','저장된 태그 규칙을 확인·편집합니다. 적용을 눌러야 저장되며 기본 규칙 복원도 초안만 바꿉니다. 알 수 없는 외부 태그는 그대로 두고, 기존 기억은 유지됩니다. 바꾸려면 원하는 구간을 직접 재분석하세요.');hint.className='ms-input-hint';
+    const head=make('div');head.className='ms-input-head';head.setAttribute('aria-hidden','true');head.append(make('span','태그 이름 · XML 예시 · 표식'),make('span','처리 방법'),make('span','직접 구분자'),make('span'));
+    const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';
+    box.append(style,toolbar,status,hint,head,list);
     const previewArea=make('section'),previewButton=make('button','현재 채팅 미리보기'),previewStatus=make('p'),warning=make('p'),output=make('pre');
     previewArea.className='ms-input-preview';previewButton.type='button';previewButton.dataset.sourceInputPreview='';previewButton.disabled=true;
     previewStatus.dataset.sourceInputPreviewStatus='';previewStatus.setAttribute('role','status');previewStatus.setAttribute('aria-live','polite');
@@ -54966,13 +55001,14 @@ function mountMemorySuiteSourceInputControls(container, config) {
       status.textContent='변경한 규칙을 적용해 주세요.';setEnabled();void showPreview();
     }
     function addRow(value=null,key='ignoredTags',control=null) {
-      const element=make('div'),fields=make('div'),tagLabel=make('label','태그 이름 또는 XML 예시'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label','처리 방법'),action=make('select'),remove=make('button','삭제');
+      const hidden=text=>{const span=make('span',text);span.className='ms-sr-only';return span;};
+      const element=make('div'),fields=make('div'),tagLabel=make('label'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label'),action=make('select'),remove=make('button','삭제');
       element.dataset.sourceInputRow='';element.className='ms-input-row';fields.className='ms-input-fields';tagLabel.dataset.ruleTagLabel='';
-      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='예: decoration 또는 <decoration>예시</decoration>';tagLabel.append(valueInput);
+      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='예: decoration 또는 <decoration>예시</decoration>';tagLabel.append(hidden('태그 이름 또는 XML 예시'),valueInput);
       custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','직접 구분자'));
-      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;
-      const openLabel=make('label','여는 표식'),closeLabel=make('label','닫는 표식');openLabel.append(open);closeLabel.append(close);customFields.append(openLabel,closeLabel);
-      for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(action);
+      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;open.placeholder='여는 표식 예: [START]';close.placeholder='닫는 표식 예: [END]';
+      const openLabel=make('label'),closeLabel=make('label');openLabel.append(hidden('여는 표식'),open);closeLabel.append(hidden('닫는 표식'),close);customFields.append(openLabel,closeLabel);
+      for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(hidden('처리 방법'),action);
       remove.type='button';remove.dataset.ruleDelete='';remove.setAttribute('aria-label','이 규칙 삭제');
       if(value&&typeof value==='object'){custom.checked=true;open.value=value.open;close.value=value.close;}else if(value)valueInput.value=value;
       const row={element,value:valueInput,custom,open,close,action,remove,control};rows.push(row);
@@ -54985,8 +55021,8 @@ function mountMemorySuiteSourceInputControls(container, config) {
         syncMode();changed();
       };valueInput.oninput=open.oninput=close.oninput=changed;action.onchange=changed;
       remove.onclick=()=>{if(!loaded||applying||isEmpty(row))return;removed.push({row,index:rows.indexOf(row)});if(removed.length>128)removed.shift();rows=rows.filter(item=>item!==row);element.remove();changed();};
-      fields.append(tagLabel,customLabel,customFields);if(control)fields.append(make('small',controlLabels[control]||'저장된 기본 규칙'));
-      element.append(fields,actionLabel,remove);list.append(element);return row;
+      fields.append(tagLabel,customFields);if(control){const chip=make('small',controlLabels[control]||'저장된 기본 규칙');chip.className='ms-input-chip';fields.append(chip);}
+      element.append(fields,actionLabel,customLabel,remove);list.append(element);return row;
     }
     function fill(rules=sourceRules(),resetInitial=true) {
       rows=[];removed=[];list.replaceChildren();
@@ -55020,18 +55056,51 @@ function mountMemorySuiteSourceInputControls(container, config) {
     loadPreferences().then(()=>{if(disposed())return;loaded=true;fill();status.textContent='';if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!disposed())status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
   }
 
+function memorySuiteReanalysisGridCss(){return `
+.ms-reanalysis-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));grid-auto-flow:row dense;gap:10px;min-width:0}
+.ms-reanalysis-turn--compact{display:flex;flex-direction:column;gap:5px;aspect-ratio:1/1;min-width:0;min-height:0;padding:12px;border:1px solid var(--border,#8885);border-radius:var(--r-md,12px);background:var(--surface,transparent);overflow:hidden;overflow-wrap:anywhere;cursor:pointer;transition:border-color .16s,box-shadow .16s,background .16s}
+.ms-reanalysis-turn--compact:hover{border-color:var(--border2,#8889)}
+.ms-reanalysis-turn--compact:has(>label input:checked){border-color:var(--accent,#79522d);box-shadow:inset 0 0 0 1px var(--accent,#79522d);background:var(--accent-soft,var(--surface,transparent))}
+.ms-reanalysis-turn--compact:has(>label input:disabled){cursor:default;opacity:.75}
+.ms-reanalysis-turn--compact>label{display:flex;align-items:flex-start;gap:8px;min-width:0;cursor:pointer}
+.ms-reanalysis-turn--compact>label input{flex:none;width:17px;height:17px;margin:1px 0 0;accent-color:var(--accent,#79522d)}
+.ms-reanalysis-turn--compact>label strong{min-width:0;font-size:14px;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.ms-reanalysis-turn--compact .ms-turn-meta{margin:0;font-size:11.5px;line-height:1.45;color:var(--text3,inherit);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.ms-reanalysis-turn--compact .ms-turn-eyebrow{font-size:11px;font-weight:700;color:var(--text3,inherit);letter-spacing:.02em}
+.ms-reanalysis-turn--compact .ms-turn-summary{flex:0 1 auto;min-height:0;margin:0;font-size:12.5px;line-height:1.55;color:var(--text2,inherit);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5}
+.ms-reanalysis-turn--compact>details{margin-top:auto;font-size:12px}
+.ms-reanalysis-turn--compact>details>summary{cursor:pointer;color:var(--text2,inherit);font-weight:650}
+.ms-reanalysis-turn--compact pre{margin:8px 0 0;padding:10px 12px;max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border,#8885);border-radius:var(--r-sm,8px);background:var(--surface2,transparent);font:12px/1.6 var(--font-mono,ui-monospace,monospace)}
+.ms-reanalysis-turn--compact.is-open{grid-column:1/-1;aspect-ratio:auto;cursor:default}
+.ms-reanalysis-turn--compact.is-open .ms-turn-summary{display:block;white-space:pre-wrap}
+@media(max-width:600px){.ms-reanalysis-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.ms-reanalysis-turn--compact{padding:10px}.ms-reanalysis-turn--compact .ms-turn-summary{-webkit-line-clamp:4}}
+`;}
 // One card per turn keeps checkboxes aligned and allows source inspection without dispatch.
 function appendMemorySuiteReanalysisRange(list,range,config) {
   const doc=list.ownerDocument,make=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
   const row=make('section'),label=make('label'),input=make('input'),details=make('details'),summary=make('summary','원문 보기'),output=make('pre');
-  row.className='ms-reanalysis-turn';row.style.cssText='display:grid;gap:8px;padding:14px;border:1px solid #8885;border-radius:12px;min-width:0';
-  label.style.cssText='display:flex;align-items:center;gap:10px';input.type='checkbox';input.value=range.key;input.setAttribute('aria-label',range.label+' 재분석 선택');input.onchange=config.changed;
-  label.append(input,make('strong',range.label));row.append(label);
-  if(range.description){const description=make('p',range.description);description.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(description);}
-  if(range.summary){const excerpt=make('p','저장된 내용 · '+range.summary);excerpt.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(excerpt);}
-  output.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto';details.append(summary,output);row.append(details);list.append(row);
+  input.type='checkbox';input.value=range.key;input.setAttribute('aria-label',range.label+' 재분석 선택');input.onchange=config.changed;
+  if(config.compact){
+    // Square cards: many turns per screen; opening the source widens the card to a full row.
+    const host=list.getRootNode?.()?.head||list.getRootNode?.();
+    if(host?.querySelector&&!host.querySelector('style[data-ms-reanalysis-grid]')){const style=make('style');style.dataset.msReanalysisGrid='';style.textContent=memorySuiteReanalysisGridCss();host.append(style);}
+    row.className='ms-reanalysis-turn ms-reanalysis-turn--compact';
+    const title=make('strong',range.label);title.title=range.label;label.append(input,title);row.append(label);
+    if(range.description){const description=make('p',range.description);description.className='ms-turn-meta';description.title=range.description;row.append(description);}
+    if(range.summary){const eyebrow=make('small','저장된 내용'),excerpt=make('p',range.summary);eyebrow.className='ms-turn-eyebrow';excerpt.className='ms-turn-summary';excerpt.title=range.summary;row.append(eyebrow,excerpt);}
+    row.onclick=event=>{if(!event.target.closest?.('label,details,button,a')&&!input.disabled)input.click();};
+  }else{
+    row.className='ms-reanalysis-turn';row.style.cssText='display:grid;gap:8px;padding:14px;border:1px solid #8885;border-radius:12px;min-width:0';
+    label.style.cssText='display:flex;align-items:center;gap:10px';
+    label.append(input,make('strong',range.label));row.append(label);
+    if(range.description){const description=make('p',range.description);description.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(description);}
+    if(range.summary){const excerpt=make('p','저장된 내용 · '+range.summary);excerpt.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(excerpt);}
+    output.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto';
+  }
+  details.append(summary,output);row.append(details);list.append(row);
   let serial=0;
   details.ontoggle=async()=>{
+    if(config.compact)row.classList.toggle('is-open',details.open);
     if(!details.open){serial++;return;}
     const token=++serial;output.textContent='원문을 읽는 중…';
     try{const sample=await config.read();if(!row.isConnected||!config.current()||token!==serial)return;
@@ -58594,15 +58663,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
     accept.focus?.();
   });
   const viewerRunHayakuMaintenance = async () => {
-    const root = Memory.ledgerViewer.root, button = root?.querySelector?.('#hayakuMaintenanceRun');
-    if (button?.disabled) return;
-    if (button) button.disabled = true;
+    const root = Memory.ledgerViewer.root;
+    const buttons = Array.from(root?.querySelectorAll?.('#hayakuMaintenanceRun,#hayakuOverviewMaintenance') || []);
+    if (buttons.some(button => button.disabled)) return;
+    buttons.forEach(button => { button.disabled = true; });
     try {
       const result = await runHayakuMaintenance({confirmAnalysis: viewerConfirmHayakuMaintenance});
       const node = root?.querySelector?.('#hayakuSafeHealthStatus');
       if (node) node.textContent = `${result.ok ? '점검·복구 완료' : '점검·복구 미완료'} · ${viewerHayakuMaintenanceSummary(result.after || result.before)}${result.description ? ' · ' + result.description : ''} · 모델 호출 ${result.physicalCalls || 0}회`;
       return result;
-    } finally { if (button) button.disabled = false; }
+    } finally { buttons.forEach(button => { button.disabled = false; }); }
   };
   const viewerRunNativeColdStart = async () => {
     const batchTurns = normalizeColdStartBatchTurns(Memory.ledgerViewer.root?.querySelector?.('#hayakuColdStartBatchTurns')?.value || Memory.settings?.coldStartBatchTurns || 1);
@@ -58613,7 +58683,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     }
     // This pre-confirmation read must stay pure: a full ledger load can perform
     // copied-chat adoption/repair maintenance before the user chooses Continue.
-    const initialLedger = await loadStorageLedgerSummary(initialScope);
+    const initialLedger = await loadStorageLedgerSummary(initialScope, { readTimeoutMs: HAYAKU_VIEWER_LEDGER_READ_TIMEOUT_MS });
     if (initialLedger.enabled !== true) {
       viewerRecoveryMessage(`Cold Start 원장을 확인하지 못했습니다 · ${initialLedger.reason || 'storage_unavailable'}`, true);
       return { ok: false, skipped: true, reason: initialLedger.reason || 'storage_unavailable' };
@@ -58635,7 +58705,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       viewerRecoveryMessage('채팅 범위가 바뀌어 Cold Start를 시작하지 않았습니다.', true);
       return { ok: false, skipped: true, reason: 'cold_start_confirmation_scope_changed' };
     }
-    const confirmedLedger = await loadStorageLedgerSummary(confirmedScope);
+    const confirmedLedger = await loadStorageLedgerSummary(confirmedScope, { readTimeoutMs: HAYAKU_VIEWER_LEDGER_READ_TIMEOUT_MS });
     if (confirmedLedger.enabled !== true) {
       viewerRecoveryMessage(`Cold Start 원장을 다시 확인하지 못했습니다 · ${confirmedLedger.reason || 'storage_unavailable'}`, true);
       return { ok: false, skipped: true, reason: confirmedLedger.reason || 'storage_unavailable' };
@@ -58973,11 +59043,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const card=root.querySelector('#hayakuSourceEditConsent');if(!card||card.dataset.reanalysisMounted===text(viewer.scope?.key))return;
     let navigation=viewer.pendingSourceReanalysis;delete viewer.pendingSourceReanalysis;
     card.dataset.reanalysisMounted=text(viewer.scope?.key);let inventory=null,busy=false,reviewSaving=false,version=0,reviewVersion=0;
-    card.innerHTML='<details class="fold" data-reanalysis-fold><summary id="hayakuSourceEditConsentTitle">직접 재분석</summary><div class="fold__body"><p>단일 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. Other Ax 비용과 기억 교체 대상을 실행 전에 확인합니다.</p><button type="button" class="btn" data-reanalysis-refresh>구간 목록 새로고침</button><div data-reanalysis-ranges class="stack"></div><div class="cluster"><button type="button" class="btn" data-reanalysis-run disabled>바로 재분석</button><button type="button" class="btn" data-reanalysis-review hidden>확인 후 재분석</button></div><div data-reanalysis-review-panel></div><p role="status" aria-live="polite" data-reanalysis-status></p></div></details>';
+    card.innerHTML='<details class="fold" data-reanalysis-fold><summary id="hayakuSourceEditConsentTitle">직접 재분석</summary><div class="fold__body"><style>#hayakuSourceEditConsent .reanalysis-body{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}#hayakuSourceEditConsent .reanalysis-desc{margin:0;font-size:var(--fs-note,12px);color:var(--text2)}#hayakuSourceEditConsent .reanalysis-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface2)}#hayakuSourceEditConsent [data-reanalysis-status]{margin:0;font-weight:650}#hayakuSourceEditConsent [data-reanalysis-status]:empty,#hayakuSourceEditConsent [data-reanalysis-review-panel]:empty{display:none}@media(max-width:600px){#hayakuSourceEditConsent .reanalysis-toolbar>.cluster{width:100%}#hayakuSourceEditConsent .reanalysis-toolbar .btn{flex:1}}</style><div class="reanalysis-body"><p class="reanalysis-desc">단일 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. Other Ax 비용과 기억 교체 대상을 실행 전에 확인합니다.</p><div class="reanalysis-toolbar"><div class="cluster"><button type="button" class="btn btn--sm" data-reanalysis-refresh>구간 목록 새로고침</button><button type="button" class="btn btn--sm" data-reanalysis-select-all disabled>모두 선택</button><button type="button" class="btn btn--sm" data-reanalysis-select-none disabled>모두 해제</button><span class="chip" data-reanalysis-count>선택 0 / 0</span></div><div class="cluster"><button type="button" class="btn" data-reanalysis-review hidden>확인 후 재분석</button><button type="button" class="btn btn--primary" data-reanalysis-run disabled>바로 재분석</button></div></div><p role="status" aria-live="polite" data-reanalysis-status></p><div data-reanalysis-review-panel></div><div data-reanalysis-ranges class="ms-reanalysis-grid"></div></div></div></details>';
     const list=card.querySelector('[data-reanalysis-ranges]'),run=card.querySelector('[data-reanalysis-run]'),refresh=card.querySelector('[data-reanalysis-refresh]'),status=card.querySelector('[data-reanalysis-status]'),review=card.querySelector('[data-reanalysis-review]'),panel=card.querySelector('[data-reanalysis-review-panel]');
     const current=()=>Memory.ledgerViewer.root===root&&Memory.ledgerViewer.activeTab==='recovery'&&root.querySelector('#hayakuSourceEditConsent')===card&&card.contains(list)&&root.querySelector('[data-recovery-panel="reanalysis"]')?.hidden!==true;
     const selected=()=>[...list.querySelectorAll('input:checked')].map(node=>node.value);
-    const sync=()=>{const locked=busy||reviewSaving,n=selected().length;run.disabled=locked||!n;review.hidden=n!==1;review.disabled=locked||n!==1;refresh.disabled=locked;for(const input of list.querySelectorAll('input'))input.disabled=locked;};
+    const selectAll=card.querySelector('[data-reanalysis-select-all]'),selectNone=card.querySelector('[data-reanalysis-select-none]'),count=card.querySelector('[data-reanalysis-count]');
+    const sync=()=>{const locked=busy||reviewSaving,n=selected().length,total=list.querySelectorAll('input').length;run.disabled=locked||!n;review.hidden=n!==1;review.disabled=locked||n!==1;refresh.disabled=locked;selectAll.disabled=locked||!total||n===total;selectNone.disabled=locked||!n;count.textContent='선택 '+n+' / '+total;for(const input of list.querySelectorAll('input'))input.disabled=locked;};
+    const setAll=checked=>{
+      if(busy||reviewSaving||!inventory||!current())return;reviewVersion++;panel.replaceChildren();
+      const inputs=[...list.querySelectorAll('input')];inputs.forEach(node=>{node.checked=checked;});
+      status.textContent=checked?'모든 턴 '+inputs.length+'개를 선택했습니다.':'선택을 모두 해제했습니다.';sync();
+    };
+    selectAll.onclick=()=>setAll(true);selectNone.onclick=()=>setAll(false);
     const changed=event=>{
       reviewVersion++;panel.replaceChildren();
       if(inventory&&event?.target){
@@ -59006,7 +59083,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     const load=async(force=false)=>{if((busy||reviewSaving)&&force!==true)return;const token=++version;reviewVersion++;inventory=null;list.replaceChildren();panel.replaceChildren();run.disabled=review.disabled=true;review.hidden=true;status.textContent='구간을 읽는 중…';
       try{const result=await listHayakuReanalysisRanges();if(token!==version||!current())return;inventory=result;
-        for(const range of result.ranges)appendMemorySuiteReanalysisRange(list,range,{changed,current,read:()=>readHayakuReanalysisTurn(inventory,range)});
+        for(const range of result.ranges)appendMemorySuiteReanalysisRange(list,range,{compact:true,changed,current,read:()=>readHayakuReanalysisTurn(inventory,range)});
         status.textContent=result.ranges.length?'원하는 턴을 선택하세요. 원문 보기에서 내용을 확인할 수 있습니다.':'재분석할 저장 구간이 없습니다.';
         if(navigation){
           const target=navigation;navigation=null;
@@ -59807,7 +59884,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const scope = await RisuCompat.currentChatScope();
       const ledger = !scope?.confident
         ? { enabled: false, reason: scope?.reason || 'scope_unavailable', records: [] }
-        : await loadStorageLedger(scope);
+        : await loadStorageLedger(scope, { readTimeoutMs: HAYAKU_VIEWER_LEDGER_READ_TIMEOUT_MS });
       if (!stillOpen()) return null;
       const transitionLocked = (ledger?.enabled === false && typeof isHayakuStorageTransitionError === 'function' && isHayakuStorageTransitionError(ledger))
         || (typeof isHayakuStorageTransitionActive === 'function' && isHayakuStorageTransitionActive());
@@ -60347,6 +60424,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     let safeHealthTicket = null, safeHealthBusy = false;
     const safeHealthOutput = message => { const node = root.querySelector('#hayakuDerivedCacheStatus'); if (node && root === Memory.ledgerViewer.root) node.textContent = message; };
     root.querySelector('#hayakuMaintenanceRun')?.addEventListener('click', () => viewerRunHayakuMaintenance());
+    root.querySelector('#hayakuOverviewMaintenance')?.addEventListener('click', () => viewerRunHayakuMaintenance());
     root.querySelector('#hayakuSafeHealthInspect')?.addEventListener('click', async () => {
       if (safeHealthBusy) return; safeHealthBusy = true; safeHealthTicket = null;
       const apply = root.querySelector('#hayakuSafeHealthApply'); if (apply) apply.disabled = true;
@@ -60766,7 +60844,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             <dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>누락 복구</dd><dt>대상 턴</dt><dd id="hayakuNativeRepairTargets">선택한 항목을 확인합니다.</dd><dt>선택 묶음</dt><dd id="hayakuNativeRepairBatch">-</dd><dt>예상 기본 호출</dt><dd id="hayakuNativeRepairCalls">-</dd><dt>추가 복구 허용량</dt><dd><span class="x-extra">설정에서 정의한 작업별 제한</span> — <button class="linkbtn" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경</button></dd><dt>실제 호출 수</dt><dd>완료 후 결과에 표시됩니다.</dd></dl>
             <div class="cluster" style="margin-top:14px"><button id="runHayakuNativeRepair" class="btn btn--primary" type="button">선택한 턴 복구…</button></div><div id="hayakuNativeRepairOutcome" class="stack"></div>
           </div></div></section>
-        <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 누락 복구와 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><div id="hayakuSourceEditConsent" class="stack"></div><details class="fold"><summary>분석 태그 규칙 설정</summary><div id="hayakuSourceTrackingSettings" class="stack"></div></details></div></section>
+        <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 누락 복구와 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><div id="hayakuSourceEditConsent" class="stack"></div><details class="fold"><summary>분석 태그 규칙 설정</summary><div class="fold__body"><div id="hayakuSourceTrackingSettings" class="stack"></div></div></details></div></section>
         <section data-recovery-panel="cold" data-subpanel="cold" data-group="rc" hidden><div class="stack"><div class="card fail-box" hidden><div class="empty"><b>원장을 읽지 못해 복구 대상을 계산하지 않습니다.</b><span>AI 작업은 시작할 수 없습니다. 현재 채팅 범위를 다시 확인하세요.</span></div></div><div class="card"><h2 class="card__title">Cold Start</h2><p class="card__desc">기록이 없는 채팅의 완료 턴을 묶음 단위로 분석합니다.</p><div class="cluster"><span class="badge" id="hayakuNativeColdStartState">대기</span><span id="hayakuNativeColdStartProgress">-</span><span>Cold Start 대상 <b id="hayakuNativeColdStartTurns">-</b></span></div><div class="field" style="margin-top:12px"><label for="hayakuColdStartBatchTurns">호출당 U+A</label><select id="hayakuColdStartBatchTurns" class="select" data-no-track aria-label="Cold Start 호출당 U+A"><option value="1">1턴</option><option value="5">5턴</option><option value="10">10턴</option></select><span class="hint">이번 실행에만 적용됩니다. 기본값은 설정 › 복구·안전의 Cold Start 묶음입니다 (저장된 값 <b id="hayakuColdStartSavedValue">-</b>).</span></div><dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>Cold Start</dd><dt>대상 턴</dt><dd id="hayakuColdStartTargetRows">완료된 턴 수는 현재 원장에서 계산합니다.</dd><dt>선택 묶음</dt><dd id="hayakuColdStartBundleCount">-</dd><dt>예상 기본 호출</dt><dd id="hayakuColdStartCallCount">-</dd><dt>추가 복구 허용량</dt><dd>설정에 따른 묶음별 제한</dd></dl><div class="cluster" style="margin-top:12px"><button id="runHayakuNativeColdStart" class="btn btn--primary" type="button">Cold Start 실행…</button><button id="cancelHayakuNativeColdStart" class="btn" type="button">중단 요청</button></div></div></div></section>
         <div class="grid g2"><div class="card"><h2 class="card__title">자동 복구</h2><p class="card__desc">설정 탭과 같은 값입니다 (한 곳에서만 편집).</p><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">정상 응답 처리 안에서 현재 누락/불가 패킷을 1회 복구합니다. 유일한 자동 복구 단계이며, 실패하거나 건너뛴 턴은 Recovery Journal에 남아 아래 수동 복구를 기다립니다.</div></div><span class="badge" id="auto-after" aria-live="polite">설정 확인 중</span></div><button class="linkbtn" id="hayakuRecoverySettingsLink" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경 →</button></div><div class="card"><h2 class="card__title">기억 복원 · Portable JSON</h2><p class="card__desc">같은 채팅은 교체 복원, 다른 채팅은 이사/복사 모드만 허용됩니다. 작업 전 대상 기억을 자동 백업합니다.</p><div data-portable-backup-host="hayaku_locator_continuity"></div></div></div>
         <section class="card" aria-labelledby="hayakuMaintenanceHeading"><h2 id="hayakuMaintenanceHeading" class="card__title">상태 점검 및 자동 복구</h2><p class="card__desc">로컬·서버 모드에서 완료된 턴의 패킷과 원장 결속을 검사합니다. 기존 패킷으로 결속을 복구하고, 기록이 없는 채팅은 콜드스타트, 사용 중 빠진 턴은 누락 복구로 연결합니다.</p><div class="cluster"><button id="hayakuMaintenanceRun" class="btn btn--primary" type="button">상태 점검 및 자동 복구</button><button id="hayakuSafeHealthInspect" class="btn" type="button">읽기 전용 검사</button></div><p id="hayakuSafeHealthStatus" role="status">점검과 결속 복구는 모델 호출 없이 진행됩니다. 기억 생성이 필요하면 대상 턴과 호출 한도를 보여준 뒤 Other Ax 분석을 시작합니다. 사용자 제외 턴과 기존 기억은 보존합니다.</p><details class="fold"><summary>고급 도구 · 메시지 캐시</summary><div class="fold__body"><div class="cluster"><button id="hayakuSafeHealthPreview" class="btn" type="button">캐시 복구 미리보기</button><button id="hayakuSafeHealthApply" class="btn" type="button" disabled>캐시 복구</button></div><p id="hayakuDerivedCacheStatus" role="status">로컬 메시지 리비전 캐시 전용입니다. 원문·패킷·원장은 변경하지 않습니다.</p></div></details></section>
@@ -60815,7 +60893,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         <nav class="sidebar" aria-label="HAYAKU 메뉴"><div class="nav-label">상태</div>${nav('Overview','연속성 관제','관제','grid')}<div class="nav-label">기억</div>${nav('Packets','패킷 · 세계선','패킷','layers', '<span id="hayakuOverviewPacketCount" class="count" hidden>0</span>')}${nav('Scopes','스코프 데이터 관리','스코프','layers')}<div class="nav-label">복구</div>${nav('Recovery','구간 점검 · 복구','복구','wrench', '<span id="hayakuOverviewRecoveryCount" class="count count--alert" hidden>0</span>')}<div class="nav-label">연결 · 설정</div>${nav('Server','서버 연결','연결','server')}${nav('Settings','설정','설정','sliders')}${nav('Logs','작동 기록','기록','log')}<div class="side-foot"><b id="hayakuSidebarAux">Other Ax · 호출 미검증</b><span>Provider와 키는 RisuAI 소유 — HAYAKU에는 저장하지 않습니다.</span></div></nav>
         <main class="main"><div class="page-body">
           <section class="page is-active" id="hayakuViewerPanelOverview" data-hayaku-viewer-panel="overview" data-page="overview" role="tabpanel" aria-labelledby="hayakuViewerTabOverview">
-            <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Continuity status</div><h1 class="page-title">연속성 관제</h1><p class="page-desc">완료된 턴마다 기억 패킷이 이어져 있는지 확인합니다. Other Ax 연결 테스트는 비용 동의 후 별도로 실행합니다.</p></div><div class="page-actions"><button class="btn" data-hayaku-viewer-goto="recovery" type="button">${hayakuMockupIcon('wrench')}구간 점검</button><button id="hayakuOverviewReconcile" class="btn btn--primary" type="button">${hayakuMockupIcon('refresh')}다시 대조</button></div></div>
+            <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Continuity status</div><h1 class="page-title">연속성 관제</h1><p class="page-desc">완료된 턴마다 기억 패킷이 이어져 있는지 확인합니다. Other Ax 연결 테스트는 비용 동의 후 별도로 실행합니다.</p></div><div class="page-actions"><button class="btn" id="hayakuOverviewMaintenance" type="button">${hayakuMockupIcon('wrench')}상태 점검 및 자동 복구</button><button id="hayakuOverviewReconcile" class="btn btn--primary" type="button">${hayakuMockupIcon('refresh')}다시 대조</button></div></div>
             <div class="stack">
               <div id="hayakuOverviewHealth" class="banner banner--danger"><div class="banner__icon">${hayakuMockupIcon('alert')}</div><div><b id="hayakuOverviewHealthTitle">현재 채팅 원장을 확인하고 있습니다.</b><span id="hayakuOverviewHealthCopy">데이터를 변경하지 않고 현재 채팅의 원장 상태를 읽습니다.</span><small id="hayakuOverviewAuxiliaryStatus" role="status" aria-live="polite">Other Ax는 비용 동의 후 테스트합니다.</small></div><div class="cluster"><span id="hayakuOverviewCoverageBadge" class="badge">패킷 연결률 미확인</span><button type="button" class="btn btn--sm" data-hayaku-auxiliary-test>Other Ax 연결 테스트</button></div></div>
               <div id="hayakuOverviewFailBox" class="card fail-box"><div class="empty"><b>원장을 읽지 못해 수치와 노선도를 표시하지 않습니다.</b><span>정상 수치를 그대로 보여주지 않습니다. 다시 대조해 현재 채팅 범위를 확인하세요.</span></div></div>

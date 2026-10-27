@@ -58072,21 +58072,31 @@ function mountMemorySuiteSourceInputControls(container, config) {
     box.dataset.sourceInputControls=owner;box.className='ms-source-settings';container.prepend(box);
     const make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
     const style=make('style');style.textContent=`
-.ms-source-settings{font:14px/1.6 system-ui,-apple-system,'Malgun Gothic',sans-serif;display:grid;gap:14px;width:100%;max-width:960px;margin:0 auto 24px;color:inherit}
-.ms-source-settings *{box-sizing:border-box}.ms-source-settings p,.ms-source-settings h3{margin:0}.ms-source-settings h3{font-size:18px}.ms-source-settings label{display:grid;gap:5px;font-size:13px}.ms-source-settings small{opacity:.8}
-.ms-source-settings button,.ms-source-settings input,.ms-source-settings textarea,.ms-source-settings select{font:inherit;color:inherit;border:1px solid #8887;border-radius:9px;background:transparent;min-width:0;padding:8px 10px}.ms-source-settings textarea{width:100%;resize:vertical;min-height:42px}.ms-source-settings button{cursor:pointer;min-height:40px}.ms-source-settings button:disabled{opacity:.5;cursor:default}.ms-source-settings :is(button,input,textarea,select):focus-visible{outline:2px solid currentColor;outline-offset:2px}
-.ms-source-settings .ms-input-list{display:grid;gap:10px}.ms-source-settings .ms-input-row{border:1px solid #8885;border-radius:12px;padding:14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,230px) auto;gap:10px;align-items:start}.ms-source-settings .ms-input-fields{display:grid;gap:8px}.ms-source-settings .ms-custom-toggle{display:flex;align-items:center;gap:8px}.ms-source-settings .ms-custom-toggle input{margin:0}.ms-source-settings .ms-custom-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ms-source-settings [hidden]{display:none!important}
-.ms-source-settings .ms-input-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.ms-source-settings .ms-input-apply{background:#79522d;color:white;border-color:#79522d;font-weight:700}.ms-source-settings .ms-input-status{min-height:24px}.ms-source-settings .ms-input-preview{border-top:1px solid #8885;padding-top:14px;display:grid;gap:10px}.ms-source-settings pre{font:13px/1.6 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid #8885;border-radius:10px;padding:14px;max-height:360px;overflow:auto;margin:0}.ms-source-settings .ms-input-warning{border-left:3px solid #b9802e;padding-left:10px}.ms-source-settings details{font-size:13px}.ms-source-settings summary{cursor:pointer}
-@media(max-width:600px){.ms-source-settings .ms-input-row{grid-template-columns:minmax(0,1fr) auto}.ms-source-settings .ms-input-fields{grid-column:1/-1}.ms-source-settings .ms-custom-fields{grid-template-columns:1fr}.ms-source-settings .ms-input-actions button{flex:1}}
+.ms-source-settings{display:grid;gap:12px;width:100%;min-width:0;color:inherit;font:inherit;font-size:var(--fs-body,13px);line-height:1.55}
+.ms-source-settings *{box-sizing:border-box}.ms-source-settings p,.ms-source-settings h3{margin:0}.ms-source-settings h3{font-size:15px}.ms-source-settings label{display:grid;gap:5px;font-size:12.5px}.ms-source-settings small{opacity:.8}
+.ms-source-settings button,.ms-source-settings input,.ms-source-settings textarea,.ms-source-settings select{font:inherit;font-size:13px;color:inherit;border:1px solid var(--border2,#8887);border-radius:var(--r-sm,8px);background:var(--input-bg,var(--surface,transparent));min-width:0;min-height:38px;padding:7px 10px}.ms-source-settings textarea{width:100%;resize:vertical;line-height:1.5}.ms-source-settings button{cursor:pointer;padding:7px 14px;font-weight:650;background:var(--surface,transparent)}.ms-source-settings button:hover:not(:disabled){background:var(--surface3,#8881)}.ms-source-settings button:disabled{opacity:.5;cursor:default}.ms-source-settings :is(button,input,textarea,select):focus-visible{outline:2px solid var(--accent,currentColor);outline-offset:1px}
+.ms-source-settings [hidden]{display:none!important}.ms-source-settings .ms-sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.ms-source-settings .ms-input-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-input-toolbar .ms-input-apply{margin-right:auto;min-width:88px}
+.ms-source-settings .ms-input-apply{background:var(--accent,#79522d);color:var(--on-accent,#fff);border-color:var(--accent,#79522d)}.ms-source-settings .ms-input-apply:hover:not(:disabled){background:var(--accent-hover,var(--accent,#79522d))}
+.ms-source-settings .ms-input-status:empty{display:none}.ms-source-settings .ms-input-status{font-weight:650}.ms-source-settings .ms-input-hint{font-size:12px;color:var(--text2,inherit)}
+.ms-source-settings .ms-input-head,.ms-source-settings .ms-input-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(128px,160px) 110px 62px;gap:8px;align-items:center}
+.ms-source-settings .ms-input-head{padding:0 11px;font-size:11.5px;font-weight:700;color:var(--text3,inherit)}
+.ms-source-settings .ms-input-list{display:grid;gap:6px}.ms-source-settings .ms-input-row{padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface,transparent)}
+.ms-source-settings .ms-input-row textarea{min-height:38px;height:38px;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;resize:none}.ms-source-settings .ms-input-row select{width:100%}.ms-source-settings .ms-input-row [data-rule-delete]{padding:7px 8px}
+.ms-source-settings .ms-input-fields{display:grid;gap:4px;min-width:0}.ms-source-settings .ms-custom-toggle{display:flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap;cursor:pointer}.ms-source-settings .ms-custom-toggle input{margin:0;min-height:0;width:16px;height:16px;accent-color:var(--accent,currentColor)}.ms-source-settings .ms-custom-fields{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.ms-source-settings .ms-input-chip{justify-self:start;padding:0 8px;border:1px solid var(--border2,#8886);border-radius:99px;font-size:11px;opacity:1;color:var(--text2,inherit)}
+.ms-source-settings .ms-input-preview{border-top:1px solid var(--border,#8885);padding-top:12px;display:grid;gap:8px}.ms-source-settings .ms-input-preview>button{justify-self:start}.ms-source-settings pre{font:12.5px/1.6 var(--font-mono,ui-monospace,monospace);white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border,#8885);border-radius:var(--r-sm,8px);background:var(--surface2,transparent);padding:12px;max-height:360px;overflow:auto;margin:0}.ms-source-settings .ms-input-warning{border-left:3px solid var(--warn,#b9802e);padding-left:10px}.ms-source-settings details{font-size:12.5px}.ms-source-settings summary{cursor:pointer}
+@media(max-width:600px){.ms-source-settings .ms-input-head{display:none}.ms-source-settings .ms-input-row{grid-template-columns:minmax(0,1fr) auto auto}.ms-source-settings .ms-input-fields{grid-column:1/-1}.ms-source-settings .ms-custom-fields{grid-template-columns:1fr}.ms-source-settings .ms-input-toolbar{display:grid;grid-template-columns:1fr 1fr}.ms-source-settings .ms-input-toolbar button{white-space:nowrap;padding:7px 8px}.ms-source-settings .ms-input-toolbar .ms-input-apply{margin-right:0}}
 `;
-    box.append(style,make('h3','분석할 내용'),make('p','설정 없이 바로 사용할 수 있습니다. 알 수 없는 외부 태그와 내용은 그대로 둡니다. 필요한 경우에만 아래 규칙을 바꾸세요.'));
-    const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';box.append(list);
-    const actions=make('div'),apply=make('button','적용'),status=make('p');actions.className='ms-input-actions';apply.type='button';apply.className='ms-input-apply';apply.dataset.sourceInputApply='';apply.disabled=true;
+    const toolbar=make('div'),apply=make('button','적용'),add=make('button','태그 추가'),undo=make('button','삭제 되돌리기'),defaults=make('button','기본 규칙 복원'),status=make('p');
+    toolbar.className='ms-input-toolbar';apply.className='ms-input-apply';apply.dataset.sourceInputApply='';
+    for(const button of [apply,add,undo,defaults]){button.type='button';button.disabled=true;}
+    add.dataset.sourceInputAdd='';undo.dataset.sourceInputUndo='';defaults.dataset.sourceInputDefaults='';toolbar.append(apply,add,undo,defaults);
     status.dataset.sourceInputStatus='';status.className='ms-input-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
-    const toolbar=make('div'),add=make('button','태그 추가'),undo=make('button','삭제 되돌리기'),defaults=make('button','기본 규칙 복원');toolbar.className='ms-input-actions';
-    for(const button of [add,undo,defaults]){button.type='button';button.disabled=true;}
-    add.dataset.sourceInputAdd='';undo.dataset.sourceInputUndo='';defaults.dataset.sourceInputDefaults='';toolbar.append(add,undo,defaults);box.insertBefore(toolbar,list);
-    actions.append(apply);box.append(actions,status,make('p','규칙은 적용을 눌러야 저장됩니다. 기본 규칙 복원도 초안만 바꿉니다. 기존 기억은 그대로 유지되며, 바꾸려면 원하는 구간을 직접 재분석하세요.'));
+    const hint=make('p','저장된 태그 규칙을 확인·편집합니다. 적용을 눌러야 저장되며 기본 규칙 복원도 초안만 바꿉니다. 알 수 없는 외부 태그는 그대로 두고, 기존 기억은 유지됩니다. 바꾸려면 원하는 구간을 직접 재분석하세요.');hint.className='ms-input-hint';
+    const head=make('div');head.className='ms-input-head';head.setAttribute('aria-hidden','true');head.append(make('span','태그 이름 · XML 예시 · 표식'),make('span','처리 방법'),make('span','직접 구분자'),make('span'));
+    const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';
+    box.append(style,toolbar,status,hint,head,list);
     const previewArea=make('section'),previewButton=make('button','현재 채팅 미리보기'),previewStatus=make('p'),warning=make('p'),output=make('pre');
     previewArea.className='ms-input-preview';previewButton.type='button';previewButton.dataset.sourceInputPreview='';previewButton.disabled=true;
     previewStatus.dataset.sourceInputPreviewStatus='';previewStatus.setAttribute('role','status');previewStatus.setAttribute('aria-live','polite');
@@ -58149,13 +58159,14 @@ function mountMemorySuiteSourceInputControls(container, config) {
       status.textContent='변경한 규칙을 적용해 주세요.';setEnabled();void showPreview();
     }
     function addRow(value=null,key='ignoredTags',control=null) {
-      const element=make('div'),fields=make('div'),tagLabel=make('label','태그 이름 또는 XML 예시'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label','처리 방법'),action=make('select'),remove=make('button','삭제');
+      const hidden=text=>{const span=make('span',text);span.className='ms-sr-only';return span;};
+      const element=make('div'),fields=make('div'),tagLabel=make('label'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label'),action=make('select'),remove=make('button','삭제');
       element.dataset.sourceInputRow='';element.className='ms-input-row';fields.className='ms-input-fields';tagLabel.dataset.ruleTagLabel='';
-      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='예: decoration 또는 <decoration>예시</decoration>';tagLabel.append(valueInput);
+      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='예: decoration 또는 <decoration>예시</decoration>';tagLabel.append(hidden('태그 이름 또는 XML 예시'),valueInput);
       custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','직접 구분자'));
-      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;
-      const openLabel=make('label','여는 표식'),closeLabel=make('label','닫는 표식');openLabel.append(open);closeLabel.append(close);customFields.append(openLabel,closeLabel);
-      for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(action);
+      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;open.placeholder='여는 표식 예: [START]';close.placeholder='닫는 표식 예: [END]';
+      const openLabel=make('label'),closeLabel=make('label');openLabel.append(hidden('여는 표식'),open);closeLabel.append(hidden('닫는 표식'),close);customFields.append(openLabel,closeLabel);
+      for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(hidden('처리 방법'),action);
       remove.type='button';remove.dataset.ruleDelete='';remove.setAttribute('aria-label','이 규칙 삭제');
       if(value&&typeof value==='object'){custom.checked=true;open.value=value.open;close.value=value.close;}else if(value)valueInput.value=value;
       const row={element,value:valueInput,custom,open,close,action,remove,control};rows.push(row);
@@ -58168,8 +58179,8 @@ function mountMemorySuiteSourceInputControls(container, config) {
         syncMode();changed();
       };valueInput.oninput=open.oninput=close.oninput=changed;action.onchange=changed;
       remove.onclick=()=>{if(!loaded||applying||isEmpty(row))return;removed.push({row,index:rows.indexOf(row)});if(removed.length>128)removed.shift();rows=rows.filter(item=>item!==row);element.remove();changed();};
-      fields.append(tagLabel,customLabel,customFields);if(control)fields.append(make('small',controlLabels[control]||'저장된 기본 규칙'));
-      element.append(fields,actionLabel,remove);list.append(element);return row;
+      fields.append(tagLabel,customFields);if(control){const chip=make('small',controlLabels[control]||'저장된 기본 규칙');chip.className='ms-input-chip';fields.append(chip);}
+      element.append(fields,actionLabel,customLabel,remove);list.append(element);return row;
     }
     function fill(rules=sourceRules(),resetInitial=true) {
       rows=[];removed=[];list.replaceChildren();
@@ -58203,18 +58214,51 @@ function mountMemorySuiteSourceInputControls(container, config) {
     loadPreferences().then(()=>{if(disposed())return;loaded=true;fill();status.textContent='';if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!disposed())status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
   }
 
+function memorySuiteReanalysisGridCss(){return `
+.ms-reanalysis-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));grid-auto-flow:row dense;gap:10px;min-width:0}
+.ms-reanalysis-turn--compact{display:flex;flex-direction:column;gap:5px;aspect-ratio:1/1;min-width:0;min-height:0;padding:12px;border:1px solid var(--border,#8885);border-radius:var(--r-md,12px);background:var(--surface,transparent);overflow:hidden;overflow-wrap:anywhere;cursor:pointer;transition:border-color .16s,box-shadow .16s,background .16s}
+.ms-reanalysis-turn--compact:hover{border-color:var(--border2,#8889)}
+.ms-reanalysis-turn--compact:has(>label input:checked){border-color:var(--accent,#79522d);box-shadow:inset 0 0 0 1px var(--accent,#79522d);background:var(--accent-soft,var(--surface,transparent))}
+.ms-reanalysis-turn--compact:has(>label input:disabled){cursor:default;opacity:.75}
+.ms-reanalysis-turn--compact>label{display:flex;align-items:flex-start;gap:8px;min-width:0;cursor:pointer}
+.ms-reanalysis-turn--compact>label input{flex:none;width:17px;height:17px;margin:1px 0 0;accent-color:var(--accent,#79522d)}
+.ms-reanalysis-turn--compact>label strong{min-width:0;font-size:14px;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.ms-reanalysis-turn--compact .ms-turn-meta{margin:0;font-size:11.5px;line-height:1.45;color:var(--text3,inherit);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.ms-reanalysis-turn--compact .ms-turn-eyebrow{font-size:11px;font-weight:700;color:var(--text3,inherit);letter-spacing:.02em}
+.ms-reanalysis-turn--compact .ms-turn-summary{flex:0 1 auto;min-height:0;margin:0;font-size:12.5px;line-height:1.55;color:var(--text2,inherit);overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5}
+.ms-reanalysis-turn--compact>details{margin-top:auto;font-size:12px}
+.ms-reanalysis-turn--compact>details>summary{cursor:pointer;color:var(--text2,inherit);font-weight:650}
+.ms-reanalysis-turn--compact pre{margin:8px 0 0;padding:10px 12px;max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border,#8885);border-radius:var(--r-sm,8px);background:var(--surface2,transparent);font:12px/1.6 var(--font-mono,ui-monospace,monospace)}
+.ms-reanalysis-turn--compact.is-open{grid-column:1/-1;aspect-ratio:auto;cursor:default}
+.ms-reanalysis-turn--compact.is-open .ms-turn-summary{display:block;white-space:pre-wrap}
+@media(max-width:600px){.ms-reanalysis-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.ms-reanalysis-turn--compact{padding:10px}.ms-reanalysis-turn--compact .ms-turn-summary{-webkit-line-clamp:4}}
+`;}
 // One card per turn keeps checkboxes aligned and allows source inspection without dispatch.
 function appendMemorySuiteReanalysisRange(list,range,config) {
   const doc=list.ownerDocument,make=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
   const row=make('section'),label=make('label'),input=make('input'),details=make('details'),summary=make('summary','원문 보기'),output=make('pre');
-  row.className='ms-reanalysis-turn';row.style.cssText='display:grid;gap:8px;padding:14px;border:1px solid #8885;border-radius:12px;min-width:0';
-  label.style.cssText='display:flex;align-items:center;gap:10px';input.type='checkbox';input.value=range.key;input.setAttribute('aria-label',range.label+' 재분석 선택');input.onchange=config.changed;
-  label.append(input,make('strong',range.label));row.append(label);
-  if(range.description){const description=make('p',range.description);description.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(description);}
-  if(range.summary){const excerpt=make('p','저장된 내용 · '+range.summary);excerpt.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(excerpt);}
-  output.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto';details.append(summary,output);row.append(details);list.append(row);
+  input.type='checkbox';input.value=range.key;input.setAttribute('aria-label',range.label+' 재분석 선택');input.onchange=config.changed;
+  if(config.compact){
+    // Square cards: many turns per screen; opening the source widens the card to a full row.
+    const host=list.getRootNode?.()?.head||list.getRootNode?.();
+    if(host?.querySelector&&!host.querySelector('style[data-ms-reanalysis-grid]')){const style=make('style');style.dataset.msReanalysisGrid='';style.textContent=memorySuiteReanalysisGridCss();host.append(style);}
+    row.className='ms-reanalysis-turn ms-reanalysis-turn--compact';
+    const title=make('strong',range.label);title.title=range.label;label.append(input,title);row.append(label);
+    if(range.description){const description=make('p',range.description);description.className='ms-turn-meta';description.title=range.description;row.append(description);}
+    if(range.summary){const eyebrow=make('small','저장된 내용'),excerpt=make('p',range.summary);eyebrow.className='ms-turn-eyebrow';excerpt.className='ms-turn-summary';excerpt.title=range.summary;row.append(eyebrow,excerpt);}
+    row.onclick=event=>{if(!event.target.closest?.('label,details,button,a')&&!input.disabled)input.click();};
+  }else{
+    row.className='ms-reanalysis-turn';row.style.cssText='display:grid;gap:8px;padding:14px;border:1px solid #8885;border-radius:12px;min-width:0';
+    label.style.cssText='display:flex;align-items:center;gap:10px';
+    label.append(input,make('strong',range.label));row.append(label);
+    if(range.description){const description=make('p',range.description);description.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(description);}
+    if(range.summary){const excerpt=make('p','저장된 내용 · '+range.summary);excerpt.style.cssText='margin:0;white-space:pre-wrap;overflow-wrap:anywhere';row.append(excerpt);}
+    output.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto';
+  }
+  details.append(summary,output);row.append(details);list.append(row);
   let serial=0;
   details.ontoggle=async()=>{
+    if(config.compact)row.classList.toggle('is-open',details.open);
     if(!details.open){serial++;return;}
     const token=++serial;output.textContent='원문을 읽는 중…';
     try{const sample=await config.read();if(!row.isConnected||!config.current()||token!==serial)return;

@@ -24,19 +24,24 @@ for(const mode of ['plugin_only','server_only'])for(const scenario of ['missing'
    HTMLElement:gui.dom.window.HTMLElement,MutationObserver:gui.dom.window.MutationObserver,getComputedStyle:gui.dom.window.getComputedStyle.bind(gui.dom.window)});
   r.setLlmResponder(async call=>{await new Promise(resolve=>release=resolve);return scenario==='cold'?coldResponder(call):{type:'success',result:JSON.stringify(envelope(2))};});
   const source=plain(r.chat.message);await r.hayaku.showUi();
-  const nav=gui.document.querySelector('[data-go="recovery"]')||gui.document.querySelector('#hayakuViewerTabRecovery');await nav?.fire('click');
-  const run=gui.document.querySelector('#hayakuMaintenanceRun');assert(run,'production action must exist');const pending=run.fire('click');
+  const overview=gui.document.querySelector('#hayakuOverviewMaintenance');assert(overview,'continuity overview action must exist');
+  assert.equal(overview.textContent.trim(),'상태 점검 및 자동 복구');assert.equal(overview.hasAttribute('data-hayaku-viewer-goto'),false,'overview action must execute rather than navigate');
+  if(scenario==='missing')snapshot(mode+'-overview-entry',gui);
+  if(scenario==='cold'){const nav=gui.document.querySelector('[data-go="recovery"]')||gui.document.querySelector('#hayakuViewerTabRecovery');await nav?.fire('click');}
+  const run=scenario==='missing'?overview:gui.document.querySelector('#hayakuMaintenanceRun');assert(run,'production action must exist');const pending=run.fire('click');
   const choices=await waitFor(()=>{const n=gui.document.querySelector('#hayakuMaintenanceAnalysisChoices');return n&&!n.hidden?n:null;},'analysis confirmation');
   assert.equal(r.llmCalls.length,0);assert.equal(gui.document.querySelector('#hayakuNativeJobOverlay').hidden,false);
   assert.match(gui.document.querySelector('#hayakuMaintenanceJobPlan').textContent,/기본.*회.*최대/);snapshot(mode+'-'+scenario+'-confirmation',gui);
   choices.querySelector('[data-maintenance-analysis="yes"]').click();
   await waitFor(()=>release,'real native model boundary');assert.equal(gui.document.querySelector('#hayakuNativeJobOverlay').hidden,false);
+  assert.equal(overview.disabled,true);assert.equal(gui.document.querySelector('#hayakuMaintenanceRun').disabled,true,'both entry points share the same running state');
   assert.match(gui.document.querySelector('#hayakuNativeJobState').textContent,/분석/);snapshot(mode+'-'+scenario+'-running',gui);
   gui.document.querySelector('#minimizeHayakuNativeJob').click();assert.equal(gui.document.querySelector('#hayakuNativeJobOverlay').hidden,true);
   gui.document.querySelector('#hayakuNativeJobChip').click();assert.equal(gui.document.querySelector('#hayakuNativeJobOverlay').hidden,false);
   const first=release;release=null;first();
   if(scenario==='cold'){await waitFor(()=>release,'second cold start unit');const second=release;release=null;second();}
   const result=await pending;assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.physicalCalls,scenario==='cold'?2:1);
+  assert.equal(overview.disabled,false);assert.equal(gui.document.querySelector('#hayakuMaintenanceRun').disabled,false);
   assert.deepEqual(plain(r.chat.message),source);assert.equal(result.after.needsBinding,false);assert.deepEqual(plain(result.after.targetTurns),[]);
   assert.match(gui.document.querySelector('#hayakuSafeHealthStatus').textContent,/점검·복구 완료/);assert.equal(gui.document.querySelector('#hayakuNativeJobTitle').textContent,'상태 점검 및 자동 복구');
   snapshot(mode+'-'+scenario+'-completed',gui);

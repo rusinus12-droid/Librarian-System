@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-27T06:56:21.020Z",
+  "generatedAt": "2026-10-27T07:55:41.331Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4016,24 +4016,24 @@
       "bytes": 3416
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "63c6da7972eb1081c6b494e1e300fba3930bf1386e4e58d6a28e1a33bc5786b9",
-      "bytes": 3682432
+      "sha256": "7e4855fded01640f4b16980ca53f9c8e34856c34884623d1f5ed7367f427b87f",
+      "bytes": 3688704
     },
     "plugins/GRADIA.js": {
       "sha256": "4e43c6b81ceb21d0d2faf3ed198f0a7ca2b6657e8c71f27cf2e290a0b49545f4",
       "bytes": 3019277
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "e58010d9be6eb310a9392fa777224f42f6c575761d213ddbb1ccb283846cd8b3",
-      "bytes": 4153766
+      "sha256": "294446055dbce512d3585abdb7e5a742c783232f230474b0db0d8ee5ab493c4d",
+      "bytes": 4164103
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "3fda2ec012c86d969855130e785a2759ecc20c0be60d811feb9ca5c4b92f3b28",
       "bytes": 1649278
     },
     "plugins/LIBRA.js": {
-      "sha256": "c42365d6c046e3e5cfe2ac2a5a943647fff28380c6bf96e52af6d3296729ba2f",
-      "bytes": 6736339
+      "sha256": "347b2fe5b219de563f17235ef4dc2badac6bb1c3f15869b87b09bf5628f47504",
+      "bytes": 6742611
     },
     "plugins/RETRACE.js": {
       "sha256": "04f3a6defddab22b6f544acbb229012cd442672acdb44cb4f3a5aaf79ced4979",
@@ -4168,8 +4168,8 @@
       "bytes": 31884
     },
     "sdk/MemorySuiteSourceInputControls.source.js": {
-      "sha256": "83b0bbc53e8a09d78a764871b295b0461d1d418a0a03cc768658837287f43d9b",
-      "bytes": 30236
+      "sha256": "7e2edfada6a442bfe286dd57eb7953b6322782bc1a707bb44e24e627147169ae",
+      "bytes": 36508
     },
     "sdk/MemorySuiteSourceReview.source.js": {
       "sha256": "f4034be5499753f71c018ab55fda89cda146c287cda20ab541e26b48b61ea020",
@@ -6784,8 +6784,8 @@
       "bytes": 10424
     },
     "tests/hayaku_maintenance_server_gui_test.cjs": {
-      "sha256": "64f0c371168966135a6c6f9a6ced82c6a682e9f2f1603d4e02245ac803e35484",
-      "bytes": 11368
+      "sha256": "1f09f9557ca8ca94724637c3f5d83d2f10a4b010e8107f649eed29a256204e74",
+      "bytes": 12108
     },
     "tests/hayaku_manual_preflight_diagnostics_runtime_test.cjs": {
       "sha256": "af78e2a1bc7a3aa0fb45380e5149fd77fd5c457562102e360c794847d3912f9d",
@@ -7134,6 +7134,10 @@
     "tests/hayaku_storage_mode_parity_test.cjs": {
       "sha256": "5fcff5437412c9c9ab38b245fbf779be64152ec7e722c8360319e947f83201f1",
       "bytes": 9573
+    },
+    "tests/hayaku_storage_read_coalescing_test.cjs": {
+      "sha256": "6ce7cc0f06fe42289dc77d2eea7a31edd670c42e0f5f6f50001856c02989ad98",
+      "bytes": 3663
     },
     "tests/hayaku_storage_reconciliation_journal_fault_test.cjs": {
       "sha256": "83b8b56e9600657c5f7a1b7720ee6c198472a619e0b7c0e5f10e93daefc9ff39",
