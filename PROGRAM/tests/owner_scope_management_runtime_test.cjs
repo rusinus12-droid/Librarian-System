@@ -49,11 +49,11 @@ const deadline=setTimeout(()=>{throw Error('scope management regression timeout'
   }finally{await f.close();}
   const values=new Map(Array.from({length:337},(_,i)=>[ns+'.'+(i===0?'A':i===1?'B':'K'+i),'PRIVATE_BODY_'+i]));values.set(ns+'.ORPHAN','PRIVATE_ORPHAN');
   const catalog={characters:[{chaId:'one',name:'<img src=x onerror=bad>',chats:Array.from({length:337},(_,i)=>({id:i===0?'A':i===1?'B':'K'+i,name:'Chat '+i}))}]};
-  const g=await fixture(variant,{values,catalog,adapter:async({hostScopes,records})=>({scopes:records.map(row=>{const id=row.logicalKey.slice(ns.length+1);return {scopeId:id,scopeKey:id,characterId:id==='ORPHAN'?'removed':'one',chatId:id};}),records:records.map(row=>({...row,classification:'scope',scopeId:row.logicalKey.slice(ns.length+1)})),blockers:[],completeKnownScopes:true}),bridgeOptions:{scopeManagement:true}}),dom=new JSDOM('<!doctype html><div id="host"></div>');
+  const g=await fixture(variant,{values,catalog,adapter:async({hostScopes,records})=>({scopes:records.map(row=>{const id=row.logicalKey.slice(ns.length+1);return {scopeId:id,scopeKey:id,characterId:id==='ORPHAN'?'removed':'one',chatId:id};}),records:records.map(row=>({...row,classification:'scope',scopeId:row.logicalKey.slice(ns.length+1)})),blockers:[],completeKnownScopes:true}),bridgeOptions:{scopeManagement:true},current:'K200'}),dom=new JSDOM('<!doctype html><div id="host"></div>');
   try{
    const host=dom.window.document.getElementById('host');await g.bridge.mountScopeManagementPanel(host);
    const q=selector=>host.querySelector(selector);assert.match(q('[data-scope-summary]').textContent,/338/);
-   assert.equal(host.querySelectorAll('[data-scope-row]').length,50,'bounded rendering does not cap the inventory');assert.equal(host.querySelectorAll('img').length,0,'native labels are escaped');
+   assert.equal(host.querySelectorAll('[data-scope-row]').length,50,'bounded rendering does not cap the inventory');assert.equal(q('[data-scope-row]').getAttribute('data-scope-row'),'K200','current scope is listed first');assert.equal(q('[data-scope-row]').getAttribute('data-current'),'true');assert.equal(host.querySelectorAll('img').length,0,'native labels are escaped');
    q('[data-scope-filter]').value='detached';q('[data-scope-filter]').dispatchEvent(new dom.window.Event('change'));
    assert.equal(host.querySelectorAll('[data-scope-row]').length,1);assert.equal(q('[data-scope-row]').getAttribute('data-scope-row'),'ORPHAN');
    q('[data-scope-filter]').value='all';q('[data-scope-search]').value='K336';q('[data-scope-search]').dispatchEvent(new dom.window.Event('input'));

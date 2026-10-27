@@ -11211,7 +11211,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let catalog=null,busy=false,limit=50,serial=0;const selected=new Set();
     const filtered=()=>{const term=q('[data-scope-search]').value.trim().toLocaleLowerCase(),filter=q('[data-scope-filter]').value;
       return (catalog?.rows||[]).filter(row=>(!term||[row.characterName,row.chatTitle,row.scopeKey,row.scopeId].join(' ').toLocaleLowerCase().includes(term))
-        &&(filter==='all'||filter==='issues'&&(row.issues.length>0||row.unavailable)||filter==='memory'&&row.ownedRecordCount>0&&!row.detached||filter==='detached'&&row.detached&&row.ownedRecordCount>0||filter==='empty'&&row.ownedRecordCount===0&&!row.unavailable&&row.issues.length===0&&catalog.completeKnownScopes||row.mode===filter));};
+        &&(filter==='all'||filter==='issues'&&(row.issues.length>0||row.unavailable)||filter==='memory'&&row.ownedRecordCount>0&&!row.detached||filter==='detached'&&row.detached&&row.ownedRecordCount>0||filter==='empty'&&row.ownedRecordCount===0&&!row.unavailable&&row.issues.length===0&&catalog.completeKnownScopes||row.mode===filter)).sort((x,y)=>Number(y.current===true)-Number(x.current===true));};
     // Like Flashback's scope cleanup: any non-current, non-server scope can be ticked; the safety checks run
     // when an action is started and say which rows were skipped and why.
     const deleteTarget=()=>q('[data-scope-delete-target]').value;
