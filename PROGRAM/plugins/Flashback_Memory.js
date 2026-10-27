@@ -2798,6 +2798,9 @@ const PLUGIN_VERSION = '1.3.8';
   const ACTIVITY_LOG_MAX_ENTRIES = 30;
   const MAINTENANCE_JOURNAL_VERSION = 1;
   const MAINTENANCE_JOURNAL_WRITE_TIMEOUT_MS = 1500;
+  // Reads only verify that no physical repair is unresolved. In server mode the read
+  // crosses the network at startup; a 1.5s miss left every repair blocked until reload.
+  const MAINTENANCE_JOURNAL_READ_TIMEOUT_MS = 15000;
   const MAINTENANCE_JOURNAL_STALE_MS = 30 * 60 * 1000;
   const STORAGE_IO_TIMEOUT_MS = 60000;
   const REMOTE_EMBEDDING_CONCURRENCY = 2;
@@ -3227,6 +3230,18 @@ const PLUGIN_VERSION = '1.3.8';
     && !(value.physicalRepair.state==='settled'&&value.status==='running');
 
   const maintenanceJournalAdmissions = new Map();
+  const maintenanceProgressObservers = new Map();
+  const reportMaintenanceTask = (options, stage, fields = {}) => {
+    try { options?.onProgress?.({ ...fields, stage, at: Date.now() }); } catch (_) {}
+  };
+  const reportMaintenanceJournal = journal => reportMaintenanceTask({ onProgress: maintenanceProgressObservers.get(journal?.operationId) }, journal?.stage || 'preflight', {
+    operationId: journal?.operationId, scopeKey: journal?.scopeKey, progress: journal?.progress, execution: journal?.execution
+  });
+  const observeMaintenanceLedger = (ledger, options) => typeof options?.onProgress !== 'function' ? ledger : {
+    ...ledger,
+    reserve(...args) { const result=ledger.reserve(...args);reportMaintenanceTask(options,'embedding_request',{execution:ledger.snapshot()});return result; },
+    settle(...args) { const result=ledger.settle(...args);reportMaintenanceTask(options,'embedding_response',{execution:ledger.snapshot()});return result; }
+  };
   const persistMaintenanceJournal = async (patch = {}) => {
     const now = Date.now();
     const current = Runtime.maintenanceJournal && typeof Runtime.maintenanceJournal === 'object'
@@ -3247,6 +3262,7 @@ const PLUGIN_VERSION = '1.3.8';
       if(admission)throw error;
       warn('maintenance journal write failed', error);
     }
+    reportMaintenanceJournal(next);
     return next;
   };
 
@@ -3266,6 +3282,7 @@ const PLUGIN_VERSION = '1.3.8';
     Runtime.maintenanceJournal = next;
     if (patch.busyLabel && Runtime.guiBusyDepth > 0) Runtime.guiBusyLabel = compact(patch.busyLabel, 120);
     try { applyBusyState(); } catch (_) {}
+    reportMaintenanceJournal(next);
     return next;
   };
 
@@ -3305,7 +3322,7 @@ const PLUGIN_VERSION = '1.3.8';
       const assertPinnedRead=()=>{if(!readOpen||Runtime.unloaded||getLiveApi()?.pluginStorage!==physicalStore)throw Error('HEALTH_JOURNAL_READ_UNVERIFIED');};
       try{physicalRaw=await RisuCompat.runLocalPhysicalMutation(STORAGE.maintenanceJournal,async()=>{
         assertPinnedRead();const value=await physicalStore.getItem(STORAGE.maintenanceJournal);assertPinnedRead();return value;
-      },'physical maintenance journal read',MAINTENANCE_JOURNAL_WRITE_TIMEOUT_MS);}finally{readOpen=false;}
+      },'physical maintenance journal read',MAINTENANCE_JOURNAL_READ_TIMEOUT_MS);}finally{readOpen=false;}
       if(physicalRaw!=null){
         let local;try{local=typeof physicalRaw==='string'?JSON.parse(physicalRaw):physicalRaw;}catch(_){throw Error('HEALTH_JOURNAL_READ_UNVERIFIED');}
         const normalized=normalizeMaintenanceJournal(local);
@@ -3323,7 +3340,7 @@ const PLUGIN_VERSION = '1.3.8';
 
       const stored = await withDeadline(
         RisuCompat.getItem(STORAGE.maintenanceJournal),
-        MAINTENANCE_JOURNAL_WRITE_TIMEOUT_MS,
+        MAINTENANCE_JOURNAL_READ_TIMEOUT_MS,
         'maintenance journal read'
       );
       const parsed = typeof stored === 'string' ? JSON.parse(stored) : stored;
@@ -20471,6 +20488,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       scopeKey, originScopeKey: embeddingOriginScope(record), sourceRevision, targetProfile,
       jobId: embeddingPhysicalJobId(scopeKey, sourceRevision, targetProfile, embeddingOriginScope(record)) };
   };
+  // A retired record whose inline vector was dropped to fit the worldline value
+  // becomes ordinary raw-first work: restoring it re-embeds instead of failing
+  // the commit readback as a missing vector payload.
+  const vectorlessRetiredRecord = (record, settings = Runtime.settings || DEFAULTS) => {
+    const stripped = { ...record, vector: [], vectorRef: null, vectorPayloadMissing: false, vectorPayloadLocal: false, vectorStorageMode: '',
+      dim: 0, embeddingDimensions: 0, provider: '', model: '', embeddingProvider: '', embeddingModel: '', embeddingProfileId: '',
+      embeddingDescriptor: null, embeddingProvenance: null, retiredVectorDropped: true };
+    delete stripped.embeddingReceipt;
+    return { ...stripped, embeddingWork: rawEmbeddingWorkForRecord(stripped, settings) };
+  };
   const isValidatedVectorlessRecord = record => {
     const work = record?.embeddingWork;
     if (work?.schema !== 'flashback.embedding_work.v1' || !['pending', 'unconfigured', 'repair_needed', 'running', 'failed', 'uncertain'].includes(work.status)
@@ -20673,7 +20700,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (!key || seenRecords.has(key) || !isResponseMemoryRecord(record) || !record.text || !Array.isArray(record.vector)) return false;
       seenRecords.add(key);
       return true;
-    }).map(record => ({
+    }).map(record => record.retiredVectorDropped === true && !isValidatedVectorlessRecord(record)
+      ? vectorlessRetiredRecord({ ...record, scopeKey: text(scopeKey || record.scopeKey || '') }) : record).map(record => ({
       ...record,
       scopeKey: text(scopeKey || record.scopeKey || ''),
       lifecycleStatus: ['quarantined', 'inactive_variant', 'detached_branch', 'orphaned'].includes(record.lifecycleStatus) ? record.lifecycleStatus : 'orphaned',
@@ -20716,13 +20744,33 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     return normalized;
   };
+  // Retired raw records keep their text for variant restore, plus an inline vector.
+  // 1024-d vectors (~20 KB each) let one re-sync of many turns push the worldline
+  // past the server's single-value limit (4 MiB). Drop the oldest retired vectors
+  // first; a restored record without one is re-embedded like any missing vector.
+  const TURN_WORLDLINE_MAX_STORED_BYTES = 3 * 1024 * 1024;
+  const turnWorldlineBytes = value => new TextEncoder().encode(safeStringify(value)).length;
+  const compactTurnWorldlineForStorage = worldline => {
+    if (turnWorldlineBytes(worldline) <= TURN_WORLDLINE_MAX_STORED_BYTES) return worldline;
+    const retiredRecords = worldline.retiredRecords.slice();
+    let bytes = turnWorldlineBytes(worldline);
+    for (let index = 0; index < retiredRecords.length && bytes > TURN_WORLDLINE_MAX_STORED_BYTES; index++) {
+      const record = retiredRecords[index];
+      if (!Array.isArray(record.vector) || !record.vector.length) continue;
+      const saved = new TextEncoder().encode(safeStringify(record.vector)).length - 2;
+      retiredRecords[index] = vectorlessRetiredRecord(record);
+      bytes -= saved;
+    }
+    // Text is never dropped; the storage layer still refuses a value it cannot hold.
+    return { ...worldline, retiredRecords };
+  };
   const saveTurnWorldline = async (scopeKey, value, saveOptions = {}) => {
     const end=beginFlashbackOwnerWrite();try{
     if (flashbackRecallRequests.active?.scopeKey === scopeKey) flashbackRecallRequests.active.cancelled = true;
     if (!scopeKey) return emptyTurnWorldline('');
     const manifest = await loadScopeManifest(scopeKey);
     assertNoForeignScopeCollision(manifest, 'turn worldline save');
-    const normalized = normalizeTurnWorldline(value, scopeKey);
+    const normalized = compactTurnWorldlineForStorage(normalizeTurnWorldline(value, scopeKey));
     await saveOptions.assertCurrent?.();
     await requireStorageWrite(scopeKeys.worldline(scopeKey), safeStringify(normalized), 'turn worldline save');
     await saveOptions.sourceEditValidate?.();
@@ -30924,7 +30972,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           try{await withDeadline(error.storageMutationSettlement,12000,'explicit source publication settlement');}
           catch{throw Error('SOURCE_EDIT_RESTORE_UNCONFIRMED');}
         }
-        const expectedWorldline=safeStringify(normalizeTurnWorldline(nextWorldline,scope.scopeKey));
+        const expectedWorldline=safeStringify(compactTurnWorldlineForStorage(normalizeTurnWorldline(nextWorldline,scope.scopeKey)));
         const currentManifest=await loadScopeManifest(scope.scopeKey);
         const currentRaw=currentManifest[MANIFEST_STORAGE_READ]?.raw;
         const currentWorldline=await RisuCompat.getItem(scopeKeys.worldline(scope.scopeKey));
@@ -40132,10 +40180,15 @@ const MemorySuiteHealthRecovery = (() => {
       if(physicalContext(options)){physicalContext(options).activeAttemptId=proof.attemptId;physicalContext(options).activeJobIds=proof.targets.map(target=>target.jobId);}
       const vectors = await embedTexts(proof.targets.map(target => target.text), cfg, {
         purpose: 'document', scope: proof.scope, allowHashFallback: false, concurrency: 1, physicalRecovery:physicalContext(options),physicalJobIds:proof.targets.map(target=>target.jobId), maintenanceSourceValidate:options.maintenanceSourceValidate,
-        contextGroupIds: proof.targets.map(() => proof.sourceHash), operationLedger: ledger, deadlineAt, signal: options.signal,
-        validateAuthority: () => markEmbeddingAttemptSubmitted(proof) });
+        contextGroupIds: proof.targets.map(() => proof.sourceHash), operationLedger: observeMaintenanceLedger(ledger, options), deadlineAt, signal: options.signal,
+        validateAuthority: async () => {
+          await markEmbeddingAttemptSubmitted(proof);
+          reportMaintenanceTask(options, 'embedding_request', { scopeKey: proof.scope.scopeKey, operationId: options.maintenanceOperationId,
+            currentTurn: options.currentTurn || 0, groupRecords: proof.targets.length, execution: ledger.snapshot() });
+        } });
       if (vectors.flashbackFallbackUsed || vectors.flashbackEmbeddingProvider !== normalizeProvider(cfg.embeddingProvider)
         || vectors.flashbackEmbeddingModel !== cfg.embeddingModel || vectors.length !== proof.targets.length) throw embeddingWorkError('FLASHBACK_EMBEDDING_RESULT_PROFILE_INVALID');
+      reportMaintenanceTask(options, 'saving_vectors', { scopeKey: proof.scope.scopeKey, execution: ledger.snapshot() });
       await withEmbeddingWorkLock(proof.scope.scopeKey,proof, async () => {
         const current = await assertEmbeddingAttemptCurrent(proof);
         const patches = new Map(proof.targets.map((target, index) => [target.id, { target, vector: vectors[index] }]));
@@ -40322,6 +40375,13 @@ const MemorySuiteHealthRecovery = (() => {
     });
   };
   const activeEmbeddingQueues = new Set();
+  // Track admission before the first async boundary as well as the write pass.
+  // Inspection pauses the next group; an issued group retains its normal receipt
+  // and readback path before any snapshot is captured.
+  const pendingEmbeddingQueueRuns = new Set(), embeddingQueueIdleWaiters = new Set();
+  let maintenanceInspectionReaders = 0;
+  const maintenanceQueuePaused = options => ({ scopeKey: text(options.scopeKey || ''), ok: false, ready: 0, failed: 0,
+    processedSources: 0, physicalRequests: 0, pendingSources: 0, inventoryKnown: false, reason: 'maintenance_inspection_active' });
   const embeddingQueueInventory = (boundary, records, worldline, options = {}, registry = null) => {
     const groups = new Map();
     for (const record of records) {
@@ -40354,8 +40414,9 @@ const MemorySuiteHealthRecovery = (() => {
     }
     return { eligible, blocked, inventorySources: groups.size, blockedSources: blocked.length, uncertainSources, failedSources, legacySources };
   };
-  const processPendingEmbeddingQueue = async (options = {}) => {
+  const processPendingEmbeddingQueuePass = async (options = {}) => {
     if(flashbackRecoveryActions?.isBusy()&&!physicalContext(options))return {ok:false,ready:0,failed:0,reason:'FLASHBACK_REPAIR_ACTION_BUSY'};
+    if(physicalRepairUnresolved()&&!physicalContext(options))await reverifyMaintenanceJournal();
     if(physicalRepairUnresolved()&&!physicalContext(options))return {ok:false,ready:0,failed:0,reason:'FLASHBACK_PHYSICAL_OUTCOME_UNRESOLVED'};
     // Explicitly disabled work has no scope/inventory read authority. Preserve
     // busy/unresolved fences above and perform all authority checks for real work.
@@ -40401,9 +40462,12 @@ const MemorySuiteHealthRecovery = (() => {
       assertCompleteScopeLoad(loaded, 'pending embedding queue discovery');
       const worldline = await loadTurnWorldline(scopeKey,physicalReaders(options));
       inventory = embeddingQueueInventory(boundary, loaded.records, worldline, options, readEmbeddingAttemptRegistry(loaded.manifest));
+      reportMaintenanceTask(options, 'embedding_queue', { scopeKey, totalRecords: inventory.eligible.reduce((sum, group) => sum + group.records, 0), completedRecords: 0, execution: ledger.snapshot() });
       ledger.check();
       if (!inventory.eligible.length && migration.deferred) stopReason = 'migration_deferred';
       for (const group of inventory.eligible) {
+        if (maintenanceInspectionReaders > 0) { stopReason = 'maintenance_inspection_active'; break; }
+        if (options.automatic === true && Runtime.maintenanceActiveOperationId) { stopReason = 'maintenance_running'; break; }
         if (processedSources >= maxSources || requestCount() >= maxRequests || ledger.snapshot().requestCount >= ledger.snapshot().maxRequests) break;
         if (processedRecords + group.records > maxRecords || processedChars + group.chars > maxChars) { budgetDeferred++; continue; }
         ledger.check();
@@ -40412,10 +40476,14 @@ const MemorySuiteHealthRecovery = (() => {
           stopReason = current.settings.embeddingAutoProcess === false ? 'automatic_paused' : 'request_active'; break;
         }
         const result = await processPendingEmbeddingWork({ sourceHash: group.sourceHash, originScopeKey: group.originScopeKey, retryFailed: options.retryFailed === true,
-          operationLedger: ledger, deadlineAt: Math.min(Date.now() + requestTimeoutMs, deadlineAt), signal: options.signal, maintenanceSourceValidate: options.maintenanceSourceValidate, sourceGroups:options.sourceGroups, physicalRecovery:physicalContext(options) });
+          operationLedger: ledger, deadlineAt: Math.min(Date.now() + requestTimeoutMs, deadlineAt), signal: options.signal, maintenanceSourceValidate: options.maintenanceSourceValidate, sourceGroups:options.sourceGroups, physicalRecovery:physicalContext(options),
+          maintenanceOperationId: options.maintenanceOperationId, onProgress: options.onProgress,
+          currentTurn: finiteTurnIndex(loaded.records.find(record => record.sourceHash === group.sourceHash && embeddingOriginScope(record) === group.originScopeKey)) });
         processedSources++; processedRecords += group.records; processedChars += group.chars;
         ready += Number(result.ready || 0); failed += Number(result.failed || 0);
         if(result.uncertain)uncertainRecords+=group.records;
+        reportMaintenanceTask(options, 'embedding_done', { scopeKey, completedRecords: ready, failedRecords: failed, uncertainRecords,
+          execution: ledger.snapshot(), reason: result.reason || '' });
         if (!result.ok && !result.failed && !result.uncertain) {
           stopReason = result.reason || 'no_durable_progress'; break;
         }
@@ -40434,6 +40502,19 @@ const MemorySuiteHealthRecovery = (() => {
         pendingSources: Math.max(0, (inventory?.eligible.length || 0) - processedSources),
         reason: error?.code || error?.type || 'queue_failed', elapsedMs: Date.now() - startedAt };
     } finally { activeEmbeddingQueues.delete(scopeKey); }
+  };
+  const processPendingEmbeddingQueue = async (options = {}) => {
+    if (maintenanceInspectionReaders > 0) return maintenanceQueuePaused(options);
+    if (options.automatic === true && Runtime.maintenanceActiveOperationId) {
+      return { ...maintenanceQueuePaused(options), reason: 'maintenance_running' };
+    }
+    const run = {};
+    pendingEmbeddingQueueRuns.add(run);
+    try { return await processPendingEmbeddingQueuePass(options); }
+    finally {
+      pendingEmbeddingQueueRuns.delete(run);
+      if (!pendingEmbeddingQueueRuns.size) for (const resolve of embeddingQueueIdleWaiters) resolve();
+    }
   };
 
   const scheduledEmbeddingQueues = new Map();
@@ -40456,7 +40537,7 @@ const MemorySuiteHealthRecovery = (() => {
         invalidateGuiDataCache('all');
         if (isGuiRenderActive() && Runtime.guiTab === 'provider') void refreshEmbeddingWorkPanel(guiRoot, result);
         if ((result.ok && result.pendingSources > 0 && Number(result.ready || 0) + Number(result.failed || 0) > 0)
-          || ['queue_running', 'request_active'].includes(result.reason)) {
+          || ['queue_running', 'request_active', 'maintenance_inspection_active', 'maintenance_running'].includes(result.reason)) {
           schedulePendingEmbeddingWork(key, { reason: 'continue_pending', delayMs: result.reason === 'queue_running' ? 1000 : 250 });
         }
         if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('embedding_queue', 120);
@@ -43620,6 +43701,7 @@ ${cleanedText}`, 80),
       :code==='HEALTH_RESET_REVIEW_REQUIRED'?'서버 초기화 상태 검토가 필요합니다. 설정에서 서버 초기화 결정을 확인해 주세요.'
       :code==='HEALTH_SCOPE_OR_SOURCE_CHANGED'?'점검 중 대화 범위나 채팅 원문이 변경되었습니다. 다시 시도해 주세요.'
       :code==='HEALTH_SETTINGS_CHANGED'?'점검 중 설정이 변경되었습니다. 다시 시도해 주세요.'
+      :code==='HEALTH_BACKGROUND_WORK_BUSY'?'진행 중인 임베딩의 저장 확인을 기다리고 있습니다. 완료 후 다시 상태 점검을 실행해 주세요.'
       :code==='HEALTH_STORAGE_UNAVAILABLE'?'저장소에 접근할 수 없습니다.'
       :code==='HEALTH_SERVER_CONNECTION_REQUIRED'?'서버 연결 또는 인증 상태를 확인할 수 없어 정상 여부는 미검증입니다.'
       :code==='HEALTH_SERVER_URL_UNVERIFIED'?'서버 URL을 확인할 수 없습니다.'
@@ -43843,10 +43925,21 @@ ${cleanedText}`, 80),
     ? String(value) : 'PHYSICAL_VERIFICATION_INCOMPLETE';
   const physicalRepairUnresolved = () => Runtime.maintenanceJournalReadUnverified===true || (Runtime.lastPhysicalRepairResult && Runtime.lastPhysicalRepairResult.operationId===Runtime.maintenanceJournal?.operationId
     ? Runtime.lastPhysicalRepairResult.status==='uncertain' : ['active','unknown'].includes(Runtime.maintenanceJournal?.physicalRepair?.state));
+  // A failed journal read is not evidence of an unresolved repair. When nothing is
+  // running, read it again before refusing; a real active/unknown marker still blocks.
+  let maintenanceJournalReverify = null;
+  const reverifyMaintenanceJournal = async () => {
+    if (Runtime.maintenanceJournalReadUnverified !== true || Runtime.unloaded || Runtime.maintenanceActiveOperationId
+      || Runtime.portableMemoryActiveOperationId || flashbackRecoveryActions?.isBusy()) return !physicalRepairUnresolved();
+    if (!maintenanceJournalReverify) maintenanceJournalReverify = recoverMaintenanceJournal().finally(() => { maintenanceJournalReverify = null; });
+    await maintenanceJournalReverify;
+    return !physicalRepairUnresolved();
+  };
   const physicalRepairBusy = () => physicalRepairUnresolved() || Runtime.unloaded || Runtime.inAfter === true || Runtime.inBefore === true
     || !!Runtime.maintenanceActiveOperationId || !!Runtime.portableMemoryActiveOperationId
     || Runtime.finalizedCaptureInFlight?.size > 0 || activeEmbeddingQueues.size > 0 || activeEmbeddingWorkAttempts.size > 0;
   const collectPhysicalRepair = async () => {
+    if(physicalRepairUnresolved())await reverifyMaintenanceJournal();
     if(physicalRepairBusy())throw embeddingWorkError('FLASHBACK_PHYSICAL_OWNER_BUSY');
     const context=await createMaintenanceReadOnlyContext(),loaded=await loadScopeRecordsRaw(context.scope.scopeKey,context.readers);
     assertCompleteScopeLoad(loaded,'physical repair preview');
@@ -44370,7 +44463,26 @@ ${cleanedText}`, 80),
     getState:()=>Object.freeze({busy:!!flashbackOwnerLease,previewAvailable:!!archiveRepairOffer,physicalPending:flashbackOwnerLease?.holds.size||0})
   });
 
-  const inspectMemoryMaintenance = async (options = {}) => {
+  const withMaintenanceQueuePause = async (read, options = {}) => {
+    maintenanceInspectionReaders++;
+    let idle;
+    try {
+      if (pendingEmbeddingQueueRuns.size) {
+        reportMaintenanceTask(options, 'waiting_embedding');
+        const settled = new Promise(resolve => { idle = resolve; embeddingQueueIdleWaiters.add(resolve); });
+        try { await withDeadline(settled, STORAGE_IO_TIMEOUT_MS, 'maintenance embedding settlement'); }
+        catch (_) { throw maintenanceInspectionUnavailable('HEALTH_BACKGROUND_WORK_BUSY'); }
+      }
+      if (Runtime.unloaded) throw maintenanceInspectionUnavailable('HEALTH_STORAGE_UNAVAILABLE');
+      return await read();
+    } finally {
+      if (idle) embeddingQueueIdleWaiters.delete(idle);
+      maintenanceInspectionReaders--;
+    }
+  };
+  const inspectMemoryMaintenance = (options = {}) => withMaintenanceQueuePause(() => inspectMemoryMaintenanceSnapshot(options), options);
+  const inspectMemoryMaintenanceSnapshot = async (options = {}) => {
+    reportMaintenanceTask(options, 'scope');
     const readContext=await createMaintenanceInspectionContext(options);
     if(readContext.serverInspection&&readContext.inspection.complete!==true){
       readContext.assertCurrentSync();
@@ -44378,6 +44490,7 @@ ${cleanedText}`, 80),
         automatic:{strategy:'server_inspection_only',stages:[],blocked:true,reason:'inspection_incomplete'}};
     }
     const {settings,snapshot,scope,readers,credentialStatus}=readContext;
+    reportMaintenanceTask(options, 'storage', { scopeKey: scope.scopeKey });
     const scopeReadiness=null; // Inspection never adopts, migrates or prepares storage.
     const sourceVectorRepairRequired = scopeReadiness?.sourceVectorRepairRequired === true;
     const sourceVectorRepair = scopeReadiness?.sourceVectorRepair || null;
@@ -44442,6 +44555,7 @@ ${cleanedText}`, 80),
     const unrecoverablePermanentHistory = Math.max(0, expectedPermanentHistory - readablePermanentHistory);
     const responseRecords = records.filter(record => isResponseMemoryRecord(record) && !(record.autoEpisode || record.sourceType === 'episode_index'));
     const episodeRecords = records.filter(record => record.autoEpisode || record.sourceType === 'episode_index');
+    reportMaintenanceTask(options, 'source', { scopeKey: scope.scopeKey });
     const sources = collectLiveChatSourcesFromSnapshot(snapshot, normalizeColdStartOptions(settings, { scope: 'current', historyLimit: 0 }));
     const diff = diffLiveChatSourcesAgainstRecords(sources, responseRecords);
     const expectedProvider = settings.embeddingProvider;
@@ -44456,6 +44570,7 @@ ${cleanedText}`, 80),
     let liveChunkSchemaMismatch = 0;
     let inheritedChunkSchemaMismatch = 0;
     let recordsNeedingEmbedding = 0;
+    let unqueuedVectorRepairRecords = 0;
     let repairTokens = 0;
     // A retained vector stays comparable while its re-embedding job is open, so the
     // vector checks below pass. Count the open jobs themselves.
@@ -44482,6 +44597,9 @@ ${cleanedText}`, 80),
       const vectorMissing = !Array.isArray(record.vector) || !record.vector.length;
       const dimBad = Number(record.dim || 0) !== (Array.isArray(record.vector) ? record.vector.length : 0)
         || (settings.embeddingProvider === 'hash' && Array.isArray(record.vector) && record.vector.length !== settings.hashDimensions);
+      if ((providerBad || vectorMissing || dimBad) && !(isValidatedEmbeddingWorkRecord(record)
+        && ['pending', 'running', 'failed', 'uncertain'].includes(record.embeddingWork.status)
+        && record.embeddingWork.targetProfile?.profileFingerprint === embeddingProfileSettingsFingerprint(settings))) unqueuedVectorRepairRecords++;
       const sanitizerVersionBad = recordNeedsLiveSanitizerRebuild(record);
       const chunkVersionBad = recordNarrativeChunkVersion(record) < NARRATIVE_CHUNK_SCHEMA_VERSION;
       if (dirty) dirtyRecords += 1;
@@ -44679,15 +44797,13 @@ ${cleanedText}`, 80),
       pendingAdoptionSourceScopeKey,
       pendingAdoptionSourceCommit: scopeReadiness?.pendingAdoptionSourceCommit || ''
     };
-    const storageSourceHealthy = !plan.missingTurns
+    reportMaintenanceTask(options, 'plan', { scopeKey: scope.scopeKey });
+    const storageStructureHealthy = !plan.missingTurns
       && !plan.changedTurns
       && !plan.detachedPeerMetadataTurns
       && !plan.staleStoredTurns
       && !plan.externalRecords
       && !plan.dirtyRecords
-      && !plan.providerMismatch
-      && !plan.missingVectors
-      && !plan.dimensionMismatch
       && !plan.storageMissingShards
       && !plan.storageManifestCorrupt
       && !plan.storageForeignScopeKey
@@ -44700,6 +44816,12 @@ ${cleanedText}`, 80),
       && !plan.liveChunkSchemaMismatch
       && !plan.episodeStale
       && !plan.sourceVectorRepairRequired;
+    const storageSourceHealthy = storageStructureHealthy && !plan.providerMismatch && !plan.missingVectors && !plan.dimensionMismatch;
+    // Raw-first pending work deliberately has no vector yet. That is ordinary
+    // queue work, provided every vector defect belongs to a validated current
+    // job and the raw source/storage structure is intact.
+    plan.embeddingQueueSourceHealthy = storageStructureHealthy && unqueuedVectorRepairRecords === 0
+      && providerMismatch === localProviderMismatch && missingVectors === localMissingVectors && dimensionMismatch === localDimensionMismatch;
     plan.healthy=storageSourceHealthy&&!plan.embeddingCredentialMissing&&!plan.embeddingCredentialUnverified&&!plan.embeddingWorkIncompleteRecords;
     plan.inspection={readOnly:true,coverage:'plugin_only',complete:rawLoaded.manifest.manifestRawPresent===true&&!rawLoaded.manifest.manifestRecovered&&!rawLoaded.manifest.manifestCorrupt,
       preparationPerformed:false,credentialSynchronizationPerformed:false,providerCalls:0};
@@ -44726,7 +44848,7 @@ ${cleanedText}`, 80),
           blocked: false,
           reason: 'server_turn_sync_available'
         };
-      } else if (plan.storageSourceHealthy && maintenanceEmbeddingQueueAvailable(plan)) {
+      } else if (plan.embeddingQueueSourceHealthy && maintenanceEmbeddingQueueAvailable(plan)) {
         plan.automatic = { strategy: 'embedding_queue', stages: ['embedding_queue'], blocked: false, reason: 'pending_embedding_work' };
       } else {
         plan.automatic = {
@@ -44737,6 +44859,7 @@ ${cleanedText}`, 80),
         };
       }
     }
+    reportMaintenanceTask(options, 'verify', { scopeKey: scope.scopeKey });
     try{await readContext.assertCurrent();}catch(error){throw maintenanceInspectionUnavailable(error?.message);}
     readContext.assertCurrentSync?.();
     Object.defineProperty(plan, '_maintenanceContext', {
@@ -45004,12 +45127,13 @@ ${cleanedText}`, 80),
   // Auto recovery for open re-embedding jobs only. Runs the ordinary pending queue
   // (same writer as background progress) until it is empty or a pass makes no
   // progress, then re-inspects. Failed jobs are retried; uncertain ones are not.
-  const drainPendingEmbeddingQueue = async (scopeKey, signal, maxPasses = 20) => {
+  const drainPendingEmbeddingQueue = async (scopeKey, signal, maxPasses = 20, progressOptions = {}) => {
     const passes = [];
     let ready = 0, failed = 0, uncertain = 0;
     for (let pass = 0; pass < maxPasses; pass++) {
       if (signal?.aborted) throw new EmbeddingAdapterError('ABORTED', 'Maintenance cancelled.');
-      const queue = await processPendingEmbeddingQueue({ scopeKey, retryFailed: true, signal });
+      const queue = await processPendingEmbeddingQueue({ scopeKey, retryFailed: true, signal,
+        onProgress: progressOptions.onProgress, maintenanceOperationId: progressOptions.maintenanceOperationId });
       passes.push({ ready: Number(queue.ready || 0), failed: Number(queue.failed || 0), pendingSources: Number(queue.pendingSources || 0), reason: queue.reason || '' });
       ready += Number(queue.ready || 0); failed += Number(queue.failed || 0); uncertain += Number(queue.uncertainRecords || 0);
       if (!Number(queue.ready || 0) || !Number(queue.pendingSources || 0)) break;
@@ -45018,6 +45142,7 @@ ${cleanedText}`, 80),
   };
   const runMaintenanceEmbeddingQueue = async (preflight, options = {}) => {
     const scope = preflight?._maintenanceContext?.scope;
+    if (physicalRepairUnresolved()) await reverifyMaintenanceJournal();
     if (!scope?.scopeKey) throw maintenanceInspectionUnavailable('HEALTH_SCOPE_UNVERIFIED');
     if (preflight._approvalBinding !== maintenanceApprovalBinding(preflight)) {
       throw new EmbeddingAdapterError('STALE_SOURCE', '유지보수 미리보기 후 상태가 변경되었습니다. 다시 점검해 주세요.');
@@ -45036,10 +45161,12 @@ ${cleanedText}`, 80),
     const signal = Runtime.maintenanceController?.signal || parentSignal;
     Runtime.maintenanceActiveOperationId = operationId;
     renderMaintenanceExecution();
+    reportMaintenanceTask(options, 'preflight', { operationId, scopeKey: scope.scopeKey });
     try {
-      const drained = await drainPendingEmbeddingQueue(scope.scopeKey, signal);
+      await withMaintenanceQueuePause(async () => {}, options);
+      const drained = await drainPendingEmbeddingQueue(scope.scopeKey, signal, 20, { ...options, maintenanceOperationId: operationId });
       const { passes, ready, failed, uncertain } = drained;
-      const after = await inspectMemoryMaintenance({ requestPermission: false });
+      const after = await inspectMemoryMaintenance({ requestPermission: false, onProgress: event => reportMaintenanceTask(options, 'verify', event) });
       const last = { reason: drained.stopReason };
       const result = {
         operationId, scopeKey: scope.scopeKey, maintenanceMode: 'auto', status: 'completed',
@@ -45063,9 +45190,11 @@ ${cleanedText}`, 80),
   };
 
   const runMemoryMaintenance = async (mode = 'auto', options = {}) => {
+    reportMaintenanceTask(options, 'preparing');
     if(flashbackRecoveryActions?.isBusy()) {
       const error=new Error('FLASHBACK_REPAIR_ACTION_BUSY');error.code='FLASHBACK_REPAIR_ACTION_BUSY';throw error;
     }
+    if(physicalRepairUnresolved())await reverifyMaintenanceJournal();
     if(physicalRepairUnresolved())throw embeddingWorkError('FLASHBACK_PHYSICAL_OUTCOME_UNRESOLVED');
     if (Runtime.portableMemoryActiveOperationId) {
       const error = new Error('기억 JSON 백업 또는 복원이 실행 중입니다. 현재 작업이 끝난 뒤 다시 시도해 주세요.');
@@ -45082,7 +45211,7 @@ ${cleanedText}`, 80),
     const normalizedMode = normalizeChoice(mode, ['auto', 'sync', 'rebuild', 'reembed'], 'auto');
     let preflight = options.preflight && typeof options.preflight === 'object' ? options.preflight : null;
     if (!preflight) {
-      try { preflight = await inspectMemoryMaintenance({ requestPermission: false }); } catch (_) {}
+      try { preflight = await inspectMemoryMaintenance({ requestPermission: false, onProgress: options.onProgress }); } catch (_) {}
     }
     const context = preflight?._maintenanceContext && typeof preflight._maintenanceContext === 'object'
       ? preflight._maintenanceContext
@@ -45129,8 +45258,11 @@ ${cleanedText}`, 80),
       else parentSignal?.addEventListener?.('abort', abortMaintenance, { once: true });
       Runtime.maintenanceActiveOperationId = operationId;
       renderMaintenanceExecution();
+      reportMaintenanceTask(options, 'preflight', { operationId, scopeKey: executionScope.scopeKey });
       try {
+        await withMaintenanceQueuePause(async () => {}, options);
         const operationSettings = {
+          onProgress: options.onProgress,
           maintenanceOperationId: operationId,
           maintenanceSourceValidate: async () => {
             if (Runtime.maintenanceController?.signal.aborted || parentSignal?.aborted) throw new EmbeddingAdapterError('ABORTED', 'Maintenance cancelled.');
@@ -45142,6 +45274,7 @@ ${cleanedText}`, 80),
           settings: admission.settings,
           snapshot: executionSnapshot
         };
+        reportMaintenanceTask(options, 'sync', { operationId, scopeKey: executionScope.scopeKey });
         const syncOperation = await ingestLiveChatColdStart({
           scope: 'current',
           historyLimit: 0,
@@ -45152,10 +45285,11 @@ ${cleanedText}`, 80),
         // Synced turns are stored raw-first; finish their (and any older) pending
         // embedding in the same run so one automatic recovery leaves nothing queued.
         const embeddingQueue = configuredModelEmbedding(admission.settings)
-          ? await drainPendingEmbeddingQueue(executionScope.scopeKey, operationSettings.signal)
+          ? await drainPendingEmbeddingQueue(executionScope.scopeKey, operationSettings.signal, 20, { ...options, maintenanceOperationId: operationId })
           : null;
         const after = await inspectMemoryMaintenance({
           requestPermission: false,
+          onProgress: event => reportMaintenanceTask(options, 'verify', event),
           settings: sharedSettings || await loadSettings(),
           snapshot: executionSnapshot,
           scope: executionScope
@@ -45252,6 +45386,7 @@ ${cleanedText}`, 80),
     options={...options,signal:Runtime.maintenanceController?.signal||parentSignal};
     Runtime.maintenanceExecutionLedger=null;Runtime.maintenanceResumedBatches=0;Runtime.maintenanceResolvedDimensions=null;
     Runtime.maintenanceActiveOperationId = operationId;
+    if (typeof options.onProgress === 'function') maintenanceProgressObservers.set(operationId, options.onProgress);
     maintenanceJournalAdmissions.set(operationId,journalAdmission);
     renderMaintenanceExecution();
     try {
@@ -45393,7 +45528,7 @@ ${cleanedText}`, 80),
     const embeddingPreflight = await requireMaintenanceEmbeddingCredential(settings, before, normalizedMode, {operationLedger,signal:options.signal});
     await maintenanceSourceValidate();
     if (automatic.blocked) throw maintenanceBlockedErrorForPlan(settings, before, automatic);
-    const operationSettings = { settings, snapshot: operationSnapshot, operationLedger, maintenanceSourceValidate, signal:options.signal, deadlineAt:options.deadlineAt, maintenanceOperationId: operationId, activityKind: 'maintenance_sync', allowHashFallback: false };
+    const operationSettings = { settings, snapshot: operationSnapshot, operationLedger, maintenanceSourceValidate, signal:options.signal, deadlineAt:options.deadlineAt, maintenanceOperationId: operationId, activityKind: 'maintenance_sync', allowHashFallback: false, onProgress: options.onProgress };
     await persistMaintenanceJournal({
       operationId,
       status: 'running',
@@ -45552,6 +45687,7 @@ ${cleanedText}`, 80),
     await persistMaintenanceJournal({ operationId, status: 'running', stage: 'verify', scopeKey: before.scopeKey || scope?.scopeKey || '', strategy: operation?.strategy || normalizedMode, stages: operation?.stages || [] });
     const after = await inspectMemoryMaintenance({
       requestPermission: false,
+      onProgress: event => reportMaintenanceTask(options, 'verify', event),
       settings,
       snapshot: operationSnapshot,
       scope: operationScope,
@@ -45651,6 +45787,7 @@ ${cleanedText}`, 80),
       throw error;
     } finally {
       maintenanceJournalAdmissions.delete(operationId);
+      maintenanceProgressObservers.delete(operationId);
       if (Runtime.maintenanceActiveOperationId === operationId) Runtime.maintenanceActiveOperationId = '';
       parentSignal?.removeEventListener?.('abort',abortMaintenance);renderMaintenanceExecution();
     }
@@ -48778,6 +48915,140 @@ ${cleanedText}`, 80),
     await guiAlert(`${prefix}: ${formatErrorMessage(error)}`, '오류');
   };
 
+  // Session-local display only. A popup never grants storage/provider authority.
+  let maintenanceLiveJob = null, maintenanceJobSerial = 0, maintenanceJobTicker = null, maintenanceJobKeyHandler = null;
+  const MAINTENANCE_JOB_STAGES = Object.freeze({
+    preparing: [0, '작업을 준비하고 있습니다.'], waiting_embedding: [0, '진행 중인 임베딩 묶음의 저장 확인을 기다립니다.'],
+    preflight: [0, '대상 범위와 실행 조건을 확인하고 있습니다.'], scope: [0, '현재 채팅과 저장 위치를 확인하고 있습니다.'],
+    storage: [0, '저장된 원문과 검색 벡터를 읽고 있습니다.'], source: [1, '현재 대화와 저장된 기억을 대조하고 있습니다.'],
+    plan: [2, '누락·변경·미완료 항목과 복구 계획을 확인하고 있습니다.'],
+    sync: [1, '누락·변경된 대화 원문을 동기화하고 있습니다.'], rebuild: [1, '현재 채팅의 기억을 다시 구성하고 있습니다.'],
+    cleanup: [1, '저장된 기억을 정제하고 검색 색인을 정리하고 있습니다.'],
+    reembed: [2, '검색 벡터를 다시 처리하고 있습니다.'], repair_vectors: [2, '이전 기억의 검색 벡터를 복구하고 있습니다.'],
+    embedding_queue: [2, '처리 가능한 임베딩 대기 기록을 확인했습니다.'], embedding_request: [2, '임베딩 요청을 보내고 응답을 기다립니다.'],
+    embedding_response: [2, '임베딩 요청의 처리 결과를 확인하고 있습니다.'], saving_vectors: [3, '응답받은 검색 벡터를 저장하고 다시 읽어 확인합니다.'], embedding_done: [2, '현재 묶음의 저장 확인을 마쳤습니다. 다음 대기 기록을 확인합니다.'],
+    verify: [3, '저장 결과와 현재 원문을 최종 대조하고 있습니다.'], complete: [3, '실행 결과를 정리하고 있습니다.'],
+    '동기화': [1, '대화 기억을 동기화하고 있습니다.'], '재구축': [1, '대화 기억을 다시 구성하고 있습니다.'], '기억 정제': [1, '저장된 기억을 정제하고 있습니다.']
+  });
+  const maintenanceJobInScope = job => !!job && maintenanceLiveJob === job
+    && (!job.scopeKey || !Runtime.currentScope?.scopeKey || job.scopeKey === Runtime.currentScope.scopeKey);
+  const removeMaintenanceJobSurface = () => {
+    if (maintenanceJobTicker) { clearInterval(maintenanceJobTicker); maintenanceJobTicker = null; }
+    if (maintenanceJobKeyHandler) { document.removeEventListener?.('keydown', maintenanceJobKeyHandler); maintenanceJobKeyHandler = null; }
+    getGuiNode('flashbackMaintenanceJob')?.remove();getGuiNode('maintenanceJobChip')?.remove();
+  };
+  const maintenanceJobCanCancel = job => job?.kind === 'recovery' && job.state === 'running' && !!job.operationId
+    && job.operationId === Runtime.maintenanceActiveOperationId && !!Runtime.maintenanceController
+    && !Runtime.maintenanceController.signal.aborted;
+  const renderMaintenanceJob = () => {
+    try { renderMaintenanceJobSurface(); }
+    catch(error){
+      try { removeMaintenanceJobSurface(); } catch (_) {}
+      if(maintenanceLiveJob&&!maintenanceLiveJob.renderError){maintenanceLiveJob.renderError=true;warn('maintenance job display failed',error);}
+    }
+  };
+  const renderMaintenanceJobSurface = () => {
+    const job = maintenanceLiveJob;
+    if (!guiVisible || !guiRoot || !maintenanceJobInScope(job) || job.dismissed) { removeMaintenanceJobSurface();return; }
+    let portal = getGuiNode('flashbackMaintenanceJob');
+    if (!portal) {
+      portal = document.createElement('div');portal.id = 'flashbackMaintenanceJob';portal.className = 'overlay is-open t-flashback';
+      portal.innerHTML = `<style>#flashbackMaintenanceJob .dialog{max-height:calc(100dvh - 32px);overflow:auto;min-width:0}#flashbackMaintenanceJob .kv{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#flashbackMaintenanceJob .steps{display:grid;grid-auto-flow:row;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr))}#flashbackMaintenanceJob pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:28vh;overflow:auto}#maintenanceJobChip{position:absolute;right:18px;top:64px;z-index:40;max-width:calc(100% - 36px);white-space:normal}#flashbackMaintenanceJob .dialog__actions{flex-wrap:wrap}</style>
+        <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="fb-maintenance-job-title" aria-describedby="fb-maintenance-job-message">
+          <div class="split"><div><div class="eyebrow">FLASHBACK JOB</div><h2 id="fb-maintenance-job-title"></h2><p class="muted" data-job-target></p></div><span class="badge" data-job-state></span></div>
+          <p class="muted" id="fb-maintenance-job-message" role="status" aria-live="polite"></p>
+          <p class="hint" data-job-clock aria-live="off"></p>
+          <div class="steps" data-job-steps>${[0,1,2,3].map(i=>`<div class="step"><span class="step__no">${i+1}</span><b></b><span data-step-sub></span></div>`).join('')}</div>
+          <div data-job-meter hidden><p class="hint" data-job-count></p><div class="progress" role="progressbar" aria-label="이번 큐의 기록 처리"><i></i></div></div>
+          <dl class="kv"><dt>저장 확인된 벡터</dt><dd data-job-ready>미확인</dd><dt>제공자 요청</dt><dd data-job-requests>미확인</dd><dt>응답 대기</dt><dd data-job-pending>미확인</dd><dt>결과 미확정</dt><dd data-job-unknown>미확인</dd></dl>
+          <p class="hint" data-job-cancel-note hidden>중지를 요청했습니다. 이미 전송된 요청의 종료와 저장 여부를 확인하고 있습니다.</p>
+          <details class="fold"><summary>진행 내역</summary><div class="fold__body"><pre data-job-history></pre></div></details>
+          <div class="note" data-job-result hidden><pre></pre></div>
+          <div class="dialog__actions"><button id="maintenanceJobMinimizeBtn" class="btn" type="button">최소화</button><button id="maintenanceJobCancelBtn" class="btn btn--danger" type="button">작업 중지 요청</button><button id="maintenanceJobDoneBtn" class="btn btn--primary" type="button" hidden>확인</button></div>
+        </div>`;
+      guiRoot.appendChild(portal);
+      const valid = () => maintenanceJobInScope(job) && !job.dismissed;
+      portal.querySelector('#maintenanceJobMinimizeBtn').addEventListener('click',()=>{if(valid()){job.minimized=true;renderMaintenanceJob();job.previousFocus?.isConnected&&job.previousFocus?.focus?.();}});
+      portal.querySelector('#maintenanceJobCancelBtn').addEventListener('click',()=>{
+        if(!valid()||!maintenanceJobCanCancel(job))return;
+        job.cancelRequested=true;Runtime.maintenanceController.abort();Runtime.maintenanceExecutionLedger?.cancel();renderMaintenanceJob();
+      });
+      portal.querySelector('#maintenanceJobDoneBtn').addEventListener('click',()=>{if(valid()&&job.state!=='running'){job.dismissed=true;removeMaintenanceJobSurface();job.previousFocus?.isConnected&&job.previousFocus?.focus?.();}});
+      maintenanceJobKeyHandler = event => {
+        if(!valid()||job.minimized||!guiVisible)return;
+        if(event.key==='Escape'){event.preventDefault?.();event.stopImmediatePropagation?.();portal.querySelector('#maintenanceJobMinimizeBtn').click();}
+        if(event.key==='Tab'){
+          const buttons=[...portal.querySelectorAll('button:not([disabled]):not([hidden]),summary')],first=buttons[0],last=buttons.at(-1);
+          if(event.shiftKey&&(document.activeElement===first||!portal.contains(document.activeElement))){event.preventDefault();last?.focus();}
+          else if(!event.shiftKey&&(document.activeElement===last||!portal.contains(document.activeElement))){event.preventDefault();first?.focus();}
+        }
+      };
+      document.addEventListener('keydown',maintenanceJobKeyHandler);
+      portal.querySelector('#maintenanceJobMinimizeBtn').focus();
+    }
+    portal.hidden=job.minimized;portal.className=job.minimized?'overlay t-flashback':'overlay is-open t-flashback';portal.setAttribute('aria-hidden',String(job.minimized));
+    const put=(selector,value)=>{const node=portal.querySelector(selector);if(node&&node.textContent!==String(value))node.textContent=String(value);};
+    const running=job.state==='running',elapsed=Math.floor(((job.finishedAt||Date.now())-job.startedAt)/1000);
+    const label=job.cancelRequested&&running?'중지 요청됨':running?'실행 중':job.state==='failed'?'작업 실패':job.state==='cancelled'?'중지됨':job.state==='attention'?'완료 · 확인 필요':'완료';
+    put('#fb-maintenance-job-title',job.kind==='inspection'?'기억 상태 점검':'자동 점검·복구');put('[data-job-state]',label);
+    portal.querySelector('[data-job-state]').className=`badge ${running?'badge--info':job.state==='failed'?'badge--danger':job.state==='completed'?'badge--ok':'badge--warn'}`;
+    put('[data-job-target]',job.currentTurn?`현재 처리: T${job.currentTurn}`:'현재 채팅의 기억');
+    put('#fb-maintenance-job-message',job.cancelRequested&&running?'중지 요청을 처리하고 있습니다. 이미 전송된 요청은 완료될 수 있습니다.':job.message);
+    put('[data-job-clock]',`경과 ${elapsed}초 · 마지막 진행 보고 ${Math.max(0,Math.floor(((job.finishedAt||Date.now())-job.updatedAt)/1000))}초 전`);
+    const titles=job.kind==='inspection'?['대상·저장소 확인','원문 대조','복구 계획','최종 확인']:['대상 확인','원문 동기화·정제','검색 벡터 처리','저장·최종 확인'];
+    portal.querySelectorAll('.step').forEach((node,index)=>{node.querySelector('b').textContent=titles[index];node.querySelector('[data-step-sub]').textContent=job.visited.has(index)?'진행 확인':job.kind==='inspection'?'':'필요한 경우 실행';node.classList.toggle('is-active',running&&index===job.stepIndex);node.classList.toggle('is-done',job.visited.has(index)&&(!running||index!==job.stepIndex)&&job.state!=='failed');node.classList.toggle('is-fail',job.state==='failed'&&index===job.stepIndex);});
+    const known=Number.isFinite(job.totalRecords)&&job.totalRecords>0,done=(job.completedRecords||0)+(job.failedRecords||0)+(job.uncertainRecords||0);
+    portal.querySelector('[data-job-meter]').hidden=!known;
+    if(known){const meter=portal.querySelector('[role="progressbar"]');meter.setAttribute('aria-valuemin','0');meter.setAttribute('aria-valuemax',String(job.totalRecords));meter.setAttribute('aria-valuenow',String(Math.min(done,job.totalRecords)));meter.querySelector('i').style.setProperty('--v',`${Math.min(100,done/job.totalRecords*100)}%`);put('[data-job-count]',`이번 큐 ${formatNumber(done)} / ${formatNumber(job.totalRecords)}개 기록 처리`);}
+    const count=value=>value==null?'미확인':formatNumber(value)+'건';
+    put('[data-job-ready]',job.completedRecords==null?'미확인':formatNumber(job.completedRecords)+'개');put('[data-job-requests]',count(job.requests));put('[data-job-pending]',count(job.pending));put('[data-job-unknown]',count(job.unknown));
+    put('[data-job-history]',job.history.join('\n'));portal.querySelector('[data-job-cancel-note]').hidden=!job.cancelRequested;
+    portal.querySelector('#maintenanceJobCancelBtn').hidden=job.kind!=='recovery'||!running;portal.querySelector('#maintenanceJobCancelBtn').disabled=!maintenanceJobCanCancel(job);
+    portal.querySelector('#maintenanceJobDoneBtn').hidden=running;portal.querySelector('[data-job-result]').hidden=running;
+    if(!running)put('[data-job-result] pre',job.summary||job.message);
+    let chip=getGuiNode('maintenanceJobChip');
+    if(!chip){chip=document.createElement('button');chip.id='maintenanceJobChip';chip.type='button';chip.className='btn btn--sm';chip.addEventListener('click',()=>{if(maintenanceJobInScope(job)&&!job.dismissed){job.minimized=false;renderMaintenanceJob();getGuiNode('maintenanceJobMinimizeBtn')?.focus();}});guiRoot.appendChild(chip);}
+    chip.hidden=!job.minimized;chip.textContent=`${job.kind==='inspection'?'상태 점검':'자동 복구'} · ${label} · ${elapsed}초`;
+    if(running&&!maintenanceJobTicker)maintenanceJobTicker=setInterval(renderMaintenanceJob,500);
+    if(!running&&maintenanceJobTicker){clearInterval(maintenanceJobTicker);maintenanceJobTicker=null;}
+  };
+  const runMaintenanceGuiTask = async (kind, run) => {
+    if(maintenanceLiveJob?.state==='running')throw new Error('이미 상태 점검 또는 자동 복구가 실행 중입니다. 작업창에서 진행 상황을 확인해 주세요.');
+    removeMaintenanceJobSurface();
+    const now=Date.now(),job={id:++maintenanceJobSerial,kind,state:'running',startedAt:now,updatedAt:now,stepIndex:0,visited:new Set([0]),stage:'preparing',message:MAINTENANCE_JOB_STAGES.preparing[1],history:[],requests:kind==='inspection'?0:null,pending:kind==='inspection'?0:null,unknown:kind==='inspection'?0:null,previousFocus:typeof document!=='undefined'?document.activeElement:null};
+    maintenanceLiveJob=job;renderMaintenanceJob();
+    const progress=event=>{
+      if(maintenanceLiveJob!==job||job.state!=='running')return;
+      const step=MAINTENANCE_JOB_STAGES[event.stage];
+      if(event.operationId)job.operationId=event.operationId;if(event.scopeKey)job.scopeKey=event.scopeKey;
+      if(step){job.stepIndex=step[0];job.visited.add(step[0]);job.message=step[1];}
+      if(event.stage!==job.stage){job.history.push(`${Math.floor((Date.now()-job.startedAt)/1000)}초 · ${job.message}`);job.history=job.history.slice(-12);}
+      job.stage=event.stage;job.updatedAt=Date.now();
+      for(const key of ['currentTurn','totalRecords','completedRecords','failedRecords','uncertainRecords'])if(Number.isFinite(event[key]))job[key]=event[key];
+      if(event.execution){job.requests=event.execution.requestCount??null;job.pending=event.execution.pendingRequests??null;job.unknown=event.execution.unknownOutcomes??null;}
+      renderMaintenanceJob();
+    };
+    try{
+      const result=await run(progress);job.result=result;
+      job.state=job.cancelRequested?'cancelled':kind==='inspection'?(result?.inspection?.complete===false?'attention':'completed'):(result?.healthy===true?'completed':'attention');
+      job.message=job.cancelRequested?'중지 요청 처리가 끝났습니다. 이미 완료된 저장 결과는 유지됩니다.':kind==='inspection'?'상태 점검을 마쳤습니다. 진단 결과에서 필요한 복구를 선택할 수 있습니다.':maintenanceCompletionTitle(result);
+      job.summary=kind==='inspection'?maintenanceJudgementText(result):maintenanceResultText(result);
+      if(kind==='inspection')job.minimized=true;
+      return result;
+    }catch(error){job.state=job.cancelRequested?'cancelled':'failed';job.message=job.cancelRequested?'중지 요청 처리가 끝났습니다. 완료된 항목과 미확정 결과는 다시 점검해 주세요.':formatErrorMessage(error,800);job.summary=job.message;throw error;}
+    finally{job.finishedAt=Date.now();renderMaintenanceJob();}
+  };
+  const runMaintenanceGuiRecovery = async (plan, label) => {
+    setBusy(true,label);
+    try{
+      const result=await runMaintenanceGuiTask('recovery',onProgress=>runMemoryMaintenance('auto',{preflight:plan,onProgress}));
+      if(typeof scheduleFlashbackAttentionRefresh==='function')scheduleFlashbackAttentionRefresh('maintenance_auto',80);
+      if(guiVisible&&maintenanceJobInScope(maintenanceLiveJob)){await refreshUi('import');renderMaintenanceJob();}
+      return result;
+    }catch(error){warn('maintenance GUI recovery failed',error);}
+    finally{setBusy(false);renderMaintenanceJob();}
+  };
+
   const showMaintenanceInspectionModal = async (plan) => {
     if (!plan) return;
     const isServerMode = plan.inspection?.coverage === 'server_snapshot';
@@ -48830,20 +49101,8 @@ ${cleanedText}`, 80),
               <span style="color:var(--text2)">${escapeHtml(maintenanceEmbeddingWorkText(plan))}. 이 기억들은 이전 벡터로만 검색되며 리콜이 제한될 수 있습니다.</span>
             </div>
           </div>`;
-        if (queueable) actionBtn = { text: '⚡ 재임베딩 대기 벡터 처리', className: 'btn btn--primary', onClick: async () => {
-            setBusy(true, '재임베딩 대기 벡터 처리');
-            try {
-              const result = await runMemoryMaintenance('auto', { preflight: plan });
-              setBusy(false);
-              if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('maintenance_auto', 80);
-              await refreshUi('import');
-              await showMaintenanceCompletionModal(result);
-            } catch (error) {
-              await guiError('재임베딩 대기 벡터 처리 실패', error);
-            } finally {
-              setBusy(false);
-            }
-          } };
+        if (queueable) actionBtn = { text: '⚡ 재임베딩 대기 벡터 처리', className: 'btn btn--primary',
+          onClick: () => runMaintenanceGuiRecovery(plan, '재임베딩 대기 벡터 처리') };
       } else {
         badgeHtml = `<span class="badge badge--warn">동기화 필요 (${formatNumber(missing + changed)}턴)</span>`;
         bannerHtml = `
@@ -48857,20 +49116,7 @@ ${cleanedText}`, 80),
         actionBtn = {
           text: '⚡ 누락 턴 동기화 실행',
           className: 'btn btn--primary',
-          onClick: async () => {
-            setBusy(true, '누락·변경 턴 동기화');
-            try {
-              const result = await runMemoryMaintenance('auto', { preflight: plan });
-              setBusy(false);
-              if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('maintenance_auto', 80);
-              await refreshUi('import');
-              await showMaintenanceCompletionModal(result);
-            } catch (error) {
-              await guiError('누락·변경 턴 동기화 실패', error);
-            } finally {
-              setBusy(false);
-            }
-          }
+          onClick: () => runMaintenanceGuiRecovery(plan, '누락·변경 턴 동기화')
         };
       }
 
@@ -48898,7 +49144,7 @@ ${cleanedText}`, 80),
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);padding-bottom:7px">
             <span style="color:var(--text3)">임베딩 연산 및 비용</span>
-            <span style="color:var(--text)">서버 백그라운드 처리 (클라이언트 호출 0건 / 0원)</span>
+            <span style="color:var(--text)">점검 호출 0회 · 복구 실행 시 모델 사용량이 발생할 수 있습니다</span>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
             <span style="color:var(--text3);flex-shrink:0">진단 종합 판정</span>
@@ -48930,20 +49176,7 @@ ${cleanedText}`, 80),
         actionBtn = {
           text: '⚡ 자동 점검·복구 실행',
           className: 'btn btn--primary',
-          onClick: async () => {
-            setBusy(true, '자동 점검·복구');
-            try {
-              const result = await runMemoryMaintenance('auto', { preflight: plan });
-              setBusy(false);
-              if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('maintenance_auto', 80);
-              await refreshUi('import');
-              await showMaintenanceCompletionModal(result);
-            } catch (error) {
-              await guiError('자동 점검·복구 실패', error);
-            } finally {
-              setBusy(false);
-            }
-          }
+          onClick: () => runMaintenanceGuiRecovery(plan, '자동 점검·복구')
         };
       }
 
@@ -49431,7 +49664,7 @@ ${cleanedText}`, 80),
       // after the durable commit, so the user must always be able to return
       // control to RisuAI and reopen the GUI later.
       if(btn.dataset?.sourceAction==='explicit_apply'){btn.disabled=busy||btn.dataset.sourceActionReady!=='true';continue;}
-      btn.disabled = busy && !['closeBtn', 'topMoreBtn', 'exportDebugLogBtn', 'topMenuDebugBtn', 'cancelMultilingualProbeBtn', 'cancelMaintenanceResultBtn', 'maintenanceExecutionDetailsBtn'].includes(btn.id);
+      btn.disabled = busy && !['closeBtn', 'topMoreBtn', 'exportDebugLogBtn', 'topMenuDebugBtn', 'cancelMultilingualProbeBtn', 'cancelMaintenanceResultBtn', 'maintenanceExecutionDetailsBtn', 'maintenanceJobMinimizeBtn', 'maintenanceJobCancelBtn', 'maintenanceJobDoneBtn', 'maintenanceJobChip'].includes(btn.id);
     }
     for (const checkbox of guiQueryAll('.storage-scope-select')) {
       if (busy) checkbox.disabled = true;
@@ -49785,6 +50018,7 @@ ${cleanedText}`, 80),
       setNodeText('maintenanceResumedBatches',count(status.resumedBatches,'배치'));
       setNodeText('maintenanceExecutionScope',status.scopeKey||'확인 중');
     }catch(_){}
+    renderMaintenanceJob();
   };
   const renderLastActionLogs = () => {
     renderMaintenanceExecution();
@@ -50635,6 +50869,7 @@ ${cleanedText}`, 80),
     const preserveRoot = options.removeRoot !== true
       && (options.preserveRoot === true || (options.preserveRoot !== false && hideContainer && guiContainerShown));
     guiVisible = false;
+    removeMaintenanceJobSurface();
     FlashbackCurrentStatus.stop();
     try { globalThis.__memorySuiteTheme?.stop?.(); } catch (_e) { try { globalThis.__librarianDiag && globalThis.__librarianDiag('flashback', 'theme.bridge.stop', _e); } catch (__) {} }
     Runtime.guiRefreshToken += 1;
@@ -51460,10 +51695,12 @@ ${cleanedText}`, 80),
     getGuiNode('maintenanceInspectBtn')?.addEventListener('click', async () => {
       setBusy(true, '기억 상태 진단');
       try {
-        const plan = await inspectMemoryMaintenance({ requestPermission: true });
-        renderMaintenancePlanInUi(plan);
-        await showMaintenanceInspectionModal(plan);
-      } catch (error) { await guiError('기억 상태 진단 실패', error); }
+        const plan = await runMaintenanceGuiTask('inspection', onProgress => inspectMemoryMaintenance({ requestPermission: true, onProgress }));
+        if(guiVisible&&maintenanceJobInScope(maintenanceLiveJob)){
+          renderMaintenancePlanInUi(plan);
+          await showMaintenanceInspectionModal(plan);
+        }
+      } catch (error) { warn('maintenance GUI inspection failed', error); }
       finally { setBusy(false); }
     });
     getGuiNode('maintenanceAutoBtn')?.addEventListener('click', async () => {
@@ -53509,7 +53746,7 @@ return createReadSession;
     clearOperationLogs,
     getActivityLog: activityLogSnapshot,
     clearActivityLog,
-    _test: { maintenanceResultText, automaticMaintenanceStrategyForPlan, maintenancePartialSuccessLines, maintenanceIsolatedReasonText, formatErrorMessage, embedTextsIsolated, classifyIsolatedEmbeddingFailure, embeddingFailureIsItemScoped, pushActivityLog, activityLogSnapshot, normalizeMaintenanceJournal, flashbackLiveChatCacheKey, flashbackMessageRevisionProjection, liveChatRevisionCacheScope, splitTextIntoChunks, reconstructChunkGroupText, lexicalOverlap, buildSparseFieldsForRecord, sparseProjectionForRecord, scoreBm25fCandidates, reciprocalRankFusion, classifyTemporalIntent, classifyTruthIntent, applyRecallHardGates, applyRecallTemporalHardGate, resolveRecallLane, recallLaneLimits, computeMemoryHeat, buildCurrentUserStateOverlay, generateRecallCandidateArms, selectRecallByLanes, ensureRecallIntentCoverage, collectLiveStructuredStateFacts, extractLatestUserInput, resolveFlashbackCurrentTurn, latestFlashbackCurrentInputRange, hasFlashbackChatProvenance, latestFlashbackProvenanceUserTurn, hasUnresolvedPromptTemplate, findFlashbackTerminalAssistantPrefillIndex, isLikelyMetaUserMessage, stripNestedThoughtBlocks, lastVisibleResponseBoundary, stripExternalRuntimeArtifacts, stripSourceArtifacts, formatRecallBlock, formatFlashbackDynamicEvidenceBlock, buildFlashbackStaticEvidenceContract, flashbackStaticProfileId, injectFlashbackMessages, findStableSystemPrefixEnd, getCachedQueryEmbedding, getCachedQueryEmbeddings, queryEmbeddingCacheKey, invalidateQueryEmbeddingCache, normalizeQueryForEmbeddingCache, estimateTokens, embeddingPricingFor, estimateEmbeddingCostForTokens, estimateEmbeddingCostForRecords, statsForRecords, debugRecords: debugRecordsSnapshot, normalizeSettings, repairZeroInitializedSettings, readArgumentSettings, applyArgumentOverrides, settingsOverrideDiff, readEmbeddingKey, saveEmbeddingKeyLocal, saveEmbeddingCredential, inspectEmbeddingKeyPersistence, setPluginArgumentValue, embeddingArgumentBackendState, embeddingSyncedBackendState, embeddingLocalBackendState, selectEmbeddingCredential, providerRequiresEmbeddingCredential, maintenanceEmbeddingWorkRequested, requireMaintenanceEmbeddingCredential, embedTexts, inspectLastEmbedFallback: () => Runtime.lastEmbedUsedFallback === true, normalizeStoredChatMessages, liveChatStateFromNormalized, liveChatStateFromResponseGroups, changedConversationPairIndexes, collectLiveChatSourcesFromSnapshot, diffLiveChatSourcesAgainstRecords, sameMaintenanceTurnText, recordMemorySanitizerVersion, recordNeedsLiveSanitizerRebuild, automaticMaintenanceStrategyForPlan, classifyRequestType, flashbackModelMainRequestEvidence, requestKindCore: FlashbackRequestKindCore, classifyRecallQuery, adaptiveRecallProfile, previousTurnRecallProfile, buildDiscriminativeRecallAnchors, selectDiverseRecall, applyRecallQualityBalance, compareRecallItemsFinal, buildRecallQuery, buildSceneContextQuery, decomposeRecallTopics, effectiveRecallPreferenceWeights, applyFlashbackRecallPreference, applyFlashbackMultiTopicCoverage, ensureFlashbackMustCarryCoverage, ensureFlashbackContradictionCoverage, computeImportanceDensity, extractEntityAnchors, buildLatestStateByEntity, applyCurrentUserOverlaySuppressions, collectCurrentStateFacts, structuredStateFactsFromMetadata, extractQueryStateProperties, buildRecallShardSummary, flashbackMemoryLaneDocumentStats, flashbackMemoryLaneWeightedMatch, flashbackMemoryLaneQueryPhrases, selectRecallShardIndexes, previousTurnSourceShardIndexes, detectEpisodeBoundaries, buildEpisodeIndexRecords, sanitizeAssistantForMemory, extractMemoryMetadata, cleanRecordForMemory, collectCurrentSceneTailCandidates, collectEntityFocusedCandidates, applyPerSourceDiversityLimit, injectMessage, finalizedAssistantCandidate, finalizedAssistantMatchesPendingBaselineVariant, serializePendingCaptureJournalEntry, normalizePendingCaptureJournalEnvelope, persistPendingCaptureJournalEntry, loadPendingCaptureJournalEntries, recoverPendingCapturesFromJournal, finiteTurnIndex, latestResponseTurnIndex, latestLiveResponseTurnIndex, computeStoryRecency, storyOrderValue, buildRecentResponseRanks, buildStoredTurnVectorGroups, selectPreviousTurnVectorContext, recallSemanticSignals, manualRecordDeleteKey, memoryRecordDisplayTitle, turnPairDisplayText, formatCostSummary, formatGuiDateTime, flashbackLineageReasonLabel, manualEditorShardIndexes, currentScopeStats, isGuiRenderActive, maybeScheduleConversationDriftCheck, isRetainedMemoryRecord, isPermanentSessionHistoryRecord, isInheritedScopeMemoryRecord, normalizeInheritedScopeRecordForActiveHistory, memorySessionBridgeMarker, resolveScopeFromSnapshot, sameCharacterChatIdentity, findSameChatPersonaScopeSource, findCloneSource, rebindRecordForSameChatPersonaRecovery, cloneRecordForNativeChatCopy, liveRecordForNativeChatCopy, repairMisclassifiedNativeCopyScope, cloneScopeStorage, ensureScopeStorageReady, prepareScopeStorageForRequest, resolveCurrentScopeIdentityBundle, beforeRequest, pendingCaptureRuntimeSnapshot: () => ({ lastRecall: Runtime.lastRecall, pendingTurns: (Runtime.pendingTurns || []).map(item => ({ pendingId: item.pendingId || '', scopeKey: item.scope?.scopeKey || '', pairIndex: Number(item.pairIndex || 0) || 0, latestUser: item.latestUser || '' })), deferredScopeStorage: Array.from(Runtime.deferredScopeStorageTasks.keys()) }), ensureFlashbackArchiveForHandoff, createImmutableFlashbackHandoffArchive, archiveAndCompactFlashbackSourceScope, flashbackSourceIntegritySnapshot, compareFlashbackSourceIntegrity, restoreLegacyCompactedSourceScope, readFlashbackHandoffLedger, writeFlashbackHandoffReceipt, verifyFlashbackArchiveRef, loadFlashbackArchiveChain, loadFlashbackArchiveManifestSummary, normalizeFlashbackArchiveRef, flashbackArchiveRecordIdentity, loadScopeManifest, saveScopeManifest, buildFlashbackVectorShardPayload, hydrateFlashbackVectorRecords, persistFlashbackVectorShard, encodeFlashbackShardEnvelope, decodeFlashbackShardEnvelope, flashbackArchiveGzipSupported, retireExternalRecordsForScope, reconcileFlashbackTurnWorldline, debugWorldlineSnapshot, flashbackPairIdentity, flashbackLiveWorldlineHash, responseGroupsForWorldline, protectPendingGenerationWorldlineTarget, prepareFlashbackWorldlineReplacement, synchronizeFlashbackTurnWorldline, loadTurnWorldline, loadScopeRecords, loadScopeRecordsForRecall, invalidateRecallShardCache, saveAllRecords, pendingThresholds: Object.freeze({ fallbackMinOverlap: PENDING_FALLBACK_MIN_OVERLAP, shortMarkedFallbackMinOverlap: PENDING_SHORT_MARKED_FALLBACK_MIN_OVERLAP, shortLatestScoreSlack: PENDING_SHORT_LATEST_SCORE_SLACK, shortUnconfirmedGraceMs: PENDING_SHORT_UNCONFIRMED_GRACE_MS, singleShortZeroOverlapMs: PENDING_SINGLE_SHORT_ZERO_OVERLAP_MS }) }
+    _test: { maintenanceResultText, automaticMaintenanceStrategyForPlan, saveTurnWorldline, loadTurnWorldline, maintenancePartialSuccessLines, maintenanceIsolatedReasonText, formatErrorMessage, embedTextsIsolated, classifyIsolatedEmbeddingFailure, embeddingFailureIsItemScoped, pushActivityLog, activityLogSnapshot, normalizeMaintenanceJournal, flashbackLiveChatCacheKey, flashbackMessageRevisionProjection, liveChatRevisionCacheScope, splitTextIntoChunks, reconstructChunkGroupText, lexicalOverlap, buildSparseFieldsForRecord, sparseProjectionForRecord, scoreBm25fCandidates, reciprocalRankFusion, classifyTemporalIntent, classifyTruthIntent, applyRecallHardGates, applyRecallTemporalHardGate, resolveRecallLane, recallLaneLimits, computeMemoryHeat, buildCurrentUserStateOverlay, generateRecallCandidateArms, selectRecallByLanes, ensureRecallIntentCoverage, collectLiveStructuredStateFacts, extractLatestUserInput, resolveFlashbackCurrentTurn, latestFlashbackCurrentInputRange, hasFlashbackChatProvenance, latestFlashbackProvenanceUserTurn, hasUnresolvedPromptTemplate, findFlashbackTerminalAssistantPrefillIndex, isLikelyMetaUserMessage, stripNestedThoughtBlocks, lastVisibleResponseBoundary, stripExternalRuntimeArtifacts, stripSourceArtifacts, formatRecallBlock, formatFlashbackDynamicEvidenceBlock, buildFlashbackStaticEvidenceContract, flashbackStaticProfileId, injectFlashbackMessages, findStableSystemPrefixEnd, getCachedQueryEmbedding, getCachedQueryEmbeddings, queryEmbeddingCacheKey, invalidateQueryEmbeddingCache, normalizeQueryForEmbeddingCache, estimateTokens, embeddingPricingFor, estimateEmbeddingCostForTokens, estimateEmbeddingCostForRecords, statsForRecords, debugRecords: debugRecordsSnapshot, normalizeSettings, repairZeroInitializedSettings, readArgumentSettings, applyArgumentOverrides, settingsOverrideDiff, readEmbeddingKey, saveEmbeddingKeyLocal, saveEmbeddingCredential, inspectEmbeddingKeyPersistence, setPluginArgumentValue, embeddingArgumentBackendState, embeddingSyncedBackendState, embeddingLocalBackendState, selectEmbeddingCredential, providerRequiresEmbeddingCredential, maintenanceEmbeddingWorkRequested, requireMaintenanceEmbeddingCredential, embedTexts, inspectLastEmbedFallback: () => Runtime.lastEmbedUsedFallback === true, normalizeStoredChatMessages, liveChatStateFromNormalized, liveChatStateFromResponseGroups, changedConversationPairIndexes, collectLiveChatSourcesFromSnapshot, diffLiveChatSourcesAgainstRecords, sameMaintenanceTurnText, recordMemorySanitizerVersion, recordNeedsLiveSanitizerRebuild, automaticMaintenanceStrategyForPlan, classifyRequestType, flashbackModelMainRequestEvidence, requestKindCore: FlashbackRequestKindCore, classifyRecallQuery, adaptiveRecallProfile, previousTurnRecallProfile, buildDiscriminativeRecallAnchors, selectDiverseRecall, applyRecallQualityBalance, compareRecallItemsFinal, buildRecallQuery, buildSceneContextQuery, decomposeRecallTopics, effectiveRecallPreferenceWeights, applyFlashbackRecallPreference, applyFlashbackMultiTopicCoverage, ensureFlashbackMustCarryCoverage, ensureFlashbackContradictionCoverage, computeImportanceDensity, extractEntityAnchors, buildLatestStateByEntity, applyCurrentUserOverlaySuppressions, collectCurrentStateFacts, structuredStateFactsFromMetadata, extractQueryStateProperties, buildRecallShardSummary, flashbackMemoryLaneDocumentStats, flashbackMemoryLaneWeightedMatch, flashbackMemoryLaneQueryPhrases, selectRecallShardIndexes, previousTurnSourceShardIndexes, detectEpisodeBoundaries, buildEpisodeIndexRecords, sanitizeAssistantForMemory, extractMemoryMetadata, cleanRecordForMemory, collectCurrentSceneTailCandidates, collectEntityFocusedCandidates, applyPerSourceDiversityLimit, injectMessage, finalizedAssistantCandidate, finalizedAssistantMatchesPendingBaselineVariant, serializePendingCaptureJournalEntry, normalizePendingCaptureJournalEnvelope, persistPendingCaptureJournalEntry, loadPendingCaptureJournalEntries, recoverPendingCapturesFromJournal, finiteTurnIndex, latestResponseTurnIndex, latestLiveResponseTurnIndex, computeStoryRecency, storyOrderValue, buildRecentResponseRanks, buildStoredTurnVectorGroups, selectPreviousTurnVectorContext, recallSemanticSignals, manualRecordDeleteKey, memoryRecordDisplayTitle, turnPairDisplayText, formatCostSummary, formatGuiDateTime, flashbackLineageReasonLabel, manualEditorShardIndexes, currentScopeStats, isGuiRenderActive, maybeScheduleConversationDriftCheck, isRetainedMemoryRecord, isPermanentSessionHistoryRecord, isInheritedScopeMemoryRecord, normalizeInheritedScopeRecordForActiveHistory, memorySessionBridgeMarker, resolveScopeFromSnapshot, sameCharacterChatIdentity, findSameChatPersonaScopeSource, findCloneSource, rebindRecordForSameChatPersonaRecovery, cloneRecordForNativeChatCopy, liveRecordForNativeChatCopy, repairMisclassifiedNativeCopyScope, cloneScopeStorage, ensureScopeStorageReady, prepareScopeStorageForRequest, resolveCurrentScopeIdentityBundle, beforeRequest, pendingCaptureRuntimeSnapshot: () => ({ lastRecall: Runtime.lastRecall, pendingTurns: (Runtime.pendingTurns || []).map(item => ({ pendingId: item.pendingId || '', scopeKey: item.scope?.scopeKey || '', pairIndex: Number(item.pairIndex || 0) || 0, latestUser: item.latestUser || '' })), deferredScopeStorage: Array.from(Runtime.deferredScopeStorageTasks.keys()) }), ensureFlashbackArchiveForHandoff, createImmutableFlashbackHandoffArchive, archiveAndCompactFlashbackSourceScope, flashbackSourceIntegritySnapshot, compareFlashbackSourceIntegrity, restoreLegacyCompactedSourceScope, readFlashbackHandoffLedger, writeFlashbackHandoffReceipt, verifyFlashbackArchiveRef, loadFlashbackArchiveChain, loadFlashbackArchiveManifestSummary, normalizeFlashbackArchiveRef, flashbackArchiveRecordIdentity, loadScopeManifest, saveScopeManifest, buildFlashbackVectorShardPayload, hydrateFlashbackVectorRecords, persistFlashbackVectorShard, encodeFlashbackShardEnvelope, decodeFlashbackShardEnvelope, flashbackArchiveGzipSupported, retireExternalRecordsForScope, reconcileFlashbackTurnWorldline, debugWorldlineSnapshot, flashbackPairIdentity, flashbackLiveWorldlineHash, responseGroupsForWorldline, protectPendingGenerationWorldlineTarget, prepareFlashbackWorldlineReplacement, synchronizeFlashbackTurnWorldline, loadTurnWorldline, loadScopeRecords, loadScopeRecordsForRecall, invalidateRecallShardCache, saveAllRecords, pendingThresholds: Object.freeze({ fallbackMinOverlap: PENDING_FALLBACK_MIN_OVERLAP, shortMarkedFallbackMinOverlap: PENDING_SHORT_MARKED_FALLBACK_MIN_OVERLAP, shortLatestScoreSlack: PENDING_SHORT_LATEST_SCORE_SLACK, shortUnconfirmedGraceMs: PENDING_SHORT_UNCONFIRMED_GRACE_MS, singleShortZeroOverlapMs: PENDING_SINGLE_SHORT_ZERO_OVERLAP_MS }) }
   });
   publicApi._test.buildUiHtml = buildUiHtml;
   publicApi._test.renderManualEditorPanelHtml = renderManualEditorPanelHtml;

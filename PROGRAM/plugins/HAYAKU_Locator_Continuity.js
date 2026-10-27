@@ -14032,6 +14032,18 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       Memory.compatCallStats.lastTimeout = text(label);
       Memory.lastWarnings = [...ensureArray(Memory.lastWarnings), `host_timeout:${text(label)}`].slice(-20);
     };
+    const maintenanceStorageRead = key => {
+      const authority = Memory.maintenanceReadAuthority;
+      if (!authority || !MemorySuiteStorageBridge.shouldRoute('plugin', key)) return null;
+      return async () => {
+        authority.fence.assertCurrent();
+        const value = await MemorySuiteStorageBridge.get('plugin', key,
+          () => MemorySuiteStorageBridge.ownerLegacyRead('plugin', key), null, null,
+          {scope: authority.scope, noCache: true, readOnlySnapshot: true, strictServerOnly: true});
+        authority.fence.assertCurrent();
+        return value;
+      };
+    };
     const getStorageItemOutcome = async (key, timeoutMs = HOST_API_CALL_TIMEOUT_MS) => {
       const storage = MemorySuiteStorageBridge.createPluginStorageProxy(storageHost()?.pluginStorage);
       if (typeof storage?.getItem !== 'function') {
@@ -14041,7 +14053,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const requestedTimeout = Math.max(100, Number(timeoutMs) || HOST_API_CALL_TIMEOUT_MS);
       const timeoutMarker = {};
       let timer = null;
-      const operation = Promise.resolve().then(() => storage.getItem(key));
+      const operation = Promise.resolve().then(maintenanceStorageRead(key) || (() => storage.getItem(key)));
       try {
         const settled = await Promise.race([
           operation.then(
@@ -14134,6 +14146,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       };
     };
     const getStorageItem = async (key, fallback = null) => {
+      if (maintenanceStorageRead(key)) {
+        const outcome = await getStorageItemOutcome(key);
+        if (outcome.state !== 'fulfilled') throw Error(outcome.error || outcome.reason || 'maintenance_storage_read_failed');
+        return outcome.value == null || outcome.value === '' ? fallback : outcome.value;
+      }
       const storage = MemorySuiteStorageBridge.createPluginStorageProxy(storageHost()?.pluginStorage);
       if (typeof storage?.getItem !== 'function') return fallback;
       const value = await boundedHostCall(`MemorySuite.getItem:${key}`, () => storage.getItem(key), fallback);
@@ -14610,6 +14627,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           chatIdHash: stableHash64(chatId),
           characterId: compact(characterId, 160),
           chatId: compact(chatId, 160),
+          personaId: compact(chat?.bindedPersona || chat?.boundPersonaId || chat?.personaId || '', 240),
           bridgeHandoffSourceChatId: compact(bridgeHandoffSourceChatId, 160),
           bridgeHandoffTransferId: compact(bridgeMarkerState.valid ? bridgeMarkerState.transferId : '', 160),
           bridgeHandoffSourceScopeKey: compact(bridgeMarkerState.valid ? bridgeMarkerState.sourceHayakuScopeKey : '', 196),
@@ -17752,6 +17770,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return false;
     }
     if (NATIVE_JOB_TERMINAL_STATES.has(job.state) || job.state === 'awaiting_choice') return false;
+    if (hayakuMaintenanceOperation) hayakuMaintenanceOperation.cancelled = true;
+    if (hayakuMaintenanceConfirmCancel) hayakuMaintenanceConfirmCancel();
     if (job.kind === 'manual_missing_batch') Memory.nativeRecovery.manualBatchCancelRequested = true;
     if (job.kind === 'cold_start') Memory.nativeRecovery.coldStartCancelRequested = true;
     else Memory.nativeRecovery.repairCancelRequested = true;
@@ -40112,10 +40132,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       reason: 'archive_hydrated_cache_hit'
     };
   };
-  const readHayakuSharedArchive = async archiveRefValue => {
+  const readHayakuSharedArchive = async (archiveRefValue, options = {}) => {
     const head = normalizeHayakuArchiveRef(archiveRefValue);
     if (!head) return { archiveRef: null, records: [], archive: null, layers: [], verified: false, reason: 'archive_ref_absent' };
-    const hydratedCache = readHayakuHydratedArchiveCache(head);
+    const hydratedCache = options.fresh === true ? null : readHayakuHydratedArchiveCache(head);
     if (hydratedCache) return hydratedCache;
     const seen = new Set();
     const layers = [];
@@ -40123,7 +40143,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     while (cursor && layers.length < HAYAKU_ARCHIVE_MAX_DEPTH) {
       if (seen.has(cursor.storageKey)) return { archiveRef: head, records: [], archive: null, layers, verified: false, reason: 'archive_cycle' };
       seen.add(cursor.storageKey);
-      const raw = await RisuCompat.getStorageItem(cursor.storageKey, null);
+      const raw = options.read ? await options.read(cursor.storageKey) : await RisuCompat.getStorageItem(cursor.storageKey, null);
       const decoded = await decodeHayakuArchiveStorage(cursor.storageKey, raw);
       const parsed = decoded.parsed;
       if (!objectish(parsed) || parsed.schema !== HAYAKU_ARCHIVE_SCHEMA || compact(parsed.archiveId || '', 128) !== cursor.archiveId) {
@@ -40147,10 +40167,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const result = { archiveRef: head, records, archive: layers[0]?.archive || null, layers, verified, digest, reason: verified ? 'archive_verified' : 'archive_digest_mismatch' };
     return verified ? cacheHayakuHydratedArchive(head, result) : result;
   };
-  const hydrateHayakuLedgerArchive = async ledger => {
+  const hydrateHayakuLedgerArchive = async (ledger, options = {}) => {
     const archiveRef = normalizeHayakuArchiveRef(ledger?.archiveRef);
     if (!archiveRef) return { ...ledger, archiveRef: null, archiveRecords: 0, archiveVerified: true };
-    const archive = await readHayakuSharedArchive(archiveRef);
+    const archive = await readHayakuSharedArchive(archiveRef, options);
     const marked = archive.records.map(record => normalizeStorageRecord({
       ...record,
       archiveReferenceOnly: true,
@@ -45601,6 +45621,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }, {});
   };
   const runNativeAuxiliaryProbe = async (options = {}) => {
+    if (hayakuMaintenanceOperation) return {ok: false, reason: 'maintenance_in_progress'};
     if(hayakuReanalysisRunning)return {ok:false,reason:'source_reanalysis_in_progress'};
     const probe = Memory.nativeRecovery.auxiliaryProbe || (Memory.nativeRecovery.auxiliaryProbe = { inFlight: false, last: null });
     const settings = await loadSettings(options.automatic === true);
@@ -47585,6 +47606,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return result;
   };
   const runNativeTargetedRegeneration = async (options = {}) => {
+    if (hayakuMaintenanceOperation) return {ok: false, reason: 'maintenance_in_progress'};
     if(typeof options.sourceEditValidate!=='function')return {ok:false,reason:'explicit_reanalysis_required'};
     const state = Memory.nativeRecovery;
     if (state.manualBatchInFlight) return { ok:false, reason:'manual_repair_batch_in_flight' };
@@ -47971,7 +47993,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       });
       if (candidateWrite.durable !== true) throw new Error(candidateWrite.reason || 'native_candidate_write_failed');
 
-      if (Memory.nativeRecovery.job?.kind === 'manual_repair') updateNativeJob({ state: 'adopting', message: '검증된 복구 패킷을 원장에 반영하고 readback을 확인합니다.', cancellable: false });
+      if (['manual_repair','manual_missing_batch'].includes(Memory.nativeRecovery.job?.kind)) updateNativeJob({ state: 'adopting', message: '검증된 복구 패킷을 원장에 반영하고 readback을 확인합니다.', cancellable: false });
       const adoption = await adoptBridgeIncrementalRecoveryCapsule(nativeRepairCapsuleFromCandidate(candidateWrite.candidate));
       const outcome = classifyNativeRepairAdoption(adoption);
       if (outcome === 'completed') {
@@ -48257,6 +48279,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return { attempted: true, adopted: adoption?.verified === true && adoption?.durable === true, reason: adoption?.reason || 'legacy_takeover_attempted', packets: packets.length, adoption: clone(adoption, {}) };
   };
   const runNativeRepairSweep = async (options = {}) => {
+    if (hayakuMaintenanceOperation && options.maintenanceToken !== hayakuMaintenanceOperation) return {ok: false, reason: 'maintenance_in_progress'};
     if(hayakuReanalysisRunning)return {ok:false,reason:'source_reanalysis_in_progress'};
     const state = Memory.nativeRecovery;
     if(state.manualBatchInFlight && options.batchToken!==state.manualBatchToken)return {ok:false,skipped:true,reason:'manual_repair_batch_in_flight'};
@@ -48373,12 +48396,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     diagnostic.phaseTimings=ensureArray(diagnostic.phaseTimings);
     if(diagnostic.stage)diagnostic.phaseTimings.push({stage:diagnostic.stage,turn:diagnostic.turn||0,elapsedMs:Math.max(0,phaseAt-(diagnostic.updatedAt||diagnostic.startedAt||phaseAt))});
     const labels={scope_lookup:'채팅 확인',coverage_scan:'누락 턴 확인',selection_check:'선택 확인',turn_scope_check:'대상 턴 확인',debt_inspection:'저장 상태 확인',repair_execution:'원문과 저장 상태 확인',lease_acquire:'중복 작업 확인',evidence_verify:'원문 근거 확인',model_call:'AI가 기억을 생성하는 중',response_validation:'생성 결과 검사'};
-    if(state.job?.jobId===diagnostic.jobId)updateNativeJob({message:'T'+(detail.turn||diagnostic.turn||0)+' · '+(labels[stage]||stage)});
+    if(state.job?.jobId===diagnostic.jobId && !state.job.cancelRequested)updateNativeJob({
+      state:stage==='model_call'?'analyzing':stage==='response_validation'?'verifying':'preparing',
+      message:'T'+(detail.turn||diagnostic.turn||0)+' · '+(labels[stage]||stage)});
     Object.assign(diagnostic, detail, { stage, updatedAt: phaseAt });
     if (state.job?.jobId === diagnostic.jobId) updateNativeJob({ diagnosticStage: stage, currentTurn: diagnostic.turn || 0 });
     pushOperationLog('native_recovery:selected_missing_stage', { jobId:diagnostic.jobId, scopeKey:diagnostic.scopeKey, stage, turn:diagnostic.turn || 0 }, 'info');
   };
   const runNativeMissingTurnBatch=async(options={})=>{
+    if (hayakuMaintenanceOperation && options.maintenanceToken !== hayakuMaintenanceOperation) return {ok: false, reason: 'maintenance_in_progress'};
     const state=Memory.nativeRecovery;
     const targets=[...new Set(ensureArray(options.targetTurns).map(Number).filter(n=>Number.isInteger(n)&&n>0))].sort((a,b)=>a-b);
     const reject = reason => {
@@ -48449,7 +48475,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         if(stopped()){results.push({turn,ok:false,reason:'user_cancelled'});break;}
         try{
           setNativeManualRepairPhase('repair_execution');
-          const result=await runNativeRepairSweep({force:true,reason:'viewer_selected_missing',includeAwaitingReview:true,explicitRetry:true,targetPairIndex:turn,expectedScopeKey:scope.key,expectedRow:row,batchToken:token});
+          const result=await runNativeRepairSweep({force:true,reason:'viewer_selected_missing',includeAwaitingReview:true,explicitRetry:true,targetPairIndex:turn,expectedScopeKey:scope.key,expectedRow:row,batchToken:token,maintenanceToken:options.maintenanceToken});
           const entry={turn,suspended:result.suspended===true,ok:result.ok===true&&result.repaired===true,repaired:result.repaired===true,reason:result.reason||result.error||'repair_not_completed',failureId:result.failureId||'',error:result.validationError||result.error||'',responseShape:clone(result.responseShape||null,null),recordAdmission:clone(result.recordAdmission||null,null),partialMemory:clone(result.partialMemory||null,null),generationMetrics:clone(result.generationMetrics||[],[]),code:result.code||'',stage:result.stage||diagnostic.stage};
           if(!entry.ok&&result.ok===true){
             const after=await inspectRecoveryDebtsForNativeRepair({targetPairIndex:turn,limit:1});
@@ -48518,6 +48544,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     };
   };
   const startNativeColdStart = async (options = {}) => {
+    if (hayakuMaintenanceOperation && options.maintenanceToken !== hayakuMaintenanceOperation) return {ok: false, reason: 'maintenance_in_progress'};
     if(hayakuReanalysisRunning)return {ok:false,reason:'source_reanalysis_in_progress'};
     const state = Memory.nativeRecovery;
     if (state.manualBatchInFlight) return { ok:false, reason:'manual_repair_batch_in_flight' };
@@ -49311,6 +49338,227 @@ const MemorySuiteHealthRecovery = (() => {
   const hayakuHealthRecovery = Object.freeze({ inspect: () => getHayakuRecoveryActions().inspect(),
     preview: () => getHayakuRecoveryActions().preview('refresh_derived_cache'), repair: ticket => getHayakuRecoveryActions().apply(ticket), clear: () => getHayakuRecoveryActions().clear() });
 /* HAYAKU HEALTH ADAPTER END */
+
+  // The cache-only compatibility adapter above retains its narrow contract.
+  // Maintenance reads the selected authority without copy adoption, migration,
+  // debt enrollment, cache hydration shortcuts, or implicit local fallback.
+  let hayakuMaintenanceOperation = null, hayakuMaintenanceConfirmCancel = null;
+  const hayakuMaintenanceBusy = () => Boolean(hayakuReanalysisRunning || Memory.nativeRecovery.manualBatchInFlight
+    || Memory.nativeRecovery.repairInFlight || Memory.nativeRecovery.coldStartInFlight
+    || Memory.nativeRecovery.llmInFlight || Memory.nativeRecovery.unverifiedStreams
+    || Memory.nativeRecovery.auxiliaryProbe?.inFlight || Memory.nativeRecovery.job?.state === 'awaiting_choice');
+  const hayakuMaintenanceReasonLabel = reason => ({
+    maintenance_cancelled:'작업을 중단했습니다.', analysis_confirmation_required:'기억 분석을 시작하지 않았습니다.',
+    maintenance_plan_changed:'원문·설정 또는 저장 상태가 바뀌었습니다. 다시 점검해 주세요.',
+    maintenance_source_changed:'진행 중 대화 내용이나 선택한 채팅이 바뀌었습니다.',
+    maintenance_route_changed:'저장 경로가 바뀌었습니다. 다시 점검해 주세요.',
+    maintenance_storage_changed:'검사 중 저장 자료가 바뀌었습니다. 다시 점검해 주세요.',
+    maintenance_storage_transition_required:'저장 위치 이전을 완료한 뒤 다시 점검해 주세요.',
+    maintenance_ledger_invalid:'원장의 형식이나 채팅 식별 정보를 확인하지 못했습니다. 기존 자료를 보존했습니다.',
+    maintenance_ledger_record_invalid:'원장에 읽을 수 없는 기록이 있습니다. 기존 자료를 보존했습니다.',
+    maintenance_recovery_vault_invalid:'복구 자료를 읽지 못했습니다. 기존 자료를 보존했습니다.',
+    authoritative_chat_unavailable:'현재 채팅의 원문을 확인하지 못했습니다.',
+    native_recovery_busy:'다른 복구 작업이 진행 중입니다.', recovery_lease_active:'이미 예약된 복구 작업이 있습니다.',
+    binding_readback_incomplete:'저장된 원장 결속을 확인하지 못했습니다.',
+    maintenance_readback_incomplete:'일부 턴의 패킷 또는 원장 결속이 아직 확인되지 않았습니다.'
+  }[reason] || '점검·복구를 완료하지 못했습니다. 저장소 연결과 작동 기록을 확인해 주세요.');
+  const readHayakuMaintenanceFrame = async (progress = () => {}) => {
+    if (Memory.unloaded || !ownsRuntime()) throw Error('maintenance_owner_unavailable');
+    progress('preparing', '현재 채팅과 저장 경로를 확인합니다.');
+    const fence = MemorySuiteStorageBridge.captureReadOnlyAuthorityFence();
+    const scope = await RisuCompat.currentChatScope();
+    if (!scope?.confident || !scope.key || scope.chatMessagesAvailable !== true) throw Error('authoritative_chat_unavailable');
+    const sourceWitness = JSON.stringify([scope.key, scope.personaId, scope.hostLineage, scope.chatMessages]);
+    const route = await MemorySuiteStorageBridge.getScopeMode(scope);
+    if (route.transition || route.mode === 'mirror') throw Error('maintenance_storage_transition_required');
+    if (!['plugin_only', 'server_only'].includes(route.mode)) throw Error('maintenance_storage_route_unverified');
+    const routeWitness = JSON.stringify([route, MemorySuiteStorageBridge.status().serverBinding]);
+    const observed = new Map();
+    const read = async key => {
+      fence.assertCurrent();
+      const value = await MemorySuiteStorageBridge.get('plugin', key,
+        () => MemorySuiteStorageBridge.ownerLegacyRead('plugin', key), null, null,
+        {scope, noCache: true, readOnlySnapshot: true, strictServerOnly: true});
+      fence.assertCurrent();
+      const witness = JSON.stringify(value ?? null);
+      if (observed.has(key) && observed.get(key) !== witness) throw Error('maintenance_storage_changed');
+      observed.set(key, witness);
+      return value;
+    };
+    progress('verifying', '완료 턴·패킷 본문·원장·공유 아카이브를 대조합니다.');
+    const storageKey = storageLedgerStorageKey(scope), raw = await read(storageKey);
+    const value = typeof raw === 'string' ? safeJsonParse(raw, null) : raw;
+    if (raw != null && raw !== '' && (!objectish(value) || value.version !== STORAGE_LEDGER_VERSION
+      || value.scopeKey !== scope.key || !Array.isArray(value.records))) throw Error('maintenance_ledger_invalid');
+    const hydrated = await hydrateCapturedLedgerRaw(value, scope, {offline: true, read});
+    let ledger = normalizeStorageLedger(hydrated, scope);
+    if (value && ledger.records.length !== value.records.length) throw Error('maintenance_ledger_record_invalid');
+    ledger = await hydrateHayakuLedgerArchive(ledger, {fresh: true, read});
+    if (ledger.archiveVerified !== true) throw Error('maintenance_' + (ledger.archiveReason || 'archive_unverified'));
+    // Fresh vault reads are essential: an unreadable index is never an empty
+    // history and must not turn a previous live failure into a cold start.
+    const vaultValue = await read(recoveryVaultKeyForScope(scope.key));
+    const vaultIndex = typeof vaultValue === 'string' ? safeJsonParse(vaultValue, null) : vaultValue;
+    if (vaultValue != null && vaultValue !== '' && !objectish(vaultIndex)) throw Error('maintenance_recovery_vault_invalid');
+    let expanded = vaultIndex;
+    if (vaultIndex) {
+      validateRecoveryVaultIndex(vaultIndex, scope.key);
+      if (vaultIndex.storageFormat === RECOVERY_VAULT_STORAGE_FORMAT) {
+        const records = [];
+        for (const ref of vaultIndex.debtRefs) {
+          const rawShard = await read(ref.key);
+          records.push(validateRecoveryVaultShard(typeof rawShard === 'string' ? safeJsonParse(rawShard, null) : rawShard, ref, scope.key));
+        }
+        expanded = {...vaultIndex, records};
+      }
+    }
+    const vault = normalizeRecoveryVault(expanded, scope.key);
+    const snapshot = hayakuCanonicalTopologySnapshot(authoritativeChatSnapshot(scope.chatMessages, scope), ledger);
+    const migration = importChatPacketsIntoStorageLedger(clone(ledger, {}), snapshot, scope);
+    const worldline = reconcileTurnWorldline(migration.ledger.worldline, snapshot, scope);
+    const binding = bindStorageLedgerToSnapshot({...migration.ledger, worldline}, snapshot, worldline);
+    const live = liveChatLedgerRecordsFromSnapshot(snapshot, scope, worldline);
+    const slots = reconcileStorageSlotHeads(binding.ledger, binding.activeRecords, live);
+    const exact = exactHayakuTurnCoverage(snapshot, slots.ledger, scope.key);
+    const activeDebts = vault.records.filter(record => !record.inheritedSessionHistory && !record.permanentSessionHistory
+      && RECOVERY_DEBT_ACTIVE_STATUSES.has(record.status) && record.worldlineStatus === 'active'
+      && exact.missingTurns.includes(Number(record.pairIndex)) && snapshot.conversationPairs.some(pair => Number(pair.pairIndex) === Number(record.pairIndex)
+        && (!record.userHash || record.userHash === pair.userHash)
+        && (!record.assistantHash || record.assistantHash === pair.assistantVisibleHash)
+        && (!record.assistantMessageIdHash || record.assistantMessageIdHash === pair.assistantMessageIdHash)));
+    const coverage = recoveryCoverageProjection({snapshot, ledger: slots.ledger, activeRecords: activeDebts});
+    // Compare durable binding fields, not reconciliation's transient `changed`
+    // flag or observation timestamps. A suppressed slot is temporarily visited
+    // during projection and must not become an endless repair requirement.
+    const sameFields = (left, right, fields) => Boolean(left && right)
+      && fields.every(key => JSON.stringify(left[key] ?? null) === JSON.stringify(right[key] ?? null));
+    const bindingFields = ['hash','recordState','slotId','ownerTurnNodeId','logicalTurnId','parentTurnNodeId',
+      'userHash','assistantVisibleHash','userMessageIdHash','assistantMessageIdHash'];
+    const headFields = ['selectedVariantHash','selectedRecordId','ownerTurnNodeId','packetType','state'];
+    const nodeFields = ['status','pairIndex','userHash','assistantVisibleHash','userMessageIdHash','assistantMessageIdHash','packetHashes','packetLineageStatus'];
+    const originalRecords = new Map(ledger.records.map(record => [record.recordId, record]));
+    const originalHeads = new Map(ensureArray(ledger.slotHeads).map(head => [head.slotId, head]));
+    const expectedHeads = new Map(slots.ledger.slotHeads.map(head => [head.slotId, head]));
+    const originalNodes = new Map(normalizeTurnWorldline(ledger.worldline).nodes.map(node => [node.turnNodeId, node]));
+    const bindingChecks = {packetImport: migration.changed === true,
+      identity: binding.ledger.records.some(record => !sameFields(record, originalRecords.get(record.recordId), bindingFields)),
+      slotHeads: [...expectedHeads].some(([id, head]) => !sameFields(head, originalHeads.get(id), headFields))
+        || [...originalHeads].some(([id, head]) => head.state === 'active' && !expectedHeads.has(id)),
+      worldline: normalizeTurnWorldline(worldline).nodes.filter(node => node.status === 'active')
+        .some(node => !sameFields(node, originalNodes.get(node.turnNodeId), nodeFields)),
+      topology: ledger.chatTopologyHash !== turnTopologySnapshotHash(snapshot)};
+    const needsBinding = coverage.completedTurns > 0 && Object.values(bindingChecks).some(Boolean);
+    const leasedTurns = activeDebts.filter(record => recoveryDebtLeaseIsActive(record, now())).map(record => Number(record.pairIndex));
+    const targetTurns = coverage.mode === 'cold_start' ? coverage.coldStartTargetTurns : coverage.missingTurns;
+    const batchTurns = normalizeColdStartBatchTurns(Memory.settings?.coldStartBatchTurns || 1);
+    const extraCalls = Memory.settings?.recoveryExtraCalls === 1 ? 1 : 0;
+    const baseCalls = coverage.mode === 'cold_start' ? Math.ceil(targetTurns.length / batchTurns) : targetTurns.length;
+    const automaticRetryCalls = coverage.mode === 'cold_start' && batchTurns > 1 ? coldStartAutomaticRetryBudget(targetTurns.length, batchTurns) : 0;
+    // Repeat every physical witness, including referenced bodies, before
+    // declaring inspection complete. No normalized/cached empty can certify it.
+    for (const key of [...observed.keys()]) await read(key);
+    const current = await RisuCompat.currentChatScope();
+    if (!current?.confident || sourceWitness !== JSON.stringify([current.key, current.personaId, current.hostLineage, current.chatMessages])) throw Error('maintenance_source_changed');
+    const currentRoute = await MemorySuiteStorageBridge.getScopeMode(current);
+    if (routeWitness !== JSON.stringify([currentRoute, MemorySuiteStorageBridge.status().serverBinding])) throw Error('maintenance_route_changed');
+    fence.assertCurrent();
+    const report = {schema: 'hayaku.maintenance.v1', known: true, complete: true, scopeKey: scope.key, storageMode: route.mode,
+      status: targetTurns.length || needsBinding ? 'repair_needed' : 'healthy', mode: coverage.mode,
+      completedTurns: coverage.completedTurns, coveredTurns: coverage.coveredTurns, missingTurns: targetTurns,
+      userSuppressedTurns: coverage.userSuppressedTurns, leasedTurns, needsBinding, bindingChecks, targetTurns,
+      batchTurns, baseCalls, extraCalls, automaticRetryCalls, maxCalls: (baseCalls + automaticRetryCalls) * (1 + extraCalls),
+      rows: coverage.rows, checkedAt: now()};
+    return {report, scope, snapshot, fence, signature: JSON.stringify([sourceWitness, routeWitness, [...observed], Memory.settings]),
+      transcriptFingerprint: nativeColdStartTranscriptFingerprint(scope)};
+  };
+  const inspectHayakuMaintenance = async (progress = () => {}) => {
+    try { return (await readHayakuMaintenanceFrame(progress)).report; }
+    catch (error) { return {schema: 'hayaku.maintenance.v1', known: false, complete: false, status: 'unverified', reason: text(error?.message || error)}; }
+  };
+  const runHayakuMaintenance = async (options = {}) => {
+    if (hayakuMaintenanceOperation || hayakuMaintenanceBusy()) return {ok: false, status: 'busy', reason: 'native_recovery_busy'};
+    const operation = {cancelled: false, phase: 'inspection'}; hayakuMaintenanceOperation = operation;
+    beginNativeJob('maintenance', {message: '현재 채팅의 완료 턴과 원장 결속을 점검합니다.'});
+    const progress = (state, message) => updateNativeJob({state, message, maintenancePhase: operation.phase, cancellable: !operation.cancelled});
+    let before = null, after = null, binding = null, analysis = null, physicalCalls = 0;
+    const check = () => {
+      if (operation.cancelled || Memory.unloaded || !ownsRuntime()) throw Error('maintenance_cancelled');
+    };
+    const finish = (ok, status, reason = '') => {
+      physicalCalls = Math.max(physicalCalls, Number(nativeJobSnapshot()?.physicalCalls || 0));
+      const report = after?.report || before?.report;
+      const result = {ok, status, reason, description:ok ? '' : hayakuMaintenanceReasonLabel(reason), before: before?.report || null, after: after?.report || null,
+        binding, analysis, physicalCalls, total: report?.completedTurns || 0,
+        completed: report?.coveredTurns.length || 0, cancelled: operation.cancelled};
+      updateNativeJob({kind: 'maintenance', state: 'verifying', maintenancePhase: 'verification', physicalCalls, total: result.total,
+        completed: result.completed, targetTurns: before?.report.targetTurns || [],
+        maintenance: report,
+        message: ok ? `점검·복구 완료 · 패킷 확인 ${result.completed}/${result.total}턴 · 사용자 제외 ${report?.userSuppressedTurns.length || 0}턴 · 원장 결속 확인 · 모델 호출 ${physicalCalls}회`
+          : `점검·복구 미완료 · ${result.description} · 모델 호출 ${physicalCalls}회`});
+      finishNativeJob(ok ? 'completed' : operation.cancelled ? 'cancelled' : status === 'needs_confirmation' ? 'suspended' : 'failed', result, ok ? '' : reason || status);
+      pushOperationLog('maintenance:finished', result, ok ? 'success' : 'warn');
+      return result;
+    };
+    try {
+      await loadSettings(false); check();
+      before = await readHayakuMaintenanceFrame(progress); check();
+      // Keep native engine reads on the authority proved by this run. A missing
+      // server row must not import a retained local migration artifact midway.
+      operation.authority = {scope: before.scope, fence: before.fence};
+      Memory.maintenanceReadAuthority = operation.authority;
+      updateNativeJob({scopeKey: before.scope.key, targetTurns: before.report.targetTurns, total: before.report.completedTurns,
+        completed: before.report.coveredTurns.length, maintenance: before.report});
+      if (before.report.leasedTurns.length) return finish(false, 'busy', 'recovery_lease_active');
+      if (before.report.needsBinding) {
+        operation.phase = 'binding';
+        progress('adopting', '기존 패킷을 보존하며 현재 턴과 원장·슬롯 결속을 복구합니다.');
+        before.fence.assertCurrent(); check();
+        binding = await reconcileObservedChatTopology(before.scope, before.snapshot, 'manual_maintenance',
+          {refreshScope: true, prompt: false, verifyBindings: true, expectedMaintenanceSignature: before.signature});
+        if (binding.ok !== true || binding.durable !== true) return finish(false, 'unverified', binding.reason || 'binding_readback_failed');
+      }
+      operation.phase = 'verification';
+      after = await readHayakuMaintenanceFrame(progress); check();
+      if (after.scope.key !== before.scope.key || after.transcriptFingerprint !== before.transcriptFingerprint) throw Error('maintenance_source_changed');
+      if (after.report.needsBinding) return finish(false, 'unverified', 'binding_readback_incomplete');
+      if (after.report.targetTurns.length) {
+        const plan = after;
+        operation.phase = 'analysis';
+        updateNativeJob({maintenance: plan.report, completed: plan.report.coveredTurns.length});
+        progress('awaiting_confirmation', `${plan.report.mode === 'cold_start' ? '콜드스타트' : '누락 턴 복구'} · ${plan.report.targetTurns.length}턴 · 기본 ${plan.report.baseCalls}회 · 최대 ${plan.report.maxCalls}회 호출`);
+        const allowed = typeof options.confirmAnalysis === 'function' ? await options.confirmAnalysis(clone(plan.report, {})) : options.allowModel === true;
+        check();
+        if (!allowed) return finish(false, 'needs_confirmation', 'analysis_confirmation_required');
+        const current = await readHayakuMaintenanceFrame(progress); check();
+        plan.fence.assertCurrent();
+        if (current.signature !== plan.signature) throw Error('maintenance_plan_changed');
+        if (plan.report.mode === 'cold_start') {
+          beginNativeJob('cold_start', {scopeKey: plan.scope.key, targetTurns: plan.report.targetTurns,
+            message: '콜드스타트를 실행합니다. 검증된 체크포인트는 재사용합니다.'});
+          analysis = await startNativeColdStart({resume: true, batchTurns: plan.report.batchTurns,
+            confirmationScopeKey: plan.scope.key, confirmationTranscriptFingerprint: plan.transcriptFingerprint,
+            maintenanceToken: operation});
+          physicalCalls = Number(analysis?.llmCalls ?? nativeJobSnapshot()?.physicalCalls ?? 0);
+        } else {
+          analysis = await runNativeMissingTurnBatch({scopeKey: plan.scope.key, targetTurns: plan.report.targetTurns,
+            rows: plan.report.rows.filter(row => plan.report.targetTurns.includes(row.turn)), maintenanceToken: operation});
+          physicalCalls = Number(analysis?.physicalCalls || 0);
+        }
+        check();
+        operation.phase = 'verification';
+        progress('verifying', '저장소에서 다시 읽어 완료 턴과 원장 결속을 최종 확인합니다.');
+        after = await readHayakuMaintenanceFrame(progress); check();
+        if (after.scope.key !== before.scope.key || after.transcriptFingerprint !== before.transcriptFingerprint) throw Error('maintenance_source_changed');
+        if (analysis?.ok !== true) return finish(false, 'partial', analysis?.reason || analysis?.error || 'analysis_incomplete');
+      }
+      const healthy = after.report.targetTurns.length === 0 && !after.report.needsBinding;
+      return finish(healthy, healthy ? 'verified' : 'partial', healthy ? '' : 'maintenance_readback_incomplete');
+    } catch (error) { return finish(false, 'unverified', compact(error?.message || error, 240)); }
+    finally {
+      if (Memory.maintenanceReadAuthority === operation.authority) Memory.maintenanceReadAuthority = null;
+      if (hayakuMaintenanceOperation === operation) hayakuMaintenanceOperation = null;
+    }
+  };
 
   const nativeRecoveryStatus = async (options = {}) => {
     const settings = await loadSettings(false);
@@ -55103,6 +55351,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       warning:`Other Ax 기본 ${units.length}회(턴당 1회), 구조 복구 추가 허용은 턴당 최대 ${extraCalls}회로 전체 최대 ${units.length*(1+extraCalls)}회입니다. Provider 비용이 발생할 수 있습니다. 검증과 저장 확인에 성공하면 선택한 턴의 기존 기억을 새 기억으로 자동 교체합니다. 채팅 원문은 변경하지 않습니다.`};
   };
   const runHayakuSelectedReanalysis=selection=>{
+    if (hayakuMaintenanceOperation) return Promise.resolve({ok: false, reason: 'maintenance_in_progress'});
     if(hayakuReanalysisRunning?.selection===selection)return hayakuReanalysisRunning.promise;
     if(Memory.settings?.enabled===false)return Promise.resolve({ok:false,reason:'owner_disabled'});
     if(hayakuReanalysisRunning||hayakuReanalysisBusy())return Promise.resolve({ok:false,reason:'reanalysis_busy'});
@@ -55625,6 +55874,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if (!current?.confident || current.key !== scope.key || current.chatMessagesAvailable !== true) return {ok:false,durable:false,changed:false,reason:'coverage_scope_changed'};
         scope=current; snapshot=authoritativeChatSnapshot(scope.chatMessages,scope);
       }
+      if (options.expectedMaintenanceSignature) {
+        const current = await readHayakuMaintenanceFrame();
+        if (current.signature !== options.expectedMaintenanceSignature) return {ok:false,durable:false,changed:false,reason:'maintenance_plan_changed'};
+      }
       let ledger = await loadStorageLedger(scope);
       if (Memory.unloaded || !ownsRuntime()) return inactive();
       if (ledger.enabled !== true) {
@@ -55642,7 +55895,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           node.status === 'quarantined'
           && node.lastMissingSnapshotHash !== observationHash
         ));
-      if (!topologyChanged
+      if (options.verifyBindings !== true && !topologyChanged
         && !pendingRetirementObservation
         && migration.changed !== true
         && ledger.copiedChatRepair !== true
@@ -56395,6 +56648,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     );
   };
   const viewerNativeJobKindLabel = kind => ({
+    maintenance: '상태 점검 및 자동 복구',
     manual_missing_batch: '선택한 누락 턴 복구',
     source_edit:'원문 재분석',
     manual_repair: '수동 누락 복구',
@@ -56779,26 +57033,43 @@ function mountMemorySuiteReanalysisReview(container,config) {
     setText('#hayakuNativeJobElapsedCompact', viewerNativeJobElapsed(job));
     setText('#hayakuNativeJobTurns', viewerFormatTurnList(job.targetTurns, '-'));
     setText('#hayakuNativeJobCurrent', job.currentTurn ? `T${job.currentTurn}` : '-');
-    setText('#hayakuNativeJobMessage', job.kind === 'manual_missing_batch' ? job.message || job.error || stateLabel : job.error || job.message || stateLabel);
-    const operationKind = job.kind === 'cold_start' ? 'cold' : job.kind === 'targeted_regeneration' ? 'regen' : job.kind === 'background_repair_confirmation' ? 'background' : 'repair';
+    setText('#hayakuNativeJobMessage', ['manual_missing_batch','maintenance'].includes(job.kind) ? job.message || job.error || stateLabel : job.error || job.message || stateLabel);
+    const operationKind = job.kind === 'maintenance' ? 'maintenance' : job.kind === 'cold_start' ? 'cold' : job.kind === 'targeted_regeneration' ? 'regen' : job.kind === 'background_repair_confirmation' ? 'background' : 'repair';
     const result = job.result || {};
     root.querySelectorAll?.('[data-hayaku-job-body]')?.forEach(node => { node.hidden = node.getAttribute('data-hayaku-job-body') !== operationKind; });
-    const stepLabels = operationKind === 'cold'
+    const stepLabels = operationKind === 'maintenance' ? ['상태 점검', '결속 복구', '누락 분석', '저장 재검증'] : operationKind === 'cold'
       ? ['묶음', '분석', '검증', '기록']
       : operationKind === 'regen'
         ? ['재검증', '분석', '후보 검증', '후보 비교']
         : ['대조', '분석', '검증', '기록'];
     root.querySelectorAll?.('[data-job-step]')?.forEach(node => { node.textContent = stepLabels[Math.max(0, Number(node.getAttribute('data-job-step')) - 1)] || ''; });
+    const activeStep = operationKind === 'maintenance'
+      ? ({inspection:1,binding:2,analysis:3,verification:4}[job.maintenancePhase] || 1)
+      : job.state === 'analyzing' ? 2 : job.state === 'verifying' ? 3 : job.state === 'adopting' || terminal ? 4 : 1;
+    root.querySelectorAll?.('[data-job-step]')?.forEach(node => {
+      const step = node.closest?.('.step'), number = Number(node.getAttribute('data-job-step'));
+      const done = number < activeStep || job.state === 'completed';
+      step?.classList?.toggle('is-done', done);
+      step?.classList?.toggle('is-active', !terminal && number === activeStep);
+      step?.classList?.toggle('is-fail', job.state === 'failed' && number === activeStep);
+      if (number === activeStep) step?.setAttribute?.('aria-current', 'step'); else step?.removeAttribute?.('aria-current');
+    });
     setText('#hayakuNativeJobResultTarget', viewerFormatTurnList(job.targetTurns, '-'));
     setText('#hayakuNativeJobColdBundles', Number(result.analysisBatchCount || total) ? `${Number(result.analysisBatchCount || total).toLocaleString()}묶음` : '-');
     const eyebrow = root.querySelector?.('#hayakuNativeJobEyebrow');
-    if (eyebrow) eyebrow.textContent = operationKind === 'cold' ? 'Other Ax Cold Start' : operationKind === 'regen' ? 'Other Ax targeted regeneration' : operationKind === 'background' ? 'Background auto repair' : 'Other Ax recovery';
+    if (eyebrow) eyebrow.textContent = operationKind === 'maintenance' ? 'Memory maintenance' : operationKind === 'cold' ? 'Other Ax Cold Start' : operationKind === 'regen' ? 'Other Ax targeted regeneration' : operationKind === 'background' ? 'Background auto repair' : 'Other Ax recovery';
     const recoveryConfirmation = Memory.ledgerViewer.recoveryConfirmation;
     setText('#hayakuNativeJobConfirmationTarget', recoveryConfirmation?.pairIndex ? `T${recoveryConfirmation.pairIndex}` : viewerFormatTurnList(job.targetTurns, '-'));
     setText('#hayakuNativeJobResultMemory', `${Number(result.memorySaved ?? result.completed ?? 0)}/${Number(result.total ?? job.total ?? 0)}턴`);
     setText('#hayakuNativeJobResultPackets', `${Number(result.packetCompleted ?? result.repaired ?? 0)}개`);
     setText('#hayakuNativeJobResultPartial', `${Number(result.partialSaved || 0)}개`);
     setText('#hayakuNativeJobResultCalls', `${Number(job.physicalCalls ?? result.physicalCalls ?? 0)}회`);
+    const maintenance = result.after || job.maintenance || result.inspection;
+    setText('#hayakuMaintenanceJobCoverage', maintenance?.known ? viewerHayakuMaintenanceSummary(maintenance) : maintenance?.reason ? hayakuMaintenanceReasonLabel(maintenance.reason) : '현재 채팅의 원문과 원장을 읽는 중');
+    setText('#hayakuMaintenanceJobCalls', `${Number(job.physicalCalls ?? result.physicalCalls ?? 0)}회`);
+    setText('#hayakuMaintenanceJobPlan', maintenance?.known ? `${maintenance.mode === 'cold_start' ? '콜드스타트' : '누락 턴 복구'} · 대상 ${viewerFormatTurnList(maintenance.targetTurns, '없음')} · 기본 ${maintenance.baseCalls}회 · 최대 ${maintenance.maxCalls}회` : '대상을 확인합니다.');
+    const maintenanceChoices = root.querySelector?.('#hayakuMaintenanceAnalysisChoices');
+    if (maintenanceChoices) maintenanceChoices.hidden = job.kind !== 'maintenance' || !awaitingConfirmation || !hayakuMaintenanceConfirmCancel;
     setText('#hayakuNativeJobResultColdSaved', `${Number(result.packets ?? result.saved ?? result.savedTurns ?? 0)}개`);
     setText('#hayakuNativeJobResultColdHeld', `${Number(result.failedChunks ?? result.held ?? result.heldTurns ?? 0)}묶음`);
     setText('#hayakuNativeJobResultColdCalls', `${Number(job.physicalCalls ?? result.llmCalls ?? result.physicalCalls ?? 0)}회`);
@@ -58298,6 +58569,41 @@ function mountMemorySuiteReanalysisReview(container,config) {
     }catch(error){viewerRecoveryMessage(`누락 복구 실패 · ${compact(error?.message||error,180)}`,true);return {ok:false,reason:text(error?.message||error)};}
     finally{selection.recoveryBusy=false;if(button)button.disabled=false;}
   };
+  const viewerHayakuMaintenanceSummary = report => !report?.known
+    ? `검사 미완료 · ${hayakuMaintenanceReasonLabel(report?.reason)}`
+    : `${report.storageMode === 'server_only' ? '서버' : '로컬'} · 완료 ${report.completedTurns}턴 · 패킷 확인 ${report.coveredTurns.length}턴 · ${report.mode === 'cold_start' ? '콜드스타트 대상' : '누락'} ${report.targetTurns.length}턴 · 원장 결속 ${report.needsBinding ? '복구 필요' : '확인'} · 사용자 제외 ${report.userSuppressedTurns.length}턴`;
+  const viewerConfirmHayakuMaintenance = plan => new Promise(resolve => {
+    const root = Memory.ledgerViewer.root;
+    const choices = root?.querySelector?.('#hayakuMaintenanceAnalysisChoices');
+    const accept = choices?.querySelector?.('[data-maintenance-analysis="yes"]');
+    const decline = choices?.querySelector?.('[data-maintenance-analysis="no"]');
+    if (!root || !accept || !decline) { resolve(false); return; }
+    let settled = false;
+    const finish = allowed => {
+      if (settled) return; settled = true;
+      accept.removeEventListener('click', yes); decline.removeEventListener('click', no);
+      if (hayakuMaintenanceConfirmCancel === no) hayakuMaintenanceConfirmCancel = null;
+      choices.hidden = true; resolve(allowed);
+    };
+    const yes = () => finish(true), no = () => finish(false);
+    accept.addEventListener('click', yes); decline.addEventListener('click', no);
+    hayakuMaintenanceConfirmCancel = no;
+    choices.hidden = false;
+    Memory.ledgerViewer.jobMinimized = false;
+    updateNativeJob({maintenance: plan});
+    accept.focus?.();
+  });
+  const viewerRunHayakuMaintenance = async () => {
+    const root = Memory.ledgerViewer.root, button = root?.querySelector?.('#hayakuMaintenanceRun');
+    if (button?.disabled) return;
+    if (button) button.disabled = true;
+    try {
+      const result = await runHayakuMaintenance({confirmAnalysis: viewerConfirmHayakuMaintenance});
+      const node = root?.querySelector?.('#hayakuSafeHealthStatus');
+      if (node) node.textContent = `${result.ok ? '점검·복구 완료' : '점검·복구 미완료'} · ${viewerHayakuMaintenanceSummary(result.after || result.before)}${result.description ? ' · ' + result.description : ''} · 모델 호출 ${result.physicalCalls || 0}회`;
+      return result;
+    } finally { if (button) button.disabled = false; }
+  };
   const viewerRunNativeColdStart = async () => {
     const batchTurns = normalizeColdStartBatchTurns(Memory.ledgerViewer.root?.querySelector?.('#hayakuColdStartBatchTurns')?.value || Memory.settings?.coldStartBatchTurns || 1);
     const initialScope = await RisuCompat.currentChatScope();
@@ -59747,6 +60053,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     }
   };
   const closeLedgerViewer = async () => {
+    if (hayakuMaintenanceConfirmCancel) hayakuMaintenanceConfirmCancel();
     clearSourceEditPreview();
     Memory.ledgerViewer.auxiliaryProbeConfirmationCancel?.();
     hayakuHealthRecovery.clear();
@@ -60038,12 +60345,26 @@ function mountMemorySuiteReanalysisReview(container,config) {
     root.querySelector?.('#refreshHayakuWorldline')?.addEventListener('click', () => refreshLedgerViewer());
     root.querySelector?.('#refreshHayakuRecovery')?.addEventListener('click', () => viewerRenderNativeRecovery());
     let safeHealthTicket = null, safeHealthBusy = false;
-    const safeHealthOutput = message => { const node = root.querySelector('#hayakuSafeHealthStatus'); if (node && root === Memory.ledgerViewer.root) node.textContent = message; };
+    const safeHealthOutput = message => { const node = root.querySelector('#hayakuDerivedCacheStatus'); if (node && root === Memory.ledgerViewer.root) node.textContent = message; };
+    root.querySelector('#hayakuMaintenanceRun')?.addEventListener('click', () => viewerRunHayakuMaintenance());
     root.querySelector('#hayakuSafeHealthInspect')?.addEventListener('click', async () => {
       if (safeHealthBusy) return; safeHealthBusy = true; safeHealthTicket = null;
       const apply = root.querySelector('#hayakuSafeHealthApply'); if (apply) apply.disabled = true;
-      try { const report = await hayakuHealthRecovery.inspect(); safeHealthOutput(report.known ? '메타데이터 읽기 검증 완료 · 원문·패킷·아카이브 전체는 미검사입니다. 정상으로 확정하지 않습니다.' : '검사 미완료 · 현재 범위 또는 정본 메타데이터를 확인할 수 없습니다.'); }
-      finally { safeHealthBusy = false; }
+      const run = root.querySelector('#hayakuMaintenanceRun');
+      try {
+        if (hayakuMaintenanceOperation || hayakuMaintenanceBusy()) return;
+        if (run) run.disabled = true;
+        const job = beginNativeJob('maintenance', {message:'저장 자료를 변경하지 않고 검사합니다.', cancellable:false});
+        const report = await inspectHayakuMaintenance((state,message) => {
+          if (Memory.nativeRecovery.job?.jobId === job.jobId) updateNativeJob({state,message});
+        });
+        const message = viewerHayakuMaintenanceSummary(report) + ' · 읽기 전용 · 모델 호출 0회';
+        const output = root.querySelector('#hayakuSafeHealthStatus'); if (output) output.textContent = message;
+        if (Memory.nativeRecovery.job?.jobId !== job.jobId) return;
+        updateNativeJob({maintenance:report, total:report.completedTurns || 0, completed:report.coveredTurns?.length || 0, message, cancellable:false});
+        finishNativeJob(report.known ? 'completed' : 'failed', {inspection:report,physicalCalls:0}, report.reason || '');
+      }
+      finally { safeHealthBusy = false; if (run && !hayakuMaintenanceOperation) run.disabled = false; }
     });
     root.querySelector('#hayakuSafeHealthPreview')?.addEventListener('click', async () => {
       if (safeHealthBusy) return; safeHealthBusy = true;
@@ -60448,7 +60769,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 누락 복구와 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><div id="hayakuSourceEditConsent" class="stack"></div><details class="fold"><summary>분석 태그 규칙 설정</summary><div id="hayakuSourceTrackingSettings" class="stack"></div></details></div></section>
         <section data-recovery-panel="cold" data-subpanel="cold" data-group="rc" hidden><div class="stack"><div class="card fail-box" hidden><div class="empty"><b>원장을 읽지 못해 복구 대상을 계산하지 않습니다.</b><span>AI 작업은 시작할 수 없습니다. 현재 채팅 범위를 다시 확인하세요.</span></div></div><div class="card"><h2 class="card__title">Cold Start</h2><p class="card__desc">기록이 없는 채팅의 완료 턴을 묶음 단위로 분석합니다.</p><div class="cluster"><span class="badge" id="hayakuNativeColdStartState">대기</span><span id="hayakuNativeColdStartProgress">-</span><span>Cold Start 대상 <b id="hayakuNativeColdStartTurns">-</b></span></div><div class="field" style="margin-top:12px"><label for="hayakuColdStartBatchTurns">호출당 U+A</label><select id="hayakuColdStartBatchTurns" class="select" data-no-track aria-label="Cold Start 호출당 U+A"><option value="1">1턴</option><option value="5">5턴</option><option value="10">10턴</option></select><span class="hint">이번 실행에만 적용됩니다. 기본값은 설정 › 복구·안전의 Cold Start 묶음입니다 (저장된 값 <b id="hayakuColdStartSavedValue">-</b>).</span></div><dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>Cold Start</dd><dt>대상 턴</dt><dd id="hayakuColdStartTargetRows">완료된 턴 수는 현재 원장에서 계산합니다.</dd><dt>선택 묶음</dt><dd id="hayakuColdStartBundleCount">-</dd><dt>예상 기본 호출</dt><dd id="hayakuColdStartCallCount">-</dd><dt>추가 복구 허용량</dt><dd>설정에 따른 묶음별 제한</dd></dl><div class="cluster" style="margin-top:12px"><button id="runHayakuNativeColdStart" class="btn btn--primary" type="button">Cold Start 실행…</button><button id="cancelHayakuNativeColdStart" class="btn" type="button">중단 요청</button></div></div></div></section>
         <div class="grid g2"><div class="card"><h2 class="card__title">자동 복구</h2><p class="card__desc">설정 탭과 같은 값입니다 (한 곳에서만 편집).</p><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">정상 응답 처리 안에서 현재 누락/불가 패킷을 1회 복구합니다. 유일한 자동 복구 단계이며, 실패하거나 건너뛴 턴은 Recovery Journal에 남아 아래 수동 복구를 기다립니다.</div></div><span class="badge" id="auto-after" aria-live="polite">설정 확인 중</span></div><button class="linkbtn" id="hayakuRecoverySettingsLink" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경 →</button></div><div class="card"><h2 class="card__title">기억 복원 · Portable JSON</h2><p class="card__desc">같은 채팅은 교체 복원, 다른 채팅은 이사/복사 모드만 허용됩니다. 작업 전 대상 기억을 자동 백업합니다.</p><div data-portable-backup-host="hayaku_locator_continuity"></div></div></div>
-        <details class="fold"><summary>안전 검사 도구</summary><div class="fold__body"><div class="cluster"><button id="hayakuSafeHealthInspect" class="btn" type="button">읽기 전용 검사</button><button id="hayakuSafeHealthPreview" class="btn" type="button">안전 복구 미리보기</button><button id="hayakuSafeHealthApply" class="btn" type="button" disabled>캐시 복구</button></div><p id="hayakuSafeHealthStatus" role="status">원문·정본 전체를 검사하는 기능은 아닙니다.</p></div></details>
+        <section class="card" aria-labelledby="hayakuMaintenanceHeading"><h2 id="hayakuMaintenanceHeading" class="card__title">상태 점검 및 자동 복구</h2><p class="card__desc">로컬·서버 모드에서 완료된 턴의 패킷과 원장 결속을 검사합니다. 기존 패킷으로 결속을 복구하고, 기록이 없는 채팅은 콜드스타트, 사용 중 빠진 턴은 누락 복구로 연결합니다.</p><div class="cluster"><button id="hayakuMaintenanceRun" class="btn btn--primary" type="button">상태 점검 및 자동 복구</button><button id="hayakuSafeHealthInspect" class="btn" type="button">읽기 전용 검사</button></div><p id="hayakuSafeHealthStatus" role="status">점검과 결속 복구는 모델 호출 없이 진행됩니다. 기억 생성이 필요하면 대상 턴과 호출 한도를 보여준 뒤 Other Ax 분석을 시작합니다. 사용자 제외 턴과 기존 기억은 보존합니다.</p><details class="fold"><summary>고급 도구 · 메시지 캐시</summary><div class="fold__body"><div class="cluster"><button id="hayakuSafeHealthPreview" class="btn" type="button">캐시 복구 미리보기</button><button id="hayakuSafeHealthApply" class="btn" type="button" disabled>캐시 복구</button></div><p id="hayakuDerivedCacheStatus" role="status">로컬 메시지 리비전 캐시 전용입니다. 원문·패킷·원장은 변경하지 않습니다.</p></div></details></section>
       </div></section>`;
     const scopePage=`<section class="page" id="hayakuViewerPanelScopes" data-hayaku-viewer-panel="scopes" data-page="scopes" role="tabpanel" aria-labelledby="hayakuViewerTabScopes" hidden><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Scope data</div><h1 class="page-title">스코프 데이터 관리</h1><p class="page-desc">채팅별 패킷 저장소와 원본 채팅이 없는 고아 데이터를 확인하고 정리합니다.</p></div></div><div id="hayakuScopeDataManagementPanel"></div></section>`;
     const serverPage = `<section class="page" id="hayakuViewerPanelServer" data-hayaku-viewer-panel="server" data-page="server" role="tabpanel" aria-labelledby="hayakuViewerTabServer" hidden><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">서버 연결</h1><p class="page-desc">전체 대화의 저장 위치, 서버 주소와 이전 상태를 확인합니다. 저장 자료 정리는 스코프 데이터 관리에서 진행합니다.</p></div></div><div id="hayakuMemorySuiteServerConnectionPanel"></div></section>`;
@@ -60490,7 +60811,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
 @container app (max-width:414px){#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button [data-tray-text]{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}}</style>
       <div class="stage"><div class="frame"><div class="app" data-hayaku-mockup="1">
         <header class="topbar"><div class="brand"><div class="brand__mark" style="font:800 20px var(--font-sans)">速</div><div><div class="brand__name">HAYAKU</div><div class="brand__ver">CONTINUITY CONTROL · v${PLUGIN_VERSION}</div></div></div><div class="scope"><b id="hayakuViewerScopeTop">현재 채팅</b><span>›</span><span id="hayakuViewerScopeMeta">현재 채팅의 원장 상태를 읽습니다.</span></div><div class="grow"></div><span id="hayakuViewerHealth" class="health health--ok" role="button" tabindex="0" aria-haspopup="dialog" style="cursor:pointer" title="누르면 상태 및 진단 로그 보기"><i></i><span data-health-text>정상 작동</span></span><button id="hayakuNativeJobChip" class="btn btn--sm hayaku-job-button" type="button" data-idle-go="logs" aria-controls="hayakuNativeJobOverlay" aria-expanded="false" title="진행 중이거나 끝난 작업을 다시 엽니다">${hayakuMockupIcon('clock')}<span data-tray-text>작업 없음</span></button><div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기">${hayakuMockupIcon('more')}</button><div class="menu__panel"><button id="hayakuOverviewRefresh" type="button">${hayakuMockupIcon('refresh')}다시 대조</button><button id="hayakuOverviewExport" type="button">${hayakuMockupIcon('download')}디버그 JSON 내보내기</button></div></div><button id="closeHayakuViewer" class="btn btn--icon" type="button" title="닫기" aria-label="HAYAKU 닫기">${hayakuMockupIcon('x')}</button></header>
-        <div id="hayakuNativeJobOverlay" class="overlay" aria-hidden="true" hidden><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-live="polite" aria-labelledby="hayakuNativeJobTitle"><div class="split"><div><div class="eyebrow" id="hayakuNativeJobEyebrow">Other Ax</div><h2 id="hayakuNativeJobTitle">복구 작업</h2><p><span id="hayakuNativeJobState">대기</span> · 경과 <span id="hayakuNativeJobElapsed">0초</span></p></div><span class="badge badge--info"><span id="hayakuNativeJobStateCompact">대기</span> · <span id="hayakuNativeJobElapsedCompact">0초</span></span></div><div class="progress" style="margin:14px 0"><i id="hayakuNativeJobProgressBar" style="width:0%"></i></div><div class="cluster"><span>대상 <b id="hayakuNativeJobTurns">-</b></span><span>현재 <b id="hayakuNativeJobCurrent">-</b></span><span id="hayakuNativeJobProgressText" class="hint">대상 확인</span></div><p id="hayakuNativeJobMessage" class="muted">작업 상태를 확인합니다.</p><div class="steps" style="margin-top:12px"><div class="step is-active"><span class="step__no">1</span><b data-job-step="1">대조</b></div><div class="step"><span class="step__no">2</span><b data-job-step="2">분석</b></div><div class="step"><span class="step__no">3</span><b data-job-step="3">검증</b></div><div class="step"><span class="step__no">4</span><b data-job-step="4">기록</b></div></div><div class="list" data-hayaku-job-body="repair" hidden style="margin-top:12px"><div class="res-row"><b>대상</b><span id="hayakuNativeJobResultTarget">-</span></div><div class="res-row"><b>기억 저장</b><span id="hayakuNativeJobResultMemory">0/0턴</span></div><div class="res-row"><b>완전 패킷</b><span id="hayakuNativeJobResultPackets">0개</span></div><div class="res-row"><b>부분 저장</b><span id="hayakuNativeJobResultPartial">0개</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultCalls">0회</span></div></div><div class="list" data-hayaku-job-body="cold" hidden style="margin-top:12px"><div class="res-row"><b>대상 묶음</b><span id="hayakuNativeJobColdBundles">-</span></div><div class="res-row"><b>저장된 패킷</b><span id="hayakuNativeJobResultColdSaved">0개</span></div><div class="res-row"><b>실패한 묶음</b><span id="hayakuNativeJobResultColdHeld">0묶음</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultColdCalls">0회</span></div></div><div class="card" data-hayaku-job-body="regen" hidden style="margin-top:12px"><p id="hayakuNativeJobResultRegeneration" class="muted">후보 준비 상태를 확인합니다.</p><section id="hayakuNativeJobComparison" class="cmp" hidden aria-label="기존 패킷과 재생성 후보 비교"></section><div id="hayakuNativeJobChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-regeneration-choice="later">나중에 결정</button><button type="button" class="btn" data-hayaku-regeneration-choice="keep_original">기존 패킷 유지</button><button type="button" class="btn btn--primary" data-hayaku-regeneration-choice="adopt_regenerated">재생성 후보 채택</button></div></div><div class="card" data-hayaku-job-body="background" hidden style="margin-top:12px"><p>복구 저널을 유지하거나 실행 전에 확인한 대상으로 복구를 요청합니다.</p><div class="list"><div class="res-row"><b>확인된 대상</b><span id="hayakuNativeJobConfirmationTarget">-</span></div></div><div id="hayakuRecoveryConfirmationChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-recovery-confirmation="no">아니요 · 저널에 유지</button><button type="button" class="btn btn--primary" data-hayaku-recovery-confirmation="yes">예 · 자동 복구 시작</button></div></div><div class="dialog__actions"><button id="minimizeHayakuNativeJob" class="btn">최소화</button><button id="cancelHayakuNativeJob" class="btn btn--danger">작업 중단</button><button id="closeHayakuNativeJob" class="btn btn--primary" hidden>닫기</button></div></div></div>
+        <div id="hayakuNativeJobOverlay" class="overlay" aria-hidden="true" hidden><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-live="polite" aria-labelledby="hayakuNativeJobTitle"><div class="split"><div><div class="eyebrow" id="hayakuNativeJobEyebrow">Other Ax</div><h2 id="hayakuNativeJobTitle">복구 작업</h2><p><span id="hayakuNativeJobState">대기</span> · 경과 <span id="hayakuNativeJobElapsed">0초</span></p></div><span class="badge badge--info"><span id="hayakuNativeJobStateCompact">대기</span> · <span id="hayakuNativeJobElapsedCompact">0초</span></span></div><div class="progress" style="margin:14px 0"><i id="hayakuNativeJobProgressBar" style="width:0%"></i></div><div class="cluster"><span>대상 <b id="hayakuNativeJobTurns">-</b></span><span>현재 <b id="hayakuNativeJobCurrent">-</b></span><span id="hayakuNativeJobProgressText" class="hint">대상 확인</span></div><p id="hayakuNativeJobMessage" class="muted">작업 상태를 확인합니다.</p><div class="steps" style="margin-top:12px"><div class="step is-active"><span class="step__no">1</span><b data-job-step="1">대조</b></div><div class="step"><span class="step__no">2</span><b data-job-step="2">분석</b></div><div class="step"><span class="step__no">3</span><b data-job-step="3">검증</b></div><div class="step"><span class="step__no">4</span><b data-job-step="4">기록</b></div></div><div class="card" data-hayaku-job-body="maintenance" hidden style="margin-top:12px"><p id="hayakuMaintenanceJobCoverage" role="status">현재 채팅을 확인합니다.</p><p id="hayakuMaintenanceJobPlan"></p><div class="res-row"><b>실제 모델 호출</b><span id="hayakuMaintenanceJobCalls">0회</span></div><div id="hayakuMaintenanceAnalysisChoices" class="dialog__actions" hidden><p style="flex-basis:100%">Other Ax 분석에는 Provider 비용이 발생할 수 있습니다. 검증된 기억은 유지하고 누락된 대상만 생성합니다.</p><button class="btn" type="button" data-maintenance-analysis="no">분석 없이 종료</button><button class="btn btn--primary" type="button" data-maintenance-analysis="yes">계속 · 기억 분석</button></div></div><div class="list" data-hayaku-job-body="repair" hidden style="margin-top:12px"><div class="res-row"><b>대상</b><span id="hayakuNativeJobResultTarget">-</span></div><div class="res-row"><b>기억 저장</b><span id="hayakuNativeJobResultMemory">0/0턴</span></div><div class="res-row"><b>완전 패킷</b><span id="hayakuNativeJobResultPackets">0개</span></div><div class="res-row"><b>부분 저장</b><span id="hayakuNativeJobResultPartial">0개</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultCalls">0회</span></div></div><div class="list" data-hayaku-job-body="cold" hidden style="margin-top:12px"><div class="res-row"><b>대상 묶음</b><span id="hayakuNativeJobColdBundles">-</span></div><div class="res-row"><b>저장된 패킷</b><span id="hayakuNativeJobResultColdSaved">0개</span></div><div class="res-row"><b>실패한 묶음</b><span id="hayakuNativeJobResultColdHeld">0묶음</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultColdCalls">0회</span></div></div><div class="card" data-hayaku-job-body="regen" hidden style="margin-top:12px"><p id="hayakuNativeJobResultRegeneration" class="muted">후보 준비 상태를 확인합니다.</p><section id="hayakuNativeJobComparison" class="cmp" hidden aria-label="기존 패킷과 재생성 후보 비교"></section><div id="hayakuNativeJobChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-regeneration-choice="later">나중에 결정</button><button type="button" class="btn" data-hayaku-regeneration-choice="keep_original">기존 패킷 유지</button><button type="button" class="btn btn--primary" data-hayaku-regeneration-choice="adopt_regenerated">재생성 후보 채택</button></div></div><div class="card" data-hayaku-job-body="background" hidden style="margin-top:12px"><p>복구 저널을 유지하거나 실행 전에 확인한 대상으로 복구를 요청합니다.</p><div class="list"><div class="res-row"><b>확인된 대상</b><span id="hayakuNativeJobConfirmationTarget">-</span></div></div><div id="hayakuRecoveryConfirmationChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-recovery-confirmation="no">아니요 · 저널에 유지</button><button type="button" class="btn btn--primary" data-hayaku-recovery-confirmation="yes">예 · 자동 복구 시작</button></div></div><div class="dialog__actions"><button id="minimizeHayakuNativeJob" class="btn">최소화</button><button id="cancelHayakuNativeJob" class="btn btn--danger">작업 중단</button><button id="closeHayakuNativeJob" class="btn btn--primary" hidden>닫기</button></div></div></div>
         <nav class="sidebar" aria-label="HAYAKU 메뉴"><div class="nav-label">상태</div>${nav('Overview','연속성 관제','관제','grid')}<div class="nav-label">기억</div>${nav('Packets','패킷 · 세계선','패킷','layers', '<span id="hayakuOverviewPacketCount" class="count" hidden>0</span>')}${nav('Scopes','스코프 데이터 관리','스코프','layers')}<div class="nav-label">복구</div>${nav('Recovery','구간 점검 · 복구','복구','wrench', '<span id="hayakuOverviewRecoveryCount" class="count count--alert" hidden>0</span>')}<div class="nav-label">연결 · 설정</div>${nav('Server','서버 연결','연결','server')}${nav('Settings','설정','설정','sliders')}${nav('Logs','작동 기록','기록','log')}<div class="side-foot"><b id="hayakuSidebarAux">Other Ax · 호출 미검증</b><span>Provider와 키는 RisuAI 소유 — HAYAKU에는 저장하지 않습니다.</span></div></nav>
         <main class="main"><div class="page-body">
           <section class="page is-active" id="hayakuViewerPanelOverview" data-hayaku-viewer-panel="overview" data-page="overview" role="tabpanel" aria-labelledby="hayakuViewerTabOverview">
@@ -61291,6 +61612,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         export: async options => viewerPrettyJson(await buildHayakuOperationDebugExport(options))
       },
       recovery: {
+        maintenance: {inspect: inspectHayakuMaintenance, run: runHayakuMaintenance},
         status: async options => clone(await nativeRecoveryStatus(options || {}), {}),
         auxiliaryModel: {
           status: () => nativeAuxiliaryProbeSnapshot(),

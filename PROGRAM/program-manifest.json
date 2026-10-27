@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-27T04:18:31.043Z",
+  "generatedAt": "2026-10-27T06:56:21.020Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -1603,6 +1603,14 @@
       "sha256": "7b5d43a2ea9a4000dd2fce04abaf9f4c6ac66dbb3fdbe0f833623e2d44c8e572",
       "bytes": 78634
     },
+    "docs/FLASHBACK_MAINTENANCE_DIAGNOSIS_20261027.md": {
+      "sha256": "e6944eba7de46a0a4f835ca6c690f5aafc93f8fdca8488cfa7a93113e314516f",
+      "bytes": 7130
+    },
+    "docs/FLASHBACK_MAINTENANCE_LIVE_JOB_20261027.md": {
+      "sha256": "7897bbd7c49df7dcc885244ad0509925f81223e911fccd642021daca452a4dc0",
+      "bytes": 5599
+    },
     "docs/FLASHBACK_MAINTENANCE_OUTCOME_20261003.md": {
       "sha256": "8ec2ccbbd7068ac42fd9cce2236ff09f2541c6b04013fd935df7c40b01b47e84",
       "bytes": 6332
@@ -2406,6 +2414,10 @@
     "docs/HAYAKU_MIRROR_BINDING_PATCH_20260913.md": {
       "sha256": "c107116f8d00fd38fba6b665a5f1e2c810a22e0a6ef8e822f75ab03bf0d89be7",
       "bytes": 2021
+    },
+    "docs/HAYAKU_ONE_TOUCH_MAINTENANCE_20261027.md": {
+      "sha256": "fd970b9afe32a7ffc7b0a6f71244ed915155e86c4183872c126257733b8f958c",
+      "bytes": 7311
     },
     "docs/HAYAKU_PACKET_INJECTION_PATCH_20260913.md": {
       "sha256": "67ea808633ae076b0fbb899856c01489ecb72979fc6bff630a01b587ac644dfa",
@@ -4004,16 +4016,16 @@
       "bytes": 3416
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "999bf0dd9d0f419816c7496ce19b66fedf41066d6c718f3a99801ada141aaf3f",
-      "bytes": 3657315
+      "sha256": "63c6da7972eb1081c6b494e1e300fba3930bf1386e4e58d6a28e1a33bc5786b9",
+      "bytes": 3682432
     },
     "plugins/GRADIA.js": {
       "sha256": "4e43c6b81ceb21d0d2faf3ed198f0a7ca2b6657e8c71f27cf2e290a0b49545f4",
       "bytes": 3019277
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "b1c71deea6325e70f5f9c366a528cdc455f4a432d4cc80356e61b21057a3ae6f",
-      "bytes": 4125111
+      "sha256": "e58010d9be6eb310a9392fa777224f42f6c575761d213ddbb1ccb283846cd8b3",
+      "bytes": 4153766
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "3fda2ec012c86d969855130e785a2759ecc20c0be60d811feb9ca5c4b92f3b28",
@@ -5179,6 +5191,10 @@
       "sha256": "246be94ee62a3272cf47cbbac1ce356d45f302038b5be121fe22e31baac46269",
       "bytes": 5884
     },
+    "tests/fixtures/hayaku_maintenance_fixture.cjs": {
+      "sha256": "3230150122202d511333b5624be4e7a1af2a06b839aac80e71d0b1ae8a25a0cb",
+      "bytes": 1942
+    },
     "tests/fixtures/hayaku_reanalysis_fixture.cjs": {
       "sha256": "00b2737c280762fb7748d7eccfcf755edacae6d9f854ed1014533ca5b451306c",
       "bytes": 4108
@@ -5783,6 +5799,10 @@
       "sha256": "8aec9bb81ffc714f8876ecf83503c6ab25d0f95486c301a9f5758895347ff17f",
       "bytes": 3778
     },
+    "tests/flashback_journal_transient_read_reverify_test.cjs": {
+      "sha256": "fe0f66e1fb24ba75a90e9b7cde2416832956e9c285967dcf8fa8a9394a851590",
+      "bytes": 1591
+    },
     "tests/flashback_legacy_hash_arg_policy_runtime_test.cjs": {
       "sha256": "a379630aaf35c3f72a4d8fa793f7c6c642481ca347e5566e1f3570a6ab1c052a",
       "bytes": 3995
@@ -5819,6 +5839,14 @@
       "sha256": "edc0772149960ea5ecb69d370aaef8bc9e0d75de50652623426dd0a41de252a6",
       "bytes": 1593
     },
+    "tests/flashback_maintenance_live_job_gui_test.cjs": {
+      "sha256": "7c7921c54381809ba5aa3a500cf8f8790ecbf831dc7fa3e9ade02917f84de44e",
+      "bytes": 11814
+    },
+    "tests/flashback_maintenance_live_job_server_gui_test.cjs": {
+      "sha256": "eeb9495e62e69fc2ad02078894461a6fe7c6d68e0870645448d32300ac93645d",
+      "bytes": 4789
+    },
     "tests/flashback_maintenance_outcome_gui_runtime_test.cjs": {
       "sha256": "4214a109385ce7d994f0aa499a1f0fd58f7e31a172b5c02c6f6aec29db6bb76e",
       "bytes": 10576
@@ -5826,6 +5854,10 @@
     "tests/flashback_maintenance_pending_embedding_test.cjs": {
       "sha256": "cda9a518ff6b47d3089263c1060c92809af7f05e9313e0771514deab5546a9bc",
       "bytes": 4794
+    },
+    "tests/flashback_maintenance_queue_inspection_runtime_test.cjs": {
+      "sha256": "6498fd5038931a627fbf81e05f4914ce1d74e736c18986cbfa41440cf26b0e0f",
+      "bytes": 6944
     },
     "tests/flashback_maintenance_readonly_archive_test.cjs": {
       "sha256": "8e3d12318e08b282095cf80f287dda32200d2f2ba3499023ab3fd2ce838b4ad2",
@@ -5872,8 +5904,8 @@
       "bytes": 2723
     },
     "tests/flashback_physical_journal_recovery_test.cjs": {
-      "sha256": "eefa6a295ccbe5cc1b051ad8298283fde297cbcf888524a421a7f59ab434262e",
-      "bytes": 3681
+      "sha256": "73681b3a7c7de423ead4340d9f617aaaf12390c174d580bdc3969e1f60fc456a",
+      "bytes": 3828
     },
     "tests/flashback_physical_journal_restart_tombstone_test.cjs": {
       "sha256": "0f97dd8e47309549e4ee7a4f16eaaea0ffbf985bbb1792151a1b8e5cdd78fd54",
@@ -6166,6 +6198,10 @@
     "tests/flashback_unchanged_reingest_preservation_runtime_test.cjs": {
       "sha256": "990edb81c62036acb26740340cfd4ae207b956751526df78e9d320c849934bf6",
       "bytes": 25572
+    },
+    "tests/flashback_worldline_retired_vector_compaction_test.cjs": {
+      "sha256": "8793120df33b2efd2e8f6fc7069e9da2c0bc3a3378153a17cb7cb2cd2df304a9",
+      "bytes": 4392
     },
     "tests/flashback_worldline_workspace_v129_runtime_test.cjs": {
       "sha256": "58717dadb3db16c4b443d53f83b46ed47866ea78ddfe13ebfa33195b55f47256",
@@ -6742,6 +6778,14 @@
     "tests/hayaku_long_chat_revision_cache_test.cjs": {
       "sha256": "b01eed436e6c1072e3479badb7368218a655119cc9d4fc091c90d0069a934cb4",
       "bytes": 5037
+    },
+    "tests/hayaku_maintenance_runtime_test.cjs": {
+      "sha256": "eb03573f14acff832a325d8eb5a6ae1abaa9a6fabfb17f4ee1cc23e85588adde",
+      "bytes": 10424
+    },
+    "tests/hayaku_maintenance_server_gui_test.cjs": {
+      "sha256": "64f0c371168966135a6c6f9a6ced82c6a682e9f2f1603d4e02245ac803e35484",
+      "bytes": 11368
     },
     "tests/hayaku_manual_preflight_diagnostics_runtime_test.cjs": {
       "sha256": "af78e2a1bc7a3aa0fb45380e5149fd77fd5c457562102e360c794847d3912f9d",
