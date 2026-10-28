@@ -1364,10 +1364,26 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const requestScope = requestOptions.scope && typeof requestOptions.scope === 'object'
       ? requestOptions.scope
       : state.scopeRouting.current;
-    const requestScopeId = String(requestOptions.scopeId || requestScope?.scopeId || '').trim();
+    let requestScopeId = String(requestOptions.scopeId || requestScope?.scopeId || '').trim();
+    if ((!requestScopeId || !requestScopeId.startsWith('memory-suite:')) && state.scopeRouting.registry) {
+      const alias = requestScopeId || requestScope?.scopeKey || requestScope?.chatId;
+      if (alias) {
+        const aliasRow = registryEntryByAlias(state.scopeRouting.registry, alias);
+        if (aliasRow?.scopeId) requestScopeId = aliasRow.scopeId;
+      }
+    }
+    if ((!requestScopeId || !requestScopeId.startsWith('memory-suite:')) && state.scopeRouting.current?.scopeId && (
+      !requestScope?.scopeKey ||
+      state.scopeRouting.current.scopeKey === requestScope?.scopeKey ||
+      state.scopeRouting.current.chatId === requestScope?.chatId
+    )) {
+      requestScopeId = state.scopeRouting.current.scopeId;
+    }
     const registeredMode = requestScopeId ? state.scopeRouting.registry?.entries?.[requestScopeId]?.mode : '';
     const transientMode = requestScopeId ? state.scopeRouting.transientModes.get(requestScopeId) : '';
-    const requestMode = normalizeMode(requestOptions.storageMode || transientMode || registeredMode || state.config.mode || MODE_PLUGIN_ONLY);
+    const globalStored = state.scopeRouting.registry ? liveGlobalRow(state.scopeRouting.registry) : null;
+    const globalMode = globalStored?.mode ? normalizeMode(globalStored.mode) : '';
+    const requestMode = normalizeMode(requestOptions.storageMode || transientMode || registeredMode || globalMode || state.config.mode || MODE_PLUGIN_ONLY);
     const init = {
       method,
       headers: {
@@ -4009,7 +4025,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     let registry = await loadScopeRegistry(force, false);
     if (!globalModeEnabled && (!scopeInput || scope.scopeId === state.scopeRouting.current?.scopeId)) registry = await maybeImportLegacyGlobalMode(scope, registry);
-    const storedRow = registry.entries[scope.scopeId];
+    let storedRow = registry.entries[scope.scopeId];
+    if (!storedRow) {
+      storedRow = registryEntryByAlias(registry, scope.scopeId)
+        || (scope.scopeKey ? registryEntryByAlias(registry, scope.scopeKey) : null)
+        || (scope.chatId ? registryEntryByAlias(registry, scope.chatId) : null);
+    }
+    if (!storedRow && state.scopeRouting.current?.scopeId && (
+      state.scopeRouting.current.scopeKey === scope.scopeKey ||
+      state.scopeRouting.current.chatId === scope.chatId
+    )) {
+      storedRow = registry.entries[state.scopeRouting.current.scopeId];
+    }
+    if (storedRow && !scope.scopeId.startsWith('memory-suite:') && storedRow.scopeId) {
+      scope.scopeId = storedRow.scopeId;
+    }
     const stored = isRemovedScopeRow(storedRow) ? null : storedRow;
     const transient = state.scopeRouting.transientModes.get(scope.scopeId);
     const choice=await qualifyResetChoiceForScope(scope);
@@ -9648,7 +9678,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     assertServerObservationCurrent: input=>serverObservationAction('current',input),
     releaseServerObservation: input=>serverObservationAction('release',input),
     getCurrentScope: async () => await resolveCurrentScope(true),
-    getScopeMode: async scope => await readScopeMode(scope, true),
+    getScopeMode: async (scope, force = false) => await readScopeMode(scope, force),
     // Core3 global changes verify all known scopes before retiring legacy overrides.
     // Other consumers preserve their legacy behavior. `getGlobalMode` reports the saved choice
     // (`set:false` means no governance, which is the pre-global behaviour).

@@ -2,6 +2,11 @@
 //@display-name LIA: Persona Linker
 //@api 3.0
 //@version 0.29.3
+//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIA_Persona_Linker.js
+//@allowed-ipc flashback_hayaku_bridge
+//@arg memory_suite_server_url string Legacy LIA recovery server URL; blank uses http://127.0.0.1:47630
+//@arg max_lore_entries int Legacy lore breadth base; v0.22.15 keeps the protected + reranked Top-K lore pipeline
+//@arg max_lore_chars int Maximum characters copied from each lorebook entry as generation context
 /* Target-only handoff storage preparation v1. Authenticated owner handlers only. */
 async function prepareMemorySuiteHandoffTargetStorage(api, storage, owner, payload) {
   const readTarget = async () => {
@@ -202,11 +207,6 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 /* v0.26.24 fixes Emotion Asset ZIP export when the already-resolved visual target is re-resolved without a full Persona context. */
 /* v0.26.23 hardens random Persona candidate generation against truncated Ollama Cloud/reasoning output and preserves provider completion diagnostics. */
 /* v0.25.3 fixes Persona Asset Studio preview crashes when a Source Persona has no canonical role/personality PersonaSpec fields. */
-//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIA_Persona_Linker.js
-//@allowed-ipc flashback_hayaku_bridge
-//@arg memory_suite_server_url string Legacy LIA recovery server URL; blank uses http://127.0.0.1:47630
-//@arg max_lore_entries int Legacy lore breadth base; v0.22.15 keeps the protected + reranked Top-K lore pipeline
-//@arg max_lore_chars int Maximum characters copied from each lorebook entry as generation context
 
 (async () => {
   // Canonical LIA mockup CSS/DOM transplanted verbatim; suite.js demo behavior is intentionally excluded.
@@ -13519,8 +13519,8 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
       badge = await rootDoc.createElement?.("button");
       if (!badge) return null;
       await badge.setAttribute?.("x-lia-persona-proof", "1");
-      await badge.setAttribute?.("aria-label", "Open LIA Persona Panel");
-      await badge.setAttribute?.("title", "LIA Persona");
+      await badge.setAttribute?.("x-lia-persona-proof-label", "Open LIA Persona Panel");
+      await badge.setAttribute?.("x-lia-persona-proof-title", "LIA Persona");
       await badge.setTextContent?.("L");
       await badge.setStyleAttribute?.("position:fixed;left:58px;top:11px;right:auto;bottom:auto;z-index:22;display:flex;align-items:center;justify-content:center;width:20px;height:20px;min-width:20px;min-height:20px;margin:0;padding:0;border:1px solid rgba(255,255,255,.42);border-radius:999px;background:#dc2626;color:#ffffff;box-shadow:0 2px 8px rgba(0,0,0,.20);font:800 10px/1 system-ui,-apple-system,Segoe UI,sans-serif;text-align:center;cursor:pointer;opacity:.98;pointer-events:auto;box-sizing:border-box;overflow:hidden;");
 
@@ -13595,11 +13595,11 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
       if (!badge) return;
       if (personaProofBadgeRenderKey === renderKey) return;
       await badge.setTextContent?.("L");
-      await badge.setAttribute?.("title", `LIA Persona
+      await badge.setAttribute?.("x-lia-persona-proof-title", `LIA Persona
 ${name}
 ${status}
 ${revisionText}`);
-      await badge.setAttribute?.("aria-label", `LIA Persona: ${name}. ${status}. ${revisionText}`);
+      await badge.setAttribute?.("x-lia-persona-proof-label", `LIA Persona: ${name}. ${status}. ${revisionText}`);
       await badge.setStyle?.("borderColor", verified ? 'rgba(255,255,255,.46)' : 'rgba(255,255,255,.42)');
       await badge.setStyle?.("background", verified ? '#16a34a' : '#dc2626');
       await badge.setStyle?.("boxShadow", verified ? '0 2px 8px rgba(0,0,0,.20),0 0 0 2px rgba(22,163,74,.34)' : '0 2px 8px rgba(0,0,0,.20),0 0 0 2px rgba(220,38,38,.34)');

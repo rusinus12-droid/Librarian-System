@@ -12,7 +12,7 @@ for(const config of [
  await f.host.plugin.saveProviderPreset('writer',{...config,key:'synthetic-only',context_window:262144,max_tokens:4096,reasoning_preset:'off',reasoning_effort:'none',timeout_ms:5000,stream:false});
  const {pending}=await f.start();await f.select();assert.equal(await f.done(pending),true);
  assert.equal(f.queries(),1);assert.equal(f.prompts.length,1);assert(JSON.stringify(f.prompts[0]).includes('WRITER_OWNER_EVIDENCE'));
- assert.equal(f.sent.length,1);assert(!JSON.stringify([...f.values,...f.local]).includes('WRITER_OWNER_EVIDENCE'));
+ assert.equal(f.copied.length,1);assert.equal(f.sent.length,0);assert(!JSON.stringify([...f.values,...f.local]).includes('WRITER_OWNER_EVIDENCE'));
 });
 test('an atomic owner bundle larger than 64KiB reaches a model request larger than 128000 bytes',{timeout:15000},async t=>{
  const f=await fixture(t);f.controls.evidenceText='BEGIN_LARGE_MEMORY '+('기억'.repeat(24000))+' END_LARGE_MEMORY';
@@ -44,7 +44,7 @@ test('a smaller context packs complete owner items and rechecks every contributi
  const packed=included.length+measured.omittedItems;assert(packed<items.length,'record budget trims the packet');
  const recordChars=items.filter(x=>x.owner!=='libra'&&sent.includes(x.content)).reduce((n,x)=>n+x.content.length,0);assert(recordChars<=8000,String(recordChars));
  assert(measured.finalInputAllowance+measured.effectiveOutputReserve+measured.safetyMargin<=measured.contextLimit);
- current=false;f.button('바로 전송').click();await f.wait(()=>f.document.body.textContent.includes('검증 실패'),'source currentness');assert.equal(f.sent.length,0);
+ current=false;f.button('복사 후 직접 전송').click();await f.wait(()=>f.document.body.textContent.includes('검증 실패'),'source currentness');assert.equal(f.sent.length+f.copied.length,0);
  await f.host.plugin.cancelInputAssistSend();assert.equal(await pending,false);
 });
 test('matching catalog context caps a larger manual context value',{timeout:15000},async t=>{

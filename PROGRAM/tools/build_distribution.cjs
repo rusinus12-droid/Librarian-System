@@ -893,12 +893,16 @@ function buildRelease(options = {}) {
   const completed = [];
   try {
     let versionChange = null;
+    let targetVersion = currentVersion;
     if (options.version) {
-      const targetVersion = validateTargetVersion(currentVersion, options.version);
+      targetVersion = validateTargetVersion(currentVersion, options.version);
       versionChange = applyReleaseVersion(packageRoot, targetVersion);
-      refreshSourceReleaseMetadata(qualification);
-      const metadata = readReleaseMetadata(programDir);
-      if (metadata.packageVersion !== targetVersion) throw new Error('distribution_version_refresh_mismatch');
+    }
+    // Same-version builds also need current source hashes before preflight and
+    // smoke checks; editing a plugin does not necessarily bump its version.
+    refreshSourceReleaseMetadata(qualification);
+    if (readReleaseMetadata(programDir).packageVersion !== targetVersion) {
+      throw new Error('distribution_version_refresh_mismatch');
     }
     const profiles = profile === 'all' ? ['release', 'source'] : [profile];
     const results = {};

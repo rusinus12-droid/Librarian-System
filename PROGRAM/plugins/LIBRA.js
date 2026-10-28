@@ -1,7 +1,86 @@
 //@name libra
 //@display-name LIBRA v2.6.8
+//@api 3.0
 //@version 2.6.8
 //@allowed-ipc serial_gradation_agents_for_rp
+//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
+//@allowed-ipc flashback_hayaku_bridge
+//@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
+//@arg memory_suite_server_url string Librarian System Server URL; blank uses http://127.0.0.1:47630
+//@arg enable_gui string true|false
+//@arg evidence_link_index_enabled string true|false; Stage 1 read-only evidence link index. Default false: no build, no storage write, no timer
+//@arg lore_link_index_enabled string true|false; Stage 2 read-only lore reference link index. Default false: no build, no storage write, no timer
+//@arg debug string true|false
+//@arg model_presets_json string JSON object of saved LLM provider presets
+//@arg provider_presets_json string Alternate provider-preset JSON input
+//@arg default_preset string Default LLM preset name
+//@arg risuai_aux_allow_plugins string true|false — allow a plugin-provided RisuAI auxiliary model; blank uses true
+//@arg story_arc_preset string Retired and ignored; kept only so an old saved value is not lost
+//@arg response_lore_enabled string true|false — shared LIBRA consumers use unified full-body lore retrieval; default true
+//@arg response_lore_start_count int Adaptive lore frontier starting count; default 8, expands toward the 128 ceiling
+//@arg response_lore_max_items int Maximum lore items per consumer after adaptive expansion; default 48, hard ceiling 128
+//@arg response_lore_max_chars int Lore material character budget per consumer view; default 12000
+//@arg live_context_enabled string true|false — exact completed U+A live context; Classic also requires classic_live_tail_enabled; default true
+//@arg live_tail_max_turns int 1-4 — recent completed dialogue turns, independent of memory commits; default 4
+//@arg live_tail_max_chars int Recent dialogue character budget; default 24000
+//@arg bootstrap_references_enabled string true|false — before the first current-session canonical memory, provide persona/character/activated lore background; default true
+//@arg bootstrap_reference_max_chars int Bootstrap Reference Pack character budget; default 7000
+//@arg classic_live_tail_enabled string true|false — advanced opt-in to append recent dialogue to Classic direct injection; default false
+//@arg librarian_preset string LLM preset for Librarian; blank inherits the existing Ariadne binding or shared default
+//@arg enable_librarian string optional true|false; blank preserves previous explicit memory enable choice
+//@arg ariadne_preset string Legacy model-binding input; inherited only when no Librarian binding exists
+//@arg character_ito_preset string Retired and ignored; kept only so an old saved value is not lost
+//@arg world_ito_preset string Retired and ignored; kept only so an old saved value is not lost
+//@arg plot_ito_preset string Retired and ignored; kept only so an old saved value is not lost
+//@arg selected_module_lore_ids string JSON/comma-separated IDs or namespaces of module lorebooks Ariadne memory stages may read
+//@arg excluded_module_lore_ids string JSON/comma-separated stable IDs of entries inside selected module lorebooks Ariadne must not read
+//@arg excluded_character_lore_ids string JSON/comma-separated stable IDs of character lorebook entries Ariadne must not read
+//@arg llm_provider string Fallback LLM provider
+//@arg llm_url string Fallback LLM URL or full endpoint
+//@arg llm_key string Fallback LLM API key / token / Vertex service-account JSON
+//@arg llm_model string Fallback LLM model
+//@arg llm_temp string Fallback LLM temperature
+//@arg llm_timeout int Fallback LLM timeout ms
+//@arg llm_timeout_ms int Alternate fallback timeout alias
+//@arg llm_max_completion_tokens int Fallback LLM max completion tokens
+//@arg llm_request_format string chat_completions|responses
+//@arg llm_reasoning_preset string auto|off|gpt|openrouter|gemini|gemini_budget|claude|claude_budget|deepseek|kimi|glm|ollama|custom
+//@arg llm_reasoning_effort string none|minimal|low|medium|high|xhigh|max
+//@arg llm_reasoning_budget_tokens int Reasoning budget tokens
+//@arg llm_thinking_type string enabled|disabled
+//@arg llm_glm_thinking_type string Provider-specific GLM thinking alias
+//@arg llm_glm_thinking string Alternate GLM thinking alias
+//@arg llm_service_tier string off|auto|default|flex|priority|scale
+//@arg llm_stream string true|false
+//@arg llm_prompt_cache string auto|off
+//@arg custom_service_tier_passthrough string true|false
+//@arg vertex_flex_mode string off|provisioned_then_flex|flex_only
+//@arg llm_extra_body_json string Additional fallback request body JSON
+//@arg embedding_enabled string true|false
+//@arg embedding_provider string openai|voyageai|voyage_context|gemini|vertex|cohere|jina|mistral|bedrock|dashscope|openai_compat|ollama|lmstudio|localai|tei|custom_http
+//@arg embedding_url string Embedding API endpoint
+//@arg embedding_key string Embedding API key
+//@arg embedding_model string Embedding model
+//@arg embedding_timeout_ms int Embedding request timeout ms
+//@arg embedding_dimensions string auto|integer
+//@arg embedding_batch_size string auto|integer
+//@arg embedding_max_retries int 0|1|2
+//@arg embedding_input_mode string automatic|manual
+//@arg embedding_query_task string Provider-specific query task
+//@arg embedding_document_task string Provider-specific document task
+//@arg embedding_query_prefix string Query prefix
+//@arg embedding_document_prefix string Document prefix
+//@arg embedding_normalize_vectors string true|false
+//@arg embedding_custom_request_template string JSON request template for Custom HTTP embedding
+//@arg embedding_custom_response_path string Vector response path
+//@arg embedding_custom_error_path string Error response path
+//@arg embedding_custom_method string POST|GET
+//@arg embed_provider string Embedding provider alternate argument
+//@arg embed_url string Embedding URL alternate argument
+//@arg embed_key string Embedding key alternate argument
+//@arg embed_model string Embedding model alternate argument
+//@arg embed_timeout int Embedding timeout alternate argument
+//@arg backend_hosting_token string Hosting bridge token backup; normally managed by the LIBRA GUI
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
  * verified/current are assertions supplied AFTER the owner's existing final
@@ -291,7 +370,6 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 /* v2.3.27 / Book UX 5.17: exact-revision user consent for source edits, five-turn reanalysis and stale-source exclusion; existing automatic recovery cannot bypass approval. */
 /* v2.3.31 / BOOK_UX 5.23: typed model envelopes and explicit failure diagnostics; generous bounded memory budgets; scope-bound five-turn range selection, retry, cold start and candidate regeneration. */
 /* v2.3.33 / BOOK_UX 5.25: render nested reader children, preserve live controls on clock ticks, avoid immediate failed whole-chain State reanalysis, losslessly compact State transport, and separate memory/State latency diagnostics. */
-//@api 3.0
 /* v2.3.30 / BOOK_UX 5.21: restore the explicit chat-menu Input Writer, migrate its misplaced menu id, paint before container acknowledgement, preserve Settings drafts, and repair the delivery hash dependency. */
 /* v2.3.26 / Book UX 5.16: scoped Reader lifecycle, manual cold-start access, exact correction navigation, live save-state controls, bounded reader paging and visible/hidden output obligations. No storage schema or automatic analysis change. */
 /* v2.3.25 / Book UX v5.15 fixes bounded, scope-pinned diagnostics; failure-aware State maintenance; Compute client status; failed-run budgets; and live action validation. */
@@ -424,84 +502,6 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 /* v1.0.58 ports FLASHBACK-style native chat-copy continuity into LIBRA: copy detection can reuse the immediately previous resolved chat when the host chat list is incomplete, canonical-memory validation uses message-id-independent U+A content identity, cloned current memories are rebound to the copied chat's new message IDs/sourceDigest without re-embedding, and durable readback verifies every copied canonical memory/vector before the copy is marked complete. RE:TRACE handoff remains separate and source-immutable. */
 /* v1.0.57 makes WebRisu credential persistence update-safe by mirroring provider-preset secrets, active LLM/embedding provider secrets, and the hosting token into verified pluginStorage backups while retaining localPluginStorage; active llm_key/embedding_key/hosting-token arguments are also repaired when host argument writes are available, and startup reads reconcile surviving copies back into missing stores without changing provider/model selection. */
 /* v1.0.56 aligns LIBRA with RE:TRACE peer-compatibility v1 and makes next-session preparation strictly source-immutable: shared archives are detached transport layers, prepare no longer annotates source memory refs or source manifest archive metadata, source memory/vector fingerprints are proven unchanged across prepare/adopt, and compatibility is negotiated by stable protocol/features instead of exact plugin versions. v1.0.55 raises the common live-recall step budget from 1,500ms to 20,000ms while preserving v1.0.54 cache-first embedding-settings resolution and fail-soft dense fallback, so transiently slow host/pluginStorage reads get substantially more time without reintroducing whole-recall aborts for embedding-settings timeouts. v1.0.54 makes live recall resilient to slow embedding-settings initialization: recall now uses the already-loaded provider runtime cache first, bounds any cache-miss settings load as a non-fatal dense-retrieval dependency, continues sparse/exact/temporal recall when embedding settings are temporarily unavailable, and distinguishes per-step timeout diagnostics from the true 30-second request deadline. v1.0.53 repairs RE:TRACE next-session interoperability without restoring World Additional: the handoff inspection exposes an archive-metadata-independent canonical state hash, prepare/verify/adopt receipts include deprecated zero-only World Additional counters for older bridge builds, capabilities advertise canonical-memory-only handoff, and handoff verification reads inherited memory/vector records with bounded concurrency for large histories. v1.0.52 hardens long-term-memory integrity and scaling: high-risk unsupported canonical claims trigger one bounded evidence-repair pass and otherwise fall back to the latest evidence-safe stage; branch batch fingerprints are persisted in the manifest so reloads can detect changed historical batches without a full live-path audit; and automatic memory scans process only the new/current, changed, in-flight, recovery, or bounded embedding-retry batches instead of rechecking every existing five-turn memory. v1.0.51 removes avoidable live-input stalls: request-local chat pairs are parsed once and shared across branch/query/recall, branch validation uses change-targeted fast checks with yielded deep audits, native-copy/recovery maintenance leaves the normal live path, input-assist OFF bypasses full settings loading, and legacy recall catalogs are served immediately while v3/256D upgrades rebuild in the background. v1.0.50 hardens embedding correctness end-to-end: provider-aware long-input splitting occurs before per-part query/document formatting, silent truncation is disabled for Vertex/Cohere, Gemini Embedding 2 uses prompt prefixes instead of task_type, Voyage Context separates global from shared section context groups, and the recall catalog uses a 256D hashed sketch rebuilt from existing full vectors without re-embedding. v1.0.49 caps the maximum dynamic recall block at 12,000 characters across normalization, runtime budgeting, and GUI input while retaining v1.0.48 dynamic token budgeting. v1.0.48 removes the fixed recallMaxTokens bottleneck: recall character budget is resolved first from prompt pressure, then an effective token ceiling is derived per request/tier from that character budget and the observed CJK/text mix, with candidate text able to raise the ceiling when its token density is higher. v1.0.47 completes HAYAKU/Flashback current-input compatibility by filtering peer runtime/evidence carriers both as standalone prompt rows and inside rendered current-input wrappers, while keeping the resolver fully local and dependency-free. v1.0.46 makes recall excerpts context-safe: semantic paragraph/list boundaries are preserved, character excerpts retain their identity lead (for example `이유민:`), chronology excerpts retain the event lead, and sentence-radius expansion can no longer cross into a different character/event block. v1.0.45 extends LIBRA's absolute live-recall watchdog from 8 seconds to 30 seconds while preserving the existing per-step and query-embedding timeouts, giving slow RisuAI context/pluginStorage environments enough total time to finish fallback retrieval without weakening individual-operation fail-open guards. v1.0.44 aligns live recall current-input resolution with HAYAKU/Flashback provenance+wrapper rules, rejects prompt/meta rows from legacy fallback, and removes nonessential manifest-stat writes from the bounded request path so a completed recall is never discarded by bookkeeping timeout. v1.0.43 fixes the Home/current-turn recall GUI scope regression by keeping recall-view helpers inside the GUI scope instead of referencing LIBRA memory-core private helpers. v1.0.42 removes World Additional completely from active LIBRA memory creation, storage, recall, handoff, and GUI paths; World ito now records unresolved setting gaps as explicitly unknown/undecided rather than generating future canon proposals. v1.0.41 auto-migrates compatible legacy vectors into portable pluginStorage without re-embedding and lets same-space legacy profile IDs remain dense-recall compatible while migration finishes. v1.0.40 fixes embedding-timeout fallback, unifies embedding-space signatures, makes pluginStorage the durable Float32 vector source of truth, separates exact strong anchors from lexical terms, and adds two-stage catalog-to-hydration recall with intent-aware tail forcing. */
-//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
-//@allowed-ipc flashback_hayaku_bridge
-//@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
-//@arg memory_suite_server_url string Librarian System Server URL; blank uses http://127.0.0.1:47630
-//@arg enable_gui string true|false
-//@arg evidence_link_index_enabled string true|false; Stage 1 read-only evidence link index. Default false: no build, no storage write, no timer
-//@arg lore_link_index_enabled string true|false; Stage 2 read-only lore reference link index. Default false: no build, no storage write, no timer
-//@arg debug string true|false
-//@arg model_presets_json string JSON object of saved LLM provider presets
-//@arg provider_presets_json string Alternate provider-preset JSON input
-//@arg default_preset string Default LLM preset name
-//@arg risuai_aux_allow_plugins string true|false — allow a plugin-provided RisuAI auxiliary model; blank uses true
-//@arg story_arc_preset string Retired and ignored; kept only so an old saved value is not lost
-//@arg response_lore_enabled string true|false — shared LIBRA consumers use unified full-body lore retrieval; default true
-//@arg response_lore_start_count int Adaptive lore frontier starting count; default 8, expands toward the 128 ceiling
-//@arg response_lore_max_items int Maximum lore items per consumer after adaptive expansion; default 48, hard ceiling 128
-//@arg response_lore_max_chars int Lore material character budget per consumer view; default 12000
-//@arg live_context_enabled string true|false — exact completed U+A live context; Classic also requires classic_live_tail_enabled; default true
-//@arg live_tail_max_turns int 1-4 — recent completed dialogue turns, independent of memory commits; default 4
-//@arg live_tail_max_chars int Recent dialogue character budget; default 24000
-//@arg bootstrap_references_enabled string true|false — before the first current-session canonical memory, provide persona/character/activated lore background; default true
-//@arg bootstrap_reference_max_chars int Bootstrap Reference Pack character budget; default 7000
-//@arg classic_live_tail_enabled string true|false — advanced opt-in to append recent dialogue to Classic direct injection; default false
-//@arg librarian_preset string LLM preset for Librarian; blank inherits the existing Ariadne binding or shared default
-//@arg enable_librarian string optional true|false; blank preserves previous explicit memory enable choice
-//@arg ariadne_preset string Legacy model-binding input; inherited only when no Librarian binding exists
-//@arg character_ito_preset string Retired and ignored; kept only so an old saved value is not lost
-//@arg world_ito_preset string Retired and ignored; kept only so an old saved value is not lost
-//@arg plot_ito_preset string Retired and ignored; kept only so an old saved value is not lost
-//@arg selected_module_lore_ids string JSON/comma-separated IDs or namespaces of module lorebooks Ariadne memory stages may read
-//@arg excluded_module_lore_ids string JSON/comma-separated stable IDs of entries inside selected module lorebooks Ariadne must not read
-//@arg excluded_character_lore_ids string JSON/comma-separated stable IDs of character lorebook entries Ariadne must not read
-//@arg llm_provider string Fallback LLM provider
-//@arg llm_url string Fallback LLM URL or full endpoint
-//@arg llm_key string Fallback LLM API key / token / Vertex service-account JSON
-//@arg llm_model string Fallback LLM model
-//@arg llm_temp string Fallback LLM temperature
-//@arg llm_timeout int Fallback LLM timeout ms
-//@arg llm_timeout_ms int Alternate fallback timeout alias
-//@arg llm_max_completion_tokens int Fallback LLM max completion tokens
-//@arg llm_request_format string chat_completions|responses
-//@arg llm_reasoning_preset string auto|off|gpt|openrouter|gemini|gemini_budget|claude|claude_budget|deepseek|kimi|glm|ollama|custom
-//@arg llm_reasoning_effort string none|minimal|low|medium|high|xhigh|max
-//@arg llm_reasoning_budget_tokens int Reasoning budget tokens
-//@arg llm_thinking_type string enabled|disabled
-//@arg llm_glm_thinking_type string Provider-specific GLM thinking alias
-//@arg llm_glm_thinking string Alternate GLM thinking alias
-//@arg llm_service_tier string off|auto|default|flex|priority|scale
-//@arg llm_stream string true|false
-//@arg llm_prompt_cache string auto|off
-//@arg custom_service_tier_passthrough string true|false
-//@arg vertex_flex_mode string off|provisioned_then_flex|flex_only
-//@arg llm_extra_body_json string Additional fallback request body JSON
-//@arg embedding_enabled string true|false
-//@arg embedding_provider string openai|voyageai|voyage_context|gemini|vertex|cohere|jina|mistral|bedrock|dashscope|openai_compat|ollama|lmstudio|localai|tei|custom_http
-//@arg embedding_url string Embedding API endpoint
-//@arg embedding_key string Embedding API key
-//@arg embedding_model string Embedding model
-//@arg embedding_timeout_ms int Embedding request timeout ms
-//@arg embedding_dimensions string auto|integer
-//@arg embedding_batch_size string auto|integer
-//@arg embedding_max_retries int 0|1|2
-//@arg embedding_input_mode string automatic|manual
-//@arg embedding_query_task string Provider-specific query task
-//@arg embedding_document_task string Provider-specific document task
-//@arg embedding_query_prefix string Query prefix
-//@arg embedding_document_prefix string Document prefix
-//@arg embedding_normalize_vectors string true|false
-//@arg embedding_custom_request_template string JSON request template for Custom HTTP embedding
-//@arg embedding_custom_response_path string Vector response path
-//@arg embedding_custom_error_path string Error response path
-//@arg embedding_custom_method string POST|GET
-//@arg embed_provider string Embedding provider alternate argument
-//@arg embed_url string Embedding URL alternate argument
-//@arg embed_key string Embedding key alternate argument
-//@arg embed_model string Embedding model alternate argument
-//@arg embed_timeout int Embedding timeout alternate argument
-//@arg backend_hosting_token string Hosting bridge token backup; normally managed by the LIBRA GUI
 
 /*
  * LIBRA v1.0.52
@@ -44684,6 +44684,11 @@ function createLibraReadonlySourceContext(owner) {
       throw error;
     };
     const notifyCanonicalJob = () => {
+      // Both newly persisted and loaded jobs can require the shared popup.
+      // Terminal auxiliary results must yield before rendering or binding actions.
+      const job = state.canonicalJob;
+      if ((canonicalJobActive(job) || ['awaiting_choice', 'interrupted'].includes(string(job?.state || '')))
+        && canonicalJobTerminal(state.activeAuxiliaryJob)) state.activeAuxiliaryJob = null;
       const snapshot = clone(state.canonicalJob);
       for (const listener of Array.from(state.canonicalJobListeners)) { try { listener(snapshot); } catch (_) {} }
       try { if (typeof scheduleCanonicalJobSurfaceRender === 'function') scheduleCanonicalJobSurfaceRender(snapshot); } catch (_e) { try { globalThis.__librarianDiag && globalThis.__librarianDiag('libra', 'canonical.surface.render', _e); } catch (__) {} }
@@ -72696,6 +72701,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const sample=await readReanalysisTurn(inventory,units[0]);if(sample.rawDigest!==reviewed.rawDigest)throw Error('검토한 원문이 변경되었습니다. 다시 확인하세요.');
         }
         const batches=[...new Map(units.map(unit=>[unit.batchStart,{startTurn:unit.batchStart,identityDigest:unit.batchIdentity}])).values()];
+        if(Object.prototype.hasOwnProperty.call(selection,'sourceBindings')){
+          const bindings=new Map(asArray(selection.sourceBindings).map(row=>[Number(row?.startTurn),string(row?.sourceDigest||'')]));
+          for(const batch of batches){
+            const expected=bindings.get(batch.startTurn);
+            if(!expected)throw Error('selected_batch_source_changed');
+            batch.sourceDigest=expected;
+          }
+        }
         return await startSelectedCanonicalBatches({scopeKey:inventory.scopeKey,mode:'source_edit',ranges:batches,...(reviewed?{reviewedSource:{key:reviewed.key,rawDigest:reviewed.rawDigest,rulesKey:reviewed.rulesKey}}:{})});
       }catch(error){return {ok:false,reason:String(error?.message||error)};}
     };
@@ -72959,6 +72972,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if (!actual) throw new Error('selected_batch_range_invalid');
         if(selection.mode==='source_edit'){
           if(!row.identityDigest||row.identityDigest!==actual.identityDigest)throw Error('selected_batch_identity_changed');
+          if(Object.prototype.hasOwnProperty.call(row,'sourceDigest')&&(!row.sourceDigest||row.sourceDigest!==actual.sourceDigest))throw Error('selected_batch_source_changed');
         }else if(!row.sourceDigest||row.sourceDigest!==actual.sourceDigest)throw Error('selected_batch_source_changed');
         const expectedStatus = 'missing';
         if (selection.mode!=='source_edit'&&actual.status !== expectedStatus) throw new Error('selected_batch_status_changed');
@@ -72989,6 +73003,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const current=buildPairs(live.chat,live.scope.scopeKey).slice(0,last);
           if(current.length!==last||digest(sourcePairs(current))!==identity)throw Error('selected_batch_identity_changed');
           if(sourceDigest(current)!==source)throw Error('selected_batch_source_changed');
+          // Preserve the approved batch digests across inventory/context awaits
+          // and through the existing validation immediately before submission.
+          if(selected.some(row=>sourceDigest(batchForStart(current,row.startTurn))!==row.sourceDigest))throw Error('selected_batch_source_changed');
           assertReviewed(live,current);
         };
         await validate();
@@ -92406,7 +92423,7 @@ advanced
     const isServer = storageMode !== 'plugin_only';
 
     let batchInventory = { observedTurns: 0, completeBatches: 0, pendingTurns: 0, ranges: [] };
-    try { batchInventory = await LibraMemoryCore.listCanonicalBatchRanges(); } catch (_) {}
+    try { batchInventory = await LibraMemoryCore.listCanonicalBatchRanges({ expectedScopeKey: scopeKey }); } catch (_) {}
     const liveTurns = Number(batchInventory?.observedTurns || 0);
     const completeBatches = Number(batchInventory?.completeBatches || 0);
     const pendingTurns = Number(batchInventory?.pendingTurns || 0);
@@ -92513,15 +92530,43 @@ advanced
 
   const runLibraMemoryMaintenance = async (mode = 'auto', options = {}) => {
     const startedAt = Date.now();
-    let preflight = options.preflight || await inspectLibraMemoryMaintenance();
+    const preflight = options.preflight || await inspectLibraMemoryMaintenance();
     const context = await LibraMemoryCore.resolveContext();
     const scopeKey = text(context.scope?.scopeKey || '');
+    if (!scopeKey || preflight.scopeKey !== scopeKey || !Array.isArray(preflight.ranges)) {
+      throw new Error('점검한 채팅 범위가 변경되었거나 확인되지 않았습니다. 다시 점검해 주세요.');
+    }
+    const plannedRanges = preflight.ranges.map(row => ({ ...row }));
+    const sourceBinding = (turns, ranges) => JSON.stringify([Number(turns), ranges.map(row => [
+      row.startTurn, row.endTurn, row.sourceDigest, row.identityDigest
+    ])]);
+    const expectedSource = sourceBinding(preflight.liveTurns, plannedRanges);
+    const assertScope = async () => {
+      const current = await LibraMemoryCore.resolveContext();
+      if (text(current.scope?.scopeKey || '') !== scopeKey) {
+        throw new Error('점검한 채팅 범위가 변경되었습니다. 다시 점검해 주세요.');
+      }
+    };
+    const assertSource = async () => {
+      await assertScope();
+      const inventory = await LibraMemoryCore.listCanonicalBatchRanges({ expectedScopeKey: scopeKey });
+      if (inventory.scopeKey !== scopeKey || sourceBinding(inventory.observedTurns, guiAsArray(inventory.ranges)) !== expectedSource) {
+        throw new Error('점검한 대화 원문 또는 구간이 변경되었습니다. 다시 점검해 주세요.');
+      }
+      await assertScope();
+    };
+    await assertSource();
     const actionsTaken = [];
 
     // 1. 상황별 정본 기억 생성 및 복구 (수동 콜드스타트 / 누락 복구 / 실패 재분석)
     if (preflight.savedRangesCount === 0 && preflight.completeBatches > 0) {
       try {
-        const job = await LibraMemoryCore.startManualColdStart({});
+        const targets = plannedRanges.filter(row => row.status !== 'saved');
+        const job = await LibraMemoryCore.startManualColdStart({
+          expectedScopeKey: scopeKey,
+          startTurns: targets.map(row => row.startTurn),
+          selectionBindings: targets
+        });
         const processed = Number(job?.completed ?? preflight.completeBatches);
         actionsTaken.push(`수동 콜드스타트 자동 실행: 1~${preflight.completeBatches * 5}턴 초기 정본 기억 생성 완료 (${processed}개 구간)`);
       } catch (err) {
@@ -92553,16 +92598,23 @@ advanced
 
       if (preflight.failedRangesCount > 0) {
         try {
+          await assertSource();
           const failedStarts = new Set(guiAsArray(preflight.failedRanges).map(r => Number(r.startTurn)));
           if (failedStarts.size > 0) {
             const reanaInventory = await LibraMemoryCore.listReanalysisRanges({ kind: 'canonical' });
+            if (reanaInventory.scopeKey !== scopeKey) throw new Error('점검한 채팅 범위가 변경되었습니다. 다시 점검해 주세요.');
             const targetUnits = guiAsArray(reanaInventory?.ranges).filter(unit => failedStarts.has(Number(unit.batchStart)));
+            if (targetUnits.some(unit => unit.batchIdentity !== plannedRanges.find(row => Number(row.startTurn) === Number(unit.batchStart))?.identityDigest)) {
+              throw new Error('점검한 대화 원문 또는 구간이 변경되었습니다. 다시 점검해 주세요.');
+            }
             if (targetUnits.length > 0) {
               const reanaSelection = {
                 kind: 'canonical',
-                scopeKey: reanaInventory.scopeKey,
+                scopeKey,
                 topology: reanaInventory.topology,
-                ranges: targetUnits
+                ranges: targetUnits,
+                sourceBindings: plannedRanges.filter(row => failedStarts.has(Number(row.startTurn)))
+                  .map(row => ({ startTurn: row.startTurn, sourceDigest: row.sourceDigest }))
               };
               const reanaResult = await LibraMemoryCore.reanalyzeSelectedRanges(reanaSelection);
               if (reanaResult?.ok === true || Number(reanaResult?.processed || 0) > 0) {
@@ -92580,8 +92632,10 @@ advanced
     }
 
     // 중간 검사: 정본 생성 후 최신 상태 및 임베딩 갱신 필요성 확인
+    await assertScope();
     let mid = null;
     try { mid = await inspectLibraMemoryMaintenance(); } catch (_) {}
+    await assertScope();
 
     // 2. 상태 재생 (State Replay)
     const activeWorldlineId = text(worldManagerSnapshotView().head?.worldlineId || 'main');
@@ -92603,6 +92657,7 @@ advanced
     }
 
     // 3. 파생 캐시 및 메모리 그래프 무결성 갱신
+    await assertScope();
     try {
       const hr = LibraMemoryCore.healthRecovery;
       if (hr) {
@@ -92625,6 +92680,7 @@ advanced
     const effectiveVectorPending = Math.max(Number(preflight.vectorPending || 0), Number(mid?.vectorPending || 0));
 
     if (curEmbedSummary?.state === 'ready') {
+      await assertScope();
       if (effectiveVectorFailed > 0) {
         try {
           await LibraMemoryCore.retryFailedEmbeddingRebuild();
@@ -92645,6 +92701,7 @@ advanced
     try { await refreshGuiSnapshot(false); } catch (_) {}
 
     const after = await inspectLibraMemoryMaintenance();
+    await assertScope();
     const durationMs = Math.max(0, Date.now() - startedAt);
 
     return {

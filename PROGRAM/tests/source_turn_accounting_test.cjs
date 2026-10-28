@@ -2,6 +2,8 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const { test } = require('node:test');
+const os = require('node:os');
+const { synchronize } = require('../tools/sync_source_turn_accounting.cjs');
 const source = fs.readFileSync(path.join(__dirname, '../sdk/MemorySuiteSourceTurnAccounting.source.js'), 'utf8');
 const count = vm.runInNewContext(source + '\ncountMemorySuiteSourceTurns');
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -59,4 +61,25 @@ test('prototype-like lane and identity keys are ordinary data; invalid arrays ca
     const output = plain(count({owner:'test',units})); assert.equal(output.completeUniqueOriginalTurns,null);
   }
   assert.equal(run([]).completeUniqueOriginalTurns,0);
+});
+test('embedding accounting preserves the complete leading host metadata and is idempotent', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'source-turn-header-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'plugins'));
+  fs.mkdirSync(path.join(root, 'sdk'));
+  fs.writeFileSync(path.join(root, 'sdk/MemorySuiteSourceTurnAccounting.source.js'), source);
+  const header = '//@name fixture\n//@api 3.0\n//@version 0.0.1\n//@allowed-ipc peer\n//@arg enabled string true|false\n//@update-url https://offline.invalid/plugin.js\n';
+  const files = ['LIBRA.js', 'HAYAKU_Locator_Continuity.js', 'Flashback_Memory.js'];
+  for (const file of files) fs.writeFileSync(path.join(root, 'plugins', file), header + 'globalThis.result = countMemorySuiteSourceTurns({owner:"fixture",units:[]});\n');
+  assert.equal(synchronize({ root }), 3);
+  const embedded = files.map(file => fs.readFileSync(path.join(root, 'plugins', file), 'utf8'));
+  for (const output of embedded) {
+    assert.ok(output.startsWith(header), 'all metadata remains before the inserted function');
+    const context = {};
+    vm.runInNewContext(output, context);
+    assert.equal(context.result.completeUniqueOriginalTurns, 0);
+  }
+  assert.equal(synchronize({ root, check: true }), 3);
+  synchronize({ root });
+  assert.deepEqual(files.map(file => fs.readFileSync(path.join(root, 'plugins', file), 'utf8')), embedded);
 });

@@ -23,14 +23,14 @@ for(const writingMode of ['novel','rp'])for(const unified of [false,true])test(w
     assert.doesNotMatch(system,/NOVEL AUTHOR INPUTS/);
    }
   }
-  assert.equal(await f.done(pending),true);assert.match(f.sent.at(-1),/^WRITER_CHOICE_/);
-  assert.doesNotMatch(f.sent.at(-1),/NSFW GUIDANCE|proposed USER input choices/);
+  assert.equal(await f.done(pending),true);assert.match(f.copied.at(-1),/^WRITER_CHOICE_/);assert.equal(f.sent.length,0);
+  assert.doesNotMatch(f.copied.at(-1),/NSFW GUIDANCE|proposed USER input choices/);
  }
 });
 test('real explicit Novel writer queries once, binds edited output and delivers without retaining evidence',async t=>{
  const f=await fixture(t),{pending}=await f.start();await f.select();
  const editor=f.document.querySelector('textarea');editor.value='EDITED_WRITER_OUTPUT 은빛 열쇠를 찾는 장면으로 잇는다.';editor.dispatchEvent(new f.dom.window.Event('input',{bubbles:true}));
- assert.equal(await f.done(pending),true);assert.deepEqual(f.sent,['EDITED_WRITER_OUTPUT 은빛 열쇠를 찾는 장면으로 잇는다.']);
+ assert.equal(await f.done(pending),true);assert.deepEqual(f.copied,['EDITED_WRITER_OUTPUT 은빛 열쇠를 찾는 장면으로 잇는다.']);assert.equal(f.sent.length,0);
  assert.equal(f.prompts.length,1);assert.equal(f.queries(),1);
  assert.ok(JSON.stringify(f.prompts[0]).includes('WRITER_OWNER_EVIDENCE'));assert.ok(!JSON.stringify(f.prompts).includes('LEGACY_AUTHORIZATION_ONLY'));
  const request=f.bus.messages.find(m=>m.body.action==='capture').body.payload;
@@ -77,15 +77,31 @@ for(const change of ['owner','native','scope','permission','disconnect','setting
  f.button('복사 후 직접 전송').click();await f.wait(()=>f.document.body.textContent.includes('복사 검증 실패'),'stale copy rejection');
  assert.equal(f.copied.length+f.sent.length,0);await f.host.plugin.cancelInputAssistSend();assert.equal(await pending,false);
 });
-test('permission-dialog await cannot hide a native change before sendChat',async t=>{
- const f=await fixture(t),{pending}=await f.start();await f.select();f.controls.onPermission=async()=>{f.chat.message[1].data+=' changed during permission';};
- assert.equal(await f.done(pending),false);assert.equal(f.sent.length,0);
+for(const unified of [false,true])test('writer offers copy without direct send or sendChat support and '+(unified?'bound memory':'native context'),async t=>{
+ const f=await fixture(t,{unified,sendAvailable:false}),{pending}=await f.start();await f.select();
+ const chosen=f.document.querySelector('textarea').value;
+ assert.equal(f.button('바로 전송'),undefined);assert.ok(f.button('복사 후 직접 전송').classList.contains('btn--primary'));
+ assert.equal(await f.done(pending),true);assert.deepEqual(f.copied,[chosen]);assert.equal(f.sent.length,0);
+ assert.equal(f.prompts.length,1);assert.ok(f.permissions.every(p=>['fetchLogs','db','mainDom','replacer'].includes(p)));
+ assert.equal(f.host.plugin.getInputAssistSendStatus().phase,'copied');
+});
+test('losing the final review GUI cancels without sending or copying',async t=>{
+ const f=await fixture(t,{unified:false}),{pending}=await f.start();const cards=await f.choices();
+ f.document.body.remove();cards[0].querySelector('.btn--primary').click();
+ assert.equal(await pending,false);assert.equal(f.sent.length+f.copied.length,0);
+});
+test('blocked clipboard leaves a manual selection without sending or regenerating',async t=>{
+ const f=await fixture(t,{unified:false}),{pending}=await f.start();await f.select();f.controls.clipboardError=Error('fixture_clipboard_denied');
+ f.button('복사 후 직접 전송').click();await f.wait(()=>f.document.body.textContent.includes('자동 복사가 차단'),'manual clipboard fallback');
+ const editor=f.document.querySelector('textarea');assert.equal(editor.selectionStart,0);assert.equal(editor.selectionEnd,editor.value.length);
+ assert.equal(f.sent.length+f.copied.length,0);assert.equal(f.prompts.length,1);assert.equal(f.button('바로 전송'),undefined);
+ await f.host.plugin.cancelInputAssistSend();assert.equal(await pending,false);
 });
 test('editing a delivery while its currentness check waits cannot replace the sealed output',async t=>{
  const f=await fixture(t),{pending}=await f.start();await f.select();let release,entered;const ready=new Promise(r=>entered=r);
  f.controls.onCurrent=async()=>{f.controls.onCurrent=null;entered();await new Promise(r=>release=r);};
- f.button('바로 전송').click();await ready;const editor=f.document.querySelector('textarea');editor.value='LATE_REPLACEMENT';release();
- await f.wait(()=>f.document.body.textContent.includes('전달 검증 실패'),'changed exact output');assert.equal(f.sent.length,0);
+ f.button('복사 후 직접 전송').click();await ready;const editor=f.document.querySelector('textarea');editor.value='LATE_REPLACEMENT';release();
+ await f.wait(()=>f.document.body.textContent.includes('복사 검증 실패'),'changed exact output');assert.equal(f.sent.length+f.copied.length,0);
  await f.host.plugin.cancelInputAssistSend();assert.equal(await pending,false);
 });
 test('canceling a held model settles the writer and rejects late choices',async t=>{

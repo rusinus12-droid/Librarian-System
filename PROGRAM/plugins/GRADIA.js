@@ -20801,7 +20801,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
   );
 
   const inputAssistContinueCancellationError = () => {
-    const error = new Error('사용자가 이어쓰기 입력 전송을 취소했습니다.');
+    const error = new Error('사용자가 인풋 작성을 취소했습니다.');
     error.code = 'input_assist_send_cancelled';
     return error;
   };
@@ -20810,10 +20810,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     const current = Runtime.inputAssistSend || {};
     if (!current.busy) return false;
     if (current.cancelRequested) return true;
-    if (current.phase === 'sending') {
-      await setInputAssistContinuePanel('이미 RisuAI 전송이 시작되어 이 요청은 취소할 수 없습니다.', 'error', 5000);
-      return false;
-    }
     Runtime.inputAssistSend = {
       ...current,
       phase: 'cancelling',
@@ -20825,8 +20821,8 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     if (inputWriterDialogCancel) await inputWriterDialogCancel();
     await setInputAssistContinuePanel(
       current.phase === 'generating'
-        ? '전송 취소 요청을 받았습니다. 입력 생성이 끝나도 RisuAI로 보내지 않습니다…'
-        : '전송을 취소하고 있습니다…',
+        ? '인풋 작성 취소 요청을 받았습니다. 생성된 내용은 복사하지 않습니다…'
+        : '인풋 작성을 취소하고 있습니다…',
       'cancelled'
     );
     return true;
@@ -20941,6 +20937,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       const app = guiEl('div', { class: 'frame' });
       const card = guiEl('section', { class: 'card wide', style: { width: '100%', margin: '0', padding: '18px', display: 'grid', gap: '14px' } });
       const textarea = guiEl('textarea', {
+        class: 'textarea editable',
         placeholder: '비워 두면 직전 상황 이어가기\n내용을 입력하면 해당 인풋을 확장합니다.',
         style: { width: '100%', minHeight: '180px', resize: 'vertical', boxSizing: 'border-box', padding: '14px', borderRadius: '12px', font: 'inherit' }
       });
@@ -21117,20 +21114,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     const cancelledResult = { action: 'cancelled', content: '', edited: false, translationLanguage: '' };
     if (!body) return cancelledResult;
     const guiReady = await canUseInputAssistConfirmationGui();
-    if (!guiReady) {
-      if (onValidate) await onValidate(body);
-      Runtime.inputAssistConfirmation = {
-        ...(Runtime.inputAssistConfirmation || {}),
-        open: false,
-        source: 'explicit_input_writer_delivery_headless',
-        decision: 'direct',
-        selected: body,
-        edited: false,
-        sourceEdited: false,
-        translationLanguage: ''
-      };
-      return { action: 'direct', content: body, edited: false, translationLanguage: '' };
-    }
+    if (!guiReady) return cancelledResult;
     const settingsWasVisible = Gui.visible === true;
     try {
       const guiApi = getLiveApi(['showContainer']);
@@ -21187,17 +21171,16 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         value: displayedValue,
         spellcheck: true,
         dataset: { inputDeliveryEditor: '' },
-        'aria-label': '최종 전송 인풋 편집',
-        style: { width: '100%', minHeight: '180px', maxHeight: '420px', padding: '12px', borderRadius: '10px', resize: 'vertical', background: 'rgba(5,9,17,.58)' }
+        'aria-label': '최종 인풋 편집',
+        style: { width: '100%', minHeight: '180px', maxHeight: '420px', padding: '12px', borderRadius: '10px', resize: 'vertical', background: 'var(--input-bg, #0c0f16)' }
       });
       const copyStatus = guiEl('div', {
         class: 'note',
-        text: '현재 인풋을 직접 수정하거나 다른 언어로 번역한 뒤 전송할 수 있습니다.',
-        style: { minHeight: '18px', margin: '0', color: 'var(--sga-muted)' }
+        text: '현재 인풋을 수정하거나 번역한 뒤 복사해 RisuAI 입력창에 붙여넣으세요.',
+        style: { minHeight: '18px', margin: '0', color: 'var(--text2)' }
       });
       const countNode = guiEl('span', { class: 'note', text: `${displayedValue.length.toLocaleString('ko-KR')}자` });
       let copyButton = null;
-      let directButton = null;
       let cancelButton = null;
       const languageButtons = Object.fromEntries(languageDefs.map(([language, label]) => [language, guiEl('button', {
         class: 'btn btn--sm',
@@ -21214,13 +21197,12 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       const setBusy = (next, message = '') => {
         busy = !!next;
         preview.disabled = busy;
-        if (copyButton) copyButton.disabled = busy;
-        if (directButton) directButton.disabled = busy || !displayedValue.trim();
+        if (copyButton) copyButton.disabled = busy || !displayedValue.trim();
         if (cancelButton) cancelButton.disabled = busy;
         updateLanguageLabels();
         if (message) {
           copyStatus.textContent = message;
-          copyStatus.style.color = 'var(--sga-muted)';
+          copyStatus.style.color = 'var(--text2)';
         }
       };
       const captureEditor = (markEdited = true) => {
@@ -21241,7 +21223,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
           if (markEdited && changed) translatedEdited[translationView] = true;
         }
         countNode.textContent = `${displayedValue.length.toLocaleString('ko-KR')}자`;
-        if (directButton) directButton.disabled = busy || !displayedValue.trim();
+        if (copyButton) copyButton.disabled = busy || !displayedValue.trim();
         updateLanguageLabels();
       };
       const reviewResult = action => {
@@ -21255,12 +21237,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       };
       const finish = async result => {
         if (settled || busy && result?.action !== 'cancelled') return;
-        if (result?.action === 'direct' && onValidate) {
-          setBusy(true);
-          try { await onValidate(result.content, () => text(preview.value).trim()); }
-          catch (error) { copyStatus.textContent = '전달 검증 실패: ' + text(error.code || error.message); copyStatus.style.color = '#ff9aa7'; return; }
-          finally { setBusy(false); }
-        }
         if (settled) return;
         settled = true;
         if (inputWriterDialogCancel === cancelDialog) inputWriterDialogCancel = null;
@@ -21288,7 +21264,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
           preview.value = displayedValue;
           countNode.textContent = `${displayedValue.length.toLocaleString('ko-KR')}자`;
           copyStatus.textContent = '최종 인풋을 원래 언어로 표시합니다.';
-          copyStatus.style.color = 'var(--sga-muted)';
+          copyStatus.style.color = 'var(--text2)';
           updateLanguageLabels();
           return;
         }
@@ -21303,8 +21279,8 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
           displayedValue = next;
           preview.value = displayedValue;
           countNode.textContent = `${displayedValue.length.toLocaleString('ko-KR')}자`;
-          copyStatus.textContent = `${languageLabel} 번역본입니다. 이 번역본도 직접 수정한 뒤 전송할 수 있습니다.`;
-          copyStatus.style.color = 'var(--sga-muted)';
+          copyStatus.textContent = `${languageLabel} 번역본입니다. 이 번역본도 직접 수정한 뒤 복사할 수 있습니다.`;
+          copyStatus.style.color = 'var(--text2)';
         } catch (error) {
           copyStatus.textContent = `${languageLabel} 번역 실패: ${compact(error?.message || error, 500)}`;
           copyStatus.style.color = '#ff9aa7';
@@ -21318,13 +21294,13 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         if (!result.content) return;
         copyButton.disabled = true;
         copyStatus.textContent = '클립보드에 복사하고 있습니다…';
-        copyStatus.style.color = 'var(--sga-muted)';
+        copyStatus.style.color = 'var(--text2)';
 
         if (onValidate) {
           setBusy(true);
           try { await onValidate(result.content, () => text(preview.value).trim()); }
           catch (error) { copyStatus.textContent = '복사 검증 실패: ' + text(error.code || error.message); copyStatus.style.color = '#ff9aa7'; return; }
-          finally { setBusy(false); copyButton.disabled = false; }
+          finally { setBusy(false); }
         }
         if (settled) return;
         // Verification may consume activation; retain the existing manual-copy fallback.
@@ -21352,9 +21328,8 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       for (const [language] of languageDefs) {
         languageButtons[language].addEventListener('click', () => { void toggleTranslation(language); });
       }
-      copyButton = guiEl('button', { class: 'btn btn--ghost', text: '복사 후 직접 전송', onClick: () => { void onCopy(); } });
+      copyButton = guiEl('button', { class: 'btn btn--primary', text: '복사 후 직접 전송', onClick: () => { void onCopy(); } });
       cancelButton = guiEl('button', { class: 'btn btn--ghost', text: '취소', onClick: () => { void finish(cancelledResult); } });
-      directButton = guiEl('button', { class: 'btn btn--primary', text: '바로 전송', onClick: () => { void finish(reviewResult('direct')); } });
       const keyHandler = event => {
         if (event?.key === 'Escape') {
           event.preventDefault?.();
@@ -21362,13 +21337,13 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         }
       };
       const cancelDialog = () => finish(cancelledResult);
-      if (onValidate) inputWriterDialogCancel = cancelDialog;
+      inputWriterDialogCancel = cancelDialog;
       document.addEventListener('keydown', keyHandler);
       const app = guiEl('div', { class: 'frame wide' });
       const card = guiEl('section', { class: 'card wide', style: { width: '100%', margin: '0', padding: '18px', display: 'grid', gap: '14px' } }, [
         guiEl('div', {}, [
           guiEl('h2', { text: '작성된 인풋 최종 확인' }),
-          guiEl('p', { class: 'note', text: '현재 내용을 직접 수정하거나 영어·한국어·일본어로 번역한 뒤, 그대로 전송하거나 복사할 수 있습니다.' })
+          guiEl('p', { class: 'note', text: '내용을 수정하거나 영어·한국어·일본어로 번역한 뒤 복사하세요. RisuAI 입력창에 붙여넣어 직접 전송할 수 있습니다.' })
         ]),
         guiEl('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center' } }, [
           guiEl('span', { class: 'badge badge--info', text: '편집 가능' }),
@@ -21379,8 +21354,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         copyStatus,
         guiEl('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' } }, [
           cancelButton,
-          copyButton,
-          directButton
+          copyButton
         ])
       ]);
       app.appendChild(card);
@@ -21497,7 +21471,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
           await translateInputAssistReviewText(value, settings, targetLanguage)
         )
       });
-      if (delivery.action === 'cancelled' || !text(delivery.content).trim()) throw inputAssistContinueCancellationError();
+      if (delivery.action !== 'copy' || !text(delivery.content).trim()) throw inputAssistContinueCancellationError();
       generated = text(delivery.content).trim();
       const baseDeliverySource = continuationMode ? 'explicit_writer_continue' : 'explicit_writer_expand';
       const deliverySource = [
@@ -21531,29 +21505,9 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       }
       await assertInputWriterDelivery(writerLease, generated);
       generated = finalizeInputAssistDelivery(generated, deliverySource, settings).trim();
-      Runtime.inputAssistSend = { ...Runtime.inputAssistSend, phase: 'ready', generated };
-      if (delivery.action === 'copy') {
-        Runtime.inputAssistSend = { ...Runtime.inputAssistSend, busy: false, phase: 'copied', ok: true, reason: 'manual_copy', lastAt: Date.now() };
-        await setInputAssistContinuePanel('인풋을 복사했습니다. RisuAI 입력창에 붙여넣어 직접 전송하세요.', 'done', 6000);
-        finishCallTelemetry('explicit_input_writer_copied');
-        return true;
-      }
-      const sendApi = getLiveApi(['sendChat']);
-      if (typeof sendApi?.sendChat !== 'function') throw new Error('현재 RisuAI에서 플러그인 sendChat API를 사용할 수 없습니다. 복사 후 직접 전송을 사용해 주세요.');
-      const permissionApi = getLiveApi(['requestPluginPermission']);
-      if (typeof permissionApi?.requestPluginPermission === 'function') {
-        const granted = await permissionApi.requestPluginPermission('sendChat');
-        if (granted === false) throw new Error('GRADIA의 채팅 전송 권한이 거부되었습니다. 복사 후 직접 전송을 사용해 주세요.');
-      }
-      if (inputAssistContinueCancelled(requestId)) throw inputAssistContinueCancellationError();
-      Runtime.inputAssistSend = { ...Runtime.inputAssistSend, phase: 'sending', cancelRequested: false };
-      await setInputAssistContinuePanel('RisuAI로 전송하고 있습니다…', 'working');
-      await assertInputWriterDelivery(writerLease, generated);
-      closeInputWriterEvidence('LIB_READ_CONSUMED', writerLease);
-      const sent = await sendApi.sendChat(generated);
-      if (sent === false) throw new Error('RisuAI가 GRADIA의 채팅 전송 요청을 허용하지 않았습니다.');
-      Runtime.inputAssistSend = { busy: false, phase: 'sent', requestId, cancelRequested: false, cancelled: false, lastAt: Date.now(), ok: true, reason: '', generated };
-      await setInputAssistContinuePanel('GRADIA 인풋을 전송했습니다.', 'done', 3500);
+      Runtime.inputAssistSend = { ...Runtime.inputAssistSend, busy: false, phase: 'copied', generated, ok: true, reason: 'manual_copy', lastAt: Date.now() };
+      await setInputAssistContinuePanel('인풋을 복사했습니다. RisuAI 입력창에 붙여넣어 직접 전송하세요.', 'done', 6000);
+      finishCallTelemetry('explicit_input_writer_copied');
       return true;
     } catch (error) {
       if (error?.code === 'input_assist_send_cancelled' || inputAssistContinueCancelled(requestId)) {
@@ -38537,7 +38491,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     // Empty/continuation input is intentionally not rewritten here. RisuAI can
     // dispatch its native empty-send path before a plugin can safely replace it;
-    // the explicit chat-menu action generates text first and calls sendChat.
+    // the explicit chat-menu action generates text for user-reviewed copying.
     const settings = await loadSettings();
     ;
     const existingInjectionCount = countSgaInjectionMessages(messages);
@@ -39868,7 +39822,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (typeof document === 'undefined' || document.getElementById('sga-rp-gui-style')) return;
     const style = document.createElement('style');
     style.id = 'sga-rp-gui-style';
-    style.textContent = `${GRADIA_MOCKUP_STYLE}\n#sga-rp-gui-root{position:fixed;inset:0;z-index:9999;display:block;overflow:hidden;background:transparent;color-scheme:normal}\n\n#sga-rp-gui-root .app{width:100%;height:100%}
+    style.textContent = `${GRADIA_MOCKUP_STYLE}\n#sga-rp-gui-root{position:fixed;inset:0;z-index:9999;display:block;overflow:hidden;background:transparent;color:var(--text,#edf0f7);color-scheme:dark}\n#sga-rp-gui-root .dialog textarea::placeholder{color:var(--text2);opacity:1}\n\n#sga-rp-gui-root .app{width:100%;height:100%}
 #sga-rp-gui-root .proto-bar{display:none}
 #sga-rp-gui-root > .stage{height:100%;padding:16px;align-items:center;overflow:hidden;background:transparent}
 #sga-rp-gui-root > .stage > .frame{height:min(830px,100%);min-height:0}
@@ -40101,7 +40055,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     ];
     const card = guiEl('section', {
       dataset: { inputChoiceCard: String(choice?.id || choice?.perspective || index + 1) },
-      style: { padding: '13px', border: '1px solid rgba(139,92,255,.32)', borderRadius: '14px', background: 'rgba(10,12,24,.80)', display: 'grid', gap: '8px' }
+      style: { padding: '13px', border: '1px solid rgba(139,92,255,.32)', borderRadius: '14px', background: 'var(--surface2)', display: 'grid', gap: '8px' }
     });
     const editor = guiEl('textarea', {
       class: 'textarea editable',
