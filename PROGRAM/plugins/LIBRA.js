@@ -58765,15 +58765,19 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const at = source.indexOf(needle, from);
           if (at < 0) return false;
           from = at + needle.length;
-          if (canonicalEntityWordChar(source[at - 1])) continue;
           const tail = source.slice(from);
-          if (!canonicalEntityWordChar(tail[0]) || CANONICAL_ENTITY_KOREAN_PARTICLE.test(tail)) return true;
+          const tailOk = !canonicalEntityWordChar(tail[0]) || CANONICAL_ENTITY_KOREAN_PARTICLE.test(tail);
+          if (!canonicalEntityWordChar(source[at - 1]) && tailOk) return true;
+          if (tailOk && /^[\uAC00-\uD7A3]{2}$/.test(needle)) {
+            if (at >= 1 && /^[\uAC00-\uD7A3]$/.test(source[at - 1]) && !canonicalEntityWordChar(source[at - 2])) return true;
+            if (at >= 2 && /^(?:남궁|황보|제갈|선우|사공|독고|동방|서문)$/.test(source.slice(at - 2, at)) && !canonicalEntityWordChar(source[at - 3])) return true;
+          }
         }
         return false;
       };
       if (matchExact(name)) return true;
       const rawName = String(name || '').trim();
-      const parts = rawName.split(/[\s·/_-]+/).map(p => p.trim()).filter(p => p.length >= 2);
+      const parts = rawName.split(/[\s·/_()-]+/).map(p => p.trim()).filter(p => p.length >= 2);
       if (parts.length > 1 && parts.some(part => matchExact(part))) return true;
       if (/^[\uAC00-\uD7A3]{3,5}$/.test(rawName)) {
         if (matchExact(rawName.slice(1))) return true;
@@ -61265,6 +61269,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
           relations: relations.slice(0, 32), omitted: Math.max(0, candidates.length - 64),
           relationsOmitted: Math.max(0, relations.length - 32) });
     };
+    const canonicalWorldEntityNameBoundToEvidence = (e, quote) => {
+      const source = canonicalEvidenceComparable(quote);
+      const needle = canonicalEvidenceComparable(e?.name);
+      if (!needle || !source) return false;
+      if (source.includes(needle)) return true;
+      if (e?.kind === 'thread' && source.length >= 2) return true;
+      const rawName = String(e?.name || '').trim();
+      const parts = rawName.split(/[\s·/_(),:-]+/).map(p => canonicalEvidenceComparable(p)).filter(p => p.length >= 2);
+      if (parts.some(part => source.includes(part))) return true;
+      return false;
+    };
     const validateUnifiedEntityRecord = (e,entities,sources) => {
       unifiedKeys(e, ['tempId','name','type','kind','evidenceSpans'], 'entity');
       unifiedAssert(unifiedId(e.tempId) && !entities.has(e.tempId), 'UNIFIED_ENTITY_ID_INVALID');
@@ -61273,7 +61288,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       unifiedEvidence(e.evidenceSpans, sources, e.tempId);
       unifiedAssert(e.evidenceSpans.some(s => e.type === 'person'
         ? canonicalEntityNameBoundToEvidence(e.name, s.quote)
-        : canonicalEvidenceComparable(s.quote).includes(canonicalEvidenceComparable(e.name))), 'UNIFIED_ENTITY_NAME_UNBOUND');
+        : canonicalWorldEntityNameBoundToEvidence(e, s.quote)), 'UNIFIED_ENTITY_NAME_UNBOUND');
     };
     const validateUnifiedFactRecord = (f,entities,facts,sources,schema=UNIFIED_ARTIFACT_SCHEMA,allowCandidateAlias=false,allowLegacyProfileStrings=false) => {
       unifiedKeys(f, ['tempFactId','domain','subjectTempRef','targetTempRef','dimension','claimKind','values','text','temporalRole','certainty','evidenceSpans','dependsOn','effect'], 'fact');
@@ -61778,19 +61793,70 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
       };
       const duplicates=(rows,id)=>{const counts=new Map();for(const r of rows){const k=r?.[id];if(unifiedId(k))counts.set(k,(counts.get(k)||0)+1);}return new Set([...counts].filter(([,n])=>n>1).map(([k])=>k));};
+      const repairQuoteInSource=(quoteValue,rawValue)=>{
+        const needle=String(quoteValue||'').trim(),body=String(rawValue||'');
+        const length=needle.length,limit=Math.max(1,Math.floor(length*0.12));
+        if(length<6||length>300||!body||body.length>20000)return '';
+        let previous=new Array(body.length+1).fill(0),previousStart=Array.from({length:body.length+1},(_,index)=>index);
+        for(let i=1;i<=length;i+=1){
+          const current=new Array(body.length+1),currentStart=new Array(body.length+1);
+          current[0]=i;currentStart[0]=0;
+          for(let j=1;j<=body.length;j+=1){
+            const substitute=previous[j-1]+(needle[i-1]===body[j-1]?0:1);
+            const remove=previous[j]+1,insert=current[j-1]+1;
+            if(substitute<=remove&&substitute<=insert){current[j]=substitute;currentStart[j]=previousStart[j-1];}
+            else if(remove<=insert){current[j]=remove;currentStart[j]=previousStart[j];}
+            else{current[j]=insert;currentStart[j]=currentStart[j-1];}
+          }
+          previous=current;previousStart=currentStart;
+        }
+        let best=Infinity,end=-1;
+        for(let j=1;j<=body.length;j+=1)if(previous[j]<best){best=previous[j];end=j;}
+        if(best>limit||end<0)return '';
+        return body.slice(previousStart[end],end).trim();
+      };
       const evidence=(row,path)=>{
         if(!Array.isArray(row?.evidenceSpans))return;
         row.evidenceSpans=row.evidenceSpans.flatMap((span,i)=>{
           const clean=pick(span,['ref','quote'],path+'.evidenceSpans['+i+']');
-          if(isPlainObject(clean)&&canonicalEvidenceSpanBinding(clean,sources.get(clean.ref)))return [clean];
+          if(isPlainObject(clean)){
+            if(canonicalEvidenceSpanBinding(clean,sources.get(clean.ref)))return [clean];
+            if(canonicalEvidenceComparable(clean.quote).length>=4){
+              for(const src of sources.values()){
+                if(canonicalEvidenceSpanBinding(clean,src)){clean.ref=src.ref;return [clean];}
+              }
+            }
+            const targetSrc=sources.get(clean.ref);
+            if(targetSrc){
+              const repaired=repairQuoteInSource(clean.quote,targetSrc.raw);
+              if(repaired&&canonicalEvidenceSpanBinding({ref:clean.ref,quote:repaired},targetSrc)){clean.quote=repaired;return [clean];}
+            }
+          }
           admission.droppedFields.push({path:path+'.evidenceSpans['+i+']',reason:'source_quote_mismatch'});return [];
         });
+      };
+      const bindEntitySpanInCitedSource=e=>{
+        if(!Array.isArray(e?.evidenceSpans)||!e.evidenceSpans.length||!unifiedText(e?.name,180))return;
+        const bound=s=>e.type==='person'?canonicalEntityNameBoundToEvidence(e.name,s.quote):canonicalWorldEntityNameBoundToEvidence(e,s.quote);
+        if(e.evidenceSpans.some(bound))return;
+        for(const s of e.evidenceSpans){
+          const src=sources.get(s?.ref),raw=String(src?.raw||'');
+          if(!raw)continue;
+          const rawBound=e.type==='person'?canonicalEntityNameBoundToEvidence(e.name,raw):canonicalWorldEntityNameBoundToEvidence(e,raw);
+          if(!rawBound)continue;
+          const rawName=String(e.name||'').trim();
+          const candidates=[rawName,...rawName.split(/[\s·/_(),:-]+/).filter(p=>p.length>=2),...(/^[\uAC00-\uD7A3]{3,5}$/.test(rawName)?[rawName.slice(1)]:[])];
+          let idx=-1,matchLen=rawName.length;
+          for(const cand of candidates){const pos=raw.indexOf(cand);if(pos>=0){idx=pos;matchLen=cand.length;break;}}
+          const snippet=idx>=0?raw.slice(Math.max(0,idx-20),Math.min(raw.length,idx+matchLen+80)).trim():raw.slice(0,Math.min(raw.length,200)).trim();
+          if(snippet&&canonicalEvidenceSpanBinding({ref:s.ref,quote:snippet},src)&&bound({quote:snippet})){s.quote=snippet;return;}
+        }
       };
       const entityRows=asArray(artifact.entities), entityDuplicates=duplicates(entityRows,'tempId'),entities=new Map();
       for(let i=0;i<entityRows.length;i++){
         const e=pick(entityRows[i],['tempId','name','type','kind','evidenceSpans'],'entities['+i+']');
         try{unifiedAssert(i<100,'UNIFIED_ENTITY_LIMIT');unifiedAssert(!entityDuplicates.has(e?.tempId),'UNIFIED_ENTITY_ID_AMBIGUOUS');
-          evidence(e,'entities['+i+']');validateUnifiedEntityRecord(e,entities,sources);entities.set(e.tempId,e);
+          evidence(e,'entities['+i+']');bindEntitySpanInCitedSource(e);validateUnifiedEntityRecord(e,entities,sources);entities.set(e.tempId,e);
         }catch(error){reject('entity',i,e,string(error.message||error));}
       }
       if(!Array.isArray(artifact.entities))admission.droppedFields.push({path:'entities',reason:'array_required'});
@@ -86419,6 +86485,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.bookPeopleSection = nextSection;
     applySharedNavigationTarget({ pageId: Gui.bookPeopleSection === 'relationships' ? 'relationships' : 'characters' });
     Gui.bookPage = 'people';
+    if (nextSection !== 'profile') {
+      Gui.pendingProductManagementOpen = 'people';
+      const existingFold = Gui.app?.querySelector?.('details.fold[data-product-management="people"]');
+      if (existingFold) existingFold.open = true;
+    }
     queueGuiNavigationRender();
     if (nextSection !== 'profile') {
       setTimeout(() => {
@@ -86437,6 +86508,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.bookWorldSection = nextSection;
     Gui.bookPage = 'world';
     applySharedNavigationTarget({ pageId: 'world' });
+    if (nextSection !== 'guide') {
+      Gui.pendingProductManagementOpen = 'world';
+      const existingFold = Gui.app?.querySelector?.('details.fold[data-product-management="world"]');
+      if (existingFold) existingFold.open = true;
+    }
     queueGuiNavigationRender();
     if (nextSection !== 'guide') {
       setTimeout(() => {
@@ -86455,6 +86531,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.bookStorySection = nextSection;
     Gui.bookPage = 'story';
     if (Gui.bookStorySection !== 'direction') applySharedNavigationTarget({ pageId: 'narrative', narrativeHubSection: Gui.bookStorySection === 'toc' ? 'current' : Gui.bookStorySection });
+    if (nextSection !== 'toc') {
+      Gui.pendingProductManagementOpen = 'story';
+      const existingFold = Gui.app?.querySelector?.('details.fold[data-product-management="story"]');
+      if (existingFold) existingFold.open = true;
+    }
     queueGuiNavigationRender();
     if (nextSection !== 'toc') {
       setTimeout(() => {
@@ -89596,11 +89677,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const buildWorldManagerCorrectionEditor = (domain, row, view, renderInDialog = false) => {
     const keyValue=worldManagerDraftKey(domain,row); const draft=Gui.worldManagerEditDraft?.key===keyValue?Gui.worldManagerEditDraft:null;
     if (draft && !renderInDialog) return null;
-    if (!draft) return guiEl('div',{class:'cluster',style:{alignItems:'flex-start'},dataset:{worldCorrectionAction:domain}},[
-      worldManagerSourceBadge(domain, row, view),
-      guiEl('button',{class:'btn',type:'button',text:worldManagerCorrectionId(row)?'교정 수정':'수정',disabled:!view?.head,onClick:()=>openWorldManagerCorrectionEditor(domain,row,view)}),
+    if (!draft) return guiEl('div',{class:'cluster',style:{display:'flex',alignItems:'center',justifyContent:'flex-end',width:'100%',gap:'8px'},dataset:{worldCorrectionAction:domain}},[
       buildWorldManagerIdentityMerge(domain,row,view),
-      buildWorldManagerIdentitySplit(domain,row,view)
+      buildWorldManagerIdentitySplit(domain,row,view),
+      guiEl('button',{class:'btn',type:'button',style:{marginLeft:'auto'},text:worldManagerCorrectionId(row)?'교정 수정':'수정',disabled:!view?.head,onClick:()=>openWorldManagerCorrectionEditor(domain,row,view)})
     ]);
     const values=draft.values; const set=(name,value)=>{values[name]=value;}; const fields=[];
     if(draft.unified&&['characters','world'].includes(domain))fields.push(fieldNode('이름',worldManagerInput(values.name,value=>set('name',value))),fieldNode('별칭',worldManagerTextarea(values.aliases,value=>set('aliases',value))),...buildUnifiedWorldStateEditor(draft,view));
@@ -92700,6 +92780,10 @@ advanced
         if (!Gui.visible || state.targetViewKey !== guiBodyViewKey()) return;
         const stateRoot = state.navigation ? null : Gui.root;
         Array.from(stateRoot?.querySelectorAll('details') || []).forEach((node, index) => {
+          if (Gui.pendingProductManagementOpen && node.dataset?.productManagement === Gui.pendingProductManagementOpen) {
+            node.open = true;
+            return;
+          }
           const key = guiDisclosureStateKey(node, index);
           if (Object.prototype.hasOwnProperty.call(state.disclosures || {}, key)) {
             node.open = state.disclosures[key] === true;
@@ -92730,7 +92814,15 @@ advanced
         }
         const page = document.scrollingElement || document.documentElement;
         if (page) { page.scrollTop = Number(state.pageTop || 0); page.scrollLeft = Number(state.pageLeft || 0); }
-
+        if (Gui.pendingProductManagementOpen) {
+          const targetMgmt = Gui.pendingProductManagementOpen;
+          Gui.pendingProductManagementOpen = '';
+          const fold = Gui.app?.querySelector?.(`details.fold[data-product-management="${targetMgmt}"]`);
+          if (fold) {
+            fold.open = true;
+            try { fold.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+          }
+        }
       } catch (_) {}
     };
     try { requestAnimationFrame(apply); } catch (_) { setTimeout(apply, 0); }
