@@ -147,44 +147,35 @@ async function run() {
     assert(overlay.querySelector('[data-memory-model-save="analysis"]'), 'Dialog keeps the Librarian preset save control');
 
     const fullBtn = overlay.querySelector('button.btn--primary[data-maintenance-full]');
-    assert(fullBtn, 'One-touch recovery is the primary dialog action');
+    assert(fullBtn, 'Auto recovery is the primary dialog action');
+    assert.equal(fullBtn.textContent.trim(), '자동 복구 실행');
     await hostFactory.pause(50);
-    assert.equal(overlay.querySelector('[data-maintenance-targets]')?.dataset.maintenanceTargets, 'ready', 'one-touch targets are listed before running');
+    assert.equal(overlay.querySelector('[data-maintenance-targets]')?.dataset.maintenanceTargets, 'ready', 'recovery targets are listed before running');
 
     const autoBtn = overlay.querySelector('button[data-maintenance-auto]');
     assert(autoBtn, 'Auto recovery button must exist in dialog');
+    assert.equal(autoBtn, fullBtn, 'Single unified auto recovery button');
 
-    // Click auto recovery button
-    autoBtn.click();
-    await hostFactory.pause(100);
-
-    // After recovery, completion view is rendered
-    const completionTitle = overlay.querySelector('h2');
-    assert(completionTitle.textContent.includes('완료'), 'Completion view must show completion title');
+    // One-touch auto recovery: cost/target confirmation first, then live steps, then completion.
+    fullBtn.click();
+    await hostFactory.pause(50);
+    const confirm = doc.querySelector('#dlg-product-confirm');
+    assert(confirm, 'Auto recovery must ask for confirmation first');
+    assert.match(confirm.textContent, /모델 생성 호출 약 \d+회/, 'confirmation states the expected model calls');
+    assert.match(confirm.textContent, /미크로 누락 \(1턴\)/, 'confirmation lists the Micro target');
+    assert.equal(overlay.querySelector('h2').textContent.includes('완료'), false, 'nothing runs before confirmation');
+    confirm.querySelector('[data-operation-confirm-execute]').click();
+    let finished = false;
+    for (let i = 0; i < 100 && !finished; i++) {
+      await hostFactory.pause(50);
+      finished = overlay.querySelector('h2')?.textContent.includes('완료');
+    }
+    assert(finished, 'Auto recovery reaches its completion view');
 
     // Verify completion actions provide entry points
     const completionButtons = Array.from(overlay.querySelectorAll('button'));
     assert(completionButtons.some(b => b.textContent.includes('기억 생성 구간 선택')), 'Completion must offer range selection button');
     assert(completionButtons.some(b => b.textContent.includes('원문 재분석')), 'Completion must offer reanalysis button');
-
-    // One-touch recovery: cost/target confirmation first, then live steps, then completion.
-    await host.api.openMemoryMaintenanceDialog();
-    const fullOverlay = doc.querySelector('#dlg-maintenance');
-    await hostFactory.pause(50);
-    fullOverlay.querySelector('button[data-maintenance-full]').click();
-    await hostFactory.pause(50);
-    const confirm = doc.querySelector('#dlg-product-confirm');
-    assert(confirm, 'One-touch recovery must ask for confirmation first');
-    assert.match(confirm.textContent, /모델 생성 호출 약 \d+회/, 'confirmation states the expected model calls');
-    assert.match(confirm.textContent, /미크로 누락 \(1턴\)/, 'confirmation lists the Micro target');
-    assert.equal(fullOverlay.querySelector('h2').textContent.includes('완료'), false, 'nothing runs before confirmation');
-    confirm.querySelector('[data-operation-confirm-execute]').click();
-    let finished = false;
-    for (let i = 0; i < 100 && !finished; i++) {
-      await hostFactory.pause(50);
-      finished = fullOverlay.querySelector('h2')?.textContent.includes('원터치 전체 복구 완료');
-    }
-    assert(finished, 'One-touch recovery reaches its completion view');
 
     console.log('libra_memory_maintenance_auto_recovery_test: PASS');
   } finally {
