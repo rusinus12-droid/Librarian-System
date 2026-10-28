@@ -45967,28 +45967,35 @@ ${cleanedText}`, 80),
     snapshot_value_missing:'목록에 있는 저장 값 일부를 읽지 못함'
   }[reason]||(/^HEALTH_SETTINGS_/.test(String(reason||''))?'전역 임베딩 설정의 읽기 권한·내용·현재성을 검증하지 못함':'점검에 필요한 증거를 검증하지 못함'));
 
-  const maintenancePlanText = (plan = {}) => plan.inspection?.coverage==='server_snapshot'&&!plan.inspection.complete
-    ? [maintenanceJudgementText(plan),`미완료 사유: ${(plan.inspection.reasons||[]).map(maintenanceServerInspectionReasonText).join(' · ')||'점검 증거 미검증'}`,'읽기 전용 · 서버 물리 복구 차단 · 제공자 호출 없음'].join('\n')
+  // Keep labels with their values; conditional rows must not shift later labels.
+  const maintenancePlanDetails = (plan = {}) => plan.inspection?.complete === false
+    ? [
+      ['종합 판정', maintenanceJudgementText(plan)],
+      ['미완료 사유', (plan.inspection.reasons || []).map(maintenanceServerInspectionReasonText).join(' · ') || '점검 증거 미검증'],
+      ['점검 범위', '읽기 전용 · 정상 여부 미확인 · 복구 실행 안 함']
+    ]
     : [
-    `현재 채팅 턴 ${formatNumber(plan.liveTurns)}개 · 저장 턴 ${formatNumber(plan.storedTurns)}개`,
-    `누락 ${formatNumber(plan.missingTurns)} · 변경 ${formatNumber(plan.changedTurns)} · 오래된/고아 ${formatNumber(plan.staleStoredTurns)}`,
-    `정제 필요 ${formatNumber(plan.dirtyRecords)} · 외부 구형 데이터 ${formatNumber(plan.externalRecords)}`,
-    `정제기 버전 불일치 ${formatNumber(plan.sanitizerVersionMismatch)}${plan.requiresFullRebuild ? ' · 전체 재구축 필요' : ''}`,
-    `문장 청크 v${formatNumber(plan.narrativeChunkSchemaVersion || NARRATIVE_CHUNK_SCHEMA_VERSION)} · 현재 채팅 구형 청크 ${formatNumber(plan.liveChunkSchemaMismatch)} · 인계 기록 구형 청크 ${formatNumber(plan.inheritedChunkSchemaMismatch)}`,
-    `리콜 샤드 인덱스 v${formatNumber(plan.shardIndexVersion)} / v${formatNumber(plan.shardIndexExpectedVersion || FLASHBACK_SHARD_INDEX_VERSION)} · ${plan.shardIndexMismatch ? '재구축 필요' : '정상'}`,
-    `저장 무결성: 매니페스트 ${plan.storageManifestCorrupt ? '손상' : '정상'} · archiveRef ${plan.storageArchiveRefInvalid ? '손상' : '정상'} · 누락 샤드 ${formatNumber(plan.storageMissingShards)}${Array.isArray(plan.missingShardIndexes) && plan.missingShardIndexes.length ? ` [${plan.missingShardIndexes.join(', ')}]` : ''} · 손상 샤드 ${formatNumber(plan.storageCorruptShards)} · 개수 불일치 ${plan.storageRecordCountMismatch ? '예' : '아니오'} · 범위 충돌 ${plan.storageForeignScopeKey ? '예' : '아니오'}`,
-    `영구 이전 세션 기록: 기대 ${formatNumber(plan.expectedPermanentHistory)} · 읽기 가능 ${formatNumber(plan.readablePermanentHistory)} · 복원 불가 가능성 ${formatNumber(plan.unrecoverablePermanentHistory)}`,
-    `이전 세션 아카이브: ${maintenanceArchiveStatusText(plan)}`,
-    `벡터 복구 ${plan.archiveInspectionComplete===false?'확인 불가':formatNumber(plan.recordsNeedingEmbedding)} · 로컬 ${formatNumber(plan.localRecordsNeedingEmbedding)} · 아카이브 ${plan.archiveRecordsNeedingEmbedding==null?'확인 불가':formatNumber(plan.archiveRecordsNeedingEmbedding)} · 프로바이더 불일치 ${formatNumber(plan.providerMismatch)}`,
-    `임베딩 키 ${plan.inspection?.coverage==='server_snapshot'?(plan.inspection.credentialStatus==='not_required'?'필요 없음 · 설정 기준':'미검증 · 점검에서 읽지 않음'):plan.embeddingCredentialRequired ? (plan.embeddingCredential?.present ? `확인됨 · ${plan.embeddingCredential?.durableAcrossUpdate ? '업데이트 보존 경로 있음' : '현재 기기 전용'}` : (plan.embeddingWorkPending ? '없음 · 원격 복구 차단' : '없음 · 현재 기억 데이터는 유지')) : '필요 없음'}`,
-    `에피소드 인덱스 ${plan.episodeStale ? '갱신 필요' : '정상'}`,
-    maintenanceEmbeddingWorkText(plan),
-    `자동 복구 경로: ${maintenanceStrategyText(plan.automatic)}`,
-    plan.requiresFullRebuild
+    ['턴 대조', `현재 채팅 턴 ${formatNumber(plan.liveTurns)}개 · 저장 턴 ${formatNumber(plan.storedTurns)}개`],
+    ['누락·변경', `누락 ${formatNumber(plan.missingTurns)} · 변경 ${formatNumber(plan.changedTurns)} · 오래된/고아 ${formatNumber(plan.staleStoredTurns)}`],
+    ['정제 상태', `정제 필요 ${formatNumber(plan.dirtyRecords)} · 외부 구형 데이터 ${formatNumber(plan.externalRecords)}`],
+    ['정제기 버전', `정제기 버전 불일치 ${formatNumber(plan.sanitizerVersionMismatch)}${plan.requiresFullRebuild ? ' · 전체 재구축 필요' : ''}`],
+    ['문장 청크', `문장 청크 v${formatNumber(plan.narrativeChunkSchemaVersion || NARRATIVE_CHUNK_SCHEMA_VERSION)} · 현재 채팅 구형 청크 ${formatNumber(plan.liveChunkSchemaMismatch)} · 인계 기록 구형 청크 ${formatNumber(plan.inheritedChunkSchemaMismatch)}`],
+    ['리콜 샤드', `리콜 샤드 인덱스 v${formatNumber(plan.shardIndexVersion)} / v${formatNumber(plan.shardIndexExpectedVersion || FLASHBACK_SHARD_INDEX_VERSION)} · ${plan.shardIndexMismatch ? '재구축 필요' : '정상'}`],
+    ['저장 무결성', `저장 무결성: 매니페스트 ${plan.storageManifestCorrupt ? '손상' : '정상'} · archiveRef ${plan.storageArchiveRefInvalid ? '손상' : '정상'} · 누락 샤드 ${formatNumber(plan.storageMissingShards)}${Array.isArray(plan.missingShardIndexes) && plan.missingShardIndexes.length ? ` [${plan.missingShardIndexes.join(', ')}]` : ''} · 손상 샤드 ${formatNumber(plan.storageCorruptShards)} · 개수 불일치 ${plan.storageRecordCountMismatch ? '예' : '아니오'} · 범위 충돌 ${plan.storageForeignScopeKey ? '예' : '아니오'}`],
+    ['영구 기록', `영구 이전 세션 기록: 기대 ${formatNumber(plan.expectedPermanentHistory)} · 읽기 가능 ${formatNumber(plan.readablePermanentHistory)} · 복원 불가 가능성 ${formatNumber(plan.unrecoverablePermanentHistory)}`],
+    ['이전 아카이브', `이전 세션 아카이브: ${maintenanceArchiveStatusText(plan)}`],
+    ['벡터 복구', `벡터 복구 ${plan.archiveInspectionComplete===false?'확인 불가':formatNumber(plan.recordsNeedingEmbedding)} · 로컬 ${formatNumber(plan.localRecordsNeedingEmbedding)} · 아카이브 ${plan.archiveRecordsNeedingEmbedding==null?'확인 불가':formatNumber(plan.archiveRecordsNeedingEmbedding)} · 프로바이더 불일치 ${formatNumber(plan.providerMismatch)}`],
+    ['임베딩 자격', `임베딩 키 ${plan.inspection?.coverage==='server_snapshot'?(plan.inspection.credentialStatus==='not_required'?'필요 없음 · 설정 기준':'미검증 · 점검에서 읽지 않음'):plan.embeddingCredentialRequired ? (plan.embeddingCredential?.present ? `확인됨 · ${plan.embeddingCredential?.durableAcrossUpdate ? '업데이트 보존 경로 있음' : '현재 기기 전용'}` : (plan.embeddingWorkPending ? '없음 · 원격 복구 차단' : '없음 · 현재 기억 데이터는 유지')) : '필요 없음'}`],
+    ['에피소드 인덱스', `에피소드 인덱스 ${plan.episodeStale ? '갱신 필요' : '정상'}`],
+    ['재임베딩 작업', maintenanceEmbeddingWorkText(plan)],
+    ['자동 복구 경로', `자동 복구 경로: ${maintenanceStrategyText(plan.automatic)}`],
+    ['예상 작업', plan.requiresFullRebuild
       ? `전체 재구축 청크 ${formatNumber(plan.rebuildTotalChunks)}개 · 기존 벡터 재사용 예상 ${formatNumber(plan.estimatedReusableVectors)}개 · 신규 임베딩 예상 ${formatNumber(plan.rebuildEstimatedNewEmbeddingVectors)}개 / ${formatNumber(plan.rebuildEstimatedEmbeddingTokens)} tokens / ${formatCostSummary(plan.rebuildEmbeddingCost)}`
-      : `신규 임베딩 예상 ${formatNumber(plan.estimatedEmbeddingChunks)}개 / ${formatNumber(plan.estimatedEmbeddingTokens)} tokens / ${formatCostSummary(plan.embeddingCost)}`,
-    maintenanceJudgementText(plan)
-  ].join('\n');
+      : `신규 임베딩 예상 ${formatNumber(plan.estimatedEmbeddingChunks)}개 / ${formatNumber(plan.estimatedEmbeddingTokens)} tokens / ${formatCostSummary(plan.embeddingCost)}`],
+    ['종합 판정', maintenanceJudgementText(plan)]
+  ];
+
+  const maintenancePlanText = (plan = {}) => maintenancePlanDetails(plan).map(([, value]) => value).join('\n');
 
   // Zero-vector fault isolation: user-facing reason for a held-back turn.
   const maintenanceIsolatedReasonText = code => {
@@ -47164,7 +47171,7 @@ ${cleanedText}`, 80),
 
   const assertManualEditorManifest = manifest => {
     if (manifest?.manifestCorrupt || manifest?.foreignScopeKey || manifest?.archiveRefInvalid) {
-      throw new Error('저장 목록을 확인하지 못했습니다. 기억 유지보수에서 상태만 진단해 주세요.');
+      throw new Error('저장 목록을 확인하지 못했습니다. 기억 유지보수의 ‘상태 점검 및 자동 복구’ 버튼으로 점검해 주세요.');
     }
   };
   const manualEditorCommitIdentity = manifest => JSON.stringify([
@@ -47581,7 +47588,7 @@ ${cleanedText}`, 80),
     ].filter(Boolean).join(' · ');
     const problems = (data.issues || []).map(issue => `파일 ${issue.shardIndex + 1}: ${issue.reason}`);
     if (data.countMismatch) problems.push(`저장 목록 ${formatNumber(data.expectedTotal)}개 / 읽은 원문 ${formatNumber(total)}개`);
-    const warning = problems.length ? `<div class="note note--warn" role="status"><strong>원문 목록 확인 필요</strong><span>${escapeHtml(problems.join(' · '))}</span><span>읽을 수 있는 기록만 표시합니다. 데이터 삭제나 재구축 없이 기억 유지보수의 ‘상태만 진단’으로 확인하세요.</span></div>` : '';
+    const warning = problems.length ? `<div class="note note--warn" role="status"><strong>원문 목록 확인 필요</strong><span>${escapeHtml(problems.join(' · '))}</span><span>읽을 수 있는 기록만 표시합니다. 데이터 삭제나 재구축 없이 기억 유지보수의 ‘상태 점검 및 자동 복구’로 확인하세요.</span></div>` : '';
     const rows = displayRecords.map(record => {
       const selected = pending.has(record.key);
       const metaLine = [
@@ -47819,7 +47826,7 @@ ${cleanedText}`, 80),
       return {
         tone: 'danger',
         title: '저장 상태 확인 필요',
-        meta: `${issues.join(' · ')} · ‘상태만 진단’에서 원인을 확인하세요.`
+        meta: `${issues.join(' · ')} · ‘상태 점검 및 자동 복구’에서 원인을 확인하세요.`
       };
     }
     if (!text(current?.scope?.scopeKey || '').trim()) {
@@ -47833,13 +47840,13 @@ ${cleanedText}`, 80),
       return {
         tone: 'warning',
         title: '부분 통계 표시 중',
-        meta: '현재 포인터 범위만 집계했습니다. 전체 무결성은 ‘상태만 진단’에서 확인할 수 있습니다.'
+        meta: '현재 포인터 범위만 집계했습니다. 전체 무결성은 ‘상태 점검 및 자동 복구’에서 확인할 수 있습니다.'
       };
     }
     return {
       tone: 'success',
       title: '기본 저장 상태에서 이상 없음',
-      meta: '전체 무결성은 ‘상태만 진단’에서 확인할 수 있습니다.'
+      meta: '전체 무결성은 ‘상태 점검 및 자동 복구’에서 확인할 수 있습니다.'
     };
   };
 
@@ -48385,6 +48392,18 @@ ${cleanedText}`, 80),
     </div>`;
   };
 
+  const maintenancePlanPresentation = (plan = {}) => {
+    const incomplete = plan.inspection?.complete === false;
+    const pending = Number(plan.embeddingWorkIncompleteRecords || 0);
+    if (incomplete) return { label: '점검 미완료', tone: 'warn', headline: '점검을 끝내지 못해 정상 여부를 확인하지 못했습니다.' };
+    if (plan.healthy === true && !pending) return { label: '정상 확인', tone: 'ok', headline: '이번 점검 범위에서 추가 복구가 필요하지 않습니다.' };
+    if (plan.automatic?.blocked) return { label: '실행 차단', tone: 'warn', headline: '현재 점검 결과로는 자동 복구를 실행할 수 없습니다.' };
+    if (plan.automatic?.strategy === 'embedding_queue') return { label: '재임베딩 미완료', tone: 'warn', headline: '원문·저장 점검 후 처리할 재임베딩 작업이 남아 있습니다.' };
+    if (pending) return { label: '임베딩 확인 필요', tone: 'warn', headline: `아직 완료되지 않은 임베딩 작업이 ${formatNumber(pending)}개 있습니다.` };
+    if (plan.automatic?.strategy === 'no_action' || plan.automatic?.strategy === 'server_inspection_only') return { label: '확인 필요', tone: 'warn', headline: '점검 결과와 자동 복구 가능 범위를 확인하세요.' };
+    return { label: '복구 필요', tone: 'warn', headline: '점검에서 정리하거나 복구할 항목을 확인했습니다.' };
+  };
+
   const renderMaintenancePlanInUi = plan => {
     const target = getGuiNode('maintenancePlan');
     if (!target || !plan) return false;
@@ -48396,51 +48415,60 @@ ${cleanedText}`, 80),
     const cost = fullRebuild ? plan.rebuildEmbeddingCost : plan.embeddingCost;
     const damage = Number(plan.storageMissingShards || 0) + Number(plan.storageCorruptShards || 0) + Number(!!plan.storageManifestCorrupt) + Number(!!plan.storageArchiveRefInvalid) + Number(!!plan.storageRecordCountMismatch) + Number(!!plan.storageForeignScopeKey);
     const isServerMode = plan.inspection?.coverage === 'server_snapshot';
+    const complete = plan.inspection?.complete !== false;
+    const state = maintenancePlanPresentation(plan);
+    const detailsOpen = !!target.querySelector?.('#maintenancePlanDetails')?.open;
+    const pending = Number(plan.embeddingWorkIncompleteRecords || 0);
     const metrics = isServerMode ? [
       ['현재 채팅', `${number(plan.liveTurns)}턴`],
       ['서버 저장', `${number(plan.storedTurns)}턴`],
-      ['누락 턴', `${number(plan.missingTurns)}턴`],
-      ['변경 감지', `${number(plan.changedTurns)}턴`],
-      ['동기화 상태', plan.healthy ? '일치 (정상)' : plan.automatic?.strategy === 'server_turn_sync' ? '동기화 필요' : '점검 완료'],
-      ['임베딩 처리', plan.inspection.credentialStatus === 'not_required' ? '서버 자동' : '서버 연동'],
-      ['클라이언트 호출', '0건 (호출 없음)'],
-      ['예상 비용', '0원 (서버 처리)']
+      ['누락 턴', `${number(plan.missingTurns)}턴`, Number(plan.missingTurns) > 0],
+      ['변경 감지', `${number(plan.changedTurns)}턴`, Number(plan.changedTurns) > 0],
+      ['점검 판정', state.label, state.tone === 'warn'],
+      ['미완료 임베딩', `${number(pending)}개`, pending > 0],
+      ['점검 모델 호출', '0회'],
+      ['복구 비용', '실행 시 사용량에 따라 발생 가능']
     ] : [
-      ['누락', `${number(plan.missingTurns)}턴`],
-      ['변경 감지', `${number(plan.changedTurns)}구간`],
-      ['손상', number(damage)],
+      ['누락', `${number(plan.missingTurns)}턴`, Number(plan.missingTurns) > 0],
+      ['변경 감지', `${number(plan.changedTurns)}구간`, Number(plan.changedTurns) > 0],
+      ['손상', number(damage), damage > 0],
       ['영구 과거', `${number(plan.readablePermanentHistory)} / ${number(plan.expectedPermanentHistory)} 보존 · 변경 없음`],
       ['벡터 재사용', `${number(plan.estimatedReusableVectors)}개`],
-      ['새 임베딩', `${number(newVectors)}개`],
+      ['새 임베딩', `${number(newVectors)}개`, Number(newVectors) > 0],
       ['예상 토큰', `약 ${number(tokens)}`],
       ['예상 비용', formatCostSummary(cost)]
     ];
-    const details = maintenancePlanText(plan).split('\n').filter(Boolean);
+    const details = maintenancePlanDetails(plan);
     const callsText = isServerMode
-      ? '서버 모드: 클라이언트 임베딩 API 호출 없음 (서버가 직접 처리)'
+      ? '점검은 모델을 호출하지 않습니다. 복구 실행 시 설정된 경로로 모델 호출과 사용량이 발생할 수 있습니다.'
       : Number(newVectors || 0) > 0
         ? `새 임베딩 ${number(newVectors)}개를 위해 임베딩 제공자를 호출합니다.`
         : '예상 임베딩 제공자 호출 없음.';
     const credentialText = plan.inspection?.coverage === 'server_snapshot'
-      ? (plan.inspection.credentialStatus === 'not_required' ? '필요 없음 · 서버 전용' : '확인됨 · 서버 연동')
+      ? (plan.inspection.credentialStatus === 'not_required' ? '필요 없음 · 설정 기준' : '미검증 · 점검에서 읽지 않음')
       : plan.embeddingCredentialRequired ? (plan.embeddingCredential?.present ? '준비됨' : plan.embeddingWorkPending ? '없음 · 원격 복구 차단' : '없음 · 현재 기억 데이터는 유지') : '필요 없음';
     const serverModeText = plan.inspection?.coverage === 'server_snapshot'
-      ? (plan.automatic?.strategy === 'server_turn_sync' ? '서버 모드: 누락·변경 턴을 서버 DB에 안전하게 동기화할 수 있습니다.' : '서버 모드: 현재 원문과 서버 저장소 기억이 정상 일치합니다.')
-      : '서버 전용 모드에서는 물리 복구와 제공자 호출을 수행하지 않습니다.';
-    const detailLabels = isServerMode
-      ? ['진단 대상', '턴 대조', '누락·변경', '임베딩 키', '복구 전략', '종합 판정']
-      : ['저장 범위','턴 상태','정제 상태','정제기 버전','문장 청크','리콜 샤드','저장 무결성','영구 기록','이전 아카이브','벡터 복구','임베딩 자격','에피소드 인덱스','자동 복구 경로','예상 작업','판정'];
-    target.innerHTML = `<div class="plan-grid">${metrics.map(([label,value]) => `<div><b>${escapeHtml(label)}</b>${escapeHtml(value)}</div>`).join('')}</div><dl class="cost-table" style="margin-top:12px"><dt>제공자 호출</dt><dd>${escapeHtml(callsText)}</dd><dt>자격 증명·제공자</dt><dd>${escapeHtml(credentialText)}</dd><dt>저장소 모드</dt><dd>${escapeHtml(serverModeText)}</dd>${details.map((line,index) => `<dt>${escapeHtml(detailLabels[index] || '점검 세부')}</dt><dd>${escapeHtml(line)}</dd>`).join('')}</dl>`;
-    setNodeText('maintenancePlanBadge', plan.healthy ? '정상 확인' : plan.automatic?.blocked ? '실행 차단' : '계획 확인');
+      ? '서버 스냅샷 기준 점검입니다. 실제 복구 가능 범위는 아래 자동 복구 경로와 보호 조건을 따릅니다.'
+      : '로컬 저장소 기준 점검입니다. 복구 시 저장 변경과 필요한 임베딩 제공자 호출이 발생할 수 있습니다.';
+    const executionText = !complete || plan.automatic?.blocked ? '현재 계획으로 자동 복구를 실행할 수 없습니다.'
+      : plan.automatic?.strategy === 'no_action' ? '현재 계획에는 자동으로 실행할 복구 작업이 없습니다.'
+      : `진단 창에서 실행 버튼을 누르면 ${maintenanceStrategyText(plan.automatic)} 작업을 시작합니다.`;
+    target.innerHTML = `<div class="note${state.tone === 'warn' ? ' note--warn' : ''}" role="status"><strong style="display:block">${escapeHtml(state.headline)}</strong><span>${escapeHtml(maintenanceJudgementText(plan))}</span></div><div class="plan-grid">${metrics.map(([label,value,warning], index) => `<div${complete && warning ? ' style="border-color:var(--warn-ink);color:var(--warn-ink)"' : ''}><b>${escapeHtml(label)}</b>${escapeHtml(!complete && !(isServerMode && index >= 6) ? '미확인' : value)}</div>`).join('')}</div><dl class="cost-table" style="row-gap:10px"><dt>예정 작업</dt><dd>${escapeHtml(executionText)}</dd><dt>제공자 호출</dt><dd>${escapeHtml(callsText)}</dd><dt>자격 증명·제공자</dt><dd>${escapeHtml(complete ? credentialText : '미확인')}</dd><dt>저장소 모드</dt><dd>${escapeHtml(serverModeText)}</dd></dl><details id="maintenancePlanDetails" class="fold"${detailsOpen ? ' open' : ''}><summary>점검 세부 정보</summary><div class="fold__body"><dl class="cost-table">${details.map(([label,value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('')}</dl></div></details>`;
+    const badge = getGuiNode('maintenancePlanBadge');
+    if (badge) { badge.textContent = state.label; badge.className = `badge badge--${state.tone}`; }
     return true;
   };
 
   const buildImportTab = () => {
     return `<section id="panel-import" data-panel="import" class="stack stack--lg">
-      <div class="card"><div class="steps"><div class="step is-active"><span class="step__no">1</span><b>상태 점검</b><span>읽기 전용 · 제공자 호출 없음</span></div><div class="step"><span class="step__no">2</span><b>예상 변경·비용</b><span>누락·손상·벡터 재사용</span></div><div class="step"><span class="step__no">3</span><b>승인</b><span>비용이 있으면 동의 필요</span></div><div class="step"><span class="step__no">4</span><b>진행·결과</b><span>저장 후 readback</span></div></div><div class="cluster"><button id="maintenanceInspectBtn" class="btn btn--primary" type="button"><i data-i="shield" data-size="sm"></i>상태 점검 및 자동 복구</button><button id="maintenanceAutoBtn" class="btn sr-only" type="button" tabindex="-1" aria-hidden="true" style="display:none">자동 점검·복구</button></div><p class="hint">점검은 먼저 저장소를 안전하게 읽기만 합니다. 누락되거나 변경된 턴이 발견되면 진단 창에서 바로 확인 후 원스톱으로 동기화·복구를 실행할 수 있습니다. (로컬 / 서버 모드 자동 감지)</p></div>
-      <section class="card"><div class="card__head"><div><h2 class="card__title">점검 · 복구 계획</h2><p class="card__desc">실행 전 확인된 원문과 저장 상태를 비교합니다. 자격 증명이나 제공자 호출이 필요하면 동의 전에 구분해 표시합니다.</p></div><span id="maintenancePlanBadge" class="badge">${Runtime.guiLastMaintenancePlan ? (Runtime.guiLastMaintenancePlan.healthy ? '정상 확인' : Runtime.guiLastMaintenancePlan.automatic?.blocked ? '실행 차단' : '계획 확인') : '진단 대기'}</span></div><div id="maintenancePlan"><div class="empty"><b>아직 진단 결과가 없습니다.</b><span>‘상태만 진단’을 눌러 읽기 전용 결과를 확인하세요.</span></div></div>
+      <div class="card"><div class="steps"><div class="step is-active"><span class="step__no">1</span><b>상태 점검</b><span>읽기 전용 · 제공자 호출 없음</span></div><div class="step"><span class="step__no">2</span><b>예상 변경·비용</b><span>누락·손상·벡터 재사용</span></div><div class="step"><span class="step__no">3</span><b>실행 선택</b><span>진단 창에서 복구 실행</span></div><div class="step"><span class="step__no">4</span><b>진행·결과</b><span>저장 후 readback</span></div></div><div class="cluster"><button id="maintenanceInspectBtn" class="btn btn--primary" type="button"><i data-i="shield" data-size="sm"></i>상태 점검 및 자동 복구</button><button id="maintenanceAutoBtn" class="btn sr-only" type="button" tabindex="-1" aria-hidden="true" style="display:none">자동 점검·복구</button></div><p class="hint">점검은 먼저 저장소를 안전하게 읽기만 합니다. 누락되거나 변경된 턴이 발견되면 진단 창에서 바로 확인 후 원스톱으로 동기화·복구를 실행할 수 있습니다. (로컬 / 서버 모드 자동 감지)</p></div>
+      <section class="card"><div class="card__head"><div><h2 class="card__title">점검 · 복구 계획</h2><p class="card__desc">실행 전 확인된 원문과 저장 상태를 비교합니다. 자격 증명이나 제공자 호출이 필요하면 동의 전에 구분해 표시합니다.</p></div><span id="maintenancePlanBadge" class="badge">${Runtime.guiLastMaintenancePlan ? (maintenancePlanPresentation(Runtime.guiLastMaintenancePlan).label) : '진단 대기'}</span></div><div id="maintenancePlan" class="stack" style="gap:20px"><div class="empty"><b>아직 진단 결과가 없습니다.</b><span>‘상태 점검 및 자동 복구’를 눌러 읽기 전용 결과를 확인하세요.</span></div></div>
+      </section>
+      <section id="maintenanceManualCard" class="card"><div class="card__head"><div><h2 class="card__title">수동 복구</h2><p class="card__desc">개별 작업을 지정해 실행합니다. 작업 종류와 보호 조건을 확인하세요.</p></div></div>
+        <div class="stack" style="gap:20px">
         <div class="grid g2"><div class="field"><label for="maintenanceMode">작업</label><select id="maintenanceMode" aria-describedby="maintenanceMode-hint" class="select"><option value="sync">누락·변경 턴 동기화 (서버/로컬 공통)</option><option value="rebuild">현재 채팅에서 전체 재구축 (로컬 전용)</option><option value="reembed">로컬 미완료 벡터 복구 (로컬 전용)</option></select><span class="hint" id="maintenanceMode-hint">전체 재구축은 현재 채팅 원문에서 저장소를 교체합니다. 로컬 복구는 저장된 대기 항목만 처리합니다.</span></div><div class="field"><label>보호 조건</label><p class="hint">영구 과거, 다른 채팅 소유 자료, 확인되지 않은 항목은 실행 대상에서 제외합니다. 저장·복구 뒤에는 실제 저장소를 다시 읽습니다.</p></div></div>
-        <div class="cluster"><button id="maintenanceRunBtn" class="btn btn--primary" type="button">선택 작업 실행</button><button id="maintenanceArchiveRunBtn" class="btn" type="button">아카이브 응답 한 묶음 복구</button></div>
+        <div class="cluster" style="gap:12px;padding-top:4px"><button id="maintenanceRunBtn" class="btn" type="button">선택 작업 실행</button><button id="maintenanceArchiveRunBtn" class="btn" type="button">이전 세션 응답 벡터 복구</button></div>
+        </div>
       </section>
       <section id="maintenanceExecutionCard" class="card" aria-labelledby="maintenanceExecutionTitle"><div class="card__head"><div><h2 id="maintenanceExecutionTitle" class="card__title">유지보수 실행 현황</h2><p class="card__desc">요청 수, 완료 배치, 미확정 결과는 별도로 표시합니다.</p></div><span id="maintenanceExecutionBadge" class="badge" data-tone="neutral">대기</span></div>
         <p id="maintenanceExecutionStatus" class="note" role="status" aria-live="polite" aria-atomic="true">아직 실행한 유지보수 작업이 없습니다.</p>
@@ -49104,7 +49132,8 @@ ${cleanedText}`, 80),
     const embeddingIncomplete = Math.max(0, Number(plan.embeddingWorkIncompleteRecords || 0) || 0);
     // An incomplete inspection reports zero turns; it must never read as healthy.
     const inspectionComplete = plan.inspection?.complete !== false;
-    const isHealthy = inspectionComplete && (plan.healthy || (isServerMode && missing === 0 && changed === 0 && !embeddingIncomplete));
+    const presentation = maintenancePlanPresentation(plan);
+    const isHealthy = presentation.tone === 'ok';
     const title = '기억 유지보수 진단';
 
     let badgeHtml = '';
@@ -49131,7 +49160,7 @@ ${cleanedText}`, 80),
             <span style="font-size:20px;line-height:1;margin-top:1px">✅</span>
             <div style="font-size:13px;line-height:1.55;min-width:0">
               <b style="color:var(--text);display:block;margin-bottom:2px">모든 대화 턴이 서버에 정상 동기화되어 있습니다</b>
-              <span style="color:var(--text2)">현재 채팅 원문(총 ${formatNumber(live)}턴)과 서버 저장소의 기억이 완벽하게 일치합니다. 추가 동기화나 복구가 필요하지 않습니다.</span>
+              <span style="color:var(--text2)">현재 채팅 ${formatNumber(live)}턴과 서버 스냅샷을 대조했습니다. 이번 점검 범위에서 추가 복구가 필요하지 않습니다.</span>
             </div>
           </div>`;
       } else if (missing === 0 && changed === 0 && embeddingIncomplete) {
@@ -49147,7 +49176,7 @@ ${cleanedText}`, 80),
           </div>`;
         if (queueable) actionBtn = { text: '⚡ 재임베딩 대기 벡터 처리', className: 'btn btn--primary',
           onClick: () => runMaintenanceGuiRecovery(plan, '재임베딩 대기 벡터 처리') };
-      } else {
+      } else if (plan.automatic?.strategy === 'server_turn_sync' && !plan.automatic?.blocked) {
         badgeHtml = `<span class="badge badge--warn">동기화 필요 (${formatNumber(missing + changed)}턴)</span>`;
         bannerHtml = `
           <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-radius:var(--r-md, 10px);background:var(--accent-soft, rgba(234,153,34,0.08));border:1px solid var(--accent, #ea9922)">
@@ -49166,10 +49195,10 @@ ${cleanedText}`, 80),
 
       metricsHtml = `
         <div class="plan-grid" style="margin-top:4px">
-          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">현재 채팅</b><span class="mono" style="font-size:16px;font-weight:700;color:var(--text)">${formatNumber(live)}턴</span></div>
-          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">서버 저장</b><span class="mono" style="font-size:16px;font-weight:700;color:var(--text)">${formatNumber(stored)}턴</span></div>
-          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">누락된 턴</b><span class="mono" style="font-size:16px;font-weight:700;color:${missing > 0 ? 'var(--danger-ink, #e05252)' : 'var(--ok-ink, #2eaf7d)'}">${formatNumber(missing)}턴</span></div>
-          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">변경 감지</b><span class="mono" style="font-size:16px;font-weight:700;color:${changed > 0 ? 'var(--warn-ink, #ea9922)' : 'var(--text)'}">${formatNumber(changed)}턴</span></div>
+          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">현재 채팅</b><span class="mono" style="font-size:16px;font-weight:700;color:var(--text)">${inspectionComplete ? formatNumber(live) + '턴' : '미확인'}</span></div>
+          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">서버 저장</b><span class="mono" style="font-size:16px;font-weight:700;color:var(--text)">${inspectionComplete ? formatNumber(stored) + '턴' : '미확인'}</span></div>
+          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">누락된 턴</b><span class="mono" style="font-size:16px;font-weight:700;color:${missing > 0 ? 'var(--danger-ink, #e05252)' : 'var(--ok-ink, #2eaf7d)'}">${inspectionComplete ? formatNumber(missing) + '턴' : '미확인'}</span></div>
+          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">변경 감지</b><span class="mono" style="font-size:16px;font-weight:700;color:${changed > 0 ? 'var(--warn-ink, #ea9922)' : 'var(--text)'}">${inspectionComplete ? formatNumber(changed) + '턴' : '미확인'}</span></div>
         </div>`;
 
       detailsHtml = `
@@ -49226,7 +49255,7 @@ ${cleanedText}`, 80),
 
       metricsHtml = `
         <div class="plan-grid" style="margin-top:4px">
-          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">누락된 턴</b><span class="mono" style="font-size:16px;font-weight:700;color:${missing > 0 ? 'var(--danger-ink, #e05252)' : 'var(--text)'}">${formatNumber(missing)}턴</span></div>
+          <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">누락된 턴</b><span class="mono" style="font-size:16px;font-weight:700;color:${missing > 0 ? 'var(--danger-ink, #e05252)' : 'var(--text)'}">${inspectionComplete ? formatNumber(missing) + '턴' : '미확인'}</span></div>
           <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">변경 감지</b><span class="mono" style="font-size:16px;font-weight:700;color:${changed > 0 ? 'var(--warn-ink, #ea9922)' : 'var(--text)'}">${formatNumber(changed)}구간</span></div>
           <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">손상 샤드</b><span class="mono" style="font-size:16px;font-weight:700;color:${damage > 0 ? 'var(--danger-ink, #e05252)' : 'var(--ok-ink, #2eaf7d)'}">${formatNumber(damage)}</span></div>
           <div><b style="color:var(--text3);font-size:11.5px;margin-bottom:3px">벡터 재사용</b><span class="mono" style="font-size:16px;font-weight:700;color:var(--text)">${formatNumber(plan.estimatedReusableVectors)}개</span></div>
@@ -49251,6 +49280,12 @@ ${cleanedText}`, 80),
             <span style="color:var(--text2);text-align:right">${escapeHtml(maintenanceJudgementText(plan))}</span>
           </div>
         </div>`;
+    }
+
+    if (!inspectionComplete || plan.automatic?.blocked || ['no_action', 'server_inspection_only'].includes(plan.automatic?.strategy)) actionBtn = null;
+    if (!bannerHtml || !inspectionComplete || plan.automatic?.blocked) {
+      badgeHtml = `<span class="badge badge--${presentation.tone}">${escapeHtml(presentation.label)}</span>`;
+      bannerHtml = `<div class="note${presentation.tone === 'warn' ? ' note--warn' : ''}" role="status"><strong>${escapeHtml(presentation.headline)}</strong><span>${escapeHtml(maintenanceJudgementText(plan))}</span></div>`;
     }
 
     const bodyHtml = `
@@ -51800,15 +51835,15 @@ ${cleanedText}`, 80),
     getGuiNode('maintenanceArchiveRunBtn')?.addEventListener('click',async()=>{
       try{
         const preview=await flashbackArchiveRecovery.preview();
-        if(!preview.allowed){await guiAlert(`선택 가능한 아카이브 응답 묶음이 없습니다. ${preview.reason}\n이 작업은 검증된 로컬 저장소의 지원되는 응답 한 묶음만 처리합니다.`,'아카이브 응답 한 묶음 복구');return;}
+        if(!preview.allowed){await guiAlert(`선택 가능한 아카이브 응답 묶음이 없습니다. ${preview.reason}\n이 작업은 검증된 로컬 저장소의 지원되는 응답 한 묶음만 처리합니다.`,'이전 세션 응답 벡터 복구');return;}
         const c=preview.counts;
-        if(!await guiConfirm(`${preview.warning}\n\n선택 ${c.eligibleGroups}묶음 · ${c.eligibleRecords}개 레코드\n남은 응답 묶음 ${c.remainingGroups}\n제외 ${c.excludedGroups}묶음 · ${c.excludedRecords}개 레코드\n\n선택한 묶음만 실행할까요?`,'아카이브 응답 한 묶음 복구'))return;
-        setBusy(true,'아카이브 응답 묶음 복구');
+        if(!await guiConfirm(`${preview.warning}\n\n선택 ${c.eligibleGroups}묶음 · ${c.eligibleRecords}개 레코드\n남은 응답 묶음 ${c.remainingGroups}\n제외 ${c.excludedGroups}묶음 · ${c.excludedRecords}개 레코드\n\n선택한 묶음만 실행할까요?`,'이전 세션 응답 벡터 복구'))return;
+        setBusy(true,'이전 세션 응답 벡터 복구');
         const result=await flashbackArchiveRecovery.repair(preview.ticket);setBusy(false);
         if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('maintenance_archive_repair', 80);
-        const label=result.status==='verified'?'선택한 아카이브 응답 묶음 완료':result.status==='uncertain'?'아카이브 응답 묶음 결과 불명':result.status==='failed'?'아카이브 응답 묶음 실패':'아카이브 응답 묶음 실행 차단';
+        const label=result.status==='verified'?'선택한 이전 세션 응답 벡터 복구 완료':result.status==='uncertain'?'이전 세션 응답 벡터 복구 결과 불명':result.status==='failed'?'이전 세션 응답 벡터 복구 실패':'이전 세션 응답 벡터 복구 실행 차단';
         await guiAlert(`${label}\n검증 완료 ${result.archiveReembedded||0}개 레코드\n남은 응답 묶음 ${result.counts?.remainingGroups??c.remainingGroups}\n제외 ${result.counts?.excludedGroups??c.excludedGroups}묶음 · ${result.counts?.excludedRecords??c.excludedRecords}개 레코드\n제공자 요청 ${result.provider?.requests?.length||0}회\n후보 저장 ${result.candidates?.state||'none'} · 소유자 게시 ${result.publication?.state||'none'}\n아카이브 전체 범위는 이번 작업에서 검증하지 않았습니다.`,label);
-      }catch(error){await guiError('아카이브 응답 묶음 복구 실패',error);}finally{setBusy(false);}
+      }catch(error){await guiError('이전 세션 응답 벡터 복구 실패',error);}finally{setBusy(false);}
     });
     getGuiNode('maintenanceRunBtn')?.addEventListener('click', async () => {
       if (maintenanceGuiActionPending || Runtime.guiBusyDepth > 0) return;

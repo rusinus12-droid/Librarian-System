@@ -4004,8 +4004,8 @@
       "bytes": 9711
     },
     "docs/사용설명서.md": {
-      "sha256": "eba5b4a284aa1e555dd019bde6464ed09046cfd44581ef9ccfe6f35f92df6de1",
-      "bytes": 108235
+      "sha256": "3404d43ea9252738b0ecc0cc27d3100372c0800f0c7752b93db2c5071302581a",
+      "bytes": 108250
     },
     "macOS_서버_실행.command": {
       "sha256": "cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c",
@@ -4020,8 +4020,8 @@
       "bytes": 3349
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "0cb422a34f0dbf4a11ec66b5bdcfe059c9be8447d9d2d9816b59c25307e20eed",
-      "bytes": 3688767
+      "sha256": "e98b31c699b0f1de7109ea17f9fe5c44c200bb111d74130d3ba9155097106c8b",
+      "bytes": 3692879
     },
     "plugins/GRADIA.js": {
       "sha256": "9dcb1a6f7bb10fc5377024b44569e69d297aeb445e59aba2e2829bccf64eace5",
@@ -11894,6 +11894,14 @@
     "처음_읽어주세요.txt": {
       "sha256": "65c99b8df354e7cd6ec0808148ea0bd3d5ac0e74e575bc8712ece80fa242e6e4",
       "bytes": 3783
+    },
+    "tests/flashback_maintenance_plan_presentation_test.cjs": {
+      "sha256": "c94307e1fbf0812452d7451c3394a6d96f228163e92fbe57d3f8632c29176bf7",
+      "bytes": 7160
+    },
+    "docs/FLASHBACK_MAINTENANCE_CLARITY_20261028.md": {
+      "sha256": "b279a07d238a64728bbf3df759ba40c94677e6f6458af77b4cecd677320629d8",
+      "bytes": 3799
     }
   },
   "storageSdkVariants": {
