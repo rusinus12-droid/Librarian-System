@@ -12298,7 +12298,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let catalog=null,busy=false,limit=50,serial=0;const selected=new Set();
     const filtered=()=>{const term=q('[data-scope-search]').value.trim().toLocaleLowerCase(),filter=q('[data-scope-filter]').value;
       return (catalog?.rows||[]).filter(row=>(!term||[row.characterName,row.chatTitle,row.scopeKey,row.scopeId].join(' ').toLocaleLowerCase().includes(term))
-        &&(filter==='all'||filter==='issues'&&(row.issues.length>0||row.unavailable)||filter==='memory'&&row.ownedRecordCount>0&&!row.detached||filter==='detached'&&row.detached&&row.ownedRecordCount>0||filter==='empty'&&row.ownedRecordCount===0&&!row.unavailable&&row.issues.length===0&&catalog.completeKnownScopes||row.mode===filter));};
+        &&(filter==='all'||filter==='issues'&&(row.issues.length>0||row.unavailable)||filter==='memory'&&row.ownedRecordCount>0&&!row.detached||filter==='detached'&&row.detached&&row.ownedRecordCount>0||filter==='empty'&&row.ownedRecordCount===0&&!row.unavailable&&row.issues.length===0&&catalog.completeKnownScopes||row.mode===filter)).sort((x,y)=>Number(y.current===true)-Number(x.current===true));};
     // Like Flashback's scope cleanup: any non-current, non-server scope can be ticked; the safety checks run
     // when an action is started and say which rows were skipped and why.
     const deleteTarget=()=>q('[data-scope-delete-target]').value;
@@ -83477,6 +83477,100 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.lens-reader__head h2{margin:0}',
     '.lens-reader__head .deck{margin:8px 0 0}','.lens-reader .detail-pane>.stack{gap:20px}','.lens-rail__head strong{font:750 15px/1.4 var(--font-sans)}','.lens-prov>.fold__body{padding:16px 18px;gap:14px}','.lens-ref{gap:6px}',
     '.lens-items{gap:18px}',
+    // Memory model rows (maintenance overlay): label and provider text stack in one column, the
+    // controls take their own column and move below the text when the box is narrow.
+    '.memory-model-summary{display:grid;container-type:inline-size;border:1px solid var(--inset-line,var(--border));border-radius:var(--r-sm);background:var(--surface);overflow:hidden}',
+    '.memory-model-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,320px);grid-template-areas:"name ctrl" "meta ctrl";gap:2px 14px;align-items:center;padding:12px 14px;border-top:1px solid var(--border)}',
+    '.memory-model-row:first-child{border-top:0}',
+    '.memory-model-row>.setting__name{grid-area:name;min-width:0}',
+    '.memory-model-row__meta{grid-area:meta;min-width:0;color:var(--text3);font-size:12px;line-height:1.45;overflow-wrap:anywhere}',
+    '.memory-model-row__ctrl{grid-area:ctrl;min-width:0;display:flex;justify-content:flex-end}',
+    '.memory-model-row__ctrl>.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end;min-width:0;width:100%}',
+    '.memory-model-row__ctrl .select{flex:1 1 170px;width:auto;min-width:0;max-width:100%}',
+    '@container (max-width:520px){.memory-model-row{grid-template-columns:minmax(0,1fr);grid-template-areas:"name" "meta" "ctrl";row-gap:4px}.memory-model-row__ctrl{justify-content:flex-start;margin-top:6px}.memory-model-row__ctrl>.cluster{justify-content:flex-start;width:100%}.memory-model-row__ctrl .select{flex:1 1 100%;width:100%}}',
+    // Maintenance overlay: former Reading Desk progress card, one-touch targets and live steps.
+    '#dlg-maintenance .dialog{container-type:inline-size}',
+    '.memory-progress{display:grid;gap:6px}.memory-progress>.hint,.memory-progress>p{margin:0}',
+    '.maintenance-targets{display:grid;gap:0;font-size:12.5px}',
+    '.maintenance-target-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 12px;padding:6px 0;border-top:1px solid var(--border2)}',
+    '.maintenance-target-row:first-child{border-top:0}.maintenance-target-row>span{color:var(--text3)}.maintenance-target-row>b{text-align:right;overflow-wrap:anywhere}',
+    '.maintenance-steps{display:grid;margin:12px 0;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface2)}',
+    '.maintenance-step{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 14px;border-top:1px solid var(--border2);font-size:13px}',
+    '.maintenance-step:first-child{border-top:0}.maintenance-step small{color:var(--text3)}',
+    '.maintenance-step__icon{font:700 14px/1 var(--font-mono);color:var(--text3);text-align:center}',
+    '.maintenance-step[data-step-status=running]{background:var(--accent-soft)}.maintenance-step[data-step-status=running] .maintenance-step__icon{color:var(--accent-ink)}',
+    '.maintenance-step[data-step-status=done] .maintenance-step__icon,.maintenance-step[data-step-status=done]>b{color:var(--ok-ink)}',
+    '.maintenance-step[data-step-status=warn] .maintenance-step__icon,.maintenance-step[data-step-status=warn]>b{color:var(--warn-ink)}',
+    '@container (max-width:560px){#dlg-maintenance .three-status{grid-template-columns:repeat(2,minmax(0,1fr))!important}#dlg-maintenance .dialog__actions>.btn{flex:1 1 calc(50% - 8px)}}',
+    // Unified worldline view (HAYAKU worldline style): lineage, memory lanes, turn rail, inspector.
+    '.libra-worldline{container-type:inline-size;display:grid;gap:12px}',
+    '.t-libra .card.libra-worldline>*+*:not(.setting){margin-top:0}',
+    '.wl-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px 14px}',
+    '.wl-head h3{margin:2px 0 0}.wl-badges{display:flex;flex-wrap:wrap;gap:6px}',
+    '.wl-lineage{padding:12px 14px;border:1px solid var(--inset-line,var(--border));border-left:3px solid var(--accent);border-radius:var(--r-md);background:var(--inset-bg,var(--surface2));display:grid;gap:6px}',
+    '.wl-lineage>.hint{margin:0}',
+    '.wl-lineage__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px}',
+    '.wl-lineage__head>div{display:grid;gap:2px}.wl-lineage__title{font-size:14px}',
+    '.wl-lineage__path{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:12.5px}',
+    '.wl-node{display:inline-flex;align-items:center;max-width:100%;padding:3px 10px;border:1px solid var(--border2);border-radius:99px;background:var(--surface);font-weight:650;overflow-wrap:anywhere}',
+    '.wl-node--current{background:var(--accent);border-color:var(--accent);color:var(--on-accent,#fff)}',
+    '.wl-fork{font:700 12px/1.4 var(--font-mono);color:var(--accent-ink)}',
+    '.wl-lineage__notes{display:flex;flex-wrap:wrap;gap:2px 16px;margin-top:4px;font-size:12px;color:var(--text3)}',
+    '.wl-lineage dl{margin:0;display:grid;grid-template-columns:minmax(96px,max-content) minmax(0,1fr);gap:4px 14px;font-size:12.5px}',
+    '.wl-lineage dl>div{display:contents}.wl-lineage dt{color:var(--text3)}.wl-lineage dd{margin:0;overflow-wrap:anywhere}',
+    '.wl-lanes-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}.wl-lanes-head>strong{font-size:13.5px}',
+    '.wl-lens-choice{width:auto;max-width:220px;min-height:30px;padding-block:2px}',
+    '.wl-legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin-left:auto;font-size:11.5px;color:var(--text2)}',
+    '.wl-legend>span{display:inline-flex;align-items:center;gap:5px}',
+    '.wl-legend__dot{display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid}',
+    '.wl-lanes{overflow-x:auto;border:1px solid var(--inset-line,var(--border));border-radius:var(--r-md);background:var(--surface);-webkit-overflow-scrolling:touch}',
+    '.wl-lanes__inner{display:grid;min-width:max-content}',
+    '.wl-lane{display:grid;grid-template-columns:96px max-content;align-items:stretch;border-top:1px solid var(--border)}',
+    '.wl-lane:first-child{border-top:0}',
+    '.wl-lane__label{position:sticky;left:0;z-index:1;display:grid;align-content:center;gap:1px;padding:6px 10px;background:var(--surface2);border-right:1px solid var(--border);font:700 12px/1.3 var(--font-sans);max-width:96px;overflow-wrap:anywhere}',
+    '.wl-lane__label small{font:500 11px/1.3 var(--font-sans);color:var(--text3)}',
+    '.wl-track{display:flex;align-items:center;padding:6px 8px}',
+    '.wl-track__empty{margin:0;padding:6px 4px;white-space:nowrap}',
+    '.wl-seg{flex:0 0 calc(var(--span,1) * 28px - 2px);height:30px;margin:0 1px;padding:0 3px;border:1px solid var(--ok-line);border-radius:6px;background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1 var(--font-mono);display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;cursor:pointer}',
+    '.wl-seg:hover{filter:none;box-shadow:0 0 0 1px var(--accent-line,var(--accent))}',
+    '.wl-seg--partial{background:var(--ok-soft);border-style:dotted}',
+    '.wl-seg--missing{border:1px dashed var(--warn-line);background:var(--warn-soft);color:var(--warn-ink)}',
+    '.wl-seg--failed{border-color:var(--danger-line);background:var(--danger-soft);color:var(--danger-ink)}',
+    '.wl-seg--running{border-color:var(--accent-line,var(--accent));background:var(--accent-soft);color:var(--accent-ink)}',
+    '.wl-seg--pending,.wl-seg--off,.wl-seg--unknown{border-color:var(--border2);background:var(--surface3);color:var(--text3)}',
+    '.wl-seg.is-on{box-shadow:0 0 0 2px var(--accent);position:relative;z-index:1}',
+    '.wl-legend__dot.wl-seg--saved{border-color:var(--ok-line);background:var(--ok-soft)}',
+    '.wl-fork-mark{flex:0 0 3px;align-self:stretch;margin:0 4px;border-radius:2px;background:var(--accent)}',
+    '.wl-layout{display:grid;grid-template-columns:minmax(230px,.8fr) minmax(0,1.5fr);gap:14px;align-items:start}',
+    '.wl-list{max-height:520px;overflow:auto;border:1px solid var(--inset-line,var(--border));border-radius:var(--r-md);background:var(--surface)}',
+    '.wl-list__head{position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;padding:8px 12px;background:var(--surface2);border-bottom:1px solid var(--border);color:var(--text3);font-weight:700}',
+    '.wl-row{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr);gap:2px 8px;align-items:center;width:100%;min-height:44px;padding:8px 12px 8px 30px;border:0;border-top:1px solid var(--border);background:transparent;color:var(--text);text-align:left;cursor:pointer}',
+    '.wl-list__head+.wl-row{border-top:0}',
+    '.wl-row::before{content:"";position:absolute;left:14px;top:0;bottom:0;width:2px;background:var(--accent-line,var(--accent))}',
+    '.wl-row::after{content:"";position:absolute;left:8px;top:50%;width:14px;height:14px;margin-top:-7px;border-radius:50%;background:var(--surface);border:3px solid var(--ok)}',
+    '.wl-row--gap::after{border:3px dashed var(--warn);background:var(--warn-soft)}',
+    '.wl-row--bad::after{border-color:var(--danger);border-radius:3px;background:var(--danger-soft)}',
+    '.wl-row--running::after{border-color:var(--accent);background:var(--accent-soft)}',
+    '.wl-row--inherited::before{background:var(--border2)}',
+    '.wl-row:hover{background:var(--surface2)}',
+    '.wl-row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}',
+    '.wl-row>b{font:700 13px var(--font-mono);color:var(--accent-ink)}',
+    '.wl-chips{display:flex;flex-wrap:wrap;gap:3px 4px;min-width:0}',
+    '.wl-chip{padding:0 6px;border-radius:99px;font:650 11px/1.7 var(--font-sans);white-space:nowrap;background:var(--surface3);color:var(--text2)}',
+    '.wl-chip--ok{background:var(--ok-soft);color:var(--ok-ink)}.wl-chip--gap{background:var(--warn-soft);color:var(--warn-ink)}.wl-chip--bad{background:var(--danger-soft);color:var(--danger-ink)}',
+    '.wl-chip--run,.wl-chip--inherit{background:var(--accent-soft);color:var(--accent-ink)}.wl-chip--muted,.wl-chip--own{background:var(--surface3);color:var(--text3)}',
+    '.wl-row__state{grid-column:2;font-size:11.5px;font-weight:700;line-height:1.4;color:var(--ok-ink)}','.wl-row>b{grid-row:1/span 2}',
+    '.wl-row--gap .wl-row__state{color:var(--warn-ink)}.wl-row--bad .wl-row__state{color:var(--danger-ink)}.wl-row--running .wl-row__state{color:var(--accent-ink)}',
+    '.wl-fork-row{margin:4px 10px 4px 24px;padding:4px 8px;border-left:3px solid var(--accent);border-radius:0 4px 4px 0;background:var(--accent-soft);color:var(--accent-ink);font:700 11.5px/1.5 var(--font-sans)}',
+    '.wl-inspector{display:grid;gap:10px;min-width:0;padding:14px 16px;border:1px solid var(--inset-line,var(--border));border-radius:var(--r-md);background:var(--surface2)}',
+    '.wl-inspector__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px;padding-bottom:8px;border-bottom:1px solid var(--border)}',
+    '.wl-inspector__head>div{display:grid;gap:2px}.wl-inspector__head h4{margin:0}',
+    '.wl-inspector .note{margin:0;display:grid;gap:6px}.wl-inspector .note>.split{flex-wrap:wrap;gap:6px}.wl-inspector .note .hint,.wl-inspector .note p{margin:0}',
+    '.wl-mem-row{display:grid;grid-template-columns:minmax(84px,max-content) minmax(0,1fr) auto;gap:6px 10px;align-items:center}',
+    '.wl-mem-row__label{color:var(--text3);font-size:12px}.wl-mem-row>.badge{justify-self:start;max-width:100%;white-space:normal}',
+    '.wl-break{word-break:break-all;color:var(--text3)}.wl-fold-body{font-size:12px;color:var(--text2)}.wl-fold-body p{margin:0 0 4px}',
+    '@container (max-width:760px){.wl-layout{grid-template-columns:minmax(0,1fr)}.wl-list{max-height:320px}.wl-legend{margin-left:0}}',
+    '@container (max-width:460px){.wl-lane{grid-template-columns:66px max-content}.wl-lane__label{max-width:66px;padding:6px 8px}.wl-row{grid-template-columns:40px minmax(0,1fr)}.wl-mem-row{grid-template-columns:minmax(0,1fr) auto}.wl-mem-row__label{grid-column:1/-1}.wl-inspector{padding:12px}}',
     '@media (max-width:640px){.lens-nav{position:static}.lens-chat__compose{grid-template-columns:minmax(0,1fr)}.lens-editbar{position:static}.lens-bubble{max-width:100%}.lens-run__time{margin-left:0}}'
   ].join('\n');
   const injectGuiStyle = () => {
@@ -87163,15 +87257,23 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ? `${EmbeddingProviderRegistry.getCapabilities(embed.provider).label} · ${embeddingModel}`
       : embedStatus.state === 'off' ? '사용 안 함 · 키워드 검색만 사용 중'
       : '키워드 검색만 사용 중 · 빠른 연결로 키 하나만 넣으면 됩니다';
-    const item = (kind, label, meta, controls = null) => guiEl('div', { class: "row", dataset: { memoryModel: kind } }, [
+    // Label and provider text share one column; controls get their own column and drop below on
+    // narrow widths (memory-model-row CSS), so the description is never squeezed into a sliver.
+    const item = (kind, label, meta, controls = null) => guiEl('div', { class: "memory-model-row", dataset: { memoryModel: kind } }, [
       guiEl('span', { class: "setting__name", text: label }),
-      guiEl('small', { text: meta }), controls
+      guiEl('small', { class: "memory-model-row__meta", text: meta }),
+      controls ? guiEl('div', { class: "memory-model-row__ctrl" }, [controls]) : null
     ]);
+    // The summary now lives in the maintenance overlay, which a body render does not rebuild,
+    // so it replaces itself to show the current dirty/saved state.
+    let root = null;
+    const repaint = () => { if (root?.isConnected) root.replaceWith(buildBookMemoryModelSummary()); };
     const analysisControls = slot ? guiEl('div', { class: "cluster" }, [
       selectNode(selectedBinding, presetChoicesFromState(true), value => {
         slot.presetName = value;
         slot.preset = value;
         queueGuiRender(0, 'body');
+        setTimeout(repaint, 0);
       }),
       guiEl('button', {
         class: 'btn', type: 'button', dataset: { guiSaveLabel: 'AI 프리셋 저장', memoryModelSave: 'analysis' },
@@ -87181,14 +87283,20 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             await saveGuiState();
             guiSetStatus('Librarian AI 프리셋을 저장했습니다.');
             queueGuiRender(0, 'body');
+            repaint();
           } catch (error) { guiSetStatus(String(error.message || error), true, true); }
         }
       })
     ]) : null;
-    return guiEl('div', { class: "stack", 'aria-label': '기억 작성 모델 설정' }, [
+    const openEmbeddingSettings = () => {
+      Gui.app?.querySelector('#dlg-maintenance')?.remove();
+      selectBookSettingsRoomSection('embedding');
+    };
+    root = guiEl('div', { class: "memory-model-summary", 'aria-label': '기억 작성 모델 설정' }, [
       item('analysis', 'AI 분석 · Librarian', analysisMeta, analysisControls),
-      item('embedding', '임베딩', embeddingMeta, guiEl('button',{class:'btn',type:'button',text:embedStatus.state === 'ready' ? '모델 설정' : '빠른 연결',onClick:()=>selectBookSettingsRoomSection('embedding')}))
+      item('embedding', '임베딩', embeddingMeta, guiEl('button',{class:'btn',type:'button',text:embedStatus.state === 'ready' ? '모델 설정' : '빠른 연결',onClick:openEmbeddingSettings}))
     ]);
+    return root;
   };
 
   const buildBookMemoryProgressPanel = () => {
@@ -87205,24 +87313,22 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const partialMemories=savedMemories.filter(ref=>ref.pipelineStatus==='partial').length;
     const stateThrough=Number(snapshot?.continuityState?.throughTurn||0);
     const stateWaiting=savedMemories.filter(ref=>Number(ref.turnRange?.end||0)>stateThrough).length;
-    return guiEl('section', { class: "card", dataset: { memoryProgress: 'true' } }, [
-      guiEl('div', { class: 'split' }, [guiEl('h3', { text: '기억 작성 현황' }), guiEl('span', { class: 'badge', text: turns == null ? '채팅 확인 중' : `현재 U+A ${turns}턴` })]),
-      guiEl('div', {class:'hint',dataset:{memoryStateProgress:'true'},text:'저장된 기억 '+savedMemories.length+'개'+(partialMemories?' · '+partialMemories+'개 구간 부분 저장':'')+' · 상태 반영 '+stateThrough+'턴까지'+(stateWaiting?' · '+stateWaiting+'개 구간 상태 반영 대기':snapshot?.continuityState?.status==='partial'?' · 일부 상태 확인 필요':'')}),
-      guiEl('p', { text: turns == null ? '채팅을 읽은 뒤 현재 턴과 다음 기억 생성 시점을 표시합니다.' : `현재 ${turns}턴 · 다음 기억 생성까지 ${next - turns}턴 · 생성 가능한 구간 ${complete}개` }),
-      buildBookMemoryModelSummary(),
-      guiEl('div', { class: 'cluster' }, [
-        guiEl('button', { class: 'btn btn--primary', type: 'button', text: '기억 생성', dataset:{bookMemoryCreate:'true'}, disabled:!available, onClick: () => void showCanonicalRangeDrawer('missing') }),
-        guiEl('button', { class: 'btn', type: 'button', text: '재분석', dataset:{bookMemoryReanalyze:'true'}, disabled:!available||!turns, onClick: () => void showLibraSourceReanalysisDrawer({kind:Gui.bookPage==='memory'?Gui.bookMemoryKind||'canonical':'canonical',scopeKey:snapshot.scope.scopeKey}) }),
-        guiEl('button', { class: 'btn', type: 'button', text: '⚡ 상태 점검·복구', dataset:{bookMemoryMaintenance:'true'}, onClick: () => void openLibraMemoryMaintenanceDialog() })
-      ]),
-      guiEl('div',{dataset:{bookDeskJob:'true'}},[buildBookJobSummary()]),
-      diagnostic ? guiEl('div', { class: "note danger banner banner--warn", role: 'status', dataset: { memoryFailureNotice: 'true' } }, [
+    // Former Reading Desk "기억 작성 현황" card. It is rendered inside the maintenance
+    // overlay now; model selection and the create/reanalyze/recover entries live in that
+    // overlay's model box and action row, so this block carries progress and failures only.
+    const failureNotice = diagnostic ? guiEl('div', { class: "note danger banner banner--warn", role: 'status', dataset: { memoryFailureNotice: 'true' } }, [
         guiEl('div', { class: "split" }, [
           guiEl('strong', { text: diagnostic.title + (diagnostic.code === 'MODEL_DECLINED' ? ' · ' + String(lastFailure.startTurn || '?') + '–' + String(lastFailure.endTurn || Number(lastFailure.startTurn || 0) + 4) + '턴 미생성' : '') }),
-          guiEl('button', { class: 'btn', type: 'button', text: '닫기', 'aria-label': '기억 생성 실패 안내 닫기', onClick: () => dismissBookMemoryFailureNotice(snapshot) })
+          guiEl('button', { class: 'btn', type: 'button', text: '닫기', 'aria-label': '기억 생성 실패 안내 닫기', onClick: () => { dismissBookMemoryFailureNotice(snapshot); failureNotice?.remove?.(); } })
         ]),
         guiEl('p', { text: diagnostic.message })
-      ]) : null,
+      ]) : null;
+    return guiEl('section', { class: "memory-progress", dataset: { memoryProgress: 'true' }, 'aria-label': '기억 작성 현황' }, [
+      guiEl('div', { class: 'split' }, [guiEl('strong', { text: '기억 작성 현황' }), guiEl('span', { class: 'badge', text: turns == null ? '채팅 확인 중' : `현재 U+A ${turns}턴` })]),
+      guiEl('div', {class:'hint',dataset:{memoryStateProgress:'true'},text:'저장된 기억 '+savedMemories.length+'개'+(partialMemories?' · '+partialMemories+'개 구간 부분 저장':'')+' · 상태 반영 '+stateThrough+'턴까지'+(stateWaiting?' · '+stateWaiting+'개 구간 상태 반영 대기':snapshot?.continuityState?.status==='partial'?' · 일부 상태 확인 필요':'')}),
+      guiEl('p', { class: 'hint', text: turns == null ? '채팅을 읽은 뒤 현재 턴과 다음 기억 생성 시점을 표시합니다.' : `현재 ${turns}턴 · 다음 기억 생성까지 ${next - turns}턴 · 생성 가능한 구간 ${complete}개` }),
+      guiEl('div',{dataset:{bookDeskJob:'true'}},[buildBookJobSummary()]),
+      failureNotice,
       failures.length ? guiLazyDetails({ class: "split", dataset: { memoryFailureSummary: 'true' } },
         guiEl('summary', { text: '미완료 구간 ' + failures.length + '개 · 상세 진단' }),
         () => failures.map(row => {
@@ -91360,6 +91466,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     finally{state.loading=false;queueGuiNavigationRender();}
   };
   const buildBookHostLineagePanel = () => {
+    // Lineage header of the unified worldline view (buildBookReceiptRecoveryPanel mounts it).
     const snapshot = LibraMemoryCore.peekSnapshot();
     const candidate = MemorySuiteHostLineage.normalize(snapshot?.hostLineage);
     const lineage = candidate && candidate.hostChatId === snapshot?.scope?.chatId ? candidate : null;
@@ -91371,6 +91478,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       diverged: ['원문 차이 있음', '이전 채팅과 원문이 달라, 이어지는 범위를 확인해야 합니다.'],
       unavailable: ['정보 확인 전', '현재 채팅의 세계선 정보를 아직 확인하지 못했습니다.']
     }[status];
+    const tone = { independent: 'badge--ok', verified: 'badge--ok', unverified: 'badge--warn', diverged: 'badge--danger', unavailable: '' }[status];
     const field = (label, value) => value ? guiEl('div', {}, [
       guiEl('dt', { text: label }), guiEl('dd', { text: String(value) })
     ]) : null;
@@ -91383,46 +91491,36 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // 검증: tests/libra_book_lineage_panel_execution_test.cjs (helper 없이 패널을 실제 실행).
     const isHostBranch = !!String(hostWorldline?.parentWorldlineId ?? '').trim() || lineage?.kind === 'native_branch';
     const forkTurnNum = Number(hostWorldline?.forkTurn || lineage?.commonPrefixPairs || 0);
-    const branchDiagram = isHostBranch ? guiEl('div', { class: "worldline-branch-diagram", style: "margin: 12px 0 10px; padding: 12px 14px; background: rgba(0,0,0,0.025); border: 1px solid var(--borderc, rgba(0,0,0,0.1)); border-radius: 8px;" }, [
-      guiEl('div', { class: "split", style: "align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap;" }, [
-        guiEl('div', { class: "badge", style: "font-weight: 600; padding: 4px 8px;" }, [
-          guiEl('span', { text: '🏛 상위: ' + (lineage?.parentName || lineage?.parentChatId || '부모 세계선') })
-        ]),
-        guiEl('span', { style: "color: var(--accent, #4f46e5); font-weight: bold; display: inline-flex; align-items: center; gap: 4px;" }, [
-          guiEl('span', { text: `────( ↳ T${forkTurnNum} 분기점 )────▶` })
-        ]),
-        guiEl('div', { class: "badge", style: "background: var(--accent, #4f46e5); color: #fff; font-weight: 600; padding: 4px 8px;" }, [
-          guiEl('span', { text: '★ 현재 분기: ' + (snapshot?.scope?.chatTitle || snapshot?.scope?.chatId || '현재 세계선') })
-        ])
-      ]),
-      guiEl('div', { style: "display: flex; gap: 16px; margin-top: 8px; font-size: 11px; color: var(--muted, #64748b); flex-wrap: wrap;" }, [
-        guiEl('span', { text: `• T1 ~ T${forkTurnNum}: 상위 세계선 공통 원문 승계` }),
-        guiEl('span', { text: `• T${forkTurnNum + 1} 이후: 현재 세계선 고유 진행` })
-      ])
-    ]) : guiEl('div', { class: "worldline-branch-diagram", style: "margin: 12px 0 10px; padding: 12px 14px; background: rgba(0,0,0,0.025); border: 1px solid var(--borderc, rgba(0,0,0,0.1)); border-radius: 8px;" }, [
-      guiEl('div', { class: "split", style: "align-items: center; justify-content: flex-start; gap: 8px;" }, [
-        guiEl('div', { class: "badge", style: "background: var(--accent, #4f46e5); color: #fff; font-weight: 600; padding: 4px 8px;" }, [
-          guiEl('span', { text: '🏛 기본 세계선: ' + (snapshot?.scope?.chatTitle || snapshot?.scope?.chatId || '현재 채팅') })
-        ]),
-        guiEl('span', { class: "hint", style: "margin: 0;", text: '단일 연속성 · 분기 없는 독립 세계선입니다.' })
-      ])
+    const currentName = snapshot?.scope?.chatTitle || snapshot?.scope?.chatId || '현재 세계선';
+    const pathNodes = isHostBranch ? [
+      guiEl('span', { class: "wl-node", text: '🏛 상위: ' + (lineage?.parentName || lineage?.parentChatId || '부모 세계선') }),
+      guiEl('span', { class: "wl-fork", text: `─ ↳ T${forkTurnNum} 분기점 ─▶` }),
+      guiEl('span', { class: "wl-node wl-node--current", text: '★ 현재 분기: ' + currentName })
+    ] : [
+      guiEl('span', { class: "wl-node wl-node--current", text: '🏛 기본 세계선: ' + (snapshot?.scope?.chatTitle || snapshot?.scope?.chatId || '현재 채팅') })
+    ];
+    const branchDiagram = guiEl('div', { class: "worldline-branch-diagram" }, [
+      guiEl('div', { class: "wl-lineage__path" }, pathNodes),
+      guiEl('div', { class: "wl-lineage__notes" }, isHostBranch ? [
+        guiEl('span', { text: `T1 ~ T${forkTurnNum}: 상위 세계선 공통 원문 승계` }),
+        guiEl('span', { text: `T${forkTurnNum + 1} 이후: 현재 세계선 고유 진행` })
+      ] : [guiEl('span', { text: '단일 연속성 · 분기 없는 독립 세계선입니다.' })])
     ]);
-    return guiEl('section', { class: "card", dataset: { bookSection: 'host-lineage', lineageStatus: status }, 'aria-label': '현재 세계선' }, [
-      guiEl('div', { class: "split" }, [
-        guiEl('span', { class: "badge", text: '§', 'aria-hidden': 'true' }),
-        guiEl('div', { class: "stack" }, [
+    return guiEl('section', { class: "wl-lineage", dataset: { bookSection: 'host-lineage', lineageStatus: status }, 'aria-label': '현재 세계선' }, [
+      guiEl('div', { class: "wl-lineage__head" }, [
+        guiEl('div', {}, [
           guiEl('span', { class: "eyebrow", text: 'STORY LINEAGE' }),
-          guiEl('h3', { text: '현재 세계선' })
+          guiEl('strong', { class: "wl-lineage__title", text: '현재 세계선' })
         ]),
-        guiEl('span', { class: "badge", text: copy[0] })
+        guiEl('span', { class: ('badge ' + tone).trim(), text: copy[0] })
       ]),
-      guiEl('p', { class: "muted", text: copy[1] }),
+      guiEl('p', { class: "hint", text: copy[1] }),
       branchDiagram,
       lineage ? guiEl('details', { class: "fold" }, [
         guiEl('summary', { text: '세계선 기록 보기' }),
-        guiEl('dl', {}, [
+        guiEl('dl', { class: "fold__body" }, [
           field('현재 채팅', lineage.hostChatId),
-          field('분기 경로', lineage.path.join(' → ') || lineage.hostChatId),
+          field('분기 경로', (Array.isArray(lineage.path) ? lineage.path : []).join(' → ') || lineage.hostChatId),
           field('이전 채팅', lineage.parentName || lineage.parentChatId),
           field('분기 메시지', lineage.forkMessageId),
           lineage.parentChatId ? field('확인한 공통 원문', lineage.commonPrefixPairs + ' U+A턴 · ' + lineage.commonPrefixMessages + '개 메시지') : null,
@@ -91444,12 +91542,37 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const scopeKey=bookReceiptRecoveryScopeKey();
     if (!Gui.receiptDesk || Gui.receiptDesk.scopeKey!==scopeKey) {
       if(Gui.receiptDesk?.pollTimer)clearTimeout(Gui.receiptDesk.pollTimer);
-      Gui.receiptDesk={scopeKey,loaded:false,loading:false,status:null,error:'',busy:{}};
+      Gui.receiptDesk={scopeKey,loaded:false,loading:false,status:null,error:'',busy:{},lens:null,lensId:'',lensError:'',lensSignature:'',lensPolls:0};
       Gui.receiptDeskSerial=Number(Gui.receiptDeskSerial||0)+1;
     }
     return Gui.receiptDesk;
   };
-  const loadBookReceiptRecoveryStatus = async (force=false) => {
+  // Lens units for the worldline lanes. They are not part of the receipt status, so they are
+  // re-read only when the chat or saved memories change, on a manual refresh, or every sixth poll.
+  const bookWorldlineLensSignature = () => {
+    const snapshot=LibraMemoryCore.peekSnapshot();
+    const committed=Object.values(snapshot?.manifest?.memories||{}).filter(row=>row?.status==='committed').length;
+    return [Array.isArray(snapshot?.pairs)?snapshot.pairs.length:0,committed].join(':');
+  };
+  const loadBookWorldlineLens = async (state,key,serial,force) => {
+    if(typeof LibraMemoryCore.listReanalysisRanges!=='function')return;
+    const signature=bookWorldlineLensSignature();
+    state.lensPolls=Number(state.lensPolls||0)+1;
+    if(!force&&state.lens&&state.lensSignature===signature&&state.lensPolls%6!==0)return;
+    try {
+      let inventory;
+      try { inventory=await LibraMemoryCore.listReanalysisRanges({kind:'lens',...(state.lensId?{lensId:state.lensId}:{})}); }
+      catch(error) {
+        if(!state.lensId||error?.code!=='LENS_NOT_FOUND')throw error;
+        state.lensId='';inventory=await LibraMemoryCore.listReanalysisRanges({kind:'lens'});
+      }
+      if(bookReceiptRecoveryScopeKey()!==key || Gui.receiptDeskSerial!==serial || inventory?.scopeKey!==key)return;
+      state.lens=inventory;state.lensId=String(inventory.lensId||'');state.lensError='';state.lensSignature=signature;
+    } catch(error) {
+      if(bookReceiptRecoveryScopeKey()===key && Gui.receiptDeskSerial===serial)state.lensError=String(error?.message||error);
+    }
+  };
+  const loadBookReceiptRecoveryStatus = async (force=false,options={}) => {
     const state=bookReceiptRecoveryState(),scope=LibraMemoryCore.peekSnapshot()?.scope;
     if(!state.scopeKey || !scope || (state.loading && !force) || (state.loaded && !force))return;
     const serial=++Gui.receiptDeskSerial,key=state.scopeKey;
@@ -91459,6 +91582,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if(bookReceiptRecoveryScopeKey()!==key || Gui.receiptDeskSerial!==serial
         || result?.scopeKey!==key)return;
       state.status=result;state.loaded=true;
+      await loadBookWorldlineLens(state,key,serial,options.lens===true);
     } catch(error) {
       if(bookReceiptRecoveryScopeKey()!==key || Gui.receiptDeskSerial!==serial)return;
       state.error=String(error?.message||error);
@@ -91516,6 +91640,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     })();
     state.busy[actionKey]=task;queueGuiNavigationRender();return task;
   };
+  // Unified worldline view (HAYAKU worldline style): lineage, memory lanes (정본 5턴 · 미크로 1턴 ·
+  // 렌즈 주기 구간), the turn rail and the turn inspector. Formerly two cards: "대화 저장 · Micro
+  // 분석" and "현재 세계선".
   const buildBookReceiptRecoveryPanel = () => {
     const state=bookReceiptRecoveryState();
     if(state.scopeKey && !state.loaded && !state.loading)void loadBookReceiptRecoveryStatus();
@@ -91528,6 +91655,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const microLabel={succeeded:'분석 완료',never_started:'분석 미시작',queued:'분석 대기',publish_ready:'발행 확인 필요',
       failed:'분석 실패',unknown:'이전 분석 결과 불명확',OFF:'Micro 꺼짐',
       unavailable:'분석 상태 확인 불가'};
+    const segmentLabel={saved:'저장됨',partial:'부분 저장',missing:'누락',failed:'분석 실패',pending:'미완성 구간',running:'분석 중',off:'꺼짐',unknown:'확인 전'};
     const receiptCard=row=>{
       const busy=!!state.busy['receipt:'+row.turn];
       const retryable=['missing','failed','pending_write','queued','paused','unavailable','running'].includes(row.status)
@@ -91580,7 +91708,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
     }
     const manifestMemories=Object.values(snapshot?.manifest?.memories||{});
-    let maxTurn=0;
+    const liveTurns=Array.isArray(snapshot?.pairs)?snapshot.pairs.length:0;
+    let maxTurn=liveTurns;
     for(const t of turnMap.keys())if(t>maxTurn)maxTurn=t;
     for(const mem of manifestMemories){
       const end=Number(mem?.turnRange?.end||0);
@@ -91592,7 +91721,37 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     }
     const turnList=[...turnMap.values()].sort((a,b)=>a.turn-b.turn);
     const totalTurns=turnList.length;
+    // 정본: T1–T5, T6–T10 … 5턴 묶음. 저장/실패는 manifest, 마지막 미완성 묶음은 대기로 표시한다.
+    const committedByStart=new Map();
+    for(const ref of manifestMemories)if(ref?.status==='committed'&&Number(ref.turnRange?.start)>0)committedByStart.set(Number(ref.turnRange.start),ref);
+    const failedBatches=snapshot?.manifest?.failedBatches||{};
+    const canonicalJob=LibraMemoryCore.state?.canonicalJob;
+    const canonicalRunning=canonicalJob&&String(canonicalJob.scopeKey||'')===state.scopeKey&&['preparing','running','adopting','cancel_requested'].includes(String(canonicalJob.state||''))
+      ?new Set((Array.isArray(canonicalJob.targetStarts)?canonicalJob.targetStarts:[canonicalJob.currentStart]).map(Number)):new Set();
+    const canonicalSegments=[];
+    for(let start=1;start<=totalTurns;start+=5){
+      const end=start+4,ref=committedByStart.get(start);
+      const segmentStatus=ref?(ref.pipelineStatus==='partial'?'partial':'saved'):canonicalRunning.has(start)?'running'
+        :failedBatches[String(start)]?'failed':end>liveTurns?'pending':'missing';
+      canonicalSegments.push({start,end,label:`T${start}–T${end}`,status:segmentStatus});
+    }
+    const canonicalFor=turn=>canonicalSegments.find(row=>turn>=row.start&&turn<=row.end)||null;
+    const completeCanonical=canonicalSegments.filter(row=>row.status!=='pending');
+    const savedCanonical=completeCanonical.filter(row=>row.status==='saved'||row.status==='partial').length;
+    // 렌즈: 선택한 렌즈의 실제 기록 구간(주기 단위). 아직 주기에 닿지 않은 마지막 구간은 대기로 표시한다.
+    const lensInventory=state.lens&&state.lens.scopeKey===state.scopeKey?state.lens:null;
+    const lenses=Array.isArray(lensInventory?.lenses)?lensInventory.lenses:[];
+    const activeLens=lenses.find(row=>row.lensId===lensInventory?.lensId)||null;
+    const lensSpan=Math.max(1,Number(activeLens?.analysisSpan||5));
+    const lensSegments=(Array.isArray(lensInventory?.ranges)?lensInventory.ranges:[]).map(row=>({
+      start:Number(row.start),end:Number(row.end),label:row.label||`T${row.start}–T${row.end}`,
+      status:row.status==='missing'&&Number(row.end)-Number(row.start)+1<lensSpan&&activeLens?.cadence?.mode!=='manual'?'pending':row.status
+    })).filter(row=>row.start>0&&row.end>=row.start);
+    const lensFor=turn=>lensSegments.find(row=>turn>=row.start&&turn<=row.end)||null;
+    const dueLens=lensSegments.filter(row=>row.status!=='pending');
+    const savedLens=dueLens.filter(row=>row.status==='saved').length;
     const verifiedReceipts=turnList.filter(item=>item.receipt?.status==='verified').length;
+    const microOff=microRows.some(row=>row?.status==='OFF');
     const succeededMicros=turnList.filter(item=>item.micro?.status==='succeeded').length;
     const missingTurnList=turnList.filter(item=>{
       const rOk=item.receipt?.status==='verified';
@@ -91606,107 +91765,134 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const activeTurn=Number(state.selectedTurn);
     const activeData=turnMap.get(activeTurn)||{turn:activeTurn,receipt:null,micro:null};
     const isInherited=isHostBranch&&forkTurn>0&&activeTurn<=forkTurn;
-    const branchBanner=isHostBranch?guiEl('div',{class:"callout",style:"margin:8px 0 12px;padding:10px 14px;border-left:3px solid var(--accent,#4f46e5);background:rgba(0,0,0,0.02);"},[
-      guiEl('div',{style:"display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;"},[
-        guiEl('div',{style:"display:flex;align-items:center;gap:8px;flex-wrap:wrap;"},[
-          guiEl('span',{class:"badge",text:'🏛 상위 세계선'}),
-          guiEl('strong',{text:lineage?.parentName||lineage?.parentChatId||'부모 세계선'}),
-          guiEl('span',{style:"color:var(--accent,#4f46e5);font-weight:bold;",text:`──( ↳ T${forkTurn} 분기점 )──▶`}),
-          guiEl('span',{class:"badge",style:"background:var(--accent,#4f46e5);color:#fff;",text:'★ 현재 분기'}),
-          guiEl('strong',{text:snapshot?.scope?.chatTitle||snapshot?.scope?.chatId||'현재 세계선'})
-        ]),
-        guiEl('span',{class:"hint",style:"margin:0;",text:`T1~T${forkTurn} 상위 승계 · T${forkTurn+1} 이후 고유 진행`})
-      ])
-    ]):guiEl('div',{class:"callout",style:"margin:8px 0 12px;padding:10px 14px;border-left:3px solid var(--accent,#4f46e5);background:rgba(0,0,0,0.02);"},[
-      guiEl('div',{style:"display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;"},[
-        guiEl('div',{style:"display:flex;align-items:center;gap:8px;"},[
-          guiEl('span',{class:"badge",style:"background:var(--accent,#4f46e5);color:#fff;",text:'🏛 기본 세계선'}),
-          guiEl('strong',{text:snapshot?.scope?.chatTitle||snapshot?.scope?.chatId||'현재 채팅'}),
-          guiEl('span',{class:"hint",style:"margin:0;",text:'단일 연속성 · 분기 없는 독립 세계선'})
-        ]),
-        guiEl('span',{class:"hint",style:"margin:0;",text:`T1~T${totalTurns||1} 전체 고유 진행`})
+    const selectTurn=turn=>{state.selectedTurn=turn;queueGuiNavigationRender();};
+    const turnHealth=item=>{
+      const rec=item.receipt,mic=item.micro,canon=canonicalFor(item.turn),lens=lensFor(item.turn);
+      const gaps=[];
+      if(rec?.status!=='verified')gaps.push('영수증');
+      if(mic?.status!=='succeeded'&&mic?.status!=='OFF')gaps.push('Micro');
+      if(canon&&['missing','failed'].includes(canon.status))gaps.push('정본');
+      if(lens&&['missing','failed'].includes(lens.status))gaps.push('렌즈');
+      const running=rec?.status==='running'||mic?.status==='queued'||canon?.status==='running';
+      const failed=rec?.status==='failed'||rec?.status==='unrecoverable'||mic?.status==='failed'||canon?.status==='failed'||lens?.status==='failed';
+      return {gaps,running,tone:running?'running':!gaps.length?'ok':failed?'bad':'gap',
+        text:running?'분석 중':!gaps.length?'정상':gaps.join('·')+' 누락'};
+    };
+    // Memory lanes share one horizontal scale (1 turn = 1 cell), so a 5-turn canonical range sits
+    // exactly above its five Micro turns and the lens unit that covers them.
+    const forkMark=()=>guiEl('span',{class:"wl-fork-mark",title:`T${forkTurn} 분기점`,'aria-hidden':'true'});
+    const segmentButton=(lane,row)=>guiEl('button',{
+      type:'button',class:`wl-seg wl-seg--${row.status}${activeTurn>=row.start&&activeTurn<=row.end?' is-on':''}`,
+      style:`--span:${row.end-row.start+1}`,title:`${lane} ${row.label} · ${segmentLabel[row.status]||row.status}`,
+      'aria-label':`${lane} ${row.label} ${segmentLabel[row.status]||row.status}`,
+      text:row.end>row.start?row.label:`${row.start}`,onClick:()=>selectTurn(activeTurn>=row.start&&activeTurn<=row.end?activeTurn:row.start)
+    });
+    const laneTrack=(lane,rows)=>{
+      const nodes=[];
+      for(const row of rows){
+        if(isHostBranch&&forkTurn>0&&row.start===forkTurn+1)nodes.push(forkMark());
+        nodes.push(segmentButton(lane,row));
+      }
+      return nodes;
+    };
+    const microSegments=turnList.map(item=>({start:item.turn,end:item.turn,label:`T${item.turn}`,
+      status:item.micro?.status==='succeeded'?'saved':item.micro?.status==='OFF'?'off':item.micro?.status==='queued'?'running'
+        :item.micro?.status==='failed'?'failed':item.micro?'missing':state.loaded?'missing':'unknown'}));
+    const lane=(name,unit,rows,empty)=>guiEl('div',{class:"wl-lane",dataset:{worldlineLane:name}},[
+      guiEl('div',{class:"wl-lane__label"},[guiEl('span',{text:name}),guiEl('small',{text:unit})]),
+      guiEl('div',{class:"wl-track"},rows.length?laneTrack(name,rows):[guiEl('span',{class:"hint wl-track__empty",text:empty})])
+    ]);
+    const lensChoice=lenses.length>1?guiEl('select',{class:'select wl-lens-choice','aria-label':'세계선에 표시할 렌즈',value:state.lensId,onChange:event=>{
+      state.lensId=String(event?.target?.value||'');state.lens=null;void loadBookReceiptRecoveryStatus(true,{lens:true});
+    }},lenses.map(row=>guiEl('option',{value:row.lensId,text:row.name,selected:row.lensId===state.lensId}))):null;
+    const lanes=guiEl('div',{class:"wl-lanes",dataset:{worldlineLanes:'true'}},[
+      guiEl('div',{class:"wl-lanes__inner"},[
+        lane('정본','5턴 묶음',canonicalSegments,totalTurns?'':'턴 없음'),
+        lane('미크로','1턴',microSegments,'턴 없음'),
+        lane(activeLens?`렌즈 · ${activeLens.name}`:'렌즈',activeLens?`${lensSpan}턴 주기`:'구간',lensSegments,
+          state.lensError?'렌즈 기록을 읽지 못했습니다':lensInventory?(lenses.length?'기록 구간 없음':'저장된 렌즈 없음'):'확인 중')
       ])
     ]);
-    const timelineCol=guiEl('div',{class:"turn-timeline-col",style:"display:flex;flex-direction:column;gap:4px;max-height:480px;overflow-y:auto;padding-right:6px;"},[
-      guiEl('div',{style:"display:flex;justify-content:space-between;align-items:center;padding-bottom:6px;border-bottom:1px solid var(--borderc,rgba(0,0,0,0.1));margin-bottom:4px;"},[
-        guiEl('small',{style:"font-weight:bold;color:var(--muted,#64748b);",text:'턴 목록'}),
-        guiEl('small',{style:"color:var(--muted,#64748b);",text:`${totalTurns}개 턴`})
+    const legend=guiEl('div',{class:"wl-legend"},[
+      ['saved','저장됨'],['missing','누락'],['failed','실패'],['running','분석 중'],['pending','미완성 · 대기']
+    ].map(([key,label])=>guiEl('span',{},[guiEl('i',{class:`wl-legend__dot wl-seg--${key}`}),guiEl('span',{text:label})])));
+    const chip=(label,tone)=>guiEl('span',{class:`wl-chip wl-chip--${tone}`,text:label});
+    const chipTone=value=>['saved','partial','verified','succeeded'].includes(value)?'ok':['failed','unrecoverable'].includes(value)?'bad':['pending','off','OFF','unknown'].includes(value)?'muted':['running','queued'].includes(value)?'run':'gap';
+    const timelineCol=guiEl('div',{class:"turn-timeline-col wl-list",role:'list','aria-label':'턴 연속성'},[
+      guiEl('div',{class:"wl-list__head"},[
+        guiEl('small',{text:'턴 연속성'}),
+        guiEl('small',{text:`${totalTurns}개 턴`})
       ]),
       ...turnList.flatMap(item=>{
-        const isForkDivider=isHostBranch&&forkTurn>0&&item.turn===forkTurn+1;
-        const turnInherited=isHostBranch&&forkTurn>0&&item.turn<=forkTurn;
-        const isSelected=item.turn===activeTurn;
-        const rec=item.receipt;
-        const mic=item.micro;
-        const recOk=rec?.status==='verified';
-        const micOk=mic?.status==='succeeded';
-        const isRunning=rec?.status==='running'||mic?.status==='queued';
-        let statusBadgeText='완료';
-        let statusStyle='color:#16a34a;font-size:11px;';
-        if(isRunning){
-          statusBadgeText='분석 중';
-          statusStyle='color:#2563eb;font-size:11px;font-weight:bold;';
-        }else if(!recOk&&!micOk){
-          statusBadgeText='영수증·Micro 누락';
-          statusStyle='color:#dc2626;font-size:11px;font-weight:bold;';
-        }else if(!micOk){
-          statusBadgeText='Micro 누락';
-          statusStyle='color:#ea580c;font-size:11px;font-weight:bold;';
-        }else if(!recOk){
-          statusBadgeText='영수증 누락';
-          statusStyle='color:#d97706;font-size:11px;font-weight:bold;';
-        }
         const elements=[];
-        if(isForkDivider){
-          elements.push(guiEl('div',{style:"margin:6px 0;padding:4px 8px;background:rgba(79,70,229,0.08);border-left:2px solid var(--accent,#4f46e5);font-size:11px;color:var(--accent,#4f46e5);font-weight:bold;border-radius:2px;"},[
-            guiEl('span',{text:`↳ T${forkTurn} 분기점 (상위 세계선에서 갈라진 지점)`})
-          ]));
+        const turnInherited=isHostBranch&&forkTurn>0&&item.turn<=forkTurn;
+        if(isHostBranch&&forkTurn>0&&item.turn===forkTurn+1){
+          elements.push(guiEl('div',{class:"wl-fork-row",role:'listitem'},[guiEl('span',{text:`↳ T${forkTurn} 분기점 (상위 세계선에서 갈라진 지점)`})]));
         }
+        const health=turnHealth(item),canon=canonicalFor(item.turn);
         elements.push(guiEl('button',{
-          type:'button',
-          class:`btn-turn-select ${isSelected?'is-selected':''}`,
-          style:`display:flex;align-items:center;justify-content:space-between;padding:6px 10px;width:100%;text-align:left;border:1px solid ${isSelected?'var(--accent,#4f46e5)':'var(--borderc,rgba(0,0,0,0.1))'};background:${isSelected?'rgba(79,70,229,0.08)':'var(--card-bg,#fff)'};border-radius:6px;cursor:pointer;transition:all 0.15s;margin-bottom:3px;`,
-          onClick:()=>{
-            state.selectedTurn=item.turn;
-            queueGuiNavigationRender();
-          }
+          type:'button',role:'listitem',
+          class:`btn-turn-select wl-row wl-row--${health.tone}${turnInherited?' wl-row--inherited':''}${item.turn===activeTurn?' is-on is-selected':''}`,
+          'aria-current':item.turn===activeTurn?'true':'false',
+          dataset:{worldlineTurn:String(item.turn),turnHealth:health.tone},
+          onClick:()=>selectTurn(item.turn)
         },[
-          guiEl('div',{style:"display:flex;align-items:center;gap:6px;"},[
-            guiEl('strong',{style:`font-size:13px;${isSelected?'color:var(--accent,#4f46e5);':''}`,text:`T${item.turn}`}),
-            guiEl('span',{class:"badge",style:`font-size:10px;padding:1px 5px;${turnInherited?'background:#e0e7ff;color:#3730a3;':'background:#dcfce7;color:#166534;'}`,text:turnInherited?'승계':'고유'})
+          guiEl('b',{text:`T${item.turn}`}),
+          guiEl('span',{class:"wl-chips"},[
+            isHostBranch?chip(turnInherited?'승계':'고유',turnInherited?'inherit':'own'):null,
+            chip('영수증',chipTone(item.receipt?.status||'missing')),
+            chip('Micro',chipTone(item.micro?.status||'missing')),
+            canon&&item.turn===canon.start?chip('정본 '+canon.label,chipTone(canon.status)):null
           ]),
-          guiEl('span',{style:statusStyle,text:statusBadgeText})
+          guiEl('span',{class:"wl-row__state",text:health.text})
         ]));
         return elements;
       })
     ]);
-    const inspectorCol=guiEl('div',{class:"turn-inspector-col",style:"display:flex;flex-direction:column;gap:10px;padding:12px 16px;background:rgba(0,0,0,0.015);border:1px solid var(--borderc,rgba(0,0,0,0.08));border-radius:8px;"},[
-      guiEl('div',{class:"split",style:"align-items:center;justify-content:space-between;border-bottom:1px solid var(--borderc,rgba(0,0,0,0.08));padding-bottom:8px;"},[
-        guiEl('div',{style:"display:flex;align-items:center;gap:8px;"},[
+    const activeCanonical=canonicalFor(activeTurn),activeLensUnit=lensFor(activeTurn);
+    const memoryRow=(label,value,tone,action)=>guiEl('div',{class:"wl-mem-row"},[
+      guiEl('span',{class:"wl-mem-row__label",text:label}),
+      guiEl('span',{class:`badge${tone==='ok'?' badge--ok':tone==='bad'?' badge--danger':tone==='gap'?' badge--warn':tone==='run'?' badge--info':''}`,text:value}),
+      action||null
+    ]);
+    const drawer=options=>typeof showLibraSourceReanalysisDrawer==='function'?()=>void showLibraSourceReanalysisDrawer({scopeKey:state.scopeKey,...options}):null;
+    const canonicalAction=activeCanonical&&activeCanonical.status!=='pending'&&drawer({kind:'canonical',startTurn:activeCanonical.start})
+      ?guiEl('button',{class:'btn btn--sm',type:'button',text:'정본 재분석',onClick:drawer({kind:'canonical',startTurn:activeCanonical.start})}):null;
+    const lensAction=activeLensUnit&&activeLensUnit.status!=='pending'&&drawer({kind:'lens'})
+      ?guiEl('button',{class:'btn btn--sm',type:'button',text:'렌즈 재분석',onClick:drawer({kind:'lens',lensId:state.lensId,startTurn:activeLensUnit.start,endTurn:activeLensUnit.end})}):null;
+    const inspectorCol=guiEl('div',{class:"turn-inspector-col wl-inspector"},[
+      guiEl('div',{class:"wl-inspector__head"},[
+        guiEl('div',{},[
           guiEl('span',{class:"eyebrow",text:'TURN INSPECTOR'}),
-          guiEl('h4',{style:"margin:0;",text:`T${activeTurn} 보존 및 분석 상세`})
+          guiEl('h4',{text:`T${activeTurn} 보존 및 분석 상세`})
         ]),
-        guiEl('span',{class:"badge",style:isInherited?'background:#e0e7ff;color:#3730a3;':'background:#dcfce7;color:#166534;',text:isInherited?'부모 세계선 승계 원문':'현재 세계선 고유 진행'})
+        guiEl('span',{class:`badge ${isInherited?'badge--info':'badge--ok'}`,text:isInherited?'부모 세계선 승계 원문':'현재 세계선 고유 진행'})
       ]),
-      guiEl('div',{class:"note",style:"margin:0;"},[
-        guiEl('div',{class:"split",style:"align-items:center;justify-content:space-between;"},[
+      guiEl('div',{class:"note wl-mem",dataset:{worldlineMemory:String(activeTurn)}},[
+        guiEl('strong',{text:`기억 현황 (T${activeTurn})`}),
+        memoryRow('정본 · 5턴',activeCanonical?`${activeCanonical.label} · ${segmentLabel[activeCanonical.status]}`:'구간 없음',chipTone(activeCanonical?.status||'pending'),canonicalAction),
+        memoryRow('미크로 · 1턴',microLabel[activeData.micro?.status]||(state.loaded?'분석 미시작':'확인 중'),chipTone(activeData.micro?.status||'missing')),
+        memoryRow(activeLens?`렌즈 · ${activeLens.name}`:'렌즈',activeLensUnit?`${activeLensUnit.label} · ${segmentLabel[activeLensUnit.status]||activeLensUnit.status}`:lensInventory?(lenses.length?'구간 없음':'렌즈 없음'):'확인 중',chipTone(activeLensUnit?.status||'pending'),lensAction)
+      ]),
+      guiEl('div',{class:"note"},[
+        guiEl('div',{class:"split"},[
           guiEl('strong',{text:`원문 저장 영수증 (T${activeTurn})`}),
-          guiEl('span',{class:"badge",style:activeData.receipt?.status==='verified'?'background:#dcfce7;color:#166534;':'background:#fee2e2;color:#991b1b;',text:receiptLabel[activeData.receipt?.status]||(activeData.receipt?.status?activeData.receipt.status:'저장 대기')})
+          guiEl('span',{class:`badge ${activeData.receipt?.status==='verified'?'badge--ok':'badge--danger'}`,text:receiptLabel[activeData.receipt?.status]||(activeData.receipt?.status?activeData.receipt.status:'저장 대기')})
         ]),
-        activeData.receipt?.reason?guiEl('p',{class:"hint",style:"margin:4px 0;",text:'사유: '+activeData.receipt.reason}):null,
-        activeData.receipt?.receiptKey?guiEl('small',{style:"color:var(--muted,#64748b);word-break:break-all;",text:'키: '+activeData.receipt.receiptKey}):null,
-        activeData.receipt?guiEl('div',{style:"margin-top:6px;"},[
+        activeData.receipt?.reason?guiEl('p',{class:"hint",text:'사유: '+activeData.receipt.reason}):null,
+        activeData.receipt?.receiptKey?guiEl('small',{class:"wl-break",text:'키: '+activeData.receipt.receiptKey}):null,
+        activeData.receipt?guiEl('div',{class:"cluster"},[
           guiEl('button',{class:"btn btn--sm",type:'button',disabled:!!state.busy['receipt:'+activeTurn]||activeData.receipt?.status==='running',text:state.busy['receipt:'+activeTurn]?'저장 확인 중':activeData.receipt?.status==='running'?'복구 진행 중':'저장 다시 확인',onClick:()=>void openApprovedRecoveryDialog('receipt',activeData.receipt)})
         ]):null
       ]),
-      guiEl('div',{class:"note",style:"margin:0;"},[
-        guiEl('div',{class:"split",style:"align-items:center;justify-content:space-between;"},[
+      guiEl('div',{class:"note"},[
+        guiEl('div',{class:"split"},[
           guiEl('strong',{text:`Micro 기억 분석 (T${activeTurn})`}),
-          guiEl('span',{class:"badge",style:activeData.micro?.status==='succeeded'?'background:#dcfce7;color:#166534;':activeData.micro?.status==='publish_ready'?'background:#fef3c7;color:#92400e;':'background:#fee2e2;color:#991b1b;',text:microLabel[activeData.micro?.status]||(activeData.micro?.status?activeData.micro.status:'분석 미시작')})
+          guiEl('span',{class:`badge ${activeData.micro?.status==='succeeded'?'badge--ok':activeData.micro?.status==='publish_ready'?'badge--warn':'badge--danger'}`,text:microLabel[activeData.micro?.status]||(activeData.micro?.status?activeData.micro.status:'분석 미시작')})
         ]),
         activeData.micro?.status==='unknown'?guiEl('small',{class:"hint",text:'이전 호출 결과가 불명확하여 중복 비용이 발생할 수 있음'}):null,
         ['never_started','failed','unknown'].includes(activeData.micro?.status)?guiEl('small',{class:"hint",text:'모델 호출 비용이 발생할 수 있음'}):null,
-        guiEl('div',{class:"cluster",style:"margin-top:8px;"},[
+        guiEl('div',{class:"cluster"},[
           guiEl('button',{
             class:"btn btn--sm btn--primary",
             type:'button',
@@ -91722,54 +91908,59 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           activeData.micro?.status==='publish_ready'?guiEl('button',{class:"btn btn--sm",type:'button',text:'Micro 발행 다시 확인',onClick:()=>void openApprovedRecoveryDialog('micro',activeData.micro)}):null
         ])
       ]),
-      guiEl('details',{class:"fold",style:"margin-top:4px;"},[
+      guiEl('details',{class:"fold"},[
         guiEl('summary',{text:`T${activeTurn} 대화 원문 및 저장 정보 확인`}),
-        guiEl('div',{class:"fold__body",style:"padding:8px 10px;font-size:12px;color:var(--muted,#64748b);"},[
+        guiEl('div',{class:"fold__body wl-fold-body"},[
           guiEl('p',{text:`세계선: ${isInherited?'부모 채팅 원문 승계':'현재 세계선 고유'}`}),
           guiEl('p',{text:`턴 번호: T${activeTurn}`}),
-          activeData.receipt?.sourceDigest?guiEl('p',{text:`원문 Digest: ${activeData.receipt.sourceDigest}`}):null,
-          activeData.micro?.receiptRef?guiEl('p',{text:`영수증 참조: ${activeData.micro.receiptRef}`}):null,
+          activeCanonical?guiEl('p',{text:`정본 구간: ${activeCanonical.label}`}):null,
+          activeData.receipt?.sourceDigest?guiEl('p',{class:"wl-break",text:`원문 Digest: ${activeData.receipt.sourceDigest}`}):null,
+          activeData.micro?.receiptRef?guiEl('p',{class:"wl-break",text:`영수증 참조: ${activeData.micro.receiptRef}`}):null,
           guiEl('p',{class:"hint",text:'원문 재분석 시 위 영수증과 세계선 정보를 기준으로 실시간 대시보드에서 분석이 진행됩니다.'})
         ])
       ])
     ]);
-    const masterDetailGrid=guiEl('div',{class:"grid",style:"display:grid;grid-template-columns:minmax(180px,220px) 1fr;gap:14px;margin-top:10px;"},[
+    const masterDetailGrid=guiEl('div',{class:"wl-layout"},[
       timelineCol,
       inspectorCol
     ]);
-    const allLedgerCards=guiEl('details',{class:"fold",style:"margin-top:14px;"},[
+    const allLedgerCards=guiEl('details',{class:"fold"},[
       guiEl('summary',{text:`전체 원장 카드 상세 (${receiptRows.length+microRows.length}개)`}),
       guiEl('div',{class:"fold__body"},[
         ...receiptRows.map(receiptCard),
         ...microRows.map(microCard)
       ])
     ]);
-    return guiEl('section',{class:"card",dataset:{receiptRecoveryScope:state.scopeKey},'aria-label':'대화 저장 · Micro 분석'},[
-      guiEl('div',{class:"split",style:"align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;"},[
-        guiEl('div',{class:"stack"},[
-          guiEl('span',{class:"eyebrow",text:'WORLDLINE CONTINUITY & STORAGE'}),
-          guiEl('h3',{text:'대화 저장 · Micro 분석'})
+    const countBadge=(label,done,total,extra='')=>guiEl('span',{class:`badge${total&&done===total?' badge--ok':done<total?' badge--warn':''}`,text:`${label} ${done}/${total}${extra}`});
+    return guiEl('section',{class:"card libra-worldline",dataset:{receiptRecoveryScope:state.scopeKey,bookSection:'worldline'},'aria-label':'세계선 · 기억 연속성'},[
+      guiEl('div',{class:"wl-head"},[
+        guiEl('div',{},[
+          guiEl('span',{class:"eyebrow",text:'WORLDLINE CONTINUITY & MEMORY'}),
+          guiEl('h3',{text:'세계선 · 기억 연속성'})
         ]),
-        guiEl('div',{class:"cluster"},[
+        guiEl('div',{class:"wl-badges"},[
           guiEl('span',{class:"badge",text:`총 ${totalTurns}턴`}),
-          guiEl('span',{class:"badge",style:verifiedReceipts===totalTurns?"background:#dcfce7;color:#166534;":"",text:`영수증 저장 ${verifiedReceipts}/${totalTurns}`}),
-          guiEl('span',{class:"badge",style:succeededMicros===totalTurns?"background:#dcfce7;color:#166534;":"",text:`Micro 완료 ${succeededMicros}/${totalTurns}`}),
-          missingCount>0?guiEl('span',{class:"badge",style:"background:#fee2e2;color:#991b1b;font-weight:bold;",text:`누락 ${missingCount}턴`}):null
+          countBadge('영수증',verifiedReceipts,totalTurns),
+          microOff?guiEl('span',{class:"badge",text:'Micro 꺼짐'}):countBadge('Micro',succeededMicros,totalTurns),
+          countBadge('정본',savedCanonical,completeCanonical.length,'구간'),
+          lensInventory&&lenses.length?countBadge('렌즈',savedLens,dueLens.length,'구간'):null,
+          missingCount>0?guiEl('span',{class:"badge badge--danger",text:`누락 ${missingCount}턴`}):totalTurns?guiEl('span',{class:"badge badge--ok",text:'턴 저장 정상'}):null
         ])
       ]),
-      branchBanner,
-      state.loading?guiEl('p',{text:'상태 확인 중'}):null,
+      buildBookHostLineagePanel(),
+      state.loading?guiEl('p',{class:'hint',text:'상태 확인 중'}):null,
       state.error?guiEl('p',{class:'al-error',text:'상태를 확인하지 못했습니다: '+state.error}):null,
       status.reason?guiEl('p',{class:'al-error',text:'상태 일부를 확인하지 못했습니다: '+status.reason}):null,
-      guiEl('div',{class:"cluster",style:"margin:6px 0;"},[
-        guiEl('button',{class:'btn btn--sm',type:'button',disabled:state.loading,text:state.loading?'상태 읽는 중…':'상태 새로고침',onClick:()=>void loadBookReceiptRecoveryStatus(true)}),
+      guiEl('div',{class:"wl-lanes-head"},[guiEl('strong',{text:'기억 현황'}),lensChoice,legend]),
+      lanes,
+      guiEl('div',{class:"cluster"},[
+        guiEl('button',{class:'btn btn--sm',type:'button',disabled:state.loading,text:state.loading?'상태 읽는 중…':'상태 새로고침',onClick:()=>void loadBookReceiptRecoveryStatus(true,{lens:true})}),
         missingCount>0?guiEl('button',{class:'btn btn--sm btn--primary',type:'button',text:`누락된 ${missingCount}개 턴 재분석`,onClick:()=>{
           if(typeof showLibraSourceReanalysisDrawer==='function'){
-            const first=missingTurnList[0]?.turn||1;
-            const last=missingTurnList[missingTurnList.length-1]?.turn||totalTurns;
-            void showLibraSourceReanalysisDrawer({kind:'micro',scopeKey:state.scopeKey,startTurn:first,endTurn:last});
+            void showLibraSourceReanalysisDrawer({kind:'micro',scopeKey:state.scopeKey,startTurns:missingTurnList.map(item=>item.turn)});
           }
-        }}):null
+        }}):null,
+        typeof openLibraMemoryMaintenanceDialog==='function'?guiEl('button',{class:'btn btn--sm',type:'button',text:'⚡ 상태 점검·복구',dataset:{bookMemoryMaintenance:'true'},onClick:()=>void openLibraMemoryMaintenanceDialog()}):null
       ]),
       masterDetailGrid,
       allLedgerCards
@@ -92528,6 +92719,89 @@ advanced
     };
   };
 
+  // Micro (1 turn) and lens (cadence span) gaps for the one-touch recovery. Read-only: the
+  // same inventories the source reanalysis drawer lists. A trailing lens unit shorter than its
+  // cadence span is not due yet, and manual or paused lenses never analyze automatically.
+  const inspectLibraAuxiliaryRecoveryTargets = async () => {
+    const out = { micro: { enabled: true, inventory: null, ranges: [], error: '' }, lenses: [], lensError: '' };
+    try {
+      const scope = LibraMemoryCore.peekSnapshot()?.scope;
+      const receipt = scope?.scopeKey ? await LibraMemoryCore.getReceiptRecoveryStatus({ scope }).catch(() => null) : null;
+      out.micro.enabled = !guiAsArray(receipt?.microJobs).some(row => row?.status === 'OFF');
+      if (out.micro.enabled) {
+        const inventory = await LibraMemoryCore.listReanalysisRanges({ kind: 'micro' });
+        out.micro.inventory = inventory;
+        out.micro.ranges = guiAsArray(inventory?.ranges).filter(row => row.status !== 'saved');
+      }
+    } catch (error) { out.micro.error = String(error?.message || error); }
+    try {
+      const first = await LibraMemoryCore.listReanalysisRanges({ kind: 'lens' });
+      for (const lens of guiAsArray(first?.lenses)) {
+        if (lens.status !== 'active' || lens.cadence?.mode === 'manual') continue;
+        const inventory = lens.lensId === first.lensId ? first : await LibraMemoryCore.listReanalysisRanges({ kind: 'lens', lensId: lens.lensId });
+        const span = Math.max(1, Number(lens.analysisSpan || 5));
+        const ranges = guiAsArray(inventory?.ranges).filter(row => row.status === 'failed' || (row.status === 'missing' && Number(row.end) - Number(row.start) + 1 >= span));
+        out.lenses.push({ lensId: lens.lensId, name: lens.name, analysisSpan: span, inventory, ranges });
+      }
+    } catch (error) { out.lensError = String(error?.message || error); }
+    return out;
+  };
+
+  // Estimated model generation calls: one per canonical 5-turn range, Micro turn and lens unit.
+  const libraFullRecoveryCalls = (plan, targets) => {
+    const canonical = plan.coldStartNeeded ? Number(plan.completeBatches || 0) : Number(plan.missingRangesCount || 0) + Number(plan.failedRangesCount || 0);
+    const micro = targets?.micro?.enabled ? guiAsArray(targets.micro.ranges).length : 0;
+    const lens = guiAsArray(targets?.lenses).reduce((sum, row) => sum + guiAsArray(row.ranges).length, 0);
+    return { canonical, micro, lens, total: canonical + micro + lens };
+  };
+  const libraFullRecoveryRows = (plan, targets) => {
+    const calls = libraFullRecoveryCalls(plan, targets);
+    const lensRows = guiAsArray(targets?.lenses);
+    return [
+      ['수동 콜드스타트', plan.coldStartNeeded ? `${plan.completeBatches}개 구간 (T1–T${plan.completeBatches * 5})` : '필요 없음'],
+      ['정본 누락·실패 (5턴)', plan.coldStartNeeded ? '콜드스타트에 포함' : calls.canonical ? `${calls.canonical}개 구간` : '없음'],
+      ['미크로 누락 (1턴)', !targets ? '확인 불가' : targets.micro.error ? '확인 실패' : !targets.micro.enabled ? 'Micro 꺼짐' : calls.micro ? `${calls.micro}턴` : '없음'],
+      ['렌즈 누락 (구간)', !targets ? '확인 불가' : targets.lensError ? '확인 실패' : !lensRows.length ? '자동 분석 렌즈 없음' : calls.lens ? lensRows.filter(row => row.ranges.length).map(row => `${row.name} ${row.ranges.length}개`).join(' · ') : '없음'],
+      ['상태 재생', plan.stateLagging ? `T${plan.stateThroughTurn} → 최신 정본 (모델 호출 0회)` : '최신'],
+      ['재임베딩', plan.embedSummary?.state !== 'ready' ? '임베딩 미설정 · 건너뜀' : plan.vectorFailed > 0 ? `실패 ${plan.vectorFailed}건 재생성` : plan.vectorPending > 0 ? `대기 ${plan.vectorPending}건` : '새로 저장된 기억만 갱신']
+    ];
+  };
+
+  // Reuses the source reanalysis path (one auxiliary job per owner) for every Micro turn and
+  // lens unit that is still missing when the step starts.
+  const runLibraAuxiliaryRecovery = async (actionsTaken, progress) => {
+    const targets = await inspectLibraAuxiliaryRecoveryTargets();
+    const runOwner = async (label, inventory, ranges) => {
+      const result = await LibraMemoryCore.reanalyzeSelectedRanges({ ...inventory, ranges });
+      const processed = Number(result?.processed ?? guiAsArray(result?.results).filter(row => row?.ok).length);
+      if (result?.ok === true) actionsTaken.push(`${label} 누락 복구 완료: ${ranges.map(row => row.label).join(', ')} (${ranges.length}개)`);
+      else actionsTaken.push(`${label} 누락 복구 경고: ${processed ? '완료 ' + processed + '개 · ' : ''}${result?.reason || '일부 구간을 완료하지 못했습니다.'}`);
+      return result?.ok === true;
+    };
+    progress('micro', 'running');
+    if (targets.micro.error) { actionsTaken.push(`미크로 누락 확인 경고: ${targets.micro.error}`); progress('micro', 'warn', targets.micro.error); }
+    else if (!targets.micro.enabled) progress('micro', 'skipped', 'Micro 꺼짐');
+    else if (!targets.micro.ranges.length) progress('micro', 'skipped', '누락 없음');
+    else {
+      progress('micro', 'running', `${targets.micro.ranges.length}턴 분석 중`);
+      try { progress('micro', await runOwner('미크로', targets.micro.inventory, targets.micro.ranges) ? 'done' : 'warn'); }
+      catch (error) { actionsTaken.push(`미크로 누락 복구 경고: ${error?.message || error}`); progress('micro', 'warn', String(error?.message || error)); }
+    }
+    progress('lens', 'running');
+    const dueLenses = targets.lenses.filter(row => row.ranges.length);
+    if (targets.lensError) { actionsTaken.push(`렌즈 누락 확인 경고: ${targets.lensError}`); progress('lens', 'warn', targets.lensError); }
+    else if (!dueLenses.length) progress('lens', 'skipped', targets.lenses.length ? '누락 없음' : '자동 분석 렌즈 없음');
+    else {
+      let clean = true;
+      for (const lens of dueLenses) {
+        progress('lens', 'running', `${lens.name} · ${lens.ranges.length}개 구간 분석 중`);
+        try { clean = await runOwner(`렌즈 「${lens.name}」`, lens.inventory, lens.ranges) && clean; }
+        catch (error) { clean = false; actionsTaken.push(`렌즈 「${lens.name}」 누락 복구 경고: ${error?.message || error}`); }
+      }
+      progress('lens', clean ? 'done' : 'warn');
+    }
+  };
+
   const runLibraMemoryMaintenance = async (mode = 'auto', options = {}) => {
     const startedAt = Date.now();
     const preflight = options.preflight || await inspectLibraMemoryMaintenance();
@@ -92557,6 +92831,12 @@ advanced
     };
     await assertSource();
     const actionsTaken = [];
+    const progress = (step, status, detail = '') => { try { options.onProgress?.({ step, status, detail }); } catch (_) {} };
+    const stepResult = (step, from, idle) => {
+      const rows = actionsTaken.slice(from);
+      progress(step, !rows.length ? 'skipped' : rows.some(row => row.includes('경고')) ? 'warn' : 'done', rows.length ? '' : idle);
+    };
+    progress('canonical', 'running');
 
     // 1. 상황별 정본 기억 생성 및 복구 (수동 콜드스타트 / 누락 복구 / 실패 재분석)
     if (preflight.savedRangesCount === 0 && preflight.completeBatches > 0) {
@@ -92568,7 +92848,9 @@ advanced
           selectionBindings: targets
         });
         const processed = Number(job?.completed ?? preflight.completeBatches);
-        actionsTaken.push(`수동 콜드스타트 자동 실행: 1~${preflight.completeBatches * 5}턴 초기 정본 기억 생성 완료 (${processed}개 구간)`);
+        const unfinished = Number(job?.failed || 0);
+        if (processed > 0 && !unfinished) actionsTaken.push(`수동 콜드스타트 자동 실행: 1~${preflight.completeBatches * 5}턴 초기 정본 기억 생성 완료 (${processed}개 구간)`);
+        else actionsTaken.push(`수동 콜드스타트 경고: 저장 ${processed}개 · 미완료 ${unfinished || Math.max(0, preflight.completeBatches - processed)}개 구간${job?.error ? ' · ' + job.error : ''}`);
       } catch (err) {
         actionsTaken.push(`수동 콜드스타트 경고: ${err.message || err}`);
       }
@@ -92589,7 +92871,8 @@ advanced
             const job = await LibraMemoryCore.startSelectedCanonicalBatches(request);
             const processed = Number(job?.completed ?? missingRanges.length);
             const rangesText = missingRanges.map(r => `T${r.startTurn}–T${r.endTurn}`).join(', ');
-            actionsTaken.push(`누락 정본 구간 자동 복구 완료: ${rangesText} (${processed}개 구간)`);
+            if (processed > 0 && !Number(job?.failed || 0)) actionsTaken.push(`누락 정본 구간 자동 복구 완료: ${rangesText} (${processed}개 구간)`);
+            else actionsTaken.push(`누락 정본 복구 경고: ${rangesText} 중 저장 ${processed}개 · 미완료 ${Number(job?.failed || 0) || Math.max(0, missingRanges.length - processed)}개${job?.error ? ' · ' + job.error : ''}`);
           }
         } catch (err) {
           actionsTaken.push(`누락 정본 복구 경고: ${err.message || err}`);
@@ -92631,6 +92914,10 @@ advanced
       }
     }
 
+    stepResult('canonical', 0, '누락 없음');
+    // 원터치 전체 복구: 정본 다음에 미크로(1턴)·렌즈(주기 구간) 누락을 같은 재분석 경로로 복구한다.
+    if (options.auxiliary === true) await runLibraAuxiliaryRecovery(actionsTaken, progress);
+
     // 중간 검사: 정본 생성 후 최신 상태 및 임베딩 갱신 필요성 확인
     await assertScope();
     let mid = null;
@@ -92643,6 +92930,8 @@ advanced
     const effectiveStateThrough = Number(mid?.stateThroughTurn ?? preflight.stateThroughTurn ?? 0);
     const effectiveLagging = preflight.stateLagging || mid?.stateLagging || (preflight.unappliedCount > 0) || (effectiveLastCommitted > effectiveStateThrough);
 
+    progress('state', 'running');
+    const stateActionsBefore = actionsTaken.length;
     if (effectiveLagging) {
       try {
         await runStateReplayMaintenance({
@@ -92655,9 +92944,12 @@ advanced
         actionsTaken.push(`상태 재생 경고: ${err.message || err}`);
       }
     }
+    stepResult('state', stateActionsBefore, '최신 상태');
 
     // 3. 파생 캐시 및 메모리 그래프 무결성 갱신
     await assertScope();
+    progress('cache', 'running');
+    const cacheActionsBefore = actionsTaken.length;
     try {
       const hr = LibraMemoryCore.healthRecovery;
       if (hr) {
@@ -92673,6 +92965,9 @@ advanced
     } catch (err) {
       actionsTaken.push(`캐시 갱신 경고: ${err.message || err}`);
     }
+    stepResult('cache', cacheActionsBefore, '정상');
+    progress('embedding', 'running');
+    const embeddingActionsBefore = actionsTaken.length;
 
     // 4. 재임베딩 (실패/대기 벡터 재생성 및 신규 정본 임베딩)
     const curEmbedSummary = (mid?.embedSummary?.state === 'ready' ? mid.embedSummary : null) || preflight.embedSummary || libraEmbeddingStatusSummary();
@@ -92698,6 +92993,7 @@ advanced
       }
     }
 
+    stepResult('embedding', embeddingActionsBefore, curEmbedSummary?.state === 'ready' ? '최신 유지' : '임베딩 미설정');
     try { await refreshGuiSnapshot(false); } catch (_) {}
 
     const after = await inspectLibraMemoryMaintenance();
@@ -92707,6 +93003,7 @@ advanced
     return {
       schema: 'libra.memory_maintenance_result.v1',
       scopeKey,
+      mode,
       status: 'completed',
       healthy: after.healthy,
       durationMs,
@@ -92778,6 +93075,7 @@ advanced
       return overlay;
     }
 
+    let auxTargetsTask = null;
     renderInspectionPlan(plan);
 
     function renderInspectionPlan(p) {
@@ -92843,11 +93141,35 @@ advanced
       ]);
 
       const modelBox = guiEl('div', {
+        class: 'maintenance-box',
         style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md, 10px)', padding: '12px 14px', marginBottom: '14px' }
       }, [
         guiEl('div', { style: { fontWeight: '700', fontSize: '12.5px', marginBottom: '8px', color: 'var(--text)' }, text: '기억 작성 및 분석 모델 현황' }),
         buildBookMemoryModelSummary()
       ]);
+      // Progress, job and failure notices from the retired Reading Desk card.
+      const progressBox = guiEl('div', {
+        class: 'maintenance-box',
+        style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md, 10px)', padding: '12px 14px', marginBottom: '14px' }
+      }, [buildBookMemoryProgressPanel()]);
+      const targetsBody = guiEl('div', { class: 'maintenance-targets', dataset: { maintenanceTargets: 'loading' } }, [
+        guiEl('p', { class: 'hint', style: { margin: '0' }, text: '미크로·렌즈 누락 구간을 확인하는 중…' })
+      ]);
+      const targetsBox = guiEl('div', {
+        class: 'maintenance-box',
+        style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md, 10px)', padding: '12px 14px', marginBottom: '14px' }
+      }, [
+        guiEl('div', { style: { fontWeight: '700', fontSize: '12.5px', marginBottom: '8px', color: 'var(--text)' }, text: '원터치 전체 복구 대상' }),
+        targetsBody
+      ]);
+      const paintTargets = targets => {
+        targetsBody.dataset.maintenanceTargets = 'ready';
+        targetsBody.replaceChildren(...libraFullRecoveryRows(p, targets).map(([label, value]) => guiEl('div', { class: 'maintenance-target-row' }, [
+          guiEl('span', { text: label }), guiEl('b', { text: value })
+        ])));
+      };
+      if (!auxTargetsTask) auxTargetsTask = inspectLibraAuxiliaryRecoveryTargets().catch(() => null);
+      void auxTargetsTask.then(paintTargets);
 
       const detailRows = [
         ['저장 모드', p.isServer ? '🌐 서버 모드 (Librarian System)' : '💻 로컬 플러그인 모드'],
@@ -92909,8 +93231,9 @@ advanced
       }
 
       const autoBtn = guiEl('button', {
-        class: 'btn btn--primary',
+        class: 'btn',
         type: 'button',
+        dataset: { maintenanceAuto: 'true' },
         text: '⚡ 자동 점검·복구 실행',
         onClick: async () => {
           autoBtn.disabled = true;
@@ -92932,7 +93255,86 @@ advanced
       });
       actions.appendChild(autoBtn);
 
-      dialog.replaceChildren(header, banner, metrics, modelBox, detailsBox, actions);
+      const fullLabel = '⚡ 원터치 전체 복구';
+      const fullBtn = guiEl('button', {
+        class: 'btn btn--primary',
+        type: 'button',
+        dataset: { maintenanceFull: 'true' },
+        text: fullLabel,
+        onClick: async () => {
+          fullBtn.disabled = true;
+          fullBtn.textContent = '복구 대상 확인 중…';
+          const targets = await auxTargetsTask;
+          const rows = libraFullRecoveryRows(p, targets);
+          const calls = libraFullRecoveryCalls(p, targets);
+          const confirmed = await confirmApprovedOperation(
+            '콜드스타트·정본(5턴) 누락 복구, 미크로(1턴) 누락 복구, 렌즈(주기 구간) 누락 복구, 상태 재생, 재임베딩을 차례로 실행합니다. 성공한 구간만 저장하고 실패한 구간의 기존 기억은 유지합니다.',
+            {
+              title: '원터치 전체 복구', kind: '콜드스타트 · 누락 복구 · 재임베딩', actionLabel: '전체 복구 시작',
+              target: rows.map(([label, value]) => `${label} ${value}`).join(' · '),
+              cost: `모델 생성 호출 약 ${calls.total}회 (정본 ${calls.canonical} · 미크로 ${calls.micro} · 렌즈 ${calls.lens}) · 상태 확인 호출이 더해질 수 있으며 임베딩 API 사용량은 별도입니다.`
+            }
+          );
+          if (!confirmed) {
+            fullBtn.disabled = false;
+            fullBtn.textContent = fullLabel;
+            return;
+          }
+          const view = renderFullProgress();
+          try {
+            const result = await runLibraMemoryMaintenance('full', { preflight: p, auxiliary: true, onProgress: view.update });
+            auxTargetsTask = null;
+            renderCompletion(result);
+          } catch (err) {
+            dialog.replaceChildren(
+              guiEl('div', { class: 'eyebrow', text: 'Memory Health & Recovery' }),
+              guiEl('h2', { text: '원터치 전체 복구 실패' }),
+              guiEl('p', { class: 'note note--danger', text: String(err?.message || err) }),
+              guiEl('div', { class: 'dialog__actions' }, [
+                guiEl('button', { class: 'btn btn--primary', type: 'button', text: '닫기', onClick: close })
+              ])
+            );
+          }
+        }
+      });
+      actions.appendChild(fullBtn);
+
+      dialog.replaceChildren(header, banner, metrics, progressBox, modelBox, targetsBox, detailsBox, actions);
+    }
+
+    function renderFullProgress() {
+      const labels = { canonical: '정본 기억 (콜드스타트 · 5턴 누락·실패 복구)', micro: '미크로 기억 (1턴 누락 복구)', lens: '렌즈 기억 (주기 구간 누락 복구)', state: '현재 상태 재생', cache: '파생 캐시 · 그래프 갱신', embedding: '재임베딩' };
+      const statusText = { pending: '대기', running: '진행 중', done: '완료', skipped: '건너뜀', warn: '확인 필요' };
+      const icons = { pending: '○', running: '◐', done: '✓', skipped: '–', warn: '!' };
+      const rows = new Map(Object.keys(labels).map(step => {
+        const icon = guiEl('span', { class: 'maintenance-step__icon', text: icons.pending });
+        const state = guiEl('b', { text: statusText.pending });
+        const detail = guiEl('small', { text: '' });
+        const row = guiEl('div', { class: 'maintenance-step', dataset: { maintenanceStep: step, stepStatus: 'pending' } }, [
+          icon, guiEl('span', { class: 'maintenance-step__label' }, [document.createTextNode(labels[step]), detail]), state
+        ]);
+        return [step, { row, icon, state, detail }];
+      }));
+      const bar = guiEl('progress', { max: rows.size, value: 0, 'aria-label': '원터치 전체 복구 진행률', style: { width: '100%' } });
+      const live = guiEl('p', { class: 'hint', role: 'status', 'aria-live': 'polite', text: '정본 기억부터 차례로 복구합니다. 미크로·렌즈 작업 진행률은 작업 창에서도 확인할 수 있습니다.' });
+      dialog.replaceChildren(
+        guiEl('div', { class: 'eyebrow', text: 'Memory Health & Recovery' }),
+        guiEl('h2', { style: { margin: '2px 0 10px' }, text: '원터치 전체 복구 진행 중' }),
+        bar, live,
+        guiEl('div', { class: 'maintenance-steps', dataset: { maintenanceProgress: 'true' } }, [...rows.values()].map(item => item.row)),
+        guiEl('div', { class: 'dialog__actions' }, [guiEl('button', { class: 'btn', type: 'button', text: '창 닫기 (복구는 계속)', onClick: close })])
+      );
+      const update = ({ step, status, detail }) => {
+        const item = rows.get(step);
+        if (!item) return;
+        item.row.dataset.stepStatus = status;
+        item.icon.textContent = icons[status] || icons.pending;
+        item.state.textContent = statusText[status] || status;
+        item.detail.textContent = detail ? ' · ' + detail : '';
+        bar.value = [...rows.values()].filter(row => ['done', 'skipped', 'warn'].includes(row.row.dataset.stepStatus)).length;
+        if (status === 'running') live.textContent = `${labels[step]}${detail ? ' · ' + detail : ''}`;
+      };
+      return { update };
     }
 
     function renderCompletion(result) {
@@ -92942,7 +93344,7 @@ advanced
       const header = guiEl('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' } }, [
         guiEl('div', {}, [
           guiEl('div', { class: 'eyebrow', text: 'Memory Health & Recovery' }),
-          guiEl('h2', { style: { margin: '2px 0 0' }, text: '상태 점검 및 자동 복구 완료' })
+          guiEl('h2', { style: { margin: '2px 0 0' }, text: result.mode === 'full' ? '원터치 전체 복구 완료' : '상태 점검 및 자동 복구 완료' })
         ]),
         guiEl('div', {}, [
           result.healthy
@@ -92951,20 +93353,23 @@ advanced
         ])
       ]);
 
-      const banner = guiEl('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 14px', borderRadius: 'var(--r-md, 10px)', background: 'var(--ok-soft, rgba(46,175,125,0.08))', border: '1px solid var(--ok-ink, #2eaf7d)', margin: '12px 0' } }, [
-        guiEl('span', { style: { fontSize: '20px', lineHeight: '1', marginTop: '1px' }, text: '🎉' }),
+      const warned = result.actionsTaken.some(act => act.includes('경고'));
+      const banner = guiEl('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 14px', borderRadius: 'var(--r-md, 10px)', background: warned ? 'var(--warn-soft, rgba(234,153,34,0.08))' : 'var(--ok-soft, rgba(46,175,125,0.08))', border: warned ? '1px solid var(--warn-line, #ea9922)' : '1px solid var(--ok-ink, #2eaf7d)', margin: '12px 0' } }, [
+        guiEl('span', { style: { fontSize: '20px', lineHeight: '1', marginTop: '1px' }, text: warned ? '⚠️' : '🎉' }),
         guiEl('div', { style: { fontSize: '13px', lineHeight: '1.55', minWidth: '0' } }, [
-          guiEl('b', { style: { color: 'var(--text)', display: 'block', marginBottom: '2px' }, text: '기억 및 상태 자동 점검·복구가 성공적으로 완료되었습니다' }),
-          guiEl('span', { style: { color: 'var(--text2)' }, text: `소요 시간 ${durationSec}초 · 최신 저장소 및 상태 readback 검증을 마쳤습니다.` })
+          guiEl('b', { style: { color: 'var(--text)', display: 'block', marginBottom: '2px' }, text: warned ? '복구를 마쳤지만 일부 항목은 완료되지 않았습니다' : '기억 및 상태 자동 점검·복구가 성공적으로 완료되었습니다' }),
+          guiEl('span', { style: { color: 'var(--text2)' }, text: `소요 시간 ${durationSec}초 · ${warned ? '아래 경고 항목을 확인한 뒤 해당 구간을 다시 분석하세요.' : '최신 저장소 및 상태 readback 검증을 마쳤습니다.'}` })
         ])
       ]);
 
       const actionsBox = guiEl('div', {
         style: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md, 10px)', padding: '13px 15px', display: 'grid', gap: '8px', fontSize: '12.5px', marginBottom: '14px' }
       }, result.actionsTaken.length ? result.actionsTaken.map(act => guiEl('div', {
-        style: { display: 'flex', alignItems: 'center', gap: '8px' }
+        style: { display: 'flex', alignItems: 'flex-start', gap: '8px', minWidth: '0', overflowWrap: 'anywhere' }
       }, [
-        guiEl('span', { style: { color: 'var(--ok-ink, #2eaf7d)', fontWeight: '700' }, text: '✓' }),
+        act.includes('경고')
+          ? guiEl('span', { style: { color: 'var(--warn-ink, #ea9922)', fontWeight: '700' }, text: '!' })
+          : guiEl('span', { style: { color: 'var(--ok-ink, #2eaf7d)', fontWeight: '700' }, text: '✓' }),
         guiEl('span', { text: act })
       ])) : [guiEl('div', { style: { color: 'var(--text2)' }, text: '조치가 필요한 비정상 상태가 발견되지 않아 즉시 정상 확정되었습니다.' })]);
 
@@ -94104,7 +94509,7 @@ advanced
         ])
       ]),
 
-      buildBookMemoryProgressPanel(), buildBookReceiptRecoveryPanel(), buildBookHostLineagePanel()
+      buildBookReceiptRecoveryPanel()
     ].filter(Boolean));
   };
 

@@ -167,12 +167,39 @@ function deskContext(api={}){
   return {c,current};
 }
 test('desk renders independent receipt and Micro cards',async()=>{
-  assert.match(sourceBetween('const buildApprovedMockupDesk =','const buildApprovedMockupMemory ='),
-    /buildBookMemoryProgressPanel\(\), buildBookReceiptRecoveryPanel\(\)/,'desk mounts the receipt recovery section');
+  const deskPage=sourceBetween('const buildApprovedMockupDesk =','const buildApprovedMockupMemory =');
+  assert.match(deskPage,/buildBookReceiptRecoveryPanel\(\)/,'desk mounts the unified worldline section');
+  assert.doesNotMatch(deskPage,/buildBookMemoryProgressPanel\(\)|buildBookHostLineagePanel\(\)/,
+    'memory progress moved to the maintenance overlay; lineage is part of the worldline section');
   const {c}=deskContext();
   const tree=c.buildBookDeskPanel();
   assert.ok(flat(tree).some(n=>n.tag==='section'&&n.dataset?.receiptRecoveryScope==='scope-A'),'desk stage cards absent');
   await tick();
+});
+test('worldline view shows canonical 5-turn ranges, per-turn Micro, lens units and the branch fork',async()=>{
+  const lensRanges=[{key:'1-5',start:1,end:5,label:'T1–T5',status:'saved'},{key:'6-10',start:6,end:10,label:'T6–T10',status:'missing'},{key:'11-12',start:11,end:12,label:'T11–T12',status:'missing'}];
+  const {c,current}=deskContext({getReceiptRecoveryStatus:async()=>({scopeKey:'scope-A',
+      receiptStages:Array.from({length:12},(_,i)=>({scopeKey:'scope-A',turn:i+1,status:'verified'})),
+      microJobs:Array.from({length:12},(_,i)=>({scopeKey:'scope-A',turn:i+1,status:i===6?'failed':'succeeded'}))}),
+    listReanalysisRanges:async({kind})=>{assert.equal(kind,'lens');return {scopeKey:'scope-A',kind:'lens',lensId:'L1',
+      lenses:[{lensId:'L1',name:'관계',status:'active',cadence:{mode:'every_n_batches',everyNBatches:1},analysisSpan:5}],ranges:lensRanges};}});
+  current.pairs=Array(12).fill({});
+  current.manifest={memories:{a:{status:'committed',turnRange:{start:1,end:5}}},failedBatches:{6:{startTurn:6}},worldlineMeta:{parentWorldlineId:'parent',forkTurn:5}};
+  await c.loadBookReceiptRecoveryStatus();
+  const nodes=flat(c.buildBookDeskPanel());
+  const lane=name=>nodes.find(n=>n.dataset?.worldlineLane===name);
+  const segs=node=>flat(node).filter(n=>n.tag==='button').map(n=>[n.text,n.class.match(/wl-seg--(\w+)/)[1]]);
+  assert.deepEqual(segs(lane('정본')),[['T1–T5','saved'],['T6–T10','failed'],['T11–T15','pending']],'canonical shows 5-turn ranges');
+  assert.equal(segs(lane('미크로')).length,12,'Micro is one cell per turn');
+  assert.deepEqual(segs(lane('미크로'))[6],['7','failed']);
+  assert.deepEqual(segs(nodes.find(n=>/^렌즈/.test(n.dataset?.worldlineLane||''))),[['T1–T5','saved'],['T6–T10','missing'],['T11–T12','pending']],
+    'lens shows cadence units; a trailing unit shorter than the span is not due yet');
+  assert.ok(nodes.some(n=>n.class==='wl-fork-row'),'branch fork divider is drawn in the turn rail');
+  assert.equal(nodes.find(n=>n.dataset?.worldlineTurn==='7')?.dataset.turnHealth,'bad');
+  assert.equal(nodes.find(n=>n.dataset?.worldlineTurn==='3')?.dataset.turnHealth,'ok');
+  const inspector=nodes.find(n=>n.dataset?.worldlineMemory==='12');
+  assert.match(flat(inspector).map(n=>n.text||'').join(' '),/T11–T15 · 미완성 구간/);
+  for(const label of ['T12 미크로 바로 재분석','저장 다시 확인'])assert.ok(nodes.some(n=>n.tag==='button'&&n.text===label),label);
 });
 test('desk renders failure, unrecoverable, OFF, unavailable and unknown with cost copy',async()=>{
   let reads=0,mutations=0;

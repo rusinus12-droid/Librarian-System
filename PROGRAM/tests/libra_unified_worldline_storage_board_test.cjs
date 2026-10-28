@@ -113,13 +113,13 @@ function makeContext(snapshot, recoveryStatus) {
   const deskNodes = flat(deskPanel);
   const deskTexts = deskNodes.map(n => n.text || '').join(' ');
 
-  assert.ok(deskTexts.includes('WORLDLINE CONTINUITY & STORAGE'), 'Desk panel must include unified header');
+  assert.ok(deskTexts.includes('WORLDLINE CONTINUITY & MEMORY'), 'Desk panel must include unified header');
   assert.ok(deskTexts.includes('총 3턴'), 'Desk panel must report total 3 turns');
-  assert.ok(deskTexts.includes('영수증 저장 3/3'), 'Desk panel must report verified receipts');
-  assert.ok(deskTexts.includes('Micro 완료 1/3'), 'Desk panel must report completed micro analyses');
+  assert.ok(deskTexts.includes('영수증 3/3'), 'Desk panel must report verified receipts');
+  assert.ok(deskTexts.includes('Micro 1/3'), 'Desk panel must report completed micro analyses');
   assert.ok(deskTexts.includes('누락 2턴'), 'Desk panel must report 2 missing/failed turns');
   assert.ok(deskTexts.includes('↳ T2 분기점'), 'Desk panel must display visual fork turn divider');
-  assert.ok(deskTexts.includes('상위 승계'), 'Desk panel must identify inherited turn region');
+  assert.ok(deskTexts.includes('상위 세계선 공통 원문 승계'), 'Desk panel must identify inherited turn region');
   assert.ok(deskTexts.includes('고유 진행'), 'Desk panel must identify unique turn progression');
   console.log('✓ Unified desk summary and branch flow verified');
 
@@ -154,8 +154,7 @@ function makeContext(snapshot, recoveryStatus) {
   batchBtn.onClick();
   assert.equal(c1.drawerOptions?.kind, 'micro');
   assert.equal(c1.drawerOptions?.scopeKey, 'scope-branch');
-  assert.equal(c1.drawerOptions?.startTurn, 2);
-  assert.equal(c1.drawerOptions?.endTurn, 3);
+  assert.deepEqual([...c1.drawerOptions?.startTurns], [2, 3], 'only the missing turns are preselected');
   console.log('✓ Batch missing turns reanalysis trigger verified');
 
   // Scenario 2: Root (independent) worldline

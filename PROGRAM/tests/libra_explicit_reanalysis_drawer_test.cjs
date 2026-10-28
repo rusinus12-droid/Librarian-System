@@ -2,9 +2,13 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {fixture,source}=require('./fixtures/libra_reanalysis_gui_fixture.cjs');
 const flush=()=>new Promise(resolve=>setTimeout(resolve,0));
-test('reading desk exposes the common reanalysis drawer',()=>{
-  const panel=source.slice(source.indexOf('  const buildBookMemoryProgressPanel ='),source.indexOf('  const buildCanonicalActionPanel ='));
-  assert.match(panel,/bookMemoryReanalyze/);assert.match(panel,/showLibraSourceReanalysisDrawer/);
+test('maintenance overlay and worldline inspector expose the common reanalysis drawer',()=>{
+  // The Reading Desk "기억 작성 현황" card moved into the maintenance overlay.
+  const dialog=source.slice(source.indexOf('  const openLibraMemoryMaintenanceDialog ='),source.indexOf('  LibraMemoryCore.inspectMemoryMaintenance ='));
+  assert.match(dialog,/text: '원문 재분석'[\s\S]*?showLibraSourceReanalysisDrawer\(\{ kind: 'canonical'/);
+  const worldline=source.slice(source.indexOf('  const buildBookReceiptRecoveryPanel ='),source.indexOf('  const BOOK_NATIVE_SETTINGS_SECTIONS ='));
+  assert.match(worldline,/showLibraSourceReanalysisDrawer\(\{kind:'micro',scopeKey:state\.scopeKey,startTurn:activeTurn,endTurn:activeTurn\}\)/);
+  assert.match(worldline,/drawer\(\{kind:'canonical',startTurn:activeCanonical\.start\}\)/);
 });
 test('canonical selection folds initially and groups five source turns into one card',async()=>{
   const f=fixture();try{
