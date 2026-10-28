@@ -38923,6 +38923,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
 
   const Gui = {
+    openSerial: 0,
+    openingPromise: null,
     root: null,
     app: null,
     state: null,
@@ -43597,6 +43599,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   }
 
   const hideSettingsGui = async () => {
+    Gui.openSerial += 1;
     Gui.visible = false;
     if (Gui.refreshTimer) { clearTimeout(Gui.refreshTimer); Gui.refreshTimer = null; }
     if (Gui.inputRenderTimer) { clearTimeout(Gui.inputRenderTimer); Gui.inputRenderTimer = null; }
@@ -43663,32 +43666,42 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
   };
 
-  const showSettingsGui = async () => {
-    Gui.visible = true;
-    ;
-
-    // Match Flashback Memory's container path as well as its layout: resolve the
-    // live lowercase API at open time instead of reusing a possibly stale uppercase
-    // facade captured during plugin startup.
-    try {
-      const guiApi = getLiveApi(['showContainer']);
-      if (typeof guiApi?.showContainer === 'function') await guiApi.showContainer('fullscreen');
-    } catch (error) {
-      warn('settings_gui_show_failed', error);
-    }
-
-    if (!Gui.root || !document.getElementById('sga-rp-gui-root')) await initSettingsGui();
-    const stateIsFresh = !!Gui.state && Date.now() - Number(Gui.stateLoadedAt || 0) < 60000;
-    const shouldForceReload = !Gui.state || (!Runtime.inFlight && !Gui.dirty && !stateIsFresh);
-    await ensureGuiState(shouldForceReload);
-    await renderSettingsGui();
-    ;
-    if (Gui.pageId === 'references') {
-      void refreshModuleLoreCatalog(false);
-      void refreshCharacterLoreCatalog(false);
-    }
-    forceTransparentGuiSurface();
+  const renderSettingsOpeningState = (failed = false) => {
+    if (!Gui.root || !Gui.visible) return false;
+    injectGuiStyle(); Gui.app = null; Gui.shellReady = false;
+    Gui.root.innerHTML = `<div class="stage"><div class="frame"><div class="app t-gradia" style="display:flex;flex-direction:column"><header class="topbar" style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px"><b>GRADIA · 설정</b><button type="button" class="btn" data-gradia-opening-close>닫기</button></header><main style="flex:1;min-height:0;overflow:auto;padding:clamp(16px,4vw,40px)"><section class="card stack" style="gap:24px" data-gradia-opening-state="${failed?'failed':'loading'}"><div><div class="eyebrow">SETTINGS WORKSPACE</div><h1 class="page-title" style="margin:8px 0 12px">${failed?'설정 화면을 열지 못했습니다':'설정을 불러오고 있습니다'}</h1><p class="muted">${failed?'RisuAI의 설정 자료를 읽지 못했습니다. 호스트와 로컬 저장소가 준비된 뒤 다시 시도하세요.':'저장된 설정을 확인하고 있습니다…'}</p></div><p class="note${failed?' note--warn':''}" role="${failed?'alert':'status'}">${failed?'설정 값을 아직 확인하지 못했습니다. 다시 시도하면 기존 자료를 다시 읽습니다.':'설정 자료 읽기 중'}</p><div class="cluster" style="gap:12px"><button type="button" class="btn btn--primary" data-gradia-opening-retry${failed?'':' disabled'}>다시 시도</button></div></section></main></div></div></div>`;
+    Gui.root.querySelector('[data-gradia-opening-close]').onclick=()=>{void hideSettingsGui();};
+    Gui.root.querySelector('[data-gradia-opening-retry]').onclick=event=>{if(event.currentTarget.disabled)return;event.currentTarget.disabled=true;void showSettingsGui();};
     return true;
+  };
+
+  const showSettingsGui = async () => {
+    if (Gui.openingPromise && Gui.visible) return await Gui.openingPromise;
+    const serial=++Gui.openSerial;
+    Gui.visible=true;
+    const current=()=>Gui.visible && Gui.openSerial===serial;
+    const task=(async()=>{
+      try {
+        if (!Gui.root || !document.getElementById('sga-rp-gui-root')) await initSettingsGui();
+        if (!current() || !Gui.root) return false;
+        if (!Gui.app || !Gui.root.contains(Gui.app)) renderSettingsOpeningState();
+        const guiApi=getLiveApi(['showContainer']);
+        if(typeof guiApi?.showContainer==='function') void Promise.resolve().then(()=>current()?guiApi.showContainer('fullscreen'):false).catch(error=>warn('settings_gui_show_failed',error));
+        const stateIsFresh=!!Gui.state && Date.now()-Number(Gui.stateLoadedAt||0)<60000;
+        const shouldForceReload=!Gui.state || (!Runtime.inFlight && !Gui.dirty && !stateIsFresh);
+        await ensureGuiState(shouldForceReload);
+        if (!current()) return false;
+        await renderSettingsGui();
+        if (!current()) return false;
+        if (Gui.pageId==='references') {void refreshModuleLoreCatalog(false);void refreshCharacterLoreCatalog(false);}
+        forceTransparentGuiSurface();return true;
+      } catch(error) {
+        if(current())renderSettingsOpeningState(true);
+        warn('settings_gui_open_failed',error);return false;
+      }
+    })();
+    Gui.openingPromise=task;
+    try{return await task;}finally{if(Gui.openingPromise===task)Gui.openingPromise=null;}
   };
 
   const readGuiEnabledForRegistration = async () => {

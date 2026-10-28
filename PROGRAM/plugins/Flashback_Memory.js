@@ -2296,6 +2296,7 @@ const PLUGIN_VERSION = '1.3.8';
   let guiContainerShown = false;
   let guiMounted = false;
   let guiVisible = false;
+  let guiOpenSequence = 0;
   let storageRenderToken = 0;
   let manualEditorRenderToken = 0;
 
@@ -49990,6 +49991,53 @@ ${cleanedText}`, 80),
     }
   };
 
+  const renderGuiOpeningFailure = error => {
+    const root = ensureGuiRoot();
+    if (!root || !guiVisible) return false;
+    const unavailable = error?.code === 'MEMORY_SUITE_SERVER_UNAVAILABLE' || error?.message === 'memory_suite_server_unavailable';
+    root.removeAttribute?.('data-vrm-skeleton');
+    root.removeAttribute?.('data-vrm-mounted');
+    guiMounted = false;
+    root.innerHTML = `<style>${FLASHBACK_GUI_MOCKUP_STYLES}</style><div class="stage" style="width:100%"><div class="frame"><div class="app" style="display:flex;flex-direction:column;height:100%">
+      <header class="topbar" style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px"><div class="brand"><div><b>Flashback Memory</b><div class="brand__ver">기억 관리</div></div></div><button type="button" class="btn" data-opening-close>닫기</button></header>
+      <main style="flex:1;min-height:0;overflow:auto;padding:clamp(16px,4vw,40px)"><section class="card stack" style="gap:24px" data-opening-error>
+        <div><div class="eyebrow">${unavailable ? 'SERVER CONNECTION' : 'MEMORY WORKSPACE'}</div><h1 class="page-title" style="margin:8px 0 12px">${unavailable ? '서버에 연결하지 못했습니다' : '기억 관리 화면을 열지 못했습니다'}</h1><p class="muted">${unavailable ? '설정을 읽는 중 서버 응답을 확인하지 못했습니다. 서버 실행 상태와 연결 주소를 확인한 뒤 다시 시도하세요.' : '설정 또는 저장소 자료를 읽지 못했습니다. 잠시 후 다시 시도해 주세요.'}</p></div>
+        <div class="note note--warn" role="alert">기억 데이터의 현재 상태는 미확인입니다. 연결이 복구되면 기존 자료를 다시 읽어 화면을 엽니다.</div>
+        <div class="cluster" style="gap:12px"><button type="button" class="btn btn--primary" data-opening-retry>다시 시도</button>${unavailable ? '<button type="button" class="btn" data-opening-settings>연결 설정</button>' : ''}</div>
+        <p class="hint" role="status" aria-live="polite" data-opening-status>${unavailable ? '오류 코드: MEMORY_SUITE_SERVER_UNAVAILABLE' : '자료 읽기 실패 · 정상 여부 미확인'}</p>
+        <section data-opening-connection hidden></section>
+      </section></main></div></div></div>`;
+    const current = () => guiVisible && guiRoot === root && !!root.querySelector('[data-opening-error]') && root.isConnected;
+    root.querySelector('[data-opening-close]').onclick = () => { void closeGui().catch(error => warn('opening close failed', error)); };
+    root.querySelector('[data-opening-retry]').onclick = async event => {
+      const button = event.currentTarget;
+      if (button.disabled || !current()) return;
+      button.disabled = true; button.textContent = '연결 확인 중…';
+      root.querySelector('[data-opening-status]').textContent = unavailable ? '서버 연결을 새로 확인하고 있습니다…' : '자료를 다시 읽고 있습니다…';
+      try {
+        if (unavailable) {
+          const probe = await MemorySuiteStorageBridge.testConnection();
+          if (!current()) return;
+          if (!probe?.ok) throw new Error('MEMORY_SUITE_SERVER_UNAVAILABLE');
+        }
+        if (current()) await showUi();
+      } catch (_) {
+        if (current()) root.querySelector('[data-opening-status]').textContent = '아직 연결 또는 자료 읽기를 확인하지 못했습니다. 실행 상태와 주소를 확인한 뒤 다시 시도하세요.';
+      } finally {
+        if (current()) { button.disabled = false; button.textContent = '다시 시도'; }
+      }
+    };
+    const settings = root.querySelector('[data-opening-settings]');
+    if (settings) settings.onclick = async () => {
+      const host = root.querySelector('[data-opening-connection]');
+      if (!host.hidden) { host.hidden = true; settings.textContent = '연결 설정'; return; }
+      host.hidden = false; settings.textContent = '연결 설정 접기';
+      try { await MemorySuiteStorageBridge.mountConnectionPanel(host, { title: 'Flashback · 서버 연결', description: '연결 주소와 서버 상태를 확인하세요.' }); }
+      catch (_) { if (current()) host.textContent = '연결 설정을 읽지 못했습니다. 잠시 후 다시 열어 주세요.'; }
+    };
+    return true;
+  };
+
   const setNodeText = (id, value) => {
     const node = getGuiNode(id);
     const next = text(value);
@@ -50945,6 +50993,7 @@ ${cleanedText}`, 80),
     activeEmbeddingRecoveryDialog?.(false);
     activeEmbeddingRecoveryDialog = null;
     const hideContainer = !options || options.hideContainer !== false;
+    if (hideContainer) guiOpenSequence += 1;
     const preserveRoot = options.removeRoot !== true
       && (options.preserveRoot === true || (options.preserveRoot !== false && hideContainer && guiContainerShown));
     guiVisible = false;
@@ -52106,6 +52155,7 @@ ${cleanedText}`, 80),
   };
 
   const showUi = async () => {
+    const openSequence = ++guiOpenSequence;
     // HAYAKU Raw Vault와 동일한 핵심 순서:
     // 1) iframe container를 먼저 fullscreen으로 표시
     // 2) 첫 표시에는 가벼운 skeleton을 즉시 mount
@@ -52120,6 +52170,7 @@ ${cleanedText}`, 80),
       ]);
       globalThis.__memorySuiteTheme?.start?.('flashback', () => getApiCandidates().find(api => typeof api?.getColorScheme === 'function'), 2000);
     } catch (_e) { try { globalThis.__librarianDiag && globalThis.__librarianDiag('flashback', 'theme.bridge.start', _e); } catch (__) {} }
+    if (openSequence !== guiOpenSequence) return false;
     const canReuseRoot = !!(guiMounted && guiRoot && guiRoot.getAttribute?.('data-vrm-mounted') === '1');
     const showPromise = showGuiContainer({ timeoutMs: 1500 }).catch(error => warn('showContainer async failed', error));
     if (!canReuseRoot) {
@@ -52128,12 +52179,21 @@ ${cleanedText}`, 80),
       await Promise.race([showPromise, delay(80)]).catch(() => false);
       await nextRenderFrame().catch(() => {});
     }
+    if (openSequence !== guiOpenSequence) return false;
     guiVisible = true;
     if (isFlashbackStorageTransitionActive() && (!Runtime.guiTab || Runtime.guiTab === 'overview')) {
       Runtime.guiTab = 'server';
       Runtime.guiConnectSubtab = 'srv';
     }
-    const rendered = await refreshUi(Runtime.guiTab || 'overview', { summary: false, deferHeavy: true, forceData: !canReuseRoot, storage: Runtime.guiTab === 'storage' });
+    const openingToken = Runtime.guiRefreshToken + 1;
+    let rendered;
+    try {
+      rendered = await refreshUi(Runtime.guiTab || 'overview', { summary: false, deferHeavy: true, forceData: !canReuseRoot, storage: Runtime.guiTab === 'storage' });
+    } catch (error) {
+      if (guiVisible && Runtime.guiRefreshToken === openingToken) renderGuiOpeningFailure(error);
+      warn('GUI opening failed', error);
+      return false;
+    }
     const summaryToken = Runtime.guiRefreshToken;
     // Yield two frames so fullscreen/container layout and the static shell are
     // visible before PocketRisu performs host snapshots and storage reads.

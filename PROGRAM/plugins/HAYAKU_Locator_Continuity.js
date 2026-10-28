@@ -56891,7 +56891,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const isContextMissing = !scope?.confident;
     const records = ensureArray(ledger?.records);
     const activeRecords = records.filter(r => ['active', 'historical'].includes(r?.recordState)).length;
-    const health = Memory.ledgerViewer.workHealth || { label: '정상 작동', error: false, warning: false };
+    const health = ledger?.enabled === false
+      ? { label: '원장 확인 필요', error: true, warning: false }
+      : Memory.ledgerViewer.workHealth || { label: '상태 확인 중', error: false, warning: true };
     const coverage = Memory.ledgerViewer.recoveryCoverage || Memory.ledgerViewer.continuitySnapshot?.coverage;
     const completedTurns = Math.max(0, Number(coverage?.completedTurns || 0) || 0);
     const coveredTurns = ensureArray(coverage?.coveredTurns).length;
@@ -57010,8 +57012,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const scope=Memory.ledgerViewer.scope?.key || Memory.ledgerViewer.scopeKey || '';
     const visibleJob=job && (!scope || !job.scopeKey || scope===job.scopeKey) ? job : null;
     const terminal=visibleJob && NATIVE_JOB_TERMINAL_STATES.has(visibleJob.state);
-    const health=Memory.ledgerViewer.workHealth||{label:'정상 작동',warning:false,error:false};
-    const error=visibleJob ? visibleJob.state==='failed' : health.error===true;
+    const ledgerUnavailable=Memory.ledgerViewer.ledger?.enabled===false;
+    const health=Memory.ledgerViewer.workHealth||{label:'상태 확인 중',warning:true,error:false};
+    const error=ledgerUnavailable || (visibleJob ? visibleJob.state==='failed' : health.error===true);
     const warning=visibleJob ? !terminal : health.warning===true;
     host.classList.toggle('health--danger',error);
     host.classList.toggle('health--warn',!error&&warning);
@@ -57032,10 +57035,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
       });
     }
     const textNode=host.querySelector?.('[data-health-text]');
-    if(textNode) textNode.textContent=visibleJob
+    if(textNode) textNode.textContent=ledgerUnavailable ? '원장 확인 필요' : visibleJob
       ? (error?'복구 실패':terminal?'복구 완료':'복구 진행 중')
       : text(health.label||'정상 작동');
-    host.title=visibleJob
+    host.title=ledgerUnavailable ? '원장을 읽지 못했습니다 · 누르면 상태 및 진단 로그 보기' : visibleJob
       ? `${viewerNativeJobKindLabel(visibleJob.kind)} · ${viewerNativeJobStateLabel(visibleJob.state)}`
       : text(health.label||'정상 작동') + ' · 누르면 상태 및 진단 로그 보기';
   };
@@ -59885,8 +59888,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const status = root.querySelector?.('#hayakuViewerStatus');
     if (status) status.textContent = '현재 채팅의 플러그인 원장을 읽는 중입니다.';
     const stillOpen = () => Memory.ledgerViewer.root === root && viewer.visible === true;
+    let readScope = null;
     try {
       const scope = await RisuCompat.currentChatScope();
+      readScope = scope;
       const ledger = !scope?.confident
         ? { enabled: false, reason: scope?.reason || 'scope_unavailable', records: [] }
         : await loadStorageLedger(scope, { readTimeoutMs: HAYAKU_VIEWER_LEDGER_READ_TIMEOUT_MS });
@@ -59945,7 +59950,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return clone({ scope, ledger }, null);
     } catch (error) {
       if (!stillOpen()) return null;
-      viewer.scope = null;
+      viewer.scope = readScope;
       viewer.ledger = { enabled: false, reason: compact(error?.message || error, 180), records: [] };
       if (typeof isHayakuStorageTransitionError === 'function' && isHayakuStorageTransitionError(error)) {
         Memory.storageTransitionPending = true;

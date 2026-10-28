@@ -22510,12 +22510,15 @@ ${revisionText}`);
     return {...ctx,manualViewPlan:manualLivePersonaPlan(ctx,ctx.livePersonaBinding)};
   }
   function renderLiaPreviewState(root, error = null) {
-    const message=error ? `화면을 읽지 못했습니다: ${error?.message || error}` : '현재 채팅과 로컬 Persona 자료를 읽고 있습니다…';
-    root.innerHTML=`<header class="topbar"><strong>LIA · Persona Linker</strong><button type="button" class="btn" data-lia-preview-close>닫기</button></header><main class="main" style="grid-column:1/-1;grid-row:2;min-width:0;padding:24px;overflow:auto;font-size:14px;line-height:1.6"><h2>${error?'자료 읽기 확인 필요':'불러오는 중'}</h2><p id="dpg-status" role="${error?'alert':'status'}" style="white-space:pre-wrap;overflow-wrap:anywhere">${htmlEscape(message)}</p><p>로컬 자료와 Persona 연결은 그대로 보존됩니다.</p><button type="button" class="btn" data-lia-preview-retry${error?'':' disabled'}>다시 읽기</button></main>`;
+    const failed = !!error;
+    const timeout = error?.code === 'LIA_PREVIEW_READ_TIMEOUT' || String(error?.message || '').startsWith('LIA_PREVIEW_READ_TIMEOUT');
+    const code = error?.code === 'MEMORY_SUITE_SERVER_UNAVAILABLE' || error?.message === 'memory_suite_server_unavailable'
+      ? 'MEMORY_SUITE_SERVER_UNAVAILABLE' : timeout ? 'LIA_PREVIEW_READ_TIMEOUT' : 'LIA_PREVIEW_READ_FAILED';
+    root.innerHTML=`<header class="topbar" style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px"><div class="brand"><div><b>LIA · Persona Linker</b><div class="brand__ver">Persona 작업실</div></div></div><button type="button" class="btn" data-lia-preview-close>닫기</button></header><main class="main" style="grid-column:1/-1;grid-row:2;min-width:0;padding:clamp(16px,4vw,40px);overflow:auto;font-size:14px;line-height:1.6"><section class="card stack" style="gap:24px" data-lia-preview-state="${failed?'failed':'loading'}"><div><div class="eyebrow">PERSONA WORKSPACE</div><h1 class="page-title" style="margin:8px 0 12px">${failed?'Persona 작업실을 열지 못했습니다':'Persona 작업실을 준비하고 있습니다'}</h1><p class="muted">${failed?(timeout?'RisuAI의 자료 응답이 늦어 화면 읽기를 멈췄습니다. 잠시 후 다시 읽어 주세요.':'현재 채팅 또는 Persona 자료의 응답을 확인하지 못했습니다. 호스트와 저장소가 준비된 뒤 다시 읽어 주세요.'):'현재 채팅과 로컬 Persona 자료를 읽고 있습니다…'}</p></div><div class="note${failed?' note--warn':''}" role="${failed?'alert':'status'}">LIA는 로컬 저장소를 사용합니다. 자료를 읽지 못한 상태를 빈 목록이나 연결 해제로 처리하지 않습니다.</div><div class="cluster" style="gap:12px"><button type="button" class="btn btn--primary" data-lia-preview-retry${failed?'':' disabled'}>${failed?'다시 읽기':'자료 읽는 중…'}</button></div><p id="dpg-status" class="hint" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere">${failed?'오류 코드: '+code:'읽기 전용 · Persona 저장·채택 작업 없음'}</p></section></main>`;
     const closeBtn = typeof root.querySelector === 'function' ? root.querySelector('[data-lia-preview-close]') : null;
-    if (closeBtn) closeBtn.onclick=()=>void closeLiaUi();
+    if (closeBtn) closeBtn.onclick=()=>{void closeLiaUi().catch(()=>{});};
     const retryBtn = typeof root.querySelector === 'function' ? root.querySelector('[data-lia-preview-retry]') : null;
-    if (retryBtn) retryBtn.onclick=()=>void refreshPreview({skipCapture:true});
+    if (retryBtn) retryBtn.onclick=()=>{if(retryBtn.disabled)return;retryBtn.disabled=true;void refreshPreview({skipCapture:true});};
   }
   async function refreshPreview(options = {}) {
     const root = document.getElementById("dpg-preview-root");
@@ -22550,7 +22553,7 @@ ${revisionText}`);
     } catch (error) {
       if (!current()) return null;
       renderLiaPreviewState(root,error);
-      setStatus(`미리보기 실패: ${error?.message || error}`, "error");
+      // The failure view already shows a bounded diagnostic code; do not echo raw host errors.
       return null;
     } finally {
       if(previewTimer!==null)clearTimeout(previewTimer);
@@ -23245,7 +23248,7 @@ ${revisionText}`);
     cancelLiaUpdateNotice();
     await api.showContainer("fullscreen");
     document.removeEventListener("click",closeLiaMenu);document.addEventListener("click",closeLiaMenu);
-    if (liaUiVisible && document.querySelector(".frame .app #dpg-status")) return;
+    if (liaUiVisible && document.querySelector(".frame .app #dpg-status") && !document.querySelector("[data-lia-preview-state]")) return;
     liaUiVisible = true;
     document.body.className = "t-lia";
     document.body.innerHTML = `<style>${LIA_MOCKUP_CSS}</style><div class="stage"><div class="frame" data-device="desktop"><div class="app" id="dpg-preview-root"></div></div></div>`;
