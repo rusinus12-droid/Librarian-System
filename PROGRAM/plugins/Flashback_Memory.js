@@ -3,6 +3,91 @@
 //@api 3.0
 //@version 1.3.8
 //@allowed-ipc serial_gradation_agents_for_rp
+//@allowed-ipc flashback_hayaku_bridge
+//@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
+//@arg memory_suite_server_url string Librarian System Server URL; blank uses http://127.0.0.1:47630
+//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/Flashback_Memory.js
+//@arg mode string off|normal; blank uses normal
+//@arg embedding_provider string openai|voyageai|voyage_context|gemini|gemini-embedding|cohere|jina|mistral|bedrock|dashscope|ollama|lmstudio|localai|tei|vertex|vertex-embedding|openai_compat|openai_compat_local|custom_http|custom; blank leaves model embedding unconfigured; legacy hash is migration-only
+//@arg embedding_url string Embedding endpoint/base URL; blank uses the selected provider default
+//@arg embedding_endpoint string Optional exact embedding endpoint; blank derives it from embedding_url
+//@arg embedding_model string Embedding model name; blank uses the selected provider default (hash: nomic-embed-text)
+//@arg embedding_key string Optional API key; blank means no arg-level key
+//@arg embedding_enabled string true|false; blank uses true
+//@arg embedding_timeout_ms string Embedding request timeout in milliseconds; blank uses 30000
+//@arg embedding_dimensions string Requested output dimensions; blank or 0 uses provider auto detection
+//@arg hook_recall_timeout_ms string Maximum total recall time inside beforeRequest; blank uses 20000
+//@arg embedding_batch_size string Number of chunks embedded per request when endpoint supports batching; blank uses 8
+//@arg embedding_max_retries string Retry count for transient embedding failures; blank uses 2
+//@arg embedding_query_task string Optional provider query task/input type
+//@arg embedding_document_task string Optional provider document task/input type
+//@arg embedding_query_prefix string Optional query prefix
+//@arg embedding_document_prefix string Optional document prefix
+//@arg embedding_normalize string true|false; blank uses true
+//@arg fallback_hash_embedding string Legacy setting, ignored; model-only retrieval never substitutes local vectors
+//@arg hash_dimensions string Legacy vector metadata compatibility only; no new hash embeddings
+//@arg top_k string Number of vector records injected per request; blank uses 12
+//@arg min_score string Minimum cosine score for recall; blank uses 0.12
+//@arg lexical_weight string Small lexical overlap boost added to cosine score; blank uses 0.12
+//@arg max_injection_chars string Maximum dynamic evidence characters injected into beforeRequest; blank uses 4000
+//@arg injection_position string before_current_input|last_system|before_last_user; blank uses before_current_input
+//@arg prompt_cache_mode string off|existing_only|safe_auto; blank uses existing_only
+//@arg chunk_chars string Maximum source chunk characters before embedding; blank uses 1200
+//@arg chunk_overlap string Overlap characters between chunks; blank uses 160
+//@arg max_response_items string Maximum complete captured U+A turns retained per chat scope; blank uses 1200
+//@arg capture_after_request string true|false; blank uses true
+//@arg min_capture_chars string Legacy compatibility only; finalized non-empty responses are always captured
+//@arg enable_gui string true|false; blank uses true
+//@arg auto_open_gui string true|false; blank uses false (legacy compatibility only)
+//@arg debug_log string true|false; blank uses false
+//@arg operation_log_enabled string true|false; blank uses false
+//@arg heuristic_recall string true|false; blank uses true
+//@arg candidate_limit string Vector candidates to rerank before MMR; blank uses 80
+//@arg evidence_gate string true|false; blank uses true
+//@arg mmr_enabled string true|false; blank uses true
+//@arg mmr_lambda string 0.0-1.0, higher means relevance over diversity; blank uses 0.72
+//@arg recency_half_life_days string Half-life used for response recency boost; blank uses 14
+//@arg recency_half_life_turns string Half-life in story turns used for response recency when turnIndex exists; blank uses 6
+//@arg continuation_recent_items string Number of recent response records boosted for continuation prompts; blank uses 5
+//@arg episode_index_enabled string true|false; blank uses true
+//@arg episode_boundary_similarity string Cosine threshold for response-to-response episode boundary detection; blank uses 0.35
+//@arg current_scene_tail_enabled string true|false; blank uses true
+//@arg current_scene_tail_turns string Recent response turns considered current scene tail; blank uses 2
+//@arg current_scene_tail_limit string Maximum current scene tail candidates; blank uses 4
+//@arg current_scene_tail_min_keep string Minimum current scene tail records kept after MMR; blank uses 1
+//@arg entity_focused_recall_enabled string true|false; blank uses true
+//@arg entity_focused_per_anchor string Per-anchor entity-focused candidates; blank uses 1
+//@arg entity_focused_max_total string Maximum total entity-focused candidates; blank uses 3
+//@arg max_recall_per_source_hash string Hard cap for final recall records sharing sourceHash; blank uses 2
+//@arg max_recall_per_turn string Hard cap for final recall records sharing sourceType+turnIndex; blank uses 3
+//@arg latest_turn_boost string Additional score boost for the latest captured response turn; blank uses 0.12
+//@arg continuation_tail_messages string Legacy previous-turn context setting retained for compatibility; blank uses 4
+//@arg recall_relatedness_weight string 0-100 relevance preference after the evidence gate; blank uses 70
+//@arg recall_recency_weight string 0-100 story-turn recency preference after the evidence gate; blank uses 30
+//@arg recall_context_messages string Maximum recent user/assistant messages used as a separate scene-context query; blank uses 5
+//@arg adaptive_context_window string true|false; blank uses true
+//@arg multi_query_recall string true|false; blank uses true
+//@arg contradiction_bundle_enabled string true|false; blank uses true
+//@arg multi_resolution_recall_enabled string true|false; blank uses true
+//@arg recall_stability_enabled string true|false; blank uses true
+//@arg recall_stability_boost string 0.0-0.08 request-local scene persistence boost; blank uses 0.025
+//@arg gate_high_cosine string Cosine threshold that can pass the evidence gate directly; blank uses 0.42
+//@arg gate_exact_anchor string Exact-anchor evidence threshold; blank uses 0.14
+//@arg gate_keyword_overlap string Keyword-overlap evidence threshold; blank uses 0.12
+//@arg gate_name_overlap string Name-overlap evidence threshold; blank uses 0.18
+//@arg raw_excerpt_mode string sentence_window|record; blank uses sentence_window
+//@arg raw_sentence_window string Sentences retained around the best matching sentence; blank uses 1
+//@arg cold_start_scope string current|all; blank uses current
+//@arg cold_start_history_limit string Maximum chat history items synchronized into response turns; blank uses 0 (unlimited)
+//@arg episode_min_records string Minimum response records per episode; blank uses 2
+//@arg episode_max_records string Maximum response records per episode; blank uses 12
+//@arg episode_recall_count string Episode centroids considered during recall; blank uses 3
+//@arg episode_child_limit string Maximum child records expanded from matching episodes; blank uses 24
+//@arg structured_state_enabled string true|false; blank uses true
+//@arg recall_shard_limit string Maximum indexed storage shards loaded for one recall; blank uses 12
+//@arg recall_full_scan_threshold string Full-scan scopes at or below this shard count; blank uses 8
+//@arg episode_hierarchy_enabled string true|false; blank uses true
+//@arg episode_parent_size string Scene episodes grouped into one higher-level session index; blank uses 6
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
  * verified/current are assertions supplied AFTER the owner's existing final
@@ -301,91 +386,6 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 /* v0.11.18 makes Librarian System data moves observable and non-blocking in the server-connection side panel. Initial pluginStorage→server seeding, manual mirror sync, and server→pluginStorage restore now run as resumable background jobs with live phase, item count, bytes, elapsed time, last activity, retry/failure, and current-key diagnostics; the prior storage mode stays authoritative until baseline/readback/integrity verification completes. */
 /* v0.11.17 adds a first-class 서버 연결 page to the Flashback side panel. The page exposes plugin-only/mirror/server-only storage modes, the loopback server URL, live connection testing, server/protocol status, synchronization, recovery, and guarded pluginStorage deletion without changing recall or capture behavior. */
 /* v0.11.16 adds the RE:TRACE server-scope deletion owner proof. Before an active server scope can be removed, Flashback verifies the exact scoped server keys in pluginStorage/local storage, restores server-only data when necessary, and durably switches to plugin_only. Recall, capture, vector, archive, and worldline behavior are unchanged. */
-//@allowed-ipc flashback_hayaku_bridge
-//@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
-//@arg memory_suite_server_url string Librarian System Server URL; blank uses http://127.0.0.1:47630
-//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/Flashback_Memory.js
-//@arg mode string off|normal; blank uses normal
-//@arg embedding_provider string openai|voyageai|voyage_context|gemini|gemini-embedding|cohere|jina|mistral|bedrock|dashscope|ollama|lmstudio|localai|tei|vertex|vertex-embedding|openai_compat|openai_compat_local|custom_http|custom; blank leaves model embedding unconfigured; legacy hash is migration-only
-//@arg embedding_url string Embedding endpoint/base URL; blank uses the selected provider default
-//@arg embedding_endpoint string Optional exact embedding endpoint; blank derives it from embedding_url
-//@arg embedding_model string Embedding model name; blank uses the selected provider default (hash: nomic-embed-text)
-//@arg embedding_key string Optional API key; blank means no arg-level key
-//@arg embedding_enabled string true|false; blank uses true
-//@arg embedding_timeout_ms string Embedding request timeout in milliseconds; blank uses 30000
-//@arg embedding_dimensions string Requested output dimensions; blank or 0 uses provider auto detection
-//@arg hook_recall_timeout_ms string Maximum total recall time inside beforeRequest; blank uses 20000
-//@arg embedding_batch_size string Number of chunks embedded per request when endpoint supports batching; blank uses 8
-//@arg embedding_max_retries string Retry count for transient embedding failures; blank uses 2
-//@arg embedding_query_task string Optional provider query task/input type
-//@arg embedding_document_task string Optional provider document task/input type
-//@arg embedding_query_prefix string Optional query prefix
-//@arg embedding_document_prefix string Optional document prefix
-//@arg embedding_normalize string true|false; blank uses true
-//@arg fallback_hash_embedding string Legacy setting, ignored; model-only retrieval never substitutes local vectors
-//@arg hash_dimensions string Legacy vector metadata compatibility only; no new hash embeddings
-//@arg top_k string Number of vector records injected per request; blank uses 12
-//@arg min_score string Minimum cosine score for recall; blank uses 0.12
-//@arg lexical_weight string Small lexical overlap boost added to cosine score; blank uses 0.12
-//@arg max_injection_chars string Maximum dynamic evidence characters injected into beforeRequest; blank uses 4000
-//@arg injection_position string before_current_input|last_system|before_last_user; blank uses before_current_input
-//@arg prompt_cache_mode string off|existing_only|safe_auto; blank uses existing_only
-//@arg chunk_chars string Maximum source chunk characters before embedding; blank uses 1200
-//@arg chunk_overlap string Overlap characters between chunks; blank uses 160
-//@arg max_response_items string Maximum complete captured U+A turns retained per chat scope; blank uses 1200
-//@arg capture_after_request string true|false; blank uses true
-//@arg min_capture_chars string Legacy compatibility only; finalized non-empty responses are always captured
-//@arg enable_gui string true|false; blank uses true
-//@arg auto_open_gui string true|false; blank uses false (legacy compatibility only)
-//@arg debug_log string true|false; blank uses false
-//@arg operation_log_enabled string true|false; blank uses false
-//@arg heuristic_recall string true|false; blank uses true
-//@arg candidate_limit string Vector candidates to rerank before MMR; blank uses 80
-//@arg evidence_gate string true|false; blank uses true
-//@arg mmr_enabled string true|false; blank uses true
-//@arg mmr_lambda string 0.0-1.0, higher means relevance over diversity; blank uses 0.72
-//@arg recency_half_life_days string Half-life used for response recency boost; blank uses 14
-//@arg recency_half_life_turns string Half-life in story turns used for response recency when turnIndex exists; blank uses 6
-//@arg continuation_recent_items string Number of recent response records boosted for continuation prompts; blank uses 5
-//@arg episode_index_enabled string true|false; blank uses true
-//@arg episode_boundary_similarity string Cosine threshold for response-to-response episode boundary detection; blank uses 0.35
-//@arg current_scene_tail_enabled string true|false; blank uses true
-//@arg current_scene_tail_turns string Recent response turns considered current scene tail; blank uses 2
-//@arg current_scene_tail_limit string Maximum current scene tail candidates; blank uses 4
-//@arg current_scene_tail_min_keep string Minimum current scene tail records kept after MMR; blank uses 1
-//@arg entity_focused_recall_enabled string true|false; blank uses true
-//@arg entity_focused_per_anchor string Per-anchor entity-focused candidates; blank uses 1
-//@arg entity_focused_max_total string Maximum total entity-focused candidates; blank uses 3
-//@arg max_recall_per_source_hash string Hard cap for final recall records sharing sourceHash; blank uses 2
-//@arg max_recall_per_turn string Hard cap for final recall records sharing sourceType+turnIndex; blank uses 3
-//@arg latest_turn_boost string Additional score boost for the latest captured response turn; blank uses 0.12
-//@arg continuation_tail_messages string Legacy previous-turn context setting retained for compatibility; blank uses 4
-//@arg recall_relatedness_weight string 0-100 relevance preference after the evidence gate; blank uses 70
-//@arg recall_recency_weight string 0-100 story-turn recency preference after the evidence gate; blank uses 30
-//@arg recall_context_messages string Maximum recent user/assistant messages used as a separate scene-context query; blank uses 5
-//@arg adaptive_context_window string true|false; blank uses true
-//@arg multi_query_recall string true|false; blank uses true
-//@arg contradiction_bundle_enabled string true|false; blank uses true
-//@arg multi_resolution_recall_enabled string true|false; blank uses true
-//@arg recall_stability_enabled string true|false; blank uses true
-//@arg recall_stability_boost string 0.0-0.08 request-local scene persistence boost; blank uses 0.025
-//@arg gate_high_cosine string Cosine threshold that can pass the evidence gate directly; blank uses 0.42
-//@arg gate_exact_anchor string Exact-anchor evidence threshold; blank uses 0.14
-//@arg gate_keyword_overlap string Keyword-overlap evidence threshold; blank uses 0.12
-//@arg gate_name_overlap string Name-overlap evidence threshold; blank uses 0.18
-//@arg raw_excerpt_mode string sentence_window|record; blank uses sentence_window
-//@arg raw_sentence_window string Sentences retained around the best matching sentence; blank uses 1
-//@arg cold_start_scope string current|all; blank uses current
-//@arg cold_start_history_limit string Maximum chat history items synchronized into response turns; blank uses 0 (unlimited)
-//@arg episode_min_records string Minimum response records per episode; blank uses 2
-//@arg episode_max_records string Maximum response records per episode; blank uses 12
-//@arg episode_recall_count string Episode centroids considered during recall; blank uses 3
-//@arg episode_child_limit string Maximum child records expanded from matching episodes; blank uses 24
-//@arg structured_state_enabled string true|false; blank uses true
-//@arg recall_shard_limit string Maximum indexed storage shards loaded for one recall; blank uses 12
-//@arg recall_full_scan_threshold string Full-scan scopes at or below this shard count; blank uses 8
-//@arg episode_hierarchy_enabled string true|false; blank uses true
-//@arg episode_parent_size string Scene episodes grouped into one higher-level session index; blank uses 6
 
 /* v0.11.16 adds RE:TRACE/Librarian System handoff synchronization: server/mirror storage is verified before and after owner-led session adoption, while plugin-only behavior is unchanged. */
 /*

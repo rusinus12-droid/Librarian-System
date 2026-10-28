@@ -1,7 +1,59 @@
 //@name hayaku_locator_continuity
 //@display-name HAYAKU · Locator Continuity v3.3.8
+//@api 3.0
 //@version 3.3.8
 //@allowed-ipc serial_gradation_agents_for_rp
+//@author rusinus12@gmail.com
+//@allowed-ipc flashback_hayaku_bridge
+//@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
+//@arg memory_suite_server_url string Librarian System Server URL; blank uses http://127.0.0.1:47630
+//@allowed-ipc flashback_hayaku_bridge
+//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/HAYAKU_Locator_Continuity.js
+//@arg hayaku_enabled string true|false
+//@arg hayaku_mode string auto|balanced|fast|deep
+//@arg hayaku_prompt_mode string auto|balanced|full
+//@arg hayaku_packet_output_slot string auto|tail|wrapper|footer
+//@arg hayaku_packet_closing_tag string Optional closing tag, e.g. </Story>
+//@arg hayaku_prompt_cache string off|structural|native
+//@arg hayaku_max_items_per_axis string 3
+//@arg hayaku_recall_short_max_age string Optional source-turn age cutoff; all five temporal fields required
+//@arg hayaku_recall_medium_max_age string Optional source-turn age cutoff, greater than short cutoff
+//@arg hayaku_recall_short_turn_quota string Optional unique source-turn quota, 0 to 24
+//@arg hayaku_recall_medium_turn_quota string Optional unique source-turn quota, 0 to 24
+//@arg hayaku_recall_long_turn_quota string Optional unique source-turn quota, 0 to 24
+//@arg hayaku_bm25_channel string true|false
+//@arg hayaku_bm25_weight string 0.08
+//@arg hayaku_memory_language string ko|en|ja|zh|source; blank uses source to follow the completed text language
+//@arg hayaku_debug string true|false
+//@arg hayaku_packet_recovery string true|false
+//@arg hayaku_after_request_auto_repair string true|false; repair the current missing/unusable packet once inside the normal afterRequest pipeline; blank uses true
+//@arg hayaku_recovery_extra_calls string 0|1; explicit structural recovery allowance per operation; default 0
+//@arg hayaku_background_auto_repair string true|false; retired and ignored; afterRequest repair is the only automatic stage
+//@arg hayaku_native_auto_repair string true|false; retired and ignored
+//@arg risuai_aux_allow_plugins string true|false; allow a plugin-provided RisuAI auxiliary model; blank uses true
+//@arg hayaku_cold_start_batch_turns string 1|5|10; maximum completed U+A turns per Other Ax Cold Start call; blank uses 1
+//@arg hayaku_packet_coverage_audit string true|false
+//@arg hayaku_packet_coverage_fallback_recall string true|false
+//@arg hayaku_display_scrubber string true|false
+//@arg hayaku_recall_relatedness_weight string 0-100 relevance preference after retrieval gate; blank uses 70
+//@arg hayaku_recall_recency_weight string 0-100 story-turn recency preference after retrieval gate; blank uses 30
+//@arg hayaku_recall_context_messages string Fixed recent user/assistant message window before the current input; blank uses 5
+//@arg hayaku_adaptive_context_window string true|false; blank uses true
+//@arg hayaku_multi_query_recall string true|false; blank uses true
+//@arg hayaku_contradiction_bundle string true|false; blank uses true
+//@arg hayaku_multi_resolution_recall string true|false; blank uses true
+//@arg hayaku_recall_stability string true|false; blank uses true
+//@arg hayaku_recall_stability_boost string 0.0-0.08 request-local scene persistence boost; blank uses 0.025
+//@arg hayaku_recovery_vault string true|false; deprecated compatibility argument; exact visible U+A Recovery Journal preservation is always enabled
+//@arg hayaku_raw_passage_recall string true|false; search Recovery Journal evidence with exact/BM25/trigram/proximity passage retrieval; blank uses true
+//@arg hayaku_raw_recall_max_items string retired and ignored; raw passage recall is bounded by hayaku_raw_recall_max_chars
+//@arg hayaku_raw_recall_max_chars string Maximum total verbatim recovery evidence characters; blank uses 2400
+//@arg hayaku_raw_recall_min_score string retired and ignored; raw passage recall uses rank fusion, not a score floor
+//@arg hayaku_typed_memory_graph string true|false; derive deterministic typed relations between packet memory rows; blank uses true
+//@arg hayaku_graph_closure_recall string true|false; admit bounded typed-neighbor evidence after the normal retrieval gate; blank uses true
+//@arg hayaku_graph_closure_max_nodes string Maximum typed graph closure rows kept per request; blank uses 8
+//@arg hayaku_hierarchical_episode_memory string true|false; build router-only scene/turn episode hierarchy from L1 rows; blank uses true
+//@arg hayaku_episode_router_max_hits string Maximum episode routers activated per request; blank uses 3
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
  * verified/current are assertions supplied AFTER the owner's existing final
@@ -255,9 +307,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 /* 3.0.50 / Integrated Implementation 01: Shared Source Edit Consent 1.1.0 and explicit selected keys. Existing recovery/output/packet contracts retained. Common diff UI is a subsequent phase. */
 /* v3.0.49: exact completed-turn coverage, illustration-neutral identities, visible source-edit review, preserve-until-replacement consent, and stale-debt reconciliation. */
 /* v3.0.45 / BOOK_UX 5.18: verified RisuAI native branch prefixes, source-bound adoption, preserved consent and read-only lineage status. */
-//@author rusinus12@gmail.com
 /* v3.0.47 / BOOK_UX 5.23: align grounding instructions, readable failure review, preview/source-bound user adoption, verified maintenance I/O and nonblocking recovery minimization. */
-//@api 3.0
 /* v3.0.46 / BOOK_UX 5.20: scoped authoring card below overview metrics; source-edit controls in Recovery Journal; native chat lineage integrated into Worldline. Presentation and guarded review entry only; packet, consent and storage authority unchanged. */
 /* v3.0.43: GUI draft lifetime, truthful record/probe status, paged ledger, main-model authoring receipt, multilingual explicit output slots and schema-first semantic authoring. No extra normal-path model call or memory schema migration. */
 /* v3.0.44: source-edit confirmation, old-carrier exclusion and consent-bound targeted Other Ax repair; normal response-model packet authoring is unchanged. */
@@ -329,9 +379,6 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 /* v2.4.20 adds the shared Librarian System background-sync progress UI. Initial server seeding, mirror synchronization, and restore expose live phase/count/bytes/timing/retry diagnostics while keeping HAYAKU packet authority and existing ledger semantics unchanged; the active storage mode is not committed until server baseline verification finishes. */
 /* v2.4.19 adds a first-class 서버 연결 page to the HAYAKU side panel with storage-mode selection, loopback URL editing, connection testing, server/protocol status, synchronization, recovery, and guarded pluginStorage deletion. Packet capture, binding, recall, and the live-chat-primary dual-ledger contract are unchanged. */
 /* v2.4.18 adds the RE:TRACE server-scope deletion owner proof while preserving HAYAKU's live-chat-primary dual-ledger contract. Active server-scope deletion first verifies/restores the exact ledger data in pluginStorage and switches durably to plugin_only; packet capture, binding, recall, and archive semantics are unchanged. */
-//@allowed-ipc flashback_hayaku_bridge
-//@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
-//@arg memory_suite_server_url string Librarian System Server URL; blank uses http://127.0.0.1:47630
 
 /* v2.4.18 adds RE:TRACE/Librarian System handoff synchronization: mirror/server storage is verified around owner-led session adoption without changing live-chat packet authority or source-immutable handoff semantics. */
 /* v2.4.16 adds three Librarian System storage modes with plugin-only as the default, live pluginStorage+server mirroring, server-only storage, verified server-to-pluginStorage recovery, and guarded deletion of only server-backed HAYAKU pluginStorage data after server integrity/coverage proof. Mirror-mode deletion switches automatically to server-only; live-chat packet authority and RE:TRACE compatibility beacons remain untouched. */
@@ -374,53 +421,6 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 /* v2.3.58 enables the render-only packet scrubber by default, verifies damaged and incomplete packet concealment, and includes output-observation evidence while finalized binding is still waiting. */
 /* v2.3.57 performs one authoritative final-chat reconcile before binding timeout, separates capture durability from binding status, and carries exact-hash rejection for mismatched request nonces through later requests and verified native chat copies. */
 /* v2.3.56 gzip-compresses immutable cold archive layers with browser CompressionStream while keeping compact metadata sidecars uncompressed; archive bodies are decompressed lazily and cached. */
-//@allowed-ipc flashback_hayaku_bridge
-//@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/HAYAKU_Locator_Continuity.js
-//@arg hayaku_enabled string true|false
-//@arg hayaku_mode string auto|balanced|fast|deep
-//@arg hayaku_prompt_mode string auto|balanced|full
-//@arg hayaku_packet_output_slot string auto|tail|wrapper|footer
-//@arg hayaku_packet_closing_tag string Optional closing tag, e.g. </Story>
-//@arg hayaku_prompt_cache string off|structural|native
-//@arg hayaku_max_items_per_axis string 3
-//@arg hayaku_recall_short_max_age string Optional source-turn age cutoff; all five temporal fields required
-//@arg hayaku_recall_medium_max_age string Optional source-turn age cutoff, greater than short cutoff
-//@arg hayaku_recall_short_turn_quota string Optional unique source-turn quota, 0 to 24
-//@arg hayaku_recall_medium_turn_quota string Optional unique source-turn quota, 0 to 24
-//@arg hayaku_recall_long_turn_quota string Optional unique source-turn quota, 0 to 24
-//@arg hayaku_bm25_channel string true|false
-//@arg hayaku_bm25_weight string 0.08
-//@arg hayaku_memory_language string ko|en|ja|zh|source; blank uses source to follow the completed text language
-//@arg hayaku_debug string true|false
-//@arg hayaku_packet_recovery string true|false
-//@arg hayaku_after_request_auto_repair string true|false; repair the current missing/unusable packet once inside the normal afterRequest pipeline; blank uses true
-//@arg hayaku_recovery_extra_calls string 0|1; explicit structural recovery allowance per operation; default 0
-//@arg hayaku_background_auto_repair string true|false; retired and ignored; afterRequest repair is the only automatic stage
-//@arg hayaku_native_auto_repair string true|false; retired and ignored
-//@arg risuai_aux_allow_plugins string true|false; allow a plugin-provided RisuAI auxiliary model; blank uses true
-//@arg hayaku_cold_start_batch_turns string 1|5|10; maximum completed U+A turns per Other Ax Cold Start call; blank uses 1
-//@arg hayaku_packet_coverage_audit string true|false
-//@arg hayaku_packet_coverage_fallback_recall string true|false
-//@arg hayaku_display_scrubber string true|false
-//@arg hayaku_recall_relatedness_weight string 0-100 relevance preference after retrieval gate; blank uses 70
-//@arg hayaku_recall_recency_weight string 0-100 story-turn recency preference after retrieval gate; blank uses 30
-//@arg hayaku_recall_context_messages string Fixed recent user/assistant message window before the current input; blank uses 5
-//@arg hayaku_adaptive_context_window string true|false; blank uses true
-//@arg hayaku_multi_query_recall string true|false; blank uses true
-//@arg hayaku_contradiction_bundle string true|false; blank uses true
-//@arg hayaku_multi_resolution_recall string true|false; blank uses true
-//@arg hayaku_recall_stability string true|false; blank uses true
-//@arg hayaku_recall_stability_boost string 0.0-0.08 request-local scene persistence boost; blank uses 0.025
-//@arg hayaku_recovery_vault string true|false; deprecated compatibility argument; exact visible U+A Recovery Journal preservation is always enabled
-//@arg hayaku_raw_passage_recall string true|false; search Recovery Journal evidence with exact/BM25/trigram/proximity passage retrieval; blank uses true
-//@arg hayaku_raw_recall_max_items string retired and ignored; raw passage recall is bounded by hayaku_raw_recall_max_chars
-//@arg hayaku_raw_recall_max_chars string Maximum total verbatim recovery evidence characters; blank uses 2400
-//@arg hayaku_raw_recall_min_score string retired and ignored; raw passage recall uses rank fusion, not a score floor
-//@arg hayaku_typed_memory_graph string true|false; derive deterministic typed relations between packet memory rows; blank uses true
-//@arg hayaku_graph_closure_recall string true|false; admit bounded typed-neighbor evidence after the normal retrieval gate; blank uses true
-//@arg hayaku_graph_closure_max_nodes string Maximum typed graph closure rows kept per request; blank uses 8
-//@arg hayaku_hierarchical_episode_memory string true|false; build router-only scene/turn episode hierarchy from L1 rows; blank uses true
-//@arg hayaku_episode_router_max_hits string Maximum episode routers activated per request; blank uses 3
 
 /*
  * HAYAKU · Locator Continuity Plugin
@@ -1593,6 +1593,7 @@ const MemorySuiteExecutionContract = (() => {
   // Viewer-initiated full-ledger reads are not on a request hook; a large inline
   // ledger can need several seconds through the host transport.
   const HAYAKU_VIEWER_LEDGER_READ_TIMEOUT_MS = 10000;
+  const HAYAKU_STORAGE_READ_FLIGHT_MAX_AGE_MS = 30000;
   const HOST_REQUEST_DEADLINE_MS = 30000;
   const COPIED_CHAT_SOURCE_CACHE_POSITIVE_TTL_MS = 60000;
   const COPIED_CHAT_SOURCE_CACHE_NEGATIVE_TTL_MS = 5000;
@@ -14065,7 +14066,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const fence = storageWriteFence.get(key);
       const writeToken = `${storageWriteSequences.get(key) || 0}:${Number(fence?.revision || 0) || 0}`;
       const flight = storageReadFlights.get(key);
+      // A lost host reply must not pin every future retry to the same promise.
+      // Keep sharing slow transfers within a bounded window, then admit a fresh read.
+      const flightAgeMs = flight ? Date.now() - flight.startedAt : Infinity;
       const joined = Boolean(flight && flight.storage === storage && flight.authority === authority
+        && flightAgeMs >= 0 && flightAgeMs < HAYAKU_STORAGE_READ_FLIGHT_MAX_AGE_MS
         && flight.writeToken === writeToken && !(Number(fence?.pending || 0) > 0));
       let operation;
       if (joined) {
@@ -14074,7 +14079,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       } else {
         operation = Promise.resolve().then(maintenanceStorageRead(key) || (() => storage.getItem(key)));
         if (!(Number(fence?.pending || 0) > 0)) {
-          const entry = { storage, authority, writeToken, operation };
+          const entry = { storage, authority, writeToken, operation, startedAt: Date.now() };
           storageReadFlights.set(key, entry);
           operation.then(() => {}, () => {}).then(() => { if (storageReadFlights.get(key) === entry) storageReadFlights.delete(key); });
         }

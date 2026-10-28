@@ -6,8 +6,8 @@ const createBus=require('./libra_gradia_read_bus.cjs');
 const createOwner=require('../../tools/libra_gradia_unified_read.cjs');
 const fingerprint=v=>crypto.createHash('sha256').update(v).digest('hex');
 const wait=async(fn,label='condition',ms=120000)=>{const at=Date.now();while(Date.now()-at<ms){const v=fn();if(v)return v;await new Promise(r=>setTimeout(r,10));}throw Error('WAIT_TIMEOUT: '+label);};
-async function fixture(t,{native=false,writingMode='novel',unified=true,bus:providedBus,chat:providedChat,character:providedCharacter}={}){
- const bus=providedBus||createBus(),controls={current:true,onQuery:null,onModel:null,onPermission:null,onCurrent:null,denied:false},unloads=[],prompts=[],sent=[],copied=[];
+async function fixture(t,{native=false,writingMode='novel',unified=true,sendAvailable=true,bus:providedBus,chat:providedChat,character:providedCharacter}={}){
+ const bus=providedBus||createBus(),controls={current:true,onQuery:null,onModel:null,onCurrent:null,denied:false},unloads=[],prompts=[],sent=[],copied=[],permissions=[];
  const nativeHost=native?await require('./libra_memory_graph_reader_fixture.cjs').fixture({mode:'server_only',hostOverrides:bus.api('libra')}):null;
  const chat=providedChat||nativeHost?.f.chat||{id:'h',message:[{role:'user',chatId:'u1',data:'민아는 은빛 열쇠를 확인한다.'},{role:'assistant',chatId:'a1',data:'준호가 은빛 열쇠를 보관한 채 문 앞에서 기다렸다.'}]};
  const character=providedCharacter||nativeHost?.f.character||{chaId:'c',name:'민아',chats:[chat],chatPage:0,lorebook:[]};
@@ -52,9 +52,9 @@ async function fixture(t,{native=false,writingMode='novel',unified=true,bus:prov
   getCharacter:async()=>{await controls.onNativeRead?.();return character;},getChar:async()=>{await controls.onNativeRead?.();return character;},getCharacterFromIndex:async()=>{await controls.onNativeRead?.();return character;},
   getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getChatFromIndex:async()=>chat,
   getDatabase:async()=>({personas:[],selectedPersona:'',modules:[]}),nativeFetch:transport,fetch:transport,
-  requestPluginPermission:async name=>{if(name==='sendChat')await controls.onPermission?.();return true;},
-  showContainer:async()=>{},hideContainer:async()=>{},sendChat:async value=>{sent.push(value);return true;},
-  onUnload:async fn=>{unloads.push(fn);return true;}},testGlobals:{crypto:crypto.webcrypto,Response,window:dom.window,Element:dom.window.Element,document:dom.window.document,getComputedStyle:dom.window.getComputedStyle.bind(dom.window),MutationObserver:dom.window.MutationObserver,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),navigator:{clipboard:{writeText:async v=>{copied.push(v);}},userActivation:{isActive:true}}}});
+  requestPluginPermission:async name=>{permissions.push(name);return ['fetchLogs','db','mainDom','replacer'].includes(name);},
+  showContainer:async()=>{},hideContainer:async()=>{},sendChat:sendAvailable?async value=>{sent.push(value);if(controls.sendError)throw controls.sendError;return controls.sendResult??true;}:undefined,
+  onUnload:async fn=>{unloads.push(fn);return true;}},testGlobals:{crypto:crypto.webcrypto,Response,window:dom.window,Element:dom.window.Element,document:dom.window.document,getComputedStyle:dom.window.getComputedStyle.bind(dom.window),MutationObserver:dom.window.MutationObserver,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window),navigator:{clipboard:{writeText:async v=>{if(controls.clipboardError)throw controls.clipboardError;copied.push(v);}},userActivation:{isActive:true}}}});
  t.after(async()=>{await host.plugin.closeSettingsGui();for(const fn of unloads.reverse())await fn();dom.window.close();await owner?.dispose();await nativeHost?.cleanup();});
  if(unified){const status=await host.plugin.connectLibReadOnly(url);assert.equal(status.state,'connected',JSON.stringify(status));}
  await host.plugin.saveProviderPreset('writer',{provider:'openai',url:'https://api.openai.com/v1/chat/completions',key:'synthetic-only',model:'gpt-4o-mini-2024-07-18',request_format:'chat_completions',context_window:128000,max_tokens:4096,reasoning_preset:'off',reasoning_effort:'none',timeout_ms:5000,stream:false});
@@ -62,9 +62,9 @@ async function fixture(t,{native=false,writingMode='novel',unified=true,bus:prov
  const document=dom.window.document;
  const button=label=>[...document.querySelectorAll('button')].find(n=>n.textContent.trim()===label);
  const start=async(input='은빛 열쇠를 찾는 다음 장면을 제안해 줘.',beforeProceed=null)=>{const pending=host.plugin.continueSceneWithInputAssist();const selector='textarea[placeholder^="비워 두면 직전 상황 이어가기"]';await wait(()=>document.querySelector(selector),'composer');const editor=document.querySelector(selector);editor.value=input;await beforeProceed?.();button('진행').click();return {pending};};
- return {host,bus,controls,dom,document,button,start,wait,prompts,sent,copied,chat,character,scope,values,local,nativeHost,queries:()=>native?bus.messages.filter(m=>m.body.action==='capture').length:queries,
+ return {host,bus,controls,dom,document,button,start,wait,prompts,sent,copied,permissions,chat,character,scope,values,local,nativeHost,queries:()=>native?bus.messages.filter(m=>m.body.action==='capture').length:queries,
   async choices(){await wait(()=>{const status=host.plugin.getInputAssistSendStatus();if(status?.phase==='error'||status?.phase==='cancelled')throw Error('WRITER_FAILED: '+JSON.stringify(status));return document.querySelector('[data-input-choice-card]');},'choice picker',native?120000:15000);return [...document.querySelectorAll('[data-input-choice-card]')];},
-  async select(index=0){const cards=await this.choices();cards[index].querySelector('.btn--primary').click();await wait(()=>button('바로 전송'),'delivery picker');},
-  async done(pending,action='바로 전송'){button(action).click();return await pending;}};
+  async select(index=0){const cards=await this.choices();cards[index].querySelector('.btn--primary').click();await wait(()=>button('복사 후 직접 전송'),'delivery picker');},
+  async done(pending,action='복사 후 직접 전송'){button(action).click();return await pending;}};
 }
 module.exports={fixture,wait};

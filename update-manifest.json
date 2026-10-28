@@ -31,5 +31,9 @@
     "dataTemplate": "DATA",
     "updater": "UPDATER",
     "checksumFile": "SHA256SUMS.txt"
-  }
+  },
+  "qualification": "offline_candidate",
+  "status": "offline_candidate",
+  "updaterEligible": false,
+  "publicationReady": false
 }

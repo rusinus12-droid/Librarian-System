@@ -12,15 +12,18 @@ const end = source.indexOf('    const setStorageItemOutcome =', start);
 assert(start >= 0 && end > start);
 assert.match(source, /const HAYAKU_VIEWER_LEDGER_READ_TIMEOUT_MS = 10000;/);
 assert.match(source, /loadStorageLedger\(scope, \{ readTimeoutMs: HAYAKU_VIEWER_LEDGER_READ_TIMEOUT_MS \}\)/);
+const maxFlightAgeMs = Number(source.match(/const HAYAKU_STORAGE_READ_FLIGHT_MAX_AGE_MS = (\d+);/)[1]);
+assert(maxFlightAgeMs >= 10000, 'slow viewer reads retain their sharing window');
 
 function fixture() {
-  let reads = 0, value = JSON.stringify({ n: 0 });
+  let reads = 0, value = JSON.stringify({ n: 0 }), clock = 100000;
   const pending = [];
   const storage = { getItem: () => { reads++; return new Promise(resolve => pending.push(() => resolve(value))); } };
   const Memory = { compatCallStats: { calls: 0, timeouts: 0, failures: 0, storageWriteTimeouts: 0, storageReadTimeouts: 0, coalescedStorageReads: 0 }, lastWarnings: [], maintenanceReadAuthority: null };
   const storageWriteSequences = new Map(), storageWriteFence = new Map();
   const ctx = {
     Memory, storageWriteSequences, storageWriteFence, storageReadFlights: new Map(), HOST_API_CALL_TIMEOUT_MS: 1500,
+    HAYAKU_STORAGE_READ_FLIGHT_MAX_AGE_MS: maxFlightAgeMs, Date: { now: () => clock },
     MemorySuiteStorageBridge: { createPluginStorageProxy: s => s, shouldRoute: () => false },
     storageHost: () => ({ pluginStorage: storage }),
     clone: (v, f = null) => JSON.parse(JSON.stringify(v ?? f)), compact: (v, n) => String(v ?? '').slice(0, n), text: v => String(v ?? ''), ensureArray: v => Array.isArray(v) ? v : [],
@@ -28,6 +31,7 @@ function fixture() {
   };
   const read = vm.runInNewContext(source.slice(start, end) + '\n;getStorageItemOutcome;', ctx);
   return { read, Memory, reads: () => reads, flush: () => pending.splice(0).forEach(fn => fn()), setValue: v => { value = v; },
+    advance: ms => { clock += ms; }, releaseOldest: () => pending.shift()(),
     write: key => storageWriteSequences.set(key, (storageWriteSequences.get(key) || 0) + 1) };
 }
 
@@ -57,5 +61,19 @@ function fixture() {
   const retry = f.read('ledger'); await new Promise(r => setImmediate(r));
   assert.equal(f.reads(), 5);
   f.flush(); assert.equal((await retry).state, 'fulfilled');
+
+  // A lost reply cannot poison this key forever. Expiry admits a new physical
+  // transfer even though the earlier operation has not settled or been written.
+  const lost = fixture();
+  assert.equal((await lost.read('ledger', 100)).state, 'indeterminate');
+  lost.advance(maxFlightAgeMs);
+  const replacement = lost.read('ledger'); await new Promise(r => setImmediate(r));
+  assert.equal(lost.reads(), 2, 'an expired flight cannot capture a retry');
+  // A late completion of the old flight must not evict the replacement entry.
+  lost.releaseOldest(); await new Promise(r => setImmediate(r));
+  const joinedReplacement = lost.read('ledger'); await new Promise(r => setImmediate(r));
+  assert.equal(lost.reads(), 2, 'late cleanup preserves the new in-flight read');
+  lost.flush();
+  for (const outcome of await Promise.all([replacement, joinedReplacement])) assert.equal(outcome.state, 'fulfilled');
   console.log('hayaku storage read coalescing: ok');
 })().catch(error => { console.error(error); process.exit(1); });

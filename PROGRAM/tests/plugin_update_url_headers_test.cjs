@@ -6,6 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { maskSource } = require('../tools/lib/ultralight_scan.cjs');
 const program = path.resolve(__dirname, '..');
 const prefix = 'https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/';
 const filenames = [
@@ -20,6 +21,15 @@ const read = file => fs.readFileSync(file, 'utf8');
 function checkHeader(source, filename) {
   const lines = source.match(/^[ \t]*\/\/@update-url\b[^\r\n]*$/gm) || [];
   assert.deepEqual(lines, ['//@update-url ' + prefix + filename], filename + ': one exact update URL');
+  const directives = [];
+  const masked = maskSource(source, { onLineComment(start, end) {
+    if (/^\/\/@/.test(source.slice(start, end)) && /^[ \t]*$/.test(source.slice(source.lastIndexOf('\n', start - 1) + 1, start))) directives.push(start);
+  } });
+  const firstCode = masked.search(/\S/);
+  assert.ok(source.startsWith('//@name '), filename + ': metadata starts the script');
+  assert.ok(firstCode >= 0, filename + ': executable plugin body');
+  assert.match(source.slice(0, firstCode), /^\/\/@api 3\.0\s*$/m, filename + ': API declared before execution');
+  assert.ok(directives.every(start => start < firstCode), filename + ': all host directives precede executable helpers');
 }
 function version(source, filename) {
   const matches = [...source.matchAll(/^\/\/@version[ \t]+([^\r\n]+)$/gm)];

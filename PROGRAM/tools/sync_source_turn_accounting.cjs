@@ -13,9 +13,13 @@ function synchronize({root = path.resolve(__dirname, '..'), check = false} = {})
     if (starts > 1 || ends > 1 || starts !== ends) throw Error('Ambiguous source-turn accounting markers: ' + name);
     if (!starts) {
       if (check) throw Error('Missing source-turn accounting: ' + name);
-      const header = /^\/\/@version[^\n]*\n/m.exec(source);
-      if (!header) throw Error('Missing version header: ' + name);
-      const at = header.index + header[0].length;
+      // Keep every host directive ahead of executable helpers, including @arg
+      // and @allowed-ipc directives that follow @version.
+      const header = /^(?:\/\/@[^\r\n]*\r?\n)+/.exec(source);
+      if (!header || !/^\/\/@version\s/m.test(header[0]) || !/^\/\/@api\s/m.test(header[0])) {
+        throw Error('Missing leading plugin metadata: ' + name);
+      }
+      const at = header[0].length;
       return {file, source: source.slice(0, at) + shared + '\n' + source.slice(at)};
     }
     const start = source.indexOf(START), end = source.indexOf(END, start) + END.length;

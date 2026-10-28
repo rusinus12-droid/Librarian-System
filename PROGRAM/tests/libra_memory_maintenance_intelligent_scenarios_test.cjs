@@ -90,13 +90,10 @@ async function run() {
       ]
     };
 
-    const res = await host2.api.runMemoryMaintenance('auto', { preflight: mockPreflight });
-    assert.equal(res.status, 'completed');
-    assert.ok(Array.isArray(res.actionsTaken));
-    // Verify vector rebuild was triggered
-    const vectorAction = res.actionsTaken.find(a => a.includes('임베딩'));
-    assert(vectorAction, 'Maintenance must trigger embedding vector retry for failed vectors');
-    console.log('✓ Scenario 2 (Vector Re-embedding & Missing Handling): PASS');
+    const callsBefore = host2.wire.length;
+    await assert.rejects(host2.api.runMemoryMaintenance('auto', { preflight: mockPreflight }), /점검한 채팅 범위/);
+    assert.equal(host2.wire.length, callsBefore, 'unbound plans cannot authorize model or embedding work');
+    console.log('✓ Scenario 2 (Unbound recovery plan refused): PASS');
   } finally {
     await host2.close();
   }

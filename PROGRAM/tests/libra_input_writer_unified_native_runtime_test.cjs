@@ -16,8 +16,10 @@ test('actual LIBRA kernel and SQLite feed the explicit writer; canonical replace
  assert.ok(result.items.reduce((total,item)=>total+item.content.length,0)<=3000,'real writer receives the owner-selected 3000-character bundle');
  assert.equal(owner.f.control.calls.length,calls);assert.deepEqual(owner.server.storedRows().filter(row=>!row.key.includes(':memory-graph-control:v1:')),rows,'writer reading must not mutate memory');
  ({pending}=await f.start('은빛 열쇠를 다시 찾는 미전송 입력을 제안해 줘.'));await f.select();
- f.controls.onPermission=async()=>{const memory=owner.server.getMemory(),key=owner.server.getManifest().memories['1'].key;
-  await owner.server.mutate(key,{...memory,summary:'externally replaced canonical source'});};
- assert.equal(await f.done(pending),false);assert.equal(f.sent.length,0);assert.equal(f.copied.length,1);
+ const memory=owner.server.getMemory(),key=owner.server.getManifest().memories['1'].key;
+ await owner.server.mutate(key,{...memory,summary:'externally replaced canonical source'});
+ f.button('복사 후 직접 전송').click();await f.wait(()=>f.document.body.textContent.includes('복사 검증 실패'),'canonical replacement blocks copy');
+ assert.equal(f.sent.length,0);assert.equal(f.copied.length,1);
+ await f.host.plugin.cancelInputAssistSend();assert.equal(await pending,false);
  assert.equal(owner.f.control.calls.length,calls);assert.equal(f.queries(),2);
 });

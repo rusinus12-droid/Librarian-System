@@ -525,9 +525,8 @@ const extractHeader = src => {
 };
 
 const collectDirectives = (src) => {
-  const leadSet = new Set(extractHeader(src).split('\n').filter(Boolean));
+  const leadLines = extractHeader(src).split('\n').filter(Boolean).length;
   const ordered = [];
-  const seen = new Set();
   maskSource(src, {
     onLineComment: (start, end) => {
       const lineStart = src.lastIndexOf('\n', start - 1) + 1;
@@ -535,17 +534,13 @@ const collectDirectives = (src) => {
       const text = src.slice(start, end).trim();
       if (!/^\/\/[@!]/.test(text)) return;
       // A repeated directive is NOT always redundant: HAYAKU legitimately declares
-      // `//@allowed-ipc flashback_hayaku_bridge` twice (two bridges). Only skip a line that
-      // the leading block already emitted — everything else is preserved verbatim, in order.
-      if (leadSet.has(text) && seen.has(text)) return;
-      seen.add(text);
+      // `//@allowed-ipc flashback_hayaku_bridge` twice (two bridges). Collect each
+      // occurrence once, including duplicates inside the leading metadata block.
       ordered.push(text);
     }
   });
-  // Leading block first: the host parser reads name/display-name/version before anything.
-  const lead = [...leadSet];
-  const rest = ordered.filter(line => !leadSet.has(line));
-  return { text: [...lead, ...rest].join('\n'), leadLines: lead.length, directiveCount: lead.length + rest.length };
+  // Source order already places the leading identity block first.
+  return { text: ordered.join('\n'), leadLines, directiveCount: ordered.length };
 };
 
 // Remove the developer-only `_test` surface. It has TWO shapes and BOTH must go:
