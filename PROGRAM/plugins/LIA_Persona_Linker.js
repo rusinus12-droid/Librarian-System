@@ -15686,8 +15686,8 @@ ${revisionText}`);
     ].join("\n");
   }
 
-  async function generateRandomCandidates() {
-    let ctx = await getContext();
+  async function generateRandomCandidates(contextOptions = null) {
+    let ctx = await getContext(contextOptions);
     if (!isRandomGeneration(ctx)) throw new Error("후보 생성은 랜덤 신규 생성 모드에서만 사용할 수 있습니다.");
     preservedUserRewriteGuidanceText = getUserRewriteGuidance();
     preservedRandomConceptText = getRandomConcept();
@@ -18972,8 +18972,8 @@ ${revisionText}`);
     return { fields: unique(appliedFields, 24), result: updated };
   }
 
-  async function runLLMRewrite() {
-    let ctx = await getContext();
+  async function runLLMRewrite(contextOptions = null) {
+    let ctx = await getContext(contextOptions);
     preservedUserRewriteGuidanceText = getUserRewriteGuidance();
     preservedRandomConceptText = getRandomConcept();
     const generationMode = generationModeFor(ctx);
@@ -19114,6 +19114,7 @@ ${revisionText}`);
     let vaultMessage = "";
     let vaultTone = "ok";
     try {
+      if (contextOptions?.quickRandom) return {generationMode, personaName:canonicalName, personaSpec, worldBlueprint:blueprintState.blueprint};
       const snapshot = buildVaultSnapshot(ctx, completed);
       const vault = await readStoredResultVault();
       preservedResultVaultId = snapshot.id;
@@ -23154,6 +23155,85 @@ ${revisionText}`);
     if(event?.target?.closest?.('.menu'))return;
     document.querySelectorAll('.menu.is-open').forEach(menu=>{menu.classList.remove('is-open');menu.querySelector('[data-menu]')?.setAttribute('aria-expanded','false');});
   }
+  let randomChatPopup = null, randomChatButtonHandle = null;
+  const RANDOM_CHAT_BUTTON_ID = 'lia-random-persona-chat';
+  const LIA_RANDOM_POPUP_CSS = `${LIA_MOCKUP_CSS.match(/\.t-lia\s*\{[^}]*\}/)?.[0] || ''}
+    #lia-random-chat-popup{font-family:var(--font-sans,system-ui)}
+    #lia-random-chat-popup button{font:inherit;font-weight:650;min-height:44px;border:1px solid var(--border2);border-radius:var(--r-sm);padding:8px 14px;background:var(--surface);color:var(--text);cursor:pointer}
+    #lia-random-chat-popup button:hover{background:var(--surface3)}
+    #lia-random-chat-popup button:disabled{opacity:.5;cursor:default}
+    #lia-random-chat-popup [data-adopt],#lia-random-chat-popup [data-all]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+    #lia-random-chat-popup [data-adopt]:hover,#lia-random-chat-popup [data-all]:hover{background:var(--accent-hover)}
+    #lia-random-chat-popup [data-countdown]{margin-top:16px;padding:14px;background:var(--accent-soft);border:1px solid var(--accent-line);color:var(--accent-ink);border-radius:var(--r-md)}
+    #lia-random-chat-popup progress{accent-color:var(--accent)}
+    #lia-random-chat-popup [data-status],#lia-random-chat-popup article pre,#lia-random-chat-popup article p{color:var(--text2)}
+    #lia-random-chat-popup h2{letter-spacing:-.04em}
+    #lia-random-chat-popup h3{color:var(--accent-ink)}
+    #lia-random-chat-popup button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+    @media(max-width:600px){#lia-random-chat-popup header h2{min-width:100%}}
+  `;
+  async function openRandomPersonaChatPopup() {
+    if (randomChatPopup) { if(!randomChatPopup.closed)await api.showContainer?.('fullscreen'); return; }
+    const hadUi = liaUiVisible;
+    const priorDraft = {text:preservedLLMResultText,candidates:preservedRandomCandidates,selected:preservedSelectedRandomCandidateId,key:preservedRandomCandidateContextKey,
+      locks:preservedPersonaFieldLocks,audit:preservedPersonaAudit,evolution:preservedPersonaEvolution,evolutionSelection:preservedPersonaEvolutionSelection,
+      profile:preservedPersonaVariantProfile,translation:preservedTranslationText,vault:preservedResultVaultId};
+    let restored=false;
+    const restoreDraft=()=>{if(restored)return;restored=true;setGeneratedOutputText(priorDraft.text);preservedRandomCandidates=priorDraft.candidates;preservedSelectedRandomCandidateId=priorDraft.selected;preservedRandomCandidateContextKey=priorDraft.key;
+      preservedPersonaFieldLocks=priorDraft.locks;preservedPersonaAudit=priorDraft.audit;preservedPersonaEvolution=priorDraft.evolution;preservedPersonaEvolutionSelection=priorDraft.evolutionSelection;
+      preservedPersonaVariantProfile=priorDraft.profile;preservedTranslationText=priorDraft.translation;preservedResultVaultId=priorDraft.vault;};
+    await api.showContainer?.('fullscreen');
+    const overlay = document.createElement('div');
+    overlay.id = 'lia-random-chat-popup';
+    overlay.className = 't-lia';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:var(--scrim);display:flex;align-items:center;justify-content:center;padding:16px;font:14px/1.6 system-ui;color:var(--text)';
+    overlay.innerHTML = `<style>${LIA_RANDOM_POPUP_CSS}</style><section role="dialog" aria-modal="true" aria-labelledby="lia-random-title" style="background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);padding:24px;width:min(100%,1000px);max-height:92vh;overflow:auto;box-sizing:border-box"><header style="display:flex;gap:12px;flex-wrap:wrap;align-items:center"><h2 id="lia-random-title" style="margin:0;flex:1">랜덤 페르소나 생성하기</h2><button data-all disabled>선택지 모두 저장</button><button data-close>창 닫기</button></header><div data-countdown hidden role="status"><span></span> <progress max="10" value="10"></progress> <button data-cancel-close>자동 닫기 취소</button></div><p data-status role="status">세계관을 읽고 후보 3개를 생성합니다. 후보별 상세 생성에는 설정된 Provider 호출이 사용됩니다.</p><div data-cards style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px"></div></section>`;
+    document.body.appendChild(overlay);
+    const state = {closed:false,busy:true,timer:null,rows:[],scope:'',binding:'',deadline:0};
+    randomChatPopup = state;
+    const status = message => { if (!state.closed) overlay.querySelector('[data-status]').textContent = message; };
+    const stopTimer = () => {clearInterval(state.timer);state.timer=null;overlay.querySelector('[data-countdown]').hidden=true;};
+    const close = async () => {if(state.closed)return;state.closed=true;stopTimer();overlay.remove();if(!state.busy){restoreDraft();if(randomChatPopup===state)randomChatPopup=null;}if(!hadUi)await api.hideContainer?.();};
+    state.close = close;
+    overlay.querySelector('[data-close]').onclick = close;
+    overlay.querySelector('[data-cancel-close]').onclick = () => {stopTimer();status('자동 닫기를 취소했습니다. 후보는 계속 저장할 수 있습니다.');};
+    overlay.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();void close();}});
+    overlay.querySelector('[data-close]').focus();
+    const guard = async () => {if(state.closed||pluginUnloaded)throw Error('닫힌 작업입니다.');const ctx=await getLiveRuntimeContext();if(livePersonaScopeKey(ctx)!==state.scope)throw Error('현재 채팅이 바뀌었습니다. 다시 열어 주세요.');return ctx;};
+    const render = () => {
+      if(state.closed)return;
+      overlay.querySelector('[data-all]').disabled=state.busy||!state.rows.length||state.rows.every(row=>row.saved);
+      overlay.querySelector('[data-cards]').innerHTML=state.rows.map((row,index)=>`<article style="border:1px solid var(--border2);background:var(--surface);border-radius:var(--r-md);padding:18px;min-width:0"><h3>${htmlEscape(row.candidate.name)}</h3><pre style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:40vh;overflow:auto">${htmlEscape(row.result?.personaPrompt||[['gender','성별'],['age','나이'],['speciesRace','종족'],['origin','출신'],['role','역할'],['conceptHook','컨셉'],['personalityCore','성격'],['internalContradiction','내적 갈등'],['relationshipSeed','관계의 시작'],['noveltyReason','약점과 대가']].filter(([key])=>row.candidate[key]).map(([key,label])=>label+': '+row.candidate[key]).join('\n\n'))}</pre><p>${row.saved?'저장됨':'상세 생성 대기'}</p><button data-save="${index}" ${state.busy||row.saved?'disabled':''}>저장만</button> <button data-adopt="${index}" ${state.busy?'disabled':''}>저장 및 채택</button></article>`).join('');
+    };
+    const countdown = () => {stopTimer();state.deadline=Date.now()+10000;const box=overlay.querySelector('[data-countdown]');box.hidden=false;overlay.querySelector('section').scrollTop=0;const tick=()=>{const left=Math.max(0,Math.ceil((state.deadline-Date.now())/1000));box.querySelector('span').textContent=`채택·바인딩 완료 · ${left}초 후 자동으로 닫힙니다`;box.querySelector('progress').value=left;if(!left)void close();};tick();state.timer=setInterval(tick,200);};
+    const options = {...readContextOptions(),generationMode:GENERATION_MODE_RANDOM,quickRandom:true};
+    const save = async row => {
+      await guard();
+      if(!row.result){status(`${row.candidate.name} 상세 페르소나 생성 중…`);preservedSelectedRandomCandidateId=row.candidate.id;await runLLMRewrite(options);await guard();row.result=JSON.parse(JSON.stringify(requireLLMResult(['personaPrompt'])));}
+      if(!row.saved){await guard();const ctx=await getContext(options);await guard();row.saved=await upsertGeneratedPersona(ctx,row.result);}
+      return row.saved;
+    };
+    const action = async (index,adopt,all=false) => {
+      if(state.busy||state.closed)return;stopTimer();state.busy=true;render();
+      try {
+        if(all){for(const row of state.rows)await save(row);status('제안된 후보 3개를 모두 저장했습니다.');}
+        else {const row=state.rows[index];await save(row);
+          if(adopt){const ctx=await guard();if(String(ctx.chat?.bindedPersona||'')!==state.binding)throw Error('채팅의 Persona 연결이 변경되었습니다. 다시 열어 주세요.');
+            const catalog=await readLiaScopePersonaCatalog(),scope=catalog.rows.find(item=>item.scopeKey===state.scope),persona=catalog.personas.find(item=>item.id===row.saved.persona.id);
+            if(!scope||!persona||scope.personaId!==state.binding)throw Error('저장한 Persona 또는 현재 채팅 연결이 변경되었습니다. 다시 열어 주세요.');
+            const bound=await changeLiaScopePersona({scopeKey:state.scope,expectedRevision:scope.revision,personaId:persona.id,expectedPersonaRevision:persona.revision});state.binding=bound.personaId;
+            status(`${row.candidate.name} 저장·채택·바인딩 완료`);if(!state.closed)countdown();
+          }else status(`${row.candidate.name} 저장 완료 · 채팅 연결은 유지됩니다.`);
+        }
+      }catch(error){status(`완료하지 못했습니다: ${error?.message||error}`);}
+      finally{state.busy=false;if(state.closed){restoreDraft();if(randomChatPopup===state)randomChatPopup=null;}else render();}
+    };
+    overlay.querySelector('[data-all]').onclick=()=>action(0,false,true);
+    overlay.querySelector('[data-cards]').onclick=event=>{const button=event.target.closest('button');if(button?.hasAttribute('data-save'))void action(Number(button.dataset.save),false);if(button?.hasAttribute('data-adopt'))void action(Number(button.dataset.adopt),true);};
+    try {const ctx=await getLiveRuntimeContext();state.scope=livePersonaScopeKey(ctx);state.binding=String(ctx.chat?.bindedPersona||'');await guard();const bundle=await generateRandomCandidates(options);await guard();state.rows=bundle.candidates.map(candidate=>({candidate,result:null,saved:null}));status('후보 3개를 제안했습니다. 저장할 때 선택한 후보를 완성된 Persona로 상세 생성합니다.');}
+    catch(error){status(`후보 생성 실패: ${error?.message||error}`);}
+    finally{state.busy=false;if(state.closed){restoreDraft();if(randomChatPopup===state)randomChatPopup=null;}else render();}
+  }
   async function closeLiaUi() {
     cancelLiaUpdateNotice();
     liaUiVisible=false;liaPreviewEpoch+=1;
@@ -23161,6 +23241,7 @@ ${revisionText}`);
     await api.hideContainer?.();
   }
   async function openUI() {
+    if(randomChatPopup){await api.showContainer?.('fullscreen');return;}
     cancelLiaUpdateNotice();
     await api.showContainer("fullscreen");
     document.removeEventListener("click",closeLiaMenu);document.addEventListener("click",closeLiaMenu);
@@ -23243,6 +23324,8 @@ ${revisionText}`);
 
   async function handlePluginUnload() {
     if (pluginUnloaded) return;
+    if(randomChatPopup)await randomChatPopup.close();
+    if(randomChatButtonHandle)await unregisterUiRegistration(randomChatButtonHandle,RANDOM_CHAT_BUTTON_ID,['unregisterButton','removeButton'],[]);
     cancelManualLivePersonaAnalysis("plugin_unloaded");
     liaHealthRecovery?.clear();
     pluginUnloaded = true;
@@ -23871,6 +23954,7 @@ const createMemorySuiteLiaHealthAdapter = options => {
     id: LIA_BUTTON_UI_ID,
   };
   registeredButtonHandle = await api.registerButton?.(registeredButtonDescriptor, openUI);
+  randomChatButtonHandle = await api.registerButton?.({name:'리아로 랜덤 페르소나 생성하기',icon:'✨',iconType:'html',location:'chat',id:RANDOM_CHAT_BUTTON_ID},openRandomPersonaChatPopup);
   // Existing Persona objects, bindings, pending journals and legacy names stay
   // untouched at startup. A prior enabled flag never resumes tracking.
   try { await initializePersonaProofExperience(); } catch (_) {}
