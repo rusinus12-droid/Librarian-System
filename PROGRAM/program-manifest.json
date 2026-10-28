@@ -4032,8 +4032,8 @@
       "bytes": 4164981
     },
     "plugins/LIA_Persona_Linker.js": {
-      "sha256": "ece1460ba6474dab3f45ad6e5268872a2b1949058f1e5d114efdbbd287b80b59",
-      "bytes": 1661887
+      "sha256": "c2989c360066229a96a3dfa6edaa11a68f21b3ff6b2e7515e96f83def8b65013",
+      "bytes": 1663393
     },
     "plugins/LIBRA.js": {
       "sha256": "fd7e6ca0a96616d7e48e51c61369f7e5932ff7267aef2c058f7de265a628eef5",
@@ -11914,6 +11914,14 @@
     "tests/gradia_hayaku_opening_failure_test.cjs": {
       "sha256": "5bd1927802d6d1e8fc6aebb6ca68de503b89c25355c1165f7a1ac2ad439e2c8f",
       "bytes": 5574
+    },
+    "tests/lia_settings_save_in_place_test.cjs": {
+      "sha256": "93fb331b25681000f31a586cf95ecd9f5b64fd0e0c92df5b3673514ecff93ede",
+      "bytes": 6092
+    },
+    "docs/LIA_SETTINGS_SAVE_IN_PLACE_20261028.md": {
+      "sha256": "082f37640e71bb8648416798cc4da39ee8af62f3c8a649b1729d80e4d589f6cc",
+      "bytes": 1824
     }
   },
   "storageSdkVariants": {

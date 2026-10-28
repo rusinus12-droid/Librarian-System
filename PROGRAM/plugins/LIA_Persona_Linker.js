@@ -22873,9 +22873,14 @@ ${revisionText}`);
         activateTab("edit");
         setStatus("Persona 초안을 생성해 실제 결과를 다시 읽었습니다. 아직 RisuAI Persona는 변경하지 않았습니다.", "ok");
       } else if (action === "save-lore-limit") {
-        const value = await saveLoreCharacterLimit(document.getElementById("lia-max-chars")?.value);
+        const input = document.getElementById("lia-max-chars");
+        const submitted = input?.value;
+        const value = await saveLoreCharacterLimit(submitted);
+        if (input?.isConnected && input.value === submitted) {
+          const bar = document.getElementById("savebar");
+          if (bar) bar.hidden = true;
+        }
         setStatus(`자료 길이 설정을 ${value}자로 저장하고 RisuAI ARG에서 다시 확인했습니다.`, "ok");
-        await refreshPreview({skipCapture:true});
       } else if (action === "save-editor-draft") {
         const result=await saveCurrentResultToVault();
         const vault=await readStoredResultVault();
@@ -22901,10 +22906,29 @@ ${revisionText}`);
         await refreshPreview({skipCapture:true});
         setStatus(`RisuAI Persona에 ${source==="translation"?getTranslationLanguage():"원문"} 채택본을 저장하고 Persona DB를 다시 읽었습니다: ${result.personaName}`,"ok");
       } else if (action === "save-provider") {
+        const root = document.getElementById("dpg-preview-root");
+        const keyInput = document.getElementById("lia-api-key");
+        const clearKey = document.getElementById("lia-clear-api-key");
+        const submittedKey = keyInput?.value;
+        const submittedClear = clearKey?.checked;
         const saved=await writeStoredLLMConfig(readLLMConfig());
         const readback=await readStoredLLMConfig();
-        if(readback.provider!==saved.provider||readback.model!==saved.model||readback.apiKey!==saved.apiKey)throw new Error("텍스트 AI 설정 durable readback 불일치");
-        await refreshPreview({skipCapture:true});setStatus(`텍스트 AI 설정을 저장하고 다시 읽었습니다. 인증 정보 ${readback.apiKey?"보존됨":"없음"}.`,"ok");
+        if(JSON.stringify(normalizeLLMConfig(readback))!==JSON.stringify(normalizeLLMConfig(saved)))throw new Error("텍스트 AI 설정 durable readback 불일치");
+        // Refresh the saved baseline, not the workspace. Keep editors, scroll,
+        // focus and any input typed while storage was pending in the same DOM.
+        const current = liaUiVisible && root?.isConnected && document.getElementById("dpg-preview-root") === root;
+        const unchanged = current && JSON.stringify(readLLMConfig()) === JSON.stringify(saved);
+        if (liaMockupContext) liaMockupContext.savedLLMConfig = readback;
+        if (current) {
+          if (keyInput?.isConnected) {
+            if (keyInput.value === submittedKey) keyInput.value = "";
+            keyInput.placeholder = readback.apiKey ? "저장된 키가 있습니다 · 변경 시 새 값 입력" : "필요한 경우에만 입력";
+          }
+          if (clearKey?.isConnected && clearKey.checked === submittedClear) clearKey.checked = false;
+          const state = document.getElementById("lia-provider-state");
+          if (state) state.textContent = `${readback.apiKey ? "인증 정보 저장됨" : "인증 정보 없음"}${unchanged ? " · 저장 완료" : " · 이후 입력 변경은 미저장"}`;
+          setStatus("텍스트 AI 설정을 저장하고 저장값을 재확인했습니다.","ok");
+        }
       } else if (action === "update-five") {
         const fresh=await getLiveRuntimeContext();
         fresh.livePersonaBinding=await readLivePersonaBindingForContext(fresh);
