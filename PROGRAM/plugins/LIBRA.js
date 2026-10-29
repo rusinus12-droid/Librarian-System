@@ -13590,7 +13590,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let value;try{value=JSON.parse(raw);}catch(_){readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');}
     if(!value||typeof value!=='object'||Array.isArray(value))readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');return value;
   };
-  const readReadonlyRoute=async (identity, ownerRead=false)=>{
+  const readReadonlyRoute=async (identity, ownerRead=false, publicationAttempt=0)=>{
     const fence=readonlyRouteFence(),plugin=rawPluginStorage(),device=await rawDeviceStorage({strict:true});
     if(typeof plugin?.getItem!=='function')readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');
     const rawScope=(await plugin.getItem('libra:v1:scope-registry:v1'))||(await device?.getItem?.('libra:v1:scope-registry:v1')),registry=readonlyRouteObject(rawScope);
@@ -13612,7 +13612,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       candidates.push(picked);
     }
     const modePublication=await inspectModePublicationCopies(modePublicationCopies);
-    if(!['absent','observed'].includes(modePublication.status))readonlyRouteFail('READ_ROUTE_MODE_PUBLICATION_UNAVAILABLE');
+    if(!['absent','observed'].includes(modePublication.status)){
+      // Two stores are published separately. Reobserve a briefly unsettled pair
+      // (startup sync on slow hosts needs up to ~1s: 40/80 then 120ms steps, 0.84s),
+      // without accepting either half or crossing an authority/configuration fence.
+      if(['unsettled','conflict'].includes(modePublication.status)&&publicationAttempt<8){
+        await new Promise(resolve=>setTimeout(resolve,Math.min(120,40*2**publicationAttempt)));
+        if(fence!==readonlyRouteFence())readonlyRouteFail('READ_ROUTE_AUTHORITY_CHANGED');
+        return readReadonlyRoute(identity,ownerRead,publicationAttempt+1);
+      }
+      throw Object.assign(new Error('READ_ROUTE_MODE_PUBLICATION_UNAVAILABLE'),{
+        code:'READ_ROUTE_MODE_PUBLICATION_UNAVAILABLE',modePublicationStatus:modePublication.status,
+        modePublicationAttempts:publicationAttempt+1
+      });
+    }
     const pick=id=>{let out=null;for(const candidate of candidates){const value=candidate[id];if(!value)continue;if(out&&value.updatedAt===out.updatedAt&&JSON.stringify(value)!==JSON.stringify(out))readonlyRouteFail('READ_ROUTE_AMBIGUOUS');if(!out||value.updatedAt>out.updatedAt)out=value;}return out;};
     const stored=pick(scope.scopeKey),global=pick(GLOBAL_SCOPE_ID);
     if(stored?.removed||stored?.origin==='transition_pending'||state.scopeRouting.transientModes.has(scope.scopeKey))readonlyRouteFail('READ_ROUTE_SCOPE_UNAVAILABLE');
@@ -34997,15 +35010,18 @@ function createLibraReadonlySourceContext(owner) {
     // second fixed bottleneck.
     const RECALL_RUNTIME_SCHEMA = 'libra.recall_runtime.v1';
     const RECALL_TOKEN_BUDGET_SCHEMA = 'libra.dynamic_recall_token_budget.v1';
-    const RECALL_REQUEST_BUDGET_MS = 30000; // absolute live-recall watchdog; per-step guards remain separately bounded
-    const CHAT_OUTPUT_HEALTH_GRACE_MS = 30000; // committed-output event must arrive within this after a main afterRequest
-    const RECALL_STEP_BUDGET_MS = 20000;
-    const RECALL_EMBEDDING_BUDGET_MS = 3500;
+    // User-requested 2026-10-30: every live-recall timeout gets 10 s more, because slow
+    // host storage transfers (not the server) were exhausting the original bounds.
+    const RECALL_TIMEOUT_EXTENSION_MS = 10000;
+    const RECALL_REQUEST_BUDGET_MS = 30000 + RECALL_TIMEOUT_EXTENSION_MS; // absolute live-recall watchdog; per-step guards remain separately bounded
+    const CHAT_OUTPUT_HEALTH_GRACE_MS = 5000; // fail over promptly; a bounded late scan also covers slow host commits
+    const RECALL_STEP_BUDGET_MS = 20000 + RECALL_TIMEOUT_EXTENSION_MS;
+    const RECALL_EMBEDDING_BUDGET_MS = 3500 + RECALL_TIMEOUT_EXTENSION_MS;
     // A provider slower than the default budget would otherwise leave every recall
     // lexical-only. The default query-embedding budget adapts per embedding space: a
     // timeout doubles it (up to the cap, inside the 30 s recall watchdog); measured
     // requests pull it back to 1.5x the slowest recent latency, never below the default.
-    const RECALL_EMBEDDING_MAX_BUDGET_MS = 12000;
+    const RECALL_EMBEDDING_MAX_BUDGET_MS = 12000 + RECALL_TIMEOUT_EXTENSION_MS;
     const queryEmbeddingBudgets = new Map();
     const adaptiveQueryEmbeddingBudget = binding => queryEmbeddingBudgets.get(binding)?.budget || RECALL_EMBEDDING_BUDGET_MS;
     const noteQueryEmbeddingLatency = (binding, { elapsedMs = 0, timedOut = false } = {}) => {
@@ -40259,6 +40275,14 @@ function createLibraReadonlySourceContext(owner) {
       await storage.setVerifiedJson(captureKey, record, scope);
       return { captureStatus: 'verified', captureKey };
     };
+    const freshMainAfterRequestPair = (context,pair,health=state.mainAfterRequestHealth) => {
+      const proof=health?.microBoundary;
+      if(!proof||health!==state.mainAfterRequestHealth||Date.now()-health.at<0||Date.now()-health.at>120000
+        ||proof.scopeKey!==context.scope.scopeKey||Number(pair.turn)!==proof.turn
+        ||digest(pair.user.text)!==proof.userHash||digest(pair.assistant.text)!==proof.assistantHash)return false;
+      const prefix=buildPairs(context.chat,context.scope.scopeKey).slice(0,proof.turn-1);
+      return sourceDigest(prefix)===proof.prefixDigest;
+    };
     const persistCompletedTurnReceipt = async (context, pair, captureSource = 'completed_pair_reconcile', options = {}) => {
       const scope = asObject(context?.scope);
       if (!string(scope.scopeKey) || !pair?.user?.text || !pair?.assistant?.text || Number(pair.turn || 0) < 1) {
@@ -40340,9 +40364,12 @@ function createLibraReadonlySourceContext(owner) {
         || priorReceipt.rawSourcePacket && immutableNarrative(priorReceipt) !== immutableNarrative(receipt))) {
         throw new Error('LIBRA_COMPLETED_TURN_IMMUTABLE_CONFLICT');
       }
-      // Only a fresh official output may reserve the first Micro invocation.
+      // Only a fresh official output or an exact source-bound main completion
+      // from this runtime may reserve the first Micro invocation.
       // A pre-existing receipt with a lost work journal remains unknown.
-      if (!priorReceipt && captureSource === 'risu_chat_output' && options.admitMicroPlan === true
+      const mainCompletion=captureSource==='completed_pair_reconcile'
+        && freshMainAfterRequestPair(context,pair,options.mainAfterRequestBoundary);
+      if (!priorReceipt && (captureSource === 'risu_chat_output' || mainCompletion) && options.admitMicroPlan === true
         && options.microPlanBoundary) {
         try {
           const claim={scope,identity:receiptRecoveryIdentity(context,pair),boundary:options.microPlanBoundary};
@@ -40354,13 +40381,14 @@ function createLibraReadonlySourceContext(owner) {
               storage.getVerifiedJson(key.microMemoryHead(scope,worldlineId,sessionEpoch,turn),scope,null)]);
             if (!priorWork && !priorCapture && storedHead?.revisionId !== revisionId
               && priorMicroHead?.sourceRevisionId !== revisionId
-              && (await validateReceiptRecoveryClaim(claim)).status === 'current') {
+              && (await validateReceiptRecoveryClaim(claim)).status === 'current'
+              && (!mainCompletion||freshMainAfterRequestPair(context,pair,options.mainAfterRequestBoundary))) {
               const reservedAt=Date.now();
               await storage.setVerifiedJson(workKey,{
                 schema:'libra.micro_work.v1',scopeKey:scope.scopeKey,worldlineId,sessionEpoch,turn,
                 sourceRevisionId:revisionId,sourceDigest:head.sourceDigest,receiptKey,
                 producerVersion:microProducerVersion,status:'reserved',phase:'planned',
-                planProvenance:'risu_chat_output_fresh_receipt',
+                planProvenance:mainCompletion?'main_after_request_fresh_receipt':'risu_chat_output_fresh_receipt',
                 planRuntimeToken:state.microRuntimeToken,
                  planRestoreGeneration:Number(state.microRestoreGeneration||0),
                 attemptId:'micro_'+digest([workKey,reservedAt,Math.random()]),
@@ -41122,7 +41150,12 @@ function createLibraReadonlySourceContext(owner) {
             continue;
           }
           recoveryBoundary = await captureReceiptRecoveryBoundary(context,pair);
-          const persisted = await persistCompletedTurnReceipt(context, pair, 'completed_pair_reconcile', { deferInventory: true, beforeWrite: preparationGuard });
+          const mainAfterRequestBoundary=state.mainAfterRequestHealth;
+          const persisted = await persistCompletedTurnReceipt(context, pair, 'completed_pair_reconcile', {
+            deferInventory: true, beforeWrite: preparationGuard,
+            admitMicroPlan:freshMainAfterRequestPair(context,pair,mainAfterRequestBoundary),
+            microPlanBoundary:recoveryBoundary,mainAfterRequestBoundary
+          });
           await preparationGuard?.();
           result.verified += 1;
           if (persisted.captureStatus !== 'verified') result.capturePending += 1;
@@ -45603,6 +45636,49 @@ function createLibraReadonlySourceContext(owner) {
           ...options, pairs: buildPairs(live.chat, scopeKey), manifest: null
         });
       });
+    };
+
+    // Recall-only branch view. Each committed memory is admitted only when its five
+    // source turns still hash to the stored source digest (or its approved source-edit
+    // slot is preserved); everything else is withheld in a private copy. Nothing is
+    // written, so this never needs the scope queue that long analysis jobs hold.
+    const readOnlyBranchViewForRecall = async (context, pairs) => {
+      const manifest = clone(await loadManifest(context.scope, pairs.length));
+      const startSet = new Set(completeBatchStarts(pairs).map(Number));
+      const verified = [];
+      let withheld = 0;
+      for (const ref of Object.values(asObject(manifest.memories))) {
+        if (ref?.status !== 'committed') continue;
+        const start = Number(ref?.turnRange?.start || 0);
+        const batch = start && startSet.has(start) ? batchForStart(pairs, start) : [];
+        const current = batch.length === BATCH_SIZE && (string(ref.sourceDigest || '') === sourceDigest(batch)
+          || !!(await libraCanonicalSlotPreservationKind(context, ref, batch)));
+        if (current) { verified.push(start); continue; }
+        ref.status = 'inactive'; ref.inactiveReason = 'recall_readonly_branch_unverified'; withheld += 1;
+      }
+      const guard = normalizeBranchGuard(manifest.branchGuard);
+      manifest.branchGuard = normalizeBranchGuard({ ...guard,
+        verifiedStarts: guard.status === BRANCH_GUARD_READY ? guard.verifiedStarts : verified });
+      refreshCanonicalFrontiers(manifest, pairs.length);
+      const result = { readOnly: true, changed: false, withheld, observedTurns: pairs.length,
+        trustedCurrentRefs: listRecallCurrentMemoryRefs(manifest).length, reason: 'scope_queue_busy_readonly' };
+      Runtime.lastBranchReconcile = clone(result);
+      return { ...result, manifest };
+    };
+    const BRANCH_RECALL_QUEUE_WAIT_MS = 1500, BRANCH_RECALL_IDLE_WAIT_MS = 4000;
+    // The serialized reconcile still runs and persists on its own; recall only stops
+    // waiting for a scope queue that an analysis or audit job is holding.
+    const reconcileBranchForRecall = async (context, options = {}) => {
+      const scopeKey = string(context?.scope?.scopeKey || '');
+      const queueBusy = state.queues.has(scopeKey);
+      const queued = reconcileCanonicalBranchBeforeRecall(context, options);
+      queued.catch(error => warn('LIBRA queued branch reconcile failed after read-only recall view', error));
+      let timer;
+      const waited = await Promise.race([queued.then(value => ({ value })),
+        new Promise(resolve => { timer = setTimeout(() => resolve(null), queueBusy ? BRANCH_RECALL_QUEUE_WAIT_MS : BRANCH_RECALL_IDLE_WAIT_MS); })]);
+      clearTimeout(timer);
+      if (waited) return waited.value;
+      return await readOnlyBranchViewForRecall(context, Array.isArray(options.pairs) ? options.pairs : buildPairs(context.chat, scopeKey));
     };
 
     const verifyBatchStillCurrent = async (expectedContext, startTurn, expectedDigest) => {
@@ -59401,7 +59477,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return state.microRestoreGeneration;
     };
     const microPlannedWithoutInvocation = work => work?.status==='reserved' && work.phase==='planned'
-      && work.planProvenance==='risu_chat_output_fresh_receipt'
+      && ['risu_chat_output_fresh_receipt','main_after_request_fresh_receipt'].includes(work.planProvenance)
       && work.planRuntimeToken===state.microRuntimeToken
        && Number(work.planRestoreGeneration)===Number(state.microRestoreGeneration||0)
       && Number(work.logicalAttempts)===1 && Number(work.physicalAttemptsUsed)===0
@@ -66467,8 +66543,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
           ? { ...result, stateAdmission: await admitPublishedMicroStateClaims(scope, worldlineId, sessionEpoch, turn) }
           : result)
         .then(async result => {
-          // Store this turn's Micro vectors before reporting the publication, so whoever
-          // waits on it observes them; a slow provider only delays this report, bounded.
+          // Raw/Micro are already durable. Give optional vector warming a short
+          // grace period rather than blocking every following analysis behind it.
           if (result?.status === 'verified' && !state.disposed) {
             let timer = null;
             await Promise.race([warmMicroRepresentationVectors(), new Promise(resolve => { timer = setTimeout(resolve, MICRO_WARM_PUBLICATION_WAIT_MS); })]);
@@ -71319,7 +71395,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           guard,
           'before_settings',
           () => loadMemorySettings(),
-          1200
+          1200 + RECALL_TIMEOUT_EXTENSION_MS
         );
         if (settings.enabled === false) return messages;
         // Historical source edits are inspected only by explicit actions.
@@ -71327,7 +71403,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           guard,
           'before_context',
           () => resolveContext(),
-          1800
+          1800 + RECALL_TIMEOUT_EXTENSION_MS
         );
         requestScope = clone(asObject(context.scope));
         // Context resolution may finish after a newer request has published.
@@ -71335,12 +71411,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if (requestOwner !== latestRecallPublicationOwner) return messages;
         const previousRequestScope = state.lastRequestScope ? clone(state.lastRequestScope) : null;
         const completedPairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
+        const pendingUserRows=rawChatMessages(context.chat)
+          .slice(Number(completedPairs.at(-1)?.assistant?.endIndex ?? -1)+1)
+          .filter(row=>messageRole(row)==='user');
+        const pendingUserText=pendingUserRows.map(row=>cleanMessageText('user',row)).filter(Boolean).join('\n\n');
         clearStaleMemoryInjectionDebug(context.scope, 'before_request_scope_changed');
         state.lastRequestScope = {
           at: Date.now(),
           requestType: normalizeRequestType(type) || 'missing',
           scope: clone(context.scope),
-          observedTurns: completedPairs.length
+          observedTurns: completedPairs.length,
+          pendingMicro: pendingUserText ? {scopeKey:context.scope.scopeKey,turn:completedPairs.length+1,
+            userHash:digest(pendingUserText),prefixDigest:sourceDigest(completedPairs)} : null
         };
 
         // Startup normally checks the marker in the background. If the host context or
@@ -71353,7 +71435,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             guard,
             'before_pending_boundary_recovery',
             () => recoverPendingLiveBoundaryAtStartup(context),
-            1600,
+            1600 + RECALL_TIMEOUT_EXTENSION_MS,
             { soft: true, fallback: null, abortOnTimeout: false }
           );
         }
@@ -71365,7 +71447,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             guard,
             'before_pending_boundary_arm',
             () => armPendingLiveBoundary({ scope: context.scope, completedPairs, messages, requestType: type }),
-            1600,
+            1600 + RECALL_TIMEOUT_EXTENSION_MS,
             { soft: true, fallback: null, abortOnTimeout: false }
           );
         }
@@ -71375,10 +71457,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const branchResult = await runRecallStep(
           guard,
           'before_branch_reconcile',
-          () => reconcileCanonicalBranchBeforeRecall(context, { pairs: completedPairs, reason: 'before_request_fast' }),
+          () => reconcileBranchForRecall(context, { pairs: completedPairs, reason: 'before_request_fast' }),
           // Still a hard branch-safety gate, but sized for the first request after
           // load on slow hosts (observed 2.45s on Tauri); the 30s recall budget remains.
-          6000
+          // A busy scope queue yields a read-only digest-verified view instead of a timeout.
+          6000 + RECALL_TIMEOUT_EXTENSION_MS
         );
         let requestManifest = branchResult?.manifest || null;
 
@@ -71391,9 +71474,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const copyHint = !!nativeCopyExplicitSourceChatId(context.chat) || bridgeMarker.valid || !!nativeCopyBranchSourceChatId(context.chat);
         const emptyManifest = !nativeCopyManifestHasData(requestManifest);
         if (!nativeCacheFresh && emptyManifest && copyHint) {
-          const copyResult = await runRecallStep(guard, 'before_native_copy_rescue', () => ensureNativeChatCopyAdopted(context), 800, { soft: true, fallback: null, abortOnTimeout: false });
+          const copyResult = await runRecallStep(guard, 'before_native_copy_rescue', () => ensureNativeChatCopyAdopted(context), 800 + RECALL_TIMEOUT_EXTENSION_MS, { soft: true, fallback: null, abortOnTimeout: false });
           if (copyResult?.ok === true && copyResult?.skipped !== true) {
-            requestManifest = await runRecallStep(guard, 'before_manifest_after_copy', () => loadManifest(context.scope, completedPairs.length), 900, { soft: true, fallback: requestManifest, abortOnTimeout: false });
+            requestManifest = await runRecallStep(guard, 'before_manifest_after_copy', () => loadManifest(context.scope, completedPairs.length), 900 + RECALL_TIMEOUT_EXTENSION_MS, { soft: true, fallback: requestManifest, abortOnTimeout: false });
           }
         } else if (!nativeCacheFresh) {
           setTimeout(() => { void ensureNativeChatCopyAdopted(context).catch(error => warn('LIBRA deferred native-copy check failed', error)); }, 6000);
@@ -71414,7 +71497,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const recentDialogue = await runRecallStep(guard, 'before_receipt_dialogue',
           () => readRecentDialogueForResponse({ context, pairs: responseView.pairs, manifest: requestManifest,
             settings: runtimeSettings, route: injectionMode, boundary: responseBoundary,
-            deadlineAt: Date.now() + 1400, publishState: false }), 1500,
+            deadlineAt: Date.now() + 1400 + RECALL_TIMEOUT_EXTENSION_MS, publishState: false }), 1500 + RECALL_TIMEOUT_EXTENSION_MS,
           { soft: true, fallback: null, abortOnTimeout: false });
         if (requestOwner !== latestRecallPublicationOwner) return messages;
         let receiptView = recentDialogue || emptyRecentReceiptView(context, responseView.pairs);
@@ -71600,6 +71683,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
           blockChars: 0,
           error: compact(error?.message || error, 700),
           errorCode: string(error?.code || ''),
+          modePublicationStatus: string(error?.modePublicationStatus || ''),
+          modePublicationAttempts: Number(error?.modePublicationAttempts || 0),
           failOpen: true,
           deadlineExceeded: error?.code === 'LIBRA_RECALL_DEADLINE',
           stepTimedOut: error?.code === 'LIBRA_RECALL_STEP_TIMEOUT' || error?.stepTimeout === true,
@@ -71629,6 +71714,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           at: Date.now(), requestType: normalizeRequestType(type) || 'missing', scope: clone(failure.scope),
           scopeKey: failure.scopeKey, chars: 0, selectedMemories: 0, injectedMemories: 0, injected: false,
           failOpen: true, deadlineExceeded: failure.deadlineExceeded, stepTimedOut: failure.stepTimedOut, timeoutPhase: failure.timeoutPhase, errorCode: failure.errorCode,
+          modePublicationStatus: failure.modePublicationStatus, modePublicationAttempts: failure.modePublicationAttempts,
           inputSource: failure.inputSource, inputConfidence: failure.inputConfidence, liveTail: preservedLiveTail,
           queryText: compact(failure.queryText || '', 600), recallRuntime: runtimeSnapshot, error: failure.error
         };
@@ -71658,13 +71744,21 @@ function mountMemorySuiteReanalysisReview(container,config) {
         scheduled: false,
         blockedReason: ''
       };
+      if(mainNarrativeType){
+        state.mainAfterRequestHealth={schema:'libra.capture_backend_health.v1',at:Date.now(),requestType,
+          observedRunsAtAfter:Number(state.captureBackendObservedRuns||0),
+          expectedScope:expectedScope?clone(expectedScope):null,
+          microBoundary:expectedScope&&state.lastRequestScope?.pendingMicro
+            ? {...state.lastRequestScope.pendingMicro,assistantHash:digest(cleanMessageText('assistant',{content:response}))}:null};
+      }
       // Only an exact main model request may trigger automatic memory analysis.
       // Auxiliary RisuAI requests (otherax, translation, image/tool helpers, etc.)
       // must never retry or advance a five-turn memory batch.
-      if (fallbackActive && mainNarrativeType) {
+      if (mainNarrativeType && state.settings?.autoAnalyze !== false
+        && (fallbackActive || state.mainAfterRequestHealth?.microBoundary)) {
         state.lastAfterRequest.scheduled = scheduleScan({
           delay: 140,
-          reason: 'afterRequest_fallback',
+          reason: fallbackActive ? 'afterRequest_fallback' : 'afterRequest_main_completion',
           requestType,
           expectedScope: expectedScope ? clone(expectedScope) : undefined
         });
@@ -71674,17 +71768,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
         state.lastAfterRequest.blockedReason = state.settings?.autoAnalyze === false ? 'auto_analyze_disabled' : `capture_backend:${state.captureBackend}`;
       }
       if (state.captureBackend === LIBRA_CAPTURE_BACKENDS.CHAT_OUTPUT_V3 && mainNarrativeType) {
-        state.captureBackendHealthPending = {
-          schema: 'libra.capture_backend_health.v1',
-          at: Date.now(),
-          requestType,
-          observedRunsAtAfter: Number(state.captureBackendObservedRuns || 0),
-          expectedScope: expectedScope ? clone(expectedScope) : null
-        };
+        state.captureBackendHealthPending = state.mainAfterRequestHealth;
         // RisuAI awaits chat-output listeners one by one, so another plugin's slow
         // listener can starve ours. Do not wait for the next request to notice:
         // a turn that stays unobserved past the grace period fails over now.
         const pendingHealth = state.captureBackendHealthPending;
+        state.mainAfterRequestHealth = pendingHealth;
         setTimeout(() => {
           if (state.disposed || state.captureBackendHealthPending !== pendingHealth) return;
           if (state.captureBackendObservedRuns > Number(pendingHealth.observedRunsAtAfter || 0)) { state.captureBackendHealthPending = null; return; }
@@ -71692,6 +71781,20 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const failover = state.captureBackendFailover;
           if (typeof failover === 'function') Promise.resolve(failover('chat_output_silent_after_request', clone(pendingHealth))).catch(error => warn('LIBRA delayed capture failover failed', error));
         }, CHAT_OUTPUT_HEALTH_GRACE_MS);
+      }
+      if(mainNarrativeType && state.mainAfterRequestHealth?.microBoundary){
+        const pendingHealth=state.mainAfterRequestHealth;
+        // A slow later afterRequest listener can postpone the host's final chat
+        // commit past the early failover. Reconcile once more, under the same
+        // captured scope; receipt/Micro revision keys deduplicate existing work.
+        setTimeout(() => {
+          if (state.disposed || state.settings?.autoAnalyze === false
+            || (state.captureBackend===LIBRA_CAPTURE_BACKENDS.CHAT_OUTPUT_V3
+              && state.captureBackendObservedRuns>Number(pendingHealth.observedRunsAtAfter||0))
+            || state.mainAfterRequestHealth !== pendingHealth) return;
+          scheduleScan({ delay: 0, reason: 'afterRequest_late_commit_reconcile', requestType,
+            expectedScope: expectedScope ? clone(expectedScope) : undefined });
+        }, 30000);
       }
       return (response);
     };
@@ -71719,6 +71822,23 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
         const pairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
         const manifest = await loadManifest(context.scope, pairs.length);
+        if (typeof options.onProvisional === 'function' && options.summaryOnly === true
+          && refreshSerial === state.snapshotRefreshSerial
+          && (!state.snapshot?.scope || sameSnapshotScope(state.snapshot.scope, context.scope))) {
+          // The manifest and live turns are enough for the opening view. Continuity,
+          // Story Arc and the verified state projection keep their previous values
+          // (marked unconfirmed) until the full refresh below replaces them.
+          const previous = state.snapshot?.scope ? state.snapshot : {};
+          const memoryRefs = listMemoryRefs(manifest);
+          state.snapshot = {
+            ...previous, scope: clone(context.scope), manifest: clone(manifest), pairs: clone(pairs),
+            hostLineage: MemorySuiteHostLineage.inspect(context.character, context.chat),
+            memories: memoryRefs.map(ref => ({ ...clone(ref), detailLoaded: false })),
+            totals: { memories: memoryRefs.length, runs: asArray(manifest.runIds).length },
+            runs: asArray(previous.runs), refreshedAt: Date.now(), provisional: true, error: ''
+          };
+          try { options.onProvisional(state.snapshot); } catch (_) {}
+        }
         const continuityState = await loadContinuityState(context.scope, manifest, { requireCurrent: true }).catch(() => null);
         const storyArc = continuityState?.narrative
           ? await storyArcCompatibilityProjection(context.scope, continuityState).catch(() => null)
@@ -72826,6 +72946,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const deleteCurrentScope = async (options = {}) => {
       const context = await resolveContext();
       if(options.expectedScopeKey&&string(context.scope.scopeKey)!==string(options.expectedScopeKey))throw new Error('scope_delete_scope_changed');
+      state.mainAfterRequestHealth = null;
+      state.captureBackendHealthPending = null;
       lensWriteGeneration++;for(const run of lensActiveRuns)run.controller.abort();
       lensQueue.splice(0,lensQueue.length,...lensQueue.filter(job=>job.scopeKey!==context.scope.scopeKey));
       await (lensScopeLocks.get(context.scope.scopeKey)||Promise.resolve());
@@ -76227,7 +76349,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return record.provider === profile.provider && record.model === profile.model && record.profileId === profile.profileId;
     };
     let microVectorWarm = null, microVectorWarmQueued = null, microVectorWarmError = '';
-    const MICRO_WARM_PAGE_TURNS = 50, MICRO_WARM_PUBLICATION_WAIT_MS = 15000;
+    const MICRO_WARM_PAGE_TURNS = 50, MICRO_WARM_PUBLICATION_WAIT_MS = 1000;
     const readMicroRepresentationGraph = async (scopeKey, resources) => {
       const nodes = new Map(), units = [];
       for (let page = 0; ; page++) {
@@ -77013,7 +77135,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       } };
       record.abort = () => record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
       record.timer = setTimeout(() => record.finish(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' })),
-        options.timeoutMs || (action === 'describe' ? 3000 : 25000));
+        (action === 'describe' && options.describeTimeoutMs) || options.timeoutMs || (action === 'describe' ? 3000 : 25000));
       pending.set(id, record); signal?.addEventListener('abort', record.abort, { once: true });
       if (signal?.aborted) { record.abort(); return; }
       void send(ids[owner], requestChannel, { schema, kind: 'request', id, action, ...body })
@@ -96469,7 +96591,14 @@ advanced
             skipNativeCopyAdoption: true,
             limits: guiSnapshotLimits(),
             trackGuiLimits: true,
-            summaryOnly: true
+            summaryOnly: true,
+            // Paint current turns/memories as soon as the manifest is read instead of
+            // keeping the cached view until the slow state revalidation finishes.
+            onProvisional: () => {
+              if (!Gui.visible || openSerial !== Gui.openSerial || LibraMemoryCore.state.disposed) return;
+              perf.provisionalAt = Date.now();
+              void renderSettingsGui().then(() => guiSetStatus('기억 목록을 갱신했습니다. 상태 추적 검증을 계속 확인하고 있습니다.'), () => {});
+            }
           });
           // The core preserves the last snapshot and returns its error on failed
           // reads. A fulfilled promise alone is not evidence of server recovery.

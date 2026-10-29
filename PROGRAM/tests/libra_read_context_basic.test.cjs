@@ -10,7 +10,7 @@ async function fixture(options={}){
  const character={chaId:'native-character',chatPage:0,chats:[chat]};let calls=0,fetches=0;
  const registry={'native-character::native-chat':{characterId:character.chaId,chatId:chat.id,scopeKey:'registered-scope'}};
  const routes={schema:'memory-suite.scope-routing.v1',namespace:'libra',pluginId:'LIBRA',legacyGlobalModeImported:true,entries:{'registered-scope':{scopeId:'registered-scope',scopeKey:'registered-scope',mode:options.mode||'plugin_only',origin:'user_explicit',updatedAt:1}}};
- const r=await createLibraVmHarness({}, {}, {transformSource:options.exposeBridge?(source=>source.replace("  const RisuCompat = (() => {","  globalThis.__testReadBridge = MemorySuiteStorageBridge;\n  const RisuCompat = (() => {")):undefined,initialValues:[[REG,JSON.stringify(registry)],[ROUTE,JSON.stringify(routes)]],contextGlobals:{setTimeout:()=>({unref(){}}),clearTimeout(){},setInterval:()=>({unref(){}}),clearInterval(){}}});
+ const r=await createLibraVmHarness({}, {}, {transformSource:options.exposeBridge?(source=>source.replace("  const RisuCompat = (() => {","  globalThis.__testReadBridge = MemorySuiteStorageBridge;\n  const RisuCompat = (() => {")):undefined,initialValues:[[REG,JSON.stringify(registry)],[ROUTE,JSON.stringify(routes)]],contextGlobals:{setTimeout:(fn,ms,...args)=>ms<=120?setTimeout(fn,ms,...args):({unref(){}}),clearTimeout,setInterval:()=>({unref(){}}),clearInterval(){}}});
  await new Promise(resolve=>setImmediate(resolve));
  r.context.risuai.getCharacter=async()=>{calls++;if(options.readHost)return options.readHost(character);return character;};
  r.context.risuai.nativeFetch=async()=>{fetches++;throw Error('network forbidden');};
@@ -132,7 +132,21 @@ test('request context binds observed persisted publication across independent SD
 }finally{await f.close();}});
 test('pending and tampered persisted mode publications refuse request context without writes',async()=>{const f=await fixture({exposeBridge:true});try{
  await f.r.context.__testReadBridge.setServerUrl('http://127.0.0.1:47630');const saved=JSON.parse(f.r.values.get(ROUTE)),before=f.r.storageWrites.length;
- saved.modePublication.phase='pending';f.r.values.set(ROUTE,JSON.stringify(saved));await assert.rejects(()=>f.issue('pending-record'),/READ_ROUTE_MODE_PUBLICATION_UNAVAILABLE/);
+ saved.modePublication.phase='pending';f.r.values.set(ROUTE,JSON.stringify(saved));await assert.rejects(()=>f.issue('pending-record'),error=>error.code==='READ_ROUTE_MODE_PUBLICATION_UNAVAILABLE'&&error.modePublicationStatus==='unsettled'&&error.modePublicationAttempts===9);
  saved.modePublication.phase='settled';saved.modePublication.routeDigest='0'.repeat(64);f.r.values.set(ROUTE,JSON.stringify(saved));await assert.rejects(()=>f.issue('tampered-record'),/READ_ROUTE_MODE_PUBLICATION_UNAVAILABLE/);
  assert.equal(f.r.storageWrites.length,before);assert.equal(f.fetches(),0);
 }finally{await f.close();}});
+
+test('a briefly pending publication is reread only after both copies settle, without any writes',async()=>{
+ const f=await fixture({exposeBridge:true});try{
+  await f.r.context.__testReadBridge.setServerUrl('http://127.0.0.1:47630');
+  const settled=f.r.values.get(ROUTE),pending=JSON.parse(settled);pending.modePublication.phase='pending';
+  f.r.values.set(ROUTE,JSON.stringify(pending));const writes=f.r.storageWrites.length;
+  setTimeout(()=>f.r.values.set(ROUTE,settled),20);
+  const result=await f.issue('settled-after-observation');
+  assert.equal(result.summary.scope.scopeKey,'registered-scope');
+  assert.equal(result.summary.route.mode,'plugin_only');
+  assert.equal(JSON.parse(f.r.values.get(ROUTE)).modePublication.phase,'settled');
+  assert.equal(f.r.storageWrites.length,writes);assert.equal(f.fetches(),0);
+ }finally{await f.close();}
+});

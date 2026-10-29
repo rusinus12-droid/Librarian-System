@@ -50,6 +50,8 @@ test('registered inspection shows a live popup, minimizes/reopens, then displays
     assert.equal(job(f).querySelector('#maintenanceJobMinimizeBtn').disabled, false);
     job(f).querySelector('#maintenanceJobMinimizeBtn').click();assert.equal(job(f).hidden, true);
     const chip = f.doc.querySelector('#maintenanceJobChip');assert.equal(chip.hidden, false);assert.equal(chip.disabled, false);
+    assert.equal(chip.parentElement,f.doc.querySelector('.topbar'),'minimized task belongs to the product header');
+    assert.match(chip.getAttribute('aria-label'),/작업창 다시 열기/);
     await pause(1050);chip.click();assert.equal(job(f).hidden, false);assert.match(job(f).querySelector('[data-job-clock]').textContent, /경과 1초/);
     f.doc.dispatchEvent(new f.dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     assert.equal(job(f).hidden, true);assert.equal(f.calls.hide, 0, 'Escape minimizes the task, keeping the GUI open');

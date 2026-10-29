@@ -1581,20 +1581,28 @@ const MemorySuiteExecutionContract = (() => {
     '"revealState"\\s*:\\s*"(?:hidden|hinted|partially_revealed|private|secret|internal|sealed)"'
   ].join('|'), 'i');
   const HIGH_IMPORTANCE_PACKET_RE = /"overall"\s*:\s*(?:0\.[89]\d*|1(?:\.0+)?)|"importance"\s*:\s*(?:0\.[89]\d*|1(?:\.0+)?)/i;
+  // User-requested 2026-10-30: every recall/storage timeout gets 10 s more, because slow
+  // host storage transfers (not the server) were exhausting the original bounds.
+  const RECALL_TIMEOUT_EXTENSION_MS = 10000;
   const BEFORE_REQUEST_BUDGET_MS = Object.freeze({
-    fast: 10000,
-    balanced: 20000,
-    deep: 30000
+    fast: 10000 + RECALL_TIMEOUT_EXTENSION_MS,
+    balanced: 20000 + RECALL_TIMEOUT_EXTENSION_MS,
+    deep: 30000 + RECALL_TIMEOUT_EXTENSION_MS
   });
   // RisuAI awaits replacers sequentially and does not impose a hook timeout.
   // Bound every non-interactive host/storage call so a stalled adapter cannot
   // hold the main model request open indefinitely.
-  const HOST_API_CALL_TIMEOUT_MS = 1500;
+  const HOST_API_CALL_TIMEOUT_MS = 1500 + RECALL_TIMEOUT_EXTENSION_MS;
   // Viewer-initiated full-ledger reads are not on a request hook; a large inline
   // ledger can need several seconds through the host transport.
   const HAYAKU_VIEWER_LEDGER_READ_TIMEOUT_MS = 10000;
+  // Server-mode storage crosses the host fetch bridge; the 1.3 MB ledger read in the
+  // 2026-10-29 debug took longer than 1.5s while the server answered in ~10ms. A
+  // timed-out read is treated as missing data (recall refused, repair evidence lost),
+  // so storage I/O gets its own bound. Other host API calls keep the short bound.
+  const HAYAKU_STORAGE_IO_TIMEOUT_MS = 6000 + RECALL_TIMEOUT_EXTENSION_MS;
   const HAYAKU_STORAGE_READ_FLIGHT_MAX_AGE_MS = 30000;
-  const HOST_REQUEST_DEADLINE_MS = 30000;
+  const HOST_REQUEST_DEADLINE_MS = 30000 + RECALL_TIMEOUT_EXTENSION_MS;
   const COPIED_CHAT_SOURCE_CACHE_POSITIVE_TTL_MS = 60000;
   // Any ledger write already invalidates both results through the ledger generation, so a
   // short negative TTL only re-read every candidate ledger for an unchanged copied chat.
@@ -14062,7 +14070,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         return value;
       };
     };
-    const getStorageItemOutcome = async (key, timeoutMs = HOST_API_CALL_TIMEOUT_MS) => {
+    const getStorageItemOutcome = async (key, timeoutMs = HAYAKU_STORAGE_IO_TIMEOUT_MS) => {
       const storage = MemorySuiteStorageBridge.createPluginStorageProxy(storageHost()?.pluginStorage);
       if (typeof storage?.getItem !== 'function') {
         return { state: 'rejected', value: null, reason: 'plugin_storage_unavailable', error: 'plugin_storage_unavailable' };
@@ -14121,7 +14129,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         if (timer != null) clearTimeout(timer);
       }
     };
-    const setStorageItemOutcome = async (key, value, timeoutMs = HOST_API_CALL_TIMEOUT_MS) => {
+    const setStorageItemOutcome = async (key, value, timeoutMs = HAYAKU_STORAGE_IO_TIMEOUT_MS) => {
       const storage = MemorySuiteStorageBridge.createPluginStorageProxy(storageHost()?.pluginStorage);
       if (typeof storage?.setItem !== 'function') {
         return { state: 'rejected', saved: false, reason: 'plugin_storage_unavailable', error: 'plugin_storage_unavailable' };
@@ -14195,7 +14203,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       const storage = MemorySuiteStorageBridge.createPluginStorageProxy(storageHost()?.pluginStorage);
       if (typeof storage?.getItem !== 'function') return fallback;
-      const value = await boundedHostCall(`MemorySuite.getItem:${key}`, () => storage.getItem(key), fallback);
+      const value = await boundedHostCall(`MemorySuite.getItem:${key}`, () => storage.getItem(key), fallback, HAYAKU_STORAGE_IO_TIMEOUT_MS);
       return value == null || value === '' ? fallback : value;
     };
     const setStorageItem = async (key, value) => {
@@ -14207,7 +14215,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (typeof storage?.removeItem !== 'function') return false;
       storageWriteFence.delete(key);
       invalidateCopiedChatSourceLedger(key);
-      return !!(await boundedHostCall(`MemorySuite.removeItem:${key}`, () => storage.removeItem(key), false));
+      return !!(await boundedHostCall(`MemorySuite.removeItem:${key}`, () => storage.removeItem(key), false, HAYAKU_STORAGE_IO_TIMEOUT_MS));
     };
     const contextBudget = async () => {
       const current = host('getDatabase');
@@ -15211,7 +15219,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         if(literalDeviceProviders.has(current))provider=literalDeviceProviders.get(current);else literalDeviceProviders.set(current,provider);
       }
       if(provider===missing || provider&&typeof provider.getItem!=='function')throw Error('HAYAKU_READSET_STORAGE_UNAVAILABLE');
-      const values=provider?await Promise.all(keys.map(key=>boundedHostCall('readset:deviceMetadata',()=>provider.getItem(key),missing))):[];
+      const values=provider?await Promise.all(keys.map(key=>boundedHostCall('readset:deviceMetadata',()=>provider.getItem(key),missing,HAYAKU_STORAGE_IO_TIMEOUT_MS))):[];
       if(values.includes(missing))throw Error('HAYAKU_READSET_STORAGE_UNAVAILABLE');
       return {provider,values};
     };
@@ -36338,7 +36346,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     && frame.sourceRules===memorySuiteSourceTagKey('hayaku')
     && !MemorySuiteStorageBridge.status().transition
     && frame.backend===JSON.stringify(MemorySuiteStorageBridge.status().serverBinding));
-  const hayakuReadsetRefuse = (frame,reason) => {
+  const hayakuReadsetRefuse = (frame,reason,detail='') => {
     if (!frame) return false;
     frame.cancelled=true;frame.reason=reason;
     if (frame.requestId===hayakuRecallRequests.sequence) {
@@ -36351,7 +36359,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (Memory.authoritativeLedgerCache===frame.cache) Memory.authoritativeLedgerCache=null;
       if (Memory.store===frame.store) Memory.store=emptyStore();
       if (hayakuRecallRequests.active?.id===frame.requestId) hayakuRecallRequests.active.cancelled=true;
-      Memory.lastBeforeRequest={at:now(),skipped:true,reason,authoritativeLedger:{reconcileCommit:{saved:false,durable:false,storageState:'rejected',reason}}};
+      Memory.lastBeforeRequest={at:now(),skipped:true,reason,authorityFailure:compact(detail,160),authoritativeLedger:{reconcileCommit:{saved:false,durable:false,storageState:'rejected',reason}}};
     }
     return false;
   };
@@ -36410,9 +36418,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const read=await hayakuReadsetRead(frame);
       const ownPendingHead=expectedHead===frame.head&&frame.pendingWrite&&read.head===frame.pendingWrite.serialized
         && frame.pendingWrite.fenceState.revision===frame.pendingWrite.revision;
-      if (read.body!==frame.body||(JSON.stringify(read.head)!==JSON.stringify(expectedHead)&&!ownPendingHead)) throw Error('HAYAKU_READSET_AUTHORITY_CHANGED');
+      if (read.body!==frame.body) throw Error('HAYAKU_READSET_AUTHORITY_BODY_CHANGED');
+      if (JSON.stringify(read.head)!==JSON.stringify(expectedHead)&&!ownPendingHead) throw Error('HAYAKU_READSET_LEDGER_HEAD_CHANGED');
       return true;
-    } catch (_) { return hayakuReadsetRefuse(frame,'HAYAKU_READSET_AUTHORITY_CHANGED'); }
+    } catch (error) { return hayakuReadsetRefuse(frame,'HAYAKU_READSET_AUTHORITY_CHANGED',error?.code||error?.message||'readset_verification_failed'); }
   };
   const hayakuRequestCurrent = token => !token || (hayakuRecallRequests.active===token&&!token.cancelled&&!Memory.unloaded
     && hayakuReadsetCurrent(token.readsetFrame)
@@ -38071,6 +38080,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
             const baseLineage = requestLineageFor(messages, storageSnapshot, chatScope, worldline);
             return issueRequestGenerationIdentity(chatScope, baseLineage);
           });
+          // Capture the proved live request before recall's storage publication.
+          // A rejected ledger write must not discard the independent afterRequest
+          // repair opportunity. The normal admission below upgrades this entry.
+          if (requestLineage?.lineageQuality === 'authoritative'
+            && (settings.packetRecovery !== false || settings.recoveryVaultEnabled !== false)) {
+            stage('registerRecoveryCaptureOrigin', () => registerPendingCapture(
+              chatScope, requestLineage, requestType, authoritativeSnapshot,
+              { packetWriteExpected: false, recoveryVaultOnly: true }
+            ));
+          }
           livePackets = stage('dualLedgerPacketsForRequest', () => storagePacketsForRequest(
             mergedLedgerRecords.records,
             storageSnapshot,
@@ -41939,7 +41958,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if(serialized.length>CAPTURE_RAW_DELTA_MAX_CHARS||new TextEncoder().encode(serialized).length>CAPTURE_RAW_DELTA_MAX_BYTES)throw Error('CAPTURE_RAW_MIGRATION_SIZE_LIMIT');
     const digest=stableHash64(serialized),storageKey=CAPTURE_RAW_DELTA_PREFIX+scope.key+'::'+context.binding+'::'+digest;
     const check=()=>{if(Memory.unloaded||!ownsRuntime()||localRecallPostingProvider()!==context.provider)throw Error('CAPTURE_RAW_MIGRATION_PROVIDER_CHANGED');};
-    check();const prior=await RisuCompat.getStorageItemOutcome(storageKey,HOST_API_CALL_TIMEOUT_MS);check();
+    check();const prior=await RisuCompat.getStorageItemOutcome(storageKey, HAYAKU_STORAGE_IO_TIMEOUT_MS);check();
     if(prior.state!=='fulfilled')throw Error('CAPTURE_RAW_MIGRATION_READ_FAILED');
     if(prior.value!==serialized){
       if(prior.value!=null&&prior.value!=='')throw Error('CAPTURE_RAW_MIGRATION_COLLISION');
@@ -41950,7 +41969,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if(write.state!=='fulfilled')throw Error('CAPTURE_RAW_MIGRATION_WRITE_UNCONFIRMED');
       context.writeChars+=serialized.length;context.writes+=1;
     }
-    const readback=await RisuCompat.getStorageItemOutcome(storageKey,HOST_API_CALL_TIMEOUT_MS);check();
+    const readback=await RisuCompat.getStorageItemOutcome(storageKey, HAYAKU_STORAGE_IO_TIMEOUT_MS);check();
     context.readChars+=typeof readback.value==='string'?readback.value.length:0;
     if(readback.state!=='fulfilled'||readback.value!==serialized)throw Error('CAPTURE_RAW_MIGRATION_READBACK_FAILED');
     return {schema:CAPTURE_RAW_DELTA_SCHEMA,scopeKey:scope.key,binding:context.binding,storageKey,digest,rawDigest:stableHash64(record.raw),packetIndex:0};
@@ -41963,7 +41982,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!key) return { ...emptyStorageLedger(scope), enabled: false, reason: 'scope_unavailable' };
     if (!RisuCompat.hasPluginStorage()) return { ...emptyStorageLedger(scope), enabled: false, reason: 'plugin_storage_unavailable' };
     const storedOutcome = typeof RisuCompat.getStorageItemOutcome === 'function'
-      ? await RisuCompat.getStorageItemOutcome(key, options.readTimeoutMs || HOST_API_CALL_TIMEOUT_MS)
+      ? await RisuCompat.getStorageItemOutcome(key, options.readTimeoutMs || HAYAKU_STORAGE_IO_TIMEOUT_MS)
       : { state: 'fulfilled', value: await RisuCompat.getStorageItem(key, null) };
     if (Memory.unloaded || !ownsRuntime()) return inactive();
     if (storedOutcome.state !== 'fulfilled') {
@@ -42065,7 +42084,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const key = storageLedgerStorageKey(scope);
     if (!key) return { ...emptyStorageLedger(scope), enabled: false, reason: 'scope_unavailable', recordsIncluded: false, logicalRecordCount: 0 };
     if (!RisuCompat.hasPluginStorage()) return { ...emptyStorageLedger(scope), enabled: false, reason: 'plugin_storage_unavailable', recordsIncluded: false, logicalRecordCount: 0 };
-    const storedOutcome = typeof RisuCompat.getStorageItemOutcome === 'function' ? await RisuCompat.getStorageItemOutcome(key, options.readTimeoutMs || HOST_API_CALL_TIMEOUT_MS) : { state: 'fulfilled', value: await RisuCompat.getStorageItem(key, null) };
+    const storedOutcome = typeof RisuCompat.getStorageItemOutcome === 'function' ? await RisuCompat.getStorageItemOutcome(key, options.readTimeoutMs || HAYAKU_STORAGE_IO_TIMEOUT_MS) : { state: 'fulfilled', value: await RisuCompat.getStorageItem(key, null) };
     if (storedOutcome.state !== 'fulfilled') return { ...emptyStorageLedger(scope), enabled: false, reason: compact(storedOutcome.error || storedOutcome.reason || 'storage_unavailable', 240), code: compact(storedOutcome.code || '', 96), storageKey: key, recordsIncluded: false, logicalRecordCount: 0 };
     const stored = storedOutcome.value ?? null;
     const ledger = normalizeStorageLedger(await hydrateCapturedLedgerRaw(stored,scope), scope);
@@ -43275,7 +43294,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     let confirmedRaw = null;
     let readbackOutcome = null;
     if ((writeOutcome.state === 'fulfilled' || sourcePublication && writeOutcome.state === 'rejected') && readbackRequired) {
-      readbackOutcome = await RisuCompat.getStorageItemOutcome(key, HOST_API_CALL_TIMEOUT_MS);
+      readbackOutcome = await RisuCompat.getStorageItemOutcome(key, HAYAKU_STORAGE_IO_TIMEOUT_MS);
       confirmedRaw = readbackOutcome.state === 'fulfilled' ? readbackOutcome.value : null;
       if (typeof confirmedRaw === 'string' && stableHash64(confirmedRaw) === stableHash64(serialized)) {
         storageState = 'confirmed';
@@ -50096,7 +50115,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       } };
       record.abort = () => record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
       record.timer = setTimeout(() => record.finish(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' })),
-        options.timeoutMs || (action === 'describe' ? 3000 : 25000));
+        (action === 'describe' && options.describeTimeoutMs) || options.timeoutMs || (action === 'describe' ? 3000 : 25000));
       pending.set(id, record); signal?.addEventListener('abort', record.abort, { once: true });
       if (signal?.aborted) { record.abort(); return; }
       void send(ids[owner], requestChannel, { schema, kind: 'request', id, action, ...body })
@@ -51122,7 +51141,7 @@ return createReadSession;
       if(bytes>CAPTURE_RAW_DELTA_MAX_BYTES)return {...result,reason:'capture_delta_size_limit',chars:serialized.length,bytes};
       const digest=stableHash64(serialized),storageKey=CAPTURE_RAW_DELTA_PREFIX+scope.key+'::'+binding+'::'+digest;
       if(!await providerCurrent())return {...result,reason:'capture_delta_source_or_provider_changed'};
-      const before=await RisuCompat.getStorageItemOutcome(storageKey,HOST_API_CALL_TIMEOUT_MS);
+      const before=await RisuCompat.getStorageItemOutcome(storageKey, HAYAKU_STORAGE_IO_TIMEOUT_MS);
       if(!await providerCurrent())return {...result,reason:'capture_delta_source_or_provider_changed'};
       if(before.state!=='fulfilled')return {...result,reason:before.reason||'capture_delta_read_failed'};
       let written=false;
@@ -51139,7 +51158,7 @@ return createReadSession;
         written=true;
         captureRawReplayStates.delete(scope.key);
       }
-      const readback=await RisuCompat.getStorageItemOutcome(storageKey,HOST_API_CALL_TIMEOUT_MS);
+      const readback=await RisuCompat.getStorageItemOutcome(storageKey, HAYAKU_STORAGE_IO_TIMEOUT_MS);
       if(readback.state!=='fulfilled'||readback.value!==serialized)return {...result,reason:readback.reason||'capture_delta_readback_mismatch'};
       if(!await providerCurrent())return {...result,reason:'capture_delta_source_or_provider_changed'};
       if(!await current())return {...result,reason:'capture_delta_source_or_provider_changed',preservedRawDurable:true,
@@ -51665,6 +51684,8 @@ return createReadSession;
       if (!visible) continue;
       const canonicalHash = stableHash64(canonicalHistoryText(visible, 'user'));
       if (expectedHash && canonicalHash !== expectedHash) continue;
+      if (pending?.lineage?.userMessageIdentityStable === true
+        && stableHash64(stableMessageSourceId(message)) !== pending.lineage.userMessageIdHash) continue;
       return { text: visible, canonicalHash, messageIndex: index, sourceMessageId: messageSourceId(message, index) };
     }
     return null;
@@ -51677,6 +51698,14 @@ return createReadSession;
     if (nonce && compact(current[0]?.requestNonce || '', 96) !== nonce) return false;
     return ensureArray(inspection?.semanticIncompletePackets).length === 0
       && Number(inspection?.invalidCount || 0) === 0;
+  };
+  const afterRequestCaptureSourceCurrent = (scope,pending) => {
+    if (!scope?.confident || scope.key!==pending?.scope?.key || !Array.isArray(pending.requestSourcePrefix)) return false;
+    const snapshot=authoritativeChatSnapshot(scope.chatMessages,scope);
+    const prefix=ensureArray(snapshot.conversationPairs)
+      .filter(pair=>Number(pair.pairIndex)<Number(pending.lineage?.targetPairIndex))
+      .map(pair=>hayakuSourceEditDigest(pair));
+    return JSON.stringify(prefix)===JSON.stringify(pending.requestSourcePrefix);
   };
   const repairCurrentPacketInsideAfterRequest = async (content = '', requestType = '') => {
     const source = text(content);
@@ -51728,7 +51757,7 @@ return createReadSession;
     const userEvidence = afterRequestRecoveryUserEvidence(scope, pending);
     const assistantText = canonicalHistoryText(echoGuard.content, 'assistant');
     const targetPairIndex = Math.max(1, Number(pending?.lineage?.targetPairIndex || 1) || 1);
-    if (!scope?.confident || !scope?.key || !userEvidence?.text || !assistantText) {
+    if (!scope?.confident || !scope?.key || !userEvidence?.text || !assistantText || !afterRequestCaptureSourceCurrent(scope,pending)) {
       const message = !scope?.confident ? 'authoritative_chat_unavailable' : !userEvidence?.text ? 'after_request_user_evidence_unavailable' : 'after_request_assistant_evidence_empty';
       pending.afterRequestRepair = { attempted: false, enabled: true, outcome: 'evidence_unavailable', errorCode: 'HAYAKU_AFTER_REQUEST_EVIDENCE_UNAVAILABLE', errorMessage: message, attemptedAt: now() };
       pending.inlineRepairFailure = null;
@@ -51795,7 +51824,7 @@ return createReadSession;
       if(!latest?.confident||latest.key!==scope.key||latestUser?.canonicalHash!==userEvidence.canonicalHash
         || latestUser?.messageIndex!==userEvidence.messageIndex || latestUser?.sourceMessageId!==userEvidence.sourceMessageId
         || currentPending?.lineage?.requestNonce!==pending.lineage.requestNonce
-        || !assistantUnchanged)throw new Error('SOURCE_EDIT_SOURCE_CHANGED');
+        || !assistantUnchanged || !afterRequestCaptureSourceCurrent(latest,pending))throw new Error('SOURCE_EDIT_SOURCE_CHANGED');
       const replacement = replaceHayakuPacketText(source, analyzed.packet);
       if (replacement.ok !== true) throw new Error(replacement.reason || 'after_request_packet_replacement_failed');
       pending.afterRequestRepair = {
@@ -55630,7 +55659,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     if (expectedScopeKey && scope.key !== expectedScopeKey) return { ok: false, reason: 'coverage_scope_changed', scopeKey: scope.key };
     const storageKey = storageLedgerStorageKey(scope);
     if (!storageKey || !RisuCompat.hasPluginStorage()) return { ok: false, reason: 'storage_unavailable', scopeKey: scope.key };
-    const storedResult = await RisuCompat.getStorageItemOutcome(storageKey, HOST_API_CALL_TIMEOUT_MS);
+    const storedResult = await RisuCompat.getStorageItemOutcome(storageKey, HAYAKU_STORAGE_IO_TIMEOUT_MS);
     if (storedResult.state !== 'fulfilled') return { ok: false, reason: storedResult.reason || 'storage_read_failed', scopeKey: scope.key };
     const storedRaw = storedResult.value;
     const hasStoredValue = storedRaw != null && storedRaw !== '';
@@ -55905,7 +55934,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         || manualRecaptureTranscriptFingerprint(latestScope) !== token.transcriptFingerprint) {
         return { ok: false, adopted: false, durable: false, reason: 'selected_turn_source_changed', records: 0, scopeKey: latestScope?.key || '' };
       }
-      const latestRaw = await RisuCompat.getStorageItemOutcome(state.storageKey, HOST_API_CALL_TIMEOUT_MS);
+      const latestRaw = await RisuCompat.getStorageItemOutcome(state.storageKey, HAYAKU_STORAGE_IO_TIMEOUT_MS);
       const latestRevision = latestRaw.state === 'fulfilled'
         ? stableHash64(typeof latestRaw.value === 'string' ? latestRaw.value : (latestRaw.value == null ? '' : JSON.stringify(latestRaw.value)))
         : '';
@@ -55922,7 +55951,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (commit.durable !== true) {
         return { ok: false, adopted: false, durable: false, reason: commit.reason || 'storage_readback_failed', records: 0, scopeKey: state.scope.key };
       }
-      const readback = await RisuCompat.getStorageItemOutcome(state.storageKey, HOST_API_CALL_TIMEOUT_MS);
+      const readback = await RisuCompat.getStorageItemOutcome(state.storageKey, HAYAKU_STORAGE_IO_TIMEOUT_MS);
       if (readback.state !== 'fulfilled') {
         return { ok: false, adopted: true, durable: false, reason: readback.reason || 'storage_readback_failed', records: 0, scopeKey: state.scope.key };
       }
@@ -58457,7 +58486,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const batchSelect = root.querySelector?.('#hayakuColdStartBatchTurns');
     viewerRenderAuxiliaryProbe();
     if (stateNode) stateNode.textContent = '상태 확인 중';
-    Memory.ledgerViewer.continuitySnapshot = null;
+    // Keep the exact quick coverage of this scope (or the last full coverage of the
+    // same scope) on screen while the slower debt inspection runs.
+    {
+      const viewer = Memory.ledgerViewer, scopeKey = text(viewer.scope?.key || viewer.scope?.scopeKey);
+      const last = Memory.nativeRecovery?.lastCoverage;
+      const quick = viewerQuickCoverage(viewer.scope, viewer.ledger);
+      if (quick) viewer.continuitySnapshot = { scopeKey, coverage: quick };
+      else if (viewer.continuitySnapshot?.scopeKey !== scopeKey) {
+        viewer.continuitySnapshot = last?.scopeKey === scopeKey && Array.isArray(last.rows)
+          ? { scopeKey, coverage: { ...last, provisional: true } } : null;
+      }
+    }
     viewerRenderContinuityLine();
     try {
       const renderScopeKey=text(Memory.ledgerViewer.scope?.key||Memory.ledgerViewer.scope?.scopeKey);
@@ -59203,11 +59243,26 @@ function mountMemorySuiteReanalysisReview(container,config) {
       previousEnd: rows.filter(r => r.turn < (visible[0]?.turn ?? 0)).slice(-1)[0]?.turn ?? null,
       nextEnd: rows.filter(r => r.turn > (visible[visible.length-1]?.turn ?? 0)).slice(0,24).slice(-1)[0]?.turn ?? null };
   };
+  // Exact turn coverage from the ledger the viewer already loaded and the live chat.
+  // It reads no storage and writes nothing, so missing turns show at once; the
+  // debt/vault inspection that follows replaces it with the full recovery coverage.
+  const viewerQuickCoverage = (scope, ledger) => {
+    if (!scope?.confident || scope.chatMessagesAvailable !== true || ledger?.enabled !== true) return null;
+    try {
+      const snapshot = authoritativeChatSnapshot(scope.chatMessages, scope);
+      const worldline = reconcileTurnWorldline(ledger.worldline, snapshot, scope);
+      const bound = bindStorageLedgerToSnapshot({ ...ledger, worldline }, snapshot, worldline).ledger;
+      return { ...exactHayakuTurnCoverage(snapshot, bound, scope.key), provisional: true, checkedAt: now() };
+    } catch (error) {
+      pushOperationLog('viewer:quick_coverage_failed', { reason: compact(error?.message || error, 160) }, 'warn');
+      return null;
+    }
+  };
   const viewerRenderContinuityLine = (coverage = null) => {
     const viewer = Memory.ledgerViewer, root = viewer.root;
     const host = root?.querySelector?.('#hayakuContinuityLine'); if (!host) return;
     const scopeKey = text(viewer.scope?.key || viewer.scope?.scopeKey);
-    if (viewer.continuityScopeKey !== scopeKey) { viewer.continuityEndTurn = null; viewer.continuitySnapshot = null; viewer.continuityScopeKey = scopeKey; }
+    if (viewer.continuityScopeKey !== scopeKey) { viewer.continuityEndTurn = null; if (viewer.continuitySnapshot?.scopeKey !== scopeKey) viewer.continuitySnapshot = null; viewer.continuityScopeKey = scopeKey; }
     if (coverage && (!coverage.scopeKey || coverage.scopeKey === scopeKey)) viewer.continuitySnapshot = { scopeKey, coverage };
     const current = viewer.continuitySnapshot?.scopeKey === scopeKey ? viewer.continuitySnapshot.coverage : null;
     const model = viewerContinuityModel(viewer.ledger, current, viewer.continuityEndTurn);
@@ -59250,7 +59305,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     if (copy) copy.textContent = !verified
       ? '완료 턴 대조가 확인되지 않았습니다. 이 원장만으로 누락 여부를 확정하지 않습니다.'
       : current?.sourceEditError ? `원문 재분석 상태 확인 필요 · ${compact(current.sourceEditError,160)}`
-      : `완료 U+A ${Number(current?.completedTurns || 0).toLocaleString()}턴 · 패킷 보유 ${ensureArray(current?.coveredTurns).length.toLocaleString()}턴 · 누락 ${missing.toLocaleString()} · 검토 대기 ${pending.toLocaleString()}`;
+      : `완료 U+A ${Number(current?.completedTurns || 0).toLocaleString()}턴 · 패킷 보유 ${ensureArray(current?.coveredTurns).length.toLocaleString()}턴 · 누락 ${missing.toLocaleString()} · 검토 대기 ${pending.toLocaleString()}${current?.provisional ? ' · 복구 상태 확인 중' : ''}`;
     if (badge) badge.textContent = verified && Number(current?.completedTurns)>0
       ? `패킷 연결률 ${Math.round(ensureArray(current?.coveredTurns).length/Number(current.completedTurns)*100)}%`
       : '패킷 연결률 미확인';
@@ -59970,6 +60025,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if(!checked?.confident||checked.key!==scope.key||checked.chatId!==scope.chatId)throw new Error('viewer_scope_changed_during_partial_refresh');
       }
       viewer.ledger = ledger;
+      const quickCoverage = viewerQuickCoverage(scope, ledger);
+      if (quickCoverage) viewer.continuitySnapshot = { scopeKey: text(scope?.key || ''), coverage: quickCoverage };
       viewerRenderData();
       if (status) status.textContent = ledger?.enabled
         ? '조회·관리 · pluginStorage 원장'

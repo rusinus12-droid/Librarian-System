@@ -997,11 +997,13 @@
   const INPUT_ASSIST_RUNTIME_RESPONSE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
   const INPUT_ASSIST_STATIC_HANDOFF_MAX_AGE_MS = 30 * 1000;
   const INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS = 2400;
-  const INPUT_ASSIST_LORE_CONTEXT_MAX_CHARS = 3200;
+  const INPUT_ASSIST_LORE_CONTEXT_MAX_CHARS = 12000;
   // The writer's reference packet is already selected as whole entries within
   // INPUT_ASSIST_LORE_CONTEXT_MAX_CHARS of content; its headings come on top. Cutting the
   // rendered block again at that size would split the last entry, so only a safety cap applies.
-  const inputAssistLoreBlock = value => compact(value, INPUT_ASSIST_LORE_CONTEXT_MAX_CHARS * 2);
+  const inputAssistReferenceChars = settings => clampInt(settings?.stageOptions?.[INPUT_ASSIST_STAGE_ID]?.max_chars,
+    1000, REFERENCE_BUDGET_CUSTOM_MAX_CHARS, INPUT_ASSIST_LORE_CONTEXT_MAX_CHARS);
+  const inputAssistLoreBlock = (value, settings) => compact(value, inputAssistReferenceChars(settings) * 2);
   const AUTHOR_DIRECTED_INPUT_CHOICES_SCHEMA = 'gradia_author_directed_input_choices_v1';
   const AUTHOR_DIRECTED_INPUT_CHOICE_TARGET = 3;
   const NOVEL_INPUT_CHOICES_SCHEMA = 'gradia_novel_input_choices_v1';
@@ -1613,31 +1615,47 @@
       if (unit === 'm') return num * 1000000;
       if (unit === 'k') return num * 1024;
     }
-    if (/claude-3|claude-2/i.test(rawModel)) return 200000;
+    if (/claude/i.test(rawModel)) return 200000;
     if (/gemini-(?:1\.5|2\.0)-pro/i.test(rawModel)) return 2000000;
     if (/gemini/i.test(rawModel)) return 1000000;
     // A dot is a regex word boundary: GPT-4.1 must be resolved before legacy GPT-4.
     if (/gpt-4\.1(?:[-:]|$)/i.test(rawModel)) return 1047576;
-    if (/gpt-4o|chatgpt-4o|\bo1\b|\bo3\b/i.test(rawModel)) return 128000;
+    if (/gpt-5/i.test(rawModel)) return 400000;
+    if (/gpt-oss/i.test(rawModel)) return 131072;
+    if (/\bo[34](?:-mini|-pro)?\b/i.test(rawModel)) return 200000;
+    if (/gpt-4o|chatgpt-4o|\bo1\b/i.test(rawModel)) return 128000;
     if (/gpt-4-(?:turbo|1106|0125)/i.test(rawModel)) return 128000;
     if (/gpt-4-32k/i.test(rawModel)) return 32768;
     if (/gpt-4(?:$|-(?:0314|0613)$)/i.test(rawModel)) return 8192;
     if (/gpt-3\.5-turbo-16k/i.test(rawModel)) return 16384;
     if (/gpt-3\.5/i.test(rawModel)) return 4096;
+    // Family/generation fallbacks (V4.x including Ollama's :cloud tags advertise 1M).
+    // Manual/catalog/provider metadata stays above these in every budget consumer,
+    // and a heuristic value alone never hard-blocks a request (see manualSkillCapacity).
+    if (/deepseek[-_/]?v4(?:[._-]|$)/i.test(rawModel)) return 1000000;
+    if (/deepseek[-_/]?(?:v3|r1|chat|reasoner)/i.test(rawModel)) return 128000;
     if (/deepseek/i.test(rawModel)) return 64000;
+    if (/kimi[-_]?k2|kimi-latest|moonshot-v1-128k/i.test(rawModel)) return 256000;
+    if (/kimi|moonshot/i.test(rawModel)) return 128000;
+    if (/minimax/i.test(rawModel)) return 1000000;
+    if (/grok-4/i.test(rawModel)) return 256000;
+    if (/grok/i.test(rawModel)) return 131072;
     if (/qwen.*(?:128k|1m)/i.test(rawModel)) return 131072;
+    if (/qwen-?3/i.test(rawModel)) return 131072;
     if (/qwen-?2\.5|qwen2\.5/i.test(rawModel)) return 32768;
     if (/qwen/i.test(rawModel)) return 32768;
+    if (/llama-?4/i.test(rawModel)) return 1000000;
     if (/llama-?3\.[123]/i.test(rawModel)) return 128000;
     if (/llama-?3\b/i.test(rawModel)) return 8192;
     if (/llama-?2-70b/i.test(rawModel)) return 4096;
     if (/llama/i.test(rawModel)) return 8192;
-    if (/mistral-large|codestral/i.test(rawModel)) return 128000;
+    if (/mistral-large|mistral-medium|codestral/i.test(rawModel)) return 128000;
     if (/mistral|mixtral/i.test(rawModel)) return 32768;
-    if (/command-r/i.test(rawModel)) return 128000;
+    if (/command-[ra]/i.test(rawModel)) return 128000;
+    if (/gemma-?3/i.test(rawModel)) return 128000;
     if (/gemma-2/i.test(rawModel)) return 8192;
     if (/solar/i.test(rawModel)) return 4096;
-    if (/glm-4/i.test(rawModel)) return 128000;
+    if (/glm-?[45]/i.test(rawModel)) return 128000;
     return 0;
   };
 
@@ -1653,7 +1671,9 @@
     // configured completion envelope (including thinking), 10% margin and framing.
     const outputTokens=Number(outputOverride??preset.max_tokens)||DEFAULT_MAX_STAGE_TOKENS;
     const maxInputChars=contextTokens?Math.max(0,Math.floor((contextTokens*0.90-outputTokens)*2.4)-4096):null;
-    return {contextTokens,outputTokens,maxInputChars,model:preset.model||'',verified:contextTokens>0,
+    // Only manual, catalog or provider metadata is authoritative enough to block a run.
+    const source=manualContext?'manual':catalogContext?'catalog':ollamaContext?'provider_default':estimatedContext?'model_heuristic':'profile_fallback';
+    return {contextTokens,outputTokens,maxInputChars,model:preset.model||'',verified:contextTokens>0,source,
       maxSkillChars:maxInputChars===null?MANUAL_SKILL_MAX_CHARS:Math.max(0,Math.min(MANUAL_SKILL_MAX_CHARS,Math.floor(maxInputChars*MANUAL_SKILL_INPUT_SHARE)))};
   };
   const manualSkillBudget = (selection,stage,settings={},capacity=manualSkillCapacity(stage,settings)) => {
@@ -1668,6 +1688,11 @@
   };
   const assertManualSkillBudget = (selection,stage,settings={},capacity) => {
     const budget=manualSkillBudget(selection,stage,settings,capacity);
+    if(!budget.fits&&budget.source==='model_heuristic'&&budget.chars<=MANUAL_SKILL_MAX_CHARS){
+      // A name-based context guess must not break a model whose real window is larger.
+      warn(`skill_context_heuristic:${stage}`,`추정 문맥 기준 Skill ${budget.chars}자 > ${budget.maxSkillChars}자. 실제 한도를 확인하려면 AI 프리셋에 문맥 크기를 입력하세요.`);
+      return {...budget,fits:true,heuristicOverride:true};
+    }
     if(!budget.fits)throw Object.assign(new Error(`${stage}: 추가 Skill ${budget.chars.toLocaleString()}자 / 한도 ${budget.maxSkillChars.toLocaleString()}자. 대화·분석·연속성·로어북 공간을 보존하려면 자료 · Skill에서 스타일 적용을 해제하거나 스킬·참고 문서 선택을 줄이세요.`),{code:'GRADIA_SKILL_CHAR_BUDGET_EXCEEDED'});
     return budget;
   };
@@ -1683,6 +1708,10 @@
     }
     const budget=assertManualSkillBudget(selection,stage,settings,capacity);
     const inputChars=text(systemPrompt).length+text(userPrompt).length+text(sharedPromptPrefix).length;
+    if(capacity.maxInputChars&&inputChars>capacity.maxInputChars&&capacity.source==='model_heuristic'){
+      warn(`skill_context_heuristic_input:${stage}`,`추정 문맥 기준 입력 ${inputChars}자 > ${capacity.maxInputChars}자. 모델이 실제로 거부하면 제공자 오류로 표시됩니다.`);
+      return {...budget,inputChars,heuristicOverride:true};
+    }
     if(capacity.maxInputChars&&inputChars>capacity.maxInputChars)throw Object.assign(new Error(`${stage}: 전체 입력 ${inputChars.toLocaleString()}자 / 안전 입력 한도 ${capacity.maxInputChars.toLocaleString()}자. 대화·분석·연속성·로어북은 줄이지 않았습니다. 추가 Skill 선택을 줄이거나 문맥이 더 큰 모델을 선택하세요.`),{code:'GRADIA_SKILL_PROTECTED_CONTEXT_EXCEEDED'});
     return {...budget,inputChars};
   };
@@ -3404,6 +3433,9 @@
     Runtime.lastFinalOverlayMeta = null;
   };
   const LIB_EVIDENCE_MAX_BYTES = 4 * 1024 * 1024;
+  // User-requested 2026-10-30: every memory-recall timeout gets 10 s more, because slow
+  // host storage transfers (not the server) were exhausting the original bounds.
+  const MEMORY_READ_TIMEOUT_EXTENSION_MS = 10000;
   // Per evidence request: at most this many stall/length recoveries (see beforeModel), so the
   // whole request stays within (stage calls + this) x stage timeout.
   const LIB_EVIDENCE_MAX_RECOVERIES = 2;
@@ -3566,6 +3598,7 @@
     let session;
     let certifiedSelections = [];
     try {
+      await LibReadConnection.ensureConnected();
       session = await (proposalContext ? LibWriterReadConsumer : LibReadConsumer).beginRead({ requestId, signal: controller.signal, queryText: baseRecent.latestUser,
         evidenceBudget: libEvidenceBudget(settings),
         ...(proposalContext ? { proposal: proposalContext.proposal } : {}),
@@ -14559,7 +14592,7 @@ ${passage.text || ''}`, 420));
     const referenceCapacityOptions = inputAssistTerminalPath
       ? {
           profileId: 'custom',
-          profileCapChars: INPUT_ASSIST_LORE_CONTEXT_MAX_CHARS,
+          profileCapChars: inputAssistReferenceChars(settings),
           stageNames: [INPUT_ASSIST_STAGE_ID]
         }
       : { stageNames: [settings?.activeStageName || 'shadow_act'] };
@@ -19491,14 +19524,46 @@ ${passage.text || ''}`, 420));
     return NOVEL_INPUT_CHOICE_PERSPECTIVES.includes(normalized) ? normalized : '';
   };
 
+  // Some providers drop the constant `schema` field, rename it, return a bare
+  // choices array, or nest the payload one level down. Only that envelope is
+  // recovered here; every choice is still validated by the normalizers.
+  const coerceInputChoicesPayload = (parsed, schemaName) => {
+    const objectRow = value => value && typeof value === 'object' && !Array.isArray(value);
+    const hasChoices = value => objectRow(value) && Array.isArray(value.choices) && value.choices.some(objectRow);
+    let payload = Array.isArray(parsed) ? { choices: parsed } : parsed;
+    if (objectRow(payload) && !hasChoices(payload)) {
+      const nested = Object.values(payload).find(value => hasChoices(value)
+        || (Array.isArray(value) && value.length > 0 && value.every(objectRow)));
+      if (nested) payload = Array.isArray(nested) ? { schema: payload.schema, choices: nested } : nested;
+    }
+    if (!hasChoices(payload)) return { payload: null, schemaOk: false, recovered: false };
+    const declared = typeof payload.schema === 'string' ? payload.schema.trim() : '';
+    // A different GRADIA artifact is a wrong answer, not a missing envelope.
+    if (declared && declared !== schemaName && !/input[_-]?choices/i.test(declared)) return { payload: null, schemaOk: false, recovered: false };
+    return { payload: { ...payload, schema: schemaName }, schemaOk: true, recovered: declared !== schemaName };
+  };
+  const parseInputChoicesResponse = raw => {
+    const source = stripCodeFence(text(raw || '')).trim();
+    if (source.startsWith('[')) {
+      const end = source.lastIndexOf(']');
+      for (const attempt of jsonRepairCandidates(end > 0 ? source.slice(0, end + 1) : source)) {
+        try { return JSON.parse(attempt); } catch (_) {}
+      }
+    }
+    return relaxedJsonParse(source);
+  };
+
   const normalizeNovelInputChoices = (payload, original = '') => {
     const source = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
     const rawChoices = Array.isArray(source.choices) ? source.choices : [];
     const byPerspective = new Map();
     const seenBodies = new Set();
-    for (const rawItem of rawChoices) {
+    // Exactly three unlabeled candidates follow the requested order.
+    const positional = rawChoices.length === NOVEL_INPUT_CHOICE_TARGET;
+    for (const [index, rawItem] of rawChoices.entries()) {
       const item = rawItem && typeof rawItem === 'object' && !Array.isArray(rawItem) ? rawItem : {};
-      const perspective = normalizeNovelInputChoicePerspective(item.perspective || item.id || item.mode || item.focus);
+      const perspective = normalizeNovelInputChoicePerspective(item.perspective || item.id || item.mode || item.focus)
+        || (positional ? NOVEL_INPUT_CHOICE_PERSPECTIVES[index] : '');
       if (!perspective || byPerspective.has(perspective)) continue;
       const input = cleanInputAssistResult(item.input || item.rewritten_input || item.rewrittenInput || item.content || item.brief || '');
       if (!input) continue;
@@ -20016,7 +20081,7 @@ ${passage.text || ''}`, 420));
           ? `[CURRENT USER INPUT — ORIGINAL OPTION / CONSTRAINT SOURCE]\n${original}`
           : '[CURRENT USER INPUT]\n(no new user action; propose plausible player-controlled actions or an observe/wait option)',
         '',
-        recent.risuContext ? `[CONSISTENCY REFERENCES — OPTIONAL IDEA SUPPORT, NOT AUTHORITY]\n${inputAssistLoreBlock(recent.risuContext)}` : '',
+        recent.risuContext ? `[CONSISTENCY REFERENCES — OPTIONAL IDEA SUPPORT, NOT AUTHORITY]\n${inputAssistLoreBlock(recent.risuContext, scoped)}` : '',
         '',
         '[CHOICE CONTRACT]',
         '- Each option must be materially different in the USER action/tactic, not merely different wording.',
@@ -20025,16 +20090,26 @@ ${passage.text || ''}`, 420));
         '- Preserve explicit OOC/agency constraints across every compatible option. Do not preserve a concrete original action as mandatory when the point of the picker is to offer alternatives.',
         '- Do not enact any option. The user will choose after generation.'
       ].filter(Boolean).join('\n');
-      const result = await callLLMWithPreset(scoped, INPUT_ASSIST_STAGE_ID, systemPrompt, userPrompt, {
-        maxTokens: 2600,
-        temp: 0.65,
-        forceNoThinking: true,
-        jsonMode: true,
-        omitNativeJsonMode: !!writerEvidence
-      });
-      const parsedPayload = result.ok ? relaxedJsonParse(result.content) : null;
-      const schemaOk = parsedPayload?.schema === AUTHOR_DIRECTED_INPUT_CHOICES_SCHEMA;
-      const choices = schemaOk ? normalizeAuthorDirectedInputChoices(parsedPayload, original, playerInputVoice) : [];
+      const requestPlayerChoices = async (attempt) => {
+        const response = await callLLMWithPreset(scoped, INPUT_ASSIST_STAGE_ID, attempt
+          ? `${systemPrompt}\nThe previous answer could not be read. Reply with the single JSON object only, starting with { and ending with }.`
+          : systemPrompt, userPrompt, {
+          maxTokens: 2600,
+          temp: attempt ? 0.4 : 0.65,
+          forceNoThinking: true,
+          jsonMode: true,
+          omitNativeJsonMode: !!writerEvidence
+        });
+        const envelope = response.ok ? coerceInputChoicesPayload(parseInputChoicesResponse(response.content), AUTHOR_DIRECTED_INPUT_CHOICES_SCHEMA) : { schemaOk: false };
+        return { result: response, schemaOk: envelope.schemaOk,
+          choices: envelope.schemaOk ? normalizeAuthorDirectedInputChoices(envelope.payload, original, playerInputVoice) : [] };
+      };
+      let attemptResult = await requestPlayerChoices(0);
+      if (attemptResult.result.ok === true && (!attemptResult.schemaOk || attemptResult.choices.length < 2)) {
+        warn('author_directed_choice_schema_retry', attemptResult.schemaOk ? 'author_directed_choices_insufficient' : 'author_directed_choices_schema_invalid');
+        attemptResult = await requestPlayerChoices(1);
+      }
+      const { result, schemaOk, choices } = attemptResult;
       const ok = result.ok === true && schemaOk && choices.length >= 2;
       const reason = ok ? ''
         : result.ok && !schemaOk ? 'author_directed_choices_schema_invalid'
@@ -20120,7 +20195,7 @@ ${passage.text || ''}`, 420));
           ? `[CONTINUATION REQUEST]\nType: ${continuationCue.kind}\n${continuationCue.preserveSilence ? 'The source input is silence. In Novel mode this is not a player-agency lock; propose authorial continuations that respect the silence as the starting condition.' : 'Continue from the nearest unresolved motion already present.'}`
           : `[CURRENT USER INPUT — PRESERVE CORE AUTHOR INTENT ACROSS ALL THREE OPTIONS]\n${original}`,
         '',
-        recent.risuContext ? `[CONSISTENCY REFERENCES — IDENTITY/KNOWLEDGE/SETTING GUARD, NOT USER-CHOICE AUTHORITY]\n${inputAssistLoreBlock(recent.risuContext)}` : '',
+        recent.risuContext ? `[CONSISTENCY REFERENCES — IDENTITY/KNOWLEDGE/SETTING GUARD, NOT USER-CHOICE AUTHORITY]\n${inputAssistLoreBlock(recent.risuContext, scoped)}` : '',
         '',
         '[THREE-PERSPECTIVE CONTRACT]',
         '- Candidate 1 must be perspective=user_focus.',
@@ -20133,18 +20208,32 @@ ${passage.text || ''}`, 420));
       const maxTokens = targetChoice.chars
         ? Math.min(4200, Math.max(1800, Math.ceil(targetChoice.chars * 3.2)))
         : 3600;
-      const result = await callLLMWithPreset(scoped, INPUT_ASSIST_STAGE_ID, systemPrompt, userPrompt, {
-        maxTokens,
-        temp: 0.58,
-        forceNoThinking: true,
-        jsonMode: true,
-        omitNativeJsonMode: !!writerEvidence
-      });
-      const parsedPayload = result.ok ? relaxedJsonParse(result.content) : null;
-      const schemaOk = parsedPayload?.schema === NOVEL_INPUT_CHOICES_SCHEMA;
-      const choices = schemaOk ? normalizeNovelInputChoices(parsedPayload, original) : [];
-      const requiredPerspectivesOk = NOVEL_INPUT_CHOICE_PERSPECTIVES.every((perspective, index) => choices[index]?.perspective === perspective);
-      const ok = result.ok === true && schemaOk && choices.length === NOVEL_INPUT_CHOICE_TARGET && requiredPerspectivesOk;
+      const requestNovelChoices = async (attempt) => {
+        const response = await callLLMWithPreset(scoped, INPUT_ASSIST_STAGE_ID, attempt
+          ? `${systemPrompt}\nThe previous answer could not be read. Reply with the single JSON object only, starting with { and ending with }.`
+          : systemPrompt, userPrompt, {
+          maxTokens,
+          temp: attempt ? 0.35 : 0.58,
+          forceNoThinking: true,
+          jsonMode: true,
+          omitNativeJsonMode: !!writerEvidence
+        });
+        const envelope = response.ok ? coerceInputChoicesPayload(parseInputChoicesResponse(response.content), NOVEL_INPUT_CHOICES_SCHEMA) : { schemaOk: false };
+        const normalized = envelope.schemaOk ? normalizeNovelInputChoices(envelope.payload, original) : [];
+        const perspectivesOk = NOVEL_INPUT_CHOICE_PERSPECTIVES.every((perspective, index) => normalized[index]?.perspective === perspective);
+        return { result: response, schemaOk: envelope.schemaOk, schemaRecovered: envelope.recovered === true, choices: normalized, requiredPerspectivesOk: perspectivesOk };
+      };
+      let attemptResult = await requestNovelChoices(0);
+      // One format-only retry: the user explicitly asked for choices and a single
+      // malformed envelope is the common intermittent failure.
+      const novelChoicesUsable = value => value.result.ok === true && value.schemaOk && value.choices.length === NOVEL_INPUT_CHOICE_TARGET && value.requiredPerspectivesOk;
+      const schemaRetried = attemptResult.result.ok === true && !novelChoicesUsable(attemptResult);
+      if (schemaRetried) {
+        warn('novel_input_choice_schema_retry', attemptResult.schemaOk ? 'novel_input_choices_incomplete' : 'novel_input_choices_schema_invalid');
+        attemptResult = await requestNovelChoices(1);
+      }
+      const { result, schemaOk, choices, requiredPerspectivesOk } = attemptResult;
+      const ok = novelChoicesUsable(attemptResult);
       const reason = ok ? ''
         : result.ok && !schemaOk ? 'novel_input_choices_schema_invalid'
           : result.ok && !requiredPerspectivesOk ? 'novel_input_choices_perspectives_missing'
@@ -20171,6 +20260,8 @@ ${passage.text || ''}`, 420));
           effectiveMode: 'novel_three_choices',
           shadowDraftMode: normalizeShadowDraftMode(settings.shadowDraftMode),
           schemaOk,
+          schemaRecovered: attemptResult.schemaRecovered,
+          schemaRetried,
           requiredPerspectivesOk,
           choiceCount: choices.length,
           choices: choices.map(choice => ({ ...choice, input: compact(choice.input, 5000) })),
@@ -29607,7 +29698,7 @@ function createGradiaEvidenceBudget({ digest }) {
         const canceled = new Promise((_, reject) => {
           listener = () => reject(libEvidenceError(record.reason || 'LIB_READ_CANCELED'));
           record.controller.signal.addEventListener('abort', listener, { once: true });
-          timer = setTimeout(() => stop(record, 'LIB_READ_TIMEOUT'), 30000);
+          timer = setTimeout(() => stop(record, 'LIB_READ_TIMEOUT'), 30000 + MEMORY_READ_TIMEOUT_EXTENSION_MS);
         });
         try { const result = await Promise.race([Promise.resolve().then(() => { check(record); return operation(); }), canceled]); check(record); return result; }
         finally { clearTimeout(timer); record.controller.signal.removeEventListener('abort', listener); }
@@ -29910,7 +30001,7 @@ function createGradiaEvidenceBudget({ digest }) {
   };
   const createPrivateLibReadBridge = (url, assertLive, readOwners = ['libra']) => {
     const unifiedProvider = createLibraGradiaUnifiedRead({ role: 'client', check: assertLive,
-      describeTimeoutMs: 3000,
+      describeTimeoutMs: 3000 + MEMORY_READ_TIMEOUT_EXTENSION_MS, timeoutMs: 10000 + MEMORY_READ_TIMEOUT_EXTENSION_MS,
       api: () => getLiveApi(['addPluginChannelListener','postPluginChannelMessage']),
       randomId: () => globalThis.crypto?.randomUUID?.() || Date.now() + ':' + Math.random().toString(36).slice(2) });
     const deny = () => { throw libEvidenceError('LIB_READ_WRITE_FORBIDDEN'); };
@@ -37619,7 +37710,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let generation = 0, bridge = null, scope = null, scopeBundle = null, timer = null, disposed = false, pendingConsent = null, preferenceTail = Promise.resolve();
     let readOwners = ['libra'], unavailable = {}, excludedServerOwners = {}, readSource = 'unified_engine';
     let consentReadPending = true, consentMayBeStored = false, preferenceRevision = 0;
-    const status = () => Object.freeze({state,reason,url,explicit,readSource,readOwners:Object.freeze([...readOwners]),
+    // A saved connection is re-established with the same consented owners after a
+    // transient loss (owner plugin loaded later, server restart, slow scope probe).
+    // A user disconnect, URL change, import or disposal clears `explicit` and stops it.
+    let reconnectTimer = null, reconnectAttempts = 0, reconnecting = null;
+    const LIB_READ_RECONNECT_TERMINAL = ['LIB_READ_SERVER_URL_CHANGED','LIB_READ_SETTINGS_IMPORTED','LIB_READ_CANCELED','LIB_READ_PREFERENCE_UNAVAILABLE','LIB_READ_SOURCE_UNSUPPORTED','LIB_READ_SERVER_URL_INVALID'];
+    const status = () => Object.freeze({state,reason,url,explicit,readSource,readOwners:Object.freeze([...readOwners]),reconnectAttempts,
       activeOwners:Object.freeze(Object.keys(scopeBundle?.scopes || {})),unavailable:Object.freeze({...unavailable}),corpus:corpus ? Object.freeze({...corpus}) : null,
       modelCompatibility:'configured_model_context',tokenAccounting:'unicode-text-estimate-plus-framing'});
     const refresh = () => {
@@ -37654,6 +37750,32 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (old) void old.dispose();
       unbindLibReadOnlyClient();
       state = 'disconnected'; reason = code; refresh();
+      if (code) scheduleReconnect(code);
+    };
+    const reconnectNow = () => {
+      if (reconnecting) return reconnecting;
+      if (disposed || !explicit || pendingConsent || ['connected','connecting'].includes(state)) return Promise.resolve(status());
+      reconnectAttempts++;
+      reconnecting = connect(true, [...readOwners], readSource)
+        .then(result => { if (state === 'connected') reconnectAttempts = 0; return result; })
+        .finally(() => { reconnecting = null; });
+      return reconnecting;
+    };
+    const scheduleReconnect = code => {
+      if (disposed || !explicit || reconnectTimer || LIB_READ_RECONNECT_TERMINAL.includes(code)) return;
+      const delay = Math.min(60000, 2000 * 2 ** Math.min(5, reconnectAttempts));
+      reconnectTimer = setTimeout(() => { reconnectTimer = null; void reconnectNow(); }, delay);
+    };
+    // Called before a memory read. Waits briefly for a saved connection to come back;
+    // the read itself still applies every scope, receipt and currentness check.
+    const ensureConnected = async (timeoutMs = 4000 + MEMORY_READ_TIMEOUT_EXTENSION_MS) => {
+      if (disposed || !explicit || state === 'connected') return status();
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      let timer;
+      try { await Promise.race([reconnectNow(), new Promise(resolve => { timer = setTimeout(resolve, timeoutMs); })]); }
+      catch (_) { /* The read reports the unavailable connection itself. */ }
+      finally { clearTimeout(timer); }
+      return status();
     };
     const forget = async (code = 'LIB_READ_CONNECTION_UNAVAILABLE') => {
       const hadConsent = explicit || consentMayBeStored || consentReadPending; explicit = false; invalidate(code);
@@ -37710,6 +37832,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (readSource === 'plugin_ipc') {
           const native = await readLibPluginNativeIdentity(); check();
           const next = createGradiaPluginRead({ role:'reader', primitives:createGradiaReadPrimitives(),
+            describeTimeoutMs:3000 + MEMORY_READ_TIMEOUT_EXTENSION_MS, timeoutMs:25000 + MEMORY_READ_TIMEOUT_EXTENSION_MS,
             api:()=>getLiveApi(['addPluginChannelListener','postPluginChannelMessage']), check });
           bridge = next;
           const resolved = await next.describe(native,readOwners); check();
@@ -37801,9 +37924,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       } catch (_) { /* First install or unreadable preferences remain disconnected. */ }
       finally { consentReadPending = false; }
     };
-    return Object.freeze({status,setUrl,connect:source=>connect(false,LIB_READ_OWNERS,source||'unified_engine'),connectUnified:()=>connect(false,LIB_READ_OWNERS,'unified_engine'),inspect,start,assertScope,
+    return Object.freeze({status,setUrl,connect:source=>connect(false,LIB_READ_OWNERS,source||'unified_engine'),connectUnified:()=>connect(false,LIB_READ_OWNERS,'unified_engine'),inspect,start,assertScope,ensureConnected,
       disconnect:()=>forget(),imported:()=>forget('LIB_READ_SETTINGS_IMPORTED'),
-      dispose:async()=>{disposed=true;invalidate('LIB_READ_CANCELED');try { await preferenceTail; } catch (_) { /* Failed durable revocation remains explicit in status. */ }}});
+      dispose:async()=>{disposed=true;clearTimeout(reconnectTimer);reconnectTimer=null;invalidate('LIB_READ_CANCELED');try { await preferenceTail; } catch (_) { /* Failed durable revocation remains explicit in status. */ }}});
   })();
 
   const LibReadConsumer = createLibServerReadConsumer({ getBinding: () => libReadBinding, assertNativeScope: assertLibNativeScope, onSelection: value => { libReadSelection = value; } });
@@ -44165,7 +44288,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       } };
       record.abort = () => record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
       record.timer = setTimeout(() => record.finish(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' })),
-        options.timeoutMs || (action === 'describe' ? 3000 : 25000));
+        (action === 'describe' && options.describeTimeoutMs) || options.timeoutMs || (action === 'describe' ? 3000 : 25000));
       pending.set(id, record); signal?.addEventListener('abort', record.abort, { once: true });
       if (signal?.aborted) { record.abort(); return; }
       void send(ids[owner], requestChannel, { schema, kind: 'request', id, action, ...body })

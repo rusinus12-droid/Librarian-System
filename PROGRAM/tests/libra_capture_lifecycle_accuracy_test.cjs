@@ -15,6 +15,52 @@ async function fixture(mode='server_only'){
   out.event=()=>({char:out.fx.f.character,chat:out.fx.f.chat,characterIndex:0,chatIndex:0,messageIndex:1});
   return out;
 }
+
+for(const mode of ['plugin_only','mirror','server_only'])test(`silent output failover catches a late committed turn despite an intervening auxiliary request (${mode})`,async()=>{
+  const timers={early:[],late:[]};let listener;
+  const fx=await serverFixture({mode,host:{addRisuChatListener:async(kind,fn)=>{if(kind==='output')listener=fn;return true;}},contextGlobals:{
+    setTimeout:(fn,ms,...args)=>{
+      const source=String(fn);
+      if(source.includes('LIBRA delayed capture failover failed')){assert.equal(ms,5000);timers.early.push(fn);return {unref(){}};}
+      if(source.includes('afterRequest_late_commit_reconcile')){assert.equal(ms,30000);timers.late.push(fn);return {unref(){}};}
+      return setTimeout(fn,ms,...args);
+    },clearTimeout
+  }});
+  try{
+    const f=fx.f,core=f.r.core;
+    f.chat.message=f.chat.message.slice(0,2);f.chat.messages=f.chat.message;f.control.onCall=async args=>microResult(args);
+    f.chat.message.push({role:'user',chatId:'late-u2',data:'Store a brass key.'});
+    const settings=await f.r.api.getLibraMemorySettings();await f.r.api.saveLibraMemorySettings({...settings,autoAnalyze:true});
+    await core.beforeRequest([{role:'user',content:'Store a brass key.'}],'model');
+    assert.equal(core.state.lastRequestScope.pendingMicro.turn,2);
+    await core.afterRequest('Mara stored a brass key.','model');
+    assert.equal(timers.early.length,1);assert.equal(timers.late.length,1);
+    timers.early[0]();await waitFor(()=>core.state.captureBackend==='script_output_legacy',5000);
+    await waitFor(()=>f.r.api.getCaptureBackendState().lastMicroPublication?.turn===1,15000);
+    assert.equal(f.control.calls.length,0,'old history is not automatically reanalyzed');
+    f.chat.message.push({role:'assistant',chatId:'late-a2',data:'Mara stored a brass key.'});
+    await core.afterRequest('Auxiliary helper result.','otherax');
+    timers.late[0]();
+    await waitFor(()=>f.r.api.getCaptureBackendState().lastMicroPublication?.turn===2,15000);
+    assert.equal((await f.r.api.debugReadActiveMicroMemory(2)).status,'verified',JSON.stringify(f.r.api.getCaptureBackendState().lastMicroPublication));
+    assert.equal(f.control.calls.length,1,'only the proved fresh turn may start automatic analysis');
+    f.chat.message.push({role:'user',chatId:'late-u3',data:'Store the silver key.'});
+    await core.beforeRequest([{role:'user',content:'Store the silver key.'}],'model');
+    await core.afterRequest('Mara stored the silver key.','model');
+    f.chat.message.push({role:'assistant',chatId:'late-a3',data:'Mara stored the silver key.'});
+    await waitFor(()=>f.r.api.getCaptureBackendState().lastMicroPublication?.turn===3,15000);
+    assert.equal((await f.r.api.debugReadActiveMicroMemory(3)).status,'verified','subsequent legacy completions keep their own proof');
+    assert.equal(f.control.calls.length,2);
+    f.chat.message.push({role:'user',chatId:'late-u4',data:'Store a copper key.'});
+    await core.beforeRequest([{role:'user',content:'Store a copper key.'}],'model');
+    f.chat.message.at(-1).data='Discard the copper key instead.';
+    await core.afterRequest('Mara stored the copper key.','model');
+    f.chat.message.push({role:'assistant',chatId:'late-a4',data:'Mara stored the copper key.'});
+    await waitFor(()=>f.r.api.getCaptureBackendState().lastMicroPublication?.turn===4,15000);
+    assert.equal(f.control.calls.length,2,'edited user source cannot borrow the earlier completion permission');
+    assert.equal(typeof listener,'function');
+  }finally{await fx.cleanup();}
+});
 test('streaming draft is not captured until the authoritative completed output callback',async()=>{
   const {fx,listener,event}=await fixture();
   try{
