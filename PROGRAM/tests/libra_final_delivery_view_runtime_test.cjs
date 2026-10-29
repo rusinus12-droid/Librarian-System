@@ -8,7 +8,7 @@ test('final delivery GUI uses only the current receipt and never promotes select
  const seam='  const publicApi = Object.freeze({\n    getHostLineageStatus: () => LibraMemoryCore';
  const f=await createLibraVmHarness({}, {},{contextGlobals:{document,MutationObserver:dom.window.MutationObserver},transformSource:rawSource=>{
   const source=rawSource.replace(/\r\n/g, '\n');
-  assert.equal(source.split(seam).length,2);return source.replace(seam,'  globalThis.__deliveryUi={Gui,Runtime,LibraMemoryCore,bookFinalDeliveryView,openBookFinalEvidenceDialog};\n'+seam);
+  assert.equal(source.split(seam).length,2);return source.replace(seam,'  globalThis.__deliveryUi={Gui,Runtime,LibraMemoryCore,bookFinalDeliveryView,buildBookDeliveryNotes,openBookFinalEvidenceDialog};\n'+seam);
  }});
  try{
   const u=f.context.__deliveryUi,scopeKey='synthetic-scope';
@@ -23,6 +23,9 @@ test('final delivery GUI uses only the current receipt and never promotes select
   u.Runtime.lastMemoryRecallViewer=structuredClone(receipt);
   let view=u.bookFinalDeliveryView();assert.equal(view.status,'verified');assert.equal(view.rows.length,2,'candidate-only row is excluded');
   assert.equal(view.rows[0].worldlineId,'parent-worldline','verified inherited evidence is retained');
+  let notes=u.buildBookDeliveryNotes(view);
+  assert.match(notes.textContent,/마지막 요청의 사서 주석/);assert.doesNotMatch(notes.textContent,/이번 턴|이번 리콜|추가 LLM/);
+  assert.match(notes.textContent,/현재 턴과 다를 수 있습니다/);assert.ok(notes.querySelector('.anno--final'));
   u.openBookFinalEvidenceDialog();const overlay=document.querySelector('[data-final-evidence]');assert.ok(overlay);
   assert.equal(overlay.querySelectorAll('[data-evidence-family]').length,2);
   const detail=overlay.querySelector('[data-evidence-family] details');detail.open=true;detail.dispatchEvent(new dom.window.Event('toggle'));
@@ -34,8 +37,16 @@ test('final delivery GUI uses only the current receipt and never promotes select
   // A failed newer request wins over an older successful recall in core state.
   u.LibraMemoryCore.state.lastRecall={delivery:structuredClone(receipt)};
   for(const extra of [{error:'fixture failure',failOpen:true},{skipped:true,skipReason:'fixture skip'},{finalVerification:{status:'rejected'}}]){
-   u.Runtime.lastMemoryRecallViewer={...structuredClone(receipt),...extra};view=u.bookFinalDeliveryView();assert.notEqual(view.status,'verified');assert.equal(view.rows.length,0);
+   u.Runtime.lastMemoryRecallViewer={...structuredClone(receipt),lensRecall:{injected:true,injectedItems:[{text:'unverified lens'}]},...extra};view=u.bookFinalDeliveryView();assert.notEqual(view.status,'verified');assert.equal(view.rows.length,0);assert.equal(view.lensRows.length,0);
+   notes=u.buildBookDeliveryNotes(view);assert.equal(notes.querySelector('.anno--final'),null);assert.doesNotMatch(notes.textContent,/unverified lens|리콜 기록이 없습니다/);
+   assert.match(notes.textContent,extra.error?/전달 실패/:extra.skipped?/리콜 건너뜀/:/검증 미확인/);
   }
+  u.Runtime.lastMemoryRecallViewer={...structuredClone(receipt),rows:[],lensRecall:{injected:true,injectedItems:[{text:'lens-only evidence',lensName:'렌즈'}]}};
+  view=u.bookFinalDeliveryView();notes=u.buildBookDeliveryNotes(view);
+  assert.match(notes.textContent,/기억 근거 1개/);assert.match(notes.textContent,/일반 근거 0개 · 렌즈 기억\(비정본\) 1개/);assert.match(notes.textContent,/lens-only evidence/);
+  u.openBookFinalEvidenceDialog();assert.ok(document.querySelector('[data-evidence-family="렌즈 기억"]'));
+  u.Runtime.lastMemoryRecallViewer.scopeKey='other';view=u.bookFinalDeliveryView();notes=u.buildBookDeliveryNotes(view);
+  assert.equal(notes.dataset.deliveryNotes,'unavailable');assert.match(notes.textContent,/전달 기록 없음/);assert.doesNotMatch(notes.textContent,/lens-only evidence/);
   assert.equal(f.storageReads.length,reads,'receipt display performs no storage reads');assert.equal(f.storageWrites.length,writes,'receipt display performs no writes');
  }finally{await f.cleanup();dom.window.close();}
 });

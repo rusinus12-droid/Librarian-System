@@ -34,6 +34,29 @@ const {waitFor}=require('../fixtures/libra_vm_harness.cjs');
   await memory.getByRole('button',{name:'수정',exact:true}).waitFor();
   for(const label of ['재분석','수정','버전 기록','실행 기록'])assert.equal(await memory.getByRole('button',{name:label,exact:true}).count(),1);
   const originalText=await memory.locator('pre.code').first().innerText();assert.match(originalText,/## 시간순 사건/);
+  // Opening raw retrieval evidence must not enlarge the grid track or move its toggle offscreen.
+  const evidence=memory.locator('details.fold').filter({has:page.locator('summary',{hasText:'검색 영역·anchor·원문 U+A'})});
+  for(const width of [1600,768,390]){
+   await page.setViewportSize({width,height:1100});
+   await evidence.locator(':scope > summary').click();
+   await evidence.locator('pre.code').waitFor();
+   const bounds=await evidence.evaluate(node=>{
+    const body=node.closest('.mem-entry__body'),summary=node.querySelector('summary'),pre=node.querySelector('pre');
+    const b=body.getBoundingClientRect(),s=summary.getBoundingClientRect(),p=pre.getBoundingClientRect();
+    return {overflow:body.scrollWidth-body.clientWidth,summaryInside:s.left>=b.left&&s.right<=b.right+1,preInside:p.left>=b.left&&p.right<=b.right+1};
+   });
+   assert.ok(bounds.overflow<=1,`expanded evidence stays within memory body at ${width}px: ${JSON.stringify(bounds)}`);
+   assert.ok(bounds.summaryInside&&bounds.preInside,`toggle and JSON stay inside memory body at ${width}px`);
+   assert.match(await evidence.locator('pre.code').textContent(),/"sourcePairs"/);
+   if(artifacts){
+    fs.mkdirSync(artifacts,{recursive:true});
+    await evidence.scrollIntoViewIfNeeded();
+    await page.screenshot({path:path.join(artifacts,`memory-evidence-expanded-${width}.png`)});
+   }
+   await evidence.locator(':scope > summary').click();
+   assert.equal(await evidence.locator('pre.code').isVisible(),false,'the toggle remains usable after expansion');
+  }
+  await page.setViewportSize({width:1600,height:1100});
   const capture=async name=>{if(artifacts){fs.mkdirSync(artifacts,{recursive:true});await page.screenshot({path:path.join(artifacts,name),fullPage:true});}};
   await management.locator('[data-canonical-management-tools]').scrollIntoViewIfNeeded();await capture('memory-management-tools.png');
   await memory.getByRole('button',{name:'수정',exact:true}).scrollIntoViewIfNeeded();await capture('memory-management-card.png');

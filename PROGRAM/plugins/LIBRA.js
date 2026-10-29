@@ -83897,10 +83897,26 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.t-libra .mem-entry__range{min-width:66px;padding:6px 10px;border-radius:var(--r-sm);background:var(--accent-soft);color:var(--accent-ink);font:700 13px/1.2 var(--font-mono);text-align:center;font-variant-numeric:tabular-nums}',
     '.t-libra .mem-entry__copy{display:grid;gap:2px;min-width:0}.t-libra .mem-entry__copy strong{font:700 15px/1.4 var(--font-display)}',
     '.t-libra .mem-entry__meta{font-size:12px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-    '.t-libra .mem-entry__body{display:grid;gap:14px;padding:18px 20px 20px}',
+    '.t-libra .mem-entry__body{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;gap:14px;padding:18px 20px 20px}',
+    '.t-libra .mem-entry__body>.fold,.t-libra .mem-entry__body>.fold>.fold__body{min-width:0}',
+    '.t-libra .mem-entry__body>.fold>summary{overflow-wrap:anywhere}.t-libra .mem-entry__body>.fold>summary::after{flex-shrink:0}',
+    '.t-libra .mem-entry__body>.fold .code{min-width:0;max-width:100%;max-height:440px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}',
     '.t-libra .mem-entry__heading{margin:4px 0 -6px;font:700 12.5px/1.4 var(--font-sans);color:var(--text2)}',
     '.t-libra .mem-entry__text{margin:0;max-height:440px;overflow:auto;padding:16px 18px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere;font-size:13px;line-height:1.75}',
     '.t-libra .mem-footnote{margin:0;padding:0 4px;font-size:11.5px;line-height:1.6}',
+    '.t-libra .anno--failed{border-left-color:var(--danger)}.t-libra .anno--unconfirmed{border-left-color:var(--warn)}',
+    // Versions keep their own scroll range when the execution tab below changes height.
+    '.t-libra [data-canonical-variant-dialog] .drawer{min-width:0;min-height:0;max-width:100%}',
+    '.t-libra [data-canonical-variant-dialog] .drawer__head{flex-shrink:0;min-width:0}.t-libra [data-canonical-variant-dialog] .drawer__head>div{min-width:0;overflow-wrap:anywhere}',
+    '.t-libra [data-canonical-variant-dialog] .drawer__body{display:flex;flex-direction:column;min-height:0;min-width:0;overflow:auto;gap:16px}',
+    '.t-libra [data-canonical-variant-dialog] .drawer__body>*{flex-shrink:0;min-width:0}',
+    '.t-libra [data-canonical-variant-dialog] #ver-rows{max-height:320px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}',
+    '.t-libra [data-canonical-variant-dialog] .ver-row{padding:12px 14px;overflow-wrap:anywhere}.t-libra [data-canonical-variant-dialog] .ver-row+.ver-row{border-top:1px solid var(--border)}',
+    '.t-libra [data-canonical-variant-dialog] #run-rows{min-width:0;overflow:visible;border:0;background:transparent}',
+    '.t-libra [data-canonical-variant-dialog] .tabs{flex-wrap:wrap;overflow:visible}.t-libra [data-canonical-variant-dialog] .tab{min-width:0}',
+    '.t-libra [data-canonical-variant-dialog] .card,.t-libra [data-canonical-variant-dialog] .card__head>div{min-width:0;overflow-wrap:anywhere}',
+    '.t-libra [data-canonical-variant-dialog] .res-row{grid-template-columns:minmax(0,1fr);overflow-wrap:anywhere}',
+    '.t-libra [data-canonical-variant-dialog] pre{max-width:100%;max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}',
     '@media(max-width:860px){.t-libra .mem-tools .mem-tools__groups{grid-template-columns:minmax(0,1fr)}}',
     '@media(max-width:560px){.t-libra .mem-tools{padding:16px}.t-libra .mem-entry__summary{grid-template-columns:auto minmax(0,1fr) auto;padding:12px 14px;gap:10px}.t-libra .mem-entry__summary>.badge{display:none}.t-libra .mem-stats>div{padding:6px 12px;min-width:0}.t-libra .mem-entry__body{padding:14px}}',
     // Canonical copy editor: the edit dialog fills the frame and the text area takes the free height.
@@ -94898,15 +94914,36 @@ advanced
   const bookFinalDeliveryView = () => {
     const binding = canonicalReaderBinding();
     const delivery = libraGuiObject(LibraMemoryCore.getLastRecallViewer());
-    if (!binding.scopeKey || delivery.scopeKey !== binding.scopeKey) return {status:'unavailable',binding,delivery:{},rows:[]};
+    if (!binding.scopeKey || delivery.scopeKey !== binding.scopeKey) return {status:'unavailable',binding,delivery:{},rows:[],lensRows:[]};
     const worldline = libraGuiText(delivery.worldlineId || delivery.scope?.worldlineId);
     const rows = libraGuiArray(delivery.rows);
-    if (worldline && worldline !== binding.worldlineId) return {status:'unavailable',binding,delivery:{},rows:[]};
+    if (worldline && worldline !== binding.worldlineId) return {status:'unavailable',binding,delivery:{},rows:[],lensRows:[]};
     const verified = delivery.finalVerification?.status === 'verified'
       && delivery.finalVerification?.modelDispatchEligible === true;
     const status = delivery.error || delivery.failOpen ? 'failed' : delivery.skipped ? 'skipped'
       : verified ? 'verified' : 'unconfirmed';
-    return {status,binding,delivery,rows:status === 'verified' ? rows.filter(row => row.injected === true) : []};
+    return {status,binding,delivery,rows:status === 'verified' ? rows.filter(row => row.injected === true) : [],
+      lensRows:status === 'verified' && delivery.lensRecall?.injected === true ? libraGuiArray(delivery.lensRecall.injectedItems) : []};
+  };
+
+  const buildBookDeliveryNotes = view => {
+    const {status,delivery,rows,lensRows}=view;
+    const verified=status==='verified',count=rows.length+lensRows.length;
+    const statusText={verified:'요청 메시지 주입 검증 완료',failed:'마지막 요청 전달 실패',skipped:'마지막 요청 리콜 건너뜀',unconfirmed:'마지막 요청 전달 검증 미확인',unavailable:'전달 기록 없음'}[status];
+    const absence={failed:'마지막 요청의 전달 처리에 실패했습니다.',skipped:'마지막 요청에서는 리콜을 건너뛰었습니다.',unconfirmed:'마지막 요청에서 어떤 근거가 주입됐는지 최종 검증되지 않았습니다.',unavailable:'현재 채팅·세계선에서 확인된 전달 기록이 없습니다.'}[status];
+    const reason=delivery.error || delivery.skipReason || delivery.finalVerification?.reason;
+    const excerpts=[...rows.map(row=>row.selectedText ?? row.text),...lensRows.map(row=>row.renderedLine || row.text)].map(value=>compact(libraGuiText(value),360)).filter(Boolean).slice(0,3).join('  ');
+    const note=(kicker,title,body,action=null,className='anno')=>guiEl('div',{class:className},[
+      guiEl('div',{class:'anno__head'},[guiEl('span',{class:'anno__kicker',text:kicker}),action]),guiEl('h3',{text:title}),guiEl('p',{text:body})]);
+    return guiEl('article',{class:'leaf',dataset:{deliveryNotes:status}},[
+      guiEl('div',{class:'eyebrow',text:"Librarian's Notes"}),guiEl('h2',{text:'마지막 요청의 사서 주석'}),
+      guiEl('p',{class:'hint',text:status==='unavailable'?'현재 범위의 마지막 요청 기록을 표시합니다.':`기록 시각 · ${libraFormatTime(delivery.at)} · 현재 턴과 다를 수 있습니다.`}),
+      note('RECALL',verified?`마지막 리콜 · 기억 근거 ${count}개`:'마지막 리콜 · 근거 확인 안 됨',verified?(excerpts || (delivery.liveTailInjected?'검색 기억 없이 최근 완료 대화만 주입했습니다.':'검증된 요청에 포함된 기억 근거가 없습니다.')):absence,
+        guiEl('button',{class:'linkbtn',type:'button',text:'기억 서가 열기 →',onClick:()=>bookNavigate('memory')})),
+      note('DELIVERY','사서 모드 전달',verified?`일반 근거 ${rows.length}개 · 렌즈 기억(비정본) ${lensRows.length}개 · 전체 주입 ${Number(delivery.blockChars || 0)}자`:`${absence}${reason?` 사유: ${libraGuiText(reason)}`:''}`),
+      note('FINAL',statusText,'플러그인의 요청 메시지 주입 검증 상태입니다. 제공자 수신이나 모델의 실제 활용 여부를 확인한 기록은 아닙니다.',
+        guiEl('button',{class:'linkbtn',type:'button',text:'전달 근거 보기 →',onClick:()=>openBookFinalEvidenceDialog()}),`anno ${verified?'anno--final':status==='failed'?'anno--failed':'anno--unconfirmed'}`)
+    ]);
   };
 
   const openBookFinalEvidenceDialog = () => {
@@ -94931,7 +94968,7 @@ advanced
       }
       const statusText = {verified:'최종 검증을 통과한 마지막 요청의 전달 기록',failed:'마지막 요청 전달 실패',skipped:'마지막 요청 리콜 건너뜀',unconfirmed:'최종 전달 확인 안 됨'}[status];
       content.append(guiEl('p',{class:status === 'verified' ? 'note' : 'note note--warn',text:statusText}));
-      const lensInjected = delivery.lensRecall?.injected === true ? libraGuiArray(delivery.lensRecall?.injectedItems) : [];
+      const lensInjected = view.lensRows;
       const meta = guiEl('dl',{class:'kv'});
       for (const [label,value] of [['전달 시각',libraFormatTime(delivery.at)],['경로','사서 모드'],['기억 근거',`${rows.length}개`],['렌즈 기억 (비정본)',lensInjected.length ? `${lensInjected.length}개 · ${Number(delivery.lensRecall?.usedChars || 0)}자` : '포함 안 됨'],['전체 전달 문자',String(Number(delivery.blockChars || 0))],['최근 완료 대화',delivery.liveTailInjected === true ? `${Number(delivery.liveTailChars || 0)}자 포함` : '포함 안 됨']]) meta.append(guiEl('dt',{text:label}),guiEl('dd',{text:value}));
       content.append(meta,guiEl('p',{class:'hint',text:'마지막 요청에 전달된 발췌입니다. 이후 저장된 기억이나 상태가 바뀌어도 이 기록의 내용을 다시 작성하지 않습니다.'}));
@@ -94977,19 +95014,10 @@ advanced
     const currentTurn = Array.isArray(snapshot.pairs) ? snapshot.pairs.length : null;
     const pending = currentTurn == null ? null : Math.max(0, currentTurn - committedTurn);
     const finalView = bookFinalDeliveryView();
-    const delivery = finalView.delivery;
-    const route = normalizeResponseInjectionMode(delivery.route || Gui.state?.runtime?.injectionMode || DEFAULT_RESPONSE_INJECTION_MODE);
-    const mode = LIBRA_RESPONSE_MODE_UI[route] || LIBRA_RESPONSE_MODE_UI.classic;
-    const used = finalView.rows;
-    const count = used.length;
-    const chars = finalView.status === 'verified' ? Number(delivery.blockChars || 0) : 0;
+    const count = finalView.rows.length + finalView.lensRows.length;
     const text = (value, fallback) => String(value || '').trim() || fallback;
     const link = (label, page) => guiEl('button', { class: 'linkbtn', type: 'button', text: label, onClick: () => bookNavigate(page) });
     const fact = (n, label) => guiEl('div', { class: 'fact' }, [guiEl('b', { text: String(n) }), guiEl('span', { text: label })]);
-    const note = (kicker, title, body, action = null) => guiEl('div', { class: 'anno' }, [
-      guiEl('div', { class: 'anno__head' }, [guiEl('span', { class: 'anno__kicker', text: kicker }), action]),
-      guiEl('h3', { text: title }), guiEl('p', { text: body })
-    ]);
     const statusLabel = committedTurn > 0 ? `T${committedTurn}까지 정본 상태 반영` : '정본 상태 반영 대기';
     return guiEl('div', { class: 'stack', dataset: { libraProductDetail: 'desk' } }, [
       guiEl('div', { class: committedTurn > 0 ? 'banner banner--ok' : 'banner banner--warn', dataset: { productReadback: 'desk-status' } }, [
@@ -95007,12 +95035,7 @@ advanced
           guiEl('div', { class: 'facts' }, [fact(count, '전달 근거'), fact(relationships.length, '관계 영향'), fact(world.length, '세계 항목'), fact(threads.length, '열린 줄기')]),
           guiEl('div', { class: 'cluster' }, [characters.length ? link(`인물 ${characters.length} →`, 'people') : null, relationships.length ? link(`관계 ${relationships.length} →`, 'people') : null, world.length ? link(`세계 ${world.length} →`, 'world') : null, threads.length ? link(`열린 줄기 ${threads.length} →`, 'story') : null].filter(Boolean))
         ]),
-        guiEl('article', { class: 'leaf' }, [
-          guiEl('div', { class: 'eyebrow', text: "Librarian's Notes" }), guiEl('h2', { text: '이번 턴의 사서 주석' }),
-          note('RECALL', `이번 리콜 · 기억 근거 ${count}개`, used.slice(0, 3).map(row => compact(libraGuiText(row.text || row.selectedText || ''), 360)).filter(Boolean).join('  ') || '현재 채팅에서 확인된 이번 턴 리콜 기록이 없습니다.', link('서가에서 보기 →', 'memory')),
-          note('DELIVERY', `사서 모드 전달 · ${mode.label}`, count ? `${count}개 기억 근거 · ${chars}자 직접 전달 · 추가 LLM 호출 0회` : finalView.status === 'verified' && delivery.liveTailInjected ? '검색 기억 없이 최근 완료 대화만 전달했습니다.' : '현재 요청에서 직접 전달된 기억 근거가 확인되지 않았습니다.'),
-          guiEl('div', { class: 'anno anno--final' }, [guiEl('div', { class: 'anno__head' }, [guiEl('span', { class: 'anno__kicker', text: 'FINAL' }), guiEl('button', { class: 'linkbtn', type: 'button', text: '전달 근거 보기 →', onClick: () => openBookFinalEvidenceDialog() })]), guiEl('h3', { text: '최종 주입' }), guiEl('p', { text: '이 화면은 현재 채팅 범위의 실제 전달 영수증만 표시합니다. 전달 기록이 없으면 성공으로 추정하지 않습니다.' })])
-        ])
+        buildBookDeliveryNotes(finalView)
       ]),
 
       buildBookReceiptRecoveryPanel()
