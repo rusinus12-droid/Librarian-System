@@ -59,6 +59,9 @@ const buildSheet = state => {
     guiAsObject: value => (value && typeof value === 'object' && !Array.isArray(value) ? value : {}),
     text: value => String(value ?? '').trim(),
     worldManagerSnapshotView: () => view,
+    // This fixture supplies an unversioned Head, without unified identity links.
+    worldManagerIsUnified: () => false,
+    openWorldManagerIdentityLinkReview: () => {},
     bookProjectionIdentity: (domain, row, index) => String(row?.id || `${domain}:${index}`),
     bookCharacterName: row => String(row?.name || ''),
     bookCharacterEvidence: () => null,
@@ -74,7 +77,7 @@ const buildSheet = state => {
     worldManagerDisplayReferences: value => value,
     worldManagerRelationshipDefinition: () => '',
     worldManagerSourceBadge: () => null,
-    LibraMemoryCore:{state:{snapshot:{scope:{scopeKey:'scope-a'}}}},
+    LibraMemoryCore:{state:{snapshot:{scope:{scopeKey:'scope-a'}}},identityLinkReviewRows:()=>[]},
     Gui, Object, Array, String, Number, Set, Math, JSON,
     console
   });
@@ -146,6 +149,9 @@ record('A34 the empty projection states what is missing instead of a blank page'
     guiAsObject: v => (v && typeof v === 'object' && !Array.isArray(v) ? v : {}),
     text: v => String(v ?? '').trim(),
     worldManagerSnapshotView: () => ({ characters: [], relationships: [] }),
+    worldManagerIsUnified: () => false,
+    openWorldManagerIdentityLinkReview: () => {},
+    LibraMemoryCore: { identityLinkReviewRows: () => [] },
     buildBookEmptyState: (eyebrow, title, description) => el('section', { class: 'libra-book-empty' }, [
       el('span', { class: 'libra-book-eyebrow', text: eyebrow }), el('h1', { text: title }), el('p', { text: description })
     ]),

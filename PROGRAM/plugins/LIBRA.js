@@ -61796,28 +61796,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
       };
       const duplicates=(rows,id)=>{const counts=new Map();for(const r of rows){const k=r?.[id];if(unifiedId(k))counts.set(k,(counts.get(k)||0)+1);}return new Set([...counts].filter(([,n])=>n>1).map(([k])=>k));};
-      const repairQuoteInSource=(quoteValue,rawValue)=>{
-        const needle=String(quoteValue||'').trim(),body=String(rawValue||'');
-        const length=needle.length,limit=Math.max(1,Math.floor(length*0.12));
-        if(length<6||length>300||!body||body.length>20000)return '';
-        let previous=new Array(body.length+1).fill(0),previousStart=Array.from({length:body.length+1},(_,index)=>index);
-        for(let i=1;i<=length;i+=1){
-          const current=new Array(body.length+1),currentStart=new Array(body.length+1);
-          current[0]=i;currentStart[0]=0;
-          for(let j=1;j<=body.length;j+=1){
-            const substitute=previous[j-1]+(needle[i-1]===body[j-1]?0:1);
-            const remove=previous[j]+1,insert=current[j-1]+1;
-            if(substitute<=remove&&substitute<=insert){current[j]=substitute;currentStart[j]=previousStart[j-1];}
-            else if(remove<=insert){current[j]=remove;currentStart[j]=previousStart[j];}
-            else{current[j]=insert;currentStart[j]=currentStart[j-1];}
-          }
-          previous=current;previousStart=currentStart;
-        }
-        let best=Infinity,end=-1;
-        for(let j=1;j<=body.length;j+=1)if(previous[j]<best){best=previous[j];end=j;}
-        if(best>limit||end<0)return '';
-        return body.slice(previousStart[end],end).trim();
-      };
       const evidence=(row,path)=>{
         if(!Array.isArray(row?.evidenceSpans))return;
         row.evidenceSpans=row.evidenceSpans.flatMap((span,i)=>{
@@ -61829,11 +61807,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
                 if(canonicalEvidenceSpanBinding(clean,src)){clean.ref=src.ref;return [clean];}
               }
             }
-            const targetSrc=sources.get(clean.ref);
-            if(targetSrc){
-              const repaired=repairQuoteInSource(clean.quote,targetSrc.raw);
-              if(repaired&&canonicalEvidenceSpanBinding({ref:clean.ref,quote:repaired},targetSrc)){clean.quote=repaired;return [clean];}
-            }
+            // A near match can change negation, quantities or who acted. Keep
+            // non-verbatim evidence unbound; the existing admission path drops
+            // it and fences the rejected fact's State field.
           }
           admission.droppedFields.push({path:path+'.evidenceSpans['+i+']',reason:'source_quote_mismatch'});return [];
         });
@@ -62269,6 +62245,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       memory.sourceEvidenceRef=await writer.put(memory.scopeKey,libraSourceUnitForBatch(memory.scopeKey,targetBatch,{worldlineId:memory.worldlineId||'main'}),rows,{normalizationVersion:approved.ref.normalizationVersion});
       memory.unifiedOrigin=unifiedOriginIdentity(sourceMemory);
       memory.unifiedIdentityScope=sourceMemory.unifiedIdentityScope||sourceMemory.unifiedOrigin?.scopeKey||sourceMemory.scopeKey;
+      memory.unifiedIdentityProvenance=buildUnifiedIdentityProvenance(memory);
       memory.unifiedTransfer={schema:'libra.unified_transfer_binding.v1',sourceScopeKey:sourceMemory.scopeKey,
         sourceMemoryId:sourceMemory.memoryId,sourceRevision:sourceMemory.revision,sourceEvidenceRef:clone(sourceMemory.sourceEvidenceRef),
         targetScopeKey:memory.scopeKey,targetMemoryId:memory.memoryId,targetSourceDigest:memory.sourceDigest,
@@ -63522,6 +63499,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           asArray(fact.evidenceSpans).some(proof => proof.ref === span.ref
             && canonicalEntityNameBoundToEvidence(entity.name, proof.quote))))) currentEntities.add(entity.tempId);
       }
+      const automaticIdentityLinks=clone(asArray(basis.head?.unifiedAutomaticIdentityLinks));
       const artifactPersonNames=artifact.entities.filter(x=>x.type==='person'&&currentEntities.has(x.tempId)).map(x=>String(x.name||'').trim());
       for(const e of artifact.entities.filter(e=>currentEntities.has(e.tempId))){
         const nameKey=statePipelineIdentityKey(e.name);
@@ -63544,6 +63522,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if(matches.length>1 || (matches[0] && usedIds.has(matches[0].id) && !asArray(matches[0].mergedIds).length && !koreanAliasMatch)){pending.push({entity:e.tempId,reason:'ambiguous_identity'});continue;}
         let entity=matches[0];
         if(entity && koreanAliasMatch){
+          const linkNames=[string(entity.name),string(e.name)].sort();
+          const linkId=unifiedAutomaticIdentityLinkId(entity.id,linkNames);
+          if(!automaticIdentityLinks.some(link=>link.linkId===linkId))automaticIdentityLinks.push({schema:'libra.automatic_identity_link.v1',linkId,targetId:entity.id,names:linkNames,
+            originEntityId:`ce_${e.type}_${stableHash(`${memory.unifiedIdentityScope||memory.scopeKey}:${e.type}:${e.kind||''}:${nameKey}`)}`,
+            originKey:unifiedOriginKey(memory),memoryId:memory.memoryId,revision:memory.revision,tempId:e.tempId,turnRange:clone(memory.turnRange),
+            evidenceSpans:clone(e.evidenceSpans),reason:'name_form_only'});
           const incomingName=String(e.name||'').trim(),currentName=String(entity.name||'').trim();
           if(koreanPersonGivenNameFromFull(incomingName) && /^[\uAC00-\uD7A3]{2}$/.test(currentName)){
             entity.sourceNames=[...new Set([...asArray(entity.sourceNames),currentName])];
@@ -63565,6 +63549,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       registry.byId=Object.fromEntries(registry.entities.map(e=>[e.id,clone(e)]));
       registry.fingerprint=digest(registry.entities.map(e=>({id:e.id,type:e.type,kind:e.kind,name:statePipelineIdentityKey(e.name),aliases:asArray(e.aliases).map(statePipelineIdentityKey).sort()})));
       const head=clone(basis.head || emptyContinuityState({scopeKey:memory.scopeKey},manifest));
+      if(automaticIdentityLinks.length)head.unifiedAutomaticIdentityLinks=automaticIdentityLinks;
       for(const ent of resolved.values()){
         if(ent.type!=='person')continue;
         const charRow=asArray(head.characters).find(r=>r.id===ent.id);
@@ -63784,6 +63769,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
         row.certainty='confirmed';row.fieldEvidence={...asObject(row.fieldEvidence),[c.field]:fieldEvidence};head[collection]=rows;
       }
       // Events are an evidence-backed chronology, separate from unresolved threads.
+      const nativeOrigins=memory.unifiedRuntimeEntityOverrides?null:readUnifiedIdentityProvenance(memory).value;
+      for(const [tempId,entity] of resolved){
+        if(entity.type!=='person')continue;const row=asArray(head.characters).find(r=>r.id===entity.id);if(!row)continue;
+        const origins=memory.unifiedRuntimeEntityOrigins?.[tempId]||asArray(nativeOrigins?.entities).filter(e=>e.tempId===tempId).map(e=>({originId:e.originId,name:e.name}));
+        row.identityOrigins=unifiedIdentityOriginUnion(asArray(row.identityOrigins),origins);
+      }
       // Bound the Head projection; the complete history stays in canonical memory.
       const events=[...asArray(head.narrative.events)];
       for(const f of [...currentFacts.values()].filter(f=>f.claimKind==='event'&&!blockedFacts.has(f.tempFactId)).sort((a,b)=>orderFor(a)-orderFor(b))){
@@ -63868,6 +63859,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       unifiedAssert(group.sourceHash===digest(plan.source)&&group.targetHash===digest(plan.target)&&group.referenceDigest===plan.referenceDigest,'UNIFIED_MERGE_BASIS_CHANGED');
       const source=head[group.sourceType].find(r=>r.id===group.sourceId),target=head[group.sourceType].find(r=>r.id===group.targetId);
       const provenance={schema:STATE_CORRECTION_EVENT_SCHEMA,correctionId:correction.correctionId,anchor:clone(correction.anchor),createdAt:correction.createdAt||'',policy:'identity_merge'};
+      if(group.sourceType==='characters')target.identityOrigins=unifiedIdentityOriginUnion(asArray(target.identityOrigins),asArray(source.identityOrigins));
       const fields=new Set([...Object.keys(asObject(source.state)),...Object.keys(asObject(source.clearedFieldEvidence)),...Object.keys(asObject(source.clearedFieldCorrectionProvenance))]);
       for(const field of fields){const a=unifiedIdentityCell(source,field),b=unifiedIdentityCell(target,field);
         if(group.fieldChoices[field]==='both'){
@@ -63947,6 +63939,35 @@ function mountMemorySuiteReanalysisReview(container,config) {
         else if(x&&typeof x==='object')visit(x,next);
       }};visit(fact.values,'values');return out;
     };
+    // Native identity and fact-role provenance is independent of the display
+    // card. It is written once with new canonical records; old records can be
+    // reconstructed without rewriting their approved evidence.
+    const unifiedNativeIdentityId=(memory,entity)=>'ce_'+entity.type+'_'+stableHash((memory.unifiedIdentityScope||memory.unifiedOrigin?.scopeKey||memory.scopeKey)+':'+entity.type+':'+(entity.kind||'')+':'+statePipelineIdentityKey(entity.name));
+    const buildUnifiedIdentityProvenance=memory=>{
+      const entities=asArray(memory.canonicalArtifact?.entities).filter(e=>e.type==='person').map(e=>({tempId:e.tempId,originId:unifiedNativeIdentityId(memory,e),name:e.name,kind:e.kind||''}));
+      const byTemp=new Map(entities.map(e=>[e.tempId,e])),factRoles=[];
+      for(const fact of asArray(memory.canonicalArtifact?.facts))for(const ref of unifiedSplitFactRefs(fact)){const entity=byTemp.get(ref.tempId);if(entity)factRoles.push({factId:fact.tempFactId,path:ref.path,tempId:ref.tempId,originId:entity.originId});}
+      return {schema:'libra.identity_provenance.v1',artifactDigest:memory.artifactDigest,identityScope:memory.unifiedIdentityScope||memory.unifiedOrigin?.scopeKey||memory.scopeKey,entities,factRoles};
+    };
+    const readUnifiedIdentityProvenance=memory=>{
+      const expected=buildUnifiedIdentityProvenance(memory),stored=memory.unifiedIdentityProvenance;
+      unifiedAssert(!stored||digest(stored)===digest(expected),'UNIFIED_IDENTITY_PROVENANCE_MISMATCH');
+      return {value:expected,source:stored?'persisted':'canonical_reconstructed'};
+    };
+    const unifiedIdentityOriginUnion=(...groups)=>[...new Map(groups.flatMap(asArray).map(row=>[row.originId,clone(row)])).values()];
+    const unifiedIdentitySplitRoleOwners=replay=>{
+      const owners=new Map(),records=new Map(asArray(replay.store?.records).map(r=>[r.correctionId,r]));
+      // Follow actual canonical replay order, including inherited sessions whose
+      // local turn counters restart. A bare anchorTurn is not a global clock.
+      for(const record of asArray(replay.appliedCorrections).map(id=>records.get(id)).filter(Boolean)){
+        for(const patch of asArray(record.compiledAfter?.patches))if(patch.domain==='identity'&&patch.operation==='split'){
+          const targets=new Map(asArray(patch.split?.targets).map(t=>[t.key,t.id]));
+          for(const a of asArray(patch.split?.assignments))owners.set(JSON.stringify([a.originKey,a.factId,a.path]),targets.get(a.targetKey));
+        }
+      }
+      return owners;
+    };
+    const unifiedIdentityCurrentCard=(head,idValue)=>{let id=idValue;const seen=new Set();while(head?.unifiedIdentityRedirects?.[id]&&!seen.has(id)){seen.add(id);id=head.unifiedIdentityRedirects[id];}return id;};
     const unifiedSplitSetFactRef=(fact,path,value)=>{
       // The paths are enumerated from a validated original fact, never arbitrary user pointers.
       unifiedAssert(unifiedSplitFactRefs(fact).some(r=>r.path===path),'UNIFIED_SPLIT_REFERENCE_PATH_INVALID');
@@ -63956,7 +63977,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     const collectUnifiedSplitPreview=async({sourceId=''}={})=>{
       const context=await resolveContext(),pairs=buildPairs(context.chat,context.scope.scopeKey),manifest=await loadManifest(context.scope,pairs.length);
-      unifiedAssert((await MemorySuiteStorageBridge.getMode())==='plugin_only','UNIFIED_BACKEND_NOT_SUPPORTED');
       const meta=await loadStateWorldlineMeta(context.scope,{strict:true}),activeId=meta.activeWorldlineId||'main';
       const cutoff=meta.worldlines[activeId]?.cutoffTurn??Infinity;
       const head=await storage.getJson(key.continuityState(context.scope),null);
@@ -63967,22 +63987,27 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const replay=await buildUnifiedReplayCandidate({context,manifest,cutoffTurn:cutoff,collectIdentityTrace:true});
       unifiedAssert(!replay.head.unifiedCoverage?.legacyCount,'UNIFIED_SPLIT_TYPED_HISTORY_REQUIRED');
       unifiedAssert(unifiedSplitHeadDigest(head)===unifiedSplitHeadDigest(replay.head),'UNIFIED_IDENTITY_HEAD_STALE');
-      const occurrences=[];
+      const occurrences=[],roleOwners=unifiedIdentitySplitRoleOwners(replay);
       for(const entry of replay.identityTrace){
         const resolved=new Map(entry.resolvedEntities.map(e=>[e.tempId,e.id]));
-        for(const fact of entry.memory.canonicalArtifact.facts)for(const ref of unifiedSplitFactRefs(fact))if(resolved.get(ref.tempId)===sourceId){
-          const originKey=unifiedOriginKey(entry.memory);
+        const originKey=unifiedOriginKey(entry.memory),provenance=readUnifiedIdentityProvenance(entry.memory),entities=new Map(provenance.value.entities.map(e=>[e.tempId,e]));
+        for(const fact of entry.memory.canonicalArtifact.facts)for(const ref of unifiedSplitFactRefs(fact))if(unifiedIdentityCurrentCard(head,roleOwners.get(JSON.stringify([originKey,fact.tempFactId,ref.path]))||resolved.get(ref.tempId))===sourceId){
+          const original=entities.get(ref.tempId);unifiedAssert(original,'UNIFIED_SPLIT_ORIGINAL_IDENTITY_MISSING');
           occurrences.push({occurrenceId:'split_ref_'+stableHash(originKey+'|'+fact.tempFactId+'|'+ref.path),originKey,
             artifactDigest:entry.memory.artifactDigest,factId:fact.tempFactId,path:ref.path,tempId:ref.tempId,
+            originIdentityId:original.originId,originalEntityName:original.name,originProvenance:provenance.source,
             memoryId:entry.memory.memoryId,revision:entry.memory.revision,turnRange:clone(entry.memory.turnRange),
             text:fact.text,domain:fact.domain,claimKind:fact.claimKind,temporalRole:fact.temporalRole,certainty:fact.certainty,evidenceSpans:clone(fact.evidenceSpans)});
         }
       }
       unifiedAssert(occurrences.length>0,'UNIFIED_SPLIT_FACT_REFERENCES_REQUIRED');
       unifiedAssert(occurrences.length<=1500,'UNIFIED_SPLIT_REVIEW_TOO_LARGE');
+      const grouped=new Map();for(const o of occurrences){if(!grouped.has(o.originIdentityId))grouped.set(o.originIdentityId,{originId:o.originIdentityId,name:o.originalEntityName,roles:0});grouped.get(o.originIdentityId).roles++;}
+      const originGroups=[...grouped.values()],suggestedTargets=originGroups.slice(0,8).map((g,i)=>({key:'person_'+(i+1),name:g.name,aliases:[],originId:g.originId}));
+      const suggestedAssignments=occurrences.map(o=>({occurrenceId:o.occurrenceId,targetKey:(suggestedTargets.find(t=>t.originId===o.originIdentityId)||suggestedTargets[0]).key,reviewNeeded:!suggestedTargets.some(t=>t.originId===o.originIdentityId),reason:'canonical_identity_origin'}));
       const body={schema:'libra.unified_identity_split_preview.v1',scopeKey:context.scope.scopeKey,worldlineId:activeId,
         sourceId,sourceName:source.name,sourceAliases:clone(asArray(source.aliases)),anchorTurn:head.throughTurn,
-        basisFingerprint:head.basis?.sourceFingerprint||'',beforeDigest:unifiedSplitHeadDigest(head),occurrences,
+        basisFingerprint:head.basis?.sourceFingerprint||'',beforeDigest:unifiedSplitHeadDigest(head),occurrences,originGroups,suggestedTargets,suggestedAssignments,
         journalDigest:stateCorrectionReplayJournalDigest(replay.store),modelCalls:0,canonicalChanges:0};
       return {preview:{...body,previewDigest:digest(body)},context,manifest,head,replay,cutoff};
     };
@@ -64039,7 +64064,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const assignments=preview.occurrences.map(o=>({...o,targetKey:given.get(o.occurrenceId)}));
       const transformMemory=memory=>{
         const selected=assignments.filter(a=>a.originKey===unifiedOriginKey(memory));if(!selected.length)return memory;
-        const next=clone(memory);next.unifiedRuntimeEntityOverrides={};
+        const next=clone(memory);next.unifiedRuntimeEntityOverrides={};next.unifiedRuntimeEntityOrigins={};
         const childTemps=new Map(),occupiedTemps=new Set(next.canonicalArtifact.entities.map(e=>e.tempId));
         for(const child of targets){let candidate='split_'+child.key;while(occupiedTemps.has(candidate))candidate+='_';occupiedTemps.add(candidate);childTemps.set(child.key,candidate);}
         for(const a of selected){
@@ -64048,13 +64073,25 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const originalEntity=memory.canonicalArtifact.entities.find(e=>e.tempId===a.tempId);
           unifiedAssert(fact&&originalEntity,'UNIFIED_SPLIT_FACT_MISSING');
           if(!next.canonicalArtifact.entities.some(e=>e.tempId===tempId))next.canonicalArtifact.entities.push({tempId,name:child.name,type:'person',kind:'person',evidenceSpans:clone(originalEntity.evidenceSpans)});
-          next.unifiedRuntimeEntityOverrides[tempId]=clone(child);unifiedSplitSetFactRef(fact,a.path,tempId);
+          next.unifiedRuntimeEntityOverrides[tempId]=clone(child);
+          next.unifiedRuntimeEntityOrigins[tempId]=unifiedIdentityOriginUnion(asArray(next.unifiedRuntimeEntityOrigins[tempId]),[{originId:a.originIdentityId||unifiedNativeIdentityId(memory,originalEntity),name:a.originalEntityName||originalEntity.name}]);
+          unifiedSplitSetFactRef(fact,a.path,tempId);
         }
+        // The allocated facts now name child entities. Retire only orphaned
+        // source declarations so cited-name discovery cannot recreate the parent.
+        const allocatedTemps=new Set(selected.map(a=>a.tempId));
+        next.canonicalArtifact.entities=next.canonicalArtifact.entities.filter(e=>!allocatedTemps.has(e.tempId)||next.canonicalArtifact.facts.some(f=>unifiedSplitFactRefs(f).some(ref=>ref.tempId===e.tempId)));
         return next;
       };
       // The original approved artifact is checked by loadUnifiedApprovedBatch BEFORE
       // this local, explicitly user-authorized interpretation. It is never persisted.
-      const projected=await buildUnifiedReplayCandidate({context,manifest,cutoffTurn:cutoff,store:replay.store,transformMemory});
+      // The temporary allocation already replaces the combined identity with
+      // children. Skip confirmations and only the merges that built this card
+      // during this projection. Keep the durable journal unchanged: it replays
+      // those operations before the final split on the original Head.
+      const projectionStore=clone(replay.store);
+      projectionStore.records=asArray(projectionStore.records).filter(c=>!asArray(c.compiledAfter?.patches).some(p=>p.domain==='identity'&&(p.operation==='link_review'||p.operation==='merge'&&[p.merge?.sourceId,p.merge?.targetId].some(id=>unifiedIdentityCurrentCard(head,id)===preview.sourceId))));
+      const projected=await buildUnifiedReplayCandidate({context,manifest,cutoffTurn:cutoff,store:projectionStore,transformMemory});
       unifiedAssert(targets.every(t=>projected.head.characters.some(r=>r.id===t.id)),'UNIFIED_SPLIT_CHILD_CURRENT_REFERENCE_REQUIRED');
       unifiedAssert(!projected.head.characters.some(r=>r.id===preview.sourceId),'UNIFIED_SPLIT_SOURCE_UNRESOLVED');
       unifiedAssert(!asArray(projected.head.unifiedApplied?.pending).some(p=>!asArray(head.unifiedApplied?.pending).some(old=>digest(old)===digest(p))),'UNIFIED_SPLIT_CONFLICT_REQUIRES_REVIEW');
@@ -64073,10 +64110,68 @@ function mountMemorySuiteReanalysisReview(container,config) {
         target:{domain:'head',mode:'identity_split'},patch:{identitySplit:split}});}finally{state.unifiedSplitPermits.delete(permit);}
     };
 
+    // Automatic name links stay usable, but remain reviewable until a user
+    // confirms them. Names are not independent entity IDs; immutable canonical
+    // occurrences remain the authority for later fact-role splitting.
+    const unifiedAutomaticIdentityLinkId=(targetId,names)=>'auto_link_'+stableHash(JSON.stringify([targetId,[...names].sort()]));
+    const unifiedIdentityReviewRows=head=>{
+      const links=new Map(asArray(head?.unifiedAutomaticIdentityLinks).map(link=>[link.linkId,clone(link)]));
+      const characters=asArray(head?.characters);
+      for(const row of characters){
+        if(row.identityCorrectionProvenance?.merge||row.identityCorrectionProvenance?.allocation||row.identityCorrectionProvenance?.aliases)continue;
+        for(const alias of asArray(row.aliases)){
+          if(!koreanPersonIdentityMatch(row.name,alias))continue;
+          const names=[string(row.name),string(alias)].sort(),linkId=unifiedAutomaticIdentityLinkId(row.id,names);
+          if(!links.has(linkId))links.set(linkId,{schema:'libra.automatic_identity_link.v1',linkId,targetId:row.id,names,reason:'legacy_name_alias',evidenceSpans:[],originEntityId:''});
+        }
+      }
+      return [...links.values()].map(link=>{
+        let targetId=link.targetId;const visited=new Set();
+        while(head?.unifiedIdentityRedirects?.[targetId]&&!visited.has(targetId)){visited.add(targetId);targetId=head.unifiedIdentityRedirects[targetId];}
+        const row=characters.find(row=>row.id===targetId),split=head?.unifiedIdentitySplits?.[targetId];
+        const decision=head?.unifiedIdentityLinkDecisions?.[link.linkId];
+        return {...link,currentTargetId:targetId,currentName:row?.name||'',status:split?'split':!row?'inactive':decision?.status==='confirmed'?'confirmed':'review',
+          decision:clone(decision||null),modelJudgement:false,applied:!!row&&!split,requiresApproval:false};
+      }).sort((a,b)=>a.linkId.localeCompare(b.linkId));
+    };
+    const unifiedIdentityReviewPlan=head=>{
+      const body={schema:'libra.identity_link_review.v1',scopeKey:head.scopeKey,worldlineId:head.worldlineId||'main',anchorTurn:head.throughTurn,
+        basisFingerprint:head.basis?.sourceFingerprint||'',headDigest:unifiedSplitHeadDigest(head),rows:unifiedIdentityReviewRows(head)};
+      return {...body,previewDigest:digest(body)};
+    };
+    const listUnifiedIdentityLinkReviews=async()=>{
+      const context=await resolveContext(),manifest=await loadManifest(context.scope,buildPairs(context.chat,context.scope.scopeKey).length);
+      const head=await storage.getJson(key.continuityState(context.scope),null);
+      unifiedAssert(head?.scopeKey===context.scope.scopeKey&&isReadableUnifiedEngineVersion(head?.unifiedApplied?.engineVersion),'UNIFIED_IDENTITY_HEAD_REQUIRED');
+      const boundary=statePipelineReplayRefs(manifest).find(ref=>statePipelineCursorMatchesRef(head.reviewedThroughCanonical,ref,head.worldlineId||'main'));
+      unifiedAssert(boundary&&correctionBasisFingerprintForCanonicalRef(manifest,boundary)===head.basis?.sourceFingerprint,'UNIFIED_IDENTITY_HEAD_STALE');
+      return {...unifiedIdentityReviewPlan(head),splitSupported:['plugin_only','mirror','server_only'].includes(await MemorySuiteStorageBridge.getMode())};
+    };
+    const unifiedIdentityReviewRowDigest=row=>digest({linkId:row.linkId,targetId:row.currentTargetId,names:row.names});
+    const compileUnifiedIdentityLinkReview=(head,request)=>{
+      unifiedKeys(request,['linkId','previewDigest'],'identity_link_review');
+      const plan=unifiedIdentityReviewPlan(head),row=plan.rows.find(row=>row.linkId===request.linkId&&row.status==='review');
+      unifiedAssert(row&&plan.previewDigest===request.previewDigest,'UNIFIED_IDENTITY_REVIEW_CHANGED');
+      return {linkId:row.linkId,targetId:row.currentTargetId,names:clone(row.names),expectedDigest:unifiedIdentityReviewRowDigest(row)};
+    };
+    const applyUnifiedIdentityLinkReview=(headValue,review,correction)=>{
+      const head=clone(headValue),row=unifiedIdentityReviewRows(head).find(row=>row.linkId===review.linkId);
+      unifiedAssert(row&&row.status==='review'&&unifiedIdentityReviewRowDigest(row)===review.expectedDigest,'UNIFIED_IDENTITY_REVIEW_CHANGED');
+      head.unifiedIdentityLinkDecisions={...asObject(head.unifiedIdentityLinkDecisions),[review.linkId]:{status:'confirmed',names:clone(review.names),targetId:review.targetId,
+        correctionId:correction.correctionId,anchor:clone(correction.anchor),policy:'user_confirmed_automatic_link'}};
+      return head;
+    };
+    const confirmUnifiedIdentityLink=async request=>{
+      const plan=await listUnifiedIdentityLinkReviews();
+      unifiedAssert(request.scopeKey===plan.scopeKey&&request.previewDigest===plan.previewDigest,'UNIFIED_IDENTITY_REVIEW_CHANGED');
+      return await appendStateCorrection({anchorTurn:plan.anchorTurn,basisFingerprint:plan.basisFingerprint,worldlineId:plan.worldlineId,expectedScopeKey:plan.scopeKey,
+        target:{domain:'head',mode:'identity_link_review'},patch:{identityLinkReview:{linkId:request.linkId,previewDigest:request.previewDigest}}});
+    };
+
     const validateUnifiedCorrectionPatch = (compiled,head) => {
       const rows=[...asArray(head.characters),...asArray(head.world)],byId=new Map(rows.map(r=>[r.id,r]));
       for(const patch of asArray(compiled.patches)){
-        if(patch.domain==='identity'){(patch.operation==='split'?applyUnifiedIdentitySplit:applyUnifiedIdentityMerge)(head,patch.operation==='split'?patch.split:patch.merge,{correctionId:'preflight',anchor:{throughTurn:head.throughTurn}});continue;}
+        if(patch.domain==='identity'){(patch.operation==='link_review'?applyUnifiedIdentityLinkReview:patch.operation==='split'?applyUnifiedIdentitySplit:applyUnifiedIdentityMerge)(head,patch.operation==='link_review'?patch.review:patch.operation==='split'?patch.split:patch.merge,{correctionId:'preflight',anchor:{throughTurn:head.throughTurn}});continue;}
         // Name/alias edits are compiled with the old identity as selector and replayed
         // into the same Registry ID. Endpoint changes require a separate merge group.
         const identity=asObject(patch.identitySet);
@@ -65142,6 +65237,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           createdAt: candidateOnly ? nowIso() : (activeRef?.createdAt || nowIso()),
           updatedAt: nowIso()
         };
+        if(unified)memory.unifiedIdentityProvenance=buildUnifiedIdentityProvenance(memory);
         const initialProjection = buildMemoryRetrievalProjection(memory);
         memory.sections = clone(initialProjection.sections);
         memory.anchors = clone(initialProjection.anchors);
@@ -65185,6 +65281,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const candidateReadback = await storage.getJson(memoryKey, null);
         if (candidateReadback?.schema !== MEMORY_SCHEMA
           || !unifiedRecordAdmissionValid(candidateReadback,memory)
+          || (unified&&digest(candidateReadback?.unifiedIdentityProvenance)!==digest(memory.unifiedIdentityProvenance))
           || string(candidateReadback?.memoryId || '') !== string(memory.memoryId)
           || Number(candidateReadback?.revision || 0) !== revision
           || string(candidateReadback?.sourceDigest || '') !== sourceHash
@@ -77528,6 +77625,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (!asArray(source.world).length) throw stateCorrectionFailure('STATE_CORRECTION_PATCH_INVALID');
         asArray(source.world).forEach(appendWorld);
       }
+      if(source.identityLinkReview){
+        unifiedAssert(domain==='head'&&Object.keys(source).length===1,'UNIFIED_IDENTITY_REVIEW_GROUP_ONLY');
+        patches.push({patchId:'identity_link_review_'+digest(source.identityLinkReview),domain:'identity',operation:'link_review',review:compileUnifiedIdentityLinkReview(head,source.identityLinkReview)});
+      }
       if(source.identitySplit){
         unifiedAssert(domain==='head' && Object.keys(source).length===1,'UNIFIED_IDENTITY_SPLIT_GROUP_ONLY');
         const split=compileUnifiedIdentitySplit(head,source.identitySplit);
@@ -77600,7 +77701,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         rows[index] = next; head[collectionKey] = rows; applied += 1;
       };
       for (const patch of asArray(compiled.patches)) {
-        if(patch?.domain==='identity'){Object.assign(head,(patch.operation==='split'?applyUnifiedIdentitySplit:applyUnifiedIdentityMerge)(head,patch.operation==='split'?patch.split:patch.merge,correction));applied++;continue;}
+        if(patch?.domain==='identity'){Object.assign(head,(patch.operation==='link_review'?applyUnifiedIdentityLinkReview:patch.operation==='split'?applyUnifiedIdentitySplit:applyUnifiedIdentityMerge)(head,patch.operation==='link_review'?patch.review:patch.operation==='split'?patch.split:patch.merge,correction));applied++;continue;}
         if (patch?.domain === 'characters') { applyRecord('characters', patch, false); continue; }
         if (patch?.domain === 'world') { applyRecord('world', patch, true); continue; }
         if (patch?.domain === 'relationships') {
@@ -77744,6 +77845,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       asArray(head.world).forEach(collect);
       collect(head.narrative);
       for (const keyName of ['arcs','threads','locks','motifs','turningPoints']) asArray(head?.narrative?.[keyName]).forEach(collect);
+      for(const decision of Object.values(asObject(head.unifiedIdentityLinkDecisions)))if(decision?.correctionId)ids.add(string(decision.correctionId));
       return ids;
     };
     const stateHeadHasCorrection = (headValue, correctionId, domain = 'head') => {
@@ -81379,7 +81481,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       getCanonicalCandidateComparison, resolveCanonicalCandidate, selectCanonicalVariant, deleteCanonicalVariant,
       saveCanonicalManualStateDisposition, saveContinuityOverride,
       loadStateCorrectionJournal, appendStateCorrection, setStateCorrectionStatus, rebuildCurrentStateForWorldline, loadStateWorldlineMeta, setStateWorldline, rollbackStateWorldline,
-      getUnifiedResponseContext, validateUnifiedResponseContext, previewUnifiedIdentityMerge, mergeUnifiedIdentity, previewUnifiedIdentitySplit, splitUnifiedIdentity, previewUnifiedMigration, beginUnifiedMigration, previewUnifiedLegacyRebuild, getUnifiedLegacyRebuildEvidence, rebuildSelectedUnifiedLegacy, previewUnifiedRetention, collectUnifiedRetention, listWorldManagerHistory, getWorldManagerHistoryDetail, listCanonicalReaderChapters, getCanonicalReaderChapter, getCanonicalEvidenceChain,
+      getUnifiedResponseContext, validateUnifiedResponseContext, listUnifiedIdentityLinkReviews, confirmUnifiedIdentityLink, identityLinkReviewRows:unifiedIdentityReviewRows, previewUnifiedIdentityMerge, mergeUnifiedIdentity, previewUnifiedIdentitySplit, splitUnifiedIdentity, previewUnifiedMigration, beginUnifiedMigration, previewUnifiedLegacyRebuild, getUnifiedLegacyRebuildEvidence, rebuildSelectedUnifiedLegacy, previewUnifiedRetention, collectUnifiedRetention, listWorldManagerHistory, getWorldManagerHistoryDetail, listCanonicalReaderChapters, getCanonicalReaderChapter, getCanonicalEvidenceChain,
       listExecutionReceipts, getExecutionReceiptDetail, listWorldManagerCorrections, getWorldManagerRuntimeMeta,
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
       getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, inspectLocalMemoryGraphCorpus, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, inspectVolatileMemoryGraphCorpus, inspectMicroRepresentationVectors, warmMicroRepresentationVectors, prewarmVolatileMemoryGraphCorpus, disposeVolatileMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, releaseMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
@@ -83394,7 +83496,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const LIBRA_APPROVED_MARGIN_RESET_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-margin-reset\" aria-hidden=\"true\"><div class=\"dialog dialog--danger\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dmr-t\"><div class=\"eyebrow\" style=\"color:var(--danger-ink)\">Reset</div><h2 id=\"dmr-t\">사서의 여백을 초기화할까요?</h2><p>목표·완료 조건·강제하지 말아야 할 전개·부드러운 선호가 모두 지워집니다. 잠금도 해제됩니다. 비운 내용은 ‘여백에 기록’을 눌러야 저장됩니다.</p><div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--danger-solid\" data-close=\"\" data-act=\"margin-reset\" data-toast=\"여백을 비웠습니다. ‘여백에 기록’을 눌러야 저장됩니다. (시안)\">초기화</button></div></div></div>";
   const LIBRA_APPROVED_RECOVERY_JOB_HTML = "<div class=\"overlay\" id=\"job-recover\" data-require=\"kind\" aria-hidden=\"true\" data-inherit-ctx=\"\" data-job-labels=\"범위와 대상을 확인하는 중|작업을 실행하는 중|결과를 다시 읽어 확인하는 중|작업을 마쳤습니다. 아래 결과를 확인하세요.\">\n    <div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"jrc-t\"><div class=\"eyebrow\" data-fill=\"kind\">복구</div><h2 id=\"jrc-t\" data-fill=\"title\">작업</h2><div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg=\"\">준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>확인</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>실행</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>readback</b></div></div>\n      <div class=\"list\" data-job-result=\"\" hidden=\"\" style=\"margin-top:12px\">\n        <div data-variant=\"default state\"><div class=\"res-row\"><b>정본 기억</b><span class=\"badge\">변경 없음</span></div><div class=\"res-row\"><b>현재 상태</b><span class=\"badge badge--ok\">정본 기준으로 다시 반영</span><small>모델 호출 0회 (표본 결과)</small></div></div>\n        <div data-variant=\"rebuild\" hidden=\"\"><div class=\"res-row\"><b>상태 반영</b><span class=\"badge badge--ok\"><span data-fill=\"boundary\">T120</span> 경계로 되돌린 뒤 재구축</span></div><div class=\"res-row\"><b>원문 채팅 · 정본 기억</b><span class=\"badge\">변경 없음</span><small>(표본 결과)</small></div></div>\n        <div data-variant=\"receipt\" hidden=\"\"><div class=\"res-row\"><b>원문 기록</b><span class=\"badge badge--ok\">영수증과 일치하는 2건 복구</span></div><div class=\"res-row\"><b>모델 호출</b><span>0회</span><small>(표본 결과)</small></div></div>\n        <div data-variant=\"micro\" hidden=\"\"><div class=\"res-row\"><b>Micro 기억</b><span class=\"badge badge--ok\">재처리 저장됨</span></div><div class=\"res-row\"><b>모델 호출</b><span>1회</span><small>이전 호출 결과가 불명확했다면 중복 비용이 있었을 수 있습니다.</small></div><div class=\"res-row\"><b>발행 확인 (publish_ready)</b><span class=\"badge badge--info\">별도 확인 필요</span><small>저장 성공과 발행 확인은 서로 다른 상태입니다. (표본 결과)</small></div></div>\n      </div>\n      <div class=\"dialog__actions\"><button class=\"btn btn--danger\" data-job-cancel=\"\" data-close=\"\">중단 요청</button><button class=\"btn btn--primary\" data-job-done=\"\" data-close=\"\" hidden=\"\">확인</button></div></div></div>";
   const LIBRA_APPROVED_STATE_DIALOG_HTML = "<div class=\"overlay\" id=\"dialog-state\" aria-hidden=\"true\">\n    <div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"ds-t\">\n      <div class=\"eyebrow\">Memory Status</div><h2 id=\"ds-t\">기억 상태</h2>\n      <dl class=\"kv\"><dt>현재 U+A</dt><dd><span data-status-current-turns=\"\">128</span>턴</dd><dt>저장된 기억</dt><dd><span id=\"state-mem-n\">25</span>개 (정본 · T<span data-status-committed-turn=\"\">125</span>까지)</dd><dt>대기</dt><dd><span data-status-pending-turns=\"\">3</span>턴 (5턴 미만)</dd><dt>상태 반영</dt><dd>T<span data-status-committed-turn=\"\">125</span>까지</dd><dt>부분 저장</dt><dd><span data-status-partial=\"\">0</span>개 구간</dd><dt>대기 중 반영</dt><dd><span data-status-awaiting=\"\">0</span>개 구간</dd></dl>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-toast=\"전체 상태를 읽기 전용으로 확인했습니다. (시안)\">전체 상태 확인</button><button class=\"btn btn--primary\" data-close=\"\" data-autofocus=\"\">닫기</button></div>\n    </div>\n  </div>";
-  const LIBRA_APPROVED_MERGE_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-merge\" data-require=\"target\" aria-hidden=\"true\"><div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dmg-t\"><div class=\"eyebrow\">Same entity</div><h2 id=\"dmg-t\">같은 항목 병합 · 분리 · <span data-fill=\"target\">인물 · 아스텔</span></h2><p class=\"muted\" style=\"font-size:13px\">인물·세계 항목이 같은 대상인지 지정합니다. 정본 기억 본문을 합치는 기능이 아닙니다.</p><div class=\"choices\" id=\"mg-mode\"><button class=\"choice is-on\"><b>병합</b><span>두 항목을 같은 대상으로 취급</span></button><button class=\"choice\"><b>분리</b><span>이전에 병합한 항목을 다시 나눔</span></button></div><div class=\"field\" id=\"mg-partner-f\" style=\"margin-top:10px\"><label for=\"mg-partner\">같은 대상으로 볼 항목</label><select class=\"select\" id=\"mg-partner\" data-no-track=\"\"></select></div><div class=\"field\" id=\"mg-split-f\" hidden=\"\" style=\"margin-top:10px\"><label for=\"mg-split\">다시 나눌 병합 기록</label><select class=\"select\" id=\"mg-split\" data-no-track=\"\"></select><span class=\"hint\" id=\"mg-split-hint\"></span></div><div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--primary\" id=\"mg-go\" data-close=\"\" data-act=\"merge-apply\" data-toast=\"{mgmsg} readback으로 확인했습니다. (시안)\">적용</button></div></div></div>";
+  const LIBRA_APPROVED_MERGE_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-merge\" aria-hidden=\"true\"><div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dmg-t\"><div class=\"eyebrow\">Identity management</div><h2 id=\"dmg-t\"><span data-identity-title>인물 병합·분리</span> · <span data-fill=\"target\"></span></h2><p class=\"muted\" data-identity-intro style=\"font-size:13px\">두 카드를 같은 인물로 연결하거나, 한 카드의 사실을 인물별로 나눕니다. 원문과 정본은 보존합니다.</p><div class=\"choices\" id=\"mg-mode\"><button class=\"choice\" type=\"button\" data-identity-mode=\"merge\" aria-pressed=\"false\"><b>병합</b><span>두 카드를 같은 대상으로 연결</span></button><button class=\"choice\" type=\"button\" data-identity-mode=\"split\" aria-pressed=\"false\"><b>인물 분리</b><span>한 카드의 사실을 원래 인물별로 나눔</span></button></div><div class=\"field\" id=\"mg-partner-f\" style=\"margin-top:16px\"><label for=\"mg-partner\">병합 후 남길 항목</label><select class=\"select\" id=\"mg-partner\"></select></div><div id=\"mg-split-f\" hidden style=\"margin-top:16px\"></div><div class=\"dialog__actions\"></div></div></div>";
   const LIBRA_APPROVED_PENDING_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-pending\" aria-hidden=\"true\"><div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dpd-t\"><div class=\"eyebrow\">Pending evidence</div><h2 id=\"dpd-t\">보류 근거 해결 · <span data-fill=\"person\">전체</span></h2><div class=\"stack stack--sm\" id=\"pend-list\"></div><div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">닫기</button><button class=\"btn btn--primary\" id=\"pend-go\" data-close=\"\" data-act=\"pend-resolve\" data-toast=\"‘{ptitle}’ 보류를 선택한 근거({pchoice})로 해결하고 readback으로 확인했습니다. (시안)\">해결</button></div></div></div>";
   const LIBRA_APPROVED_RECOVERY_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-recover\" data-require=\"kind\" aria-hidden=\"true\"><div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"drc-t\"><div class=\"eyebrow\" data-fill=\"kind\">복구</div><h2 id=\"drc-t\" data-fill=\"title\">작업</h2>\n    <dl class=\"cost-table\"><dt>비용</dt><dd data-fill=\"cost\">-</dd><dt>영향</dt><dd data-fill=\"impact\">-</dd></dl><div class=\"field\" data-variant=\"rebuild\" hidden=\"\" style=\"margin-top:10px\"><label for=\"rb-bound\">되돌릴 5턴 경계</label><select class=\"select\" id=\"rb-bound\" data-no-track=\"\"><option value=\"T120\">T120 이후 (M-25 반영분)</option><option value=\"T115\">T115 이후 (M-24부터)</option><option value=\"T110\">T110 이후 (M-23부터)</option><option value=\"T105\">T105 이후 (M-22부터)</option></select><span class=\"hint\" id=\"rb-hint\">모델 호출 0회 · 저장된 정본 1개를 다시 반영합니다.</span></div>\n    <div class=\"note note--warn\" style=\"margin-top:10px\">채팅·분기·scope가 바뀐 경우 이전 기억·근거·작업 상태를 새 범위의 사실로 재사용하지 않습니다. 이전 호출 결과가 불명확하면 중복 비용이 발생할 수 있습니다.</div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--primary\" data-close=\"\" data-run-job=\"job-recover\">실행</button></div></div></div>";
   const LIBRA_APPROVED_CORRECTIONS_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-corr-life\" aria-hidden=\"true\"><div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dcl-t\"><div class=\"eyebrow\">Corrections</div><h2 id=\"dcl-t\">교정 목록</h2><div class=\"list\" id=\"corr-list\"><div class=\"row\"><div><div class=\"row__title\">아스텔 → 정원사: 신뢰 ↑</div><div class=\"row__meta\">상태: <span class=\"badge badge--ok\">적용 중</span></div></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"재검토를 시작합니다. (시안)\">재검토</button><button class=\"btn btn--sm btn--danger\" data-toast=\"교정을 삭제했습니다. (시안)\">삭제</button></div></div><div class=\"row\"><div><div class=\"row__title\">기록관 소속 정정</div><div class=\"row__meta\">상태: <span class=\"badge\">휴면</span> · 롤백 뒤 비활성</div></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"다시 적용합니다. (시안)\">다시 적용</button><button class=\"btn btn--sm\" data-toast=\"보류로 전환합니다. (시안)\">보류</button><button class=\"btn btn--sm\" data-toast=\"수정 화면을 엽니다. (시안)\">수정</button></div></div></div><div class=\"dialog__actions\"><button class=\"btn btn--primary\" data-close=\"\" data-autofocus=\"\">닫기</button></div></div></div>";
@@ -83733,8 +83835,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.t-libra [data-libra-product-detail=people]>.detail-pane>.manage-block{margin-top:20px;padding-top:14px;border-top:1px solid var(--border)}',
     '.t-libra [data-libra-product-detail=people]>.detail-pane>.manage-block>.note{margin-top:0!important;margin-bottom:10px}',
     '.t-libra [data-libra-product-detail=people]>.detail-pane>.manage-block>.cluster{display:flex;flex-wrap:wrap;gap:8px 10px;margin-top:10px!important}',
+    '.t-libra .canonical-reading{margin-top:26px;min-width:0;overflow-wrap:anywhere}',
+    '.t-libra .canonical-reading__section{margin-top:26px;padding-top:22px;border-top:1px solid var(--border)}.t-libra .canonical-reading__section:first-child{margin-top:0;padding-top:0;border-top:0}',
+    '.t-libra .canonical-reading .canonical-reading__heading{margin:0 0 14px;color:var(--text);font-size:18px;line-height:1.5;font-weight:700}.t-libra .canonical-reading h3.canonical-reading__heading{font-size:22px}',
+    '.t-libra .canonical-reading p,.t-libra .canonical-reading li{font-size:15px;line-height:1.9;white-space:pre-line;overflow-wrap:anywhere}.t-libra .canonical-reading p{margin:0 0 12px}',
+    '.t-libra .canonical-reading ul{margin:0;padding-left:22px}.t-libra .canonical-reading li+li{margin-top:9px}.t-libra .canonical-reading li::marker{color:var(--accent)}',
     '.t-libra details.fold[data-product-management]{margin-top:18px}',
     '.t-libra details.fold[data-product-management]>.fold__body{padding-top:14px;display:grid;gap:14px}',
+    '.t-libra .people-management-nav{display:flex;flex-wrap:wrap;align-items:center;gap:0 20px;margin:0;padding:0 0 10px;border:0;border-bottom:1px solid var(--border);border-radius:0;background:transparent;box-shadow:none}',
+    '.t-libra .people-management-nav__label{margin-right:4px;color:var(--text3);font-size:11.5px;font-weight:700;letter-spacing:.06em;white-space:nowrap}',
+    '.t-libra .people-management-nav__link{appearance:none;display:inline-flex;align-items:center;justify-content:center;min-height:40px;margin:0 0 -11px;padding:8px 12px 10px;border:0;border-bottom:3px solid transparent;border-radius:0;background:transparent;box-shadow:none;color:var(--text2);font:inherit;font-size:14px;font-weight:600;white-space:nowrap;cursor:pointer}',
+    '.t-libra .people-management-nav__link[aria-current=page]{border-bottom-color:var(--accent);color:var(--accent);font-weight:750}',
+    '.t-libra .people-management-nav__link:hover{color:var(--text)}.t-libra .people-management-nav__link:focus-visible{outline:2px solid var(--accent);outline-offset:3px}',
+    '@media(max-width:560px){.t-libra .people-management-nav{gap:6px 12px}.t-libra .people-management-nav__label{flex-basis:100%;margin:0}.t-libra .people-management-nav__link{padding-left:10px;padding-right:10px}}',
     '.t-libra .fold__body [data-world-domain-browser].g-side,.t-libra .sheet-page [data-world-domain-browser].g-side{grid-template-columns:minmax(0,1fr);gap:14px}',
     '.t-libra [data-world-domain-browser]>.rail{width:100%;min-width:0}',
     '.t-libra [data-world-domain-browser]>.rail>.rail__list{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px;max-height:240px;overflow-y:auto}',
@@ -87569,13 +87682,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     ]);
   };
 
-  const buildCanonicalActionPanel = () => guiEl('section', { class: 'card canonical-action-panel' }, [
-    guiEl('h3', { text: '정본 수동 작업' }),
+  const buildCanonicalActionPanel = () => guiEl('section', { class: 'card canonical-action-panel', dataset: { canonicalManagementTools: 'true' } }, [
+    guiEl('h3', { text: '기억 관리 도구' }),
     guiEl('div', { class: 'cluster' }, [
       guiEl('button', { class: 'btn btn--primary', type: 'button', text: '기억 생성 구간 선택', onClick: () => void showCanonicalRangeDrawer('missing') }),
       guiEl('button', { class: 'btn', type: 'button', text: '재분석', onClick: () => void showLibraSourceReanalysisDrawer({kind:'canonical'}) }),
       guiEl('button', { class: 'btn', type: 'button', text: '수동 콜드스타트', onClick: () => { void runLibraColdStartWithConfirm().catch(() => null); } }),
-      guiEl('button', { class: 'btn', type: 'button', text: '⚡ 상태 점검 및 자동 복구', onClick: () => void openLibraMemoryMaintenanceDialog() })
+      guiEl('button', { class: 'btn', type: 'button', text: '상태 점검 및 자동 복구', onClick: () => void openLibraMemoryMaintenanceDialog() }),
+      guiEl('button', { class: 'btn', type: 'button', text: '버전 · 실행 기록', onClick: () => { Gui.worldManagerCanonicalMemoryFocus = null; void showCanonicalVariantDialog(Number(Gui.canonicalReaderSelected?.turnRange?.start || 0)); } }),
+      guiEl('button', { class: 'btn', type: 'button', text: '복구 · 재구축', onClick: () => selectBookSettingsRoomSection('recovery') })
     ])
   ]);
 
@@ -87627,7 +87742,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const memories = (snapshot.memories || []).slice();
     if (worldManagerCanonicalMemoryFocus?.memory && !memories.some(row => String(row?.memoryId || '') === String(worldManagerCanonicalMemoryFocus.memoryId || '') && Number(row?.revision || 0) === Number(worldManagerCanonicalMemoryFocus.revision || 0))) memories.push(worldManagerCanonicalMemoryFocus.memory);
     const total = Math.max(Number(snapshot.totals?.memories ?? memories.length), memories.length);
-    if (!memories.length) return guiEl('div', {}, [buildCanonicalActionPanel(), guiEl('div', { class: 'hint', style: { marginBottom: '12px' }, text: CANONICAL_VALIDATOR_RETIREMENT_NOTE }), guiEl('div', { class: 'card' }, [guiEl('h3', { text: '정본 메모리가 없습니다.' }), guiEl('div', { class: 'hint', text: '완성된 5턴이 있다면 수동 콜드스타트로 기존 세션의 누락 정본을 생성할 수 있습니다.' }), guiEl('button', { class: 'btn btn--primary', type: 'button', text: '지난 대화 기억 만들기…', onClick: () => { void runLibraColdStartWithConfirm().catch(() => null); } })])]);
+    if (!memories.length) return guiEl('div', {}, [buildCanonicalActionPanel(), guiEl('div', { class: 'hint', style: { marginBottom: '12px' }, text: CANONICAL_VALIDATOR_RETIREMENT_NOTE }), guiEl('div', { class: 'card' }, [guiEl('h3', { text: '정본 메모리가 없습니다.' }), guiEl('div', { class: 'hint', text: '완성된 5턴이 있다면 위의 기억 관리 도구에서 생성할 구간을 선택하거나 수동 콜드스타트를 실행하세요.' })])]);
     const ordered = memories.slice().reverse();
     if (worldManagerCanonicalMemoryFocus) ordered.sort((left,right) => {
       const leftFocused=String(left?.memoryId||'')===String(worldManagerCanonicalMemoryFocus.memoryId||'')&&Number(left?.revision||0)===Number(worldManagerCanonicalMemoryFocus.revision||0);
@@ -88542,6 +88657,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
 
 
+  const buildPeopleManagementNavigation = () => guiEl('nav',{
+    class:'people-management-nav','aria-label':'인물 관계 상세 관리 페이지',dataset:{peopleManagementNavigation:'true'}
+  },[
+    guiEl('span',{class:'people-management-nav__label',text:'관리 페이지'}),
+    ...[{id:'characters',label:'인물'},{id:'relationships',label:'관계'}].map(page=>guiEl('button',{
+      class:'people-management-nav__link',type:'button',dataset:{peopleManagementPage:page.id},
+      'aria-current':Gui.bookPeopleSection===page.id?'page':'false',text:page.label,
+      onClick:()=>{if(Gui.bookPeopleSection!==page.id)bookSelectPeopleSection(page.id);}
+    }))
+  ]);
+
   const canonicalReaderIdentityKey = value => `${text(value?.memoryId || '')}:r${Number(value?.revision || 0)}:w:${text(value?.worldlineId || 'main')}`;
   const canonicalReaderSelectedKey = () => canonicalReaderIdentityKey(Gui.canonicalReaderSelected);
   const canonicalReaderBinding = () => {
@@ -89107,77 +89233,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
 
   const worldManagerSnapshotView = () => {
-    const coalesceKoreanPersonRowsForView = head => {
-      const rawCharacters = guiAsArray(head?.characters);
-      const rawRelationships = guiAsArray(head?.relationships);
-      if (!head || rawCharacters.length < 2) return { characters: rawCharacters, relationships: rawRelationships };
-      const splitNames = new Set(Object.values(guiAsObject(head.unifiedIdentitySplits)).flatMap(s => guiAsArray(s?.retiredNames)).map(n => text(n).trim()).filter(Boolean));
-      const givenFromFull = value => {
-        const raw = text(value).trim();
-        if (/^[\uAC00-\uD7A3]{3}$/.test(raw)) return raw.slice(1);
-        if (/^(?:남궁|황보|제갈|선우|사공|독고|동방|서문)[\uAC00-\uD7A3]{2}$/.test(raw)) return raw.slice(2);
-        return '';
-      };
-      const evidenceTurn = entry => {
-        const ev = guiAsObject(entry);
-        return Number(ev.sourceTurnRange?.end || ev.turnRange?.end || ev.canonical?.turnRange?.end || ev.turn || 0);
-      };
-      const redirectId = new Map();
-      const redirectName = new Map();
-      const mergedById = new Map(rawCharacters.map(row => [text(row?.id), cloneJson(row)]));
-      for (const row of rawCharacters) {
-        const name = text(row?.name).trim();
-        if (!/^[\uAC00-\uD7A3]{2}$/.test(name) || splitNames.has(name)) continue;
-        if (row?.correctionProvenance || row?.identityCorrectionProvenance?.split) continue;
-        const sameGiven = rawCharacters.filter(other => text(other?.name).trim() === name);
-        if (sameGiven.length !== 1) continue;
-        const fullMatches = rawCharacters.filter(other => other?.id !== row?.id && !splitNames.has(text(other?.name).trim()) && !other?.identityCorrectionProvenance?.split && givenFromFull(other?.name) === name);
-        if (fullMatches.length !== 1) continue;
-        const target = mergedById.get(text(fullMatches[0].id));
-        const source = mergedById.get(text(row.id));
-        if (!target || !source) continue;
-        redirectId.set(text(source.id), text(target.id));
-        redirectName.set(text(source.id), text(target.name));
-        target.aliases = [...new Set([...guiAsArray(target.aliases), source.name, ...guiAsArray(source.aliases)].map(v => text(v).trim()).filter(v => v && v !== text(target.name).trim()))];
-        const targetState = { ...guiAsObject(target.state) };
-        const targetFe = { ...guiAsObject(target.fieldEvidence) };
-        const sourceState = guiAsObject(source.state);
-        const sourceFe = guiAsObject(source.fieldEvidence);
-        for (const [field, val] of Object.entries(sourceState)) {
-          const tTurn = evidenceTurn(targetFe[field]);
-          const sTurn = evidenceTurn(sourceFe[field]);
-          if (!Object.prototype.hasOwnProperty.call(targetState, field) || sTurn >= tTurn) {
-            targetState[field] = cloneJson(val);
-            if (sourceFe[field]) targetFe[field] = cloneJson(sourceFe[field]);
-          }
-        }
-        target.state = targetState;
-        target.fieldEvidence = targetFe;
-        if (evidenceTurn(source.evidence) > evidenceTurn(target.evidence)) target.evidence = cloneJson(source.evidence);
-        mergedById.delete(text(source.id));
-      }
-      if (!redirectId.size) return { characters: rawCharacters, relationships: rawRelationships };
-      const characters = [...mergedById.values()];
-      const relMap = new Map();
-      for (const rel of rawRelationships) {
-        const next = cloneJson(rel);
-        const subId = text(next?.subjectId);
-        const tgtId = text(next?.targetId);
-        if (redirectId.has(subId)) { next.subjectId = redirectId.get(subId); next.subjectName = redirectName.get(subId) || next.subjectName; }
-        if (redirectId.has(tgtId)) { next.targetId = redirectId.get(tgtId); next.targetName = redirectName.get(tgtId) || next.targetName; }
-        const key = `${text(next?.subjectId)}>${text(next?.targetId)}:${text(next?.dimension)}`;
-        const existing = relMap.get(key);
-        if (!existing || evidenceTurn(next?.fieldEvidence?.value || next?.evidence) >= evidenceTurn(existing?.fieldEvidence?.value || existing?.evidence)) {
-          relMap.set(key, next);
-        }
-      }
-      return { characters, relationships: [...relMap.values()] };
-    };
     const snapshot = LibraMemoryCore.peekSnapshot() || {};
     const current = snapshot.currentStateView;
     const value = current ? current.head : snapshot.continuityState;
     const head = value && typeof value === 'object' ? value : null;
-    const coalesced = coalesceKoreanPersonRowsForView(head);
     return {
       snapshot,
       head,
@@ -89185,8 +89244,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       error: text(current?.error || snapshot.error || ''),
       canonicalThroughTurn: Number(snapshot.continuityState?.throughTurn || 0),
       throughTurn: Number(head?.throughTurn || 0),
-      characters: coalesced.characters,
-      relationships: coalesced.relationships,
+      characters: guiAsArray(head?.characters),
+      relationships: guiAsArray(head?.relationships),
       world: guiAsArray(head?.world),
       narrative: guiAsObject(head?.narrative),
       domainStatus: guiAsObject(head?.domainStatus),
@@ -89554,17 +89613,69 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return fieldNode(worldManagerArticleFieldLabel(field),worldManagerTextarea(list?worldManagerListText(current[field]):text(current[field]||''),value=>update(field,list?String(value).split('\n').map(v=>v.trim()).filter(Boolean):value)),list?'한 줄에 한 항목씩 입력합니다.':'' );
     }).concat(guiLazyDetails({class:'fold'},guiEl('summary',{text:'고급 · 구조화 상태 편집'}),()=>fieldNode('상태 JSON',worldManagerTextarea(draft.values.state,value=>{draft.values.state=value;},{tall:true}),'소속·접근 권한·규칙 예외는 구조를 유지해서 편집합니다. 비워진 필드는 명시적 해제로 저장됩니다.')));
   };
+  const openWorldManagerIdentityLinkReview = (options={}) => {
+    const binding=canonicalReaderBinding(),body=guiEl('div',{class:'stack',dataset:{identityLinkReview:'true'}});
+    let plan=null,busy=false,includeConfirmed=options.includeConfirmed===true;
+    const status=guiEl('p',{class:'hint',role:'status','aria-live':'polite',text:'자동 연결과 원문 근거를 읽고 있습니다.'});
+    const list=guiEl('div',{class:'stack',dataset:{identityLinkRows:'true'}});
+    const current=()=>Gui.visible&&body.isConnected&&canonicalReaderBindingKey(binding)===canonicalReaderBindingKey(canonicalReaderBinding());
+    const reload=async()=>{
+      if(busy||!current())return;busy=true;
+      try{plan=await globalThis.__LIBRA__.listWorldManagerIdentityLinkReviews();if(current()){render();status.textContent=options.message||'자동 연결은 이미 적용되어 있습니다. 검토하지 않고 계속 사용할 수 있으며 필요할 때 확인하거나 분리할 수 있습니다.';}}
+      catch(error){if(current())status.textContent='연결 목록 확인 실패 · '+String(error.code||error.message||error);}
+      finally{busy=false;}
+    };
+    const render=()=>{
+      list.replaceChildren();const rows=guiAsArray(plan?.rows).filter(row=>row.status==='review'||includeConfirmed&&row.status==='confirmed');
+      if(!rows.length){list.appendChild(guiEl('div',{class:'empty',text:'검토할 자동 연결이 없습니다.'}));return;}
+      for(const link of rows){
+        const actions=guiEl('div',{class:'cluster',style:{gap:'12px'}}),splitHost=guiEl('div');
+        const card=guiEl('section',{class:'card stack',style:{gap:'16px'},dataset:{identityLink:link.linkId}},[
+          guiEl('div',{class:'split'},[guiEl('strong',{text:link.names.join(' ↔ ')}),guiEl('span',{class:'badge '+(link.status==='confirmed'?'badge--ok':'badge--warn'),text:link.status==='confirmed'?'연결 확정됨':'자동 적용됨 · 검토 대상'})]),
+          guiEl('p',{class:'muted',text:'현재 '+(link.currentName||'인물')+'에 자동 연결되어 즉시 사용 중입니다. '+(link.reason==='legacy_name_alias'?'기존 별칭 연결이며 처음 연결한 시점의 상세 기록은 없습니다.':'이름 형태가 일치해 자동 연결한 항목입니다. 필요한 경우에만 원문을 검토할 수 있습니다.')}),
+          guiLazyDetails({class:'fold'},guiEl('summary',{text:'연결 근거 · 원문 보기'}),()=>guiEl('div',{class:'fold__body stack'},[
+            guiEl('p',{class:'hint',text:link.turnRange?'T'+link.turnRange.start+'–'+link.turnRange.end+' · '+link.memoryId+' r'+link.revision:'분리 절차에서 보존된 정본의 모든 사실과 원문을 다시 확인합니다.'}),
+            ...guiAsArray(link.evidenceSpans).map(span=>guiEl('blockquote',{},[guiEl('p',{text:span.quote}),guiEl('small',{text:span.ref})]))])),actions,splitHost]);
+        const confirm=guiEl('button',{class:'btn btn--primary',type:'button',text:'같은 인물 · 연결 확정',disabled:link.status!=='review',dataset:{confirmIdentityLink:link.linkId},onClick:async()=>{
+          if(busy||!current())return;busy=true;confirm.disabled=true;split.disabled=true;
+          try{const out=await globalThis.__LIBRA__.confirmWorldManagerIdentityLink({scopeKey:plan.scopeKey,linkId:link.linkId,previewDigest:plan.previewDigest});if(!out?.ok)throw new Error('연결 확정 저장 확인 실패');
+            if(!current())return;await refreshGuiSnapshot(false);plan=await globalThis.__LIBRA__.listWorldManagerIdentityLinkReviews();if(current()){render();status.textContent='연결 확정을 저장하고 다시 읽었습니다.';}}
+          catch(error){if(current()){status.textContent='연결 확정 실패 · '+String(error.code||error.message||error);confirm.disabled=false;split.disabled=!plan.splitSupported;}}
+          finally{busy=false;}
+        }});
+        const split=guiEl('button',{class:'btn',type:'button',text:'서로 다른 인물 · 분리 검토',disabled:!plan.splitSupported,dataset:{splitIdentityLink:link.linkId},onClick:()=>{
+          if(busy||!current())return;const view=worldManagerSnapshotView(),row=guiAsArray(view.characters).find(row=>row.id===link.currentTargetId);
+          if(!row){status.textContent='현재 인물이 바뀌었습니다. 목록을 다시 읽어 주세요.';return;}
+          openWorldManagerIdentityDialog('characters',row,view,{mode:'split',initialNames:link.names,
+            onClose:()=>openWorldManagerIdentityLinkReview({includeConfirmed}),
+            onComplete:({kind})=>openWorldManagerIdentityLinkReview({includeConfirmed,message:kind==='split'?'서로 다른 인물로 분리하고 저장 결과를 다시 읽었습니다.':'병합을 저장하고 연결 목록을 다시 읽었습니다.'})});
+        }});
+        actions.append(confirm,split);if(!plan.splitSupported)splitHost.appendChild(guiEl('p',{class:'hint',text:'현재 저장 모드에서는 사실별 분리를 지원하지 않습니다. 분리 버튼을 실행하지 않았습니다.'}));list.appendChild(card);
+      }
+    };
+    body.append(guiEl('p',{class:'muted',dataset:{identityLinkIntro:'true'},text:'자동 연결은 계속 적용됩니다. 이 목록은 잘못된 연결로 확정한 결과가 아니라, 이름만으로 연결되어 문맥 확인이 필요한 후보입니다. 분리할 때는 원문과 사실의 주체·대상을 직접 확인합니다.'}),
+      guiEl('div',{class:'cluster',dataset:{identityLinkToolbar:'true'}},[guiEl('button',{class:'btn',type:'button',text:'목록 다시 읽기',onClick:()=>void reload()}),guiEl('label',{class:'check'},[guiEl('input',{type:'checkbox',checked:includeConfirmed,onChange:event=>{includeConfirmed=event.target.checked;render();}}),'확정된 연결도 보기'])]),status,list);
+    openLibraPanelDialog('자동 연결 검토','Identity Link Review',body);void reload();return body;
+  };
+
   const buildWorldManagerIdentityMerge = (domain,row,view) => {
     if(!worldManagerIsUnified(view)||!['characters','world'].includes(domain))return null;
-    const targets=guiAsArray(view[domain]).filter(r=>r.id!==row.id&&(domain==='characters'||r.kind===row.kind));
-    if(!targets.length)return null;
-    return guiEl('button',{class:'btn btn--sm',type:'button',text:'같은 항목 병합 · 분리…',onClick:()=>{
-      const binding=canonicalReaderBinding();Gui.app.querySelector('#dlg-merge')?.remove();
+    if(domain==='world'&&!guiAsArray(view.world).some(other=>other.id!==row.id&&other.kind===row.kind))return null;
+    return guiEl('button',{class:'btn btn--sm',type:'button',dataset:{openIdentityManager:domain,identitySourceId:String(row.id)},text:domain==='characters'?'병합·분리 관리…':'같은 항목 병합…',onClick:()=>openWorldManagerIdentityDialog(domain,row,view)});
+  };
+  const openWorldManagerIdentityDialog = (domain,row,view,options={}) => {
+    if(!worldManagerIsUnified(view)||!['characters','world'].includes(domain)||!Gui.visible)return null;
+    const targets=guiAsArray(view[domain]).filter(other=>other.id!==row.id&&(domain==='characters'||other.kind===row.kind));
+    if(domain==='world'&&!targets.length)return null;
+      const binding=canonicalReaderBinding();Gui.app.querySelector('#dlg-merge')?.remove();Gui.app.querySelector('[data-libra-panel-dialog]')?.remove();
       const template=document.createElement('template');template.innerHTML=LIBRA_APPROVED_MERGE_DIALOG_HTML;
       const overlay=template.content.firstElementChild;overlay.classList.add('is-open');overlay.setAttribute('aria-hidden','false');overlay.dataset.identityTarget=String(row.id);overlay.dataset.identityScope=binding.scopeKey;
       overlay.querySelector('[data-fill="target"]').textContent=row.name||row.id;
-      const guard=()=>Gui.visible&&canonicalReaderBindingKey(binding)===canonicalReaderBindingKey(canonicalReaderBinding())&&overlay.dataset.identityTarget===String(row.id)&&overlay.dataset.identityScope===binding.scopeKey;
-      const close=()=>overlay.remove();
+      overlay.querySelector('[data-identity-title]').textContent=domain==='characters'?'인물 병합·분리':'세계 항목 병합';
+      if(domain==='world')overlay.querySelector('[data-identity-intro]').textContent='같은 종류의 세계 항목 두 개를 같은 대상으로 연결합니다. 원문과 정본은 보존합니다.';
+      const guard=()=>Gui.visible&&overlay.isConnected&&canonicalReaderBindingKey(binding)===canonicalReaderBindingKey(canonicalReaderBinding())&&overlay.dataset.identityTarget===String(row.id)&&overlay.dataset.identityScope===binding.scopeKey;
+      const close=(notify=true)=>{if(!overlay.isConnected)return;overlay.remove();if(notify)options.onClose?.();};
+      const complete=async(kind,result)=>{if(!guard())return;close(false);if(options.onComplete)await options.onComplete({kind,result});};
       let selected='',preview=null,busy=false;const choices={},relations={};
       const status=guiEl('div',{class:'hint',text:'같은 인물이나 사물이 잘못 나뉜 경우에만 병합합니다. 원문·정본은 보존하며 현재 참조와 다음 분석의 식별을 함께 고칩니다.'});
       const fields=guiEl('div',{class:'grid g2'});
@@ -89590,21 +89701,29 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         try{
           const result=await globalThis.__LIBRA__.mergeWorldManagerIdentity({sourceId:preview.sourceId,targetId:preview.targetId,previewDigest:preview.previewDigest,fieldChoices:choices,relationChoices:relations});
           if(result?.ok!==true)throw new Error(result?.reason||'병합 저장 확인 실패');
-          await refreshGuiSnapshot(false);await renderSettingsGui();guiSetStatus('동일 항목 병합과 참조 재결속을 저장했습니다. 기록·교정에서 병합 교정을 일시 중지하면 이전 식별을 다시 재생합니다.',false);
+          if(!guard())return;await refreshGuiSnapshot(false);await renderSettingsGui();guiSetStatus('병합을 저장했습니다. 병합 되돌리기는 기록·교정에서 해당 병합 교정을 일시 중지해 실행할 수 있습니다.',false);await complete('merge',result);
         }catch(e){status.textContent=String(e.code||'')+' '+String(e.message||e);apply.disabled=false;}finally{busy=false;review.disabled=false;}
       }});
       const partner=overlay.querySelector('#mg-partner');partner.replaceWith(select);select.id='mg-partner';select.className='select';
       const conflictFold=guiEl('details',{class:'fold'},[guiEl('summary',{text:'충돌 검토 · 기존 식별과 근거'}),guiEl('div',{class:'fold__body stack'},[status,review,fields])]);
       overlay.querySelector('#mg-partner-f').after(conflictFold);
-      const split=buildWorldManagerIdentitySplit(domain,row,view);const splitField=overlay.querySelector('#mg-split-f');splitField.replaceChildren(split||guiEl('p',{class:'hint',text:'이 항목에는 분리 작업을 제공하지 않습니다.'}));
-      const modes=[...overlay.querySelectorAll('#mg-mode button')];modes.forEach((button,i)=>button.onclick=()=>{if(!guard())return;modes.forEach((node,j)=>node.classList.toggle('is-on',j===i));overlay.querySelector('#mg-partner-f').hidden=i===1;conflictFold.hidden=i===1;splitField.hidden=i!==1;apply.hidden=i===1;});
-      overlay.querySelector('.dialog__actions').replaceChildren(guiEl('button',{class:'btn',type:'button',text:'취소',onClick:close}),apply);
-      overlay.addEventListener('click',event=>{if(event.target===overlay)close();});Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,close);
-    }});
+      const splitField=overlay.querySelector('#mg-split-f'),modes=[...overlay.querySelectorAll('[data-identity-mode]')];let splitForm=null;
+      const selectMode=mode=>{
+        if(!guard()||busy)return;const splitting=mode==='split'&&domain==='characters';
+        for(const button of modes){const active=button.dataset.identityMode===(splitting?'split':'merge');button.classList.toggle('is-on',active);button.setAttribute('aria-pressed',String(active));}
+        overlay.dataset.identityMode=splitting?'split':'merge';overlay.querySelector('#mg-partner-f').hidden=splitting;conflictFold.hidden=splitting;splitField.hidden=!splitting;apply.hidden=splitting;
+        if(splitting&&!splitForm){splitForm=createWorldManagerIdentitySplitForm(domain,row,view,options.initialNames||[],out=>complete('split',out),guard);splitField.appendChild(splitForm);}
+      };
+      for(const button of modes){button.hidden=button.dataset.identityMode==='split'&&domain!=='characters';button.disabled=button.dataset.identityMode==='merge'&&!targets.length;button.onclick=()=>selectMode(button.dataset.identityMode);}
+      if(domain==='world')overlay.querySelector('#mg-mode').hidden=true;
+      select.disabled=!targets.length;review.disabled=!targets.length;
+      overlay.querySelector('.dialog__actions').replaceChildren(guiEl('button',{class:'btn',type:'button',text:'닫기',onClick:()=>close()}),apply);
+      overlay.addEventListener('click',event=>{if(event.target===overlay)close();});Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,close);selectMode(options.mode==='split'||!targets.length?'split':'merge');
+      return overlay;
   };
 
-  // Keep explicit review forms stable across background snapshot/body refreshes.
-  // Three bounded UI nodes only; never persist grants or carry forms to another scope/open.
+  // Keep scoped maintenance forms stable across background body refreshes.
+  // The identity manager owns its form directly and never borrows cached nodes.
   const guiUnifiedScopedReviewForm = (kind,identity,build) => {
     const scopeKey=String(LibraMemoryCore.peekSnapshot()?.scope?.scopeKey||'');
     if(!scopeKey)return build();
@@ -89615,26 +89734,23 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if(old&&old.identity===identity)return old.node;
     const node=build();Gui.unifiedSixthForms.forms[kind]={identity,node};return node;
   };
-  const buildWorldManagerIdentitySplit = (domain,row,view) => {
+  const createWorldManagerIdentitySplitForm = (domain,row,view,initialNames=[],onComplete=null,isCurrent=()=>true) => {
     if(!worldManagerIsUnified(view)||domain!=='characters')return null;
-    return guiUnifiedScopedReviewForm('split',String(row.id),()=>createWorldManagerIdentitySplit(domain,row,view));
-  };
-  const createWorldManagerIdentitySplit = (domain,row,view) => {
-    if(!worldManagerIsUnified(view)||domain!=='characters')return null;
-    return guiLazyDetails({class:'fold',style:{flex:'1 0 100%',width:'100%',minWidth:'0',boxSizing:'border-box',marginTop:'8px'},dataset:{worldIdentitySplit:domain}},guiEl('summary',{text:'서로 다른 인물 분리'}),()=>{
-      let preview=null,busy=false,page=0;const assignments=new Map(),targets=[{key:'person_1',name:'',aliases:[]},{key:'person_2',name:'',aliases:[]}];
-      const status=guiEl('div',{class:'hint',text:'하나로 잘못 기록된 인물의 사실별 역할을 나눕니다. 원문·정본은 보존하며 자동 배정하지 않습니다.'});
+      let preview=null,busy=false,page=0;const assignments=new Map(),targets=[{key:'person_1',name:text(initialNames[0]||''),aliases:[]},{key:'person_2',name:text(initialNames[1]||''),aliases:[]}];
+      const originBindings=new Map(),autoAssigned=new Set(),reviewOnly=new Set(),manualAssignments=new Set();
+      const status=guiEl('div',{class:'hint',role:'status','aria-live':'polite',text:'원래 인물 ID에 따라 사실별 역할을 자동 배정합니다. 검토 표시는 저장을 막지 않으며 필요한 항목만 바꿀 수 있습니다.'});
       const targetFields=guiEl('div',{class:'grid g2',style:{minWidth:'0'}}),facts=guiEl('div',{style:{display:'grid',gap:'10px',minWidth:'0'}}),paging=guiEl('div',{class:'cluster'});
       const complete=()=>!!preview&&targets.every(t=>t.name.trim())&&assignments.size===preview.occurrences.length&&targets.every(t=>[...assignments.values()].includes(t.key));
-      const updateStatus=()=>{if(preview)status.textContent=`${preview.sourceName} · 역할 ${assignments.size}/${preview.occurrences.length}개 배정 · 모델 호출 없음 · 정본 변경 없음`;apply.disabled=busy||!complete();};
+      const updateStatus=()=>{if(preview)status.textContent=`${preview.sourceName} · 역할 ${assignments.size}/${preview.occurrences.length}개 배정 · 원본 ID 자동 배정 ${autoAssigned.size}개 · 검토 표시 ${reviewOnly.size}개(개별 승인 불필요) · 모델 호출 없음 · 정본 변경 없음`;apply.disabled=busy||!complete();};
       const renderFacts=()=>{
         facts.replaceChildren();paging.replaceChildren();if(!preview)return;const total=Math.ceil(preview.occurrences.length/24);page=Math.min(page,total-1);
         for(const o of preview.occurrences.slice(page*24,page*24+24)){
           const label=o.path==='subjectTempRef'?'행위·상태의 주체':o.path==='targetTempRef'?'관계의 대상':o.path.replace(/^values\./,'값 · ');
-          const choose=worldManagerSelect(assignments.get(o.occurrenceId)||'',[['','인물 선택 필요'],...targets.map(t=>[t.key,t.name.trim()||`인물 ${targets.indexOf(t)+1}`])],v=>{if(v)assignments.set(o.occurrenceId,v);else assignments.delete(o.occurrenceId);updateStatus();});
+          const choose=worldManagerSelect(assignments.get(o.occurrenceId)||'',[['','인물 선택 필요'],...targets.map(t=>[t.key,t.name.trim()||`인물 ${targets.indexOf(t)+1}`])],v=>{if(v)assignments.set(o.occurrenceId,v);else assignments.delete(o.occurrenceId);manualAssignments.add(o.occurrenceId);autoAssigned.delete(o.occurrenceId);originHint.textContent='원래 인물: '+o.originalEntityName+' · '+o.originIdentityId+' · 사용자 수정';updateStatus();});
           choose.setAttribute('aria-label',`사실 ${o.factId} ${o.path}의 인물`);choose.dataset.splitOccurrence=o.occurrenceId;choose.dataset.splitFact=o.factId;choose.dataset.splitPath=o.path;
+          const originHint=guiEl('div',{class:'hint',dataset:{splitOrigin:o.originIdentityId},text:'원래 인물: '+o.originalEntityName+' · '+o.originIdentityId+(manualAssignments.has(o.occurrenceId)?' · 사용자 수정':reviewOnly.has(o.occurrenceId)?' · 추천 배정 검토 표시':' · 원본 ID로 자동 배정')});
           facts.appendChild(guiEl('div',{class:'card',style:{minWidth:'0',overflowWrap:'anywhere'}},[
-            guiEl('strong',{text:`T${o.turnRange.start}–${o.turnRange.end} · ${label}`}),guiEl('div',{text:o.text}),choose,
+            guiEl('strong',{text:`T${o.turnRange.start}–${o.turnRange.end} · ${label}`}),guiEl('div',{text:o.text}),originHint,choose,
             guiLazyDetails({},guiEl('summary',{text:'원문 근거'}),()=>guiEl('div',{style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere'},text:o.evidenceSpans.map(e=>`${e.ref}\n${e.quote}`).join('\n\n')}))
           ]));
         }
@@ -89648,26 +89764,40 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           targetFields.append(fieldNode(`인물 ${i+1} 이름`,name),fieldNode(`인물 ${i+1} 별칭`,aliases));
         });
       };
-      const review=guiEl('button',{type:'button',class:'btn',text:'분리할 사실과 근거 확인',onClick:async()=>{
-        if(busy)return;busy=true;review.disabled=true;apply.disabled=true;
-        try{preview=await globalThis.__LIBRA__.previewWorldManagerIdentitySplit({sourceId:row.id});assignments.clear();page=0;renderFacts();}
+      const prefill=()=>{
+        const prior=new Map(assignments),used=new Set();assignments.clear();autoAssigned.clear();reviewOnly.clear();originBindings.clear();
+        for(const group of guiAsArray(preview.originGroups)){
+          const matches=targets.filter(t=>!used.has(t.key)&&[t.name,...t.aliases].some(n=>String(n).normalize('NFKC').trim()===String(group.name).normalize('NFKC').trim()));
+          let target=matches.length===1?matches[0]:null,needsReview=false;
+          if(!target){target=targets.find(t=>!used.has(t.key)&&!t.name.trim());if(target)target.name=group.name;}
+          if(!target){target=targets.find(t=>!used.has(t.key));needsReview=!!target;}
+          if(!target&&targets.length<8){target={key:'person_'+(targets.length+1),name:group.name,aliases:[]};targets.push(target);}
+          if(!target){target=targets[0];needsReview=true;}
+          used.add(target.key);originBindings.set(group.originId,{key:target.key,needsReview});
+        }
+        for(const o of preview.occurrences){
+          const binding=originBindings.get(o.originIdentityId),manual=manualAssignments.has(o.occurrenceId)&&targets.some(t=>t.key===prior.get(o.occurrenceId));
+          assignments.set(o.occurrenceId,manual?prior.get(o.occurrenceId):binding.key);if(!manual)autoAssigned.add(o.occurrenceId);if(binding.needsReview)reviewOnly.add(o.occurrenceId);
+        }
+        renderTargets();renderFacts();
+      };
+      const loadPreview=async()=>{
+        if(busy||!isCurrent())return;busy=true;review.disabled=true;apply.disabled=true;
+        try{preview=await globalThis.__LIBRA__.previewWorldManagerIdentitySplit({sourceId:row.id});if(!isCurrent())return;page=0;prefill();}
         catch(e){preview=null;facts.replaceChildren();status.textContent=String(e.code||'')+' '+String(e.message||e);}
-        finally{busy=false;review.disabled=false;apply.disabled=!complete();}
-      }});
+        finally{busy=false;review.disabled=false;updateStatus();}
+      };
+      const review=guiEl('button',{type:'button',class:'btn',text:'분리할 사실과 근거 확인',onClick:loadPreview});
       const add=guiEl('button',{type:'button',class:'btn',text:'분리 인물 추가',onClick:()=>{if(busy||targets.length>=8)return;targets.push({key:`person_${targets.length+1}`,name:'',aliases:[]});renderTargets();renderFacts();add.disabled=targets.length>=8;}});
-      const apply=guiEl('button',{type:'button',class:'btn btn--primary',text:'전체 배정을 확인하고 분리 저장',disabled:true,onClick:async()=>{
-        if(busy||!complete())return;busy=true;apply.disabled=true;review.disabled=true;add.disabled=true;
+      const apply=guiEl('button',{type:'button',class:'btn btn--primary',text:'현재 배정으로 분리 저장',disabled:true,onClick:async()=>{
+        if(busy||!complete()||!isCurrent())return;busy=true;apply.disabled=true;review.disabled=true;add.disabled=true;
         try{const out=await globalThis.__LIBRA__.splitWorldManagerIdentity({sourceId:row.id,previewDigest:preview.previewDigest,targets,assignments:[...assignments].map(([occurrenceId,targetKey])=>({occurrenceId,targetKey}))});
-          if(out?.ok!==true)throw new Error(out?.reason||'인물 분리 저장 확인 실패');await refreshGuiSnapshot(false);await renderSettingsGui();guiSetStatus('인물 분리와 참조 배정을 저장했습니다. 원문·정본은 보존했습니다.');}
+          if(out?.ok!==true)throw new Error(out?.reason||'인물 분리 저장 확인 실패');if(!isCurrent())return;await refreshGuiSnapshot(false);await renderSettingsGui();guiSetStatus('인물 분리와 참조 배정을 저장했습니다. 원문·정본은 보존했습니다.');if(onComplete)await onComplete(out);}
         catch(e){status.textContent=String(e.code||'')+' '+String(e.message||e);}
         finally{busy=false;review.disabled=false;add.disabled=targets.length>=8;apply.disabled=!complete();}
       }});
-      renderTargets();return guiEl('div',{style:{display:'grid',gap:'10px',padding:'12px',minWidth:'0'}},[status,targetFields,guiEl('div',{class:'cluster'},[add,review]),facts,paging,apply]);
-    });
+      renderTargets();queueMicrotask(()=>void loadPreview());return guiEl('div',{dataset:{worldIdentitySplit:domain},style:{display:'grid',gap:'16px',minWidth:'0'}},[status,targetFields,guiEl('div',{class:'cluster'},[add,review]),facts,paging,apply]);
   };
-
-
-
 
   const buildUnifiedRetentionPanel = () => guiUnifiedScopedReviewForm('retention','current',createUnifiedRetentionPanel);
   const createUnifiedRetentionPanel = () => guiLazyDetails({class:'fold',dataset:{unifiedRetention:'true'}},guiEl('summary',{text:'보관 자료 점검·임시 자료 정리'}),()=>{
@@ -89694,7 +89824,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (draft && !renderInDialog) return null;
     if (!draft) return guiEl('div',{class:'cluster',style:{display:'flex',alignItems:'center',justifyContent:'flex-end',width:'100%',gap:'8px'},dataset:{worldCorrectionAction:domain}},[
       buildWorldManagerIdentityMerge(domain,row,view),
-      buildWorldManagerIdentitySplit(domain,row,view),
       guiEl('button',{class:'btn',type:'button',style:{marginLeft:'auto'},text:worldManagerCorrectionId(row)?'교정 수정':'수정',disabled:!view?.head,onClick:()=>openWorldManagerCorrectionEditor(domain,row,view)})
     ]);
     const values=draft.values; const set=(name,value)=>{values[name]=value;}; const fields=[];
@@ -91249,7 +91378,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         return guiEl('button',{class:`chapter${active?' is-on':''}`,type:'button','aria-current':active?'true':null,
           dataset:{memoryId:text(item.memoryId),revision:String(Number(item.revision||0))},
           onClick:()=>{Gui.bookMemoryDetail=true;void loadCanonicalReaderDetail(item);}},[
-          guiEl('b',{text:text(item.title||`TURN ${start}–${end}`)}),guiEl('small',{text:`T${start}–T${end} · r${Number(item.revision||0)}`})
+          guiEl('b',{text:bookReadingTitle(item.title||`TURN ${start}–${end}`)}),guiEl('small',{text:`T${start}–T${end} · r${Number(item.revision||0)}`})
         ]);
       })
     ]);
@@ -91301,6 +91430,41 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     ]);
   };
 
+  // Display-only presentation: never rewrite canonical text, citations or facts.
+  const bookReadingVisibleText = value => String(value??'').replace(/(?:\s*[(（]\s*근거\s*[:：]\s*t\d+-(?:u|a)(?:\s*[,，;；/·]\s*t\d+-(?:u|a))*\s*[)）]\s*)+$/gi,'').trim();
+  const bookReadingTitle = value => bookReadingVisibleText(value).replace(/^#{1,6}\s+/,'').trim()||'제목 없는 기억';
+  const parseBookMemoryReading = value => {
+    const sections=[{key:'summary',title:'종합 기억',blocks:[]}];let section=sections[0],afterBlank=true;
+    const keys={'시간순사건':'chronology','인물과관계':'characters_relations','인물간관계':'characters_relations','세계와장면':'world_scene','내러티브와미해결문제':'narrative_open_threads','확정사실과불확실정보':'facts_uncertainty','회상키워드':'recall_keys'};
+    for(const raw of String(value??'').replace(/\r\n?/g,'\n').split('\n')){
+      const heading=/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/.exec(raw);
+      if(heading){
+        const title=heading[1].trim(),normalized=title.replace(/\s+/g,'');
+        if(normalized==='종합기억'&&sections.length===1&&section===sections[0])section.title=title;
+        else{section={key:keys[normalized]||'section_'+sections.length,title,blocks:[]};sections.push(section);}
+        afterBlank=true;continue;
+      }
+      if(!raw.trim()){afterBlank=true;continue;}
+      const bullet=/^\s*[-*•]\s+(.+)$/.exec(raw),last=section.blocks.at(-1);
+      if(bullet){const list=last?.kind==='list'&&!afterBlank?last:{kind:'list',items:[]};if(list!==last)section.blocks.push(list);list.items.push(bullet[1]);}
+      else if(last?.kind==='list'&&!afterBlank&&/^\s{2,}\S/.test(raw))last.items[last.items.length-1]+='\n'+raw.trim();
+      else if(last?.kind==='paragraph'&&!afterBlank)last.text+='\n'+raw.trim();
+      else section.blocks.push({kind:'paragraph',text:raw.trim()});
+      afterBlank=false;
+    }
+    return sections.map(section=>({...section,blocks:section.blocks.map(block=>block.kind==='list'
+      ?{kind:'list',items:block.items.map(bookReadingVisibleText).filter(Boolean)}
+      :{kind:'paragraph',text:bookReadingVisibleText(block.text)}).filter(block=>block.kind==='list'?block.items.length:!!block.text)}));
+  };
+  const buildBookMemoryReadingBody = detail => {
+    const raw=String(detail?.text||detail?.summary||'이 기억에는 표시할 본문이 없습니다.');
+    return guiEl('div',{class:'prose canonical-reading',dataset:{canonicalReading:'true'}},parseBookMemoryReading(raw).map((section,index)=>
+      guiEl('section',{class:'canonical-reading__section','aria-label':section.title,dataset:{canonicalReadingSection:section.key}},[
+        guiEl(index===0?'h3':'h4',{class:'canonical-reading__heading',text:section.title}),
+        ...section.blocks.map(block=>block.kind==='list'?guiEl('ul',{},block.items.map(item=>guiEl('li',{text:item}))):guiEl('p',{text:block.text}))
+      ])));
+  };
+
   const buildBookMemoryReadingSheet = () => {
     const detail=guiAsObject(Gui.canonicalReaderDetail);
     const reanalysisScope=canonicalReaderBinding().scopeKey;
@@ -91312,15 +91476,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const move=(target,label)=>guiEl('button',{class:'btn btn--sm',type:'button',text:label,disabled:!target,onClick:()=>{if(target)void loadCanonicalReaderDetail(target);}});
     return guiEl('article',{class:'sheet-page detail-pane',dataset:{canonicalChapter:text(detail.memoryId),detailLoaded:'true'}},[
       guiEl('div',{class:'eyebrow',text:`Chapter ${String(Number(detail.chapterNumber||0)).padStart(2,'0')} · ${text(detail.memoryId)} · T${start}–T${end}`}),
-      guiEl('h2',{text:text(detail.title||'제목 없는 기억')}),
+      guiEl('h2',{text:bookReadingTitle(detail.title)}),
       guiEl('p',{class:'deck',text:`revision ${Number(detail.revision||0)} · ${text(detail.worldlineId||'main')}`}),
       guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm',type:'button',text:'재분석',dataset:{canonicalReaderReanalysis:'true'},onClick:()=>void showLibraSourceReanalysisDrawer({kind:'canonical',scopeKey:reanalysisScope,startTurn:start,endTurn:end})})]),
-      guiEl('div',{class:'prose'},[guiEl('p',{text:text(detail.text||detail.summary||'이 기억에는 표시할 본문이 없습니다.')})]),
-      guiEl('div',{class:'manage-only cluster'},[
-        guiEl('button',{class:'btn btn--sm',type:'button',text:'수정용 복사본으로 교정',onClick:()=>void openCanonicalReaderCorrection()}),
-        guiEl('button',{class:'btn btn--sm',type:'button',text:'버전 · 실행 기록',onClick:()=>void showCanonicalVariantDialog(start)}),
-        guiEl('span',{class:'hint',text:'원문과 정본은 보존됩니다. 수정용 복사본과 후보는 별도로 검토하고 승인합니다.'})
-      ]),
+      buildBookMemoryReadingBody(detail),
       guiEl('div',{class:'margin-notes'},[
         guiEl('div',{},[guiEl('h3',{text:'연결된 장면'}),guiEl('div',{class:'cluster'},links.length?links.map(bookReaderCrossReference):[guiEl('span',{class:'hint',text:'연결된 항목이 없습니다.'})])]),
         guiEl('div',{},[guiEl('h3',{text:detail.changesMeaning==='current_evidence_links'?'현재 필드의 정본 근거':'이 기억이 바꾼 값'}),guiEl('ul',{},changes.map(change=>guiEl('li',{text:`${text(change.domain||'state')} · ${text(change.entityId||'현재 상태')} · ${guiAsArray(change.fields).map(text).join(', ')}`}))),changes.length?null:guiEl('p',{class:'hint',text:'별도의 상태 변경 필드가 없습니다.'})])
@@ -94911,6 +95070,12 @@ advanced
         'aria-selected': String(activeKind === kind), dataset: {memoryReaderKind: kind},
         text: label, onClick: () => selectBookMemoryKind(kind)
       }))]);
+    if (activeKind === 'canonical' && Gui.memoryHubSection !== 'read') {
+      const manage = guiEl('section', { id: 'memory-root', class: 'card', role: 'tabpanel', 'aria-label': '정본 기억 관리', dataset: { productMemoryManagement: 'true', productReadback: 'canonical-memory-management' } }, [
+        buildLibraMemoriesPanel(), buildCanonicalEvidenceDrawer()
+      ]);
+      return guiEl('div', { class: 'stack', dataset: { libraProductDetail: 'memory' } }, [tabs, manage]);
+    }
     const reader = activeKind === 'micro'
       ? buildBookMicroReaderProjection()
       : activeKind === 'lens'
@@ -94924,16 +95089,7 @@ advanced
         : 'canonical-memory-reader';
     reader.setAttribute?.('role', 'tabpanel');
     reader.setAttribute?.('aria-label', activeKind === 'micro' ? 'Micro 기억' : activeKind === 'lens' ? '렌즈 기억' : '정본 기억');
-    const manage = activeKind !== 'canonical' ? null : guiEl('div', { class: 'manage-block' }, [guiEl('div', { class: 'banner banner--info' }, [
-      guiEl('div', {}, [guiEl('b', { text: '정본 기억 관리' }), guiEl('p', { text: '재분석은 원문 재분석 화면에서 실행합니다. 교정용 복사본과 기존 후보는 검토 후 별도 승인합니다.' })]),
-      guiEl('div', { class: 'cluster' }, [
-        guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: '기억 생성 구간 선택', onClick: () => void showCanonicalRangeDrawer('missing') }),
-        guiEl('button', { class: 'btn btn--sm', type: 'button', text: '상태 점검 및 자동 복구', onClick: () => void openLibraMemoryMaintenanceDialog() }),
-        guiEl('button', { class: 'btn btn--sm', type: 'button', text: '버전 · 실행 기록', onClick: () => { Gui.worldManagerCanonicalMemoryFocus = null; void showCanonicalVariantDialog(Number(Gui.canonicalReaderSelected?.turnRange?.start || 0)); } }),
-        guiEl('button', { class: 'btn btn--sm', type: 'button', text: '복구 · 재구축', onClick: () => selectBookSettingsRoomSection('recovery') })
-      ])
-    ]), guiEl('section', { class: 'card', dataset: { productMemoryManagement: 'true' } }, [buildLibraMemoriesPanel(), buildCanonicalEvidenceDrawer()])]);
-    return guiEl('div', { class: 'stack', dataset: { libraProductDetail: 'memory' } }, [tabs, manage, reader]);
+    return guiEl('div', { class: 'stack', dataset: { libraProductDetail: 'memory' } }, [tabs, reader]);
   };
 
   const buildApprovedMockupSettings = () => {
@@ -95006,6 +95162,7 @@ advanced
     const selectedName=row?bookCharacterName(row):'';
     const matching=rows.map((item,index)=>({item,index,id:identities[index],name:bookCharacterName(item)})).filter(entry=>!search||[entry.name,...guiAsArray(entry.item.aliases)].join(' ').toLocaleLowerCase().includes(search));
     const rail=guiEl('aside',{class:'rail'},[
+      guiEl('button',{class:'btn',type:'button',style:{margin:'12px',whiteSpace:'normal'},dataset:{openIdentityLinkReview:'true'},disabled:!worldManagerIsUnified(view),text:'자동 연결 검토 ('+LibraMemoryCore.identityLinkReviewRows(view.head).filter(row=>row.status==='review').length+')',onClick:openWorldManagerIdentityLinkReview}),
       guiEl('div',{class:'rail__search'},[guiEl('div',{class:'search'},[guiEl('input',{class:'input',type:'search',placeholder:'인물 검색','aria-label':'인물 검색',value:Gui.bookCharacterQuery||'',onInput:event=>{Gui.bookCharacterQuery=event.target.value;const q=event.target.value.trim().toLocaleLowerCase();let n=0;Gui.app?.querySelectorAll('[data-character-search]').forEach(node=>{node.hidden=!node.dataset.characterSearch.includes(q);if(!node.hidden)n++;});const empty=Gui.app?.querySelector('[data-character-search-empty]');if(empty)empty.hidden=n>0;}})])]),
       guiEl('div',{class:'rail__list'},matching.length?matching.map(({item,id,name:n})=>{
         const factsFor=worldManagerArticleFacts({id:item.id||'',name:n,state:guiAsObject(item.state)},view,Number.MAX_SAFE_INTEGER);
@@ -95188,7 +95345,7 @@ advanced
       case 'people': {
         const body=buildApprovedMockupPeople();
         if(Gui.bookPeopleSection!=='profile')(body.querySelector('.sheet-page')||body).appendChild(guiLazyDetails({class:'fold',open:true,dataset:{productManagement:'people'}},guiEl('summary',{text:'인물 · 관계 상세 관리'}),()=>guiEl('div',{class:'fold__body stack'},[
-          buildLibraHubTabs([{id:'characters',label:'인물'},{id:'relationships',label:'관계'}],Gui.bookPeopleSection,value=>bookSelectPeopleSection(value),'인물 관계 관리'),
+          buildPeopleManagementNavigation(),
           Gui.bookPeopleSection==='relationships'?buildWorldManagerRelationshipsPanel():buildWorldManagerCharactersPanel()
         ])));
         return body;
@@ -96594,6 +96751,8 @@ advanced
     async getResponseContext(options = {}) { return safeClone(await LibraMemoryCore.getUnifiedResponseContext(options)); },
     async validateResponseContext(snapshot) { return safeClone(await LibraMemoryCore.validateUnifiedResponseContext(snapshot)); },
     getLastResponseContext() { return safeClone(Runtime.lastResponseContext||null); },
+    async listWorldManagerIdentityLinkReviews() { return safeClone(await LibraMemoryCore.listUnifiedIdentityLinkReviews()); },
+    async confirmWorldManagerIdentityLink(options = {}) { return safeClone(await LibraMemoryCore.confirmUnifiedIdentityLink(options)); },
     async previewWorldManagerIdentityMerge(options = {}) { return safeClone(await LibraMemoryCore.previewUnifiedIdentityMerge(options)); },
     async mergeWorldManagerIdentity(options = {}) { return safeClone(await LibraMemoryCore.mergeUnifiedIdentity(options)); },
     async previewWorldManagerIdentitySplit(options = {}) { return safeClone(await LibraMemoryCore.previewUnifiedIdentitySplit(options)); },
