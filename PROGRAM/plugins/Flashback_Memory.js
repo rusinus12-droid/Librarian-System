@@ -1962,6 +1962,7 @@ const PLUGIN_VERSION = '1.3.8';
     return true;
   };
   const SCOPE_REGISTRY_REMEMBER_TTL_MS = 30000;
+  const CLONE_SOURCE_VECTOR_FAILURE_TTL_MS = 10 * 60 * 1000;
   const NATIVE_COPY_OBSERVER_POLL_MS = 1800;
   const NATIVE_COPY_OBSERVER_FOLLOWUP_MS = Object.freeze([900, 3200]);
 
@@ -19891,16 +19892,25 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return out;
   };
 
+  // Callers pass whole manifests as scope metadata; per-shard summaries belong only in the
+  // manifest. Kept in every registry entry they pushed the registry past the 4 MB server value limit.
+  const REGISTRY_MANIFEST_ONLY_FIELDS = Object.freeze(['shardSummaries', 'records', 'items']);
+  const compactRegistryScope = item => {
+    if (!item || typeof item !== 'object' || !REGISTRY_MANIFEST_ONLY_FIELDS.some(field => field in item)) return item;
+    const compact = { ...item };
+    for (const field of REGISTRY_MANIFEST_ONLY_FIELDS) delete compact[field];
+    return compact;
+  };
   const readRegistry = async () => {
     const raw = await RisuCompat.getItem(STORAGE.registry);
     const parsed = typeof raw === 'string' ? tryJsonParse(raw, null) : raw;
     return parsed && typeof parsed === 'object'
-      ? { version: 2, updatedAt: parsed.updatedAt || 0, scopes: Array.isArray(parsed.scopes) ? parsed.scopes : [] }
+      ? { version: 2, updatedAt: parsed.updatedAt || 0, scopes: Array.isArray(parsed.scopes) ? parsed.scopes.map(compactRegistryScope) : [] }
       : { version: 2, updatedAt: 0, scopes: [] };
   };
 
   const writeRegistry = async (registry) => {
-    const scopes = (Array.isArray(registry?.scopes) ? registry.scopes : []).filter(item => item?.scopeKey).slice(0, 240);
+    const scopes = (Array.isArray(registry?.scopes) ? registry.scopes : []).filter(item => item?.scopeKey).slice(0, 240).map(compactRegistryScope);
     await requireStorageWrite(STORAGE.registry, safeStringify({ version: 2, updatedAt: Date.now(), scopes }), 'registry save');
     return { version: 2, updatedAt: Date.now(), scopes };
   };
@@ -25124,13 +25134,28 @@ const MemorySuiteSnapshotCache = (() => {
         ? 'same_chat_persona_recovery'
         : 'chat_copy_live';
       let cloned;
+      // A source whose vectors need repair aborts the clone after reading the whole source
+      // scope. Scope resolution runs on every chat switch and GUI refresh, so remember that
+      // outcome for this exact source commit instead of re-reading it each time.
+      const cloneFailureKey = `${text(source.source?.scopeKey || '')}>${scope.scopeKey}`;
+      const sourceCommit = text((await loadScopeManifest(source.source)).commitId || '');
+      const knownFailure = Runtime.cloneSourceVectorFailures?.get(cloneFailureKey);
       try {
+        if (knownFailure && knownFailure.sourceCommit === sourceCommit && Date.now() - knownFailure.at < CLONE_SOURCE_VECTOR_FAILURE_TTL_MS) {
+          throw Object.assign(new Error(knownFailure.message), { code: knownFailure.code, affectedRecordIds: knownFailure.affectedRecordIds,
+            vectorRepair: knownFailure.vectorRepair, sourcePreserved: true, cachedCloneFailure: true });
+        }
         cloned = await cloneScopeStorage(source.source, scope, settings, {
           reason: source.reason,
           mode: cloneMode,
           weight: source.weight
         });
       } catch (cloneError) {
+        if (cloneError?.code === 'FLASHBACK_CLONE_SOURCE_VECTOR_INVALID' && cloneError.cachedCloneFailure !== true) {
+          if (!(Runtime.cloneSourceVectorFailures instanceof Map)) Runtime.cloneSourceVectorFailures = new Map();
+          Runtime.cloneSourceVectorFailures.set(cloneFailureKey, { at: Date.now(), sourceCommit, message: cloneError.message, code: cloneError.code,
+            affectedRecordIds: cloneError.affectedRecordIds, vectorRepair: cloneError.vectorRepair });
+        }
         // Read-only inspection must not dead-end on a repairable source-vector
         // abort. Return a repair-required signal so inspect can build a plan;
         // the low-level clone still aborted and preserved the source. Every
@@ -46765,9 +46790,10 @@ ${cleanedText}`, 80),
     if(row?.hostPresence==='orphan'&&Number(row.count||0)>0)return 'orphan';
     return 'memory'; // unknown count is not proof of absence
   };
-  const filteredManagementRows = rows => {
+  const filteredManagementRows = (rows, currentScopeKey = '') => {
     const view=Runtime.guiStorageManagementView||'memory';
-    return (rows||[]).filter(row=>{const kind=storageManagementKind(row);return view==='all'||(view==='cleanup'?['registry_only','empty'].includes(kind):view==='orphan'?kind==='orphan':!['registry_only','empty','orphan'].includes(kind));});
+    // The current chat stays visible in the memory view even before it stores anything.
+    return (rows||[]).filter(row=>{const kind=storageManagementKind(row);return view==='all'||(view==='memory'&&currentScopeKey&&text(row?.scopeKey||'').trim()===currentScopeKey)||(view==='cleanup'?['registry_only','empty'].includes(kind):view==='orphan'?kind==='orphan':!['registry_only','empty','orphan'].includes(kind));});
   };
 
   const emptyServerShellListingKeys = listing => {
@@ -47185,9 +47211,11 @@ ${cleanedText}`, 80),
       throw new Error('저장 목록을 확인하지 못했습니다. 기억 유지보수의 ‘상태 점검 및 자동 복구’ 버튼으로 점검해 주세요.');
     }
   };
-  const manualEditorCommitIdentity = manifest => JSON.stringify([
-    manifest?.commitId || '', manifest?.updatedAt || '', Number(manifest?.count || 0), Number(manifest?.shardCount || 0)
-  ]);
+  // A scope without a stored manifest gets a fresh emptyManifest() (updatedAt = now) on every
+  // read, so its identity must not include those generated timestamps.
+  const manualEditorCommitIdentity = manifest => manifest?.manifestRawPresent === false
+    ? JSON.stringify(['absent', text(manifest?.scopeKey || '')])
+    : JSON.stringify([manifest?.commitId || '', manifest?.updatedAt || '', Number(manifest?.count || 0), Number(manifest?.shardCount || 0)]);
   const manualEditorRecordStatus = (record = {}) => {
     const state = text(record.lifecycleStatus || 'active');
     const labels = { quarantined: '격리 · 리콜 제외', inactive_variant: '이전 후보 · 리콜 제외', detached_branch: '분리된 분기 · 리콜 제외', orphaned: '고아 기록 · 리콜 제외' };
@@ -47478,9 +47506,24 @@ ${cleanedText}`, 80),
     return { selectedCount, selectableCount: selectable.length, selected: Array.from(selected) };
   };
 
+  // The current chat's scope is always listed first. A scope the registry does not list yet
+  // (no stored memory, or a registry write that has not landed) is shown from the live scope.
+  const pinCurrentStorageScope = (scopeStats, currentScopeKey) => {
+    const list = Array.isArray(scopeStats) ? scopeStats.slice() : [];
+    if (!currentScopeKey) return list;
+    const index = list.findIndex(row => text(row?.scopeKey || '').trim() === currentScopeKey);
+    if (index > 0) list.unshift(list.splice(index, 1)[0]);
+    if (index < 0) {
+      const live = Runtime.currentScope?.scopeKey === currentScopeKey ? Runtime.currentScope : { scopeKey: currentScopeKey };
+      const cachedManifest = Runtime.guiCurrentStatsCache?.value?.scope?.scopeKey === currentScopeKey ? Runtime.guiCurrentStatsCache.value.manifest : null;
+      list.unshift(cachedManifest?.manifestRawPresent === true ? guiStorageRowFromManifest(cachedManifest, live)
+        : guiStorageRowFromRegistryMeta({ scopeKey: currentScopeKey, characterName: live.characterName || '', chatTitle: live.chatTitle || '', chatId: live.chatId || '', personaName: live.personaName || '', count: 0 }));
+    }
+    return list;
+  };
   const renderStorageRows = (scopeStats, currentScopeKey) => {
     const selected = storageScopeSelection();
-    const rows = filteredManagementRows(Array.isArray(scopeStats) ? scopeStats : []).map(item => {
+    const rows = filteredManagementRows(pinCurrentStorageScope(scopeStats, currentScopeKey), currentScopeKey).map(item => {
       const scopeKey = text(item.scopeKey || '').trim();
       const isCurrent = scopeKey === currentScopeKey;
       const kind=storageManagementKind(item),live=isCurrent&&Runtime.currentScope?.scopeKey===scopeKey?Runtime.currentScope:{};

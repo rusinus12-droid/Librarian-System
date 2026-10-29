@@ -43,3 +43,12 @@
 - `storage_global_maintenance_wait_test.cjs`(24개 통과): 실제 백업 중 전체 전환 사례에서 최종 확인 읽기가 더는 대기하지 않고(`observed === false`) 세 범위 확인까지 끝나는 것으로 기대값을 바꿨다. 수정 전에는 백업이 읽기를 막았기 때문에 대기가 관찰됐다.
 - 저장 클라이언트 묶음 56개 중 실패 6개(`storage_global_fresh_health_authority`, `storage_global_owner_public_gui`, `storage_mode_owner_parity_audit`, `storage_mode_publication_basic`, `storage_mode_special_parity_gates`, `storage_transition_gui_recovery`)는 직전 커밋 코드에서도 똑같이 실패하는 기존 실패다.
 - 실제 RisuAI 호스트와 사용자 DATA를 쓰는 서버에서는 실행하지 않았다.
+
+## 후속: 플래시백 필름 보관함 (12:58·13:06 디버그)
+
+- **응답 원문·세계선이 열리지 않음:** 현재 채팅(New Chat 4 (Copy 3))에는 저장된 Flashback 기억이 없어 manifest가 없다. `emptyManifest()`가 읽을 때마다 `updatedAt`을 현재 시각으로 채우기 때문에, 목록·세계선을 읽은 앞뒤의 manifest 동일성 비교가 항상 "변경됨"이 됐다. 그래서 재시도해도 "목록을 읽는 중 저장 내용이 변경되었습니다"로 끝났다. 저장된 manifest가 없을 때는 시각 대신 `absent`와 scopeKey로 동일성을 비교하도록 바꿨다.
+- **스코프 레지스트리 4MB 초과(콘솔의 미러 쓰기 오류):** `rememberScope({...meta, ...manifest})`가 manifest 전체를 넘기면서, 레지스트리 항목마다 그 스코프의 `shardSummaries`(최대 약 98KB)가 함께 저장됐다. 레지스트리가 4.27MB가 되어 서버 단일 값 제한(4MB)을 넘었고 미러 쓰기가 실패했다. 이제 레지스트리를 쓰고 읽을 때 manifest 전용 필드(`shardSummaries`·`records`·`items`)를 뺀다. 현재 서버 레지스트리 기준으로 4.0MB가 170KB로 줄어든다. 줄어든 레지스트리는 다음 레지스트리 쓰기 때 저장된다.
+- **스코프 정리에 현재 스코프가 없거나 위에 오지 않음:** 목록이 `updatedAt` 순으로만 정렬됐고, 아직 기억이 없는 현재 스코프는 레지스트리에도 없었으며 '기억 저장소' 보기에서 걸러졌다. 이제 표시할 때 현재 스코프를 항상 맨 위에 두고, 목록에 없으면 현재 채팅 정보로 행을 만들어 기본 보기에서도 보이게 했다.
+- **채팅방 전환 속도:** 채팅을 전환할 때마다 4MB 레지스트리를 읽고 다시 썼다. 레지스트리 축소로 이 비용이 크게 줄어든다. 또 원본 벡터 복구가 필요한 복사 채팅은 범위를 확인할 때마다(약 17초 간격, 화면 갱신마다) 원본 스코프 전체를 읽은 뒤에야 복제를 중단했다. 이제 같은 원본 commit에서 실패한 결과를 10분 동안 기억해 다시 읽지 않는다. 오류 자체는 그대로 알린다. 원본을 복구하면 commit이 바뀌어 즉시 다시 시도한다.
+
+검증: `flashback_empty_scope_and_registry_size_test.cjs`는 manifest 읽기에 몇 ms 지연을 넣은 저장소로 실행한다. 수정 전 코드에서는 실제 증상과 같은 "목록을 읽는 중 저장 내용이 변경되었습니다" 오류로 실패한다. 클론 벡터 복구 관련 테스트 4개와 저장소 열람 테스트는 통과한다. Flashback 테스트 154개 중 실패 12개는 직전 커밋에서도 똑같이 실패하거나(10개) 외부 산출물 디렉터리가 필요하다(2개).
