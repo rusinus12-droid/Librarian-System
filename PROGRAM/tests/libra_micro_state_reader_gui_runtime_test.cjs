@@ -77,15 +77,15 @@ async function conflictingClaims(){
   const before=f.writes.length,modelCalls=calls;
   const inspected=await f.api.readMicroStateAdmissionForTurn(6);
   assert.equal(inspected.status,'verified');assert.equal(inspected.decisions.length,2);
-  for(const row of inspected.decisions){assert.equal(row.status,'pending');assert.equal(row.reason,'micro_same_turn_field_conflict');}
+  for(const row of inspected.decisions){assert.equal(row.status,'admitted');assert.equal(row.reason,'automatic_review');}
   assert.equal(f.writes.length,before);assert.equal(calls,modelCalls);
   const view=await f.api.debugLoadContinuityStateForResponse();
-  assert.equal(view.authority.microProjection.pendingClaims.length,2);assert.equal(view.head.throughTurn,5);
-  assert.equal(Object.hasOwn(view.head.world.find(row=>row.name==='도서관').state,'doorStatus'),false);
+  assert.equal(view.authority.microProjection.pendingClaims.length,0);assert.equal(view.head.throughTurn,6);
+  assert.equal(view.head.world.find(row=>row.name==='도서관').state.doorStatus,'닫혔다');
+  assert.equal(view.head.memoryReview.rows.filter(row=>row.risk==='high').length,2,'source-verified conflicts apply with explicit high risk');
   const panel=await openMicro(f,6);
-  assert.equal(panel.dataset.microStateAdmission,'pending');assert.match(panel.textContent,/승인 0개.*보류 2개/);
-  assert.equal(panel.querySelectorAll('[data-micro-state-pending-reason="micro_same_turn_field_conflict"]').length,2);
-  assert.ok(panel.textContent.includes('서로 다른 값'));assert.deepEqual(f.errors,[]);
+  assert.equal(panel.dataset.microStateAdmission,'ready');assert.match(panel.textContent,/반영 2개.*보류 0개/);
+  assert.ok(panel.textContent.includes('기억·상태 자동 반영 검토'));assert.deepEqual(f.errors,[]);
   // Change a persisted decision after projection, while the final proof is read.
   const entry=[...f.values].find(([,raw])=>{try{const row=JSON.parse(raw);return row.schema==='libra.micro_state_admission.v1'&&row.turn===6&&row.claimIndex===0;}catch{return false;}});
   assert.ok(entry);const [decisionKey,saved]=entry,getItem=f.host.pluginStorage.getItem;

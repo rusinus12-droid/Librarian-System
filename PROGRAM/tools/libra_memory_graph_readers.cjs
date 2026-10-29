@@ -113,6 +113,7 @@ module.exports = function createMemoryGraphReaders({ identity, normalizeName, di
       });
       const src = source('canonical', row.key, record.revision, { record, ref: row.ref }, row.originScope || frame.scopeKey, validFacts.length ? 1 : 0);
       array(artifact.facts).forEach((fact, index) => {
+        if (array(row.rejectedFacts).includes(fact.tempFactId)) { note('canonical', 'user_rejected_claim'); return; }
         const contract = object(snapshot.claimContracts?.[fact.claimKind]);
         if (!fact.tempFactId || duplicate.get(fact.tempFactId) !== 1 || !contract.domain || contract.domain !== fact.domain) {
           note('canonical', 'claim_schema_or_identity_ambiguous'); return;
@@ -184,6 +185,7 @@ module.exports = function createMemoryGraphReaders({ identity, normalizeName, di
       const recordTurn = Number.isSafeInteger(Number(record.turn)) ? Number(record.turn) : null;
       const recordSessionEpoch = Number.isSafeInteger(Number(record.sessionEpoch)) ? Number(record.sessionEpoch) : null;
       spans.forEach((span, index) => {
+        if (array(row.rejectedClaimIndexes).includes(index)) { note('micro', 'user_rejected_claim'); return; }
         const claim = claims[index] || null, intent = claim?.stateIntent;
         const actor = intent ? byName(intent.target?.entityName) : null;
         const logicalActor = actor && [...entityById].find(([, node]) => node.id === actor.id)?.[0];

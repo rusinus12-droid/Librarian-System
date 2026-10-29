@@ -37958,7 +37958,10 @@ function createLibraReadonlySourceContext(owner) {
     };
     const loadContinuityStateForResponse = async (scope, manifest = null, options = {}) => {
       const refs = continuityStateRefs(manifest);
-      const withInheritedMicro = async view => await markInheritedMicroStateForReassessment(scope, manifest, view);
+      const withInheritedMicro = async view => {
+        const inherited=await markInheritedMicroStateForReassessment(scope,manifest,view);
+        return options.skipMemoryReview?inherited:await projectMemoryReviewForResponse(scope,manifest,inherited,options);
+      };
       const currentHead = await loadContinuityState(scope, manifest, { requireCurrent: true }).catch(() => null);
       if (currentHead) {
         const canonicalView = responseStateAuthorityForHead(currentHead, refs,
@@ -47419,6 +47422,7 @@ function createLibraReadonlySourceContext(owner) {
       });
       const src = source('canonical', row.key, record.revision, { record, ref: row.ref }, row.originScope || frame.scopeKey, validFacts.length ? 1 : 0);
       array(artifact.facts).forEach((fact, index) => {
+        if (array(row.rejectedFacts).includes(fact.tempFactId)) { note('canonical', 'user_rejected_claim'); return; }
         const contract = object(snapshot.claimContracts?.[fact.claimKind]);
         if (!fact.tempFactId || duplicate.get(fact.tempFactId) !== 1 || !contract.domain || contract.domain !== fact.domain) {
           note('canonical', 'claim_schema_or_identity_ambiguous'); return;
@@ -47490,6 +47494,7 @@ function createLibraReadonlySourceContext(owner) {
       const recordTurn = Number.isSafeInteger(Number(record.turn)) ? Number(record.turn) : null;
       const recordSessionEpoch = Number.isSafeInteger(Number(record.sessionEpoch)) ? Number(record.sessionEpoch) : null;
       spans.forEach((span, index) => {
+        if (array(row.rejectedClaimIndexes).includes(index)) { note('micro', 'user_rejected_claim'); return; }
         const claim = claims[index] || null, intent = claim?.stateIntent;
         const actor = intent ? byName(intent.target?.entityName) : null;
         const logicalActor = actor && [...entityById].find(([, node]) => node.id === actor.id)?.[0];
@@ -60057,6 +60062,223 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return { ...micro, attemptId:string(work.attemptId||''),
         personInventoryStatus, personInventoryError };
     };
+    const memoryReviewKey=(scope,worldline)=>`${PREFIX}:scope:${scope.scopeKey}:memory-review:v1:${worldline}`;
+    const memoryReviewId=(kind,record,index)=>`${kind}:${digest([record.scopeKey,record.sourceDigest,record.analysisRevisionId||record.artifactDigest,index])}`;
+    const readMemoryReviewPolicy=async(scope,worldline)=>{
+      const storageKey=memoryReviewKey(scope,worldline),saved=await storage.getVerifiedJson(storageKey,scope,null);
+      if(saved&&(saved.schema!=='libra.memory_review.v1'||saved.scopeKey!==scope.scopeKey||saved.worldlineId!==worldline))throw Error('MEMORY_REVIEW_SCOPE_INVALID');
+      if(saved)for(const [id,value] of Object.entries(asObject(saved.decisions)))if(!['automatic','confirmed','rejected'].includes(value?.status)||value?.row?.id!==id||value.row.scopeKey!==scope.scopeKey||value.row.worldlineId!==worldline
+        ||!['low','medium','high'].includes(value.risk)||value.sourceDigest!==value.row.sourceDigest)throw Error('MEMORY_REVIEW_RECORD_INVALID');
+      return {key:storageKey,saved,decisions:asObject(saved?.decisions)};
+    };
+    const memoryReviewDecision=(policy,kind,record,index)=>policy.decisions[memoryReviewId(kind,record,index)]?.status||'automatic';
+    const memoryReviewRisk=(reason,claim={})=>{
+      if(/conflict|overlap|verifier|quarantin/.test(reason)||claim.certainty&&claim.certainty!=='confirmed'||claim.epistemicStatus&&claim.epistemicStatus!=='observed')return 'high';
+      return reason?'medium':'low';
+    };
+    // Automatic use is a projection of verified records, never a rewrite of source/Canonical bytes.
+    const collectMemoryReviews=async(context,manifest,view)=>{
+      const scope=context.scope,worldline=string(view?.head?.worldlineId||manifest?.activeWorldlineId||'main');
+      const policy=await readMemoryReviewPolicy(scope,worldline),head=view?.head,rows=[],internal=new Map(),unavailable=[];
+      const dependencies=new Map([[policy.key,policy.saved]]);
+      dependencies.set(key.manifest(scope),await storage.getVerifiedJson(key.manifest(scope),scope,null));
+      dependencies.set(key.continuityState(scope),await storage.getVerifiedJson(key.continuityState(scope),scope,null));
+      dependencies.set(key.stateWorldlineMeta(scope),await storage.getVerifiedJson(key.stateWorldlineMeta(scope),scope,null));
+      const registry=await storage.getVerifiedJson(key.entityRegistry(scope),scope,null);
+      dependencies.set(key.entityRegistry(scope),registry);
+      const add=(kind,record,index,data)=>{
+        const id=memoryReviewId(kind,record,index),saved=policy.decisions[id];
+        const row={id,kind,turn:Number(record.turn||record.turnRange?.start||0),memoryId:record.memoryId||'',revision:record.revision||record.analysisRevisionId,
+          sourceDigest:record.sourceDigest,scopeKey:scope.scopeKey,worldlineId:worldline,status:saved?.status||'automatic',
+          verification:saved?.verification||'source_storage_scope_verified',risk:saved?.risk||memoryReviewRisk(data.reason,data.claim),reason:saved?.reason||data.reason||'',
+          factId:kind==='canonical'?index:'',text:string(data.claim?.text||''),quote:string(data.quote||''),stateEligible:data.stateEligible===true,
+          domain:data.domain||'',field:data.field||'',targetName:data.targetName||''};
+        row.validationLevel=saved?.validationLevel||(row.risk==='high'?'additional_verification_pending':row.stateEligible&&!row.reason?'rules_verified':'source_verified');
+        rows.push(row);internal.set(id,{...data,row,record,index});
+      };
+      const pending=asArray(head?.unifiedApplied?.pending);
+      for(const ref of fullContinuityRefs(manifest)){
+        const selected=pending.filter(p=>p.memoryId===ref.memoryId&&Number(p.revision)===Number(ref.revision)&&p.fact);
+        for(const saved of Object.values(policy.decisions)){const row=saved.row;if(row?.kind==='canonical'&&row.memoryId===ref.memoryId&&Number(row.revision)===Number(ref.revision)&&row.factId&&!selected.some(p=>p.fact===row.factId))selected.push({fact:row.factId,memoryId:row.memoryId,revision:row.revision,reason:saved.reason});}
+        if(!selected.length)continue;
+        try{
+          const record=await loadMemoryRef(ref,scope);await loadUnifiedApprovedBatch(context,ref,manifest);
+          if(!unifiedInheritedRef(ref)&&Number(ref.sessionEpoch||0)===0){const batch=buildPairs(context.chat,scope.scopeKey).slice(Number(ref.turnRange.start)-1,Number(ref.turnRange.end));
+            unifiedAssert(batch.length===BATCH_SIZE&&sourceDigest(batch)===record.sourceDigest,'MEMORY_REVIEW_CURRENT_SOURCE_CHANGED');}
+          dependencies.set(ref.key,record);if(record.sourceEvidenceRef?.key)dependencies.set(record.sourceEvidenceRef.key,await storage.getStoredJson(record.sourceEvidenceRef.key,null,scope));
+          const expanded=[...selected];
+          for(const p of selected.filter(p=>p.reason==='same_source_order_conflict')){
+            const origin=asArray(record.canonicalArtifact.facts).find(f=>f.tempFactId===p.fact);
+            for(const f of asArray(record.canonicalArtifact.facts))if(origin&&f.tempFactId!==origin.tempFactId&&f.domain===origin.domain&&f.subjectTempRef===origin.subjectTempRef&&f.targetTempRef===origin.targetTempRef
+              &&UNIFIED_CLAIMS[f.claimKind]?.field===UNIFIED_CLAIMS[origin.claimKind]?.field&&digest(asArray(f.evidenceSpans).map(s=>s.ref))===digest(asArray(origin.evidenceSpans).map(s=>s.ref))&&!expanded.some(e=>e.fact===f.tempFactId))expanded.push({...p,fact:f.tempFactId});
+          }
+          for(const p of expanded){
+            const fact=asArray(record.canonicalArtifact?.facts).find(f=>f.tempFactId===p.fact);if(!fact)continue;
+            const c=UNIFIED_CLAIMS[fact.claimKind],domain=STATE_PIPELINE_DOMAIN_HEAD_KEYS[fact.domain];
+            const supported=view.authority?.exactBasis===true&&c?.field&&fact.certainty==='confirmed'&&fact.temporalRole==='current_sequence'
+              &&['missing_current_binding','same_source_order_conflict','dependency_pending','quarantined_field_update'].includes(p.reason);
+            add('canonical',record,fact.tempFactId,{claim:fact,quote:asArray(fact.evidenceSpans).map(s=>s.quote).join('\n'),reason:p.reason,
+              stateEligible:!!supported,domain,field:c?.field||'',pending:p,ref});
+          }
+        }catch(error){unavailable.push({kind:'canonical',memoryId:ref.memoryId,reason:string(error.code||error.message)});}
+      }
+      const meta=await loadStateWorldlineMeta(scope,{strict:true}),cutoff=meta.worldlines?.[meta.activeWorldlineId]?.cutoffTurn;
+      const pairs=buildPairs(context.chat,scope.scopeKey).filter(p=>cutoff==null||p.turn<=Number(cutoff));
+      const hostWorldline=hostWorldlineIdForScope(scope);
+      for(const pair of pairs){
+        let active;try{active=await readActiveMicroMemory(scope,hostWorldline,0,pair.turn);}catch(error){unavailable.push({kind:'micro',turn:pair.turn,reason:'storage_unverified'});continue;}
+        if(active.status!=='verified'||active.record.analysisStatus!=='verified')continue;
+        if(active.record.sourceRevisionId!==completedTurnRevisionId(pair)||active.record.sourceDigest!==sourceDigest([pair])){unavailable.push({kind:'micro',turn:pair.turn,reason:'current_source_changed'});continue;}
+        dependencies.set(active.recordKey,active.record);dependencies.set(active.headKey,active.head);dependencies.set(active.record.receiptKey,active.receipt);
+        const validated=microRecallMemoryFromRecord(active.record,active.receipt,active.recordKey);if(!validated)continue;
+        for(const [index,claim] of asArray(active.record.claims).entries()){
+          const intent=asObject(claim.stateIntent),admission=asArray(view?.head?.microProjection?.pendingClaims).find(p=>p.turn===pair.turn&&p.claimIndex===index);
+          const conflicted=asArray(active.record.claims).some(other=>other!==claim&&digest(other.stateIntent?.target)===digest(intent.target)&&other.stateIntent?.domain===intent.domain&&other.stateIntent?.field===intent.field&&digest(other.stateIntent?.value)!==digest(intent.value));
+          const reason=admission?.reason||(conflicted?'micro_same_turn_field_conflict':''),eligible=view.authority?.exactBasis===true&&isPlainObject(claim.stateIntent)&&!!head&&claim.temporalRole==='current'&&claim.certainty==='confirmed'&&claim.epistemicStatus==='observed'
+            &&!/(source|receipt|scope|worldline|cutoff|reconciliation|read_failed|unavailable|correction|registry)/.test(reason);
+          add('micro',active.record,index,{claim,quote:claim.evidence?.exactQuote,reason,stateEligible:eligible,domain:STATE_PIPELINE_DOMAIN_HEAD_KEYS[intent.domain],field:intent.field,active});
+        }
+      }
+      const identity={scopeKey:scope.scopeKey,worldlineId:worldline,restoreGeneration:Number(state.microRestoreGeneration||0),rows,
+        headDigest:digest(head),dependencies:[...dependencies].map(([k,v])=>[k,digest(v)])};
+      return {schema:'libra.memory_review_inventory.v1',...identity,previewDigest:digest(identity),unavailable,policy,internal,dependencies,registry};
+    };
+    const projectMemoryReviewForResponse=async(scope,manifest,view,options={})=>{
+      const context=await resolveContext();if(context.scope.scopeKey!==scope.scopeKey)return view;
+      const catalog=options.reviewCatalog||await collectMemoryReviews(context,manifest,view),head=view.head?clone(view.head):null;
+      if(!head)return {...view,memoryReview:{rows:catalog.rows,unavailable:catalog.unavailable}};
+      const proofs=asArray(consumedMicroProofsByState.get(view.authority||view.head)).slice();
+      const proofKeys=new Set(proofs.flatMap(p=>[p.recordKey,p.headKey,p.receiptKey]).filter(Boolean));
+      for(const [k,v] of catalog.dependencies)if(!proofKeys.has(k)){proofs.push(stateDecisionConsumptionProof(k,v));proofKeys.add(k);}
+      const applied=[],rejected=[],blocked=[],reviewTransitions=[];
+      const resolve=name=>{const matches=asArray(catalog.registry?.entities).filter(e=>e.validated===true&&[e.name,...asArray(e.aliases)].some(n=>statePipelineIdentityKey(n)===statePipelineIdentityKey(name)));return matches.length===1?matches[0]:null;};
+      for(const row of catalog.rows){
+        const item=catalog.internal.get(row.id);
+        if(row.status==='rejected'){rejected.push(row);continue;}
+        if(!row.stateEligible)continue;
+        try{
+          let domain=row.domain,targetId='',field=row.field,value,clear=false,sourceRow=null;
+          if(row.kind==='canonical'){
+            const fact=item.claim,c=UNIFIED_CLAIMS[fact.claimKind];
+            if(asArray(fact.dependsOn).some(id=>!asArray(item.record.canonicalArtifact.facts).some(f=>f.tempFactId===id&&f.certainty==='confirmed'&&f.temporalRole==='current_sequence')))throw Error('dependency_unverified');
+            const selectedFact={...clone(fact),dependsOn:[]};
+            const artifact={...clone(item.record.canonicalArtifact),facts:[selectedFact],stateBindings:[{factTempId:fact.tempFactId,typedValueField:c.value,stateDomain:fact.domain,stateField:c.field}]};
+            const memory={...item.record,canonicalArtifact:artifact};memory.unifiedIdentityProvenance=buildUnifiedIdentityProvenance(memory);
+            const projected=buildUnifiedStateCandidate(memory,{head,registry:catalog.registry,ref:item.ref,logicalWorldlineId:catalog.worldlineId},manifest);
+            if(projected.pending.some(p=>p.fact===fact.tempFactId))throw Error('typed_state_validation_pending');
+            targetId=fact.domain==='relationship'?`cs_rel_${stableHash(`${projected.resolvedEntities.find(e=>e.tempId===fact.subjectTempRef)?.id}>${projected.resolvedEntities.find(e=>e.tempId===fact.targetTempRef)?.id}:${fact.dimension}`)}`:projected.resolvedEntities.find(e=>e.tempId===fact.subjectTempRef)?.id;
+            sourceRow=domain==='narrative'?projected.head.narrative:asArray(projected.head[domain]).find(r=>r.id===targetId);
+            const values=domain==='narrative'?sourceRow:sourceRow?.state;
+            if(!sourceRow)throw Error('target_unresolved');
+            clear=!Object.prototype.hasOwnProperty.call(asObject(values),field);value=values?.[field];
+          }else{
+            const intent=item.claim.stateIntent;
+            if(!asArray(view.head?.microProjection?.pendingClaims).some(p=>p.turn===row.turn&&p.claimIndex===item.index))continue;
+            if(!['characters','world','relationships','narrative'].includes(domain))throw Error('state_domain_unsupported');
+            if(domain==='relationships'){
+              const subject=resolve(intent.target.subjectName),target=resolve(intent.target.targetName);
+              if(!subject||!target||subject.id===target.id||!CONTINUITY_STATE_RELATION_DIMENSIONS.includes(intent.target.dimension))throw Error('relationship_target_unresolved');
+              targetId=`cs_rel_${stableHash(`${subject.id}>${target.id}:${intent.target.dimension}`)}`;
+              sourceRow={id:targetId,subjectId:subject.id,subjectName:subject.name,targetId:target.id,targetName:target.name,dimension:intent.target.dimension,state:{}};
+            }else if(domain!=='narrative'){
+              const entity=resolve(intent.target.entityName);if(!entity)throw Error('registry_target_unresolved');targetId=entity.id;
+              sourceRow={id:entity.id,name:entity.name,kind:entity.kind,aliases:clone(asArray(entity.aliases)),state:{}};
+            }
+            value=clone(intent.value??null);clear=intent.operation==='clear';
+            if(!clear&&typeof value==='string'&&!canonicalEntityNameBoundToEvidence(value,item.claim.evidence.exactQuote))throw Error('state_value_not_source_bound');
+            if(!clear&&/Ref$/.test(field)){
+              const entity=resolve(value)||asArray(catalog.registry?.entities).find(e=>e.id===value&&e.validated===true);
+              if(!entity)throw Error('registry_reference_unresolved');value=entity.id;
+            }
+          }
+          let target=domain==='narrative'?head.narrative:asArray(head[domain]).find(r=>r.id===targetId);
+          if(!target&&sourceRow){head[domain]=[...asArray(head[domain]),clone(sourceRow)];target=head[domain].at(-1);}
+          if(!target)throw Error('target_unresolved');
+          const correction=target.fieldCorrectionProvenance?.[field]||target.clearedFieldCorrectionProvenance?.[field];
+          if(correction?.correctionId)throw Error('explicit_user_correction');
+          const previousEvidence=target.fieldEvidence?.[field]||target.clearedFieldEvidence?.[field];
+          const through=Number(previousEvidence?.sourceTurnRange?.start||previousEvidence?.canonical?.turnRange?.start||previousEvidence?.turn||0);
+          if(through>row.turn)throw Error('newer_state_field_evidence');
+          const patch={domain,entityId:targetId,relationId:targetId,set:clear?{}:{[field]:value},clear:clear?[field]:[],identitySet:{}};
+          validateUnifiedCorrectionPatch({patches:[patch]},head);
+          const stateValue=domain==='narrative'?target:(target.state=asObject(target.state));
+          if(clear)delete stateValue[field];else stateValue[field]=clone(value);
+          const provenance=row.kind==='micro'?{schema:'libra.micro_state_field_evidence.v1',status:'state_admitted',receiptKey:item.record.receiptKey,sourceRevisionId:item.record.sourceRevisionId,
+            analysisRevisionId:item.record.analysisRevisionId,claimDigest:digest(item.claim),role:item.claim.evidence.role,messageId:item.claim.evidence.messageId,startOffset:item.claim.evidence.startOffset,endOffset:item.claim.evidence.endOffset,exactQuote:item.claim.evidence.exactQuote}
+            :{schema:'libra.state_field_evidence.v1',memoryId:item.record.memoryId,revision:item.record.revision,artifactDigest:item.record.artifactDigest,assertionIds:[item.index]};
+          const evidenceName=clear?'clearedFieldEvidence':'fieldEvidence';target[evidenceName]=asObject(target[evidenceName]);target[evidenceName][field]={...provenance,reviewId:row.id,reviewStatus:row.status,risk:row.risk,
+            verification:row.verification,sourceDigest:row.sourceDigest,turn:row.turn,evidenceSpans:[{quote:row.quote}],recordKey:row.kind==='micro'?item.active.recordKey:item.ref.key};
+          if(clear&&target.fieldEvidence)delete target.fieldEvidence[field];if(!clear&&target.clearedFieldEvidence)delete target.clearedFieldEvidence[field];
+          if(row.kind==='micro')reviewTransitions.push({turn:row.turn,claimIndex:item.index,domain:item.claim.stateIntent.domain,targetId:targetId||'current_narrative',field,disposition:'still_current',reviewId:row.id});
+          applied.push(row);
+        }catch(error){row.stateEligible=false;row.stateBlockReason=string(error.code||error.message);blocked.push(row);}
+      }
+      const handled=new Set([...applied,...rejected].map(row=>row.id));
+      if(head.unifiedApplied)head.unifiedApplied.pending=asArray(head.unifiedApplied.pending).filter(p=>!catalog.rows.some(row=>row.kind==='canonical'&&handled.has(row.id)&&row.memoryId===p.memoryId&&Number(row.revision)===Number(p.revision)&&catalog.internal.get(row.id)?.index===p.fact));
+      if(head.microProjection)head.microProjection.pendingClaims=asArray(head.microProjection.pendingClaims).filter(p=>!catalog.rows.some(row=>row.kind==='micro'&&handled.has(row.id)&&row.turn===p.turn&&catalog.internal.get(row.id)?.index===p.claimIndex));
+      for(const domain of Object.keys(asObject(head.domainStatus))){
+        if(!asArray(head.unifiedApplied?.pending).some(p=>STATE_PIPELINE_DOMAIN_HEAD_KEYS[p.domain]===domain)
+          &&asArray(view.head?.unifiedApplied?.pending).some(p=>STATE_PIPELINE_DOMAIN_HEAD_KEYS[p.domain]===domain))head.domainStatus[domain]={...head.domainStatus[domain],status:'ready',reason:'automatic_memory_review'};
+      }
+      if(applied.some(r=>r.kind==='micro'))head.throughTurn=Math.max(Number(head.throughTurn||0),...applied.filter(r=>r.kind==='micro').map(r=>r.turn));
+      if(head.microProjection){head.microProjection.transitions=[...asArray(head.microProjection.transitions),...reviewTransitions];head.microProjection.throughTurn=head.throughTurn;head.microProjection.status=head.microProjection.pendingClaims.length?'partial':'current';}
+      if(view.authority?.exactBasis===true&&!asArray(head.unifiedApplied?.pending).length&&!asArray(head.microProjection?.pendingClaims).length&&!head.unifiedCoverage?.legacyCount
+        &&RESPONSE_STATE_DOMAINS.every(domain=>head.domainStatus?.[domain]?.status==='ready'))head.status='ready';
+      const metadata={schema:'libra.memory_review_projection.v1',rows:catalog.rows,applied:applied.map(r=>r.id),rejected:rejected.map(r=>r.id),unavailable:catalog.unavailable};
+      head.memoryReview=metadata;
+      const refreshed=responseStateAuthorityForHead(head,continuityStateRefs(manifest),{exactBasis:view.authority?.exactBasis===true,sourceMode:'canonical_plus_reviewed_memory'});
+      const authority=clone(asObject(refreshed.authority));
+      if(head.microProjection){authority.microProjection=clone(head.microProjection);authority.microProjection.throughTurn=head.throughTurn;if(head.microProjection.pendingClaims.length){authority.pending=true;authority.current=false;}}
+      authority.memoryReview={automatic:catalog.rows.filter(r=>r.status==='automatic').length,confirmed:catalog.rows.filter(r=>r.status==='confirmed').length,rejected:rejected.length};
+      head.responseAuthority=clone(authority);rememberConsumedState(head,authority,proofs);
+      let microStateTurn=view.microStateTurn;
+      if(microStateTurn){microStateTurn=clone(microStateTurn);microStateTurn.pendingClaims=asArray(microStateTurn.pendingClaims).filter(p=>!catalog.rows.some(r=>r.kind==='micro'&&handled.has(r.id)&&r.turn===microStateTurn.turn&&catalog.internal.get(r.id)?.index===p.claimIndex));
+        for(const row of rejected.filter(r=>r.kind==='micro'&&r.turn===microStateTurn.turn))microStateTurn.transitions.push({turn:row.turn,claimIndex:catalog.internal.get(row.id).index,disposition:'rejected',reason:'user_rejected'});
+        for(const row of applied.filter(r=>r.kind==='micro'&&r.turn===microStateTurn.turn))microStateTurn.transitions.push({turn:row.turn,claimIndex:catalog.internal.get(row.id).index,disposition:'still_current',reason:'automatic_review'});}
+      return {...view,head,authority,memoryReview:metadata,...(microStateTurn?{microStateTurn}:{})};
+    };
+    const listMemoryReviews=async()=>{
+      const context=await resolveContext(),manifest=await loadManifest(context.scope,buildPairs(context.chat,context.scope.scopeKey).length);
+      const view=await loadContinuityStateForResponse(context.scope,manifest,{skipMemoryReview:true});
+      const catalog=await collectMemoryReviews(context,manifest,view);
+      await projectMemoryReviewForResponse(context.scope,manifest,view,{reviewCatalog:catalog});
+      catalog.previewDigest=digest({scopeKey:catalog.scopeKey,worldlineId:catalog.worldlineId,rows:catalog.rows,headDigest:catalog.headDigest,dependencies:catalog.dependencies.size?[...catalog.dependencies].map(([k,v])=>[k,digest(v)]):[]});
+      return catalog;
+    };
+    const memoryReviewDto=catalog=>({schema:catalog.schema,scopeKey:catalog.scopeKey,worldlineId:catalog.worldlineId,previewDigest:catalog.previewDigest,rows:clone(catalog.rows),unavailable:clone(catalog.unavailable)});
+    const setMemoryReviewDecision=async request=>{
+      unifiedAssert(['confirmed','rejected','automatic'].includes(request.status),'MEMORY_REVIEW_STATUS_INVALID');
+      const initial=await resolveContext();unifiedAssert(initial.scope.scopeKey===request.scopeKey,'MEMORY_REVIEW_SCOPE_CHANGED');
+      return await enqueue(initial.scope.scopeKey,async()=>{
+        assertPortableMemoryIdle();const catalog=await listMemoryReviews();
+        unifiedAssert(catalog.scopeKey===request.scopeKey&&catalog.previewDigest===request.previewDigest,'MEMORY_REVIEW_PREVIEW_CHANGED');
+        const selected=asArray(request.ids);unifiedAssert(selected.length>0&&selected.length<=32&&new Set(selected).size===selected.length,'MEMORY_REVIEW_SELECTION_INVALID');
+        unifiedAssert(selected.every(id=>catalog.internal.has(id)),'MEMORY_REVIEW_TARGET_CHANGED');
+        const before=catalog.policy.saved,decisions=clone(catalog.policy.decisions),at=nowIso();
+        for(const id of selected){const row=catalog.internal.get(id).row;decisions[id]={status:request.status,at,verification:row.verification,validationLevel:row.validationLevel,risk:row.risk,reason:row.reason,sourceDigest:row.sourceDigest,row:clone(row)};}
+        const next={schema:'libra.memory_review.v1',scopeKey:catalog.scopeKey,worldlineId:catalog.worldlineId,revision:Number(before?.revision||0)+1,decisions,updatedAt:at};
+        const mode=(await MemorySuiteStorageBridge.getScopeMode(initial.scope,false))?.mode||'plugin_only';
+        const raw=await LibraProviderBridge.storage.getItem(catalog.policy.key);
+        unifiedAssert(digest(raw?JSON.parse(raw):null)===digest(before),'MEMORY_REVIEW_STORE_CHANGED');
+        if(mode==='plugin_only'){
+          const live=await resolveContext();unifiedAssert(live.scope.scopeKey===initial.scope.scopeKey,'MEMORY_REVIEW_SCOPE_CHANGED');
+          const rechecked=await listMemoryReviews();unifiedAssert(rechecked.previewDigest===catalog.previewDigest,'MEMORY_REVIEW_SOURCE_CHANGED');
+          await storage.setVerifiedJson(catalog.policy.key,next,initial.scope);
+        }else{
+          const conditions=[];
+          const required=new Set([key.manifest(initial.scope),key.continuityState(initial.scope),key.entityRegistry(initial.scope),key.stateWorldlineMeta(initial.scope)]);
+          for(const id of selected){const item=catalog.internal.get(id);if(item.active)required.add(item.active.headKey);else{required.add(item.ref.key);if(item.record.sourceEvidenceRef?.key)required.add(item.record.sourceEvidenceRef.key);}}
+          for(const [storageKey,value] of catalog.dependencies){if(storageKey===catalog.policy.key||!required.has(storageKey))continue;if(conditions.length>=63)throw Error('MEMORY_REVIEW_READSET_TOO_LARGE');
+            const v=await LibraProviderBridge.storage.getItem(storageKey);unifiedAssert(digest(v?JSON.parse(v):null)===digest(value),'MEMORY_REVIEW_SOURCE_CHANGED');conditions.push({key:storageKey,expected:v==null?{exists:false}:{exists:true,value:v}});}
+          const prepared=await MemorySuiteStorageBridge.prepareConditionalBatch({conditions,mutations:[{key:catalog.policy.key,kind:'set',expected:raw==null?{exists:false}:{exists:true,value:raw},value:JSON.stringify(next)}]});
+          const receipt=await MemorySuiteStorageBridge.commitConditionalBatch(prepared);unifiedAssert(receipt.endToEndVerified===true,'MEMORY_REVIEW_COMMIT_UNVERIFIED');
+        }
+        unifiedAssert(digest(await storage.getVerifiedJson(catalog.policy.key,initial.scope,null))===digest(next),'MEMORY_REVIEW_READBACK_FAILED');
+        state.lastMicroStateAdmissionRefresh={at:Date.now(),reason:'memory_review_changed'};state.memoryGraphStoreSerial+=1;
+        state.recallCatalogCache?.delete(catalog.scopeKey);state.memoryGraphPages?.invalidate();state.memoryGraphCompiler?.invalidateAll();
+        return {ok:true,status:request.status,count:selected.length,revision:next.revision};
+      });
+    };
     const evaluateMicroStateClaim = (microValue, receiptValue, claimIndex, registryValue, headValue, worldlineBindingValue, options = {}) => {
       const micro = asObject(microValue), receipt = asObject(receiptValue);
       const registry = asObject(registryValue), head = asObject(headValue);
@@ -60500,6 +60722,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const context = await resolveContext();
       if (string(context.scope?.scopeKey || '') !== string(scope.scopeKey || '')) return canonicalView;
       const worldlineMeta = await loadStateWorldlineMeta(scope, { strict: true });
+      const reviewPolicy=await readMemoryReviewPolicy(scope,string(worldlineMeta.activeWorldlineId||'main'));
+      stateProofs.push(stateDecisionConsumptionProof(reviewPolicy.key,reviewPolicy.saved));
       const cutoff = worldlineMeta.worldlines?.[worldlineMeta.activeWorldlineId]?.cutoffTurn;
       if (cutoff != null && (!Number.isInteger(Number(cutoff)) || Number(cutoff) < 0)) {
         throw stateCorrectionFailure('STATE_WORLDLINE_CUTOFF_INVALID');
@@ -60537,6 +60761,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           catch (_) { active = { status: 'pending_reconciliation', reason: 'overlap_micro_read_failed' }; }
           if (active.status !== 'verified' || active.record.analysisStatus !== 'verified') continue;
           for (const [claimIndex, claim] of asArray(active.record.claims).entries()) {
+          if(memoryReviewDecision(reviewPolicy,'micro',active.record,claimIndex)==='rejected')continue;
             if (!isPlainObject(claim.stateIntent)) continue;
             if (head.domainStatus?.[STATE_PIPELINE_DOMAIN_HEAD_KEYS[claim.stateIntent.domain]]?.status !== 'ready') {
               pendingClaims.push({turn, claimIndex, reason: 'state_domain_not_ready'});
@@ -60736,6 +60961,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
         const admitted = [];
         for (const [claimIndex, claim] of asArray(active.record.claims).entries()) {
+          if(memoryReviewDecision(reviewPolicy,'micro',active.record,claimIndex)==='rejected')continue;
           if (!isPlainObject(claim.stateIntent)) continue;
           const domainKey = STATE_PIPELINE_DOMAIN_HEAD_KEYS[claim.stateIntent.domain];
           if (!genesis && head.domainStatus?.[domainKey]?.status !== 'ready') {
@@ -74786,7 +75012,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const refs = canonicalReaderRefs(active.manifest, resolved);
         const frame = { owner: 'libra:' + captured.summary.route.mode, scopeKey: scope.scopeKey,
           worldlineId: resolved.worldlineId, restoreEpoch: epoch,
-          view: { viewerId: 'owner_reader', temporalView: 'current_owner_page', cutoffTurn: active.cutoffTurn ?? null } };
+          view: { viewerId: 'owner_reader', temporalView: 'current_owner_page', cutoffTurn: active.cutoffTurn ?? null, memoryReviewDigest:digest((await readMemoryReviewPolicy(scope,resolved.worldlineId)).saved) } };
         const pageIdentity = { scopeKey: scope.scopeKey, worldlineId: resolved.worldlineId, epoch,
           publicationGeneration: captured.summary.publicationGeneration,
           refs: refs.map(canonicalReaderRefIdentity), turns: active.pairs.map(pair => Number(pair.turn)) };
@@ -74804,6 +75030,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         await read(key.manifest(scope), () => storage.getVerifiedJson(key.manifest(scope), scope, null));
         const storedRegistry = await read(key.entityRegistry(scope), () => storage.getVerifiedJson(key.entityRegistry(scope), scope, null));
         const registry = storedRegistry || { schema: ENTITY_REGISTRY_SCHEMA, scopeKey: scope.scopeKey, entities: [] };
+        const reviewPolicy=await readMemoryReviewPolicy(scope,resolved.worldlineId);
+        addSourceKey(reviewPolicy.key);
         const canonical = [], canonicalSliceProof = [];
         for (const ref of refs.slice(canonicalOffset, canonicalOffset + limit)) {
           const memory = await read(ref.key, () => loadMemoryRef(ref,scope));
@@ -74818,7 +75046,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           canonicalSliceProof.push({ refIdentity: canonicalReaderRefIdentity(ref), available: true, evidenceKey: string(approvedEvidence?.ref?.key || '') });
           const entityRefs = Object.fromEntries(asArray(memory.canonicalArtifact?.entities).map(entity => [entity.tempId,
             unifiedContinuityEntityId(memory.canonicalArtifact, entity.tempId, registry || {}, memory.unifiedRuntimeEntityOverrides) || '']));
-          canonical.push({ key: ref.key, ref: clone(ref), record: clone(memory), entityRefs,
+          canonical.push({ key: ref.key, ref: clone(ref), record: clone(memory), entityRefs, rejectedFacts:asArray(memory.canonicalArtifact?.facts).filter(f=>memoryReviewDecision(reviewPolicy,'canonical',memory,f.tempFactId)==='rejected').map(f=>f.tempFactId),
             originScope: string(memory.scopeKey || scope.scopeKey), evidenceBatch: approvedEvidence ? clone(approvedEvidence.batch) : [] });
         }
         const micro = [], microSliceProof = [];
@@ -74853,7 +75081,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             });
           }
           if (value.status === 'verified' && microRecallMemoryFromRecord(value.record, value.receipt, value.recordKey)) {
-            micro.push({ ...clone(value), receiptKey: value.record.receiptKey });
+            micro.push({ ...clone(value), receiptKey: value.record.receiptKey, rejectedClaimIndexes:asArray(value.record.claims).map((_,i)=>i).filter(i=>memoryReviewDecision(reviewPolicy,'micro',value.record,i)==='rejected') });
           } else if (value.status !== 'missing' || !refs.some(ref => Number(ref.sessionEpoch || 0) === 0 && turn >= Number(ref.turnRange?.start) && turn <= Number(ref.turnRange?.end))) {
             pending.micro.push(value.reason || value.status || 'micro_unavailable');
           }
@@ -75202,7 +75430,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           scopeKey: scope.scopeKey,
           worldlineId: resolved.worldlineId,
           restoreEpoch: epoch,
-          view: { viewerId: 'owner_reader', temporalView: 'current_owner_page', cutoffTurn: active.cutoffTurn ?? null }
+          view: { viewerId: 'owner_reader', temporalView: 'current_owner_page', cutoffTurn: active.cutoffTurn ?? null, memoryReviewDigest:digest((await readMemoryReviewPolicy(scope,resolved.worldlineId)).saved) }
         };
         if (Number(state.microRestoreGeneration || 0) !== epoch || state.disposed) throw new Error('LIBRA_GRAPH_READER_EPOCH_CHANGED');
         await ownerReadonlySourceContext.assertCurrent(request);
@@ -81481,6 +81709,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       getCanonicalCandidateComparison, resolveCanonicalCandidate, selectCanonicalVariant, deleteCanonicalVariant,
       saveCanonicalManualStateDisposition, saveContinuityOverride,
       loadStateCorrectionJournal, appendStateCorrection, setStateCorrectionStatus, rebuildCurrentStateForWorldline, loadStateWorldlineMeta, setStateWorldline, rollbackStateWorldline,
+      listMemoryReviews, memoryReviewDto, setMemoryReviewDecision,
       getUnifiedResponseContext, validateUnifiedResponseContext, listUnifiedIdentityLinkReviews, confirmUnifiedIdentityLink, identityLinkReviewRows:unifiedIdentityReviewRows, previewUnifiedIdentityMerge, mergeUnifiedIdentity, previewUnifiedIdentitySplit, splitUnifiedIdentity, previewUnifiedMigration, beginUnifiedMigration, previewUnifiedLegacyRebuild, getUnifiedLegacyRebuildEvidence, rebuildSelectedUnifiedLegacy, previewUnifiedRetention, collectUnifiedRetention, listWorldManagerHistory, getWorldManagerHistoryDetail, listCanonicalReaderChapters, getCanonicalReaderChapter, getCanonicalEvidenceChain,
       listExecutionReceipts, getExecutionReceiptDetail, listWorldManagerCorrections, getWorldManagerRuntimeMeta,
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
@@ -81559,6 +81788,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             const pending = asArray(projection.pendingClaims).find(row => row.claimIndex === claimIndex);
             const transition = asArray(projection.transitions).find(row => row.claimIndex === claimIndex);
             const disposition = string(transition?.disposition || '');
+            if(disposition==='rejected'){decisions.push({claimIndex,status:'rejected',disposition,reason:'user_rejected'});continue;}
             if (!pending && ['still_current','absorbed','corrected'].includes(disposition)) {
               decisions.push({claimIndex, status:disposition === 'corrected' ? 'superseded' : 'admitted',
                 disposition, reason:string(transition.reason || '')});
@@ -83748,6 +83978,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '@container (max-width:520px){.memory-model-row{grid-template-columns:minmax(0,1fr);grid-template-areas:"name" "meta" "ctrl";row-gap:4px}.memory-model-row__ctrl{justify-content:flex-start;margin-top:6px}.memory-model-row__ctrl>.cluster{justify-content:flex-start;width:100%}.memory-model-row__ctrl .select{flex:1 1 100%;width:100%}}',
     // Maintenance overlay: former Reading Desk progress card, one-touch targets and live steps.
     '#dlg-maintenance .dialog{container-type:inline-size}',
+    '.t-libra.app:has(.topbar [data-maintenance-progress-chip]){grid-template-rows:auto minmax(0,1fr)}.t-libra .topbar:has([data-maintenance-progress-chip]){flex-wrap:wrap;min-height:var(--top-h);padding-block:8px;row-gap:8px}',
+    '.t-libra .topbar .grow:has([data-maintenance-progress-chip]){order:10;flex:1 0 100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-start}.t-libra .topbar .grow:has([data-maintenance-progress-chip])>.btn{min-width:0;max-width:100%;min-height:28px;height:auto;padding:4px 8px;font-size:12px;line-height:1.4;white-space:normal;overflow-wrap:anywhere}',
     '.memory-progress{display:grid;gap:6px}.memory-progress>.hint,.memory-progress>p{margin:0}',
     '.maintenance-targets{display:grid;gap:0;font-size:12.5px}',
     '.maintenance-target-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 12px;padding:6px 0;border-top:1px solid var(--border2)}',
@@ -87735,6 +87967,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ]),
       guiEl('div', { class: 'mem-tools__group' }, [guiEl('span', { class: 'mem-tools__label', text: '다시 쓰기' }),
         buildCanonicalTool('재분석', '원문을 다시 읽어 정본을 새로 분석합니다.', () => void showLibraSourceReanalysisDrawer({kind:'canonical'})),
+        buildCanonicalTool('기억·상태 자동 반영 검토', '자동 반영 항목의 검증 수준·위험도를 분류하고 확정·반려합니다.', () => openMemoryReviewDialog()),
         buildCanonicalTool('버전 · 실행 기록', '정본 후보를 비교하고 실행 이력을 봅니다.', () => { Gui.worldManagerCanonicalMemoryFocus = null; void showCanonicalVariantDialog(Number(Gui.canonicalReaderSelected?.turnRange?.start || 0)); })
       ]),
       guiEl('div', { class: 'mem-tools__group' }, [guiEl('span', { class: 'mem-tools__label', text: '점검 · 복구' }),
@@ -89675,35 +89908,117 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return fieldNode(worldManagerArticleFieldLabel(field),worldManagerTextarea(list?worldManagerListText(current[field]):text(current[field]||''),value=>update(field,list?String(value).split('\n').map(v=>v.trim()).filter(Boolean):value)),list?'한 줄에 한 항목씩 입력합니다.':'' );
     }).concat(guiLazyDetails({class:'fold'},guiEl('summary',{text:'고급 · 구조화 상태 편집'}),()=>fieldNode('상태 JSON',worldManagerTextarea(draft.values.state,value=>{draft.values.state=value;},{tall:true}),'소속·접근 권한·규칙 예외는 구조를 유지해서 편집합니다. 비워진 필드는 명시적 해제로 저장됩니다.')));
   };
+  const openMemoryReviewDialog = () => {
+    const binding=canonicalReaderBinding(),body=guiEl('div',{class:'stack',dataset:{memoryReview:'true'}}),list=guiEl('div',{class:'stack'}),status=guiEl('p',{class:'hint',role:'status','aria-live':'polite'});
+    let catalog=null,busy=false,risk='all',kind='all',level='all',decision='automatic';const selected=new Set();
+    const valid=()=>Gui.visible&&body.isConnected&&canonicalReaderBindingKey(binding)===canonicalReaderBindingKey(canonicalReaderBinding());
+    const riskLabel={low:'낮음 · 기본 검증 통과',medium:'중간 · 검토 필요',high:'높음 · 추가 검증 미완'};
+    const levelLabel={rules_verified:'상태 규칙 검증',source_verified:'원문·저장·범위 검증',additional_verification_pending:'추가 검증 미완'};
+    const reasonLabel=reason=>({same_source_order_conflict:'같은 시점의 근거에 서로 다른 상태 값이 있습니다.',missing_current_binding:'원문 사실의 상태 연결 선언이 누락되어 자동으로 연결했습니다.',dependency_pending:'연관된 사실의 상태 처리가 남아 있습니다.',quarantined_field_update:'필드 검토가 남은 항목으로, 별도 확인이 필요합니다.',canonical_overlap_conflict:'정본의 기존 값과 충돌합니다.',canonical_overlap_field_provenance_unavailable:'기존 상태 필드의 상세 근거를 확인하지 못했습니다.'}[reason]||microStatePendingLabel(reason));
+    const decisionLabel={automatic:'자동 반영 중',confirmed:'사용자 확정',rejected:'반려 · 사용 제외'};
+    const stateReasonLabel=reason=>/explicit_user_correction/.test(reason)?'사용자 교정 우선':/newer_state/.test(reason)?'더 최근 근거 우선':/target|registry|reference/.test(reason)?'대상·참조 연결 확인 필요':/source/.test(reason)?'원문과 상태 값의 일치 확인 필요':'상태 항목의 형식·근거 확인 필요';
+    const sync=()=>{body.querySelectorAll('button,input,select').forEach(n=>n.disabled=busy);body.querySelectorAll('[data-memory-review-select]').forEach(n=>n.checked=selected.has(n.dataset.memoryReviewSelect));for(const button of actions.querySelectorAll('[data-review-decision]'))button.disabled=busy||!selected.size;count.textContent=`${selected.size}개 선택`;};
+    const save=async value=>{
+      if(busy||!valid()||!selected.size)return;busy=true;sync();let completed=0;const ids=[...selected];
+      try{
+        for(let offset=0;offset<ids.length;offset+=16){
+          if(!valid())return;const batch=ids.slice(offset,offset+16);
+          if(!batch.every(id=>catalog.rows.some(row=>row.id===id)))throw Error('선택한 근거가 바뀌었습니다.');
+          const out=await globalThis.__LIBRA__.setMemoryReviewDecision({scopeKey:catalog.scopeKey,previewDigest:catalog.previewDigest,ids:batch,status:value});if(!valid())return;
+          if(!out?.ok)throw Error('저장 확인 실패');for(const id of batch)selected.delete(id);completed+=out.count;
+          catalog=await globalThis.__LIBRA__.listMemoryReviews();if(!valid())return;status.textContent=`${completed} / ${ids.length}개 저장·재조회 완료`;
+        }
+        await refreshGuiSnapshot(false);if(valid()){render();status.textContent=`${completed}개 · ${decisionLabel[value]} 저장·재조회 완료`;}
+      }
+      catch(error){if(valid())status.textContent=`변경 중단 · ${completed}개 완료 · ${String(error.code||error.message||error)}. 남은 항목은 목록을 다시 확인하세요.`;}
+      finally{busy=false;if(valid())sync();}
+    };
+    const visible=()=>guiAsArray(catalog?.rows).filter(row=>(risk==='all'||row.risk===risk)&&(kind==='all'||row.kind===kind)&&(level==='all'||row.validationLevel===level)&&(decision==='all'||row.status===decision));
+    const render=()=>{
+      selected.clear();list.replaceChildren();
+      for(const row of visible())list.appendChild(guiEl('section',{class:'card stack',dataset:{memoryReviewId:row.id,memoryReviewRisk:row.risk,memoryReviewStatus:row.status}},[
+        guiEl('label',{class:'check'},[guiEl('input',{type:'checkbox',dataset:{memoryReviewSelect:row.id},onChange:event=>{if(event.target.checked)selected.add(row.id);else selected.delete(row.id);sync();}}),`${row.kind==='micro'?'Micro':'정본'} · T${row.turn} · ${decisionLabel[row.status]}`]),
+        guiEl('div',{class:'cluster'},[guiEl('span',{class:`badge ${row.risk==='low'?'badge--ok':'badge--warn'}`,text:riskLabel[row.risk]}),guiEl('span',{class:'hint',text:'원문·저장·범위 확인 · '+levelLabel[row.validationLevel]})]),
+        guiEl('p',{text:row.text}),guiEl('p',{class:'hint',text:`기억 검색: ${row.status==='rejected'?'사용 제외':'즉시 사용'} · 상태: ${row.status==='rejected'?'반려로 사용 제외':row.stateEligible?'자동 반영 대상':row.stateBlockReason?'미반영 · '+stateReasonLabel(row.stateBlockReason):'해당 상태 변화 없음/검증 미완'}`}),
+        row.reason?guiEl('p',{class:'hint',text:'추가 검토 사유 · '+reasonLabel(row.reason)}):null,
+        guiLazyDetails({class:'fold'},guiEl('summary',{text:'원문 근거 · 검증 정보'}),()=>guiEl('div',{class:'fold__body stack'},[guiEl('blockquote',{text:row.quote}),guiEl('p',{class:'hint',text:`출처 ${row.sourceDigest} · ${row.domain||'기억'} ${row.field||''}`})]))
+      ]));
+      if(!visible().length)list.appendChild(guiEl('p',{class:'empty',text:'이 분류에 해당하는 항목이 없습니다.'}));
+      if(catalog?.unavailable?.length)list.appendChild(guiEl('p',{class:'note note--warn',text:`검증 미완 ${catalog.unavailable.length}개는 자동 반영 대상에서 제외했습니다.`}));sync();
+    };
+    const reload=async()=>{if(busy||!valid())return;busy=true;sync();try{catalog=await globalThis.__LIBRA__.listMemoryReviews();if(valid()){render();status.textContent=`${catalog.rows.length}개 확인 · 반려 전까지 검증된 기억으로 사용됩니다.`;}}catch(error){if(valid())status.textContent=String(error.code||error.message||error);}finally{busy=false;if(valid())sync();}};
+    const count=guiEl('span',{class:'hint',text:'0개 선택'});
+    const actions=guiEl('div',{class:'cluster'},[
+      guiEl('button',{class:'btn',type:'button',text:'표시 항목 전체 선택',onClick:()=>{for(const row of visible())selected.add(row.id);list.querySelectorAll('input').forEach(n=>n.checked=true);sync();}}),
+      guiEl('button',{class:'btn',type:'button',text:'선택 해제',onClick:()=>{selected.clear();list.querySelectorAll('input').forEach(n=>n.checked=false);sync();}}),count,
+      ...[['confirmed','선택 확정'],['rejected','선택 반려'],['automatic','자동 반영으로 되돌리기']].map(([value,label])=>guiEl('button',{class:value==='rejected'?'btn btn--danger':'btn',type:'button',text:label,disabled:true,dataset:{reviewDecision:value},onClick:()=>void save(value)}))
+    ]);
+    const filter=(label,options,onChange)=>guiEl('label',{class:'field'},[guiEl('span',{text:label}),guiEl('select',{class:'select','aria-label':label,onChange:event=>{onChange(event.target.value);render();}},options.map(([value,text])=>guiEl('option',{value,text}))) ]);
+    body.append(guiEl('p',{class:'muted',text:'원문·저장·현재 범위가 검증된 기억은 사용자 반려 전까지 사용합니다. 자동 반영과 사용자 확정은 구분하며, 확정해도 원문의 검증 수준이나 위험도가 높아지지는 않습니다.'}),
+      guiEl('div',{class:'grid g2'},[filter('위험도',[['all','전체 위험도'],...Object.entries(riskLabel)],v=>risk=v),filter('검증 수준',[['all','전체 검증 수준'],...Object.entries(levelLabel)],v=>level=v),filter('기억 종류',[['all','전체 종류'],['micro','Micro'],['canonical','정본 보류']],v=>kind=v),filter('검토 상태',[['automatic','자동 반영 중'],['confirmed','사용자 확정'],['rejected','반려'],['all','전체 상태']],v=>decision=v)]),
+      guiEl('button',{class:'btn',type:'button',text:'목록 다시 읽기',onClick:()=>void reload()}),actions,status,list);
+    openLibraPanelDialog('기억·상태 자동 반영 검토','Memory & State Review',body);void reload();return body;
+  };
   const openWorldManagerIdentityLinkReview = (options={}) => {
     const binding=canonicalReaderBinding(),body=guiEl('div',{class:'stack',dataset:{identityLinkReview:'true'}});
     let plan=null,busy=false,includeConfirmed=options.includeConfirmed===true;
+    const selected=new Set();
     const status=guiEl('p',{class:'hint',role:'status','aria-live':'polite',text:'자동 연결과 원문 근거를 읽고 있습니다.'});
     const list=guiEl('div',{class:'stack',dataset:{identityLinkRows:'true'}});
     const current=()=>Gui.visible&&body.isConnected&&canonicalReaderBindingKey(binding)===canonicalReaderBindingKey(canonicalReaderBinding());
+    const syncControls=()=>{
+      const review=guiAsArray(plan?.rows).filter(row=>row.status==='review');
+      selectAll.disabled=busy||!review.length;clearSelection.disabled=busy||!selected.size;
+      bulkConfirm.disabled=busy||!selected.size;bulkConfirm.textContent=`선택한 ${selected.size}개 · 같은 인물 연결 확정`;
+      selectionCount.textContent=`${selected.size}개 선택`;reloadButton.disabled=busy;confirmedToggle.disabled=busy;
+      list.querySelectorAll('[data-select-identity-link]').forEach(node=>{node.disabled=busy;node.checked=selected.has(node.dataset.selectIdentityLink);});
+      list.querySelectorAll('[data-confirm-identity-link]').forEach(node=>{node.disabled=busy||!review.some(row=>row.linkId===node.dataset.confirmIdentityLink);});
+      list.querySelectorAll('[data-split-identity-link]').forEach(node=>{node.disabled=busy||!plan?.splitSupported;});
+    };
+    const confirmLinks=async(ids,multiple=false)=>{
+      if(busy||!current()||!ids.length)return;
+      const initial=plan,targets=ids.map(id=>guiAsArray(initial?.rows).find(row=>row.linkId===id&&row.status==='review'));
+      if(targets.some(row=>!row))return;
+      busy=true;syncControls();let completed=0;
+      try{
+        for(const target of targets){
+          if(!current())return;
+          const latest=await globalThis.__LIBRA__.listWorldManagerIdentityLinkReviews();if(!current())return;
+          const row=guiAsArray(latest.rows).find(row=>row.linkId===target.linkId);
+          if(latest.scopeKey!==initial.scopeKey||latest.worldlineId!==initial.worldlineId||latest.anchorTurn!==initial.anchorTurn||latest.basisFingerprint!==initial.basisFingerprint||JSON.stringify(row)!==JSON.stringify(target))throw new Error('연결 대상이나 근거가 바뀌었습니다. 목록을 다시 읽고 선택해 주세요.');
+          const out=await globalThis.__LIBRA__.confirmWorldManagerIdentityLink({scopeKey:latest.scopeKey,linkId:target.linkId,previewDigest:latest.previewDigest});
+          if(!out?.ok)throw new Error('연결 확정 저장 확인 실패');if(!current())return;
+          plan=await globalThis.__LIBRA__.listWorldManagerIdentityLinkReviews();if(!current())return;
+          if(!guiAsArray(plan.rows).some(item=>item.linkId===target.linkId&&item.status==='confirmed'))throw new Error('연결 확정 재조회 확인 실패');
+          selected.delete(target.linkId);completed++;status.textContent=`연결 확정 ${completed} / ${targets.length}개 저장·재조회 완료`;
+        }
+        if(current()){await refreshGuiSnapshot(false);if(current())status.textContent=multiple?`선택한 연결 ${completed}개를 확정하고 다시 읽었습니다.`:'연결 확정을 저장하고 다시 읽었습니다.';}
+      }catch(error){if(current())status.textContent=`연결 확정 중단 · ${completed} / ${targets.length}개 완료 · 나머지는 다시 확인해 주세요. ${String(error.code||error.message||error)}`;}
+      finally{busy=false;if(current()){render();syncControls();}}
+    };
     const reload=async()=>{
       if(busy||!current())return;busy=true;
-      try{plan=await globalThis.__LIBRA__.listWorldManagerIdentityLinkReviews();if(current()){render();status.textContent=options.message||'자동 연결은 이미 적용되어 있습니다. 검토하지 않고 계속 사용할 수 있으며 필요할 때 확인하거나 분리할 수 있습니다.';}}
+      syncControls();
+      try{plan=await globalThis.__LIBRA__.listWorldManagerIdentityLinkReviews();if(current()){selected.clear();render();status.textContent=options.message||'자동 연결은 이미 적용되어 있습니다. 검토하지 않고 계속 사용할 수 있으며 필요할 때 확인하거나 분리할 수 있습니다.';}}
       catch(error){if(current())status.textContent='연결 목록 확인 실패 · '+String(error.code||error.message||error);}
-      finally{busy=false;}
+      finally{busy=false;if(current())syncControls();}
     };
     const render=()=>{
       list.replaceChildren();const rows=guiAsArray(plan?.rows).filter(row=>row.status==='review'||includeConfirmed&&row.status==='confirmed');
+      for(const id of selected)if(!rows.some(row=>row.linkId===id&&row.status==='review'))selected.delete(id);
+      syncControls();
       if(!rows.length){list.appendChild(guiEl('div',{class:'empty',text:'검토할 자동 연결이 없습니다.'}));return;}
       for(const link of rows){
         const actions=guiEl('div',{class:'cluster',style:{gap:'12px'}}),splitHost=guiEl('div');
         const card=guiEl('section',{class:'card stack',style:{gap:'16px'},dataset:{identityLink:link.linkId}},[
+          link.status==='review'?guiEl('label',{class:'check'},[guiEl('input',{type:'checkbox',checked:selected.has(link.linkId),disabled:busy,dataset:{selectIdentityLink:link.linkId},onChange:event=>{if(busy)return;if(event.target.checked)selected.add(link.linkId);else selected.delete(link.linkId);syncControls();}}),`${link.names.join(' ↔ ')} 선택`]):null,
           guiEl('div',{class:'split'},[guiEl('strong',{text:link.names.join(' ↔ ')}),guiEl('span',{class:'badge '+(link.status==='confirmed'?'badge--ok':'badge--warn'),text:link.status==='confirmed'?'연결 확정됨':'자동 적용됨 · 검토 대상'})]),
           guiEl('p',{class:'muted',text:'현재 '+(link.currentName||'인물')+'에 자동 연결되어 즉시 사용 중입니다. '+(link.reason==='legacy_name_alias'?'기존 별칭 연결이며 처음 연결한 시점의 상세 기록은 없습니다.':'이름 형태가 일치해 자동 연결한 항목입니다. 필요한 경우에만 원문을 검토할 수 있습니다.')}),
           guiLazyDetails({class:'fold'},guiEl('summary',{text:'연결 근거 · 원문 보기'}),()=>guiEl('div',{class:'fold__body stack'},[
             guiEl('p',{class:'hint',text:link.turnRange?'T'+link.turnRange.start+'–'+link.turnRange.end+' · '+link.memoryId+' r'+link.revision:'분리 절차에서 보존된 정본의 모든 사실과 원문을 다시 확인합니다.'}),
             ...guiAsArray(link.evidenceSpans).map(span=>guiEl('blockquote',{},[guiEl('p',{text:span.quote}),guiEl('small',{text:span.ref})]))])),actions,splitHost]);
         const confirm=guiEl('button',{class:'btn btn--primary',type:'button',text:'같은 인물 · 연결 확정',disabled:link.status!=='review',dataset:{confirmIdentityLink:link.linkId},onClick:async()=>{
-          if(busy||!current())return;busy=true;confirm.disabled=true;split.disabled=true;
-          try{const out=await globalThis.__LIBRA__.confirmWorldManagerIdentityLink({scopeKey:plan.scopeKey,linkId:link.linkId,previewDigest:plan.previewDigest});if(!out?.ok)throw new Error('연결 확정 저장 확인 실패');
-            if(!current())return;await refreshGuiSnapshot(false);plan=await globalThis.__LIBRA__.listWorldManagerIdentityLinkReviews();if(current()){render();status.textContent='연결 확정을 저장하고 다시 읽었습니다.';}}
-          catch(error){if(current()){status.textContent='연결 확정 실패 · '+String(error.code||error.message||error);confirm.disabled=false;split.disabled=!plan.splitSupported;}}
-          finally{busy=false;}
+          await confirmLinks([link.linkId]);
         }});
         const split=guiEl('button',{class:'btn',type:'button',text:'서로 다른 인물 · 분리 검토',disabled:!plan.splitSupported,dataset:{splitIdentityLink:link.linkId},onClick:()=>{
           if(busy||!current())return;const view=worldManagerSnapshotView(),row=guiAsArray(view.characters).find(row=>row.id===link.currentTargetId);
@@ -89715,8 +90030,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         actions.append(confirm,split);if(!plan.splitSupported)splitHost.appendChild(guiEl('p',{class:'hint',text:'현재 저장 모드에서는 사실별 분리를 지원하지 않습니다. 분리 버튼을 실행하지 않았습니다.'}));list.appendChild(card);
       }
     };
+    const reloadButton=guiEl('button',{class:'btn',type:'button',text:'목록 다시 읽기',onClick:()=>void reload()});
+    const confirmedToggle=guiEl('input',{type:'checkbox',checked:includeConfirmed,onChange:event=>{if(busy)return;includeConfirmed=event.target.checked;render();}});
+    const selectionCount=guiEl('span',{class:'hint',text:'0개 선택'});
+    const selectAll=guiEl('button',{class:'btn',type:'button',text:'검토 대상 전체 선택',onClick:()=>{if(busy)return;for(const row of guiAsArray(plan?.rows))if(row.status==='review')selected.add(row.linkId);syncControls();}});
+    const clearSelection=guiEl('button',{class:'btn',type:'button',text:'선택 해제',disabled:true,onClick:()=>{if(busy)return;selected.clear();syncControls();}});
+    const bulkConfirm=guiEl('button',{class:'btn btn--primary',type:'button',text:'선택한 0개 · 같은 인물 연결 확정',disabled:true,dataset:{confirmIdentityLinks:'true'},onClick:()=>void confirmLinks([...selected],true)});
     body.append(guiEl('p',{class:'muted',dataset:{identityLinkIntro:'true'},text:'자동 연결은 계속 적용됩니다. 이 목록은 잘못된 연결로 확정한 결과가 아니라, 이름만으로 연결되어 문맥 확인이 필요한 후보입니다. 분리할 때는 원문과 사실의 주체·대상을 직접 확인합니다.'}),
-      guiEl('div',{class:'cluster',dataset:{identityLinkToolbar:'true'}},[guiEl('button',{class:'btn',type:'button',text:'목록 다시 읽기',onClick:()=>void reload()}),guiEl('label',{class:'check'},[guiEl('input',{type:'checkbox',checked:includeConfirmed,onChange:event=>{includeConfirmed=event.target.checked;render();}}),'확정된 연결도 보기'])]),status,list);
+      guiEl('div',{class:'cluster',dataset:{identityLinkToolbar:'true'}},[reloadButton,guiEl('label',{class:'check'},[confirmedToggle,'확정된 연결도 보기'])]),
+      guiEl('div',{class:'cluster',dataset:{identityLinkSelection:'true'}},[selectAll,clearSelection,selectionCount,bulkConfirm]),status,list);
     openLibraPanelDialog('자동 연결 검토','Identity Link Review',body);void reload();return body;
   };
 
@@ -91507,10 +91829,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const admission=current?.admission;
     if(!admission || admission.status!=='verified')return guiEl('div',{class:'note note--warn',dataset:{microStateAdmission:'unavailable'}},[
       guiEl('p',{text:'분석은 저장됐지만 현재 상태 승인을 확인하지 못했습니다.'})]);
-    const decisions=guiAsArray(admission.decisions),pending=decisions.filter(row=>!['admitted','superseded'].includes(row.status));
+    const decisions=guiAsArray(admission.decisions),pending=decisions.filter(row=>!['admitted','superseded','rejected'].includes(row.status));
+    const rejected=decisions.filter(row=>row.status==='rejected');
     const absorbed=decisions.filter(row=>row.disposition==='absorbed'),replaced=decisions.filter(row=>row.status==='superseded');
     return guiEl('section',{class:pending.length?'note note--warn':'note',dataset:{microStateAdmission:pending.length?'pending':'ready'}},[
-      guiEl('h3',{text:`현재 상태 · 승인 ${decisions.filter(row=>row.status==='admitted'&&row.disposition!=='absorbed').length}개${absorbed.length?` · 정본·교정에 반영 ${absorbed.length}개`:''}${replaced.length?` · 이후 변경으로 대체 ${replaced.length}개`:''} · 보류 ${pending.length}개`}),
+      guiEl('h3',{text:`현재 상태 · 반영 ${decisions.filter(row=>row.status==='admitted'&&row.disposition!=='absorbed').length}개${absorbed.length?` · 정본·교정에 반영 ${absorbed.length}개`:''}${replaced.length?` · 이후 변경으로 대체 ${replaced.length}개`:''} · 보류 ${pending.length}개`}),
+      guiEl('button',{class:'btn btn--sm',type:'button',text:'기억·상태 자동 반영 검토',onClick:()=>openMemoryReviewDialog()}),
+      rejected.length?guiEl('p',{class:'hint',text:`사용자 반려 ${rejected.length}개 · 기억 검색과 상태 반영에서 제외했습니다.`}):null,
       !decisions.length?guiEl('p',{text:'이 턴에는 상태에 적용할 변화가 없습니다.'}):null,
       ...[...absorbed,...replaced].map(row=>guiEl('p',{dataset:{microStateDisposition:row.disposition},
         text:`기록 ${Number(row.claimIndex)+1} · ${row.disposition==='absorbed'?'현재 정본·교정에 반영돼 있습니다.':'이후 정본·교정으로 대체됐습니다.'}`})),
@@ -93507,10 +93832,16 @@ advanced
     };
   };
 
+  const maintenanceProgressBindingKey = () => {
+    const binding=canonicalReaderBinding();return JSON.stringify([binding.scopeKey,binding.worldlineId]);
+  };
   const openLibraMemoryMaintenanceDialog = async () => {
+    const retained=Gui.maintenanceProgressSurface;
+    if(retained?.bindingKey===maintenanceProgressBindingKey()){retained.restore();return retained.overlay;}
     Gui.app?.querySelector('#dlg-maintenance')?.remove();
     const binding = canonicalReaderBinding();
     const bindingKey = canonicalReaderBindingKey(binding);
+    const progressBindingKey=maintenanceProgressBindingKey();
 
     const overlay = guiEl('div', {
       class: 'overlay is-open',
@@ -93525,9 +93856,12 @@ advanced
       style: { maxWidth: '640px' }
     });
     overlay.appendChild(dialog);
+    let progressSurface=null;
 
     const close = () => {
       document.removeEventListener('keydown', escape, true);
+      if(progressSurface?.running){progressSurface.minimize();return;}
+      if(progressSurface){progressSurface.dispose();return;}
       overlay.remove();
     };
     const escape = event => {
@@ -93781,6 +94115,7 @@ advanced
             const result = await runLibraMemoryMaintenance('full', { preflight: p, auxiliary: true, onProgress: view.update });
             auxTargetsTask = null;
             renderCompletion(result);
+            progressSurface.running=false;progressSurface.outcome=result.healthy?'완료':'확인 필요';progressSurface.sync();
           } catch (err) {
             dialog.replaceChildren(
               guiEl('div', { class: 'eyebrow', text: 'Memory Health & Recovery' }),
@@ -93790,6 +94125,7 @@ advanced
                 guiEl('button', { class: 'btn btn--primary', type: 'button', text: '닫기', onClick: close })
               ])
             );
+            progressSurface.running=false;progressSurface.outcome='실패';progressSurface.sync();
           }
         }
       });
@@ -93818,8 +94154,28 @@ advanced
         guiEl('h2', { style: { margin: '2px 0 10px' }, text: '자동 복구 진행 중' }),
         bar, live,
         guiEl('div', { class: 'maintenance-steps', dataset: { maintenanceProgress: 'true' } }, [...rows.values()].map(item => item.row)),
-        guiEl('div', { class: 'dialog__actions' }, [guiEl('button', { class: 'btn', type: 'button', text: '창 닫기 (복구는 계속)', onClick: close })])
+        guiEl('div', { class: 'dialog__actions' }, [guiEl('button', { class: 'btn', type: 'button', text: '전체 진행 최소화 (복구는 계속)', dataset:{maintenanceMinimize:'true'}, onClick: close })])
       );
+      Gui.maintenanceProgressSurface?.dispose();
+      let minimized=false,disposed=false;
+      const chip=guiEl('button',{class:'btn btn--sm',type:'button',dataset:{maintenanceProgressChip:'true'},'aria-label':'자동 복구 전체 진행 다시 열기',onClick:()=>progressSurface.restore()});
+      progressSurface={bindingKey:progressBindingKey,overlay,running:true,outcome:'',sync:()=>{
+        if(disposed)return;
+        const same=Gui.visible&&Gui.app&&maintenanceProgressBindingKey()===progressBindingKey;
+        if(!same){overlay.remove();chip.remove();return;}
+        if(!overlay.isConnected){minimized=true;Gui.app.appendChild(overlay);}
+        overlay.classList.toggle('is-open',!minimized);overlay.setAttribute('aria-hidden',String(minimized));
+        const done=[...rows.values()].filter(row=>['done','skipped','warn'].includes(row.row.dataset.stepStatus)).length;
+        chip.textContent=`복구 · ${progressSurface.running?`${done}/${rows.size}`:progressSurface.outcome}`;
+        chip.title=live.textContent;
+        if(minimized)Gui.app.querySelector('.topbar .grow')?.appendChild(chip);else chip.remove();
+      },minimize:()=>{minimized=true;progressSurface.sync();},restore:()=>{
+        if(disposed||!Gui.visible||maintenanceProgressBindingKey()!==progressBindingKey)return;
+        const bindKeyboard=!overlay.isConnected||!overlay.classList.contains('is-open');
+        minimized=false;if(!overlay.isConnected)Gui.app.appendChild(overlay);progressSurface.sync();if(bindKeyboard)bindApprovedOverlayKeyboard(overlay,close);
+      },dispose:()=>{disposed=true;overlay.remove();chip.remove();if(Gui.maintenanceProgressSurface===progressSurface)Gui.maintenanceProgressSurface=null;}};
+      Gui.maintenanceProgressSurface=progressSurface;
+      progressSurface.sync();
       const update = ({ step, status, detail }) => {
         const item = rows.get(step);
         if (!item) return;
@@ -93829,6 +94185,7 @@ advanced
         item.detail.textContent = detail ? ' · ' + detail : '';
         bar.value = [...rows.values()].filter(row => ['done', 'skipped', 'warn'].includes(row.row.dataset.stepStatus)).length;
         if (status === 'running') live.textContent = `${labels[step]}${detail ? ' · ' + detail : ''}`;
+        progressSurface.sync();
       };
       return { update };
     }
@@ -95024,7 +95381,8 @@ advanced
         guiEl('div', { class: 'banner__icon', text: committedTurn > 0 ? '✓' : '!' }),
         guiEl('div', {}, [guiEl('b', { text: statusLabel }), guiEl('span', { text: `${currentTurn == null ? '현재 대화 턴 확인 불가' : `현재 ${currentTurn}턴 · 저장 대기 ${pending}턴`} · 정본 기억 ${refs.length}개` })]),
         guiEl('div', { class: 'cluster' }, [
-          guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: '상태 점검 및 자동 복구', onClick: () => { void openLibraMemoryMaintenanceDialog(); } })
+          guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: '상태 점검 및 자동 복구', onClick: () => { void openLibraMemoryMaintenanceDialog(); } }),
+          guiEl('button',{class:'btn btn--sm',type:'button',text:'기억·상태 자동 반영 검토',onClick:()=>openMemoryReviewDialog()})
         ])
       ]),
       guiEl('div', { class: 'spread' }, [
@@ -95486,6 +95844,7 @@ advanced
       health.title = '현재 LIBRA 저장소에서 다시 읽은 정본 기준';
     }
     syncBookCurrentStatus(app);
+    Gui.maintenanceProgressSurface?.sync();
     app.querySelector('[data-final-evidence]')?.libraRefreshState?.();
     const close = app.querySelector('.topbar > [data-close-gui]');
     if(close && !close.dataset.productActionsBound){close.dataset.productActionsBound='true';close.addEventListener('click',event=>{event.preventDefault();void hideSettingsGui();});}
@@ -96744,6 +97103,8 @@ advanced
     async validateResponseContext(snapshot) { return safeClone(await LibraMemoryCore.validateUnifiedResponseContext(snapshot)); },
     getLastResponseContext() { return safeClone(Runtime.lastResponseContext||null); },
     async listWorldManagerIdentityLinkReviews() { return safeClone(await LibraMemoryCore.listUnifiedIdentityLinkReviews()); },
+    async listMemoryReviews() { return safeClone(LibraMemoryCore.memoryReviewDto(await LibraMemoryCore.listMemoryReviews())); },
+    async setMemoryReviewDecision(options = {}) { return safeClone(await LibraMemoryCore.setMemoryReviewDecision(options)); },
     async confirmWorldManagerIdentityLink(options = {}) { return safeClone(await LibraMemoryCore.confirmUnifiedIdentityLink(options)); },
     async previewWorldManagerIdentityMerge(options = {}) { return safeClone(await LibraMemoryCore.previewUnifiedIdentityMerge(options)); },
     async mergeWorldManagerIdentity(options = {}) { return safeClone(await LibraMemoryCore.mergeUnifiedIdentity(options)); },
