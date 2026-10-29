@@ -2226,6 +2226,9 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   const token = options.token || (authorityRuntime ? crypto.randomBytes(32).toString('base64url') : loadOrCreateToken(dataDir));
   const updaterVerificationMode = String(process.env.LIBRARIAN_UPDATER_VERIFY_MODE || '') === '1';
   let maintenanceMode = updaterVerificationMode;
+  // True only while createBackup owns maintenance. A backup snapshots a checkpointed database
+  // in a worker and gates writes; reads stay served so owners do not fail mid-list.
+  let backupReadWindow = false;
   const repositories = authorityRuntime
     ? authorityRuntime.createRepositories((namespace,control,repositoryOptions) => createRepository(dataDir,namespace,()=>maintenanceMode === true,control,repositoryOptions))
     : Object.create(null);
@@ -2359,7 +2362,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       fs.mkdirSync(targetDir, { recursive: true });
       const stores = {};
       const ownsMaintenanceMode = maintenanceMode !== true;
-      if (ownsMaintenanceMode) maintenanceMode = true;
+      if (ownsMaintenanceMode) { maintenanceMode = true; backupReadWindow = true; }
       const captureBackupRepairAuthority = () => {
         const physical = readDataInstanceIdentity(dataDir);
         if (physical.dataInstanceId !== dataInstanceId || physical.dataIdentityContract !== dataIdentityContract) throw new Error('backup_physical_identity_changed');
@@ -2433,7 +2436,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         try { fs.rmSync(targetDir, { recursive: true, force: true }); } catch (_) {}
         throw error;
       } finally {
-        if (ownsMaintenanceMode) maintenanceMode = false;
+        if (ownsMaintenanceMode) { backupReadWindow = false; maintenanceMode = false; }
       }
     })().finally(() => { backupInFlight = null; });
     return await backupInFlight;
@@ -2509,7 +2512,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   const flashbackServerRepair = require('./core/flashback-server-repair.cjs')({getRepository:()=>repositories.flashback,dataInstanceId,epochs:()=>namespaceReset.epochs(),canWrite:()=>!maintenanceMode&&!namespaceReset.active(),strongProofProvider:flashbackVectorProof});
   const ownerScopeHealth = require('./core/owner-scope-health.cjs')({getRepository:()=>repositories.libra,dataInstanceId,epochs:()=>namespaceReset.epochs(),canRead:()=>!maintenanceMode&&!namespaceReset.active()});
   const legacyOwnerScopeDelete = require('./core/owner-scope-delete.cjs')({repositories,backup:createBackup,canStart:()=>!maintenanceMode,
-    setMaintenance:value=>{maintenanceMode=value;},advanceEpochs:namespaces=>namespaceReset.advanceEpochs(namespaces)});
+    setMaintenance:value=>{maintenanceMode=value;if(value)backupReadWindow=false;},advanceEpochs:namespaces=>namespaceReset.advanceEpochs(namespaces)});
   const ownerScopeDelete = async (...args) => { assertLegacyAuthorityUnavailable({dataDir}); return legacyOwnerScopeDelete(...args); };
   let libraNativeArchiveRepairBinding = null;
   const getLibraNativeArchiveRepair = () => {
@@ -2553,6 +2556,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     let restoreRequiresRecovery = false;
     const stagedRestoreFiles = new Set();
     maintenanceMode = true;
+    backupReadWindow = false;
     try {
       // Single owner of restore-time epoch advancement for every entrypoint
       // (admin/direct, manager, future ZIP restore). Fences old clients before
@@ -3227,7 +3231,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     dataDir, dataInstanceId, dataIdentityContract, repositories,
     backup:()=>createBackup('manual','before-reset',{allowDuringMaintenance:true}),
     canStart:()=>!maintenanceMode,
-    setMaintenance:value=>{maintenanceMode=value;},
+    setMaintenance:value=>{maintenanceMode=value;if(value)backupReadWindow=false;},
     clearCatalog:namespaces=>{
       const catalog=readScopeCatalog();
       for(const namespace of namespaces) delete catalog.namespaces[namespace];
@@ -3519,7 +3523,9 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         });
       }
 
-      if (maintenanceMode && !url.pathname.startsWith('/v1/admin/')
+      const backupSafeRead = backupReadWindow && ((request.method === 'GET' && ['/v1/kv/get', '/v1/kv/keys', '/v1/integrity'].includes(url.pathname))
+        || (request.method === 'POST' && url.pathname === '/v1/kv/get-many'));
+      if (maintenanceMode && !backupSafeRead && !url.pathname.startsWith('/v1/admin/')
           && !(isAdminRequest(principal) && request.method === 'POST' && url.pathname === '/v1/shutdown')) {
         return sendJson(request, response, 503, { ok: false, error: 'server_maintenance_in_progress' });
       }
@@ -3900,6 +3906,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     diagnosticJournal.record({ event: 'server.stopping', operation: 'server.shutdown', ok: true, message: 'graceful shutdown requested' });
     await portableTransfers.close();
     maintenanceMode = true;
+    backupReadWindow = false;
     if (autoBackupTimer) clearInterval(autoBackupTimer);
     if (startupBackupTimer) clearTimeout(startupBackupTimer);
     if (changeSettledBackupTimer) clearTimeout(changeSettledBackupTimer);

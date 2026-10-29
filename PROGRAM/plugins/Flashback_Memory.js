@@ -5732,6 +5732,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const request = (...args) => withOwnerOperation({kind:'storage_operation',operation:'request'}, () => requestImpl(...args));
+  // Reads are served during a backup; callers that wait on read maintenance keep their own UI.
+  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch'];
   const requestImpl = async (method, route, body = null, requestOptions = {}) => {
     if (managerOnly && method !== 'GET' && !route.startsWith('/v1/manager/') && !(method === 'POST' && route === '/v1/kv/get-many')) throw managerOnlyError();
     if (localOnlyOwner && !(method === 'GET' && (route.startsWith('/v1/kv/get?') || route.startsWith('/v1/kv/keys?') || route.startsWith('/v1/integrity?')))) throw localOnlyError();
@@ -5786,6 +5788,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (error?.status === 403 && requestOptions.authRetry !== false) {
         await bootstrap(true, requestOptions.allowPluginOnly === true);
         return await request(method, route, body, { ...requestOptions, bindingGeneration, authRetry: false });
+      }
+      // A backup gates writes for a second or two and the server refuses before running
+      // anything, so the identical write (same operationId and expectations) is retried.
+      const maintenanceAttempt = Number(requestOptions.maintenanceAttempt || 0);
+      if (error?.status === 503 && error?.payload?.error === 'server_maintenance_in_progress' && maintenanceAttempt < MAINTENANCE_RETRY_LIMIT
+        && requestOptions.maintenanceRetry !== false && method === 'POST' && MAINTENANCE_RETRY_ROUTES.includes(route)) {
+        await new Promise(resolve => setTimeout(resolve, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1)));
+        return await requestImpl(method, route, body, { ...requestOptions, bindingGeneration, maintenanceAttempt: maintenanceAttempt + 1 });
       }
       if (error?.payload?.error === 'data_instance_binding_changed') dataBinding.rejected = true;
       const unavailable = normalizeServerAvailabilityError(error);
@@ -47282,6 +47292,13 @@ ${cleanedText}`, 80),
     else total = Math.max(total, observed);
     const afterManifest = await loadScopeManifest(scope.scopeKey);
     if (manualEditorCommitIdentity(afterManifest) !== manualEditorCommitIdentity(manifest)) {
+      // A concurrent commit or a briefly unavailable re-read (server backup window) both land
+      // here. Re-scan against the newer manifest a couple of times before asking the user.
+      const attempt = Number(options.changedRetry || 0);
+      if (attempt < 2 && !shouldCancel()) {
+        await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1)));
+        return listManualEditorRecords({ ...options, scope, force: true, changedRetry: attempt + 1 });
+      }
       throw new Error('목록을 읽는 중 저장 내용이 변경되었습니다. 새로고침해 주세요.');
     }
     const sorted = sortManualEditorRecords(summaries, sort).slice(0, limit);

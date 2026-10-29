@@ -1347,6 +1347,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const request = (...args) => withOwnerOperation({kind:'storage_operation',operation:'request'}, () => requestImpl(...args));
+  // Reads are served during a backup; callers that wait on read maintenance keep their own UI.
+  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch'];
   const requestImpl = async (method, route, body = null, requestOptions = {}) => {
     if (localOnlyOwner && !(method === 'GET' && (route.startsWith('/v1/kv/get?') || route.startsWith('/v1/kv/keys?') || route.startsWith('/v1/integrity?')))) throw localOnlyError();
     const connection = await bootstrap(requestOptions.forceBootstrap === true, requestOptions.allowPluginOnly === true);
@@ -1409,6 +1411,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (error?.status === 403 && requestOptions.authRetry !== false) {
         await bootstrap(true, requestOptions.allowPluginOnly === true);
         return await request(method, route, body, { ...requestOptions, bindingGeneration, authRetry: false });
+      }
+      // A backup gates writes for a second or two and the server refuses before running
+      // anything, so the identical write (same operationId and expectations) is retried.
+      const maintenanceAttempt = Number(requestOptions.maintenanceAttempt || 0);
+      if (error?.status === 503 && error?.payload?.error === 'server_maintenance_in_progress' && maintenanceAttempt < MAINTENANCE_RETRY_LIMIT
+        && requestOptions.maintenanceRetry !== false && method === 'POST' && MAINTENANCE_RETRY_ROUTES.includes(route)) {
+        await new Promise(resolve => setTimeout(resolve, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1)));
+        return await requestImpl(method, route, body, { ...requestOptions, bindingGeneration, maintenanceAttempt: maintenanceAttempt + 1 });
       }
       if (error?.payload?.error === 'data_instance_binding_changed') dataBinding.rejected = true;
       const unavailable = normalizeServerAvailabilityError(error);

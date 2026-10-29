@@ -233,7 +233,7 @@ async function run() {
   console.log('✓ Title logic verified');
 
   // Verify step custom subtitles
-  assert(code.includes("if(job.stepSubs && job.stepSubs[i])"), 'Step subtitles must be customized from job.stepSubs');
+  assert(code.includes("const sub=job.stepSubs?.[i]||"), 'Step subtitles must be customized from job.stepSubs');
   console.log('✓ Step subtitles logic verified');
 
   // Verify progress bar calculation uses step progress

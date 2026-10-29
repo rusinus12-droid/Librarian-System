@@ -5549,6 +5549,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const request = (...args) => withOwnerOperation({kind:'storage_operation',operation:'request'}, () => requestImpl(...args));
+  // Reads are served during a backup; callers that wait on read maintenance keep their own UI.
+  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch'];
   const requestImpl = async (method, route, body = null, requestOptions = {}) => {
     if (localOnlyOwner && !(method === 'GET' && (route.startsWith('/v1/kv/get?') || route.startsWith('/v1/kv/keys?') || route.startsWith('/v1/integrity?')))) throw localOnlyError();
     const connection = await bootstrap(requestOptions.forceBootstrap === true, requestOptions.allowPluginOnly === true);
@@ -5611,6 +5613,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (error?.status === 403 && requestOptions.authRetry !== false) {
         await bootstrap(true, requestOptions.allowPluginOnly === true);
         return await request(method, route, body, { ...requestOptions, bindingGeneration, authRetry: false });
+      }
+      // A backup gates writes for a second or two and the server refuses before running
+      // anything, so the identical write (same operationId and expectations) is retried.
+      const maintenanceAttempt = Number(requestOptions.maintenanceAttempt || 0);
+      if (error?.status === 503 && error?.payload?.error === 'server_maintenance_in_progress' && maintenanceAttempt < MAINTENANCE_RETRY_LIMIT
+        && requestOptions.maintenanceRetry !== false && method === 'POST' && MAINTENANCE_RETRY_ROUTES.includes(route)) {
+        await new Promise(resolve => setTimeout(resolve, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1)));
+        return await requestImpl(method, route, body, { ...requestOptions, bindingGeneration, maintenanceAttempt: maintenanceAttempt + 1 });
       }
       if (error?.payload?.error === 'data_instance_binding_changed') dataBinding.rejected = true;
       const unavailable = normalizeServerAvailabilityError(error);
@@ -82545,12 +82555,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const measurable = Math.max(0, Number(job.total || 0));
     const done = Math.max(0, Number(job.completed || 0) + Number(job.failed || 0) + Number(job.skipped || 0));
     Gui.app.querySelectorAll('[data-canonical-job-clock]').forEach(node => {
-      if (node.dataset.canonicalJobClock === String(job.jobId)) node.textContent = `${String(job.state || '')} · ${elapsed}초 · ${measurable ? `${done}/${measurable}` : '배치 수 확인 중'}`;
+      if (node.dataset.canonicalJobClock === String(job.jobId)) node.textContent = `${CANONICAL_JOB_STATE_LABELS[job.state] || String(job.state || '')} · ${elapsed}초 · ${measurable ? `${done}/${measurable}구간` : '구간 수 확인 중'}`;
     });
     Gui.app.querySelectorAll('[data-canonical-job-chip]').forEach(node => {
-      if (node.dataset.canonicalJobId !== String(job.jobId)) return;
-      const terminal = ['completed', 'completed_with_warnings', 'cancelled', 'failed', 'original_kept'].includes(String(job.state || ''));
-      node.textContent = `${terminal ? '완료' : job.currentStage || job.phase || '작업'} · ${measurable ? `${done}/${measurable}` : `${elapsed}초`}`;
+      if (node.dataset.canonicalJobId === String(job.jobId)) setLibraJobPill(node, canonicalJobPillState(job));
     });
   }
 
@@ -82670,10 +82678,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const done = Math.max(0, Number(job.completed || 0) + Number(job.failed || 0) + Number(job.skipped || 0));
     const stepProgress = !terminal && typeof job.stepIndex === 'number' && job.stepIndex >= 0 ? Math.min(0.9, (job.stepIndex + 0.5) / 4) : 0;
     const percent = measurable ? (terminal ? 100 : Math.min(99, Math.round((done + stepProgress) / measurable * 100))) : 0;
-    const headActions = Gui.app.querySelector('.topbar .grow');
-    if (Gui.canonicalJobMinimized && headActions) {
-      const chip = guiEl('button', { class: 'btn btn--sm canonical-job-chip', type: 'button', dataset: { canonicalJobChip: 'true', canonicalJobId: String(job.jobId) }, text: `${terminal ? '완료' : job.currentStage || job.phase || '작업'} · ${measurable ? `${done}/${measurable}` : `${elapsed}초`}`, onClick: () => { Gui.canonicalJobMinimized = false; renderCanonicalJobSurface(job); } });
-      headActions.prepend(chip);
+    const dock = Gui.canonicalJobMinimized ? libraJobDock() : null;
+    if (dock) {
+      const chip = buildLibraJobPill({ canonicalJobChip: 'true', canonicalJobId: String(job.jobId) }, () => { Gui.canonicalJobMinimized = false; renderCanonicalJobSurface(job); });
+      setLibraJobPill(chip, canonicalJobPillState(job));
+      dock.prepend(chip);
     }
     if (Gui.canonicalJobMinimized) return;
     const template=document.createElement('template');template.innerHTML=LIBRA_APPROVED_JOB_DIALOG_HTML;
@@ -84063,8 +84072,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '@container (max-width:520px){.memory-model-row{grid-template-columns:minmax(0,1fr);grid-template-areas:"name" "meta" "ctrl";row-gap:4px}.memory-model-row__ctrl{justify-content:flex-start;margin-top:6px}.memory-model-row__ctrl>.cluster{justify-content:flex-start;width:100%}.memory-model-row__ctrl .select{flex:1 1 100%;width:100%}}',
     // Maintenance overlay: former Reading Desk progress card, one-touch targets and live steps.
     '#dlg-maintenance .dialog{container-type:inline-size}',
-    '.t-libra.app:has(.topbar [data-maintenance-progress-chip]){grid-template-rows:auto minmax(0,1fr)}.t-libra .topbar:has([data-maintenance-progress-chip]){flex-wrap:wrap;min-height:var(--top-h);padding-block:8px;row-gap:8px}',
-    '.t-libra .topbar .grow:has([data-maintenance-progress-chip]){order:10;flex:1 0 100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-start}.t-libra .topbar .grow:has([data-maintenance-progress-chip])>.btn{min-width:0;max-width:100%;min-height:28px;height:auto;padding:4px 8px;font-size:12px;line-height:1.4;white-space:normal;overflow-wrap:anywhere}',
+    // Minimized jobs float in one dock (bottom-right; above the tab bar when narrow) so the header never wraps.
+    '.job-dock{position:absolute;right:18px;bottom:18px;z-index:40;display:flex;flex-direction:column;align-items:flex-end;gap:8px;max-width:min(320px,calc(100% - 36px));pointer-events:none}.job-dock:empty{display:none}',
+    '.job-pill{pointer-events:auto;position:relative;display:grid;grid-template-columns:22px minmax(0,1fr);align-items:center;gap:10px;width:236px;max-width:100%;min-height:46px;padding:8px 14px 10px 11px;border:1px solid var(--border2);border-radius:12px;background:var(--surface);color:var(--text);box-shadow:0 8px 22px rgba(0,0,0,.16);text-align:left;overflow:hidden;cursor:pointer;font:inherit}.job-pill:hover{background:var(--surface2)}',
+    '.job-pill__icon{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:800 12px/1 var(--font-sans);background:var(--ok-soft);color:var(--ok-ink)}.job-pill[data-tone=running] .job-pill__icon{box-sizing:border-box;border:2.5px solid var(--accent-soft);border-top-color:var(--accent);background:transparent;animation:job-pill-spin .9s linear infinite}.job-pill[data-tone=warn] .job-pill__icon{background:var(--warn-soft);color:var(--warn-ink)}.job-pill[data-tone=failed] .job-pill__icon{background:var(--danger-soft);color:var(--danger-ink)}@keyframes job-pill-spin{to{transform:rotate(360deg)}}',
+    '.job-pill__text{display:grid;min-width:0;line-height:1.3}.job-pill__title{font-size:12.5px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.job-pill__meta{font-size:11.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.job-pill__bar{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--surface3)}.job-pill__bar[hidden]{display:none}.job-pill__bar i{display:block;height:100%;background:var(--accent);transition:width var(--motion)}',
+    '@container app (max-width:900px){.job-dock{right:12px;bottom:72px}}@container app (max-width:640px){.job-dock{left:12px;right:12px;max-width:none;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;align-items:stretch}.job-pill{width:auto;flex:1 1 150px;max-width:240px}}',
     '.memory-progress{display:grid;gap:6px}.memory-progress>.hint,.memory-progress>p{margin:0}',
     '.maintenance-targets{display:grid;gap:0;font-size:12.5px}',
     '.maintenance-target-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 12px;padding:6px 0;border-top:1px solid var(--border2)}',
@@ -89996,6 +90009,43 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const CANONICAL_JOB_KIND_LABELS = Object.freeze({source_edit:'원문 수정 재분석',cold_start:'수동 콜드스타트',manual_scan:'구간 분석',failed_retry:'실패 구간 재시도',regenerate:'정본 재생성'});
   const CANONICAL_JOB_STATE_LABELS = Object.freeze({preparing:'준비 중',running:'진행 중',adopting:'저장 중',cancel_requested:'취소 요청됨',completed:'완료',
     completed_with_warnings:'완료 · 참고 사항',failed:'실패',cancelled:'취소됨',original_kept:'원본 유지',awaiting_choice:'선택 대기',awaiting_edit:'편집 대기'});
+  const canonicalJobStageLabel = job => {
+    const stage = String(job?.currentStage || job?.phase || '');
+    return /finaliz/.test(stage) ? '마무리 점검' : /state/.test(stage) ? '상태 반영' : /commit|sav|persist|adopt/.test(stage) ? '저장'
+      : /librarian|generat|analy|pipeline/.test(stage) ? '분석' : /prepar|scan|resolv|inventory/.test(stage) ? '준비' : '진행 중';
+  };
+  // Minimized jobs live in one floating dock instead of the header, so the header never reflows.
+  const libraJobDock = () => {
+    if (!Gui.app) return null;
+    let dock = Gui.app.querySelector('[data-job-dock]');
+    if (!dock) { dock = guiEl('div', { class: 'job-dock', role: 'region', 'aria-label': '최소화한 작업', dataset: { jobDock: 'true' } }); Gui.app.appendChild(dock); }
+    return dock;
+  };
+  const buildLibraJobPill = (dataset, onClick) => guiEl('button', { class: 'job-pill', type: 'button', dataset, onClick }, [
+    guiEl('span', { class: 'job-pill__icon', 'aria-hidden': 'true' }),
+    guiEl('span', { class: 'job-pill__text' }, [guiEl('b', { class: 'job-pill__title' }), guiEl('small', { class: 'job-pill__meta' })]),
+    guiEl('span', { class: 'job-pill__bar', 'aria-hidden': 'true' }, [guiEl('i')])
+  ]);
+  // tone: running | done | warn | failed. percent is 0–100 or null for an unmeasured step.
+  const setLibraJobPill = (pill, { title, meta, tone = 'running', percent = null, label = '' }) => {
+    pill.dataset.tone = tone;
+    pill.querySelector('.job-pill__title').textContent = title;
+    pill.querySelector('.job-pill__meta').textContent = meta;
+    pill.querySelector('.job-pill__icon').textContent = tone === 'done' ? '✓' : tone === 'running' ? '' : '!';
+    pill.querySelector('.job-pill__bar').hidden = percent == null;
+    pill.querySelector('.job-pill__bar i').style.width = `${Math.max(0, Math.min(100, Number(percent) || 0))}%`;
+    pill.setAttribute('aria-label', label || `${title} · ${meta} · 다시 열기`);
+    pill.title = label || `${title} · ${meta}`;
+  };
+  const canonicalJobPillState = job => {
+    const terminal = ['completed', 'completed_with_warnings', 'cancelled', 'failed', 'original_kept'].includes(String(job.state || ''));
+    const total = Math.max(0, Number(job.total || 0)), done = Math.max(0, Number(job.completed || 0) + Number(job.failed || 0) + Number(job.skipped || 0));
+    const failed = job.state === 'failed' || Number(job.failed || 0) > 0;
+    const title = job.jobType === 'micro' ? '미크로 작업' : job.jobType === 'lens' ? '렌즈 작업' : '정본 작업';
+    const meta = terminal ? (failed ? '일부 실패' : job.state === 'cancelled' ? '취소됨' : '완료') : `${canonicalJobStageLabel(job)}${total ? ` · ${done}/${total}` : ''}`;
+    return { title, meta, tone: !terminal ? 'running' : failed || job.state === 'cancelled' ? 'failed' : guiAsArray(job.stateWarnings).length ? 'warn' : 'done',
+      percent: total ? Math.round(done / total * 100) : null, label: `${title} · ${meta} · 작업 창 다시 열기` };
+  };
   const canonicalRejectionLabel = reason => /FACT_KIND|DOMAIN/.test(reason)?'사실 종류가 영역과 맞지 않음'
     :/DEPENDENCY/.test(reason)?'의존한 사실이 제외됨':/EVIDENCE|QUOTE|SOURCE/.test(reason)?'원문 인용을 확인하지 못함'
     :/IDENTITY|TEMP_REF|UNRESOLVED/.test(reason)?'대상 인물·장소를 확인하지 못함':/AMBIGUOUS|DUPLICATE/.test(reason)?'식별자가 중복됨':'형식 검증을 통과하지 못함';
@@ -91223,7 +91273,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       error.code = result?.code || 'STATE_REPLAY_FAILED';
       throw error;
     }
-    const snapshot = await LibraMemoryCore.refreshSnapshot(undefined, { suppressGuiSchedule: true });
+    const snapshot = await LibraMemoryCore.refreshSnapshot(undefined, { cloneResult: false, suppressGuiSchedule: true, limits: guiSnapshotLimits(), trackGuiLimits: true, summaryOnly: true });
     if (text(snapshot?.scope?.scopeKey || '') !== scopeKey) throw new Error('STATE_MAINTENANCE_SCOPE_CHANGED');
     const actual = guiAsObject(snapshot?.continuityState?.head || snapshot?.continuityState);
     const expected = guiAsObject(result.head || result.currentHead);
@@ -93817,6 +93867,7 @@ advanced
     if (preflight.savedRangesCount === 0 && preflight.completeBatches > 0) {
       try {
         const targets = plannedRanges.filter(row => row.status !== 'saved');
+        progress('canonical', 'running', `콜드스타트 ${targets.length}개 구간 · 작업 창에서 진행`);
         const job = await LibraMemoryCore.startManualColdStart({
           expectedScopeKey: scopeKey,
           startTurns: targets.map(row => row.startTurn),
@@ -93834,6 +93885,7 @@ advanced
         try {
           const missingRanges = guiAsArray(preflight.missingRanges);
           if (missingRanges.length > 0) {
+            progress('canonical', 'running', `누락 ${missingRanges.length}개 구간 · 작업 창에서 진행`);
             const request = {
               scopeKey,
               mode: 'missing',
@@ -93866,6 +93918,7 @@ advanced
               throw new Error('점검한 대화 원문 또는 구간이 변경되었습니다. 다시 점검해 주세요.');
             }
             if (targetUnits.length > 0) {
+              progress('canonical', 'running', `실패 ${targetUnits.length}개 구간 재분석 · 작업 창에서 진행`);
               const reanaSelection = {
                 kind: 'canonical',
                 scopeKey,
@@ -93895,8 +93948,10 @@ advanced
 
     // 중간 검사: 정본 생성 후 최신 상태 및 임베딩 갱신 필요성 확인
     await assertScope();
+    progress('state', 'running', '정본 반영 범위 확인 중');
+    // Nothing rebuilt above means the preflight is still current; skip a second full inventory.
     let mid = null;
-    try { mid = await inspectLibraMemoryMaintenance(); } catch (_) {}
+    if (actionsTaken.length) { try { mid = await inspectLibraMemoryMaintenance(); } catch (_) {} }
     await assertScope();
 
     // 2. 상태 재생 (State Replay)
@@ -93905,15 +93960,17 @@ advanced
     const effectiveStateThrough = Number(mid?.stateThroughTurn ?? preflight.stateThroughTurn ?? 0);
     const effectiveLagging = preflight.stateLagging || mid?.stateLagging || (preflight.unappliedCount > 0) || (effectiveLastCommitted > effectiveStateThrough);
 
-    progress('state', 'running');
     const stateActionsBefore = actionsTaken.length;
+    let stateReplayed = false;
     if (effectiveLagging) {
+      progress('state', 'running', `T${effectiveStateThrough} → T${effectiveLastCommitted} 다시 구성 중 · 모델 호출 없음`);
       try {
         await runStateReplayMaintenance({
           kind: 'rebuild',
           scopeKey,
           worldlineId: activeWorldlineId
         });
+        stateReplayed = true;
         actionsTaken.push(`상태 재생 완료: T${effectiveStateThrough} → T${effectiveLastCommitted} (추가 모델 호출 0회)`);
       } catch (err) {
         actionsTaken.push(`상태 재생 경고: ${err.message || err}`);
@@ -93943,6 +94000,7 @@ advanced
     stepResult('cache', cacheActionsBefore, '정상');
     progress('embedding', 'running');
     const embeddingActionsBefore = actionsTaken.length;
+    let embeddingBackground = false;
 
     // 4. 재임베딩 (실패/대기 벡터 재생성 및 신규 정본 임베딩)
     const curEmbedSummary = (mid?.embedSummary?.state === 'ready' ? mid.embedSummary : null) || preflight.embedSummary || libraEmbeddingStatusSummary();
@@ -93955,6 +94013,7 @@ advanced
         try {
           await LibraMemoryCore.retryFailedEmbeddingRebuild();
           actionsTaken.push(`실패한 임베딩 벡터 ${effectiveVectorFailed}건 재생성 요청`);
+          embeddingBackground = true;
         } catch (err) {
           actionsTaken.push(`임베딩 재시도 경고: ${err.message || err}`);
         }
@@ -93962,21 +94021,26 @@ advanced
         try {
           await LibraMemoryCore.startEmbeddingRebuild();
           actionsTaken.push(`대기 중인 임베딩 벡터 재생성 및 최신화 요청 완료`);
+          embeddingBackground = true;
         } catch (err) {
           actionsTaken.push(`임베딩 재생성 경고: ${err.message || err}`);
         }
       }
     }
 
-    stepResult('embedding', embeddingActionsBefore, curEmbedSummary?.state === 'ready' ? '최신 유지' : '임베딩 미설정');
-    try { await refreshGuiSnapshot(false); } catch (_) {}
-
+    if (embeddingBackground) progress('embedding', 'done', '요청 완료 · 벡터 생성은 백그라운드에서 계속');
+    else stepResult('embedding', embeddingActionsBefore, curEmbedSummary?.state === 'ready' ? '최신 유지' : '임베딩 미설정');
+    // The State replay already re-read the summary snapshot; refresh it again only if it did not run.
+    if (!stateReplayed) { progress('verify', 'running', '화면 데이터 갱신 중'); try { await refreshGuiSnapshot(false); } catch (_) {} }
+    progress('verify', 'running', '복구 결과 다시 점검 중');
     let after = null;
     try {
       after = await inspectLibraMemoryMaintenance();
+      progress('verify', after.healthy ? 'done' : 'warn', after.healthy ? '문제 없음' : `남은 항목 ${after.issues.length}개`);
     } catch (err) {
       actionsTaken.push(`최종 점검 갱신 경고: ${err?.message || err}`);
       after = mid || preflight;
+      progress('verify', 'warn', '최종 점검 실패');
     }
     await assertScope();
     const durationMs = Math.max(0, Date.now() - startedAt);
@@ -94297,7 +94361,8 @@ advanced
     }
 
     function renderFullProgress() {
-      const labels = { canonical: '정본 기억 (콜드스타트 · 5턴 누락·실패 복구)', micro: '미크로 기억 (1턴 누락 복구)', lens: '렌즈 기억 (주기 구간 누락 복구)', state: '현재 상태 재생', cache: '파생 캐시 · 그래프 갱신', embedding: '재임베딩' };
+      const labels = { canonical: '정본 기억 (콜드스타트 · 5턴 누락·실패 복구)', micro: '미크로 기억 (1턴 누락 복구)', lens: '렌즈 기억 (주기 구간 누락 복구)', state: '현재 상태 재생', cache: '파생 캐시 · 그래프 갱신', embedding: '재임베딩', verify: '최종 점검 · 화면 갱신' };
+      const shortLabels = { canonical: '정본', micro: '미크로', lens: '렌즈', state: '상태', cache: '캐시', embedding: '임베딩', verify: '최종 점검' };
       const statusText = { pending: '대기', running: '진행 중', done: '완료', skipped: '건너뜀', warn: '확인 필요' };
       const icons = { pending: '○', running: '◐', done: '✓', skipped: '–', warn: '!' };
       const rows = new Map(Object.keys(labels).map(step => {
@@ -94320,7 +94385,7 @@ advanced
       );
       Gui.maintenanceProgressSurface?.dispose();
       let minimized=false,disposed=false;
-      const chip=guiEl('button',{class:'btn btn--sm',type:'button',dataset:{maintenanceProgressChip:'true'},'aria-label':'자동 복구 전체 진행 다시 열기',onClick:()=>progressSurface.restore()});
+      const chip=buildLibraJobPill({maintenanceProgressChip:'true'},()=>progressSurface.restore());
       progressSurface={bindingKey:progressBindingKey,overlay,running:true,outcome:'',sync:()=>{
         if(disposed)return;
         const same=Gui.visible&&Gui.app&&maintenanceProgressBindingKey()===progressBindingKey;
@@ -94328,9 +94393,11 @@ advanced
         if(!overlay.isConnected){minimized=true;Gui.app.appendChild(overlay);}
         overlay.classList.toggle('is-open',!minimized);overlay.setAttribute('aria-hidden',String(minimized));
         const done=[...rows.values()].filter(row=>['done','skipped','warn'].includes(row.row.dataset.stepStatus)).length;
-        chip.textContent=`복구 · ${progressSurface.running?`${done}/${rows.size}`:progressSurface.outcome}`;
-        chip.title=live.textContent;
-        if(minimized)Gui.app.querySelector('.topbar .grow')?.appendChild(chip);else chip.remove();
+        const current=[...rows.entries()].find(([,row])=>row.row.dataset.stepStatus==='running');
+        setLibraJobPill(chip,{title:'자동 복구',meta:progressSurface.running?`${current?shortLabels[current[0]]:'진행 중'} · ${done}/${rows.size}`:progressSurface.outcome,
+          tone:progressSurface.running?'running':progressSurface.outcome==='완료'?'done':progressSurface.outcome==='실패'?'failed':'warn',
+          percent:progressSurface.running?Math.round(done/rows.size*100):null,label:`자동 복구 · ${live.textContent} · 전체 진행 다시 열기`});
+        if(minimized)libraJobDock()?.appendChild(chip);else chip.remove();
       },minimize:()=>{minimized=true;progressSurface.sync();},restore:()=>{
         if(disposed||!Gui.visible||maintenanceProgressBindingKey()!==progressBindingKey)return;
         const bindKeyboard=!overlay.isConnected||!overlay.classList.contains('is-open');

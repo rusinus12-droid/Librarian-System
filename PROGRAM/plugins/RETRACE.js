@@ -9209,6 +9209,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         if (!pending) return;
         if (text(response.action || '').trim() !== text(pending.action || '').trim()) return;
         Runtime.hayakuIpcPending.delete(requestId);
+        Runtime.hayakuIpcLastSeenAt = Date.now();
         Runtime.hayakuIpcUnavailableUntil = 0;
         clearTimeout(pending.timer);
         if (response.ok === true) pending.resolve(response.result);
@@ -9421,6 +9422,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
         if (!pending) return;
         if (text(response.action || '').trim() !== pending.action) return;
         Runtime.liaIpcPending.delete(requestId);
+        Runtime.liaIpcLastSeenAt = Date.now();
         clearTimeout(pending.timer);
         Runtime.liaIpcLastError = response.ok === true ? '' : text(response.error || 'LIA IPC request failed.');
         if (response.ok === true) pending.resolve(response.result);
@@ -11670,6 +11672,20 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     return null;
   };
 
+  // An owner that answered recently but timed out now is running and congested, not absent.
+  const RETRACE_OWNER_RECENTLY_SEEN_MS = 10 * 60 * 1000;
+  const ownerRecentlySeenAt = key => Number({ flashback: Runtime.flashbackIpcLastSeenAt, hayaku: Runtime.hayakuIpcLastSeenAt, libra: Runtime.libraIpcLastSeenAt, lia: Runtime.liaIpcLastSeenAt }[key] || 0);
+  const ownerTimedOutRecently = (key, errorText) => /timed out|timeout/i.test(String(errorText || ''))
+    && ownerRecentlySeenAt(key) > 0 && Date.now() - ownerRecentlySeenAt(key) < RETRACE_OWNER_RECENTLY_SEEN_MS;
+  const unresponsivePeerResult = (requirement, required, transport, errorText) => ({
+    key: requirement.key, label: requirement.label, pluginId: requirement.pluginId,
+    installed: true, required, compatible: !required, blocking: required, status: 'owner_unresponsive',
+    pluginVersion: '', protocolMajor: 0, handoffContract: '',
+    reason: `${requirement.label}는 실행 중이지만 지금 응답이 늦습니다. 다른 작업이 끝난 뒤 다시 확인해 주세요.`,
+    errors: required ? ['owner_ipc_timeout'] : [], warnings: ['owner_ipc_timeout'], compatibility: null,
+    sourceDetected: false, ownerReachable: false, transport, error: errorText
+  });
+
   const probeUniversalPeerCompatibility = async (key, options = {}) => {
     const requirement = RETRACE_PEER_REQUIREMENTS[key];
     const timeoutMs = Math.max(700, Math.min(8000, Number(options.timeoutMs || 2400) || 2400));
@@ -11694,6 +11710,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
             error: gate.reason || 'hayaku_owner_incompatible'
           };
         }
+        if (ownerTimedOutRecently('hayaku', gate.reason)) return unresponsivePeerResult(requirement, required, 'hayaku_plugin_ipc', gate.reason);
         return {
           key: requirement?.key || 'hayaku',
           label: requirement?.label || 'HAYAKU',
@@ -11822,6 +11839,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       if (transport === 'none') transport = 'hayaku_storage_detected';
     }
 
+    if (!raw && !installed && ownerTimedOutRecently(key, errorText)) return unresponsivePeerResult(requirement, required, transport === 'none' ? `${key}_plugin_ipc` : transport, errorText);
     let evaluated = evaluatePeerCompatibility(requirement, raw, installed, { required });
     if (pluginVersionHint && !evaluated.pluginVersion) evaluated.pluginVersion = pluginVersionHint;
     if (key === 'hayaku') {
@@ -16232,7 +16250,7 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       <div class="check-item ${contractOk ? 'ok' : 'warn'}" data-diagnostics-contract><span class="dot">${contractOk ? '✓' : '!'}</span><div><b>호환 계약</b><small>${escapeHtml(peerLabel)}</small></div><button class="btn btn--sm" type="button" data-diagnose-compatibility ${checking ? 'disabled' : ''}>${checking ? '검사 중…' : '호환 계약 검사'}</button></div>
       <div class="check-item ${gate?.ready ? 'ok' : ''}" data-diagnostics-storage-gate><span class="dot">${gate?.ready ? '✓' : 'i'}</span><div><b>저장 Gate · 마지막 채팅 점검</b><small>${escapeHtml(gateLabel)}</small></div><span class="badge ${gate?.ready ? 'badge--ok' : 'badge--info'}">${!gate ? '미검사' : gate.ready ? '통과' : '확인 필요'}</span></div>
       <div class="check-item ${scopeCount === null ? '' : 'warn'}"><span class="dot">${scopeCount === null ? 'i' : '!'}</span><div><b>서버 사본</b><small>${escapeHtml(scopeText)} · 런타임 경고 ${formatNumber(warnings)}건</small></div><button class="btn btn--sm" type="button" data-retrace-goto="serverdata" data-server-subgoto="data">서버 관리</button></div>`;
-    const peerDetails = protocolOnly ? `<section class="card card--flat" data-diagnostics-peer-results><h3 class="card__title">플러그인별 호환 계약 검사 결과</h3><p class="hint">대화방 선택 없이 응답과 프로토콜을 검사했습니다. 미응답 플러그인은 설치·활성화 상태를 확인하세요. 채팅별 승계 가능 여부는 다음 세션 화면에서 다시 검사합니다.</p><div class="list">${peers.map(peer => `<article class="res"><div><strong>${escapeHtml(peer.label || peer.key)}</strong><small>${escapeHtml(peer.pluginVersion ? `v${peer.pluginVersion}` : '버전 미확인')} · ${escapeHtml(peer.reason || peer.error || '')}</small></div><span class="badge ${!peer.ownerReachable ? 'badge--info' : peer.compatible ? 'badge--ok' : 'badge--danger'}">${!peer.ownerReachable ? '응답 미확인' : peer.compatible ? '호환' : '계약 불일치'}</span></article>`).join('')}</div></section>` : '';
+    const peerDetails = protocolOnly ? `<section class="card card--flat" data-diagnostics-peer-results><h3 class="card__title">플러그인별 호환 계약 검사 결과</h3><p class="hint">대화방 선택 없이 응답과 프로토콜을 검사했습니다. 응답 지연은 플러그인이 실행 중이지만 다른 작업으로 바쁜 상태이니 잠시 뒤 다시 검사하세요. 응답 미확인은 설치·활성화 상태를 확인하세요. 채팅별 승계 가능 여부는 다음 세션 화면에서 다시 검사합니다.</p><div class="list">${peers.map(peer => `<article class="res"><div><strong>${escapeHtml(peer.label || peer.key)}</strong><small style="display:block">${escapeHtml(peer.pluginVersion ? `v${peer.pluginVersion}` : '버전 미확인')} · ${escapeHtml(peer.reason || peer.error || '')}</small></div><span class="badge ${peer.status === 'owner_unresponsive' ? 'badge--warn' : !peer.ownerReachable ? 'badge--info' : peer.compatible ? 'badge--ok' : 'badge--danger'}">${peer.status === 'owner_unresponsive' ? '응답 지연' : !peer.ownerReachable ? '응답 미확인' : peer.compatible ? '호환' : '계약 불일치'}</span></article>`).join('')}</div></section>` : '';
     const summaryLines = [`server=${serverKnown ? 'checked' : 'not_checked'}`, `compatibility=${checking ? 'checking' : !suite ? 'not_checked' : contractOk ? 'compatible' : 'needs_review'}`,
       `compatibility_scope=${protocolOnly ? 'protocol_only' : suite ? 'session' : 'not_checked'}`, `compatibility_error=${Runtime.diagnosticsError || ''}`,
       `owner_ipc=${ipcRows.map(row => `${row.key}:${peerByKey.get(row.key)?.ownerReachable ? 'responded' : 'unconfirmed'}`).join(',')}`,

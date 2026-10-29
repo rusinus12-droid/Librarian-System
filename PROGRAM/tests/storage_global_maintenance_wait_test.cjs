@@ -116,7 +116,9 @@ for(const variant of variants){
    }});
    stop=f.bridge.subscribeSyncJob(job=>{if(job?.serverWait?.active)observed=true;});
    assert.equal((await f.bridge.setGlobalMode('server_only')).completeKnownScopes,true);
-   assert.equal((await backupPromise).ok,true);assert.equal(observed,true);assert.equal(f.bridge.getSyncJob().verifiedScopes,3);
+   // A backup now only fences writes: the final read is served without a maintenance wait,
+   // and the following publication write retries through the short backup window.
+   assert.equal((await backupPromise).ok,true);assert.equal(observed,false);assert.equal(f.bridge.getSyncJob().verifiedScopes,3);
   }finally{stop?.();await backupPromise?.catch(()=>{});await f?.close();}
  });
 }

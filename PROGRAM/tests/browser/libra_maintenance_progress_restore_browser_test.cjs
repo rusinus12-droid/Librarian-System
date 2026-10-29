@@ -26,14 +26,18 @@ const {chromium}=require('playwright');
   await page.locator('[data-canonical-job-portal]').getByRole('button',{name:'최소화',exact:true}).click();
   await page.evaluate(()=>{const a=__maintenanceUI,s=a.LibraMemoryCore.state.snapshot;window.__oldMaintenanceScope=s.scope.scopeKey;s.scope.scopeKey='another-scope';a.Gui.maintenanceProgressSurface.sync();});assert.equal(await chip.count(),0);assert.equal(await overlay.count(),0);
   await page.evaluate(()=>{const a=__maintenanceUI;a.LibraMemoryCore.state.snapshot.scope.scopeKey=window.__oldMaintenanceScope;a.Gui.maintenanceProgressSurface.sync();});await chip.waitFor();
-  for(const width of [1280,390,320]){
+  for(const width of [1280,820,390,320]){
    await page.setViewportSize({width,height:1000});
-   const layout=await page.locator('.topbar').evaluate(n=>{
-    const b=n.getBoundingClientRect(),main=n.parentElement.querySelector('.main').getBoundingClientRect();
-    return {overflow:n.scrollWidth-n.clientWidth,overlap:b.bottom>main.top+1,chips:[...n.querySelectorAll('[data-maintenance-progress-chip],[data-canonical-job-chip]')].map(c=>{const r=c.getBoundingClientRect();return {text:c.textContent,clipped:c.scrollWidth>c.clientWidth+1||c.scrollHeight>c.clientHeight+1,outside:r.left<b.left||r.right>b.right+1||r.top<b.top||r.bottom>b.bottom+1};})};
+   const layout=await page.evaluate(()=>{
+    const app=document.querySelector('.t-libra.app,.app'),top=app.querySelector('.topbar'),tab=app.querySelector('.tabbar'),a=app.getBoundingClientRect(),t=top.getBoundingClientRect();
+    const tabTop=tab&&getComputedStyle(tab).display!=='none'?tab.getBoundingClientRect().top:a.bottom;
+    const pills=[...app.querySelectorAll('[data-job-dock] .job-pill')].map(c=>{const r=c.getBoundingClientRect();return {text:c.textContent,r:{l:r.left,t:r.top,rt:r.right,b:r.bottom},clipped:c.scrollWidth>c.clientWidth+1,outside:r.left<a.left||r.right>a.right+1||r.bottom>tabTop+1||r.top<t.bottom};});
+    const overlap=pills.some((p,i)=>pills.some((q,j)=>j>i&&p.r.l<q.r.rt&&q.r.l<p.r.rt&&p.r.t<q.r.b&&q.r.t<p.r.b));
+    return {topHeight:Math.round(t.height),topChips:top.querySelectorAll('[data-maintenance-progress-chip],[data-canonical-job-chip]').length,topOverflow:top.scrollWidth-top.clientWidth,pills,overlap};
    });
-   assert.ok(layout.overflow<=1&&!layout.overlap,JSON.stringify({width,layout}));
-   assert.ok(layout.chips.every(c=>!c.clipped&&!c.outside),JSON.stringify({width,layout}));
+   assert.equal(layout.topChips,0,'minimized jobs never enter the header');assert.ok(layout.topHeight<=60&&layout.topOverflow<=1,JSON.stringify({width,layout}));
+   assert.equal(layout.pills.length,2,JSON.stringify({width,layout}));assert.ok(!layout.overlap&&layout.pills.every(c=>!c.clipped&&!c.outside),JSON.stringify({width,layout}));
+   if(process.env.LIBRA_REVIEW_ARTIFACT_DIR){fs.mkdirSync(process.env.LIBRA_REVIEW_ARTIFACT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.LIBRA_REVIEW_ARTIFACT_DIR,`job-dock-${width}.png`)});}
   }
   await page.setViewportSize({width:390,height:1000});
   if(process.env.LIBRA_REVIEW_ARTIFACT_DIR){fs.mkdirSync(process.env.LIBRA_REVIEW_ARTIFACT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.LIBRA_REVIEW_ARTIFACT_DIR,'maintenance-two-chips-mobile.png')});}
