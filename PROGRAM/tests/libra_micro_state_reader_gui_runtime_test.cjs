@@ -85,7 +85,7 @@ async function conflictingClaims(){
   assert.equal(view.head.memoryReview.rows.filter(row=>row.risk==='high').length,2,'source-verified conflicts apply with explicit high risk');
   const panel=await openMicro(f,6);
   assert.equal(panel.dataset.microStateAdmission,'ready');assert.match(panel.textContent,/반영 2개.*보류 0개/);
-  assert.ok(panel.textContent.includes('기억·상태 자동 반영 검토'));assert.deepEqual(f.errors,[]);
+  assert.ok(panel.querySelector('[data-micro-state-review]'));assert.deepEqual(f.errors,[]);
   // Change a persisted decision after projection, while the final proof is read.
   const entry=[...f.values].find(([,raw])=>{try{const row=JSON.parse(raw);return row.schema==='libra.micro_state_admission.v1'&&row.turn===6&&row.claimIndex===0;}catch{return false;}});
   assert.ok(entry);const [decisionKey,saved]=entry,getItem=f.host.pluginStorage.getItem;

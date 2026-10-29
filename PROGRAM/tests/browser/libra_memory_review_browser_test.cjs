@@ -17,11 +17,14 @@ const {conflictingClaims}=require('../libra_memory_review_runtime_test.cjs');
   await panel.getByLabel('위험도',{exact:true}).selectOption('low');assert.equal(await rows.count(),0);await panel.getByLabel('위험도',{exact:true}).selectOption('high');assert.equal(await rows.count(),1);
   await panel.getByLabel('검증 수준',{exact:true}).selectOption('rules_verified');assert.equal(await rows.count(),0);await panel.getByLabel('검증 수준',{exact:true}).selectOption('additional_verification_pending');assert.equal(await rows.count(),1);
   for(const width of [1280,390,320]){await page.setViewportSize({width,height:1000});assert.ok(await panel.locator('[data-memory-review]').evaluate(n=>n.scrollWidth<=n.clientWidth+1));}
-  await rows.first().locator('input').check();await panel.getByRole('button',{name:'선택 확정',exact:true}).click();await panel.getByRole('status').filter({hasText:'사용자 확정 저장·재조회 완료'}).waitFor();
+  assert.equal(await panel.getByRole('button',{name:'선택 확정',exact:true}).isDisabled(),true,'decision buttons wait for a selection');
+  const card=await rows.first().innerText();assert.equal(card.split('추가 검증 미완').length,1,'risk and validation level are not repeated on the card');assert.doesNotMatch(card,/보류했습니다/,'auto-applied rows never claim to be held');
+  await rows.first().locator('input').check();await panel.getByRole('button',{name:'선택 확정',exact:true}).click();await panel.getByRole('status').filter({hasText:'1개를 확정했습니다'}).waitFor();
   await panel.getByLabel('검토 상태',{exact:true}).selectOption('confirmed');assert.equal(await rows.count(),1);assert.equal(await rows.first().getAttribute('data-memory-review-risk'),'high');
-  await rows.first().locator('input').check();await panel.getByRole('button',{name:'선택 반려',exact:true}).click();await panel.getByRole('status').filter({hasText:'반려 · 사용 제외 저장·재조회 완료'}).waitFor();
+  await rows.first().locator('input').check();assert.equal(await panel.getByRole('button',{name:'선택 확정',exact:true}).isDisabled(),true,'confirming an already confirmed row is a no-op');
+  await panel.getByRole('button',{name:'선택 반려',exact:true}).click();await panel.getByRole('status').filter({hasText:'1개를 반려했습니다'}).waitFor();
   await panel.getByLabel('검토 상태',{exact:true}).selectOption('rejected');assert.equal(await rows.count(),2);
-  await panel.getByRole('button',{name:'표시 항목 전체 선택',exact:true}).click();await panel.getByRole('button',{name:'자동 반영으로 되돌리기',exact:true}).click();await panel.getByRole('status').filter({hasText:'2개 · 자동 반영 중 저장·재조회 완료'}).waitFor();
+  await panel.getByRole('button',{name:'표시 항목 전체 선택',exact:true}).click();await panel.getByRole('button',{name:'자동 반영으로 되돌리기',exact:true}).click();await panel.getByRole('status').filter({hasText:'2개를 자동 반영으로 되돌렸습니다'}).waitFor();
   await panel.getByLabel('검토 상태',{exact:true}).selectOption('automatic');assert.equal(await rows.count(),2);
   if(process.env.LIBRA_REVIEW_ARTIFACT_DIR){fs.mkdirSync(process.env.LIBRA_REVIEW_ARTIFACT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.LIBRA_REVIEW_ARTIFACT_DIR,'memory-review-mobile.png')});}
   assert.equal(await page.evaluate(()=>__writerHost.calls.model),0);assert.deepEqual(errors,[]);

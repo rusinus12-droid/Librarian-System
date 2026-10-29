@@ -54,13 +54,16 @@ async function conflictingClaims(onReady){
   assert.equal(view.head.memoryReview.rows.filter(row=>row.risk==='high').length,2,'source-verified conflicts apply with explicit high risk');
   const panel=await openMicro(f,6);
   assert.equal(panel.dataset.microStateAdmission,'ready');assert.match(panel.textContent,/반영 2개.*보류 0개/);
-  assert.ok(panel.textContent.includes('기억·상태 자동 반영 검토'));assert.deepEqual(f.errors,[]);
+  assert.ok(panel.querySelector('[data-micro-state-review]'));assert.deepEqual(f.errors,[]);
 
   let catalog=await f.api.listMemoryReviews();assert.equal(catalog.rows.length,2);assert.ok(catalog.rows.every(r=>r.risk==='high'&&r.verification==='source_storage_scope_verified'));
   const first=catalog.rows.find(r=>r.text.includes('열렸다')),second=catalog.rows.find(r=>r.text.includes('닫혔다'));
   await assert.rejects(f.api.setMemoryReviewDecision({scopeKey:'other',previewDigest:catalog.previewDigest,ids:[first.id],status:'confirmed'}));
   const decide=async(ids,status)=>{const p=await f.api.listMemoryReviews();return f.api.setMemoryReviewDecision({scopeKey:p.scopeKey,previewDigest:p.previewDigest,ids,status});};
+  assert.equal(catalog.rows.find(r=>r.id===first.id).stateOutcome,'superseded');assert.equal(catalog.rows.find(r=>r.id===second.id).stateOutcome,'applied');
   assert.equal((await decide([first.id],'confirmed')).ok,true);
+  assert.equal((await f.api.debugLoadContinuityStateForResponse()).head.world.find(r=>r.name==='도서관').state.doorStatus,'열렸다','a confirmed value outranks a later automatic value of the same turn');
+  const afterConfirm=await f.api.listMemoryReviews();assert.equal(afterConfirm.rows.find(r=>r.id===first.id).stateOutcome,'applied');assert.equal(afterConfirm.rows.find(r=>r.id===second.id).stateOutcome,'superseded');
   await assert.rejects(f.api.setMemoryReviewDecision({scopeKey:catalog.scopeKey,previewDigest:catalog.previewDigest,ids:[second.id],status:'rejected'}),/PREVIEW_CHANGED/);
   assert.equal((await decide([second.id],'rejected')).ok,true);
   let reviewed=await f.api.debugLoadContinuityStateForResponse();assert.equal(reviewed.head.world.find(r=>r.name==='도서관').state.doorStatus,'열렸다');
