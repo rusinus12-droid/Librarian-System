@@ -13,7 +13,7 @@ function fixture({oldPhase='before_branch_reconcile',sameScope=false,currentEarl
  let seq=0,enter,release;const entered=new Promise(r=>enter=r),blocked=new Promise(r=>release=r),Runtime={lastInjection:'prior'},state={captureBackend:'none',bootstrapReferenceCache:new Map(),pendingBoundaryRecoveryCheckedScopes:new Set(),lastRequestScope:{scope:{scopeKey:'unrelated-prior'}}};
  const scope=id=>({scopeKey:sameScope?'same-scope':'scope-'+id,chatId:'chat-'+id});
  const fail=message=>Object.assign(new Error(message),{code:'SYNTHETIC_DEPENDENCY_FAILURE'});
- const context={Runtime,state,DEFAULT_RESPONSE_INJECTION_MODE:'fixture-default',LIBRA_CAPTURE_BACKENDS:{CHAT_OUTPUT_V3:'capture'},RECALL_REQUEST_BUDGET_MS:1000,
+ const context={Runtime,state,DEFAULT_RESPONSE_INJECTION_MODE:'fixture-default',LIBRA_CAPTURE_BACKENDS:{CHAT_OUTPUT_V3:'capture'},RECALL_REQUEST_BUDGET_MS:1000,RECALL_TIMEOUT_EXTENSION_MS:10000,
   MEMORY_INJECTION_MARKER:'marker1',LEGACY_PLANNING_INJECTION_MARKER:'marker2',CLASSIC_INJECTION_MARKER:'marker3',LEGACY_RESPONSE_INJECTION_MARKER:'marker4',
   isMainNarrativeRequest:type=>type==='model',contentToText:String,createRecallGuard:()=>({id:++seq}),recallGuardSnapshot:g=>({id:g?.id||0}),
   async runRecallStep(g,phase){
@@ -24,6 +24,7 @@ function fixture({oldPhase='before_branch_reconcile',sameScope=false,currentEarl
    if(phase==='before_branch_reconcile')throw fail('newer_failure');
    throw Error('unexpected test phase:'+phase);
   },loadMemorySettings(){},resolveContext(){},buildPairs:()=>[],clearStaleMemoryInjectionDebug(){},
+  rawChatMessages:()=>[],messageRole:()=>'',cleanMessageText:()=>'',digest:()=>'',sourceDigest:()=>'',
   normalizeRequestType:String,clone:plain,string:v=>String(v??''),compact:(v,n)=>String(v??'').slice(0,n),asObject:v=>v&&typeof v==='object'?v:{},
   liveTailDiagnosticSnapshot:v=>v??null,warn(){},scheduleGuiTraceRefresh(){}};
  const helpersStart=source.indexOf('    const memoryInjectionScopeMatches = (left, right) => {'),helpersEnd=source.indexOf('    const scheduleBeforeRequestRecovery = async ',helpersStart);

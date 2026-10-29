@@ -1574,6 +1574,10 @@ const PLUGIN_VERSION = '1.3.8';
   });
   const EXTERNAL_RETIREMENT_VERSION = 1;
   const HOOK_RECALL_TIMEOUT_POLICY_VERSION = 1;
+  // User-requested 2026-10-30: every recall timeout gets 10 s more, because slow host
+  // storage transfers (not the server) were exhausting the original bounds.
+  const RECALL_TIMEOUT_EXTENSION_MS = 10000;
+  const HOOK_RECALL_TIMEOUT_MAX_MS = 20000 + RECALL_TIMEOUT_EXTENSION_MS;
   const SETTINGS_POLICY_VERSION = 6;
   const EMBEDDING_PREPROCESSING_VERSION = 1;
   const TURN_WORLDLINE_VERSION = 'flashback_turn_worldline_v1';
@@ -1817,7 +1821,7 @@ const PLUGIN_VERSION = '1.3.8';
     progressiveReembedMaxRecords: 24,
     progressiveReembedMaxChars: 50000,
     progressiveReembedMaxRequests: 8,
-    hookRecallTimeoutMs: 20000,
+    hookRecallTimeoutMs: 20000 + RECALL_TIMEOUT_EXTENSION_MS,
     hookRecallTimeoutPolicyVersion: HOOK_RECALL_TIMEOUT_POLICY_VERSION,
     settingsPolicyVersion: SETTINGS_POLICY_VERSION,
     embeddingBatchSize: 8,
@@ -1923,7 +1927,7 @@ const PLUGIN_VERSION = '1.3.8';
     && flashbackQueryEmbeddingCooldown.fingerprint === embeddingProfileSettingsFingerprint(settings);
   const flashbackQueryEmbeddingBudgetMs = (settings = {}) => {
     const hook = Math.max(1000, Number(settings?.hookRecallTimeoutMs || DEFAULTS.hookRecallTimeoutMs) || DEFAULTS.hookRecallTimeoutMs);
-    return Math.min(4000, Math.max(1500, Math.round(hook * 0.25)));
+    return Math.min(4000 + RECALL_TIMEOUT_EXTENSION_MS, Math.max(1500 + RECALL_TIMEOUT_EXTENSION_MS, Math.round(hook * 0.25)));
   };
   const recallExecutionDeadline = (configuredTimeoutMs = 0, now = Date.now()) => {
     const checkedAt = Math.max(0, Number(now || Date.now()) || Date.now());
@@ -15820,7 +15824,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       progressiveReembedMaxRecords: clampInt(raw.progressiveReembedMaxRecords ?? raw.progressive_reembed_max_records, 1, 200, DEFAULTS.progressiveReembedMaxRecords),
       progressiveReembedMaxChars: clampInt(raw.progressiveReembedMaxChars ?? raw.progressive_reembed_max_chars, 1000, 500000, DEFAULTS.progressiveReembedMaxChars),
       progressiveReembedMaxRequests: clampInt(raw.progressiveReembedMaxRequests ?? raw.progressive_reembed_max_requests, 1, 64, DEFAULTS.progressiveReembedMaxRequests),
-      hookRecallTimeoutMs: clampInt(raw.hookRecallTimeoutMs ?? raw.hook_recall_timeout_ms, 1000, 20000, DEFAULTS.hookRecallTimeoutMs),
+      hookRecallTimeoutMs: clampInt(raw.hookRecallTimeoutMs ?? raw.hook_recall_timeout_ms, 1000, HOOK_RECALL_TIMEOUT_MAX_MS, DEFAULTS.hookRecallTimeoutMs),
       hookRecallTimeoutPolicyVersion: clampInt(raw.hookRecallTimeoutPolicyVersion, 0, HOOK_RECALL_TIMEOUT_POLICY_VERSION, DEFAULTS.hookRecallTimeoutPolicyVersion),
       settingsPolicyVersion: SETTINGS_POLICY_VERSION,
       embeddingBatchSize: clampInt(raw.embeddingBatchSize ?? raw.embedding_batch_size, 1, 128, DEFAULTS.embeddingBatchSize),
@@ -17210,6 +17214,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       throw new EmbeddingAdapterError('EMBEDDING_PHYSICAL_PENDING', 'A previous embedding request is still physically pending on this route.');
     }
     const operationLedger = diagnosticContext.operationLedger || MemorySuiteExecutionContract.createLedger({ maxRequests: 1, signal, deadlineAt: diagnosticContext.deadlineAt });
+    const serializedBody=request.body===undefined?undefined:JSON.stringify(request.body);
+    if(serializedBody&&MemorySuiteExecutionContract.utf8Bytes(serializedBody)>1024*1024)throw new EmbeddingAdapterError('INPUT_TOO_LONG','Embedding request exceeds the byte budget.');
+    // Durable source/reservation checks are preparation, not provider latency.
+    // Keep the operation deadline/cancellation fence, then start the wire timeout.
+    operationLedger.check();
+    if (typeof diagnosticContext.validateAuthority === 'function') {
+      try { await diagnosticContext.validateAuthority(); }
+      catch (error) { throw new EmbeddingAdapterError('STALE_SOURCE', error?.code || error?.message || 'Embedding authority changed', { retryable: false }); }
+    }
+    operationLedger.check();
     let reservation = null;
     let physicalSubmitted = false, physicalSettled = false, logicalEnded = false, providerResponseReceived=false;
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -17271,12 +17285,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         headers: request.headers || {},
         signal: controller?.signal || signal || undefined
       };
-      if (request.body !== undefined) requestInit.body = JSON.stringify(request.body);
-      if (requestInit.body && MemorySuiteExecutionContract.utf8Bytes(requestInit.body) > 1024 * 1024) throw new EmbeddingAdapterError('INPUT_TOO_LONG', 'Embedding request exceeds the byte budget.');
-      if (typeof diagnosticContext.validateAuthority === 'function') {
-        try { await diagnosticContext.validateAuthority(); }
-        catch (error) { throw new EmbeddingAdapterError('STALE_SOURCE', error?.code || error?.message || 'Embedding authority changed', { retryable: false }); }
-      }
+      if (serializedBody !== undefined) requestInit.body = serializedBody;
       operationLedger.check();
       reservation = operationLedger.reserve(diagnosticContext.requestKind || (/ollama_/.test(diagnosticContext.purpose || '') ? 'metadata' : 'embedding'));
       physicalSubmitted = true;
@@ -17342,7 +17351,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     } catch (error) {
       if (remainingMs() <= 0 && !(error instanceof EmbeddingAdapterError)) timedOut = true;
       const classified = classifyEmbeddingError(error, { provider: cfg.embeddingProvider, timedOut });
-      operationLedger.settle(reservation, (['TIMEOUT', 'NETWORK_ERROR', 'ABORTED'].includes(classified.type)||(physicalContext(diagnosticContext)&&physicalSubmitted&&(!providerResponseReceived||classified.type==='UNKNOWN'))) ? 'outcome_unknown' : 'failed');
+      operationLedger.settle(reservation, (['TIMEOUT', 'NETWORK_ERROR', 'ABORTED'].includes(classified.type)
+        || physicalSubmitted&&classified.code==='FLASHBACK_DEADLINE'
+        ||(physicalContext(diagnosticContext)&&physicalSubmitted&&(!providerResponseReceived||classified.type==='UNKNOWN'))) ? 'outcome_unknown' : 'failed');
       throw classified;
     } finally {
       logicalEnded = true;
@@ -23323,10 +23334,20 @@ const MemorySuiteSnapshotCache = (() => {
     const missingShardIndexes = [];
     const corruptShardIndexes = [];
     if (manifest.shardCount > 0) {
+      const shards = await mapOrderedWithConcurrency(
+        Array.from({ length: manifest.shardCount }, (_, index) => index),
+        clampInt(options.shardReadConcurrency, 1, 4, 1),
+        async i => {
+          await options.assertCurrent?.();
+          const shard = await readScopeShardRecords(manifest.scopeKey, i, manifest, {
+            ...options, rawTextOnly: options.rawTextOnly === true
+          });
+          await options.assertCurrent?.();
+          return shard;
+        }
+      );
       for (let i = 0; i < manifest.shardCount; i += 1) {
-        const shard = await readScopeShardRecords(manifest.scopeKey, i, manifest, {
-          ...options, rawTextOnly: options.rawTextOnly === true
-        });
+        const shard = shards[i];
         if (shard.missing) {
           missingShards += 1;
           missingShardIndexes.push(i);
@@ -29257,6 +29278,12 @@ const MemorySuiteSnapshotCache = (() => {
   };
   const synchronizeFlashbackTurnWorldline = async (scope, liveState = {}, settings = null, options = {}) => {
     if (!scope?.scopeKey) return { changed: false, reason: 'no_scope' };
+    const stage = async (name, operation) => {
+      const startedAt = Date.now();
+      options.onStage?.({ stage: name, startedAt, running: true });
+      try { return await operation(); }
+      finally { options.onStage?.({ stage: name, startedAt, elapsedMs: Date.now()-startedAt, running: false }); }
+    };
     await options.assertCurrent?.();
     const startupRestore = options.reason === 'startup_restore_only' && options.allowRetirement === false;
     const startupAttempt = startupRestore ? flashbackRecallRequests.active : null;
@@ -29270,7 +29297,7 @@ const MemorySuiteSnapshotCache = (() => {
     const normalizedObservedLive = conversationStateWithIndexes(liveState);
     const observedLiveHash = flashbackLiveWorldlineHash(scope.scopeKey, normalizedObservedLive);
     let manifest;
-    try { manifest = await loadScopeManifest(scope.scopeKey); }
+    try { manifest = await stage('manifest', () => loadScopeManifest(scope.scopeKey)); }
     catch (error) { if (startupRestore) return deferStartup(error.code || error.message); throw error; }
     const forceReconcile = options.forceReconcile === true || Number(manifest.sourceConsentPolicyVersion||0)<2;
     const allowRetirement = options.allowRetirement !== false;
@@ -29298,7 +29325,11 @@ const MemorySuiteSnapshotCache = (() => {
       return { changed: false, reason: 'worldline_current', liveHash: observedLiveHash };
     }
     const cfg = settings || await loadSettings();
+    const lockWaitStartedAt = Date.now();
+    options.onStage?.({ stage: 'write_lock', startedAt: lockWaitStartedAt, running: true });
     const result = await withScopeWriteLock(scope.scopeKey, async () => {
+      options.onStage?.({ stage: 'write_lock', startedAt: lockWaitStartedAt, elapsedMs: Date.now()-lockWaitStartedAt, running: false });
+      await options.assertCurrent?.();
       const readStartupHost = async () => {
         const snapshot = await loadRisuSnapshot(false);
         const current = resolveScopeFromSnapshot(snapshot);
@@ -29344,8 +29375,14 @@ const MemorySuiteSnapshotCache = (() => {
       }
       let currentManifest, loaded, storedWorldline;
       try {
-        currentManifest = await loadScopeManifest(scope.scopeKey);
-        [loaded, storedWorldline] = await Promise.all([loadScopeRecords(scope.scopeKey), loadTurnWorldline(scope.scopeKey)]);
+        currentManifest = await stage('locked_manifest', () => loadScopeManifest(scope.scopeKey));
+        [loaded, storedWorldline] = await Promise.all([
+          stage('records', () => loadScopeRecords(scope.scopeKey, {
+            readOnly: true, shardReadConcurrency: options.shardReadConcurrency || 1, assertCurrent: options.assertCurrent
+          })),
+          stage('worldline', () => loadTurnWorldline(scope.scopeKey))
+        ]);
+        await options.assertCurrent?.();
         assertCompleteScopeLoad(loaded, 'turn worldline synchronization');
       } catch (error) { if (startupRestore) return deferStartup(error.code || error.message); throw error; }
       const initialConfirmation=confirmFlashbackInitialCaptures(loaded.records,normalizedObservedLive,scope);
@@ -39998,10 +40035,12 @@ const MemorySuiteHealthRecovery = (() => {
     }
     await assertEmbeddingWorkBoundary(boundary);
   };
-  const assertEmbeddingAttemptCurrent = async proof => {
+  const assertEmbeddingAttemptCurrent = async (proof, options = {}) => {
     await proof.maintenanceSourceValidate?.();
     await assertEmbeddingWorkBoundary(proof);
-    const loaded = await loadScopeRecordsRaw(proof.scope.scopeKey,physicalReaders(proof));
+    // Authority binds raw source/jobs/registry, independently of vector bytes.
+    // Callers that mutate records still request full hydration by default.
+    const loaded = await loadScopeRecordsRaw(proof.scope.scopeKey,{...physicalReaders(proof),rawTextOnly:options.rawTextOnly===true});
     assertCompleteScopeLoad(loaded, 'embedding attempt validation');
     const source = loaded.records.filter(record => record.sourceHash === proof.sourceHash && embeddingOriginScope(record) === proof.originScopeKey && isResponseMemoryRecord(record));
     if (embeddingSourceSetIdentity(source) !== proof.sourceSet) throw embeddingWorkError('FLASHBACK_EMBEDDING_SOURCE_CHANGED');
@@ -40022,18 +40061,18 @@ const MemorySuiteHealthRecovery = (() => {
     return loaded;
   };
   const markEmbeddingAttemptSubmitted = async proof => {
-    if (proof.submissionRecorded) return assertEmbeddingAttemptCurrent(proof);
+    if (proof.submissionRecorded) return assertEmbeddingAttemptCurrent(proof,{rawTextOnly:true});
     return withEmbeddingWorkLock(proof.scope.scopeKey,proof, async () => {
-      const current = await assertEmbeddingAttemptCurrent(proof);
+      const current = await assertEmbeddingAttemptCurrent(proof,{rawTextOnly:true});
       const entry = readEmbeddingAttemptRegistry(current.manifest).entries[proof.attemptId];
       const registry = updateEmbeddingAttemptRegistry(current.manifest, proof.attemptId, { ...entry, state: 'submitted', submittedAt: Date.now() });
       proof.submissionAttempted = true;
       if(physicalContext(proof))physicalContext(proof).phase='submission';
-      const saveSubmission = () => saveScopeManifest({ ...current.manifest, embeddingAttemptRegistry: registry }, proof.scope, { physicalRecovery:physicalContext(proof), assertCurrent:()=>assertEmbeddingAttemptCurrent({...proof,submissionAttempted:false}) });
+      const saveSubmission = () => saveScopeManifest({ ...current.manifest, embeddingAttemptRegistry: registry }, proof.scope, { physicalRecovery:physicalContext(proof), assertCurrent:()=>assertEmbeddingAttemptCurrent({...proof,submissionAttempted:false},{rawTextOnly:true}) });
       await (physicalContext(proof) ? saveSubmission() : backgroundFlashbackWrite(proof.scope.scopeKey, saveSubmission));
       const persisted = await loadScopeManifest(proof.scope,physicalReaders(proof));
       if (safeStringify(persisted.embeddingAttemptRegistry) !== safeStringify(registry)) throw embeddingWorkError('FLASHBACK_EMBEDDING_REGISTRY_SUBMISSION_UNVERIFIED');
-      await assertEmbeddingAttemptCurrent(proof);
+      await assertEmbeddingAttemptCurrent(proof,{rawTextOnly:true});
       proof.submissionRecorded = true;
       return current;
     });
@@ -40203,7 +40242,7 @@ const MemorySuiteHealthRecovery = (() => {
       if(physicalContext(options))physicalContext(options).phase='reservation';
       await saveScopeRecords(boundary.scope, reserved, boundary.settings, boundary.scope, { metadataOnly: true, embeddingAttemptRegistry: nextRegistry,
         physicalRecovery:physicalContext(options), assertCurrent:async()=>{ await options.maintenanceSourceValidate?.();await assertEmbeddingWorkBoundary(boundary); } });
-      await assertEmbeddingAttemptCurrent(proof);
+      await assertEmbeddingAttemptCurrent(proof,{rawTextOnly:true});
       return proof;
     } catch (error) {
       activeEmbeddingWorkAttempts.delete(attemptId);
@@ -40244,6 +40283,7 @@ const MemorySuiteHealthRecovery = (() => {
     if(flashbackRecoveryActions?.isBusy()&&!physicalContext(options))return {ok:false,ready:0,failed:0,reason:'FLASHBACK_REPAIR_ACTION_BUSY'};
     if(physicalRepairUnresolved()&&!physicalContext(options)&&!embeddingRecoveryOffers.has(options.recoveryToken))return {ok:false,ready:0,failed:0,reason:'FLASHBACK_PHYSICAL_OUTCOME_UNRESOLVED'};
     let proof = null, operationLedger = options.operationLedger || null;
+    const initialRequests = Number(operationLedger?.snapshot().requestCount || 0);
     try {
       options.operationLedger?.check();
       if (options.operationLedger) {
@@ -40258,9 +40298,9 @@ const MemorySuiteHealthRecovery = (() => {
       if (!boundary.configured) return { ok: false, ready: 0, reused: 0, reason: 'embedding_unconfigured' };
       proof = await reserveCapturedEmbeddingAttempt(boundary, sourceHash, options);
       if (proof.skipped) return { ok: true, ...proof };
-      await assertEmbeddingAttemptCurrent(proof);
+      await assertEmbeddingAttemptCurrent(proof,{rawTextOnly:true});
       const cfg = { ...proof.settings, embeddingMaxRetries: 0, fallbackHashEmbedding: false };
-      const deadlineAt = Math.min(Date.now() + cfg.embeddingTimeoutMs, Number(options.deadlineAt) || Infinity);
+      const deadlineAt = Number(options.deadlineAt) || Date.now() + cfg.embeddingTimeoutMs * 65;
       const ledger = operationLedger || (operationLedger = MemorySuiteExecutionContract.createLedger({ maxRequests: 64,
         deadlineAt, signal: options.signal,
         isCurrent: () => !Runtime.unloaded && Runtime.embeddingGeneration === proof.generation }));
@@ -40298,7 +40338,7 @@ const MemorySuiteHealthRecovery = (() => {
           return completed;
         });
         if(physicalContext(options)){physicalContext(options).phase='completion';physicalContext(options).completing=proof.targets;}
-        const saveCompletion = () => saveScopeRecords(proof.scope, next, cfg, proof.scope, { metadataOnly: true, physicalRecovery:physicalContext(options), embeddingAttemptRegistry: updateEmbeddingAttemptRegistry(current.manifest, proof.attemptId), assertCurrent: () => assertEmbeddingAttemptCurrent(proof) });
+        const saveCompletion = () => saveScopeRecords(proof.scope, next, cfg, proof.scope, { metadataOnly: true, physicalRecovery:physicalContext(options), embeddingAttemptRegistry: updateEmbeddingAttemptRegistry(current.manifest, proof.attemptId), assertCurrent: () => assertEmbeddingAttemptCurrent(proof,{rawTextOnly:true}) });
         await (physicalContext(options) ? saveCompletion() : backgroundFlashbackWrite(proof.scope.scopeKey, saveCompletion));
       });
       const current = await assertEmbeddingWorkBoundary(proof);
@@ -40322,9 +40362,10 @@ const MemorySuiteHealthRecovery = (() => {
       // The ledger refuses an expired/cancelled operation before any wire submission.
       // Nothing reached the provider, so the targets return to pending for the next
       // progressive pass instead of being parked as uncertain/failed for manual recovery.
-      const neverSent = /before wire submission/.test(text(error?.message || '')) && !proof?.submissionAttempted
+      const neverSent = (/before wire submission/.test(text(error?.message || '')) || reason === 'FLASHBACK_DEADLINE')
+        && Number(operationLedger?.snapshot().requestCount || 0) === initialRequests
         && !Number(operationLedger?.snapshot().pendingRequests || 0);
-      const uncertain = (!neverSent && (['NETWORK_ERROR', 'TIMEOUT', 'ABORTED', 'UNKNOWN'].includes(error?.type)
+      const uncertain = (!neverSent && (['NETWORK_ERROR', 'TIMEOUT', 'ABORTED', 'UNKNOWN'].includes(error?.type) || reason==='FLASHBACK_DEADLINE'
         || Number(operationLedger?.snapshot().pendingRequests || 0) > 0))
         || /(?:SCOPE|SOURCE|PROFILE|BACKEND|BOUNDARY|ATTEMPT|RUNTIME|REGISTRY)_/.test(reason)
         || (proof?.submissionAttempted && !proof.submissionRecorded);
@@ -40344,7 +40385,7 @@ const MemorySuiteHealthRecovery = (() => {
             const entry = readEmbeddingAttemptRegistry(current.manifest).entries[proof.attemptId];
             const registry = updateEmbeddingAttemptRegistry(current.manifest, proof.attemptId, uncertain ? { ...entry, state: 'uncertain' } : null);
             if(physicalContext(options))physicalContext(options).phase='failure';
-            await saveScopeRecords(proof.scope, next, proof.settings, proof.scope, { metadataOnly: true, physicalRecovery:physicalContext(options), embeddingAttemptRegistry: registry, assertCurrent: () => assertEmbeddingAttemptCurrent(proof) });
+            await saveScopeRecords(proof.scope, next, proof.settings, proof.scope, { metadataOnly: true, physicalRecovery:physicalContext(options), embeddingAttemptRegistry: registry, assertCurrent: () => assertEmbeddingAttemptCurrent(proof,{rawTextOnly:true}) });
             recorded = true;
           });
         } catch (_) { /* Keep the reservation/source untouched if authority is no longer provable. */ }
@@ -40529,14 +40570,18 @@ const MemorySuiteHealthRecovery = (() => {
     // embeddingTimeoutMs bounds one provider request. A pass first loads/migrates the
     // whole scope (tens of seconds on slow hosts) and may send maxRequests requests,
     // so a single-request deadline for the pass expired before any wire submission.
+    // Without a caller deadline the pass budget starts after discovery: on a slow host
+    // loading the scope alone outlasted it and every request "timed out" in ~2ms
+    // before submission, leaving the records pending (2026-10-29 debug).
     const requestTimeoutMs = clampInt(options.timeoutMs, 1, 180000, boundary.settings.embeddingTimeoutMs);
-    const deadlineAt = Math.min(startedAt + requestTimeoutMs * (maxRequests + 1), Number(options.deadlineAt) || Infinity);
-    const parentLedger = options.operationLedger || MemorySuiteExecutionContract.createLedger({ maxRequests, deadlineAt, signal: options.signal,
+    const explicitDeadlineAt = Number(options.deadlineAt) || 0;
+    let deadlineAt = explicitDeadlineAt || startedAt + requestTimeoutMs * (maxRequests + 1);
+    const parentLedger = options.operationLedger || MemorySuiteExecutionContract.createLedger({ maxRequests, deadlineAt: explicitDeadlineAt, signal: options.signal,
       isCurrent: () => !Runtime.unloaded && Runtime.embeddingGeneration === boundary.generation });
     const ledger = boundedEmbeddingPassLedger(parentLedger, maxRequests);
     const initialRequests = ledger.snapshot().requestCount, requestCount = () => ledger.snapshot().requestCount - initialRequests;
     const maxRecords = clampInt(options.maxRecords, 0, 50000, 50000), maxChars = clampInt(options.maxChars, 0, 500000, 500000);
-    let inventory = null, processedSources = 0, processedRecords = 0, processedChars = 0, budgetDeferred = 0, ready = 0, failed = 0, uncertainRecords = 0, stopReason = '';
+    let inventory = null, processedSources = 0, processedRecords = 0, processedChars = 0, budgetDeferred = 0, ready = 0, failed = 0, uncertainRecords = 0, stopReason = '', failureReason = '';
     try {
       if (maxSources === 0 || maxRequests === 0 || maxRecords === 0 || maxChars === 0) return { ...empty, ok: false, inventoryKnown: false, reason: 'budget_disabled' };
       ledger.check();
@@ -40550,6 +40595,7 @@ const MemorySuiteHealthRecovery = (() => {
       const worldline = await loadTurnWorldline(scopeKey,physicalReaders(options));
       inventory = embeddingQueueInventory(boundary, loaded.records, worldline, options, readEmbeddingAttemptRegistry(loaded.manifest));
       reportMaintenanceTask(options, 'embedding_queue', { scopeKey, totalRecords: inventory.eligible.reduce((sum, group) => sum + group.records, 0), completedRecords: 0, execution: ledger.snapshot() });
+      if (!explicitDeadlineAt) deadlineAt = Date.now() + requestTimeoutMs * (maxRequests + 1);
       ledger.check();
       if (!inventory.eligible.length && migration.deferred) stopReason = 'migration_deferred';
       for (const group of inventory.eligible) {
@@ -40563,11 +40609,12 @@ const MemorySuiteHealthRecovery = (() => {
           stopReason = current.settings.embeddingAutoProcess === false ? 'automatic_paused' : 'request_active'; break;
         }
         const result = await processPendingEmbeddingWork({ sourceHash: group.sourceHash, originScopeKey: group.originScopeKey, retryFailed: options.retryFailed === true,
-          operationLedger: ledger, deadlineAt: Math.min(Date.now() + requestTimeoutMs, deadlineAt), signal: options.signal, maintenanceSourceValidate: options.maintenanceSourceValidate, sourceGroups:options.sourceGroups, physicalRecovery:physicalContext(options),
+          operationLedger: ledger, deadlineAt, signal: options.signal, maintenanceSourceValidate: options.maintenanceSourceValidate, sourceGroups:options.sourceGroups, physicalRecovery:physicalContext(options),
           maintenanceOperationId: options.maintenanceOperationId, onProgress: options.onProgress,
           currentTurn: finiteTurnIndex(loaded.records.find(record => record.sourceHash === group.sourceHash && embeddingOriginScope(record) === group.originScopeKey)) });
         processedSources++; processedRecords += group.records; processedChars += group.chars;
         ready += Number(result.ready || 0); failed += Number(result.failed || 0);
+        if(result.failed)failureReason=result.reason||'embedding_failed';
         if(result.uncertain)uncertainRecords+=group.records;
         reportMaintenanceTask(options, 'embedding_done', { scopeKey, completedRecords: ready, failedRecords: failed, uncertainRecords,
           execution: ledger.snapshot(), reason: result.reason || '' });
@@ -40579,11 +40626,11 @@ const MemorySuiteHealthRecovery = (() => {
         }
       }
       if (!processedSources && budgetDeferred) stopReason = 'source_budget_exhausted';
-      return { ...empty, ok: !stopReason, ready, failed, uncertain:uncertainRecords>0, uncertainRecords, processedSources, processedRecords, processedChars, budgetDeferred,
+      return { ...empty, ok: !stopReason && !failed, ready, failed, uncertain:uncertainRecords>0, uncertainRecords, processedSources, processedRecords, processedChars, budgetDeferred,
         physicalRequests: requestCount(), pendingSources: Math.max(0, inventory.eligible.length - processedSources) + migration.remainingSources, migrationPrepared: migration.prepared, migrationDeferred: migration.deferred,
         inventorySources: inventory.inventorySources, blockedSources: inventory.blockedSources,
         uncertainSources: inventory.uncertainSources, failedSources: inventory.failedSources, legacySources: inventory.legacySources,
-        blocked: inventory.blocked, reason: stopReason || 'queue_pass_complete', elapsedMs: Date.now() - startedAt };
+        blocked: inventory.blocked, reason: stopReason || failureReason || 'queue_pass_complete', elapsedMs: Date.now() - startedAt };
     } catch (error) {
       return { ...empty, ok: false, ready, failed, uncertain:uncertainRecords>0, uncertainRecords, processedSources, processedRecords, processedChars, physicalRequests: requestCount(),
         pendingSources: Math.max(0, (inventory?.eligible.length || 0) - processedSources),
@@ -40605,6 +40652,7 @@ const MemorySuiteHealthRecovery = (() => {
   };
 
   const scheduledEmbeddingQueues = new Map();
+  const embeddingQueueUnsentRetries = new Map();
   const schedulePendingEmbeddingWork = (scopeKey, options = {}) => {
     const key = text(scopeKey || '');
     if (!key || Runtime.unloaded || Runtime.settings?.embeddingAutoProcess === false || !configuredModelEmbedding(Runtime.settings)) return false;
@@ -40623,9 +40671,16 @@ const MemorySuiteHealthRecovery = (() => {
         Runtime.lastEmbeddingQueue = { ...result, scopeKey: key, generation, reason: result.reason, trigger: options.reason || 'background', at: Date.now() };
         invalidateGuiDataCache('all');
         if (isGuiRenderActive() && Runtime.guiTab === 'provider') void refreshEmbeddingWorkPanel(guiRoot, result);
+        // A pass that timed out before any wire submission sent nothing and owes no
+        // outcome check; give it a few spaced retries instead of waiting for the next turn.
+        const unsentTimeout = result.reason === 'TIMEOUT' && !Number(result.physicalRequests || 0) && !result.uncertain;
+        const timeoutRetries = unsentTimeout ? (embeddingQueueUnsentRetries.get(key) || 0) + 1 : 0;
+        if (unsentTimeout) embeddingQueueUnsentRetries.set(key, timeoutRetries); else embeddingQueueUnsentRetries.delete(key);
         if ((result.ok && result.pendingSources > 0 && Number(result.ready || 0) + Number(result.failed || 0) > 0)
           || ['queue_running', 'request_active', 'maintenance_inspection_active', 'maintenance_running'].includes(result.reason)) {
           schedulePendingEmbeddingWork(key, { reason: 'continue_pending', delayMs: result.reason === 'queue_running' ? 1000 : 250 });
+        } else if (unsentTimeout && timeoutRetries <= 3) {
+          schedulePendingEmbeddingWork(key, { reason: 'unsent_timeout_retry', delayMs: 5000 });
         }
         if (typeof scheduleFlashbackAttentionRefresh === 'function') scheduleFlashbackAttentionRefresh('embedding_queue', 120);
       })().catch(error => {
@@ -41303,6 +41358,7 @@ const MemorySuiteHealthRecovery = (() => {
       }
     };
     const hookTimeoutMs = settings.hookRecallTimeoutMs || DEFAULTS.hookRecallTimeoutMs;
+    const preparationStages = {};
     let hookDeadlinePhase = 'preparation';
     let hookDeadlineAt = Date.now() + hookTimeoutMs;
     const hookRemainingMs = () => Math.max(1, hookDeadlineAt - Date.now());
@@ -41526,6 +41582,11 @@ const MemorySuiteHealthRecovery = (() => {
         await withinHookDeadline(
           synchronizeFlashbackTurnWorldline(scope, observedLiveState, settings, {
             protectedPending: pendingCapture.pending,
+            shardReadConcurrency: 4,
+            assertCurrent: () => ensureHookDeadline('beforeRequest worldline'),
+            onStage: update => {
+              preparationStages[update.stage] = update;
+            },
             onProtectedGenerationTarget: promoteProtectedGenerationTarget
           }),
           'beforeRequest worldline'
@@ -41915,7 +41976,8 @@ const MemorySuiteHealthRecovery = (() => {
             : 'before_request_recall_deadline',
           deadlinePhase,
           timeoutMs: settings.hookRecallTimeoutMs || DEFAULTS.hookRecallTimeoutMs,
-          stageElapsed: { total: Date.now() - hookStartedAt }
+          stageElapsed: { total: Date.now() - hookStartedAt },
+          preparationStages: JSON.parse(JSON.stringify(preparationStages))
         };
         refreshLastRecallPanel();
       }
@@ -43160,8 +43222,9 @@ const MemorySuiteHealthRecovery = (() => {
     const empty = { scopeKey: scope.scopeKey, reembedded: 0, embeddedVectors: 0, embeddedBatches: 0, physicalRequests: 0, selected: 0, pending: 0, skipped: true };
     if (scope.scopeKey !== boundary.scope.scopeKey) return { ...empty, reason: 'scope_changed' };
     if (embeddingProfileSettingsFingerprint(settings) !== boundary.profile) return { ...empty, reason: 'profile_changed' };
-    const deadlineAt = Math.min(Date.now() + boundary.settings.embeddingTimeoutMs, Number(options.deadlineAt) || Infinity);
-    const ledger = options.operationLedger || MemorySuiteExecutionContract.createLedger({ maxRequests: Number.isInteger(options.maxRequests) ? options.maxRequests : options.all ? 128 : boundary.settings.progressiveReembedMaxRequests,
+    const maxRequests = Number.isInteger(options.maxRequests) ? options.maxRequests : options.all ? 128 : boundary.settings.progressiveReembedMaxRequests;
+    const deadlineAt = Math.min(Date.now() + boundary.settings.embeddingTimeoutMs * (maxRequests + 1), Number(options.deadlineAt) || Infinity);
+    const ledger = options.operationLedger || MemorySuiteExecutionContract.createLedger({ maxRequests,
       deadlineAt, signal: options.signal, isCurrent: () => !Runtime.unloaded && Runtime.embeddingGeneration === boundary.generation });
     const initialRequests = ledger.snapshot().requestCount;
     let ready = 0, failed = 0, selected = 0, chars = 0, last = null;
@@ -44648,6 +44711,7 @@ ${cleanedText}`, 80),
     const expectedProvider = settings.embeddingProvider;
     const expectedModel = expectedRecordModel(settings);
     let dirtyRecords = 0;
+    let anchorOnlyDirtyRecords = 0;
     let providerMismatch = 0;
     let missingVectors = 0;
     let dimensionMismatch = 0;
@@ -44674,6 +44738,10 @@ ${cleanedText}`, 80),
         || Number(artifacts.removedHtmlCommentCount || 0) > 0
         || cleaned.removedPeerPacketArtifact === true;
       const dirty = contentDirty || cleaned.metadataChanged === true;
+      if(cleaned.anchorsChanged&&!cleaned.textChanged&&!cleaned.metadataChanged
+        && !Number(artifacts.statusDataCount||0)&&!Number(artifacts.hiddenPacketCount||0)
+        && !Number(artifacts.removedThoughtBlockCount||0)&&!Number(artifacts.removedHtmlCommentCount||0)
+        && !cleaned.removedPeerPacketArtifact)anchorOnlyDirtyRecords++;
       const recordProvider = text(record.provider || '').trim();
       const providerBad = !recordEmbeddingCompatibility(record, settings, {
         provider: expectedProvider,
@@ -44793,6 +44861,7 @@ ${cleanedText}`, 80),
       staleStoredTurns: diff.staleGroups.length,
       externalRecords,
       dirtyRecords,
+      anchorOnlyDirtyRecords,
       providerMismatch,
       localProviderMismatch,
       archiveProviderMismatch: archiveInspectionComplete ? archiveProviderMismatch : null,
@@ -44885,12 +44954,12 @@ ${cleanedText}`, 80),
       pendingAdoptionSourceCommit: scopeReadiness?.pendingAdoptionSourceCommit || ''
     };
     reportMaintenanceTask(options, 'plan', { scopeKey: scope.scopeKey });
-    const storageStructureHealthy = !plan.missingTurns
+    const rawStorageStructureHealthy = !plan.missingTurns
       && !plan.changedTurns
       && !plan.detachedPeerMetadataTurns
       && !plan.staleStoredTurns
       && !plan.externalRecords
-      && !plan.dirtyRecords
+      && !(plan.dirtyRecords-plan.anchorOnlyDirtyRecords)
       && !plan.storageMissingShards
       && !plan.storageManifestCorrupt
       && !plan.storageForeignScopeKey
@@ -44901,13 +44970,13 @@ ${cleanedText}`, 80),
       && !plan.shardIndexMismatch
       && !plan.sanitizerVersionMismatch
       && !plan.liveChunkSchemaMismatch
-      && !plan.episodeStale
       && !plan.sourceVectorRepairRequired;
+    const storageStructureHealthy = rawStorageStructureHealthy && !plan.episodeStale && !plan.anchorOnlyDirtyRecords;
     const storageSourceHealthy = storageStructureHealthy && !plan.providerMismatch && !plan.missingVectors && !plan.dimensionMismatch;
     // Raw-first pending work deliberately has no vector yet. That is ordinary
     // queue work, provided every vector defect belongs to a validated current
     // job and the raw source/storage structure is intact.
-    plan.embeddingQueueSourceHealthy = storageStructureHealthy && unqueuedVectorRepairRecords === 0
+    plan.embeddingQueueSourceHealthy = rawStorageStructureHealthy && unqueuedVectorRepairRecords === 0
       && providerMismatch === localProviderMismatch && missingVectors === localMissingVectors && dimensionMismatch === localDimensionMismatch;
     plan.healthy=storageSourceHealthy&&!plan.embeddingCredentialMissing&&!plan.embeddingCredentialUnverified&&!plan.embeddingWorkIncompleteRecords;
     plan.inspection={readOnly:true,coverage:'plugin_only',complete:rawLoaded.manifest.manifestRawPresent===true&&!rawLoaded.manifest.manifestRecovered&&!rawLoaded.manifest.manifestCorrupt,
@@ -44926,7 +44995,9 @@ ${cleanedText}`, 80),
     plan.automatic = plan.inspection.complete?automaticMaintenanceStrategyForPlan(plan)
       :{strategy:'storage_preparation_required',stages:[],blocked:true,reason:'inspection_incomplete'};
     if (readContext.serverInspection) {
-      const autoPlan = plan.inspection.complete ? automaticMaintenanceStrategyForPlan(plan) : null;
+      // Server inspection deliberately does not read credentials. That is not
+      // the reason a raw-storage repair is unsupported, nor queue authority.
+      const autoPlan = plan.inspection.complete ? automaticMaintenanceStrategyForPlan({...plan,embeddingCredentialMissing:false,embeddingCredentialUnverified:false}) : null;
       const needsSync = Number(plan.missingTurns || 0) > 0 || Number(plan.changedTurns || 0) > 0 || (autoPlan?.stages || []).includes('sync');
       if (needsSync && !plan.requiresFullRebuild) {
         plan.automatic = {
@@ -44942,7 +45013,11 @@ ${cleanedText}`, 80),
           strategy: 'server_inspection_only',
           stages: [],
           blocked: true,
-          reason: plan.healthy ? 'server_physical_repair_disabled' : (autoPlan?.reason || 'server_physical_repair_disabled')
+          reason: !plan.inspection.complete ? 'inspection_incomplete'
+            : autoPlan?.blocked ? (autoPlan.reason || autoPlan.strategy)
+            : plan.episodeStale ? 'episode_index_stale'
+            : unqueuedVectorRepairRecords > 0 ? 'unqueued_vector_damage'
+            : 'server_physical_repair_disabled'
         };
       }
     }
@@ -44955,6 +45030,11 @@ ${cleanedText}`, 80),
       configurable: true
     });
     Object.defineProperty(plan,'_approvalBinding',{value:maintenanceApprovalBinding(plan),enumerable:false});
+    // Keep diagnostic blockers, without retaining the source/corpus context.
+    Runtime.lastMaintenanceInspection={at:plan.at,scopeKey:plan.scopeKey,automatic:{...plan.automatic},inspection:{...plan.inspection},
+      counts:Object.fromEntries(['missingTurns','changedTurns','staleStoredTurns','dirtyRecords','anchorOnlyDirtyRecords','embeddingWorkIncompleteRecords',
+        'embeddingWorkFailedRecords','embeddingWorkUncertainRecords','unqueuedVectorRepairRecords','storageMissingShards','storageManifestCorrupt',
+        'storageRecordCountMismatch','shardIndexMismatch','episodeStale','embeddingQueueSourceHealthy'].filter(key=>Object.hasOwn(plan,key)).map(key=>[key,plan[key]]))};
     return plan;
   };
 
@@ -45220,12 +45300,69 @@ ${cleanedText}`, 80),
     for (let pass = 0; pass < maxPasses; pass++) {
       if (signal?.aborted) throw new EmbeddingAdapterError('ABORTED', 'Maintenance cancelled.');
       const queue = await processPendingEmbeddingQueue({ scopeKey, retryFailed: true, signal,
-        onProgress: progressOptions.onProgress, maintenanceOperationId: progressOptions.maintenanceOperationId });
-      passes.push({ ready: Number(queue.ready || 0), failed: Number(queue.failed || 0), pendingSources: Number(queue.pendingSources || 0), reason: queue.reason || '' });
+        onProgress: progressOptions.onProgress, maintenanceOperationId: progressOptions.maintenanceOperationId,
+        deadlineAt: progressOptions.deadlineAt, maintenanceSourceValidate: progressOptions.maintenanceSourceValidate });
+      passes.push({ ready: Number(queue.ready || 0), failed: Number(queue.failed || 0), pendingSources: Number(queue.pendingSources || 0),
+        physicalRequests: Number(queue.physicalRequests || 0), elapsedMs: Number(queue.elapsedMs || 0), reason: queue.reason || '' });
       ready += Number(queue.ready || 0); failed += Number(queue.failed || 0); uncertain += Number(queue.uncertainRecords || 0);
       if (!Number(queue.ready || 0) || !Number(queue.pendingSources || 0)) break;
     }
-    return { passes, ready, failed, uncertain, stopReason: passes[passes.length - 1]?.reason || '' };
+    const result={passes,ready,failed,uncertain,stopReason:passes[passes.length-1]?.reason||''};
+    Runtime.lastMaintenanceQueueResult={scopeKey,at:Date.now(),...result};
+    return result;
+  };
+  const refreshMaintenanceQueueEpisodes = async (scope, settings, options = {}) => {
+    const profile = embeddingProfileSettingsFingerprint(settings);
+    const assertCurrent = async () => {
+      if(options.signal?.aborted)throw new EmbeddingAdapterError('ABORTED','Maintenance cancelled.');
+      await options.maintenanceSourceValidate?.();
+      const current=await readEmbeddingWorkBoundary();
+      if(current.scope.scopeKey!==scope.scopeKey||current.profile!==profile)throw new EmbeddingAdapterError('STALE_SOURCE','Maintenance scope or embedding profile changed.');
+    };
+    await assertCurrent();
+    return maybeRebuildEpisodeIndex(scope,settings,null,{reason:'maintenance_embedding_queue',assertCurrent});
+  };
+  const cleanMaintenanceReadyAnchors = async (scope,settings,options={}) => withScopeWriteLock(scope.scopeKey,async()=>{
+    await options.maintenanceSourceValidate?.();
+    const boundary=await readEmbeddingWorkBoundary();
+    if(boundary.scope.scopeKey!==scope.scopeKey||boundary.profile!==embeddingProfileSettingsFingerprint(settings))throw new EmbeddingAdapterError('STALE_SOURCE','Maintenance scope or profile changed.');
+    const loaded=await loadScopeRecordsRaw(scope.scopeKey);assertCompleteScopeLoad(loaded,'maintenance anchor cleanup');
+    const expected=new Map(),next=loaded.records.map(record=>{
+      if(!isResponseMemoryRecord(record)||record.embeddingWork)return record;
+      const cleaned=cleanRecordForMemory(record,scope),artifacts=cleaned.artifacts||{};
+      if(!cleaned.anchorsChanged||cleaned.textChanged||cleaned.metadataChanged||cleaned.removedPeerPacketArtifact
+        ||Number(artifacts.statusDataCount||0)||Number(artifacts.hiddenPacketCount||0)
+        ||Number(artifacts.removedThoughtBlockCount||0)||Number(artifacts.removedHtmlCommentCount||0))return record;
+      const patched={...record,entityAnchors:cleaned.record.entityAnchors};
+      expected.set(embeddingOwnedRecordId(record),patched);return patched;
+    });
+    if(!expected.size)return {changed:0};
+    const assertCurrent=async()=>{
+      if(options.signal?.aborted)throw new EmbeddingAdapterError('ABORTED','Maintenance cancelled.');
+      await options.maintenanceSourceValidate?.();await assertEmbeddingWorkBoundary(boundary);
+    };
+    await saveScopeRecords(scope,next,settings,scope,{metadataOnly:true,assertCurrent});
+    const verified=await loadScopeRecordsRaw(scope.scopeKey);assertCompleteScopeLoad(verified,'maintenance anchor readback');
+    for(const [id,expectedRecord]of expected){
+      const actual=verified.records.find(record=>embeddingOwnedRecordId(record)===id);
+      if(!actual||rawEmbeddingSourceRevision(actual)!==rawEmbeddingSourceRevision(expectedRecord)
+        ||safeStringify(actual.entityAnchors)!==safeStringify(expectedRecord.entityAnchors)
+        ||safeStringify(actual.vector)!==safeStringify(expectedRecord.vector)
+        ||safeStringify(actual.embeddingReceipt)!==safeStringify(expectedRecord.embeddingReceipt))throw embeddingWorkError('FLASHBACK_ANCHOR_CLEANUP_READBACK_FAILED');
+    }
+    await assertCurrent();return {changed:expected.size};
+  });
+  const inspectMaintenanceAfterExecution = async (options, assertCurrent) => {
+    try{return await inspectMemoryMaintenance(options);}
+    catch(error){
+      if(error?.inspectionReason!=='HEALTH_SERVER_CONNECTION_REQUIRED')throw error;
+      // An ordinary bootstrap refresh may overlap the closing read-only snapshot.
+      // Settle/refresh the connection once, then revalidate the admitted source and
+      // route. Never rerun the completed sync/provider writes to retry inspection.
+      await MemorySuiteStorageBridge.bootstrap(false);
+      await assertCurrent();
+      return inspectMemoryMaintenance(options);
+    }
   };
   const runMaintenanceEmbeddingQueue = async (preflight, options = {}) => {
     const scope = preflight?._maintenanceContext?.scope;
@@ -45253,7 +45390,12 @@ ${cleanedText}`, 80),
       await withMaintenanceQueuePause(async () => {}, options);
       const drained = await drainPendingEmbeddingQueue(scope.scopeKey, signal, 20, { ...options, maintenanceOperationId: operationId });
       const { passes, ready, failed, uncertain } = drained;
-      const after = await inspectMemoryMaintenance({ requestPermission: false, onProgress: event => reportMaintenanceTask(options, 'verify', event) });
+      if(preflight.anchorOnlyDirtyRecords>0)await cleanMaintenanceReadyAnchors(scope,preflight._maintenanceContext.settings,{...options,signal});
+      if(ready>0)await refreshMaintenanceQueueEpisodes(scope,preflight._maintenanceContext.settings,{...options,signal});
+      const after = await inspectMaintenanceAfterExecution({ requestPermission: false, onProgress: event => reportMaintenanceTask(options, 'verify', event) },async()=>{
+        const current=await readEmbeddingWorkBoundary();
+        if(current.scope.scopeKey!==scope.scopeKey||current.profile!==embeddingProfileSettingsFingerprint(preflight._maintenanceContext.settings))throw new EmbeddingAdapterError('STALE_SOURCE','Maintenance scope or profile changed.');
+      });
       const last = { reason: drained.stopReason };
       const result = {
         operationId, scopeKey: scope.scopeKey, maintenanceMode: 'auto', status: 'completed',
@@ -45355,7 +45497,7 @@ ${cleanedText}`, 80),
             if (Runtime.maintenanceController?.signal.aborted || parentSignal?.aborted) throw new EmbeddingAdapterError('ABORTED', 'Maintenance cancelled.');
             await admission.assertSourceCurrent();
           },
-          deadlineAt: Date.now() + 120000,
+          deadlineAt: Number(options.deadlineAt) || undefined,
           activityKind: 'maintenance_sync',
           signal: Runtime.maintenanceController?.signal || parentSignal,
           settings: admission.settings,
@@ -45366,21 +45508,24 @@ ${cleanedText}`, 80),
           scope: 'current',
           historyLimit: 0,
           incremental: true,
+          deferEmbedding: true,
           ...operationSettings
         });
         await operationSettings.maintenanceSourceValidate();
         // Synced turns are stored raw-first; finish their (and any older) pending
         // embedding in the same run so one automatic recovery leaves nothing queued.
         const embeddingQueue = configuredModelEmbedding(admission.settings)
-          ? await drainPendingEmbeddingQueue(executionScope.scopeKey, operationSettings.signal, 20, { ...options, maintenanceOperationId: operationId })
+          ? await drainPendingEmbeddingQueue(executionScope.scopeKey, operationSettings.signal, 20, { ...operationSettings, maintenanceOperationId: operationId })
           : null;
-        const after = await inspectMemoryMaintenance({
+        if(preflight.anchorOnlyDirtyRecords>0)await cleanMaintenanceReadyAnchors(executionScope,admission.settings,operationSettings);
+        if(embeddingQueue?.ready>0)await refreshMaintenanceQueueEpisodes(executionScope,admission.settings,operationSettings);
+        const after = await inspectMaintenanceAfterExecution({
           requestPermission: false,
           onProgress: event => reportMaintenanceTask(options, 'verify', event),
           settings: sharedSettings || await loadSettings(),
           snapshot: executionSnapshot,
           scope: executionScope
-        });
+        },operationSettings.maintenanceSourceValidate);
         const result = {
           operationId,
           scopeKey: executionScope.scopeKey,
@@ -45977,6 +46122,9 @@ ${cleanedText}`, 80),
       if (plan.automatic?.strategy === 'server_turn_sync') {
         return `판정: 서버 스냅샷 대조 완료 · 누락 ${formatNumber(plan.missingTurns)}개, 변경 ${formatNumber(plan.changedTurns)}개 턴 동기화 가능.`;
       }
+      const blockReason={episode_index_stale:'파생 에피소드 인덱스 갱신이 필요합니다.',unqueued_vector_damage:'미완료 임베딩 작업과 연결되지 않은 벡터 손상이 있어 별도 복구가 필요합니다.',
+        manifest_metadata_untrusted:'저장 목록의 무결성을 확인할 수 없습니다.',permanent_history_may_be_missing:'보호된 이전 기록이 누락됐을 수 있습니다.'}[plan.automatic?.reason]||'';
+      if(plan.automatic?.blocked&&blockReason)return `판정: ${blockReason} ${maintenanceEmbeddingWorkText(plan)}. 자격 증명·제공자 준비 상태는 이 읽기 전용 점검에서 검사하지 않았습니다.`;
       return `판정: 서버 스냅샷 기준 원문·저장 무결성 ${plan.storageSourceHealthy?'점검 통과':'확인할 항목 있음'}. 자격 증명 ${plan.inspection.credentialStatus==='not_required'?'불필요한 설정':'미검증'} · 제공자 준비 상태 미검증. 실시간 상태 보장이나 서버 복구 권한이 아닙니다.`;
     }
     if(plan.inspection?.complete===false)return '판정: 저장소 준비 여부를 확인하지 못해 점검 미완료입니다. 점검 중 자동 이관·복구는 실행하지 않았습니다.';
@@ -46109,8 +46257,12 @@ ${cleanedText}`, 80),
     return lines;
   };
 
+  const maintenanceServerStorageVerified = plan => plan?.inspection?.coverage==='server_snapshot'
+    && plan.inspection.complete===true && plan.storageSourceHealthy===true
+    && plan.embeddingWorkIncompleteRecords===0 && plan.missingTurns===0 && plan.changedTurns===0;
   const maintenanceCompletionTitle = result => result?.healthy === true
     ? '기억 유지보수 완료'
+    : maintenanceServerStorageVerified(result?.after) ? '복구 처리 완료 · 서버 저장 점검 통과'
     : result?.healthy === false ? '점검 완료 · 복구 대기' : '점검 완료 · 결과 확인 필요';
   const maintenanceDeferredReason = (result = {}) => {
     const operation = result.operation || {};
@@ -46146,8 +46298,8 @@ ${cleanedText}`, 80),
         `동기화 전: 누락 ${formatNumber(result.before?.missingTurns)}개 · 변경 ${formatNumber(result.before?.changedTurns)}개`,
         `동기화 후: 누락 ${formatNumber(result.after?.missingTurns)}개 · 변경 ${formatNumber(result.after?.changedTurns)}개`,
         ...(result.operation.queue ? [`재임베딩: 완료 ${formatNumber(result.operation.queue.ready)}개 · 실패 ${formatNumber(result.operation.queue.failed)}개 · 남은 미완료 ${formatNumber(result.after?.embeddingWorkIncompleteRecords)}개`] : []),
-        result.healthy === true || (result.after?.missingTurns === 0 && result.after?.changedTurns === 0)
-          ? '최종 판정: 서버 기억과 현재 대화 원문이 완전히 일치합니다 (정상).'
+        maintenanceServerStorageVerified(result.after)
+          ? '최종 판정: 서버 스냅샷 범위에서 원문·저장 점검을 통과했고 미완료 임베딩이 없습니다. 제공자 준비 상태는 별도 확인이 필요합니다.'
           : '최종 판정: 동기화 후 상태 점검을 확인하세요.'
       ].join('\n');
     }
@@ -48465,6 +48617,7 @@ ${cleanedText}`, 80),
     const pending = Number(plan.embeddingWorkIncompleteRecords || 0);
     if (incomplete) return { label: '점검 미완료', tone: 'warn', headline: '점검을 끝내지 못해 정상 여부를 확인하지 못했습니다.' };
     if (plan.healthy === true && !pending) return { label: '정상 확인', tone: 'ok', headline: '이번 점검 범위에서 추가 복구가 필요하지 않습니다.' };
+    if (maintenanceServerStorageVerified(plan)) return { label: '서버 저장 점검 통과', tone: 'ok', headline: '원문·저장 점검을 마쳤고 미완료 임베딩이 없습니다. 제공자 준비 상태는 별도 확인이 필요합니다.' };
     if (plan.automatic?.blocked) return { label: '실행 차단', tone: 'warn', headline: '현재 점검 결과로는 자동 복구를 실행할 수 없습니다.' };
     if (plan.automatic?.strategy === 'embedding_queue') return { label: '재임베딩 미완료', tone: 'warn', headline: '원문·저장 점검 후 처리할 재임베딩 작업이 남아 있습니다.' };
     if (pending) return { label: '임베딩 확인 필요', tone: 'warn', headline: `아직 완료되지 않은 임베딩 작업이 ${formatNumber(pending)}개 있습니다.` };
@@ -48518,7 +48671,8 @@ ${cleanedText}`, 80),
     const serverModeText = plan.inspection?.coverage === 'server_snapshot'
       ? '서버 스냅샷 기준 점검입니다. 실제 복구 가능 범위는 아래 자동 복구 경로와 보호 조건을 따릅니다.'
       : '로컬 저장소 기준 점검입니다. 복구 시 저장 변경과 필요한 임베딩 제공자 호출이 발생할 수 있습니다.';
-    const executionText = !complete || plan.automatic?.blocked ? '현재 계획으로 자동 복구를 실행할 수 없습니다.'
+    const executionText = maintenanceServerStorageVerified(plan) ? '추가로 실행할 복구 작업이 없습니다.'
+      : !complete || plan.automatic?.blocked ? '현재 계획으로 자동 복구를 실행할 수 없습니다.'
       : plan.automatic?.strategy === 'no_action' ? '현재 계획에는 자동으로 실행할 복구 작업이 없습니다.'
       : `진단 창에서 실행 버튼을 누르면 ${maintenanceStrategyText(plan.automatic)} 작업을 시작합니다.`;
     target.innerHTML = `<div class="note${state.tone === 'warn' ? ' note--warn' : ''}" role="status"><strong style="display:block">${escapeHtml(state.headline)}</strong><span>${escapeHtml(maintenanceJudgementText(plan))}</span></div><div class="plan-grid">${metrics.map(([label,value,warning], index) => `<div${complete && warning ? ' style="border-color:var(--warn-ink);color:var(--warn-ink)"' : ''}><b>${escapeHtml(label)}</b>${escapeHtml(!complete && !(isServerMode && index >= 6) ? '미확인' : value)}</div>`).join('')}</div><dl class="cost-table" style="row-gap:10px"><dt>예정 작업</dt><dd>${escapeHtml(executionText)}</dd><dt>제공자 호출</dt><dd>${escapeHtml(callsText)}</dd><dt>자격 증명·제공자</dt><dd>${escapeHtml(complete ? credentialText : '미확인')}</dd><dt>저장소 모드</dt><dd>${escapeHtml(serverModeText)}</dd></dl><details id="maintenancePlanDetails" class="fold"${detailsOpen ? ' open' : ''}><summary>점검 세부 정보</summary><div class="fold__body"><dl class="cost-table">${details.map(([label,value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('')}</dl></div></details>`;
@@ -48695,7 +48849,7 @@ ${cleanedText}`, 80),
       <details class="fold"><summary>세부 값 <span class="hint">검색 수 · 근거 · 문맥</span></summary><div class="fold__body grid g2">
         ${field('topK','Top K',settings.topK,'type="number" min="1" max="80"')}${field('minScore','최소 점수',settings.minScore,'type="number" min="0" max="1" step="0.01"')}
         ${field('candidateLimit','후보 수',settings.candidateLimit,'type="number" min="8" max="400"')}${field('gateHighCosine','고유사도 기준',settings.gateHighCosine,'type="number" min="0" max="1" step="0.01"')}
-        ${field('maxInjectionChars','최대 주입 글자',settings.maxInjectionChars,'type="number" min="800" max="8000" step="100"')}${field('hookRecallTimeoutMs','요청 훅 리콜 제한시간(ms)',settings.hookRecallTimeoutMs,'type="number" min="1000" max="20000" step="250"')}
+        ${field('maxInjectionChars','최대 주입 글자',settings.maxInjectionChars,'type="number" min="800" max="8000" step="100"')}${field('hookRecallTimeoutMs','요청 훅 리콜 제한시간(ms)',settings.hookRecallTimeoutMs,'type="number" min="1000" max="'+HOOK_RECALL_TIMEOUT_MAX_MS+'" step="250"')}
         ${field('recallRelatednessWeight','관련 기억 비중(%)',settings.recallRelatednessWeight,'type="number" min="0" max="100"')}${field('recallRecencyWeight','최근 기억 비중(%)',settings.recallRecencyWeight,'type="number" min="0" max="100"')}
         ${field('recallContextMessages','리콜 문맥 채팅 수',settings.recallContextMessages,'type="number" min="0" max="20"')}${field('recallStabilityBoost','리콜 안정성 보너스',settings.recallStabilityBoost,'type="number" min="0" max="0.12" step="0.005"')}
         <div class="stack">${setting('currentSceneTailEnabled','현재 장면 보강','현재 장면의 직접 근거를 함께 검사합니다.',settings.currentSceneTailEnabled)}${setting('entityFocusedRecallEnabled','엔티티 집중 회수','인물·대상 근거를 추가로 비교합니다.',settings.entityFocusedRecallEnabled)}${setting('episodeIndexEnabled','에피소드 인덱스','파생 인덱스를 리콜 확장에 사용합니다.',settings.episodeIndexEnabled)}${setting('contextualRecall','문맥 중심 의미 검색','최근 대화와 현재 입력을 함께 비교합니다.',settings.contextualRecall)}${setting('adaptiveContextWindow','적응형 최근 문맥','문맥 중심 검색을 끈 경우에 적용합니다.',settings.adaptiveContextWindow)}${setting('multiQueryRecall','다중 주제 리콜','현재 요청의 독립 주제를 보존합니다.',settings.multiQueryRecall)}${setting('contradictionBundleEnabled','상태 변화 묶음','서로 다른 사실 상태를 한 근거 묶음으로 유지합니다.',settings.contradictionBundleEnabled)}${setting('multiResolutionRecallEnabled','다중 해상도 에피소드 확장','필요한 경우 관련 에피소드 문맥을 확장합니다.',settings.multiResolutionRecallEnabled)}${setting('recallStabilityEnabled','장면 리콜 안정화','연속 요청의 유효한 선택을 안정화합니다.',settings.recallStabilityEnabled)}</div>
@@ -48750,7 +48904,9 @@ ${cleanedText}`, 80),
 
   // Data presentation: turn text as user/response lines, a worldline stat grid without empty
   // cells, and turn nodes whose id and badges stay aligned.
-  const FLASHBACK_GUI_DATA_STYLES = String.raw`.fb-turn-text,.frame-card__img,.frame-card__detail>p{white-space:pre-line}.fb-wl-stats{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:16px}.fb-wl-node>summary{flex-wrap:wrap}.fb-wl-node__head{display:flex;align-items:baseline;gap:10px;min-width:0;margin-right:auto}.fb-wl-node__head b{min-width:36px}.fb-wl-node__head code{font:500 12px/1.4 var(--font-mono,monospace);color:var(--text3)}.fb-wl-node>summary .cluster{gap:6px}
+  const FLASHBACK_GUI_DATA_STYLES = String.raw`.fb-turn-text,.frame-card__img,.frame-card__detail>p{white-space:pre-line}
+[data-manual-record-key] [data-full-record]{min-width:0;max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal}
+.fb-wl-stats{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:16px}.fb-wl-node>summary{flex-wrap:wrap}.fb-wl-node__head{display:flex;align-items:baseline;gap:10px;min-width:0;margin-right:auto}.fb-wl-node__head b{min-width:36px}.fb-wl-node__head code{font:500 12px/1.4 var(--font-mono,monospace);color:var(--text3)}.fb-wl-node>summary .cluster{gap:6px}
 /* HAYAKU 월드라인 노선도 & 2열 결속 레이아웃 */
 .route{overflow-x:auto;padding:6px 4px 12px;margin:10px 0}
 .route__track{display:flex;min-width:max-content}
@@ -49093,7 +49249,7 @@ ${cleanedText}`, 80),
     let portal = getGuiNode('flashbackMaintenanceJob');
     if (!portal) {
       portal = document.createElement('div');portal.id = 'flashbackMaintenanceJob';portal.className = 'overlay is-open t-flashback';
-      portal.innerHTML = `<style>#flashbackMaintenanceJob .dialog{max-height:calc(100dvh - 32px);overflow:auto;min-width:0}#flashbackMaintenanceJob .kv{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#flashbackMaintenanceJob .steps{display:grid;grid-auto-flow:row;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr))}#flashbackMaintenanceJob pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:28vh;overflow:auto}#maintenanceJobChip{position:absolute;right:18px;top:64px;z-index:40;max-width:calc(100% - 36px);white-space:normal}#flashbackMaintenanceJob .dialog__actions{flex-wrap:wrap}</style>
+      portal.innerHTML = `<style>#flashbackMaintenanceJob .dialog{max-height:calc(100dvh - 32px);overflow:auto;min-width:0}#flashbackMaintenanceJob .kv{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#flashbackMaintenanceJob .steps{display:grid;grid-auto-flow:row;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr))}#flashbackMaintenanceJob pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:28vh;overflow:auto}#maintenanceJobChip{position:static;flex:0 1 auto;min-width:64px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} @container app (max-width:640px){#maintenanceJobChip{max-width:110px;font-size:11px;padding:5px 7px}} @container app (max-width:400px){.topbar:has(#maintenanceJobChip:not([hidden])){gap:6px;padding-inline:10px}.topbar:has(#maintenanceJobChip:not([hidden])) #sidebarHealth{display:none}.topbar:has(#maintenanceJobChip:not([hidden])) .brand__name{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.topbar:has(#maintenanceJobChip:not([hidden])) .brand__mark{width:28px;height:28px}}#flashbackMaintenanceJob .dialog__actions{flex-wrap:wrap}</style>
         <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="fb-maintenance-job-title" aria-describedby="fb-maintenance-job-message">
           <div class="split"><div><div class="eyebrow">FLASHBACK JOB</div><h2 id="fb-maintenance-job-title"></h2><p class="muted" data-job-target></p></div><span class="badge" data-job-state></span></div>
           <p class="muted" id="fb-maintenance-job-message" role="status" aria-live="polite"></p>
@@ -49147,8 +49303,9 @@ ${cleanedText}`, 80),
     portal.querySelector('#maintenanceJobDoneBtn').hidden=running;portal.querySelector('[data-job-result]').hidden=running;
     if(!running)put('[data-job-result] pre',job.summary||job.message);
     let chip=getGuiNode('maintenanceJobChip');
-    if(!chip){chip=document.createElement('button');chip.id='maintenanceJobChip';chip.type='button';chip.className='btn btn--sm';chip.addEventListener('click',()=>{if(maintenanceJobInScope(job)&&!job.dismissed){job.minimized=false;renderMaintenanceJob();getGuiNode('maintenanceJobMinimizeBtn')?.focus();}});guiRoot.appendChild(chip);}
+    if(!chip){const header=guiRoot.querySelector('.topbar');if(!header)return;chip=document.createElement('button');chip.id='maintenanceJobChip';chip.type='button';chip.className='btn btn--sm';chip.addEventListener('click',()=>{if(maintenanceJobInScope(job)&&!job.dismissed){job.minimized=false;renderMaintenanceJob();getGuiNode('maintenanceJobMinimizeBtn')?.focus();}});header.insertBefore(chip,header.querySelector('.topbar-actions'));}
     chip.hidden=!job.minimized;chip.textContent=`${job.kind==='inspection'?'상태 점검':'자동 복구'} · ${label} · ${elapsed}초`;
+    chip.title=`작업창 다시 열기 · ${chip.textContent}`;chip.setAttribute('aria-label',chip.title);
     if(running&&!maintenanceJobTicker)maintenanceJobTicker=setInterval(renderMaintenanceJob,500);
     if(!running&&maintenanceJobTicker){clearInterval(maintenanceJobTicker);maintenanceJobTicker=null;}
   };
@@ -52969,6 +53126,13 @@ ${cleanedText}`, 80),
       lastExternalRetirement: Runtime.lastExternalRetirement,
       lastEpisodeIndex: Runtime.lastEpisodeIndex,
       maintenanceJournal: Runtime.maintenanceJournal,
+      maintenanceInspection: Runtime.lastMaintenanceInspection || null,
+      maintenanceQueue: Runtime.lastMaintenanceQueueResult ? {
+        scopeKey: Runtime.lastMaintenanceQueueResult.scopeKey, at: Runtime.lastMaintenanceQueueResult.at,
+        ready: Runtime.lastMaintenanceQueueResult.ready, failed: Runtime.lastMaintenanceQueueResult.failed,
+        uncertain: Runtime.lastMaintenanceQueueResult.uncertain, stopReason: Runtime.lastMaintenanceQueueResult.stopReason,
+        passes: Runtime.lastMaintenanceQueueResult.passes.slice(-20)
+      } : null,
       maintenanceEmbeddingPreflight: Runtime.lastMaintenanceEmbeddingPreflight ? {
         at: Number(Runtime.lastMaintenanceEmbeddingPreflight.at || 0) || 0,
         ok: Runtime.lastMaintenanceEmbeddingPreflight.ok === true,
@@ -53329,7 +53493,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       } };
       record.abort = () => record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
       record.timer = setTimeout(() => record.finish(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' })),
-        options.timeoutMs || (action === 'describe' ? 3000 : 25000));
+        (action === 'describe' && options.describeTimeoutMs) || options.timeoutMs || (action === 'describe' ? 3000 : 25000));
       pending.set(id, record); signal?.addEventListener('abort', record.abort, { once: true });
       if (signal?.aborted) { record.abort(); return; }
       void send(ids[owner], requestChannel, { schema, kind: 'request', id, action, ...body })

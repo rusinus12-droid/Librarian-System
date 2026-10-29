@@ -21,6 +21,7 @@ function setup() {
     assert(a >= 0 && b > a); return source.slice(a, b);
   };
   vm.runInContext(slice('  const maintenanceStrategyText =', '  // Zero-vector fault isolation:') +
+    slice('  const maintenanceServerStorageVerified =','  const maintenanceCompletionTitle =') +
     slice('  const maintenancePlanPresentation =', '  // Client-side text filter') +
     slice('  const showMaintenanceInspectionModal =', '  const showMaintenanceCompletionModal =') +
     ';globalThis.ui={render:renderMaintenancePlanInUi,build:buildImportTab,diagnose:showMaintenanceInspectionModal};', context);
@@ -77,6 +78,19 @@ test('server queue costs, unverified credentials and nonhealthy matching turns r
     f.ui.render({ ...base, healthy: true, embeddingWorkIncompleteRecords: 0, automatic: { strategy: 'no_action', blocked: false } });
     assert.equal(f.doc.querySelector('#maintenancePlanBadge').textContent, '정상 확인');
   } finally { f.dom.window.close(); }
+});
+
+test('verified server storage with no pending work is distinguished from an execution block',()=>{
+  const f=setup();try{
+    const plan={...base,healthy:false,storageSourceHealthy:true,missingTurns:0,changedTurns:0,embeddingWorkIncompleteRecords:0,
+      inspection:{complete:true,coverage:'server_snapshot',credentialStatus:'unverified'},automatic:{strategy:'server_inspection_only',blocked:true}};
+    f.ui.render(plan);
+    assert.equal(f.doc.querySelector('#maintenancePlanBadge').textContent,'서버 저장 점검 통과');
+    assert.match(f.doc.querySelector('#maintenancePlan').textContent,/추가로 실행할 복구 작업이 없습니다/);
+    assert.match(f.doc.querySelector('#maintenancePlan').textContent,/제공자 준비 상태는 별도 확인/);
+    f.ui.render({...plan,embeddingWorkIncompleteRecords:13});
+    assert.equal(f.doc.querySelector('#maintenancePlanBadge').textContent,'실행 차단','a matching turn count cannot hide unfinished embeddings');
+  }finally{f.dom.window.close();}
 });
 
 test('diagnosis popup follows producer health and allowed action rather than inferring health from zero missing turns', async () => {

@@ -9388,7 +9388,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let value;try{value=JSON.parse(raw);}catch(_){readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');}
     if(!value||typeof value!=='object'||Array.isArray(value))readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');return value;
   };
-  const readReadonlyRoute=async (identity, ownerRead=false)=>{
+  const readReadonlyRoute=async (identity, ownerRead=false, publicationAttempt=0)=>{
     const fence=readonlyRouteFence(),plugin=rawPluginStorage(),device=await rawDeviceStorage({strict:true});
     if(typeof plugin?.getItem!=='function')readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');
     const rawScope=(await plugin.getItem('libra:v1:scope-registry:v1'))||(await device?.getItem?.('libra:v1:scope-registry:v1')),registry=readonlyRouteObject(rawScope);
@@ -9410,7 +9410,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       candidates.push(picked);
     }
     const modePublication=await inspectModePublicationCopies(modePublicationCopies);
-    if(!['absent','observed'].includes(modePublication.status))readonlyRouteFail('READ_ROUTE_MODE_PUBLICATION_UNAVAILABLE');
+    if(!['absent','observed'].includes(modePublication.status)){
+      // Two stores are published separately. Reobserve a briefly unsettled pair
+      // (startup sync on slow hosts needs up to ~1s: 40/80 then 120ms steps, 0.84s),
+      // without accepting either half or crossing an authority/configuration fence.
+      if(['unsettled','conflict'].includes(modePublication.status)&&publicationAttempt<8){
+        await new Promise(resolve=>setTimeout(resolve,Math.min(120,40*2**publicationAttempt)));
+        if(fence!==readonlyRouteFence())readonlyRouteFail('READ_ROUTE_AUTHORITY_CHANGED');
+        return readReadonlyRoute(identity,ownerRead,publicationAttempt+1);
+      }
+      throw Object.assign(new Error('READ_ROUTE_MODE_PUBLICATION_UNAVAILABLE'),{
+        code:'READ_ROUTE_MODE_PUBLICATION_UNAVAILABLE',modePublicationStatus:modePublication.status,
+        modePublicationAttempts:publicationAttempt+1
+      });
+    }
     const pick=id=>{let out=null;for(const candidate of candidates){const value=candidate[id];if(!value)continue;if(out&&value.updatedAt===out.updatedAt&&JSON.stringify(value)!==JSON.stringify(out))readonlyRouteFail('READ_ROUTE_AMBIGUOUS');if(!out||value.updatedAt>out.updatedAt)out=value;}return out;};
     const stored=pick(scope.scopeKey),global=pick(GLOBAL_SCOPE_ID);
     if(stored?.removed||stored?.origin==='transition_pending'||state.scopeRouting.transientModes.has(scope.scopeKey))readonlyRouteFail('READ_ROUTE_SCOPE_UNAVAILABLE');

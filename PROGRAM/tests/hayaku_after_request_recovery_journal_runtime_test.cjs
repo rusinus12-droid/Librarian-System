@@ -189,6 +189,42 @@ const historicalEnvelope = assistantText => {
     await journalOnlyRuntime.dispose();
   }
 
+  // Exercise the actual beforeRequest ledger writer, not a manually armed capture.
+  // Change a readset setting during its write; recall must fail closed while the
+  // independent, source-bound afterRequest repair still gets one chance.
+  for(const editPrefix of [false,true]){
+    const rows=[user('independent-u1','I inspect the valve.'),assistant('independent-a1','The valve is closed.'),user('independent-u2','I turn the brass valve.')];
+    const h=await createHayakuRuntime({messages:rows,afterRequestAutoRepair:true,backgroundAutoRepair:false});
+    try{
+      h.hayaku._test.stopWorldlineTopologyObserver();
+      const write=h.pluginStorage.setItem.bind(h.pluginStorage);let changed=false;
+      h.pluginStorage.setItem=async(key,value)=>{
+        const result=await write(key,value);
+        if(!changed&&String(key).startsWith('hayaku.v2.ledger.')){
+          changed=true;h.argumentsMap.set('hayaku_mode','quality');
+        }
+        return result;
+      };
+      await h.callBeforeRequest([{role:'user',chatId:'independent-u2',id:'independent-u2',content:'I turn the brass valve.'}],'model');
+      assert.equal(changed,true,'fault entered real ledger write');
+      assert.equal(h.hayaku.lastDebug().lastBeforeRequest.reason,'HAYAKU_READSET_AUTHORITY_CHANGED');
+      assert.ok(h.hayaku.lastDebug().lastBeforeRequest.authorityFailure);
+      const scope=await h.hayaku._test.currentChatScope();
+      const pending=h.hayaku._test.selectPendingCapture([],scope,'model');
+      assert.ok(pending,'request capture survives recall rejection');
+      if(editPrefix){rows[1].data='The earlier scene has changed.';h.setMessages(rows);}
+      const l=pending.lineage;
+      h.setLlmResponder(async()=>({type:'success',result:JSON.stringify(currentEnvelope(assistantText,{
+        parent_turn_node_id:l.parentTurnNodeId,logical_turn_id:l.logicalTurnId,request_nonce:l.requestNonce,
+        identity_version:2,lineage_schema:l.lineageSchema,turn_owner_key:l.turnOwnerKey,generation_attempt_id:l.generationAttemptId
+      }))}));
+      const response=await h.callAfterRequest(assistantText,'model');
+      assert.equal(h.llmCalls.length,editPrefix?0:1,'one repair only for unchanged source');
+      assert.equal(response!==assistantText,!editPrefix);
+      await h.callAfterRequest(response,'model');
+      assert.equal(h.llmCalls.length,editPrefix?0:1,'repeated afterRequest must not resend');
+    }finally{await h.dispose();}
+  }
   console.log('PASS hayaku_after_request_recovery_journal_runtime_test');
 })().catch(error => {
   console.error(error);

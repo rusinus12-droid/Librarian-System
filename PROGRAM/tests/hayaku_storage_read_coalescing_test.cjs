@@ -14,6 +14,9 @@ assert.match(source, /const HAYAKU_VIEWER_LEDGER_READ_TIMEOUT_MS = 10000;/);
 assert.match(source, /loadStorageLedger\(scope, \{ readTimeoutMs: HAYAKU_VIEWER_LEDGER_READ_TIMEOUT_MS \}\)/);
 const maxFlightAgeMs = Number(source.match(/const HAYAKU_STORAGE_READ_FLIGHT_MAX_AGE_MS = (\d+);/)[1]);
 assert(maxFlightAgeMs >= 10000, 'slow viewer reads retain their sharing window');
+const extensionMs = Number(source.match(/const RECALL_TIMEOUT_EXTENSION_MS = (\d+);/)[1]);
+const storageIoTimeoutMs = Number(source.match(/const HAYAKU_STORAGE_IO_TIMEOUT_MS = (\d+) \+ RECALL_TIMEOUT_EXTENSION_MS;/)[1]) + extensionMs;
+assert.equal(storageIoTimeoutMs, 16000, 'storage I/O bound is the 6s bound plus the requested 10s');
 
 function fixture() {
   let reads = 0, value = JSON.stringify({ n: 0 }), clock = 100000;
@@ -23,6 +26,7 @@ function fixture() {
   const storageWriteSequences = new Map(), storageWriteFence = new Map();
   const ctx = {
     Memory, storageWriteSequences, storageWriteFence, storageReadFlights: new Map(), HOST_API_CALL_TIMEOUT_MS: 1500,
+    HAYAKU_STORAGE_IO_TIMEOUT_MS: storageIoTimeoutMs,
     HAYAKU_STORAGE_READ_FLIGHT_MAX_AGE_MS: maxFlightAgeMs, Date: { now: () => clock },
     MemorySuiteStorageBridge: { createPluginStorageProxy: s => s, shouldRoute: () => false },
     storageHost: () => ({ pluginStorage: storage }),
@@ -75,5 +79,13 @@ function fixture() {
   assert.equal(lost.reads(), 2, 'late cleanup preserves the new in-flight read');
   lost.flush();
   for (const outcome of await Promise.all([replacement, joinedReplacement])) assert.equal(outcome.state, 'fulfilled');
+
+  // 2026-10-29: a 1.3 MB ledger crossed the host bridge in more than 1.5s although the
+  // server answered in ~10ms. Default storage reads now wait for such a transfer.
+  const slow = fixture();
+  const slowRead = slow.read('ledger');
+  setTimeout(() => slow.flush(), 1800);
+  assert.equal((await slowRead).state, 'fulfilled', 'a 1.8s transfer is not reported as missing data');
+  assert.ok(storageIoTimeoutMs < 40000, 'the 40s request deadline still bounds storage');
   console.log('hayaku storage read coalescing: ok');
 })().catch(error => { console.error(error); process.exit(1); });
