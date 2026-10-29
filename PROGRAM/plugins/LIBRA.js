@@ -61741,6 +61741,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
         // A domain written as a known label ("관계", "세계") is mapped when it names the domain the
         // contract fixes for the claim kind. Typos and other domains still fail validation as before.
         if (contract && !domains.includes(f.domain) && unifiedVocabularyMap(UNIFIED_VOCABULARY.domain, f.domain, domains) === contract.domain) { mark({ path: path + '.domain', field: 'domain', from: compact(String(f.domain), 80), to: contract.domain }); f.domain = contract.domain; }
+        // World and narrative claims share one subject contract (a world entity), so a
+        // thread filed under "world" (or a world claim under "narrative") has one reading.
+        else if (contract && f.domain !== contract.domain && ['world','narrative'].includes(f.domain) && ['world','narrative'].includes(contract.domain)) { mark({ path: path + '.domain', field: 'domain', from: f.domain, to: contract.domain }); f.domain = contract.domain; }
         if (!contract && f.claimKind !== 'character_info' && unifiedText(f.text) && persons.has(f.subjectTempRef)) {
           // A kind the contract does not have (asked for by a custom instruction) about a person is
           // kept as an evidence-bound character note, which has no State field. About anything else
@@ -62882,7 +62885,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
         unifiedAssert(!rawHead || isReadableUnifiedEngineVersion(rawHead.unifiedApplied?.engineVersion) || migration || (branchReplay && !fullContinuityRefs(manifest).some(r=>Number(r.turnRange?.start)<Number(batch[0].turn))),'UNIFIED_EDIT_HEAD_UNSUPPORTED');
         // A historical job receives its own verified prefix, never today's Head.
         const prefix=await buildUnifiedReplayCandidate({context,manifest,cutoffTurn:Number(batch[0].turn)-1,signal:options.signal});
-        unifiedAssert(unifiedStateCanContinue(prefix.head)||prefix.canonicalCount===0,'UNIFIED_EDIT_PREFIX_PENDING');
+        // The replay above is gap-free, and a quarantined record's pending fields stay
+        // pending on every replay, so they never become 'ready'. They are isolated
+        // inside the head, exactly as the live path continues past them. Only an
+        // unreconstructed legacy prefix with open pending fields still blocks.
+        unifiedAssert(unifiedStateCanContinue(prefix.head)||prefix.canonicalCount===0
+          ||!(prefix.head?.unifiedCoverage?.legacyCount>0),'UNIFIED_EDIT_PREFIX_PENDING');
         await options.sourceEditValidate?.();
         const analysisHead=prefix.canonicalCount?prefix.head:null;
         return {serverReadSet,serverActiveReadSet,serverActiveDescriptor,engineVersion:UNIFIED_ENGINE_VERSION,scopeKey:context.scope.scopeKey,worldlineId:'main',replayRequired:true,
@@ -66144,7 +66152,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if (state.disposed) return { ok: true, skipped: true, reason: 'runtime_disposed' };
         if (state.deletingScopes.has(context.scope.scopeKey)) return { ok: true, skipped: true, reason: 'scope_deleting' };
         const pairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
-        const receiptPreparation = await reconcileCompletedTurnReceipts(context, pairs, options);
+        // An explicit historical selection prepares each selected batch's own five
+        // receipts right before it runs. Sweeping the whole 32-turn tail first only
+        // delays the first batch and touches turns nobody selected.
+        const explicitHistoricalSelection = options.allowHistoricalBackfill === true && asArray(options.startTurns).length > 0;
+        const receiptPreparation = explicitHistoricalSelection
+          ? { at: Date.now(), scopeKey: string(context.scope.scopeKey || ''), examined: 0, olderUnexamined: pairs.length,
+              verified: 0, pending: 0, capturePending: 0, inventoryPending: 0, gaps: [], deferredToSelectedBatches: true }
+          : await reconcileCompletedTurnReceipts(context, pairs, options);
         let manifest = await loadManifest(context.scope, pairs.length);
         if (state.disposed) return { ok: true, skipped: true, reason: 'runtime_disposed' };
         manifest = await migrateTerminalInFlightFailure(context, manifest);

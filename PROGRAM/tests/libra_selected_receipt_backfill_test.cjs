@@ -39,8 +39,9 @@ for (const mode of ['plugin_only', 'server_only']) test(`${mode}: selected histo
     assert.equal(f.control.calls.length, 1, 'only the selected batch is analysed');
     const rows = allRows(s);
     const heads = new Set(rows.filter(row => row.value?.schema === 'libra.completed_turn_head.v1').map(row => row.value.turn));
-    for (let turn = 6; turn <= 40; turn++) assert.ok(heads.has(turn), `selected plus original bounded tail has T${turn} receipt`);
-    for (let turn = 1; turn <= 5; turn++) assert.equal(heads.has(turn), false, `unselected old T${turn} stays outside capture window`);
+    for (let turn = 6; turn <= 10; turn++) assert.ok(heads.has(turn), `selected T${turn} has its receipt`);
+    // An explicit selection prepares only its own five turns; it never sweeps the tail first.
+    for (const turn of [1, 2, 3, 4, 5, 11, 25, 40]) assert.equal(heads.has(turn), false, `unselected T${turn} stays outside the capture window`);
     const manifest = rows.find(row => row.value?.schema === 'libra.manifest.v1').value;
     assert.deepEqual(Object.keys(manifest.memories), ['6']);
     assert.equal(manifest.memories['6'].status, 'committed');
