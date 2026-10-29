@@ -4902,14 +4902,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const registry = mergeScopeRegistries(await loadScopeRegistry(true, false), requested);
       registry.updatedAt = Date.now();
       const payload = JSON.stringify(registry);
-      let success = false;
+      // Success means the primary pluginStorage copy reads back exactly. The device
+      // copy is an emergency backup and only decides success when pluginStorage is absent.
+      let pluginSuccess = false, deviceSuccess = false;
       const pluginStore = rawPluginStorage();
       if (pluginStore?.setItem) {
         try {
           const result = await pluginStore.setItem(SCOPE_ROUTING_LOCAL_KEY, payload);
           if (result !== false) {
             const readback = await pluginStore.getItem?.(SCOPE_ROUTING_LOCAL_KEY);
-            success = String(readback || '') === payload;
+            pluginSuccess = String(readback || '') === payload;
           }
         } catch (error) { reportStorageFailure('scope.routing.plugin.write', error); }
       }
@@ -4918,9 +4920,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         try {
           const result = await deviceStore.setItem(SCOPE_ROUTING_LOCAL_KEY, payload);
           const readback = await deviceStore.getItem?.(SCOPE_ROUTING_LOCAL_KEY);
-          if (result !== false && String(readback || '') === payload) success = true;
+          deviceSuccess = result !== false && String(readback || '') === payload;
         } catch (error) { reportStorageFailure('scope.routing.device.write', error); }
       }
+      const success = pluginStore?.setItem ? pluginSuccess : deviceSuccess;
       if (!success) {
         state.scopeRouting.registry = null;
         state.scopeRouting.registryLoaded = false;
@@ -4942,18 +4945,27 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!force && state.scopeRouting.registryLoaded && state.scopeRouting.registry) return state.scopeRouting.registry;
     if (!force && state.scopeRouting.registryLoading) return await state.scopeRouting.registryLoading;
     const task = (async () => {
-      let pluginRaw = null, deviceRaw = null, serverRaw = null;
+      // The pluginStorage copy is the routing table. The device copy and the server
+      // copy are emergency sources only: they are read when the plugin copy is lost,
+      // and the recovered table is written back to the plugin copy.
+      let pluginRaw = null, deviceRaw = null, serverRaw = null, source = 'plugin';
       const pluginStore = rawPluginStorage();
       try { pluginRaw = await pluginStore?.getItem?.(SCOPE_ROUTING_LOCAL_KEY); } catch (error) { reportStorageFailure('storage.scope.route.read.plugin', error); }
-      const deviceStore = await rawDeviceStorage().catch(() => null);
-      try { deviceRaw = await deviceStore?.getItem?.(SCOPE_ROUTING_LOCAL_KEY); } catch (error) { reportStorageFailure('storage.scope.route.read.device', error); }
-      if (tryServer && !pluginRaw && !deviceRaw) {
+      if (!pluginRaw) {
+        source = 'device';
+        const deviceStore = await rawDeviceStorage().catch(() => null);
+        try { deviceRaw = await deviceStore?.getItem?.(SCOPE_ROUTING_LOCAL_KEY); } catch (error) { reportStorageFailure('storage.scope.route.read.device', error); }
+      }
+      if (!pluginRaw && !deviceRaw && (tryServer || (!state.scopeRouting.serverRestoreAttempted && !!dataBinding?.url))) {
+        source = 'server';
+        state.scopeRouting.serverRestoreAttempted = true;
         try {
           const remote = await remoteGet('plugin', SCOPE_ROUTING_SERVER_KEY, { allowPluginOnly: true });
           if (remote.exists === true) serverRaw = remote.value;
         } catch (error) { reportStorageFailure('storage.scope.route.read.server', error); }
       }
-      const registry = mergeScopeRegistries(serverRaw, pluginRaw, deviceRaw);
+      const registry = mergeScopeRegistries(pluginRaw || deviceRaw || serverRaw);
+      if (!pluginRaw && (deviceRaw || serverRaw) && Object.keys(registry.entries || {}).length) scheduleScopeRegistryRestore(registry, source);
       state.scopeRouting.registry = registry;
       state.scopeRouting.registryLoaded = true;
       state.scopeRouting.routeCache.clear();
@@ -4961,6 +4973,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     })();
     state.scopeRouting.registryLoading = task;
     try { return await task; } finally { state.scopeRouting.registryLoading = null; }
+  };
+
+  // Writes a table recovered from an emergency copy back through the normal writer.
+  // At most one restore runs at a time and a failed restore waits a minute.
+  const scheduleScopeRegistryRestore = (registry, source) => {
+    const routing = state.scopeRouting;
+    if (routing.restoreInFlight || Date.now() - Number(routing.restoreAttemptAt || 0) < 60000) return;
+    routing.restoreInFlight = true; routing.restoreAttemptAt = Date.now();
+    setTimeout(() => {
+      void writeScopeRegistryLocal(registry, { reason: source === 'server' ? 'routing_restored_server' : 'routing_restored_device' })
+        .then(() => setStatus('scope_routes_restored', '', { source }))
+        .catch(error => reportStorageFailure('storage.scope.route.restore.' + source, error))
+        .finally(() => { routing.restoreInFlight = false; });
+    }, 0);
   };
 
   const synchronizeScopeRegistryToServer = (...args) => withOwnerOperation({kind:'storage_operation',operation:'synchronizeScopeRegistryToServer'}, () => synchronizeScopeRegistryToServerImpl(...args));
@@ -8284,9 +8310,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const routeWitness = async () => {
       const currentUrl = await readCurrentUrl();
       assertConnectionState(currentUrl);
-      const plugin = rawPluginStorage(), device = await rawDeviceStorage({strict:true});
-      if (!plugin?.getItem || !device?.getItem) reject('LIB_READ_ROUTE_UNVERIFIED');
-      const raws = [await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY),await device.getItem(SCOPE_ROUTING_LOCAL_KEY)];
+      const plugin = rawPluginStorage();
+      if (!plugin?.getItem) reject('LIB_READ_ROUTE_UNVERIFIED');
+      // pluginStorage holds the routing table; the device copy is an emergency
+      // source read only when the plugin copy is missing.
+      const primaryRoute = await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY);
+      const hasPrimaryRoute = primaryRoute != null && primaryRoute !== '';
+      const device = hasPrimaryRoute ? null : await rawDeviceStorage({strict:true});
+      const raws = [hasPrimaryRoute ? primaryRoute : await device?.getItem?.(SCOPE_ROUTING_LOCAL_KEY)];
       for (const raw of raws) if (raw != null && raw !== '') {
         let parsed; try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { reject('LIB_READ_ROUTE_UNVERIFIED'); }
         if (parsed?.schema !== SCOPE_ROUTING_SCHEMA || !parsed.entries || typeof parsed.entries !== 'object' || Array.isArray(parsed.entries)
@@ -8405,9 +8436,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const routeWitness = async () => {
       const currentUrl = await readCurrentUrl();
       assertConnectionState(currentUrl);
-      const plugin = rawPluginStorage(), device = await rawDeviceStorage({strict:true});
-      if (!plugin?.getItem || !device?.getItem) reject('HEALTH_ROUTE_UNVERIFIED');
-      const raws = [await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY),await device.getItem(SCOPE_ROUTING_LOCAL_KEY)];
+      const plugin = rawPluginStorage();
+      if (!plugin?.getItem) reject('HEALTH_ROUTE_UNVERIFIED');
+      // pluginStorage holds the routing table; the device copy is an emergency
+      // source read only when the plugin copy is missing.
+      const primaryRoute = await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY);
+      const hasPrimaryRoute = primaryRoute != null && primaryRoute !== '';
+      const device = hasPrimaryRoute ? null : await rawDeviceStorage({strict:true});
+      const raws = [hasPrimaryRoute ? primaryRoute : await device?.getItem?.(SCOPE_ROUTING_LOCAL_KEY)];
       for (const raw of raws) if (raw != null && raw !== '') {
         let parsed; try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { reject('HEALTH_ROUTE_UNVERIFIED'); }
         if (parsed?.schema !== SCOPE_ROUTING_SCHEMA || !parsed.entries || typeof parsed.entries !== 'object' || Array.isArray(parsed.entries)

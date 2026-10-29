@@ -8020,7 +8020,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     try {
       const generation=wholeDataInventoryEpoch,plugin=rawPluginStorage();
       let device;try {device=await rawDeviceStorage({strict:true});} catch (_) {return modePublicationView('unavailable');}
-      const stores=[...new Set([plugin,device].filter(Boolean))];
+      let primaryRaw=null;
+      try {primaryRaw=plugin?await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY):null;} catch (_) {return modePublicationView('unavailable');}
+      const stores=(plugin&&(primaryRaw!=null&&primaryRaw!==''||!device))?[plugin]:[device].filter(Boolean);
       if (!stores.length) return modePublicationView('unavailable');
       let copies;try {copies=[];for (const store of stores) copies.push(await store.getItem(SCOPE_ROUTING_LOCAL_KEY));}
       catch (_) {return modePublicationView('unavailable');}
@@ -8129,14 +8131,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       registry.updatedAt = Date.now();
       if (modePublicationEnabled) registry.modePublication = await createModePublication(registry, registry.modePublication, detail);
       const payload = JSON.stringify(registry);
-      let success = false;
+      // Success means the primary pluginStorage copy reads back exactly. The device
+      // copy is an emergency backup and only decides success when pluginStorage is absent.
+      let pluginSuccess = false, deviceSuccess = false;
       const pluginStore = rawPluginStorage();
       if (pluginStore?.setItem) {
         try {
           const result = await pluginStore.setItem(SCOPE_ROUTING_LOCAL_KEY, payload);
           if (result !== false) {
             const readback = await pluginStore.getItem?.(SCOPE_ROUTING_LOCAL_KEY);
-            success = String(readback || '') === payload;
+            pluginSuccess = String(readback || '') === payload;
           }
         } catch (error) { reportStorageFailure('scope.routing.plugin.write', error); }
       }
@@ -8145,9 +8149,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         try {
           const result = await deviceStore.setItem(SCOPE_ROUTING_LOCAL_KEY, payload);
           const readback = await deviceStore.getItem?.(SCOPE_ROUTING_LOCAL_KEY);
-          if (result !== false && String(readback || '') === payload) success = true;
+          deviceSuccess = result !== false && String(readback || '') === payload;
         } catch (error) { reportStorageFailure('scope.routing.device.write', error); }
       }
+      const success = pluginStore?.setItem ? pluginSuccess : deviceSuccess;
       if (!success) {
         state.scopeRouting.registry = null;
         state.scopeRouting.registryLoaded = false;
@@ -8188,18 +8193,27 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const revalidating = !force && loaded;
     const generation = scopeRegistryGeneration;
     const task = (async () => {
-      let pluginRaw = null, deviceRaw = null, serverRaw = null;
+      // The pluginStorage copy is the routing table. The device copy and the server
+      // copy are emergency sources only: they are read when the plugin copy is lost,
+      // and the recovered table is written back to the plugin copy.
+      let pluginRaw = null, deviceRaw = null, serverRaw = null, source = 'plugin';
       const pluginStore = rawPluginStorage();
       try { pluginRaw = await pluginStore?.getItem?.(SCOPE_ROUTING_LOCAL_KEY); } catch (error) { reportStorageFailure('storage.scope.route.read.plugin', error); }
-      const deviceStore = await rawDeviceStorage().catch(() => null);
-      try { deviceRaw = await deviceStore?.getItem?.(SCOPE_ROUTING_LOCAL_KEY); } catch (error) { reportStorageFailure('storage.scope.route.read.device', error); }
-      if (tryServer && !pluginRaw && !deviceRaw) {
+      if (!pluginRaw) {
+        source = 'device';
+        const deviceStore = await rawDeviceStorage().catch(() => null);
+        try { deviceRaw = await deviceStore?.getItem?.(SCOPE_ROUTING_LOCAL_KEY); } catch (error) { reportStorageFailure('storage.scope.route.read.device', error); }
+      }
+      if (!pluginRaw && !deviceRaw && (tryServer || (!state.scopeRouting.serverRestoreAttempted && !!dataBinding?.url))) {
+        source = 'server';
+        state.scopeRouting.serverRestoreAttempted = true;
         try {
           const remote = await remoteGet('plugin', SCOPE_ROUTING_SERVER_KEY, { allowPluginOnly: true });
           if (remote.exists === true) serverRaw = remote.value;
         } catch (error) { reportStorageFailure('storage.scope.route.read.server', error); }
       }
-      const registry = mergeScopeRegistries(serverRaw, pluginRaw, deviceRaw);
+      const registry = mergeScopeRegistries(pluginRaw || deviceRaw || serverRaw);
+      if (!pluginRaw && (deviceRaw || serverRaw) && Object.keys(registry.entries || {}).length) scheduleScopeRegistryRestore(registry, source);
       // A local registry write that landed meanwhile is newer than this read.
       if (generation !== scopeRegistryGeneration && state.scopeRouting.registryLoaded && state.scopeRouting.registry) return state.scopeRouting.registry;
       state.scopeRouting.registryCheckedAt = Date.now();
@@ -8211,6 +8225,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     })();
     state.scopeRouting.registryLoading = task;
     try { return await task; } finally { state.scopeRouting.registryLoading = null; }
+  };
+
+  // Writes a table recovered from an emergency copy back through the normal writer.
+  // At most one restore runs at a time and a failed restore waits a minute.
+  const scheduleScopeRegistryRestore = (registry, source) => {
+    const routing = state.scopeRouting;
+    if (routing.restoreInFlight || Date.now() - Number(routing.restoreAttemptAt || 0) < 60000) return;
+    routing.restoreInFlight = true; routing.restoreAttemptAt = Date.now();
+    setTimeout(() => {
+      void writeScopeRegistryLocal(registry, { reason: source === 'server' ? 'routing_restored_server' : 'routing_restored_device' })
+        .then(() => setStatus('scope_routes_restored', '', { source }))
+        .catch(error => reportStorageFailure('storage.scope.route.restore.' + source, error))
+        .finally(() => { routing.restoreInFlight = false; });
+    }, 0);
   };
 
   const synchronizeScopeRegistryToServer = (...args) => withOwnerOperation({kind:'storage_operation',operation:'synchronizeScopeRegistryToServer'}, () => synchronizeScopeRegistryToServerImpl(...args));
@@ -8569,7 +8597,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const registry = parseScopeRegistry(await loadScopeRegistry(true, false));
     const origin = String(persistOptions.origin || 'user_explicit');
     const serverPublication=await prepareServerModePublication(scope,target,['inherited','migrated'].includes(origin)?'inherited':'explicit');
-    registry.entries[scope.scopeId] = { ...(registry.entries[scope.scopeId] || {}), ...scope, mode: target, origin, updatedAt: Math.max(Date.now(),Number(registry.entries[scope.scopeId]?.updatedAt || 0)+1), source: String(persistOptions.source || 'user_scope_setting'), ...(persistOptions.globalMigrationJobId?{globalMigrationJobId:persistOptions.globalMigrationJobId,pendingTargetMode:target}:{}) };
+    registry.entries[scope.scopeId] = { ...(registry.entries[scope.scopeId] || {}), ...scope, mode: target, origin, updatedAt: Math.max(Date.now(),Number(registry.entries[scope.scopeId]?.updatedAt || 0)+1), source: String(persistOptions.source || 'user_scope_setting'), ...(persistOptions.globalMigrationJobId?{globalMigrationJobId:persistOptions.globalMigrationJobId,pendingTargetMode:target}:{}), ...(persistOptions.clearPendingTarget===true?{pendingTargetMode:null}:{}) };
     registry.legacyGlobalModeImported = true;
     const saved = await writeScopeRegistryLocal(registry);
     if (saved.entries[scope.scopeId]?.mode !== target) throw Object.assign(new Error('memory_suite_mode_readback_mismatch'),{code:'MEMORY_SUITE_MODE_READBACK_MISMATCH'});
@@ -9393,7 +9421,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         updatedAt:Math.max(Date.now(),Number(oldGlobal.updatedAt||0)+1),source:'global_allchat_verified'};
       registry.legacyGlobalModeImported=true;registry.globalMigrationRemoteHistory=inventory.remoteRequired;
       let saved=await writeScopeRegistryLocal(registry,{reason:'global_allchat_commit',phase:'pending'});
-      for(const store of [...new Set(Object.values(inventory.stores).filter(Boolean))]){
+      for(const store of [inventory.stores.plugin||inventory.stores.local].filter(Boolean)){
         const raw=await store.getItem(SCOPE_ROUTING_LOCAL_KEY);
         if(globalCanonical(globalReadRegistry(raw,'commit',[]).entries)!==globalCanonical(saved.entries))throw globalModeError('MEMORY_SUITE_GLOBAL_REGISTRY_READBACK_FAILED');
       }
@@ -9405,7 +9433,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if(remote.exists!==true||globalCanonical(parseScopeRegistry(remote.value).entries)!==globalCanonical(saved.entries))throw globalModeError('MEMORY_SUITE_GLOBAL_PUBLICATION_READBACK_FAILED');
       }
       saved=await writeScopeRegistryLocal(saved,{reason:'global_allchat_verified',phase:'settled'});
-      for(const store of [...new Set(Object.values(inventory.stores).filter(Boolean))]){
+      for(const store of [inventory.stores.plugin||inventory.stores.local].filter(Boolean)){
         if(String(await store.getItem(SCOPE_ROUTING_LOCAL_KEY))!==JSON.stringify(saved))throw globalModeError('MEMORY_SUITE_GLOBAL_REGISTRY_READBACK_FAILED');
       }
       if(inventory.remoteRequired){
@@ -13923,9 +13951,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const routeWitness = async () => {
       const currentUrl = await readCurrentUrl();
       assertConnectionState(currentUrl);
-      const plugin = rawPluginStorage(), device = await rawDeviceStorage({strict:true});
-      if (!plugin?.getItem || !device?.getItem) reject('LIB_READ_ROUTE_UNVERIFIED');
-      const raws = [await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY),await device.getItem(SCOPE_ROUTING_LOCAL_KEY)];
+      const plugin = rawPluginStorage();
+      if (!plugin?.getItem) reject('LIB_READ_ROUTE_UNVERIFIED');
+      // pluginStorage holds the routing table; the device copy is an emergency
+      // source read only when the plugin copy is missing.
+      const primaryRoute = await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY);
+      const hasPrimaryRoute = primaryRoute != null && primaryRoute !== '';
+      const device = hasPrimaryRoute ? null : await rawDeviceStorage({strict:true});
+      const raws = [hasPrimaryRoute ? primaryRoute : await device?.getItem?.(SCOPE_ROUTING_LOCAL_KEY)];
       for (const raw of raws) if (raw != null && raw !== '') {
         let parsed; try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { reject('LIB_READ_ROUTE_UNVERIFIED'); }
         if (parsed?.schema !== SCOPE_ROUTING_SCHEMA || !parsed.entries || typeof parsed.entries !== 'object' || Array.isArray(parsed.entries)
@@ -14073,9 +14106,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const routeWitness = async (allowConnectionRefresh = false) => {
       const currentUrl = await readCurrentUrl();
       assertConnectionState(currentUrl, allowConnectionRefresh);
-      const plugin = rawPluginStorage(), device = await rawDeviceStorage({strict:true});
-      if (!plugin?.getItem || !device?.getItem) reject('HEALTH_ROUTE_UNVERIFIED');
-      const raws = [await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY),await device.getItem(SCOPE_ROUTING_LOCAL_KEY)];
+      const plugin = rawPluginStorage();
+      if (!plugin?.getItem) reject('HEALTH_ROUTE_UNVERIFIED');
+      // pluginStorage holds the routing table; the device copy is an emergency
+      // source read only when the plugin copy is missing.
+      const primaryRoute = await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY);
+      const hasPrimaryRoute = primaryRoute != null && primaryRoute !== '';
+      const device = hasPrimaryRoute ? null : await rawDeviceStorage({strict:true});
+      const raws = [hasPrimaryRoute ? primaryRoute : await device?.getItem?.(SCOPE_ROUTING_LOCAL_KEY)];
       for (const raw of raws) if (raw != null && raw !== '') {
         let parsed; try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { reject('HEALTH_ROUTE_UNVERIFIED'); }
         if (parsed?.schema !== SCOPE_ROUTING_SCHEMA || !parsed.entries || typeof parsed.entries !== 'object' || Array.isArray(parsed.entries)
@@ -14426,6 +14464,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     getScopeExecutionPolicy,
     getRecoveryState: async scope => await recoveryLockForScope(scope || await resolveCurrentScope(true)),
     setScopeMode: async (scope, mode, modeOptions = {}) => { requireOperationalMode(mode); return await withModeConfiguration(()=>scopedSetModeSafely(mode, { ...(modeOptions && typeof modeOptions === 'object' ? modeOptions : {}), scope })); },
+    // Completes a pending scope transition through the routing writer and the server
+    // publication. It never starts a migration: only a row still marked
+    // transition_pending is finalized, to its recorded target mode.
+    finalizeScopeTransition: async (scopeInput, source = 'transition_completed') => await withModeConfiguration(async () => {
+      const scope = normalizeScopeDescriptor(scopeInput);
+      const row = parseScopeRegistry(await loadScopeRegistry(true, false)).entries[scope.scopeId];
+      if (!scope.scopeId || row?.origin !== 'transition_pending') return false;
+      await persistScopedMode(row.pendingTargetMode || MODE_SERVER_ONLY, scope, { origin: 'user_scope_setting', source, clearPendingTarget: true });
+      return true;
+    }),
     ensureHandoffReady: scopedEnsureHandoffReady,
     verifyNativeBranchSourceDurability,
     serverGet: scopedServerGet,
@@ -29598,13 +29646,25 @@ const MemorySuiteSnapshotCache = (() => {
           }
         }
       }
+      // Append-only reconciliation (no stored record retired, quarantined or restored)
+      // leaves every stored record's recall status correct, so a request hook may
+      // recall before the copy-on-write commit lands. On a slow host that commit took
+      // ~23s and exhausted the recall deadline (2026-10-29 debug). The caller runs
+      // the full synchronization in the background.
+      if (options.deferAppendOnlyWrite === true && allowRetirement && !newlyRetired.length
+        && !quarantinedResponses.length && !restoredKeys.size && !retiredLifecycleChanges
+        && !preservedResponses.length && currentManifest.turnWorldlinePendingRetirement !== true) {
+        return { changed: false, reason: 'worldline_append_write_deferred', deferredWrite: true, liveHash, observedLiveHash,
+          generationTargetProtected: !!protectedTarget, protectedPairIndex: Number(protectedTarget?.pairIndex || 0) || 0,
+          observedPairCount: Number(normalizedLive.pairCount || normalizedLive.pairs?.length || 0) || 0, allowRetirement };
+      }
       let saved = { manifest: currentManifest, records: loaded.records };
       if (responseChanged) {
         const nonResponse = loaded.records.filter(record => !isResponseMemoryRecord(record) && !(record.autoEpisode || record.sourceType === 'episode_index'));
-        saved = await saveScopeRecords(scope, [...nonResponse, ...inheritedResponses, ...provisionalResponses, ...nextResponses], cfg, scope,
-          { metadataOnly: options.preserveRawRecords === true, assertCurrent: options.assertCurrent });
+        saved = await stage('save_records', () => saveScopeRecords(scope, [...nonResponse, ...inheritedResponses, ...provisionalResponses, ...nextResponses], cfg, scope,
+          { metadataOnly: options.preserveRawRecords === true, assertCurrent: options.assertCurrent }));
       }
-      const worldline = await saveTurnWorldline(scope.scopeKey, nextWorldline, { assertCurrent: options.assertCurrent });
+      const worldline = await stage('save_worldline', () => saveTurnWorldline(scope.scopeKey, nextWorldline, { assertCurrent: options.assertCurrent }));
       const savedManifest = await saveScopeManifest({
         ...saved.manifest,
         sourceConsentPolicyVersion:2,
@@ -40256,6 +40316,7 @@ const MemorySuiteHealthRecovery = (() => {
   // The other direction: a recall starting while such a write is in flight waits for it
   // (bounded) instead of reading a scope that is about to change.
   const FLASHBACK_RECALL_YIELD_MAX_MS = 8000, FLASHBACK_BACKGROUND_WRITE_WAIT_MAX_MS = 3000;
+  const FLASHBACK_CHAT_OUTPUT_HEALTH_GRACE_MS = 30000;
   const flashbackBackgroundWrites = new Map();
   const yieldToActiveFlashbackRecall = async scopeKey => {
     for (const until = Date.now() + FLASHBACK_RECALL_YIELD_MAX_MS; Date.now() < until;) {
@@ -41579,10 +41640,11 @@ const MemorySuiteHealthRecovery = (() => {
         opLog('before_finalized_capture_reconciled', { hook: 'beforeRequest', scopeKey: scope.scopeKey, result: reconciled }, 'info');
       }
       if (liveChat.known) {
-        await withinHookDeadline(
+        const worldlineSync = await withinHookDeadline(
           synchronizeFlashbackTurnWorldline(scope, observedLiveState, settings, {
             protectedPending: pendingCapture.pending,
             shardReadConcurrency: 4,
+            deferAppendOnlyWrite: true,
             assertCurrent: () => ensureHookDeadline('beforeRequest worldline'),
             onStage: update => {
               preparationStages[update.stage] = update;
@@ -41595,6 +41657,13 @@ const MemorySuiteHealthRecovery = (() => {
             warn('turn worldline synchronization failed; recall skipped for branch safety', error);
             throw error;
           });
+        if (worldlineSync?.deferredWrite === true) {
+          // Commit the appended lineage after this recall; background writes yield to it.
+          const deferredPending = pendingCapture.pending;
+          void backgroundFlashbackWrite(scope.scopeKey, () => synchronizeFlashbackTurnWorldline(scope, observedLiveState, settings, {
+            protectedPending: deferredPending, shardReadConcurrency: 4
+          })).catch(error => warn('deferred turn worldline commit failed; the next request reconciles again', error));
+        }
       }
       const { normalizedMessages, latestUser, retrievalQuery } = pendingCapture;
       opLog('before_recall_start', {
@@ -42369,6 +42438,17 @@ const MemorySuiteHealthRecovery = (() => {
         pendingId: text(queuedDecision?.pendingId || ''),
         observedRunsAtAfter: Number(Runtime.captureBackendObservedRuns || 0)
       };
+      // RisuAI awaits chat-output listeners one after another; a slow listener in
+      // another plugin starved this one and the turn waited for the next request
+      // (2026-10-29: T32 never captured). Fail over on a timer, like LIBRA/HAYAKU.
+      const pendingHealth = Runtime.captureBackendHealthPending;
+      scheduleTimer(() => {
+        if (Runtime.unloaded || Runtime.captureBackendHealthPending !== pendingHealth || pendingHealth.captureConfirmed === true) return;
+        if (Number(Runtime.captureBackendObservedRuns || 0) > Number(pendingHealth.observedRunsAtAfter || 0)) return;
+        Runtime.captureBackendHealthChecks += 1;
+        void failoverSilentFlashbackChatOutputBackend({ ...pendingHealth, trigger: 'after_request_timer' })
+          .catch(error => warn('chat-output failover failed', error));
+      }, FLASHBACK_CHAT_OUTPUT_HEALTH_GRACE_MS);
     }
     if (Runtime.captureBackend !== FLASHBACK_CAPTURE_BACKENDS.AFTER_REQUEST_RECONCILE) {
       opLog('after_capture_deferred_to_selected_backend', { hook: 'afterRequest', type, requestClass, captureMode: Runtime.captureBackend }, 'debug');
@@ -45555,33 +45635,10 @@ ${cleanedText}`, 80),
           }
         };
         if (executionScope?.scopeKey) {
-          try {
-            const api = getLiveApi();
-            const routeKey = '__memory_suite_internal_scope_routes_v1__:flashback';
-            const localApi = getLiveApi(['getLocalPluginStorage']) || api;
-            const stores = [
-              api?.pluginStorage,
-              typeof localApi?.getLocalPluginStorage === 'function' ? await localApi.getLocalPluginStorage() : api?.safeLocalStorage
-            ].filter(st => st && typeof st.getItem === 'function' && typeof st.setItem === 'function');
-            for (const store of stores) {
-              const regRaw = await store.getItem(routeKey);
-              if (regRaw) {
-                const reg = typeof regRaw === 'string' ? JSON.parse(regRaw) : regRaw;
-                const existing = reg?.entries?.[executionScope.scopeKey];
-                if (existing?.origin === 'transition_pending') {
-                  reg.entries[executionScope.scopeKey] = {
-                    ...existing,
-                    mode: existing.pendingTargetMode || 'server_only',
-                    origin: 'user_scope_setting',
-                    pendingTargetMode: null,
-                    updatedAt: Date.now(),
-                    source: 'server_turn_sync_completed'
-                  };
-                  await store.setItem(routeKey, JSON.stringify(reg));
-                }
-              }
-            }
-          } catch (_) {}
+          // Finalize through the routing writer (pluginStorage primary, backups, server
+          // publication). Writing each store directly left the copies and the server apart.
+          try { await MemorySuiteStorageBridge.finalizeScopeTransition?.({ ...executionScope, scopeId: executionScope.scopeKey }, 'server_turn_sync_completed'); }
+          catch (error) { warn('scope transition finalize after server sync failed', error); }
         }
         Runtime.lastMaintenanceOutcome = result;
         pushActivityLog('server_sync_completed', `서버 모드 대화 기억 동기화를 완료했습니다. (신규: ${syncOperation.inserted || 0}턴, 갱신: ${syncOperation.updated || 0}턴)`, {

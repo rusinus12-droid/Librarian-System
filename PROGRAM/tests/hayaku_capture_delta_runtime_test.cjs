@@ -319,7 +319,7 @@ test('timed-out raw provider write stays indeterminate until actual late complet
   store.setItem=async(key,value)=>{if(hold&&key.startsWith(PREFIX)){entered=true;await held;}return set(key,value);};
   const {h,response}=await start(store);try{
     hold=true;await emit(h,response);await waitFor(()=>entered,'raw underlying provider entered');
-    await waitFor(()=>h.hayaku.lastDebug().lastCaptureReceipt?.storageState==='indeterminate','raw outcome timeout');
+    await waitFor(()=>h.hayaku.lastDebug().lastCaptureReceipt?.storageState==='indeterminate','raw outcome timeout',25000); // storage I/O bound is 16s since the +10s recall extension
     assert.equal(h.hayaku.lastDebug().lastCaptureReceipt.rawDurable,false);assert.equal([...store.values.keys()].filter(key=>key.startsWith(PREFIX)).length,0);
     assert.equal(h.chat.message[1].data,response);
     release();await waitFor(()=>[...store.values.keys()].some(key=>key.startsWith(PREFIX))&&h.hayaku.lastDebug().captureObservationQueue.pending===0,'actual late physical completion');

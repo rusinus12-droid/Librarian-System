@@ -3650,7 +3650,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     try {
       const generation=wholeDataInventoryEpoch,plugin=rawPluginStorage();
       let device;try {device=await rawDeviceStorage({strict:true});} catch (_) {return modePublicationView('unavailable');}
-      const stores=[...new Set([plugin,device].filter(Boolean))];
+      let primaryRaw=null;
+      try {primaryRaw=plugin?await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY):null;} catch (_) {return modePublicationView('unavailable');}
+      const stores=(plugin&&(primaryRaw!=null&&primaryRaw!==''||!device))?[plugin]:[device].filter(Boolean);
       if (!stores.length) return modePublicationView('unavailable');
       let copies;try {copies=[];for (const store of stores) copies.push(await store.getItem(SCOPE_ROUTING_LOCAL_KEY));}
       catch (_) {return modePublicationView('unavailable');}
@@ -3758,14 +3760,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       registry.updatedAt = Date.now();
       if (modePublicationEnabled) registry.modePublication = await createModePublication(registry, registry.modePublication, detail);
       const payload = JSON.stringify(registry);
-      let success = false;
+      // Success means the primary pluginStorage copy reads back exactly. The device
+      // copy is an emergency backup and only decides success when pluginStorage is absent.
+      let pluginSuccess = false, deviceSuccess = false;
       const pluginStore = rawPluginStorage();
       if (pluginStore?.setItem) {
         try {
           const result = await pluginStore.setItem(SCOPE_ROUTING_LOCAL_KEY, payload);
           if (result !== false) {
             const readback = await pluginStore.getItem?.(SCOPE_ROUTING_LOCAL_KEY);
-            success = String(readback || '') === payload;
+            pluginSuccess = String(readback || '') === payload;
           }
         } catch (error) { reportStorageFailure('scope.routing.plugin.write', error); }
       }
@@ -3774,9 +3778,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         try {
           const result = await deviceStore.setItem(SCOPE_ROUTING_LOCAL_KEY, payload);
           const readback = await deviceStore.getItem?.(SCOPE_ROUTING_LOCAL_KEY);
-          if (result !== false && String(readback || '') === payload) success = true;
+          deviceSuccess = result !== false && String(readback || '') === payload;
         } catch (error) { reportStorageFailure('scope.routing.device.write', error); }
       }
+      const success = pluginStore?.setItem ? pluginSuccess : deviceSuccess;
       if (!success) {
         state.scopeRouting.registry = null;
         state.scopeRouting.registryLoaded = false;
@@ -3817,18 +3822,27 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const revalidating = !force && loaded;
     const generation = scopeRegistryGeneration;
     const task = (async () => {
-      let pluginRaw = null, deviceRaw = null, serverRaw = null;
+      // The pluginStorage copy is the routing table. The device copy and the server
+      // copy are emergency sources only: they are read when the plugin copy is lost,
+      // and the recovered table is written back to the plugin copy.
+      let pluginRaw = null, deviceRaw = null, serverRaw = null, source = 'plugin';
       const pluginStore = rawPluginStorage();
       try { pluginRaw = await pluginStore?.getItem?.(SCOPE_ROUTING_LOCAL_KEY); } catch (error) { reportStorageFailure('storage.scope.route.read.plugin', error); }
-      const deviceStore = await rawDeviceStorage().catch(() => null);
-      try { deviceRaw = await deviceStore?.getItem?.(SCOPE_ROUTING_LOCAL_KEY); } catch (error) { reportStorageFailure('storage.scope.route.read.device', error); }
-      if (tryServer && !pluginRaw && !deviceRaw) {
+      if (!pluginRaw) {
+        source = 'device';
+        const deviceStore = await rawDeviceStorage().catch(() => null);
+        try { deviceRaw = await deviceStore?.getItem?.(SCOPE_ROUTING_LOCAL_KEY); } catch (error) { reportStorageFailure('storage.scope.route.read.device', error); }
+      }
+      if (!pluginRaw && !deviceRaw && (tryServer || (!state.scopeRouting.serverRestoreAttempted && !!dataBinding?.url))) {
+        source = 'server';
+        state.scopeRouting.serverRestoreAttempted = true;
         try {
           const remote = await remoteGet('plugin', SCOPE_ROUTING_SERVER_KEY, { allowPluginOnly: true });
           if (remote.exists === true) serverRaw = remote.value;
         } catch (error) { reportStorageFailure('storage.scope.route.read.server', error); }
       }
-      const registry = mergeScopeRegistries(serverRaw, pluginRaw, deviceRaw);
+      const registry = mergeScopeRegistries(pluginRaw || deviceRaw || serverRaw);
+      if (!pluginRaw && (deviceRaw || serverRaw) && Object.keys(registry.entries || {}).length) scheduleScopeRegistryRestore(registry, source);
       // A local registry write that landed meanwhile is newer than this read.
       if (generation !== scopeRegistryGeneration && state.scopeRouting.registryLoaded && state.scopeRouting.registry) return state.scopeRouting.registry;
       state.scopeRouting.registryCheckedAt = Date.now();
@@ -3840,6 +3854,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     })();
     state.scopeRouting.registryLoading = task;
     try { return await task; } finally { state.scopeRouting.registryLoading = null; }
+  };
+
+  // Writes a table recovered from an emergency copy back through the normal writer.
+  // At most one restore runs at a time and a failed restore waits a minute.
+  const scheduleScopeRegistryRestore = (registry, source) => {
+    const routing = state.scopeRouting;
+    if (routing.restoreInFlight || Date.now() - Number(routing.restoreAttemptAt || 0) < 60000) return;
+    routing.restoreInFlight = true; routing.restoreAttemptAt = Date.now();
+    setTimeout(() => {
+      void writeScopeRegistryLocal(registry, { reason: source === 'server' ? 'routing_restored_server' : 'routing_restored_device' })
+        .then(() => setStatus('scope_routes_restored', '', { source }))
+        .catch(error => reportStorageFailure('storage.scope.route.restore.' + source, error))
+        .finally(() => { routing.restoreInFlight = false; });
+    }, 0);
   };
 
   const synchronizeScopeRegistryToServer = (...args) => withOwnerOperation({kind:'storage_operation',operation:'synchronizeScopeRegistryToServer'}, () => synchronizeScopeRegistryToServerImpl(...args));
@@ -5015,7 +5043,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         updatedAt:Math.max(Date.now(),Number(oldGlobal.updatedAt||0)+1),source:'global_allchat_verified'};
       registry.legacyGlobalModeImported=true;registry.globalMigrationRemoteHistory=inventory.remoteRequired;
       let saved=await writeScopeRegistryLocal(registry,{reason:'global_allchat_commit',phase:'pending'});
-      for(const store of [...new Set(Object.values(inventory.stores).filter(Boolean))]){
+      for(const store of [inventory.stores.plugin||inventory.stores.local].filter(Boolean)){
         const raw=await store.getItem(SCOPE_ROUTING_LOCAL_KEY);
         if(globalCanonical(globalReadRegistry(raw,'commit',[]).entries)!==globalCanonical(saved.entries))throw globalModeError('MEMORY_SUITE_GLOBAL_REGISTRY_READBACK_FAILED');
       }
@@ -5027,7 +5055,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if(remote.exists!==true||globalCanonical(parseScopeRegistry(remote.value).entries)!==globalCanonical(saved.entries))throw globalModeError('MEMORY_SUITE_GLOBAL_PUBLICATION_READBACK_FAILED');
       }
       saved=await writeScopeRegistryLocal(saved,{reason:'global_allchat_verified',phase:'settled'});
-      for(const store of [...new Set(Object.values(inventory.stores).filter(Boolean))]){
+      for(const store of [inventory.stores.plugin||inventory.stores.local].filter(Boolean)){
         if(String(await store.getItem(SCOPE_ROUTING_LOCAL_KEY))!==JSON.stringify(saved))throw globalModeError('MEMORY_SUITE_GLOBAL_REGISTRY_READBACK_FAILED');
       }
       if(inventory.remoteRequired){
@@ -9396,7 +9424,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(!row||row.characterId!==identity.characterId||row.chatId!==identity.chatId)readonlyRouteFail('READ_ROUTE_SCOPE_UNAVAILABLE');
     const scope={characterId:identity.characterId,chatId:identity.chatId,scopeKey:readonlyRouteId(row.scopeKey)};
     const candidates=[],modePublicationCopies=[];let legacyModeImported=false;
-    for(const store of [...new Set([plugin,device].filter(Boolean))]){
+    // One authoritative copy: pluginStorage, or the device backup when it is missing.
+    const primaryRouteRaw=await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY);
+    for(const store of (primaryRouteRaw!=null&&primaryRouteRaw!==''||!device)?[plugin]:[device]){
       const raw=await store.getItem(SCOPE_ROUTING_LOCAL_KEY);modePublicationCopies.push(raw);if(raw==null||raw==='')continue;
       const parsed=readonlyRouteObject(raw);
       if(parsed.schema!==SCOPE_ROUTING_SCHEMA||parsed.namespace!==namespace||!parsed.entries||typeof parsed.entries!=='object'||Array.isArray(parsed.entries))readonlyRouteFail('READ_ROUTE_STORAGE_UNAVAILABLE');

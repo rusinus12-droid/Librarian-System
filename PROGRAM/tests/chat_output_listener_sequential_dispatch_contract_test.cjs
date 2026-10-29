@@ -43,18 +43,21 @@ test('Flashback request-local recall reads use their own budget, separate from c
 
 test('Flashback returns never-sent embedding attempts to pending instead of uncertain',()=>{
  const source=read('Flashback_Memory.js');
- assert.match(source,/const neverSent = \/before wire submission\/\.test\(text\(error\?\.message \|\| ''\)\) && !proof\?\.submissionAttempted/);
+ // Never-sent is proven by the ledger: no request was added and none is pending.
+ assert.match(source,/const neverSent = \(\/before wire submission\/\.test\(text\(error\?\.message \|\| ''\)\) \|\| reason === 'FLASHBACK_DEADLINE'\)\n\s*&& Number\(operationLedger\?\.snapshot\(\)\.requestCount \|\| 0\) === initialRequests\n\s*&& !Number\(operationLedger\?\.snapshot\(\)\.pendingRequests \|\| 0\);/);
  assert.match(source,/deferred \? \{ \.\.\.work, status: 'pending'/);
 });
 
 test('LIBRA branch reconcile stays a hard gate with a cold-start sized step limit',()=>{
  const source=read('LIBRA.js'),i=source.indexOf("'before_branch_reconcile',");
- assert.ok(i>0);assert.match(source.slice(i,i+600),/\n\s*6000\n\s*\);/);
+ assert.ok(i>0);assert.match(source.slice(i,i+800),/\n\s*6000 \+ RECALL_TIMEOUT_EXTENSION_MS\n\s*\);/);
+ assert.match(source,/const RECALL_TIMEOUT_EXTENSION_MS = 10000;/);
 });
 
 test('Flashback maintenance never reads an incomplete inspection or missing chunks as healthy',()=>{
  const source=read('Flashback_Memory.js');
- assert.match(source,/const isHealthy = inspectionComplete && \(plan\.healthy/);
+ assert.match(source,/const isHealthy = presentation\.tone === 'ok';/);
+ assert.match(source,/if \(incomplete\) return \{ label: '점검 미완료', tone: 'warn'/,'an incomplete inspection is never the ok tone');
  assert.match(source,/const directExact = direct && direct\.complete !== false/);
  assert.match(source,/group\.complete !== false && sameMaintenanceTurnText\(/);
  assert.match(source,/const embeddingQueue = configuredModelEmbedding\(admission\.settings\)/,'server sync also drains pending embedding');
@@ -63,4 +66,13 @@ test('Flashback maintenance never reads an incomplete inspection or missing chun
  assert.match(source,/\.legend i\.w\{border-color:var\(--warn\);border-radius:2px;transform:rotate\(45deg\)\}/,'only the marker rotates');
  const server=fs.readFileSync(path.join(__dirname,'..','server','core','flashback-scope-health.cjs'),'utf8');
  assert.match(server,/MAX_VALUE_BYTES = 8 \* 1024 \*\* 2, MAX_TOTAL_BYTES = 32 \* 1024 \*\* 2/);
+});
+
+test('Flashback fails over a starved listener on a timer and defers append-only worldline commits past recall',()=>{
+ const source=read('Flashback_Memory.js');
+ assert.match(source,/const FLASHBACK_CHAT_OUTPUT_HEALTH_GRACE_MS = 30000;/);
+ assert.match(source,/void failoverSilentFlashbackChatOutputBackend\(\{ \.\.\.pendingHealth, trigger: 'after_request_timer' \}\)/);
+ assert.match(source,/deferAppendOnlyWrite: true,/);
+ assert.match(source,/options\.deferAppendOnlyWrite === true && allowRetirement && !newlyRetired\.length\n\s*&& !quarantinedResponses\.length && !restoredKeys\.size && !retiredLifecycleChanges/);
+ assert.match(source,/if \(worldlineSync\?\.deferredWrite === true\) \{/);
 });

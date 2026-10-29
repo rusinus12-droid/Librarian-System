@@ -3583,8 +3583,18 @@
       }
     }
     const resolved = resolveSgaCurrentTurn(messages);
-    const inputMessage = messages[resolved.requestIndex];
-    if (!nativeTurnMessageId(inputMessage)) throw libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
+    let inputMessage = messages[resolved.requestIndex];
+    if (!nativeTurnMessageId(inputMessage)) {
+      // A preset "Current Input" wrapper carries the text but no host message id.
+      // Bind to the one native user message with that exact text, never a guess.
+      const comparable = value => text(value).replace(/\s+/g, ' ').trim();
+      const wanted = comparable(contentToText(inputMessage?.content ?? ''));
+      const bodyOf = message => comparable(contentToText(message?.content ?? ''));
+      const native = wanted ? messages.filter(message => nativeTurnMessageId(message) && currentTurnRole(message) === 'user'
+        && typeof message.content === 'string' && bodyOf(message).length >= 8 && wanted.includes(bodyOf(message))) : [];
+      if (native.length !== 1) throw libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
+      inputMessage = native[0];
+    }
     if (typeof inputMessage.content !== 'string') throw libEvidenceError('LIB_READ_NATIVE_CONTENT_UNSUPPORTED');
     return { schema: 'gradia.native-read-set.v1', currentInputRef: nativeTurnRef(inputMessage), selections,
       currentInput: contentToText(inputMessage.content), query: baseRecent.latestUser, turns: [...selected.values()] };
@@ -29824,6 +29834,10 @@ function createGradiaEvidenceBudget({ digest }) {
         const selection = Object.freeze({ corpusBytes, corpusItems: corpus.length, selectedItems: selected.length,
           omittedItems: candidates.length - selected.length, ...(multipleOwners ? {deduplicatedItems,owners:allowedOwners.filter(owner=>corpus.some(item=>item.owner===owner))} : {}),
           truncated: false, promptByteLimit: evidenceBudget.maxBytes, promptCharLimit:evidenceBudget.maxChars, readSource,
+          // Display-only digest of what reached the model, for the run results page.
+          items: Object.freeze(selected.map(item => Object.freeze({ owner: String(item.owner || ''), source: String(item.source || ''),
+            key: String(item.key || '').slice(0, 160), chars: String(item.content || '').length,
+            preview: String(item.content || '').replace(/\s+/g, ' ').trim().slice(0, 220) }))),
           reason: selected.length === candidates.length ? 'all_complete_items' : 'complete_items_prompt_budget' });
         const assertCurrent = async () => {
           try { await assertBinding(); if (await guarded(() => assertReadCurrent()) !== true) fail('LIB_READ_STALE'); await assertBinding(); check(record); return true; }
@@ -29947,7 +29961,9 @@ function createGradiaEvidenceBudget({ digest }) {
         }
       }
       const key = '__memory_suite_internal_scope_routes_v1__:'+owner;
-      const raws = [parse(await API.pluginStorage.getItem(key)),parse(await device?.getItem?.(key))];
+      // pluginStorage is the routing table; the device copy only when it is missing.
+      const primaryRegistry = parse(await API.pluginStorage.getItem(key));
+      const raws = [primaryRegistry ?? parse(await device?.getItem?.(key))];
       const entries = {}; let imported = false;
       for (const registry of raws) if (registry) {
         if (registry.schema !== 'memory-suite.scope-routing.v1' || registry.namespace !== owner
@@ -33649,14 +33665,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const registry = mergeScopeRegistries(await loadScopeRegistry(true, false), requested);
       registry.updatedAt = Date.now();
       const payload = JSON.stringify(registry);
-      let success = false;
+      // Success means the primary pluginStorage copy reads back exactly. The device
+      // copy is an emergency backup and only decides success when pluginStorage is absent.
+      let pluginSuccess = false, deviceSuccess = false;
       const pluginStore = rawPluginStorage();
       if (pluginStore?.setItem) {
         try {
           const result = await pluginStore.setItem(SCOPE_ROUTING_LOCAL_KEY, payload);
           if (result !== false) {
             const readback = await pluginStore.getItem?.(SCOPE_ROUTING_LOCAL_KEY);
-            success = String(readback || '') === payload;
+            pluginSuccess = String(readback || '') === payload;
           }
         } catch (error) { reportStorageFailure('scope.routing.plugin.write', error); }
       }
@@ -33665,9 +33683,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         try {
           const result = await deviceStore.setItem(SCOPE_ROUTING_LOCAL_KEY, payload);
           const readback = await deviceStore.getItem?.(SCOPE_ROUTING_LOCAL_KEY);
-          if (result !== false && String(readback || '') === payload) success = true;
+          deviceSuccess = result !== false && String(readback || '') === payload;
         } catch (error) { reportStorageFailure('scope.routing.device.write', error); }
       }
+      const success = pluginStore?.setItem ? pluginSuccess : deviceSuccess;
       if (!success) {
         state.scopeRouting.registry = null;
         state.scopeRouting.registryLoaded = false;
@@ -33689,18 +33708,27 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!force && state.scopeRouting.registryLoaded && state.scopeRouting.registry) return state.scopeRouting.registry;
     if (!force && state.scopeRouting.registryLoading) return await state.scopeRouting.registryLoading;
     const task = (async () => {
-      let pluginRaw = null, deviceRaw = null, serverRaw = null;
+      // The pluginStorage copy is the routing table. The device copy and the server
+      // copy are emergency sources only: they are read when the plugin copy is lost,
+      // and the recovered table is written back to the plugin copy.
+      let pluginRaw = null, deviceRaw = null, serverRaw = null, source = 'plugin';
       const pluginStore = rawPluginStorage();
       try { pluginRaw = await pluginStore?.getItem?.(SCOPE_ROUTING_LOCAL_KEY); } catch (error) { reportStorageFailure('storage.scope.route.read.plugin', error); }
-      const deviceStore = await rawDeviceStorage().catch(() => null);
-      try { deviceRaw = await deviceStore?.getItem?.(SCOPE_ROUTING_LOCAL_KEY); } catch (error) { reportStorageFailure('storage.scope.route.read.device', error); }
-      if (tryServer && !pluginRaw && !deviceRaw) {
+      if (!pluginRaw) {
+        source = 'device';
+        const deviceStore = await rawDeviceStorage().catch(() => null);
+        try { deviceRaw = await deviceStore?.getItem?.(SCOPE_ROUTING_LOCAL_KEY); } catch (error) { reportStorageFailure('storage.scope.route.read.device', error); }
+      }
+      if (!pluginRaw && !deviceRaw && (tryServer || (!state.scopeRouting.serverRestoreAttempted && !!dataBinding?.url))) {
+        source = 'server';
+        state.scopeRouting.serverRestoreAttempted = true;
         try {
           const remote = await remoteGet('plugin', SCOPE_ROUTING_SERVER_KEY, { allowPluginOnly: true });
           if (remote.exists === true) serverRaw = remote.value;
         } catch (error) { reportStorageFailure('storage.scope.route.read.server', error); }
       }
-      const registry = mergeScopeRegistries(serverRaw, pluginRaw, deviceRaw);
+      const registry = mergeScopeRegistries(pluginRaw || deviceRaw || serverRaw);
+      if (!pluginRaw && (deviceRaw || serverRaw) && Object.keys(registry.entries || {}).length) scheduleScopeRegistryRestore(registry, source);
       state.scopeRouting.registry = registry;
       state.scopeRouting.registryLoaded = true;
       state.scopeRouting.routeCache.clear();
@@ -33708,6 +33736,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     })();
     state.scopeRouting.registryLoading = task;
     try { return await task; } finally { state.scopeRouting.registryLoading = null; }
+  };
+
+  // Writes a table recovered from an emergency copy back through the normal writer.
+  // At most one restore runs at a time and a failed restore waits a minute.
+  const scheduleScopeRegistryRestore = (registry, source) => {
+    const routing = state.scopeRouting;
+    if (routing.restoreInFlight || Date.now() - Number(routing.restoreAttemptAt || 0) < 60000) return;
+    routing.restoreInFlight = true; routing.restoreAttemptAt = Date.now();
+    setTimeout(() => {
+      void writeScopeRegistryLocal(registry, { reason: source === 'server' ? 'routing_restored_server' : 'routing_restored_device' })
+        .then(() => setStatus('scope_routes_restored', '', { source }))
+        .catch(error => reportStorageFailure('storage.scope.route.restore.' + source, error))
+        .finally(() => { routing.restoreInFlight = false; });
+    }, 0);
   };
 
   const synchronizeScopeRegistryToServer = (...args) => withOwnerOperation({kind:'storage_operation',operation:'synchronizeScopeRegistryToServer'}, () => synchronizeScopeRegistryToServerImpl(...args));
@@ -33975,7 +34017,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     const registry = parseScopeRegistry(await loadScopeRegistry(true, false));
     const origin = String(persistOptions.origin || 'user_explicit');
-    registry.entries[scope.scopeId] = { ...(registry.entries[scope.scopeId] || {}), ...scope, mode: target, origin, updatedAt: Math.max(Date.now(),Number(registry.entries[scope.scopeId]?.updatedAt || 0)+1), source: String(persistOptions.source || 'user_scope_setting') };
+    registry.entries[scope.scopeId] = { ...(registry.entries[scope.scopeId] || {}), ...scope, mode: target, origin, updatedAt: Math.max(Date.now(),Number(registry.entries[scope.scopeId]?.updatedAt || 0)+1), source: String(persistOptions.source || 'user_scope_setting'), ...(persistOptions.clearPendingTarget===true?{pendingTargetMode:null}:{}) };
     registry.legacyGlobalModeImported = true;
     const saved = await writeScopeRegistryLocal(registry);
     if (saved.entries[scope.scopeId]?.mode !== target) throw Object.assign(new Error('memory_suite_mode_readback_mismatch'),{code:'MEMORY_SUITE_MODE_READBACK_MISMATCH'});
@@ -37039,9 +37081,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const routeWitness = async () => {
       const currentUrl = await readCurrentUrl();
       assertConnectionState(currentUrl);
-      const plugin = rawPluginStorage(), device = await rawDeviceStorage({strict:true});
-      if (!plugin?.getItem || !device?.getItem) reject('LIB_READ_ROUTE_UNVERIFIED');
-      const raws = [await plugin.getItem('__memory_suite_internal_scope_routes_v1__:'+owner),await device.getItem('__memory_suite_internal_scope_routes_v1__:'+owner)];
+      const plugin = rawPluginStorage();
+      if (!plugin?.getItem) reject('LIB_READ_ROUTE_UNVERIFIED');
+      // pluginStorage holds the routing table; the device copy is an emergency
+      // source read only when the plugin copy is missing.
+      const primaryRoute = await plugin.getItem('__memory_suite_internal_scope_routes_v1__:'+owner);
+      const hasPrimaryRoute = primaryRoute != null && primaryRoute !== '';
+      const device = hasPrimaryRoute ? null : await rawDeviceStorage({strict:true});
+      const raws = [hasPrimaryRoute ? primaryRoute : await device?.getItem?.('__memory_suite_internal_scope_routes_v1__:'+owner)];
       for (const raw of raws) if (raw != null && raw !== '') {
         let parsed; try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { reject('LIB_READ_ROUTE_UNVERIFIED'); }
         if (parsed?.schema !== SCOPE_ROUTING_SCHEMA || !parsed.entries || typeof parsed.entries !== 'object' || Array.isArray(parsed.entries)
@@ -37297,9 +37344,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const routeWitness = async () => {
       const currentUrl = await readCurrentUrl();
       assertConnectionState(currentUrl);
-      const plugin = rawPluginStorage(), device = await rawDeviceStorage({strict:true});
-      if (!plugin?.getItem || !device?.getItem) reject('HEALTH_ROUTE_UNVERIFIED');
-      const raws = [await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY),await device.getItem(SCOPE_ROUTING_LOCAL_KEY)];
+      const plugin = rawPluginStorage();
+      if (!plugin?.getItem) reject('HEALTH_ROUTE_UNVERIFIED');
+      // pluginStorage holds the routing table; the device copy is an emergency
+      // source read only when the plugin copy is missing.
+      const primaryRoute = await plugin.getItem(SCOPE_ROUTING_LOCAL_KEY);
+      const hasPrimaryRoute = primaryRoute != null && primaryRoute !== '';
+      const device = hasPrimaryRoute ? null : await rawDeviceStorage({strict:true});
+      const raws = [hasPrimaryRoute ? primaryRoute : await device?.getItem?.(SCOPE_ROUTING_LOCAL_KEY)];
       for (const raw of raws) if (raw != null && raw !== '') {
         let parsed; try { parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { reject('HEALTH_ROUTE_UNVERIFIED'); }
         if (parsed?.schema !== SCOPE_ROUTING_SCHEMA || !parsed.entries || typeof parsed.entries !== 'object' || Array.isArray(parsed.entries)
@@ -37585,6 +37637,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     getScopeExecutionPolicy,
     getRecoveryState: async scope => await recoveryLockForScope(scope || await resolveCurrentScope(true)),
     setScopeMode: async (scope, mode, modeOptions = {}) => { requireOperationalMode(mode); return await withModeConfiguration(()=>scopedSetModeSafely(mode, { ...(modeOptions && typeof modeOptions === 'object' ? modeOptions : {}), scope })); },
+    // Completes a pending scope transition through the routing writer and the server
+    // publication. It never starts a migration: only a row still marked
+    // transition_pending is finalized, to its recorded target mode.
+    finalizeScopeTransition: async (scopeInput, source = 'transition_completed') => await withModeConfiguration(async () => {
+      const scope = normalizeScopeDescriptor(scopeInput);
+      const row = parseScopeRegistry(await loadScopeRegistry(true, false)).entries[scope.scopeId];
+      if (!scope.scopeId || row?.origin !== 'transition_pending') return false;
+      await persistScopedMode(row.pendingTargetMode || MODE_SERVER_ONLY, scope, { origin: 'user_scope_setting', source, clearPendingTarget: true });
+      return true;
+    }),
     ensureHandoffReady: scopedEnsureHandoffReady,
     verifyNativeBranchSourceDurability,
     serverGet: scopedServerGet,
@@ -39951,6 +40013,40 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 #sga-rp-gui-root .proto-bar{display:none}
 #sga-rp-gui-root > .stage{height:100%;padding:16px;align-items:center;overflow:hidden;background:transparent}
 #sga-rp-gui-root > .stage > .frame{height:min(830px,100%);min-height:0}
+#sga-rp-gui-root .gx-results{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start}
+#sga-rp-gui-root .gx-col{display:grid;gap:10px;min-width:0}
+#sga-rp-gui-root .gx-status{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;padding:10px 12px;border:1px solid var(--border2);border-radius:12px;background:var(--surface2)}
+#sga-rp-gui-root .gx-status--warn{border-color:rgba(245,180,80,.55)}
+#sga-rp-gui-root .gx-sec{border:1px solid var(--border2);border-radius:12px;background:var(--surface);min-width:0}
+#sga-rp-gui-root .gx-sec > summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;padding:10px 12px;cursor:pointer;list-style:none}
+#sga-rp-gui-root .gx-sec > summary::-webkit-details-marker{display:none}
+#sga-rp-gui-root .gx-sec > summary::before{content:'▸';color:var(--text2)}
+#sga-rp-gui-root .gx-sec[open] > summary::before{content:'▾'}
+#sga-rp-gui-root .gx-sec__body{padding:0 12px 12px;display:grid;gap:8px;min-width:0}
+#sga-rp-gui-root .gx-sec__body h4{margin:6px 0 0;font-size:12px;color:var(--text2)}
+#sga-rp-gui-root .gx-meta{color:var(--text2);font-size:12px;overflow-wrap:anywhere}
+#sga-rp-gui-root .gx-empty{margin:0;color:var(--text2);font-size:12.5px}
+#sga-rp-gui-root .gx-text{margin:0;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
+#sga-rp-gui-root .gx-draft{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;line-height:1.75;font-size:13.5px;max-height:560px;overflow:auto;padding:12px;border-radius:10px;background:rgba(5,9,17,.45)}
+#sga-rp-gui-root .gx-draft--snippet{max-height:220px;font-size:13px}
+#sga-rp-gui-root .gx-list{margin:0;padding-left:18px;display:grid;gap:4px;font-size:13px;line-height:1.55}
+#sga-rp-gui-root .gx-list li{overflow-wrap:anywhere}
+#sga-rp-gui-root .gx-list li > .gx-meta{margin-left:6px}
+#sga-rp-gui-root .gx-owner{display:grid;gap:6px;padding:8px 10px;border-radius:10px;background:rgba(124,156,255,.06)}
+#sga-rp-gui-root .gx-owner__head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+#sga-rp-gui-root .gx-tag{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;background:rgba(139,92,255,.18);font-size:11.5px}
+#sga-rp-gui-root .gx-edit{display:grid;gap:6px;padding:8px 0;border-top:1px solid var(--border2)}
+#sga-rp-gui-root .gx-edit:first-child{border-top:0}
+#sga-rp-gui-root .gx-edit__head{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
+#sga-rp-gui-root .gx-stage{display:grid;gap:10px;min-width:0}
+#sga-rp-gui-root [data-page="results"] [data-subpanel]{min-width:0;overflow-x:hidden}
+@container app (max-width:900px){#sga-rp-gui-root .gx-results{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:900px){#sga-rp-gui-root .gx-results{grid-template-columns:minmax(0,1fr)}}
+#sga-rp-gui-root .dialog,#sga-rp-gui-root .dialog *{box-sizing:border-box}
+#sga-rp-gui-root .dialog > *,#sga-rp-gui-root .dialog section,#sga-rp-gui-root .dialog [data-input-choice-card] > *{min-width:0;max-width:100%}
+#sga-rp-gui-root .dialog pre.textarea,#sga-rp-gui-root .dialog textarea.textarea{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;overflow-x:hidden}
+#sga-rp-gui-root .dialog .cluster,#sga-rp-gui-root .dialog [data-input-choice-card] > div{flex-wrap:wrap}
+#sga-rp-gui-root .dialog .badge{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #sga-rp-gui-root .skill-row{grid-template-columns:minmax(0,1fr) auto}
 #sga-rp-gui-root .skill-row > div{min-width:0;overflow-wrap:anywhere}
 #sga-rp-gui-root .skill-row > .cluster{max-width:230px;justify-content:flex-end}
@@ -43538,6 +43634,96 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const loreSummary=page.querySelector('[data-subpanel="sum"] .choice:last-child span');if(loreSummary)loreSummary.textContent='자동 · 시작 '+(mockupRuntime().loreRerankerTopK??DEFAULT_STAGE_LORE_RERANK_TOP_K)+'개 · 필요 시 확장';
     mockupRenderSkills();
   };
+  // ---- run results: readable draft, grouped materials, memory owners, AIDE analysis/edits ----
+  const resultsDraftText = draft => text(typeof draft === 'string' ? draft : draft?.rp_text || draft?.text || draft?.body || '').trim();
+  const resultsList = (items, empty = '없음') => {
+    const rows = (Array.isArray(items) ? items : []).map(item => text(typeof item === 'string' ? item : item?.text || item?.summary || JSON.stringify(item))).filter(Boolean);
+    return rows.length ? guiEl('ul', { class: 'gx-list' }, rows.map(row => guiEl('li', { text: row }))) : guiEl('p', { class: 'gx-empty', text: empty });
+  };
+  const resultsSection = (title, meta, children, open = true) => {
+    const node = guiEl('details', { class: 'gx-sec' }, [
+      guiEl('summary', {}, [guiEl('strong', { text: title }), meta ? guiEl('span', { class: 'gx-meta', text: meta }) : null]),
+      guiEl('div', { class: 'gx-sec__body' }, children)
+    ]);
+    node.open = open;
+    return node;
+  };
+  const resultsDraftSection = (draft, title = '초안', open = true) => {
+    const body = resultsDraftText(draft);
+    return resultsSection(title, body ? `${body.length.toLocaleString('ko-KR')}자` : '없음',
+      [guiEl('div', { class: 'gx-draft', text: body || '(초안 없음)' })], open);
+  };
+  const RESULTS_MEMORY_OWNERS = Object.freeze([['libra', 'LIBRA'], ['hayaku', 'HAYAKU'], ['flashback', 'Flashback']]);
+  const resultsMemorySection = () => {
+    const meta = Runtime.finalDraftMeta || {};
+    const selection = libReadSelection;
+    const items = Array.isArray(selection?.items) ? selection.items : [];
+    const status = meta.externalEvidence === true && items.length
+      ? `기억 ${items.length}개 사용`
+      : `미사용 · ${meta.libReadReason || meta.libReadStatus || (LibReadConnection.status().state === 'connected' ? '이번 실행 기록 없음' : '기억 연결 없음')}`;
+    const groups = RESULTS_MEMORY_OWNERS.map(([owner, label]) => {
+      const rows = items.filter(item => item.owner === owner);
+      return guiEl('div', { class: 'gx-owner' }, [
+        guiEl('div', { class: 'gx-owner__head' }, [guiEl('strong', { text: label }), guiEl('span', { class: 'gx-meta', text: rows.length ? `${rows.length}개 · ${rows.reduce((sum, row) => sum + row.chars, 0).toLocaleString('ko-KR')}자` : '사용 안 함' })]),
+        rows.length ? guiEl('ul', { class: 'gx-list' }, rows.map(row => guiEl('li', {}, [
+          row.source || row.key ? guiEl('span', { class: 'gx-tag', text: row.source || row.key }) : null,
+          guiEl('span', { text: row.preview })
+        ]))) : null
+      ]);
+    });
+    return resultsSection('기억 (LIBRA · HAYAKU · Flashback)', status, groups, true);
+  };
+  const resultsMaterialsSections = usage => {
+    if (!usage) return [guiEl('p', { class: 'gx-empty', text: '실행 자료 미조회' })];
+    const refs = Array.isArray(usage.referenceMaterials) ? usage.referenceMaterials : [];
+    const contexts = Array.isArray(usage.contextMaterials) ? usage.contextMaterials : [];
+    const skills = Array.isArray(usage.skillMaterials) ? usage.skillMaterials : [];
+    const refRow = item => guiEl('li', {}, [
+      guiEl('span', { text: item.label || item.id || '자료' }),
+      guiEl('span', { class: 'gx-meta', text: [item.chars ? `${Number(item.chars).toLocaleString('ko-KR')}자` : '', item.evidenceMode === 'relevant_passages' ? `발췌 ${item.passageCount || 0}개` : '', item.injectionProtected ? '보호' : ''].filter(Boolean).join(' · ') })
+    ]);
+    const group = (title, rows, open = false) => resultsSection(title, `${rows.length}개`, rows.length ? [guiEl('ul', { class: 'gx-list' }, rows.map(refRow))] : [guiEl('p', { class: 'gx-empty', text: '없음' })], open);
+    const budget = usage.referenceBudget;
+    return [
+      group('페르소나 · 캐릭터 정의', refs.filter(item => ['persona', 'character_definition', 'author_note'].includes(item.kind))),
+      group('로어', refs.filter(item => item.kind === 'lore'), false),
+      group('기타 참조', refs.filter(item => !['persona', 'character_definition', 'author_note', 'lore'].includes(item.kind))),
+      resultsSection('대화 · 문맥', `${contexts.length}개`, [guiEl('ul', { class: 'gx-list' }, contexts.map(item => guiEl('li', {}, [
+        guiEl('span', { text: item.label || stageMaterialKindLabel(item.kind) }),
+        guiEl('span', { class: 'gx-meta', text: [item.turns ? `${item.turns}턴` : '', item.chars ? `${Number(item.chars).toLocaleString('ko-KR')}자` : ''].filter(Boolean).join(' · ') })
+      ])))], false),
+      resultsSection('Skill · 품질 규칙', `${skills.length} + ${usage.qualityRules?.length || 0}`, [
+        resultsList(skills.map(item => `Skill · ${item.label}`), '선택한 Skill 없음'),
+        resultsList((usage.qualityRules || []).map(item => `기본 규칙 · ${item.label}`), '')
+      ], false),
+      budget ? guiEl('p', { class: 'gx-meta', text: `참조 예산 ${Number(budget.usedChars || 0).toLocaleString('ko-KR')} / ${Number(budget.effectiveBudgetChars || 0).toLocaleString('ko-KR')}자${Number(budget.omittedChars || 0) ? ` · 미주입 ${Number(budget.omittedChars).toLocaleString('ko-KR')}자` : ''}` }) : null
+    ].filter(Boolean);
+  };
+  const resultsAideView = trace => {
+    const parsed = trace?.parsed && typeof trace.parsed === 'object' ? trace.parsed : null;
+    if (!parsed) return guiEl('p', { class: 'gx-empty', text: trace ? text(trace.reason || '분석 기록 없음') : '실행 기록 없음' });
+    const { analysis, directives } = executionResultAnalysisParts(parsed);
+    const edits = Array.isArray(parsed.edits) ? parsed.edits : [];
+    const patch = parsed.patchMeta || {};
+    const opLabel = { insert_after: '뒤에 추가', insert_before: '앞에 추가', replace: '교체', delete: '삭제', rewrite: '다시 쓰기' };
+    return guiEl('div', { class: 'gx-stage' }, [
+      resultsSection('분석', analysis?.summary || parsed.summary ? '' : '요약 없음', [
+        guiEl('p', { class: 'gx-text', text: text(analysis?.summary || parsed.summary || '') || '(요약 없음)' }),
+        guiEl('h4', { text: '지켜야 할 조건' }), resultsList(analysis?.constraints || parsed.constraints),
+        guiEl('h4', { text: '위험 요소' }), resultsList(analysis?.risks || parsed.risks),
+        guiEl('h4', { text: '수정 지시' }), resultsList(directives)
+      ]),
+      resultsSection('초안 수정 내역', `${Number(patch.appliedEdits ?? edits.length)}/${Number(patch.requestedEdits ?? edits.length)} 적용${patch.blockCountBefore ? ` · 문단 ${patch.blockCountBefore}→${patch.blockCountAfter}` : ''}`,
+        edits.length ? edits.map((edit, index) => guiEl('div', { class: 'gx-edit' }, [
+          guiEl('div', { class: 'gx-edit__head' }, [
+            guiEl('span', { class: 'gx-tag', text: `${index + 1}. ${opLabel[edit.operation] || edit.operation || '수정'}${edit.target ? ` · ${edit.target}` : ''}` }),
+            guiEl('span', { class: 'gx-meta', text: text(edit.reason || '') })
+          ]),
+          edit.content ? guiEl('div', { class: 'gx-draft gx-draft--snippet', text: text(edit.content) }) : null
+        ])) : [resultsList(parsed.change_log, parsed.fallback ? `수정 없음 · ${parsed.reason || '폴백'}` : '수정 없음')]),
+      resultsDraftSection(parsed.draft, '수정 후 초안', false)
+    ]);
+  };
   const hydrateMockupProductView = () => {
     const app=Gui.app;if(!app||!Gui.state)return;
     const runtime=mockupRuntime();
@@ -43552,14 +43738,18 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const inputs=results.querySelectorAll('[data-subpanel="i"] .card p');
       if(inputs[0])inputs[0].textContent=assist?.originalInput||assist?.original||'실행 기록 없음';
       if(inputs[1])inputs[1].textContent=assist?.rewritten||assist?.deliveredInput||'실행 기록 없음';
-      const shadow=latestTraceForStage('shadow_act'),usage=stageMaterialUsageForDisplay('shadow_act',shadow),draft=results.querySelector('[data-subpanel="s"] .card p');
-      if(draft)draft.textContent=shadow?.parsed?.draft?resultText(shadow.parsed.draft,6000):'실행 기록 없음';
-      const values=results.querySelectorAll('[data-subpanel="s"] .kv dd');
-      if(values[0]){const button=values[0].querySelector('button');values[0].replaceChildren(document.createTextNode(usage?stageMaterialUsageSummaryText(usage):'실행 자료 미조회'));if(button)values[0].append(button);}
-      if(values[1])values[1].textContent=usage?stageMaterialUsageFullText(usage):'실행 자료 미조회';
-      if(values[2])values[2].textContent=usage?.skillMaterials?String(usage.skillMaterials.length)+'개':'실행 자료 미조회';
-      if(values[3])values[3].textContent=shadow?formatElapsedBrief(shadow.elapsedMs):'실행 전';
-      for(const [key,id] of [['c','aide_character'],['w','aide_world'],['p','aide_plot']]){const trace=latestTraceForStage(id),info=traceStateInfo(trace),panel=results.querySelector('[data-subpanel="'+key+'"]');const title=panel?.querySelector('b'),body=panel?.querySelector('span:not(.banner__icon)');if(title)title.textContent=info.label+(info.elapsed?' · '+info.elapsed:'');if(body)body.textContent=trace?resultText(trace.parsed||trace.reason||info.title,6000):info.title;const banner=panel?.querySelector('.banner');if(banner)banner.classList.toggle('banner--warn',info.className==='warn'||info.className==='danger');}
+      const shadow=latestTraceForStage('shadow_act'),usage=stageMaterialUsageForDisplay('shadow_act',shadow),shadowPanel=results.querySelector('[data-subpanel="s"]');
+      if(shadowPanel){
+        const info=traceStateInfo(shadow);
+        shadowPanel.replaceChildren(guiEl('div',{class:'gx-results'},[
+          guiEl('div',{class:'gx-col'},[
+            guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'SHADOW ACT'}),guiEl('span',{class:'gx-meta',text:info.label+(info.elapsed?' · '+info.elapsed:'')+(shadow?.model?' · '+shadow.model:'')})]),
+            resultsDraftSection(shadow?.parsed?.draft,'작성한 초안',true)
+          ]),
+          guiEl('div',{class:'gx-col'},[guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'사용한 자료'})]),resultsMemorySection(),...resultsMaterialsSections(usage)])
+        ]));
+      }
+      for(const [key,id] of [['c','aide_character'],['w','aide_world'],['p','aide_plot']]){const trace=latestTraceForStage(id),info=traceStateInfo(trace),panel=results.querySelector('[data-subpanel="'+key+'"]');if(!panel)continue;panel.replaceChildren(guiEl('div',{class:'gx-status'+(info.className==='warn'||info.className==='danger'?' gx-status--warn':'')},[guiEl('strong',{text:info.label}),guiEl('span',{class:'gx-meta',text:[info.elapsed,trace?.model].filter(Boolean).join(' · ')||info.title})]),resultsAideView(trace));}
       const fallback=results.querySelector('[data-subtab="w"] .count');if(fallback){const info=traceStateInfo(latestTraceForStage('aide_world'));fallback.hidden=info.className!=='warn';fallback.textContent='폴백';}
     }
     const mode=normalizeChoice(runtime.mode==='full'?'normal':runtime.mode,['off','lite','normal'],'normal');
