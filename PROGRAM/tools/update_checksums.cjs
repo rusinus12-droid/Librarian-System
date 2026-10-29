@@ -11,7 +11,8 @@ const unknownArgs = process.argv.slice(2).filter(arg => arg !== '--distribution'
 if (unknownArgs.length) throw new Error(`unknown_checksum_argument:${unknownArgs.join(',')}`);
 const files = [];
 const forbiddenDistributionData = /(?:^|\/)(?:runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|scope-catalog(?:\.[^/]*)?\.json|[^/]+\.(?:sqlite(?:-(?:wal|shm))?|db|jsonl|log))(?:$|\/)/i;
-const CHECKSUM_EXCLUDED_DIRECTORIES = new Set(['.git', 'node_modules', '__pycache__', '.development']);
+// `.claude` holds local agent sessions and their git worktrees, never release content.
+const CHECKSUM_EXCLUDED_DIRECTORIES = new Set(['.git', 'node_modules', '__pycache__', '.development', '.claude']);
 // A linked worktree has `.git` as a FILE (a `gitdir:` pointer), not a directory, so the directory rule
 // above does not cover it: the pointer was recorded as a checksum row whose bytes depend on where the
 // checkout lives, making the artifact differ per machine. Exclude the name in both shapes.
