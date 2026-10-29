@@ -22,73 +22,15 @@ const between = (start, end) => {
 const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
 const countMatches = (value, pattern) => (value.match(pattern) || []).length;
 
-// Commit 5 GUI state is deliberately common. It must not be captured in the
-// LIBRA/GRADIA family-specific hub state, because switching draft engines must
-// preserve the same scope-bound direction draft.
-for (const field of [
-  'narrativeDirectionDraft', 'narrativeDirectionDraftKey',
-  'narrativeDirectionLoading', 'narrativeDirectionSaving',
-  'narrativeDirectionError', 'narrativeDirectionLoadSerial'
-]) assert.match(source, new RegExp(`${field}:`), `missing common GUI direction state: ${field}`);
+// The 사서의 여백 editor was removed from the almanac: it stored a direction that no response request read.
+// The GUI must not keep a dead editor, while the public storage API below stays intact for existing data.
+for (const name of ['loadNarrativeDirectionDraft', 'saveNarrativeDirectionDraft', 'clearNarrativeDirectionDraft', 'LIBRA_APPROVED_MARGIN_RESET_DIALOG_HTML'])
+  assert.doesNotMatch(source, new RegExp(`const ${name}\\s*=`), `${name} is retired with the margin editor`);
+assert.doesNotMatch(source, /narrativeDirectionDraft:/, 'no GUI draft state remains for the retired margin');
+const story = between('const buildApprovedMockupStory = () =>', 'const buildApprovedManageView =');
+assert.doesNotMatch(story, /사서의 여백|margin-form|directionField/, 'the almanac renders no margin editor');
+assert.ok(countMatches(source, /function getNarrativeDirection\(/g) > 0, 'the public direction API remains');
 
-assert.doesNotMatch(source,/const GUI_FAMILY_HUB_STATE_KEYS\s*=/,'retired family state must not fork the common direction draft');
-assert.match(source,/const activeGuiResponseFamily = \(\) => 'libra'/);
-const route=require('./helpers/libra_navigation_contract.cjs').navigation(source);
-assert.deepEqual(route('story_arc_direction'),{pageId:'narrative',narrativeHubSection:'direction'},'retained direction deep link remains outside the retired response-generation workspace');
-
-const currentPanel = between('const buildWorldManagerNarrativeCurrentPanel =', 'const narrativeDirectionScopeKey =');
-assert.doesNotMatch(currentPanel, /앞으로의 서사 방향 설정|Gui\.narrativeHubSection\s*=\s*'direction'/,
-  'Current Narrative must remain a latest-state reader, not a future-direction editor');
-
-const approved=require('./helpers/libra_approved_gui_contract.cjs');
-const directionBlock=['narrativeDirectionScopeKey','narrativeDirectionPersistedShape','narrativeDirectionSemanticallyEqual','narrativeDirectionDraftFromRecord','narrativeDirectionDraftList','loadNarrativeDirectionDraft','saveNarrativeDirectionDraft','clearNarrativeDirectionDraft'].map(name=>approved.extract(source,name)).join('\n');
-const loadBlock = between('const loadNarrativeDirectionDraft =', 'const saveNarrativeDirectionDraft =');
-const saveBlock = between('const saveNarrativeDirectionDraft =', 'const clearNarrativeDirectionDraft =');
-const clearBlock=approved.extract(source,'clearNarrativeDirectionDraft');
-const panelBlock=approved.extract(source,'buildApprovedMockupStory');
-
-for (const label of [
-  '목표', '완료 조건', '강제하지 말아야 할 전개', '부드러운 선호 (soft preferences)', '잠금'
-]) assert.ok(panelBlock.includes(label), `missing Narrative Direction field: ${label}`);
-assert.match(panelBlock, /원하는 다음 방향을 저장합니다\./);
-assert.match(panelBlock, /현재 사실과 권위가 다르며 사실로 저장되지 않습니다\./);
-assert.doesNotMatch(directionBlock,
-  /LibraMemoryCore\.setStoryArcDestination|storyArcDestinationDraft|planner-narrative-direction:v1|:story-arc/,
-  'the shared GUI must use the public Direction API, not a legacy object or storage key');
-assert.doesNotMatch(directionBlock,
-  /rebuildStoryArc|rebuildWorldManager|refreshGuiSnapshot|nextBeats|다음 전개 제안|\.beats\b/,
-  'Direction editing must not rebuild factual state or revive generated future-beat persistence');
-
-assert.equal(countMatches(loadBlock, /api\.getNarrativeDirection\(/g), 1,
-  'lazy load must call the public getter exactly once');
-assert.equal(countMatches(saveBlock, /api\.setNarrativeDirection\(/g), 1,
-  'save must call the public setter exactly once');
-assert.equal(countMatches(saveBlock, /api\.getNarrativeDirection\(/g), 1,
-  'save must perform one independent durable readback');
-assert.equal(countMatches(clearBlock, /api\.clearNarrativeDirection\(/g), 1,
-  'clear must call the public clearer exactly once');
-assert.equal(countMatches(clearBlock, /api\.getNarrativeDirection\(/g), 1,
-  'clear must perform one independent durable readback');
-assert.match(saveBlock, /narrativeDirectionSemanticallyEqual/,
-  'save must compare its receipt with physical readback semantically');
-assert.match(clearBlock, /narrativeDirectionSemanticallyEqual/,
-  'clear must compare its receipt with physical readback semantically');
-assert.match(panelBlock, /loadNarrativeDirectionDraft\(/,
-  'Direction data must be loaded lazily only after this internal page is rendered');
-
-const narrativePanel = between('const buildWorldManagerNarrativePanel =', 'const stateTrackingSettingsForGui =');
-assert.match(narrativePanel, /Gui\.narrativeHubSection\s*=\s*'current'/,
-  'stale Narrative direction state must migrate back to current facts');
-assert.doesNotMatch(narrativePanel, /buildNarrativeDirectionPanel\(\)/,
-  'the Current Narrative hub must not mount future Planner directives');
-assert.doesNotMatch(narrativePanel, /narrativeDirectionPending/,
-  'the Commit 2 Direction placeholder must be retired');
-
-assert.doesNotMatch(source,/const buildLibraDraftWorkspacePanel\s*=|const buildGradiaDraftWorkspacePanel\s*=/,'retired draft-family workspaces stay removed');
-const storyOwner=approved.extract(source,'buildApprovedMockupStory');
-assert.match(storyOwner,/saveNarrativeDirectionDraft\(/,'the active story owner retains the explicit user direction editor');
-
-require('./helpers/libra_active_book_routes.cjs')(source);
 const baseDirection = (patch = {}) => ({
   schema: 'libra.planner_narrative_direction.v1',
   scopeKey: 'scope-a',
@@ -102,203 +44,6 @@ const baseDirection = (patch = {}) => ({
   updatedAt: 1700000000000,
   ...patch
 });
-
-const makeGuiHarness = () => {
-  const state = {
-    scopeKey: 'scope-a',
-    getCalls: 0,
-    setCalls: 0,
-    clearCalls: 0,
-    renders: 0,
-    statuses: [],
-    setPayload: null,
-    setOptions: null,
-    clearOptions: null,
-    getQueue: [],
-    setResult: null,
-    clearResult: null
-  };
-  const context = {
-    Object, Array, String, Number, Boolean, Math, JSON, Promise,
-    setTimeout, clearTimeout,
-    LibraMemoryCore: {
-      peekSnapshot: () => ({ scope: { scopeKey: state.scopeKey } })
-    },
-    Gui: {
-      narrativeDirectionDraft: null,
-      narrativeDirectionDraftKey: '',
-      narrativeDirectionLoading: false,
-      narrativeDirectionSaving: false,
-      narrativeDirectionError: '',
-      narrativeDirectionLoadSerial: 0,
-      narrativeHubSection: 'direction'
-    },
-    guiAsArray: value => Array.isArray(value) ? value : [],
-    guiAsObject: value => value && typeof value === 'object' && !Array.isArray(value) ? value : {},
-    text: value => String(value ?? ''),
-    cloneJson: clone,
-    queueGuiNavigationRender: () => { state.renders += 1; },
-    renderSettingsGui: async () => { state.renders += 1; },
-    guiSetStatus: (...args) => { state.statuses.push(args); },
-    guiEl: (tag, attrs = {}, children = []) => ({ tag, attrs, children }),
-    fieldNode: (label, node, note) => ({ label, node, note }),
-    inputNode: (value, onInput, options) => ({ value, onInput, options }),
-    checkboxNode: (value, label, onInput) => ({ value, label, onInput }),
-    libraStatusBadge: (label, kind) => ({ label, kind }),
-    confirmApprovedOperation:async()=>true,
-    LIBRA_APPROVED_MARGIN_RESET_DIALOG_HTML:approved.literal(source,'LIBRA_APPROVED_MARGIN_RESET_DIALOG_HTML'),
-    __LIBRA__: {
-      getNarrativeDirection: async options => {
-        state.getCalls += 1;
-        assert.deepEqual(clone(options), { scopeKey: state.scopeKey });
-        if (!state.getQueue.length) throw new Error('unexpected Direction getter call');
-        const next = state.getQueue.shift();
-        if (next instanceof Error) throw next;
-        return clone(next);
-      },
-      setNarrativeDirection: async (payload, options) => {
-        state.setCalls += 1;
-        state.setPayload = clone(payload);
-        state.setOptions = clone(options);
-        if (state.setResult instanceof Error) throw state.setResult;
-        return clone(state.setResult);
-      },
-      clearNarrativeDirection: async options => {
-        state.clearCalls += 1;
-        state.clearOptions = clone(options);
-        if (state.clearResult instanceof Error) throw state.clearResult;
-        return clone(state.clearResult);
-      }
-    }
-  };
-  vm.createContext(context);
-  vm.runInContext(`'use strict';\n${directionBlock}\nthis.directionApi = {
-    narrativeDirectionScopeKey,
-    narrativeDirectionSemanticallyEqual,
-    loadNarrativeDirectionDraft,
-    saveNarrativeDirectionDraft,
-    clearNarrativeDirectionDraft
-  };`, context);
-  return { state, context, api: context.directionApi };
-};
-
-const editDraft = (harness, patch = {}) => {
-  Object.assign(harness.context.Gui.narrativeDirectionDraft, {
-    goal: '두 사람이 다시 만나기 전까지 긴장을 높인다.',
-    completionConditions: '실종 원인이 밝혀진다.\n증거가 검증된다.',
-    doNotForce: '용서를 자동 확정하지 않는다.',
-    softPreferences: '대화 중심\n단서 발견 중심',
-    locked: true,
-    dirty: true,
-    ...patch
-  });
-};
-
-const runGuiContract = async () => {
-  const harness = makeGuiHarness();
-  const exact = baseDirection();
-  assert.equal(harness.api.narrativeDirectionSemanticallyEqual(exact, clone(exact)), true);
-  assert.equal(harness.api.narrativeDirectionSemanticallyEqual(exact, { ...exact, revision: 8 }), false,
-    'revision is part of the durable receipt');
-  assert.equal(harness.api.narrativeDirectionSemanticallyEqual(exact, { ...exact, updatedAt: exact.updatedAt + 1 }), false,
-    'updatedAt is part of the durable receipt');
-  assert.equal(harness.api.narrativeDirectionSemanticallyEqual(exact, { ...exact, scopeKey: 'scope-b' }), false,
-    'scope binding is part of the durable receipt');
-  assert.equal(harness.api.narrativeDirectionSemanticallyEqual(exact, {
-    ...exact, completionConditions: [...exact.completionConditions, 'extra']
-  }), false, 'every persisted list is part of the durable receipt');
-
-  harness.state.getQueue.push(baseDirection());
-  await harness.api.loadNarrativeDirectionDraft();
-  assert.equal(harness.state.getCalls, 1);
-  assert.equal(harness.context.Gui.narrativeDirectionDraft.scopeKey, 'scope-a');
-  assert.equal(harness.context.Gui.narrativeDirectionDraft.revision, 7);
-  assert.equal(harness.context.Gui.narrativeDirectionDraft.completionConditions, '직접 원인이 밝혀진다.');
-  assert.equal(harness.context.Gui.narrativeDirectionDraft.doNotForce, '사용자의 용서를 확정하지 않는다.');
-  assert.equal(harness.context.Gui.narrativeDirectionDraft.softPreferences, '대화와 단서 중심');
-  assert.equal(harness.context.Gui.narrativeDirectionDraft.dirty, false);
-
-  editDraft(harness);
-  const retained = harness.context.Gui.narrativeDirectionDraft;
-  await harness.api.loadNarrativeDirectionDraft();
-  assert.equal(harness.state.getCalls, 1,
-    'rerender or response-family switch must not overwrite a same-scope dirty draft');
-  assert.equal(harness.context.Gui.narrativeDirectionDraft, retained);
-
-  const saved = baseDirection({
-    revision: 8,
-    goal: retained.goal,
-    completionConditions: ['실종 원인이 밝혀진다.', '증거가 검증된다.'],
-    doNotForce: ['용서를 자동 확정하지 않는다.'],
-    softPreferences: ['대화 중심', '단서 발견 중심'],
-    locked: true,
-    updatedAt: 1700000001000
-  });
-  harness.state.setResult = saved;
-  harness.state.getQueue.push(saved);
-  await harness.api.saveNarrativeDirectionDraft();
-  assert.equal(harness.state.setCalls, 1);
-  assert.equal(harness.state.getCalls, 2);
-  assert.deepEqual(harness.state.setOptions, { scopeKey: 'scope-a' });
-  assert.deepEqual(harness.state.setPayload, {
-    goal: saved.goal,
-    completionConditions: saved.completionConditions,
-    doNotForce: saved.doNotForce,
-    softPreferences: saved.softPreferences,
-    locked: true
-  });
-  assert.equal(harness.context.Gui.narrativeDirectionDraft.revision, 8);
-  assert.equal(harness.context.Gui.narrativeDirectionDraft.dirty, false);
-  assert.equal(harness.context.Gui.narrativeDirectionError, '');
-  assert.ok(harness.state.statuses.some(args => args[1] === false),
-    'exact save readback must publish success');
-
-  editDraft(harness, { goal: 'readback mismatch draft' });
-  const mismatchDraft = harness.context.Gui.narrativeDirectionDraft;
-  const expected = baseDirection({ revision: 9, goal: 'readback mismatch draft', updatedAt: 1700000002000 });
-  harness.state.setResult = expected;
-  harness.state.getQueue.push({ ...expected, goal: 'different physical value' });
-  const successesBeforeMismatch = harness.state.statuses.filter(args => args[1] === false).length;
-  await harness.api.saveNarrativeDirectionDraft();
-  assert.equal(harness.context.Gui.narrativeDirectionDraft, mismatchDraft,
-    'save readback mismatch must retain the editable draft object');
-  assert.equal(harness.context.Gui.narrativeDirectionDraft.goal, 'readback mismatch draft');
-  assert.equal(harness.context.Gui.narrativeDirectionDraft.dirty, true);
-  assert.ok(harness.context.Gui.narrativeDirectionError,
-    'save readback mismatch must expose a sticky error');
-  assert.equal(harness.state.statuses.filter(args => args[1] === false).length, successesBeforeMismatch,
-    'save readback mismatch must not publish success');
-  assert.ok(harness.state.statuses.at(-1)?.[1] === true,
-    'save readback mismatch must publish an error status');
-
-  const clearHarness = makeGuiHarness();
-  clearHarness.state.getQueue.push(baseDirection());
-  await clearHarness.api.loadNarrativeDirectionDraft();
-  const cleared = baseDirection({
-    revision: 8,
-    goal: '', completionConditions: [], doNotForce: [], softPreferences: [],
-    locked: false, updatedAt: 1700000003000
-  });
-  clearHarness.state.clearResult = cleared;
-  clearHarness.state.getQueue.push(cleared);
-  await clearHarness.api.clearNarrativeDirectionDraft();
-  assert.equal(clearHarness.state.clearCalls, 1);
-  assert.equal(clearHarness.state.getCalls, 2);
-  assert.deepEqual(clearHarness.state.clearOptions, { scopeKey: 'scope-a' });
-  assert.equal(clearHarness.context.Gui.narrativeDirectionDraft.goal, '');
-  assert.equal(clearHarness.context.Gui.narrativeDirectionDraft.completionConditions, '');
-  assert.equal(clearHarness.context.Gui.narrativeDirectionDraft.doNotForce, '');
-  assert.equal(clearHarness.context.Gui.narrativeDirectionDraft.softPreferences, '');
-  assert.equal(clearHarness.context.Gui.narrativeDirectionDraft.locked, false);
-  assert.equal(clearHarness.context.Gui.narrativeDirectionDraft.dirty, false);
-
-  const wrongScope = makeGuiHarness();
-  wrongScope.state.getQueue.push(baseDirection({ scopeKey: 'scope-b' }));
-  await wrongScope.api.loadNarrativeDirectionDraft();
-  assert.equal(wrongScope.context.Gui.narrativeDirectionDraft, null,
-    'a direction from another scope must never hydrate this page');
-  assert.ok(wrongScope.context.Gui.narrativeDirectionError);
-};
 
 // The existing public API remains the storage authority, but Commit 5 must
 // close its optimistic-write gap: set/clear may only resolve after an exact
@@ -379,7 +124,6 @@ const runCoreReadbackContract = async () => {
 };
 
 (async () => {
-  await runGuiContract();
   await runCoreReadbackContract();
   process.stdout.write('libra_narrative_direction_gui_rc2_test: PASS\n');
 })().catch(error => {

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-29T03:30:10.088Z",
+  "generatedAt": "2026-10-29T05:39:02.282Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4072,8 +4072,8 @@
       "bytes": 1663393
     },
     "plugins/LIBRA.js": {
-      "sha256": "5ca8659c3fd0d3fe8901462308027d93a68a4ed18f2166681574acc95db156a3",
-      "bytes": 6829340
+      "sha256": "2d50ec975670a43924596220630afeff891f92f92665825fc88fcbff9f77f425",
+      "bytes": 6829521
     },
     "plugins/RETRACE.js": {
       "sha256": "04f3a6defddab22b6f544acbb229012cd442672acdb44cb4f3a5aaf79ced4979",
@@ -7296,12 +7296,12 @@
       "bytes": 1075
     },
     "tests/helpers/libra_active_book_routes.cjs": {
-      "sha256": "0b9fa54a036219fb235d872ca43799a875566eda4e8ce7dd28c4841f9894273d",
-      "bytes": 1708
+      "sha256": "4132bcb26b23ff0a4e0ebbb16e46dd08f9b3a002899de9c720e114fdab12b8a5",
+      "bytes": 1987
     },
     "tests/helpers/libra_approved_gui_contract.cjs": {
-      "sha256": "98cb5c4da0bebbc98b12d7555d97bb61507f447308b911b0695766a6921bd227",
-      "bytes": 4778
+      "sha256": "9c95fe3fefb86895d684d15fb19b02c93e92214262d4c063e8d91042cf8f5e51",
+      "bytes": 4738
     },
     "tests/helpers/libra_approved_gui_navigation.cjs": {
       "sha256": "4c14d839985a71fec990883bba79992dc0277efc1cbdf91fc361d9cd803bd21d",
@@ -7628,8 +7628,8 @@
       "bytes": 2432
     },
     "tests/libra_book_ux_v513_true_view_layer_contract_test.cjs": {
-      "sha256": "470a067776d4658439e54f77bcf423f7a475183d7a343d20735661044e9a6570",
-      "bytes": 3356
+      "sha256": "12fb01cf4039a1d39559f27543d6ddc64763fca7ba5e45be5b7f1df3e2fc23ef",
+      "bytes": 3384
     },
     "tests/libra_book_ux_v514_operational_observability_contract_test.cjs": {
       "sha256": "5aa3bbee23e31feb8377538406069341b3c280e01fc2ae311a8cf7d1341c17f1",
@@ -8764,20 +8764,16 @@
       "bytes": 869
     },
     "tests/libra_narrative_direction_gui_rc2_test.cjs": {
-      "sha256": "ec049c27121a765ecc5cfd2381900628ef08ffe3f1066cd53b2b65f11c3e80b1",
-      "bytes": 18980
+      "sha256": "be9d225a8bc3d4fb368df818d2356103d3e41a01950151c964325c5b7503b3bf",
+      "bytes": 5627
     },
     "tests/libra_narrative_direction_loop_and_general_headers_mutations.cjs": {
       "sha256": "d3d698e6b52c97874a0e274a0284652778afbec009609b53698712b5a1af56f9",
       "bytes": 4787
     },
     "tests/libra_narrative_direction_loop_and_general_headers_test.cjs": {
-      "sha256": "e5b767e28f8881c221b66be1ae587a26e4309610495de9ffc59037364e4308f5",
-      "bytes": 8283
-    },
-    "tests/libra_narrative_direction_render_path_test.cjs": {
-      "sha256": "e18b11cb8adbc6a9ef71275483e3ccc26b1905cd7cdfe871583cdc6ccb3e0977",
-      "bytes": 7172
+      "sha256": "27a2608064fb6fb5847a4c91db8a3dd4c643197f810ae58be20af03475955f21",
+      "bytes": 4469
     },
     "tests/libra_narrative_event_projection_runtime_test.cjs": {
       "sha256": "ba866715e7f73971adf37c645ba34f580b47191278679e6049e57d77275b9e5c",

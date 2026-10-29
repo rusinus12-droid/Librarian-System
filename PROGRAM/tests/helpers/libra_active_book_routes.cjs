@@ -5,9 +5,10 @@ module.exports = function assertActiveBookRoutes(source) {
   assert.match(source, /const buildApprovedMockupDestinationDetail = page =>/);
   assert.match(source, /case 'desk': return buildApprovedMockupDesk\(\)/);
   assert.match(source, /case 'memory': return buildApprovedMockupMemory\(\)/);
-  assert.match(source, /case 'people': \{[\s\S]*?const body=buildApprovedMockupPeople\(\)/);
-  assert.match(source, /case 'world': \{\s+const body=buildApprovedMockupWorld\(\)/);
-  assert.match(source, /case 'story': \{\s+const body=buildApprovedMockupStory\(\)/);
+  // Read and manage are separate screens: each destination renders its reader or its manage view, never both.
+  assert.match(source, /case 'people': return Gui\.bookPeopleSection==='profile'\?buildApprovedMockupPeople\(\):buildApprovedManageView\('people'/);
+  assert.match(source, /case 'world': return Gui\.bookWorldSection==='guide'\?buildApprovedMockupWorld\(\):buildApprovedManageView\('world'/);
+  assert.match(source, /case 'story': return Gui\.bookStorySection==='toc'\?buildApprovedMockupStory\(\):buildApprovedManageView\('story'/);
   assert.match(source, /case 'settings': return buildApprovedMockupSettings\(\)/);
   for (const oldRenderer of ['buildBookDeskPanel','buildBookMemoryPanel','buildBookPeoplePanel','buildBookWorldPanel','buildBookStoryPanel','buildBookSettingsPanel','buildBookExecutionFlowTab','renderActiveTab']) {
     assert.doesNotMatch(source, new RegExp(`const ${oldRenderer}\\s*=`), `${oldRenderer} is not a fallback renderer`);
