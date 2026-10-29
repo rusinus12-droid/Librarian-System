@@ -1,0 +1,31 @@
+# 재분석 경고·상태 대기·조회 지연 수정
+
+분석 대상: 사용자 디버그 덤프(원문 수정 재분석 T21–T25, mirror 모드)와 외부 분석 메모.
+
+## 관찰
+
+- 배치 시간: 생성 24.9초, 저장 35.3초, 상태 추적 26.5초, 마무리 1.0초. 배치가 끝난 뒤 작업 종료까지 약 54초가 더 걸렸다(전체 기억 연결 점검과 스냅샷 갱신). GUI 스냅샷은 51.1초가 걸렸다.
+- 모델이 장소(라운지·사무실)를 주체로 `domain:"world", claimKind:"location"` 사실 2건을 냈다. `location`은 인물 위치 계약이라 `UNIFIED_FACT_KIND_INVALID`로 거부됐다.
+- 거부 사실은 저장되지 않지만 `stateBlocks`가 인물 영역 전체를 `not_updated`로 묶었다. 그래서 Head가 `partial`이 되고 작업에 "상태 추적 확인 필요"가 표시됐다. 이 영역 차단은 이후 Micro 인물 변화도 `state_domain_not_ready`로 보류시켰다. 현재 Head의 보류 14건은 모두 이런 거부 사실(`memory_record_quarantined`)이었다.
+- 거부 사실은 정본에 없으므로 자동 반영 검토에 항목이 생길 수 없었다. 경고는 있는데 확인할 곳이 없었던 이유다. 완료 창의 상태 경고는 원인이 아닌 실행 사유 코드(`approved_source_edit_replay`)를 그대로 보여 줬다.
+- 자동 반영 검토 수집은 행이 생기지 않는 기록에서도 정본의 원문 근거 전체를 읽었고(약 10.5MB), 이를 응답·화면 검증 의존성에 넣었다.
+- 화면용 상태 재검증은 1.5초 제한 안에서 모든 근거를 다시 읽는다. 시간을 넘기거나 다른 작업 중 값이 바뀌면 `currentStateView.head`를 비웠고, 인물 카드함·세계 도감·서사 연감이 저장된 Head가 있어도 빈 화면이 됐다.
+
+## 수정
+
+- **장소 사실 재분류:** 장소를 주체로 한 `location` 사실은 다른 장소를 가리키면 `containment`(상위 장소)로, 자기 자신을 가리키거나 대상이 없으면 문장을 값으로 하는 `world_state`로 바꾼다. 기록은 `place_location_reclassified`로 남는다.
+- **거부 사실의 영향 범위:** 거부 사실은 `memory_record_quarantined` 보류 항목으로 계속 남는다. 같은 필드의 이전 값은 계속 막는다(`quarantined_field_update`). 다만 영역 전체를 대기 상태로 만들지는 않는다. 이전 Head에 남은 같은 사유도 응답·화면 투영에서는 대기로 보지 않는다. 거부 사실의 문장은 `admission.rejected[].text`에 남긴다.
+- **검토 수집 범위:** `memory_record_quarantined`와 `not_direct_current_fact`는 검토 대상에서 뺀다. 검토 행이 실제로 생기는 기록에서만 원문을 검증하고, 원문 근거 본문은 읽기 의존성에서 제외한다(기록의 `sourceDigest`가 근거를 묶는다).
+- **응답·화면 검증 의존성 축소:** 검토 투영이 manifest·Head·Registry·세계선 메타의 원본 바이트를 소비 근거로 고정하고 있었다. 그래서 통계·시각 같은 무관한 manifest 쓰기만으로도 응답 컨텍스트와 상태 화면이 `CONSUMER_MICRO_STATE_DEPENDENCY_CHANGED`로 무효가 됐다(`libra_main_memory_semantic_history_test`가 109173f부터 실패). 이 항목들은 기본 투영이 이미 묶고 있으므로, 검토 정책과 실제 검토 행의 기록만 근거로 고정한다.
+- **화면 빈 상태 방지:** 재검증이 실패하면 마지막으로 읽은 투영(없으면 저장된 Head)을 `current:false`로 표시한다. 응답 생성 경로의 검증은 바꾸지 않는다.
+- **작업 경고 기준:** 자동 반영 대상 사유(`MEMORY_REVIEW_AUTO_REASONS`)는 `stateNotices`(자동 반영 안내)로 보낸다. 실제로 대기 중인 사유만 `stateWarnings`로 표시한다.
+- **완료 창 문구:** 작업 종류·상태는 한국어로 표시한다. 제외된 항목은 문장과 사유로 보여 주고, 상태 안내에는 **자동 반영 검토 열기** 버튼을 둔다. 원본 JSON과 원인 코드는 표시하지 않는다. 배치 뒤 점검 구간은 "전체 기억 연결 점검과 현재 상태 갱신 중"으로 표시한다.
+- **저장 단계 계측:** `memoryBatchTimings[].commitSteps`에 생성 종료 기준 누적 시간을 기록한다. 기록 시점은 사전 검증, 원문 근거·기준 저장, 원문 재확인, 후보 기록, 정본 확정, manifest 활성화다.
+
+## 남은 확인
+
+저장 35초의 세부 원인은 실제 mirror 환경에서 새 `commitSteps`로 확인해야 한다. 기존 데이터의 인물·서사 영역 상태 표시를 저장소에서 갱신하려면 **상태 추적 다시 반영**을 한 번 실행한다. 화면과 응답 투영은 실행 전에도 새 기준을 적용한다.
+
+## 실행 검증
+
+- `libra_rejected_fact_state_readiness_test.cjs`: 장소 `location` 재분류(world_state·containment), 거부 사실 문장 보존, 거부 사실이 있어도 인물 영역과 Head가 `ready`, 다른 사실 반영, 검토 행 없음. 수정 전 코드에서는 실패한다.

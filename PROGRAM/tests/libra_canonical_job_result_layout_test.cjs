@@ -69,7 +69,8 @@ async function testLayout() {
   assert.ok(!code.includes('JSON.stringify(warning.admission||warning)))'), 'raw JSON dump into summary span must be removed');
   
   // Verify that fold details is used for structured inspection
-  assert.ok(code.includes('검증 세부 내역 접기/펼치기'), 'collapsible inspection details must be present');
+  assert.ok(code.includes('제외된 항목 보기'), 'collapsible list of excluded items must be present');
+  assert.ok(!code.includes('(정본 저장 결과와 별도로 확인합니다.)'), 'raw State reason codes are not shown as the warning text');
 
   // Verify CSS polish contains .res-row anti-squeeze and three-status rules
   assert.ok(code.includes('.res-row>b{white-space:nowrap!important'), 'anti-vertical-wrap CSS for res-row must be present');

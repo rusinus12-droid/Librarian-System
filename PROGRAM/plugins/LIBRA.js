@@ -36905,6 +36905,7 @@ function createLibraReadonlySourceContext(owner) {
     // Owner source writes make the runtime index stale. Its read path would reject it
     // through the source proofs anyway; dropping it here only skips that costly check.
     const noteMemoryGraphSourceWrite = storageKey => {
+      state.snapshotSourceEpoch = Number(state.snapshotSourceEpoch || 0) + 1;
       const volatileState = volatileCorpusRuntime;
       if (!volatileState || !String(storageKey || '').startsWith(PREFIX + ':scope:')) return;
       // Derived Micro vectors are not graph source records.
@@ -59237,11 +59238,39 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     const readActiveMicroMemory = async (scope, worldlineId, sessionEpoch, turn, options = {}) => {
       const empty = (status, reason = '') => ({ status, reason, record: null, head: null });
+      // State projection only needs records containing a state intent. Exclusion
+      // grants no memory/state authority; positive candidates still take the full
+      // receipt/work/source/publication checks below and final consumer readback.
+      let candidateHead, candidateRecord;
+      if (options.stateCandidateOnly === true) {
+        const pair = asArray(options.statePairs).find(row => Number(row.turn) === Number(turn));
+        candidateHead = await storage.getVerifiedJson(key.microMemoryHead(scope, worldlineId, sessionEpoch, turn), scope, null);
+        if (pair && candidateHead?.schema === 'libra.micro_memory_head.v1'
+          && candidateHead.scopeKey === scope.scopeKey && candidateHead.worldlineId === worldlineId
+          && Number(candidateHead.sessionEpoch) === Number(sessionEpoch) && Number(candidateHead.turn) === Number(turn)
+          && candidateHead.sourceRevisionId === completedTurnRevisionId(pair)
+          && candidateHead.sourceDigest === sourceDigest([pair])) {
+          const candidateKey = key.microMemory(scope, worldlineId, sessionEpoch, turn,
+            candidateHead.sourceRevisionId, candidateHead.analysisRevisionId);
+          if (candidateHead.recordKey === candidateKey) {
+            candidateRecord = await storage.getVerifiedJson(candidateKey, scope, null);
+            if (candidateRecord?.schema === 'libra.micro_memory.v1' && candidateRecord.scopeKey === scope.scopeKey
+              && candidateRecord.sourceRevisionId === candidateHead.sourceRevisionId
+              && candidateRecord.sourceDigest === candidateHead.sourceDigest
+              && candidateRecord.analysisRevisionId === candidateHead.analysisRevisionId
+              && candidateRecord.analysisStatus === 'verified' && candidateHead.analysisStatus === 'verified'
+              && Array.isArray(candidateRecord.claims)
+              && !candidateRecord.claims.some(claim => Object.prototype.hasOwnProperty.call(asObject(claim), 'stateIntent'))) {
+              return empty('not_state_candidate');
+            }
+          }
+        }
+      }
       const active = await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn, options);
       if (active.status !== 'verified') return empty(active.status, active.reason);
       const headKey = key.microMemoryHead(scope, worldlineId, sessionEpoch, turn);
       let head;
-      try { head = await storage.getVerifiedJson(headKey, scope, null); }
+      try { head = candidateHead === undefined ? await storage.getVerifiedJson(headKey, scope, null) : candidateHead; }
       catch (error) { return empty('pending_reconciliation', compact(error?.message || error, 300)); }
       if (!head) return empty('missing', 'micro_head_absent');
       const recordKey = key.microMemory(scope, worldlineId, sessionEpoch, turn,
@@ -59253,7 +59282,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         return empty('stale_source', 'micro_head_binding_changed');
       }
       let record;
-      try { record = await storage.getVerifiedJson(recordKey, scope, null); }
+      try { record = candidateRecord === undefined ? await storage.getVerifiedJson(recordKey, scope, null) : candidateRecord; }
       catch (error) { return empty('pending_reconciliation', compact(error?.message || error, 300)); }
       if (record?.schema !== 'libra.micro_memory.v1' || record.scopeKey !== active.receipt.scopeKey
         || record.sourceRevisionId !== active.receipt.revisionId
@@ -60071,6 +60100,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         ||!['low','medium','high'].includes(value.risk)||value.sourceDigest!==value.row.sourceDigest)throw Error('MEMORY_REVIEW_RECORD_INVALID');
       return {key:storageKey,saved,decisions:asObject(saved?.decisions)};
     };
+    // Held canonical reasons the review projection applies automatically when the fact is a confirmed current one.
+    const MEMORY_REVIEW_AUTO_REASONS=Object.freeze(['missing_current_binding','same_source_order_conflict','dependency_pending','quarantined_field_update']);
     const memoryReviewDecision=(policy,kind,record,index)=>policy.decisions[memoryReviewId(kind,record,index)]?.status||'automatic';
     const memoryReviewRisk=(reason,claim={})=>{
       if(/conflict|overlap|verifier|quarantin/.test(reason)||claim.certainty&&claim.certainty!=='confirmed'||claim.epistemicStatus&&claim.epistemicStatus!=='observed')return 'high';
@@ -60096,16 +60127,22 @@ function mountMemorySuiteReanalysisReview(container,config) {
         row.validationLevel=saved?.validationLevel||(row.risk==='high'?'additional_verification_pending':row.stateEligible&&!row.reason?'rules_verified':'source_verified');
         rows.push(row);internal.set(id,{...data,row,record,index});
       };
-      const pending=asArray(head?.unifiedApplied?.pending);
+      // Rejected facts were never stored and historical facts are not State, so neither is a review target.
+      const pending=asArray(head?.unifiedApplied?.pending).filter(p=>p.fact&&!['memory_record_quarantined','not_direct_current_fact'].includes(p.reason));
+      const currentPairs=buildPairs(context.chat,scope.scopeKey);
       for(const ref of fullContinuityRefs(manifest)){
-        const selected=pending.filter(p=>p.memoryId===ref.memoryId&&Number(p.revision)===Number(ref.revision)&&p.fact);
+        const selected=pending.filter(p=>p.memoryId===ref.memoryId&&Number(p.revision)===Number(ref.revision));
         for(const saved of Object.values(policy.decisions)){const row=saved.row;if(row?.kind==='canonical'&&row.memoryId===ref.memoryId&&Number(row.revision)===Number(ref.revision)&&row.factId&&!selected.some(p=>p.fact===row.factId))selected.push({fact:row.factId,memoryId:row.memoryId,revision:row.revision,reason:saved.reason});}
         if(!selected.length)continue;
         try{
-          const record=await loadMemoryRef(ref,scope);await loadUnifiedApprovedBatch(context,ref,manifest);
-          if(!unifiedInheritedRef(ref)&&Number(ref.sessionEpoch||0)===0){const batch=buildPairs(context.chat,scope.scopeKey).slice(Number(ref.turnRange.start)-1,Number(ref.turnRange.end));
+          const record=await loadMemoryRef(ref,scope);
+          if(!selected.some(p=>asArray(record.canonicalArtifact?.facts).some(f=>f.tempFactId===p.fact)))continue;
+          // Source checks run only for records that actually yield a review row. The record's
+          // sourceDigest binds the stored evidence, so its large body is not a read dependency.
+          await loadUnifiedApprovedBatch(context,ref,manifest);
+          if(!unifiedInheritedRef(ref)&&Number(ref.sessionEpoch||0)===0){const batch=currentPairs.slice(Number(ref.turnRange.start)-1,Number(ref.turnRange.end));
             unifiedAssert(batch.length===BATCH_SIZE&&sourceDigest(batch)===record.sourceDigest,'MEMORY_REVIEW_CURRENT_SOURCE_CHANGED');}
-          dependencies.set(ref.key,record);if(record.sourceEvidenceRef?.key)dependencies.set(record.sourceEvidenceRef.key,await storage.getStoredJson(record.sourceEvidenceRef.key,null,scope));
+          dependencies.set(ref.key,record);
           const expanded=[...selected];
           for(const p of selected.filter(p=>p.reason==='same_source_order_conflict')){
             const origin=asArray(record.canonicalArtifact.facts).find(f=>f.tempFactId===p.fact);
@@ -60116,7 +60153,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             const fact=asArray(record.canonicalArtifact?.facts).find(f=>f.tempFactId===p.fact);if(!fact)continue;
             const c=UNIFIED_CLAIMS[fact.claimKind],domain=STATE_PIPELINE_DOMAIN_HEAD_KEYS[fact.domain];
             const supported=view.authority?.exactBasis===true&&c?.field&&fact.certainty==='confirmed'&&fact.temporalRole==='current_sequence'
-              &&['missing_current_binding','same_source_order_conflict','dependency_pending','quarantined_field_update'].includes(p.reason);
+              &&MEMORY_REVIEW_AUTO_REASONS.includes(p.reason);
             add('canonical',record,fact.tempFactId,{claim:fact,quote:asArray(fact.evidenceSpans).map(s=>s.quote).join('\n'),reason:p.reason,
               stateEligible:!!supported,domain,field:c?.field||'',pending:p,ref});
           }
@@ -60154,7 +60191,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if(!head)return {...view,memoryReview:{rows:catalog.rows,unavailable:catalog.unavailable}};
       const proofs=asArray(consumedMicroProofsByState.get(view.authority||view.head)).slice();
       const proofKeys=new Set(proofs.flatMap(p=>[p.recordKey,p.headKey,p.receiptKey]).filter(Boolean));
-      for(const [k,v] of catalog.dependencies)if(!proofKeys.has(k)){proofs.push(stateDecisionConsumptionProof(k,v));proofKeys.add(k);}
+      // The base view already binds the manifest, Head, Registry and worldline through its own
+      // proofs and boundary. Pinning their exact bytes here made any unrelated manifest write
+      // (stats, timestamps) invalidate every response context, so only review inputs are bound.
+      const broad=new Set([key.manifest(scope),key.continuityState(scope),key.stateWorldlineMeta(scope),key.entityRegistry(scope)]);
+      for(const [k,v] of catalog.dependencies)if(!proofKeys.has(k)&&!broad.has(k)&&(k===catalog.policy.key||catalog.rows.length)){proofs.push(stateDecisionConsumptionProof(k,v));proofKeys.add(k);}
       const applied=[],rejected=[],blocked=[],reviewTransitions=[];
       const resolve=name=>{const matches=asArray(catalog.registry?.entities).filter(e=>e.validated===true&&[e.name,...asArray(e.aliases)].some(n=>statePipelineIdentityKey(n)===statePipelineIdentityKey(name)));return matches.length===1?matches[0]:null;};
       // A user-confirmed value outranks an automatic value of the same turn; newer evidence still wins across turns.
@@ -60227,13 +60268,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const handled=new Set([...applied,...rejected].map(row=>row.id));
       if(head.unifiedApplied)head.unifiedApplied.pending=asArray(head.unifiedApplied.pending).filter(p=>!catalog.rows.some(row=>row.kind==='canonical'&&handled.has(row.id)&&row.memoryId===p.memoryId&&Number(row.revision)===Number(p.revision)&&catalog.internal.get(row.id)?.index===p.fact));
       if(head.microProjection)head.microProjection.pendingClaims=asArray(head.microProjection.pendingClaims).filter(p=>!catalog.rows.some(row=>row.kind==='micro'&&handled.has(row.id)&&row.turn===p.turn&&catalog.internal.get(row.id)?.index===p.claimIndex));
+      // A rejected fact (memory_record_quarantined) has no value to apply; older Heads still list it as blocking.
+      const blocking=p=>p.reason!=='memory_record_quarantined';
+      const canonicalThrough=Number(head.reviewedThroughCanonical?.turnRange?.end||head.throughTurn||0);
       for(const domain of Object.keys(asObject(head.domainStatus))){
-        if(!asArray(head.unifiedApplied?.pending).some(p=>STATE_PIPELINE_DOMAIN_HEAD_KEYS[p.domain]===domain)
-          &&asArray(view.head?.unifiedApplied?.pending).some(p=>STATE_PIPELINE_DOMAIN_HEAD_KEYS[p.domain]===domain))head.domainStatus[domain]={...head.domainStatus[domain],status:'ready',reason:'automatic_memory_review'};
+        const inDomain=p=>STATE_PIPELINE_DOMAIN_HEAD_KEYS[p.domain]===domain;
+        if(!asArray(head.unifiedApplied?.pending).some(p=>inDomain(p)&&blocking(p))
+          &&(asArray(view.head?.unifiedApplied?.pending).some(inDomain)||head.domainStatus[domain]?.reason==='unified_bindings_pending'))
+          head.domainStatus[domain]={...head.domainStatus[domain],status:'ready',reason:'automatic_memory_review',throughTurn:Math.max(Number(head.domainStatus[domain]?.throughTurn||0),canonicalThrough)};
       }
       if(applied.some(r=>r.kind==='micro'))head.throughTurn=Math.max(Number(head.throughTurn||0),...applied.filter(r=>r.kind==='micro').map(r=>r.turn));
       if(head.microProjection){head.microProjection.transitions=[...asArray(head.microProjection.transitions),...reviewTransitions];head.microProjection.throughTurn=head.throughTurn;head.microProjection.status=head.microProjection.pendingClaims.length?'partial':'current';}
-      if(view.authority?.exactBasis===true&&!asArray(head.unifiedApplied?.pending).length&&!asArray(head.microProjection?.pendingClaims).length&&!head.unifiedCoverage?.legacyCount
+      if(view.authority?.exactBasis===true&&!asArray(head.unifiedApplied?.pending).some(blocking)&&!asArray(head.microProjection?.pendingClaims).length&&!head.unifiedCoverage?.legacyCount
         &&RESPONSE_STATE_DOMAINS.every(domain=>head.domainStatus?.[domain]?.status==='ready'))head.status='ready';
       const metadata={schema:'libra.memory_review_projection.v1',rows:catalog.rows,applied:applied.map(r=>r.id),rejected:rejected.map(r=>r.id),unavailable:catalog.unavailable};
       head.memoryReview=metadata;
@@ -61965,6 +62011,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
           // "상태" names a person's condition or a place's condition depending on the subject.
           if (f.claimKind === 'character_state' && f.subjectTempRef && !persons.has(f.subjectTempRef)) f.claimKind = 'world_state';
         }
+        // "location" is a person's whereabouts. Filed about a place, it is either the place's
+        // container (another place) or a plain description of the place itself.
+        if (f.claimKind === 'location' && f.subjectTempRef && !persons.has(f.subjectTempRef) && isPlainObject(f.values)) {
+          const ref = f.values.locationRef, places = new Set(asArray(artifact.entities).filter(e => e?.type === 'world').map(e => e.tempId));
+          const kind = ref && ref !== f.subjectTempRef && places.has(ref) ? 'containment' : unifiedText(f.text) ? 'world_state' : '';
+          if (kind) {
+            mark({ path: path + '.claimKind', field: 'claimKind', from: 'location', to: kind, reason: 'place_location_reclassified' });
+            f.claimKind = kind; f.domain = 'world'; f.values = kind === 'containment' ? { parentRef: ref } : { condition: f.text };
+          }
+        }
         const contract = UNIFIED_CLAIMS[f.claimKind];
         // A typed value written under its own name ({emotion:"…"} for character_state) moves to the
         // contract's key when it is the only plain text value; references are never guessed.
@@ -62023,7 +62079,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       normalizeUnifiedProviderVocabulary(artifact,admission);
       const sources=canonicalEvidenceSources(batch);
       const reject=(kind,index,row,reason)=>{
-        admission.rejected.push({kind,index,id:string(row?.tempFactId||row?.tempId||''),reason});
+        admission.rejected.push({kind,index,id:string(row?.tempFactId||row?.tempId||''),reason,text:compact(string((kind==='fact'?row?.text:row?.name)||''),160)});
         if(kind==='fact'){
           const c=UNIFIED_CLAIMS[row?.claimKind];
           // Even a rejected later update must fence older updates to that field.
@@ -63798,7 +63854,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const evidence=continuityEvidence(memory), facts=new Map(artifact.facts.map(f=>[f.tempFactId,f]));
       const candidates=new Map(), domainPending=new Set(), blockedFacts=new Set(bindingPlan.supersededFacts);
       const admissionBlocks=asArray(memory.artifactValidation?.admission?.stateBlocks);
-      for(const b of admissionBlocks){pending.push({fact:b.fact,domain:b.domain,reason:'memory_record_quarantined'});for(const domain of ['character','relationship','world','narrative'])if(b.domain==='*'||b.domain===domain)domainPending.add(domain); }
+      // A rejected fact has no stored value to apply. It stays listed and still fences the
+      // exact older field below, but it no longer holds back the whole domain's readiness.
+      for(const b of admissionBlocks)pending.push({fact:b.fact,domain:b.domain,reason:'memory_record_quarantined'});
       const declaredBindings=new Set(artifact.stateBindings.map(b=>b.factTempId));
       const invalidProfileSelectors=new Set(bindingPlan.invalidProfileSelectors);
       for(const f of currentFacts.values())if(UNIFIED_CLAIMS[f.claimKind].field && !declaredBindings.has(f.tempFactId) && !blockedFacts.has(f.tempFactId)){blockedFacts.add(f.tempFactId);domainPending.add(f.domain);pending.push({fact:f.tempFactId,domain:f.domain,reason:invalidProfileSelectors.has(f.tempFactId)?'profile_selector_missing':'missing_current_binding'});}
@@ -65262,8 +65320,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const batchTiming = { schema: 'libra.memory_batch_timing.v1', runId: run.runId,
         scopeKey: context.scope.scopeKey, startTurn, endTurn: startTurn + BATCH_SIZE - 1, startedAt,
         generationPhaseMs: 0, commitAndEmbeddingMs: 0, stateTrackingMs: 0, finalizationMs: 0,
-        canonicalDurableAt: 0, stateFinishedAt: 0, finishedAt: 0, totalMs: 0 };
+        canonicalDurableAt: 0, stateFinishedAt: 0, finishedAt: 0, totalMs: 0, commitSteps: {} };
       let generationFinishedAt = startedAt;
+      // Cumulative ms since generation finished, so a slow save step is visible in the debug export.
+      const markCommitStep = name => { batchTiming.commitSteps[name] = Date.now() - generationFinishedAt; };
       const persistedProviderBudget = asObject(work.providerBudget);
       const providerBudget = createCanonicalProviderBudget(activeMemoryStageOrderForSettings(policySnapshot), persistedProviderBudget, startedAt,{generationPolicy:policySnapshot.generationPolicy});
       work.providerBudget = providerBudget;
@@ -65412,6 +65472,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
         if (!canonicalArtifact || artifactValidation?.ok !== true) throw new Error('정본 typed artifact가 없거나 검증되지 않았습니다.');
         const preCommitVerification = await verifyBatchStillCurrent(context, startTurn, sourceHash);
+        markCommitStep('precommitVerified');
         if (!preCommitVerification.ok) {
           if (preCommitVerification.reason === 'runtime_disposed') return disposedResult();
           if (candidateOnly) throw new LIBRAError(`candidate_source_changed:${preCommitVerification.reason || 'unknown'}`, 'CANDIDATE_SOURCE_CHANGED');
@@ -65475,6 +65536,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           updatedAt: nowIso()
         };
         if(unified)memory.unifiedIdentityProvenance=buildUnifiedIdentityProvenance(memory);
+        markCommitStep('evidenceAndBasisStored');
         const initialProjection = buildMemoryRetrievalProjection(memory);
         memory.sections = clone(initialProjection.sections);
         memory.anchors = clone(initialProjection.anchors);
@@ -65492,6 +65554,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         unifiedAssert(asArray(memory.rawPacketRefs).length===BATCH_SIZE,'CANONICAL_ANALYSIS_RAW_PROVENANCE_UNAVAILABLE');
         await readCanonicalRawBatch(batch,memory.rawPacketRefs);
         const finalCommitVerification = await verifyBatchStillCurrent(context, startTurn, sourceHash);
+        markCommitStep('rawSourceRechecked');
         if (!finalCommitVerification.ok) {
           if (finalCommitVerification.reason === 'runtime_disposed') {
             const provisionalVectorKey = string(memory?.embedding?.vectorKey || '');
@@ -65528,6 +65591,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           || string(candidateReadback?.renderValidation?.contentHash || '') !== string(renderValidation.contentHash || '')) {
           throw new Error('canonical_candidate_readback_failed');
         }
+        markCommitStep('candidateWritten');
         if (state.disposed) {
           try { await storage.remove(memoryKey); } catch (_) {}
           const provisionalVectorKey = string(memory?.embedding?.vectorKey || '');
@@ -65571,6 +65635,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           || string(committedReadback?.renderValidation?.contentHash || '') !== string(renderValidation.contentHash || '')) {
           throw new Error('canonical_adoption_readback_failed');
         }
+        markCommitStep('recordCommitted');
         const previousHistory = asArray(activeRef?.history);
         const history = activeRef?.key
           ? [...previousHistory, { key: activeRef.key, revision: activeRef.revision, sourceDigest: activeRef.sourceDigest, status: 'inactive', supersededAt: nowIso() }]
@@ -65654,6 +65719,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const persisted=await storage.getJson(key.manifest(context.scope),null);
           unifiedAssert(persisted?.memories?.[String(startTurn)]?.key===memoryKey && persisted.memories[String(startTurn)].artifactDigest===memory.artifactDigest,'UNIFIED_ACTIVE_READBACK');
         }
+        markCommitStep('manifestActivated');
         await registerCanonicalVariant(context.scope, manifest, memory, memoryKey, {
           status: 'active', origin: string(options.mode || options.reason || 'canonical_commit'),
           stateTrackingStatus: 'scheduled_post_commit', userPinned: false
@@ -66781,6 +66847,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
             reason: cleanupFailed ? 'cancelled_manifest_cleanup_failed' : 'cancelled', processed, partialCommitted,
             staleDiscarded, failed: failedBatches.length, manifestInFlightCleared: cancellationManifestCleanup?.cleared === true };
         }
+        try { await options.onFinalizing?.({ processed, failed: failedBatches.length }); }
+        catch (progressError) { warn('LIBRA finalization progress display failed', progressError); }
         if (allowHistoricalBackfill) {
           const completedAudit = await reconcileCanonicalBranchBeforeRecallUnlocked(context, {
             pairs,
@@ -71685,9 +71753,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
           if ((refreshSerial === state.snapshotRefreshSerial || options.requireCurrentView === true) && sameSnapshotScope(activeContext?.scope, context.scope)) {
             // Canonical Head stays immutable. The viewer consumes the same verified,
             // read-only Micro projection as responses, with physical/source readback.
+            let view = null;
             try {
               const boundary = await captureUnifiedResponseBoundary(context);
-              const view = await loadContinuityStateForResponse(context.scope, manifest);
+              view = await loadContinuityStateForResponse(context.scope, manifest);
               const token = registerConsumedDataReadSet(context.scope,
                 asArray(consumedMicroProofsByState.get(view?.authority || view?.head)), null);
               try {
@@ -71697,8 +71766,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
               finally { releaseConsumedDataReadSet(token); }
               nextSnapshot.currentStateView = clone(view);
             } catch (error) {
-              nextSnapshot.currentStateView = { head: null, authority: { current: false, pending: true,
-                sourceMode: 'unavailable' }, error: compact(error?.message || error, 300) };
+              // The viewer keeps the last read projection (or the stored Head) visible and marks it
+              // unconfirmed; a slow or interrupted revalidation must not empty every State page.
+              nextSnapshot.currentStateView = { head: view?.head ? clone(view.head) : null,
+                authority: { ...clone(asObject(view?.authority)), current: false, pending: true,
+                  sourceMode: view?.head ? 'unconfirmed_projection' : 'unavailable' },
+                error: compact(error?.message || error, 300) };
             }
             activeContext = await resolveContext();
             if (refreshSerial !== state.snapshotRefreshSerial || !sameSnapshotScope(activeContext?.scope, context.scope)) {
@@ -72929,22 +73002,35 @@ function mountMemorySuiteReanalysisReview(container,config) {
             }),
             onBatchComplete: async event => {
               const latest = state.lastScan?.memoryId === event.memory?.memoryId ? state.lastScan?.continuityState : null;
-              const pending = latest && !['complete', 'not_required'].includes(string(latest.status || ''))
+              const incomplete = latest && !['complete', 'not_required'].includes(string(latest.status || ''))
                 && !['state_tracking_disabled', 'already_reviewed'].includes(string(latest.reason || ''));
+              // Held facts the review projection applies automatically are not a warning, and a
+              // rejected fact (memory_record_quarantined) has nothing to apply. Only the rest waits.
+              const heldRows = asArray(latest?.head?.unifiedApplied?.pending).filter(p => p.fact && p.reason !== 'memory_record_quarantined');
+              const autoApplied = heldRows.filter(p => MEMORY_REVIEW_AUTO_REASONS.includes(p.reason));
+              const waiting = heldRows.filter(p => !MEMORY_REVIEW_AUTO_REASONS.includes(p.reason));
+              const pending = incomplete && (!latest.head || string(latest.status || '') !== 'partial' || waiting.length > 0);
               const stateWarnings = asArray(state.canonicalJob?.stateWarnings).filter(row => row.startTurn !== event.startTurn);
-              if (pending) stateWarnings.push({ startTurn: event.startTurn, endTurn: event.endTurn, reason: string(latest.reason || latest.status || 'state_tracking_pending') });
+              if (pending) stateWarnings.push({ startTurn: event.startTurn, endTurn: event.endTurn,
+                reason: string(waiting[0]?.reason || latest.status || 'state_tracking_pending'), reasons: [...new Set(waiting.map(p => string(p.reason)))].slice(0, 8), count: waiting.length });
+              const stateNotices = asArray(state.canonicalJob?.stateNotices).filter(row => row.startTurn !== event.startTurn);
+              if (autoApplied.length) stateNotices.push({ startTurn: event.startTurn, endTurn: event.endTurn, autoApplied: autoApplied.length });
               const memoryWarnings=asArray(state.canonicalJob?.memoryWarnings).filter(row=>row.startTurn!==event.startTurn);
               const admission=event.memory?.artifactValidation?.admission;
               if(admission?.status==='partial')memoryWarnings.push({startTurn:event.startTurn,endTurn:event.endTurn,admission:clone(admission)});
               return await updateCanonicalJob(context.scope, {
-                completed: event.processed, failed: event.failed, currentStage: 'commit', stateWarnings, memoryWarnings,
-                message: `TURN ${event.startTurn}~${event.endTurn} ${admission?.status==='partial'?'기억 부분 저장':'정본 저장 완료'}${pending ? ' · 상태 추적은 확인 필요' : ''}`
+                completed: event.processed, failed: event.failed, currentStage: 'commit', stateWarnings, stateNotices, memoryWarnings,
+                message: `TURN ${event.startTurn}~${event.endTurn} ${admission?.status==='partial'?(Number(admission.rejectedFacts||0)?`정본 저장 완료 · 근거 부족 사실 ${Number(admission.rejectedFacts)}건 제외`:'정본 저장 완료 · 일부 보완 필드 제외'):'정본 저장 완료'}${pending ? ' · 상태 반영 일부 대기' : autoApplied.length ? ` · 보류 ${autoApplied.length}건 자동 반영` : ''} · 마무리 점검 중`
               });
             },
             onBatchFailure: async event => await updateCanonicalJob(context.scope, {
               completed: event.processed, failed: event.failed,
               failures: [...asArray(state.canonicalJob?.failures), { startTurn: event.startTurn, endTurn: event.endTurn, message: event.message, at: event.at }],
               message: `TURN ${event.startTurn}~${event.endTurn} 실패 · 다음 배치를 계속합니다.`
+            }),
+            onFinalizing: async () => await updateCanonicalJob(context.scope, {
+              phase: 'finalizing', currentStage: 'commit_finalizing',
+              message: '정본 저장 완료 · 전체 기억 연결 점검과 현재 상태 갱신 중'
             })
           });
           const cancelled = state.canonicalJob?.cancelRequested === true || state.canonicalJobAbortController?.signal?.aborted;
@@ -82600,13 +82686,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     body.querySelector('#jm-t').textContent = job.title || (
       job.jobType === 'micro' ? `미크로 작업 · ${job.kindLabel || job.kind || 'source_edit'}`
       : job.jobType === 'lens' ? `렌즈 작업 · ${job.lensName || job.kindLabel || job.kind || '재분석'}`
-      : `정본 작업 · ${String(job.kind||'')}`
+      : `정본 작업 · ${CANONICAL_JOB_KIND_LABELS[job.kind]||String(job.kind||'')}`
     );
     const targetText=job.targetText || (job.currentStart?`T${job.currentStart}–T${Number(job.currentStart)+4}`:guiAsArray(job.ranges?.length?job.ranges:guiAsArray(job.targetStarts).map(start=>({startTurn:start,endTurn:Number(start)+4}))).map(row=>`T${row.startTurn||row.start}–T${row.endTurn||row.end}`).join(' · ')||'대상 범위 확인 중');
     body.querySelector('[data-fill="target"]').textContent=targetText;
     const kindBadge = body.querySelector('[data-fill="kind"]');
     if (kindBadge) {
-      kindBadge.textContent = String(job.stateLabel || job.state || '');
+      kindBadge.textContent = String(job.stateLabel || (job.state==='completed_with_warnings'&&(Number(job.failed||0)||guiAsArray(job.stateWarnings).length)?'완료 · 확인 필요':CANONICAL_JOB_STATE_LABELS[job.state]) || job.state || '');
       kindBadge.className = `badge ${terminal ? (failedTerminal ? 'badge--danger' : 'badge--ok') : 'badge--info'}`;
     }
     const meter=body.querySelector('.progress');meter.hidden=!measurable;meter.querySelector('i').style.setProperty('--v',`${percent}%`);
@@ -82623,7 +82709,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       node.classList.toggle('is-active',isActive);
       node.classList.toggle('is-fail',isFail);
       if(job.stepTitles && job.stepTitles[i]){const t=node.querySelector('b');if(t)t.textContent=job.stepTitles[i];}
-      if(job.stepSubs && job.stepSubs[i]){const s=node.querySelector('span:not(.step__no)');if(s)s.textContent=job.stepSubs[i];}
+      const sub=job.stepSubs?.[i]||(node.dataset.variant==='regen'?'':['턴 범위','사서 모델','근거 대조','저장 · 상태 반영'][i]);
+      if(sub){const s=node.querySelector('span:not(.step__no)');if(s)s.textContent=sub;}
     });
     const result=body.querySelector('[data-job-result]');result.replaceChildren();result.hidden=!terminal;
     const summary=(label,value,detail='',extra=null)=>{
@@ -82656,56 +82743,43 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           result.append(summary(item.label, item.value, item.detail || ''));
         }
       }else{
-        const stateBadgeCls=['completed'].includes(job.state)?'badge badge--ok'
+        const onlyNotices=job.state==='completed_with_warnings'&&!Number(job.failed||0)&&!guiAsArray(job.stateWarnings).length&&!job.error;
+        const stateBadgeCls=job.state==='completed'||onlyNotices?'badge badge--ok'
           :['completed_with_warnings','awaiting_choice','awaiting_edit'].includes(job.state)?'badge badge--warn'
           :['failed','cancelled'].includes(job.state)?'badge badge--danger':'badge';
-        const stateBadgeLabel=job.state==='completed'?'정상 완료'
-          :job.state==='completed_with_warnings'?'완료 (확인 필요 항목 있음)'
-          :job.state==='failed'?'작업 실패'
-          :job.state==='cancelled'?'작업 취소됨'
-          :String(job.state||'');
+        const stateBadgeLabel=onlyNotices?'완료 · 참고 사항 있음':job.state==='completed_with_warnings'?'완료 · 확인 필요':CANONICAL_JOB_STATE_LABELS[job.state]||String(job.state||'');
         const jobLabel=job.jobType==='micro'?'미크로 작업':job.jobType==='lens'?'렌즈 작업':'정본 작업';
-        result.append(summary(jobLabel,guiEl('span',{class:stateBadgeCls,text:stateBadgeLabel}),job.message&&job.message!=='작업을 마쳤습니다. 아래 결과를 확인하세요.'?job.message:''));
+        // The header badge and message line already state the outcome; a failure keeps its own row.
+        if(Number(job.failed||0)||['failed','cancelled'].includes(job.state))result.append(summary(jobLabel,guiEl('span',{class:stateBadgeCls,text:stateBadgeLabel}),job.message&&job.message!=='작업을 마쳤습니다. 아래 결과를 확인하세요.'?job.message:''));
         if(job.error){
           result.append(summary('오류 안내',guiEl('span',{class:'badge badge--danger',text:'오류 발생'}),String(job.error)));
         }
         for(const warning of guiAsArray(job.memoryWarnings)){
           const admission=warning.admission||{};
-          const hasAdmission=Boolean(warning.admission);
-          const acceptedEnt=Number(admission.acceptedEntities??0);
-          const acceptedFact=Number(admission.acceptedFacts??0);
-          const rejectedCount=guiAsArray(admission.rejected).length;
-          const droppedCount=guiAsArray(admission.droppedFields).length;
-          let detailText='';
-          if(hasAdmission){
-            const parts=[];
-            if(acceptedEnt>0||acceptedFact>0)parts.push(`인물 ${acceptedEnt}개 · 사실 ${acceptedFact}개 반영`);
-            if(rejectedCount>0)parts.push(`근거 미흡 ${rejectedCount}건 제외`);
-            if(droppedCount>0)parts.push(`보완 필드 ${droppedCount}건 제외`);
-            detailText=parts.join(', ')||(admission.status==='partial'?'일부 항목이 제외되고 부분 저장되었습니다.':'저장 결과를 확인했습니다.');
-          }else{
-            detailText=String(warning.reason||warning.message||'저장 검증 결과를 확인했습니다.');
-          }
-          const rawJson=JSON.stringify(warning.admission||warning,null,2);
-          const foldDetails=guiEl('details',{class:'fold',style:'margin-top:6px;grid-column:1 / -1;width:100%;'},[
-            guiEl('summary',{style:'font-size:11.5px;cursor:pointer;color:var(--text3);padding:4px 8px;',text:'검증 세부 내역 접기/펼치기'}),
-            guiEl('div',{class:'fold__body',style:'padding:8px 10px;background:var(--surface);border-radius:var(--r-sm);margin-top:4px;'},[
-              guiEl('pre',{style:'margin:0;font-size:11px;max-height:140px;overflow:auto;white-space:pre-wrap;word-break:break-all;',text:rawJson})
-            ])
-          ]);
-          result.append(summary(
-            `T${warning.startTurn}–T${warning.endTurn} 저장 확인`,
-            guiEl('span',{class:'badge badge--warn',text:'부분 저장'}),
-            detailText,
-            foldDetails
-          ));
+          const rejectedRows=guiAsArray(admission.rejected),droppedCount=guiAsArray(admission.droppedFields).length;
+          const parts=[];
+          if(Number(admission.acceptedFacts??0)>0)parts.push(`사실 ${Number(admission.acceptedFacts)}개 저장`);
+          if(rejectedRows.length)parts.push(`근거 부족 ${rejectedRows.length}건 제외`);
+          if(droppedCount)parts.push(`보완 필드 ${droppedCount}건 제외`);
+          const detailText=(parts.join(' · ')||'일부 항목을 제외하고 저장했습니다')+'. 제외된 항목은 기억 검색과 상태에 쓰이지 않으며, 다른 사실과 현재 상태는 그대로 반영됩니다.';
+          const foldDetails=rejectedRows.length?guiEl('details',{class:'fold',style:'margin-top:6px;grid-column:1 / -1;width:100%;'},[
+            guiEl('summary',{style:'font-size:12px;cursor:pointer;padding:4px 8px;',text:'제외된 항목 보기'}),
+            guiEl('div',{class:'fold__body stack',style:'padding:8px 10px;gap:6px;'},rejectedRows.map(row=>guiEl('p',{style:'margin:0;font-size:12px;',
+              text:`${row.kind==='entity'?'개체':'사실'} ${row.id||Number(row.index)+1} · ${canonicalRejectionLabel(row.reason)}${row.text?` — ${row.text}`:''}`})).concat(
+              guiEl('p',{class:'hint',style:'margin:0;',text:'다시 반영하려면 기억 관리 도구의 재분석으로 이 구간을 다시 분석하세요.'})))
+          ]):null;
+          result.append(summary(`T${warning.startTurn}–T${warning.endTurn} 저장 결과`,guiEl('span',{class:'badge',text:'일부 항목 제외'}),detailText,foldDetails));
+        }
+        for(const notice of guiAsArray(job.stateNotices)){
+          result.append(summary(`T${notice.startTurn}–T${notice.endTurn} 상태 반영`,guiEl('span',{class:'badge badge--ok',text:'자동 반영'}),
+            `검증 규칙만으로 확정하지 못한 ${Number(notice.autoApplied||0)}건을 자동 반영했습니다. 검토하지 않아도 그대로 사용됩니다.`,
+            guiEl('button',{class:'btn btn--sm',type:'button',style:'grid-column:1 / -1;justify-self:start;',text:'자동 반영 검토 열기',onClick:()=>{Gui.canonicalJobMinimized=true;renderCanonicalJobSurface(job);openMemoryReviewDialog();}})));
         }
         for(const warning of guiAsArray(job.stateWarnings)){
-          result.append(summary(
-            '현재 상태 반영',
-            guiEl('span',{class:'badge badge--warn',text:'확인 필요'}),
-            `${String(warning.reason||warning.message||'')} (정본 저장 결과와 별도로 확인합니다.)`
-          ));
+          const reasons=guiAsArray(warning.reasons).length?guiAsArray(warning.reasons):[warning.reason];
+          result.append(summary(`T${warning.startTurn}–T${warning.endTurn} 상태 반영`,guiEl('span',{class:'badge badge--warn',text:'일부 대기'}),
+            `${Number(warning.count||0)?`${Number(warning.count)}건 · `:''}${reasons.map(memoryReviewReasonLabel).join(' ')} 기억 저장은 끝났고, 나머지 상태는 그대로 반영되어 있습니다.`,
+            guiEl('button',{class:'btn btn--sm',type:'button',style:'grid-column:1 / -1;justify-self:start;',text:'자동 반영 검토 열기',onClick:()=>{Gui.canonicalJobMinimized=true;renderCanonicalJobSurface(job);openMemoryReviewDialog();}})));
         }
       }
     }
@@ -82719,7 +82793,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       portal.remove();
       Gui.app.querySelectorAll('[data-canonical-job-chip]').forEach(node=>node.remove());
     }}));
-    body.appendChild(guiEl('p',{class:'hint',dataset:{canonicalJobClock:String(job.jobId)},text:`${String(job.state||'')} · ${elapsed}초 · ${measurable?`${done}/${measurable}`:'배치 수 확인 중'}`}));
+    body.appendChild(guiEl('p',{class:'hint',dataset:{canonicalJobClock:String(job.jobId)},text:`${CANONICAL_JOB_STATE_LABELS[job.state]||String(job.state||'')} · ${elapsed}초 · ${measurable?`${done}/${measurable}구간`:'구간 수 확인 중'}`}));
     if (job.state === 'awaiting_edit' && job.comparison?.candidate) {
       // Editing is the whole task here: the dialog grows to the frame and the text area takes the free height.
       body.classList.add('dialog--editor');
@@ -89541,7 +89615,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const worldManagerSnapshotView = () => {
     const snapshot = LibraMemoryCore.peekSnapshot() || {};
     const current = snapshot.currentStateView;
-    const value = current ? current.head : snapshot.continuityState;
+    const value = current?.head || snapshot.continuityState;
     const head = value && typeof value === 'object' ? value : null;
     return {
       snapshot,
@@ -89919,6 +89993,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return fieldNode(worldManagerArticleFieldLabel(field),worldManagerTextarea(list?worldManagerListText(current[field]):text(current[field]||''),value=>update(field,list?String(value).split('\n').map(v=>v.trim()).filter(Boolean):value)),list?'한 줄에 한 항목씩 입력합니다.':'' );
     }).concat(guiLazyDetails({class:'fold'},guiEl('summary',{text:'고급 · 구조화 상태 편집'}),()=>fieldNode('상태 JSON',worldManagerTextarea(draft.values.state,value=>{draft.values.state=value;},{tall:true}),'소속·접근 권한·규칙 예외는 구조를 유지해서 편집합니다. 비워진 필드는 명시적 해제로 저장됩니다.')));
   };
+  const CANONICAL_JOB_KIND_LABELS = Object.freeze({source_edit:'원문 수정 재분석',cold_start:'수동 콜드스타트',manual_scan:'구간 분석',failed_retry:'실패 구간 재시도',regenerate:'정본 재생성'});
+  const CANONICAL_JOB_STATE_LABELS = Object.freeze({preparing:'준비 중',running:'진행 중',adopting:'저장 중',cancel_requested:'취소 요청됨',completed:'완료',
+    completed_with_warnings:'완료 · 참고 사항',failed:'실패',cancelled:'취소됨',original_kept:'원본 유지',awaiting_choice:'선택 대기',awaiting_edit:'편집 대기'});
+  const canonicalRejectionLabel = reason => /FACT_KIND|DOMAIN/.test(reason)?'사실 종류가 영역과 맞지 않음'
+    :/DEPENDENCY/.test(reason)?'의존한 사실이 제외됨':/EVIDENCE|QUOTE|SOURCE/.test(reason)?'원문 인용을 확인하지 못함'
+    :/IDENTITY|TEMP_REF|UNRESOLVED/.test(reason)?'대상 인물·장소를 확인하지 못함':/AMBIGUOUS|DUPLICATE/.test(reason)?'식별자가 중복됨':'형식 검증을 통과하지 못함';
   const memoryReviewReasonLabel = reason => ({
     micro_same_turn_field_conflict:'같은 턴에 서로 다른 값이 기록되어 있습니다. 기록 순서상 마지막 값을 반영하며, 사용자가 확정한 값이 있으면 그 값을 우선합니다.',
     same_source_order_conflict:'같은 시점의 근거에 서로 다른 값이 있습니다. 기록 순서상 마지막 값을 반영하며, 사용자가 확정한 값이 있으면 그 값을 우선합니다.',
@@ -97166,8 +97246,8 @@ advanced
     async getWorldManagerRuntimeMeta() { return safeClone(await LibraMemoryCore.getWorldManagerRuntimeMeta()); },
     async getWorldManagerNarrative() {
       const snapshot = await LibraMemoryCore.refreshSnapshot(undefined, { suppressGuiSchedule: true, requireCurrentView: true });
-      return safeClone((snapshot?.currentStateView ? snapshot.currentStateView.head?.narrative
-        : snapshot?.continuityState?.narrative) || __libraNarrativeEmptyState());
+      return safeClone((snapshot?.currentStateView?.head?.narrative
+        || snapshot?.continuityState?.narrative) || __libraNarrativeEmptyState());
     },
     async addWorldManagerCorrection(options = {}) { return safeClone(await LibraMemoryCore.appendStateCorrection(options)); },
     async addWorldManagerNarrativeCorrection(narrativePatch = {}, options = {}) {
