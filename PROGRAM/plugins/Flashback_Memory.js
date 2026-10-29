@@ -20769,18 +20769,25 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   // 1024-d vectors (~20 KB each) let one re-sync of many turns push the worldline
   // past the server's single-value limit (4 MiB). Drop the oldest retired vectors
   // first; a restored record without one is re-embedded like any missing vector.
-  const TURN_WORLDLINE_MAX_STORED_BYTES = 3 * 1024 * 1024;
-  const turnWorldlineBytes = value => new TextEncoder().encode(safeStringify(value)).length;
+  // The ledger is stored as compact JSON: the indented form put every vector
+  // element on its own line and nearly doubled a 2 MB ledger to 3.8 MB. The
+  // budget counts the bytes the storage client measures (the string re-encoded
+  // as JSON), so escaping cannot push a compacted ledger past the server limit.
+  // Older indented ledgers still parse and are rewritten compact on their next save.
+  const TURN_WORLDLINE_MAX_STORED_BYTES = 2 * 1024 * 1024;
+  const serializeTurnWorldline = value => JSON.stringify(value);
+  const turnWorldlineWireBytes = serialized => new TextEncoder().encode(JSON.stringify(serialized)).length - 2;
   const compactTurnWorldlineForStorage = worldline => {
-    if (turnWorldlineBytes(worldline) <= TURN_WORLDLINE_MAX_STORED_BYTES) return worldline;
+    let bytes = turnWorldlineWireBytes(serializeTurnWorldline(worldline));
+    if (bytes <= TURN_WORLDLINE_MAX_STORED_BYTES) return worldline;
     const retiredRecords = worldline.retiredRecords.slice();
-    let bytes = turnWorldlineBytes(worldline);
     for (let index = 0; index < retiredRecords.length && bytes > TURN_WORLDLINE_MAX_STORED_BYTES; index++) {
       const record = retiredRecords[index];
       if (!Array.isArray(record.vector) || !record.vector.length) continue;
-      const saved = new TextEncoder().encode(safeStringify(record.vector)).length - 2;
-      retiredRecords[index] = vectorlessRetiredRecord(record);
-      bytes -= saved;
+      const stripped = vectorlessRetiredRecord(record);
+      // JSON escaping is per character, so the per-record delta is exact.
+      bytes -= turnWorldlineWireBytes(serializeTurnWorldline(record)) - turnWorldlineWireBytes(serializeTurnWorldline(stripped));
+      retiredRecords[index] = stripped;
     }
     // Text is never dropped; the storage layer still refuses a value it cannot hold.
     return { ...worldline, retiredRecords };
@@ -20793,7 +20800,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     assertNoForeignScopeCollision(manifest, 'turn worldline save');
     const normalized = compactTurnWorldlineForStorage(normalizeTurnWorldline(value, scopeKey));
     await saveOptions.assertCurrent?.();
-    await requireStorageWrite(scopeKeys.worldline(scopeKey), safeStringify(normalized), 'turn worldline save');
+    await requireStorageWrite(scopeKeys.worldline(scopeKey), serializeTurnWorldline(normalized), 'turn worldline save');
     await saveOptions.sourceEditValidate?.();
     return normalized;
     }finally{end();}

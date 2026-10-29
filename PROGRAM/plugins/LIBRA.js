@@ -59276,7 +59276,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
           }
         }
       }
-      const active = await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn, options);
+      // A caller that has just verified this exact receipt may hand it over as the
+      // opening source read; the closing source and head re-reads below still run.
+      const supplied = asObject(options.verifiedSource);
+      const active = supplied.status === 'verified' && supplied.receipt?.scopeKey === scope.scopeKey
+        && supplied.receipt.worldlineId === worldlineId && Number(supplied.receipt.sessionEpoch) === Number(sessionEpoch)
+        && Number(supplied.receipt.turn) === Number(turn)
+        && supplied.receiptKey === key.completedTurnReceipt(scope, worldlineId, sessionEpoch, turn, supplied.receipt.revisionId)
+        ? supplied : await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn, options);
       if (active.status !== 'verified') return empty(active.status, active.reason);
       const headKey = key.microMemoryHead(scope, worldlineId, sessionEpoch, turn);
       let head;
@@ -59309,7 +59316,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
              && Number(head.restoreGeneration) !== Number(state.microRestoreGeneration || 0)))
           return empty('stale_source','micro_publish_boundary_changed');
         let work;
-        try {work=await storage.getVerifiedJson(head.workKey,scope,null);}
+        const prefetched = asObject(options.prefetchedWork);
+        try {work=prefetched.key && prefetched.key === head.workKey ? prefetched.value : await storage.getVerifiedJson(head.workKey,scope,null);}
         catch (_) {return empty('pending_reconciliation','micro_work_read_unavailable');}
         if (!work || work.status !== 'result_ready'
           || string(work.attemptId || '') !== string(head.attemptId || '')
@@ -59420,7 +59428,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       let work=null,reason='';
       try {work=await storage.getVerifiedJson(workKey,scope,null);}
       catch (_) {reason='work_copy_unavailable';}
-      const published=await readActiveMicroMemory(scope,receipt.worldlineId,receipt.sessionEpoch,receipt.turn);
+      // Reuse this poll's verified receipt and work read instead of fetching both again.
+      const published=await readActiveMicroMemory(scope,receipt.worldlineId,receipt.sessionEpoch,receipt.turn,
+        {verifiedSource:active,...(reason?{}:{prefetchedWork:{key:workKey,value:work}})});
       const jobKey=[scope.scopeKey,receipt.worldlineId,receipt.sessionEpoch,
         receipt.turn,receipt.revisionId].join(':');
       const status=reason?'unknown':state.microJobs.has(jobKey)?'running':microStageStatusFromWork(work,published);
