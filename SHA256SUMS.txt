@@ -669,12 +669,12 @@ cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c  ./PROGRAM/macO
 4587c121f08b56d71872eb94cc19ecd7e546d2890011bb673aa08f9d1188c7cf  ./PROGRAM/memory-suite.sh
 e9a0a6707acf0ced5f89ab11e319c8fe66bf253bfd6066d4d7f52f8f2adfc97b  ./PROGRAM/PACKAGE_CONTENTS.txt
 a4417c66f84a2b13205c1ca75f08454006f07a01d008ffc89105cbd4ff31d00e  ./PROGRAM/plugins/Flashback_Memory.js
-63bab64cfad8449b1291cf368b9e285872c3ececc3840abdededf5dab9f7f833  ./PROGRAM/plugins/GRADIA.js
+cd2bf8e5b221f2fa061174dcfbc77d5bb792c76bb41e5bae5a32b32aaf9bcceb  ./PROGRAM/plugins/GRADIA.js
 df77cf79398538dbd983ea10070553fb61312016a12677ab3cbe6290ad56fa66  ./PROGRAM/plugins/HAYAKU_Locator_Continuity.js
 6d86731b4536c7c2adefeb47f446c7fcbc764d6240fc3eac7b3b57292768ef31  ./PROGRAM/plugins/LIA_Persona_Linker.js
 075d3d13306b66ed4c9260e01ef99f4c34cffa0fe2899e3d3488e9413d110e11  ./PROGRAM/plugins/LIBRA.js
 3e12856aafd7e7ea4068a3f3ec971bf2ec71f0f2c4d00915c1f4166c5ba42ccd  ./PROGRAM/plugins/RETRACE.js
-9cd308f5567ebeefaad5c914ce5d29f94beda8511124a34c2b0f94a052cb6578  ./PROGRAM/program-manifest.json
+11b82c843a31e149354d466f1f953c3ca0fce2a9e5424a257e191bd26f0fae01  ./PROGRAM/program-manifest.json
 8d5c64f1573f97a5a442db122023d0c2fb7a087fd6acffcbc087c550eee3645b  ./PROGRAM/release-policy.json
 38f798a00ebc9fe69e474d7342bad540350dc07e106ae1c4fdceb6c9e299b751  ./PROGRAM/RisuAI_플러그인_폴더_열기.bat
 c35515d7e669bc31e2901c27f941b48f86ef15eebc20835ef325384728b57401  ./PROGRAM/run_regression_batch.py
@@ -1275,7 +1275,7 @@ bffe1a5567b57370c2a21acf5e7098fce898636185f661d327d041c618c726a5  ./PROGRAM/test
 1fbc46daeb2ad228fcd81ac328b4180ede2ab7cb29d7b6bcec493eaa9dc64d65  ./PROGRAM/tests/gradia_three_owner_read_auth_test.cjs
 3bd3382c993f5ae1ccbaff6c3d228d724e8b32b4adf56ffe189c436e91587353  ./PROGRAM/tests/gradia_three_owner_sdk_test.cjs
 d57bfa75ec47ecc39698ea33185463b24707d718e787e64ca39f37ea4b08b523  ./PROGRAM/tests/gradia/aide-full-draft-recovery-gui.test.cjs
-51360ec329f52d6c9739ed0a834c7f367017b492c4292ef07115e2955497c710  ./PROGRAM/tests/gradia/aide-full-draft-recovery.test.cjs
+f0d98d63fd76bf3c738f55a563dd864c27a771a23c35ee1a441ea2a3cfe68318  ./PROGRAM/tests/gradia/aide-full-draft-recovery.test.cjs
 fcac35e825ffff26245c63cd75a611bcd2ae0ee547068e47095e6725eeb3a25d  ./PROGRAM/tests/gradia/draft-live-scene.test.cjs
 75e5511a6ef48115094ca8801d7d53924e709370ca10cb9e3e688dd936862998  ./PROGRAM/tests/gradia/draft-only.test.cjs
 d63f1725ada854e8a58752a03efed6ccaeaf54ab1c0feb235d955b574ed8a0ce  ./PROGRAM/tests/gradia/evidence-bridge.test.cjs

@@ -23023,12 +23023,14 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     )
   );
 
+  // 거절 어휘가 관용·서술로 쓰인 경우만 걸러낸다. 텍스트를 지우고 판정하면 그 사이에 숨은 거절이
+  // 통과하므로, 지우지 않고 해당 꼴에만 부정 lookahead를 건다. 같은 앞부분의 다른 거절 표현은 그대로 잡힌다.
   const isAideSourceRefusal = value => {
     const head = text(value || '').slice(0, 1400);
-    const refusal=/(?:\bI (?:cannot|can['’]t|won['’]t|am unable to) (?:help|assist|comply|provide|write|generate)|\bunable to (?:comply|assist)|(?:도와드릴|제공할|제공해 드릴|작성할|생성할|응할)\s*수\s*(?:는\s*)?없)/i.test(head);
-    const serviceReply=/^\s*(?:[#*_]+\s*)?(?:I (?:cannot|can['’]t|won['’]t|am unable)|I['’]m sorry|I am sorry|Sorry\b|죄송|미안|요청하신|해당 요청|이 요청|현재 요청|도와드릴|제공할|작성할|생성할|응할)/i.test(head);
+    const refusal=/(?:\bI(?:['’]m not able to| (?:cannot|can['’]t|won['’]t|am unable to)) (?:help|assist|comply|provide|write|generate)(?!\s+(?:but\b|\w+ing\b|myself\b|yourself\b|himself\b|herself\b|itself\b|themselves\b|ourselves\b))|\bI must decline\b|\bunable to (?:comply|assist)|(?:도와드릴|제공할|제공해 드릴|작성할|생성할|응할|답할|답변할|답변\s*드릴)\s*수\s*(?:는\s*)?없(?!\s*(?:는|던|을)?\s*(?:처지|형편|상황|입장|것|듯|터))(?!었|았))/i.test(head);
+    const serviceReply=/^\s*(?:[#*_]+)?(?:I (?:cannot|can['’]t|won['’]t|am unable)|I['’]m not able|I must decline|I['’]m sorry|I am sorry|Sorry\b|죄송|미안|요청하신|해당 요청|이 요청|현재 요청|도와드릴|제공할|작성할|생성할|응할|답할|답변할)/i.test(head);
     const policyReply=/\b(?:safety|policy|underage|minor)\b|안전 정책|정책상|미성년/i.test(head);
-    return refusal && (serviceReply || policyReply);
+    return refusal&&(serviceReply||policyReply);
   };
 
   const applyAidePatchWithRecovery = (document, patch, currentInput = '') => {
@@ -23038,52 +23040,41 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       blockCountAfter:document.blocks.length,applied:[],skipped:[]});
     
     const whole = patch.edits.filter(edit => edit.operation === 'replace_draft');
-    
-    // [선행 감지기] 현재 문서가 AI의 거절 메시지 상태인지 먼저 확인
-    const isRefusal = isAideSourceRefusal(source);
-
-    // --- 경로 1: 거절 메시지 상태일 때 ---
-    if (isRefusal) {
-      // 거절 상태에서는 '문단 단위 수정(whole.length === 0)'이 들어오면 차단
-      if (whole.length === 0) {
-        if (patch.edits.length > 0) {
-          // 문단 단위로 조금씩 지우려는 시도를 차단 (Bypass 방지)
-          return reject('refusal_must_be_replaced_entirely');
-        }
-        // 패치가 아예 없는 경우 (변화 없음)
-        return {ok:true, draft:source, sourceHash:document.sourceHash, outputHash:document.sourceHash,
-          blockCountBefore:document.blocks.length, blockCountAfter:document.blocks.length,
-          applied:[], skipped:[], recoveryMode: 'refusal_preserved'};
-      }
-      
-      // 전체 교체(whole.length > 0)라면 아래의 '통합 검증 로직'으로 진행
-    }
-
-    // --- 경로 2: 일반 문서 상태이거나, 거절 상태에서 전체 교체 패치가 들어온 경우 ---
-    if (whole.length > 0) {
-      // [통합 검증 로직] 전체 교체(replace_draft)에 대한 엄격한 검증 수행
-      const edit = whole[0];
-      if (patch.edits.length !== 1) return reject('aide_full_recovery_mixed_operations');
-      if (edit.target !== 'draft' || edit.expectedHash !== document.sourceHash) return reject('aide_full_recovery_source_mismatch');
-      if (text(edit.reason).trim().length < 16) return reject('aide_full_recovery_diagnosis_missing');
-      if (typeof edit.content !== 'string' || !edit.content || edit.content.length > 80000 || !isUsableDraftText(edit.content)
-        || /<\/?DRAFT_BLOCK\b/i.test(edit.content)) return reject('aide_full_recovery_invalid_body');
-      if (normalizeDraftPatchComparisonText(edit.content) === normalizeDraftPatchComparisonText(source)) return reject('aide_full_recovery_unchanged');
-      
-      // (참고: 이전에 제거하기로 한 거절 내용 자체에 대한 검사는 제외함)
-      // if (isAideSourceRefusal(edit.content)) return reject('aide_full_recovery_candidate_refusal');
-
-      const commitment = validateAuthoritativeCommitments(currentInput, edit.content);
-      if (!commitment.ok) return reject('aide_full_recovery_commitment_conflict');
-      
-      const next = buildDraftPatchDocument(edit.content);
-      return {ok:true, draft:edit.content, sourceHash:document.sourceHash, outputHash:stableDraftHash(edit.content),
-        blockCountBefore:document.blocks.length, blockCountAfter:next.blocks.length,
-        applied:[{...edit}], skipped:[], recoveryMode:'full_draft_recovery', commitmentGuard:commitment};
-    } else {
-      // 일반 문서 상태에서 문단 단위 수정인 경우
+    if (!whole.length) {
+      // 거절 초안은 문단 연산을 조합해서 덮을 수 없다. 아래 원자적 전면 교체만이 그것을 대체한다.
+      if (patch.edits.length && isAideSourceRefusal(source)) return reject('refusal_must_be_replaced_entirely');
       return applyDraftPatchOperations(document, patch.edits);
     }
+
+    // [통합 검증 로직] 전체 교체(replace_draft)에 대한 엄격한 검증 수행
+    const edit = whole[0];
+    if (patch.edits.length !== 1) return reject('aide_full_recovery_mixed_operations');
+    if (edit.target !== 'draft' || edit.expectedHash !== document.sourceHash) return reject('aide_full_recovery_source_mismatch');
+    if (text(edit.reason).trim().length < 16) return reject('aide_full_recovery_diagnosis_missing');
+    if (typeof edit.content !== 'string' || !edit.content || edit.content.length > 80000 || !isUsableDraftText(edit.content)
+      || /<\/?DRAFT_BLOCK\b/i.test(edit.content)) return reject('aide_full_recovery_invalid_body');
+    if (normalizeDraftPatchComparisonText(edit.content) === normalizeDraftPatchComparisonText(source)) return reject('aide_full_recovery_unchanged');
+
+    // (참고: 이전에 제거하기로 한 거절 내용 자체에 대한 검사는 제외함)
+    // if (isAideSourceRefusal(edit.content)) return reject('aide_full_recovery_candidate_refusal');
+
+    // 복구 후보가 다시 메타·거절문이면 채택하지 않는다. 초안은 그대로 두고 이 시도만 기록해서,
+    // 다음 에이데가 같은 초안에서 다른 복구를 시도할 수 있게 한다.
+    if (isAideSourceRefusal(edit.content)) return {
+      ok:true, draft:source, sourceHash:document.sourceHash, outputHash:document.sourceHash,
+      blockCountBefore:document.blocks.length, blockCountAfter:document.blocks.length,
+      applied:[], skipped:[{operation:'replace_draft', target:edit.target, expectedHash:edit.expectedHash,
+        reason:edit.reason, skipReason:'candidate_refusal_not_adopted'}],
+      recoveryRejected:'aide_full_recovery_candidate_refusal'
+    };
+
+    const commitment = validateAuthoritativeCommitments(currentInput, edit.content);
+    if (!commitment.ok) return reject('aide_full_recovery_commitment_conflict');
+
+    const next = buildDraftPatchDocument(edit.content);
+    return {ok:true, draft:edit.content, sourceHash:document.sourceHash, outputHash:stableDraftHash(edit.content),
+      blockCountBefore:document.blocks.length, blockCountAfter:next.blocks.length,
+      applied:[{...edit}], skipped:[], recoveryMode:'full_draft_recovery', commitmentGuard:commitment};
   };
 
   const submittedCurrentInput = (recent = {}) => text(recent?.latestUser || '').trim();
@@ -26147,7 +26138,7 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
       }
 
       if (!isAcceptedAidePatchApplication(patch, applied)) {
-        const reason = 'aide_patch_no_applicable_edits';
+        const reason = applied.recoveryRejected || 'aide_patch_no_applicable_edits';
         const fallback = attachStageLineage(
           fallbackStage(stageName, previous, reason),
           stageName,
@@ -38786,14 +38777,25 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         explicitCreateTokens: 0
       });
     await libReadSession.assertCurrent();
-    let injection = buildFinalOverlay(current, stages, finalRecent, settings);
-    if (usesLibEvidence) {
+    // 거절문은 응답이 아니다. 어느 단계가 만들어냈든 넘겨줄 초안 자체가 거절문이면, 그것을 주입하는 순간
+    // 최종 응답이 거절이 된다. 이번 턴에는 초안을 넘기지 않고 원래 요청을 그대로 진행시킨다.
+    const refusalDraftSuppressed = !!boundFinalDraft && isAideSourceRefusal(boundFinalDraft);
+    if (refusalDraftSuppressed) {
+      warn('final_draft_refusal_suppressed', { runId: runLineage.runId, chars: boundFinalDraft.length, stage: safeStage?.stage || current?.stage || '' });
+      // 억제된 턴은 아무것도 전달되지 않는다. 런타임과 결과 화면이 실제 전달 상태와 어긋나지 않도록
+      // 최종 초안을 비우고, 왜 아무것도 전달되지 않았는지를 메타에 남긴다.
+      Runtime.finalDraft = '';
+      Runtime.finalDraftMeta = { ...(Runtime.finalDraftMeta || {}), suppressed: 'final_draft_refusal_suppressed', refusalDraftChars: boundFinalDraft.length };
+    }
+    let injection = refusalDraftSuppressed ? '' : buildFinalOverlay(current, stages, finalRecent, settings);
+    if (usesLibEvidence && !refusalDraftSuppressed) {
       await libReadSession.finalize(boundFinalDraft);
       injection = `${injection}\n${LIB_EVIDENCE_TRANSPORT_MARKER}`;
       injection = await libReadSession.finalize(injection);
     }
     return {
       ok: !!injection,
+      reason: refusalDraftSuppressed ? 'final_draft_refusal_suppressed' : '',
       injection,
       externalEvidence: usesLibEvidence,
       finalizeHandoff: usesLibEvidence ? async () => {
@@ -39111,6 +39113,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const result = await runPipeline(messages, type, requestSettings);
       if (result.externalEvidence) {
         try {
+          // 거절 초안 억제는 LIB 읽기 실패가 아니다. 이번 턴만 초안을 넘기지 않고 원래 요청을 계속한다.
+          if (result.reason === 'final_draft_refusal_suppressed') {
+            recordBeforeSkip('final_draft_refusal_suppressed', { type: text(type || ''), stageCount: result.stages?.length || 0, preserveDebug: true, requestFingerprint: fingerprint });
+            await finishPipelineWorkStatus('GRADIA 초안이 거절문이라 원래 입력으로 응답을 계속합니다.', false, 6000, 'refusal_suppressed');
+            if (requestSettings.failureMode === 'hard') throw new Error(`${PUBLIC_LOG_PREFIX} Pipeline failed: final_draft_refusal_suppressed`);
+            return messages;
+          }
           if (!result.ok || !result.injection) throw libEvidenceError('LIB_READ_DRAFT_UNAVAILABLE');
           await updatePipelineWorkPanel('GRADIA 초안 작성 완료 · 응답 모델이 장면을 완성하고 있습니다…', 'awaiting_response', { currentStage: '' });
           const injection = await result.finalizeHandoff();

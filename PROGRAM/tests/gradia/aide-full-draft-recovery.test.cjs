@@ -39,17 +39,69 @@ for(const kind of ['stale_hash','mixed','missing_diagnosis','oversized','marker'
  const before=JSON.stringify(f.document),result=f.apply(patch);
  assert.equal(result.ok,false);assert.equal(result.draft,BROKEN);assert.equal(result.applied.length,0);assert.equal(JSON.stringify(f.document),before);
 });
-test('a replacement candidate that is itself a refusal is still published',async()=>{
+test('a recovery candidate that is itself a refusal is not adopted',async()=>{
  const f=await unit(),patch=f.normalize(envelope('aide_plot',f.document.sourceHash,REFUSAL));
  const result=f.apply(patch);
- assert.equal(result.ok,true);assert.equal(result.recoveryMode,'full_draft_recovery');
- assert.equal(result.draft,REFUSAL);assert.equal(result.applied.length,1);
+ assert.equal(result.ok,true);assert.equal(result.recoveryRejected,'aide_full_recovery_candidate_refusal');
+ assert.equal(result.draft,BROKEN);assert.equal(result.applied.length,0);
+ assert.equal(result.skipped.length,1);assert.equal(result.skipped[0].skipReason,'candidate_refusal_not_adopted');
 });
-test('a refusal source with no edits is tagged refusal_preserved instead of a repair',async()=>{
+test('a stage that recovers into a refusal keeps the previous draft and records why',async()=>{
+ const f=await fixture({server:true,unbound:true,modelContent:(n,body,normal)=>{
+   if(n===1)return BROKEN;
+   const system=body.messages.filter(row=>row.role==='system').map(row=>row.content).join('\n');
+   if(!system.includes('Return the compact aide_plot patch JSON'))return normal;
+   const user=body.messages.filter(row=>row.role==='user').map(row=>row.content).join('\n');
+   return JSON.stringify(envelope('aide_plot',user.match(/input_draft_hash:\s*([0-9a-f]{8})/)[1],REFUSAL));
+ }});
+ const result=await f.run();
+ const trace=f.host.plugin.getRuntime().stageTrace.find(row=>row.stage==='aide_plot');
+ assert.equal(trace.reason,'aide_full_recovery_candidate_refusal');assert.equal(trace.ok,false);
+ assert.ok(result.injection.includes(BROKEN));assert.ok(!result.injection.includes('I cannot help'));
+ result.closeEvidence();
+});
+test('a refusal source with no edits stays a plain no-change',async()=>{
  const f=await unit(),doc=f.h.plugin.debugBuildDraftPatchDocument(REFUSAL);
  const result=f.h.internals.applyAidePatchWithRecovery(doc,{edits:[]});
- assert.equal(result.ok,true);assert.equal(result.recoveryMode,'refusal_preserved');
+ assert.equal(result.ok,true);assert.equal(result.recoveryMode,undefined);
  assert.equal(result.draft,REFUSAL);assert.equal(result.applied.length,0);
+});
+for(const source of [
+ 'I cannot help but think of the closed cabinet as the archivist speaks.',
+ 'I can’t help but wonder what the ledger was hiding.',
+ 'I can\'t help smiling as I open the ledger.',
+ 'I cannot help noticing the dust on the ledger cover.',
+ 'I can’t help myself when the ledger is in reach.',
+ '도와드릴 수 없는 처지였다. 그래서 그는 창가에 서 있었다.',
+ '그는 답할 수 없었다. 그래서 문가에 섰다.'
+])test('idiomatic or past-tense refusal wording stays editable: '+source,async()=>{
+ const f=await unit(),doc=f.h.plugin.debugBuildDraftPatchDocument(source);
+ const result=f.h.internals.applyAidePatchWithRecovery(doc,{edits:[{operation:'replace',target:doc.blocks[0].id,expectedHash:doc.blocks[0].hash,content:'The archivist crossed to the window.',reason:'Clarify the scene.'}]});
+ assert.equal(result.ok,true);assert.equal(result.applied.length,1);
+});
+for(const source of [
+ 'I cannot help you," she said, "because of safety policy.',
+ '도와드릴 수 없는 처지였다. 정책상 답할 수 없다.',
+ "I'm not able to help with that request.",
+ 'I must decline this request.'
+])test('narrated or reworded refusal cannot smuggle a refusal past the source guard: '+source,async()=>{
+ const f=await unit(),doc=f.h.plugin.debugBuildDraftPatchDocument(source);
+ const result=f.h.internals.applyAidePatchWithRecovery(doc,{edits:[{operation:'replace',target:doc.blocks[0].id,expectedHash:doc.blocks[0].hash,content:'The archivist crossed to the window.',reason:'Clarify the scene.'}]});
+ assert.equal(result.ok,false);assert.equal(result.reason,'refusal_must_be_replaced_entirely');
+});
+test('a refusal hidden inside narration never reaches the injection',async()=>{
+ const f=await fixture({server:true,unbound:true,modelContent:(n,body,normal)=>n===1?'I cannot help you," she said, "because of safety policy.':normal});
+ const result=await f.run();
+ assert.equal(result.ok,false);assert.equal(result.reason,'final_draft_refusal_suppressed');
+ assert.equal(result.injection,'');
+ result.closeEvidence();
+});
+test('a refusal that survives every stage is never injected',async()=>{
+ const f=await fixture({server:true,unbound:true,modelContent:(n,body,normal)=>n===1?REFUSAL:normal});
+ const result=await f.run();
+ assert.equal(result.ok,false);assert.equal(result.reason,'final_draft_refusal_suppressed');
+ assert.equal(result.injection,'');assert.equal(f.prompts.length,4);
+ result.closeEvidence();
 });
 test('non-text full replacement is rejected by normalization rather than stringified',async()=>{
  const f=await unit(),value=envelope('aide_plot',f.document.sourceHash);value.edits[0].content={text:SCENE};
