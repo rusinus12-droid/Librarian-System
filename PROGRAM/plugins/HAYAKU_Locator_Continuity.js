@@ -36461,6 +36461,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     } finally { clearTimeout(timer); }
   };
   const captureHayakuReadset = async (scope,messages,requestType,requestId,chatMessages) => {
+    // First contact (including recovery from an unavailable startup server)
+    // establishes DATA identity. Finish that work before pinning the readset;
+    // its own bootstrap must not look like an external authority change.
+    const config = await MemorySuiteStorageBridge.getConnectionSettings({scope:{scopeId:scope.key,scopeKey:scope.key},force:true});
+    if (config.transition || config.recoveryRequired || config.scope?.available === false) throw Error('HAYAKU_READSET_STORAGE_UNAVAILABLE');
+    if (config.mode !== 'plugin_only' && !MemorySuiteStorageBridge.status().serverBinding?.current) {
+      const connection = await MemorySuiteStorageBridge.bootstrap(true, true);
+      if (!connection) throw Error('HAYAKU_READSET_STORAGE_UNAVAILABLE');
+    }
     const frame={scope:Object.freeze({...scope}),requestId,scopeEpoch:hayakuRecallRequests.scopeEpoch,providers:Object.freeze(hayakuReadsetProviders()),
       settings:JSON.stringify(Memory.settings||{}),backend:JSON.stringify(MemorySuiteStorageBridge.status().serverBinding),
       sourceRules:memorySuiteSourceTagKey('hayaku'),
@@ -37980,7 +37989,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       if (authoritativeChatAvailable && chatScope?.confident) {
         try { readsetFrame=await captureHayakuReadset(chatScope,messages,requestType,recallRequestId,authoritativeChatMessages); }
-        catch (_) { return hayakuRecallPassthrough(messages); }
+        catch (error) {
+          Memory.lastBeforeRequest = { at: now(), skipped: true, reason: 'readset_admission_refused',
+            error: compact(error?.code || error?.message || error, 180), requestType,
+            scopeKey: chatScope.key, stages, elapsedMs: now() - startedAt };
+          debugLog('beforeRequest:readset-refused', Memory.lastBeforeRequest);
+          return hayakuRecallPassthrough(messages);
+        }
       }
       lastHayakuRequestInjectionReceipt = null;
       if (!authoritativeChatAvailable) {

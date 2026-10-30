@@ -28,7 +28,7 @@ module.exports = ({ getRepository, dataInstanceId, epochs, canRead }) => async (
   const records = [], values = [], skipped = [], inventory = [];
   let bytes = 0, inventoryComplete = true, scopeVerified = false;
   const selected = (space, name) => space === 'plugin'
-    ? /^(?:manifest:v2(?::previous:v1)?|turn_worldline:v1|records:shard:[0-9]{4,6}|records:commit:[A-Za-z0-9_-]{1,160}:shard:[0-9]{4,6})$/.test(name)
+    ? /^(?:manifest:v2(?::previous:v1)?|turn_worldline:v1|source-edit-consent:v1|records:shard:[0-9]{4,6}|records:commit:[A-Za-z0-9_-]{1,160}:shard:[0-9]{4,6})$/.test(name)
     : /^[A-Za-z0-9_-]{1,160}:[0-9]{4,6}$/.test(name);
   repository.database.exec('BEGIN');
   try {
@@ -40,9 +40,13 @@ module.exports = ({ getRepository, dataInstanceId, epochs, canRead }) => async (
         if (typeof row.key !== 'string' || !row.key.startsWith(ownedPrefix)) fail('HEALTH_SCOPE_PREFIX_MISMATCH', 500);
         inventory.push([space,row.key,row.tombstone,row.revision,row.digest,row.valueBytes]);
         const name = row.key.slice(ownedPrefix.length);
-        if (!selected(space,name)) { skipped.push({space,reason:'unsupported_scope_record'}); continue; }
+        // Repair protocol state is not memory evidence. Bind its inventory so a
+        // concurrent operation invalidates the snapshot, without reading its body.
+        const repairProtocol = space === 'plugin' && /^server_physical_repair:v2(?::[A-Za-z0-9._-]{16,100})?$/.test(name);
+        if (!selected(space,name) && !repairProtocol) { skipped.push({space,reason:'unsupported_scope_record'}); continue; }
         if (!Number.isSafeInteger(row.revision) || row.revision < 1 || !/^[a-f0-9]{64}$/.test(row.digest)
             || !Number.isSafeInteger(row.valueBytes) || row.valueBytes < 0 || typeof row.tombstone !== 'boolean') fail('HEALTH_RECORD_METADATA_UNVERIFIED', 503);
+        if (repairProtocol) continue;
         records.push({space,key:row.key,name,tombstone:row.tombstone,revision:row.revision,digest:row.digest,valueBytes:row.valueBytes});
       }
     }
@@ -109,6 +113,6 @@ module.exports = ({ getRepository, dataInstanceId, epochs, canRead }) => async (
       coverage:'scope_records_only',status:complete?'snapshot_complete':'snapshot_incomplete',healthVerified:false,
       complete,inventoryComplete,scopeVerified,fingerprint,records:scopeVerified?records:[],values,skipped,
       limits:{maxItemsPerSpace:MAX_ITEMS,maxValueBytes:MAX_VALUE_BYTES,maxTotalValueBytes:MAX_TOTAL_BYTES},
-      exclusions:['global_settings','credentials','other_scopes','host_currentness','physical_repair']};
+      exclusions:['global_settings','credentials','other_scopes','host_currentness','physical_repair','physical_repair_protocol_values']};
   } finally { repository.database.exec('ROLLBACK'); }
 };

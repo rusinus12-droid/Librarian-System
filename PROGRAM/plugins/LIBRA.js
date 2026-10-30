@@ -71596,6 +71596,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         queryBundle.unifiedEnvelopeReserve = 0;
         // The lens query embedding runs alongside canonical recall; lens recall reuses it.
         void prewarmLensQuery(context, queryBundle.currentText);
+        // Scan/vector publication already uses this scope's writer queue. Keep
+        // selection and its final physical proof in one queue entry so a queued
+        // manifest publication cannot revoke the read set between those steps.
+        return await runRecallStep(guard, 'unified_source_publication', () => enqueue(context.scope.scopeKey, async () => {
+        ensureRecallGuard(guard, 'unified_source_publication');
         let result = await recall(context, queryBundle, guard);
         pendingGraphExecution = result.unifiedExecution;
         if (requestOwner !== latestRecallPublicationOwner) return messages;
@@ -71684,6 +71689,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         Runtime.lastInjection = block; scheduleGuiTraceRefresh();
         graphTransferred = true;
         return finalMessages;
+        }), RECALL_REQUEST_BUDGET_MS);
       } catch (error) {
         // A superseded asynchronous failure must not erase a newer request's
         // delivery diagnostics, including when both requests share a scope.

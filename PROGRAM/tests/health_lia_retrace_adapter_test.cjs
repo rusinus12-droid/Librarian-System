@@ -25,6 +25,12 @@ function fixture(owner){
  return{adapter,state,scope,ctx,cache,derived,index,shard};
 }
 for(const owner of ['LIA','RETRACE']){
+ test(owner+': auxiliary same-scope metadata cannot invalidate the fixed health inventory',async()=>{
+  const f=fixture(owner),key=(owner==='LIA'?'shard':'cold')+':source-edit-consent:v1';
+  f.state.data.set(key,JSON.stringify({schema:'memory-suite.source-edit-consent.v1',owner,scopeKey:f.scope.scopeKey,tasks:{}}));
+  const before=JSON.stringify([...f.state.data]);assert.equal((await f.adapter.inspect()).known,true);assert.equal((await f.adapter.preview()).allowed,true);
+  assert(!f.state.reads.includes(key));assert.equal(JSON.stringify([...f.state.data]),before);assert.equal(f.state.writes,0);
+ });
  test(owner+': actual adapter reads metadata without touching canonical stores or host source',async()=>{const f=fixture(owner),before=JSON.stringify([f.ctx,[...f.state.data],f.cache,f.derived]);const r=await f.adapter.inspect(),t=await f.adapter.preview();assert.equal(r.owner,owner);assert.equal(r.known,true);assert.equal(r.complete,false);assert.equal(t.allowed,true);assert.equal(f.state.clears,0);assert.equal(f.state.writes,0);assert.equal(JSON.stringify([f.ctx,[...f.state.data],f.cache,f.derived]),before);assert.doesNotMatch(JSON.stringify([r,t]),/private transcript|private profile|ledgers/)});
  test(owner+': explicit cache clear preserves all canonical bytes and unrelated scope',async()=>{const f=fixture(owner),before=JSON.stringify([f.ctx,[...f.state.data]]),t=await f.adapter.preview();assert.equal((await f.adapter.repair(t)).status,'cache_invalidated');assert.equal(JSON.stringify([f.ctx,[...f.state.data]]),before);assert.equal(f.cache.bindings.other.data,'keep');assert.equal(f.adapter.isBusy(),false);assert.equal(f.state.writes,0)});
  test(owner+': failed reads, nonlocal mode and malformed metadata remain unknown',async()=>{for(const kind of ['mode','malformed']){const f=fixture(owner);if(kind==='mode')f.state.mode='server_only';else f.state.data.set(owner==='LIA'?'index':'cold','{invalid json');assert.equal((await f.adapter.inspect()).known,false);assert.equal((await f.adapter.preview()).allowed,false);assert.equal(f.state.clears,0)}});

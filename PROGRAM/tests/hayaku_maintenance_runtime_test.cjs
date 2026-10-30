@@ -4,6 +4,8 @@ const {createHayakuRuntime,createValidPacket,hiddenPacketMessage,waitFor}=requir
 const {plain,messages,envelope,coldResponder}=require('./fixtures/hayaku_maintenance_fixture.cjs');
 async function fixture(options,fn){const r=await createHayakuRuntime({autoRepair:false,...options});try{return await fn(r);}finally{await r.dispose();}}
 test('read-only inspection is pure and binding-only repair preserves source with zero model calls',()=>fixture({messages:messages()},async r=>{
+ const scope=await r.hayaku._test.currentChatScope();
+ r.pluginStorage.values.set('hayaku.v2.ledger.'+scope.key+':source-edit-consent:v1',JSON.stringify({schema:'memory-suite.source-edit-consent.v1',owner:'HAYAKU',scopeKey:scope.key,tasks:{}}));
  const before=plain([...r.pluginStorage.values]),source=plain(r.chat.message);
  const inspected=await r.hayaku.recovery.maintenance.inspect();assert.equal(inspected.known,true,JSON.stringify(inspected));assert.equal(inspected.needsBinding,true);
  assert.deepEqual(plain([...r.pluginStorage.values]),before);assert.equal(r.llmCalls.length,0);

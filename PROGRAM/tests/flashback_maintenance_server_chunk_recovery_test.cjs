@@ -71,10 +71,13 @@ for(const scenario of ['missing_turn','failed_queue','anchor_drift'])test(`serve
     // Derived index staleness is not damage to raw source/queue authority.
     const manifest=await f.api._test.loadScopeManifest(scope);
     await f.api._test.saveScopeManifest({...manifest,episodeSourceDigest:'outdated-derived-index'},scope);
-    // Keep this test focused on the actual missing-turn path above; inspection
-    // must explain a derived-index block rather than blaming unread credentials.
+    // A stale derivative alone has a no-provider repair route; it must not
+    // require re-sending the already paid embedding work or raw turn sync.
     const stale=await f.api.inspectMemoryMaintenance();
-    assert.equal(stale.automatic.reason,'episode_index_stale');
+    assert.equal(stale.automatic.strategy,'server_episode_rebuild');
+    assert.equal(stale.automatic.blocked,false);
     assert.equal(stale.inspection.providerCalls,0);
+    const paidCalls=providerCalls,reindexed=await f.api.runMemoryMaintenance('auto',{preflight:stale});
+    assert.equal(reindexed.after.episodeStale,false);assert.equal(reindexed.after.storageSourceHealthy,true);assert.equal(providerCalls,paidCalls);
   }finally{releaseRefresh();await refreshing?.catch(()=>{});await f.dispose();await app.close();fs.rmSync(dataDir,{recursive:true,force:true});}
 });

@@ -31,6 +31,18 @@ const base = { inspection: { complete: true, coverage: 'plugin_only' }, healthy:
   automatic: { strategy: 'embedding_queue', blocked: false }, embeddingWorkIncompleteRecords: 2,
   embeddingWorkPendingRecords: 2, missingTurns: 0, changedTurns: 0 };
 
+test('server episode-only diagnosis offers a no-provider derived-index action',async()=>{
+ const f=setup();try{
+  const plan={...base,episodeStale:true,embeddingWorkIncompleteRecords:0,automatic:{strategy:'server_episode_rebuild',stages:['episode_rebuild'],blocked:false},
+   inspection:{complete:true,coverage:'server_snapshot',credentialStatus:'unverified'}};
+  f.ui.render(plan);await f.ui.diagnose(plan);
+  assert.match(f.dialog().actionBtn?.text||'',/에피소드 인덱스 갱신/);
+  assert.match(f.dialog().bodyHtml,/제공자 호출 0회/);assert.match(f.doc.querySelector('#maintenancePlan').textContent,/제공자 호출 0회/);
+  assert.match(f.dialog().bodyHtml,/원문·벡터 정상 · 인덱스 갱신 필요/);
+  assert.doesNotMatch(f.dialog().bodyHtml,/복구 실행 시 모델 사용량이 발생/);
+ }finally{f.dom.window.close();}
+});
+
 test('main primary entry and manual controls remain; detail rows retain labels and open state', () => {
   const f = setup(); try {
     f.doc.body.insertAdjacentHTML('beforeend', f.ui.build());
@@ -97,13 +109,17 @@ test('diagnosis popup follows producer health and allowed action rather than inf
   const f = setup(); try {
     for (const complete of [false, true]) {
       const plan = { ...base, embeddingWorkIncompleteRecords: 0, automatic: { strategy: 'server_inspection_only', blocked: true },
-        inspection: { complete, coverage: 'server_snapshot', credentialStatus: 'unverified' } };
+        inspection: { complete, coverage: 'server_snapshot', credentialStatus: 'unverified', reasons: complete ? [] : ['unsupported_scope_record', 'snapshot_incomplete'] } };
       f.ui.render(plan); await f.ui.diagnose(plan);
       const dialog = f.dialog();
       assert.equal(dialog.actionBtn, null);
       assert(dialog.badgeHtml.includes(f.doc.querySelector('#maintenancePlanBadge').textContent));
       assert.doesNotMatch(dialog.bodyHtml, /완벽하게 일치|모든 대화 턴이 서버에 정상/);
-      if (!complete) assert.equal((dialog.bodyHtml.match(/>미확인<\/span>/g) || []).length, 4);
+      if (!complete) {
+        assert.equal((dialog.bodyHtml.match(/>미확인<\/span>/g) || []).length, 4);
+        assert.match(dialog.bodyHtml, /지원하지 않는 범위 저장 항목이 있음/,'the popup must retain the specific blocker');
+        assert.match(dialog.bodyHtml, /서버 저장 자료의 전체 범위를 확인하지 못함/);
+      }
     }
     await f.ui.diagnose({ ...base, inspection: { complete: true, coverage: 'server_snapshot' } });
     assert.match(f.dialog().actionBtn.text, /재임베딩 대기/);

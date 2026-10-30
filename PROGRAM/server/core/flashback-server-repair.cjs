@@ -61,7 +61,7 @@ module.exports = ({getRepository,dataInstanceId,epochs,canWrite,strongProofProvi
         // Protocol records have separate exact predicates and never carry source authority.
         if(space==='plugin'&&/^server_physical_repair:v2(?::[A-Za-z0-9._-]{16,100})?$/.test(name))continue;
         if(rows.length>=MAX_ROWS)fail('REPAIR_READ_SET_LIMIT');
-        const allowed=space==='plugin'?/^(?:manifest:v2(?::previous:v1)?|turn_worldline:v1|records:shard:[0-9]{4,6}|records:commit:[A-Za-z0-9_-]{1,160}:shard:[0-9]{4,6})$/.test(name):/^[A-Za-z0-9_-]{1,160}:[0-9]{4,6}$/.test(name);
+        const allowed=space==='plugin'?/^(?:manifest:v2(?::previous:v1)?|turn_worldline:v1|source-edit-consent:v1|records:shard:[0-9]{4,6}|records:commit:[A-Za-z0-9_-]{1,160}:shard:[0-9]{4,6})$/.test(name):/^[A-Za-z0-9_-]{1,160}:[0-9]{4,6}$/.test(name);
         if(!allowed)fail('REPAIR_UNSUPPORTED_SCOPE_RECORD');
         if(!Number.isSafeInteger(listed.valueBytes)||listed.valueBytes<0||listed.valueBytes>MAX_VALUE_BYTES||bytes+listed.valueBytes>MAX_TOTAL_BYTES)fail('REPAIR_VALUE_LIMIT');
         const row=rawRead(repo,space,listed.key);

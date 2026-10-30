@@ -42208,7 +42208,10 @@ const MemorySuiteHealthRecovery = (() => {
             revisionRecord.persistedAt = Date.now();
             outputCandidate.provisionalSavedAt = revisionRecord.persistedAt;
             consumeRequestDecisionForPending(pending.pendingId);
-            stopFinalizedCaptureMonitor(pending.pendingId);
+            // The output callback may precede the host transcript commit. Raw
+            // durability is not live confirmation; keep checking the exact
+            // request-bound pair before canonical promotion or embedding.
+            scheduleFinalizedCaptureMonitor(pending, settings, { responseCompleted: true });
             captured += 1;
           } else {
             revisionRecord.status = 'pending';
@@ -44049,7 +44052,7 @@ ${cleanedText}`, 80),
       const incomplete=async reason=>{if(reason)inspection.reasons.push(reason);await assertCurrent();return {snapshot,scope,inspection,assertCurrent,assertCurrentSync,serverInspection:true};};
       if(!captured.complete||!captured.inventoryComplete||!captured.scopeVerified)return await incomplete('snapshot_incomplete');
       const pluginPrefix=scopePrefix(scope.scopeKey)+':',localPrefix=FLASHBACK_VECTOR_STORAGE_PREFIX+keyHash(scope.scopeKey)+':';
-      const owned=(space,key)=>space==='plugin'?key.startsWith(pluginPrefix)&&/^(?:manifest:v2(?::previous:v1)?|turn_worldline:v1|records:shard:[0-9]{4,6}|records:commit:[A-Za-z0-9_-]{1,160}:shard:[0-9]{4,6})$/.test(key.slice(pluginPrefix.length))
+      const owned=(space,key)=>space==='plugin'?key.startsWith(pluginPrefix)&&/^(?:manifest:v2(?::previous:v1)?|turn_worldline:v1|source-edit-consent:v1|records:shard:[0-9]{4,6}|records:commit:[A-Za-z0-9_-]{1,160}:shard:[0-9]{4,6})$/.test(key.slice(pluginPrefix.length))
         :space==='local'&&key.startsWith(localPrefix)&&/^[A-Za-z0-9_-]{1,160}:[0-9]{4,6}$/.test(key.slice(localPrefix.length));
       const values=new Map(),inventory=new Map();
       for(const row of captured.records){const id=row.space+'\n'+row.key;if(!owned(row.space,row.key)||inventory.has(id))return await incomplete('snapshot_record_unverified');inventory.set(id,row);}
@@ -44710,14 +44713,23 @@ ${cleanedText}`, 80),
       maintenanceInspectionReaders--;
     }
   };
+  // Record every returned verdict, including early incomplete snapshots. Keep
+  // diagnostic blockers detached from the caller and never retain source data.
+  const recordMaintenanceInspection = plan => {
+    Runtime.lastMaintenanceInspection=cloneRuntimeValue({at:plan.at,scopeKey:plan.scopeKey,automatic:plan.automatic,inspection:plan.inspection,
+      counts:Object.fromEntries(['missingTurns','changedTurns','staleStoredTurns','dirtyRecords','anchorOnlyDirtyRecords','embeddingWorkIncompleteRecords',
+        'embeddingWorkFailedRecords','embeddingWorkUncertainRecords','unqueuedVectorRepairRecords','storageMissingShards','storageManifestCorrupt',
+        'storageRecordCountMismatch','shardIndexMismatch','episodeStale','embeddingQueueSourceHealthy'].filter(key=>Object.hasOwn(plan,key)).map(key=>[key,plan[key]]))},null);
+    return plan;
+  };
   const inspectMemoryMaintenance = (options = {}) => withMaintenanceQueuePause(() => inspectMemoryMaintenanceSnapshot(options), options);
   const inspectMemoryMaintenanceSnapshot = async (options = {}) => {
     reportMaintenanceTask(options, 'scope');
     const readContext=await createMaintenanceInspectionContext(options);
     if(readContext.serverInspection&&readContext.inspection.complete!==true){
       readContext.assertCurrentSync();
-      return {scopeKey:readContext.scope.scopeKey,healthy:false,storageSourceHealthy:null,inspection:readContext.inspection,
-        automatic:{strategy:'server_inspection_only',stages:[],blocked:true,reason:'inspection_incomplete'}};
+      return recordMaintenanceInspection({at:Date.now(),scopeKey:readContext.scope.scopeKey,healthy:false,storageSourceHealthy:null,inspection:readContext.inspection,
+        automatic:{strategy:'server_inspection_only',stages:[],blocked:true,reason:'inspection_incomplete'}});
     }
     const {settings,snapshot,scope,readers,credentialStatus}=readContext;
     reportMaintenanceTask(options, 'storage', { scopeKey: scope.scopeKey });
@@ -45088,6 +45100,8 @@ ${cleanedText}`, 80),
         };
       } else if (plan.embeddingQueueSourceHealthy && maintenanceEmbeddingQueueAvailable(plan)) {
         plan.automatic = { strategy: 'embedding_queue', stages: ['embedding_queue'], blocked: false, reason: 'pending_embedding_work' };
+      } else if (plan.episodeStale && plan.embeddingQueueSourceHealthy && !plan.anchorOnlyDirtyRecords && !plan.embeddingWorkIncompleteRecords) {
+        plan.automatic = { strategy: 'server_episode_rebuild', stages: ['episode_rebuild'], blocked: false, reason: 'derived_episode_index_stale' };
       } else {
         plan.automatic = {
           strategy: 'server_inspection_only',
@@ -45110,12 +45124,7 @@ ${cleanedText}`, 80),
       configurable: true
     });
     Object.defineProperty(plan,'_approvalBinding',{value:maintenanceApprovalBinding(plan),enumerable:false});
-    // Keep diagnostic blockers, without retaining the source/corpus context.
-    Runtime.lastMaintenanceInspection={at:plan.at,scopeKey:plan.scopeKey,automatic:{...plan.automatic},inspection:{...plan.inspection},
-      counts:Object.fromEntries(['missingTurns','changedTurns','staleStoredTurns','dirtyRecords','anchorOnlyDirtyRecords','embeddingWorkIncompleteRecords',
-        'embeddingWorkFailedRecords','embeddingWorkUncertainRecords','unqueuedVectorRepairRecords','storageMissingShards','storageManifestCorrupt',
-        'storageRecordCountMismatch','shardIndexMismatch','episodeStale','embeddingQueueSourceHealthy'].filter(key=>Object.hasOwn(plan,key)).map(key=>[key,plan[key]]))};
-    return plan;
+    return recordMaintenanceInspection(plan);
   };
 
   const maintenanceEmbeddingWorkRequested = (mode = 'auto', plan = {}) => {
@@ -45400,7 +45409,9 @@ ${cleanedText}`, 80),
       if(current.scope.scopeKey!==scope.scopeKey||current.profile!==profile)throw new EmbeddingAdapterError('STALE_SOURCE','Maintenance scope or embedding profile changed.');
     };
     await assertCurrent();
-    return maybeRebuildEpisodeIndex(scope,settings,null,{reason:'maintenance_embedding_queue',assertCurrent});
+    // Explicit maintenance must close the derived index even when the normal
+    // background policy would wait for a third newly captured turn.
+    return maybeRebuildEpisodeIndex(scope,settings,null,{force:true,reason:'maintenance_episode_refresh',assertCurrent});
   };
   const cleanMaintenanceReadyAnchors = async (scope,settings,options={}) => withScopeWriteLock(scope.scopeKey,async()=>{
     await options.maintenanceSourceValidate?.();
@@ -45534,12 +45545,23 @@ ${cleanedText}`, 80),
     }
 
     if (preflight?.inspection?.coverage === 'server_snapshot') {
+      const episodeOnly = normalizedMode === 'auto' && preflight.automatic?.strategy === 'server_episode_rebuild';
       const allowsServerSync = (normalizedMode === 'sync' || normalizedMode === 'auto')
         && ((preflight.automatic?.stages || []).includes('sync')
             || Number(preflight.missingTurns || 0) > 0
             || Number(preflight.changedTurns || 0) > 0);
-      if (!allowsServerSync) {
+      if (!allowsServerSync && !episodeOnly) {
         throw maintenanceInspectionUnavailable('HEALTH_LOCAL_MODE_REQUIRED');
+      }
+      if (episodeOnly) {
+        // Recompute eligibility from authoritative evidence; a caller cannot
+        // turn a stale plan or a different repair into a derived-only write.
+        const fresh = await inspectMemoryMaintenance({ requestPermission: false });
+        if (fresh.automatic?.strategy !== 'server_episode_rebuild' || fresh.automatic.blocked
+            || !preflight._approvalBinding || preflight._approvalBinding !== fresh._approvalBinding
+            || context.readBinding !== fresh._maintenanceContext?.readBinding) {
+          throw new EmbeddingAdapterError('STALE_SOURCE', '점검 이후 저장 자료·원문·설정이 변경되었습니다. 다시 점검해 주세요.');
+        }
       }
       const executionSnapshot = sharedSnapshot || await loadRisuCaptureSnapshot();
       const executionScope = sharedScope || resolveScopeFromSnapshot(executionSnapshot);
@@ -45558,7 +45580,7 @@ ${cleanedText}`, 80),
       if (physicalRepairUnresolved()) throw Error('FLASHBACK_PHYSICAL_OUTCOME_UNRESOLVED');
       if (Runtime.portableMemoryActiveOperationId) throw Error('FLASHBACK_PORTABLE_MEMORY_BUSY');
       if (Runtime.maintenanceActiveOperationId) throw Error('FLASHBACK_MAINTENANCE_BUSY');
-      const operationId = `server_sync_${stableHash(`${Date.now()}|${Math.random()}`).slice(0, 20)}`;
+      const operationId = `${episodeOnly ? 'server_episode' : 'server_sync'}_${stableHash(`${Date.now()}|${Math.random()}`).slice(0, 20)}`;
       const startedAt = Date.now();
       Runtime.maintenanceController = typeof AbortController === 'function' ? new AbortController() : null;
       const parentSignal = options.signal;
@@ -45583,6 +45605,25 @@ ${cleanedText}`, 80),
           settings: admission.settings,
           snapshot: executionSnapshot
         };
+        if (episodeOnly) {
+          reportMaintenanceTask(options, 'episode_rebuild', { operationId, scopeKey: executionScope.scopeKey,
+            execution: { requestCount: 0, pendingRequests: 0, unknownOutcomes: 0 } });
+          await admission.assertCurrent();
+          const episodes = await refreshMaintenanceQueueEpisodes(executionScope, admission.settings, operationSettings);
+          await operationSettings.maintenanceSourceValidate();
+          const after = await inspectMaintenanceAfterExecution({ requestPermission: false,
+            onProgress: event => reportMaintenanceTask(options, 'verify', event), snapshot: executionSnapshot, scope: executionScope }, operationSettings.maintenanceSourceValidate);
+          const result = { operationId, scopeKey: executionScope.scopeKey, maintenanceMode: 'auto', status: 'completed',
+            durationMs: Math.max(0, Date.now() - startedAt), before: preflight, after,
+            planMatchesAfter: maintenanceServerStorageVerified(after), healthy: after.healthy === true,
+            operation: { strategy: 'server_episode_rebuild', stages: ['episode_rebuild'], episodes },
+            totals: { embeddedVectors: 0, embeddedBatches: 0, physicalRequests: 0 } };
+          Runtime.lastMaintenanceOutcome = result;
+          pushActivityLog('server_episode_index_refreshed', '기존 벡터를 재사용해 서버 에피소드 인덱스를 갱신했습니다. 제공자 호출은 없습니다.',
+            { scopeKey: executionScope.scopeKey, episodes: episodes.episodes, verified: maintenanceServerStorageVerified(after) }, maintenanceServerStorageVerified(after) ? 'success' : 'warn');
+          renderMaintenanceExecution();
+          return result;
+        }
         reportMaintenanceTask(options, 'sync', { operationId, scopeKey: executionScope.scopeKey });
         const syncOperation = await ingestLiveChatColdStart({
           scope: 'current',
@@ -46134,6 +46175,7 @@ ${cleanedText}`, 80),
       live_source_required: '현재 채팅 원문 필요',
       scope_collision: '저장 범위 충돌 — 자동 변경 차단',
       server_turn_sync: '서버 누락·변경 턴 동기화',
+      server_episode_rebuild: '서버 에피소드 인덱스 갱신',
       embedding_queue: '재임베딩 대기 벡터 처리',
       server_inspection_only: '서버 읽기 전용 · 실제 복구 차단',
       credential_required: '임베딩 API 키 필요 — 기존 벡터 보존',
@@ -46179,6 +46221,7 @@ ${cleanedText}`, 80),
       if (plan.automatic?.strategy === 'server_turn_sync') {
         return `판정: 서버 스냅샷 대조 완료 · 누락 ${formatNumber(plan.missingTurns)}개, 변경 ${formatNumber(plan.changedTurns)}개 턴 동기화 가능.`;
       }
+      if (plan.automatic?.strategy === 'server_episode_rebuild') return '판정: 원문·기존 벡터는 확인됐고 파생 에피소드 인덱스만 갱신하면 됩니다. 기존 벡터를 재사용하며 제공자 호출 0회입니다.';
       const blockReason={episode_index_stale:'파생 에피소드 인덱스 갱신이 필요합니다.',unqueued_vector_damage:'미완료 임베딩 작업과 연결되지 않은 벡터 손상이 있어 별도 복구가 필요합니다.',
         manifest_metadata_untrusted:'저장 목록의 무결성을 확인할 수 없습니다.',permanent_history_may_be_missing:'보호된 이전 기록이 누락됐을 수 있습니다.'}[plan.automatic?.reason]||'';
       if(plan.automatic?.blocked&&blockReason)return `판정: ${blockReason} ${maintenanceEmbeddingWorkText(plan)}. 자격 증명·제공자 준비 상태는 이 읽기 전용 점검에서 검사하지 않았습니다.`;
@@ -46330,6 +46373,11 @@ ${cleanedText}`, 80),
     ? '실패한 임베딩 작업이 남아 있습니다. 설정과 오류를 확인한 뒤 임베딩 작업의 [실패 작업 재시도]를 선택해 주세요. 자동 점검은 실패 작업을 다시 요청하지 않습니다.' : '';
 
   const maintenanceResultText = (result = {}) => {
+    if (result.operation?.strategy === 'server_episode_rebuild') return [
+      maintenanceCompletionTitle(result), '서버 에피소드 인덱스 갱신 · 기존 원문·벡터 재사용',
+      `에피소드 ${formatNumber(result.operation.episodes?.episodes)}개 · 제공자 호출 0회`,
+      maintenanceServerStorageVerified(result.after) ? '서버 스냅샷 범위의 원문·저장 점검을 통과했습니다. 제공자 준비 상태는 별도 확인이 필요합니다.' : '갱신 후 상태 점검 결과를 확인하세요.'
+    ].join('\n');
     if (result.operation?.strategy === 'embedding_queue') {
       const queue = result.operation.queue || {}, after = result.after || {};
       return [
@@ -48675,6 +48723,7 @@ ${cleanedText}`, 80),
     if (incomplete) return { label: '점검 미완료', tone: 'warn', headline: '점검을 끝내지 못해 정상 여부를 확인하지 못했습니다.' };
     if (plan.healthy === true && !pending) return { label: '정상 확인', tone: 'ok', headline: '이번 점검 범위에서 추가 복구가 필요하지 않습니다.' };
     if (maintenanceServerStorageVerified(plan)) return { label: '서버 저장 점검 통과', tone: 'ok', headline: '원문·저장 점검을 마쳤고 미완료 임베딩이 없습니다. 제공자 준비 상태는 별도 확인이 필요합니다.' };
+    if (plan.automatic?.strategy === 'server_episode_rebuild') return { label: '에피소드 갱신 필요', tone: 'warn', headline: '저장된 기억과 벡터를 재사용해 에피소드 인덱스를 갱신할 수 있습니다.' };
     if (plan.automatic?.blocked) return { label: '실행 차단', tone: 'warn', headline: '현재 점검 결과로는 자동 복구를 실행할 수 없습니다.' };
     if (plan.automatic?.strategy === 'embedding_queue') return { label: '재임베딩 미완료', tone: 'warn', headline: '원문·저장 점검 후 처리할 재임베딩 작업이 남아 있습니다.' };
     if (pending) return { label: '임베딩 확인 필요', tone: 'warn', headline: `아직 완료되지 않은 임베딩 작업이 ${formatNumber(pending)}개 있습니다.` };
@@ -48693,6 +48742,7 @@ ${cleanedText}`, 80),
     const cost = fullRebuild ? plan.rebuildEmbeddingCost : plan.embeddingCost;
     const damage = Number(plan.storageMissingShards || 0) + Number(plan.storageCorruptShards || 0) + Number(!!plan.storageManifestCorrupt) + Number(!!plan.storageArchiveRefInvalid) + Number(!!plan.storageRecordCountMismatch) + Number(!!plan.storageForeignScopeKey);
     const isServerMode = plan.inspection?.coverage === 'server_snapshot';
+    const episodeOnly = plan.automatic?.strategy === 'server_episode_rebuild';
     const complete = plan.inspection?.complete !== false;
     const state = maintenancePlanPresentation(plan);
     const detailsOpen = !!target.querySelector?.('#maintenancePlanDetails')?.open;
@@ -48705,7 +48755,7 @@ ${cleanedText}`, 80),
       ['점검 판정', state.label, state.tone === 'warn'],
       ['미완료 임베딩', `${number(pending)}개`, pending > 0],
       ['점검 모델 호출', '0회'],
-      ['복구 비용', '실행 시 사용량에 따라 발생 가능']
+      ['복구 비용', episodeOnly ? '제공자 호출 0회 · 추가 임베딩 없음' : '실행 시 사용량에 따라 발생 가능']
     ] : [
       ['누락', `${number(plan.missingTurns)}턴`, Number(plan.missingTurns) > 0],
       ['변경 감지', `${number(plan.changedTurns)}구간`, Number(plan.changedTurns) > 0],
@@ -48717,7 +48767,7 @@ ${cleanedText}`, 80),
       ['예상 비용', formatCostSummary(cost)]
     ];
     const details = maintenancePlanDetails(plan);
-    const callsText = isServerMode
+    const callsText = episodeOnly ? '기존 벡터를 재사용합니다. 제공자 호출 0회 · 추가 임베딩 없음.' : isServerMode
       ? '점검은 모델을 호출하지 않습니다. 복구 실행 시 설정된 경로로 모델 호출과 사용량이 발생할 수 있습니다.'
       : Number(newVectors || 0) > 0
         ? `새 임베딩 ${number(newVectors)}개를 위해 임베딩 제공자를 호출합니다.`
@@ -49277,6 +49327,7 @@ ${cleanedText}`, 80),
     plan: [2, '누락·변경·미완료 항목과 복구 계획을 확인하고 있습니다.'],
     sync: [1, '누락·변경된 대화 원문을 동기화하고 있습니다.'], rebuild: [1, '현재 채팅의 기억을 다시 구성하고 있습니다.'],
     cleanup: [1, '저장된 기억을 정제하고 검색 색인을 정리하고 있습니다.'],
+    episode_rebuild: [2, '기존 벡터를 재사용해 에피소드 인덱스를 갱신하고 있습니다.'],
     reembed: [2, '검색 벡터를 다시 처리하고 있습니다.'], repair_vectors: [2, '이전 기억의 검색 벡터를 복구하고 있습니다.'],
     embedding_queue: [2, '처리 가능한 임베딩 대기 기록을 확인했습니다.'], embedding_request: [2, '임베딩 요청을 보내고 응답을 기다립니다.'],
     embedding_response: [2, '임베딩 요청의 처리 결과를 확인하고 있습니다.'], saving_vectors: [3, '응답받은 검색 벡터를 저장하고 다시 읽어 확인합니다.'], embedding_done: [2, '현재 묶음의 저장 확인을 마쳤습니다. 다음 대기 기록을 확인합니다.'],
@@ -49384,7 +49435,7 @@ ${cleanedText}`, 80),
     };
     try{
       const result=await run(progress);job.result=result;
-      job.state=job.cancelRequested?'cancelled':kind==='inspection'?(result?.inspection?.complete===false?'attention':'completed'):(result?.healthy===true?'completed':'attention');
+      job.state=job.cancelRequested?'cancelled':kind==='inspection'?(result?.inspection?.complete===false?'attention':'completed'):(result?.healthy===true||maintenanceServerStorageVerified(result?.after)?'completed':'attention');
       job.message=job.cancelRequested?'중지 요청 처리가 끝났습니다. 이미 완료된 저장 결과는 유지됩니다.':kind==='inspection'?'상태 점검을 마쳤습니다. 진단 결과에서 필요한 복구를 선택할 수 있습니다.':maintenanceCompletionTitle(result);
       job.summary=kind==='inspection'?maintenanceJudgementText(result):maintenanceResultText(result);
       if(kind==='inspection')job.minimized=true;
@@ -49406,6 +49457,7 @@ ${cleanedText}`, 80),
   const showMaintenanceInspectionModal = async (plan) => {
     if (!plan) return;
     const isServerMode = plan.inspection?.coverage === 'server_snapshot';
+    const episodeOnly = plan.automatic?.strategy === 'server_episode_rebuild';
     const missing = Math.max(0, Number(plan.missingTurns || 0) || 0);
     const changed = Math.max(0, Number(plan.changedTurns || 0) || 0);
     const live = Math.max(0, Number(plan.liveTurns || 0) || 0);
@@ -49445,6 +49497,11 @@ ${cleanedText}`, 80),
               <span style="color:var(--text2)">현재 채팅 ${formatNumber(live)}턴과 서버 스냅샷을 대조했습니다. 이번 점검 범위에서 추가 복구가 필요하지 않습니다.</span>
             </div>
           </div>`;
+      } else if (episodeOnly) {
+        badgeHtml = '<span class="badge badge--warn">에피소드 갱신 필요</span>';
+        bannerHtml = '<div class="note note--warn"><strong style="display:block">파생 에피소드 인덱스를 갱신할 수 있습니다.</strong><span>기존 원문과 벡터를 재사용합니다. 제공자 호출 0회 · 추가 임베딩 없음.</span></div>';
+        actionBtn = { text: '에피소드 인덱스 갱신', className: 'btn btn--primary',
+          onClick: () => runMaintenanceGuiRecovery(plan, '에피소드 인덱스 갱신') };
       } else if (missing === 0 && changed === 0 && embeddingIncomplete) {
         const queueable = plan.automatic?.strategy === 'embedding_queue';
         badgeHtml = `<span class="badge badge--warn">재임베딩 미완료 (${formatNumber(embeddingIncomplete)}개)</span>`;
@@ -49491,7 +49548,7 @@ ${cleanedText}`, 80),
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);padding-bottom:7px">
             <span style="color:var(--text3)">데이터 무결성</span>
-            <span style="color:${!inspectionComplete || plan.storageSourceHealthy === false ? 'var(--warn-ink, #ea9922)' : 'var(--ok-ink)'};font-weight:600">${!inspectionComplete ? '미확인 (점검 미완료)' : plan.storageSourceHealthy === false ? '확인할 항목 있음' : '정상 (매니페스트 정상 · 샤드 무결성 유지)'}</span>
+            <span style="color:${!inspectionComplete || plan.storageSourceHealthy === false ? 'var(--warn-ink, #ea9922)' : 'var(--ok-ink)'};font-weight:600">${!inspectionComplete ? '미확인 (점검 미완료)' : episodeOnly ? '원문·벡터 정상 · 인덱스 갱신 필요' : plan.storageSourceHealthy === false ? '확인할 항목 있음' : '정상 (매니페스트 정상 · 샤드 무결성 유지)'}</span>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);padding-bottom:7px">
             <span style="color:var(--text3)">재임베딩 상태</span>
@@ -49499,7 +49556,7 @@ ${cleanedText}`, 80),
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border2);padding-bottom:7px">
             <span style="color:var(--text3)">임베딩 연산 및 비용</span>
-            <span style="color:var(--text)">점검 호출 0회 · 복구 실행 시 모델 사용량이 발생할 수 있습니다</span>
+            <span style="color:var(--text)">${episodeOnly ? '제공자 호출 0회 · 추가 임베딩 없음' : '점검 호출 0회 · 복구 실행 시 모델 사용량이 발생할 수 있습니다'}</span>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
             <span style="color:var(--text3);flex-shrink:0">진단 종합 판정</span>
@@ -49568,6 +49625,10 @@ ${cleanedText}`, 80),
     if (!bannerHtml || !inspectionComplete || plan.automatic?.blocked) {
       badgeHtml = `<span class="badge badge--${presentation.tone}">${escapeHtml(presentation.label)}</span>`;
       bannerHtml = `<div class="note${presentation.tone === 'warn' ? ' note--warn' : ''}" role="status"><strong>${escapeHtml(presentation.headline)}</strong><span>${escapeHtml(maintenanceJudgementText(plan))}</span></div>`;
+      if (!inspectionComplete) {
+        const reasons=(plan.inspection?.reasons || []).map(maintenanceServerInspectionReasonText).join(' · ') || '점검 증거 미검증';
+        bannerHtml += `<div class="note note--warn" role="status">미완료 사유: ${escapeHtml(reasons)}</div>`;
+      }
     }
 
     const bodyHtml = `
@@ -53183,7 +53244,7 @@ ${cleanedText}`, 80),
       lastExternalRetirement: Runtime.lastExternalRetirement,
       lastEpisodeIndex: Runtime.lastEpisodeIndex,
       maintenanceJournal: Runtime.maintenanceJournal,
-      maintenanceInspection: Runtime.lastMaintenanceInspection || null,
+      maintenanceInspection: cloneRuntimeValue(Runtime.lastMaintenanceInspection, null),
       maintenanceQueue: Runtime.lastMaintenanceQueueResult ? {
         scopeKey: Runtime.lastMaintenanceQueueResult.scopeKey, at: Runtime.lastMaintenanceQueueResult.at,
         ready: Runtime.lastMaintenanceQueueResult.ready, failed: Runtime.lastMaintenanceQueueResult.failed,
