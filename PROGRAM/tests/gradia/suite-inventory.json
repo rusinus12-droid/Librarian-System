@@ -3,6 +3,8 @@
     "."
   ],
   "files": [
+    "aide-full-draft-recovery-gui.test.cjs",
+    "aide-full-draft-recovery.test.cjs",
     "draft-live-scene.test.cjs",
     "draft-only.test.cjs",
     "evidence-bridge.test.cjs",
@@ -11,6 +13,8 @@
     "evidence-budget-v2.test.cjs",
     "evidence-stage-delivery.test.cjs",
     "hypav3-removal.test.cjs",
+    "input-assist-reference-cap.test.cjs",
+    "input-choice-envelope.test.cjs",
     "legacy-removal.test.cjs",
     "lib-read-consumer.test.cjs",
     "load-dev-dependency.test.cjs",
@@ -19,7 +23,9 @@
     "memory-retirement.test.cjs",
     "model-context-budget.test.cjs",
     "model-context-heuristic.test.cjs",
+    "native-host-id-binding.test.cjs",
     "native-projection-v2.test.cjs",
+    "owner-read-deadline.test.cjs",
     "producer-owner-migration.test.cjs",
     "ranked-evidence-basic.test.cjs",
     "read-v2-credit.test.cjs",
