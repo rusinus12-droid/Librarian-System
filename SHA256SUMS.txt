@@ -669,12 +669,12 @@ cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c  ./PROGRAM/macO
 4587c121f08b56d71872eb94cc19ecd7e546d2890011bb673aa08f9d1188c7cf  ./PROGRAM/memory-suite.sh
 e9a0a6707acf0ced5f89ab11e319c8fe66bf253bfd6066d4d7f52f8f2adfc97b  ./PROGRAM/PACKAGE_CONTENTS.txt
 a4417c66f84a2b13205c1ca75f08454006f07a01d008ffc89105cbd4ff31d00e  ./PROGRAM/plugins/Flashback_Memory.js
-518f16d239afd6a5386b75a64f678adcc7600e39a6ca4716703713c7e53b245a  ./PROGRAM/plugins/GRADIA.js
+63bab64cfad8449b1291cf368b9e285872c3ececc3840abdededf5dab9f7f833  ./PROGRAM/plugins/GRADIA.js
 df77cf79398538dbd983ea10070553fb61312016a12677ab3cbe6290ad56fa66  ./PROGRAM/plugins/HAYAKU_Locator_Continuity.js
 6d86731b4536c7c2adefeb47f446c7fcbc764d6240fc3eac7b3b57292768ef31  ./PROGRAM/plugins/LIA_Persona_Linker.js
 075d3d13306b66ed4c9260e01ef99f4c34cffa0fe2899e3d3488e9413d110e11  ./PROGRAM/plugins/LIBRA.js
 3e12856aafd7e7ea4068a3f3ec971bf2ec71f0f2c4d00915c1f4166c5ba42ccd  ./PROGRAM/plugins/RETRACE.js
-a19bbe89aaae8bc2104a034143e552370a3ee027784a48fc91dab3e8a7f3c5d0  ./PROGRAM/program-manifest.json
+9cd308f5567ebeefaad5c914ce5d29f94beda8511124a34c2b0f94a052cb6578  ./PROGRAM/program-manifest.json
 8d5c64f1573f97a5a442db122023d0c2fb7a087fd6acffcbc087c550eee3645b  ./PROGRAM/release-policy.json
 38f798a00ebc9fe69e474d7342bad540350dc07e106ae1c4fdceb6c9e299b751  ./PROGRAM/RisuAI_플러그인_폴더_열기.bat
 c35515d7e669bc31e2901c27f941b48f86ef15eebc20835ef325384728b57401  ./PROGRAM/run_regression_batch.py
@@ -685,7 +685,7 @@ d00649128173c221303abf07d1f50bfc34c007f0118be9856ad9e4ce77db80f4  ./PROGRAM/sdk/
 ae52d772bf7f06747f03f6fe12da8b29d516d583c154d22b70b51a87834de94a  ./PROGRAM/sdk/gradia/GradiaReadV2Frames.source.js
 da14a645ed32ce1d30f35e07c91f5579be7b39c0aa9bb3cf85ce7ad0a6c059c6  ./PROGRAM/sdk/gradia/GradiaReadV2Protocol.source.js
 252611525fbf1016c910d1f1d3fda04f6e19a9a1807c777fb33888c20bbdcd89  ./PROGRAM/sdk/gradia/LibraGradiaRankedProducer.source.js
-ec74f563c680bf3ddcb93484ccd1f45fc63690941223c0a73e6951798546dfef  ./PROGRAM/sdk/GradiaEvidenceBudget.source.js
+76e430ea6b35833d252df033752ebeac7e2aba6c147cba03f67c682e89998ccc  ./PROGRAM/sdk/GradiaEvidenceBudget.source.js
 3ce9514e8ab32ed4a9f3b433c19d31f731c04002b0ebb5abb0fc716408c6744d  ./PROGRAM/sdk/GradiaEvidenceRender.v2.source.js
 610925c140c711e12e6e8dc3388c7d57b3005f93d1c2eeda1195a15e528fd214  ./PROGRAM/sdk/GradiaModelContextBudget.source.js
 f5824b697df20fecb9b136c53262f14df9fb8cc60c884661b5e7aefbaca4a59c  ./PROGRAM/sdk/LibraReadonlySourceContext.source.js
@@ -1275,7 +1275,7 @@ bffe1a5567b57370c2a21acf5e7098fce898636185f661d327d041c618c726a5  ./PROGRAM/test
 1fbc46daeb2ad228fcd81ac328b4180ede2ab7cb29d7b6bcec493eaa9dc64d65  ./PROGRAM/tests/gradia_three_owner_read_auth_test.cjs
 3bd3382c993f5ae1ccbaff6c3d228d724e8b32b4adf56ffe189c436e91587353  ./PROGRAM/tests/gradia_three_owner_sdk_test.cjs
 d57bfa75ec47ecc39698ea33185463b24707d718e787e64ca39f37ea4b08b523  ./PROGRAM/tests/gradia/aide-full-draft-recovery-gui.test.cjs
-da3504aa6aa39020013ed2e9c8183e63267136a5cee22624a918d60755a0939c  ./PROGRAM/tests/gradia/aide-full-draft-recovery.test.cjs
+51360ec329f52d6c9739ed0a834c7f367017b492c4292ef07115e2955497c710  ./PROGRAM/tests/gradia/aide-full-draft-recovery.test.cjs
 fcac35e825ffff26245c63cd75a611bcd2ae0ee547068e47095e6725eeb3a25d  ./PROGRAM/tests/gradia/draft-live-scene.test.cjs
 75e5511a6ef48115094ca8801d7d53924e709370ca10cb9e3e688dd936862998  ./PROGRAM/tests/gradia/draft-only.test.cjs
 d63f1725ada854e8a58752a03efed6ccaeaf54ab1c0feb235d955b574ed8a0ce  ./PROGRAM/tests/gradia/evidence-bridge.test.cjs

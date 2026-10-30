@@ -27,7 +27,7 @@ test('public schema and patch evaluation use the same full-recovery contract as 
  const bad=f.h.plugin.debugEvaluateAidePatch('aide_plot',BROKEN,envelope('aide_plot','00000000'));
  assert.equal(bad.acceptedApplication,false);assert.equal(bad.applied.draft,BROKEN);
 });
-for(const kind of ['stale_hash','mixed','missing_diagnosis','oversized','marker','unchanged','candidate_refusal','non_text'])test('whole replacement rejects '+kind+' without partial deletion',async()=>{
+for(const kind of ['stale_hash','mixed','missing_diagnosis','oversized','marker','unchanged','non_text'])test('whole replacement rejects '+kind+' without partial deletion',async()=>{
  const f=await unit(),patch=f.normalize(envelope('aide_plot',f.document.sourceHash));
  if(kind==='stale_hash')patch.edits[0].expectedHash='00000000';
  if(kind==='mixed')patch.edits.push({operation:'delete',target:f.document.blocks[1].id,expectedHash:f.document.blocks[1].hash,content:'',reason:'delete'});
@@ -35,10 +35,21 @@ for(const kind of ['stale_hash','mixed','missing_diagnosis','oversized','marker'
  if(kind==='oversized')patch.edits[0].content='x'.repeat(80001);
  if(kind==='marker')patch.edits[0].content='<DRAFT_BLOCK>scene</DRAFT_BLOCK>';
  if(kind==='unchanged')patch.edits[0].content=BROKEN;
- if(kind==='candidate_refusal')patch.edits[0].content=REFUSAL;
  if(kind==='non_text')patch.edits[0].content={text:SCENE};
  const before=JSON.stringify(f.document),result=f.apply(patch);
  assert.equal(result.ok,false);assert.equal(result.draft,BROKEN);assert.equal(result.applied.length,0);assert.equal(JSON.stringify(f.document),before);
+});
+test('a replacement candidate that is itself a refusal is still published',async()=>{
+ const f=await unit(),patch=f.normalize(envelope('aide_plot',f.document.sourceHash,REFUSAL));
+ const result=f.apply(patch);
+ assert.equal(result.ok,true);assert.equal(result.recoveryMode,'full_draft_recovery');
+ assert.equal(result.draft,REFUSAL);assert.equal(result.applied.length,1);
+});
+test('a refusal source with no edits is tagged refusal_preserved instead of a repair',async()=>{
+ const f=await unit(),doc=f.h.plugin.debugBuildDraftPatchDocument(REFUSAL);
+ const result=f.h.internals.applyAidePatchWithRecovery(doc,{edits:[]});
+ assert.equal(result.ok,true);assert.equal(result.recoveryMode,'refusal_preserved');
+ assert.equal(result.draft,REFUSAL);assert.equal(result.applied.length,0);
 });
 test('non-text full replacement is rejected by normalization rather than stringified',async()=>{
  const f=await unit(),value=envelope('aide_plot',f.document.sourceHash);value.edits[0].content={text:SCENE};
@@ -60,14 +71,14 @@ for(const source of ['I can’t help with that request.','이 요청은 도와�
  const applied=f.h.internals.applyAidePatchWithRecovery(doc,patch);
  assert.equal(applied.ok,true);assert.equal(applied.recoveryMode,'full_draft_recovery');assert.equal(applied.draft,SCENE);
  const paragraph={edits:[{operation:'replace',target:doc.blocks[0].id,expectedHash:doc.blocks[0].hash,content:SCENE,reason:summary}]};
- assert.equal(f.h.internals.applyAidePatchWithRecovery(doc,paragraph).reason,'aide_patch_source_refusal_preserved');
+ assert.equal(f.h.internals.applyAidePatchWithRecovery(doc,paragraph).reason,'refusal_must_be_replaced_entirely');
 });
 test('a policy explanation before the refusal blocks paragraph bypass but not whole replacement',async()=>{
  const f=await unit(),source='A safety policy applies to this request. I cannot provide that response.';
  const doc=f.h.plugin.debugBuildDraftPatchDocument(source),patch=f.normalize(envelope('aide_plot',doc.sourceHash));
  assert.equal(f.h.internals.applyAidePatchWithRecovery(doc,patch).draft,SCENE);
  const composed={edits:doc.blocks.map(block=>({operation:'delete',target:block.id,expectedHash:block.hash,content:'',reason:'delete meta block'}))};
- assert.equal(f.h.internals.applyAidePatchWithRecovery(doc,composed).reason,'aide_patch_source_refusal_preserved');
+ assert.equal(f.h.internals.applyAidePatchWithRecovery(doc,composed).reason,'refusal_must_be_replaced_entirely');
 });
 test('whole replacement cannot carry extra operations to bypass the refusal boundary',async()=>{
  const f=await unit(),source='I cannot help with that request because of safety policy.';
@@ -85,7 +96,7 @@ for(const legacy of [false,true])test('refusal source boundary for '+(legacy?'le
  const f=await unit(),doc=f.h.plugin.debugBuildDraftPatchDocument(REFUSAL);
  const patch=legacy?{edits:[{operation:'replace',target:doc.blocks[0].id,expectedHash:doc.blocks[0].hash,content:SCENE,reason:summary}]}:f.normalize(envelope('aide_plot',doc.sourceHash));
  const result=f.h.internals.applyAidePatchWithRecovery(doc,patch,'Continue the scene.');
- if(legacy){assert.equal(result.reason,'aide_patch_source_refusal_preserved');assert.equal(result.draft,REFUSAL);assert.equal(result.applied.length,0);}
+ if(legacy){assert.equal(result.reason,'refusal_must_be_replaced_entirely');assert.equal(result.draft,REFUSAL);assert.equal(result.applied.length,0);}
  else{assert.equal(result.ok,true);assert.equal(result.draft,SCENE);assert.equal(result.applied.length,1);}
 });
 for(const stage of ['aide_character','aide_world','aide_plot'])test(stage+' publishes a complete recovery through the real pipeline with no extra calls',async()=>{

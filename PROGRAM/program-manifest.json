@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-30T14:34:54.935Z",
+  "generatedAt": "2026-10-30T14:42:19.925Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4104,7 +4104,7 @@
       "bytes": 3728762
     },
     "plugins/GRADIA.js": {
-      "sha256": "518f16d239afd6a5386b75a64f678adcc7600e39a6ca4716703713c7e53b245a",
+      "sha256": "63bab64cfad8449b1291cf368b9e285872c3ececc3840abdededf5dab9f7f833",
       "bytes": 3057493
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
@@ -4164,7 +4164,7 @@
       "bytes": 10467
     },
     "sdk/GradiaEvidenceBudget.source.js": {
-      "sha256": "ec74f563c680bf3ddcb93484ccd1f45fc63690941223c0a73e6951798546dfef",
+      "sha256": "76e430ea6b35833d252df033752ebeac7e2aba6c147cba03f67c682e89998ccc",
       "bytes": 13070
     },
     "sdk/GradiaEvidenceRender.v2.source.js": {
@@ -6518,6 +6518,14 @@
     "tests/gradia_three_owner_sdk_test.cjs": {
       "sha256": "3bd3382c993f5ae1ccbaff6c3d228d724e8b32b4adf56ffe189c436e91587353",
       "bytes": 16523
+    },
+    "tests/gradia/aide-full-draft-recovery-gui.test.cjs": {
+      "sha256": "d57bfa75ec47ecc39698ea33185463b24707d718e787e64ca39f37ea4b08b523",
+      "bytes": 1462
+    },
+    "tests/gradia/aide-full-draft-recovery.test.cjs": {
+      "sha256": "51360ec329f52d6c9739ed0a834c7f367017b492c4292ef07115e2955497c710",
+      "bytes": 14962
     },
     "tests/gradia/draft-live-scene.test.cjs": {
       "sha256": "fcac35e825ffff26245c63cd75a611bcd2ae0ee547068e47095e6725eeb3a25d",

@@ -29651,11 +29651,11 @@ function createGradiaEvidenceBudget({ digest }) {
   const STRUCTURED_SCHEMA_PINS = Object.freeze({
     "gradia_shadow_act_analysis": "eab576bde604cd1d0eea59d5982b15ec1330cb956aa398bf889ed1a2331d4360",
     "gradia_aide_character_analysis": "87ac9b6ae219a49caab8ad84861fcc9e101a40be2a890769d1f1791922e459f7",
-    "gradia_aide_character_patch": "d0409eb67068aed48f356aed804d72076a9b530706b53f65718805ed4a29551a",
+    "gradia_aide_character_patch": "c75cefb3ee0a1c16f54d38b8bf6e07a2101b1a1a24108fa073f8bf825b9b921f",
     "gradia_aide_world_analysis": "a86eededd2d3d47680d13dd579641cb39f87031f3a37d2656ecaf0c94d069641",
-    "gradia_aide_world_patch": "9ff7f71db44fdf932dc43137b050fee47d96cb5a7b936b7c1932aa05b4cb6c1d",
+    "gradia_aide_world_patch": "f28a548fd7e02c46cc6923abc3271dc6371919c8a6f60a795b1795783d6c345f",
     "gradia_aide_plot_analysis": "3927b606ab067bb9532b997bed89cd7ef0ec866d66b9a61c2e31e60cb2e87bfb",
-    "gradia_aide_plot_patch": "d8438ca82453dedf811892912788d68b2daf7dd1d2322389f969ed782f09571c"
+    "gradia_aide_plot_patch": "917ba51651879ffe86dff333a0c80a6f5c19c213235ffa25beb4d146a518d7e1"
 });
   const issued = new WeakMap();
   const stop = reason => { throw Object.assign(new TypeError(reason), { budgetReason: reason }); };
