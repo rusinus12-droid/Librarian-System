@@ -3628,12 +3628,11 @@ Before continuing, verify:
     Runtime.lastFinalOverlayMeta = null;
   };
   const LIB_EVIDENCE_MAX_BYTES = 4 * 1024 * 1024;
-  // User-requested 2026-10-30: every memory-recall timeout gets 10 s more, because slow
-  // host storage transfers (not the server) were exhausting the original bounds.
-  const MEMORY_READ_TIMEOUT_EXTENSION_MS = 10000;
-  // LIBRA recall can use its full 40s source-query budget before issuing the
-  // owner receipt. IPC and its outer capture guard must allow that same work.
-  const LIB_MEMORY_OWNER_READ_TIMEOUT_MS = 40000 + MEMORY_READ_TIMEOUT_EXTENSION_MS;
+  // User-requested 2026-11-01: 기억 증거 읽기(메인)는 기본 1분 30초(90초)로 설정하고,
+  // 부족할 경우 20초를 추가로 부여 (총 110초 = 90,000ms + 20,000ms).
+  const MEMORY_READ_TIMEOUT_EXTENSION_MS = 20000;
+  const LIB_MEMORY_OWNER_READ_BASE_TIMEOUT_MS = 90000;
+  const LIB_MEMORY_OWNER_READ_TIMEOUT_MS = LIB_MEMORY_OWNER_READ_BASE_TIMEOUT_MS + MEMORY_READ_TIMEOUT_EXTENSION_MS;
   // Owner currentness checks before a provider request are bounded on their own;
   // they no longer count against the stage model timeout (see guardModel).
   const LIB_EVIDENCE_PREDISPATCH_ALLOWANCE_MS = LIB_MEMORY_OWNER_READ_TIMEOUT_MS;
@@ -3936,6 +3935,13 @@ Before continuing, verify:
     let certifiedSelections = [];
     let nativeHostBinding = nativeBinding;
     try {
+      if (!proposalContext) {
+        const st = LibReadConnection.status();
+        const routeOwners = st.draftReadOwners || LIB_READ_OWNERS;
+        if (Array.isArray(routeOwners) && routeOwners.length === 0) {
+          return { status: 'unavailable', reason: 'LIB_READ_OWNERS_DISABLED', assertCurrent: async () => true, close() {} };
+        }
+      }
       if (nativeBinding?.error) throw nativeBinding.error;
       nativeBinding?.assertLocal?.();
       await LibReadConnection.ensureConnected();
@@ -4282,6 +4288,12 @@ Before continuing, verify:
       assertNative = context.assertCurrent;
       // Resolve capacity before acquiring owner evidence. Only an unavailable
       // optional source at this point can fall back to native context.
+      const st = LibReadConnection.status();
+      const routeOwners = st.inputWriterReadOwners || LIB_READ_OWNERS;
+      if (Array.isArray(routeOwners) && routeOwners.length === 0) {
+        noteDiagnostic('disabled', 'LIB_READ_OWNERS_DISABLED', 'owner_read');
+        return null;
+      }
       const resolved = resolvePreset(settings, INPUT_ASSIST_STAGE_ID);
       const profile = await guardInputWriterRead(lease, () => discoverLibModelContext(resolved.preset, resolved.name));
       assertLocal();
@@ -30617,14 +30629,18 @@ function createGradiaEvidenceBudget({ digest }) {
       record.removeAbort = () => input.signal?.removeEventListener('abort', abort);
       if (input.signal?.aborted) abort();
       const guarded = async (operation, timeoutMs = LIB_MEMORY_OWNER_READ_TIMEOUT_MS) => {
-        check(record); let timer, listener;
+        check(record); let timer, listener, extensionTimer;
         const canceled = new Promise((_, reject) => {
           listener = () => reject(libEvidenceError(record.reason || 'LIB_READ_CANCELED'));
           record.controller.signal.addEventListener('abort', listener, { once: true });
-          timer = setTimeout(() => stop(record, 'LIB_READ_TIMEOUT'), timeoutMs);
+          const baseTimeoutMs = Math.max(10000, timeoutMs - MEMORY_READ_TIMEOUT_EXTENSION_MS);
+          timer = setTimeout(() => {
+            warn('lib_read_timeout_extending', `LIB 기억 증거 읽기 기본 시간(${Math.round(baseTimeoutMs / 1000)}초) 경과: 추가 ${Math.round(MEMORY_READ_TIMEOUT_EXTENSION_MS / 1000)}초를 연장 부여합니다.`);
+            extensionTimer = setTimeout(() => stop(record, 'LIB_READ_TIMEOUT'), MEMORY_READ_TIMEOUT_EXTENSION_MS);
+          }, baseTimeoutMs);
         });
         try { const result = await Promise.race([Promise.resolve().then(() => { check(record); return operation(); }), canceled]); check(record); return result; }
-        finally { clearTimeout(timer); record.controller.signal.removeEventListener('abort', listener); }
+        finally { clearTimeout(timer); clearTimeout(extensionTimer); record.controller.signal.removeEventListener('abort', listener); }
       };
       try {
         check(record);
@@ -38176,14 +38192,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           ||auth.readNamespaces.some(owner=>!allowed.includes(owner))||owners.some(owner=>!auth.readNamespaces.includes(owner))
           ||!Array.isArray(auth.writeNamespaces)||auth.writeNamespaces.length)reject('LIB_READ_PRINCIPAL_REQUIRED');
         let selectedOwners=owners;
-        if(readOptions.source==='unified_engine' && owners.includes('libra') && typeof options.unifiedReadProvider?.describe==='function'){
+        const isInput = !!readOptions.proposal;
+        const connStatus = typeof LibReadConnection?.status === 'function' ? LibReadConnection.status() : null;
+        const routeOwners = isInput ? connStatus?.inputWriterReadOwners : connStatus?.draftReadOwners;
+        if (Array.isArray(routeOwners)) {
+          const filtered = selectedOwners.filter(owner => routeOwners.includes(owner));
+          if (filtered.length) selectedOwners = filtered;
+        }
+        if(readOptions.source==='unified_engine' && selectedOwners.includes('libra') && typeof options.unifiedReadProvider?.describe==='function'){
           try {
             const capability=await options.unifiedReadProvider.describe();
             if(capability?.source!=='unified_engine'||capability.readOnly!==true)reject('LIB_READ_UNIFIED_UNAVAILABLE');
           }
           catch(error){
             if(!['LIB_READ_TIMEOUT','LIB_READ_UNIFIED_UNAVAILABLE','LIB_READ_TRANSPORT_UNAVAILABLE'].includes(error?.code))throw error;
-            selectedOwners=Object.freeze(owners.filter(owner=>owner!=='libra'));
+            selectedOwners=Object.freeze(selectedOwners.filter(owner=>owner!=='libra'));
             if(!selectedOwners.length)throw error;
           }
         }
@@ -38770,14 +38793,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let url = LIB_READ_DEFAULT_URL, state = 'disconnected', reason = '', corpus = null, explicit = false;
     let generation = 0, bridge = null, scope = null, scopeBundle = null, timer = null, disposed = false, pendingConsent = null, preferenceTail = Promise.resolve();
     let inspecting = null, lastInspection = null;
-    let readOwners = ['libra'], unavailable = {}, excludedServerOwners = {}, readSource = 'unified_engine';
+    let readOwners = [...LIB_READ_OWNERS], draftReadOwners = [...LIB_READ_OWNERS], inputWriterReadOwners = [...LIB_READ_OWNERS];
+    let isLegacyV1Consent = false;
+    let unavailable = {}, excludedServerOwners = {}, readSource = 'unified_engine';
     let consentReadPending = true, consentMayBeStored = false, preferenceRevision = 0;
     // A saved connection is re-established with the same consented owners after a
     // transient loss (owner plugin loaded later, server restart, slow scope probe).
     // A user disconnect, URL change, import or disposal clears `explicit` and stops it.
     let reconnectTimer = null, reconnectAttempts = 0, reconnecting = null, connecting = null;
     const LIB_READ_RECONNECT_TERMINAL = ['LIB_READ_SERVER_URL_CHANGED','LIB_READ_SETTINGS_IMPORTED','LIB_READ_CANCELED','LIB_READ_PREFERENCE_UNAVAILABLE','LIB_READ_SOURCE_UNSUPPORTED','LIB_READ_SERVER_URL_INVALID'];
-    const status = () => Object.freeze({state,reason,url,explicit,readSource,readOwners:Object.freeze([...readOwners]),reconnectAttempts,
+    const status = () => Object.freeze({state,reason,url,explicit,readSource,
+      readOwners:Object.freeze([...readOwners]),
+      draftReadOwners:Object.freeze([...draftReadOwners]),
+      inputWriterReadOwners:Object.freeze([...inputWriterReadOwners]),
+      reconnectAttempts,
       inspecting:!!inspecting,lastInspection,
       activeOwners:Object.freeze(Object.keys(scopeBundle?.scopes || {})),unavailable:Object.freeze({...unavailable}),corpus:corpus ? Object.freeze({...corpus}) : null,
       modelCompatibility:'configured_model_context',tokenAccounting:'unicode-text-estimate-plus-framing'});
@@ -38885,9 +38914,32 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         catch (_) { if (epoch === generation) invalidate('LIB_READ_NATIVE_SCOPE_CHANGED'); }
       }, 500);
     };
-    const performConnect = async (startup = false, requestedOwners = LIB_READ_OWNERS, requestedSource = 'unified_engine') => {
+    const performConnect = async (startup = false, requestedOwners = null, requestedSource = null, config = {}) => {
       if (disposed) return status();
-      invalidate(''); readOwners = [...requestedOwners]; readSource = String(requestedSource) === 'server_logical_read' ? 'unified_engine' : String(requestedSource); unavailable = {}; excludedServerOwners = {}; state = 'connecting'; refresh();
+      if (Array.isArray(config.draftReadOwners)) {
+        draftReadOwners = config.draftReadOwners.filter(o => LIB_READ_OWNERS.includes(o));
+      }
+      if (Array.isArray(config.inputWriterReadOwners)) {
+        inputWriterReadOwners = config.inputWriterReadOwners.filter(o => LIB_READ_OWNERS.includes(o));
+      }
+      let targetOwners = requestedOwners;
+      if (!Array.isArray(targetOwners)) {
+        if (isLegacyV1Consent) {
+          targetOwners = [...LIB_READ_OWNERS];
+          draftReadOwners = [...LIB_READ_OWNERS];
+          inputWriterReadOwners = [...LIB_READ_OWNERS];
+          isLegacyV1Consent = false;
+        } else {
+          const union = new Set([...draftReadOwners, ...inputWriterReadOwners]);
+          targetOwners = LIB_READ_OWNERS.filter(o => union.has(o));
+          if (!targetOwners.length) targetOwners = [...LIB_READ_OWNERS];
+        }
+      }
+      const validOwners = targetOwners.filter(o => LIB_READ_OWNERS.includes(o));
+      readOwners = validOwners.length ? validOwners : [...LIB_READ_OWNERS];
+      const src = requestedSource || (config.readSource || readSource);
+      readSource = String(src) === 'server_logical_read' ? 'unified_engine' : String(src);
+      invalidate(''); unavailable = {}; excludedServerOwners = {}; state = 'connecting'; refresh();
       const epoch = generation, target = url;
       const check = () => { if (disposed || epoch !== generation || url !== target) throw libEvidenceError('LIB_READ_CONNECTION_CHANGED'); };
       try {
@@ -38903,7 +38955,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           await assertScope(scope); check();
           if (!startup) {
             pendingConsent = {url:target};
-            await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource}); check();
+            await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource,draftReadOwners:[...draftReadOwners],inputWriterReadOwners:[...inputWriterReadOwners]}); check();
             await assertScope(scope); check(); pendingConsent = null; explicit = true;
           }
           bindLibReadOnlyClient(next.createClient(resolved.scopes),{scope,readSource});
@@ -38935,7 +38987,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         await read.assertCurrent(); read = null; await assertScope(resolved); check();
         if (!startup) {
           pendingConsent = {url:target};
-          await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource}); check();
+          await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource,draftReadOwners:[...draftReadOwners],inputWriterReadOwners:[...inputWriterReadOwners]}); check();
           await assertScope(resolved); check();
           pendingConsent = null; explicit = true;
         }
@@ -39012,10 +39064,29 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         url = normalizeLibReadUrl(saved.url);
         // Canonical, device-local exact-URL consent is the only startup authority.
         if (saved.explicit !== true || saved.url !== url) return;
-        const savedOwners = saved.schema === 'gradia.lib-read-connection.v1' ? ['libra'] : saved.readOwners;
+        if (saved.schema === 'gradia.lib-read-connection.v1') {
+          isLegacyV1Consent = true;
+          draftReadOwners = ['libra'];
+          inputWriterReadOwners = ['libra'];
+          readOwners = ['libra'];
+          consentMayBeStored = true;
+          explicit = true;
+          await connect(true, ['libra'], saved.readSource || 'unified_engine', { draftReadOwners, inputWriterReadOwners });
+          return;
+        }
+        isLegacyV1Consent = false;
+        const savedOwners = saved.readOwners;
         if (!Array.isArray(savedOwners) || !savedOwners.length || savedOwners.length > 3
           || new Set(savedOwners).size !== savedOwners.length || savedOwners.some(owner=>!LIB_READ_OWNERS.includes(owner))) return;
-        consentMayBeStored = true; explicit = true; await connect(true,LIB_READ_OWNERS.filter(owner=>savedOwners.includes(owner)),saved.readSource||'unified_engine');
+        draftReadOwners = Array.isArray(saved.draftReadOwners)
+          ? saved.draftReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner))
+          : [...savedOwners];
+        inputWriterReadOwners = Array.isArray(saved.inputWriterReadOwners)
+          ? saved.inputWriterReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner))
+          : [...savedOwners];
+        readOwners = LIB_READ_OWNERS.filter(owner => savedOwners.includes(owner));
+        consentMayBeStored = true; explicit = true;
+        await connect(true, readOwners, saved.readSource || 'unified_engine', { draftReadOwners, inputWriterReadOwners });
       } catch (_) {
         if (epoch === generation && !disposed) {
           state = 'error'; reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; refresh();
@@ -39023,7 +39094,54 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       finally { consentReadPending = false; }
     };
-    return Object.freeze({status,setUrl,connect:source=>connect(false,LIB_READ_OWNERS,source||'unified_engine'),connectUnified:()=>connect(false,LIB_READ_OWNERS,'unified_engine'),inspect,start,assertScope,ensureConnected,
+    const connectWithOwners = (first, second, third) => {
+      let src = readSource || 'unified_engine';
+      let owners = null;
+      let cfg = {};
+      if (first && typeof first === 'object' && !Array.isArray(first)) {
+        cfg = first;
+        if (typeof cfg.readSource === 'string') src = cfg.readSource;
+      } else if (Array.isArray(first)) {
+        owners = first.filter(o => LIB_READ_OWNERS.includes(o));
+        if (typeof second === 'string') src = second;
+      } else if (typeof first === 'string') {
+        src = first;
+      }
+      return connect(false, owners, src, cfg);
+    };
+    return Object.freeze({status,setUrl,
+      connect: connectWithOwners,
+      connectUnified: () => connectWithOwners(null, 'unified_engine'),
+      setDraftReadOwners: async owners => {
+        if (Array.isArray(owners)) {
+          draftReadOwners = owners.filter(o => LIB_READ_OWNERS.includes(o));
+          if (state === 'connected') return await connect(false, null, readSource, { draftReadOwners, inputWriterReadOwners });
+          refresh();
+        }
+        return status();
+      },
+      setInputWriterReadOwners: async owners => {
+        if (Array.isArray(owners)) {
+          inputWriterReadOwners = owners.filter(o => LIB_READ_OWNERS.includes(o));
+          if (state === 'connected') return await connect(false, null, readSource, { draftReadOwners, inputWriterReadOwners });
+          refresh();
+        }
+        return status();
+      },
+      setReadOwners: async owners => {
+        if (Array.isArray(owners)) {
+          const valid = owners.filter(o => LIB_READ_OWNERS.includes(o));
+          if (valid.length) {
+            draftReadOwners = [...valid];
+            inputWriterReadOwners = [...valid];
+            readOwners = [...valid];
+            if (state === 'connected') return await connect(false, valid, readSource, { draftReadOwners, inputWriterReadOwners });
+            refresh();
+          }
+        }
+        return status();
+      },
+      inspect,start,assertScope,ensureConnected,
       disconnect:()=>forget(),imported:()=>forget('LIB_READ_SETTINGS_IMPORTED'),
       dispose:async()=>{disposed=true;clearTimeout(reconnectTimer);reconnectTimer=null;invalidate('LIB_READ_CANCELED');try { await preferenceTail; } catch (_) { /* Failed durable revocation remains explicit in status. */ }}});
   })();
@@ -44126,7 +44244,27 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       const modeChoice = target.closest('[data-lib-mode-choice]');
       if (modeChoice) { Gui.libReadSourceDraft = modeChoice.dataset.libModeChoice; mockupRenderSources({preserveUrlDraft:true}); return; }
-      if (target.closest('#lib-connect,[data-lib-read-action=connect]')) { LibReadConnection.setUrl(app.querySelector(target.closest('#lib-connect')?'#lib-url':'#lib-settings-url')?.value||''); void LibReadConnection.connect(Gui.libReadSourceDraft||LibReadConnection.status().readSource).then(()=>{mockupRenderSources();guiSetStatus('LIB 읽기 전용 연결 상태를 갱신했습니다.');}); return; }
+      if (target.closest('#lib-connect,[data-lib-read-action=connect]')) {
+        LibReadConnection.setUrl(app.querySelector(target.closest('#lib-connect')?'#lib-url':'#lib-settings-url')?.value||'');
+        const st = LibReadConnection.status();
+        const nextDraftOwners = Gui.libDraftReadOwnersDraft !== undefined && Gui.libDraftReadOwnersDraft !== null
+          ? Gui.libDraftReadOwnersDraft
+          : (st.draftReadOwners || st.readOwners);
+        const nextInputOwners = Gui.libInputWriterReadOwnersDraft !== undefined && Gui.libInputWriterReadOwnersDraft !== null
+          ? Gui.libInputWriterReadOwnersDraft
+          : (st.inputWriterReadOwners || st.readOwners);
+        void LibReadConnection.connect({
+          draftReadOwners: nextDraftOwners,
+          inputWriterReadOwners: nextInputOwners,
+          readSource: Gui.libReadSourceDraft || st.readSource
+        }).then(()=>{
+          Gui.libDraftReadOwnersDraft = null;
+          Gui.libInputWriterReadOwnersDraft = null;
+          mockupRenderSources();
+          guiSetStatus('LIB 기억 읽기 대상 및 연결 상태를 갱신했습니다.');
+        });
+        return;
+      }
       if (target.closest('#lib-disconnect,[data-lib-read-action=disconnect]')) { void LibReadConnection.disconnect().then(()=>{mockupRenderSources();guiSetStatus('LIB 읽기 전용 연결을 해제했습니다.');}).catch(()=>{mockupRenderSources();guiSetStatus('LIB_READ_PREFERENCE_UNAVAILABLE: 자동 연결 해제를 저장하지 못했습니다. 연결 해제를 다시 눌러 주세요.',true,true);}); return; }
       if (target.closest('#lib-check,[data-lib-read-action=check]')) { void LibReadConnection.inspect().then(result=>{mockupRenderSources();guiSetStatus(result.lastInspection?.ok?'기억 연결 확인 완료 · 실제 기억 검색은 다음 실행 시 수행합니다.':`기억 연결 확인 실패 · ${result.lastInspection?.code || result.reason || 'LIB_READ_CONNECTION_UNAVAILABLE'}`,!result.lastInspection?.ok);}); return; }
     });
@@ -44242,6 +44380,24 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (control.matches?.('[data-dirty-key="skill-library"]')) { updateMockupSkillToggle(control); mockupRefreshStatus(); return; }
     if (control.matches?.('#lib-read-source')) { Gui.libReadSourceDraft=control.value; mockupRenderSources({preserveUrlDraft:true}); return; }
     if (control.matches?.('#lib-url,[data-lib-read-url]')) { LibReadConnection.setUrl(control.value); Gui.app.querySelectorAll('#lib-url,[data-lib-read-url]').forEach(node=>{node.value=control.value;}); mockupRenderSources({preserveUrlDraft:true}); return; }
+    if (control.matches?.('[data-lib-draft-owner]')) {
+      const targetOwner = control.dataset.libDraftOwner;
+      const current = new Set(Gui.libDraftReadOwnersDraft || LibReadConnection.status().draftReadOwners || LibReadConnection.status().readOwners);
+      if (control.checked) current.add(targetOwner);
+      else current.delete(targetOwner);
+      Gui.libDraftReadOwnersDraft = LIB_READ_OWNERS.filter(o => current.has(o));
+      mockupRenderSources({preserveUrlDraft:true});
+      return;
+    }
+    if (control.matches?.('[data-lib-input-writer-owner]')) {
+      const targetOwner = control.dataset.libInputWriterOwner;
+      const current = new Set(Gui.libInputWriterReadOwnersDraft || LibReadConnection.status().inputWriterReadOwners || LibReadConnection.status().readOwners);
+      if (control.checked) current.add(targetOwner);
+      else current.delete(targetOwner);
+      Gui.libInputWriterReadOwnersDraft = LIB_READ_OWNERS.filter(o => current.has(o));
+      mockupRenderSources({preserveUrlDraft:true});
+      return;
+    }
     const providerStage=control.closest('.stage-detail[data-detail]');
     if(providerStage&&control.tagName==='SELECT'&&control.closest('.stage-detail')?.querySelectorAll('select')[0]===control){const id=({'shadow':'shadow_act','char':'aide_character','world':'aide_world','plot':'aide_plot'})[providerStage.dataset.detail];if(id&&Gui.state.agents[id]){Gui.state.agents[id].presetName=control.value;markGuiDirty();mockupRefreshStatus();}}
   };
@@ -44676,6 +44832,47 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       select.value=status.readSource;field.append(label,select);connectButton.parentElement?.prepend(field);
     }
+    if(connectButton&&!page.querySelector('#lib-read-owners-container')){
+      const container=mockupNode('div','field');container.id='lib-read-owners-container';
+
+      const draftField=mockupNode('div','field');draftField.id='lib-draft-read-owners';
+      const draftLabel=mockupNode('span','label','초안 작성 시 기억 읽기 대상 (각각 켜기/끄기)');
+      const draftCluster=mockupNode('div','cluster');draftCluster.style.marginTop='6px';draftCluster.style.display='flex';draftCluster.style.flexWrap='wrap';draftCluster.style.gap='14px';
+
+      const inputField=mockupNode('div','field');inputField.id='lib-input-writer-read-owners';
+      inputField.style.marginTop='8px';
+      const inputLabel=mockupNode('span','label','인풋 작성 시 기억 읽기 대상 (각각 켜기/끄기)');
+      const inputCluster=mockupNode('div','cluster');inputCluster.style.marginTop='6px';inputCluster.style.display='flex';inputCluster.style.flexWrap='wrap';inputCluster.style.gap='14px';
+
+      const ownerDefs=[
+        {id:'libra',label:'LIBRA (미크로·통합 기억)'},
+        {id:'hayaku',label:'HAYAKU (로케이터·연속성)'},
+        {id:'flashback',label:'Flashback (벡터 메모리)'}
+      ];
+      for(const def of ownerDefs){
+        const dRow=mockupNode('label','cluster');dRow.style.cursor='pointer';dRow.style.display='inline-flex';dRow.style.alignItems='center';dRow.style.gap='5px';
+        const dCb=document.createElement('input');dCb.type='checkbox';dCb.dataset.libDraftOwner=def.id;
+        dRow.append(dCb,document.createTextNode(def.label));draftCluster.append(dRow);
+
+        const iRow=mockupNode('label','cluster');iRow.style.cursor='pointer';iRow.style.display='inline-flex';iRow.style.alignItems='center';iRow.style.gap='5px';
+        const iCb=document.createElement('input');iCb.type='checkbox';iCb.dataset.libInputWriterOwner=def.id;
+        iRow.append(iCb,document.createTextNode(def.label));inputCluster.append(iRow);
+      }
+      draftField.append(draftLabel,draftCluster);
+      inputField.append(inputLabel,inputCluster);
+      container.append(draftField,inputField);
+      connectButton.parentElement?.prepend(container);
+    }
+    const activeDraftOwners = Gui.libDraftReadOwnersDraft || status.draftReadOwners || status.readOwners;
+    page.querySelectorAll('[data-lib-draft-owner]').forEach(cb => {
+      cb.checked = activeDraftOwners.includes(cb.dataset.libDraftOwner);
+      cb.disabled = status.state === 'connecting';
+    });
+    const activeInputOwners = Gui.libInputWriterReadOwnersDraft || status.inputWriterReadOwners || status.readOwners;
+    page.querySelectorAll('[data-lib-input-writer-owner]').forEach(cb => {
+      cb.checked = activeInputOwners.includes(cb.dataset.libInputWriterOwner);
+      cb.disabled = status.state === 'connecting';
+    });
     const selectedSource=Gui.libReadSourceDraft||status.readSource;
     const modeLabel=source=>source==='plugin_ipc'?'플러그인 모드':'서버 모드 · LIB 백엔드';
     const readSourceControl=page.querySelector('#lib-read-source');
@@ -44700,9 +44897,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return '';
     };
     const hint = reasonHint(status.reason);
+    const draftSummary = activeDraftOwners.length ? activeDraftOwners.map(o => o.toUpperCase()).join(' · ') : '꺼짐';
+    const inputSummary = activeInputOwners.length ? activeInputOwners.map(o => o.toUpperCase()).join(' · ') : '꺼짐';
+    const ownersChanged = (Gui.libDraftReadOwnersDraft && (
+      Gui.libDraftReadOwnersDraft.length !== status.draftReadOwners.length ||
+      Gui.libDraftReadOwnersDraft.some(o => !status.draftReadOwners.includes(o))
+    )) || (Gui.libInputWriterReadOwnersDraft && (
+      Gui.libInputWriterReadOwnersDraft.length !== status.inputWriterReadOwners.length ||
+      Gui.libInputWriterReadOwnersDraft.some(o => !status.inputWriterReadOwners.includes(o))
+    ));
     const modeStatus=Gui.app.querySelector('[data-lib-mode-status]');
-    if(modeStatus)modeStatus.textContent=(status.state==='connected'?'현재 적용: '+modeLabel(status.readSource):status.state==='connecting'?'연결 검증 중: '+modeLabel(status.readSource):'현재 적용: 연결 없음')
-      +(selectedSource!==status.readSource?' · 선택: '+modeLabel(selectedSource)+' (연결·적용 필요)':'')+(status.reason?' · '+status.reason+(hint?' ('+hint+')':''):'')
+    if(modeStatus)modeStatus.textContent=(status.state==='connected'?'현재 적용: '+modeLabel(status.readSource)+' (초안: '+status.draftReadOwners.map(o=>o.toUpperCase()).join(' · ')+' / 인풋: '+status.inputWriterReadOwners.map(o=>o.toUpperCase()).join(' · ')+')':status.state==='connecting'?'연결 검증 중: '+modeLabel(status.readSource):'현재 적용: 연결 없음')
+      +(selectedSource!==status.readSource?' · 선택: '+modeLabel(selectedSource)+' (연결·적용 필요)':'')
+      +(ownersChanged?' · 대상 변경 (초안: '+draftSummary+' / 인풋: '+inputSummary+') (연결·적용 필요)':'')
+      +(status.reason?' · '+status.reason+(hint?' ('+hint+')':''):'')
       +(status.inspecting?' · 기억 연결 확인 중…':status.lastInspection?' · '+(status.lastInspection.ok?'연결 확인 완료 · 실제 기억 검색은 실행 시 수행':`연결 확인 실패 · ${status.lastInspection.code}`)+' ('+new Date(status.lastInspection.at).toLocaleTimeString('ko-KR')+')':'');
     Gui.app.querySelectorAll('[data-lib-read-action]').forEach(button=>{
       button.disabled=button.dataset.libReadAction==='check'?status.state!=='connected'||status.inspecting:button.dataset.libReadAction==='connect'&&status.state==='connecting';
@@ -44713,9 +44921,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const inspect=page.querySelector('#lib-check');if(inspect){inspect.disabled=status.state!=='connected'||status.inspecting;inspect.textContent=status.inspecting?'확인 중…':'기억 연결 확인';}
     const connect=page.querySelector('#lib-connect');if(connect)connect.disabled=status.state==='connecting';
     const corpus=page.querySelector('.kv dd:last-child');if(corpus)corpus.textContent=status.corpus?.source==='plugin_ipc'?'플러그인 IPC 연결 확인 · 실행 순서와 무관하게 읽습니다':status.corpus?.source==='unified_engine'?'통합 검색 연결 확인 · 질문은 실행 시 전달됩니다':status.corpus?status.corpus.items+'개 / '+status.corpus.bytes+' bytes (한도 4 MiB)':'연결 뒤 실제 읽기 검증 전';
-    const activeOwners=page.querySelector('.kv dd:first-of-type');if(activeOwners)activeOwners.textContent=status.activeOwners.join(' · ')||'없음';
+    const activeOwners=page.querySelector('.kv dd:first-of-type');if(activeOwners)activeOwners.textContent=status.activeOwners.map(o=>o.toUpperCase()).join(' · ')||'없음';
     const names=page.querySelectorAll('.state-grid > div');
-    if(names[1])names[1].replaceChildren(mockupNode('b','','활성 읽기 대상'),document.createTextNode((status.activeOwners.join(' · ')||'없음')+' · 쓰기 권한 없음'));
+    if(names[1])names[1].replaceChildren(mockupNode('b','','활성 읽기 대상'),document.createTextNode((status.activeOwners.map(o=>o.toUpperCase()).join(' · ')||'없음')+' · 쓰기 권한 없음'));
     if(names[2])names[2].replaceChildren(mockupNode('b','','현재 채팅 scope'),document.createTextNode(Runtime.currentChatScope||'현재 채팅 scope 미확인'));
     if(names[3])names[3].replaceChildren(mockupNode('b','','단계 모델 호환'),document.createTextNode('모델·문맥 설정 기준 · 입력 토큰 추정'));
     const note=page.querySelector('.note--warn');if(note)note.textContent='기억 연결은 읽기 전용입니다. 플러그인 IPC는 각 플러그인의 현재 채팅 기억을 직접 읽습니다. 서버 모드는 기존 통합 읽기를 사용합니다. 방식 변경 후 연결 버튼을 눌러 적용하세요.';
@@ -45657,7 +45865,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (!budget(input.maxCorpusBytes) || !same(scope, scopes[requestedOwners[0]])) fail('LIB_READ_REQUEST_INVALID');
         // Availability is checked before expensive capture. Missing optional
         // owners do not impose the capture timeout or suppress healthy peers.
-        const available = await describe(scope, requestedOwners);
+        const isInput = !!input.proposal;
+        const connStatus = typeof LibReadConnection?.status === 'function' ? LibReadConnection.status() : null;
+        const routeOwners = isInput ? connStatus?.inputWriterReadOwners : connStatus?.draftReadOwners;
+        let queryOwners = requestedOwners;
+        if (Array.isArray(routeOwners)) {
+          const filtered = queryOwners.filter(owner => routeOwners.includes(owner));
+          if (filtered.length) queryOwners = filtered;
+        }
+        const available = await describe(scope, queryOwners);
         assertCurrentSync();
         const owners = Object.keys(available.scopes);
         for (const owner of owners) if (!same(available.scopes[owner], scopes[owner])) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
