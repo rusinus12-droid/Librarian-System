@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-31T07:21:31.349Z",
+  "generatedAt": "2026-10-31T07:51:42.856Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -1690,6 +1690,10 @@
     "docs/GRADIA_INPUT_WRITER_CONTEXT_PREFLIGHT_20261031.md": {
       "sha256": "946e09c1e18741a62104b985021a9111f93ce49e6247df25df2413f90c350eda",
       "bytes": 4138
+    },
+    "docs/GRADIA_LIB_READ_CONNECTION_REPAIR_20261031.md": {
+      "sha256": "bf868a233618e372ddd3e474e401fe216fffe2dd047fadeac8fcbbf4a07c8721",
+      "bytes": 4959
     },
     "docs/GRADIA_LIBRA_LENS_READ_20261022.md": {
       "sha256": "da7945d513c1688e0aad47dc9eb3561dc361e3a74d3efd43c7c07f5f411ad2e3",
@@ -7154,6 +7158,10 @@
     "tests/hayaku_partial_outcome_binding_runtime_test.cjs": {
       "sha256": "1fd7cc9d6db80ef285e46701b7db13b875e45acaf6d979e8b528e666981c3f7d",
       "bytes": 4217
+    },
+    "tests/hayaku_partial_packet_binding_runtime_test.cjs": {
+      "sha256": "36fd07661986eb8e6e3c190cebf50be10418c6b17304840dadb65ea88ce0793e",
+      "bytes": 7590
     },
     "tests/hayaku_partial_recall_supersession_runtime_test.cjs": {
       "sha256": "9f363d1bbe06ffadac6b77b0a73df7fc4e1bcdaddd0225ee16a09942f78f76d3",
