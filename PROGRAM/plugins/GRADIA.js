@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.7
+//@display-name GRADIA v0.28.8
 //@api 3.0
-//@version 0.28.7
+//@version 0.28.8
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -936,7 +936,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.7';
+  const PLUGIN_VERSION = '0.28.8';
   
   
   
@@ -3512,6 +3512,10 @@
   // LIBRA recall can use its full 40s source-query budget before issuing the
   // owner receipt. IPC and its outer capture guard must allow that same work.
   const LIB_MEMORY_OWNER_READ_TIMEOUT_MS = 40000 + MEMORY_READ_TIMEOUT_EXTENSION_MS;
+  // Owner currentness checks before a provider request are bounded on their own;
+  // they no longer count against the stage model timeout (see guardModel).
+  const LIB_EVIDENCE_PREDISPATCH_ALLOWANCE_MS = LIB_MEMORY_OWNER_READ_TIMEOUT_MS;
+  const LIB_EVIDENCE_RECHECK_COALESCE_MS = 1500;
   // Per evidence request: at most this many stall/length recoveries (see beforeModel), so the
   // whole request stays within (stage calls + this) x stage timeout.
   const LIB_EVIDENCE_MAX_RECOVERIES = 2;
@@ -3791,7 +3795,10 @@
         } });
     } catch (error) {
       if (proposalContext || /CANCELED|SUPERSEDED|MODE_CHANGED/.test(error?.code || '')) throw error;
-      return { status: 'unavailable', reason: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE',
+      const connection = LibReadConnection.status();
+      const code = error?.code === 'LIB_READ_CONNECTION_UNAVAILABLE'
+        ? connection.reason || (connection.state === 'connecting' ? 'LIB_READ_CONNECTION_PENDING' : error.code) : error?.code;
+      return { status: 'unavailable', reason: /^LIB_READ_[A-Z_]+$/.test(code || '') ? code : 'LIB_READ_UNAVAILABLE',
         assertCurrent: async () => true, close() {} };
     }
     if (session.status !== 'ready') return { ...session, close() {} };
@@ -3800,7 +3807,7 @@
       || JSON.stringify(session.engine?.proposal) !== JSON.stringify(proposalContext.proposal))) {
       session.invalidate('LIB_READ_PROPOSAL_CHANGED'); throw libEvidenceError('LIB_READ_PROPOSAL_CHANGED');
     }
-    const run = { status: 'ready', purpose: proposalContext ? 'input_writer' : 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), attempt: null, stageViews: new Map(),
+    const run = { status: 'ready', purpose: proposalContext ? 'input_writer' : 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), attempt: null, stageViews: new Map(), dispatchCount: 0, verifiedAt: 0, verifiedDispatch: -1,
       fail(code) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); if (proposalContext) purgeInputWriterEvidenceRuntime(); } return libEvidenceError(code); },
       assertStageView(stage, recent) {
         const expected = certifiedSelections.find(selection => selection.stage === stage);
@@ -3824,19 +3831,34 @@
           || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
         session.assertLocalCurrent();
       },
-      async assertCurrent() {
+      async assertCurrent(checkOptions = {}) {
         if (this.failed) throw libEvidenceError(this.failed);
         try { nativeHostBinding?.assertLocal?.(); } catch (_) { throw this.fail('LIB_READ_NATIVE_CHANGED'); }
         this.assertStageViews();
         if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
         if (requestSettingsSignature(settings) !== settingsSignature
           || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
+        // Back-to-back pre-dispatch checks (guard start, payload, request) share
+        // one owner round trip. Any provider dispatch invalidates it, so every
+        // check after a model call still re-verifies the owner sources.
+        if (checkOptions.coalesce === true && this.verifiedAt && this.verifiedDispatch === this.dispatchCount
+          && Date.now() - this.verifiedAt < LIB_EVIDENCE_RECHECK_COALESCE_MS) return;
         try { if (proposalContext) await proposalContext.assertCurrent(); await nativeHostBinding?.assertCurrent(); await session.assertCurrent(); await nativeHostBinding?.assertCurrent(); if (proposalContext) await proposalContext.assertCurrent(); }
-        catch (_) { throw this.fail('LIB_READ_CURRENTNESS_LOST'); }
+        catch (error) {
+          // A run that already failed (model timeout, cancellation) aborted this
+          // check itself; report that cause, not "currentness lost".
+          if (this.failed) throw libEvidenceError(this.failed);
+          Runtime.lastLibReadDiagnostic = Object.freeze({...Runtime.lastLibReadDiagnostic,
+            at:Date.now(),status:'failed',code:'LIB_READ_CURRENTNESS_LOST',
+            causeCode:/^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_SOURCE_CHECK_FAILED'});
+          throw this.fail('LIB_READ_CURRENTNESS_LOST');
+        }
         if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
         if (requestSettingsSignature(settings) !== settingsSignature
           || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
+        this.verifiedAt = Date.now(); this.verifiedDispatch = this.dispatchCount;
       },
+      noteDispatch() { this.dispatchCount += 1; this.verifiedAt = 0; },
       // recovery: 'stall' resends a request that was dispatched but produced no response at all
       // (nothing was received, so there is no response to reuse); 'length' discards a provider
       // length-stopped response and asks again with a larger output budget. Each is allowed once
@@ -3876,17 +3898,24 @@
         return this.failed ? libEvidenceError(this.failed) : this.fail('LIB_READ_MODEL_TIMEOUT');
       },
       async guardModel(operation, timeoutMs, options = {}) {
-        await this.assertCurrent();
+        await this.assertCurrent({ coalesce: true });
         let timer, abort;
         const attempt = { controller: new AbortController(), stallRetryable: options.stallRetryable === true,
-          dispatched: false, responded: false, stalled: false };
+          dispatched: false, responded: false, stalled: false, onDispatch: null };
         this.attempt = attempt; this.lastAttemptStalled = false;
         try {
           const canceled = new Promise((_, reject) => {
             abort = () => reject(libEvidenceError(this.failed || 'LIB_READ_CANCELED'));
             this.signal.addEventListener('abort', abort, { once: true });
-            timer = setTimeout(() => { const error = this.timeoutAttempt(attempt); if (attempt.stalled) reject(error); },
-              Math.max(10, Math.min(MAX_STAGE_TIMEOUT_MS, Number(timeoutMs) || DEFAULT_STAGE_TIMEOUT_MS)));
+            const modelTimeoutMs = Math.max(10, Math.min(MAX_STAGE_TIMEOUT_MS, Number(timeoutMs) || DEFAULT_STAGE_TIMEOUT_MS));
+            const arm = ms => { clearTimeout(timer); timer = setTimeout(() => { const error = this.timeoutAttempt(attempt); if (attempt.stalled) reject(error); }, ms); };
+            // Owner currentness checks run before the provider request. In server
+            // mode each is a storage round trip, and they used to consume the
+            // provider's own timeout (a 5 s preset failed every stage after the
+            // first as "currentness lost"). Bound them separately; the provider
+            // gets its full timeout from the moment the request is dispatched.
+            arm(modelTimeoutMs + LIB_EVIDENCE_PREDISPATCH_ALLOWANCE_MS);
+            attempt.onDispatch = () => { if (!this.failed) arm(modelTimeoutMs); };
             if (this.signal.aborted) abort();
           });
           const result = await Promise.race([Promise.resolve().then(operation), canceled]);
@@ -3895,7 +3924,7 @@
         } finally { clearTimeout(timer); if (abort) this.signal.removeEventListener('abort', abort); if (this.attempt === attempt) this.attempt = null; }
       },
       async assertPayload(body, route = '', method = 'POST') {
-        await this.assertCurrent();
+        await this.assertCurrent({ coalesce: true });
         if (typeof body !== 'string' || body.length > budgetMeter.maxPayloadBytes
           || new TextEncoder().encode(body).length > budgetMeter.maxPayloadBytes) throw this.fail('LIB_READ_PAYLOAD_BUDGET_EXCEEDED');
         let payload; try { payload = JSON.parse(body); } catch (_) { throw this.fail('LIB_READ_PAYLOAD_INVALID'); }
@@ -4314,13 +4343,14 @@
       // The evidence attempt this request belongs to (guardModel owns the stage deadline).
       const attempt = evidenceRun?.attempt || null;
       try {
+        // The owner currentness check is not provider time; finish it first.
+        if (evidenceRun) await evidenceRun.assertCurrent({ coalesce: true });
         if (typeof AbortController !== 'undefined' && !requestInit.signal) {
           controller = new AbortController();
           requestInit.signal = controller.signal;
           timer = setTimeout(() => { timedOut = true; controller.abort(); rejectTimeout(timeoutError()); }, timeoutMs);
         }
         if (evidenceRun) {
-          await evidenceRun.assertCurrent();
           if (controller) {
             const abort = () => controller.abort();
             evidenceRun.signal.addEventListener('abort', abort, { once: true });
@@ -4334,10 +4364,12 @@
           }
         }
         if (evidenceRun) evidenceRun.assertDispatch?.(requestUrl, requestInit);
+        evidenceRun?.noteDispatch?.();
         if (typeof API.nativeFetch === 'function' || typeof API.risuFetch === 'function') {
           if (attempt) {
             if (attempt.stalled) throw libEvidenceError(evidenceRun.failed || 'LIB_READ_MODEL_STALLED');
             attempt.dispatched = true;
+            attempt.onDispatch?.();
           }
           const transport = typeof API.nativeFetch === 'function' ? API.nativeFetch(requestUrl, requestInit) : API.risuFetch(requestUrl, requestInit);
           if (evidenceRun) Promise.resolve(transport).catch(() => {});
@@ -38104,14 +38136,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const LibReadConnection = (() => {
     let url = LIB_READ_DEFAULT_URL, state = 'disconnected', reason = '', corpus = null, explicit = false;
     let generation = 0, bridge = null, scope = null, scopeBundle = null, timer = null, disposed = false, pendingConsent = null, preferenceTail = Promise.resolve();
+    let inspecting = null, lastInspection = null;
     let readOwners = ['libra'], unavailable = {}, excludedServerOwners = {}, readSource = 'unified_engine';
     let consentReadPending = true, consentMayBeStored = false, preferenceRevision = 0;
     // A saved connection is re-established with the same consented owners after a
     // transient loss (owner plugin loaded later, server restart, slow scope probe).
     // A user disconnect, URL change, import or disposal clears `explicit` and stops it.
-    let reconnectTimer = null, reconnectAttempts = 0, reconnecting = null;
+    let reconnectTimer = null, reconnectAttempts = 0, reconnecting = null, connecting = null;
     const LIB_READ_RECONNECT_TERMINAL = ['LIB_READ_SERVER_URL_CHANGED','LIB_READ_SETTINGS_IMPORTED','LIB_READ_CANCELED','LIB_READ_PREFERENCE_UNAVAILABLE','LIB_READ_SOURCE_UNSUPPORTED','LIB_READ_SERVER_URL_INVALID'];
     const status = () => Object.freeze({state,reason,url,explicit,readSource,readOwners:Object.freeze([...readOwners]),reconnectAttempts,
+      inspecting:!!inspecting,lastInspection,
       activeOwners:Object.freeze(Object.keys(scopeBundle?.scopes || {})),unavailable:Object.freeze({...unavailable}),corpus:corpus ? Object.freeze({...corpus}) : null,
       modelCompatibility:'configured_model_context',tokenAccounting:'unicode-text-estimate-plus-framing'});
     const refresh = () => {
@@ -38134,7 +38168,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return task;
     };
     const invalidate = (code = 'LIB_READ_CONNECTION_UNAVAILABLE') => {
-      generation++; clearTimeout(timer); timer = null;
+      generation++; clearTimeout(timer); timer = null; inspecting = null; lastInspection = null;
       if (pendingConsent) {
         const stale = pendingConsent; pendingConsent = null; explicit = false;
         const revokedAt = generation;
@@ -38143,7 +38177,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         });
       }
       const old = bridge; bridge = null; scope = null; scopeBundle = null; corpus = null;
-      if (old) void old.dispose();
+      if (old) void Promise.resolve().then(() => old.dispose()).catch(() => {});
       unbindLibReadOnlyClient();
       state = 'disconnected'; reason = code; refresh();
       if (code) scheduleReconnect(code);
@@ -38165,10 +38199,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // Called before a memory read. Waits briefly for a saved connection to come back;
     // the read itself still applies every scope, receipt and currentness check.
     const ensureConnected = async (timeoutMs = 4000 + MEMORY_READ_TIMEOUT_EXTENSION_MS) => {
-      if (disposed || !explicit || state === 'connected') return status();
+      if (disposed || state === 'connected' || (!explicit && state !== 'connecting')) return status();
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       let timer;
-      try { await Promise.race([reconnectNow(), new Promise(resolve => { timer = setTimeout(resolve, timeoutMs); })]); }
+      try { await Promise.race([connecting || reconnectNow(), new Promise(resolve => { timer = setTimeout(resolve, timeoutMs); })]); }
       catch (_) { /* The read reports the unavailable connection itself. */ }
       finally { clearTimeout(timer); }
       return status();
@@ -38218,7 +38252,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         catch (_) { if (epoch === generation) invalidate('LIB_READ_NATIVE_SCOPE_CHANGED'); }
       }, 500);
     };
-    const connect = async (startup = false, requestedOwners = LIB_READ_OWNERS, requestedSource = 'unified_engine') => {
+    const performConnect = async (startup = false, requestedOwners = LIB_READ_OWNERS, requestedSource = 'unified_engine') => {
       if (disposed) return status();
       invalidate(''); readOwners = [...requestedOwners]; readSource = String(requestedSource) === 'server_logical_read' ? 'unified_engine' : String(requestedSource); unavailable = {}; excludedServerOwners = {}; state = 'connecting'; refresh();
       const epoch = generation, target = url;
@@ -38274,11 +38308,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         }
         bindLibReadOnlyClient(client,{scope:resolved,readSource}); state = 'connected'; reason = '';
       } catch (error) {
-        if (epoch === generation) { invalidate(/^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE'); state = 'error'; }
+        if (epoch === generation) {
+          unavailable = {...unavailable, ...(error?.unavailable || {})};
+          invalidate(/^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE'); state = 'error';
+        }
       }
       refresh(); return status();
     };
-    const inspect = async () => {
+    const connect = (...args) => {
+      const operation = performConnect(...args);
+      connecting = operation;
+      // A superseded attempt cannot clear the newer connection's wait handle.
+      void operation.then(() => { if (connecting === operation) connecting = null; },
+        () => { if (connecting === operation) connecting = null; });
+      return operation;
+    };
+    const performInspect = async () => {
       const epoch = generation, binding = libReadBinding;
       if (state !== 'connected' || !binding) return status();
       try {
@@ -38299,9 +38344,30 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           corpus={source:'unified_engine',queried:false};
         }else corpus = {items:read.snapshot.items.length,bytes:read.snapshot.corpusBytes}; read = null;
       } catch (error) {
-        if (epoch === generation) { invalidate(/^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE'); state = 'error'; }
+        if (epoch === generation) {
+          invalidate(/^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE'); state = 'error';
+          lastInspection = Object.freeze({at:Date.now(),ok:false,code:reason});
+        }
       }
       refresh(); return status();
+    };
+    const inspect = () => {
+      if (inspecting) return inspecting;
+      if (state !== 'connected' || !libReadBinding) {
+        lastInspection = Object.freeze({at:Date.now(),ok:false,code:reason || 'LIB_READ_CONNECTION_UNAVAILABLE'});
+        refresh(); return Promise.resolve(status());
+      }
+      const epoch = generation;
+      const operation = Promise.resolve().then(performInspect).then(() => {
+        if (epoch === generation || inspecting === operation) {
+          lastInspection = Object.freeze({at:Date.now(),ok:state === 'connected',code:reason});
+        }
+      }).finally(() => {
+        if (inspecting === operation) inspecting = null;
+        refresh();
+      }).then(status);
+      inspecting = operation; lastInspection = null; refresh();
+      return operation;
     };
     const start = async () => {
       if (disposed || generation !== 0) { consentReadPending = false; return; }
@@ -38317,7 +38383,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (!Array.isArray(savedOwners) || !savedOwners.length || savedOwners.length > 3
           || new Set(savedOwners).size !== savedOwners.length || savedOwners.some(owner=>!LIB_READ_OWNERS.includes(owner))) return;
         consentMayBeStored = true; explicit = true; await connect(true,LIB_READ_OWNERS.filter(owner=>savedOwners.includes(owner)),saved.readSource||'unified_engine');
-      } catch (_) { /* First install or unreadable preferences remain disconnected. */ }
+      } catch (_) {
+        if (epoch === generation && !disposed) {
+          state = 'error'; reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; refresh();
+        }
+      }
       finally { consentReadPending = false; }
     };
     return Object.freeze({status,setUrl,connect:source=>connect(false,LIB_READ_OWNERS,source||'unified_engine'),connectUnified:()=>connect(false,LIB_READ_OWNERS,'unified_engine'),inspect,start,assertScope,ensureConnected,
@@ -38390,6 +38460,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // and how long it spent instead of only that no evidence arrived.
     Runtime.lastLibReadDiagnostic = Object.freeze({ at: Date.now(), purpose: 'response_evidence',
       status: String(libReadSession.status || ''), code: usesLibEvidence ? '' : String(libReadSession.reason || ''),
+      connection: LibReadConnection.status(),
       elapsedMs: Math.max(0, Date.now() - libReadStartedAt) });
     if (usesLibEvidence) settings = { ...settings, [LIB_EVIDENCE_CONTEXT]: libReadSession };
     try {
@@ -42733,6 +42804,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     risuEngine: Runtime.risuEngine,
     finalDraftMeta: Runtime.finalDraftMeta,
     lastLibReadDiagnostic: Runtime.lastLibReadDiagnostic || null,
+    libReadConnection: LibReadConnection.status(),
     lastInputWriterReadDiagnostic: Runtime.lastInputWriterReadDiagnostic || null,
     finalDraft: Runtime.finalDraft || '',
     finalDraftPreview: compactMiddle(Runtime.finalDraft || '', 2000),
@@ -43402,7 +43474,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (modeChoice) { Gui.libReadSourceDraft = modeChoice.dataset.libModeChoice; mockupRenderSources({preserveUrlDraft:true}); return; }
       if (target.closest('#lib-connect,[data-lib-read-action=connect]')) { LibReadConnection.setUrl(app.querySelector(target.closest('#lib-connect')?'#lib-url':'#lib-settings-url')?.value||''); void LibReadConnection.connect(Gui.libReadSourceDraft||LibReadConnection.status().readSource).then(()=>{mockupRenderSources();guiSetStatus('LIB 읽기 전용 연결 상태를 갱신했습니다.');}); return; }
       if (target.closest('#lib-disconnect,[data-lib-read-action=disconnect]')) { void LibReadConnection.disconnect().then(()=>{mockupRenderSources();guiSetStatus('LIB 읽기 전용 연결을 해제했습니다.');}).catch(()=>{mockupRenderSources();guiSetStatus('LIB_READ_PREFERENCE_UNAVAILABLE: 자동 연결 해제를 저장하지 못했습니다. 연결 해제를 다시 눌러 주세요.',true,true);}); return; }
-      if (target.closest('#lib-check,[data-lib-read-action=check]')) { void LibReadConnection.inspect().then(()=>{mockupRenderSources();guiSetStatus('LIB 읽기 상태를 다시 확인했습니다.');}); return; }
+      if (target.closest('#lib-check,[data-lib-read-action=check]')) { void LibReadConnection.inspect().then(result=>{mockupRenderSources();guiSetStatus(result.lastInspection?.ok?'기억 연결 확인 완료 · 실제 기억 검색은 다음 실행 시 수행합니다.':`기억 연결 확인 실패 · ${result.lastInspection?.code || result.reason || 'LIB_READ_CONNECTION_UNAVAILABLE'}`,!result.lastInspection?.ok);}); return; }
     });
     app.addEventListener('change', event => { void handleMockupControlChange(event.target); });
     app.addEventListener('input', event => { void handleMockupControlChange(event.target, true); });
@@ -43958,18 +44030,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (code === 'LIB_READ_TRANSPORT_UNAVAILABLE' || code === 'LIB_READ_TIMEOUT') return '백엔드 서버 미응답 · [플러그인 IPC]로 전환해 보세요';
       if (code === 'LIB_READ_PLUGIN_MODE_REQUIRED') return 'LIBRA 플러그인 전용 모드 필요';
       if (code === 'LIB_READ_SCOPE_UNAVAILABLE') return '현재 캐릭터/채팅 scope 미확인';
+      if (code === 'LIB_READ_PREFERENCE_UNAVAILABLE') return '저장된 연결 설정을 읽거나 저장하지 못했습니다. 연결·적용을 다시 눌러 주세요';
+      if (code === 'LIB_READ_CONNECTION_UNAVAILABLE') return '관리 · 진단의 기억 읽기 모드에서 연결·적용을 눌러 주세요';
+      if (code === 'LIB_READ_CONNECTION_PENDING') return '연결 검증이 진행 중입니다. 완료 후 다시 실행하세요';
       return '';
     };
     const hint = reasonHint(status.reason);
     const modeStatus=Gui.app.querySelector('[data-lib-mode-status]');
     if(modeStatus)modeStatus.textContent=(status.state==='connected'?'현재 적용: '+modeLabel(status.readSource):status.state==='connecting'?'연결 검증 중: '+modeLabel(status.readSource):'현재 적용: 연결 없음')
-      +(selectedSource!==status.readSource?' · 선택: '+modeLabel(selectedSource)+' (연결·적용 필요)':'')+(status.reason?' · '+status.reason+(hint?' ('+hint+')':''):'');
+      +(selectedSource!==status.readSource?' · 선택: '+modeLabel(selectedSource)+' (연결·적용 필요)':'')+(status.reason?' · '+status.reason+(hint?' ('+hint+')':''):'')
+      +(status.inspecting?' · 기억 연결 확인 중…':status.lastInspection?' · '+(status.lastInspection.ok?'연결 확인 완료 · 실제 기억 검색은 실행 시 수행':`연결 확인 실패 · ${status.lastInspection.code}`)+' ('+new Date(status.lastInspection.at).toLocaleTimeString('ko-KR')+')':'');
     Gui.app.querySelectorAll('[data-lib-read-action]').forEach(button=>{
-      button.disabled=button.dataset.libReadAction==='check'?status.state!=='connected':button.dataset.libReadAction==='connect'&&status.state==='connecting';
+      button.disabled=button.dataset.libReadAction==='check'?status.state!=='connected'||status.inspecting:button.dataset.libReadAction==='connect'&&status.state==='connecting';
+      if(button.dataset.libReadAction==='check')button.textContent=status.inspecting?'기억 연결 확인 중…':'기억 연결 확인';
     });
     const chip=page.querySelector('#lib-chip');if(chip){chip.className='health '+(status.state==='connected'?'health--ok':'health--warn');const textNode=chip.querySelector('span');if(textNode)textNode.textContent=status.state==='connected'?'읽기 전용 연결됨':'읽기 연결 '+status.state;}
     const state=page.querySelector('#lib-state');if(state)state.textContent=status.state+(status.reason?' · '+status.reason+(hint?' ('+hint+')':''):'');
-    const inspect=page.querySelector('#lib-check');if(inspect)inspect.disabled=status.state!=='connected';
+    const inspect=page.querySelector('#lib-check');if(inspect){inspect.disabled=status.state!=='connected'||status.inspecting;inspect.textContent=status.inspecting?'확인 중…':'기억 연결 확인';}
     const connect=page.querySelector('#lib-connect');if(connect)connect.disabled=status.state==='connecting';
     const corpus=page.querySelector('.kv dd:last-child');if(corpus)corpus.textContent=status.corpus?.source==='plugin_ipc'?'플러그인 IPC 연결 확인 · 실행 순서와 무관하게 읽습니다':status.corpus?.source==='unified_engine'?'통합 검색 연결 확인 · 질문은 실행 시 전달됩니다':status.corpus?status.corpus.items+'개 / '+status.corpus.bytes+' bytes (한도 4 MiB)':'연결 뒤 실제 읽기 검증 전';
     const activeOwners=page.querySelector('.kv dd:first-of-type');if(activeOwners)activeOwners.textContent=status.activeOwners.join(' · ')||'없음';
@@ -44643,7 +44720,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       receipts.clear(); operations.clear();
       for (const record of pending.values()) { record.finish(); record.reject(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' })); }
       pending.clear();
-      if (started) await api()?.removePluginChannelListener?.(options.role === 'owner' ? requestChannel : responseChannel, listener);
+      // Some RisuAI API proxies expose a callable for methods the host does not
+      // implement. Listener removal is optional; local revocation above is not.
+      try { if (started) await api()?.removePluginChannelListener?.(options.role === 'owner' ? requestChannel : responseChannel, listener); }
+      catch (_) { /* Older hosts remove channels when the plugin unloads. */ }
       started = false;
     }
   });

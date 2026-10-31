@@ -214,3 +214,21 @@ test('pending explicit inspection retains the connected card and does not reconn
  await wait(()=>h.status().connection.corpus?.source==='unified_engine');
  assert.equal(h.status().connection.state,'connected');
 });
+
+test('settings memory check displays progress and its result in the owning card',async t=>{
+ const h=await fixture(t);await h.connect();await h.plugin.debugNavigateGui('management','flow');
+ const gate=h.holdCapture(),button=h.node('[data-lib-read-action="check"]');button.click();await gate.entered;
+ try{assert.equal(button.disabled,true);assert.match(button.textContent,/확인 중/);assert.match(h.node('[data-lib-mode-status]').textContent,/기억 연결 확인 중/);}
+ finally{gate.release();}
+ await wait(()=>h.status().connection.lastInspection?.ok);
+ assert.match(h.node('[data-lib-mode-status]').textContent,/연결 확인 완료.*실제 기억 검색은 실행 시 수행/);
+ assert.equal(h.node('[data-lib-read-action="check"]').disabled,false);
+ assert.equal(h.requests.filter(r=>r.url.endsWith('/bootstrap')).length,1);
+});
+
+test('a failed memory check displays the refusal beside its button',async t=>{
+ const h=await fixture(t);await h.connect();await h.plugin.debugNavigateGui('management','flow');
+ h.setChat('replaced');h.node('[data-lib-read-action="check"]').click();
+ await wait(()=>h.status().connection.lastInspection?.ok===false);
+ assert.match(h.node('[data-lib-mode-status]').textContent,/연결 확인 실패.*LIB_READ_NATIVE_SCOPE_CHANGED/);
+});

@@ -4,7 +4,8 @@ const create=require('../tools/libra_gradia_unified_read.cjs'),createBus=require
 const fingerprint=v=>crypto.createHash('sha256').update(v).digest('hex');
 async function fixture(t,options={}){
  const bus=createBus();let serial=0,queries=0,releases=0,current=true,boundary=1,authority;
- const owner=create({role:'owner',api:bus.api('libra'),now:options.now,release:execution=>{releases++;options.onRelease?.(execution);},fingerprint,randomId:()=>String(++serial),
+ const api=id=>({...bus.api(id),...(options.missingRemove?{removePluginChannelListener:async()=>{throw Error('API method removePluginChannelListener not found');}}:{})});
+ const owner=create({role:'owner',api:api('libra'),now:options.now,release:execution=>{releases++;options.onRelease?.(execution);},fingerprint,randomId:()=>String(++serial),
    boundary:async()=>({dataInstanceId:'A'.repeat(32),resetEpoch:0,boundary}),
    query:async(request,cap)=>{queries++;authority=cap;const receipt=cap.bindGraph({readerFrame:{},nodes:[],edges:[],bases:[]});
      assert.equal(cap.verifyReceipt(receipt),true);await options.onQuery?.();
@@ -12,7 +13,7 @@ async function fixture(t,options={}){
        bundle:{generation:'g1'},packet:{renderedText:options.content??'TYPED OWNER EVIDENCE',packetDigest:fingerprint('packet')}};},
    verify:async()=>{await options.onVerify?.();return current;}});
  await owner.start();
- const client=create({role:'client',api:bus.api('serial_gradation_agents_for_rp'),timeoutMs:options.timeoutMs||1000,randomId:()=>String(++serial)});
+ const client=create({role:'client',api:api('serial_gradation_agents_for_rp'),timeoutMs:options.timeoutMs||1000,randomId:()=>String(++serial)});
  t.after(async()=>{await client.dispose();await owner.dispose();});
  const input={scope:{scopeKey:'s',characterId:'c',chatId:'h'},queryText:'current question',maxCorpusBytes:4096};
  const proof=s=>({scope:s.scope,readIdentity:s.readIdentity,dependencies:s.dependencies,evidenceRevision:s.evidenceRevision,dataInstanceId:s.dataInstanceId,resetEpoch:s.resetEpoch});
@@ -59,6 +60,14 @@ test('client disconnect revokes its issued receipt on the owner',async t=>{
  const f=await fixture(t),r=await f.client.capture(f.input);await f.client.dispose();
  const next=create({role:'client',api:f.bus.api('serial_gradation_agents_for_rp'),timeoutMs:1000});
  t.after(()=>next.dispose());await assert.rejects(()=>next.current({proof:f.proof(r)}),e=>e.code==='LIB_READ_STALE');
+});
+
+test('RisuAI proxy rejecting optional listener removal still revokes receipts and settles disposal',async t=>{
+ const f=await fixture(t,{missingRemove:true}),r=await f.client.capture(f.input);
+ await assert.doesNotReject(()=>f.client.dispose());
+ const next=create({role:'client',api:f.bus.api('serial_gradation_agents_for_rp'),timeoutMs:1000});t.after(()=>next.dispose());
+ await assert.rejects(()=>next.current({proof:f.proof(r)}),e=>e.code==='LIB_READ_STALE');
+ assert.equal(f.releases(),1);await assert.doesNotReject(()=>f.owner.dispose());
 });
 test('an owner boundary changing during compiler validation cannot certify an old packet',async t=>{
  let mutate=false,f;f=await fixture(t,{onVerify:()=>{if(mutate)f.changeBoundary();}});

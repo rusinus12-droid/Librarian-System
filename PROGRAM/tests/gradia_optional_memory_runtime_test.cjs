@@ -51,7 +51,8 @@ async function setup(t,present=[],saved,{serverOwners=[],staleLibraRegistry=fals
   else content='STANDALONE_DRAFT: 민아는 도서관 문 앞에서 은빛 열쇠를 바라봤다. The warm lamplight spread across the shelves while she waited quietly for an answer.';
   if(state.responseText!==null)content=state.responseText;
   return new Response(JSON.stringify({choices:[{message:{content},finish_reason:'stop'}]}));};
- const host=await load({api:{...bus.api('serial_gradation_agents_for_rp'),pluginStorage:store,getLocalPluginStorage:async()=>device,
+ const readerApi=bus.api('serial_gradation_agents_for_rp');
+ const host=await load({api:{...readerApi,postPluginChannelMessage:async(...args)=>{await state.onSend?.(...args);return readerApi.postPluginChannelMessage(...args);},pluginStorage:store,getLocalPluginStorage:async()=>device,
   getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacter:async()=>character,getChar:async()=>character,getCharacterFromIndex:async()=>character,
   getChatFromIndex:async()=>chat,getChat:async()=>chat,getCurrentChat:async()=>chat,getDatabase:async()=>({characters:[character],personas:[],selectedPersona:'',modules:[]}),
   nativeFetch,fetch:nativeFetch,showContainer:async()=>{},hideContainer:async()=>{},sendChat:async v=>{sent.push(v);return true;},onUnload:async fn=>unloads.push(fn)},
@@ -75,6 +76,39 @@ for(const mode of ['novel','rp'])test(`no owners: ${mode} Input Writer copies a 
 test('no owners: failed IPC/server connection still permits native pipeline and Input Writer',async t=>{
  const f=await setup(t);let s=await f.host.plugin.connectLibReadOnly('','plugin_ipc');assert.equal(s.state,'error');assert.equal(s.reason,'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE');await f.configure();await f.run();assert.equal(f.prompts.length,4);assert.equal(await f.writer(),true);
  s=await f.host.plugin.connectLibReadOnly('','unified_engine');assert.equal(s.state,'error');assert.equal(s.reason,'LIB_READ_SCOPE_REGISTRY_UNAVAILABLE');assert.equal(f.state.captures,0);t.diagnostic(JSON.stringify({ipc:'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE',server:s.reason}));
+});
+
+test('a request waits for the ongoing explicit connection and consumes its evidence',async t=>{
+ const f=await setup(t,['libra']);await f.configure();
+ let release,entered;const gate=new Promise(r=>release=r),started=new Promise(r=>entered=r);
+ f.state.onSend=async(_target,_channel,message)=>{if(message.action==='describe'){entered();await gate;}};
+ const connecting=f.host.plugin.connectLibReadOnly('','plugin_ipc');await started;
+ const running=f.run();
+ try{await new Promise(r=>setTimeout(r,150));assert.equal(f.prompts.length,0,'no native-only draft while the explicit connection is still in flight');}
+ finally{release();}
+ assert.equal((await connecting).state,'connected');const out=await running;
+ assert.equal(f.prompts.length,4);assert.ok(f.prompts.every(p=>JSON.stringify(p).includes('LIBRA_OPTIONAL_MEMORY')));
+ assert.ok(JSON.stringify(out).includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1'));
+});
+
+test('failed connection keeps its specific refusal and owner diagnostics in the run',async t=>{
+ const f=await setup(t);const status=await f.host.plugin.connectLibReadOnly('','plugin_ipc');
+ assert.equal(status.reason,'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE');
+ assert.equal(status.unavailable.libra,'LIB_READ_TIMEOUT');
+ await f.configure();await f.run();const runtime=f.host.plugin.getRuntime();
+ assert.equal(runtime.finalDraftMeta.libReadReason,status.reason);
+ assert.equal(runtime.lastLibReadDiagnostic.connection.state,'error');
+ assert.equal(runtime.lastLibReadDiagnostic.connection.readSource,'plugin_ipc');
+ assert.equal(runtime.lastLibReadDiagnostic.connection.unavailable.libra,'LIB_READ_TIMEOUT');
+ assert.equal(f.state.captures,0);
+});
+
+test('unreadable saved connection is reported instead of appearing as a fresh install',async t=>{
+ const unloads=[];const h=await load({api:{getLocalPluginStorage:async()=>{throw Error('device storage unavailable');},onUnload:async fn=>unloads.push(fn)}});
+ t.after(async()=>{for(const fn of unloads.reverse())await fn();});
+ assert.equal(h.plugin.getLibReadOnlyStatus().connection.reason,'LIB_READ_PREFERENCE_UNAVAILABLE');
+ assert.equal(h.plugin.getLibReadOnlyStatus().connection.state,'error');
+ assert.equal(h.getCalls(),0);
 });
 for(const present of [['libra'],['hayaku'],['flashback'],['libra','hayaku'],['libra','flashback'],['hayaku','flashback']])test('plugin IPC subset: '+present.join('+'),async t=>{
  const f=await setup(t,present),s=await f.host.plugin.connectLibReadOnly('','plugin_ipc');assert.equal(s.state,'connected',JSON.stringify(s));assert.deepEqual(Array.from(s.activeOwners),present);await f.configure();const out=await f.run();assert.equal(f.prompts.length,4);assert.ok(JSON.stringify(out).includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1'));for(const o of present)assert.ok(f.prompts.every(p=>JSON.stringify(p).includes(o.toUpperCase()+'_OPTIONAL_MEMORY')));assert.equal(f.state.captures,present.length);assert.equal(await f.writer(),true);

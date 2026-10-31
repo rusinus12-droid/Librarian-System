@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.12
+//@display-name LIBRA v2.6.13
 //@api 3.0
-//@version 2.6.12
+//@version 2.6.13
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.6.12';
+  const PLUGIN_VERSION = '2.6.13';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -35085,6 +35085,12 @@ function createLibraReadonlySourceContext(owner) {
     // User-requested 2026-10-30: every live-recall timeout gets 10 s more, because slow
     // host storage transfers (not the server) were exhausting the original bounds.
     const RECALL_TIMEOUT_EXTENSION_MS = 10000;
+    // Final consumer-data revalidation re-reads manifest, state head, registry,
+    // worldline meta and Micro bodies. Over a slow host transport a fixed 1.5 s
+    // failed a 19 s recall that still had 70 s of budget (2026-10-31 live trace).
+    // It gets the same extension as every other recall step and stays bounded by
+    // the caller's hard deadline and the request watchdog.
+    const CONSUMER_REVALIDATION_BUDGET_MS = 1500 + RECALL_TIMEOUT_EXTENSION_MS;
     // The 2026-10-31 live trace spent 36.5 s in graph query and reached final
     // verification with only 1.388 s left. Give physical verification its own room.
     const RECALL_REQUEST_BUDGET_MS = 90000; // absolute live-recall watchdog
@@ -35578,7 +35584,7 @@ function createLibraReadonlySourceContext(owner) {
       if (options.signal) entry.consumerSignal = options.signal;
       const hardDeadline = Number(options.deadlineAt) || (options.useCapturedDeadline ? entry.consumerDeadlineAt : 0);
       const signal = options.signal || (options.useCapturedDeadline ? entry.consumerSignal : null);
-      const deadlineAt = Math.min(Date.now() + 1500, hardDeadline || Infinity);
+      const deadlineAt = Math.min(Date.now() + CONSUMER_REVALIDATION_BUDGET_MS, hardDeadline || Infinity);
       const check = () => {
         if (signal?.aborted) throw signal.reason || consumerContractError('CONSUMER_CANCELLED');
         if (Date.now() >= deadlineAt) throw consumerContractError('CONSUMER_DATA_REVALIDATION_DEADLINE');
@@ -71461,7 +71467,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       entry.responseBoundary = unifiedDeepFreeze(clone(boundary));
     };
     const captureUnifiedResponseBoundary=async(context,settings=null,options={})=>{
-      const deadlineAt=Math.min(Date.now()+1500,Number(options.deadlineAt)||Infinity);
+      const deadlineAt=Math.min(Date.now()+CONSUMER_REVALIDATION_BUDGET_MS,Number(options.deadlineAt)||Infinity);
       let timer;
       try {return await Promise.race([(async()=>{
       const scope=context.scope,pairs=buildPairs(context.chat,scope.scopeKey);
@@ -71479,7 +71485,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     const assertUnifiedResponseBoundary=async(boundary,options={})=>{
       if(!boundary)return true;
-      const deadlineAt=Math.min(Date.now()+1500,Number(options.deadlineAt)||Infinity);let timer;
+      const deadlineAt=Math.min(Date.now()+CONSUMER_REVALIDATION_BUDGET_MS,Number(options.deadlineAt)||Infinity);let timer;
       try{return await Promise.race([(async()=>{
         const context=await resolveContext();unifiedAssert(context.scope.scopeKey===boundary.scopeKey,'UNIFIED_RESPONSE_SCOPE_CHANGED');
         const current=await captureUnifiedResponseBoundary(context,null,{...options,deadlineAt,force:true});
@@ -97583,7 +97589,10 @@ advanced
       receipts.clear(); operations.clear();
       for (const record of pending.values()) { record.finish(); record.reject(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' })); }
       pending.clear();
-      if (started) await api()?.removePluginChannelListener?.(options.role === 'owner' ? requestChannel : responseChannel, listener);
+      // Some RisuAI API proxies expose a callable for methods the host does not
+      // implement. Listener removal is optional; local revocation above is not.
+      try { if (started) await api()?.removePluginChannelListener?.(options.role === 'owner' ? requestChannel : responseChannel, listener); }
+      catch (_) { /* Older hosts remove channels when the plugin unloads. */ }
       started = false;
     }
   });

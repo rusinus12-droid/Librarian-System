@@ -189,7 +189,10 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
       receipts.clear(); operations.clear();
       for (const record of pending.values()) { record.finish(); record.reject(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' })); }
       pending.clear();
-      if (started) await api()?.removePluginChannelListener?.(options.role === 'owner' ? requestChannel : responseChannel, listener);
+      // Some RisuAI API proxies expose a callable for methods the host does not
+      // implement. Listener removal is optional; local revocation above is not.
+      try { if (started) await api()?.removePluginChannelListener?.(options.role === 'owner' ? requestChannel : responseChannel, listener); }
+      catch (_) { /* Older hosts remove channels when the plugin unloads. */ }
       started = false;
     }
   });
