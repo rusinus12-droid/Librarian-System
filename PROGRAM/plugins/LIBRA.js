@@ -5551,7 +5551,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const request = (...args) => withOwnerOperation({kind:'storage_operation',operation:'request'}, () => requestImpl(...args));
   // Reads are served during a backup; callers that wait on read maintenance keep their own UI.
-  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch'];
+  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch', '/v1/kv/get-many', '/v1/integrity'];
   const requestImpl = async (method, route, body = null, requestOptions = {}) => {
     if (localOnlyOwner && !(method === 'GET' && (route.startsWith('/v1/kv/get?') || route.startsWith('/v1/kv/keys?') || route.startsWith('/v1/integrity?')))) throw localOnlyError();
     const connection = await bootstrap(requestOptions.forceBootstrap === true, requestOptions.allowPluginOnly === true);
@@ -5618,8 +5618,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // A backup gates writes for a second or two and the server refuses before running
       // anything, so the identical write (same operationId and expectations) is retried.
       const maintenanceAttempt = Number(requestOptions.maintenanceAttempt || 0);
+      const isRetryableMaintenanceRoute = method === 'GET' || MAINTENANCE_RETRY_ROUTES.includes(route);
       if (error?.status === 503 && error?.payload?.error === 'server_maintenance_in_progress' && maintenanceAttempt < MAINTENANCE_RETRY_LIMIT
-        && requestOptions.maintenanceRetry !== false && method === 'POST' && MAINTENANCE_RETRY_ROUTES.includes(route)) {
+        && requestOptions.maintenanceRetry !== false && isRetryableMaintenanceRoute) {
         await new Promise(resolve => setTimeout(resolve, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1)));
         return await requestImpl(method, route, body, { ...requestOptions, bindingGeneration, maintenanceAttempt: maintenanceAttempt + 1 });
       }
@@ -60172,7 +60173,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const boundary=await captureReceiptRecoveryBoundary(context,pair);
       return {scope,identity,boundary};
     };
-     const MICRO_PROVIDER_TIMEOUT_MS = 120000, MICRO_LEASE_MARGIN_MS = 30000;
+     const MICRO_PROVIDER_TIMEOUT_MS = 60000, MICRO_LEASE_MARGIN_MS = 15000;
      const microInvocationsInFlight = new Set();
      const produceMicroForTurn = async (scope, worldlineId, sessionEpoch, turn, expectedRevisionId = '', options={}) => {
        const active = await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn);
@@ -77659,7 +77660,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       };
       await validateGraph();
       if ((await gradiaLensReadSnapshot(bound.request)).digest !== bound.lensDigest) throw Error('LIB_READ_STALE');
-      await validateGraph();
       return !bound.closed;
     };
     const releaseGradiaMemoryEvidence = execution => {
@@ -77672,17 +77672,20 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const before = await gradiaLensReadSnapshot(request);
       // Both owner channels validate the proposal before reaching this reader.
       // Reserve canonical and lens memory together without reducing peer owners' byte budget.
-      const characterCap = request.proposal?.purpose === 'input_writer_proposal'
+      const isInputWriter = request.proposal?.purpose === 'input_writer_proposal';
+      const characterCap = isInputWriter
         ? GRADIA_INPUT_WRITER_EVIDENCE_MAX_CHARS : GRADIA_RESPONSE_EVIDENCE_MAX_CHARS;
       const maxChars = Math.min(characterCap,Math.max(32,Math.floor(request.maxCorpusBytes/4)));
       const allowance = before.enabled ? Math.min(before.registry.recallMaxChars,Math.floor(maxChars*before.registry.recallBudgetRatio)) : 0;
       const lensAllowance = allowance >= LENS_RECALL_MIN_CHARS && maxChars-allowance-2>=32 ? allowance : 0;
+      const maxReads = isInputWriter ? 2048 : GRADIA_OWNER_SESSION_MAX_READS;
+      const maxUnits = isInputWriter ? 12 : 24;
       let graph, result;
       try {
         graph = await executeMemoryGraphUnifiedQuery({expectedScopeKey:request.scope.scopeKey,mode:'unified',
           requestId:request.operationId||request.id,queryInput:{queryText:request.queryText||'현재 기억',viewerId:'gradia_reader'},
-          resourceBudget:{maxReads:GRADIA_OWNER_SESSION_MAX_READS,maxSourceBytes:GRADIA_OWNER_SESSION_MAX_SOURCE_BYTES},
-          consumerPolicy:{maxCharacters:maxChars-(lensAllowance?lensAllowance+2:0),maxUnits:24}},null,authority);
+          resourceBudget:{maxReads,maxSourceBytes:GRADIA_OWNER_SESSION_MAX_SOURCE_BYTES},
+          consumerPolicy:{maxCharacters:maxChars-(lensAllowance?lensAllowance+2:0),maxUnits}},null,authority);
         if (!unifiedGraphDeliveryAuthority.has(graph) || graph.modelDispatchEligible!==true) throw Error('LIB_READ_UNIFIED_UNAVAILABLE');
         const canonical = graph.packet.renderedText;
         const lens = lensAllowance ? await recallLensMemories(before.context,{currentText:request.queryText},maxChars,
@@ -93229,7 +93232,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       pending_write:'쓰기 결과 확인 중',failed:'저장 실패',unrecoverable:'원문과 영수증을 찾을 수 없음',
       paused:'복구 일시중단',stale:'원문 변경으로 이전 작업 무효',unavailable:'상태 확인 불가',
       pending_reconciliation:'저장 확인 중'};
-    const microLabel={succeeded:'분석 완료',never_started:'분석 미시작',queued:'분석 대기',publish_ready:'발행 확인 필요',
+    const microLabel={succeeded:'분석 완료',never_started:'분석 미시작',queued:'분석 대기',running:'분석 중',publish_ready:'발행 확인 필요',
       failed:'분석 실패',unknown:'이전 분석 결과 불명확',OFF:'Micro 꺼짐',
       unavailable:'분석 상태 확인 불가'};
     const segmentLabel={saved:'저장됨',partial:'부분 저장',missing:'누락',failed:'분석 실패',pending:'미완성 구간',running:'분석 중',off:'꺼짐',unknown:'확인 전'};

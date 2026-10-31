@@ -3822,7 +3822,8 @@ Before continuing, verify:
       const wanted = comparable(contentToText(inputMessage?.content ?? ''));
       const bodyOf = message => comparable(contentToText(message?.content ?? ''));
       const native = wanted ? messages.filter(message => nativeTurnMessageId(message) && currentTurnRole(message) === 'user'
-        && typeof message.content === 'string' && bodyOf(message).length >= 8 && wanted.includes(bodyOf(message))) : [];
+        && typeof message.content === 'string' && (bodyOf(message).length >= 8 && (wanted.includes(bodyOf(message)) || bodyOf(message).includes(wanted))
+          || (bodyOf(message).length >= 16 && wanted.length >= 16 && (bodyOf(message).startsWith(wanted.slice(0, 16)) || wanted.startsWith(bodyOf(message).slice(0, 16))) && Math.abs(bodyOf(message).length - wanted.length) <= 10))) : [];
       if (native.length !== 1) throw nativeIdUnavailable('input_without_id', { matches: native.length, inputChars: wanted.length });
       inputMessage = native[0];
     }
@@ -3893,7 +3894,8 @@ Before continuing, verify:
       // (rowValue, promptValue): the prompt may wrap the whole row; it may never
       // drop part of it, or the model would see a different input than was sent.
       const sameInput = (rowValue, promptValue) => { const x = squash(rowValue), y = squash(promptValue);
-        return !!x && !!y && (x === y || (x.length >= 8 && y.includes(x))); };
+        return !!x && !!y && (x === y || (x.length >= 8 && y.includes(x)) || (y.length >= 8 && x.includes(y))
+          || (x.length >= 16 && y.length >= 16 && (x.startsWith(y.slice(0, 16)) || y.startsWith(x.slice(0, 16))) && Math.abs(x.length - y.length) <= 10)); };
       if (!wanted || !row || !nativeTurnMessageId(row)) throw nativeIdUnavailable('input_row_missing');
       if (turnBlockReason({ ...row, role: 'user', content: rowText })) throw nativeIdUnavailable('input_row_blocked');
       if (!sameInput(comparableInput(rowText), wanted)) throw nativeIdUnavailable('input_text_mismatch',
