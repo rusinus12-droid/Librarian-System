@@ -64,7 +64,7 @@ async function setup(t,present=[],saved,{serverOwners=[],staleLibraRegistry=fals
  const writer=async(mode='novel')=>{await host.plugin.saveRuntimeSettings({mode:'off',default_preset:'audit',input_assist_mode:'user_focus',writing_mode:mode,input_assist_target_chars:500,lore_activation_mode:'off',input_assist_lore_activation_mode:'off'});
   const doc=dom.window.document,button=label=>[...doc.querySelectorAll('button')].find(b=>b.textContent.trim()===label);
   const pending=host.plugin.continueSceneWithInputAssist();await wait(()=>doc.querySelector('textarea[placeholder^="비워 두면 직전 상황 이어가기"]'),'composer');doc.querySelector('textarea').value='문 앞에서 열쇠를 확인하는 다음 입력';button('진행').click();
-  await wait(()=>{const s=host.plugin.getInputAssistSendStatus();if(s?.phase==='error')throw Error(JSON.stringify(s));return doc.querySelector('[data-input-choice-card]');},'choices');doc.querySelector('[data-input-choice-card] .btn--primary').click();await wait(()=>button('바로 전송'),'delivery');button('복사 후 직접 전송').click();return pending;};
+  await wait(()=>{const s=host.plugin.getInputAssistSendStatus();if(s?.phase==='error')throw Error(JSON.stringify(s));return doc.querySelector('[data-input-choice-card]');},'choices');doc.querySelector('[data-input-choice-card] .btn--primary').click();await wait(()=>button('복사 후 직접 전송'),'delivery');button('복사 후 직접 전송').click();return pending;};
  return {host,bus,owners,state,prompts,configure,run,writer,copied};
 }
 for(const [mode,multi,expected]of [['normal','lightweight',4],['normal','heavyweight',8],['lite','lightweight',2],['off','lightweight',0]])test(`no owners: ${mode}/${multi} preserves native pipeline (${expected} calls)`,async t=>{

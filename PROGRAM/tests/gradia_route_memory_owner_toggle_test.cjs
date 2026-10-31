@@ -201,3 +201,87 @@ test('toggling draft and input writer owners independently connects and persists
   assert.deepEqual(saved.draftReadOwners, ['libra', 'flashback']);
   assert.deepEqual(saved.inputWriterReadOwners, ['libra', 'hayaku']);
 });
+
+test('UI supports disabling / turning off LIB memory read and persists off state', async t => {
+  const f = await fixture(t);
+  const doc = f.dom.window.document;
+
+  // First connect to ensure connected state
+  await f.connect();
+  assert.equal(f.status().connection.state, 'connected');
+
+  // Now select 'off' in #lib-read-source
+  const select = doc.querySelector('#lib-read-source');
+  assert.ok(select, '#lib-read-source exists');
+  const offOption = Array.from(select.options).find(opt => opt.value === 'off');
+  assert.ok(offOption, 'off option exists in select');
+
+  select.value = 'off';
+  select.dispatchEvent(new f.dom.window.Event('change', {bubbles: true}));
+
+  // Click connect to apply off setting
+  doc.querySelector('#lib-connect').click();
+  await wait(() => {
+    const s = f.local.get(PREF) ? JSON.parse(f.local.get(PREF)) : null;
+    return f.status().connection.state === 'disconnected' && s?.explicit === false && s?.readSource === 'off';
+  });
+
+  const conn = f.status().connection;
+  assert.equal(conn.state, 'disconnected');
+  assert.equal(conn.readSource, 'off');
+  assert.equal(conn.explicit, false);
+  assert.equal(conn.reason, 'LIB_READ_DISABLED');
+
+  // Verify persistence
+  const saved = JSON.parse(f.local.get(PREF));
+  assert.equal(saved.schema, 'gradia.lib-read-connection.v2');
+  assert.equal(saved.explicit, false);
+  assert.equal(saved.readSource, 'off');
+});
+
+test('saved off preference restores cleanly without network requests or reconnection attempts', async t => {
+  const f = await fixture(t, {
+    saved: {
+      schema: 'gradia.lib-read-connection.v2',
+      url,
+      explicit: false,
+      readSource: 'off',
+      readOwners: ['libra'],
+      draftReadOwners: ['libra'],
+      inputWriterReadOwners: ['libra']
+    }
+  });
+
+  const conn = f.status().connection;
+  assert.equal(conn.state, 'disconnected');
+  assert.equal(conn.readSource, 'off');
+  assert.equal(conn.explicit, false);
+  assert.equal(conn.reason, 'LIB_READ_DISABLED');
+  assert.equal(f.requests.length, 0, 'No network requests on startup when memory read is off');
+});
+
+test('clicking #lib-disconnect disables memory reading, updates UI and persists off state', async t => {
+  const f = await fixture(t);
+  const doc = f.dom.window.document;
+
+  await f.connect();
+  assert.equal(f.status().connection.state, 'connected');
+
+  // Click disconnect button
+  const disconnectBtn = doc.querySelector('#lib-disconnect');
+  assert.ok(disconnectBtn, '#lib-disconnect exists');
+  disconnectBtn.click();
+
+  await wait(() => {
+    const s = f.local.get(PREF) ? JSON.parse(f.local.get(PREF)) : null;
+    return f.status().connection.state === 'disconnected' && s?.explicit === false && s?.readSource === 'off';
+  });
+
+  const conn = f.status().connection;
+  assert.equal(conn.state, 'disconnected');
+  assert.equal(conn.readSource, 'off');
+  assert.equal(conn.explicit, false);
+
+  const chip = doc.querySelector('#lib-chip');
+  assert.ok(chip.textContent.includes('기억 읽기 끔') || chip.textContent.includes('사용 안 함'));
+});
