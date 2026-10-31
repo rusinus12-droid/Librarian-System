@@ -163,7 +163,7 @@ for(const timing of ['disconnectBeforeStart','disconnectDuringRead'])test(`faile
 test('old saved read-source choices migrate to the unified engine and the old search option is absent',async t=>{
  const h=await fixture(t,{preference:{schema:'gradia.lib-read-connection.v2',explicit:true,readOwners:['libra'],readSource:'server_logical_read'}});
  await wait(()=>h.status().connection?.state==='connected');assert.equal(h.status().connection.readSource,'unified_engine');
- assert.deepEqual([...h.node('#lib-read-source').options].map(o=>o.value),['unified_engine','plugin_ipc']);
+ assert.deepEqual([...h.node('#lib-read-source').options].map(o=>o.value),['off','unified_engine','plugin_ipc']);
 });
 test('missing unified owner support cannot fall back to server logical memory',async t=>{
  const h=await fixture(t,{ownerUnavailable:true});assert.equal((await h.connect()).connection.state,'error');
@@ -177,32 +177,29 @@ test('missing unified owner support cannot fall back to server logical memory',a
 });
 
 test('settings applies the server mode through the real read-only connection and saves verified consent',async t=>{
- const h=await fixture(t);await h.plugin.debugNavigateGui('management','flow');
- const field=h.node('#lib-settings-url');field.value=h.url;field.dispatchEvent(new h.doc.defaultView.Event('input',{bubbles:true}));
- h.node('[data-lib-mode-choice="unified_engine"]').click();
+ const h=await fixture(t);await h.plugin.debugNavigateGui('references','flow');
+ const field=h.node('#lib-url');field.value=h.url;field.dispatchEvent(new h.doc.defaultView.Event('input',{bubbles:true}));
+ const select=h.node('#lib-read-source');select.value='unified_engine';select.dispatchEvent(new h.doc.defaultView.Event('change',{bubbles:true}));
  assert.equal(h.requests.length,0,'selecting a mode cannot connect');
  assert.equal(h.status().connection.state,'disconnected');
- h.node('[data-lib-read-action="connect"]').click();await wait(()=>h.status().connection.state==='connected');
+ h.node('#lib-connect').click();await wait(()=>h.status().connection.state==='connected');
  assert.equal(h.status().connection.readSource,'unified_engine');
- assert.match(h.node('[data-lib-mode-status]').textContent,/현재 적용: 서버 모드/);
  const saved=JSON.parse(h.local.get(PREF));assert.equal(saved.readSource,'unified_engine');assert.equal(saved.explicit,true);
  assert.equal(h.requests.filter(r=>r.url.endsWith('/bootstrap')).length,1);
- h.node('[data-lib-mode-choice="plugin_ipc"]').click();
- assert.match(h.node('[data-lib-mode-status]').textContent,/현재 적용: 서버 모드.*선택: 플러그인 모드.*적용 필요/);
+ select.value='plugin_ipc';select.dispatchEvent(new h.doc.defaultView.Event('change',{bubbles:true}));
  assert.equal(h.status().connection.readSource,'unified_engine','an unapplied selection must not relabel the active binding');
- assert.equal(h.node('#lib-read-source').value,'plugin_ipc','both connection views share the selection');
- h.node('[data-lib-read-action="disconnect"]').click();await wait(()=>JSON.parse(h.local.get(PREF)).explicit===false);
- assert.match(h.node('[data-lib-mode-status]').textContent,/연결 없음/);assert.equal(h.status().status,'unavailable');
+ assert.equal(h.node('#lib-read-source').value,'plugin_ipc');
+ h.node('#lib-disconnect').click();await wait(()=>JSON.parse(h.local.get(PREF)).explicit===false);
+ assert.equal(h.status().status,'unavailable');
 });
 
 test('a failed settings mode switch reports no active connection and never falls back to the previous server',async t=>{
- const h=await fixture(t,{ownerUnavailable:true});await h.plugin.debugNavigateGui('management','flow');
- h.node('[data-lib-mode-choice="plugin_ipc"]').click();
- assert.equal(h.requests.length,0);assert.equal(h.node('[data-lib-server-field]').hidden,true);
- h.node('[data-lib-read-action="connect"]').click();await wait(()=>h.status().connection.state==='error');
- assert.match(h.node('[data-lib-mode-status]').textContent,/연결 없음.*LIB_READ_/);
+ const h=await fixture(t,{ownerUnavailable:true});await h.plugin.debugNavigateGui('references','flow');
+ const select=h.node('#lib-read-source');select.value='plugin_ipc';select.dispatchEvent(new h.doc.defaultView.Event('change',{bubbles:true}));
+ assert.equal(h.requests.length,0);assert.equal(h.node('#lib-url').disabled,true);
+ h.node('#lib-connect').click();await wait(()=>h.status().connection.state==='error');
  assert.equal(h.status().status,'unavailable');assert.equal(h.requests.length,0,'plugin mode must not bootstrap the server');
- assert.equal(h.node('[data-lib-read-action="check"]').disabled,true);
+ assert.equal(h.node('#lib-check').disabled,true);
 });
 
 test('pending explicit inspection retains the connected card and does not reconnect',async t=>{
@@ -216,19 +213,19 @@ test('pending explicit inspection retains the connected card and does not reconn
 });
 
 test('settings memory check displays progress and its result in the owning card',async t=>{
- const h=await fixture(t);await h.connect();await h.plugin.debugNavigateGui('management','flow');
- const gate=h.holdCapture(),button=h.node('[data-lib-read-action="check"]');button.click();await gate.entered;
- try{assert.equal(button.disabled,true);assert.match(button.textContent,/확인 중/);assert.match(h.node('[data-lib-mode-status]').textContent,/기억 연결 확인 중/);}
+ const h=await fixture(t);await h.connect();await h.plugin.debugNavigateGui('references','flow');
+ const gate=h.holdCapture(),button=h.node('#lib-check');button.click();await gate.entered;
+ try{assert.equal(button.disabled,true);assert.match(button.textContent,/확인 중/);}
  finally{gate.release();}
  await wait(()=>h.status().connection.lastInspection?.ok);
- assert.match(h.node('[data-lib-mode-status]').textContent,/연결 확인 완료.*실제 기억 검색은 실행 시 수행/);
- assert.equal(h.node('[data-lib-read-action="check"]').disabled,false);
+ assert.match(h.node('#lib-state').textContent,/connected/);
+ assert.equal(h.node('#lib-check').disabled,false);
  assert.equal(h.requests.filter(r=>r.url.endsWith('/bootstrap')).length,1);
 });
 
 test('a failed memory check displays the refusal beside its button',async t=>{
- const h=await fixture(t);await h.connect();await h.plugin.debugNavigateGui('management','flow');
- h.setChat('replaced');h.node('[data-lib-read-action="check"]').click();
+ const h=await fixture(t);await h.connect();await h.plugin.debugNavigateGui('references','flow');
+ h.setChat('replaced');h.node('#lib-check').click();
  await wait(()=>h.status().connection.lastInspection?.ok===false);
- assert.match(h.node('[data-lib-mode-status]').textContent,/연결 확인 실패.*LIB_READ_NATIVE_SCOPE_CHANGED/);
+ assert.match(h.node('#lib-state').textContent,/LIB_READ_NATIVE_SCOPE_CHANGED/);
 });

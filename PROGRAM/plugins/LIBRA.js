@@ -59701,6 +59701,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (work.status === 'reserved') return work.phase === 'manual_planned' ? 'queued' : 'unknown';
       return 'unknown';
     };
+    const MICRO_PROVIDER_TIMEOUT_MS = 60000, MICRO_LEASE_MARGIN_MS = 15000;
+    const microInvocationsInFlight = new Set();
     const readMicroStageStatus = async (scope, active) => {
       const receipt=active.receipt;
       const workKey=key.microWork(scope,receipt.worldlineId,receipt.sessionEpoch,
@@ -59715,7 +59717,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         {verifiedSource:active,...(reason?{}:{prefetchedWork:{key:workKey,value:work}})});
       const jobKey=[scope.scopeKey,receipt.worldlineId,receipt.sessionEpoch,
         receipt.turn,receipt.revisionId].join(':');
-      const inFlight = microInvocationsInFlight.has(workKey) || work?.phase === 'invoking';
+      const inFlight = microInvocationsInFlight.has(workKey) || (work?.phase === 'invoking' && Number(work?.leaseExpiresAt || 0) > Date.now());
       const status=reason?'unknown':state.microJobs.has(jobKey)?(inFlight?'running':'queued'):microStageStatusFromWork(work,published);
       return {receiptRef:active.receiptKey,revisionId:receipt.revisionId,sourceDigest:receipt.sourceDigest,
         turn:receipt.turn,status,reason,attemptId:string(work?.attemptId||''),
@@ -60174,8 +60176,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const boundary=await captureReceiptRecoveryBoundary(context,pair);
       return {scope,identity,boundary};
     };
-     const MICRO_PROVIDER_TIMEOUT_MS = 60000, MICRO_LEASE_MARGIN_MS = 15000;
-     const microInvocationsInFlight = new Set();
      const produceMicroForTurn = async (scope, worldlineId, sessionEpoch, turn, expectedRevisionId = '', options={}) => {
        const active = await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn);
       if (active.status !== 'verified' || (expectedRevisionId && active.receipt.revisionId !== expectedRevisionId)) {

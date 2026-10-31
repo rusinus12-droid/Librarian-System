@@ -42677,6 +42677,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       entry?.scope?.key === scope.key
       && entry?.lineage?.requestNonce === lineage.requestNonce
     )) || null;
+    const baselinePair = ensureArray(snapshot?.conversationPairs)
+      .find(pair => Number(pair?.pairIndex || 0) === Number(lineage.targetPairIndex || 0)) || null;
     let userEvidence = null;
     if (scope && Array.isArray(scope.chatMessages) && scope.chatMessages.length) {
       userEvidence = afterRequestRecoveryUserEvidence(scope, { lineage });
