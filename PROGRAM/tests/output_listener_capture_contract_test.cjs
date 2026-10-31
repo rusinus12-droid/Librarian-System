@@ -88,8 +88,10 @@ assert.match(flashbackCapture, /chatOutputTurnRevisions\.get\(turnKey\)/);
 assert.match(flashbackCapture, /provisional:\s*true,\s*captureSource:\s*'risu_chat_output'/);
 assert.match(flashbackCapture, /remoteEmbeddingQueued:\s*false/);
 const flashbackSave = between(flashback, 'const saveFinalizedChatCapture = async', 'const finalizedCaptureReconciliation = (');
-assert.match(flashbackSave, /remoteUpgradeQueued = !provisional/,
-  'remote embedding is impossible for provisional committed-output revisions');
+// 2026-10-31: provisional captures are embedded early (still excluded from recall
+// until confirmed); hosts without live confirmation otherwise never embedded them.
+assert.match(flashbackSave, /remoteUpgradeQueued = schedulePendingEmbeddingWork\(scope\.scopeKey, \{ reason: provisional \? 'provisional_capture' : 'finalized_capture' \}\)/,
+  'provisional and finalized captures both queue embedding work');
 const flashbackAfter = between(flashback, 'const afterRequest = async', 'const registerRequestHooksOnce = async');
 assert.match(flashbackAfter, /if \(Runtime\.captureBackend !== FLASHBACK_CAPTURE_BACKENDS\.AFTER_REQUEST_RECONCILE\)[\s\S]*?return content;/,
   'afterRequest only captures when the selected fallback backend owns capture');

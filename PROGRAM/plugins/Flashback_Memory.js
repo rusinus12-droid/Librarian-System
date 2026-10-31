@@ -40905,9 +40905,12 @@ const MemorySuiteHealthRecovery = (() => {
         removePendingTurnById(pendingId);
         upsertChatMonitorAssistant(scope, assistantPosition, assistant, { pairIndex, userPosition: userMessagePosition, userText: latestUser });
       }
-      // Provisional output revisions remain raw until authoritative live confirmation.
+      // Provisional captures stay excluded from recall until live confirmation, but
+      // their vectors are prepared now: hosts that never deliver the live-chat
+      // confirmation left afterRequest captures raw forever. A replaced revision is
+      // re-queued as new vectorless records, so embedding early wastes at most one pass.
       // Scheduling only creates a timer; discovery/reservation/provider work happens after return.
-      const remoteUpgradeQueued = !provisional && schedulePendingEmbeddingWork(scope.scopeKey, { reason: 'finalized_capture' });
+      const remoteUpgradeQueued = schedulePendingEmbeddingWork(scope.scopeKey, { reason: provisional ? 'provisional_capture' : 'finalized_capture' });
       if (provisional) {
         const responseCandidate = Runtime.afterRequestCaptureCandidates.get(pendingId);
         if (responseCandidate) Object.assign(responseCandidate, {

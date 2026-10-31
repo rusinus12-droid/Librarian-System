@@ -3171,6 +3171,7 @@ function __libraNarrativeStripPatch(value) {
     lastAssociativeRecallDiagnostics: null,
     lastResponseAuthorNote: null,
     lastResponseMaterialSource: null,
+    lastHostRequestMessages: null,
     uiLaunchSerial: 0,
     uiLaunchKind: '',
     uiLaunchAt: 0,
@@ -23770,6 +23771,9 @@ function summarizeAgentCbsTag(rawContent) {
         recent.visibleText = recent.text;
         recent.recentTurnCount = Number(liveTail.pairCount || 0);
       }
+      // Remembered so graph recall can tell which lore RisuAI already injected this turn.
+      Runtime.lastHostRequestMessages = { at: Date.now(), messages: (Array.isArray(messages) ? messages : []).map(message => ({
+        role: message?.role, content: message?.content, memo: message?.memo, removable: message?.removable })) };
       const snapshot = sealReferenceSourceSnapshot(await loadRisuContextSnapshot(stageSettings, messages, recent));
       Runtime.lastResponseMaterialSource = {
         at: Date.now(),
@@ -51760,7 +51764,8 @@ function createLibraReadonlySourceContext(owner) {
       entitySlotScore,
       predicateScore,
       roleWeight,
-      mandatoryInclusion: Boolean(unit?.activation?.alwaysActive === true || unit?.activation?.hostSelected === true)
+      // Host-selected lore is already in the prompt; only constant lore the host did not carry is forced in.
+      mandatoryInclusion: Boolean(unit?.activation?.alwaysActive === true && unit?.activation?.hostSelected !== true)
     };
   };
 
@@ -68274,6 +68279,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
 
     // Only entries the CURRENT request allowed are considered, and the identity tuple is the existing
     // one — no re-keying by label, which the research note warns decays.
+    // Lore RisuAI already placed in the latest request is in the prompt verbatim; delivering it
+    // again as recall evidence duplicated it and crowded out canonical/micro/state memories.
+    const HOST_REQUEST_LORE_MAX_AGE_MS = 10 * 60 * 1000;
+    const hostDeliveredLoreIdentities = snapshot => {
+      const request = Runtime.lastHostRequestMessages;
+      if (!request || !Array.isArray(request.messages) || Date.now() - Number(request.at || 0) > HOST_REQUEST_LORE_MAX_AGE_MS) return new Set();
+      try {
+        const selection = reuseRisuSelectedLorebooks(request.messages, asArray(snapshot?.candidates), snapshot?.cbsContext);
+        return new Set(asArray(selection?.activeLore).map(lore => loreContinuityIdentity(lore)).filter(Boolean));
+      } catch (_) { return new Set(); }
+    };
     const loreLinkAllowedEntries = snapshot => {
       const candidates = asArray(snapshot?.candidates).filter(candidate => ['character', 'module'].includes(candidate?.sourceType));
       const active = asArray(snapshot?.activeLore);
@@ -75524,6 +75540,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             activationKey: entry.lore.activationKey ?? null, effectiveForceState: entry.lore.effectiveForceState ?? null },
           passages: responseLorePassageWindows(entry.rendered).map(passage => loreLinkPassageLocator(passage, entry.rendered)) }));
         const allowedLore = loreEntries(loreSnapshot);
+        const hostDeliveredLore = hostDeliveredLoreIdentities(loreSnapshot);
         const storedLoreMapping = await read(key.loreLinkMapping(scope), () => storage.getVerifiedJson(key.loreLinkMapping(scope), scope, null));
         const loreIndex = await buildLoreLinkIndex(scope, active.manifest, { snapshot: loreSnapshot });
         if (registry?.schema !== ENTITY_REGISTRY_SCHEMA || registry.scopeKey !== scope.scopeKey) throw new Error('LIBRA_GRAPH_REGISTRY_UNAVAILABLE');
@@ -75542,7 +75559,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           claimContracts: UNIFIED_CLAIMS,
           state: { key: key.continuityState(scope), revision: stableReferenceJson({ stateWorldline, correctionStore, basis: stateView?.head?.basis || null }),
             view: stateView, correctionKey: key.stateCorrections(scope), corrections: correctionJournal },
-          lore: { entries: allowedLore, index: loreIndex, revision: stableReferenceJson(loreIndex.basis),
+          lore: { entries: allowedLore.filter(entry => !hostDeliveredLore.has(entry.identity)), index: loreIndex, revision: stableReferenceJson(loreIndex.basis),
             selectionBinding: loreIndex.basis }, inventory, pending }, { nodeLimit });
         resources?.retain(graph,'native_projection_graph',2);
         // Capture the physical body baseline before the final logical readback.
@@ -84573,6 +84590,25 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.t-libra .mem-entry__body>.fold,.t-libra .mem-entry__body>.fold>.fold__body{min-width:0}',
     '.t-libra .mem-entry__body>.fold>summary{overflow-wrap:anywhere}.t-libra .mem-entry__body>.fold>summary::after{flex-shrink:0}',
     '.t-libra .mem-entry__body>.fold .code{min-width:0;max-width:100%;max-height:440px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}',
+    // Receipt/execution-record JSON (long node ids, excerpts) must wrap inside its card instead of widening it.
+    '.t-libra details.fold,.t-libra details.fold>.fold__body{min-width:0;max-width:100%}',
+    '.t-libra .delivery-card{display:flex;flex-direction:column;gap:14px}',
+    '.t-libra .delivery-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}',
+    '.t-libra .delivery-metric{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border:1px solid var(--line,rgba(0,0,0,.08));border-radius:var(--r-md,10px);background:var(--surface,transparent);min-width:0}',
+    '.t-libra .delivery-metric>span{font-size:12px;color:var(--text2)}.t-libra .delivery-metric>strong{font:750 20px/1.2 var(--font-sans);font-variant-numeric:tabular-nums}',
+    '.t-libra .delivery-families{display:flex;flex-wrap:wrap;gap:6px}.t-libra .delivery-family{padding:3px 10px;border-radius:999px;font-size:12px;border:1px solid var(--line,rgba(0,0,0,.1));background:var(--surface-2,rgba(0,0,0,.03))}',
+    // Debug log: a fixed-width list rail beside a fluid detail card; rows stack badge / title / meta so titles never collapse to one glyph per line.
+    '.t-libra .diag-log{grid-template-columns:minmax(240px,340px) minmax(0,1fr);align-items:start;gap:16px}',
+    '@media (max-width:860px){.t-libra .diag-log{grid-template-columns:minmax(0,1fr)}}',
+    '.t-libra .diag-log__rail{display:flex;flex-direction:column;gap:10px;min-width:0}',
+    '.t-libra .diag-log__intro{display:block}.t-libra .diag-log__intro h3{margin:0 0 4px}.t-libra .diag-log__intro p{margin:0;color:var(--text2);font-size:13px;line-height:1.55}',
+    '.t-libra .diag-log__rail>.cluster{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}',
+    '.t-libra .diag-log .list{display:flex;flex-direction:column;gap:6px;max-height:60vh;overflow:auto;min-width:0}',
+    '.t-libra .diag-log__row{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"badge title" "badge meta";column-gap:10px;row-gap:2px;align-items:center;width:100%;min-width:0;text-align:left;padding:10px 12px}',
+    '.t-libra .diag-log__row>:first-child{grid-area:badge}.t-libra .diag-log__row>strong{grid-area:title;min-width:0;overflow-wrap:anywhere;word-break:normal;writing-mode:horizontal-tb;font-size:13.5px;line-height:1.4}.t-libra .diag-log__row>small{grid-area:meta;min-width:0;color:var(--text2);overflow-wrap:anywhere}',
+    '.t-libra .diag-log__head{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-areas:"badge title" "badge meta";column-gap:12px;row-gap:2px;align-items:center;margin-bottom:12px}',
+    '.t-libra .diag-log__head>:first-child{grid-area:badge}.t-libra .diag-log__head>strong{grid-area:title;overflow-wrap:anywhere;font-size:15px}.t-libra .diag-log__head>small{grid-area:meta;color:var(--text2)}',
+    '.t-libra details.fold>.fold__body pre,.t-libra .card pre{box-sizing:border-box;min-width:0;max-width:100%;max-height:520px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;margin:0;padding:12px 14px;border-radius:var(--r-sm,8px);background:var(--surface-2,rgba(0,0,0,.03));font:12px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}',
     '.t-libra .mem-entry__heading{margin:4px 0 -6px;font:700 12.5px/1.4 var(--font-sans);color:var(--text2)}',
     '.t-libra .mem-entry__text{margin:0;max-height:440px;overflow:auto;padding:16px 18px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere;font-size:13px;line-height:1.75}',
     '.t-libra .mem-footnote{margin:0;padding:0 4px;font-size:11.5px;line-height:1.6}',
@@ -87466,6 +87502,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     classic: Object.freeze({ label: '사서 모드', badge: '원문 근거', description: '현재 리콜 엔진이 선택한 실제 발췌를 재가공 없이 시간순으로 전달합니다.', calls: '추가 LLM 0회' }),
 
   });
+  const LIBRA_DELIVERY_FAMILY_LABELS = Object.freeze({ canonical: '정본', micro: '미크로', state: '상태', lore: '로어', lens: '렌즈(비정본)' });
   const buildLibraClassicPanel = (options = {}) => {
     const compactView = options.compact === true;
     const recall = LibraMemoryCore.getLastRecall();
@@ -87473,7 +87510,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const active = libraGuiText(delivery.route || Runtime.lastInjectionMode) === 'classic';
     const count = Number(delivery.classicMemories || delivery.injectedMemories || 0);
     const chars = Number(delivery.classicChars || delivery.blockChars || Runtime.lastClassicInjectionMeta?.chars || 0);
-    return guiEl('div', { class: 'card' }, [
+    // Which memory families actually reached the request (canonical/micro/state/lore/lens), so a lore-only delivery is visible at a glance.
+    const familyCounts = new Map();
+    for (const memory of [...(Array.isArray(recall?.memories) ? recall.memories : []), ...(Array.isArray(recall?.payload?.memories) ? recall.payload.memories : [])]) {
+      const family = libraGuiText(memory?.family || memory?.memory?.family || '');
+      if (family) familyCounts.set(family, (familyCounts.get(family) || 0) + 1);
+    }
+    const familyRows = [...familyCounts.entries()].sort((a, b) => b[1] - a[1]);
+    return guiEl('div', { class: 'card delivery-card' }, [
       guiEl('div', { class: 'split' }, [
         guiEl('div', {}, [
           guiEl('h3', { text: '이번 턴 사서 모드 전달' }),
@@ -87482,11 +87526,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         libraStatusBadge(active ? (count ? '직접 전달 완료' : '선택된 기억 없음') : '대기', active && count ? 'good' : '')
       ]),
       guiEl('div', { class: 'hint', text: "LIBRA 메모리 검색과 검증된 근거를 사용합니다." }),
-      active ? guiEl('div', { class: "stack" }, [
-        guiEl('div', { class: "stack" }, [guiEl('span', { text: '직접 전달 기억' }), guiEl('strong', { text: String(count) })]),
-        guiEl('div', { class: "stack" }, [guiEl('span', { text: '전달 문자' }), guiEl('strong', { text: String(chars) })]),
-        guiEl('div', { class: "stack" }, [guiEl('span', { text: '추가 LLM' }), guiEl('strong', { text: '0회' })])
-      ]) : null,
+      active ? guiEl('div', { class: 'delivery-metrics' }, [
+        ['직접 전달 기억', `${count}개`], ['전달 문자', `${chars.toLocaleString('ko-KR')}자`], ['추가 LLM', '0회']
+      ].map(([label, value]) => guiEl('div', { class: 'delivery-metric' }, [guiEl('span', { text: label }), guiEl('strong', { text: value })]))) : null,
+      active && familyRows.length ? guiEl('div', { class: 'delivery-families', 'aria-label': '기억 종류별 전달' },
+        familyRows.map(([family, n]) => guiEl('span', { class: `delivery-family delivery-family--${family}`, text: `${LIBRA_DELIVERY_FAMILY_LABELS[family] || family} ${n}` }))) : null,
       compactView && active ? guiEl('div', { class: 'cluster' }, [guiEl('button', { class: 'btn', type: 'button', text: '실제 전달 근거 보기', onClick: () => libraGuiNavigate('recall') })]) : null
     ]);
   };
@@ -92056,7 +92100,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     ]);
     const list = guiEl('div', { class: "list", role: 'listbox', 'aria-label': '디버그 로그 목록' },
       visible.length ? visible.map(row => guiEl('button', {
-        class: `row${selected && row.id === selected.id ? ' active' : ''}`,
+        class: `row diag-log__row${selected && row.id === selected.id ? ' active' : ''}`,
         type: 'button', role: 'option', 'aria-selected': String(!!selected && row.id === selected.id),
         dataset: { logRowId: row.id },
         onClick: () => { Gui.diagnosticLogSelectedId = row.id; queueGuiRender(0, 'body'); }
@@ -92074,12 +92118,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           onClick: () => { Gui.diagnosticLogLimit += 60; queueGuiRender(0, 'body'); }
         })]) : null;
     const detailRows = selected ? [
-      guiEl('div', { class: "split" }, [
+      guiEl('div', { class: "diag-log__head" }, [
         libraStatusBadge(selected.kind === 'snapshot' ? '스냅샷' : '이벤트', levelClass(selected.level)),
         guiEl('strong', { text: selected.title }),
         guiEl('small', { text: `${selected.source} · ${libraFormatTime(selected.at)}` })
       ]),
-      guiEl('pre', { class: "stack", text: selected.detail || '(추가 정보 없음)' }),
+      guiEl('pre', { class: "diag-log__detail", text: selected.detail || '(추가 정보 없음)' }),
       // 복구·재분석을 로그 문구에서 자동 실행하지 않는다. 관련 설정 화면으로만 연결한다.
       guiEl('div', { class: 'cluster' }, [
         guiEl('button', { class: 'btn', type: 'button', text: '복사', onClick: () => {
@@ -92089,9 +92133,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           onClick: () => { bookNavigate('settings'); selectBookSettingsRoomSection?.('general'); } })
       ])
     ] : [guiEl('div', { class: 'hint', text: '왼쪽 목록에서 항목을 선택하면 상세가 표시됩니다.' })];
-    return guiEl('div', { class: "grid g-side" }, [
-      guiEl('div', { class: "rail" }, [
-        guiEl('div', { class: 'card__head' }, [
+    return guiEl('div', { class: "grid g-side diag-log" }, [
+      guiEl('div', { class: "rail diag-log__rail" }, [
+        guiEl('div', { class: 'card__head diag-log__intro' }, [
           guiEl('h3', { text: '디버그 로그' }),
           guiEl('p', { text: '실행 이벤트와 현재 상태 스냅샷을 한 곳에서 봅니다. 스냅샷은 조회 시점 값이며 과거에 발생한 기록이 아닙니다.' })
         ]),
