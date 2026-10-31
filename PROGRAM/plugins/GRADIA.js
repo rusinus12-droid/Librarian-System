@@ -3817,12 +3817,29 @@ Before continuing, verify:
     if (!nativeTurnMessageId(inputMessage)) {
       // A preset "Current Input" wrapper carries the text but no host message id.
       // Bind to the one native user message with that exact text, never a guess.
-      const comparable = value => text(value).replace(/\s+/g, ' ').trim();
-      const wanted = comparable(contentToText(inputMessage?.content ?? ''));
-      const bodyOf = message => comparable(contentToText(message?.content ?? ''));
+      const cleanSquash = value => text(value)
+        .replace(/[\u200B-\u200D\uFEFF]/g, '')
+        .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"')
+        .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+        .replace(/…/g, '...')
+        .replace(/\s+/g, '')
+        .trim();
+      const wanted = cleanSquash(contentToText(inputMessage?.content ?? ''));
+      const isMatch = (msgText, target) => {
+        const x = cleanSquash(msgText), y = cleanSquash(target);
+        if (!x || !y) return false;
+        if (x === y || (x.length >= 8 && (y.includes(x) || x.includes(y)))) return true;
+        const minLen = Math.min(x.length, y.length), diffLen = Math.abs(x.length - y.length);
+        if (minLen >= 16 && diffLen <= 15) {
+          if (x.startsWith(y.slice(0, 16)) || y.startsWith(x.slice(0, 16))) return true;
+          let p = 0; while (p < minLen && x[p] === y[p]) p++;
+          let s = 0; while (s < minLen - p && x[x.length - 1 - s] === y[y.length - 1 - s]) s++;
+          if (p + s >= minLen - 5) return true;
+        }
+        return false;
+      };
       const native = wanted ? messages.filter(message => nativeTurnMessageId(message) && currentTurnRole(message) === 'user'
-        && typeof message.content === 'string' && (bodyOf(message).length >= 8 && (wanted.includes(bodyOf(message)) || bodyOf(message).includes(wanted))
-          || (bodyOf(message).length >= 16 && wanted.length >= 16 && (bodyOf(message).startsWith(wanted.slice(0, 16)) || wanted.startsWith(bodyOf(message).slice(0, 16))) && Math.abs(bodyOf(message).length - wanted.length) <= 10))) : [];
+        && typeof message.content === 'string' && isMatch(contentToText(message.content), wanted)) : [];
       if (native.length !== 1) throw nativeIdUnavailable('input_without_id', { matches: native.length, inputChars: wanted.length });
       inputMessage = native[0];
     }
@@ -3880,31 +3897,43 @@ Before continuing, verify:
     if (resolved.confidence === 'explicit_wrapper' && !nativeTurnMessageId(mapped[resolved.requestIndex])) {
       const comparableInput = value => narrative({ role: 'user', content: stripCodeFence(value) });
       const wanted = comparableInput(resolved.text);
-      // The current input is the latest live user row. Bind that row only: short
-      // inputs ("계속", "…") repeat across a chat, and requiring the text to occur
-      // once in the whole chat refused memory evidence on exactly those turns.
-      const row = host.messages.findLast(message => currentTurnRole(message) === 'user');
-      const rowText = row ? contentToText(row.data ?? row.content ?? '') : '';
-      // Host input scripts (regex "edit input/request", CBS) may reformat the
-      // prompt copy of the same message. Identity comes from the row (latest,
-      // pending, unique id); the text must be the same message, compared without
-      // whitespace, or the prompt copy may wrap the complete row.
-      const squash = value => text(value).replace(/\s+/g, '');
-      // (rowValue, promptValue): the prompt may wrap the whole row; it may never
-      // drop part of it, or the model would see a different input than was sent.
-      const sameInput = (rowValue, promptValue) => { const x = squash(rowValue), y = squash(promptValue);
-        return !!x && !!y && (x === y || (x.length >= 8 && y.includes(x)) || (y.length >= 8 && x.includes(y))
-          || (x.length >= 16 && y.length >= 16 && (x.startsWith(y.slice(0, 16)) || y.startsWith(x.slice(0, 16))) && Math.abs(x.length - y.length) <= 10)); };
-      if (!wanted || !row || !nativeTurnMessageId(row)) throw nativeIdUnavailable('input_row_missing');
+      const cleanSquash = value => text(value)
+        .replace(/[\u200B-\u200D\uFEFF]/g, '')
+        .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"')
+        .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+        .replace(/…/g, '...')
+        .replace(/\s+/g, '')
+        .trim();
+      const sameInput = (rowValue, promptValue) => {
+        const x = cleanSquash(rowValue), y = cleanSquash(promptValue);
+        if (!x || !y) return false;
+        if (x === y || (x.length >= 8 && y.includes(x)) || (y.length >= 8 && x.includes(y))) return true;
+        const minLen = Math.min(x.length, y.length);
+        const diffLen = Math.abs(x.length - y.length);
+        if (minLen >= 16 && diffLen <= 15) {
+          if (x.startsWith(y.slice(0, 16)) || y.startsWith(x.slice(0, 16))) return true;
+          let p = 0; while (p < minLen && x[p] === y[p]) p++;
+          let s = 0; while (s < minLen - p && x[x.length - 1 - s] === y[y.length - 1 - s]) s++;
+          if (p + s >= minLen - 5) return true;
+        }
+        return false;
+      };
+      if (!wanted) throw nativeIdUnavailable('input_wanted_missing');
+      const pendingFrom = host.messages.findLastIndex(message => currentTurnRole(message) === 'assistant') + 1;
+      const recentCandidates = host.messages.slice(pendingFrom).filter(message => currentTurnRole(message) === 'user' && nativeTurnMessageId(message));
+      let row = host.messages.findLast(message => currentTurnRole(message) === 'user');
+      let rowText = row ? contentToText(row.data ?? row.content ?? '') : '';
+      if (!row || !sameInput(comparableInput(rowText), wanted)) {
+        const found = recentCandidates.find(message => sameInput(comparableInput(contentToText(message.data ?? message.content ?? '')), wanted))
+          || host.messages.filter(message => currentTurnRole(message) === 'user' && nativeTurnMessageId(message))
+            .findLast(message => sameInput(comparableInput(contentToText(message.data ?? message.content ?? '')), wanted));
+        if (found) { row = found; rowText = contentToText(row.data ?? row.content ?? ''); }
+      }
+      if (!row || !nativeTurnMessageId(row)) throw nativeIdUnavailable('input_row_missing');
       if (turnBlockReason({ ...row, role: 'user', content: rowText })) throw nativeIdUnavailable('input_row_blocked');
       if (!sameInput(comparableInput(rowText), wanted)) throw nativeIdUnavailable('input_text_mismatch',
         { wrapperChars: wanted.length, rowChars: comparableInput(rowText).length });
       if (host.messages.filter(message => nativeTurnMessageId(message) === nativeTurnMessageId(row)).length !== 1) throw nativeIdUnavailable('input_row_id_duplicate');
-      // Two unanswered rows with the same text are still ambiguous; only answered
-      // (completed) turns may repeat it.
-      const pendingFrom = host.messages.findLastIndex(message => currentTurnRole(message) === 'assistant') + 1;
-      if (host.messages.slice(pendingFrom).filter(message => currentTurnRole(message) === 'user'
-        && sameInput(comparableInput(contentToText(message.data ?? message.content ?? '')), wanted)).length !== 1) throw nativeIdUnavailable('input_pending_ambiguous');
       hostInput = { ...row, content: rowText };
     }
     const snapshot = captureLibNativeReadSet(mapped, settings, baseRecent, hostInput);
@@ -38213,7 +38242,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           ||!Array.isArray(auth.writeNamespaces)||auth.writeNamespaces.length)reject('LIB_READ_PRINCIPAL_REQUIRED');
         let selectedOwners=owners;
         const isInput = !!readOptions.proposal;
-        const connStatus = typeof LibReadConnection?.status === 'function' ? LibReadConnection.status() : null;
+        const connStatus = typeof LibReadConnection !== 'undefined' && typeof LibReadConnection.status === 'function' ? LibReadConnection.status() : null;
         const routeOwners = isInput ? connStatus?.inputWriterReadOwners : connStatus?.draftReadOwners;
         if (Array.isArray(routeOwners)) {
           const filtered = selectedOwners.filter(owner => routeOwners.includes(owner));
@@ -38246,7 +38275,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
               maxRawBytes: perOwnerRaw
             });
             const elapsedMs = Math.max(0, Date.now() - ownerStartedAt);
-            noteOwnerEvidenceTiming(owner, 'open', elapsedMs);
+            if (typeof noteOwnerEvidenceTiming === 'function') noteOwnerEvidenceTiming(owner, 'open', elapsedMs);
             return { owner, read, elapsedMs };
           }));
 
@@ -38297,7 +38326,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             const results = await Promise.all(selectedOwners.map(async (owner, idx) => {
               const checkStartedAt = Date.now();
               const result = await orderedReads[idx].assertCurrent();
-              noteOwnerEvidenceTiming(owner, 'check', Date.now() - checkStartedAt);
+              if (typeof noteOwnerEvidenceTiming === 'function') noteOwnerEvidenceTiming(owner, 'check', Date.now() - checkStartedAt);
               return result;
             }));
             if (results.some(result => result !== true)) reject('LIB_READ_STALE');
@@ -45924,7 +45953,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         // Availability is checked before expensive capture. Missing optional
         // owners do not impose the capture timeout or suppress healthy peers.
         const isInput = !!input.proposal;
-        const connStatus = typeof LibReadConnection?.status === 'function' ? LibReadConnection.status() : null;
+        const connStatus = typeof LibReadConnection !== 'undefined' && typeof LibReadConnection.status === 'function' ? LibReadConnection.status() : null;
         const routeOwners = isInput ? connStatus?.inputWriterReadOwners : connStatus?.draftReadOwners;
         let queryOwners = requestedOwners;
         if (Array.isArray(routeOwners)) {

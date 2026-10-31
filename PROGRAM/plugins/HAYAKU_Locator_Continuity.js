@@ -4457,8 +4457,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const maintenanceAttempt = Number(requestOptions.maintenanceAttempt || 0);
       const isRetryableMaintenanceRoute = method === 'GET' || MAINTENANCE_RETRY_ROUTES.includes(route);
       if (error?.status === 503 && error?.payload?.error === 'server_maintenance_in_progress' && maintenanceAttempt < MAINTENANCE_RETRY_LIMIT
-        && requestOptions.maintenanceRetry !== false && isRetryableMaintenanceRoute) {
-        await new Promise(resolve => setTimeout(resolve, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1)));
+        && requestOptions.maintenanceRetry !== false && method === 'POST' && MAINTENANCE_RETRY_ROUTES.includes(route)) {
+        await new Promise(resolve => setTimeout(resolve, Math.min(1000, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1))));
         return await requestImpl(method, route, body, { ...requestOptions, bindingGeneration, maintenanceAttempt: maintenanceAttempt + 1 });
       }
       if (error?.payload?.error === 'data_instance_binding_changed') dataBinding.rejected = true;
@@ -42677,12 +42677,20 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       entry?.scope?.key === scope.key
       && entry?.lineage?.requestNonce === lineage.requestNonce
     )) || null;
+    let userEvidence = null;
+    if (scope && Array.isArray(scope.chatMessages) && scope.chatMessages.length) {
+      userEvidence = afterRequestRecoveryUserEvidence(scope, { lineage });
+    }
+    if (!userEvidence && baselinePair?.userVisible) {
+      userEvidence = { text: baselinePair.userVisible, canonicalHash: stableHash64(canonicalHistoryText(baselinePair.userVisible, 'user')), messageIndex: -1, sourceMessageId: '' };
+    }
     if (existing) {
       existing.createdAt = now();
       existing.requestType = compact(requestType || existing.requestType || 'model', 32).toLowerCase();
       existing.recoveryRequired = options?.recoveryRequired === true;
       existing.packetWriteExpected = options?.packetWriteExpected !== false;
       existing.recoveryVaultOnly = options?.recoveryVaultOnly === true;
+      if (userEvidence && !existing.userEvidence) existing.userEvidence = clone(userEvidence);
       existing.recoveryTarget = existing.recoveryRequired
         ? clone(options?.recoveryTarget || recoveryTargetForCapture(snapshot, options?.recoveryRequest), null)
         : null;
@@ -42690,8 +42698,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return existing;
     }
     Memory.captureSequence = Math.max(0, Number(Memory.captureSequence || 0)) + 1;
-    const baselinePair = ensureArray(snapshot?.conversationPairs)
-      .find(pair => Number(pair?.pairIndex || 0) === Number(lineage.targetPairIndex || 0)) || null;
     const entry = {
       scope: {
         key: compact(scope.key, 160),
@@ -42714,6 +42720,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         generationAttemptId: compact(lineage.generationAttemptId || '', 96),
         generationIdentityQuality: compact(lineage.generationIdentityQuality || '', 32)
       },
+      userEvidence: userEvidence ? clone(userEvidence) : null,
       baselineAssistantVisibleHash: compact(baselinePair?.assistantVisibleHash || '', 96),
       baselineAssistantMessageIdHash: compact(baselinePair?.assistantMessageIdHash || '', 96),
       baselinePacketHashes: uniq(ensureArray(baselinePair?.packetHashes), 8),
@@ -51939,6 +51946,9 @@ return createReadSession;
         return { text: visible, canonicalHash, messageIndex: lastUserIndex, sourceMessageId: messageSourceId(message, lastUserIndex) };
       }
     }
+    if (pending?.userEvidence?.text) {
+      return { ...pending.userEvidence };
+    }
     return null;
   };
   const afterRequestPacketAlreadyUsable = (inspection, pending) => {
@@ -51953,6 +51963,9 @@ return createReadSession;
   const afterRequestCaptureSourceCurrent = (scope,pending) => {
     if (!scope?.confident || scope.key!==pending?.scope?.key) return false;
     if (!Array.isArray(pending.requestSourcePrefix)) return true;
+    if (!Array.isArray(scope.chatMessages) || !scope.chatMessages.length) {
+      return Boolean(pending?.userEvidence?.text);
+    }
     const snapshot=authoritativeChatSnapshot(scope.chatMessages,scope);
     const prefix=ensureArray(snapshot.conversationPairs)
       .filter(pair=>Number(pair.pairIndex)<Number(pending.lineage?.targetPairIndex))
@@ -51964,10 +51977,13 @@ return createReadSession;
     const normalizedType = text(requestType || 'model').trim().toLowerCase();
     if (normalizedType !== 'model' || Memory.unloaded || !ownsRuntime()) return source;
     await loadSettings(false);
-    const scope = await RisuCompat.currentChatScope().catch(() => null);
-    const pending = [...ensureArray(prunePendingCaptures())].reverse().find(entry => (
-      entry?.scope?.key && entry.scope.key === scope?.key && text(entry.requestType || 'model').trim().toLowerCase() === 'model'
+    let scope = await RisuCompat.currentChatScope().catch(() => null);
+    let pending = [...ensureArray(prunePendingCaptures())].reverse().find(entry => (
+      entry?.scope?.key && (entry.scope.key === scope?.key || (!scope?.key && entry.scope.key)) && text(entry.requestType || 'model').trim().toLowerCase() === 'model'
     )) || null;
+    if ((!scope || !scope.confident || !Array.isArray(scope.chatMessages) || !scope.chatMessages.length) && pending?.scope) {
+      scope = { ...pending.scope, confident: true, key: pending.scope.key, chatMessages: Array.isArray(scope?.chatMessages) ? scope.chatMessages : [] };
+    }
     // Envelope repair runs before inspection so a markerless or wrapper-nested
     // packet is accepted as the canonical packet instead of triggering Other Ax.
     source = restoreMalformedPacketEnvelope(source, pending ? requestPacketLineageObject({ requestLineage: pending.lineage }) : null);
@@ -52013,7 +52029,7 @@ return createReadSession;
     const assistantText = canonicalHistoryText(echoGuard.content, 'assistant');
     const targetPairIndex = Math.max(1, Number(pending?.lineage?.targetPairIndex || 1) || 1);
     if (!scope?.confident || !scope?.key || !userEvidence?.text || !assistantText || !afterRequestCaptureSourceCurrent(scope,pending)) {
-      const message = !scope?.confident ? 'authoritative_chat_unavailable' : !userEvidence?.text ? 'after_request_user_evidence_unavailable' : 'after_request_assistant_evidence_empty';
+      const message = !scope?.confident ? 'authoritative_chat_unavailable' : !userEvidence?.text ? 'after_request_user_evidence_unavailable' : !assistantText ? 'after_request_assistant_evidence_empty' : 'after_request_source_mismatch';
       pending.afterRequestRepair = { attempted: false, enabled: true, outcome: 'evidence_unavailable', errorCode: 'HAYAKU_AFTER_REQUEST_EVIDENCE_UNAVAILABLE', errorMessage: message, attemptedAt: now() };
       pending.inlineRepairFailure = null;
       rememberRepair();

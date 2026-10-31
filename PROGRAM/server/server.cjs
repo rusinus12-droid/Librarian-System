@@ -3524,7 +3524,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       }
 
       const backupSafeRead = backupReadWindow && ((request.method === 'GET' && ['/v1/kv/get', '/v1/kv/keys', '/v1/integrity'].includes(url.pathname))
-        || (request.method === 'POST' && url.pathname === '/v1/kv/get-many'));
+        || (request.method === 'POST' && (url.pathname === '/v1/kv/get-many' || gradiaRoute)));
       if (maintenanceMode && !backupSafeRead && !url.pathname.startsWith('/v1/admin/')
           && !(isAdminRequest(principal) && request.method === 'POST' && url.pathname === '/v1/shutdown')) {
         return sendJson(request, response, 503, { ok: false, error: 'server_maintenance_in_progress' });

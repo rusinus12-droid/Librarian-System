@@ -5620,8 +5620,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const maintenanceAttempt = Number(requestOptions.maintenanceAttempt || 0);
       const isRetryableMaintenanceRoute = method === 'GET' || MAINTENANCE_RETRY_ROUTES.includes(route);
       if (error?.status === 503 && error?.payload?.error === 'server_maintenance_in_progress' && maintenanceAttempt < MAINTENANCE_RETRY_LIMIT
-        && requestOptions.maintenanceRetry !== false && isRetryableMaintenanceRoute) {
-        await new Promise(resolve => setTimeout(resolve, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1)));
+        && requestOptions.maintenanceRetry !== false && method === 'POST' && MAINTENANCE_RETRY_ROUTES.includes(route)) {
+        await new Promise(resolve => setTimeout(resolve, Math.min(1000, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1))));
         return await requestImpl(method, route, body, { ...requestOptions, bindingGeneration, maintenanceAttempt: maintenanceAttempt + 1 });
       }
       if (error?.payload?.error === 'data_instance_binding_changed') dataBinding.rejected = true;
@@ -59715,7 +59715,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         {verifiedSource:active,...(reason?{}:{prefetchedWork:{key:workKey,value:work}})});
       const jobKey=[scope.scopeKey,receipt.worldlineId,receipt.sessionEpoch,
         receipt.turn,receipt.revisionId].join(':');
-      const status=reason?'unknown':state.microJobs.has(jobKey)?'running':microStageStatusFromWork(work,published);
+      const inFlight = microInvocationsInFlight.has(workKey) || work?.phase === 'invoking';
+      const status=reason?'unknown':state.microJobs.has(jobKey)?(inFlight?'running':'queued'):microStageStatusFromWork(work,published);
       return {receiptRef:active.receiptKey,revisionId:receipt.revisionId,sourceDigest:receipt.sourceDigest,
         turn:receipt.turn,status,reason,attemptId:string(work?.attemptId||''),
         logicalAttempts:Number(work?.logicalAttempts||0),physicalAttemptsUsed:Number(work?.physicalAttemptsUsed||0),
@@ -93256,7 +93257,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const busy=!!state.busy[kind+':'+row.turn];
       const retryable=['never_started','failed','unknown'].includes(row.status);
       return guiEl('div',{class:"note",dataset:{microTurn:String(row.turn),microStatus:row.status}},[
-        guiEl('strong',{text:`T${row.turn} Micro 분석`}),
+        guiEl('strong',{text:`T${row.turn} Micro 분석 `}),
         guiEl('span',{text:microLabel[row.status]||row.status}),
         retryable?guiEl('small',{text:'모델 호출 비용이 발생할 수 있음'}):null,
         row.status==='unknown'?guiEl('small',{text:'이전 호출 결과가 불명확하여 중복 비용이 발생할 수 있음'}):null,
