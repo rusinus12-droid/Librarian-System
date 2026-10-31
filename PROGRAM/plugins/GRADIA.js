@@ -3976,7 +3976,7 @@ Before continuing, verify:
       || JSON.stringify(session.engine?.proposal) !== JSON.stringify(proposalContext.proposal))) {
       session.invalidate('LIB_READ_PROPOSAL_CHANGED'); throw libEvidenceError('LIB_READ_PROPOSAL_CHANGED');
     }
-    const run = { status: 'ready', purpose: proposalContext ? 'input_writer' : 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), attempt: null, stageViews: new Map(), dispatchCount: 0, verifiedAt: 0, verifiedDispatch: -1,
+    const run = { status: 'ready', purpose: proposalContext ? 'input_writer' : 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), attempt: null, stageViews: new Map(), dispatchCount: 0, verifiedAt: Date.now(), verifiedDispatch: 0,
       fail(code) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); if (proposalContext) purgeInputWriterEvidenceRuntime(); } return libEvidenceError(code); },
       assertStageView(stage, recent) {
         const expected = certifiedSelections.find(selection => selection.stage === stage);
@@ -4327,8 +4327,13 @@ Before continuing, verify:
       ];
       if (!options.requireEvidence && (!lease.run || lease.run.status !== 'consumed') && fallbackAllowedCodes.includes(error?.code)) {
         if (Runtime.inputAssistSend?.cancelRequested || (lease.parentRequestId !== null && Runtime.inputAssistSend?.requestId !== lease.parentRequestId) || error?.code === 'LIB_READ_CANCELED') throw (error?.code === 'LIB_READ_CANCELED' ? error : libEvidenceError('LIB_READ_CANCELED'));
-        await assertNative?.();
         closeInputWriterEvidence(error.code, lease);
+        try {
+          const current = await loadRisuStaticContextSnapshot(settings, { force: true, viewOnly: true });
+          if (inputWriterNativeView(current) !== initialNative) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
+        } catch (nativeError) {
+          if (nativeError?.code === 'LIB_READ_NATIVE_CHANGED') throw nativeError;
+        }
         if (Runtime.inputAssistSend?.busy) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, memory: { status: 'unavailable', reason: error.code } };
         // Keep the boundary that actually failed (e.g. model_context_preflight).
         noteDiagnostic('unavailable', error.code, notedStage || 'owner_read');

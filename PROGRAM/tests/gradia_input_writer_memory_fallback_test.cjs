@@ -73,3 +73,20 @@ test('a superseded memory read before evidence falls back safely to native choic
  assert.equal(await f.done(pending),true);
  assert.equal(f.copied.length,1);
 });
+
+test('a memory currentness failure before model dispatch falls back safely to native choices',{timeout:30000},async t=>{
+ const f=await fixture(t);
+ f.controls.onCurrent=async()=>{
+  throw Object.assign(new Error('currentness lost'),{code:'LIB_READ_CURRENTNESS_LOST'});
+ };
+ const {pending}=await f.start();await f.choices();
+ assert.equal(f.queries(),1,'attempted query');
+ assert.equal(f.prompts.length,1,'the writer fell back and asked the model with native context');
+ assert(!JSON.stringify(f.prompts[0]).includes('WRITER_OWNER_EVIDENCE'));
+ const memory=f.host.plugin.getInputAssistSendStatus().memory;
+ assert.equal(memory.status,'unavailable');
+ assert.equal(memory.reason,'LIB_READ_CURRENTNESS_LOST');
+ await f.select();
+ assert.equal(await f.done(pending),true);
+ assert.equal(f.copied.length,1);
+});

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-31T21:01:02.325Z",
+  "generatedAt": "2026-10-31T21:18:12.209Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4148,8 +4148,8 @@
       "bytes": 3761147
     },
     "plugins/GRADIA.js": {
-      "sha256": "5f8306e40bc2f2a5b147541b9a3ac5749b5bff9306a22cb4b704a8b2603ee9b8",
-      "bytes": 3131793
+      "sha256": "189adfcb5cf22fff60f4c4783a86e50e934ece35b532f9356f49849266c6ebc8",
+      "bytes": 3132128
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "a16c3f03001c8987fe2ceb579d044590a0485a519a9fb69404b17784e5c62e62",
@@ -6496,8 +6496,8 @@
       "bytes": 6549
     },
     "tests/gradia_input_writer_memory_fallback_test.cjs": {
-      "sha256": "8f470f4aa3451e8703cb20b6f2114d62b02b5949135c50a52124d685ee5b6370",
-      "bytes": 4336
+      "sha256": "d9694410d48445c588d865b54654959290268aaf8f1caf36981912a66fb3808e",
+      "bytes": 5148
     },
     "tests/gradia_input_writer_unified_runtime_test.cjs": {
       "sha256": "16e3a3a1776e1b2ec7d640d010382d107c03ba1e60f90f22f7a1bd3e0d3fb251",
@@ -6566,6 +6566,10 @@
     "tests/gradia_results_view_gui_test.cjs": {
       "sha256": "12976552c7ed03d854064472ed4f141ebcd31c013cc3582640d6537eb9537dca",
       "bytes": 4043
+    },
+    "tests/gradia_route_memory_owner_toggle_test.cjs": {
+      "sha256": "40d9df0b092860df71839ad57f523bafbc88a2c757e174893dbb97734968f105",
+      "bytes": 8849
     },
     "tests/gradia_shadow_draft_mode_gui_test.cjs": {
       "sha256": "3a18aff7fae76fe624b6a2c51290fe96cbdf8164e1e400c534c245996fe2a1b1",
