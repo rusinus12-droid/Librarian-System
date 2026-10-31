@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.14
+//@display-name LIBRA v2.6.15
 //@api 3.0
-//@version 2.6.14
+//@version 2.6.15
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.6.14';
+  const PLUGIN_VERSION = '2.6.15';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
