@@ -1643,7 +1643,7 @@ function __libraNarrativeStripPatch(value) {
     world_ito: 3200,
     plot_ito: 3200
   });
-    const DRAFT_PATCH_MAX_EDITS = 18;
+    const DRAFT_PATCH_MAX_EDITS = 36;
   const DRAFT_PATCH_BLOCK_MAX_CHARS = 1800;
   const DEFAULT_RECENT_TURNS = 8;
   const DEFAULT_INPUT_ASSIST_TURNS = 1;

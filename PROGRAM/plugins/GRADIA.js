@@ -1048,7 +1048,7 @@
     quality: 2600,
     custom: 2600
   });
-  const DRAFT_PATCH_MAX_EDITS = 18;
+  const DRAFT_PATCH_MAX_EDITS = 36;
   const DRAFT_PATCH_BLOCK_MAX_CHARS = 1800;
   const DEFAULT_RECENT_TURNS = 8;
   const DEFAULT_INPUT_ASSIST_TURNS = 1;
@@ -18191,6 +18191,7 @@ ${passage.text || ''}`, 420));
       || getConfiguredThinkingType(preset) === 'disabled';
     if (explicitlyDisabled || !budget.reasoningAllowed) return 'none';
     const effort = String(preset.reasoning_effort || 'none').trim().toLowerCase();
+    if (effort === 'none') return 'none';
     if (effort === 'low' || effort === 'medium' || effort === 'high') return effort;
     if (effort === 'minimal') return 'low';
     if (effort === 'xhigh' || effort === 'max') return 'high';
@@ -23508,7 +23509,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     if (!text(parsed.analysis.summary || parsed.summary || '').trim()) return 'summary_missing';
     if (!isPlainObject(parsed.domain)) return 'domain_object_missing';
     if (!Array.isArray(parsed.edits)) return 'edits_array_missing';
-    if (parsed.edits.length > DRAFT_PATCH_MAX_EDITS) return 'too_many_edits';
+    if (parsed.edits.length > DRAFT_PATCH_MAX_EDITS * 2) return 'too_many_edits';
     for (const edit of parsed.edits) {
       if (!isPlainObject(edit)) return 'edit_not_object';
       const operation = normalizeAidePatchOperation(edit.operation || edit.op || edit.type);
@@ -23537,8 +23538,10 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       || !Array.isArray(parsed.edits)) return null;
     const analysisValue = parsed.analysis;
     const domain = normalizeAnalysisDomainValue(parsed.domain || parsed.domain_notes || parsed.details || {});
-    const sourceEdits = parsed.edits;
-    if (sourceEdits.length > DRAFT_PATCH_MAX_EDITS) return null;
+    const rawEdits = Array.isArray(parsed.edits) ? parsed.edits : [];
+    const sourceEdits = rawEdits.length > DRAFT_PATCH_MAX_EDITS
+      ? rawEdits.slice(0, DRAFT_PATCH_MAX_EDITS)
+      : rawEdits;
     const edits = sourceEdits.map((edit, index) => {
       if (!isPlainObject(edit)) return null;
       const operation = normalizeAidePatchOperation(edit.operation || edit.op || edit.type);
@@ -26595,7 +26598,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   ]
 }
 ${dedicatedAnalysis ? 'The dedicated analysis is already supplied. Do not repeat or replace it in analysis, domain, rewrite_directives, do_not_reveal, pov_limits, or beats; keep those fields compact as shown and spend the output on exact edits.' : ''}
-Use edits: [] when the current draft already satisfies this stage. Never emit an insert or replacement whose normalized prose exactly matches any CURRENT SAME-TURN DRAFT block. For ordinary edits, never return the complete draft or unchanged paragraphs. Only the guarded replace_draft operation may contain a complete new candidate. Never return markdown fences, commentary, or prose outside the JSON object.`;
+Use edits: [] when the current draft already satisfies this stage. Focus edits on the highest-priority corrections (maximum ${DRAFT_PATCH_MAX_EDITS} edits). Never emit an insert or replacement whose normalized prose exactly matches any CURRENT SAME-TURN DRAFT block. For ordinary edits, never return the complete draft or unchanged paragraphs. Only the guarded replace_draft operation may contain a complete new candidate. Never return markdown fences, commentary, or prose outside the JSON object.`;
 
   const formatAnalysisTransferForPatch = (value, maxChars = 5200) => {
     if (!isPlainObject(value)) return '';
