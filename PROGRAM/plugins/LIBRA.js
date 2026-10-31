@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.13
+//@display-name LIBRA v2.6.14
 //@api 3.0
-//@version 2.6.13
+//@version 2.6.14
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.6.13';
+  const PLUGIN_VERSION = '2.6.14';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -38523,6 +38523,8 @@ function createLibraReadonlySourceContext(owner) {
         pending_count: asArray(projection.pendingClaims).length,
         pending_effects: asArray(projection.pendingClaims).filter(item => item?.candidateValue !== undefined)
           .slice(0, 8).map(item => ({ turn: Number(item.turn || 0), domain: item.domain,
+            target: item.domain === 'narrative' ? 'current_narrative'
+              : string(asArray(item.domain === 'character' ? head.characters : head.world).find(row => row?.id === item.targetId)?.name || item.targetName || item.targetId || 'unknown'),
             field: item.field, candidate_value: clone(item.candidateValue),
             status: 'uncertain_not_applied', reason: item.reason })) };
     };
@@ -47770,6 +47772,19 @@ function createLibraReadonlySourceContext(owner) {
     if (state?.view?.head?.schema === 'libra.continuity_state.v2') attempt('state', () => {
       const head = state.view.head, authority = object(state.view.authority);
       const src = source('state', state.key, state.revision, { head, authority });
+      // A recalled state field must say whose state it is: "character.current_state"
+      // alone was ambiguous whenever several characters share a field.
+      const stateNames = new Map([...array(head?.characters), ...array(head?.world)]
+        .map(item => [string(item?.id), string(item?.name)]).filter(([id, name]) => id && name));
+      const stateOwnerLabel = (domain, row) => {
+        if (domain === 'narrative') return '';
+        const nameOf = id => stateNames.get(string(id)) || '';
+        if (domain === 'relationship') {
+          const subject = string(row?.subjectName) || nameOf(row?.subjectId), target = string(row?.targetName) || nameOf(row?.targetId);
+          return subject || target ? `${subject || 'unknown'} → ${target || 'unknown'}${row?.dimension ? ` (${string(row.dimension)})` : ''}` : '';
+        }
+        return string(row?.name) || nameOf(row?.id);
+      };
       const corrections = new Map();
       for (const row of array(state.corrections?.records)) {
         if (row.status !== 'active' || row.scopeKey !== frame.scopeKey || row.worldlineId !== frame.worldlineId) continue;
@@ -47816,7 +47831,8 @@ function createLibraReadonlySourceContext(owner) {
             const role = correction.correctionId ? 'user_corrected' : !hasProvenance ? 'state_unprovenanced'
               : authority.current === true && authority.pending !== true ? 'state_current' : 'state_last_known';
             if (hasProvenance && correction.correctionId && !correctionSources.has(correction.correctionId)) check(2);
-            const stateText = `${domain}.${field} = ${readableStateValue(items[itemIndex])}${isClear ? ' (cleared)' : ''}`;
+            const ownerLabel = stateOwnerLabel(domain, row);
+            const stateText = `${ownerLabel ? ownerLabel + ' · ' : ''}${domain}.${field} = ${readableStateValue(items[itemIndex])}${isClear ? ' (cleared)' : ''}`;
             const node = meaning(src, isCollection ? 'state_item' : 'state_field', key, body, selector,
               { semanticRole: role, ...body, text: stateText });
             if (!hasProvenance) { note('state', 'field_provenance_unknown'); continue; }
@@ -58175,8 +58191,16 @@ function createMemorySuiteSourceInputPolicy(config) {
     if(preferences)return preferences;
     if(!loading)loading=(async()=>{
       const raw=await config.read();
-      const value=raw==null||raw===''?{}:typeof raw==='string'?JSON.parse(raw):clone(raw);
-      if(!value||typeof value!=='object'||Array.isArray(value))throw Error('SOURCE_INPUT_PREFERENCES_INVALID');
+      // A malformed stored preference (hand-edited or torn) must not take the whole
+      // plugin down at startup: fall back to defaults and say so. Nothing is
+      // written back until the user saves the rules again.
+      let value;
+      try{value=raw==null||raw===''?{}:typeof raw==='string'?JSON.parse(raw):clone(raw);}catch(error){value=null;}
+      if(!value||typeof value!=='object'||Array.isArray(value)){
+        try{globalThis.__memorySuiteSourceInputPreferenceErrors={...(globalThis.__memorySuiteSourceInputPreferenceErrors||{}),[owner]:{at:Date.now(),reason:'SOURCE_INPUT_PREFERENCES_INVALID'}};}catch(_){}
+        try{console.warn('[memory-suite] '+owner+' source input preferences unreadable; using defaults');}catch(_){}
+        value={};
+      }
       value.ignoredTags=memorySuiteSourceIgnoredTags(value.ignoredTags)
         .filter(x=>!memorySuiteIsInternalSourceRule(x)&&!(value.externalRulesVersion!==1&&x==='dag_runtime_contract'));
       if(value.sourceRules)value.sourceRules={...value.sourceRules,...memorySuiteExternalSourceRules(memorySuiteNormalizeSourceRules(value.sourceRules),value.externalRulesVersion!==1)};
@@ -87077,6 +87101,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     lastMemoryAfterRequest: LibraMemoryCore.state.lastAfterRequest ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastAfterRequest)) : null,
     lastGradiaUnifiedRead: LibraMemoryCore.state.lastGradiaUnifiedRead ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastGradiaUnifiedRead)) : null,
     lastMicroPlanRefusal: LibraMemoryCore.state.lastMicroPlanRefusal ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastMicroPlanRefusal)) : null,
+    initFailure: Runtime.initFailure || null,
+    sourceInputPreferenceErrors: globalThis.__memorySuiteSourceInputPreferenceErrors || null,
     lastMemoryScanSchedule: LibraMemoryCore.state.lastScanSchedule ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastScanSchedule)) : null,
     lastMemoryScheduledScanResult: LibraMemoryCore.state.lastScheduledScanResult ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastScheduledScanResult)) : null,
     lastMemoryScan: LibraMemoryCore.state.lastScan ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastScan)) : null,
@@ -99155,6 +99181,10 @@ advanced
     console.log(`${PUBLIC_LOG_PREFIX} ${PUBLIC_DISPLAY_NAME} v${PLUGIN_VERSION} loaded. Memory: Librarian (one completed 5-turn boundary). Crash recovery: exact pending 5-turn boundary only. Response injection: Classic.`);
   } catch (error) {
     console.warn(PUBLIC_LOG_PREFIX, 'Failed to initialize:', error?.message || error);
+    // Name the failing step for the next debug export (no stored values).
+    try { Runtime.initFailure = { at: Date.now(), name: String(error?.name || ''), code: String(error?.code || ''),
+      message: compact(error?.message || error, 240),
+      frames: String(error?.stack || '').split(String.fromCharCode(10)).slice(1, 6).map(line => line.trim().slice(0, 160)) }; } catch (_) {}
   }
 
   /* LIBRARIAN SYSTEM PORTABLE MEMORY BACKUP v1 :: Libra START */

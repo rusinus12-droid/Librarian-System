@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.10
+//@display-name HAYAKU · Locator Continuity v3.3.11
 //@api 3.0
-//@version 3.3.10
+//@version 3.3.11
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -989,7 +989,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.10';
+  const PLUGIN_VERSION = '3.3.11';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -55023,8 +55023,16 @@ function createMemorySuiteSourceInputPolicy(config) {
     if(preferences)return preferences;
     if(!loading)loading=(async()=>{
       const raw=await config.read();
-      const value=raw==null||raw===''?{}:typeof raw==='string'?JSON.parse(raw):clone(raw);
-      if(!value||typeof value!=='object'||Array.isArray(value))throw Error('SOURCE_INPUT_PREFERENCES_INVALID');
+      // A malformed stored preference (hand-edited or torn) must not take the whole
+      // plugin down at startup: fall back to defaults and say so. Nothing is
+      // written back until the user saves the rules again.
+      let value;
+      try{value=raw==null||raw===''?{}:typeof raw==='string'?JSON.parse(raw):clone(raw);}catch(error){value=null;}
+      if(!value||typeof value!=='object'||Array.isArray(value)){
+        try{globalThis.__memorySuiteSourceInputPreferenceErrors={...(globalThis.__memorySuiteSourceInputPreferenceErrors||{}),[owner]:{at:Date.now(),reason:'SOURCE_INPUT_PREFERENCES_INVALID'}};}catch(_){}
+        try{console.warn('[memory-suite] '+owner+' source input preferences unreadable; using defaults');}catch(_){}
+        value={};
+      }
       value.ignoredTags=memorySuiteSourceIgnoredTags(value.ignoredTags)
         .filter(x=>!memorySuiteIsInternalSourceRule(x)&&!(value.externalRulesVersion!==1&&x==='dag_runtime_contract'));
       if(value.sourceRules)value.sourceRules={...value.sourceRules,...memorySuiteExternalSourceRules(memorySuiteNormalizeSourceRules(value.sourceRules),value.externalRulesVersion!==1)};

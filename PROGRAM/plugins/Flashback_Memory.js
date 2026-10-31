@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.3.14
+//@display-name ⚡ FLASHBACK Memory v1.3.15
 //@api 3.0
-//@version 1.3.14
+//@version 1.3.15
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
 //@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.3.14';
+const PLUGIN_VERSION = '1.3.15';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -30684,8 +30684,16 @@ function createMemorySuiteSourceInputPolicy(config) {
     if(preferences)return preferences;
     if(!loading)loading=(async()=>{
       const raw=await config.read();
-      const value=raw==null||raw===''?{}:typeof raw==='string'?JSON.parse(raw):clone(raw);
-      if(!value||typeof value!=='object'||Array.isArray(value))throw Error('SOURCE_INPUT_PREFERENCES_INVALID');
+      // A malformed stored preference (hand-edited or torn) must not take the whole
+      // plugin down at startup: fall back to defaults and say so. Nothing is
+      // written back until the user saves the rules again.
+      let value;
+      try{value=raw==null||raw===''?{}:typeof raw==='string'?JSON.parse(raw):clone(raw);}catch(error){value=null;}
+      if(!value||typeof value!=='object'||Array.isArray(value)){
+        try{globalThis.__memorySuiteSourceInputPreferenceErrors={...(globalThis.__memorySuiteSourceInputPreferenceErrors||{}),[owner]:{at:Date.now(),reason:'SOURCE_INPUT_PREFERENCES_INVALID'}};}catch(_){}
+        try{console.warn('[memory-suite] '+owner+' source input preferences unreadable; using defaults');}catch(_){}
+        value={};
+      }
       value.ignoredTags=memorySuiteSourceIgnoredTags(value.ignoredTags)
         .filter(x=>!memorySuiteIsInternalSourceRule(x)&&!(value.externalRulesVersion!==1&&x==='dag_runtime_contract'));
       if(value.sourceRules)value.sourceRules={...value.sourceRules,...memorySuiteExternalSourceRules(memorySuiteNormalizeSourceRules(value.sourceRules),value.externalRulesVersion!==1)};
@@ -53636,6 +53644,8 @@ ${cleanedText}`, 80),
       maintenanceInspection: cloneRuntimeValue(Runtime.lastMaintenanceInspection, null),
       lastWriterBusy: cloneRuntimeValue(Runtime.lastWriterBusy || null, null),
       maintenanceSettingsReread: cloneRuntimeValue(Runtime.maintenanceSettingsReread || null, null),
+      startupRetry: cloneRuntimeValue(Runtime.startupRetry || null, null),
+      startupCompleted: Runtime.startupCompleted === true,
       maintenanceQueue: Runtime.lastMaintenanceQueueResult ? {
         scopeKey: Runtime.lastMaintenanceQueueResult.scopeKey, at: Runtime.lastMaintenanceQueueResult.at,
         ready: Runtime.lastMaintenanceQueueResult.ready, failed: Runtime.lastMaintenanceQueueResult.failed,
@@ -54928,6 +54938,29 @@ return createReadSession;
     }
   };
 
+  // The plugin can start before the Librarian System server answers (server
+  // restarting, slow host). A failed bootstrap used to abort startup for the whole
+  // session: no request hooks, no capture backend, no recall. Retry it instead.
+  let flashbackStartupRetryAttempt = 0, flashbackStartupRetryTimer = null;
+  const isFlashbackServerStartupUnavailable = error => /bootstrap timed out|memory_suite_server_unavailable|MEMORY_SUITE_TIMEOUT|server_unavailable|Failed to fetch|NetworkError/i
+    .test(`${error?.code || ''} ${error?.message || error || ''}`);
+  const scheduleFlashbackStartupRetry = error => {
+    if (Runtime.unloaded || Runtime.startupCompleted === true || flashbackStartupRetryTimer) return;
+    const delayMs = Math.min(60000, 2000 * 2 ** Math.min(5, flashbackStartupRetryAttempt));
+    flashbackStartupRetryAttempt += 1;
+    Runtime.startupRetry = { attempt: flashbackStartupRetryAttempt, nextAt: Date.now() + delayMs, reason: formatErrorMessage(error, 160), recoveredAt: 0 };
+    flashbackStartupRetryTimer = scheduleTimer(async () => {
+      flashbackStartupRetryTimer = null;
+      if (Runtime.unloaded || Runtime.startupCompleted === true) return;
+      const result = await retryFlashbackStorageInitialization();
+      if (result?.ok) {
+        Runtime.startupRetry = { ...Runtime.startupRetry, recoveredAt: Date.now(), nextAt: 0 };
+        pushActivityLog('startup_recovered', '서버 연결이 늦어 미뤄졌던 Flashback 시작을 마쳤습니다. 리콜과 캡처가 다시 동작합니다.',
+          { attempts: flashbackStartupRetryAttempt }, 'success');
+      } else if (!result?.pending) scheduleFlashbackStartupRetry(result?.error || 'startup_retry_failed');
+    }, delayMs);
+  };
+
   function ensureFlashbackStorageTransitionWatcher() {
     if (flashbackStorageTransitionUnsubscribe || typeof MemorySuiteStorageBridge.subscribeSyncJob !== 'function') return;
     flashbackStorageTransitionUnsubscribe = MemorySuiteStorageBridge.subscribeSyncJob(job => {
@@ -55109,6 +55142,9 @@ return createReadSession;
         Runtime.guiConnectSubtab = 'srv';
         ensureFlashbackStorageTransitionWatcher();
         warn('Storage transition in progress; deferring Flashback memory initialization and keeping recovery GUI available.', error);
+      } else if (isFlashbackServerStartupUnavailable(error)) {
+        warn('Librarian System server not reachable at startup; Flashback initialization will retry.', error);
+        scheduleFlashbackStartupRetry(error);
       } else {
         throw error;
       }

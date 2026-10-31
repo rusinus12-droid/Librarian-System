@@ -23,3 +23,29 @@ test('a server read failure before evidence falls back to native choices and rec
  await f.select();
  assert.equal(await f.done(pending),true);assert.equal(f.copied.length,1);
 });
+
+// 2026-10-31 live: the plugin iframe refused every programmatic copy, and the
+// final review offered no way forward. A blocked copy must leave a verified
+// manual path that still re-checks memory before the draft is exported.
+test('a blocked clipboard leaves a verified manual-copy continuation',{timeout:30000},async t=>{
+ const f=await fixture(t),{pending}=await f.start();await f.select();
+ f.controls.clipboardError=Object.assign(new Error('blocked by permissions policy'),{name:'NotAllowedError'});
+ f.button('복사 후 직접 전송').click();
+ await f.wait(()=>f.button('직접 복사 후 계속'),'manual copy continuation');
+ assert.match(f.document.body.textContent,/Ctrl\/Cmd\+C로 복사한 뒤/);
+ assert.equal(f.copied.length,0);
+ f.button('직접 복사 후 계속').click();
+ assert.equal(await pending,true,'verified manual copy completes the writer');
+ assert.equal(f.sent.length,0);
+});
+
+test('a manual continuation is still refused when memory changed after the copy was offered',{timeout:30000},async t=>{
+ const f=await fixture(t),{pending}=await f.start();await f.select();
+ f.controls.clipboardError=Object.assign(new Error('blocked'),{name:'NotAllowedError'});
+ f.button('복사 후 직접 전송').click();
+ await f.wait(()=>f.button('직접 복사 후 계속'),'manual copy continuation');
+ f.controls.current=false;
+ f.button('직접 복사 후 계속').click();
+ await f.wait(()=>f.document.body.textContent.includes('붙여넣지 마세요'),'stale manual copy rejection');
+ await f.host.plugin.cancelInputAssistSend();assert.equal(await pending,false);
+});

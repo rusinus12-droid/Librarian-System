@@ -23,3 +23,20 @@ test('shared input policy keeps absent defaults distinct from explicit empty rul
   if(expected===null)assert.equal(context.memorySuiteSourceRules('flashback'),null);else assert.equal(context.memorySuiteCanonicalSource('','flashback'),'');p.dispose();
  }
 });
+// 2026-10-31 live: LIBRA died at startup with "Expected double-quoted property
+// name in JSON" — its first startup step reads these preferences. A malformed
+// stored value must fall back to defaults instead of stopping the plugin.
+for(const owner of ['libra','hayaku','flashback'])test(owner+' malformed stored source preferences fall back to defaults without a write',async()=>{
+ const context=vm.createContext({console:{log(){},warn(){}},setTimeout,clearTimeout});vm.runInContext(source,context);let writes=0;
+ const policy=context.createMemorySuiteSourceInputPolicy({owner,read:async()=>'{"ignoredTags":[x,],}',write:async()=>{writes++;return true;}});
+ try{
+  const preferences=await policy.ready();
+  assert.ok(preferences&&typeof preferences==='object','startup continues with default preferences');
+  assert.equal(context.memorySuiteSourceRules(owner),null,'no custom rules are invented');
+  assert.equal(context.__memorySuiteSourceInputPreferenceErrors?.[owner]?.reason,'SOURCE_INPUT_PREFERENCES_INVALID');
+  assert.equal(writes,0,'the unreadable value is not overwritten until the user saves');
+ }finally{policy.dispose();}
+});
+for(const name of ['LIBRA.js','HAYAKU_Locator_Continuity.js','Flashback_Memory.js'])test(name+' embeds the hardened preference reader',()=>{
+ assert.ok(fs.readFileSync(path.join(__dirname,'../plugins',name),'utf8').includes("reason:'SOURCE_INPUT_PREFERENCES_INVALID'"));
+});

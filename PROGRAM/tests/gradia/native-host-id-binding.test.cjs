@@ -10,7 +10,7 @@ async function fixture(mutate,apiOverrides={},testGlobals={}){
     transformSource:source=>source.replace('clearStructuredSettings, fullDraftStagePrompt, Runtime };','clearStructuredSettings, fullDraftStagePrompt, Runtime, captureLibNativeReadSetFromHost, buildRecentChat };')});
   const api=host.internals,settings={...api.Runtime.settings},input=messages();
   mutate?.(chat,character,input);
-  return {chat,character,input,settings,changeScope:()=>selected=1,bind:()=>api.captureLibNativeReadSetFromHost(input,settings,api.buildRecentChat(input,settings),scope)};
+  return {chat,character,input,settings,runtime:api.Runtime,changeScope:()=>selected=1,bind:()=>api.captureLibNativeReadSetFromHost(input,settings,api.buildRecentChat(input,settings),scope)};
 }
 test('missing provider IDs bind to exact unique host messages without changing stage text',async()=>{
   const f=await fixture(),original=JSON.stringify(f.input),b=await f.bind();
@@ -59,6 +59,25 @@ test('wrapped input binds the latest live user when an answered turn repeats its
   await b.assertCurrent();
 });
 
+// Host input scripts can reformat the prompt copy (line breaks, a decorating
+// prefix) of the latest pending message; the row is still the same input.
+test('wrapped input binds a reformatted prompt copy that contains the whole live row',async()=>{
+  const f=await fixture((_chat,_character,input)=>{
+    input[2]={role:'user',content:'<Current Input>\n[장면 지시]\nWhere is   the\nblue ledger?\n</Current Input>'};
+  });
+  const b=await f.bind();
+  assert.equal(b.snapshot.currentInputRef.messageId,'native-2');
+});
+test('a refused wrapper binding names the failing step without its text',async()=>{
+  const f=await fixture((chat,_character,input)=>{
+    input[2]={role:'user',content:'<Current Input>\nAn entirely different request.\n</Current Input>'};
+  });
+  await assert.rejects(()=>f.bind(),error=>error.code==='LIB_READ_NATIVE_ID_UNAVAILABLE');
+  const failure=f.runtime.lastNativeBindFailure;
+  assert.equal(failure.step,'input_text_mismatch');
+  assert.ok(failure.wrapperChars>0&&failure.rowChars>0);
+  assert.ok(!JSON.stringify(failure).includes('different request'));
+});
 for(const kind of ['duplicate','partial','streaming','historical'])test(`wrapped input refuses ${kind} live identity`,async()=>{
   const f=await fixture((chat,_character,input)=>{
     input[2]={role:'user',content:'<Current Input>\nWhere is the blue ledger?\n</Current Input>'};

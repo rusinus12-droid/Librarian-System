@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.10
+//@display-name GRADIA v0.28.11
 //@api 3.0
-//@version 0.28.10
+//@version 0.28.11
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -936,7 +936,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.10';
+  const PLUGIN_VERSION = '0.28.11';
   
   
   
@@ -3650,6 +3650,12 @@
       .map(key => [key, text(recent?.[key] || '')])),
     visibleMessages: (recent.visibleMessages || []).map(message => ({ role: message.role, content: message.content }))
   });
+  // One code covers several binding steps; record which one refused and how big
+  // the compared values were, never their text.
+  const nativeIdUnavailable = (step, detail = {}) => {
+    Runtime.lastNativeBindFailure = Object.freeze({ at: Date.now(), step, ...detail });
+    return libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
+  };
   const captureLibNativeReadSet = (messages, settings, baseRecent, hostInput = null) => {
     const selected = new Map();
     const selections = [];
@@ -3661,10 +3667,10 @@
       selections.push({ stage, turns: recent.turnEligibility?.selected || [], view: libNativePromptView(attachInputAssistContinuityState(recent, settings)) });
       for (const turn of recent.turnEligibility?.selected || []) {
         for (const ref of [turn.user, ...(turn.assistants || [turn.assistant]), turn.boundary].filter(Boolean)) {
-          if (!ref.messageId) throw libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
+          if (!ref.messageId) throw nativeIdUnavailable('turn_ref_without_id', { stage, role: String(ref.role || '') });
           const candidates = messages.filter(message => nativeTurnMessageId(message) === ref.messageId
             && JSON.stringify(nativeTurnRef(message)) === JSON.stringify(ref));
-          if (candidates.length !== 1) throw libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
+          if (candidates.length !== 1) throw nativeIdUnavailable('turn_ref_not_unique', { stage, matches: candidates.length });
           if (typeof candidates[0].content !== 'string') throw libEvidenceError('LIB_READ_NATIVE_CONTENT_UNSUPPORTED');
           selected.set(JSON.stringify(ref), { ref, role: currentTurnRole(candidates[0]), content: candidates[0].content });
         }
@@ -3680,7 +3686,7 @@
       const bodyOf = message => comparable(contentToText(message?.content ?? ''));
       const native = wanted ? messages.filter(message => nativeTurnMessageId(message) && currentTurnRole(message) === 'user'
         && typeof message.content === 'string' && bodyOf(message).length >= 8 && wanted.includes(bodyOf(message))) : [];
-      if (native.length !== 1) throw libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
+      if (native.length !== 1) throw nativeIdUnavailable('input_without_id', { matches: native.length, inputChars: wanted.length });
       inputMessage = native[0];
     }
     if (typeof inputMessage.content !== 'string') throw libEvidenceError('LIB_READ_NATIVE_CONTENT_UNSUPPORTED');
@@ -3699,7 +3705,7 @@
     // The request's text/window remains unchanged; host IDs are never invented.
     const readHostSnapshot = async () => {
       const api = getLiveApi(['getCurrentCharacterIndex','getCurrentChatIndex','getCharacterFromIndex','getChatFromIndex']);
-      if (['getCurrentCharacterIndex','getCurrentChatIndex','getCharacterFromIndex','getChatFromIndex'].some(key => typeof api?.[key] !== 'function')) throw libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
+      if (['getCurrentCharacterIndex','getCurrentChatIndex','getCharacterFromIndex','getChatFromIndex'].some(key => typeof api?.[key] !== 'function')) throw nativeIdUnavailable('host_api_missing');
       const indexNumber = value => typeof value === 'number' || typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : NaN;
       const indexes = (await Promise.all([api.getCurrentCharacterIndex(),api.getCurrentChatIndex()])).map(indexNumber);
       if (!indexes.every(value => Number.isSafeInteger(value) && value >= 0)) throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED');
@@ -3742,15 +3748,25 @@
       // once in the whole chat refused memory evidence on exactly those turns.
       const row = host.messages.findLast(message => currentTurnRole(message) === 'user');
       const rowText = row ? contentToText(row.data ?? row.content ?? '') : '';
-      if (!wanted || !row || !nativeTurnMessageId(row)
-        || turnBlockReason({ ...row, role: 'user', content: rowText })
-        || comparableInput(rowText) !== wanted
-        || host.messages.filter(message => nativeTurnMessageId(message) === nativeTurnMessageId(row)).length !== 1) throw libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
+      // Host input scripts (regex "edit input/request", CBS) may reformat the
+      // prompt copy of the same message. Identity comes from the row (latest,
+      // pending, unique id); the text must be the same message, compared without
+      // whitespace, or the prompt copy may wrap the complete row.
+      const squash = value => text(value).replace(/\s+/g, '');
+      // (rowValue, promptValue): the prompt may wrap the whole row; it may never
+      // drop part of it, or the model would see a different input than was sent.
+      const sameInput = (rowValue, promptValue) => { const x = squash(rowValue), y = squash(promptValue);
+        return !!x && !!y && (x === y || (x.length >= 8 && y.includes(x))); };
+      if (!wanted || !row || !nativeTurnMessageId(row)) throw nativeIdUnavailable('input_row_missing');
+      if (turnBlockReason({ ...row, role: 'user', content: rowText })) throw nativeIdUnavailable('input_row_blocked');
+      if (!sameInput(comparableInput(rowText), wanted)) throw nativeIdUnavailable('input_text_mismatch',
+        { wrapperChars: wanted.length, rowChars: comparableInput(rowText).length });
+      if (host.messages.filter(message => nativeTurnMessageId(message) === nativeTurnMessageId(row)).length !== 1) throw nativeIdUnavailable('input_row_id_duplicate');
       // Two unanswered rows with the same text are still ambiguous; only answered
       // (completed) turns may repeat it.
       const pendingFrom = host.messages.findLastIndex(message => currentTurnRole(message) === 'assistant') + 1;
       if (host.messages.slice(pendingFrom).filter(message => currentTurnRole(message) === 'user'
-        && comparableInput(contentToText(message.data ?? message.content ?? '')) === wanted).length !== 1) throw libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
+        && sameInput(comparableInput(contentToText(message.data ?? message.content ?? '')), wanted)).length !== 1) throw nativeIdUnavailable('input_pending_ambiguous');
       hostInput = { ...row, content: rowText };
     }
     const snapshot = captureLibNativeReadSet(mapped, settings, baseRecent, hostInput);
@@ -4142,7 +4158,8 @@
       lease.run.evidencePrefix = 'UNSUBMITTED INPUT PROPOSAL: retrieval hints and generated choices are not enacted events, canon, or current state. User selection and actual host submission remain separate.\n';
       lease.run.block = lease.run.evidencePrefix + lease.run.block;
       if (new TextEncoder().encode(lease.run.block).length > lease.run.evidenceBudget.maxBytes) throw libEvidenceError('LIB_READ_PROMPT_BUDGET_EXCEEDED');
-      await lease.run.assertCurrent();
+      // openLibEvidenceRun has just verified the run; only local prefixing happened since.
+      await lease.run.assertCurrent({ coalesce: true });
       if (Runtime.inputAssistSend?.busy) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, memory: { status: 'ready', reason: '' } };
       noteDiagnostic('ready', '', 'owner_read');
       return lease;
@@ -17528,6 +17545,10 @@ ${passage.text || ''}`, 420));
     return n;
   };
 
+  // Draft-length budgets were sized at 1.8 characters per token, which fits English
+  // prose. Korean and Japanese prose run near one character per token in common
+  // tokenizers, so a 5,000-7,000 character Korean target ran out of output tokens.
+  const draftCharsPerToken = settings => normalizeInternalDraftLanguage(settings?.internalDraftLanguage) === 'english' ? 1.8 : 1.1;
   const stageOutputTokenBudget = (settings, stageName, systemPrompt, preset, options = {}) => {
     if (options.maxTokens) return options.maxTokens;
     const presetMax = clampInt(preset?.max_tokens, 64, 200000, DEFAULT_MAX_STAGE_TOKENS);
@@ -17546,7 +17567,8 @@ ${passage.text || ''}`, 420));
       ? 1400 + shadowBeatCount * 140
       : 0;
     const analysisWanted = Math.max(768, Math.round(baseAnalysisWanted * analysisScale), shadowPlanningFloor);
-    const visibleWanted = isAnalysis ? analysisWanted : Math.ceil(draftChars / 1.8) + 1536;
+    const charsPerToken = draftCharsPerToken(settings);
+    const visibleWanted = isAnalysis ? analysisWanted : Math.ceil(draftChars / charsPerToken) + 1536;
     const reasoningFamily = effectiveReasoningFamilyForPreset(preset);
     const reasoningPreview = resolveProviderOutputBudget(preset, { maxTokens: presetMax }, reasoningFamily);
     const reasoningActive = reasoningPreview.reasoningAllowed === true;
@@ -17558,12 +17580,19 @@ ${passage.text || ''}`, 420));
           : Math.max(2048, Math.ceil(visibleWanted * 0.75)))
       : 0;
     const wanted = visibleWanted + reasoningHeadroom;
-    const draftSafetyCap = Math.min(32768, Math.max(8192, Math.ceil(draftChars / 1.7) + 2048));
+    const draftSafetyCap = Math.min(32768, Math.max(8192, Math.ceil(draftChars / Math.min(1.7, charsPerToken)) + 2048));
     const reasoningDraftCap = reasoningActive
       ? Math.min(32768, Math.max(draftSafetyCap, Math.ceil(visibleWanted * 1.8)))
       : draftSafetyCap;
     const analysisCap = reasoningActive ? MAX_ANALYSIS_RETRY_OUTPUT_TOKENS : MAX_ANALYSIS_OUTPUT_TOKENS;
-    return Math.max(384, Math.min(presetMax, wanted, isAnalysis ? analysisCap : reasoningDraftCap));
+    const granted = Math.max(384, Math.min(presetMax, wanted, isAnalysis ? analysisCap : reasoningDraftCap));
+    // Shows when a draft target cannot fit the preset's own max_tokens.
+    try {
+      Runtime.lastDraftOutputBudget = { ...(Runtime.lastDraftOutputBudget || {}), [stageName + (isAnalysis ? ':analysis' : ':write')]: {
+        at: Date.now(), targetMaxChars: draftChars, charsPerToken, wanted, presetMax, granted, reasoningActive,
+        limitedByPreset: granted === presetMax && presetMax < wanted } };
+    } catch (_) {}
+    return granted;
   };
 
   const contextSizeErrorInfo = (error) => {
@@ -21662,8 +21691,50 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       // the copy must run synchronously inside a click. A verified text is armed
       // for a short time; the next click copies it before any await and is then
       // verified again before the draft is exported.
-      const COPY_ARMED_MS = 15000;
-      let armedCopy = null;
+      const COPY_ARMED_MS = 60000;
+      let armedCopy = null, manualCopyButton = null;
+      // Some RisuAI builds block every programmatic copy inside the plugin iframe,
+      // even within a click. Never leave the user stuck: select the text for
+      // Ctrl/Cmd+C and let them continue once it is verified again.
+      const offerManualCopy = result => {
+        copyStatus.textContent = '이 화면에서는 자동 복사가 차단되었습니다. 아래 인풋이 선택되어 있으니 Ctrl/Cmd+C로 복사한 뒤 "직접 복사 후 계속"을 눌러 주세요.';
+        copyStatus.style.color = '#ff9aa7';
+        try { preview.focus(); preview.select(); if (typeof preview.setSelectionRange === 'function') preview.setSelectionRange(0, preview.value.length); } catch (_) {}
+        warn('input_assist_clipboard_copy_unavailable', 'programmatic_copy_blocked');
+        copyButton.textContent = '복사 후 직접 전송';
+        copyButton.disabled = false;
+        if (!manualCopyButton) {
+          manualCopyButton = guiEl('button', { class: 'btn', type: 'button', text: '직접 복사 후 계속', onClick: () => { void onManualCopied(); } });
+          copyButton.parentNode?.insertBefore(manualCopyButton, copyButton);
+        }
+        manualCopyButton.disabled = false;
+        manualCopyButton.dataset.content = result.content;
+      };
+      const onManualCopied = async () => {
+        if (settled || busy || !manualCopyButton || manualCopyButton.disabled) return;
+        const result = reviewResult('copy');
+        if (!result.content) return;
+        if (result.content !== manualCopyButton.dataset.content) {
+          copyStatus.textContent = '인풋이 바뀌었습니다. 다시 선택해 복사한 뒤 눌러 주세요.';
+          try { preview.focus(); preview.select(); } catch (_) {}
+          manualCopyButton.dataset.content = result.content;
+          return;
+        }
+        manualCopyButton.disabled = true; copyButton.disabled = true;
+        if (onValidate) {
+          setBusy(true);
+          try { await onValidate(result.content, () => text(preview.value).trim()); }
+          catch (error) {
+            copyStatus.textContent = '검증 실패: ' + text(error.code || error.message) + ' · 복사한 인풋은 붙여넣지 마세요.';
+            copyStatus.style.color = '#ff9aa7';
+            return;
+          }
+          finally { setBusy(false); }
+        }
+        if (settled) return;
+        if (Runtime.lastInputAssist) { Runtime.lastInputAssist.clipboardCopyMethod = 'manual'; Runtime.lastInputAssist.clipboardUserActivation = null; }
+        await finish(result);
+      };
       const onCopy = async () => {
         if (settled || busy || copyButton?.disabled) return;
         const result = reviewResult('copy');
@@ -21674,13 +21745,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
           copyButton.disabled = true;
           copyButton.textContent = '복사 후 직접 전송';
           const copiedNow = await pendingCopy;
-          if (!copiedNow?.ok) {
-            copyStatus.textContent = '자동 복사가 차단되었습니다. 아래 인풋 전체를 선택해 Ctrl/Cmd+C로 복사해 주세요.';
-            copyStatus.style.color = '#ff9aa7';
-            try { preview.focus(); preview.select(); } catch (_) {}
-            copyButton.disabled = false;
-            return;
-          }
+          if (!copiedNow?.ok) { offerManualCopy(result); return; }
           if (onValidate) {
             setBusy(true);
             try { await onValidate(result.content, () => text(preview.value).trim()); }
@@ -21726,20 +21791,12 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
           // Verified, but the click expired while verifying. Arm one synchronous copy.
           armedCopy = { content: result.content, at: Date.now() };
           copyButton.textContent = '검증 완료 · 눌러서 복사';
-          copyStatus.textContent = '기억 검증을 마쳤지만 그사이 브라우저의 클릭 권한이 만료됐습니다. 버튼을 한 번 더 누르면 바로 복사됩니다(15초 안).';
+          copyStatus.textContent = '기억 검증을 마쳤지만 그사이 브라우저의 클릭 권한이 만료됐습니다. 버튼을 한 번 더 누르면 바로 복사됩니다(1분 안).';
           copyStatus.style.color = 'var(--text2)';
           copyButton.disabled = false;
           return;
         }
-        copyStatus.textContent = '자동 복사가 차단되었습니다. 아래 인풋 전체를 선택해 Ctrl/Cmd+C로 복사해 주세요.';
-        copyStatus.style.color = '#ff9aa7';
-        try {
-          preview.focus();
-          preview.select();
-          if (typeof preview.setSelectionRange === 'function') preview.setSelectionRange(0, preview.value.length);
-        } catch (_) {}
-        warn('input_assist_clipboard_copy_unavailable', copied?.error || 'unknown');
-        copyButton.disabled = false;
+        offerManualCopy(result);
       };
       preview.addEventListener('input', () => captureEditor(true));
       for (const [language] of languageDefs) {
@@ -27776,7 +27833,7 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
 
   const risuEngineOutputTokenBudget = settings => Math.max(768, Math.min(
     DEFAULT_MAX_STAGE_TOKENS * 4,
-    Math.ceil((settings?.targetDraftMaxChars || DEFAULT_TARGET_DRAFT_MAX_CHARS) / 2.1) + 1280
+    Math.ceil((settings?.targetDraftMaxChars || DEFAULT_TARGET_DRAFT_MAX_CHARS) / (normalizeInternalDraftLanguage(settings?.internalDraftLanguage) === 'english' ? 2.1 : 1.1)) + 1280
   ));
 
   const resolveRisuEnginePromptCapacity = (settings = {}, presetStageName = 'aide_plot') => {
@@ -30308,7 +30365,8 @@ function createGradiaEvidenceBudget({ digest }) {
             assertBindingSignature();
           } catch (error) { const code = error?.code === 'LIB_READ_BOUNDARY_CHANGED' ? error.code : 'LIB_READ_STALE'; stop(record, code); fail(code); } },
           assertCurrent, getEvidence: async () => { await assertCurrent(); return record.evidence; },
-          bindDraft: async draft => { await assertCurrent(); if (typeof draft !== 'string' || !draft || bytes(draft) > 320000) fail('LIB_READ_DRAFT_INVALID');
+          // Hashing is local, so one owner check after it covers the bind.
+          bindDraft: async draft => { check(record); if (typeof draft !== 'string' || !draft || bytes(draft) > 320000) fail('LIB_READ_DRAFT_INVALID');
             const hash = await guarded(() => digest(draft)); await assertCurrent(); if (!/^[a-f0-9]{64}$/.test(hash)) fail('LIB_READ_HASH_UNAVAILABLE'); record.draft = draft; return Object.freeze({ evidenceRevision, draftHash: hash }); },
           finalizeDraft: async () => { await assertCurrent(); if (!record.draft) fail('LIB_READ_DRAFT_UNBOUND'); return record.draft; }
         });
@@ -37742,7 +37800,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           revisions.push([owner,packet.evidenceRevision,packet.readIdentity]);
         }
         const assertCurrentSync=()=>{if(reads.some(read=>read.assertCurrentSync()!==true))reject('LIB_READ_STALE');return true;};
-        const assertCurrent=async()=>{for(const read of reads)if(await read.assertCurrent()!==true)reject('LIB_READ_STALE');return assertCurrentSync();};
+        // Each owner's check is an independent read-only round trip; waiting for them
+        // one after another made every check cost LIBRA + HAYAKU + Flashback in sequence.
+        const assertCurrent=async()=>{const results=await Promise.all(reads.map(read=>read.assertCurrent()));if(results.some(result=>result!==true))reject('LIB_READ_STALE');return assertCurrentSync();};
         await assertCurrent();
         if(!globalThis.crypto?.subtle)reject('LIB_READ_HASH_UNAVAILABLE');
         const digest=await globalThis.crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(revisions)));
@@ -42899,6 +42959,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     libReadConnection: LibReadConnection.status(),
     lastInputWriterReadDiagnostic: Runtime.lastInputWriterReadDiagnostic || null,
     libEvidenceCheckStats: Runtime.libEvidenceCheckStats || null,
+    lastNativeBindFailure: Runtime.lastNativeBindFailure || null,
+    lastDraftOutputBudget: Runtime.lastDraftOutputBudget || null,
     finalDraft: Runtime.finalDraft || '',
     finalDraftPreview: compactMiddle(Runtime.finalDraft || '', 2000),
     lastInputAssist: Runtime.lastInputAssist ? {
