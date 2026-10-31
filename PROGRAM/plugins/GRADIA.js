@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.4
+//@display-name GRADIA v0.28.5
 //@api 3.0
-//@version 0.28.4
+//@version 0.28.5
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -936,7 +936,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.4';
+  const PLUGIN_VERSION = '0.28.5';
   
   
   
@@ -3023,7 +3023,9 @@
     }
     else if (clean.key) headers.Authorization = `Bearer ${stripBearerPrefix(clean.key)}`;
     applyOpenAIProviderHeaders(headers, meta.key);
-    const response = await RisuCompat.nativeFetch(meta.modelsUrl, { method: 'GET', headers }, Math.max(5000, Number(clean.timeout_ms || 20000) || 20000));
+    const timeout = options.timeoutMs == null ? Math.max(5000, Number(clean.timeout_ms || 20000) || 20000)
+      : clampInt(options.timeoutMs, 1000, 10000, 3000);
+    const response = await RisuCompat.nativeFetch(meta.modelsUrl, { method: 'GET', headers }, timeout);
     if (response?.ok === false) {
       const detail = await responseBodyToText(response).catch(() => '');
       throw new Error(`모델 목록 조회 실패: HTTP ${response?.status || 'Unknown'}${detail ? ` - ${detail.slice(0, 240)}` : ''}`);
@@ -3033,6 +3035,51 @@
     if (!models.length) throw new Error('프로바이더가 빈 모델 목록을 반환했습니다.');
     ProviderModelCache.set(cacheKey, { at: Date.now(), models });
     return models.map(item => ({ ...item }));
+  };
+
+  // External-memory payloads need configured limits or metadata bound to this
+  // provider route/model. Model-name estimates remain UI hints.
+  const libModelContextProfile = (preset, name) => {
+    const providerId = canonicalProvider(preset.provider || 'custom'), modelId = preset.model;
+    const mode = modeForProvider(providerId);
+    const requestFormat = mode === 'anthropic' ? 'anthropic' : ['gemini','vertex_gemini'].includes(mode) ? 'gemini'
+      : mode === 'ollama_native' ? 'ollama_native' : normalizeLLMRequestFormat(preset.request_format);
+    const manual = Number(preset.context_window || 0);
+    let catalog = preset.metadata_model_id === modelId ? Number(preset.catalog_context_window || 0) : 0;
+    let metadataAt = 0;
+    const meta = providerModelMetadata(providerId, preset.url);
+    if (meta?.modelsUrl) {
+      const key = `${meta.key}|${meta.modelsUrl}|${providerCredentialCacheFingerprint(preset.key)}`;
+      const cached = ProviderModelCache.get(key);
+      if (cached && Date.now() - cached.at < PROVIDER_MODEL_CACHE_TTL_MS) {
+        const limit = Number(cached.models.find(item => item.id === modelId)?.contextWindow || 0);
+        if (Number.isSafeInteger(limit) && limit > 0 && limit <= 4000000) {
+          catalog = catalog ? Math.min(catalog, limit) : limit;
+          metadataAt = cached.at;
+        }
+      }
+    }
+    const providerDefault = mode === 'ollama_native' ? ollamaContextWindowTokens(preset) : 0;
+    const limit = manual && catalog ? Math.min(manual, catalog) : manual || catalog || providerDefault;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 4000000) return null;
+    const source = catalog && limit === catalog && (!manual || catalog < manual) ? 'catalog'
+      : manual ? 'configured' : 'provider_default';
+    return Object.freeze({ providerId, modelId, requestFormat, context: Object.freeze({ source, limit,
+      sourceIdentity: `${source}:${name}:${modelId}:${metadataAt}`, providerId, modelId }) });
+  };
+  const discoverLibModelContext = async (preset, name) => {
+    const known = libModelContextProfile(preset, name);
+    if (known) return known;
+    let timer;
+    try {
+      // Bound response parsing as well as fetching headers. A late catalogue can
+      // warm the route-bound cache, but cannot resume this writer's owner read.
+      await Promise.race([listProviderModels(preset, { timeoutMs: 3000 }),
+        new Promise(resolve => { timer = setTimeout(resolve, 3000); })]);
+    }
+    catch (_) { return null; }
+    finally { clearTimeout(timer); }
+    return libModelContextProfile(preset, name);
   };
 
   const REASONING_PRESETS = Object.freeze({
@@ -3876,7 +3923,7 @@
         this.block = chosen.block;
         this.modelSelection = Object.freeze({ selectedItems:low,omittedItems:unique.length-low,
           duplicateItems:this.evidencePacket.items.length-unique.length,
-          ...Object.fromEntries(['contextLimit','finalInputAllowance','effectiveOutputReserve','safetyMargin',
+          ...Object.fromEntries(['contextLimit','contextSource','finalInputAllowance','effectiveOutputReserve','safetyMargin',
             'serializedPayloadBytes','renderedEvidenceBytes','payloadByteLimit','meterKind'].map(key=>[key,decision.witness[key]])) });
         this.budgetWitness = decision.witness;
         this.budgetEnvelope = Object.freeze({ providerId:profile.providerId,modelId:profile.modelId,
@@ -3887,19 +3934,8 @@
       setBudgetProfile(preset, name) {
         if (!budgetMeter) return;
         if (text(preset.extra_body_json || '').trim()) throw this.fail('LIB_READ_EXTRA_BODY_UNSUPPORTED');
-        const providerId = canonicalProvider(preset.provider || 'custom'), modelId = preset.model;
-        const mode = modeForProvider(providerId);
-        const requestFormat = mode === 'anthropic' ? 'anthropic' : ['gemini','vertex_gemini'].includes(mode) ? 'gemini'
-          : mode === 'ollama_native' ? 'ollama_native' : normalizeLLMRequestFormat(preset.request_format);
-        const manual = Number(preset.context_window || 0);
-        const catalog = preset.metadata_model_id === modelId ? Number(preset.catalog_context_window || 0) : 0;
-        const providerDefault = mode === 'ollama_native' ? ollamaContextWindowTokens(preset) : 0;
-        const limit = manual && catalog ? Math.min(manual,catalog) : manual || catalog || providerDefault;
-        const contextSource = catalog && limit === catalog && (!manual || catalog < manual) ? 'catalog' : manual ? 'configured' : 'provider_default';
-        if (!Number.isSafeInteger(limit) || limit < 1) throw this.fail('LIB_READ_MODEL_CONTEXT_UNAVAILABLE');
-        this.budgetProfile = Object.freeze({ providerId, modelId, requestFormat,
-          context: Object.freeze({ source:contextSource, limit,
-            sourceIdentity: `${contextSource}:${name}:${modelId}`, providerId, modelId }) });
+        this.budgetProfile = libModelContextProfile(preset, name);
+        if (!this.budgetProfile) throw this.fail('LIB_READ_MODEL_CONTEXT_UNAVAILABLE');
         this.budgetWitness = null; this.budgetEnvelope = null;
       },
       assertDispatch(route, init) {
@@ -3992,6 +4028,12 @@
         if (inputWriterNativeView(current) !== initialNative) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
       } };
       assertNative = context.assertCurrent;
+      // Resolve capacity before acquiring owner evidence. Only an unavailable
+      // optional source at this point can fall back to native context.
+      const resolved = resolvePreset(settings, INPUT_ASSIST_STAGE_ID);
+      const profile = await guardInputWriterRead(lease, () => discoverLibModelContext(resolved.preset, resolved.name));
+      assertLocal();
+      if (!profile) throw libEvidenceError('LIB_READ_MODEL_CONTEXT_UNAVAILABLE');
       await context.assertCurrent();
       lease.run = await openLibEvidenceRun([], settings, { latestUser: query }, lease.operationId, context);
       assertLocal();
@@ -3999,7 +4041,9 @@
       lease.run.evidencePrefix = 'UNSUBMITTED INPUT PROPOSAL: retrieval hints and generated choices are not enacted events, canon, or current state. User selection and actual host submission remain separate.\n';
       lease.run.block = lease.run.evidencePrefix + lease.run.block;
       if (new TextEncoder().encode(lease.run.block).length > lease.run.evidenceBudget.maxBytes) throw libEvidenceError('LIB_READ_PROMPT_BUDGET_EXCEEDED');
-      await lease.run.assertCurrent(); return lease;
+      await lease.run.assertCurrent();
+      if (Runtime.inputAssistSend?.busy) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, memory: { status: 'ready', reason: '' } };
+      return lease;
     } catch (error) {
       // Only an unavailable optional source BEFORE any evidence is accepted may
       // fall back. Cancellation, native changes and a ready/consumed read stay fatal.
@@ -4007,11 +4051,13 @@
         'LIB_READ_CONNECTION_UNAVAILABLE','LIB_READ_UNIFIED_UNAVAILABLE','LIB_READ_TRANSPORT_UNAVAILABLE',
         // An oversized owner store is an unavailable optional source, not a writer failure.
         'LIB_READ_METADATA_BUDGET_EXCEEDED','LIB_READ_REFERENCE_LIMIT_EXCEEDED','LIB_READ_STORAGE_BUDGET_EXCEEDED',
-        'LIB_READ_CORPUS_BUDGET_EXCEEDED','LIB_READ_BUDGET_EXCEEDED'].includes(error?.code)) {
+        'LIB_READ_CORPUS_BUDGET_EXCEEDED','LIB_READ_BUDGET_EXCEEDED','LIB_READ_MODEL_CONTEXT_UNAVAILABLE'].includes(error?.code)) {
         assertLocal();
         await assertNative?.();
         assertLocal();
         closeInputWriterEvidence(error.code, lease);
+        if (Runtime.inputAssistSend?.busy) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, memory: { status: 'unavailable', reason: error.code } };
+        warn('input_writer_memory_unavailable', error.code);
         return null;
       }
       closeInputWriterEvidence(/^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE', lease);
@@ -19018,6 +19064,12 @@ ${passage.text || ''}`, 420));
     telemetry.completedAt = Date.now();
     telemetry.status = status;
     telemetry.elapsedMs = telemetry.completedAt - telemetry.startedAt;
+    for (const logical of telemetry.logicalCalls) {
+      if (logical.status === 'running') {
+        logical.completedAt = telemetry.completedAt;
+        logical.status = /cancel/.test(status) ? 'cancelled' : /fail/.test(status) ? 'failed' : 'incomplete';
+      }
+    }
     return telemetry;
   };
 
@@ -20865,6 +20917,14 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     }
   });
 
+  const inputAssistMemoryNotice = () => Runtime.inputAssistSend?.memory?.reason === 'LIB_READ_MODEL_CONTEXT_UNAVAILABLE'
+    ? ' · 기억 참고 생략: 모델 문맥 한도 미확인' : '';
+  const refreshInputAssistMemoryNotice = app => {
+    const node = app.querySelector('[data-input-memory-notice]');
+    if (!node) return;
+    node.dataset.memoryBase ??= node.textContent;
+    node.textContent = node.dataset.memoryBase + inputAssistMemoryNotice();
+  };
   const setInputAssistContinuePanel = async (message = '', state = 'working', autoClearMs = 0, cancelable = false) => {
     const panelEpoch = ++InputAssistContinuePanelEpoch;
     await unbindInputAssistContinueCancelButton();
@@ -21606,7 +21666,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         const choices = Array.isArray(Runtime.lastInputAssist?.authorChoices) ? Runtime.lastInputAssist.authorChoices : [];
         if (Runtime.lastInputAssist?.ok !== true || choices.length < 2) throw new Error(Runtime.lastInputAssist?.reason || '유저 행동 선택지를 충분히 만들지 못했습니다.');
         Runtime.inputAssistSend = { ...Runtime.inputAssistSend, phase: 'confirming', generated: '' };
-        await setInputAssistContinuePanel('선택지 생성 완료 · 사용할 인풋을 직접 선택하세요.', 'working', 0, false);
+        await setInputAssistContinuePanel('선택지 생성 완료 · 사용할 인풋을 직접 선택하세요.' + inputAssistMemoryNotice(), 'working', 0, false);
         const reviewed = await showAuthorDirectedInputChoicePicker({
           original: originalInput,
           choices,
@@ -21632,7 +21692,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         const choices = Array.isArray(Runtime.lastInputAssist?.novelChoices) ? Runtime.lastInputAssist.novelChoices : [];
         if (Runtime.lastInputAssist?.ok !== true || choices.length !== NOVEL_INPUT_CHOICE_TARGET) throw new Error(Runtime.lastInputAssist?.reason || '소설 모드의 세 작가 관점 선택지를 모두 만들지 못했습니다.');
         Runtime.inputAssistSend = { ...Runtime.inputAssistSend, phase: 'confirming', generated: '' };
-        await setInputAssistContinuePanel('세 작가 관점 선택지 생성 완료 · 사용할 인풋을 직접 선택하세요.', 'working', 0, false);
+        await setInputAssistContinuePanel('세 작가 관점 선택지 생성 완료 · 사용할 인풋을 직접 선택하세요.' + inputAssistMemoryNotice(), 'working', 0, false);
         const reviewed = await showNovelInputChoicePicker({
           original: originalInput,
           choices,
@@ -40834,6 +40894,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         }
       };
       const renderCards = () => {
+        refreshInputAssistMemoryNotice(app);
         if (typeof bodyNode.replaceChildren === 'function') bodyNode.replaceChildren();
         else while (bodyNode.firstChild) bodyNode.removeChild(bodyNode.firstChild);
         if (initialOriginal) {
@@ -40896,7 +40957,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       app.appendChild(guiEl('div', { class: 'page-head' }, [
         guiEl('div', {}, [
           guiEl('h2', { text: 'RP 행동 선택' }),
-          guiEl('p', { text: '인풋 도우미는 유저가 할 수 있는 행동만 제안합니다. 선택한 항목만 유저 입력이 되고, NPC·세계 반응은 이후 GRADIA가 작성합니다.' })
+          guiEl('p', { 'data-input-memory-notice': '', text: '인풋 도우미는 유저가 할 수 있는 행동만 제안합니다. 선택한 항목만 유저 입력이 되고, NPC·세계 반응은 이후 GRADIA가 작성합니다.' })
         ]),
         closeButton
       ]));
@@ -41075,6 +41136,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         }
       };
       const renderCards = () => {
+        refreshInputAssistMemoryNotice(app);
         if (typeof bodyNode.replaceChildren === 'function') bodyNode.replaceChildren();
         else while (bodyNode.firstChild) bodyNode.removeChild(bodyNode.firstChild);
         if (initialOriginal) {
@@ -41141,7 +41203,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       app.appendChild(guiEl('div', { class: 'page-head' }, [
         guiEl('div', {}, [
           guiEl('h2', { text: '소설 모드 · 인풋 선택' }),
-          guiEl('p', { text: '주인공 중심 · 현장 인물 중심 · 세계/외부 인물 중심의 세 작가 관점을 비교하고, 이번 턴에 사용할 입력을 직접 고릅니다.' })
+          guiEl('p', { 'data-input-memory-notice': '', text: '주인공 중심 · 현장 인물 중심 · 세계/외부 인물 중심의 세 작가 관점을 비교하고, 이번 턴에 사용할 입력을 직접 고릅니다.' })
         ]),
         closeButton
       ]));
@@ -42652,6 +42714,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       lastAt: Number(Runtime.inputAssistSend?.lastAt) || 0,
       ok: Runtime.inputAssistSend?.ok ?? null,
       reason: Runtime.inputAssistSend?.reason || '',
+      memory: Runtime.inputAssistSend?.memory || null,
       generatedPreview: compact(Runtime.inputAssistSend?.generated || '', 2400)
     },
     pipelineWorkStatus: JSON.parse(JSON.stringify(Runtime.pipelineWorkStatus || null)),

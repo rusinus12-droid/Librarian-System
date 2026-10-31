@@ -155,9 +155,11 @@ test('a configured stage model can read evidence without the retired GPT4o-mini 
  const f=await fixture(t);await f.host.plugin.saveProviderPreset('writer',{provider:'openai',url:'https://api.openai.com/v1/chat/completions',key:'synthetic-only',model:'gpt-5.6',request_format:'chat_completions',context_window:262144,max_tokens:4096,reasoning_preset:'off',stream:false});
  const {pending}=await f.start();await f.select();assert.equal(await f.done(pending),true);assert.equal(f.prompts.length,1);assert.equal(f.prompts[0].model,'gpt-5.6');
 });
-test('missing stage context metadata blocks writer evidence before dispatch',async t=>{
+test('missing stage context metadata omits optional evidence before capture and allows native writing',async t=>{
  const f=await fixture(t);await f.host.plugin.saveProviderPreset('writer',{provider:'openai',url:'https://api.openai.com/v1/chat/completions',key:'synthetic-only',model:'unregistered-fixture-model',request_format:'chat_completions',context_window:0,max_tokens:4096,stream:false});
- const {pending}=await f.start();assert.equal(await pending,false);assert.equal(f.prompts.length,0);assert.equal(f.sent.length+f.copied.length,0);
+ const {pending}=await f.start();await f.select();assert.equal(await f.done(pending),true);
+ assert.equal(f.queries(),0);assert.equal(f.prompts.length,1);assert.equal(f.sent.length+f.copied.length,1);
+ assert(!JSON.stringify(f.prompts).includes('WRITER_OWNER_EVIDENCE'));
 });
 test('canceling a stalled native context recheck closes the picker without a late export',async t=>{
  const f=await fixture(t),{pending}=await f.start();await f.select();let release,entered;const ready=new Promise(r=>entered=r);

@@ -34,6 +34,11 @@ async function fixture(t,{native=false,writingMode='novel',unified=true,sendAvai
    result.corpusBytes=path.endsWith('/capture')?Buffer.byteLength(result.items[0].content):undefined;
    return new Response(JSON.stringify({ok:true,dataInstanceId:dataId,result}));
   }
+  if(init.method==='GET'){
+   controls.metadataRequests=(controls.metadataRequests||0)+1;
+   const payload=await controls.onMetadata?.(target,init)??{data:[]};
+   return new Response(JSON.stringify(payload));
+  }
   const body=JSON.parse(init.body);prompts.push(body);await controls.onModel?.(prompts.length,body,init);
   const system=body.messages?.filter(m=>m.role==='system').map(m=>m.content).join('\n')||body.instructions||body.system||body.systemInstruction?.parts?.map(p=>p.text).join('\n')||body.input?.filter(m=>m.role==='system').flatMap(m=>m.content.map(p=>p.text)).join('\n')||'';
   let content;

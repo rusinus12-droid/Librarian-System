@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-31T01:07:32.769Z",
+  "generatedAt": "2026-10-31T01:28:03.982Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -1312,7 +1312,7 @@
       "sourceAuthorityUntilCutover": true
     },
     "gradiaThreeOwnerRead": {
-      "pluginVersion": "0.28.4",
+      "pluginVersion": "0.28.5",
       "principal": "serial_gradation_agents_for_rp",
       "readers": [
         "libra",
@@ -1428,7 +1428,7 @@
     "libra": "2.6.10",
     "lia": "0.29.4",
     "retrace": "1.12.7",
-    "gradia": "0.28.4"
+    "gradia": "0.28.5"
   },
   "files": {
     "_common.cmd": {
@@ -1678,6 +1678,10 @@
     "docs/GRADIA_INPUT_WRITER_CONTEXT_20261022.md": {
       "sha256": "c959f8d59786c3e6aad1c3cd8f15fa38b63ba651b61750ae794aaacddbf6761c",
       "bytes": 6835
+    },
+    "docs/GRADIA_INPUT_WRITER_CONTEXT_PREFLIGHT_20261031.md": {
+      "sha256": "946e09c1e18741a62104b985021a9111f93ce49e6247df25df2413f90c350eda",
+      "bytes": 4138
     },
     "docs/GRADIA_LIBRA_LENS_READ_20261022.md": {
       "sha256": "da7945d513c1688e0aad47dc9eb3561dc361e3a74d3efd43c7c07f5f411ad2e3",
@@ -4108,7 +4112,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "76697246fdade5159158268e9047a0fe28e643a0b0a2ea50551f117c20d17f2f",
+      "sha256": "bbff0b57f83564b517eb8f35fbf6be8f10b863ff753d95a69d7c01bb7042109d",
       "bytes": 3351
     },
     "plugins/Flashback_Memory.js": {
@@ -4116,8 +4120,8 @@
       "bytes": 3729622
     },
     "plugins/GRADIA.js": {
-      "sha256": "77579e9547103cab78af1ca78327913db189faf46a6b0f2a01b9f0067045745c",
-      "bytes": 3066835
+      "sha256": "52cef0bf2a99d29ea84132378e57495aa4093e593c98e88094f70536102592c1",
+      "bytes": 3070307
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "c1c8e146d4f22fb359f8f20807f69361d4855c54d85aa9e3efa3beff4e17e5b2",
@@ -5296,8 +5300,8 @@
       "bytes": 840
     },
     "tests/fixtures/gradia_input_writer_unified_fixture.cjs": {
-      "sha256": "aa5c8b7f4f63fc086108279ff3fc9db10d2dcb849ed37b3b25299f0abc7305b8",
-      "bytes": 10733
+      "sha256": "fd3e38e266de7acea73e872225fa1c8cf30f9bbc445f8451f159d87c30735f47",
+      "bytes": 10946
     },
     "tests/fixtures/hayaku_cache_rediscovery_cap_mutation.cjs": {
       "sha256": "e2aa561db72fe744006d915c741077d47ae3cf3a3a589a26222ea9c0dcbea2ae",
@@ -6443,9 +6447,13 @@
       "sha256": "b7ded07406d4bab0feebc3ee842be75e1265cc80f692bc6a68eca4043ee93d93",
       "bytes": 17118
     },
+    "tests/gradia_input_writer_context_preflight_test.cjs": {
+      "sha256": "6587c98538ada3e7ca7bdf08b7f5069314e242050a82ded3d6906d3bdcde2057",
+      "bytes": 6266
+    },
     "tests/gradia_input_writer_unified_runtime_test.cjs": {
-      "sha256": "301ccc89e880685b98d8e56ef6eed4b368966fb3412bf05c7685c0aa7d9c6c7c",
-      "bytes": 20023
+      "sha256": "16e3a3a1776e1b2ec7d640d010382d107c03ba1e60f90f22f7a1bd3e0d3fb251",
+      "bytes": 20174
     },
     "tests/gradia_legacy_hosting_retirement_test.cjs": {
       "sha256": "112a451b396ab02f7e6ba11dc675db5ee90d5608d249710853d2e43889318479",
@@ -12184,7 +12192,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "53f4e1532c68f3e95d666f1a8f48e42e0a28ffcb4ae66d706fc724f0b17aaa69",
+      "sha256": "1f4d3450daf625a433c1ff363129cef19cdc3ab5189860ffbb00f70ac157f21b",
       "bytes": 3785
     }
   },
