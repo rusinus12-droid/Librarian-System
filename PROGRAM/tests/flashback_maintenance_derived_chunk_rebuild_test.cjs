@@ -74,3 +74,39 @@ test('server mode re-chunks turns whose derived chunk schema is old',async()=>{
     assert.equal(counts.legacySanitizerRecords,0);
   } finally { await f.dispose(); await app.close?.(); }
 });
+
+// Real pre-schema records were chunked by an older writer, so their chunk hashes
+// differ from what the current chunker produces for the same turn. The re-chunk
+// must replace that stored group in place: leaving it made the new chunks collide
+// with it as near-duplicates (silently kept, or merged into a row whose raw-first
+// embedding work no longer matched its source and failed the commit).
+test('server re-chunk replaces old-writer chunks whose hashes differ from the current chunker',async()=>{
+  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'fb-rechunk-hash-'));
+  const app=createMemorySuiteServer({dataDir,autoBackup:false,port:0}),address=await app.listen();
+  const f=await createFixture({source:fs.readFileSync(require.resolve('../plugins/Flashback_Memory.js'),'utf8'),
+    exposeStorageBridge:true,chat:{message:[...pair(1,true),...pair(2)]},
+    arguments:{memory_suite_server_url:`http://127.0.0.1:${address.port}`,embedding_key:'synthetic-key'},
+    nativeFetch:async(url,init)=>String(url).startsWith('https://provider.invalid/')
+      ?new Response(JSON.stringify({data:JSON.parse(init.body).input.map((_,index)=>({index,embedding:[1,0,0]}))}),{status:200})
+      :mockFetch(url,init)});
+  try{
+    const cfg={...await f.api.loadSettings(),embeddingProvider:'openai_compat',embeddingModel:'derived-rebuild',embeddingUrl:'https://provider.invalid/v1',embeddingDimensions:3,
+      embeddingEnabled:true,embeddingAutoProcess:false,embeddingMaxRetries:0,embeddingBatchSize:8,episodeIndexEnabled:true,autoEpisodeIndex:true,autoColdStart:false};
+    await f.api.saveSettings(cfg);const scope=await f.api.resolveCurrentScope(false);
+    await f.context.__fixtureStorageBridge.setScopeMode({scopeId:scope.scopeKey,scopeKey:scope.scopeKey},'server_only');
+    await f.api.ingestLiveChatColdStart({scope:'current',canonical:true});
+    const loaded=await f.api._test.loadScopeRecords(scope.scopeKey);
+    const legacy=loaded.records.map(record=>{const {chunkSchemaVersion:_,...rest}=record;
+      return record.sourceType==='response'?{...rest,hash:'legacy_'+record.hash}:rest;});
+    await f.api._test.saveAllRecords(legacy,cfg,scope);
+    const plan=await f.api.inspectMemoryMaintenance();
+    assert.equal(plan.automatic.reason,'derived_chunk_rechunk_available');
+    const result=await f.api.runMemoryMaintenance('auto',{preflight:plan});
+    const rows=(await f.api._test.loadScopeRecords(scope.scopeKey)).records.filter(r=>r.sourceType==='response');
+    assert.equal(rows.filter(r=>!r.chunkSchemaVersion).length,0,'no old-writer chunk survives');
+    assert.equal(rows.filter(r=>String(r.hash).startsWith('legacy_')).length,0);
+    assert.equal(result.after.liveChunkSchemaMismatch,0);assert.equal(result.after.embeddingWorkIncompleteRecords,0);
+    assert.equal(result.healthy,true);assert.equal(result.operation.sync.rechunkedTurns,2);
+    assert.equal(rows.length,loaded.records.filter(r=>r.sourceType==='response').length,'one chunk set per turn');
+  } finally { await f.dispose(); await app.close?.(); fs.rmSync(dataDir,{recursive:true,force:true}); }
+});

@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.3.13
+//@display-name ⚡ FLASHBACK Memory v1.3.14
 //@api 3.0
-//@version 1.3.13
+//@version 1.3.14
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
 //@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.3.13';
+const PLUGIN_VERSION = '1.3.14';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -28727,8 +28727,19 @@ const MemorySuiteSnapshotCache = (() => {
     incoming = replacement.incoming;
     let replacedRecords = replacement.replacedRecords;
     let invalidatedEpisodeIndexes = replacement.invalidatedEpisodeIndexes;
+    const rechunkGroupKeys = new Set((Array.isArray(options.rechunkGroupKeys) ? options.rechunkGroupKeys : []).map(value => text(value)).filter(Boolean));
+    const rechunkTurns = new Set((incoming || []).filter(record => isResponseMemoryRecord(record)).map(finiteTurnIndex));
+    // Only a stored group whose turn is re-derived in this same commit is replaced;
+    // inherited records and every other turn stay untouched.
+    const rechunkDrops = rechunkGroupKeys.size ? replacement.records.filter(record => isResponseMemoryRecord(record)
+      && !record.autoEpisode && record.sourceType !== 'episode_index'
+      && !isInheritedScopeMemoryRecord(record, scope.scopeKey)
+      && rechunkGroupKeys.has(responseTurnGroupKey(record)) && rechunkTurns.has(finiteTurnIndex(record))) : [];
+    const rechunkDropSet = new Set(rechunkDrops);
+    replacedRecords += rechunkDrops.length;
+    const survivingRecords = rechunkDropSet.size ? replacement.records.filter(record => !rechunkDropSet.has(record)) : replacement.records;
     const retainedExisting = options.deferEmbedding === true
-      ? replacement.records.map(record => retainRawAfterDerivedVectorDamage(record, cfg)) : replacement.records;
+      ? survivingRecords.map(record => retainRawAfterDerivedVectorDamage(record, cfg)) : survivingRecords;
     const vectorRepairNeeded = retainedExisting.filter(record => record.embeddingWork?.status === 'repair_needed').length;
     for (const record of retainedExisting) {
       if (!record?.hash) continue;
@@ -28782,7 +28793,15 @@ const MemorySuiteSnapshotCache = (() => {
         const nearDuplicate = findNearDuplicate(record);
         if (nearDuplicate) {
           const keepIncoming = text(record.text).length > text(nearDuplicate.text).length || Number(record.importanceScore || 0) > Number(nearDuplicate.importanceScore || 0);
-          if (keepIncoming) {
+          if (keepIncoming && record.embeddingWork) {
+            // A raw-first record's work is bound to its own text/source revision.
+            // Overlaying it on the old record kept the old vectorRef/receipt and
+            // hash, so the merged row matched neither and failed its binding.
+            map.delete(nearDuplicate.hash);
+            map.set(record.hash, { ...record, id: nearDuplicate.id || record.id, createdAt: nearDuplicate.createdAt || record.createdAt, updatedAt: nowIso() });
+            rememberBucket(record);
+            updated += 1;
+          } else if (keepIncoming) {
             map.set(nearDuplicate.hash, { ...nearDuplicate, ...record, id: nearDuplicate.id || record.id, hash: nearDuplicate.hash, createdAt: nearDuplicate.createdAt || record.createdAt, updatedAt: nowIso() });
             updated += 1;
           }
@@ -31849,6 +31868,7 @@ const MemorySuiteHealthRecovery = (() => {
     const unchanged = [];
     const metadataChanged = [];
     const rechunked = [];
+    const rechunkedGroupKeys = [];
     const matchedGroupKeys = new Set();
     for (const source of sources || []) {
       const pair = responsePairFromMaintenanceSource(source);
@@ -31866,7 +31886,7 @@ const MemorySuiteHealthRecovery = (() => {
         && !exact.records.some(record => isInheritedScopeMemoryRecord(record, options.scopeKey || ''))) {
         changed.push(source);
         rechunked.push(source);
-        if (exact.key) matchedGroupKeys.add(exact.key);
+        if (exact.key) { matchedGroupKeys.add(exact.key); rechunkedGroupKeys.push(exact.key); }
         continue;
       }
       if (exact) {
@@ -31887,6 +31907,7 @@ const MemorySuiteHealthRecovery = (() => {
       unchanged,
       metadataChanged,
       rechunked,
+      rechunkedGroupKeys,
       selected: [...missing, ...changed],
       staleGroups,
       storedGroups: groups.length,
@@ -32050,7 +32071,7 @@ const MemorySuiteHealthRecovery = (() => {
     const publicationSourceHashes = options.deferEmbedding === true && !options.sourceEditReplacement
       && !options.sourceEditValidate && !options.maintenanceSourceValidate && !options.operationLedger
       ? new Set(records.map(record => record.sourceHash).filter(Boolean)) : null;
-    const result = await upsertRecords(records, cfg, scope, { replaceTurnPair: options.replaceTurnPair === true, deferEmbedding: true, sourceEditValidate:options.sourceEditValidate, sourceEditReplacement:options.sourceEditReplacement === true, maintenanceSourceValidate:options.maintenanceSourceValidate, publicationSourceHashes });
+    const result = await upsertRecords(records, cfg, scope, { replaceTurnPair: options.replaceTurnPair === true, rechunkGroupKeys: options.rechunkGroupKeys, deferEmbedding: true, sourceEditValidate:options.sourceEditValidate, sourceEditReplacement:options.sourceEditReplacement === true, maintenanceSourceValidate:options.maintenanceSourceValidate, publicationSourceHashes });
     if (options.deferEmbedding !== true && !options.skipEpisodeRebuild && records.some(record => (record.sourceType === 'chat_turn' ? 'response' : record.sourceType) === 'response')) {
       scheduleEpisodeIndexRebuild(scope, cfg, { reason: 'ingestSources' });
     }
@@ -32152,6 +32173,7 @@ const MemorySuiteHealthRecovery = (() => {
           skipEpisodeRebuild: true, deferEmbedding: true,
           skipGuiRefresh: true,
           replaceTurnPair: true,
+          rechunkGroupKeys: effectiveDiff.rechunkedGroupKeys,
           operationLedger:options.operationLedger, maintenanceSourceValidate:options.maintenanceSourceValidate, signal:options.signal, deadlineAt:options.deadlineAt,
           reuseRecords: loadedAfterSync.records,
           allowHashFallback: options.allowHashFallback !== false,
