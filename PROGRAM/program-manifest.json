@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-31T08:38:15.861Z",
+  "generatedAt": "2026-10-31T08:51:09.833Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -1312,7 +1312,7 @@
       "sourceAuthorityUntilCutover": true
     },
     "gradiaThreeOwnerRead": {
-      "pluginVersion": "0.28.9",
+      "pluginVersion": "0.28.10",
       "principal": "serial_gradation_agents_for_rp",
       "readers": [
         "libra",
@@ -1428,7 +1428,7 @@
     "libra": "2.6.13",
     "lia": "0.29.4",
     "retrace": "1.12.7",
-    "gradia": "0.28.9"
+    "gradia": "0.28.10"
   },
   "files": {
     "_common.cmd": {
@@ -4136,16 +4136,16 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "2b5bb4619e6f674d809e106df5d784eea94d6dd1b28d41ebf028dd7ff7668648",
-      "bytes": 3352
+      "sha256": "e0881d43614b792ded622c52e319a8c1570f0d27a71141f6a70dd5ccf3a5850e",
+      "bytes": 3353
     },
     "plugins/Flashback_Memory.js": {
       "sha256": "97322ff7c3aa3a688fd9614fbcee95d1d40a41a82adbba8e1acf199205c9cd53",
       "bytes": 3757868
     },
     "plugins/GRADIA.js": {
-      "sha256": "f9e4af2b6777d32098f229e04fe8cc16f6ff89873a433be3ac98d4e89837abd4",
-      "bytes": 3085351
+      "sha256": "b874eb796b1228b744e2e104b491672d35c98595c0f74e029186584a6f6b8842",
+      "bytes": 3086644
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "9a5d627bb1b2d25503ddbc3975a1aeff6abcce560db5e172145c31675651d12a",
@@ -6482,6 +6482,10 @@
     "tests/gradia_input_writer_context_preflight_test.cjs": {
       "sha256": "84baadcfad9fbfcef6fffc6914413e9cc7358061580c37cc75de019e8422794d",
       "bytes": 6549
+    },
+    "tests/gradia_input_writer_memory_fallback_test.cjs": {
+      "sha256": "2fbf4d3b2b1c7927ac5d09d4534d270c0c2b8f7ee451b62aa0df5c963c4ee2bd",
+      "bytes": 1556
     },
     "tests/gradia_input_writer_unified_runtime_test.cjs": {
       "sha256": "16e3a3a1776e1b2ec7d640d010382d107c03ba1e60f90f22f7a1bd3e0d3fb251",
@@ -12232,8 +12236,8 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "8c5ddd42a15fc73aa3d3acfebf43b2c32f39a08335d449f96deaa3c72cb6bb96",
-      "bytes": 3786
+      "sha256": "311c55bccbc674bb12d1dcb8d8c06bba4b210bbf38ed4b84a54ac6725fb9ff97",
+      "bytes": 3787
     }
   },
   "storageSdkVariants": {

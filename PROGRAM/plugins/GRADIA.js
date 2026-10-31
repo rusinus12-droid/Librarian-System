@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.9
+//@display-name GRADIA v0.28.10
 //@api 3.0
-//@version 0.28.9
+//@version 0.28.10
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -936,7 +936,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.9';
+  const PLUGIN_VERSION = '0.28.10';
   
   
   
@@ -4095,9 +4095,11 @@
     let notedStage = '';
     const noteDiagnostic = (status, code, stage) => {
       notedStage = String(stage || '');
+      const transport = globalThis.__gradiaLibReadTransportCause;
       Runtime.lastInputWriterReadDiagnostic = Object.freeze({ at: Date.now(), purpose: 'input_writer_proposal',
         status: String(status || ''), code: String(code || ''), stage: String(stage || ''),
-        elapsedMs: Math.max(0, Date.now() - startedAt) });
+        elapsedMs: Math.max(0, Date.now() - startedAt),
+        ...(status !== 'ready' && transport && transport.at >= startedAt ? { transportCause: transport } : {}) });
     };
     let assertNative;
     try {
@@ -4147,7 +4149,7 @@
     } catch (error) {
       // Only an unavailable optional source BEFORE any evidence is accepted may
       // fall back. Cancellation, native changes and a ready/consumed read stay fatal.
-      if (!options.requireEvidence && !lease.run && ['LIB_READ_TIMEOUT','LIB_READ_PLUGIN_OWNERS_UNAVAILABLE','LIB_READ_OWNER_UNAVAILABLE',
+      if (!options.requireEvidence && !lease.run && ['LIB_READ_TIMEOUT','LIB_READ_UNAVAILABLE','LIB_READ_SERVER_MAINTENANCE','LIB_READ_PLUGIN_OWNERS_UNAVAILABLE','LIB_READ_OWNER_UNAVAILABLE',
         'LIB_READ_CONNECTION_UNAVAILABLE','LIB_READ_UNIFIED_UNAVAILABLE','LIB_READ_TRANSPORT_UNAVAILABLE',
         // An oversized owner store is an unavailable optional source, not a writer failure.
         'LIB_READ_METADATA_BUDGET_EXCEEDED','LIB_READ_REFERENCE_LIMIT_EXCEEDED','LIB_READ_STORAGE_BUDGET_EXCEEDED',
@@ -21027,8 +21029,13 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     }
   });
 
-  const inputAssistMemoryNotice = () => Runtime.inputAssistSend?.memory?.reason === 'LIB_READ_MODEL_CONTEXT_UNAVAILABLE'
-    ? ' · 기억 참고 생략: 모델 문맥 한도 미확인' : '';
+  const INPUT_ASSIST_MEMORY_SKIP_LABELS = Object.freeze({ LIB_READ_MODEL_CONTEXT_UNAVAILABLE: '모델 문맥 한도 미확인',
+    LIB_READ_TIMEOUT: '기억 서버 응답 지연', LIB_READ_UNAVAILABLE: '기억 서버 읽기 실패', LIB_READ_SERVER_MAINTENANCE: '기억 서버 점검 중' });
+  const inputAssistMemoryNotice = () => {
+    const memory = Runtime.inputAssistSend?.memory;
+    if (memory?.status !== 'unavailable' || !memory.reason) return '';
+    return ` · 기억 참고 생략: ${INPUT_ASSIST_MEMORY_SKIP_LABELS[memory.reason] || memory.reason}`;
+  };
   const refreshInputAssistMemoryNotice = app => {
     const node = app.querySelector('[data-input-memory-notice]');
     if (!node) return;
@@ -30667,6 +30674,7 @@ function createMemorySuiteHostLineage() {
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
  * The server stores opaque values. Each plugin keeps ownership of its own data schema.
  */
+const READ_SESSION_CAPTURE_TIMEOUT_MS = 60000;
 const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const options = rawOptions && typeof rawOptions === 'object' ? rawOptions : {};
   const localOnlyOwner = options.storagePolicy === 'local_only';
@@ -37575,12 +37583,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           'X-Memory-Suite-Plugin':pluginId,'X-Memory-Suite-Plugin-Version':pluginVersion,
           'X-Memory-Suite-Data-Instance':connection.dataInstanceId,'X-Memory-Suite-Reset-Epochs':JSON.stringify(connection.resetEpochs),
           'X-Memory-Suite-Scope-Id':encodeURIComponent(scope.scopeId),'X-Memory-Suite-Storage-Mode':MODE_SERVER_ONLY},body:JSON.stringify(body)
-      },'Memory read-only session',requestTimeoutMs,null,true,action==='capture'?6*maxCorpusBytes+8388608:1048576);
+      // A capture reads the owner's whole published corpus; on a busy server or a
+      // slow host transport it outlasts the general 30 s request bound.
+      },'Memory read-only session',action==='capture'?Math.max(requestTimeoutMs,READ_SESSION_CAPTURE_TIMEOUT_MS):requestTimeoutMs,null,true,action==='capture'?6*maxCorpusBytes+8388608:1048576);
       }catch(error){checkAbort();
+        // Codes only (never content): which owner/action failed and how.
+        try { globalThis.__gradiaLibReadTransportCause = Object.freeze({ at: Date.now(), owner, action,
+          code: String(error?.code || error?.payload?.error || error?.name || 'error').slice(0, 80),
+          status: Number(error?.status || 0) || 0 }); } catch (_) {}
         const refusals={gradia_read_corpus_budget_exceeded:'LIB_READ_CORPUS_BUDGET_EXCEEDED',gradia_read_storage_budget_exceeded:'LIB_READ_STORAGE_BUDGET_EXCEEDED',
           gradia_read_metadata_budget_exceeded:'LIB_READ_METADATA_BUDGET_EXCEEDED',gradia_read_reference_limit_exceeded:'LIB_READ_REFERENCE_LIMIT_EXCEEDED',gradia_read_dependency_unavailable:'LIB_READ_SOURCE_UNAVAILABLE',
           gradia_read_scope_changed:'LIB_READ_SCOPE_INVALID',gradia_read_manifest_scope_mismatch:'LIB_READ_SCOPE_INVALID',gradia_read_dependencies_invalid:'LIB_READ_EVIDENCE_INVALID',gradia_read_evidence_revision_invalid:'LIB_READ_EVIDENCE_INVALID',
-          gradia_read_maintenance:'LIB_READ_SERVER_MAINTENANCE',MEMORY_SUITE_RESET_RECONNECT_REQUIRED:'LIB_READ_RESET_REVIEW_REQUIRED',gradia_readonly_route_forbidden:'LIB_READ_PRINCIPAL_REQUIRED'};
+          gradia_read_maintenance:'LIB_READ_SERVER_MAINTENANCE',MEMORY_SUITE_RESET_RECONNECT_REQUIRED:'LIB_READ_RESET_REVIEW_REQUIRED',gradia_readonly_route_forbidden:'LIB_READ_PRINCIPAL_REQUIRED',
+          MEMORY_SUITE_TIMEOUT:'LIB_READ_TIMEOUT'};
         reject(error?.code==='LIB_READ_RESPONSE_BUDGET_EXCEEDED'||error?.code==='LIB_READ_BOUNDED_TRANSPORT_UNAVAILABLE'?error.code:refusals[error?.payload?.error]||refusals[error?.code]||'LIB_READ_UNAVAILABLE');}
       await assertRoute();
       if(payload?.dataInstanceId!==connection.dataInstanceId)reject('LIB_READ_DATA_CHANGED');
