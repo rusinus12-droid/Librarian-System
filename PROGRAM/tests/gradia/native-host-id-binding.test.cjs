@@ -45,6 +45,20 @@ test('fenced Current Input transport keeps the live raw identity',async()=>{
   await b.assertCurrent();
 });
 
+// Short inputs ("계속", "…") recur across a chat. An earlier, answered turn with
+// the same text must not make the current wrapped input unbindable.
+test('wrapped input binds the latest live user when an answered turn repeats its text',async()=>{
+  const f=await fixture((chat,_character,input)=>{
+    chat.message[0].data='Where is the blue ledger?';
+    input[0]={role:'user',content:'Where is the blue ledger?'};
+    input[2]={role:'user',content:'<Current Input>\nWhere is the blue ledger?\n</Current Input>'};
+  });
+  const b=await f.bind();
+  assert.equal(b.snapshot.currentInputRef.messageId,'native-2');
+  assert.equal(b.snapshot.currentInput,'Where is the blue ledger?');
+  await b.assertCurrent();
+});
+
 for(const kind of ['duplicate','partial','streaming','historical'])test(`wrapped input refuses ${kind} live identity`,async()=>{
   const f=await fixture((chat,_character,input)=>{
     input[2]={role:'user',content:'<Current Input>\nWhere is the blue ledger?\n</Current Input>'};

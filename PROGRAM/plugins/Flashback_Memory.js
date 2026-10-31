@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.3.10
+//@display-name ⚡ FLASHBACK Memory v1.3.13
 //@api 3.0
-//@version 1.3.10
+//@version 1.3.13
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
 //@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.3.10';
+const PLUGIN_VERSION = '1.3.13';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -2603,6 +2603,7 @@ const PLUGIN_VERSION = '1.3.10';
     const local = String(error?.code || error?.type || error?.message || error || '').match(/EMBEDDING_CHECKPOINT_[A-Z_]+/)?.[0];
     if (local) return diagnosticSlice(maintenanceIsolatedReasonText(local), max);
     if (typeof error === 'string') return diagnosticSlice(error, max);
+    if (error?.userMessage) return diagnosticSlice(String(error.userMessage), max);
     if (error?.message) {
       const prefix = error.name && error.name !== 'Error' ? `${error.name}: ` : '';
       return diagnosticSlice(`${prefix}${error.message}`, max);
@@ -5736,7 +5737,52 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
   };
 
-  const request = (...args) => withOwnerOperation({kind:'storage_operation',operation:'request'}, () => requestImpl(...args));
+  // Fenced read cache. While this instance holds an unexpired writer fence for a
+  // Flashback scope alias, the server rejects every other owner's write to that
+  // alias (and maintenance-mode writes), so a value this instance read cannot be
+  // changed behind it. One repair used to re-read the same 63 KB manifest ~400
+  // times over a slow host transport; inside a fence it is read once per change.
+  // Entries live only as long as the fence session and are dropped by our own
+  // writes before the request is sent.
+  const fencedReadCaches = new Map();
+  const FENCED_READ_CACHE_MIN_LEASE_MS = 15000;
+  let fencedReadWriteEpoch = 0;
+  const fencedReadCacheFor = key => {
+    const alias = flashbackWriterAlias(key);
+    if (!alias) return null;
+    const session = flashbackWriters.get(alias), cache = fencedReadCaches.get(alias);
+    if (!cache || !session || session.closed || session.readCache !== cache || !session.fence
+      || !(Number(session.fence.expiresAt) - Date.now() > FENCED_READ_CACHE_MIN_LEASE_MS)) return null;
+    return cache;
+  };
+  const cloneFencedRead = value => typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
+  const invalidateFencedReads = (method, route, body) => {
+    if (method === 'GET' || route === '/v1/kv/get-many' || route === '/v1/flashback/writer') return;
+    // A read already in flight may return the value from before this write.
+    fencedReadWriteEpoch += 1;
+    if (!fencedReadCaches.size) return;
+    const keys = [];
+    if (body && typeof body === 'object') {
+      if (typeof body.key === 'string') keys.push(body.key);
+      for (const list of [body.keys, body.mutations]) if (Array.isArray(list)) for (const item of list) {
+        const itemKey = typeof item === 'string' ? item : item?.key;
+        if (typeof itemKey === 'string') keys.push(itemKey);
+      }
+    }
+    // A write whose keys cannot be named (bulk/manager/restore routes) may touch anything.
+    if (!keys.length) { for (const cache of fencedReadCaches.values()) cache.clear(); return; }
+    for (const itemKey of keys) {
+      const alias = flashbackWriterAlias(itemKey);
+      if (!alias) continue;
+      const cache = fencedReadCaches.get(alias);
+      if (cache) for (const cacheKey of [...cache.keys()]) if (cacheKey.endsWith(`\n${itemKey}`)) cache.delete(cacheKey);
+    }
+  };
+  const request = (...args) => {
+    try { invalidateFencedReads(String(args[0] || ''), String(args[1] || ''), args[2]); }
+    catch (_) { for (const cache of fencedReadCaches.values()) cache.clear(); }
+    return withOwnerOperation({kind:'storage_operation',operation:'request'}, () => requestImpl(...args));
+  };
   // Reads are served during a backup; callers that wait on read maintenance keep their own UI.
   const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch'];
   const requestImpl = async (method, route, body = null, requestOptions = {}) => {
@@ -5852,13 +5898,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const remoteGet = async (space, key, requestOptions = {}) => {
+    const cache = fencedReadCacheFor(key), cacheKey = `${space}\n${key}`;
+    if (cache?.has(cacheKey)) return cloneFencedRead(cache.get(cacheKey));
+    const writeEpoch = fencedReadWriteEpoch;
     const payload = await request(
       'GET',
       `/v1/kv/get?namespace=${encodeURIComponent(namespace)}&space=${encodeURIComponent(space)}&key=${encodeURIComponent(key)}`,
       null,
       { allowPluginOnly: requestOptions.allowPluginOnly === true, scope:requestOptions.scope, storageMode:requestOptions.storageMode }
     );
-    return payload?.result || {};
+    const result = payload?.result || {};
+    // Only a fence still held after the read may keep it: a fence acquired while
+    // this request was in flight did not cover the value it returned.
+    if (cache && fencedReadCacheFor(key) === cache && writeEpoch === fencedReadWriteEpoch) cache.set(cacheKey, cloneFencedRead(result));
+    return result;
   };
 
   const remoteGetMany = async (space, keys = [], requestOptions = {}) => {
@@ -13601,6 +13654,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     ? String(key || '').match(/^vector_rag_memory:(?:scope:|local-vector-shard:v1:)([A-Za-z0-9_-]{1,128}):/)?.[1] || '' : '';
   const flashbackWriters = new Map();
   const flashbackFenceError = code => Object.assign(new Error(code), { code, storageMutationRejected: true });
+  // A fence is leased per scope alias for two minutes and is only released by its
+  // holder. A reload that aborts a write leaves it behind until the lease lapses,
+  // so a bare 409 must tell the user what it means; a maintenance run waits it out
+  // before writing (withMaintenanceWriterHeld).
+  const isFlashbackWriterBusy = error => String(error?.payload?.error || '') === 'FLASHBACK_WRITER_BUSY'
+    || /FLASHBACK_WRITER_BUSY/.test(String(error?.code || error?.message || ''));
+  const flashbackWriterBusyError = (alias, waitedMs, error) => {
+    Runtime.lastWriterBusy = { at: Date.now(), alias, waitedMs: Math.max(0, Math.round(waitedMs)),
+      code: 'FLASHBACK_WRITER_BUSY', status: Number(error?.status || 409) || 409 };
+    const busy = flashbackFenceError('FLASHBACK_WRITER_BUSY');
+    busy.status = Number(error?.status || 409) || 409;
+    busy.payload = error?.payload;
+    busy.userMessage = '다른 창이나 이전 세션에서 기억 저장이 진행 중입니다(잠금 유효 시간 최대 2분). 잠시 후 다시 시도해 주세요.';
+    return busy;
+  };
   const flashbackWriterBoundary = async () => {
     const scope = await resolveCurrentScope(true);
     return { url: (await readConfig()).url, scopeId: scope?.scopeId || '', mode: (await readScopeMode(scope, true)).mode };
@@ -13674,11 +13742,29 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           await request('POST', '/v1/flashback/writer', body, { allowPluginOnly:true, forceBootstrap:true, onResponse });
         }
         assertWriterCurrent();
+        if (!session.closed) {
+          session.readCache = new Map();
+          fencedReadCaches.set(alias, session.readCache);
+          // A session held across a long repair (provider waits included) renews its
+          // lease before it lapses instead of failing the next commit as EXPIRED.
+          session.heartbeat = setInterval(() => {
+            if (session.closed || !session.fence || session.users < 1 || lifecycle.disposed) return;
+            if (Number(session.fence.expiresAt) - Date.now() > 45000) return;
+            void usableFlashbackFence(key).catch(error => setStatus('writer_renew_failed', error?.message || error));
+          }, 15000);
+          try { session.heartbeat?.unref?.(); } catch (_) {}
+        }
       })();
     }
     session.users += 1;
     try {
-      await session.ready;
+      try { await session.ready; }
+      catch (error) {
+        // The reader only ever sees a 409 with a bare code. Say what it means and
+        // keep the code/receipt intact for the callers that inspect it.
+        if (!isFlashbackWriterBusy(error)) throw error;
+        throw flashbackWriterBusyError(alias, 0, error);
+      }
       await usableFlashbackFence(key);
       assertWriterCurrent();
       const result = await fn();
@@ -13690,6 +13776,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       session.users -= 1;
       if (session.users === 0) {
         session.closed = true;
+        if (session.heartbeat) { clearInterval(session.heartbeat); session.heartbeat = null; }
+        if (fencedReadCaches.get(alias) === session.readCache) fencedReadCaches.delete(alias);
+        session.readCache?.clear?.();
         try {
           if (session.fence && session.release) await session.release();
         } catch (error) { setStatus('writer_release_unconfirmed', error?.message || error); }
@@ -20510,7 +20599,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       copiedFromChatId: next.copiedFromChatId || '',
       copiedFromChatTitle: next.copiedFromChatTitle || ''
     };
-    if (!recovery && next.archiveOwner !== true && !text(next.scopeKey || '').startsWith(FLASHBACK_ARCHIVE_SCOPE_PREFIX)) {
+    const deferredRegistry = Runtime.deferredScopeRegistryUpdates?.get(text(next.scopeKey || ''));
+    if (deferredRegistry && !recovery && next.archiveOwner !== true) {
+      // The registry is the GUI's scope listing, not storage authority. A held
+      // repair commits many times; rewriting the whole (often 300 KB) registry and
+      // reading it back per commit is deferred to one write when the run ends.
+      deferredRegistry.pending = { scope: registryScope, extra: registryExtra };
+    } else if (!recovery && next.archiveOwner !== true && !text(next.scopeKey || '').startsWith(FLASHBACK_ARCHIVE_SCOPE_PREFIX)) {
       try {
         await rememberScope(registryScope, registryExtra);
       } catch (error) {
@@ -31736,7 +31831,10 @@ const MemorySuiteHealthRecovery = (() => {
     })();return operation.promise;
   };
 
-  const diffLiveChatSourcesAgainstRecords = (sources = [], records = []) => {
+  // options.rechunkLegacy: a stored turn whose text still matches the live turn but
+  // whose chunks predate the narrative chunk schema is re-derived from the live
+  // source like a changed turn. That is the only re-derivation server mode can run.
+  const diffLiveChatSourcesAgainstRecords = (sources = [], records = [], options = {}) => {
     const groups = responseGroupsForWorldline(records);
     const groupsBySourceHash = new Map();
     const groupsByPair = new Map();
@@ -31750,6 +31848,7 @@ const MemorySuiteHealthRecovery = (() => {
     const changed = [];
     const unchanged = [];
     const metadataChanged = [];
+    const rechunked = [];
     const matchedGroupKeys = new Set();
     for (const source of sources || []) {
       const pair = responsePairFromMaintenanceSource(source);
@@ -31762,6 +31861,14 @@ const MemorySuiteHealthRecovery = (() => {
         group.complete !== false && sameMaintenanceTurnText(group.assistantText, pair.assistantText)
         && (!pair.userText || !group.userText || samePairUserText(group.userText, pair.userText))
       ));
+      if (exact && options.rechunkLegacy === true
+        && exact.records.some(record => recordNarrativeChunkVersion(record) < NARRATIVE_CHUNK_SCHEMA_VERSION)
+        && !exact.records.some(record => isInheritedScopeMemoryRecord(record, options.scopeKey || ''))) {
+        changed.push(source);
+        rechunked.push(source);
+        if (exact.key) matchedGroupKeys.add(exact.key);
+        continue;
+      }
       if (exact) {
         // Existing packet-derived metadata is detached lazily without changing
         // the visible U+A vector or treating the packet as a source change.
@@ -31779,6 +31886,7 @@ const MemorySuiteHealthRecovery = (() => {
       changed,
       unchanged,
       metadataChanged,
+      rechunked,
       selected: [...missing, ...changed],
       staleGroups,
       storedGroups: groups.length,
@@ -32028,12 +32136,13 @@ const MemorySuiteHealthRecovery = (() => {
       if (!sources.length) continue;
       const liveState = liveChatStateFromSnapshot(item);
       const loadedBeforeSync = await loadScopeRecords(itemScope.scopeKey);
-      const diff = diffLiveChatSourcesAgainstRecords(sources, loadedBeforeSync.records);
+      const rechunkOptions = { rechunkLegacy: options.rechunkLegacyTurns === true, scopeKey: itemScope.scopeKey };
+      const diff = diffLiveChatSourcesAgainstRecords(sources, loadedBeforeSync.records, rechunkOptions);
       await synchronizeFlashbackTurnWorldline(itemScope, liveState, coldStartSettings, { assertCurrent: options.maintenanceSourceValidate });
       // A rollback may restore the exact response from the retired branch, so
       // decide actual embedding work from the post-reconciliation records.
       const loadedAfterSync = await loadScopeRecords(itemScope.scopeKey);
-      const effectiveDiff = diffLiveChatSourcesAgainstRecords(sources, loadedAfterSync.records);
+      const effectiveDiff = diffLiveChatSourcesAgainstRecords(sources, loadedAfterSync.records, rechunkOptions);
       const metadataUpdate = incremental && effectiveDiff.metadataChanged.length
         ? await updateIndependentMetadataForScope(itemScope, effectiveDiff.metadataChanged, coldStartSettings, { assertCurrent: options.maintenanceSourceValidate })
         : { updatedTurns: 0, updatedRecords: 0, embedded: 0 };
@@ -32071,6 +32180,7 @@ const MemorySuiteHealthRecovery = (() => {
       result.total = Number(batch.total || result.total || 0);
       result.missingTurns += diff.missing.length;
       result.changedTurns += diff.changed.length;
+      result.rechunkedTurns = Number(result.rechunkedTurns || 0) + effectiveDiff.rechunked.length;
       result.unchangedTurns += diff.unchanged.length;
       result.metadataDetachedTurns += Number(metadataUpdate.updatedTurns || 0);
       result.staleStoredTurns += diff.staleGroups.length;
@@ -40905,9 +41015,12 @@ const MemorySuiteHealthRecovery = (() => {
         removePendingTurnById(pendingId);
         upsertChatMonitorAssistant(scope, assistantPosition, assistant, { pairIndex, userPosition: userMessagePosition, userText: latestUser });
       }
-      // Provisional output revisions remain raw until authoritative live confirmation.
+      // Provisional captures stay excluded from recall until live confirmation, but
+      // their vectors are prepared now: hosts that never deliver the live-chat
+      // confirmation left afterRequest captures raw forever. A replaced revision is
+      // re-queued as new vectorless records, so embedding early wastes at most one pass.
       // Scheduling only creates a timer; discovery/reservation/provider work happens after return.
-      const remoteUpgradeQueued = !provisional && schedulePendingEmbeddingWork(scope.scopeKey, { reason: 'finalized_capture' });
+      const remoteUpgradeQueued = schedulePendingEmbeddingWork(scope.scopeKey, { reason: provisional ? 'provisional_capture' : 'finalized_capture' });
       if (provisional) {
         const responseCandidate = Runtime.afterRequestCaptureCandidates.get(pendingId);
         if (responseCandidate) Object.assign(responseCandidate, {
@@ -44038,20 +44151,60 @@ ${cleanedText}`, 80),
       const snapshot=JSON.parse(JSON.stringify(options.snapshot||await loadRisuCaptureSnapshot())),scope=resolveScopeFromSnapshot(snapshot);
       if(!scope?.available||!scope.scopeKey||options.scope?.scopeKey&&options.scope.scopeKey!==scope.scopeKey)throw Error('HEALTH_SCOPE_UNVERIFIED');
       const hostBinding=value=>JSON.stringify([resolveScopeFromSnapshot(value).scopeKey,MemorySuiteHostLineage.inspect(value.character,value.chat),value.chat?.bindedPersona||'',value.chat?.message||value.chat?.messages||[]]);
-      const hostWitness=hostBinding(snapshot),generation=Runtime.embeddingGeneration,sessionKey=Runtime.sessionEmbeddingKey;let lastHostSnapshot=snapshot;
+      const hostWitness=hostBinding(snapshot);let generation=Runtime.embeddingGeneration,sessionKey=Runtime.sessionEmbeddingKey;let lastHostSnapshot=snapshot;
       const assertHostSync=(inspectGeneration=true)=>{if(hostBinding(lastHostSnapshot)!==hostWitness)throw Error('HEALTH_SCOPE_OR_SOURCE_CHANGED');if(Runtime.sessionEmbeddingKey!==sessionKey||inspectGeneration&&Runtime.embeddingGeneration!==generation)throw Error('HEALTH_SETTINGS_CHANGED');};
       const assertHost=async(inspectGeneration=true)=>{lastHostSnapshot=await loadRisuCaptureSnapshot();assertHostSync(inspectGeneration);};
       await assertHost();
       const observed=await MemorySuiteStorageBridge.inspectFlashbackServerHealthSnapshot({scopeId:scope.scopeKey,scopeKey:scope.scopeKey});
       await assertHost();
       const captured=JSON.parse(JSON.stringify(observed.snapshot));
-      let settingsState=null,argumentWitness='',settings=null,settingsUnavailable='';
+      let settingsState=null,argumentWitness='',settings=null,settingsUnavailable='',settingsWitness='';
+      // The settings record is rewritten by the plugin itself (embedding-key
+      // recovery, policy stamp, argument repair). Comparing raw bytes turned those
+      // self-inflicted rewrites into a user-facing "점검 중 설정이 변경되었습니다".
+      // Compare the values the plan actually depends on instead.
+      const settingsFromSnapshot = state => {
+        const raw=state?.raw,parsed=typeof raw==='string'?tryJsonParse(raw,null):raw;
+        if(raw!=null&&(!parsed||typeof parsed!=='object'||Array.isArray(parsed)))throw Error('HEALTH_SETTINGS_UNVERIFIED');
+        let source=Number(parsed?.version||0)>=4&&parsed.overrides&&typeof parsed.overrides==='object'?{...DEFAULTS,...parsed.overrides}:parsed?.settings&&typeof parsed.settings==='object'?parsed.settings:parsed||{};
+        if(Number(source.hookRecallTimeoutPolicyVersion||0)<HOOK_RECALL_TIMEOUT_POLICY_VERSION)source={...source,hookRecallTimeoutMs:DEFAULTS.hookRecallTimeoutMs,hookRecallTimeoutPolicyVersion:HOOK_RECALL_TIMEOUT_POLICY_VERSION};
+        return source;
+      };
+      const maintenanceSettingsWitness = value => MemorySuiteExecutionContract.hash(JSON.stringify([
+        embeddingRequestSettingsFingerprint(value||DEFAULTS),
+        Number(value?.chunkChars||0)||0,Number(value?.chunkOverlap||0)||0,
+        value?.episodeIndexEnabled===true?'episode_on':'episode_off',
+        Number(value?.maxResponseItems||0)||0,Number(value?.minCaptureChars||0)||0,
+        value?.captureAfterRequest===false?'capture_off':'capture_on'
+      ]));
       // Execution changes the corpus and may invalidate embedding jobs itself.
       // Keep checking the actual source, settings and route after that change.
       const assertSourceCurrent=async()=>{
         await assertHost(false);
-        if(settingsState){await settingsState.assertCurrent();await assertHost(false);
-          const args=await readArgumentSettings({strictReadOnly:true});await assertHost(false);if(JSON.stringify(args)!==argumentWitness)throw Error('HEALTH_SETTINGS_CHANGED');}
+        if(settingsState){
+          let rewritten=false;
+          try{await settingsState.assertCurrent();}
+          catch(error){if(error?.message==='HEALTH_SETTINGS_CHANGED')rewritten=true;else throw error;}
+          if(!rewritten){
+            await assertHost(false);
+            const args=await readArgumentSettings({strictReadOnly:true});
+            await assertHost(false);
+            if(JSON.stringify(args)!==argumentWitness)rewritten=true;
+          }
+          if(rewritten){
+            const state=await MemorySuiteStorageBridge.inspectFlashbackGlobalSettingsSnapshot();
+            await assertHost(false);
+            const args=await readArgumentSettings({strictReadOnly:true});
+            await assertHost(false);
+            const derived=applyArgumentOverrides(normalizeSettings(settingsFromSnapshot(state)),args);
+            if(maintenanceSettingsWitness(derived)!==settingsWitness)throw Error('HEALTH_SETTINGS_CHANGED');
+            // Same inspected values, newer record bytes: adopt the rewrite instead of
+            // aborting the user's repair and asking them to press the button again.
+            settingsState=state;settings=derived;argumentWitness=JSON.stringify(args);
+            generation=Runtime.embeddingGeneration;sessionKey=Runtime.sessionEmbeddingKey;
+            Runtime.maintenanceSettingsReread={at:Date.now(),scopeKey:scope.scopeKey,adopted:true,witness:settingsWitness};
+          }
+        }
         await observed.assertRouteCurrent({allowConnectionRefresh:true});assertHostSync(false);settingsState?.assertCurrentSync();
       };
       const assertCurrent=async()=>{
@@ -44074,11 +44227,8 @@ ${cleanedText}`, 80),
       if([...inventory].some(([id,row])=>!row.tombstone&&!values.has(id)))return await incomplete('snapshot_value_missing');
       try{
         settingsState=await MemorySuiteStorageBridge.inspectFlashbackGlobalSettingsSnapshot();await assertHost();
-        const raw=settingsState.raw,parsed=typeof raw==='string'?tryJsonParse(raw,null):raw;
-        if(raw!=null&&(!parsed||typeof parsed!=='object'||Array.isArray(parsed)))throw Error('HEALTH_SETTINGS_UNVERIFIED');
-        let source=Number(parsed?.version||0)>=4&&parsed.overrides&&typeof parsed.overrides==='object'?{...DEFAULTS,...parsed.overrides}:parsed?.settings&&typeof parsed.settings==='object'?parsed.settings:parsed||{};
-        if(Number(source.hookRecallTimeoutPolicyVersion||0)<HOOK_RECALL_TIMEOUT_POLICY_VERSION)source={...source,hookRecallTimeoutMs:DEFAULTS.hookRecallTimeoutMs,hookRecallTimeoutPolicyVersion:HOOK_RECALL_TIMEOUT_POLICY_VERSION};
-        const args=await readArgumentSettings({strictReadOnly:true});await assertHost();argumentWitness=JSON.stringify(args);settings=applyArgumentOverrides(normalizeSettings(source),args);
+        const args=await readArgumentSettings({strictReadOnly:true});await assertHost();argumentWitness=JSON.stringify(args);settings=applyArgumentOverrides(normalizeSettings(settingsFromSnapshot(settingsState)),args);
+        settingsWitness=maintenanceSettingsWitness(settings);
       }catch(error){settingsUnavailable=/^HEALTH_[A-Z0-9_]+$/.test(error?.message||'')?error.message:'HEALTH_SETTINGS_UNVERIFIED';settingsState=null;}
       if(settingsUnavailable)return await incomplete(settingsUnavailable);
       const readValue=async(space,key,target=scope.scopeKey)=>{
@@ -44733,7 +44883,10 @@ ${cleanedText}`, 80),
     Runtime.lastMaintenanceInspection=cloneRuntimeValue({at:plan.at,scopeKey:plan.scopeKey,automatic:plan.automatic,inspection:plan.inspection,
       counts:Object.fromEntries(['missingTurns','changedTurns','staleStoredTurns','dirtyRecords','anchorOnlyDirtyRecords','embeddingWorkIncompleteRecords',
         'embeddingWorkFailedRecords','embeddingWorkUncertainRecords','unqueuedVectorRepairRecords','storageMissingShards','storageManifestCorrupt',
-        'storageRecordCountMismatch','shardIndexMismatch','episodeStale','embeddingQueueSourceHealthy'].filter(key=>Object.hasOwn(plan,key)).map(key=>[key,plan[key]]))},null);
+        'storageRecordCountMismatch','shardIndexMismatch','episodeStale','embeddingQueueSourceHealthy','requiresFullRebuild',
+        'requiresDerivedSchemaRebuildOnly','legacySanitizerRecords','liveChunkSchemaMismatch','inheritedChunkSchemaMismatch',
+        'sanitizerVersionMismatch','providerMismatch','missingVectors','dimensionMismatch','liveTurns','storedTurns','storageCorruptShards',
+        'externalRecords'].filter(key=>Object.hasOwn(plan,key)).map(key=>[key,plan[key]]))},null);
     return plan;
   };
   const inspectMemoryMaintenance = (options = {}) => withMaintenanceQueuePause(() => inspectMemoryMaintenanceSnapshot(options), options);
@@ -44923,6 +45076,17 @@ ${cleanedText}`, 80),
       && !storageManifestCorrupt
       && sources.length > 0
       && (legacySanitizerRecords > 0 || liveChunkSchemaMismatch > 0 || storageMissingShards > 0 || storageRecordCountMismatch);
+    // A derived-schema rebuild means every stored body is intact and readable; only
+    // the derived narrative-chunk metadata predates the current writer. That is a
+    // different class from physical damage, and server mode cannot execute a
+    // physical rebuild at all, so the two must not share one blanket refusal.
+    const requiresDerivedSchemaRebuildOnly = requiresFullRebuild
+      && legacySanitizerRecords === 0
+      && liveChunkSchemaMismatch > 0
+      && storageMissingShards === 0
+      && storageRecordCountMismatch === false
+      && Number(storageCorruptShards || 0) === 0
+      && !storageForeignScopeKey;
     // Compute the full-rebuild reuse plan even when the current automatic strategy
     // is targeted/no-op, because the user may explicitly choose the advanced rebuild.
     const rebuildEstimate = !storageManifestCorrupt && sources.length > 0
@@ -45020,6 +45184,7 @@ ${cleanedText}`, 80),
       shardIndexMismatch,
       sanitizerVersionMismatch,
       requiresFullRebuild,
+      requiresDerivedSchemaRebuildOnly,
       recordsNeedingEmbedding,
       localRecordsNeedingEmbedding,
       archiveInspectionComplete,
@@ -45105,12 +45270,23 @@ ${cleanedText}`, 80),
       // the reason a raw-storage repair is unsupported, nor queue authority.
       const autoPlan = plan.inspection.complete ? automaticMaintenanceStrategyForPlan({...plan,embeddingCredentialMissing:false,embeddingCredentialUnverified:false}) : null;
       const needsSync = Number(plan.missingTurns || 0) > 0 || Number(plan.changedTurns || 0) > 0 || (autoPlan?.stages || []).includes('sync');
-      if (needsSync && !plan.requiresFullRebuild) {
+      // Server mode can only append turns or rebuild the derived episode index; it
+      // cannot execute a physical rebuild. When the stored bodies are intact and
+      // only the derived chunk schema is old, refusing the turn sync would freeze
+      // the scope's memory forever, so the sync proceeds and the pending rebuild is
+      // reported instead of silently substituted.
+      // Old derived chunks are re-derived the same way: the turn sync re-chunks those
+      // turns from the live source (vectors reused where a chunk is unchanged).
+      // Leaving them as a standing "blocked" verdict froze every later check.
+      const derivedRechunk = plan.requiresDerivedSchemaRebuildOnly === true && autoPlan?.blocked !== true;
+      const serverSyncAllowed = (needsSync || derivedRechunk) && (!plan.requiresFullRebuild || derivedRechunk);
+      if (serverSyncAllowed) {
         plan.automatic = {
           strategy: 'server_turn_sync',
           stages: ['sync'],
           blocked: false,
-          reason: 'server_turn_sync_available'
+          reason: needsSync ? 'server_turn_sync_available' : 'derived_chunk_rechunk_available',
+          ...(derivedRechunk ? { derivedRechunk: true, derivedRechunkRecords: Number(plan.liveChunkSchemaMismatch || 0) } : {})
         };
       } else if (plan.embeddingQueueSourceHealthy && maintenanceEmbeddingQueueAvailable(plan)) {
         plan.automatic = { strategy: 'embedding_queue', stages: ['embedding_queue'], blocked: false, reason: 'pending_embedding_work' };
@@ -45123,6 +45299,7 @@ ${cleanedText}`, 80),
           blocked: true,
           reason: !plan.inspection.complete ? 'inspection_incomplete'
             : autoPlan?.blocked ? (autoPlan.reason || autoPlan.strategy)
+            : plan.requiresFullRebuild ? (plan.requiresDerivedSchemaRebuildOnly ? 'derived_schema_rebuild_required' : 'full_rebuild_required')
             : plan.episodeStale ? 'episode_index_stale'
             : unqueuedVectorRepairRecords > 0 ? 'unqueued_vector_damage'
             : 'server_physical_repair_disabled'
@@ -45469,6 +45646,46 @@ ${cleanedText}`, 80),
       return inspectMemoryMaintenance(options);
     }
   };
+  // A repair commits many times. Taking the server writer fence per commit cost an
+  // acquire/release round trip each time and dropped the fenced read cache between
+  // commits, so the same manifest and shards were downloaded again for every batch.
+  // Holding one fence for the run keeps both, and the commits inside join it.
+  // A lease left by a reloaded page or another window lives up to two minutes and
+  // only its holder can release it. Before anything is written the run may simply
+  // wait it out; failing at once turned every reload into a "blocked" repair.
+  const MAINTENANCE_WRITER_BUSY_WAIT_MS = 130000;
+  const withMaintenanceWriterHeld = async (scopeKey, fn, waitOptions = {}) => {
+    const key = text(scopeKey || '').trim();
+    if (!key || typeof MemorySuiteStorageBridge?.withFlashbackWriter !== 'function') return await fn();
+    const deferrals = Runtime.deferredScopeRegistryUpdates || (Runtime.deferredScopeRegistryUpdates = new Map());
+    const owned = !deferrals.has(key), entry = deferrals.get(key) || { pending: null };
+    if (owned) deferrals.set(key, entry);
+    const waitUntil = Date.now() + MAINTENANCE_WRITER_BUSY_WAIT_MS;
+    let started = false;
+    try {
+      for (let attempt = 1; ; attempt += 1) {
+        try { return await MemorySuiteStorageBridge.withFlashbackWriter(scopeKeys.manifest(key), () => { started = true; return fn(); }); }
+        catch (error) {
+          const busy = String(error?.code || error?.message || '') === 'FLASHBACK_WRITER_BUSY';
+          if (started || !busy || waitOptions.signal?.aborted || Date.now() >= waitUntil) throw error;
+          Runtime.lastWriterBusy = { ...(Runtime.lastWriterBusy || {}), waitingForRelease: true, attempts: attempt };
+          waitOptions.onWait?.({ attempt, remainingMs: Math.max(0, waitUntil - Date.now()) });
+          await delay(Math.min(5000, Math.max(250, waitUntil - Date.now())));
+          if (waitOptions.signal?.aborted) throw error;
+        }
+      }
+    }
+    finally {
+      if (owned) {
+        deferrals.delete(key);
+        if (entry.pending) {
+          try { await rememberScope(entry.pending.scope, entry.pending.extra); }
+          catch (error) { warn('scope registry update failed', error); queueScopeRegistryRetry(entry.pending.scope, entry.pending.extra, error); }
+        }
+      }
+    }
+  };
+
   const runMaintenanceEmbeddingQueue = async (preflight, options = {}) => {
     const scope = preflight?._maintenanceContext?.scope;
     if (physicalRepairUnresolved()) await reverifyMaintenanceJournal();
@@ -45492,6 +45709,7 @@ ${cleanedText}`, 80),
     renderMaintenanceExecution();
     reportMaintenanceTask(options, 'preflight', { operationId, scopeKey: scope.scopeKey });
     try {
+      return await withMaintenanceWriterHeld(scope.scopeKey, async () => {
       await withMaintenanceQueuePause(async () => {}, options);
       const drained = await drainPendingEmbeddingQueue(scope.scopeKey, signal, 20, { ...options, maintenanceOperationId: operationId });
       const { passes, ready, failed, uncertain } = drained;
@@ -45515,6 +45733,7 @@ ${cleanedText}`, 80),
         after.embeddingWorkIncompleteRecords ? 'warn' : 'success');
       renderMaintenanceExecution();
       return result;
+      }, { signal, onWait: wait => reportMaintenanceTask(options, 'waiting_lock', { operationId, scopeKey: scope.scopeKey, ...wait }) });
     } finally {
       parentSignal?.removeEventListener?.('abort', abortMaintenance);
       Runtime.maintenanceController = null;
@@ -45605,6 +45824,7 @@ ${cleanedText}`, 80),
       renderMaintenanceExecution();
       reportMaintenanceTask(options, 'preflight', { operationId, scopeKey: executionScope.scopeKey });
       try {
+        return await withMaintenanceWriterHeld(executionScope.scopeKey, async () => {
         await withMaintenanceQueuePause(async () => {}, options);
         const operationSettings = {
           onProgress: options.onProgress,
@@ -45644,6 +45864,7 @@ ${cleanedText}`, 80),
           historyLimit: 0,
           incremental: true,
           deferEmbedding: true,
+          rechunkLegacyTurns: preflight.requiresDerivedSchemaRebuildOnly === true,
           ...operationSettings
         });
         await operationSettings.maintenanceSourceValidate();
@@ -45703,6 +45924,8 @@ ${cleanedText}`, 80),
         }, 'success');
         renderMaintenanceExecution();
         return result;
+        }, { signal: Runtime.maintenanceController?.signal || parentSignal,
+          onWait: wait => reportMaintenanceTask(options, 'waiting_lock', { operationId, scopeKey: executionScope.scopeKey, ...wait }) });
       } finally {
         parentSignal?.removeEventListener?.('abort', abortMaintenance);
         Runtime.maintenanceController = null;
@@ -46233,10 +46456,13 @@ ${cleanedText}`, 80),
       if(plan.inspection.complete&&Number(plan.embeddingWorkIncompleteRecords||0)&&plan.automatic?.strategy!=='server_turn_sync'){const work=maintenanceEmbeddingWorkJudgement(plan);if(work)return work;}
       if(!plan.inspection.complete)return '판정: 서버 스냅샷 점검 미완료 · 정상 여부 미검증입니다. 제외·누락된 자료를 로컬 사본으로 대체하지 않았습니다.';
       if (plan.automatic?.strategy === 'server_turn_sync') {
-        return `판정: 서버 스냅샷 대조 완료 · 누락 ${formatNumber(plan.missingTurns)}개, 변경 ${formatNumber(plan.changedTurns)}개 턴 동기화 가능.`;
+        return `판정: 서버 스냅샷 대조 완료 · 누락 ${formatNumber(plan.missingTurns)}개, 변경 ${formatNumber(plan.changedTurns)}개 턴 동기화 가능.${plan.automatic?.derivedRechunk ? ` 이전 버전 문장 청크 ${formatNumber(plan.liveChunkSchemaMismatch)}개는 같은 동기화에서 현재 원문으로 다시 나눕니다(바뀐 청크만 다시 임베딩).` : ''}`;
       }
       if (plan.automatic?.strategy === 'server_episode_rebuild') return '판정: 원문·기존 벡터는 확인됐고 파생 에피소드 인덱스만 갱신하면 됩니다. 기존 벡터를 재사용하며 제공자 호출 0회입니다.';
-      const blockReason={episode_index_stale:'파생 에피소드 인덱스 갱신이 필요합니다.',unqueued_vector_damage:'미완료 임베딩 작업과 연결되지 않은 벡터 손상이 있어 별도 복구가 필요합니다.',
+      const blockReason={episode_index_stale:'파생 에피소드 인덱스 갱신이 필요합니다.',
+        derived_schema_rebuild_required:'저장된 기록의 문장 청크 스키마가 이전 버전이라 전체 재구축이 필요합니다. 서버 모드에서는 실행할 수 없으므로 누락 턴 동기화로 기억을 계속 쌓고, 전체 재구축은 로컬 저장 모드에서 실행해야 합니다(기존 벡터 재사용).',
+        full_rebuild_required:'저장 구조상 전체 재구축이 필요합니다. 서버 모드에서는 실행할 수 없으므로 로컬 저장 모드에서 재구축해야 합니다.',
+        unqueued_vector_damage:'미완료 임베딩 작업과 연결되지 않은 벡터 손상이 있어 별도 복구가 필요합니다.',
         manifest_metadata_untrusted:'저장 목록의 무결성을 확인할 수 없습니다.',permanent_history_may_be_missing:'보호된 이전 기록이 누락됐을 수 있습니다.'}[plan.automatic?.reason]||'';
       if(plan.automatic?.blocked&&blockReason)return `판정: ${blockReason} ${maintenanceEmbeddingWorkText(plan)}. 자격 증명·제공자 준비 상태는 이 읽기 전용 점검에서 검사하지 않았습니다.`;
       return `판정: 서버 스냅샷 기준 원문·저장 무결성 ${plan.storageSourceHealthy?'점검 통과':'확인할 항목 있음'}. 자격 증명 ${plan.inspection.credentialStatus==='not_required'?'불필요한 설정':'미검증'} · 제공자 준비 상태 미검증. 실시간 상태 보장이나 서버 복구 권한이 아닙니다.`;
@@ -46283,8 +46509,8 @@ ${cleanedText}`, 80),
     ['턴 대조', `현재 채팅 턴 ${formatNumber(plan.liveTurns)}개 · 저장 턴 ${formatNumber(plan.storedTurns)}개`],
     ['누락·변경', `누락 ${formatNumber(plan.missingTurns)} · 변경 ${formatNumber(plan.changedTurns)} · 오래된/고아 ${formatNumber(plan.staleStoredTurns)}`],
     ['정제 상태', `정제 필요 ${formatNumber(plan.dirtyRecords)} · 외부 구형 데이터 ${formatNumber(plan.externalRecords)}`],
-    ['정제기 버전', `정제기 버전 불일치 ${formatNumber(plan.sanitizerVersionMismatch)}${plan.requiresFullRebuild ? ' · 전체 재구축 필요' : ''}`],
-    ['문장 청크', `문장 청크 v${formatNumber(plan.narrativeChunkSchemaVersion || NARRATIVE_CHUNK_SCHEMA_VERSION)} · 현재 채팅 구형 청크 ${formatNumber(plan.liveChunkSchemaMismatch)} · 인계 기록 구형 청크 ${formatNumber(plan.inheritedChunkSchemaMismatch)}`],
+    ['정제기 버전', `정제기 버전 불일치 ${formatNumber(plan.sanitizerVersionMismatch)}${plan.requiresFullRebuild && Number(plan.legacySanitizerRecords || 0) > 0 ? ' · 전체 재구축 필요' : ''}`],
+    ['문장 청크', `문장 청크 v${formatNumber(plan.narrativeChunkSchemaVersion || NARRATIVE_CHUNK_SCHEMA_VERSION)} · 현재 채팅 구형 청크 ${formatNumber(plan.liveChunkSchemaMismatch)} · 인계 기록 구형 청크 ${formatNumber(plan.inheritedChunkSchemaMismatch)}${plan.requiresDerivedSchemaRebuildOnly ? ' · 원문은 정상, 자동 복구에서 청크만 다시 나눔' : ''}`],
     ['리콜 샤드', `리콜 샤드 인덱스 v${formatNumber(plan.shardIndexVersion)} / v${formatNumber(plan.shardIndexExpectedVersion || FLASHBACK_SHARD_INDEX_VERSION)} · ${plan.shardIndexMismatch ? '재구축 필요' : '정상'}`],
     ['저장 무결성', `저장 무결성: 매니페스트 ${plan.storageManifestCorrupt ? '손상' : '정상'} · archiveRef ${plan.storageArchiveRefInvalid ? '손상' : '정상'} · 누락 샤드 ${formatNumber(plan.storageMissingShards)}${Array.isArray(plan.missingShardIndexes) && plan.missingShardIndexes.length ? ` [${plan.missingShardIndexes.join(', ')}]` : ''} · 손상 샤드 ${formatNumber(plan.storageCorruptShards)} · 개수 불일치 ${plan.storageRecordCountMismatch ? '예' : '아니오'} · 범위 충돌 ${plan.storageForeignScopeKey ? '예' : '아니오'}`],
     ['영구 기록', `영구 이전 세션 기록: 기대 ${formatNumber(plan.expectedPermanentHistory)} · 읽기 가능 ${formatNumber(plan.readablePermanentHistory)} · 복원 불가 가능성 ${formatNumber(plan.unrecoverablePermanentHistory)}`],
@@ -48738,6 +48964,8 @@ ${cleanedText}`, 80),
     if (plan.healthy === true && !pending) return { label: '정상 확인', tone: 'ok', headline: '이번 점검 범위에서 추가 복구가 필요하지 않습니다.' };
     if (maintenanceServerStorageVerified(plan)) return { label: '서버 저장 점검 통과', tone: 'ok', headline: '원문·저장 점검을 마쳤고 미완료 임베딩이 없습니다. 제공자 준비 상태는 별도 확인이 필요합니다.' };
     if (plan.automatic?.strategy === 'server_episode_rebuild') return { label: '에피소드 갱신 필요', tone: 'warn', headline: '저장된 기억과 벡터를 재사용해 에피소드 인덱스를 갱신할 수 있습니다.' };
+    if (plan.automatic?.strategy === 'server_turn_sync' && plan.automatic?.derivedRechunk) return { label: '청크 갱신 가능', tone: 'warn',
+      headline: '이전 버전 문장 청크를 현재 원문으로 다시 나눌 수 있습니다. 누락·변경 턴이 있으면 함께 동기화합니다.' };
     if (plan.automatic?.blocked) return { label: '실행 차단', tone: 'warn', headline: '현재 점검 결과로는 자동 복구를 실행할 수 없습니다.' };
     if (plan.automatic?.strategy === 'embedding_queue') return { label: '재임베딩 미완료', tone: 'warn', headline: '원문·저장 점검 후 처리할 재임베딩 작업이 남아 있습니다.' };
     if (pending) return { label: '임베딩 확인 필요', tone: 'warn', headline: `아직 완료되지 않은 임베딩 작업이 ${formatNumber(pending)}개 있습니다.` };
@@ -49335,7 +49563,7 @@ ${cleanedText}`, 80),
   // Session-local display only. A popup never grants storage/provider authority.
   let maintenanceLiveJob = null, maintenanceJobSerial = 0, maintenanceJobTicker = null, maintenanceJobKeyHandler = null;
   const MAINTENANCE_JOB_STAGES = Object.freeze({
-    preparing: [0, '작업을 준비하고 있습니다.'], waiting_embedding: [0, '진행 중인 임베딩 묶음의 저장 확인을 기다립니다.'],
+    preparing: [0, '작업을 준비하고 있습니다.'], waiting_lock: [0, '다른 창이나 이전 세션의 저장 잠금이 풀리기를 기다립니다(최대 2분).'], waiting_embedding: [0, '진행 중인 임베딩 묶음의 저장 확인을 기다립니다.'],
     preflight: [0, '대상 범위와 실행 조건을 확인하고 있습니다.'], scope: [0, '현재 채팅과 저장 위치를 확인하고 있습니다.'],
     storage: [0, '저장된 원문과 검색 벡터를 읽고 있습니다.'], source: [1, '현재 대화와 저장된 기억을 대조하고 있습니다.'],
     plan: [2, '누락·변경·미완료 항목과 복구 계획을 확인하고 있습니다.'],
@@ -49365,23 +49593,125 @@ ${cleanedText}`, 80),
       if(maintenanceLiveJob&&!maintenanceLiveJob.renderError){maintenanceLiveJob.renderError=true;warn('maintenance job display failed',error);}
     }
   };
+  // One row per stage change: elapsed time, the step it belongs to, the message.
+  // A stage that bounces back and forth (request/response per batch) is folded
+  // into its rows with a repeat count instead of flooding the log.
+  const renderMaintenanceJobHistory = (list, job, titles) => {
+    if (!list) return;
+    const signature = job.history.map(entry => `${entry.at}|${entry.step}|${entry.repeat}|${entry.text}`).join('\n');
+    if (list.dataset.signature === signature) return;
+    list.dataset.signature = signature;
+    list.replaceChildren(...job.history.map(entry => {
+      const row = document.createElement('li'), time = document.createElement('time'), tag = document.createElement('span'), body = document.createElement('span');
+      time.textContent = `${formatNumber(entry.at)}초`;
+      tag.className = 'fbjob__tag'; tag.textContent = titles[entry.step] ? `${entry.step + 1}단계` : '-'; tag.title = titles[entry.step] || '';
+      body.className = 'fbjob__text'; body.textContent = entry.text;
+      if (entry.repeat > 1) {
+        const repeat = document.createElement('span');
+        repeat.className = 'fbjob__repeat'; repeat.textContent = `×${formatNumber(entry.repeat)} · 마지막 ${formatNumber(entry.lastAt)}초`;
+        body.appendChild(repeat);
+      }
+      row.append(time, tag, body);
+      return row;
+    }));
+    if (job.state === 'running') list.scrollTop = list.scrollHeight;
+  };
+  // Result text is a title line followed by "label: value" lines. Render the
+  // pairs as rows so every fact has its own boundary; other lines stay paragraphs.
+  const renderMaintenanceJobResult = (container, summary) => {
+    if (!container) return;
+    const value = String(summary || '');
+    if (container.dataset.summary === value) return;
+    container.dataset.summary = value;
+    const nodes = [];
+    let rows = null;
+    for (const line of value.split('\n').map(item => item.trim()).filter(Boolean)) {
+      const pair = line.match(/^([^:：\[\]]{1,24})[:：]\s*(.+)$/);
+      if (!pair) { rows = null; const paragraph = document.createElement('p'); paragraph.textContent = line; nodes.push(paragraph); continue; }
+      if (!rows) { rows = document.createElement('dl'); rows.className = 'fbjob__rows'; nodes.push(rows); }
+      const term = document.createElement('dt'), detail = document.createElement('dd');
+      term.textContent = pair[1].trim(); detail.textContent = pair[2].trim();
+      if (/판정/.test(pair[1])) { term.classList.add('is-verdict'); detail.classList.add('is-verdict'); }
+      rows.append(term, detail);
+    }
+    container.replaceChildren(...nodes);
+  };
   const renderMaintenanceJobSurface = () => {
     const job = maintenanceLiveJob;
     if (!guiVisible || !guiRoot || !maintenanceJobInScope(job) || job.dismissed) { removeMaintenanceJobSurface();return; }
     let portal = getGuiNode('flashbackMaintenanceJob');
     if (!portal) {
       portal = document.createElement('div');portal.id = 'flashbackMaintenanceJob';portal.className = 'overlay is-open t-flashback';
-      portal.innerHTML = `<style>#flashbackMaintenanceJob .dialog{max-height:calc(100dvh - 32px);overflow:auto;min-width:0}#flashbackMaintenanceJob .kv{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#flashbackMaintenanceJob .steps{display:grid;grid-auto-flow:row;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr))}#flashbackMaintenanceJob pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:28vh;overflow:auto}#maintenanceJobChip{position:static;flex:0 1 auto;min-width:64px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} @container app (max-width:640px){#maintenanceJobChip{max-width:110px;font-size:11px;padding:5px 7px}} @container app (max-width:400px){.topbar:has(#maintenanceJobChip:not([hidden])){gap:6px;padding-inline:10px}.topbar:has(#maintenanceJobChip:not([hidden])) #sidebarHealth{display:none}.topbar:has(#maintenanceJobChip:not([hidden])) .brand__name{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.topbar:has(#maintenanceJobChip:not([hidden])) .brand__mark{width:28px;height:28px}}#flashbackMaintenanceJob .dialog__actions{flex-wrap:wrap}</style>
+      // Each region is its own bordered block with a label, so status, steps,
+      // counters, the running log and the final result never read as one text run.
+      portal.innerHTML = `<style>
+#flashbackMaintenanceJob .dialog{max-height:calc(100dvh - 32px);overflow:auto;min-width:0;display:grid;gap:14px}
+#flashbackMaintenanceJob .fbjob__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+#flashbackMaintenanceJob .fbjob__head h2{margin:2px 0 0}
+#flashbackMaintenanceJob .fbjob__head .badge{flex:0 0 auto;white-space:nowrap}
+#flashbackMaintenanceJob .fbjob__now{display:grid;gap:4px;padding:12px 14px;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:var(--r-md,10px);background:var(--surface2)}
+#flashbackMaintenanceJob .fbjob__now[data-tone="ok"]{border-left-color:var(--ok)}
+#flashbackMaintenanceJob .fbjob__now[data-tone="warn"]{border-left-color:var(--warn)}
+#flashbackMaintenanceJob .fbjob__now[data-tone="danger"]{border-left-color:var(--danger)}
+#flashbackMaintenanceJob .fbjob__msg{margin:0;font-weight:700;color:var(--text);line-height:1.5;overflow-wrap:anywhere}
+#flashbackMaintenanceJob .fbjob__meta{margin:0;display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12px;color:var(--text2)}
+#flashbackMaintenanceJob .fbjob__meta>span+span::before{content:"·";margin-right:10px;color:var(--text3)}
+#flashbackMaintenanceJob .fbjob__steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:8px}
+#flashbackMaintenanceJob .fbjob__step{display:grid;grid-template-columns:26px minmax(0,1fr);gap:8px;align-items:start;padding:10px;border:1px solid var(--border);border-radius:var(--r-md,10px);background:var(--surface);min-width:0}
+#flashbackMaintenanceJob .fbjob__no{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:800 12px/1 var(--font-sans,inherit);border:2px solid var(--border2);color:var(--text2);background:var(--surface)}
+#flashbackMaintenanceJob .fbjob__step b{display:block;font-size:13px;line-height:1.35;color:var(--text);word-break:keep-all;overflow-wrap:anywhere}
+#flashbackMaintenanceJob .fbjob__step [data-step-sub]{display:block;font-size:12px;color:var(--text3);margin-top:2px}
+#flashbackMaintenanceJob .fbjob__step.is-done .fbjob__no{background:var(--ok);border-color:var(--ok);color:#fff}
+#flashbackMaintenanceJob .fbjob__step.is-done [data-step-sub]{color:var(--ok-ink)}
+#flashbackMaintenanceJob .fbjob__step.is-active{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+#flashbackMaintenanceJob .fbjob__step.is-active .fbjob__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent,#fff)}
+#flashbackMaintenanceJob .fbjob__step.is-active [data-step-sub]{color:var(--accent-ink,var(--accent));font-weight:700}
+#flashbackMaintenanceJob .fbjob__step.is-fail{border-color:var(--danger)}
+#flashbackMaintenanceJob .fbjob__step.is-fail .fbjob__no{background:var(--danger);border-color:var(--danger);color:#fff}
+#flashbackMaintenanceJob .fbjob__step.is-fail [data-step-sub]{color:var(--danger-ink,var(--danger));font-weight:700}
+#flashbackMaintenanceJob .fbjob__step.is-skipped{opacity:.6}
+#flashbackMaintenanceJob .fbjob__card{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-md,10px)}
+#flashbackMaintenanceJob .fbjob__card[hidden],#flashbackMaintenanceJob .fbjob__result[hidden]{display:none}
+#flashbackMaintenanceJob .fbjob__meterhead{display:flex;justify-content:space-between;gap:12px;font-size:13px;color:var(--text2)}
+#flashbackMaintenanceJob .fbjob__meterhead b{color:var(--text);font-variant-numeric:tabular-nums}
+#flashbackMaintenanceJob .progress>i{background:var(--fbjob-bar,var(--accent))}
+#flashbackMaintenanceJob .fbjob__stats{margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,130px),1fr));gap:8px}
+#flashbackMaintenanceJob .fbjob__stats>div{padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md,10px);background:var(--surface);min-width:0}
+#flashbackMaintenanceJob .fbjob__stats dt{font-size:12px;color:var(--text2);margin:0}
+#flashbackMaintenanceJob .fbjob__stats dd{margin:4px 0 0;font-size:18px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums}
+#flashbackMaintenanceJob .fbjob__log{list-style:none;margin:0;padding:0;max-height:28vh;overflow:auto}
+#flashbackMaintenanceJob .fbjob__log li{display:grid;grid-template-columns:52px 56px minmax(0,1fr);gap:8px;align-items:baseline;padding:7px 2px;border-top:1px solid var(--border);font-size:13px;line-height:1.45}
+#flashbackMaintenanceJob .fbjob__log li:first-child{border-top:0}
+#flashbackMaintenanceJob .fbjob__log time{color:var(--text3);font-variant-numeric:tabular-nums;text-align:right}
+#flashbackMaintenanceJob .fbjob__tag{justify-self:start;padding:1px 7px;border-radius:99px;border:1px solid var(--border2);font-size:11px;color:var(--text2);white-space:nowrap}
+#flashbackMaintenanceJob .fbjob__text{color:var(--text);overflow-wrap:anywhere}
+#flashbackMaintenanceJob .fbjob__repeat{margin-left:6px;color:var(--text3);font-size:12px}
+#flashbackMaintenanceJob .fbjob__result{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-md,10px);background:var(--surface2)}
+#flashbackMaintenanceJob .fbjob__result h3{margin:0;font-size:14px;color:var(--text)}
+#flashbackMaintenanceJob .fbjob__rows{margin:0;display:grid;grid-template-columns:max-content minmax(0,1fr)}
+#flashbackMaintenanceJob .fbjob__rows dt,#flashbackMaintenanceJob .fbjob__rows dd{margin:0;padding:6px 0;border-top:1px solid var(--border);font-size:13px;line-height:1.5}
+#flashbackMaintenanceJob .fbjob__rows dt{padding-right:14px;color:var(--text2);white-space:nowrap}
+#flashbackMaintenanceJob .fbjob__rows dd{color:var(--text);overflow-wrap:anywhere}
+#flashbackMaintenanceJob .fbjob__rows .is-verdict{font-weight:700;color:var(--text)}
+#flashbackMaintenanceJob .fbjob__result p{margin:0;font-size:13px;line-height:1.5;color:var(--text);overflow-wrap:anywhere}
+#flashbackMaintenanceJob .fbjob__result p:first-of-type{font-weight:700}
+#flashbackMaintenanceJob .dialog__actions{flex-wrap:wrap}
+#maintenanceJobChip{position:static;flex:0 1 auto;min-width:64px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@container app (max-width:640px){#maintenanceJobChip{max-width:110px;font-size:11px;padding:5px 7px}#flashbackMaintenanceJob .fbjob__stats{grid-template-columns:repeat(2,minmax(0,1fr))}#flashbackMaintenanceJob .fbjob__log li{grid-template-columns:44px minmax(0,1fr)}#flashbackMaintenanceJob .fbjob__tag{display:none}#flashbackMaintenanceJob .fbjob__rows{grid-template-columns:minmax(0,1fr)}#flashbackMaintenanceJob .fbjob__rows dd{border-top:0;padding-top:0}}
+@container app (max-width:400px){.topbar:has(#maintenanceJobChip:not([hidden])){gap:6px;padding-inline:10px}.topbar:has(#maintenanceJobChip:not([hidden])) #sidebarHealth{display:none}.topbar:has(#maintenanceJobChip:not([hidden])) .brand__name{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.topbar:has(#maintenanceJobChip:not([hidden])) .brand__mark{width:28px;height:28px}}
+</style>
         <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="fb-maintenance-job-title" aria-describedby="fb-maintenance-job-message">
-          <div class="split"><div><div class="eyebrow">FLASHBACK JOB</div><h2 id="fb-maintenance-job-title"></h2><p class="muted" data-job-target></p></div><span class="badge" data-job-state></span></div>
-          <p class="muted" id="fb-maintenance-job-message" role="status" aria-live="polite"></p>
-          <p class="hint" data-job-clock aria-live="off"></p>
-          <div class="steps" data-job-steps>${[0,1,2,3].map(i=>`<div class="step"><span class="step__no">${i+1}</span><b></b><span data-step-sub></span></div>`).join('')}</div>
-          <div data-job-meter hidden><p class="hint" data-job-count></p><div class="progress" role="progressbar" aria-label="이번 큐의 기록 처리"><i></i></div></div>
-          <dl class="kv"><dt>저장 확인된 벡터</dt><dd data-job-ready>미확인</dd><dt>제공자 요청</dt><dd data-job-requests>미확인</dd><dt>응답 대기</dt><dd data-job-pending>미확인</dd><dt>결과 미확정</dt><dd data-job-unknown>미확인</dd></dl>
+          <header class="fbjob__head"><div><div class="eyebrow">FLASHBACK JOB</div><h2 id="fb-maintenance-job-title"></h2></div><span class="badge" data-job-state></span></header>
+          <section class="fbjob__now" aria-label="현재 상태">
+            <p class="fbjob__msg" id="fb-maintenance-job-message" role="status" aria-live="polite"></p>
+            <p class="fbjob__meta"><span data-job-target></span><span data-job-clock aria-live="off"></span></p>
+          </section>
+          <ol class="fbjob__steps" data-job-steps aria-label="작업 단계">${[0,1,2,3].map(i=>`<li class="fbjob__step"><span class="fbjob__no" aria-hidden="true">${i+1}</span><div><b></b><span data-step-sub></span></div></li>`).join('')}</ol>
+          <section class="fbjob__card" data-job-meter hidden><div class="fbjob__meterhead"><span>이번 큐 기록 처리</span><b data-job-count></b></div><div class="progress" role="progressbar" aria-label="이번 큐의 기록 처리"><i></i></div></section>
+          <dl class="fbjob__stats"><div><dt>저장 확인된 벡터</dt><dd data-job-ready>미확인</dd></div><div><dt>제공자 요청</dt><dd data-job-requests>미확인</dd></div><div><dt>응답 대기</dt><dd data-job-pending>미확인</dd></div><div><dt>결과 미확정</dt><dd data-job-unknown>미확인</dd></div></dl>
           <p class="hint" data-job-cancel-note hidden>중지를 요청했습니다. 이미 전송된 요청의 종료와 저장 여부를 확인하고 있습니다.</p>
-          <details class="fold"><summary>진행 내역</summary><div class="fold__body"><pre data-job-history></pre></div></details>
-          <div class="note" data-job-result hidden><pre></pre></div>
+          <details class="fold"><summary><span>진행 내역 <span class="muted" data-job-history-count></span></span></summary><div class="fold__body"><ol class="fbjob__log" data-job-history></ol></div></details>
+          <section class="fbjob__result" data-job-result hidden aria-label="실행 결과"><h3>실행 결과</h3><div data-job-result-body></div></section>
           <div class="dialog__actions"><button id="maintenanceJobMinimizeBtn" class="btn" type="button">최소화</button><button id="maintenanceJobCancelBtn" class="btn btn--danger" type="button">작업 중지 요청</button><button id="maintenanceJobDoneBtn" class="btn btn--primary" type="button" hidden>확인</button></div>
         </div>`;
       guiRoot.appendChild(portal);
@@ -49413,17 +49743,33 @@ ${cleanedText}`, 80),
     put('[data-job-target]',job.currentTurn?`현재 처리: T${job.currentTurn}`:'현재 채팅의 기억');
     put('#fb-maintenance-job-message',job.cancelRequested&&running?'중지 요청을 처리하고 있습니다. 이미 전송된 요청은 완료될 수 있습니다.':job.message);
     put('[data-job-clock]',`경과 ${elapsed}초 · 마지막 진행 보고 ${Math.max(0,Math.floor(((job.finishedAt||Date.now())-job.updatedAt)/1000))}초 전`);
+    const tone=running?(job.cancelRequested?'warn':'info'):job.state==='failed'?'danger':job.state==='completed'?'ok':'warn';
+    portal.querySelector('.fbjob__now').dataset.tone=tone;
     const titles=job.kind==='inspection'?['대상·저장소 확인','원문 대조','복구 계획','최종 확인']:['대상 확인','원문 동기화·정제','검색 벡터 처리','저장·최종 확인'];
-    portal.querySelectorAll('.step').forEach((node,index)=>{node.querySelector('b').textContent=titles[index];node.querySelector('[data-step-sub]').textContent=job.visited.has(index)?'진행 확인':job.kind==='inspection'?'':'필요한 경우 실행';node.classList.toggle('is-active',running&&index===job.stepIndex);node.classList.toggle('is-done',job.visited.has(index)&&(!running||index!==job.stepIndex)&&job.state!=='failed');node.classList.toggle('is-fail',job.state==='failed'&&index===job.stepIndex);});
+    portal.querySelectorAll('.fbjob__step').forEach((node,index)=>{
+      const active=running&&index===job.stepIndex,failed=job.state==='failed'&&index===job.stepIndex,visited=job.visited.has(index);
+      const done=visited&&!active&&!failed,skipped=!running&&!visited&&!failed;
+      node.querySelector('b').textContent=titles[index];
+      node.querySelector('[data-step-sub]').textContent=failed?'실패':active?'진행 중':done?'완료':skipped?'해당 없음':job.kind==='inspection'?'대기':'필요 시 실행';
+      node.classList.toggle('is-active',active);node.classList.toggle('is-done',done);node.classList.toggle('is-fail',failed);node.classList.toggle('is-skipped',skipped);
+      if(active)node.setAttribute('aria-current','step');else node.removeAttribute('aria-current');
+    });
     const known=Number.isFinite(job.totalRecords)&&job.totalRecords>0,done=(job.completedRecords||0)+(job.failedRecords||0)+(job.uncertainRecords||0);
     portal.querySelector('[data-job-meter]').hidden=!known;
-    if(known){const meter=portal.querySelector('[role="progressbar"]');meter.setAttribute('aria-valuemin','0');meter.setAttribute('aria-valuemax',String(job.totalRecords));meter.setAttribute('aria-valuenow',String(Math.min(done,job.totalRecords)));meter.querySelector('i').style.setProperty('--v',`${Math.min(100,done/job.totalRecords*100)}%`);put('[data-job-count]',`이번 큐 ${formatNumber(done)} / ${formatNumber(job.totalRecords)}개 기록 처리`);}
+    if(known){
+      const meter=portal.querySelector('[role="progressbar"]'),ratio=Math.min(1,done/job.totalRecords);
+      meter.setAttribute('aria-valuemin','0');meter.setAttribute('aria-valuemax',String(job.totalRecords));meter.setAttribute('aria-valuenow',String(Math.min(done,job.totalRecords)));
+      meter.querySelector('i').style.setProperty('--v',`${ratio*100}%`);
+      meter.style.setProperty('--fbjob-bar',tone==='ok'?'var(--ok)':tone==='danger'?'var(--danger)':tone==='warn'?'var(--warn)':'var(--accent)');
+      put('[data-job-count]',`${formatNumber(done)} / ${formatNumber(job.totalRecords)}개 · ${Math.round(ratio*100)}%`);
+    }
     const count=value=>value==null?'미확인':formatNumber(value)+'건';
     put('[data-job-ready]',job.completedRecords==null?'미확인':formatNumber(job.completedRecords)+'개');put('[data-job-requests]',count(job.requests));put('[data-job-pending]',count(job.pending));put('[data-job-unknown]',count(job.unknown));
-    put('[data-job-history]',job.history.join('\n'));portal.querySelector('[data-job-cancel-note]').hidden=!job.cancelRequested;
+    renderMaintenanceJobHistory(portal.querySelector('[data-job-history]'),job,titles);put('[data-job-history-count]',job.history.length?`${formatNumber(job.history.length)}건`:'');
+    portal.querySelector('[data-job-cancel-note]').hidden=!job.cancelRequested;
     portal.querySelector('#maintenanceJobCancelBtn').hidden=job.kind!=='recovery'||!running;portal.querySelector('#maintenanceJobCancelBtn').disabled=!maintenanceJobCanCancel(job);
     portal.querySelector('#maintenanceJobDoneBtn').hidden=running;portal.querySelector('[data-job-result]').hidden=running;
-    if(!running)put('[data-job-result] pre',job.summary||job.message);
+    if(!running)renderMaintenanceJobResult(portal.querySelector('[data-job-result-body]'),job.summary||job.message);
     let chip=getGuiNode('maintenanceJobChip');
     if(!chip){const header=guiRoot.querySelector('.topbar');if(!header)return;chip=document.createElement('button');chip.id='maintenanceJobChip';chip.type='button';chip.className='btn btn--sm';chip.addEventListener('click',()=>{if(maintenanceJobInScope(job)&&!job.dismissed){job.minimized=false;renderMaintenanceJob();getGuiNode('maintenanceJobMinimizeBtn')?.focus();}});header.insertBefore(chip,header.querySelector('.topbar-actions'));}
     chip.hidden=!job.minimized;chip.textContent=`${job.kind==='inspection'?'상태 점검':'자동 복구'} · ${label} · ${elapsed}초`;
@@ -49441,7 +49787,14 @@ ${cleanedText}`, 80),
       const step=MAINTENANCE_JOB_STAGES[event.stage];
       if(event.operationId)job.operationId=event.operationId;if(event.scopeKey)job.scopeKey=event.scopeKey;
       if(step){job.stepIndex=step[0];job.visited.add(step[0]);job.message=step[1];}
-      if(event.stage!==job.stage){job.history.push(`${Math.floor((Date.now()-job.startedAt)/1000)}초 · ${job.message}`);job.history=job.history.slice(-12);}
+      if(event.stage!==job.stage){
+        const at=Math.floor((Date.now()-job.startedAt)/1000),last=job.history.at(-1),previous=job.history.at(-2);
+        // request → response → request…: count the alternation on the existing pair of rows.
+        if(previous&&last&&previous.text===job.message&&previous.repeat===last.repeat){previous.repeat+=1;previous.lastAt=at;}
+        else if(last&&last.text===job.message){last.repeat+=1;last.lastAt=at;}
+        else job.history.push({at,lastAt:at,step:job.stepIndex,text:job.message,repeat:1});
+        job.history=job.history.slice(-40);
+      }
       job.stage=event.stage;job.updatedAt=Date.now();
       for(const key of ['currentTurn','totalRecords','completedRecords','failedRecords','uncertainRecords'])if(Number.isFinite(event[key]))job[key]=event[key];
       if(event.execution){job.requests=event.execution.requestCount??null;job.pending=event.execution.pendingRequests??null;job.unknown=event.execution.unknownOutcomes??null;}
@@ -53259,6 +53612,8 @@ ${cleanedText}`, 80),
       lastEpisodeIndex: Runtime.lastEpisodeIndex,
       maintenanceJournal: Runtime.maintenanceJournal,
       maintenanceInspection: cloneRuntimeValue(Runtime.lastMaintenanceInspection, null),
+      lastWriterBusy: cloneRuntimeValue(Runtime.lastWriterBusy || null, null),
+      maintenanceSettingsReread: cloneRuntimeValue(Runtime.maintenanceSettingsReread || null, null),
       maintenanceQueue: Runtime.lastMaintenanceQueueResult ? {
         scopeKey: Runtime.lastMaintenanceQueueResult.scopeKey, at: Runtime.lastMaintenanceQueueResult.at,
         ready: Runtime.lastMaintenanceQueueResult.ready, failed: Runtime.lastMaintenanceQueueResult.failed,

@@ -20316,8 +20316,84 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return `<!-- ${block} -->`;
     });
   };
+  // Restores the canonical envelope when the model wrote the packet JSON without
+  // markers, with only one marker, or inside a memory-suite wrapper such as
+  // <LIBRA_CLASSIC_RECALL>. Only a strictly parseable hayaku_packet_v1 object is
+  // rewrapped; anything else is left alone. Missing lineage is filled from the
+  // runtime constants the request already supplied; a conflicting lineage is kept
+  // so the normal nonce check still rejects it.
+  const MEMORY_SUITE_ECHO_WRAPPER_RE = /<((?:LIBRA|HAYAKU|FLASHBACK|GRADIA|RETRACE|LIA)_[A-Z0-9_]+)>\s*<\/\1>/g;
+  const balancedJsonObjectEnd = (value, start) => {
+    let depth = 0;
+    let inString = false;
+    for (let i = start; i < value.length; i += 1) {
+      const ch = value[i];
+      if (inString) {
+        if (ch === '\\') i += 1;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === '{') depth += 1;
+      else if (ch === '}') {
+        depth -= 1;
+        if (depth === 0) return i + 1;
+      }
+    }
+    return -1;
+  };
+  const restoreMalformedPacketEnvelope = (value, lineage = null) => {
+    if (typeof value !== 'string') return value;
+    let out = value.replace(MEMORY_SUITE_ECHO_WRAPPER_RE, '');
+    if (!out.includes('hayaku_packet_v1')) return out;
+    const hasStart = out.includes(PACKET_START);
+    const hasEnd = out.includes(PACKET_END);
+    if (hasStart && hasEnd && out.indexOf(PACKET_START) < out.lastIndexOf(PACKET_END)) return out;
+    const head = /\{\s*"meta"\s*:\s*\{/g;
+    const spans = [];
+    let match;
+    while ((match = head.exec(out))) {
+      const end = balancedJsonObjectEnd(out, match.index);
+      if (end < 0) break;
+      let packet = null;
+      try { packet = JSON.parse(out.slice(match.index, end)); } catch (_e) { packet = null; }
+      const meta = packet && typeof packet === 'object' && !Array.isArray(packet) ? packet.meta : null;
+      if (meta && meta.schema === 'hayaku_packet_v1' && (!meta.packet_type || meta.packet_type === 'current_snapshot')) {
+        if (!meta.packet_type) meta.packet_type = 'current_snapshot';
+        if (lineage && typeof lineage === 'object' && !meta.lineage) meta.lineage = { ...lineage };
+        spans.push({ start: match.index, end, packet });
+      }
+      head.lastIndex = end;
+    }
+    if (spans.length !== 1) return out;
+    const span = spans[0];
+    let start = span.start;
+    let end = span.end;
+    // Absorb stray markers, comment delimiters and a memory-suite wrapper that holds nothing but the packet.
+    const before = out.slice(0, start);
+    const after = out.slice(end);
+    const lead = /(?:<([A-Z][A-Z0-9_]*)>\s*)?(?:<!--\s*)?(?:(?:<<<\s*)?HAYAKU_STATE_PACKET_START(?:\s*>>>)?\s*)?$/.exec(before);
+    const trail = /^\s*(?:HAYAKU_STATE_PACKET_END(?:\s*>>>)?)?\s*(?:-->)?\s*(?:<\/([A-Z][A-Z0-9_]*)>)?/.exec(after);
+    let leadLen = lead ? lead[0].length : 0;
+    let trailLen = trail ? trail[0].length : 0;
+    const openTag = lead?.[1] || '';
+    const closeTag = trail?.[1] || '';
+    if (openTag || closeTag) {
+      const wrapperOk = openTag && openTag === closeTag && MEMORY_SUITE_WRAPPER_TAG_RE.test(openTag);
+      if (!wrapperOk) {
+        if (openTag) leadLen -= lead[0].indexOf('>') + 1;
+        if (closeTag) trailLen = trail[0].lastIndexOf('</');
+      }
+    }
+    start -= Math.max(0, leadLen);
+    end += Math.max(0, trailLen);
+    const envelope = `<!-- ${PACKET_START}\n${JSON.stringify(span.packet)}\n${PACKET_END} -->`;
+    out = `${out.slice(0, start).replace(/\s*$/, '')}\n\n${envelope}${out.slice(end).replace(/^\s*$/, '')}`;
+    return out;
+  };
   const stripHayakuDisplayArtifacts = value => {
     if (typeof value !== 'string') return value;
+    value = restoreMalformedPacketEnvelope(value);
     // Display concealment fails closed for incomplete reserved packets and for
     // internal runtime-instruction prompt echoes that survived response hooks.
     const packetStripped = stripReservedPacketArtifacts(value, {
@@ -20354,7 +20430,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     });
   };
   // Only directives in active control text choose a slot. Quoted examples and old user turns are not contracts.
+  // Memory-suite injections (LIBRA recall, HAYAKU/Flashback evidence, LBDATA) wrap
+  // evidence in tags and carry words like "ONLY"/"response". They are never the
+  // preset's visible-output wrapper; treating them as one made the model write the
+  // packet inside <LIBRA_CLASSIC_RECALL> and leak recall markup into the response.
+  const MEMORY_SUITE_WRAPPER_TAG_RE = /^(?:LIBRA|HAYAKU|FLASHBACK|GRADIA|RETRACE|LIA|LBDATA)(?:[_.:-][A-Za-z0-9_.:-]*)?$/i;
   const packetPlacementDirectiveText = value => text(value)
+    .replace(/<((?:LIBRA|HAYAKU|FLASHBACK|GRADIA|RETRACE|LIA|LBDATA)(?:[_.:-][A-Za-z0-9_.:-]*)?)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '')
     .replace(/<(?:quoted_text|untrusted_text|example|history)\b[^>]*>[\s\S]*?<\/(?:quoted_text|untrusted_text|example|history)>/gi, '')
     .replace(/^\s*>.*$/gm, '')
     .replace(/(?:"[^"\n]*"|“[^”\n]*”|「[^」\n]*」)/g, match => /<\/?[A-Za-z]/.test(match) ? '' : match);
@@ -20366,7 +20448,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const tags = new Set();
     for (const match of body.matchAll(/<([A-Za-z][A-Za-z0-9_.:-]{0,63})(?:\s[^>]*|)>/g)) {
       const tag = match[1];
-      if (/^(?:system|developer|user|assistant|current_input|input|instructions|example|history|untrusted_text|quoted_text|think|thinking|analysis|reasoning)$/i.test(tag) || tags.has(tag.toLowerCase())) continue;
+      if (/^(?:system|developer|user|assistant|current_input|input|instructions|example|history|untrusted_text|quoted_text|think|thinking|analysis|reasoning)$/i.test(tag) || MEMORY_SUITE_WRAPPER_TAG_RE.test(tag) || tags.has(tag.toLowerCase())) continue;
       const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const closeMatch = new RegExp(`<\\/${escaped}\\s*>`, 'i').exec(body.slice(match.index));
       if (!closeMatch) continue;
@@ -51791,7 +51873,7 @@ return createReadSession;
     return JSON.stringify(prefix)===JSON.stringify(pending.requestSourcePrefix);
   };
   const repairCurrentPacketInsideAfterRequest = async (content = '', requestType = '') => {
-    const source = text(content);
+    let source = text(content);
     const normalizedType = text(requestType || 'model').trim().toLowerCase();
     if (normalizedType !== 'model' || Memory.unloaded || !ownsRuntime()) return source;
     await loadSettings(false);
@@ -51799,6 +51881,9 @@ return createReadSession;
     const pending = [...ensureArray(prunePendingCaptures())].reverse().find(entry => (
       entry?.scope?.key && entry.scope.key === scope?.key && text(entry.requestType || 'model').trim().toLowerCase() === 'model'
     )) || null;
+    // Envelope repair runs before inspection so a markerless or wrapper-nested
+    // packet is accepted as the canonical packet instead of triggering Other Ax.
+    source = restoreMalformedPacketEnvelope(source, pending ? requestPacketLineageObject({ requestLineage: pending.lineage }) : null);
     if (!pending) return source;
     const rememberRepair = () => {
       const r = pending.afterRequestRepair;
@@ -59068,7 +59153,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
       ['출력 종료 사유', '미관측 · 입력 예산 확보는 출력 여유를 보장하지 않습니다.'],
       ['관측 경계', 'HAYAKU beforeRequest 및 Other Ax 복구 전 afterRequest. Provider 직전 최종 payload 보장은 아닙니다.']
     ];
-    node.innerHTML = heading + viewerScopeFields(rows) + viewerPacketAuthoringHistoryHtml(text(b.scopeKey || Memory.ledgerViewer.scope?.key || ''));
+    // Grouped view: what was asked of the model, what came back, and what the observation can/cannot prove.
+    const byLabel = new Map(rows.map(([label, value]) => [label, value]));
+    const authoringTone = !data.authoring ? 'idle' : data.authoring.result === 'valid_packet_awaiting_binding' ? 'ok' : 'warn';
+    const repairTone = !data.repair ? 'idle' : data.repair.outcome === 'packet_already_usable' ? 'ok' : 'warn';
+    const storeTone = /패킷 저장 확인/.test(data.storageStatus) ? 'ok' : /거부|아님/.test(data.storageStatus) ? 'warn' : 'idle';
+    const tile = (label, value, tone) => `<div class="pa-tile" data-tone="${tone}"><span>${viewerEscapeHtml(label)}</span><strong>${viewerEscapeHtml(value)}</strong></div>`;
+    const group = (title, labels) => `<section class="pa-group"><h3>${viewerEscapeHtml(title)}</h3>${viewerScopeFields(labels.map(label => [label, byLabel.get(label) ?? '']))}</section>`;
+    node.innerHTML = heading
+      + `<div class="pa-tiles">${tile('메인 작성 결과', byLabel.get('메인 작성 결과'), authoringTone)}${tile('패킷 저장', byLabel.get('패킷 저장'), storeTone)}${tile('복구 경로', byLabel.get('기존 복구 경로'), repairTone)}</div>`
+      + `<div class="pa-groups">${group('작성 지시', ['작성 지시', '관측 시각', '출력 위치', '위치 경고', '계약 / 형식 / 알림'])}</div>`
+      + `<p class="pa-foot">${viewerEscapeHtml(byLabel.get('출력 종료 사유'))} · ${viewerEscapeHtml(byLabel.get('관측 경계'))}</p>`
+      + viewerPacketAuthoringHistoryHtml(text(b.scopeKey || Memory.ledgerViewer.scope?.key || ''));
   };
   const viewerPacketAuthoringHistoryHtml = scopeKey => {
     const summary = packetAuthoringSummary(scopeKey);
@@ -59084,7 +59180,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       ['복구 건너뜀', summary.repairSkipped ? `${summary.repairSkipped}턴 · ${summary.skipReasons.join(', ')}` : '0턴']
     ];
     const advice = packetAuthoringAdvice(summary);
-    return `<h3 class="card__title" style="margin-top:14px">최근 ${summary.total}턴 패킷 작성 현황 <span class="hint">이번 세션</span></h3>${viewerScopeFields(rows)}`
+    return `<section class="pa-history"><h3>최근 ${summary.total}턴 패킷 작성 현황 <span class="hint">이번 세션</span></h3><div class="pa-stats">${rows.map(([label, value]) => `<div class="pa-stat"><span>${viewerEscapeHtml(label)}</span><strong>${viewerEscapeHtml(value)}</strong></div>`).join('')}</div></section>`
       + (advice.length ? `<div class="note" style="margin-top:8px">${advice.map(line => `<p style="margin:2px 0">${viewerEscapeHtml(line)}</p>`).join('')}</div>` : '');
   };
   // Session-only rolling history of main-model packet authoring and the afterRequest
@@ -59456,8 +59552,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const recallBadge=root.querySelector?.('#hayakuOverviewRecallBadge');
     if(recallBadge)recallBadge.textContent=recall?.at?`${recallRows.length.toLocaleString()}개 · ${Number(recall?.recallDataChars||0).toLocaleString()}자`:`${recallRows.length.toLocaleString()}개 · 미주입`;
     const recallBody=root.querySelector?.('#hayakuOverviewRecallRows');
+    // Every delivered row is reachable: the top three stay visible, the rest open in place,
+    // and a long row shows its full text on demand instead of a fixed 220-char cut.
+    const recallRowHtml=row=>{
+      const full=text(row.state||'');
+      const body=full.length>220
+        ?`<details class="rec__more"><summary>${viewerEscapeHtml(compact(full,220))}</summary><p>${viewerEscapeHtml(full)}</p></details>`
+        :`<p>${viewerEscapeHtml(full)}</p>`;
+      return `<div class="rec"><span class="score">${Number(row.score||0).toFixed(3)}</span><div><b>${viewerEscapeHtml(row.ref||row.axis||'기억')}</b>${body}</div><span class="badge">${viewerEscapeHtml(row.category||row.axis||'memory')}</span></div>`;
+    };
     if(recallBody) recallBody.innerHTML=recallRows.length
-      ? recallRows.slice(0,3).map(row=>`<div class="rec"><span class="score">${Number(row.score||0).toFixed(3)}</span><div><b>${viewerEscapeHtml(row.ref||row.axis||'기억')}</b><p>${viewerEscapeHtml(compact(row.state||'',220))}</p></div><span class="badge">${viewerEscapeHtml(row.category||row.axis||'memory')}</span></div>`).join('')
+      ? recallRows.slice(0,3).map(recallRowHtml).join('')
+        +(recallRows.length>3?`<details class="rec-all"><summary>나머지 ${(recallRows.length-3).toLocaleString()}개 모두 보기</summary><div class="rec-all__list">${recallRows.slice(3).map(recallRowHtml).join('')}</div></details>`:'')
       : '<div class="empty"><span>아직 이번 실행에서 실제로 전달된 기억이 없습니다.</span></div>';
     const activityBody=root.querySelector?.('#hayakuOverviewActivity');
     if(activityBody){
@@ -61052,6 +61158,26 @@ function mountMemorySuiteReanalysisReview(container,config) {
 #${LEDGER_VIEWER_ROOT_ID} .pk-origin[data-origin="cold"]{background:#efe8f8;color:#55307f;border-color:#d8c8ee}
 #${LEDGER_VIEWER_ROOT_ID} .pk-origin[data-origin="partial"],#${LEDGER_VIEWER_ROOT_ID} .pk-origin[data-origin="inherited"],#${LEDGER_VIEWER_ROOT_ID} .pk-origin[data-origin="other"]{background:#eef1f3;color:#3b4a54;border-color:#d5dde2}
 #${LEDGER_VIEWER_ROOT_ID} .axis .kv{grid-template-columns:minmax(0,1fr);gap:2px}
+#${LEDGER_VIEWER_ROOT_ID} .rec-all{margin-top:6px}
+#${LEDGER_VIEWER_ROOT_ID} .rec-all>summary{cursor:pointer;padding:10px 4px;font-weight:650;font-size:13.5px;color:var(--accent,#1f6f78)}
+#${LEDGER_VIEWER_ROOT_ID} .rec-all__list{max-height:62vh;overflow:auto;padding-right:4px}
+#${LEDGER_VIEWER_ROOT_ID} .rec__more>summary{cursor:pointer;list-style:none;color:inherit;overflow-wrap:anywhere}
+#${LEDGER_VIEWER_ROOT_ID} .rec__more>summary::-webkit-details-marker{display:none}
+#${LEDGER_VIEWER_ROOT_ID} .rec__more[open]>summary{display:none}
+#${LEDGER_VIEWER_ROOT_ID} .rec__more>p{white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+#${LEDGER_VIEWER_ROOT_ID} .pa-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:4px 0 14px}
+#${LEDGER_VIEWER_ROOT_ID} .pa-tile{display:flex;flex-direction:column;gap:4px;min-width:0;padding:12px 14px;border:1px solid var(--line,#dfe5e8);border-left-width:4px;border-radius:10px;background:var(--surface,#fff)}
+#${LEDGER_VIEWER_ROOT_ID} .pa-tile[data-tone="ok"]{border-left-color:#2f8a5b}#${LEDGER_VIEWER_ROOT_ID} .pa-tile[data-tone="warn"]{border-left-color:#c98a12}#${LEDGER_VIEWER_ROOT_ID} .pa-tile[data-tone="idle"]{border-left-color:#aab4ba}
+#${LEDGER_VIEWER_ROOT_ID} .pa-tile>span,#${LEDGER_VIEWER_ROOT_ID} .pa-stat>span{font-size:12px;color:var(--text2,#5d6b73)}
+#${LEDGER_VIEWER_ROOT_ID} .pa-tile>strong{font-size:14.5px;line-height:1.45;overflow-wrap:anywhere}
+#${LEDGER_VIEWER_ROOT_ID} .pa-group h3,#${LEDGER_VIEWER_ROOT_ID} .pa-history h3{margin:0 0 8px;font-size:13.5px}
+#${LEDGER_VIEWER_ROOT_ID} .pa-group .kv{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 18px}
+#${LEDGER_VIEWER_ROOT_ID} .pa-group .kv dd{min-width:0;overflow-wrap:anywhere}
+#${LEDGER_VIEWER_ROOT_ID} .pa-foot{margin:12px 0 0;font-size:12px;line-height:1.55;color:var(--text2,#5d6b73)}
+#${LEDGER_VIEWER_ROOT_ID} .pa-history{margin-top:16px;padding-top:14px;border-top:1px solid var(--line,#dfe5e8)}
+#${LEDGER_VIEWER_ROOT_ID} .pa-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+#${LEDGER_VIEWER_ROOT_ID} .pa-stat{display:flex;flex-direction:column;gap:3px;min-width:0;padding:10px 12px;border-radius:8px;background:var(--surface-2,#f3f6f7)}
+#${LEDGER_VIEWER_ROOT_ID} .pa-stat>strong{font-size:14px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 #${LEDGER_VIEWER_ROOT_ID} .axis .kv dt{margin-top:8px;font-size:11.5px}
 #${LEDGER_VIEWER_ROOT_ID} .axis .kv dd{min-width:0;overflow-wrap:anywhere}
 #${LEDGER_VIEWER_ROOT_ID} .axis .list{display:grid;gap:6px;margin:4px 0 0;padding:0;list-style:none}

@@ -25,6 +25,9 @@ for(const kind of ['missing','wrong-model','provider-error'])test('unknown conte
  await f.select();
  assert.equal(await f.done(pending),true);assert.equal(f.copied.length,1);
  assert.equal(f.host.plugin.getRuntime().inputAssistSend.memory.status,'unavailable');
+ // The diagnostic names the boundary that failed, not the generic owner read.
+ const diagnostic=f.host.plugin.getRuntime().lastInputWriterReadDiagnostic;
+ assert.equal(diagnostic?.code,'LIB_READ_MODEL_CONTEXT_UNAVAILABLE');assert.equal(diagnostic?.stage,'model_context_preflight');
 });
 
 test('cancellation while discovering context cannot read memory or dispatch a late model call',{timeout:15000},async t=>{
