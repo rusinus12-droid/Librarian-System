@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.3.10
+//@display-name ⚡ FLASHBACK Memory v1.3.11
 //@api 3.0
-//@version 1.3.10
+//@version 1.3.11
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
 //@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.3.10';
+const PLUGIN_VERSION = '1.3.11';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -44736,7 +44736,10 @@ ${cleanedText}`, 80),
     Runtime.lastMaintenanceInspection=cloneRuntimeValue({at:plan.at,scopeKey:plan.scopeKey,automatic:plan.automatic,inspection:plan.inspection,
       counts:Object.fromEntries(['missingTurns','changedTurns','staleStoredTurns','dirtyRecords','anchorOnlyDirtyRecords','embeddingWorkIncompleteRecords',
         'embeddingWorkFailedRecords','embeddingWorkUncertainRecords','unqueuedVectorRepairRecords','storageMissingShards','storageManifestCorrupt',
-        'storageRecordCountMismatch','shardIndexMismatch','episodeStale','embeddingQueueSourceHealthy'].filter(key=>Object.hasOwn(plan,key)).map(key=>[key,plan[key]]))},null);
+        'storageRecordCountMismatch','shardIndexMismatch','episodeStale','embeddingQueueSourceHealthy','requiresFullRebuild',
+        'requiresDerivedSchemaRebuildOnly','legacySanitizerRecords','liveChunkSchemaMismatch','inheritedChunkSchemaMismatch',
+        'sanitizerVersionMismatch','providerMismatch','missingVectors','dimensionMismatch','liveTurns','storedTurns','storageCorruptShards',
+        'externalRecords'].filter(key=>Object.hasOwn(plan,key)).map(key=>[key,plan[key]]))},null);
     return plan;
   };
   const inspectMemoryMaintenance = (options = {}) => withMaintenanceQueuePause(() => inspectMemoryMaintenanceSnapshot(options), options);
@@ -44926,6 +44929,17 @@ ${cleanedText}`, 80),
       && !storageManifestCorrupt
       && sources.length > 0
       && (legacySanitizerRecords > 0 || liveChunkSchemaMismatch > 0 || storageMissingShards > 0 || storageRecordCountMismatch);
+    // A derived-schema rebuild means every stored body is intact and readable; only
+    // the derived narrative-chunk metadata predates the current writer. That is a
+    // different class from physical damage, and server mode cannot execute a
+    // physical rebuild at all, so the two must not share one blanket refusal.
+    const requiresDerivedSchemaRebuildOnly = requiresFullRebuild
+      && legacySanitizerRecords === 0
+      && liveChunkSchemaMismatch > 0
+      && storageMissingShards === 0
+      && storageRecordCountMismatch === false
+      && Number(storageCorruptShards || 0) === 0
+      && !storageForeignScopeKey;
     // Compute the full-rebuild reuse plan even when the current automatic strategy
     // is targeted/no-op, because the user may explicitly choose the advanced rebuild.
     const rebuildEstimate = !storageManifestCorrupt && sources.length > 0
@@ -45023,6 +45037,7 @@ ${cleanedText}`, 80),
       shardIndexMismatch,
       sanitizerVersionMismatch,
       requiresFullRebuild,
+      requiresDerivedSchemaRebuildOnly,
       recordsNeedingEmbedding,
       localRecordsNeedingEmbedding,
       archiveInspectionComplete,
@@ -45108,12 +45123,20 @@ ${cleanedText}`, 80),
       // the reason a raw-storage repair is unsupported, nor queue authority.
       const autoPlan = plan.inspection.complete ? automaticMaintenanceStrategyForPlan({...plan,embeddingCredentialMissing:false,embeddingCredentialUnverified:false}) : null;
       const needsSync = Number(plan.missingTurns || 0) > 0 || Number(plan.changedTurns || 0) > 0 || (autoPlan?.stages || []).includes('sync');
-      if (needsSync && !plan.requiresFullRebuild) {
+      // Server mode can only append turns or rebuild the derived episode index; it
+      // cannot execute a physical rebuild. When the stored bodies are intact and
+      // only the derived chunk schema is old, refusing the turn sync would freeze
+      // the scope's memory forever, so the sync proceeds and the pending rebuild is
+      // reported instead of silently substituted.
+      const serverSyncAllowed = needsSync && (!plan.requiresFullRebuild
+        || (plan.requiresDerivedSchemaRebuildOnly && autoPlan?.blocked !== true));
+      if (serverSyncAllowed) {
         plan.automatic = {
           strategy: 'server_turn_sync',
           stages: ['sync'],
           blocked: false,
-          reason: 'server_turn_sync_available'
+          reason: 'server_turn_sync_available',
+          ...(plan.requiresDerivedSchemaRebuildOnly ? { derivedRebuildPending: true } : {})
         };
       } else if (plan.embeddingQueueSourceHealthy && maintenanceEmbeddingQueueAvailable(plan)) {
         plan.automatic = { strategy: 'embedding_queue', stages: ['embedding_queue'], blocked: false, reason: 'pending_embedding_work' };
@@ -45126,6 +45149,7 @@ ${cleanedText}`, 80),
           blocked: true,
           reason: !plan.inspection.complete ? 'inspection_incomplete'
             : autoPlan?.blocked ? (autoPlan.reason || autoPlan.strategy)
+            : plan.requiresFullRebuild ? (plan.requiresDerivedSchemaRebuildOnly ? 'derived_schema_rebuild_required' : 'full_rebuild_required')
             : plan.episodeStale ? 'episode_index_stale'
             : unqueuedVectorRepairRecords > 0 ? 'unqueued_vector_damage'
             : 'server_physical_repair_disabled'
@@ -46236,10 +46260,13 @@ ${cleanedText}`, 80),
       if(plan.inspection.complete&&Number(plan.embeddingWorkIncompleteRecords||0)&&plan.automatic?.strategy!=='server_turn_sync'){const work=maintenanceEmbeddingWorkJudgement(plan);if(work)return work;}
       if(!plan.inspection.complete)return '판정: 서버 스냅샷 점검 미완료 · 정상 여부 미검증입니다. 제외·누락된 자료를 로컬 사본으로 대체하지 않았습니다.';
       if (plan.automatic?.strategy === 'server_turn_sync') {
-        return `판정: 서버 스냅샷 대조 완료 · 누락 ${formatNumber(plan.missingTurns)}개, 변경 ${formatNumber(plan.changedTurns)}개 턴 동기화 가능.`;
+        return `판정: 서버 스냅샷 대조 완료 · 누락 ${formatNumber(plan.missingTurns)}개, 변경 ${formatNumber(plan.changedTurns)}개 턴 동기화 가능.${plan.automatic?.derivedRebuildPending ? ` 저장된 기록의 파생 문장 청크 스키마가 이전 버전(${formatNumber(plan.liveChunkSchemaMismatch)}개)이라 전체 재구축은 남아 있지만, 서버 모드에서는 동기화로 기억을 계속 쌓을 수 있습니다.` : ''}`;
       }
       if (plan.automatic?.strategy === 'server_episode_rebuild') return '판정: 원문·기존 벡터는 확인됐고 파생 에피소드 인덱스만 갱신하면 됩니다. 기존 벡터를 재사용하며 제공자 호출 0회입니다.';
-      const blockReason={episode_index_stale:'파생 에피소드 인덱스 갱신이 필요합니다.',unqueued_vector_damage:'미완료 임베딩 작업과 연결되지 않은 벡터 손상이 있어 별도 복구가 필요합니다.',
+      const blockReason={episode_index_stale:'파생 에피소드 인덱스 갱신이 필요합니다.',
+        derived_schema_rebuild_required:'저장된 기록의 문장 청크 스키마가 이전 버전이라 전체 재구축이 필요합니다. 서버 모드에서는 실행할 수 없으므로 누락 턴 동기화로 기억을 계속 쌓고, 전체 재구축은 로컬 저장 모드에서 실행해야 합니다(기존 벡터 재사용).',
+        full_rebuild_required:'저장 구조상 전체 재구축이 필요합니다. 서버 모드에서는 실행할 수 없으므로 로컬 저장 모드에서 재구축해야 합니다.',
+        unqueued_vector_damage:'미완료 임베딩 작업과 연결되지 않은 벡터 손상이 있어 별도 복구가 필요합니다.',
         manifest_metadata_untrusted:'저장 목록의 무결성을 확인할 수 없습니다.',permanent_history_may_be_missing:'보호된 이전 기록이 누락됐을 수 있습니다.'}[plan.automatic?.reason]||'';
       if(plan.automatic?.blocked&&blockReason)return `판정: ${blockReason} ${maintenanceEmbeddingWorkText(plan)}. 자격 증명·제공자 준비 상태는 이 읽기 전용 점검에서 검사하지 않았습니다.`;
       return `판정: 서버 스냅샷 기준 원문·저장 무결성 ${plan.storageSourceHealthy?'점검 통과':'확인할 항목 있음'}. 자격 증명 ${plan.inspection.credentialStatus==='not_required'?'불필요한 설정':'미검증'} · 제공자 준비 상태 미검증. 실시간 상태 보장이나 서버 복구 권한이 아닙니다.`;
@@ -46286,8 +46313,8 @@ ${cleanedText}`, 80),
     ['턴 대조', `현재 채팅 턴 ${formatNumber(plan.liveTurns)}개 · 저장 턴 ${formatNumber(plan.storedTurns)}개`],
     ['누락·변경', `누락 ${formatNumber(plan.missingTurns)} · 변경 ${formatNumber(plan.changedTurns)} · 오래된/고아 ${formatNumber(plan.staleStoredTurns)}`],
     ['정제 상태', `정제 필요 ${formatNumber(plan.dirtyRecords)} · 외부 구형 데이터 ${formatNumber(plan.externalRecords)}`],
-    ['정제기 버전', `정제기 버전 불일치 ${formatNumber(plan.sanitizerVersionMismatch)}${plan.requiresFullRebuild ? ' · 전체 재구축 필요' : ''}`],
-    ['문장 청크', `문장 청크 v${formatNumber(plan.narrativeChunkSchemaVersion || NARRATIVE_CHUNK_SCHEMA_VERSION)} · 현재 채팅 구형 청크 ${formatNumber(plan.liveChunkSchemaMismatch)} · 인계 기록 구형 청크 ${formatNumber(plan.inheritedChunkSchemaMismatch)}`],
+    ['정제기 버전', `정제기 버전 불일치 ${formatNumber(plan.sanitizerVersionMismatch)}${plan.requiresFullRebuild && Number(plan.legacySanitizerRecords || 0) > 0 ? ' · 전체 재구축 필요' : ''}`],
+    ['문장 청크', `문장 청크 v${formatNumber(plan.narrativeChunkSchemaVersion || NARRATIVE_CHUNK_SCHEMA_VERSION)} · 현재 채팅 구형 청크 ${formatNumber(plan.liveChunkSchemaMismatch)} · 인계 기록 구형 청크 ${formatNumber(plan.inheritedChunkSchemaMismatch)}${plan.requiresDerivedSchemaRebuildOnly ? ' · 전체 재구축 필요(원문·벡터는 정상, 서버 모드에서는 동기화만 가능)' : ''}`],
     ['리콜 샤드', `리콜 샤드 인덱스 v${formatNumber(plan.shardIndexVersion)} / v${formatNumber(plan.shardIndexExpectedVersion || FLASHBACK_SHARD_INDEX_VERSION)} · ${plan.shardIndexMismatch ? '재구축 필요' : '정상'}`],
     ['저장 무결성', `저장 무결성: 매니페스트 ${plan.storageManifestCorrupt ? '손상' : '정상'} · archiveRef ${plan.storageArchiveRefInvalid ? '손상' : '정상'} · 누락 샤드 ${formatNumber(plan.storageMissingShards)}${Array.isArray(plan.missingShardIndexes) && plan.missingShardIndexes.length ? ` [${plan.missingShardIndexes.join(', ')}]` : ''} · 손상 샤드 ${formatNumber(plan.storageCorruptShards)} · 개수 불일치 ${plan.storageRecordCountMismatch ? '예' : '아니오'} · 범위 충돌 ${plan.storageForeignScopeKey ? '예' : '아니오'}`],
     ['영구 기록', `영구 이전 세션 기록: 기대 ${formatNumber(plan.expectedPermanentHistory)} · 읽기 가능 ${formatNumber(plan.readablePermanentHistory)} · 복원 불가 가능성 ${formatNumber(plan.unrecoverablePermanentHistory)}`],
@@ -48741,6 +48768,8 @@ ${cleanedText}`, 80),
     if (plan.healthy === true && !pending) return { label: '정상 확인', tone: 'ok', headline: '이번 점검 범위에서 추가 복구가 필요하지 않습니다.' };
     if (maintenanceServerStorageVerified(plan)) return { label: '서버 저장 점검 통과', tone: 'ok', headline: '원문·저장 점검을 마쳤고 미완료 임베딩이 없습니다. 제공자 준비 상태는 별도 확인이 필요합니다.' };
     if (plan.automatic?.strategy === 'server_episode_rebuild') return { label: '에피소드 갱신 필요', tone: 'warn', headline: '저장된 기억과 벡터를 재사용해 에피소드 인덱스를 갱신할 수 있습니다.' };
+    if (plan.automatic?.strategy === 'server_turn_sync' && plan.automatic?.derivedRebuildPending) return { label: '턴 동기화 가능', tone: 'warn',
+      headline: '누락·변경 턴은 동기화할 수 있습니다. 파생 문장 청크 재구축은 서버 모드에서 실행할 수 없어 남아 있습니다.' };
     if (plan.automatic?.blocked) return { label: '실행 차단', tone: 'warn', headline: '현재 점검 결과로는 자동 복구를 실행할 수 없습니다.' };
     if (plan.automatic?.strategy === 'embedding_queue') return { label: '재임베딩 미완료', tone: 'warn', headline: '원문·저장 점검 후 처리할 재임베딩 작업이 남아 있습니다.' };
     if (pending) return { label: '임베딩 확인 필요', tone: 'warn', headline: `아직 완료되지 않은 임베딩 작업이 ${formatNumber(pending)}개 있습니다.` };
