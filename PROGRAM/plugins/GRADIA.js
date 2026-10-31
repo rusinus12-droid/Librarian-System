@@ -4305,14 +4305,17 @@ Before continuing, verify:
     } catch (error) {
       // Only an unavailable optional source BEFORE any evidence is accepted may
       // fall back. Cancellation, native changes and a ready/consumed read stay fatal.
-      if (!options.requireEvidence && !lease.run && ['LIB_READ_TIMEOUT','LIB_READ_UNAVAILABLE','LIB_READ_SERVER_MAINTENANCE','LIB_READ_PLUGIN_OWNERS_UNAVAILABLE','LIB_READ_OWNER_UNAVAILABLE',
+      const fallbackAllowedCodes = [
+        'LIB_READ_TIMEOUT','LIB_READ_UNAVAILABLE','LIB_READ_SERVER_MAINTENANCE','LIB_READ_PLUGIN_OWNERS_UNAVAILABLE','LIB_READ_OWNER_UNAVAILABLE',
         'LIB_READ_CONNECTION_UNAVAILABLE','LIB_READ_UNIFIED_UNAVAILABLE','LIB_READ_TRANSPORT_UNAVAILABLE',
         // An oversized owner store is an unavailable optional source, not a writer failure.
         'LIB_READ_METADATA_BUDGET_EXCEEDED','LIB_READ_REFERENCE_LIMIT_EXCEEDED','LIB_READ_STORAGE_BUDGET_EXCEEDED',
-        'LIB_READ_CORPUS_BUDGET_EXCEEDED','LIB_READ_BUDGET_EXCEEDED','LIB_READ_MODEL_CONTEXT_UNAVAILABLE'].includes(error?.code)) {
-        assertLocal();
+        'LIB_READ_CORPUS_BUDGET_EXCEEDED','LIB_READ_BUDGET_EXCEEDED','LIB_READ_MODEL_CONTEXT_UNAVAILABLE',
+        'LIB_READ_SUPERSEDED','LIB_READ_STALE','LIB_READ_CURRENTNESS_LOST'
+      ];
+      if (!options.requireEvidence && (!lease.run || lease.run.status !== 'consumed') && fallbackAllowedCodes.includes(error?.code)) {
+        if (Runtime.inputAssistSend?.cancelRequested || (lease.parentRequestId !== null && Runtime.inputAssistSend?.requestId !== lease.parentRequestId) || error?.code === 'LIB_READ_CANCELED') throw (error?.code === 'LIB_READ_CANCELED' ? error : libEvidenceError('LIB_READ_CANCELED'));
         await assertNative?.();
-        assertLocal();
         closeInputWriterEvidence(error.code, lease);
         if (Runtime.inputAssistSend?.busy) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, memory: { status: 'unavailable', reason: error.code } };
         // Keep the boundary that actually failed (e.g. model_context_preflight).
@@ -30610,7 +30613,7 @@ function createGradiaEvidenceBudget({ digest }) {
       input.signal?.addEventListener('abort', abort, { once: true });
       record.removeAbort = () => input.signal?.removeEventListener('abort', abort);
       if (input.signal?.aborted) abort();
-      const guarded = async (operation, timeoutMs = 30000 + MEMORY_READ_TIMEOUT_EXTENSION_MS) => {
+      const guarded = async (operation, timeoutMs = LIB_MEMORY_OWNER_READ_TIMEOUT_MS) => {
         check(record); let timer, listener;
         const canceled = new Promise((_, reject) => {
           listener = () => reject(libEvidenceError(record.reason || 'LIB_READ_CANCELED'));

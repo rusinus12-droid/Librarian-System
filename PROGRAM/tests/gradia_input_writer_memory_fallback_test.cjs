@@ -56,3 +56,20 @@ test('a manual continuation is still refused when memory changed after the copy 
  await f.wait(()=>f.document.body.textContent.includes('붙여넣지 마세요'),'stale manual copy rejection');
  await f.host.plugin.cancelInputAssistSend();assert.equal(await pending,false);
 });
+
+test('a superseded memory read before evidence falls back safely to native choices',{timeout:30000},async t=>{
+ const f=await fixture(t);
+ f.controls.onQuery=async()=>{
+  throw Object.assign(new Error('session superseded'),{code:'LIB_READ_SUPERSEDED'});
+ };
+ const {pending}=await f.start();await f.choices();
+ assert.equal(f.queries(),1,'attempted query');
+ assert.equal(f.prompts.length,1,'the writer fell back and asked the model with native context');
+ assert(!JSON.stringify(f.prompts[0]).includes('WRITER_OWNER_EVIDENCE'));
+ const memory=f.host.plugin.getInputAssistSendStatus().memory;
+ assert.equal(memory.status,'unavailable');
+ assert.equal(memory.reason,'LIB_READ_SUPERSEDED');
+ await f.select();
+ assert.equal(await f.done(pending),true);
+ assert.equal(f.copied.length,1);
+});

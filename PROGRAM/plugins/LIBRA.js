@@ -77685,7 +77685,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         graph = await executeMemoryGraphUnifiedQuery({expectedScopeKey:request.scope.scopeKey,mode:'unified',
           requestId:request.operationId||request.id,queryInput:{queryText:request.queryText||'현재 기억',viewerId:'gradia_reader'},
           resourceBudget:{maxReads,maxSourceBytes:GRADIA_OWNER_SESSION_MAX_SOURCE_BYTES},
-          consumerPolicy:{maxCharacters:maxChars-(lensAllowance?lensAllowance+2:0),maxUnits}},null,authority);
+          consumerPolicy:{maxCharacters:maxChars-(lensAllowance?lensAllowance+2:0),maxUnits},
+          ...(isInputWriter ? { corpusMode: 'window', limit: 5, nodeLimit: 256 } : {})},null,authority);
         if (!unifiedGraphDeliveryAuthority.has(graph) || graph.modelDispatchEligible!==true) throw Error('LIB_READ_UNIFIED_UNAVAILABLE');
         const canonical = graph.packet.renderedText;
         const lens = lensAllowance ? await recallLensMemories(before.context,{currentText:request.queryText},maxChars,

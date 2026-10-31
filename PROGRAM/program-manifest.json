@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-31T14:41:06.793Z",
+  "generatedAt": "2026-10-31T20:05:10.616Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4148,8 +4148,8 @@
       "bytes": 3761147
     },
     "plugins/GRADIA.js": {
-      "sha256": "a02ee5768480683a46a9098c0c86700f36b80f4235f15e7e94906c54a3cfb163",
-      "bytes": 3119273
+      "sha256": "3ce01cfccfcfc90b7d1c159821c954bb3e33a920a6638f60930d212ae1a11aa9",
+      "bytes": 3119691
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "a16c3f03001c8987fe2ceb579d044590a0485a519a9fb69404b17784e5c62e62",
@@ -4160,8 +4160,8 @@
       "bytes": 1665739
     },
     "plugins/LIBRA.js": {
-      "sha256": "25264d9a20079dfe552a44d0407353240a1e7fa6b9567a07ae038f09f74207ae",
-      "bytes": 6946644
+      "sha256": "711597b5ac1ea65d7be0eb04c2af9ed557bf5a3555057c5b61485f7409b4c95b",
+      "bytes": 6946732
     },
     "plugins/RETRACE.js": {
       "sha256": "3386123502411149a0843d2d1a45b59d0e6af80c5175646e6b2c159b94eef27f",
@@ -6496,8 +6496,8 @@
       "bytes": 6549
     },
     "tests/gradia_input_writer_memory_fallback_test.cjs": {
-      "sha256": "ec3b407ea85702b3bd7a3d1507338ae10a98a5f0840623ab7323c6fdbceea42e",
-      "bytes": 3546
+      "sha256": "8f470f4aa3451e8703cb20b6f2114d62b02b5949135c50a52124d685ee5b6370",
+      "bytes": 4336
     },
     "tests/gradia_input_writer_unified_runtime_test.cjs": {
       "sha256": "16e3a3a1776e1b2ec7d640d010382d107c03ba1e60f90f22f7a1bd3e0d3fb251",
