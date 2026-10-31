@@ -9190,11 +9190,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     return {space, key, remoteKey:route.remoteKey, scopeId:route.scopeId};
   };
-  const conditionalBatchRecord = async (space, key, readObserver = null) => {
-    const lease = readObserver ? readObserver() : null;
+  const validateConditionalBatchRecord = async (row, lease = null) => {
     let stage = null;
     try {
-      const row = await remoteGet(space,key,{allowPluginOnly:true});
       if (lease) { lease.accept(row.value ?? null); stage = lease.prepare(row.value ?? null); }
       if (typeof row.exists !== 'boolean' || typeof row.tombstone !== 'boolean' || row.exists && row.tombstone
         || !Number.isSafeInteger(row.revision) || row.revision < 0 || typeof row.digest !== 'string') {
@@ -9207,33 +9205,75 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       if (row.exists && await conditionalBatchSHA(row.value) !== row.digest) throw conditionalBatchError('MEMORY_SUITE_BATCH_VALUE_DIGEST_MISMATCH');
       return row;
-    } finally { stage?.release(); lease?.release(); }
+    } finally { stage?.release(); }
   };
 
-  const captureConditionalReadSet = async (keys = [], { readObserver = null } = {}) => {
+  const conditionalBatchRecord = async (space, key, readObserver = null) => {
+    const lease = readObserver ? readObserver() : null;
+    try { return await validateConditionalBatchRecord(await remoteGet(space,key,{allowPluginOnly:true}),lease); }
+    finally { lease?.release(); }
+  };
+  // Opt-in read batching keeps the same per-value admission and cryptographic
+  // validation. The caller sizes each batch from its current shared I/O budget.
+  const conditionalBatchRecords = async (routes, readObserver, readBatchSize) => {
+    const result=[];
+    for(let offset=0;offset<routes.length;){
+      const size=readBatchSize?readBatchSize():1;
+      if(!Number.isSafeInteger(size)||size<1||size>4)throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_SIZE_INVALID');
+      const space=routes[offset].space,part=[];
+      for(const route of routes.slice(offset,offset+size)){if(route.space!==space)break;part.push(route);}
+      offset+=part.length;
+      if(part.length===1){result.push(await conditionalBatchRecord(space,part[0].remoteKey,readObserver));continue;}
+      const leases=[];
+      try{
+        for(const _ of part)leases.push(readObserver?readObserver():null);
+        const rows=await remoteGetMany(space,part.map(row=>row.remoteKey),{allowPluginOnly:true});
+        for(const [index,route]of part.entries()){
+          if(!Object.hasOwn(rows?.values||{},route.remoteKey))throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_INVALID');
+          result.push(await validateConditionalBatchRecord(rows.values[route.remoteKey],leases[index]));
+          leases[index]?.release();leases[index]=null;
+        }
+      }finally{for(const lease of leases)lease?.release();}
+    }
+    return result;
+  };
+
+  const captureConditionalReadSet = async (keys = [], { readObserver = null, readBatchSize = null } = {}) => {
     if (readObserver !== null && typeof readObserver !== 'function') throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_OBSERVER_INVALID');
+    if (readBatchSize !== null && typeof readBatchSize !== 'function') throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_SIZE_INVALID');
     if(!Array.isArray(keys)||!keys.length||keys.length>64)throw conditionalBatchError('MEMORY_SUITE_BATCH_ITEM_LIMIT');
-    const boundary=await conditionalBatchBoundary(),records=[],seen=new Set();
+    const boundary=await conditionalBatchBoundary(),records=[],seen=new Set(),routes=[];
     for(const key of keys){const route=await conditionalBatchRoute('plugin',key,boundary);
       if(seen.has(route.remoteKey))throw conditionalBatchError('MEMORY_SUITE_BATCH_DUPLICATE_KEY');seen.add(route.remoteKey);
-      const row=await conditionalBatchRecord(route.space,route.remoteKey,readObserver);
+      routes.push(route);
+    }
+    const rows=await conditionalBatchRecords(routes,readObserver,readBatchSize);
+    for(const [index,route]of routes.entries()){
+      const row=rows[index];
       records.push({...route,revision:row.revision,digest:row.digest,exists:row.exists,tombstone:row.tombstone});
     }
     if(jsonComparable(boundary)!==jsonComparable(await conditionalBatchBoundary()))throw conditionalBatchError('MEMORY_SUITE_BATCH_BOUNDARY_CHANGED');
     const data={schema:'memory-suite.storage.read-set.v1',boundary,records,capturedAt:Date.now()};
     return {...data,payloadDigest:await conditionalBatchSHA(data)};
   };
-  const assertConditionalReadSet = async (raw, { readObserver = null } = {}) => {
+  const assertConditionalReadSet = async (raw, { readObserver = null, readBatchSize = null } = {}) => {
     if (readObserver !== null && typeof readObserver !== 'function') throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_OBSERVER_INVALID');
+    if (readBatchSize !== null && typeof readBatchSize !== 'function') throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_SIZE_INVALID');
     const data=conditionalBatchClone(raw || {}),hash=data.payloadDigest;delete data.payloadDigest;
     if(data.schema!=='memory-suite.storage.read-set.v1' || !Array.isArray(data.records)||!data.records.length||data.records.length>64
       || hash!==await conditionalBatchSHA(data))throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_SET_INVALID');
     if(jsonComparable(data.boundary)!==jsonComparable(await conditionalBatchBoundary()))throw conditionalBatchError('MEMORY_SUITE_BATCH_BOUNDARY_CHANGED');
+    const routes=[];
     for(const saved of data.records){const route=await conditionalBatchRoute(saved.space,saved.key,data.boundary);
       if(route.remoteKey!==saved.remoteKey)throw conditionalBatchError('MEMORY_SUITE_BATCH_ROUTE_CHANGED');
-      const row=await conditionalBatchRecord(route.space,route.remoteKey,readObserver);
+      routes.push(route);
+    }
+    const rows=await conditionalBatchRecords(routes,readObserver,readBatchSize);
+    for(const [index,saved]of data.records.entries()){
+      const row=rows[index];
       if(row.revision!==saved.revision||row.digest!==saved.digest||row.exists!==saved.exists||row.tombstone!==saved.tombstone)throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_SET_CHANGED',{storageMutationKey:saved.key});
     }
+    if(jsonComparable(data.boundary)!==jsonComparable(await conditionalBatchBoundary()))throw conditionalBatchError('MEMORY_SUITE_BATCH_BOUNDARY_CHANGED');
     return true;
   };
   const captureServerBinding=async()=>{

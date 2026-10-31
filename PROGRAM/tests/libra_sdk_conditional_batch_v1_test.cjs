@@ -78,6 +78,42 @@ try{
   await assert.rejects(()=>bridge.assertConditionalReadSet(pin,{readObserver}),/READ_SET_CHANGED/);assert.equal(active,0);assert.equal(stages,0);
   await assert.rejects(()=>bridge.captureConditionalReadSet(['libra:head'],{readObserver:'invalid'}),/READ_OBSERVER_INVALID/);
  });
+ await test('bounded batched readsets verify every body and reject ABA, omitted keys and exhausted admission',async()=>{
+  const keys=['libra:head','libra:basis','libra:registry','libra:absent-one','libra:absent-two'];
+  let active=0,peak=0,accepted=0;
+  const readObserver=()=>{active++;peak=Math.max(peak,active);let done=false;return{
+    accept(){accepted++;},prepare(){return{release(){}};},release(){if(!done){done=true;active--;}}
+  };};
+  const first=calls.length,pin=await bridge.captureConditionalReadSet(keys,{readObserver,readBatchSize:()=>3});
+  assert.equal(calls.slice(first).filter(([url])=>url.endsWith('/v1/kv/get-many')).length,2);
+  assert.equal(pin.records.length,5);assert.equal(accepted,5);assert.equal(peak,3);assert.equal(active,0);
+  assert.equal(await bridge.assertConditionalReadSet(pin,{readObserver,readBatchSize:()=>3}),true);
+  assert.equal(accepted,10);assert.equal(active,0);
+  await proxy.setItem('libra:head',await proxy.getItem('libra:head'));
+  await assert.rejects(()=>bridge.assertConditionalReadSet(pin,{readObserver,readBatchSize:()=>3}),/READ_SET_CHANGED/);
+  assert.equal(active,0);
+  const before=calls.length;
+  await assert.rejects(()=>bridge.captureConditionalReadSet(keys,{readObserver:()=>{throw Error('no_remaining_io_credit');},readBatchSize:()=>3}),/no_remaining_io_credit/);
+  assert.equal(calls.slice(before).filter(([url])=>url.endsWith('/v1/kv/get-many')).length,0);
+  await assert.rejects(()=>bridge.captureConditionalReadSet(keys,{readBatchSize:()=>0}),/READ_SIZE_INVALID/);
+  assert.equal(active,0);
+  const nativeFetch=globalThis.risuai.nativeFetch;
+  try{
+    for(const faultKind of ['digest','omitted']){
+      globalThis.risuai.nativeFetch=async(url,init)=>{
+        const response=await nativeFetch(url,init);
+        if(!url.endsWith('/v1/kv/get-many'))return response;
+        const body=await response.json();
+        if(faultKind==='omitted')delete body.result.values['libra:head'];
+        else body.result.values['libra:head'].value='untrusted modified response';
+        return new Response(JSON.stringify(body),{status:200});
+      };
+      await assert.rejects(()=>bridge.captureConditionalReadSet(keys,{readObserver,readBatchSize:()=>3}),
+        faultKind==='digest'?/VALUE_DIGEST_MISMATCH/:/READ_INVALID/);
+      assert.equal(active,0,'malformed batch responses release every reservation');
+    }
+  }finally{globalThis.risuai.nativeFetch=nativeFetch;}
+ });
  await test('build refuses an older GC owner that cannot retain paged projections, while old reads remain available',async()=>{
   fault='old-projection';await bridge.bootstrap(true);
   await assert.rejects(()=>bridge.acquireGraphStorageLease(scope.scopeKey,'build'),/PROJECTION_UPGRADE_REQUIRED/);

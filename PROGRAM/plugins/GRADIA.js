@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.3
+//@display-name GRADIA v0.28.4
 //@api 3.0
-//@version 0.28.3
+//@version 0.28.4
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -936,7 +936,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.3';
+  const PLUGIN_VERSION = '0.28.4';
   
   
   
@@ -3565,7 +3565,7 @@
       .map(key => [key, text(recent?.[key] || '')])),
     visibleMessages: (recent.visibleMessages || []).map(message => ({ role: message.role, content: message.content }))
   });
-  const captureLibNativeReadSet = (messages, settings, baseRecent) => {
+  const captureLibNativeReadSet = (messages, settings, baseRecent, hostInput = null) => {
     const selected = new Map();
     const selections = [];
     for (const stage of ['shadow_act', ...normalizeAideStageOrder(settings.aideStageOrder)]) {
@@ -3586,7 +3586,7 @@
       }
     }
     const resolved = resolveSgaCurrentTurn(messages);
-    let inputMessage = messages[resolved.requestIndex];
+    let inputMessage = hostInput || messages[resolved.requestIndex];
     if (!nativeTurnMessageId(inputMessage)) {
       // A preset "Current Input" wrapper carries the text but no host message id.
       // Bind to the one native user message with that exact text, never a guess.
@@ -3644,7 +3644,24 @@
       const row = candidates[0];
       return { ...message, chatId: nativeTurnMessageId(row), generationInfo: row.generationInfo, saying: row.saying };
     });
-    const snapshot = captureLibNativeReadSet(mapped, settings, baseRecent);
+    // Preset wrappers need not occur as a second, bare user row in the provider
+    // prompt. Resolve their body, then bind only an exact unique live user. Keep
+    // the wrapper and the completed-turn windows unchanged in the stage prompt.
+    const resolved = resolveSgaCurrentTurn(mapped);
+    let hostInput = null;
+    if (resolved.confidence === 'explicit_wrapper' && !nativeTurnMessageId(mapped[resolved.requestIndex])) {
+      const comparableInput = value => narrative({ role: 'user', content: stripCodeFence(value) });
+      const wanted = comparableInput(resolved.text);
+      const candidates = host.messages.filter(row => nativeTurnMessageId(row) && currentTurnRole(row) === 'user'
+        && !turnBlockReason({ ...row, role: 'user', content: contentToText(row.data ?? row.content ?? '') })
+        && comparableInput(contentToText(row.data ?? row.content ?? '')) === wanted);
+      if (!wanted || candidates.length !== 1
+        || host.messages.filter(row => nativeTurnMessageId(row) === nativeTurnMessageId(candidates[0])).length !== 1) throw libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
+      const row = candidates[0];
+      if (host.messages.findLast(message => currentTurnRole(message) === 'user') !== row) throw libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
+      hostInput = { ...row, content: contentToText(row.data ?? row.content ?? '') };
+    }
+    const snapshot = captureLibNativeReadSet(mapped, settings, baseRecent, hostInput);
     for (const selection of snapshot.selections) {
       let lastPosition = -1, lastId = '';
       for (const turn of selection.turns) {

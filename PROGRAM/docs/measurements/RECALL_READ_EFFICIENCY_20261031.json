@@ -1,0 +1,738 @@
+{
+  "schema": "librarian.recall-efficiency-measurement.v1",
+  "date": "2026-10-31",
+  "timezone": "Asia/Seoul",
+  "boundary": "production hooks and engine; controlled host; disposable HTTP/SQLite; not live RisuAI or provider performance",
+  "injectedServerDelayMs": 10,
+  "repetitionsPerMode": 1,
+  "fixture": "5-turn canonical plus 3 published Micro",
+  "before": [
+    {
+      "mode": "plugin_only",
+      "elapsedMs": 1058,
+      "transportCalls": 639,
+      "counts": {
+        "other": 280,
+        "source-receipt-head": 124,
+        "source-receipt": 109,
+        "micro-memory-head": 72,
+        "micro-memory": 27,
+        "micro-work": 27
+      },
+      "corpusMode": "request_local_corpus",
+      "ownerProof": null,
+      "phases": [
+        {
+          "label": "before_settings",
+          "startedOffsetMs": 1,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "before_context",
+          "startedOffsetMs": 1,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "before_branch_reconcile",
+          "startedOffsetMs": 1,
+          "elapsedMs": 1,
+          "ok": true
+        },
+        {
+          "label": "before_receipt_dialogue",
+          "startedOffsetMs": 3,
+          "elapsedMs": 2,
+          "ok": true
+        },
+        {
+          "label": "graph_owner_frame",
+          "startedOffsetMs": 13,
+          "elapsedMs": 3,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_context",
+          "startedOffsetMs": 16,
+          "elapsedMs": 1,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_read",
+          "startedOffsetMs": 17,
+          "elapsedMs": 1,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_prepare",
+          "startedOffsetMs": 18,
+          "elapsedMs": 371,
+          "ok": true
+        },
+        {
+          "label": "native_semantic_settings",
+          "startedOffsetMs": 390,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "graph_select_and_validate",
+          "startedOffsetMs": 394,
+          "elapsedMs": 346,
+          "ok": true
+        },
+        {
+          "label": "unified_graph_query",
+          "startedOffsetMs": 12,
+          "elapsedMs": 729,
+          "ok": true
+        },
+        {
+          "label": "lens_recall",
+          "startedOffsetMs": 742,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "unified_response_boundary",
+          "startedOffsetMs": 742,
+          "elapsedMs": 2,
+          "ok": true
+        },
+        {
+          "label": "unified_query_receipts",
+          "startedOffsetMs": 744,
+          "elapsedMs": 3,
+          "ok": true
+        },
+        {
+          "label": "unified_final_consumer",
+          "startedOffsetMs": 747,
+          "elapsedMs": 308,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "mode": "mirror",
+      "elapsedMs": 17517,
+      "transportCalls": 665,
+      "counts": {
+        "other": 217,
+        "source-receipt-head": 171,
+        "source-receipt": 141,
+        "micro-memory-head": 114,
+        "micro-memory": 44,
+        "micro-work": 44
+      },
+      "corpusMode": "request_local_corpus",
+      "ownerProof": null,
+      "phases": [
+        {
+          "label": "before_settings",
+          "startedOffsetMs": 0,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "before_context",
+          "startedOffsetMs": 0,
+          "elapsedMs": 1,
+          "ok": true
+        },
+        {
+          "label": "before_branch_reconcile",
+          "startedOffsetMs": 1,
+          "elapsedMs": 35,
+          "ok": true
+        },
+        {
+          "label": "before_receipt_dialogue",
+          "startedOffsetMs": 129,
+          "elapsedMs": 496,
+          "ok": true
+        },
+        {
+          "label": "graph_owner_frame",
+          "startedOffsetMs": 670,
+          "elapsedMs": 137,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_context",
+          "startedOffsetMs": 807,
+          "elapsedMs": 35,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_read",
+          "startedOffsetMs": 842,
+          "elapsedMs": 105,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_prepare",
+          "startedOffsetMs": 947,
+          "elapsedMs": 3243,
+          "ok": true
+        },
+        {
+          "label": "native_semantic_settings",
+          "startedOffsetMs": 6233,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "graph_select_and_validate",
+          "startedOffsetMs": 6529,
+          "elapsedMs": 5310,
+          "ok": true
+        },
+        {
+          "label": "unified_graph_query",
+          "startedOffsetMs": 670,
+          "elapsedMs": 11169,
+          "ok": true
+        },
+        {
+          "label": "lens_recall",
+          "startedOffsetMs": 11840,
+          "elapsedMs": 1,
+          "ok": true
+        },
+        {
+          "label": "unified_response_boundary",
+          "startedOffsetMs": 11841,
+          "elapsedMs": 50,
+          "ok": true
+        },
+        {
+          "label": "unified_query_receipts",
+          "startedOffsetMs": 11891,
+          "elapsedMs": 504,
+          "ok": true
+        },
+        {
+          "label": "unified_final_consumer",
+          "startedOffsetMs": 12395,
+          "elapsedMs": 5119,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "mode": "server_only",
+      "elapsedMs": 17460,
+      "transportCalls": 672,
+      "counts": {
+        "other": 218,
+        "source-receipt-head": 172,
+        "source-receipt": 142,
+        "micro-memory-head": 116,
+        "micro-memory": 45,
+        "micro-work": 45
+      },
+      "corpusMode": "request_local_corpus",
+      "ownerProof": null,
+      "phases": [
+        {
+          "label": "before_settings",
+          "startedOffsetMs": 0,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "before_context",
+          "startedOffsetMs": 0,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "before_branch_reconcile",
+          "startedOffsetMs": 0,
+          "elapsedMs": 35,
+          "ok": true
+        },
+        {
+          "label": "before_receipt_dialogue",
+          "startedOffsetMs": 116,
+          "elapsedMs": 461,
+          "ok": true
+        },
+        {
+          "label": "graph_owner_frame",
+          "startedOffsetMs": 620,
+          "elapsedMs": 109,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_context",
+          "startedOffsetMs": 729,
+          "elapsedMs": 43,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_read",
+          "startedOffsetMs": 772,
+          "elapsedMs": 80,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_prepare",
+          "startedOffsetMs": 852,
+          "elapsedMs": 3263,
+          "ok": true
+        },
+        {
+          "label": "native_semantic_settings",
+          "startedOffsetMs": 6204,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "graph_select_and_validate",
+          "startedOffsetMs": 6483,
+          "elapsedMs": 5237,
+          "ok": true
+        },
+        {
+          "label": "unified_graph_query",
+          "startedOffsetMs": 619,
+          "elapsedMs": 11102,
+          "ok": true
+        },
+        {
+          "label": "lens_recall",
+          "startedOffsetMs": 11724,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "unified_response_boundary",
+          "startedOffsetMs": 11724,
+          "elapsedMs": 50,
+          "ok": true
+        },
+        {
+          "label": "unified_query_receipts",
+          "startedOffsetMs": 11774,
+          "elapsedMs": 499,
+          "ok": true
+        },
+        {
+          "label": "unified_final_consumer",
+          "startedOffsetMs": 12273,
+          "elapsedMs": 5184,
+          "ok": true
+        }
+      ]
+    }
+  ],
+  "after": [
+    {
+      "mode": "plugin_only",
+      "elapsedMs": 449,
+      "transportCalls": 501,
+      "counts": {
+        "other": 278,
+        "source-receipt-head": 78,
+        "source-receipt": 41,
+        "micro-memory-head": 62,
+        "micro-memory": 15,
+        "micro-work": 27
+      },
+      "enumerations": 1,
+      "corpusMode": "request_local_corpus",
+      "ownerProof": "request_local_owner_proof",
+      "phases": [
+        {
+          "label": "before_background_drain",
+          "startedOffsetMs": 0,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "before_settings",
+          "startedOffsetMs": 0,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "before_context",
+          "startedOffsetMs": 0,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "before_branch_reconcile",
+          "startedOffsetMs": 1,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "before_receipt_dialogue",
+          "startedOffsetMs": 3,
+          "elapsedMs": 2,
+          "ok": true
+        },
+        {
+          "label": "graph_background_drain",
+          "startedOffsetMs": 13,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "graph_owner_frame",
+          "startedOffsetMs": 14,
+          "elapsedMs": 4,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_context",
+          "startedOffsetMs": 18,
+          "elapsedMs": 1,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_read",
+          "startedOffsetMs": 19,
+          "elapsedMs": 1,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_prepare",
+          "startedOffsetMs": 20,
+          "elapsedMs": 353,
+          "ok": true
+        },
+        {
+          "label": "native_semantic_settings",
+          "startedOffsetMs": 374,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "graph_select_and_validate",
+          "startedOffsetMs": 378,
+          "elapsedMs": 52,
+          "ok": true
+        },
+        {
+          "label": "unified_graph_query",
+          "startedOffsetMs": 13,
+          "elapsedMs": 418,
+          "ok": true
+        },
+        {
+          "label": "lens_recall",
+          "startedOffsetMs": 431,
+          "elapsedMs": 1,
+          "ok": true
+        },
+        {
+          "label": "unified_response_boundary",
+          "startedOffsetMs": 432,
+          "elapsedMs": 2,
+          "ok": true
+        },
+        {
+          "label": "unified_query_receipts",
+          "startedOffsetMs": 434,
+          "elapsedMs": 2,
+          "ok": true
+        },
+        {
+          "label": "unified_final_consumer",
+          "startedOffsetMs": 436,
+          "elapsedMs": 10,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "mode": "mirror",
+      "elapsedMs": 7096,
+      "transportCalls": 266,
+      "counts": {
+        "other": 165,
+        "source-receipt-head": 108,
+        "source-receipt": 56,
+        "micro-memory-head": 92,
+        "micro-memory": 27,
+        "micro-work": 39
+      },
+      "enumerations": 1,
+      "corpusMode": "request_local_corpus",
+      "ownerProof": "request_local_owner_proof",
+      "phases": [
+        {
+          "label": "before_background_drain",
+          "startedOffsetMs": 0,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "before_settings",
+          "startedOffsetMs": 0,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "before_context",
+          "startedOffsetMs": 0,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "before_branch_reconcile",
+          "startedOffsetMs": 0,
+          "elapsedMs": 34,
+          "ok": true
+        },
+        {
+          "label": "before_receipt_dialogue",
+          "startedOffsetMs": 143,
+          "elapsedMs": 512,
+          "ok": true
+        },
+        {
+          "label": "graph_background_drain",
+          "startedOffsetMs": 698,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "graph_owner_frame",
+          "startedOffsetMs": 698,
+          "elapsedMs": 124,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_context",
+          "startedOffsetMs": 822,
+          "elapsedMs": 33,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_read",
+          "startedOffsetMs": 855,
+          "elapsedMs": 93,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_prepare",
+          "startedOffsetMs": 948,
+          "elapsedMs": 2659,
+          "ok": true
+        },
+        {
+          "label": "native_semantic_settings",
+          "startedOffsetMs": 3887,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "graph_select_and_validate",
+          "startedOffsetMs": 4166,
+          "elapsedMs": 1232,
+          "ok": true
+        },
+        {
+          "label": "unified_graph_query",
+          "startedOffsetMs": 698,
+          "elapsedMs": 4701,
+          "ok": true
+        },
+        {
+          "label": "lens_recall",
+          "startedOffsetMs": 5402,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "unified_response_boundary",
+          "startedOffsetMs": 5402,
+          "elapsedMs": 35,
+          "ok": true
+        },
+        {
+          "label": "unified_query_receipts",
+          "startedOffsetMs": 5437,
+          "elapsedMs": 516,
+          "ok": true
+        },
+        {
+          "label": "unified_final_consumer",
+          "startedOffsetMs": 5953,
+          "elapsedMs": 1140,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "mode": "server_only",
+      "elapsedMs": 6890,
+      "transportCalls": 265,
+      "counts": {
+        "other": 164,
+        "source-receipt-head": 108,
+        "source-receipt": 56,
+        "micro-memory-head": 92,
+        "micro-memory": 27,
+        "micro-work": 39
+      },
+      "enumerations": 1,
+      "corpusMode": "request_local_corpus",
+      "ownerProof": "request_local_owner_proof",
+      "phases": [
+        {
+          "label": "before_background_drain",
+          "startedOffsetMs": 0,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "before_settings",
+          "startedOffsetMs": 0,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "before_context",
+          "startedOffsetMs": 0,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "before_branch_reconcile",
+          "startedOffsetMs": 0,
+          "elapsedMs": 31,
+          "ok": true
+        },
+        {
+          "label": "before_receipt_dialogue",
+          "startedOffsetMs": 93,
+          "elapsedMs": 477,
+          "ok": true
+        },
+        {
+          "label": "graph_background_drain",
+          "startedOffsetMs": 600,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "graph_owner_frame",
+          "startedOffsetMs": 600,
+          "elapsedMs": 124,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_context",
+          "startedOffsetMs": 724,
+          "elapsedMs": 42,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_read",
+          "startedOffsetMs": 766,
+          "elapsedMs": 112,
+          "ok": true
+        },
+        {
+          "label": "graph_corpus_prepare",
+          "startedOffsetMs": 878,
+          "elapsedMs": 2582,
+          "ok": true
+        },
+        {
+          "label": "native_semantic_settings",
+          "startedOffsetMs": 3756,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "graph_select_and_validate",
+          "startedOffsetMs": 4048,
+          "elapsedMs": 1189,
+          "ok": true
+        },
+        {
+          "label": "unified_graph_query",
+          "startedOffsetMs": 600,
+          "elapsedMs": 4637,
+          "ok": true
+        },
+        {
+          "label": "lens_recall",
+          "startedOffsetMs": 5238,
+          "elapsedMs": 0,
+          "ok": true
+        },
+        {
+          "label": "unified_response_boundary",
+          "startedOffsetMs": 5238,
+          "elapsedMs": 18,
+          "ok": true
+        },
+        {
+          "label": "unified_query_receipts",
+          "startedOffsetMs": 5256,
+          "elapsedMs": 506,
+          "ok": true
+        },
+        {
+          "label": "unified_final_consumer",
+          "startedOffsetMs": 5762,
+          "elapsedMs": 1126,
+          "ok": true
+        }
+      ]
+    }
+  ],
+  "actualSession": {
+    "libra": {
+      "budgetMs": 40000,
+      "elapsedMs": 40047,
+      "graphQueryMs": 36505,
+      "queryEmbeddingMs": 409,
+      "finalConsumerObservedMs": 1434,
+      "finalConsumerCompleted": false,
+      "serverWindowAllLibraRequests": 467,
+      "serverProcessingMsTotal": 518,
+      "serverResponseBytes": 6667014,
+      "serverRequestCountIncludesPossibleConcurrentWork": true
+    },
+    "hayaku": {
+      "reportedBeforeRequestMs": 4571,
+      "reportedTimeExcludesFinalReadsetVerification": true,
+      "searchMs": 23,
+      "rebuildIndexMs": 57,
+      "injectedRows": 12,
+      "recallDataChars": 4461
+    }
+  },
+  "sourceSha256": {
+    "PROGRAM/plugins/LIBRA.js": "ea86a83fdccf242d38d770fb4bc53d9f16bb60d3c47e728a562601467fa5d1b2",
+    "PROGRAM/plugins/GRADIA.js": "43e6c5d36c39567912ef17d8e9091617201f6974b8d1d4d733640722a79a106d",
+    "PROGRAM/plugins/Flashback_Memory.js": "1e85a8bf47654b84f7644a76d6bc5cf25d97d7b4d109653a09078e2852999344",
+    "PROGRAM/sdk/MemorySuiteStorageClient.libra.source.js": "73c54014a8253c3c8cbf6936ea37ddc5f9bd6af005636317d687aaef7463eb20",
+    "PROGRAM/tools/libra_memory_graph_corpus.cjs": "ac51542e03db18dbdf29d240b2210fc78a1aa4dda742fbb8b908d9a995962a57"
+  },
+  "release": {
+    "pluginVersions": {
+      "libra": "2.6.10",
+      "flashback": "1.3.10",
+      "gradia": "0.28.4"
+    },
+    "sourceSha256": {
+      "PROGRAM/plugins/LIBRA.js": "55ddf28afca0087155dd13dcfe77064061daca331344ca7f5790fb5ef37b16a0",
+      "PROGRAM/plugins/GRADIA.js": "77579e9547103cab78af1ca78327913db189faf46a6b0f2a01b9f0067045745c",
+      "PROGRAM/plugins/Flashback_Memory.js": "c125acb52509f1682a88c8e37309a69c0fd9e45b5276ac0060f2b63805022e0b",
+      "PROGRAM/sdk/MemorySuiteStorageClient.libra.source.js": "73c54014a8253c3c8cbf6936ea37ddc5f9bd6af005636317d687aaef7463eb20",
+      "PROGRAM/tools/libra_memory_graph_corpus.cjs": "ac51542e03db18dbdf29d240b2210fc78a1aa4dda742fbb8b908d9a995962a57"
+    },
+    "historicalMeasurementHashesPreserved": true
+  }
+}

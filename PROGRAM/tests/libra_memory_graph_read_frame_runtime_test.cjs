@@ -8,11 +8,15 @@ const released=api=>{
 };
 
 test('projection-local reuse still rejects byte-identical server ABA at the final physical read',async t=>{
-  const x=await fixture({mode:'server_only'});t.after(()=>x.cleanup());
+  const seam="const rows = mode === 'plugin_only' ? null : await MemorySuiteStorageBridge.serverGetMany('plugin',part);";
+  const x=await fixture({mode:'server_only',transformSource:source=>{
+    assert.equal(source.split(seam).length,2);
+    return source.replace(seam,"globalThis.__closingOwnerReadback=true; "+seam+" globalThis.__closingOwnerReadback=false;");
+  }});t.after(()=>x.cleanup());
   const api=x.f.r.api,key=x.active.recordKey,body=x.server.storedRows().find(row=>row.key===key).value;
   let mutations=0;
   x.server.hooks.beforeServerRequest=async(url,init)=>{
-    if(!url.endsWith('/v1/kv/get-many')||!JSON.parse(init.body).keys.includes(key))return;
+    if(!x.f.r.context.__closingOwnerReadback||!url.endsWith('/v1/kv/get-many')||!JSON.parse(init.body).keys.includes(key))return;
     mutations++;
     await x.server.mutate(key,{...body,externalRevisionMarker:mutations});
     await x.server.mutate(key,body);

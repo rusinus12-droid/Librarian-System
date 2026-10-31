@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.3.9
+//@display-name ⚡ FLASHBACK Memory v1.3.10
 //@api 3.0
-//@version 1.3.9
+//@version 1.3.10
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
 //@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.3.9';
+const PLUGIN_VERSION = '1.3.10';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -41808,7 +41808,21 @@ const MemorySuiteHealthRecovery = (() => {
           || preparedBinding.modelProfile !== embeddingProfileSettingsFingerprint(finalSettings)))) recallToken.cancelled = true;
       // No await follows this final live authority check before constructing and returning evidence.
       // A change observed after preparation revokes this request's evidence.
-      if (!flashbackRequestCurrent(recallToken,recallBranch) || (strictReadSet && (strictReadSet.epoch !== flashbackRecallCacheEpoch || !flashbackProjectionBindingCurrent(strictReadSet.binding))) || recallToken.settingsHash !== stableHash(JSON.stringify(Runtime.settings || {}))) return injectStableFlashbackPrefix(messages);
+      if (!flashbackRequestCurrent(recallToken,recallBranch) || (strictReadSet && (strictReadSet.epoch !== flashbackRecallCacheEpoch || !flashbackProjectionBindingCurrent(strictReadSet.binding))) || recallToken.settingsHash !== stableHash(JSON.stringify(Runtime.settings || {}))) {
+        if (recallRetryable(recallAttempt)) { retryRecall(); continue; }
+        const reason = 'FLASHBACK_RECALL_FINAL_BINDING_CHANGED';
+        // Do not replace a newer request's result. The superseded request still
+        // records why it returned without evidence instead of leaving no trace.
+        if (flashbackRecallRequests.active === recallToken) {
+          Runtime.lastRecall = { at: Date.now(), scopeKey: scope.scopeKey, skipped: true, reason,
+            attempts: recallAttempt + 1, stageElapsed: { total: Date.now() - hookStartedAt } };
+          refreshLastRecallPanel();
+        }
+        pushActivityLog('recall_skipped', '최종 검증 중 기억의 기준이 변경되어 이번 기억 주입을 건너뛰었습니다.', {
+          scopeKey: scope.scopeKey, reason, attempts: recallAttempt + 1
+        }, 'warn');
+        return injectStableFlashbackPrefix(messages);
+      }
       break;
       }
       const rawHostInjectionBudget = flashbackHostInjectionBudget(messages, scopeBundle.snapshot, settings);

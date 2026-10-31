@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.9
+//@display-name LIBRA v2.6.10
 //@api 3.0
-//@version 2.6.9
+//@version 2.6.10
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.6.9';
+  const PLUGIN_VERSION = '2.6.10';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -13392,11 +13392,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     return {space, key, remoteKey:route.remoteKey, scopeId:route.scopeId};
   };
-  const conditionalBatchRecord = async (space, key, readObserver = null) => {
-    const lease = readObserver ? readObserver() : null;
+  const validateConditionalBatchRecord = async (row, lease = null) => {
     let stage = null;
     try {
-      const row = await remoteGet(space,key,{allowPluginOnly:true});
       if (lease) { lease.accept(row.value ?? null); stage = lease.prepare(row.value ?? null); }
       if (typeof row.exists !== 'boolean' || typeof row.tombstone !== 'boolean' || row.exists && row.tombstone
         || !Number.isSafeInteger(row.revision) || row.revision < 0 || typeof row.digest !== 'string') {
@@ -13409,33 +13407,75 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       if (row.exists && await conditionalBatchSHA(row.value) !== row.digest) throw conditionalBatchError('MEMORY_SUITE_BATCH_VALUE_DIGEST_MISMATCH');
       return row;
-    } finally { stage?.release(); lease?.release(); }
+    } finally { stage?.release(); }
   };
 
-  const captureConditionalReadSet = async (keys = [], { readObserver = null } = {}) => {
+  const conditionalBatchRecord = async (space, key, readObserver = null) => {
+    const lease = readObserver ? readObserver() : null;
+    try { return await validateConditionalBatchRecord(await remoteGet(space,key,{allowPluginOnly:true}),lease); }
+    finally { lease?.release(); }
+  };
+  // Opt-in read batching keeps the same per-value admission and cryptographic
+  // validation. The caller sizes each batch from its current shared I/O budget.
+  const conditionalBatchRecords = async (routes, readObserver, readBatchSize) => {
+    const result=[];
+    for(let offset=0;offset<routes.length;){
+      const size=readBatchSize?readBatchSize():1;
+      if(!Number.isSafeInteger(size)||size<1||size>4)throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_SIZE_INVALID');
+      const space=routes[offset].space,part=[];
+      for(const route of routes.slice(offset,offset+size)){if(route.space!==space)break;part.push(route);}
+      offset+=part.length;
+      if(part.length===1){result.push(await conditionalBatchRecord(space,part[0].remoteKey,readObserver));continue;}
+      const leases=[];
+      try{
+        for(const _ of part)leases.push(readObserver?readObserver():null);
+        const rows=await remoteGetMany(space,part.map(row=>row.remoteKey),{allowPluginOnly:true});
+        for(const [index,route]of part.entries()){
+          if(!Object.hasOwn(rows?.values||{},route.remoteKey))throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_INVALID');
+          result.push(await validateConditionalBatchRecord(rows.values[route.remoteKey],leases[index]));
+          leases[index]?.release();leases[index]=null;
+        }
+      }finally{for(const lease of leases)lease?.release();}
+    }
+    return result;
+  };
+
+  const captureConditionalReadSet = async (keys = [], { readObserver = null, readBatchSize = null } = {}) => {
     if (readObserver !== null && typeof readObserver !== 'function') throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_OBSERVER_INVALID');
+    if (readBatchSize !== null && typeof readBatchSize !== 'function') throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_SIZE_INVALID');
     if(!Array.isArray(keys)||!keys.length||keys.length>64)throw conditionalBatchError('MEMORY_SUITE_BATCH_ITEM_LIMIT');
-    const boundary=await conditionalBatchBoundary(),records=[],seen=new Set();
+    const boundary=await conditionalBatchBoundary(),records=[],seen=new Set(),routes=[];
     for(const key of keys){const route=await conditionalBatchRoute('plugin',key,boundary);
       if(seen.has(route.remoteKey))throw conditionalBatchError('MEMORY_SUITE_BATCH_DUPLICATE_KEY');seen.add(route.remoteKey);
-      const row=await conditionalBatchRecord(route.space,route.remoteKey,readObserver);
+      routes.push(route);
+    }
+    const rows=await conditionalBatchRecords(routes,readObserver,readBatchSize);
+    for(const [index,route]of routes.entries()){
+      const row=rows[index];
       records.push({...route,revision:row.revision,digest:row.digest,exists:row.exists,tombstone:row.tombstone});
     }
     if(jsonComparable(boundary)!==jsonComparable(await conditionalBatchBoundary()))throw conditionalBatchError('MEMORY_SUITE_BATCH_BOUNDARY_CHANGED');
     const data={schema:'memory-suite.storage.read-set.v1',boundary,records,capturedAt:Date.now()};
     return {...data,payloadDigest:await conditionalBatchSHA(data)};
   };
-  const assertConditionalReadSet = async (raw, { readObserver = null } = {}) => {
+  const assertConditionalReadSet = async (raw, { readObserver = null, readBatchSize = null } = {}) => {
     if (readObserver !== null && typeof readObserver !== 'function') throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_OBSERVER_INVALID');
+    if (readBatchSize !== null && typeof readBatchSize !== 'function') throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_SIZE_INVALID');
     const data=conditionalBatchClone(raw || {}),hash=data.payloadDigest;delete data.payloadDigest;
     if(data.schema!=='memory-suite.storage.read-set.v1' || !Array.isArray(data.records)||!data.records.length||data.records.length>64
       || hash!==await conditionalBatchSHA(data))throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_SET_INVALID');
     if(jsonComparable(data.boundary)!==jsonComparable(await conditionalBatchBoundary()))throw conditionalBatchError('MEMORY_SUITE_BATCH_BOUNDARY_CHANGED');
+    const routes=[];
     for(const saved of data.records){const route=await conditionalBatchRoute(saved.space,saved.key,data.boundary);
       if(route.remoteKey!==saved.remoteKey)throw conditionalBatchError('MEMORY_SUITE_BATCH_ROUTE_CHANGED');
-      const row=await conditionalBatchRecord(route.space,route.remoteKey,readObserver);
+      routes.push(route);
+    }
+    const rows=await conditionalBatchRecords(routes,readObserver,readBatchSize);
+    for(const [index,saved]of data.records.entries()){
+      const row=rows[index];
       if(row.revision!==saved.revision||row.digest!==saved.digest||row.exists!==saved.exists||row.tombstone!==saved.tombstone)throw conditionalBatchError('MEMORY_SUITE_BATCH_READ_SET_CHANGED',{storageMutationKey:saved.key});
     }
+    if(jsonComparable(data.boundary)!==jsonComparable(await conditionalBatchBoundary()))throw conditionalBatchError('MEMORY_SUITE_BATCH_BOUNDARY_CHANGED');
     return true;
   };
   const captureServerBinding=async()=>{
@@ -35043,9 +35083,11 @@ function createLibraReadonlySourceContext(owner) {
     // User-requested 2026-10-30: every live-recall timeout gets 10 s more, because slow
     // host storage transfers (not the server) were exhausting the original bounds.
     const RECALL_TIMEOUT_EXTENSION_MS = 10000;
-    const RECALL_REQUEST_BUDGET_MS = 30000 + RECALL_TIMEOUT_EXTENSION_MS; // absolute live-recall watchdog; per-step guards remain separately bounded
+    // The 2026-10-31 live trace spent 36.5 s in graph query and reached final
+    // verification with only 1.388 s left. Give physical verification its own room.
+    const RECALL_REQUEST_BUDGET_MS = 90000; // absolute live-recall watchdog
     const CHAT_OUTPUT_HEALTH_GRACE_MS = 5000; // fail over promptly; a bounded late scan also covers slow host commits
-    const RECALL_STEP_BUDGET_MS = 20000 + RECALL_TIMEOUT_EXTENSION_MS;
+    const RECALL_STEP_BUDGET_MS = 45000;
     const RECALL_EMBEDDING_BUDGET_MS = 3500 + RECALL_TIMEOUT_EXTENSION_MS;
     // A provider slower than the default budget would otherwise leave every recall
     // lexical-only. The default query-embedding budget adapts per embedding space: a
@@ -36271,11 +36313,11 @@ function createLibraReadonlySourceContext(owner) {
           }
           throw error;
         }
-        if (guard) guard.phases.push({ label, elapsedMs: Date.now() - startedAt, ok: true });
+        if (guard) guard.phases.push({ label, startedOffsetMs: startedAt - guard.startedAt, elapsedMs: Date.now() - startedAt, ok: true });
         ensureRecallGuard(guard, label);
         return result;
       } catch (error) {
-        if (guard) guard.phases.push({ label, elapsedMs: Date.now() - startedAt, ok: false, error: compact(error?.message || error, 180) });
+        if (guard) guard.phases.push({ label, startedOffsetMs: startedAt - guard.startedAt, elapsedMs: Date.now() - startedAt, ok: false, error: compact(error?.message || error, 180) });
         if (options.soft === true && (error?.stepTimeout === true || error?.code !== 'LIBRA_RECALL_DEADLINE')) {
           if (guard) guard.softFailures.push({ label, at: Date.now(), error: compact(error?.message || error, 220) });
           return options.fallback;
@@ -37005,6 +37047,42 @@ function createLibraReadonlySourceContext(owner) {
       };
       const frame = {
         owns: storageKey => string(storageKey).startsWith(prefix),
+        async prefetch(storageKeys){
+          const keys = [...new Set(storageKeys)].filter(storageKey => frame.owns(storageKey) && !entries.has(storageKey));
+          for(let offset=0;offset<keys.length;){
+            resources?.check();
+            const access=resources?.inspect();
+            const batchSize=access?Math.max(1,Math.min(4,
+              Math.floor((access.pool.limits.ioBytes-access.pool.ioBytes)/access.limits.maxValueBytes),
+              Math.floor((access.limits.maxSourceBytes-access.sourceBytes)/access.limits.maxValueBytes),
+              access.pool.limits.reads-access.pool.reads)):4;
+            const part=keys.slice(offset,offset+batchSize);offset+=part.length;
+            if(mode==='plugin_only'){
+              for(const storageKey of part)if(!entries.has(storageKey))entries.set(storageKey,physical(storageKey));
+              await Promise.all(part.map(storageKey=>entries.get(storageKey)));
+              continue;
+            }
+            const locals=new Map(),reservations=[];
+            let retained;
+            try{
+              if(mode==='mirror')for(const storageKey of part)locals.set(storageKey,await account(()=>MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey)));
+              if(resources)for(const _ of part)reservations.push(resources.reserveRead('source'));
+              const rows=await MemorySuiteStorageBridge.serverGetMany('plugin',part);
+              state.memoryNetworkIO.ownerReads+=part.length*(mode==='mirror'?2:1);
+              if(resources)retained=resources.retain(rows?.values,'owner_prefetch',2);
+              for(const [index,storageKey]of part.entries()){
+                if(!Object.hasOwn(rows?.values||{},storageKey))throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
+                const remote=rows.values[storageKey];
+                reservations[index]?.accept(remote?.value??null);reservations[index]?.release();
+                const entry={local:locals.get(storageKey)??null,remote};
+                if(resources)leases.push(resources.retain(entry,'owner_read_frame',2));
+                // An overlapping read owns its earlier observation. Never replace
+                // it with a later prefetch; assertCurrent compares every witness.
+                if(!entries.has(storageKey))entries.set(storageKey,Promise.resolve(entry));
+              }
+            }finally{retained?.release();for(const reservation of reservations)reservation.release();}
+          }
+        },
         async read(storageKey,fallback){
           const cached = entries.has(storageKey);
           if(!cached)entries.set(storageKey,physical(storageKey));
@@ -49740,15 +49818,34 @@ function createLibraReadonlySourceContext(owner) {
     const native = await enumerate(snapshot, options, owner.check), generation = stamp(native.graph);
     if (owner && typeof owner === 'object') knownFrames.set(owner, native.graph);
     owner.resources?.retain(native.graph,'merged_corpus_graph');
-    return { ...native, compiledIndex: null,
+    // Use the same owner-issued source proof as the durable index. A cold read
+    // must not rehydrate every receipt/Micro and rebuild the whole graph at each
+    // consumer check. The proof is private to this request; no persistent write
+    // or cross-request freshness grant is created.
+    const ownerProof = typeof owner.captureSourceProof === 'function' && typeof owner.verifySourceProofs === 'function'
+      ? await owner.captureSourceProof({ graph: native.graph, collected: native.collected,
+          windows: native.windows, windowProofs: native.windowProofs, config: native.config }) : null;
+    owner.check();
+    const proofRecord = ownerProof ? { schema: proofSchema, proofVersion, scopeKey: native.graph.scopeKey,
+      frame: native.graph.readerFrame, generation, windowCount: native.windows.length,
+      windows: native.windows, ownerProof } : null;
+    if (proofRecord) owner.resources?.retain(proofRecord,'request_local_source_proof',2);
+    return { ...native, compiledIndex: null, sourceProofs: proofRecord,
       currentGraph: async (resources = owner.resources) => {
+        if (proofRecord) {
+          const verdict = await owner.verifySourceProofs(proofRecord, { initialGraph: native.graph, config: native.config, phase: 'commit' });
+          owner.check();
+          if (!verdict || verdict.status !== 'verified') fail('source_changed', { currentnessVerification: verdict || null });
+          return native.graph;
+        }
         const live = await enumerate(opts => snapshot(opts,resources), native.config, resources?.check || owner.check);
         if (!same(live.windows,native.windows) || stamp(live.graph) !== generation) fail('source_changed');
         return live.graph;
       },
       access: { schema, mode: 'request_local_corpus', reason, generation, windowCount: native.windows.length,
         familyContracts: FAMILY_CURRENTNESS_CONTRACTS,
-        nativeReprojectionRequired: true, ownerAtomicity: false, inventoryComplete: false, byteBounded: false }
+        nativeReprojectionRequired: !proofRecord, currentnessVerification: proofRecord ? 'request_local_owner_proof' : 'native_reprojection',
+        ownerAtomicity: false, inventoryComplete: false, byteBounded: false }
     };
   };
 
@@ -59293,7 +59390,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const microScope = receipt => ({ scopeKey: string(receipt.scopeKey || ''),
       characterId: string(receipt.characterId || ''), chatId: string(receipt.chatId || '') });
     const activeMicroSource = async (receipt, options = {}) => {
-      const targetScope = options.cachedScope
+      const receiptScope = microScope(receipt);
+      // Keep the request's read frame and resource budget attached. Recreating
+      // this scope object used to bypass both on every Micro closing source read.
+      const sameFrame = options.cachedScope && memoryGraphReadFrames.has(options.cachedScope)
+        && ['scopeKey','characterId','chatId'].every(name => string(options.cachedScope[name]) === receiptScope[name]);
+      const targetScope = sameFrame ? options.cachedScope : options.cachedScope
         ? { ...microScope(receipt), _cachedMode: options.cachedScope._cachedMode }
         : microScope(receipt);
       const active = await readActiveCompletedTurnReceipt(targetScope, receipt.worldlineId,
@@ -71394,7 +71496,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       let requestScope = null;
       let guard = null;
       let queryBundle = null;
-      let pendingGraphExecution = null, graphTransferred = false;
+      let pendingGraphExecution = null, graphTransferred = false, requestGraphActivity = null;
       try {
         if (!isMainNarrativeRequest(type)) return messages;
         requestOwner = {};
@@ -71428,6 +71530,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
           1200 + RECALL_TIMEOUT_EXTENSION_MS
         );
         if (settings.enabled === false) return messages;
+        requestGraphActivity=volatileMemoryGraphCorpus();
+        requestGraphActivity.interactiveReaders++;
+        await runRecallStep(guard,'before_background_drain',()=>yieldVolatileMemoryGraphCorpusBuild(),RECALL_STEP_BUDGET_MS);
         // Historical source edits are inspected only by explicit actions.
         const context = await runRecallStep(
           guard,
@@ -71757,7 +71862,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
         warn('LIBRA recall failed open', error);
         scheduleGuiTraceRefresh();
         return messages;
-      } finally { if (!graphTransferred && pendingGraphExecution) releaseMemoryGraphUnifiedQuery(pendingGraphExecution); }
+      } finally {
+        if (!graphTransferred && pendingGraphExecution) releaseMemoryGraphUnifiedQuery(pendingGraphExecution);
+        if(requestGraphActivity)requestGraphActivity.interactiveReaders--;
+      }
     };
 
     const afterRequest = async (response, type) => {
@@ -75285,7 +75393,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const sourceContext = collect ? ownerReadonlySourceContext : readonlySourceContext;
       let captured = null, graphIdentity = null, readFrame = null;
       try {
-        captured = await sourceContext.capture({ requestId, durationMs: 30000 });
+        captured = await sourceContext.capture({ requestId, durationMs: RECALL_REQUEST_BUDGET_MS });
         const request = { handle: captured.handle, requestId };
         const context = await resolveContext(), scope = memoryGraphBudgetedScope({...context.scope},resources);
         if (scope.scopeKey !== captured.summary.scope.scopeKey || options.expectedScopeKey && options.expectedScopeKey !== scope.scopeKey) throw new Error('LIBRA_GRAPH_READER_SCOPE_CHANGED');
@@ -75311,6 +75419,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const sourceKeys = collect ? new Set() : null;
         const addSourceKey = value => { if (sourceKeys && typeof value === 'string' && value.startsWith(PREFIX + ':scope:')) sourceKeys.add(value); };
         const read = async (keyValue, load) => { const value = await load(); addSourceKey(keyValue); readbacks.push({ key: keyValue, body: stableReferenceJson(value), load }); return value; };
+        const pageTurns=turns.slice(microOffset,microOffset+limit),pageWorldline=hostWorldlineIdForScope(scope);
+        await readFrame.prefetch(pageTurns.flatMap(turn=>[
+          key.completedTurnHead(scope,pageWorldline,0,turn),key.microMemoryHead(scope,pageWorldline,0,turn)]));
+        const microDependencies=[];
+        for(const turn of pageTurns){
+          for(const headKey of [key.completedTurnHead(scope,pageWorldline,0,turn),key.microMemoryHead(scope,pageWorldline,0,turn)]){
+            let head=null;try{head=await storage.getVerifiedJson(headKey,scope,null);}catch(_){}
+            for(const field of ['receiptKey','recordKey','workKey'])if(typeof head?.[field]==='string')microDependencies.push(head[field]);
+          }
+        }
+        await readFrame.prefetch(microDependencies);
         await read(key.manifest(scope), () => storage.getVerifiedJson(key.manifest(scope), scope, null));
         const storedRegistry = await read(key.entityRegistry(scope), () => storage.getVerifiedJson(key.entityRegistry(scope), scope, null));
         const registry = storedRegistry || { schema: ENTITY_REGISTRY_SCHEMA, scopeKey: scope.scopeKey, entities: [] };
@@ -75339,7 +75458,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const completedHeadKey = key.completedTurnHead(scope, worldlineId, 0, turn);
           const microHeadKey = key.microMemoryHead(scope, worldlineId, 0, turn);
           const value = await read('micro-turn:' + turn,
-            () => readActiveMicroMemory(scope, worldlineId, 0, turn));
+            () => readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs: active.pairs }));
           addSourceKey(completedHeadKey);
           addSourceKey(microHeadKey);
           for (const storageKey of [value.recordKey, value.headKey, value.record?.receiptKey, value.record?.workKey]) addSourceKey(storageKey);
@@ -75700,7 +75819,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const requestId = id('graph_corpus_frame');
       let captured = null;
       try {
-        captured = await ownerReadonlySourceContext.capture({ requestId, durationMs: 30000 });
+        captured = await ownerReadonlySourceContext.capture({ requestId, durationMs: RECALL_REQUEST_BUDGET_MS });
         const request = { handle: captured.handle, requestId };
         const context = await resolveContext(), scope = memoryGraphBudgetedScope(context.scope,resources);
         if (scope.scopeKey !== captured.summary.scope.scopeKey || expectedScopeKey && expectedScopeKey !== scope.scopeKey) {
@@ -75949,9 +76068,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const published = proofRecord?.ownerProof;
           if (!published || published.schema !== 'libra.graph_corpus_owner_proof.v1') return null;
           const requestId = id('graph_corpus_verify');
-          let captured = null;
+          let captured = null, readFrame = null;
           try {
-            captured = await ownerReadonlySourceContext.capture({ requestId, durationMs: 30000 });
+            captured = await ownerReadonlySourceContext.capture({ requestId, durationMs: RECALL_REQUEST_BUDGET_MS });
             const request = { handle: captured.handle, requestId };
             const context = await resolveContext(), scope = memoryGraphBudgetedScope(context.scope,resources);
             if (scope.scopeKey !== captured.summary.scope.scopeKey || scope.scopeKey !== (targetGraph?.scopeKey || initialGraph.scopeKey)) {
@@ -75964,6 +76083,22 @@ function mountMemorySuiteReanalysisReview(container,config) {
             const resolved = await resolveWorldManagerHistoryWorldline(scope);
             const refs = canonicalReaderRefs(active.manifest, resolved);
             const turns = active.pairs.map(pair => Number(pair.turn));
+
+            // One proof verification is one read frame. Batch the small owner
+            // heads and reuse their exact bytes while deriving all live windows;
+            // the closing readback still checks bodies, revisions and both copies.
+            readFrame = await openMemoryGraphReadFrame(scope);
+            const proofTurns=turns.slice(0,Number(config.maxWindows||64)*Number(config.limit||published.limit||20));
+            const proofWorldline=hostWorldlineIdForScope(scope);
+            await readFrame.prefetch([key.manifest(scope),key.entityRegistry(scope),key.continuityState(scope),
+              key.stateWorldlineMeta(scope),key.stateCorrections(scope),key.loreLinkMapping(scope),
+              ...proofTurns.flatMap(turn=>[key.completedTurnHead(scope,proofWorldline,0,turn),key.microMemoryHead(scope,proofWorldline,0,turn)])]);
+            const workKeys=[];
+            for(const turn of proofTurns){
+              let head=null;try{head=await storage.getVerifiedJson(key.microMemoryHead(scope,proofWorldline,0,turn),scope,null);}catch(_){}
+              if(typeof head?.workKey==='string')workKeys.push(head.workKey);
+            }
+            await readFrame.prefetch(workKeys);
 
             await storage.getVerifiedJson(key.manifest(scope), scope, null);
             const storedRegistry = await storage.getVerifiedJson(key.entityRegistry(scope), scope, null);
@@ -76139,6 +76274,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             const finalLore = buildAllowedLore(await loadRisuContextSnapshot(await loadSettings(), [], null));
             if (stableReferenceJson(finalLore) !== stableReferenceJson(allowedLore)) throw new Error('LIBRA_GRAPH_READER_LORE_CHANGED');
             if (Number(state.microRestoreGeneration || 0) !== liveEpoch || state.disposed) throw new Error('LIBRA_GRAPH_READER_EPOCH_CHANGED');
+            await readFrame.assertCurrent();
             await ownerReadonlySourceContext.assertCurrent(request);
             await assertRoute();
 
@@ -76184,7 +76320,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
             for (const storageKey of sharedKeys) {
               const expected = published.sourceBodyDigests?.[storageKey];
               if (typeof expected !== 'string'
-                || memoryGraphSourceFingerprint(stableReferenceJson(await readRawOwnerSource(storageKey))) !== expected)
+                || memoryGraphSourceFingerprint(stableReferenceJson(readFrame.owns(storageKey)
+                  ? await readFrame.readRaw(storageKey) : await readRawOwnerSource(storageKey))) !== expected)
                 return { ...verdict, status: 'stale_source', physicalSharedSourcesChanged: true,
                   reusableWindows: phase === 'build' ? verdict.reusableWindows.filter(index => index !== 0) : [], phase };
             }
@@ -76194,6 +76331,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
               collectedPatch: { scope }
             };
           } finally {
+            readFrame?.close();
             if (captured) ownerReadonlySourceContext.release({ handle: captured.handle, requestId });
           }
         }
@@ -76258,14 +76396,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // host-storage fallback cannot atomically reclaim old pages; IndexedDB can.
     // This runtime index never writes storage.
     // It is rebuilt in the background after new memory. A build yields to recall
-    // requests at most twice, then completes, so back-to-back requests cannot starve it.
+    // requests and resumes in idle time; a derived build never takes the live
+    // request's I/O reservations or starts another projection during delivery.
     // Each build starts from the previous runtime index (`basis`), so the corpus module's
     // incremental path re-enumerates only changed windows; superseded pages are dropped
     // by starting fresh once the basis outgrows the last fresh build threefold.
-    const VOLATILE_CORPUS_DELAY_MS = 1500, VOLATILE_CORPUS_MAX_YIELDS = 2;
+    const VOLATILE_CORPUS_DELAY_MS = 1500;
     const volatileMemoryGraphCorpus = () => volatileCorpusRuntime || (volatileCorpusRuntime = {
       store: null, basis: null, basisScopeKey: '', freshChars: 0, scopeKey: '', generation: '', builtAt: 0, timer: null,
-      running: null, yieldRequested: false, yields: 0, queriesInFlight: 0, builds: 0, failures: 0,
+      running: null, yieldRequested: false, yields: 0, queriesInFlight: 0, interactiveReaders: 0, builds: 0, failures: 0,
       sourceChangeRetries: 0, consecutiveSourceChangeRetries: 0, lastError: '', lastBuildMs: 0, lastBuildMode: '' });
     const volatileStoreChars = store => { let chars = 0; for (const value of store.values()) chars += String(value).length; return chars; };
     const yieldVolatileMemoryGraphCorpusBuild = async () => {
@@ -76284,7 +76423,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         volatileState.timer = null;
         if (state.disposed) return;
         if (volatileState.running || state.memoryGraphCorpus?.inspect().activeBuild
-          || volatileState.queriesInFlight > 0 && volatileState.yields < VOLATILE_CORPUS_MAX_YIELDS) {
+          || volatileState.queriesInFlight > 0 || volatileState.interactiveReaders > 0) {
           scheduleVolatileMemoryGraphCorpus(delayMs); return;
         }
         const basis = volatileState.basis && volatileState.basisScopeKey && volatileState.freshChars
@@ -76292,7 +76431,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const store = new Map(basis || []), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
         volatileState.yieldRequested = false;
         volatileState.running = buildMemoryGraphCorpusInto({}, store, () => {
-          if (volatileState.yieldRequested || volatileState.queriesInFlight > 0 && volatileState.yields < VOLATILE_CORPUS_MAX_YIELDS) {
+          if (volatileState.yieldRequested || volatileState.queriesInFlight > 0 || volatileState.interactiveReaders > 0) {
             volatileState.yields += 1; throw new Error('LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED');
           }
         }).then(result => {
@@ -76338,7 +76477,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         volatilePrewarmTimer = null;
         if (state.disposed || libraMemoryWorkActive()) return;
         const volatileState = volatileMemoryGraphCorpus();
-        if (volatileState.store || volatileState.running || volatileState.timer || volatileState.queriesInFlight > 0) return;
+        if (volatileState.store || volatileState.running || volatileState.timer || volatileState.queriesInFlight > 0 || volatileState.interactiveReaders > 0) return;
         ensureMemoryGraphUnifiedSuite();
         volatileState.prewarming = true;
         scheduleVolatileMemoryGraphCorpus(0);
@@ -76517,7 +76656,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // A background runtime-index build yields while any query is in flight.
       const volatileState = volatileMemoryGraphCorpus();
       volatileState.queriesInFlight += 1;
-      try { return await executeMemoryGraphUnifiedQueryOnce(options, recallGuard, gradiaAuthority); }
+      try {
+        await runRecallStep(recallGuard, 'graph_background_drain',
+          () => yieldVolatileMemoryGraphCorpusBuild(), RECALL_STEP_BUDGET_MS);
+        return await executeMemoryGraphUnifiedQueryOnce(options, recallGuard, gradiaAuthority);
+      }
       finally { volatileState.queriesInFlight -= 1; }
     };
     const executeMemoryGraphUnifiedQueryOnce = async (options = {}, recallGuard = null, gradiaAuthority = null) => {
@@ -76546,17 +76689,27 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const activity = resources.begin();
       try {
         const sourceReadObserver = () => resources.reserveRead('source');
+        const sourceReadBatchSize = () => {
+          const access=resources.inspect();
+          return Math.max(1,Math.min(4,
+            Math.floor((access.pool.limits.ioBytes-access.pool.ioBytes)/access.limits.maxValueBytes),
+            Math.floor((access.limits.maxSourceBytes-access.sourceBytes)/access.limits.maxValueBytes),
+            access.pool.limits.reads-access.pool.reads));
+        };
         const corpusMode = options.corpusMode || 'auto';
         if (!['auto','required','window'].includes(corpusMode)) throw new Error('LIBRA_GRAPH_CORPUS_OPTIONS_INVALID');
         const explicitWindow = ['limit','nodeLimit','canonicalCursor','microCursor'].some(key => options[key] !== undefined);
         if (explicitWindow && corpusMode === 'required') throw new Error('LIBRA_GRAPH_CORPUS_WINDOW_CONFLICT');
         let initialCollected = null, graph = null, corpusContext = null, corpus = null, coldReason = 'no_published_corpus';
         if (corpusMode !== 'window' && !explicitWindow) {
-          const frameResolved = await resolveMemoryGraphCorpusFrame(options.expectedScopeKey || '',resources);
+          const frameResolved = await runRecallStep(recallGuard, 'graph_owner_frame',
+            () => resolveMemoryGraphCorpusFrame(options.expectedScopeKey || '',resources), RECALL_REQUEST_BUDGET_MS);
           graph = frameResolved.graph;
           initialCollected = frameResolved.collected;
-          corpusContext = await memoryGraphCorpusContext(graph, initialCollected, epoch, serial, recallGuard, resources);
-          try { corpus = await state.memoryGraphCorpus.read({ initialGraph: graph, ...corpusContext }); }
+          corpusContext = await runRecallStep(recallGuard, 'graph_corpus_context',
+            () => memoryGraphCorpusContext(graph, initialCollected, epoch, serial, recallGuard, resources), RECALL_REQUEST_BUDGET_MS);
+          try { corpus = await runRecallStep(recallGuard, 'graph_corpus_read',
+            () => state.memoryGraphCorpus.read({ initialGraph: graph, ...corpusContext }), RECALL_REQUEST_BUDGET_MS); }
           catch (error) {
             if (corpusMode !== 'auto' || !['stale_generation','restore_binding_invalid'].includes(error.reason)) throw error;
             coldReason = error.reason === 'stale_generation' ? 'superseded_derived_index' : 'incompatible_derived_index';
@@ -76580,7 +76733,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
             if (!corpus) Object.assign(volatileState, { store: null, scopeKey: '', generation: '' });
           }
           if (!corpus && corpusMode === 'auto') {
-            corpus = await state.memoryGraphCorpus.prepare({ ...corpusContext, reason: coldReason });
+            corpus = await runRecallStep(recallGuard, 'graph_corpus_prepare',
+              () => state.memoryGraphCorpus.prepare({ ...corpusContext, reason: coldReason }), RECALL_REQUEST_BUDGET_MS);
             corpus = { ...corpus, access: { ...corpus.access, runtimeIndex } };
             scheduleVolatileMemoryGraphCorpus();
           }
@@ -76611,7 +76765,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         // establish a cross-corpus atomic snapshot; all are checked at delivery.
         const conditionalReadSets = [];
         if (storageMode !== 'plugin_only') for (let offset = 0; offset < pinKeys.length; offset += 64) {
-          conditionalReadSets.push(await MemorySuiteStorageBridge.captureConditionalReadSet(pinKeys.slice(offset,offset + 64),{ readObserver: sourceReadObserver }));
+          conditionalReadSets.push(await MemorySuiteStorageBridge.captureConditionalReadSet(pinKeys.slice(offset,offset + 64),{ readObserver: sourceReadObserver, readBatchSize: sourceReadBatchSize }));
         }
         const ownerProof = corpus?.sourceProofs?.ownerProof || null;
         const hasIncrementalBodyDigests = Boolean(ownerProof?.sourceBodyDigests && typeof ownerProof.sourceBodyDigests === 'object');
@@ -76788,7 +76942,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             try {
               if (semanticSettingsBinding && settingsBinding(await readSemanticConfig()) !== semanticSettingsBinding) return false;
               await corpusContext.owner.assertRoute();
-              for (const readSet of conditionalReadSets) await MemorySuiteStorageBridge.assertConditionalReadSet(readSet,{ readObserver: sourceReadObserver });
+              for (const readSet of conditionalReadSets) await MemorySuiteStorageBridge.assertConditionalReadSet(readSet,{ readObserver: sourceReadObserver, readBatchSize: sourceReadBatchSize });
               for(const dependency of nativeSemantic?.dependencies||[]){
                 if(!dependency.ownerBodyDigest||vectorReadbacks.has(dependency.key))continue;
                 const pin=storageMode!=='plugin_only'?await MemorySuiteStorageBridge.captureConditionalReadSet([dependency.key],{readObserver:sourceReadObserver}):null;
@@ -76849,11 +77003,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
                 } else {
                   for (const storageKey of pinKeys) consumedStorageKeys.add(storageKey);
                 }
-                for (const storageKey of consumedStorageKeys) {
-                  if (!storageKey || !Object.hasOwn(ownerProof.sourceBodyDigests, storageKey)) return false;
-                  const currentRaw = await readRawSource(storageKey);
-                  if (memoryGraphSourceFingerprint(stableReferenceJson(currentRaw)) !== ownerProof.sourceBodyDigests[storageKey]) return false;
-                }
+                const closingScope=memoryGraphBudgetedScope({...initialCollected.scope},resources);
+                const closingFrame=await openMemoryGraphReadFrame(closingScope);
+                try{
+                  await closingFrame.prefetch([...consumedStorageKeys]);
+                  for (const storageKey of consumedStorageKeys) {
+                    if (!storageKey || !Object.hasOwn(ownerProof.sourceBodyDigests, storageKey)) return false;
+                    const currentRaw = closingFrame.owns(storageKey) ? await closingFrame.readRaw(storageKey) : await readRawSource(storageKey);
+                    if (memoryGraphSourceFingerprint(stableReferenceJson(currentRaw)) !== ownerProof.sourceBodyDigests[storageKey]) return false;
+                  }
+                }finally{closingFrame.close();}
               } else {
                 for (const saved of pinnedValues) {
                   if (stableReferenceJson(await readRawSource(saved.key)) !== stableReferenceJson(saved.raw)) {
@@ -76872,13 +77031,19 @@ function mountMemorySuiteReanalysisReview(container,config) {
         ownerVerifier.openValidation = () => {
           resources.check();
           const scoped = resources.scope();
-          return { ...ownerVerifier, openValidation: null, release: () => scoped.close(),
-            currentGraph: corpus ? () => corpus.currentGraph(scoped)
-              : () => readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: graph.scopeKey },null,scoped) };
+          const activity=volatileMemoryGraphCorpus();activity.interactiveReaders++;
+          let released=false;
+          return { ...ownerVerifier, openValidation: null, release: () => {
+            if(released)return;released=true;scoped.close();activity.interactiveReaders--;
+          }, currentGraph: async () => {
+            await yieldVolatileMemoryGraphCorpusBuild();
+            return corpus ? await corpus.currentGraph(scoped)
+              : await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: graph.scopeKey },null,scoped);
+          } };
         };
         const semanticBudgetStopped = () => (nativeSemantic?.diagnostics.rejected || []).some(row => row.reason === 'representation_byte_budget');
         if (gradiaAuthority) ownerVerifier.verifyGradiaReceipt = async receipt => gradiaAuthority.verifyReceipt(receipt);
-        const execution = await suite.rollout.executeUnifiedRequest({
+        const execution = await runRecallStep(recallGuard, 'graph_select_and_validate', () => suite.rollout.executeUnifiedRequest({
           sealToken,
           graph,
           queryInput,
@@ -76893,7 +77058,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           ownerVerifier,
           semanticAccessComplete: () => !semanticBudgetStopped(), semanticReader: nativeSemantic?.readPage || null,
           preparedIndex: corpus?.compiledIndex || null, resources
-        });
+        }), RECALL_REQUEST_BUDGET_MS);
         // N01: a query reads a slice of the source window, so it has to say which slice it read and where
         // the owner says the next one starts — otherwise a window-bounded answer looks like a whole-history
         // answer. The inventory is the owner's own coverage record, carried through unchanged.

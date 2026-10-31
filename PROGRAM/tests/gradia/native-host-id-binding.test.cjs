@@ -21,6 +21,40 @@ test('missing provider IDs bind to exact unique host messages without changing s
   f.chat.message[1].data='The ledger has moved to the lower shelf.';
   await assert.rejects(()=>b.assertCurrent(),error=>error.code==='LIB_READ_NATIVE_CHANGED');
 });
+
+test('Current Input wrapper binds to the exact live user while preserving the prompt',async()=>{
+  const f=await fixture((_chat,_character,input)=>{
+    input[2]={role:'user',content:'<Current Input>\nWhere is the blue ledger?\n</Current Input>'};
+  });
+  const original=JSON.stringify(f.input),b=await f.bind();
+  assert.equal(b.snapshot.currentInputRef.messageId,'native-2');
+  assert.equal(b.snapshot.currentInput,'Where is the blue ledger?');
+  assert.equal(JSON.stringify(f.input),original);
+  await b.assertCurrent();
+  f.chat.message[2].data='A different current input.';
+  await assert.rejects(()=>b.assertCurrent(),error=>error.code==='LIB_READ_NATIVE_CHANGED');
+});
+
+test('fenced Current Input transport keeps the live raw identity',async()=>{
+  const f=await fixture((_chat,_character,input)=>{
+    input[2]={role:'user',content:'<Current Input>\n```\nWhere is the blue ledger?\n```\n</Current Input>'};
+  });
+  const b=await f.bind();
+  assert.equal(b.snapshot.currentInputRef.messageId,'native-2');
+  assert.equal(b.snapshot.currentInput,'Where is the blue ledger?');
+  await b.assertCurrent();
+});
+
+for(const kind of ['duplicate','partial','streaming','historical'])test(`wrapped input refuses ${kind} live identity`,async()=>{
+  const f=await fixture((chat,_character,input)=>{
+    input[2]={role:'user',content:'<Current Input>\nWhere is the blue ledger?\n</Current Input>'};
+    if(kind==='duplicate')chat.message.push({...chat.message[2],chatId:'another-user'});
+    if(kind==='partial')chat.message[2].data='Where is the blue ledger? Add unrelated instructions.';
+    if(kind==='streaming')chat.message[2].isStreaming=true;
+    if(kind==='historical')chat.message.push({role:'user',chatId:'newer-user',data:'A different pending request.'});
+  });
+  await assert.rejects(()=>f.bind(),error=>error.code==='LIB_READ_NATIVE_ID_UNAVAILABLE');
+});
 for(const kind of ['ambiguous','streaming','order','scope'])test(`host identity binding refuses ${kind}`,async()=>{
   const f=await fixture((chat,character)=>{
     if(kind==='ambiguous')chat.message.push({...chat.message[1],chatId:'different-a'});

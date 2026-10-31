@@ -580,15 +580,34 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     const native = await enumerate(snapshot, options, owner.check), generation = stamp(native.graph);
     if (owner && typeof owner === 'object') knownFrames.set(owner, native.graph);
     owner.resources?.retain(native.graph,'merged_corpus_graph');
-    return { ...native, compiledIndex: null,
+    // Use the same owner-issued source proof as the durable index. A cold read
+    // must not rehydrate every receipt/Micro and rebuild the whole graph at each
+    // consumer check. The proof is private to this request; no persistent write
+    // or cross-request freshness grant is created.
+    const ownerProof = typeof owner.captureSourceProof === 'function' && typeof owner.verifySourceProofs === 'function'
+      ? await owner.captureSourceProof({ graph: native.graph, collected: native.collected,
+          windows: native.windows, windowProofs: native.windowProofs, config: native.config }) : null;
+    owner.check();
+    const proofRecord = ownerProof ? { schema: proofSchema, proofVersion, scopeKey: native.graph.scopeKey,
+      frame: native.graph.readerFrame, generation, windowCount: native.windows.length,
+      windows: native.windows, ownerProof } : null;
+    if (proofRecord) owner.resources?.retain(proofRecord,'request_local_source_proof',2);
+    return { ...native, compiledIndex: null, sourceProofs: proofRecord,
       currentGraph: async (resources = owner.resources) => {
+        if (proofRecord) {
+          const verdict = await owner.verifySourceProofs(proofRecord, { initialGraph: native.graph, config: native.config, phase: 'commit' });
+          owner.check();
+          if (!verdict || verdict.status !== 'verified') fail('source_changed', { currentnessVerification: verdict || null });
+          return native.graph;
+        }
         const live = await enumerate(opts => snapshot(opts,resources), native.config, resources?.check || owner.check);
         if (!same(live.windows,native.windows) || stamp(live.graph) !== generation) fail('source_changed');
         return live.graph;
       },
       access: { schema, mode: 'request_local_corpus', reason, generation, windowCount: native.windows.length,
         familyContracts: FAMILY_CURRENTNESS_CONTRACTS,
-        nativeReprojectionRequired: true, ownerAtomicity: false, inventoryComplete: false, byteBounded: false }
+        nativeReprojectionRequired: !proofRecord, currentnessVerification: proofRecord ? 'request_local_owner_proof' : 'native_reprojection',
+        ownerAtomicity: false, inventoryComplete: false, byteBounded: false }
     };
   };
 

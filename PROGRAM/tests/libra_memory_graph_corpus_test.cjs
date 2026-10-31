@@ -85,6 +85,28 @@ function fixture({count=53,canonicalCount=2,incrementalProof=false,hubEdges=0}={
     change(){editedMicro=count-1;revision++;},changeCanonical(){canonicalRev++;},changeState(){stateRev++;},changeLore(){loreRev++;},
     grow(delta=1){count+=delta;},restartCursor(){cursorEpoch++;},cancel(){broken=true;},uncancel(){broken=false;},get compiles(){return compileCount;}};
 }
+test('cold request uses owner proofs without graph re-enumeration and refuses changes in every family',async()=>{
+  for(const mutation of [null,'change','changeCanonical','changeState','changeLore','grow']){
+    const x=fixture({count:5,incrementalProof:true});
+    const cold=await x.corpus.prepare({owner:x.owner,snapshot:x.snapshot,options:{limit:1}});
+    assert.ok(cold.sourceProofs?.ownerProof);
+    assert.equal(cold.access.nativeReprojectionRequired,false);
+    const reads=x.visits.length;
+    if(mutation){x[mutation]();await assert.rejects(()=>cold.currentGraph(),/SOURCE_CHANGED/);}
+    else assert.equal((await cold.currentGraph()).units.length,cold.graph.units.length);
+    assert.equal(x.visits.length,reads,'validation never repeats full native enumeration');
+    assert.equal(x.writes.length,0,'request-local proofs never publish data');
+    x.idle();
+  }
+});
+
+test('cold proof refusal cannot fall back to a stale request snapshot',async()=>{
+  const x=fixture({count:5,incrementalProof:true});
+  const cold=await x.corpus.prepare({owner:x.owner,snapshot:x.snapshot,options:{limit:1}});
+  x.owner.verifySourceProofs=async()=>null;
+  await assert.rejects(()=>cold.currentGraph(),/SOURCE_CHANGED/);
+});
+
 test('one durable index spans 53 owner windows and the ended family never restarts',async()=>{
   const x=fixture();const built=await x.build();assert.equal(built.windowCount,53);
   assert.equal(x.writes.at(-1),x.corpus.location(await x.initial()).rootKey);
