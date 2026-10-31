@@ -102,6 +102,8 @@ id_ed25519*
 /.development/evidence/
 /.development/STATUS.json
 /.development/local.env
+# Local git worktrees; committing them records them as dangling gitlinks.
+/.development/worktrees/
 coverage/
 test-results/
 playwright-report/

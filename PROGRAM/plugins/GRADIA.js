@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.6
+//@display-name GRADIA v0.28.7
 //@api 3.0
-//@version 0.28.6
+//@version 0.28.7
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -936,7 +936,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.6';
+  const PLUGIN_VERSION = '0.28.7';
   
   
   
@@ -3046,10 +3046,13 @@
   const libCatalogContextLimit = (models, modelId) => {
     const rows = Array.isArray(models) ? models : [];
     const leaf = libModelContextLeaf(modelId);
-    const row = rows.find(item => String(item?.id || '') === String(modelId || ''))
-      || (leaf ? rows.find(item => libModelContextLeaf(item?.id) === leaf) : null);
-    const limit = Number(row?.contextWindow || 0);
-    return Number.isSafeInteger(limit) && limit > 0 && limit <= 4000000 ? limit : 0;
+    const valid = value => { const limit = Number(value || 0); return Number.isSafeInteger(limit) && limit > 0 && limit <= 4000000 ? limit : 0; };
+    const exact = rows.find(item => String(item?.id || '') === String(modelId || ''));
+    if (exact) return valid(exact.contextWindow);
+    // Several tagged variants can share one leaf ("qwen3:8b", "qwen3:32b"). Only
+    // the smallest of their windows is safe to assume for the unlisted variant.
+    const limits = leaf ? rows.filter(item => libModelContextLeaf(item?.id) === leaf).map(item => valid(item?.contextWindow)).filter(Boolean) : [];
+    return limits.length ? Math.min(...limits) : 0;
   };
   // An OpenAI-compatible Ollama gateway (cloud or proxied) reports no context
   // metadata, so its own num_ctx policy is the only limit this route defines.
@@ -3722,14 +3725,21 @@
     if (resolved.confidence === 'explicit_wrapper' && !nativeTurnMessageId(mapped[resolved.requestIndex])) {
       const comparableInput = value => narrative({ role: 'user', content: stripCodeFence(value) });
       const wanted = comparableInput(resolved.text);
-      const candidates = host.messages.filter(row => nativeTurnMessageId(row) && currentTurnRole(row) === 'user'
-        && !turnBlockReason({ ...row, role: 'user', content: contentToText(row.data ?? row.content ?? '') })
-        && comparableInput(contentToText(row.data ?? row.content ?? '')) === wanted);
-      if (!wanted || candidates.length !== 1
-        || host.messages.filter(row => nativeTurnMessageId(row) === nativeTurnMessageId(candidates[0])).length !== 1) throw libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
-      const row = candidates[0];
-      if (host.messages.findLast(message => currentTurnRole(message) === 'user') !== row) throw libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
-      hostInput = { ...row, content: contentToText(row.data ?? row.content ?? '') };
+      // The current input is the latest live user row. Bind that row only: short
+      // inputs ("계속", "…") repeat across a chat, and requiring the text to occur
+      // once in the whole chat refused memory evidence on exactly those turns.
+      const row = host.messages.findLast(message => currentTurnRole(message) === 'user');
+      const rowText = row ? contentToText(row.data ?? row.content ?? '') : '';
+      if (!wanted || !row || !nativeTurnMessageId(row)
+        || turnBlockReason({ ...row, role: 'user', content: rowText })
+        || comparableInput(rowText) !== wanted
+        || host.messages.filter(message => nativeTurnMessageId(message) === nativeTurnMessageId(row)).length !== 1) throw libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
+      // Two unanswered rows with the same text are still ambiguous; only answered
+      // (completed) turns may repeat it.
+      const pendingFrom = host.messages.findLastIndex(message => currentTurnRole(message) === 'assistant') + 1;
+      if (host.messages.slice(pendingFrom).filter(message => currentTurnRole(message) === 'user'
+        && comparableInput(contentToText(message.data ?? message.content ?? '')) === wanted).length !== 1) throw libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
+      hostInput = { ...row, content: rowText };
     }
     const snapshot = captureLibNativeReadSet(mapped, settings, baseRecent, hostInput);
     for (const selection of snapshot.selections) {
@@ -4037,7 +4047,9 @@
     if (!lease) return null;
     const assertLocal = () => assertInputWriterLease(lease);
     const startedAt = Date.now();
+    let notedStage = '';
     const noteDiagnostic = (status, code, stage) => {
+      notedStage = String(stage || '');
       Runtime.lastInputWriterReadDiagnostic = Object.freeze({ at: Date.now(), purpose: 'input_writer_proposal',
         status: String(status || ''), code: String(code || ''), stage: String(stage || ''),
         elapsedMs: Math.max(0, Date.now() - startedAt) });
@@ -4091,12 +4103,13 @@
         assertLocal();
         closeInputWriterEvidence(error.code, lease);
         if (Runtime.inputAssistSend?.busy) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, memory: { status: 'unavailable', reason: error.code } };
-        noteDiagnostic('unavailable', error.code, 'owner_read');
+        // Keep the boundary that actually failed (e.g. model_context_preflight).
+        noteDiagnostic('unavailable', error.code, notedStage || 'owner_read');
         warn('input_writer_memory_unavailable', error.code);
         return null;
       }
       closeInputWriterEvidence(/^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE', lease);
-      noteDiagnostic('failed', /^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE', 'owner_read');
+      noteDiagnostic('failed', /^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE', notedStage || 'owner_read');
       throw error;
     }
   };

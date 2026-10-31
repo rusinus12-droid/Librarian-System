@@ -9,7 +9,7 @@ const pair=(i,long=false)=>[{role:'user',chatId:'u'+i,data:`Where is parcel ${i}
 // records. Server mode cannot execute the physical rebuild that would re-derive it,
 // so the only forward path is the ordinary turn sync; it must not be refused with a
 // verdict that blames the episode index instead.
-test('server mode keeps turn sync available when only the derived chunk schema is old',async()=>{
+test('server mode re-chunks turns whose derived chunk schema is old',async()=>{
   const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'fb-derived-rebuild-'));
   const app=createMemorySuiteServer({dataDir,autoBackup:false,port:0}),address=await app.listen();
   const f=await createFixture({source:fs.readFileSync(require.resolve('../plugins/Flashback_Memory.js'),'utf8'),
@@ -43,24 +43,34 @@ test('server mode keeps turn sync available when only the derived chunk schema i
     assert.equal(syncPlan.legacySanitizerRecords,0);
     assert.equal(syncPlan.automatic.strategy,'server_turn_sync');
     assert.equal(syncPlan.automatic.blocked,false);
-    assert.equal(syncPlan.automatic.derivedRebuildPending,true);
 
-    // With nothing left to sync the derived rebuild is the only outstanding item, and
-    // the verdict must name it instead of the episode index.
+    assert.equal(syncPlan.automatic.derivedRechunk,true);
+
+    // With nothing left to sync, the old chunks alone must still have a server-mode
+    // route. A standing "blocked" verdict here froze the scope at every later check.
     f.currentChat.message.splice(2);
-    const blockedPlan=await f.api.inspectMemoryMaintenance();
-    assert.equal(blockedPlan.missingTurns,0);
-    assert.equal(blockedPlan.requiresFullRebuild,true);
-    assert.equal(blockedPlan.automatic.strategy,'server_inspection_only');
-    assert.equal(blockedPlan.automatic.blocked,true);
-    assert.equal(blockedPlan.automatic.reason,'derived_schema_rebuild_required');
-    assert.notEqual(blockedPlan.automatic.reason,'episode_index_stale');
+    const rechunkPlan=await f.api.inspectMemoryMaintenance();
+    assert.equal(rechunkPlan.missingTurns,0);
+    assert.equal(rechunkPlan.requiresFullRebuild,true);
+    assert.equal(rechunkPlan.automatic.strategy,'server_turn_sync');
+    assert.equal(rechunkPlan.automatic.blocked,false);
+    assert.equal(rechunkPlan.automatic.reason,'derived_chunk_rechunk_available');
+    assert.equal(rechunkPlan.automatic.derivedRechunk,true);
+    const result=await f.api.runMemoryMaintenance('auto',{preflight:rechunkPlan});
+    assert.equal(result.after.liveChunkSchemaMismatch,0,'the live source re-derives current-schema chunks');
+    assert.equal(result.after.requiresFullRebuild,false);
+    assert.notEqual(result.after.automatic.blocked===true&&/rebuild/.test(result.after.automatic.reason||''),true);
+    assert.equal(result.after.embeddingWorkIncompleteRecords,0);
+    const rows=(await f.api._test.loadScopeRecords(scope.scopeKey)).records.filter(r=>r.sourceType==='response');
+    assert.ok(rows.length>0&&rows.every(r=>Number(r.chunkSchemaVersion)>=2));
+    assert.equal(result.operation.sync.rechunkedTurns,1);
 
-    // Diagnostics keep the deciding inputs, so the same verdict is explainable offline.
+    // Diagnostics keep the deciding inputs of the latest (post-repair) inspection,
+    // so the same verdict is explainable offline.
     const counts=(await f.api.debugState())?.maintenanceInspection?.counts||{};
-    assert.equal(counts.requiresFullRebuild,true);
-    assert.equal(counts.requiresDerivedSchemaRebuildOnly,true);
-    assert.equal(typeof counts.liveChunkSchemaMismatch,'number');
+    assert.equal(counts.requiresFullRebuild,false);
+    assert.equal(counts.requiresDerivedSchemaRebuildOnly,false);
+    assert.equal(counts.liveChunkSchemaMismatch,0);
     assert.equal(counts.legacySanitizerRecords,0);
   } finally { await f.dispose(); await app.close?.(); }
 });

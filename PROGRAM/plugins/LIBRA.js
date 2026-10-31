@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.11
+//@display-name LIBRA v2.6.12
 //@api 3.0
-//@version 2.6.11
+//@version 2.6.12
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.6.11';
+  const PLUGIN_VERSION = '2.6.12';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -23772,9 +23772,6 @@ function summarizeAgentCbsTag(rawContent) {
         recent.visibleText = recent.text;
         recent.recentTurnCount = Number(liveTail.pairCount || 0);
       }
-      // Remembered so graph recall can tell which lore RisuAI already injected this turn.
-      Runtime.lastHostRequestMessages = { at: Date.now(), messages: (Array.isArray(messages) ? messages : []).map(message => ({
-        role: message?.role, content: message?.content, memo: message?.memo, removable: message?.removable })) };
       const snapshot = sealReferenceSourceSnapshot(await loadRisuContextSnapshot(stageSettings, messages, recent));
       Runtime.lastResponseMaterialSource = {
         at: Date.now(),
@@ -40500,8 +40497,14 @@ function createLibraReadonlySourceContext(owner) {
       // A pre-existing receipt with a lost work journal remains unknown.
       const mainCompletion=captureSource==='completed_pair_reconcile'
         && freshMainAfterRequestPair(context,pair,options.mainAfterRequestBoundary);
+      // Keyed to this turn's revision: the worker reports it only for the same
+      // receipt, so a later turn never inherits an earlier turn's refusal.
+      const noteMicroPlanRefusal = reason => {
+        state.lastMicroPlanRefusal = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId, captureSource, reason: string(reason) };
+      };
       if (!priorReceipt && (captureSource === 'risu_chat_output' || mainCompletion) && options.admitMicroPlan === true
         && options.microPlanBoundary) {
+        if (state.lastMicroPlanRefusal?.scopeKey === scope.scopeKey && Number(state.lastMicroPlanRefusal?.turn) === Number(turn)) state.lastMicroPlanRefusal = null;
         try {
           const claim={scope,identity:receiptRecoveryIdentity(context,pair),boundary:options.microPlanBoundary};
           if ((await validateReceiptRecoveryClaim(claim)).status === 'current') {
@@ -40526,16 +40529,19 @@ function createLibraReadonlySourceContext(owner) {
                 logicalAttempts:1,physicalAttemptsUsed:0,attemptHistory:[],
                 reservedAt,leaseExpiresAt:reservedAt+45000,result:null
               },scope);
-            }
-          }
-        } catch (_) { /* Receipt persistence continues; unproved Micro remains unknown. */ }
+            } else noteMicroPlanRefusal(priorWork || priorCapture ? 'plan_work_already_present'
+              : storedHead?.revisionId === revisionId || priorMicroHead?.sourceRevisionId === revisionId ? 'plan_revision_already_published'
+              : 'plan_boundary_changed');
+          } else noteMicroPlanRefusal('plan_recovery_claim_stale');
+        } catch (error) {
+          /* Receipt persistence continues; unproved Micro remains unknown. */
+          noteMicroPlanRefusal('plan_reservation_failed:' + string(error?.code || error?.message || 'error').slice(0, 80));
+        }
       } else if (!priorReceipt) {
         // The Micro worker can only ever answer "work journal missing" for this
         // turn, so record the actual admission decision while it is still known.
-        state.lastMicroPlanRefusal = { at: Date.now(), scopeKey: scope.scopeKey, turn,
-          revisionId, captureSource,
-          reason: string(options.microPlanReason
-            || (options.microPlanBoundary ? 'plan_admission_refused' : 'plan_boundary_missing')) };
+        noteMicroPlanRefusal(options.microPlanReason
+          || (options.microPlanBoundary ? 'plan_admission_refused' : 'plan_boundary_missing'));
       }
       // A verified immutable receipt is sufficient: transport only its pointer.
       if (!priorReceipt) {
@@ -60185,9 +60191,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         return { ...existing, duplicate: true };
       }
       if (!work) {
+        const refusal=state.lastMicroPlanRefusal?.scopeKey===receipt.scopeKey
+          &&Number(state.lastMicroPlanRefusal?.turn)===Number(turn)
+          &&string(state.lastMicroPlanRefusal?.revisionId)===string(receipt.revisionId)?state.lastMicroPlanRefusal:null;
         if(options.manual!==true)return {status:'unknown',reason:'micro_work_missing',
-          planRefusal:string(state.lastMicroPlanRefusal?.reason||''),
-          planRefusedAt:Number(state.lastMicroPlanRefusal?.at||0)};
+          planRefusal:string(refusal?.reason||''),planRefusedAt:Number(refusal?.at||0)};
         const reservedAt=Date.now();
         work={schema:'libra.micro_work.v1',scopeKey:receipt.scopeKey,worldlineId,sessionEpoch,turn,
           sourceRevisionId:receipt.revisionId,sourceDigest:receipt.sourceDigest,
@@ -68322,9 +68330,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // Lore RisuAI already placed in the latest request is in the prompt verbatim; delivering it
     // again as recall evidence duplicated it and crowded out canonical/micro/state memories.
     const HOST_REQUEST_LORE_MAX_AGE_MS = 10 * 60 * 1000;
-    const hostDeliveredLoreIdentities = snapshot => {
+    const hostDeliveredLoreIdentities = (snapshot, scopeKey = '') => {
       const request = Runtime.lastHostRequestMessages;
       if (!request || !Array.isArray(request.messages) || Date.now() - Number(request.at || 0) > HOST_REQUEST_LORE_MAX_AGE_MS) return new Set();
+      // Another chat's request says nothing about which lore this prompt carries.
+      if (!scopeKey || string(request.scopeKey || '') !== string(scopeKey)) return new Set();
       try {
         const selection = reuseRisuSelectedLorebooks(request.messages, asArray(snapshot?.candidates), snapshot?.cbsContext);
         return new Set(asArray(selection?.activeLore).map(lore => loreContinuityIdentity(lore)).filter(Boolean));
@@ -71615,6 +71625,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
           pendingMicro: pendingUserText ? {scopeKey:context.scope.scopeKey,turn:completedPairs.length+1,
             userHash:digest(pendingUserText),prefixDigest:sourceDigest(completedPairs)} : null
         };
+        // The lore RisuAI placed in THIS request, bound to its scope. Graph recall
+        // below drops those entries instead of delivering them a second time.
+        Runtime.lastHostRequestMessages = { at: Date.now(), scopeKey: string(context.scope?.scopeKey || ''),
+          messages: (Array.isArray(messages) ? messages : []).map(message => ({
+            role: message?.role, content: message?.content, memo: message?.memo, removable: message?.removable })) };
 
         // Startup normally checks the marker in the background. If the host context or
         // Librarian System server was unavailable then, the first later model request gets one
@@ -75596,7 +75611,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             activationKey: entry.lore.activationKey ?? null, effectiveForceState: entry.lore.effectiveForceState ?? null },
           passages: responseLorePassageWindows(entry.rendered).map(passage => loreLinkPassageLocator(passage, entry.rendered)) }));
         const allowedLore = loreEntries(loreSnapshot);
-        const hostDeliveredLore = hostDeliveredLoreIdentities(loreSnapshot);
+        const hostDeliveredLore = hostDeliveredLoreIdentities(loreSnapshot, scope?.scopeKey);
         const storedLoreMapping = await read(key.loreLinkMapping(scope), () => storage.getVerifiedJson(key.loreLinkMapping(scope), scope, null));
         const loreIndex = await buildLoreLinkIndex(scope, active.manifest, { snapshot: loreSnapshot });
         if (registry?.schema !== ENTITY_REGISTRY_SCHEMA || registry.scopeKey !== scope.scopeKey) throw new Error('LIBRA_GRAPH_REGISTRY_UNAVAILABLE');
