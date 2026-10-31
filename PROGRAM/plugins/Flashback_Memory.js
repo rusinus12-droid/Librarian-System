@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.3.11
+//@display-name ⚡ FLASHBACK Memory v1.3.12
 //@api 3.0
-//@version 1.3.11
+//@version 1.3.12
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
 //@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.3.11';
+const PLUGIN_VERSION = '1.3.12';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -2603,6 +2603,7 @@ const PLUGIN_VERSION = '1.3.11';
     const local = String(error?.code || error?.type || error?.message || error || '').match(/EMBEDDING_CHECKPOINT_[A-Z_]+/)?.[0];
     if (local) return diagnosticSlice(maintenanceIsolatedReasonText(local), max);
     if (typeof error === 'string') return diagnosticSlice(error, max);
+    if (error?.userMessage) return diagnosticSlice(String(error.userMessage), max);
     if (error?.message) {
       const prefix = error.name && error.name !== 'Error' ? `${error.name}: ` : '';
       return diagnosticSlice(`${prefix}${error.message}`, max);
@@ -13601,6 +13602,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     ? String(key || '').match(/^vector_rag_memory:(?:scope:|local-vector-shard:v1:)([A-Za-z0-9_-]{1,128}):/)?.[1] || '' : '';
   const flashbackWriters = new Map();
   const flashbackFenceError = code => Object.assign(new Error(code), { code, storageMutationRejected: true });
+  // A fence is leased per scope alias for two minutes and is only released by its
+  // holder. A reload that aborts a write leaves it behind, so the next instance
+  // must release what it still holds on unload and otherwise tell the user what a
+  // bare 409 means.
+  const isFlashbackWriterBusy = error => String(error?.payload?.error || '') === 'FLASHBACK_WRITER_BUSY'
+    || /FLASHBACK_WRITER_BUSY/.test(String(error?.code || error?.message || ''));
+  const flashbackWriterBusyError = (alias, waitedMs, error) => {
+    Runtime.lastWriterBusy = { at: Date.now(), alias, waitedMs: Math.max(0, Math.round(waitedMs)),
+      code: 'FLASHBACK_WRITER_BUSY', status: Number(error?.status || 409) || 409 };
+    const busy = flashbackFenceError('FLASHBACK_WRITER_BUSY');
+    busy.status = Number(error?.status || 409) || 409;
+    busy.payload = error?.payload;
+    busy.userMessage = '다른 창이나 이전 세션에서 기억 저장이 진행 중입니다(잠금 유효 시간 최대 2분). 잠시 후 다시 시도해 주세요.';
+    return busy;
+  };
   const flashbackWriterBoundary = async () => {
     const scope = await resolveCurrentScope(true);
     return { url: (await readConfig()).url, scopeId: scope?.scopeId || '', mode: (await readScopeMode(scope, true)).mode };
@@ -13678,7 +13694,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     session.users += 1;
     try {
-      await session.ready;
+      try { await session.ready; }
+      catch (error) {
+        // The reader only ever sees a 409 with a bare code. Say what it means and
+        // keep the code/receipt intact for the callers that inspect it.
+        if (!isFlashbackWriterBusy(error)) throw error;
+        throw flashbackWriterBusyError(alias, 0, error);
+      }
       await usableFlashbackFence(key);
       assertWriterCurrent();
       const result = await fn();
@@ -44041,20 +44063,60 @@ ${cleanedText}`, 80),
       const snapshot=JSON.parse(JSON.stringify(options.snapshot||await loadRisuCaptureSnapshot())),scope=resolveScopeFromSnapshot(snapshot);
       if(!scope?.available||!scope.scopeKey||options.scope?.scopeKey&&options.scope.scopeKey!==scope.scopeKey)throw Error('HEALTH_SCOPE_UNVERIFIED');
       const hostBinding=value=>JSON.stringify([resolveScopeFromSnapshot(value).scopeKey,MemorySuiteHostLineage.inspect(value.character,value.chat),value.chat?.bindedPersona||'',value.chat?.message||value.chat?.messages||[]]);
-      const hostWitness=hostBinding(snapshot),generation=Runtime.embeddingGeneration,sessionKey=Runtime.sessionEmbeddingKey;let lastHostSnapshot=snapshot;
+      const hostWitness=hostBinding(snapshot);let generation=Runtime.embeddingGeneration,sessionKey=Runtime.sessionEmbeddingKey;let lastHostSnapshot=snapshot;
       const assertHostSync=(inspectGeneration=true)=>{if(hostBinding(lastHostSnapshot)!==hostWitness)throw Error('HEALTH_SCOPE_OR_SOURCE_CHANGED');if(Runtime.sessionEmbeddingKey!==sessionKey||inspectGeneration&&Runtime.embeddingGeneration!==generation)throw Error('HEALTH_SETTINGS_CHANGED');};
       const assertHost=async(inspectGeneration=true)=>{lastHostSnapshot=await loadRisuCaptureSnapshot();assertHostSync(inspectGeneration);};
       await assertHost();
       const observed=await MemorySuiteStorageBridge.inspectFlashbackServerHealthSnapshot({scopeId:scope.scopeKey,scopeKey:scope.scopeKey});
       await assertHost();
       const captured=JSON.parse(JSON.stringify(observed.snapshot));
-      let settingsState=null,argumentWitness='',settings=null,settingsUnavailable='';
+      let settingsState=null,argumentWitness='',settings=null,settingsUnavailable='',settingsWitness='';
+      // The settings record is rewritten by the plugin itself (embedding-key
+      // recovery, policy stamp, argument repair). Comparing raw bytes turned those
+      // self-inflicted rewrites into a user-facing "점검 중 설정이 변경되었습니다".
+      // Compare the values the plan actually depends on instead.
+      const settingsFromSnapshot = state => {
+        const raw=state?.raw,parsed=typeof raw==='string'?tryJsonParse(raw,null):raw;
+        if(raw!=null&&(!parsed||typeof parsed!=='object'||Array.isArray(parsed)))throw Error('HEALTH_SETTINGS_UNVERIFIED');
+        let source=Number(parsed?.version||0)>=4&&parsed.overrides&&typeof parsed.overrides==='object'?{...DEFAULTS,...parsed.overrides}:parsed?.settings&&typeof parsed.settings==='object'?parsed.settings:parsed||{};
+        if(Number(source.hookRecallTimeoutPolicyVersion||0)<HOOK_RECALL_TIMEOUT_POLICY_VERSION)source={...source,hookRecallTimeoutMs:DEFAULTS.hookRecallTimeoutMs,hookRecallTimeoutPolicyVersion:HOOK_RECALL_TIMEOUT_POLICY_VERSION};
+        return source;
+      };
+      const maintenanceSettingsWitness = value => MemorySuiteExecutionContract.hash(JSON.stringify([
+        embeddingRequestSettingsFingerprint(value||DEFAULTS),
+        Number(value?.chunkChars||0)||0,Number(value?.chunkOverlap||0)||0,
+        value?.episodeIndexEnabled===true?'episode_on':'episode_off',
+        Number(value?.maxResponseItems||0)||0,Number(value?.minCaptureChars||0)||0,
+        value?.captureAfterRequest===false?'capture_off':'capture_on'
+      ]));
       // Execution changes the corpus and may invalidate embedding jobs itself.
       // Keep checking the actual source, settings and route after that change.
       const assertSourceCurrent=async()=>{
         await assertHost(false);
-        if(settingsState){await settingsState.assertCurrent();await assertHost(false);
-          const args=await readArgumentSettings({strictReadOnly:true});await assertHost(false);if(JSON.stringify(args)!==argumentWitness)throw Error('HEALTH_SETTINGS_CHANGED');}
+        if(settingsState){
+          let rewritten=false;
+          try{await settingsState.assertCurrent();}
+          catch(error){if(error?.message==='HEALTH_SETTINGS_CHANGED')rewritten=true;else throw error;}
+          if(!rewritten){
+            await assertHost(false);
+            const args=await readArgumentSettings({strictReadOnly:true});
+            await assertHost(false);
+            if(JSON.stringify(args)!==argumentWitness)rewritten=true;
+          }
+          if(rewritten){
+            const state=await MemorySuiteStorageBridge.inspectFlashbackGlobalSettingsSnapshot();
+            await assertHost(false);
+            const args=await readArgumentSettings({strictReadOnly:true});
+            await assertHost(false);
+            const derived=applyArgumentOverrides(normalizeSettings(settingsFromSnapshot(state)),args);
+            if(maintenanceSettingsWitness(derived)!==settingsWitness)throw Error('HEALTH_SETTINGS_CHANGED');
+            // Same inspected values, newer record bytes: adopt the rewrite instead of
+            // aborting the user's repair and asking them to press the button again.
+            settingsState=state;settings=derived;argumentWitness=JSON.stringify(args);
+            generation=Runtime.embeddingGeneration;sessionKey=Runtime.sessionEmbeddingKey;
+            Runtime.maintenanceSettingsReread={at:Date.now(),scopeKey:scope.scopeKey,adopted:true,witness:settingsWitness};
+          }
+        }
         await observed.assertRouteCurrent({allowConnectionRefresh:true});assertHostSync(false);settingsState?.assertCurrentSync();
       };
       const assertCurrent=async()=>{
@@ -44077,11 +44139,8 @@ ${cleanedText}`, 80),
       if([...inventory].some(([id,row])=>!row.tombstone&&!values.has(id)))return await incomplete('snapshot_value_missing');
       try{
         settingsState=await MemorySuiteStorageBridge.inspectFlashbackGlobalSettingsSnapshot();await assertHost();
-        const raw=settingsState.raw,parsed=typeof raw==='string'?tryJsonParse(raw,null):raw;
-        if(raw!=null&&(!parsed||typeof parsed!=='object'||Array.isArray(parsed)))throw Error('HEALTH_SETTINGS_UNVERIFIED');
-        let source=Number(parsed?.version||0)>=4&&parsed.overrides&&typeof parsed.overrides==='object'?{...DEFAULTS,...parsed.overrides}:parsed?.settings&&typeof parsed.settings==='object'?parsed.settings:parsed||{};
-        if(Number(source.hookRecallTimeoutPolicyVersion||0)<HOOK_RECALL_TIMEOUT_POLICY_VERSION)source={...source,hookRecallTimeoutMs:DEFAULTS.hookRecallTimeoutMs,hookRecallTimeoutPolicyVersion:HOOK_RECALL_TIMEOUT_POLICY_VERSION};
-        const args=await readArgumentSettings({strictReadOnly:true});await assertHost();argumentWitness=JSON.stringify(args);settings=applyArgumentOverrides(normalizeSettings(source),args);
+        const args=await readArgumentSettings({strictReadOnly:true});await assertHost();argumentWitness=JSON.stringify(args);settings=applyArgumentOverrides(normalizeSettings(settingsFromSnapshot(settingsState)),args);
+        settingsWitness=maintenanceSettingsWitness(settings);
       }catch(error){settingsUnavailable=/^HEALTH_[A-Z0-9_]+$/.test(error?.message||'')?error.message:'HEALTH_SETTINGS_UNVERIFIED';settingsState=null;}
       if(settingsUnavailable)return await incomplete(settingsUnavailable);
       const readValue=async(space,key,target=scope.scopeKey)=>{
@@ -53291,6 +53350,8 @@ ${cleanedText}`, 80),
       lastEpisodeIndex: Runtime.lastEpisodeIndex,
       maintenanceJournal: Runtime.maintenanceJournal,
       maintenanceInspection: cloneRuntimeValue(Runtime.lastMaintenanceInspection, null),
+      lastWriterBusy: cloneRuntimeValue(Runtime.lastWriterBusy || null, null),
+      maintenanceSettingsReread: cloneRuntimeValue(Runtime.maintenanceSettingsReread || null, null),
       maintenanceQueue: Runtime.lastMaintenanceQueueResult ? {
         scopeKey: Runtime.lastMaintenanceQueueResult.scopeKey, at: Runtime.lastMaintenanceQueueResult.at,
         ready: Runtime.lastMaintenanceQueueResult.ready, failed: Runtime.lastMaintenanceQueueResult.failed,

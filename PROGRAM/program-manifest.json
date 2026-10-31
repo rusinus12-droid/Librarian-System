@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-31T04:17:38.679Z",
+  "generatedAt": "2026-10-31T04:37:07.666Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -407,7 +407,7 @@
           "nonOwningOutputHooksAreSanitizers": true
         },
         "flashback": {
-          "version": "1.3.11",
+          "version": "1.3.12",
           "provisionalRemoteEmbedding": false,
           "backendOrder": [
             "chat_output_v3",
@@ -769,7 +769,7 @@
         "canonicalStorageFormatUnchanged": true
       },
       "flashback": {
-        "version": "1.3.11",
+        "version": "1.3.12",
         "unchangedNormalizedDescriptorReuse": true,
         "unchangedLivePairStateReuse": true,
         "changedMessageOnlyRenormalized": true,
@@ -1031,7 +1031,7 @@
       "remountPreservesBusyState": true
     },
     "flashbackArchiveReembedding": {
-      "version": "1.3.11",
+      "version": "1.3.12",
       "fullMaintenanceIncludesArchive": true,
       "automaticMaintenanceIncludesArchive": true,
       "progressiveMaintenanceIncludesArchive": true,
@@ -1410,7 +1410,7 @@
     },
     "scopeSpecificStorageModesCompatibilityOnly": true,
     "flashbackQueryEmbeddingLifetime": {
-      "version": "1.3.11",
+      "version": "1.3.12",
       "callerBudgetMs": [
         1500,
         4000
@@ -1423,7 +1423,7 @@
     }
   },
   "plugins": {
-    "flashback": "1.3.11",
+    "flashback": "1.3.12",
     "hayaku": "3.3.9",
     "libra": "2.6.11",
     "lia": "0.29.4",
@@ -1702,6 +1702,10 @@
     "docs/GRADIA_OPTIONAL_MEMORY_20261022.md": {
       "sha256": "2d11a68742849d78960075d18f3d4e242e8778902afa01f07a1b0e136aeb69c9",
       "bytes": 3307
+    },
+    "docs/GRADIA_PLOT_AIDE_OBSERVATION_20261030.md": {
+      "sha256": "520c9bd1e3a529d546c193374ba48048faf740de57011094a2c852eac2b7d6e6",
+      "bytes": 7525
     },
     "docs/GRADIA_SKILL_ROUTER_REVIEW_20261022.md": {
       "sha256": "6b7981ab1b07c5d11a9c6867ccd8625bab4f49d42ddb131cab5dbed38138ce42",
@@ -4120,12 +4124,12 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "a422f63f36a353c3006197ea443b2513d341117a27293932ac38078d08fa5a3a",
+      "sha256": "79c010141ed9b06f39c64f9c79cbb5789cee9cf83e25e5d966500868d4d770b1",
       "bytes": 3351
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "4ed27a90923c213c4af5dbee0988b0d2ce8d5fbdadfd18cd6d3feb23b7f70dca",
-      "bytes": 3732986
+      "sha256": "e291eb013a5e55456454acb2483478391a3bbdb8e499891ab365dce45e03cc9f",
+      "bytes": 3736775
     },
     "plugins/GRADIA.js": {
       "sha256": "826c496a5e5ccc9c71a06562c67434e38a6365e8272bc353e2204b97452d7bd2",
@@ -12208,7 +12212,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "b7d0f416ea8b1ddf70a7d10922a7a33862f440b9a7e2cf648b6484d7cdd3b611",
+      "sha256": "7e034aaaa78a6425f8725740cb4b517e29cc894c74ff46c59e42d4436c1ea805",
       "bytes": 3785
     }
   },
