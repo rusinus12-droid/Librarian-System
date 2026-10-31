@@ -3640,11 +3640,26 @@ Before continuing, verify:
   const LIB_EVIDENCE_RECHECK_COALESCE_MS = 1500;
   // Counts only (no content): where a run's verification time goes.
   const noteEvidenceCheck = (kind, startedAt, reused = false) => {
-    const stats = Runtime.libEvidenceCheckStats || (Runtime.libEvidenceCheckStats = { since: Date.now(), runChecks: 0, runReused: 0, runMs: 0, runMaxMs: 0, nativeChecks: 0, nativeMs: 0, nativeMaxMs: 0 });
+    const stats = Runtime.libEvidenceCheckStats || (Runtime.libEvidenceCheckStats = { since: Date.now(), runChecks: 0, runReused: 0, runMs: 0, runMaxMs: 0, nativeChecks: 0, nativeMs: 0, nativeMaxMs: 0, byOwner: {} });
     const ms = Math.max(0, Date.now() - startedAt);
     if (kind === 'native') { stats.nativeChecks += 1; stats.nativeMs += ms; stats.nativeMaxMs = Math.max(stats.nativeMaxMs, ms); }
     else if (reused) stats.runReused += 1;
     else { stats.runChecks += 1; stats.runMs += ms; stats.runMaxMs = Math.max(stats.runMaxMs, ms); }
+  };
+  const noteOwnerEvidenceTiming = (owner, phase, ms) => {
+    const stats = Runtime.libEvidenceCheckStats || (Runtime.libEvidenceCheckStats = { since: Date.now(), runChecks: 0, runReused: 0, runMs: 0, runMaxMs: 0, nativeChecks: 0, nativeMs: 0, nativeMaxMs: 0, byOwner: {} });
+    if (!stats.byOwner) stats.byOwner = {};
+    const o = stats.byOwner[owner] || (stats.byOwner[owner] = { openCount: 0, openMs: 0, openMaxMs: 0, checkCount: 0, checkMs: 0, checkMaxMs: 0 });
+    const clampedMs = Math.max(0, Number(ms) || 0);
+    if (phase === 'open') {
+      o.openCount += 1;
+      o.openMs += clampedMs;
+      o.openMaxMs = Math.max(o.openMaxMs, clampedMs);
+    } else if (phase === 'check') {
+      o.checkCount += 1;
+      o.checkMs += clampedMs;
+      o.checkMaxMs = Math.max(o.checkMaxMs, clampedMs);
+    }
   };
   // Per evidence request: at most this many stall/length recoveries (see beforeModel), so the
   // whole request stays within (stage calls + this) x stage timeout.
@@ -21871,16 +21886,19 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
           return;
         }
         manualCopyButton.disabled = true; copyButton.disabled = true;
-        if (onValidate) {
+        if (onValidate && !freshVerification(result.content)) {
           copyStatus.textContent = '기억이 바뀌지 않았는지 확인하고 있습니다…';
           setBusy(true);
-          try { await onValidate(result.content, () => text(preview.value).trim()); }
-          catch (error) {
+          try {
+            await onValidate(result.content, () => text(preview.value).trim());
+            verifiedCopy = { content: result.content, at: Date.now() };
+          } catch (error) {
             copyStatus.textContent = '검증 실패: ' + text(error.code || error.message) + ' · 복사한 인풋은 붙여넣지 마세요.';
             copyStatus.style.color = '#ff9aa7';
+            manualCopyButton.disabled = false;
+            copyButton.disabled = false;
             return;
-          }
-          finally { setBusy(false); }
+          } finally { setBusy(false); }
         }
         if (settled) return;
         if (Runtime.lastInputAssist) { Runtime.lastInputAssist.clipboardCopyMethod = 'manual'; Runtime.lastInputAssist.clipboardUserActivation = null; }
@@ -22634,10 +22652,113 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     return fence ? fence[1].trim() : body;
   };
 
+  const extractAllJsonObjectStrings = (raw) => {
+    const source = stripCodeFence(raw);
+    if (!source) return [];
+    const results = [];
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    let start = -1;
+    for (let i = 0; i < source.length; i += 1) {
+      const ch = source[i];
+      if (escape) { escape = false; continue; }
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === '{') {
+        if (depth === 0) start = i;
+        depth += 1;
+      } else if (ch === '}') {
+        depth -= 1;
+        if (depth === 0 && start >= 0) {
+          results.push(source.slice(start, i + 1));
+          start = -1;
+        }
+      }
+    }
+    return results;
+  };
+
+  const repairTruncatedJsonObject = (raw) => {
+    let source = stripCodeFence(raw);
+    if (!source || !source.includes('{')) return null;
+    const start = source.indexOf('{');
+    source = source.slice(start);
+    source = source.replace(/,\s*(?:"[^"]*)?$/, '');
+    source = source.replace(/:\s*$/, ': null');
+    const stack = [];
+    let inString = false;
+    let escape = false;
+    for (let i = 0; i < source.length; i += 1) {
+      const ch = source[i];
+      if (escape) { escape = false; continue; }
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === '{') stack.push('}');
+      else if (ch === '[') stack.push(']');
+      else if (ch === '}' || ch === ']') {
+        if (stack.length && stack[stack.length - 1] === ch) {
+          stack.pop();
+        }
+      }
+    }
+    let repaired = source;
+    if (inString) repaired += '"';
+    while (stack.length) {
+      repaired += stack.pop();
+    }
+    return repaired;
+  };
+
+  const repairUnescapedJsonQuotes = (source) => {
+    let inString = false;
+    let escape = false;
+    let out = '';
+    for (let i = 0; i < source.length; i += 1) {
+      const ch = source[i];
+      if (escape) {
+        out += ch;
+        escape = false;
+        continue;
+      }
+      if (ch === '\\') {
+        out += ch;
+        escape = true;
+        continue;
+      }
+      if (ch === '"') {
+        if (!inString) {
+          inString = true;
+          out += ch;
+        } else {
+          const rest = source.slice(i + 1).match(/^\s*(?:[:,\}\]]|$)/);
+          if (rest) {
+            inString = false;
+            out += ch;
+          } else {
+            out += '\\"';
+          }
+        }
+        continue;
+      }
+      out += ch;
+    }
+    return out;
+  };
+
   const extractJsonObjectString = (raw) => {
     const source = stripCodeFence(raw);
     if (!source) return '';
-    if (source.startsWith('{') && source.endsWith('}')) return source;
+    const allObjects = extractAllJsonObjectStrings(source);
+    if (allObjects.length) {
+      const schemaPreferred = allObjects.find(obj =>
+        obj.includes(ANALYSIS_SCHEMA) || obj.includes(SERIAL_DRAFT_PATCH_SCHEMA) || obj.includes('gradia_')
+      );
+      if (schemaPreferred) return schemaPreferred;
+      return allObjects[0];
+    }
     const first = source.indexOf('{');
     if (first < 0) return '';
     let depth = 0;
@@ -22748,13 +22869,20 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       .replace(/\bNone\b/g, 'null')
       .replace(/,\s*([}\]])/g, '$1');
     const repairedEscapes = repairInvalidJsonStringEscapes(normalized);
+    const unescapedQuotes = repairUnescapedJsonQuotes(normalized);
+    const unescapedQuotesEscapes = repairInvalidJsonStringEscapes(unescapedQuotes);
     const variants = [
       json,
       normalized,
       repairedEscapes,
+      unescapedQuotes,
+      unescapedQuotesEscapes,
       escapeJsonStringControlChars(normalized),
       escapeJsonStringControlChars(repairedEscapes),
+      escapeJsonStringControlChars(unescapedQuotes),
+      escapeJsonStringControlChars(unescapedQuotesEscapes),
       quoteBareJsonKeys(normalized),
+      quoteBareJsonKeys(unescapedQuotes),
       repairInvalidJsonStringEscapes(quoteBareJsonKeys(normalized)),
       escapeJsonStringControlChars(quoteBareJsonKeys(normalized)),
       escapeJsonStringControlChars(repairInvalidJsonStringEscapes(quoteBareJsonKeys(normalized))),
@@ -22766,12 +22894,108 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     return [...new Set(variants.filter(Boolean))];
   };
 
-  const relaxedJsonParse = (raw) => {
-    const json = extractLooseJsonObjectString(raw);
-    if (!json) return null;
-    for (const attempt of jsonRepairCandidates(json)) {
-      try { return JSON.parse(attempt); } catch (_) {}
+  const fallbackParseAnalysisSchema = (raw, stageName = '') => {
+    const source = String(raw || '');
+    if (!source.includes(ANALYSIS_SCHEMA)) return null;
+    const summaryMatch = source.match(/"summary"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (!summaryMatch) return null;
+    const summary = summaryMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+    const stageMatch = source.match(/"stage"\s*:\s*"([^"]+)"/);
+    const resolvedStage = stageName || stageMatch?.[1] || '';
+
+    const constraints = [];
+    const constMatch = source.match(/"constraints"\s*:\s*\[([\s\S]*?)\]/);
+    if (constMatch) {
+      const items = constMatch[1].match(/"((?:[^"\\]|\\.)*)"/g) || [];
+      for (const item of items) constraints.push(item.slice(1, -1).replace(/\\"/g, '"'));
     }
+
+    const risks = [];
+    const risksMatch = source.match(/"risks"\s*:\s*\[([\s\S]*?)\]/);
+    if (risksMatch) {
+      const items = risksMatch[1].match(/"((?:[^"\\]|\\.)*)"/g) || [];
+      for (const item of items) risks.push(item.slice(1, -1).replace(/\\"/g, '"'));
+    }
+
+    const beats = [];
+    const beatsMatch = source.match(/"beats"\s*:\s*\[([\s\S]*?)\]/);
+    if (beatsMatch) {
+      const items = beatsMatch[1].match(/"((?:[^"\\]|\\.)*)"/g) || [];
+      for (const item of items) beats.push(item.slice(1, -1).replace(/\\"/g, '"'));
+    }
+
+    const situationMatch = source.match(/"latest_confirmed_situation"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    const situation = situationMatch ? situationMatch[1].replace(/\\"/g, '"') : '';
+    if (!beats.length) return null;
+
+    return {
+      schema: ANALYSIS_SCHEMA,
+      stage: resolvedStage,
+      ok: true,
+      analysis: { summary, constraints, risks },
+      domain: {
+        current_scene_anchor: situation ? { latest_confirmed_situation: situation } : {},
+        story_author_plan: { beats },
+        director_brief: { ending_requirement: 'Preserve natural scene tension and causality' }
+      }
+    };
+  };
+
+  const relaxedJsonParse = (raw, expectedStage = '', options = {}) => {
+    const rawText = String(raw || '').trim();
+    if (!rawText) return null;
+    const allowTruncatedRepair = options.allowTruncatedRepair === true
+      || ['shadow_act', 'aide_character', 'aide_world', 'aide_plot'].includes(expectedStage);
+
+    // 1. Try extracted discrete JSON objects, schema-preferred first
+    const allObjects = extractAllJsonObjectStrings(rawText);
+    const candidates = [];
+    if (allObjects.length) {
+      const schemaPreferred = allObjects.filter(obj =>
+        obj.includes(ANALYSIS_SCHEMA) || obj.includes(SERIAL_DRAFT_PATCH_SCHEMA) || obj.includes('gradia_')
+      );
+      for (const obj of schemaPreferred) candidates.push(obj);
+      for (const obj of allObjects) if (!candidates.includes(obj)) candidates.push(obj);
+    }
+    const loose = extractLooseJsonObjectString(rawText);
+    if (loose && !candidates.includes(loose)) candidates.push(loose);
+
+    for (const json of candidates) {
+      for (const attempt of jsonRepairCandidates(json)) {
+        try {
+          const res = JSON.parse(attempt);
+          if (res && typeof res === 'object') return res;
+        } catch (_) {}
+      }
+    }
+
+    // 2. If truncated repair is allowed (analysis only), try truncated repair on candidates
+    if (allowTruncatedRepair) {
+      for (const json of candidates.length ? candidates : [rawText]) {
+        const truncatedRepaired = repairTruncatedJsonObject(json);
+        if (truncatedRepaired) {
+          for (const attempt of jsonRepairCandidates(truncatedRepaired)) {
+            try {
+              const res = JSON.parse(attempt);
+              if (res && typeof res === 'object') {
+                res._truncatedRepaired = true;
+                return res;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+
+      // 3. Fallback analysis schema extraction if schema keyword is present
+      if (rawText.includes(ANALYSIS_SCHEMA)) {
+        const fallback = fallbackParseAnalysisSchema(rawText, expectedStage);
+        if (fallback) {
+          fallback._truncatedRepaired = true;
+          return fallback;
+        }
+      }
+    }
+
     return null;
   };
 
@@ -25432,11 +25656,17 @@ Begin directly with the in-world response and finish the complete same-turn draf
 
   const analysisContractIssue = (stageName, rawContent, settings = {}) => {
     const completion = inspectStructuredJsonCompletion(rawContent);
-    if (completion.started && !completion.complete) {
-      return `provider_output_truncated_unreported:${completion.reason || 'json_incomplete'}`;
+    const rawTruncated = completion.started && !completion.complete;
+    const parsed = relaxedJsonParse(rawContent, stageName, { allowTruncatedRepair: true });
+    if (!isPlainObject(parsed)) {
+      if (rawTruncated) {
+        return `provider_output_truncated_unreported:${completion.reason || 'json_incomplete'}`;
+      }
+      return 'root_not_object';
     }
-    const parsed = relaxedJsonParse(rawContent);
-    if (!isPlainObject(parsed)) return 'root_not_object';
+    if (parsed._truncatedRepaired) {
+      warn('GRADIA analysis parsed via truncated repair', { stage: stageName, reason: completion.reason || 'truncated' });
+    }
     if (parsed.schema !== ANALYSIS_SCHEMA) return 'schema_mismatch';
     if (parsed.stage !== stageName) return 'stage_mismatch';
     if (parsed.ok !== true) return 'reported_not_ok';
@@ -25456,7 +25686,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   };
 
   const normalizeAnalysisResult = (stageName, rawContent) => {
-    const parsed = relaxedJsonParse(rawContent);
+    const parsed = relaxedJsonParse(rawContent, stageName, { allowTruncatedRepair: true });
     if (!isPlainObject(parsed)
       || parsed.schema !== ANALYSIS_SCHEMA
       || parsed.stage !== stageName
@@ -26022,7 +26252,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       if (analysisResult.ok) {
         analysis = normalizeAnalysisResult(stageName, analysisResult.content);
         if (!hasMeaningfulAnalysisResult(analysis, stageName, settings)) {
-          const plainAnalysis = relaxedJsonParse(analysisResult.content);
+          const plainAnalysis = relaxedJsonParse(analysisResult.content, stageName);
           if (plainAnalysis) analysis = normalizeAnalysisResult(stageName, JSON.stringify(plainAnalysis));
         }
       }
@@ -26876,7 +27106,7 @@ Use edits: [] when the current draft already satisfies this stage. Never emit an
       if (analysisResult.ok) {
         analysis = normalizeAnalysisResult(stageName, analysisResult.content);
         if (!hasMeaningfulAnalysisResult(analysis, stageName, settings)) {
-          const plainAnalysis = relaxedJsonParse(analysisResult.content);
+          const plainAnalysis = relaxedJsonParse(analysisResult.content, stageName);
           if (plainAnalysis) analysis = normalizeAnalysisResult(stageName, JSON.stringify(plainAnalysis));
         }
       }
@@ -37949,42 +38179,117 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             if(!selectedOwners.length)throw error;
           }
         }
-        const reads=[],items=[],revisions=[];let corpusBytes=0,metadataBytes=0,rawBytes=0,dependencyCount=0;
-        try{for(const owner of selectedOwners){
-          const remainingCorpus=Math.max(1,maxCorpusBytes-corpusBytes);
-          const remainingRaw=Math.min(7*remainingCorpus+2097152,7*maxCorpusBytes+2097152-rawBytes);
-          const read=await openLibraReadSession(scopes[owner],{...readOptions,owner,
-            source:owner==='libra'?readOptions.source:'server_logical_read',maxCorpusBytes:remainingCorpus,maxRawBytes:remainingRaw});
-          reads.push(read);const packet=read.snapshot;
-          corpusBytes+=packet.corpusBytes;
-          if(corpusBytes>maxCorpusBytes)reject('LIB_READ_CORPUS_BUDGET_EXCEEDED');
-          if(!Number.isSafeInteger(packet.metadataBytes)||packet.metadataBytes<0||!Number.isSafeInteger(packet.rawBytes)||packet.rawBytes<0)reject('LIB_READ_RESPONSE_INVALID');
-          metadataBytes+=packet.metadataBytes;rawBytes+=packet.rawBytes;dependencyCount+=packet.dependencies.length;
-          // Sum of per-owner server caps (LIBRA 1 MiB, HAYAKU 1 MiB, Flashback 8 MiB).
-          if(metadataBytes>10485760||rawBytes>7*maxCorpusBytes+2097152||dependencyCount>4096+owners.length)reject('LIB_READ_METADATA_BUDGET_EXCEEDED');
-          if(packet.dataInstanceId!==connection.dataInstanceId)reject('LIB_READ_DATA_CHANGED');
-          for(const item of packet.items){if(item.source.namespace!==owner)reject('LIB_READ_RESPONSE_INVALID');items.push(Object.freeze({...item,owner}));}
-          if(items.length>4096)reject('LIB_READ_REFERENCE_LIMIT_EXCEEDED');
-          revisions.push([owner,packet.evidenceRevision,packet.readIdentity]);
+        const nOwners = Math.max(1, selectedOwners.length);
+        const perOwnerCorpus = Math.max(1, Math.floor(maxCorpusBytes / nOwners));
+        const perOwnerRaw = Math.max(1, Math.floor((7 * maxCorpusBytes + 2097152) / nOwners));
+        const reads = [], readsByOwner = new Map();
+        let failedReason = null;
+        try {
+          const settled = await Promise.allSettled(selectedOwners.map(async owner => {
+            const ownerStartedAt = Date.now();
+            const read = await openLibraReadSession(scopes[owner], {
+              ...readOptions,
+              owner,
+              source: owner === 'libra' ? readOptions.source : 'server_logical_read',
+              maxCorpusBytes: perOwnerCorpus,
+              maxRawBytes: perOwnerRaw
+            });
+            const elapsedMs = Math.max(0, Date.now() - ownerStartedAt);
+            noteOwnerEvidenceTiming(owner, 'open', elapsedMs);
+            return { owner, read, elapsedMs };
+          }));
+
+          for (const res of settled) {
+            if (res.status === 'fulfilled') {
+              readsByOwner.set(res.value.owner, res.value.read);
+              reads.push(res.value.read);
+            } else if (!failedReason) {
+              failedReason = res.reason;
+            }
+          }
+          if (failedReason) {
+            for (const read of reads) read.close?.();
+            throw failedReason;
+          }
+
+          const orderedReads = selectedOwners.map(owner => readsByOwner.get(owner));
+          const items = [], revisions = [];
+          let corpusBytes = 0, metadataBytes = 0, rawBytes = 0, dependencyCount = 0;
+          for (let i = 0; i < selectedOwners.length; i += 1) {
+            const owner = selectedOwners[i];
+            const read = orderedReads[i];
+            const packet = read.snapshot;
+            corpusBytes += packet.corpusBytes;
+            if (corpusBytes > maxCorpusBytes) reject('LIB_READ_CORPUS_BUDGET_EXCEEDED');
+            if (!Number.isSafeInteger(packet.metadataBytes) || packet.metadataBytes < 0 || !Number.isSafeInteger(packet.rawBytes) || packet.rawBytes < 0) reject('LIB_READ_RESPONSE_INVALID');
+            metadataBytes += packet.metadataBytes;
+            rawBytes += packet.rawBytes;
+            dependencyCount += packet.dependencies.length;
+            // Sum of per-owner server caps (LIBRA 1 MiB, HAYAKU 1 MiB, Flashback 8 MiB).
+            if (metadataBytes > 10485760 || rawBytes > 7 * maxCorpusBytes + 2097152 || dependencyCount > 4096 + owners.length) reject('LIB_READ_METADATA_BUDGET_EXCEEDED');
+            if (packet.dataInstanceId !== connection.dataInstanceId) reject('LIB_READ_DATA_CHANGED');
+            for (const item of packet.items) {
+              if (item.source.namespace !== owner) reject('LIB_READ_RESPONSE_INVALID');
+              items.push(Object.freeze({ ...item, owner }));
+            }
+            if (items.length > 4096) reject('LIB_READ_REFERENCE_LIMIT_EXCEEDED');
+            revisions.push([owner, packet.evidenceRevision, packet.readIdentity]);
+          }
+
+          const assertCurrentSync = () => {
+            if (orderedReads.some(read => read.assertCurrentSync() !== true)) reject('LIB_READ_STALE');
+            return true;
+          };
+          // Each owner's check is an independent read-only round trip;
+          // checks are parallelized and timed per owner for performance diagnosis.
+          const assertCurrent = async () => {
+            const results = await Promise.all(selectedOwners.map(async (owner, idx) => {
+              const checkStartedAt = Date.now();
+              const result = await orderedReads[idx].assertCurrent();
+              noteOwnerEvidenceTiming(owner, 'check', Date.now() - checkStartedAt);
+              return result;
+            }));
+            if (results.some(result => result !== true)) reject('LIB_READ_STALE');
+            return assertCurrentSync();
+          };
+          await assertCurrent();
+          if (!globalThis.crypto?.subtle) reject('LIB_READ_HASH_UNAVAILABLE');
+          const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(revisions)));
+          const evidenceRevision = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+          assertCurrentSync();
+          const snapshot = Object.freeze({
+            schema: 'memory-suite.memory-read-session.v1',
+            readOnly: true,
+            complete: true,
+            scope: anchor,
+            scopes: Object.freeze(Object.fromEntries(selectedOwners.map(owner => [owner, scopes[owner]]))),
+            owners: selectedOwners,
+            items: Object.freeze(items),
+            evidenceRevision,
+            corpusBytes,
+            maxCorpusBytes,
+            metadataBytes,
+            rawBytes,
+            dataInstanceId: connection.dataInstanceId
+          });
+          return Object.freeze({
+            snapshot,
+            source: readOptions.source || 'server_logical_read',
+            ...(readOptions.source === 'unified_engine' ? {
+              engine: Object.freeze({
+                ...orderedReads.find(read => read.source === 'unified_engine')?.engine,
+                ...(!selectedOwners.includes('libra') ? { purpose: proposal ? 'input_writer_proposal' : 'response_evidence', ...(proposal ? { proposal } : {}) } : {}),
+                sourceByOwner: Object.freeze(Object.fromEntries(selectedOwners.map((owner, index) => [owner, orderedReads[index].source])))
+              })
+            } : {}),
+            close: () => { for (const read of orderedReads) read.close?.(); },
+            assertCurrentSync,
+            assertCurrent
+          });
+        } catch (error) {
+          for (const read of reads) read.close?.();
+          throw error;
         }
-        const assertCurrentSync=()=>{if(reads.some(read=>read.assertCurrentSync()!==true))reject('LIB_READ_STALE');return true;};
-        // Each owner's check is an independent read-only round trip; waiting for them
-        // one after another made every check cost LIBRA + HAYAKU + Flashback in sequence.
-        const assertCurrent=async()=>{const results=await Promise.all(reads.map(read=>read.assertCurrent()));if(results.some(result=>result!==true))reject('LIB_READ_STALE');return assertCurrentSync();};
-        await assertCurrent();
-        if(!globalThis.crypto?.subtle)reject('LIB_READ_HASH_UNAVAILABLE');
-        const digest=await globalThis.crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(revisions)));
-        const evidenceRevision=Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
-        assertCurrentSync();
-        const snapshot=Object.freeze({schema:'memory-suite.memory-read-session.v1',readOnly:true,complete:true,
-          scope:anchor,scopes:Object.freeze(Object.fromEntries(selectedOwners.map(owner=>[owner,scopes[owner]]))),
-          owners:selectedOwners,items:Object.freeze(items),evidenceRevision,corpusBytes,maxCorpusBytes,metadataBytes,rawBytes,dataInstanceId:connection.dataInstanceId});
-        return Object.freeze({snapshot,source:readOptions.source||'server_logical_read',
-          ...(readOptions.source==='unified_engine'?{engine:Object.freeze({...reads.find(read=>read.source==='unified_engine')?.engine,
-            ...(!selectedOwners.includes('libra')?{purpose:proposal?'input_writer_proposal':'response_evidence',...(proposal?{proposal}:{})}:{}),
-            sourceByOwner:Object.freeze(Object.fromEntries(selectedOwners.map((owner,index)=>[owner,reads[index].source])))})}:{}),
-          close:()=>{for(const read of reads)read.close?.();},assertCurrentSync,assertCurrent});
-        }catch(error){for(const read of reads)read.close?.();throw error;}
       }
     });
   };

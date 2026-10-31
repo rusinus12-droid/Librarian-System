@@ -40004,7 +40004,20 @@ const MemorySuiteHealthRecovery = (() => {
   const readEmbeddingWorkBoundary = async (options = {}) => {
     const recovery=physicalContext(options);
     if(recovery)return recovery.boundary();
-    const { scope } = await resolveCurrentScopeIdentityBundle(false);
+    let scope = options.scope || null;
+    if (!scope && options.scopeKey && Runtime.currentScope?.scopeKey === options.scopeKey) {
+      scope = Runtime.currentScope;
+    }
+    if (!scope) {
+      try {
+        const bundle = await resolveCurrentScopeIdentityBundle(false);
+        scope = bundle?.scope || null;
+      } catch (_) {}
+    }
+    if (!scope || !scope.scopeKey) throw embeddingWorkError('FLASHBACK_SCOPE_UNAVAILABLE');
+    if (!scope.characterId && !scope.chatId && !scope.characterKey) {
+      throw embeddingWorkError('FLASHBACK_SCOPE_IDENTITY_UNAVAILABLE');
+    }
     assertFlashbackArchiveOwnerResolved(await loadScopeManifest(scope));
     const settings = await loadSettings(true);
     const connection = await MemorySuiteStorageBridge.getConnectionSettings({ scope, force: true });
@@ -40863,12 +40876,12 @@ const MemorySuiteHealthRecovery = (() => {
     scheduleTimer(() => {
       if (scheduledEmbeddingQueues.get(key) !== marker) return;
       scheduledEmbeddingQueues.delete(key);
-      if (Runtime.inBefore) { schedulePendingEmbeddingWork(key, { reason: options.reason, delayMs: 250 }); return; }
+      if (Runtime.inBefore) { schedulePendingEmbeddingWork(key, { ...options, delayMs: 250 }); return; }
       const generation = Runtime.embeddingGeneration;
       void (async () => {
         const settings = await loadSettings(true);
         if (settings.embeddingAutoProcess === false || !configuredModelEmbedding(settings)) return;
-        const result = await processPendingEmbeddingQueue({ scopeKey: key, automatic: true });
+        const result = await processPendingEmbeddingQueue({ scopeKey: key, scope: options.scope, automatic: true });
         Runtime.lastEmbeddingQueue = { ...result, scopeKey: key, generation, reason: result.reason, trigger: options.reason || 'background', at: Date.now() };
         invalidateGuiDataCache('all');
         if (isGuiRenderActive() && Runtime.guiTab === 'provider') void refreshEmbeddingWorkPanel(guiRoot, result);
@@ -41050,7 +41063,7 @@ const MemorySuiteHealthRecovery = (() => {
       // confirmation left afterRequest captures raw forever. A replaced revision is
       // re-queued as new vectorless records, so embedding early wastes at most one pass.
       // Scheduling only creates a timer; discovery/reservation/provider work happens after return.
-      const remoteUpgradeQueued = schedulePendingEmbeddingWork(scope.scopeKey, { reason: provisional ? 'provisional_capture' : 'finalized_capture' });
+      const remoteUpgradeQueued = schedulePendingEmbeddingWork(scope.scopeKey, { reason: provisional ? 'provisional_capture' : 'finalized_capture', scope });
       if (provisional) {
         const responseCandidate = Runtime.afterRequestCaptureCandidates.get(pendingId);
         if (responseCandidate) Object.assign(responseCandidate, {

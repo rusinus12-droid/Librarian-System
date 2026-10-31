@@ -44,8 +44,15 @@ test('a manual continuation is still refused when memory changed after the copy 
  f.controls.clipboardError=Object.assign(new Error('blocked'),{name:'NotAllowedError'});
  f.button('복사 후 직접 전송').click();
  await f.wait(()=>f.button('직접 복사 후 계속'),'manual copy continuation');
+ const editor = f.document.querySelector('textarea[data-input-delivery-editor]');
+ if (editor) editor.value += ' (수정)';
  f.controls.current=false;
  f.button('직접 복사 후 계속').click();
+ // When content changed, first click updates dataset with '인풋이 바뀌었습니다'
+ if (editor) {
+   await f.wait(()=>f.document.body.textContent.includes('인풋이 바뀌었습니다'),'content changed notice');
+   f.button('직접 복사 후 계속').click();
+ }
  await f.wait(()=>f.document.body.textContent.includes('붙여넣지 마세요'),'stale manual copy rejection');
  await f.host.plugin.cancelInputAssistSend();assert.equal(await pending,false);
 });

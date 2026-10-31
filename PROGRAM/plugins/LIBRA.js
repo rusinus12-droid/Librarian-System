@@ -875,7 +875,7 @@ const MemorySuiteExecutionContract = (() => {
     hayaku_packet_recovery: [16384, 32768],
     hayaku_cold_start: [16384, 32768],
     hayaku_failed_analysis_resolution: [16384, 32768],
-    micro_memory: [2048, 4096],
+    micro_memory: [4096, 12288],
     lens_analysis: [4096, 8192]
   });
   const completion = result => {
@@ -59400,7 +59400,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       try {
         result = await LibraProviderBridge.callTask(LIBRARIAN_STAGE_ID, systemPrompt, userPrompt, {
           taskKind: 'micro_memory', taskSettingsSnapshot: settings, signal,
-          maxTokens: 4096, reasoningBudgetCapTokens: 2048, timeoutMs: MICRO_PROVIDER_TIMEOUT_MS, deadlineAt,
+          maxTokens: 8192, reasoningBudgetCapTokens: 4096, timeoutMs: MICRO_PROVIDER_TIMEOUT_MS, deadlineAt,
           extraCalls: maxPhysicalAttempts - 1, maxCorrectiveRetries: maxPhysicalAttempts - 1,
           jsonMode: true, structuredTask: true,
           forceNonStreaming: true, disablePromptCache: true, temp: 0.1
@@ -59435,10 +59435,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
       try {
         const raw = string(result.content || '').trim();
         const fenced = raw.match(/^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i);
-        envelope = JSON.parse(fenced ? fenced[1] : raw);
+        const candidateText = fenced ? fenced[1] : raw;
+        try {
+          envelope = JSON.parse(candidateText);
+        } catch (_) {
+          envelope = relaxedJsonParse(candidateText) || relaxedJsonParse(raw);
+        }
       }
       catch (_) { return pending('producer_json_invalid', provider); }
-      if (envelope?.schema !== 'libra.micro_producer_envelope.v1' || !isPlainObject(envelope)) {
+      if (!envelope || envelope?.schema !== 'libra.micro_producer_envelope.v1' || !isPlainObject(envelope)) {
         return pending('producer_schema_invalid', provider);
       }
       let registry;
@@ -93742,10 +93747,43 @@ guiEl('details',{class:'fold'},[guiEl('summary',{text:'기억 분석 · 검색 �
           memoryToggle('enabled','새 LIBRA 사용'),memoryToggle('autoAnalyze','AI 응답 저장 후 자동 분석'),memoryToggle('sectionVectors','영역별 임베딩 투영'),memoryToggle('autoCatchUpEnabled','활성 세션의 누락 5턴 자동 따라잡기')
         ])])
 ];
+      const RECALL_BUDGET_PRESETS = [
+        { id: 'compact', label: '경량', sub: '16개 · 4,000자', units: 16, chars: 4000, desc: '핵심 기억만 빠르게 검색 (16개 · 4,000자)' },
+        { id: 'standard', label: '표준', sub: '24개 · 6,000자', units: 24, chars: 6000, desc: '균형 잡힌 기본 RP (24개 · 6,000자)' },
+        { id: 'extended', label: '확장', sub: '40개 · 10,000자', units: 40, chars: 10000, desc: '인과·상태를 풍부하게 회상 (40개 · 10,000자, 권장)' },
+        { id: 'maximum', label: '최대', sub: '64개 · 16,000자', units: 64, chars: 16000, desc: '서사 및 미크로 최대 보존 (64개 · 16,000자)' }
+      ];
+      const activeBudgetPreset = RECALL_BUDGET_PRESETS.find(p => p.units === Number(settings.unifiedMaxUnits) && p.chars === Number(settings.recallMaxChars))?.id || 'custom';
+      const budgetPresetButtons = guiEl('div', { class: 'stack', style: { gridColumn: '1 / -1', marginBottom: '8px' } }, [
+        guiEl('div', { class: 'field__label', text: '리콜 예산 프리셋' }),
+        guiEl('div', { class: 'cluster', style: { gap: '6px' } }, RECALL_BUDGET_PRESETS.map(preset => {
+          const isSelected = activeBudgetPreset === preset.id;
+          return guiEl('button', {
+            class: `btn btn--sm ${isSelected ? 'btn--primary' : ''}`,
+            type: 'button',
+            text: `${preset.label} (${preset.sub})`,
+            title: preset.desc,
+            onClick: () => {
+              patch({ unifiedMaxUnits: preset.units, recallMaxChars: preset.chars });
+              void renderSettingsGui();
+            }
+          });
+        })),
+        guiEl('p', { class: 'hint', style: { marginTop: '4px' }, text: activeBudgetPreset === 'custom'
+          ? `현재 상태: 직접 입력 (${settings.unifiedMaxUnits}개 · ${Number(settings.recallMaxChars).toLocaleString()}자)`
+          : RECALL_BUDGET_PRESETS.find(p => p.id === activeBudgetPreset)?.desc || '' })
+      ]);
       const advanced=guiEl('details',{class:'fold'},[
-        guiEl('summary',{},['세부 리콜 값 ',guiEl('span',{class:'hint',text:'제품 전용 상세 설정'})]),
+        guiEl('summary',{},[
+          '세부 리콜 값 ',
+          guiEl('span',{class:'hint',text: activeBudgetPreset !== 'custom'
+            ? `[${RECALL_BUDGET_PRESETS.find(p => p.id === activeBudgetPreset)?.label}: ${settings.unifiedMaxUnits}개 · ${Number(settings.recallMaxChars).toLocaleString()}자]`
+            : `[직접 입력: ${settings.unifiedMaxUnits}개 · ${Number(settings.recallMaxChars).toLocaleString()}자]`
+          })
+        ]),
         guiEl('div',{class:'fold__body grid g2'},[
-...currentInputs,
+          budgetPresetButtons,
+          ...currentInputs,
 ...[['recallMaxChars','통합 근거 최대 문자',3000,LibraMemoryCore.recallMaxDynamicChars]].map(([key,label,min,max])=>field(label,guiEl('input',{class:'input',type:'number',min,max,step:key==='semanticSpanScoreFloorRatio'?.01:1,value:settings[key],dataset:{memorySetting:key},onInput:event=>patch({[key]:Number(event.target.value)}),onChange:event=>patch({[key]:Number(event.target.value)})}))),
 ...[['recallQueryMessages','입력 문맥의 최근 채팅 수',1,20],['autoCatchUpMaxBatches','자동 따라잡기 최대 배치',1,6],['runDetailRetention','상세 실행 기록 보관 수',5,200]].map(([key,label,min,max])=>field(label,guiEl('input',{class:'input',type:'number',min,max,step:['gateExactAnchor','mmrLambda'].includes(key)?.01:1,value:settings[key],dataset:{memorySetting:key},onInput:event=>patch({[key]:Number(event.target.value)}),onChange:event=>patch({[key]:Number(event.target.value)})}))),
 ...extraDetails
