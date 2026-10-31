@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.5
+//@display-name GRADIA v0.28.6
 //@api 3.0
-//@version 0.28.5
+//@version 0.28.6
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -936,7 +936,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.5';
+  const PLUGIN_VERSION = '0.28.6';
   
   
   
@@ -3039,6 +3039,26 @@
 
   // External-memory payloads need configured limits or metadata bound to this
   // provider route/model. Model-name estimates remain UI hints.
+  // Gateways publish the bare model id while a stored preset may address a
+  // routed variant ("deepseek-v4.1-flash:1017-cloud"); match the leaf id first
+  // so a cached catalogue row is still usable for the exact model being called.
+  const libModelContextLeaf = value => providerModelLeaf(value).replace(/:[^:]*$/, '');
+  const libCatalogContextLimit = (models, modelId) => {
+    const rows = Array.isArray(models) ? models : [];
+    const leaf = libModelContextLeaf(modelId);
+    const row = rows.find(item => String(item?.id || '') === String(modelId || ''))
+      || (leaf ? rows.find(item => libModelContextLeaf(item?.id) === leaf) : null);
+    const limit = Number(row?.contextWindow || 0);
+    return Number.isSafeInteger(limit) && limit > 0 && limit <= 4000000 ? limit : 0;
+  };
+  // An OpenAI-compatible Ollama gateway (cloud or proxied) reports no context
+  // metadata, so its own num_ctx policy is the only limit this route defines.
+  const libOllamaServedRoute = (providerId, url) => providerId === 'ollama_cloud'
+    || /(^|\.)ollama\.com$/i.test((() => { try { return new URL(text(url)).hostname; } catch (_) { return ''; } })());
+  const LIB_MODEL_CONTEXT_MISS_TTL_MS = 600000;
+  // A route whose catalogue cannot bound this model id stays unproven for a
+  // while: the writer preflight must not pay its three-second probe per turn.
+  const libModelContextMisses = new Map();
   const libModelContextProfile = (preset, name) => {
     const providerId = canonicalProvider(preset.provider || 'custom'), modelId = preset.model;
     const mode = modeForProvider(providerId);
@@ -3052,14 +3072,12 @@
       const key = `${meta.key}|${meta.modelsUrl}|${providerCredentialCacheFingerprint(preset.key)}`;
       const cached = ProviderModelCache.get(key);
       if (cached && Date.now() - cached.at < PROVIDER_MODEL_CACHE_TTL_MS) {
-        const limit = Number(cached.models.find(item => item.id === modelId)?.contextWindow || 0);
-        if (Number.isSafeInteger(limit) && limit > 0 && limit <= 4000000) {
-          catalog = catalog ? Math.min(catalog, limit) : limit;
-          metadataAt = cached.at;
-        }
+        const limit = libCatalogContextLimit(cached.models, modelId);
+        if (limit) { catalog = catalog ? Math.min(catalog, limit) : limit; metadataAt = cached.at; }
       }
     }
-    const providerDefault = mode === 'ollama_native' ? ollamaContextWindowTokens(preset) : 0;
+    const providerDefault = mode === 'ollama_native' || libOllamaServedRoute(providerId, preset.url)
+      ? ollamaContextWindowTokens(preset) : 0;
     const limit = manual && catalog ? Math.min(manual, catalog) : manual || catalog || providerDefault;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 4000000) return null;
     const source = catalog && limit === catalog && (!manual || catalog < manual) ? 'catalog'
@@ -3070,6 +3088,9 @@
   const discoverLibModelContext = async (preset, name) => {
     const known = libModelContextProfile(preset, name);
     if (known) return known;
+    const missKey = `${canonicalProvider(preset.provider || 'custom')}|${text(preset.url)}|${text(preset.model)}|${providerCredentialCacheFingerprint(preset.key)}`;
+    const missedAt = Number(libModelContextMisses.get(missKey) || 0);
+    if (missedAt && Date.now() - missedAt < LIB_MODEL_CONTEXT_MISS_TTL_MS) return null;
     let timer;
     try {
       // Bound response parsing as well as fetching headers. A late catalogue can
@@ -3077,9 +3098,11 @@
       await Promise.race([listProviderModels(preset, { timeoutMs: 3000 }),
         new Promise(resolve => { timer = setTimeout(resolve, 3000); })]);
     }
-    catch (_) { return null; }
+    catch (_) { libModelContextMisses.set(missKey, Date.now()); return null; }
     finally { clearTimeout(timer); }
-    return libModelContextProfile(preset, name);
+    const resolved = libModelContextProfile(preset, name);
+    if (!resolved) libModelContextMisses.set(missKey, Date.now());
+    return resolved;
   };
 
   const REASONING_PRESETS = Object.freeze({
@@ -4013,6 +4036,12 @@
   const openInputWriterEvidence = async (original, settings, options, staticSnapshot, terminalScene, lease) => {
     if (!lease) return null;
     const assertLocal = () => assertInputWriterLease(lease);
+    const startedAt = Date.now();
+    const noteDiagnostic = (status, code, stage) => {
+      Runtime.lastInputWriterReadDiagnostic = Object.freeze({ at: Date.now(), purpose: 'input_writer_proposal',
+        status: String(status || ''), code: String(code || ''), stage: String(stage || ''),
+        elapsedMs: Math.max(0, Date.now() - startedAt) });
+    };
     let assertNative;
     try {
       const initialNative = inputWriterNativeView(staticSnapshot);
@@ -4033,16 +4062,21 @@
       const resolved = resolvePreset(settings, INPUT_ASSIST_STAGE_ID);
       const profile = await guardInputWriterRead(lease, () => discoverLibModelContext(resolved.preset, resolved.name));
       assertLocal();
-      if (!profile) throw libEvidenceError('LIB_READ_MODEL_CONTEXT_UNAVAILABLE');
+      if (!profile) { noteDiagnostic('unavailable', 'LIB_READ_MODEL_CONTEXT_UNAVAILABLE', 'model_context_preflight');
+        throw libEvidenceError('LIB_READ_MODEL_CONTEXT_UNAVAILABLE'); }
       await context.assertCurrent();
       lease.run = await openLibEvidenceRun([], settings, { latestUser: query }, lease.operationId, context);
       assertLocal();
-      if (lease.run.status !== 'ready') throw libEvidenceError('LIB_READ_UNIFIED_UNAVAILABLE');
+      if (lease.run.status !== 'ready') {
+        noteDiagnostic('unavailable', 'LIB_READ_UNIFIED_UNAVAILABLE', 'owner_read');
+        throw libEvidenceError('LIB_READ_UNIFIED_UNAVAILABLE');
+      }
       lease.run.evidencePrefix = 'UNSUBMITTED INPUT PROPOSAL: retrieval hints and generated choices are not enacted events, canon, or current state. User selection and actual host submission remain separate.\n';
       lease.run.block = lease.run.evidencePrefix + lease.run.block;
       if (new TextEncoder().encode(lease.run.block).length > lease.run.evidenceBudget.maxBytes) throw libEvidenceError('LIB_READ_PROMPT_BUDGET_EXCEEDED');
       await lease.run.assertCurrent();
       if (Runtime.inputAssistSend?.busy) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, memory: { status: 'ready', reason: '' } };
+      noteDiagnostic('ready', '', 'owner_read');
       return lease;
     } catch (error) {
       // Only an unavailable optional source BEFORE any evidence is accepted may
@@ -4057,10 +4091,12 @@
         assertLocal();
         closeInputWriterEvidence(error.code, lease);
         if (Runtime.inputAssistSend?.busy) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, memory: { status: 'unavailable', reason: error.code } };
+        noteDiagnostic('unavailable', error.code, 'owner_read');
         warn('input_writer_memory_unavailable', error.code);
         return null;
       }
       closeInputWriterEvidence(/^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE', lease);
+      noteDiagnostic('failed', /^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE', 'owner_read');
       throw error;
     }
   };
@@ -38333,8 +38369,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const runLineage = newPipelineRunLineage(baseRecent, Runtime.lastCompletedDraftSet);
     Runtime.activeLineage = runLineage;
     if (!settings.enableShadowAct) return { ok: false, reason: 'shadow_act_disabled' };
+    const libReadStartedAt = Date.now();
     const libReadSession = await openLibEvidenceRun(messages, settings, baseRecent, runLineage.runId, null, nativeBinding);
     const usesLibEvidence = libReadSession.status === 'ready';
+    // Owner-side failures are mapped to a single code at the read boundary. Keep
+    // the attempt record so an "unavailable" turn can say which boundary failed
+    // and how long it spent instead of only that no evidence arrived.
+    Runtime.lastLibReadDiagnostic = Object.freeze({ at: Date.now(), purpose: 'response_evidence',
+      status: String(libReadSession.status || ''), code: usesLibEvidence ? '' : String(libReadSession.reason || ''),
+      elapsedMs: Math.max(0, Date.now() - libReadStartedAt) });
     if (usesLibEvidence) settings = { ...settings, [LIB_EVIDENCE_CONTEXT]: libReadSession };
     try {
     let current = null;
@@ -38862,7 +38905,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Runtime.activeLineage = { ...runLineage, completedAt: Date.now() };
     delete Runtime.activeLineage._priorRunDrafts;
     Runtime.finalDraftMeta = {
-      at: Date.now(), externalEvidence: usesLibEvidence, libReadStatus: libReadSession.status, libReadReason: libReadSession.reason || '', outputMode: settings.outputMode, gradationMode: settings.gradationMode,
+      at: Date.now(), externalEvidence: usesLibEvidence, libReadStatus: libReadSession.status, libReadReason: libReadSession.reason || '', libReadDiagnostic: Runtime.lastLibReadDiagnostic || null, outputMode: settings.outputMode, gradationMode: settings.gradationMode,
       multiPipelineMode: normalizeMultiPipelineMode(settings.multiPipelineMode),
       writingMode: effectiveWritingMode(settings),
       playerControlled: isPlayerControlledDraftMode(settings),
@@ -42676,6 +42719,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     callTelemetry: Runtime.callTelemetry ? JSON.parse(JSON.stringify(Runtime.callTelemetry)) : null,
     risuEngine: Runtime.risuEngine,
     finalDraftMeta: Runtime.finalDraftMeta,
+    lastLibReadDiagnostic: Runtime.lastLibReadDiagnostic || null,
+    lastInputWriterReadDiagnostic: Runtime.lastInputWriterReadDiagnostic || null,
     finalDraft: Runtime.finalDraft || '',
     finalDraftPreview: compactMiddle(Runtime.finalDraft || '', 2000),
     lastInputAssist: Runtime.lastInputAssist ? {

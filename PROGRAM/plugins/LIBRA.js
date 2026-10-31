@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.10
+//@display-name LIBRA v2.6.11
 //@api 3.0
-//@version 2.6.10
+//@version 2.6.11
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.6.10';
+  const PLUGIN_VERSION = '2.6.11';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -16102,7 +16102,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     worldline_mismatch: '다른 세계선의 기록',
     below_score_floor: '현재 입력과 관련 낮음',
     covered_by_delivered_memory: '정본·Micro 기억에 이미 같은 내용',
-    budget_too_small: '리콜 예산이 너무 작음'
+    budget_too_small: '리콜 예산이 너무 작음',
+    lens_storage_unavailable: '렌즈 저장소를 읽지 못함'
   });
 
   const LENS_RECALL_BLOCK_HEADER = '[LIBRA LENS MEMORY — PERSPECTIVE NOTES (NON-CANONICAL)]';
@@ -35091,6 +35092,11 @@ function createLibraReadonlySourceContext(owner) {
     // verification with only 1.388 s left. Give physical verification its own room.
     const RECALL_REQUEST_BUDGET_MS = 90000; // absolute live-recall watchdog
     const CHAT_OUTPUT_HEALTH_GRACE_MS = 5000; // fail over promptly; a bounded late scan also covers slow host commits
+    // A turn's request and its committed output are bound by scope, turn and the
+    // user/assistant/prefix digests, not by wall clock. A multi-stage draft
+    // routinely runs past two minutes, and the legacy script-output path can only
+    // bind through this window, so it stays wide enough for a real slow turn.
+    const TURN_BINDING_FRESHNESS_MS = 900000;
     const RECALL_STEP_BUDGET_MS = 45000;
     const RECALL_EMBEDDING_BUDGET_MS = 3500 + RECALL_TIMEOUT_EXTENSION_MS;
     // A provider slower than the default budget would otherwise leave every recall
@@ -35297,6 +35303,8 @@ function createLibraReadonlySourceContext(owner) {
       receiptRecoveryLedgerTails: new Map(),
       receiptRecoveryCompletions: new Set(),
       lastMicroPublication: null,
+      lastMicroPlanRefusal: null,
+      lastGradiaUnifiedRead: null,
       canonicalJob: null,
       canonicalJobPromise: null,
       canonicalJobListeners: new Set(),
@@ -40387,14 +40395,25 @@ function createLibraReadonlySourceContext(owner) {
       await storage.setVerifiedJson(captureKey, record, scope);
       return { captureStatus: 'verified', captureKey };
     };
-    const freshMainAfterRequestPair = (context,pair,health=state.mainAfterRequestHealth) => {
+    const mainAfterRequestPairProof = (context,pair,health=state.mainAfterRequestHealth) => {
+      // Identity, not elapsed time, is what binds a committed output to the
+      // request that produced it; the age check only bounds how long a stale
+      // proof may be reused.
       const proof=health?.microBoundary;
-      if(!proof||health!==state.mainAfterRequestHealth||Date.now()-health.at<0||Date.now()-health.at>120000
-        ||proof.scopeKey!==context.scope.scopeKey||Number(pair.turn)!==proof.turn
-        ||digest(pair.user.text)!==proof.userHash||digest(pair.assistant.text)!==proof.assistantHash)return false;
+      if(!proof) return {ok:false,reason:'no_main_after_request_boundary'};
+      if(health!==state.mainAfterRequestHealth) return {ok:false,reason:'boundary_superseded'};
+      const age=Date.now()-Number(health.at||0);
+      if(!(age>=0)||age>TURN_BINDING_FRESHNESS_MS) return {ok:false,reason:'boundary_expired'};
+      if(proof.scopeKey!==context.scope.scopeKey) return {ok:false,reason:'scope_changed'};
+      if(Number(pair.turn)!==proof.turn) return {ok:false,reason:'turn_mismatch'};
+      if(digest(pair.user.text)!==proof.userHash) return {ok:false,reason:'user_source_changed'};
+      if(digest(pair.assistant.text)!==proof.assistantHash) return {ok:false,reason:'assistant_source_changed'};
       const prefix=buildPairs(context.chat,context.scope.scopeKey).slice(0,proof.turn-1);
-      return sourceDigest(prefix)===proof.prefixDigest;
+      if(sourceDigest(prefix)!==proof.prefixDigest) return {ok:false,reason:'prefix_changed'};
+      return {ok:true,reason:''};
     };
+    const freshMainAfterRequestPair = (context,pair,health=state.mainAfterRequestHealth) =>
+      mainAfterRequestPairProof(context,pair,health).ok;
     const persistCompletedTurnReceipt = async (context, pair, captureSource = 'completed_pair_reconcile', options = {}) => {
       const scope = asObject(context?.scope);
       if (!string(scope.scopeKey) || !pair?.user?.text || !pair?.assistant?.text || Number(pair.turn || 0) < 1) {
@@ -40510,6 +40529,13 @@ function createLibraReadonlySourceContext(owner) {
             }
           }
         } catch (_) { /* Receipt persistence continues; unproved Micro remains unknown. */ }
+      } else if (!priorReceipt) {
+        // The Micro worker can only ever answer "work journal missing" for this
+        // turn, so record the actual admission decision while it is still known.
+        state.lastMicroPlanRefusal = { at: Date.now(), scopeKey: scope.scopeKey, turn,
+          revisionId, captureSource,
+          reason: string(options.microPlanReason
+            || (options.microPlanBoundary ? 'plan_admission_refused' : 'plan_boundary_missing')) };
       }
       // A verified immutable receipt is sufficient: transport only its pointer.
       if (!priorReceipt) {
@@ -41263,9 +41289,10 @@ function createLibraReadonlySourceContext(owner) {
           }
           recoveryBoundary = await captureReceiptRecoveryBoundary(context,pair);
           const mainAfterRequestBoundary=state.mainAfterRequestHealth;
+          const microPlanProof=mainAfterRequestPairProof(context,pair,mainAfterRequestBoundary);
           const persisted = await persistCompletedTurnReceipt(context, pair, 'completed_pair_reconcile', {
             deferInventory: true, beforeWrite: preparationGuard,
-            admitMicroPlan:freshMainAfterRequestPair(context,pair,mainAfterRequestBoundary),
+            admitMicroPlan:microPlanProof.ok, microPlanReason:microPlanProof.reason,
             microPlanBoundary:recoveryBoundary,mainAfterRequestBoundary
           });
           await preparationGuard?.();
@@ -60158,7 +60185,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
         return { ...existing, duplicate: true };
       }
       if (!work) {
-        if(options.manual!==true)return {status:'unknown',reason:'micro_work_missing'};
+        if(options.manual!==true)return {status:'unknown',reason:'micro_work_missing',
+          planRefusal:string(state.lastMicroPlanRefusal?.reason||''),
+          planRefusedAt:Number(state.lastMicroPlanRefusal?.at||0)};
         const reservedAt=Date.now();
         work={schema:'libra.micro_work.v1',scopeKey:receipt.scopeKey,worldlineId,sessionEpoch,turn,
           sourceRevisionId:receipt.revisionId,sourceDigest:receipt.sourceDigest,
@@ -63244,8 +63273,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // "No LEGACY record on the server": the check is the TYPED predicate (v4 or
       // v5), not an exact-v4 comparison. Testing exact-v4 made a v5 record look
       // legacy and failed the whole server batch, which is the opposite of the
-      // intent its own comment states.
-      unifiedAssert(fullContinuityRefs(saved || {}).every(unifiedRefIsReadableUnified),'UNIFIED_SERVER_LEGACY_NOT_SUPPORTED');
+      // intent its own comment states. Name the blocking refs: an unexplained
+      // legacy ref leaves State Tracking pending with no way to find the record.
+      const unifiedUnreadableRefs = manifest => fullContinuityRefs(manifest || {})
+        .filter(ref => !unifiedRefIsReadableUnified(ref));
+      const unifiedUnreadableRefsDetail = refs => refs.slice(0, 8).map(ref =>
+        `${string(ref.memoryId || ref.key)}@${string(ref.artifactSchema || 'none')}`).join(',')
+        + (refs.length > 8 ? `,+${refs.length - 8}` : '');
+      const savedUnreadableRefs = unifiedUnreadableRefs(saved);
+      unifiedAssert(!savedUnreadableRefs.length,
+        `UNIFIED_SERVER_LEGACY_NOT_SUPPORTED:${unifiedUnreadableRefsDetail(savedUnreadableRefs)}`);
       const durableManifest=await storage.getJson(key.manifest(context.scope),null);
       let active=await storage.getJson(unifiedServerActiveKey(context.scope),null);
       const meta=await storage.getJson(key.stateWorldlineMeta(context.scope),null);
@@ -63260,7 +63297,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const activationRequired=!active && fullContinuityRefs(durableManifest||{}).length>0;
       if(activationRequired && initializeImported){
         // Same intent, same correction: every durable ref must be a TYPED record.
-        unifiedAssert(fullContinuityRefs(durableManifest).every(unifiedRefIsReadableUnified),'UNIFIED_SERVER_LEGACY_NOT_SUPPORTED');
+        const durableUnreadableRefs = unifiedUnreadableRefs(durableManifest);
+        unifiedAssert(!durableUnreadableRefs.length,
+          `UNIFIED_SERVER_LEGACY_NOT_SUPPORTED:${unifiedUnreadableRefsDetail(durableUnreadableRefs)}`);
         const descriptor={schema:'libra.unified_server_active.v1',scopeKey:context.scope.scopeKey,worldlineId:'main',manifestIdentity:unifiedServerManifestIdentity(durableManifest),createdAt:nowIso(),source:'verified_storage_mode_import'};
         const conditions=[{key:key.manifest(context.scope),expected:{exists:true,value:JSON.stringify(durableManifest)}}];
         for(const k of unifiedServerReadKeys(context.scope)){
@@ -66691,6 +66730,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             queueMetrics: { queuedAt, startedAt, finishedAt: Date.now(),
               queueWaitMs: Math.max(0, startedAt - queuedAt) },
             status: string(result?.status || 'pending'), reason: string(result?.reason || ''),
+            ...(result?.planRefusal ? { planRefusal: string(result.planRefusal) } : {}),
             personInventoryStatus: string(result?.personInventoryStatus || ''),
             personInventoryError: string(result?.personInventoryError || ''),
             analysisStatus: string(result?.record?.analysisStatus || ''),
@@ -71767,6 +71807,21 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const finalMessages = block ? injectSystemMessage(messages, block, { injectionPosition: position,
           currentTurnResolution: resolveCurrentTurnEvidence(messages) }) : messages;
         const rows = authority.displayRows.map(row => ({ ...row, classicUsed: true, injected: Boolean(block) }));
+        // One line per lane so a recalled turn answers "did every memory kind take
+        // part" without cross-referencing the graph, the lens delivery and the
+        // Micro frontier separately.
+        const familyInventory = execution?.diagnostics?.families || null;
+        const laneCoverage = {
+          canonical: rows.filter(row => row.family === 'canonical').length,
+          lore: rows.filter(row => row.family === 'lore').length,
+          micro: rows.filter(row => row.family === 'micro').length,
+          stateUnits: Number(familyInventory?.state?.units || 0),
+          stateRecords: Number(familyInventory?.state?.records || 0),
+          stateReasons: asArray(familyInventory?.state?.reasons).map(reason => string(reason)).filter(Boolean),
+          lens: useLensBlock ? asArray(lensRecall?.injectedItems).length : 0,
+          stateBases: Number(verified?.verifiedBasisCount || 0),
+          verifiedNodes: Number(verified?.verifiedNodeCount || 0)
+        };
         const contextPacket = { route: 'classic', current_input: queryBundle.currentText,
           layers: { memory: rows.filter(row => row.family === 'canonical') },
           live_tail: null,
@@ -71784,7 +71839,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
           scopeKey: context.scope.scopeKey, queryText: queryBundle.currentText, rows,
           microFrontier: microFrontierFromDelivery({ rows }, state.lastMicroPublication, null),
           selectedMemories: rows.length, responseContextRequestId: responseContext.requestId,
-          responseContextDigest: responseContext.contextDigest,
+          responseContextDigest: responseContext.contextDigest, laneCoverage,
+          ...(familyInventory ? { familyInventory } : {}),
           servedEngine: 'unified', injectedMemories: block ? packet.admittedNodeIds.length : 0,
           dynamicChars: packet.characterLength, blockChars: block.length, finalVerification: verified,
           liveTailInjected: false, liveTailChars: 0,
@@ -71889,7 +71945,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const fallbackActive = state.settings?.autoAnalyze !== false && state.captureBackend === LIBRA_CAPTURE_BACKENDS.AFTER_REQUEST_RECONCILE;
       const mainNarrativeType = isMainNarrativeRequest(type);
       const requestScopeAgeMs = Date.now() - Number(state.lastRequestScope?.at || 0);
-      const requestScopeFresh = requestScopeAgeMs >= 0 && requestScopeAgeMs <= 120000;
+      const requestScopeFresh = requestScopeAgeMs >= 0 && requestScopeAgeMs <= TURN_BINDING_FRESHNESS_MS;
       const rememberedScope = asObject(state.lastRequestScope?.scope);
       const expectedScope = mainNarrativeType && requestScopeFresh && string(rememberedScope.scopeKey)
         ? clone(rememberedScope)
@@ -76763,6 +76819,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
           graph = await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: options.expectedScopeKey || '' }, value => { initialCollected = value; },resources);
           corpusContext = await memoryGraphCorpusContext(graph, initialCollected, epoch, serial, recallGuard, resources);
         }
+        // The projection already counts what each lane contributed and why it
+        // skipped anything; carry it so a recalled turn can answer "did State
+        // Tracking take part" without a second read.
+        const familyInventory = (() => {
+          const families = graph?.coverage?.families;
+          if (!families || typeof families !== 'object') return null;
+          return Object.fromEntries(Object.entries(families).map(([name, entry]) => [name, {
+            records: Number(entry?.records || 0), units: Number(entry?.units || 0),
+            reasons: asArray(entry?.reasons).map(reason => string(reason)).filter(Boolean).slice(0, 8)
+          }]));
+        })();
         if (gradiaAuthority) options = { ...options, consumerPolicy: { ...options.consumerPolicy,
           consumer: 'gradia', gradiaSelectionReceipt: gradiaAuthority.bindGraph(graph) } };
         if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0) || !initialCollected?.scope) {
@@ -76781,19 +76848,27 @@ function mountMemorySuiteReanalysisReview(container,config) {
         // Each SDK readset retains its own 64-key limit. Multiple readsets do not
         // establish a cross-corpus atomic snapshot; all are checked at delivery.
         const conditionalReadSets = [];
+        const pinStartedAt = Date.now();
         if (storageMode !== 'plugin_only') for (let offset = 0; offset < pinKeys.length; offset += 64) {
           conditionalReadSets.push(await MemorySuiteStorageBridge.captureConditionalReadSet(pinKeys.slice(offset,offset + 64),{ readObserver: sourceReadObserver, readBatchSize: sourceReadBatchSize }));
         }
+        const readsetMs = Date.now() - pinStartedAt;
         const ownerProof = corpus?.sourceProofs?.ownerProof || null;
         const hasIncrementalBodyDigests = Boolean(ownerProof?.sourceBodyDigests && typeof ownerProof.sourceBodyDigests === 'object');
         const pinnedValues = [];
         if (!hasIncrementalBodyDigests) {
+          // One storage round-trip per pinned source, in order: the largest
+          // unattributed span in a cold recall. Account for it in the delivery
+          // diagnostics instead of leaving it between phase labels.
           for (const storageKey of pinKeys) {
             const raw = await readRawSource(storageKey);
             resources.retain(raw,'pinned_source_body');
             pinnedValues.push({ key: storageKey, raw });
           }
         }
+        const sourcePinTrace = { keys: pinKeys.length, readsets: conditionalReadSets.length,
+          readsetMs, bodyReadMs: Date.now() - pinStartedAt - readsetMs,
+          incrementalDigests: hasIncrementalBodyDigests, storageMode };
 
         const mode = normalizeMemoryEngineMode(options.mode);
         const sealToken = suite.rollout.sealRequestMode({
@@ -77110,7 +77185,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
                 families: Object.freeze(['canonical', 'micro'].filter(family => windowNext[family + 'Cursor']))
               })
             : null,
-          diagnostics: { ...execution.diagnostics, resourceAccess,
+          diagnostics: { ...execution.diagnostics, families: familyInventory, sourcePin: sourcePinTrace, resourceAccess,
           nativeSemantic: nativeSemantic?.diagnostics || { status: 'caller_supplied', authority: 'unverified_relevance_signals' } },
           additionalEmbeddingCalls: nativeSemantic?.diagnostics.queryRequestCount || 0 });
         // Display metadata comes from these same native rows; it does not rank,
@@ -77491,25 +77566,38 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       };
       const parts = [fingerprint(registry)];
       const lenses = registry.enabled === false ? [] : registry.lenses.filter(lens => lens.recall.enabled);
+      let lensStatus = lenses.length ? 'verified' : (registry.enabled === false ? 'registry_disabled' : 'no_enabled_lens');
       if (lenses.length) {
-        const native = () => digest(buildPairs(context.chat, scope.scopeKey).map(pair => [pair.turn, completedTurnRevisionId(pair), sourceDigest([pair])]));
-        const nativeDigest = native();
-        parts.push(nativeDigest, fingerprint(await storage.getVerifiedJson(key.stateWorldlineMeta(scope),scope,null)),
-          fingerprint(await storage.getJson(key.entityRegistry(scope), null)));
-        const manifest = await storage.getVerifiedJson(key.manifest(scope),scope,null);
-        const inherited = await loadInheritedLensArchives(scope, manifest||{inheritedLensArchives:[]}, {readOnly:true});
-        parts.push(fingerprint(inherited));
-        for (const lens of lenses) {
-          parts.push(fingerprint(await loadLensRecordsMap(scope,lens.lensId)));
-          if (registry.recallSemantic !== false) parts.push(fingerprint(await loadLensVectorStore(scope,lens.lensId)));
+        try {
+          const native = () => digest(buildPairs(context.chat, scope.scopeKey).map(pair => [pair.turn, completedTurnRevisionId(pair), sourceDigest([pair])]));
+          const nativeDigest = native();
+          parts.push(nativeDigest, fingerprint(await storage.getVerifiedJson(key.stateWorldlineMeta(scope),scope,null)),
+            fingerprint(await storage.getJson(key.entityRegistry(scope), null)));
+          const manifest = await storage.getVerifiedJson(key.manifest(scope),scope,null);
+          const inherited = await loadInheritedLensArchives(scope, manifest||{inheritedLensArchives:[]}, {readOnly:true});
+          parts.push(fingerprint(inherited));
+          for (const lens of lenses) {
+            parts.push(fingerprint(await loadLensRecordsMap(scope,lens.lensId)));
+            if (registry.recallSemantic !== false) parts.push(fingerprint(await loadLensVectorStore(scope,lens.lensId)));
+          }
+          if (registry.recallSemantic !== false) parts.push(fingerprint((await LibraProviderBridge.getConfig())?.embed));
+          const current = await resolveContext();
+          if (!sameSnapshotScope(current.scope,scope)
+              || digest(buildPairs(current.chat,scope.scopeKey).map(pair=>[pair.turn,completedTurnRevisionId(pair),sourceDigest([pair])])) !== nativeDigest)
+            throw Error('LIB_READ_STALE');
+        } catch (error) {
+          const code = string(error?.code || '');
+          // Change detection, cancellation and byte accounting stay authoritative.
+          // Any other lens read failure is an unavailable optional source: the
+          // request continues canonical-only instead of losing all evidence.
+          if (/^LIB_READ_(STALE|BUDGET_EXCEEDED|CANCELED|NATIVE_SCOPE_CHANGED)$/.test(code)) throw error;
+          lensStatus = 'unavailable';
+          parts.push(`lens_unavailable:${compact(code || error?.message || error, 160)}`);
+          return {context,registry,enabled:false,lensStatus,
+            lensReason: compact(code || error?.message || error, 200),digest:digest(parts)};
         }
-        if (registry.recallSemantic !== false) parts.push(fingerprint((await LibraProviderBridge.getConfig())?.embed));
-        const current = await resolveContext();
-        if (!sameSnapshotScope(current.scope,scope)
-            || digest(buildPairs(current.chat,scope.scopeKey).map(pair=>[pair.turn,completedTurnRevisionId(pair),sourceDigest([pair])])) !== nativeDigest)
-          throw Error('LIB_READ_STALE');
       }
-      return {context,registry,enabled:lenses.length>0,digest:digest(parts)};
+      return {context,registry,enabled:lenses.length>0,lensStatus,digest:digest(parts)};
     };
     const verifyGradiaMemoryEvidence = async execution => {
       const bound = gradiaMemoryEvidence.get(execution);
@@ -77555,6 +77643,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (content.length>maxChars || MemorySuiteExecutionContract.utf8Bytes(content)>request.maxCorpusBytes) throw Error('LIB_READ_CORPUS_BUDGET_EXCEEDED');
         const lensEvidence = Object.freeze({schema:'libra.gradia-lens-evidence.v1',noncanonical:true,
           itemCount:asArray(lens?.injectedItems).length,characterLength:lensText.length,
+          lensStatus:before.lensStatus,...(before.lensReason?{lensReason:before.lensReason}:{}),
           bindingDigest:before.digest});
         result = Object.freeze({...graph,lensEvidence,packet:Object.freeze({...graph.packet,renderedText:content,
           packetDigest:digest([graph.packet.packetDigest||'',content,before.digest])})});
@@ -77628,7 +77717,26 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           return { scope, url: binding.url, dataInstanceId: binding.dataInstanceId, resetEpoch: binding.resetEpoch,
             generation: binding.generation, serial: state.memoryGraphStoreSerial, restoreEpoch: Number(state.microRestoreGeneration || 0) };
         },
-        query: captureGradiaMemoryEvidence,
+        query: async (request, authority) => {
+          const startedAt = Date.now();
+          try {
+            const execution = await captureGradiaMemoryEvidence(request, authority);
+            state.lastGradiaUnifiedRead = { at: startedAt, ok: true,
+              purpose: request.proposal ? 'input_writer_proposal' : 'response_evidence',
+              elapsedMs: Date.now() - startedAt, lensStatus: execution.lensEvidence?.lensStatus || '',
+              characters: execution.packet?.renderedText?.length || 0, code: '' };
+            return execution;
+          } catch (error) {
+            // The reader collapses every owner-side failure into one code, so the
+            // owner keeps the real one: the next debug export must say whether the
+            // graph was refused, the packet failed verification, or the read broke.
+            state.lastGradiaUnifiedRead = { at: startedAt, ok: false,
+              purpose: request.proposal ? 'input_writer_proposal' : 'response_evidence',
+              elapsedMs: Date.now() - startedAt,
+              code: compact(error?.code || error?.message || error, 200), stage: 'owner_query' };
+            throw error;
+          }
+        },
         verify: verifyGradiaMemoryEvidence,
         release: releaseGradiaMemoryEvidence
       });
@@ -81981,7 +82089,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const canonicalBudget = Math.max(0, Number(options.canonicalBudgetChars ?? options.maxChars ?? 4000));
       const budgetChars = Math.min(registry.recallMaxChars, Math.floor(canonicalBudget * registry.recallBudgetRatio));
       const empty = extra => ({ schema: 'libra.lens_recall_delivery.v2', enabled: false, budgetChars, usedChars: 0, renderedBlock: '', injectedItems: [], skippedCandidates: [], perLensBudgets: [], ...extra });
-      if (registry.enabled === false) return empty({});
+      if (registry.enabled === false) return empty({ emptyReason: 'registry_disabled' });
       const candidatesLenses = registry.lenses.filter(lens => lens.recall.enabled);
       const skipped = [];
       const skip = (lens, item, record, reasonCode) => skipped.push({
@@ -81990,10 +82098,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         reasonCode, reasonLabel: LENS_RECALL_SKIP_REASON_LABELS[reasonCode] || reasonCode
       });
       for (const lens of registry.lenses.filter(lens => !lens.recall.enabled)) skip(lens, null, null, 'recall_disabled');
-      if (!candidatesLenses.length) return empty({ skippedCandidates: skipped });
+      if (!candidatesLenses.length) return empty({ skippedCandidates: skipped, emptyReason: 'no_enabled_lens' });
       if (budgetChars < LENS_RECALL_MIN_CHARS) {
         for (const lens of candidatesLenses) skip(lens, null, null, 'budget_too_small');
-        return empty({ skippedCandidates: skipped });
+        return empty({ skippedCandidates: skipped, emptyReason: 'budget_too_small' });
       }
       const scope = context.scope;
       const pairs = buildPairs(context.chat, scope.scopeKey);
@@ -82039,7 +82147,22 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       // Calibration/diagnostics only: every scored candidate, admitted or not.
       const scores = options.includeScores === true ? [] : null;
-      const recordsByLens = await Promise.all(candidatesLenses.map(lens => loadLensRecordsMap(scope, lens.lensId).catch(() => ({}))));
+      // A lens whose record store cannot be read must not look identical to a lens
+      // that never produced a note. Record the read outcome per lens and skip it
+      // with its own reason instead of swallowing the failure.
+      const lensReads = [];
+      const recordsByLens = await Promise.all(candidatesLenses.map(async lens => {
+        try {
+          const map = await loadLensRecordsMap(scope, lens.lensId);
+          lensReads.push({ lensId: lens.lensId, lensName: lens.name, status: 'loaded', records: Object.keys(map).length });
+          return map;
+        } catch (error) {
+          lensReads.push({ lensId: lens.lensId, lensName: lens.name, status: 'storage_unavailable', records: 0,
+            error: compact(error?.message || error, 180) });
+          skip(lens, null, null, 'lens_storage_unavailable');
+          return {};
+        }
+      }));
       const inherited=await loadInheritedLensArchives(scope,options.readOnly===true ? (await storage.getVerifiedJson(key.manifest(scope),scope,null)||{inheritedLensArchives:[]}) : null,{readOnly:options.readOnly===true});
       for(const item of inherited.unavailable){const lens=candidatesLenses.find(row=>row.lensId===item.lensId);if(lens)skip(lens,null,null,'inherited_archive_unavailable');}
       const resolvePeople = await lensPeopleResolver(scope);
@@ -82104,7 +82227,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       if (queryUnit && semantic.missingVectors && options.refreshVectors !== false) for (const lens of candidatesLenses) void scheduleLensVectorRefresh(scope, lens.lensId, semantic.profileId);
       const withCandidates = candidatesLenses.filter(lens => byLens.has(lens.lensId));
-      if (!withCandidates.length) return empty({ enabled: true, skippedCandidates: skipped, semantic, ...(scores ? { scores } : {}) });
+      if (!withCandidates.length) return empty({ enabled: true, skippedCandidates: skipped, semantic,
+        lensReads, emptyReason: lensReads.some(row => row.status === 'storage_unavailable') ? 'lens_storage_unavailable' : 'no_candidate_items',
+        ...(scores ? { scores } : {}) });
       const header = `${LENS_RECALL_BLOCK_HEADER}\n${LENS_RECALL_BLOCK_NOTE}`;
       const bodyBudget = budgetChars - header.length - 1;
       const totalShare = withCandidates.reduce((sum, lens) => sum + lens.recall.share, 0);
@@ -82132,6 +82257,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const renderedBlock = injected.length ? [header, ...injected.map(item => item.renderedLine)].join('\n') : '';
       return clone({
         schema: 'libra.lens_recall_delivery.v2', enabled: true, budgetChars, usedChars: renderedBlock.length, renderedBlock, semantic, ...(scores ? { scores } : {}),
+        lensReads, emptyReason: injected.length ? '' : 'no_candidate_items',
         injectedItems: injected.map(({ record, ...item }) => item), skippedCandidates: skipped.slice(0, 60), skippedCount: skipped.length,
         perLensBudgets: withCandidates.map(lens => ({ lensId: lens.lensId, lensName: lens.name, share: lens.recall.share, allocatedChars: allocation.get(lens.lensId) || 0 }))
       });
@@ -82140,6 +82266,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
     return Object.freeze({
       VERSION, BATCH_SIZE, STAGE_ORDER, STAGE_LABELS, state, providerBridge: LibraProviderBridge,
+      TURN_BINDING_FRESHNESS_MS,
       librarianPromptContract: () => unifiedPromptContract(),
       getLensStarterTemplates: () => clone(STARTER_LENS_TEMPLATES),
       loadLensRegistry: async () => await readLensRegistry({ force: true }),
@@ -86927,6 +87054,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     lastMemoryPendingBoundaryArm: LibraMemoryCore.state.lastPendingBoundaryArm ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastPendingBoundaryArm)) : null,
     lastMemoryPendingBoundaryRecovery: LibraMemoryCore.state.lastPendingBoundaryRecovery ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastPendingBoundaryRecovery)) : null,
     lastMemoryAfterRequest: LibraMemoryCore.state.lastAfterRequest ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastAfterRequest)) : null,
+    lastGradiaUnifiedRead: LibraMemoryCore.state.lastGradiaUnifiedRead ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastGradiaUnifiedRead)) : null,
+    lastMicroPlanRefusal: LibraMemoryCore.state.lastMicroPlanRefusal ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastMicroPlanRefusal)) : null,
     lastMemoryScanSchedule: LibraMemoryCore.state.lastScanSchedule ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastScanSchedule)) : null,
     lastMemoryScheduledScanResult: LibraMemoryCore.state.lastScheduledScanResult ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastScheduledScanResult)) : null,
     lastMemoryScan: LibraMemoryCore.state.lastScan ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastScan)) : null,
@@ -98477,7 +98606,7 @@ advanced
               observeHookRuntime('output', 'legacy_script_output');
               if (LibraMemoryCore.getSettings().autoAnalyze !== false) {
                 const lastScope = state.lastRequestScope;
-                const freshScope = lastScope?.scope && Date.now() - Number(lastScope.at || 0) <= 120000 ? safeClone(lastScope.scope) : undefined;
+                const freshScope = lastScope?.scope && Date.now() - Number(lastScope.at || 0) <= LibraMemoryCore.TURN_BINDING_FRESHNESS_MS ? safeClone(lastScope.scope) : undefined;
                 LibraMemoryCore.scheduleLegacyOutputBoundaryScan({ expectedScope: freshScope });
               }
               return content;
@@ -98556,7 +98685,7 @@ advanced
             observeHookRuntime('output', 'legacy_script_output');
             if (LibraMemoryCore.getSettings().autoAnalyze !== false) {
               const lastScope = state.lastRequestScope;
-              const freshScope = lastScope?.scope && Date.now() - Number(lastScope.at || 0) <= 120000 ? safeClone(lastScope.scope) : undefined;
+              const freshScope = lastScope?.scope && Date.now() - Number(lastScope.at || 0) <= LibraMemoryCore.TURN_BINDING_FRESHNESS_MS ? safeClone(lastScope.scope) : undefined;
               LibraMemoryCore.scheduleLegacyOutputBoundaryScan({ expectedScope: freshScope });
             }
             return content;
