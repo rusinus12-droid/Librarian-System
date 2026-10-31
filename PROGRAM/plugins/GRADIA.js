@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.8
+//@display-name GRADIA v0.28.9
 //@api 3.0
-//@version 0.28.8
+//@version 0.28.9
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -936,7 +936,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.8';
+  const PLUGIN_VERSION = '0.28.9';
   
   
   
@@ -3516,6 +3516,14 @@
   // they no longer count against the stage model timeout (see guardModel).
   const LIB_EVIDENCE_PREDISPATCH_ALLOWANCE_MS = LIB_MEMORY_OWNER_READ_TIMEOUT_MS;
   const LIB_EVIDENCE_RECHECK_COALESCE_MS = 1500;
+  // Counts only (no content): where a run's verification time goes.
+  const noteEvidenceCheck = (kind, startedAt, reused = false) => {
+    const stats = Runtime.libEvidenceCheckStats || (Runtime.libEvidenceCheckStats = { since: Date.now(), runChecks: 0, runReused: 0, runMs: 0, runMaxMs: 0, nativeChecks: 0, nativeMs: 0, nativeMaxMs: 0 });
+    const ms = Math.max(0, Date.now() - startedAt);
+    if (kind === 'native') { stats.nativeChecks += 1; stats.nativeMs += ms; stats.nativeMaxMs = Math.max(stats.nativeMaxMs, ms); }
+    else if (reused) stats.runReused += 1;
+    else { stats.runChecks += 1; stats.runMs += ms; stats.runMaxMs = Math.max(stats.runMaxMs, ms); }
+  };
   // Per evidence request: at most this many stall/length recoveries (see beforeModel), so the
   // whole request stays within (stage calls + this) x stage timeout.
   const LIB_EVIDENCE_MAX_RECOVERIES = 2;
@@ -3842,8 +3850,12 @@
         // one owner round trip. Any provider dispatch invalidates it, so every
         // check after a model call still re-verifies the owner sources.
         if (checkOptions.coalesce === true && this.verifiedAt && this.verifiedDispatch === this.dispatchCount
-          && Date.now() - this.verifiedAt < LIB_EVIDENCE_RECHECK_COALESCE_MS) return;
-        try { if (proposalContext) await proposalContext.assertCurrent(); await nativeHostBinding?.assertCurrent(); await session.assertCurrent(); await nativeHostBinding?.assertCurrent(); if (proposalContext) await proposalContext.assertCurrent(); }
+          && Date.now() - this.verifiedAt < LIB_EVIDENCE_RECHECK_COALESCE_MS) { noteEvidenceCheck('run', Date.now(), true); return; }
+        const checkStartedAt = Date.now();
+        // The native/proposal check after the owner check also covers any change made
+        // before or during it; checking it on both sides doubled a full host snapshot
+        // reload (character, DB, chat) on every check of the input writer.
+        try { await nativeHostBinding?.assertCurrent(); await session.assertCurrent(); await nativeHostBinding?.assertCurrent(); if (proposalContext) await proposalContext.assertCurrent(); }
         catch (error) {
           // A run that already failed (model timeout, cancellation) aborted this
           // check itself; report that cause, not "currentness lost".
@@ -3857,6 +3869,7 @@
         if (requestSettingsSignature(settings) !== settingsSignature
           || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
         this.verifiedAt = Date.now(); this.verifiedDispatch = this.dispatchCount;
+        noteEvidenceCheck('run', checkStartedAt);
       },
       noteDispatch() { this.dispatchCount += 1; this.verifiedAt = 0; },
       // recovery: 'stall' resends a request that was dispatched but produced no response at all
@@ -3919,7 +3932,8 @@
             if (this.signal.aborted) abort();
           });
           const result = await Promise.race([Promise.resolve().then(operation), canceled]);
-          await this.assertCurrent();
+          // The transport already re-verified right after the response arrived.
+          await this.assertCurrent({ coalesce: true });
           return result;
         } finally { clearTimeout(timer); if (abort) this.signal.removeEventListener('abort', abort); if (this.attempt === attempt) this.attempt = null; }
       },
@@ -4007,7 +4021,9 @@
         try { budgetMeter.assertDispatch(this.budgetWitness, { ...this.budgetEnvelope, routeIdentity: route, method: init.method, body: init.body }); }
         catch (_) { throw this.fail('LIB_READ_PAYLOAD_CHANGED'); }
       },
-      async finalize(draft) { await this.assertCurrent(); await session.bindDraft(draft);
+      // The check after finalizeDraft is the one that guards delivery; the one before
+      // binding may reuse a just-finished verification.
+      async finalize(draft) { await this.assertCurrent({ coalesce: true }); await session.bindDraft(draft);
         const final = await session.finalizeDraft(); await this.assertCurrent(); return final; },
       close() { this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate('LIB_READ_CLOSED');
         if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); if (proposalContext) purgeInputWriterEvidenceRuntime(); activeLibEvidenceRun = null; } }
@@ -4093,9 +4109,18 @@
       for (const char of rawQuery) { const size = new TextEncoder().encode(char).length; if (queryBytes + size > 12000) break; query += char; queryBytes += size; }
       const proposal = Object.freeze({ schema: 'gradia.input-writer-proposal.v1', purpose: 'input_writer_proposal',
         operationId: lease.operationId, proposalDigest, nativeContextDigest, queryTruncated: query.length !== rawQuery.length, factAdopted: false });
+      // Overlapping checks (UI actions while a model call re-verifies) join the
+      // read already in flight instead of each reloading the whole host snapshot.
+      let nativeCheck = null;
       const context = { proposal, controller: lease.controller, assertLocal, async assertCurrent() {
-        const current = await guardInputWriterRead(lease, () => loadRisuStaticContextSnapshot(settings, { force: true }));
-        if (inputWriterNativeView(current) !== initialNative) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
+        if (!nativeCheck) nativeCheck = (async () => {
+          const nativeStartedAt = Date.now();
+          const current = await guardInputWriterRead(lease, () => loadRisuStaticContextSnapshot(settings, { force: true, viewOnly: true }));
+          const changed = inputWriterNativeView(current) !== initialNative;
+          noteEvidenceCheck('native', nativeStartedAt);
+          if (changed) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
+        })().finally(() => { nativeCheck = null; });
+        return await nativeCheck;
       } };
       assertNative = context.assertCurrent;
       // Resolve capacity before acquiring owner evidence. Only an unavailable
@@ -10179,7 +10204,10 @@ function mergeAgentCbsWarnings(...warningLists) {
       const db = { ...(baseDb || {}) };
       const chatInfo = await loadCurrentChatForRisuContext(character, settings.debugLog);
       const persona = selectedPersonaFromDb(db, chatInfo.chat);
-      const candidates = collectRisuLorebookCandidates(character, db, chatInfo.chat, persona, {
+      // A view-only read (input writer change detection) compares identity,
+      // character, chat and the DB subset only. Collecting lore candidates walks
+      // every character and module lorebook on the UI thread for nothing.
+      const candidates = options.viewOnly === true ? [] : collectRisuLorebookCandidates(character, db, chatInfo.chat, persona, {
         selectedModuleLoreIds: settings.selectedModuleLoreIds,
         excludedModuleLoreIds: settings.excludedModuleLoreIds,
         excludedCharacterLoreIds: settings.excludedCharacterLoreIds
@@ -10201,7 +10229,8 @@ function mergeAgentCbsWarnings(...warningLists) {
       return snapshot;
     })();
 
-    if (cacheKey) {
+    // A view-only snapshot has no lore candidates; never hand it to a normal reader.
+    if (cacheKey && options.viewOnly !== true) {
       RisuStaticSnapshotInFlight.set(cacheKey, task);
       try { return await task; }
       finally { RisuStaticSnapshotInFlight.delete(cacheKey); }
@@ -19158,7 +19187,7 @@ ${passage.text || ''}`, 420));
     if ((stageName === ARC_DIRECTOR_STAGE_ID)) throw retiredMemoryError();
     const evidenceRun = settings?.[LIB_EVIDENCE_CONTEXT];
     if (evidenceRun) {
-      await evidenceRun.assertCurrent();
+      await evidenceRun.assertCurrent({ coalesce: true });
       // An evidence run sends no repair request. The draft-pipeline caller handles
       // the refusal like a failed repair, so SHADOW fails closed and an AIDE keeps
       // the previous draft, without invalidating the evidence session.
@@ -19462,7 +19491,7 @@ ${passage.text || ''}`, 420));
       : null;
     const lengthLimit = providerLengthLimitInfo(result.finishReason) || unreportedJsonTruncation;
     if (evidenceRun) {
-      await evidenceRun.assertCurrent();
+      await evidenceRun.assertCurrent({ coalesce: true });
       if (result.content && lengthLimit && !lengthLimit.unreported && !options.lengthLimitRetry && !options.evidenceLengthRetry) {
         // Only a provider-reported length stop (the output budget was too small). The truncated
         // response is discarded, never reused; the same prompts and evidence are sent once more
@@ -21621,10 +21650,50 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
           setBusy(false);
         }
       };
+      // Memory verification can outlast the browser's click activation, and the
+      // plugin iframe's permissions policy blocks the Clipboard API outright, so
+      // the copy must run synchronously inside a click. A verified text is armed
+      // for a short time; the next click copies it before any await and is then
+      // verified again before the draft is exported.
+      const COPY_ARMED_MS = 15000;
+      let armedCopy = null;
       const onCopy = async () => {
         if (settled || busy || copyButton?.disabled) return;
         const result = reviewResult('copy');
         if (!result.content) return;
+        if (armedCopy && armedCopy.content === result.content && Date.now() - armedCopy.at < COPY_ARMED_MS) {
+          armedCopy = null;
+          const pendingCopy = copyInputAssistTextToClipboard(result.content); // execCommand runs now, inside this click
+          copyButton.disabled = true;
+          copyButton.textContent = '복사 후 직접 전송';
+          const copiedNow = await pendingCopy;
+          if (!copiedNow?.ok) {
+            copyStatus.textContent = '자동 복사가 차단되었습니다. 아래 인풋 전체를 선택해 Ctrl/Cmd+C로 복사해 주세요.';
+            copyStatus.style.color = '#ff9aa7';
+            try { preview.focus(); preview.select(); } catch (_) {}
+            copyButton.disabled = false;
+            return;
+          }
+          if (onValidate) {
+            setBusy(true);
+            try { await onValidate(result.content, () => text(preview.value).trim()); }
+            catch (error) {
+              copyStatus.textContent = '복사 후 검증 실패: ' + text(error.code || error.message) + ' · 복사된 인풋은 붙여넣지 마세요.';
+              copyStatus.style.color = '#ff9aa7';
+              return;
+            }
+            finally { setBusy(false); }
+          }
+          if (settled) return;
+          if (Runtime.lastInputAssist) {
+            Runtime.lastInputAssist.clipboardCopyMethod = copiedNow.method || '';
+            Runtime.lastInputAssist.clipboardUserActivation = copiedNow.userActivation;
+          }
+          await finish(result);
+          return;
+        }
+        armedCopy = null;
+        copyButton.textContent = '복사 후 직접 전송';
         copyButton.disabled = true;
         copyStatus.textContent = '클립보드에 복사하고 있습니다…';
         copyStatus.style.color = 'var(--text2)';
@@ -21646,8 +21715,16 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
           await finish(result);
           return;
         }
-        const activationNote = copied?.userActivation === false ? ' 클릭 권한이 이미 소진된 상태였습니다.' : '';
-        copyStatus.textContent = `자동 복사가 차단되었습니다.${activationNote} 아래 인풋 전체를 선택해 Ctrl/Cmd+C로 복사해 주세요.`;
+        if (copied?.userActivation === false) {
+          // Verified, but the click expired while verifying. Arm one synchronous copy.
+          armedCopy = { content: result.content, at: Date.now() };
+          copyButton.textContent = '검증 완료 · 눌러서 복사';
+          copyStatus.textContent = '기억 검증을 마쳤지만 그사이 브라우저의 클릭 권한이 만료됐습니다. 버튼을 한 번 더 누르면 바로 복사됩니다(15초 안).';
+          copyStatus.style.color = 'var(--text2)';
+          copyButton.disabled = false;
+          return;
+        }
+        copyStatus.textContent = '자동 복사가 차단되었습니다. 아래 인풋 전체를 선택해 Ctrl/Cmd+C로 복사해 주세요.';
         copyStatus.style.color = '#ff9aa7';
         try {
           preview.focus();
@@ -42806,6 +42883,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     lastLibReadDiagnostic: Runtime.lastLibReadDiagnostic || null,
     libReadConnection: LibReadConnection.status(),
     lastInputWriterReadDiagnostic: Runtime.lastInputWriterReadDiagnostic || null,
+    libEvidenceCheckStats: Runtime.libEvidenceCheckStats || null,
     finalDraft: Runtime.finalDraft || '',
     finalDraftPreview: compactMiddle(Runtime.finalDraft || '', 2000),
     lastInputAssist: Runtime.lastInputAssist ? {

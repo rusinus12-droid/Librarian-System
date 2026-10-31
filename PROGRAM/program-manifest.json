@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-10-31T07:51:42.856Z",
+  "generatedAt": "2026-10-31T08:38:15.861Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -1312,7 +1312,7 @@
       "sourceAuthorityUntilCutover": true
     },
     "gradiaThreeOwnerRead": {
-      "pluginVersion": "0.28.8",
+      "pluginVersion": "0.28.9",
       "principal": "serial_gradation_agents_for_rp",
       "readers": [
         "libra",
@@ -1428,7 +1428,7 @@
     "libra": "2.6.13",
     "lia": "0.29.4",
     "retrace": "1.12.7",
-    "gradia": "0.28.8"
+    "gradia": "0.28.9"
   },
   "files": {
     "_common.cmd": {
@@ -1690,6 +1690,10 @@
     "docs/GRADIA_INPUT_WRITER_CONTEXT_PREFLIGHT_20261031.md": {
       "sha256": "946e09c1e18741a62104b985021a9111f93ce49e6247df25df2413f90c350eda",
       "bytes": 4138
+    },
+    "docs/GRADIA_INPUT_WRITER_PERFORMANCE_REPORT_20261031.md": {
+      "sha256": "82380ba5f46c73bfc532cb8d4f7a727d6e2b61307411210d88a104904e4b9d27",
+      "bytes": 18603
     },
     "docs/GRADIA_LIB_READ_CONNECTION_REPAIR_20261031.md": {
       "sha256": "bf868a233618e372ddd3e474e401fe216fffe2dd047fadeac8fcbbf4a07c8721",
@@ -4132,7 +4136,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "512fcd80f05a0806878743561f20660772ea502df8a93de58e007e30c79f6a0e",
+      "sha256": "2b5bb4619e6f674d809e106df5d784eea94d6dd1b28d41ebf028dd7ff7668648",
       "bytes": 3352
     },
     "plugins/Flashback_Memory.js": {
@@ -4140,8 +4144,8 @@
       "bytes": 3757868
     },
     "plugins/GRADIA.js": {
-      "sha256": "6227d57d95c118984b0dd11a3585fa7f19445be8bb83b900f12291c61207f8fe",
-      "bytes": 3080577
+      "sha256": "f9e4af2b6777d32098f229e04fe8cc16f6ff89873a433be3ac98d4e89837abd4",
+      "bytes": 3085351
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "9a5d627bb1b2d25503ddbc3975a1aeff6abcce560db5e172145c31675651d12a",
@@ -12228,7 +12232,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "6e63e27a3d1dd931d7ed76e83e8fcefa9923a72e071e1513da1c4ffc34500689",
+      "sha256": "8c5ddd42a15fc73aa3d3acfebf43b2c32f39a08335d449f96deaa3c72cb6bb96",
       "bytes": 3786
     }
   },

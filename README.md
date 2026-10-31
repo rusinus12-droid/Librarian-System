@@ -80,7 +80,7 @@ flowchart TB
 | **HAYAKU Locator Continuity** | `3.3.10` | 플러그인 (Owner) | 장면 전환·장소 이동·인물 배치 연속성 추적 및 빠른 위치 컨텍스트 복원 |
 | **LIA Persona Linker** | `0.29.4` | 플러그인 (Local owner) | 기기 전용 페르소나 관리·수동 갱신 및 월드 로어북(Lorebook) BM25F 재순위화 |
 | **RE:TRACE** | `1.12.7` | 플러그인 (Manager) | 서버/로컬 스코프 통합 조회, 고정(Pin), 삭제 보호, ZIP 백업 내보내기/복원 관리 GUI |
-| **GRADIA** | `0.28.8` | 플러그인 (Consumer) | `LIBRA`·`Flashback`·`HAYAKU`의 검증된 기억 근거를 읽기 전용으로 통합 소비하는 소설/서사 생성 보조기 |
+| **GRADIA** | `0.28.9` | 플러그인 (Consumer) | `LIBRA`·`Flashback`·`HAYAKU`의 검증된 기억 근거를 읽기 전용으로 통합 소비하는 소설/서사 생성 보조기 |
 
 > **호환 SDK**: Storage SDK `1.8.35` · Compute SDK `0.3.8`
 
