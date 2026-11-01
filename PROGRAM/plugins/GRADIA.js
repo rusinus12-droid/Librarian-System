@@ -3792,6 +3792,25 @@ Before continuing, verify:
     Runtime.lastNativeBindFailure = Object.freeze({ at: Date.now(), step, ...detail });
     return libEvidenceError('LIB_READ_NATIVE_ID_UNAVAILABLE');
   };
+  const matchesNativeTemplateInput = (rowValue, promptValue, stripFn) => {
+    const raw = text(rowValue);
+    if (!/\{\{[\s\S]+?\}\}|<\s*(?:user|char)\s*>/i.test(raw)) return false;
+    const pieces = raw.split(/\{\{[\s\S]+?\}\}|<\s*(?:user|char)\s*>/gi)
+      .map(part => stripFn(part))
+      .filter(Boolean);
+    const totalChars = pieces.reduce((sum, part) => sum + part.length, 0);
+    const hasCjk = pieces.some(part => /[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(part));
+    if (!pieces.length || (totalChars < 4 && !(hasCjk && totalChars >= 2))) return false;
+    const target = stripFn(promptValue);
+    if (!target) return false;
+    let cursor = 0;
+    for (const piece of pieces) {
+      const found = target.indexOf(piece, cursor);
+      if (found < 0) return false;
+      cursor = found + piece.length;
+    }
+    return true;
+  };
   const captureLibNativeReadSet = (messages, settings, baseRecent, hostInput = null) => {
     const selected = new Map();
     const selections = [];
@@ -3831,13 +3850,15 @@ Before continuing, verify:
         .replace(/\s+/g, '')
         .trim();
       const stripFormatting = value => cleanSquash(value).replace(/[*_~`#"'\[\]()<>|+-]/g, '');
-      const wanted = cleanSquash(resolved.text || contentToText(inputMessage?.content ?? ''));
-      const isMatch = (msgText, target) => {
-        const x = cleanSquash(msgText), y = cleanSquash(target);
+      const wantedRaw = resolved.text || contentToText(inputMessage?.content ?? '');
+      const wanted = cleanSquash(wantedRaw);
+      const isMatch = (msgText, targetRaw) => {
+        const x = cleanSquash(msgText), y = cleanSquash(targetRaw);
         if (!x || !y) return false;
         if (x === y || ((x.length >= 4 || /[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(x) && x.length >= 2) && y.includes(x))) return true;
-        const fx = stripFormatting(msgText), fy = stripFormatting(target);
+        const fx = stripFormatting(msgText), fy = stripFormatting(targetRaw);
         if (fx && fy && (fx === fy || ((fx.length >= 4 || /[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(fx) && fx.length >= 2) && fy.includes(fx)))) return true;
+        if (matchesNativeTemplateInput(msgText, targetRaw, stripFormatting)) return true;
         const minLen = Math.min(x.length, y.length), maxLen = Math.max(x.length, y.length), diffLen = maxLen - minLen;
         if (minLen >= 16 && diffLen <= Math.min(15, Math.floor(maxLen * 0.25))) {
           let p = 0; while (p < minLen && x[p] === y[p]) p++;
@@ -3848,7 +3869,7 @@ Before continuing, verify:
       };
       const pendingFrom = messages.findLastIndex(message => currentTurnRole(message) === 'assistant') + 1;
       const native = wanted ? messages.slice(pendingFrom).filter(message => nativeTurnMessageId(message) && currentTurnRole(message) === 'user'
-        && typeof message.content === 'string' && isMatch(contentToText(message.content), wanted)) : [];
+        && typeof message.content === 'string' && isMatch(contentToText(message.content), wantedRaw)) : [];
       if (native.length !== 1) throw nativeIdUnavailable('input_without_id', { matches: native.length, inputChars: wanted.length });
       inputMessage = native[0];
     }
@@ -3879,7 +3900,18 @@ Before continuing, verify:
       if (JSON.stringify(indexes) !== JSON.stringify(verified)
         || text(character?.chaId || character?.id) !== scope.characterId || text(chat?.id) !== scope.chatId
         || !Array.isArray(chat?.message)) throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED');
-      return { messages: chat.message, witness: JSON.stringify([indexes,scope.characterId,scope.chatId,chat.message]) };
+      const liveDbApi = getLiveApi(['getDatabase']);
+      const dbGetter = typeof liveDbApi?.getDatabase === 'function' ? liveDbApi.getDatabase.bind(liveDbApi) : (typeof API?.getDatabase === 'function' ? API.getDatabase.bind(API) : null);
+      const db = dbGetter ? await safeApi('getDatabase.personas', () => dbGetter(['personas', 'selectedPersona']), false) : null;
+      const persona = selectedPersonaFromDb(db || {}, chat);
+      const characterName = firstFilled(character?.nickname, character?.name, character?.charName);
+      const userName = firstFilled(persona?.name, 'User');
+      return {
+        messages: chat.message,
+        characterName,
+        userName,
+        witness: JSON.stringify([indexes,scope.characterId,scope.chatId,chat.message])
+      };
     };
     const readHost = async () => {
       let timer;
@@ -3891,6 +3923,15 @@ Before continuing, verify:
     };
     const host = await readHost();
     const narrative = message => sanitizeMessageContentForHistory(currentTurnRole(message),contentToText(message?.data ?? message?.content ?? ''));
+    const cleanSquash = value => text(value)
+      .normalize('NFKC')
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"')
+      .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+      .replace(/…/g, '...')
+      .replace(/\s+/g, '')
+      .trim();
+    const stripFormatting = value => cleanSquash(value).replace(/[*_~`#"'\[\]()<>|+-]/g, '');
     const pendingFrom = host.messages.findLastIndex(message => currentTurnRole(message) === 'assistant') + 1;
     const completedHostMessages = host.messages.slice(0, pendingFrom);
     const lastRequestAssistant = messages.findLastIndex(message => currentTurnRole(message) === 'assistant');
@@ -3899,12 +3940,36 @@ Before continuing, verify:
       if (nativeTurnMessageId(message) || !['user','assistant'].includes(currentTurnRole(message))) return { ...message };
       if (index === initialResolved.requestIndex || (lastRequestAssistant >= 0 && index > lastRequestAssistant)) return { ...message };
       const pool = pendingFrom > 0 ? completedHostMessages : host.messages;
-      const candidates = pool.filter(row => nativeTurnMessageId(row)
-        && !turnBlockReason({...row,role:currentTurnRole(row),content:contentToText(row.data ?? row.content ?? '')})
-        && currentTurnRole(row) === currentTurnRole(message) && narrative(row) === narrative(message));
+      const targetNarrative = narrative(message);
+      const candidates = pool.filter(row => {
+        if (!nativeTurnMessageId(row)) return false;
+        const rowRole = currentTurnRole(row);
+        const rawText = contentToText(row.data ?? row.content ?? '');
+        if (turnBlockReason({ ...row, role: rowRole, content: rawText }) || rowRole !== currentTurnRole(message)) return false;
+        const rowNarrative = narrative({ ...row, role: rowRole, content: rawText });
+        if (rowNarrative === targetNarrative) return true;
+        const expandedNarrative = narrative({
+          ...row,
+          role: rowRole,
+          content: applyBasicRisuPlaceholdersForRag(rawText, host.characterName, host.userName)
+        });
+        return expandedNarrative === targetNarrative || matchesNativeTemplateInput(rowNarrative, targetNarrative, stripFormatting);
+      });
       if (candidates.length !== 1 || host.messages.filter(row => nativeTurnMessageId(row) === nativeTurnMessageId(candidates[0])).length !== 1) return { ...message };
       const row = candidates[0];
-      return { ...message, chatId: nativeTurnMessageId(row), generationInfo: row.generationInfo, saying: row.saying };
+      const rawRowText = contentToText(row.data ?? row.content ?? '');
+      return {
+        ...message,
+        chatId: nativeTurnMessageId(row),
+        generationInfo: row.generationInfo,
+        saying: row.saying,
+        turnMeta: {
+          ...message?.turnMeta,
+          nativeContent: rawRowText,
+          stageContent: applyBasicRisuPlaceholdersForRag(rawRowText, host.characterName, host.userName),
+          ref: nativeTurnRef({ ...row, role: currentTurnRole(row), content: rawRowText })
+        }
+      };
     });
     // Bind the current request input to the unanswered native user region after the
     // last assistant. Keep the request-side prompt text intact while attaching the
@@ -3914,15 +3979,6 @@ Before continuing, verify:
     if (resolved.requestIndex >= 0 && !nativeTurnMessageId(mapped[resolved.requestIndex])) {
       const comparableInput = value => narrative({ role: 'user', content: stripCodeFence(value) });
       const wanted = comparableInput(resolved.text);
-      const cleanSquash = value => text(value)
-        .normalize('NFKC')
-        .replace(/[\u200B-\u200D\uFEFF]/g, '')
-        .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"')
-        .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
-        .replace(/…/g, '...')
-        .replace(/\s+/g, '')
-        .trim();
-      const stripFormatting = value => cleanSquash(value).replace(/[*_~`#"'\[\]()<>|+-]/g, '');
       const sameInput = (rowValue, promptValue) => {
         const x = cleanSquash(rowValue), y = cleanSquash(promptValue);
         if (!x || !y) return false;
@@ -3930,6 +3986,7 @@ Before continuing, verify:
         const fx = stripFormatting(rowValue), fy = stripFormatting(promptValue);
         if (fx && fy && (fx === fy || ((fx.length >= 4 || /[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(fx) && fx.length >= 2) && fy.includes(fx)))) return true;
         if ((x.length >= 4 || /[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(x) && x.length >= 2) && y.includes(x)) return true;
+        if (matchesNativeTemplateInput(rowValue, promptValue, stripFormatting)) return true;
         if (y.endsWith('...[truncated]') && y.length >= 1000) {
           const prefix = y.slice(0, -'...[truncated]'.length);
           if (prefix && x.startsWith(prefix)) return true;
@@ -3955,9 +4012,42 @@ Before continuing, verify:
       const rowText = contentToText(row.data ?? row.content ?? '');
       if (!nativeTurnMessageId(row)) throw nativeIdUnavailable('input_row_missing');
       if (turnBlockReason({ ...row, role: 'user', content: rowText })) throw nativeIdUnavailable('input_row_blocked');
-      if (!sameInput(comparableInput(rowText), wanted)) throw nativeIdUnavailable('input_text_mismatch',
-        { wrapperChars: wanted.length, rowChars: comparableInput(rowText).length });
       if (host.messages.filter(message => nativeTurnMessageId(message) === nativeTurnMessageId(row)).length !== 1) throw nativeIdUnavailable('input_row_id_duplicate');
+      const expandedRowText = applyBasicRisuPlaceholdersForRag(rowText, host.characterName, host.userName);
+      const comparableRow = comparableInput(rowText);
+      const comparableExpandedRow = comparableInput(expandedRowText);
+      const textMatched = sameInput(comparableRow, wanted) || sameInput(comparableExpandedRow, wanted);
+      const requestMsg = mapped[resolved.requestIndex];
+      const isRegisteredInput = requestMsg?.turnMeta?.registeredInput === true
+        || (!!Runtime.inputAssistStaticHandoff?.deliveredInputHash && Runtime.inputAssistStaticHandoff.deliveredInputHash === stableDraftHash(resolved.text))
+        || (!!Runtime.lastInputAssist?.deliveredInput && cleanSquash(comparableInput(Runtime.lastInputAssist.deliveredInput)) === cleanSquash(wanted));
+      const provenanceKind = isRegisteredInput
+        ? 'registered_input'
+        : (resolved.confidence === 'request_provenance' || hasSgaChatProvenance(requestMsg))
+          ? 'request_provenance'
+          : resolved.confidence === 'explicit_wrapper'
+            ? 'explicit_wrapper'
+            : (resolved.confidence || 'legacy');
+      const hasStrongProvenance = ['explicit_wrapper', 'request_provenance', 'registered_input'].includes(provenanceKind);
+      const sqRow = cleanSquash(comparableRow), sqWanted = cleanSquash(wanted);
+      const isPartialTruncation = !textMatched && sqRow.length > sqWanted.length && sqWanted.length > 0 && sqRow.includes(sqWanted) && !sqWanted.endsWith('...[truncated]');
+      const isHistoricalReplay = !textMatched && completedHostMessages.some(item => currentTurnRole(item) === 'user'
+        && sameInput(comparableInput(contentToText(item.data ?? item.content ?? '')), wanted));
+      if (isPartialTruncation || isHistoricalReplay || (!hasStrongProvenance && !textMatched)) {
+        throw nativeIdUnavailable('input_text_mismatch', {
+          wrapperChars: wanted.length,
+          rowChars: comparableRow.length,
+          provenance: provenanceKind
+        });
+      }
+      Runtime.lastNativeBindDiagnostic = Object.freeze({
+        at: Date.now(),
+        mode: textMatched ? 'text_verified_bind' : 'structural_provenance_bind',
+        provenance: provenanceKind,
+        textMatched,
+        wrapperChars: wanted.length,
+        rowChars: comparableRow.length
+      });
       hostInput = { ...row, role: 'user', content: rowText };
       mapped[resolved.requestIndex] = {
         ...mapped[resolved.requestIndex],
@@ -3969,6 +4059,7 @@ Before continuing, verify:
           currentInput: true,
           currentInputProven: true,
           nativeContent: rowText,
+          stageContent: expandedRowText,
           ref: nativeTurnRef(hostInput)
         }
       };
@@ -7109,7 +7200,14 @@ ${text(paired.leadingAssistant.content || '')}
     });
     const sanitizeWindowMessage = message => message ? {
       ...message,
-      content: sanitizeMessageContentForHistory(message.role, typeof message.turnMeta?.nativeContent === 'string' ? message.turnMeta.nativeContent : message.content)
+      content: sanitizeMessageContentForHistory(
+        message.role,
+        typeof message.turnMeta?.stageContent === 'string'
+          ? message.turnMeta.stageContent
+          : typeof message.turnMeta?.nativeContent === 'string'
+            ? message.turnMeta.nativeContent
+            : message.content
+      )
     } : null;
     const systemSliced = systemContextMessages.slice(-6).map(sanitizeWindowMessage).filter(m => text(m?.content || '').trim());
     const otherSliced = otherInfoMessages.slice(-8).map(sanitizeWindowMessage).filter(m => text(m?.content || '').trim());

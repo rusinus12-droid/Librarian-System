@@ -15,24 +15,41 @@ const programDir = path.resolve(__dirname, '..');
 const packageRoot = path.resolve(programDir, '..');
 const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
-function snapshotDataTree(rootDir) {
-  const root = path.resolve(rootDir);
-  if (!fs.existsSync(root)) return [];
-  const rows = [];
-  const walk = current => {
-    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (entry.isFile()) {
-        rows.push({
-          path: path.relative(root, full).split(path.sep).join('/'),
-          sha256: sha(full)
-        });
+function isInsideDir(targetPath, rootDir) {
+  if (typeof targetPath !== 'string' && !Buffer.isBuffer(targetPath) && !(targetPath instanceof URL)) return false;
+  const resolvedTarget = path.resolve(targetPath instanceof URL ? targetPath : String(targetPath));
+  const resolvedRoot = path.resolve(rootDir);
+  const relative = path.relative(resolvedRoot, resolvedTarget);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+async function withNoSourceDataAccess(sourceDataRoot, fn) {
+  const trackedMethods = [
+    'readFileSync', 'writeFileSync', 'appendFileSync', 'copyFileSync',
+    'readdirSync', 'openSync', 'rmSync', 'unlinkSync', 'renameSync', 'mkdirSync'
+  ];
+  const originals = new Map();
+  const accesses = [];
+  for (const method of trackedMethods) {
+    if (typeof fs[method] !== 'function') continue;
+    originals.set(method, fs[method]);
+    fs[method] = function (...args) {
+      for (const arg of args.slice(0, 2)) {
+        if (isInsideDir(arg, sourceDataRoot)) {
+          accesses.push({ method, path: String(arg) });
+        }
       }
+      return originals.get(method).apply(this, args);
+    };
+  }
+  try {
+    const value = await fn();
+    return { value, accesses };
+  } finally {
+    for (const [method, orig] of originals.entries()) {
+      fs[method] = orig;
     }
-  };
-  walk(root);
-  return rows.sort((a, b) => a.path.localeCompare(b.path, 'en'));
+  }
 }
 
 async function main() {
@@ -41,12 +58,16 @@ async function main() {
   const dataLayout = path.join(dataRoot, 'data-layout.json');
   const hadSourceDataLayout = fs.existsSync(dataLayout);
   const beforeDataLayout = hadSourceDataLayout ? sha(dataLayout) : null;
-  const beforeDataSnapshot = snapshotDataTree(dataRoot);
   const beforeProgramVersion = fs.readFileSync(path.join(programDir, 'VERSION.txt'), 'utf8');
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'librarian-release-updater-contract-'));
   try {
     const output = path.join(temp, 'release');
-    const result = buildDistribution({ outputDir: output });
+    const { value: result, accesses: buildDataAccesses } = await withNoSourceDataAccess(
+      dataRoot,
+      () => buildDistribution({ outputDir: output })
+    );
+    assert.deepEqual(buildDataAccesses, [], 'buildDistribution must not read or mutate source/user DATA');
+    assert.equal(result.report.sourceDataReadOrCopied, false, 'distribution report must confirm source DATA was not read or copied');
     assert.equal(path.basename(result.archivePath), expectedAssetName(version));
     assert.equal(result.report.artifact, expectedAssetName(version));
     assert.equal(result.report.releaseTag, `v${version}`);
@@ -65,13 +86,17 @@ async function main() {
     ]) assert.ok(entries.includes(prefix + required), `release ZIP missing ${required}`);
 
     const candidateWork = path.join(temp, 'candidate-work');
-    const receipt = await prepareReleaseCandidate({
-      archivePath: result.archivePath,
-      workRoot: candidateWork,
-      targetVersion: version,
-      currentVersion: version,
-      expectedArchiveSha256: result.report.archiveSha256
-    });
+    const { value: receipt, accesses: candidateDataAccesses } = await withNoSourceDataAccess(
+      dataRoot,
+      () => prepareReleaseCandidate({
+        archivePath: result.archivePath,
+        workRoot: candidateWork,
+        targetVersion: version,
+        currentVersion: version,
+        expectedArchiveSha256: result.report.archiveSha256
+      })
+    );
+    assert.deepEqual(candidateDataAccesses, [], 'prepareReleaseCandidate must not read or mutate source/user DATA');
     assert.equal(receipt.targetVersion, version);
     assert.equal(receipt.asset, expectedAssetName(version));
     assert.equal(fs.readFileSync(path.join(candidateWork, 'PROGRAM.next', 'VERSION.txt'), 'utf8').trim(), version);
@@ -96,7 +121,6 @@ async function main() {
     if (hadSourceDataLayout) {
       assert.equal(sha(dataLayout), beforeDataLayout, 'release build and candidate preparation must not mutate active DATA/data-layout.json');
     }
-    assert.deepEqual(snapshotDataTree(dataRoot), beforeDataSnapshot, 'release build and candidate preparation must not mutate any source/user DATA file');
     assert.equal(fs.readFileSync(path.join(programDir, 'VERSION.txt'), 'utf8'), beforeProgramVersion, 'release build must not mutate active PROGRAM version');
     console.log('remote_update_release_zip_runtime_test: PASS');
   } finally {
