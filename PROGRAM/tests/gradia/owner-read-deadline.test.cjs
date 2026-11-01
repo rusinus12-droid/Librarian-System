@@ -23,7 +23,7 @@ async function hostFixture(t){
   const consumer=client=>host.internals.createLibServerReadConsumer({getBinding:()=>({client,scope,maxCorpusBytes:16384}),assertNativeScope:async()=>true,digest:async value=>digest(value)});
   return {host,observed,makeOwner,consumer};
 }
-for(const delay of [35,65])test(`production owner IPC capture respects its bounded read budget: ${delay}s virtual query`,async t=>{
+for(const delay of [35,115])test(`production owner IPC capture respects its bounded read budget: ${delay}s virtual query`,async t=>{
   const f=await hostFixture(t);await f.makeOwner(delay);
   const ipc=f.observed.client;
   const client={schema:'memory-suite.libra-read-client.v1',pluginId:'serial_gradation_agents_for_rp',openReadSession:async()=>{
@@ -31,7 +31,7 @@ for(const delay of [35,65])test(`production owner IPC capture respects its bound
     return {source:'unified_engine',snapshot,assertCurrent:async()=>true,assertCurrentSync:()=>true,close:()=>ipc.release(snapshot.readIdentity.ownerReceiptId)};
   }};
   const reader=f.consumer(client);t.after(()=>reader.invalidate('LIB_READ_CANCELED'));
-  if(delay>50)await assert.rejects(()=>reader.beginRead({requestId:'slow'}),error=>error.code==='LIB_READ_TIMEOUT');
+  if(delay>110)await assert.rejects(()=>reader.beginRead({requestId:'slow'}),error=>error.code==='LIB_READ_TIMEOUT');
   else{const session=await reader.beginRead({requestId:'slow'});assert.equal((await session.getEvidence()).items[0].content,'OWNER_MEMORY_AFTER_SLOW_QUERY');}
   assert.equal(f.host.getCalls(),0);
 });

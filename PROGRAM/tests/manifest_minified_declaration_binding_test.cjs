@@ -49,7 +49,7 @@ function fixture() {
   const canonical = path.join(temp, 'canonical'), staged = path.join(temp, 'staged');
   for (const root of [canonical, staged]) {
     for (const owner of Object.keys(plugins)) put(root, relative(owner), source(owner));
-    for (const file of ['program-manifest.json', 'VERSION.txt', 'sdk/MemorySuiteStorageClient.source.js', 'sdk/MemorySuiteStorageClient.libra.source.js', 'sdk/MemorySuiteComputeClient.source.js', 'sdk/MemorySuiteExecutionContract.source.js']) {
+    for (const file of ['program-manifest.json', 'VERSION.txt', 'sdk/MemorySuiteStorageClient.source.js', 'sdk/MemorySuiteStorageClient.libra.source.js', 'sdk/MemorySuiteStorageClient.flashback.source.js', 'sdk/MemorySuiteComputeClient.source.js', 'sdk/MemorySuiteExecutionContract.source.js']) {
       put(root, file, fs.readFileSync(path.join(program, file)));
     }
   }

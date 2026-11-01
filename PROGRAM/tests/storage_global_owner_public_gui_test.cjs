@@ -94,7 +94,16 @@ function captureSeededRoots(s,name){return seedRoots(name).map(([key,seed])=>{
 async function openPanel(s){
  await s.open();await pause(180);
  if(s.name==='LIBRA'){await settleOwnerStore(s);const firstRun=s.doc.querySelector('[data-libra-quick-dialog] .dialog__actions button');if(firstRun)await s.click('[data-libra-quick-dialog] .dialog__actions button');}
- if(s.name==='LIBRA'){await s.click('.topbar [data-go="settings"]');await until(()=>s.doc.querySelector('.setnav [data-subtab="store"]'),'settings room');await s.click('.setnav [data-subtab="store"]');}
+ if(s.name==='LIBRA'){
+  const serverNav = s.doc.querySelector('.sidebar [data-go="server"], [data-go="server"]');
+  if (serverNav) {
+    await s.click('.sidebar [data-go="server"], [data-go="server"]');
+  } else {
+    await s.click('.topbar [data-go="settings"]');
+    await until(()=>s.doc.querySelector('.setnav [data-subtab="store"]'),'settings room');
+    await s.click('.setnav [data-subtab="store"]');
+  }
+ }
  else if(s.name==='HAYAKU')await s.click('[data-hayaku-viewer-goto="server"]');
  else {await s.click('[data-go="connect"]');await s.click('button[data-group="c"][data-subtab="srv"]');}
  await until(()=>s.doc.querySelector('[data-apply]'),'global panel mounted',10000);

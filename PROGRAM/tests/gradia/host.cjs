@@ -6,6 +6,7 @@ async function load(options={}){
  const hooks={};const logs=[];const store=new Map(Object.entries(options.storage||{}));const accesses=[];let calls=0;
  const api={getArgument:async()=>undefined, setArgument:async()=>{},
  pluginStorage:{getItem:async k=>{accesses.push(['read',k]);return store.get(k)},setItem:async(k,v)=>{accesses.push(['write',k]);return store.set(k,v)},removeItem:async k=>{accesses.push(['remove',k]);return store.delete(k)}},
+ getLocalPluginStorage:async()=>api.pluginStorage,
  addRisuReplacer:async(k,v)=>hooks[k]=v,addRisuScriptHandler:async(k,v)=>hooks[k]=v,
  requestPluginPermission:async()=>true,onUnload:async()=>{},
  getCharacter:async()=>null,getDatabase:async()=>({characters:[]}),getChatFromIndex:async()=>null,

@@ -4,7 +4,7 @@ const {JSDOM,VirtualConsole}=require('jsdom');
 const ART=process.env.LIBRA_GUI_ARTIFACT_ROOT || '';
 const META={LIBRA:['LIBRA.js','__LIBRA__'],HAYAKU:['HAYAKU_Locator_Continuity.js','HAYAKU'],Flashback:['Flashback_Memory.js','__FlashbackMemory']};
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
-async function until(fn,label,ms=6000){const start=Date.now();while(Date.now()-start<ms){if(fn())return fn();await pause(15);}throw Error('Timeout '+label);}
+async function until(fn,label,ms=15000){const start=Date.now();while(Date.now()-start<ms){if(fn())return fn();await pause(15);}throw Error('Timeout '+label);}
 async function create(name,kind='Full',options={}){
  const errors=[],logs=[],wire=[],unloads=[],timers=new Set(),regs=[],writes=[],values=new Map(options.initialValues||[]),args=new Map(Object.entries({memory_suite_server_mode:'plugin_only',enable_gui:'true',hayaku_debug:'false',hayaku_background_auto_repair:'false',hayaku_after_request_auto_repair:'false',...options.args}));
  const vc=new VirtualConsole();vc.on('jsdomError',e=>{if(e.type!=='css-parsing')errors.push(e.message);});

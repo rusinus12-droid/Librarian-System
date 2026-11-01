@@ -1360,7 +1360,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const request = (...args) => withOwnerOperation({kind:'storage_operation',operation:'request'}, () => requestImpl(...args));
   // Reads are served during a backup; callers that wait on read maintenance keep their own UI.
-  const MAINTENANCE_RETRY_LIMIT = 25, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch', '/v1/kv/get-many', '/v1/integrity'];
+  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch', '/v1/kv/get-many', '/v1/integrity'];
   const requestImpl = async (method, route, body = null, requestOptions = {}) => {
     if (managerOnly && method !== 'GET' && !route.startsWith('/v1/manager/') && !(method === 'POST' && route === '/v1/kv/get-many')) throw managerOnlyError();
     if (localOnlyOwner && !(method === 'GET' && (route.startsWith('/v1/kv/get?') || route.startsWith('/v1/kv/keys?') || route.startsWith('/v1/integrity?')))) throw localOnlyError();
@@ -1419,6 +1419,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // A backup gates writes for a second or two and the server refuses before running
       // anything, so the identical write (same operationId and expectations) is retried.
       const maintenanceAttempt = Number(requestOptions.maintenanceAttempt || 0);
+      const isRetryableMaintenanceRoute = method === 'GET' || MAINTENANCE_RETRY_ROUTES.includes(route);
       if (error?.status === 503 && error?.payload?.error === 'server_maintenance_in_progress' && maintenanceAttempt < MAINTENANCE_RETRY_LIMIT
         && requestOptions.maintenanceRetry !== false && method === 'POST' && MAINTENANCE_RETRY_ROUTES.includes(route)) {
         await new Promise(resolve => setTimeout(resolve, Math.min(1000, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1))));

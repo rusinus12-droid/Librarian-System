@@ -109,9 +109,14 @@ async function openServerPanelNormally(s) {
     await settleOwnerStore(s);
     const firstRun = s.doc.querySelector('[data-libra-quick-dialog] .dialog__actions button');
     if (firstRun) await s.click('[data-libra-quick-dialog] .dialog__actions button');
-    await s.click('.topbar [data-go="settings"]');
-    await until(() => s.doc.querySelector('.setnav [data-subtab="store"]'), 'LIBRA settings store subtab');
-    await s.click('.setnav [data-subtab="store"]');
+    const serverNav = s.doc.querySelector('.sidebar [data-go="server"], [data-go="server"]');
+    if (serverNav) {
+      await s.click('.sidebar [data-go="server"], [data-go="server"]');
+    } else {
+      await s.click('.topbar [data-go="settings"]');
+      await until(() => s.doc.querySelector('.setnav [data-subtab="store"]'), 'LIBRA settings store subtab');
+      await s.click('.setnav [data-subtab="store"]');
+    }
   } else if (s.name === 'HAYAKU') {
     await s.click('[data-hayaku-viewer-goto="server"]');
   } else {
@@ -364,16 +369,16 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
             'LIBRA server recovery panel mounted',
             8000
           );
-          const settingsPage = s.doc.querySelector('.page[data-page="settings"]');
-          assert.ok(settingsPage?.classList.contains('is-active'), 'LIBRA opens directly on settings page during transition');
+          const serverPage = s.doc.querySelector('.page[data-page="server"]') || s.doc.querySelector('.page[data-page="settings"]');
+          assert.ok(serverPage?.classList.contains('is-active'), 'LIBRA opens directly on server page during transition');
           const retryBtn = s.doc.querySelector('[data-libra-storage-retry]');
           assert.ok(retryBtn, 'LIBRA renders manual storage retry button');
           assert.equal(retryBtn.textContent, '진행 화면으로 이동');
           retryBtn.click();
           await pause(120);
           assert.ok(
-            s.doc.querySelector('.page[data-page="settings"]')?.classList.contains('is-active'),
-            'LIBRA stays on settings server recovery panel while transition is still locked'
+            (s.doc.querySelector('.page[data-page="server"]') || s.doc.querySelector('.page[data-page="settings"]'))?.classList.contains('is-active'),
+            'LIBRA stays on server recovery panel while transition is still locked'
           );
         } else if (name === 'HAYAKU') {
           await until(

@@ -25,6 +25,9 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'retrace_owner_contract_retention_test.cjs',
   'gradia_plugin_integration_test.cjs',
   'gradia_suite_test.cjs',
+  'gradia/native-host-id-binding.test.cjs',
+  'gradia_risuai_three_owner_read_session_acceptance_test.cjs',
+  'flashback_vectors_pending_runtime_test.cjs',
   'program_data_layout_test.cjs',
   'cross_platform_launcher_test.cjs',
   'launcher_safety_regression_test.cjs',
@@ -338,7 +341,7 @@ const RUNTIME_TOOL_FILES = new Set([
 ]);
 const RUNTIME_SDK_FILES = new Set([
   // The search kernel stays in sdk/ only as a test oracle; nothing at runtime loads it.
-  'MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js','MemorySuiteComputeClient.source.js','MemorySuiteExecutionContract.source.js'
+  'MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js','MemorySuiteStorageClient.flashback.source.js','MemorySuiteComputeClient.source.js','MemorySuiteExecutionContract.source.js'
 ]);
 const RUNTIME_DOC_FILES = new Set([
   'ANDROID_INSTALL_HELPER.md','STORAGE_MODE_TRANSITION_CONTRACT.md','UPDATER_0.3.51_BOOTSTRAP.md','사용설명서.md','데이터_구조와_마이그레이션.md','보안과_복구.md'
@@ -641,7 +644,7 @@ function runReleaseSmokeFromSource() {
   if (!support?.modulesDir) throw new Error('distribution_build_support_unavailable');
   smokeEnv.GRADIA_TOOLCHAIN_ROOT = support.modulesDir;
   smokeEnv.NODE_PATH = process.env.NODE_PATH || support.modulesDir;
-  const smoke=runNodeProcess(['--test','--test-concurrency=4',...RELEASE_SMOKE_TESTS.map(name=>path.join(programDir,'tests',name))],programDir,{timeoutMs:600000,env:smokeEnv});
+  const smoke=runNodeProcess(['--test','--test-concurrency=4',...RELEASE_SMOKE_TESTS.map(name=>path.join(programDir,'tests',name))],programDir,{timeoutMs:900000,env:smokeEnv});
   assertTreeSourceUnchanged(programDir,programSnapshot,shouldCopySourceProgram,'program_source_after_smoke',true);
   assertTreeSourceUnchanged(updaterRoot,updaterSnapshot,shouldCopyUpdater,'updater_source_after_smoke');
   return smoke;

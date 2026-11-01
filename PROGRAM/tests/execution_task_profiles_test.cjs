@@ -20,7 +20,7 @@ const standard = {
 };
 const retired = ['sga_private_analysis','sga_full_draft','sga_patch','sga_final_rewrite','sga_length_rewrite'];
 // LIBRA adds Micro memory and memory lens analysis; the other products must reject both.
-const libra = {...standard,micro_memory:[2048,4096],lens_analysis:[4096,8192]}; retired.forEach(k=>delete libra[k]);
+const libra = {...standard,micro_memory:[4096,12288],lens_analysis:[4096,8192]}; retired.forEach(k=>delete libra[k]);
 const plain = x=>JSON.parse(JSON.stringify(x));
 const load = text=>vm.runInNewContext(text+';MemorySuiteExecutionContract',{URL,URLSearchParams,TextEncoder,TextDecoder,setTimeout,clearTimeout},{timeout:1000});
 const expected = file=>file==='LIBRA.js'?libra:standard;

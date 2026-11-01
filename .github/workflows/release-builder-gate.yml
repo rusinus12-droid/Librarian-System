@@ -1,0 +1,110 @@
+name: Release Builder Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  release-builder-gate:
+    name: release-builder-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run release builder publication gate
+        run: |
+          mkdir -p "$RUNNER_TEMP/librarian-release"
+          node PROGRAM/tools/build_distribution.cjs \
+            --profile release \
+            --qualification publication_gate \
+            --output-dir "$RUNNER_TEMP/librarian-release"
+
+      - name: Verify build report publication contract
+        run: |
+          node -e '
+          const fs = require("node:fs");
+          const path = require("node:path");
+
+          const outDir = process.env.RUNNER_TEMP + "/librarian-release";
+          const files = fs.readdirSync(outDir).filter(f => f.endsWith(".build-report.json"));
+          if (files.length === 0) {
+            console.error("No .build-report.json found in output directory");
+            process.exit(1);
+          }
+          const reportPath = path.join(outDir, files[0]);
+          const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+
+          const required = {
+            schema: "librarian-system.distribution-build-report.v1",
+            profile: "release",
+            qualification: "publication_gate",
+            publicationSmokePassed: true,
+            updaterEligible: true,
+            sourceUnchangedVerified: true,
+            sourceDataReadOrCopied: false,
+            embeddedRuntime: false,
+            privateDataPatternsRejected: true,
+            unixExecutePermissionsVerified: true,
+            utf8EntryNamesVerified: true,
+            testsRun: true,
+            testProfile: "release_smoke",
+            fullRegressionRunByBuilder: false,
+            fullRegressionRequiredBeforePublication: true
+          };
+
+          let mismatch = false;
+          for (const [key, val] of Object.entries(required)) {
+            if (report[key] !== val) {
+              console.error(`Build report field mismatch: ${key} = ${report[key]} (expected ${val})`);
+              mismatch = true;
+            }
+          }
+          if (mismatch) process.exit(1);
+          console.log("Build report publication contract verified successfully.");
+          '
+
+      - name: Verify clean working tree
+        run: |
+          STATUS=$(git status --porcelain)
+          if [ -n "$STATUS" ]; then
+            echo "Working tree is dirty after release build:"
+            echo "$STATUS"
+            git diff
+            exit 1
+          fi
+          echo "Working tree is completely clean."
+
+      - name: Upload release build artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: librarian-release-artifacts
+          path: |
+            ${{ runner.temp }}/librarian-release/*.zip
+            ${{ runner.temp }}/librarian-release/*.build-report.json
+            ${{ runner.temp }}/librarian-release/*.GITHUB_RELEASE_INFO.txt
+          if-no-files-found: error
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: librarian-release-failure-reports
+          path: |
+            ${{ runner.temp }}/librarian-release/*.failed-*.json
+            ${{ runner.temp }}/librarian-release/*.build-report.json
+          if-no-files-found: ignore
