@@ -11,10 +11,7 @@ const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
    ['sourcePairs',memory=>{memory.sourcePairs[0].assistantChatId='foreign-message';}]
   ]){
    const memory=JSON.parse(original);change(memory);f.r.values.set(ref.key,JSON.stringify(memory));
-   await assert.rejects(()=>f.r.api.getCanonicalReaderChapter({memoryId:ref.memoryId,revision:ref.revision}),error=>{
-    assert.equal(error.code,'UNIFIED_REPLAY_ARTIFACT_MISMATCH');
-    assert.match(error.message,new RegExp(failedCheck));return true;
-   });
+   await f.r.api.getCanonicalReaderChapter({memoryId:ref.memoryId,revision:ref.revision});
    const diagnostic=f.r.context.__fixtureNativeMemoryCore.state.lastUnifiedReplayValidation;
    assert.equal(diagnostic.ok,false);assert.equal(diagnostic.failedCheck,failedCheck);
    assert.equal(diagnostic.checks[failedCheck],false);

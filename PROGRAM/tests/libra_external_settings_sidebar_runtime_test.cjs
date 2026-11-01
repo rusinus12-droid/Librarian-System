@@ -14,8 +14,8 @@ const {createLibraVmHarness}=require('./fixtures/libra_vm_harness.cjs');
   assert.equal(n.items.length,15);assert.equal(new Set(n.items.map(item=>item.id)).size,15);
   for(const item of n.items){
    n.selectBookExternalSettings(item.id);
-   assert.equal(n.Gui.bookPage,'settings',item.id);
-   assert.equal(n.bookSettingsRoomActiveSection(),item.section,item.id);
+   assert.equal(n.Gui.bookPage,item.id==='server'?'server':'settings',item.id);
+   if(item.id!=='server')assert.equal(n.bookSettingsRoomActiveSection(),item.section,item.id);
    assert.equal(n.bookExternalSettingsActive(item),true,item.id);
    assert.equal(n.Gui.state,draft,'navigation retains draft identity');assert.equal(n.Gui.dirty,true);
   }

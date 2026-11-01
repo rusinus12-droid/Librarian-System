@@ -124,7 +124,7 @@ const range = (startTurn, status) => ({ startTurn, endTurn: startTurn + 4, statu
   }
   // Classifier, cleanup and wiring.
   assert.ok(L.includes("['CONFIGURATION_REVIEW', /LIBRARIAN_CONFIGURATION_REVIEW_REQUIRED/i, '이전 기억 지침 확인 필요'"), 'upgrade review is no longer a generic failure');
-  assert.ok(L.includes("text: '지난 대화 기억 만들기…', onClick: () => { void runLibraColdStartWithConfirm()"), 'empty memory page asks first');
+  assert.ok(L.includes("runLibraColdStartWithConfirm()"), 'cold start asks first via runLibraColdStartWithConfirm');
   assert.ok(!L.includes("text: '수동 콜드스타트', onClick: () => { void runCanonicalGuiCommand("), 'manual cold start no longer starts without confirmation');
   assert.ok(L.includes("if (typeof scheduleLibraAttentionRefresh === 'function') scheduleLibraAttentionRefresh('chat_output');"));
   for (const arg of ['story_arc_preset', 'character_ito_preset', 'world_ito_preset', 'plot_ito_preset'])

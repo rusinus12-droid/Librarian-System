@@ -34,8 +34,8 @@ const runColdThenScan = async () => {
   try {
     const cold = await f.run();
     const api = f.r.api;
-    // Exactly what the second button does: startManualCanonicalScan({}) with no arguments.
-    await api.startManualCanonicalScan({});
+    const inv = await api.listCanonicalBatchRanges();
+    await api.startSelectedCanonicalBatches({ scopeKey: inv.scopeKey, mode: 'source_edit', ranges: inv.ranges.filter(r => r.startTurn === 1) });
     // Let the job settle: the conflict window is ~500ms after the cold start resolves.
     await new Promise(resolve => setTimeout(resolve, 1200));
     return {
@@ -66,7 +66,8 @@ const runColdThenScan = async () => {
     const f = await fixture();
     try {
       const api = f.r.api;
-      await api.startManualCanonicalScan({ startTurns: [1] });
+      const inv = await api.listCanonicalBatchRanges();
+      await api.startSelectedCanonicalBatches({ scopeKey: inv.scopeKey, mode: 'missing', ranges: inv.ranges.filter(r => r.startTurn === 1) });
       await new Promise(resolve => setTimeout(resolve, 900));
       report.standalone = jobState(await api.getCanonicalJobStatus());
       assert.equal(report.standalone.state, 'completed',
@@ -82,7 +83,8 @@ const runColdThenScan = async () => {
     try {
       const api = f.r.api;
       let rejected = false;
-      try { await api.startManualCanonicalScan({ startTurns: [999] }); }
+      const inv = await api.listCanonicalBatchRanges();
+      try { await api.startSelectedCanonicalBatches({ scopeKey: inv.scopeKey, mode: 'missing', ranges: [{ startTurn: 999 }] }); }
       catch (error) { rejected = /selected_batch_range_invalid/.test(String(error?.message || error)); }
       report.badRangeRejected = rejected;
       assert.ok(rejected, 'an invalid batch range must still be rejected');

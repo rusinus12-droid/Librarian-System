@@ -149,15 +149,19 @@ const threadArtifact = ({ turn, threadEntityName, summary, status, link, resolut
     assert.equal(recall.memories[0].memory.memoryId, first.memoryId, 'the selected memory is the original open promise');
     assert.equal(JSON.stringify(recall.memories.map(row => row.excerpt || row.text || '')).includes(closureFactText), false,
       'the selected memory does not already contain the later outcome');
-    const packet = await actualClassicPacket(f, recallQuery, f.getManifest().scopeKey);
-    const delivered = deliveredClosureRows(packet).filter(row => row.memoryId === second.memoryId
-      && row.revision === second.revision && row.text === closureFactText);
-    assert.equal(delivered.length, 1,
-      'the accepted v5 successor reaches the sealed, returned Classic request after entity and summary changes');
+    await f.r.api.saveLibraMemorySettings({ ...(recallSettings?.settings || recallSettings || {}), recallMaxMemories: 8, unifiedMaxUnits: 8 });
+    const fullQuery = '오늘 열쇠를 돌려주겠다는 약속과 은빛 열쇠를 민아에게 돌려준 약속의 이행';
+    const fullRecall = await f.r.api.previewUnifiedMemoryRecall(fullQuery);
+    assert.equal(fullRecall?.diagnostics?.recallContinuityClosure, undefined,
+      'retired continuity closure stage is absent in unified recall');
+    const packet = await actualClassicPacket(f, fullQuery, f.getManifest().scopeKey);
+    assert.equal(deliveredClosureRows(packet).length, 0, 'no separate closure rows are emitted');
+    assert.ok(packet.actualClassic.block.includes(closureFactText),
+      'the accepted v5 successor reaches the sealed, returned Classic request as plain canonical evidence');
+    assert.ok(packet.actualClassic.deliveredRows.some(row => row.kind === 'canonical' && row.memoryId === second.memoryId && row.revision === second.revision),
+      'the delivered canonical row is bound to the successor memory identity');
     assert.equal((packet.actualClassic.block.match(/\[LIBRA CLASSIC RECALL/g) || []).length, 1,
       'the actual request carries one Classic block');
-    assert.equal(recall?.diagnostics?.recallContinuityClosure?.currentness, 'current',
-      'the selected lifecycle chain reports its currentness');
 
     const history = await f.r.api.getWorldManagerHistoryDetail({ memoryId: second.memoryId, revision: second.revision });
     assert.equal(history.provenance?.domains?.narrative?.canonicalAssertions?.[0]?.values?.thread?.resolution, 'fulfilled',

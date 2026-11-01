@@ -33,11 +33,11 @@ for (const kind of ['source', 'Full', 'Min']) {
         const doc = dom.window.document;
         const button = doc.getElementById('maintenanceArchiveRunBtn');
         assert(button, 'registered production archive button maintenanceArchiveRunBtn is required');
-        assert.equal(button.textContent.trim(), '아카이브 응답 한 묶음 복구');
+        assert.equal(button.textContent.trim(), '이전 세션 응답 벡터 복구');
         const localMode = doc.getElementById('maintenanceMode');
         assert(localMode, 'original local repair control remains available');
         localMode.value = 'reembed';
-        assert.equal(localMode.selectedOptions[0].textContent, '로컬 미완료 벡터 복구');
+        assert.equal(localMode.selectedOptions[0].textContent, '로컬 미완료 벡터 복구 (로컬 전용)');
         assert.notEqual(button.id, 'maintenanceRunBtn', 'archive action has its own registered route');
 
         f.startObservation();
@@ -66,7 +66,7 @@ for (const kind of ['source', 'Full', 'Min']) {
         const result = await f.waitFor(() => {
           const current = dialog(); return current && current.textContent !== confirmation ? current : null;
         }, 'selected archive group result');
-        assert.match(result.textContent, /선택한 아카이브 응답 묶음 완료/);
+        assert.match(result.textContent, /선택한 (?:아카이브 응답 묶음|이전 세션 응답 벡터 복구) 완료/);
         assert.match(result.textContent, /남은 응답 묶음[^\d]*1/);
         assert.match(result.textContent, /제외[^\d]*1/);
         assert.doesNotMatch(result.textContent, /모든\s*아카이브.*완료|전체\s*아카이브.*(?:정상|복구\s*완료)|전체\s*(?:자료|데이터)\s*정상/);

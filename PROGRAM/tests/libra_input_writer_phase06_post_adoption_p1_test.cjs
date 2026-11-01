@@ -1,7 +1,8 @@
 'use strict';
 // The Writer modal, clipboard/insert/send coordinator and choice regeneration
-// were removed. Current memory candidates retain preview/adopt/keep and final
-// authority fences; shared request-local recall must still avoid durable writes.
+// were removed. Current memory reanalysis uses listReanalysisRanges + reanalyzeSelectedRanges
+// while preserving prior revisions and authority fences; shared request-local recall
+// must still avoid durable writes.
 const assert=require('node:assert/strict');
 const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
 const {actualClassicPacket}=require('./fixtures/libra_actual_classic_request.cjs');
@@ -21,13 +22,19 @@ const expose=source=>{
   const recall=await f.r.api.retainedReadOnlyRecall('민아 지호 신뢰 은빛 열쇠');
   assert(recall.memories.some(x=>x.memory.memoryId===original.memoryId),'a real canonical ref must exercise the recall catalog');
   assert.deepEqual(f.r.storageWrites,[]);assert.deepEqual(f.r.storageRemovals,[]);assert.equal(f.control.calls.length,calls);
-  const job=await f.r.api.regenerateCanonicalMemory({startTurn:1});assert.equal(job.state,'awaiting_choice');assert.equal(f.r.values.get(ref.key),before);
-  const kept=await f.r.api.resolveCanonicalCandidate({jobId:job.jobId,decision:'keep'});assert.notEqual(kept.state,'awaiting_choice');assert.equal(f.getMemory().revision,original.revision);
-  const next=await f.r.api.regenerateCanonicalMemory({startTurn:1});assert.equal(next.state,'awaiting_choice');
-  const callsBeforeAdopt=f.control.calls.length,adopted=await f.r.api.resolveCanonicalCandidate({jobId:next.jobId,decision:'adopt'});assert.match(adopted.state,/^completed/);assert.equal(f.getMemory().revision,2);assert.equal(f.control.calls.length,callsBeforeAdopt);
+  await assert.rejects(()=>f.r.api.regenerateCanonicalMemory({startTurn:1}),/LIBRA_REANALYSIS_ENTRY_RETIRED|폐기/);
+  const inv=await f.r.api.listReanalysisRanges();
+  const reanalyzed=await f.r.api.reanalyzeSelectedRanges({...inv,ranges:inv.ranges.filter(r=>r.batchStart===1)});
+  assert.equal(reanalyzed.ok,true,JSON.stringify(reanalyzed));
+  assert.equal(f.r.values.get(ref.key),before,'prior canonical revision bytes remain intact');
+  assert.equal(f.getMemory().revision,2);
   const delivered=await actualClassicPacket(f,'민아 지호 신뢰',f.getManifest().scopeKey);assert(delivered.actualClassic.deliveredRows.some(x=>x.revision===2));
-  const stale=await f.r.api.regenerateCanonicalMemory({startTurn:1});assert.equal(stale.state,'awaiting_choice');f.chat.message[1].data+=' changed after preview';
-  await assert.rejects(()=>f.r.api.resolveCanonicalCandidate({jobId:stale.jobId,decision:'adopt'}),/source|precondition/i);assert.equal(f.getMemory().revision,2);
+  const staleInv=await f.r.api.listReanalysisRanges();
+  const sample=await f.r.context.__LIBRA__?null:null;
+  f.chat.message[1].chatId='changed-after-preview';
+  const staleRes=await f.r.api.reanalyzeSelectedRanges({...staleInv,ranges:staleInv.ranges.filter(r=>r.batchStart===1)});
+  assert.equal(staleRes.ok,false);
+  assert.equal(f.getMemory().revision,2);
  }finally{await f.r.cleanup();}
- console.log('libra_input_writer_phase06_post_adoption_p1_test: PASS (memory candidate/readonly recall successor; Writer send lifecycle retired)');
+ console.log('libra_input_writer_phase06_post_adoption_p1_test: PASS (memory reanalysis/readonly recall successor; Writer send lifecycle retired)');
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -29,7 +29,7 @@ async function fixture(options={}){
  const host={getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacter:async()=>character,getChar:async()=>character,getCharacterFromIndex:async()=>character,getChat:async()=>chat,getCurrentChat:async()=>chat,getChatFromIndex:async()=>chat,
  getDatabase:async fields=>{const db={personas:[],selectedPersona:'',characters:[character],plugins:[]};return Array.isArray(fields)?Object.fromEntries(fields.map(k=>[k,db[k]??null])):db;},
  addRisuReplacer:async(mode,fn)=>{control.hooks[mode]=fn;return true;},
- runLLMModel:async(...args)=>{control.calls.push(clone(args));if(control.onCall)return control.onCall(args);if(control.modelFails)return {type:'error',result:'synthetic_provider_failure'};return {type:'success',result:JSON.stringify(control.artifact)};}};
+ runLLMModel:async(...args)=>{control.calls.push(clone(args));if(control.onCall)return control.onCall(args);if(control.modelFails)return {type:'error',result:'synthetic_provider_failure'};if(JSON.stringify(args).includes('[LIBRA MICRO SOURCE CONTRACT]'))return require('./libra_reanalysis_kinds_fixture.cjs').microReply(args);return {type:'success',result:JSON.stringify(control.artifact)};}};
  Object.assign(host,options.host || {});
  const r=await createLibraVmHarness({enable_character_ito:false,enable_world_ito:false,enable_plot_ito:false,...options.args},host,{initialValues:options.snapshot?.values,transformSource:options.transformSource,contextGlobals:options.contextGlobals});
  const settings=await r.api.getLibraMemorySettings();

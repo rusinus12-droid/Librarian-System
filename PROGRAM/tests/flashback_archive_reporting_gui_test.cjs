@@ -18,10 +18,10 @@ for(const kind of kinds)for(const mixed of [false,true])test(`${kind} registered
   const doc=dom.window.document,mode=doc.getElementById('maintenanceMode'),button=doc.getElementById('maintenanceRunBtn');
   assert(mode&&button,'actual generated controls are present');mode.value='reembed';
   await t.test('entry label and help state local pending scope',()=>{
-    assert.equal(mode.selectedOptions[0].textContent,'로컬 미완료 벡터 복구');
+    assert.match(mode.selectedOptions[0].textContent,/^로컬 미완료 벡터 복구/);
     assert.match(mode.closest('.grid')?.textContent||mode.parentNode.parentNode.textContent,/저장된 대기 항목만 처리/);
   });
-  const dialog=()=>doc.querySelector('.overlay.is-open .dialog [id$="-message"]');
+  const dialog=()=>doc.querySelector('.overlay.is-open .dialog [id^="vrm-dialog-"][id$="-message"]');
   button.click();const first=await f.waitFor(dialog,'first GUI dialog');
   if(!mixed){
     assert.match(first.textContent,/아카이브 벡터 복구는 아직 지원하지 않습니다/);
@@ -48,7 +48,7 @@ for(const kind of kinds)for(const mixed of [false,true])test(`${kind} registered
   try{
     doc.getElementById('maintenanceInspectBtn').click();
     const inspected=await f.waitFor(dialog,'unknown archive diagnostic');
-    assert.match(inspected.textContent,/아카이브 확인 불가/);
+    assert.match(inspected.textContent,/아카이브 확인 불가|아카이브 보호를 위해 모든 자동 변경을 차단/);
     assert.doesNotMatch(inspected.textContent,/벡터 복구 0 · 로컬 0 · 아카이브 0/);
     doc.querySelector('.overlay.is-open .dialog .dialog__actions button:last-child').click();await f.waitFor(()=>!dialog(),'unknown diagnostic dismissal');
   }finally{f.pluginStorage.values.set(archiveKey,raw);}

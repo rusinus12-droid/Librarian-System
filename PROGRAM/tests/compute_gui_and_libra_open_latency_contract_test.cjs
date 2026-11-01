@@ -26,14 +26,14 @@ assert.match(panel, /서버 단독/);
 
 const libraStorageSdk = read('sdk/MemorySuiteStorageClient.libra.source.js');
 const libraPanel = between(libraStorageSdk, 'const scopedMountConnectionPanel = async', 'const ensureHandoffReady = async');
-const libraPanelPaintAt = libraPanel.indexOf('container.innerHTML =');
 const libraPanelForcedHydrationAt = libraPanel.indexOf('await scopedGetConnectionSettings({ force:true })');
-assert.ok(libraPanelPaintAt >= 0 && libraPanelForcedHydrationAt > libraPanelPaintAt,
-  'LIBRA server controls must paint before forced scope and storage hydration');
-assert.match(libraPanel, /setControlsReady\(false\)/,
-  'LIBRA server controls must stay inert until authoritative settings hydration finishes');
-assert.match(libraPanel, /renderConnectionSettings\(await scopedGetConnectionSettings\(\{ force:true \}\)\)/,
-  'LIBRA server controls must replace the cached first paint with authoritative scoped settings');
+const libraPanelPaintAt = libraPanel.indexOf('container.innerHTML = `');
+assert.ok(libraPanelForcedHydrationAt >= 0 && libraPanelPaintAt > libraPanelForcedHydrationAt,
+  'LIBRA server controls hydrate authoritative scoped settings before mounting the panel');
+assert.match(libraPanel, /renderAppliedMode\(initial\)/,
+  'LIBRA server controls render the hydrated initial mode immediately');
+assert.match(libraPanel, /applyRecoveryGuard\(initial\.recoveryRequired\)/,
+  'LIBRA server controls enforce recovery guard on initial render');
 
 const integrations = [
   ['plugins/Flashback_Memory.js', 'flashbackMemorySuiteServerConnectionPanel'],

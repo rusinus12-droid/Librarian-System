@@ -455,7 +455,8 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       entitySlotScore,
       predicateScore,
       roleWeight,
-      mandatoryInclusion: Boolean(unit?.activation?.alwaysActive === true || unit?.activation?.hostSelected === true)
+      // Host-selected lore is already in the prompt; only constant lore the host did not carry is forced in.
+      mandatoryInclusion: Boolean(unit?.activation?.alwaysActive === true && unit?.activation?.hostSelected !== true)
     };
   };
 

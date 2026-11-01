@@ -133,8 +133,8 @@ const run = async () => {
     'approved terminal failure/results remain inspectable until explicit dismissal; replacing the retired automatic-dismiss UX');
   assert.match(source, /canonical_failed_run_delete_terminal_failure_only/,
     'the storage API must reject deletion of non-failed execution records');
-  assert.match(source, /text: '실패 구간 새 분석'/,
-    'canonical management must retain the explicit failed-batch recovery action');
+  assert.match(source, /buildCanonicalTool\('재분석'|showLibraSourceReanalysisDrawer/,
+    'canonical management must retain the explicit reanalysis recovery action');
   assert.doesNotMatch(source, /const buildLibraRunsPanel =/,
     'the deleted legacy execution-card panel must not be restored just to expose old controls');
 

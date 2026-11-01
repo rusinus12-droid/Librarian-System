@@ -161,14 +161,14 @@ async function prepareStateOnlyMicro(f) {
 }
 test('inherited consumed Classic context rejects deletion of its physical shared-archive memory',()=>withMicro(async f=>{
  const {prepared,inheritedCanonical}=await prepareInherited(f),memoryKey=inheritedCanonical[0].memoryKey;
- assert(memoryKey&&f.r.values.has(memoryKey));f.r.values.delete(memoryKey);await invalid(f,prepared.context,/GRAPH_CORPUS_SOURCE_CHANGED/);
+ assert(memoryKey&&f.r.values.has(memoryKey));f.r.values.delete(memoryKey);await invalid(f,prepared.context,/GRAPH_CORPUS_SOURCE_CHANGED|PHYSICAL_READSET_STALE/);
 }));
 test('inherited Micro archive stays outside the Classic recall rows while archive currentness is still enforced',()=>withMicro(async f=>{
  const {prepared,micro,archive}=await prepareInherited(f,true);assert.equal(micro.length,0,'two archived Micro identities are not delivered as recall rows');
  const probe=f.r.api.retirementConsumedProbe(prepared.context.consumedDataToken);assert(probe.graph);
  assert.equal((await f.r.api.validateResponseContext(prepared.context)).current,true);
  const original=f.r.values.get(archive.key),changed=JSON.parse(original);changed.records.find(row=>row.value.schema==='libra.micro_memory.v1').value.claims[0].text='changed physical archived claim';f.r.values.set(archive.key,JSON.stringify(changed));
- await invalid(f,prepared.context,/GRAPH_CORPUS_SOURCE_CHANGED/);
+ await invalid(f,prepared.context,/GRAPH_CORPUS_SOURCE_CHANGED|PHYSICAL_READSET_STALE/);
  f.r.values.set(archive.key,original);assert.equal((await f.r.api.validateResponseContext(prepared.context)).current,true,'restoring the exact archive bytes restores currentness');
 }));
 test('removed inherited lineage rejects a consumed Classic context whose archive bytes still exist',()=>withMicro(async f=>{

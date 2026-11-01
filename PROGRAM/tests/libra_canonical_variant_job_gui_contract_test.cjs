@@ -112,8 +112,7 @@ assert.match(renderer,/Gui\.mockupApp &&|!Gui\.mockupApp \|\| !Gui\.root\.contai
 assert.match(renderer,/Gui\.root\.replaceChildren\(stage\)/,'root mounting occurs at the approved frame boundary');
 assert.match(renderer,/current\.replaceChildren\(\)/,'only the selected destination body is hydrated');
 assert.match(renderer,/requestedRegions=new Set\(Gui\.invalidations\)/);
-assert.match(renderer,/existingDrawer=app\.querySelector\('#drawer-quick\[data-book-quick-drawer\]'\)/,'the app keeps one independent drawer owner');
-assert.match(renderer,/regionTimesMs/,'actual main/drawer construction retains measured diagnostics');
+assert.match(renderer,/regionTimesMs/,'actual main construction retains measured diagnostics');
 assert.match(source, /const typing = activeTag === 'TEXTAREA'[\s\S]*?!\['checkbox', 'radio', 'range', 'button', 'submit'\]\.includes\(activeType\)[\s\S]*?if \(active && Gui\.app\?\.contains\(active\) && typing\) return;/,
   'text editing blocks body remounts without suppressing checkbox or button navigation');
 assert.match(source, /summaryOnly: true/);

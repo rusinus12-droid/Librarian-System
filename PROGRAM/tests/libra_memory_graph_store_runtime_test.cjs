@@ -20,7 +20,7 @@ const retryBusy = async run => { for (let i = 0; ; i++) { try { return await run
       assert.equal((await api.getMemoryGraphDurablePage(options)).status, 'missing_generation');
       assert.equal(f.r.storageWrites.length, writes0); assert.equal(x.server?.batches.length || 0, batches0);
       const calls = f.control.calls.length, built = await api.buildMemoryGraphGeneration(options);
-      assert.equal(built.status, 'published'); assert.equal(built.pageCount, 17);
+      assert.equal(built.status, 'published'); assert.equal(built.pageCount, 19);
       assert.deepEqual(plain(built.totals), { nodes: 48, edges: 81, bases: 27, units: 33 });
       assert.equal(built.publication, mode === 'server_only' ? 'conditional_root_cas' : 'runtime_ordered_root_last_readback_partial');
       assert.equal(built.ownerAtomicity, false); assert.equal(built.inventoryComplete, false); assert.equal(f.control.calls.length, calls);
@@ -29,7 +29,7 @@ const retryBusy = async run => { for (let i = 0; ; i++) { try { return await run
       else {
         const finalBatch = x.server.batches.at(-1);
         assert.ok(finalBatch.mutations.some(row => row.key === root.key));
-        assert.ok(finalBatch.conditions.length > 17, 'root CAS pins pages/manifest and current source keys');
+        assert.ok(finalBatch.conditions.length > 19, 'root CAS pins pages/manifest and current source keys');
       }
       const readWrites = f.r.storageWrites.length, readBatches = x.server?.batches.length || 0;
       const rows = []; let cursor = '', first, count = 0;

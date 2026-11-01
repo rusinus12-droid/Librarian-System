@@ -37,7 +37,7 @@ const storage = {
     if (!isManifest) return values.has(k) ? values.get(k) : null;
     const record = { tag: operation.getStore() || 'background', scope: lock.getStore() || '', enter: performance.now(), exit: 0 };
     readWindows.push(record);
-    if (record.tag === 'regeneration' && !heldRead) {
+    if (record.tag === 'regeneration' && record.scope && !heldRead) {
       heldRead = true; await readRelease.promise;
     }
     record.exit = performance.now();
@@ -145,12 +145,17 @@ const overlaps = (a, b) => a.enter < b.exit && b.enter < a.exit;
   const ref = manifest0.memories['6'];
   assert.equal(ref.status, 'committed', 'T6 canonical really committed');
   const canonicalBytes = values.get(ref.key), sourceBytes = JSON.stringify(chat);
-  const canonicalRefs = JSON.stringify(manifest0.memories);
+  const batchInv = await api.listCanonicalBatchRanges();
+  const batchRange = batchInv.ranges.filter(r => r.startTurn === 6);
   holdProvider = true;
 
   // --- the race ---
   readWindows.length = 0;
-  const regeneration = operation.run('regeneration', () => api.regenerateCanonicalMemory({ startTurn: 6, memoryId: ref.memoryId, revision: ref.revision }));
+  const regeneration = operation.run('regeneration', () => api.startSelectedCanonicalBatches({
+    scopeKey: batchInv.scopeKey,
+    mode: 'source_edit',
+    ranges: batchRange
+  }));
   await waitFor(() => heldRead);
   const competing = operation.run('competing', () => api.retryPendingUnifiedVectors());
   await waitFor(() => queueRows.some(row => row.tag === 'competing' && row.scopeKey === manifest0.scopeKey));
@@ -159,15 +164,16 @@ const overlaps = (a, b) => a.enter < b.exit && b.enter < a.exit;
   assert.equal(lockWindows.some(row => row.tag === 'competing'), false, 'retry waits for regeneration owner lock');
   readRelease.resolve();
   await waitFor(() => providerHeldSeen);
-  await assert.rejects(api.scanMemoryNow(), /canonical_job_busy/, 'scan refuses while regeneration provider is held');
+  await assert.rejects(api.runManualColdStart(), /canonical_job_busy/, 'scan refuses while regeneration provider is held');
   providerRelease.resolve();
   const [regenResult, competingResult] = await Promise.all([regeneration, competing]);
-  assert.equal(regenResult.state, 'awaiting_choice', JSON.stringify(regenResult));
-  const scan = await api.scanMemoryNow();
+  assert.equal(regenResult.ok, true, JSON.stringify(regenResult));
+  assert.ok(['completed', 'completed_with_warnings'].includes(regenResult.job.state), JSON.stringify(regenResult));
+  const scan = await api.runManualColdStart();
   assert.ok(['completed', 'completed_with_warnings'].includes(scan.state), JSON.stringify(scan));
-  assert.equal(values.get(ref.key), canonicalBytes, 'candidate generation and retry preserve active canonical bytes');
+  assert.equal(values.get(ref.key), canonicalBytes, 'source_edit replacement and retry preserve prior canonical revision bytes');
   assert.equal(JSON.stringify(chat), sourceBytes, 'source unchanged');
-  assert.equal(JSON.stringify(JSON.parse(values.get(manifestKey)).memories), canonicalRefs, 'canonical refs and derived vector metadata preserved');
+  assert.equal(JSON.parse(values.get(manifestKey)).memories['6'].revision, 2, 'T6 canonical advanced to revision 2');
 
   const regenReads = readWindows.filter(w => w.tag === 'regeneration' && w.scope === manifest0.scopeKey);
   const competingReads = readWindows.filter(w => w.tag === 'competing' && w.scope === manifest0.scopeKey);
@@ -179,7 +185,7 @@ const overlaps = (a, b) => a.enter < b.exit && b.enter < a.exit;
     regenerationManifestReads: regenReads.length,
     competingManifestReads: competingReads.length,
     overlappingReadWindows: overlapPairs,
-    regenerationState: regenResult.state,
+    regenerationState: regenResult.job.state,
     competingCompleted: competingResult.ok,
     scanAfterRelease: scan.state
   };

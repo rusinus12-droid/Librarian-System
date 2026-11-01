@@ -386,6 +386,12 @@ TEST_TIMEOUT_SECONDS = {
     # standalone and 81-89s under load. The in-test observation deadlines still bound each scenario;
     # this only stops the harness from cutting a suite off while it is still working.
     'distribution_builder_failure_runtime_test.cjs': 300,
+    # 90s RECALL_REQUEST_BUDGET_MS watchdog + 30-turn 1024-d local embedding suites
+    # naturally exceed the 60s default while preserving all internal test deadlines.
+    'libra_memory_graph_local_gc_semantic_runtime_test.cjs': 180,
+    'libra_micro_vector_ranking_runtime_test.cjs': 180,
+    'libra_consumed_micro_freshness_runtime_test.cjs': 180,
+    'libra_response_context_v1_test.cjs': 180,
 }
 all_tests=sorted(
     test for test in (root/'tests').glob('*.cjs')

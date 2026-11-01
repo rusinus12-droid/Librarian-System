@@ -61,6 +61,8 @@ const context = vm.createContext({
   openCanonicalReaderCorrection: async () => {},
   bookSelectMemorySection: () => {},
   loadCanonicalReaderDetail: async () => {},
+  canonicalReaderBinding: () => ({ scopeKey: 'scope-1', worldlineId: 'wl', openSerial: 1 }),
+  showLibraSourceReanalysisDrawer: async () => {},
   buildBookEmptyState: (kicker, title, body, attrs = {}) => el('div', { class: 'libra-book-empty-state', ...attrs }, [
     el('span', { text: kicker }), el('strong', { text: title }), el('p', { text: body })]),
   bookTurnEvidenceForChapter: () => TURN_EVIDENCE

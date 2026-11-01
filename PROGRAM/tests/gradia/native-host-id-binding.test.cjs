@@ -578,5 +578,71 @@ test('end-to-end beforeRequest pipeline with {{user}}/{{char}} placeholders and 
   assert.equal(diag?.textMatched,false);
 });
 
+test('<user>/<char> angle-bracket placeholders and short CBS random/pick choice macros bind native IDs and keep stage view identical',async()=>{
+  const persona={name:'철수',personaPrompt:'신중한 조사관'};
+  const f=await fixture((chat,character,input)=>{
+    character.name='아키비스트';
+    chat.message[0].data='<user>: {{random::캐비닛을 연다::서랍을 연다}}';
+    chat.message[1].data='<char>가 위쪽 선반의 푸른 장부를 가리켰다.';
+    chat.message[2].data='<user>는 {{pick::조용히 들어간다::문을 두드린다}} 그리고 <char>를 바라본다.';
+    input[0]={role:'user',content:'철수: 서랍을 연다'};
+    input[1]={role:'assistant',content:'아키비스트가 위쪽 선반의 푸른 장부를 가리켰다.'};
+    input[2]={role:'user',content:'<Current Input>\n철수는 조용히 들어간다 그리고 아키비스트를 바라본다.\n</Current Input>'};
+  },{
+    getDatabase:async()=>({personas:[persona],selectedPersona:0})
+  });
+  const b=await f.bind();
+  assert.equal(b.snapshot.currentInputRef.messageId,'native-2');
+  assert.ok(b.snapshot.turns.some(row=>row.ref.messageId==='native-0'));
+  assert.ok(b.snapshot.turns.some(row=>row.ref.messageId==='native-1'));
+  assert.equal(f.runtime.lastNativeBindDiagnostic?.mode,'text_verified_bind');
+  const shadowSelection=b.selections.find(item=>item.stage==='shadow_act');
+  const stageSettings=f.api.scopedSettingsForStage(f.settings,'shadow_act');
+  const stageRecent=f.api.buildRecentChat(b.messages,stageSettings);
+  const currentTurn=f.api.resolveSgaCurrentTurn(b.messages);
+  const actualChat=await f.api.loadActualChatContextForRag(f.character,{chat:f.chat,source:'getChatFromIndex'},b.messages,currentTurn,persona,false);
+  const effectiveRecent=f.api.attachInputAssistContinuityState(
+    f.api.applyActualChatContextToRecent(stageRecent,actualChat,stageSettings.turnWindow),
+    f.settings
+  );
+  assert.deepEqual(f.api.libNativePromptView(effectiveRecent),shadowSelection.view);
+});
+
+for(const withChatSlotIds of [false,true])test(`preset emitting both <chat> pending user row (withChatSlotIds=${withChatSlotIds}) and <Current Input> wrapper binds cleanly without duplicate or unbound turn ref`,async()=>{
+  const persona={name:'철수',personaPrompt:'신중한 조사관'};
+  const f=await fixture((chat,character,input)=>{
+    character.name='아키비스트';
+    chat.message[0].data='{{user}}가 캐비닛을 연다.';
+    chat.message[1].data='{{char}}가 위쪽 선반의 푸른 장부를 가리켰다.';
+    chat.message[2].data='{{user}}는 {{random::문을 두드린다::조용히 들어간다}}.';
+    input.length=0;
+    input.push(
+      {role:'user',...(withChatSlotIds?{chatId:'native-0'}:{}),content:'철수가 캐비닛을 연다.'},
+      {role:'assistant',...(withChatSlotIds?{chatId:'native-1'}:{}),content:'아키비스트가 위쪽 선반의 푸른 장부를 가리켰다.'},
+      {role:'user',...(withChatSlotIds?{chatId:'native-2'}:{}),content:'철수는 문을 두드린다.'},
+      {role:'user',content:'<Current Input>\n[장면 지시] 철수가 노크 후 문을 밀고 들어간다.\n</Current Input>'}
+    );
+  },{
+    getDatabase:async()=>({personas:[persona],selectedPersona:0})
+  });
+  const b=await f.bind();
+  assert.equal(b.snapshot.currentInputRef.messageId,'native-2');
+  assert.ok(b.snapshot.turns.some(row=>row.ref.messageId==='native-0'));
+  assert.ok(b.snapshot.turns.some(row=>row.ref.messageId==='native-1'));
+  const shadowSelection=b.selections.find(item=>item.stage==='shadow_act');
+  assert.equal(shadowSelection.turns.length,1);
+  assert.equal(shadowSelection.turns[0].boundary.messageId,'native-2');
+  const stageSettings=f.api.scopedSettingsForStage(f.settings,'shadow_act');
+  const stageRecent=f.api.buildRecentChat(b.messages,stageSettings);
+  const currentTurn=f.api.resolveSgaCurrentTurn(b.messages);
+  const actualChat=await f.api.loadActualChatContextForRag(f.character,{chat:f.chat,source:'getChatFromIndex'},b.messages,currentTurn,persona,false);
+  const effectiveRecent=f.api.attachInputAssistContinuityState(
+    f.api.applyActualChatContextToRecent(stageRecent,actualChat,stageSettings.turnWindow),
+    f.settings
+  );
+  assert.deepEqual(f.api.libNativePromptView(effectiveRecent),shadowSelection.view);
+});
+
+
 
 

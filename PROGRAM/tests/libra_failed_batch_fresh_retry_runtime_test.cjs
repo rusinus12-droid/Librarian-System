@@ -128,7 +128,16 @@ const readWork = startTurn => {
     const api = await waitFor(() => context.__LIBRA__);
     await waitFor(() => legacyOutputHandler);
 
-    const first = await api.startManualCanonicalScan({ startTurns: [1] });
+    const runRange = async startTurn => {
+      const inv = await api.listReanalysisRanges();
+      const res = await api.reanalyzeSelectedRanges({
+        ...inv,
+        ranges: inv.ranges.filter(r => r.batchStart === startTurn)
+      });
+      return res.job || await api.getCanonicalJobStatus();
+    };
+
+    const first = await runRange(1);
     assert.equal(first.failed, 1);
     assert.equal(runLlmCalls, 1, 'the first terminal provider failure consumes one physical submission');
     let manifest = readManifest();
@@ -144,7 +153,7 @@ const readWork = startTurn => {
     await new Promise(resolve => setTimeout(resolve, 220));
     assert.equal(runLlmCalls, beforeNonBoundary, 'legacy output at turn 11 does not schedule a Canonical provider call');
 
-    const retried = await api.retryFailedMemoryAnalysis({ startTurns: [1] });
+    const retried = await runRange(1);
     assert.equal(retried.failed, 1);
     assert.equal(runLlmCalls, beforeNonBoundary + 1, 'explicit retry creates exactly one fresh physical submission');
     manifest = readManifest();
@@ -169,7 +178,7 @@ const readWork = startTurn => {
     const currentRange=selected.ranges.filter(row=>row.startTurn===11);
     assert.equal(currentRange.length,1);assert.equal(currentRange[0].status,'failed');
     const previousCurrentRun=readManifest().failedBatches['11'].runId;
-    const analyzed=await api.startSelectedCanonicalBatches({scopeKey:selected.scopeKey,mode:'failed',ranges:currentRange});
+    const analyzed=await runRange(11);
     assert.equal(analyzed.failed,1,JSON.stringify(analyzed));
     assert.equal(runLlmCalls,beforeLaterBoundary+2,'an explicit retry of the current failed range receives one fresh physical budget');
     assert.notEqual(readManifest().failedBatches['11'].runId,previousCurrentRun);

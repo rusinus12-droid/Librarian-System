@@ -66,7 +66,8 @@ assert(
 );
 
 assert(
-  source.includes("text: '상태 점검 및 자동 복구', onClick: () => void openLibraMemoryMaintenanceDialog()"),
+  source.includes("text: '상태 점검 및 자동 복구', onClick: () => void openLibraMemoryMaintenanceDialog()")
+    || source.includes("buildCanonicalTool('상태 점검 및 자동 복구'"),
   'Canonical Archive management banner must provide 상태 점검 및 자동 복구 button'
 );
 

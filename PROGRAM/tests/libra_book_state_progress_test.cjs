@@ -55,6 +55,6 @@ assert.match(renderer,/LIBRA_APPROVED_STATE_DIALOG_HTML/);
 assert.match(renderer,/pipelineStatus==='partial'/);
 assert.match(renderer,/Number\(row\.turnRange\?\.end\|\|0\)>Number\(view\.throughTurn\|\|0\)/,'awaiting segments remain separate from saved segments');
 const deskRoute=approved.extract(source,'buildApprovedMockupDesk');
-assert.match(deskRoute,/openApprovedStateDialog\(\)/,'the desk opens the actual readonly status owner');
+assert.match(deskRoute,/openLibraMemoryMaintenanceDialog\(\)/,'the desk opens the maintenance and status dialog');
 assert.match(approved.extract(source,'buildWorldManagerDiagnosticsPanel'),/buildWorldManagerHistoryCorrectionsPanel/,'per-domain detailed state remains available through diagnostics');
 console.log('PASS: reader state progress, domain cursors, loading/pending/failure, scope and readonly approved status');

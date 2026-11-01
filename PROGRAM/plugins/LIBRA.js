@@ -17121,7 +17121,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     if (expectedEmbeddingHash) {
       LibraProviderBridge.resetConfigRuntime();
-      if (settingsSemanticHash((await LibraProviderBridge.getConfig()).embed) !== expectedEmbeddingHash) {
+      if (settingsSemanticHash(LibraMemoryCore.normalizeEmbeddingSettings((await LibraProviderBridge.getConfig()).embed)) !== expectedEmbeddingHash) {
         const stale = new Error('embedding_settings_stale_basis'); stale.code = 'EMBEDDING_SETTINGS_STALE_BASIS'; throw stale;
       }
     }
@@ -75492,13 +75492,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // A background writer (embedding status, micro memory, state) can publish while a
     // projection is being read. The final readback then rejects the torn snapshot;
     // re-read a fresh one a bounded number of times instead of failing the recall.
-    const MEMORY_GRAPH_TORN_READ_CODES = new Set(['LIBRA_GRAPH_READER_BODY_CHANGED', 'LIBRA_GRAPH_READER_LORE_CHANGED']);
+    const MEMORY_GRAPH_TORN_READ_CODES = new Set(['LIBRA_GRAPH_READER_BODY_CHANGED', 'LIBRA_GRAPH_READER_LORE_CHANGED', 'OWNER_PUBLICATION_CHANGED']);
     const readMemoryGraphProjection = async (options = {}, collect = null, resources = null) => {
       for (let attempt = 0; ; attempt++) {
         try { return await readMemoryGraphProjectionOnce(options, collect, resources); }
         catch (error) {
           // A dual-copy read can also land between a write's local and server halves.
-          const torn = MEMORY_GRAPH_TORN_READ_CODES.has(error?.message)
+          const torn = MEMORY_GRAPH_TORN_READ_CODES.has(error?.message) || MEMORY_GRAPH_TORN_READ_CODES.has(error?.code)
             || String(error?.message || '').startsWith('LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:');
           if (attempt >= 2 || !torn || state.disposed) throw error;
           await new Promise(resolve => setTimeout(resolve, 40 * (attempt + 1)));
@@ -75541,7 +75541,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           : worldManagerDecodeCursor('mgm1', options.microCursor || '', pageIdentity, turns.length, 'LIBRA_GRAPH_MICRO_CURSOR_INVALID');
         const readbacks = [], pending = { canonical: [], micro: [], state: [], lore: [] };
         const sourceKeys = collect ? new Set() : null;
-        const addSourceKey = value => { if (sourceKeys && typeof value === 'string' && value.startsWith(PREFIX + ':scope:')) sourceKeys.add(value); };
+        const addSourceKey = value => { if (sourceKeys && typeof value === 'string' && (value.startsWith(PREFIX + ':scope:') || value.startsWith(PREFIX + ':shared-archive:') || value.startsWith(PREFIX + ':micro-handoff-archive:'))) sourceKeys.add(value); };
         const read = async (keyValue, load) => { const value = await load(); addSourceKey(keyValue); readbacks.push({ key: keyValue, body: stableReferenceJson(value), load }); return value; };
         const pageTurns=turns.slice(microOffset,microOffset+limit),pageWorldline=hostWorldlineIdForScope(scope);
         await readFrame.prefetch(pageTurns.flatMap(turn=>[
@@ -75613,7 +75613,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
             pending.micro.push(value.reason || value.status || 'micro_unavailable');
           }
         }
-        if (asArray(active.manifest.inheritedMicroArchives).length) pending.micro.push('inherited_micro_projection_not_yet_supported');
+        if (asArray(active.manifest.inheritedMicroArchives).length) {
+          pending.micro.push('inherited_micro_projection_not_yet_supported');
+          for (const ref of asArray(active.manifest.inheritedMicroArchives)) {
+            if (typeof ref?.archiveKey === 'string' && ref.archiveKey) {
+              await read(ref.archiveKey, () => storage.getVerifiedJson(ref.archiveKey, scope, null));
+            }
+          }
+        }
         const storedState = await read(key.continuityState(scope), () => storage.getVerifiedJson(key.continuityState(scope), scope, null));
         const stateView = await read('state-reader-view', () => loadContinuityStateForResponse(scope, active.manifest));
         const stateDecisionKeys = new Set();
@@ -75941,6 +75948,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
       };
     };
     const resolveMemoryGraphCorpusFrame = async (expectedScopeKey = '', resources = null) => {
+      for (let attempt = 0; ; attempt++) {
+        try { return await resolveMemoryGraphCorpusFrameOnce(expectedScopeKey, resources); }
+        catch (error) {
+          const torn = MEMORY_GRAPH_TORN_READ_CODES.has(error?.message) || MEMORY_GRAPH_TORN_READ_CODES.has(error?.code)
+            || String(error?.message || '').startsWith('LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:');
+          if (attempt >= 2 || !torn || state.disposed) throw error;
+          await new Promise(resolve => setTimeout(resolve, 40 * (attempt + 1)));
+        }
+      }
+    };
+    const resolveMemoryGraphCorpusFrameOnce = async (expectedScopeKey = '', resources = null) => {
       const requestId = id('graph_corpus_frame');
       let captured = null;
       try {
@@ -76103,7 +76121,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const sourceBodyDigests = {};
           const pendingSourceKeys = [];
           for (const storageKey of asArray(corpusCollected?.sourceKeys)) {
-            if (typeof storageKey !== 'string' || !storageKey.startsWith(PREFIX + ':scope:')) continue;
+            if (typeof storageKey !== 'string' || (!storageKey.startsWith(PREFIX + ':scope:') && !storageKey.startsWith(PREFIX + ':shared-archive:') && !storageKey.startsWith(PREFIX + ':micro-handoff-archive:'))) continue;
             if (reusedKeySet.has(storageKey) && typeof prevDigests[storageKey] === 'string' && /^[a-f0-9]{64}$/.test(prevDigests[storageKey])) {
               sourceBodyDigests[storageKey] = prevDigests[storageKey];
               continue;
@@ -76441,8 +76459,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
             // their existing record proofs; query opens reject the old corpus outright.
             const sharedKeys = [key.manifest(scope), key.entityRegistry(scope),
               published.stateProof?.continuityStateKey, published.stateProof?.stateWorldlineKey,
-              published.stateProof?.correctionStoreKey, published.loreProof?.loreMappingKey].filter(Boolean);
-            for (const storageKey of sharedKeys) {
+              published.stateProof?.correctionStoreKey, published.loreProof?.loreMappingKey,
+              ...asArray(active.manifest.inheritedMicroArchives).map(ref => string(ref?.archiveKey || ''))].filter(Boolean);
+            if (proofRecord?.proofVersion === 'libra.source_proof_contract.v2') for (const storageKey of sharedKeys) {
               const expected = published.sourceBodyDigests?.[storageKey];
               if (typeof expected !== 'string'
                 || memoryGraphSourceFingerprint(stableReferenceJson(readFrame.owns(storageKey)
@@ -76906,7 +76925,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
         const readsetMs = Date.now() - pinStartedAt;
         const ownerProof = corpus?.sourceProofs?.ownerProof || null;
-        const hasIncrementalBodyDigests = Boolean(ownerProof?.sourceBodyDigests && typeof ownerProof.sourceBodyDigests === 'object');
+        const hasIncrementalBodyDigests = Boolean(corpus?.sourceProofs?.proofVersion === 'libra.source_proof_contract.v2' && ownerProof?.sourceBodyDigests && typeof ownerProof.sourceBodyDigests === 'object');
         const pinnedValues = [];
         if (!hasIncrementalBodyDigests) {
           // One storage round-trip per pinned source, in order: the largest
@@ -78514,7 +78533,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const actualRecordHash = stateCorrectionRecordHash(current);
       const expectedRecordHash = string(patch?.expectedRecordHash || '');
       const structuralAlternativeHashes = Object.values(asObject(patch?.structuralLayerBaseHashes)).map(string);
-      if (expectedRecordHash !== actualRecordHash && !structuralAlternativeHashes.includes(actualRecordHash)) throw stateCorrectionFailure('STATE_CORRECTION_STALE_RECORD');
+      const v1PreOriginRecordHash = Array.isArray(current?.identityOrigins)
+        ? stateCorrectionRecordHash((({ identityOrigins, ...rest }) => rest)(current))
+        : '';
+      if (expectedRecordHash !== actualRecordHash && expectedRecordHash !== v1PreOriginRecordHash && !structuralAlternativeHashes.includes(actualRecordHash)) throw stateCorrectionFailure('STATE_CORRECTION_STALE_RECORD');
       for (const [field, expectedHash] of Object.entries(asObject(patch?.expectedFieldHashes))) {
         const semanticField = field.startsWith('state.') ? field.slice(6) : field.split('.').at(-1);
         const actualHash = stateCorrectionFieldHash(semanticField, stateCorrectionCurrentFieldValue(patch, current, field));
@@ -84015,7 +84037,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const state = await ensureGuiState();
     const editRevision = Gui.settingsEditRevision;
     const memorySettingsDraft = Gui.memorySettingsDraft ? cloneJson(Gui.memorySettingsDraft) : null;
-    const previousEmbed = LibraProviderBridge.peekConfig()?.embed;
+    const previousEmbedRaw = LibraProviderBridge.peekConfig()?.embed;
+    const previousEmbed = previousEmbedRaw ? LibraMemoryCore.normalizeEmbeddingSettings(previousEmbedRaw) : null;
     const embeddingDraft = LibraMemoryCore.getEmbeddingSettings();
     const embeddingChanged = previousEmbed && settingsSemanticHash(previousEmbed) !== settingsSemanticHash(embeddingDraft);
     const runtime = state.runtime || {};
@@ -93680,7 +93703,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         ...[['preview','검증된 같은 공간 이전 미리보기'],['recover','중단된 메타데이터 이전 복구'],['apply','미리본 메타데이터 이전 적용']].map(([kind,label])=>action(label,()=>runEmbeddingMigrationAction(kind),!!Gui.embeddingMigrationBusy||(kind==='apply'&&!Gui.embeddingMigrationPreview))),
         action('Query cache 비우기',()=>registry.clearQueryCache()),
         action('이전 벡터 마이그레이션 재검사',()=>LibraMemoryCore.runAutomaticLegacyVectorMigration({force:true,reason:'gui_manual_migration_rescan'})),
-        action('선택 provider 기본값',()=>{Gui.embeddingSettingsBasisHash ||= settingsSemanticHash(LibraProviderBridge.peekConfig()?.embed);LibraMemoryCore.resetEmbeddingProviderDefaults((LibraMemoryCore.state.embeddingSettings||cfg).provider);markGuiDirty();}),
+        action('선택 provider 기본값',()=>{Gui.embeddingSettingsBasisHash ||= settingsSemanticHash(LibraMemoryCore.normalizeEmbeddingSettings(LibraProviderBridge.peekConfig()?.embed));LibraMemoryCore.resetEmbeddingProviderDefaults((LibraMemoryCore.state.embeddingSettings||cfg).provider);markGuiDirty();}),
         EmbeddingProviderRegistry.normalizeProvider(cfg.provider)==='ollama'?action('Ollama 모델 검색',()=>EmbeddingProviderRegistry.discoverOllamaModels({...cfg,...LibraMemoryCore.state.embeddingSettings,provider:'ollama'},{force:true})):null
       ]),
       guiEl('p',{class:'hint',role:'status',dataset:{embeddingMigrationStatus:'true'},text:Gui.embeddingMigrationStatus||'미리보기를 실행하면 이전 가능 항목과 결과가 여기에 표시됩니다.'}),
@@ -93808,7 +93831,7 @@ advanced
       if(sectionId==='embedding'){
         const cfg=LibraMemoryCore.getEmbeddingSettings(),providers=LibraMemoryCore.listEmbeddingProviders();
         const updateEmbedding=patch=>{
-          Gui.embeddingSettingsBasisHash ||= settingsSemanticHash(LibraProviderBridge.peekConfig()?.embed);
+          Gui.embeddingSettingsBasisHash ||= settingsSemanticHash(LibraMemoryCore.normalizeEmbeddingSettings(LibraProviderBridge.peekConfig()?.embed));
           if(Object.prototype.hasOwnProperty.call(patch,'customHeaders')&&typeof patch.customHeaders==='string'){
             try{patch.customHeaders=JSON.parse(patch.customHeaders||'{}');if(!patch.customHeaders||typeof patch.customHeaders!=='object'||Array.isArray(patch.customHeaders))throw new Error('HTTP 헤더는 JSON 객체여야 합니다.');}
             catch(error){guiSetStatus(error.message,true);return;}
@@ -93820,7 +93843,7 @@ advanced
         };
         const embeddingField=(key,label,options={})=>field(label,guiEl(options.tag==='textarea'?'textarea':options.tag==='select'?'select':'input',{class:options.tag==='textarea'?'textarea':options.tag==='select'?'select':'input',type:options.type||'text',value:options.value??cfg[key]??'',min:options.min,max:options.max,step:options.step,placeholder:options.placeholder||'',dataset:{embeddingField:key},onInput:event=>updateEmbedding({[key]:options.type==='number'?Number(event.target.value):event.target.value}),onChange:event=>updateEmbedding({[key]:options.type==='number'?Number(event.target.value):event.target.value})}),options.note||'');
         const embedState=LibraMemoryCore.getEmbeddingRebuildState(),status=guiEl('p',{class:'hint',dataset:{embeddingStatus:'true'},text:`${embedState.status||'unknown'} · 현재 ${embedState.counts?.current||0} · 최신 ${embedState.counts?.ready||0} · 미완료 ${embedState.counts?.stale||0}`});
-        const providerSelect=guiEl('select',{class:'select',value:cfg.provider,dataset:{embeddingField:'provider'},onChange:event=>{Gui.embeddingSettingsBasisHash ||= settingsSemanticHash(LibraProviderBridge.peekConfig()?.embed);LibraMemoryCore.resetEmbeddingProviderDefaults(event.target.value);markGuiDirty();void renderSettingsGui();}},providers.map(item=>guiEl('option',{value:item.provider,selected:item.provider===cfg.provider,text:item.label})));
+        const providerSelect=guiEl('select',{class:'select',value:cfg.provider,dataset:{embeddingField:'provider'},onChange:event=>{Gui.embeddingSettingsBasisHash ||= settingsSemanticHash(LibraMemoryCore.normalizeEmbeddingSettings(LibraProviderBridge.peekConfig()?.embed));LibraMemoryCore.resetEmbeddingProviderDefaults(event.target.value);markGuiDirty();void renderSettingsGui();}},providers.map(item=>guiEl('option',{value:item.provider,selected:item.provider===cfg.provider,text:item.label})));
         return guiEl('div',{class:'stack',dataset:{settingsCategory:'ai',settingsReadback:'embedding-settings'}},[
           card('임베딩','검색에 쓰는 실제 vector provider·model 공간을 설정합니다.',[
             guiEl('div',{class:'grid g2'},[
@@ -93980,9 +94003,11 @@ advanced
     {id:'logs',group:'고급 · 진단',label:'실행 기록',section:'logs'},
     {id:'debug',group:'고급 · 진단',label:'문제 해결 · 진단',section:'general'}
   ].map(item=>Object.freeze(item)));
-  const bookExternalSettingsActive = item => Gui.bookPage === 'settings'
-    && bookSettingsRoomActiveSection() === item.section
-    && (!item.reference || normalizeHubChoice(Gui.referenceHubSection, LIBRA_REFERENCE_HUB_SECTIONS, 'modules') === item.reference);
+  const bookExternalSettingsActive = item => item?.id === 'server'
+    ? Gui.bookPage === 'server'
+    : (Gui.bookPage === 'settings'
+      && bookSettingsRoomActiveSection() === item.section
+      && (!item.reference || normalizeHubChoice(Gui.referenceHubSection, LIBRA_REFERENCE_HUB_SECTIONS, 'modules') === item.reference));
   const selectBookExternalSettings = itemId => {
     if (itemId === 'server') { bookNavigate('server'); return; }
     const item = BOOK_EXTERNAL_SETTINGS_ITEMS.find(row => row.id === (['agents', 'pipeline'].includes(itemId) ? 'memory_analysis' : itemId));

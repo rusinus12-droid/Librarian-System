@@ -12,7 +12,7 @@ const diagnostics=part(source,'  const operationalScopeKey =','  const operation
 const jobs=part(source,'  const loadCanonicalJobsPage =','  const executionReceiptStatusCopy');
 const replay=part(source,'  const runStateReplayMaintenance =','  const buildStateTrackingAvailabilityPanel =');
 const receipts=part(source,'  const executionReceiptCacheKey =','  const deleteFailedExecutionRun =');
-const dom={guiAsObject:obj,guiAsArray:arr,text,guiEl:el,libraStatusBadge:(value,tone)=>el('badge',{text:value,tone}),guiLazyDetails:(attrs,summary,body)=>el('details',attrs,[summary,...body()]),fieldNode:(label,field)=>el('field',{text:label},[field]),selectNode:(value,options,onChange)=>el('select',{value,options,onChange}),guiSetStatus:()=>{},queueGuiNavigationRender:()=>{},libraFormatTime:x=>String(x)};
+const dom={guiAsObject:obj,guiAsArray:arr,text,guiEl:el,libraStatusBadge:(value,tone)=>el('badge',{text:value,tone}),guiLazyDetails:(attrs,summary,body)=>el('details',attrs,[summary,...body()]),fieldNode:(label,field)=>el('field',{text:label},[field]),selectNode:(value,options,onChange)=>el('select',{value,options,onChange}),guiSetStatus:()=>{},queueGuiNavigationRender:()=>{},libraFormatTime:x=>String(x),guiSnapshotLimits:()=>({})};
 // The State panel now renders its selects with the production optionNodes helper; load it verbatim.
 dom.optionNodes=vm.runInNewContext(part(source,'  const optionNodes = (items, selected) => items.map(item => {','\n  const inputNode =')+';optionNodes',{guiEl:el,String,Array});
 const results=[];

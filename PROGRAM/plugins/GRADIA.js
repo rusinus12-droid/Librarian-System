@@ -3795,21 +3795,28 @@ Before continuing, verify:
   const matchesNativeTemplateInput = (rowValue, promptValue, stripFn) => {
     const raw = text(rowValue);
     if (!/\{\{[\s\S]+?\}\}|<\s*(?:user|char)\s*>/i.test(raw)) return false;
+    const target = stripFn(promptValue);
+    if (!target) return false;
     const pieces = raw.split(/\{\{[\s\S]+?\}\}|<\s*(?:user|char)\s*>/gi)
       .map(part => stripFn(part))
       .filter(Boolean);
     const totalChars = pieces.reduce((sum, part) => sum + part.length, 0);
     const hasCjk = pieces.some(part => /[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(part));
-    if (!pieces.length || (totalChars < 4 && !(hasCjk && totalChars >= 2))) return false;
-    const target = stripFn(promptValue);
-    if (!target) return false;
-    let cursor = 0;
-    for (const piece of pieces) {
-      const found = target.indexOf(piece, cursor);
-      if (found < 0) return false;
-      cursor = found + piece.length;
+    if (pieces.length && (totalChars >= 4 || (hasCjk && totalChars >= 2))) {
+      let cursor = 0;
+      let matchedAll = true;
+      for (const piece of pieces) {
+        const found = target.indexOf(piece, cursor);
+        if (found < 0) { matchedAll = false; break; }
+        cursor = found + piece.length;
+      }
+      if (matchedAll) return true;
     }
-    return true;
+    const choiceMatches = [...raw.matchAll(/\{\{\s*(?:random|pick)\s*::([\s\S]+?)\}\}/gi)];
+    if (choiceMatches.length) {
+      return choiceMatches.every(match => match[1].split('::').map(opt => stripFn(opt)).filter(opt => opt.length >= 2).some(opt => target.includes(opt)));
+    }
+    return false;
   };
   const captureLibNativeReadSet = (messages, settings, baseRecent, hostInput = null) => {
     const selected = new Map();
@@ -3849,7 +3856,7 @@ Before continuing, verify:
         .replace(/…/g, '...')
         .replace(/\s+/g, '')
         .trim();
-      const stripFormatting = value => cleanSquash(value).replace(/[*_~`#"'\[\]()<>|+-]/g, '');
+      const stripFormatting = value => cleanSquash(value).replace(/[*_~`#"'\[\]()<>|+:\uFF1A-]/g, '');
       const wantedRaw = resolved.text || contentToText(inputMessage?.content ?? '');
       const wanted = cleanSquash(wantedRaw);
       const isMatch = (msgText, targetRaw) => {
@@ -3879,12 +3886,20 @@ Before continuing, verify:
       currentInput: contentToText(inputContent), query: baseRecent.latestUser, turns: [...selected.values()] };
   };
   const captureLibNativeReadSetFromHost = async (messages, settings, baseRecent, scope) => {
-    try {
-      const snapshot = captureLibNativeReadSet(messages, settings, baseRecent);
-      return { messages, snapshot, selections: snapshot.selections, assertCurrent: async () => true };
-    } catch (error) {
-      if (error?.code !== 'LIB_READ_NATIVE_ID_UNAVAILABLE') throw error;
-      Runtime.lastNativeBindFailure = null;
+    const fastResolved = resolveSgaCurrentTurn(messages);
+    const fastLastAssistant = messages.findLastIndex(message => currentTurnRole(message) === 'assistant');
+    const hasUnboundOrDuplicatePendingUser = fastResolved.requestIndex >= 0 && (
+      !nativeTurnMessageId(messages[fastResolved.requestIndex])
+      || messages.some((message, idx) => idx > fastLastAssistant && idx !== fastResolved.requestIndex && currentTurnRole(message) === 'user' && message?.turnMeta?.supersededPendingDuplicate !== true)
+    );
+    if (!hasUnboundOrDuplicatePendingUser) {
+      try {
+        const snapshot = captureLibNativeReadSet(messages, settings, baseRecent);
+        return { messages, snapshot, selections: snapshot.selections, assertCurrent: async () => true };
+      } catch (error) {
+        if (error?.code !== 'LIB_READ_NATIVE_ID_UNAVAILABLE') throw error;
+        Runtime.lastNativeBindFailure = null;
+      }
     }
     // Provider request messages can omit RisuAI's native IDs. Bind completed turns
     // to the completed host transcript and bind the current request input to the
@@ -3931,18 +3946,20 @@ Before continuing, verify:
       .replace(/…/g, '...')
       .replace(/\s+/g, '')
       .trim();
-    const stripFormatting = value => cleanSquash(value).replace(/[*_~`#"'\[\]()<>|+-]/g, '');
+    const stripFormatting = value => cleanSquash(value).replace(/[*_~`#"'\[\]()<>|+:\uFF1A-]/g, '');
     const pendingFrom = host.messages.findLastIndex(message => currentTurnRole(message) === 'assistant') + 1;
     const completedHostMessages = host.messages.slice(0, pendingFrom);
     const lastRequestAssistant = messages.findLastIndex(message => currentTurnRole(message) === 'assistant');
     const initialResolved = resolveSgaCurrentTurn(messages);
     const mapped = messages.map((message, index) => {
-      if (nativeTurnMessageId(message) || !['user','assistant'].includes(currentTurnRole(message))) return { ...message };
+      if (!['user','assistant'].includes(currentTurnRole(message)) || typeof message?.turnMeta?.nativeContent === 'string') return { ...message };
       if (index === initialResolved.requestIndex || (lastRequestAssistant >= 0 && index > lastRequestAssistant)) return { ...message };
       const pool = pendingFrom > 0 ? completedHostMessages : host.messages;
       const targetNarrative = narrative(message);
+      const existingId = nativeTurnMessageId(message);
       const candidates = pool.filter(row => {
         if (!nativeTurnMessageId(row)) return false;
+        if (existingId && nativeTurnMessageId(row) !== existingId) return false;
         const rowRole = currentTurnRole(row);
         const rawText = contentToText(row.data ?? row.content ?? '');
         if (turnBlockReason({ ...row, role: rowRole, content: rawText }) || rowRole !== currentTurnRole(message)) return false;
@@ -3976,7 +3993,7 @@ Before continuing, verify:
     // verified native identity and native content reference.
     const resolved = initialResolved;
     let hostInput = null;
-    if (resolved.requestIndex >= 0 && !nativeTurnMessageId(mapped[resolved.requestIndex])) {
+    if (resolved.requestIndex >= 0 && (!nativeTurnMessageId(mapped[resolved.requestIndex]) || typeof mapped[resolved.requestIndex]?.turnMeta?.nativeContent !== 'string')) {
       const comparableInput = value => narrative({ role: 'user', content: stripCodeFence(value) });
       const wanted = comparableInput(resolved.text);
       const sameInput = (rowValue, promptValue) => {
@@ -4049,6 +4066,27 @@ Before continuing, verify:
         rowChars: comparableRow.length
       });
       hostInput = { ...row, role: 'user', content: rowText };
+      for (let i = Math.max(0, lastRequestAssistant + 1); i < mapped.length; i += 1) {
+        if (i === resolved.requestIndex || currentTurnRole(mapped[i]) !== 'user') continue;
+        const candidateText = comparableInput(contentToText(mapped[i]?.content ?? ''));
+        if (
+          nativeTurnMessageId(mapped[i]) === nativeTurnMessageId(row)
+          || sameInput(comparableRow, candidateText)
+          || sameInput(comparableExpandedRow, candidateText)
+          || sameInput(wanted, candidateText)
+        ) {
+          mapped[i] = {
+            ...mapped[i],
+            chatId: undefined,
+            messageId: undefined,
+            id: undefined,
+            turnMeta: {
+              ...mapped[i]?.turnMeta,
+              supersededPendingDuplicate: true
+            }
+          };
+        }
+      }
       mapped[resolved.requestIndex] = {
         ...mapped[resolved.requestIndex],
         chatId: nativeTurnMessageId(row),
@@ -7192,6 +7230,7 @@ ${text(paired.leadingAssistant.content || '')}
     });
     const visibleChatMessages = allowed.filter(m => {
       if (!['user', 'assistant'].includes(m.role)) return false;
+      if (m.turnMeta?.supersededPendingDuplicate === true) return false;
       if (m.turnMeta?.currentInput === true) return true;
       // Keep empty native/request records through eligibility and variant selection.
       if (!text(m.content || '').trim()) return true;
@@ -8283,8 +8322,8 @@ ${text(paired.leadingAssistant.content || '')}
   };
 
   const applyBasicRisuPlaceholdersForRag = (value, characterName, userName) => text(value || '')
-    .replace(/\{\{char\}\}/gi, characterName || '')
-    .replace(/\{\{user\}\}/gi, userName || 'User');
+    .replace(/\{\{char\}\}|<\s*char\s*>/gi, characterName || '')
+    .replace(/\{\{user\}\}|<\s*user\s*>/gi, userName || 'User');
 
   const resolveRequestFirstMessageForRag = (character, requestMessages, currentTurnResolution, persona, storedMessages = []) => {
     const fallback = {
