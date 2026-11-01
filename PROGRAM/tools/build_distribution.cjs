@@ -28,6 +28,7 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'gradia/native-host-id-binding.test.cjs',
   'gradia_risuai_three_owner_read_session_acceptance_test.cjs',
   'flashback_vectors_pending_runtime_test.cjs',
+  'chat_output_listener_sequential_dispatch_contract_test.cjs',
   'program_data_layout_test.cjs',
   'cross_platform_launcher_test.cjs',
   'launcher_safety_regression_test.cjs',

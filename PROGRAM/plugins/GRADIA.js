@@ -7051,7 +7051,7 @@ Before continuing, verify:
   };
   // RisuAI awaits every plugin's output listener in sequence. Return at once so
   // the host-side character lookup below never delays LIBRA/HAYAKU/Flashback capture.
-  const recordCommittedOutput = event => recordCommittedOutputReceipt(event).catch(() => {});
+  const recordCommittedOutput = event => { void recordCommittedOutputReceipt(event).catch(() => {}); };
   const recordCommittedOutputReceipt = async event => {
     const message = event?.chat?.message?.[event?.messageIndex];
     if (!message || currentTurnRole(message) !== 'assistant' || event.chat.isStreaming === true) return;
