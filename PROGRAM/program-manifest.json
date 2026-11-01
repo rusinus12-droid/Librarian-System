@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-01T13:33:17.477Z",
+  "generatedAt": "2026-11-01T13:47:06.255Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4144,12 +4144,12 @@
       "bytes": 3353
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "75804b1f33f07871d1b0c142fecfd80c3f8b07ca2c71703ff4678d6755f946d3",
-      "bytes": 3761545
+      "sha256": "b473101cfb500656a89baa892ffa750e7a0395e3556943649893ba278f209870",
+      "bytes": 3762134
     },
     "plugins/GRADIA.js": {
-      "sha256": "dd38b3bb83cc01a55ff9ca5105dc99ef62dc2ccab24f21d56431263c63d2c973",
-      "bytes": 3147023
+      "sha256": "0cec08acbf7ba37ffb001fcb2ec1cfe90062c0c96b81f2e392ebd670163cfe78",
+      "bytes": 3147542
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "ff9811131b37f973f0892651fc7aa73d9f3e1ec35674fb2e10ab364effd17340",
@@ -4980,8 +4980,8 @@
       "bytes": 5864
     },
     "tests/chat_output_listener_sequential_dispatch_contract_test.cjs": {
-      "sha256": "242d3241e97d62a6c71ba50f896a9125f7e6d307aab4c57a302d9817144dad6b",
-      "bytes": 5737
+      "sha256": "e150e6290f45aaf085d0d1756554699b0dfd1266b4eff17742404944a59ce0ab",
+      "bytes": 5630
     },
     "tests/chat_status_runtime_test.cjs": {
       "sha256": "f2beca4473a4ae503452bd04e3822a3b2626f174fb9b9555af01380440d1da58",
@@ -6728,8 +6728,8 @@
       "bytes": 5664
     },
     "tests/gradia/native-host-id-binding.test.cjs": {
-      "sha256": "fec33190eac382f02bbf4c4cf6c95e5265127d1694c47eaf5758cc83427c2dc5",
-      "bytes": 34330
+      "sha256": "990bf202a52e9cfbd3be2e9dce901f31c5cf83b2375381986e3aeddc2bd2e86b",
+      "bytes": 35953
     },
     "tests/gradia/native-projection-v2.test.cjs": {
       "sha256": "10aeb7aea17b2614bc603ec7122bbd200f552474aadd2d32ada7ac75dafad0fc",

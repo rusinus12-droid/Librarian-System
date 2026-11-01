@@ -643,6 +643,33 @@ for(const withChatSlotIds of [false,true])test(`preset emitting both <chat> pend
   assert.deepEqual(f.api.libNativePromptView(effectiveRecent),shadowSelection.view);
 });
 
+test('CBS random/pick choice macro rejects request when choice option does not match (negative regression)', async () => {
+  const f = await fixture((chat, character, input) => {
+    chat.message[2].data = '{{pick::문을 연다::창문을 연다}}';
+    input[2] = { role: 'user', content: '문을 부순다' };
+  });
+  await assert.rejects(() => f.bind(), error => error.code === 'LIB_READ_NATIVE_ID_UNAVAILABLE');
+  assert.equal(f.runtime.lastNativeBindFailure?.step, 'input_text_mismatch');
+});
+
+test('CBS macro with static prefix and suffix rejects request when static pieces match but choice does not match (negative regression)', async () => {
+  const f = await fixture((chat, character, input) => {
+    chat.message[2].data = '조사관이 {{pick::정답A::정답B}} 방으로 들어간다.';
+    input[2] = { role: 'user', content: '조사관이 완전히다른선택 방으로 들어간다.' };
+  });
+  await assert.rejects(() => f.bind(), error => error.code === 'LIB_READ_NATIVE_ID_UNAVAILABLE');
+  assert.equal(f.runtime.lastNativeBindFailure?.step, 'input_text_mismatch');
+});
+
+test('CBS macro rejects request when choice matches but static prefix/suffix do not match (negative regression)', async () => {
+  const f = await fixture((chat, character, input) => {
+    chat.message[2].data = '완전히다른앞부분 {{pick::정답A::정답B}} 완전히다른뒷부분';
+    input[2] = { role: 'user', content: '정답B' };
+  });
+  await assert.rejects(() => f.bind(), error => error.code === 'LIB_READ_NATIVE_ID_UNAVAILABLE');
+  assert.equal(f.runtime.lastNativeBindFailure?.step, 'input_text_mismatch');
+});
+
 
 
 

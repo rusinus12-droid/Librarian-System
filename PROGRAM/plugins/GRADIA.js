@@ -3802,7 +3802,9 @@ Before continuing, verify:
       .filter(Boolean);
     const totalChars = pieces.reduce((sum, part) => sum + part.length, 0);
     const hasCjk = pieces.some(part => /[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(part));
-    if (pieces.length && (totalChars >= 4 || (hasCjk && totalChars >= 2))) {
+    const hasStaticPieces = pieces.length > 0 && (totalChars >= 4 || (hasCjk && totalChars >= 2));
+    let staticMatched = false;
+    if (hasStaticPieces) {
       let cursor = 0;
       let matchedAll = true;
       for (const piece of pieces) {
@@ -3810,13 +3812,26 @@ Before continuing, verify:
         if (found < 0) { matchedAll = false; break; }
         cursor = found + piece.length;
       }
-      if (matchedAll) return true;
+      staticMatched = matchedAll;
     }
     const choiceMatches = [...raw.matchAll(/\{\{\s*(?:random|pick)\s*::([\s\S]+?)\}\}/gi)];
-    if (choiceMatches.length) {
-      return choiceMatches.every(match => match[1].split('::').map(opt => stripFn(opt)).filter(opt => opt.length >= 2).some(opt => target.includes(opt)));
+    const hasChoiceMacros = choiceMatches.length > 0;
+    let choicesMatched = false;
+    if (hasChoiceMacros) {
+      choicesMatched = choiceMatches.every(match => {
+        const options = match[1].split('::')
+          .map(opt => stripFn(opt))
+          .filter(opt => opt.length >= 2 || (/[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(opt) && opt.length >= 1));
+        return options.length > 0 && options.some(opt => target.includes(opt));
+      });
     }
-    return false;
+    if (hasChoiceMacros) {
+      if (hasStaticPieces) {
+        return staticMatched && choicesMatched;
+      }
+      return choicesMatched;
+    }
+    return hasStaticPieces && staticMatched;
   };
   const captureLibNativeReadSet = (messages, settings, baseRecent, hostInput = null) => {
     const selected = new Map();

@@ -68,11 +68,10 @@ test('Flashback maintenance never reads an incomplete inspection or missing chun
  assert.match(server,/MAX_VALUE_BYTES = 8 \* 1024 \*\* 2, MAX_TOTAL_BYTES = 32 \* 1024 \*\* 2/);
 });
 
-test('Flashback fails over a starved listener on a timer and defers append-only worldline commits past recall',()=>{
+test('Flashback fails over a starved listener on a timer and synchronizes worldline within hook deadline',()=>{
  const source=read('Flashback_Memory.js');
  assert.match(source,/const FLASHBACK_CHAT_OUTPUT_HEALTH_GRACE_MS = 30000;/);
  assert.match(source,/void failoverSilentFlashbackChatOutputBackend\(\{ \.\.\.pendingHealth, trigger: 'after_request_timer' \}\)/);
- assert.match(source,/deferAppendOnlyWrite: true,/);
- assert.match(source,/options\.deferAppendOnlyWrite === true && allowRetirement && !newlyRetired\.length\n\s*&& !quarantinedResponses\.length && !restoredKeys\.size && !retiredLifecycleChanges/);
- assert.match(source,/if \(worldlineSync\?\.deferredWrite === true\) \{/);
+ assert.match(source,/await withinHookDeadline\(\s*synchronizeFlashbackTurnWorldline\(scope, observedLiveState, settings,/);
+ assert.match(source,/turn worldline synchronization failed; recall skipped for branch safety/);
 });

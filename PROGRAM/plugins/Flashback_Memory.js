@@ -36368,6 +36368,14 @@ const MemorySuiteHealthRecovery = (() => {
       profileId: lexicalFallback ? '' : queryProfileId
     }).comparable;
     let records = storedRecords.filter(modelEligible);
+    // Retained source text stays searchable while its vectors wait for
+    // re-embedding (profile change, failed embedding work). Rank it with the
+    // keyword/exact arms instead of returning an empty recall.
+    if (!records.length && storedRecords.length && !lexicalFallback && cfg.heuristicRecall) {
+      lexicalFallback = { status: 'vectors_pending', error: 'stored vectors are not comparable with the current embedding profile' };
+      semanticQuery = false; queryVector = []; sceneContext.active = false; sceneContext.vector = [];
+      records = storedRecords.slice();
+    }
     const inactiveBranchFiltered = Number(branchGate.diagnostics?.inactiveBranchFiltered || 0) || 0;
     const worldlineMismatchFiltered = Number(branchGate.diagnostics?.worldlineMismatchFiltered || 0) || 0;
     const privacyFiltered = Number(branchGate.diagnostics?.privacyFiltered || 0) || 0;
