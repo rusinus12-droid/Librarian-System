@@ -245,6 +245,8 @@ async function assertOwnerMemoryReadUnlocked(s, name, kind) {
 }
 
 test('owner GUI resumes through one progress action and recovers legacy and expired cancellation', {timeout:240000}, async () => {
+  const keepAlive = setInterval(() => {}, 1000);
+  try {
   const results = [];
   assert(ownerEntries.length&&recoveryKinds.length,'requested recovery case and owner must exist');
   for (const [name] of ownerEntries) {
@@ -499,4 +501,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
     }
   }
   assert.equal(results.length, ownerEntries.length * kinds.length * recoveryKinds.length);
+  } finally {
+    clearInterval(keepAlive);
+  }
 });
