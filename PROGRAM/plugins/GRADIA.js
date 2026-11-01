@@ -3910,7 +3910,7 @@ Before continuing, verify:
         messages: chat.message,
         characterName,
         userName,
-        witness: JSON.stringify([indexes,scope.characterId,scope.chatId,chat.message])
+        witness: JSON.stringify([indexes,scope.characterId,scope.chatId,characterName,userName,chat.message])
       };
     };
     const readHost = async () => {

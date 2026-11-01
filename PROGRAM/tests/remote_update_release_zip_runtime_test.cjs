@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const cp = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -15,6 +16,14 @@ const programDir = path.resolve(__dirname, '..');
 const packageRoot = path.resolve(programDir, '..');
 const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
+const STAGING_PACKAGING_TOOLS = new Set([
+  'prepare_data.cjs',
+  'update_manifest.cjs',
+  'update_checksums.cjs',
+  'build_plugins.cjs',
+  'verify_runtime_archive.cjs'
+]);
+
 function isInsideDir(targetPath, rootDir) {
   if (typeof targetPath !== 'string' && !Buffer.isBuffer(targetPath) && !(targetPath instanceof URL)) return false;
   const resolvedTarget = path.resolve(targetPath instanceof URL ? targetPath : String(targetPath));
@@ -23,29 +32,90 @@ function isInsideDir(targetPath, rootDir) {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
-async function withNoSourceDataAccess(sourceDataRoot, fn) {
+function createChildFsGuardPreload(tempDir, sourceDataRoot, logFile) {
+  const preloadPath = path.join(tempDir, 'child-source-data-guard.cjs');
+  const script = `'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const sourceDataRoot = ${JSON.stringify(path.resolve(sourceDataRoot))};
+const logFile = ${JSON.stringify(path.resolve(logFile))};
+const origAppend = fs.appendFileSync.bind(fs);
+function isInside(targetPath) {
+  if (typeof targetPath !== 'string' && !Buffer.isBuffer(targetPath) && !(targetPath instanceof URL)) return false;
+  const resolved = path.resolve(targetPath instanceof URL ? targetPath : String(targetPath));
+  const rel = path.relative(sourceDataRoot, resolved);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+for (const method of ['readFileSync','writeFileSync','appendFileSync','copyFileSync','readdirSync','openSync','rmSync','unlinkSync','renameSync','mkdirSync']) {
+  if (typeof fs[method] !== 'function') continue;
+  const orig = fs[method].bind(fs);
+  fs[method] = function (...args) {
+    for (const arg of args.slice(0, 2)) {
+      if (isInside(arg)) {
+        origAppend(logFile, JSON.stringify({ pid: process.pid, argv: process.argv.slice(1, 3), method, path: String(arg) }) + '\\n');
+      }
+    }
+    return orig(...args);
+  };
+}
+`;
+  fs.writeFileSync(preloadPath, script, 'utf8');
+  return preloadPath;
+}
+
+async function withStagingPackagingDataGuard(sourceDataRoot, tempDir, fn) {
   const trackedMethods = [
     'readFileSync', 'writeFileSync', 'appendFileSync', 'copyFileSync',
     'readdirSync', 'openSync', 'rmSync', 'unlinkSync', 'renameSync', 'mkdirSync'
   ];
   const originals = new Map();
-  const accesses = [];
+  const inProcessAccesses = [];
+  const childLogFile = path.join(tempDir, 'staging-child-data-access.jsonl');
+  fs.writeFileSync(childLogFile, '', 'utf8');
+  const preloadPath = createChildFsGuardPreload(tempDir, sourceDataRoot, childLogFile);
+  const origSpawnSync = cp.spawnSync;
+
   for (const method of trackedMethods) {
     if (typeof fs[method] !== 'function') continue;
     originals.set(method, fs[method]);
     fs[method] = function (...args) {
       for (const arg of args.slice(0, 2)) {
         if (isInsideDir(arg, sourceDataRoot)) {
-          accesses.push({ method, path: String(arg) });
+          inProcessAccesses.push({ method, path: String(arg) });
         }
       }
       return originals.get(method).apply(this, args);
     };
   }
+
+  cp.spawnSync = function (command, args = [], options = {}) {
+    const scriptArg = Array.isArray(args) ? args.find(arg => typeof arg === 'string' && /\.(?:cjs|js)$/i.test(arg)) : '';
+    const toolName = scriptArg ? path.basename(scriptArg) : '';
+    if (STAGING_PACKAGING_TOOLS.has(toolName)) {
+      for (const arg of args) {
+        if (typeof arg === 'string' && isInsideDir(arg, sourceDataRoot)) {
+          inProcessAccesses.push({ method: `spawnSync:${toolName}:arg`, path: arg });
+        }
+      }
+      const env = { ...(options?.env || process.env) };
+      if (env.LIBRARIAN_PACKAGE_ROOT && isInsideDir(path.join(env.LIBRARIAN_PACKAGE_ROOT, 'DATA'), sourceDataRoot)) {
+        inProcessAccesses.push({ method: `spawnSync:${toolName}:env`, path: env.LIBRARIAN_PACKAGE_ROOT });
+      }
+      return origSpawnSync.call(this, command, ['--require', preloadPath, ...args], { ...options, env });
+    }
+    return origSpawnSync.call(this, command, args, options);
+  };
+
   try {
     const value = await fn();
-    return { value, accesses };
+    const childAccesses = fs.readFileSync(childLogFile, 'utf8')
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map(line => JSON.parse(line));
+    return { value, inProcessAccesses, childAccesses };
   } finally {
+    cp.spawnSync = origSpawnSync;
     for (const [method, orig] of originals.entries()) {
       fs[method] = orig;
     }
@@ -62,11 +132,17 @@ async function main() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'librarian-release-updater-contract-'));
   try {
     const output = path.join(temp, 'release');
-    const { value: result, accesses: buildDataAccesses } = await withNoSourceDataAccess(
+    const {
+      value: result,
+      inProcessAccesses: buildInProcessAccesses,
+      childAccesses: buildStagingChildAccesses
+    } = await withStagingPackagingDataGuard(
       dataRoot,
+      temp,
       () => buildDistribution({ outputDir: output })
     );
-    assert.deepEqual(buildDataAccesses, [], 'buildDistribution must not read or mutate source/user DATA');
+    assert.deepEqual(buildInProcessAccesses, [], 'in-process buildDistribution staging/packaging must not access source/user DATA');
+    assert.deepEqual(buildStagingChildAccesses, [], 'staging/packaging child tools must not access source/user DATA');
     assert.equal(result.report.sourceDataReadOrCopied, false, 'distribution report must confirm source DATA was not read or copied');
     assert.equal(path.basename(result.archivePath), expectedAssetName(version));
     assert.equal(result.report.artifact, expectedAssetName(version));
@@ -86,8 +162,13 @@ async function main() {
     ]) assert.ok(entries.includes(prefix + required), `release ZIP missing ${required}`);
 
     const candidateWork = path.join(temp, 'candidate-work');
-    const { value: receipt, accesses: candidateDataAccesses } = await withNoSourceDataAccess(
+    const {
+      value: receipt,
+      inProcessAccesses: candidateInProcessAccesses,
+      childAccesses: candidateChildAccesses
+    } = await withStagingPackagingDataGuard(
       dataRoot,
+      temp,
       () => prepareReleaseCandidate({
         archivePath: result.archivePath,
         workRoot: candidateWork,
@@ -96,7 +177,8 @@ async function main() {
         expectedArchiveSha256: result.report.archiveSha256
       })
     );
-    assert.deepEqual(candidateDataAccesses, [], 'prepareReleaseCandidate must not read or mutate source/user DATA');
+    assert.deepEqual(candidateInProcessAccesses, [], 'in-process prepareReleaseCandidate must not access source/user DATA');
+    assert.deepEqual(candidateChildAccesses, [], 'prepareReleaseCandidate child tools must not access source/user DATA');
     assert.equal(receipt.targetVersion, version);
     assert.equal(receipt.asset, expectedAssetName(version));
     assert.equal(fs.readFileSync(path.join(candidateWork, 'PROGRAM.next', 'VERSION.txt'), 'utf8').trim(), version);

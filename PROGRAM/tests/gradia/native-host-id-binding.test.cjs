@@ -209,6 +209,33 @@ test('host selection change revokes the mapping',async()=>{
   const f=await fixture(),b=await f.bind();f.changeScope();
   await assert.rejects(()=>b.assertCurrent(),error=>error.code==='LIB_READ_NATIVE_CHANGED');
 });
+
+test('persona or character name change after binding revokes the mapping',async()=>{
+  const persona={name:'철수'};
+  const f1=await fixture((chat,character,input)=>{
+    character.name='아키비스트';
+    chat.message[2].data='{{user}}는 {{char}}에게 묻는다.';
+    input[2]={role:'user',content:'<Current Input>\n철수는 아키비스트에게 묻는다.\n</Current Input>'};
+  },{
+    getDatabase:async()=>({personas:[persona],selectedPersona:0})
+  });
+  const b1=await f1.bind();
+  await b1.assertCurrent();
+  persona.name='민수';
+  await assert.rejects(()=>b1.assertCurrent(),error=>error.code==='LIB_READ_NATIVE_CHANGED');
+
+  const f2=await fixture((chat,character,input)=>{
+    character.name='아키비스트';
+    chat.message[2].data='{{user}}는 {{char}}에게 묻는다.';
+    input[2]={role:'user',content:'<Current Input>\n철수는 아키비스트에게 묻는다.\n</Current Input>'};
+  },{
+    getDatabase:async()=>({personas:[{name:'철수'}],selectedPersona:0})
+  });
+  const b2=await f2.bind();
+  await b2.assertCurrent();
+  f2.character.name='사서';
+  await assert.rejects(()=>b2.assertCurrent(),error=>error.code==='LIB_READ_NATIVE_CHANGED');
+});
 test('unavailable selection cannot be coerced into character zero',async()=>{
   const f=await fixture(null,{getCurrentCharacterIndex:async()=>null});
   await assert.rejects(()=>f.bind(),error=>error.code==='LIB_READ_NATIVE_SCOPE_CHANGED');
@@ -541,6 +568,8 @@ test('end-to-end beforeRequest pipeline with {{user}}/{{char}} placeholders and 
     const serialized=JSON.stringify(prompt);
     for(const owner of owners)assert.ok(serialized.includes(owner.toUpperCase()+'_MEMORY_EVIDENCE'));
     assert.ok(serialized.includes('아키비스트가 위쪽 선반의 푸른 장부를 가리켰다.'));
+    assert.ok(serialized.includes('철수가 방문을 밀고 들어가 아키비스트 앞에서 주변을 살핀다.'));
+    assert.ok(!serialized.includes('{{user}}는 조용히 문을 열고'));
   }
   assert.ok(out.some(m=>typeof m.content==='string'&&m.content.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1')));
   const diag=host.plugin.getRuntime().lastNativeBindDiagnostic;
