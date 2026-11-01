@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-01T21:56:26.778Z",
+  "generatedAt": "2026-11-01T22:21:26.752Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -5048,8 +5048,8 @@
       "bytes": 5821
     },
     "tests/distribution_builder_test.cjs": {
-      "sha256": "8f79003fbea2c913f3cfc6d8dbba58b973010c2b14d0afa34ffde52c54e74c81",
-      "bytes": 5958
+      "sha256": "2b0d0195ae1c32acb6585682d66e5719063e5984acca677df379828ea09ac72c",
+      "bytes": 7494
     },
     "tests/distribution_metadata_coherence_test.cjs": {
       "sha256": "7dd90e88c96ec2c096f272aa4a087c5708ab482a3228d4d84300c204844d78c9",
@@ -11632,8 +11632,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "cb75e8b9284c336b54b76b3115c30b15a2d7961b7dffd29f6509118763f8c04d",
-      "bytes": 56411
+      "sha256": "a3062bf61cbce861ec82f070b926b8e9520dea4d12a9f3b748bfca6294f27257",
+      "bytes": 56518
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",
