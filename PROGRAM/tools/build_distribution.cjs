@@ -254,7 +254,7 @@ const REQUIRED_UPDATER_FILES = new Set([
 const UPDATER_SENSITIVE_PATH_PATTERN = /(?:^|\/)(?:update-state\.json|latest\.log|[^/]+\.(?:log|tmp|bak|old|sqlite|db|zip))(?:$|\/)/i;
 
 function parseArgs(argv = process.argv.slice(2)) {
-  const result = { outputDir: null, version: null, profile: 'release', qualification: process.env.LIBRARIAN_PACKAGE_QUALIFICATION || 'publication_gate' };
+  const result = { outputDir: null, version: null, profile: 'release', qualification: process.env.LIBRARIAN_PACKAGE_QUALIFICATION || 'publication_gate', check: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = String(argv[index] || '');
     if (arg === '--output-dir') {
@@ -275,6 +275,8 @@ function parseArgs(argv = process.argv.slice(2)) {
       const value = String(argv[++index] || '');
       if (!['publication_gate', 'offline_candidate'].includes(value)) throw new Error(`distribution_qualification_invalid:${value}`);
       result.qualification = value;
+    } else if (arg === '--check') {
+      result.check = true;
     } else throw new Error(`unknown_distribution_builder_argument:${arg}`);
   }
   return result;
@@ -893,7 +895,7 @@ function buildRelease(options = {}) {
   const qualification = options.qualification || process.env.LIBRARIAN_PACKAGE_QUALIFICATION || 'publication_gate';
   if (!['publication_gate', 'offline_candidate'].includes(qualification)) throw new Error(`distribution_qualification_invalid:${qualification}`);
   const currentVersion = fs.readFileSync(path.join(programDir, 'VERSION.txt'), 'utf8').trim();
-  const snapshot = options.version ? snapshotVersionTransactionFiles(packageRoot) : null;
+  const snapshot = (options.version || options.check) ? snapshotVersionTransactionFiles(packageRoot) : null;
   const completed = [];
   try {
     let versionChange = null;
@@ -915,6 +917,9 @@ function buildRelease(options = {}) {
       result.versionChange = versionChange;
       results[selected] = result;
       completed.push(result);
+    }
+    if (options.check && snapshot) {
+      restoreVersionTransactionFiles(snapshot);
     }
     return profile === 'all' ? { profile: 'all', results, versionChange } : results[profile];
   } catch (error) {

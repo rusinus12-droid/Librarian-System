@@ -69,6 +69,7 @@ function main() {
     assert.throws(() => parseArgs(['--skip-tests']), /unknown_distribution_builder_argument/,
       'the user-facing builder must never produce an untested release artifact');
     assert.throws(() => parseArgs(['--output-dir', '--skip-tests']), /distribution_output_dir_value_required/);
+    assert.equal(parseArgs(['--check']).check, true);
 
     const checksumRoot = path.join(tempRoot, 'checksum root');
     fs.mkdirSync(checksumRoot);

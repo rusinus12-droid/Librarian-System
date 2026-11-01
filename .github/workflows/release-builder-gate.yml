@@ -31,6 +31,7 @@ jobs:
           node PROGRAM/tools/build_distribution.cjs \
             --profile release \
             --qualification publication_gate \
+            --check \
             --output-dir "$RUNNER_TEMP/librarian-release"
 
       - name: Verify build report publication contract
