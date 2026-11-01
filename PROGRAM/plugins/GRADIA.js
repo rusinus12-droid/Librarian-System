@@ -3795,6 +3795,10 @@ Before continuing, verify:
   const captureLibNativeReadSet = (messages, settings, baseRecent, hostInput = null) => {
     const selected = new Map();
     const selections = [];
+    const effectiveRef = message => message?.turnMeta?.ref || nativeTurnRef(message);
+    const effectiveContent = message => typeof message?.turnMeta?.nativeContent === 'string'
+      ? message.turnMeta.nativeContent
+      : message?.content;
     for (const stage of ['shadow_act', ...normalizeAideStageOrder(settings.aideStageOrder)]) {
       if (stage === 'aide_character' && (!settings.enableCharacterAide || settings.mode === 'lite')) continue;
       if (stage === 'aide_world' && (!settings.enableWorldAide || settings.mode === 'lite')) continue;
@@ -3805,10 +3809,11 @@ Before continuing, verify:
         for (const ref of [turn.user, ...(turn.assistants || [turn.assistant]), turn.boundary].filter(Boolean)) {
           if (!ref.messageId) throw nativeIdUnavailable('turn_ref_without_id', { stage, role: String(ref.role || '') });
           const candidates = messages.filter(message => nativeTurnMessageId(message) === ref.messageId
-            && JSON.stringify(nativeTurnRef(message)) === JSON.stringify(ref));
+            && JSON.stringify(effectiveRef(message)) === JSON.stringify(ref));
           if (candidates.length !== 1) throw nativeIdUnavailable('turn_ref_not_unique', { stage, matches: candidates.length });
-          if (typeof candidates[0].content !== 'string') throw libEvidenceError('LIB_READ_NATIVE_CONTENT_UNSUPPORTED');
-          selected.set(JSON.stringify(ref), { ref, role: currentTurnRole(candidates[0]), content: candidates[0].content });
+          const content = effectiveContent(candidates[0]);
+          if (typeof content !== 'string') throw libEvidenceError('LIB_READ_NATIVE_CONTENT_UNSUPPORTED');
+          selected.set(JSON.stringify(ref), { ref, role: currentTurnRole(candidates[0]), content });
         }
       }
     }
@@ -3816,36 +3821,41 @@ Before continuing, verify:
     let inputMessage = hostInput || messages[resolved.requestIndex];
     if (!nativeTurnMessageId(inputMessage)) {
       // A preset "Current Input" wrapper carries the text but no host message id.
-      // Bind to the one native user message with that exact text, never a guess.
+      // Only an unanswered user row after the last assistant in the request may supply it.
       const cleanSquash = value => text(value)
+        .normalize('NFKC')
         .replace(/[\u200B-\u200D\uFEFF]/g, '')
         .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"')
         .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
         .replace(/…/g, '...')
         .replace(/\s+/g, '')
         .trim();
-      const wanted = cleanSquash(contentToText(inputMessage?.content ?? ''));
+      const stripFormatting = value => cleanSquash(value).replace(/[*_~`#"'\[\]()<>|+-]/g, '');
+      const wanted = cleanSquash(resolved.text || contentToText(inputMessage?.content ?? ''));
       const isMatch = (msgText, target) => {
         const x = cleanSquash(msgText), y = cleanSquash(target);
         if (!x || !y) return false;
-        if (x === y || (x.length >= 8 && (y.includes(x) || x.includes(y)))) return true;
-        const minLen = Math.min(x.length, y.length), diffLen = Math.abs(x.length - y.length);
-        if (minLen >= 16 && diffLen <= 15) {
-          if (x.startsWith(y.slice(0, 16)) || y.startsWith(x.slice(0, 16))) return true;
+        if (x === y || ((x.length >= 4 || /[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(x) && x.length >= 2) && y.includes(x))) return true;
+        const fx = stripFormatting(msgText), fy = stripFormatting(target);
+        if (fx && fy && (fx === fy || ((fx.length >= 4 || /[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(fx) && fx.length >= 2) && fy.includes(fx)))) return true;
+        const minLen = Math.min(x.length, y.length), maxLen = Math.max(x.length, y.length), diffLen = maxLen - minLen;
+        if (minLen >= 16 && diffLen <= Math.min(15, Math.floor(maxLen * 0.25))) {
           let p = 0; while (p < minLen && x[p] === y[p]) p++;
           let s = 0; while (s < minLen - p && x[x.length - 1 - s] === y[y.length - 1 - s]) s++;
-          if (p + s >= minLen - 5) return true;
+          if (p >= 4 && s >= 4 && p + s >= minLen - 5) return true;
         }
         return false;
       };
-      const native = wanted ? messages.filter(message => nativeTurnMessageId(message) && currentTurnRole(message) === 'user'
+      const pendingFrom = messages.findLastIndex(message => currentTurnRole(message) === 'assistant') + 1;
+      const native = wanted ? messages.slice(pendingFrom).filter(message => nativeTurnMessageId(message) && currentTurnRole(message) === 'user'
         && typeof message.content === 'string' && isMatch(contentToText(message.content), wanted)) : [];
       if (native.length !== 1) throw nativeIdUnavailable('input_without_id', { matches: native.length, inputChars: wanted.length });
       inputMessage = native[0];
     }
-    if (typeof inputMessage.content !== 'string') throw libEvidenceError('LIB_READ_NATIVE_CONTENT_UNSUPPORTED');
-    return { schema: 'gradia.native-read-set.v1', currentInputRef: nativeTurnRef(inputMessage), selections,
-      currentInput: contentToText(inputMessage.content), query: baseRecent.latestUser, turns: [...selected.values()] };
+    const inputContent = effectiveContent(inputMessage);
+    if (typeof inputContent !== 'string') throw libEvidenceError('LIB_READ_NATIVE_CONTENT_UNSUPPORTED');
+    return { schema: 'gradia.native-read-set.v1', currentInputRef: effectiveRef(inputMessage), selections,
+      currentInput: contentToText(inputContent), query: baseRecent.latestUser, turns: [...selected.values()] };
   };
   const captureLibNativeReadSetFromHost = async (messages, settings, baseRecent, scope) => {
     try {
@@ -3853,10 +3863,11 @@ Before continuing, verify:
       return { messages, snapshot, selections: snapshot.selections, assertCurrent: async () => true };
     } catch (error) {
       if (error?.code !== 'LIB_READ_NATIVE_ID_UNAVAILABLE') throw error;
+      Runtime.lastNativeBindFailure = null;
     }
-    // Provider request messages can omit RisuAI's native IDs. Bind only an
-    // unambiguous exact narrative match to the selected live host transcript.
-    // The request's text/window remains unchanged; host IDs are never invented.
+    // Provider request messages can omit RisuAI's native IDs. Bind completed turns
+    // to the completed host transcript and bind the current request input to the
+    // structural pending native user row after the last assistant.
     const readHostSnapshot = async () => {
       const api = getLiveApi(['getCurrentCharacterIndex','getCurrentChatIndex','getCharacterFromIndex','getChatFromIndex']);
       if (['getCurrentCharacterIndex','getCurrentChatIndex','getCharacterFromIndex','getChatFromIndex'].some(key => typeof api?.[key] !== 'function')) throw nativeIdUnavailable('host_api_missing');
@@ -3880,61 +3891,87 @@ Before continuing, verify:
     };
     const host = await readHost();
     const narrative = message => sanitizeMessageContentForHistory(currentTurnRole(message),contentToText(message?.data ?? message?.content ?? ''));
-    const mapped = messages.map(message => {
+    const pendingFrom = host.messages.findLastIndex(message => currentTurnRole(message) === 'assistant') + 1;
+    const completedHostMessages = host.messages.slice(0, pendingFrom);
+    const lastRequestAssistant = messages.findLastIndex(message => currentTurnRole(message) === 'assistant');
+    const initialResolved = resolveSgaCurrentTurn(messages);
+    const mapped = messages.map((message, index) => {
       if (nativeTurnMessageId(message) || !['user','assistant'].includes(currentTurnRole(message))) return { ...message };
-      const candidates = host.messages.filter(row => nativeTurnMessageId(row)
+      if (index === initialResolved.requestIndex || (lastRequestAssistant >= 0 && index > lastRequestAssistant)) return { ...message };
+      const pool = pendingFrom > 0 ? completedHostMessages : host.messages;
+      const candidates = pool.filter(row => nativeTurnMessageId(row)
         && !turnBlockReason({...row,role:currentTurnRole(row),content:contentToText(row.data ?? row.content ?? '')})
         && currentTurnRole(row) === currentTurnRole(message) && narrative(row) === narrative(message));
       if (candidates.length !== 1 || host.messages.filter(row => nativeTurnMessageId(row) === nativeTurnMessageId(candidates[0])).length !== 1) return { ...message };
       const row = candidates[0];
       return { ...message, chatId: nativeTurnMessageId(row), generationInfo: row.generationInfo, saying: row.saying };
     });
-    // Preset wrappers need not occur as a second, bare user row in the provider
-    // prompt. Resolve their body, then bind only an exact unique live user. Keep
-    // the wrapper and the completed-turn windows unchanged in the stage prompt.
-    const resolved = resolveSgaCurrentTurn(mapped);
+    // Bind the current request input to the unanswered native user region after the
+    // last assistant. Keep the request-side prompt text intact while attaching the
+    // verified native identity and native content reference.
+    const resolved = initialResolved;
     let hostInput = null;
-    if (resolved.confidence === 'explicit_wrapper' && !nativeTurnMessageId(mapped[resolved.requestIndex])) {
+    if (resolved.requestIndex >= 0 && !nativeTurnMessageId(mapped[resolved.requestIndex])) {
       const comparableInput = value => narrative({ role: 'user', content: stripCodeFence(value) });
       const wanted = comparableInput(resolved.text);
       const cleanSquash = value => text(value)
+        .normalize('NFKC')
         .replace(/[\u200B-\u200D\uFEFF]/g, '')
         .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"')
         .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
         .replace(/…/g, '...')
         .replace(/\s+/g, '')
         .trim();
+      const stripFormatting = value => cleanSquash(value).replace(/[*_~`#"'\[\]()<>|+-]/g, '');
       const sameInput = (rowValue, promptValue) => {
         const x = cleanSquash(rowValue), y = cleanSquash(promptValue);
         if (!x || !y) return false;
-        if (x === y || (x.length >= 8 && y.includes(x)) || (y.length >= 8 && x.includes(y))) return true;
+        if (x === y) return true;
+        const fx = stripFormatting(rowValue), fy = stripFormatting(promptValue);
+        if (fx && fy && (fx === fy || ((fx.length >= 4 || /[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(fx) && fx.length >= 2) && fy.includes(fx)))) return true;
+        if ((x.length >= 4 || /[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(x) && x.length >= 2) && y.includes(x)) return true;
+        if (y.endsWith('...[truncated]') && y.length >= 1000) {
+          const prefix = y.slice(0, -'...[truncated]'.length);
+          if (prefix && x.startsWith(prefix)) return true;
+        }
         const minLen = Math.min(x.length, y.length);
-        const diffLen = Math.abs(x.length - y.length);
-        if (minLen >= 16 && diffLen <= 15) {
-          if (x.startsWith(y.slice(0, 16)) || y.startsWith(x.slice(0, 16))) return true;
+        const maxLen = Math.max(x.length, y.length);
+        const diffLen = maxLen - minLen;
+        if (minLen >= 16 && diffLen <= Math.min(15, Math.floor(maxLen * 0.25))) {
           let p = 0; while (p < minLen && x[p] === y[p]) p++;
           let s = 0; while (s < minLen - p && x[x.length - 1 - s] === y[y.length - 1 - s]) s++;
-          if (p + s >= minLen - 5) return true;
+          if (p >= 4 && s >= 4 && p + s >= minLen - 5) return true;
         }
         return false;
       };
       if (!wanted) throw nativeIdUnavailable('input_wanted_missing');
-      const pendingFrom = host.messages.findLastIndex(message => currentTurnRole(message) === 'assistant') + 1;
-      const recentCandidates = host.messages.slice(pendingFrom).filter(message => currentTurnRole(message) === 'user' && nativeTurnMessageId(message));
-      let row = host.messages.findLast(message => currentTurnRole(message) === 'user');
-      let rowText = row ? contentToText(row.data ?? row.content ?? '') : '';
-      if (!row || !sameInput(comparableInput(rowText), wanted)) {
-        const found = recentCandidates.find(message => sameInput(comparableInput(contentToText(message.data ?? message.content ?? '')), wanted))
-          || host.messages.filter(message => currentTurnRole(message) === 'user' && nativeTurnMessageId(message))
-            .findLast(message => sameInput(comparableInput(contentToText(message.data ?? message.content ?? '')), wanted));
-        if (found) { row = found; rowText = contentToText(row.data ?? row.content ?? ''); }
+      const pendingUsers = host.messages.slice(pendingFrom).filter(message => currentTurnRole(message) === 'user');
+      if (!pendingUsers.length) throw nativeIdUnavailable('input_row_missing');
+      if (pendingUsers.some(item => turnBlockReason({ ...item, role: 'user', content: contentToText(item.data ?? item.content ?? '') }) === 'active_stream')) {
+        throw nativeIdUnavailable('input_row_blocked');
       }
-      if (!row || !nativeTurnMessageId(row)) throw nativeIdUnavailable('input_row_missing');
+      if (pendingUsers.length !== 1) throw nativeIdUnavailable('input_pending_ambiguous', { candidates: pendingUsers.length });
+      const row = pendingUsers[0];
+      const rowText = contentToText(row.data ?? row.content ?? '');
+      if (!nativeTurnMessageId(row)) throw nativeIdUnavailable('input_row_missing');
       if (turnBlockReason({ ...row, role: 'user', content: rowText })) throw nativeIdUnavailable('input_row_blocked');
       if (!sameInput(comparableInput(rowText), wanted)) throw nativeIdUnavailable('input_text_mismatch',
         { wrapperChars: wanted.length, rowChars: comparableInput(rowText).length });
       if (host.messages.filter(message => nativeTurnMessageId(message) === nativeTurnMessageId(row)).length !== 1) throw nativeIdUnavailable('input_row_id_duplicate');
-      hostInput = { ...row, content: rowText };
+      hostInput = { ...row, role: 'user', content: rowText };
+      mapped[resolved.requestIndex] = {
+        ...mapped[resolved.requestIndex],
+        chatId: nativeTurnMessageId(row),
+        generationInfo: row.generationInfo,
+        saying: row.saying,
+        turnMeta: {
+          ...mapped[resolved.requestIndex]?.turnMeta,
+          currentInput: true,
+          currentInputProven: true,
+          nativeContent: rowText,
+          ref: nativeTurnRef(hostInput)
+        }
+      };
     }
     const snapshot = captureLibNativeReadSet(mapped, settings, baseRecent, hostInput);
     for (const selection of snapshot.selections) {
@@ -4251,7 +4288,7 @@ Before continuing, verify:
     if (!expected) return;
     expected.failed ||= code;
     expected.controller.abort();
-    if (expected.run) { expected.run.fail(code); expected.run.close(); }
+    if (expected.run) { expected.run.fail?.(code); expected.run.close?.(); }
     if (inputWriterEvidenceLease === expected) inputWriterEvidenceLease = null;
   };
   const inputWriterNativeView = snapshot => JSON.stringify({
@@ -4300,9 +4337,9 @@ Before continuing, verify:
         elapsedMs: Math.max(0, Date.now() - startedAt),
         ...(status !== 'ready' && transport && transport.at >= startedAt ? { transportCause: transport } : {}) });
     };
+    const initialNative = inputWriterNativeView(staticSnapshot);
     let assertNative;
     try {
-      const initialNative = inputWriterNativeView(staticSnapshot);
       const proposalDigest = await libReadSha256(original), nativeContextDigest = await libReadSha256(initialNative);
       assertLocal();
       const rawQuery = [original, terminalScene].filter(Boolean).join('\n\n') || 'Continue the existing scene with an unsubmitted input proposal.';
@@ -4316,8 +4353,9 @@ Before continuing, verify:
       const context = { proposal, controller: lease.controller, assertLocal, async assertCurrent() {
         if (!nativeCheck) nativeCheck = (async () => {
           const nativeStartedAt = Date.now();
-          const current = await guardInputWriterRead(lease, () => loadRisuStaticContextSnapshot(settings, { force: true, viewOnly: true }));
-          const changed = inputWriterNativeView(current) !== initialNative;
+          const current = await guardInputWriterRead(lease, () => loadRisuStaticContextSnapshot(settings, { force: true, viewOnly: true, strictHostRead: true }));
+          const changed = !current?.character || !current?.chatInfo?.chat || !current?.chatInfo?.identity
+            || inputWriterNativeView(current) !== initialNative;
           noteEvidenceCheck('native', nativeStartedAt);
           if (changed) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
         })().finally(() => { nativeCheck = null; });
@@ -4373,10 +4411,25 @@ Before continuing, verify:
         if (Runtime.inputAssistSend?.cancelRequested || (lease.parentRequestId !== null && Runtime.inputAssistSend?.requestId !== lease.parentRequestId) || error?.code === 'LIB_READ_CANCELED') throw (error?.code === 'LIB_READ_CANCELED' ? error : libEvidenceError('LIB_READ_CANCELED'));
         closeInputWriterEvidence(error.code, lease);
         try {
-          const current = await loadRisuStaticContextSnapshot(settings, { force: true, viewOnly: true });
-          if (inputWriterNativeView(current) !== initialNative) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
+          let timer;
+          const current = await Promise.race([
+            loadRisuStaticContextSnapshot(settings, { force: true, viewOnly: true, strictHostRead: true }),
+            new Promise((_, reject) => {
+              timer = setTimeout(() => reject(libEvidenceError('LIB_READ_TIMEOUT')), 10000 + MEMORY_READ_TIMEOUT_EXTENSION_MS);
+            })
+          ]).finally(() => clearTimeout(timer));
+          if (Runtime.inputAssistSend?.cancelRequested || (lease.parentRequestId !== null && Runtime.inputAssistSend?.requestId !== lease.parentRequestId)) {
+            throw libEvidenceError('LIB_READ_CANCELED');
+          }
+          if (!current?.character || !current?.chatInfo?.chat || !current?.chatInfo?.identity
+            || inputWriterNativeView(current) !== initialNative) {
+            throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
+          }
         } catch (nativeError) {
-          if (nativeError?.code === 'LIB_READ_NATIVE_CHANGED') throw nativeError;
+          const failureCode = /^LIB_READ_[A-Z_]+$/.test(nativeError?.code || '') ? nativeError.code : 'LIB_READ_NATIVE_UNAVAILABLE';
+          const failure = nativeError?.code === failureCode ? nativeError : libEvidenceError(failureCode);
+          noteDiagnostic('failed', failureCode, 'native_revalidation');
+          throw failure;
         }
         if (Runtime.inputAssistSend?.busy) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, memory: { status: 'unavailable', reason: error.code } };
         // Keep the boundary that actually failed (e.g. model_context_preflight).
@@ -6891,8 +6944,9 @@ Before continuing, verify:
     if (message?.disabled) return 'disabled';
     if (message?.isComment === true) return 'comment';
     if (message?.isStreaming === true) return 'active_stream';
-    if (!text(message?.content || '').trim()) return 'empty';
-    if (message.role === 'assistant' && /```risuerror\b/i.test(message.content)) return 'host_error';
+    const body = typeof message?.turnMeta?.nativeContent === 'string' ? message.turnMeta.nativeContent : message?.content;
+    if (!text(body || '').trim()) return 'empty';
+    if (message.role === 'assistant' && /```risuerror\b/i.test(body)) return 'host_error';
     return '';
   };
   const resolveCurrentVisibleUserIndex = (messages, currentUserText = '') => {
@@ -7029,7 +7083,7 @@ ${text(paired.leadingAssistant.content || '')}
       .map(m => {
         // Content filtering must not erase a selected native identity: retain a
         // blocking tombstone so an older variant/group member cannot revive it.
-        if (['user', 'assistant'].includes(m.role) && nativeTurnMessageId(m)
+        if (['user', 'assistant'].includes(m.role) && nativeTurnMessageId(m) && m.turnMeta?.currentInput !== true
           && (isSgaInjectionText(m.content) || isLikelyMetaUserMessage(m.content) || isOthersInfoMessage(m.content))) {
           return { ...m, content: '', turnMeta: { ...m.turnMeta, blocked: 'filtered_conversation_record' } };
         }
@@ -7042,11 +7096,12 @@ ${text(paired.leadingAssistant.content || '')}
       .filter(m => ['system', 'developer'].includes(m.role) && !['supaMemory', 'hypaMemory'].includes(m.memo))
       .map(m => ({ ...m, content: m.content.replace(/<Past Events Summary>[\s\S]*?<\/Past Events Summary>/gi, '').trim() }));
     const otherInfoMessages = allowed.filter(m => {
-      if (['system', 'developer'].includes(m.role)) return false;
+      if (['system', 'developer'].includes(m.role) || m.turnMeta?.currentInput === true) return false;
       return isOthersInfoMessage(m.content) || (m.role === 'user' && isLikelyMetaUserMessage(m.content));
     });
     const visibleChatMessages = allowed.filter(m => {
       if (!['user', 'assistant'].includes(m.role)) return false;
+      if (m.turnMeta?.currentInput === true) return true;
       // Keep empty native/request records through eligibility and variant selection.
       if (!text(m.content || '').trim()) return true;
       if (isLikelyMetaUserMessage(m.content) || isOthersInfoMessage(m.content)) return false;
@@ -7054,7 +7109,7 @@ ${text(paired.leadingAssistant.content || '')}
     });
     const sanitizeWindowMessage = message => message ? {
       ...message,
-      content: sanitizeMessageContentForHistory(message.role, message.content)
+      content: sanitizeMessageContentForHistory(message.role, typeof message.turnMeta?.nativeContent === 'string' ? message.turnMeta.nativeContent : message.content)
     } : null;
     const systemSliced = systemContextMessages.slice(-6).map(sanitizeWindowMessage).filter(m => text(m?.content || '').trim());
     const otherSliced = otherInfoMessages.slice(-8).map(sanitizeWindowMessage).filter(m => text(m?.content || '').trim());
@@ -7958,34 +8013,35 @@ ${text(paired.leadingAssistant.content || '')}
     return chats[page] || chats[0] || null;
   };
 
-  const safeApi = async (label, fn, debugLog = false) => {
+  const safeApi = async (label, fn, debugLog = false, strict = false) => {
     try { return await fn(); }
     catch (error) {
       if (debugLog) warn(`${label}_unavailable`, error);
+      if (strict) throw libEvidenceError('LIB_READ_NATIVE_UNAVAILABLE', error?.message || label);
       return null;
     }
   };
 
-  const loadCurrentCharacterForRisuContext = async (debugLog = false) => {
+  const loadCurrentCharacterForRisuContext = async (debugLog = false, strict = false) => {
     const directApi = getLiveApi(['getCharacter']) || getLiveApi(['getChar']);
     const directGetter = typeof directApi?.getCharacter === 'function' ? directApi.getCharacter.bind(directApi) : (typeof directApi?.getChar === 'function' ? directApi.getChar.bind(directApi) : null);
-    const directRaw = directGetter ? await safeApi('getCharacter', directGetter, debugLog) : null;
+    const directRaw = directGetter ? await safeApi('getCharacter', directGetter, debugLog, strict) : null;
     const direct = (directRaw && typeof directRaw === 'object' && directRaw.character && typeof directRaw.character === 'object') ? directRaw.character : directRaw;
     if (direct) return { character: direct, source: 'getCharacter' };
     const indexApi = getLiveApi(['getCurrentCharacterIndex', 'getCharacterFromIndex']) || getLiveApi(['getCurrentCharacterIndex']);
     if (typeof indexApi?.getCurrentCharacterIndex === 'function') {
-      const charIndexRaw = await safeApi('getCurrentCharacterIndex', () => indexApi.getCurrentCharacterIndex(), debugLog);
+      const charIndexRaw = await safeApi('getCurrentCharacterIndex', () => indexApi.getCurrentCharacterIndex(), debugLog, strict);
       const charIndex = parseInt(charIndexRaw, 10);
       if (Number.isInteger(charIndex) && charIndex >= 0) {
         if (typeof indexApi?.getCharacterFromIndex === 'function') {
-          const byIndex = await safeApi('getCharacterFromIndex', () => indexApi.getCharacterFromIndex(charIndex), debugLog);
+          const byIndex = await safeApi('getCharacterFromIndex', () => indexApi.getCharacterFromIndex(charIndex), debugLog, strict);
           const unwrapped = (byIndex && typeof byIndex === 'object' && byIndex.character && typeof byIndex.character === 'object') ? byIndex.character : byIndex;
           if (unwrapped) return { character: unwrapped, source: 'getCharacterFromIndex' };
         }
         const dbApi = getLiveApi(['getDatabase']);
         if (typeof dbApi?.getDatabase === 'function' || typeof API?.getDatabase === 'function') {
           const getter = typeof dbApi?.getDatabase === 'function' ? dbApi.getDatabase.bind(dbApi) : API.getDatabase.bind(API);
-          const db = await safeApi('getDatabase.characters', () => getter(['characters']), debugLog);
+          const db = await safeApi('getDatabase.characters', () => getter(['characters']), debugLog, strict);
           if (Array.isArray(db?.characters) && db.characters[charIndex]) {
             return { character: db.characters[charIndex], source: 'getDatabase.characters' };
           }
@@ -7995,7 +8051,7 @@ ${text(paired.leadingAssistant.content || '')}
     const fallbackDbApi = getLiveApi(['getDatabase']);
     if (typeof fallbackDbApi?.getDatabase === 'function' || typeof API?.getDatabase === 'function') {
       const getter = typeof fallbackDbApi?.getDatabase === 'function' ? fallbackDbApi.getDatabase.bind(fallbackDbApi) : API.getDatabase.bind(API);
-      const db = await safeApi('getDatabase.selectedCharacter', () => getter(['selectedCharacter', 'characters']), debugLog);
+      const db = await safeApi('getDatabase.selectedCharacter', () => getter(['selectedCharacter', 'characters']), debugLog, strict);
       const selIdx = parseInt(db?.selectedCharacter, 10);
       if (Number.isInteger(selIdx) && selIdx >= 0 && Array.isArray(db?.characters) && db.characters[selIdx]) {
         return { character: db.characters[selIdx], source: 'getDatabase.selectedCharacter' };
@@ -8004,15 +8060,21 @@ ${text(paired.leadingAssistant.content || '')}
     return { character: null, source: 'missing' };
   };
 
-  const loadCurrentChatForRisuContext = async (character, debugLog = false) => {
+  const loadCurrentChatForRisuContext = async (character, debugLog = false, strict = false) => {
     const fallback = currentChatFromCharacter(character);
     const out = { chat: fallback, source: fallback ? 'character.chats' : 'missing', error: '', identity: '' };
     const liveApi = getLiveApi(['getCurrentCharacterIndex', 'getCurrentChatIndex', 'getChatFromIndex']);
-    if (typeof liveApi?.getCurrentCharacterIndex !== 'function' || typeof liveApi?.getCurrentChatIndex !== 'function' || typeof liveApi?.getChatFromIndex !== 'function') return out;
-    const charIndex = await safeApi('getCurrentCharacterIndex', () => liveApi.getCurrentCharacterIndex(), debugLog);
-    const chatIndex = await safeApi('getCurrentChatIndex', () => liveApi.getCurrentChatIndex(), debugLog);
-    if (!Number.isFinite(Number(charIndex)) || !Number.isFinite(Number(chatIndex))) return out;
-    const chat = await safeApi('getChatFromIndex', () => liveApi.getChatFromIndex(parseInt(charIndex, 10), parseInt(chatIndex, 10)), debugLog);
+    if (typeof liveApi?.getCurrentCharacterIndex !== 'function' || typeof liveApi?.getCurrentChatIndex !== 'function' || typeof liveApi?.getChatFromIndex !== 'function') {
+      if (strict) throw libEvidenceError('LIB_READ_NATIVE_UNAVAILABLE', 'host_chat_api_missing');
+      return out;
+    }
+    const charIndex = await safeApi('getCurrentCharacterIndex', () => liveApi.getCurrentCharacterIndex(), debugLog, strict);
+    const chatIndex = await safeApi('getCurrentChatIndex', () => liveApi.getCurrentChatIndex(), debugLog, strict);
+    if (!Number.isFinite(Number(charIndex)) || !Number.isFinite(Number(chatIndex)) || parseInt(charIndex, 10) < 0 || parseInt(chatIndex, 10) < 0) {
+      if (strict) throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED', 'host_chat_index_invalid');
+      return out;
+    }
+    const chat = await safeApi('getChatFromIndex', () => liveApi.getChatFromIndex(parseInt(charIndex, 10), parseInt(chatIndex, 10)), debugLog, strict);
     if (chat) {
       return {
         chat,
@@ -8021,19 +8083,27 @@ ${text(paired.leadingAssistant.content || '')}
         identity: `${parseInt(charIndex, 10)}:${parseInt(chatIndex, 10)}`
       };
     }
+    if (strict) throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED', 'host_chat_missing');
     return out;
   };
 
   const loadCurrentChatIdentity = async (debugLog = false, options = {}) => {
     const now = Date.now();
-    if (options.force !== true && CurrentChatIdentityCache.value && CurrentChatIdentityCache.expiresAt > now) return CurrentChatIdentityCache.value;
+    const strict = options.strict === true;
+    if (!strict && options.force !== true && CurrentChatIdentityCache.value && CurrentChatIdentityCache.expiresAt > now) return CurrentChatIdentityCache.value;
     const liveApi = getLiveApi(['getCurrentCharacterIndex', 'getCurrentChatIndex']);
-    if (typeof liveApi?.getCurrentCharacterIndex !== 'function' || typeof liveApi?.getCurrentChatIndex !== 'function') return '';
+    if (typeof liveApi?.getCurrentCharacterIndex !== 'function' || typeof liveApi?.getCurrentChatIndex !== 'function') {
+      if (strict) throw libEvidenceError('LIB_READ_NATIVE_UNAVAILABLE', 'host_identity_api_missing');
+      return '';
+    }
     const [charIndex, chatIndex] = await Promise.all([
-      safeApi('getCurrentCharacterIndex', () => liveApi.getCurrentCharacterIndex(), debugLog),
-      safeApi('getCurrentChatIndex', () => liveApi.getCurrentChatIndex(), debugLog)
+      safeApi('getCurrentCharacterIndex', () => liveApi.getCurrentCharacterIndex(), debugLog, strict),
+      safeApi('getCurrentChatIndex', () => liveApi.getCurrentChatIndex(), debugLog, strict)
     ]);
-    if (!Number.isFinite(Number(charIndex)) || !Number.isFinite(Number(chatIndex))) return '';
+    if (!Number.isFinite(Number(charIndex)) || !Number.isFinite(Number(chatIndex)) || parseInt(charIndex, 10) < 0 || parseInt(chatIndex, 10) < 0) {
+      if (strict) throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED', 'host_identity_index_invalid');
+      return '';
+    }
     const value = `${parseInt(charIndex, 10)}:${parseInt(chatIndex, 10)}`;
     CurrentChatIdentityCache = { value, expiresAt: Date.now() + 250 };
     return value;
@@ -8233,7 +8303,7 @@ ${text(paired.leadingAssistant.content || '')}
       firstMessageIncluded = true;
     }
     const currentText = text(currentTurnResolution?.text || extractLatestUserInput(requestMessages) || '');
-    const currentId = nativeTurnMessageId(currentTurnResolution?.message || {});
+    const currentId = nativeTurnMessageId(currentTurnResolution?.message || resolveSgaCurrentTurn(requestMessages)?.message || {});
     let currentUserIndex = -1;
     if (currentId) for (let i = messages.length - 1; i >= 0; i -= 1) { if (messages[i].role === 'user' && nativeTurnMessageId(messages[i]) === currentId) { currentUserIndex = i; break; } }
     // Text can bind only the already-terminal stored user, never an older same-text turn.
@@ -8290,8 +8360,10 @@ ${text(paired.leadingAssistant.content || '')}
       return recent;
     }
     const messages = chatContext.messages;
-    const latestUser = messages.find(item => item.turnMeta?.currentInput === true)?.content || recent.latestUser || '';
-    const turnWindow = buildCompleteRecentTurnWindow(messages, settings?.turnWindow || DEFAULT_RECENT_TURNS, latestUser);
+    const requestLatestUser = text(recent.latestUser || '');
+    const storedCurrentUser = messages.find(item => item.turnMeta?.currentInput === true)?.content || '';
+    const latestUser = requestLatestUser || storedCurrentUser || '';
+    const turnWindow = buildCompleteRecentTurnWindow(messages, settings?.turnWindow || DEFAULT_RECENT_TURNS, storedCurrentUser || latestUser);
     const latestAssistant = turnWindow.previousTurnAssistant || '';
     const selectedMessages = turnWindow.selectedMessages;
     recent.latestUser = text(latestUser || '');
@@ -10406,30 +10478,36 @@ function mergeAgentCbsWarnings(...warningLists) {
   }));
 
   const loadRisuStaticContextSnapshot = async (settings, options = {}) => {
+    const strict = options.strictHostRead === true;
     const staticSettingsHash = risuStaticSettingsHash(settings);
-    const scopeIdentity = text(options.scopeIdentity || await loadCurrentChatIdentity(settings.debugLog)).trim();
+    const scopeIdentity = text(options.scopeIdentity || await loadCurrentChatIdentity(settings.debugLog, { force: options.force === true, strict })).trim();
     const cacheKey = scopeIdentity ? `${scopeIdentity}|${staticSettingsHash}` : '';
     // Do not reuse a previous request's lore/database snapshot by TTL. WingLore or
     // another plugin may have changed lore immediately before this request. Only coalesce
     // truly concurrent reads; explicit Input Assist handoff passes its exact snapshot directly.
-    if (cacheKey && options.force !== true && RisuStaticSnapshotInFlight.has(cacheKey)) {
+    if (cacheKey && options.force !== true && !strict && RisuStaticSnapshotInFlight.has(cacheKey)) {
       return await RisuStaticSnapshotInFlight.get(cacheKey);
     }
 
     const task = (async () => {
-      const characterInfo = await loadCurrentCharacterForRisuContext(settings.debugLog);
+      const characterInfo = await loadCurrentCharacterForRisuContext(settings.debugLog, strict);
       const character = characterInfo.character;
+      if (strict && !character) throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED', 'host_character_missing');
       // plugins.md is authoritative: request only documented database keys.
       // globalChatVariables is intentionally not exposed to plugins. Conditional
       // lore therefore uses host-formatted request evidence instead of treating
       // an unavailable global toggle as false.
       const liveDbApi = getLiveApi(['getDatabase']);
       const dbGetter = typeof liveDbApi?.getDatabase === 'function' ? liveDbApi.getDatabase.bind(liveDbApi) : (typeof API?.getDatabase === 'function' ? API.getDatabase.bind(API) : null);
+      if (strict && !dbGetter) throw libEvidenceError('LIB_READ_NATIVE_UNAVAILABLE', 'host_db_api_missing');
       const baseDb = dbGetter
-        ? await safeApi('getDatabase', () => dbGetter(['personas', 'selectedPersona', 'modules', 'installedModules', 'customModules', 'enabledModules', 'moduleIntergration']), settings.debugLog)
+        ? await safeApi('getDatabase', () => dbGetter(['personas', 'selectedPersona', 'modules', 'installedModules', 'customModules', 'enabledModules', 'moduleIntergration']), settings.debugLog, strict)
         : null;
       const db = { ...(baseDb || {}) };
-      const chatInfo = await loadCurrentChatForRisuContext(character, settings.debugLog);
+      const chatInfo = await loadCurrentChatForRisuContext(character, settings.debugLog, strict);
+      if (strict && (!chatInfo?.chat || !Array.isArray(chatInfo.chat.message))) {
+        throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED', 'host_chat_messages_missing');
+      }
       const persona = selectedPersonaFromDb(db, chatInfo.chat);
       // A view-only read (input writer change detection) compares identity,
       // character, chat and the DB subset only. Collecting lore candidates walks

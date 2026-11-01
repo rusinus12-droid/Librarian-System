@@ -90,3 +90,41 @@ test('a memory currentness failure before model dispatch falls back safely to na
  assert.equal(await f.done(pending),true);
  assert.equal(f.copied.length,1);
 });
+
+test('native revalidation failure during optional memory fallback fails closed when native context changed',{timeout:30000},async t=>{
+ const f=await fixture(t);
+ f.controls.onQuery=async()=>{
+  f.chat.message.push({role:'user',chatId:'u-changed',data:'중간에 변경된 네이티브 메시지'});
+  throw Object.assign(new Error('memory unavailable'),{code:'LIB_READ_UNAVAILABLE'});
+ };
+ const {pending}=await f.start();
+ await assert.rejects(()=>f.choices(),/WRITER_FAILED/);
+ assert.equal(f.prompts.length,0,'must not dispatch model when native context changed during fallback');
+ const diagnostic=f.host.plugin.getRuntime().lastInputWriterReadDiagnostic;
+ assert.equal(diagnostic.status,'failed');
+ assert.equal(diagnostic.stage,'native_revalidation');
+ assert.equal(diagnostic.code,'LIB_READ_NATIVE_CHANGED');
+ await f.host.plugin.cancelInputAssistSend();
+ assert.equal(await pending,false);
+});
+
+test('native revalidation failure during optional memory fallback fails closed when host API throws',{timeout:30000},async t=>{
+ const f=await fixture(t);
+ let failHost=false;
+ f.controls.onNativeRead=async()=>{
+  if(failHost)throw new Error('host_api_boom');
+ };
+ f.controls.onQuery=async()=>{
+  failHost=true;
+  throw Object.assign(new Error('memory unavailable'),{code:'LIB_READ_UNAVAILABLE'});
+ };
+ const {pending}=await f.start();
+ await assert.rejects(()=>f.choices(),/WRITER_FAILED/);
+ assert.equal(f.prompts.length,0,'must not dispatch model when native revalidation cannot verify host context');
+ const diagnostic=f.host.plugin.getRuntime().lastInputWriterReadDiagnostic;
+ assert.equal(diagnostic.status,'failed');
+ assert.equal(diagnostic.stage,'native_revalidation');
+ assert.equal(diagnostic.code,'LIB_READ_NATIVE_UNAVAILABLE');
+ await f.host.plugin.cancelInputAssistSend();
+ assert.equal(await pending,false);
+});
