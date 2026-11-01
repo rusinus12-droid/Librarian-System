@@ -76,7 +76,7 @@ test('durably reserved model vectors flow through actual recall and evidence ren
     assert.equal(result.fallbackWarning, '');
   });
 });
-for (const mode of ['pending', 'legacy_hash', 'wrong_profile', 'changed_source']) test(`${mode} rows cannot enter any recall arm or structured-state output`, async () => {
+for (const mode of ['pending', 'legacy_hash', 'wrong_profile', 'changed_source']) test(`${mode} rows with non-current vectors stay out of semantic/state paths but remain keyword-recallable`, async () => {
   await setup(async ({ h, cfg, scope, raw, read }) => {
     let row = raw[0];
     if (mode !== 'pending') {

@@ -34406,7 +34406,7 @@ const MemorySuiteHealthRecovery = (() => {
     // records with stale/incompatible vectors are still admitted to the lexical arms as long as they are
     // valid retained memory records with raw text.
     const allowPendingVectorRecords = (context.allowVectorsPending === true || context.lexicalFallbackStatus === 'vectors_pending')
-      && context.lexicalFallbackStatus !== 'query_failed' && context.allowLexicalFallbackStatus !== 'query_failed';
+      && context.lexicalFallbackStatus !== 'query_failed';
     const isModelComparable = (record) => {
       if (!configuredModelEmbedding(settings)) return false;
       if (context.allowLexicalFallback === true && context.lexicalFallbackStatus !== 'vectors_pending') {

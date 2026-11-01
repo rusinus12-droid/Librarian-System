@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-01T14:11:10.258Z",
+  "generatedAt": "2026-11-01T14:15:41.364Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4144,8 +4144,8 @@
       "bytes": 3353
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "497d327d9646e98200a738e67a32a934f2c1230e4dda20f8a018b0717aeab18b",
-      "bytes": 3763745
+      "sha256": "e08f49a883b3f745aedbe89301e4a5ce1a3723072ac820271f954507ddf3c4bc",
+      "bytes": 3763688
     },
     "plugins/GRADIA.js": {
       "sha256": "0cec08acbf7ba37ffb001fcb2ec1cfe90062c0c96b81f2e392ebd670163cfe78",
@@ -6080,8 +6080,8 @@
       "bytes": 7710
     },
     "tests/flashback_model_only_retrieval_runtime_test.cjs": {
-      "sha256": "47a6184ae09631efe0219bc193c344faf4ef846ebc51cb02de0f25141a31d4f6",
-      "bytes": 25732
+      "sha256": "4db5a1b29e30fc1a92699a2340dafa14f3d5ab4bfd10e154c4c1562ecffd4b65",
+      "bytes": 25765
     },
     "tests/flashback_multilingual_embedding_probe_test.cjs": {
       "sha256": "9f95db1b7500b07f8e0f57b80ce3b1ab160293c25c45743ae0b4c258d6b6f773",
@@ -6414,6 +6414,10 @@
     "tests/flashback_unchanged_reingest_preservation_runtime_test.cjs": {
       "sha256": "990edb81c62036acb26740340cfd4ae207b956751526df78e9d320c849934bf6",
       "bytes": 25572
+    },
+    "tests/flashback_vectors_pending_runtime_test.cjs": {
+      "sha256": "ffe84f14c234581fba9ef99afb11d2a8110e3e89e26d95d1783566675b258d33",
+      "bytes": 8863
     },
     "tests/flashback_worldline_preparation_reads_test.cjs": {
       "sha256": "3bd79425f3a3a9251271fe87a2f8675f358f6925e253ba7d9f69c8f3d2daaa3c",
