@@ -42,16 +42,16 @@ flowchart TB
     subgraph Host["RisuAI 클라이언트 (Browser / WebView)"]
         direction TB
         subgraph Owners["기억 소유자 플러그인 (Storage Owners)"]
-            LIBRA["LIBRA v2.3.193<br/>(정본/Micro 기억 · 상태 투영 · 그래프 회상)"]
-            FB["Flashback v1.0.128<br/>(에피소드 기억 · 채팅 어텐션)"]
-            HAYAKU["HAYAKU v3.0.163<br/>(장소/인물 연속성 · 위치 추적)"]
+            LIBRA["LIBRA<br/>(정본/Micro 기억 · 상태 투영 · 그래프 회상)"]
+            FB["Flashback<br/>(에피소드 기억 · 채팅 어텐션)"]
+            HAYAKU["HAYAKU<br/>(장소/인물 연속성 · 위치 추적)"]
         end
-        LIA["LIA v0.26.90<br/>(local_only · 페르소나 수동 갱신)"]
+        LIA["LIA<br/>(local_only · 페르소나 수동 갱신)"]
         Persona[("RisuAI Persona · 기기 저장소")]
         LIA <--> Persona
-        RETRACE["RE:TRACE v1.9.90<br/>(manager_only · 인계/서버 관리)"]
+        RETRACE["RE:TRACE<br/>(manager_only · 인계/서버 관리)"]
         RETRACE -->|인계 조정| LIBRA & FB & HAYAKU
-        GRADIA["GRADIA v0.25.92<br/>(읽기 전용 다중 기억 소비자 · 서사 보조)"]
+        GRADIA["GRADIA<br/>(읽기 전용 다중 기억 소비자 · 서사 보조)"]
         GRADIA -->|검증된 근거 읽기| LIBRA & FB & HAYAKU
     end
 
@@ -64,7 +64,7 @@ flowchart TB
         SQLite --> Backup
     end
 
-    Owners <-->|"Storage SDK v1.8.28<br/>(server_only / plugin_only)"| Router
+    Owners <-->|"Storage SDK<br/>(server_only / plugin_only)"| Router
     RETRACE -->|관리 권한| Router
 ```
 

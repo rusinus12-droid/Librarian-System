@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { readReleaseMetadata, renderGuide } = require('../tools/release_metadata.cjs');
+const { readReleaseMetadata, renderGuide, renderReadme } = require('../tools/release_metadata.cjs');
 
 const programDir = path.resolve(__dirname, '..');
 const packageRoot = path.resolve(programDir, '..');
@@ -106,6 +106,23 @@ function main() {
   assert.match(firstRead, /plugin_only.*기존 JS kernel/);
   assert.match(contents, /plugin_only → local.*server_only → prefer_server/);
   assert.match(contents, /mirror는 두 저장 위치 사이의 전환 단계/);
+
+  if (fs.existsSync(path.join(packageRoot, 'README.md'))) {
+    const readme = readPackage('README.md');
+    assert.equal(
+      readme,
+      renderReadme(readme, release),
+      'README.md must stay synchronized with release_metadata.cjs renderReadme()'
+    );
+    const mermaidMatch = readme.match(/```mermaid[\s\S]*?```/);
+    if (mermaidMatch) {
+      assert.doesNotMatch(
+        mermaidMatch[0],
+        /\b(?:LIBRA|Flashback|HAYAKU|LIA|RE:TRACE|GRADIA|Storage SDK)\s+v\d+\.\d+\.\d+/,
+        'Mermaid architecture diagram must not duplicate plugin/SDK version numbers'
+      );
+    }
+  }
 
   process.stdout.write('distribution_metadata_coherence_test: PASS\n');
 }
