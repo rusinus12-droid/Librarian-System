@@ -6,7 +6,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { buildDistribution } = require('../tools/build_distribution.cjs');
 const { readZipEntries } = require('../tools/zip_writer.cjs');
 const { prepareReleaseCandidate } = require('../../UPDATER/release_archive.cjs');
 const { expectedAssetName } = require('../tools/release_asset_contract.cjs');
@@ -74,6 +73,7 @@ async function withStagingPackagingDataGuard(sourceDataRoot, tempDir, fn) {
   fs.writeFileSync(childLogFile, '', 'utf8');
   const preloadPath = createChildFsGuardPreload(tempDir, sourceDataRoot, childLogFile);
   const origSpawnSync = cp.spawnSync;
+  const buildDistModulePath = require.resolve('../tools/build_distribution.cjs');
 
   for (const method of trackedMethods) {
     if (typeof fs[method] !== 'function') continue;
@@ -106,8 +106,11 @@ async function withStagingPackagingDataGuard(sourceDataRoot, tempDir, fn) {
     return origSpawnSync.call(this, command, args, options);
   };
 
+  delete require.cache[buildDistModulePath];
+  const { buildDistribution } = require('../tools/build_distribution.cjs');
+
   try {
-    const value = await fn();
+    const value = await fn({ buildDistribution });
     const childAccesses = fs.readFileSync(childLogFile, 'utf8')
       .trim()
       .split(/\r?\n/)
@@ -119,6 +122,7 @@ async function withStagingPackagingDataGuard(sourceDataRoot, tempDir, fn) {
     for (const [method, orig] of originals.entries()) {
       fs[method] = orig;
     }
+    delete require.cache[buildDistModulePath];
   }
 }
 
@@ -139,7 +143,7 @@ async function main() {
     } = await withStagingPackagingDataGuard(
       dataRoot,
       temp,
-      () => buildDistribution({ outputDir: output })
+      ({ buildDistribution }) => buildDistribution({ outputDir: output })
     );
     assert.deepEqual(buildInProcessAccesses, [], 'in-process buildDistribution staging/packaging must not access source/user DATA');
     assert.deepEqual(buildStagingChildAccesses, [], 'staging/packaging child tools must not access source/user DATA');
