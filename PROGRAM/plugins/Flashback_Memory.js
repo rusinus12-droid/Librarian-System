@@ -34399,13 +34399,26 @@ const MemorySuiteHealthRecovery = (() => {
     const cap = Math.max(8, Number(settings.candidateLimit || DEFAULTS.candidateLimit) || DEFAULTS.candidateLimit);
     const modelContext = { provider: context.queryProvider || settings.embeddingProvider,
       model: context.queryModel || settings.embeddingModel, dimensions: queryVector.length, profileId: context.queryProfileId };
-    // Keyword fallback (no query vector this request) keeps the same admission:
-    // profile, ready receipt and source binding must still match; only the query
-    // dimension is taken from the record because there is no query vector.
-    records = context.allowLexicalFallback === true && configuredModelEmbedding(settings)
-      ? (records || []).filter(record => recordEmbeddingCompatibility(record, settings, { ...modelContext, dimensions: Array.isArray(record?.vector) ? record.vector.length : 0, profileId: '' }).comparable)
-      : queryVector.length && configuredModelEmbedding(settings)
-        ? (records || []).filter(record => recordEmbeddingCompatibility(record, settings, modelContext).comparable) : [];
+    // Model compatibility admission:
+    // When a query vector is present, records with compatible vectors are admitted.
+    // In query lexical fallback (query vector failed), records compatible with current profile are admitted.
+    // When stored vectors are pending re-embedding (vectors_pending fallback or mixed-profile state),
+    // records with stale/incompatible vectors are still admitted to the lexical arms as long as they are
+    // valid retained memory records with raw text.
+    const allowPendingVectorRecords = (context.allowVectorsPending === true || context.lexicalFallbackStatus === 'vectors_pending')
+      && context.lexicalFallbackStatus !== 'query_failed' && context.allowLexicalFallbackStatus !== 'query_failed';
+    const isModelComparable = (record) => {
+      if (!configuredModelEmbedding(settings)) return false;
+      if (context.allowLexicalFallback === true && context.lexicalFallbackStatus !== 'vectors_pending') {
+        return recordEmbeddingCompatibility(record, settings, { ...modelContext, dimensions: Array.isArray(record?.vector) ? record.vector.length : 0, profileId: '' }).comparable;
+      }
+      return queryVector.length ? recordEmbeddingCompatibility(record, settings, modelContext).comparable : false;
+    };
+    records = (records || []).filter(record => {
+      if (isModelComparable(record)) return true;
+      if (allowPendingVectorRecords && isRetainedMemoryRecord(record) && text(record?.text || '').trim().length > 0) return true;
+      return false;
+    });
     const responseRecords = records.filter(record => isResponseMemoryRecord(record));
     delete context.computeCosine;
     const dense = [];
@@ -35272,14 +35285,15 @@ const MemorySuiteHealthRecovery = (() => {
     if (isResponseMemoryRecord(record) && contextExcludedPreviousTurnMatchesRecord(record, context)) return null;
     const semantic = recallSemanticSignals(record, queryVector, settings, context);
     const { vectorComparable, cosine } = semantic;
-    if (!vectorComparable && !context.allowLexicalFallback) return null;
+    const allowPendingVector = context.allowVectorsPending === true && isRetainedMemoryRecord(record);
+    if (!vectorComparable && !context.allowLexicalFallback && !allowPendingVector) return null;
     if (isCurrentInputDuplicate(record, context.currentUser || query)) return null;
     if (isOwnInjection(record.text)) return null;
     const candidateMeta = context.candidateMeta instanceof Map
       ? context.candidateMeta.get(text(record.id || record.hash || record.sourceId || ''))
       : null;
-    if(context.allowLexicalFallback){
-      // Keyword fallback (no query vector this request): rank-based keyword evidence only. The scene-context BM25
+    if(context.allowLexicalFallback || (!vectorComparable && allowPendingVector)){
+      // Keyword fallback (no query vector this request or pending vector): rank-based keyword evidence only. The scene-context BM25
       // arm counts at half strength, as it does in fusion.
       const channels=candidateMeta?.channels||{};
       const contextRank=Number(channels.contextSparse?.rank||0);
@@ -36374,7 +36388,9 @@ const MemorySuiteHealthRecovery = (() => {
     if (!records.length && storedRecords.length && !lexicalFallback && cfg.heuristicRecall) {
       lexicalFallback = { status: 'vectors_pending', error: 'stored vectors are not comparable with the current embedding profile' };
       semanticQuery = false; queryVector = []; sceneContext.active = false; sceneContext.vector = [];
-      records = storedRecords.slice();
+      records = storedRecords.filter(r => isRetainedMemoryRecord(r) && text(r?.text || '').trim().length > 0);
+    } else if (!lexicalFallback && cfg.heuristicRecall && records.length < storedRecords.length) {
+      records = storedRecords.filter(r => modelEligible(r) || (isRetainedMemoryRecord(r) && text(r?.text || '').trim().length > 0));
     }
     const inactiveBranchFiltered = Number(branchGate.diagnostics?.inactiveBranchFiltered || 0) || 0;
     const worldlineMismatchFiltered = Number(branchGate.diagnostics?.worldlineMismatchFiltered || 0) || 0;
@@ -36393,7 +36409,7 @@ const MemorySuiteHealthRecovery = (() => {
     const overlay = buildCurrentUserStateOverlay(primaryQueryText, { temporalIntent, truthIntent, topic: queryType });
     const liveStateFacts = cfg.structuredStateEnabled ? [...detectedLiveStateFacts, ...overlay.facts] : [];
     const queryStateProperties = extractQueryStateProperties(primaryQueryText);
-    const latestStateByEntity = buildLatestStateByEntity(records, liveStateFacts);
+    const latestStateByEntity = buildLatestStateByEntity(records.filter(modelEligible), liveStateFacts);
     applyCurrentUserOverlaySuppressions(latestStateByEntity, overlay.suppressions);
     applyCurrentStateValidityAging(latestStateByEntity, latestResponseTurn);
     const currentStateFacts = !semanticQuery && cfg.structuredStateEnabled ? collectCurrentStateFacts(latestStateByEntity, rawQueryAnchors, queryStateProperties, 14) : [];
@@ -36425,6 +36441,8 @@ const MemorySuiteHealthRecovery = (() => {
     }
     const recallContext = { scopeKey: scope.scopeKey, currentUser: primaryQueryText, recentResponseRanks, latestStateByEntity, queryStateProperties, stateQueryAnchors: rawQueryAnchors, queryType, temporalIntent, truthIntent, queryIntent, overlay, strategy, records, latestResponseTurn, queryFallbackUsed, queryProvider, queryModel, queryProfileId, queryVector, allowLexicalFallback: true, sceneContext, queryTopics, previousTurn, previousTurnProfile, previousTurnNumber, excludedPreviousTurnNumber, excludedPreviousTurnSourceHash };
     recallContext.allowLexicalFallback = !!lexicalFallback;
+    recallContext.lexicalFallbackStatus = lexicalFallback?.status || '';
+    recallContext.allowVectorsPending = lexicalFallback?.status === 'vectors_pending' || (cfg.heuristicRecall && records.some(r => !modelEligible(r)));
     const candidateLimit = Math.max(effectiveTopK, Math.min(records.length, Math.ceil(Number(cfg.candidateLimit || DEFAULTS.candidateLimit) * topKMultiplier)));
     const sparseStageStartedAt = Date.now();
     let arms = await generateRecallCandidateArms({
@@ -36477,7 +36495,7 @@ const MemorySuiteHealthRecovery = (() => {
       const compatibility = recordEmbeddingCompatibility(record, cfg, { provider: queryProvider, model: queryModel,
         dimensions: lexicalFallback && Array.isArray(record?.vector) ? record.vector.length : queryVector.length, profileId: lexicalFallback ? '' : queryProfileId });
       if (compatibility.legacyProfileCompatible && compatibility.comparable) vectorCompatibility.legacyCompatible++;
-      const keywordOnly = lexicalFallback?.status === 'vectors_pending';
+      const keywordOnly = lexicalFallback?.status === 'vectors_pending' || (recallContext.allowVectorsPending && isRetainedMemoryRecord(record));
       if (!compatibility.comparable && !keywordOnly) {
         dimSkipped += 1;
         for(const reason of compatibility.reasons)vectorCompatibility.reasons[reason]=(vectorCompatibility.reasons[reason]||0)+1;

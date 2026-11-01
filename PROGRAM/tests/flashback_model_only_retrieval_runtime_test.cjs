@@ -90,9 +90,13 @@ for (const mode of ['pending', 'legacy_hash', 'wrong_profile', 'changed_source']
     await h.api._test.saveAllRecords([row], cfg, scope);
     const before = clone(await read());
     const result = await h.api.recallRecords(QUERY, cfg, scope, { currentPairIndex: 10 });
-    assert.equal(result.records.length, 0);
+    assert.equal(result.modelReadiness.status, 'lexical_fallback');
+    assert.equal(result.modelReadiness.reason, 'vectors_pending');
+    assert.equal(result.modelReadiness.ready, false);
+    assert.equal(result.candidateArms?.dense || 0, 0);
     assert.equal(result.currentStateFacts?.length || 0, 0);
     assert.equal(result.candidateArms?.hashRecovery || 0, 0);
+    assert.equal(result.records.length, 1, 'stored raw memory remains reachable by keyword while vector is pending');
     const arms = await h.api._test.generateRecallCandidateArms({ records: [row], queryText: QUERY, queryVector: [1, 0, 0], settings: cfg,
       context: { scopeKey: scope.scopeKey, queryProvider: 'openai', queryModel: cfg.embeddingModel, queryProfileId: h.context.__modelOnlyAudit.embeddingProfileId(cfg, 3) } });
     assert(Object.values(arms).every(rows => rows.length === 0), 'all candidate channels honor model readiness');
