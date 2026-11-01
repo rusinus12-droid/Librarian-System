@@ -6,7 +6,7 @@ const {ensureDataInstanceIdentity}=require('../../server/core/data-instance-iden
 const OWNERS=Object.freeze(['libra','hayaku','flashback']);
 const PROFILE='memory-suite.authority-profile.core3.v2';
 function core3Fixture(t){
- const root=fs.mkdtempSync(path.join(process.env.LIB_CORE3_BASIC_CHECKPOINT||os.tmpdir(),'core3-basic-'));
+ const root=fs.mkdtempSync(path.join(process.env.LIB_CORE3_BASIC_CHECKPOINT||fs.realpathSync(os.tmpdir()),'core3-basic-'));
  const dataDir=path.join(root,'DATA');fs.mkdirSync(dataDir);
  const physicalBinding={...ensureDataInstanceIdentity(dataDir),controlStoreId:crypto.randomUUID()};
  const ownerBindings={},databases={},handles=new Set();

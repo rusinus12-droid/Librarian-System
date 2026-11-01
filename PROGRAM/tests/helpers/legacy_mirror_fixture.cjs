@@ -9,7 +9,7 @@ async function seedLegacyMirrorFixture(bridge,store,scopeInput=null){
  const registry=JSON.parse(await store.getItem(key));
  registry.entries[scope.scopeId]={...registry.entries[scope.scopeId],mode:'mirror',origin:'user_explicit',updatedAt:Math.max(Date.now(),Number(registry.entries[scope.scopeId]?.updatedAt||0)+1),source:'legacy_mirror_upgrade_fixture'};
  await store.setItem(key,JSON.stringify(registry));
- assert.equal((await bridge.getScopeMode(scope)).mode,'mirror');
+ assert.equal((await bridge.getScopeMode(scope, true)).mode,'mirror');
  return {changed:true,from:'plugin_only',to:'mirror',fixture:'legacy_upgrade'};
 }
 module.exports={seedLegacyMirrorFixture};

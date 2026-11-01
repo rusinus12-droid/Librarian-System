@@ -27,7 +27,7 @@ const vector = weights => {
 };
 const documentVector = text => {
   const index = docs.findIndex(doc => doc.text && text.includes(doc.text));
-  return vector([[index === 1 && /^\[TURN /u.test(text) ? 101 : Math.max(0, index), 1]]);
+  return vector([[index === 1 && (text.includes(GRAPH_FACT) || /^\[TURN /u.test(text)) ? 101 : Math.max(0, index), 1]]);
 };
 const embeddingHost = counts => ({ nativeFetch: async (url, init) => {
   assert.match(url, /^https:\/\/synthetic\.invalid\//);

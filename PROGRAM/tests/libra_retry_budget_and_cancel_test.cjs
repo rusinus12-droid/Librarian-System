@@ -82,7 +82,8 @@ async function defect5() {
       out.cancellation = await g.r.api.cancelCanonicalJob();
       return { type: 'success', result: JSON.stringify(g.control.artifact) };
     };
-    await g.r.api.startManualCanonicalScan({ startTurns: [1] });
+    const inv = await g.r.api.listCanonicalBatchRanges();
+    await g.r.api.startSelectedCanonicalBatches({ scopeKey: inv.scopeKey, mode: 'missing', ranges: inv.ranges.filter(r => r.startTurn === 1) });
     const job = await g.r.api.getCanonicalJobStatus();
     out.job = {
       state: job.state, phase: job.phase, cancelRequested: job.cancelRequested,

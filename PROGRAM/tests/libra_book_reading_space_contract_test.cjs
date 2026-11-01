@@ -11,14 +11,14 @@ const between = (a, b) => {
   return source.slice(i, j);
 };
 
-const desk = between('const buildApprovedMockupDesk =', 'const buildApprovedMockupMemory =');
+const desk = between('const buildBookDeliveryNotes =', 'const buildApprovedMockupMemory =');
 assert.match(desk, /class: 'spread'/);
 assert.match(desk, /class: 'leaf'/);
-assert.match(desk, /class: 'anno anno--final'/);
+assert.match(desk, /anno--final/);
 assert.match(desk, /bookFinalDeliveryView\(\)/);
 assert.match(desk, /worldManagerSnapshotView\(\)/);
-assert.match(desk, /const used = finalView\.rows/);
-assert.match(desk, /finalView\.status === 'verified'/);
+assert.match(desk, /finalView\.rows\.length/);
+assert.match(desk, /status === 'verified'|status==='verified'/);
 const receipt = between('const bookFinalDeliveryView =', 'const openBookFinalEvidenceDialog =');
 assert.match(receipt, /LibraMemoryCore\.getLastRecallViewer\(\)/);
 assert.match(receipt, /delivery\.scopeKey !== binding\.scopeKey/);

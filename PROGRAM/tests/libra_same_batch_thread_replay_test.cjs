@@ -74,6 +74,7 @@ async function malformedEvidence(edit){
     const record=JSON.parse(values.get(ref.key));
     mutate(record.canonicalArtifact.facts.find(f=>f.tempFactId==='f13').values.thread.linkTarget);
     record.artifactDigest=digest(record.canonicalArtifact);ref.artifactDigest=record.artifactDigest;
+    if(record.unifiedIdentityProvenance)record.unifiedIdentityProvenance.artifactDigest=record.artifactDigest;
     values.set(ref.key,JSON.stringify(record));values.set(manifestKey,JSON.stringify(manifest));
     const tampered=await fixture({snapshot:{chat,values:[...values]}});
     try{

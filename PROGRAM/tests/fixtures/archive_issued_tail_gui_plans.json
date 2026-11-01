@@ -15,1293 +15,1498 @@
   "plans": [
     {
       "name": "raw_reporting",
-      "sourceSha256": "8731028b8c62bbdf37a34b1bfdfef8c80594009251eecf6d713f0188fe5ac08c",
-      "sourceBytes": 3377193,
-      "sourceCodeUnits": 3321256,
-      "observedSha256": "eb99921f5bc80243bbd381344608c4c3a577dca3fa425de8fc102b7ebd334888",
+      "sourceSha256": "75804b1f33f07871d1b0c142fecfd80c3f8b07ca2c71703ff4678d6755f946d3",
+      "sourceBytes": 3761545,
+      "sourceCodeUnits": 3680800,
+      "observedSha256": "ecef496d0f5190f425d3ee356fd0385ef7a2b9b68151684c440c21d40d3e0f37",
       "callsites": [
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:3045",
+          "label": "scheduleTimer:3059",
           "callbackSha256": "1d8414130fbade21dcb16e5c5424d2b12757cfd78e4ff4409e02f25e2f38e20d"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:4729",
+          "label": "scheduleLifecycleTimeout:4450",
+          "callbackSha256": "2bf9c91241e953ca75bc7e53d6905692655f3cf429dee6cc54b12449340cdbae"
+        },
+        {
+          "family": "scheduleLifecycleTimeout",
+          "label": "scheduleLifecycleTimeout:4774",
           "callbackSha256": "9a1ea6f96c83ff134032d6a4aa2844034182d93f54f8fc9758e48bc75d20e6bf"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:6832",
+          "label": "scheduleLifecycleTimeout:6950",
           "callbackSha256": "2fe8a8aa555b08fde1d2de9e9b1a38f8b59df3792e830327e1d5c98e04f6d9ac"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:7114",
+          "label": "scheduleLifecycleTimeout:7232",
           "callbackSha256": "1a5c343880ce4fe20fd7d900c463354c58bfbc4b91f402a9672ffd95538de3de"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:7261",
+          "label": "scheduleLifecycleTimeout:7379",
           "callbackSha256": "c818df42a6b3e75588c9fedd3dfe6123b5d5e74fd24d43a97e8cac1bba37d6d7"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:7436",
+          "label": "scheduleLifecycleTimeout:7597",
           "callbackSha256": "faffa929d71d60642357a0560a12a0e8492e50d80b178301ba9269e7094461ad"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:7582",
+          "label": "scheduleLifecycleTimeout:7751",
           "callbackSha256": "7e6a6977354251999e8d862d2306a124285a54697ca023a95edd968d3cb496c0"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:7586",
+          "label": "scheduleLifecycleTimeout:7755",
           "callbackSha256": "7e6a6977354251999e8d862d2306a124285a54697ca023a95edd968d3cb496c0"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:9634",
+          "label": "scheduleLifecycleTimeout:10410",
           "callbackSha256": "1a95de4b77d4949cccec3bf874ea32049451382bd53e06375ff1f81ed3644396"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:9638",
+          "label": "scheduleLifecycleTimeout:10414",
           "callbackSha256": "53f8e2f7f5936fa04a22df474de81109b2c69dc3fdd6b184a4e8a2b1a2754adc"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:9638",
+          "label": "scheduleLifecycleTimeout:10414",
           "callbackSha256": "90d6beb1bcb05fc3f1d8da437e60258d2498d7ae2b05d5397a3937331efb4b23"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:9749",
+          "label": "scheduleLifecycleTimeout:10525",
           "callbackSha256": "5d94b09cc8ec7223ddae2af8a2ce05f2f0eeae12375e287575f1c9d63bce7d64"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:10857",
+          "label": "scheduleLifecycleTimeout:11635",
           "callbackSha256": "7367ae3fbcd5fc7e01bb9a794a69d9d8a13777cc6279d78761be7e82ce8797d5"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:11515",
-          "callbackSha256": "0056c7725fd9e3f5979c3b6193bdde47c90b0e6d2fd73bd1c4a9f09adef747df"
+          "label": "scheduleLifecycleTimeout:12979",
+          "callbackSha256": "43706dc5273442f8423690aac16baf0b562cbb8fb8977629c75577a69c4de836"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:11856",
+          "label": "scheduleLifecycleTimeout:13432",
           "callbackSha256": "8a0d3adcda4a995dc8e48e93ab045956bd13115a00888c17230b6e8a9bbe7145"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:19212",
+          "label": "scheduleTimer:21112",
           "callbackSha256": "b3152e2e49b5a59d0fdc6c0b35a16f134145e882fcc913cf93443311aca188f2"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:23574",
+          "label": "scheduleTimer:25530",
           "callbackSha256": "eaddcbec156896d6c12f8f518756ae41967500afee5caa8496c3ffe0829285de"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:23603",
+          "label": "scheduleTimer:25559",
           "callbackSha256": "dd308a72a6ac2111d0074bde4b37adccf138ada23f4027edb68c3a622a869144"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:23605",
+          "label": "scheduleTimer:25561",
           "callbackSha256": "545a92fbc03788485a905311f5d1285679688b38bdeb30f4867381fe834a02d2"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:28292",
+          "label": "scheduleTimer:30334",
           "callbackSha256": "626326b4accae2b5698703fb08e0698dc5f9571088e847c52a90dfebb59c838f"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:30706",
+          "label": "scheduleTimer:32977",
           "callbackSha256": "16f1b9bbd2e497e7363f4af0aae1c3268bd8fb473fe5a89e0780ab8b2a7be776"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:38528",
-          "callbackSha256": "13b75851210c2e97d877d09634e2af8d701032184172894b77dbc9e40c83d0b2"
+          "label": "scheduleTimer:40879",
+          "callbackSha256": "6821b6263b8c34470e0294dbf3b6bbe2ed85b58c4582f51f73ca373ee3492f83"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:38980",
+          "label": "scheduleTimer:41341",
           "callbackSha256": "977fa4abf2867b2b39f7aafb9ed75a95243097636def38463a62e6f334c28cb0"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:40697",
+          "label": "scheduleTimer:42615",
+          "callbackSha256": "6edb1cee5a943b1c27f05997784148e34788fbd452bb0f3e0d4b078e1a612839"
+        },
+        {
+          "family": "scheduleTimer",
+          "label": "scheduleTimer:43100",
           "callbackSha256": "8131e6c1083d95662e2de0f6ee9a8241093bba9a1aefacf1079b00da58b5d3c1"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:46418",
+          "label": "scheduleTimer:50536",
           "callbackSha256": "1a2b8806668fd1836b0c01ae036a3b2e68f3d3d2c12ce3dbb33ecd3480e524a5"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:48387",
+          "label": "scheduleTimer:53063",
           "callbackSha256": "e8c5a3e7885ef3842d7f72dc405ebaa7ceb6e5330959777d7153235887c307b4"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:49103",
+          "label": "scheduleTimer:53790",
           "callbackSha256": "462bc6eae0b560410eac22139b007eb4ffa210d2c6cc05df4615c54b06fd83df"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:50102",
-          "callbackSha256": "c681cbadc09f6e6922bc17d1a429aea9d153b127bb81717a7aaebf3a168209f6"
+          "label": "scheduleTimer:54826",
+          "callbackSha256": "648ed3d94917ec34f44a481307c2100feb4b04ef63d396ec80151442426c44a0"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:50115",
-          "callbackSha256": "8813e8b18fa54948647390d558b8323f4b1f3795d77bee51ff91458b545850f4"
+          "label": "scheduleTimer:54836",
+          "callbackSha256": "ce1a5494776e3303fc85acfc8aacf66d85d895e0422c2d6f47e74b0cd850940d"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:50118",
-          "callbackSha256": "84b11ee997606956e8cfaefdbe3ca3d11e410aae3bb9ca107d9eeb26d5c53faa"
+          "label": "scheduleTimer:54840",
+          "callbackSha256": "52ffbe0b7c0f24a2c3e5dfd8a0aa9254e450bb5e63b6720e57b67a34090cba06"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:50122",
-          "callbackSha256": "f2d2ae7368475f003c9dbb2efd50414ed16e721ad7b74eaccb5a14fd4eca8b99"
+          "label": "scheduleTimer:54852",
+          "callbackSha256": "5cf5707130448c29ad43138bc5a263cd043f23d6edb2fb366b2ae5004fea69a9"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:50134",
-          "callbackSha256": "2348e0c7e63d556e472ead0844f336a42764f3707278ba1432ec5306e8cde193"
+          "label": "scheduleTimer:54964",
+          "callbackSha256": "bbdc522e337015330be717a1112be05e2c1db9e8b8d85144f870197bba40d95e"
+        },
+        {
+          "family": "scheduleTimer",
+          "label": "scheduleTimer:54988",
+          "callbackSha256": "9a3f7cd928bd602c3c5a95147c651f624ca35788ca5b6c4f32dfb0d38e4b0e98"
+        },
+        {
+          "family": "scheduleTimer",
+          "label": "scheduleTimer:54991",
+          "callbackSha256": "10b3fe6e7a33832f4629819ef36fe7f23605bf3bfc782b22ec319b51394c8ff2"
+        },
+        {
+          "family": "scheduleTimer",
+          "label": "scheduleTimer:55007",
+          "callbackSha256": "bcd027261a502e7da8d5fac1340cb68224886ef579b9d0245cd6d26716bbb726"
         }
       ],
-      "expressionCount": 54,
+      "expressionCount": 64,
       "anchors": [
         {
           "before": "try { fn(); } catch (error) { warn('scheduled timer callback failed', error); }",
-          "start": 107939,
-          "regionEnd": 3321256
+          "start": 107941,
+          "regionEnd": 3680800
         },
         {
           "before": "      callback();\n    }, Math.max(0, Number(delayMs || 0) || 0));",
-          "start": 264429,
-          "regionEnd": 3321256
+          "start": 267137,
+          "regionEnd": 3680800
         },
         {
           "before": "  globalThis.__FlashbackMemory = publicApi;",
-          "start": 3186315,
-          "regionEnd": 3321256
+          "start": 3538012,
+          "regionEnd": 3680800
         },
         {
           "before": "  const autoMigratePlugin = !localOnlyOwner",
-          "start": 264727,
-          "regionEnd": 3321256
+          "start": 267435,
+          "regionEnd": 3680800
         },
         {
           "before": "void refreshHostRuntimeInfo();",
-          "start": 3186974,
-          "regionEnd": 3321256
+          "start": 3539061,
+          "regionEnd": 3680800
         },
         {
           "before": "registerUi(Runtime.settings).catch(error => warn('registerUi async failed', error));",
-          "start": 3188861,
-          "regionEnd": 3321256
+          "start": 3540399,
+          "regionEnd": 3680800
         },
         {
           "before": "    Runtime.scheduledTimers.add(id);",
-          "start": 108224,
-          "regionEnd": 3321256
+          "start": 108226,
+          "regionEnd": 3680800
         },
         {
           "before": "    lifecycle.timers.add(timer);",
-          "start": 264495,
-          "regionEnd": 3321256
+          "start": 267203,
+          "regionEnd": 3680800
         }
       ],
       "patches": [
         {
-          "start": 107939,
-          "end": 108018,
+          "start": 107941,
+          "end": 108020,
           "before": "try { fn(); } catch (error) { warn('scheduled timer callback failed', error); }",
           "after": "try { globalThis.__root085IssuedStartupObserver.invoke(fn); } catch (error) { warn('scheduled timer callback failed', error); }"
         },
         {
-          "start": 108224,
-          "end": 108260,
+          "start": 108226,
+          "end": 108262,
           "before": "    Runtime.scheduledTimers.add(id);",
           "after": "    Runtime.scheduledTimers.add(id);\n    globalThis.__root085IssuedStartupObserver.timerRegistered('runtime',id,fn,ms);"
         },
         {
-          "start": 188709,
-          "end": 188709,
+          "start": 189827,
+          "end": 189827,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:3045\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:3059\","
         },
         {
-          "start": 188768,
-          "end": 188768,
+          "start": 189886,
+          "end": 189886,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 188792,
-          "end": 188792,
+          "start": 189910,
+          "end": 189910,
           "before": "",
           "after": ")"
         },
         {
-          "start": 188799,
-          "end": 188799,
+          "start": 189917,
+          "end": 189917,
           "before": "",
           "after": ")"
         },
         {
-          "start": 264429,
-          "end": 264494,
+          "start": 260125,
+          "end": 260125,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:4450\","
+        },
+        {
+          "start": 260243,
+          "end": 260243,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 260258,
+          "end": 260258,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 260269,
+          "end": 260269,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 267137,
+          "end": 267202,
           "before": "      callback();\n    }, Math.max(0, Number(delayMs || 0) || 0));",
           "after": "      globalThis.__root085IssuedStartupObserver.invoke(callback);\n    }, Math.max(0, Number(delayMs || 0) || 0));"
         },
         {
-          "start": 264495,
-          "end": 264527,
+          "start": 267203,
+          "end": 267235,
           "before": "    lifecycle.timers.add(timer);",
           "after": "    lifecycle.timers.add(timer);\n    globalThis.__root085IssuedStartupObserver.timerRegistered('sdk',timer,callback,delayMs);"
         },
         {
-          "start": 264727,
-          "end": 264770,
+          "start": 267435,
+          "end": 267478,
           "before": "  const autoMigratePlugin = !localOnlyOwner",
           "after": "  globalThis.__root085IssuedStartupObserver.captureSdk({ timers: lifecycle.timers, clear: clearLifecycleTimeout });\n  const autoMigratePlugin = !localOnlyOwner"
         },
         {
-          "start": 276422,
-          "end": 276422,
+          "start": 279399,
+          "end": 279399,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:4729\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:4774\","
         },
         {
-          "start": 276482,
-          "end": 276482,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
-        },
-        {
-          "start": 276575,
-          "end": 276575,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 276582,
-          "end": 276582,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 395948,
-          "end": 395948,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:6832\","
-        },
-        {
-          "start": 396018,
-          "end": 396018,
+          "start": 279459,
+          "end": 279459,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 396112,
-          "end": 396112,
+          "start": 279552,
+          "end": 279552,
           "before": "",
           "after": ")"
         },
         {
-          "start": 396125,
-          "end": 396125,
+          "start": 279559,
+          "end": 279559,
           "before": "",
           "after": ")"
         },
         {
-          "start": 409995,
-          "end": 409995,
+          "start": 403922,
+          "end": 403922,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7114\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:6950\","
         },
         {
-          "start": 410036,
-          "end": 410036,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
-        },
-        {
-          "start": 410582,
-          "end": 410582,
+          "start": 403992,
+          "end": 403992,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 410635,
-          "end": 410635,
+          "start": 404086,
+          "end": 404086,
           "before": "",
           "after": ")"
         },
         {
-          "start": 410637,
-          "end": 410637,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
-        },
-        {
-          "start": 410659,
-          "end": 410659,
+          "start": 404099,
+          "end": 404099,
           "before": "",
           "after": ")"
         },
         {
-          "start": 410671,
-          "end": 410671,
+          "start": 417969,
+          "end": 417969,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7232\","
         },
         {
-          "start": 410725,
-          "end": 410725,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 410820,
-          "end": 410820,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 410827,
-          "end": 410827,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 417438,
-          "end": 417438,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7261\","
-        },
-        {
-          "start": 417451,
-          "end": 417451,
+          "start": 418010,
+          "end": 418010,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 417489,
-          "end": 417489,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 417492,
-          "end": 417492,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 437956,
-          "end": 437956,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7436\","
-        },
-        {
-          "start": 437969,
-          "end": 437969,
+          "start": 418556,
+          "end": 418556,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 438051,
-          "end": 438051,
+          "start": 418609,
+          "end": 418609,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 418611,
+          "end": 418611,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 438068,
-          "end": 438068,
+          "start": 418633,
+          "end": 418633,
           "before": "",
           "after": ")"
         },
         {
-          "start": 438194,
-          "end": 438194,
+          "start": 418645,
+          "end": 418645,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 438217,
-          "end": 438217,
+          "start": 418699,
+          "end": 418699,
           "before": "",
           "after": ")"
         },
         {
-          "start": 438223,
-          "end": 438223,
+          "start": 418794,
+          "end": 418794,
           "before": "",
           "after": ")"
         },
         {
-          "start": 438226,
-          "end": 438226,
+          "start": 418801,
+          "end": 418801,
           "before": "",
           "after": ")"
         },
         {
-          "start": 448147,
-          "end": 448147,
+          "start": 425412,
+          "end": 425412,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7582\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7379\","
         },
         {
-          "start": 448158,
-          "end": 448158,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 448332,
-          "end": 448332,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7586\","
-        },
-        {
-          "start": 448343,
-          "end": 448343,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 596335,
-          "end": 596335,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:9634\","
-        },
-        {
-          "start": 596388,
-          "end": 596388,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 596477,
-          "end": 596477,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:9638\","
-        },
-        {
-          "start": 596490,
-          "end": 596490,
+          "start": 425425,
+          "end": 425425,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 596624,
-          "end": 596624,
+          "start": 425463,
+          "end": 425463,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 425466,
+          "end": 425466,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 447973,
+          "end": 447973,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7597\","
+        },
+        {
+          "start": 447986,
+          "end": 447986,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 596649,
-          "end": 596649,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:9638\","
-        },
-        {
-          "start": 596699,
-          "end": 596699,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 596717,
-          "end": 596717,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 596724,
-          "end": 596724,
+          "start": 448068,
+          "end": 448068,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 596761,
-          "end": 596761,
+          "start": 448085,
+          "end": 448085,
           "before": "",
           "after": ")"
         },
         {
-          "start": 596765,
-          "end": 596765,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 596768,
-          "end": 596768,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 604077,
-          "end": 604077,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:9749\","
-        },
-        {
-          "start": 604096,
-          "end": 604096,
+          "start": 448211,
+          "end": 448211,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 605535,
-          "end": 605535,
+          "start": 448234,
+          "end": 448234,
           "before": "",
           "after": ")"
         },
         {
-          "start": 605542,
-          "end": 605542,
+          "start": 448240,
+          "end": 448240,
           "before": "",
           "after": ")"
         },
         {
-          "start": 677959,
-          "end": 677959,
+          "start": 448243,
+          "end": 448243,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:10857\","
+          "after": ")"
         },
         {
-          "start": 678029,
-          "end": 678029,
+          "start": 458023,
+          "end": 458023,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7751\","
+        },
+        {
+          "start": 458034,
+          "end": 458034,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 458208,
+          "end": 458208,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7755\","
+        },
+        {
+          "start": 458219,
+          "end": 458219,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 654529,
+          "end": 654529,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:10410\","
+        },
+        {
+          "start": 654582,
+          "end": 654582,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 654671,
+          "end": 654671,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:10414\","
+        },
+        {
+          "start": 654684,
+          "end": 654684,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 678129,
-          "end": 678129,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 678142,
-          "end": 678142,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 741918,
-          "end": 741918,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:11515\","
-        },
-        {
-          "start": 741928,
-          "end": 741928,
+          "start": 654818,
+          "end": 654818,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 742065,
-          "end": 742065,
+          "start": 654843,
+          "end": 654843,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:10414\","
+        },
+        {
+          "start": 654893,
+          "end": 654893,
           "before": "",
           "after": ")"
         },
         {
-          "start": 742067,
-          "end": 742067,
+          "start": 654911,
+          "end": 654911,
           "before": "",
           "after": ")"
         },
         {
-          "start": 763669,
-          "end": 763669,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:11856\","
-        },
-        {
-          "start": 763726,
-          "end": 763726,
+          "start": 654918,
+          "end": 654918,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 764375,
-          "end": 764375,
+          "start": 654955,
+          "end": 654955,
           "before": "",
           "after": ")"
         },
         {
-          "start": 764382,
-          "end": 764382,
+          "start": 654959,
+          "end": 654959,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1210139,
-          "end": 1210139,
+          "start": 654962,
+          "end": 654962,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:19212\","
+          "after": ")"
         },
         {
-          "start": 1210288,
-          "end": 1210288,
+          "start": 662271,
+          "end": 662271,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:10525\","
+        },
+        {
+          "start": 662290,
+          "end": 662290,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1210676,
-          "end": 1210676,
+          "start": 663729,
+          "end": 663729,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 663736,
+          "end": 663736,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 736294,
+          "end": 736294,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:11635\","
+        },
+        {
+          "start": 736364,
+          "end": 736364,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1210824,
-          "end": 1210824,
+          "start": 736464,
+          "end": 736464,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1210929,
-          "end": 1210929,
+          "start": 736477,
+          "end": 736477,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1210936,
-          "end": 1210936,
+          "start": 857366,
+          "end": 857366,
           "before": "",
-          "after": ")"
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:12979\","
         },
         {
-          "start": 1468605,
-          "end": 1468605,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:23574\","
-        },
-        {
-          "start": 1468621,
-          "end": 1468621,
+          "start": 857376,
+          "end": 857376,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1468754,
-          "end": 1468754,
+          "start": 857398,
+          "end": 857398,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1468763,
-          "end": 1468763,
+          "start": 857400,
+          "end": 857400,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1470763,
-          "end": 1470763,
+          "start": 886847,
+          "end": 886847,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:23603\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:13432\","
         },
         {
-          "start": 1470768,
-          "end": 1470768,
+          "start": 886904,
+          "end": 886904,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1470835,
-          "end": 1470835,
+          "start": 887553,
+          "end": 887553,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1470837,
-          "end": 1470837,
+          "start": 887560,
+          "end": 887560,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1470910,
-          "end": 1470910,
+          "start": 1357007,
+          "end": 1357007,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:23605\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:21112\","
         },
         {
-          "start": 1470915,
-          "end": 1470915,
+          "start": 1357156,
+          "end": 1357156,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1470985,
-          "end": 1470985,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 1470987,
-          "end": 1470987,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 1724742,
-          "end": 1724742,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:28292\","
-        },
-        {
-          "start": 1724756,
-          "end": 1724756,
+          "start": 1357544,
+          "end": 1357544,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1724933,
-          "end": 1724933,
+          "start": 1357692,
+          "end": 1357692,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1724940,
-          "end": 1724940,
+          "start": 1357797,
+          "end": 1357797,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1895743,
-          "end": 1895743,
+          "start": 1357804,
+          "end": 1357804,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:30706\","
+          "after": ")"
         },
         {
-          "start": 1895757,
-          "end": 1895757,
+          "start": 1619464,
+          "end": 1619464,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:25530\","
+        },
+        {
+          "start": 1619480,
+          "end": 1619480,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1895958,
-          "end": 1895958,
+          "start": 1619613,
+          "end": 1619613,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1895965,
-          "end": 1895965,
+          "start": 1619622,
+          "end": 1619622,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2380371,
-          "end": 2380371,
+          "start": 1621622,
+          "end": 1621622,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:38528\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:25559\","
         },
         {
-          "start": 2380449,
-          "end": 2380449,
+          "start": 1621627,
+          "end": 1621627,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2380485,
-          "end": 2380485,
+          "start": 1621694,
+          "end": 1621694,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2380517,
-          "end": 2380517,
+          "start": 1621696,
+          "end": 1621696,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 1621769,
+          "end": 1621769,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:25561\","
+        },
+        {
+          "start": 1621774,
+          "end": 1621774,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2380592,
-          "end": 2380592,
+          "start": 1621844,
+          "end": 1621844,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2380669,
-          "end": 2380669,
+          "start": 1621846,
+          "end": 1621846,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 1882878,
+          "end": 1882878,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:30334\","
+        },
+        {
+          "start": 1882892,
+          "end": 1882892,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2381097,
-          "end": 2381097,
+          "start": 1883069,
+          "end": 1883069,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 1883076,
+          "end": 1883076,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2077257,
+          "end": 2077257,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:32977\","
+        },
+        {
+          "start": 2077271,
+          "end": 2077271,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2381126,
-          "end": 2381126,
+          "start": 2077472,
+          "end": 2077472,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2381199,
-          "end": 2381199,
+          "start": 2077479,
+          "end": 2077479,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2568213,
+          "end": 2568213,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:40879\","
+        },
+        {
+          "start": 2568291,
+          "end": 2568291,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2381241,
-          "end": 2381241,
+          "start": 2568327,
+          "end": 2568327,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2381444,
-          "end": 2381444,
+          "start": 2568359,
+          "end": 2568359,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2381566,
-          "end": 2381566,
+          "start": 2568422,
+          "end": 2568422,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2381647,
-          "end": 2381647,
+          "start": 2568499,
+          "end": 2568499,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2381704,
-          "end": 2381704,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2381936,
-          "end": 2381936,
+          "start": 2568949,
+          "end": 2568949,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2382000,
-          "end": 2382000,
+          "start": 2568978,
+          "end": 2568978,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2382010,
-          "end": 2382010,
+          "start": 2569051,
+          "end": 2569051,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2382055,
-          "end": 2382055,
+          "start": 2569093,
+          "end": 2569093,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2382065,
-          "end": 2382065,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2382072,
-          "end": 2382072,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2407445,
-          "end": 2407445,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:38980\","
-        },
-        {
-          "start": 2407518,
-          "end": 2407518,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2501629,
-          "end": 2501629,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:40697\","
-        },
-        {
-          "start": 2501688,
-          "end": 2501688,
+          "start": 2569521,
+          "end": 2569521,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2501761,
-          "end": 2501761,
+          "start": 2569573,
+          "end": 2569573,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2569580,
+          "end": 2569580,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2501802,
-          "end": 2501802,
+          "start": 2569619,
+          "end": 2569619,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2501851,
-          "end": 2501851,
+          "start": 2569909,
+          "end": 2569909,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2501924,
-          "end": 2501924,
+          "start": 2570031,
+          "end": 2570031,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2501936,
-          "end": 2501936,
+          "start": 2570102,
+          "end": 2570102,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2501977,
-          "end": 2501977,
+          "start": 2570186,
+          "end": 2570186,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2501989,
-          "end": 2501989,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2501996,
-          "end": 2501996,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2967888,
-          "end": 2967888,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:46418\","
-        },
-        {
-          "start": 2967908,
-          "end": 2967908,
+          "start": 2570267,
+          "end": 2570267,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2967921,
-          "end": 2967921,
+          "start": 2570324,
+          "end": 2570324,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2967950,
-          "end": 2967950,
+          "start": 2570556,
+          "end": 2570556,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2967974,
-          "end": 2967974,
+          "start": 2570620,
+          "end": 2570620,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2967996,
-          "end": 2967996,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 3078369,
-          "end": 3078369,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:48387\","
-        },
-        {
-          "start": 3078377,
-          "end": 3078377,
+          "start": 2570630,
+          "end": 2570630,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3078472,
-          "end": 3078472,
+          "start": 2570675,
+          "end": 2570675,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3078475,
-          "end": 3078475,
+          "start": 2570685,
+          "end": 2570685,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3117551,
-          "end": 3117551,
+          "start": 2570692,
+          "end": 2570692,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:49103\","
+          "after": ")"
         },
         {
-          "start": 3117614,
-          "end": 3117614,
+          "start": 2596346,
+          "end": 2596346,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:41341\","
+        },
+        {
+          "start": 2596419,
+          "end": 2596419,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2670067,
+          "end": 2670067,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:42615\","
+        },
+        {
+          "start": 2670393,
+          "end": 2670393,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3117692,
-          "end": 3117692,
+          "start": 2670557,
+          "end": 2670557,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2670566,
+          "end": 2670566,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2693516,
+          "end": 2693516,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:43100\","
+        },
+        {
+          "start": 2693575,
+          "end": 2693575,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3117729,
-          "end": 3117729,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 3117778,
-          "end": 3117778,
+          "start": 2693648,
+          "end": 2693648,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3117859,
-          "end": 3117859,
+          "start": 2693689,
+          "end": 2693689,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3117871,
-          "end": 3117871,
+          "start": 2693738,
+          "end": 2693738,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3117908,
-          "end": 3117908,
+          "start": 2693811,
+          "end": 2693811,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3117920,
-          "end": 3117920,
+          "start": 2693823,
+          "end": 2693823,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 2693864,
+          "end": 2693864,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3117927,
-          "end": 3117927,
+          "start": 2693876,
+          "end": 2693876,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3186315,
-          "end": 3186358,
+          "start": 2693883,
+          "end": 2693883,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3286865,
+          "end": 3286865,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50536\","
+        },
+        {
+          "start": 3286885,
+          "end": 3286885,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3286898,
+          "end": 3286898,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3286927,
+          "end": 3286927,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3286951,
+          "end": 3286951,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3286973,
+          "end": 3286973,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3426318,
+          "end": 3426318,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:53063\","
+        },
+        {
+          "start": 3426326,
+          "end": 3426326,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3426421,
+          "end": 3426421,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3426424,
+          "end": 3426424,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3466389,
+          "end": 3466389,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:53790\","
+        },
+        {
+          "start": 3466452,
+          "end": 3466452,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3466530,
+          "end": 3466530,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3466567,
+          "end": 3466567,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3466616,
+          "end": 3466616,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3466697,
+          "end": 3466697,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3466709,
+          "end": 3466709,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3466746,
+          "end": 3466746,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3466758,
+          "end": 3466758,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3466765,
+          "end": 3466765,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3538012,
+          "end": 3538055,
           "before": "  globalThis.__FlashbackMemory = publicApi;",
           "after": "  globalThis.__root085IssuedStartupObserver.captureRuntime({ Runtime, sharedScopeWriteLocks, clearScheduledTimers, scheduleTimer, withDeadline });\n  globalThis.__FlashbackMemory = publicApi;"
         },
         {
-          "start": 3186974,
-          "end": 3187004,
+          "start": 3539061,
+          "end": 3539091,
           "before": "void refreshHostRuntimeInfo();",
           "after": "void globalThis.__root085IssuedStartupObserver.promise('startup.runtime_info',refreshHostRuntimeInfo());"
         },
         {
-          "start": 3188355,
-          "end": 3188355,
+          "start": 3540034,
+          "end": 3540034,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50102\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54826\","
         },
         {
-          "start": 3188371,
-          "end": 3188371,
+          "start": 3540052,
+          "end": 3540052,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3188497,
-          "end": 3188497,
+          "start": 3540180,
+          "end": 3540180,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3188506,
-          "end": 3188506,
+          "start": 3540191,
+          "end": 3540191,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3188861,
-          "end": 3188945,
+          "start": 3540399,
+          "end": 3540483,
           "before": "registerUi(Runtime.settings).catch(error => warn('registerUi async failed', error));",
           "after": "globalThis.__root085IssuedStartupObserver.promise('startup.ui',registerUi(Runtime.settings).catch(error => warn('registerUi async failed', error)));"
         },
         {
-          "start": 3188964,
-          "end": 3188964,
+          "start": 3540504,
+          "end": 3540504,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50115\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54836\","
         },
         {
-          "start": 3188972,
-          "end": 3188972,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
-        },
-        {
-          "start": 3189060,
-          "end": 3189060,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 3189063,
-          "end": 3189063,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 3189255,
-          "end": 3189255,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50118\","
-        },
-        {
-          "start": 3189269,
-          "end": 3189269,
+          "start": 3540520,
+          "end": 3540520,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3189432,
-          "end": 3189432,
+          "start": 3540685,
+          "end": 3540685,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3189439,
-          "end": 3189439,
+          "start": 3540694,
+          "end": 3540694,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3189466,
-          "end": 3189466,
+          "start": 3540723,
+          "end": 3540723,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50122\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54840\","
         },
         {
-          "start": 3189480,
-          "end": 3189480,
+          "start": 3540739,
+          "end": 3540739,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3189773,
-          "end": 3189773,
+          "start": 3541048,
+          "end": 3541048,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3189819,
-          "end": 3189819,
+          "start": 3541094,
+          "end": 3541094,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3189831,
-          "end": 3189831,
+          "start": 3541108,
+          "end": 3541108,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3189838,
-          "end": 3189838,
+          "start": 3541117,
+          "end": 3541117,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3189865,
-          "end": 3189865,
+          "start": 3541146,
+          "end": 3541146,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50134\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54852\","
         },
         {
-          "start": 3189879,
-          "end": 3189879,
+          "start": 3541162,
+          "end": 3541162,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3190230,
-          "end": 3190230,
+          "start": 3541527,
+          "end": 3541527,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3190294,
-          "end": 3190294,
+          "start": 3541591,
+          "end": 3541591,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3191217,
-          "end": 3191217,
+          "start": 3542552,
+          "end": 3542552,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3191509,
-          "end": 3191509,
+          "start": 3542852,
+          "end": 3542852,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3191641,
-          "end": 3191641,
+          "start": 3542996,
+          "end": 3542996,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3191715,
-          "end": 3191715,
+          "start": 3543070,
+          "end": 3543070,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3191819,
-          "end": 3191819,
+          "start": 3543176,
+          "end": 3543176,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3191826,
-          "end": 3191826,
+          "start": 3543185,
+          "end": 3543185,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3547096,
+          "end": 3547096,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54964\","
+        },
+        {
+          "start": 3547418,
+          "end": 3547418,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3547576,
+          "end": 3547576,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3547613,
+          "end": 3547613,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3547683,
+          "end": 3547683,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3547690,
+          "end": 3547690,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3548479,
+          "end": 3548479,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54988\","
+        },
+        {
+          "start": 3548502,
+          "end": 3548502,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3548641,
+          "end": 3548641,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3548655,
+          "end": 3548655,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54991\","
+        },
+        {
+          "start": 3548668,
+          "end": 3548668,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3548705,
+          "end": 3548705,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3548708,
+          "end": 3548708,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3548713,
+          "end": 3548713,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3548741,
+          "end": 3548741,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3548752,
+          "end": 3548752,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3549297,
+          "end": 3549297,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:55007\","
+        },
+        {
+          "start": 3549305,
+          "end": 3549305,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3549405,
+          "end": 3549405,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3549408,
+          "end": 3549408,
           "before": "",
           "after": ")"
         }
@@ -1309,1293 +1514,1498 @@
     },
     {
       "name": "owner_injected",
-      "sourceSha256": "b0eb03e69832c60d1e5e848c8a18130ada2643ee93dd3d94f2bbdeb6dda06f40",
-      "sourceBytes": 3377781,
-      "sourceCodeUnits": 3321844,
-      "observedSha256": "409d687014fd26b799892851e29f2754e09397e5866c9b51cd9f362d2bb7cf3f",
+      "sourceSha256": "421e7b81f2916e0a95a8b2aea10f7714f412ec3d576f06223143c8a779a88bc8",
+      "sourceBytes": 3762133,
+      "sourceCodeUnits": 3681388,
+      "observedSha256": "8d16e8509403fb49058424a936a5dd3e3d1eaa0efce9d7fe8f513a90338796ff",
       "callsites": [
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:3045",
+          "label": "scheduleTimer:3059",
           "callbackSha256": "1d8414130fbade21dcb16e5c5424d2b12757cfd78e4ff4409e02f25e2f38e20d"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:4729",
+          "label": "scheduleLifecycleTimeout:4450",
+          "callbackSha256": "2bf9c91241e953ca75bc7e53d6905692655f3cf429dee6cc54b12449340cdbae"
+        },
+        {
+          "family": "scheduleLifecycleTimeout",
+          "label": "scheduleLifecycleTimeout:4774",
           "callbackSha256": "9a1ea6f96c83ff134032d6a4aa2844034182d93f54f8fc9758e48bc75d20e6bf"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:6832",
+          "label": "scheduleLifecycleTimeout:6950",
           "callbackSha256": "2fe8a8aa555b08fde1d2de9e9b1a38f8b59df3792e830327e1d5c98e04f6d9ac"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:7114",
+          "label": "scheduleLifecycleTimeout:7232",
           "callbackSha256": "1a5c343880ce4fe20fd7d900c463354c58bfbc4b91f402a9672ffd95538de3de"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:7261",
+          "label": "scheduleLifecycleTimeout:7379",
           "callbackSha256": "c818df42a6b3e75588c9fedd3dfe6123b5d5e74fd24d43a97e8cac1bba37d6d7"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:7436",
+          "label": "scheduleLifecycleTimeout:7597",
           "callbackSha256": "faffa929d71d60642357a0560a12a0e8492e50d80b178301ba9269e7094461ad"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:7582",
+          "label": "scheduleLifecycleTimeout:7751",
           "callbackSha256": "7e6a6977354251999e8d862d2306a124285a54697ca023a95edd968d3cb496c0"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:7586",
+          "label": "scheduleLifecycleTimeout:7755",
           "callbackSha256": "7e6a6977354251999e8d862d2306a124285a54697ca023a95edd968d3cb496c0"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:9634",
+          "label": "scheduleLifecycleTimeout:10410",
           "callbackSha256": "1a95de4b77d4949cccec3bf874ea32049451382bd53e06375ff1f81ed3644396"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:9638",
+          "label": "scheduleLifecycleTimeout:10414",
           "callbackSha256": "53f8e2f7f5936fa04a22df474de81109b2c69dc3fdd6b184a4e8a2b1a2754adc"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:9638",
+          "label": "scheduleLifecycleTimeout:10414",
           "callbackSha256": "90d6beb1bcb05fc3f1d8da437e60258d2498d7ae2b05d5397a3937331efb4b23"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:9749",
+          "label": "scheduleLifecycleTimeout:10525",
           "callbackSha256": "5d94b09cc8ec7223ddae2af8a2ce05f2f0eeae12375e287575f1c9d63bce7d64"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:10857",
+          "label": "scheduleLifecycleTimeout:11635",
           "callbackSha256": "7367ae3fbcd5fc7e01bb9a794a69d9d8a13777cc6279d78761be7e82ce8797d5"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:11515",
-          "callbackSha256": "0056c7725fd9e3f5979c3b6193bdde47c90b0e6d2fd73bd1c4a9f09adef747df"
+          "label": "scheduleLifecycleTimeout:12979",
+          "callbackSha256": "43706dc5273442f8423690aac16baf0b562cbb8fb8977629c75577a69c4de836"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:11856",
+          "label": "scheduleLifecycleTimeout:13432",
           "callbackSha256": "8a0d3adcda4a995dc8e48e93ab045956bd13115a00888c17230b6e8a9bbe7145"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:19212",
+          "label": "scheduleTimer:21112",
           "callbackSha256": "b3152e2e49b5a59d0fdc6c0b35a16f134145e882fcc913cf93443311aca188f2"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:23574",
+          "label": "scheduleTimer:25530",
           "callbackSha256": "eaddcbec156896d6c12f8f518756ae41967500afee5caa8496c3ffe0829285de"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:23603",
+          "label": "scheduleTimer:25559",
           "callbackSha256": "dd308a72a6ac2111d0074bde4b37adccf138ada23f4027edb68c3a622a869144"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:23605",
+          "label": "scheduleTimer:25561",
           "callbackSha256": "545a92fbc03788485a905311f5d1285679688b38bdeb30f4867381fe834a02d2"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:28292",
+          "label": "scheduleTimer:30334",
           "callbackSha256": "626326b4accae2b5698703fb08e0698dc5f9571088e847c52a90dfebb59c838f"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:30706",
+          "label": "scheduleTimer:32977",
           "callbackSha256": "16f1b9bbd2e497e7363f4af0aae1c3268bd8fb473fe5a89e0780ab8b2a7be776"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:38528",
-          "callbackSha256": "13b75851210c2e97d877d09634e2af8d701032184172894b77dbc9e40c83d0b2"
+          "label": "scheduleTimer:40879",
+          "callbackSha256": "6821b6263b8c34470e0294dbf3b6bbe2ed85b58c4582f51f73ca373ee3492f83"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:38980",
+          "label": "scheduleTimer:41341",
           "callbackSha256": "977fa4abf2867b2b39f7aafb9ed75a95243097636def38463a62e6f334c28cb0"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:40697",
+          "label": "scheduleTimer:42615",
+          "callbackSha256": "6edb1cee5a943b1c27f05997784148e34788fbd452bb0f3e0d4b078e1a612839"
+        },
+        {
+          "family": "scheduleTimer",
+          "label": "scheduleTimer:43100",
           "callbackSha256": "8131e6c1083d95662e2de0f6ee9a8241093bba9a1aefacf1079b00da58b5d3c1"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:46418",
+          "label": "scheduleTimer:50536",
           "callbackSha256": "1a2b8806668fd1836b0c01ae036a3b2e68f3d3d2c12ce3dbb33ecd3480e524a5"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:48387",
+          "label": "scheduleTimer:53063",
           "callbackSha256": "e8c5a3e7885ef3842d7f72dc405ebaa7ceb6e5330959777d7153235887c307b4"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:49103",
+          "label": "scheduleTimer:53790",
           "callbackSha256": "462bc6eae0b560410eac22139b007eb4ffa210d2c6cc05df4615c54b06fd83df"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:50103",
-          "callbackSha256": "c681cbadc09f6e6922bc17d1a429aea9d153b127bb81717a7aaebf3a168209f6"
+          "label": "scheduleTimer:54827",
+          "callbackSha256": "648ed3d94917ec34f44a481307c2100feb4b04ef63d396ec80151442426c44a0"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:50116",
-          "callbackSha256": "8813e8b18fa54948647390d558b8323f4b1f3795d77bee51ff91458b545850f4"
+          "label": "scheduleTimer:54837",
+          "callbackSha256": "ce1a5494776e3303fc85acfc8aacf66d85d895e0422c2d6f47e74b0cd850940d"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:50119",
-          "callbackSha256": "84b11ee997606956e8cfaefdbe3ca3d11e410aae3bb9ca107d9eeb26d5c53faa"
+          "label": "scheduleTimer:54841",
+          "callbackSha256": "52ffbe0b7c0f24a2c3e5dfd8a0aa9254e450bb5e63b6720e57b67a34090cba06"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:50123",
-          "callbackSha256": "f2d2ae7368475f003c9dbb2efd50414ed16e721ad7b74eaccb5a14fd4eca8b99"
+          "label": "scheduleTimer:54853",
+          "callbackSha256": "5cf5707130448c29ad43138bc5a263cd043f23d6edb2fb366b2ae5004fea69a9"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:50135",
-          "callbackSha256": "2348e0c7e63d556e472ead0844f336a42764f3707278ba1432ec5306e8cde193"
+          "label": "scheduleTimer:54965",
+          "callbackSha256": "bbdc522e337015330be717a1112be05e2c1db9e8b8d85144f870197bba40d95e"
+        },
+        {
+          "family": "scheduleTimer",
+          "label": "scheduleTimer:54989",
+          "callbackSha256": "9a3f7cd928bd602c3c5a95147c651f624ca35788ca5b6c4f32dfb0d38e4b0e98"
+        },
+        {
+          "family": "scheduleTimer",
+          "label": "scheduleTimer:54992",
+          "callbackSha256": "10b3fe6e7a33832f4629819ef36fe7f23605bf3bfc782b22ec319b51394c8ff2"
+        },
+        {
+          "family": "scheduleTimer",
+          "label": "scheduleTimer:55008",
+          "callbackSha256": "bcd027261a502e7da8d5fac1340cb68224886ef579b9d0245cd6d26716bbb726"
         }
       ],
-      "expressionCount": 54,
+      "expressionCount": 64,
       "anchors": [
         {
           "before": "try { fn(); } catch (error) { warn('scheduled timer callback failed', error); }",
-          "start": 107939,
-          "regionEnd": 3321844
+          "start": 107941,
+          "regionEnd": 3681388
         },
         {
           "before": "      callback();\n    }, Math.max(0, Number(delayMs || 0) || 0));",
-          "start": 264429,
-          "regionEnd": 3321844
+          "start": 267137,
+          "regionEnd": 3681388
         },
         {
           "before": "  globalThis.__FlashbackMemory = publicApi;",
-          "start": 3186903,
-          "regionEnd": 3321844
+          "start": 3538600,
+          "regionEnd": 3681388
         },
         {
           "before": "  const autoMigratePlugin = !localOnlyOwner",
-          "start": 264727,
-          "regionEnd": 3321844
+          "start": 267435,
+          "regionEnd": 3681388
         },
         {
           "before": "void refreshHostRuntimeInfo();",
-          "start": 3187562,
-          "regionEnd": 3321844
+          "start": 3539649,
+          "regionEnd": 3681388
         },
         {
           "before": "registerUi(Runtime.settings).catch(error => warn('registerUi async failed', error));",
-          "start": 3189449,
-          "regionEnd": 3321844
+          "start": 3540987,
+          "regionEnd": 3681388
         },
         {
           "before": "    Runtime.scheduledTimers.add(id);",
-          "start": 108224,
-          "regionEnd": 3321844
+          "start": 108226,
+          "regionEnd": 3681388
         },
         {
           "before": "    lifecycle.timers.add(timer);",
-          "start": 264495,
-          "regionEnd": 3321844
+          "start": 267203,
+          "regionEnd": 3681388
         }
       ],
       "patches": [
         {
-          "start": 107939,
-          "end": 108018,
+          "start": 107941,
+          "end": 108020,
           "before": "try { fn(); } catch (error) { warn('scheduled timer callback failed', error); }",
           "after": "try { globalThis.__root085IssuedStartupObserver.invoke(fn); } catch (error) { warn('scheduled timer callback failed', error); }"
         },
         {
-          "start": 108224,
-          "end": 108260,
+          "start": 108226,
+          "end": 108262,
           "before": "    Runtime.scheduledTimers.add(id);",
           "after": "    Runtime.scheduledTimers.add(id);\n    globalThis.__root085IssuedStartupObserver.timerRegistered('runtime',id,fn,ms);"
         },
         {
-          "start": 188709,
-          "end": 188709,
+          "start": 189827,
+          "end": 189827,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:3045\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:3059\","
         },
         {
-          "start": 188768,
-          "end": 188768,
+          "start": 189886,
+          "end": 189886,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 188792,
-          "end": 188792,
+          "start": 189910,
+          "end": 189910,
           "before": "",
           "after": ")"
         },
         {
-          "start": 188799,
-          "end": 188799,
+          "start": 189917,
+          "end": 189917,
           "before": "",
           "after": ")"
         },
         {
-          "start": 264429,
-          "end": 264494,
+          "start": 260125,
+          "end": 260125,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:4450\","
+        },
+        {
+          "start": 260243,
+          "end": 260243,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 260258,
+          "end": 260258,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 260269,
+          "end": 260269,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 267137,
+          "end": 267202,
           "before": "      callback();\n    }, Math.max(0, Number(delayMs || 0) || 0));",
           "after": "      globalThis.__root085IssuedStartupObserver.invoke(callback);\n    }, Math.max(0, Number(delayMs || 0) || 0));"
         },
         {
-          "start": 264495,
-          "end": 264527,
+          "start": 267203,
+          "end": 267235,
           "before": "    lifecycle.timers.add(timer);",
           "after": "    lifecycle.timers.add(timer);\n    globalThis.__root085IssuedStartupObserver.timerRegistered('sdk',timer,callback,delayMs);"
         },
         {
-          "start": 264727,
-          "end": 264770,
+          "start": 267435,
+          "end": 267478,
           "before": "  const autoMigratePlugin = !localOnlyOwner",
           "after": "  globalThis.__root085IssuedStartupObserver.captureSdk({ timers: lifecycle.timers, clear: clearLifecycleTimeout });\n  const autoMigratePlugin = !localOnlyOwner"
         },
         {
-          "start": 276422,
-          "end": 276422,
+          "start": 279399,
+          "end": 279399,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:4729\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:4774\","
         },
         {
-          "start": 276482,
-          "end": 276482,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
-        },
-        {
-          "start": 276575,
-          "end": 276575,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 276582,
-          "end": 276582,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 395948,
-          "end": 395948,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:6832\","
-        },
-        {
-          "start": 396018,
-          "end": 396018,
+          "start": 279459,
+          "end": 279459,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 396112,
-          "end": 396112,
+          "start": 279552,
+          "end": 279552,
           "before": "",
           "after": ")"
         },
         {
-          "start": 396125,
-          "end": 396125,
+          "start": 279559,
+          "end": 279559,
           "before": "",
           "after": ")"
         },
         {
-          "start": 409995,
-          "end": 409995,
+          "start": 403922,
+          "end": 403922,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7114\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:6950\","
         },
         {
-          "start": 410036,
-          "end": 410036,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
-        },
-        {
-          "start": 410582,
-          "end": 410582,
+          "start": 403992,
+          "end": 403992,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 410635,
-          "end": 410635,
+          "start": 404086,
+          "end": 404086,
           "before": "",
           "after": ")"
         },
         {
-          "start": 410637,
-          "end": 410637,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
-        },
-        {
-          "start": 410659,
-          "end": 410659,
+          "start": 404099,
+          "end": 404099,
           "before": "",
           "after": ")"
         },
         {
-          "start": 410671,
-          "end": 410671,
+          "start": 417969,
+          "end": 417969,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7232\","
         },
         {
-          "start": 410725,
-          "end": 410725,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 410820,
-          "end": 410820,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 410827,
-          "end": 410827,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 417438,
-          "end": 417438,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7261\","
-        },
-        {
-          "start": 417451,
-          "end": 417451,
+          "start": 418010,
+          "end": 418010,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 417489,
-          "end": 417489,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 417492,
-          "end": 417492,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 437956,
-          "end": 437956,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7436\","
-        },
-        {
-          "start": 437969,
-          "end": 437969,
+          "start": 418556,
+          "end": 418556,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 438051,
-          "end": 438051,
+          "start": 418609,
+          "end": 418609,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 418611,
+          "end": 418611,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 438068,
-          "end": 438068,
+          "start": 418633,
+          "end": 418633,
           "before": "",
           "after": ")"
         },
         {
-          "start": 438194,
-          "end": 438194,
+          "start": 418645,
+          "end": 418645,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 438217,
-          "end": 438217,
+          "start": 418699,
+          "end": 418699,
           "before": "",
           "after": ")"
         },
         {
-          "start": 438223,
-          "end": 438223,
+          "start": 418794,
+          "end": 418794,
           "before": "",
           "after": ")"
         },
         {
-          "start": 438226,
-          "end": 438226,
+          "start": 418801,
+          "end": 418801,
           "before": "",
           "after": ")"
         },
         {
-          "start": 448147,
-          "end": 448147,
+          "start": 425412,
+          "end": 425412,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7582\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7379\","
         },
         {
-          "start": 448158,
-          "end": 448158,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 448332,
-          "end": 448332,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7586\","
-        },
-        {
-          "start": 448343,
-          "end": 448343,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 596335,
-          "end": 596335,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:9634\","
-        },
-        {
-          "start": 596388,
-          "end": 596388,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 596477,
-          "end": 596477,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:9638\","
-        },
-        {
-          "start": 596490,
-          "end": 596490,
+          "start": 425425,
+          "end": 425425,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 596624,
-          "end": 596624,
+          "start": 425463,
+          "end": 425463,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 425466,
+          "end": 425466,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 447973,
+          "end": 447973,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7597\","
+        },
+        {
+          "start": 447986,
+          "end": 447986,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 596649,
-          "end": 596649,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:9638\","
-        },
-        {
-          "start": 596699,
-          "end": 596699,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 596717,
-          "end": 596717,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 596724,
-          "end": 596724,
+          "start": 448068,
+          "end": 448068,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 596761,
-          "end": 596761,
+          "start": 448085,
+          "end": 448085,
           "before": "",
           "after": ")"
         },
         {
-          "start": 596765,
-          "end": 596765,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 596768,
-          "end": 596768,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 604077,
-          "end": 604077,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:9749\","
-        },
-        {
-          "start": 604096,
-          "end": 604096,
+          "start": 448211,
+          "end": 448211,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 605535,
-          "end": 605535,
+          "start": 448234,
+          "end": 448234,
           "before": "",
           "after": ")"
         },
         {
-          "start": 605542,
-          "end": 605542,
+          "start": 448240,
+          "end": 448240,
           "before": "",
           "after": ")"
         },
         {
-          "start": 677959,
-          "end": 677959,
+          "start": 448243,
+          "end": 448243,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:10857\","
+          "after": ")"
         },
         {
-          "start": 678029,
-          "end": 678029,
+          "start": 458023,
+          "end": 458023,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7751\","
+        },
+        {
+          "start": 458034,
+          "end": 458034,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 458208,
+          "end": 458208,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7755\","
+        },
+        {
+          "start": 458219,
+          "end": 458219,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 654529,
+          "end": 654529,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:10410\","
+        },
+        {
+          "start": 654582,
+          "end": 654582,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 654671,
+          "end": 654671,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:10414\","
+        },
+        {
+          "start": 654684,
+          "end": 654684,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 678129,
-          "end": 678129,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 678142,
-          "end": 678142,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 741918,
-          "end": 741918,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:11515\","
-        },
-        {
-          "start": 741928,
-          "end": 741928,
+          "start": 654818,
+          "end": 654818,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 742065,
-          "end": 742065,
+          "start": 654843,
+          "end": 654843,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:10414\","
+        },
+        {
+          "start": 654893,
+          "end": 654893,
           "before": "",
           "after": ")"
         },
         {
-          "start": 742067,
-          "end": 742067,
+          "start": 654911,
+          "end": 654911,
           "before": "",
           "after": ")"
         },
         {
-          "start": 763669,
-          "end": 763669,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:11856\","
-        },
-        {
-          "start": 763726,
-          "end": 763726,
+          "start": 654918,
+          "end": 654918,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 764375,
-          "end": 764375,
+          "start": 654955,
+          "end": 654955,
           "before": "",
           "after": ")"
         },
         {
-          "start": 764382,
-          "end": 764382,
+          "start": 654959,
+          "end": 654959,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1210139,
-          "end": 1210139,
+          "start": 654962,
+          "end": 654962,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:19212\","
+          "after": ")"
         },
         {
-          "start": 1210288,
-          "end": 1210288,
+          "start": 662271,
+          "end": 662271,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:10525\","
+        },
+        {
+          "start": 662290,
+          "end": 662290,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1210676,
-          "end": 1210676,
+          "start": 663729,
+          "end": 663729,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 663736,
+          "end": 663736,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 736294,
+          "end": 736294,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:11635\","
+        },
+        {
+          "start": 736364,
+          "end": 736364,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1210824,
-          "end": 1210824,
+          "start": 736464,
+          "end": 736464,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1210929,
-          "end": 1210929,
+          "start": 736477,
+          "end": 736477,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1210936,
-          "end": 1210936,
+          "start": 857366,
+          "end": 857366,
           "before": "",
-          "after": ")"
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:12979\","
         },
         {
-          "start": 1468605,
-          "end": 1468605,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:23574\","
-        },
-        {
-          "start": 1468621,
-          "end": 1468621,
+          "start": 857376,
+          "end": 857376,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1468754,
-          "end": 1468754,
+          "start": 857398,
+          "end": 857398,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1468763,
-          "end": 1468763,
+          "start": 857400,
+          "end": 857400,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1470763,
-          "end": 1470763,
+          "start": 886847,
+          "end": 886847,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:23603\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:13432\","
         },
         {
-          "start": 1470768,
-          "end": 1470768,
+          "start": 886904,
+          "end": 886904,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1470835,
-          "end": 1470835,
+          "start": 887553,
+          "end": 887553,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1470837,
-          "end": 1470837,
+          "start": 887560,
+          "end": 887560,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1470910,
-          "end": 1470910,
+          "start": 1357007,
+          "end": 1357007,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:23605\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:21112\","
         },
         {
-          "start": 1470915,
-          "end": 1470915,
+          "start": 1357156,
+          "end": 1357156,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1470985,
-          "end": 1470985,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 1470987,
-          "end": 1470987,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 1724742,
-          "end": 1724742,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:28292\","
-        },
-        {
-          "start": 1724756,
-          "end": 1724756,
+          "start": 1357544,
+          "end": 1357544,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1724933,
-          "end": 1724933,
+          "start": 1357692,
+          "end": 1357692,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1724940,
-          "end": 1724940,
+          "start": 1357797,
+          "end": 1357797,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1895743,
-          "end": 1895743,
+          "start": 1357804,
+          "end": 1357804,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:30706\","
+          "after": ")"
         },
         {
-          "start": 1895757,
-          "end": 1895757,
+          "start": 1619464,
+          "end": 1619464,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:25530\","
+        },
+        {
+          "start": 1619480,
+          "end": 1619480,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1895958,
-          "end": 1895958,
+          "start": 1619613,
+          "end": 1619613,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1895965,
-          "end": 1895965,
+          "start": 1619622,
+          "end": 1619622,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2380371,
-          "end": 2380371,
+          "start": 1621622,
+          "end": 1621622,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:38528\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:25559\","
         },
         {
-          "start": 2380449,
-          "end": 2380449,
+          "start": 1621627,
+          "end": 1621627,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2380485,
-          "end": 2380485,
+          "start": 1621694,
+          "end": 1621694,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2380517,
-          "end": 2380517,
+          "start": 1621696,
+          "end": 1621696,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 1621769,
+          "end": 1621769,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:25561\","
+        },
+        {
+          "start": 1621774,
+          "end": 1621774,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2380592,
-          "end": 2380592,
+          "start": 1621844,
+          "end": 1621844,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2380669,
-          "end": 2380669,
+          "start": 1621846,
+          "end": 1621846,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 1882878,
+          "end": 1882878,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:30334\","
+        },
+        {
+          "start": 1882892,
+          "end": 1882892,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2381097,
-          "end": 2381097,
+          "start": 1883069,
+          "end": 1883069,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 1883076,
+          "end": 1883076,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2077257,
+          "end": 2077257,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:32977\","
+        },
+        {
+          "start": 2077271,
+          "end": 2077271,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2381126,
-          "end": 2381126,
+          "start": 2077472,
+          "end": 2077472,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2381199,
-          "end": 2381199,
+          "start": 2077479,
+          "end": 2077479,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2568213,
+          "end": 2568213,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:40879\","
+        },
+        {
+          "start": 2568291,
+          "end": 2568291,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2381241,
-          "end": 2381241,
+          "start": 2568327,
+          "end": 2568327,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2381444,
-          "end": 2381444,
+          "start": 2568359,
+          "end": 2568359,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2381566,
-          "end": 2381566,
+          "start": 2568422,
+          "end": 2568422,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2381647,
-          "end": 2381647,
+          "start": 2568499,
+          "end": 2568499,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2381704,
-          "end": 2381704,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2381936,
-          "end": 2381936,
+          "start": 2568949,
+          "end": 2568949,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2382000,
-          "end": 2382000,
+          "start": 2568978,
+          "end": 2568978,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2382010,
-          "end": 2382010,
+          "start": 2569051,
+          "end": 2569051,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2382055,
-          "end": 2382055,
+          "start": 2569093,
+          "end": 2569093,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2382065,
-          "end": 2382065,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2382072,
-          "end": 2382072,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2407445,
-          "end": 2407445,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:38980\","
-        },
-        {
-          "start": 2407518,
-          "end": 2407518,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2501629,
-          "end": 2501629,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:40697\","
-        },
-        {
-          "start": 2501688,
-          "end": 2501688,
+          "start": 2569521,
+          "end": 2569521,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2501761,
-          "end": 2501761,
+          "start": 2569573,
+          "end": 2569573,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2569580,
+          "end": 2569580,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2501802,
-          "end": 2501802,
+          "start": 2569619,
+          "end": 2569619,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2501851,
-          "end": 2501851,
+          "start": 2569909,
+          "end": 2569909,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2501924,
-          "end": 2501924,
+          "start": 2570031,
+          "end": 2570031,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2501936,
-          "end": 2501936,
+          "start": 2570102,
+          "end": 2570102,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2501977,
-          "end": 2501977,
+          "start": 2570186,
+          "end": 2570186,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2501989,
-          "end": 2501989,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2501996,
-          "end": 2501996,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2967888,
-          "end": 2967888,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:46418\","
-        },
-        {
-          "start": 2967908,
-          "end": 2967908,
+          "start": 2570267,
+          "end": 2570267,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2967921,
-          "end": 2967921,
+          "start": 2570324,
+          "end": 2570324,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2967950,
-          "end": 2967950,
+          "start": 2570556,
+          "end": 2570556,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2967974,
-          "end": 2967974,
+          "start": 2570620,
+          "end": 2570620,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2967996,
-          "end": 2967996,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 3078369,
-          "end": 3078369,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:48387\","
-        },
-        {
-          "start": 3078377,
-          "end": 3078377,
+          "start": 2570630,
+          "end": 2570630,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3078472,
-          "end": 3078472,
+          "start": 2570675,
+          "end": 2570675,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3078475,
-          "end": 3078475,
+          "start": 2570685,
+          "end": 2570685,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3117551,
-          "end": 3117551,
+          "start": 2570692,
+          "end": 2570692,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:49103\","
+          "after": ")"
         },
         {
-          "start": 3117614,
-          "end": 3117614,
+          "start": 2596346,
+          "end": 2596346,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:41341\","
+        },
+        {
+          "start": 2596419,
+          "end": 2596419,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2670067,
+          "end": 2670067,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:42615\","
+        },
+        {
+          "start": 2670393,
+          "end": 2670393,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3117692,
-          "end": 3117692,
+          "start": 2670557,
+          "end": 2670557,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2670566,
+          "end": 2670566,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2693516,
+          "end": 2693516,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:43100\","
+        },
+        {
+          "start": 2693575,
+          "end": 2693575,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3117729,
-          "end": 3117729,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 3117778,
-          "end": 3117778,
+          "start": 2693648,
+          "end": 2693648,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3117859,
-          "end": 3117859,
+          "start": 2693689,
+          "end": 2693689,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3117871,
-          "end": 3117871,
+          "start": 2693738,
+          "end": 2693738,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3117908,
-          "end": 3117908,
+          "start": 2693811,
+          "end": 2693811,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3117920,
-          "end": 3117920,
+          "start": 2693823,
+          "end": 2693823,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 2693864,
+          "end": 2693864,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3117927,
-          "end": 3117927,
+          "start": 2693876,
+          "end": 2693876,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3186903,
-          "end": 3186946,
+          "start": 2693883,
+          "end": 2693883,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3286865,
+          "end": 3286865,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50536\","
+        },
+        {
+          "start": 3286885,
+          "end": 3286885,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3286898,
+          "end": 3286898,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3286927,
+          "end": 3286927,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3286951,
+          "end": 3286951,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3286973,
+          "end": 3286973,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3426318,
+          "end": 3426318,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:53063\","
+        },
+        {
+          "start": 3426326,
+          "end": 3426326,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3426421,
+          "end": 3426421,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3426424,
+          "end": 3426424,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3466389,
+          "end": 3466389,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:53790\","
+        },
+        {
+          "start": 3466452,
+          "end": 3466452,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3466530,
+          "end": 3466530,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3466567,
+          "end": 3466567,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3466616,
+          "end": 3466616,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3466697,
+          "end": 3466697,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3466709,
+          "end": 3466709,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3466746,
+          "end": 3466746,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3466758,
+          "end": 3466758,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3466765,
+          "end": 3466765,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3538600,
+          "end": 3538643,
           "before": "  globalThis.__FlashbackMemory = publicApi;",
           "after": "  globalThis.__root085IssuedStartupObserver.captureRuntime({ Runtime, sharedScopeWriteLocks, clearScheduledTimers, scheduleTimer, withDeadline });\n  globalThis.__FlashbackMemory = publicApi;"
         },
         {
-          "start": 3187562,
-          "end": 3187592,
+          "start": 3539649,
+          "end": 3539679,
           "before": "void refreshHostRuntimeInfo();",
           "after": "void globalThis.__root085IssuedStartupObserver.promise('startup.runtime_info',refreshHostRuntimeInfo());"
         },
         {
-          "start": 3188943,
-          "end": 3188943,
+          "start": 3540622,
+          "end": 3540622,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50103\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54827\","
         },
         {
-          "start": 3188959,
-          "end": 3188959,
+          "start": 3540640,
+          "end": 3540640,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3189085,
-          "end": 3189085,
+          "start": 3540768,
+          "end": 3540768,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3189094,
-          "end": 3189094,
+          "start": 3540779,
+          "end": 3540779,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3189449,
-          "end": 3189533,
+          "start": 3540987,
+          "end": 3541071,
           "before": "registerUi(Runtime.settings).catch(error => warn('registerUi async failed', error));",
           "after": "globalThis.__root085IssuedStartupObserver.promise('startup.ui',registerUi(Runtime.settings).catch(error => warn('registerUi async failed', error)));"
         },
         {
-          "start": 3189552,
-          "end": 3189552,
+          "start": 3541092,
+          "end": 3541092,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50116\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54837\","
         },
         {
-          "start": 3189560,
-          "end": 3189560,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
-        },
-        {
-          "start": 3189648,
-          "end": 3189648,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 3189651,
-          "end": 3189651,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 3189843,
-          "end": 3189843,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50119\","
-        },
-        {
-          "start": 3189857,
-          "end": 3189857,
+          "start": 3541108,
+          "end": 3541108,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3190020,
-          "end": 3190020,
+          "start": 3541273,
+          "end": 3541273,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3190027,
-          "end": 3190027,
+          "start": 3541282,
+          "end": 3541282,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3190054,
-          "end": 3190054,
+          "start": 3541311,
+          "end": 3541311,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50123\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54841\","
         },
         {
-          "start": 3190068,
-          "end": 3190068,
+          "start": 3541327,
+          "end": 3541327,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3190361,
-          "end": 3190361,
+          "start": 3541636,
+          "end": 3541636,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3190407,
-          "end": 3190407,
+          "start": 3541682,
+          "end": 3541682,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3190419,
-          "end": 3190419,
+          "start": 3541696,
+          "end": 3541696,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3190426,
-          "end": 3190426,
+          "start": 3541705,
+          "end": 3541705,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3190453,
-          "end": 3190453,
+          "start": 3541734,
+          "end": 3541734,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50135\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54853\","
         },
         {
-          "start": 3190467,
-          "end": 3190467,
+          "start": 3541750,
+          "end": 3541750,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3190818,
-          "end": 3190818,
+          "start": 3542115,
+          "end": 3542115,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3190882,
-          "end": 3190882,
+          "start": 3542179,
+          "end": 3542179,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3191805,
-          "end": 3191805,
+          "start": 3543140,
+          "end": 3543140,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3192097,
-          "end": 3192097,
+          "start": 3543440,
+          "end": 3543440,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3192229,
-          "end": 3192229,
+          "start": 3543584,
+          "end": 3543584,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3192303,
-          "end": 3192303,
+          "start": 3543658,
+          "end": 3543658,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3192407,
-          "end": 3192407,
+          "start": 3543764,
+          "end": 3543764,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3192414,
-          "end": 3192414,
+          "start": 3543773,
+          "end": 3543773,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3547684,
+          "end": 3547684,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54965\","
+        },
+        {
+          "start": 3548006,
+          "end": 3548006,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3548164,
+          "end": 3548164,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3548201,
+          "end": 3548201,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3548271,
+          "end": 3548271,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3548278,
+          "end": 3548278,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3549067,
+          "end": 3549067,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54989\","
+        },
+        {
+          "start": 3549090,
+          "end": 3549090,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3549229,
+          "end": 3549229,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3549243,
+          "end": 3549243,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54992\","
+        },
+        {
+          "start": 3549256,
+          "end": 3549256,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3549293,
+          "end": 3549293,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3549296,
+          "end": 3549296,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3549301,
+          "end": 3549301,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3549329,
+          "end": 3549329,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3549340,
+          "end": 3549340,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3549885,
+          "end": 3549885,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:55008\","
+        },
+        {
+          "start": 3549893,
+          "end": 3549893,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3549993,
+          "end": 3549993,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3549996,
+          "end": 3549996,
           "before": "",
           "after": ")"
         }
@@ -2603,1293 +3013,1498 @@
     },
     {
       "name": "owner_injected_collision",
-      "sourceSha256": "baaa4c4d4dd6315c252db433acfc492d468fd4cce38c39c08f7959f166d1b01d",
-      "sourceBytes": 3377660,
-      "sourceCodeUnits": 3321723,
-      "observedSha256": "af740e7192d86feaab5afe2ec62d242b633f1d6176fc21c78d6ab5b42785851e",
+      "sourceSha256": "fa1f589f4dbd6de8377279d8492e841cd76c9410cc4882db54753b845cd4be2d",
+      "sourceBytes": 3762012,
+      "sourceCodeUnits": 3681267,
+      "observedSha256": "49daab6e55aef5bd185f8a9cb77faa4c29c5f10131fcea235275d0e1df747724",
       "callsites": [
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:3045",
+          "label": "scheduleTimer:3059",
           "callbackSha256": "1d8414130fbade21dcb16e5c5424d2b12757cfd78e4ff4409e02f25e2f38e20d"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:4729",
+          "label": "scheduleLifecycleTimeout:4450",
+          "callbackSha256": "2bf9c91241e953ca75bc7e53d6905692655f3cf429dee6cc54b12449340cdbae"
+        },
+        {
+          "family": "scheduleLifecycleTimeout",
+          "label": "scheduleLifecycleTimeout:4774",
           "callbackSha256": "9a1ea6f96c83ff134032d6a4aa2844034182d93f54f8fc9758e48bc75d20e6bf"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:6832",
+          "label": "scheduleLifecycleTimeout:6950",
           "callbackSha256": "2fe8a8aa555b08fde1d2de9e9b1a38f8b59df3792e830327e1d5c98e04f6d9ac"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:7114",
+          "label": "scheduleLifecycleTimeout:7232",
           "callbackSha256": "1a5c343880ce4fe20fd7d900c463354c58bfbc4b91f402a9672ffd95538de3de"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:7261",
+          "label": "scheduleLifecycleTimeout:7379",
           "callbackSha256": "c818df42a6b3e75588c9fedd3dfe6123b5d5e74fd24d43a97e8cac1bba37d6d7"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:7436",
+          "label": "scheduleLifecycleTimeout:7597",
           "callbackSha256": "faffa929d71d60642357a0560a12a0e8492e50d80b178301ba9269e7094461ad"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:7582",
+          "label": "scheduleLifecycleTimeout:7751",
           "callbackSha256": "7e6a6977354251999e8d862d2306a124285a54697ca023a95edd968d3cb496c0"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:7586",
+          "label": "scheduleLifecycleTimeout:7755",
           "callbackSha256": "7e6a6977354251999e8d862d2306a124285a54697ca023a95edd968d3cb496c0"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:9634",
+          "label": "scheduleLifecycleTimeout:10410",
           "callbackSha256": "1a95de4b77d4949cccec3bf874ea32049451382bd53e06375ff1f81ed3644396"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:9638",
+          "label": "scheduleLifecycleTimeout:10414",
           "callbackSha256": "53f8e2f7f5936fa04a22df474de81109b2c69dc3fdd6b184a4e8a2b1a2754adc"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:9638",
+          "label": "scheduleLifecycleTimeout:10414",
           "callbackSha256": "90d6beb1bcb05fc3f1d8da437e60258d2498d7ae2b05d5397a3937331efb4b23"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:9749",
+          "label": "scheduleLifecycleTimeout:10525",
           "callbackSha256": "5d94b09cc8ec7223ddae2af8a2ce05f2f0eeae12375e287575f1c9d63bce7d64"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:10857",
+          "label": "scheduleLifecycleTimeout:11635",
           "callbackSha256": "7367ae3fbcd5fc7e01bb9a794a69d9d8a13777cc6279d78761be7e82ce8797d5"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:11515",
-          "callbackSha256": "0056c7725fd9e3f5979c3b6193bdde47c90b0e6d2fd73bd1c4a9f09adef747df"
+          "label": "scheduleLifecycleTimeout:12979",
+          "callbackSha256": "43706dc5273442f8423690aac16baf0b562cbb8fb8977629c75577a69c4de836"
         },
         {
           "family": "scheduleLifecycleTimeout",
-          "label": "scheduleLifecycleTimeout:11856",
+          "label": "scheduleLifecycleTimeout:13432",
           "callbackSha256": "8a0d3adcda4a995dc8e48e93ab045956bd13115a00888c17230b6e8a9bbe7145"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:19212",
+          "label": "scheduleTimer:21112",
           "callbackSha256": "b3152e2e49b5a59d0fdc6c0b35a16f134145e882fcc913cf93443311aca188f2"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:23574",
+          "label": "scheduleTimer:25530",
           "callbackSha256": "eaddcbec156896d6c12f8f518756ae41967500afee5caa8496c3ffe0829285de"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:23603",
+          "label": "scheduleTimer:25559",
           "callbackSha256": "dd308a72a6ac2111d0074bde4b37adccf138ada23f4027edb68c3a622a869144"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:23605",
+          "label": "scheduleTimer:25561",
           "callbackSha256": "545a92fbc03788485a905311f5d1285679688b38bdeb30f4867381fe834a02d2"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:28292",
+          "label": "scheduleTimer:30334",
           "callbackSha256": "626326b4accae2b5698703fb08e0698dc5f9571088e847c52a90dfebb59c838f"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:30706",
+          "label": "scheduleTimer:32977",
           "callbackSha256": "16f1b9bbd2e497e7363f4af0aae1c3268bd8fb473fe5a89e0780ab8b2a7be776"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:38528",
-          "callbackSha256": "13b75851210c2e97d877d09634e2af8d701032184172894b77dbc9e40c83d0b2"
+          "label": "scheduleTimer:40879",
+          "callbackSha256": "6821b6263b8c34470e0294dbf3b6bbe2ed85b58c4582f51f73ca373ee3492f83"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:38980",
+          "label": "scheduleTimer:41341",
           "callbackSha256": "977fa4abf2867b2b39f7aafb9ed75a95243097636def38463a62e6f334c28cb0"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:40697",
+          "label": "scheduleTimer:42615",
+          "callbackSha256": "6edb1cee5a943b1c27f05997784148e34788fbd452bb0f3e0d4b078e1a612839"
+        },
+        {
+          "family": "scheduleTimer",
+          "label": "scheduleTimer:43100",
           "callbackSha256": "8131e6c1083d95662e2de0f6ee9a8241093bba9a1aefacf1079b00da58b5d3c1"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:46418",
+          "label": "scheduleTimer:50536",
           "callbackSha256": "1a2b8806668fd1836b0c01ae036a3b2e68f3d3d2c12ce3dbb33ecd3480e524a5"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:48387",
+          "label": "scheduleTimer:53063",
           "callbackSha256": "e8c5a3e7885ef3842d7f72dc405ebaa7ceb6e5330959777d7153235887c307b4"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:49103",
+          "label": "scheduleTimer:53790",
           "callbackSha256": "462bc6eae0b560410eac22139b007eb4ffa210d2c6cc05df4615c54b06fd83df"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:50103",
-          "callbackSha256": "c681cbadc09f6e6922bc17d1a429aea9d153b127bb81717a7aaebf3a168209f6"
+          "label": "scheduleTimer:54827",
+          "callbackSha256": "648ed3d94917ec34f44a481307c2100feb4b04ef63d396ec80151442426c44a0"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:50116",
-          "callbackSha256": "8813e8b18fa54948647390d558b8323f4b1f3795d77bee51ff91458b545850f4"
+          "label": "scheduleTimer:54837",
+          "callbackSha256": "ce1a5494776e3303fc85acfc8aacf66d85d895e0422c2d6f47e74b0cd850940d"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:50119",
-          "callbackSha256": "84b11ee997606956e8cfaefdbe3ca3d11e410aae3bb9ca107d9eeb26d5c53faa"
+          "label": "scheduleTimer:54841",
+          "callbackSha256": "52ffbe0b7c0f24a2c3e5dfd8a0aa9254e450bb5e63b6720e57b67a34090cba06"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:50123",
-          "callbackSha256": "f2d2ae7368475f003c9dbb2efd50414ed16e721ad7b74eaccb5a14fd4eca8b99"
+          "label": "scheduleTimer:54853",
+          "callbackSha256": "5cf5707130448c29ad43138bc5a263cd043f23d6edb2fb366b2ae5004fea69a9"
         },
         {
           "family": "scheduleTimer",
-          "label": "scheduleTimer:50135",
-          "callbackSha256": "2348e0c7e63d556e472ead0844f336a42764f3707278ba1432ec5306e8cde193"
+          "label": "scheduleTimer:54965",
+          "callbackSha256": "bbdc522e337015330be717a1112be05e2c1db9e8b8d85144f870197bba40d95e"
+        },
+        {
+          "family": "scheduleTimer",
+          "label": "scheduleTimer:54989",
+          "callbackSha256": "9a3f7cd928bd602c3c5a95147c651f624ca35788ca5b6c4f32dfb0d38e4b0e98"
+        },
+        {
+          "family": "scheduleTimer",
+          "label": "scheduleTimer:54992",
+          "callbackSha256": "10b3fe6e7a33832f4629819ef36fe7f23605bf3bfc782b22ec319b51394c8ff2"
+        },
+        {
+          "family": "scheduleTimer",
+          "label": "scheduleTimer:55008",
+          "callbackSha256": "bcd027261a502e7da8d5fac1340cb68224886ef579b9d0245cd6d26716bbb726"
         }
       ],
-      "expressionCount": 54,
+      "expressionCount": 64,
       "anchors": [
         {
           "before": "try { fn(); } catch (error) { warn('scheduled timer callback failed', error); }",
-          "start": 107939,
-          "regionEnd": 3321723
+          "start": 107941,
+          "regionEnd": 3681267
         },
         {
           "before": "      callback();\n    }, Math.max(0, Number(delayMs || 0) || 0));",
-          "start": 264429,
-          "regionEnd": 3321723
+          "start": 267137,
+          "regionEnd": 3681267
         },
         {
           "before": "  globalThis.__FlashbackMemory = publicApi;",
-          "start": 3186782,
-          "regionEnd": 3321723
+          "start": 3538479,
+          "regionEnd": 3681267
         },
         {
           "before": "  const autoMigratePlugin = !localOnlyOwner",
-          "start": 264727,
-          "regionEnd": 3321723
+          "start": 267435,
+          "regionEnd": 3681267
         },
         {
           "before": "void refreshHostRuntimeInfo();",
-          "start": 3187441,
-          "regionEnd": 3321723
+          "start": 3539528,
+          "regionEnd": 3681267
         },
         {
           "before": "registerUi(Runtime.settings).catch(error => warn('registerUi async failed', error));",
-          "start": 3189328,
-          "regionEnd": 3321723
+          "start": 3540866,
+          "regionEnd": 3681267
         },
         {
           "before": "    Runtime.scheduledTimers.add(id);",
-          "start": 108224,
-          "regionEnd": 3321723
+          "start": 108226,
+          "regionEnd": 3681267
         },
         {
           "before": "    lifecycle.timers.add(timer);",
-          "start": 264495,
-          "regionEnd": 3321723
+          "start": 267203,
+          "regionEnd": 3681267
         }
       ],
       "patches": [
         {
-          "start": 107939,
-          "end": 108018,
+          "start": 107941,
+          "end": 108020,
           "before": "try { fn(); } catch (error) { warn('scheduled timer callback failed', error); }",
           "after": "try { globalThis.__root085IssuedStartupObserver.invoke(fn); } catch (error) { warn('scheduled timer callback failed', error); }"
         },
         {
-          "start": 108224,
-          "end": 108260,
+          "start": 108226,
+          "end": 108262,
           "before": "    Runtime.scheduledTimers.add(id);",
           "after": "    Runtime.scheduledTimers.add(id);\n    globalThis.__root085IssuedStartupObserver.timerRegistered('runtime',id,fn,ms);"
         },
         {
-          "start": 188709,
-          "end": 188709,
+          "start": 189827,
+          "end": 189827,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:3045\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:3059\","
         },
         {
-          "start": 188768,
-          "end": 188768,
+          "start": 189886,
+          "end": 189886,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 188792,
-          "end": 188792,
+          "start": 189910,
+          "end": 189910,
           "before": "",
           "after": ")"
         },
         {
-          "start": 188799,
-          "end": 188799,
+          "start": 189917,
+          "end": 189917,
           "before": "",
           "after": ")"
         },
         {
-          "start": 264429,
-          "end": 264494,
+          "start": 260125,
+          "end": 260125,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:4450\","
+        },
+        {
+          "start": 260243,
+          "end": 260243,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 260258,
+          "end": 260258,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 260269,
+          "end": 260269,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 267137,
+          "end": 267202,
           "before": "      callback();\n    }, Math.max(0, Number(delayMs || 0) || 0));",
           "after": "      globalThis.__root085IssuedStartupObserver.invoke(callback);\n    }, Math.max(0, Number(delayMs || 0) || 0));"
         },
         {
-          "start": 264495,
-          "end": 264527,
+          "start": 267203,
+          "end": 267235,
           "before": "    lifecycle.timers.add(timer);",
           "after": "    lifecycle.timers.add(timer);\n    globalThis.__root085IssuedStartupObserver.timerRegistered('sdk',timer,callback,delayMs);"
         },
         {
-          "start": 264727,
-          "end": 264770,
+          "start": 267435,
+          "end": 267478,
           "before": "  const autoMigratePlugin = !localOnlyOwner",
           "after": "  globalThis.__root085IssuedStartupObserver.captureSdk({ timers: lifecycle.timers, clear: clearLifecycleTimeout });\n  const autoMigratePlugin = !localOnlyOwner"
         },
         {
-          "start": 276422,
-          "end": 276422,
+          "start": 279399,
+          "end": 279399,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:4729\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:4774\","
         },
         {
-          "start": 276482,
-          "end": 276482,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
-        },
-        {
-          "start": 276575,
-          "end": 276575,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 276582,
-          "end": 276582,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 395948,
-          "end": 395948,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:6832\","
-        },
-        {
-          "start": 396018,
-          "end": 396018,
+          "start": 279459,
+          "end": 279459,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 396112,
-          "end": 396112,
+          "start": 279552,
+          "end": 279552,
           "before": "",
           "after": ")"
         },
         {
-          "start": 396125,
-          "end": 396125,
+          "start": 279559,
+          "end": 279559,
           "before": "",
           "after": ")"
         },
         {
-          "start": 409995,
-          "end": 409995,
+          "start": 403922,
+          "end": 403922,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7114\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:6950\","
         },
         {
-          "start": 410036,
-          "end": 410036,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
-        },
-        {
-          "start": 410582,
-          "end": 410582,
+          "start": 403992,
+          "end": 403992,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 410635,
-          "end": 410635,
+          "start": 404086,
+          "end": 404086,
           "before": "",
           "after": ")"
         },
         {
-          "start": 410637,
-          "end": 410637,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
-        },
-        {
-          "start": 410659,
-          "end": 410659,
+          "start": 404099,
+          "end": 404099,
           "before": "",
           "after": ")"
         },
         {
-          "start": 410671,
-          "end": 410671,
+          "start": 417969,
+          "end": 417969,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7232\","
         },
         {
-          "start": 410725,
-          "end": 410725,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 410820,
-          "end": 410820,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 410827,
-          "end": 410827,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 417438,
-          "end": 417438,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7261\","
-        },
-        {
-          "start": 417451,
-          "end": 417451,
+          "start": 418010,
+          "end": 418010,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 417489,
-          "end": 417489,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 417492,
-          "end": 417492,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 437956,
-          "end": 437956,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7436\","
-        },
-        {
-          "start": 437969,
-          "end": 437969,
+          "start": 418556,
+          "end": 418556,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 438051,
-          "end": 438051,
+          "start": 418609,
+          "end": 418609,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 418611,
+          "end": 418611,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 438068,
-          "end": 438068,
+          "start": 418633,
+          "end": 418633,
           "before": "",
           "after": ")"
         },
         {
-          "start": 438194,
-          "end": 438194,
+          "start": 418645,
+          "end": 418645,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 438217,
-          "end": 438217,
+          "start": 418699,
+          "end": 418699,
           "before": "",
           "after": ")"
         },
         {
-          "start": 438223,
-          "end": 438223,
+          "start": 418794,
+          "end": 418794,
           "before": "",
           "after": ")"
         },
         {
-          "start": 438226,
-          "end": 438226,
+          "start": 418801,
+          "end": 418801,
           "before": "",
           "after": ")"
         },
         {
-          "start": 448147,
-          "end": 448147,
+          "start": 425412,
+          "end": 425412,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7582\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7379\","
         },
         {
-          "start": 448158,
-          "end": 448158,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 448332,
-          "end": 448332,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7586\","
-        },
-        {
-          "start": 448343,
-          "end": 448343,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 596335,
-          "end": 596335,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:9634\","
-        },
-        {
-          "start": 596388,
-          "end": 596388,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 596477,
-          "end": 596477,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:9638\","
-        },
-        {
-          "start": 596490,
-          "end": 596490,
+          "start": 425425,
+          "end": 425425,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 596624,
-          "end": 596624,
+          "start": 425463,
+          "end": 425463,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 425466,
+          "end": 425466,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 447973,
+          "end": 447973,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7597\","
+        },
+        {
+          "start": 447986,
+          "end": 447986,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 596649,
-          "end": 596649,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:9638\","
-        },
-        {
-          "start": 596699,
-          "end": 596699,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 596717,
-          "end": 596717,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 596724,
-          "end": 596724,
+          "start": 448068,
+          "end": 448068,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 596761,
-          "end": 596761,
+          "start": 448085,
+          "end": 448085,
           "before": "",
           "after": ")"
         },
         {
-          "start": 596765,
-          "end": 596765,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 596768,
-          "end": 596768,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 604077,
-          "end": 604077,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:9749\","
-        },
-        {
-          "start": 604096,
-          "end": 604096,
+          "start": 448211,
+          "end": 448211,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 605535,
-          "end": 605535,
+          "start": 448234,
+          "end": 448234,
           "before": "",
           "after": ")"
         },
         {
-          "start": 605542,
-          "end": 605542,
+          "start": 448240,
+          "end": 448240,
           "before": "",
           "after": ")"
         },
         {
-          "start": 677959,
-          "end": 677959,
+          "start": 448243,
+          "end": 448243,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:10857\","
+          "after": ")"
         },
         {
-          "start": 678029,
-          "end": 678029,
+          "start": 458023,
+          "end": 458023,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7751\","
+        },
+        {
+          "start": 458034,
+          "end": 458034,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 458208,
+          "end": 458208,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:7755\","
+        },
+        {
+          "start": 458219,
+          "end": 458219,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 654529,
+          "end": 654529,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:10410\","
+        },
+        {
+          "start": 654582,
+          "end": 654582,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 654671,
+          "end": 654671,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:10414\","
+        },
+        {
+          "start": 654684,
+          "end": 654684,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 678129,
-          "end": 678129,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 678142,
-          "end": 678142,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 741918,
-          "end": 741918,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:11515\","
-        },
-        {
-          "start": 741928,
-          "end": 741928,
+          "start": 654818,
+          "end": 654818,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 742065,
-          "end": 742065,
+          "start": 654843,
+          "end": 654843,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:10414\","
+        },
+        {
+          "start": 654893,
+          "end": 654893,
           "before": "",
           "after": ")"
         },
         {
-          "start": 742067,
-          "end": 742067,
+          "start": 654911,
+          "end": 654911,
           "before": "",
           "after": ")"
         },
         {
-          "start": 763669,
-          "end": 763669,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:11856\","
-        },
-        {
-          "start": 763726,
-          "end": 763726,
+          "start": 654918,
+          "end": 654918,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 764375,
-          "end": 764375,
+          "start": 654955,
+          "end": 654955,
           "before": "",
           "after": ")"
         },
         {
-          "start": 764382,
-          "end": 764382,
+          "start": 654959,
+          "end": 654959,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1210139,
-          "end": 1210139,
+          "start": 654962,
+          "end": 654962,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:19212\","
+          "after": ")"
         },
         {
-          "start": 1210288,
-          "end": 1210288,
+          "start": 662271,
+          "end": 662271,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:10525\","
+        },
+        {
+          "start": 662290,
+          "end": 662290,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1210676,
-          "end": 1210676,
+          "start": 663729,
+          "end": 663729,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 663736,
+          "end": 663736,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 736294,
+          "end": 736294,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:11635\","
+        },
+        {
+          "start": 736364,
+          "end": 736364,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1210824,
-          "end": 1210824,
+          "start": 736464,
+          "end": 736464,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1210929,
-          "end": 1210929,
+          "start": 736477,
+          "end": 736477,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1210936,
-          "end": 1210936,
+          "start": 857366,
+          "end": 857366,
           "before": "",
-          "after": ")"
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:12979\","
         },
         {
-          "start": 1468605,
-          "end": 1468605,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:23574\","
-        },
-        {
-          "start": 1468621,
-          "end": 1468621,
+          "start": 857376,
+          "end": 857376,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1468754,
-          "end": 1468754,
+          "start": 857398,
+          "end": 857398,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1468763,
-          "end": 1468763,
+          "start": 857400,
+          "end": 857400,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1470763,
-          "end": 1470763,
+          "start": 886847,
+          "end": 886847,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:23603\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleLifecycleTimeout:13432\","
         },
         {
-          "start": 1470768,
-          "end": 1470768,
+          "start": 886904,
+          "end": 886904,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1470835,
-          "end": 1470835,
+          "start": 887553,
+          "end": 887553,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1470837,
-          "end": 1470837,
+          "start": 887560,
+          "end": 887560,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1470910,
-          "end": 1470910,
+          "start": 1357007,
+          "end": 1357007,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:23605\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:21112\","
         },
         {
-          "start": 1470915,
-          "end": 1470915,
+          "start": 1357156,
+          "end": 1357156,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1470985,
-          "end": 1470985,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 1470987,
-          "end": 1470987,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 1724742,
-          "end": 1724742,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:28292\","
-        },
-        {
-          "start": 1724756,
-          "end": 1724756,
+          "start": 1357544,
+          "end": 1357544,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1724933,
-          "end": 1724933,
+          "start": 1357692,
+          "end": 1357692,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1724940,
-          "end": 1724940,
+          "start": 1357797,
+          "end": 1357797,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1895743,
-          "end": 1895743,
+          "start": 1357804,
+          "end": 1357804,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:30706\","
+          "after": ")"
         },
         {
-          "start": 1895757,
-          "end": 1895757,
+          "start": 1619464,
+          "end": 1619464,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:25530\","
+        },
+        {
+          "start": 1619480,
+          "end": 1619480,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 1895958,
-          "end": 1895958,
+          "start": 1619613,
+          "end": 1619613,
           "before": "",
           "after": ")"
         },
         {
-          "start": 1895965,
-          "end": 1895965,
+          "start": 1619622,
+          "end": 1619622,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2380371,
-          "end": 2380371,
+          "start": 1621622,
+          "end": 1621622,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:38528\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:25559\","
         },
         {
-          "start": 2380449,
-          "end": 2380449,
+          "start": 1621627,
+          "end": 1621627,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2380485,
-          "end": 2380485,
+          "start": 1621694,
+          "end": 1621694,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2380517,
-          "end": 2380517,
+          "start": 1621696,
+          "end": 1621696,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 1621769,
+          "end": 1621769,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:25561\","
+        },
+        {
+          "start": 1621774,
+          "end": 1621774,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2380592,
-          "end": 2380592,
+          "start": 1621844,
+          "end": 1621844,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2380669,
-          "end": 2380669,
+          "start": 1621846,
+          "end": 1621846,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 1882878,
+          "end": 1882878,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:30334\","
+        },
+        {
+          "start": 1882892,
+          "end": 1882892,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2381097,
-          "end": 2381097,
+          "start": 1883069,
+          "end": 1883069,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 1883076,
+          "end": 1883076,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2077257,
+          "end": 2077257,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:32977\","
+        },
+        {
+          "start": 2077271,
+          "end": 2077271,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2381126,
-          "end": 2381126,
+          "start": 2077472,
+          "end": 2077472,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2381199,
-          "end": 2381199,
+          "start": 2077479,
+          "end": 2077479,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2568213,
+          "end": 2568213,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:40879\","
+        },
+        {
+          "start": 2568291,
+          "end": 2568291,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2381241,
-          "end": 2381241,
+          "start": 2568327,
+          "end": 2568327,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2381444,
-          "end": 2381444,
+          "start": 2568359,
+          "end": 2568359,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2381566,
-          "end": 2381566,
+          "start": 2568422,
+          "end": 2568422,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2381647,
-          "end": 2381647,
+          "start": 2568499,
+          "end": 2568499,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2381704,
-          "end": 2381704,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2381936,
-          "end": 2381936,
+          "start": 2568949,
+          "end": 2568949,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2382000,
-          "end": 2382000,
+          "start": 2568978,
+          "end": 2568978,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2382010,
-          "end": 2382010,
+          "start": 2569051,
+          "end": 2569051,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2382055,
-          "end": 2382055,
+          "start": 2569093,
+          "end": 2569093,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2382065,
-          "end": 2382065,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2382072,
-          "end": 2382072,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2407445,
-          "end": 2407445,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:38980\","
-        },
-        {
-          "start": 2407518,
-          "end": 2407518,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2501629,
-          "end": 2501629,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:40697\","
-        },
-        {
-          "start": 2501688,
-          "end": 2501688,
+          "start": 2569521,
+          "end": 2569521,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2501761,
-          "end": 2501761,
+          "start": 2569573,
+          "end": 2569573,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2569580,
+          "end": 2569580,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2501802,
-          "end": 2501802,
+          "start": 2569619,
+          "end": 2569619,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2501851,
-          "end": 2501851,
+          "start": 2569909,
+          "end": 2569909,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2501924,
-          "end": 2501924,
+          "start": 2570031,
+          "end": 2570031,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2501936,
-          "end": 2501936,
+          "start": 2570102,
+          "end": 2570102,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2501977,
-          "end": 2501977,
+          "start": 2570186,
+          "end": 2570186,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2501989,
-          "end": 2501989,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2501996,
-          "end": 2501996,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 2967767,
-          "end": 2967767,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:46418\","
-        },
-        {
-          "start": 2967787,
-          "end": 2967787,
+          "start": 2570267,
+          "end": 2570267,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2967800,
-          "end": 2967800,
+          "start": 2570324,
+          "end": 2570324,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2967829,
-          "end": 2967829,
+          "start": 2570556,
+          "end": 2570556,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 2967853,
-          "end": 2967853,
+          "start": 2570620,
+          "end": 2570620,
           "before": "",
           "after": ")"
         },
         {
-          "start": 2967875,
-          "end": 2967875,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 3078248,
-          "end": 3078248,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:48387\","
-        },
-        {
-          "start": 3078256,
-          "end": 3078256,
+          "start": 2570630,
+          "end": 2570630,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3078351,
-          "end": 3078351,
+          "start": 2570675,
+          "end": 2570675,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3078354,
-          "end": 3078354,
+          "start": 2570685,
+          "end": 2570685,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3117430,
-          "end": 3117430,
+          "start": 2570692,
+          "end": 2570692,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:49103\","
+          "after": ")"
         },
         {
-          "start": 3117493,
-          "end": 3117493,
+          "start": 2596346,
+          "end": 2596346,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:41341\","
+        },
+        {
+          "start": 2596419,
+          "end": 2596419,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2670067,
+          "end": 2670067,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:42615\","
+        },
+        {
+          "start": 2670393,
+          "end": 2670393,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3117571,
-          "end": 3117571,
+          "start": 2670557,
+          "end": 2670557,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2670566,
+          "end": 2670566,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 2693516,
+          "end": 2693516,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:43100\","
+        },
+        {
+          "start": 2693575,
+          "end": 2693575,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3117608,
-          "end": 3117608,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 3117657,
-          "end": 3117657,
+          "start": 2693648,
+          "end": 2693648,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3117738,
-          "end": 3117738,
+          "start": 2693689,
+          "end": 2693689,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3117750,
-          "end": 3117750,
+          "start": 2693738,
+          "end": 2693738,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3117787,
-          "end": 3117787,
+          "start": 2693811,
+          "end": 2693811,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3117799,
-          "end": 3117799,
+          "start": 2693823,
+          "end": 2693823,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 2693864,
+          "end": 2693864,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3117806,
-          "end": 3117806,
+          "start": 2693876,
+          "end": 2693876,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3186782,
-          "end": 3186825,
+          "start": 2693883,
+          "end": 2693883,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3286744,
+          "end": 3286744,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50536\","
+        },
+        {
+          "start": 3286764,
+          "end": 3286764,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3286777,
+          "end": 3286777,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3286806,
+          "end": 3286806,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3286830,
+          "end": 3286830,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3286852,
+          "end": 3286852,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3426197,
+          "end": 3426197,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:53063\","
+        },
+        {
+          "start": 3426205,
+          "end": 3426205,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3426300,
+          "end": 3426300,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3426303,
+          "end": 3426303,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3466268,
+          "end": 3466268,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:53790\","
+        },
+        {
+          "start": 3466331,
+          "end": 3466331,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3466409,
+          "end": 3466409,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3466446,
+          "end": 3466446,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3466495,
+          "end": 3466495,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3466576,
+          "end": 3466576,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3466588,
+          "end": 3466588,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3466625,
+          "end": 3466625,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3466637,
+          "end": 3466637,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3466644,
+          "end": 3466644,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3538479,
+          "end": 3538522,
           "before": "  globalThis.__FlashbackMemory = publicApi;",
           "after": "  globalThis.__root085IssuedStartupObserver.captureRuntime({ Runtime, sharedScopeWriteLocks, clearScheduledTimers, scheduleTimer, withDeadline });\n  globalThis.__FlashbackMemory = publicApi;"
         },
         {
-          "start": 3187441,
-          "end": 3187471,
+          "start": 3539528,
+          "end": 3539558,
           "before": "void refreshHostRuntimeInfo();",
           "after": "void globalThis.__root085IssuedStartupObserver.promise('startup.runtime_info',refreshHostRuntimeInfo());"
         },
         {
-          "start": 3188822,
-          "end": 3188822,
+          "start": 3540501,
+          "end": 3540501,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50103\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54827\","
         },
         {
-          "start": 3188838,
-          "end": 3188838,
+          "start": 3540519,
+          "end": 3540519,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3188964,
-          "end": 3188964,
+          "start": 3540647,
+          "end": 3540647,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3188973,
-          "end": 3188973,
+          "start": 3540658,
+          "end": 3540658,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3189328,
-          "end": 3189412,
+          "start": 3540866,
+          "end": 3540950,
           "before": "registerUi(Runtime.settings).catch(error => warn('registerUi async failed', error));",
           "after": "globalThis.__root085IssuedStartupObserver.promise('startup.ui',registerUi(Runtime.settings).catch(error => warn('registerUi async failed', error)));"
         },
         {
-          "start": 3189431,
-          "end": 3189431,
+          "start": 3540971,
+          "end": 3540971,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50116\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54837\","
         },
         {
-          "start": 3189439,
-          "end": 3189439,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
-        },
-        {
-          "start": 3189527,
-          "end": 3189527,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 3189530,
-          "end": 3189530,
-          "before": "",
-          "after": ")"
-        },
-        {
-          "start": 3189722,
-          "end": 3189722,
-          "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50119\","
-        },
-        {
-          "start": 3189736,
-          "end": 3189736,
+          "start": 3540987,
+          "end": 3540987,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3189899,
-          "end": 3189899,
+          "start": 3541152,
+          "end": 3541152,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3189906,
-          "end": 3189906,
+          "start": 3541161,
+          "end": 3541161,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3189933,
-          "end": 3189933,
+          "start": 3541190,
+          "end": 3541190,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50123\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54841\","
         },
         {
-          "start": 3189947,
-          "end": 3189947,
+          "start": 3541206,
+          "end": 3541206,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3190240,
-          "end": 3190240,
+          "start": 3541515,
+          "end": 3541515,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3190286,
-          "end": 3190286,
+          "start": 3541561,
+          "end": 3541561,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3190298,
-          "end": 3190298,
+          "start": 3541575,
+          "end": 3541575,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3190305,
-          "end": 3190305,
+          "start": 3541584,
+          "end": 3541584,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3190332,
-          "end": 3190332,
+          "start": 3541613,
+          "end": 3541613,
           "before": "",
-          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:50135\","
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54853\","
         },
         {
-          "start": 3190346,
-          "end": 3190346,
+          "start": 3541629,
+          "end": 3541629,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3190697,
-          "end": 3190697,
+          "start": 3541994,
+          "end": 3541994,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3190761,
-          "end": 3190761,
+          "start": 3542058,
+          "end": 3542058,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3191684,
-          "end": 3191684,
+          "start": 3543019,
+          "end": 3543019,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3191976,
-          "end": 3191976,
+          "start": 3543319,
+          "end": 3543319,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3192108,
-          "end": 3192108,
+          "start": 3543463,
+          "end": 3543463,
           "before": "",
           "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
         },
         {
-          "start": 3192182,
-          "end": 3192182,
+          "start": 3543537,
+          "end": 3543537,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3192286,
-          "end": 3192286,
+          "start": 3543643,
+          "end": 3543643,
           "before": "",
           "after": ")"
         },
         {
-          "start": 3192293,
-          "end": 3192293,
+          "start": 3543652,
+          "end": 3543652,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3547563,
+          "end": 3547563,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54965\","
+        },
+        {
+          "start": 3547885,
+          "end": 3547885,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3548043,
+          "end": 3548043,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3548080,
+          "end": 3548080,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3548150,
+          "end": 3548150,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3548157,
+          "end": 3548157,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3548946,
+          "end": 3548946,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54989\","
+        },
+        {
+          "start": 3548969,
+          "end": 3548969,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3549108,
+          "end": 3549108,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3549122,
+          "end": 3549122,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:54992\","
+        },
+        {
+          "start": 3549135,
+          "end": 3549135,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3549172,
+          "end": 3549172,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3549175,
+          "end": 3549175,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3549180,
+          "end": 3549180,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3549208,
+          "end": 3549208,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3549219,
+          "end": 3549219,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3549764,
+          "end": 3549764,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.label(\"scheduleTimer:55008\","
+        },
+        {
+          "start": 3549772,
+          "end": 3549772,
+          "before": "",
+          "after": "globalThis.__root085IssuedStartupObserver.promise('scheduled.chain',"
+        },
+        {
+          "start": 3549872,
+          "end": 3549872,
+          "before": "",
+          "after": ")"
+        },
+        {
+          "start": 3549875,
+          "end": 3549875,
           "before": "",
           "after": ")"
         }

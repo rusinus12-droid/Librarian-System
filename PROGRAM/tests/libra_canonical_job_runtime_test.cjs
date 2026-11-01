@@ -121,7 +121,13 @@ const validEditedCanonical = [
   vm.runInContext(source, context, { filename: 'LIBRA-canonical-job-runtime.js' });
   const api = await waitFor(() => context.__LIBRA__);
   await api.getLibraProviderConfig();
-  const result = await api.startManualCanonicalScan();
+  await assert.rejects(() => api.startManualCanonicalScan(), /LIBRA_REANALYSIS_ENTRY_RETIRED|폐기/);
+  const initialInventory = await api.listCanonicalBatchRanges();
+  const result = await api.startSelectedCanonicalBatches({
+    scopeKey: initialInventory.scopeKey,
+    mode: 'missing',
+    ranges: initialInventory.ranges.filter(r => r.startTurn === 6)
+  });
   assert.equal(api.getRuntime().settings.enableCharacterAide, true, 'state-only test domain is enabled');
   assert.equal(result.kind, 'manual_scan');
   assert.deepEqual(Array.from(result.targetStarts), [6], 'current-five action targets only the latest complete five-turn batch');

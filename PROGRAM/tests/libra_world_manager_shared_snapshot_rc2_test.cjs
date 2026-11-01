@@ -42,7 +42,7 @@ const synchronousDomainBuilders = [
   between('const buildWorldManagerRelationshipsCurrentPanel =', 'const buildWorldManagerWorldCurrentPanel ='),
   between('const buildWorldManagerWorldCurrentPanel =', 'const resetWorldManagerPagedView ='),
   between('const buildWorldManagerCharactersPanel =', 'const buildWorldManagerNarrativeCurrentPanel ='),
-  between('const buildWorldManagerNarrativeCurrentPanel =', 'const narrativeDirectionScopeKey =')
+  between('const buildWorldManagerNarrativeCurrentPanel =', 'const stateTrackingSettingsForGui =')
 ].join('\n');
 const firstRenderBoundaries = [snapshotGetter, synchronousDomainBuilders].join('\n');
 assert.match(snapshotGetter, /LibraMemoryCore\.peekSnapshot\(\)/);

@@ -1,6 +1,5 @@
 'use strict';
-const { releaseVersion, releaseText, releasePattern } = require('./fixtures/release_versions.cjs');
-
+const { releaseVersion, releasePattern } = require('./fixtures/release_versions.cjs');
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -14,6 +13,7 @@ assert.match(source, releasePattern("^\\/\\/@version {libra}\\s*$", "m"));
 assert.match(source, /const LIVE_TAIL_SOURCE_MODE = 'sanitized_completed_ua'/);
 assert.match(source, /const liveTailBindingForManifest =/);
 assert.match(source, /const pruneExpiredPendingBoundaryStore =/);
+assert.match(source, /const liveTailRouteEnabled = \(\) => false;/, 'raw dialogue Live Tail injection is permanently retired');
 const beforeRequestSource = source.slice(source.indexOf('const beforeRequest = async (messages, type) =>'), source.indexOf('const afterRequest = async (response, type) =>'));
 assert.ok(beforeRequestSource.indexOf('liveTailAttempt = receiptView.liveTail') < beforeRequestSource.indexOf('let result = await recall('), 'Live Tail diagnostics are built before retrieval can fail');
 assert.match(beforeRequestSource, /const preservedLiveTail = liveTailDiagnosticSnapshot\(/);
@@ -127,115 +127,58 @@ const baseManifest = (observedTurn, refs = [], guardSuffix = '') => ({
   }]))
 });
 
-const turnsOf = tail => Array.from(tail.sourcePairs, row => Number(row.turn));
-
 (async () => {
-  const testSource = source;
-  vm.runInContext(testSource, context, { filename: 'LIBRA.js' });
+  vm.runInContext(source, context, { filename: 'LIBRA.js' });
   const api = await waitFor(() => context.__LIBRA__?.version === releaseVersion('libra') && typeof context.__LIBRA__?.debugBuildLiveTailContext === 'function' ? context.__LIBRA__ : null);
   assert.equal(api.version, releaseVersion('libra'));
 
-  const settings = { classicLiveTailEnabled:true, liveContextEnabled: true, liveTailMaxTurns: 4, liveTailMaxChars: 24000 };
+  const settings = { classicLiveTailEnabled: true, liveContextEnabled: true, liveTailMaxTurns: 4, liveTailMaxChars: 24000 };
   const binding = { scopeKey: 'character-a::chat-a', characterId: 'character-a', chatId: 'chat-a', worldlineId: 'branch-a' };
 
   const firstPairs = api.debugBuildPairs(makeChat(4, { carrierTurn: 4, id: 'first-window' }), 'first-window');
-  const first = api.debugBuildLiveTailContext(firstPairs, baseManifest(4), settings, 'planner', binding);
-  assert.deepEqual(turnsOf(first), [1, 2, 3, 4]);
-  assert.equal(first.sourceMode, 'sanitized_completed_ua');
-  assert.equal(first.requestLocalOnly, true);
-  assert.equal(first.persisted, false);
-  assert.equal(first.internalCarrierRemoved, true);
-  assert.doesNotMatch(first.transcript, /private carrier/);
-  assert.match(first.transcript, /Visible user 4/);
-  assert.match(first.promptBlock, /RECENT DIALOGUE/);
-  assert.equal(first.binding.worldlineId, 'branch-a');
-  assert.ok(first.binding.branchGuardDigest);
-  assert.ok(first.binding.canonicalRefsDigest);
-  assert.ok(first.binding.bindingDigest);
-  assert.ok(first.sourcePairs[3].user.rawPayloadDigests[0]);
-  assert.equal(Object.hasOwn(first.sourcePairs[3].user, 'rawValue'), false, 'provenance must not copy raw content');
-  assert.doesNotMatch(JSON.stringify(first.sourcePairs), /private carrier/);
+  assert.equal(firstPairs.length, 4);
+  for (const route of ['planner', 'sga', 'classic']) {
+    assert.equal(api.debugBuildLiveTailContext(firstPairs, baseManifest(4), settings, route, binding), null,
+      `compatibility entry points cannot reactivate retired raw-dialogue injection (${route})`);
+  }
 
-  const boundaryPairs = api.debugBuildPairs(makeChat(5, { id: 'boundary' }), 'boundary');
-  const boundary = api.debugBuildLiveTailContext(boundaryPairs, baseManifest(5), settings, 'planner', binding);
-  assert.deepEqual(turnsOf(boundary), [2, 3, 4, 5]);
-  assert.equal(boundary.pendingBoundaryRescue, false);
-
-  const secondPairs = api.debugBuildPairs(makeChat(9, { id: 'second-window' }), 'second-window');
-  const second = api.debugBuildLiveTailContext(secondPairs, baseManifest(9, [1]), settings, 'sga', binding);
-  assert.deepEqual(turnsOf(second), [6, 7, 8, 9], 'Live Tail repeats after the first canonical batch');
-  assert.equal(second.selectionMode, 'recent_completed_dialogue');
-
-  const thirdPairs = api.debugBuildPairs(makeChat(14, { id: 'third-window' }), 'third-window');
-  const third = api.debugBuildLiveTailContext(thirdPairs, baseManifest(14, [1, 6]), settings, 'planner', binding);
-  assert.deepEqual(turnsOf(third), [11, 12, 13, 14], 'Live Tail continues on later five-turn cycles');
-
-  const committed = api.debugBuildLiveTailContext(boundaryPairs, baseManifest(5, [1]), settings, 'planner', binding);
-  assert.deepEqual(turnsOf(committed), turnsOf(boundary), 'committing a batch must not remove recent dialogue');
-  assert.equal(committed.transcript, boundary.transcript);
-  assert.equal(committed.promptBlock, boundary.promptBlock, 'storage state must not alter the prompt');
-
-  const gapPairs = api.debugBuildPairs(makeChat(17, { id: 'branch-gap' }), 'branch-gap');
-  const gap = api.debugBuildLiveTailContext(gapPairs, baseManifest(17, [1, 11], 'gap'), settings, 'planner', binding);
-  assert.deepEqual(turnsOf(gap), [14, 15, 16, 17], 'historical gaps must not displace recent dialogue');
-  assert.equal(gap.branchRepairMode, false);
-  assert.deepEqual(Array.from(gap.branchRepairTurns), []);
-  const noMemory = api.debugBuildLiveTailContext(gapPairs, baseManifest(17), settings, 'planner', binding);
-  assert.equal(noMemory.transcript, gap.transcript);
-  const twoTurns = api.debugBuildLiveTailContext(gapPairs, baseManifest(17), { ...settings, liveTailMaxTurns: 2 }, 'planner', binding);
-  assert.deepEqual(turnsOf(twoTurns), [16, 17], 'preserve configured turn budget');
-  const pendingChat = makeChat(4);
-  pendingChat.message.push({ role: 'user', data: 'UNANSWERED_INPUT', chatId: 'pending' });
-  const pendingPairs = api.debugBuildPairs(pendingChat, 'pending-chat');
-  const pending = api.debugBuildLiveTailContext(pendingPairs, baseManifest(4), settings, 'planner', binding);
-  assert.doesNotMatch(pending.transcript, /UNANSWERED_INPUT/);
-
-  // Current consumer delivery is proved through the registered hook, rather than
-  // the retired Planner/Input Writer/SGA prompt compilers.
-  const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
-  const f=await fixture({args:{live_context_enabled:'true',classic_live_tail_enabled:'true'}});
-  try {
-    assert.equal((await f.run()).completed,1);
-    const calls=f.control.calls.length;
-    const query='CURRENT_INPUT_ONLY';
-    const messages=await f.control.hooks.beforeRequest([{role:'user',content:query}],'model');
-    const responseContext=f.r.api.getLastResponseContext();
-    const viewer=f.r.api.getLastMemoryRecallViewer();
-    assert.equal(responseContext.route,'classic');
-    assert.equal(responseContext.scopeKey,f.getManifest().scopeKey);
-    assert.equal(responseContext.values.currentInput,query);
-    assert.equal(viewer.responseContextRequestId,responseContext.requestId);
-    assert.equal(viewer.responseContextDigest,responseContext.contextDigest);
-    const valid=await f.r.api.validateResponseContext(responseContext);
-    assert.equal(valid.ok,true,JSON.stringify(valid));assert.equal(valid.current,true);
-    const block=messages.filter(x=>x.role==='system').map(x=>x.content).join('\n');
-    const lastAssistant=f.chat.message.at(-1).data;
-    assert.ok(block.includes(lastAssistant),'actual returned request includes the most recent completed assistant');
-    assert.equal(block.split(lastAssistant).length-1,1,'recent dialogue is not duplicated');
-    assert.equal(viewer.liveTailInjected,true);
-    assert.equal(f.control.calls.length,calls,'Classic has no response-drafting provider dispatch');
-  }finally{await f.r.cleanup();}
-
-  const changedGuard = api.debugBuildLiveTailContext(firstPairs, baseManifest(4, [], 'changed'), settings, 'planner', binding);
-  assert.notEqual(changedGuard.binding.bindingDigest, first.binding.bindingDigest);
-  assert.notEqual(changedGuard.hash, first.hash, 'branch binding participates in the Live Tail hash');
-  const changedWorldline = api.debugBuildLiveTailContext(firstPairs, baseManifest(4), settings, 'planner', { ...binding, worldlineId: 'branch-b' });
-  assert.notEqual(changedWorldline.binding.bindingDigest, first.binding.bindingDigest);
-
-  const oversizedPairs = api.debugBuildPairs(makeChat(4, { oversizedTurn: 4, id: 'oversized' }), 'oversized');
-  const oversized = api.debugBuildLiveTailContext(oversizedPairs, baseManifest(4), { ...settings, liveTailMaxChars: 4000 }, 'planner', binding);
-  assert.equal(oversized.truncated, true);
-  assert.deepEqual(turnsOf(oversized), [4]);
-  assert.match(oversized.transcript, /LOCAL SAFETY TRUNCATION/);
-
-  assert.equal(api.debugBuildLiveTailContext(firstPairs, baseManifest(4), {...settings,classicLiveTailEnabled:false}, 'classic', binding), null);
-  assert.ok(api.debugBuildLiveTailContext(firstPairs, baseManifest(4), { ...settings, classicLiveTailEnabled: true }, 'classic', binding));
-
-  const diagnostic = api.debugLiveTailDiagnosticSnapshot(first);
+  assert.equal(api.debugLiveTailDiagnosticSnapshot(null), null);
+  const diagnostic = api.debugLiveTailDiagnosticSnapshot({
+    schema: 'libra.live_tail.v1',
+    available: true,
+    sourceMode: 'sanitized_completed_ua',
+    selectionMode: 'recent_completed_dialogue',
+    transcript: 'Visible user 4',
+    sourcePairs: [{ turn: 4 }],
+    binding: { worldlineId: 'branch-a', bindingDigest: 'digest-a' }
+  });
   assert.equal(diagnostic.available, true);
   assert.equal(Object.hasOwn(diagnostic, 'transcript'), false);
   assert.equal(Object.hasOwn(diagnostic, 'sourcePairs'), false);
-  assert.equal(diagnostic.binding.bindingDigest, first.binding.bindingDigest);
+  assert.equal(diagnostic.binding.bindingDigest, 'digest-a');
+
+  const { fixture } = require('./fixtures/libra_unified_runtime_fixture.cjs');
+  const f = await fixture({ args: { live_context_enabled: 'true', classic_live_tail_enabled: 'true' } });
+  try {
+    assert.equal((await f.run()).completed, 1);
+    const calls = f.control.calls.length;
+    const query = 'CURRENT_INPUT_ONLY';
+    const messages = await f.control.hooks.beforeRequest([{ role: 'user', content: query }], 'model');
+    const responseContext = f.r.api.getLastResponseContext();
+    const viewer = f.r.api.getLastMemoryRecallViewer();
+    assert.equal(responseContext.route, 'classic');
+    assert.equal(responseContext.scopeKey, f.getManifest().scopeKey);
+    assert.equal(responseContext.values.currentInput, query);
+    assert.equal(viewer.responseContextRequestId, responseContext.requestId);
+    assert.equal(viewer.responseContextDigest, responseContext.contextDigest);
+    const valid = await f.r.api.validateResponseContext(responseContext);
+    assert.equal(valid.ok, true, JSON.stringify(valid));
+    assert.equal(valid.current, true);
+    const block = messages.filter(x => x.role === 'system').map(x => x.content).join('\n');
+    assert.doesNotMatch(block, /RECENT DIALOGUE/, 'retired Live Tail block is never injected into Classic requests');
+    assert.equal(viewer.liveTailInjected, false);
+    assert.equal(f.control.calls.length, calls, 'Classic has no response-drafting provider dispatch');
+  } finally { await f.r.cleanup(); }
 
   const now = Date.now();
   const pendingScope = { scopeKey: 'character-a::chat-a', characterId: 'character-a', chatId: 'chat-a' };
@@ -264,4 +207,3 @@ const turnsOf = tail => Array.from(tail.sourcePairs, row => Number(row.turn));
   console.error(error);
   process.exitCode = 1;
 });
-

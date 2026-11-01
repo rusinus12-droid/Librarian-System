@@ -1,6 +1,6 @@
 'use strict';const{test}=require('node:test'),assert=require('node:assert/strict');const{fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
 // Explicit range selection is read-only; execution is the one user action. No tracker ticket exists.
-const currentSelection=async f=>{const inv=await f.r.api.listCanonicalBatchRanges();return {allowed:true,scopeKey:inv.scopeKey,mode:'source_edit',ranges:inv.ranges.filter(r=>r.startTurn===1)};};
+const currentSelection=async f=>{const inv=await f.r.api.listCanonicalBatchRanges();return {allowed:true,scopeKey:inv.scopeKey,mode:'source_edit',ranges:inv.ranges.filter(r=>r.startTurn===1).map(({startTurn,endTurn,identityDigest})=>({startTurn,endTurn,identityDigest}))};};
 const applySelection=async(f,selection)=>{try{return await f.r.api.startSelectedCanonicalBatches(selection);}catch(e){return {ok:false,reason:String(e.message||e)};}};
 
 // Isolate fixture bootstrap timers, then invoke the real scheduler/callback.

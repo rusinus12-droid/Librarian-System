@@ -49,6 +49,7 @@ let currentChatIndex = 0;
 // A real RisuAI host keeps the character's chatPage equal to the selected chat;
 // the unified recall's readonly source context reads the selection from it.
 const selectChat = index => { currentChatIndex = index; character.chatPage = index; };
+let allowMicroLlm = false;
 const unloadHandlers = [];
 const host = {
   pluginStorage: storage,
@@ -63,6 +64,13 @@ const host = {
   },
   async getArg(name) { return this.getArgument(name); },
   async setArgument() { return true; },
+  async runLLMModel(...args) {
+    if (allowMicroLlm && JSON.stringify(args).includes('[LIBRA MICRO SOURCE CONTRACT]')) {
+      const input = JSON.parse(args[0].messages.find(row => row.role === 'user').content);
+      return require('./fixtures/libra_reanalysis_kinds_fixture.cjs').microReply(args, input.assistant.text);
+    }
+    throw new Error('portable restore runtime test has no provider or server');
+  },
   async nativeFetch() { throw new Error('portable restore runtime test has no provider or server'); },
   async onUnload(handler) { unloadHandlers.push(handler); return true; },
   async registerSetting() { return true; }, async unregisterSetting() { return true; },
@@ -277,13 +285,17 @@ const scopeManifestEntry = chatId => Array.from(values.entries()).find(([key, ra
   await waitFor(() => { const state=api.getCaptureBackendState();
     return state.receiptQueueScopes===0 && state.microQueueScopes===0 && state.microQueuedJobs===0;
   }, 'admitted background owner work drains before portable export');
-  for(const turn of [1,2,3]){
-    const activeReceipt=await api.debugReadActiveCompletedTurnReceipt(turn);
-    assert.equal(activeReceipt.status,'verified');
-    const explicitMicro=await api.retryMicroAnalysis({scope:{scopeKey:manifest.scopeKey,scopeId:manifest.scopeKey,
-      characterId:character.id,chatId:chats[currentChatIndex].id},receiptRef:activeReceipt.receiptKey,
-      revision:activeReceipt.receipt.revisionId,digest:activeReceipt.receipt.sourceDigest,expectedGeneration:0});
-    assert.equal(explicitMicro.status,'verified','a historical source requires an explicit permitted fixture analysis retry');
+  allowMicroLlm = true;
+  try {
+    for(const turn of [1,2,3]){
+      const activeReceipt=await api.debugReadActiveCompletedTurnReceipt(turn);
+      assert.equal(activeReceipt.status,'verified');
+      const inv=await api.listReanalysisRanges({kind:'micro'});
+      const explicitMicro=await api.reanalyzeSelectedRanges({...inv,ranges:inv.ranges.filter(r=>r.start===turn)});
+      assert.equal(explicitMicro.ok,true,'a historical source requires an explicit permitted fixture analysis retry');
+    }
+  } finally {
+    allowMicroLlm = false;
   }
   const sourceRaw=await api.debugReadActiveRawPacket(1);assert.equal(sourceRaw.status,'verified');
   const envelope = await portable.exportCurrentScope();

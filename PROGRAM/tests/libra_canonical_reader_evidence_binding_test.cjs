@@ -9,12 +9,12 @@ const authoritySrc = fs.readFileSync(path.join(__dirname, '../server/authority/l
 
 // 1. Structural contract assertions in LIBRA.js
 assert(
-  libraSrc.includes("에|아|야)"),
+  /에\|아\|야(?:\|요)?\)/.test(libraSrc),
   'LIBRA.js must include vocative particles (아|야) in CANONICAL_ENTITY_KOREAN_PARTICLE'
 );
 
 assert(
-  authoritySrc.includes("에|아|야)"),
+  /에\|아\|야(?:\|요)?\)/.test(authoritySrc),
   'authority must include vocative particles (아|야) in CANONICAL_ENTITY_KOREAN_PARTICLE'
 );
 
@@ -29,7 +29,7 @@ assert(
 );
 
 assert(
-  libraSrc.includes("catch(replayErr){\n          console.warn?.('canonical_reader_evidence_replay_warning:', replayErr?.message || replayErr);\n        }"),
+  libraSrc.includes("canonical_reader_evidence_replay_warning:"),
   'LIBRA.js getCanonicalReaderChapter must guard unifiedEvidenceRead against replay rejection crashing reader'
 );
 

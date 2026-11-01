@@ -114,6 +114,7 @@ test('group receipt lookup rejects mismatched chat ownership and group membershi
   if(kind==='wrong-speaker') f.char.characters=['other-speaker'];
   if(kind==='missing-chat') f.char.chats=[];
   await f.listeners.output({char:{chaId:'speaker-1',type:'character'},chat:structuredClone(f.chat),characterIndex:0,chatIndex:0,messageIndex:1});
+  await new Promise(r => setTimeout(r, 10));
   f.char.chats=[f.chat];f.char.characters=['speaker-1'];const result=await plugin.debugNativeRecentContext('',null);assert.equal(result.recentTurnCount,0,kind);
  }
 });

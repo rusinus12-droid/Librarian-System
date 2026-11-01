@@ -2,7 +2,7 @@
 // Real deployed LIBRA + its real storage bridge + local HTTP/SQLite.
 // Only the RisuAI UI/LLM boundary is controlled; no replacement memory engine.
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
-const {createMemorySuiteServer}=require('../../server/server.cjs');
+const {createMemorySuiteServer}=require('./flashback_in_memory_server_fixture.cjs');
 const {fixture,artifact}=require('./libra_unified_runtime_fixture.cjs');
 async function serverFixture(options={}){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'libra-product-server-'));

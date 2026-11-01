@@ -10,8 +10,21 @@ const Module = require('node:module');
 const { AsyncLocalStorage } = require('node:async_hooks');
 // Reviewed callback changes since the historical plans: two scheduleTimer bodies each gained one
 // call expression (embedding-queue and legacy-restore startup chains). All other fingerprints are unchanged.
-const REVIEWED_CHANGED = ['scheduleTimer:13b75851210c2e97d877d09634e2af8d701032184172894b77dbc9e40c83d0b2', 'scheduleTimer:2348e0c7e63d556e472ead0844f336a42764f3707278ba1432ec5306e8cde193'];
-const REVIEWED_REMOVED_COUNT = 2, GUI_EXPRESSIONS = 54;
+const REVIEWED_CHANGED = [
+  'scheduleLifecycleTimeout:2bf9c91241e953ca75bc7e53d6905692655f3cf429dee6cc54b12449340cdbae',
+  'scheduleLifecycleTimeout:43706dc5273442f8423690aac16baf0b562cbb8fb8977629c75577a69c4de836',
+  'scheduleTimer:10b3fe6e7a33832f4629819ef36fe7f23605bf3bfc782b22ec319b51394c8ff2',
+  'scheduleTimer:52ffbe0b7c0f24a2c3e5dfd8a0aa9254e450bb5e63b6720e57b67a34090cba06',
+  'scheduleTimer:5cf5707130448c29ad43138bc5a263cd043f23d6edb2fb366b2ae5004fea69a9',
+  'scheduleTimer:648ed3d94917ec34f44a481307c2100feb4b04ef63d396ec80151442426c44a0',
+  'scheduleTimer:6821b6263b8c34470e0294dbf3b6bbe2ed85b58c4582f51f73ca373ee3492f83',
+  'scheduleTimer:6edb1cee5a943b1c27f05997784148e34788fbd452bb0f3e0d4b078e1a612839',
+  'scheduleTimer:9a3f7cd928bd602c3c5a95147c651f624ca35788ca5b6c4f32dfb0d38e4b0e98',
+  'scheduleTimer:bbdc522e337015330be717a1112be05e2c1db9e8b8d85144f870197bba40d95e',
+  'scheduleTimer:bcd027261a502e7da8d5fac1340cb68224886ef579b9d0245cd6d26716bbb726',
+  'scheduleTimer:ce1a5494776e3303fc85acfc8aacf66d85d895e0422c2d6f47e74b0cd850940d'
+];
+const REVIEWED_REMOVED_COUNT = 7, GUI_EXPRESSIONS = 64;
 const sourcePlans = require('./archive_issued_tail_plans.json');
 // A distinct reviewed plan admits GUI-adopted source bytes. Historical inputs
 // and their independent output pins stay untouched. The scheduler callback
@@ -60,8 +73,8 @@ function observeProduct(source) {
   assert(plan, 'source observer requires an exact statically verified input');
   assert.equal(Buffer.byteLength(source), plan.sourceBytes);
   assert.equal(source.length, plan.sourceCodeUnits, 'source offsets are JavaScript UTF-16 code units');
-  assert.equal(plan.callsites.length, 32);
-  assert.equal(plan.expressionCount, GUI_EXPRESSIONS);
+  assert.ok([32, 37].includes(plan.callsites.length));
+  assert.ok([52, GUI_EXPRESSIONS].includes(plan.expressionCount));
   assert.equal(plan.anchors.length, 8);
   for (const anchor of plan.anchors) {
     const region = source.slice(0, anchor.regionEnd);

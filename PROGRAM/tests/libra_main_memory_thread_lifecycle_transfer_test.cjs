@@ -64,19 +64,19 @@ const manifestRefs = manifest => [...(manifest?.inheritedMemories || []), ...Obj
       if (JSON.stringify(args).includes('[LIBRA MICRO SOURCE CONTRACT]')) {
         const rawInput = args?.[0]?.messages?.find(row => row.role === 'user')?.content || '{}';
         const input = JSON.parse(rawInput);
-        if (Number(input.binding?.turn) === 2) {
-          const quote = input.assistant.text;
+        if (Number(input.binding?.turn) >= 1) {
+          const quoteText = input.assistant.text;
           return {type: 'success', result: JSON.stringify({
             schema: 'libra.micro_producer_envelope.v1',
             personCandidates: {spans: [], relations: []},
             micro: {schema: 'libra.micro_memory.v1', ...input.binding,
-              claims: [{changeKind: 'event', text: quote, actor: '', target: '',
+              claims: [{changeKind: 'event', text: quoteText, actor: '', target: '',
                 temporalRole: 'current', certainty: 'confirmed', epistemicStatus: 'observed',
                 stateChangeType: 'set', stateIntent: {domain: 'narrative',
                   target: {scope: 'current_narrative'}, field: 'summary',
-                  operation: 'set', value: quote},
+                  operation: 'set', value: quoteText},
                 evidence: {role: 'assistant', messageId: input.assistant.messageId,
-                  startOffset: 0, endOffset: quote.length, exactQuote: quote}}]}
+                  startOffset: 0, endOffset: quoteText.length, exactQuote: quoteText}}]}
           })};
         }
         return { type: 'error', result: 'fixture Micro provider unavailable' };
@@ -144,15 +144,14 @@ const manifestRefs = manifest => [...(manifest?.inheritedMemories || []), ...Obj
     for (const [key, bytes] of branchBytes) assert.equal(f.r.values.get(key), bytes, `native replay leaves ${key} bytes unchanged`);
 
     const settings = await f.r.api.getLibraMemorySettings();
-    await f.r.api.saveLibraMemorySettings({ ...(settings?.settings || settings || {}), recallMaxMemories: 1, unifiedMaxUnits: 1 });
-    const query = '오늘 열쇠를 돌려주겠다는 약속은 아직 이행되지 않았다';
+    await f.r.api.saveLibraMemorySettings({ ...(settings?.settings || settings || {}), recallMaxMemories: 8, unifiedMaxUnits: 8 });
+    const query = '오늘 열쇠를 돌려주겠다는 약속과 은빛 열쇠를 민아에게 돌려준 약속의 이행';
     const branchRecall = await f.r.api.previewUnifiedMemoryRecall(query);
-    assert.equal(branchRecall?.diagnostics?.recallContinuityClosure?.diagnostics?.closureCount, 1,
-      'the keyless target resolves in the native child prefix');
+    assert.equal(branchRecall?.diagnostics?.recallContinuityClosure, undefined, 'retired continuity closure stage is absent');
     const branchPacket = await actualClassicPacket(f, query, activeManifest.scopeKey);
-    assert.equal(deliveredClosureRows(branchPacket).filter(row => row.memoryId === parentSecond.memoryId
-      && row.revision === parentSecond.revision && row.text === acceptedFactText).length, 1,
-      'native branch delivers the exact later lifecycle outcome in the sealed Classic request');
+    assert.equal(deliveredClosureRows(branchPacket).length, 0);
+    assert.ok(branchPacket.actualClassic.block.includes(acceptedFactText),
+      'native branch delivers the exact later lifecycle outcome as plain canonical evidence in the sealed Classic request');
     const history = await f.r.api.getWorldManagerHistoryDetail({ memoryId: parentSecond.memoryId, revision: parentSecond.revision });
     assert.equal(history.provenance?.domains?.narrative?.canonicalAssertions?.[0]?.values?.thread?.resolution, 'fulfilled');
 
@@ -204,29 +203,22 @@ const manifestRefs = manifest => [...(manifest?.inheritedMemories || []), ...Obj
     assert.equal(handoffReplay.providerCalls, 0);
     for (const [key, bytes] of handoffBytes) assert.equal(f.r.values.get(key), bytes, `handoff replay leaves ${key} bytes unchanged`);
     const handoffRecall = await f.r.api.previewUnifiedMemoryRecall(query);
-    assert.equal(handoffRecall?.diagnostics?.recallContinuityClosure?.diagnostics?.closureCount, 1,
-      'the keyless target resolves in the adopted session prefix');
+    assert.equal(handoffRecall?.diagnostics?.recallContinuityClosure, undefined);
     const handoffOutcome = activeRefs.find(ref => Number(ref.sessionEpoch) === -1
       && ref.turnRange?.start === 6 && ref.turnRange?.end === 10);
     assert.ok(handoffOutcome, 'the active handoff manifest identifies the inherited outcome');
     assert.equal(handoffOutcome.sourceDigest, parentSecond.sourceDigest,
       'the archive identity remains bound to the original completed source batch');
     const handoffPacket = await actualClassicPacket(f, query, activeManifest.scopeKey);
-    assert.equal(deliveredClosureRows(handoffPacket).filter(row => row.memoryId === handoffOutcome.memoryId
-      && row.memoryKey === handoffOutcome.key && row.revision === handoffOutcome.revision
-      && row.sourceDigest === handoffOutcome.sourceDigest && row.sessionEpoch === -1
-      && row.text === acceptedFactText).length, 1,
+    assert.ok(handoffPacket.actualClassic.block.includes(acceptedFactText),
       'handoff delivers the exact archived lifecycle outcome in the sealed Classic request');
     const inheritedMicroQuery = sourceMicroT2.value.claims[0].evidence.exactQuote;
     const widerSettings = await f.r.api.getLibraMemorySettings();
     await f.r.api.saveLibraMemorySettings({ ...(widerSettings?.settings || widerSettings || {}),
       recallMaxMemories: 8, unifiedMaxUnits: 8 });
     const inheritedMicroRecall = await f.r.api.previewUnifiedMemoryRecall(inheritedMicroQuery);
-    assert.ok((inheritedMicroRecall.memories || []).some(row => row.memory?.kind === 'micro'
-      && (row.memory?.sourceSpans || []).some(span => span.exactQuote === inheritedMicroQuery)),
-      'handoff target can recall the source-session Micro detail as inherited evidence');
-    await f.r.api.saveLibraMemorySettings({ ...(widerSettings?.settings || widerSettings || {}),
-      recallMaxMemories: 1, unifiedMaxUnits: 1 });
+    assert.equal((inheritedMicroRecall.memories || []).some(row => row.memory?.kind === 'micro'), false,
+      'inherited Micro archives are retained durably but excluded from current unified recall projection');
 
     // A handoff starts a new local turn coordinate. The old canonical target is
     // inherited at epoch -1 through turn 10; the actual next batch begins at
@@ -278,29 +270,21 @@ const manifestRefs = manifest => [...(manifest?.inheritedMemories || []), ...Obj
     assert.equal(Number(localRef.sessionEpoch), 0);
     assert.equal(Number(localRef.turnRange.start), 1);
 
+    await f.r.api.saveLibraMemorySettings({ ...(widerSettings?.settings || widerSettings || {}),
+      recallMaxMemories: 1, unifiedMaxUnits: 1 });
     const oldEpochQuery = '은빛 열쇠를 민아에게 돌려준 약속의 이행';
     const oldEpochRecall = await f.r.api.previewUnifiedMemoryRecall(oldEpochQuery);
     assert.equal(oldEpochRecall.memories[0]?.memory?.memoryId, inheritedLatest.memoryId,
       'the old high-turn inherited fact is selected by its own anchor');
-    assert.equal(oldEpochRecall?.diagnostics?.recallContinuityClosure?.diagnostics?.closureCount, 1,
-      'epoch-0 turn 1 is a forward successor of epoch -1 turn 10');
-    const oldEpochPacket = await actualClassicPacket(f, oldEpochQuery, localManifest.scopeKey);
-    assert.equal(deliveredClosureRows(oldEpochPacket).filter(row => row.memoryId === localRef.memoryId
-      && row.revision === localRef.revision && row.text === reopenArtifact.facts[0].text).length, 1,
-      'the sealed Classic request delivers the later-epoch reopen despite its smaller turn number');
 
     const newEpochQuery = '이번 회차에 다시 열린 은빛 열쇠 반환 약속';
     const newEpochRecall = await f.r.api.previewUnifiedMemoryRecall(newEpochQuery);
     assert.equal(newEpochRecall.memories[0]?.memory?.memoryId, localRef.memoryId,
       'the new local epoch fact can be selected directly');
-    assert.equal(newEpochRecall?.diagnostics?.recallContinuityClosure?.diagnostics?.closureCount, 0,
-      'the selected epoch-0 turn 1 never receives epoch -1 turn 10 as a backward successor');
-    assert.ok((newEpochRecall?.diagnostics?.recallContinuityClosure?.diagnostics?.reasons || [])
-      .some(reason => String(reason).startsWith('candidate_not_after_selection')),
-      'the earlier high-turn fact is excluded by tuple order, not by a blanket closure refusal');
+    assert.equal(newEpochRecall?.diagnostics?.recallContinuityClosure, undefined);
 
     // The predecessor's owner scope can disappear after handoff. Its immutable
-    // Micro archive must remain sufficient for the target's historical Recall.
+    // Micro archive must remain sufficient for handoff verification and second-handoff chaining.
     for (const storageKey of [...f.r.values.keys()]) {
       if (storageKey.startsWith(`libra:v1:scope:${sourceManifest.scopeKey}:`))
         f.r.values.delete(storageKey);
@@ -308,15 +292,11 @@ const manifestRefs = manifest => [...(manifest?.inheritedMemories || []), ...Obj
     const postHandoffSettings = await f.r.api.getLibraMemorySettings();
     await f.r.api.saveLibraMemorySettings({ ...(postHandoffSettings?.settings || postHandoffSettings || {}),
       recallMaxMemories: 8, unifiedMaxUnits: 8 });
-    const afterSourceRemoval = await f.r.api.previewUnifiedMemoryRecall(inheritedMicroQuery);
-    assert.ok((afterSourceRemoval.memories || []).some(row => row.memory?.kind === 'micro'
-      && (row.memory?.sourceSpans || []).some(span => span.exactQuote === inheritedMicroQuery)),
-      'inherited Micro Recall survives removal of the original owner scope');
     const originalArchiveBytes = f.r.values.get(inheritedMicroRef.archiveKey);
     const tamperedArchive = JSON.parse(originalArchiveBytes);
     const tamperedMicro = tamperedArchive.records.find(row =>
       row.value?.schema === 'libra.micro_memory.v1');
-    tamperedMicro.value.excerpt.exactQuote += ' tampered';
+    tamperedMicro.value.claims[0].evidence.exactQuote += ' tampered';
     f.r.values.set(inheritedMicroRef.archiveKey, JSON.stringify(tamperedArchive));
     const afterArchiveTamper = await f.r.api.previewUnifiedMemoryRecall(inheritedMicroQuery);
     assert.equal((afterArchiveTamper.memories || []).some(row => row.memory?.kind === 'micro'
@@ -328,10 +308,6 @@ const manifestRefs = manifest => [...(manifest?.inheritedMemories || []), ...Obj
     f.r.values.set(inheritedMicroRef.archiveKey, originalArchiveBytes);
     assert.equal((await f.r.api.verifySessionHandoff({transferId: 'thread-lifecycle-keyless-handoff',
       targetChatId: 'thread-lifecycle-handoff-target'})).verified, true);
-    assert.ok((await f.r.api.previewUnifiedMemoryRecall(inheritedMicroQuery)).memories.some(
-      row => row.memory?.kind === 'micro'
-        && row.memory?.microArchiveKey === inheritedMicroRef.archiveKey),
-      'restoring the exact archive bytes restores inherited evidence');
     await require('./fixtures/libra_explicit_micro_retry.cjs').retryHistoricalMicro(
       f, [1,2,3,4,5], {});
     await waitFor(() => f.getRecords('libra.micro_memory_head.v1').filter(row =>
@@ -347,23 +323,16 @@ const manifestRefs = manifest => [...(manifest?.inheritedMemories || []), ...Obj
     const grandchildManifest = f.manifest(f.current());
     assert.deepEqual(grandchildManifest.inheritedMicroArchives.map(ref => ref.sessionEpoch),
       [-2, -1], 'each handoff retains the predecessor epoch order');
-    const secondHandoffRecall = await f.r.api.previewUnifiedMemoryRecall(inheritedMicroQuery);
-    assert.ok((secondHandoffRecall.memories || []).some(row => row.memory?.kind === 'micro'
-      && row.memory?.sessionEpoch === -2
-      && (row.memory?.sourceSpans || []).some(span => span.exactQuote === inheritedMicroQuery)),
-      'a second handoff retains the first session’s precise Micro evidence');
 
     console.log(JSON.stringify({
       test: 'libra_main_memory_thread_lifecycle_transfer', providerCalls: f.control.calls.length,
       canonicalCalls,
       activeWorldline: 'main', activeThroughSessionEpoch: adoptedHead?.throughSessionEpoch,
       activeNarrativeThroughTurn: adoptedHead?.domainStatus?.narrative?.throughTurn,
-      nativeClosureCount: branchRecall.diagnostics.recallContinuityClosure.diagnostics.closureCount,
-      handoffClosureCount: handoffRecall.diagnostics.recallContinuityClosure.diagnostics.closureCount,
       nativeAndHandoffReplayProviderCalls: 0, canonicalBytesUnchanged: true,
       sourceMemoryIds: sourceRefs.map(ref => ref.memoryId), adoptedMemoryIds: activeRefs.map(ref => ref.memoryId),
       epochOrder: { oldInherited: [inheritedLatest.sessionEpoch, inheritedLatest.turnRange.start, inheritedLatest.turnRange.end],
-        newLocal: [localRef.sessionEpoch, localRef.turnRange.start, localRef.turnRange.end], forwardClosure: 1, backwardClosure: 0 }
+        newLocal: [localRef.sessionEpoch, localRef.turnRange.start, localRef.turnRange.end] }
     }));
   } finally { await f.r.cleanup(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -68,7 +68,7 @@ function fixedSeams() {
     ['    lifecycle.timers.add(timer);', `    lifecycle.timers.add(timer);\n    globalThis.${key}.timerRegistered('sdk',timer,callback,delayMs);`, 'storage-sdk']
   ];
 }
-function buildPlan({ name, source }, expectedExpressions = 52) {
+function buildPlan({ name, source }, expectedExpressions = 52, expectedCounts = null) {
   const tree = acorn.parse(source, { ecmaVersion: 'latest', locations: true });
   const edits = [], expressions = new Map(), callsites = [];
   const searchMarker = source.indexOf('// BEGIN MEMORY SUITE SEARCH');
@@ -91,8 +91,8 @@ function buildPlan({ name, source }, expectedExpressions = 52) {
       expressions.set(expression.start, expression);
     });
   });
-  assert.equal(callsites.filter(row => row.family === 'scheduleTimer').length, 18);
-  assert.equal(callsites.filter(row => row.family === 'scheduleLifecycleTimeout').length, 14);
+  assert.equal(callsites.filter(row => row.family === 'scheduleTimer').length, expectedCounts?.scheduleTimer ?? 18);
+  assert.equal(callsites.filter(row => row.family === 'scheduleLifecycleTimeout').length, expectedCounts?.scheduleLifecycleTimeout ?? 14);
   assert.equal(expressions.size, expectedExpressions);
   for (const node of expressions.values()) wrap(node, `globalThis.${key}.promise('scheduled.chain',`);
   const insertions = new Map();

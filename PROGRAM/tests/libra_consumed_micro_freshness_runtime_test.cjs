@@ -222,8 +222,8 @@ for (const mutation of ['head_deleted', 'body_changed']) {
     await withMicro(async (f, active, prepare) => {
       const context = await prepare();
       if (mutation === 'head_deleted') f.r.values.delete(active.headKey); else mutateBody(f, active);
-      // The unified graph corpus binds the Micro bytes, so the change surfaces as a source change.
-      await invalid(f, context, /CONSUMER_MICRO|LIBRA_GRAPH_CORPUS_SOURCE_CHANGED/);
+      // The unified graph corpus binds the Micro bytes, so the change surfaces as a source or physical readset change.
+      await invalid(f, context, /CONSUMER_MICRO|LIBRA_GRAPH_CORPUS_SOURCE_CHANGED|LIBRA_GRAPH_COMPILER_PHYSICAL_READSET_STALE/);
     });
   });
 }
@@ -292,8 +292,8 @@ test('a stalled final consumed-data read is bounded and its late result cannot i
     try {
       const output = await f.control.hooks.beforeRequest(input, 'model');
       assert.equal(reached, true);
-      // RECALL_REQUEST_BUDGET_MS is the 30s absolute live-recall watchdog.
-      assert.ok(Date.now() - started < 35000, 'final read is bounded by the absolute recall watchdog');
+      // RECALL_REQUEST_BUDGET_MS is the 90s absolute live-recall watchdog.
+      assert.ok(Date.now() - started < 95000, 'final read is bounded by the absolute recall watchdog');
       assert.deepEqual(clone(output), input);
       assert.equal(f.control.calls.length, calls);
       release(); await new Promise(resolve => setTimeout(resolve, 20));

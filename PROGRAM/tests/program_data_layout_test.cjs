@@ -73,6 +73,7 @@ function assertPackageRoot(root, { allowSourceInput = false } = {}) {
     // GitHub Download ZIP also includes this file without a .git directory.
     // Only verified readable source inputs may carry repository metadata.
     if (fs.existsSync(path.join(root, '.gitignore'))) expectedRootEntries.push('.gitignore');
+    if (fs.existsSync(path.join(root, '.github'))) expectedRootEntries.push('.github');
     if (fs.existsSync(path.join(root, 'README.md'))) expectedRootEntries.push('README.md');
   }
   assert.deepEqual(rootEntries, expectedRootEntries.sort(), 'Bundle root contains only PROGRAM/DATA, updater, and verified release artifacts.');

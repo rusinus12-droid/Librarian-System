@@ -223,6 +223,19 @@ module.exports = function createMemoryGraphReaders({ identity, normalizeName, di
     if (state?.view?.head?.schema === 'libra.continuity_state.v2') attempt('state', () => {
       const head = state.view.head, authority = object(state.view.authority);
       const src = source('state', state.key, state.revision, { head, authority });
+      // A recalled state field must say whose state it is: "character.current_state"
+      // alone was ambiguous whenever several characters share a field.
+      const stateNames = new Map([...array(head?.characters), ...array(head?.world)]
+        .map(item => [string(item?.id), string(item?.name)]).filter(([id, name]) => id && name));
+      const stateOwnerLabel = (domain, row) => {
+        if (domain === 'narrative') return '';
+        const nameOf = id => stateNames.get(string(id)) || '';
+        if (domain === 'relationship') {
+          const subject = string(row?.subjectName) || nameOf(row?.subjectId), target = string(row?.targetName) || nameOf(row?.targetId);
+          return subject || target ? `${subject || 'unknown'} → ${target || 'unknown'}${row?.dimension ? ` (${string(row.dimension)})` : ''}` : '';
+        }
+        return string(row?.name) || nameOf(row?.id);
+      };
       const corrections = new Map();
       for (const row of array(state.corrections?.records)) {
         if (row.status !== 'active' || row.scopeKey !== frame.scopeKey || row.worldlineId !== frame.worldlineId) continue;
@@ -269,7 +282,8 @@ module.exports = function createMemoryGraphReaders({ identity, normalizeName, di
             const role = correction.correctionId ? 'user_corrected' : !hasProvenance ? 'state_unprovenanced'
               : authority.current === true && authority.pending !== true ? 'state_current' : 'state_last_known';
             if (hasProvenance && correction.correctionId && !correctionSources.has(correction.correctionId)) check(2);
-            const stateText = `${domain}.${field} = ${readableStateValue(items[itemIndex])}${isClear ? ' (cleared)' : ''}`;
+            const ownerLabel = stateOwnerLabel(domain, row);
+            const stateText = `${ownerLabel ? ownerLabel + ' · ' : ''}${domain}.${field} = ${readableStateValue(items[itemIndex])}${isClear ? ' (cleared)' : ''}`;
             const node = meaning(src, isCollection ? 'state_item' : 'state_field', key, body, selector,
               { semanticRole: role, ...body, text: stateText });
             if (!hasProvenance) { note('state', 'field_provenance_unknown'); continue; }

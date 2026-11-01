@@ -1,58 +1,166 @@
 'use strict';
 // Actual owner algorithms in an in-memory host; no production admission claim.
-const {test}=require('node:test'),assert=require('node:assert/strict');
-const {createLibraVmHarness}=require('./fixtures/libra_vm_harness.cjs');
-async function fixture(){return createLibraVmHarness({}, {}, {
- transformSource:source=>source.replace('    const sentenceUnits = value => {',
- '    globalThis.__rankedTest = { shortlistRecallCatalog, normalizeSettings, buildQueryBundle, selectByMmr, memorySimilarity, gradiaRankedMetadata, scoreGradiaHydratedRows, gradiaRankedOwnerProfile, registry: EmbeddingProviderRegistry };\n    const sentenceUnits = value => {')
- .replace("        const MULTILINGUAL_PROBE_SCHEMA = 'libra.embedding_multilingual_probe.v1';",
- `        globalThis.__seedRankedCache = (raw, texts) => { const cfg = normalizeConfig(raw); for (const value of texts) rememberQueryCache(queryCacheKey(cfg, value, {}), { vector: [1, 0], provider: cfg.provider, model: cfg.model, dimensions: 2, profileId: profileFor({ ...cfg, dimensions: 2 }).profileId, normalized: true }); };\n        const MULTILINGUAL_PROBE_SCHEMA = 'libra.embedding_multilingual_probe.v1';`),
- contextGlobals:{setTimeout:()=>({unref(){}}),clearTimeout(){},setInterval:()=>({unref(){}}),clearInterval(){}}
-});}
+const { test } = require('node:test'), assert = require('node:assert/strict');
+const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
+const { createLibraVmHarness } = require('./fixtures/libra_vm_harness.cjs');
 
-function corpus(count=100){const refs=Array.from({length:count},(_,i)=>({key:'memory-'+i,memoryId:'mem-'+i,revision:1,status:'committed',turnRange:{start:i*5+1,end:i*5+5},sessionEpoch:0}));return {manifest:{schema:'libra.manifest.v1',memories:Object.fromEntries(refs.map((r,i)=>[i,r])),inheritedMemories:[],branchGuard:{schema:'libra.branch_guard.v1',status:'ready',verifiedStarts:[]}},catalog:{schema:'libra.recall_catalog.v3',scopeKey:'s',entries:refs.map(ref=>({memoryKey:ref.key,turnRange:ref.turnRange,sessionEpoch:0,searchText:'shared relevant memory '+ref.memoryId,strongAnchorTokens:[],summary:'summary'}))}};}
-const bundle=()=>({currentText:'shared relevant memory',sceneText:'',sparseText:'shared relevant memory',currentWeight:1,sceneWeight:0,queryType:'state',currentAnchors:{strong:[],weak:[]},sceneAnchors:{strong:[],weak:[]},pairs:Array.from({length:500},()=>({})),promptChars:0,promptPressure:'normal'});
-test('explicit ranked profile exposes bounded 80-row metadata frontier while ordinary hydration remains 32',async()=>{const f=await fixture();try{
- const t=f.context.__rankedTest,{catalog,manifest}=corpus(),settings=t.normalizeSettings({performancePreset:'balanced',candidateLimit:80,recallMaxMemories:12,forceCurrentScene:false}),q=bundle();
- const ordinary=t.shortlistRecallCatalog(catalog,manifest,q,{},settings,null,[]);
- const ranked=t.shortlistRecallCatalog(catalog,manifest,q,{},settings,null,[],'gradia.ranked-metadata.v2');
- assert.equal(ordinary.refs.length,32);assert.equal(ranked.profile,'gradia.ranked-metadata.v2');assert.equal(ranked.refs.length,80);assert.equal(ranked.rows.length,80);assert.equal(ranked.frontierLimit,80);assert.equal(ranked.ordinaryHydrateLimit,32);assert.equal(ranked.authorityQualified,false);
- assert.equal(JSON.stringify(t.shortlistRecallCatalog(catalog,manifest,q,{},settings,null,[])),JSON.stringify(ordinary));
-}finally{await f.cleanup();}});
-test('ranked profile caps forced union at the existing preset and retains an explicit temporal anchor',async()=>{const f=await fixture();try{
- const t=f.context.__rankedTest,{catalog,manifest}=corpus(400),settings=t.normalizeSettings({performancePreset:'light',candidateLimit:40,recallMaxMemories:6,forceCurrentScene:false}),q=bundle();q.provenanceRescue={selected:catalog.entries.slice(0,75).map(e=>({memoryKey:e.memoryKey}))};q.currentText='turn 2000';q.sparseText='turn 2000';
- const ranked=t.shortlistRecallCatalog(catalog,manifest,q,{},settings,null,[],'gradia.ranked-metadata.v2');assert.equal(ranked.refs.length,40);assert.equal(new Set(ranked.refs.map(r=>r.key)).size,40);assert.equal(ranked.frontierLimit,40);
- if(ranked.temporalAnchor.status==='resolved')assert.ok(ranked.refs.some(ref=>ref.key===ranked.temporalAnchor.ref.key));
-}finally{await f.cleanup();}});
-test('cache-only registry lookup is cold/inflight unavailable without calling an embedder',async()=>{const f=await fixture();try{
- const t=f.context.__rankedTest;assert.equal(typeof t.registry.peekWarmQuery,'function');const before=t.registry.getQueryCacheStats();const result=t.registry.peekWarmQuery({provider:'openai',model:'text-embedding-3-small'},['same complete query'],{});assert.equal(result.status,'unavailable');assert.equal(result.reason,'query_cache_unavailable');assert.equal(JSON.stringify(t.registry.getQueryCacheStats()),JSON.stringify(before));
-}finally{await f.cleanup();}});
+const sha = v => crypto.createHash('sha256').update(v).digest('hex');
+const load = (file, name) => Function(fs.readFileSync(path.join(__dirname, '..', file), 'utf8') + ';return ' + name)();
 
-test('owner ranked metadata refuses a cold cache and actual local scoring retains full bodies',async()=>{const f=await fixture();try{
- const t=f.context.__rankedTest,{catalog,manifest}=corpus(),settings=t.normalizeSettings({performancePreset:'balanced',candidateLimit:80,recallMaxMemories:12,forceCurrentScene:false,evidenceGate:false}),q=bundle();
- const cold=t.gradiaRankedMetadata({catalog,manifest,queryBundle:q,settings,embeddingConfig:{provider:'openai',model:'text-embedding-3-small'}});
- assert.equal(cold.status,'unavailable');assert.equal(cold.reason,'query_cache_unavailable');
- const body='shared relevant memory '+('full body '.repeat(200));
- const records=Array.from({length:60},(_,i)=>({id:'mem-'+i+':r1',memory:{memoryId:'mem-'+i,revision:1,status:'committed',text:body,turnRange:{start:i*5+1,end:i*5+5},sessionEpoch:0},vectorRecord:null,shortlistMeta:{forced:i===0,forcedReasons:i===0?['current_scene_tail']:[]}}));
- const rows=t.scoreGradiaHydratedRows(records,{queryBundle:q,settings,queryVectors:{current:null,scene:null,profileId:'',configHash:''}});
- assert.equal(rows.length,60);assert.equal(rows[0].memory.text,body);assert.ok(rows.every(row=>Number.isFinite(row.relevance)));
-}finally{await f.cleanup();}});
+async function fixture() {
+  return createLibraVmHarness({}, {}, {
+    transformSource: source => source.replace(
+      '    const sentenceUnits = value => {',
+      '    globalThis.__rankedTest = { normalizeSettings, buildQueryBundle, registry: EmbeddingProviderRegistry, createLibraGradiaRankedProducer };\n    const sentenceUnits = value => {'
+    ).replace(
+      "        const MULTILINGUAL_PROBE_SCHEMA = 'libra.embedding_multilingual_probe.v1';",
+      `        globalThis.__seedRankedCache = (raw, texts) => { const cfg = normalizeConfig(raw); for (const value of texts) rememberQueryCache(queryCacheKey(cfg, value, {}), { vector: [1, 0], provider: cfg.provider, model: cfg.model, dimensions: 2, profileId: profileFor({ ...cfg, dimensions: 2 }).profileId, normalized: true }); };\n        const MULTILINGUAL_PROBE_SCHEMA = 'libra.embedding_multilingual_probe.v1';`
+    ),
+    contextGlobals: { setTimeout: () => ({ unref() {} }), clearTimeout() {}, setInterval: () => ({ unref() {} }), clearInterval() {} }
+  });
+}
 
-test('warm private owner profile hydrates its 80-row preset with actual LIBRA scoring and no provider calls',async()=>{const f=await fixture();try{
- const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),sha=v=>crypto.createHash('sha256').update(v).digest('hex');
- const load=(file,name)=>Function(fs.readFileSync(path.join(__dirname,'..',file),'utf8')+';return '+name)();
- const protocol=load('sdk/gradia/GradiaReadV2Protocol.source.js','createGradiaReadV2Protocol')({sha256:sha});
- const render=load('sdk/GradiaEvidenceRender.v2.source.js','createGradiaEvidenceRender')({protocol}),limits=protocol.validateLimits({});
- const credit=load('sdk/gradia/GradiaReadV2Credit.source.js','createGradiaReadV2Credit')({maxManagedBytes:limits.managedBytes,maxPhysicalReads:4});
- const t=f.context.__rankedTest,{catalog,manifest}=corpus(400),settings=t.normalizeSettings({performancePreset:'balanced',candidateLimit:80,recallMaxMemories:12,forceCurrentScene:false,evidenceGate:false}),q=bundle(),embeddingConfig={provider:'openai',model:'text-embedding-3-small'};
- q.pairs=Array.from({length:2000},()=>({}));f.context.__seedRankedCache(embeddingConfig,[q.currentText]);
- const before=JSON.stringify(t.registry.getQueryCacheStats());
- const metadata=t.gradiaRankedMetadata({catalog,manifest,queryBundle:q,settings,embeddingConfig});assert.equal(metadata.status,'available');assert.equal(metadata.refs.length,80);assert.equal(JSON.stringify(t.registry.getQueryCacheStats()),before);
- let reads=0;const body=ref=>'shared relevant memory '+ref.memoryId+' '+('entire text '.repeat(80));
- const vmCredit={...credit,reserve:raw=>credit.reserve({...raw}),beginPhysical:raw=>credit.beginPhysical({...raw})};
- const result=await t.gradiaRankedOwnerProfile.createCapture({protocol,render,digest:sha,credit:vmCredit,metadata,queryBundle:q,settings,limits,reader:{
- async assertCurrent(){return true;},async inspect(ref){const content=body(ref);return {narrativeBytes:Buffer.byteLength(content),serializedBytes:Buffer.byteLength(content)+500,proofBytes:100,contentHash:sha(content),profile:'libra.canonical.memory-text.v1',sourceHandle:ref.key,groupId:null};},
- async materialize(ref){reads++;return {itemId:ref.memoryId,content:body(ref),row:{id:ref.memoryId,memory:{...ref,text:body(ref),status:'committed'},vectorRecord:null,shortlistMeta:metadata.rows.find(row=>row.entry.memoryKey===ref.key)}};}
- }});
- assert.equal(reads,80);assert.equal(result.items.length,80);assert.ok(result.coverage.returnedEligibleBytes>8192);assert.equal(result.coverage.frontierExhausted,true);assert.equal(result.authorityQualified,false);result.release();assert.equal(credit.snapshot().managedBytes,0);
-}finally{await f.cleanup();}});
+function buildGradiaDeps(maxPhysicalReads = 4) {
+  const protocol = load('sdk/gradia/GradiaReadV2Protocol.source.js', 'createGradiaReadV2Protocol')({ sha256: sha });
+  const render = load('sdk/GradiaEvidenceRender.v2.source.js', 'createGradiaEvidenceRender')({ protocol });
+  const limits = protocol.validateLimits({});
+  const credit = load('sdk/gradia/GradiaReadV2Credit.source.js', 'createGradiaReadV2Credit')({ maxManagedBytes: limits.managedBytes, maxPhysicalReads });
+  const vmCredit = { ...credit, reserve: raw => credit.reserve({ ...raw }), beginPhysical: raw => credit.beginPhysical({ ...raw }) };
+  return { protocol, render, limits, credit, vmCredit };
+}
+
+test('explicit ranked producer enforces frozen 80-row frontier and candidateLimit bounds', async () => {
+  const f = await fixture();
+  try {
+    const t = f.context.__rankedTest;
+    const { protocol, render, limits, vmCredit } = buildGradiaDeps();
+    const producer = t.createLibraGradiaRankedProducer({ protocol, render, digest: sha, credit: vmCredit });
+    assert.equal(producer.contract, 'libra.gradia-ranked-producer.v2');
+    assert.equal(producer.authorityQualified, false);
+    const frontier = Object.freeze(Array.from({ length: 80 }, (_, i) => Object.freeze({ key: `memory-${i}`, memoryId: `mem-${i}`, revision: 1 })));
+    const body = ref => `shared relevant memory ${ref.memoryId}`;
+    const captured = await producer.capture({
+      limits,
+      frontier,
+      policy: { schema: 'libra.recall-mmr.v2', candidateLimit: 80, mmrEnabled: true, mmrLambda: 0.7 },
+      owner: {
+        async assertCurrent() { return true; },
+        async inspect(ref) {
+          const content = body(ref);
+          return { narrativeBytes: Buffer.byteLength(content), serializedBytes: Buffer.byteLength(content) + 128, proofBytes: 64, contentHash: sha(content), profile: 'libra.canonical.memory-text.v1', sourceHandle: ref.key, groupId: null };
+        },
+        async materialize(ref) {
+          const content = body(ref);
+          return { itemId: ref.memoryId, content, row: { id: ref.memoryId, relevance: 0.9, forced: false, exactScore: 0.5, sparseEvidence: 0.4 } };
+        },
+        async scoreRows(rows) { return rows; },
+        similarity(left, right) { return left.id === right.id ? 1 : 0.1; }
+      }
+    });
+    assert.equal(captured.profile, 'gradia.ranked-corpus-component.v2');
+    assert.equal(captured.items.length, 80);
+    assert.equal(captured.coverage.frontierCount, 80);
+    assert.equal(captured.coverage.visitedCount, 80);
+    assert.equal(captured.coverage.frontierExhausted, true);
+    captured.release();
+  } finally { await f.cleanup(); }
+});
+
+test('ranked producer rejects associative overflow when owner.associativeEnabled is not true', async () => {
+  const f = await fixture();
+  try {
+    const t = f.context.__rankedTest;
+    const { protocol, render, limits, vmCredit } = buildGradiaDeps();
+    const producer = t.createLibraGradiaRankedProducer({ protocol, render, digest: sha, credit: vmCredit });
+    const frontier = Object.freeze(Array.from({ length: 41 }, (_, i) => Object.freeze({ key: `memory-${i}`, memoryId: `mem-${i}` })));
+    await assert.rejects(
+      producer.capture({
+        limits,
+        frontier,
+        policy: { schema: 'libra.recall-mmr.v2', candidateLimit: 40, mmrEnabled: true, mmrLambda: 0.7 },
+        owner: {
+          associativeEnabled: false,
+          async assertCurrent() { return true; },
+          async inspect() { return {}; },
+          async materialize() { return {}; },
+          async scoreRows(rows) { return rows; },
+          similarity() { return 0; }
+        }
+      }),
+      /GRADIA_V2_PRODUCER_ASSOCIATIVE_NOT_ADMITTED/
+    );
+  } finally { await f.cleanup(); }
+});
+
+test('cache-only registry lookup is cold/inflight unavailable without calling an embedder', async () => {
+  const f = await fixture();
+  try {
+    const t = f.context.__rankedTest;
+    assert.equal(typeof t.registry.peekWarmQuery, 'function');
+    const before = t.registry.getQueryCacheStats();
+    const result = t.registry.peekWarmQuery({ provider: 'openai', model: 'text-embedding-3-small' }, ['same complete query'], {});
+    assert.equal(result.status, 'unavailable');
+    assert.equal(result.reason, 'query_cache_unavailable');
+    assert.equal(JSON.stringify(t.registry.getQueryCacheStats()), JSON.stringify(before));
+  } finally { await f.cleanup(); }
+});
+
+test('warm query cache hits without provider calls while cold queries stay unavailable', async () => {
+  const f = await fixture();
+  try {
+    const t = f.context.__rankedTest;
+    const embeddingConfig = { provider: 'openai', model: 'text-embedding-3-small' };
+    const cold = t.registry.peekWarmQuery(embeddingConfig, ['shared relevant memory'], {});
+    assert.equal(cold.status, 'unavailable');
+    assert.equal(cold.reason, 'query_cache_unavailable');
+    f.context.__seedRankedCache(embeddingConfig, ['shared relevant memory']);
+    const warm = t.registry.peekWarmQuery(embeddingConfig, ['shared relevant memory'], {});
+    assert.equal(warm.status, 'available');
+    assert.equal(warm.vectors.length, 1);
+  } finally { await f.cleanup(); }
+});
+
+test('warm private owner profile hydrates its 80-row preset with actual LIBRA producer and releases managed credit', async () => {
+  const f = await fixture();
+  try {
+    const t = f.context.__rankedTest;
+    const { protocol, render, limits, credit, vmCredit } = buildGradiaDeps();
+    const producer = t.createLibraGradiaRankedProducer({ protocol, render, digest: sha, credit: vmCredit });
+    const embeddingConfig = { provider: 'openai', model: 'text-embedding-3-small' };
+    const queryText = 'shared relevant memory';
+    f.context.__seedRankedCache(embeddingConfig, [queryText]);
+    const before = JSON.stringify(t.registry.getQueryCacheStats());
+    const warm = t.registry.peekWarmQuery(embeddingConfig, [queryText], {});
+    assert.equal(warm.status, 'available');
+    assert.equal(JSON.stringify(t.registry.getQueryCacheStats()), before);
+    const frontier = Object.freeze(Array.from({ length: 80 }, (_, i) => Object.freeze({ key: `memory-${i}`, memoryId: `mem-${i}`, revision: 1 })));
+    let reads = 0;
+    const body = ref => `shared relevant memory ${ref.memoryId} ` + ('entire text '.repeat(80));
+    const result = await producer.capture({
+      limits,
+      frontier,
+      policy: { schema: 'libra.recall-mmr.v2', candidateLimit: 80, mmrEnabled: true, mmrLambda: 0.7 },
+      owner: {
+        async assertCurrent() { return true; },
+        async inspect(ref) {
+          const content = body(ref);
+          return { narrativeBytes: Buffer.byteLength(content), serializedBytes: Buffer.byteLength(content) + 500, proofBytes: 100, contentHash: sha(content), profile: 'libra.canonical.memory-text.v1', sourceHandle: ref.key, groupId: null };
+        },
+        async materialize(ref) {
+          reads++;
+          const content = body(ref);
+          return { itemId: ref.memoryId, content, row: { id: ref.memoryId, relevance: 0.85, forced: ref.memoryId === 'mem-0', exactScore: 0.6, sparseEvidence: 0.5 } };
+        },
+        async scoreRows(rows) { return rows; },
+        similarity(left, right) { return left.id === right.id ? 1 : 0.15; }
+      }
+    });
+    assert.equal(reads, 80);
+    assert.equal(result.items.length, 80);
+    assert.ok(result.coverage.returnedEligibleBytes > 8192);
+    assert.equal(result.coverage.frontierExhausted, true);
+    assert.equal(result.authorityQualified, false);
+    result.release();
+    assert.equal(credit.snapshot().managedBytes, 0);
+  } finally { await f.cleanup(); }
+});

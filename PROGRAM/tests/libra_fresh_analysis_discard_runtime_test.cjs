@@ -4,7 +4,15 @@ const { fixture } = require('./fixtures/libra_unified_runtime_fixture.cjs');
 const clone = value => JSON.parse(JSON.stringify(value));
 const records = f => [...f.r.values.entries()].flatMap(([key, raw]) => { try { return [{ key, value: JSON.parse(raw) }]; } catch { return []; } });
 const read = (f, key) => f.r.values.has(key) ? JSON.parse(f.r.values.get(key)) : null;
-const retry = f => f.r.api.retryFailedMemoryAnalysis({ startTurns: [1] });
+const retry = async f => {
+  const inv = await f.r.api.listCanonicalBatchRanges();
+  const res = await f.r.api.startSelectedCanonicalBatches({
+    scopeKey: inv.scopeKey,
+    mode: 'source_edit',
+    ranges: inv.ranges.filter(r => r.startTurn === 1)
+  });
+  return res.job || await f.r.api.getCanonicalJobStatus();
+};
 const results = [];
 async function setup() {
   const f = await fixture();
@@ -67,7 +75,7 @@ const assertDiscarded = f => {
     assert.notEqual(run.commit.providerBudget.operationId, f.oldWork.providerBudget.operationId);
     assert.equal(run.commit.providerBudget.totalCalls, 1);
     const committed = f.getMemory();
-    await retry(f);
+    await f.run();
     assert.equal(f.control.calls.length, f.callsBefore + 1);
     assert.deepEqual(f.getMemory().canonicalArtifact, committed.canonicalArtifact);
   });
@@ -80,7 +88,7 @@ const assertDiscarded = f => {
       if (mode === 'current_engine') work.engineVersion = 'libra.unified.v2';
       if (mode === 'orphan_run') f.r.values.delete(f.workKey);
       else f.r.values.set(f.workKey, JSON.stringify(work));
-      const result = mode === 'cold_start' ? await f.run() : mode === 'manual_scan' ? await f.r.api.startManualCanonicalScan({ startTurns:[1] }) : await retry(f);
+      const result = mode === 'cold_start' ? await f.run() : await retry(f);
       assert.equal(result.completed, 1, JSON.stringify(result));
       assertDiscarded(f);
       assert.equal(f.control.calls.length, f.callsBefore + 1);
@@ -89,7 +97,7 @@ const assertDiscarded = f => {
   await test('resuming an interrupted canonical job creates a fresh analysis rather than resuming its old stage', async f => {
     const job = await f.r.api.getCanonicalJobStatus();
     for (const row of records(f)) if (row.value.schema === 'libra.canonical_job.v1' && row.value.jobId === job.jobId) {
-      row.value.state = 'interrupted'; f.r.values.set(row.key, JSON.stringify(row.value));
+      row.value.kind = 'cold_start'; row.value.state = 'interrupted'; f.r.values.set(row.key, JSON.stringify(row.value));
     }
     assert.equal((await f.r.api.resumeCanonicalJob({ jobId: job.jobId })).completed, 1);
     assertDiscarded(f);
@@ -163,7 +171,7 @@ const assertDiscarded = f => {
     f.control.onCall=async()=>{started();await new Promise(resolve=>{finish=resolve;});return {type:'success',result:JSON.stringify(f.control.artifact)};};
     const job=retry(f);await ready;
     const active=f.r.values.get(f.workKey);
-    try{await assert.rejects(()=>retry(f),/canonical_job_busy/);assert.equal(f.r.values.get(f.workKey),active);assert.equal(f.control.calls.length,f.callsBefore+1);}
+    try{await assert.rejects(()=>retry(f),/selected_batch_busy|canonical_job_busy/);assert.equal(f.r.values.get(f.workKey),active);assert.equal(f.control.calls.length,f.callsBefore+1);}
     finally{finish();}
     assert.equal((await job).completed,1);assertDiscarded(f);
   });

@@ -3,15 +3,7 @@ const assert=require('node:assert/strict');
 const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
 (async()=>{const f=await fixture();try{
  const result=await f.run();assert.equal(result.completed,1,JSON.stringify(result));
- const lineage=await f.r.api.getHostLineageStatus();
- const scope={scopeKey:lineage.scopeKey,scopeId:lineage.scopeKey,characterId:f.character.id,chatId:f.chat.id};
- for(let turn=1;turn<=5;turn++){
-  const active=await f.r.api.debugReadActiveCompletedTurnReceipt(turn);
-  assert.equal(active.status,'verified',`T${turn}: completed receipt is durable before manual retry`);
-  const retry=await f.r.api.retryMicroAnalysis({scope,receiptRef:active.receiptKey,
-    revision:active.receipt.revisionId,digest:active.receipt.sourceDigest,expectedGeneration:0});
-  assert.equal(retry.status,'verified',`T${turn}: explicit historical Micro retry`);
- }
+ await require('./fixtures/libra_explicit_micro_retry.cjs').retryHistoricalMicro(f,[1,2,3,4,5],{});
  const {waitFor}=require('./fixtures/libra_vm_harness.cjs');
  await waitFor(()=>f.r.api.getCaptureBackendState().lastMicroPublication?.turn===5,15000);
  const microCalls=f.control.calls.filter(args=>JSON.stringify(args).includes('LIBRA MICRO SOURCE CONTRACT'));

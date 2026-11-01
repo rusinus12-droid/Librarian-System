@@ -75,7 +75,7 @@ assert.deepEqual(evaluateConst('SHARED_CUSTOM_HUB_SECTIONS'), [
   'memory', 'state', 'active_draft', 'ooc'
 ]);
 assert.deepEqual(evaluateConst('SHARED_SETTINGS_HUB_SECTIONS'), [
-  'references', 'memory', 'state', 'server', 'ai', 'embedding', 'recovery', 'transfer', 'general', 'source_edits'
+  'references', 'memory', 'state', 'server', 'ai', 'embedding', 'recovery', 'transfer', 'general', 'source_edits', 'scopes'
 ]);
 assert.deepEqual(evaluateConst('SHARED_EXECUTION_LOG_SECTIONS'), [
   'memory', 'state', 'draft', 'recall', 'embedding', 'rebuild'

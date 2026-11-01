@@ -11,6 +11,10 @@ try {
 
   assert.equal(typeof builder.nextPatchVersion, 'function', 'builder exports nextPatchVersion');
   assert.equal(builder.nextPatchVersion('0.3.53'), '0.3.54');
+  // Sequential merge version progression (PR A merge -> PR B merge)
+  assert.equal(builder.nextPatchVersion('0.5.0'), '0.5.1');
+  assert.equal(builder.nextPatchVersion('0.5.1'), '0.5.2');
+  assert.equal(builder.nextPatchVersion('0.5.2'), '0.5.3');
   assert.equal(typeof builder.validateTargetVersion, 'function', 'builder exports validateTargetVersion');
   assert.equal(builder.validateTargetVersion('0.3.53', '0.4.0'), '0.4.0');
   assert.throws(() => builder.validateTargetVersion('0.3.53', '0.3.53'), /distribution_version_must_increase/);

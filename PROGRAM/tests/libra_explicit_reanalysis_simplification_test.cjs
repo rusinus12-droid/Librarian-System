@@ -5,7 +5,7 @@ const fs=require('node:fs'),path=require('node:path');
 const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
 const snapshot=f=>JSON.parse(JSON.stringify(f.getManifest().memories['1']));
 async function initialized(options={}){const f=await fixture({...options,transformSource:source=>source.replace("const memoryStageEnabledForSettings =", "globalThis.__reanalysisCore=LibraMemoryCore;\n  const memoryStageEnabledForSettings =")});if(options.setup)await options.setup(f);assert.equal((await f.run()).completed,1);await f.r.api.retryPendingUnifiedVectors();return f;}
-const selection=async f=>{const inv=await f.r.api.listCanonicalBatchRanges();return {scopeKey:inv.scopeKey,mode:'source_edit',ranges:inv.ranges.filter(r=>r.startTurn===1)};};
+const selection=async f=>{const inv=await f.r.api.listCanonicalBatchRanges();return {scopeKey:inv.scopeKey,mode:'source_edit',ranges:inv.ranges.filter(r=>r.startTurn===1).map(({startTurn,endTurn,identityDigest})=>({startTurn,endTurn,identityDigest}))};};
 const execute=async(f,s)=>f.r.api.startSelectedCanonicalBatches(s||await selection(f));
 
 test('one explicit selection analyzes current edited source without a preview ticket',async()=>{const f=await initialized();try{

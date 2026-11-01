@@ -2,13 +2,13 @@
 // Build-time identities only. A shared version number does not authorize replacing
 // a consumer's preserved SDK with the newer active-writer runtime.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const preservedConsumerSha256='93711f7bb78faaf46d18bda64da7108710b37b0865a44a67fbbd2e831fb004bb';
+const preservedConsumerSha256='764da15a4a8dcead46eb54f7f7e5e49c4596d1c7360759dcf3b2c21751451fec';
 // Reviewed manager-only health delta; local-only consumers retain their pin.
-const managerOnlyConsumerSha256='3090192a9e1160983fa485ada60887075f08122d048c3fa5787485098d382c16';
+const managerOnlyConsumerSha256='375c4e1b26cbcc84c5d48a71f776d292dd97593a8b5414c6f69efd06c4d42f8d';
 // Explicit GRADIA-only read extension; other preserved consumers keep their prior pin.
-const gradiaReadOnlyConsumerSha256='322272fb279a2b46c2449e8ef59725be3f83c6778b511b776d0f703fff82681c';
+const gradiaReadOnlyConsumerSha256='415bf41ad691fc3d329f470463c45e657d160df9b5a7de3208c91694f61f91f5';
 const STORAGE_VARIANTS=Object.freeze({
- 'Flashback_Memory.js':Object.freeze({variant:'core3-standard-flashback',source:'sdk/MemorySuiteStorageClient.source.js',embedsCompute:false}),
+ 'Flashback_Memory.js':Object.freeze({variant:'core3-standard-flashback',source:'sdk/MemorySuiteStorageClient.flashback.source.js',embedsCompute:false}),
  'HAYAKU_Locator_Continuity.js':Object.freeze({variant:'core3-standard-hayaku',source:'sdk/MemorySuiteStorageClient.source.js',embedsCompute:false}),
  'LIBRA.js':Object.freeze({variant:'libra-control-plane-preroute',source:'sdk/MemorySuiteStorageClient.libra.source.js',embedsCompute:false}),
  'LIA_Persona_Linker.js':Object.freeze({variant:'preserved-local-only',embeddedSha256:preservedConsumerSha256,embedsCompute:false}),

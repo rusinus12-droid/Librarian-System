@@ -28793,7 +28793,10 @@ const MemorySuiteSnapshotCache = (() => {
       } else {
         const nearDuplicate = findNearDuplicate(record);
         if (nearDuplicate) {
-          const keepIncoming = text(record.text).length > text(nearDuplicate.text).length || Number(record.importanceScore || 0) > Number(nearDuplicate.importanceScore || 0);
+          const promotesProvisionalCapture = nearDuplicate.metadata?.captureAuthority?.provisional === true
+            && record.metadata?.captureAuthority?.liveConfirmed === true
+            && record.metadata?.captureAuthority?.provisional !== true;
+          const keepIncoming = promotesProvisionalCapture || text(record.text).length > text(nearDuplicate.text).length || Number(record.importanceScore || 0) > Number(nearDuplicate.importanceScore || 0);
           if (keepIncoming && record.embeddingWork) {
             // A raw-first record's work is bound to its own text/source revision.
             // Overlaying it on the old record kept the old vectorRef/receipt and
@@ -34396,13 +34399,26 @@ const MemorySuiteHealthRecovery = (() => {
     const cap = Math.max(8, Number(settings.candidateLimit || DEFAULTS.candidateLimit) || DEFAULTS.candidateLimit);
     const modelContext = { provider: context.queryProvider || settings.embeddingProvider,
       model: context.queryModel || settings.embeddingModel, dimensions: queryVector.length, profileId: context.queryProfileId };
-    // Keyword fallback (no query vector this request) keeps the same admission:
-    // profile, ready receipt and source binding must still match; only the query
-    // dimension is taken from the record because there is no query vector.
-    records = context.allowLexicalFallback === true && configuredModelEmbedding(settings)
-      ? (records || []).filter(record => recordEmbeddingCompatibility(record, settings, { ...modelContext, dimensions: Array.isArray(record?.vector) ? record.vector.length : 0, profileId: '' }).comparable)
-      : queryVector.length && configuredModelEmbedding(settings)
-        ? (records || []).filter(record => recordEmbeddingCompatibility(record, settings, modelContext).comparable) : [];
+    // Model compatibility admission:
+    // When a query vector is present, records with compatible vectors are admitted.
+    // In query lexical fallback (query vector failed), records compatible with current profile are admitted.
+    // When stored vectors are pending re-embedding (vectors_pending fallback or mixed-profile state),
+    // records with stale/incompatible vectors are still admitted to the lexical arms as long as they are
+    // valid retained memory records with raw text.
+    const allowPendingVectorRecords = (context.allowVectorsPending === true || context.lexicalFallbackStatus === 'vectors_pending')
+      && context.lexicalFallbackStatus !== 'query_failed';
+    const isModelComparable = (record) => {
+      if (!configuredModelEmbedding(settings)) return false;
+      if (context.allowLexicalFallback === true && context.lexicalFallbackStatus !== 'vectors_pending') {
+        return recordEmbeddingCompatibility(record, settings, { ...modelContext, dimensions: Array.isArray(record?.vector) ? record.vector.length : 0, profileId: '' }).comparable;
+      }
+      return queryVector.length ? recordEmbeddingCompatibility(record, settings, modelContext).comparable : false;
+    };
+    records = (records || []).filter(record => {
+      if (isModelComparable(record)) return true;
+      if (allowPendingVectorRecords && isRetainedMemoryRecord(record) && text(record?.text || '').trim().length > 0) return true;
+      return false;
+    });
     const responseRecords = records.filter(record => isResponseMemoryRecord(record));
     delete context.computeCosine;
     const dense = [];
@@ -35269,14 +35285,15 @@ const MemorySuiteHealthRecovery = (() => {
     if (isResponseMemoryRecord(record) && contextExcludedPreviousTurnMatchesRecord(record, context)) return null;
     const semantic = recallSemanticSignals(record, queryVector, settings, context);
     const { vectorComparable, cosine } = semantic;
-    if (!vectorComparable && !context.allowLexicalFallback) return null;
+    const allowPendingVector = context.allowVectorsPending === true && isRetainedMemoryRecord(record);
+    if (!vectorComparable && !context.allowLexicalFallback && !allowPendingVector) return null;
     if (isCurrentInputDuplicate(record, context.currentUser || query)) return null;
     if (isOwnInjection(record.text)) return null;
     const candidateMeta = context.candidateMeta instanceof Map
       ? context.candidateMeta.get(text(record.id || record.hash || record.sourceId || ''))
       : null;
-    if(context.allowLexicalFallback){
-      // Keyword fallback (no query vector this request): rank-based keyword evidence only. The scene-context BM25
+    if(context.allowLexicalFallback || (!vectorComparable && allowPendingVector)){
+      // Keyword fallback (no query vector this request or pending vector): rank-based keyword evidence only. The scene-context BM25
       // arm counts at half strength, as it does in fusion.
       const channels=candidateMeta?.channels||{};
       const contextRank=Number(channels.contextSparse?.rank||0);
@@ -36358,8 +36375,12 @@ const MemorySuiteHealthRecovery = (() => {
         previousTurnProfile = semanticQuery ? {active:false,reason:'joint_query',currentWeight:1,previousWeight:0} : previousTurnRecallProfile(primaryQueryText, rawQueryAnchors, queryType, previousTurn);
       }
     }
-    const modelEligible = record => recordEmbeddingCompatibility(record, cfg, { provider: queryProvider,
-      model: queryModel, dimensions: queryVector.length, profileId: queryProfileId }).comparable;
+    const modelEligible = record => recordEmbeddingCompatibility(record, cfg, {
+      provider: queryProvider,
+      model: queryModel,
+      dimensions: lexicalFallback && Array.isArray(record?.vector) ? record.vector.length : queryVector.length,
+      profileId: lexicalFallback ? '' : queryProfileId
+    }).comparable;
     let records = storedRecords.filter(modelEligible);
     // Retained source text stays searchable while its vectors wait for
     // re-embedding (profile change, failed embedding work). Rank it with the
@@ -36367,7 +36388,9 @@ const MemorySuiteHealthRecovery = (() => {
     if (!records.length && storedRecords.length && !lexicalFallback && cfg.heuristicRecall) {
       lexicalFallback = { status: 'vectors_pending', error: 'stored vectors are not comparable with the current embedding profile' };
       semanticQuery = false; queryVector = []; sceneContext.active = false; sceneContext.vector = [];
-      records = storedRecords.slice();
+      records = storedRecords.filter(r => isRetainedMemoryRecord(r) && text(r?.text || '').trim().length > 0);
+    } else if (!lexicalFallback && cfg.heuristicRecall && records.length < storedRecords.length) {
+      records = storedRecords.filter(r => modelEligible(r) || (isRetainedMemoryRecord(r) && text(r?.text || '').trim().length > 0));
     }
     const inactiveBranchFiltered = Number(branchGate.diagnostics?.inactiveBranchFiltered || 0) || 0;
     const worldlineMismatchFiltered = Number(branchGate.diagnostics?.worldlineMismatchFiltered || 0) || 0;
@@ -36386,7 +36409,7 @@ const MemorySuiteHealthRecovery = (() => {
     const overlay = buildCurrentUserStateOverlay(primaryQueryText, { temporalIntent, truthIntent, topic: queryType });
     const liveStateFacts = cfg.structuredStateEnabled ? [...detectedLiveStateFacts, ...overlay.facts] : [];
     const queryStateProperties = extractQueryStateProperties(primaryQueryText);
-    const latestStateByEntity = buildLatestStateByEntity(records, liveStateFacts);
+    const latestStateByEntity = buildLatestStateByEntity(records.filter(modelEligible), liveStateFacts);
     applyCurrentUserOverlaySuppressions(latestStateByEntity, overlay.suppressions);
     applyCurrentStateValidityAging(latestStateByEntity, latestResponseTurn);
     const currentStateFacts = !semanticQuery && cfg.structuredStateEnabled ? collectCurrentStateFacts(latestStateByEntity, rawQueryAnchors, queryStateProperties, 14) : [];
@@ -36418,6 +36441,8 @@ const MemorySuiteHealthRecovery = (() => {
     }
     const recallContext = { scopeKey: scope.scopeKey, currentUser: primaryQueryText, recentResponseRanks, latestStateByEntity, queryStateProperties, stateQueryAnchors: rawQueryAnchors, queryType, temporalIntent, truthIntent, queryIntent, overlay, strategy, records, latestResponseTurn, queryFallbackUsed, queryProvider, queryModel, queryProfileId, queryVector, allowLexicalFallback: true, sceneContext, queryTopics, previousTurn, previousTurnProfile, previousTurnNumber, excludedPreviousTurnNumber, excludedPreviousTurnSourceHash };
     recallContext.allowLexicalFallback = !!lexicalFallback;
+    recallContext.lexicalFallbackStatus = lexicalFallback?.status || '';
+    recallContext.allowVectorsPending = lexicalFallback?.status === 'vectors_pending' || (cfg.heuristicRecall && records.some(r => !modelEligible(r)));
     const candidateLimit = Math.max(effectiveTopK, Math.min(records.length, Math.ceil(Number(cfg.candidateLimit || DEFAULTS.candidateLimit) * topKMultiplier)));
     const sparseStageStartedAt = Date.now();
     let arms = await generateRecallCandidateArms({
@@ -36470,7 +36495,7 @@ const MemorySuiteHealthRecovery = (() => {
       const compatibility = recordEmbeddingCompatibility(record, cfg, { provider: queryProvider, model: queryModel,
         dimensions: lexicalFallback && Array.isArray(record?.vector) ? record.vector.length : queryVector.length, profileId: lexicalFallback ? '' : queryProfileId });
       if (compatibility.legacyProfileCompatible && compatibility.comparable) vectorCompatibility.legacyCompatible++;
-      const keywordOnly = lexicalFallback?.status === 'vectors_pending';
+      const keywordOnly = lexicalFallback?.status === 'vectors_pending' || (recallContext.allowVectorsPending && isRetainedMemoryRecord(record));
       if (!compatibility.comparable && !keywordOnly) {
         dimSkipped += 1;
         for(const reason of compatibility.reasons)vectorCompatibility.reasons[reason]=(vectorCompatibility.reasons[reason]||0)+1;
@@ -40005,15 +40030,18 @@ const MemorySuiteHealthRecovery = (() => {
   const readEmbeddingWorkBoundary = async (options = {}) => {
     const recovery=physicalContext(options);
     if(recovery)return recovery.boundary();
-    let scope = options.scope || null;
-    if (!scope && options.scopeKey && Runtime.currentScope?.scopeKey === options.scopeKey) {
-      scope = Runtime.currentScope;
+    let scope = null;
+    try {
+      const bundle = await resolveCurrentScopeIdentityBundle(false);
+      scope = bundle?.scope || null;
+    } catch (_) {}
+    const optionScope = options.scope && typeof options.scope === 'object' && options.scope.scopeKey ? options.scope : null;
+    if (optionScope && (!scope || !scope.scopeKey
+      || ((!scope.chatId || optionScope.chatId === scope.chatId) && (!scope.characterId || optionScope.characterId === scope.characterId)))) {
+      scope = optionScope;
     }
-    if (!scope) {
-      try {
-        const bundle = await resolveCurrentScopeIdentityBundle(false);
-        scope = bundle?.scope || null;
-      } catch (_) {}
+    if ((!scope || !scope.scopeKey) && options.scopeKey && Runtime.currentScope?.scopeKey === options.scopeKey) {
+      scope = Runtime.currentScope;
     }
     if (!scope || !scope.scopeKey) throw embeddingWorkError('FLASHBACK_SCOPE_UNAVAILABLE');
     if (!scope.characterId && !scope.chatId && !scope.characterKey) {
@@ -40236,7 +40264,7 @@ const MemorySuiteHealthRecovery = (() => {
 
   const assertEmbeddingWorkBoundary = async proof => {
     if (Runtime.unloaded) throw embeddingWorkError('FLASHBACK_EMBEDDING_RUNTIME_CLOSED');
-    const current = await readEmbeddingWorkBoundary(proof);
+    const current = await readEmbeddingWorkBoundary(physicalContext(proof) ? { physicalRecovery: physicalContext(proof) } : {});
     if (current.scope.scopeKey !== proof.scope.scopeKey) throw embeddingWorkError('FLASHBACK_EMBEDDING_SCOPE_CHANGED');
     if (!current.configured || current.profile !== proof.profile || current.generation !== proof.generation) throw embeddingWorkError('FLASHBACK_EMBEDDING_PROFILE_CHANGED');
     if (current.storageBinding !== proof.storageBinding) throw embeddingWorkError('FLASHBACK_EMBEDDING_BACKEND_CHANGED');
@@ -40789,7 +40817,7 @@ const MemorySuiteHealthRecovery = (() => {
     // loading the scope alone outlasted it and every request "timed out" in ~2ms
     // before submission, leaving the records pending (2026-10-29 debug).
     const requestTimeoutMs = clampInt(options.timeoutMs, 1, 180000, boundary.settings.embeddingTimeoutMs);
-    const explicitDeadlineAt = Number(options.deadlineAt) || 0;
+    const explicitDeadlineAt = Number(options.deadlineAt) || (Object.hasOwn(options, 'timeoutMs') ? startedAt + requestTimeoutMs : 0);
     let deadlineAt = explicitDeadlineAt || startedAt + requestTimeoutMs * (maxRequests + 1);
     const parentLedger = options.operationLedger || MemorySuiteExecutionContract.createLedger({ maxRequests, deadlineAt: explicitDeadlineAt, signal: options.signal,
       isCurrent: () => !Runtime.unloaded && Runtime.embeddingGeneration === boundary.generation });
@@ -40841,13 +40869,13 @@ const MemorySuiteHealthRecovery = (() => {
         }
       }
       if (!processedSources && budgetDeferred) stopReason = 'source_budget_exhausted';
-      return { ...empty, ok: !stopReason && !failed, ready, failed, uncertain:uncertainRecords>0, uncertainRecords, processedSources, processedRecords, processedChars, budgetDeferred,
+      return { ...empty, ok: !stopReason && !failed, passStopped: !!stopReason, ready, failed, uncertain:uncertainRecords>0, uncertainRecords, processedSources, processedRecords, processedChars, budgetDeferred,
         physicalRequests: requestCount(), pendingSources: Math.max(0, inventory.eligible.length - processedSources) + migration.remainingSources, migrationPrepared: migration.prepared, migrationDeferred: migration.deferred,
         inventorySources: inventory.inventorySources, blockedSources: inventory.blockedSources,
         uncertainSources: inventory.uncertainSources, failedSources: inventory.failedSources, legacySources: inventory.legacySources,
         blocked: inventory.blocked, reason: stopReason || failureReason || 'queue_pass_complete', elapsedMs: Date.now() - startedAt };
     } catch (error) {
-      return { ...empty, ok: false, ready, failed, uncertain:uncertainRecords>0, uncertainRecords, processedSources, processedRecords, processedChars, physicalRequests: requestCount(),
+      return { ...empty, ok: false, passStopped: true, ready, failed, uncertain:uncertainRecords>0, uncertainRecords, processedSources, processedRecords, processedChars, physicalRequests: requestCount(),
         pendingSources: Math.max(0, (inventory?.eligible.length || 0) - processedSources),
         reason: error?.code || error?.type || 'queue_failed', elapsedMs: Date.now() - startedAt };
     } finally { activeEmbeddingQueues.delete(scopeKey); }
@@ -40891,7 +40919,7 @@ const MemorySuiteHealthRecovery = (() => {
         const unsentTimeout = result.reason === 'TIMEOUT' && !Number(result.physicalRequests || 0) && !result.uncertain;
         const timeoutRetries = unsentTimeout ? (embeddingQueueUnsentRetries.get(key) || 0) + 1 : 0;
         if (unsentTimeout) embeddingQueueUnsentRetries.set(key, timeoutRetries); else embeddingQueueUnsentRetries.delete(key);
-        if ((result.ok && result.pendingSources > 0 && Number(result.ready || 0) + Number(result.failed || 0) > 0)
+        if ((!result.passStopped && !result.uncertain && result.pendingSources > 0 && Number(result.ready || 0) + Number(result.failed || 0) > 0)
           || ['queue_running', 'request_active', 'maintenance_inspection_active', 'maintenance_running'].includes(result.reason)) {
           schedulePendingEmbeddingWork(key, { reason: 'continue_pending', delayMs: result.reason === 'queue_running' ? 1000 : 250 });
         } else if (unsentTimeout && timeoutRetries <= 3) {
@@ -41344,7 +41372,7 @@ const MemorySuiteHealthRecovery = (() => {
       const expiry = current ? finalizedCaptureMonitorExpiry(state, current) : null;
       if (!current || expiry?.expired) {
         if (current) {
-          const completedCandidate = Runtime.afterRequestCaptureCandidates.get(pendingId) || null;
+          const completedCandidate = Runtime.afterRequestCaptureCandidates.get(pendingId) || Runtime.chatOutputCaptureCandidates.get(pendingId) || null;
           const provisionalPreserved = Number(completedCandidate?.provisionalSavedAt || 0) > 0;
           const previousCapture = Runtime.lastCapture?.pendingId === pendingId ? Runtime.lastCapture : {};
           Runtime.lastCapture = {
@@ -41363,7 +41391,7 @@ const MemorySuiteHealthRecovery = (() => {
             lastFailureStage: state.lastFailureStage || 'assistant_not_found',
             observedMessageCount: Number(state.observedMessageCount || 0) || 0,
             chatSource: state.chatSource || '',
-            responseCandidateReceived: Runtime.afterRequestCaptureCandidates.has(pendingId),
+            responseCandidateReceived: Runtime.afterRequestCaptureCandidates.has(pendingId) || Runtime.chatOutputCaptureCandidates.has(pendingId),
             ageMs: expiry.ageMs,
             maxAgeMs: expiry.maxAgeMs
           };
@@ -41415,7 +41443,7 @@ const MemorySuiteHealthRecovery = (() => {
         const candidate = live.known ? authoritativeFinalizedCandidate(live.normalized, current) : null;
         if (candidate) {
           const authoritativeBody = canonicalChatResponseText(candidate.authoritativePair?.assistantText || candidate.body || '');
-          const responseCandidate = Runtime.afterRequestCaptureCandidates.get(pendingId) || null;
+          const responseCandidate = Runtime.afterRequestCaptureCandidates.get(pendingId) || Runtime.chatOutputCaptureCandidates.get(pendingId) || null;
           const contentMatches = responseCandidate ? sameMaintenanceTurnText(authoritativeBody, responseCandidate.body) : null;
           state.lastFailureStage = contentMatches === false ? 'content_mismatch' : 'live_candidate_found';
           if (responseCandidate && contentMatches === true) {
@@ -41797,11 +41825,10 @@ const MemorySuiteHealthRecovery = (() => {
         opLog('before_finalized_capture_reconciled', { hook: 'beforeRequest', scopeKey: scope.scopeKey, result: reconciled }, 'info');
       }
       if (liveChat.known) {
-        const worldlineSync = await withinHookDeadline(
+        await withinHookDeadline(
           synchronizeFlashbackTurnWorldline(scope, observedLiveState, settings, {
             protectedPending: pendingCapture.pending,
             shardReadConcurrency: 4,
-            deferAppendOnlyWrite: true,
             assertCurrent: () => ensureHookDeadline('beforeRequest worldline'),
             onStage: update => {
               preparationStages[update.stage] = update;
@@ -41814,13 +41841,6 @@ const MemorySuiteHealthRecovery = (() => {
             warn('turn worldline synchronization failed; recall skipped for branch safety', error);
             throw error;
           });
-        if (worldlineSync?.deferredWrite === true) {
-          // Commit the appended lineage after this recall; background writes yield to it.
-          const deferredPending = pendingCapture.pending;
-          void backgroundFlashbackWrite(scope.scopeKey, () => synchronizeFlashbackTurnWorldline(scope, observedLiveState, settings, {
-            protectedPending: deferredPending, shardReadConcurrency: 4
-          })).catch(error => warn('deferred turn worldline commit failed; the next request reconciles again', error));
-        }
       }
       const { normalizedMessages, latestUser, retrievalQuery } = pendingCapture;
       opLog('before_recall_start', {
@@ -41850,8 +41870,10 @@ const MemorySuiteHealthRecovery = (() => {
       // scope replaced this one, prepare again within the remaining deadline instead
       // of delivering nothing.
       const settingsHashAtRecall = recallToken.settingsHash;
+      const embeddingGenerationAtRecall = Runtime.embeddingGeneration;
       const recallRetryable = attempt => attempt < 2 && !Runtime.unloaded && flashbackRecallRequests.active === recallToken
         && recallToken.branch === recallBranch && (!Runtime.currentScope?.scopeKey || Runtime.currentScope.scopeKey === scope.scopeKey)
+        && Runtime.embeddingGeneration === embeddingGenerationAtRecall
         && stableHash(JSON.stringify(Runtime.settings || {})) === settingsHashAtRecall && hookDeadlineAt - Date.now() > 1000;
       const retryRecall = () => {
         closeFlashbackRecallReadSet(recallToken);
@@ -43485,14 +43507,14 @@ const MemorySuiteHealthRecovery = (() => {
     const maxRecords = clampInt(options.maxRecords, 0, 50000, options.all ? 50000 : boundary.settings.progressiveReembedMaxRecords);
     const maxChars = clampInt(options.maxChars, 0, 500000, options.all ? 500000 : boundary.settings.progressiveReembedMaxChars);
     do {
-      last = await processPendingEmbeddingQueue({ ...options, scopeKey: scope.scopeKey, expectedProfile: boundary.profile,
+      last = await processPendingEmbeddingQueue({ ...options, scope: boundary.scope, scopeKey: scope.scopeKey, expectedProfile: boundary.profile,
         expectedGeneration: boundary.generation, expectedStorageBinding: boundary.storageBinding,
         operationLedger: ledger, deadlineAt, maxSources: options.all ? 200 : boundary.settings.progressiveReembedMaxRecords,
         maxRecords: Math.max(0, maxRecords - selected), maxChars: Math.max(0, maxChars - chars),
         maxRequests: Math.min(64, Math.max(0, ledger.snapshot().maxRequests - ledger.snapshot().requestCount)) });
       ready += Number(last.ready || 0); failed += Number(last.failed || 0);
       selected += Number(last.processedRecords || 0); chars += Number(last.processedChars || 0);
-    } while (options.all && last.ok && last.pendingSources > 0 && Number(last.ready || 0) + Number(last.failed || 0) > 0
+    } while (options.all && !last.passStopped && !last.uncertain && last.pendingSources > 0 && Number(last.ready || 0) + Number(last.failed || 0) > 0
       && selected < maxRecords && chars < maxChars && ledger.snapshot().requestCount < ledger.snapshot().maxRequests);
     const total = (await loadScopeManifest(scope)).count;
     return { ...empty, reembedded: ready, embeddedVectors: ready, embeddedBatches: ledger.snapshot().requestCount - initialRequests,
@@ -44216,6 +44238,7 @@ ${cleanedText}`, 80),
       };
       const maintenanceSettingsWitness = value => MemorySuiteExecutionContract.hash(JSON.stringify([
         embeddingRequestSettingsFingerprint(value||DEFAULTS),
+        Number(value?.hashDimensions||0)||0,
         Number(value?.chunkChars||0)||0,Number(value?.chunkOverlap||0)||0,
         value?.episodeIndexEnabled===true?'episode_on':'episode_off',
         Number(value?.maxResponseItems||0)||0,Number(value?.minCaptureChars||0)||0,
@@ -49516,6 +49539,7 @@ ${cleanedText}`, 80),
         msgEl.id = `${dialogId}-message`;
         msgEl.className = 'dialog__content';
         msgEl.innerHTML = options.bodyHtml;
+        if (!msgEl.textContent) msgEl.textContent = String(message || options.bodyHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
       } else {
         msgEl = doc.createElement('p');
         msgEl.id = `${dialogId}-message`;
@@ -52585,8 +52609,8 @@ ${cleanedText}`, 80),
       finally { setBusy(false); }
     });
     getGuiNode('maintenanceAutoBtn')?.addEventListener('click', async () => {
-      getGuiNode('maintenanceInspectBtn')?.click?.();
-      return;
+      const inspectBtn = getGuiNode('maintenanceInspectBtn');
+      if (inspectBtn) { inspectBtn.click?.(); return; }
       let plan = null;
       setBusy(true, '자동 복구 계획 확인');
       try { plan = await inspectMemoryMaintenance({ requestPermission: true }); renderMaintenancePlanInUi(plan); }

@@ -45,7 +45,7 @@ assert.match(clusterRule, /flex-wrap:wrap/, 'narrow screens wrap the action row 
 assert.match(clusterRule, /align-items:center/, 'controls and their inline status sit vertically centred on the row');
 
 // ── the engine maintenance actions share ONE action row, not stacked blocks ─────────────────────
-const maintenance = between("guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}}", 'buildUnifiedLegacySelectionPanel(),');
+const maintenance = between("guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}}", "guiEl('details',{class:'fold'},[guiEl('summary',{text:'기억 분석 · 검색 작동 상세'})");
 const actionRow = maintenance.slice(maintenance.indexOf("guiEl('div',{class:'cluster'},["));
 assert.ok(maintenance.includes("guiEl('div',{class:'cluster'},["), 'engine maintenance actions are grouped in a .cluster row');
 for (const label of ['기존 기억 보존 전환', '통합 상태 적용 재시도', '통합 임베딩 후처리 재시도']) {

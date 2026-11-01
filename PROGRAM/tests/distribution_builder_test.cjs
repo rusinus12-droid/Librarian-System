@@ -8,8 +8,11 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const {
   assertPristineDistributionData,
+  buildRelease,
   parseArgs,
+  restoreVersionTransactionFiles,
   shouldCopyProgram,
+  snapshotVersionTransactionFiles,
   verifyChecksumFile
 } = require('../tools/build_distribution.cjs');
 const {
@@ -69,6 +72,30 @@ function main() {
     assert.throws(() => parseArgs(['--skip-tests']), /unknown_distribution_builder_argument/,
       'the user-facing builder must never produce an untested release artifact');
     assert.throws(() => parseArgs(['--output-dir', '--skip-tests']), /distribution_output_dir_value_required/);
+    assert.equal(parseArgs(['--check']).check, true);
+
+    const packageRoot = path.resolve(programDir, '..');
+    const beforeCheckSnapshot = snapshotVersionTransactionFiles(packageRoot);
+    assert.ok(beforeCheckSnapshot.length >= 10, 'snapshotVersionTransactionFiles captures all release metadata files');
+    const manifestSnapshot = beforeCheckSnapshot.find(f => f.relative === 'PROGRAM/program-manifest.json');
+    assert.ok(manifestSnapshot, 'program-manifest.json is captured in version transaction files');
+    const originalManifestBytes = fs.readFileSync(manifestSnapshot.absolute);
+
+    try {
+      fs.writeFileSync(manifestSnapshot.absolute, JSON.stringify({ ...JSON.parse(originalManifestBytes.toString('utf8')), generatedAt: 'simulated-mutation' }));
+      assert.notDeepEqual(fs.readFileSync(manifestSnapshot.absolute), originalManifestBytes);
+      restoreVersionTransactionFiles(beforeCheckSnapshot);
+      assert.deepEqual(fs.readFileSync(manifestSnapshot.absolute), originalManifestBytes, 'transaction restores exact bytes');
+    } finally {
+      restoreVersionTransactionFiles(beforeCheckSnapshot);
+    }
+
+    const blockingOutputDir = path.join(tempRoot, 'blocking-output-file');
+    fs.writeFileSync(blockingOutputDir, 'block');
+    assert.throws(() => {
+      buildRelease({ check: true, outputDir: blockingOutputDir });
+    });
+    assert.deepEqual(fs.readFileSync(manifestSnapshot.absolute), originalManifestBytes, 'buildRelease error path restores snapshot when check: true');
 
     const checksumRoot = path.join(tempRoot, 'checksum root');
     fs.mkdirSync(checksumRoot);

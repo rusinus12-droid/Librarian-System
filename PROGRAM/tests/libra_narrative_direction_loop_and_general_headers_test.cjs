@@ -37,8 +37,8 @@ const cssRule = selector => {
 
   // The diagnostic log is a list/detail reading room: the list rail on the side, a wider detail card.
   const logList = between('const buildDiagnosticLogList = () =>', 'const buildDiagnosticLogSection =');
-  assert.ok(/guiEl\('div', \{ class: "grid g-side" \}/.test(logList), 'the diagnostic log must keep the side-by-side list/detail layout');
-  assert.ok(/guiEl\('div', \{ class: "rail" \}/.test(logList), 'the log list must sit in the side rail');
+  assert.ok(/guiEl\('div', \{ class: "grid g-side(?:\s+diag-log)?" \}/.test(logList), 'the diagnostic log must keep the side-by-side list/detail layout');
+  assert.ok(/guiEl\('div', \{ class: "rail(?:\s+diag-log__rail)?" \}/.test(logList), 'the log list must sit in the side rail');
   assert.ok(/guiEl\('div', \{ class: "card", role: 'region', 'aria-label': '선택한 로그 상세' \}/.test(logList), 'the detail must keep its own region');
   assert.ok(/visible\.map\(row => guiEl\('button', \{\s*class: `row/.test(logList), 'log rows must stay clickable buttons');
 

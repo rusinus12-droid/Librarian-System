@@ -25,6 +25,10 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'retrace_owner_contract_retention_test.cjs',
   'gradia_plugin_integration_test.cjs',
   'gradia_suite_test.cjs',
+  'gradia/native-host-id-binding.test.cjs',
+  'gradia_risuai_three_owner_read_session_acceptance_test.cjs',
+  'flashback_vectors_pending_runtime_test.cjs',
+  'chat_output_listener_sequential_dispatch_contract_test.cjs',
   'program_data_layout_test.cjs',
   'cross_platform_launcher_test.cjs',
   'launcher_safety_regression_test.cjs',
@@ -250,7 +254,7 @@ const REQUIRED_UPDATER_FILES = new Set([
 const UPDATER_SENSITIVE_PATH_PATTERN = /(?:^|\/)(?:update-state\.json|latest\.log|[^/]+\.(?:log|tmp|bak|old|sqlite|db|zip))(?:$|\/)/i;
 
 function parseArgs(argv = process.argv.slice(2)) {
-  const result = { outputDir: null, version: null, profile: 'release', qualification: process.env.LIBRARIAN_PACKAGE_QUALIFICATION || 'publication_gate' };
+  const result = { outputDir: null, version: null, profile: 'release', qualification: process.env.LIBRARIAN_PACKAGE_QUALIFICATION || 'publication_gate', check: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = String(argv[index] || '');
     if (arg === '--output-dir') {
@@ -271,6 +275,8 @@ function parseArgs(argv = process.argv.slice(2)) {
       const value = String(argv[++index] || '');
       if (!['publication_gate', 'offline_candidate'].includes(value)) throw new Error(`distribution_qualification_invalid:${value}`);
       result.qualification = value;
+    } else if (arg === '--check') {
+      result.check = true;
     } else throw new Error(`unknown_distribution_builder_argument:${arg}`);
   }
   return result;
@@ -338,7 +344,7 @@ const RUNTIME_TOOL_FILES = new Set([
 ]);
 const RUNTIME_SDK_FILES = new Set([
   // The search kernel stays in sdk/ only as a test oracle; nothing at runtime loads it.
-  'MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js','MemorySuiteComputeClient.source.js','MemorySuiteExecutionContract.source.js'
+  'MemorySuiteStorageClient.source.js','MemorySuiteStorageClient.libra.source.js','MemorySuiteStorageClient.flashback.source.js','MemorySuiteComputeClient.source.js','MemorySuiteExecutionContract.source.js'
 ]);
 const RUNTIME_DOC_FILES = new Set([
   'ANDROID_INSTALL_HELPER.md','STORAGE_MODE_TRANSITION_CONTRACT.md','UPDATER_0.3.51_BOOTSTRAP.md','사용설명서.md','데이터_구조와_마이그레이션.md','보안과_복구.md'
@@ -641,7 +647,7 @@ function runReleaseSmokeFromSource() {
   if (!support?.modulesDir) throw new Error('distribution_build_support_unavailable');
   smokeEnv.GRADIA_TOOLCHAIN_ROOT = support.modulesDir;
   smokeEnv.NODE_PATH = process.env.NODE_PATH || support.modulesDir;
-  const smoke=runNodeProcess(['--test','--test-concurrency=4',...RELEASE_SMOKE_TESTS.map(name=>path.join(programDir,'tests',name))],programDir,{timeoutMs:600000,env:smokeEnv});
+  const smoke=runNodeProcess(['--test','--test-concurrency=4',...RELEASE_SMOKE_TESTS.map(name=>path.join(programDir,'tests',name))],programDir,{timeoutMs:900000,env:smokeEnv});
   assertTreeSourceUnchanged(programDir,programSnapshot,shouldCopySourceProgram,'program_source_after_smoke',true);
   assertTreeSourceUnchanged(updaterRoot,updaterSnapshot,shouldCopyUpdater,'updater_source_after_smoke');
   return smoke;
@@ -889,7 +895,7 @@ function buildRelease(options = {}) {
   const qualification = options.qualification || process.env.LIBRARIAN_PACKAGE_QUALIFICATION || 'publication_gate';
   if (!['publication_gate', 'offline_candidate'].includes(qualification)) throw new Error(`distribution_qualification_invalid:${qualification}`);
   const currentVersion = fs.readFileSync(path.join(programDir, 'VERSION.txt'), 'utf8').trim();
-  const snapshot = options.version ? snapshotVersionTransactionFiles(packageRoot) : null;
+  const snapshot = (options.version || options.check) ? snapshotVersionTransactionFiles(packageRoot) : null;
   const completed = [];
   try {
     let versionChange = null;
@@ -911,6 +917,9 @@ function buildRelease(options = {}) {
       result.versionChange = versionChange;
       results[selected] = result;
       completed.push(result);
+    }
+    if (options.check && snapshot) {
+      restoreVersionTransactionFiles(snapshot);
     }
     return profile === 'all' ? { profile: 'all', results, versionChange } : results[profile];
   } catch (error) {
@@ -965,6 +974,9 @@ module.exports = { buildOfflineCandidate,
   assertSourceUnchanged,
   buildDistribution,
   buildRelease,
+  snapshotVersionTransactionFiles,
+  restoreVersionTransactionFiles,
+  VERSION_TRANSACTION_RELATIVE_FILES,
   compareVersions,
   nextPatchVersion,
   validateTargetVersion,

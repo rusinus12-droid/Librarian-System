@@ -274,3 +274,36 @@ try{for(const owner of selectedOwners){
 4. 2.4 수동 복사 정책 결정 → 반영
 5. 2.3 LIBRA revision 기반 검증 (LIBRA·GRADIA 양쪽 계약 변경이라 별도 PR)
 6. 2.7 버전·매니페스트·실기 확인
+
+---
+
+## 5. 2026-11-01 안정화 패치 반영 및 장기 과제 기록
+
+### 5.1 버그 수정 + 재현 회귀 테스트 원자적 커밋 규칙 (P2)
+
+- **원칙**: 모든 버그 수정은 `bug reproduction → failing regression test → minimal product fix → same test passes → related regression suite` 계약을 따르며, 제품 코드 수정과 직접 재현 테스트를 같은 커밋에 원자적으로 포함한다.
+- **이번 패치 적용 완료**:
+  - GRADIA native-input 구조적 identity 결속 회귀 수정 + `PROGRAM/tests/gradia/native-host-id-binding.test.cjs` 재현 테스트 동시 반영
+  - GRADIA Input Writer optional memory fallback 시 native revalidation fail-closed 보장 + `PROGRAM/tests/gradia/native-host-id-binding.test.cjs`, `PROGRAM/tests/gradia_input_writer_memory_fallback_test.cjs` 재현 테스트 동시 반영
+  - `DATA/data-layout.json` Git 추적 제거 + `PROGRAM/tests/remote_update_release_zip_runtime_test.cjs` 소스 DATA 비의존 검증 반영
+  - `README.md` Mermaid 다이어그램 플러그인/SDK 중복 버전 제거 + `PROGRAM/tests/distribution_metadata_coherence_test.cjs` `renderReadme()` 동기화 게이트 반영
+- **향후 직접 재현 회귀 테스트 보강 대상 백로그** (최근 제품 코드 수정 중 직접 재현 테스트 분리가 필요했던 항목):
+  - maintenance `503` retry 경계 재현 테스트
+  - HAYAKU `afterRequest` / recovery evidence 경계 재현 테스트
+  - LIBRA micro queue / in-flight status 전이 재현 테스트
+  - 만료된 `leaseExpiresAt` 처리 재현 테스트
+  - HAYAKU baseline / capture evidence 계열 재현 테스트
+
+### 5.2 장기 구조 개선 백로그 — Canonical SDK / Build-Time Composition (P3)
+
+- **현황**: 플러그인 아티팩트 크기(`LIBRA` ~6.95 MB, `HAYAKU` ~4.21 MB, `Flashback` ~3.76 MB, `GRADIA` ~3.13 MB, `Storage SDK` ~735 KB)가 커졌으며, 공용 SDK 변경이 여러 플러그인 아티팩트에 반복 반영되고 있음.
+- **장기 목표 구조**:
+  ```text
+  canonical SDK/source
+          ↓
+  build-time composition
+          ↓
+  generated plugin artifacts
+  ```
+- **방향**: 생성된 플러그인 아티팩트를 직접 수작업 수정하는 대신 정본(canonical) SDK/소스에서 빌드 타임 합성 파이프라인으로 생성하도록 단계적으로 전환한다. (이번 안정화 패치에서는 대규모 리팩터링 없이 설계 과제 백로그로만 기록함.)
+
