@@ -128,13 +128,13 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
       if (metadata.sender !== readerId || message.kind !== 'request') return;
       let reply;
       try { reply = { ok: true, result: await serve(message.action, message.payload) }; }
-      catch (error) { reply = { ok: false, errorCode: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNIFIED_UNAVAILABLE' }; }
+      catch (error) { reply = { ok: false, errorCode: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNIFIED_UNAVAILABLE', reason: error?.readDiagnostic?.dispatchReason || error?.message || '', ...(error?.readDiagnostic ? { diagnostic: error.readDiagnostic } : {}) }; }
       if (!disposed) await api().postPluginChannelMessage(readerId, responseChannel, { schema, kind: 'response', requestId: message.requestId, ...reply });
     } else {
       if (metadata.sender !== ownerId || message.kind !== 'response') return;
       const record = pending.get(message.requestId); if (!record) return;
       pending.delete(message.requestId); record.finish();
-      if (message.ok === true) record.resolve(message.result); else record.reject(Object.assign(new Error(message.errorCode), { code: /^LIB_READ_[A-Z_]+$/.test(message.errorCode || '') ? message.errorCode : 'LIB_READ_UNIFIED_UNAVAILABLE' }));
+      if (message.ok === true) record.resolve(message.result); else record.reject(Object.assign(new Error(message.reason || message.errorCode), { code: /^LIB_READ_[A-Z_]+$/.test(message.errorCode || '') ? message.errorCode : 'LIB_READ_UNIFIED_UNAVAILABLE', ...(message.diagnostic ? { readDiagnostic: message.diagnostic } : {}), ...(message.reason ? { dispatchReason: message.reason } : {}) }));
     }
   };
   let starting = null;

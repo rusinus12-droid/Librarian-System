@@ -3851,10 +3851,18 @@ Before continuing, verify:
           if (!ref.messageId) throw nativeIdUnavailable('turn_ref_without_id', { stage, role: String(ref.role || '') });
           const candidates = messages.filter(message => nativeTurnMessageId(message) === ref.messageId
             && JSON.stringify(effectiveRef(message)) === JSON.stringify(ref));
-          if (candidates.length !== 1) throw nativeIdUnavailable('turn_ref_not_unique', { stage, matches: candidates.length });
-          const content = effectiveContent(candidates[0]);
+          // Completed-turn selection keeps the last assistant variant. A preset
+          // may repeat that exact native row in the request; certify one source
+          // only when every matching copy has the same role and raw content.
+          // Host transcript ID uniqueness is still checked by the host binder.
+          const candidate = candidates[candidates.length - 1];
+          if (!candidate || candidates.some(message => currentTurnRole(message) !== currentTurnRole(candidate)
+            || effectiveContent(message) !== effectiveContent(candidate))) {
+            throw nativeIdUnavailable('turn_ref_not_unique', { stage, matches: candidates.length });
+          }
+          const content = effectiveContent(candidate);
           if (typeof content !== 'string') throw libEvidenceError('LIB_READ_NATIVE_CONTENT_UNSUPPORTED');
-          selected.set(JSON.stringify(ref), { ref, role: currentTurnRole(candidates[0]), content });
+          selected.set(JSON.stringify(ref), { ref, role: currentTurnRole(candidate), content });
         }
       }
     }
@@ -45848,13 +45856,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (metadata.sender !== readerId || message.kind !== 'request') return;
       let reply;
       try { reply = { ok: true, result: await serve(message.action, message.payload) }; }
-      catch (error) { reply = { ok: false, errorCode: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNIFIED_UNAVAILABLE' }; }
+      catch (error) { reply = { ok: false, errorCode: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNIFIED_UNAVAILABLE', reason: error?.readDiagnostic?.dispatchReason || error?.message || '', ...(error?.readDiagnostic ? { diagnostic: error.readDiagnostic } : {}) }; }
       if (!disposed) await api().postPluginChannelMessage(readerId, responseChannel, { schema, kind: 'response', requestId: message.requestId, ...reply });
     } else {
       if (metadata.sender !== ownerId || message.kind !== 'response') return;
       const record = pending.get(message.requestId); if (!record) return;
       pending.delete(message.requestId); record.finish();
-      if (message.ok === true) record.resolve(message.result); else record.reject(Object.assign(new Error(message.errorCode), { code: /^LIB_READ_[A-Z_]+$/.test(message.errorCode || '') ? message.errorCode : 'LIB_READ_UNIFIED_UNAVAILABLE' }));
+      if (message.ok === true) record.resolve(message.result); else record.reject(Object.assign(new Error(message.reason || message.errorCode), { code: /^LIB_READ_[A-Z_]+$/.test(message.errorCode || '') ? message.errorCode : 'LIB_READ_UNIFIED_UNAVAILABLE', ...(message.diagnostic ? { readDiagnostic: message.diagnostic } : {}), ...(message.reason ? { dispatchReason: message.reason } : {}) }));
     }
   };
   let starting = null;

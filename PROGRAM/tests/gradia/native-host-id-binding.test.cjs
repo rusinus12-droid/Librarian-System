@@ -9,12 +9,40 @@ async function fixture(mutate,apiOverrides={},testGlobals={}){
   const host=await load({captureInternals:true,testGlobals,api:{getCurrentCharacterIndex:async()=>selected,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>character,getChatFromIndex:async()=>chat,...apiOverrides},
     transformSource:source=>source.replace(
       'clearStructuredSettings, fullDraftStagePrompt, Runtime };',
-      'clearStructuredSettings, fullDraftStagePrompt, Runtime, captureLibNativeReadSetFromHost, buildRecentChat, resolveSgaCurrentTurn, loadActualChatContextForRag, applyActualChatContextToRecent, attachInputAssistContinuityState, libNativePromptView, scopedSettingsForStage };'
+      'clearStructuredSettings, fullDraftStagePrompt, Runtime, captureLibNativeReadSet, captureLibNativeReadSetFromHost, buildRecentChat, resolveSgaCurrentTurn, loadActualChatContextForRag, applyActualChatContextToRecent, attachInputAssistContinuityState, libNativePromptView, scopedSettingsForStage };'
     )});
   const api=host.internals,settings={...api.Runtime.settings},input=messages();
   mutate?.(chat,character,input);
   return {chat,character,input,settings,api,runtime:api.Runtime,changeScope:()=>selected=1,bind:()=>api.captureLibNativeReadSetFromHost(input,settings,api.buildRecentChat(input,settings),scope)};
 }
+test('repeated identical completed assistant references bind without mutating the request',async()=>{
+  const f=await fixture((_chat,_character,input)=>{
+    input.forEach((row,i)=>row.chatId='native-'+i);
+    input.splice(1,0,{...input[1]});
+  });
+  const original=JSON.stringify(f.input),b=await f.bind();
+  assert.equal(JSON.stringify(f.input),original);
+  assert.equal(b.snapshot.turns.filter(row=>row.ref.messageId==='native-1').length,1);
+  assert.equal(b.snapshot.currentInputRef.messageId,'native-2');
+  await b.assertCurrent();
+});
+
+test('same reference with conflicting raw content remains blocked',async()=>{
+  const f=await fixture();
+  f.input.forEach((row,i)=>row.chatId='native-'+i);
+  const original=f.api.captureLibNativeReadSet(f.input,f.settings,f.api.buildRecentChat(f.input,f.settings));
+  const ref=original.turns.find(row=>row.ref.messageId==='native-1').ref;
+  f.input[1].turnMeta={ref,nativeContent:f.input[1].content};
+  f.input.splice(1,0,{...f.input[1],turnMeta:{ref,nativeContent:'Conflicting raw source.'}});
+  assert.throws(()=>f.api.captureLibNativeReadSet(f.input,f.settings,f.api.buildRecentChat(f.input,f.settings)),
+    error=>error.code==='LIB_READ_NATIVE_ID_UNAVAILABLE');
+});
+
+test('duplicate host rows remain ambiguous even when their content is identical',async()=>{
+  const f=await fixture(chat=>chat.message.splice(1,0,{...chat.message[1]}));
+  await assert.rejects(()=>f.bind(),error=>error.code==='LIB_READ_NATIVE_ID_UNAVAILABLE');
+});
+
 test('missing provider IDs bind to exact unique host messages without changing stage text',async()=>{
   const f=await fixture(),original=JSON.stringify(f.input),b=await f.bind();
   assert.equal(b.snapshot.currentInputRef.messageId,'native-2');
@@ -389,7 +417,7 @@ test('Input Writer optional memory fallback fails closed on timeout during nativ
   assert.equal(diag.code,'LIB_READ_TIMEOUT');
 });
 
-test('end-to-end beforeRequest pipeline with formatted Current Input wrapper binds native ID and injects memory evidence across all stages without LIB_READ_NATIVE_VIEW_CHANGED',async()=>{
+for (const duplicateAssistant of [false,true]) test('end-to-end formatted Current Input injects memory across all stages, duplicate assistant='+duplicateAssistant,async()=>{
   const crypto=require('node:crypto');
   const chat={id:scope.chatId,message:messages().map((row,i)=>({role:row.role,chatId:'native-'+i,data:row.content}))};
   const character={chaId:scope.characterId,name:'Archivist',chats:[chat],chatPage:0,lorebook:[]};
@@ -465,6 +493,7 @@ test('end-to-end beforeRequest pipeline with formatted Current Input wrapper bin
   },{scope:{scopeKey:'bound-scope',...scope}});
   const reqMessages=messages();
   reqMessages[2]={role:'user',content:'<Current Input>\n[장면 지시]\nWhere is   the\nblue ledger?\n</Current Input>'};
+  if (duplicateAssistant) reqMessages.splice(1,0,{...reqMessages[1]});
   const out=await host.hooks.beforeRequest(reqMessages,'model');
   assert.equal(prompts.length,4);
   for(const prompt of prompts){
