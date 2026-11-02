@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-02T12:57:09.866Z",
+  "generatedAt": "2026-11-02T13:12:38.903Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -1767,6 +1767,10 @@
       "sha256": "164f57de78db6a296e024d94add0e04717218a7a95d974ebef721610ed663a85",
       "bytes": 9565
     },
+    "docs/GRADIA_NATIVE_REFERENCE_DUPLICATION_20261102.md": {
+      "sha256": "185ff1a2a3fb097f2753f25cdbc44f839a3c7b7c35e57f7660b87d4264d5357e",
+      "bytes": 1534
+    },
     "docs/GRADIA_OPTIONAL_MEMORY_20261022.md": {
       "sha256": "2d11a68742849d78960075d18f3d4e242e8778902afa01f07a1b0e136aeb69c9",
       "bytes": 3307
@@ -2995,6 +2999,10 @@
       "sha256": "558f7d2ff5f092fab9110f0805152818fa0fc6a9876a97120bc755bf222c5cc4",
       "bytes": 6733
     },
+    "docs/LIBRA_RECALL_BOUNDARY_DIAGNOSTICS_20261102.md": {
+      "sha256": "b8f093f2e24816b8483400add7d8aaeb0949df3d6a5b8a05703557e03f9eb0ec",
+      "bytes": 1434
+    },
     "docs/LIBRA_RECORD_NORMALIZATION_2.3.65.md": {
       "sha256": "a6b9c9e451e3611d3c6643b3f6e5663eccc946d16508f3081c694c286867b2e3",
       "bytes": 2810
@@ -3804,7 +3812,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "8e4a6396ecd63e75b60d5c97bcb10c8da2186814c5673f63337811bdffb7a62b",
+      "sha256": "ffd7d3791f9ee94921ef72b415292f2a7949309759b1977a516c6bceae422444",
       "bytes": 11836
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4208,8 +4216,8 @@
       "bytes": 3353
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "998e4b3360493b4e0f234c906628db9d0e9497f68615a35b6e531613d0d8b611",
-      "bytes": 3765000
+      "sha256": "66e414e761ee8cb0699a3fd58296a30d0ccc5c4bd843ac3a0994efe0906eca66",
+      "bytes": 3766494
     },
     "plugins/GRADIA.js": {
       "sha256": "fab3997ded88247211b4061389e6f48230b1ecc0f0fa00e56ee1ba3681f14d6f",

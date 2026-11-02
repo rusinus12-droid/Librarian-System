@@ -40625,6 +40625,13 @@ const MemorySuiteHealthRecovery = (() => {
           || row.embeddingReceipt.jobId !== target.jobId || !embeddingWorkRecordReady(row, current)) throw embeddingWorkError('FLASHBACK_EMBEDDING_COMPLETION_CHANGED');
       }
       await assertEmbeddingWorkBoundary(proof);
+      const totalTokens = proof.targets.reduce((sum, target) => sum + estimateTokens(target.text), 0);
+      const vectorizationCost = estimateEmbeddingCostForTokens(totalTokens, cfg);
+      Runtime.lastVectorizationCost = vectorizationCost;
+      if (Runtime.lastCapture && (!Number(Runtime.lastCapture.embeddingCost?.tokens || 0))) {
+        Runtime.lastCapture.embeddingCost = vectorizationCost;
+        Runtime.lastCapture.embeddedVectors = Number(Runtime.lastCapture.embeddedVectors || 0) + proof.targets.length;
+      }
       invalidateGuiDataCache('all');
       return { ok: true, ready: proof.targets.length, reused: proof.reused, attemptId: proof.attemptId };
     } catch (error) {
@@ -40939,7 +40946,12 @@ const MemorySuiteHealthRecovery = (() => {
         if (settings.embeddingAutoProcess === false || !configuredModelEmbedding(settings)) return;
         const result = await processPendingEmbeddingQueue({ scopeKey: key, scope: options.scope, automatic: true });
         Runtime.lastEmbeddingQueue = { ...result, scopeKey: key, generation, reason: result.reason, trigger: options.reason || 'background', at: Date.now() };
+        if (Number(result.ready || 0) > 0 && settings.episodeIndexEnabled !== false) {
+          const targetScope = options.scope || (Runtime.currentScope?.scopeKey === key ? Runtime.currentScope : { scopeKey: key });
+          scheduleEpisodeIndexRebuild(targetScope, settings, { reason: 'embedding_queue_complete' });
+        }
         invalidateGuiDataCache('all');
+        refreshEmbeddingCostPanel().catch(error => warn('embedding cost panel refresh failed', error));
         if (isGuiRenderActive() && Runtime.guiTab === 'provider') void refreshEmbeddingWorkPanel(guiRoot, result);
         // A pass that timed out before any wire submission sent nothing and owes no
         // outcome check; give it a few spaced retries instead of waiting for the next turn.
@@ -46773,7 +46785,12 @@ ${cleanedText}`, 80),
 
   const renderEmbeddingCostPanelBody = (settings, stats = {}) => {
     const scopeCost = scopeEmbeddingCostEstimate(stats, settings);
-    const latestVectorCost = Runtime.lastImport?.embeddingCost || Runtime.lastCapture?.embeddingCost || null;
+    const latestVectorCost = (Number(Runtime.lastImport?.embeddingCost?.tokens || 0) > 0 ? Runtime.lastImport.embeddingCost : null)
+      || (Number(Runtime.lastCapture?.embeddingCost?.tokens || 0) > 0 ? Runtime.lastCapture.embeddingCost : null)
+      || (Number(Runtime.lastVectorizationCost?.tokens || 0) > 0 ? Runtime.lastVectorizationCost : null)
+      || (Runtime.embedding?.last?.requestPurpose === 'document' && Number(Runtime.embedding.last.inputCharacters || 0) > 0
+        ? estimateEmbeddingCostForTokens(Math.max(1, Math.ceil(Runtime.embedding.last.inputCharacters / 2.5)), settings, Runtime.embedding.last.model)
+        : null);
     const queryCost = Runtime.lastRecall?.queryEmbeddingCost || null;
     const pricing = embeddingPricingFor(settings.embeddingProvider, settings.embeddingModel);
     const formula = pricing.pricePerMillion != null

@@ -285,8 +285,8 @@
     "plugins": {
       "flashback": {
         "version": "1.3.16",
-        "sha256": "998e4b3360493b4e0f234c906628db9d0e9497f68615a35b6e531613d0d8b611",
-        "bytes": 3765000
+        "sha256": "66e414e761ee8cb0699a3fd58296a30d0ccc5c4bd843ac3a0994efe0906eca66",
+        "bytes": 3766494
       },
       "hayaku": {
         "version": "3.3.11",
