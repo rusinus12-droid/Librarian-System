@@ -29,6 +29,12 @@ SHA-256 compared with the current verified build. Matching assets remain
 untouched; only missing assets are uploaded. A same-name asset with different
 content stops the retry rather than overwriting it.
 
+Release builds set a stable build ID, metadata timestamp, and ZIP timestamp from
+the triggering event commit. Rebuilding the same event therefore produces the
+same report and archive bytes, which makes the asset hash check meaningful.
+When an asset is listed by GitHub but its download fails, recovery stops with a
+download/API/permission diagnostic instead of treating it as absent.
+
 Every publication run executes the release-builder checks plus the targeted
 Release Builder, GRADIA native-input/read-session, Updater, and Migration
 regressions. Build reports, the target commit, tag, Release URL, and a

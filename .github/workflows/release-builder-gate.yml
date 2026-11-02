@@ -175,7 +175,9 @@ jobs:
           console.log(JSON.stringify({ ...state, targetVersion, previousVersion, commit, eventSha, transactionSha: transaction?.sha || null }));
           fs.appendFileSync(process.env.GITHUB_ENV,
             `CURRENT_VERSION=${currentVersion}\nPREVIOUS_VERSION=${previousVersion}\nNEXT_VERSION=${targetVersion}\n` +
-            `RELEASE_COMMIT_SHA=${commit}\nRELEASE_PHASE=${state.phase}\nEVENT_SHA=${eventSha}\n`);
+            `RELEASE_COMMIT_SHA=${commit}\nRELEASE_PHASE=${state.phase}\nEVENT_SHA=${eventSha}\n` +
+            `LIBRARIAN_RELEASE_BUILD_ID=release-${eventSha.slice(0, 40)}\n` +
+            `LIBRARIAN_RELEASE_GENERATED_AT=${execFileSync("git", ["show", "-s", "--format=%cI", eventSha], { encoding: "utf8" }).trim()}\n`);
           '
 
       - name: Guard against duplicate version transaction
@@ -370,7 +372,16 @@ jobs:
             missing=()
             for f in "${ASSETS[@]}"; do
               name=$(basename "$f")
-              if gh release download "$TAG" --pattern "$name" --dir "$RUNNER_TEMP/librarian-release-existing" --clobber >/dev/null 2>&1; then
+              exists=$(node -e '
+                const release = JSON.parse(require("fs").readFileSync("/tmp/librarian-release.json", "utf8"));
+                const name = process.argv[1];
+                process.stdout.write((release.assets || []).some(asset => asset.name === name) ? "true" : "false");
+              ' "$name")
+              if [[ "$exists" == "true" ]]; then
+                if ! gh release download "$TAG" --pattern "$name" --dir "$RUNNER_TEMP/librarian-release-existing" --clobber >/dev/null 2>&1; then
+                  echo "Existing asset ${name} is listed but could not be downloaded; refusing to treat an API or permission failure as a missing asset."
+                  exit 1
+                fi
                 existing="$RUNNER_TEMP/librarian-release-existing/$name"
                 expected=$(sha256sum "$f" | cut -d' ' -f1)
                 actual=$(sha256sum "$existing" | cut -d' ' -f1)

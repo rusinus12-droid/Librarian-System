@@ -704,7 +704,9 @@ function buildDistribution(options = {}) {
   fs.mkdirSync(outputDir,{recursive:true});
   const canonicalPackageRoot=fs.realpathSync.native(packageRoot),canonicalOutputDir=fs.realpathSync.native(outputDir);
   if(isWithin(canonicalPackageRoot,canonicalOutputDir))throw new Error(`distribution_output_must_be_outside_source_package:${canonicalOutputDir}`);
-  const buildId=new Date().toISOString().replace(/[-:.]/g,'')+'-'+crypto.randomBytes(4).toString('hex');
+  const buildId=process.env.LIBRARIAN_RELEASE_BUILD_ID ||
+    (new Date().toISOString().replace(/[-:.]/g,'')+'-'+crypto.randomBytes(4).toString('hex'));
+  const generatedAt=process.env.LIBRARIAN_RELEASE_GENERATED_AT || new Date().toISOString();
   const artifactBase=`Librarian-System-${version}${isSource?'-Source':''}${offline?'-Offline-Candidate':''}`;
   const topLevelName=artifactBase;
   const archivePath=path.join(outputDir,offline?artifactBase+'.zip':isSource?expectedSourceAssetName(version):expectedAssetName(version));
@@ -793,7 +795,8 @@ function buildDistribution(options = {}) {
     if(updateManifest.assetName!==expectedAssetName(version)||updateManifest.updatePolicy!==releasePolicy.updatePolicy)throw new Error('distribution_update_manifest_contract_mismatch');
     assertPristineDistributionData(stagedData);verifyChecksumFile(stagedRoot);
     if(isSource){verifySourceFixtureBytes(stagedProgram);}
-    phase='archive';const zip=createZipFromDirectory(stagedRoot,archivePath,{rootName:topLevelName});
+    phase='archive';const zip=createZipFromDirectory(stagedRoot,archivePath,{rootName:topLevelName,
+      timestamp:generatedAt ? new Date(generatedAt) : undefined});
     const verification=verifyZipAgainstDirectory(archivePath,stagedRoot,{rootName:topLevelName}),entries=readZipEntries(archivePath);
     assertArchivePrivacy(entries,topLevelName);
     let runtimeDependencyClosure=null;
@@ -810,7 +813,7 @@ function buildDistribution(options = {}) {
     const report={schema:'librarian-system.distribution-build-report.v1',productName:PRODUCT_NAME,packageVersion:version,profile,
       qualification,...(offline?{fullReleaseGatePassed:false}:{}),publicationSmokePassed:!offline,updaterEligible:!isSource&&!offline,pluginVersions:Object.fromEntries(Object.entries(releaseMetadata.plugins).map(([owner,row])=>[owner,row.version])),
       pluginSha256:Object.fromEntries(Object.entries(releaseMetadata.plugins).map(([owner,row])=>[owner,row.sha256])),sourceUnchangedVerified:true,
-      guidesGeneratedFromSource:true,generatedAt:new Date().toISOString(),buildId,artifact:path.basename(archivePath),releaseTag:`v${version}`,
+      guidesGeneratedFromSource:true,generatedAt,buildId,artifact:path.basename(archivePath),releaseTag:`v${version}`,
       releaseAssetContract:isSource?null:'librarian.update-manifest.v1',officialUpdaterAsset:expectedAssetName(version),sourceAsset:expectedSourceAssetName(version),
       updatePolicy:updateManifest.updatePolicy,minimumSourceVersion:updateManifest.minimumSourceVersion,updateManifestSha256:sha256File(path.join(stagedRoot,'update-manifest.json')),
       archiveSha256:verification.archiveSha256,archiveBytes:zip.bytes,archiveFiles:verification.files,embeddedRuntime:false,sourceDataReadOrCopied:false,
