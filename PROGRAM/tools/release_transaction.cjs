@@ -46,9 +46,24 @@ function classifyRelease({ exists, tagName, expectedTag }) {
   throw new Error(`release_points_to_unexpected_tag:${tagName}:${expectedTag}`);
 }
 
+function findReleaseCommitForEvent(commits, eventSha) {
+  const expectedParent = String(eventSha || '').trim();
+  if (!expectedParent) return null;
+  const matches = commits.filter(commit =>
+    Array.isArray(commit.parents) &&
+    commit.parents[0] === expectedParent &&
+    parseReleaseCommitSubject(commit.subject)
+  );
+  if (matches.length > 1) {
+    throw new Error(`release_event_has_multiple_transactions:${expectedParent}`);
+  }
+  return matches[0] || null;
+}
+
 module.exports = {
   classifyRelease,
   classifyTag,
   determineReleaseState,
+  findReleaseCommitForEvent,
   parseReleaseCommitSubject
 };

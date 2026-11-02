@@ -147,26 +147,35 @@ jobs:
         id: state
         run: |
           git fetch origin main --tags
-          git checkout main
-          git reset --hard origin/main
+          git checkout --detach "$GITHUB_SHA"
           node -e '
           const fs = require("node:fs");
-          const { determineReleaseState } = require("./PROGRAM/tools/release_transaction.cjs");
+          const { execFileSync } = require("node:child_process");
+          const { determineReleaseState, findReleaseCommitForEvent } = require("./PROGRAM/tools/release_transaction.cjs");
           const { nextPatchVersion } = require("./PROGRAM/tools/release_version.cjs");
+          const eventSha = process.env.GITHUB_SHA;
+          const commits = execFileSync("git", [
+            "log", "origin/main", "--format=%H%x00%P%x00%s"
+          ], { encoding: "utf8" }).trim().split("\n").filter(Boolean).map(line => {
+            const [sha, parents, subject] = line.split("\0");
+            return { sha, parents: parents ? parents.split(" ") : [], subject };
+          });
+          const transaction = findReleaseCommitForEvent(commits, eventSha);
+          const checkoutSha = transaction ? transaction.sha : "origin/main";
+          execFileSync("git", ["checkout", "--detach", checkoutSha], { stdio: "inherit" });
           const currentVersion = fs.readFileSync("PROGRAM/VERSION.txt", "utf8").trim();
-          const headSubject = require("node:child_process").execFileSync(
-            "git", ["log", "-1", "--pretty=%s"], { encoding: "utf8" }).trim();
-          const parentVersion = require("node:child_process").execFileSync(
-            "git", ["show", "HEAD^:PROGRAM/VERSION.txt"], { encoding: "utf8" }).trim();
+          const headSubject = execFileSync("git", ["log", "-1", "--pretty=%s"], { encoding: "utf8" }).trim();
+          const parentVersion = headSubject.startsWith("chore(release):")
+            ? execFileSync("git", ["show", "HEAD^:PROGRAM/VERSION.txt"], { encoding: "utf8" }).trim()
+            : null;
           const state = determineReleaseState({ headSubject, currentVersion, parentVersion });
           const targetVersion = state.targetVersion || nextPatchVersion(currentVersion);
           const previousVersion = state.previousVersion || currentVersion;
-          const commit = require("node:child_process").execFileSync(
-            "git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-          console.log(JSON.stringify({ ...state, targetVersion, previousVersion, commit }));
+          const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+          console.log(JSON.stringify({ ...state, targetVersion, previousVersion, commit, eventSha, transactionSha: transaction?.sha || null }));
           fs.appendFileSync(process.env.GITHUB_ENV,
             `CURRENT_VERSION=${currentVersion}\nPREVIOUS_VERSION=${previousVersion}\nNEXT_VERSION=${targetVersion}\n` +
-            `RELEASE_COMMIT_SHA=${commit}\nRELEASE_PHASE=${state.phase}\n`);
+            `RELEASE_COMMIT_SHA=${commit}\nRELEASE_PHASE=${state.phase}\nEVENT_SHA=${eventSha}\n`);
           '
 
       - name: Guard against duplicate version transaction
@@ -294,7 +303,12 @@ jobs:
 
       - name: Push release commit to main
         run: |
-          git push origin "HEAD:main"
+          git fetch origin main
+          if git merge-base --is-ancestor "$RELEASE_COMMIT_SHA" origin/main; then
+            echo "Release commit ${RELEASE_COMMIT_SHA} is already present on origin/main."
+          else
+            git push origin "HEAD:main"
+          fi
 
       - name: Create or reuse release tag
         id: tag
@@ -353,19 +367,27 @@ jobs:
               echo "Existing GitHub Release has unexpected tag ${RELEASE_TAG}."
               exit 1
             }
-            node -e '
-            const release = JSON.parse(require("fs").readFileSync("/tmp/librarian-release.json", "utf8"));
-            const names = new Set((release.assets || []).map(asset => asset.name));
-            const required = [
-              `Librarian-System-${process.env.NEXT_VERSION}.zip`,
-              `Librarian-System-${process.env.NEXT_VERSION}.build-report.json`,
-              `Librarian-System-${process.env.NEXT_VERSION}.GITHUB_RELEASE_INFO.txt`
-            ];
-            for (const name of required) {
-              if (!names.has(name)) throw new Error(`existing_release_asset_missing:${name}`);
-            }
-            '
-            echo "Reusing existing GitHub Release ${RELEASE_URL}."
+            missing=()
+            for f in "${ASSETS[@]}"; do
+              name=$(basename "$f")
+              if gh release download "$TAG" --pattern "$name" --dir "$RUNNER_TEMP/librarian-release-existing" --clobber >/dev/null 2>&1; then
+                existing="$RUNNER_TEMP/librarian-release-existing/$name"
+                expected=$(sha256sum "$f" | cut -d' ' -f1)
+                actual=$(sha256sum "$existing" | cut -d' ' -f1)
+                if [[ "$expected" != "$actual" ]]; then
+                  echo "Existing asset ${name} has a different SHA-256 (${actual}, expected ${expected})."
+                  exit 1
+                fi
+              else
+                missing+=("$f")
+              fi
+            done
+            if ((${#missing[@]} > 0)); then
+              gh release upload "$TAG" "${missing[@]}"
+              echo "Uploaded ${#missing[@]} missing asset(s) to ${RELEASE_URL}."
+            else
+              echo "Reusing complete GitHub Release ${RELEASE_URL}."
+            fi
           else
             RELEASE_URL=$(gh release create "$TAG" \
               "${ASSETS[@]}" \
