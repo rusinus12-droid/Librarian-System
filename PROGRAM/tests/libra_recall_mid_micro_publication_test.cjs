@@ -16,13 +16,19 @@ const { waitFor } = require('./fixtures/libra_vm_harness.cjs');
 const QUOTE = '민아가 은빛 열쇠를 준호에게 잠시 건넸다.';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const PHYSICAL = 'assertPhysicalCurrentness: async (dependencies = null, verifyContext = null) => {';
+const COMPLETE = 'consumedProofComplete = !unresolved;';
 
 async function setup() {
   let listener;
   const host = { addRisuChatListener: async (_kind, handler) => { listener = handler; return true; } };
   const server = await serverFixture({ mode: 'server_only', host, transformSource: source => {
     assert.equal(source.split(PHYSICAL).length, 2);
-    return source.replace(PHYSICAL, PHYSICAL + '\n            if (globalThis.__beforePhysicalCheck) await globalThis.__beforePhysicalCheck();');
+    assert.equal(source.split(COMPLETE).length, 2);
+    return source.replace(PHYSICAL, PHYSICAL + '\n            if (globalThis.__beforePhysicalCheck) await globalThis.__beforePhysicalCheck();')
+      .replace(COMPLETE, 'if (globalThis.__forceUnresolved) unresolved = true;\n                  ' + COMPLETE
+        + '\n                  (globalThis.__consumedChecks ||= []).push({ complete: consumedProofComplete,'
+        + ' families: [...candidateUnits].map(u => string(u?.family || \'\')), keys: [...consumedStorageKeys],'
+        + ' items: bundleItems.map(item => string(item?.nodeId || \'\')) });');
   } });
   const f = withLorebook(server.f);
   await f.run(); await f.r.api.retryPendingUnifiedVectors();
@@ -96,5 +102,33 @@ test('server_only: a replaced Micro head before the final check refuses delivery
     x.beforeFinalCheck(row => /:micro-memory-head:/.test(row.key));
     const { meta } = await x.recall();
     assert.equal(meta.injected, false, 'replacing a published Micro head is not a first publication');
+  } finally { await x.server.cleanup(); }
+});
+
+test('server_only: the narrow check covers every consumed item; an unresolved item restores the full check', async () => {
+  const x = await setup();
+  try {
+    // Normal recall: every delivered item is resolved and its records are re-read.
+    x.f.r.context.__consumedChecks = [];
+    const normal = await x.recall();
+    assert.equal(normal.meta.injected, true);
+    const checks = x.f.r.context.__consumedChecks;
+    assert.ok(checks.length >= 1, 'the final consumer ran the consumed-evidence check');
+    for (const check of checks) {
+      assert.equal(check.complete, true, JSON.stringify(check));
+      assert.ok(check.items.length >= 1);
+      assert.ok(check.keys.some(storageKey => /:micro-memory:/.test(storageKey)), 'consumed Micro records are re-read');
+    }
+    const families = new Set(checks.flatMap(check => check.families));
+    assert.ok(families.has('micro') && families.size >= 2, 'multiple families are consumed: ' + [...families]);
+    // Same mid-recall publication as the first test, but with one consumed item
+    // forced unresolved: the whole-corpus pin set is checked again and refuses it.
+    x.f.r.context.__forceUnresolved = true;
+    x.server.hooks.beforeServerRequest = async () => { await sleep(10); };
+    const published = x.startMicro(300);
+    await sleep(20);
+    const forced = await x.recall();
+    await published();
+    assert.equal(forced.meta.injected, false, 'an incomplete consumed set falls back to the full pin-set check');
   } finally { await x.server.cleanup(); }
 });

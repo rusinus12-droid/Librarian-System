@@ -123,3 +123,11 @@ LIBRA 회귀 40개 중 39개 통과. `libra_phase_d_v5_fault_semantic_recovery_t
 성능은 2차와 같다(server_only warm 1,401ms / 92회, 새 Micro 뒤 재빌드 후 1,573ms / 104회, 3회 중앙값). LIBRA 회귀 85개 중 수정 전 커밋에서도 실패하는 `libra_memory_graph_resources_runtime_test`, `libra_memory_graph_store_runtime_test`, 간헐 실패 `libra_phase_d_v5_fault_semantic_recovery_test` 외 모두 통과.
 
 리뷰의 `libra_micro_current_observation_state_integration_test.cjs`(6fa89ac) 지적은 타당하다. 이 검사는 플러그인을 실행하지 않는 객체 검사이며 인용 끝 위치도 틀렸다. 이번 작업 범위 밖이라 고치지 않았다. Flashback 비용 패널 표시 우선순위도 같은 이유로 손대지 않았다.
+
+## 4차: 6dccb30 리뷰의 남은 검증 (코드 변경 없음, 검사만 추가)
+
+- **소비 근거 완전성.** `libra_recall_mid_micro_publication_test`에 네 번째 검사를 추가했다. 정상 회상에서 최종 검사가 기록한 내역을 보면, 모든 전달 항목이 해석되어 `consumedProofComplete=true`이고, 소비한 Micro 기록이 재읽기 대상에 들어 있으며, Micro를 포함한 두 종류 이상의 근거가 함께 검사된다. 항목 하나를 강제로 미해석 처리하면 회상 중 Micro 게시 상황에서 전체 pin readset 검사로 돌아가 전달이 거부된다. 이 fixture에는 Lore가 선택되지 않아 정본·Micro·State·Lore 네 종류가 동시에 선택된 경우는 확인하지 못했다.
+- **Micro 최초 게시 허용 조건.** `libra_appended_micro_tolerance_unit_test`는 실제 `LIBRA.js`의 `appendedOnlyMicroTurns`를 잘라 실행한다. `missing -> verified`만 허용하고 다음은 거부함을 확인한다: `missing -> stale_source`, missing 상태에서 head만 변경, 원문 revision/digest 변경, head 키 변경, 이전 기록 키 존재, `stale_source -> verified`, 이미 검증된 Micro 교체, 정본 창 변경, 턴 삭제, 턴 쌍·manifest·registry 변경, frame·창 수 변경, Micro 외 가족 변경. 리뷰 전의 느슨한 조건으로 바꾸면 이 검사가 실패한다.
+- **32키 묶음 예산.** `libra_owner_batch_budget_unit_test`는 실제 `ownerGetMany`를 실제 자원 관리기와 함께 실행한다. 작은 값 32개는 1회 왕복, 큰 값이 섞이면 나눠 읽고 모든 값이 정확히 돌아오며 바이트가 계산된다. 한도를 넘는 단일 값은 기존처럼 `VALUE_BYTE_BUDGET`으로 실패한다. 나눠 읽는 요청이 실패하면 오류로 끝나고 예약이 모두 반환된다. 처음 묶음 응답을 크기 판단에 쓴 뒤 버리고 다시 읽는 비용은 남아 있다. 실제 쿼리 경로에서는 모든 읽기가 같은 값 한도를 쓰므로, 가장 큰 기록(약 34KB)을 받을 수 있는 한도에서는 head 묶음(합계 약 22KB)이 나뉘지 않았다.
+
+남은 것: 실제 RisuAI 설치 검증, 장기 누적 대화, 다른 기기의 동시 접근, `UNIFIED_RESPONSE_AUTHORITY_CHANGED` 실제 원인, Micro->State 실제 반영 테스트.

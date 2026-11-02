@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-02T16:21:57.650Z",
+  "generatedAt": "2026-11-02T16:50:25.471Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3000,8 +3000,8 @@
       "bytes": 6733
     },
     "docs/LIBRA_RECALL_BOTTLENECK_20261102.md": {
-      "sha256": "9de8d07c6394cb7c7bee2723c46288d2b32be75fcb21590ed35f153d543961e6",
-      "bytes": 16492
+      "sha256": "93dfaff2bd6affec34f51be8e349d096c46407bf765cc2bb39e77d570a559129",
+      "bytes": 18795
     },
     "docs/LIBRA_RECALL_BOUNDARY_DIAGNOSTICS_20261102.md": {
       "sha256": "b8f093f2e24816b8483400add7d8aaeb0949df3d6a5b8a05703557e03f9eb0ec",
@@ -9556,8 +9556,8 @@
       "bytes": 3698
     },
     "tests/libra_recall_mid_micro_publication_test.cjs": {
-      "sha256": "61c9856647bf87669ee60fbe03e09a1eb38d4d8211256544921b42de328ce099",
-      "bytes": 5682
+      "sha256": "118849257ecbf23dbf96ebc5c5d0baf1d1dfb02e3fd23b91d728694310481175",
+      "bytes": 7726
     },
     "tests/libra_recall_read_efficiency_test.cjs": {
       "sha256": "88c74fd6e0b4bfe677428ba57e555d45b3ff26c5ce8d848830f4965b33bd4684",
