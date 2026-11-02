@@ -591,8 +591,10 @@ async function verifyStorageTransitionContract(options = {}) {
   }
 }
 
-const H06_PRODUCT_PATH_SCENARIOS = new Set(['H06-01', 'H06-02', 'H06-04', 'H06-06']);
+const H06_LIBRARIAN_PRODUCT_PATH_SCENARIOS = new Set(['H06-02']);
+const H06_HOST_CONTRACT_SCENARIOS = new Set(['H06-01', 'H06-04', 'H06-06']);
 const H06_CONTRACT_FIXTURE_SCENARIOS = new Set(['H06-03', 'H06-05', 'H06-07', 'H06-08']);
+const H06_PRODUCT_PATH_SCENARIOS = new Set([...H06_LIBRARIAN_PRODUCT_PATH_SCENARIOS, ...H06_HOST_CONTRACT_SCENARIOS]);
 
 async function runH06CompatibilityReplay(options = {}) {
   const contractsDir = options.contractsDir || defaultContractsDir;
@@ -852,33 +854,55 @@ async function runH06CompatibilityReplay(options = {}) {
       assert.equal(fenceErrorCode, 'LIB_READ_AUTHORITY_CHANGED');
     }
 
-    const isProductPath = H06_PRODUCT_PATH_SCENARIOS.has(spec.scenarioId);
+    let kind;
+    if (H06_LIBRARIAN_PRODUCT_PATH_SCENARIOS.has(spec.scenarioId)) {
+      kind = 'librarian_product_path_replay';
+    } else if (H06_HOST_CONTRACT_SCENARIOS.has(spec.scenarioId)) {
+      kind = 'host_contract_replay';
+    } else {
+      kind = 'contract_fixture_validation';
+    }
+
     scenarioResults.push({
       scenarioId: spec.scenarioId,
       title: spec.title,
-      kind: isProductPath ? 'product_path_replay' : 'contract_fixture_validation',
+      kind,
       passed: true,
-      actualLibrarianReplay: isProductPath,
+      actualLibrarianProductPathReplay: kind === 'librarian_product_path_replay',
+      actualLibrarianReplay: kind === 'librarian_product_path_replay',
+      hostContractReplay: kind === 'host_contract_replay',
+      contractFixtureValidation: kind === 'contract_fixture_validation',
       syntheticDeterministicFixture: true,
       actualHostGuiExecuted: false
     });
   }
 
-  const productPathPassed = scenarioResults.filter(s => s.kind === 'product_path_replay' && s.passed).length;
+  const librarianProductPathPassed = scenarioResults.filter(s => s.kind === 'librarian_product_path_replay' && s.passed).length;
+  const hostContractPassed = scenarioResults.filter(s => s.kind === 'host_contract_replay' && s.passed).length;
   const contractFixturePassed = scenarioResults.filter(s => s.kind === 'contract_fixture_validation' && s.passed).length;
 
   return {
     ok: true,
     scenarioCount: scenarioResults.length,
-    productPathReplay: {
-      total: H06_PRODUCT_PATH_SCENARIOS.size,
-      passed: productPathPassed,
-      scenarios: scenarioResults.filter(s => s.kind === 'product_path_replay').map(s => s.scenarioId)
+    librarianProductPathReplay: {
+      total: H06_LIBRARIAN_PRODUCT_PATH_SCENARIOS.size,
+      passed: librarianProductPathPassed,
+      scenarios: Array.from(H06_LIBRARIAN_PRODUCT_PATH_SCENARIOS)
+    },
+    hostContractReplay: {
+      total: H06_HOST_CONTRACT_SCENARIOS.size,
+      passed: hostContractPassed,
+      scenarios: Array.from(H06_HOST_CONTRACT_SCENARIOS)
     },
     contractFixtureValidation: {
       total: H06_CONTRACT_FIXTURE_SCENARIOS.size,
       passed: contractFixturePassed,
-      scenarios: scenarioResults.filter(s => s.kind === 'contract_fixture_validation').map(s => s.scenarioId)
+      scenarios: Array.from(H06_CONTRACT_FIXTURE_SCENARIOS)
+    },
+    productPathReplay: {
+      total: H06_PRODUCT_PATH_SCENARIOS.size,
+      passed: librarianProductPathPassed + hostContractPassed,
+      scenarios: Array.from(H06_PRODUCT_PATH_SCENARIOS)
     },
     scenarios: scenarioResults
   };
@@ -1190,8 +1214,10 @@ if (require.main === module) {
 
 module.exports = {
   SERVER_BACKED_OWNERS,
-  H06_PRODUCT_PATH_SCENARIOS: Array.from(H06_PRODUCT_PATH_SCENARIOS),
+  H06_LIBRARIAN_PRODUCT_PATH_SCENARIOS: Array.from(H06_LIBRARIAN_PRODUCT_PATH_SCENARIOS),
+  H06_HOST_CONTRACT_SCENARIOS: Array.from(H06_HOST_CONTRACT_SCENARIOS),
   H06_CONTRACT_FIXTURE_SCENARIOS: Array.from(H06_CONTRACT_FIXTURE_SCENARIOS),
+  H06_PRODUCT_PATH_SCENARIOS: Array.from(H06_PRODUCT_PATH_SCENARIOS),
   verifyPluginOnlyAuthorityContract,
   verifyServerOnlyAuthorityAndFailClosedContract,
   verifyLiaLocalOnlyAuthorityContract,

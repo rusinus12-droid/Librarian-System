@@ -607,26 +607,109 @@ function checkUpstreamDrift(options = {}) {
   const signatureChanges = [];
   const semanticDrift = [];
 
-  let verificationFailed = false;
+  // Deep structural drift analysis against extracted upstream contracts
+  // Bypasses upstream-lock hash check so we can report WHICH signatures/semantics changed
+  let extractedUpstream = null;
   try {
-    runContractVerification({
-      contractsDir,
-      upstreamDir: options.upstreamDir
+    extractedUpstream = extractUpstreamContracts(options.upstreamDir, {
+      repository: pack.upstreamLock.repository,
+      commit: options.headCommit || 'HEAD'
     });
   } catch (err) {
-    verificationFailed = true;
-    if (err.code === 'UNMAPPED_RISUAI_API_USAGE') {
-      missingUsedApis.push(err.details || { code: err.code, message: err.message });
-    } else if (err.code === 'RISUAI_API_SIGNATURE_INCOMPATIBLE') {
-      signatureChanges.push(err.details || { code: err.code, message: err.message });
-    } else if (err.code === 'RISUAI_UPSTREAM_SEMANTIC_DRIFT') {
-      semanticDrift.push(err.details || { code: err.code, message: err.message });
-    } else {
-      semanticDrift.push({ code: err.code || 'DRIFT_DETECTED', message: err.message, details: err.details || null });
+    semanticDrift.push({
+      kind: 'extraction_failure',
+      code: err.code || 'UPSTREAM_EXTRACTION_FAILED',
+      message: err.message
+    });
+  }
+
+  if (extractedUpstream) {
+    // 1. Check API surface drift for all Librarian used APIs
+    const usageInventory = options.usageInventory || buildRisuApiUsageInventory({
+      pluginDir: options.sourcePluginDir
+    });
+    const reviewedApis = pack.apiSurface.apis || {};
+
+    for (const [apiName, usage] of Object.entries(usageInventory.apis || {})) {
+      const reviewedContract = reviewedApis[apiName];
+      if (!reviewedContract) {
+        missingUsedApis.push({
+          apiName,
+          owners: usage.owners,
+          reason: 'unmapped_in_compatibility_pack'
+        });
+        continue;
+      }
+      const upstreamApi = extractedUpstream.dtsSurface?.[apiName];
+      if (!upstreamApi) {
+        missingUsedApis.push({
+          apiName,
+          owners: usage.owners,
+          reason: 'missing_from_live_upstream_dts'
+        });
+        continue;
+      }
+      const cmp = compareApiEntryCompatibility(apiName, reviewedContract, upstreamApi);
+      if (!cmp.compatible) {
+        signatureChanges.push({
+          apiName,
+          owners: usage.owners,
+          reason: cmp.reason,
+          expected: reviewedContract,
+          actual: upstreamApi
+        });
+      }
+    }
+
+    // 2. Check runtime semantics drift across tracked methods
+    const contractedMethods = pack.runtimeSemantics.methods || {};
+    for (const [methodName, expected] of Object.entries(contractedMethods)) {
+      const actual = extractedUpstream.runtimeSemantics?.[methodName];
+      if (!actual) {
+        semanticDrift.push({
+          kind: 'method_missing',
+          methodName,
+          reason: `Tracked semantic method '${methodName}' missing in live upstream extraction`
+        });
+      } else if (actual.implementationFingerprint !== expected.implementationFingerprint) {
+        semanticDrift.push({
+          kind: 'method_fingerprint_mismatch',
+          methodName,
+          expectedFingerprint: expected.implementationFingerprint,
+          actualFingerprint: actual.implementationFingerprint
+        });
+      }
+    }
+
+    // 3. Check plugin loader fingerprint
+    if (extractedUpstream.loaderFingerprint && pack.pluginLoaderContract?.implementationFingerprint) {
+      if (extractedUpstream.loaderFingerprint !== pack.pluginLoaderContract.implementationFingerprint) {
+        semanticDrift.push({
+          kind: 'loader_fingerprint_mismatch',
+          expectedFingerprint: pack.pluginLoaderContract.implementationFingerprint,
+          actualFingerprint: extractedUpstream.loaderFingerprint
+        });
+      }
+    }
+
+    // 4. Check storage implementation fingerprints
+    for (const [key, expectedFp] of Object.entries(pack.storageContract?.implementationFingerprints || {})) {
+      const actualFp = extractedUpstream.storageFingerprints?.[key];
+      if (actualFp && actualFp !== expectedFp) {
+        semanticDrift.push({
+          kind: 'storage_fingerprint_mismatch',
+          className: key,
+          expectedFingerprint: expectedFp,
+          actualFingerprint: actualFp
+        });
+      }
     }
   }
 
-  const isCurrent = changedFiles.length === 0 && !verificationFailed;
+  const isCurrent = changedFiles.length === 0 &&
+                    missingUsedApis.length === 0 &&
+                    signatureChanges.length === 0 &&
+                    semanticDrift.length === 0;
 
   return {
     schema: 'librarian.risu-upstream-drift-report.v1',

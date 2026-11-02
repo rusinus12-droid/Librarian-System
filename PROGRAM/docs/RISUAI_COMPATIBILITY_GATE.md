@@ -62,19 +62,19 @@ PROGRAM/contracts/risuai/
 ├── plugin-loader-contract.json  # 6개 플러그인 헤더, //@arg 스키마, //@version 500B 제한
 ├── storage-contract.json        # pluginStorage / safeLocalStorage / getLocalPluginStorage 의미론
 ├── ipc-contract.json            # 양방향 //@allowed-ipc 토폴로지 (14개 허용 쌍)
-└── replay/                      # H06 시나리오 (Product-path Replay 4개 + Contract Fixture Validation 4개)
-    ├── [Product-Path] H06-01.json  # output 리스너 스냅샷 격리, messageIndex=-1 무시, 이어쓰기 대체 (RisuAI chat listener)
-    ├── [Product-Path] H06-02.json  # 네이티브 브랜치 T12 분기 및 부모/형제 스코프 오염 방지 (Librarian Native branch capability)
-    ├── [Contract-Fix] H06-03.json  # RETRACE 양방향 IPC A→B→C 핸드오프 및 조상 불변성 fixture 검증
-    ├── [Product-Path] H06-04.json  # 포터블 아카이브 클린 복원 및 SHA-256 무결성 검증 (Portable manifest structure)
-    ├── [Contract-Fix] H06-05.json  # 엔티티 분리 후 원문 수정 시 stale basis 교정 중단 fixture 검증
-    ├── [Product-Path] H06-06.json  # 선택 구간 재분석 및 실행 중 채팅 전환 펜싱 (runLLMModel & chat index switch fence)
-    ├── [Contract-Fix] H06-07.json  # 미완료 작업 재로드 및 GC 중 내구성 핀(pin) 보호 fixture 검증
-    └── [Contract-Fix] H06-08.json  # 통합 읽기 세션(Unified Authority Snapshot) 및 stale 주입 펜싱 fixture 검증
+└── replay/                      # H06 시나리오 (Product-Path 1개 + Host-Contract 3개 + Contract-Fixture 4개)
+    ├── [Host-Contract] H06-01.json  # output 리스너 스냅샷 격리, messageIndex=-1 무시, 이어쓰기 대체 (RisuAI host chat listener)
+    ├── [Product-Path]  H06-02.json  # 네이티브 브랜치 T12 분기 및 부모/형제 스코프 오염 방지 (실제 Librarian Native branch capability)
+    ├── [Contract-Fix]  H06-03.json  # RETRACE 양방향 IPC A→B→C 핸드오프 및 조상 불변성 fixture 검증
+    ├── [Host-Contract] H06-04.json  # 포터블 아카이브 클린 복원 및 SHA-256 무결성 검증 (RisuAI host pluginStorage manifest)
+    ├── [Contract-Fix]  H06-05.json  # 엔티티 분리 후 원문 수정 시 stale basis 교정 중단 fixture 검증
+    ├── [Host-Contract] H06-06.json  # 선택 구간 재분석 및 실행 중 채팅 전환 펜싱 (RisuAI runLLMModel & chat index fence)
+    ├── [Contract-Fix]  H06-07.json  # 미완료 작업 재로드 및 GC 중 내구성 핀(pin) 보호 fixture 검증
+    └── [Contract-Fix]  H06-08.json  # 통합 읽기 세션(Unified Authority Snapshot) 및 stale 주입 펜싱 fixture 검증
 ```
 
 > [!NOTE]
-> H06는 실제 제품 경로(Product-path replay: H06-01, 02, 04, 06)와 인조 픽스처 불변조건 검증(Contract fixture validation: H06-03, 05, 07, 08)을 엄격히 구분하여 보고서에 기록하며, 실제 제품 경로가 아닌 항목을 과장하여 표현하지 않는다.
+> H06는 실제 제품 경로(`librarian_product_path_replay`: H06-02), 호스트 계약 재생(`host_contract_replay`: H06-01, 04, 06), 그리고 인조 픽스처 불변조건 검증(`contract_fixture_validation`: H06-03, 05, 07, 08)의 3단계로 엄격히 구분하여 보고서에 기록하며, 실제 제품 경로가 아닌 항목을 과장하여 표현하지 않는다.
 
 ### Semantic Drift 정책
 

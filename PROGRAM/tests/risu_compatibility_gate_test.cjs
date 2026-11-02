@@ -259,33 +259,47 @@ test('10. Storage authority owner matrix covers server-backed owners (libra, hay
   assert.equal(liaResult.serverOnlyRejectedWithLocalOnlyPolicy, true);
 });
 
-test('11. H06 scenarios clearly distinguish Product-path replay (4) and Contract fixture validation (4)', async () => {
+test('11. H06 scenarios clearly distinguish Librarian Product-path (1), Host Contract (3), and Contract Fixture (4)', async () => {
   const replay = await runH06CompatibilityReplay({ contractsDir });
   assert.equal(replay.ok, true);
   assert.equal(replay.scenarioCount, 8);
 
-  // Product-path replay scenarios (calls actual Librarian SDK/plugin/host path)
-  assert.equal(replay.productPathReplay.total, 4);
-  assert.equal(replay.productPathReplay.passed, 4);
-  assert.deepEqual(replay.productPathReplay.scenarios, ['H06-01', 'H06-02', 'H06-04', 'H06-06']);
+  // 1. Librarian Product-path replay (H06-02: executes actual Librarian Native Branch Scope capability & view protection)
+  assert.equal(replay.librarianProductPathReplay.total, 1);
+  assert.equal(replay.librarianProductPathReplay.passed, 1);
+  assert.deepEqual(replay.librarianProductPathReplay.scenarios, ['H06-02']);
 
-  // Contract fixture validation scenarios (validates synthetic fixture invariants)
+  // 2. Host Contract replay (H06-01, H06-04, H06-06: executes RisuAI host listener, manifest storage, chat switch/runLLMModel)
+  assert.equal(replay.hostContractReplay.total, 3);
+  assert.equal(replay.hostContractReplay.passed, 3);
+  assert.deepEqual(replay.hostContractReplay.scenarios, ['H06-01', 'H06-04', 'H06-06']);
+
+  // 3. Contract fixture validation (H06-03, H06-05, H06-07, H06-08: synthetic fixture invariant checks)
   assert.equal(replay.contractFixtureValidation.total, 4);
   assert.equal(replay.contractFixtureValidation.passed, 4);
   assert.deepEqual(replay.contractFixtureValidation.scenarios, ['H06-03', 'H06-05', 'H06-07', 'H06-08']);
 
   for (const s of replay.scenarios) {
-    if (['H06-01', 'H06-02', 'H06-04', 'H06-06'].includes(s.scenarioId)) {
-      assert.equal(s.kind, 'product_path_replay');
-      assert.equal(s.actualLibrarianReplay, true);
+    if (s.scenarioId === 'H06-02') {
+      assert.equal(s.kind, 'librarian_product_path_replay');
+      assert.equal(s.actualLibrarianProductPathReplay, true);
+      assert.equal(s.hostContractReplay, false);
+      assert.equal(s.contractFixtureValidation, false);
+    } else if (['H06-01', 'H06-04', 'H06-06'].includes(s.scenarioId)) {
+      assert.equal(s.kind, 'host_contract_replay');
+      assert.equal(s.actualLibrarianProductPathReplay, false);
+      assert.equal(s.hostContractReplay, true);
+      assert.equal(s.contractFixtureValidation, false);
     } else {
       assert.equal(s.kind, 'contract_fixture_validation');
-      assert.equal(s.actualLibrarianReplay, false);
+      assert.equal(s.actualLibrarianProductPathReplay, false);
+      assert.equal(s.hostContractReplay, false);
+      assert.equal(s.contractFixtureValidation, true);
     }
   }
 });
 
-test('12. Upstream drift report schema conforms to normalized specification with guaranteed array fields', () => {
+test('12. Upstream drift report schema conforms to normalized specification with guaranteed array fields and deep extraction', () => {
   const pack = loadCompatibilityPack(contractsDir);
 
   // Create a synthetic clean upstream directory matching pinned lock hashes
@@ -294,8 +308,6 @@ test('12. Upstream drift report schema conforms to normalized specification with
     for (const [relFile, expectedHash] of Object.entries(pack.upstreamLock.files || {})) {
       const full = path.join(tempUpstreamDir, ...relFile.split('/'));
       fs.mkdirSync(path.dirname(full), { recursive: true });
-      // Write content that satisfies sha256File hash
-      // If we don't have matching content, checkUpstreamDrift marks it modified/missing, which still tests the schema!
       fs.writeFileSync(full, 'upstream-stub', 'utf8');
     }
 
@@ -306,7 +318,7 @@ test('12. Upstream drift report schema conforms to normalized specification with
     });
 
     assert.equal(report.schema, 'librarian.risu-upstream-drift-report.v1');
-    assert.ok(report.status === 'compatible_pin_current' || report.status === 'upstream_review_required');
+    assert.equal(report.status, 'upstream_review_required');
     assert.equal(report.lockedCommit, pack.upstreamLock.commit);
     assert.equal(report.pinnedCommit, pack.upstreamLock.commit);
     assert.equal(report.headCommit, 'test-head-sha');

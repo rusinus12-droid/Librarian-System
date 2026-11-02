@@ -57,13 +57,13 @@ jobs:
             exit 1
           fi
           git checkout -B main "$EXPECTED_RELEASE_SHA"
-          node -e '
+          CURRENT_MAIN_SHA="$CURRENT_MAIN_SHA" EXPECTED_RELEASE_SHA="$EXPECTED_RELEASE_SHA" node -e '
           const fs = require("node:fs");
           const { execFileSync } = require("node:child_process");
           const { determineReleaseState, verifyReleaseShaFence } = require("./PROGRAM/tools/release_transaction.cjs");
           const { nextPatchVersion } = require("./PROGRAM/tools/release_version.cjs");
           const expectedSha = process.env.EXPECTED_RELEASE_SHA || "${{ github.sha }}";
-          const currentSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+          const currentSha = process.env.CURRENT_MAIN_SHA || execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
           verifyReleaseShaFence({ expectedSha, currentMainSha: currentSha, stage: "fence1" });
           const currentVersion = fs.readFileSync("PROGRAM/VERSION.txt", "utf8").trim();
           const headSubject = execFileSync("git", ["log", "-1", "--pretty=%s"], { encoding: "utf8" }).trim();
@@ -217,7 +217,7 @@ jobs:
             echo "Re-run Manual Release against the current main commit."
             exit 1
           fi
-          node -e '
+          CURRENT_MAIN_SHA="$CURRENT_MAIN_SHA" EXPECTED="$EXPECTED" node -e '
           const { verifyReleaseShaFence } = require("./PROGRAM/tools/release_transaction.cjs");
           verifyReleaseShaFence({
             expectedSha: process.env.EXPECTED || process.env.EXPECTED_RELEASE_SHA,

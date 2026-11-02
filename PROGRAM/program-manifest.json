@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-02T05:13:42.821Z",
+  "generatedAt": "2026-11-02T05:43:13.318Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3868,8 +3868,8 @@
       "bytes": 4851
     },
     "docs/RISUAI_COMPATIBILITY_GATE.md": {
-      "sha256": "9ea05b8056035eef7c505870bbd7664717f6df52f42d7f1f541b8da346309245",
-      "bytes": 14293
+      "sha256": "f0db0244ac865cbfb57da77eed228136eba63c3d69a2adef0a42919b8c8e6675",
+      "bytes": 14409
     },
     "docs/SDK_FORCE_INITIAL_PENDING_PROOF_20261003.md": {
       "sha256": "30efad979d179357fc071745ddef90126179515d8a9a2c6838efc921cad8a247",
@@ -10840,8 +10840,8 @@
       "bytes": 19109
     },
     "tests/risu_compatibility_gate_test.cjs": {
-      "sha256": "cc7435068c866512e095862372f955bfa9d4c8b942dc1539cb8f2fda670c7f0e",
-      "bytes": 13958
+      "sha256": "504eab317e63998285c077be75679bf8da573bfa6773cbb2cfbd8fa1a5bb796d",
+      "bytes": 14647
     },
     "tests/scope_catalog_fallback_test.cjs": {
       "sha256": "f8f0f11e7803c310f579511341d4ef5cb9a1e387f6e98194f13bc36964421b59",
@@ -12072,8 +12072,8 @@
       "bytes": 27500
     },
     "tools/risu_compatibility_gate.cjs": {
-      "sha256": "34a4c7c45c4a9568b71a0ce79094e7dd49d7c5aa8e195eab77cdc91ed2bef3ed",
-      "bytes": 51124
+      "sha256": "3966a5a335ca46c64c4501b6fd3865b45896a3db5baf96b825f755f03f6c9062",
+      "bytes": 52295
     },
     "tools/risu_contract_extractor.cjs": {
       "sha256": "703a19ec8394d714c0d320d742b6972ff5716d708efaacc550ea031e3cce2a01",
@@ -12084,8 +12084,8 @@
       "bytes": 30498
     },
     "tools/risu_contract_verifier.cjs": {
-      "sha256": "20294a16df7622176f49733096ee41f8c5df2d33de93fed4f6f00012286a73bf",
-      "bytes": 26833
+      "sha256": "7e8a82c73c2749518bf4f18eb026859d3f6ca41e547306197d49b51bb3b03bdd",
+      "bytes": 29779
     },
     "tools/risu_plugin_harness.js": {
       "sha256": "a0d6a5ab738b424c9037fe46d125f377f0d06e354a54b5154fd2ab635e0e1ccc",
