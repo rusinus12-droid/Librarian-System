@@ -28,7 +28,7 @@ const DEFAULT_CONFIG = Object.freeze({
   computeWorkers: 0
 });
 
-const nowIso = () => new Date().toISOString();
+const nowIso = () => process.env.LIBRARIAN_PREPARE_TIMESTAMP || new Date().toISOString();
 const safeStamp = () => nowIso().replace(/[:.]/g, '-');
 const sha256File = filePath => {
   const hash = crypto.createHash('sha256');

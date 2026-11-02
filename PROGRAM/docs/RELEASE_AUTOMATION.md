@@ -3,7 +3,9 @@
 The `release-builder-gate` job validates pull requests. The `main-release` job
 publishes only after a push to `main`; the two jobs are intentionally separate.
 
-`main-release` serializes runs with `cancel-in-progress: false`. The workflow
+`main-release` never cancels an active run, and assigns each merge event its own
+concurrency group so GitHub's single pending slot cannot replace an earlier
+merge's request. The workflow
 checks out the triggering `GITHUB_SHA` and searches the complete `main` history
 for a release commit whose parent is that event commit. This preserves recovery
 when later commits have already landed on `main`; the recovery commit is not
@@ -14,6 +16,10 @@ and reuses an existing tag or GitHub Release when it points to the same commit.
 It never increments the version again. A tag or Release pointing to a
 different commit is treated as a collision and stops safely. If the recovery
 commit is already reachable from current `main`, the push step is a no-op.
+If another event has advanced `main` before an event's release commit can be
+pushed, the non-fast-forward push fails safely rather than publishing that
+event's version against the wrong commit; rerun that event after the preceding
+release transaction completes.
 
 The workflow requires `contents: write` for `GITHUB_TOKEN`. Repository rulesets
 or branch protection must allow the GitHub Actions bot to push the release
@@ -31,7 +37,9 @@ content stops the retry rather than overwriting it.
 
 Release builds set a stable build ID, metadata timestamp, and ZIP timestamp from
 the triggering event commit. Rebuilding the same event therefore produces the
-same report and archive bytes, which makes the asset hash check meaningful.
+same DATA metadata, report, and archive bytes. The dedicated
+`release_reproducibility_test.cjs` verifies the ZIP, report, and package info
+byte-for-byte, which makes the asset hash check meaningful.
 When an asset is listed by GitHub but its download fails, recovery stops with a
 download/API/permission diagnostic instead of treating it as absent.
 

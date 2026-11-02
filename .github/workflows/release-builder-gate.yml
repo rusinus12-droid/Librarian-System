@@ -120,7 +120,9 @@ jobs:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(release):')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     concurrency:
-      group: librarian-main-release-${{ github.ref }}
+      # Use one group per merge event so GitHub's single pending slot cannot
+      # replace an earlier merge's release request.
+      group: librarian-main-release-${{ github.event.after || github.sha }}
       cancel-in-progress: false
     permissions:
       contents: write
@@ -161,7 +163,7 @@ jobs:
             return { sha, parents: parents ? parents.split(" ") : [], subject };
           });
           const transaction = findReleaseCommitForEvent(commits, eventSha);
-          const checkoutSha = transaction ? transaction.sha : "origin/main";
+          const checkoutSha = transaction ? transaction.sha : eventSha;
           execFileSync("git", ["checkout", "--detach", checkoutSha], { stdio: "inherit" });
           const currentVersion = fs.readFileSync("PROGRAM/VERSION.txt", "utf8").trim();
           const headSubject = execFileSync("git", ["log", "-1", "--pretty=%s"], { encoding: "utf8" }).trim();
@@ -279,6 +281,7 @@ jobs:
         run: |
           node --test \
             PROGRAM/tests/release_transaction_test.cjs \
+            PROGRAM/tests/release_reproducibility_test.cjs \
             PROGRAM/tests/release_builder_profiles_test.cjs \
             PROGRAM/tests/release_builder_qualification_runtime_test.cjs \
             PROGRAM/tests/release_builder_version_input_test.cjs \

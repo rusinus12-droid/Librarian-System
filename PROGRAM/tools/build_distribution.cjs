@@ -522,7 +522,7 @@ function createCleanData(stagedRoot) {
     '--program-dir', stagedProgram,
     '--data-dir', stagedData,
     '--fresh-distribution'
-  ], stagedProgram);
+  ], stagedProgram, { env: { LIBRARIAN_PREPARE_TIMESTAMP: process.env.LIBRARIAN_RELEASE_GENERATED_AT || '' } });
   const keepDirectories = [
     'backups/auto',
     'backups/manual',
@@ -682,7 +682,8 @@ function refreshStagedMetadata(stagedRoot, declarationBindings, qualification, t
     LIBRARIAN_PACKAGE_QUALIFICATION:qualification,
     LIBRARIAN_MANIFEST_DECLARATION_ROOT:programDir,
     LIBRARIAN_MANIFEST_DECLARATION_BINDINGS:JSON.stringify(declarationBindings),
-    LIBRARIAN_MANIFEST_TRANSFORM_BINDINGS:transformBindings ? JSON.stringify(transformBindings) : ''
+    LIBRARIAN_MANIFEST_TRANSFORM_BINDINGS:transformBindings ? JSON.stringify(transformBindings) : '',
+    LIBRARIAN_RELEASE_GENERATED_AT: process.env.LIBRARIAN_RELEASE_GENERATED_AT || ''
   }});
   const releasePolicy=readReleasePolicy(stagedProgram);
   const updateManifest=writeUpdateManifest(stagedRoot,{qualification});
