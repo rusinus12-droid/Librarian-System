@@ -62,16 +62,19 @@ PROGRAM/contracts/risuai/
 ├── plugin-loader-contract.json  # 6개 플러그인 헤더, //@arg 스키마, //@version 500B 제한
 ├── storage-contract.json        # pluginStorage / safeLocalStorage / getLocalPluginStorage 의미론
 ├── ipc-contract.json            # 양방향 //@allowed-ipc 토폴로지 (14개 허용 쌍)
-└── replay/
-    ├── H06-01.json              # output 리스너 스냅샷 격리, messageIndex=-1 무시, 이어쓰기 대체
-    ├── H06-02.json              # 네이티브 브랜치 T12 분기 및 부모/형제 스코프 오염 방지
-    ├── H06-03.json              # RETRACE 양방향 IPC A→B→C 핸드오프 및 조상 불변성
-    ├── H06-04.json              # 포터블 아카이브 클린 복원 및 SHA-256 무결성 검증
-    ├── H06-05.json              # 엔티티 분리 후 원문 수정 시 stale basis 교정 중단
-    ├── H06-06.json              # 선택 구간 재분석 및 실행 중 채팅 전환 펜싱
-    ├── H06-07.json              # 미완료 작업 재로드 및 GC 중 내구성 핀(pin) 보호
-    └── H06-08.json              # 통합 읽기 세션(Unified Authority Snapshot) 및 stale 주입 펜싱
+└── replay/                      # H06 시나리오 (Product-path Replay 4개 + Contract Fixture Validation 4개)
+    ├── [Product-Path] H06-01.json  # output 리스너 스냅샷 격리, messageIndex=-1 무시, 이어쓰기 대체 (RisuAI chat listener)
+    ├── [Product-Path] H06-02.json  # 네이티브 브랜치 T12 분기 및 부모/형제 스코프 오염 방지 (Librarian Native branch capability)
+    ├── [Contract-Fix] H06-03.json  # RETRACE 양방향 IPC A→B→C 핸드오프 및 조상 불변성 fixture 검증
+    ├── [Product-Path] H06-04.json  # 포터블 아카이브 클린 복원 및 SHA-256 무결성 검증 (Portable manifest structure)
+    ├── [Contract-Fix] H06-05.json  # 엔티티 분리 후 원문 수정 시 stale basis 교정 중단 fixture 검증
+    ├── [Product-Path] H06-06.json  # 선택 구간 재분석 및 실행 중 채팅 전환 펜싱 (runLLMModel & chat index switch fence)
+    ├── [Contract-Fix] H06-07.json  # 미완료 작업 재로드 및 GC 중 내구성 핀(pin) 보호 fixture 검증
+    └── [Contract-Fix] H06-08.json  # 통합 읽기 세션(Unified Authority Snapshot) 및 stale 주입 펜싱 fixture 검증
 ```
+
+> [!NOTE]
+> H06는 실제 제품 경로(Product-path replay: H06-01, 02, 04, 06)와 인조 픽스처 불변조건 검증(Contract fixture validation: H06-03, 05, 07, 08)을 엄격히 구분하여 보고서에 기록하며, 실제 제품 경로가 아닌 항목을 과장하여 표현하지 않는다.
 
 ### Semantic Drift 정책
 
@@ -102,6 +105,11 @@ PROGRAM/contracts/risuai/
 - `server_only -> plugin_only`: 로컬 복원이 실패하면 cutover가 거부되고 `server_only` 정본 권한이 그대로 유지되어야 하며, `restorePluginStorage()` 검증 완료 후에만 `plugin_only`로 전환된다.
 - 기존 스토리지 회귀 스위트(`storage_modes_test.cjs`, `storage_mode_owner_parity_audit_test.cjs`, `storage_mode_special_parity_gates_test.cjs`, `storage_mirror_transition_retirement_test.cjs`)를 게이트 내부에서 함께 실행하여 기존 계약을 보존한다.
 
+### 5.4 Storage Owner Matrix 및 LIA Local-Only 정책
+- **Server-backed Owners Matrix**: `libra`, `hayaku`, `flashback` 3개 오너 모두에 대해 계약 기반 호스트 아래에서 `plugin_only` (서버 요청 0), `server_only` (로컬 canonical 쓰기 0, 서버 다이제스트 검증), `server_only + offline fail-closed` 불변조건을 각각 동일하게 검증한다.
+- **LIA Local-Only**: LIA는 스토리지 정책이 `local_only`로 고정되어 있으므로, `plugin_only`는 정상 동작하고 `server_only` 전환 시도는 `LOCAL_ONLY_OWNER_POLICY`로 거부됨을 확인한다.
+- **RE:TRACE**: 일반 canonical KV storage owner matrix에 포함하지 않으며 전용 매니저/핸드오프 불변조건을 유지한다.
+
 ---
 
 ## 6. GitHub Actions 워크플로 구조
@@ -114,6 +122,12 @@ PROGRAM/contracts/risuai/
 ├── risu-upstream-drift.yml        # 주간 스케줄 및 수동 실행용 RisuAI upstream main 드리프트 모니터
 └── manual-release.yml             # risu-compatibility-gate 통과 필수 + Release Builder 통과 후 릴리즈 발행
 ```
+
+### Manual Release SHA Fencing
+Manual Release 워크플로는 검증 대상 커밋과 배포 커밋의 동일성을 보장하기 위해 2중 SHA Fence를 수행한다.
+1. **Fence #1 (시작 시점)**: Compatibility Gate 검증 SHA(`github.sha`)와 `origin/main` 최신 커밋이 일치하는지 확인하고 해당 exact SHA를 체크아웃한다. 중간에 다른 커밋이 머지된 경우 fail-closed로 즉시 중단한다.
+2. **Fence #2 (커밋 생성 직전)**: 릴리즈 빌더 및 회귀 테스트 통과 후 버전 커밋 생성 직전에 다시 `origin/main`과 검증 SHA의 일치 여부를 재확인한다.
+3. **Artifact Runtime Verification**: 빌드 직후 실행되는 단계는 upstream 재검증이 아니라 새 버전 메타데이터가 반영된 실제 릴리즈 아티팩트와 기존 검토된 계약 간 런타임 호환성만 확인한다.
 
 ---
 

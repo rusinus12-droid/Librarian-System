@@ -593,41 +593,51 @@ function checkUpstreamDrift(options = {}) {
   for (const rel of TRACKED_UPSTREAM_FILES) {
     const full = path.join(root, ...rel.split('/'));
     if (!fs.existsSync(full)) {
-      changedFiles.push({ file: rel, status: 'missing', lockedHash: pack.upstreamLock.files[rel], currentHash: null });
+      changedFiles.push({ file: rel, status: 'missing', lockedHash: pack.upstreamLock.files?.[rel] || null, currentHash: null });
       continue;
     }
     const currentHash = sha256File(full);
-    const lockedHash = pack.upstreamLock.files[rel];
+    const lockedHash = pack.upstreamLock.files?.[rel];
     if (currentHash !== lockedHash) {
       changedFiles.push({ file: rel, status: 'modified', lockedHash, currentHash });
     }
   }
 
-  if (changedFiles.length === 0) {
-    return {
-      status: 'compatible_pin_current',
-      lockedCommit: pack.upstreamLock.commit,
-      headCommit: options.headCommit || pack.upstreamLock.commit,
-      changedFiles: []
-    };
-  }
+  const missingUsedApis = [];
+  const signatureChanges = [];
+  const semanticDrift = [];
 
-  let semanticOrSignatureDrift = null;
+  let verificationFailed = false;
   try {
     runContractVerification({
       contractsDir,
       upstreamDir: options.upstreamDir
     });
   } catch (err) {
-    semanticOrSignatureDrift = { code: err.code || 'DRIFT_DETECTED', message: err.message };
+    verificationFailed = true;
+    if (err.code === 'UNMAPPED_RISUAI_API_USAGE') {
+      missingUsedApis.push(err.details || { code: err.code, message: err.message });
+    } else if (err.code === 'RISUAI_API_SIGNATURE_INCOMPATIBLE') {
+      signatureChanges.push(err.details || { code: err.code, message: err.message });
+    } else if (err.code === 'RISUAI_UPSTREAM_SEMANTIC_DRIFT') {
+      semanticDrift.push(err.details || { code: err.code, message: err.message });
+    } else {
+      semanticDrift.push({ code: err.code || 'DRIFT_DETECTED', message: err.message, details: err.details || null });
+    }
   }
 
+  const isCurrent = changedFiles.length === 0 && !verificationFailed;
+
   return {
-    status: 'upstream_review_required',
+    schema: 'librarian.risu-upstream-drift-report.v1',
+    status: isCurrent ? 'compatible_pin_current' : 'upstream_review_required',
     lockedCommit: pack.upstreamLock.commit,
-    headCommit: options.headCommit || 'HEAD',
+    pinnedCommit: pack.upstreamLock.commit,
+    headCommit: options.headCommit || (isCurrent ? pack.upstreamLock.commit : 'HEAD'),
     changedFiles,
-    semanticOrSignatureDrift
+    missingUsedApis,
+    signatureChanges,
+    semanticDrift
   };
 }
 

@@ -39,20 +39,32 @@ jobs:
       - name: Install pinned build dependencies
         run: npm ci --prefix PROGRAM/build-support
 
-      - name: Resolve release transaction state
+      - name: Resolve release transaction state (Fence #1)
         id: state
         run: |
           if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
             echo "Error: Manual release is only permitted on the main branch (attempted on ${{ github.ref }})."
             exit 1
           fi
+          EXPECTED_RELEASE_SHA="${{ github.sha }}"
           git fetch origin main --tags
-          git checkout -B main origin/main
+          CURRENT_MAIN_SHA=$(git rev-parse origin/main)
+          if [[ "$CURRENT_MAIN_SHA" != "$EXPECTED_RELEASE_SHA" ]]; then
+            echo "Error: main changed after compatibility validation."
+            echo "validated: $EXPECTED_RELEASE_SHA"
+            echo "current main: $CURRENT_MAIN_SHA"
+            echo "Re-run Manual Release against the current main commit."
+            exit 1
+          fi
+          git checkout -B main "$EXPECTED_RELEASE_SHA"
           node -e '
           const fs = require("node:fs");
           const { execFileSync } = require("node:child_process");
-          const { determineReleaseState } = require("./PROGRAM/tools/release_transaction.cjs");
+          const { determineReleaseState, verifyReleaseShaFence } = require("./PROGRAM/tools/release_transaction.cjs");
           const { nextPatchVersion } = require("./PROGRAM/tools/release_version.cjs");
+          const expectedSha = process.env.EXPECTED_RELEASE_SHA || "${{ github.sha }}";
+          const currentSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+          verifyReleaseShaFence({ expectedSha, currentMainSha: currentSha, stage: "fence1" });
           const currentVersion = fs.readFileSync("PROGRAM/VERSION.txt", "utf8").trim();
           const headSubject = execFileSync("git", ["log", "-1", "--pretty=%s"], { encoding: "utf8" }).trim();
           const parentVersion = headSubject.startsWith("chore(release):")
@@ -61,12 +73,13 @@ jobs:
           const state = determineReleaseState({ headSubject, currentVersion, parentVersion });
           const targetVersion = state.targetVersion || nextPatchVersion(currentVersion);
           const previousVersion = state.previousVersion || currentVersion;
-          const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+          const commit = currentSha;
           const seedRef = state.phase === "resume" ? "HEAD^" : "HEAD";
           const seedCommit = execFileSync("git", ["rev-parse", seedRef], { encoding: "utf8" }).trim();
           const generatedAt = execFileSync("git", ["show", "-s", "--format=%cI", seedRef], { encoding: "utf8" }).trim();
           console.log(JSON.stringify({ ...state, targetVersion, previousVersion, commit, seedCommit, seedRef }));
           fs.appendFileSync(process.env.GITHUB_ENV,
+            `EXPECTED_RELEASE_SHA=${expectedSha}\n` +
             `CURRENT_VERSION=${currentVersion}\nPREVIOUS_VERSION=${previousVersion}\nNEXT_VERSION=${targetVersion}\n` +
             `RELEASE_COMMIT_SHA=${commit}\nRELEASE_PHASE=${state.phase}\n` +
             `LIBRARIAN_RELEASE_BUILD_ID=release-${seedCommit.slice(0, 40)}\n` +
@@ -183,10 +196,36 @@ jobs:
             PROGRAM/tests/distribution_updater_migration_file_test.cjs \
             PROGRAM/tests/remote_update_release_zip_runtime_test.cjs
 
-      - name: Verify RisuAI Compatibility Gate against version-bumped release artifacts
+      - name: Verify version-bumped release artifacts against reviewed RisuAI contract
         run: |
+          # Note: Authoritative upstream verification is conducted in the reusable risu-compatibility-gate.
+          # This step explicitly verifies runtime compatibility between the newly version-bumped
+          # release artifacts and the reviewed RisuAI contract pack.
           node PROGRAM/tools/risu_compatibility_gate.cjs \
             --report "$RUNNER_TEMP/librarian-release/risu-compatibility-report.json"
+
+      - name: Verify main commit unchanged before commit (Fence #2)
+        if: env.RELEASE_PHASE == 'prepare'
+        run: |
+          git fetch origin main
+          CURRENT_MAIN_SHA=$(git rev-parse origin/main)
+          EXPECTED="${EXPECTED_RELEASE_SHA:-${{ github.sha }}}"
+          if [[ "$CURRENT_MAIN_SHA" != "$EXPECTED" ]]; then
+            echo "Error: main changed during release transaction before commit."
+            echo "validated: $EXPECTED"
+            echo "current main: $CURRENT_MAIN_SHA"
+            echo "Re-run Manual Release against the current main commit."
+            exit 1
+          fi
+          node -e '
+          const { verifyReleaseShaFence } = require("./PROGRAM/tools/release_transaction.cjs");
+          verifyReleaseShaFence({
+            expectedSha: process.env.EXPECTED || process.env.EXPECTED_RELEASE_SHA,
+            currentMainSha: process.env.CURRENT_MAIN_SHA,
+            stage: "fence2"
+          });
+          '
+          echo "Fence #2 passed: origin/main matches original validated SHA ($EXPECTED)."
 
       - name: Commit release version
         if: env.RELEASE_PHASE == 'prepare'

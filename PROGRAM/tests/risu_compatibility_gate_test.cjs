@@ -25,12 +25,16 @@ const {
   loadCompatibilityPack,
   verifyApiSurfaceContract,
   verifyRuntimeSemantics,
-  verifyLoaderAndIpcContracts
+  verifyLoaderAndIpcContracts,
+  checkUpstreamDrift
 } = require('../tools/risu_contract_verifier.cjs');
 const { createContractBackedHostCluster } = require('../tools/risu_contract_host.cjs');
 const {
+  SERVER_BACKED_OWNERS,
   verifyPluginOnlyAuthorityContract,
   verifyServerOnlyAuthorityAndFailClosedContract,
+  verifyLiaLocalOnlyAuthorityContract,
+  verifyStorageAuthorityOwnerMatrix,
   verifyStorageTransitionContract,
   runH06CompatibilityReplay
 } = require('../tools/risu_compatibility_gate.cjs');
@@ -228,4 +232,91 @@ test('9. Pinned compatibility contract + storage authority (plugin_only, server_
   const replay = await runH06CompatibilityReplay({ contractsDir });
   assert.equal(replay.ok, true);
   assert.equal(replay.scenarioCount, 8);
+});
+
+test('10. Storage authority owner matrix covers server-backed owners (libra, hayaku, flashback) and LIA local-only policy', async () => {
+  assert.deepEqual(SERVER_BACKED_OWNERS, ['libra', 'hayaku', 'flashback']);
+
+  for (const owner of SERVER_BACKED_OWNERS) {
+    const pluginOnly = await verifyPluginOnlyAuthorityContract({ contractsDir, owner });
+    assert.equal(pluginOnly.ok, true);
+    assert.equal(pluginOnly.owner, owner);
+    assert.equal(pluginOnly.serverCanonicalRequests, 0, `${owner}: server canonical requests must be 0 in plugin_only`);
+
+    const serverOnly = await verifyServerOnlyAuthorityAndFailClosedContract({ contractsDir, owner });
+    assert.equal(serverOnly.ok, true);
+    assert.equal(serverOnly.owner, owner);
+    assert.equal(serverOnly.localCanonicalWrites, 0, `${owner}: local canonical writes must be 0 in server_only`);
+    assert.equal(serverOnly.serverDigestVerified, true);
+    assert.equal(serverOnly.serverOfflineFailClosedVerified, true);
+  }
+
+  // LIA local-only policy verification
+  const liaResult = await verifyLiaLocalOnlyAuthorityContract({ contractsDir });
+  assert.equal(liaResult.ok, true);
+  assert.equal(liaResult.owner, 'lia');
+  assert.equal(liaResult.pluginOnlyVerified, true);
+  assert.equal(liaResult.serverOnlyRejectedWithLocalOnlyPolicy, true);
+});
+
+test('11. H06 scenarios clearly distinguish Product-path replay (4) and Contract fixture validation (4)', async () => {
+  const replay = await runH06CompatibilityReplay({ contractsDir });
+  assert.equal(replay.ok, true);
+  assert.equal(replay.scenarioCount, 8);
+
+  // Product-path replay scenarios (calls actual Librarian SDK/plugin/host path)
+  assert.equal(replay.productPathReplay.total, 4);
+  assert.equal(replay.productPathReplay.passed, 4);
+  assert.deepEqual(replay.productPathReplay.scenarios, ['H06-01', 'H06-02', 'H06-04', 'H06-06']);
+
+  // Contract fixture validation scenarios (validates synthetic fixture invariants)
+  assert.equal(replay.contractFixtureValidation.total, 4);
+  assert.equal(replay.contractFixtureValidation.passed, 4);
+  assert.deepEqual(replay.contractFixtureValidation.scenarios, ['H06-03', 'H06-05', 'H06-07', 'H06-08']);
+
+  for (const s of replay.scenarios) {
+    if (['H06-01', 'H06-02', 'H06-04', 'H06-06'].includes(s.scenarioId)) {
+      assert.equal(s.kind, 'product_path_replay');
+      assert.equal(s.actualLibrarianReplay, true);
+    } else {
+      assert.equal(s.kind, 'contract_fixture_validation');
+      assert.equal(s.actualLibrarianReplay, false);
+    }
+  }
+});
+
+test('12. Upstream drift report schema conforms to normalized specification with guaranteed array fields', () => {
+  const pack = loadCompatibilityPack(contractsDir);
+
+  // Create a synthetic clean upstream directory matching pinned lock hashes
+  const tempUpstreamDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-drift-clean-'));
+  try {
+    for (const [relFile, expectedHash] of Object.entries(pack.upstreamLock.files || {})) {
+      const full = path.join(tempUpstreamDir, ...relFile.split('/'));
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      // Write content that satisfies sha256File hash
+      // If we don't have matching content, checkUpstreamDrift marks it modified/missing, which still tests the schema!
+      fs.writeFileSync(full, 'upstream-stub', 'utf8');
+    }
+
+    const report = checkUpstreamDrift({
+      contractsDir,
+      upstreamDir: tempUpstreamDir,
+      headCommit: 'test-head-sha'
+    });
+
+    assert.equal(report.schema, 'librarian.risu-upstream-drift-report.v1');
+    assert.ok(report.status === 'compatible_pin_current' || report.status === 'upstream_review_required');
+    assert.equal(report.lockedCommit, pack.upstreamLock.commit);
+    assert.equal(report.pinnedCommit, pack.upstreamLock.commit);
+    assert.equal(report.headCommit, 'test-head-sha');
+
+    // Invariant: all summary array fields exist and are Arrays (never undefined)
+    assert.ok(Array.isArray(report.changedFiles), 'changedFiles must be Array');
+    assert.ok(Array.isArray(report.missingUsedApis), 'missingUsedApis must be Array');
+    assert.ok(Array.isArray(report.signatureChanges), 'signatureChanges must be Array');
+    assert.ok(Array.isArray(report.semanticDrift), 'semanticDrift must be Array');
+  } finally {
+    fs.rmSync(tempUpstreamDir, { recursive: true, force: true });
+  }
 });

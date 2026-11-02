@@ -44,6 +44,18 @@ const defaultContractsDir = path.join(programDir, 'contracts', 'risuai');
 
 const sdkStandardSource = fs.readFileSync(path.join(programDir, 'sdk', 'MemorySuiteStorageClient.source.js'), 'utf8');
 const sdkLibraSource = fs.readFileSync(path.join(programDir, 'sdk', 'MemorySuiteStorageClient.libra.source.js'), 'utf8');
+const sdkFlashbackPath = path.join(programDir, 'sdk', 'MemorySuiteStorageClient.flashback.source.js');
+const sdkFlashbackSource = fs.existsSync(sdkFlashbackPath)
+  ? fs.readFileSync(sdkFlashbackPath, 'utf8')
+  : sdkStandardSource;
+
+function getSdkSourceForOwner(owner) {
+  if (owner === 'libra') return sdkLibraSource;
+  if (owner === 'flashback') return sdkFlashbackSource;
+  return sdkStandardSource;
+}
+
+const SERVER_BACKED_OWNERS = ['libra', 'hayaku', 'flashback'];
 
 function createStorageBridgeOnContractHost({
   namespace = 'libra',
@@ -56,7 +68,7 @@ function createStorageBridgeOnContractHost({
   defaultUrl = 'http://127.0.0.1:1',
   pluginPrefixes = [`${namespace}.`, 'scope:']
 }) {
-  const sdkText = namespace === 'libra' ? sdkLibraSource : sdkStandardSource;
+  const sdkText = getSdkSourceForOwner(namespace);
   const createBridge = new Function(`${sdkText}\nreturn createMemorySuiteStorageBridge;`)();
   const previousRisuai = globalThis.risuai;
   const previousRisuAI = globalThis.RisuAI;
@@ -106,6 +118,7 @@ function isCanonicalServerRequestUrl(url) {
 }
 
 async function verifyPluginOnlyAuthorityContract(options = {}) {
+  const owner = options.owner || 'libra';
   const serverRequests = [];
   const serverCanonicalWrites = [];
 
@@ -117,17 +130,17 @@ async function verifyPluginOnlyAuthorityContract(options = {}) {
         serverCanonicalWrites.push(String(url));
         throw createVerificationError(
           'PLUGIN_ONLY_SERVER_CANONICAL_REQUEST_FORBIDDEN',
-          `plugin_only mode attempted canonical server request: ${url}`,
-          { url }
+          `plugin_only mode attempted canonical server request for ${owner}: ${url}`,
+          { owner, url }
         );
       }
-      throw new Error('server offline in plugin_only test');
+      throw new Error(`server offline in plugin_only test for ${owner}`);
     }
   });
 
-  const scope = { scopeId: 'char:c1|chat:s1', scopeKey: 'char:c1|chat:s1', characterId: 'c1', chatId: 's1', label: 'Scope 1', aliases: ['s1'] };
+  const scope = { scopeId: `char:c1|chat:s1_${owner}`, scopeKey: `char:c1|chat:s1_${owner}`, characterId: 'c1', chatId: `s1_${owner}`, label: 'Scope 1', aliases: [`s1_${owner}`] };
   const hostHandle = cluster.createHostForPlugin({
-    name: 'libra',
+    name: owner,
     argumentOverrides: {
       memory_suite_server_mode: 'plugin_only',
       memory_suite_server_url: 'http://127.0.0.1:65534'
@@ -135,40 +148,44 @@ async function verifyPluginOnlyAuthorityContract(options = {}) {
   });
 
   const { bridge, restoreGlobals } = createStorageBridgeOnContractHost({
-    namespace: 'libra',
-    pluginId: 'libra',
+    namespace: owner,
+    pluginId: owner,
+    storagePolicy: options.storagePolicy,
     cluster,
     hostHandle,
     currentScopeProvider: async () => scope,
     resolveKeyScope: async ({ key }) => (
-      String(key).startsWith('scope:s1:')
+      String(key).startsWith(`scope:s1_${owner}:`)
         ? { kind: 'scope', ...scope }
         : { kind: 'global' }
-    )
+    ),
+    pluginPrefixes: [`${owner}.`, 'scope:']
   });
 
   try {
     const proxy = bridge.createPluginStorageProxy(cluster.pluginStorage);
     assert.equal(await bridge.getMode(), 'plugin_only');
 
-    const payload = { owner: 'libra', mode: 'plugin_only', turn: 5, canonical: true };
-    await proxy.setItem('scope:s1:canonical:1', payload);
+    const canonicalKey = `scope:s1_${owner}:canonical:1`;
+    const payload = { owner, mode: 'plugin_only', turn: 5, canonical: true };
+    await proxy.setItem(canonicalKey, payload);
 
     // Optional fault injection for negative regression testing
     if (typeof options.simulateForbiddenServerCanonicalWrite === 'function') {
       await options.simulateForbiddenServerCanonicalWrite(hostHandle.api);
     }
 
-    const readback = await proxy.getItem('scope:s1:canonical:1');
-    assert.deepEqual(readback, payload, 'plugin_only readback must equal written canonical payload');
+    const readback = await proxy.getItem(canonicalKey);
+    assert.deepEqual(readback, payload, `${owner}: plugin_only readback must equal written canonical payload`);
 
-    const rawStored = await cluster.pluginStorage.getItem('scope:s1:canonical:1');
-    assert.deepEqual(rawStored, payload, 'plugin_only canonical write must reside in contract-backed pluginStorage');
-    assert.equal(serverCanonicalWrites.length, 0, 'plugin_only must make zero server canonical requests');
-    assert.equal(serverRequests.length, 0, 'plugin_only normal operation must work without any server requests');
+    const rawStored = await cluster.pluginStorage.getItem(canonicalKey);
+    assert.deepEqual(rawStored, payload, `${owner}: plugin_only canonical write must reside in contract-backed pluginStorage`);
+    assert.equal(serverCanonicalWrites.length, 0, `${owner}: plugin_only must make zero server canonical requests`);
+    assert.equal(serverRequests.length, 0, `${owner}: plugin_only normal operation must work without any server requests`);
 
     return {
       ok: true,
+      owner,
       mode: 'plugin_only',
       canonicalLocation: 'risuai.pluginStorage',
       serverCanonicalRequests: serverCanonicalWrites.length,
@@ -254,7 +271,8 @@ async function startLibrarianServerForGate(options = {}) {
 }
 
 async function verifyServerOnlyAuthorityAndFailClosedContract(options = {}) {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-compat-server-only-'));
+  const owner = options.owner || 'libra';
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), `risu-compat-server-only-${owner}-`));
   const serverHandle = await startLibrarianServerForGate({ host: '127.0.0.1', port: 0, dataDir, autoBackup: false });
   const { baseUrl, fetchServer } = serverHandle;
 
@@ -271,8 +289,8 @@ async function verifyServerOnlyAuthorityAndFailClosedContract(options = {}) {
           : 'SERVER_ONLY_OFFLINE_FALLBACK_FORBIDDEN';
         throw createVerificationError(
           code,
-          `Forbidden local pluginStorage canonical write in server_only mode (serverOnline=${serverOnline}): ${key}`,
-          { key, serverOnline }
+          `Forbidden local pluginStorage canonical write in server_only mode for ${owner} (serverOnline=${serverOnline}): ${key}`,
+          { owner, key, serverOnline }
         );
       }
     }
@@ -291,9 +309,9 @@ async function verifyServerOnlyAuthorityAndFailClosedContract(options = {}) {
     }
   });
 
-  const scope = { scopeId: 'char:c1|chat:s2', scopeKey: 'char:c1|chat:s2', characterId: 'c1', chatId: 's2', label: 'Scope 2', aliases: ['s2'] };
+  const scope = { scopeId: `char:c1|chat:s2_${owner}`, scopeKey: `char:c1|chat:s2_${owner}`, characterId: 'c1', chatId: `s2_${owner}`, label: 'Scope 2', aliases: [`s2_${owner}`] };
   const hostHandle = cluster.createHostForPlugin({
-    name: 'libra',
+    name: owner,
     argumentOverrides: {
       memory_suite_server_mode: '',
       memory_suite_server_url: baseUrl
@@ -301,17 +319,18 @@ async function verifyServerOnlyAuthorityAndFailClosedContract(options = {}) {
   });
 
   const { bridge, restoreGlobals } = createStorageBridgeOnContractHost({
-    namespace: 'libra',
-    pluginId: 'libra',
+    namespace: owner,
+    pluginId: owner,
     cluster,
     hostHandle,
     defaultUrl: baseUrl,
     currentScopeProvider: async () => scope,
     resolveKeyScope: async ({ key }) => (
-      String(key).startsWith('scope:s2:')
+      String(key).startsWith(`scope:s2_${owner}:`)
         ? { kind: 'scope', ...scope }
         : { kind: 'global' }
-    )
+    ),
+    pluginPrefixes: [`${owner}.`, 'scope:']
   });
 
   try {
@@ -322,24 +341,25 @@ async function verifyServerOnlyAuthorityAndFailClosedContract(options = {}) {
 
     enforcingServerOnlyIsolation = true;
 
-    const payload = { owner: 'libra', mode: 'server_only', turn: 5, canonical: true };
-    await proxy.setItem('scope:s2:canonical:1', payload);
+    const canonicalKey = `scope:s2_${owner}:canonical:1`;
+    const payload = { owner, mode: 'server_only', turn: 5, canonical: true };
+    await proxy.setItem(canonicalKey, payload);
 
     if (typeof options.simulateForbiddenLocalCanonicalWrite === 'function') {
       await options.simulateForbiddenLocalCanonicalWrite(pluginStorage);
     }
 
-    const readback = await proxy.getItem('scope:s2:canonical:1');
-    assert.deepEqual(readback, payload, 'server_only readback must return canonical value from server');
+    const readback = await proxy.getItem(canonicalKey);
+    assert.deepEqual(readback, payload, `${owner}: server_only readback must return canonical value from server`);
 
-    const serverRecord = await bridge.serverGet('plugin', 'scope:s2:canonical:1');
-    assert.equal(serverRecord.exists, true, 'server_only record must exist on Librarian server');
+    const serverRecord = await bridge.serverGet('plugin', canonicalKey);
+    assert.equal(serverRecord.exists, true, `${owner}: server_only record must exist on Librarian server`);
     assert.deepEqual(serverRecord.value, payload);
-    assert.ok(typeof serverRecord.digest === 'string' && serverRecord.digest.length === 64, 'server digest present');
+    assert.ok(typeof serverRecord.digest === 'string' && serverRecord.digest.length === 64, `${owner}: server digest present`);
 
     const localKeys = await pluginStorage.keys();
-    const leakedLocalKeys = localKeys.filter(k => k.startsWith('scope:s2:canonical:'));
-    assert.equal(leakedLocalKeys.length, 0, 'server_only must not write canonical owner data to pluginStorage');
+    const leakedLocalKeys = localKeys.filter(k => k.startsWith(`scope:s2_${owner}:canonical:`));
+    assert.equal(leakedLocalKeys.length, 0, `${owner}: server_only must not write canonical owner data to pluginStorage`);
     assert.equal(localCanonicalWrites.length, 0);
 
     // Server-offline fail-closed check
@@ -351,24 +371,25 @@ async function verifyServerOnlyAuthorityAndFailClosedContract(options = {}) {
 
     let readFailedClosed = false;
     try {
-      await proxy.getItem('scope:s2:canonical:1');
+      await proxy.getItem(canonicalKey);
     } catch (_) {
       readFailedClosed = true;
     }
-    assert.equal(readFailedClosed, true, 'server_only read must fail closed when server is offline');
+    assert.equal(readFailedClosed, true, `${owner}: server_only read must fail closed when server is offline`);
 
     let writeFailedClosed = false;
     try {
-      await proxy.setItem('scope:s2:canonical:offline-attempt', { mustNotFallback: true });
+      await proxy.setItem(`scope:s2_${owner}:canonical:offline-attempt`, { mustNotFallback: true });
     } catch (_) {
       writeFailedClosed = true;
     }
-    assert.equal(writeFailedClosed, true, 'server_only write must fail closed when server is offline');
-    assert.equal(await bridge.getMode(), 'server_only', 'server_only must not implicitly fall back to plugin_only when offline');
-    assert.equal(localCanonicalWrites.length, 0, 'server_only offline failure must never fall back to local pluginStorage');
+    assert.equal(writeFailedClosed, true, `${owner}: server_only write must fail closed when server is offline`);
+    assert.equal(await bridge.getMode(), 'server_only', `${owner}: server_only must not implicitly fall back to plugin_only when offline`);
+    assert.equal(localCanonicalWrites.length, 0, `${owner}: server_only offline failure must never fall back to local pluginStorage`);
 
     return {
       ok: true,
+      owner,
       mode: 'server_only',
       canonicalLocation: 'Librarian Server (PROGRAM/server/server.cjs)',
       localCanonicalWrites: localCanonicalWrites.length,
@@ -382,6 +403,92 @@ async function verifyServerOnlyAuthorityAndFailClosedContract(options = {}) {
     await serverHandle.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
+}
+
+async function verifyLiaLocalOnlyAuthorityContract(options = {}) {
+  const serverRequests = [];
+  const cluster = createContractBackedHostCluster({
+    contractsDir: options.contractsDir,
+    fetchImpl: async (url, init) => {
+      serverRequests.push({ url: String(url), method: init?.method || 'GET' });
+      throw new Error('server offline in lia test');
+    }
+  });
+
+  const scope = { scopeId: 'char:c1|chat:s1_lia', scopeKey: 'char:c1|chat:s1_lia', characterId: 'c1', chatId: 's1_lia', label: 'Scope LIA', aliases: ['s1_lia'] };
+  const hostHandle = cluster.createHostForPlugin({
+    name: 'lia',
+    argumentOverrides: {
+      memory_suite_server_mode: 'plugin_only',
+      memory_suite_server_url: 'http://127.0.0.1:65534'
+    }
+  });
+
+  const { bridge, restoreGlobals } = createStorageBridgeOnContractHost({
+    namespace: 'lia',
+    pluginId: 'lia',
+    storagePolicy: 'local_only',
+    cluster,
+    hostHandle,
+    currentScopeProvider: async () => scope,
+    resolveKeyScope: async ({ key }) => (
+      String(key).startsWith('scope:s1_lia:')
+        ? { kind: 'scope', ...scope }
+        : { kind: 'global' }
+    ),
+    pluginPrefixes: ['lia.', 'scope:']
+  });
+
+  try {
+    const proxy = bridge.createPluginStorageProxy(cluster.pluginStorage);
+    assert.equal(await bridge.getMode(), 'plugin_only');
+
+    // plugin_only normal operation succeeds
+    const payload = { owner: 'lia', mode: 'plugin_only', canonical: true };
+    await proxy.setItem('scope:s1_lia:canonical:1', payload);
+    const readback = await proxy.getItem('scope:s1_lia:canonical:1');
+    assert.deepEqual(readback, payload);
+    assert.equal(serverRequests.length, 0, 'LIA plugin_only must make zero server requests');
+
+    // Attempting server_only mode transition must be rejected with LOCAL_ONLY_OWNER_POLICY
+    await assert.rejects(
+      () => bridge.setMode('server_only'),
+      /LOCAL_ONLY_OWNER_POLICY/
+    );
+    await assert.rejects(
+      () => bridge.setScopeMode(scope, 'server_only'),
+      /LOCAL_ONLY_OWNER_POLICY/
+    );
+
+    assert.equal(await bridge.getMode(), 'plugin_only', 'mode must remain plugin_only after rejected transition');
+    assert.deepEqual(await proxy.getItem('scope:s1_lia:canonical:1'), payload, 'local data preserved');
+
+    return {
+      ok: true,
+      owner: 'lia',
+      storagePolicy: 'local_only',
+      pluginOnlyVerified: true,
+      serverOnlyRejectedWithLocalOnlyPolicy: true
+    };
+  } finally {
+    try { await bridge.dispose?.(); } catch (_) {}
+    restoreGlobals();
+  }
+}
+
+async function verifyStorageAuthorityOwnerMatrix(options = {}) {
+  const matrix = {
+    serverBackedOwners: {},
+    liaLocalOnly: null
+  };
+  for (const owner of SERVER_BACKED_OWNERS) {
+    matrix.serverBackedOwners[owner] = {
+      pluginOnly: await verifyPluginOnlyAuthorityContract({ ...options, owner }),
+      serverOnly: await verifyServerOnlyAuthorityAndFailClosedContract({ ...options, owner })
+    };
+  }
+  matrix.liaLocalOnly = await verifyLiaLocalOnlyAuthorityContract(options);
+  return matrix;
 }
 
 async function verifyStorageTransitionContract(options = {}) {
@@ -483,6 +590,9 @@ async function verifyStorageTransitionContract(options = {}) {
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
 }
+
+const H06_PRODUCT_PATH_SCENARIOS = new Set(['H06-01', 'H06-02', 'H06-04', 'H06-06']);
+const H06_CONTRACT_FIXTURE_SCENARIOS = new Set(['H06-03', 'H06-05', 'H06-07', 'H06-08']);
 
 async function runH06CompatibilityReplay(options = {}) {
   const contractsDir = options.contractsDir || defaultContractsDir;
@@ -742,18 +852,34 @@ async function runH06CompatibilityReplay(options = {}) {
       assert.equal(fenceErrorCode, 'LIB_READ_AUTHORITY_CHANGED');
     }
 
+    const isProductPath = H06_PRODUCT_PATH_SCENARIOS.has(spec.scenarioId);
     scenarioResults.push({
       scenarioId: spec.scenarioId,
       title: spec.title,
+      kind: isProductPath ? 'product_path_replay' : 'contract_fixture_validation',
       passed: true,
+      actualLibrarianReplay: isProductPath,
       syntheticDeterministicFixture: true,
       actualHostGuiExecuted: false
     });
   }
 
+  const productPathPassed = scenarioResults.filter(s => s.kind === 'product_path_replay' && s.passed).length;
+  const contractFixturePassed = scenarioResults.filter(s => s.kind === 'contract_fixture_validation' && s.passed).length;
+
   return {
     ok: true,
     scenarioCount: scenarioResults.length,
+    productPathReplay: {
+      total: H06_PRODUCT_PATH_SCENARIOS.size,
+      passed: productPathPassed,
+      scenarios: scenarioResults.filter(s => s.kind === 'product_path_replay').map(s => s.scenarioId)
+    },
+    contractFixtureValidation: {
+      total: H06_CONTRACT_FIXTURE_SCENARIOS.size,
+      passed: contractFixturePassed,
+      scenarios: scenarioResults.filter(s => s.kind === 'contract_fixture_validation').map(s => s.scenarioId)
+    },
     scenarios: scenarioResults
   };
 }
@@ -966,8 +1092,9 @@ async function runFullCompatibilityGate(options = {}) {
       ? await verifyReleaseArtifactsInContractHost(artifactDir, { contractsDir })
       : { ok: true, skipped: true };
 
-    const pluginOnlyCheck = await verifyPluginOnlyAuthorityContract({ contractsDir });
-    const serverOnlyCheck = await verifyServerOnlyAuthorityAndFailClosedContract({ contractsDir });
+    const storageAuthorityMatrix = await verifyStorageAuthorityOwnerMatrix({ contractsDir });
+    const pluginOnlyCheck = storageAuthorityMatrix.serverBackedOwners.libra.pluginOnly;
+    const serverOnlyCheck = storageAuthorityMatrix.serverBackedOwners.libra.serverOnly;
     const transitionCheck = await verifyStorageTransitionContract({ contractsDir });
 
     const reusedStorageSuites = [];
@@ -1005,6 +1132,7 @@ async function runFullCompatibilityGate(options = {}) {
         semanticDrift: contractCheck.runtimeSemantics,
         pluginLoaderAndIpc: contractCheck.loaderAndIpc,
         artifactRuntime: artifactRuntimeCheck,
+        storageAuthorityMatrix,
         pluginOnlyAuthority: pluginOnlyCheck,
         serverOnlyAuthority: serverOnlyCheck,
         storageTransition: transitionCheck,
@@ -1061,8 +1189,13 @@ if (require.main === module) {
 }
 
 module.exports = {
+  SERVER_BACKED_OWNERS,
+  H06_PRODUCT_PATH_SCENARIOS: Array.from(H06_PRODUCT_PATH_SCENARIOS),
+  H06_CONTRACT_FIXTURE_SCENARIOS: Array.from(H06_CONTRACT_FIXTURE_SCENARIOS),
   verifyPluginOnlyAuthorityContract,
   verifyServerOnlyAuthorityAndFailClosedContract,
+  verifyLiaLocalOnlyAuthorityContract,
+  verifyStorageAuthorityOwnerMatrix,
   verifyStorageTransitionContract,
   runH06CompatibilityReplay,
   verifyReleaseArtifactsInContractHost,

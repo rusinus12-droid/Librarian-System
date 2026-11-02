@@ -46,9 +46,33 @@ function classifyRelease({ exists, tagName, expectedTag }) {
   throw new Error(`release_points_to_unexpected_tag:${tagName}:${expectedTag}`);
 }
 
+function verifyReleaseShaFence({ expectedSha, currentMainSha, stage = 'fence' }) {
+  const expected = String(expectedSha || '').trim();
+  const current = String(currentMainSha || '').trim();
+  if (!expected) {
+    throw new Error(`release_sha_fence_missing_expected:${stage}`);
+  }
+  if (!current) {
+    throw new Error(`release_sha_fence_missing_current:${stage}`);
+  }
+  if (expected !== current) {
+    const error = new Error(
+      `main changed after compatibility validation.\n` +
+      `validated: ${expected}\n` +
+      `current main: ${current}\n` +
+      `Re-run Manual Release against the current main commit.`
+    );
+    error.code = 'RELEASE_SHA_FENCE_MISMATCH';
+    error.details = { expectedSha: expected, currentMainSha: current, stage };
+    throw error;
+  }
+  return { ok: true, sha: expected, stage };
+}
+
 module.exports = {
   classifyRelease,
   classifyTag,
   determineReleaseState,
-  parseReleaseCommitSubject
+  parseReleaseCommitSubject,
+  verifyReleaseShaFence
 };

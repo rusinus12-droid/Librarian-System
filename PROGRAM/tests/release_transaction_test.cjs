@@ -5,7 +5,8 @@ const {
   classifyRelease,
   classifyTag,
   determineReleaseState,
-  parseReleaseCommitSubject
+  parseReleaseCommitSubject,
+  verifyReleaseShaFence
 } = require('../tools/release_transaction.cjs');
 
 assert.equal(parseReleaseCommitSubject('chore(release): v0.5.2'), 'v0.5.2');
@@ -49,5 +50,27 @@ assert.throws(() => classifyTag({ exists: true, actualSha: 'def', releaseCommitS
   /release_tag_points_to_unexpected_commit/);
 assert.equal(classifyRelease({ exists: false, tagName: null, expectedTag: 'v0.5.2' }), 'create');
 assert.equal(classifyRelease({ exists: true, tagName: 'v0.5.2', expectedTag: 'v0.5.2' }), 'reuse');
+
+// Release SHA Fence Invariant (validated SHA == origin/main -> allowed, != -> blocked)
+assert.deepEqual(
+  verifyReleaseShaFence({ expectedSha: 'abc1234', currentMainSha: 'abc1234', stage: 'fence1' }),
+  { ok: true, sha: 'abc1234', stage: 'fence1' }
+);
+assert.throws(
+  () => verifyReleaseShaFence({ expectedSha: 'abc1234', currentMainSha: 'def5678', stage: 'fence1' }),
+  err => err.code === 'RELEASE_SHA_FENCE_MISMATCH' && err.message.includes('main changed after compatibility validation.')
+);
+assert.throws(
+  () => verifyReleaseShaFence({ expectedSha: 'abc1234', currentMainSha: 'def5678', stage: 'fence2' }),
+  err => err.code === 'RELEASE_SHA_FENCE_MISMATCH' && err.message.includes('main changed after compatibility validation.')
+);
+assert.throws(
+  () => verifyReleaseShaFence({ expectedSha: '', currentMainSha: 'abc1234' }),
+  /release_sha_fence_missing_expected/
+);
+assert.throws(
+  () => verifyReleaseShaFence({ expectedSha: 'abc1234', currentMainSha: '' }),
+  /release_sha_fence_missing_current/
+);
 
 process.stdout.write('release_transaction_test: PASS\n');
