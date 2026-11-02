@@ -270,7 +270,7 @@ manifest.legacyTechnicalIdentity = 'memory-suite';
 const packageVersion = fs.readFileSync(path.join(root, 'VERSION.txt'), 'utf8').trim();
 if (!/^\d+\.\d+\.\d+$/.test(packageVersion)) throw new Error(`manifest_program_version_invalid:${packageVersion}`);
 manifest.packageVersion = packageVersion;
-manifest.generatedAt = new Date().toISOString();
+manifest.generatedAt = process.env.LIBRARIAN_RELEASE_GENERATED_AT || new Date().toISOString();
 manifest.server = {
   ...manifest.server,
   version: packageVersion,

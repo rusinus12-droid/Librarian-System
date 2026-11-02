@@ -45,6 +45,6 @@ test('explicit offline qualification survives a real version bump and failed-bui
  assert.notEqual(failed.status,0);assert.match(failed.stderr,/distribution_output_must_be_outside_source_package/);assert.deepEqual(snapshot(),before);
  fs.symlinkSync(linked,path.join(program,'tools','untrusted-link'),process.platform==='win32'?'junction':'dir');
  const badLink=spawnSync(process.execPath,[path.join(program,'tools/build_distribution.cjs'),'--profile','source','--offline-candidate','--output-dir',path.join(temp,'bad-link-output')],{env,encoding:'utf8',timeout:30000});
- assert.notEqual(badLink.status,0);assert.match(badLink.stderr,/distribution_symbolic_link_is_not_allowed/);
- assert.equal(fs.readdirSync(path.join(temp,'bad-link-output')).some(file=>file.endsWith('.zip')),false);
+ assert.notEqual(badLink.status,0);assert.match(badLink.stderr,/manifest_symbolic_link_is_not_allowed/);
+ assert.equal(fs.existsSync(path.join(temp,'bad-link-output')),false);
 });

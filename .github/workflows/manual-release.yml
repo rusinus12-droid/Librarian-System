@@ -1,0 +1,362 @@
+name: Manual Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  manual-release:
+    name: manual-release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: librarian-manual-release
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pinned build dependencies
+        run: npm ci --prefix PROGRAM/build-support
+
+      - name: Resolve release transaction state
+        id: state
+        run: |
+          if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
+            echo "Error: Manual release is only permitted on the main branch (attempted on ${{ github.ref }})."
+            exit 1
+          fi
+          git fetch origin main --tags
+          git checkout -B main origin/main
+          node -e '
+          const fs = require("node:fs");
+          const { execFileSync } = require("node:child_process");
+          const { determineReleaseState } = require("./PROGRAM/tools/release_transaction.cjs");
+          const { nextPatchVersion } = require("./PROGRAM/tools/release_version.cjs");
+          const currentVersion = fs.readFileSync("PROGRAM/VERSION.txt", "utf8").trim();
+          const headSubject = execFileSync("git", ["log", "-1", "--pretty=%s"], { encoding: "utf8" }).trim();
+          const parentVersion = headSubject.startsWith("chore(release):")
+            ? execFileSync("git", ["show", "HEAD^:PROGRAM/VERSION.txt"], { encoding: "utf8" }).trim()
+            : null;
+          const state = determineReleaseState({ headSubject, currentVersion, parentVersion });
+          const targetVersion = state.targetVersion || nextPatchVersion(currentVersion);
+          const previousVersion = state.previousVersion || currentVersion;
+          const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+          const seedRef = state.phase === "resume" ? "HEAD^" : "HEAD";
+          const seedCommit = execFileSync("git", ["rev-parse", seedRef], { encoding: "utf8" }).trim();
+          const generatedAt = execFileSync("git", ["show", "-s", "--format=%cI", seedRef], { encoding: "utf8" }).trim();
+          console.log(JSON.stringify({ ...state, targetVersion, previousVersion, commit, seedCommit, seedRef }));
+          fs.appendFileSync(process.env.GITHUB_ENV,
+            `CURRENT_VERSION=${currentVersion}\nPREVIOUS_VERSION=${previousVersion}\nNEXT_VERSION=${targetVersion}\n` +
+            `RELEASE_COMMIT_SHA=${commit}\nRELEASE_PHASE=${state.phase}\n` +
+            `LIBRARIAN_RELEASE_BUILD_ID=release-${seedCommit.slice(0, 40)}\n` +
+            `LIBRARIAN_RELEASE_GENERATED_AT=${generatedAt}\n`);
+          '
+
+      - name: Guard against duplicate version transaction
+        if: env.RELEASE_PHASE == 'prepare'
+        run: |
+          if git rev-parse -q --verify "refs/tags/v${NEXT_VERSION}" >/dev/null; then
+            echo "Error: Tag v${NEXT_VERSION} already exists. Aborting release without modification."
+            exit 1
+          fi
+          echo "Tag v${NEXT_VERSION} is unique and available."
+
+      - name: Run release builder with publication gate
+        run: |
+          mkdir -p "$RUNNER_TEMP/librarian-release"
+          args=(--profile release --qualification publication_gate --output-dir "$RUNNER_TEMP/librarian-release")
+          if [[ "$RELEASE_PHASE" == "prepare" ]]; then
+            args+=(--version "$NEXT_VERSION")
+          else
+            args+=(--check)
+          fi
+          node PROGRAM/tools/build_distribution.cjs "${args[@]}"
+
+      - name: Verify build report publication contract
+        run: |
+          node -e '
+          const fs = require("node:fs");
+          const path = require("node:path");
+
+          const outDir = process.env.RUNNER_TEMP + "/librarian-release";
+          const files = fs.readdirSync(outDir).filter(f => f.endsWith(".build-report.json"));
+          if (files.length === 0) {
+            console.error("No .build-report.json found in output directory");
+            process.exit(1);
+          }
+          const reportPath = path.join(outDir, files[0]);
+          const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+
+          const required = {
+            schema: "librarian-system.distribution-build-report.v1",
+            profile: "release",
+            qualification: "publication_gate",
+            publicationSmokePassed: true,
+            updaterEligible: true,
+            sourceUnchangedVerified: true,
+            sourceDataReadOrCopied: false,
+            embeddedRuntime: false,
+            privateDataPatternsRejected: true,
+            unixExecutePermissionsVerified: true,
+            utf8EntryNamesVerified: true,
+            testsRun: true,
+            testProfile: "release_smoke",
+            fullRegressionRunByBuilder: false,
+            fullRegressionRequiredBeforePublication: true
+          };
+
+          let mismatch = false;
+          for (const [key, val] of Object.entries(required)) {
+            if (report[key] !== val) {
+              console.error(`Build report field mismatch: ${key} = ${report[key]} (expected ${val})`);
+              mismatch = true;
+            }
+          }
+          if (mismatch) process.exit(1);
+          console.log("Build report publication contract verified successfully.");
+          '
+
+      - name: Verify version transaction changes against contract
+        if: env.RELEASE_PHASE == 'prepare'
+        run: |
+          node -e '
+          const fs = require("node:fs");
+          const { execSync } = require("node:child_process");
+          const { VERSION_TRANSACTION_RELATIVE_FILES } = require("./PROGRAM/tools/build_distribution.cjs");
+
+          const status = execSync("git status --porcelain", { encoding: "utf8" }).trim();
+          if (!status) {
+            console.error("No file modifications found after version bump");
+            process.exit(1);
+          }
+
+          const allowed = new Set(VERSION_TRANSACTION_RELATIVE_FILES);
+          const lines = status.split("\n").filter(Boolean);
+          for (const line of lines) {
+            const file = line.slice(3).trim();
+            if (!allowed.has(file)) {
+              console.error(`Disallowed file modified outside VERSION_TRANSACTION_RELATIVE_FILES: ${file}`);
+              process.exit(1);
+            }
+          }
+
+          const newVersion = fs.readFileSync("PROGRAM/VERSION.txt", "utf8").trim();
+          if (newVersion !== process.env.NEXT_VERSION) {
+            console.error(`PROGRAM/VERSION.txt (${newVersion}) != NEXT_VERSION (${process.env.NEXT_VERSION})`);
+            process.exit(1);
+          }
+          console.log("All modified files strictly match VERSION_TRANSACTION_RELATIVE_FILES contract.");
+          '
+
+      - name: Run required release regressions
+        id: regressions
+        run: |
+          node --test --test-concurrency=1 \
+            PROGRAM/tests/release_transaction_test.cjs \
+            PROGRAM/tests/release_reproducibility_test.cjs \
+            PROGRAM/tests/release_builder_profiles_test.cjs \
+            PROGRAM/tests/release_builder_qualification_runtime_test.cjs \
+            PROGRAM/tests/release_builder_version_input_test.cjs \
+            PROGRAM/tests/gradia/native-host-id-binding.test.cjs \
+            PROGRAM/tests/gradia/server-read-adapter.test.cjs \
+            PROGRAM/tests/distribution_updater_migration_file_test.cjs \
+            PROGRAM/tests/remote_update_release_zip_runtime_test.cjs
+
+      - name: Commit release version
+        if: env.RELEASE_PHASE == 'prepare'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          node -e '
+          const { execSync } = require("node:child_process");
+          const { VERSION_TRANSACTION_RELATIVE_FILES } = require("./PROGRAM/tools/build_distribution.cjs");
+          for (const f of VERSION_TRANSACTION_RELATIVE_FILES) {
+            execSync(`git add "${f}"`);
+          }
+          '
+          git commit -m "chore(release): v${NEXT_VERSION}"
+          RELEASE_COMMIT_SHA=$(git rev-parse HEAD)
+          echo "RELEASE_COMMIT_SHA=$RELEASE_COMMIT_SHA" >> "$GITHUB_ENV"
+
+      - name: Push release commit to main
+        run: |
+          git fetch origin main
+          if git merge-base --is-ancestor "$RELEASE_COMMIT_SHA" origin/main; then
+            echo "Release commit ${RELEASE_COMMIT_SHA} is already present on origin/main."
+          else
+            git push origin "HEAD:main"
+          fi
+
+      - name: Create or reuse release tag
+        id: tag
+        run: |
+          TAG="v${NEXT_VERSION}"
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            TAG_SHA=$(git rev-list -n 1 "${TAG}")
+            if [[ "$TAG_SHA" != "$RELEASE_COMMIT_SHA" ]]; then
+              echo "Tag ${TAG} points to ${TAG_SHA}, expected ${RELEASE_COMMIT_SHA}."
+              exit 1
+            fi
+            echo "Reusing existing tag ${TAG}."
+          else
+            git tag "${TAG}" "$RELEASE_COMMIT_SHA"
+            git push origin "${TAG}"
+            echo "Created and pushed tag ${TAG}."
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify release artifact integrity
+        run: |
+          node -e '
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const outDir = process.env.RUNNER_TEMP + "/librarian-release";
+          const reportPath = fs.readdirSync(outDir).find(f => f.endsWith(".build-report.json"));
+          if (!reportPath) throw new Error("release_build_report_missing");
+          const report = JSON.parse(fs.readFileSync(path.join(outDir, reportPath), "utf8"));
+          if (report.packageVersion !== process.env.NEXT_VERSION || report.releaseTag !== `v${process.env.NEXT_VERSION}`) {
+            throw new Error(`release_artifact_version_mismatch:${report.packageVersion}:${report.releaseTag}`);
+          }
+          const asset = path.join(outDir, `Librarian-System-${process.env.NEXT_VERSION}.zip`);
+          if (!fs.existsSync(asset) || fs.statSync(asset).size === 0) throw new Error("release_asset_missing_or_empty");
+          console.log(`Verified ${path.basename(asset)} (${fs.statSync(asset).size} bytes).`);
+          '
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        id: github-release
+        run: |
+          ASSETS=()
+          for f in "$RUNNER_TEMP/librarian-release"/*.zip \
+                   "$RUNNER_TEMP/librarian-release"/*.build-report.json \
+                   "$RUNNER_TEMP/librarian-release"/*.GITHUB_RELEASE_INFO.txt; do
+            if [ -f "$f" ]; then
+              ASSETS+=("$f")
+            fi
+          done
+
+          TAG="v${NEXT_VERSION}"
+          if gh release view "$TAG" --json tagName,url,assets >/tmp/librarian-release.json 2>/dev/null; then
+            RELEASE_URL=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/tmp/librarian-release.json", "utf8")).url)')
+            RELEASE_TAG=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/tmp/librarian-release.json", "utf8")).tagName)')
+            [[ "$RELEASE_TAG" == "$TAG" ]] || {
+              echo "Existing GitHub Release has unexpected tag ${RELEASE_TAG}."
+              exit 1
+            }
+            missing=()
+            for f in "${ASSETS[@]}"; do
+              name=$(basename "$f")
+              exists=$(node -e '
+                const release = JSON.parse(require("fs").readFileSync("/tmp/librarian-release.json", "utf8"));
+                const name = process.argv[1];
+                process.stdout.write((release.assets || []).some(asset => asset.name === name) ? "true" : "false");
+              ' "$name")
+              if [[ "$exists" == "true" ]]; then
+                if ! gh release download "$TAG" --pattern "$name" --dir "$RUNNER_TEMP/librarian-release-existing" --clobber >/dev/null 2>&1; then
+                  echo "Existing asset ${name} is listed but could not be downloaded; refusing to treat an API or permission failure as a missing asset."
+                  exit 1
+                fi
+                existing="$RUNNER_TEMP/librarian-release-existing/$name"
+                expected=$(sha256sum "$f" | cut -d' ' -f1)
+                actual=$(sha256sum "$existing" | cut -d' ' -f1)
+                if [[ "$expected" != "$actual" ]]; then
+                  echo "Existing asset ${name} has a different SHA-256 (${actual}, expected ${expected})."
+                  exit 1
+                fi
+              else
+                missing+=("$f")
+              fi
+            done
+            if ((${#missing[@]} > 0)); then
+              gh release upload "$TAG" "${missing[@]}"
+              echo "Uploaded ${#missing[@]} missing asset(s) to ${RELEASE_URL}."
+            else
+              echo "Reusing complete GitHub Release ${RELEASE_URL}."
+            fi
+          else
+            RELEASE_URL=$(gh release create "$TAG" \
+              "${ASSETS[@]}" \
+              --title "Librarian System v${NEXT_VERSION}" \
+              --generate-notes)
+          fi
+          echo "url=${RELEASE_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release build artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: librarian-release-v${{ env.NEXT_VERSION }}
+          path: |
+            ${{ runner.temp }}/librarian-release/*.zip
+            ${{ runner.temp }}/librarian-release/*.build-report.json
+            ${{ runner.temp }}/librarian-release/*.GITHUB_RELEASE_INFO.txt
+          if-no-files-found: error
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: librarian-manual-release-failure-reports
+          path: |
+            ${{ runner.temp }}/librarian-release/*.failed-*.json
+            ${{ runner.temp }}/librarian-release/*.build-report.json
+          if-no-files-found: ignore
+
+      - name: Write job summary
+        if: always()
+        run: |
+          node -e '
+          const fs = require("node:fs");
+          const path = require("node:path");
+
+          const outDir = process.env.RUNNER_TEMP + "/librarian-release";
+          let reportContent = "Build report not available";
+          if (fs.existsSync(outDir)) {
+            const files = fs.readdirSync(outDir).filter(f => f.endsWith(".build-report.json"));
+            if (files.length > 0) {
+              reportContent = fs.readFileSync(path.join(outDir, files[0]), "utf8");
+            }
+          }
+
+          const tag = process.env.NEXT_VERSION ? `v${process.env.NEXT_VERSION}` : "N/A";
+          const commit = process.env.RELEASE_COMMIT_SHA || process.env.GITHUB_SHA || "N/A";
+          const phase = process.env.RELEASE_PHASE || "unknown";
+
+          const summary = [
+            "# Librarian System Manual Release Summary",
+            "",
+            `- **Status**: ${process.env.RELEASE_STATUS || "Completed"}`,
+            `- **Phase**: ${phase}`,
+            `- **Target Version**: ${process.env.NEXT_VERSION || "N/A"}`,
+            `- **Release Tag**: ${tag}`,
+            `- **Release Commit**: \`${commit}\``,
+            "",
+            "## Build Report",
+            "```json",
+            reportContent,
+            "```",
+            "",
+            "## Verification & Rerun Guide",
+            "If this run failed before GitHub Release creation, resolve any issue and re-trigger manual-release.",
+            "If the release commit was already pushed to main, manual-release will detect it and safely resume without bumping version again."
+          ].join("\n");
+
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + "\n");
+          '
+        env:
+          RELEASE_STATUS: ${{ job.status }}
