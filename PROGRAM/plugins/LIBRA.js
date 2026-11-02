@@ -35309,6 +35309,8 @@ function createLibraReadonlySourceContext(owner) {
       lastMicroPublication: null,
       lastMicroPlanRefusal: null,
       lastGradiaUnifiedRead: null,
+      lastResponseBoundaryFailure: null,
+      lastCorpusColdReason: null,
       canonicalJob: null,
       canonicalJobPromise: null,
       canonicalJobListeners: new Set(),
@@ -59696,11 +59698,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         'Each claim has changeKind (event, person, relation, world, thread or correction), text, actor, target, temporalRole (current, historical, hypothetical or uncertain), certainty (confirmed or uncertain), epistemicStatus (observed, reported or uncertain), stateChangeType (none, set or clear), and evidence with role, messageId, startOffset, endOffset and exactQuote.',
         'EVIDENCE SHAPE: evidence is exactly ONE object, NEVER an array: {"role":"assistant","messageId":"copy source ID","startOffset":0,"endOffset":1,"exactQuote":"copy exact source span"}. Copy an evidenceCandidates object unchanged when it supports the claim. claims is an array; each claim.evidence is an object.',
         'For an observed current set/clear change, optionally include stateIntent with domain (character, relationship, world or narrative), target, field, operation matching stateChangeType, and value for set only. Character/world target is {entityName}; relationship target is {subjectName,targetName,dimension}; narrative target is {scope:"current_narrative"}. Names must appear in the exact evidence quote. Omit stateIntent when the target, field or value is uncertain; a source quote alone does not approve State.',
-        'CURRENT CHANGES: an explicitly completed movement, loss/recovery of consciousness, injury/recovery, or opening/closing is a change, not a static description. Preserve both the event and its supported current State intent. For a person use domain character; use field locationRef for a changed location (value is the exact cited place name, not an invented ID), or condition for a changed physical condition. For world changes use domain world and the precise affected property: a location door opening/closing uses doorStatus on that location, not condition implying that the whole building changed. condition describes the explicitly stated condition of the target itself. Copy the value literally from the quote, not a translation or a label such as open/closed. Registry resolution and State approval belong to runtime; do not invent a target or approve the claim yourself.',
-        'LOCATION VALUE: copy only the destination place name, without its containing-place phrase: 북관 안의 의무실 -> 의무실. Prefer an exact registeredStateTargets name/alias appearing in the source quote. This list clarifies existing identity only; it proves no event, presence or State change. A separately named door/object is not its building; never merge similarly named targets. Keep the exact affected property when describing an unnamed part of a known location.',
+        'CURRENT OBSERVATIONS & CHANGES: an explicitly completed movement, direct observation of current location/presence, loss/recovery of consciousness, injury/recovery, holding an item, or opening/closing is eligible for State tracking. Preserve both the observed event/presence and its supported current State intent. For a person use domain character; use field locationRef for current or changed location (e.g. "서재에 앉아 있다" -> locationRef: "서재"; value is the exact cited place name, not an invented ID), or condition for current physical condition/state. For world changes use domain world and the precise affected property: a location door opening/closing uses doorStatus on that location, not condition implying that the whole building changed. condition describes the explicitly stated condition of the target itself. Copy the value literally from the quote, not a translation or a label such as open/closed. Registry resolution and State approval belong to runtime; do not invent a target or approve the claim yourself.',
+        'LOCATION VALUE: copy only the destination or current place name, without its containing-place phrase: 북관 안의 의무실 -> 의무실. Prefer an exact registeredStateTargets name/alias appearing in the source quote. This list clarifies existing identity only; it proves no event, presence or State change. A separately named door/object is not its building; never merge similarly named targets. Keep the exact affected property when describing an unnamed part of a known location.',
         'CHANGE EXAMPLE (shape only, never copy these source facts): for source 아린이 기절했다. with messageId a1, a claim is {"changeKind":"person","text":"아린이 기절했다.","actor":"아린","target":"","temporalRole":"current","certainty":"confirmed","epistemicStatus":"observed","stateChangeType":"set","stateIntent":{"domain":"character","target":{"entityName":"아린"},"field":"condition","operation":"set","value":"기절했다"},"evidence":{"role":"assistant","messageId":"a1","startOffset":0,"endOffset":9,"exactQuote":"아린이 기절했다."}}. A question or an unperformed plan never proves that change.',
         'Offsets are UTF-16 indices in the exact U or A text. Quote only an exact contiguous source span. Do not invent an outcome from a request, intention or report.',
-        'Evidence and person span role is exactly user or assistant, never subject, narrator or description. evidenceCandidates provide exact optional UTF-16 spans; other exact source spans are also allowed. Actor and target must be strings: copy only a named participant that appears inside that claim\'s exactQuote, otherwise use empty string; never use assistant, user, narrator, null, or a translated name as a participant. STATIC DESCRIPTION IS NOT A STATE TRANSITION: a sentence saying a room contains something, a rule exists, or a speaker reports an existing condition has stateChangeType:none and no stateIntent. Keep its directly grounded world claim. set or clear is only for an explicit change action in this turn with temporalRole:current, certainty:confirmed, epistemicStatus:observed. If used, stateIntent.target is an object such as {\"entityName\":\"exact cited name\"}, never a string. Omit stateIntent for a mere description or unsupported State field/value Check both source roles: preserve a directly evidenced user question as an event with stateChangeType:none, alongside assistant world facts; the question itself does not prove the requested outcome.',
+        'Evidence and person span role is exactly user or assistant, never subject, narrator or description. evidenceCandidates provide exact optional UTF-16 spans; other exact source spans are also allowed. Actor and target must be strings: copy only a named participant that appears inside that claim\'s exactQuote, otherwise use empty string; never use assistant, user, narrator, null, or a translated name as a participant. CURRENT OBSERVATION VS BACKGROUND: direct current presence ("서재에 있다") or state transition ("서재로 들어갔다") in this turn is admitted with stateChangeType:set, temporalRole:current, certainty:confirmed, epistemicStatus:observed. Enduring background facts (appearance, affiliation, permanent rules) or ungrounded rumors remain stateChangeType:none without stateIntent, grounded as general claims. If used, stateIntent.target is an object such as {\"entityName\":\"exact cited name\"}, never a string. Check both source roles: preserve a directly evidenced user question as an event with stateChangeType:none, alongside assistant world facts; the question itself does not prove the requested outcome.',
         'Write each claim text in the language of the source turn, keeping names, numbers and quantities exactly as written there; recall searches this text with the user\'s own words.',
         'Describe this turn\'s changes and precise evidence only; do not recap five turns or merge identities. Return JSON only.'
       ].join('\n');
@@ -71874,6 +71876,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
       try{return await Promise.race([(async()=>{
         const context=await resolveContext();unifiedAssert(context.scope.scopeKey===boundary.scopeKey,'UNIFIED_RESPONSE_SCOPE_CHANGED');
         const current=await captureUnifiedResponseBoundary(context,null,{...options,deadlineAt,force:true});
+        if (digest(current)!==digest(boundary)) {
+          // Record field names only: no transcript, settings, or memory values.
+          const fields = ['scopeKey','sourceDigest','manifestDigest','headDigest','registryDigest',
+            'worldlineDigest','migrationDigest','directionDigest','policyDigest','memoryPolicyDigest','storageMode'];
+          state.lastResponseBoundaryFailure = { at: Date.now(), code: 'UNIFIED_RESPONSE_AUTHORITY_CHANGED',
+            changedFields: fields.filter(field => digest(current[field])!==digest(boundary[field])) };
+          const error = Error('UNIFIED_RESPONSE_AUTHORITY_CHANGED');
+          error.code = 'UNIFIED_RESPONSE_AUTHORITY_CHANGED';
+          error.responseBoundary = clone(state.lastResponseBoundaryFailure);
+          throw error;
+        }
         unifiedAssert(digest(current)===digest(boundary),'UNIFIED_RESPONSE_AUTHORITY_CHANGED');return true;
       })(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(consumerContractError('CONSUMER_DATA_REVALIDATION_DEADLINE')),Math.max(1,deadlineAt-Date.now()));})]);}finally{clearTimeout(timer);}
     };
@@ -72302,6 +72315,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           blockChars: 0,
           error: compact(error?.message || error, 700),
           errorCode: string(error?.code || ''),
+          ...(error?.responseBoundary ? { responseBoundary: clone(error.responseBoundary) } : {}),
           modePublicationStatus: string(error?.modePublicationStatus || ''),
           modePublicationAttempts: Number(error?.modePublicationAttempts || 0),
           failOpen: true,
@@ -77233,7 +77247,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
           if (!corpus && corpusMode === 'auto') {
             corpus = await runRecallStep(recallGuard, 'graph_corpus_prepare',
               () => state.memoryGraphCorpus.prepare({ ...corpusContext, reason: coldReason }), RECALL_REQUEST_BUDGET_MS);
-            corpus = { ...corpus, access: { ...corpus.access, runtimeIndex } };
+            corpus = { ...corpus, access: { ...corpus.access, runtimeIndex, coldReason } };
+            state.lastCorpusColdReason = { at: Date.now(), reason: coldReason, runtimeIndex };
             scheduleVolatileMemoryGraphCorpus();
           }
           if (corpus) {
@@ -77285,10 +77300,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
           // One storage round-trip per pinned source, in order: the largest
           // unattributed span in a cold recall. Account for it in the delivery
           // diagnostics instead of leaving it between phase labels.
-          for (const storageKey of pinKeys) {
-            const raw = await readRawSource(storageKey);
-            resources.retain(raw,'pinned_source_body');
-            pinnedValues.push({ key: storageKey, raw });
+          const batchSize = Math.max(1, Math.min(16, sourceReadBatchSize()));
+          for (let offset = 0; offset < pinKeys.length; offset += batchSize) {
+            const chunk = pinKeys.slice(offset, offset + batchSize);
+            const chunkResults = await Promise.all(chunk.map(async storageKey => {
+              const raw = await readRawSource(storageKey);
+              return { key: storageKey, raw };
+            }));
+            for (const item of chunkResults) {
+              resources.retain(item.raw, 'pinned_source_body');
+              pinnedValues.push(item);
+            }
           }
         }
         const sourcePinTrace = { keys: pinKeys.length, readsets: conditionalReadSets.length,
@@ -78061,7 +78083,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           resourceBudget:{maxReads,maxSourceBytes:GRADIA_OWNER_SESSION_MAX_SOURCE_BYTES},
           consumerPolicy:{maxCharacters:maxChars-(lensAllowance?lensAllowance+2:0),maxUnits},
           ...(isInputWriter ? { corpusMode: 'window', limit: 5, nodeLimit: 256 } : {})},null,authority);
-        if (!unifiedGraphDeliveryAuthority.has(graph) || graph.modelDispatchEligible!==true) throw Error('LIB_READ_UNIFIED_UNAVAILABLE');
+        if (!unifiedGraphDeliveryAuthority.has(graph) || graph.modelDispatchEligible!==true) {
+          const error = Error('LIB_READ_UNIFIED_UNAVAILABLE');
+          error.readDiagnostic = { stage: 'graph_delivery_admission',
+            ownerAuthority: unifiedGraphDeliveryAuthority.has(graph),
+            modelDispatchEligible: graph?.modelDispatchEligible === true,
+            deliveryOutcome: graph?.deliveryOutcome || '',
+            dispatchReason: graph?.dispatchVerification?.reason || '',
+            stopReason: graph?.stopReason || '' };
+          throw error;
+        }
         const canonical = graph.packet.renderedText;
         const lens = lensAllowance ? await recallLensMemories(before.context,{currentText:request.queryText},maxChars,
           {readOnly:true,refreshVectors:false,deliveredText:canonical}) : null;
@@ -78161,7 +78192,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             state.lastGradiaUnifiedRead = { at: startedAt, ok: false,
               purpose: request.proposal ? 'input_writer_proposal' : 'response_evidence',
               elapsedMs: Date.now() - startedAt,
-              code: compact(error?.code || error?.message || error, 200), stage: 'owner_query' };
+              code: compact(error?.code || error?.message || error, 200), stage: 'owner_query',
+              ...(error?.readDiagnostic ? { admission: clone(error.readDiagnostic) } : {}),
+              ...(state.lastResponseBoundaryFailure?.at >= startedAt
+                ? { responseBoundary: clone(state.lastResponseBoundaryFailure) } : {}) };
             throw error;
           }
         },
@@ -87497,6 +87531,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     lastMemoryPendingBoundaryRecovery: LibraMemoryCore.state.lastPendingBoundaryRecovery ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastPendingBoundaryRecovery)) : null,
     lastMemoryAfterRequest: LibraMemoryCore.state.lastAfterRequest ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastAfterRequest)) : null,
     lastGradiaUnifiedRead: LibraMemoryCore.state.lastGradiaUnifiedRead ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastGradiaUnifiedRead)) : null,
+    lastResponseBoundaryFailure: LibraMemoryCore.state.lastResponseBoundaryFailure ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastResponseBoundaryFailure)) : null,
+    lastCorpusColdReason: LibraMemoryCore.state.lastCorpusColdReason ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastCorpusColdReason)) : null,
     lastMicroPlanRefusal: LibraMemoryCore.state.lastMicroPlanRefusal ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastMicroPlanRefusal)) : null,
     initFailure: Runtime.initFailure || null,
     sourceInputPreferenceErrors: globalThis.__memorySuiteSourceInputPreferenceErrors || null,
@@ -96766,7 +96802,11 @@ advanced
         const info=evidenceSummary(row.fieldEvidence?.[f.key]);
         return [guiEl('dt',{text:f.label}),guiEl('dd',{dataset:{characterField:f.key},text:f.value}),info.count?guiEl('details',{},[guiEl('summary',{text:`근거 ${info.count}개 · T${info.turn||'?'}`}),...info.spans.map(span=>guiEl('blockquote',{text:text(span.quote)}))]):guiEl('small',{class:'hint',text:'연결된 인용 근거 없음'})];
       }));
-      const nodes=matched.length?[factNodes(matched)]:[guiEl('p',{class:'muted',text:key==='know'?'기록된 지식이 없습니다. 이는 모른다는 뜻이 아닙니다.':'이 분류에는 현재 기록된 항목이 없습니다.'})];
+      const domainReady = view?.domainStatus?.characters?.status === 'ready';
+      const emptyHint = !domainReady
+        ? '정본의 인물 상태 영역이 아직 준비되지 않았습니다. (5턴 정본 분석 후 반영)'
+        : (key==='know'?'기록된 지식이 없습니다. 이는 모른다는 뜻이 아닙니다.':'이 분류에는 현재 기록된 항목이 없습니다.');
+      const nodes=matched.length?[factNodes(matched)]:[guiEl('p',{class:'muted',text:emptyHint})];
       if(key==='intro'){
         const known=new Set(Object.values(groupKeys).flat()),extra=facts.filter(f=>!known.has(f.key));
         if(extra.length)nodes.push(guiEl('details',{class:'fold',dataset:{characterExtraFields:'true'}},[guiEl('summary',{text:'상세 · 추가 기록'}),guiEl('div',{class:'fold__body'},[factNodes(extra)])]));
@@ -97986,13 +98026,13 @@ advanced
       if (metadata.sender !== readerId || message.kind !== 'request') return;
       let reply;
       try { reply = { ok: true, result: await serve(message.action, message.payload) }; }
-      catch (error) { reply = { ok: false, errorCode: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNIFIED_UNAVAILABLE' }; }
+      catch (error) { reply = { ok: false, errorCode: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNIFIED_UNAVAILABLE', reason: error?.readDiagnostic?.dispatchReason || error?.message || '', ...(error?.readDiagnostic ? { diagnostic: error.readDiagnostic } : {}) }; }
       if (!disposed) await api().postPluginChannelMessage(readerId, responseChannel, { schema, kind: 'response', requestId: message.requestId, ...reply });
     } else {
       if (metadata.sender !== ownerId || message.kind !== 'response') return;
       const record = pending.get(message.requestId); if (!record) return;
       pending.delete(message.requestId); record.finish();
-      if (message.ok === true) record.resolve(message.result); else record.reject(Object.assign(new Error(message.errorCode), { code: /^LIB_READ_[A-Z_]+$/.test(message.errorCode || '') ? message.errorCode : 'LIB_READ_UNIFIED_UNAVAILABLE' }));
+      if (message.ok === true) record.resolve(message.result); else record.reject(Object.assign(new Error(message.reason || message.errorCode), { code: /^LIB_READ_[A-Z_]+$/.test(message.errorCode || '') ? message.errorCode : 'LIB_READ_UNIFIED_UNAVAILABLE', ...(message.diagnostic ? { readDiagnostic: message.diagnostic } : {}), ...(message.reason ? { dispatchReason: message.reason } : {}) }));
     }
   };
   let starting = null;

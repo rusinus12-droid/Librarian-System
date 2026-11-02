@@ -45,7 +45,13 @@ const exposeResponseBoundary = source => {
     canonicalMutation.memories[start].revision += 1;
     await f.r.context.risuai.pluginStorage.setItem(manifestKey, JSON.stringify(canonicalMutation));
     await assert.rejects(api.debugPhaseDAssertResponseBoundary(boundary),
-      error => /UNIFIED_RESPONSE_AUTHORITY_CHANGED/.test(String(error?.message || error)),
+      error => {
+        assert.match(String(error?.message || error), /UNIFIED_RESPONSE_AUTHORITY_CHANGED/);
+        assert.equal(error.code, 'UNIFIED_RESPONSE_AUTHORITY_CHANGED');
+        assert.deepEqual(Array.from(error.responseBoundary.changedFields), ['manifestDigest']);
+        assert.deepEqual(Object.keys(error.responseBoundary).sort(), ['at','changedFields','code']);
+        return true;
+      },
       'canonical revision changes are rejected by the response boundary');
 
     console.log(JSON.stringify({ test: 'libra_phase_d_response_boundary_identity',
