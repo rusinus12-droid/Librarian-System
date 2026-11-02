@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-02T05:43:13.318Z",
+  "generatedAt": "2026-11-02T05:58:40.329Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -12084,8 +12084,8 @@
       "bytes": 30498
     },
     "tools/risu_contract_verifier.cjs": {
-      "sha256": "7e8a82c73c2749518bf4f18eb026859d3f6ca41e547306197d49b51bb3b03bdd",
-      "bytes": 29779
+      "sha256": "b7e78da2c343abf33f630a4857e8a5236e7458b2ec8b400e905feb0779db1002",
+      "bytes": 30156
     },
     "tools/risu_plugin_harness.js": {
       "sha256": "a0d6a5ab738b424c9037fe46d125f377f0d06e354a54b5154fd2ab635e0e1ccc",

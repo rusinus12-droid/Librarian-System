@@ -682,20 +682,29 @@ function checkUpstreamDrift(options = {}) {
     }
 
     // 3. Check plugin loader fingerprint
-    if (extractedUpstream.loaderFingerprint && pack.pluginLoaderContract?.implementationFingerprint) {
-      if (extractedUpstream.loaderFingerprint !== pack.pluginLoaderContract.implementationFingerprint) {
-        semanticDrift.push({
-          kind: 'loader_fingerprint_mismatch',
-          expectedFingerprint: pack.pluginLoaderContract.implementationFingerprint,
-          actualFingerprint: extractedUpstream.loaderFingerprint
-        });
-      }
+    if (!extractedUpstream.loaderFingerprint) {
+      semanticDrift.push({
+        kind: 'loader_missing',
+        reason: 'Plugin loader fingerprint could not be extracted from live upstream plugins.svelte.ts'
+      });
+    } else if (pack.pluginLoaderContract?.implementationFingerprint && extractedUpstream.loaderFingerprint !== pack.pluginLoaderContract.implementationFingerprint) {
+      semanticDrift.push({
+        kind: 'loader_fingerprint_mismatch',
+        expectedFingerprint: pack.pluginLoaderContract.implementationFingerprint,
+        actualFingerprint: extractedUpstream.loaderFingerprint
+      });
     }
 
     // 4. Check storage implementation fingerprints
     for (const [key, expectedFp] of Object.entries(pack.storageContract?.implementationFingerprints || {})) {
       const actualFp = extractedUpstream.storageFingerprints?.[key];
-      if (actualFp && actualFp !== expectedFp) {
+      if (!actualFp) {
+        semanticDrift.push({
+          kind: 'storage_unit_missing',
+          className: key,
+          reason: `Storage class '${key}' fingerprint missing in live upstream extraction`
+        });
+      } else if (actualFp !== expectedFp) {
         semanticDrift.push({
           kind: 'storage_fingerprint_mismatch',
           className: key,
