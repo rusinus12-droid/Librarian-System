@@ -62,6 +62,14 @@ assert.deepEqual(findReleaseCommitForEvent([
 assert.equal(findReleaseCommitForEvent([
   { sha: 'later', parents: ['release'], subject: 'feat: later change' }
 ], 'merge'), null);
+assert.deepEqual(findReleaseCommitForEvent([
+  { sha: 'release', parents: ['rebased'], subject: 'chore(release): v0.5.2', body: 'chore(release): v0.5.2\n\nRelease-Event: merge' }
+], 'merge'), {
+  sha: 'release',
+  parents: ['rebased'],
+  subject: 'chore(release): v0.5.2',
+  body: 'chore(release): v0.5.2\n\nRelease-Event: merge'
+});
 assert.throws(() => findReleaseCommitForEvent([
   { sha: 'release-a', parents: ['merge'], subject: 'chore(release): v0.5.2' },
   { sha: 'release-b', parents: ['merge'], subject: 'chore(release): v0.5.3' }

@@ -49,11 +49,13 @@ function classifyRelease({ exists, tagName, expectedTag }) {
 function findReleaseCommitForEvent(commits, eventSha) {
   const expectedParent = String(eventSha || '').trim();
   if (!expectedParent) return null;
-  const matches = commits.filter(commit =>
-    Array.isArray(commit.parents) &&
-    commit.parents[0] === expectedParent &&
-    parseReleaseCommitSubject(commit.subject)
-  );
+  const matches = commits.filter(commit => {
+    if (!parseReleaseCommitSubject(commit.subject)) return false;
+    if (Array.isArray(commit.parents) && commit.parents[0] === expectedParent) return true;
+    if (commit.eventSha === expectedParent) return true;
+    if (typeof commit.body === 'string' && commit.body.includes(`Release-Event: ${expectedParent}`)) return true;
+    return false;
+  });
   if (matches.length > 1) {
     throw new Error(`release_event_has_multiple_transactions:${expectedParent}`);
   }

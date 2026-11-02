@@ -1,49 +1,30 @@
-# Release automation recovery
+# Release automation and manual publication guide
 
-The `release-builder-gate` job validates pull requests. The `main-release` job
-publishes only after a push to `main`; the two jobs are intentionally separate.
+The repository uses separate GitHub Actions workflows for PR verification and
+official release publication:
 
-`main-release` never cancels an active run, and assigns each merge event its own
-concurrency group so GitHub's single pending slot cannot replace an earlier
-merge's request. The workflow
-checks out the triggering `GITHUB_SHA` and searches the complete `main` history
-for a release commit whose parent is that event commit. This preserves recovery
-when later commits have already landed on `main`; the recovery commit is not
-recomputed from the newest unrelated change. A release commit
-(`chore(release): vX.Y.Z`) is a durable transaction marker. If a run fails
-after that commit is pushed, rerunning the workflow rebuilds the exact version
-and reuses an existing tag or GitHub Release when it points to the same commit.
-It never increments the version again. A tag or Release pointing to a
-different commit is treated as a collision and stops safely. If the recovery
-commit is already reachable from current `main`, the push step is a no-op.
-If another event has advanced `main` before an event's release commit can be
-pushed, the non-fast-forward push fails safely rather than publishing that
-event's version against the wrong commit; rerun that event after the preceding
-release transaction completes.
+- `release-builder-gate.yml`: Validates all pull requests and pushes to `main` using
+  the official release builder with non-destructive verification (`--check`). It has
+  read-only permissions (`contents: read`) and never creates commits, tags, or GitHub Releases.
+- `manual-release.yml`: Triggered strictly on demand via `workflow_dispatch` by an
+  authorized administrator on the `main` branch.
 
-The workflow requires `contents: write` for `GITHUB_TOKEN`. Repository rulesets
-or branch protection must allow the GitHub Actions bot to push the release
-commit to `main` and create tags, or the workflow will stop with the push
-error. The workflow never disables protection or force-pushes. If direct
-pushes
-to `main` are prohibited, use an approved repository policy that permits this
-specific workflow, or replace the push step with a reviewed human/PR promotion
-process before enabling publication.
+## Manual release workflow
 
-If a GitHub Release already exists, each local asset is downloaded and
-SHA-256 compared with the current verified build. Matching assets remain
-untouched; only missing assets are uploaded. A same-name asset with different
-content stops the retry rather than overwriting it.
+Official releases are created only when a maintainer runs the `Manual Release`
+workflow on `main`:
 
-Release builds set a stable build ID, metadata timestamp, and ZIP timestamp from
-the triggering event commit. Rebuilding the same event therefore produces the
-same DATA metadata, report, and archive bytes. The dedicated
-`release_reproducibility_test.cjs` verifies the ZIP, report, and package info
-byte-for-byte, which makes the asset hash check meaningful.
-When an asset is listed by GitHub but its download fails, recovery stops with a
-download/API/permission diagnostic instead of treating it as absent.
+1. **Serialization**: Runs serialize with `concurrency: group: librarian-manual-release, cancel-in-progress: false` to ensure two releases cannot run concurrently.
+2. **Branch restriction**: Only executions on `refs/heads/main` are permitted.
+3. **Transaction state resolution**:
+   - In the normal case (`prepare` phase), the workflow reads the current package version from `PROGRAM/VERSION.txt` on the latest `main`, calculates the next patch version via `nextPatchVersion()`, and builds with `--version <nextVersion>`.
+   - If a previous execution committed `chore(release): vX.Y.Z` but failed before tag creation or asset upload, the workflow detects the existing release commit on `HEAD` and enters the `resume` phase for that exact version, avoiding duplicate version bumps.
+4. **Idempotency**: If a release tag or GitHub Release already exists on the release commit, existing assets are SHA-256 verified against the current build. Matching assets remain untouched; only missing assets are uploaded.
+5. **Publication gate & regressions**: Every publication run executes the official release builder publication gate and full targeted release regressions (release transaction, official release reproducibility with `--profile release`, builder profiles, qualification runtime, version input, GRADIA native-input/read-session, Updater migration, and ZIP runtime tests).
+6. **Atomic release commit**: Only version transaction files defined in `VERSION_TRANSACTION_RELATIVE_FILES` are committed. If any builder or regression check fails, no commit, tag, or release is created.
 
-Every publication run executes the release-builder checks plus the targeted
-Release Builder, GRADIA native-input/read-session, Updater, and Migration
-regressions. Build reports, the target commit, tag, Release URL, and a
-rerun procedure are written to the GitHub Actions Job Summary.
+## How to trigger a release
+
+1. Navigate to the repository **Actions** tab on GitHub.
+2. Select **Manual Release** from the left-hand workflow list.
+3. Click **Run workflow**, ensure the branch is set to `main`, and confirm.

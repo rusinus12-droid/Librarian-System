@@ -9,7 +9,9 @@ const { spawnSync } = require('node:child_process');
 const programDir = path.resolve(__dirname, '..');
 const builder = path.join(programDir, 'tools', 'build_distribution.cjs');
 const version = fs.readFileSync(path.join(programDir, 'VERSION.txt'), 'utf8').trim();
-const artifactBase = `Librarian-System-${version}-Source-Offline-Candidate`;
+const qualification = process.env.LIBRARIAN_REPRODUCIBILITY_QUALIFICATION || 'offline_candidate';
+const isOffline = qualification === 'offline_candidate';
+const artifactBase = `Librarian-System-${version}${isOffline ? '-Offline-Candidate' : ''}`;
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'librarian-release-reproducibility-'));
 const env = {
   ...process.env,
@@ -19,16 +21,19 @@ const env = {
 
 try {
   for (const suffix of ['a', 'b']) {
-    const result = spawnSync(process.execPath, [
-      builder, '--profile', 'source', '--offline-candidate',
+    const args = [
+      builder, '--profile', 'release',
+      '--qualification', qualification,
+      '--check',
       '--output-dir', path.join(tempRoot, suffix)
-    ], { encoding: 'utf8', env, timeout: 180000 });
+    ];
+    const result = spawnSync(process.execPath, args, { encoding: 'utf8', env, timeout: 300000 });
     assert.equal(result.status, 0, result.stderr || result.stdout);
   }
   for (const name of [
     `${artifactBase}.zip`,
     `${artifactBase}.build-report.json`,
-    `${artifactBase}.PACKAGE_INFO.txt`
+    `${artifactBase}.GITHUB_RELEASE_INFO.txt`
   ]) {
     assert.deepEqual(
       fs.readFileSync(path.join(tempRoot, 'a', name)),
