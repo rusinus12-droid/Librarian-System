@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-02T14:39:09.693Z",
+  "generatedAt": "2026-11-02T15:40:16.244Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -2999,6 +2999,10 @@
       "sha256": "558f7d2ff5f092fab9110f0805152818fa0fc6a9876a97120bc755bf222c5cc4",
       "bytes": 6733
     },
+    "docs/LIBRA_RECALL_BOTTLENECK_20261102.md": {
+      "sha256": "d3ce369ac912c7b156efaceff69d80675fe0c757f3ebd988748ae4319733bc7e",
+      "bytes": 13666
+    },
     "docs/LIBRA_RECALL_BOUNDARY_DIAGNOSTICS_20261102.md": {
       "sha256": "b8f093f2e24816b8483400add7d8aaeb0949df3d6a5b8a05703557e03f9eb0ec",
       "bytes": 1434
@@ -3194,6 +3198,10 @@
     "docs/measurements/LIBRA_RAG_PROJECTION_BUDGET_20261015.json": {
       "sha256": "742289dcc677d77240e66c4119c6662d8c6c704a2cfd16f1ad1d45c421e6fc85",
       "bytes": 13617
+    },
+    "docs/measurements/LIBRA_RECALL_BOTTLENECK_20261102.json": {
+      "sha256": "accfcf4b9125efb889483f8af9a5c79c12e3b89922866c1c51cedf0237b2e946",
+      "bytes": 31330
     },
     "docs/measurements/RECALL_READ_EFFICIENCY_20261031.json": {
       "sha256": "1e4d044c12a2c258fb8c5f94c9453fe0bd2bc24fddba3718e25da4ebad0d2904",
@@ -3812,7 +3820,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "2eba75673a48c05d3d383e344ffaf543d402ef75c153e9a800244a44315766f3",
+      "sha256": "0b6c6be8fbffc2f815411a87a2a1d98a69cd02a05a391a4e0b2420544f35ec39",
       "bytes": 11836
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4232,8 +4240,8 @@
       "bytes": 1665739
     },
     "plugins/LIBRA.js": {
-      "sha256": "76110835261f1ea2afcc6fbfd532e75158c73a0940e50095d2f9f273bde740a8",
-      "bytes": 6976159
+      "sha256": "110198ef363f93192a66f9eeb4d1e0cea44340b7e0af29d39666fc7bc2731583",
+      "bytes": 6979473
     },
     "plugins/RETRACE.js": {
       "sha256": "3386123502411149a0843d2d1a45b59d0e6af80c5175646e6b2c159b94eef27f",

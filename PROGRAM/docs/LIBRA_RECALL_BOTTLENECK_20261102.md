@@ -75,3 +75,38 @@ LIBRA에는 이미 런타임 공통 색인(volatile common index)이 있다. col
 - 통과: `libra_volatile_corpus_index_runtime_test`, `libra_recall_background_priority_test`, `libra_recall_verification_budget_test`, `libra_recall_read_efficiency_test`(3모드), `libra_parallel_source_pin_regression_test`, `libra_memory_graph_incremental_currentness_runtime_test`, `libra_phase_d_response_boundary_identity_test`, `libra_micro_final_injection_3mode_test`, `libra_worldline_async_isolation_3mode_test`, `libra_phase_d_v5_aba_correction_recovery_test`.
 - `libra_cold_start_3mode_parity_test`는 수정 전 cee7f55에서도 같은 방식으로 실패한다. 이번 변경과 무관하며 검사를 완화하지 않았다.
 - HAYAKU·Flashback·GRADIA 소스는 바꾸지 않았다.
+
+## 2차 작업: 안전 계약 완화 (사용자 승인)
+
+사용자가 안전 계약 변경을 허용해 D-1·D-2를 진행했다. 아래 네 변경은 기존 보장을 일부 줄인다. 줄어든 보장을 각 항목에 적었다.
+
+### 변경
+
+1. **owner head 묶음 읽기 4 → 32키.** read frame의 `prefetch`와 닫기 검사(`assertCurrent`)가 서버 get-many를 32키씩, 묶음당 읽기 예약 1개로 보낸다. 묶음 전체 바이트는 계속 계산한다. plugin_only는 그대로다. 줄어든 보장: 키 단위였던 읽기 예약이 묶음 단위가 되어, 키 하나가 크면 예산 초과가 묶음 전체에서 판정된다.
+2. **최종 검사는 소비한 기록만 다시 읽는다.** 원천별 본문 다이제스트와 소비 의존성이 있으면 `assertPhysicalCurrentness`가 코퍼스 전체 pin readset 검사를 건너뛴다. 소비한 기록·공유 기록(manifest, registry, State, Lore 매핑)의 본문 대조는 그대로다. 줄어든 보장: 소비하지 않은 원천의 변경은 전달을 막지 않는다.
+3. **전달 검사(commit)에서 새로 붙은 Micro를 허용.** 코퍼스를 읽을 때 검증된 Micro가 없던 턴에 새 Micro head만 생긴 경우, 그 차이로 회상을 폐기하지 않는다(`appendedOnlyMicroTurns`). 색인 열기(open)와 빌드는 여전히 정확히 일치해야 한다. 원문 쌍·manifest·registry·정본 창·State·Lore 변경은 계속 거부한다. 줄어든 보장: 회상 도중 생긴 Micro는 이번 전달에 반영되지 않고 다음 회상부터 반영된다.
+4. **owner 기록 쓰기가 진행 중 readset을 취소하지 않음.** `fencedMemoryStorageSet/Remove`가 모든 원천 쓰기마다 `memoryGraphCompiler.invalidateAll()`로 진행 중 회상의 readset을 전부 취소했다(`LIBRA_GRAPH_RESOURCE_CLOSED`, closeReason `readset_revoked`). 이 호출을 뺐다. 다른 무효화 경로(복원, 마이그레이션, 생성 빌드 취소 등 `invalidateAll` 호출부 13곳)는 그대로다. 줄어든 보장: 쓰기 즉시 취소 대신 최종 검사의 소비 기록 재읽기에 의존한다.
+
+시도 후 버린 것: 요청 안에서 owner proof 판정 결과를 재사용하는 memo. `libra_worldline_async_isolation_current_modes_test`가 약 50% 확률로 `LIBRA_GRAPH_RESOURCE_CLOSED`로 실패해 제거했다. 1번으로 검증 1회당 왕복이 이미 2회 안팎이라 얻는 것도 적었다.
+
+### 2차 측정 (같은 조건, 3회 중앙값, ms / 전송 호출)
+
+| 모드 | 단계 | 1차 후 | 2차 후 |
+|---|---|---:|---:|
+| server_only | cold | 3,667 / 272 | 2,692 / 208 |
+| server_only | warm | 2,331 / 153 | 1,390 / 92 |
+| server_only | 새 Micro 뒤 재빌드 후 | 2,561 / 170 | 1,582 / 104 |
+| mirror | cold | 3,684 / 337 | 2,679 / 272 |
+| mirror | warm | 2,340 / 153 | 1,400 / 92 |
+| mirror | 새 Micro 뒤 재빌드 후 | 2,585 / 171 | 1,599 / 105 |
+| plugin_only | 전 단계 | 변화 없음 | 변화 없음 |
+
+수정 전(cee7f55) 대비 server_only 새 턴 뒤 회상은 3,961ms → 1,582ms다. 모든 측정 회상이 `injected=true`, `verified`였다.
+
+회상 도중 이전 턴 Micro가 게시되는 경우: 수정 전 전달 실패(`LIBRA_GRAPH_CORPUS_SOURCE_CHANGED` → `PHYSICAL_READSET_STALE` → `RESOURCE_CLOSED` 순으로 세 겹이 막고 있었다), 수정 후 전달 성공. 신규 `tests/libra_recall_mid_micro_publication_test.cjs`는 HEAD에서 실패, 수정 후 3/3 통과.
+
+### 2차 검증
+
+LIBRA 회귀 40개 중 39개 통과. `libra_phase_d_v5_fault_semantic_recovery_test`, `libra_phase_d_v5_response_loss_recovery_test`, `libra_phase_d_v5_scope_chat_transition_recovery_test`는 수정 전 커밋에서도 간헐적으로 실패한다(각 3회 반복으로 확인). `libra_micro_state_admission_3mode`, `libra_phase_d_a05_action_matrix`, `libra_phase_d_v5_correction_race_recovery`, `libra_phase_d_v5_state_scope_commit_boundary`, `libra_source_edit_final_injection_3mode`, `libra_cold_start_3mode_parity`는 수정 전 커밋에서도 실패한다.
+
+남은 비용: cold 경로 전체 재투영(약 1.1~1.5초)과 회상당 owner proof 검증 3회. 실제 RisuAI에서 다른 기기·클라이언트가 같은 scope를 동시에 쓰는 경우는 시험하지 않았다.

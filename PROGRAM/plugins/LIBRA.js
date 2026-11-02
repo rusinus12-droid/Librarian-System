@@ -36987,7 +36987,9 @@ function createLibraReadonlySourceContext(owner) {
         if (serialized === null || serialized === undefined) state.memoryGraphKnownKeys.delete(storageKey);
         else state.memoryGraphKnownKeys.add(storageKey);
       } else {
-        state.memoryGraphCompiler?.invalidateAll();
+        // An owner write no longer revokes every in-flight recall readset. Delivery
+        // re-reads the records it actually consumed, so an unrelated write (such as a
+        // previous turn's Micro finishing mid-recall) no longer voids the recall.
         noteMemoryGraphSourceWrite(storageKey);
       }
       return true;
@@ -37013,7 +37015,9 @@ function createLibraReadonlySourceContext(owner) {
       if (String(storageKey || '').includes(':memory-graph:v1:')) {
         state.memoryGraphKnownKeys?.delete(storageKey);
       } else {
-        state.memoryGraphCompiler?.invalidateAll();
+        // An owner write no longer revokes every in-flight recall readset. Delivery
+        // re-reads the records it actually consumed, so an unrelated write (such as a
+        // previous turn's Micro finishing mid-recall) no longer voids the recall.
         noteMemoryGraphSourceWrite(storageKey);
       }
       return true;
@@ -37067,6 +37071,10 @@ function createLibraReadonlySourceContext(owner) {
         if(mode === 'mirror' && digest(local) !== digest(remote))throw new Error(`LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:${storageKey}`);
         return clone(mode === 'plugin_only' ? local : remote);
       };
+      // Owner heads are small. One read lease covers a whole server get-many batch
+      // (the SDK accepts 64 keys), so a verification pass costs ceil(keys/32) round
+      // trips instead of ceil(keys/4). The batch body is still byte-accounted.
+      const OWNER_GET_MANY_BATCH = 32;
       const frame = {
         owns: storageKey => string(storageKey).startsWith(prefix),
         async prefetch(storageKeys){
@@ -37078,7 +37086,7 @@ function createLibraReadonlySourceContext(owner) {
               Math.floor((access.pool.limits.ioBytes-access.pool.ioBytes)/access.limits.maxValueBytes),
               Math.floor((access.limits.maxSourceBytes-access.sourceBytes)/access.limits.maxValueBytes),
               access.pool.limits.reads-access.pool.reads)):4;
-            const part=keys.slice(offset,offset+batchSize);offset+=part.length;
+            const part=keys.slice(offset,offset+(mode==='plugin_only'?batchSize:OWNER_GET_MANY_BATCH));offset+=part.length;
             if(mode==='plugin_only'){
               for(const storageKey of part)if(!entries.has(storageKey))entries.set(storageKey,physical(storageKey));
               await Promise.all(part.map(storageKey=>entries.get(storageKey)));
@@ -37088,14 +37096,14 @@ function createLibraReadonlySourceContext(owner) {
             let retained;
             try{
               if(mode==='mirror')for(const storageKey of part)locals.set(storageKey,await account(()=>MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey)));
-              if(resources)for(const _ of part)reservations.push(resources.reserveRead('source'));
+              if(resources)reservations.push(resources.reserveRead('source'));
               const rows=await MemorySuiteStorageBridge.serverGetMany('plugin',part);
               state.memoryNetworkIO.ownerReads+=part.length*(mode==='mirror'?2:1);
               if(resources)retained=resources.retain(rows?.values,'owner_prefetch',2);
+              reservations[0]?.accept(part.map(storageKey=>rows?.values?.[storageKey]?.value??null));reservations[0]?.release();
               for(const [index,storageKey]of part.entries()){
                 if(!Object.hasOwn(rows?.values||{},storageKey))throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
                 const remote=rows.values[storageKey];
-                reservations[index]?.accept(remote?.value??null);reservations[index]?.release();
                 const entry={local:locals.get(storageKey)??null,remote};
                 if(resources)leases.push(resources.retain(entry,'owner_read_frame',2));
                 // An overlapping read owns its earlier observation. Never replace
@@ -37143,12 +37151,13 @@ function createLibraReadonlySourceContext(owner) {
               Math.floor((access.pool.limits.ioBytes-access.pool.ioBytes)/access.limits.maxValueBytes),
               Math.floor((access.limits.maxSourceBytes-access.sourceBytes)/access.limits.maxValueBytes),
               access.pool.limits.reads-access.pool.reads)) : 4;
-            const part = keys.slice(offset,offset+batchSize), reservations=[];
+            const part = keys.slice(offset,offset+(mode === 'plugin_only' ? batchSize : OWNER_GET_MANY_BATCH)), reservations=[];
             offset += part.length;
             let retained;
             try {
-              if(mode !== 'plugin_only' && resources)for(const _ of part)reservations.push(resources.reserveRead('source'));
+              if(mode !== 'plugin_only' && resources)reservations.push(resources.reserveRead('source'));
               const rows = mode === 'plugin_only' ? null : await MemorySuiteStorageBridge.serverGetMany('plugin',part);
+              if(rows){reservations[0]?.accept(part.map(storageKey=>rows.values?.[storageKey]?.value??null));reservations[0]?.release();}
               if(rows)state.memoryNetworkIO.ownerReads += part.length;
               // serverGetMany already resolves oversized keys individually.
               // Keep the held reservations through validation of those bodies.
@@ -37158,7 +37167,6 @@ function createLibraReadonlySourceContext(owner) {
                 if(rows){
                   if(!Object.hasOwn(rows.values||{},storageKey))throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
                   const current = rows.values[storageKey];
-                  reservations[index]?.accept(current?.value??null);reservations[index]?.release();
                   const pin = row => [row?.exists,row?.tombstone,row?.revision,row?.digest,row?.value??null];
                   if(stableReferenceJson(pin(current)) !== stableReferenceJson(pin(before.remote)))throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
                 }
@@ -76837,7 +76845,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
               },
               windows: liveWindows
             };
-            const verdict = state.memoryGraphInventory.verifyIncrementalSourceProofs(published, liveProof);
+            let verdict = state.memoryGraphInventory.verifyIncrementalSourceProofs(published, liveProof);
+            // A previous turn's Micro often finishes while this recall runs. A turn whose
+            // Micro was not verified when the corpus was read contributed nothing to it,
+            // so its new head cannot invalidate consumed evidence. Only delivery checks
+            // (commit) accept it; opening an index still requires an exact match.
+            if (phase === 'commit' && verdict.status !== 'verified') {
+              const appended = appendedOnlyMicroTurns(published, liveProof, verdict);
+              if (appended) verdict = { ...verdict, status: 'verified', mode: 'incremental_owner_proof_appended_micro', appendedMicroTurns: appended };
+            }
             // Shared records occur in every window. Semantic equality cannot authorize
             // older physical fingerprints. A fresh first window captures the new bytes
             // and refreshes shared projections while unchanged historical windows reuse
@@ -76854,11 +76870,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
                 return { ...verdict, status: 'stale_source', physicalSharedSourcesChanged: true,
                   reusableWindows: phase === 'build' ? verdict.reusableWindows.filter(index => index !== 0) : [], phase };
             }
-            return {
-              ...verdict,
-              phase,
-              collectedPatch: { scope }
-            };
+            return { ...verdict, phase, collectedPatch: { scope } };
           } finally {
             readFrame?.close();
             if (captured) ownerReadonlySourceContext.release({ handle: captured.handle, requestId });
@@ -76931,6 +76943,28 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // incremental path re-enumerates only changed windows; superseded pages are dropped
     // by starting fresh once the basis outgrows the last fresh build threefold.
     const VOLATILE_CORPUS_DELAY_MS = 1500;
+    // Returns the appended turns when the only difference is Micro heads that
+    // appeared for turns whose Micro was not verified in the published proof.
+    const appendedOnlyMicroTurns = (published, live, verdict) => {
+      if (verdict.frameChanged || verdict.windowCountChanged) return null;
+      if (asArray(verdict.changedFamilies).some(family => family !== 'micro')) return null;
+      if (published.turnPairsDigest !== live.turnPairsDigest || published.manifestDigest !== live.manifestDigest
+        || published.registryDigest !== live.registryDigest) return null;
+      const appended = [];
+      for (const [index, before] of asArray(published.windows).entries()) {
+        const after = live.windows[index], left = asArray(before?.microSlice), right = asArray(after?.microSlice);
+        if (!after || left.length !== right.length) return null;
+        if (stableReferenceJson(before.canonicalSlice) !== stableReferenceJson(after.canonicalSlice)) return null;
+        for (const [position, item] of left.entries()) {
+          const next = right[position];
+          if (Number(item?.turn) !== Number(next?.turn)) return null;
+          if (stableReferenceJson(item) === stableReferenceJson(next)) continue;
+          if (item?.status === 'verified') return null;
+          appended.push(Number(item.turn));
+        }
+      }
+      return appended.length ? appended : null;
+    };
     const volatileMemoryGraphCorpus = () => volatileCorpusRuntime || (volatileCorpusRuntime = {
       store: null, basis: null, basisScopeKey: '', freshChars: 0, scopeKey: '', generation: '', builtAt: 0, timer: null,
       running: null, yieldRequested: false, yields: 0, queriesInFlight: 0, interactiveReaders: 0, builds: 0, failures: 0,
@@ -77506,7 +77540,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
             try {
               if (semanticSettingsBinding && settingsBinding(await readSemanticConfig()) !== semanticSettingsBinding) return false;
               await corpusContext.owner.assertRoute();
-              for (const readSet of conditionalReadSets) await MemorySuiteStorageBridge.assertConditionalReadSet(readSet,{ readObserver: sourceReadObserver, readBatchSize: sourceReadBatchSize });
+              // With per-source body digests and known dependencies, the closing check
+              // below re-reads exactly the consumed records. The whole-corpus pin set would
+              // re-read every source and reject delivery when an unrelated record (such as
+              // a previous turn's Micro finishing mid-recall) changes.
+              const consumedOnlyCheck = hasIncrementalBodyDigests && Boolean(dependencies || verifyContext);
+              if (!consumedOnlyCheck) for (const readSet of conditionalReadSets) await MemorySuiteStorageBridge.assertConditionalReadSet(readSet,{ readObserver: sourceReadObserver, readBatchSize: sourceReadBatchSize });
               for(const dependency of nativeSemantic?.dependencies||[]){
                 if(!dependency.ownerBodyDigest||vectorReadbacks.has(dependency.key))continue;
                 const pin=storageMode!=='plugin_only'?await MemorySuiteStorageBridge.captureConditionalReadSet([dependency.key],{readObserver:sourceReadObserver}):null;
