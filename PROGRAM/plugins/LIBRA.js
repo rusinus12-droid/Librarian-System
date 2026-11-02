@@ -37026,6 +37026,10 @@ function createLibraReadonlySourceContext(owner) {
       if (!volatileState || !String(storageKey || '').startsWith(PREFIX + ':scope:')) return;
       // Derived Micro vectors are not graph source records.
       if (/^[^]*?:micro-vector:[^:]+:[^:]+$/.test(String(storageKey))) return;
+      // Each recall arms its live boundary before querying. That request-lifecycle
+      // record is never projected; dropping the index for it sent every recall
+      // after a new turn back to a full cold build. Source proofs still decide.
+      if (/:pending-live-boundaries:v1$/.test(String(storageKey))) return;
       volatileState.sourceWrites = (volatileState.sourceWrites || 0) + 1;
       volatileState.consecutiveSourceChangeRetries = 0;
       if (volatileState.store) Object.assign(volatileState, { store: null, scopeKey: '', generation: '' });
@@ -76921,10 +76925,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const volatileStoreChars = store => { let chars = 0; for (const value of store.values()) chars += String(value).length; return chars; };
     const yieldVolatileMemoryGraphCorpusBuild = async () => {
       const volatileState = volatileMemoryGraphCorpus();
+      // A pending or running build is deferred, not cancelled: the yielded build's
+      // catch path does not reschedule, and nothing else would rebuild the index
+      // until the next owner write, so every later recall would stay cold.
+      const deferred = Boolean(volatileState.timer || volatileState.running);
       clearTimeout(volatileState.timer); volatileState.timer = null;
-      if (!volatileState.running) return;
-      volatileState.yieldRequested = true;
-      try { await volatileState.running; } catch (_) { /* The yielded build is discarded. */ }
+      if (volatileState.running) {
+        volatileState.yieldRequested = true;
+        try { await volatileState.running; } catch (_) { /* The yielded build is discarded. */ }
+      }
+      // The timer re-checks active readers when it fires and waits for them.
+      if (deferred && !state.disposed && !volatileState.store) scheduleVolatileMemoryGraphCorpus();
     };
     const scheduleVolatileMemoryGraphCorpus = (delayMs = VOLATILE_CORPUS_DELAY_MS) => {
       if (state.disposed) return;
