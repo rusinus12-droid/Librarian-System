@@ -1,0 +1,29 @@
+{
+  "schema": "librarian.risu-h06-replay.v1",
+  "scenarioId": "H06-07",
+  "title": "UI Re-entry / Reload With Incomplete Job & Durable Pin Protection",
+  "sourceSpecification": "PROGRAM/docs/HOST_MODEL_VALIDATION_06.md",
+  "evidenceBoundary": {
+    "actualRisuAiGuiExecuted": false,
+    "actualWebViewIframeExecuted": false,
+    "liveExternalModelExecuted": false,
+    "syntheticDeterministicFixture": true,
+    "containsUserRpData": false
+  },
+  "hostPrimitivesUsed": [
+    "pluginStorage",
+    "getLocalPluginStorage",
+    "onUnload"
+  ],
+  "fixture": {
+    "scopeId": "char:c-h06-07|chat:s-h06-07",
+    "pendingJobId": "job-h06-07-incomplete",
+    "pinnedRecordKeys": ["pin:job-h06-07:staging-1"],
+    "unreferencedOrphanKeys": ["orphan:expired-1"]
+  },
+  "expectedContract": {
+    "preservesManualConfirmationAcrossReload": true,
+    "gcPreservesActiveJobPins": true,
+    "gcRemovesExpiredUnreferencedOrphansOnly": true
+  }
+}

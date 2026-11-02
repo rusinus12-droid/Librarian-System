@@ -1,0 +1,3269 @@
+{
+  "schema": "librarian.risu-api-surface.v1",
+  "repository": "kwaroran/Risuai",
+  "commit": "ea61945f9038e0189807d075f55f4e66ab7e98bf",
+  "sourceFiles": {
+    "declarations": "src/ts/plugins/apiV3/risuai.d.ts",
+    "implementation": "src/ts/plugins/apiV3/v3.svelte.ts"
+  },
+  "trackedAliases": [
+    "Risuai",
+    "RisuAI",
+    "risuai",
+    "risuApi",
+    "risuAPI"
+  ],
+  "apis": {
+    "addPluginChannelListener": {
+      "name": "addPluginChannelListener",
+      "kind": "method",
+      "requiredArgs": 2,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "channelName",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "callback",
+          "optional": false,
+          "type": "Function",
+          "callbackShape": "Function"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "addRisuChatListener": {
+      "name": "addRisuChatListener",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "mode",
+          "optional": false,
+          "type": "'output'"
+        },
+        {
+          "name": "func",
+          "optional": true,
+          "type": "(arg: ChatOutputListenerArg) => void | Promise<void>",
+          "callbackShape": "(arg: ChatOutputListenerArg) => void | Promise<void>"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra"
+      ]
+    },
+    "addRisuReplacer": {
+      "name": "addRisuReplacer",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "type",
+          "optional": false,
+          "type": "'beforeRequest'"
+        },
+        {
+          "name": "func",
+          "optional": true,
+          "type": "(messages: OpenAIChat[], type: string) => OpenAIChat[] | Promise<OpenAIChat[]>",
+          "callbackShape": "(messages: OpenAIChat[], type: string) => OpenAIChat[] | Promise<OpenAIChat[]>"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "overloads": [
+        {
+          "parameters": [
+            {
+              "name": "type",
+              "optional": false,
+              "type": "'beforeRequest'"
+            },
+            {
+              "name": "func",
+              "optional": true,
+              "type": "(messages: OpenAIChat[], type: string) => OpenAIChat[] | Promise<OpenAIChat[]>",
+              "callbackShape": "(messages: OpenAIChat[], type: string) => OpenAIChat[] | Promise<OpenAIChat[]>"
+            }
+          ],
+          "returnType": "Promise<void>"
+        },
+        {
+          "parameters": [
+            {
+              "name": "type",
+              "optional": false,
+              "type": "'afterRequest'"
+            },
+            {
+              "name": "func",
+              "optional": true,
+              "type": "(content: string, type: string) => string | Promise<string>",
+              "callbackShape": "(content: string, type: string) => string | Promise<string>"
+            }
+          ],
+          "returnType": "Promise<void>"
+        }
+      ],
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "libra"
+      ]
+    },
+    "addRisuScriptHandler": {
+      "name": "addRisuScriptHandler",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "mode",
+          "optional": false,
+          "type": "ScriptMode"
+        },
+        {
+          "name": "func",
+          "optional": true,
+          "type": "(content: string) => string | null | undefined | Promise<string | null | undefined>",
+          "callbackShape": "(content: string) => string | null | undefined | Promise<string | null | undefined>"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "libra"
+      ]
+    },
+    "alertError": {
+      "name": "alertError",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "msg",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": false,
+      "implementedInV3": true,
+      "owners": [
+        "gradia"
+      ]
+    },
+    "apiVersion": {
+      "name": "apiVersion",
+      "kind": "property",
+      "type": "string",
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "hayaku",
+        "libra",
+        "retrace"
+      ]
+    },
+    "getArg": {
+      "name": "getArg",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "arg",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "any",
+      "returnsPromise": false,
+      "deprecated": true,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "getArgument": {
+      "name": "getArgument",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "key",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<string | number | undefined>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "getChar": {
+      "name": "getChar",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<any>",
+      "returnsPromise": true,
+      "deprecated": true,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "getCharacter": {
+      "name": "getCharacter",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<any>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "getCharacterFromIndex": {
+      "name": "getCharacterFromIndex",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "index",
+          "optional": false,
+          "type": "number"
+        }
+      ],
+      "returnType": "Promise<any|null>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "getChatFromIndex": {
+      "name": "getChatFromIndex",
+      "kind": "method",
+      "requiredArgs": 2,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "characterIndex",
+          "optional": false,
+          "type": "number"
+        },
+        {
+          "name": "chatIndex",
+          "optional": false,
+          "type": "number"
+        }
+      ],
+      "returnType": "Promise<any|null>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "getColorScheme": {
+      "name": "getColorScheme",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<{ name: string; scheme: ColorScheme }>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "hayaku",
+        "libra"
+      ]
+    },
+    "getCurrentCharacterIndex": {
+      "name": "getCurrentCharacterIndex",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<number>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "getCurrentChatIndex": {
+      "name": "getCurrentChatIndex",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<number>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "getDatabase": {
+      "name": "getDatabase",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "includeOnly",
+          "optional": true,
+          "type": "string[]|'all'"
+        }
+      ],
+      "returnType": "Promise<DatabaseSubset|null>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "getLocalPluginStorage": {
+      "name": "getLocalPluginStorage",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<SafeLocalPluginStorage>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "subMethods": {
+        "getItem": {
+          "name": "getItem",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            }
+          ],
+          "returnType": "Promise<T | null>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "setItem": {
+          "name": "setItem",
+          "kind": "method",
+          "requiredArgs": 2,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "optional": false,
+              "type": "T"
+            }
+          ],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "removeItem": {
+          "name": "removeItem",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            }
+          ],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "keys": {
+          "name": "keys",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<string[]>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "clear": {
+          "name": "clear",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        }
+      },
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "getRootDocument": {
+      "name": "getRootDocument",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<SafeDocument>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "gradia",
+        "lia"
+      ]
+    },
+    "getRuntimeInfo": {
+      "name": "getRuntimeInfo",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<{ apiVersion: string; platform: string; saveMethod: string; }>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "hideContainer": {
+      "name": "hideContainer",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "nativeFetch": {
+      "name": "nativeFetch",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "url",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "options",
+          "optional": true,
+          "type": "RequestInit"
+        }
+      ],
+      "returnType": "Promise<Response>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "onUnload": {
+      "name": "onUnload",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "func",
+          "optional": true,
+          "type": "() => void | Promise<void>",
+          "callbackShape": "() => void | Promise<void>"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "pluginStorage": {
+      "name": "pluginStorage",
+      "kind": "namespace",
+      "type": "PluginStorage",
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "subMethods": {
+        "getItem": {
+          "name": "getItem",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            }
+          ],
+          "returnType": "Promise<any | null>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "setItem": {
+          "name": "setItem",
+          "kind": "method",
+          "requiredArgs": 2,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "optional": false,
+              "type": "any"
+            }
+          ],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "removeItem": {
+          "name": "removeItem",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            }
+          ],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "clear": {
+          "name": "clear",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "key": {
+          "name": "key",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "index",
+              "optional": false,
+              "type": "number"
+            }
+          ],
+          "returnType": "Promise<any | null>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "keys": {
+          "name": "keys",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<string[]>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "length": {
+          "name": "length",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<number>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        }
+      },
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "postPluginChannelMessage": {
+      "name": "postPluginChannelMessage",
+      "kind": "method",
+      "requiredArgs": 3,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "pluginName",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "channelName",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "message",
+          "optional": false,
+          "type": "any"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "readImage": {
+      "name": "readImage",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "path",
+          "optional": true,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<any>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "lia"
+      ]
+    },
+    "registerBodyIntercepter": {
+      "name": "registerBodyIntercepter",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "callback",
+          "optional": true,
+          "type": "(body: any, type: string) => any",
+          "callbackShape": "(body: any, type: string) => any"
+        }
+      ],
+      "returnType": "Promise<{ id: string } | null>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "hayaku"
+      ]
+    },
+    "registerButton": {
+      "name": "registerButton",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "arg",
+          "optional": false,
+          "type": "{ name: string, icon: string, iconType: 'html'|'img'|'none', location?: 'action'|'chat'|'hamburger', id?: string }"
+        },
+        {
+          "name": "callback",
+          "optional": true,
+          "type": "() => void",
+          "callbackShape": "() => void"
+        }
+      ],
+      "returnType": "Promise<UIPartResponse>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "registerSetting": {
+      "name": "registerSetting",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 4,
+      "parameters": [
+        {
+          "name": "name",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "callback",
+          "optional": true,
+          "type": "() => void | Promise<void>",
+          "callbackShape": "() => void | Promise<void>"
+        },
+        {
+          "name": "icon",
+          "optional": true,
+          "type": "string"
+        },
+        {
+          "name": "iconType",
+          "optional": true,
+          "type": "IconType"
+        },
+        {
+          "name": "id",
+          "optional": true,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<UIPartResponse>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "removeRisuChatListener": {
+      "name": "removeRisuChatListener",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "mode",
+          "optional": false,
+          "type": "'output'"
+        },
+        {
+          "name": "func",
+          "optional": true,
+          "type": "(arg: ChatOutputListenerArg) => void | Promise<void>",
+          "callbackShape": "(arg: ChatOutputListenerArg) => void | Promise<void>"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra"
+      ]
+    },
+    "removeRisuReplacer": {
+      "name": "removeRisuReplacer",
+      "kind": "method",
+      "requiredArgs": 2,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "type",
+          "optional": false,
+          "type": "ReplacerType"
+        },
+        {
+          "name": "func",
+          "optional": false,
+          "type": "Function",
+          "callbackShape": "Function"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra"
+      ]
+    },
+    "removeRisuScriptHandler": {
+      "name": "removeRisuScriptHandler",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "mode",
+          "optional": false,
+          "type": "ScriptMode"
+        },
+        {
+          "name": "func",
+          "optional": true,
+          "type": "(content: string) => string | null | undefined | Promise<string | null | undefined>",
+          "callbackShape": "(content: string) => string | null | undefined | Promise<string | null | undefined>"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra"
+      ]
+    },
+    "requestPluginPermission": {
+      "name": "requestPluginPermission",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "permission",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<boolean>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "libra"
+      ]
+    },
+    "risuFetch": {
+      "name": "risuFetch",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "url",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "options",
+          "optional": true,
+          "type": "any"
+        }
+      ],
+      "returnType": "Promise<any>",
+      "returnsPromise": true,
+      "deprecated": true,
+      "declaredInDts": false,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "runLLMModel": {
+      "name": "runLLMModel",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "options",
+          "optional": false,
+          "type": "{ messages: any[]; staticModel?: string; mode: string; allowPlugins?: boolean; }"
+        }
+      ],
+      "returnType": "Promise<any>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "hayaku",
+        "libra"
+      ]
+    },
+    "safeLocalStorage": {
+      "name": "safeLocalStorage",
+      "kind": "namespace",
+      "type": "SafeLocalStorage",
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "subMethods": {
+        "getItem": {
+          "name": "getItem",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            }
+          ],
+          "returnType": "Promise<string | null>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "setItem": {
+          "name": "setItem",
+          "kind": "method",
+          "requiredArgs": 2,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "optional": false,
+              "type": "string"
+            }
+          ],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "removeItem": {
+          "name": "removeItem",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            }
+          ],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "clear": {
+          "name": "clear",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "key": {
+          "name": "key",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "index",
+              "optional": false,
+              "type": "number"
+            }
+          ],
+          "returnType": "Promise<string | null>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "keys": {
+          "name": "keys",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<string[]>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "length": {
+          "name": "length",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<number>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        }
+      },
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "saveAsset": {
+      "name": "saveAsset",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "data",
+          "optional": false,
+          "type": "any"
+        }
+      ],
+      "returnType": "Promise<string>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "lia"
+      ]
+    },
+    "setArg": {
+      "name": "setArg",
+      "kind": "method",
+      "requiredArgs": 2,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "arg",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "optional": false,
+          "type": "string | number"
+        }
+      ],
+      "returnType": "void",
+      "returnsPromise": false,
+      "deprecated": true,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "setArgument": {
+      "name": "setArgument",
+      "kind": "method",
+      "requiredArgs": 2,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "key",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "optional": false,
+          "type": "string | number"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "setCharacter": {
+      "name": "setCharacter",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "character",
+          "optional": false,
+          "type": "any"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "retrace"
+      ]
+    },
+    "setCharacterToIndex": {
+      "name": "setCharacterToIndex",
+      "kind": "method",
+      "requiredArgs": 2,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "index",
+          "optional": false,
+          "type": "number"
+        },
+        {
+          "name": "character",
+          "optional": false,
+          "type": "any"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "retrace"
+      ]
+    },
+    "setChatToIndex": {
+      "name": "setChatToIndex",
+      "kind": "method",
+      "requiredArgs": 3,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "characterIndex",
+          "optional": false,
+          "type": "number"
+        },
+        {
+          "name": "chatIndex",
+          "optional": false,
+          "type": "number"
+        },
+        {
+          "name": "chat",
+          "optional": false,
+          "type": "any"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "gradia",
+        "lia"
+      ]
+    },
+    "setDatabase": {
+      "name": "setDatabase",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "db",
+          "optional": false,
+          "type": "DatabaseSubset"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "lia"
+      ]
+    },
+    "showContainer": {
+      "name": "showContainer",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "mode",
+          "optional": false,
+          "type": "ContainerMode"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    },
+    "unregisterBodyIntercepter": {
+      "name": "unregisterBodyIntercepter",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "id",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "hayaku"
+      ]
+    },
+    "unregisterUIPart": {
+      "name": "unregisterUIPart",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "id",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "owners": [
+        "flashback",
+        "gradia",
+        "hayaku",
+        "lia",
+        "libra",
+        "retrace"
+      ]
+    }
+  },
+  "hostSurface": {
+    "apiVersion": {
+      "name": "apiVersion",
+      "kind": "property",
+      "type": "string",
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "apiVersionCompatibleWith": {
+      "name": "apiVersionCompatibleWith",
+      "kind": "property",
+      "type": "string[]",
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "log": {
+      "name": "log",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "message",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": true,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "showContainer": {
+      "name": "showContainer",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "mode",
+          "optional": false,
+          "type": "ContainerMode"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "hideContainer": {
+      "name": "hideContainer",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "getRootDocument": {
+      "name": "getRootDocument",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<SafeDocument>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "createMutationObserver": {
+      "name": "createMutationObserver",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "callback",
+          "optional": false,
+          "type": "SafeMutationCallback",
+          "callbackShape": "SafeMutationCallback"
+        }
+      ],
+      "returnType": "Promise<SafeMutationObserver>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "getCharacter": {
+      "name": "getCharacter",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<any>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "setCharacter": {
+      "name": "setCharacter",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "character",
+          "optional": false,
+          "type": "any"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "getChar": {
+      "name": "getChar",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<any>",
+      "returnsPromise": true,
+      "deprecated": true,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "setChar": {
+      "name": "setChar",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "character",
+          "optional": false,
+          "type": "any"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": true,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "getCharacterFromIndex": {
+      "name": "getCharacterFromIndex",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "index",
+          "optional": false,
+          "type": "number"
+        }
+      ],
+      "returnType": "Promise<any|null>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "setCharacterToIndex": {
+      "name": "setCharacterToIndex",
+      "kind": "method",
+      "requiredArgs": 2,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "index",
+          "optional": false,
+          "type": "number"
+        },
+        {
+          "name": "character",
+          "optional": false,
+          "type": "any"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "getChatFromIndex": {
+      "name": "getChatFromIndex",
+      "kind": "method",
+      "requiredArgs": 2,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "characterIndex",
+          "optional": false,
+          "type": "number"
+        },
+        {
+          "name": "chatIndex",
+          "optional": false,
+          "type": "number"
+        }
+      ],
+      "returnType": "Promise<any|null>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "parseRisuChat": {
+      "name": "parseRisuChat",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "text",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "options",
+          "optional": true,
+          "type": "{ messageIndex?: number; role?: string; processRegex?: boolean; runVar?: boolean; rmVar?: boolean; tokenizeAccurate?: boolean; cbsConditions?: { firstmsg?: boolean; chatRole?: string; }; }"
+        }
+      ],
+      "returnType": "Promise<string>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "setChatToIndex": {
+      "name": "setChatToIndex",
+      "kind": "method",
+      "requiredArgs": 3,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "characterIndex",
+          "optional": false,
+          "type": "number"
+        },
+        {
+          "name": "chatIndex",
+          "optional": false,
+          "type": "number"
+        },
+        {
+          "name": "chat",
+          "optional": false,
+          "type": "any"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "getCurrentCharacterIndex": {
+      "name": "getCurrentCharacterIndex",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<number>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "getCurrentChatIndex": {
+      "name": "getCurrentChatIndex",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<number>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "getCurrentLorebookEntries": {
+      "name": "getCurrentLorebookEntries",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<any[]>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "pluginStorage": {
+      "name": "pluginStorage",
+      "kind": "namespace",
+      "type": "PluginStorage",
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "subMethods": {
+        "getItem": {
+          "name": "getItem",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            }
+          ],
+          "returnType": "Promise<any | null>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "setItem": {
+          "name": "setItem",
+          "kind": "method",
+          "requiredArgs": 2,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "optional": false,
+              "type": "any"
+            }
+          ],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "removeItem": {
+          "name": "removeItem",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            }
+          ],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "clear": {
+          "name": "clear",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "key": {
+          "name": "key",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "index",
+              "optional": false,
+              "type": "number"
+            }
+          ],
+          "returnType": "Promise<any | null>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "keys": {
+          "name": "keys",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<string[]>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "length": {
+          "name": "length",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<number>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        }
+      }
+    },
+    "safeLocalStorage": {
+      "name": "safeLocalStorage",
+      "kind": "namespace",
+      "type": "SafeLocalStorage",
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "subMethods": {
+        "getItem": {
+          "name": "getItem",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            }
+          ],
+          "returnType": "Promise<string | null>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "setItem": {
+          "name": "setItem",
+          "kind": "method",
+          "requiredArgs": 2,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "optional": false,
+              "type": "string"
+            }
+          ],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "removeItem": {
+          "name": "removeItem",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            }
+          ],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "clear": {
+          "name": "clear",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "key": {
+          "name": "key",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "index",
+              "optional": false,
+              "type": "number"
+            }
+          ],
+          "returnType": "Promise<string | null>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "keys": {
+          "name": "keys",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<string[]>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "length": {
+          "name": "length",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<number>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        }
+      }
+    },
+    "getLocalPluginStorage": {
+      "name": "getLocalPluginStorage",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<SafeLocalPluginStorage>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true,
+      "subMethods": {
+        "getItem": {
+          "name": "getItem",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            }
+          ],
+          "returnType": "Promise<T | null>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "setItem": {
+          "name": "setItem",
+          "kind": "method",
+          "requiredArgs": 2,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "optional": false,
+              "type": "T"
+            }
+          ],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "removeItem": {
+          "name": "removeItem",
+          "kind": "method",
+          "requiredArgs": 1,
+          "optionalArgs": 0,
+          "parameters": [
+            {
+              "name": "key",
+              "optional": false,
+              "type": "string"
+            }
+          ],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "keys": {
+          "name": "keys",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<string[]>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        },
+        "clear": {
+          "name": "clear",
+          "kind": "method",
+          "requiredArgs": 0,
+          "optionalArgs": 0,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "returnsPromise": true,
+          "deprecated": false,
+          "declaredInDts": true
+        }
+      }
+    },
+    "getArgument": {
+      "name": "getArgument",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "key",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<string | number | undefined>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "setArgument": {
+      "name": "setArgument",
+      "kind": "method",
+      "requiredArgs": 2,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "key",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "optional": false,
+          "type": "string | number"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "getArg": {
+      "name": "getArg",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "arg",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "any",
+      "returnsPromise": false,
+      "deprecated": true,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "setArg": {
+      "name": "setArg",
+      "kind": "method",
+      "requiredArgs": 2,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "arg",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "optional": false,
+          "type": "string | number"
+        }
+      ],
+      "returnType": "void",
+      "returnsPromise": false,
+      "deprecated": true,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "getDatabase": {
+      "name": "getDatabase",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "includeOnly",
+          "optional": true,
+          "type": "string[]|'all'"
+        }
+      ],
+      "returnType": "Promise<DatabaseSubset|null>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "setDatabaseLite": {
+      "name": "setDatabaseLite",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "db",
+          "optional": false,
+          "type": "Omit<DatabaseSubset, 'plugins'>"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "setDatabase": {
+      "name": "setDatabase",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "db",
+          "optional": false,
+          "type": "DatabaseSubset"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "changeColorScheme": {
+      "name": "changeColorScheme",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "name",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "setColorScheme": {
+      "name": "setColorScheme",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "scheme",
+          "optional": false,
+          "type": "ColorScheme"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "getColorScheme": {
+      "name": "getColorScheme",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<{ name: string; scheme: ColorScheme }>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "changeTextTheme": {
+      "name": "changeTextTheme",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "name",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "setCustomTextTheme": {
+      "name": "setCustomTextTheme",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "theme",
+          "optional": false,
+          "type": "CustomTextTheme"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "getTextTheme": {
+      "name": "getTextTheme",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<{ name: string; customTheme: CustomTextTheme }>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "nativeFetch": {
+      "name": "nativeFetch",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "url",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "options",
+          "optional": true,
+          "type": "RequestInit"
+        }
+      ],
+      "returnType": "Promise<Response>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "saveSecretHeader": {
+      "name": "saveSecretHeader",
+      "kind": "method",
+      "requiredArgs": 3,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "key",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "prefix",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "optional": false,
+          "type": "string|string[]"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "registerSetting": {
+      "name": "registerSetting",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 4,
+      "parameters": [
+        {
+          "name": "name",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "callback",
+          "optional": true,
+          "type": "() => void | Promise<void>",
+          "callbackShape": "() => void | Promise<void>"
+        },
+        {
+          "name": "icon",
+          "optional": true,
+          "type": "string"
+        },
+        {
+          "name": "iconType",
+          "optional": true,
+          "type": "IconType"
+        },
+        {
+          "name": "id",
+          "optional": true,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<UIPartResponse>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "registerButton": {
+      "name": "registerButton",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "arg",
+          "optional": false,
+          "type": "{ name: string, icon: string, iconType: 'html'|'img'|'none', location?: 'action'|'chat'|'hamburger', id?: string }"
+        },
+        {
+          "name": "callback",
+          "optional": true,
+          "type": "() => void",
+          "callbackShape": "() => void"
+        }
+      ],
+      "returnType": "Promise<UIPartResponse>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "unregisterUIPart": {
+      "name": "unregisterUIPart",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "id",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "registerMCP": {
+      "name": "registerMCP",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 2,
+      "parameters": [
+        {
+          "name": "arg",
+          "optional": false,
+          "type": "{ identifier: string; name: string; version: string; description: string; }"
+        },
+        {
+          "name": "getToolList",
+          "optional": true,
+          "type": "() => Promise<MCPToolDef[]>",
+          "callbackShape": "() => Promise<MCPToolDef[]>"
+        },
+        {
+          "name": "callTool",
+          "optional": true,
+          "type": "(toolName: string, content: any) => Promise<MCPToolCallContent[]>",
+          "callbackShape": "(toolName: string, content: any) => Promise<MCPToolCallContent[]>"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "unregisterMCP": {
+      "name": "unregisterMCP",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "identifier",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "addProvider": {
+      "name": "addProvider",
+      "kind": "method",
+      "requiredArgs": 2,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "name",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "func",
+          "optional": false,
+          "type": "ProviderFunction"
+        },
+        {
+          "name": "options",
+          "optional": true,
+          "type": "ProviderOptions"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "addTTSPreprocessor": {
+      "name": "addTTSPreprocessor",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "func",
+          "optional": true,
+          "type": "(ctx: BeforeTTSContext) => Promise<BeforeTTSResult | void> | BeforeTTSResult | void",
+          "callbackShape": "(ctx: BeforeTTSContext) => Promise<BeforeTTSResult | void> | BeforeTTSResult | void"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "addTTSPostprocessor": {
+      "name": "addTTSPostprocessor",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "func",
+          "optional": true,
+          "type": "(ctx: AfterTTSContext) => Promise<AfterTTSResult | void> | AfterTTSResult | void",
+          "callbackShape": "(ctx: AfterTTSContext) => Promise<AfterTTSResult | void> | AfterTTSResult | void"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "addRisuScriptHandler": {
+      "name": "addRisuScriptHandler",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "mode",
+          "optional": false,
+          "type": "ScriptMode"
+        },
+        {
+          "name": "func",
+          "optional": true,
+          "type": "(content: string) => string | null | undefined | Promise<string | null | undefined>",
+          "callbackShape": "(content: string) => string | null | undefined | Promise<string | null | undefined>"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "removeRisuScriptHandler": {
+      "name": "removeRisuScriptHandler",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "mode",
+          "optional": false,
+          "type": "ScriptMode"
+        },
+        {
+          "name": "func",
+          "optional": true,
+          "type": "(content: string) => string | null | undefined | Promise<string | null | undefined>",
+          "callbackShape": "(content: string) => string | null | undefined | Promise<string | null | undefined>"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "addRisuReplacer": {
+      "name": "addRisuReplacer",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "type",
+          "optional": false,
+          "type": "'beforeRequest'"
+        },
+        {
+          "name": "func",
+          "optional": true,
+          "type": "(messages: OpenAIChat[], type: string) => OpenAIChat[] | Promise<OpenAIChat[]>",
+          "callbackShape": "(messages: OpenAIChat[], type: string) => OpenAIChat[] | Promise<OpenAIChat[]>"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "overloads": [
+        {
+          "parameters": [
+            {
+              "name": "type",
+              "optional": false,
+              "type": "'beforeRequest'"
+            },
+            {
+              "name": "func",
+              "optional": true,
+              "type": "(messages: OpenAIChat[], type: string) => OpenAIChat[] | Promise<OpenAIChat[]>",
+              "callbackShape": "(messages: OpenAIChat[], type: string) => OpenAIChat[] | Promise<OpenAIChat[]>"
+            }
+          ],
+          "returnType": "Promise<void>"
+        },
+        {
+          "parameters": [
+            {
+              "name": "type",
+              "optional": false,
+              "type": "'afterRequest'"
+            },
+            {
+              "name": "func",
+              "optional": true,
+              "type": "(content: string, type: string) => string | Promise<string>",
+              "callbackShape": "(content: string, type: string) => string | Promise<string>"
+            }
+          ],
+          "returnType": "Promise<void>"
+        }
+      ],
+      "implementedInV3": true
+    },
+    "removeRisuReplacer": {
+      "name": "removeRisuReplacer",
+      "kind": "method",
+      "requiredArgs": 2,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "type",
+          "optional": false,
+          "type": "ReplacerType"
+        },
+        {
+          "name": "func",
+          "optional": false,
+          "type": "Function",
+          "callbackShape": "Function"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "addRisuChatListener": {
+      "name": "addRisuChatListener",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "mode",
+          "optional": false,
+          "type": "'output'"
+        },
+        {
+          "name": "func",
+          "optional": true,
+          "type": "(arg: ChatOutputListenerArg) => void | Promise<void>",
+          "callbackShape": "(arg: ChatOutputListenerArg) => void | Promise<void>"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "removeRisuChatListener": {
+      "name": "removeRisuChatListener",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "mode",
+          "optional": false,
+          "type": "'output'"
+        },
+        {
+          "name": "func",
+          "optional": true,
+          "type": "(arg: ChatOutputListenerArg) => void | Promise<void>",
+          "callbackShape": "(arg: ChatOutputListenerArg) => void | Promise<void>"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "registerBodyIntercepter": {
+      "name": "registerBodyIntercepter",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "callback",
+          "optional": true,
+          "type": "(body: any, type: string) => any",
+          "callbackShape": "(body: any, type: string) => any"
+        }
+      ],
+      "returnType": "Promise<{ id: string } | null>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "unregisterBodyIntercepter": {
+      "name": "unregisterBodyIntercepter",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "id",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "readImage": {
+      "name": "readImage",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "path",
+          "optional": true,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<any>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "readInlay": {
+      "name": "readInlay",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "id",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<InlayAssetForPlugin | null>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "saveAsset": {
+      "name": "saveAsset",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "data",
+          "optional": false,
+          "type": "any"
+        }
+      ],
+      "returnType": "Promise<string>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "loadPlugins": {
+      "name": "loadPlugins",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "onUnload": {
+      "name": "onUnload",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "func",
+          "optional": true,
+          "type": "() => void | Promise<void>",
+          "callbackShape": "() => void | Promise<void>"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "getFetchLogs": {
+      "name": "getFetchLogs",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<{ url: string; body: string; status?: number; response?: string; error?: string; timestamp: number; }[]|null>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "checkCharOrder": {
+      "name": "checkCharOrder",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "getRuntimeInfo": {
+      "name": "getRuntimeInfo",
+      "kind": "method",
+      "requiredArgs": 0,
+      "optionalArgs": 0,
+      "parameters": [],
+      "returnType": "Promise<{ apiVersion: string; platform: string; saveMethod: string; }>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "requestPluginPermission": {
+      "name": "requestPluginPermission",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "permission",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<boolean>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "unwarpSafeArray": {
+      "name": "unwarpSafeArray",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "safeArray",
+          "optional": false,
+          "type": "SafeClassArray<T>"
+        }
+      ],
+      "returnType": "Promise<T[]>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": false
+    },
+    "searchTranslationCache": {
+      "name": "searchTranslationCache",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "partialKey",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<{key: string, value: string}[]>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "getTranslationCache": {
+      "name": "getTranslationCache",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "key",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<string | null>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "addPluginChannelListener": {
+      "name": "addPluginChannelListener",
+      "kind": "method",
+      "requiredArgs": 2,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "channelName",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "callback",
+          "optional": false,
+          "type": "Function",
+          "callbackShape": "Function"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "postPluginChannelMessage": {
+      "name": "postPluginChannelMessage",
+      "kind": "method",
+      "requiredArgs": 3,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "pluginName",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "channelName",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "message",
+          "optional": false,
+          "type": "any"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "runLLMModel": {
+      "name": "runLLMModel",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "options",
+          "optional": false,
+          "type": "{ messages: any[]; staticModel?: string; mode: string; allowPlugins?: boolean; }"
+        }
+      ],
+      "returnType": "Promise<any>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "sendChat": {
+      "name": "sendChat",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "message",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": true,
+      "implementedInV3": true
+    },
+    "risuFetch": {
+      "name": "risuFetch",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 1,
+      "parameters": [
+        {
+          "name": "url",
+          "optional": false,
+          "type": "string"
+        },
+        {
+          "name": "options",
+          "optional": true,
+          "type": "any"
+        }
+      ],
+      "returnType": "Promise<any>",
+      "returnsPromise": true,
+      "deprecated": true,
+      "declaredInDts": false,
+      "implementedInV3": true
+    },
+    "alertError": {
+      "name": "alertError",
+      "kind": "method",
+      "requiredArgs": 1,
+      "optionalArgs": 0,
+      "parameters": [
+        {
+          "name": "msg",
+          "optional": false,
+          "type": "string"
+        }
+      ],
+      "returnType": "Promise<void>",
+      "returnsPromise": true,
+      "deprecated": false,
+      "declaredInDts": false,
+      "implementedInV3": true
+    }
+  },
+  "allowlistedOptionalProbes": {
+    "addEventListener": {
+      "owners": [
+        "gradia",
+        "lia",
+        "libra"
+      ],
+      "guard": "typeof api?.addEventListener === \"function\"",
+      "reason": "Optional legacy event target probe when onUnload is absent."
+    },
+    "deletePluginStorage": {
+      "owners": [
+        "retrace"
+      ],
+      "guard": "typeof g.deletePluginStorage === \"function\"",
+      "reason": "Legacy v1 storage adapter probe in LibrarianIntegrityCore fallback."
+    },
+    "deleteStorage": {
+      "owners": [
+        "retrace"
+      ],
+      "guard": "typeof g.deleteStorage === \"function\"",
+      "reason": "Legacy v1 storage adapter probe in LibrarianIntegrityCore fallback."
+    },
+    "getChat": {
+      "owners": [
+        "retrace"
+      ],
+      "guard": "typeof direct?.getChat === \"function\"",
+      "reason": "Optional legacy chat getter probe; RisuAI v3 uses getChatFromIndex(characterIndex, chatIndex)."
+    },
+    "getCurrentChat": {
+      "owners": [
+        "retrace"
+      ],
+      "guard": "typeof chatApi?.getCurrentChat === \"function\"",
+      "reason": "Optional legacy chat getter probe; RisuAI v3 uses getChatFromIndex(characterIndex, chatIndex)."
+    },
+    "getPluginStorage": {
+      "owners": [
+        "libra",
+        "retrace"
+      ],
+      "guard": "typeof g.getPluginStorage === \"function\"",
+      "reason": "Legacy v1 storage adapter probe in LibrarianIntegrityCore fallback."
+    },
+    "getStorage": {
+      "owners": [
+        "retrace"
+      ],
+      "guard": "typeof g.getStorage === \"function\"",
+      "reason": "Legacy v1 storage adapter probe in LibrarianIntegrityCore fallback."
+    },
+    "pluginStorageDelete": {
+      "owners": [
+        "retrace"
+      ],
+      "guard": "typeof g.pluginStorageDelete === \"function\"",
+      "reason": "Legacy v1 storage adapter probe in LibrarianIntegrityCore fallback."
+    },
+    "pluginStorageGet": {
+      "owners": [
+        "retrace"
+      ],
+      "guard": "typeof g.pluginStorageGet === \"function\"",
+      "reason": "Legacy v1 storage adapter probe in LibrarianIntegrityCore fallback."
+    },
+    "pluginStorageSet": {
+      "owners": [
+        "retrace"
+      ],
+      "guard": "typeof g.pluginStorageSet === \"function\"",
+      "reason": "Legacy v1 storage adapter probe in LibrarianIntegrityCore fallback."
+    },
+    "promptInput": {
+      "owners": [
+        "gradia"
+      ],
+      "guard": "typeof promptApi?.promptInput === \"function\"",
+      "reason": "Optional fork prompt modal probe in GRADIA; falls back to GRADIA in-container composer."
+    },
+    "removePluginChannelListener": {
+      "owners": [
+        "flashback",
+        "libra"
+      ],
+      "guard": "typeof api?.removePluginChannelListener === \"function\"",
+      "reason": "Optional fork/legacy IPC cleanup probe; RisuAI v3 unregisters channel listeners automatically via addPluginUnloadCallback."
+    },
+    "setPluginStorage": {
+      "owners": [
+        "libra",
+        "retrace"
+      ],
+      "guard": "typeof g.setPluginStorage === \"function\"",
+      "reason": "Legacy v1 storage adapter probe in LibrarianIntegrityCore fallback."
+    },
+    "setStorage": {
+      "owners": [
+        "retrace"
+      ],
+      "guard": "typeof g.setStorage === \"function\"",
+      "reason": "Legacy v1 storage adapter probe in LibrarianIntegrityCore fallback."
+    },
+    "unregisterButton": {
+      "owners": [
+        "libra"
+      ],
+      "guard": "typeof api?.unregisterButton === \"function\"",
+      "reason": "Optional legacy UI unregistration probe; RisuAI v3 uses unregisterUIPart(id)."
+    },
+    "unregisterPluginChannelListener": {
+      "owners": [
+        "flashback",
+        "libra"
+      ],
+      "guard": "typeof api?.unregisterPluginChannelListener === \"function\"",
+      "reason": "Optional fork/legacy IPC cleanup probe; RisuAI v3 unregisters channel listeners automatically via addPluginUnloadCallback."
+    },
+    "unregisterSetting": {
+      "owners": [
+        "libra"
+      ],
+      "guard": "typeof api?.unregisterSetting === \"function\"",
+      "reason": "Optional legacy UI unregistration probe; RisuAI v3 uses unregisterUIPart(id)."
+    }
+  },
+  "allowlistedDynamicDispatches": [
+    {
+      "helperPattern": "methods.every(name => !name || typeof api?.[name] === \"function\")",
+      "description": "Capability resolver checking a caller-supplied list of required RisuAI method names (all literal call sites are statically extracted)."
+    },
+    {
+      "helperPattern": "typeof candidate[methodName] === \"function\"",
+      "description": "Storage SDK / host helper invoking a method name from a fixed literal candidate list (e.g. [\"getArgument\", \"getArg\"])."
+    }
+  ]
+}

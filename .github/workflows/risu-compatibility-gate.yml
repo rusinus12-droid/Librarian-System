@@ -1,0 +1,15 @@
+name: RisuAI Compatibility Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  risu-compatibility-gate:
+    name: risu-compatibility-gate
+    uses: ./.github/workflows/_risu-compatibility-check.yml

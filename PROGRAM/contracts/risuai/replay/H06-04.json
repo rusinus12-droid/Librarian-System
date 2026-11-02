@@ -1,0 +1,32 @@
+{
+  "schema": "librarian.risu-h06-replay.v1",
+  "scenarioId": "H06-04",
+  "title": "Portable Archive Fresh Install Without Source Session",
+  "sourceSpecification": "PROGRAM/docs/HOST_MODEL_VALIDATION_06.md",
+  "evidenceBoundary": {
+    "actualRisuAiGuiExecuted": false,
+    "actualWebViewIframeExecuted": false,
+    "liveExternalModelExecuted": false,
+    "syntheticDeterministicFixture": true,
+    "containsUserRpData": false
+  },
+  "hostPrimitivesUsed": [
+    "getCharacterFromIndex",
+    "getChatFromIndex",
+    "pluginStorage"
+  ],
+  "fixture": {
+    "sourceSessionPresentInHost": false,
+    "archiveOriginScopeId": "char:origin-c0|chat:origin-s0",
+    "freshTargetScopeId": "char:fresh-c1|chat:fresh-s1",
+    "bundleRecords": [
+      { "id": "rec-1", "turnRange": [1, 5], "summary": "Synthetic portable canonical record 1" }
+    ]
+  },
+  "expectedContract": {
+    "verifiesPortableBundleDigest": true,
+    "rebindsToFreshTargetIdentity": true,
+    "preservesCorrectionAndSplitReplay": true,
+    "doesNotRequireOriginScopeInHost": true
+  }
+}

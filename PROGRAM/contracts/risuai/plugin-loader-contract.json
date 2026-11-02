@@ -1,0 +1,146 @@
+{
+  "schema": "librarian.risu-plugin-loader-contract.v1",
+  "repository": "kwaroran/Risuai",
+  "commit": "ea61945f9038e0189807d075f55f4e66ab7e98bf",
+  "sourceFile": "src/ts/plugins/plugins.svelte.ts",
+  "implementationFingerprint": "b093bdc2bec1ede98477817bba49d4c68b51e8fbe5a2332e0c8aabbb13c6a82a",
+  "headerDirectives": {
+    "//@name": {
+      "required": true,
+      "nonEmpty": true
+    },
+    "//@api": {
+      "required": true,
+      "supportedVersions": [
+        "3.0"
+      ],
+      "rejectedOnInstall": [
+        "2.0",
+        "2.1"
+      ]
+    },
+    "//@version": {
+      "requiredWhenUpdateUrlPresent": true,
+      "minVersion": "0.0.1",
+      "maxByteOffsetInImportPlugin": 500,
+      "updateCheckRangeHeaderBytes": 512
+    },
+    "//@display-name": {
+      "required": false,
+      "nonEmptyWhenPresent": true
+    },
+    "//@arg": {
+      "aliases": [
+        "//@arg",
+        "//@risu-arg"
+      ],
+      "allowedTypes": [
+        "int",
+        "string"
+      ],
+      "defaultValues": {
+        "int": 0,
+        "string": ""
+      }
+    },
+    "//@allowed-ipc": {
+      "required": false,
+      "spaceSeparatedPeerNames": true,
+      "accumulatesAcrossLines": true
+    },
+    "//@update-url": {
+      "required": false,
+      "requiredProtocol": "https:"
+    },
+    "//@link": {
+      "required": false,
+      "requiredPrefix": "https"
+    }
+  },
+  "minifiedArtifactPreservation": {
+    "mustPreserveAllSourceDirectives": true,
+    "mustKeepVersionWithinFirst500Bytes": true
+  },
+  "shippedPlugins": {
+    "hayaku": {
+      "owner": "hayaku",
+      "file": "HAYAKU_Locator_Continuity.js",
+      "pluginName": "hayaku_locator_continuity",
+      "displayName": "HAYAKU · Locator Continuity v3.3.11",
+      "apiVersion": "3.0",
+      "hasUpdateUrl": true,
+      "hasVersionDirective": true,
+      "allowedIPC": [
+        "serial_gradation_agents_for_rp",
+        "flashback_hayaku_bridge"
+      ]
+    },
+    "flashback": {
+      "owner": "flashback",
+      "file": "Flashback_Memory.js",
+      "pluginName": "flashback_memory",
+      "displayName": "⚡ FLASHBACK Memory v1.3.16",
+      "apiVersion": "3.0",
+      "hasUpdateUrl": true,
+      "hasVersionDirective": true,
+      "allowedIPC": [
+        "serial_gradation_agents_for_rp",
+        "flashback_hayaku_bridge"
+      ]
+    },
+    "libra": {
+      "owner": "libra",
+      "file": "LIBRA.js",
+      "pluginName": "libra",
+      "displayName": "LIBRA v2.6.15",
+      "apiVersion": "3.0",
+      "hasUpdateUrl": true,
+      "hasVersionDirective": true,
+      "allowedIPC": [
+        "serial_gradation_agents_for_rp",
+        "flashback_hayaku_bridge"
+      ]
+    },
+    "lia": {
+      "owner": "lia",
+      "file": "LIA_Persona_Linker.js",
+      "pluginName": "lia_persona_linker",
+      "displayName": "LIA: Persona Linker",
+      "apiVersion": "3.0",
+      "hasUpdateUrl": true,
+      "hasVersionDirective": true,
+      "allowedIPC": [
+        "flashback_hayaku_bridge"
+      ]
+    },
+    "retrace": {
+      "owner": "retrace",
+      "file": "RETRACE.js",
+      "pluginName": "flashback_hayaku_bridge",
+      "displayName": "RE:TRACE",
+      "apiVersion": "3.0",
+      "hasUpdateUrl": true,
+      "hasVersionDirective": true,
+      "allowedIPC": [
+        "libra",
+        "flashback_memory",
+        "hayaku_locator_continuity",
+        "lia_persona_linker"
+      ]
+    },
+    "gradia": {
+      "owner": "gradia",
+      "file": "GRADIA.js",
+      "pluginName": "serial_gradation_agents_for_rp",
+      "displayName": "GRADIA v0.28.13",
+      "apiVersion": "3.0",
+      "hasUpdateUrl": true,
+      "hasVersionDirective": true,
+      "allowedIPC": [
+        "libra",
+        "hayaku_locator_continuity",
+        "flashback_memory"
+      ]
+    }
+  }
+}

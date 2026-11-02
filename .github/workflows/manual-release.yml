@@ -4,8 +4,15 @@ on:
   workflow_dispatch:
 
 jobs:
+  risu-compatibility-gate:
+    name: risu-compatibility-gate
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/_risu-compatibility-check.yml
+
   manual-release:
     name: manual-release
+    needs:
+      - risu-compatibility-gate
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency:
@@ -176,6 +183,11 @@ jobs:
             PROGRAM/tests/distribution_updater_migration_file_test.cjs \
             PROGRAM/tests/remote_update_release_zip_runtime_test.cjs
 
+      - name: Verify RisuAI Compatibility Gate against version-bumped release artifacts
+        run: |
+          node PROGRAM/tools/risu_compatibility_gate.cjs \
+            --report "$RUNNER_TEMP/librarian-release/risu-compatibility-report.json"
+
       - name: Commit release version
         if: env.RELEASE_PHASE == 'prepare'
         run: |
@@ -305,6 +317,7 @@ jobs:
             ${{ runner.temp }}/librarian-release/*.zip
             ${{ runner.temp }}/librarian-release/*.build-report.json
             ${{ runner.temp }}/librarian-release/*.GITHUB_RELEASE_INFO.txt
+            ${{ runner.temp }}/librarian-release/risu-compatibility-report.json
           if-no-files-found: error
 
       - name: Upload failure diagnostics
@@ -315,6 +328,7 @@ jobs:
           path: |
             ${{ runner.temp }}/librarian-release/*.failed-*.json
             ${{ runner.temp }}/librarian-release/*.build-report.json
+            ${{ runner.temp }}/librarian-release/risu-compatibility-report.json
           if-no-files-found: ignore
 
       - name: Write job summary

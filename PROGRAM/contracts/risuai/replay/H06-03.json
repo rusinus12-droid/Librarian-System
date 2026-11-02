@@ -1,0 +1,35 @@
+{
+  "schema": "librarian.risu-h06-replay.v1",
+  "scenarioId": "H06-03",
+  "title": "Plugin IPC A->B->C RE:TRACE Handoff & Ancestor Immutability",
+  "sourceSpecification": "PROGRAM/docs/HOST_MODEL_VALIDATION_06.md",
+  "evidenceBoundary": {
+    "actualRisuAiGuiExecuted": false,
+    "actualWebViewIframeExecuted": false,
+    "liveExternalModelExecuted": false,
+    "syntheticDeterministicFixture": true,
+    "containsUserRpData": false
+  },
+  "hostPrimitivesUsed": [
+    "addPluginChannelListener",
+    "postPluginChannelMessage",
+    "pluginStorage"
+  ],
+  "fixture": {
+    "coordinatorPlugin": "flashback_hayaku_bridge",
+    "ownerPlugins": ["libra", "hayaku_locator_continuity", "flashback_memory", "lia_persona_linker"],
+    "sessions": ["session-A", "session-B", "session-C"],
+    "deltasBySession": {
+      "session-A": { "t0Seed": "synthetic-seed-t0", "t5Delta": "synthetic-delta-A-t5" },
+      "session-B": { "inheritedFrom": "session-A", "t5Delta": "synthetic-delta-B-t5" },
+      "session-C": { "inheritedFrom": "session-B", "t5Delta": "synthetic-delta-C-t5" }
+    }
+  },
+  "expectedContract": {
+    "mutualAllowedIpcRequired": true,
+    "callbackReceivesSenderAndChannel": true,
+    "ancestorsImmutableDuringHandoff": true,
+    "appendsNewDeltaOnly": true,
+    "distinguishesT0AndEachSessionT5": true
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "schema": "librarian.risu-upstream-lock.v1",
+  "repository": "kwaroran/Risuai",
+  "commit": "ea61945f9038e0189807d075f55f4e66ab7e98bf",
+  "files": {
+    "src/ts/plugins/apiV3/risuai.d.ts": "ddca6852e1e655afe9ed229ad95f0bb3c815b01ee75f089db779401d7cc43a3a",
+    "src/ts/plugins/apiV3/v3.svelte.ts": "9e4df9238965375dbccebf6eb8fb06117b1d9f866c20e4b40c263b55a4a0a40b",
+    "src/ts/plugins/plugins.svelte.ts": "c9441c23f84d53e0c4304fa8d96afe11d8883ff29579fedb65ad7956d97b5461",
+    "src/ts/plugins/pluginSafeClass.ts": "9a8de9a6565aacf5bf60d1fa2ea0ddb6d70b63323f60e71e466ce3823cdcdbf9",
+    "src/ts/process/pluginStorageStore.ts": "55d1394f04dfa0c2dc76fd2b0d5981be3fd728ba05cf3912b29ba6aeacb154ca"
+  }
+}

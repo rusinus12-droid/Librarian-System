@@ -1,0 +1,77 @@
+{
+  "schema": "librarian.risu-ipc-contract.v1",
+  "repository": "kwaroran/Risuai",
+  "commit": "ea61945f9038e0189807d075f55f4e66ab7e98bf",
+  "sourceFiles": [
+    "src/ts/plugins/apiV3/v3.svelte.ts",
+    "src/ts/plugins/plugins.svelte.ts"
+  ],
+  "implementationFingerprints": {
+    "addPluginChannelListener": "4b77c3b5581df8a25b0104d21ad3cc20902314e59d2846f271a1aff8779ec4c5",
+    "postPluginChannelMessage": "30fda2062d5fbc08cec00614119e1c4d3ef41f34256655a0a60dfea1cbbb8541"
+  },
+  "semantics": {
+    "channelKeyFormula": "plugin.name + channelName",
+    "unloadAutoCleanup": true,
+    "requireReceiverExists": true,
+    "requireReceiverAllowsSender": true,
+    "requireSenderAllowsReceiver": true,
+    "callbackSecondArgShape": {
+      "sender": "string",
+      "channel": "string"
+    },
+    "preserveDirectivesInMinifiedArtifact": true
+  },
+  "plugins": {
+    "hayaku_locator_continuity": {
+      "owner": "hayaku",
+      "file": "HAYAKU_Locator_Continuity.js",
+      "allowedIPC": [
+        "serial_gradation_agents_for_rp",
+        "flashback_hayaku_bridge"
+      ]
+    },
+    "flashback_memory": {
+      "owner": "flashback",
+      "file": "Flashback_Memory.js",
+      "allowedIPC": [
+        "serial_gradation_agents_for_rp",
+        "flashback_hayaku_bridge"
+      ]
+    },
+    "libra": {
+      "owner": "libra",
+      "file": "LIBRA.js",
+      "allowedIPC": [
+        "serial_gradation_agents_for_rp",
+        "flashback_hayaku_bridge"
+      ]
+    },
+    "lia_persona_linker": {
+      "owner": "lia",
+      "file": "LIA_Persona_Linker.js",
+      "allowedIPC": [
+        "flashback_hayaku_bridge"
+      ]
+    },
+    "flashback_hayaku_bridge": {
+      "owner": "retrace",
+      "file": "RETRACE.js",
+      "allowedIPC": [
+        "libra",
+        "flashback_memory",
+        "hayaku_locator_continuity",
+        "lia_persona_linker"
+      ]
+    },
+    "serial_gradation_agents_for_rp": {
+      "owner": "gradia",
+      "file": "GRADIA.js",
+      "allowedIPC": [
+        "libra",
+        "hayaku_locator_continuity",
+        "flashback_memory"
+      ]
+    }
+  }
+}

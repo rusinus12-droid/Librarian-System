@@ -1,0 +1,29 @@
+{
+  "schema": "librarian.risu-h06-replay.v1",
+  "scenarioId": "H06-05",
+  "title": "Entity Split -> Source Transcript Edit -> Correction Abort",
+  "sourceSpecification": "PROGRAM/docs/HOST_MODEL_VALIDATION_06.md",
+  "evidenceBoundary": {
+    "actualRisuAiGuiExecuted": false,
+    "actualWebViewIframeExecuted": false,
+    "liveExternalModelExecuted": false,
+    "syntheticDeterministicFixture": true,
+    "containsUserRpData": false
+  },
+  "hostPrimitivesUsed": [
+    "getChatFromIndex",
+    "pluginStorage"
+  ],
+  "fixture": {
+    "scopeId": "char:c-h06-05|chat:s-h06-05",
+    "initialSourceDigest": "sha256:synthetic-basis-v1",
+    "mutatedSourceDigest": "sha256:synthetic-basis-v2-edited",
+    "canonicalBefore": { "entityId": "ent-1", "fact": "Original verified canonical fact" },
+    "proposedSplitPatch": { "sourceBasisDigest": "sha256:synthetic-basis-v1", "splitInto": ["ent-1a", "ent-1b"] }
+  },
+  "expectedContract": {
+    "rejectsStaleBasisAutoApproval": true,
+    "abortsCorrectionOnTranscriptDigestMismatch": true,
+    "preservesOriginalCanonicalState": true
+  }
+}
