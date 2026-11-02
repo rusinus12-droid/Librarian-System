@@ -464,17 +464,11 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
 
     const sanitizeHeaderToken = value => String(value || '').replace(/[\[\]\r\n|]/g, ' ').replace(/\s+/g, ' ').trim();
 
-    const derivedFromCanonical = new Set(
-      (graph.edges || []).filter(e => e.predicate === 'derived_from').map(e => e.from)
-    );
     const ordered = [...(queryResult.candidates || [])].sort((a, b) => {
       if (policy.includeMandatoryLore && a.mandatoryInclusion !== b.mandatoryInclusion) {
         return a.mandatoryInclusion ? -1 : 1;
       }
-      return b.score - a.score
-        || Number(derivedFromCanonical.has(a.nodeId)) - Number(derivedFromCanonical.has(b.nodeId))
-        || (a.family === 'canonical' ? 0 : 1) - (b.family === 'canonical' ? 0 : 1)
-        || a.nodeId.localeCompare(b.nodeId, 'en');
+      return b.score - a.score || a.nodeId.localeCompare(b.nodeId, 'en');
     });
 
     const autoMap = buildAutoCorrespondenceMap(ordered, graph, unitByNodeId);
