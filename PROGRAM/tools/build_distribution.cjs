@@ -171,7 +171,8 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'remote_update_migration_sigkill_recovery_test.cjs',
   'remote_update_updater_bootstrap_test.cjs',
   'remote_update_updater_external_target_test.cjs',
-  'remote_update_real_server_runtime_test.cjs'
+  'remote_update_real_server_runtime_test.cjs',
+  'memory_injection_presentation_v1_test.cjs'
 ]);
 const PRIVATE_DATA_PATTERN = /(?:^|\/)(?:runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|scope-catalog(?:\.[^/]*)?\.json|[^/]+\.(?:sqlite(?:-(?:wal|shm))?|db|jsonl|log))(?:$|\/)/i;
 // Accepted synthetic source fixtures only; never a general SQLite/private-data exception.

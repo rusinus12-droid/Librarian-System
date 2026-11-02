@@ -35276,7 +35276,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   const sceneBatonPacketState = packet => {
     const materialized = materializeExtractedPacket(packet);
-    const parsed = safeJsonParse(materialized?.raw || '', null);
+    const parsed = safeJsonParse(materialized?.raw || '', null) || (objectish(packet?.meta) && objectish(packet?.entity) ? packet : null);
     if (!objectish(parsed)) return null;
     const packetType = recoveryPacketTypeOf(parsed);
     if (isRecoveryPacketType(packetType)) return null;
@@ -35376,7 +35376,20 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           item.attire || item.outfit,
           ensureArray(item.carrying || item.carried || item.inventory).join(', ')
         ].filter(Boolean).join(' · ');
-        add('participant', `${labels.participant}: ${[name, state].filter(Boolean).join(' — ')}`);
+        const ownerLabel = name ? `[${name}]` : '';
+        add('participant', `${labels.participant}: ${[ownerLabel, state].filter(Boolean).join(' — ')}`);
+      });
+    packetItems(latest.entity.relations || latest.entity.relationships)
+      .slice(0, 2)
+      .forEach(relation => {
+        const item = itemObject(relation);
+        const from = item.from || item.subject || item.source || item.ownerEntityId || '';
+        const to = item.to || item.target || item.peer || '';
+        const relState = [item.status || item.state || item.dynamic || item.summary || item.text, item.trust, item.tension].filter(Boolean).join(' · ');
+        if (from && to && relState) {
+          const relHeader = language === 'en' ? 'Relationship (directional)' : '관계 방향';
+          add('relation', `${relHeader}: ${from} → ${to} — ${relState}`);
+        }
       });
     packetItems(latest.world.active_events || latest.world.activeEvents || latest.world.events)
       .slice(0, 2)
@@ -35388,15 +35401,24 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       ...packetItems(latest.planner.continuity_locks || latest.planner.continuityLocks),
       ...packetItems(latest.planner.do_not_resolve_yet || latest.planner.doNotResolveYet)
     ].slice(0, 3).forEach(lock => add('lock', `${labels.lock}: ${itemText(lock)}`));
-    packetItems(latest.entity.pov_memories || latest.entity.povMemories)
+    [
+      ...packetItems(latest.entity.pov_memories || latest.entity.povMemories),
+      ...packetItems(latest.entity.secrets)
+    ]
       .filter(memory => {
         const item = itemObject(memory);
-        return item.ownerEntityId && (item.privacy === 'private' || item.knowledgeState || item.knowledge_state);
+        return (item.ownerEntityId || ensureArray(item.holderEntityIds).length || ensureArray(item.deniedToEntityIds).length)
+          && (item.privacy === 'private' || item.privacy === 'secret' || item.knowledgeState || item.knowledge_state || ensureArray(item.deniedToEntityIds).length);
       })
-      .slice(0, 1)
+      .slice(0, 2)
       .forEach(memory => {
         const item = itemObject(memory);
-        add('knowledge_boundary', `${labels.boundary}: ${item.ownerEntityId} — ${item.summary || item.text || 'private knowledge'}`);
+        const owner = item.ownerEntityId || ensureArray(item.holderEntityIds).join(', ') || 'restricted';
+        const denied = ensureArray(item.deniedToEntityIds).filter(Boolean).join(', ');
+        const deniedSuffix = denied
+          ? (language === 'en' ? ` (not known by: ${denied})` : ` (미인지: ${denied})`)
+          : (language === 'en' ? ' (other characters: unconfirmed)' : ' (타 인물 인지 미확인)');
+        add('knowledge_boundary', `${labels.boundary}: ${owner}${deniedSuffix} — ${item.summary || item.text || 'private knowledge'}`);
       });
     const cap = Math.max(320, Math.min(1000, Number(options?.capChars || 800) || 800));
     const lines = [labels.lead];
@@ -36187,10 +36209,21 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const truth = continuityEvidenceTruthOf(row);
     const timeScope = continuityEvidenceTimeScopeOf(row);
     const summaryCategory = /^(?:summarymemory|ledgerrev2summarymemory)$/.test(category);
-    if (CONTINUITY_EVIDENCE_KNOWLEDGE_CATEGORY_RE.test(category)) return CONTINUITY_EVIDENCE_LANES.knowledgeBoundaries;
     if (category === 'overpromotionrisk'
       || CONTINUITY_EVIDENCE_INVALID_STATUS_RE.test(status)
       || truth === 'false') return CONTINUITY_EVIDENCE_LANES.prohibitedInferences;
+    if (!category || category === 'sourceevidencefallback'
+      || CONTINUITY_EVIDENCE_UNCERTAIN_STATUS_RE.test(status)
+      || /^(?:contested|disputed|conflicting|unknown|uncertain|unverified)$/.test(truth)) {
+      return CONTINUITY_EVIDENCE_LANES.derivedSummaries;
+    }
+    if (CONTINUITY_EVIDENCE_KNOWLEDGE_CATEGORY_RE.test(category)) return CONTINUITY_EVIDENCE_LANES.knowledgeBoundaries;
+    const vis = objectish(row?.visibility) ? row.visibility : {};
+    if (!summaryCategory && (/^(?:private|secret|internal|sealed)$/.test(normalizeKey(vis.privacy || ''))
+      || /^(?:hidden|private|sealed)$/.test(normalizeKey(vis.revealState || ''))
+      || ensureArray(vis.deniedToEntityIds).some(v => text(v).trim()))) {
+      return CONTINUITY_EVIDENCE_LANES.knowledgeBoundaries;
+    }
     if (summaryCategory) {
       if (CONTINUITY_EVIDENCE_FUTURE_SCOPE_RE.test(timeScope)) return CONTINUITY_EVIDENCE_LANES.unresolvedConstraints;
       return CONTINUITY_EVIDENCE_LANES.derivedSummaries;
@@ -36206,23 +36239,24 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     if (CONTINUITY_EVIDENCE_EVENT_CATEGORY_RE.test(category)) {
       if (CONTINUITY_EVIDENCE_FUTURE_SCOPE_RE.test(timeScope)
-        || /^(?:planned|proposed|possible|pending|pendingfuture|contested|disputed|conflicting|uncertain)$/.test(status)
-        || /^(?:contested|disputed|conflicting|unknown|uncertain|unverified)$/.test(truth)) {
+        || /^(?:planned|proposed|possible|pending|pendingfuture)$/.test(status)) {
         return CONTINUITY_EVIDENCE_LANES.unresolvedConstraints;
       }
       return CONTINUITY_EVIDENCE_LANES.confirmedChanges;
     }
     if (CONTINUITY_EVIDENCE_STATE_CATEGORY_RE.test(category)) {
+      if (/^(?:priorsnapshotcurrentunconfirmed|historicalunspecified|unspecifiednotcurrent|unknown)$/.test(timeScope)) {
+        return CONTINUITY_EVIDENCE_LANES.derivedSummaries;
+      }
       if (continuityEvidenceIsInactive(row)
-        || CONTINUITY_EVIDENCE_INVALID_STATUS_RE.test(status)
-        || CONTINUITY_EVIDENCE_UNCERTAIN_STATUS_RE.test(status)
-        || /^(?:contested|disputed|conflicting|unknown|uncertain|unverified)$/.test(truth)
-        || CONTINUITY_EVIDENCE_FUTURE_SCOPE_RE.test(timeScope)
-        || /^(?:past|historical|archived|expired|prior|priorsnapshotcurrentunconfirmed|historicalunspecified)$/.test(timeScope)
-        || /^(?:prior_scene|prior_snapshot)/.test(text(row?.sceneRelation || ''))) return CONTINUITY_EVIDENCE_LANES.confirmedChanges;
+        || /^(?:past|historical|archived|expired|prior)$/.test(timeScope)
+        || /^(?:prior_scene|prior_snapshot)/.test(text(row?.sceneRelation || ''))) {
+        return CONTINUITY_EVIDENCE_LANES.confirmedChanges;
+      }
+      if (CONTINUITY_EVIDENCE_FUTURE_SCOPE_RE.test(timeScope)) return CONTINUITY_EVIDENCE_LANES.unresolvedConstraints;
       return CONTINUITY_EVIDENCE_LANES.latestState;
     }
-    return CONTINUITY_EVIDENCE_LANES.confirmedChanges;
+    return CONTINUITY_EVIDENCE_LANES.derivedSummaries;
   };
 
   const continuityEvidenceStrictTimeInfo = row => {
@@ -36425,6 +36459,57 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const right = continuityEvidenceObservationRank(rightRow);
     return !left.epoch || !right.epoch || left.epoch === right.epoch;
   };
+  const formatHayakuVisibilityBoundaryLine = (row = {}, language = 'ko') => {
+    const boundary = objectish(row?.visibility) ? row.visibility : {};
+    const category = continuityEvidenceCategoryOf(row);
+    const ownerRaw = text(boundary.ownerEntityId || '').trim();
+    const holdersRaw = ensureArray(boundary.holderEntityIds).map(v => text(v).trim()).filter(Boolean);
+    const visibleRaw = ensureArray(boundary.visibleToEntityIds).map(v => text(v).trim()).filter(Boolean);
+    const deniedRaw = ensureArray(boundary.deniedToEntityIds).map(v => text(v).trim()).filter(Boolean);
+    const privacy = normalizeKey(boundary.privacy || '');
+    const revealState = normalizeKey(boundary.revealState || '');
+    const truthState = normalizeKey(boundary.truthState || '');
+    const isRestrictedPrivacy = /^(?:private|secret|internal|sealed|restricted)$/.test(privacy)
+      || /^(?:hidden|private|sealed|hinted)$/.test(revealState);
+    const hasKnowledgeCategory = CONTINUITY_EVIDENCE_KNOWLEDGE_CATEGORY_RE.test(category);
+    const hasExplicitBoundary = Boolean(
+      ownerRaw || holdersRaw.length || visibleRaw.length || deniedRaw.length
+      || isRestrictedPrivacy
+      || (hasKnowledgeCategory && privacy && privacy !== 'public')
+      || /^(?:false|contested|disputed|unknown|uncertain|unverified)$/.test(truthState)
+    );
+    if (!hasExplicitBoundary) return '';
+    const humanName = ref => {
+      const cleaned = modelMemoryHumanEntityName(ref, language);
+      return cleaned || text(ref).replace(/^(?:char|entity|person|npc)_/i, '').trim() || text(ref).trim();
+    };
+    const owner = ownerRaw ? humanName(ownerRaw) : '';
+    const knownBy = uniq([...holdersRaw, ...visibleRaw, ...(ownerRaw && (isRestrictedPrivacy || hasKnowledgeCategory) ? [ownerRaw] : [])].map(humanName).filter(Boolean), 8);
+    const deniedTo = uniq(deniedRaw.map(humanName).filter(Boolean), 8);
+    const parts = [];
+    if (language === 'en') {
+      if (owner) parts.push(`owner: ${owner}`);
+      if (knownBy.length) parts.push(`known by: ${knownBy.join(', ')}`);
+      if (deniedTo.length) parts.push(`not known by: ${deniedTo.join(', ')}`);
+      if (isRestrictedPrivacy || deniedTo.length || hasKnowledgeCategory) {
+        parts.push(`boundary(${privacy || revealState || 'restricted'}): awareness of other characters is unconfirmed; do not assume shared knowledge`);
+      }
+      if (/^(?:false|contested|disputed|unknown|uncertain|unverified)$/.test(truthState)) {
+        parts.push(`certainty: ${truthState}`);
+      }
+      return parts.length ? `  [knowledge_boundary ${parts.join(' | ')}]` : '';
+    }
+    if (owner) parts.push(`주체: ${owner}`);
+    if (knownBy.length) parts.push(`인지 인물: ${knownBy.join(', ')}`);
+    if (deniedTo.length) parts.push(`미인지(차단) 인물: ${deniedTo.join(', ')}`);
+    if (isRestrictedPrivacy || deniedTo.length || hasKnowledgeCategory) {
+      parts.push(`경계(${privacy || revealState || 'restricted'}): 명시된 인물 외 타 인물의 인지 여부는 미확인(자동 공유 금지)`);
+    }
+    if (/^(?:false|contested|disputed|unknown|uncertain|unverified)$/.test(truthState)) {
+      parts.push(`확실성: ${truthState}`);
+    }
+    return parts.length ? `  [지식경계 ${parts.join(' | ')}]` : '';
+  };
   const packetCoreRecallEntryFromRow = (axis,row,query='',viewContext={},options={}) => {
     const body=localRecallBody(row);if(!body)return null;
     const language=modelMemoryViewLanguage(row,body),sourceKey=packetCoreRecallSourceKey(row);
@@ -36432,8 +36517,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const boundary=row.visibility||{};
     const metadata={source:row.id||row.publicRef||sourceKey,at:ordinal,messageIndex:row.locator?.messageIndex??null,status:row.lifecycle?.status||'unspecified',
       ...(Object.keys(boundary).length?{visibility:boundary}:{})};
-    const memory='- '+body+'\n  [record '+JSON.stringify(metadata)+']';
-    return {axis,row,memory,language,localSourceEntry:true,continuityLane:CONTINUITY_EVIDENCE_LANES.derivedSummaries,
+    const boundaryLine=formatHayakuVisibilityBoundaryLine(row,language);
+    const memory='- '+body+(boundaryLine?'\n'+boundaryLine:'')+'\n  [record '+JSON.stringify(metadata)+']';
+    const overrideLane=text(options?.laneOverride||'').trim();
+    const semanticLane=continuityEvidenceLaneFor(axis,row,options);
+    return {axis,row,memory,language,localSourceEntry:true,
+      continuityLane:CONTINUITY_EVIDENCE_LANE_ORDER.includes(overrideLane)?overrideLane:CONTINUITY_EVIDENCE_LANES.derivedSummaries,
+      semanticLane,
       prefix:'',clauses:[body],extras:[],bodyKey:normalizeKey(body),lineKey:memory,boundaryKey:packetCoreRecallBoundaryKey(row),
       tokens:localRecallWords(body),entities:[],semanticKeys:[],sourceKeys:sourceKey?[sourceKey]:[],sourceRows:[{axis,row}],mergedDuplicates:0};
   };
@@ -36712,7 +36802,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const priority=candidates.length?Math.min(...candidates.map(c=>c.priorityRank)):2;
       return {id:'entry:'+stableHash64(origins.map(o=>hayakuEvidenceRowId(o.row)).sort().join('|')+'\n'+entry.memory),entry,origins,
         rowIds:origins.map(o=>hayakuEvidenceRowId(o.row)),priority,weight:candidates.length?Math.max(...candidates.filter(c=>c.priorityRank===priority).map(c=>c.weight)):Number(entry.row?.score||0),
-        lane:entry.continuityLane,body:entry.memory};
+        lane:entry.continuityLane,semanticLane:entry.semanticLane||continuityEvidenceLaneFor(entry.axis,entry.row),body:entry.memory};
     });
     for(const record of ensureArray(selected?.partialMemoryEvidence)){
       if(!text(record?.text||'').trim())continue;
@@ -36727,6 +36817,23 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const language=configured==='source'?(assessed[0]?.language||inferMemoryNoteLanguage(units.find(u=>u.raw)?.body||'')||'en'):configured;
     const value={query,policyKey,metadata,policy,units,requirements,language,rejected};hayakuEvidencePreparations.set(selected,value);return value;
   };
+  const effectiveHayakuRenderLane = unit => {
+    const explicit = text(unit?.lane || '').trim();
+    if (explicit && explicit !== CONTINUITY_EVIDENCE_LANES.derivedSummaries && CONTINUITY_EVIDENCE_LANE_ORDER.includes(explicit)) return explicit;
+    const semantic = text(unit?.semanticLane || unit?.entry?.semanticLane || '').trim();
+    if (semantic && CONTINUITY_EVIDENCE_LANE_ORDER.includes(semantic)) return semantic;
+    const origin = unit?.entry || unit?.origins?.[0] || {};
+    const computed = continuityEvidenceLaneFor(origin.axis || origin.row?.axis, origin.row || {});
+    return CONTINUITY_EVIDENCE_LANE_ORDER.includes(computed) ? computed : CONTINUITY_EVIDENCE_LANES.derivedSummaries;
+  };
+  const HAYAKU_RENDER_LANE_ORDER = Object.freeze([
+    CONTINUITY_EVIDENCE_LANES.derivedSummaries,
+    CONTINUITY_EVIDENCE_LANES.latestState,
+    CONTINUITY_EVIDENCE_LANES.confirmedChanges,
+    CONTINUITY_EVIDENCE_LANES.unresolvedConstraints,
+    CONTINUITY_EVIDENCE_LANES.knowledgeBoundaries,
+    CONTINUITY_EVIDENCE_LANES.prohibitedInferences
+  ]);
   const renderHayakuEvidencePlan = plan => {
     const structured=plan.units.filter(u=>!u.raw&&!u.partial),raw=plan.units.filter(u=>u.raw),partial=plan.units.filter(u=>u.partial);
     const locale=MODEL_MEMORY_VIEW_LOCALES[plan.language]||MODEL_MEMORY_VIEW_LOCALES.ko;
@@ -36735,8 +36842,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const append=value=>{body+=(body?'\n':'')+value;};
     if(structured.length){
       append(locale.contextLead);
-      for(const lane of CONTINUITY_EVIDENCE_LANE_ORDER){
-        const members=structured.filter(u=>u.lane===lane);if(!members.length)continue;
+      const hasDerived=structured.some(u=>effectiveHayakuRenderLane(u)===CONTINUITY_EVIDENCE_LANES.derivedSummaries);
+      if(!hasDerived){
+        append('');append(CONTINUITY_EVIDENCE_LANE_HEADERS[CONTINUITY_EVIDENCE_LANES.derivedSummaries]);
+      }
+      for(const lane of HAYAKU_RENDER_LANE_ORDER){
+        const members=structured.filter(u=>effectiveHayakuRenderLane(u)===lane);if(!members.length)continue;
         append('');append(CONTINUITY_EVIDENCE_LANE_HEADERS[lane]);
         for(const unit of members){const start=body.length+1;append(unit.body);fragments.push({id:unit.id,start,end:body.length,rowIds:unit.rowIds});}
       }
