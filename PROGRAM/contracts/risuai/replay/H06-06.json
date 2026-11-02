@@ -1,0 +1,32 @@
+{
+  "schema": "librarian.risu-h06-replay.v1",
+  "scenarioId": "H06-06",
+  "title": "Selective Range Reanalysis & Mid-Execution Chat Switch Fencing",
+  "sourceSpecification": "PROGRAM/docs/HOST_MODEL_VALIDATION_06.md",
+  "evidenceBoundary": {
+    "actualRisuAiGuiExecuted": false,
+    "actualWebViewIframeExecuted": false,
+    "liveExternalModelExecuted": false,
+    "syntheticDeterministicFixture": true,
+    "containsUserRpData": false
+  },
+  "hostPrimitivesUsed": [
+    "getCurrentCharacterIndex",
+    "getCurrentChatIndex",
+    "getChatFromIndex",
+    "runLLMModel",
+    "pluginStorage"
+  ],
+  "fixture": {
+    "initialChatIndex": 0,
+    "switchedChatIndex": 1,
+    "selectedTurnRange": [6, 10],
+    "totalTurns": 15,
+    "grantEpoch": 1
+  },
+  "expectedContract": {
+    "dispatchesSelectedRangeOnly": true,
+    "blocksStaleGrantAfterCancel": true,
+    "blocksCrossScopeCommitAfterChatSwitch": true
+  }
+}

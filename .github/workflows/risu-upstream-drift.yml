@@ -1,0 +1,88 @@
+name: RisuAI Upstream Drift Monitor
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: 'RisuAI upstream branch or commit to compare against pinned contract'
+        required: false
+        type: string
+        default: 'main'
+
+jobs:
+  risu-upstream-drift:
+    name: risu-upstream-drift
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out Librarian repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pinned build dependencies
+        run: npm ci --prefix PROGRAM/build-support
+
+      - name: Check out RisuAI upstream target ref (sparse)
+        uses: actions/checkout@v4
+        with:
+          repository: kwaroran/Risuai
+          ref: ${{ inputs.upstream_ref || 'main' }}
+          path: .risuai-upstream-head
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: |
+            src/ts/plugins/apiV3/risuai.d.ts
+            src/ts/plugins/apiV3/v3.svelte.ts
+            src/ts/plugins/plugins.svelte.ts
+            src/ts/plugins/pluginSafeClass.ts
+            src/ts/process/pluginStorageStore.ts
+
+      - name: Run RisuAI upstream contract drift analysis
+        id: drift
+        run: |
+          mkdir -p "$RUNNER_TEMP/risu-drift"
+          node PROGRAM/tools/risu_contract_verifier.cjs \
+            --upstream-dir ".risuai-upstream-head" \
+            --drift-check \
+            > "$RUNNER_TEMP/risu-drift/drift-report.json"
+          cat "$RUNNER_TEMP/risu-drift/drift-report.json"
+          node -e '
+          const fs = require("node:fs");
+          const report = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/risu-drift/drift-report.json", "utf8"));
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `status=${report.status}\n`);
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
+            "# RisuAI Upstream Drift Monitor",
+            "",
+            `- **Pinned Commit**: \`${report.pinnedCommit || report.lockedCommit}\``,
+            `- **Status**: \`${report.status}\``,
+            `- **Changed Tracked Files**: \`${(report.changedFiles || []).length}\``,
+            `- **Missing Used APIs**: \`${(report.missingUsedApis || []).length}\``,
+            `- **Signature Changes**: \`${(report.signatureChanges || []).length}\``,
+            `- **Semantic Unit Drift**: \`${(report.semanticDrift || []).length}\``,
+            "",
+            "```json",
+            JSON.stringify(report, null, 2),
+            "```"
+          ].join("\n") + "\n");
+          '
+
+      - name: Upload drift report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: risu-upstream-drift-report-${{ github.run_id }}
+          path: ${{ runner.temp }}/risu-drift/drift-report.json
+          retention-days: 30
+
+      - name: Fail closed if upstream drift requires review
+        if: steps.drift.outputs.status == 'upstream_review_required'
+        run: |
+          echo "Notice: RisuAI upstream drift detected. Review required before updating compatibility pin."
+          exit 1

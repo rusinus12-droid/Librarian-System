@@ -1,0 +1,137 @@
+name: Reusable RisuAI Compatibility Check
+
+on:
+  workflow_call:
+    inputs:
+      artifact_retention_days:
+        description: 'Days to retain compatibility report artifacts'
+        required: false
+        type: number
+        default: 14
+
+jobs:
+  risu-compatibility-check:
+    name: RisuAI Compatibility Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out Librarian repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pinned build dependencies
+        run: npm ci --prefix PROGRAM/build-support
+
+      - name: Read pinned RisuAI upstream lock
+        id: lock
+        run: |
+          node -e '
+          const fs = require("node:fs");
+          const lock = JSON.parse(fs.readFileSync("PROGRAM/contracts/risuai/upstream-lock.json", "utf8"));
+          if (lock.schema !== "librarian.risu-upstream-lock.v1" || !lock.repository || !/^[0-9a-f]{40}$/i.test(lock.commit)) {
+            throw new Error("Invalid upstream-lock.json");
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `repository=${lock.repository}\ncommit=${lock.commit}\n`);
+          '
+
+      - name: Check out pinned RisuAI upstream commit (sparse)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.lock.outputs.repository }}
+          ref: ${{ steps.lock.outputs.commit }}
+          path: .risuai-upstream
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: |
+            src/ts/plugins/apiV3/risuai.d.ts
+            src/ts/plugins/apiV3/v3.svelte.ts
+            src/ts/plugins/plugins.svelte.ts
+            src/ts/plugins/pluginSafeClass.ts
+            src/ts/process/pluginStorageStore.ts
+
+      - name: Run RisuAI Compatibility Gate regression suite (positive + negative cases)
+        run: |
+          node --test PROGRAM/tests/risu_compatibility_gate_test.cjs
+
+      - name: Build 6 minified release plugin artifacts
+        run: |
+          mkdir -p "$RUNNER_TEMP/risu-compat-artifacts"
+          node PROGRAM/tools/build_plugins.cjs \
+            --profile release \
+            --out "$RUNNER_TEMP/risu-compat-artifacts"
+
+      - name: Execute RisuAI Compatibility Gate (contract + storage authority + H06 replay)
+        run: |
+          mkdir -p "$RUNNER_TEMP/risu-compat-reports"
+          node PROGRAM/tools/risu_compatibility_gate.cjs \
+            --upstream-dir ".risuai-upstream" \
+            --artifact-dir "$RUNNER_TEMP/risu-compat-artifacts" \
+            --report "$RUNNER_TEMP/risu-compat-reports/risu-compatibility-report.json"
+
+      - name: Remove temporary upstream checkout before working-tree check
+        if: always()
+        run: rm -rf .risuai-upstream
+
+      - name: Verify clean working tree
+        run: |
+          STATUS=$(git status --porcelain)
+          if [ -n "$STATUS" ]; then
+            echo "Working tree is dirty after RisuAI Compatibility Gate:"
+            echo "$STATUS"
+            git diff
+            exit 1
+          fi
+          echo "Working tree is completely clean."
+
+      - name: Upload RisuAI Compatibility Gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: risu-compatibility-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/risu-compat-reports/risu-compatibility-report.json
+          retention-days: ${{ inputs.artifact_retention_days }}
+          if-no-files-found: warn
+
+      - name: Write job summary
+        if: always()
+        run: |
+          node -e '
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const reportPath = path.join(process.env.RUNNER_TEMP, "risu-compat-reports", "risu-compatibility-report.json");
+          const lines = [
+            "# RisuAI Compatibility Gate Summary",
+            "",
+            `- **Pinned Upstream**: \`${process.env.UPSTREAM_REPO}@${process.env.UPSTREAM_COMMIT}\``
+          ];
+          if (fs.existsSync(reportPath)) {
+            const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+            lines.push(
+              `- **Gate Status**: \`${report.status}\``,
+              `- **Duration**: \`${report.durationMs} ms\``,
+              `- **Verification Meaning**: ${report.meaning}`,
+              `- **Actual RisuAI GUI Executed**: \`${report.nonClaims.actualRisuAiGuiExecuted}\` (Contract-backed host + H06 deterministic replay)`,
+              "",
+              "## Sub-Gate Results",
+              `- **API Surface Contract**: \`${report.gates.apiContract.verifiedApiCount}\` APIs verified (\`${report.gates.apiContract.verifiedOptionalProbeCount}\` optional probes allowlisted)`,
+              `- **Semantic Drift Check**: \`${report.gates.semanticDrift.verifiedMethodCount}\` critical upstream semantic methods matched`,
+              `- **Plugin Loader & IPC**: \`${report.gates.pluginLoaderAndIpc.verifiedPlugins}\` release plugins & IPC topology verified`,
+              `- **Artifact Runtime & Ultralight**: \`${report.gates.artifactRuntime.artifactsVerified}\` minified release artifacts verified`,
+              `- **Storage Authority (\`plugin_only\`)**: \`${report.gates.pluginOnlyAuthority.ok ? "PASS" : "FAIL"}\` (0 canonical server requests)`,
+              `- **Storage Authority (\`server_only\` + fail-closed)**: \`${report.gates.serverOnlyAuthority.ok ? "PASS" : "FAIL"}\` (0 canonical local writes)`,
+              `- **Storage Mode Transitions**: \`${report.gates.storageTransition.ok ? "PASS" : "FAIL"}\``,
+              `- **H06 Compatibility Replay**: \`${report.gates.h06Replay.scenarioCount}/8\` scenarios passed`
+            );
+          } else {
+            lines.push("- **Gate Status**: `FAILED` (Report not generated)");
+          }
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");
+          '
+        env:
+          UPSTREAM_REPO: ${{ steps.lock.outputs.repository }}
+          UPSTREAM_COMMIT: ${{ steps.lock.outputs.commit }}

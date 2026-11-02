@@ -1,0 +1,31 @@
+{
+  "schema": "librarian.risu-h06-replay.v1",
+  "scenarioId": "H06-08",
+  "title": "Unified Authority Snapshot & Stale Injection Fence Across Classic/Planner/GRADIA/Input Writer",
+  "sourceSpecification": "PROGRAM/docs/HOST_MODEL_VALIDATION_06.md",
+  "evidenceBoundary": {
+    "actualRisuAiGuiExecuted": false,
+    "actualWebViewIframeExecuted": false,
+    "liveExternalModelExecuted": false,
+    "syntheticDeterministicFixture": true,
+    "containsUserRpData": false
+  },
+  "hostPrimitivesUsed": [
+    "addPluginChannelListener",
+    "postPluginChannelMessage",
+    "addRisuReplacer",
+    "getChatFromIndex",
+    "pluginStorage"
+  ],
+  "fixture": {
+    "scopeId": "char:c-h06-08|chat:s-h06-08",
+    "consumers": ["classic_recall", "planner", "gradia_pipeline", "input_writer"],
+    "initialAuthorityDigest": "sha256:synthetic-authority-gen-1",
+    "mutatedAuthorityDigest": "sha256:synthetic-authority-gen-2"
+  },
+  "expectedContract": {
+    "allConsumersObserveSameAuthoritySnapshot": true,
+    "blocksStaleInjectionAfterAuthorityMutation": true,
+    "rejectionCodeOnStaleInjection": "LIB_READ_AUTHORITY_CHANGED"
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "schema": "librarian.risu-storage-contract.v1",
+  "repository": "kwaroran/Risuai",
+  "commit": "ea61945f9038e0189807d075f55f4e66ab7e98bf",
+  "sourceFiles": [
+    "src/ts/plugins/pluginSafeClass.ts",
+    "src/ts/process/pluginStorageStore.ts"
+  ],
+  "implementationFingerprints": {
+    "SafeLocalStorage": "43a3fb3710878d01e50234861d4b4c7058f00f449027e7f8e0000e18c60feb6d",
+    "SafeLocalPluginStorage": "ba0bfaf048926d89e010097ecfae76491078a3aa25c6f48ef39b3fd0ee596a74",
+    "PluginStorageStore": "8732e4654f4529ab74c86dd58602920c92c3ec1a79d2204fe4c84f48178d4fe0"
+  },
+  "primitives": {
+    "pluginStorage": {
+      "asyncMethods": true,
+      "methods": [
+        "getItem",
+        "setItem",
+        "removeItem",
+        "clear",
+        "key",
+        "keys",
+        "length"
+      ],
+      "valueDomain": "json_serializable",
+      "missingKeyReturns": null,
+      "undefinedSerializesToNull": true,
+      "nonSerializableThrows": true,
+      "reservedInternalKeys": [
+        "_coldpluginIndex",
+        "_coldplugin"
+      ],
+      "immediateReadbackConsistency": true
+    },
+    "safeLocalStorage": {
+      "asyncMethodsInV3Rpc": true,
+      "methods": [
+        "getItem",
+        "setItem",
+        "removeItem",
+        "clear",
+        "key",
+        "keys",
+        "length"
+      ],
+      "valueDomain": "string",
+      "keyPrefix": "safe_plugin_",
+      "missingKeyReturns": null
+    },
+    "getLocalPluginStorage": {
+      "asyncFactory": true,
+      "remoteRequiredClass": true,
+      "methods": [
+        "getItem",
+        "setItem",
+        "removeItem",
+        "keys",
+        "clear"
+      ],
+      "valueDomain": "json_serializable",
+      "keyPrefix": "safe_plugin_",
+      "missingKeyReturns": null,
+      "freshProxyPerCall": true
+    }
+  },
+  "storageAuthoritySeparation": {
+    "hostOwnsStorageAuthority": false,
+    "authorityOwner": "Librarian Storage SDK",
+    "operationalModes": [
+      "plugin_only",
+      "server_only"
+    ],
+    "transitionCompatibilityMode": "mirror",
+    "modeContracts": {
+      "plugin_only": {
+        "canonicalStore": "risuai.pluginStorage",
+        "allowedServerCanonicalRequests": 0,
+        "worksWithoutServer": true,
+        "violationCode": "PLUGIN_ONLY_SERVER_CANONICAL_REQUEST_FORBIDDEN"
+      },
+      "server_only": {
+        "canonicalStore": "Librarian Server (PROGRAM/server/server.cjs)",
+        "allowedLocalCanonicalWrites": 0,
+        "serverOfflineBehavior": "fail_closed",
+        "allowSilentFallbackToPluginOnly": false,
+        "localWriteViolationCode": "SERVER_ONLY_LOCAL_CANONICAL_WRITE_FORBIDDEN",
+        "offlineFallbackViolationCode": "SERVER_ONLY_OFFLINE_FALLBACK_FORBIDDEN"
+      }
+    },
+    "transitionContract": {
+      "authoritativeDoc": "PROGRAM/docs/STORAGE_MODE_TRANSITION_CONTRACT.md",
+      "pluginToServerRequiresVerifiedReadbackAndDigestBeforeCutover": true,
+      "serverToPluginRequiresVerifiedRestoreAndReadbackBeforeCutover": true,
+      "failedTransitionPreservesSourceAuthority": true
+    }
+  }
+}

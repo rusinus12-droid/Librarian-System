@@ -1,0 +1,50 @@
+{
+  "schema": "librarian.risu-h06-replay.v1",
+  "scenarioId": "H06-01",
+  "title": "Output Listener + Auto Continue + Final Output Revision Gate",
+  "sourceSpecification": "PROGRAM/docs/HOST_MODEL_VALIDATION_06.md",
+  "evidenceBoundary": {
+    "actualRisuAiGuiExecuted": false,
+    "actualWebViewIframeExecuted": false,
+    "liveExternalModelExecuted": false,
+    "syntheticDeterministicFixture": true,
+    "containsUserRpData": false
+  },
+  "hostPrimitivesUsed": [
+    "addRisuChatListener",
+    "getChatFromIndex",
+    "getCurrentCharacterIndex",
+    "getCurrentChatIndex",
+    "pluginStorage"
+  ],
+  "fixture": {
+    "characterId": "synthetic-char-h06-01",
+    "chatId": "synthetic-chat-h06-01",
+    "characterIndex": 0,
+    "chatIndex": 0,
+    "turns": [
+      { "turn": 1, "userId": "u-1", "assistantId": "a-1", "user": "Synthetic user turn 1", "assistant": "Synthetic assistant turn 1" },
+      { "turn": 2, "userId": "u-2", "assistantId": "a-2", "user": "Synthetic user turn 2", "assistant": "Synthetic assistant turn 2" },
+      { "turn": 3, "userId": "u-3", "assistantId": "a-3", "user": "Synthetic user turn 3", "assistant": "Synthetic assistant turn 3" },
+      { "turn": 4, "userId": "u-4", "assistantId": "a-4", "user": "Synthetic user turn 4", "assistant": "Synthetic assistant turn 4" },
+      {
+        "turn": 5,
+        "userId": "u-5",
+        "assistantId": "a-5",
+        "user": "Synthetic user turn 5",
+        "autoContinueIntermediate": "Intermediate partial stream before auto-continue completion",
+        "assistantFinal": "Final committed assistant turn 5 after auto-continue completion",
+        "auxiliaryNoiseEvent": { "messageIndex": -1, "note": "Host trigger removed/auxiliary event must not be committed as canonical turn" }
+      }
+    ]
+  },
+  "expectedContract": {
+    "listenerMode": "output",
+    "snapshotMutationIsolatedFromHost": true,
+    "reReadsCommittedChatViaGetChatFromIndex": true,
+    "ignoresMessageIndexMinusOne": true,
+    "autoContinueSupersedesIntermediate": true,
+    "canonicalTurnCount": 5,
+    "finalTurnText": "Final committed assistant turn 5 after auto-continue completion"
+  }
+}

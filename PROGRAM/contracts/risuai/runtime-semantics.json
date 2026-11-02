@@ -1,0 +1,253 @@
+{
+  "schema": "librarian.risu-runtime-semantics.v1",
+  "repository": "kwaroran/Risuai",
+  "commit": "ea61945f9038e0189807d075f55f4e66ab7e98bf",
+  "driftFailureCode": "RISUAI_UPSTREAM_SEMANTIC_DRIFT",
+  "methods": {
+    "addRisuChatListener": {
+      "method": "addRisuChatListener",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "delegateFile": "src/ts/plugins/plugins.svelte.ts",
+      "semanticContract": [
+        "requires_replacer_permission_periodically",
+        "accepts_output_mode_only",
+        "registers_listener_in_chatOutput_set",
+        "auto_unregisters_on_plugin_unload",
+        "callback_receives_committed_snapshot_char_chat_characterIndex_chatIndex_messageIndex"
+      ],
+      "implementationFingerprint": "29d484f4fdbd96322fc71a9213821b7c4c8a2dc21dd5c581e78c31cd9d8bbcf6"
+    },
+    "removeRisuChatListener": {
+      "method": "removeRisuChatListener",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "delegateFile": "src/ts/plugins/plugins.svelte.ts",
+      "semanticContract": [
+        "accepts_output_mode_only",
+        "deletes_listener_from_chatOutput_set"
+      ],
+      "implementationFingerprint": "03d94f42658f0762d2122b30866664bed612a7393d7bb6682e21776ec6e36c13"
+    },
+    "addRisuReplacer": {
+      "method": "addRisuReplacer",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "delegateFile": "src/ts/plugins/plugins.svelte.ts",
+      "semanticContract": [
+        "requires_replacer_permission_periodically",
+        "supports_beforeRequest_and_afterRequest",
+        "auto_unregisters_on_plugin_unload"
+      ],
+      "implementationFingerprint": "75bd1046864df273096493f851ce63d1cef1397b19f76e1dc9c2cb204de3e52c"
+    },
+    "removeRisuReplacer": {
+      "method": "removeRisuReplacer",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "delegateFile": "src/ts/plugins/plugins.svelte.ts",
+      "semanticContract": [
+        "supports_beforeRequest_and_afterRequest",
+        "deletes_handler_from_replacer_set"
+      ],
+      "implementationFingerprint": "00de9650e2644ba8e176ebba1ccd2d711f6c2c24cdcd406151499dbb2e24ce74"
+    },
+    "addRisuScriptHandler": {
+      "method": "addRisuScriptHandler",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "delegateFile": "src/ts/plugins/plugins.svelte.ts",
+      "semanticContract": [
+        "supports_display_output_input_process_modes",
+        "registers_handler_in_edit_mode_set"
+      ],
+      "implementationFingerprint": "fe6da92b32a4959c762241a91268233c367303b9d272b8ef3866d962dc70e59b"
+    },
+    "getChatFromIndex": {
+      "method": "getChatFromIndex",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "resolves_character_by_index_in_db_characters",
+        "resolves_chat_by_chatIndex_in_character_chats",
+        "returns_state_snapshot_clone_or_null"
+      ],
+      "implementationFingerprint": "908fd2d71dfc4b71576ea9b4686c7f43ca01c22f5a993d54a4bb7ba363bafbbd"
+    },
+    "setChatToIndex": {
+      "method": "setChatToIndex",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "resolves_character_by_index_and_chat_by_chatIndex",
+        "assigns_chat_when_character_and_chat_exist"
+      ],
+      "implementationFingerprint": "e3a23e9d0631599e681bac45cb779c960e093da1ad1320ffc2b4089253722a55"
+    },
+    "getCurrentCharacterIndex": {
+      "method": "getCurrentCharacterIndex",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "returns_selectedCharID_store_value"
+      ],
+      "implementationFingerprint": "15124e33b09c10b99ad172128912c34db5b60c0c2d38ade434036d49af054bdc"
+    },
+    "getCurrentChatIndex": {
+      "method": "getCurrentChatIndex",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "reads_selectedCharID_and_returns_character_chatPage"
+      ],
+      "implementationFingerprint": "76bd18d84dd867e325fd780851b7c1e7a75a854406688b84aac2dc74d792e039"
+    },
+    "getCharacterFromIndex": {
+      "method": "getCharacterFromIndex",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "resolves_character_by_index_in_db_characters",
+        "returns_state_snapshot_clone_or_null"
+      ],
+      "implementationFingerprint": "f68fb45ab49f9d01f98ea63adbd8ff056609be17334fa64c4360cea4f6a41ba4"
+    },
+    "getDatabase": {
+      "method": "getDatabase",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "requires_db_permission_periodically",
+        "returns_null_when_permission_denied",
+        "filters_to_allowedDbKeys_and_includeOnly_subset",
+        "returns_state_snapshots_of_allowed_keys"
+      ],
+      "implementationFingerprint": "8379cc3d1ad02a697068d7ea11c08677cc21bf736ad2cd41b010480d1ce76315"
+    },
+    "getArgument": {
+      "method": "getArgument",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "looks_up_current_plugin_by_name_in_db_plugins",
+        "returns_realArg_value_for_key"
+      ],
+      "implementationFingerprint": "35fd2fad31ff59c8aaf574970441df435e640949aae001667fd75614e445f895"
+    },
+    "setArgument": {
+      "method": "setArgument",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "looks_up_current_plugin_by_name_in_db_plugins",
+        "mutates_realArg_value_for_key"
+      ],
+      "implementationFingerprint": "be65aedba4bf4199e622e410250e27e8e56814fd83df671d7acef0f07ec28394"
+    },
+    "getLocalPluginStorage": {
+      "method": "getLocalPluginStorage",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "classFile": "src/ts/plugins/pluginSafeClass.ts",
+      "semanticContract": [
+        "returns_remote_required_SafeLocalPluginStorage_instance",
+        "prefixes_keys_with_safe_plugin_",
+        "stores_json_serializable_values_in_localforage"
+      ],
+      "implementationFingerprint": "b7cd42276b380dd9fafe27a452cb72c3b7d8f0411e3f56de44e2f8eacfefa0f1"
+    },
+    "requestPluginPermission": {
+      "method": "requestPluginPermission",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "delegates_to_getPermission_with_script_hash_session_cache"
+      ],
+      "implementationFingerprint": "f2d97d08fe7b54466fb4a00df87635b89c7a0578b13f05fe56f3b536399b47b9"
+    },
+    "addPluginChannelListener": {
+      "method": "addPluginChannelListener",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "scopes_channel_key_by_plugin_name_plus_channelName",
+        "auto_deletes_channel_listener_on_plugin_unload"
+      ],
+      "implementationFingerprint": "4b77c3b5581df8a25b0104d21ad3cc20902314e59d2846f271a1aff8779ec4c5"
+    },
+    "postPluginChannelMessage": {
+      "method": "postPluginChannelMessage",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "receiver_exists",
+        "receiver_allows_sender",
+        "sender_allows_receiver",
+        "callback_receives_sender_and_channel"
+      ],
+      "implementationFingerprint": "30fda2062d5fbc08cec00614119e1c4d3ef41f34256655a0a60dfea1cbbb8541"
+    },
+    "runLLMModel": {
+      "method": "runLLMModel",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "delegates_to_requestChatDataMain_with_formated_messages",
+        "blocks_plugin_models_by_default_unless_allowPlugins_true",
+        "passes_mode_and_optional_staticModel"
+      ],
+      "implementationFingerprint": "be95fb6b247bfc47a527805a6c143a55c30c98dfba19d4df7d866d6de0539009"
+    },
+    "nativeFetch": {
+      "method": "nativeFetch",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "blocks_urlBlacklist_domains",
+        "delegates_to_oldApis_nativeFetch"
+      ],
+      "implementationFingerprint": "4943c776cd2a65b02fc02c0fdd091402ce149120cef2747ea2fe0843cb2eb7a8"
+    },
+    "risuFetch": {
+      "method": "risuFetch",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "deprecated_in_favor_of_nativeFetch",
+        "blocks_urlBlacklist_domains",
+        "delegates_to_oldApis_risuFetch"
+      ],
+      "implementationFingerprint": "91e1a1aa77c52f39c062db77215bcdbb5a81e3745f6d28a6cc739d1f8ea36217"
+    },
+    "registerSetting": {
+      "method": "registerSetting",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "validates_iconType_html_img_or_none",
+        "replaces_in_place_when_id_already_exists_in_additionalSettingsMenu",
+        "registers_unload_cleanup_callback",
+        "returns_object_with_id"
+      ],
+      "implementationFingerprint": "dc24990cfa941470bb9723cc51202e24ad9d5112b795dd8888a92f2cd8d511f0"
+    },
+    "registerButton": {
+      "method": "registerButton",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "validates_name_non_empty_and_iconType_html_img_none",
+        "defaults_location_to_action_supports_action_hamburger_chat",
+        "replaces_in_place_across_button_stores_when_id_exists",
+        "registers_unload_cleanup_callback",
+        "returns_object_with_id"
+      ],
+      "implementationFingerprint": "e77ddf38080b904c50b5c5a858869c95e78a59f90abc3bc7d1f79d1af6c5c28f"
+    },
+    "unregisterUIPart": {
+      "method": "unregisterUIPart",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "removes_matching_id_from_settings_action_hamburger_chat_menus_and_chatPanelStore"
+      ],
+      "implementationFingerprint": "cb0de58e359519b900865b474b117bbf1780824abe10a3ce4c87767f42839f1e"
+    },
+    "onUnload": {
+      "method": "onUnload",
+      "sourceFile": "src/ts/plugins/apiV3/v3.svelte.ts",
+      "semanticContract": [
+        "registers_callback_in_pluginUnloadCallbacks_for_current_plugin"
+      ],
+      "implementationFingerprint": "62cec41191ac3b7f43b46709da321074f86ddf635e50a405d5cfd2321485874b"
+    },
+    "pluginStorage": {
+      "method": "pluginStorage",
+      "sourceFile": "src/ts/process/pluginStorageStore.ts",
+      "semanticContract": [
+        "json_serializes_values_on_setItem_and_parses_on_getItem",
+        "returns_null_for_missing_keys",
+        "protects_reserved_keys_coldpluginIndex_and_coldplugin",
+        "maintains_immediate_in_memory_readback_consistency"
+      ],
+      "implementationFingerprint": "8732e4654f4529ab74c86dd58602920c92c3ec1a79d2204fe4c84f48178d4fe0"
+    }
+  }
+}

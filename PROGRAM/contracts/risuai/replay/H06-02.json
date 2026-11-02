@@ -1,0 +1,37 @@
+{
+  "schema": "librarian.risu-h06-replay.v1",
+  "scenarioId": "H06-02",
+  "title": "Native Branch T12 Fork and A/B Re-entry Isolation",
+  "sourceSpecification": "PROGRAM/docs/HOST_MODEL_VALIDATION_06.md",
+  "evidenceBoundary": {
+    "actualRisuAiGuiExecuted": false,
+    "actualWebViewIframeExecuted": false,
+    "liveExternalModelExecuted": false,
+    "syntheticDeterministicFixture": true,
+    "containsUserRpData": false
+  },
+  "hostPrimitivesUsed": [
+    "getCharacterFromIndex",
+    "getChatFromIndex",
+    "getCurrentCharacterIndex",
+    "getCurrentChatIndex",
+    "pluginStorage"
+  ],
+  "fixture": {
+    "characterId": "synthetic-char-h06-02",
+    "parentChatId": "branch-a-parent",
+    "childChatId": "branch-b-child",
+    "commonPrefixPairs": 12,
+    "canonicalPrefixEnd": 10,
+    "partialCanonicalPairs": 2,
+    "parentFutureCorrectionAtTurn": 11
+  },
+  "expectedContract": {
+    "inheritsCommittedTurnsThrough": 10,
+    "excludesUncommittedPartialTurns": [11, 12],
+    "parentImmutableOnChildWrite": true,
+    "siblingIsolationEnforced": true,
+    "rejectionCodeOnParentKeyOverwrite": "MEMORY_SUITE_NATIVE_BRANCH_KEY_OWNERSHIP_DENIED",
+    "rejectionCodeOnSiblingAccess": "MEMORY_SUITE_NATIVE_BRANCH_SCOPE_ACCESS_DENIED"
+  }
+}
