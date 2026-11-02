@@ -7,8 +7,10 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const createCompiler = require('../tools/libra_memory_graph_compiler.cjs');
-const { createHayakuRuntime, createStore, createValidPacket, hiddenPacketMessage } = require('./fixtures/hayaku_runtime_harness.cjs');
+const { createHayakuRuntime, createValidPacket, hiddenPacketMessage } = require('./fixtures/hayaku_runtime_harness.cjs');
 const { fixture: createLibraReaderFixture, QUOTE: LIBRA_FIXTURE_QUOTE } = require('./fixtures/libra_memory_graph_reader_fixture.cjs');
+const { createFixture: createFlashbackFixture } = require('./fixtures/flashback_native_runtime_fixture.cjs');
+const { syntheticFetch, configure: configureFlashback, readyForRecall: readyFlashbackRecall } = require('./helpers/unload_recall_contract_fixture.cjs');
 
 const sha256 = value => crypto.createHash('sha256').update(String(value || '')).digest('hex');
 
@@ -28,14 +30,17 @@ function buildRichLibraGraph() {
         snapshot: {
           head: {
             characters: {
-              char_mina: { name: '민아', location: '서재', emotion: '분노', goal: '은빛 열쇠 회수', knowledge: ['지호가 열쇠 반환 약속을 지키지 않았음'] },
-              char_jiho: { name: '지호', location: '복도', carrying: ['은빛 열쇠'] }
+              char_mina: { id: 'char_mina', name: '민아', location: '서재', emotion: '분노', goal: '은빛 열쇠 회수', knowledge: ['지호가 열쇠 반환 약속을 지키지 않았음'] },
+              char_jiho: { id: 'char_jiho', name: '지호', location: '복도', carrying: ['은빛 열쇠'] },
+              // Stale/unregistered entity present in state head snapshot but absent from graph.nodes (layer === 'entity')
+              old_mina: { id: 'old_mina', name: '민아', emotion: '분노' }
             },
             relationships: {
-              'char_mina->char_jiho': { fromId: 'char_mina', fromName: '민아', toId: 'char_jiho', toName: '지호', state: '신뢰 하락' }
+              'char_mina->char_jiho': { fromId: 'char_mina', fromName: '민아', toId: 'char_jiho', toName: '지호', state: '신뢰 하락' },
+              'old_mina->char_jiho': { fromId: 'old_mina', fromName: '민아', toId: 'char_jiho', toName: '지호', state: '구버전 불신' }
             },
             world: {
-              item_silver_key: { name: '은빛 열쇠', ownerRef: 'char_mina', holderRef: 'char_jiho', status: '지호가 소지 중' },
+              item_silver_key: { id: 'item_silver_key', name: '은빛 열쇠', ownerRef: 'char_mina', holderRef: 'char_jiho', status: '지호가 소지 중' },
               world: { rule: '서재 출입문은 자정 이후 잠긴다' }
             }
           }
@@ -56,7 +61,9 @@ function buildRichLibraGraph() {
     { id: 'u_mic_scene', layer: 'unit', family: 'micro', sourceId: 'src_mic_1', bindingId: 'b_u9' },
     { id: 'u_lore_rule', layer: 'unit', family: 'lore', sourceId: 'src_lore_1', bindingId: 'b_u10' },
     { id: 'u_uncertain', layer: 'unit', family: 'state', sourceId: 'src_state_1', bindingId: 'b_u11' },
-    { id: 'u_no_owner', layer: 'unit', family: 'canonical', sourceId: 'src_can_1', bindingId: 'b_u12' }
+    { id: 'u_no_owner', layer: 'unit', family: 'canonical', sourceId: 'src_can_1', bindingId: 'b_u12' },
+    { id: 'u_stale_owner', layer: 'unit', family: 'state', sourceId: 'src_state_1', bindingId: 'b_u13' },
+    { id: 'u_recorded_unknown_certainty', layer: 'unit', family: 'state', sourceId: 'src_state_1', bindingId: 'b_u14' }
   ];
 
   const units = [
@@ -71,7 +78,11 @@ function buildRichLibraGraph() {
     { nodeId: 'u_mic_scene', family: 'micro', kind: 'micro_claim', semanticRole: 'micro_candidate', turn: 6, provenanceStatus: 'verified', certainty: 'observed_candidate', text: '서재 책상 위에 빈 열쇠 상자가 열려 있다.' },
     { nodeId: 'u_lore_rule', family: 'lore', kind: 'lore_entry', semanticRole: 'background_setting', turn: null, provenanceStatus: 'verified', certainty: 'confirmed', text: '서재의 고서 보관함은 은빛 열쇠로만 열 수 있다.' },
     { nodeId: 'u_uncertain', family: 'state', kind: 'state_field', semanticRole: 'state_unprovenanced', domain: 'world', entityId: 'world', field: 'rumor', turn: 5, provenanceStatus: 'unprovenanced', certainty: 'unverified', text: '복도 끝에서 발소리가 들렸다는 미확인 보고' },
-    { nodeId: 'u_no_owner', family: 'canonical', kind: 'canonical_fact', semanticRole: 'canonical_assertion', turn: 3, provenanceStatus: 'verified', certainty: 'confirmed', fact: { claimKind: 'event' }, text: '밤비가 창문을 두드렸다.' }
+    { nodeId: 'u_no_owner', family: 'canonical', kind: 'canonical_fact', semanticRole: 'canonical_assertion', turn: 3, provenanceStatus: 'verified', certainty: 'confirmed', fact: { claimKind: 'event' }, text: '밤비가 창문을 두드렸다.' },
+    // [P1] entityId exists ('old_mina'), body contains '민아', but 'old_mina' is NOT in graph.nodes (layer === 'entity')
+    { nodeId: 'u_stale_owner', family: 'state', kind: 'state_field', semanticRole: 'state_current', domain: 'character', entityId: 'old_mina', field: 'emotion', turn: 6, provenanceStatus: 'recorded', fieldEvidence: { memoryId: 'm1' }, certainty: 'confirmed', text: '민아 · character.emotion = 분노 (구버전 엔티티)' },
+    // [P1/P2] family = state, certainty = unknown, provenanceStatus = recorded -> must stay certainty=unknown, NOT confirmed
+    { nodeId: 'u_recorded_unknown_certainty', family: 'state', kind: 'state_field', semanticRole: 'state_current', domain: 'character', entityId: 'char_mina', field: 'attitude', turn: 6, provenanceStatus: 'recorded', fieldEvidence: { memoryId: 'm1' }, certainty: 'unknown', text: '민아 · character.attitude = 유보적 태도' }
   ];
 
   const edges = [
@@ -118,7 +129,7 @@ function buildRichLibraGraph() {
   return { graph, queryResult };
 }
 
-test('LIBRA: Model-Oriented Memory Document sections, State ownership, object owner vs holder, relationship direction, knowledge boundary, and consumer compatibility', async () => {
+test('LIBRA: Model-Oriented Memory Document sections, State ownership, unresolved entityId degradation, certainty=unknown preservation, and consumer compatibility', async () => {
   const compiler = createCompiler({ fingerprint: sha256 });
   const { graph, queryResult } = buildRichLibraGraph();
 
@@ -128,8 +139,7 @@ test('LIBRA: Model-Oriented Memory Document sections, State ownership, object ow
   assert.equal(defaultPkt.consumerVerification.ok, true);
   assert.equal(defaultPkt.renderedText.split('\n').length, defaultSel.bundle.items.length + 1);
 
-  // 2. Model document presentation groups into semantic sections and preserves State ownership & epistemic boundaries
-  const t0 = performance.now();
+  // 2. Model document presentation groups into semantic sections and is strictly deterministic
   const modelSel = compiler.select(queryResult, graph, {
     consumer: 'classic',
     presentation: 'model_document',
@@ -137,11 +147,17 @@ test('LIBRA: Model-Oriented Memory Document sections, State ownership, object ow
     maxUnits: 20
   });
   const modelPkt = compiler.render(modelSel);
-  const elapsedMs = performance.now() - t0;
-
+  const repeatPkt = compiler.render(compiler.select(queryResult, graph, {
+    consumer: 'classic',
+    presentation: 'model_document',
+    maxCharacters: 4096,
+    maxUnits: 20
+  }));
+  assert.equal(modelPkt.renderedText, repeatPkt.renderedText, 'compile+render must be 100% deterministic');
   assert.equal(modelPkt.consumerVerification.ok, true);
+  assert.ok(modelPkt.characterLength <= 4096, 'rendered packet must respect maxCharacters budget');
+
   const text = modelPkt.renderedText;
-  assert.ok(elapsedMs < 50, `deterministic compile+render should be fast (got ${elapsedMs.toFixed(2)}ms)`);
 
   // Verify semantic sections exist in order
   const expectedSections = [
@@ -178,10 +194,28 @@ test('LIBRA: Model-Oriented Memory Document sections, State ownership, object ow
   assert.match(text, /\[KNOWLEDGE HOLDER: 민아 \| id=char_mina\]/);
   assert.match(text, /visibility=known_by\(민아\); other_characters=unconfirmed_do_not_assume_shared/);
 
-  // Scenario 8 & 9: Uncertain isolation and missing-owner safe degradation (no guessed owner)
+  // [P1] Unresolved entityId ('old_mina') + character name in text ('민아') must NOT be promoted to a verified owner
+  assert.doesNotMatch(text, /id=old_mina/, 'stale/unregistered entityId must never be rendered in a character header');
+  const staleOwnerItem = modelSel.bundle.items.find(i => i.nodeId === 'u_stale_owner');
+  assert.ok(staleOwnerItem, 'u_stale_owner must be present');
+  assert.equal(staleOwnerItem.attribution.ownerId, null, 'unverified entityId must not populate ownerId');
+  assert.equal(staleOwnerItem.attribution.ownerName, null, 'unverified entityId must not reconstruct ownerName from text');
+  assert.equal(staleOwnerItem.attribution.ownerResolution, 'unresolved');
+  assert.equal(staleOwnerItem.subHeader, '', 'unverified entityId must not emit a [CHARACTER: ...] subheader');
+  assert.match(staleOwnerItem.attributionLine, /^owner=unresolved \| visibility=subject_state; other_characters_awareness=unconfirmed/);
+
+  // [P1/P2] Recorded state with certainty='unknown' must preserve certainty=unknown and never promote to confirmed
+  const recordedUnknownItem = modelSel.bundle.items.find(i => i.nodeId === 'u_recorded_unknown_certainty');
+  assert.ok(recordedUnknownItem, 'u_recorded_unknown_certainty must be present');
+  assert.equal(recordedUnknownItem.attribution.certainty, 'unknown', 'certainty=unknown must not be promoted to confirmed');
+  assert.match(recordedUnknownItem.attributionLine, /certainty=unknown$/);
+  assert.doesNotMatch(recordedUnknownItem.attributionLine, /certainty=confirmed/);
+
+  // Scenario 8 & 9: Missing entityId safe degradation (no owner guessed when entityId is absent)
   const noOwnerItem = modelSel.bundle.items.find(i => i.nodeId === 'u_no_owner');
   assert.equal(noOwnerItem.attribution.ownerId, null);
   assert.equal(noOwnerItem.attribution.ownerName, null);
+  assert.equal(noOwnerItem.attribution.ownerResolution, 'none');
   assert.ok(!/owner=/.test(noOwnerItem.attributionLine), 'missing owner ID must never guess an owner');
 
   // Every original unit text appears exactly once
@@ -410,79 +444,134 @@ test('Flashback: LATEST CONFIRMED STATE historical entity ownership, directional
   }
 });
 
-test('Standalone, 2-product, and 3-product combinations + plugin_only / server_only / mirror parity', async () => {
-  // Verify LIBRA across plugin_only and server_only via reader fixture
-  for (const mode of ['plugin_only', 'server_only']) {
+test('Standalone, 2-product, and 3-product real beforeRequest hook combinations + plugin_only / server_only / mirror parity', async () => {
+  // 1. Verify LIBRA across all 3 storage modes: plugin_only, server_only, and mirror
+  for (const mode of ['plugin_only', 'server_only', 'mirror']) {
     const host = await createLibraReaderFixture({ mode });
     try {
       await host.f.r.api.saveLibraMemorySettings({ unifiedMemoryEngineMode: 'unified' });
       const msgs = await host.f.control.hooks.beforeRequest([{ role: 'user', content: LIBRA_FIXTURE_QUOTE }], 'model');
       const sys = msgs.filter(m => m.role === 'system').map(m => m.content).join('\n');
-      assert.match(sys, /\[LIBRA CLASSIC RECALL — CURRENT TURN ONLY\]/);
-      assert.match(sys, /\[LIBRA_EVIDENCE consumer=classic/);
-      assert.match(sys, /\[RELATIONSHIPS\]/);
-      assert.match(sys, /\[KNOWLEDGE\]/);
-      assert.match(sys, /\[OPEN THREADS\]/);
-      assert.match(sys, /\[RELEVANT HISTORY\]/);
-      assert.match(sys, /\[SCENE DETAILS\]/);
-      assert.match(sys, /\[WORLD CONTEXT\]/);
-      assert.match(sys, /\[RELATIONSHIP: 민아 → 지호\]/);
-      assert.match(sys, /\[KNOWLEDGE HOLDER: 민아/);
-      assert.match(sys, /attrib: /);
+      assert.match(sys, /\[LIBRA CLASSIC RECALL — CURRENT TURN ONLY\]/, `${mode}: classic header`);
+      assert.match(sys, /\[LIBRA_EVIDENCE consumer=classic/, `${mode}: evidence header`);
+      assert.match(sys, /\[RELATIONSHIPS\]/, `${mode}: RELATIONSHIPS section`);
+      assert.match(sys, /\[KNOWLEDGE\]/, `${mode}: KNOWLEDGE section`);
+      assert.match(sys, /\[OPEN THREADS\]/, `${mode}: OPEN THREADS section`);
+      assert.match(sys, /\[RELEVANT HISTORY\]/, `${mode}: RELEVANT HISTORY section`);
+      assert.match(sys, /\[SCENE DETAILS\]/, `${mode}: SCENE DETAILS section`);
+      assert.match(sys, /\[WORLD CONTEXT\]/, `${mode}: WORLD CONTEXT section`);
+      assert.match(sys, /\[RELATIONSHIP: 민아 → 지호\]/, `${mode}: relationship subheader`);
+      assert.match(sys, /\[KNOWLEDGE HOLDER: 민아/, `${mode}: knowledge holder subheader`);
+      // Verify recorded state with default 'unknown' certainty is preserved as certainty=unknown
+      assert.match(sys, /certainty=unknown/, `${mode}: unknown certainty preserved without promotion to confirmed`);
     } finally {
       await host.cleanup();
     }
   }
 
-  // Verify sequential combination of LIBRA + HAYAKU + Flashback on shared message array without cross-plugin interference
-  const compiler = createCompiler({ fingerprint: sha256 });
-  const { graph, queryResult } = buildRichLibraGraph();
-  const libraPacket = compiler.render(compiler.select(queryResult, graph, { consumer: 'classic', presentation: 'model_document', maxCharacters: 4096 }));
-  const libraSystemMsg = { role: 'system', content: `[LIBRA CLASSIC RECALL — CURRENT TURN ONLY]\n<LIBRA_CLASSIC_RECALL>\n${libraPacket.renderedText}\n</LIBRA_CLASSIC_RECALL>` };
+  // 2. Stand up real LIBRA, HAYAKU, and Flashback runtimes and execute their actual registered beforeRequest hooks
+  //    across all 7 standalone & multi-plugin combinations.
+  const libraHost = await createLibraReaderFixture({ mode: 'plugin_only' });
+  await libraHost.f.r.api.saveLibraMemorySettings({ unifiedMemoryEngineMode: 'unified' });
 
-  const flashbackSystemMsg = {
-    role: 'system',
-    content: `[ACTIVE CONTINUITY EVIDENCE]\n\nORDERED PAST EVENTS — EARLIEST TO LATEST\n[E01] T4에서 민아가 열쇠 반환을 요구했다.\n\nLATEST CONFIRMED STATE\n[민아]\n- [T46 마지막 확인 · location] 당시 서재에 있었다.\n[/ACTIVE CONTINUITY EVIDENCE]`
-  };
-
-  const h = await createHayakuRuntime({
+  const hayakuFact = '민아는 서재 책상 서랍에 은빛 열쇠 보관함을 넣어 두었다.';
+  const hayakuPkt = createValidPacket({ turn: 1, summary: hayakuFact, subject: '민아', scene: 'library' });
+  const hayakuMessages = [
+    { role: 'user', chatId: 'u1', data: '은빛 열쇠 보관함은 어디에 있지?' },
+    { role: 'assistant', chatId: 'a1', data: hiddenPacketMessage(hayakuFact, hayakuPkt) }
+  ];
+  const hayakuRuntime = await createHayakuRuntime({
     autoRepair: false,
     afterRequestAutoRepair: false,
     backgroundAutoRepair: false,
     arguments: { memory_suite_server_mode: 'plugin_only', hayaku_packet_recovery: 'false' },
-    messages: [
-      { role: 'user', chatId: 'u1', data: '민아와 지호의 상황은?' },
-      { role: 'assistant', chatId: 'a1', data: hiddenPacketMessage('민아는 서재에 있다.', createValidPacket({ turn: 1, summary: '민아는 서재에 있다.', subject: '민아', scene: 'library' })) }
-    ]
+    messages: hayakuMessages
   });
+
+  // Prepare Flashback through its public capture + fresh runtime reload path so its real beforeRequest hook injects
+  const fbSeedUser = '은빛 열쇠와 서재 계기판 상태를 확인한다.';
+  const fbSeedReply = '서재 계기판 바늘이 붉은 눈금에 멈춰 있고 은빛 열쇠 고리가 북쪽 벽에 걸려 있다.';
+  const fbSeedPhrase = '서재 계기판 바늘이 붉은 눈금에 멈춰 있고';
+  let fbInit = await createFlashbackFixture({ captureBackend: 'afterRequest' });
+  const fbStorage = fbInit.pluginStorage;
+  const fbHost = fbInit.host;
+  let fbChat = null;
+  let fbCharacter = null;
   try {
-    const baseUser = { role: 'user', content: '현재 민아와 지호의 상태를 이어서 묘사해줘.' };
-    // 1) LIBRA only
-    const comboLibra = [libraSystemMsg, baseUser];
-    assert.equal(comboLibra.length, 2);
-    // 2) HAYAKU only
-    const comboHayaku = await h.callBeforeRequest([baseUser], 'model');
-    assert.ok(comboHayaku.some(m => String(m.content || '').includes('[HAYAKU')));
-    // 3) Flashback only
-    const comboFlashback = [flashbackSystemMsg, baseUser];
-    assert.equal(comboFlashback.length, 2);
-    // 4) LIBRA + HAYAKU
-    const comboLH = await h.callBeforeRequest([libraSystemMsg, baseUser], 'model');
-    assert.ok(comboLH.some(m => String(m.content || '').includes('<LIBRA_CLASSIC_RECALL>')));
-    assert.ok(comboLH.some(m => String(m.content || '').includes('[HAYAKU')));
-    // 5) LIBRA + Flashback
-    const comboLF = [libraSystemMsg, flashbackSystemMsg, baseUser];
-    assert.equal(comboLF.length, 3);
-    // 6) HAYAKU + Flashback
-    const comboHF = await h.callBeforeRequest([flashbackSystemMsg, baseUser], 'model');
-    assert.ok(comboHF.some(m => String(m.content || '').includes('[ACTIVE CONTINUITY EVIDENCE]')));
-    assert.ok(comboHF.some(m => String(m.content || '').includes('[HAYAKU')));
-    // 7) LIBRA + HAYAKU + Flashback (All 3)
-    const comboAll = await h.callBeforeRequest([libraSystemMsg, flashbackSystemMsg, baseUser], 'model');
-    assert.ok(comboAll.some(m => String(m.content || '').includes('<LIBRA_CLASSIC_RECALL>')));
-    assert.ok(comboAll.some(m => String(m.content || '').includes('[ACTIVE CONTINUITY EVIDENCE]')));
-    assert.ok(comboAll.some(m => String(m.content || '').includes('[HAYAKU')));
+    fbInit.host.nativeFetch = (url, init) => syntheticFetch(url, init);
+    await configureFlashback(fbInit, 'configured');
+    await fbInit.api.ingestLiveChatColdStart({ scope: 'current', canonical: true });
+    await fbInit.api._selectionTest.beforeRequest([{ role: 'user', chatId: 'u1', content: fbSeedUser }], 'model');
+    await new Promise(resolve => setTimeout(resolve, 30));
+    fbInit.currentChat.message = [
+      { role: 'user', chatId: 'u1', data: fbSeedUser },
+      { role: 'assistant', chatId: 'a1', data: fbSeedReply }
+    ];
+    fbInit.currentChat.messages = fbInit.currentChat.message;
+    await fbInit.api._selectionTest.afterRequest(fbSeedReply, 'model');
+    await readyFlashbackRecall(fbInit, 'configured', fbSeedPhrase);
+    fbChat = JSON.parse(JSON.stringify(fbInit.currentChat));
+    fbCharacter = JSON.parse(JSON.stringify(fbInit.character));
   } finally {
-    await h.dispose();
+    await fbInit.dispose();
+  }
+
+  const fbRuntime = await createFlashbackFixture({
+    pluginStorage: fbStorage,
+    safeLocalStorage: fbHost.safeLocalStorage,
+    chat: fbChat,
+    character: fbCharacter,
+    captureBackend: 'afterRequest'
+  });
+
+  try {
+    fbRuntime.host.nativeFetch = (url, init) => syntheticFetch(url, init);
+    await configureFlashback(fbRuntime, 'configured');
+    const sharedQuery = `${LIBRA_FIXTURE_QUOTE} 서재 계기판 바늘과 은빛 열쇠 보관함 상태를 알려줘.`;
+    // Warm up Flashback turn worldline sync once
+    await fbRuntime.api._selectionTest.beforeRequest([{ role: 'user', chatId: 'u8', content: sharedQuery }], 'model');
+
+    const runLibraHook = async msgs => await libraHost.f.control.hooks.beforeRequest(msgs, 'model');
+    const runHayakuHook = async msgs => await hayakuRuntime.callBeforeRequest(msgs, 'model');
+    const runFlashbackHook = async msgs => await fbRuntime.api._selectionTest.beforeRequest(msgs, 'model');
+
+    const countOccurrences = (haystack, needle) => String(haystack || '').split(needle).length - 1;
+
+    const combinations = [
+      { name: 'LIBRA only', hooks: [runLibraHook], expect: { libra: 1, hayaku: 0, flashback: 0 } },
+      { name: 'HAYAKU only', hooks: [runHayakuHook], expect: { libra: 0, hayaku: 1, flashback: 0 } },
+      { name: 'Flashback only', hooks: [runFlashbackHook], expect: { libra: 0, hayaku: 0, flashback: 1 } },
+      { name: 'LIBRA + HAYAKU', hooks: [runLibraHook, runHayakuHook], expect: { libra: 1, hayaku: 1, flashback: 0 } },
+      { name: 'LIBRA + Flashback', hooks: [runLibraHook, runFlashbackHook], expect: { libra: 1, hayaku: 0, flashback: 1 } },
+      { name: 'HAYAKU + Flashback', hooks: [runHayakuHook, runFlashbackHook], expect: { libra: 0, hayaku: 1, flashback: 1 } },
+      { name: 'LIBRA + HAYAKU + Flashback', hooks: [runLibraHook, runHayakuHook, runFlashbackHook], expect: { libra: 1, hayaku: 1, flashback: 1 } }
+    ];
+
+    for (const [idx, combo] of combinations.entries()) {
+      let messages = [{ role: 'user', chatId: `u_combo_${idx + 10}`, content: sharedQuery, data: sharedQuery }];
+      for (const hook of combo.hooks) {
+        messages = await hook(messages);
+      }
+      const combinedText = messages.map(m => String(m.content || m.data || '')).join('\n');
+      assert.equal(
+        countOccurrences(combinedText, '<LIBRA_CLASSIC_RECALL>'),
+        combo.expect.libra,
+        `${combo.name}: LIBRA marker count must be ${combo.expect.libra}`
+      );
+      assert.equal(
+        countOccurrences(combinedText, '[HAYAKU RUNTIME PACKET SHAPE]'),
+        combo.expect.hayaku,
+        `${combo.name}: HAYAKU marker count must be ${combo.expect.hayaku}`
+      );
+      assert.equal(
+        countOccurrences(combinedText, '[ACTIVE CONTINUITY EVIDENCE]'),
+        combo.expect.flashback,
+        `${combo.name}: Flashback marker count must be ${combo.expect.flashback}`
+      );
+    }
+  } finally {
+    await fbRuntime.dispose();
+    await hayakuRuntime.dispose();
+    await libraHost.cleanup();
   }
 });
