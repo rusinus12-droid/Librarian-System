@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-02T13:28:36.684Z",
+  "generatedAt": "2026-11-02T14:39:09.693Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3812,7 +3812,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "f3314c8feb18bdf44f3c3e0bf4f38d04616b69fe2a4e8cce68dc32b380d009cf",
+      "sha256": "2eba75673a48c05d3d383e344ffaf543d402ef75c153e9a800244a44315766f3",
       "bytes": 11836
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4232,8 +4232,8 @@
       "bytes": 1665739
     },
     "plugins/LIBRA.js": {
-      "sha256": "1f5b43682b4ce2aa3f3832023bbb402e6f374b4ad6fb83f0f16df7b32e6cd6fd",
-      "bytes": 6974466
+      "sha256": "76110835261f1ea2afcc6fbfd532e75158c73a0940e50095d2f9f273bde740a8",
+      "bytes": 6976159
     },
     "plugins/RETRACE.js": {
       "sha256": "3386123502411149a0843d2d1a45b59d0e6af80c5175646e6b2c159b94eef27f",
@@ -9982,6 +9982,10 @@
     "tests/libra_volatile_corpus_index_runtime_test.cjs": {
       "sha256": "b0496fa0c06e6d218f9fdb413cb58f50b92846ea9c02f32775f3a0224c8ef0c5",
       "bytes": 5614
+    },
+    "tests/libra_volatile_index_after_new_turn_test.cjs": {
+      "sha256": "91cb63c1015f48c8a8d1b77ab790348c6792a8e00b1c64aa88c73023dfac7cc7",
+      "bytes": 4924
     },
     "tests/libra_world_additional_retired_3mode_parity_test.cjs": {
       "sha256": "918e468c70692ea65151c3728eb37eef8c47e2f18739dc972552dcb12d996c5b",
