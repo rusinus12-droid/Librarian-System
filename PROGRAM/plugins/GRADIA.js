@@ -4210,8 +4210,16 @@ Before continuing, verify:
         const boundScope = session.contract === 'existing-server-logical-read.v1' && session.nativeScope
           ? JSON.stringify([session.nativeScope.characterId,session.nativeScope.chatId]) : null;
         const refs = turns => JSON.stringify(turns,(key,value)=>boundScope && key === 'scope' && value === boundScope ? undefined : value);
-        if (!expected || refs(recent.turnEligibility?.selected || []) !== refs(expected.turns)
-          || JSON.stringify(libNativePromptView(recent)) !== JSON.stringify(expected.view)) throw this.fail('LIB_READ_NATIVE_VIEW_CHANGED');
+        const actualView = expected ? libNativePromptView(recent) : null;
+        const turnsChanged = !expected || refs(recent.turnEligibility?.selected || []) !== refs(expected.turns);
+        if (turnsChanged || JSON.stringify(actualView) !== JSON.stringify(expected.view)) {
+          // Record which parts differed and their sizes only; never prompt text.
+          const changedFields = expected ? Object.keys(expected.view).filter(key => JSON.stringify(actualView[key]) !== JSON.stringify(expected.view[key])) : ['stage_not_certified'];
+          Runtime.lastStageViewMismatch = Object.freeze({ at: Date.now(), stage, turnsChanged, changedFields,
+            sizes: Object.fromEntries(changedFields.filter(key => expected?.view && key in expected.view).map(key => [key, [JSON.stringify(expected.view[key]).length, JSON.stringify(actualView[key]).length]])),
+            turnCounts: [expected?.turns?.length ?? -1, (recent.turnEligibility?.selected || []).length] });
+          throw this.fail('LIB_READ_NATIVE_VIEW_CHANGED');
+        }
         this.stageViews.set(stage, recent);
       },
       assertStageViews() { proposalContext?.assertLocal(); for (const [stage, recent] of this.stageViews) this.assertStageView(stage, recent); },
@@ -6967,6 +6975,9 @@ Before continuing, verify:
       .replace(/^\s*<img\b[^>]*>\s*$/gim, ' ')
       .replace(/^\s*#{1,6}\s+[^\n]*$/gm, ' ')
       .replace(/^\s*---+\s*$/gm, ' ')
+      // Removed lines leave whitespace-only lines; drop them before collapsing so a
+      // second pass over this output (shared reference materialization) is a no-op.
+      .replace(/^[ \t]+$/gm, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
     if (!visible) return '';
@@ -43880,6 +43891,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     lastInputWriterReadDiagnostic: Runtime.lastInputWriterReadDiagnostic || null,
     libEvidenceCheckStats: Runtime.libEvidenceCheckStats || null,
     lastNativeBindFailure: Runtime.lastNativeBindFailure || null,
+    lastStageViewMismatch: Runtime.lastStageViewMismatch || null,
     lastDraftOutputBudget: Runtime.lastDraftOutputBudget || null,
     finalDraft: Runtime.finalDraft || '',
     finalDraftPreview: compactMiddle(Runtime.finalDraft || '', 2000),

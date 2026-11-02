@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-02T16:50:25.471Z",
+  "generatedAt": "2026-11-02T18:11:27.383Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3820,7 +3820,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "b19b9267185d68d117a41cf67dcef2b69118044c1528e2f64f0a5cc92c744fc5",
+      "sha256": "6f3681c9a42386a3b5035627938b8e6d07e31f5199160486d51d4a947e2973bc",
       "bytes": 11836
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4228,8 +4228,8 @@
       "bytes": 3766242
     },
     "plugins/GRADIA.js": {
-      "sha256": "fab3997ded88247211b4061389e6f48230b1ecc0f0fa00e56ee1ba3681f14d6f",
-      "bytes": 3148385
+      "sha256": "4d1716782736b5389454fc45a08e0c6f66ab70ac6deb5196cd6218ea83f5e388",
+      "bytes": 3149461
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "a3b06f84fc2844ccc012b7fd8b71a501537a1077bb376f0c5516709e15fffaf7",
@@ -6688,8 +6688,8 @@
       "bytes": 4696
     },
     "tests/gradia_three_owner_pipeline_test.cjs": {
-      "sha256": "bffe1a5567b57370c2a21acf5e7098fce898636185f661d327d041c618c726a5",
-      "bytes": 15224
+      "sha256": "06bca970f8a5a77bb809a96df6dfef9aea5c41f7672778ad582088b6530a0fe0",
+      "bytes": 16695
     },
     "tests/gradia_three_owner_read_auth_test.cjs": {
       "sha256": "1fbc46daeb2ad228fcd81ac328b4180ede2ab7cb29d7b6bcec493eaa9dc64d65",
@@ -7862,6 +7862,10 @@
     "tests/libra_analysis_nsfw_guidance_test.cjs": {
       "sha256": "3da3cddd3c3f6f67f6e8d2a61de99bd505d906b0a6a8394c6de4ef91467e1a87",
       "bytes": 9070
+    },
+    "tests/libra_appended_micro_tolerance_unit_test.cjs": {
+      "sha256": "1bab76e026d968f1368c3b77eb45c6e3d08e1ead95f9cf2167e40ab1b46329ba",
+      "bytes": 4474
     },
     "tests/libra_approved_revision_background_audit_test.cjs": {
       "sha256": "cba70da268c7715a3b22346b9a4a29bc1f3c754701d2feddc8a075e2ba61cf2e",
@@ -9154,6 +9158,10 @@
     "tests/libra_owned_scope_delete_runtime_test.cjs": {
       "sha256": "b8af47647435b43a542c1b67c7a3e46990882ea8905d7a83d9cc5ba631861ebf",
       "bytes": 12990
+    },
+    "tests/libra_owner_batch_budget_unit_test.cjs": {
+      "sha256": "aba411601702a94c07b1532144e551d3d8cf130db3f31df31ecc9def8d71cba9",
+      "bytes": 3982
     },
     "tests/libra_owner_reset_recall_route_test.cjs": {
       "sha256": "64776db00f27ed1a61e48632a6dcd7d84b353f61d4e87dccf854c3f1e0a49dd4",
