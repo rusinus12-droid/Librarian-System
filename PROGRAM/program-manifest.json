@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-02T13:19:03.454Z",
+  "generatedAt": "2026-11-02T13:28:36.684Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3812,7 +3812,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "7ba1978fb78628012a478ca928f97fde7f963e11abf318dfeffde51b670b0eed",
+      "sha256": "f3314c8feb18bdf44f3c3e0bf4f38d04616b69fe2a4e8cce68dc32b380d009cf",
       "bytes": 11836
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4216,8 +4216,8 @@
       "bytes": 3353
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "66e414e761ee8cb0699a3fd58296a30d0ccc5c4bd843ac3a0994efe0906eca66",
-      "bytes": 3766494
+      "sha256": "ecba0f54da7e9c67ddb3cd7e62e0710509d20980ba5093e889718c4d9a76a440",
+      "bytes": 3766242
     },
     "plugins/GRADIA.js": {
       "sha256": "fab3997ded88247211b4061389e6f48230b1ecc0f0fa00e56ee1ba3681f14d6f",
@@ -8927,6 +8927,10 @@
       "sha256": "e5193a82a290a32d75d669fffa98f5cc203b19f73e55234a45b9e8d23d28e0fa",
       "bytes": 7037
     },
+    "tests/libra_micro_current_observation_state_integration_test.cjs": {
+      "sha256": "f30428bdd8c3adc8d6f1bad9df415ea3e36ccaf105e8b75ba045a1763093f740",
+      "bytes": 5032
+    },
     "tests/libra_micro_final_injection_3mode_test.cjs": {
       "sha256": "1384505e7de921e775732683888d11a396361792f9bf32665db2aed371d34299",
       "bytes": 4177
@@ -9150,6 +9154,10 @@
     "tests/libra_pair_cache_scan_admission_test.cjs": {
       "sha256": "791759cac39767af23bb29ff9fe2ed0c852b38bb028dee7497dd11a024bc9a54",
       "bytes": 8475
+    },
+    "tests/libra_parallel_source_pin_regression_test.cjs": {
+      "sha256": "cccaec18aca18292fc4a6d93e6c2cc95e35b2ab6b650cb5d2a9a72adc97c5aea",
+      "bytes": 3502
     },
     "tests/libra_partial_state_projection_runtime_test.cjs": {
       "sha256": "9e59cbba9b88c13cb8197406f3fcd61b02307f288bb1e8fb1e3d7fae85dee9d1",
