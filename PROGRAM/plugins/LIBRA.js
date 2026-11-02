@@ -72192,7 +72192,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
 
         const execution = result.unifiedExecution, packet = execution.packet;
         const authority = unifiedGraphDeliveryAuthority.get(execution);
-        if (!authority || !packet || execution.modelDispatchEligible !== true) throw new Error('LIBRA_GRAPH_CONSUMER_UNAVAILABLE');
+        if (!authority || !packet || execution.modelDispatchEligible !== true) {
+          // Keep why delivery was refused; the generic code alone hides a stale
+          // source proof behind an empty errorCode in the injection diagnostics.
+          const error = new Error('LIBRA_GRAPH_CONSUMER_UNAVAILABLE');
+          error.code = 'LIBRA_GRAPH_CONSUMER_UNAVAILABLE';
+          error.readDiagnostic = { stage: 'graph_delivery_admission', ownerAuthority: Boolean(authority),
+            packet: Boolean(packet), modelDispatchEligible: execution?.modelDispatchEligible === true,
+            deliveryOutcome: string(execution?.deliveryOutcome || ''),
+            dispatchReason: string(execution?.dispatchVerification?.reason || ''),
+            stopReason: string(execution?.stopReason || '') };
+          throw error;
+        }
         if (packet.consumer !== 'classic') throw new Error('LIBRA_GRAPH_CONSUMER_ROUTE_MISMATCH');
         let lensRecall = null;
         try {
@@ -72320,6 +72331,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           error: compact(error?.message || error, 700),
           errorCode: string(error?.code || ''),
           ...(error?.responseBoundary ? { responseBoundary: clone(error.responseBoundary) } : {}),
+          ...(error?.readDiagnostic ? { admission: clone(error.readDiagnostic) } : {}),
           modePublicationStatus: string(error?.modePublicationStatus || ''),
           modePublicationAttempts: Number(error?.modePublicationAttempts || 0),
           failOpen: true,
@@ -72351,6 +72363,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           at: Date.now(), requestType: normalizeRequestType(type) || 'missing', scope: clone(failure.scope),
           scopeKey: failure.scopeKey, chars: 0, selectedMemories: 0, injectedMemories: 0, injected: false,
           failOpen: true, deadlineExceeded: failure.deadlineExceeded, stepTimedOut: failure.stepTimedOut, timeoutPhase: failure.timeoutPhase, errorCode: failure.errorCode,
+          ...(failure.admission ? { admission: clone(failure.admission) } : {}),
           modePublicationStatus: failure.modePublicationStatus, modePublicationAttempts: failure.modePublicationAttempts,
           inputSource: failure.inputSource, inputConfidence: failure.inputConfidence, liveTail: preservedLiveTail,
           queryText: compact(failure.queryText || '', 600), recallRuntime: runtimeSnapshot, error: failure.error
