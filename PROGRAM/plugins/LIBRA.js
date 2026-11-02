@@ -71878,10 +71878,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const current=await captureUnifiedResponseBoundary(context,null,{...options,deadlineAt,force:true});
         if (digest(current)!==digest(boundary)) {
           // Record field names only: no transcript, settings, or memory values.
-          const fields = ['scopeKey','sourceDigest','manifestDigest','headDigest','registryDigest',
-            'worldlineDigest','migrationDigest','directionDigest','policyDigest','memoryPolicyDigest','storageMode'];
-          state.lastResponseBoundaryFailure = { at: Date.now(), code: 'UNIFIED_RESPONSE_AUTHORITY_CHANGED',
-            changedFields: fields.filter(field => digest(current[field])!==digest(boundary[field])) };
+          const allKeys = [...new Set([...Object.keys(current || {}), ...Object.keys(boundary || {})])];
+          const diffFields = allKeys.filter(field => digest(current?.[field]) !== digest(boundary?.[field]));
+          const changedFields = diffFields.length ? diffFields : ['unclassified_boundary_change'];
+          state.lastResponseBoundaryFailure = { at: Date.now(), code: 'UNIFIED_RESPONSE_AUTHORITY_CHANGED', changedFields };
           const error = Error('UNIFIED_RESPONSE_AUTHORITY_CHANGED');
           error.code = 'UNIFIED_RESPONSE_AUTHORITY_CHANGED';
           error.responseBoundary = clone(state.lastResponseBoundaryFailure);
@@ -77297,12 +77297,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const hasIncrementalBodyDigests = Boolean(corpus?.sourceProofs?.proofVersion === 'libra.source_proof_contract.v2' && ownerProof?.sourceBodyDigests && typeof ownerProof.sourceBodyDigests === 'object');
         const pinnedValues = [];
         if (!hasIncrementalBodyDigests) {
-          // One storage round-trip per pinned source, in order: the largest
-          // unattributed span in a cold recall. Account for it in the delivery
-          // diagnostics instead of leaving it between phase labels.
-          const batchSize = Math.max(1, Math.min(16, sourceReadBatchSize()));
-          for (let offset = 0; offset < pinKeys.length; offset += batchSize) {
+          // Dynamic batching bounded by inspectable resource budget to preserve
+          // accounting, sequential determinism, and graceful backpressure.
+          let offset = 0;
+          while (offset < pinKeys.length) {
+            const batchSize = Math.max(1, sourceReadBatchSize());
             const chunk = pinKeys.slice(offset, offset + batchSize);
+            offset += chunk.length;
             const chunkResults = await Promise.all(chunk.map(async storageKey => {
               const raw = await readRawSource(storageKey);
               return { key: storageKey, raw };
@@ -96802,10 +96803,20 @@ advanced
         const info=evidenceSummary(row.fieldEvidence?.[f.key]);
         return [guiEl('dt',{text:f.label}),guiEl('dd',{dataset:{characterField:f.key},text:f.value}),info.count?guiEl('details',{},[guiEl('summary',{text:`근거 ${info.count}개 · T${info.turn||'?'}`}),...info.spans.map(span=>guiEl('blockquote',{text:text(span.quote)}))]):guiEl('small',{class:'hint',text:'연결된 인용 근거 없음'})];
       }));
-      const domainReady = view?.domainStatus?.characters?.status === 'ready';
-      const emptyHint = !domainReady
-        ? '정본의 인물 상태 영역이 아직 준비되지 않았습니다. (5턴 정본 분석 후 반영)'
-        : (key==='know'?'기록된 지식이 없습니다. 이는 모른다는 뜻이 아닙니다.':'이 분류에는 현재 기록된 항목이 없습니다.');
+      const charStatus = text(view?.domainStatus?.characters?.status || '');
+      const charReason = text(view?.domainStatus?.characters?.reason || '');
+      let emptyHint;
+      if (charStatus === 'ready') {
+        emptyHint = key === 'know' ? '기록된 지식이 없습니다. 이는 모른다는 뜻이 아닙니다.' : '이 분류에는 현재 기록된 항목이 없습니다.';
+      } else if (charStatus === 'failed') {
+        emptyHint = `정본 인물 분석이 보류/실패 상태입니다 (${charReason || '분석 오류'}). 열람대나 로그를 확인하세요.`;
+      } else if (charStatus === 'partial' || charStatus === 'not_updated') {
+        emptyHint = `인물 상태 영역이 부분 반영 상태입니다 (${charStatus}${charReason ? `: ${charReason}` : ''}).`;
+      } else if (!charStatus || charStatus === 'bootstrap' || charStatus === 'pending') {
+        emptyHint = '정본의 인물 상태 영역이 아직 준비되지 않았습니다. (초기 5턴 정본 분석 후 반영)';
+      } else {
+        emptyHint = `인물 상태 영역 상태: ${charStatus}${charReason ? ` (${charReason})` : ''}.`;
+      }
       const nodes=matched.length?[factNodes(matched)]:[guiEl('p',{class:'muted',text:emptyHint})];
       if(key==='intro'){
         const known=new Set(Object.values(groupKeys).flat()),extra=facts.filter(f=>!known.has(f.key));

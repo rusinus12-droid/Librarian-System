@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-02T13:12:38.903Z",
+  "generatedAt": "2026-11-02T13:19:03.454Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3812,7 +3812,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "ffd7d3791f9ee94921ef72b415292f2a7949309759b1977a516c6bceae422444",
+      "sha256": "7ba1978fb78628012a478ca928f97fde7f963e11abf318dfeffde51b670b0eed",
       "bytes": 11836
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4232,8 +4232,8 @@
       "bytes": 1665739
     },
     "plugins/LIBRA.js": {
-      "sha256": "1cd03ec06c94fc97c95c10f428313c1ea6e8e89725bdbfc69cc331faf70547b8",
-      "bytes": 6973757
+      "sha256": "1f5b43682b4ce2aa3f3832023bbb402e6f374b4ad6fb83f0f16df7b32e6cd6fd",
+      "bytes": 6974466
     },
     "plugins/RETRACE.js": {
       "sha256": "3386123502411149a0843d2d1a45b59d0e6af80c5175646e6b2c159b94eef27f",
