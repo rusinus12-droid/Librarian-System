@@ -37075,6 +37075,28 @@ function createLibraReadonlySourceContext(owner) {
       // (the SDK accepts 64 keys), so a verification pass costs ceil(keys/32) round
       // trips instead of ceil(keys/4). The batch body is still byte-accounted.
       const OWNER_GET_MANY_BATCH = 32;
+      const bodyUtf8Bytes = text => { let bytes = 0; for (let i = 0; i < text.length; i++) { const code = text.charCodeAt(i);
+        if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) { bytes += 4; i++; } else bytes += code < 128 ? 1 : code < 2048 ? 2 : 3; } return bytes; };
+      // One lease per get-many. If the batch body could exceed the per-read cap the
+      // batch is re-read as two halves; a single key keeps the existing per-value limit.
+      const ownerGetMany = async part => {
+        if (!resources) return await MemorySuiteStorageBridge.serverGetMany('plugin', part);
+        let lease = resources.reserveRead('source');
+        try {
+          const rows = await MemorySuiteStorageBridge.serverGetMany('plugin', part);
+          const body = part.map(storageKey => rows?.values?.[storageKey]?.value ?? null);
+          const access = resources.inspect();
+          const cap = Math.min(access.limits.maxValueBytes, access.limits.maxSourceBytes - access.sourceBytes);
+          if (part.length > 1 && bodyUtf8Bytes(JSON.stringify(body)) * 2 > cap) {
+            lease.release(); lease = null;
+            const middle = Math.ceil(part.length / 2);
+            const left = await ownerGetMany(part.slice(0, middle)), right = await ownerGetMany(part.slice(middle));
+            return { ...rows, values: { ...(left?.values || {}), ...(right?.values || {}) } };
+          }
+          lease.accept(body);
+          return rows;
+        } finally { lease?.release(); }
+      };
       const frame = {
         owns: storageKey => string(storageKey).startsWith(prefix),
         async prefetch(storageKeys){
@@ -37096,11 +37118,9 @@ function createLibraReadonlySourceContext(owner) {
             let retained;
             try{
               if(mode==='mirror')for(const storageKey of part)locals.set(storageKey,await account(()=>MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey)));
-              if(resources)reservations.push(resources.reserveRead('source'));
-              const rows=await MemorySuiteStorageBridge.serverGetMany('plugin',part);
+              const rows=await ownerGetMany(part);
               state.memoryNetworkIO.ownerReads+=part.length*(mode==='mirror'?2:1);
               if(resources)retained=resources.retain(rows?.values,'owner_prefetch',2);
-              reservations[0]?.accept(part.map(storageKey=>rows?.values?.[storageKey]?.value??null));reservations[0]?.release();
               for(const [index,storageKey]of part.entries()){
                 if(!Object.hasOwn(rows?.values||{},storageKey))throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
                 const remote=rows.values[storageKey];
@@ -37155,9 +37175,7 @@ function createLibraReadonlySourceContext(owner) {
             offset += part.length;
             let retained;
             try {
-              if(mode !== 'plugin_only' && resources)reservations.push(resources.reserveRead('source'));
-              const rows = mode === 'plugin_only' ? null : await MemorySuiteStorageBridge.serverGetMany('plugin',part);
-              if(rows){reservations[0]?.accept(part.map(storageKey=>rows.values?.[storageKey]?.value??null));reservations[0]?.release();}
+              const rows = mode === 'plugin_only' ? null : await ownerGetMany(part);
               if(rows)state.memoryNetworkIO.ownerReads += part.length;
               // serverGetMany already resolves oversized keys individually.
               // Keep the held reservations through validation of those bodies.
@@ -76959,7 +76977,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const next = right[position];
           if (Number(item?.turn) !== Number(next?.turn)) return null;
           if (stableReferenceJson(item) === stableReferenceJson(next)) continue;
-          if (item?.status === 'verified') return null;
+          // Only a first publication: no Micro before, a verified one now, on the same
+          // host turn pair and head keys. Replacement or other status changes reject.
+          if (item?.status !== 'missing' || next?.status !== 'verified' || string(item?.recordKey || '')
+            || item?.pairRevisionId !== next?.pairRevisionId || item?.pairSourceDigest !== next?.pairSourceDigest
+            || item?.completedHeadKey !== next?.completedHeadKey || item?.microHeadKey !== next?.microHeadKey) return null;
           appended.push(Number(item.turn));
         }
       }
@@ -77544,8 +77566,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
               // below re-reads exactly the consumed records. The whole-corpus pin set would
               // re-read every source and reject delivery when an unrelated record (such as
               // a previous turn's Micro finishing mid-recall) changes.
-              const consumedOnlyCheck = hasIncrementalBodyDigests && Boolean(dependencies || verifyContext);
-              if (!consumedOnlyCheck) for (const readSet of conditionalReadSets) await MemorySuiteStorageBridge.assertConditionalReadSet(readSet,{ readObserver: sourceReadObserver, readBatchSize: sourceReadBatchSize });
+              // Set below only when every consumed item resolved to an owner record with
+              // a body digest. Otherwise the whole-corpus pin set is checked as before.
+              let consumedProofComplete = false;
               for(const dependency of nativeSemantic?.dependencies||[]){
                 if(!dependency.ownerBodyDigest||vectorReadbacks.has(dependency.key))continue;
                 const pin=storageMode!=='plugin_only'?await MemorySuiteStorageBridge.captureConditionalReadSet([dependency.key],{readObserver:sourceReadObserver}):null;
@@ -77587,6 +77610,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
                   for (const sourceId of asArray(dependencies?.sourceIds)) {
                     for (const u of unitsBySourceId.get(sourceId) || []) candidateUnits.add(u);
                   }
+                  const bundleItems = asArray(verifyContext?.bundle?.items);
+                  // Empty arrays/objects are truthy: require real consumed items, and every
+                  // item must map to a unit, before the narrow check may stand alone.
+                  let unresolved = candidateUnits.size === 0 || bundleItems.length === 0
+                    || bundleItems.some(item => !unitByNodeId.get(item?.nodeId));
                   for (const u of candidateUnits) {
                     let recKey = string(u?.recordKey || '');
                     if (!recKey && u?.family === 'micro' && Number.isSafeInteger(Number(u.turn))) {
@@ -77595,6 +77623,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
                         if (found?.recordKey) { recKey = string(found.recordKey); break; }
                       }
                     }
+                    if (!recKey && !['state','lore'].includes(string(u?.family || ''))) unresolved = true;
+                    if (recKey && !Object.hasOwn(asObject(ownerProof.sourceBodyDigests), recKey)) unresolved = true;
                     if (recKey) {
                       consumedStorageKeys.add(recKey);
                       for (const depKey of asArray(ownerProof.recordDependencyKeys?.[recKey])) consumedStorageKeys.add(depKey);
@@ -77603,6 +77633,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
                       for (const decKey of asArray(ownerProof.stateProof?.decisionKeys)) consumedStorageKeys.add(decKey);
                     }
                   }
+                  consumedProofComplete = !unresolved;
                 } else {
                   for (const storageKey of pinKeys) consumedStorageKeys.add(storageKey);
                 }
@@ -77616,7 +77647,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
                     if (memoryGraphSourceFingerprint(stableReferenceJson(currentRaw)) !== ownerProof.sourceBodyDigests[storageKey]) return false;
                   }
                 }finally{closingFrame.close();}
+                if (!consumedProofComplete) for (const readSet of conditionalReadSets) await MemorySuiteStorageBridge.assertConditionalReadSet(readSet,{ readObserver: sourceReadObserver, readBatchSize: sourceReadBatchSize });
               } else {
+                for (const readSet of conditionalReadSets) await MemorySuiteStorageBridge.assertConditionalReadSet(readSet,{ readObserver: sourceReadObserver, readBatchSize: sourceReadBatchSize });
                 for (const saved of pinnedValues) {
                   if (stableReferenceJson(await readRawSource(saved.key)) !== stableReferenceJson(saved.raw)) {
                     return false;

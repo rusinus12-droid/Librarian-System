@@ -8,7 +8,7 @@ const released=api=>{
 };
 
 test('projection-local reuse still rejects byte-identical server ABA at the final physical read',async t=>{
-  const seam="const rows = mode === 'plugin_only' ? null : await MemorySuiteStorageBridge.serverGetMany('plugin',part);";
+  const seam="const rows = mode === 'plugin_only' ? null : await ownerGetMany(part);";
   const x=await fixture({mode:'server_only',transformSource:source=>{
     assert.equal(source.split(seam).length,2);
     return source.replace(seam,"globalThis.__closingOwnerReadback=true; "+seam+" globalThis.__closingOwnerReadback=false;");

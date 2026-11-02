@@ -110,3 +110,16 @@ LIBRA에는 이미 런타임 공통 색인(volatile common index)이 있다. col
 LIBRA 회귀 40개 중 39개 통과. `libra_phase_d_v5_fault_semantic_recovery_test`, `libra_phase_d_v5_response_loss_recovery_test`, `libra_phase_d_v5_scope_chat_transition_recovery_test`는 수정 전 커밋에서도 간헐적으로 실패한다(각 3회 반복으로 확인). `libra_micro_state_admission_3mode`, `libra_phase_d_a05_action_matrix`, `libra_phase_d_v5_correction_race_recovery`, `libra_phase_d_v5_state_scope_commit_boundary`, `libra_source_edit_final_injection_3mode`, `libra_cold_start_3mode_parity`는 수정 전 커밋에서도 실패한다.
 
 남은 비용: cold 경로 전체 재투영(약 1.1~1.5초)과 회상당 owner proof 검증 3회. 실제 RisuAI에서 다른 기기·클라이언트가 같은 scope를 동시에 쓰는 경우는 시험하지 않았다.
+
+## 3차: 외부 리뷰 반영 (50d822d 보완)
+
+- **P1 소비 근거 완전성.** 빈 배열·객체도 참이라 기존 조건은 소비 근거 등록의 완전성을 보증하지 않았다. 이제 bundle 항목이 하나 이상이고, 모든 항목이 unit에 대응하고, 각 unit이 본문 다이제스트가 있는 owner 기록(또는 공유 키로 검사되는 State/Lore)으로 해석될 때만 좁은 검사가 단독으로 쓰인다. 하나라도 빠지면 코퍼스 전체 pin readset 검사를 함께 한다. 다이제스트가 없는 원천을 쓰는 경로는 전처럼 전체 검사를 한다.
+- **P2 Micro 동시 게시 허용 범위.** 이전 `status=missing`, 지금 `status=verified`이고 이전 기록 키가 없으며 원문 쌍(revision, digest)과 head 키가 같을 때만 허용한다. 기존 기록 교체·다른 상태 변화는 거부한다.
+- **P2 32키 묶음 예산.** 자원 관리기는 한 번 실패하면 요청 전체가 실패 상태가 되므로, 수락 전에 묶음 본문 크기를 재고 읽기 한도의 절반을 넘으면 둘로 나눠 다시 읽는다. 키 하나는 기존 값 한도를 그대로 받는다. 남은 차이: `maxReads`는 키가 아니라 묶음 수를 센다(더 느슨해진 방향).
+- **50d822d에서 놓친 회귀.** `libra_memory_graph_read_frame_runtime_test`(바이트 동일 서버 ABA)가 소스 고리 문자열 변경으로 실행되지 않고 실패하고 있었다. 고리를 새 줄로 옮겼고 6/6 통과한다. ABA는 묶음 읽기에서도 거부된다.
+
+추가 검사 `tests/libra_recall_mid_micro_publication_test.cjs`(server_only, 3건): 회상 중 Micro 게시 → 전달 성공, 최종 검사 직전 소비한 Micro 본문 변경 → 전달 거부, 게시된 Micro head 교체 → 전달 거부. 소비 본문 다이제스트 비교를 지운 변형에서 두 번째 검사가 실패함을 확인했다. Micro head 교체 검사는 느슨한 허용 조건 변형에서도 통과한다(교체된 head는 이전 상태가 verified라 두 조건 모두 거부). 따라서 이 검사는 P2 조건의 회귀 감지력을 증명하지 않는다.
+
+성능은 2차와 같다(server_only warm 1,401ms / 92회, 새 Micro 뒤 재빌드 후 1,573ms / 104회, 3회 중앙값). LIBRA 회귀 85개 중 수정 전 커밋에서도 실패하는 `libra_memory_graph_resources_runtime_test`, `libra_memory_graph_store_runtime_test`, 간헐 실패 `libra_phase_d_v5_fault_semantic_recovery_test` 외 모두 통과.
+
+리뷰의 `libra_micro_current_observation_state_integration_test.cjs`(6fa89ac) 지적은 타당하다. 이 검사는 플러그인을 실행하지 않는 객체 검사이며 인용 끝 위치도 틀렸다. 이번 작업 범위 밖이라 고치지 않았다. Flashback 비용 패널 표시 우선순위도 같은 이유로 손대지 않았다.

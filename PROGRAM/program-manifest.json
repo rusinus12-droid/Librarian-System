@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-02T15:40:16.244Z",
+  "generatedAt": "2026-11-02T16:21:57.650Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3000,8 +3000,8 @@
       "bytes": 6733
     },
     "docs/LIBRA_RECALL_BOTTLENECK_20261102.md": {
-      "sha256": "d3ce369ac912c7b156efaceff69d80675fe0c757f3ebd988748ae4319733bc7e",
-      "bytes": 13666
+      "sha256": "9de8d07c6394cb7c7bee2723c46288d2b32be75fcb21590ed35f153d543961e6",
+      "bytes": 16492
     },
     "docs/LIBRA_RECALL_BOUNDARY_DIAGNOSTICS_20261102.md": {
       "sha256": "b8f093f2e24816b8483400add7d8aaeb0949df3d6a5b8a05703557e03f9eb0ec",
@@ -3820,7 +3820,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "0b6c6be8fbffc2f815411a87a2a1d98a69cd02a05a391a4e0b2420544f35ec39",
+      "sha256": "b19b9267185d68d117a41cf67dcef2b69118044c1528e2f64f0a5cc92c744fc5",
       "bytes": 11836
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4240,8 +4240,8 @@
       "bytes": 1665739
     },
     "plugins/LIBRA.js": {
-      "sha256": "110198ef363f93192a66f9eeb4d1e0cea44340b7e0af29d39666fc7bc2731583",
-      "bytes": 6979473
+      "sha256": "b304ac1298c6bd73d8e1c05b1cef05a018f7d904b7891cf39e10e9d62b2affc5",
+      "bytes": 6981947
     },
     "plugins/RETRACE.js": {
       "sha256": "3386123502411149a0843d2d1a45b59d0e6af80c5175646e6b2c159b94eef27f",
@@ -8820,8 +8820,8 @@
       "bytes": 5395
     },
     "tests/libra_memory_graph_read_frame_runtime_test.cjs": {
-      "sha256": "702c9bf7246d1bdb1978d11a7a0790375be86ade08e2bbd33e93f746077fb0b4",
-      "bytes": 8082
+      "sha256": "14b90d58f03bc74844461a1af1005ef429ece34f9272828cd849d5cacdee33d0",
+      "bytes": 8047
     },
     "tests/libra_memory_graph_reader_contract_test.cjs": {
       "sha256": "d77e4ba356fb7952b926e34f670781df7d4e0f44861b05f1e6b7d80dbabc0154",
@@ -9554,6 +9554,10 @@
     "tests/libra_recall_korean_channel_parity_test.cjs": {
       "sha256": "361917e56cad41a808ddf2334f6330d429b3efa229bb6f36ac9a1a09ef391b2c",
       "bytes": 3698
+    },
+    "tests/libra_recall_mid_micro_publication_test.cjs": {
+      "sha256": "61c9856647bf87669ee60fbe03e09a1eb38d4d8211256544921b42de328ce099",
+      "bytes": 5682
     },
     "tests/libra_recall_read_efficiency_test.cjs": {
       "sha256": "88c74fd6e0b4bfe677428ba57e555d45b3ff26c5ce8d848830f4965b33bd4684",
