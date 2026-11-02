@@ -55,12 +55,14 @@ jobs:
           const targetVersion = state.targetVersion || nextPatchVersion(currentVersion);
           const previousVersion = state.previousVersion || currentVersion;
           const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-          const generatedAt = execFileSync("git", ["show", "-s", "--format=%cI", "HEAD"], { encoding: "utf8" }).trim();
-          console.log(JSON.stringify({ ...state, targetVersion, previousVersion, commit }));
+          const seedRef = state.phase === "resume" ? "HEAD^" : "HEAD";
+          const seedCommit = execFileSync("git", ["rev-parse", seedRef], { encoding: "utf8" }).trim();
+          const generatedAt = execFileSync("git", ["show", "-s", "--format=%cI", seedRef], { encoding: "utf8" }).trim();
+          console.log(JSON.stringify({ ...state, targetVersion, previousVersion, commit, seedCommit, seedRef }));
           fs.appendFileSync(process.env.GITHUB_ENV,
             `CURRENT_VERSION=${currentVersion}\nPREVIOUS_VERSION=${previousVersion}\nNEXT_VERSION=${targetVersion}\n` +
             `RELEASE_COMMIT_SHA=${commit}\nRELEASE_PHASE=${state.phase}\n` +
-            `LIBRARIAN_RELEASE_BUILD_ID=release-${commit.slice(0, 40)}\n` +
+            `LIBRARIAN_RELEASE_BUILD_ID=release-${seedCommit.slice(0, 40)}\n` +
             `LIBRARIAN_RELEASE_GENERATED_AT=${generatedAt}\n`);
           '
 
@@ -73,12 +75,14 @@ jobs:
           fi
           echo "Tag v${NEXT_VERSION} is unique and available."
 
-      - name: Run release builder with patch version bump
+      - name: Run release builder with publication gate
         run: |
           mkdir -p "$RUNNER_TEMP/librarian-release"
           args=(--profile release --qualification publication_gate --output-dir "$RUNNER_TEMP/librarian-release")
           if [[ "$RELEASE_PHASE" == "prepare" ]]; then
             args+=(--version "$NEXT_VERSION")
+          else
+            args+=(--check)
           fi
           node PROGRAM/tools/build_distribution.cjs "${args[@]}"
 
