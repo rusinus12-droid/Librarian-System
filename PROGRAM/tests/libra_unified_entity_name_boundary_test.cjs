@@ -37,7 +37,9 @@ async function checkNameBinding(name, sourceText, expected) {
     entity.evidenceSpans = [{ ref: 't1-u', quote: '민아는 원문에 없는 질문을 했다.' }];
     const result = await f.run();
     assert.equal(result.completed, 1, JSON.stringify(result));
-    assert.equal(f.getMemory().canonicalArtifact.entities.some(row => row.tempId === 'mina'), false);
+    // The quote is invented, but other rows of the batch really name 민아, so the entity is rebound there.
+    const rebound = f.getMemory().canonicalArtifact.entities.find(row => row.tempId === 'mina');
+    assert.ok(rebound && !rebound.evidenceSpans.some(span => span.quote.includes('원문에 없는')));
   } finally {
     await f.r.cleanup();
   }

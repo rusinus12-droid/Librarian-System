@@ -1,7 +1,7 @@
 'use strict';
 // Pure projection of JSON snapshots collected by the private owner reader bridge.
 // No storage, provider, identity inference, physical-proof issuance or final ranking.
-module.exports = function createMemoryGraphReaders({ identity, normalizeName, digestClaim } = {}) {
+module.exports = function createMemoryGraphReaders({ identity, normalizeName, digestClaim, storyClockOf } = {}) {
   if (!identity || typeof identity.meaning !== 'function') throw new TypeError('LIBRA_GRAPH_IDENTITY_REQUIRED');
   const array = value => Array.isArray(value) ? value : [];
   const object = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -137,7 +137,7 @@ module.exports = function createMemoryGraphReaders({ identity, normalizeName, di
           ? claimProof(fact.domain, subjectId, contract.field, fact.effect || 'set', fact.values?.[contract.value], anchor) : null;
         const body = { fact, subjectId, targetIds: [...targetIds], field: contract.field || '', turn, correspondenceProof };
         const node = meaning(src, 'canonical_fact', row.key + '#facts/' + index, body, { index, typedMeaning: body },
-          { text: string(fact.text), semanticRole: 'canonical_assertion', fact: clone(fact), subjectId, targetIds: [...targetIds], field: contract.field || '', turn, temporalKnown, correspondenceProof, recordKey: row.key });
+          { text: string(fact.text), semanticRole: 'canonical_assertion', fact: clone(fact), subjectId, targetIds: [...targetIds], field: contract.field || '', turn, factIndex: index, sessionEpoch: Number(record.sessionEpoch || 0), temporalRole: string(fact.temporalRole), storyClock: fact.temporalRole === 'current_sequence' ? string(object(record.turnClocks)[turn]) : '', temporalKnown, correspondenceProof, recordKey: row.key });
         if (!array(fact.evidenceSpans).length) { note('canonical', 'claim_evidence_unavailable'); return; }
         const why = basis(src, 'canonical_claim', row.key + '#basis/' + index, body, { factIndex: index, evidenceSpans: fact.evidenceSpans });
         bases.set(why.id, { ...why, turn, temporalKnown });
@@ -184,6 +184,7 @@ module.exports = function createMemoryGraphReaders({ identity, normalizeName, di
         { record, head, receipt, receiptKey: row.receiptKey, headKey: row.headKey }, record.scopeKey, 1);
       const recordTurn = Number.isSafeInteger(Number(record.turn)) ? Number(record.turn) : null;
       const recordSessionEpoch = Number.isSafeInteger(Number(record.sessionEpoch)) ? Number(record.sessionEpoch) : null;
+      const turnClock = typeof storyClockOf === 'function' ? string(storyClockOf(receipt.assistant?.text)) : '';
       spans.forEach((span, index) => {
         if (array(row.rejectedClaimIndexes).includes(index)) { note('micro', 'user_rejected_claim'); return; }
         const claim = claims[index] || null, intent = claim?.stateIntent;
@@ -199,7 +200,7 @@ module.exports = function createMemoryGraphReaders({ identity, normalizeName, di
           { index, role: span.role, messageId: span.messageId, startOffset: span.startOffset, endOffset: span.endOffset },
           { text: claim ? string(claim.text) : span.exactQuote, semanticRole: claim ? 'micro_candidate' : 'source_only',
             authority: claim ? 'source_verified_candidate' : 'source_only', sourceSpan: clone(span),
-            turn: recordTurn, sessionEpoch: recordSessionEpoch, correspondenceProof,
+            turn: recordTurn, factIndex: index, sessionEpoch: recordSessionEpoch, temporalRole: string(claim?.temporalRole), storyClock: !claim || claim.temporalRole === 'current' ? turnClock : '', correspondenceProof,
             representationCoverage: claim ? 'producer_bounded_claim' : 'producer_bounded_excerpt' });
         const why = basis(src, 'micro_span', row.recordKey + '#span/' + index, body, { span, receiptKey: record.receiptKey });
         link(node, src.node, 'evidenced_by', why);

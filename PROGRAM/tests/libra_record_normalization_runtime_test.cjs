@@ -28,8 +28,8 @@ const saved=(f,id)=>f.getMemory()?.canonicalArtifact.facts.find(x=>x.tempFactId=
  await test('blank text is recoverable while a non-text value is not overwritten',async f=>{
   fact(f,'f9').text='  ';fact(f,'f10').text=42;await f.run();assert.equal(saved(f,'f9').text,'상자의 암호');assert.equal(saved(f,'f10'),undefined);assert.equal(receipt(f).rejectedFacts,1);
  });
- await test('conflicting valid domains and unknown domain typos are quarantined rather than rewritten',async f=>{
-  fact(f,'f9').domain='world';fact(f,'f10').domain='relatonship';await f.run();assert.equal(saved(f,'f9'),undefined);assert.equal(saved(f,'f10'),undefined);assert.equal(receipt(f).normalizedDomainCount,0);assert.ok(saved(f,'f11'));
+ await test('conflicting valid domains are quarantined while an unknown domain takes the domain of its claim kind',async f=>{
+  fact(f,'f9').domain='world';fact(f,'f10').domain='relatonship';await f.run();assert.equal(saved(f,'f9'),undefined);assert.equal(saved(f,'f10').domain,'relationship');assert.equal(receipt(f).normalizedDomainCount,1);assert.ok(saved(f,'f11'));
  });
  await test('a forged quote remains rejected after text normalization and holds stale State',async f=>{
   missing(f);fact(f,'f11').evidenceSpans=[{ref:'t5-a',quote:'invented final holder'}];await f.run();assert.equal(saved(f,'f11'),undefined);assert.ok(saved(f,'f9'));assert.equal(f.getHead().world.find(x=>x.name==='은빛 열쇠').state.holderRef,undefined);assert.equal(f.getHead().status,'partial');

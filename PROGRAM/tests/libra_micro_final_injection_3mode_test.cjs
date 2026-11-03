@@ -21,6 +21,7 @@ const DETAIL = '도서관 전체는 정숙 구역';
     try {
       const {f} = fx;
       f.chat.message = f.chat.message.slice(0, 2);
+      f.chat.message[1].data = `[2026-05-14 (목) 09:12 PM] ${f.chat.message[1].data}`;
       f.chat.messages = f.chat.message;
       f.control.onCall = async args => {
         const input = JSON.parse(args[0].messages[1].content);
@@ -57,6 +58,8 @@ const DETAIL = '도서관 전체는 정숙 구역';
         `${mode}: the Classic block carries the verified Micro evidence`);
       assert.match(classicBlock, /\(1\) \[micro:[^\]]+\] 도서관 전체는 정숙 구역이다\./,
         `${mode}: the unified Classic block labels the one-turn Micro with the micro kind`);
+      assert.match(classicBlock, /story_clock=2026-05-14 \(목\) 09:12 PM/,
+        `${mode}: a Micro claim carries the clock printed in its own turn`);
       assert.match(classicBlock, /Micro is a source observation/,
         `${mode}: the Classic preamble defines Micro as a source observation`);
       assert.doesNotMatch(classicBlock, new RegExp(`\\[canonical[:\\]][^\\n]*${DETAIL}`),

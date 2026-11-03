@@ -42,7 +42,7 @@ const makeArtifact = (startTurn, batch) => {
     secondSource.data = preferenceQuote;
     f.control.artifact = makeArtifact(6, 2);
     assert.equal((await f.run()).completed, 1, 'second canonical producer batch commits');
-    assert.equal(f.control.calls.length, 2, 'the gap probe uses two deterministic provider calls');
+    assert.equal(f.control.calls.filter(call=>!JSON.stringify(call).includes('[LIBRA EVIDENCE QUOTE REPAIR]')).length, 2, 'the gap probe uses two deterministic provider calls');
 
     const manifestKey = [...snapshot.local.keys()].find(key => /:manifest$/.test(key));
     const manifest = snapshot.getManifest() || parse(snapshot.local.get(manifestKey || ''));

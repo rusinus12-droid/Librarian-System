@@ -97,7 +97,7 @@ const quoteSpan = (text, quote, messageId) => ({role: 'assistant', messageId,
       assert.equal(admitted.status, 'admitted', `${mode}: source-backed low-risk change is admitted: ${admitted.reason}`);
       assert.equal(admitted.decision?.patch?.set?.doorStatus, '열렸다');
       assert.equal(guarded.status, 'pending');
-      assert.equal(guarded.reason, 'independent_verifier_required');
+      assert.equal(guarded.reason, 'registry_reference_unresolved');
       assert.equal(unknown.status, 'pending');
       assert.equal(unknown.reason, 'registry_target_unresolved');
       const rows = mode === 'server_only' ? fixture.storedRows() : localRows(fixture.local);

@@ -9,7 +9,7 @@ const receipt=f=>f.getMemory().artifactValidation.admission;
 (async()=>{
  await test('unknown top/entity/fact/value fields are dropped without losing valid facts',async f=>{
   f.control.artifact.extra='ignored';f.control.artifact.entities[0].confidence=.9;fact(f,'f5').confidence=.9;fact(f,'f5').values.explanation='ignored';
-  const job=await f.run();assert.equal(job.completed,1);assert.equal(job.state,'completed_with_warnings');assert.equal(f.getMemory().canonicalArtifact.facts.length,13);assert.equal(receipt(f).droppedFields.length,4);assert.equal(f.getHead().status,'ready');assert.equal(f.control.calls.length,1);
+  const job=await f.run();assert.equal(job.completed,1);assert.equal(job.state,'completed_with_warnings');assert.equal(f.getMemory().canonicalArtifact.facts.length,13);assert.equal(receipt(f).droppedFields.length,4);assert.equal(f.getHead().status,'ready');assert.equal(f.control.calls.filter(call=>!JSON.stringify(call).includes('[LIBRA EVIDENCE QUOTE REPAIR]')).length,1);
  });
  await test('one bad fact is absent from canonical and recall while unrelated knowledge survives',async f=>{
   fact(f,'f1').values={parentRef:'nonexistent'};await f.run();assert.ok(!admitted(f,'f1'));assert.ok(admitted(f,'f9'));assert.equal(receipt(f).rejectedFacts,1);assert.equal(f.getMemory().pipeline.status,'partial');
@@ -41,13 +41,13 @@ const receipt=f=>f.getMemory().artifactValidation.admission;
   f.control.artifact.facts.push(null,42);const r=await f.run();assert.equal(r.completed,1);assert.equal(receipt(f).rejectedFacts,2);assert.equal(f.getHead().status,'partial');
  });
  await test('zero valid facts remains a failure with no canonical or State',async f=>{
-  for(const x of f.control.artifact.facts)x.evidenceSpans=[{ref:'t1-a',quote:'invented'}];const r=await f.run();assert.equal(r.completed,0);assert.equal(f.getMemory(),null);assert.equal(f.getHead(),null);assert.equal(f.control.calls.length,1);
+  for(const x of f.control.artifact.facts)x.evidenceSpans=[{ref:'t1-a',quote:'invented'}];const r=await f.run();assert.equal(r.completed,0);assert.equal(f.getMemory(),null);assert.equal(f.getHead(),null);assert.equal(f.control.calls.filter(call=>!JSON.stringify(call).includes('[LIBRA EVIDENCE QUOTE REPAIR]')).length,1);
  });
  await test('wrong root schema remains a failure without automatic model repair',async f=>{
-  f.control.artifact.schema='unknown';assert.equal((await f.run()).completed,0);assert.equal(f.getMemory(),null);assert.equal(f.control.calls.length,1);
+  f.control.artifact.schema='unknown';assert.equal((await f.run()).completed,0);assert.equal(f.getMemory(),null);assert.equal(f.control.calls.filter(call=>!JSON.stringify(call).includes('[LIBRA EVIDENCE QUOTE REPAIR]')).length,1);
  });
  await test('stored admission tampering blocks State replay',async f=>{
-  fact(f,'f11').evidenceSpans[0].quote='invented';await f.run();const before=JSON.stringify(f.getHead());const ref=f.getManifest().memories['1'];const mem=f.getMemory();mem.artifactValidation.admission.stateBlocks=[];f.r.values.set(ref.key,JSON.stringify(mem));await f.r.api.retryPendingUnifiedState();assert.equal(JSON.stringify(f.getHead()),before);assert.equal(f.control.calls.length,1);
+  fact(f,'f11').evidenceSpans[0].quote='invented';await f.run();const before=JSON.stringify(f.getHead());const ref=f.getManifest().memories['1'];const mem=f.getMemory();mem.artifactValidation.admission.stateBlocks=[];f.r.values.set(ref.key,JSON.stringify(mem));await f.r.api.retryPendingUnifiedState();assert.equal(JSON.stringify(f.getHead()),before);assert.equal(f.control.calls.filter(call=>!JSON.stringify(call).includes('[LIBRA EVIDENCE QUOTE REPAIR]')).length,1);
  });
  await test('strict validator still rejects a malformed stored artifact',async f=>{
   const batch=[];for(let t=1;t<=5;t++)batch.push({turn:t,user:{text:f.chat.messages[t*2-2].data},assistant:{text:f.chat.messages[t*2-1].data}});

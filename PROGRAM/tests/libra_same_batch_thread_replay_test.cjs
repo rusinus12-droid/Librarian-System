@@ -43,7 +43,7 @@ async function malformedEvidence(edit){
     const stored=f.getMemory(1)?.canonicalArtifact?.facts||[];
     assert.notEqual(stored.find(row=>row.tempFactId==='f13')?.values?.thread?.linkStatus,'accepted',
       'empty or unrecognised evidence cannot seal a same-batch target');
-    assert.equal(f.control.calls.length,1);
+    assert.equal(f.control.calls.filter(call=>!JSON.stringify(call).includes('[LIBRA EVIDENCE QUOTE REPAIR]')).length,1);
   }finally{await f.r.cleanup();}
 }
 

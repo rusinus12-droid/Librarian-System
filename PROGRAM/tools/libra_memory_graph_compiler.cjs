@@ -318,6 +318,15 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
     for (const char of String(value || '')) { const cp = char.codePointAt(0); bytes += cp <= 0x7f ? 1 : cp <= 0x7ff ? 2 : cp <= 0xffff ? 3 : 4; }
     return bytes;
   };
+  const OFF_SEQUENCE_TEMPORAL_ROLES = new Set(['historical', 'flashback', 'reported', 'hypothetical', 'uncertain']);
+  const offSequenceTemporalRole = role => OFF_SEQUENCE_TEMPORAL_ROLES.has(role) ? role : '';
+  // Units in an already published corpus predate these fields but still hold their fact.
+  const temporalFieldsOf = unit => ({
+    factIndex: unit.factIndex ?? null,
+    sessionEpoch: unit.sessionEpoch ?? null,
+    temporalRole: String(unit.temporalRole || unit.fact?.temporalRole || ''),
+    storyClock: String(unit.storyClock || '')
+  });
   const formatHydratedItemLine = (item, idx, consumer, hydrateSourceQuotes) => {
     const quoteSuffix = hydrateSourceQuotes && item.sourceSpan?.exactQuote && !String(item.text || '').includes(item.sourceSpan.exactQuote)
       ? ` (quote: "${item.sourceSpan.exactQuote}")`
@@ -328,6 +337,11 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
     if (consumer === 'planner' || consumer === 'sga') {
       const turnTag = Number.isSafeInteger(item.turn) ? `@T${item.turn}` : '@time_unknown';
       return `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}${lifecycleTag}${turnTag}] ${singleLine(item.text)}${singleLine(quoteSuffix)}`;
+    }
+    if (consumer === 'gradia') {
+      const timeTag = [Number.isSafeInteger(item.turn) ? `recorded_T${item.turn}` : '', offSequenceTemporalRole(item.temporalRole),
+        item.storyClock ? `clock=${item.storyClock}` : ''].filter(Boolean).join('/');
+      return `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}${lifecycleTag}${timeTag ? `@${timeTag}` : ''}] ${singleLine(item.text)}${singleLine(quoteSuffix)}`;
     }
     return `(${idx + 1}) [${item.family}:${item.semanticRole || item.kind}${lifecycleTag}] ${singleLine(item.text)}${singleLine(quoteSuffix)}`;
   };
@@ -343,6 +357,14 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
     'UNCERTAIN',
     'EVIDENCE'
   ]);
+  // Relevance still decides admission; these sections only present admitted past evidence in recorded order.
+  const RECORDED_ORDER_SECTIONS = new Set(['RELEVANT HISTORY', 'SCENE DETAILS']);
+  const compareRecordedOrder = (a, b) => {
+    const aKnown = Number.isSafeInteger(a.turn), bKnown = Number.isSafeInteger(b.turn);
+    if (aKnown !== bKnown) return aKnown ? -1 : 1;
+    if (!aKnown) return 0;
+    return Number(a.sessionEpoch || 0) - Number(b.sessionEpoch || 0) || a.turn - b.turn || Number(a.factIndex || 0) - Number(b.factIndex || 0);
+  };
 
   // Shared deterministic packet formatter used during both budget admission (select) and packet assembly (render) (D07, M09)
   const formatPacketText = (consumer, scopeKey, items, independentSourceCount, hydrateSourceQuotes = false, presentation = 'default') => {
@@ -676,6 +698,9 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
         attribParts.push(`target=${targets.map(t => `${t.name}${t.id ? '(' + t.id + ')' : ''}`).join(',')}`);
       }
       attribParts.push(`visibility=${visibility}`);
+      const { temporalRole, storyClock } = temporalFieldsOf(unit);
+      if (offSequenceTemporalRole(temporalRole)) attribParts.push(`temporal=${temporalRole}`);
+      if (storyClock) attribParts.push(`story_clock=${storyClock}`);
       if (provParts.length) attribParts.push(`provenance=${provParts.join('/')}`);
       attribParts.push(`certainty=${certainty}`);
 
@@ -706,6 +731,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       return {
         ...cand,
         turn: cand.turn ?? unit.turn ?? null,
+        ...temporalFieldsOf(unit),
         sourceSpan: unit.sourceSpan || null,
         lifecycleStatus,
         ...(presentationMeta ? {
@@ -874,6 +900,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
         provenanceStatus: cand.provenanceStatus ?? null,
         lifecycleStatus,
         turn: cand.turn ?? unit.turn ?? null,
+        ...temporalFieldsOf(unit),
         text: cand.text,
         score: cand.score,
         mandatoryInclusion: cand.mandatoryInclusion,
@@ -891,7 +918,10 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       };
     });
     const items = policy.presentation === 'model_document'
-      ? SEMANTIC_SECTION_ORDER.flatMap(sec => rawItems.filter(item => (SEMANTIC_SECTION_ORDER.includes(item.semanticSection) ? item.semanticSection : 'EVIDENCE') === sec))
+      ? SEMANTIC_SECTION_ORDER.flatMap(sec => {
+        const rows = rawItems.filter(item => (SEMANTIC_SECTION_ORDER.includes(item.semanticSection) ? item.semanticSection : 'EVIDENCE') === sec);
+        return RECORDED_ORDER_SECTIONS.has(sec) ? rows.sort(compareRecordedOrder) : rows;
+      })
       : rawItems;
 
     const renderedPreview = formatPacketText(
