@@ -380,8 +380,8 @@ test('V12: plugin_only and server_only produce equivalent bundles/proofs, and GR
   const pluginRun = runPipeline(makeSnapshot('plugin_only'));
   const serverRun = runPipeline(makeSnapshot('server_only'));
 
-  const pluginSel = pluginRun.compiler.select(pluginRun.queryResult, pluginRun.graph, { consumer: 'planner', maxCharacters: 4096 });
-  const serverSel = serverRun.compiler.select(serverRun.queryResult, serverRun.graph, { consumer: 'planner', maxCharacters: 4096 });
+  const pluginSel = pluginRun.compiler.select(pluginRun.queryResult, pluginRun.graph, { consumer: 'classic', maxCharacters: 4096 });
+  const serverSel = serverRun.compiler.select(serverRun.queryResult, serverRun.graph, { consumer: 'classic', maxCharacters: 4096 });
 
   assert.deepEqual(
     pluginSel.bundle.items.map(i => ({ family: i.family, text: i.text, score: i.score })),
@@ -419,7 +419,7 @@ test('M08, M09 & M10: automatic Canonical/Micro same-turn correspondence, primar
   const { graph, queryResult, compiler } = runPipeline(snap);
 
   const selected = compiler.select(queryResult, graph, {
-    consumer: 'planner',
+    consumer: 'classic',
     maxCharacters: 4096,
     hydrateSourceQuotes: true
   });
@@ -428,10 +428,10 @@ test('M08, M09 & M10: automatic Canonical/Micro same-turn correspondence, primar
   // M08: State unit derived_from Canonical shares the same primary root source, so independentSupportingSourceCount === 2 (Canonical + Lore)
   assert.equal(selected.bundle.independentSupportingSourceCount, 2);
 
-  // M09: Planner consumer renders turn tag (@T2) and hydrated source quote within envelope budget
+  // M09: the consumer renders the hydrated source quote within envelope budget
   const packet = compiler.render(selected);
   assert.equal(selected.bundle.budget.usedCharacters, packet.characterLength);
-  assert.ok(packet.renderedText.includes('@T2'));
+  assert.ok(selected.bundle.items.some(item => item.turn === 2));
 
   // M10: Mutating a witness edge or basis binding in liveGraph rejects validateConsumedReadSet
   const verified = await compiler.validateConsumedReadSet(selected.readSetHandle, {

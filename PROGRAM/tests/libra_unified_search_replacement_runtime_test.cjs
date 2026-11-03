@@ -10,7 +10,7 @@ test('normal Classic request uses the new engine without opt-in, a stored index,
  assert.equal(result.diagnostics.memoryEngine.mode,'unified');assert.equal(result.corpusRead.mode,'request_local_corpus');
  assert.ok(result.memories.some(m=>m.family==='canonical'));assert.equal(result.unifiedExecution.modelDispatchEligible,true);
  const output=await f.control.hooks.beforeRequest([{role:'user',content:'은빛 열쇠'}],'model');
- assert.ok(output.some(row=>row.content.includes('[canonical:canonical_assertion]')));assert.equal(api.getRuntime().lastMemoryInjectionMeta.servedEngine,'unified');
+ assert.ok(output.some(row=>row.content.includes('[canonical]')));assert.equal(api.getRuntime().lastMemoryInjectionMeta.servedEngine,'unified');
  assert.equal(api.getRuntime().lastMemoryInjectionMeta.finalVerification.status,'verified');assert.equal(f.control.calls.length,calls);
  const context=api.getLastResponseContext(),viewer=api.getLastMemoryRecallViewer();
  assert.equal(viewer.responseContextDigest,context.contextDigest);assert.equal(viewer.scopeKey,result.scopeKey);

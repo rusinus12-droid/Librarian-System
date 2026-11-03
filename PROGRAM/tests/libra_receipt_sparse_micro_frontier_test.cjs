@@ -48,7 +48,7 @@ const MARKER='LATEST_MICRO_T21_UNIQUE_8651';
   const viewer=f.r.api.getLastMemoryRecallViewer();
   assert.ok(viewer.rows.some(row=>row.family==='micro'&&row.turnRange?.start===21&&String(row.text).includes(MARKER)),'latest Micro T21 is a delivered row despite the sparse receipt array');
   const injected=out.filter(row=>row.role==='system').map(row=>String(row.content||'')).join('\n');
-  assert.match(injected,new RegExp(`\\[micro:[a-z_]+\\] [^\\n]*${MARKER}`),'latest Micro enters the injected final block');
+  assert.match(injected,new RegExp(`\\[micro\\] [^\\n]*${MARKER}`),'latest Micro enters the injected final block');
   console.log(JSON.stringify({test:'libra_receipt_sparse_micro_frontier',ready:view.receiptReadSet.refs.map(r=>r.turn),
    gaps:view.receiptReadSet.gaps.map(g=>g.turn),frontier}));
  }finally{await x.cleanup();}

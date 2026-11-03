@@ -52,8 +52,8 @@ async function run(name, fn) { await fn(); tests.push(name); }
         assert.equal(meta.servedEngine, 'unified'); assert.equal(meta.finalVerification.status, 'verified');
         assert.equal(meta.finalVerification.modelDispatchEligible, true);
         assert.ok(delivered.some(message => /\[LIBRA_EVIDENCE consumer=classic/.test(message.content)));
-        assert.ok(delivered.some(message => /\[micro:micro_candidate/.test(message.content)), 'Micro role survives the final consumer');
-        assert.ok(delivered.some(message => /\[lore:/.test(message.content)), 'Lore is not relabelled canonical');
+        assert.ok(delivered.some(message => /\[micro\]/.test(message.content)), 'Micro role survives the final consumer');
+        assert.ok(delivered.some(message => /\[lore\]/.test(message.content)), 'Lore is not relabelled canonical');
         // A retired selection is migrated to unified and disclosed, so the instrumented control now has to
         // observe ZERO rescues — the opposite of the retired behaviour it used to assert.
         await api.saveLibraMemorySettings({ unifiedMemoryEngineMode: 'legacy' });

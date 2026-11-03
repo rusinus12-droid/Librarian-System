@@ -127,7 +127,7 @@ const noRetired=(text,label)=>{for(const s of RETIRED_TEXT) assert.ok(!text.incl
   const d=reopened.r.api.getRuntime().lastMemoryRecallViewer;
   const canonicalIds=d.rows.filter(r=>r.family==='canonical').map(r=>r.memoryId);
   for(const n of [1,6,11]) assert.ok(canonicalIds.includes(reopened.getMemory(n).memoryId),'memory '+n+' delivered as canonical history');
-  assert.ok(text.includes('[canonical:canonical_assertion] '+secondText),'fulfilment stays a historical canonical assertion');
+  assert.ok(text.includes('[canonical] '+secondText),'fulfilment stays a historical canonical assertion');
   assert.ok(d.rows.some(r=>r.family==='state'&&r.semanticRole==='state_current'&&r.text.includes('다시 열렸다')),'current State reflects the reopen');
   noRetired(text,'reopen');
   console.log('PASS accepted later reopen stays canonical history with current State');

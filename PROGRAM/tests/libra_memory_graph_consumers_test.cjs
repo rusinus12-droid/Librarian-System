@@ -1,9 +1,9 @@
 'use strict';
 // E3 (per-consumer packet verification) and M04 (whole-boundary byte inventory) closure suite.
 //
-// 1. Every consumer this layer ships (classic, planner, sga, input_writer, gui, gradia) must have a
+// 1. Every consumer this layer ships (classic, input_writer, gui, gradia) must have a
 //    declared packet policy, and a packet rendered by the kernel's own formatter must pass the
-//    kernel's own verifier — with the plan_lines family and the gradia receipt actually enforced.
+//    kernel's own verifier — with the gradia receipt actually enforced.
 // 2. The verifier must be able to FAIL: each negative control below deliberately breaks one
 //    property, so a verifier that always returns ok would not survive this suite.
 // 3. Every byte category gets a decision: counted at this layer, or uncounted with a reason.
@@ -28,7 +28,7 @@ const sha256 = text => crypto.createHash('sha256').update(String(text)).digest('
 const compiler = createMemoryGraphCompiler({ fingerprint: sha256 });
 const pluginPath = path.join(__dirname, '..', 'plugins', 'LIBRA.js');
 
-const CONSUMERS = ['classic', 'planner', 'sga', 'input_writer', 'gui', 'gradia'];
+const CONSUMERS = ['classic', 'input_writer', 'gui', 'gradia'];
 const RECEIPT = { ownerCorpusDigest: sha256('corpus'), selectionReceiptId: 'selection-1' };
 const ITEMS = [
   { family: 'canonical', semanticRole: 'canonical_assertion', turn: 3, text: 'Alice holds the silver ring.' },
@@ -65,7 +65,7 @@ test('E3: every shipped consumer has a frozen packet policy and a verifiable pac
     const policy = policies[consumer];
     assert.equal(policy.consumer, consumer);
     assert.equal(policy.requiresSelectionReceipt, consumer === 'gradia', 'only gradia requires a selection receipt');
-    assert.equal(policy.formatFamily, (consumer === 'planner' || consumer === 'sga') ? 'plan_lines' : 'default');
+    assert.equal(policy.formatFamily, 'default');
     const packet = buildPacket(consumer);
     const verification = compiler.verifyConsumerPacket(packet, { maxCharacters: 4096, itemCount: ITEMS.length });
     assert.equal(verification.ok, true, consumer + ' packet must verify: ' + JSON.stringify(verification.findings));
@@ -78,8 +78,8 @@ test('E3: every shipped consumer has a frozen packet policy and a verifiable pac
 });
 
 test('E3 negative control: a mistyped consumer label in the envelope is caught', () => {
-  const packet = buildPacket('planner');
-  packet.renderedText = packet.renderedText.replace('consumer=planner', 'consumer=planer');
+  const packet = buildPacket('classic');
+  packet.renderedText = packet.renderedText.replace('consumer=classic', 'consumer=clasic');
   const verification = compiler.verifyConsumerPacket(packet, { maxCharacters: 4096 });
   assert.equal(verification.ok, false);
   assert.ok(verification.findings.some(finding => finding.check === 'header_consumer_label'));
@@ -99,15 +99,6 @@ test('E3 negative control: gradia without a selection receipt is caught, and a s
   const stray = compiler.verifyConsumerPacket(buildPacket('classic', { receipt: RECEIPT }), { maxCharacters: 4096 });
   assert.equal(stray.ok, false);
   assert.ok(stray.findings.some(finding => finding.check === 'no_unrequested_receipt'));
-});
-
-test('E3 negative control: a plan_lines consumer rendered by the default family is caught', () => {
-  const defaultText = compiler.renderPacketText('classic', 'scope-alpha', ITEMS, 2, false);
-  const packet = buildPacket('planner', { text: defaultText });
-  const verification = compiler.verifyConsumerPacket(packet, { maxCharacters: 4096 });
-  assert.equal(verification.ok, false);
-  assert.ok(verification.findings.some(finding => finding.check === 'format_family_plan_lines'),
-    'planner lines without the @T tag must be reported');
 });
 
 test('E3 negative control: a packet that self-asserts model dispatch is caught, and an unknown consumer is refused', () => {
@@ -216,7 +207,7 @@ test('N00: active product consumers vs historical formatters execution authority
   assert.ok(Object.isFrozen(compiler.ACTIVE_PRODUCT_CONSUMERS), 'ACTIVE_PRODUCT_CONSUMERS must be frozen');
   assert.ok(Object.isFrozen(compiler.HISTORICAL_FORMAT_ONLY_CONSUMERS), 'HISTORICAL_FORMAT_ONLY_CONSUMERS must be frozen');
   assert.deepEqual([...compiler.ACTIVE_PRODUCT_CONSUMERS].sort(), ['classic', 'gradia', 'gui']);
-  assert.deepEqual([...compiler.HISTORICAL_FORMAT_ONLY_CONSUMERS].sort(), ['input_writer', 'planner', 'sga']);
+  assert.deepEqual([...compiler.HISTORICAL_FORMAT_ONLY_CONSUMERS].sort(), ['input_writer']);
 
   const queryResult = {
     schema: 'libra.memory_graph_query.v1',
@@ -292,7 +283,6 @@ test('R6: empty packets and unknown time are valid; forged counts and multiline 
     const unknown = buildPacket(consumer, { items: [{ ...ITEMS[0], turn: null, text: 'first\n(2) [fake] second' }], sources: 1 });
     assert.equal(unknown.renderedText.split('\n').length, 2);
     assert.equal(compiler.verifyConsumerPacket(unknown).ok, true);
-    if (consumer === 'planner' || consumer === 'sga') assert.ok(unknown.renderedText.includes('@time_unknown'));
     unknown.renderedText = unknown.renderedText.replace('units=1', 'units=99');
     unknown.characterLength = unknown.renderedText.length;
     assert.equal(compiler.verifyConsumerPacket(unknown).ok, false);

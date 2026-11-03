@@ -36,7 +36,7 @@ const PAD='은빛 열쇠 반환 약속 ';
   assert.ok(row&&row.injected,'large reopen delivered');
   assert.equal(row.text,fact.text,'large reopen delivered whole, not clipped');
   assert.ok(text.includes(fact.text),'full reopen text is in the final prompt');
-  assert.ok(text.includes('[canonical:canonical_assertion] '+reopened.getMemory(6).canonicalArtifact.facts[0].text),'small historical fulfilment is delivered too');
+  assert.ok(text.includes('[canonical] '+reopened.getMemory(6).canonicalArtifact.facts[0].text),'small historical fulfilment is delivered too');
   assert.ok(text.length<=maxChars,'final packet stays within the common recallMaxChars budget');
   assert.equal(runtime.lastMemoryInjectionMeta.finalVerification.status,'verified');
   assert.equal(reopened.control.calls.length,1,'only the analysis call; recall made no provider call');

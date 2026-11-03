@@ -40,8 +40,8 @@ const STAMP = '⏱️[2026-05-14 (목) 09:12 PM]';
       { role: 'user', content: stampedFact.text }], 'model');
     const block = out.find(row => row.content?.includes('[LIBRA CLASSIC RECALL'));
     assert.ok(block, 'Classic block delivered');
-    assert.match(block.content, /`story_clock=` is the time printed/);
-    assert.match(block.content, /story_clock=2026-05-14 \(목\) 09:12 PM \| provenance=T\d+/);
+    assert.match(block.content, /the clock is the time printed/);
+    assert.match(block.content, /\[@T\d+ \| 2026-05-14 \(목\) 09:12 PM\]\n\(\d+\) \[canonical\] /);
     console.log('libra_story_clock_runtime_test: PASS');
   } finally { await f.r.cleanup(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

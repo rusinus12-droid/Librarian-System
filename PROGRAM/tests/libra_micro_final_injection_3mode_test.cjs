@@ -56,9 +56,9 @@ const DETAIL = '도서관 전체는 정숙 구역';
       const classicBlock = delivered.map(row => String(row.content || '')).join('\n');
       assert.ok(classicBlock.includes(DETAIL),
         `${mode}: the Classic block carries the verified Micro evidence`);
-      assert.match(classicBlock, /\(1\) \[micro:[^\]]+\] 도서관 전체는 정숙 구역이다\./,
+      assert.match(classicBlock, /\(1\) \[micro\] 도서관 전체는 정숙 구역이다\./,
         `${mode}: the unified Classic block labels the one-turn Micro with the micro kind`);
-      assert.match(classicBlock, /story_clock=2026-05-14 \(목\) 09:12 PM/,
+      assert.match(classicBlock, /\[@T1 \| 2026-05-14 \(목\) 09:12 PM\]/,
         `${mode}: a Micro claim carries the clock printed in its own turn`);
       assert.match(classicBlock, /Micro is a source observation/,
         `${mode}: the Classic preamble defines Micro as a source observation`);
