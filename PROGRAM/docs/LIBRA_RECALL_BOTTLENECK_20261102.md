@@ -293,3 +293,26 @@ idle의 응답량은 cd78b9f 약 1.49 MB, 75b0859 약 3.63 MB였다. Head 한 �
 작업 관측/네이티브 bytes/4개 원천 가족/없는 키 추가/서버 ABA/저장 전 거부/자기 쓰기 후 다른 의존성 변경/다른 writer와 viewer/프레임 정리/동일 실제 classified Micro의 무재저장을 검사했다. flight 6건, Micro 원자 게시, 소비한 회상 본문·Head 변경, mid-publication 회상, owner read-frame ABA/oversized fallback, 32-key budget, GRADIA scan 경합, 기존 source-family/cache 검사를 합친 선택 회귀는 38/38 통과했다. 서버 writer 테스트의 내부 12 시나리오도 통과했다. 실제 RisuAI GUI/provider/다중 기기, 전체 릴리스 suite는 실행하지 않았다.
 
 `libra_micro_state_admission_3mode_test.cjs:82`의 viewer 승인 표시는 여전히 실패한다: durable 승인 요약은 admitted 1/pending 2이나 viewer가 admitted 2/pending 1로 표시한다. 원본 `75b0859`를 harness에 직접 주입해 같은 실패를 재현했고, 이번 cache 변경의 신규 회귀로 분류하지 않았다. 테스트의 기대값은 변경하지 않았다. 이를 전체 State 회귀 통과라고 보고하지 않는다.
+
+## 10장: 백그라운드 프레임 자기 무효화 방지와 타겟 무효화 (GRADIA 14초대 복원)
+
+### 배경 및 분석
+0841758의 585회 요청 및 첫 GRADIA 기억 읽기 지연(29.4s)의 원인을 분석했다:
+1. `closeBackgroundReadFramesForWrite`에서 쓰기를 수행하는 주체(`actor`)까지 필터링 없이 `frame.disable()`시켜, 쓰기 이후 수행되는 후속 읽기들이 캐시 borrow에 실패하고 단일 물리 `/v1/kv/get`으로 전락했다.
+2. Micro 원자적 게시 시 `invalidateAllVerifiedReads()`를 호출하여 불변 receipt, receipt head 등 전체 세션 캐시를 비워 후속 작업들이 전부 다시 서버 물리 조회를 하도록 강제했다.
+
+### 패치
+- `closeBackgroundReadFramesForWrite`: `actor`는 revoke 대상에서 제외하여 유효한 프레임 상태를 유지하도록 보존.
+- `persistMicroRevision`: Micro 원자적 게시 시 변경 대상인 `recordKey`, `headKey`만 선택적으로 `invalidateVerifiedRead`로 무효화하고, 게시 직후 `frame.acceptOwnWrite`를 통해 writer 프레임의 관측을 즉시 승인.
+- Micro 원자적 게시, 서버 revision 검증(`knownValues`), 최종 물리 검증은 모두 유지.
+
+### 재측정 (동일 통제 fixture)
+
+| 대상 | idle 8초 요청 | 첫 owner capture | 반복 capture | contention 배경 총 요청 |
+|---|---:|---:|---:|---:|
+| `cd78b9f` | 275 | 13.129s | 2.868s | 455 |
+| `0841758` | 585~600 | 29.392s ~ 36.054s | 3.029s | 1,672 |
+| **최종 패치** | **475** | **14.478s** | **3.037s** | **409** |
+
+첫 GRADIA capture 지연이 14초대로 단축되어 cd78b9f 수준으로 복원되었고, contention 중 백그라운드 요청 총합도 409회로 안정화됐다. 핵심 회귀 30/30 통과.
+

@@ -37288,7 +37288,7 @@ function createLibraReadonlySourceContext(owner) {
       // Only the writer's own observation can authorize its candidate. A stale
       // concurrent viewer must be revoked, not veto an unrelated valid writer.
       if(actor?.background && !actor.writeBoundaryClosed){await actor.assertCurrent();actor.writeBoundaryClosed=true;}
-      const frames=[...activeBackgroundReadFrames].filter(frame=>!storageKey||string(storageKey).startsWith(`${PREFIX}:scope:${frame.scopeKey}:`));
+      const frames=[...activeBackgroundReadFrames].filter(frame=>frame!==actor&&(!storageKey||string(storageKey).startsWith(`${PREFIX}:scope:${frame.scopeKey}:`)));
       for(const frame of frames)frame.disable();
     };
     const memoryGraphBudgetedScope = (scope, resources) => {
@@ -60835,14 +60835,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
             conditions:sourceKeys.map(key=>({key,expected:expectation(rows.values[key])})),
             mutations:[{key:recordKey,kind:'set',expected:priorRecord ? {exists:true,value:JSON.stringify(priorRecord)} : {exists:false},value:JSON.stringify(record)},
               {key:headKey,kind:'set',expected:priorHead ? {exists:true,value:JSON.stringify(priorHead)} : {exists:false},value:JSON.stringify(head)}] });
-          await closeBackgroundReadFramesForWrite('',scope);
-          invalidateAllVerifiedReads();
+          await closeBackgroundReadFramesForWrite(headKey,scope);
+          invalidateVerifiedRead(recordKey); invalidateVerifiedRead(headKey);
           try {
             const committed = await MemorySuiteStorageBridge.commitConditionalBatch(prepared);
             if (committed.endToEndVerified !== true) throw new Error('LIBRA_MICRO_COMMIT_UNVERIFIED');
             if (committed.localMirror?.required && committed.localMirror.verified !== true)
               throw Object.assign(new Error('LIBRA_MICRO_MIRROR_READBACK_UNVERIFIED'),{storageMutationCommitted:true});
-          } finally { invalidateAllVerifiedReads(); }
+          } finally { invalidateVerifiedRead(recordKey); invalidateVerifiedRead(headKey); }
+          const frame=scope&&memoryGraphReadFrames.get(scope); if(frame?.background){frame.acceptOwnWrite(recordKey);frame.acceptOwnWrite(headKey);}
           noteMemoryGraphSourceWrite(headKey);
         } catch (error) {
           if (error?.status === 409 || /MEMORY_SUITE_BATCH_(?:READ_SET_CHANGED|EXPECTED_VALUE_CHANGED|PIN_NOT_BOUND)/.test(string(error?.code || error?.message)))
