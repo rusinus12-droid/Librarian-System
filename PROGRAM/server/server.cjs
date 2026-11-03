@@ -2040,6 +2040,20 @@ function createRepository(dataDir, namespace, isMaintenanceActive = () => false,
     let index = cursor;
     for (; index < list.length;) {
       const key = list[index];
+      // Reuse a caller's bytes only after a fresh exact-key metadata observation.
+      // This includes missing/tombstoned keys: a later addition is never a TTL hit.
+      const known = options.knownValues && Object.hasOwn(options.knownValues, key) ? options.knownValues[key] : null;
+      if (known) {
+        const meta = getMetadata(space, key);
+        if (meta.exists === known.exists && meta.tombstone === known.tombstone
+          && meta.revision === known.revision && meta.digest === known.digest) {
+          const value = { ...meta, unchanged: true };
+          const pairBytes = Buffer.byteLength(JSON.stringify(key) + ':' + JSON.stringify(value), 'utf8') + 1;
+          if (estimatedResponseBytes + pairBytes > maxResponseBytes && returnedCount) break;
+          Object.defineProperty(values, key, { value, enumerable: true, configurable: true, writable: true });
+          returnedCount++; estimatedResponseBytes += pairBytes; index++; continue;
+        }
+      }
       const row = selectKvSized.get(space, key);
       const keyBytes = Buffer.byteLength(JSON.stringify(key), 'utf8');
       const valueBytes = Math.max(0, Number(row?.value_bytes || 0) || 0);
@@ -3572,11 +3586,18 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         const space = validateSpace(body.space);
         const keys = Array.isArray(body.keys) ? body.keys.slice(0, 512).map(validateKey) : [];
         for (const key of keys) assertNonSensitive(namespace, key);
+        if (body.knownValues != null && (typeof body.knownValues !== 'object' || Array.isArray(body.knownValues)
+          || Object.keys(body.knownValues).length > 512 || Object.entries(body.knownValues).some(([key, pin]) => !keys.includes(key)
+            || !pin || typeof pin !== 'object' || typeof pin.exists !== 'boolean' || typeof pin.tombstone !== 'boolean'
+            || !Number.isSafeInteger(pin.revision) || pin.revision < 0 || typeof pin.digest !== 'string' || pin.digest.length > 128))) {
+          throw Object.assign(new Error('invalid_known_storage_values'), {statusCode:400});
+        }
         const paged = body.paged === true || body.cursor != null || body.maxResponseBytes != null;
         const result = repositories[namespace].getMany(space, keys, {
           paged,
           cursor: body.cursor,
-          maxResponseBytes: body.maxResponseBytes
+          maxResponseBytes: body.maxResponseBytes,
+          knownValues: body.knownValues
         });
         return sendJson(request, response, 200, { ok: true, result });
       }

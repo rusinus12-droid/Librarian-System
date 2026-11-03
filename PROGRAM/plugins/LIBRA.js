@@ -5695,7 +5695,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const payload = await (requestOptions.inventoryRequest || request)(
         'POST',
         '/v1/kv/get-many',
-        { namespace, space, keys: list, paged: true, cursor, maxResponseBytes: getManyResponseBudgetBytes },
+        { namespace, space, keys: list, paged: true, cursor, maxResponseBytes: getManyResponseBudgetBytes,
+          ...(requestOptions.knownValues ? {knownValues:requestOptions.knownValues} : {}) },
         { allowPluginOnly: requestOptions.allowPluginOnly === true, scope:requestOptions.scope, storageMode:requestOptions.storageMode }
       );
       pages += 1;
@@ -9752,7 +9753,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const scopedBootstrap = async (force = false) => await bootstrap(force, true);
   const scopedServerGet = async (space, key, readOptions = {}) => await remoteGet(String(space || 'plugin'), String(key || ''), { allowPluginOnly: true,storageMode:readOptions.serverManagement?MODE_SERVER_ONLY:undefined });
-  const scopedServerGetMany = async (space = 'plugin', keys = []) => await remoteGetMany(String(space || 'plugin'), keys, { allowPluginOnly: true });
+  const scopedServerGetMany = async (space = 'plugin', keys = [], readOptions = {}) => await remoteGetMany(String(space || 'plugin'), keys,
+    { allowPluginOnly: true, knownValues: readOptions.knownValues });
   const scopedServerKeys = async (space = 'plugin', prefix = '', readOptions = {}) => await remoteKeys(String(space || 'plugin'), String(prefix || ''), { allowPluginOnly: true,storageMode:readOptions.serverManagement?MODE_SERVER_ONLY:undefined });
   const scopedServerIntegrity = async () => await remoteIntegrity({ allowPluginOnly: true });
 
@@ -37210,23 +37212,25 @@ function createLibraReadonlySourceContext(owner) {
       if (!resources) return scope;
       const copy = { ...scope }; memoryGraphSourceBudgets.set(copy,resources); return copy;
     };
-    // Session read cache for plugin-only verified owner records.
+    // Session cache: native reads reuse decodes after exact byte observation. Shared
+    // storage reuses bytes only after fresh server revision validation; concurrent
+    // checks share a transfer and different keys are batched. Delivery stays fresh.
     // LIBRA is the only writer of its namespace in a session: every write goes through
     // the fenced set/remove or a conditional batch below, and each one invalidates.
     // Background work (Micro production, receipt reconciliation, person spans, State
-    // projection) re-read the same heads/receipts per turn many times; they now read
-    // each once per write-free span. Reads with a request resource budget (recall,
+    // projection) repeatedly inspect the same heads/receipts. Reuse their decoded
+    // bytes and coalesce concurrent physical observations. Request budgets (recall,
     // GRADIA, delivery) and read frames never use it; delivery-time physical checks
-    // still read storage directly. Shared server/mirror storage and unscoped raw
-    // reads bypass this cache: external writers do not participate in invalidation.
+    // still read storage directly. TTL is a residency policy, never server authority.
     const VERIFIED_READ_CACHE_MAX = 4096, VERIFIED_READ_CACHE_TTL_MS = 20000;
-    const VERIFIED_READ_CACHE_ENTRY_BYTES = 64 * 1024, VERIFIED_READ_CACHE_MAX_BYTES = 4 * 1024 * 1024;
+    const VERIFIED_READ_CACHE_ENTRY_BYTES = 128 * 1024, VERIFIED_READ_CACHE_MAX_BYTES = 4 * 1024 * 1024;
     const verifiedReadCache = new Map();
     let verifiedReadCacheBytes = 0;
     let verifiedReadWriteSeq = 0;
     // While any delivery/validation check runs, every read goes to storage.
     let freshReadDepth = 0;
-    const verifiedReadStats = state.verifiedReadCacheStats = { hits: 0, misses: 0, invalidations: 0, clears: 0, bytes: 0, entries: 0 };
+    const verifiedReadStats = state.verifiedReadCacheStats = { hits: 0, misses: 0, invalidations: 0, clears: 0, bytes: 0, entries: 0,
+      validations: 0, validationBatches: 0, coalesced: 0, remoteChanges: 0 };
     const deleteVerifiedRead = key => {
       const row = verifiedReadCache.get(key);
       if (row) verifiedReadCacheBytes -= row.bytes;
@@ -37238,15 +37242,17 @@ function createLibraReadonlySourceContext(owner) {
       const now = Date.now();
       for (const [key, row] of verifiedReadCache) if (now - row.at >= VERIFIED_READ_CACHE_TTL_MS) deleteVerifiedRead(key);
     };
-    const rememberVerifiedRead = (key, signature, value, empty) => {
+    const rememberVerifiedRead = (key, signature, value, empty, serverPin = null, localRaw = null) => {
       pruneVerifiedReads();
       deleteVerifiedRead(key);
       // UTF-16 serialized size is a conservative payload budget, not a heap measurement.
-      const serialized = JSON.stringify(empty ? null : value), bytes = 2 * (key.length + signature.length + serialized.length);
+      const localWitness = typeof localRaw === 'string' ? localRaw : null;
+      const serialized = JSON.stringify(empty ? null : value), bytes = 2 * (key.length + signature.length + serialized.length
+        + JSON.stringify(serverPin).length + (localWitness?.length || 0));
       if (bytes > VERIFIED_READ_CACHE_ENTRY_BYTES) return;
       while (verifiedReadCache.size >= VERIFIED_READ_CACHE_MAX || verifiedReadCacheBytes + bytes > VERIFIED_READ_CACHE_MAX_BYTES)
         deleteVerifiedRead(verifiedReadCache.keys().next().value);
-      verifiedReadCache.set(key, { signature, at: Date.now(), empty, value: empty ? null : clone(value), bytes });
+      verifiedReadCache.set(key, { signature, at: Date.now(), empty, value: empty ? null : clone(value), serverPin, localRaw:localWitness, bytes });
       verifiedReadCacheBytes += bytes;
       verifiedReadStats.bytes = verifiedReadCacheBytes;
       verifiedReadStats.entries = verifiedReadCache.size;
@@ -37254,10 +37260,67 @@ function createLibraReadonlySourceContext(owner) {
     const invalidateVerifiedRead = storageKey => {
       verifiedReadWriteSeq++; verifiedReadStats.invalidations++;
       deleteVerifiedRead(String(storageKey || ''));
+      deleteVerifiedRead('stored\u0000' + String(storageKey || ''));
     };
     const invalidateAllVerifiedReads = () => { verifiedReadWriteSeq++; verifiedReadStats.clears++; verifiedReadCache.clear(); verifiedReadCacheBytes = 0; verifiedReadStats.bytes = 0; verifiedReadStats.entries = 0; };
     const verifiedReadSignature = mode => stableReferenceJson([mode, MemorySuiteStorageBridge.serverBinding?.()?.generation ?? null,
       Number(state.microRestoreGeneration || 0), state.memoryGraphStoreSerial]);
+    const verifiedServerPin = row => {
+      if (!row || typeof row.exists !== 'boolean' || typeof row.tombstone !== 'boolean'
+        || !Number.isSafeInteger(row.revision) || row.revision < 0 || typeof row.digest !== 'string') throw new Error('LIBRA_VERIFIED_STORAGE_PIN_INVALID');
+      return {exists:row.exists,tombstone:row.tombstone,revision:row.revision,digest:row.digest};
+    };
+    const verifiedReadFlights = new Map(), verifiedReadQueue = new Map();
+    let verifiedReadQueueScheduled = false, verifiedReadQueued = 0;
+    const drainVerifiedReadQueue = async () => {
+      verifiedReadQueueScheduled = false;
+      const groups = [...verifiedReadQueue.values()]; verifiedReadQueue.clear(); verifiedReadQueued = 0;
+      for (const group of groups) for (let offset = 0; offset < group.length; offset += 32) {
+        const part = group.slice(offset,offset + 32);
+        try {
+          if (state.disposed) throw new Error('LIBRA_VERIFIED_STORAGE_DISPOSED');
+          const knownValues = Object.fromEntries(part.filter(row=>row.pin).map(row=>[row.key,row.pin]));
+          verifiedReadStats.validationBatches++;
+          const batch = await MemorySuiteStorageBridge.serverGetMany('plugin',part.map(row=>row.key),{knownValues});
+          for (const row of part) {
+            const value = batch?.values?.[row.key];
+            if (!value) { row.reject(new Error('LIBRA_VERIFIED_STORAGE_BATCH_INCOMPLETE')); continue; }
+            row.resolve(value);
+          }
+        } catch (error) { for (const row of part) row.reject(error); }
+      }
+    };
+    const readVerifiedServerRow = (storageKey, signature, sequence, pin) => {
+      const groupKey = signature + '\u0000' + sequence, flightKey = groupKey + '\u0000' + storageKey;
+      const existing = verifiedReadFlights.get(flightKey);
+      if (existing && Date.now() >= existing.at && Date.now() - existing.at < VERIFIED_READ_CACHE_TTL_MS) { verifiedReadStats.coalesced++; return existing.operation; }
+      if (existing) verifiedReadFlights.delete(flightKey);
+      // Bound queue residency; admission pressure falls back to an ordinary read.
+      if (verifiedReadFlights.size >= 256 || verifiedReadQueued >= 256) return MemorySuiteStorageBridge.serverGet('plugin',storageKey);
+      const operation = new Promise((resolve,reject)=>{
+        const group = verifiedReadQueue.get(groupKey) || [];
+        group.push({key:storageKey,pin,resolve,reject}); verifiedReadQueued++;
+        verifiedReadQueue.set(groupKey,group);
+        if (!verifiedReadQueueScheduled) { verifiedReadQueueScheduled = true; Promise.resolve().then(drainVerifiedReadQueue); }
+      });
+      const entry = {operation,at:Date.now()}; verifiedReadFlights.set(flightKey,entry);
+      operation.then(()=>{if(verifiedReadFlights.get(flightKey)===entry)verifiedReadFlights.delete(flightKey);},
+        ()=>{if(verifiedReadFlights.get(flightKey)===entry)verifiedReadFlights.delete(flightKey);});
+      return operation;
+    };
+    const readVerifiedLocalRow = (storageKey,signature,sequence) => {
+      const flightKey = signature + '\u0000' + sequence + '\u0000local\u0000' + storageKey;
+      const existing = verifiedReadFlights.get(flightKey);
+      if (existing && Date.now() >= existing.at && Date.now() - existing.at < VERIFIED_READ_CACHE_TTL_MS) { verifiedReadStats.coalesced++; return existing.operation; }
+      if (existing) verifiedReadFlights.delete(flightKey);
+      const operation = MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey);
+      if (verifiedReadFlights.size < 256) {
+        const entry = {operation,at:Date.now()}; verifiedReadFlights.set(flightKey,entry);
+        operation.then(()=>{if(verifiedReadFlights.get(flightKey)===entry)verifiedReadFlights.delete(flightKey);},
+          ()=>{if(verifiedReadFlights.get(flightKey)===entry)verifiedReadFlights.delete(flightKey);});
+      }
+      return operation;
+    };
     const storage = Object.freeze({
       async getStoredJson(storageKey, fallback = null, scope = null) {
         const frame = scope && memoryGraphReadFrames.get(scope);
@@ -37273,7 +37336,19 @@ function createLibraReadonlySourceContext(owner) {
           return parseStoredJson(raw,storageKey,fallback);
         };
         if (resources) return await resources.read(load,{ consume: decode });
-        return decode(await load());
+        const raw = await load();
+        // Raw proxy reads have no server revision. Reuse only the pure JSON decode
+        // after observing exactly the same bytes; never skip their physical read.
+        const signature = !state.disposed && freshReadDepth === 0 ? verifiedReadSignature('stored') : '';
+        const cacheKey = 'stored\u0000' + storageKey;
+        const hit = signature && verifiedReadCache.get(cacheKey);
+        if (hit && hit.signature === signature && hit.value?.raw !== raw) noteMemoryGraphSourceWrite(storageKey);
+        if (hit && hit.signature === signature && hit.value?.raw === raw && Date.now() - hit.at < VERIFIED_READ_CACHE_TTL_MS) {
+          verifiedReadStats.hits++; return hit.empty ? clone(fallback) : clone(hit.value.decoded);
+        }
+        const value = decode(raw);
+        if (signature && typeof raw === 'string' && raw !== '') rememberVerifiedRead(cacheKey,signature,{raw,decoded:value},false);
+        return value;
       },
       async getJson(storageKey, fallback = null, scope = null) {
         const value = await this.getStoredJson(storageKey, fallback, scope);
@@ -37291,31 +37366,54 @@ function createLibraReadonlySourceContext(owner) {
             try { scope._cachedMode = mode; } catch (_) {}
           }
         }
-        const cacheable = mode === 'plugin_only' && !resources && !state.disposed && freshReadDepth === 0;
+        const cacheable = !resources && !state.disposed && freshReadDepth === 0;
         const signature = cacheable ? verifiedReadSignature(mode) : '';
+        let hit = null;
         if (cacheable) {
           pruneVerifiedReads();
-          const hit = verifiedReadCache.get(storageKey);
-          if (hit && hit.signature === signature && Date.now() - hit.at <= VERIFIED_READ_CACHE_TTL_MS) {
-            verifiedReadStats.hits++;
-            return hit.empty ? clone(fallback) : clone(hit.value);
-          }
-          verifiedReadStats.misses++;
+          const candidate = verifiedReadCache.get(storageKey);
+          hit = candidate?.signature === signature ? candidate : null;
+          if (!hit) verifiedReadStats.misses++;
         }
         const seqAtStart = verifiedReadWriteSeq;
-        const remember = (value, empty = false) => {
-          if (!cacheable || verifiedReadWriteSeq !== seqAtStart) return;
-          rememberVerifiedRead(storageKey, signature, value, empty);
+        const remember = (value, empty = false, serverPin = null, localRaw = null) => {
+          if (!cacheable || verifiedReadWriteSeq !== seqAtStart || state.disposed || signature !== verifiedReadSignature(mode)) return;
+          rememberVerifiedRead(storageKey, signature, value, empty, serverPin,localRaw);
         };
         const needsLocal = mode !== 'server_only';
         const needsServer = mode !== 'plugin_only';
-        const localRaw = needsLocal ? await read(() => MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey)) : null;
-        const serverRow = needsServer ? await read(() => MemorySuiteStorageBridge.serverGet('plugin',storageKey),row => row?.value ?? null) : null;
+        const localRaw = needsLocal ? await read(() => cacheable ? readVerifiedLocalRow(storageKey,signature,seqAtStart)
+          : MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey)) : null;
+        const serverRow = needsServer ? await read(() => cacheable
+          ? readVerifiedServerRow(storageKey,signature,seqAtStart,hit?.serverPin)
+          : MemorySuiteStorageBridge.serverGet('plugin',storageKey),row => row?.value ?? null) : null;
+        const serverPin = needsServer ? verifiedServerPin(serverRow) : null;
+        if (needsServer && hit) {
+          verifiedReadStats.validations++;
+          if (stableReferenceJson(serverPin) !== stableReferenceJson(hit.serverPin)) {
+            verifiedReadStats.remoteChanges++;
+            deleteVerifiedRead(storageKey);
+            // All source families use the same invalidation path, including
+            // negative-to-present additions, Lens, Canonical, Micro and State.
+            noteMemoryGraphSourceWrite(storageKey);
+          }
+        }
         state.memoryNetworkIO.ownerReads += Number(needsLocal) + Number(needsServer);
         const localExists = localRaw !== null && localRaw !== undefined && localRaw !== '';
         const serverExists = serverRow?.exists === true && serverRow?.tombstone !== true;
+        if (!needsServer && hit) {
+          if (hit.empty && !localExists || !hit.empty && typeof localRaw === 'string' && hit.localRaw === localRaw) {
+            verifiedReadStats.hits++; return hit.empty ? clone(fallback) : clone(hit.value);
+          }
+          deleteVerifiedRead(storageKey); noteMemoryGraphSourceWrite(storageKey);
+        }
         if (needsLocal && needsServer && localExists !== serverExists) throw new Error(`LIBRA_VERIFIED_STORAGE_COPY_MISMATCH:${storageKey}`);
-        if ((needsLocal && !localExists) || (needsServer && !serverExists)) { remember(null, true); return clone(fallback); }
+        if ((needsLocal && !localExists) || (needsServer && !serverExists)) { remember(null, true, serverPin); return clone(fallback); }
+        if (serverRow?.unchanged === true) {
+          if (!hit || stableReferenceJson(serverPin) !== stableReferenceJson(hit.serverPin)) throw new Error('LIBRA_VERIFIED_STORAGE_UNBOUND_REUSE');
+          if (needsLocal && localRaw !== hit.localRaw && digest(parseStoredJson(localRaw,storageKey,fallback)) !== digest(hit.value)) throw new Error(`LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:${storageKey}`);
+          verifiedReadStats.hits++; return clone(hit.value);
+        }
         const decode = () => {
           const local = needsLocal ? parseStoredJson(localRaw,storageKey,fallback) : null;
           const remote = needsServer ? parseStoredJson(serverRow.value,storageKey,fallback) : null;
@@ -37323,7 +37421,7 @@ function createLibraReadonlySourceContext(owner) {
           return clone(needsServer ? remote : local);
         };
         if (resources) return await resources.withValue(localRaw,() => resources.withValue(serverRow?.value ?? null,decode));
-        const decoded = decode(); remember(decoded); return decoded;
+        const decoded = decode(); remember(decoded,false,serverPin,localRaw); return decoded;
       },
       async setVerifiedJson(storageKey, value, scope) {
         await fencedMemoryStorageSet(storageKey, JSON.stringify(value));
@@ -60554,9 +60652,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return conflicted;
     };
     const persistMicroRevision = async (receipt, receiptKey, analysis, workKey, publishClaim) => {
+      const scope = microScope(receipt);
+      const mode = string((await MemorySuiteStorageBridge.getScopeMode(scope, false))?.mode || 'plugin_only');
+      const headKey = key.microMemoryHead(scope, receipt.worldlineId, receipt.sessionEpoch, receipt.turn);
+      const sourceKeys = [receiptKey, key.completedTurnHead(scope,receipt.worldlineId,receipt.sessionEpoch,receipt.turn),
+        key.completedTurnCapture(scope,receipt.worldlineId,receipt.sessionEpoch,receipt.turn,receipt.revisionId),workKey];
+      // Pin before closing source checks. The original revisions, including a
+      // missing target Head, must survive until atomic publication. Never refresh
+      // the predicates to publish a result computed from an earlier source.
+      const publicationPin = mode !== 'plugin_only'
+        ? await MemorySuiteStorageBridge.captureConditionalReadSet([...sourceKeys,headKey]) : null;
       const active = await activeMicroSource(receipt);
       if (!active || active.receiptKey !== receiptKey) return { status: 'stale_source' };
-      const scope = microScope(receipt);
       const claimCurrent=async()=>{
         if(publishClaim.validate)await publishClaim.validate();
          if(Number(state.microRestoreGeneration||0)!==publishClaim.restoreGeneration)return false;
@@ -60584,7 +60691,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const record = { ...base, analysisRevisionId };
       const recordKey = key.microMemory(scope, receipt.worldlineId, receipt.sessionEpoch,
         receipt.turn, receipt.revisionId, analysisRevisionId);
-      const headKey = key.microMemoryHead(scope, receipt.worldlineId, receipt.sessionEpoch, receipt.turn);
       const recallMemory = microRecallMemoryFromRecord(record, receipt, recordKey);
       if (!recallMemory) throw new Error('LIBRA_MICRO_RECALL_PROJECTION_INVALID');
       const recallProjection = microRecallProjectionFromMemory(recallMemory);
@@ -60598,7 +60704,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         recallProjection, recallProjectionDigest: digest(recallProjection) };
       const priorRecord = await readRecoverableMicroJson(recordKey, scope);
       if (priorRecord && digest(priorRecord) !== digest(record)) throw new Error('LIBRA_MICRO_IMMUTABLE_CONFLICT');
-      await storage.setVerifiedJson(recordKey, record, scope);
+      if (!publicationPin) await storage.setVerifiedJson(recordKey, record, scope);
       if (!await activeMicroSource(receipt)) return { status: 'stale_source' };
       const priorHead = await readRecoverableMicroJson(headKey, scope);
       if (priorHead?.sourceRevisionId === receipt.revisionId
@@ -60607,7 +60713,28 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       if(!await claimCurrent() || !await activeMicroSource(receipt))
         return {status:'stale_source',reason:'micro_publish_claim_changed'};
-      await storage.setVerifiedJson(headKey, head, scope);
+      if (publicationPin) {
+        const rows = await MemorySuiteStorageBridge.serverGetMany('plugin',sourceKeys);
+        const expectation = row => row?.exists === true && row.tombstone !== true ? {exists:true,value:row.value} : {exists:false};
+        try {
+          const prepared = await MemorySuiteStorageBridge.prepareConditionalBatch({ readSet:publicationPin,
+            conditions:sourceKeys.map(key=>({key,expected:expectation(rows.values[key])})),
+            mutations:[{key:recordKey,kind:'set',expected:priorRecord ? {exists:true,value:JSON.stringify(priorRecord)} : {exists:false},value:JSON.stringify(record)},
+              {key:headKey,kind:'set',expected:priorHead ? {exists:true,value:JSON.stringify(priorHead)} : {exists:false},value:JSON.stringify(head)}] });
+          invalidateAllVerifiedReads();
+          try {
+            const committed = await MemorySuiteStorageBridge.commitConditionalBatch(prepared);
+            if (committed.endToEndVerified !== true) throw new Error('LIBRA_MICRO_COMMIT_UNVERIFIED');
+            if (committed.localMirror?.required && committed.localMirror.verified !== true)
+              throw Object.assign(new Error('LIBRA_MICRO_MIRROR_READBACK_UNVERIFIED'),{storageMutationCommitted:true});
+          } finally { invalidateAllVerifiedReads(); }
+          noteMemoryGraphSourceWrite(headKey);
+        } catch (error) {
+          if (error?.status === 409 || /MEMORY_SUITE_BATCH_(?:READ_SET_CHANGED|EXPECTED_VALUE_CHANGED|PIN_NOT_BOUND)/.test(string(error?.code || error?.message)))
+            return {status:'stale_source',reason:'micro_publication_basis_changed'};
+          throw error;
+        }
+      } else await storage.setVerifiedJson(headKey, head, scope);
       const published = await readActiveMicroMemory(scope, receipt.worldlineId, receipt.sessionEpoch, receipt.turn);
       if (published.status !== 'verified' || published.head.analysisRevisionId !== analysisRevisionId) {
         throw new Error(`LIBRA_MICRO_READBACK_${published.status.toUpperCase()}`);
@@ -81492,14 +81619,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
     // ---- registry ------------------------------------------------------------------------------
     let lensRegistryCache = null;
-    let lensRegistryCacheAt = 0;
-    const invalidateLensRegistryCache = () => { lensRegistryCache = null; lensRegistryCacheAt = 0; };
+    let lensRegistryCacheRaw = '', lensRegistryCacheSignature = '';
+    const invalidateLensRegistryCache = () => { lensRegistryCache = null; lensRegistryCacheRaw = ''; lensRegistryCacheSignature = ''; };
     const readLensRegistry = async (options = {}) => {
-      if (options.force !== true && lensRegistryCache && Date.now() - lensRegistryCacheAt < 3000) return clone(lensRegistryCache);
-      const runtimeStored = await readRuntimeSettings().catch(() => ({}));
-      lensRegistryCache = normalizeLensRegistry(runtimeStored?.lens_registry);
-      lensRegistryCacheAt = Date.now();
-      return clone(lensRegistryCache);
+      // Definitions live in runtime settings, not the chat's Lens result Head.
+      // Read their actual bytes even inside the former 3s registry TTL. Only the
+      // pure normalization is memoized, under the same lifecycle fence.
+      const raw = await RisuCompat.getItem(STORAGE_RUNTIME_SETTINGS_KEY);
+      const witness = typeof raw === 'string' ? raw : stableReferenceJson(raw);
+      const signature = verifiedReadSignature('lens-registry');
+      if (options.force !== true && lensRegistryCache && lensRegistryCacheRaw === witness && lensRegistryCacheSignature === signature)
+        return clone(lensRegistryCache);
+      const runtimeStored = normalizeRuntimeRecord(parseRuntimeSettingsEnvelope(raw) || {});
+      const registry = normalizeLensRegistry(runtimeStored?.lens_registry);
+      if (lensRegistryCache && stableReferenceJson(lensRegistryCache) !== stableReferenceJson(registry)) noteMemoryGraphSourceWrite(PREFIX + ':scope:');
+      if (witness.length * 2 + JSON.stringify(registry).length * 2 <= VERIFIED_READ_CACHE_ENTRY_BYTES) {
+        lensRegistryCache = clone(registry); lensRegistryCacheRaw = witness; lensRegistryCacheSignature = signature;
+      } else invalidateLensRegistryCache();
+      return clone(registry);
     };
     let lensRegistryWriteTail = Promise.resolve();
     const mutateLensRegistry = mutation => {
@@ -81509,6 +81646,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const next = normalizeLensRegistry({ ...candidate, purgedLensIds:[...new Set([...current.purgedLensIds,...(candidate.purgedLensIds||[])])], updatedAt: nowIso() });
         await saveLensRegistryOnly(next);
         invalidateLensRegistryCache();
+        noteMemoryGraphSourceWrite(PREFIX + ':scope:');
         scheduleGuiTraceRefresh();
         return await readLensRegistry({ force: true });
       });

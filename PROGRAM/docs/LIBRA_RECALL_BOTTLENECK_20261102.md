@@ -164,7 +164,7 @@ LIBRA 회귀 40개 중 39개 통과. `libra_phase_d_v5_fault_semantic_recovery_t
 
 회귀: memory_graph, recall, gradia 계열 88개 통과. 원래 HEAD에서도 실패하던 테스트(위 장들과 동일)는 제외했다.
 
-## 6장: 2026-11-03 리뷰 후 보완
+## 6장: 2026-11-03 리뷰 후 보완 (f9e7b7b 당시; 아래 7장으로 확장)
 
 ### Git 기준
 
@@ -186,3 +186,28 @@ LIBRA 회귀 40개 중 39개 통과. `libra_phase_d_v5_fault_semantic_recovery_t
 - 실행 환경의 기본 임시 폴더에서 rename EPERM이 발생하여 임시 경로를 `.development/cache-review-temp`로 옮겼다. jsdom은 기존 `PROGRAM/build-support/node_modules`를 NODE_PATH로 지정했다. 소스의 안전 검사를 약화시키지 않았다.
 
 실제 RisuAI GUI, 실제 공급자, 장기 사용·기기 성능, 전체 회귀/CI 및 서버 캐시 우회 후 경합 지연 재측정은 수행하지 않았다. 공개 릴리스·배포도 하지 않았다.
+
+## 7장: Micro·렌즈·정본·State 공통 캐시 재사용과 게시 보호
+
+`cd78b9f`의 Map·20초 TTL·복사 반환·쓰기 무효화·최종 fresh 검사 구조를 유지하면서 `f9e7b7b`의 서버 모드 전체 캐시 우회를 대체했다. TTL은 보관 정책이고 현재성의 권한은 새 저장소 관측이다.
+
+- **서버 재사용.** 기존 `/v1/kv/get-many`에 선택적 `knownValues`를 추가했다. revision/digest/exists/tombstone이 현재 SQLite metadata와 모두 같을 때만 본문 없이 `unchanged`를 반환한다. 변경·삭제·없던 키의 생성·같은 값 ABA는 새 관측으로 처리한다. 권한·reset 검사·pagination·응답 크기 제한은 기존 경로를 사용한다. 구버전 서버가 이 옵션을 무시하면 전체 최신 값을 읽는 경로로 동작한다.
+- **동시 읽기.** 같은 키·mode/binding/restore/store 세대·자체 write sequence의 읽기는 하나의 flight를 공유한다. 서로 다른 키는 최대 32개씩 묶는다. flight/queue는 256개로 제한하고 초과 시 일반 읽기로 돌아간다. flight는 20초 후 교체할 수 있고 이전 요청의 늦은 정리가 새 flight를 삭제하지 않는다. fresh/resource-budget 읽기는 이 공유 경로에 합류하지 않는다.
+- **native 및 raw 읽기.** plugin_only는 실제 owner bytes를 읽고 이전 bytes와 같을 때만 JSON decode를 재사용한다. getStoredJson도 실제 raw 읽기 뒤 순수 decode를 재사용한다. host가 durable revision을 주지 않는 상황에서 TTL만으로 외부 탭의 원천 변경을 숨기지 않는다.
+- **모든 원천 가족.** 검증한 원천이 달라지면 기존 `noteMemoryGraphSourceWrite`와 snapshot source epoch 경로로 파생 view를 무효화한다. Micro/렌즈/정본/State를 키 종류에 따라 제외하지 않는다. 기존 keys 열거 경로도 캐시하지 않는다. 자체 set/remove 및 조건부 batch 앞뒤의 무효화를 유지한다.
+- **렌즈 정의와 결과 구별.** 렌즈 결과 Head/records뿐 아니라 runtime-settings에 저장되는 공통 렌즈 정의도 다룬다. 기존 3초 registry TTL로 정의 변경을 숨기지 않고, 실제 설정 bytes와 lifecycle이 같을 때 정규화 결과만 재사용한다. 정의 저장과 관측된 변경 모두 파생 원천 view에 알린다.
+- **Micro 게시.** source receipt·source Head·raw capture·work와 기존/누락 Micro Head의 원래 revision을 게시 검사 전에 pin한다. 서버에서는 Micro record와 Head를 같은 조건부 batch로 게시한다. 원천을 새 revision으로 다시 맞춰 오래된 후보를 통과시키지 않는다. 조건 충돌은 stale_source이며 부분 record/Head를 남기지 않는다. mirror의 서버 원자성과 로컬 복제 검증은 구별하며 로컬 복제 미검증을 성공 처리하지 않는다. 정본/State의 기존 readset/CAS와 최종 전달 검사를 유지한다.
+- **메모리.** 전체 보관 payload 4 MiB·4,096개 상한을 유지한다. 항목당 상한은 128 KiB다. mirror에서 실제 State Head의 decoded 값과 exact-local-byte witness를 함께 계산하면 기존 64 KiB로는 재사용하지 못했기 때문에, 항목당 허용량만 제한적으로 늘렸다. raw witness·pin도 바이트 예산에 포함한다. 별도 registry 정규화 캐시도 128 KiB 이내에서만 보관한다. 이는 heap 전체 상한이 아니다.
+- **변경 범위.** 서버는 DB schema 변경 없이 metadata 조회를 재사용한다. Storage SDK는 공유 릴리스 버전 1.8.35를 유지하고 LIBRA 전용 source variant에 호환 옵션을 추가하여 LIBRA embed에만 동기화했다. 기존 릴리스 메타데이터는 공통 SDK 버전의 일치를 요구하며 전용 variant의 정확한 내용은 SHA로 구분한다. 다른 다섯 플러그인의 SDK/생산자 계약은 보존했다. GRADIA의 HAYAKU 의미 보존 패치는 유지했다.
+
+### 검증과 측정 범위
+
+새 회귀는 `libra_source_family_cache_test`, `libra_micro_publication_cache_race_test`, `server_conditional_read_cache_test`다. 기존 캐시 검사는 새 물리 bytes 관측 후 decode 재사용을 확인하도록 갱신했다. schema를 해석하지 않는 저장소 가족 검사는 별도로 표시하고, 실제 API로 렌즈 생성·추가 분석, 정본 5→10턴 append, State correction을 warm cache 위에서 수행해 재시작 후에도 확인했다. 렌즈 정의의 외부 수정도 기존 TTL 안에서 감지한다. Micro는 실제 producer가 조건부 commit에 도달한 직후 원천 Head를 ABA 변경하여 record/Head 모두 게시되지 않는 것을 확인한다.
+
+실제 localhost HTTP/SQLite에서는 조건부 읽기의 새 키 생성·ABA·응답 예산·namespace 권한과 기존 조건부 게시/SDK 호환 회귀를 실행했다. 별도의 내부 dispatch fixture에서는 GRADIA three-owner 전달, 분석 중 읽기, Micro 동시 게시, 소비 근거 변경, 렌즈 의미 검색, State/정본 writer 회귀를 실행했다. fixture의 synthetic 모델 호출은 실제 공급자 실행이 아니다.
+
+최종 Node test runner 결과는 제품/fixture 선별 회귀 46/46, 실제 localhost HTTP·SDK 회귀 12/12 통과다. SDK variant 동기화 검사와 소스 문법 검사도 통과했다. 전체 저장소 회귀 또는 릴리스 gate 통과를 뜻하지 않는다.
+
+통제된 동일 State Head 50회 helper 읽기에서 server_only/mirror 모두 f9e7b7b의 응답 1,281,950 bytes가 후보의 58,235 bytes로 줄었다(약 95.5%). 같은 키의 동시 50회 읽기는 서버 요청 50→1회다. **순차 50회는 현재성 확인 때문에 여전히 서버 요청 50회이며, cd78b9f의 1회 요청과 동등하다고 주장하지 않는다.** cd78b9f는 이 비교의 TTL 안 외부 변경을 일반 읽기에서 보지 못했고 후보는 확인했다. 시간 수치는 내부 dispatch 환경의 값이므로 실제 네트워크/호스트 지연 보장이 아니다.
+
+실제 RisuAI GUI, 실제 공급자, 다중 기기 장기 운용 및 기존 8초 background+GRADIA 경합 workload의 성능 재측정은 남아 있다. 렌즈 저장 전체를 다중 writer 원자적 트랜잭션으로 전환한 것은 아니며, 이번 변경은 캐시가 생략하던 원천 관측과 Micro 게시 경계를 보호한다. 커밋·push·배포는 수행하지 않았다.

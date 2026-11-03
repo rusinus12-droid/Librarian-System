@@ -20,7 +20,7 @@ for(const mode of ['server_only','mirror']) test(`${mode}: external writes insid
   s.local.set(row.key,JSON.stringify(external));
   assert.equal((await storage.getVerifiedJson(row.key,scope)).externalMarker,external.externalMarker);
  }
- assert.equal(stats.hits,before,'shared reads never hit a TTL entry');
+ assert.equal(stats.hits,before,'a changed server revision cannot reuse the prior cached body');
  fiveMore(f);let raced=false;
  f.control.onCall=async args=>{
   if(classifyCall(args)==='canonical'){
