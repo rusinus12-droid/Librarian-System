@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-03T23:22:44.920Z",
+  "generatedAt": "2026-11-03T23:24:56.926Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -9658,6 +9658,10 @@
     "tests/libra_receipt_status_read_volume_test.cjs": {
       "sha256": "9725d14bf6ff0e8950f42c3b63fb9b1a354cfe5b5f0e4f43fc65bc9d32535f80",
       "bytes": 2752
+    },
+    "tests/libra_recent_work_runtime_test.cjs": {
+      "sha256": "f8eef30db94f4ca9f58d2bc7140bf135830b1d485bc2bca5fb43935f1ac5a2dd",
+      "bytes": 7200
     },
     "tests/libra_record_normalization_runtime_test.cjs": {
       "sha256": "1e7dbf8e802e9762ab9523165831774d4aaaa679dac0f37e6320820e8bb4653a",
