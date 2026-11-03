@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.14
+//@display-name GRADIA v0.28.15
 //@api 3.0
-//@version 0.28.14
+//@version 0.28.15
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -936,7 +936,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.14';
+  const PLUGIN_VERSION = '0.28.15';
   
   
   
@@ -3584,7 +3584,18 @@ Before continuing, verify:
   const LIB_EVIDENCE_TRANSPORT_MARKER = 'GRADIA_LIB_EVIDENCE_NO_REUSE_V1';
   let activeLibEvidenceRun = null;
   let libEvidenceResponseRedactionRequired = false;
-  const libEvidenceError = code => Object.assign(new Error(code), { code });
+  const libReadFailureDetails = error => {
+    const source = error?.readDiagnostic || {};
+    const token = value => typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_.-]{0,159}$/.test(value) ? value : '';
+    const reason = token(error?.dispatchReason) || token(source.dispatchReason) || token(error?.message);
+    const diagnostic = {};
+    for (const key of ['stage','dispatchReason','stopReason','deliveryOutcome']) if (token(source[key])) diagnostic[key] = source[key];
+    for (const key of ['ownerAuthority','modelDispatchEligible']) if (typeof source[key] === 'boolean') diagnostic[key] = source[key];
+    return { ...(reason ? {dispatchReason:reason} : {}),
+      ...(/^LIB_READ_[A-Z_]+$/.test(error?.causeCode || error?.code || '') ? {causeCode:error.causeCode || error.code} : {}),
+      ...(Object.keys(diagnostic).length ? {readDiagnostic:diagnostic} : {}) };
+  };
+  const libEvidenceError = (code, cause) => Object.assign(new Error(code), { code }, libReadFailureDetails(cause));
   const hasLibEvidenceMarker = value => typeof value === 'string' && value.includes(LIB_EVIDENCE_TRANSPORT_MARKER);
   const evidenceDerivedEntry = entry => !!entry && (entry.externalEvidence === true
     || entry.finalDraftMeta?.externalEvidence === true || hasLibEvidenceMarker(entry.injection));
@@ -4038,14 +4049,14 @@ Before continuing, verify:
     return { schema: 'gradia.native-read-set.v1', currentInputRef: effectiveRef(inputMessage), selections,
       currentInput: contentToText(inputContent), query: baseRecent.latestUser, turns: [...selected.values()] };
   };
-  const captureLibNativeReadSetFromHost = async (messages, settings, baseRecent, scope) => {
+  const captureLibNativeReadSetFromHost = async (messages, settings, baseRecent, scope, options = {}) => {
     const fastResolved = resolveSgaCurrentTurn(messages);
     const fastLastAssistant = messages.findLastIndex(message => currentTurnRole(message) === 'assistant');
     const hasUnboundOrDuplicatePendingUser = fastResolved.requestIndex >= 0 && (
       !nativeTurnMessageId(messages[fastResolved.requestIndex])
       || messages.some((message, idx) => idx > fastLastAssistant && idx !== fastResolved.requestIndex && currentTurnRole(message) === 'user' && message?.turnMeta?.supersededPendingDuplicate !== true)
     );
-    if (!hasUnboundOrDuplicatePendingUser) {
+    if (!options.forceHostRead && !hasUnboundOrDuplicatePendingUser) {
       try {
         const snapshot = captureLibNativeReadSet(messages, settings, baseRecent);
         return { messages, snapshot, selections: snapshot.selections, assertCurrent: async () => true };
@@ -4279,12 +4290,12 @@ Before continuing, verify:
     await assertCurrent();
     return { messages:mapped, snapshot, selections:snapshot.selections, assertCurrent };
   };
-  const openLibEvidenceRun = async (messages, settings, baseRecent, requestId, proposalContext = null, nativeBinding = null) => {
+  const openLibEvidenceRun = async (messages, settings, baseRecent, requestId, proposalContext = null, nativeBinding = null, openingController = null) => {
     const initialMessages = JSON.stringify(messages);
     const requestMessages = JSON.parse(initialMessages);
     const settingsSignature = requestSettingsSignature(settings);
     const runtimeSettingsSignature = requestSettingsSignature(Runtime.settings || {});
-    const controller = proposalContext?.controller || new AbortController();
+    const controller = proposalContext?.controller || openingController || new AbortController();
     let session;
     let certifiedSelections = [];
     let nativeHostBinding = nativeBinding;
@@ -4323,11 +4334,12 @@ Before continuing, verify:
           return snapshot;
         } });
     } catch (error) {
-      if (proposalContext || /CANCELED|SUPERSEDED|MODE_CHANGED/.test(error?.code || '')) throw error;
+      if (proposalContext || /CANCELED|SUPERSEDED|MODE_CHANGED|NATIVE_(?:VIEW_CHANGED|SCOPE_CHANGED|CHANGED)/.test(error?.code || '')) throw error;
       const connection = LibReadConnection.status();
       const code = error?.code === 'LIB_READ_CONNECTION_UNAVAILABLE'
         ? connection.reason || (connection.state === 'connecting' ? 'LIB_READ_CONNECTION_PENDING' : error.code) : error?.code;
       return { status: 'unavailable', reason: /^LIB_READ_[A-Z_]+$/.test(code || '') ? code : 'LIB_READ_UNAVAILABLE',
+        ...libReadFailureDetails(error),
         assertCurrent: async () => true, close() {} };
     }
     if (session.status !== 'ready') return { ...session, close() {} };
@@ -4337,7 +4349,7 @@ Before continuing, verify:
       session.invalidate('LIB_READ_PROPOSAL_CHANGED'); throw libEvidenceError('LIB_READ_PROPOSAL_CHANGED');
     }
     const run = { status: 'ready', purpose: proposalContext ? 'input_writer' : 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), attempt: null, stageViews: new Map(), dispatchCount: 0, verifiedAt: Date.now(), verifiedDispatch: 0,
-      fail(code) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); if (proposalContext) purgeInputWriterEvidenceRuntime(); } return libEvidenceError(code); },
+      fail(code, cause) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); if (proposalContext) purgeInputWriterEvidenceRuntime(); } return libEvidenceError(code, cause); },
       assertStageView(stage, recent) {
         const expected = certifiedSelections.find(selection => selection.stage === stage);
         // Native reconstruction may add only the already-verified scope to the
@@ -4392,7 +4404,7 @@ Before continuing, verify:
           Runtime.lastLibReadDiagnostic = Object.freeze({...Runtime.lastLibReadDiagnostic,
             at:Date.now(),status:'failed',code:'LIB_READ_CURRENTNESS_LOST',
             causeCode:/^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_SOURCE_CHECK_FAILED'});
-          throw this.fail('LIB_READ_CURRENTNESS_LOST');
+          throw this.fail('LIB_READ_CURRENTNESS_LOST', error);
         }
         if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
         if (requestSettingsSignature(settings) !== settingsSignature
@@ -4569,6 +4581,54 @@ Before continuing, verify:
     }
     catch (error) { run.close(); throw error; }
     return run;
+  };
+
+  // Reacquire an unavailable owner handle only while opening, before any model
+  // can consume its evidence. The retry shares the original 110-second bound.
+  const openResponseLibEvidenceRun = async (messages, settings, recent, requestId, nativeBinding) => {
+    const startedAt = Date.now(), deadlineAt = startedAt + LIB_MEMORY_OWNER_READ_TIMEOUT_MS;
+    const requestSignature = JSON.stringify(messages), settingsSignature = requestSettingsSignature(settings);
+    const runtimeSignature = requestSettingsSignature(Runtime.settings || {});
+    let previousFailure = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController();
+      let expired = false;
+      const timer = setTimeout(() => { expired = true; controller.abort(); }, Math.max(1,deadlineAt-Date.now()));
+      try {
+        const run = await openLibEvidenceRun(messages,settings,recent,requestId,null,nativeBinding,controller);
+        if (expired || Date.now() >= deadlineAt) { run.close(); throw libEvidenceError('LIB_READ_TIMEOUT'); }
+        if (attempt > 0 && run.status !== 'ready') { run.close(); throw libEvidenceError(run.reason || 'LIB_READ_UNIFIED_UNAVAILABLE',run); }
+        Runtime.lastLibReadDiagnostic = Object.freeze({at:Date.now(),purpose:'response_evidence',
+          status:run.status,code:run.reason || '',phase:'opening',attempts:attempt+1,retryCount:attempt,
+          ...libReadFailureDetails(run),...(previousFailure ? {previousFailure} : {}),
+          connection:LibReadConnection.status(),elapsedMs:Date.now()-startedAt});
+        return run;
+      } catch (caught) {
+        controller.abort();
+        let error = expired || Date.now() >= deadlineAt ? libEvidenceError('LIB_READ_TIMEOUT',caught) : caught;
+        const code = error?.code === 'LIB_READ_CURRENTNESS_LOST' ? error.causeCode : error?.code;
+        // Older LIBRA transports used the generic code even for a typed refusal.
+        const reportedCode = /^LIB_READ_[A-Z_]+$/.test(error?.dispatchReason || '') ? error.dispatchReason : code;
+        const retryable = attempt === 0 && reportedCode === 'LIB_READ_UNIFIED_UNAVAILABLE' && Date.now() < deadlineAt;
+        if (retryable) {
+          try {
+            nativeBinding?.assertLocal?.();
+            if (JSON.stringify(messages)!==requestSignature || requestSettingsSignature(settings)!==settingsSignature
+              || requestSettingsSignature(Runtime.settings || {})!==runtimeSignature) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
+            let nativeTimer;
+            try { await Promise.race([Promise.resolve().then(() => nativeBinding?.assertCurrent?.()),new Promise((_,reject) => {
+              nativeTimer=setTimeout(() => reject(libEvidenceError('LIB_READ_TIMEOUT')),Math.max(1,deadlineAt-Date.now()));
+            })]); } finally { clearTimeout(nativeTimer); }
+          } catch (nativeError) { error = nativeError; }
+        }
+        const details = libReadFailureDetails(error);
+        Runtime.lastLibReadDiagnostic = Object.freeze({at:Date.now(),purpose:'response_evidence',status:'failed',
+          code:error?.code || 'LIB_READ_UNAVAILABLE',phase:'opening',attempts:attempt+1,retryCount:attempt,...details,
+          ...(previousFailure ? {previousFailure} : {}),connection:LibReadConnection.status(),elapsedMs:Date.now()-startedAt});
+        if (!retryable || error !== caught) throw error;
+        previousFailure = Object.freeze({code:error.code,...details});
+      } finally { clearTimeout(timer); }
+    }
   };
 
   let inputWriterEvidenceLease = null;
@@ -31035,7 +31095,7 @@ function createGradiaEvidenceBudget({ digest }) {
   let libReadBindingGeneration = 0;
   let libReadSelection = null;
   const createLibServerReadConsumer = (dependencies = {}) => {
-    const fail = code => { throw libEvidenceError(code); };
+    const fail = (code, cause) => { throw libEvidenceError(code, cause); };
     const bytes = value => new TextEncoder().encode(value).length;
     const copyMeta = value => JSON.parse(JSON.stringify(value));
     const freeze = value => { if (value && typeof value === 'object') { for (const child of Object.values(value)) freeze(child); Object.freeze(value); } return value; };
@@ -31213,7 +31273,7 @@ function createGradiaEvidenceBudget({ digest }) {
           reason: selected.length === candidates.length ? 'all_complete_items' : 'complete_items_prompt_budget' });
         const assertCurrent = async () => {
           try { await assertBinding(); if (await guarded(() => assertReadCurrent()) !== true) fail('LIB_READ_STALE'); await assertBinding(); check(record); return true; }
-          catch (error) { const code = /^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_STALE'; stop(record, code); fail(code); }
+          catch (error) { const code = /^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_STALE'; stop(record, code); fail(code, error); }
         };
         await assertCurrent();
         dependencies.onSelection?.(selection);
@@ -31235,7 +31295,7 @@ function createGradiaEvidenceBudget({ digest }) {
             const hash = await guarded(() => digest(draft)); await assertCurrent(); if (!/^[a-f0-9]{64}$/.test(hash)) fail('LIB_READ_HASH_UNAVAILABLE'); record.draft = draft; return Object.freeze({ evidenceRevision, draftHash: hash }); },
           finalizeDraft: async () => { await assertCurrent(); if (!record.draft) fail('LIB_READ_DRAFT_UNBOUND'); return record.draft; }
         });
-      } catch (error) { const code = /^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE'; stop(record, code); fail(code); }
+      } catch (error) { const code = /^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE'; stop(record, code); fail(code, error); }
     };
     return Object.freeze({ factoryVersion: 'gradia.lib-server-read-consumer.v1', beginRead, invalidate });
   };
@@ -39643,7 +39703,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (libReadBinding) {
           const incoming = messages, incomingSignature = JSON.stringify(incoming);
           const settingsSignature = requestSettingsSignature(settings), runtimeSignature = requestSettingsSignature(Runtime.settings || {});
-          const bound = await captureLibNativeReadSetFromHost(messages,settings,buildRecentChat(messages,settings),libReadBinding.scope);
+          const bound = await captureLibNativeReadSetFromHost(messages,settings,buildRecentChat(messages,settings),libReadBinding.scope,
+            {forceHostRead:LibReadConnection.status().state === 'connected'});
           nativeBinding = { ...bound, assertLocal() {
             if (JSON.stringify(incoming) !== incomingSignature || requestSettingsSignature(settings) !== settingsSignature
               || requestSettingsSignature(Runtime.settings || {}) !== runtimeSignature) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
@@ -39681,12 +39742,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Runtime.activeLineage = runLineage;
     if (!settings.enableShadowAct) return { ok: false, reason: 'shadow_act_disabled' };
     const libReadStartedAt = Date.now();
-    const libReadSession = await openLibEvidenceRun(messages, settings, baseRecent, runLineage.runId, null, nativeBinding);
+    const libReadSession = await openResponseLibEvidenceRun(messages, settings, baseRecent, runLineage.runId, nativeBinding);
     const usesLibEvidence = libReadSession.status === 'ready';
     // Owner-side failures are mapped to a single code at the read boundary. Keep
     // the attempt record so an "unavailable" turn can say which boundary failed
     // and how long it spent instead of only that no evidence arrived.
-    Runtime.lastLibReadDiagnostic = Object.freeze({ at: Date.now(), purpose: 'response_evidence',
+    Runtime.lastLibReadDiagnostic = Object.freeze({ ...Runtime.lastLibReadDiagnostic, at: Date.now(), purpose: 'response_evidence',
       status: String(libReadSession.status || ''), code: usesLibEvidence ? '' : String(libReadSession.reason || ''),
       connection: LibReadConnection.status(),
       elapsedMs: Math.max(0, Date.now() - libReadStartedAt) });
@@ -40704,6 +40765,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (activeLibEvidenceRun) activeLibEvidenceRun.close();
         purgeLibEvidenceRuntime();
         Runtime.last = { at: Date.now(), ok: false, reason: error.code };
+        Runtime.lastLibReadDiagnostic = Object.freeze({...Runtime.lastLibReadDiagnostic,
+          at:Date.now(),purpose:'response_evidence',status:'failed',code:error.code,...libReadFailureDetails(error)});
+        await finishPipelineWorkStatus('기억 근거 검증에 실패해 GRADIA 작업을 중단했습니다. '+error.code, false, 6000, 'pipeline_error');
         throw error;
       }
       warn('beforeRequest failed', error);
@@ -46036,7 +46100,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (metadata.sender !== readerId || message.kind !== 'request') return;
       let reply;
       try { reply = { ok: true, result: await serve(message.action, message.payload) }; }
-      catch (error) { reply = { ok: false, errorCode: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNIFIED_UNAVAILABLE', reason: error?.readDiagnostic?.dispatchReason || error?.message || '', ...(error?.readDiagnostic ? { diagnostic: error.readDiagnostic } : {}) }; }
+      catch (error) {
+        const code = error?.code || error?.message || '';
+        reply = { ok: false, errorCode: /^LIB_READ_[A-Z_]+$/.test(code) ? code : 'LIB_READ_UNIFIED_UNAVAILABLE', reason: error?.readDiagnostic?.dispatchReason || error?.message || '', ...(error?.readDiagnostic ? { diagnostic: error.readDiagnostic } : {}) };
+      }
       if (!disposed) await api().postPluginChannelMessage(readerId, responseChannel, { schema, kind: 'response', requestId: message.requestId, ...reply });
     } else {
       if (metadata.sender !== ownerId || message.kind !== 'response') return;

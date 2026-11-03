@@ -32,18 +32,18 @@ async function fixture(t,{request=messages,hostMessages=messages}={}){
  const store={getItem:async k=>values.get(k)??null,setItem:async(k,v)=>values.set(k,v),removeItem:async k=>values.delete(k)},dom=new JSDOM('<!doctype html><html><body></body></html>',{pretendToBeVisual:true,url:'https://offline.invalid/'}),chat={id:chatId,message:hostMessages()},character={id:characterId,chaId:characterId,chats:[chat],chatPage:0};let onRead=null,onModel=null,onOutput=null,contextCharacter=character;
  const transport=async(target,init)=>{if(target.startsWith(url)){const route=new URL(target).pathname;requests.push(route);const response=await mockFetch(target,init);if(route==='/bootstrap')dataId=(await response.clone().json()).dataInstanceId;if(onRead)await onRead(route);return response;}assert.equal(target,'https://api.openai.com/v1/chat/completions');prompts.push(JSON.parse(init.body));if(onModel)await onModel();return new Response(JSON.stringify({choices:[{message:{content:'The archivist placed the brass key on the table. Warm lamplight spread over the shelves as he waited quietly beside the open door.'},finish_reason:'stop'}]}));};
  const bus=createBus(),fingerprint=v=>sha(v),ownerRows=()=>owners.map(owner=>[owner,app.repositories[owner].database.prepare("SELECT key,value_json,revision FROM kv WHERE space='plugin' ORDER BY key").all()]);
- let queried=null,ownerSerial=0,dataId=null,onQuery=null;const libraOwner=createOwner({role:'owner',api:bus.api('libra'),fingerprint,randomId:()=>String(++ownerSerial),
+ let queried=null,ownerSerial=0,dataId=null,onQuery=null,onVerify=null,verifyCalls=0;const libraOwner=createOwner({role:'owner',api:bus.api('libra'),fingerprint,randomId:()=>String(++ownerSerial),
   boundary:async request=>({scope:request.scope,dataInstanceId:dataId,resetEpoch:0}),
   query:async(request,authority)=>{authority.bindGraph({readerFrame:{},nodes:[],edges:[],bases:[]});queried=JSON.stringify(ownerRows());const text=ownerRows().map(([owner,rows])=>rows.map(row=>'['+owner+'] '+row.key+' '+row.value_json).join('\n')).join('\n');
    await onQuery?.();
    return {modelDispatchEligible:true,queryComplete:false,deliveryOutcome:'partial',windowRead:{limit:20},nextWindow:null,bundle:{generation:'g1'},packet:{renderedText:text,packetDigest:fingerprint(text)}};},
-  verify:async()=>JSON.stringify(ownerRows())===queried});await libraOwner.start();t.after(()=>libraOwner.dispose());
+  verify:async()=>{await onVerify?.(++verifyCalls);return JSON.stringify(ownerRows())===queried;}});await libraOwner.start();t.after(()=>libraOwner.dispose());
  const host=await load({transformSource:instrument,api:{...bus.api('serial_gradation_agents_for_rp'),pluginStorage:store,getLocalPluginStorage:async()=>({getItem:async k=>local.get(k)??null,setItem:async(k,v)=>local.set(k,v)}),nativeFetch:transport,fetch:transport,onUnload:async f=>unloads.push(f),showContainer:async()=>{},hideContainer:async()=>{},getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>character,getChatFromIndex:async()=>chat,getCharacter:async()=>contextCharacter,addRisuChatListener:async(t,fn)=>{if(t==='output')onOutput=fn;}},testGlobals:{crypto:crypto.webcrypto,Response,window:dom.window,Element:dom.window.Element,document:dom.window.document,getComputedStyle:dom.window.getComputedStyle.bind(dom.window),MutationObserver:dom.window.MutationObserver,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window)}});t.after(async()=>{await host.plugin.closeSettingsGui();for(const f of unloads)await f();dom.window.close();});
  await host.hooks.beforeRequest(messages(),'model');await host.plugin.openSettingsGui();dom.window.document.querySelector('.sidebar [data-go="sources"]').click();const input=dom.window.document.querySelector('#lib-url');input.value=url;input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));dom.window.document.querySelector('#lib-connect').click();await waitFor(()=>['connected','error'].includes(host.plugin.getLibReadOnlyStatus().connection.state),'readonly UI connection');assert.equal(host.plugin.getLibReadOnlyStatus().connection.state,'connected',JSON.stringify(host.plugin.getLibReadOnlyStatus()));
  const settings={...host.plugin.getRuntime().settings,inputAssistMode:'off',enableShadowAct:true,enableCharacterAide:false,enableWorldAide:false,enablePlotAide:false,multiPipelineMode:'lightweight',mode:'lite',failureMode:'hard',loreActivationMode:'off',stagePresetNames:{},defaultPresetName:'offline',presets:{offline:{provider:'openai',url:'https://api.openai.com/v1/chat/completions',key:'offline-synthetic-only',model:'gpt-4o-mini-2024-07-18',request_format:'chat_completions',context_window:128000,max_tokens:4096,reasoning_preset:'off',reasoning_effort:'none',timeout_ms:1000,stream:false}},skillRouterEnabled:false};
  const snapshot=()=>JSON.stringify(Object.fromEntries(owners.map(owner=>[owner,{kv:app.repositories[owner].database.prepare('SELECT * FROM kv ORDER BY space,key').all(),operations:app.repositories[owner].database.prepare('SELECT COUNT(*) n FROM operations').get().n}])));
  const mutate=owner=>{const key=owner==='libra'?libraManifest:owner==='hayaku'?'hayaku.v2.ledger.'+hScope.key:app.repositories.flashback.database.prepare("SELECT key FROM kv WHERE key LIKE '%:manifest:v2' ORDER BY key LIMIT 1").get().key;const r=app.repositories[owner].database.prepare('SELECT value_json FROM kv WHERE key=?').get(key);put(owner,key,JSON.parse(r.value_json),2);};
- return {host,settings,requests,prompts,values,local,snapshot,mutate,mutateNative:kind=>{if(kind==='scope')contextCharacter={...character,id:'foreign',chaId:'foreign'};if(kind==='id')chat.message[1].messageId='different-assistant';if(kind==='text')chat.message[1].content='A different persisted variant.';if(kind==='turn')chat.message.unshift({role:'user',messageId:'older-u',content:'Another completed turn.'},{role:'assistant',messageId:'older-a',content:'Another historical answer.'});},setOnRead:f=>onRead=f,setOnQuery:f=>onQuery=f,setOnModel:f=>onModel=f,recordOutput:async(idx=1)=>onOutput?.({char:character,chat,characterIndex:0,chatIndex:0,messageIndex:idx}),run:()=>host.pipeline(request(),'model',settings)};
+ return {host,settings,requests,prompts,values,local,snapshot,mutate,mutateNative:kind=>{if(kind==='scope')contextCharacter={...character,id:'foreign',chaId:'foreign'};if(kind==='id')chat.message[1].messageId='different-assistant';if(kind==='text')chat.message[1].content='A different persisted variant.';if(kind==='turn')chat.message.unshift({role:'user',messageId:'older-u',content:'Another completed turn.'},{role:'assistant',messageId:'older-a',content:'Another historical answer.'});},setOnRead:f=>onRead=f,setOnQuery:f=>onQuery=f,setOnVerify:f=>onVerify=f,setOnModel:f=>onModel=f,recordOutput:async(idx=1)=>onOutput?.({char:character,chat,characterIndex:0,chatIndex:0,messageIndex:idx}),run:()=>host.pipeline(request(),'model',settings)};
 }
 test('actual committed producer bytes reach one unchanged G2 model payload with owner provenance and no owner writes',{timeout:30000},async t=>{const f=await fixture(t),before=f.snapshot(),r=await f.run();assert.equal(r.ok,true);assert.equal(f.prompts.length,1);const body=JSON.stringify(f.prompts[0]);for(const marker of ['LIBRA_MEMORY_SENTINEL','HAYAKU_MEMORY_SENTINEL','FLASHBACK_MEMORY_SENTINEL_1','FLASHBACK_MEMORY_SENTINEL_2'])assert(body.includes(marker),marker);for(const owner of owners)assert(body.includes('\\"owner\\":\\"'+owner+'\\"'),owner);assert(!body.includes('archiveShared'),'storage metadata stays out of the model payload');assert.equal(f.snapshot(),before);assert(f.requests.every(r=>r==='/bootstrap'||/^\/v1\/(libra|hayaku|flashback)\/read-session\/(capture|current)$/.test(r)));assert(!JSON.stringify([...f.local,...f.values]).includes('HAYAKU_MEMORY_SENTINEL'));await r.finalizeHandoff();r.closeEvidence();});
 for(const owner of owners)test(`${owner} changing during capture is rejected before model dispatch`,{timeout:30000},async t=>{const f=await fixture(t);let changed=false;// LIBRA evidence is issued by the unified owner channel (the server route only authorizes the read), so a LIBRA change
@@ -78,4 +78,39 @@ test('host-bound RP transcript with prior CompletionReceipt keeps the certified 
  assert.equal(r.externalEvidence,true);
  assert.equal(f.prompts.length,1);
  r.closeEvidence();
+});
+
+test('unavailable owner during evidence materialization is reacquired once before the first model',async t=>{
+ const f=await fixture(t);let captures=0;f.setOnQuery(()=>captures++);
+ f.setOnVerify(n=>{if(n===4)throw Object.assign(Error('LIB_READ_UNIFIED_UNAVAILABLE'),{code:'LIB_READ_UNIFIED_UNAVAILABLE',
+  readDiagnostic:{stage:'graph_delivery_admission',dispatchReason:'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED',modelDispatchEligible:false}});});
+ const r=await f.run();assert.equal(r.ok,true);assert.equal(r.externalEvidence,true);assert.equal(captures,2);
+ assert.equal(f.prompts.length,1,'reacquisition never duplicates a model call');
+ r.closeEvidence();const d=f.host.plugin.getRuntime().lastLibReadDiagnostic;assert.equal(d.retryCount,1);assert.equal(d.status,'ready');
+ assert.equal(d.previousFailure.readDiagnostic.dispatchReason,'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED');
+});
+
+for(const kind of ['persistent','native','stale','legacy_stale'])test(`opening failure keeps diagnostics and never dispatches with ${kind} owner`,async t=>{
+ const f=await fixture(t);let captures=0;f.setOnQuery(()=>captures++);
+ f.setOnVerify(n=>{if(n<4)return;if(kind==='native')f.mutateNative('text');
+  throw Object.assign(Error(kind==='stale'?'LIB_READ_STALE':'LIB_READ_UNIFIED_UNAVAILABLE'),{
+   readDiagnostic:{stage:'graph_delivery_admission',dispatchReason:kind==='legacy_stale'?'LIB_READ_STALE':'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED',modelDispatchEligible:false}});});
+ await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));assert.equal(f.prompts.length,0);
+ assert.equal(captures,kind==='persistent'?2:1);
+ const d=f.host.plugin.getRuntime().lastLibReadDiagnostic;assert.equal(d.status,'failed');assert.ok(d.code);
+ assert.ok(!JSON.stringify(d).includes('LIBRA_MEMORY_SENTINEL'),'diagnostic retains no memory content');
+});
+
+test('beforeRequest owner failure exits preparing state and exports the underlying diagnostic',async t=>{
+ const f=await fixture(t);
+ await f.host.plugin.saveProviderPreset('offline',f.settings.presets.offline);
+ await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'offline',input_assist_mode:'off',multi_pipeline_mode:'lightweight',
+  enable_shadow_act:true,enable_character_aide:false,enable_world_aide:false,enable_plot_aide:false,failure_mode:'hard',lore_activation_mode:'off'});
+ f.setOnVerify(n=>{if(n>=4)throw Object.assign(Error('LIB_READ_UNIFIED_UNAVAILABLE'),{
+  readDiagnostic:{stage:'graph_delivery_admission',dispatchReason:'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED',modelDispatchEligible:false,
+    secret:'SHOULD_NOT_BE_EXPORTED'}});});
+ await assert.rejects(()=>f.host.hooks.beforeRequest(messages(),'model'),e=>e.code==='LIB_READ_UNIFIED_UNAVAILABLE');
+ const runtime=f.host.plugin.getRuntime();assert.equal(runtime.pipelineWorkStatus.busy,false);assert.equal(runtime.pipelineWorkStatus.phase,'pipeline_error');
+ assert.equal(runtime.lastLibReadDiagnostic.attempts,2);assert.equal(runtime.lastLibReadDiagnostic.readDiagnostic.dispatchReason,'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED');
+ assert.equal(f.prompts.length,0);assert.ok(!JSON.stringify(runtime.lastLibReadDiagnostic).includes('SHOULD_NOT_BE_EXPORTED'));
 });
