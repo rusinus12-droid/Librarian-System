@@ -35,7 +35,8 @@ test('native LIBRA kernel -> authenticated owner receipt -> real GRADIA SHADOW/A
  const before=x.server.storedRows().filter(row=>!row.key.includes(':memory-graph-control:v1:')),calls=f.control.calls.length;
  const output=await g.hooks.beforeRequest(messages,'model');
  assert.equal(prompts.length,4,JSON.stringify(g.plugin.getRuntime().last));
- assert.ok(prompts.every(body=>JSON.stringify(body).includes('owner_issued_evidence_bundle')));
+ assert.ok(prompts.every(body=>JSON.stringify(body).includes('\\"owner\\":\\"libra\\"')),'LIBRA evidence is tagged by owner');
+ assert.ok(prompts.every(body=>!JSON.stringify(body).includes('owner_issued_evidence_bundle')),'storage metadata stays out of the model payload');
  assert.ok(prompts.every(body=>JSON.stringify(body).includes(QUOTE)), 'real owner Micro evidence must reach each stage');
  assert.ok(output.some(row=>row.content?.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1')));
  assert.equal(bus.messages.filter(row=>row.body.action==='capture').length,1);

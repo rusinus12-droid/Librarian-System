@@ -1492,7 +1492,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const payload = await (requestOptions.inventoryRequest || request)(
         'POST',
         '/v1/kv/get-many',
-        { namespace, space, keys: list, paged: true, cursor, maxResponseBytes: getManyResponseBudgetBytes },
+        { namespace, space, keys: list, paged: true, cursor, maxResponseBytes: getManyResponseBudgetBytes,
+          ...(requestOptions.knownValues ? {knownValues:requestOptions.knownValues} : {}) },
         { allowPluginOnly: requestOptions.allowPluginOnly === true, scope:requestOptions.scope, storageMode:requestOptions.storageMode }
       );
       pages += 1;
@@ -5549,7 +5550,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const scopedBootstrap = async (force = false) => await bootstrap(force, true);
   const scopedServerGet = async (space, key, readOptions = {}) => await remoteGet(String(space || 'plugin'), String(key || ''), { allowPluginOnly: true,storageMode:readOptions.serverManagement?MODE_SERVER_ONLY:undefined });
-  const scopedServerGetMany = async (space = 'plugin', keys = []) => await remoteGetMany(String(space || 'plugin'), keys, { allowPluginOnly: true });
+  const scopedServerGetMany = async (space = 'plugin', keys = [], readOptions = {}) => await remoteGetMany(String(space || 'plugin'), keys,
+    { allowPluginOnly: true, knownValues: readOptions.knownValues });
   const scopedServerKeys = async (space = 'plugin', prefix = '', readOptions = {}) => await remoteKeys(String(space || 'plugin'), String(prefix || ''), { allowPluginOnly: true,storageMode:readOptions.serverManagement?MODE_SERVER_ONLY:undefined });
   const scopedServerIntegrity = async () => await remoteIntegrity({ allowPluginOnly: true });
 

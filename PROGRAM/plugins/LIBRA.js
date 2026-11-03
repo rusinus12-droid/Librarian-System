@@ -5695,7 +5695,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const payload = await (requestOptions.inventoryRequest || request)(
         'POST',
         '/v1/kv/get-many',
-        { namespace, space, keys: list, paged: true, cursor, maxResponseBytes: getManyResponseBudgetBytes },
+        { namespace, space, keys: list, paged: true, cursor, maxResponseBytes: getManyResponseBudgetBytes,
+          ...(requestOptions.knownValues ? {knownValues:requestOptions.knownValues} : {}) },
         { allowPluginOnly: requestOptions.allowPluginOnly === true, scope:requestOptions.scope, storageMode:requestOptions.storageMode }
       );
       pages += 1;
@@ -9752,7 +9753,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const scopedBootstrap = async (force = false) => await bootstrap(force, true);
   const scopedServerGet = async (space, key, readOptions = {}) => await remoteGet(String(space || 'plugin'), String(key || ''), { allowPluginOnly: true,storageMode:readOptions.serverManagement?MODE_SERVER_ONLY:undefined });
-  const scopedServerGetMany = async (space = 'plugin', keys = []) => await remoteGetMany(String(space || 'plugin'), keys, { allowPluginOnly: true });
+  const scopedServerGetMany = async (space = 'plugin', keys = [], readOptions = {}) => await remoteGetMany(String(space || 'plugin'), keys,
+    { allowPluginOnly: true, knownValues: readOptions.knownValues });
   const scopedServerKeys = async (space = 'plugin', prefix = '', readOptions = {}) => await remoteKeys(String(space || 'plugin'), String(prefix || ''), { allowPluginOnly: true,storageMode:readOptions.serverManagement?MODE_SERVER_ONLY:undefined });
   const scopedServerIntegrity = async () => await remoteIntegrity({ allowPluginOnly: true });
 
@@ -35580,7 +35582,7 @@ function createLibraReadonlySourceContext(owner) {
       }
       if (entry.identities[kind] !== identityDigest) throw consumerContractError('CONSUMER_DATA_BINDING_CHANGED');
     };
-    const assertConsumedDataCurrent = async (token, options = {}) => {
+    const assertConsumedDataCurrent = async (token, options = {}) => { freshReadDepth++; try {
       const entry = consumedDataReadSets.get(string(token));
       if (!entry) throw consumerContractError('CONSUMER_DATA_READSET_UNAVAILABLE');
       if (Number(options.deadlineAt) > 0) entry.consumerDeadlineAt = Number(options.deadlineAt);
@@ -35677,7 +35679,7 @@ function createLibraReadonlySourceContext(owner) {
           timer = setTimeout(() => reject(consumerContractError('CONSUMER_DATA_REVALIDATION_DEADLINE')), Math.max(1, deadlineAt - Date.now()));
         })]);
       } finally { clearTimeout(timer); }
-    };
+    } finally { freshReadDepth--; } };
 
     /* LIBRA CANONICAL STATE PIPELINE V3 START */
     const ENTITY_ADMISSION_DECISION_SCHEMA = 'libra.entity_admission_decision.v1';
@@ -36925,7 +36927,12 @@ function createLibraReadonlySourceContext(owner) {
       fence.pending = Math.max(0, Number(fence.pending || 0)) + 1;
       state.storageWriteStats.writes += 1;
       state.receiptRecoverySettledWrites.delete(storageKey);
-      const operation = Promise.resolve().then(() => LibraProviderBridge.storage.setItem(storageKey, serialized));
+      invalidateVerifiedRead(storageKey);
+      const operation = Promise.resolve().then(async () => {
+        await closeBackgroundReadFramesForWrite(storageKey);
+        return LibraProviderBridge.storage.setItem(storageKey, serialized);
+      });
+      operation.then(() => invalidateVerifiedRead(storageKey), () => invalidateVerifiedRead(storageKey));
       // Join the already admitted write; never replace its SDK owner/drain path.
       if (!fence.operations) fence.operations = new Set();
       fence.operations.add(operation);
@@ -37004,9 +37011,12 @@ function createLibraReadonlySourceContext(owner) {
       fence.pending = Math.max(0, Number(fence.pending || 0)) + 1;
       state.storageWriteStats.writes += 1;
       state.receiptRecoverySettledWrites.delete(storageKey);
+      invalidateVerifiedRead(storageKey);
       try {
+        await closeBackgroundReadFramesForWrite(storageKey);
         await LibraProviderBridge.storage.removeItem(storageKey);
       } finally {
+        invalidateVerifiedRead(storageKey);
         fence.pending = Math.max(0, Number(fence.pending || 0)) - 1;
         if (fence.pending === 0 && state.storageWriteFence.get(storageKey) === fence) {
           state.storageWriteFence.delete(storageKey);
@@ -37042,14 +37052,30 @@ function createLibraReadonlySourceContext(owner) {
 
     const memoryGraphSourceBudgets = new WeakMap();
     const memoryGraphReadFrames = new WeakMap();
+    const activeBackgroundReadFrames = new Set(), receiptReadScopes = new WeakMap();
     // One owner projection may inspect the same immutable receipt many times.
     // Share only its captured bytes; a fresh physical read of every captured key
     // (including server revision/tombstone) is required before returning the view.
-    const openMemoryGraphReadFrame = async scope => {
+    const openMemoryGraphReadFrame = async (scope, {background = false} = {}) => {
       const resources = memoryGraphSourceBudgets.get(scope);
       const mode = string((await MemorySuiteStorageBridge.getScopeMode(scope))?.mode || 'plugin_only');
       const binding = mode === 'plugin_only' ? '' : stableReferenceJson(await MemorySuiteStorageBridge.captureServerBinding());
-      const prefix = `${PREFIX}:scope:${scope.scopeKey}:`, entries = new Map(), leases = [];
+      const prefix = `${PREFIX}:scope:${scope.scopeKey}:`, entries = new Map(), leases = [], consumed = new Set(), decoded = new Map(), extraReads = new Map();
+      const sequence = verifiedReadWriteSeq;
+      // A background job may start from resident witnesses. They are provisional:
+      // assertCurrent must validate the complete consumed set before its first write
+      // or before a read-only result escapes. Public and budgeted reads stay fresh.
+      const borrow = storageKey => {
+        if(!background || frame.disabled)return false;
+        const hit=verifiedReadCache.get(storageKey);
+        if(!hit || hit.signature!==verifiedReadSignature(mode) || Date.now()<hit.at
+          || Date.now()-hit.at>=VERIFIED_READ_CACHE_TTL_MS
+          || mode!=='plugin_only' && (!hit.serverPin || !hit.empty && typeof hit.serverRaw!=='string'))return false;
+        entries.set(storageKey,Promise.resolve({local:hit.localRaw,
+          remote:mode==='plugin_only'?null:{...hit.serverPin,value:hit.empty?null:hit.serverRaw}}));
+        if(!hit.empty)decoded.set(storageKey,clone(hit.value));
+        return true;
+      };
       const account = async (load, select = value => value) => resources ? resources.read(load,{select}) : load();
       const physical = async storageKey => {
         const local = mode !== 'server_only'
@@ -37079,8 +37105,8 @@ function createLibraReadonlySourceContext(owner) {
         if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) { bytes += 4; i++; } else bytes += code < 128 ? 1 : code < 2048 ? 2 : 3; } return bytes; };
       // One lease per get-many. If the batch body could exceed the per-read cap the
       // batch is re-read as two halves; a single key keeps the existing per-value limit.
-      const ownerGetMany = async part => {
-        if (!resources) return await MemorySuiteStorageBridge.serverGetMany('plugin', part);
+      const ownerGetMany = async (part, knownValues = null) => {
+        if (!resources) return await MemorySuiteStorageBridge.serverGetMany('plugin', part, knownValues ? {knownValues} : {});
         let lease = resources.reserveRead('source');
         try {
           const rows = await MemorySuiteStorageBridge.serverGetMany('plugin', part);
@@ -37098,7 +37124,14 @@ function createLibraReadonlySourceContext(owner) {
         } finally { lease?.release(); }
       };
       const frame = {
-        owns: storageKey => string(storageKey).startsWith(prefix),
+        background, disabled:false, scopeKey:scope.scopeKey,
+        owns: storageKey => !frame.disabled && string(storageKey).startsWith(prefix),
+        observeExtra(storageKey,raw){if(!extraReads.has(storageKey))extraReads.set(storageKey,stableReferenceJson(raw));},
+        disable(){frame.disabled=true;activeBackgroundReadFrames.delete(frame);},
+        acceptOwnWrite(storageKey){
+          entries.delete(storageKey);decoded.delete(storageKey);consumed.delete(storageKey);
+          frame.disabled=false;frame.writeBoundaryClosed=false;activeBackgroundReadFrames.add(frame);
+        },
         async prefetch(storageKeys){
           const keys = [...new Set(storageKeys)].filter(storageKey => frame.owns(storageKey) && !entries.has(storageKey));
           for(let offset=0;offset<keys.length;){
@@ -37118,12 +37151,25 @@ function createLibraReadonlySourceContext(owner) {
             let retained;
             try{
               if(mode==='mirror')for(const storageKey of part)locals.set(storageKey,await account(()=>MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey)));
-              const rows=await ownerGetMany(part);
+              const warm = new Map(), knownValues = {};
+              if(background)for(const storageKey of part){
+                const hit=verifiedReadCache.get(storageKey);
+                if(hit?.signature===verifiedReadSignature(mode) && hit.serverPin && (hit.empty || typeof hit.serverRaw==='string')){
+                  warm.set(storageKey,hit);knownValues[storageKey]=hit.serverPin;
+                }
+              }
+              const rows=await ownerGetMany(part,background?knownValues:null);
               state.memoryNetworkIO.ownerReads+=part.length*(mode==='mirror'?2:1);
               if(resources)retained=resources.retain(rows?.values,'owner_prefetch',2);
               for(const [index,storageKey]of part.entries()){
                 if(!Object.hasOwn(rows?.values||{},storageKey))throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
-                const remote=rows.values[storageKey];
+                let remote=rows.values[storageKey];
+                if(background && remote.unchanged===true){
+                  const hit=warm.get(storageKey);
+                  if(!hit || stableReferenceJson(verifiedServerPin(remote))!==stableReferenceJson(hit.serverPin))throw new Error('LIBRA_VERIFIED_STORAGE_UNBOUND_REUSE');
+                  remote={...remote,value:hit.empty?null:hit.serverRaw};
+                }
+                if(background && warm.has(storageKey) && stableReferenceJson(verifiedServerPin(remote))!==stableReferenceJson(warm.get(storageKey).serverPin))noteMemoryGraphSourceWrite(storageKey);
                 const entry={local:locals.get(storageKey)??null,remote};
                 if(resources)leases.push(resources.retain(entry,'owner_read_frame',2));
                 // An overlapping read owns its earlier observation. Never replace
@@ -37134,12 +37180,23 @@ function createLibraReadonlySourceContext(owner) {
           }
         },
         async read(storageKey,fallback){
+          if(background)consumed.add(storageKey);
           const cached = entries.has(storageKey);
-          if(!cached)entries.set(storageKey,physical(storageKey));
+          if(!cached&&!borrow(storageKey))entries.set(storageKey,physical(storageKey));
           const entry = await entries.get(storageKey);
           // Cached reads retain the existing source/decode accounting policy.
           const raw = mode === 'plugin_only' ? entry.local : entry.remote?.value??null;
-          const consume = ()=>decode(entry,storageKey,fallback);
+          const consume = ()=>{
+            if(background && decoded.has(storageKey)){verifiedReadStats.sessionHits++;return clone(decoded.get(storageKey));}
+            const value=decode(entry,storageKey,fallback);
+            if(background){
+              const empty=mode==='plugin_only' ? entry.local==null||entry.local==='' : entry.remote?.exists!==true||entry.remote?.tombstone===true;
+              if(!empty)decoded.set(storageKey,clone(value));
+              if(!frame.disabled && sequence===verifiedReadWriteSeq)rememberVerifiedRead(storageKey,verifiedReadSignature(mode),empty?null:value,empty,
+                mode==='plugin_only'?null:verifiedServerPin(entry.remote),entry.local,entry.remote?.value??null);
+            }
+            return value;
+          };
           if(!resources)return consume();
           if(cached){
             if(mode === 'mirror')await resources.read(async()=>entry.local);
@@ -37148,8 +37205,9 @@ function createLibraReadonlySourceContext(owner) {
           return mode === 'mirror' ? await resources.withValue(entry.local,()=>resources.withValue(raw,consume)) : await resources.withValue(raw,consume);
         },
         async readRaw(storageKey){
+          if(background)consumed.add(storageKey);
           const cached = entries.has(storageKey);
-          if(!cached)entries.set(storageKey,physical(storageKey));
+          if(!cached&&!borrow(storageKey))entries.set(storageKey,physical(storageKey));
           const entry = await entries.get(storageKey);
           const raw = mode === 'plugin_only' ? entry.local : entry.remote?.value??null;
           if(cached && resources){
@@ -37164,7 +37222,8 @@ function createLibraReadonlySourceContext(owner) {
         async assertCurrent(){
           if(mode !== string((await MemorySuiteStorageBridge.getScopeMode(scope))?.mode || 'plugin_only')
             || mode !== 'plugin_only' && binding !== stableReferenceJson(await MemorySuiteStorageBridge.captureServerBinding()))throw new Error('LIBRA_GRAPH_READER_ROUTE_CHANGED');
-          const keys = [...entries.keys()];
+          for(const [storageKey,before]of extraReads)if(before!==stableReferenceJson(await RisuCompat.getItem(storageKey)))throw new Error('LIBRA_BACKGROUND_SETTINGS_CHANGED');
+          const keys = [...(background?consumed:entries.keys())];
           for(let offset=0;offset<keys.length;){
             const access = resources?.inspect();
             const batchSize = access ? Math.max(1,Math.min(4,
@@ -37175,7 +37234,10 @@ function createLibraReadonlySourceContext(owner) {
             offset += part.length;
             let retained;
             try {
-              const rows = mode === 'plugin_only' ? null : await ownerGetMany(part);
+              const knownValues = {};
+              if(background && mode!=='plugin_only')for(const storageKey of part)knownValues[storageKey]=verifiedServerPin((await entries.get(storageKey)).remote);
+              if(background)verifiedReadStats.sessionValidationBatches++;
+              const rows = mode === 'plugin_only' ? null : await ownerGetMany(part,background?knownValues:null);
               if(rows)state.memoryNetworkIO.ownerReads += part.length;
               // serverGetMany already resolves oversized keys individually.
               // Keep the held reservations through validation of those bodies.
@@ -37185,26 +37247,183 @@ function createLibraReadonlySourceContext(owner) {
                 if(rows){
                   if(!Object.hasOwn(rows.values||{},storageKey))throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
                   const current = rows.values[storageKey];
-                  const pin = row => [row?.exists,row?.tombstone,row?.revision,row?.digest,row?.value??null];
-                  if(stableReferenceJson(pin(current)) !== stableReferenceJson(pin(before.remote)))throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
+                  const pin = row => background ? [row?.exists,row?.tombstone,row?.revision,row?.digest] : [row?.exists,row?.tombstone,row?.revision,row?.digest,row?.value??null];
+                  if(stableReferenceJson(pin(current)) !== stableReferenceJson(pin(before.remote))){
+                    if(background){if(sequence===verifiedReadWriteSeq)noteMemoryGraphSourceWrite(storageKey);invalidateAllVerifiedReads();}
+                    throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
+                  }
                 }
                 if(mode !== 'server_only'){
                   const current = await account(()=>MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey));
                   state.memoryNetworkIO.ownerReads++;
-                  if(stableReferenceJson(current) !== stableReferenceJson(before.local))throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
+                  if(stableReferenceJson(current) !== stableReferenceJson(before.local)){
+                    if(background){if(sequence===verifiedReadWriteSeq)noteMemoryGraphSourceWrite(storageKey);invalidateAllVerifiedReads();}
+                    throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
+                  }
                 }
               }
             } finally {retained?.release();for(const reservation of reservations)reservation.release();}
           }
         },
-        close(){memoryGraphReadFrames.delete(scope);entries.clear();for(const lease of leases)lease?.release();leases.length=0;}
+        close(){frame.disable();if(memoryGraphReadFrames.get(scope)===frame)memoryGraphReadFrames.delete(scope);entries.clear();decoded.clear();extraReads.clear();for(const lease of leases)lease?.release();leases.length=0;}
       };
       memoryGraphReadFrames.set(scope,frame);
+      if(background)activeBackgroundReadFrames.add(frame);
       return frame;
+    };
+    const openBackgroundReadFrame = async scope => {
+      const frame=await openMemoryGraphReadFrame(scope,{background:true});
+      verifiedReadStats.sessions++;
+      return frame;
+    };
+    const withBackgroundReadJob = async (scope,task) => {
+      const existing=memoryGraphReadFrames.get(scope);
+      if(existing&&!existing.disabled || memoryGraphSourceBudgets.has(scope))return task(scope);
+      const jobScope={...scope},frame=await openBackgroundReadFrame(jobScope);
+      try{const result=await task(jobScope);if(!frame.writeBoundaryClosed)await frame.assertCurrent();return result;}
+      finally{frame.close();}
+    };
+    const closeBackgroundReadFramesForWrite = async (storageKey='',actorScope=null) => {
+      const actor=actorScope&&memoryGraphReadFrames.get(actorScope);
+      // Only the writer's own observation can authorize its candidate. A stale
+      // concurrent viewer must be revoked, not veto an unrelated valid writer.
+      if(actor?.background && !actor.writeBoundaryClosed){await actor.assertCurrent();actor.writeBoundaryClosed=true;}
+      const frames=[...activeBackgroundReadFrames].filter(frame=>frame!==actor&&(!storageKey||string(storageKey).startsWith(`${PREFIX}:scope:${frame.scopeKey}:`)));
+      for(const frame of frames)frame.disable();
     };
     const memoryGraphBudgetedScope = (scope, resources) => {
       if (!resources) return scope;
       const copy = { ...scope }; memoryGraphSourceBudgets.set(copy,resources); return copy;
+    };
+    // Unbound reads observe native bytes or server revisions on every call.
+    // Explicit background frames may borrow resident witnesses provisionally;
+    // their consumed set is physically checked at the write/return boundary.
+    // LIBRA is the only writer of its namespace in a session: every write goes through
+    // the fenced set/remove or a conditional batch below, and each one invalidates.
+    // Background work (Micro production, receipt reconciliation, person spans, State
+    // projection) repeatedly inspect the same heads/receipts. Reuse their decoded
+    // bytes and coalesce concurrent physical observations. Budgeted recall/GRADIA
+    // frames keep their original physical checks. TTL controls residency only.
+    const VERIFIED_READ_CACHE_MAX = 4096, VERIFIED_READ_CACHE_TTL_MS = 20000;
+    const VERIFIED_READ_CACHE_ENTRY_BYTES = 128 * 1024, VERIFIED_READ_CACHE_MAX_BYTES = 4 * 1024 * 1024;
+    const verifiedReadCache = new Map();
+    let verifiedReadCacheBytes = 0;
+    let verifiedReadWriteSeq = 0;
+    // Unbound reads bypass reuse while delivery/validation checks run. Explicit
+    // job frames use their own physical closing check, independently of peer reads.
+    let freshReadDepth = 0;
+    const verifiedReadStats = state.verifiedReadCacheStats = { hits: 0, misses: 0, invalidations: 0, clears: 0, bytes: 0, entries: 0,
+      validations: 0, validationBatches: 0, coalesced: 0, remoteChanges: 0, flightExpirations: 0, flightFallbacks: 0,
+      sessions:0,sessionHits:0,sessionValidationBatches:0 };
+    const deleteVerifiedRead = key => {
+      const row = verifiedReadCache.get(key);
+      if (row) verifiedReadCacheBytes -= row.bytes;
+      verifiedReadCache.delete(key);
+      verifiedReadStats.bytes = verifiedReadCacheBytes;
+      verifiedReadStats.entries = verifiedReadCache.size;
+    };
+    const pruneVerifiedReads = () => {
+      const now = Date.now();
+      for (const [key, row] of verifiedReadCache) if (now - row.at >= VERIFIED_READ_CACHE_TTL_MS) deleteVerifiedRead(key);
+    };
+    const rememberVerifiedRead = (key, signature, value, empty, serverPin = null, localRaw = null, serverRaw = null) => {
+      pruneVerifiedReads();
+      deleteVerifiedRead(key);
+      // UTF-16 serialized size is a conservative payload budget, not a heap measurement.
+      const localWitness = typeof localRaw === 'string' ? localRaw : null;
+      const serialized = JSON.stringify(empty ? null : value), bytes = 2 * (key.length + signature.length + serialized.length
+        + JSON.stringify(serverPin).length + (localWitness?.length || 0) + (typeof serverRaw==='string'?serverRaw.length:0));
+      if (bytes > VERIFIED_READ_CACHE_ENTRY_BYTES) return;
+      while (verifiedReadCache.size >= VERIFIED_READ_CACHE_MAX || verifiedReadCacheBytes + bytes > VERIFIED_READ_CACHE_MAX_BYTES)
+        deleteVerifiedRead(verifiedReadCache.keys().next().value);
+      verifiedReadCache.set(key, { signature, at: Date.now(), empty, value: empty ? null : clone(value), serverPin, localRaw:localWitness,serverRaw, bytes });
+      verifiedReadCacheBytes += bytes;
+      verifiedReadStats.bytes = verifiedReadCacheBytes;
+      verifiedReadStats.entries = verifiedReadCache.size;
+    };
+    const invalidateVerifiedRead = storageKey => {
+      verifiedReadWriteSeq++; verifiedReadStats.invalidations++;
+      deleteVerifiedRead(String(storageKey || ''));
+      deleteVerifiedRead('stored\u0000' + String(storageKey || ''));
+    };
+    const invalidateAllVerifiedReads = () => { verifiedReadWriteSeq++; verifiedReadStats.clears++; verifiedReadCache.clear(); verifiedReadCacheBytes = 0; verifiedReadStats.bytes = 0; verifiedReadStats.entries = 0; };
+    const commitVerifiedConditionalBatch = async prepared => {
+      await closeBackgroundReadFramesForWrite();
+      invalidateAllVerifiedReads();
+      try{return await MemorySuiteStorageBridge.commitConditionalBatch(prepared);}
+      finally{invalidateAllVerifiedReads();}
+    };
+    const verifiedReadSignature = mode => stableReferenceJson([mode, MemorySuiteStorageBridge.serverBinding?.()?.generation ?? null,
+      Number(state.microRestoreGeneration || 0), state.memoryGraphStoreSerial]);
+    const verifiedServerPin = row => {
+      if (!row || typeof row.exists !== 'boolean' || typeof row.tombstone !== 'boolean'
+        || !Number.isSafeInteger(row.revision) || row.revision < 0 || typeof row.digest !== 'string') throw new Error('LIBRA_VERIFIED_STORAGE_PIN_INVALID');
+      return {exists:row.exists,tombstone:row.tombstone,revision:row.revision,digest:row.digest};
+    };
+    const verifiedReadFlights = new Map(), verifiedReadQueue = new Map();
+    const pruneVerifiedReadFlights = () => {
+      const now = Date.now();
+      // A lost native reply may never settle. Expire other keys too, otherwise
+      // 256 old entries permanently disable admission for every new key.
+      // This releases registry slots, not the underlying host operation. Its
+      // eventual cleanup still owns only its exact entry object.
+      for (const [key,entry] of verifiedReadFlights) if (now < entry.at || now - entry.at >= VERIFIED_READ_CACHE_TTL_MS) {
+        verifiedReadFlights.delete(key); verifiedReadStats.flightExpirations++;
+      }
+    };
+    let verifiedReadQueueScheduled = false, verifiedReadQueued = 0;
+    const drainVerifiedReadQueue = async () => {
+      verifiedReadQueueScheduled = false;
+      const groups = [...verifiedReadQueue.values()]; verifiedReadQueue.clear(); verifiedReadQueued = 0;
+      for (const group of groups) for (let offset = 0; offset < group.length; offset += 32) {
+        const part = group.slice(offset,offset + 32);
+        try {
+          if (state.disposed) throw new Error('LIBRA_VERIFIED_STORAGE_DISPOSED');
+          const knownValues = Object.fromEntries(part.filter(row=>row.pin).map(row=>[row.key,row.pin]));
+          verifiedReadStats.validationBatches++;
+          const batch = await MemorySuiteStorageBridge.serverGetMany('plugin',part.map(row=>row.key),{knownValues});
+          for (const row of part) {
+            const value = batch?.values?.[row.key];
+            if (!value) { row.reject(new Error('LIBRA_VERIFIED_STORAGE_BATCH_INCOMPLETE')); continue; }
+            row.resolve(value);
+          }
+        } catch (error) { for (const row of part) row.reject(error); }
+      }
+    };
+    const readVerifiedServerRow = (storageKey, signature, sequence, pin) => {
+      pruneVerifiedReadFlights();
+      const groupKey = signature + '\u0000' + sequence, flightKey = groupKey + '\u0000' + storageKey;
+      const existing = verifiedReadFlights.get(flightKey);
+      if (existing && Date.now() >= existing.at && Date.now() - existing.at < VERIFIED_READ_CACHE_TTL_MS) { verifiedReadStats.coalesced++; return existing.operation; }
+      if (existing) verifiedReadFlights.delete(flightKey);
+      // Bound queue residency; admission pressure falls back to an ordinary read.
+      if (verifiedReadFlights.size >= 256 || verifiedReadQueued >= 256) {
+        verifiedReadStats.flightFallbacks++; return MemorySuiteStorageBridge.serverGet('plugin',storageKey);
+      }
+      const operation = new Promise((resolve,reject)=>{
+        const group = verifiedReadQueue.get(groupKey) || [];
+        group.push({key:storageKey,pin,resolve,reject}); verifiedReadQueued++;
+        verifiedReadQueue.set(groupKey,group);
+        if (!verifiedReadQueueScheduled) { verifiedReadQueueScheduled = true; Promise.resolve().then(drainVerifiedReadQueue); }
+      });
+      const entry = {operation,at:Date.now()}; verifiedReadFlights.set(flightKey,entry);
+      operation.then(()=>{if(verifiedReadFlights.get(flightKey)===entry)verifiedReadFlights.delete(flightKey);},
+        ()=>{if(verifiedReadFlights.get(flightKey)===entry)verifiedReadFlights.delete(flightKey);});
+      return operation;
+    };
+    const readVerifiedLocalRow = (storageKey,signature,sequence) => {
+      pruneVerifiedReadFlights();
+      const flightKey = signature + '\u0000' + sequence + '\u0000local\u0000' + storageKey;
+      const existing = verifiedReadFlights.get(flightKey);
+      if (existing && Date.now() >= existing.at && Date.now() - existing.at < VERIFIED_READ_CACHE_TTL_MS) { verifiedReadStats.coalesced++; return existing.operation; }
+      if (existing) verifiedReadFlights.delete(flightKey);
+      const operation = MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey);
+      if (verifiedReadFlights.size < 256) {
+        const entry = {operation,at:Date.now()}; verifiedReadFlights.set(flightKey,entry);
+        operation.then(()=>{if(verifiedReadFlights.get(flightKey)===entry)verifiedReadFlights.delete(flightKey);},
+          ()=>{if(verifiedReadFlights.get(flightKey)===entry)verifiedReadFlights.delete(flightKey);});
+      } else verifiedReadStats.flightFallbacks++;
+      return operation;
     };
     const storage = Object.freeze({
       async getStoredJson(storageKey, fallback = null, scope = null) {
@@ -37220,7 +37439,20 @@ function createLibraReadonlySourceContext(owner) {
           state.memoryNetworkIO.storedBytes += typeof raw === 'string' ? new TextEncoder().encode(raw).length : 0;
           return parseStoredJson(raw,storageKey,fallback);
         };
-        return resources ? await resources.read(load,{ consume: decode }) : decode(await load());
+        if (resources) return await resources.read(load,{ consume: decode });
+        const raw = await load();
+        // Raw proxy reads have no server revision. Reuse only the pure JSON decode
+        // after observing exactly the same bytes; never skip their physical read.
+        const signature = !state.disposed && freshReadDepth === 0 ? verifiedReadSignature('stored') : '';
+        const cacheKey = 'stored\u0000' + storageKey;
+        const hit = signature && verifiedReadCache.get(cacheKey);
+        if (hit && hit.signature === signature && hit.value?.raw !== raw) noteMemoryGraphSourceWrite(storageKey);
+        if (hit && hit.signature === signature && hit.value?.raw === raw && Date.now() - hit.at < VERIFIED_READ_CACHE_TTL_MS) {
+          verifiedReadStats.hits++; return hit.empty ? clone(fallback) : clone(hit.value.decoded);
+        }
+        const value = decode(raw);
+        if (signature && typeof raw === 'string' && raw !== '') rememberVerifiedRead(cacheKey,signature,{raw,decoded:value},false);
+        return value;
       },
       async getJson(storageKey, fallback = null, scope = null) {
         const value = await this.getStoredJson(storageKey, fallback, scope);
@@ -37238,27 +37470,70 @@ function createLibraReadonlySourceContext(owner) {
             try { scope._cachedMode = mode; } catch (_) {}
           }
         }
+        const cacheable = !resources && !state.disposed && freshReadDepth === 0;
+        const signature = cacheable ? verifiedReadSignature(mode) : '';
+        let hit = null;
+        if (cacheable) {
+          pruneVerifiedReads();
+          const candidate = verifiedReadCache.get(storageKey);
+          hit = candidate?.signature === signature ? candidate : null;
+          if (!hit) verifiedReadStats.misses++;
+        }
+        const seqAtStart = verifiedReadWriteSeq;
+        const remember = (value, empty = false, serverPin = null, localRaw = null, serverRaw = null) => {
+          if (!cacheable || verifiedReadWriteSeq !== seqAtStart || state.disposed || signature !== verifiedReadSignature(mode)) return;
+          rememberVerifiedRead(storageKey, signature, value, empty, serverPin,localRaw,serverRaw);
+        };
         const needsLocal = mode !== 'server_only';
         const needsServer = mode !== 'plugin_only';
-        const localRaw = needsLocal ? await read(() => MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey)) : null;
-        const serverRow = needsServer ? await read(() => MemorySuiteStorageBridge.serverGet('plugin',storageKey),row => row?.value ?? null) : null;
+        const localRaw = needsLocal ? await read(() => cacheable ? readVerifiedLocalRow(storageKey,signature,seqAtStart)
+          : MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey)) : null;
+        const serverRow = needsServer ? await read(() => cacheable
+          ? readVerifiedServerRow(storageKey,signature,seqAtStart,hit?.serverPin)
+          : MemorySuiteStorageBridge.serverGet('plugin',storageKey),row => row?.value ?? null) : null;
+        const serverPin = needsServer ? verifiedServerPin(serverRow) : null;
+        if (needsServer && hit) {
+          verifiedReadStats.validations++;
+          if (stableReferenceJson(serverPin) !== stableReferenceJson(hit.serverPin)) {
+            verifiedReadStats.remoteChanges++;
+            deleteVerifiedRead(storageKey);
+            // All source families use the same invalidation path, including
+            // negative-to-present additions, Lens, Canonical, Micro and State.
+            noteMemoryGraphSourceWrite(storageKey);
+          }
+        }
         state.memoryNetworkIO.ownerReads += Number(needsLocal) + Number(needsServer);
         const localExists = localRaw !== null && localRaw !== undefined && localRaw !== '';
         const serverExists = serverRow?.exists === true && serverRow?.tombstone !== true;
+        if (!needsServer && hit) {
+          if (hit.empty && !localExists || !hit.empty && typeof localRaw === 'string' && hit.localRaw === localRaw) {
+            verifiedReadStats.hits++; return hit.empty ? clone(fallback) : clone(hit.value);
+          }
+          deleteVerifiedRead(storageKey); noteMemoryGraphSourceWrite(storageKey);
+        }
         if (needsLocal && needsServer && localExists !== serverExists) throw new Error(`LIBRA_VERIFIED_STORAGE_COPY_MISMATCH:${storageKey}`);
-        if ((needsLocal && !localExists) || (needsServer && !serverExists)) return clone(fallback);
+        if ((needsLocal && !localExists) || (needsServer && !serverExists)) { remember(null, true, serverPin); return clone(fallback); }
+        if (serverRow?.unchanged === true) {
+          if (!hit || stableReferenceJson(serverPin) !== stableReferenceJson(hit.serverPin)) throw new Error('LIBRA_VERIFIED_STORAGE_UNBOUND_REUSE');
+          if (needsLocal && localRaw !== hit.localRaw && digest(parseStoredJson(localRaw,storageKey,fallback)) !== digest(hit.value)) throw new Error(`LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:${storageKey}`);
+          verifiedReadStats.hits++; return clone(hit.value);
+        }
         const decode = () => {
           const local = needsLocal ? parseStoredJson(localRaw,storageKey,fallback) : null;
           const remote = needsServer ? parseStoredJson(serverRow.value,storageKey,fallback) : null;
           if (needsLocal && needsServer && digest(local) !== digest(remote)) throw new Error(`LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:${storageKey}`);
           return clone(needsServer ? remote : local);
         };
-        return resources ? await resources.withValue(localRaw,() => resources.withValue(serverRow?.value ?? null,decode)) : decode();
+        if (resources) return await resources.withValue(localRaw,() => resources.withValue(serverRow?.value ?? null,decode));
+        const decoded = decode(); remember(decoded,false,serverPin,localRaw,serverRow?.value??null); return decoded;
       },
       async setVerifiedJson(storageKey, value, scope) {
+        const frame=scope&&memoryGraphReadFrames.get(scope);
+        await closeBackgroundReadFramesForWrite(storageKey,scope);
         await fencedMemoryStorageSet(storageKey, JSON.stringify(value));
         const stored = await this.getVerifiedJson(storageKey, scope, null);
         if (digest(stored) !== digest(value)) throw new Error(`LIBRA_VERIFIED_STORAGE_READBACK_FAILED:${storageKey}`);
+        if(frame?.background)frame.acceptOwnWrite(storageKey);
         return true;
       },
       async setJson(storageKey, value) {
@@ -37299,7 +37574,10 @@ function createLibraReadonlySourceContext(owner) {
           const stored = await this.getStoredJson(storageKey, null);
           localKey = string(normalizeLocalVectorRef(stored?.localVectorRef)?.localKey || '');
         } catch (_) {}
+        invalidateVerifiedRead(storageKey);
+        await closeBackgroundReadFramesForWrite(storageKey);
         const removed = await LibraProviderBridge.storage.removeItem(storageKey);
+        invalidateVerifiedRead(storageKey);
         if (removed !== false && localKey) {
           state.localVectorCache.delete(localKey);
           try { await RisuCompat.localRemoveItem(localKey); } catch (_) {}
@@ -40252,7 +40530,7 @@ function createLibraReadonlySourceContext(owner) {
       return { ...body, packetDigest: (await rawPacketUtf8(JSON.stringify(body))).utf8Sha256 };
     };
     const readVerifiedCompletedTurnRawPacket = async (receipt, receiptKey, options = {}) => {
-      const scope = { scopeKey: receipt.scopeKey, characterId: receipt.characterId, chatId: receipt.chatId };
+      const scope = microScope(receipt);
       const empty = (status, reason) => ({ status, reason, packet: null, rawPacketRef: null });
       try {
         const captureKey = key.completedTurnCapture(scope, receipt.worldlineId, receipt.sessionEpoch, receipt.turn, receipt.revisionId);
@@ -40680,6 +40958,7 @@ function createLibraReadonlySourceContext(owner) {
         || (options.allowProjectedEquivalent!==true&&completedTurnRevisionId(finalPair) !== revisionId)) {
         return empty('stale_source', 'source_changed_during_read');
       }
+      if(memoryGraphReadFrames.get(scope)?.background)receiptReadScopes.set(receipt,scope);
       return { status: 'verified', reason: '', receipt, head, receiptKey, headKey };
     };
     // Read the existing immutable source receipts. The current host chat is used only
@@ -41275,7 +41554,7 @@ function createLibraReadonlySourceContext(owner) {
           completedTurnRevisionId(pair), { manual: true, reason: 'micro_gap_repair' });
       }
     };
-    const reconcileCompletedTurnReceipts = async (context, pairs, options = {}) => {
+    const reconcileCompletedTurnReceiptsImpl = async (context, pairs, options = {}) => {
       const preparationGuard = options.receiptPreparationGuard;
       const reason = string(options.reason || options.mode || 'scan');
       const historical = options.allowHistoricalBackfill === true
@@ -41377,6 +41656,8 @@ function createLibraReadonlySourceContext(owner) {
       state.lastSourceReceiptReconcile = result;
       return result;
     };
+    const reconcileCompletedTurnReceipts = (context,pairs,options={}) => withBackgroundReadJob(context.scope,
+      scope=>reconcileCompletedTurnReceiptsImpl({...context,scope},pairs,options));
     // The normal scan prepares only a bounded tail. An admitted older batch
     // needs its own five original receipts before the read-only canonical gate.
     const prepareSelectedCompletedTurnReceipts = async (context, pairs, startTurn, options = {}) => {
@@ -59841,8 +60122,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         personInventory, micro, provider };
     };
     const microProducerVersion = 'micro_producer_v2';
-    const microScope = receipt => ({ scopeKey: string(receipt.scopeKey || ''),
-      characterId: string(receipt.characterId || ''), chatId: string(receipt.chatId || '') });
+    const microScope = receipt => {
+      const observed=receiptReadScopes.get(receipt);
+      return observed && memoryGraphReadFrames.has(observed) ? observed : { scopeKey: string(receipt.scopeKey || ''),
+        characterId: string(receipt.characterId || ''), chatId: string(receipt.chatId || '') };
+    };
     const activeMicroSource = async (receipt, options = {}) => {
       const receiptScope = microScope(receipt);
       // Keep the request's read frame and resource budget attached. Recreating
@@ -60482,9 +60766,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return conflicted;
     };
     const persistMicroRevision = async (receipt, receiptKey, analysis, workKey, publishClaim) => {
+      const scope = microScope(receipt);
+      const mode = string((await MemorySuiteStorageBridge.getScopeMode(scope, false))?.mode || 'plugin_only');
+      const headKey = key.microMemoryHead(scope, receipt.worldlineId, receipt.sessionEpoch, receipt.turn);
+      const sourceKeys = [receiptKey, key.completedTurnHead(scope,receipt.worldlineId,receipt.sessionEpoch,receipt.turn),
+        key.completedTurnCapture(scope,receipt.worldlineId,receipt.sessionEpoch,receipt.turn,receipt.revisionId),workKey];
+      // Pin before closing source checks. The original revisions, including a
+      // missing target Head, must survive until atomic publication. Never refresh
+      // the predicates to publish a result computed from an earlier source.
+      const publicationPin = mode !== 'plugin_only'
+        ? await MemorySuiteStorageBridge.captureConditionalReadSet([...sourceKeys,headKey]) : null;
       const active = await activeMicroSource(receipt);
       if (!active || active.receiptKey !== receiptKey) return { status: 'stale_source' };
-      const scope = microScope(receipt);
       const claimCurrent=async()=>{
         if(publishClaim.validate)await publishClaim.validate();
          if(Number(state.microRestoreGeneration||0)!==publishClaim.restoreGeneration)return false;
@@ -60512,7 +60805,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const record = { ...base, analysisRevisionId };
       const recordKey = key.microMemory(scope, receipt.worldlineId, receipt.sessionEpoch,
         receipt.turn, receipt.revisionId, analysisRevisionId);
-      const headKey = key.microMemoryHead(scope, receipt.worldlineId, receipt.sessionEpoch, receipt.turn);
       const recallMemory = microRecallMemoryFromRecord(record, receipt, recordKey);
       if (!recallMemory) throw new Error('LIBRA_MICRO_RECALL_PROJECTION_INVALID');
       const recallProjection = microRecallProjectionFromMemory(recallMemory);
@@ -60526,7 +60818,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         recallProjection, recallProjectionDigest: digest(recallProjection) };
       const priorRecord = await readRecoverableMicroJson(recordKey, scope);
       if (priorRecord && digest(priorRecord) !== digest(record)) throw new Error('LIBRA_MICRO_IMMUTABLE_CONFLICT');
-      await storage.setVerifiedJson(recordKey, record, scope);
+      if (!publicationPin) await storage.setVerifiedJson(recordKey, record, scope);
       if (!await activeMicroSource(receipt)) return { status: 'stale_source' };
       const priorHead = await readRecoverableMicroJson(headKey, scope);
       if (priorHead?.sourceRevisionId === receipt.revisionId
@@ -60535,7 +60827,30 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       if(!await claimCurrent() || !await activeMicroSource(receipt))
         return {status:'stale_source',reason:'micro_publish_claim_changed'};
-      await storage.setVerifiedJson(headKey, head, scope);
+      if (publicationPin) {
+        const rows = await MemorySuiteStorageBridge.serverGetMany('plugin',sourceKeys);
+        const expectation = row => row?.exists === true && row.tombstone !== true ? {exists:true,value:row.value} : {exists:false};
+        try {
+          const prepared = await MemorySuiteStorageBridge.prepareConditionalBatch({ readSet:publicationPin,
+            conditions:sourceKeys.map(key=>({key,expected:expectation(rows.values[key])})),
+            mutations:[{key:recordKey,kind:'set',expected:priorRecord ? {exists:true,value:JSON.stringify(priorRecord)} : {exists:false},value:JSON.stringify(record)},
+              {key:headKey,kind:'set',expected:priorHead ? {exists:true,value:JSON.stringify(priorHead)} : {exists:false},value:JSON.stringify(head)}] });
+          await closeBackgroundReadFramesForWrite(headKey,scope);
+          invalidateVerifiedRead(recordKey); invalidateVerifiedRead(headKey);
+          try {
+            const committed = await MemorySuiteStorageBridge.commitConditionalBatch(prepared);
+            if (committed.endToEndVerified !== true) throw new Error('LIBRA_MICRO_COMMIT_UNVERIFIED');
+            if (committed.localMirror?.required && committed.localMirror.verified !== true)
+              throw Object.assign(new Error('LIBRA_MICRO_MIRROR_READBACK_UNVERIFIED'),{storageMutationCommitted:true});
+          } finally { invalidateVerifiedRead(recordKey); invalidateVerifiedRead(headKey); }
+          const frame=scope&&memoryGraphReadFrames.get(scope); if(frame?.background){frame.acceptOwnWrite(recordKey);frame.acceptOwnWrite(headKey);}
+          noteMemoryGraphSourceWrite(headKey);
+        } catch (error) {
+          if (error?.status === 409 || /MEMORY_SUITE_BATCH_(?:READ_SET_CHANGED|EXPECTED_VALUE_CHANGED|PIN_NOT_BOUND)/.test(string(error?.code || error?.message)))
+            return {status:'stale_source',reason:'micro_publication_basis_changed'};
+          throw error;
+        }
+      } else await storage.setVerifiedJson(headKey, head, scope);
       const published = await readActiveMicroMemory(scope, receipt.worldlineId, receipt.sessionEpoch, receipt.turn);
       if (published.status !== 'verified' || published.head.analysisRevisionId !== analysisRevisionId) {
         throw new Error(`LIBRA_MICRO_READBACK_${published.status.toUpperCase()}`);
@@ -60556,7 +60871,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const boundary=await captureReceiptRecoveryBoundary(context,pair);
       return {scope,identity,boundary};
     };
-     const produceMicroForTurn = async (scope, worldlineId, sessionEpoch, turn, expectedRevisionId = '', options={}) => {
+     const produceMicroForTurnImpl = async (scope, worldlineId, sessionEpoch, turn, expectedRevisionId = '', options={}) => {
        const active = await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn);
       if (active.status !== 'verified' || (expectedRevisionId && active.receipt.revisionId !== expectedRevisionId)) {
         return { status: active.status === 'verified' ? 'stale_source' : active.status, reason: active.reason };
@@ -60778,6 +61093,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return { ...micro, attemptId:string(work.attemptId||''),
         personInventoryStatus, personInventoryError };
     };
+    const produceMicroForTurn=(scope,worldlineId,sessionEpoch,turn,expectedRevisionId='',options={})=>withBackgroundReadJob(scope,
+      observed=>produceMicroForTurnImpl(observed,worldlineId,sessionEpoch,turn,expectedRevisionId,options));
     const memoryReviewKey=(scope,worldline)=>`${PREFIX}:scope:${scope.scopeKey}:memory-review:v1:${worldline}`;
     const memoryReviewId=(kind,record,index)=>`${kind}:${digest([record.scopeKey,record.sourceDigest,record.analysisRevisionId||record.artifactDigest,index])}`;
     const readMemoryReviewPolicy=async(scope,worldline)=>{
@@ -61015,7 +61332,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           for(const [storageKey,value] of catalog.dependencies){if(storageKey===catalog.policy.key||!required.has(storageKey))continue;if(conditions.length>=63)throw Error('MEMORY_REVIEW_READSET_TOO_LARGE');
             const v=await LibraProviderBridge.storage.getItem(storageKey);unifiedAssert(digest(v?JSON.parse(v):null)===digest(value),'MEMORY_REVIEW_SOURCE_CHANGED');conditions.push({key:storageKey,expected:v==null?{exists:false}:{exists:true,value:v}});}
           const prepared=await MemorySuiteStorageBridge.prepareConditionalBatch({conditions,mutations:[{key:catalog.policy.key,kind:'set',expected:raw==null?{exists:false}:{exists:true,value:raw},value:JSON.stringify(next)}]});
-          const receipt=await MemorySuiteStorageBridge.commitConditionalBatch(prepared);unifiedAssert(receipt.endToEndVerified===true,'MEMORY_REVIEW_COMMIT_UNVERIFIED');
+          const receipt=await commitVerifiedConditionalBatch(prepared);unifiedAssert(receipt.endToEndVerified===true,'MEMORY_REVIEW_COMMIT_UNVERIFIED');
         }
         unifiedAssert(digest(await storage.getVerifiedJson(catalog.policy.key,initial.scope,null))===digest(next),'MEMORY_REVIEW_READBACK_FAILED');
         state.lastMicroStateAdmissionRefresh={at:Date.now(),reason:'memory_review_changed'};state.memoryGraphStoreSerial+=1;
@@ -62021,7 +62338,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       rememberConsumedState(head, authority, stateProofs);
       return { ...view, head, authority };
     };
-    const persistKnownPersonSpanInventory = async (scope, worldlineId, sessionEpoch, turn) => {
+    const persistKnownPersonSpanInventoryImpl = async (scope, worldlineId, sessionEpoch, turn) => {
       const active = await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn);
       if (active.status !== 'verified') throw new Error(`LIBRA_PERSON_INVENTORY_SOURCE_${active.status.toUpperCase()}`);
       const registry = await storage.getVerifiedJson(key.entityRegistry(scope), scope, null) || {};
@@ -62075,6 +62392,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       return { status: 'verified', duplicate: false, inventoryKey, headKey, inventory: record };
     };
+    const persistKnownPersonSpanInventory=(scope,worldlineId,sessionEpoch,turn)=>withBackgroundReadJob(scope,
+      observed=>persistKnownPersonSpanInventoryImpl(observed,worldlineId,sessionEpoch,turn));
     const persistClassifiedPersonSpanInventory = async (receipt, receiptKey, inventoryValue, workKey) => {
       const scope = microScope(receipt);
       const active = await activeMicroSource(receipt);
@@ -62111,6 +62430,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
         registryDigest: inventory.registryDigest, inventoryRevisionId, inventoryKey };
       const prior = await readRecoverableMicroJson(inventoryKey, scope);
       if (prior && digest(prior) !== digest(record)) throw new Error('LIBRA_PERSON_CLASSIFIED_IMMUTABLE_CONFLICT');
+      if(prior){
+        const priorHead=await readRecoverableMicroJson(headKey,scope);
+        if(digest(priorHead)===digest(head)){
+          const published=await readPersonSpanInventory(scope,receipt.worldlineId,receipt.sessionEpoch,receipt.turn);
+          if(published.status==='verified'&&published.inventoryKey===inventoryKey)
+            return {status:'verified',duplicate:true,inventoryKey,headKey,inventory:record};
+        }
+      }
       await storage.setVerifiedJson(inventoryKey, record, scope);
       if (!await activeMicroSource(receipt)) throw new Error('LIBRA_PERSON_CLASSIFIED_SOURCE_CHANGED');
       const currentRegistry = await storage.getVerifiedJson(key.entityRegistry(scope), scope, null) || {};
@@ -62122,7 +62449,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       return { status: 'verified', duplicate: prior !== null, inventoryKey, headKey, inventory: record };
     };
-    const readPersonSpanInventory = async (scope, worldlineId, sessionEpoch, turn, expectedRegistryDigest = '') => {
+    const readPersonSpanInventoryImpl = async (scope, worldlineId, sessionEpoch, turn, expectedRegistryDigest = '') => {
       const empty = (status, reason = '') => ({ status, reason, inventory: null });
       const active = await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn);
       if (active.status !== 'verified') return empty(active.status, active.reason);
@@ -62194,11 +62521,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       return { status: 'verified', reason: '', inventory, inventoryKey: head.inventoryKey, headKey };
     };
+    const readPersonSpanInventory=(scope,worldlineId,sessionEpoch,turn,expectedRegistryDigest='')=>withBackgroundReadJob(scope,
+      observed=>readPersonSpanInventoryImpl(observed,worldlineId,sessionEpoch,turn,expectedRegistryDigest));
     const verifiedPersonCandidatePromptBlock = async (batch, registryValue, scopeKey) => {
       const context = await resolveContext();
       if (string(context?.scope?.scopeKey || '') !== string(scopeKey || '')) return '';
       const scope = context.scope;
       const worldlineId = hostWorldlineIdForScope(scope);
+      return withBackgroundReadJob(scope,async scope=>{
       const candidatesByPair = await Promise.all(asArray(batch).map(async pair => {
         const revisionId = completedTurnRevisionId(pair);
         try {
@@ -62238,6 +62568,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         + JSON.stringify({ schema: 'libra.person_span_prompt.v1', spans: candidates.slice(0, 64),
           relations: relations.slice(0, 32), omitted: Math.max(0, candidates.length - 64),
           relationsOmitted: Math.max(0, relations.length - 32) });
+      });
     };
     const canonicalWorldEntityNameBoundToEvidence = (e, quote) => {
       const source = canonicalEvidenceComparable(quote);
@@ -63731,7 +64062,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const before=await storage.getJson(k,null);conditions.push({key:k,expected:before==null?{exists:false}:{exists:true,value:JSON.stringify(before)}});
         }
         const prepared=await MemorySuiteStorageBridge.prepareConditionalBatch({conditions,mutations:[{key:unifiedServerActiveKey(context.scope),kind:'set',expected:{exists:false},value:JSON.stringify(descriptor)}]});
-        const receipt=await MemorySuiteStorageBridge.commitConditionalBatch(prepared);
+        const receipt=await commitVerifiedConditionalBatch(prepared);
         unifiedAssert(receipt.endToEndVerified===true,'UNIFIED_SERVER_COMMIT_NOT_VERIFIED');
         active=await storage.getJson(unifiedServerActiveKey(context.scope),null);
       }
@@ -63763,7 +64094,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // Predicates were captured before waiting; do not refresh them after a
       // conflict to force an old candidate past a newer revision.
       await validate?.();
-      const receipt=await MemorySuiteStorageBridge.commitConditionalBatch(tx.serverPrepared);
+      const receipt=await commitVerifiedConditionalBatch(tx.serverPrepared);
       unifiedAssert(receipt.endToEndVerified===true,'UNIFIED_SERVER_COMMIT_NOT_VERIFIED');
       noteMemoryGraphSourceWrite(PREFIX + ':scope:');
       return receipt;
@@ -64209,6 +64540,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
 
     const readCanonicalRawBatch = async (expectedBatch, expectedRefs = null) => {
       const context=await resolveContext(), scope=context.scope, worldlineId=hostWorldlineIdForScope(scope);
+      return withBackgroundReadJob(scope,async scope=>{
       unifiedAssert(asArray(expectedBatch).length===BATCH_SIZE,'CANONICAL_COMPLETED_RECEIPT_BATCH_INVALID');
       // Join the five independent physical reads before admitting any result.
       // The final live-source check still binds the complete ordered batch.
@@ -64244,6 +64576,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           && digest(sourcePairs([current]))===digest(sourcePairs([pair]));}),
         'CANONICAL_COMPLETED_RECEIPT_SOURCE_CHANGED');
       return {batch,refs};
+      });
     };
     const executeUnifiedStage = async (stageName,batch,previousStage=null,options={}) => {
       let responseDiagnostic=null;
@@ -66643,7 +66976,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
                   readSet,
                   mutations: [{ key: manifestKey, kind: 'set', expected: { exists: true, value: manifestRaw }, value: nextRaw }]
                 });
-                const receipt = await MemorySuiteStorageBridge.commitConditionalBatch(prepared);
+                const receipt = await commitVerifiedConditionalBatch(prepared);
                 unifiedAssert(receipt.endToEndVerified === true, 'UNIFIED_CANCEL_MANIFEST_COMMIT_NOT_VERIFIED');
                 if (receipt.localMirror?.required) unifiedAssert(receipt.localMirror.verified === true, 'UNIFIED_CANCEL_MANIFEST_MIRROR_NOT_VERIFIED');
                 const verifiedRaw = await LibraProviderBridge.storage.getItem(manifestKey);
@@ -67008,7 +67341,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const admitPublishedMicroStateClaims = async (scope, worldlineId, sessionEpoch, turn) => {
       const summary = { admitted: 0, pending: 0, pendingReconciliation: 0 };
       let active;
-      try { active = await readActiveMicroMemory(scope, worldlineId, sessionEpoch, turn); }
+      try { active = await withBackgroundReadJob(scope,observed=>readActiveMicroMemory(observed, worldlineId, sessionEpoch, turn)); }
       catch (_) { summary.pendingReconciliation += 1; return summary; }
       if (active.status === 'missing') return summary;
       if (active.status !== 'verified') { summary.pendingReconciliation += 1; return summary; }
@@ -71900,7 +72233,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       })(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(consumerContractError('CONSUMER_DATA_REVALIDATION_DEADLINE')),Math.max(1,deadlineAt-Date.now()));})]);}
       finally{clearTimeout(timer);}
     };
-    const assertUnifiedResponseBoundary=async(boundary,options={})=>{
+    const assertUnifiedResponseBoundary=async(boundary,options={})=>{ freshReadDepth++; try {
       if(!boundary)return true;
       const deadlineAt=Math.min(Date.now()+CONSUMER_REVALIDATION_BUDGET_MS,Number(options.deadlineAt)||Infinity);let timer;
       try{return await Promise.race([(async()=>{
@@ -71919,7 +72252,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
         unifiedAssert(digest(current)===digest(boundary),'UNIFIED_RESPONSE_AUTHORITY_CHANGED');return true;
       })(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(consumerContractError('CONSUMER_DATA_REVALIDATION_DEADLINE')),Math.max(1,deadlineAt-Date.now()));})]);}finally{clearTimeout(timer);}
-    };
+    } finally { freshReadDepth--; } };
     const unifiedResponseContextBody=value=>{const copy=clone(value);delete copy.contextDigest;return copy;};
     const consumedPacketValues = packet => ({currentInput:packet.current_input||'',terminalScene:packet.terminal_scene||'',liveTail:clone(packet.live_tail||null),
         canonicalLayers:clone(packet.layers||{}),canonicalPriority:clone(packet.canonical_priority||null),
@@ -71961,7 +72294,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       Runtime.lastResponseContext=snapshot;return snapshot;
     };
-    const validateUnifiedResponseContext=async value=>{
+    const validateUnifiedResponseContext=async value=>{ freshReadDepth++; try {
       try{unifiedAssert(value?.schema===UNIFIED_RESPONSE_CONTEXT_SCHEMA && value.contextDigest===digest(unifiedResponseContextBody(value)),'UNIFIED_RESPONSE_CONTEXT_SEAL');
         if(value.consumerReadSet)await assertConsumerReadSet(value.consumerReadSet);
         await assertUnifiedResponseBoundary(value.boundary);
@@ -71973,7 +72306,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }else throw consumerContractError('CONSUMER_DATA_READSET_UNAVAILABLE');
         return {ok:true,current:true,contextDigest:value.contextDigest};
       }catch(e){return {ok:false,current:false,reason:e.code||String(e.message)};}
-    };
+    } finally { freshReadDepth--; } };
     const getUnifiedResponseContext=async({currentInput=''}={})=>{
       const context=await resolveContext(),pairs=buildPairs(context.chat,context.scope.scopeKey),settings=await loadSettings();
       const boundary=await captureUnifiedResponseBoundary(context,settings),manifest=await loadManifest(context.scope,pairs.length);
@@ -72486,6 +72819,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const refreshSnapshot = async (suppliedContext, options = {}) => {
       const refreshSerial = ++state.snapshotRefreshSerial;
       let context = suppliedContext || null;
+      let backgroundFrame = null;
       try {
         context = context || await resolveContext();
         clearStaleMemoryInjectionDebug(context.scope, 'snapshot_scope_changed');
@@ -72498,6 +72832,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
             });
             warn('LIBRA native chat-copy adoption failed during snapshot refresh.', error);
           }
+        }
+        if(!memoryGraphReadFrames.has(context.scope)&&!memoryGraphSourceBudgets.has(context.scope)){
+          context={...context,scope:{...context.scope}};
+          backgroundFrame=await openBackgroundReadFrame(context.scope);
         }
         const pairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
         const manifest = await loadManifest(context.scope, pairs.length);
@@ -72603,9 +72941,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
             }
             activeContext = await resolveContext();
             if (refreshSerial !== state.snapshotRefreshSerial || !sameSnapshotScope(activeContext?.scope, context.scope)) {
+              await backgroundFrame?.assertCurrent();
               return options.cloneResult === false ? nextSnapshot : clone(nextSnapshot);
             }
             nextSnapshot.hostLineage = MemorySuiteHostLineage.inspect(activeContext.character, activeContext.chat);
+            await backgroundFrame?.assertCurrent();
             state.snapshot = nextSnapshot;
             if (options.trackGuiLimits === true) {
               state.guiSnapshotLimits = {
@@ -72617,6 +72957,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           }
         }
         if (committed && options.suppressGuiSchedule !== true) scheduleGuiTraceRefresh();
+        if(!committed)await backgroundFrame?.assertCurrent();
         return options.cloneResult === false ? nextSnapshot : clone(nextSnapshot);
       } catch (error) {
         const sameScope = context?.scope && sameSnapshotScope(state.snapshot.scope, context.scope);
@@ -72639,7 +72980,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
         if (committed && options.suppressGuiSchedule !== true) scheduleGuiTraceRefresh();
         return options.cloneResult === false ? failedSnapshot : clone(failedSnapshot);
-      }
+      } finally { backgroundFrame?.close(); }
     };
 
     const exportCurrentScope = async () => {
@@ -76241,7 +76582,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const commit = async (mutations, conditions = [], readSet = null) => {
         check();
         const prepared = await MemorySuiteStorageBridge.prepareConditionalBatch({ mutations, conditions, ...(readSet ? { readSet } : {}) });
-        check(); const receipt = await MemorySuiteStorageBridge.commitConditionalBatch(prepared); check();
+        check(); const receipt = await commitVerifiedConditionalBatch(prepared); check();
         if (receipt.endToEndVerified !== true) throw new Error('LIBRA_GRAPH_STORE_COMMIT_UNVERIFIED');
       };
       const owner = {
@@ -76461,7 +76802,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         await assertRoute();
         const batch = await MemorySuiteStorageBridge.prepareConditionalBatch({ mutations, conditions });
         await assertRoute();
-        const receipt = await MemorySuiteStorageBridge.commitConditionalBatch(batch);
+        const receipt = await commitVerifiedConditionalBatch(batch);
         await assertRoute();
         if (receipt.endToEndVerified !== true) throw new Error('LIBRA_GRAPH_CORPUS_COMMIT_UNVERIFIED');
         } finally { stage?.release(); }
@@ -76617,7 +76958,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             recordDependencyKeys
           };
         },
-        async verifySourceProofs(proofRecord, { initialGraph: targetGraph, config = {}, phase = 'open' } = {}) {
+        async verifySourceProofs(proofRecord, { initialGraph: targetGraph, config = {}, phase = 'open' } = {}) { freshReadDepth++; try {
           await assertRoute();
           const published = proofRecord?.ownerProof;
           if (!published || published.schema !== 'libra.graph_corpus_owner_proof.v1') return null;
@@ -76893,7 +77234,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             readFrame?.close();
             if (captured) ownerReadonlySourceContext.release({ handle: captured.handle, requestId });
           }
-        }
+        } finally { freshReadDepth--; } }
       }, snapshot: async (sourceOptions, snapshotResources = resources) => {
         await assertRoute(); let next;
         const graph = await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: initialGraph.scopeKey }, value => { next = value; }, snapshotResources);
@@ -77251,7 +77592,20 @@ function mountMemorySuiteReanalysisReview(container,config) {
       try {
         await runRecallStep(recallGuard, 'graph_background_drain',
           () => yieldVolatileMemoryGraphCorpusBuild(), RECALL_STEP_BUDGET_MS);
-        return await executeMemoryGraphUnifiedQueryOnce(options, recallGuard, gradiaAuthority);
+        // Background owner writes (a Micro finishing) can tear the cold corpus build
+        // between projection and its source proof. Rebuild from a fresh frame, bounded.
+        for (let attempt = 0; ; attempt++) {
+          try { return await executeMemoryGraphUnifiedQueryOnce(options, recallGuard, gradiaAuthority); }
+          catch (error) {
+            const message = string(error?.message || ''), code = string(error?.code || '');
+            // Reader-level torn codes are already retried (bounded) inside projection.
+            const torn = message === 'LIBRA_GRAPH_CORPUS_SOURCE_BODY_CHANGED' || code === 'LIBRA_GRAPH_CORPUS_SOURCE_BODY_CHANGED'
+              || message.startsWith('LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:');
+            if (!torn || attempt >= 2 || state.disposed || (recallGuard && Date.now() > Number(recallGuard.deadlineAt || Infinity) - 2000)) throw error;
+            state.graphQueryTornRetries = Number(state.graphQueryTornRetries || 0) + 1;
+            await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+          }
+        }
       }
       finally { volatileState.queriesInFlight -= 1; }
     };
@@ -77554,7 +77908,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
         const ownerVerifier = {
           currentGraph: corpus ? corpus.currentGraph : async () => await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: graph.scopeKey },null,resources),
-          assertPhysicalCurrentness: async (dependencies = null, verifyContext = null) => {
+          assertPhysicalCurrentness: async (dependencies = null, verifyContext = null) => { freshReadDepth++; try {
             if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)
               || state.deletingScopes.has(graph.scopeKey) || !initialCollected?.scope) {
               return false;
@@ -77662,7 +78016,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             } catch (_err) {
               return false;
             }
-          }
+          } finally { freshReadDepth--; } }
         };
         ownerVerifier.openValidation = () => {
           resources.check();
@@ -78143,7 +78497,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       return {context,registry,enabled:lenses.length>0,lensStatus,digest:digest(parts)};
     };
-    const verifyGradiaMemoryEvidence = async execution => {
+    const verifyGradiaMemoryEvidence = async execution => { freshReadDepth++; try {
       const bound = gradiaMemoryEvidence.get(execution);
       if (!bound || bound.closed) return false;
       const validateGraph = async () => {
@@ -78154,14 +78508,36 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       await validateGraph();
       if ((await gradiaLensReadSnapshot(bound.request)).digest !== bound.lensDigest) throw Error('LIB_READ_STALE');
       return !bound.closed;
-    };
+    } finally { freshReadDepth--; } };
     const releaseGradiaMemoryEvidence = execution => {
       const bound = gradiaMemoryEvidence.get(execution);
       if (!bound) return;
       bound.closed = true; gradiaMemoryEvidence.delete(execution);
       releaseMemoryGraphUnifiedQuery(bound.graph);
     };
+    // The classic recall runs inside the scope writer queue; this reader does not, so a
+    // canonical scan rewriting the manifest (in-flight marker, frontiers) can tear it.
+    // Those writes happen at batch boundaries only, so a short bounded retry reads a
+    // consistent state instead of failing the whole GRADIA memory read.
+    const GRADIA_CAPTURE_TORN_RETRIES = 2;
+    const gradiaCaptureTorn = error => {
+      const message = string(error?.message || ''), code = string(error?.code || '');
+      return MEMORY_GRAPH_TORN_READ_CODES.has(message) || MEMORY_GRAPH_TORN_READ_CODES.has(code)
+        || message.startsWith('LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:')
+        || message === 'LIBRA_GRAPH_CORPUS_SOURCE_BODY_CHANGED'
+        || error?.readDiagnostic?.dispatchReason === 'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED';
+    };
     const captureGradiaMemoryEvidence = async (request, authority) => {
+      for (let attempt = 0; ; attempt++) {
+        try { return await captureGradiaMemoryEvidenceOnce(request, authority); }
+        catch (error) {
+          if (attempt >= GRADIA_CAPTURE_TORN_RETRIES || state.disposed || !gradiaCaptureTorn(error)) throw error;
+          state.gradiaCaptureRetries = Number(state.gradiaCaptureRetries || 0) + 1;
+          await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
+        }
+      }
+    };
+    const captureGradiaMemoryEvidenceOnce = async (request, authority) => {
       const before = await gradiaLensReadSnapshot(request);
       // Both owner channels validate the proposal before reaching this reader.
       // Reserve canonical and lens memory together without reducing peer owners' byte budget.
@@ -81385,14 +81761,25 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
     // ---- registry ------------------------------------------------------------------------------
     let lensRegistryCache = null;
-    let lensRegistryCacheAt = 0;
-    const invalidateLensRegistryCache = () => { lensRegistryCache = null; lensRegistryCacheAt = 0; };
+    let lensRegistryCacheRaw = '', lensRegistryCacheSignature = '';
+    const invalidateLensRegistryCache = () => { lensRegistryCache = null; lensRegistryCacheRaw = ''; lensRegistryCacheSignature = ''; };
     const readLensRegistry = async (options = {}) => {
-      if (options.force !== true && lensRegistryCache && Date.now() - lensRegistryCacheAt < 3000) return clone(lensRegistryCache);
-      const runtimeStored = await readRuntimeSettings().catch(() => ({}));
-      lensRegistryCache = normalizeLensRegistry(runtimeStored?.lens_registry);
-      lensRegistryCacheAt = Date.now();
-      return clone(lensRegistryCache);
+      // Definitions live in runtime settings, not the chat's Lens result Head.
+      // Read their actual bytes even inside the former 3s registry TTL. Only the
+      // pure normalization is memoized, under the same lifecycle fence.
+      const raw = await RisuCompat.getItem(STORAGE_RUNTIME_SETTINGS_KEY);
+      for(const frame of activeBackgroundReadFrames)frame.observeExtra(STORAGE_RUNTIME_SETTINGS_KEY,raw);
+      const witness = typeof raw === 'string' ? raw : stableReferenceJson(raw);
+      const signature = verifiedReadSignature('lens-registry');
+      if (options.force !== true && lensRegistryCache && lensRegistryCacheRaw === witness && lensRegistryCacheSignature === signature)
+        return clone(lensRegistryCache);
+      const runtimeStored = normalizeRuntimeRecord(parseRuntimeSettingsEnvelope(raw) || {});
+      const registry = normalizeLensRegistry(runtimeStored?.lens_registry);
+      if (lensRegistryCache && stableReferenceJson(lensRegistryCache) !== stableReferenceJson(registry)) noteMemoryGraphSourceWrite(PREFIX + ':scope:');
+      if (witness.length * 2 + JSON.stringify(registry).length * 2 <= VERIFIED_READ_CACHE_ENTRY_BYTES) {
+        lensRegistryCache = clone(registry); lensRegistryCacheRaw = witness; lensRegistryCacheSignature = signature;
+      } else invalidateLensRegistryCache();
+      return clone(registry);
     };
     let lensRegistryWriteTail = Promise.resolve();
     const mutateLensRegistry = mutation => {
@@ -81402,6 +81789,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const next = normalizeLensRegistry({ ...candidate, purgedLensIds:[...new Set([...current.purgedLensIds,...(candidate.purgedLensIds||[])])], updatedAt: nowIso() });
         await saveLensRegistryOnly(next);
         invalidateLensRegistryCache();
+        noteMemoryGraphSourceWrite(PREFIX + ':scope:');
         scheduleGuiTraceRefresh();
         return await readLensRegistry({ force: true });
       });

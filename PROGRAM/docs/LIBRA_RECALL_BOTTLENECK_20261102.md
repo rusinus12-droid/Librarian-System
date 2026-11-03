@@ -131,3 +131,208 @@ LIBRA 회귀 40개 중 39개 통과. `libra_phase_d_v5_fault_semantic_recovery_t
 - **32키 묶음 예산.** `libra_owner_batch_budget_unit_test`는 실제 `ownerGetMany`를 실제 자원 관리기와 함께 실행한다. 작은 값 32개는 1회 왕복, 큰 값이 섞이면 나눠 읽고 모든 값이 정확히 돌아오며 바이트가 계산된다. 한도를 넘는 단일 값은 기존처럼 `VALUE_BYTE_BUDGET`으로 실패한다. 나눠 읽는 요청이 실패하면 오류로 끝나고 예약이 모두 반환된다. 처음 묶음 응답을 크기 판단에 쓴 뒤 버리고 다시 읽는 비용은 남아 있다. 실제 쿼리 경로에서는 모든 읽기가 같은 값 한도를 쓰므로, 가장 큰 기록(약 34KB)을 받을 수 있는 한도에서는 head 묶음(합계 약 22KB)이 나뉘지 않았다.
 
 남은 것: 실제 RisuAI 설치 검증, 장기 누적 대화, 다른 기기의 동시 접근, `UNIFIED_RESPONSE_AUTHORITY_CHANGED` 실제 원인, Micro->State 실제 반영 테스트.
+
+## 5장: 백그라운드 저장소 읽기 캐시 (cd78b9f 당시 계약; 아래 6장으로 제한)
+
+배경: 읽는 쪽(회상, GRADIA)이 없을 때도 LIBRA 자신의 백그라운드 작업이 8초에 약 2,000회 저장소를 읽었다. 대부분 `source-receipt`, `source-receipt-head` 키를 같은 값으로 반복해서 읽는 것이었다. 이 읽기가 서버 요청 줄을 차지해 GRADIA 읽기가 41초까지 늘어난 것으로 본다.
+
+새 계약:
+
+- **무엇을 캐시하나.** `storage.getVerifiedJson`, `getStoredJson`의 결과를 세션 안에서 기억한다. 자원 예산(resource budget)이 붙은 읽기는 캐시하지 않는다.
+- **유효 기간.** 20초, 최대 4,096개.
+- **캐시 키.** 저장 모드, 서버 바인딩 세대, `microRestoreGeneration`, `memoryGraphStoreSerial`을 함께 넣는다. 이 중 하나라도 바뀌면 이전 값은 쓰이지 않는다.
+- **무효화.** fenced set, fenced remove, `storage.remove`, 그리고 코어의 `commitConditionalBatch` 6곳 앞뒤에서 캐시를 비운다. 근거: 한 세션에서 LIBRA 네임스페이스를 쓰는 주체는 LIBRA 하나다.
+- **전달 직전 검사는 항상 새로 읽는다.** `assertConsumedDataCurrent`, `assertUnifiedResponseBoundary`, `validateUnifiedResponseContext`, `verifySourceProofs`, `assertPhysicalCurrentness`, `verifyGradiaMemoryEvidence`는 `freshReadDepth` 안에서 실행되어 캐시를 건너뛴다. 그래서 모델에 전달되는 기억은 지금도 실제 저장소 값과 대조된다.
+- **포기한 것.** 다른 기기나 다른 탭이 같은 LIBRA 데이터를 바꾸면, 백그라운드 작업은 최대 20초 동안 옛 값을 볼 수 있다. 이 경우 전달 직전 검사가 거부하고, 작업은 다음 주기에 다시 한다. 틀린 기억이 전달되지는 않지만 그 사이 작업이 헛돌 수 있다.
+- **그래프 질의 재시도.** cold 빌드 중 원본이 바뀌어 `LIBRA_GRAPH_CORPUS_SOURCE_BODY_CHANGED` 또는 `LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:`가 나면 `executeMemoryGraphUnifiedQuery`가 최대 2회 새로 빌드한다. 마감까지 2초 넘게 남았을 때만 한다. 읽기 단계의 torn 코드(`LIBRA_GRAPH_READER_BODY_CHANGED` 등)는 projection 안에서 이미 2회 재시도하므로 바깥에서 다시 재시도하지 않는다. 처음에는 바깥에서도 재시도해 시도가 3×3=9회로 늘었고, `libra_memory_graph_read_frame_runtime_test`가 이를 잡았다.
+
+측정 (server_only, Micro 10개, 이 테스트 환경):
+
+| 항목 | HEAD | 변경 후 |
+|---|---|---|
+| 읽는 쪽 없이 8초 동안 백그라운드 저장소 읽기 | 2,004회 | 275회 |
+| GRADIA 읽기 열기, cold | 2,086ms | 2,037ms |
+| GRADIA 읽기 열기, warm | 823ms | 808ms |
+| GRADIA 전달 직전 검사, cold / warm | 199 / 124ms | 169 / 109ms |
+
+이 환경에서는 GRADIA 읽기 자체가 거의 그대로다. 측정 중 백그라운드 작업과 겹치지 않았기 때문이다. 실제 사용에서 얻는 효과는 백그라운드 읽기가 약 7분의 1로 줄어 서버 요청 줄이 비는 것이다. 41초 상황이 얼마나 줄었는지는 실제 RisuAI에서 다시 봐야 한다.
+
+테스트 변경:
+
+- `libra_recall_mid_micro_publication_test` 네 번째 검사를 타이밍 경쟁 대신 FULL_PIN seam으로 전체 pin 검사 횟수를 세도록 바꿨다. 이전 강제 경우는 HEAD에서도 실패했다(바꾼 키가 pin 집합에 없었다).
+- `libra_gradia_unified_pipeline_runtime_test`는 모델 프롬프트에 `owner_issued_evidence_bundle`이 있는지 확인하고 있었다. 76b1a5d에서 저장 메타데이터를 모델 입력에서 뺐으므로, 이제 LIBRA owner 표시가 있고 이 내부 라벨은 없는지 확인한다.
+
+회귀: memory_graph, recall, gradia 계열 88개 통과. 원래 HEAD에서도 실패하던 테스트(위 장들과 동일)는 제외했다.
+
+## 6장: 2026-11-03 리뷰 후 보완 (f9e7b7b 당시; 아래 7장으로 확장)
+
+### Git 기준
+
+`git ls-remote`로 확인한 현재 개발 브랜치 `claude/libra-recall-bottleneck-20261102`의 원격과 로컬 HEAD는 모두 `cd78b9f3c281ecef736d7e89d3e6a6853c6c1037`였다. 원격 main은 `659a296ff5a929880c2e6a735a7828c58bfec24c`이며 `353225b`까지의 PR #25 병합이다. 개발 브랜치의 후속 세 커밋은 아직 main에 없다. 두 브랜치를 fetch하여 포함 관계만 확인했으며 병합·push는 하지 않았다.
+
+### 변경
+
+- GRADIA의 HAYAKU 투영은 entity/world/narrative/planner의 모든 의미 leaf와 요약·추론 주의·발화 경계를 경로를 붙인 문장으로 전달한다. 과거 사건, 세계 규칙과 예외, 장면 밖 흐름, 장면 변화, 복선 회수, 지식·비밀의 공개 범위 및 목록 뒷부분을 보존한다. HAYAKU 생산자·저장 계약은 변경하지 않는다. lineage 등 전송 메타데이터는 제외하고 기존 전체 근거 예산을 적용한다. 출력이 커지면 전체 항목 선택 예산에서 제외될 수 있으며 모든 패킷이 항상 모델에 들어간다는 보장은 아니다.
+- 세션 캐시는 `plugin_only`의 예산 없는 `getVerifiedJson`에만 남긴다. `server_only`·`mirror`와 범위가 불명확한 `getStoredJson`은 캐시하지 않는다. 외부 서버 쓰기를 세션 무효화만으로 추적할 수 없기 때문이다. 따라서 5장의 서버 백그라운드 읽기 86.3% 감소 수치는 이번 후보의 성능 보장이 아니다.
+- 항목당 64 KiB, 전체 4 MiB의 UTF-16 직렬화 payload 상한과 기존 4,096개 상한을 적용한다. 키·signature 크기도 계산한다. 실제 JS heap 상한을 측정한 수치는 아니다. 캐시 접근/삽입 때 만료 항목 전체를 정리한다. 유휴 중 즉시 제거하는 타이머는 추가하지 않았다.
+- 로컬 캐시는 기존 20초 TTL과 쓰기 무효화, 연결 세대·복원 세대 분리, 전달 직전 물리 검증 우회를 유지한다. 여러 실제 RisuAI 탭이 plugin-only 저장소를 공유하는 경우의 외부 변경 통지는 이번 검사 범위에 포함되지 않는다.
+
+### 검증
+
+- `gradia_hayaku_semantic_projection_test`: 누락됐던 의미 영역, 중첩 조건, false 값, 12번째 규칙, 비밀 공개 범위, 원본 불변성 및 알 수 없는 스키마 통과.
+- `libra_verified_read_cache_test`: hit, TTL 만료, 결과 복사, 쓰기/삭제 무효화, 읽기와 쓰기 경합, 서버 연결 세대·복원 세대 변경, fresh 우회, raw 읽기 우회, 항목당·전체 payload 예산, 만료 일괄 정리, 호출별 fallback 통과.
+- `libra_shared_cache_external_write_test`: server_only/mirror 양쪽에서 반복 읽기 뒤 TTL 안에 외부 서버 쓰기를 수행한다. server_only는 새 값을, mirror의 불일치는 오류를 반환한다. 양쪽 복제본 갱신 후에는 새 값을 읽는다. 실제 정본 생산자 대기 중 추가 외부 Head 변경을 넣으면 오래된 후보 게시가 막히고, 재시작한 bridge에서도 외부 값이 유지된다. 공유 모드에 stale cache hit 자체를 허용하지 않는 방향으로 수정했다.
+- 기존 three-owner 소비/모델 전달, RP 원문 결속, 분석 중 GRADIA 읽기, 회상 중 Micro 게시와 소비 근거 변경 검사 및 서버 writer/State 원자성 검사도 실행한다. 서버 fixture는 실제 제품 request handler와 디스크 SQLite를 쓰지만 HTTP 전송은 내부 dispatch이며 RisuAI/모델은 통제한다.
+- 실행 환경의 기본 임시 폴더에서 rename EPERM이 발생하여 임시 경로를 `.development/cache-review-temp`로 옮겼다. jsdom은 기존 `PROGRAM/build-support/node_modules`를 NODE_PATH로 지정했다. 소스의 안전 검사를 약화시키지 않았다.
+
+실제 RisuAI GUI, 실제 공급자, 장기 사용·기기 성능, 전체 회귀/CI 및 서버 캐시 우회 후 경합 지연 재측정은 수행하지 않았다. 공개 릴리스·배포도 하지 않았다.
+
+## 7장: Micro·렌즈·정본·State 공통 캐시 재사용과 게시 보호
+
+`cd78b9f`의 Map·20초 TTL·복사 반환·쓰기 무효화·최종 fresh 검사 구조를 유지하면서 `f9e7b7b`의 서버 모드 전체 캐시 우회를 대체했다. TTL은 보관 정책이고 현재성의 권한은 새 저장소 관측이다.
+
+- **서버 재사용.** 기존 `/v1/kv/get-many`에 선택적 `knownValues`를 추가했다. revision/digest/exists/tombstone이 현재 SQLite metadata와 모두 같을 때만 본문 없이 `unchanged`를 반환한다. 변경·삭제·없던 키의 생성·같은 값 ABA는 새 관측으로 처리한다. 권한·reset 검사·pagination·응답 크기 제한은 기존 경로를 사용한다. 구버전 서버가 이 옵션을 무시하면 전체 최신 값을 읽는 경로로 동작한다.
+- **동시 읽기.** 같은 키·mode/binding/restore/store 세대·자체 write sequence의 읽기는 하나의 flight를 공유한다. 서로 다른 키는 최대 32개씩 묶는다. flight/queue는 256개로 제한하고 초과 시 일반 읽기로 돌아간다. flight는 20초 후 교체할 수 있고 이전 요청의 늦은 정리가 새 flight를 삭제하지 않는다. fresh/resource-budget 읽기는 이 공유 경로에 합류하지 않는다.
+- **native 및 raw 읽기.** plugin_only는 실제 owner bytes를 읽고 이전 bytes와 같을 때만 JSON decode를 재사용한다. getStoredJson도 실제 raw 읽기 뒤 순수 decode를 재사용한다. host가 durable revision을 주지 않는 상황에서 TTL만으로 외부 탭의 원천 변경을 숨기지 않는다.
+- **모든 원천 가족.** 검증한 원천이 달라지면 기존 `noteMemoryGraphSourceWrite`와 snapshot source epoch 경로로 파생 view를 무효화한다. Micro/렌즈/정본/State를 키 종류에 따라 제외하지 않는다. 기존 keys 열거 경로도 캐시하지 않는다. 자체 set/remove 및 조건부 batch 앞뒤의 무효화를 유지한다.
+- **렌즈 정의와 결과 구별.** 렌즈 결과 Head/records뿐 아니라 runtime-settings에 저장되는 공통 렌즈 정의도 다룬다. 기존 3초 registry TTL로 정의 변경을 숨기지 않고, 실제 설정 bytes와 lifecycle이 같을 때 정규화 결과만 재사용한다. 정의 저장과 관측된 변경 모두 파생 원천 view에 알린다.
+- **Micro 게시.** source receipt·source Head·raw capture·work와 기존/누락 Micro Head의 원래 revision을 게시 검사 전에 pin한다. 서버에서는 Micro record와 Head를 같은 조건부 batch로 게시한다. 원천을 새 revision으로 다시 맞춰 오래된 후보를 통과시키지 않는다. 조건 충돌은 stale_source이며 부분 record/Head를 남기지 않는다. mirror의 서버 원자성과 로컬 복제 검증은 구별하며 로컬 복제 미검증을 성공 처리하지 않는다. 정본/State의 기존 readset/CAS와 최종 전달 검사를 유지한다.
+- **메모리.** 전체 보관 payload 4 MiB·4,096개 상한을 유지한다. 항목당 상한은 128 KiB다. mirror에서 실제 State Head의 decoded 값과 exact-local-byte witness를 함께 계산하면 기존 64 KiB로는 재사용하지 못했기 때문에, 항목당 허용량만 제한적으로 늘렸다. raw witness·pin도 바이트 예산에 포함한다. 별도 registry 정규화 캐시도 128 KiB 이내에서만 보관한다. 이는 heap 전체 상한이 아니다.
+- **변경 범위.** 서버는 DB schema 변경 없이 metadata 조회를 재사용한다. Storage SDK는 공유 릴리스 버전 1.8.35를 유지하고 LIBRA 전용 source variant에 호환 옵션을 추가하여 LIBRA embed에만 동기화했다. 기존 릴리스 메타데이터는 공통 SDK 버전의 일치를 요구하며 전용 variant의 정확한 내용은 SHA로 구분한다. 다른 다섯 플러그인의 SDK/생산자 계약은 보존했다. GRADIA의 HAYAKU 의미 보존 패치는 유지했다.
+
+### 검증과 측정 범위
+
+새 회귀는 `libra_source_family_cache_test`, `libra_micro_publication_cache_race_test`, `server_conditional_read_cache_test`다. 기존 캐시 검사는 새 물리 bytes 관측 후 decode 재사용을 확인하도록 갱신했다. schema를 해석하지 않는 저장소 가족 검사는 별도로 표시하고, 실제 API로 렌즈 생성·추가 분석, 정본 5→10턴 append, State correction을 warm cache 위에서 수행해 재시작 후에도 확인했다. 렌즈 정의의 외부 수정도 기존 TTL 안에서 감지한다. Micro는 실제 producer가 조건부 commit에 도달한 직후 원천 Head를 ABA 변경하여 record/Head 모두 게시되지 않는 것을 확인한다.
+
+실제 localhost HTTP/SQLite에서는 조건부 읽기의 새 키 생성·ABA·응답 예산·namespace 권한과 기존 조건부 게시/SDK 호환 회귀를 실행했다. 별도의 내부 dispatch fixture에서는 GRADIA three-owner 전달, 분석 중 읽기, Micro 동시 게시, 소비 근거 변경, 렌즈 의미 검색, State/정본 writer 회귀를 실행했다. fixture의 synthetic 모델 호출은 실제 공급자 실행이 아니다.
+
+최종 Node test runner 결과는 제품/fixture 선별 회귀 46/46, 실제 localhost HTTP·SDK 회귀 12/12 통과다. SDK variant 동기화 검사와 소스 문법 검사도 통과했다. 전체 저장소 회귀 또는 릴리스 gate 통과를 뜻하지 않는다.
+
+통제된 동일 State Head 50회 helper 읽기에서 server_only/mirror 모두 f9e7b7b의 응답 1,281,950 bytes가 후보의 58,235 bytes로 줄었다(약 95.5%). 같은 키의 동시 50회 읽기는 서버 요청 50→1회다. **순차 50회는 현재성 확인 때문에 여전히 서버 요청 50회이며, cd78b9f의 1회 요청과 동등하다고 주장하지 않는다.** cd78b9f는 이 비교의 TTL 안 외부 변경을 일반 읽기에서 보지 못했고 후보는 확인했다. 시간 수치는 내부 dispatch 환경의 값이므로 실제 네트워크/호스트 지연 보장이 아니다.
+
+실제 RisuAI GUI, 실제 공급자, 다중 기기 장기 운용 및 기존 8초 background+GRADIA 경합 workload의 성능 재측정은 남아 있다. 렌즈 저장 전체를 다중 writer 원자적 트랜잭션으로 전환한 것은 아니며, 이번 변경은 캐시가 생략하던 원천 관측과 Micro 게시 경계를 보호한다. 커밋·push·배포는 수행하지 않았다.
+
+## 8장: 75b0859 P2 리뷰 검증 — 외부 쓰기·flight 포화·8초 경합
+
+### 진행 중인 읽기와 외부 쓰기
+
+`libra_read_flight_boundary_test.cjs`는 첫 번째 물리 읽기가 완료된 서버 응답을 host transport에 전달하기 직전에 멈춘다. Micro source pin은 먼저 완료하고 실제 공유 helper의 응답만 멈춘다. 외부 writer가 SQLite 값을 바꾼 뒤 두 번째 helper 호출을 시작하고, 같은 key와 같은 entry 객체에 합류했음을 관측한 다음 응답을 풀어 준다. 관련 없는 background 호출도 증가시킬 수 있는 전역 coalesced 수치만으로 합류를 판정하지 않는다. native host도 첫 getItem의 원래 bytes를 보관한 뒤 같은 순서를 재현한다.
+
+- native와 server_only의 늦은 호출은 이전 관측을 받을 수 있다. 이 helper를 호출 시점 최신성을 보장하는 독립적인 선형화 읽기로 해석해서는 안 된다. 다음 fresh 읽기는 새 값을 본다.
+- 실제 producer가 만든 result_ready 작업과 분석 결과를 그대로 Micro 게시 함수에 다시 전달했다. source pin 뒤의 공유 flight에 외부 쓰기를 삽입하자 `stale_source / micro_publication_basis_changed`로 거부됐다. 기존 Micro 본문·Head의 bytes와 revision은 그대로였다.
+- 실제 State 승인 함수에서도 원래 Head를 빌리는 순서를 재현했다. 닫는 검사는 `stale_basis / state_basis_changed_after_admission`으로 거부하고 외부 Head를 보존했다. 이후 새로운 원천에서 유효한 승인이 만들어질 수는 있지만, 승인된다면 새 basisDigest에 결속됨을 확인했다. State 승인의 저장소 전체 원자성을 새로 주장하는 검사는 아니다.
+- mirror의 두 번째 호출은 새로 읽은 local bytes와 첫 서버 관측이 달라 `LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH`로 거부됐다. Micro와 State의 첫 호출에 대한 게시/승인 방어도 확인했다.
+
+이 검증에서는 잘못된 Micro 재게시·State 승인을 확인하지 못했다. 공유 방식과 게시 경계는 변경하지 않았다. 검증 경계는 실제 제품 함수·서버 handler·디스크 SQLite와 통제된 in-process HTTP/RisuAI host다.
+
+### 다른 키 256개가 끝나지 않는 장애
+
+native ownerLegacyRead는 legacy getItem을 그대로 기다리며 독립적인 timeout이 없다. 서버 SDK는 기본 30초 caller timeout과 AbortSignal을 갖지만, 물리 drain/호스트의 실제 취소와는 구별된다.
+
+75b0859에서 서로 다른 키의 native 요청 256개를 멈추고 flight 나이만 20초 넘긴 뒤 새 키를 읽었다. 이전 키들을 다시 요청하지 않으면 Map은 256개 그대로이고 새 키의 동시 두 읽기는 둘 다 fallback했다. 원래 작업을 완료시키면 Map은 비워졌다. 이는 256개로 제한된 registry의 admission 복구 문제이며 독립적인 무한 메모리 누수의 증거는 아니다.
+
+수정은 각 local/server 읽기 시작 시 만료된 전체 flight를 registry에서 제거하는 것뿐이다. 추가 timer·cache·호스트 요청 취소는 도입하지 않았다. 아직 유효한 flight 256개가 차 있을 때의 fallback은 유지한다. 원래 요청은 실제로 완료될 때까지 살아 있을 수 있으며 늦은 cleanup의 entry identity 검사를 유지한다. `flightExpirations`·`flightFallbacks`로 분리 관측한다.
+
+수정 후에는 만료된 256개가 정리되고 새 키의 동시 읽기가 하나로 합쳐진다. 옛 요청들을 나중에 완료시켜도 새 pending flight는 남는다. 새 포화 회귀를 원래 75b0859 소스로 실행하면 `2 !== 1`로 실패하므로, 검사 자체가 누락된 정리를 구분하는 것도 확인했다. flight 경계 6건과 기존 캐시·원천 가족·Micro 게시·회상 회귀를 합친 선택 검사 22/22가 통과했다.
+
+### 8초 요청 수와 실제 읽기 시간 비교
+
+원래 측정 스크립트는 버전 관리된 소스나 현재 evidence에서 찾지 못했다. 따라서 기존 문서의 server_only·실제 producer Micro 10개·8초 조건을 기존 graph reader fixture로 재구성했다. 이를 과거 측정의 완전히 동일한 실행이라고 표현하지 않는다. 재실행 도구는 `tools/libra_read_contention_benchmark.cjs`다.
+
+측정 팔은 두 개다. idle은 추가 지연 없이 8초간 백그라운드만 관찰한다. contention은 같은 fixture의 transport에 요청당 5ms와 단일 FIFO slot을 넣고 250ms 뒤 실제 GRADIA owner evidence capture/verify를 시작한다. 첫 capture가 끝난 뒤 두 번째 capture를 실행한다. 두 번째 capture는 8초 창 밖이며, 첫 capture가 실패했다면 진정한 warm 상태라고 단정할 수 없다. metadata/본문 읽기와 제어·쓰기 요청 모두 세고, KV 읽기는 별도 기록했다. 실제 socket·RisuAI·provider latency 측정은 아니다.
+
+| commit | idle 8초 요청 수 (1차 / 역순 재실행) | 그중 KV get/get-many |
+|---|---:|---:|
+| 캐시 전 76b1a5d | 1,886 / 미실행 | 1,817 |
+| cd78b9f | 275 / 275 | 203 / 203 |
+| 75b0859 | 1,642 / 1,642 | 1,572 / 1,572 |
+
+idle의 응답량은 cd78b9f 약 1.49 MB, 75b0859 약 3.63 MB였다. Head 한 개의 반복 읽기에서 측정한 95.5% 전송량 감소를 이 전체 백그라운드 workload에 적용할 수 없음을 확인했다.
+
+| contention의 owner capture | cd78b9f 1차 / 역순 | 75b0859 1차 / 역순 |
+|---|---|---|
+| 첫 capture | 12.994s / 12.999s, 모두 전달 가능·검증 성공 | 34.172s 성공 / 23.866s 뒤 `LIBRA_GRAPH_COMPILER_PHYSICAL_READSET_STALE` |
+| 두 번째 capture | 2.848s / 2.834s, 모두 성공 | 8.629s / 36.763s, 모두 성공 |
+
+75b0859의 첫 successful capture 뒤 verify는 0.870s, cd78b9f는 0.217s였다. 실패한 첫 시도를 더 빠른 성공으로 집계하지 않았다. 8초 contention 창의 background 요청 수는 cd78b9f 346/334, 75b0859 355/365였으며, 이 수만 비교하면 backlog가 처리되는 데 걸린 긴 시간과 전체 query latency를 놓친다. queue wait와 요청 수·bytes·parser 비용은 결과 JSON에 분리했다.
+
+**판정:** 이 통제된 workload에서 75b0859는 cd78b9f의 백그라운드 요청 절감과 경합 읽기 성능을 유지하지 못했다. 반복 전송과 decode 감소는 일부 입증됐지만 병목 해결은 미완료이며, 앞선 좁은 측정만으로 성능 개선을 주장할 수 없다. 정상 요청이 20초 미만인 위 비교는 이번 registry 만료 정리의 효과를 측정한 것이 아니다.
+
+이번에는 이 결과를 근거로 새 캐시 계층을 추가하거나 최신성·최종 검증을 완화하지 않았다. 다음 성능 변경은 실제 백그라운드 작업 경계 안의 중복 검증을 추적하고, Micro·렌즈·정본·State의 소비 readset과 최종 게시 조건을 유지한 상태에서 수행해야 한다. 실제 RisuAI/다중 기기와 전체 릴리스 회귀는 별도다. 결과 원본은 `.development/evidence/contention8-results.json`, `contention8-repeat-results.json`, flight 결과는 `flight-review-after-fix.log`이며 로컬 evidence로 남겼다.
+
+## 9장: 백그라운드 작업 안의 관측 재사용과 닫는 검증
+
+`cd78b9f`의 반복 관측 재사용을 명시적인 작업 경계로 제한해서 복원했다. 기존 session cache와 owner read frame을 사용하며 별도의 영속 캐시는 만들지 않았다. receipt 재조정, Micro 생산, 인물 span, Canonical 원문/후보 읽기, 자동 State 승인 전 Micro 읽기, snapshot에 한정한다. 일반 helper와 resource-budgeted 회상/GRADIA 읽기는 기존 물리 검증을 유지한다.
+
+작업은 TTL 안 resident bytes와 revision을 임시 관측으로 빌릴 수 있지만, 이 값만으로 결과를 반환하거나 저장하지 않는다. 실제로 소비한 키만 닫을 때 32개 단위로 서버 revision/digest/exists/tombstone을 확인한다. native/mirror는 local bytes도 실제로 재관측한다. Micro·렌즈·정본·State의 기존 키뿐 아니라 없던 키의 추가, 삭제, 서버 ABA도 같은 검증 대상이다. Lens runtime settings는 별도 원래 bytes witness를 확인한다. 변경이 발견되면 resident cache를 비우고 해당 작업을 거부한다.
+
+`setVerifiedJson`은 쓰기 전에 해당 작업의 원래 관측을 검증한다. 쓰는 동안 재사용을 중단하고 실제 저장·readback이 성공한 키만 새 관측으로 진행한다. 다른 의존성은 다음 쓰기/반환 시 다시 검사한다. 다른 작업의 쓰기는 기존 viewer를 중단하지만 그 viewer의 오래된 관측이 정상 writer를 거부하지는 않는다. 공유 프레임은 finally에서 닫는다. Micro 본문+Head의 최종 원자 CAS와 원래 source/work/target pin은 유지한다. 무관한 요청의 전역 fresh depth가 백그라운드의 명시적 작업 경계까지 개별 읽기로 바꾸지 않으며, 각 작업의 닫는 검증 자체는 물리 읽기다.
+
+동일 classified 인물 span의 본문·Head가 이미 일치하고 전체 inventory 검증도 통과하면 재저장을 생략한다. 새 provider 호출이나 Head revision 증가 없이 중복 완료한다.
+
+### 재측정
+
+도구의 `--commits=working-tree`로 미커밋 소스를 직접 읽고 SHA-256을 기록한다. 8장의 동일 통제 fixture이며 live RisuAI/network 측정은 아니다. 초기 실험에서 첫 읽기 41~43초 회귀가 나와 그 상태를 최종 결과로 채택하지 않았고, 동일 inventory 재저장 제거 후 다시 측정했다.
+
+| 대상 | idle 8초 요청 | 첫 owner capture | 반복 capture |
+|---|---:|---:|---:|
+| `cd78b9f` 재실행 | 275 (KV 203) | 13.160s | 2.860s |
+| `75b0859` 이전 반복 측정 | 1,642 (KV 1,572) | 34.172s 성공 또는 torn read 실패 | 성공 후 8.629s |
+| 수정본 1차 | 600 (KV 559) | 22.932s | 3.018s |
+| 수정본 2차 | 519 (KV 484) | 24.767s | 3.003s |
+| 최종 소스 확인 | 585 (KV 544) | 29.392s | 3.029s |
+
+수정본의 두 capture/verify 모두 전달 가능·검증 성공이며 verify는 약 0.216~0.218초였다. idle 요청은 75b0859 대비 약 63~68% 줄었지만 cd78b9f의 275회/첫 읽기 13초에는 도달하지 못했다. idle 응답량도 약 2.63~2.92MB로 cd78b9f의 약 1.49MB보다 크다. 마지막 재실행의 contention 전체 background 요청은 1,024회로, 첫 8초 창의 411회만 보고 작업 전체 요청이 그만큼이라고 해석하지 않는다. 75b0859 동시 재실행에서는 첫 capture가 8.336초 뒤 unavailable로 실패하고 다음 capture가 13.350초 후 성공했다. 실패 시간을 성공 latency와 비교하지 않는다. 요청 감소와 반복 읽기 개선은 입증됐고, 예전 성능의 완전 복원은 남아 있다.
+
+최종 소스 확인은 capture/verify 모두 성공했고, 첫 읽기는 여전히 변동이 크다. 중간의 동일 동작 소스 확인에서는 17.883초도 관측했지만 빠른 값만 최종 성능으로 채택하지 않는다. snapshot의 미게시/교체된 반환 경로까지 닫는 검증을 추가한 최종 소스는 `c2233b285f034028953c9189c99a0f0dbd4378a2171c8ae788ed995597e5cf94`이며 `.development/evidence/job-cache-shipped-source.json`에 일치하는 SHA와 결과가 있다. 이 최종 실행의 전체 background 요청은 1,383회다.
+
+원본 반복 자료는 `.development/evidence/job-cache-idempotent.json`, `job-cache-final-comparison.json`, 실패도 포함한 비교는 `job-cache-contention3.json`이다. 첫 두 반복의 동작 소스 SHA는 `d2ea78ec599509229ae37841999b7d7e4a885c11838fb681645274c0ccd85f51`이다.
+
+### 회귀 경계
+
+작업 관측/네이티브 bytes/4개 원천 가족/없는 키 추가/서버 ABA/저장 전 거부/자기 쓰기 후 다른 의존성 변경/다른 writer와 viewer/프레임 정리/동일 실제 classified Micro의 무재저장을 검사했다. flight 6건, Micro 원자 게시, 소비한 회상 본문·Head 변경, mid-publication 회상, owner read-frame ABA/oversized fallback, 32-key budget, GRADIA scan 경합, 기존 source-family/cache 검사를 합친 선택 회귀는 38/38 통과했다. 서버 writer 테스트의 내부 12 시나리오도 통과했다. 실제 RisuAI GUI/provider/다중 기기, 전체 릴리스 suite는 실행하지 않았다.
+
+`libra_micro_state_admission_3mode_test.cjs:82`의 viewer 승인 표시는 여전히 실패한다: durable 승인 요약은 admitted 1/pending 2이나 viewer가 admitted 2/pending 1로 표시한다. 원본 `75b0859`를 harness에 직접 주입해 같은 실패를 재현했고, 이번 cache 변경의 신규 회귀로 분류하지 않았다. 테스트의 기대값은 변경하지 않았다. 이를 전체 State 회귀 통과라고 보고하지 않는다.
+
+## 10장: 백그라운드 프레임 자기 무효화 방지와 타겟 무효화 (GRADIA 14초대 복원)
+
+### 배경 및 분석
+0841758의 585회 요청 및 첫 GRADIA 기억 읽기 지연(29.4s)의 원인을 분석했다:
+1. `closeBackgroundReadFramesForWrite`에서 쓰기를 수행하는 주체(`actor`)까지 필터링 없이 `frame.disable()`시켜, 쓰기 이후 수행되는 후속 읽기들이 캐시 borrow에 실패하고 단일 물리 `/v1/kv/get`으로 전락했다.
+2. Micro 원자적 게시 시 `invalidateAllVerifiedReads()`를 호출하여 불변 receipt, receipt head 등 전체 세션 캐시를 비워 후속 작업들이 전부 다시 서버 물리 조회를 하도록 강제했다.
+
+### 패치
+- `closeBackgroundReadFramesForWrite`: `actor`는 revoke 대상에서 제외하여 유효한 프레임 상태를 유지하도록 보존.
+- `persistMicroRevision`: Micro 원자적 게시 시 변경 대상인 `recordKey`, `headKey`만 선택적으로 `invalidateVerifiedRead`로 무효화하고, 게시 직후 `frame.acceptOwnWrite`를 통해 writer 프레임의 관측을 즉시 승인.
+- Micro 원자적 게시, 서버 revision 검증(`knownValues`), 최종 물리 검증은 모두 유지.
+
+### 재측정 (동일 통제 fixture)
+
+| 대상 | idle 8초 요청 | 첫 owner capture | 반복 capture | contention 배경 총 요청 |
+|---|---:|---:|---:|---:|
+| `cd78b9f` | 275 | 13.129s | 2.868s | 455 |
+| `0841758` | 585~600 | 29.392s ~ 36.054s | 3.029s | 1,672 |
+| **최종 패치** | **475** | **14.478s** | **3.037s** | **409** |
+
+첫 GRADIA capture 지연이 14초대로 단축되어 cd78b9f 수준으로 복원되었고, contention 중 백그라운드 요청 총합도 409회로 안정화됐다. 핵심 회귀 30/30 통과.
+
+## 11장: HAYAKU → GRADIA 기억 전달 보강 (대형 패킷 단계적 폴백 및 저신뢰도 수식어 보존)
+
+### 배경 및 문제점
+1. **대형 패킷 원자적 탈락 위험**: GRADIA는 원자적 항목(atomic item) 원칙에 따라 항목 단위로 예산을 측정하므로, 패킷 크기가 커지면 프롬프트 예산 초과로 패킷 전체가 누락(drop)되는 문제가 있었습니다.
+2. **신뢰도 스펙트럼 상실**: HAYAKU 패킷의 `confidence < 0.5`인 불확실한 가설/추측이 확정적 사실과 구분 없이 평문으로 전개되어 모델이 이를 기정사실(ground truth)로 오인할 위험이 있었습니다.
+
+### 패치 내용
+- **저신뢰도 추론 수식어 보존**: `confidence < 0.5`인 추론 항목에 대해 `[추정]` 접두사를 부여하여 모델이 확정적 사실과 구분하도록 보강하고, 불필요한 숫자 메타데이터(`confidence: 0.3`)는 텍스트 리프에서 제외.
+- **8,000자 임의 조기 축약(Preemptive Folding) 제거**:
+  - `projectHayakuPacketText()`의 임의 8,000자 사전 축약 기준을 제거. 모델 컨텍스트 예산(48,000자~160,000자)이 충분할 때는 완전한 의미 투영(full projection)을 기본 제공.
+- **축약 폴백(Folded Degradation) 시 필수 제약 보존**:
+  - 패킷이 실제 모델 프롬프트 잔여 예산에 맞지 않을 때만 단계적 축약(folding)으로 전환.
+  - 축약 모드에서도 `summary_memory`, 핵심 인물/관계/위치/활성사건, `continuity_locks`, `false_inferences`와 더불어 RP 핵심 제약인 **세계 규칙 및 예외(`world_rules`)**와 **비밀 및 공개 범위(`entity.secrets`, `known_to`/`hidden_from`)**를 반드시 보존.
+  - 방대한 과거 기록(`historical_events`), 장면 밖 흐름(`offscreen_threads`), 장면 변화 디프(`scene_deltas`), 복선 추적 장부(`payoff_tracker`) 등 부가 내역 위주로 축약.
+- **파이프라인 전달 3대 경로 검증**:
+  - **Case A (예산 충족, >8,000자 회귀 방지)**: 완전본이 8,000자를 초과(~12,000자)하더라도 실제 모델 예산(48,000자) 내에 들어가면 임의 조기 축약 없이 세계 규칙, 비밀, 과거 내역, 복선 장부 전체가 최종 모델 프롬프트에 그대로 전달(`selectedItems: 1`, `omittedItems: 0`, `modelSelection.selectedItems: 1`).
+  - **Case B (전체 초과, 축약본 충족)**: 원본이 모델 예산을 초과하면 축약본으로 자동 전환되어 규칙·비밀·핵심 상태를 보존한 채 프롬프트에 수용(`selectedItems: 1`, `omittedItems: 0`, `modelSelection.selectedItems: 1`).
+  - **Case C (축약본도 예산 초과)**: 규칙 자체가 극단적으로 비대한 경우 안전하게 제외되어 프롬프트 폭주를 방지하고 캡처 통계에서 `omittedItems: 1`로 정확히 계측(`selection.omittedItems: 1`, `modelSelection.selectedItems: 1`).
+
+

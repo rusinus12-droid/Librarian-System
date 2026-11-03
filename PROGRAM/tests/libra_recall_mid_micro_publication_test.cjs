@@ -17,6 +17,7 @@ const QUOTE = '민아가 은빛 열쇠를 준호에게 잠시 건넸다.';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const PHYSICAL = 'assertPhysicalCurrentness: async (dependencies = null, verifyContext = null) => {';
 const COMPLETE = 'consumedProofComplete = !unresolved;';
+const FULL_PIN = 'if (!consumedProofComplete) for (const readSet of conditionalReadSets)';
 
 async function setup() {
   let listener;
@@ -24,7 +25,9 @@ async function setup() {
   const server = await serverFixture({ mode: 'server_only', host, transformSource: source => {
     assert.equal(source.split(PHYSICAL).length, 2);
     assert.equal(source.split(COMPLETE).length, 2);
-    return source.replace(PHYSICAL, PHYSICAL + '\n            if (globalThis.__beforePhysicalCheck) await globalThis.__beforePhysicalCheck();')
+    assert.equal(source.split(FULL_PIN).length, 2);
+    return source.replace(FULL_PIN, 'if (!consumedProofComplete && (globalThis.__fullPinChecks = (globalThis.__fullPinChecks || 0) + 1)) for (const readSet of conditionalReadSets)')
+      .replace(PHYSICAL, PHYSICAL + '\n            if (globalThis.__beforePhysicalCheck) await globalThis.__beforePhysicalCheck();')
       .replace(COMPLETE, 'if (globalThis.__forceUnresolved) unresolved = true;\n                  ' + COMPLETE
         + '\n                  (globalThis.__consumedChecks ||= []).push({ complete: consumedProofComplete,'
         + ' families: [...candidateUnits].map(u => string(u?.family || \'\')), keys: [...consumedStorageKeys],'
@@ -121,14 +124,12 @@ test('server_only: the narrow check covers every consumed item; an unresolved it
     }
     const families = new Set(checks.flatMap(check => check.families));
     assert.ok(families.has('micro') && families.size >= 2, 'multiple families are consumed: ' + [...families]);
-    // Same mid-recall publication as the first test, but with one consumed item
-    // forced unresolved: the whole-corpus pin set is checked again and refuses it.
+    // A complete consumed set skips the whole-corpus pin set; forcing one item
+    // unresolved makes the final check read the whole pin set again.
+    assert.equal(x.f.r.context.__fullPinChecks || 0, 0, 'complete consumed set: no full pin-set check');
     x.f.r.context.__forceUnresolved = true;
-    x.server.hooks.beforeServerRequest = async () => { await sleep(10); };
-    const published = x.startMicro(300);
-    await sleep(20);
     const forced = await x.recall();
-    await published();
-    assert.equal(forced.meta.injected, false, 'an incomplete consumed set falls back to the full pin-set check');
+    assert.ok((x.f.r.context.__fullPinChecks || 0) >= 1, 'an incomplete consumed set falls back to the full pin-set check');
+    assert.equal(forced.meta.injected, true, 'unchanged sources still deliver through the full check');
   } finally { await x.server.cleanup(); }
 });
