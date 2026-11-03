@@ -4078,6 +4078,7 @@ Before continuing, verify:
         messages: chat.message,
         characterName,
         userName,
+        scope: nativeTurnScope(character, chat),
         witness: JSON.stringify([indexes,scope.characterId,scope.chatId,characterName,userName,chat.message])
       };
     };
@@ -4128,6 +4129,9 @@ Before continuing, verify:
       if (candidates.length !== 1 || host.messages.filter(row => nativeTurnMessageId(row) === nativeTurnMessageId(candidates[0])).length !== 1) return { ...message };
       const row = candidates[0];
       const rawRowText = contentToText(row.data ?? row.content ?? '');
+      const ref = nativeTurnRef({ ...row, role: currentTurnRole(row), content: rawRowText });
+      const hostScope = host.scope || (scope ? JSON.stringify([scope.characterId, scope.chatId]) : '');
+      const isVerified = receiptMatches(hostScope, ref);
       return {
         ...message,
         chatId: nativeTurnMessageId(row),
@@ -4137,7 +4141,9 @@ Before continuing, verify:
           ...message?.turnMeta,
           nativeContent: rawRowText,
           stageContent: applyBasicRisuPlaceholdersForRag(rawRowText, host.characterName, host.userName),
-          ref: nativeTurnRef({ ...row, role: currentTurnRole(row), content: rawRowText })
+          nativeSelected: true,
+          verifiedCompletion: isVerified,
+          ref
         }
       };
     });
@@ -4339,7 +4345,7 @@ Before continuing, verify:
         // match exactly; foreign scopes are never removed by this comparison.
         const boundScope = session.contract === 'existing-server-logical-read.v1' && session.nativeScope
           ? JSON.stringify([session.nativeScope.characterId,session.nativeScope.chatId]) : null;
-        const refs = turns => JSON.stringify(turns,(key,value)=>boundScope && key === 'scope' && value === boundScope ? undefined : value);
+        const refs = turns => JSON.stringify(turns,(key,value)=>boundScope && key === 'scope' && value === boundScope ? undefined : (key === 'proofKind' ? undefined : value));
         const actualView = expected ? libNativePromptView(recent) : null;
         const turnsChanged = !expected || refs(recent.turnEligibility?.selected || []) !== refs(expected.turns);
         if (turnsChanged || JSON.stringify(actualView) !== JSON.stringify(expected.view)) {
