@@ -3679,34 +3679,99 @@ Before continuing, verify:
     return start > 0 ? (end > start ? `T${start}-${end}` : `T${start}`) : '';
   };
   const libMemoryLine = value => String(value ?? '').replace(/\s+/g, ' ').trim();
-  const projectHayakuPacketText = raw => {
+  const projectHayakuPacketText = (raw, options = {}) => {
     let packet;
     try { packet = JSON.parse(raw); } catch (_) { return raw; }
     if (packet?.meta?.schema !== 'hayaku_packet_v1') return raw;
     const meta = packet.meta || {};
-    // Preserve every semantic leaf, including qualifications, knowledge boundaries,
-    // and entries beyond the former display-oriented list limits. Transport lineage
-    // stays out of the model text; the original producer packet is unchanged.
-    const semanticLines = [];
-    const anchor = libMemoryLine(meta.turn_anchor || meta.turnAnchor);
-    if (anchor && !/^[A-Za-z0-9_.:-]+$/.test(anchor)) semanticLines.push(`장면: ${anchor}`);
+    // Preserve every semantic leaf while qualifying low-confidence inferences (< 0.5)
+    // with a Korean "[추정]" prefix. If the packet is oversized or folded projection
+    // is requested, degrade gracefully to summary_memory and core entity/world state.
     const labels = { entity: '인물', world: '세계', narrative: '서사', planner: '계획',
       historical_events: '과거 사건', world_rules: '세계 규칙', offscreen_threads: '장면 밖 흐름',
       scene_deltas: '장면 변화', payoff_tracker: '복선 회수', summary_memory: '요약 기억' };
-    const visit = (value, path) => {
-      if (Array.isArray(value)) { value.forEach((row, i) => visit(row, `${path} ${i + 1}`)); return; }
-      if (value && typeof value === 'object') {
-        for (const [key, row] of Object.entries(value)) visit(row, `${path} / ${labels[key] || key}`);
-        return;
-      }
-      if (value !== null && value !== undefined && libMemoryLine(value)) semanticLines.push(`${path}: ${libMemoryLine(value)}`);
+
+    const SKIP_META_KEYS = new Set(['schema', 'packet_schema_rev', 'packetSchemaRev',
+      'packet_type', 'packetType', 'confidence', 'retrieval', 'lifecycle',
+      'lineage', 'request_nonce', 'requestNonce']);
+
+    const isLowConfidence = val => {
+      if (!val || typeof val !== 'object') return false;
+      const rawConf = val.confidence ?? val.retrieval?.confidence ?? val.lifecycle?.confidence;
+      if (rawConf === null || rawConf === undefined) return false;
+      if (typeof rawConf === 'string' && /low|uncertain|speculative|unconfirmed|추정|불확실/i.test(rawConf)) return true;
+      const num = Number(rawConf);
+      return Number.isFinite(num) && num < 0.5;
     };
-    for (const key of ['entity', 'entities', 'world', 'narrative', 'planner', 'importance']) visit(packet[key], labels[key] || key);
-    for (const key of ['summary_memory', 'summaryMemory', 'false_inferences', 'falseInferences',
-      'speaker_boundaries', 'speakerBoundaries', 'overpromotion_risks', 'overpromotionRisks']) visit(meta[key], labels[key] || key);
-    // Older packet extensions may keep POV/secret collections at the root.
-    for (const key of ['povMemories', 'entityMemories', 'entity_knowledge', 'secrets', 'hiddenKnowledge', 'privateThoughts']) visit(packet[key], key);
-    return semanticLines.length ? semanticLines.join('\n') : raw;
+
+    const packetLowConf = isLowConfidence(meta) || isLowConfidence(packet);
+
+    const buildLines = fold => {
+      const semanticLines = [];
+      const anchor = libMemoryLine(meta.turn_anchor || meta.turnAnchor);
+      if (anchor && !/^[A-Za-z0-9_.:-]+$/.test(anchor)) {
+        const anchorPrefix = packetLowConf ? '[추정] ' : '';
+        semanticLines.push(`${anchorPrefix}장면: ${anchor}`);
+      }
+
+      const visit = (value, path, lowConf = packetLowConf) => {
+        if (Array.isArray(value)) {
+          value.forEach((row, i) => visit(row, `${path} ${i + 1}`, lowConf));
+          return;
+        }
+        if (value && typeof value === 'object') {
+          const hasConfidence = value.confidence !== undefined && value.confidence !== null;
+          const itemLowConf = hasConfidence ? isLowConfidence(value) : (isLowConfidence(value) || lowConf);
+          for (const [key, row] of Object.entries(value)) {
+            if (SKIP_META_KEYS.has(key)) continue;
+            visit(row, `${path} / ${labels[key] || key}`, itemLowConf);
+          }
+          return;
+        }
+        if (value !== null && value !== undefined && libMemoryLine(value)) {
+          const prefix = lowConf ? '[추정] ' : '';
+          semanticLines.push(`${prefix}${path}: ${libMemoryLine(value)}`);
+        }
+      };
+
+      if (fold) {
+        const summary = meta.summary_memory || meta.summaryMemory;
+        if (summary) visit(summary, labels.summary_memory || '요약 기억');
+        const entity = packet.entity || packet.entities || {};
+        if (entity.characters) visit(entity.characters, '인물 / characters');
+        if (entity.relations) visit(entity.relations, '인물 / relations');
+        const world = packet.world || {};
+        for (const key of ['location', 'time', 'scene']) {
+          if (world[key] !== null && world[key] !== undefined && libMemoryLine(world[key])) {
+            const prefix = (packetLowConf || isLowConfidence(world)) ? '[추정] ' : '';
+            semanticLines.push(`${prefix}세계 / ${labels[key] || key}: ${libMemoryLine(world[key])}`);
+          }
+        }
+        if (world.active_events || world.activeEvents) visit(world.active_events || world.activeEvents, '세계 / active_events');
+        const planner = packet.planner || {};
+        if (planner.continuity_locks || planner.continuityLocks) visit(planner.continuity_locks || planner.continuityLocks, '계획 / continuity_locks');
+        const falseInferences = meta.false_inferences || meta.falseInferences;
+        if (falseInferences) visit(falseInferences, 'false_inferences');
+      } else {
+        for (const key of ['entity', 'entities', 'world', 'narrative', 'planner', 'importance']) visit(packet[key], labels[key] || key);
+        for (const key of ['summary_memory', 'summaryMemory', 'false_inferences', 'falseInferences',
+          'speaker_boundaries', 'speakerBoundaries', 'overpromotion_risks', 'overpromotionRisks']) visit(meta[key], labels[key] || key);
+        for (const key of ['povMemories', 'entityMemories', 'entity_knowledge', 'secrets', 'hiddenKnowledge', 'privateThoughts']) visit(packet[key], key);
+      }
+      return semanticLines;
+    };
+
+    if (options.fold === true) {
+      const foldedLines = buildLines(true);
+      return foldedLines.length ? foldedLines.join('\n') : raw;
+    }
+    const fullLines = buildLines(false);
+    const maxChars = options.maxChars ?? 8000;
+    if (fullLines.length && options.autoFold !== false && fullLines.join('\n').length > maxChars) {
+      const foldedLines = buildLines(true);
+      if (foldedLines.length) return foldedLines.join('\n');
+    }
+    return fullLines.length ? fullLines.join('\n') : raw;
   };
   const cleanFlashbackTurnText = raw => String(raw || '').split(/\r?\n/)
     .filter(line => !/^\s*#{1,6}\s/.test(line) && !/^\s*-{3,}\s*$/.test(line)
@@ -3715,8 +3780,8 @@ Before continuing, verify:
     .replace(/<img\b[^>]*>/gi, '').replace(/<GT-(?:CTRL|SEP)\b[^>]*\/?>/gi, '')
     .replace(/^\s*User\s*:\s*/gim, '\uc0ac\uc6a9\uc790: ').replace(/^\s*Assistant\s*:\s*/gim, '\uce90\ub9ad\ud130: ')
     .replace(/[ \t]+$/gm, '').replace(/^\s+$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
-  const libMemoryModelContent = (owner, content) => {
-    if (owner === 'hayaku') return projectHayakuPacketText(content);
+  const libMemoryModelContent = (owner, content, options) => {
+    if (owner === 'hayaku') return projectHayakuPacketText(content, options);
     if (owner === 'flashback') return cleanFlashbackTurnText(content) || content;
     return content;
   };
@@ -3776,6 +3841,11 @@ Before continuing, verify:
     const empty = LIB_EVIDENCE_BLOCK_HEAD + escapeLibEvidenceJson(JSON.stringify({ evidenceRevision, items: [] })) + LIB_EVIDENCE_BLOCK_TAIL;
     let chars = empty.length, usedBytes = encoder.encode(empty).length, count = 0;
     return {
+      canFit(item) {
+        const piece = escapeLibEvidenceJson(JSON.stringify(libEvidenceItemView(schema, item)));
+        const separator = count ? 1 : 0, addChars = piece.length + separator, addBytes = encoder.encode(piece).length + separator;
+        return (chars + addChars <= maxChars && usedBytes + addBytes <= maxBytes);
+      },
       tryAdd(item) {
         const piece = escapeLibEvidenceJson(JSON.stringify(libEvidenceItemView(schema, item)));
         const separator = count ? 1 : 0, addChars = piece.length + separator, addBytes = encoder.encode(piece).length + separator;
@@ -31060,7 +31130,8 @@ function createGradiaEvidenceBudget({ digest }) {
           if (bytes(metadata) > 65536 || metadataBytes > 1048576) fail('LIB_READ_METADATA_BUDGET_EXCEEDED');
           // Copy only bounded metadata. Immutable JS text primitives are shared,
           // never full-corpus JSON-stringified, cloned or re-parsed.
-          corpus.push(Object.freeze({ ...freeze(JSON.parse(metadata)), owner, content: libMemoryModelContent(owner, item.content) }));
+          corpus.push(Object.freeze({ ...freeze(JSON.parse(metadata)), owner, content: libMemoryModelContent(owner, item.content),
+            foldedContent: owner === 'hayaku' ? projectHayakuPacketText(item.content, { fold: true }) : null }));
         }
         if (corpusBytes !== raw.corpusBytes) fail('LIB_READ_RESPONSE_INVALID');
         record.corpus = Object.freeze(corpus);
@@ -31084,7 +31155,7 @@ function createGradiaEvidenceBudget({ digest }) {
             } else {
               const identityHash = await guarded(() => digest(JSON.stringify([item.owner,item.id,item.key])));
               if (!/^[a-f0-9]{64}$/.test(identityHash)) fail('LIB_READ_HASH_UNAVAILABLE');
-              const group = {...item,id:item.owner+':'+identityHash,provenance:[provenance]};
+              const group = {...item,id:item.owner+':'+identityHash,provenance:[provenance],foldedContent:item.foldedContent};
               groups.set(contentHash,group); queues.get(item.owner).push(group);
             }
           }
@@ -31102,12 +31173,19 @@ function createGradiaEvidenceBudget({ digest }) {
         const recordCharCap = input.proposal ? LIB_INPUT_WRITER_RECORD_EVIDENCE_CHARS : Infinity;
         let recordChars = 0;
         for (const item of candidates) {
-          if (bytes(item.content) > evidenceBudget.maxBytes) continue;
-          const record = item.owner !== 'libra';
-          if (record && recordChars > 0 && recordChars + item.content.length > recordCharCap) continue;
-          if (packer.tryAdd(item)) {
-            selected.push(item);
-            if (record) recordChars += item.content.length;
+          let target = item;
+          const record = target.owner !== 'libra';
+          const overCap = bytes(target.content) > evidenceBudget.maxBytes
+            || (record && recordChars > 0 && recordChars + target.content.length > recordCharCap)
+            || !packer.canFit(target);
+          if (overCap && target.owner === 'hayaku' && target.foldedContent && target.content !== target.foldedContent) {
+            target = Object.freeze({ ...target, content: target.foldedContent, folded: true });
+          }
+          if (bytes(target.content) > evidenceBudget.maxBytes) continue;
+          if (record && recordChars > 0 && recordChars + target.content.length > recordCharCap) continue;
+          if (packer.tryAdd(target)) {
+            selected.push(target);
+            if (record) recordChars += target.content.length;
           }
         }
         // The packer's arithmetic is checked once against the real renderer.
