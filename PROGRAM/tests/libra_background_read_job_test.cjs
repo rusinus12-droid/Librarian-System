@@ -80,3 +80,45 @@ for(const mode of ['server_only','mirror'])test(`${mode}: repeating a real class
  assert.equal(x.f.control.calls.length,calls,'no repeated provider request');
  assert.equal(JSON.stringify(inventories()),before,'both inventory bodies and physical revisions are unchanged');
 });
+for(const mode of ['server_only','mirror'])test(`${mode}: writer frame survives own write to reuse unmutated receipts while concurrent viewer is revoked and receipt mutation rejects stale candidate`,async t=>{
+ const s=await serverFixture({mode,transformSource:expose});t.after(()=>s.cleanup());const c=s.f.r.context.__jobs;
+ const base={...scope,_cachedMode:mode};
+ const receiptKey='libra:v1:scope:'+scope.scopeKey+':source-receipt:wl:e0:t1:r1';
+ const targetKey='libra:v1:scope:'+scope.scopeKey+':target:write';
+ await s.mutate(receiptKey,{n:1});
+ if(mode==='mirror')s.local.set(receiptKey,JSON.stringify({n:1}));
+ assert.equal((await c.storage.getVerifiedJson(receiptKey,base)).n,1);
+
+ await c.run(base,async writerJob=>{
+  assert.equal((await c.storage.getVerifiedJson(receiptKey,writerJob)).n,1);
+  const writerFrame=c.frames.get(writerJob);
+  assert.equal(writerFrame.disabled,false,'writer frame initially active');
+
+  await c.run(base,async viewerJob=>{
+   const viewerFrame=c.frames.get(viewerJob);
+   assert.equal((await c.storage.getVerifiedJson(receiptKey,viewerJob)).n,1);
+   assert.equal(viewerFrame.disabled,false,'viewer frame initially active');
+
+   await c.storage.setVerifiedJson(targetKey,{n:99},writerJob);
+
+   assert.equal(writerFrame.disabled,false,'writer frame survives own write');
+   assert.equal(viewerFrame.disabled,true,'concurrent viewer frame is revoked');
+
+   const reqsBefore=s.requests.length;
+   const v=await c.storage.getVerifiedJson(receiptKey,writerJob);
+   assert.equal(v.n,1);
+   assert.equal(s.requests.length,reqsBefore,'unmutated receipt reuses observation across own write');
+  }).catch(err=>{
+   assert.match(err.message,/LIBRA_GRAPH_READER_BODY_CHANGED/);
+  });
+ });
+
+ c.clear();await c.storage.getVerifiedJson(receiptKey,base);
+ await assert.rejects(c.run(base,async writerJob=>{
+  await c.storage.getVerifiedJson(receiptKey,writerJob);
+  await s.mutate(receiptKey,{n:2});
+  if(mode==='mirror')s.local.set(receiptKey,JSON.stringify({n:2}));
+  await c.storage.setVerifiedJson(targetKey,{stale:true},writerJob);
+ }),/LIBRA_GRAPH_READER_BODY_CHANGED/,'mutated receipt rejects candidate write');
+});
+
