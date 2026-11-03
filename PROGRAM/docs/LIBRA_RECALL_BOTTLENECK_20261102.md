@@ -132,7 +132,7 @@ LIBRA 회귀 40개 중 39개 통과. `libra_phase_d_v5_fault_semantic_recovery_t
 
 남은 것: 실제 RisuAI 설치 검증, 장기 누적 대화, 다른 기기의 동시 접근, `UNIFIED_RESPONSE_AUTHORITY_CHANGED` 실제 원인, Micro->State 실제 반영 테스트.
 
-## 5장: 백그라운드 저장소 읽기 캐시 (새 안전계약)
+## 5장: 백그라운드 저장소 읽기 캐시 (cd78b9f 당시 계약; 아래 6장으로 제한)
 
 배경: 읽는 쪽(회상, GRADIA)이 없을 때도 LIBRA 자신의 백그라운드 작업이 8초에 약 2,000회 저장소를 읽었다. 대부분 `source-receipt`, `source-receipt-head` 키를 같은 값으로 반복해서 읽는 것이었다. 이 읽기가 서버 요청 줄을 차지해 GRADIA 읽기가 41초까지 늘어난 것으로 본다.
 
@@ -163,3 +163,26 @@ LIBRA 회귀 40개 중 39개 통과. `libra_phase_d_v5_fault_semantic_recovery_t
 - `libra_gradia_unified_pipeline_runtime_test`는 모델 프롬프트에 `owner_issued_evidence_bundle`이 있는지 확인하고 있었다. 76b1a5d에서 저장 메타데이터를 모델 입력에서 뺐으므로, 이제 LIBRA owner 표시가 있고 이 내부 라벨은 없는지 확인한다.
 
 회귀: memory_graph, recall, gradia 계열 88개 통과. 원래 HEAD에서도 실패하던 테스트(위 장들과 동일)는 제외했다.
+
+## 6장: 2026-11-03 리뷰 후 보완
+
+### Git 기준
+
+`git ls-remote`로 확인한 현재 개발 브랜치 `claude/libra-recall-bottleneck-20261102`의 원격과 로컬 HEAD는 모두 `cd78b9f3c281ecef736d7e89d3e6a6853c6c1037`였다. 원격 main은 `659a296ff5a929880c2e6a735a7828c58bfec24c`이며 `353225b`까지의 PR #25 병합이다. 개발 브랜치의 후속 세 커밋은 아직 main에 없다. 두 브랜치를 fetch하여 포함 관계만 확인했으며 병합·push는 하지 않았다.
+
+### 변경
+
+- GRADIA의 HAYAKU 투영은 entity/world/narrative/planner의 모든 의미 leaf와 요약·추론 주의·발화 경계를 경로를 붙인 문장으로 전달한다. 과거 사건, 세계 규칙과 예외, 장면 밖 흐름, 장면 변화, 복선 회수, 지식·비밀의 공개 범위 및 목록 뒷부분을 보존한다. HAYAKU 생산자·저장 계약은 변경하지 않는다. lineage 등 전송 메타데이터는 제외하고 기존 전체 근거 예산을 적용한다. 출력이 커지면 전체 항목 선택 예산에서 제외될 수 있으며 모든 패킷이 항상 모델에 들어간다는 보장은 아니다.
+- 세션 캐시는 `plugin_only`의 예산 없는 `getVerifiedJson`에만 남긴다. `server_only`·`mirror`와 범위가 불명확한 `getStoredJson`은 캐시하지 않는다. 외부 서버 쓰기를 세션 무효화만으로 추적할 수 없기 때문이다. 따라서 5장의 서버 백그라운드 읽기 86.3% 감소 수치는 이번 후보의 성능 보장이 아니다.
+- 항목당 64 KiB, 전체 4 MiB의 UTF-16 직렬화 payload 상한과 기존 4,096개 상한을 적용한다. 키·signature 크기도 계산한다. 실제 JS heap 상한을 측정한 수치는 아니다. 캐시 접근/삽입 때 만료 항목 전체를 정리한다. 유휴 중 즉시 제거하는 타이머는 추가하지 않았다.
+- 로컬 캐시는 기존 20초 TTL과 쓰기 무효화, 연결 세대·복원 세대 분리, 전달 직전 물리 검증 우회를 유지한다. 여러 실제 RisuAI 탭이 plugin-only 저장소를 공유하는 경우의 외부 변경 통지는 이번 검사 범위에 포함되지 않는다.
+
+### 검증
+
+- `gradia_hayaku_semantic_projection_test`: 누락됐던 의미 영역, 중첩 조건, false 값, 12번째 규칙, 비밀 공개 범위, 원본 불변성 및 알 수 없는 스키마 통과.
+- `libra_verified_read_cache_test`: hit, TTL 만료, 결과 복사, 쓰기/삭제 무효화, 읽기와 쓰기 경합, 서버 연결 세대·복원 세대 변경, fresh 우회, raw 읽기 우회, 항목당·전체 payload 예산, 만료 일괄 정리, 호출별 fallback 통과.
+- `libra_shared_cache_external_write_test`: server_only/mirror 양쪽에서 반복 읽기 뒤 TTL 안에 외부 서버 쓰기를 수행한다. server_only는 새 값을, mirror의 불일치는 오류를 반환한다. 양쪽 복제본 갱신 후에는 새 값을 읽는다. 실제 정본 생산자 대기 중 추가 외부 Head 변경을 넣으면 오래된 후보 게시가 막히고, 재시작한 bridge에서도 외부 값이 유지된다. 공유 모드에 stale cache hit 자체를 허용하지 않는 방향으로 수정했다.
+- 기존 three-owner 소비/모델 전달, RP 원문 결속, 분석 중 GRADIA 읽기, 회상 중 Micro 게시와 소비 근거 변경 검사 및 서버 writer/State 원자성 검사도 실행한다. 서버 fixture는 실제 제품 request handler와 디스크 SQLite를 쓰지만 HTTP 전송은 내부 dispatch이며 RisuAI/모델은 통제한다.
+- 실행 환경의 기본 임시 폴더에서 rename EPERM이 발생하여 임시 경로를 `.development/cache-review-temp`로 옮겼다. jsdom은 기존 `PROGRAM/build-support/node_modules`를 NODE_PATH로 지정했다. 소스의 안전 검사를 약화시키지 않았다.
+
+실제 RisuAI GUI, 실제 공급자, 장기 사용·기기 성능, 전체 회귀/CI 및 서버 캐시 우회 후 경합 지연 재측정은 수행하지 않았다. 공개 릴리스·배포도 하지 않았다.

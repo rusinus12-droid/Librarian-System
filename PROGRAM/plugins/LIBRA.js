@@ -37210,27 +37210,52 @@ function createLibraReadonlySourceContext(owner) {
       if (!resources) return scope;
       const copy = { ...scope }; memoryGraphSourceBudgets.set(copy,resources); return copy;
     };
-    // Session read cache for verified owner records (new contract, 2026-11-03).
+    // Session read cache for plugin-only verified owner records.
     // LIBRA is the only writer of its namespace in a session: every write goes through
     // the fenced set/remove or a conditional batch below, and each one invalidates.
     // Background work (Micro production, receipt reconciliation, person spans, State
     // projection) re-read the same heads/receipts per turn many times; they now read
     // each once per write-free span. Reads with a request resource budget (recall,
     // GRADIA, delivery) and read frames never use it; delivery-time physical checks
-    // still read storage directly. A change made by another device is seen after the
-    // TTL or at the next delivery-time physical check.
+    // still read storage directly. Shared server/mirror storage and unscoped raw
+    // reads bypass this cache: external writers do not participate in invalidation.
     const VERIFIED_READ_CACHE_MAX = 4096, VERIFIED_READ_CACHE_TTL_MS = 20000;
+    const VERIFIED_READ_CACHE_ENTRY_BYTES = 64 * 1024, VERIFIED_READ_CACHE_MAX_BYTES = 4 * 1024 * 1024;
     const verifiedReadCache = new Map();
+    let verifiedReadCacheBytes = 0;
     let verifiedReadWriteSeq = 0;
     // While any delivery/validation check runs, every read goes to storage.
     let freshReadDepth = 0;
-    const verifiedReadStats = state.verifiedReadCacheStats = { hits: 0, misses: 0, invalidations: 0, clears: 0 };
+    const verifiedReadStats = state.verifiedReadCacheStats = { hits: 0, misses: 0, invalidations: 0, clears: 0, bytes: 0, entries: 0 };
+    const deleteVerifiedRead = key => {
+      const row = verifiedReadCache.get(key);
+      if (row) verifiedReadCacheBytes -= row.bytes;
+      verifiedReadCache.delete(key);
+      verifiedReadStats.bytes = verifiedReadCacheBytes;
+      verifiedReadStats.entries = verifiedReadCache.size;
+    };
+    const pruneVerifiedReads = () => {
+      const now = Date.now();
+      for (const [key, row] of verifiedReadCache) if (now - row.at >= VERIFIED_READ_CACHE_TTL_MS) deleteVerifiedRead(key);
+    };
+    const rememberVerifiedRead = (key, signature, value, empty) => {
+      pruneVerifiedReads();
+      deleteVerifiedRead(key);
+      // UTF-16 serialized size is a conservative payload budget, not a heap measurement.
+      const serialized = JSON.stringify(empty ? null : value), bytes = 2 * (key.length + signature.length + serialized.length);
+      if (bytes > VERIFIED_READ_CACHE_ENTRY_BYTES) return;
+      while (verifiedReadCache.size >= VERIFIED_READ_CACHE_MAX || verifiedReadCacheBytes + bytes > VERIFIED_READ_CACHE_MAX_BYTES)
+        deleteVerifiedRead(verifiedReadCache.keys().next().value);
+      verifiedReadCache.set(key, { signature, at: Date.now(), empty, value: empty ? null : clone(value), bytes });
+      verifiedReadCacheBytes += bytes;
+      verifiedReadStats.bytes = verifiedReadCacheBytes;
+      verifiedReadStats.entries = verifiedReadCache.size;
+    };
     const invalidateVerifiedRead = storageKey => {
       verifiedReadWriteSeq++; verifiedReadStats.invalidations++;
-      verifiedReadCache.delete(String(storageKey || ''));
-      verifiedReadCache.delete('stored\u0000' + String(storageKey || ''));
+      deleteVerifiedRead(String(storageKey || ''));
     };
-    const invalidateAllVerifiedReads = () => { verifiedReadWriteSeq++; verifiedReadStats.clears++; verifiedReadCache.clear(); };
+    const invalidateAllVerifiedReads = () => { verifiedReadWriteSeq++; verifiedReadStats.clears++; verifiedReadCache.clear(); verifiedReadCacheBytes = 0; verifiedReadStats.bytes = 0; verifiedReadStats.entries = 0; };
     const verifiedReadSignature = mode => stableReferenceJson([mode, MemorySuiteStorageBridge.serverBinding?.()?.generation ?? null,
       Number(state.microRestoreGeneration || 0), state.memoryGraphStoreSerial]);
     const storage = Object.freeze({
@@ -37248,18 +37273,7 @@ function createLibraReadonlySourceContext(owner) {
           return parseStoredJson(raw,storageKey,fallback);
         };
         if (resources) return await resources.read(load,{ consume: decode });
-        // Same session cache as getVerifiedJson; the raw host value is cached, so each
-        // caller still gets its own parse with its own fallback.
-        const cacheKey = 'stored\u0000' + storageKey, signature = state.disposed || freshReadDepth > 0 ? '' : verifiedReadSignature('stored');
-        const hit = signature && verifiedReadCache.get(cacheKey);
-        if (hit && hit.signature === signature && Date.now() - hit.at <= VERIFIED_READ_CACHE_TTL_MS) { verifiedReadStats.hits++; return parseStoredJson(hit.value,storageKey,fallback); }
-        if (signature) verifiedReadStats.misses++;
-        const seqAtStart = verifiedReadWriteSeq, raw = await load(), value = decode(raw);
-        if (signature && verifiedReadWriteSeq === seqAtStart && (raw === null || raw === undefined || typeof raw === 'string')) {
-          verifiedReadCache.delete(cacheKey); verifiedReadCache.set(cacheKey, { signature, at: Date.now(), value: raw ?? null });
-          while (verifiedReadCache.size > VERIFIED_READ_CACHE_MAX) verifiedReadCache.delete(verifiedReadCache.keys().next().value);
-        }
-        return value;
+        return decode(await load());
       },
       async getJson(storageKey, fallback = null, scope = null) {
         const value = await this.getStoredJson(storageKey, fallback, scope);
@@ -37277,9 +37291,10 @@ function createLibraReadonlySourceContext(owner) {
             try { scope._cachedMode = mode; } catch (_) {}
           }
         }
-        const cacheable = !resources && !state.disposed && freshReadDepth === 0;
+        const cacheable = mode === 'plugin_only' && !resources && !state.disposed && freshReadDepth === 0;
         const signature = cacheable ? verifiedReadSignature(mode) : '';
         if (cacheable) {
+          pruneVerifiedReads();
           const hit = verifiedReadCache.get(storageKey);
           if (hit && hit.signature === signature && Date.now() - hit.at <= VERIFIED_READ_CACHE_TTL_MS) {
             verifiedReadStats.hits++;
@@ -37290,9 +37305,7 @@ function createLibraReadonlySourceContext(owner) {
         const seqAtStart = verifiedReadWriteSeq;
         const remember = (value, empty = false) => {
           if (!cacheable || verifiedReadWriteSeq !== seqAtStart) return;
-          verifiedReadCache.delete(storageKey);
-          verifiedReadCache.set(storageKey, { signature, at: Date.now(), empty, value: empty ? null : clone(value) });
-          while (verifiedReadCache.size > VERIFIED_READ_CACHE_MAX) verifiedReadCache.delete(verifiedReadCache.keys().next().value);
+          rememberVerifiedRead(storageKey, signature, value, empty);
         };
         const needsLocal = mode !== 'server_only';
         const needsServer = mode !== 'plugin_only';

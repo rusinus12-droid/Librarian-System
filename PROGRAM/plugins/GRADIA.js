@@ -3679,50 +3679,34 @@ Before continuing, verify:
     return start > 0 ? (end > start ? `T${start}-${end}` : `T${start}`) : '';
   };
   const libMemoryLine = value => String(value ?? '').replace(/\s+/g, ' ').trim();
-  const libMemoryItemText = value => typeof value === 'string' ? libMemoryLine(value)
-    : value && typeof value === 'object' ? ['summary','text','description','detail','details','notes','state','current_status','status','label']
-      .map(key => libMemoryLine(value[key])).find(Boolean) || '' : '';
-  const libMemoryList = (value, limit = 8) => (Array.isArray(value) ? value : []).map(libMemoryItemText).filter(Boolean).slice(0, limit);
   const projectHayakuPacketText = raw => {
     let packet;
     try { packet = JSON.parse(raw); } catch (_) { return raw; }
     if (packet?.meta?.schema !== 'hayaku_packet_v1') return raw;
-    const meta = packet.meta || {}, summary = meta.summary_memory || {}, entity = packet.entity || {};
-    const world = packet.world || {}, narrative = packet.narrative || {}, planner = packet.planner || {};
-    const lines = [];
-    const add = (label, value) => { const line = libMemoryLine(value); if (line) lines.push(`${label}: ${line}`); };
-    const addList = (label, values) => { if (values.length) lines.push(`${label}: ${values.join(' / ')}`); };
-    // Some producers store an identifier (turn:01_x) as the anchor; that is not memory text.
+    const meta = packet.meta || {};
+    // Preserve every semantic leaf, including qualifications, knowledge boundaries,
+    // and entries beyond the former display-oriented list limits. Transport lineage
+    // stays out of the model text; the original producer packet is unchanged.
+    const semanticLines = [];
     const anchor = libMemoryLine(meta.turn_anchor || meta.turnAnchor);
-    if (!/^[A-Za-z0-9_.:-]+$/.test(anchor)) add('\uc7a5\uba74', anchor);
-    add('\uc7a5\uc18c', world.location);
-    add('\uc2dc\uac04', world.time);
-    add('\uc694\uc57d', summary.summary || summary.text);
-    addList('\uc778\ubb3c', (Array.isArray(entity.characters) ? entity.characters : []).map(row => {
-      const name = libMemoryLine(row?.name); if (!name) return '';
-      const state = libMemoryLine(row?.state || row?.current_status || row?.current_state);
-      const place = libMemoryLine(row?.location || row?.last_known_location);
-      return [name, state, place && `@${place}`].filter(Boolean).join(' ');
-    }).filter(Boolean).slice(0, 10));
-    addList('\uad00\uacc4', (Array.isArray(entity.relations) ? entity.relations : []).map(row => {
-      const pair = [libMemoryLine(row?.from), libMemoryLine(row?.to)].filter(Boolean).join(' \u2192 '); if (!pair) return '';
-      return [pair, libMemoryLine(row?.type), libMemoryLine(row?.notes || row?.detail || row?.details)].filter(Boolean).join(' \u00b7 ');
-    }).filter(Boolean).slice(0, 8));
-    addList('\uc0ac\uac74', libMemoryList(world.active_events || world.activeEvents));
-    addList('\uac08\ub4f1', libMemoryList(narrative.conflict_traces || narrative.conflictTraces, 6));
-    addList('\uc778\ubb3c \uc2dc\uc810', (Array.isArray(entity.pov_memories) ? entity.pov_memories : []).map(row => {
-      const body = libMemoryItemText(row); if (!body) return '';
-      const owner = libMemoryLine(row?.ownerEntityId || row?.owner); return owner ? `${owner}: ${body}` : body;
-    }).filter(Boolean).slice(0, 6));
-    addList('\ube44\ubc00', libMemoryList(entity.secrets, 6));
-    addList('\uc911\uc694 \ub300\uc0ac', (Array.isArray(narrative.critical_dialogue) ? narrative.critical_dialogue : []).map(row => {
-      const body = libMemoryLine(row?.text); if (!body) return '';
-      const speaker = libMemoryLine(row?.speaker); return speaker ? `${speaker}: "${body}"` : `"${body}"`;
-    }).filter(Boolean).slice(0, 4));
-    addList('\uc720\uc9c0\ud560 \uc0ac\uc2e4', libMemoryList(planner.continuity_locks || planner.continuityLocks));
-    addList('\uc544\uc9c1 \uc815\ud558\uc9c0 \uc54a\uc740 \uac83', libMemoryList(planner.do_not_resolve_yet || planner.doNotResolveYet, 6));
-    addList('\ub0a8\uc740 \uacb0\uacfc', libMemoryList(planner.consequence_ledger || planner.consequenceLedger, 6));
-    return lines.length ? lines.join('\n') : raw;
+    if (anchor && !/^[A-Za-z0-9_.:-]+$/.test(anchor)) semanticLines.push(`장면: ${anchor}`);
+    const labels = { entity: '인물', world: '세계', narrative: '서사', planner: '계획',
+      historical_events: '과거 사건', world_rules: '세계 규칙', offscreen_threads: '장면 밖 흐름',
+      scene_deltas: '장면 변화', payoff_tracker: '복선 회수', summary_memory: '요약 기억' };
+    const visit = (value, path) => {
+      if (Array.isArray(value)) { value.forEach((row, i) => visit(row, `${path} ${i + 1}`)); return; }
+      if (value && typeof value === 'object') {
+        for (const [key, row] of Object.entries(value)) visit(row, `${path} / ${labels[key] || key}`);
+        return;
+      }
+      if (value !== null && value !== undefined && libMemoryLine(value)) semanticLines.push(`${path}: ${libMemoryLine(value)}`);
+    };
+    for (const key of ['entity', 'entities', 'world', 'narrative', 'planner', 'importance']) visit(packet[key], labels[key] || key);
+    for (const key of ['summary_memory', 'summaryMemory', 'false_inferences', 'falseInferences',
+      'speaker_boundaries', 'speakerBoundaries', 'overpromotion_risks', 'overpromotionRisks']) visit(meta[key], labels[key] || key);
+    // Older packet extensions may keep POV/secret collections at the root.
+    for (const key of ['povMemories', 'entityMemories', 'entity_knowledge', 'secrets', 'hiddenKnowledge', 'privateThoughts']) visit(packet[key], key);
+    return semanticLines.length ? semanticLines.join('\n') : raw;
   };
   const cleanFlashbackTurnText = raw => String(raw || '').split(/\r?\n/)
     .filter(line => !/^\s*#{1,6}\s/.test(line) && !/^\s*-{3,}\s*$/.test(line)

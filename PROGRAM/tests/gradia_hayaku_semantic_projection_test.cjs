@@ -1,0 +1,20 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {load}=require('./gradia/host.cjs');
+const {createValidPacket}=require('./fixtures/hayaku_runtime_harness.cjs');
+test('GRADIA preserves all HAYAKU semantic leaves without changing the producer packet',async()=>{
+ const capture={};
+ await load({testGlobals:{capture},transformSource:s=>s.replace('  const cleanFlashbackTurnText =','  capture.project = projectHayakuPacketText;\n  const cleanFlashbackTurnText =')});
+ const p=createValidPacket();p.meta.lineage={request_nonce:'PRIVATE_TRANSPORT_NONCE'};
+ p.world.historical_events=[{summary:'PAST',consequence:'PAST_CONSEQUENCE'}];
+ p.world.world_rules=Array.from({length:12},(_,i)=>({text:'RULE_'+i,exceptions:['EXCEPTION_'+i],enabled:false}));
+ p.world.offscreen_threads=[{summary:'OFFSCREEN',status:'unresolved'}];
+ p.narrative.scene_deltas=[{before:'BEFORE',after:'AFTER'}];
+ p.planner.payoff_tracker=[{setup:'SETUP',payoff:'PAYOFF',resolved:false}];
+ p.entity.secrets=[{text:'SECRET',known_to:['ALICE'],hidden_from:['BOB']}];
+ p.entity.characters[0].knowledge=['KNOWLEDGE'];p.meta.false_inferences=['DO_NOT_ASSUME'];
+ const raw=JSON.stringify(p),out=capture.project(raw);
+ for(const text of ['PAST','PAST_CONSEQUENCE','RULE_11','EXCEPTION_11','OFFSCREEN','unresolved','BEFORE','AFTER','SETUP','PAYOFF','false','SECRET','ALICE','BOB','KNOWLEDGE','DO_NOT_ASSUME']) assert.ok(out.includes(text),text);
+ assert.ok(!out.includes('PRIVATE_TRANSPORT_NONCE'));assert.equal(JSON.stringify(p),raw);
+ assert.equal(capture.project('plain memory'),'plain memory');assert.equal(capture.project('{"meta":{"schema":"future"}}'),'{"meta":{"schema":"future"}}');
+});

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-03T04:22:40.957Z",
+  "generatedAt": "2026-11-03T04:43:34.449Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3000,8 +3000,8 @@
       "bytes": 6733
     },
     "docs/LIBRA_RECALL_BOTTLENECK_20261102.md": {
-      "sha256": "30772d1e92df0435e6efee2ee5c0c099b72f2d2167b2b3a70c3f806c01d0d1d0",
-      "bytes": 22635
+      "sha256": "235038fae1d7875bfab143390efc6df159f614b7e849ced9932d6b0650eccd42",
+      "bytes": 26671
     },
     "docs/LIBRA_RECALL_BOUNDARY_DIAGNOSTICS_20261102.md": {
       "sha256": "b8f093f2e24816b8483400add7d8aaeb0949df3d6a5b8a05703557e03f9eb0ec",
@@ -3820,7 +3820,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "c5c9f12f6ef6edcad5c82b1d7d7b6f6523d367a339d158a4dae782cccfa84ddb",
+      "sha256": "2acc39069832a7c33ca89765584ed9161eb88c70afc95da0b4a4b95d1128fe6c",
       "bytes": 11836
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4228,8 +4228,8 @@
       "bytes": 3766242
     },
     "plugins/GRADIA.js": {
-      "sha256": "06691636d695ece1e03027014d69e9201aace5332502dc0c00ce6dd91e0a2eec",
-      "bytes": 3155378
+      "sha256": "83531fb54991b286680a0e2ab8d9834986362c93a5207c4ffb4dc40a61c7ff50",
+      "bytes": 3153802
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "a3b06f84fc2844ccc012b7fd8b71a501537a1077bb376f0c5516709e15fffaf7",
@@ -4240,8 +4240,8 @@
       "bytes": 1665739
     },
     "plugins/LIBRA.js": {
-      "sha256": "d720578ccfd9217b96bcb4a591d1f9b61e2fd4246546d266347bd12dd20b411c",
-      "bytes": 6989527
+      "sha256": "9a17b0a012380931c80d1b719941698664cc292b15a9d72d21abbdfb2ac9c1e7",
+      "bytes": 6989829
     },
     "plugins/RETRACE.js": {
       "sha256": "3386123502411149a0843d2d1a45b59d0e6af80c5175646e6b2c159b94eef27f",
@@ -6582,6 +6582,10 @@
     "tests/gradia_hayaku_read_session_test.cjs": {
       "sha256": "b7ded07406d4bab0feebc3ee842be75e1265cc80f692bc6a68eca4043ee93d93",
       "bytes": 17118
+    },
+    "tests/gradia_hayaku_semantic_projection_test.cjs": {
+      "sha256": "f6abbe297123ff7fbef7764c8f829d3672a40629497025781f40f7236f68d5e7",
+      "bytes": 1694
     },
     "tests/gradia_input_writer_context_preflight_test.cjs": {
       "sha256": "84baadcfad9fbfcef6fffc6914413e9cc7358061580c37cc75de019e8422794d",
@@ -9767,6 +9771,10 @@
       "sha256": "f3ade440db775cefbc4f6ff1a6059013f7e9f901155cf4a910ae85c0164021c5",
       "bytes": 2717
     },
+    "tests/libra_shared_cache_external_write_test.cjs": {
+      "sha256": "5a93a9a6b534a963abf8fd9e645a29790bf25726f7b371212123957a63cbbcb3",
+      "bytes": 2769
+    },
     "tests/libra_shared_navigation_rc2_contract_test.cjs": {
       "sha256": "cdea2fe4779de14784210c2981d29306f7e74598159a86b98a8bdb5e097455cc",
       "bytes": 7841
@@ -10002,6 +10010,10 @@
     "tests/libra_unified_worldline_storage_board_test.cjs": {
       "sha256": "67e6d169629d2eff375255d13e0121581d9be0b63afb08ac9e2ffdd889332980",
       "bytes": 8892
+    },
+    "tests/libra_verified_read_cache_test.cjs": {
+      "sha256": "4111f68d3b3e58fdb5c6305ae11bfd8962043c6ff33ee17062d3671e3f253ee0",
+      "bytes": 4287
     },
     "tests/libra_volatile_corpus_index_runtime_test.cjs": {
       "sha256": "b0496fa0c06e6d218f9fdb413cb58f50b92846ea9c02f32775f3a0224c8ef0c5",
