@@ -35580,7 +35580,7 @@ function createLibraReadonlySourceContext(owner) {
       }
       if (entry.identities[kind] !== identityDigest) throw consumerContractError('CONSUMER_DATA_BINDING_CHANGED');
     };
-    const assertConsumedDataCurrent = async (token, options = {}) => {
+    const assertConsumedDataCurrent = async (token, options = {}) => { freshReadDepth++; try {
       const entry = consumedDataReadSets.get(string(token));
       if (!entry) throw consumerContractError('CONSUMER_DATA_READSET_UNAVAILABLE');
       if (Number(options.deadlineAt) > 0) entry.consumerDeadlineAt = Number(options.deadlineAt);
@@ -35677,7 +35677,7 @@ function createLibraReadonlySourceContext(owner) {
           timer = setTimeout(() => reject(consumerContractError('CONSUMER_DATA_REVALIDATION_DEADLINE')), Math.max(1, deadlineAt - Date.now()));
         })]);
       } finally { clearTimeout(timer); }
-    };
+    } finally { freshReadDepth--; } };
 
     /* LIBRA CANONICAL STATE PIPELINE V3 START */
     const ENTITY_ADMISSION_DECISION_SCHEMA = 'libra.entity_admission_decision.v1';
@@ -36925,7 +36925,9 @@ function createLibraReadonlySourceContext(owner) {
       fence.pending = Math.max(0, Number(fence.pending || 0)) + 1;
       state.storageWriteStats.writes += 1;
       state.receiptRecoverySettledWrites.delete(storageKey);
+      invalidateVerifiedRead(storageKey);
       const operation = Promise.resolve().then(() => LibraProviderBridge.storage.setItem(storageKey, serialized));
+      operation.then(() => invalidateVerifiedRead(storageKey), () => invalidateVerifiedRead(storageKey));
       // Join the already admitted write; never replace its SDK owner/drain path.
       if (!fence.operations) fence.operations = new Set();
       fence.operations.add(operation);
@@ -37004,9 +37006,11 @@ function createLibraReadonlySourceContext(owner) {
       fence.pending = Math.max(0, Number(fence.pending || 0)) + 1;
       state.storageWriteStats.writes += 1;
       state.receiptRecoverySettledWrites.delete(storageKey);
+      invalidateVerifiedRead(storageKey);
       try {
         await LibraProviderBridge.storage.removeItem(storageKey);
       } finally {
+        invalidateVerifiedRead(storageKey);
         fence.pending = Math.max(0, Number(fence.pending || 0)) - 1;
         if (fence.pending === 0 && state.storageWriteFence.get(storageKey) === fence) {
           state.storageWriteFence.delete(storageKey);
@@ -37206,6 +37210,29 @@ function createLibraReadonlySourceContext(owner) {
       if (!resources) return scope;
       const copy = { ...scope }; memoryGraphSourceBudgets.set(copy,resources); return copy;
     };
+    // Session read cache for verified owner records (new contract, 2026-11-03).
+    // LIBRA is the only writer of its namespace in a session: every write goes through
+    // the fenced set/remove or a conditional batch below, and each one invalidates.
+    // Background work (Micro production, receipt reconciliation, person spans, State
+    // projection) re-read the same heads/receipts per turn many times; they now read
+    // each once per write-free span. Reads with a request resource budget (recall,
+    // GRADIA, delivery) and read frames never use it; delivery-time physical checks
+    // still read storage directly. A change made by another device is seen after the
+    // TTL or at the next delivery-time physical check.
+    const VERIFIED_READ_CACHE_MAX = 4096, VERIFIED_READ_CACHE_TTL_MS = 20000;
+    const verifiedReadCache = new Map();
+    let verifiedReadWriteSeq = 0;
+    // While any delivery/validation check runs, every read goes to storage.
+    let freshReadDepth = 0;
+    const verifiedReadStats = state.verifiedReadCacheStats = { hits: 0, misses: 0, invalidations: 0, clears: 0 };
+    const invalidateVerifiedRead = storageKey => {
+      verifiedReadWriteSeq++; verifiedReadStats.invalidations++;
+      verifiedReadCache.delete(String(storageKey || ''));
+      verifiedReadCache.delete('stored\u0000' + String(storageKey || ''));
+    };
+    const invalidateAllVerifiedReads = () => { verifiedReadWriteSeq++; verifiedReadStats.clears++; verifiedReadCache.clear(); };
+    const verifiedReadSignature = mode => stableReferenceJson([mode, MemorySuiteStorageBridge.serverBinding?.()?.generation ?? null,
+      Number(state.microRestoreGeneration || 0), state.memoryGraphStoreSerial]);
     const storage = Object.freeze({
       async getStoredJson(storageKey, fallback = null, scope = null) {
         const frame = scope && memoryGraphReadFrames.get(scope);
@@ -37220,7 +37247,19 @@ function createLibraReadonlySourceContext(owner) {
           state.memoryNetworkIO.storedBytes += typeof raw === 'string' ? new TextEncoder().encode(raw).length : 0;
           return parseStoredJson(raw,storageKey,fallback);
         };
-        return resources ? await resources.read(load,{ consume: decode }) : decode(await load());
+        if (resources) return await resources.read(load,{ consume: decode });
+        // Same session cache as getVerifiedJson; the raw host value is cached, so each
+        // caller still gets its own parse with its own fallback.
+        const cacheKey = 'stored\u0000' + storageKey, signature = state.disposed || freshReadDepth > 0 ? '' : verifiedReadSignature('stored');
+        const hit = signature && verifiedReadCache.get(cacheKey);
+        if (hit && hit.signature === signature && Date.now() - hit.at <= VERIFIED_READ_CACHE_TTL_MS) { verifiedReadStats.hits++; return parseStoredJson(hit.value,storageKey,fallback); }
+        if (signature) verifiedReadStats.misses++;
+        const seqAtStart = verifiedReadWriteSeq, raw = await load(), value = decode(raw);
+        if (signature && verifiedReadWriteSeq === seqAtStart && (raw === null || raw === undefined || typeof raw === 'string')) {
+          verifiedReadCache.delete(cacheKey); verifiedReadCache.set(cacheKey, { signature, at: Date.now(), value: raw ?? null });
+          while (verifiedReadCache.size > VERIFIED_READ_CACHE_MAX) verifiedReadCache.delete(verifiedReadCache.keys().next().value);
+        }
+        return value;
       },
       async getJson(storageKey, fallback = null, scope = null) {
         const value = await this.getStoredJson(storageKey, fallback, scope);
@@ -37238,6 +37277,23 @@ function createLibraReadonlySourceContext(owner) {
             try { scope._cachedMode = mode; } catch (_) {}
           }
         }
+        const cacheable = !resources && !state.disposed && freshReadDepth === 0;
+        const signature = cacheable ? verifiedReadSignature(mode) : '';
+        if (cacheable) {
+          const hit = verifiedReadCache.get(storageKey);
+          if (hit && hit.signature === signature && Date.now() - hit.at <= VERIFIED_READ_CACHE_TTL_MS) {
+            verifiedReadStats.hits++;
+            return hit.empty ? clone(fallback) : clone(hit.value);
+          }
+          verifiedReadStats.misses++;
+        }
+        const seqAtStart = verifiedReadWriteSeq;
+        const remember = (value, empty = false) => {
+          if (!cacheable || verifiedReadWriteSeq !== seqAtStart) return;
+          verifiedReadCache.delete(storageKey);
+          verifiedReadCache.set(storageKey, { signature, at: Date.now(), empty, value: empty ? null : clone(value) });
+          while (verifiedReadCache.size > VERIFIED_READ_CACHE_MAX) verifiedReadCache.delete(verifiedReadCache.keys().next().value);
+        };
         const needsLocal = mode !== 'server_only';
         const needsServer = mode !== 'plugin_only';
         const localRaw = needsLocal ? await read(() => MemorySuiteStorageBridge.ownerLegacyRead('plugin',storageKey)) : null;
@@ -37246,14 +37302,15 @@ function createLibraReadonlySourceContext(owner) {
         const localExists = localRaw !== null && localRaw !== undefined && localRaw !== '';
         const serverExists = serverRow?.exists === true && serverRow?.tombstone !== true;
         if (needsLocal && needsServer && localExists !== serverExists) throw new Error(`LIBRA_VERIFIED_STORAGE_COPY_MISMATCH:${storageKey}`);
-        if ((needsLocal && !localExists) || (needsServer && !serverExists)) return clone(fallback);
+        if ((needsLocal && !localExists) || (needsServer && !serverExists)) { remember(null, true); return clone(fallback); }
         const decode = () => {
           const local = needsLocal ? parseStoredJson(localRaw,storageKey,fallback) : null;
           const remote = needsServer ? parseStoredJson(serverRow.value,storageKey,fallback) : null;
           if (needsLocal && needsServer && digest(local) !== digest(remote)) throw new Error(`LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:${storageKey}`);
           return clone(needsServer ? remote : local);
         };
-        return resources ? await resources.withValue(localRaw,() => resources.withValue(serverRow?.value ?? null,decode)) : decode();
+        if (resources) return await resources.withValue(localRaw,() => resources.withValue(serverRow?.value ?? null,decode));
+        const decoded = decode(); remember(decoded); return decoded;
       },
       async setVerifiedJson(storageKey, value, scope) {
         await fencedMemoryStorageSet(storageKey, JSON.stringify(value));
@@ -37299,7 +37356,9 @@ function createLibraReadonlySourceContext(owner) {
           const stored = await this.getStoredJson(storageKey, null);
           localKey = string(normalizeLocalVectorRef(stored?.localVectorRef)?.localKey || '');
         } catch (_) {}
+        invalidateVerifiedRead(storageKey);
         const removed = await LibraProviderBridge.storage.removeItem(storageKey);
+        invalidateVerifiedRead(storageKey);
         if (removed !== false && localKey) {
           state.localVectorCache.delete(localKey);
           try { await RisuCompat.localRemoveItem(localKey); } catch (_) {}
@@ -61015,7 +61074,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           for(const [storageKey,value] of catalog.dependencies){if(storageKey===catalog.policy.key||!required.has(storageKey))continue;if(conditions.length>=63)throw Error('MEMORY_REVIEW_READSET_TOO_LARGE');
             const v=await LibraProviderBridge.storage.getItem(storageKey);unifiedAssert(digest(v?JSON.parse(v):null)===digest(value),'MEMORY_REVIEW_SOURCE_CHANGED');conditions.push({key:storageKey,expected:v==null?{exists:false}:{exists:true,value:v}});}
           const prepared=await MemorySuiteStorageBridge.prepareConditionalBatch({conditions,mutations:[{key:catalog.policy.key,kind:'set',expected:raw==null?{exists:false}:{exists:true,value:raw},value:JSON.stringify(next)}]});
-          const receipt=await MemorySuiteStorageBridge.commitConditionalBatch(prepared);unifiedAssert(receipt.endToEndVerified===true,'MEMORY_REVIEW_COMMIT_UNVERIFIED');
+          const receipt=await (async () => { invalidateAllVerifiedReads(); try { return await MemorySuiteStorageBridge.commitConditionalBatch(prepared); } finally { invalidateAllVerifiedReads(); } })();unifiedAssert(receipt.endToEndVerified===true,'MEMORY_REVIEW_COMMIT_UNVERIFIED');
         }
         unifiedAssert(digest(await storage.getVerifiedJson(catalog.policy.key,initial.scope,null))===digest(next),'MEMORY_REVIEW_READBACK_FAILED');
         state.lastMicroStateAdmissionRefresh={at:Date.now(),reason:'memory_review_changed'};state.memoryGraphStoreSerial+=1;
@@ -63731,7 +63790,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const before=await storage.getJson(k,null);conditions.push({key:k,expected:before==null?{exists:false}:{exists:true,value:JSON.stringify(before)}});
         }
         const prepared=await MemorySuiteStorageBridge.prepareConditionalBatch({conditions,mutations:[{key:unifiedServerActiveKey(context.scope),kind:'set',expected:{exists:false},value:JSON.stringify(descriptor)}]});
-        const receipt=await MemorySuiteStorageBridge.commitConditionalBatch(prepared);
+        const receipt=await (async () => { invalidateAllVerifiedReads(); try { return await MemorySuiteStorageBridge.commitConditionalBatch(prepared); } finally { invalidateAllVerifiedReads(); } })();
         unifiedAssert(receipt.endToEndVerified===true,'UNIFIED_SERVER_COMMIT_NOT_VERIFIED');
         active=await storage.getJson(unifiedServerActiveKey(context.scope),null);
       }
@@ -63763,7 +63822,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // Predicates were captured before waiting; do not refresh them after a
       // conflict to force an old candidate past a newer revision.
       await validate?.();
-      const receipt=await MemorySuiteStorageBridge.commitConditionalBatch(tx.serverPrepared);
+      const receipt=await (async () => { invalidateAllVerifiedReads(); try { return await MemorySuiteStorageBridge.commitConditionalBatch(tx.serverPrepared); } finally { invalidateAllVerifiedReads(); } })();
       unifiedAssert(receipt.endToEndVerified===true,'UNIFIED_SERVER_COMMIT_NOT_VERIFIED');
       noteMemoryGraphSourceWrite(PREFIX + ':scope:');
       return receipt;
@@ -66643,7 +66702,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
                   readSet,
                   mutations: [{ key: manifestKey, kind: 'set', expected: { exists: true, value: manifestRaw }, value: nextRaw }]
                 });
-                const receipt = await MemorySuiteStorageBridge.commitConditionalBatch(prepared);
+                const receipt = await (async () => { invalidateAllVerifiedReads(); try { return await MemorySuiteStorageBridge.commitConditionalBatch(prepared); } finally { invalidateAllVerifiedReads(); } })();
                 unifiedAssert(receipt.endToEndVerified === true, 'UNIFIED_CANCEL_MANIFEST_COMMIT_NOT_VERIFIED');
                 if (receipt.localMirror?.required) unifiedAssert(receipt.localMirror.verified === true, 'UNIFIED_CANCEL_MANIFEST_MIRROR_NOT_VERIFIED');
                 const verifiedRaw = await LibraProviderBridge.storage.getItem(manifestKey);
@@ -71900,7 +71959,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       })(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(consumerContractError('CONSUMER_DATA_REVALIDATION_DEADLINE')),Math.max(1,deadlineAt-Date.now()));})]);}
       finally{clearTimeout(timer);}
     };
-    const assertUnifiedResponseBoundary=async(boundary,options={})=>{
+    const assertUnifiedResponseBoundary=async(boundary,options={})=>{ freshReadDepth++; try {
       if(!boundary)return true;
       const deadlineAt=Math.min(Date.now()+CONSUMER_REVALIDATION_BUDGET_MS,Number(options.deadlineAt)||Infinity);let timer;
       try{return await Promise.race([(async()=>{
@@ -71919,7 +71978,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
         unifiedAssert(digest(current)===digest(boundary),'UNIFIED_RESPONSE_AUTHORITY_CHANGED');return true;
       })(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(consumerContractError('CONSUMER_DATA_REVALIDATION_DEADLINE')),Math.max(1,deadlineAt-Date.now()));})]);}finally{clearTimeout(timer);}
-    };
+    } finally { freshReadDepth--; } };
     const unifiedResponseContextBody=value=>{const copy=clone(value);delete copy.contextDigest;return copy;};
     const consumedPacketValues = packet => ({currentInput:packet.current_input||'',terminalScene:packet.terminal_scene||'',liveTail:clone(packet.live_tail||null),
         canonicalLayers:clone(packet.layers||{}),canonicalPriority:clone(packet.canonical_priority||null),
@@ -71961,7 +72020,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       Runtime.lastResponseContext=snapshot;return snapshot;
     };
-    const validateUnifiedResponseContext=async value=>{
+    const validateUnifiedResponseContext=async value=>{ freshReadDepth++; try {
       try{unifiedAssert(value?.schema===UNIFIED_RESPONSE_CONTEXT_SCHEMA && value.contextDigest===digest(unifiedResponseContextBody(value)),'UNIFIED_RESPONSE_CONTEXT_SEAL');
         if(value.consumerReadSet)await assertConsumerReadSet(value.consumerReadSet);
         await assertUnifiedResponseBoundary(value.boundary);
@@ -71973,7 +72032,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }else throw consumerContractError('CONSUMER_DATA_READSET_UNAVAILABLE');
         return {ok:true,current:true,contextDigest:value.contextDigest};
       }catch(e){return {ok:false,current:false,reason:e.code||String(e.message)};}
-    };
+    } finally { freshReadDepth--; } };
     const getUnifiedResponseContext=async({currentInput=''}={})=>{
       const context=await resolveContext(),pairs=buildPairs(context.chat,context.scope.scopeKey),settings=await loadSettings();
       const boundary=await captureUnifiedResponseBoundary(context,settings),manifest=await loadManifest(context.scope,pairs.length);
@@ -76241,7 +76300,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const commit = async (mutations, conditions = [], readSet = null) => {
         check();
         const prepared = await MemorySuiteStorageBridge.prepareConditionalBatch({ mutations, conditions, ...(readSet ? { readSet } : {}) });
-        check(); const receipt = await MemorySuiteStorageBridge.commitConditionalBatch(prepared); check();
+        check(); const receipt = await (async () => { invalidateAllVerifiedReads(); try { return await MemorySuiteStorageBridge.commitConditionalBatch(prepared); } finally { invalidateAllVerifiedReads(); } })(); check();
         if (receipt.endToEndVerified !== true) throw new Error('LIBRA_GRAPH_STORE_COMMIT_UNVERIFIED');
       };
       const owner = {
@@ -76461,7 +76520,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         await assertRoute();
         const batch = await MemorySuiteStorageBridge.prepareConditionalBatch({ mutations, conditions });
         await assertRoute();
-        const receipt = await MemorySuiteStorageBridge.commitConditionalBatch(batch);
+        const receipt = await (async () => { invalidateAllVerifiedReads(); try { return await MemorySuiteStorageBridge.commitConditionalBatch(batch); } finally { invalidateAllVerifiedReads(); } })();
         await assertRoute();
         if (receipt.endToEndVerified !== true) throw new Error('LIBRA_GRAPH_CORPUS_COMMIT_UNVERIFIED');
         } finally { stage?.release(); }
@@ -76617,7 +76676,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             recordDependencyKeys
           };
         },
-        async verifySourceProofs(proofRecord, { initialGraph: targetGraph, config = {}, phase = 'open' } = {}) {
+        async verifySourceProofs(proofRecord, { initialGraph: targetGraph, config = {}, phase = 'open' } = {}) { freshReadDepth++; try {
           await assertRoute();
           const published = proofRecord?.ownerProof;
           if (!published || published.schema !== 'libra.graph_corpus_owner_proof.v1') return null;
@@ -76893,7 +76952,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             readFrame?.close();
             if (captured) ownerReadonlySourceContext.release({ handle: captured.handle, requestId });
           }
-        }
+        } finally { freshReadDepth--; } }
       }, snapshot: async (sourceOptions, snapshotResources = resources) => {
         await assertRoute(); let next;
         const graph = await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: initialGraph.scopeKey }, value => { next = value; }, snapshotResources);
@@ -77251,7 +77310,20 @@ function mountMemorySuiteReanalysisReview(container,config) {
       try {
         await runRecallStep(recallGuard, 'graph_background_drain',
           () => yieldVolatileMemoryGraphCorpusBuild(), RECALL_STEP_BUDGET_MS);
-        return await executeMemoryGraphUnifiedQueryOnce(options, recallGuard, gradiaAuthority);
+        // Background owner writes (a Micro finishing) can tear the cold corpus build
+        // between projection and its source proof. Rebuild from a fresh frame, bounded.
+        for (let attempt = 0; ; attempt++) {
+          try { return await executeMemoryGraphUnifiedQueryOnce(options, recallGuard, gradiaAuthority); }
+          catch (error) {
+            const message = string(error?.message || ''), code = string(error?.code || '');
+            // Reader-level torn codes are already retried (bounded) inside projection.
+            const torn = message === 'LIBRA_GRAPH_CORPUS_SOURCE_BODY_CHANGED' || code === 'LIBRA_GRAPH_CORPUS_SOURCE_BODY_CHANGED'
+              || message.startsWith('LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:');
+            if (!torn || attempt >= 2 || state.disposed || (recallGuard && Date.now() > Number(recallGuard.deadlineAt || Infinity) - 2000)) throw error;
+            state.graphQueryTornRetries = Number(state.graphQueryTornRetries || 0) + 1;
+            await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+          }
+        }
       }
       finally { volatileState.queriesInFlight -= 1; }
     };
@@ -77554,7 +77626,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
         const ownerVerifier = {
           currentGraph: corpus ? corpus.currentGraph : async () => await readMemoryGraphProjection({ ...sourceOptions, expectedScopeKey: graph.scopeKey },null,resources),
-          assertPhysicalCurrentness: async (dependencies = null, verifyContext = null) => {
+          assertPhysicalCurrentness: async (dependencies = null, verifyContext = null) => { freshReadDepth++; try {
             if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)
               || state.deletingScopes.has(graph.scopeKey) || !initialCollected?.scope) {
               return false;
@@ -77662,7 +77734,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             } catch (_err) {
               return false;
             }
-          }
+          } finally { freshReadDepth--; } }
         };
         ownerVerifier.openValidation = () => {
           resources.check();
@@ -78143,7 +78215,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       return {context,registry,enabled:lenses.length>0,lensStatus,digest:digest(parts)};
     };
-    const verifyGradiaMemoryEvidence = async execution => {
+    const verifyGradiaMemoryEvidence = async execution => { freshReadDepth++; try {
       const bound = gradiaMemoryEvidence.get(execution);
       if (!bound || bound.closed) return false;
       const validateGraph = async () => {
@@ -78154,7 +78226,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       await validateGraph();
       if ((await gradiaLensReadSnapshot(bound.request)).digest !== bound.lensDigest) throw Error('LIB_READ_STALE');
       return !bound.closed;
-    };
+    } finally { freshReadDepth--; } };
     const releaseGradiaMemoryEvidence = execution => {
       const bound = gradiaMemoryEvidence.get(execution);
       if (!bound) return;

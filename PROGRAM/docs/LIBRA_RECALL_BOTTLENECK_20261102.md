@@ -131,3 +131,35 @@ LIBRA 회귀 40개 중 39개 통과. `libra_phase_d_v5_fault_semantic_recovery_t
 - **32키 묶음 예산.** `libra_owner_batch_budget_unit_test`는 실제 `ownerGetMany`를 실제 자원 관리기와 함께 실행한다. 작은 값 32개는 1회 왕복, 큰 값이 섞이면 나눠 읽고 모든 값이 정확히 돌아오며 바이트가 계산된다. 한도를 넘는 단일 값은 기존처럼 `VALUE_BYTE_BUDGET`으로 실패한다. 나눠 읽는 요청이 실패하면 오류로 끝나고 예약이 모두 반환된다. 처음 묶음 응답을 크기 판단에 쓴 뒤 버리고 다시 읽는 비용은 남아 있다. 실제 쿼리 경로에서는 모든 읽기가 같은 값 한도를 쓰므로, 가장 큰 기록(약 34KB)을 받을 수 있는 한도에서는 head 묶음(합계 약 22KB)이 나뉘지 않았다.
 
 남은 것: 실제 RisuAI 설치 검증, 장기 누적 대화, 다른 기기의 동시 접근, `UNIFIED_RESPONSE_AUTHORITY_CHANGED` 실제 원인, Micro->State 실제 반영 테스트.
+
+## 5장: 백그라운드 저장소 읽기 캐시 (새 안전계약)
+
+배경: 읽는 쪽(회상, GRADIA)이 없을 때도 LIBRA 자신의 백그라운드 작업이 8초에 약 2,000회 저장소를 읽었다. 대부분 `source-receipt`, `source-receipt-head` 키를 같은 값으로 반복해서 읽는 것이었다. 이 읽기가 서버 요청 줄을 차지해 GRADIA 읽기가 41초까지 늘어난 것으로 본다.
+
+새 계약:
+
+- **무엇을 캐시하나.** `storage.getVerifiedJson`, `getStoredJson`의 결과를 세션 안에서 기억한다. 자원 예산(resource budget)이 붙은 읽기는 캐시하지 않는다.
+- **유효 기간.** 20초, 최대 4,096개.
+- **캐시 키.** 저장 모드, 서버 바인딩 세대, `microRestoreGeneration`, `memoryGraphStoreSerial`을 함께 넣는다. 이 중 하나라도 바뀌면 이전 값은 쓰이지 않는다.
+- **무효화.** fenced set, fenced remove, `storage.remove`, 그리고 코어의 `commitConditionalBatch` 6곳 앞뒤에서 캐시를 비운다. 근거: 한 세션에서 LIBRA 네임스페이스를 쓰는 주체는 LIBRA 하나다.
+- **전달 직전 검사는 항상 새로 읽는다.** `assertConsumedDataCurrent`, `assertUnifiedResponseBoundary`, `validateUnifiedResponseContext`, `verifySourceProofs`, `assertPhysicalCurrentness`, `verifyGradiaMemoryEvidence`는 `freshReadDepth` 안에서 실행되어 캐시를 건너뛴다. 그래서 모델에 전달되는 기억은 지금도 실제 저장소 값과 대조된다.
+- **포기한 것.** 다른 기기나 다른 탭이 같은 LIBRA 데이터를 바꾸면, 백그라운드 작업은 최대 20초 동안 옛 값을 볼 수 있다. 이 경우 전달 직전 검사가 거부하고, 작업은 다음 주기에 다시 한다. 틀린 기억이 전달되지는 않지만 그 사이 작업이 헛돌 수 있다.
+- **그래프 질의 재시도.** cold 빌드 중 원본이 바뀌어 `LIBRA_GRAPH_CORPUS_SOURCE_BODY_CHANGED` 또는 `LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:`가 나면 `executeMemoryGraphUnifiedQuery`가 최대 2회 새로 빌드한다. 마감까지 2초 넘게 남았을 때만 한다. 읽기 단계의 torn 코드(`LIBRA_GRAPH_READER_BODY_CHANGED` 등)는 projection 안에서 이미 2회 재시도하므로 바깥에서 다시 재시도하지 않는다. 처음에는 바깥에서도 재시도해 시도가 3×3=9회로 늘었고, `libra_memory_graph_read_frame_runtime_test`가 이를 잡았다.
+
+측정 (server_only, Micro 10개, 이 테스트 환경):
+
+| 항목 | HEAD | 변경 후 |
+|---|---|---|
+| 읽는 쪽 없이 8초 동안 백그라운드 저장소 읽기 | 2,004회 | 275회 |
+| GRADIA 읽기 열기, cold | 2,086ms | 2,037ms |
+| GRADIA 읽기 열기, warm | 823ms | 808ms |
+| GRADIA 전달 직전 검사, cold / warm | 199 / 124ms | 169 / 109ms |
+
+이 환경에서는 GRADIA 읽기 자체가 거의 그대로다. 측정 중 백그라운드 작업과 겹치지 않았기 때문이다. 실제 사용에서 얻는 효과는 백그라운드 읽기가 약 7분의 1로 줄어 서버 요청 줄이 비는 것이다. 41초 상황이 얼마나 줄었는지는 실제 RisuAI에서 다시 봐야 한다.
+
+테스트 변경:
+
+- `libra_recall_mid_micro_publication_test` 네 번째 검사를 타이밍 경쟁 대신 FULL_PIN seam으로 전체 pin 검사 횟수를 세도록 바꿨다. 이전 강제 경우는 HEAD에서도 실패했다(바꾼 키가 pin 집합에 없었다).
+- `libra_gradia_unified_pipeline_runtime_test`는 모델 프롬프트에 `owner_issued_evidence_bundle`이 있는지 확인하고 있었다. 76b1a5d에서 저장 메타데이터를 모델 입력에서 뺐으므로, 이제 LIBRA owner 표시가 있고 이 내부 라벨은 없는지 확인한다.
+
+회귀: memory_graph, recall, gradia 계열 88개 통과. 원래 HEAD에서도 실패하던 테스트(위 장들과 동일)는 제외했다.
