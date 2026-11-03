@@ -324,8 +324,15 @@ idle의 응답량은 cd78b9f 약 1.49 MB, 75b0859 약 3.63 MB였다. Head 한 �
 
 ### 패치 내용
 - **저신뢰도 추론 수식어 보존**: `confidence < 0.5`인 추론 항목에 대해 `[추정]` 접두사를 부여하여 모델이 확정적 사실과 구분하도록 보강하고, 불필요한 숫자 메타데이터(`confidence: 0.3`)는 텍스트 리프에서 제외.
-- **단계적 폴백(Folding) 메커니즘**:
-  - 패킷이 지정 상한(8,000자)을 초과하거나 프롬프트 잔여 예산에 맞지 않을 경우, 패킷 전체를 버리지 않고 `summary_memory` + 최우선 `entity/world` + `continuity_locks` + `false_inferences`만 보존하는 접이식 폴백(folded degradation) 적용.
-  - `createLibEvidencePacker`에 `canFit(item)` 검사를 추가하여 패커 단계에서 대형 HAYAKU 패킷이 거부되기 전에 폴백 버전을 시도·수용.
+- **8,000자 임의 조기 축약(Preemptive Folding) 제거**:
+  - `projectHayakuPacketText()`의 임의 8,000자 사전 축약 기준을 제거. 모델 컨텍스트 예산(48,000자~160,000자)이 충분할 때는 완전한 의미 투영(full projection)을 기본 제공.
+- **축약 폴백(Folded Degradation) 시 필수 제약 보존**:
+  - 패킷이 실제 모델 프롬프트 잔여 예산에 맞지 않을 때만 단계적 축약(folding)으로 전환.
+  - 축약 모드에서도 `summary_memory`, 핵심 인물/관계/위치/활성사건, `continuity_locks`, `false_inferences`와 더불어 RP 핵심 제약인 **세계 규칙 및 예외(`world_rules`)**와 **비밀 및 공개 범위(`entity.secrets`, `known_to`/`hidden_from`)**를 반드시 보존.
+  - 방대한 과거 기록(`historical_events`), 장면 밖 흐름(`offscreen_threads`), 장면 변화 디프(`scene_deltas`), 복선 추적 장부(`payoff_tracker`) 등 부가 내역 위주로 축약.
+- **파이프라인 전달 3대 경로 검증**:
+  - **Case A (예산 충족)**: 세계 규칙, 비밀, 과거 내역, 장면 변화를 포함한 완전한 투영이 최종 모델 프롬프트에 그대로 전달(`selectedItems: 1`, `omittedItems: 0`).
+  - **Case B (전체 초과, 축약본 충족)**: 원본이 모델 예산을 초과하면 축약본으로 자동 전환되어 규칙·비밀·핵심 상태를 보존한 채 프롬프트에 수용(`selectedItems: 1`, `omittedItems: 0`).
+  - **Case C (축약본도 예산 초과)**: 규칙 자체가 극단적으로 비대한 경우 안전하게 제외되어 프롬프트 폭주를 방지하고 `omittedItems: 1`로 정확히 계측.
 
 

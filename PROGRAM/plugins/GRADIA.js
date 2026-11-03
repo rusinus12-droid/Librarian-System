@@ -3740,6 +3740,7 @@ Before continuing, verify:
         const entity = packet.entity || packet.entities || {};
         if (entity.characters) visit(entity.characters, '인물 / characters');
         if (entity.relations) visit(entity.relations, '인물 / relations');
+        if (entity.secrets) visit(entity.secrets, '인물 / secrets');
         const world = packet.world || {};
         for (const key of ['location', 'time', 'scene']) {
           if (world[key] !== null && world[key] !== undefined && libMemoryLine(world[key])) {
@@ -3748,10 +3749,14 @@ Before continuing, verify:
           }
         }
         if (world.active_events || world.activeEvents) visit(world.active_events || world.activeEvents, '세계 / active_events');
+        if (world.world_rules || world.worldRules) visit(world.world_rules || world.worldRules, '세계 / world_rules');
         const planner = packet.planner || {};
         if (planner.continuity_locks || planner.continuityLocks) visit(planner.continuity_locks || planner.continuityLocks, '계획 / continuity_locks');
         const falseInferences = meta.false_inferences || meta.falseInferences;
         if (falseInferences) visit(falseInferences, 'false_inferences');
+        for (const key of ['povMemories', 'entityMemories', 'entity_knowledge', 'secrets', 'hiddenKnowledge', 'privateThoughts']) {
+          if (packet[key]) visit(packet[key], key);
+        }
       } else {
         for (const key of ['entity', 'entities', 'world', 'narrative', 'planner', 'importance']) visit(packet[key], labels[key] || key);
         for (const key of ['summary_memory', 'summaryMemory', 'false_inferences', 'falseInferences',
@@ -3766,8 +3771,7 @@ Before continuing, verify:
       return foldedLines.length ? foldedLines.join('\n') : raw;
     }
     const fullLines = buildLines(false);
-    const maxChars = options.maxChars ?? 8000;
-    if (fullLines.length && options.autoFold !== false && fullLines.join('\n').length > maxChars) {
+    if (options.maxChars && typeof options.maxChars === 'number' && fullLines.join('\n').length > options.maxChars) {
       const foldedLines = buildLines(true);
       if (foldedLines.length) return foldedLines.join('\n');
     }
