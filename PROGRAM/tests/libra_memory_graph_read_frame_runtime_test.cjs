@@ -8,7 +8,7 @@ const released=api=>{
 };
 
 test('projection-local reuse still rejects byte-identical server ABA at the final physical read',async t=>{
-  const seam="const rows = mode === 'plugin_only' ? null : await ownerGetMany(part);";
+  const seam="const rows = mode === 'plugin_only' ? null : await ownerGetMany(part,background?knownValues:null);";
   const x=await fixture({mode:'server_only',transformSource:source=>{
     assert.equal(source.split(seam).length,2);
     return source.replace(seam,"globalThis.__closingOwnerReadback=true; "+seam+" globalThis.__closingOwnerReadback=false;");
@@ -16,7 +16,7 @@ test('projection-local reuse still rejects byte-identical server ABA at the fina
   const api=x.f.r.api,key=x.active.recordKey,body=x.server.storedRows().find(row=>row.key===key).value;
   let mutations=0;
   x.server.hooks.beforeServerRequest=async(url,init)=>{
-    if(!x.f.r.context.__closingOwnerReadback||!url.endsWith('/v1/kv/get-many')||!JSON.parse(init.body).keys.includes(key))return;
+    if(!x.f.r.context.__closingOwnerReadback||!url.endsWith('/v1/kv/get-many')||JSON.parse(init.body).knownValues||!JSON.parse(init.body).keys.includes(key))return;
     mutations++;
     await x.server.mutate(key,{...body,externalRevisionMarker:mutations});
     await x.server.mutate(key,body);
@@ -72,7 +72,7 @@ for (const phase of ['readback','corpus_proof']) test(`${phase}: an oversized ow
       ? 'async assertCurrent(){\n          if(mode !== string((await MemorySuiteStorageBridge.getScopeMode(scope))'
       : 'async captureSourceProof({ collected: corpusCollected, windowProofs = [], config = {}, previousOwnerProof = null, reusedOnlySourceKeys = [] }) {';
     const finish=phase==='readback'
-      ? '        },\n        close(){memoryGraphReadFrames.delete(scope);'
+      ? '        },\n        close(){frame.disable();'
       : '          const recordDependencyKeys = {};';
     assert.equal(source.split(start).length,2);assert.equal(source.split(finish).length,2);
     const marked=phase==='readback'
@@ -87,7 +87,7 @@ for (const phase of ['readback','corpus_proof']) test(`${phase}: an oversized ow
     if(url.endsWith('/v1/kv/get-many')){
       const body=JSON.parse(init.body);
       init.body=JSON.stringify({...body,maxResponseBytes:256*1024});
-      if(x.f.r.context.__oversizedOwnerRead&&body.keys.includes(key))pages++;
+      if(x.f.r.context.__oversizedOwnerRead&&!body.knownValues&&body.keys.includes(key))pages++;
     }
     if(x.f.r.context.__oversizedOwnerRead&&url.includes('/v1/kv/get?')&&new URL(url).searchParams.get('key')===key)gets++;
   };

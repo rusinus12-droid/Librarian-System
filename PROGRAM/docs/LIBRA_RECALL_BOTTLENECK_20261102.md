@@ -211,3 +211,85 @@ LIBRA 회귀 40개 중 39개 통과. `libra_phase_d_v5_fault_semantic_recovery_t
 통제된 동일 State Head 50회 helper 읽기에서 server_only/mirror 모두 f9e7b7b의 응답 1,281,950 bytes가 후보의 58,235 bytes로 줄었다(약 95.5%). 같은 키의 동시 50회 읽기는 서버 요청 50→1회다. **순차 50회는 현재성 확인 때문에 여전히 서버 요청 50회이며, cd78b9f의 1회 요청과 동등하다고 주장하지 않는다.** cd78b9f는 이 비교의 TTL 안 외부 변경을 일반 읽기에서 보지 못했고 후보는 확인했다. 시간 수치는 내부 dispatch 환경의 값이므로 실제 네트워크/호스트 지연 보장이 아니다.
 
 실제 RisuAI GUI, 실제 공급자, 다중 기기 장기 운용 및 기존 8초 background+GRADIA 경합 workload의 성능 재측정은 남아 있다. 렌즈 저장 전체를 다중 writer 원자적 트랜잭션으로 전환한 것은 아니며, 이번 변경은 캐시가 생략하던 원천 관측과 Micro 게시 경계를 보호한다. 커밋·push·배포는 수행하지 않았다.
+
+## 8장: 75b0859 P2 리뷰 검증 — 외부 쓰기·flight 포화·8초 경합
+
+### 진행 중인 읽기와 외부 쓰기
+
+`libra_read_flight_boundary_test.cjs`는 첫 번째 물리 읽기가 완료된 서버 응답을 host transport에 전달하기 직전에 멈춘다. Micro source pin은 먼저 완료하고 실제 공유 helper의 응답만 멈춘다. 외부 writer가 SQLite 값을 바꾼 뒤 두 번째 helper 호출을 시작하고, 같은 key와 같은 entry 객체에 합류했음을 관측한 다음 응답을 풀어 준다. 관련 없는 background 호출도 증가시킬 수 있는 전역 coalesced 수치만으로 합류를 판정하지 않는다. native host도 첫 getItem의 원래 bytes를 보관한 뒤 같은 순서를 재현한다.
+
+- native와 server_only의 늦은 호출은 이전 관측을 받을 수 있다. 이 helper를 호출 시점 최신성을 보장하는 독립적인 선형화 읽기로 해석해서는 안 된다. 다음 fresh 읽기는 새 값을 본다.
+- 실제 producer가 만든 result_ready 작업과 분석 결과를 그대로 Micro 게시 함수에 다시 전달했다. source pin 뒤의 공유 flight에 외부 쓰기를 삽입하자 `stale_source / micro_publication_basis_changed`로 거부됐다. 기존 Micro 본문·Head의 bytes와 revision은 그대로였다.
+- 실제 State 승인 함수에서도 원래 Head를 빌리는 순서를 재현했다. 닫는 검사는 `stale_basis / state_basis_changed_after_admission`으로 거부하고 외부 Head를 보존했다. 이후 새로운 원천에서 유효한 승인이 만들어질 수는 있지만, 승인된다면 새 basisDigest에 결속됨을 확인했다. State 승인의 저장소 전체 원자성을 새로 주장하는 검사는 아니다.
+- mirror의 두 번째 호출은 새로 읽은 local bytes와 첫 서버 관측이 달라 `LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH`로 거부됐다. Micro와 State의 첫 호출에 대한 게시/승인 방어도 확인했다.
+
+이 검증에서는 잘못된 Micro 재게시·State 승인을 확인하지 못했다. 공유 방식과 게시 경계는 변경하지 않았다. 검증 경계는 실제 제품 함수·서버 handler·디스크 SQLite와 통제된 in-process HTTP/RisuAI host다.
+
+### 다른 키 256개가 끝나지 않는 장애
+
+native ownerLegacyRead는 legacy getItem을 그대로 기다리며 독립적인 timeout이 없다. 서버 SDK는 기본 30초 caller timeout과 AbortSignal을 갖지만, 물리 drain/호스트의 실제 취소와는 구별된다.
+
+75b0859에서 서로 다른 키의 native 요청 256개를 멈추고 flight 나이만 20초 넘긴 뒤 새 키를 읽었다. 이전 키들을 다시 요청하지 않으면 Map은 256개 그대로이고 새 키의 동시 두 읽기는 둘 다 fallback했다. 원래 작업을 완료시키면 Map은 비워졌다. 이는 256개로 제한된 registry의 admission 복구 문제이며 독립적인 무한 메모리 누수의 증거는 아니다.
+
+수정은 각 local/server 읽기 시작 시 만료된 전체 flight를 registry에서 제거하는 것뿐이다. 추가 timer·cache·호스트 요청 취소는 도입하지 않았다. 아직 유효한 flight 256개가 차 있을 때의 fallback은 유지한다. 원래 요청은 실제로 완료될 때까지 살아 있을 수 있으며 늦은 cleanup의 entry identity 검사를 유지한다. `flightExpirations`·`flightFallbacks`로 분리 관측한다.
+
+수정 후에는 만료된 256개가 정리되고 새 키의 동시 읽기가 하나로 합쳐진다. 옛 요청들을 나중에 완료시켜도 새 pending flight는 남는다. 새 포화 회귀를 원래 75b0859 소스로 실행하면 `2 !== 1`로 실패하므로, 검사 자체가 누락된 정리를 구분하는 것도 확인했다. flight 경계 6건과 기존 캐시·원천 가족·Micro 게시·회상 회귀를 합친 선택 검사 22/22가 통과했다.
+
+### 8초 요청 수와 실제 읽기 시간 비교
+
+원래 측정 스크립트는 버전 관리된 소스나 현재 evidence에서 찾지 못했다. 따라서 기존 문서의 server_only·실제 producer Micro 10개·8초 조건을 기존 graph reader fixture로 재구성했다. 이를 과거 측정의 완전히 동일한 실행이라고 표현하지 않는다. 재실행 도구는 `tools/libra_read_contention_benchmark.cjs`다.
+
+측정 팔은 두 개다. idle은 추가 지연 없이 8초간 백그라운드만 관찰한다. contention은 같은 fixture의 transport에 요청당 5ms와 단일 FIFO slot을 넣고 250ms 뒤 실제 GRADIA owner evidence capture/verify를 시작한다. 첫 capture가 끝난 뒤 두 번째 capture를 실행한다. 두 번째 capture는 8초 창 밖이며, 첫 capture가 실패했다면 진정한 warm 상태라고 단정할 수 없다. metadata/본문 읽기와 제어·쓰기 요청 모두 세고, KV 읽기는 별도 기록했다. 실제 socket·RisuAI·provider latency 측정은 아니다.
+
+| commit | idle 8초 요청 수 (1차 / 역순 재실행) | 그중 KV get/get-many |
+|---|---:|---:|
+| 캐시 전 76b1a5d | 1,886 / 미실행 | 1,817 |
+| cd78b9f | 275 / 275 | 203 / 203 |
+| 75b0859 | 1,642 / 1,642 | 1,572 / 1,572 |
+
+idle의 응답량은 cd78b9f 약 1.49 MB, 75b0859 약 3.63 MB였다. Head 한 개의 반복 읽기에서 측정한 95.5% 전송량 감소를 이 전체 백그라운드 workload에 적용할 수 없음을 확인했다.
+
+| contention의 owner capture | cd78b9f 1차 / 역순 | 75b0859 1차 / 역순 |
+|---|---|---|
+| 첫 capture | 12.994s / 12.999s, 모두 전달 가능·검증 성공 | 34.172s 성공 / 23.866s 뒤 `LIBRA_GRAPH_COMPILER_PHYSICAL_READSET_STALE` |
+| 두 번째 capture | 2.848s / 2.834s, 모두 성공 | 8.629s / 36.763s, 모두 성공 |
+
+75b0859의 첫 successful capture 뒤 verify는 0.870s, cd78b9f는 0.217s였다. 실패한 첫 시도를 더 빠른 성공으로 집계하지 않았다. 8초 contention 창의 background 요청 수는 cd78b9f 346/334, 75b0859 355/365였으며, 이 수만 비교하면 backlog가 처리되는 데 걸린 긴 시간과 전체 query latency를 놓친다. queue wait와 요청 수·bytes·parser 비용은 결과 JSON에 분리했다.
+
+**판정:** 이 통제된 workload에서 75b0859는 cd78b9f의 백그라운드 요청 절감과 경합 읽기 성능을 유지하지 못했다. 반복 전송과 decode 감소는 일부 입증됐지만 병목 해결은 미완료이며, 앞선 좁은 측정만으로 성능 개선을 주장할 수 없다. 정상 요청이 20초 미만인 위 비교는 이번 registry 만료 정리의 효과를 측정한 것이 아니다.
+
+이번에는 이 결과를 근거로 새 캐시 계층을 추가하거나 최신성·최종 검증을 완화하지 않았다. 다음 성능 변경은 실제 백그라운드 작업 경계 안의 중복 검증을 추적하고, Micro·렌즈·정본·State의 소비 readset과 최종 게시 조건을 유지한 상태에서 수행해야 한다. 실제 RisuAI/다중 기기와 전체 릴리스 회귀는 별도다. 결과 원본은 `.development/evidence/contention8-results.json`, `contention8-repeat-results.json`, flight 결과는 `flight-review-after-fix.log`이며 로컬 evidence로 남겼다.
+
+## 9장: 백그라운드 작업 안의 관측 재사용과 닫는 검증
+
+`cd78b9f`의 반복 관측 재사용을 명시적인 작업 경계로 제한해서 복원했다. 기존 session cache와 owner read frame을 사용하며 별도의 영속 캐시는 만들지 않았다. receipt 재조정, Micro 생산, 인물 span, Canonical 원문/후보 읽기, 자동 State 승인 전 Micro 읽기, snapshot에 한정한다. 일반 helper와 resource-budgeted 회상/GRADIA 읽기는 기존 물리 검증을 유지한다.
+
+작업은 TTL 안 resident bytes와 revision을 임시 관측으로 빌릴 수 있지만, 이 값만으로 결과를 반환하거나 저장하지 않는다. 실제로 소비한 키만 닫을 때 32개 단위로 서버 revision/digest/exists/tombstone을 확인한다. native/mirror는 local bytes도 실제로 재관측한다. Micro·렌즈·정본·State의 기존 키뿐 아니라 없던 키의 추가, 삭제, 서버 ABA도 같은 검증 대상이다. Lens runtime settings는 별도 원래 bytes witness를 확인한다. 변경이 발견되면 resident cache를 비우고 해당 작업을 거부한다.
+
+`setVerifiedJson`은 쓰기 전에 해당 작업의 원래 관측을 검증한다. 쓰는 동안 재사용을 중단하고 실제 저장·readback이 성공한 키만 새 관측으로 진행한다. 다른 의존성은 다음 쓰기/반환 시 다시 검사한다. 다른 작업의 쓰기는 기존 viewer를 중단하지만 그 viewer의 오래된 관측이 정상 writer를 거부하지는 않는다. 공유 프레임은 finally에서 닫는다. Micro 본문+Head의 최종 원자 CAS와 원래 source/work/target pin은 유지한다. 무관한 요청의 전역 fresh depth가 백그라운드의 명시적 작업 경계까지 개별 읽기로 바꾸지 않으며, 각 작업의 닫는 검증 자체는 물리 읽기다.
+
+동일 classified 인물 span의 본문·Head가 이미 일치하고 전체 inventory 검증도 통과하면 재저장을 생략한다. 새 provider 호출이나 Head revision 증가 없이 중복 완료한다.
+
+### 재측정
+
+도구의 `--commits=working-tree`로 미커밋 소스를 직접 읽고 SHA-256을 기록한다. 8장의 동일 통제 fixture이며 live RisuAI/network 측정은 아니다. 초기 실험에서 첫 읽기 41~43초 회귀가 나와 그 상태를 최종 결과로 채택하지 않았고, 동일 inventory 재저장 제거 후 다시 측정했다.
+
+| 대상 | idle 8초 요청 | 첫 owner capture | 반복 capture |
+|---|---:|---:|---:|
+| `cd78b9f` 재실행 | 275 (KV 203) | 13.160s | 2.860s |
+| `75b0859` 이전 반복 측정 | 1,642 (KV 1,572) | 34.172s 성공 또는 torn read 실패 | 성공 후 8.629s |
+| 수정본 1차 | 600 (KV 559) | 22.932s | 3.018s |
+| 수정본 2차 | 519 (KV 484) | 24.767s | 3.003s |
+| 최종 소스 확인 | 585 (KV 544) | 29.392s | 3.029s |
+
+수정본의 두 capture/verify 모두 전달 가능·검증 성공이며 verify는 약 0.216~0.218초였다. idle 요청은 75b0859 대비 약 63~68% 줄었지만 cd78b9f의 275회/첫 읽기 13초에는 도달하지 못했다. idle 응답량도 약 2.63~2.92MB로 cd78b9f의 약 1.49MB보다 크다. 마지막 재실행의 contention 전체 background 요청은 1,024회로, 첫 8초 창의 411회만 보고 작업 전체 요청이 그만큼이라고 해석하지 않는다. 75b0859 동시 재실행에서는 첫 capture가 8.336초 뒤 unavailable로 실패하고 다음 capture가 13.350초 후 성공했다. 실패 시간을 성공 latency와 비교하지 않는다. 요청 감소와 반복 읽기 개선은 입증됐고, 예전 성능의 완전 복원은 남아 있다.
+
+최종 소스 확인은 capture/verify 모두 성공했고, 첫 읽기는 여전히 변동이 크다. 중간의 동일 동작 소스 확인에서는 17.883초도 관측했지만 빠른 값만 최종 성능으로 채택하지 않는다. snapshot의 미게시/교체된 반환 경로까지 닫는 검증을 추가한 최종 소스는 `c2233b285f034028953c9189c99a0f0dbd4378a2171c8ae788ed995597e5cf94`이며 `.development/evidence/job-cache-shipped-source.json`에 일치하는 SHA와 결과가 있다. 이 최종 실행의 전체 background 요청은 1,383회다.
+
+원본 반복 자료는 `.development/evidence/job-cache-idempotent.json`, `job-cache-final-comparison.json`, 실패도 포함한 비교는 `job-cache-contention3.json`이다. 첫 두 반복의 동작 소스 SHA는 `d2ea78ec599509229ae37841999b7d7e4a885c11838fb681645274c0ccd85f51`이다.
+
+### 회귀 경계
+
+작업 관측/네이티브 bytes/4개 원천 가족/없는 키 추가/서버 ABA/저장 전 거부/자기 쓰기 후 다른 의존성 변경/다른 writer와 viewer/프레임 정리/동일 실제 classified Micro의 무재저장을 검사했다. flight 6건, Micro 원자 게시, 소비한 회상 본문·Head 변경, mid-publication 회상, owner read-frame ABA/oversized fallback, 32-key budget, GRADIA scan 경합, 기존 source-family/cache 검사를 합친 선택 회귀는 38/38 통과했다. 서버 writer 테스트의 내부 12 시나리오도 통과했다. 실제 RisuAI GUI/provider/다중 기기, 전체 릴리스 suite는 실행하지 않았다.
+
+`libra_micro_state_admission_3mode_test.cjs:82`의 viewer 승인 표시는 여전히 실패한다: durable 승인 요약은 admitted 1/pending 2이나 viewer가 admitted 2/pending 1로 표시한다. 원본 `75b0859`를 harness에 직접 주입해 같은 실패를 재현했고, 이번 cache 변경의 신규 회귀로 분류하지 않았다. 테스트의 기대값은 변경하지 않았다. 이를 전체 State 회귀 통과라고 보고하지 않는다.
