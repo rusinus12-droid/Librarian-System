@@ -923,7 +923,7 @@ test('Scenario 5: Live LIBRA.js kernel + live HAYAKU.js + live Flashback.js + li
   assert.equal(prompts.length, 4);
   for (const prompt of prompts) {
     const serialized = JSON.stringify(prompt);
-    assert.ok(serialized.includes('owner_issued_evidence_bundle'), 'missing LIBRA owner_issued_evidence_bundle');
+    assert.ok(serialized.includes('\\"owner\\":\\"libra\\"'), 'missing LIBRA owner evidence');
     assert.ok(serialized.includes(QUOTE), 'missing live LIBRA Micro evidence QUOTE');
     assert.ok(serialized.includes('HAYAKU_LIVE_KERNEL_SENTINEL'), 'missing live HAYAKU evidence');
     assert.ok(serialized.includes('FLASHBACK_LIVE_KERNEL_SENTINEL'), 'missing live Flashback evidence');

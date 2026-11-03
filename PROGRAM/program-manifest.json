@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-02T18:11:27.383Z",
+  "generatedAt": "2026-11-03T00:24:03.819Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3820,7 +3820,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "6f3681c9a42386a3b5035627938b8e6d07e31f5199160486d51d4a947e2973bc",
+      "sha256": "f593cd6940bc0197356b8ba84131393cc0e81722a3fc08d08635ab5a1ea19999",
       "bytes": 11836
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4228,8 +4228,8 @@
       "bytes": 3766242
     },
     "plugins/GRADIA.js": {
-      "sha256": "4d1716782736b5389454fc45a08e0c6f66ab70ac6deb5196cd6218ea83f5e388",
-      "bytes": 3149461
+      "sha256": "06691636d695ece1e03027014d69e9201aace5332502dc0c00ce6dd91e0a2eec",
+      "bytes": 3155378
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "a3b06f84fc2844ccc012b7fd8b71a501537a1077bb376f0c5516709e15fffaf7",
@@ -4240,8 +4240,8 @@
       "bytes": 1665739
     },
     "plugins/LIBRA.js": {
-      "sha256": "b304ac1298c6bd73d8e1c05b1cef05a018f7d904b7891cf39e10e9d62b2affc5",
-      "bytes": 6981947
+      "sha256": "9d22e0a3a64866392ecc36da10623f4e687a87d79bdf171f9967698780a28494",
+      "bytes": 6983313
     },
     "plugins/RETRACE.js": {
       "sha256": "3386123502411149a0843d2d1a45b59d0e6af80c5175646e6b2c159b94eef27f",
@@ -6660,8 +6660,8 @@
       "bytes": 4043
     },
     "tests/gradia_risuai_three_owner_read_session_acceptance_test.cjs": {
-      "sha256": "23a87b4602fda34f02039423cab29292268fb4b9fefaad836b6b5e89221edad9",
-      "bytes": 39624
+      "sha256": "596df6cebd11234311e7533f9722a1ef6b9ac98a0c327900d73a29f93e3185ac",
+      "bytes": 39605
     },
     "tests/gradia_route_memory_owner_toggle_test.cjs": {
       "sha256": "4210a2035d93391c2e36a42923b10711877ee67ca5ff52be752e312358b9ba7d",
@@ -6684,12 +6684,12 @@
       "bytes": 9283
     },
     "tests/gradia_three_owner_consumer_test.cjs": {
-      "sha256": "3b9ff4129a928fdb46257a759fdd34c58eac4aadf71d0d95dde4aa69de10e8ee",
-      "bytes": 4696
+      "sha256": "6a706e4d03921c58cb2cd8e1ad15562a56b736f932d83882d1f08390582e38d9",
+      "bytes": 4700
     },
     "tests/gradia_three_owner_pipeline_test.cjs": {
-      "sha256": "06bca970f8a5a77bb809a96df6dfef9aea5c41f7672778ad582088b6530a0fe0",
-      "bytes": 16695
+      "sha256": "ebbc36d50ca29379a72b026e709f988079777c70a69b6b94ff5a7dd4bd1ba49a",
+      "bytes": 16773
     },
     "tests/gradia_three_owner_read_auth_test.cjs": {
       "sha256": "1fbc46daeb2ad228fcd81ac328b4180ede2ab7cb29d7b6bcec493eaa9dc64d65",
@@ -6732,8 +6732,8 @@
       "bytes": 12505
     },
     "tests/gradia/evidence-stage-delivery.test.cjs": {
-      "sha256": "ceebe21ea85a04e84314b9a307bde00d3aeb196d92fa6a7805ea42b4e3a953ef",
-      "bytes": 7891
+      "sha256": "f43f0cc46f3364ee21b0f2249fc9a7d83984a0757c8f733c4d149a47f9bb2090",
+      "bytes": 7896
     },
     "tests/gradia/fixtures/baselines/frozen-G2-GRADIA.js": {
       "sha256": "281d0ca7c8c3fd7d39239387b3f8a0b5d6fcadd217a968b2e1ff5b3fc374a99c",

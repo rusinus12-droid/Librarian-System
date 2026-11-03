@@ -78161,7 +78161,29 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       bound.closed = true; gradiaMemoryEvidence.delete(execution);
       releaseMemoryGraphUnifiedQuery(bound.graph);
     };
+    // The classic recall runs inside the scope writer queue; this reader does not, so a
+    // canonical scan rewriting the manifest (in-flight marker, frontiers) can tear it.
+    // Those writes happen at batch boundaries only, so a short bounded retry reads a
+    // consistent state instead of failing the whole GRADIA memory read.
+    const GRADIA_CAPTURE_TORN_RETRIES = 2;
+    const gradiaCaptureTorn = error => {
+      const message = string(error?.message || ''), code = string(error?.code || '');
+      return MEMORY_GRAPH_TORN_READ_CODES.has(message) || MEMORY_GRAPH_TORN_READ_CODES.has(code)
+        || message.startsWith('LIBRA_VERIFIED_STORAGE_VALUE_MISMATCH:')
+        || message === 'LIBRA_GRAPH_CORPUS_SOURCE_BODY_CHANGED'
+        || error?.readDiagnostic?.dispatchReason === 'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED';
+    };
     const captureGradiaMemoryEvidence = async (request, authority) => {
+      for (let attempt = 0; ; attempt++) {
+        try { return await captureGradiaMemoryEvidenceOnce(request, authority); }
+        catch (error) {
+          if (attempt >= GRADIA_CAPTURE_TORN_RETRIES || state.disposed || !gradiaCaptureTorn(error)) throw error;
+          state.gradiaCaptureRetries = Number(state.gradiaCaptureRetries || 0) + 1;
+          await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
+        }
+      }
+    };
+    const captureGradiaMemoryEvidenceOnce = async (request, authority) => {
       const before = await gradiaLensReadSnapshot(request);
       // Both owner channels validate the proposal before reaching this reader.
       // Reserve canonical and lens memory together without reducing peer owners' byte budget.

@@ -46,7 +46,7 @@ test('an evidence item already present verbatim in the request is omitted from t
   const user=userText(body),evidence=user.slice(user.indexOf('GRADIA EXTERNAL EVIDENCE'));
   assert.ok(!evidence.includes('fb-1'),'fully duplicated item omitted');
   assert.ok(evidence.includes('PARTIAL_SENTINEL'),'an item with any text missing from the request is kept');
-  assert.ok(evidence.includes('UNIQUE_MEMORY_SENTINEL'));assert.ok(evidence.includes('hy-1'),'a short item is never treated as a duplicate');
+  assert.ok(evidence.includes('UNIQUE_MEMORY_SENTINEL'));assert.ok(evidence.includes('blue door'),'a short item is never treated as a duplicate');
  }
  const selection=f.host.plugin.getLibReadOnlyStatus().modelSelection;
  assert.equal(selection.duplicateItems,1);assert.equal(selection.selectedItems,3);assert.equal(selection.omittedItems,0);
