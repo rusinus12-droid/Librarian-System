@@ -94,9 +94,10 @@ for(const mode of ['server_only','mirror'])test(`${mode}: writer frame survives 
   const writerFrame=c.frames.get(writerJob);
   assert.equal(writerFrame.disabled,false,'writer frame initially active');
 
-  await c.run(base,async viewerJob=>{
+  await assert.rejects(c.run(base,async viewerJob=>{
    const viewerFrame=c.frames.get(viewerJob);
    assert.equal((await c.storage.getVerifiedJson(receiptKey,viewerJob)).n,1);
+   await c.storage.getVerifiedJson(targetKey,viewerJob);
    assert.equal(viewerFrame.disabled,false,'viewer frame initially active');
 
    await c.storage.setVerifiedJson(targetKey,{n:99},writerJob);
@@ -108,10 +109,13 @@ for(const mode of ['server_only','mirror'])test(`${mode}: writer frame survives 
    const v=await c.storage.getVerifiedJson(receiptKey,writerJob);
    assert.equal(v.n,1);
    assert.equal(s.requests.length,reqsBefore,'unmutated receipt reuses observation across own write');
-  }).catch(err=>{
-   assert.match(err.message,/LIBRA_GRAPH_READER_BODY_CHANGED/);
-  });
+
+   // Revoked viewer attempting a candidate write or boundary return is rejected
+   await c.storage.setVerifiedJson(targetKey,{viewerStale:true},viewerJob);
+  }),/LIBRA_GRAPH_READER_BODY_CHANGED/,'revoked concurrent viewer is rejected and cannot write');
  });
+
+ assert.equal((await c.storage.getVerifiedJson(targetKey,base)).n,99,'target retains writer value without viewer overwrite');
 
  c.clear();await c.storage.getVerifiedJson(receiptKey,base);
  await assert.rejects(c.run(base,async writerJob=>{
@@ -120,5 +124,6 @@ for(const mode of ['server_only','mirror'])test(`${mode}: writer frame survives 
   if(mode==='mirror')s.local.set(receiptKey,JSON.stringify({n:2}));
   await c.storage.setVerifiedJson(targetKey,{stale:true},writerJob);
  }),/LIBRA_GRAPH_READER_BODY_CHANGED/,'mutated receipt rejects candidate write');
+ assert.equal((await c.storage.getVerifiedJson(targetKey,base)).n,99,'target retains previous value on candidate rejection');
 });
 
