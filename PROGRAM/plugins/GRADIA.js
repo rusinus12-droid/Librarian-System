@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.13
+//@display-name GRADIA v0.28.14
 //@api 3.0
-//@version 0.28.13
+//@version 0.28.14
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -936,7 +936,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.13';
+  const PLUGIN_VERSION = '0.28.14';
   
   
   
@@ -38539,7 +38539,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         authorizationProof=unifiedReadAuthorizations.get(authorizationKey);
         if(!authorizationProof)reject('LIB_READ_PRINCIPAL_REQUIRED');
         await authorizationCurrent();
+        return true;
       }
+      return false;
     };
     const sourceRead=source==='unified_engine'?async(action,body)=>{
       await assertRoute();
@@ -38560,7 +38562,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const result=action==='capture'?await provider.capture({...body,queryText:readOptions.queryText,signal:readOptions.signal,...(readOptions.proposal?{proposal:readOptions.proposal}:{}),
         binding:{url:connection.url,dataInstanceId:connection.dataInstanceId,resetEpoch:epoch}})
         :await provider.current({proof:body,signal:readOptions.signal});
-      try{await assertRoute();await authorizationCurrent();return result;}
+      try{
+        await assertRoute();
+        // Graph preparation may publish derived owner data during capture. The
+        // server corpus is only an authorization witness in unified mode. Refresh
+        // it before accepting evidence, then revalidate the actual owner receipt.
+        const refreshed=await authorizationCurrent(action==='capture');
+        if(refreshed){
+          const proof={scope:result.scope,readIdentity:result.readIdentity,dependencies:result.dependencies,
+            evidenceRevision:result.evidenceRevision,dataInstanceId:result.dataInstanceId,resetEpoch:result.resetEpoch};
+          const current=await provider.current({proof,signal:readOptions.signal});
+          if(current?.current!==true||current.evidenceRevision!==proof.evidenceRevision
+            ||JSON.stringify(current.scope)!==JSON.stringify(proof.scope)
+            ||current.dataInstanceId!==proof.dataInstanceId||current.resetEpoch!==proof.resetEpoch)reject('LIB_READ_STALE');
+          await assertRoute();await authorizationCurrent();
+        }
+        return result;
+      }
       catch(error){if(action==='capture')await Promise.resolve(provider.release?.(result?.readIdentity?.ownerReceiptId)).catch(()=>{});throw error;}
     }:read;
     const result=await sourceRead('capture',{scope:sourceScope,maxCorpusBytes,...(maxRawBytes===undefined?{}:{maxRawBytes})});

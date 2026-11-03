@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.15
+//@display-name LIBRA v2.6.16
 //@api 3.0
-//@version 2.6.15
+//@version 2.6.16
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.6.15';
+  const PLUGIN_VERSION = '2.6.16';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -40723,7 +40723,8 @@ function createLibraReadonlySourceContext(owner) {
       if(proof.scopeKey!==context.scope.scopeKey) return {ok:false,reason:'scope_changed'};
       if(Number(pair.turn)!==proof.turn) return {ok:false,reason:'turn_mismatch'};
       if(digest(pair.user.text)!==proof.userHash) return {ok:false,reason:'user_source_changed'};
-      if(digest(pair.assistant.text)!==proof.assistantHash) return {ok:false,reason:'assistant_source_changed'};
+      const assistantHash=digest(pair.assistant.text);
+      if(assistantHash!==proof.assistantHash && assistantHash!==proof.legacyAssistantHash) return {ok:false,reason:'assistant_source_changed'};
       const prefix=buildPairs(context.chat,context.scope.scopeKey).slice(0,proof.turn-1);
       if(sourceDigest(prefix)!==proof.prefixDigest) return {ok:false,reason:'prefix_changed'};
       return {ok:true,reason:''};
@@ -41577,6 +41578,9 @@ function createLibraReadonlySourceContext(owner) {
             return result;
           }
           const freshPairs = buildPairs(live.chat, live.scope.scopeKey);
+          // Pair candidates and their receipt/recovery authority must use the
+          // same settled host snapshot, including a commit after the scan began.
+          context = {...live,scope:context.scope};
           const fresh = freshPairs.slice(-maxPairs);
           const signature = fresh.map(pair => `${pair.turn}:${completedTurnRevisionId(pair)}`).join('|');
           candidates = fresh;
@@ -68109,6 +68113,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const serial = ++state.legacyBoundaryCheckSerial;
       const suppliedScope = asObject(options.expectedScope);
       const expectedScope = string(suppliedScope.scopeKey) ? clone(suppliedScope) : null;
+      const health=state.mainAfterRequestHealth;
+      // Legacy output carries the response after later response hooks. Bind it
+      // to the existing main request, then still require the settled live bytes,
+      // user source, prefix and scope to match before admitting Micro work.
+      if(expectedScope && health?.microBoundary?.scopeKey===expectedScope.scopeKey
+        && health===state.mainAfterRequestHealth && typeof options.completedResponse==='string'){
+        health.microBoundary.legacyAssistantHash=digest(cleanMessageText('assistant',{content:options.completedResponse}));
+      }
       Promise.resolve().then(async () => {
         await new Promise(resolve => setTimeout(resolve, clamp(options.settleDelay, 40, 1200, 90)));
         if (state.disposed || serial !== state.legacyBoundaryCheckSerial) return;
@@ -99624,7 +99636,7 @@ advanced
               if (LibraMemoryCore.getSettings().autoAnalyze !== false) {
                 const lastScope = state.lastRequestScope;
                 const freshScope = lastScope?.scope && Date.now() - Number(lastScope.at || 0) <= LibraMemoryCore.TURN_BINDING_FRESHNESS_MS ? safeClone(lastScope.scope) : undefined;
-                LibraMemoryCore.scheduleLegacyOutputBoundaryScan({ expectedScope: freshScope });
+                LibraMemoryCore.scheduleLegacyOutputBoundaryScan({ expectedScope: freshScope, completedResponse: content });
               }
               return content;
             };
@@ -99703,7 +99715,7 @@ advanced
             if (LibraMemoryCore.getSettings().autoAnalyze !== false) {
               const lastScope = state.lastRequestScope;
               const freshScope = lastScope?.scope && Date.now() - Number(lastScope.at || 0) <= LibraMemoryCore.TURN_BINDING_FRESHNESS_MS ? safeClone(lastScope.scope) : undefined;
-              LibraMemoryCore.scheduleLegacyOutputBoundaryScan({ expectedScope: freshScope });
+              LibraMemoryCore.scheduleLegacyOutputBoundaryScan({ expectedScope: freshScope, completedResponse: content });
             }
             return content;
           };

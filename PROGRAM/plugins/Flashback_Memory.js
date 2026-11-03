@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.3.16
+//@display-name ⚡ FLASHBACK Memory v1.3.17
 //@api 3.0
-//@version 1.3.16
+//@version 1.3.17
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
 //@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.3.16';
+const PLUGIN_VERSION = '1.3.17';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -39661,7 +39661,12 @@ const MemorySuiteHealthRecovery = (() => {
     const candidates=(state.pairs||[]).filter(pair=>{
       const idBound=!awaiting&&!!pending.requestUserMessageIdHash&&pair.userMessageIdHash===pending.requestUserMessageIdHash;
       if(!pair.assistantText || (!idBound&&stableHash(canonicalChatUserText(pair.userText||''))!==pending.userTextHash))return false;
-      if(response?.body && !sameMaintenanceTurnText(pair.assistantText,response.body))return false;
+      // Later response hooks may rewrite the candidate before the host commits it.
+      // A bound, unchanged user and logical pair identify that committed response;
+      // an unbound/identity-less request still requires exact candidate affinity.
+      const responseMatches=!response?.body||sameMaintenanceTurnText(pair.assistantText,response.body);
+      const stableTarget=idBound&&stableHash(canonicalChatUserText(pair.userText||''))===pending.userTextHash;
+      if(!responseMatches&&!stableTarget)return false;
       if(awaiting){
         if(Number(pair.pairIndex)>Number(pending.bindingBaseCount||0))return true;
         const baseline=(pending.bindingBaseline||[]).find(row=>row.pairIndex===Number(pair.pairIndex));
@@ -39680,8 +39685,10 @@ const MemorySuiteHealthRecovery = (() => {
       pending.userMessagePosition=Number(pair.userPosition);pending.expectedAssistantPosition=Number(pair.assistantPosition);
     }
     const message=messages.find(row=>Number(row.index)+1===Number(pair.assistantPosition))||{};
+    const responseContentDrift=!!response?.body&&!sameMaintenanceTurnText(pair.assistantText,response.body);
     return {position:Number(pair.assistantPosition),body:canonicalChatResponseText(pair.assistantText),raw:message.rawContentText||message.contentText||pair.assistantText,
-      message,authoritativePair:pair,authoritativeUserText:pair.userText,resolverMismatch:false,identityMatchMode:'request_resolution_v2'};
+      message,authoritativePair:pair,authoritativeUserText:pair.userText,resolverMismatch:false,responseContentDrift,
+      identityMatchMode:responseContentDrift?'request_resolution_v2_committed_response_drift':'request_resolution_v2'};
   };
   const authoritativeFinalizedCandidate = (liveMessages = [], pending = {}) => {
     if(pending.resolutionVersion===2)return resolvedRequestFinalizedCandidate(liveMessages,pending);

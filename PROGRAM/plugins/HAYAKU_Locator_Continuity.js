@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.11
+//@display-name HAYAKU · Locator Continuity v3.3.12
 //@api 3.0
-//@version 3.3.11
+//@version 3.3.12
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -989,7 +989,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.11';
+  const PLUGIN_VERSION = '3.3.12';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -24076,16 +24076,24 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         }
         for (let index = starts.length - 1; index >= 0; index -= 1) {
           const markerStart = starts[index];
-          const rawStart = markerStart + startNeedle.length;
+          let rawStart = markerStart + startNeedle.length;
+          let rawEnd = markerEnd;
+          // Locate marker strings first, then peel only envelope decorations.
+          // Never search past prose for a convenient JSON object or invent lineage.
+          const between = src.slice(rawStart, rawEnd);
+          const leading = /^(?:\s|>>>|<!--|-->|```(?:json)?\s*)*/i.exec(between)[0];
+          const trailing = /(?:\s|<<<|<!--|-->|```)*$/.exec(between.slice(leading.length))[0];
+          rawStart += leading.length;
+          rawEnd -= trailing.length;
           const candidate = {
             rawStart,
-            rawEnd: markerEnd,
+            rawEnd,
             type,
             markerStart,
             markerEnd: markerEnd + endNeedle.length
           };
           if (!fallback) fallback = candidate;
-          if (packetMarkerCandidateLooksUsable(src.slice(rawStart, markerEnd))) {
+          if (packetMarkerCandidateLooksUsable(src.slice(rawStart, rawEnd))) {
             selected = candidate;
             break;
           }
@@ -39865,10 +39873,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const inspectHayakuPacketText = (value = '') => {
     const source = text(value);
     const complete = [];
-    const pattern = new RegExp(`<!--\\s*${PACKET_START}\\s*([\\s\\S]*?)\\s*${PACKET_END}\\s*-->`, 'gi');
-    let match;
-    while ((match = pattern.exec(source))) {
-      const raw = text(match[1]).trim();
+    scanPacketMarkersInBody(source, PACKET_START, PACKET_END, 'marker_string', ({rawStart,rawEnd,markerStart,markerEnd}) => {
+      const raw = source.slice(rawStart,rawEnd).trim();
       const parsed = safeJsonParse(raw, null);
       const normalized = objectish(parsed) ? normalizeHayakuPacket(parsed) : null;
       const originalValidation = objectish(parsed) ? validateHayakuPacket(parsed) : { ok: false, errors: ['json_parse_failed'], warnings: [] };
@@ -39881,10 +39887,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         originalValidation,
         validation,
         needsNormalization,
-        start: match.index,
-        end: pattern.lastIndex
+        start: markerStart - (/(?:<!--\s*)?(?:<<<\s*)?$/.exec(source.slice(0,markerStart))?.[0].length || 0),
+        end: markerEnd + (/^(?:\s*>>>)?(?:\s*-->)?/.exec(source.slice(markerEnd))?.[0].length || 0)
       });
-    }
+    });
     const startCount = (source.match(new RegExp(PACKET_START, 'gi')) || []).length;
     const endCount = (source.match(new RegExp(PACKET_END, 'gi')) || []).length;
     // A packet can already satisfy the public contract while still benefiting
