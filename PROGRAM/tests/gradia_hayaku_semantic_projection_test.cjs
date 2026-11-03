@@ -149,27 +149,41 @@ async function stagePipelineFixture({items,quickProfile='fast'}){
  return {status,userText,ok:r.ok};
 }
 
-test('GRADIA pipeline delivery Case A: preserves full rich semantic information (world rules, secrets, past history) when packet fits model budget',async()=>{
+test('GRADIA pipeline delivery Case A: preserves full rich semantic information (>8000 chars) when packet fits model budget without preemptive folding',async()=>{
  const p=createValidPacket();
  p.world.world_rules=[{text:'RULE_CASE_A',exceptions:['EXCEPTION_CASE_A']}];
  p.entity.secrets=[{text:'SECRET_CASE_A',known_to:['ALICE_A'],hidden_from:['BOB_A']}];
- p.world.historical_events=[{summary:'HISTORICAL_ARCHIVE_CASE_A'}];
+ // Make full projection ~12,000 characters (> 8,000 chars) so that an arbitrary 8k pre-cap regression
+ // would shed historical events, scene deltas, and payoff trackers.
+ p.world.historical_events=Array.from({length:25},(_,i)=>({summary:'HISTORICAL_ARCHIVE_CASE_A_'+i+'_'+'H'.repeat(400)}));
  p.narrative.scene_deltas=[{before:'DELTA_BEFORE_CASE_A',after:'DELTA_AFTER_CASE_A'}];
  p.planner.payoff_tracker=[{setup:'PAYOFF_SETUP_CASE_A',payoff:'PAYOFF_PAYOFF_CASE_A'}];
 
+ const raw=JSON.stringify(p);
+ assert.ok(raw.length>10000,'packet source exceeds 10,000 characters');
+
  const res=await stagePipelineFixture({
-  items:[{owner:'hayaku',id:'h-case-a',key:'h-case-a',content:JSON.stringify(p)}]
+  items:[{owner:'hayaku',id:'h-case-a',key:'h-case-a',content:raw}],
+  quickProfile:'fast'
  });
  assert.equal(res.ok,true);
+ // Check read-session selection statistics
  assert.equal(res.status.selection.selectedItems,1);
  assert.equal(res.status.selection.omittedItems,0);
+ assert.ok(res.status.selection.items[0].chars>8000,'selected item in session exceeds 8000 characters without pre-cap folding');
+ // Check final model request selection statistics (P3)
+ assert.equal(res.status.modelSelection.selectedItems,1,'model stage selected item');
+ assert.equal(res.status.modelSelection.omittedItems,0,'model stage omitted items');
+
  assert.ok(res.userText.includes('RULE_CASE_A'),'world rule present in prompt');
  assert.ok(res.userText.includes('EXCEPTION_CASE_A'),'world rule exception present in prompt');
  assert.ok(res.userText.includes('SECRET_CASE_A'),'secret present in prompt');
  assert.ok(res.userText.includes('ALICE_A') && res.userText.includes('BOB_A'),'secret boundaries present in prompt');
- assert.ok(res.userText.includes('HISTORICAL_ARCHIVE_CASE_A'),'historical archive present in prompt');
- assert.ok(res.userText.includes('DELTA_BEFORE_CASE_A'),'scene deltas present in prompt');
- assert.ok(res.userText.includes('PAYOFF_SETUP_CASE_A'),'payoff tracker present in prompt');
+ // Non-core leaves that would have been stripped under the 8,000-char pre-cap regression
+ assert.ok(res.userText.includes('HISTORICAL_ARCHIVE_CASE_A_0'),'historical archive preserved in model prompt despite exceeding 8,000 chars');
+ assert.ok(res.userText.includes('HISTORICAL_ARCHIVE_CASE_A_24'),'last historical archive preserved in model prompt');
+ assert.ok(res.userText.includes('DELTA_BEFORE_CASE_A'),'scene deltas preserved in model prompt');
+ assert.ok(res.userText.includes('PAYOFF_SETUP_CASE_A'),'payoff tracker preserved in model prompt');
 });
 
 test('GRADIA pipeline delivery Case B: degrades oversized packet to folded version in prompt, preserving world rules and secrets while shedding verbose archives',async()=>{
@@ -185,8 +199,13 @@ test('GRADIA pipeline delivery Case B: degrades oversized packet to folded versi
   quickProfile:'fast'
  });
  assert.equal(res.ok,true);
+ // Check read-session selection statistics
  assert.equal(res.status.selection.selectedItems,1);
  assert.equal(res.status.selection.omittedItems,0);
+ // Check final model request selection statistics (P3)
+ assert.equal(res.status.modelSelection.selectedItems,1);
+ assert.equal(res.status.modelSelection.omittedItems,0);
+
  // Essential world rules, secrets, and core entities must be preserved
  assert.ok(res.userText.includes('RULE_CASE_B'),'world rule preserved in folded prompt');
  assert.ok(res.userText.includes('EXCEPTION_CASE_B'),'world rule exception preserved in folded prompt');
@@ -211,8 +230,13 @@ test('GRADIA pipeline delivery Case C: safely omits packet when even folded vers
   quickProfile:'fast'
  });
  assert.equal(res.ok,true);
+ // Check read-session selection statistics: anchor selected, oversized packet omitted
  assert.equal(res.status.selection.selectedItems,1,'only the fitting anchor is selected');
  assert.equal(res.status.selection.omittedItems,1,'oversized packet is safely omitted');
+ // Check final model request selection statistics (P3): 1 item admitted to model prompt
+ assert.equal(res.status.modelSelection.selectedItems,1);
+ assert.equal(res.status.modelSelection.omittedItems,0);
+
  assert.ok(res.userText.includes('LIBRA_ANCHOR_MEMORY'),'fitting anchor memory delivered to prompt');
  assert.ok(!res.userText.includes('OVERSIZED_WORLD_RULE_0'),'oversized packet omitted from prompt');
 });

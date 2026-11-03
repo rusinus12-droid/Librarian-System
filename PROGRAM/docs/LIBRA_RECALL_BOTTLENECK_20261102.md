@@ -331,8 +331,8 @@ idle의 응답량은 cd78b9f 약 1.49 MB, 75b0859 약 3.63 MB였다. Head 한 �
   - 축약 모드에서도 `summary_memory`, 핵심 인물/관계/위치/활성사건, `continuity_locks`, `false_inferences`와 더불어 RP 핵심 제약인 **세계 규칙 및 예외(`world_rules`)**와 **비밀 및 공개 범위(`entity.secrets`, `known_to`/`hidden_from`)**를 반드시 보존.
   - 방대한 과거 기록(`historical_events`), 장면 밖 흐름(`offscreen_threads`), 장면 변화 디프(`scene_deltas`), 복선 추적 장부(`payoff_tracker`) 등 부가 내역 위주로 축약.
 - **파이프라인 전달 3대 경로 검증**:
-  - **Case A (예산 충족)**: 세계 규칙, 비밀, 과거 내역, 장면 변화를 포함한 완전한 투영이 최종 모델 프롬프트에 그대로 전달(`selectedItems: 1`, `omittedItems: 0`).
-  - **Case B (전체 초과, 축약본 충족)**: 원본이 모델 예산을 초과하면 축약본으로 자동 전환되어 규칙·비밀·핵심 상태를 보존한 채 프롬프트에 수용(`selectedItems: 1`, `omittedItems: 0`).
-  - **Case C (축약본도 예산 초과)**: 규칙 자체가 극단적으로 비대한 경우 안전하게 제외되어 프롬프트 폭주를 방지하고 `omittedItems: 1`로 정확히 계측.
+  - **Case A (예산 충족, >8,000자 회귀 방지)**: 완전본이 8,000자를 초과(~12,000자)하더라도 실제 모델 예산(48,000자) 내에 들어가면 임의 조기 축약 없이 세계 규칙, 비밀, 과거 내역, 복선 장부 전체가 최종 모델 프롬프트에 그대로 전달(`selectedItems: 1`, `omittedItems: 0`, `modelSelection.selectedItems: 1`).
+  - **Case B (전체 초과, 축약본 충족)**: 원본이 모델 예산을 초과하면 축약본으로 자동 전환되어 규칙·비밀·핵심 상태를 보존한 채 프롬프트에 수용(`selectedItems: 1`, `omittedItems: 0`, `modelSelection.selectedItems: 1`).
+  - **Case C (축약본도 예산 초과)**: 규칙 자체가 극단적으로 비대한 경우 안전하게 제외되어 프롬프트 폭주를 방지하고 캡처 통계에서 `omittedItems: 1`로 정확히 계측(`selection.omittedItems: 1`, `modelSelection.selectedItems: 1`).
 
 

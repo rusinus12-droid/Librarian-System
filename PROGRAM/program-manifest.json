@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-03T08:37:04.595Z",
+  "generatedAt": "2026-11-03T09:01:06.775Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3000,8 +3000,8 @@
       "bytes": 6733
     },
     "docs/LIBRA_RECALL_BOTTLENECK_20261102.md": {
-      "sha256": "3b7fcc1bec5609233785b515225be9a66a424519f28d066972e4c7060aea851a",
-      "bytes": 50204
+      "sha256": "7543a7007dec9387e7b87fa50659615968396bfe437f11b53564faa6691f1c9c",
+      "bytes": 50496
     },
     "docs/LIBRA_RECALL_BOUNDARY_DIAGNOSTICS_20261102.md": {
       "sha256": "b8f093f2e24816b8483400add7d8aaeb0949df3d6a5b8a05703557e03f9eb0ec",
@@ -6584,8 +6584,8 @@
       "bytes": 17118
     },
     "tests/gradia_hayaku_semantic_projection_test.cjs": {
-      "sha256": "5bc351c17214531b468d7466b6b34e514cfa363cc44b4cd15ef71ba304c8c514",
-      "bytes": 13881
+      "sha256": "5fb344401530f9ee05566655b24fc1dd2eb960c9146b10ce6c9c47c3345e4691",
+      "bytes": 15397
     },
     "tests/gradia_input_writer_context_preflight_test.cjs": {
       "sha256": "84baadcfad9fbfcef6fffc6914413e9cc7358061580c37cc75de019e8422794d",
