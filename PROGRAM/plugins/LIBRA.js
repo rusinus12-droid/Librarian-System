@@ -1,12 +1,10 @@
 //@name libra
-//@display-name LIBRA v2.6.25
+//@display-name LIBRA v2.6.26
 //@api 3.0
-//@version 2.6.25
+//@version 2.6.26
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
-//@arg evidence_link_index_enabled string true|false; Stage 1 read-only evidence link index. Default false: no build, no storage write, no timer
-//@arg lore_link_index_enabled string true|false; Stage 2 read-only lore reference link index. Default false: no build, no storage write, no timer
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
  * verified/current are assertions supplied AFTER the owner's existing final
@@ -1485,7 +1483,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.6.25';
+  const PLUGIN_VERSION = '2.6.26';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';

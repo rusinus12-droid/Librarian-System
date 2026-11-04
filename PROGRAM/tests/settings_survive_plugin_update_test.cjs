@@ -6,19 +6,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const root = path.join(__dirname, '..');
 
-// Only settings with no screen of their own may stay declared as plugin arguments.
-const allowedArguments = {
-  'Flashback_Memory.js': [],
-  'GRADIA.js': [],
-  'RETRACE.js': [],
-  'LIA_Persona_Linker.js': ['max_lore_entries'],
-  'LIBRA.js': ['evidence_link_index_enabled', 'lore_link_index_enabled'],
-  'HAYAKU_Locator_Continuity.js': ['hayaku_recall_short_max_age', 'hayaku_recall_medium_max_age', 'hayaku_recall_short_turn_quota', 'hayaku_recall_medium_turn_quota', 'hayaku_recall_long_turn_quota'],
-};
-for (const [file, allowed] of Object.entries(allowedArguments)) {
+// No plugin declares a setting as an argument any more.
+for (const file of fs.readdirSync(path.join(root, 'plugins')).filter(name => name.endsWith('.js'))) {
   const text = fs.readFileSync(path.join(root, 'plugins', file), 'utf8');
-  const declared = [...text.matchAll(/^\/\/@arg\s+(\S+)/gm)].map(match => match[1]);
-  assert.deepEqual(declared.sort(), [...allowed].sort(), `${file} declares only settings with no screen of their own`);
+  assert.deepEqual([...text.matchAll(/^\/\/@arg\s+(\S+)/gm)].map(match => match[1]), [], `${file} declares no plugin arguments`);
 }
 
 const memoryStore = () => {

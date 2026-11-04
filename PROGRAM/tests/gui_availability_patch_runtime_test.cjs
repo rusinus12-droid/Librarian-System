@@ -5,7 +5,7 @@ const begin=source.indexOf('  let loreLimitSaveInFlight = false;'),end=source.in
 function harness(initial='620',options={}) {
   let value=initial,reads=0,writes=[];
   const api={pluginStorage:{async getItem(){reads++;if(options.readFailure)throw Error('read_failure');return value;},async setItem(key,next){writes.push(next);if(options.write) return await options.write({next,writes,set:v=>value=v});value=next;return true;}}};
-  const ctx=vm.createContext({api,LIA_LORE_CHAR_LIMIT_KEY:'lore-limit'});vm.runInContext(source.slice(begin,end)+'\nglobalThis.save=saveLoreCharacterLimit;',ctx);
+  const ctx=vm.createContext({api,LIA_LORE_CHAR_LIMIT_KEY:'lore-limit',LIA_LORE_ENTRY_LIMIT_KEY:'lore-entries'});vm.runInContext(source.slice(begin,end)+'\nglobalThis.save=saveLoreCharacterLimit;',ctx);
   return {save:ctx.save,api,value:()=>value,writes,reads:()=>reads};
 }
 (async()=>{

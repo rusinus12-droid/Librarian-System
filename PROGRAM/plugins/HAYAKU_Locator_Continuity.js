@@ -1,17 +1,12 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.17
+//@display-name HAYAKU · Locator Continuity v3.3.18
 //@api 3.0
-//@version 3.3.17
+//@version 3.3.18
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
 //@allowed-ipc flashback_hayaku_bridge
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/HAYAKU_Locator_Continuity.js
-//@arg hayaku_recall_short_max_age string Optional source-turn age cutoff; all five temporal fields required
-//@arg hayaku_recall_medium_max_age string Optional source-turn age cutoff, greater than short cutoff
-//@arg hayaku_recall_short_turn_quota string Optional unique source-turn quota, 0 to 24
-//@arg hayaku_recall_medium_turn_quota string Optional unique source-turn quota, 0 to 24
-//@arg hayaku_recall_long_turn_quota string Optional unique source-turn quota, 0 to 24
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
  * verified/current are assertions supplied AFTER the owner's existing final
@@ -947,7 +942,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.17';
+  const PLUGIN_VERSION = '3.3.18';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';

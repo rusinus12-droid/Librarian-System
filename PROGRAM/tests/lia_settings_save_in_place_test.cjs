@@ -49,5 +49,8 @@ test('lore length setting also saves and verifies in pluginStorage without rebui
  input.value='2300';input.dispatchEvent(new x.gui.dom.window.Event('input',{bubbles:true}));
  const reads=x.f.context.__contextReads,button=doc.querySelector('[data-save-lore-limit]');assert(button);button.click();
  await until(()=>!button.disabled,'lore limit save');assert.equal(String(await x.host.pluginStorage.getItem('liaPersonaLoreCharLimitV1')),'2300');
+ const entries=doc.querySelector('#lia-max-entries');assert(entries,'the lore candidate breadth has a control');
+ entries.value='30';entries.dispatchEvent(new x.gui.dom.window.Event('input',{bubbles:true}));button.click();
+ await until(async()=>!button.disabled&&String(await x.host.pluginStorage.getItem('liaPersonaLoreEntryLimitV1'))==='30','lore breadth save');assert.equal(entries.value,'30');
  assert.equal(root.firstElementChild,header);assert.equal(doc.querySelector('#lia-max-chars'),input);assert.equal(x.f.context.__contextReads,reads);assert.equal(doc.querySelector('#savebar').hidden,true);
 });
