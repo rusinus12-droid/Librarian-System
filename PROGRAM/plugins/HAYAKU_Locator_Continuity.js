@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.14
+//@display-name HAYAKU · Locator Continuity v3.3.15
 //@api 3.0
-//@version 3.3.14
+//@version 3.3.15
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.14';
+  const PLUGIN_VERSION = '3.3.15';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -50570,6 +50570,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const connStatus = typeof LibReadConnection !== 'undefined' && typeof LibReadConnection.status === 'function' ? LibReadConnection.status() : null;
         const routeOwners = input.proposal ? null : connStatus?.draftReadOwners;
         const allowedOwners = Array.isArray(routeOwners) ? requestedOwners.filter(owner => routeOwners.includes(owner)) : [];
+        // An empty route means the user turned these owners off, never "ask everyone".
+        if (Array.isArray(routeOwners) && !allowedOwners.length) fail('LIB_READ_OWNERS_DISABLED');
         const available = await describe(scope, allowedOwners.length ? allowedOwners : requestedOwners);
         assertCurrentSync();
         const owners = Object.keys(available.scopes);

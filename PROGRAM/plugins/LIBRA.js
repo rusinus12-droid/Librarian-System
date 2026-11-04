@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.22
+//@display-name LIBRA v2.6.23
 //@api 3.0
-//@version 2.6.22
+//@version 2.6.23
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1560,7 +1560,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.6.22';
+  const PLUGIN_VERSION = '2.6.23';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -40090,7 +40090,22 @@ function createLibraReadonlySourceContext(owner) {
     const sourcePairs = batch => batch.map(pair => ({ turn: pair.turn, userChatId: pair.user.chatId, assistantChatId: pair.assistant.chatId }));
     // A printed date with a time is the only story clock taken from source text; a bare time or a mentioned date is not.
     const STORY_CLOCK_PATTERN = /\d{4}[-.\/]\d{1,2}[-.\/]\d{1,2}[^\S\n]*(?:\([^)\n]{1,6}\))?[^\S\n]*(?:오전|오후|AM|PM)?[^\S\n]*\d{1,2}:\d{2}(?:[^\S\n]*(?:AM|PM))?|\b\d{1,2}\/\d{1,2}\|[^|\n]{1,12}\|[^\S\n]*(?:AM|PM)?[^\S\n]*\d{1,2}:\d{2}|(?:\d{4}년[^\S\n]*)?\d{1,2}월[^\S\n]*\d{1,2}일[^\S\n]*(?:\([^)\n]{1,6}\))?[^\S\n]*(?:오전|오후)?[^\S\n]*\d{1,2}(?::\d{2}|시(?:[^\S\n]*\d{1,2}분)?)/i;
-    const storyClockFromText = value => string(string(value).match(STORY_CLOCK_PATTERN)?.[0]).replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+    // The clock must be printed as a header: at the start of its line or in a bracketed status field.
+    // A date a sentence merely mentions ("...오후 9시에 만나기로 했던 약속") says nothing about when the turn happens.
+    const storyClockHeaderAt = (source, index, length) => {
+      const lineStart = source.lastIndexOf('\n', index - 1) + 1, before = source.slice(lineStart, index), after = source.slice(index + length);
+      if (/^\p{L}/u.test(after) || /["“”'‘’]/.test(before)) return false;
+      const head = before.split(/[\[|【<]/)[0];
+      return !/\p{L}/u.test(head) || /^[^\p{L}]*[\p{L} ]{1,12}[:：]\s*$/u.test(head);
+    };
+    const STORY_CLOCK_SCAN = new RegExp(STORY_CLOCK_PATTERN.source, STORY_CLOCK_PATTERN.flags + 'g');
+    const storyClockFromText = value => {
+      const source = string(value);
+      for (const match of source.matchAll(STORY_CLOCK_SCAN)) {
+        if (storyClockHeaderAt(source, match.index, match[0].length)) return match[0].replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+      }
+      return '';
+    };
     const turnClocksOf = batch => Object.fromEntries(batch.map(pair => [pair.turn, storyClockFromText(pair.assistant?.text)]).filter(([, clock]) => clock));
     const sourceDigest = batch => digest(batch.map(pair => ({
       turn: (state.memoryNetworkIO.sourceDigestPairs++, pair.turn),
@@ -78086,6 +78101,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const connStatus = typeof LibReadConnection !== 'undefined' && typeof LibReadConnection.status === 'function' ? LibReadConnection.status() : null;
         const routeOwners = input.proposal ? null : connStatus?.draftReadOwners;
         const allowedOwners = Array.isArray(routeOwners) ? requestedOwners.filter(owner => routeOwners.includes(owner)) : [];
+        // An empty route means the user turned these owners off, never "ask everyone".
+        if (Array.isArray(routeOwners) && !allowedOwners.length) fail('LIB_READ_OWNERS_DISABLED');
         const available = await describe(scope, allowedOwners.length ? allowedOwners : requestedOwners);
         assertCurrentSync();
         const owners = Object.keys(available.scopes);

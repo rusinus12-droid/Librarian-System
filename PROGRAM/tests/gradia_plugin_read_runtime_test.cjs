@@ -107,11 +107,23 @@ test('three actual plugin owners -> GRADIA generation and Input Writer, with no 
   f.prompts.length = 0;
   await f.host.plugin.saveRuntimeSettings({ mode:'normal',default_preset:'writer',input_assist_mode:'off',multi_pipeline_mode:'lightweight',enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true,failure_mode:'hard',lore_activation_mode:'off' });
   f.controls.onModel = async (...args) => { await pipelineModel(...args); await hstore.setItem('hayaku.v2.ledger.' + hscope, null); };
-  await assert.rejects(() => f.host.hooks.beforeRequest(messages, 'model'), /LIB_READ_/);
-  assert.equal(f.prompts.length, 1);
+  // HAYAKU drops out of this run; the draft, LIBRA and Flashback carry on.
+  const afterLoss = (await f.host.hooks.beforeRequest(messages, 'model')).map(row => String(row.content || '')).join('\n');
+  assert.ok(f.prompts.length >= 1);
+  assert.ok(afterLoss.includes('[LIBRA_EVIDENCE consumer=gradia'), 'LIBRA still reaches the final request');
+  assert.ok(!afterLoss.slice(afterLoss.indexOf('<MEMORY_RECALL>')).includes('HAYAKU_IPC_MEMORY'), 'the lost owner does not');
   await new Promise(resolve => setTimeout(resolve, 20));
   const failedDelivery = hayaku.hayaku.lastDebug().lastViewerRecall?.gradia;
-  assert.equal(failedDelivery?.status, 'failed', 'an aborted run tells the owner its selection was not delivered');
+  assert.equal(failedDelivery?.status, 'failed', 'the lost owner hears its selection was not delivered');
   assert.match(failedDelivery?.code || '', /LIB_READ_/);
   assert.ok(!JSON.stringify([...f.values]).includes('LIBRA_EVIDENCE consumer=gradia'));
+  // After that failure, turning GRADIA off gives recall straight back to every owner.
+  f.controls.onModel = null;
+  await f.host.plugin.saveRuntimeSettings({ mode: 'off' });
+  await f.host.hooks.beforeRequest(messages, 'model');
+  await new Promise(resolve => setTimeout(resolve, 20));
+  await libra.f.control.hooks.beforeRequest(JSON.parse(JSON.stringify(messages)), 'model');
+  assert.notEqual(libra.f.r.api.getRuntime().lastMemoryInjectionMeta?.gradiaCompat, true, 'LIBRA searches for itself again');
+  await hayaku.callBeforeRequest([{ role: 'user', content: chat.message.at(-1).data }], 'model');
+  assert.notEqual(hayaku.hayaku.lastDebug().lastBeforeRequest?.gradiaCompat, true, 'HAYAKU searches for itself again');
 });

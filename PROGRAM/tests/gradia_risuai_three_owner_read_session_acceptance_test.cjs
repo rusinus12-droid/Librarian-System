@@ -380,6 +380,7 @@ async function createRisuThreeOwnerHarness(t, options = {}) {
     stream: false
   });
   await host.plugin.saveRuntimeSettings({
+    memory_budget_chars: 240000, // The fixture LIBRA renders every stored row; the budget has its own tests.
     mode: 'normal',
     default_preset: 'offline',
     input_assist_mode: 'off',
@@ -592,6 +593,7 @@ test('Scenario 4: Input Writer without owner memory followed by submitted <Curre
   });
 
   await h.host.plugin.saveRuntimeSettings({
+    memory_budget_chars: 240000, // The fixture LIBRA renders every stored row; the budget has its own tests.
     mode: 'normal',
     default_preset: 'offline',
     input_assist_mode: 'user_focus',
@@ -899,6 +901,7 @@ test('Scenario 5: Live LIBRA.js kernel + live HAYAKU.js + live Flashback.js + li
     stream: false
   });
   await g.plugin.saveRuntimeSettings({
+    memory_budget_chars: 240000, // The fixture LIBRA renders every stored row; the budget has its own tests.
     mode: 'normal',
     default_preset: 'offline',
     input_assist_mode: 'off',

@@ -19,6 +19,12 @@ const STAMP = '⏱️[2026-05-14 (목) 09:12 PM]';
     assert.equal(clockOf('본문\n[📖][⭐|다빈의 집 거실|8/3|day|pm 04:45|sunny]'), '8/3 day pm 04:45');
     assert.equal(clockOf('5월 14일 오후 9시 30분, 비가 왔다.'), '5월 14일 오후 9시 30분');
     // A bare time or a mentioned date does not establish when the turn happened.
+    for (const text of ['민아는 2026년 5월 14일 오후 9시에 만나기로 했던 약속을 떠올렸다.', '2026년 5월 14일 오후 9시에 만나기로 했다.', '약속은 2026-05-14 21:12였다.', '"2026-05-14 21:12에 보자."', '그는 "2026-05-14 21:12"라고 적었다.']) {
+      assert.equal(clockOf(text), '', text);
+    }
+    assert.equal(clockOf('민아는 2026년 5월 14일 오후 9시의 약속을 떠올렸다.\n⏱️[2026-06-01 (월) 10:00 AM]'), '2026-06-01 (월) 10:00 AM', 'a header later in the text still counts');
+    assert.equal(clockOf('현재 시각: 2026-05-14 21:12'), '2026-05-14 21:12');
+    assert.equal(clockOf('| 장소 | 서재 | 2026-05-14 21:12 |'), '2026-05-14 21:12');
     for (const text of ['10:30에 만나자고 했다.', '| 날짜 | 8월 3일 저녁 |', '3일 전 일이다.', '2026-05-14에 태어났다.', '', null]) {
       assert.equal(clockOf(text), '', String(text));
     }

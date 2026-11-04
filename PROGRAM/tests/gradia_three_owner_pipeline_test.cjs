@@ -12,7 +12,7 @@ const {createHayakuRuntime,createStore,createValidPacket,hiddenPacketMessage,wai
 const root=path.resolve(__dirname,'..'),owners=['libra','hayaku','flashback'],sha=s=>crypto.createHash('sha256').update(s).digest('hex');
 const messages=()=>[{role:'user',messageId:'u1',content:'The archivist opens the library.'},{role:'assistant',messageId:'a1',content:'The brass key is on the table.'},{role:'user',messageId:'u2',content:'Continue the scene.'}];
 function instrument(source){const ast=acorn.parse(source,{ecmaVersion:'latest'}),found=[];function walk(n){if(!n||typeof n!=='object')return;if(n.type==='ArrowFunctionExpression'&&source.slice(n.start,n.end).includes('shadow_act_disabled'))found.push(n);for(const v of Object.values(n))if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')walk(v);}walk(ast);const n=found.sort((a,b)=>a.end-a.start-(b.end-b.start))[0];assert(n);return source.slice(0,n.start)+'(globalThis.__testPipeline='+source.slice(n.start,n.end)+')'+source.slice(n.end);}
-async function fixture(t,{request=messages,hostMessages=messages,ownersRunning=true,hayakuFinalDelivery=true}={}){
+async function fixture(t,{request=messages,hostMessages=messages,ownersRunning=true,hayakuFinalDelivery=true,hayakuSelectError='',hayakuContent='HAYAKU_MEMORY_SENTINEL recalled by HAYAKU',memoryBudgetChars=240000}={}){
  const fb=await createFlashback(root,{waitForLoaded:true});t.after(()=>fb.cleanup());const cfg=fb.api._test.normalizeSettings({embeddingEnabled:false,embeddingAutoProcess:false,autoEpisodeIndex:false});await fb.api.saveSettings(cfg);const fScope=await fb.api.resolveCurrentScope(false),characterId=fScope.canonicalCharacterId,chatId=fScope.canonicalChatId;
  const sources=[1,2].map(n=>({sourceType:'response',sourceId:'producer-'+n,sourceHash:'producer-hash-'+n,origin:'live_chat',role:'turn_pair',turnIndex:n,pairIndex:n,text:'User:\nWhere is the key '+n+'?\n\n---\n\nAssistant:\nFLASHBACK_MEMORY_SENTINEL_'+n+' The brass key is tied to the blue ribbon.'}));
  const fbRecords=await fb.api._test.buildRecordsFromSources(sources,cfg,fScope,{deferEmbedding:true});await fb.api._test.saveAllRecords(fbRecords,cfg,fScope);assert.equal(fb.networkCalls.length,0);
@@ -38,10 +38,10 @@ async function fixture(t,{request=messages,hostMessages=messages,ownersRunning=t
    await onQuery?.();
    return {modelDispatchEligible:true,queryComplete:false,deliveryOutcome:'partial',windowRead:{limit:20},nextWindow:null,bundle:{generation:'g1'},packet:{renderedText:text,packetDigest:fingerprint(text)}};},
   verify:async()=>{await onVerify?.(++verifyCalls);return JSON.stringify(ownerRows())===queried;}});await libraOwner.start();t.after(()=>libraOwner.dispose());
- if(ownersRunning)t.after(await require('./fixtures/gradia_owner_selection_stub.cjs')(bus,{hayaku:{scope:scopes.hayaku,content:'HAYAKU_MEMORY_SENTINEL recalled by HAYAKU',finalDelivery:hayakuFinalDelivery},flashback:{scope:scopes.flashback,content:'FLASHBACK_MEMORY_SENTINEL_1 FLASHBACK_MEMORY_SENTINEL_2 recalled by Flashback'}}));
+ if(ownersRunning)t.after(await require('./fixtures/gradia_owner_selection_stub.cjs')(bus,{hayaku:{scope:scopes.hayaku,content:hayakuContent,finalDelivery:hayakuFinalDelivery,selectError:hayakuSelectError},flashback:{scope:scopes.flashback,content:'FLASHBACK_MEMORY_SENTINEL_1 FLASHBACK_MEMORY_SENTINEL_2 recalled by Flashback'}}));
  const host=await load({transformSource:instrument,api:{...bus.api('serial_gradation_agents_for_rp'),pluginStorage:store,getLocalPluginStorage:async()=>({getItem:async k=>local.get(k)??null,setItem:async(k,v)=>local.set(k,v)}),nativeFetch:transport,fetch:transport,onUnload:async f=>unloads.push(f),showContainer:async()=>{},hideContainer:async()=>{},getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>character,getChatFromIndex:async()=>chat,getCharacter:async()=>contextCharacter,addRisuChatListener:async(t,fn)=>{if(t==='output')onOutput=fn;}},testGlobals:{crypto:crypto.webcrypto,Response,window:dom.window,Element:dom.window.Element,document:dom.window.document,getComputedStyle:dom.window.getComputedStyle.bind(dom.window),MutationObserver:dom.window.MutationObserver,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window)}});t.after(async()=>{await host.plugin.closeSettingsGui();for(const f of unloads)await f();dom.window.close();});
  await host.hooks.beforeRequest(messages(),'model');await host.plugin.openSettingsGui();dom.window.document.querySelector('.sidebar [data-go="sources"]').click();const input=dom.window.document.querySelector('#lib-url');input.value=url;input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));dom.window.document.querySelector('#lib-connect').click();await waitFor(()=>['connected','error'].includes(host.plugin.getLibReadOnlyStatus().connection.state),'readonly UI connection');assert.equal(host.plugin.getLibReadOnlyStatus().connection.state,'connected',JSON.stringify(host.plugin.getLibReadOnlyStatus()));
- const settings={...host.plugin.getRuntime().settings,inputAssistMode:'off',enableShadowAct:true,enableCharacterAide:false,enableWorldAide:false,enablePlotAide:false,multiPipelineMode:'lightweight',mode:'lite',failureMode:'hard',loreActivationMode:'off',stagePresetNames:{},defaultPresetName:'offline',presets:{offline:{provider:'openai',url:'https://api.openai.com/v1/chat/completions',key:'offline-synthetic-only',model:'gpt-4o-mini-2024-07-18',request_format:'chat_completions',context_window:128000,max_tokens:4096,reasoning_preset:'off',reasoning_effort:'none',timeout_ms:1000,stream:false}},skillRouterEnabled:false};
+ const settings={...host.plugin.getRuntime().settings,memoryBudgetChars,inputAssistMode:'off',enableShadowAct:true,enableCharacterAide:false,enableWorldAide:false,enablePlotAide:false,multiPipelineMode:'lightweight',mode:'lite',failureMode:'hard',loreActivationMode:'off',stagePresetNames:{},defaultPresetName:'offline',presets:{offline:{provider:'openai',url:'https://api.openai.com/v1/chat/completions',key:'offline-synthetic-only',model:'gpt-4o-mini-2024-07-18',request_format:'chat_completions',context_window:128000,max_tokens:4096,reasoning_preset:'off',reasoning_effort:'none',timeout_ms:1000,stream:false}},skillRouterEnabled:false};
  const snapshot=()=>JSON.stringify(Object.fromEntries(owners.map(owner=>[owner,{kv:app.repositories[owner].database.prepare('SELECT * FROM kv ORDER BY space,key').all(),operations:app.repositories[owner].database.prepare('SELECT COUNT(*) n FROM operations').get().n}])));
  const mutate=owner=>{const key=owner==='libra'?libraManifest:owner==='hayaku'?'hayaku.v2.ledger.'+hScope.key:app.repositories.flashback.database.prepare("SELECT key FROM kv WHERE key LIKE '%:manifest:v2' ORDER BY key LIMIT 1").get().key;const r=app.repositories[owner].database.prepare('SELECT value_json FROM kv WHERE key=?').get(key);put(owner,key,JSON.parse(r.value_json),2);};
  return {host,settings,requests,prompts,values,local,snapshot,mutate,mutateNative:kind=>{if(kind==='scope')contextCharacter={...character,id:'foreign',chaId:'foreign'};if(kind==='id')chat.message[1].messageId='different-assistant';if(kind==='text')chat.message[1].content='A different persisted variant.';if(kind==='turn')chat.message.unshift({role:'user',messageId:'older-u',content:'Another completed turn.'},{role:'assistant',messageId:'older-a',content:'Another historical answer.'});},setOnRead:f=>onRead=f,setOnQuery:f=>onQuery=f,setOnVerify:f=>onVerify=f,setOnModel:f=>onModel=f,recordOutput:async(idx=1)=>onOutput?.({char:character,chat,characterIndex:0,chatIndex:0,messageIndex:idx}),run:()=>host.pipeline(request(),'model',settings)};
@@ -55,10 +55,14 @@ test('memory GRADIA used also reaches the final response unless that owner turne
  assert.doesNotMatch(off.finalRecallBlock,/recalled by HAYAKU/);assert.match(off.finalRecallBlock,/recalled by Flashback/);
 });
 test('a plugin that is not running contributes no memory, and its server records are not read for the model',{timeout:30000},async t=>{const f=await fixture(t,{ownersRunning:false}),started=Date.now(),r=await f.run();assert.equal(r.ok,true);const body=JSON.stringify(f.prompts[0]);assert(body.includes('LIBRA_MEMORY_SENTINEL'));assert(!body.includes('\\"owner\\":\\"hayaku'));assert(!body.includes('\\"owner\\":\\"flashback'));assert(Date.now()-started<15000,'an absent plugin costs one short wait');});
-for(const owner of owners)test(`${owner} changing during capture is rejected before model dispatch`,{timeout:30000},async t=>{const f=await fixture(t);let changed=false;// LIBRA evidence is issued by the unified owner channel (the server route only authorizes the read), so a LIBRA change
+const ownerMarkers={libra:'LIBRA_MEMORY_SENTINEL',hayaku:'recalled by HAYAKU',flashback:'recalled by Flashback'};
+const assertOnlyOwnerLost=(body,lost)=>{for(const owner of owners)assert.equal(body.includes(ownerMarkers[owner]),owner!==lost,owner+' when '+lost+' fails');};
+for(const owner of owners)test(`${owner} changing during capture costs only ${owner}'s memory`,{timeout:30000},async t=>{const f=await fixture(t);let changed=false;// LIBRA evidence is issued by the unified owner channel (the server route only authorizes the read), so a LIBRA change
 // lands while its owner query is in flight; HAYAKU and Flashback are still captured through their server routes.
-if(owner==='libra')f.setOnQuery(()=>{if(!changed){changed=true;f.mutate(owner);}});else f.setOnRead(route=>{if(!changed&&route===`/v1/${owner}/read-session/capture`){changed=true;f.mutate(owner);}});const r=await f.run();assert.equal(f.prompts.length,1,'unavailable evidence preserves native-only fallback');assert(!JSON.stringify(f.prompts[0]).includes('MEMORY_SENTINEL'));assert(changed);assert.equal(r.externalEvidence,false);r.closeEvidence();});
-test('owner change after model call prevents influenced draft from leaving pipeline',{timeout:30000},async t=>{const f=await fixture(t);f.setOnModel(()=>f.mutate('hayaku'));await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));assert.equal(f.prompts.length,1);assert(!JSON.stringify(f.host.plugin.getRuntime()).includes('HAYAKU_MEMORY_SENTINEL'));});
+if(owner==='libra')f.setOnQuery(()=>{if(!changed){changed=true;f.mutate(owner);}});else f.setOnRead(route=>{if(!changed&&route===`/v1/${owner}/read-session/capture`){changed=true;f.mutate(owner);}});const r=await f.run();assert(changed);assert.equal(r.ok,true);assert.equal(f.prompts.length,1);assert.equal(r.externalEvidence,true);assertOnlyOwnerLost(JSON.stringify(f.prompts[0]),owner);assertOnlyOwnerLost(r.finalRecallBlockNow(),owner);r.closeEvidence();});
+test('an owner changing after the model call leaves the other owners and the draft in place',{timeout:30000},async t=>{const f=await fixture(t);f.setOnModel(()=>f.mutate('flashback'));const r=await f.run();assert.equal(r.ok,true);assert.equal(f.prompts.length,1);await r.finalizeHandoff();const block=r.finalRecallBlockNow();assert.doesNotMatch(block,/recalled by Flashback/,'a lost owner does not reach the final request');assert.match(block,/recalled by HAYAKU/);r.closeEvidence();});
+test('one long owner prompt shares the memory budget instead of pushing the others out',{timeout:30000},async t=>{const f=await fixture(t,{memoryBudgetChars:24000,hayakuContent:'HAYAKU_LONG_MEMORY\n'+('기억 한 줄\n'.repeat(12000))+'HAYAKU_TAIL'}),r=await f.run();assert.equal(r.ok,true);assert.match(r.finalRecallBlockNow(),/HAYAKU_LONG_MEMORY/);assert.match(r.finalRecallBlockNow(),/recalled by Flashback/);assert.doesNotMatch(r.finalRecallBlockNow(),/HAYAKU_TAIL/,'its tail is what gives way');assert(r.finalRecallBlockNow().length<=24000);r.closeEvidence();});
+test('an owner refusing its selection costs only that owner',{timeout:30000},async t=>{const f=await fixture(t,{hayakuSelectError:'LIB_READ_OWNER_UNAVAILABLE'}),r=await f.run();assert.equal(r.ok,true);assertOnlyOwnerLost(JSON.stringify(f.prompts[0]),'hayaku');r.closeEvidence();});
 
 for(const kind of ['scope','id','text','turn'])test(`native ${kind} mismatch still fails closed after bound-scope enrichment fix`,{timeout:30000},async t=>{const f=await fixture(t);f.mutateNative(kind);await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');assert.equal(f.prompts.length,0);});
 
@@ -89,37 +93,28 @@ test('host-bound RP transcript with prior CompletionReceipt keeps the certified 
  r.closeEvidence();
 });
 
-test('unavailable owner during evidence materialization is reacquired once before the first model',async t=>{
- const f=await fixture(t);let captures=0;f.setOnQuery(()=>captures++);
- f.setOnVerify(n=>{if(n===4)throw Object.assign(Error('LIB_READ_UNIFIED_UNAVAILABLE'),{code:'LIB_READ_UNIFIED_UNAVAILABLE',
+test('LIBRA failing during evidence materialization leaves HAYAKU and Flashback running',async t=>{
+ const f=await fixture(t);f.setOnVerify(n=>{if(n>=4)throw Object.assign(Error('LIB_READ_UNIFIED_UNAVAILABLE'),{code:'LIB_READ_UNIFIED_UNAVAILABLE',
   readDiagnostic:{stage:'graph_delivery_admission',dispatchReason:'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED',modelDispatchEligible:false}});});
- const r=await f.run();assert.equal(r.ok,true);assert.equal(r.externalEvidence,true);assert.equal(captures,2);
- assert.equal(f.prompts.length,1,'reacquisition never duplicates a model call');
- r.closeEvidence();const d=f.host.plugin.getRuntime().lastLibReadDiagnostic;assert.equal(d.retryCount,1);assert.equal(d.status,'ready');
- assert.equal(d.previousFailure.readDiagnostic.dispatchReason,'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED');
+ const r=await f.run();assert.equal(r.ok,true);assert.equal(r.externalEvidence,true);assert.equal(f.prompts.length,1);
+ await r.finalizeHandoff();assertOnlyOwnerLost(r.finalRecallBlockNow(),'libra');r.closeEvidence();
 });
-
-for(const kind of ['persistent','native','stale','legacy_stale'])test(`opening failure keeps diagnostics and never dispatches with ${kind} owner`,async t=>{
+test('the chat itself changing still stops the whole run',async t=>{
  const f=await fixture(t);let captures=0;f.setOnQuery(()=>captures++);
- f.setOnVerify(n=>{if(n<4)return;if(kind==='native')f.mutateNative('text');
-  throw Object.assign(Error(kind==='stale'?'LIB_READ_STALE':'LIB_READ_UNIFIED_UNAVAILABLE'),{
-   readDiagnostic:{stage:'graph_delivery_admission',dispatchReason:kind==='legacy_stale'?'LIB_READ_STALE':'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED',modelDispatchEligible:false}});});
+ f.setOnVerify(n=>{if(n<4)return;f.mutateNative('text');throw Object.assign(Error('LIB_READ_UNIFIED_UNAVAILABLE'),{readDiagnostic:{stage:'graph_delivery_admission',dispatchReason:'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED',modelDispatchEligible:false}});});
  await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));assert.equal(f.prompts.length,0);
- assert.equal(captures,kind==='persistent'?2:1);
  const d=f.host.plugin.getRuntime().lastLibReadDiagnostic;assert.equal(d.status,'failed');assert.ok(d.code);
  assert.ok(!JSON.stringify(d).includes('LIBRA_MEMORY_SENTINEL'),'diagnostic retains no memory content');
 });
 
-test('beforeRequest owner failure exits preparing state and exports the underlying diagnostic',async t=>{
+test('an owner failing in the request hook does not fail the request',async t=>{
  const f=await fixture(t);
  await f.host.plugin.saveProviderPreset('offline',f.settings.presets.offline);
  await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'offline',input_assist_mode:'off',multi_pipeline_mode:'lightweight',
   enable_shadow_act:true,enable_character_aide:false,enable_world_aide:false,enable_plot_aide:false,failure_mode:'hard',lore_activation_mode:'off'});
- f.setOnVerify(n=>{if(n>=4)throw Object.assign(Error('LIB_READ_UNIFIED_UNAVAILABLE'),{
-  readDiagnostic:{stage:'graph_delivery_admission',dispatchReason:'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED',modelDispatchEligible:false,
-    secret:'SHOULD_NOT_BE_EXPORTED'}});});
- await assert.rejects(()=>f.host.hooks.beforeRequest(messages(),'model'),e=>e.code==='LIB_READ_UNIFIED_UNAVAILABLE');
- const runtime=f.host.plugin.getRuntime();assert.equal(runtime.pipelineWorkStatus.busy,false);assert.equal(runtime.pipelineWorkStatus.phase,'pipeline_error');
- assert.equal(runtime.lastLibReadDiagnostic.attempts,2);assert.equal(runtime.lastLibReadDiagnostic.readDiagnostic.dispatchReason,'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED');
- assert.equal(f.prompts.length,0);assert.ok(!JSON.stringify(runtime.lastLibReadDiagnostic).includes('SHOULD_NOT_BE_EXPORTED'));
+ f.setOnVerify(n=>{if(n>=4)throw Object.assign(Error('LIB_READ_UNIFIED_UNAVAILABLE'),{readDiagnostic:{stage:'graph_delivery_admission',dispatchReason:'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED',modelDispatchEligible:false,secret:'SHOULD_NOT_BE_EXPORTED'}});});
+ const output=await f.host.hooks.beforeRequest(messages(),'model');
+ const finalText=output.map(row=>String(row.content||'')).join('\n');
+ assert.match(finalText,/recalled by HAYAKU/);assert.match(finalText,/recalled by Flashback/);assert.doesNotMatch(finalText,/LIBRA_MEMORY_SENTINEL/);
+ assert.ok(f.prompts.length>=1);assert.ok(!JSON.stringify(f.host.plugin.getRuntime()).includes('SHOULD_NOT_BE_EXPORTED'));
 });

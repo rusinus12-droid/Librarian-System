@@ -40,8 +40,9 @@ const PACKET_INSTRUCTIONS = /HAYAKU_STATE_PACKET_START|SIDE-WRITE FINAL REMINDER
     assert.match(compat, PACKET_INSTRUCTIONS, 'packet instructions are always sent');
     assert.equal(runtime.hayaku.lastDebug().lastBeforeRequest.gradiaCompat, true);
     assert.equal(runtime.hayaku.lastDebug().lastBeforeRequest.stages.search < 50, true);
-    // The announcement expiring restores normal recall.
-    runtime.hayaku._test.noteHayakuGradiaAttach({ active: false, ttlMs: 0 });
+    // An announcement nobody renews expires by itself, as when GRADIA stops without saying so.
+    runtime.hayaku._test.noteHayakuGradiaAttach({ active: true, ttlMs: 20 });
+    await new Promise(resolve => setTimeout(resolve, 40));
     const restored = (await runtime.callBeforeRequest(request(), 'model')).map(row => String(row.content || '')).join('\n');
     assert.ok(restored.includes(FACT), 'without the announcement HAYAKU works alone again');
   } finally { await runtime.dispose(); }

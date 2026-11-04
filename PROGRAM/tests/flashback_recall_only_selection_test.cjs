@@ -61,7 +61,9 @@ const QUERY = '서재 계기판 바늘과 은빛 열쇠 고리 상태를 알려�
     const compat = (await runtime.api._selectionTest.beforeRequest([{ role: 'user', chatId: 'u9', content: QUERY }], 'model')).map(row => String(row.content || '')).join('\n');
     assert.ok(!compat.includes(PHRASE), 'GRADIA delivers the evidence in compatibility mode');
     assert.equal((await runtime.api.debugState()).lastRecall.gradia.status, 'selected', 'the hook does not overwrite what was selected');
-    runtime.api._selectionTest.noteGradiaAttach({ active: false, ttlMs: 0 });
+    // An announcement nobody renews expires by itself, as when GRADIA stops without saying so.
+    runtime.api._selectionTest.noteGradiaAttach({ active: true, ttlMs: 20 });
+    await new Promise(resolve => setTimeout(resolve, 40));
     const restored = (await runtime.api._selectionTest.beforeRequest([{ role: 'user', chatId: 'u9', content: QUERY }], 'model')).map(row => String(row.content || '')).join('\n');
     assert.ok(restored.includes(PHRASE), 'without the announcement Flashback works alone again');
   } finally { await runtime.dispose(); }
