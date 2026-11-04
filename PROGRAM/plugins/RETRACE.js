@@ -1,7 +1,7 @@
 //@name flashback_hayaku_bridge
 //@display-name RE:TRACE
 //@api 3.0
-//@version 1.12.9
+//@version 1.12.10
 /* Retired standalone owner viewers, packet deletion/navigation, and HAYAKU ledger-backup APIs are removed. Legacy capsule reads support handoff only; existing stored artifacts remain available to guarded server management. */
 //@allowed-ipc libra
 //@allowed-ipc flashback_memory
@@ -7682,7 +7682,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 };
 
   const PLUGIN_NAME = 'RE:TRACE';
-const PLUGIN_VERSION = '1.12.9';
+const PLUGIN_VERSION = '1.12.10';
   const RETRACE_SETTING_UI_ID = 'retrace-main-setting';
   const RETRACE_HAMBURGER_UI_ID = 'retrace-main-hamburger';
   const HANDOFF_SCHEMA = 'memory-session-bridge-v2';
@@ -7774,9 +7774,6 @@ const PLUGIN_VERSION = '1.12.9';
   const FLASHBACK_ARCHIVE_MAX_DEPTH = 256;
   const HAYAKU_LEDGER_PREFIX = 'hayaku.v2.ledger.';
   const HAYAKU_LEDGER_SCHEMAS = new Set(['hayaku_storage_ledger_v1', 'hayaku_storage_ledger_v2']);
-  const HAYAKU_ARCHIVE_SCHEMA = 'hayaku.shared_archive.v1';
-  const HAYAKU_ARCHIVE_GZIP_SCHEMA = 'hayaku.shared_archive.gzip.v1';
-  const HAYAKU_ARCHIVE_GZIP_ENCODING = 'gzip+base64';
   const HAYAKU_ARCHIVE_META_SCHEMA = 'hayaku.shared_archive_meta.v1';
   const HAYAKU_ARCHIVE_REF_SCHEMA = 'hayaku.shared_archive_ref.v1';
   const HAYAKU_ARCHIVE_META_KEY_PREFIX = 'hayaku.v2.shared_archive_meta.';
@@ -8148,44 +8145,7 @@ const PLUGIN_VERSION = '1.12.9';
     if (value && typeof value === 'object') return value;
     try { return JSON.parse(String(value)); } catch (_) { return fallback; }
   };
-  const retraceBase64ToBytes = encoded => {
-    const source = text(encoded || '');
-    if (!source) return new Uint8Array(0);
-    if (typeof Buffer !== 'undefined') return new Uint8Array(Buffer.from(source, 'base64'));
-    if (typeof atob !== 'function') throw new Error('base64_decoder_unavailable');
-    const binary = atob(source);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-    return bytes;
-  };
-  const retraceGunzipText = async bytesInput => {
-    if (typeof DecompressionStream !== 'function' || typeof TextDecoder !== 'function' || typeof Response !== 'function') {
-      throw new Error('gzip_decompression_unavailable');
-    }
-    const bytes = bytesInput instanceof Uint8Array ? bytesInput : new Uint8Array(bytesInput || []);
-    const input = new Response(bytes).body;
-    if (!input?.pipeThrough) throw new Error('gunzip_input_stream_unavailable');
-    const decompressed = input.pipeThrough(new DecompressionStream('gzip'));
-    return new TextDecoder().decode(await new Response(decompressed).arrayBuffer());
-  };
 
-  const decodeHayakuArchivePayloadForRetrace = async rawInput => {
-    const outer = parseJson(rawInput, null);
-    if (!outer || typeof outer !== 'object' || Array.isArray(outer) || outer.schema !== HAYAKU_ARCHIVE_GZIP_SCHEMA) {
-      return { parsed: outer, compressed: false, reason: '' };
-    }
-    try {
-      if (outer.encoding !== HAYAKU_ARCHIVE_GZIP_ENCODING) throw new Error('archive_gzip_encoding_invalid');
-      const raw = await retraceGunzipText(retraceBase64ToBytes(outer.data || ''));
-      if (!raw || (outer.rawHash && stableHash64(raw) !== text(outer.rawHash))) throw new Error('archive_gzip_digest_mismatch');
-      const parsed = parseJson(raw, null);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || parsed.schema !== HAYAKU_ARCHIVE_SCHEMA) throw new Error('archive_gzip_body_invalid');
-      if (outer.archiveId && text(parsed.archiveId || '') !== text(outer.archiveId || '')) throw new Error('archive_gzip_identity_mismatch');
-      return { parsed, compressed: true, reason: '' };
-    } catch (error) {
-      return { parsed: null, compressed: true, reason: compact(error?.message || error, 240) };
-    }
-  };
 
   const compareHayakuTimelineRecords = (left, right) => {
     const leftHistorical = left?.inheritedSessionHistory === true
@@ -10460,13 +10420,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       .sort(compareHayakuTimelineRecords);
   };
 
-  const hayakuArchiveRecordIdentityForRetrace = record => text(record?.permanentHistoryId || record?.archiveCanonicalId || '').trim()
-    || stableHash64([
-      text(record?.inheritedFromScopeKey || '').trim(),
-      hayakuRecordSlotId(record),
-      text(record?.hash || '').trim(),
-      text(record?.packetType || '').trim()
-    ].join('\u0001'));
 
   const hayakuArchiveRefPointerForRetrace = value => {
     const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -14394,14 +14347,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     return scopes;
   };
 
-  const scopeManagerContainer = (parsed, field) => {
-    const root = scopeManagerObject(parsed);
-    const explicit = root[field];
-    if (explicit && typeof explicit === 'object' && !Array.isArray(explicit)) return explicit;
-    const copy = { ...root };
-    for (const key of ['version', 'savedAt', 'updatedAt', 'schema']) delete copy[key];
-    return copy;
-  };
 
   const scopeManagerLiaScopeIdentity = scopeKey => {
     const match = /^char:(.+?)\|chat:(.+)$/.exec(scopeManagerText(scopeKey));
@@ -15016,7 +14961,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     for (const scope of refreshed) plans.push(await scopeManagerBuildPlanAfterProof(scope, proofs.get(scopeManagerSelectionKey(scope))));
     return plans;
   };
-  const scopeManagerCreatePlan = async scope => (await scopeManagerCreatePlans([scope]))[0];
   const scopeManagerExecutePlan = async scope => {
     const recipeKey = scopeManagerRecipeKey(scope.namespace, scope.scopeId);
     const plan = Runtime.serverScopePlans?.get(recipeKey);
@@ -15692,13 +15636,6 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     return Runtime.remoteUpdate;
   };
 
-  const retraceStatusLabel = status => status === 'ready'
-    ? '승계 준비됨'
-    : status === 'attention'
-      ? '확인 필요'
-      : status === 'checking'
-        ? '확인 중'
-        : '검증 대기';
 
   const retraceDiagnosticSnapshot = () => {
     const overviewError = text(Runtime.overviewError).trim();

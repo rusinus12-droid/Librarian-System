@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.28
+//@display-name LIBRA v2.6.29
 //@api 3.0
-//@version 2.6.28
+//@version 2.6.29
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1299,7 +1299,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.6.28';
+  const PLUGIN_VERSION = '2.6.29';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -1682,13 +1682,6 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const INPUT_ASSIST_TARGET_CHAR_IDS = Object.freeze(['300', '500', '800', '1000', 'omakase']);
-  const INPUT_ASSIST_TARGET_CHAR_CHOICES = Object.freeze([
-    Object.freeze({ id: '300', chars: 300, label: '300자', description: '짧고 직접적인 재구성' }),
-    Object.freeze({ id: '500', chars: 500, label: '500자', description: '핵심 맥락과 행동 초점 포함' }),
-    Object.freeze({ id: '800', chars: 800, label: '800자', description: '관계와 장면 조건을 충분히 반영' }),
-    Object.freeze({ id: '1000', chars: 1000, label: '1,000자', description: '복잡한 요청을 세밀하게 재구성' }),
-    Object.freeze({ id: 'omakase', chars: 0, label: '오마카세', description: '입력과 문맥에 맞춰 AI가 길이를 결정' })
-  ]);
   const normalizeInputAssistTargetChars = value => normalizeChoice(
     String(value ?? DEFAULT_INPUT_ASSIST_TARGET_CHARS).trim().toLowerCase(),
     INPUT_ASSIST_TARGET_CHAR_IDS,
@@ -1707,12 +1700,6 @@ function __libraNarrativeStripPatch(value) {
     MULTI_PIPELINE_MODES,
     'lightweight'
   );
-  const configuredInformationTransferMode = settings => normalizeChoice(
-    settings?.informationTransferMode || settings?.information_transfer_mode || 'draft_only',
-    INFORMATION_TRANSFER_MODES,
-    'draft_only'
-  );
-  const effectiveInformationTransferMode = settings => configuredInformationTransferMode(settings);
   // Every historical value is a MIGRATION ALIAS for the unified engine: an install that saved
   // 'risu_selected' / 'risu_key' / 'libra_extended' must keep working, and must end up on the
   // one engine rather than silently keeping the old single-signal behaviour.
@@ -1743,13 +1730,6 @@ function __libraNarrativeStripPatch(value) {
       DEFAULT_INPUT_ASSIST_LORE_ACTIVATION_MODE
     );
   };
-  const INPUT_ASSIST_MODE_DEFS = Object.freeze({
-    off: Object.freeze({ label: '사용 안 함', description: '원래 입력을 그대로 초안 작성 단계로 전달합니다.' }),
-    user_focus: Object.freeze({ label: '유저 중심', description: '유저가 선언한 의도와 행동을 중심으로 입력 전체를 자연스럽게 재구성합니다.' }),
-    npc_focus: Object.freeze({ label: 'NPC 중심', description: '현재 NPC의 능동적인 행동과 반응 가능성이 드러나도록 입력 전체를 재구성합니다.' }),
-    offscreen_focus: Object.freeze({ label: '미등장 NPC·세력', description: '미등장 인물과 세력의 인과적인 움직임이 이어지도록 입력 전체를 재구성합니다.' }),
-    random: Object.freeze({ label: '랜덤 가챠', description: '위 세 재구성 관점 중 하나를 매 실행마다 무작위로 선택합니다.' })
-  });
   const CORE_ito_STAGE_IDS = Object.freeze(['character_ito', 'world_ito', 'plot_ito']);
   const DEFAULT_ito_STAGE_ORDER = Object.freeze(CORE_ito_STAGE_IDS.slice());
   const ito_STAGE_ALIAS_MAP = Object.freeze({
@@ -1921,28 +1901,6 @@ function __libraNarrativeStripPatch(value) {
   };
   const RESPONSE_IMPROVEMENT_PROFILES = Object.freeze(['off', 'recommended', 'all', 'custom']);
   const DEFAULT_RESPONSE_IMPROVEMENT_PROFILE = 'recommended';
-  const RESPONSE_IMPROVEMENT_PROFILE_DEFS = Object.freeze({
-    off: Object.freeze({
-      label: '사용 안 함',
-      description: '선택형 응답 개선 지시를 주입하지 않습니다.',
-      meta: '기존 Ariadne 프롬프트만 사용'
-    }),
-    recommended: Object.freeze({
-      label: '권장 설정',
-      description: '장면성·인물 자율성·연속성 표현을 균형 있게 보강합니다.',
-      meta: '별도 분석 호출 없음'
-    }),
-    all: Object.freeze({
-      label: '전체 활성화',
-      description: '욕설 절제를 포함한 모든 선택형 작성 지시를 사용합니다.',
-      meta: '모든 지시 켬'
-    }),
-    custom: Object.freeze({
-      label: '직접 선택',
-      description: '전문가 설정에서 지시를 개별적으로 켜고 끈 상태입니다.',
-      meta: '개별 토글'
-    })
-  });
   const RESPONSE_IMPROVEMENT_CATEGORY_DEFS = Object.freeze({
     scene: Object.freeze({ label: '장면 구성', description: '장면 실행과 압력·종결 방식을 조정합니다.' }),
     agency: Object.freeze({ label: '사용자와 모델 행동', description: '사용자가 확정한 행동과 모델이 새로 추가하는 행동을 구분합니다.' }),
@@ -18832,38 +18790,6 @@ ${text(paired.leadingAssistant.content || '')}
     return lines.join('\n');
   };
 
-  const LIBRA_HISTORICAL_FACT_RULES = Object.freeze([
-    {
-      kind: 'agreement_or_boundary',
-      weight: 8,
-      pattern: /(?:약속|합의|동의|허락|금지|규칙|조건|경계|거절|수락|하기로\s*했|하지\s*않기로|promise|promised|agree(?:d|ment)?|consent(?:ed)?|permission|forbid|forbidden|rule|boundary|reject(?:ed|ion)?|accept(?:ed|ance)?)/i
-    },
-    {
-      kind: 'knowledge_or_secret',
-      weight: 8,
-      pattern: /(?:비밀|정체|알고\s*있|알게\s*됐|알게\s*되|모르고\s*있|모른다|기억|잊지|숨기|밝히지|공개하지|secret|identity|knows?\b|learned|does\s+not\s+know|doesn['’]?t\s+know|remember|forgot|hide|hidden|undisclosed)/i
-    },
-    {
-      kind: 'relationship_or_attitude',
-      weight: 7,
-      pattern: /(?:관계|연인|친구|가족|동료|상사|부하|파트너|신뢰|불신|호감|애정|증오|싫어|경계하|존경|의지하|relationship|lover|dating|friend|family|colleague|superior|subordinate|partner|trust|distrust|affection|resent|hate|respect|rely)/i
-    },
-    {
-      kind: 'identity_or_role',
-      weight: 6,
-      pattern: /(?:(?:이름|직업|직책|역할|소속|담당|대표|매니저|리더|멤버)(?:은|는|이|가|이다|였다|라고)|(?:맡고\s*있|소속되어|근무하고)|\b(?:name|occupation|position|role|affiliation|manager|leader|member)\b.{0,50}\b(?:is|was|works?|belongs?|serves?)\b)/i
-    },
-    {
-      kind: 'obligation_or_resource',
-      weight: 6,
-      pattern: /(?:책임|의무|빚|보상|계약|소유|맡기|보관|돌려주|갚아|지켜야|해야\s*한다|책임지|obligation|responsib(?:le|ility)|debt|contract|owns?|possession|entrusted|return|repay|must\b)/i
-    },
-    {
-      kind: 'unresolved_goal',
-      weight: 5,
-      pattern: /(?:해결되지|미해결|기다리고|예정(?:이|되어|됐|된|인)|계획(?:하|했|이|은|는|을)|하려고\s*(?:한다|했다|하고|하는)|하기로\s*(?:했다|했|한)|원하고\s*있|보류(?:되|한|했)|pending|unresolved|not\s+yet|waiting|plan(?:s|ned|ning)?\b|intend(?:s|ed|ing)?\b|scheduled|wants?\s+to)/i
-    }
-  ]);
 
   
 
@@ -25143,38 +25069,6 @@ function summarizeAgentCbsTag(rawContent) {
     if(row.logicalCancelledAt && !operation.attempts.some(a=>a!==row && !a.finishedAt && a.submittedAt)){operation.physicalFinishedAt=Date.now();operation.status='cancelled_settled';}
     consumerPublishOperation(operation);
   };
-  const consumerDuplicateJsonKeys = raw => {
-    const stack = [];
-    for (let i = 0; i < raw.length; i += 1) {
-      const ch = raw[i];
-      if (ch === '"') {
-        const begin = i; let escaped = false;
-        for (i += 1; i < raw.length; i += 1) {
-          if (escaped) { escaped = false; continue; }
-          if (raw[i] === '\\') { escaped = true; continue; }
-          if (raw[i] === '"') break;
-        }
-        let next = i + 1; while (/\s/.test(raw[next] || '') && next < raw.length) next += 1;
-        const parent = stack[stack.length - 1];
-        if (raw[next] === ':' && parent?.kind === '{') {
-          const key = JSON.parse(raw.slice(begin, i + 1));
-          if (parent.keys.has(key)) return true;
-          parent.keys.add(key);
-        }
-      } else if (ch === '{' || ch === '[') stack.push({ kind: ch, keys: new Set() });
-      else if (ch === '}' || ch === ']') stack.pop();
-    }
-    return false;
-  };
-  const parseConsumerJsonObject = rawValue => {
-    if (rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)) return rawValue;
-    let raw = text(rawValue || '').trim();
-    if (/^```(?:json)?\s*[\s\S]*\s*```$/i.test(raw)) raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-    if (!raw.startsWith('{') || !raw.endsWith('}') || consumerDuplicateJsonKeys(raw)) throw consumerContractError('CONSUMER_JSON_INVALID');
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw consumerContractError('CONSUMER_JSON_INVALID');
-    return parsed;
-  };
 
   const ConsumerActiveOperations = new Map();
   const consumerAwaitHost = (promise,operation,row,queuedAt) => {
@@ -27623,9 +27517,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     return true;
   };
 
-  const reportPipelineStageProgressForRequest = async (stageName, subphase, expectedRequestId) => (
-    await reportPipelineStageProgress(stageName, subphase, expectedRequestId)
-  );
 
   const finishPipelineWorkStatus = async (message, ok = true, autoClearMs = 3500, phase = 'completed', expectedRequestId = 0) => {
     const current = Runtime.pipelineWorkStatus || {};
@@ -28489,31 +28380,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     scheduleGuiTraceRefresh();
   };
 
-  const LIVING_CANON_AUTHORITY_CONTRACT = [
-    'LIVING CANON AUTHORITY CONTRACT:',
-    '- Use prior-agent notes as scoped continuity aids, never as an exhaustive script, canon replacement, or proof by repetition.',
-    '- Authority order: explicit current user decisions/corrections; current user input and declared action; for Ariadne only, the supplied Current Chat Author Note; latest direct narrative facts; exact active setting/lore/system constraints; current same-turn draft as rewrite target; selected stage creative direction; then prior-stage notes as fallible aids.',
-    '- The Current Chat Author Note is a dedicated user directive only when explicitly supplied to Ariadne. Later ito stages inherit its realized intent through Ariadne’s same-turn draft and must not independently reinterpret, redistribute, or override it.',
-    '- STAGE CREATIVE DIRECTION: custom creative guidance applies only to its selected stage. It may shape tone, focus, pacing, and revision priorities, but it cannot erase an explicit current-turn correction, refusal, boundary, concrete choice, canon fact, or continuity constraint.',
-    '- A detail omitted from an agent note is not forbidden. One agent’s unsupported claim cannot validate another agent’s claim.',
-    '- Preserve literal attribution: actor, target, speaker, owner, observer, location, time, posture, distance, visible/held objects, injury, damage, and object state. Do not infer hidden actor, cause, method, identity, intention, ownership, or information path from an observed result.',
-    '- Separate objective truth from character knowledge. Knowledge requires a valid in-world path such as direct perception, communication, established memory, public information, or another confirmed route. Suspicion is not knowledge; rumor is not fact; a correct guess remains a guess until confirmed to that character.',
-    '- CURRENT-RUN SCOPE means the latest completed assistant response plus the current user input. Older retained scenes are historical context unless a concrete present bridge reaches the current continuity.',
-    '- LAST-KNOWN IS NOT CURRENT. An earlier offscreen activity, emotion, conversation, investigation, or routine does not automatically continue now.',
-    '- NO REPLAY. Do not restate, paraphrase, or continue an old scene merely because it remains unresolved or detailed in history. Preserve only the minimum consequence that concretely constrains this response.',
-    '- COMMIT BARRIER: a request, attempt, intention, proposal, expected result, or offered transaction is not proof of success, acceptance, completion, payment, transfer, numerical change, relationship change, or other applied outcome.',
-    '- Classify state implications as EXACT, DIRECTIONAL, PENDING, or PROPOSED. Never invent an exact amount or applied result without explicit canon, a supplied formula, a deterministic rule, or a result already confirmed in the supplied context.',
-    '- Offscreen or secondary-scene material may enter the primary response only through a concrete present bridge: sight, sound, message, report, surveillance, arrival, deadline, obligation, damage, environmental effect, or an explicitly committed immediate interaction.',
-    '- Do not replace the user’s declared action, decide an unperformed user choice, force consent, or determine hidden user-character thoughts and feelings.'
-  ].join('\n');
 
-  const PHYSICAL_ROLE_LEDGER_CONTRACT = [
-    'PHYSICAL ROLE LEDGER:',
-    '- Before accepting analysis or prose, verify each material beat as actor -> action -> target.',
-    '- Keep speaker, observer, recipient, object owner, posture, distance, contact point, and current position literal.',
-    '- Reject role inversion, impossible reach or movement, unexplained relocation, and any sentence whose pronoun makes actor or target ambiguous.',
-    '- When the supplied evidence is insufficient, preserve observable uncertainty instead of inventing hidden feelings, consent, knowledge, or causality.'
-  ].join('\n');
 
   const injectSystemMessage = (messages, content, settings) => {
     Runtime.lastInjection = text(content);
@@ -61662,17 +61529,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     // Similarity is computed but NEVER used on its own: every caller combines it
     // with an identity or evidence check (`01` section 7.1).
-    const unifiedPreferenceAnchorSimilarity = (left = null, right = null) => {
-      const tokens = value => new Set(unifiedPreferenceTokens(value));
-      const a = tokens(left?.topic || inferPreferenceTopic(left?.text || ''));
-      const b = tokens(right?.topic || inferPreferenceTopic(right?.text || ''));
-      if (!a.size || !b.size) return 0;
-      let intersection = 0;
-      for (const token of a) if (b.has(token)) intersection += 1;
-      return intersection / Math.max(1, a.size + b.size - intersection);
-    };
-    const unifiedPreferenceTokens = value => String(value || '')
-      .toLowerCase().split(/[^0-9a-z가-힣]+/u).map(token => token.trim()).filter(token => token.length >= 2);
     // A scoped boundary keeps its four axes. `boundary` lines must not be widened
     // to a general rule (`03` A08): the axes are preserved verbatim, and an axis
     // that the evidence does not state stays empty rather than being inferred.
@@ -68321,56 +68177,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // Flat sentence windows could select "댄스 동아리 소속..." while dropping the
     // preceding "이유민:" sentence, leaving the final model unable to know whose
     // trait it was. Build bounded semantic groups first and never expand across them.
-    const recallExcerptGroups = (sectionText, sectionKey = '') => {
-      const source = String(sectionText || '').replace(/\r\n/g, '\n').trim();
-      if (!source) return [];
-      const paragraphs = source.split(/\n{2,}/).map(value => value.trim()).filter(Boolean);
-      const groups = [];
-      const pushGroup = (raw, kind = 'paragraph') => {
-        const body = String(raw || '').trim();
-        if (!body) return;
-        const units = sentenceUnits(body);
-        if (!units.length) return;
-        let anchorText = '';
-        let anchorIndex = -1;
-        if (sectionKey === 'characters_relations') {
-          const identityLead = body.match(/^((?:\*\*)?[^:\n]{1,96}(?:\*\*)?\s*:\s*[^.!?。！？\n]*[.!?。！？]?)/);
-          anchorText = String(identityLead?.[1] || units[0] || '').trim();
-          anchorIndex = 0;
-        } else if (sectionKey === 'chronology') {
-          // The first sentence establishes who/when/where owns later clauses in the
-          // event paragraph; preserve it even when the strongest hit is later.
-          anchorText = String(units[0] || '').trim();
-          anchorIndex = 0;
-        }
-        groups.push({
-          index: groups.length,
-          kind,
-          raw: body,
-          units,
-          anchorText,
-          anchorIndex
-        });
-      };
-
-      for (const paragraph of paragraphs) {
-        const lines = paragraph.split(/\n/).map(line => line.trim()).filter(Boolean);
-        const bulletLines = lines.filter(line => /^[-*+]\s+/.test(line));
-        if (bulletLines.length && (sectionKey === 'narrative_open_threads' || sectionKey === 'facts_uncertainty')) {
-          // Each list item is an atomic evidence unit. Do not let a sentence radius
-          // spill into the next bullet, which can belong to a different person/event.
-          for (const line of bulletLines) pushGroup(line, 'list_item');
-          const proseLines = lines.filter(line => !/^[-*+]\s+/.test(line));
-          for (const line of proseLines) {
-            if (/^(?:확정 사실|불확실 정보|confirmed facts?|uncertain(?:ty)?|unknown)\s*[:：]?$/i.test(line)) continue;
-            pushGroup(line, 'paragraph');
-          }
-          continue;
-        }
-        pushGroup(paragraph, 'paragraph');
-      }
-      return groups;
-    };
 
 
 
@@ -80519,9 +80325,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const raw = await storage.getJson(key.lensRaw(scope, lensId), null);
       return asArray(Array.isArray(raw) ? raw : raw?.entries).filter(entry => entry && entry.runId);
     };
-    const saveLensRawRing = async (scope, lensId, entries, limit = LENS_RAW_RING_MAX) => {
-      await storage.setJson(key.lensRaw(scope, lensId), { schema: 'libra.lens_raw_store.v1', entries: asArray(entries).slice(0, clampInt(limit, 5, 50, LENS_RAW_RING_MAX)) });
-    };
 
     // ---- registry ------------------------------------------------------------------------------
     let lensRegistryCache = null;
@@ -84494,6 +84297,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.t-libra [data-world-manager-domain] .split,.t-libra [data-world-domain-browser] .split{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 12px;min-width:0}',
     '.t-libra [data-world-manager-domain] .badge,.t-libra [data-world-domain-browser] .badge{max-width:100%;white-space:normal;word-break:keep-all}',
     '.t-libra .page[data-page=desk]>.page-head>.page-actions{display:none!important}',
+    '.t-libra .libra-book-state>.btn{gap:7px}.t-libra .libra-book-state>.btn .badge{padding:0 8px}',
+    '.t-libra .libra-book-state__panel{width:min(340px,calc(100vw - 32px));padding:14px;gap:10px;font-size:13px}.t-libra .libra-book-state__title{overflow-wrap:anywhere}.t-libra .libra-book-state__panel .kv{grid-template-columns:minmax(48px,auto) minmax(0,1fr);align-items:center}.t-libra .libra-book-state__panel .kv dt{margin:0}.t-libra .libra-book-state__panel .hint{margin:0}.t-libra .libra-book-state__note{white-space:pre-wrap;overflow-wrap:anywhere}.t-libra .libra-book-state__actions{display:grid;gap:2px;margin:0 -6px;padding-top:6px;border-top:1px solid var(--border)}',
+    '@media(max-width:760px){.t-libra .page-head{position:relative}.t-libra .libra-book-state{position:static}.t-libra .libra-book-state__panel{left:0;right:0;top:auto;width:auto;margin-top:6px}}',
     // Read and manage are separate screens; the scope bar says what the manage screen may change.
     '.t-libra .manage-scope{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;padding:12px 16px;border:1px solid var(--accent-line);border-left:4px solid var(--accent);border-radius:var(--r-md);background:var(--accent-soft)}',
     '.t-libra .manage-scope__copy{display:grid;gap:4px;min-width:0;flex:1 1 280px}.t-libra .manage-scope__copy>b{color:var(--accent-ink);font:700 15px/1.4 var(--font-display)}.t-libra .manage-scope__copy>.hint{color:var(--text2)}.t-libra .manage-scope__copy>.badge{justify-self:start}',
@@ -84996,38 +84802,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     markGuiDirty();
   };
 
-  const providerEditorField = (label, key, options = {}) => {
-    const preset = Gui.state.providers[Gui.selectedPreset];
-    const value = preset?.[key] ?? '';
-    let control;
-    if (options.choices) {
-      control = selectNode(value, options.choices, next => {
-        const oldProvider = preset.provider;
-        preset[key] = next;
-        if (key === 'provider') {
-          const oldDefault = defaultUrlForProvider(oldProvider);
-          if (!preset.url || preset.url === oldDefault) preset.url = defaultUrlForProvider(next);
-          preset.provider = canonicalProvider(next);
-          renderProviderEditorGui();
-        } else if (key === 'reasoning_preset') {
-          renderProviderEditorGui();
-        }
-      });
-    } else if (options.checkbox) {
-      control = checkboxNode(!!value, options.checkboxLabel || '사용', next => { preset[key] = next; });
-    } else {
-      control = inputNode(value, next => { preset[key] = options.number ? Number(next) : next; }, {
-        tag: options.textarea ? 'textarea' : 'input',
-        type: options.number ? 'number' : (options.type || 'text'),
-        class: options.tall ? 'tall' : '',
-        placeholder: options.placeholder || '',
-        autocomplete: options.autocomplete
-      });
-    }
-    return fieldNode(label, control, options.note || '');
-  };
 
-  const isVertexProvider = (provider) => ['vertex', 'vertex-openai'].includes(canonicalProvider(provider));
 
   const inferReasoningFamily = (preset = {}) => effectiveReasoningFamilyForPreset(preset);
 
@@ -86319,22 +86094,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
 
 
-  const simpleLengthChoiceForRange = (min, max) => SIMPLE_LENGTH_CHOICES.find(choice =>
-    Number(min) === choice.min && Number(max) === choice.max
-  ) || null;
 
 
-  const applySimpleLengthToGui = choiceId => {
-    const choice = SIMPLE_LENGTH_CHOICES.find(item => item.id === choiceId);
-    if (!choice) return;
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    runtime.targetDraftMinChars = choice.min;
-    runtime.targetDraftMaxChars = choice.max;
-    runtime.maxPreviousStageChars = choice.supportChars;
-    runtime.maxInjectionChars = choice.supportChars;
-    markGuiDirty();
-    renderSettingsGui();
-  };
 
   const applyNsfwModeToGui = mode => {
     const runtime = Gui.state.runtime || (Gui.state.runtime = {});
@@ -86381,16 +86142,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
 
 
-  const saveSimpleSettingsFromGui = async () => {
-    try {
-      guiSetStatus('선택한 설정을 저장하고 있습니다…', false, true);
-      await saveGuiState();
-      await renderSettingsGui();
-      guiSetStatus('쉬운 설정을 저장했습니다. 다음 대화부터 적용됩니다.');
-    } catch (error) {
-      guiSetStatus(error?.message || String(error), true, true);
-    }
-  };
 
 
 
@@ -87481,15 +87232,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
 
 
-  const normalizeLibraResponseMaterialRuntime = runtime => {
-    runtime.responseLoreEnabled = runtime.responseLoreEnabled !== false;
-    runtime.responseLoreStartCount = clampInt(runtime.responseLoreStartCount, MIN_RESPONSE_LORE_START_COUNT, MAX_RESPONSE_LORE_ITEMS, DEFAULT_RESPONSE_LORE_START_COUNT);
-    runtime.responseLoreMaxItems = clampInt(runtime.responseLoreMaxItems, runtime.responseLoreStartCount, MAX_RESPONSE_LORE_ITEMS, DEFAULT_RESPONSE_LORE_MAX_ITEMS);
-    runtime.responseLoreMaxChars = clampInt(runtime.responseLoreMaxChars, MIN_RESPONSE_LORE_CHARS, MAX_RESPONSE_LORE_CHARS, DEFAULT_RESPONSE_LORE_MAX_CHARS);
-
-
-    return runtime;
-  };
 
   const buildGenerationPolicyPanel = () => {
     const runtime=Gui.state.runtime;
@@ -92247,22 +91989,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const unappliedRuns = new Set(saved.filter(row => Number(row.turnRange?.end || 0) > (turn ?? 0)).map(row => row.runId).filter(Boolean));
     const failedRun = (snapshot.runs || []).find(run => unappliedRuns.has(run.runId)
       && ['failed', 'error', 'failed_open'].includes(run.stateTracking?.status));
-    const detail = domains.map((domain, index) => {
+    const detailRows = domains.map((domain, index) => {
       const name = { characters: '인물', relationships: '관계', world: '세계', narrative: '서사' }[domain];
       const statusLabel={ready:'반영 완료',partial:'일부 반영',not_updated:'미반영',failed:'갱신 실패',error:'갱신 실패',failed_open:'갱신 실패'}[rows[index].status]||'반영 상태 미확인';
-      return `${name}: ${turns[index] != null && Number.isFinite(turns[index]) ? 'T' + turns[index] : '미확인'} · ${statusLabel}`;
-    }).join('\n');
+      const tone = { ready: 'ok', partial: 'warn', not_updated: 'warn', failed: 'danger', error: 'danger', failed_open: 'danger' }[rows[index].status] || '';
+      return { name, turn: turns[index] != null && Number.isFinite(turns[index]) ? 'T' + turns[index] : '미확인', status: statusLabel, tone };
+    });
+    const detail = detailRows.map(row => `${row.name}: ${row.turn} · ${row.status}`).join('\n');
     const active = job?.scopeKey === scopeKey && ['preparing', 'running', 'cancel_requested', 'adopting'].includes(job.state);
     if (!head && !saved.length) return { ...base, state: 'empty', label: '첫 기억 생성 대기' };
     if (failedRun || rows.some(row => ['failed', 'error', 'failed_open'].includes(row.status)) || reasons.some(reason => /failed|error|timeout/i.test(reason))) {
-      return { ...base, state: 'failed', label: `상태 적용 실패 · ${basis}`, detail: detail + (failedRun ? '\n' + String(failedRun.stateTracking.reason || '상태 적용 작업 실패') : ''), retry: !active };
+      return { ...base, state: 'failed', label: `상태 적용 실패 · ${basis}`, rows: detailRows, detail: detail + (failedRun ? '\n' + String(failedRun.stateTracking.reason || '상태 적용 작업 실패') : ''), retry: !active };
     }
     if (known && turn >= savedTurn && rows.every(row => row.status === 'ready') && !head?.unifiedCoverage?.legacyCount) {
-      return { ...base, state: 'ready', label: basis, detail };
+      return { ...base, state: 'ready', label: basis, rows: detailRows, detail };
     }
     const partial = rows.some(row => ['partial', 'not_updated'].includes(row.status)) || !!head?.unifiedCoverage?.legacyCount;
     const legacyOnly=!!head?.unifiedCoverage?.legacyCount && known && turn>=savedTurn && rows.every(row=>row.status==='ready');
-    return { ...base, state: partial ? 'partial' : 'pending', label: `기억 저장 완료 · T${savedTurn}까지${known?'':' · 상태 반영 기준 미확인'}`,
+    return { ...base, state: partial ? 'partial' : 'pending', label: `기억 저장 완료 · T${savedTurn}까지${known?'':' · 상태 반영 기준 미확인'}`, rows: detailRows,
       detail: `${detail}${head?.unifiedCoverage?.legacyCount ? '\n이전 형식의 기억 일부는 상태 추적에 반영되지 않았습니다. 상태 갱신만으로 해당 정보가 새로 생성되지는 않습니다.' : '\n저장된 기억 중 현재 상태에 아직 반영되지 않은 정보가 있습니다.'}`,
       retry: !active && saved.length > 0 && !legacyOnly };
   };
@@ -92276,6 +92020,88 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return '확인 필요';   // failed / partial / pending
   };
 
+  const bookBadge = (text, tone = '') => guiEl('span', { class: `badge${tone ? ' badge--' + tone : ''}`, text });
+  const BOOK_STATE_TONES = Object.freeze({ ready: 'ok', partial: 'warn', pending: 'warn', failed: 'danger', unavailable: 'danger' });
+
+  const buildBookStateDetail = (progress, message) => {
+    const busy = Gui.bookStateApplying === true;
+    // Rows come first in the detail text; whatever follows them is the explanation.
+    const note = (progress.rows ? progress.detail.split('\n').slice(progress.rows.length).join('\n') : progress.detail).trim();
+    const explanation = { partial: '기억은 저장됐으며, 일부 상태 정보의 반영 범위가 제한됩니다.', failed: '저장된 기억의 상태 갱신을 완료하지 못했습니다.', pending: '저장된 기억이 아직 상태에 반영되지 않았습니다.', unavailable: '현재 상태를 읽지 못했습니다.' }[progress.state];
+    const retry = progress.retry ? guiEl('button', { type: 'button', text: busy ? '갱신 중…' : '상태 다시 갱신', disabled: busy,
+      onClick: async (event) => {
+        const target = event?.currentTarget || null;
+        if (Gui.bookStateApplying) return;
+        Gui.bookStateApplying = true; if (target) { target.disabled = true; target.textContent = '적용 중…'; }
+        try {
+          const context = await LibraMemoryCore.resolveContext();
+          if (context.scope?.scopeKey !== progress.scopeKey) throw new Error('채팅이 변경되었습니다. 현재 화면을 다시 열어 주세요.');
+          const result = await LibraMemoryCore.recoverPendingStateTrackingJournal(context, { force: true, unifiedOnly: true });
+          await LibraMemoryCore.refreshSnapshot(undefined, { suppressGuiSchedule: true });
+          guiSetStatus(`상태 ${result.recovered || 0}개 작업 적용 · ${result.remaining || 0}개 대기`, !result.ok, true);
+          queueGuiRender(0, 'body');
+        } catch (error) { message.textContent = `적용하지 못했습니다. ${String(error.message || error)}`; }
+        finally { Gui.bookStateApplying = false; if (target) { target.disabled = false; target.textContent = '상태 다시 갱신'; } }
+      }
+    }) : null;
+    return [
+      guiEl('b', { class: 'libra-book-state__title', text: progress.label }),
+      progress.rows ? guiEl('dl', { class: 'kv' }, progress.rows.flatMap(row => [
+        guiEl('dt', { text: row.name }),
+        guiEl('dd', { class: 'cluster' }, [row.turn, bookBadge(row.status, row.tone)])
+      ])) : null,
+      explanation && (progress.state === 'unavailable' || !note) ? guiEl('p', { class: 'hint', text: explanation }) : null,
+      note ? guiEl('p', { class: 'hint libra-book-state__note', text: note }) : null,
+      guiEl('div', { class: 'libra-book-state__actions' }, [
+        // 조회 전용: 스냅샷을 다시 읽기만 한다. 재분석·복구·추가 LLM 호출을 시작하지 않는다.
+        guiEl('button', { type: 'button', text: busy ? '확인 중…' : '다시 확인', disabled: busy,
+          onClick: async () => {
+            if (Gui.bookStateApplying) return;
+            Gui.bookStateApplying = true;
+            try { await LibraMemoryCore.refreshSnapshot(undefined, { suppressGuiSchedule: true }); queueGuiRender(0, 'body'); }
+            catch (error) { message.textContent = `상태를 확인하지 못했습니다. ${String(error.message || error)}`; }
+            finally { Gui.bookStateApplying = false; }
+          }
+        }),
+        retry
+      ]),
+      retry ? guiEl('p', { class: 'hint', text: '저장된 기억만 사용 · 새 AI 분석 없음' }) : null
+    ];
+  };
+
+  const buildBookStateButton = page => {
+    const progress = bookStateProgress(page, LibraMemoryCore.peekSnapshot() || {}, LibraMemoryCore.state.canonicalJob);
+    if (!progress) return null;
+    const verdict = bookStateVerdict(progress.state);
+    const message = guiEl('small', { class: 'hint', role: 'status', 'aria-live': 'polite' });
+    const toggle = guiEl('button', { class: 'btn btn--sm', type: 'button', 'aria-haspopup': 'true', 'aria-label': `현재 상태 · ${verdict}` }, [
+      '현재 상태', bookBadge(verdict, BOOK_STATE_TONES[progress.state] || '')
+    ]);
+    const wrap = guiEl('div', { class: 'menu libra-book-state', dataset: { bookStateProgress: page, state: progress.state } }, [
+      toggle,
+      guiEl('div', { class: 'menu__panel libra-book-state__panel' }, [...buildBookStateDetail(progress, message), message])
+    ]);
+    // Rendering replaces the button, so an open panel stays open across refreshes.
+    const setOpen = open => {
+      wrap.classList.toggle('is-open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+      Gui.bookStateOpenPage = open ? page : '';
+    };
+    setOpen(Gui.bookStateOpenPage === page);
+    toggle.addEventListener('click', () => setOpen(!wrap.classList.contains('is-open')));
+    wrap.addEventListener('keydown', event => { if (event.key === 'Escape' && wrap.classList.contains('is-open')) { event.stopPropagation(); setOpen(false); toggle.focus(); } });
+    wrap.libraCloseBookState = () => setOpen(false);
+    const app = Gui.app;
+    if (app && !app.dataset.bookStateDismissBound) {
+      app.dataset.bookStateDismissBound = 'true';
+      app.addEventListener('click', event => {
+        const open = app.querySelector('.libra-book-state.is-open');
+        if (open && !open.contains(event.target)) open.libraCloseBookState?.();
+      });
+    }
+    return wrap;
+  };
+
   // §32.3: 상태는 헤더 오른쪽의 작은 버튼이다. 카드는 상시 표시하지 않고, 상세는 열었을 때만 만든다.
   // 실패를 숨기지 않는다 — 문제가 있으면 버튼 라벨이 확인 필요/조회 실패이고, 열면 전체 문장과
   // 재시도, 반영 결과, 고급 관리가 그대로 있다.
@@ -92283,15 +92109,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
 
 
-  const bookProjectionStateValue = (row, keys = []) => {
-    const source = guiAsObject(row);
-    const state = guiAsObject(source.state);
-    for (const key of guiAsArray(keys)) {
-      const value = source[key] != null && source[key] !== '' ? source[key] : state[key];
-      if (value != null && value !== '') return value;
-    }
-    return '';
-  };
 
   const bookProjectionReadable = (value, limit = 520) => compact(worldManagerArticleValue(value), limit);
   const bookProjectionIdentity = (domain, row, index) => worldManagerRowIdentity(domain, row, index);
@@ -96681,6 +96498,10 @@ advanced
     current.querySelectorAll('.page-head .seg button[data-val]').forEach(button => button.setAttribute('aria-pressed', String((button.dataset.val === 'manage') === manageMode)));
     const head = current.querySelector(':scope > .page-head');
     current.replaceChildren(); if (head) current.appendChild(head);
+    const headActions = head?.querySelector(':scope > .page-actions');
+    headActions?.querySelector(':scope > [data-book-state-progress]')?.remove();
+    const bookState = headActions ? buildBookStateButton(page) : null;
+    if (bookState) headActions.prepend(bookState);
     const status = document.createElement('div');
     status.className = 'hint'; status.dataset.guiStatus = 'true'; status.setAttribute('role','status'); status.setAttribute('aria-live','polite');
     current.appendChild(status);
@@ -97043,15 +96864,7 @@ advanced
     return serial;
   };
 
-  const libraUiLaunchIsCurrent = (kind, serial) => !LibraMemoryCore.state.disposed
-    && Runtime.uiLaunchKind === kind
-    && Number(Runtime.uiLaunchSerial || 0) === Number(serial || 0);
 
-  const endLibraUiLaunch = (kind, serial) => {
-    if (!libraUiLaunchIsCurrent(kind, serial)) return false;
-    Runtime.uiLaunchKind = '';
-    return true;
-  };
 
   // Zero-touch attention: one chat-area button that exists only while the user
   // has something to do (upgrade review blocking memory, failed ranges, past turns

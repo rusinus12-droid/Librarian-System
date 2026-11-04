@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.3.23
+//@display-name ⚡ FLASHBACK Memory v1.3.24
 //@api 3.0
-//@version 1.3.23
+//@version 1.3.24
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/Flashback_Memory.js
@@ -1338,7 +1338,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.3.23';
+const PLUGIN_VERSION = '1.3.24';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -1747,7 +1747,6 @@ const PLUGIN_VERSION = '1.3.23';
     maxRecallPerTurn: 3,
     shardSize: 64
   });
-  const CONVERSATION_DRIFT_CONFIRM_DELAY_MS = 1600;
   const PENDING_TURN_MAX_AGE_MS = 30 * 60 * 1000;
   const MAX_PENDING_TURNS = 8;
   const PENDING_CAPTURE_JOURNAL_VERSION = 3;
@@ -2267,12 +2266,6 @@ const PLUGIN_VERSION = '1.3.23';
     return barrier;
   };
 
-  const takePendingCaptureBarrier = () => {
-    const barrier = Runtime.pendingCaptureBarrier;
-    if (!barrier) return null;
-    Runtime.pendingCaptureBarrier = null;
-    return barrier;
-  };
 
   const currentPendingCaptureBarrier = () => Runtime.pendingCaptureBarrier || null;
 
@@ -2837,7 +2830,6 @@ const PLUGIN_VERSION = '1.3.23';
     return store;
   };
 
-  const appendOperationLogEntry = async (entry) => await appendOperationLogEntries([entry]);
 
   const cancelOperationLogFlushTimer = () => {
     const timer = Runtime.operationLogFlushTimer;
@@ -3521,11 +3513,6 @@ const PLUGIN_VERSION = '1.3.23';
     return out;
   };
 
-  const getAssistantVisibleText = (contentOrMessage) => {
-    if (typeof contentOrMessage === 'string') return contentOrMessage;
-    if (!contentOrMessage || typeof contentOrMessage !== 'object') return '';
-    return contentToText(contentOrMessage.content ?? contentOrMessage.text ?? contentOrMessage.message ?? '');
-  };
 
   const isOwnInjection = (value) => {
     const body = text(value);
@@ -15689,7 +15676,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const argumentSettingField = key => FLASHBACK_ARGUMENT_SETTING_FIELDS.find(field => field.key === key) || null;
   const argumentSettingControlForKey = key => argumentSettingField(key) ? argumentSettingControlId(key) : (FLASHBACK_EXISTING_SETTING_CONTROLS[key] || '');
   const argumentNameToSettingKey = name => text(name).replace(/_([a-z])/g, (_match, letter) => letter.toUpperCase());
-  const settingKeyToArgumentName = key => SETTING_ARGUMENT_NAMES.find(name => argumentNameToSettingKey(name) === key) || '';
   const flashbackSettingSource = (settingKey, argumentOverrides = Runtime.argumentOverrides || {}, storedOverrides = Runtime.storedSettingsOverrides || {}) => {
     if (Object.prototype.hasOwnProperty.call(argumentOverrides || {}, settingKey)) return 'argument';
     if (Object.prototype.hasOwnProperty.call(storedOverrides || {}, settingKey)) return 'saved';
@@ -16256,7 +16242,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     };
   };
 
-  const storedEmbeddingKeyValue = value => storedEmbeddingCredentialMeta(value).key;
 
   const embeddingCredentialEnvelope = (key = '') => ({
     schema: EMBEDDING_CREDENTIAL_SCHEMA,
@@ -19139,19 +19124,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return textBoundaryCapped(value, max);
   };
 
-  const joinLabeledFields = (fields = []) => {
-    const out = [];
-    const seen = new Set();
-    for (const [label, value] of fields) {
-      const body = knowledgeText(value).trim();
-      if (!body || body === '{}' || body === '[]' || body === '[object Object]') continue;
-      const key = stableHash(`${label}\n${body}`);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(label ? `${label}: ${body}` : body);
-    }
-    return out.join('\n\n');
-  };
 
   const collectionFrom = (value) => {
     if (Array.isArray(value)) return value.filter(item => item && typeof item === 'object');
@@ -24200,11 +24172,6 @@ const MemorySuiteSnapshotCache = (() => {
     return task;
   };
 
-  const cloneBaseTitle = (value = '') => text(value || '')
-    .trim()
-    .replace(/\s*(?:\((?:copy|복사(?:본)?)\)|(?:copy|복사(?:본)?)(?:\s*\d+)?)\s*$/i, '')
-    .trim()
-    .toLowerCase();
 
   // Persona identity is presentation/current-user state, not the durable identity
   // of a finalized RisuAI chat. Older Flashback scopes included personaId in the
@@ -27403,10 +27370,6 @@ const MemorySuiteSnapshotCache = (() => {
     }
   };
 
-  const loadAllRecords = async (scopeOverride = null) => {
-    const scope = scopeOverride?.scopeKey ? scopeOverride : (scopeOverride ? { scopeKey: scopeOverride } : await resolveCurrentScope(false));
-    return await loadScopeRecords(scope.scopeKey);
-  };
 
   const saveAllRecords = async (records, settings = null, scopeOverride = null) => {
     const scope = scopeOverride?.scopeKey ? scopeOverride : (scopeOverride ? { scopeKey: scopeOverride } : await resolveCurrentScope(false));
@@ -27563,13 +27526,6 @@ const MemorySuiteSnapshotCache = (() => {
     return false;
   };
 
-  const trimNarrativeSpan = (body, start, end) => {
-    let left = Math.max(0, Number(start || 0) || 0);
-    let right = Math.min(body.length, Math.max(left, Number(end || 0) || 0));
-    while (left < right && /\s/u.test(body[left])) left += 1;
-    while (right > left && /\s/u.test(body[right - 1])) right -= 1;
-    return { start: left, end: right };
-  };
 
   const previousNarrativeGraphemeBoundary = (body, desired, minimum = 0) => {
     const min = Math.max(0, Math.min(body.length, Number(minimum || 0) || 0));
@@ -27901,7 +27857,6 @@ const MemorySuiteSnapshotCache = (() => {
     schemaVersion: { value: NARRATIVE_CHUNK_SCHEMA_VERSION, enumerable: false }
   });
 
-  const makeRecordId = (manifest, index = 0) => `vrm_${(manifest.nextId || 1) + index}`;
 
   const isLowValueMemoryChunk = (chunk, source = {}) => {
     const body = sanitizeSourceText(chunk || '').trim();
@@ -29729,22 +29684,8 @@ const MemorySuiteSnapshotCache = (() => {
     pruneRuntimeEphemera();
   };
 
-  const isDismissedConversationDrift = (signature) => {
-    const until = Number(Runtime.driftDismissed.get(signature) || 0);
-    if (!until) return false;
-    if (Date.now() <= until) return true;
-    Runtime.driftDismissed.delete(signature);
-    return false;
-  };
 
 
-  const isAfterRequestResponseRecord = (record = {}) => {
-    const type = record.sourceType === 'chat_turn' ? 'response' : record.sourceType;
-    return type === 'response'
-      && !(record.autoEpisode || record.sourceType === 'episode_index')
-      && ['afterRequest', 'finalized_live_chat'].includes(record.origin)
-      && Number(record.turnIndex || 0) > 0;
-  };
 
   const responseTurnGroupKey = (record = {}) => compact(record.sourceHash || record.sourceId || `${record.turnIndex}:${record.id || record.hash || ''}`, 240);
 
@@ -29843,46 +29784,8 @@ const MemorySuiteSnapshotCache = (() => {
     return fragments.join('\n\n');
   };
 
-  const buildResponseTurnGroups = (records = []) => {
-    const groups = new Map();
-    for (const record of records || []) {
-      if (!isAfterRequestResponseRecord(record)) continue;
-      const key = responseTurnGroupKey(record);
-      if (!key) continue;
-      const assistantPosition = Number(record.assistantMessagePosition || record.turnIndex || 0) || 0;
-      if (!groups.has(key)) groups.set(key, {
-        key,
-        turnIndex: finiteTurnIndex(record),
-        pairIndex: Number(record.pairIndex || 0) || inferPairIndexFromAssistantPosition(assistantPosition),
-        userPosition: Number(record.userMessagePosition || 0) || 0,
-        assistantPosition,
-        bucketNos: [],
-        records: [],
-        title: record.title || '',
-        sourceId: record.sourceId || '',
-        sourceHash: record.sourceHash || ''
-      });
-      groups.get(key).records.push(record);
-    }
-    for (const group of groups.values()) {
-      group.records.sort((a, b) => Number(a.chunkIndex || 0) - Number(b.chunkIndex || 0) || text(a.id).localeCompare(text(b.id)));
-      const body = reconstructChunkGroupText(group.records);
-      group.userText = userTextFromStoredResponseBody(body);
-      group.assistantText = assistantTextFromStoredResponseBody(body);
-    }
-    return Array.from(groups.values()).sort((a, b) => a.turnIndex - b.turnIndex || a.key.localeCompare(b.key));
-  };
 
-  const responseTurnGroupsForCurrentScope = async (scope) => {
-    const loaded = await loadScopeRecords(scope.scopeKey);
-    return { ...loaded, groups: buildResponseTurnGroups(loaded.records) };
-  };
 
-  const storedConversationBaselineForScope = async (scope) => {
-    if (!scope?.scopeKey) return { groups: [], state: { count: 0, assistants: new Map() } };
-    const { groups } = await responseTurnGroupsForCurrentScope(scope);
-    return { groups, state: liveChatStateFromResponseGroups(groups) };
-  };
 
   const samePairUserText = (left = '', right = '') => {
     const a = canonicalTurnCompareText(left).replace(/\s+---\s*$/g, '').trim();
@@ -29912,17 +29815,6 @@ const MemorySuiteSnapshotCache = (() => {
 
 
 
-  const scheduleConversationDriftCheck = (signature, fn) => {
-    if (!signature || Runtime.driftChecksInFlight.has(signature) || isDismissedConversationDrift(signature)) return false;
-    Runtime.driftChecksInFlight.add(signature);
-    scheduleTimer(() => {
-      Promise.resolve()
-        .then(fn)
-        .catch(error => warn('conversation drift check failed', error))
-        .finally(() => Runtime.driftChecksInFlight.delete(signature));
-    }, CONVERSATION_DRIFT_CONFIRM_DELAY_MS);
-    return true;
-  };
 
   const maybeScheduleConversationDriftCheck = async (scope, normalizedMessages = [], options = {}) => {
     if (!scope?.scopeKey) return { scheduled: false, reason: 'no_scope' };
@@ -33282,11 +33174,6 @@ const MemorySuiteHealthRecovery = (() => {
       return {entityId:String(row.id || row.ref || name),normalized:name,kind:'person',origin:'public_character_metadata',matchForm:'declared',aliases:aliases.map(RecallKeywordFeatures.normalize)};
     }).filter(row=>row.normalized && !row.normalized.startsWith('@'));
   };
-  const resolveRecallEntities = (value, records=[]) => {
-    const entries=new Map();
-    for(const record of records)for(const row of recallEntitiesForRecord(record))entries.set(row.entityId+'\0'+row.normalized,row);
-    return RecallKeywordFeatures.resolveMentions(value,Array.from(entries.values()));
-  };
   const recallFocusForRecord = (record,anchors) => RecallKeywordFeatures.evidenceFocus(record,anchors?.queryPlan || {targets:RecallKeywordFeatures.directAnchors(anchors?.surfaceAnchors||[])},{entities:recallEntitiesForRecord(record),facts:recordStructuredStateFacts(record),properties:[...extractQueryStateProperties(anchors?.queryPlan?.requestText||'')]});
   // Lexical evidence for a semantic candidate, 0..1: an exact surface match counts
   // fully, a BM25 hit decays with its rank. Used as a bounded boost, never alone
@@ -33340,21 +33227,12 @@ const MemorySuiteHealthRecovery = (() => {
     return new Set(focus.evidence.filter(e=>e.kind==='entity_mention').map(e=>e.targetId)).size/Math.max(1,focus.total);
   };
 
-  const visibleRecallClauses = value => sanitizeAssistantForMemory(value || '', { stripRolePrefix: false })
-    .split(/(?<=[.!?。！？…])\s+|\n+/u)
-    .map(clause => clause.trim())
-    .filter(Boolean)
-    .slice(0, 260);
 
-  const collectVisibleClauses = (clauses = [], pattern, limit = 80) => clauses
-    .filter(clause => pattern.test(clause))
-    .slice(0, limit);
 
   const visibleRecallFieldsForRecord = record => {
     const visibleBody = sanitizeAssistantForMemory(record?.text || '', { stripRolePrefix: false });
     const title = sanitizeAssistantForMemory(record?.title || '', { stripRolePrefix: false });
     const tags = Array.isArray(record?.tags) ? record.tags.map(value => text(value)).filter(Boolean) : [];
-    const clauses = visibleRecallClauses(visibleBody);
     const identities = recallEntitiesForRecord(record).flatMap(row=>[row.normalized,...row.aliases]);
     const lexicalAnchors = Array.from(lexicalTokens(`${title}\n${tags.join(' ')}\n${visibleBody}`));
     const titleTokens = Array.from(lexicalTokens(`${title}\n${tags.join(' ')}`)).slice(0, 80);
@@ -33385,7 +33263,6 @@ const MemorySuiteHealthRecovery = (() => {
   };
 
   // Compatibility helper deliberately returns no peer projection.
-  const sparsePublicProjection = _record => ({});
 
   const buildSparseFieldsForRecord = (record = {}, settings = Runtime.settings || DEFAULTS) => visibleRecallFieldsForRecord(record);
 
@@ -34223,10 +34100,6 @@ const MemorySuiteHealthRecovery = (() => {
 
   const numberAnchors = (value) => Array.from(new Set((text(value || '').match(/\b\d{1,4}(?:[.:/-]\d{1,4}){0,3}\b/g) || []).slice(0, 32)));
 
-  const hasAnyHint = (value, hints) => {
-    const normalized = normalizeForLexical(value);
-    return hints.some(hint => RecallKeywordFeatures.hint(normalized,hint));
-  };
 
   // Importance is a structural fallback only. Semantic labels such as event,
   // emotion, or state change must be supplied by the analyzer in metadata;
@@ -35376,13 +35249,6 @@ const MemorySuiteHealthRecovery = (() => {
       .filter(Boolean);
   };
 
-  const recordHasEntityAnchor = (record, anchor) => {
-    const clean = normalizeEntityAnchor(anchor);
-    if (!clean || MEMORY_META_ANCHOR_STOPWORDS.has(clean)) return false;
-    if (recordEntityAnchorSet(record).has(clean)) return true;
-    const haystack = normalizeForLexical(`${record?.title || ''}\n${Array.isArray(record?.tags) ? record.tags.join(' ') : ''}\n${record?.text || ''}`);
-    return haystack.split(/\s+/).map(normalizeEntityAnchor).filter(Boolean).includes(clean);
-  };
 
   const collectEntityFocusedCandidates = (queryAnchors, items = [], settings = Runtime.settings || DEFAULTS) => {
     if (!settings.entityFocusedRecallEnabled) return [];
@@ -35413,7 +35279,6 @@ const MemorySuiteHealthRecovery = (() => {
     return out;
   };
 
-  const ensureForcedRecallItems = (selected = [], forced = [], settings = Runtime.settings || DEFAULTS) => selectFlashbackLegacyCandidates([...forced,...selected],settings);
 
   const applyPerSourceDiversityLimit = (items = [], settings = Runtime.settings || DEFAULTS, context = {}) => selectFlashbackLegacyCandidates(items,settings,context);
 
@@ -36778,7 +36643,6 @@ const MemorySuiteHealthRecovery = (() => {
     return true;
   };
 
-  const budgetGroupForRecord = (record) => sourceGroup(record?.sourceType || 'other');
 
   const recallNarrativeUnits = (value, maxUnitChars = 700, options = {}) => {
     const src = sanitizeAssistantForMemory(value, { stripRolePrefix: false })
@@ -36988,21 +36852,6 @@ const MemorySuiteHealthRecovery = (() => {
     return fitNarrativeTextToBudget(evidence, 320);
   };
 
-  const evenlySampleChronologicalItems = (items = [], limit = 0) => {
-    const source = Array.isArray(items) ? items : [];
-    const cap = Math.max(0, Number(limit || 0) || 0);
-    if (!cap || source.length <= cap) return source.slice();
-    if (cap === 1) return [source[source.length - 1]];
-    const out = [];
-    const seen = new Set();
-    for (let index = 0; index < cap; index += 1) {
-      const sourceIndex = Math.round((index * (source.length - 1)) / (cap - 1));
-      if (seen.has(sourceIndex)) continue;
-      seen.add(sourceIndex);
-      out.push(source[sourceIndex]);
-    }
-    return out;
-  };
 
   const recallDisplayOrderValue = (record = {}) => {
     const group = sourceGroup(record.sourceType);
@@ -42532,11 +42381,6 @@ const MemorySuiteHealthRecovery = (() => {
       || (expectedProvider === 'hash' && vector.length !== settings.hashDimensions);
   };
 
-  const isProgressiveReembeddingRecord = (record = {}) => {
-    const episode = record.autoEpisode === true || record.sourceType === 'episode_index';
-    if (isResponseMemoryRecord(record) && !episode) return true;
-    return record.archiveReferenceOnly === true && isResponseDerivedIndexRecord(record);
-  };
 
   const flashbackArchiveEmbeddingSnapshotFingerprint = (records = []) => stableHash(safeStringify(
     (Array.isArray(records) ? records : [])
@@ -46975,25 +46819,6 @@ ${cleanedText}`, 80),
     return found ? found[1] : key;
   };
 
-  const exportSourceTypeGroups = (records = []) => {
-    const order = new Map([...sourceTypeOptions, ...COUNT_TYPES, ['episode_index', '에피소드 인덱스'], ['unknown', '기타']]
-      .map(([type], index) => [type, index]));
-    const map = new Map();
-    for (const record of Array.isArray(records) ? records : []) {
-      const type = normalizedRecordSourceType(record);
-      if (!map.has(type)) map.set(type, { type, label: sourceTypeLabel(type), records: 0, tokens: 0, chars: 0 });
-      const group = map.get(type);
-      const body = text(record.text || '');
-      group.records += 1;
-      group.tokens += Number(record.tokenEstimate || 0) || estimateTokens(body);
-      group.chars += body.length;
-    }
-    return Array.from(map.values()).sort((a, b) => {
-      const ao = order.has(a.type) ? order.get(a.type) : 999;
-      const bo = order.has(b.type) ? order.get(b.type) : 999;
-      return ao - bo || a.label.localeCompare(b.label);
-    });
-  };
 
   const ensureManualEditorState = () => {
     const current = Runtime.guiManualEditor && typeof Runtime.guiManualEditor === 'object' ? Runtime.guiManualEditor : {};
@@ -47344,7 +47169,6 @@ ${cleanedText}`, 80),
     return `<dt>${escapeHtml(label)}</dt><dd>${formatNumber(item.records)} · ${formatNumber(item.tokens)} tokens</dd>`;
   }).join('');
 
-  const renderStorageTypeCells = (stats) => COUNT_TYPES.map(([type]) => `<td>${formatNumber(stats?.byType?.[type]?.tokens || 0)}</td>`).join('');
 
   const storageScopeSelection = () => {
     if (!(Runtime.guiStorageSelectedScopeKeys instanceof Set)) Runtime.guiStorageSelectedScopeKeys = new Set();
@@ -48794,17 +48618,6 @@ ${cleanedText}`, 80),
     const deliveredFragments = returned ? (pipeline.budgetedFragments ?? delivery.returnedFragments ?? delivery.delivered ?? null) : null;
     const actualChars = Math.max(0, Number(recall?.evidenceBudgetPlan?.actualChars || 0) || 0);
     const excluded = (delivery.discarded || []).filter(item => item?.reason === 'not_delivered_budget').length;
-    const frameHtml = selected.slice(0, 8).map((item, index) => {
-      const detail = turnPairDisplayText(item?.detail || item?.preview || item?.record?.text || '');
-      const preview = turnPairDisplayText(item?.preview || detail);
-      const title = text(item?.displayTitle || item?.title || item?.record?.title || item?.id || item?.record?.id || '제목 없음');
-      const sourceType = sourceTypeLabel(item?.sourceType || item?.record?.sourceType || item?.record?.type || 'unknown');
-      const score = Number.isFinite(Number(item?.score)) ? Number(item.score).toFixed(3) : '—';
-      const cosine = Number.isFinite(Number(item?.cosine)) ? Number(item.cosine) : null;
-      const turnRange = safeStringify(item?.turnRange || item?.record?.turnRange, '확인 불가');
-      const components = item?.components && typeof item.components === 'object' ? Object.entries(item.components).filter(([,v]) => Number.isFinite(Number(v))).map(([k,v]) => `${k} ${Number(v).toFixed(3)}`).join(' · ') : '구성 점수 확인 불가';
-      return `<details class="frame-card" id="fb-recall-frame-${index}"><summary><div class="frame-card__img fc${index % 4 + 1}">${escapeHtml(preview || '미리보기 없음')}</div><div class="frame-card__row"><div><div class="frame-card__type">FRAME ${String(index + 1).padStart(2,'0')} · ${escapeHtml(sourceType)}</div><div class="frame-card__title">${escapeHtml(title)}</div></div><span class="frame-card__score" aria-label="검색 점수">${score}</span></div><span class="frame-card__more"></span></summary><div class="frame-card__detail">${cosine == null ? '' : `<div class="meter"><span>FOCUS · 벡터 유사도 ${cosine.toFixed(3)}</span><meter min="-1" max="1" value="${Math.max(-1,Math.min(1,cosine))}" aria-label="벡터 유사도"></meter></div>`}<b>기억 내용</b><p>${escapeHtml(detail || '저장된 상세 본문이 없습니다.')}</p><details class="fold"><summary>출처 및 검색 점수</summary><div class="fold__body"><dl class="kv"><dt>출처</dt><dd>${escapeHtml(item?.origin || item?.record?.origin || '확인 불가')} · ${escapeHtml(sourceType)}</dd><dt>턴 범위</dt><dd>${escapeHtml(turnRange)}</dd><dt>검색 점수</dt><dd>${score}</dd><dt>구성</dt><dd>${escapeHtml(components)}</dd></dl><p class="hint">기억 본문입니다. 원문 U+A 전문을 별도로 조회한 결과는 아닙니다.</p></div></details></div></details>`;
-    }).join('');
     const recallFrame = renderLastRecallPanel(recall, current.scope?.scopeKey || '');
     const byType = COUNT_TYPES.map(([type,label]) => ({type,label,...(current.stats?.byType?.[type] || {records:0,tokens:0})}));
     const activityEntries = activityLogSnapshot().slice(-2).reverse();
@@ -51164,18 +50977,6 @@ ${cleanedText}`, 80),
     };
   };
 
-  const closeManualEditorPanel = () => {
-    Runtime.guiManualEditor = {
-      sourceType: '',
-      search: '',
-      sort: 'newest',
-      limit: MANUAL_EDITOR_PAGE_SIZE,
-      pendingDeleteKeys: []
-    };
-    const node = getGuiNode('manualEditorPanel');
-    if (node) { node.__manualEditorData = null; node.innerHTML = renderManualEditorPanelHtml(null); }
-    manualEditorRenderToken += 1;
-  };
 
   const openManualEditorForSourceType = async (sourceType = MANUAL_EDITOR_SOURCE_TYPE) => {
     const normalizedSourceType = normalizeDisplaySourceType(sourceType || MANUAL_EDITOR_SOURCE_TYPE);

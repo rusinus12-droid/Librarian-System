@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.22
+//@display-name GRADIA v0.28.23
 //@api 3.0
-//@version 0.28.22
+//@version 0.28.23
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -851,7 +851,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.22';
+  const PLUGIN_VERSION = '0.28.23';
   
   
   
@@ -1847,18 +1847,6 @@
   );
   const WRITING_MODES = Object.freeze(['novel', 'rp']);
   const DEFAULT_WRITING_MODE = 'novel';
-  const WRITING_MODE_DEFS = Object.freeze({
-    novel: Object.freeze({
-      label: '소설 모드',
-      description: '풀사칭 모드입니다. GRADIA는 페르소나와 주변 인물의 행동, 전개를 유저가 지시한 범위에 묶이지 않고 자율적으로 해석·묘사하며 추가 행동과 전개까지 씁니다. 유저가 명시해 고정한 내용만 지킵니다.',
-      meta: '풀사칭 · 페르소나·주변 인물·전개 자율 집필'
-    }),
-    rp: Object.freeze({
-      label: 'RP 모드',
-      description: 'AI가 지어내면 안 되는 범위를 세부 모드로 고릅니다. 사칭 금지에는 대사도 포함됩니다. 따옴표로 묶인 대사만 입력하면 페르소나의 대사로 인식합니다.',
-      meta: '세부 모드로 사칭 금지 범위 선택'
-    })
-  });
   const normalizeWritingMode = (value, fallback = DEFAULT_WRITING_MODE) => {
     const raw = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
     const aliases = { novel_mode: 'novel', story: 'novel', original: 'novel', rp_mode: 'rp', roleplay: 'rp', role_play: 'rp', author_directed: 'rp' };
@@ -1960,7 +1948,6 @@
       'Inventing includes spoken lines: not one line of dialogue may be made up for the persona.'
     ];
   };
-  const buildRpImpersonationScopeContract = settings => buildRpImpersonationScopeLines(settings).join('\n');
   // Stage instructions speak of "NPC/world" as model-owned. In a locked mode only the unlocked part stays model-owned.
   const applyRpScopeToSystemPrompt = (settings, prompt) => {
     if (!rpScopeLocksCast(settings) || typeof prompt !== 'string') return prompt;
@@ -2193,13 +2180,6 @@
     void value;
     return UNIFIED_LORE_ACTIVATION_MODE;
   };
-  const INPUT_ASSIST_MODE_DEFS = Object.freeze({
-    off: Object.freeze({ label: '사용 안 함', description: '원래 입력을 그대로 초안 작성 단계로 전달합니다.' }),
-    user_focus: Object.freeze({ label: '유저 중심', description: '유저가 선언한 의도와 행동을 중심으로 입력 전체를 자연스럽게 재구성합니다.' }),
-    npc_focus: Object.freeze({ label: 'NPC 중심', description: '현재 NPC의 능동적인 행동과 반응 가능성이 드러나도록 입력 전체를 재구성합니다.' }),
-    offscreen_focus: Object.freeze({ label: '미등장 NPC·세력', description: '미등장 인물과 세력의 인과적인 움직임이 이어지도록 입력 전체를 재구성합니다.' }),
-    random: Object.freeze({ label: '랜덤 가챠', description: '위 세 재구성 관점 중 하나를 매 실행마다 무작위로 선택합니다.' })
-  });
   const CORE_AIDE_STAGE_IDS = Object.freeze(['aide_character', 'aide_world', 'aide_plot']);
   const DEFAULT_AIDE_STAGE_ORDER = Object.freeze(CORE_AIDE_STAGE_IDS.slice());
   const AIDE_STAGE_ALIAS_MAP = Object.freeze({
@@ -2231,7 +2211,6 @@
     return ordered.slice(0, CORE_AIDE_STAGE_IDS.length);
   };
   const orderedAideStageDefs = (value) => normalizeAideStageOrder(value).map(stageId => STAGE_DEF_MAP[stageId]).filter(Boolean);
-  const orderedBeforeStageDefs = (value) => [STAGE_DEF_MAP.shadow_act, ...orderedAideStageDefs(value)];
   const QUICK_PROFILE_IDS = Object.freeze(['fast', 'balanced', 'quality', 'custom']);
   const QUICK_PROFILE_DEFS = Object.freeze({
     fast: Object.freeze({
@@ -2254,12 +2233,6 @@
       analysisTokenScale: 1, analysisLabel: '심층 분석'
     })
   });
-  const SIMPLE_TURN_CHOICES = Object.freeze([
-    Object.freeze({ value: 4, label: '짧게', description: '가벼운 대화와 빠른 장면', meta: '최근 4턴' }),
-    Object.freeze({ value: 8, label: '보통', description: '대부분의 RP에 알맞은 범위', meta: '최근 8턴 · 추천' }),
-    Object.freeze({ value: 12, label: '넓게', description: '복잡한 관계와 설정을 더 많이 참고', meta: '최근 12턴' }),
-    Object.freeze({ value: 24, label: '아주 넓게', description: '장기 문맥을 많이 참고하지만 더 무거움', meta: '최근 24턴' })
-  ]);
   const SIMPLE_LENGTH_CHOICES = Object.freeze([
     Object.freeze({
       id: 'compact',
@@ -2625,7 +2598,7 @@ Before continuing, verify:
     '- Expose no analysis, prompt labels, hidden instructions, model process, or other out-of-story material.',
     ...(isPlayerControlledDraftMode(settings) ? [...RESPONSE_HARD_RP_INVARIANT_LINES, ...buildRpImpersonationScopeLines(settings)] : RESPONSE_HARD_NOVEL_INVARIANT_LINES).map(line => `- ${line}`)
   ].join('\n');
-  const buildResponseImprovementInstructionBlock = () => ''; // compatibility no-op; retired in v0.25.14
+ // compatibility no-op; retired in v0.25.14
 
   const buildFinalQualityPreservationContract = (settings = {}) => {
     const active = ['scene-performance', 'output-contract-discipline']
@@ -2642,15 +2615,6 @@ Before continuing, verify:
     return ['FINAL QUALITY PRESERVATION CONTRACT:', ...lines].join('\n');
   };
 
-  const AIDE_ORDER_CHOICES = Object.freeze([
-    Object.freeze(['aide_character', 'aide_world', 'aide_plot']),
-    Object.freeze(['aide_character', 'aide_plot', 'aide_world']),
-    Object.freeze(['aide_world', 'aide_character', 'aide_plot']),
-    Object.freeze(['aide_world', 'aide_plot', 'aide_character']),
-    Object.freeze(['aide_plot', 'aide_character', 'aide_world']),
-    Object.freeze(['aide_plot', 'aide_world', 'aide_character'])
-  ]);
-  const aideOrderValue = value => normalizeAideStageOrder(value).join('>');
   const aideOrderLabel = value => orderedAideStageDefs(value).map(def => def.label.replace(' AIDE', '')).join(' → ');
 
   const normalizeSelectedModuleLoreIds = value => {
@@ -3181,10 +3145,8 @@ Before continuing, verify:
   // metadata, so its own num_ctx policy is the only limit this route defines.
   const libOllamaServedRoute = (providerId, url) => providerId === 'ollama_cloud'
     || /(^|\.)ollama\.com$/i.test((() => { try { return new URL(text(url)).hostname; } catch (_) { return ''; } })());
-  const LIB_MODEL_CONTEXT_MISS_TTL_MS = 600000;
   // A route whose catalogue cannot bound this model id stays unproven for a
   // while: the writer preflight must not pay its three-second probe per turn.
-  const libModelContextMisses = new Map();
   const libModelContextProfile = (preset, name) => {
     const providerId = canonicalProvider(preset.provider || 'custom'), modelId = preset.model;
     const mode = modeForProvider(providerId);
@@ -3210,25 +3172,6 @@ Before continuing, verify:
       : manual ? 'configured' : 'provider_default';
     return Object.freeze({ providerId, modelId, requestFormat, context: Object.freeze({ source, limit,
       sourceIdentity: `${source}:${name}:${modelId}:${metadataAt}`, providerId, modelId }) });
-  };
-  const discoverLibModelContext = async (preset, name) => {
-    const known = libModelContextProfile(preset, name);
-    if (known) return known;
-    const missKey = `${canonicalProvider(preset.provider || 'custom')}|${text(preset.url)}|${text(preset.model)}|${providerCredentialCacheFingerprint(preset.key)}`;
-    const missedAt = Number(libModelContextMisses.get(missKey) || 0);
-    if (missedAt && Date.now() - missedAt < LIB_MODEL_CONTEXT_MISS_TTL_MS) return null;
-    let timer;
-    try {
-      // Bound response parsing as well as fetching headers. A late catalogue can
-      // warm the route-bound cache, but cannot resume this writer's owner read.
-      await Promise.race([listProviderModels(preset, { timeoutMs: 3000 }),
-        new Promise(resolve => { timer = setTimeout(resolve, 3000); })]);
-    }
-    catch (_) { libModelContextMisses.set(missKey, Date.now()); return null; }
-    finally { clearTimeout(timer); }
-    const resolved = libModelContextProfile(preset, name);
-    if (!resolved) libModelContextMisses.set(missKey, Date.now());
-    return resolved;
   };
 
   const REASONING_PRESETS = Object.freeze({
@@ -4985,10 +4928,6 @@ Before continuing, verify:
     const p = canonicalProvider(provider);
     return !!PROVIDER_PRESETS[p]?.local || ['ollama', 'lmstudio', 'custom'].includes(p);
   };
-  const providerRequiresUrl = (provider) => {
-    const p = canonicalProvider(provider);
-    return ['custom', 'vertex', 'vertex-openai'].includes(p) || directProviderDefinition(p)?.requiresConfiguredUrl === true;
-  };
   const allowsEmptyKey = providerAllowsEmptyKey;
 
   const stripBearerPrefix = (value) => text(value || '').trim().replace(/^Bearer\s+/i, '').trim();
@@ -5342,7 +5281,6 @@ Before continuing, verify:
     return out;
   };
 
-  const normalizeStoredPostProcessors = () => ({ mode: 'off' });
 
   // Legacy storage/API names use customPrompt + replace. Semantically this is
   // direction guidance only; built-in prompt structure is never replaced.
@@ -5661,19 +5599,6 @@ Before continuing, verify:
 
   
 
-  const retainTelemetryArcCallPlan = (settings = {}, plannedCalls = 0) => {
-    const telemetry = Runtime.callTelemetry;
-    if (!telemetry || telemetry.completedAt) return 0;
-    telemetry.plannedArcBoundaryCalls = Math.max(
-      0,
-      Number(telemetry.plannedArcBoundaryCalls || 0),
-      Number(plannedCalls || 0)
-    );
-    telemetry.expected = expectedTotalCallPlan(settings, {
-      arcBoundaryCalls: telemetry.plannedArcBoundaryCalls
-    });
-    return telemetry.plannedArcBoundaryCalls;
-  };
 
   
 
@@ -8804,31 +8729,7 @@ function agentCbsCalculateRpn(expression) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
 }
 
-function hashAgentCbsContext(cbsContext) {
-  const hasher = createTextHasher()
-    .update('agent-cbs')
-    .update(cbsContext?.characterName || '')
-    .update(cbsContext?.userName || '')
-    .update(cbsContext?.randomSeedText || '')
-    .update(cbsContext?.randomMessageCount ?? 0);
-  const appendObject = (label, value) => {
-    const entries = Object.entries(value || {}).sort((a, b) => a[0].localeCompare(b[0]));
-    hasher.update(label).update(entries.length);
-    entries.forEach(([key, entryValue]) => {
-      hasher.update(key).update(entryValue);
-    });
-  };
-  appendObject('chatVars', cbsContext?.chatVars);
-  appendObject('globalVars', cbsContext?.globalVars);
-  appendObject('defaultVars', cbsContext?.defaultVars);
-  return hasher.digest();
-}
 
-function formatPromptForRunLog(messages) {
-  return (Array.isArray(messages) ? messages : [])
-    .map((message, idx) => `[${idx}] ${message?.role || '(none)'}\n${String(message?.content ?? '')}`)
-    .join('\n\n');
-}
 
 function renderAgentCbsMessages(messages, cbsContext, options = {}) {
   const state = createAgentCbsRenderState(options);
@@ -9457,17 +9358,6 @@ function summarizeAgentCbsTag(rawContent) {
   return text.length > 90 ? `${text.slice(0, 87)}...` : text;
 }
 
-function mergeAgentCbsWarnings(...warningLists) {
-  const seen = new Set();
-  const merged = [];
-  warningLists.flat().forEach((warning) => {
-    const text = String(warning || '').trim();
-    if (!text || seen.has(text)) return;
-    seen.add(text);
-    if (merged.length < AGENT_CBS_MAX_WARNINGS) merged.push(text);
-  });
-  return merged;
-}
 
 
   const parseLoreDecoratorArgs = (raw = '') => text(raw || '')
@@ -10040,27 +9930,6 @@ function mergeAgentCbsWarnings(...warningLists) {
     return all ? allMatched : false;
   };
 
-  const loreKeyMatches = (candidate, haystack) => {
-    if (candidate.alwaysActive) return true;
-    if (candidate.mode === 'folder') return false;
-    const keys = candidate.keys.length ? candidate.keys : candidate.secondaryKeys;
-    if (!keys.length) return false;
-    for (const key of keys) {
-      if (!key) continue;
-      if (candidate.useRegex || /^\/.+\/[a-z]*$/i.test(key)) {
-        const regex = makeLoreRegex(key);
-        if (regex) {
-          regex.lastIndex = 0;
-          if (regex.test(haystack)) return true;
-        }
-      } else if (haystack.includes(normalizeForLoreMatch(key).replace(/ /g, ''))) {
-        return true;
-      } else if (normalizeForLoreMatch(haystack).includes(normalizeForLoreMatch(key))) {
-        return true;
-      }
-    }
-    return false;
-  };
 
   const loreContinuityIdentity = candidate => [
     candidate?.sourceType || '',
@@ -10900,19 +10769,6 @@ function mergeAgentCbsWarnings(...warningLists) {
     return loreJaccardUnique(grams, limit);
   };
 
-  const loreJaccardLexicalStats = (queryTokens = [], textTokens = []) => {
-    const left = new Set(queryTokens.map(loreJaccardNormalizeKey).filter(Boolean));
-    const right = new Set(textTokens.map(loreJaccardNormalizeKey).filter(Boolean));
-    if (!left.size || !right.size) return { jaccard: 0, coverage: 0, overlap: 0 };
-    let overlap = 0;
-    left.forEach(token => { if (right.has(token)) overlap += 1; });
-    const union = left.size + right.size - overlap;
-    return {
-      jaccard: union > 0 ? overlap / union : 0,
-      coverage: overlap / left.size,
-      overlap
-    };
-  };
 
   const loreJaccardTokenWeight = token => {
     const raw = text(token || '');
@@ -11348,9 +11204,6 @@ function mergeAgentCbsWarnings(...warningLists) {
     );
   };
 
-  const loreBm25fSectionScores = (query, sections = []) => (
-    loreBm25fSectionScoreDetails(query, sections).scores.map(item => Number(item.score || 0))
-  );
 
   const loreFullTextIndexIdentityText = lore => [
     lore?.label,
@@ -13430,73 +13283,6 @@ ${passage.text || ''}`, 420));
     ...promoteLoreCandidatesWithJaccard(candidates, activeLore, query, options)
   });
 
-  const retrieveActiveLoreWithJaccard = (activeLore = [], primaryQuery = '', continuityQuery = '', maxContextChars = DEFAULT_SHADOW_RISU_CONTEXT_CHARS) => {
-    const currentQuery = compact(primaryQuery, 2400);
-    const supportQuery = compact(continuityQuery, INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS);
-    const routeBoost = route => ({
-      jaccard_current_input: 0.48,
-      terminal_entity: 0.44,
-      current_input: 0.42,
-      recent_context: 0.34,
-      recursive: 0.26,
-      forced: 0.22,
-      chat_local_always: 0.18,
-      always: 0.04
-    }[route] || 0);
-    const scoring = activeLore.map((lore, order) => {
-      const identity = [lore.label, lore.key, lore.source].filter(Boolean).join('\n');
-      const primary = retrieveLoreExcerptWithJaccard(lore.content, currentQuery || supportQuery, 1800);
-      const support = supportQuery
-        ? loreJaccardScoreText(supportQuery, `${identity}\n${compactMiddle(lore.content, 2600)}`, identity)
-        : { score: 0 };
-      const identityScore = loreJaccardScoreText(currentQuery || supportQuery, identity, identity);
-      return {
-        lore,
-        order,
-        score: Math.max(primary.score, identityScore.score) * LORE_JACCARD_TUNING.currentInputWeight
-          + Number(support.score || 0) * LORE_JACCARD_TUNING.continuityWeight
-          + routeBoost(lore.activationRoute)
-          + Math.min(0.1, Math.max(0, Number(lore.priority || 0)) / 1000),
-        primary
-      };
-    }).sort((left, right) => right.score - left.score || left.order - right.order);
-    let remaining = clampInt(Math.floor(Number(maxContextChars || DEFAULT_SHADOW_RISU_CONTEXT_CHARS) * 0.62), 1200, 9000, 6000);
-    const retrieved = [];
-    for (let rank = 0; rank < scoring.length && retrieved.length < DEFAULT_SHADOW_ACTIVE_LORE_LIMIT; rank += 1) {
-      const entry = scoring[rank];
-      if (remaining < 220) break;
-      const itemsLeft = Math.max(1, scoring.length - rank);
-      const preferred = rank === 0
-        ? Math.min(3600, Math.max(1800, Math.floor(remaining * 0.52)))
-        : rank === 1
-          ? Math.min(2200, Math.max(1000, Math.floor(remaining * 0.42)))
-          : Math.min(1500, Math.max(700, Math.floor(remaining / itemsLeft)));
-      const budget = Math.max(220, Math.min(remaining, preferred));
-      const excerpt = retrieveLoreExcerptWithJaccard(entry.lore.content, currentQuery || supportQuery, budget);
-      if (!text(excerpt.text).trim()) continue;
-      remaining = Math.max(0, remaining - text(excerpt.text).length);
-      retrieved.push({
-        ...entry.lore,
-        retrievedContent: excerpt.text,
-        retrieval: {
-          engine: LORE_HYBRID_RETRIEVAL_ENGINE_VERSION,
-          score: Number(entry.score.toFixed(4)),
-          excerptScore: Number(excerpt.score.toFixed(4)),
-          bm25: Number(Number(excerpt.bm25 || 0).toFixed(4)),
-          bm25f: Number(Number(excerpt.bm25 || 0).toFixed(4)),
-          bm25fRaw: Number(Number(excerpt.bm25Raw || 0).toFixed(4)),
-          bm25fEngine: excerpt.bm25Engine || LORE_BM25F_ENGINE_VERSION,
-          entityAnchor: Number(Number(excerpt.entityAnchor || 0).toFixed(4)),
-          matchedSections: excerpt.matchedSections,
-          fallback: excerpt.fallback,
-          rawChars: text(entry.lore.content).length,
-          excerptChars: text(excerpt.text).length,
-          rank: rank + 1
-        }
-      });
-    }
-    return retrieved;
-  };
 
 
   const loreStageRouteWeight = (stageName, route) => {
@@ -15599,22 +15385,6 @@ ${passage.text || ''}`, 420));
         : false
   );
 
-  const reuseShadowLorePack = (shared, refs) => {
-    const sourcePack = shared?.shadowLorePack;
-    const entries = Array.isArray(sourcePack?.entries)
-      ? sourcePack.entries.filter(entry => loreAllowedByRisuReferences(entry?.lore, refs))
-      : [];
-    return {
-      stage: 'shadow_act',
-      blocks: entries.map(entry => entry.block),
-      selected: entries.map(entry => entry.selected),
-      entries,
-      dropped: Array.isArray(sourcePack?.dropped) ? sourcePack.dropped : [],
-      budgetChars: Number(sourcePack?.budgetChars || 0),
-      usedChars: entries.reduce((sum, entry) => sum + text(entry?.block || '').length + 2, 0),
-      reusedFromShadow: true
-    };
-  };
 
   // Materialize a stage view from the one request-scoped reference snapshot.
   // Character/persona loading, module scanning, activation, and Jaccard promotion
@@ -18344,7 +18114,6 @@ ${passage.text || ''}`, 420));
     return done ? `thinking_only:${done}` : 'thinking_only';
   };
 
-  const parseSseChatText = (raw, provider = 'openai') => parseStreamText(raw, provider).content;
 
   const providerFinishReason = (data) => {
     if (!data || typeof data !== 'object') return '';
@@ -20111,29 +19880,6 @@ ${passage.text || ''}`, 420));
     return candidates[Math.floor(Math.random() * candidates.length)] || 'user_focus';
   };
 
-  const inputAssistModeInstruction = mode => ({
-    user_focus: [
-      'MODE: USER-CENTERED INPUT RECONSTRUCTION.',
-      'Rebuild the whole input around the user’s intended action, attention, question, or goal instead of retaining the original sentences and appending material.',
-      'Clarify the actionable focus, remove redundancy, reorder information, and integrate strongly implied interaction hooks into one cohesive input.',
-      'Preserve the original action modality and completion state literally. An action explicitly stated as completed must remain completed; never downgrade it into a thought, draft, intention, attempt, hesitation, cancellation, or unsent action.',
-      'Never invent a new user decision, consent, success, result, spoken line, or action that changes what the user chose.'
-    ],
-    npc_focus: [
-      'MODE: PRESENT-NPC-CENTERED INPUT RECONSTRUCTION.',
-      'Rebuild the whole input so the user’s current stimulus and the present NPCs’ room to act are expressed as one coherent request.',
-      'Requested NPC behavior must follow the current relationship, personality, knowledge, incentives, and the specific user stimulus.',
-      'Do not merely append a sentence asking NPCs to react. Integrate that focus naturally into the reorganized input.',
-      'Do not pre-write the NPC response or force feelings; leave the actual response to the downstream response model.'
-    ],
-    offscreen_focus: [
-      'MODE: OFFSCREEN LOW-FREQUENCY NPC AND FACTION INPUT RECONSTRUCTION.',
-      'Rebuild the whole input so the current action and causally reachable offscreen movement form one coherent scene request.',
-      'Prefer causally reachable signals such as rumors, messages, orders, traces, delays, agents, consequences, or converging plans.',
-      'Do not retain the original paragraph and append an unrelated offscreen-event request; reorganize and integrate the focus.',
-      'Do not teleport actors into the scene, reveal information without a path, or override established canon merely to create activity.'
-    ]
-  }[mode] || []);
 
   const playerControlledInputVoiceContext = (original = '', cbsContext = null) => {
     const aliases = new Set();
@@ -20324,17 +20070,6 @@ ${passage.text || ''}`, 420));
     'Do not recommend, rank, preselect, or label one candidate as best. The user decides in a separate GRADIA choice UI.'
   ].filter(Boolean);
 
-  const inputAssistTargetInstruction = value => {
-    const choice = inputAssistTargetChoice(value);
-    if (!choice.chars) return [
-      'TARGET LENGTH: OMAKASE.',
-      'Choose the shortest length that can reconstruct the request clearly from the available input and context. Do not pad the result.'
-    ];
-    return [
-      `TARGET LENGTH: use ${choice.chars} characters as a soft preference and practical ceiling, not a mandatory minimum.`,
-      'Use fewer characters when the reconstructed input is already complete. Never pad, repeat, invent history, or trigger a retry merely to approach the target.'
-    ];
-  };
 
   const cleanInputAssistResult = value => {
     let body = text(value || '').trim();
@@ -22440,437 +22175,18 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     }
   };
 
-  const BEFORE_REQUEST_INPUT_HIJACK_TTL_MS = 120000;
-  const BEFORE_REQUEST_INPUT_HIJACK_CACHE_MAX = 12;
-  const BeforeRequestInputHijackCache = new Map();
 
-  const beforeRequestInputHijackFingerprint = (messages, type) => {
-    const hasher = createTextHasher()
-      .update('gradia-before-request-input-hijack-v1')
-      .update(normalizeRequestType(type));
-    for (const message of (Array.isArray(messages) ? messages : [])) {
-      hasher
-        .update(currentTurnRole(message))
-        .update(rawCurrentTurnBody(message));
-    }
-    return hasher.digest();
-  };
 
-  const pruneBeforeRequestInputHijackCache = () => {
-    const now = Date.now();
-    for (const [key, entry] of BeforeRequestInputHijackCache.entries()) {
-      if (!entry || Number(entry.expiresAt || 0) <= now) BeforeRequestInputHijackCache.delete(key);
-    }
-    while (BeforeRequestInputHijackCache.size > BEFORE_REQUEST_INPUT_HIJACK_CACHE_MAX) {
-      const oldest = BeforeRequestInputHijackCache.keys().next().value;
-      if (oldest == null) break;
-      BeforeRequestInputHijackCache.delete(oldest);
-    }
-  };
 
-  const isNativeContinueResponseRequest = messages => (Array.isArray(messages) ? messages : []).some(message =>
-    /\[\s*Continue the last response\s*\]/i.test(rawCurrentTurnBody(message))
-  );
 
-  const continuationCueFromRequestBody = value => {
-    const body = text(value || '').trim();
-    if (!body) return null;
-    const wrapped = currentInputFrom(body);
-    if (wrapped) {
-      const cue = classifyInputAssistContinuationCue(wrapped);
-      if (cue.active) return { original: wrapped, cue, source: 'current_input_wrapper' };
-    }
-    const direct = classifyInputAssistContinuationCue(body);
-    if (direct.active) return { original: body, cue: direct, source: 'direct_body' };
-    const silentMatch = body.match(/\*+\s*(?:(?:the\s+user\s+)?says?\s+nothing)\s*\*+/i);
-    if (silentMatch?.[0]) {
-      const original = silentMatch[0];
-      const cue = classifyInputAssistContinuationCue(original);
-      if (cue.active) return { original, cue, source: 'embedded_silent_cue' };
-    }
-    const dewrapped = body
-      .replace(/<[^>]{1,160}>/g, '\n')
-      .replace(/^[^\n:]{1,80}:\s*/gm, '')
-      .split(/\n+/)
-      .map(line => line.trim())
-      .filter(Boolean);
-    for (let i = dewrapped.length - 1; i >= 0; i -= 1) {
-      const cue = classifyInputAssistContinuationCue(dewrapped[i]);
-      if (cue.active) return { original: dewrapped[i], cue, source: 'dewrapped_line' };
-    }
-    return null;
-  };
 
-  const detectRequestInputHijackCandidate = messages => {
-    const source = Array.isArray(messages) ? messages : [];
-    let latestUserIndex = -1;
-    let provenanceBacked = false;
-    for (let i = source.length - 1; i >= 0; i -= 1) {
-      if (currentTurnRole(source[i]) !== 'user') continue;
-      if (!hasSgaChatProvenance(source[i])) continue;
-      latestUserIndex = i;
-      provenanceBacked = true;
-      break;
-    }
-    if (latestUserIndex < 0) {
-      for (let i = source.length - 1; i >= 0; i -= 1) {
-        if (currentTurnRole(source[i]) !== 'user') continue;
-        latestUserIndex = i;
-        break;
-      }
-    }
-    if (latestUserIndex < 0) return null;
-    const assistantAfter = source.slice(latestUserIndex + 1).some(message => {
-      if (currentTurnRole(message) !== 'assistant') return false;
-      return provenanceBacked ? hasSgaChatProvenance(message) : true;
-    });
-    if (assistantAfter) return null;
-    const detected = continuationCueFromRequestBody(rawCurrentTurnBody(source[latestUserIndex]));
-    if (!detected) return null;
-    return {
-      kind: 'request_user_continuation_cue',
-      original: detected.original,
-      anchorText: '',
-      cue: detected.cue,
-      requestIndex: latestUserIndex,
-      requestSource: detected.source,
-      provenanceBacked,
-      requestFingerprint: storedChatMessageFingerprint(source[latestUserIndex])
-    };
-  };
 
-  const storedChatMessageFingerprint = message => createTextHasher()
-    .update(currentTurnRole(message))
-    .update(contentToText(message?.data ?? message?.content ?? ''))
-    .update(message?.time ?? message?.timestamp ?? '')
-    .digest();
 
-  const finiteRisuIndex = value => {
-    if (value === null || value === undefined || value === '') return null;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
 
-  const detectBeforeRequestInputHijackCandidate = async (messages, type, settings) => {
-    if (!isMainNarrativeRequest(type) || settings.inputAssistMode === 'off') return null;
-    if (isNativeContinueResponseRequest(messages)) return null;
-    const requestCandidate = detectRequestInputHijackCandidate(messages);
-    const chatApi = getLiveApi(['getCurrentCharacterIndex', 'getCurrentChatIndex', 'getChatFromIndex']);
-    const canReadChat = typeof chatApi?.getCurrentCharacterIndex === 'function'
-      && typeof chatApi?.getCurrentChatIndex === 'function'
-      && typeof chatApi?.getChatFromIndex === 'function';
-    const charIndexRaw = canReadChat
-      ? await safeApi('blankHijack.getCurrentCharacterIndex', () => chatApi.getCurrentCharacterIndex(), settings.debugLog)
-      : null;
-    const chatIndexRaw = canReadChat
-      ? await safeApi('blankHijack.getCurrentChatIndex', () => chatApi.getCurrentChatIndex(), settings.debugLog)
-      : null;
-    const charIndex = finiteRisuIndex(charIndexRaw);
-    const chatIndex = finiteRisuIndex(chatIndexRaw);
-    const chat = charIndex !== null && chatIndex !== null
-      ? await safeApi('blankHijack.getChatFromIndex', () => chatApi.getChatFromIndex(charIndex, chatIndex), settings.debugLog)
-      : null;
-    const storedMessages = Array.isArray(chat?.message) ? chat.message : [];
-    if (!storedMessages.length) return requestCandidate;
-    const lastIndex = storedMessages.length - 1;
-    const lastMessage = storedMessages[lastIndex];
-    const lastRole = currentTurnRole(lastMessage);
-    const lastText = contentToText(lastMessage?.data ?? lastMessage?.content ?? '').trim();
-    const lastFingerprint = storedChatMessageFingerprint(lastMessage);
-    if (lastRole === 'user') {
-      const cue = classifyInputAssistContinuationCue(lastText);
-      if (cue.active) {
-        return {
-          kind: 'stored_user_continuation_cue',
-          original: lastText,
-          anchorText: '',
-          cue,
-          charIndex,
-          chatIndex,
-          lastIndex,
-          lastFingerprint
-        };
-      }
-    }
-    if (requestCandidate) {
-      return {
-        ...requestCandidate,
-        charIndex,
-        chatIndex,
-        lastIndex,
-        lastFingerprint
-      };
-    }
-    if (lastRole === 'assistant') {
-      const injectedChatId = `gradia-input-${Date.now().toString(36)}-${lastFingerprint.slice(0, 12)}`;
-      return {
-        kind: 'blank_without_user_message',
-        original: '',
-        anchorText: lastText,
-        injectedChatId,
-        cue: classifyInputAssistContinuationCue(''),
-        charIndex,
-        chatIndex,
-        lastIndex,
-        lastFingerprint
-      };
-    }
-    return null;
-  };
 
-  const replaceContinuationCueInContent = (content, original, rewritten) => {
-    const replaceText = value => {
-      const body = text(value || '');
-      const wrapped = currentInputFrom(body);
-      if (wrapped && classifyInputAssistContinuationCue(wrapped).active) return body.replace(wrapped, rewritten);
-      if (original && body.includes(original)) return body.replace(original, rewritten);
-      if (classifyInputAssistContinuationCue(body).active) return rewritten;
-      return body;
-    };
-    if (typeof content === 'string') return replaceText(content);
-    if (Array.isArray(content)) {
-      const next = content.map(part => {
-        if (!part || typeof part !== 'object') return part;
-        if (part.type === 'text' || part.type === 'input_text') {
-          const replaced = replaceText(part.text || '');
-          return replaced === part.text ? part : { ...part, text: replaced };
-        }
-        return part;
-      });
-      return next;
-    }
-    return rewritten;
-  };
 
-  const applyInputAssistHijackToRequest = (messages, original, rewritten, options = {}) => {
-    const source = Array.isArray(messages) ? messages : [];
-    const next = source.slice();
-    let targetIndex = -1;
-    for (let i = source.length - 1; i >= 0; i -= 1) {
-      if (currentTurnRole(source[i]) !== 'user') continue;
-      const body = rawCurrentTurnBody(source[i]).trim();
-      const wrapped = currentInputFrom(body);
-      if (
-        (original && (sameRagChatContent(body, original) || sameRagChatContent(wrapped, original)))
-        || classifyInputAssistContinuationCue(wrapped || body).active
-      ) {
-        targetIndex = i;
-        break;
-      }
-    }
-    if (targetIndex >= 0) {
-      const message = source[targetIndex] || {};
-      next[targetIndex] = {
-        ...message,
-        content: replaceContinuationCueInContent(message.content ?? message.data ?? '', original, rewritten)
-      };
-      if ('data' in next[targetIndex] && !('content' in message)) {
-        next[targetIndex].data = next[targetIndex].content;
-        delete next[targetIndex].content;
-      }
-      return { messages: next, changed: true, mode: 'replace_user', targetIndex };
-    }
-    let insertIndex = -1;
-    const anchorText = text(options.anchorText || '').trim();
-    if (options.kind === 'blank_without_user_message' && anchorText) {
-      for (let i = source.length - 1; i >= 0; i -= 1) {
-        if (currentTurnRole(source[i]) !== 'assistant') continue;
-        if (!sameRagChatContent(rawCurrentTurnBody(source[i]), anchorText)) continue;
-        insertIndex = i + 1;
-        break;
-      }
-    }
-    if (insertIndex < 0) {
-      const terminalPrefillIndex = findSgaTerminalAssistantPrefillIndex(source);
-      insertIndex = terminalPrefillIndex >= 0 ? terminalPrefillIndex : source.length;
-    }
-    const inserted = { role: 'user', content: rewritten };
-    if (text(options.injectedChatId || '').trim()) inserted.memo = text(options.injectedChatId).trim();
-    next.splice(insertIndex, 0, inserted);
-    return { messages: next, changed: true, mode: 'insert_user', targetIndex: insertIndex };
-  };
 
-  const syncInputAssistHijackToVisibleChat = async (candidate, rewritten, settings) => {
-    const chatApi = getLiveApi(['getCurrentCharacterIndex', 'getCurrentChatIndex', 'getChatFromIndex', 'setChatToIndex']);
-    if (!candidate || typeof chatApi?.setChatToIndex !== 'function') return { ok: false, reason: 'setChatToIndex_unavailable' };
-    if (candidate.charIndex === null || candidate.charIndex === undefined || candidate.chatIndex === null || candidate.chatIndex === undefined) {
-      return { ok: false, reason: 'chat_index_unavailable' };
-    }
-    const currentCharIndex = finiteRisuIndex(await safeApi('blankHijack.syncCurrentCharacterIndex', () => chatApi.getCurrentCharacterIndex(), settings.debugLog));
-    const currentChatIndex = finiteRisuIndex(await safeApi('blankHijack.syncCurrentChatIndex', () => chatApi.getCurrentChatIndex(), settings.debugLog));
-    if (currentCharIndex !== candidate.charIndex || currentChatIndex !== candidate.chatIndex) {
-      return { ok: false, reason: 'active_chat_changed' };
-    }
-    const chat = await safeApi('blankHijack.syncGetChat', () => chatApi.getChatFromIndex(candidate.charIndex, candidate.chatIndex), settings.debugLog);
-    const storedMessages = Array.isArray(chat?.message) ? chat.message : [];
-    const currentLast = storedMessages[storedMessages.length - 1];
-    if (!currentLast || (candidate.lastFingerprint && storedChatMessageFingerprint(currentLast) !== candidate.lastFingerprint)) {
-      return { ok: false, reason: 'chat_tail_changed' };
-    }
-    const nextChat = { ...chat, message: storedMessages.slice() };
-    if (candidate.kind === 'stored_user_continuation_cue' || candidate.kind === 'request_user_continuation_cue') {
-      let replacementIndex = Number.isInteger(candidate.lastIndex) ? candidate.lastIndex : -1;
-      if (
-        replacementIndex < 0
-        || currentTurnRole(nextChat.message[replacementIndex]) !== 'user'
-        || !classifyInputAssistContinuationCue(contentToText(nextChat.message[replacementIndex]?.data ?? nextChat.message[replacementIndex]?.content ?? '')).active
-      ) {
-        replacementIndex = -1;
-        for (let i = nextChat.message.length - 1; i >= 0; i -= 1) {
-          const message = nextChat.message[i];
-          if (currentTurnRole(message) !== 'user') continue;
-          if (classifyInputAssistContinuationCue(contentToText(message?.data ?? message?.content ?? '')).active) {
-            replacementIndex = i;
-          }
-          break;
-        }
-      }
-      const current = nextChat.message[replacementIndex];
-      if (!current || currentTurnRole(current) !== 'user') return { ok: false, reason: 'placeholder_missing' };
-      const currentText = contentToText(current?.data ?? current?.content ?? '').trim();
-      if (!classifyInputAssistContinuationCue(currentText).active) return { ok: false, reason: 'placeholder_replaced_elsewhere' };
-      const replacement = { ...current };
-      if ('data' in replacement || !('content' in replacement)) replacement.data = rewritten;
-      else replacement.content = rewritten;
-      nextChat.message[replacementIndex] = replacement;
-    } else {
-      nextChat.message.push({
-        role: 'user',
-        data: rewritten,
-        time: Date.now(),
-        chatId: candidate.injectedChatId || undefined
-      });
-    }
-    const saved = await safeApi(
-      'blankHijack.setChatToIndex',
-      () => chatApi.setChatToIndex(candidate.charIndex, candidate.chatIndex, nextChat),
-      settings.debugLog
-    );
-    const replacingCue = candidate.kind === 'stored_user_continuation_cue' || candidate.kind === 'request_user_continuation_cue';
-    return { ok: saved !== null, reason: saved === null ? 'chat_save_failed' : '', mode: replacingCue ? 'replace_placeholder' : 'append_user' };
-  };
 
-  const maybeHijackBeforeRequestInput = async (messages, type, settings) => {
-    const unchanged = { messages, hijacked: false, cached: false, reason: '' };
-    if (!isMainNarrativeRequest(type) || settings.inputAssistMode === 'off') {
-      Runtime.lastInputAssistHijack = {
-        at: Date.now(),
-        ok: true,
-        skipped: true,
-        reason: !isMainNarrativeRequest(type) ? `non_model_request:${normalizeRequestType(type) || 'missing'}` : 'input_assist_off'
-      };
-      return { ...unchanged, reason: Runtime.lastInputAssistHijack.reason };
-    }
-    if (isNativeContinueResponseRequest(messages)) {
-      Runtime.lastInputAssistHijack = {
-        at: Date.now(),
-        ok: true,
-        skipped: true,
-        reason: 'native_continue_response'
-      };
-      return { ...unchanged, reason: 'native_continue_response' };
-    }
-    pruneBeforeRequestInputHijackCache();
-    const fingerprint = beforeRequestInputHijackFingerprint(messages, type);
-    const cached = BeforeRequestInputHijackCache.get(fingerprint);
-    if (cached?.rewritten) {
-      const applied = applyInputAssistHijackToRequest(messages, cached.original || '', cached.rewritten, {
-        kind: cached.kind,
-        anchorText: cached.anchorText || '',
-        injectedChatId: cached.injectedChatId || ''
-      });
-      Runtime.lastInputAssistHijack = {
-        at: Date.now(),
-        ok: true,
-        cached: true,
-        kind: cached.kind,
-        requestSource: cached.requestSource || '',
-        provenanceBacked: cached.provenanceBacked === true,
-        requestMode: applied.mode,
-        chatSync: cached.chatSync || null,
-        fingerprint
-      };
-      return { messages: applied.messages, hijacked: true, cached: true, reason: '', fingerprint };
-    }
-    const candidate = await detectBeforeRequestInputHijackCandidate(messages, type, settings);
-    if (!candidate) {
-      Runtime.lastInputAssistHijack = {
-        at: Date.now(),
-        ok: true,
-        skipped: true,
-        reason: 'no_blank_input_candidate'
-      };
-      return { ...unchanged, reason: 'no_blank_input_candidate' };
-    }
-    let rewritten = await runInputAssistForContent(candidate.original, settings, {
-      allowExistingContinuationCue: true,
-      source: 'before_request_blank_hijack',
-      requestMessages: messages,
-      telemetryNewCycle: true
-    });
-    const valid = Runtime.lastInputAssist?.ok === true
-      && !!text(rewritten).trim()
-      && !classifyInputAssistContinuationCue(rewritten).active;
-    if (!valid) {
-      Runtime.lastInputAssistHijack = {
-        at: Date.now(),
-        ok: false,
-        cached: false,
-        kind: candidate.kind,
-        requestSource: candidate.requestSource || '',
-        provenanceBacked: candidate.provenanceBacked === true,
-        reason: Runtime.lastInputAssist?.reason || 'input_assist_hijack_rewrite_failed',
-        fingerprint
-      };
-      return { ...unchanged, reason: Runtime.lastInputAssistHijack.reason };
-    }
-    rewritten = finalizeInputAssistDelivery(rewritten, 'before_request_hijack', settings);
-    const applied = applyInputAssistHijackToRequest(messages, candidate.original, rewritten, {
-      kind: candidate.kind,
-      anchorText: candidate.anchorText || '',
-      injectedChatId: candidate.injectedChatId || ''
-    });
-    const chatSync = await syncInputAssistHijackToVisibleChat(candidate, rewritten, settings);
-    const entry = {
-      original: candidate.original,
-      anchorText: candidate.anchorText || '',
-      injectedChatId: candidate.injectedChatId || '',
-      rewritten,
-      kind: candidate.kind,
-      requestSource: candidate.requestSource || '',
-      provenanceBacked: candidate.provenanceBacked === true,
-      chatSync,
-      storedAt: Date.now(),
-      expiresAt: Date.now() + BEFORE_REQUEST_INPUT_HIJACK_TTL_MS
-    };
-    BeforeRequestInputHijackCache.set(fingerprint, entry);
-    pruneBeforeRequestInputHijackCache();
-    Runtime.lastInputAssistHijack = {
-      at: Date.now(),
-      ok: true,
-      cached: false,
-      kind: candidate.kind,
-      requestSource: candidate.requestSource || '',
-      provenanceBacked: candidate.provenanceBacked === true,
-      requestMode: applied.mode,
-      chatSync,
-      fingerprint
-    };
-    Runtime.lastInputAssist = {
-      ...(Runtime.lastInputAssist || {}),
-      lateHijack: true,
-      lateHijackKind: candidate.kind,
-      requestRewriteMode: applied.mode,
-      chatSync
-    };
-    if (Runtime.lastInputAssist?.trace?.parsed) {
-      Runtime.lastInputAssist.trace.parsed.lateHijack = true;
-      Runtime.lastInputAssist.trace.parsed.lateHijackKind = candidate.kind;
-      Runtime.lastInputAssist.trace.parsed.requestRewriteMode = applied.mode;
-      Runtime.lastInputAssist.trace.parsed.chatSync = chatSync;
-    }
-    return { messages: applied.messages, hijacked: true, cached: false, reason: '', fingerprint };
-  };
 
   const testProviderPreset = async (preset) => {
     const clean = sanitizePreset(preset || {});
@@ -23379,42 +22695,9 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     return (hash >>> 0).toString(16).padStart(8, '0');
   };
 
-  const lineageGramSet = (value, gram = 3) => {
-    const body = normalizeLineageComparableText(value);
-    const out = new Set();
-    if (!body) return out;
-    if (body.length <= gram) { out.add(body); return out; }
-    for (let i = 0; i <= body.length - gram; i += 1) out.add(body.slice(i, i + gram));
-    return out;
-  };
 
-  const draftSimilarity = (left, right) => {
-    const aText = normalizeLineageComparableText(left);
-    const bText = normalizeLineageComparableText(right);
-    if (!aText || !bText) return 0;
-    if (aText === bText) return 1;
-    const a = lineageGramSet(aText);
-    const b = lineageGramSet(bText);
-    if (!a.size || !b.size) return 0;
-    let overlap = 0;
-    const [small, large] = a.size <= b.size ? [a, b] : [b, a];
-    for (const token of small) if (large.has(token)) overlap += 1;
-    return (2 * overlap) / (a.size + b.size);
-  };
 
-  const draftContainment = (candidate, reference) => {
-    const a = lineageGramSet(candidate);
-    const b = lineageGramSet(reference);
-    if (!a.size || !b.size) return 0;
-    let overlap = 0;
-    for (const token of b) if (a.has(token)) overlap += 1;
-    return overlap / b.size;
-  };
 
-  const draftPrefixSimilarity = (left, right, maxChars = 700) => draftSimilarity(
-    normalizeLineageComparableText(left).slice(0, maxChars),
-    normalizeLineageComparableText(right).slice(0, maxChars)
-  );
 
   const bestDraftCandidate = (candidates = []) => {
     const normalized = candidates
@@ -27464,135 +26747,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     return result;
   };
 
-  const buildInformationTransferBlockLegacy = (stages, settings) => {
-    if (normalizeChoice(settings.informationTransferMode || 'draft_only', INFORMATION_TRANSFER_MODES, 'draft_only') !== 'draft_and_analysis') return '';
-    const blocks = [];
-    for (const stage of stages || []) {
-      if (!BEFORE_STAGE_DEFS.some(def => def.id === stage?.stage)) continue;
-      const analysis = stage?.twoCallAnalysis || stage?.analysis || {};
-      const summary = text(analysis?.analysis?.summary || analysis?.summary || stage?.analysis?.summary || '').trim();
-      const domain = analysis?.domain || stage?.analysis?.domain || null;
-      const directives = normalizeStringArray(
-        analysis?.rewriteDirectives || analysis?.rewrite_directives || stage?.analysis?.rewrite_directives,
-        16,
-        420
-      );
-      const constraints = normalizeStringArray(
-        analysis?.analysis?.constraints || analysis?.constraints || stage?.analysis?.constraints,
-        16,
-        420
-      );
-      const risks = normalizeStringArray(
-        analysis?.analysis?.risks || analysis?.risks || stage?.analysis?.risks,
-        12,
-        420
-      );
-      const lines = [
-        summary ? `Summary: ${compact(summary, 1400)}` : '',
-        domain ? `Domain:\n${compactAnalysisDomain(domain, 2400)}` : '',
-        directives.length ? `Applied rewrite directives:\n- ${directives.join('\n- ')}` : '',
-        constraints.length ? `Constraints:\n- ${constraints.join('\n- ')}` : '',
-        risks.length ? `Risks checked:\n- ${risks.join('\n- ')}` : ''
-      ].filter(Boolean);
-      if (lines.length) blocks.push(`[${STAGE_DEF_MAP[stage.stage]?.label || stage.stage}]\n${lines.join('\n')}`);
-    }
-    if (!blocks.length) return '';
-    return compact([
-      'PRIVATE ANALYSIS MATERIAL USED TO CREATE THE DRAFT:',
-      'Use this only to understand why the draft was shaped this way. It is advisory, may contain uncertainty, and never overrides the current user input, visible canon, active lore, or system instructions.',
-      'Do not expose, quote, summarize, or mention these notes in the response.',
-      '',
-      blocks.join('\n\n')
-    ].join('\n'), Math.min(12000, Math.max(300, Math.floor(settings.maxInjectionChars * 0.30))));
-  };
 
-  const buildFinalOverlayLegacy = (lastStage, stages, recent, settings) => {
-    const safeLast = latestUsableStage(stages, lastStage);
-    const finalOverlay = isUsableStage(lastStage) ? lastStage?.final_overlay : safeLast?.final_overlay;
-    const draft = finalOverlay?.final_rp_draft || stageDraft(safeLast) || stageDraft(lastStage) || submittedCurrentInput(recent);
-    const outputMode = normalizeChoice(settings.outputMode || 'draft_guided', OUTPUT_MODES, 'draft_guided');
-    const analysisTransfer = buildInformationTransferBlock(stages, settings);
-    const maxInjectionChars = clampInt(settings.maxInjectionChars, 1500, 60000, DEFAULT_MAX_INJECTION_CHARS);
-
-    const stageLine = (stage) => {
-      const s = stages.find(item => item.stage === stage);
-      if (!s) return `${stage}: not run`;
-      return `${stage}: ${s.ok === false ? 'fallback' : 'ok'}${s.reason ? ` (${s.reason})` : ''}`;
-    };
-    const customAnalysisLines = stages
-      .filter(item => item?.analysisOnly)
-      .map(item => `${item.label || item.stage}: ${item.ok === false ? 'fallback' : 'ok'}${item.summary ? ` — ${compact(item.summary, 180)}` : ''}`);
-    const fullContextExpansionRequirements = [
-      'CONTEXT-GROUNDED SAME-SCENE EXPANSION:',
-      '- Treat the supplied draft as the authoritative same-turn scene seed and primary response blueprint, not as immutable wording and not as a sequel prompt.',
-      '- Recompose it into the final RP response. Preserve its core beats, causal order, dialogue intent, character positions, continuity, and unresolved choices.',
-      isPlayerControlledDraftMode(settings)
-        ? '- Expand inward, not forward: develop underwritten actions, context-appropriate NPC reactions, dialogue rhythm, pauses, gaze, distance, sensory grounding, and causal transitions inside the draft’s existing scene boundary.'
-        : '- Develop underwritten actions, reactions, dialogue rhythm, pauses, gaze, distance, sensory grounding, and causal transitions, and carry the story onward when that serves it.',
-      '- Strengthen the scene with established character details, active setting facts, recent events, remembered continuity, and unresolved obligations that are relevant to the present moment.',
-      '- Convert relevant context into natural behavior, dialogue, physical detail, remembered obligations, relationship texture, knowledge limits, object/injury/position continuity, and unresolved tension. Do not recite profiles, summarize memory blocks, or insert lore merely to prove it was read.',
-      '- When details conflict, follow the current user input first, then the latest visible scene and exact active canon, then older continuity. Treat the response draft as the primary composition to preserve and refine.',
-      '- If memory or an older summary conflicts with newer visible events, follow the newer events. Treat uncertain recollection, rumor, inference, and last-known offscreen state as uncertain rather than confirmed present fact.',
-      '- Do not give a character knowledge without a valid in-world path. Do not teleport offscreen actors or introduce a new major event only because a lore or memory entry mentions it.',
-      isPlayerControlledDraftMode(settings)
-        ? '- Do not append a sequel scene, time skip, new aftermath, or event beyond the draft’s final intended beat. Do not make the response longer merely for length; compress repetition and expand only material that improves this scene.'
-        : '- Additional actions and developments beyond the draft are allowed. Do not make the response longer merely for length.',
-      isPlayerControlledDraftMode(settings)
-        ? buildRpImpersonationScopeContract(settings)
-        : '- Preserve POV/knowledge boundaries and explicit author-fixed/reserved choices. In Novel mode the user persona is authorable; do not impose RP player-agency restrictions on their new dialogue, thought, feeling, or action.',
-      '- Keep the response entirely within the story. Express relevant context through natural behavior, dialogue, knowledge limits, physical continuity, and consequences instead of explaining the source material.'
-    ].join('\n');
-    const compactContextExpansionRequirements = [
-      'CONTEXT-GROUNDED SAME-SCENE EXPANSION:',
-      isPlayerControlledDraftMode(settings)
-        ? 'Use the draft as a same-turn scene seed. Expand inward through action, reaction, dialogue, sensory and causal detail—not into a sequel.'
-        : 'Use the draft as a scene seed. Develop it through action, reaction, dialogue, sensory and causal detail, and carry the story onward when that serves it.',
-      buildRpImpersonationScopeContract(settings),
-      'Use relevant established facts, recent events, and remembered continuity naturally. Newer visible canon wins; preserve knowledge paths and active writing-mode authority; keep the response entirely within the story.'
-    ].join('\n');
-    const contextExpansionRequirements = compact(
-      maxInjectionChars < 5000 ? compactContextExpansionRequirements : fullContextExpansionRequirements,
-      maxInjectionChars < 5000
-        ? Math.min(720, Math.max(360, Math.floor(maxInjectionChars * 0.28)))
-        : Math.min(4200, Math.max(1200, Math.floor(maxInjectionChars * 0.34)))
-    );
-    const stageTraceText = maxInjectionChars < 5000 ? '' : compact([
-      'STAGE TRACE SUMMARY:',
-      ['shadow_act', ...normalizeAideStageOrder(settings.aideStageOrder)].map(stageLine).join('\n'),
-      customAnalysisLines.length ? `\nCUSTOM ANALYSIS SUMMARY:\n${customAnalysisLines.join('\n')}` : ''
-    ].filter(Boolean).join('\n'), Math.min(1200, Math.max(420, Math.floor(maxInjectionChars * 0.09))));
-    const openingInstruction = maxInjectionChars < 5000
-      ? 'Use the response draft as the same-turn scene seed. Develop its existing scene with relevant established context and keep the result entirely within the story.'
-      : outputMode === 'risu_engine'
-        ? 'Finalize the same-turn RP scene seed below. Preserve its direction and selectively develop it with established character, setting, recent-event, and continuity facts.'
-        : 'Use the final RP response draft below as the same-turn scene seed and primary response blueprint. Preserve its direction and develop its existing scene with established character, setting, recent-event, and continuity facts.';
-    const fixedReserve = [
-      INJECTION_HEADER,
-      openingInstruction,
-      contextExpansionRequirements,
-      recent.sceneAnchor || '',
-      analysisTransfer,
-      stageTraceText,
-      'FINAL RESPONSE DRAFT:'
-    ].join('\n').length + (maxInjectionChars < 5000 ? 140 : 320);
-    const draftBudget = Math.max(320, maxInjectionChars - fixedReserve);
-    const block = [
-      INJECTION_HEADER,
-      openingInstruction,
-      '',
-      contextExpansionRequirements,
-      '',
-      'LATEST SCENE ANCHOR:',
-      recent.sceneAnchor || '(none detected; preserve the latest visible scene from recent chat)',
-      '',
-      'FINAL RESPONSE DRAFT:',
-      compactMiddle(draft, draftBudget),
-      analysisTransfer ? `\n${analysisTransfer}` : '',
-      '',
-      stageTraceText
-    ].filter(Boolean).join('\n');
-    return compact(block, maxInjectionChars);
-  };
 
   const isSuccessfulCurrentRunStage = (stage, recent = {}) => {
     if (!stage || stage.ok === false || stage.fallback) return false;
@@ -28358,155 +27513,8 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       : buildNovelFinalOverlay(lastStage, stages, recent, settings)
   );
 
-  const formatRisuEngineLoreEntries = (activeLore = [], predicate = () => true, maxChars = 7000) => {
-    const entries = (activeLore || []).filter(predicate);
-    if (!entries.length) return '';
-    return compact(entries.map((lore, idx) => [
-      `[Lore ${idx + 1}: ${lore.label || lore.source || 'entry'}]`,
-      lore.source ? `source=${lore.source}` : '',
-      lore.key ? `key=${lore.key}` : '',
-      lore.position ? `position=${lore.position}${lore.depth ? `:${lore.depth}` : ''}` : '',
-      lore.role && lore.role !== 'system' ? `role=${lore.role}` : '',
-      compact(lore.content, 1800)
-    ].filter(Boolean).join('\n')).join('\n\n'), maxChars);
-  };
 
-  const formatRisuEngineLedger = (ledger = {}) => {
-    const blocks = [];
-    const constraintBlock = buildConstraintBlock(ledger);
-    if (constraintBlock) blocks.push(constraintBlock);
-    if (ledger.customAnalyses?.length) {
-      blocks.push(`CUSTOM ANALYSIS LEDGER JSON:\n${compact(JSON.stringify(ledger.customAnalyses, null, 2), 7000)}`);
-    }
-    return blocks.join('\n\n');
-  };
 
-  const buildRisuEnginePromptPlan = (recent, finalDraft, stages, settings, ledger) => {
-    const activeLore = recent?.risuActiveLore || [];
-    const descLore = formatRisuEngineLoreEntries(activeLore, lore => ['before_desc', 'after_desc', 'personality', 'scenario'].includes(lore.position), 5000);
-    const normalLore = formatRisuEngineLoreEntries(activeLore, lore => !lore.position || lore.position === '', 9000);
-    const postLore = formatRisuEngineLoreEntries(activeLore, lore => lore.position === 'depth' && Number(lore.depth || 0) === 0, 5000);
-    const otherPositionLore = formatRisuEngineLoreEntries(activeLore, lore => lore.position && !['before_desc', 'after_desc', 'personality', 'scenario', 'depth'].includes(lore.position), 5000);
-    const ledgerText = formatRisuEngineLedger(ledger);
-    const stageSummary = (stages || []).map(stage => `${stage.label || STAGE_DEF_MAP[stage.stage]?.label || stage.stage}: ${stage.ok === false ? 'fallback' : 'ok'}${stage.reason ? ` (${stage.reason})` : ''}`).join('\n');
-    const visibleMessages = recent?.visibleMessages || [];
-    const olderChat = visibleMessages.slice(0, -2).map((m, idx) => `#${idx + 1} <${m.role}${m.name ? `:${m.name}` : ''}>\n${m.content}`).join('\n\n---\n\n');
-    const latestChat = visibleMessages.slice(-2).map((m, idx) => `#${idx + 1} <${m.role}${m.name ? `:${m.name}` : ''}>\n${m.content}`).join('\n\n---\n\n') || recent?.visibleText || recent?.text || '';
-    return [
-      {
-        type: 'plain',
-        type2: 'main',
-        role: 'system',
-        name: 'Main response instructions',
-        content: [
-          'You are the final RP response composer.',
-          'Use the ordered setting, character, continuity, conversation, and response-draft material to compose one coherent response.',
-          'Return only the final assistant RP response. No JSON, markdown fence, analysis, labels, technical terminology, or out-of-story explanation.'
-        ].join('\n')
-      },
-      {
-        type: 'description',
-        role: 'system',
-        innerFormat: '[Roleplay Setting]\n{{slot}}',
-        content: compact([recent?.risuContext || '', descLore].filter(Boolean).join('\n\n'), settings.shadowRisuContextMaxChars || DEFAULT_SHADOW_RISU_CONTEXT_CHARS)
-      },
-      {
-        type: 'persona',
-        role: 'system',
-        innerFormat: '[User Persona / Character Profile]\n{{slot}}',
-        content: compact(recent?.risuContextMeta?.persona ? recent.risuContext : '', 5000)
-      },
-      {
-        type: 'plain',
-        type2: 'normal',
-        role: 'system',
-        name: 'Supplementary Information',
-        content: '[Supplementary Information]'
-      },
-      {
-        type: 'lorebook',
-        role: 'system',
-        content: normalLore || '(No normal-position lorebook entry was activated.)'
-      },
-      {
-        type: 'plain',
-        type2: 'globalNote',
-        role: 'system',
-        name: 'Global Note / Built-in Style',
-        content: builtInStylePresetPrompt(settings)
-      },
-      {
-        type: 'authornote',
-        role: 'system',
-        innerFormat: '[Author Note]\n{{slot}}',
-        content: recent?.sceneAnchor ? `Latest scene anchor: ${recent.sceneAnchor}` : ''
-      },
-      {
-        type: 'memory',
-        role: 'system',
-        innerFormat: '[Roleplay Summary / Retrieved Memory]\n{{slot}}',
-        content: compact([recent?.risuMemory || '', recent?.othersInfo || '', ledgerText].filter(Boolean).join('\n\n'), 12000)
-      },
-      {
-        type: 'plain',
-        type2: 'normal',
-        role: 'system',
-        name: 'Response Instruction',
-        content: [
-          'RESPONSE INSTRUCTION:',
-          ...(rpScopeLocksCast(settings) ? buildRpImpersonationScopeLines(settings).map(line => `- ${line}`) : isAuthorDirectedDraftMode(settings) ? [
-            '- PLAYER-CONTROLLED RP: the latest user input is already the complete user-character contribution for this turn. Do not reenact it or add further user behavior.',
-            '- Treat the serial draft as the NPC/world response candidate. Improve model-owned reactions, causality, dialogue, staging, sensory grounding, and continuity without crossing the next user-agency boundary.',
-            '- NPC/world may act autonomously when causally supported, including grounded initiatives, reveals, arrivals/departures, transitions, and natural closure. Do not add an unrelated hook/sequel or continue after a new user action/decision is actually required.',
-            '- Do not force a live player-facing opening. Closure/time-skip/relocation is valid when model-owned and causally earned; it is invalid only when it skips or pre-answers a pending player-owned beat.',
-            '- User-authored behavior in the latest input is already enacted fact; normally do not restage it. Never add a user-character choice, dialogue, consent, feeling, movement, or action absent from that input.',
-            '- Story Arc, lore, memory, and older plans may guide NPC/world continuity only; they cannot authorize user-character behavior.'
-          ] : [
-            '- Use the serial draft as the same-turn scene seed and primary response blueprint. Recompose it rather than merely copying its wording.',
-            '- Develop underwritten action/reaction causality, dialogue rhythm, sensory grounding, and transitions, and carry the story onward with further developments when that serves it.',
-            '- NOVEL MODE FULL-CAST AUTHORSHIP: the user persona is part of the fiction you may write. Preserve explicit author-fixed/reserved constraints, but you may author new user-persona thoughts, feelings, choices, dialogue, and actions, and developments the user did not ask for.'
-          ]),
-          '- Use relevant persona, character, activated lore, author-note, memory, Others Info, and recent-chat items in this prompt plan as private writing evidence. Integrate them through behavior, knowledge limits, physical continuity, relationship texture, and unresolved tension instead of exposition.',
-          '- Newer visible events and the latest user input override older or uncertain memory. A memory fact does not grant every character knowledge of it without an in-world path.',
-          '- Keep functional status/interface blocks and image-command rules when present, but do not add # 응답, volume/chapter, Chatindex, or automatic timestamp wrappers like ⏱️[YYYY-MM-DD...] unless the latest user explicitly asks for them.',
-          '- Preserve prose datelines that carry scene time/place, such as "밤 10:20 PM, 시끌벅적한 고기집의 한구석."; those are story text, not removable headers.',
-          '- Let established lore and remembered events shape natural behavior and continuity. Do not recite reference material or reveal facts unavailable to the current viewpoint.',
-          postLore ? `\n[Depth 0 / PostEverything Lore]\n${postLore}` : '',
-          otherPositionLore ? `\n[Positioned Lore]\n${otherPositionLore}` : ''
-        ].filter(Boolean).join('\n')
-      },
-      {
-        type: 'chat',
-        rangeStart: 0,
-        rangeEnd: -2,
-        chatAsOriginalOnSystem: true,
-        content: olderChat || '(No older visible chat in current window.)'
-      },
-      {
-        type: 'chat',
-        rangeStart: -2,
-        rangeEnd: 'end',
-        content: latestChat || '(No recent visible chat in current window.)'
-      },
-      {
-        type: 'postEverything',
-        role: 'system',
-        content: [
-          '[Serial Draft To Finalize]',
-          compactMiddle(finalDraft, settings.maxPreviousStageChars || DEFAULT_MAX_PREVIOUS_STAGE_CHARS),
-          '',
-          '[Stage Summary]',
-          stageSummary || '(no stage summary)'
-        ].join('\n')
-      },
-      {
-        type: 'plain',
-        type2: 'assistantPrefill',
-        role: 'assistant',
-        content: 'Roleplay response:'
-      }
-    ].filter(item => item.content == null || text(item.content).trim());
-  };
 
   const risuEngineOutputTokenBudget = settings => Math.max(768, Math.min(
     DEFAULT_MAX_STAGE_TOKENS * 4,
@@ -39001,71 +38009,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       timing.totalMs = timing.modelCompletedAt - timing.prepareStartedAt;
     };
 
-    const prepareRisuEngineRecent = async (seedRecent, presetSourceStage) => {
-      const refs = stageRisuRefsByStage[presetSourceStage] || sharedRisuRefs || defaultRisuReferencesForStage('shadow_act');
-      const scopedSettings = {
-        ...settings,
-        sharedReferencePromptCacheEnabled: promptCachePlan[RISU_ENGINE_STAGE]?.enabled === true,
-        activeStageName: RISU_ENGINE_STAGE,
-        activeStageOptions: {
-          maxChars: Math.max(settings.maxRecentChars || DEFAULT_MAX_RECENT_CHARS, settings.maxPreviousStageChars || DEFAULT_MAX_PREVIOUS_STAGE_CHARS),
-          turnWindow: settings.turnWindow || DEFAULT_RECENT_TURNS,
-          timeoutMs: settings.stageTimeoutMs || DEFAULT_STAGE_TIMEOUT_MS,
-          risuRefs: refs
-        }
-      };
-      const builtRecent = buildRecentChat(messages, scopedSettings);
-      const recent = {
-        ...builtRecent,
-        sceneAnchor: seedRecent?.sceneAnchor || builtRecent.sceneAnchor,
-        previousResponseEvidence: seedRecent?.previousResponseEvidence || builtRecent.previousResponseEvidence,
-        runLineage
-      };
-      attachInputAssistContinuityState(recent, settings);
-      const contextStartedAt = Date.now();
-      const risuContext = materializeSharedRisuContext(sharedRisuContext, recent, scopedSettings, refs);
-      const contextElapsedMs = Date.now() - contextStartedAt;
-      risuSnapshot = risuContext.snapshot || risuSnapshot;
-      const stageReferenceRetryState = makeStageReferenceRetryState(risuContext);
-      stageReferenceRetryStates[RISU_ENGINE_STAGE] = stageReferenceRetryState;
-      recent.risuContext = risuContext.block || seedRecent?.risuContext || '';
-      recent.referencePacketBlock = stageReferenceRetryState?.block || risuContext.referencePacketBlock || seedRecent?.referencePacketBlock || recent.risuContext;
-      recent.referencePacket = stageReferenceRetryState?.packet || risuContext.referencePacket || seedRecent?.referencePacket || null;
-      recent.referencePacketHash = stageReferenceRetryState?.hash || risuContext.referencePacketHash || seedRecent?.referencePacketHash || '';
-      recent.referenceCapacity = risuContext.referenceCapacity || seedRecent?.referenceCapacity || null;
-      recent.risuContextMeta = risuContext.meta || seedRecent?.risuContextMeta || {};
-      recent.risuActiveLore = risuContext.activeLore || seedRecent?.risuActiveLore || [];
-      recent.risuSelectedLoreCandidates = risuContext.selectedCandidates || seedRecent?.risuSelectedLoreCandidates || [];
-      recent.risuMemory = '';
-      scopedSettings.ragCbsContext = risuContext.cbsContext || risuSnapshot?.cbsContext || null;
-      scopedSettings.ragRouteVersion = RAG_ROUTE_VERSION;
-      scopedSettings.referencePacket = recent.referencePacket;
-      scopedSettings.sharedReferenceRetryState = stageReferenceRetryState;
-      scopedSettings.sharedReferencePromptBlock = recent.referencePacketBlock;
-      scopedSettings.sharedReferencePromptHash = recent.referencePacketHash;
-      stageRecents[RISU_ENGINE_STAGE] = recent;
-      Runtime.lastRisuContext.stages[RISU_ENGINE_STAGE] = {
-        block: recent.risuContext,
-        referencePacketHash: recent.referencePacketHash,
-        selectionHash: recent.referencePacket?.selectionHash || '',
-        packedHash: recent.referencePacket?.packedHash || '',
-        meta: recent.risuContextMeta,
-        presetSourceStage
-      };
-      Runtime.lastRisuContext.last = Runtime.lastRisuContext.stages[RISU_ENGINE_STAGE];
-      Runtime.pipelineTimings.sharedContext.reusedByStages.push(RISU_ENGINE_STAGE);
-      Runtime.pipelineTimings.stages[RISU_ENGINE_STAGE] = {
-        prepareStartedAt: contextStartedAt,
-        preparedAt: Date.now(),
-        prepareMs: Date.now() - contextStartedAt,
-        contextMaterializeMs: contextElapsedMs,
-        sharedContextReused: true,
-        modelStartedAt: 0,
-        modelCompletedAt: 0,
-        modelMs: 0
-      };
-      return { recent, settings: scopedSettings };
-    };
 
     const shadowEnv = await prepareStage('shadow_act', null);
     const multiPipelineMode = normalizeMultiPipelineMode(settings.multiPipelineMode);
@@ -39909,20 +38852,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const GUI_PAGE_IDS = Object.freeze(GUI_PAGE_REGISTRY.map(item => item.id));
   const guiPageDefinition = pageId => GUI_PAGE_REGISTRY.find(item => item.id === pageId) || GUI_PAGE_REGISTRY[0];
 
-  const guiPageDisplayDefinition = (page, writingMode = currentWritingModeFromGui()) => {
-    if (!page) return page;
-    if (writingMode !== 'rp') return page;
-    const overrides = {
-      overview: { label: 'RP 개요', description: '유저 행동 불가침과 현재 반응 파이프라인 상태' },
-      quick: { label: 'RP 빠른 설정', description: 'RP 전용 선택지·반응 파이프라인 핵심 설정' },
-      input: { label: '행동 선택지', description: '선택형 유저 행동 제안 또는 직접 입력' },
-      pipeline: { label: 'RP 반응 파이프라인', description: 'SHADOW ACT와 AIDE의 NPC·세계 반응 작성' },
-      ooc: { label: '연출 지침 OOC', description: '유저 행동을 침범하지 않는 단계별 연출 지침' },
-      arc: { label: '서사 연속성', description: 'Story Arc 연속성 가드와 NPC·세계 소프트 방향' },
-      output: { label: 'RP 최종 응답', description: '유저 행동 불가침을 유지한 최종 합성' }
-    };
-    return overrides[page.id] ? { ...page, ...overrides[page.id] } : page;
-  };
 
   const normalizeGuiRoute = (tab = 'flow', section = 'overview') => {
     const key = text(section || '').trim() || 'overview';
@@ -40470,23 +39399,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
 
 
-  const builtInStageSystem = (stageId, settings = {}) => builtInStagePrompt(
-    stageId,
-    { text: '{{recent_chat}}', latestUser: '{{latest_user}}', latestAssistant: '{{latest_assistant}}' },
-    null,
-    {
-      mode: settings.mode || 'normal',
-      gradationMode: settings.gradationMode || 'full_draft',
-      outputMode: normalizeChoice(settings.outputMode || 'draft_guided', OUTPUT_MODES, 'draft_guided'),
-      writingMode: normalizeWritingMode(settings.writingMode, writingModeFromDraftMode(settings.shadowDraftMode)),
-      shadowDraftMode: normalizeShadowDraftMode(settings.shadowDraftMode),
-      internalDraftLanguage: normalizeInternalDraftLanguage(settings.internalDraftLanguage),
-      builtInStylePreset: normalizeBuiltInStylePreset(settings.builtInStylePreset),
-      maxRecentChars: settings.maxRecentChars || DEFAULT_MAX_RECENT_CHARS,
-      maxPreviousStageChars: settings.maxPreviousStageChars || DEFAULT_MAX_PREVIOUS_STAGE_CHARS,
-      beforeExtraPrompts: settings.beforeExtraPrompts || {}
-    }
-  ).system;
 
 
   
@@ -40929,11 +39841,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     guiEl('label', { text: label }), control, note ? guiEl('small', { text: note }) : null
   ]);
 
-  const inputAssistConfirmationEnabled = settings => (
-    isAuthorDirectedDraftMode(settings)
-      ? normalizeChoice(settings?.inputAssistMode || 'off', INPUT_ASSIST_MODES, 'off') !== 'off'
-      : normalizeChoice(settings?.inputAssistConfirmationMode || 'direct', INPUT_ASSIST_CONFIRMATION_MODES, 'direct') === 'confirm'
-  );
 
   const recordInputAssistConfirmationDecision = (decision, selected) => {
     const selectedText = text(selected || '');
@@ -42002,20 +40909,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return slot.presetName || Gui.state?.runtime?.defaultPresetName || 'default';
   };
 
-  const resolvedModelBehaviorForStageInGui = stageId => {
-    const presetName = resolvedPresetNameForStage(stageId);
-    const preset = Gui.state?.providers?.[presetName] || Gui.state?.providers?.default || {};
-    const family = detectModelBehaviorFamily(preset);
-    return {
-      family,
-      label: MODEL_BEHAVIOR_FAMILY_LABELS[family] || MODEL_BEHAVIOR_FAMILY_LABELS.generic
-    };
-  };
 
-  const isStageConfiguredInGui = stageId => {
-    const name = resolvedPresetNameForStage(stageId);
-    return providerConfigured(Gui.state?.providers?.[name] || Gui.state?.providers?.default || {});
-  };
 
   const uniquePresetName = (base = '새 프리셋') => {
     const bank = Gui.state?.providers || {};
@@ -42050,24 +40944,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     markGuiDirty();
   };
 
-  const deleteGuiPreset = () => {
-    const names = presetNamesFromState();
-    if (names.length <= 1) throw new Error('최소 1개의 프로바이더 프리셋은 남겨야 합니다.');
-    const target = Gui.selectedPreset;
-    delete Gui.state.providers[target];
-    const fallback = Gui.state.providers.default ? 'default' : Object.keys(Gui.state.providers)[0];
-    if (Gui.state.runtime.defaultPresetName === target) Gui.state.runtime.defaultPresetName = fallback;
-    const beforeSlots = BEFORE_STAGE_DEFS.map(def => Gui.state.agents?.[def.id]).filter(Boolean);
-    for (const slot of beforeSlots) {
-      if (slot.presetName === target) slot.presetName = '';
-    }
-    Gui.selectedPreset = fallback;
-    markGuiDirty();
-  };
 
   const isVertexProvider = (provider) => ['vertex', 'vertex-openai'].includes(canonicalProvider(provider));
 
-  const inferReasoningFamily = (preset = {}) => effectiveReasoningFamilyForPreset(preset);
 
   const applyVertexCredentialsToPreset = (preset, rawText, allowPlainToken = false) => {
     const raw = text(rawText || '').trim();
@@ -42090,24 +40969,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return { kind: parsed.access_token || parsed.token ? 'access_token_json' : 'service_account_json', projectId, location };
   };
 
-  const providerPresetUsageLabels = presetName => {
-    const name = text(presetName || '').trim();
-    if (!name) return [];
-    const labels = [];
-    if (text(Gui.state?.runtime?.defaultPresetName || '').trim() === name) labels.push('기본');
-    for (const def of CONFIGURABLE_STAGE_DEFS) {
-      if (text(Gui.state?.agents?.[def.id]?.presetName || '').trim() !== name) continue;
-      labels.push(def.id === 'shadow_act' ? 'SHADOW'
-        : def.id === 'aide_character' ? '인물'
-          : def.id === 'aide_world' ? '세계'
-            : def.id === 'aide_plot' ? '플롯'
-              : def.id === INPUT_ASSIST_STAGE_ID ? 'Input'
-                : def.id === ARC_DIRECTOR_STAGE_ID ? 'Arc'
-                  : def.id === USER_INTENT_OOC_STAGE_ID ? 'OOC'
-                    : def.label);
-    }
-    return Array.from(new Set(labels));
-  };
 
   const latestTraceForStage = (stageId) => {
     const traces = Runtime.stageTrace;
@@ -42154,55 +41015,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return { label: '실패', className: 'danger', elapsed, title: reason || '최근 실행이 실패했습니다.' };
   };
 
-  const resultListText = (items) => {
-    if (!items) return '';
-    if (!Array.isArray(items)) return typeof items === 'object' ? JSON.stringify(items, null, 2) : text(items);
-    return items.map((item, index) => {
-      if (item == null) return '';
-      if (typeof item === 'string') return `- ${item}`;
-      if (typeof item !== 'object') return `- ${text(item)}`;
-      const body = [item.type || item.kind || `#${index + 1}`, item.reason || item.summary || item.evidence || '', item.change || item.fix || item.note || ''].filter(Boolean).join(' | ');
-      return `- ${body}`;
-    }).filter(Boolean).join('\n');
-  };
 
-  const resultFindingsText = (items) => {
-    if (!Array.isArray(items)) return resultListText(items);
-    return items.map((item, index) => {
-      if (item == null) return '';
-      if (typeof item !== 'object') return `- ${text(item)}`;
-      const head = [item.severity, item.type || item.category || `finding_${index + 1}`].filter(Boolean).join(' / ');
-      const detail = [item.evidence, item.fix || item.change].filter(Boolean).join(' -> ');
-      return `- ${head}${detail ? `: ${detail}` : ''}`;
-    }).filter(Boolean).join('\n');
-  };
 
-  const traceJsonForDisplay = (def, trace, parsed) => {
-    const base = {
-      stage: def.id,
-      label: def.label,
-      ok: trace.ok,
-      reason: trace.reason || parsed?.reason || '',
-      elapsedMs: trace.elapsedMs || 0,
-      provider: trace.provider || '',
-      presetName: trace.presetName || '',
-      model: trace.model || ''
-    };
-    const values = parsed?.analysisOnly ? {
-      summary: parsed.summary || parsed.analysis?.summary || '',
-      constraints: parsed.constraints || parsed.analysis?.constraints || [],
-      risks: parsed.risks || parsed.analysis?.risks || [],
-      notes: parsed.notes || parsed.draft?.notes || [],
-      handoff: parsed.handoff || ''
-    } : {
-      analysis: parsed?.analysis || {},
-      edits: parsed?.edits || [],
-      change_log: parsed?.change_log || [],
-      draft: parsed?.draft || {},
-      final_overlay: parsed?.final_overlay || null
-    };
-    return JSON.stringify({ status: base, materials_used: trace?.materialsUsed || null, values }, null, 2);
-  };
 
   const executionResultTracesForStage = stageId =>
     (Runtime.stageTrace || []).filter(trace => trace?.stage === stageId);
@@ -42243,29 +41057,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     || null
   );
 
-  const stageMaterialUsageSummaryText = usage => {
-    if (!usage) return '';
-    const refs = Array.isArray(usage.referenceMaterials) ? usage.referenceMaterials : [];
-    const contexts = Array.isArray(usage.contextMaterials) ? usage.contextMaterials : [];
-    const skills = Array.isArray(usage.skillMaterials) ? usage.skillMaterials : [];
-    const counts = usage.counts || {};
-    const kindSummary = Object.entries(counts.byKind || {})
-      .filter(([, count]) => Number(count) > 0)
-      .map(([kind, count]) => `${stageMaterialKindLabel(kind)} ${count}`)
-      .join(' · ');
-    const names = refs.slice(0, 12).map(item => item.label).filter(Boolean);
-    const contextNames = contexts.map(item => item.label).filter(Boolean);
-    return [
-      `직접 참조 자료 ${refs.length}개${kindSummary ? ` · ${kindSummary}` : ''}`,
-      names.length ? `사용 자료: ${names.join(', ')}${refs.length > names.length ? ` 외 ${refs.length - names.length}개` : ''}` : '직접 주입된 참조 자료 없음',
-      contextNames.length ? `함께 사용된 문맥: ${contextNames.join(', ')}` : '',
-      usage.qualityRules?.length ? `기본 품질 규칙: ${usage.qualityRules.length}개 · 항상 적용` : '',
-      skills.length ? `적용 Skill: ${skills.map(item => item.label).filter(Boolean).join(', ')}` : '',
-      usage.referenceBudget
-        ? `참조 예산: ${Number(usage.referenceBudget.usedChars || 0).toLocaleString()} / ${Number(usage.referenceBudget.effectiveBudgetChars || 0).toLocaleString()}자${Number(usage.referenceBudget.omittedChars || 0) > 0 ? ` · 예산으로 미주입 ${Number(usage.referenceBudget.omittedChars || 0).toLocaleString()}자` : ''}`
-        : ''
-    ].filter(Boolean).join('\n');
-  };
 
   const stageMaterialUsageFullText = usage => {
     if (!usage) return '(사용 자료 기록 없음)';
@@ -42360,22 +41151,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     renderSettingsGui();
   };
 
-  const applyQuickStageProviderToGui = (stageId, presetName) => {
-    const agents = Gui.state.agents || (Gui.state.agents = {});
-    const slot = agents[stageId] || (agents[stageId] = {});
-    slot.presetName = compact(presetName || '', 120);
-    // 단계별 AI 연결은 속도/품질 프로필과 독립된 쉬운 설정입니다.
-    setTimeout(() => renderSettingsGui(), 0);
-  };
 
-  const applyQuickTurnWindowToGui = value => {
-    const turns = clampInt(value, 1, 64, 8);
-    for (const def of BEFORE_STAGE_DEFS) {
-      if (Gui.state.agents?.[def.id]) Gui.state.agents[def.id].turnWindow = turns;
-    }
-    markGuiDirty();
-    renderSettingsGui();
-  };
 
   const simpleLengthChoiceForRange = (min, max) => SIMPLE_LENGTH_CHOICES.find(choice =>
     Number(min) === choice.min && Number(max) === choice.max
@@ -42401,21 +41177,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     renderSettingsGui();
   };
 
-  const simplePriorityIdForOrder = value => {
-    const normalized = aideOrderValue(value);
-    for (const [id, def] of Object.entries(SIMPLE_PRIORITY_DEFS)) {
-      if (aideOrderValue(def.order) === normalized) return id;
-    }
-    return 'custom';
-  };
 
-  const applySimplePriorityToGui = priorityId => {
-    const def = SIMPLE_PRIORITY_DEFS[priorityId] || SIMPLE_PRIORITY_DEFS.character;
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    runtime.aideStageOrder = normalizeAideStageOrder(def.order);
-    markGuiDirty();
-    renderSettingsGui();
-  };
 
   const applySimpleOutputToGui = mode => {
     const runtime = Gui.state.runtime || (Gui.state.runtime = {});
@@ -42511,12 +41273,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     renderSettingsGui();
   };
 
-  const applyLoreActivationModeToGui = mode => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    runtime.loreActivationMode = UNIFIED_LORE_ACTIVATION_MODE;
-    markGuiDirty();
-    renderSettingsGui();
-  };
 
   const applyMultiPipelineModeToGui = mode => {
     const runtime = Gui.state.runtime || (Gui.state.runtime = {});
@@ -42688,11 +41444,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return state;
   };
 
-  const resetSimpleSettingsToRecommended = () => {
-    applyRecommendedSettingsToState(Gui.state);
-    markGuiDirty();
-    renderSettingsGui();
-  };
 
   const simpleProfileSummary = profileId => {
     const profile = QUICK_PROFILE_DEFS[profileId] || QUICK_PROFILE_DEFS.custom;
@@ -42700,16 +41451,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return `${profile.label} · 최근 ${profile.turnWindow}턴 · 참고 상한 ${profile.maxChars.toLocaleString('ko-KR')}자 · 기억 ${MEMORY_PROFILE_CAPS[profileId].toLocaleString('ko-KR')}자 · ${profile.analysisLabel}`;
   };
 
-  const saveSimpleSettingsFromGui = async () => {
-    try {
-      guiSetStatus('선택한 설정을 저장하고 있습니다…', false, true);
-      await saveGuiState();
-      await renderSettingsGui();
-      guiSetStatus('쉬운 설정을 저장했습니다. 다음 대화부터 적용됩니다.');
-    } catch (error) {
-      guiSetStatus(error?.message || String(error), true, true);
-    }
-  };
 
   const moveAideStageInGui = (stageId, direction) => {
     const runtime = Gui.state.runtime || (Gui.state.runtime = {});
@@ -43270,11 +42011,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }, 0);
   };
 
-  const navigateToStageAgent = async (stageId, sectionKey) => {
-    const alias = ({ shadow_act:'shadow', aide_character:'char', aide_world:'world', aide_plot:'plot' })[stageId];
-    await navigateGui('flow', '', 'pipeline');
-    if (alias) setTimeout(() => Gui.app?.querySelector(`.node[data-select-row="${alias}"]`)?.click(), 0);
-  };
 
   const closeGuiDialog = () => {
     if (!Gui.dialogLayer) return;
@@ -43480,10 +42216,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     ooc: 'pipeline', improve: 'pipeline', output: 'pipeline', references: 'sources', skills: 'sources',
     providers: 'providers', advanced: 'manage', management: 'manage'
   })[pageId] || 'home';
-  const mockupInternalRoute = page => ({
-    home: 'overview', results: 'results', pipeline: 'pipeline', sources: 'references',
-    providers: 'providers', manage: 'management'
-  })[page] || 'overview';
   const mockupSetChoice = (group, index) => {
     if (!group) return;
     [...group.querySelectorAll(':scope > .choice')].forEach((node, i) => {
@@ -47204,216 +45936,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   });
 
   try {
-    const registerInputAssistHandler = async () => {
-      const inputApi = getLiveApi(['addRisuScriptHandler']);
-      if (typeof inputApi?.addRisuScriptHandler !== 'function') {
-        Runtime.hookStatus.input = false;
-        warn('RisuAI addRisuScriptHandler input API is unavailable. Input Writing Assistant is disabled.');
-        return false;
-      }
-      const handler = async content => {
-        const explicitContinueSend = Runtime.inputAssistSend?.busy === true
-          && Runtime.inputAssistSend?.phase === 'sending';
-        if (!explicitContinueSend && Runtime.inFlight) {
-          // Preserve the active request's telemetry, progress panel, and draft
-          // lineage. The beforeRequest guard will pass this overlap through.
-          return content;
-        }
-        await updatePipelineWorkPanel('사용자 입력을 확인하고 있습니다…', 'input_received', {
-          begin: true,
-          source: explicitContinueSend ? 'explicit_continue' : 'normal_input',
-          stagePlan: [],
-          currentStage: ''
-        });
-        try {
-          if (explicitContinueSend) {
-            await updatePipelineWorkPanel('상황 이어가기 인풋 확인 완료 · 초안 파이프라인으로 전달합니다.', 'input_ready', {
-              autoClearMs: 20000
-            });
-            return content;
-          }
-          const settings = await loadSettings();
-          ;
-          if (settings.inputAssistMode !== 'off') {
-            await updatePipelineWorkPanel(isAuthorDirectedDraftMode(settings) ? '인풋 관리자가 현재 장면에서 가능한 유저 행동 선택지를 제안하고 있습니다…' : '인풋 관리자가 핵심 작가 의도를 주인공·현장 인물·세계/외부 인물의 세 관점으로 구체화하고 있습니다…', 'input_assist');
-          }
-          let rewritten = text(content || '');
-          try {
-            rewritten = await runInputAssistForContent(content, settings, {
-              source: 'normal_input',
-              telemetryNewCycle: true
-            });
-          } catch (assistError) {
-            const failureReason = compact(assistError?.message || assistError || 'input_assist_exception', 500);
-            warn('input_assist_generation_failed', failureReason);
-            Runtime.lastInputAssist = {
-              at: Date.now(),
-              ok: false,
-              reason: failureReason,
-              requestedMode: settings.inputAssistMode || 'unknown',
-              effectiveMode: 'unknown',
-              scope: settings.inputAssistScope || 'unknown',
-              original: text(content || ''),
-              rewritten: text(content || ''),
-              trace: null
-            };
-            rewritten = text(content || '');
-          }
-          const authorChoiceAssist = isAuthorDirectedDraftMode(settings)
-            && normalizeChoice(settings.inputAssistMode || 'off', INPUT_ASSIST_MODES, 'off') !== 'off';
-          if (authorChoiceAssist) {
-            const choices = Array.isArray(Runtime.lastInputAssist?.authorChoices)
-              ? Runtime.lastInputAssist.authorChoices
-              : [];
-            if (Runtime.lastInputAssist?.ok === true && choices.length >= 2) {
-              await updatePipelineWorkPanel('유저 행동 선택지 생성 완료 · 이번 턴에 할 행동을 선택하세요.', 'input_assist_confirmation');
-              const reviewed = await showAuthorDirectedInputChoicePicker({
-                original: content,
-                choices,
-                source: 'normal_input',
-                onRegenerate: async () => {
-                  await runInputAssistForContent(content, settings, { source: 'normal_input_author_choice_regenerate' });
-                  return Array.isArray(Runtime.lastInputAssist?.authorChoices) ? Runtime.lastInputAssist.authorChoices : [];
-                },
-                onTranslate: async (value, targetLanguage) => (
-                  await translateInputAssistReviewText(value, settings, targetLanguage)
-                )
-              });
-              rewritten = text(reviewed.content || '');
-              const deliverySource = reviewed.action || 'author_choice_unknown';
-              rewritten = finalizeInputAssistDelivery(rewritten, deliverySource, settings);
-              await updatePipelineWorkPanel(
-                reviewed.choice ? '유저 행동 선택 완료 · 그 행동 이후 NPC·세계 반응 파이프라인을 시작합니다.' : '원본 유저 입력 유지 · 그 행동 이후 NPC·세계 반응 파이프라인을 시작합니다.',
-                'input_ready',
-                { autoClearMs: 20000 }
-              );
-              return rewritten;
-            }
-            // Choice generation failure must never result in an AI-selected fallback.
-            // Preserve the user's own direction exactly and continue fail-soft.
-            rewritten = finalizeInputAssistDelivery(text(content || ''), 'author_choice_generation_failed_original', settings);
-            await updatePipelineWorkPanel('RP 행동 선택지를 만들지 못해 원본 유저 입력을 그대로 사용합니다.', 'input_assist_fallback', { autoClearMs: 20000 });
-            return rewritten;
-          }
-          const novelChoiceAssist = !isAuthorDirectedDraftMode(settings)
-            && normalizeChoice(settings.inputAssistMode || 'off', INPUT_ASSIST_MODES, 'off') !== 'off';
-          if (novelChoiceAssist) {
-            const choices = Array.isArray(Runtime.lastInputAssist?.novelChoices)
-              ? Runtime.lastInputAssist.novelChoices
-              : [];
-            if (Runtime.lastInputAssist?.ok === true && choices.length === NOVEL_INPUT_CHOICE_TARGET) {
-              await updatePipelineWorkPanel('세 작가 관점 인풋 선택지 생성 완료 · 이번 턴에 사용할 방향을 선택하세요.', 'input_assist_confirmation');
-              const reviewed = await showNovelInputChoicePicker({
-                original: content,
-                choices,
-                source: 'normal_input',
-                onRegenerate: async () => {
-                  await runInputAssistForContent(content, settings, { source: 'normal_input_novel_choice_regenerate' });
-                  return Array.isArray(Runtime.lastInputAssist?.novelChoices) ? Runtime.lastInputAssist.novelChoices : [];
-                },
-                onTranslate: async (value, targetLanguage) => (
-                  await translateInputAssistReviewText(value, settings, targetLanguage)
-                )
-              });
-              rewritten = text(reviewed.content || '');
-              const deliverySource = reviewed.action || 'novel_choice_unknown';
-              rewritten = finalizeInputAssistDelivery(rewritten, deliverySource, settings);
-              await updatePipelineWorkPanel(
-                reviewed.choice ? `인풋 선택 완료 · ${NOVEL_INPUT_CHOICE_PERSPECTIVE_DEFS[reviewed.choice.perspective]?.label || '선택한 관점'}으로 초안 파이프라인을 시작합니다.` : '원본 입력 유지 · 초안 파이프라인을 시작합니다.',
-                'input_ready',
-                { autoClearMs: 20000 }
-              );
-              return rewritten;
-            }
-            rewritten = finalizeInputAssistDelivery(text(content || ''), 'novel_choice_generation_failed_original', settings);
-            await updatePipelineWorkPanel('세 작가 관점 선택지를 모두 만들지 못해 원본 입력을 그대로 사용합니다.', 'input_assist_fallback', { autoClearMs: 20000 });
-            return rewritten;
-          }
-          const deliveryPlan = resolveInputAssistDeliveryPlan(content, rewritten, settings);
-          rewritten = deliveryPlan.deliveryBase;
-          let deliverySource = deliveryPlan.bypassed ? 'original_bypass' : deliveryPlan.fallbackUsed ? 'fallback_original' : 'generated_direct';
-          if (Runtime.lastInputAssist && deliveryPlan.fallbackUsed) {
-            Runtime.lastInputAssist.deliveryFallback = true;
-            Runtime.lastInputAssist.deliveryFallbackReason = deliveryPlan.fallbackReason;
-            Runtime.lastInputAssist.rewritten = rewritten;
-            Runtime.lastInputAssist.outputChars = text(rewritten).length;
-            if (Runtime.lastInputAssist.trace?.parsed) {
-              Runtime.lastInputAssist.trace.parsed.deliveryFallback = true;
-              Runtime.lastInputAssist.trace.parsed.deliveryFallbackReason = deliveryPlan.fallbackReason;
-              Runtime.lastInputAssist.trace.parsed.rewrittenInput = compact(rewritten, 8000);
-              Runtime.lastInputAssist.trace.parsed.outputChars = text(rewritten).length;
-            }
-          }
-          if (deliveryPlan.shouldConfirm && !!text(rewritten).trim()) {
-            await updatePipelineWorkPanel(
-              deliveryPlan.fallbackUsed
-                ? '인풋 확장 실패 · 확인창에서 원본 또는 폴백 메시지를 선택하세요.'
-                : '인풋 확장 완료 · 확인창에서 보낼 메시지를 선택하세요.',
-              'input_assist_confirmation'
-            );
-            const fallbackNotice = deliveryPlan.fallbackUsed
-              ? `인풋 확장에 실패하여 원본을 폴백 후보로 준비했습니다. 자동 전송하지 않으므로 원하는 쪽을 선택하거나 재생성하세요. 확장 실패 원인: ${compact(deliveryPlan.fallbackReason, 320)}`
-              : '';
-            const reviewed = await showInputAssistConfirmation({
-              original: content,
-              expanded: rewritten,
-              source: 'normal_input',
-              canUseOriginal: true,
-              notice: fallbackNotice,
-              expandedTitle: deliveryPlan.fallbackUsed ? '폴백 메시지' : '확장 메시지',
-              expandedActionLabel: deliveryPlan.fallbackUsed ? '폴백 메시지 보내기' : '확장 메시지 보내기',
-              onRegenerate: async () => {
-                const next = await runInputAssistForContent(content, settings, {
-                  source: 'normal_input_regenerate'
-                });
-                const nextPlan = resolveInputAssistDeliveryPlan(content, next, settings);
-                return nextPlan.deliveryBase;
-              },
-              onTranslate: async (value, targetLanguage) => (
-                await translateInputAssistReviewText(value, settings, targetLanguage)
-              )
-            });
-            rewritten = text(reviewed.content);
-            deliverySource = reviewed.action
-              ? `${reviewed.action}${Runtime.lastInputAssist?.confirmationEdited ? '_edited' : ''}`
-              : deliverySource;
-          }
-          if (settings.inputAssistMode !== 'off') rewritten = finalizeInputAssistDelivery(rewritten, deliverySource, settings);
-          await updatePipelineWorkPanel(
-            settings.inputAssistMode === 'off'
-              ? '입력 확인 완료 · GRADIA 초안 파이프라인을 기다리고 있습니다…'
-              : deliveryPlan.fallbackUsed
-                ? '원본 폴백 선택 완료 · GRADIA 초안 파이프라인을 기다리고 있습니다…'
-                : '입력 재구성 완료 · GRADIA 초안 파이프라인을 기다리고 있습니다…',
-            'input_ready',
-            { autoClearMs: 20000 }
-          );
-          return rewritten;
-        } catch (error) {
-          warn('input_assist_handler_failed', error);
-          Runtime.lastInputAssist = {
-            at: Date.now(),
-            ok: false,
-            reason: compact(error?.message || error, 500),
-            requestedMode: 'unknown',
-            effectiveMode: 'unknown',
-            scope: 'unknown',
-            original: text(content || ''),
-            rewritten: text(content || ''),
-            trace: null
-          };
-          finalizeInputAssistDelivery(content, 'fallback_original', {});
-          await updatePipelineWorkPanel('인풋 관리자를 건너뛰고 원래 입력으로 초안 파이프라인을 계속합니다…', 'input_assist_fallback', {
-            autoClearMs: 20000
-          });
-          return content;
-        }
-      };
-      await inputApi.addRisuScriptHandler('input', handler);
-      registered.input = handler;
-      Runtime.hookStatus.input = true;
-      return true;
-    };
 
     const registerBeforeRequestHook = async () => {
       if (typeof API.addRisuReplacer !== 'function') {

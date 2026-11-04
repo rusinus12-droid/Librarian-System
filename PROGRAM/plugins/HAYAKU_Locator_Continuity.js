@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.19
+//@display-name HAYAKU · Locator Continuity v3.3.20
 //@api 3.0
-//@version 3.3.19
+//@version 3.3.20
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -812,7 +812,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.19';
+  const PLUGIN_VERSION = '3.3.20';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -1456,7 +1456,6 @@ const MemorySuiteExecutionContract = (() => {
   // exact request lineage and the active scene id; they never contain invented
   // story facts or natural-language placeholders.
   const TAIL_CURRENT_PACKET_EXAMPLE = '{"meta":{"schema":"hayaku_packet_v1","packet_type":"current_snapshot","packet_schema_rev":2,"scene_id":"","turn_anchor":"","confidence":0.2,"summary_memory":{"summary":"","recallAnchors":[],"recallAliases":{},"canonicalAnchors":[],"mentionedEntityNames":[],"confidence":0.2}},"entity":{},"world":{},"narrative":{},"planner":{},"importance":{"overall":0.1,"reason":[]}}';
-  const TAIL_RECOVERY_PACKET_EXAMPLE = '{"meta":{"schema":"hayaku_packet_v1","packet_type":"recovery_snapshot","packet_schema_rev":2,"scene_id":"","turn_anchor":"","confidence":0.2,"summary_memory":{"summary":"","recallAnchors":[],"recallAliases":{},"canonicalAnchors":[],"mentionedEntityNames":[],"confidence":0.2}},"entity":{},"world":{},"narrative":{},"planner":{},"importance":{"overall":0.1,"reason":[]}}';
 
   
 
@@ -16879,8 +16878,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     });
     return uniq([...basic, ...scriptGrams], limit);
   };
-  const tokenSetHasAny = (value = '', tokenSet = new Set(), limit = 120) => tokenize(value, limit)
-    .some(token => tokenSet.has(text(token).toLowerCase()) || tokenSet.has(normalizeKey(token)));
   // Narrative classification is structural: quoted speech and prose syntax are
   // evaluated below.  It must not depend on a growing action-word dictionary.
   const NARRATIVE_CONTINUE_RE = /^(?:계속|계속해|이어가|이어줘|다음|응|그래|continue|go\s+on|keep\s+going|続けて|続ける|そのまま)[\s.!?。！？…]*$/i;
@@ -17548,8 +17545,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (promptChars >= 60000) return 'medium';
     return 'normal';
   };
-  const promptPressureRank = value => ({ normal: 0, medium: 1, high: 2, extreme: 3 })[text(value).trim().toLowerCase()] ?? 0;
-  const higherPromptPressure = (...values) => ['normal', 'medium', 'high', 'extreme'][Math.max(0, ...values.map(promptPressureRank))];
   const hostBudgetPromptPressure = (messages = [], contextBudget = null) => {
     const maxContext = Math.max(0, Number(contextBudget?.maxContext || 0) || 0);
     if (maxContext <= 0) return 'normal';
@@ -17823,9 +17818,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!objectish(value)) return [];
     return uniq(names.flatMap(name => ensureArray(value[name])).map(item => structuredFieldText(item)).filter(Boolean), 32);
   };
-  const bodySignatureScore = value => {
-    return clamp(Number(value?.bodySignalScore || 0), 0, 1, 0);
-  };
   const deriveEmotionProfile = value => {
     const body = itemText(value);
     const tags = explicitSignalList(value, ['emotionTags', 'emotion_tags', 'emotions']);
@@ -18096,17 +18088,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   // Secret knowledge provenance is declared by holder/inference fields. Body
   // wording is intentionally not interpreted here.
-  const boundaryEntityAliases = value => {
-    const raw = text(value).trim();
-    if (!raw) return [];
-    const expanded = raw.replace(/([a-z])([A-Z])/g, '$1 $2');
-    const parts = expanded.split(/[.:/_\-\s]+/).map(part => part.trim()).filter(Boolean);
-    const canonicalCharacterRef = /^(?:entity[.:/_\-])?(?:character|characters|char)[.:/_\-]/i.test(raw);
-    const latinTail = canonicalCharacterRef && parts.length && /^[a-z]{7,}$/i.test(parts[parts.length - 1]) ? parts[parts.length - 1] : '';
-    const suffixes = latinTail ? Array.from({ length: Math.min(8, latinTail.length - 4) }, (_, index) => latinTail.slice(-(5 + index))) : [];
-    return uniq([raw, expanded, ...parts, parts.slice(-2).join(' '), ...suffixes], 24)
-      .filter(alias => normalizeKey(alias).length >= 2);
-  };
   const inferredSecretActors = (source = {}, holders = []) => {
     const explicit = boundaryEntityValues([
       source.inferredByEntityIds, source.inferred_by, source.inferredBy,
@@ -22908,26 +22889,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const broad = packetCheapRelevanceScore(packet, contextFocus.text);
     return Math.max(broad * 0.42, Number(topicScores[0] || 0) + Number(topicScores[1] || 0) * 0.28);
   };
-  const latestCurrentSnapshotPacket = (messages = [], packets = []) => {
-    const boundary = recoveryBoundaryIndex(messages);
-    let best = null;
-    ensureArray(packets).forEach((packet, packetIndex) => {
-      const messageIndex = Number(packet?.messageIndex);
-      if (!Number.isFinite(messageIndex) || messageIndex >= boundary) return;
-      const materialized = materializeExtractedPacket(packet);
-      const raw = text(materialized.raw || '').trim();
-      if (!raw) return;
-      const parsed = safeJsonParse(raw, null);
-      if (!objectish(parsed)) return;
-      const packetType = recoveryPacketTypeOf(parsed) || 'current_snapshot';
-      if (isRecoveryPacketType(packetType)) return;
-      const rank = messageIndex * 100000 + packetIndex;
-      if (!best || rank > best.rank) {
-        best = { packet: materialized, parsed, packetType, messageIndex, packetIndex, rank };
-      }
-    });
-    return best;
-  };
   const previousTurnBridgeItemText = value => {
     if (value == null) return '';
     if (Array.isArray(value)) return value.map(previousTurnBridgeItemText).filter(Boolean).join(' / ');
@@ -23613,22 +23574,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     node.status === 'quarantined'
     && Number(node.missingObservations || 0) < RETIREMENT_REQUIRED_OBSERVATIONS
   ));
-  const worldlinePacketHashSets = value => {
-    const nodes = normalizeTurnWorldline(value).nodes;
-    return {
-      active: new Set(nodes.filter(node => node.status === 'active').flatMap(node => ensureArray(node.packetHashes)).filter(Boolean)),
-      owned: new Set(nodes.flatMap(node => [
-        ...ensureArray(node.packetHashes),
-        ...ensureArray(node.quarantinedPacketHashes)
-      ]).filter(Boolean))
-    };
-  };
-  const worldlineAllowsPacketHash = (sets, hash) => Boolean(hash) && (
-    sets?.active?.has(hash)
-    // Legacy assistant-only/prefill packets have no Tn = Un + An owner. They stay
-    // recallable while present in the authoritative chat, but never become turns.
-    || !sets?.owned?.has(hash)
-  );
   // Cheap header scan helpers: balanced mode must still see very old packet anchors,
   // but it should not allocate every full packet body before the shortlist is known.
   // These helpers keep only a compact lexical sketch plus body offsets; selected
@@ -24093,17 +24038,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return body;
   };
   const canonicalHistoryText = (value, role = '') => memorySuiteCanonicalSource(value,'hayaku') ?? canonicalHistoryTextLegacy(stripIllustrationOnlyCarriers(value), role);
-  const historyPacketHashesFromBody = value => {
-    const body = text(value || '');
-    const hashes = [];
-    const push = ({ rawStart, rawEnd }) => {
-      const raw = body.slice(rawStart, rawEnd).trim();
-      if (raw) hashes.push(stableHash64(raw));
-    };
-    scanPacketMarkersInBody(body, PACKET_START, PACKET_END, 'history_html', push);
-    scanPacketMarkersInBody(body, `<<< ${PACKET_START} >>>`, `<<< ${PACKET_END} >>>`, 'history_visible', push);
-    return uniq(hashes, 8);
-  };
   const messageRevisionCacheScope = scopeKeyInput => {
     const scopeKey = compact(scopeKeyInput || '__unknown_scope__', 196) || '__unknown_scope__';
     let cache = Memory.messageRevisionCaches.get(scopeKey);
@@ -24360,33 +24294,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     scanPacketMarkersInBody(body, PACKET_START, PACKET_END, 'history_html_diagnostic', push);
     scanPacketMarkersInBody(body, `<<< ${PACKET_START} >>>`, `<<< ${PACKET_END} >>>`, 'history_visible_diagnostic', push);
     return records;
-  };
-  const historyPacketLineageFromBody = value => {
-    const body = text(value || '');
-    const candidates = [];
-    const push = ({ rawStart, rawEnd }) => {
-      const parsed = safeJsonParse(body.slice(rawStart, rawEnd).trim(), null);
-      if (!objectish(parsed)) return;
-      const meta = objectish(parsed.meta) ? parsed.meta : {};
-      const lineage = objectish(meta.lineage) ? meta.lineage : (objectish(meta.worldline) ? meta.worldline : null);
-      if (!lineage) return;
-      candidates.push({
-        packetType: compact(meta.packet_type || meta.packetType || '', 48),
-        declaredParentTurnNodeId: compact(lineage.parent_turn_node_id || lineage.parentTurnNodeId || '', 96),
-        declaredLogicalTurnId: compact(lineage.logical_turn_id || lineage.logicalTurnId || '', 96),
-        requestNonce: compact(lineage.request_nonce || lineage.requestNonce || '', 96),
-        identityVersion: finiteNonNegativeInteger(lineage.identity_version || lineage.identityVersion, 0),
-        lineageSchema: compact(lineage.lineage_schema || lineage.lineageSchema || '', 64),
-        turnOwnerKey: compact(lineage.turn_owner_key || lineage.turnOwnerKey || '', 96),
-        generationAttemptId: compact(lineage.generation_attempt_id || lineage.generationAttemptId || '', 96)
-      });
-    };
-    scanPacketMarkersInBody(body, PACKET_START, PACKET_END, 'history_html_lineage', push);
-    scanPacketMarkersInBody(body, `<<< ${PACKET_START} >>>`, `<<< ${PACKET_END} >>>`, 'history_visible_lineage', push);
-    return candidates.findLast?.(candidate => candidate.packetType === 'current_snapshot')
-      || [...candidates].reverse().find(candidate => candidate.packetType === 'current_snapshot')
-      || candidates[candidates.length - 1]
-      || null;
   };
   const authoritativeHistoryPairs = (chatMessages, scope = {}) => {
     const pairs = [];
@@ -26623,20 +26530,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     return { records, staleRecordIds, packetDischargedIds };
   };
-  const pruneRecoveryVaultRecordIds = async (scopeKey, recordIds = [], reason = 'snapshot_reconcile') => {
-    const ids = new Set(ensureArray(recordIds).map(value => compact(value, 196)).filter(Boolean));
-    if (!scopeKey || !ids.size) return { durable: true, removed: 0, reason: 'nothing_to_prune' };
-    return await enqueueStorageOperation(async () => {
-      const vault = await loadRecoveryVault(scopeKey, { force: true });
-      const before = vault.records.length;
-      const records = vault.records.filter(record => !ids.has(recoveryVaultRecordIdentity(record)) && !ids.has(record.recordId));
-      if (records.length === before) return { durable: true, removed: 0, reason: 'already_pruned' };
-      const result = await writeRecoveryVaultDirect(scopeKey, { ...vault, records }, reason);
-      const removed = result.durable === true ? before - records.length : 0;
-      if (removed) Memory.recoveryVaultStats.stalePrunes += removed;
-      return { ...result, removed };
-    });
-  };
 
   // -------------------------------------------------------------------------
   // Request-local, embedding-free Raw Passage Recall
@@ -26807,14 +26700,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     for (let index = 0; index < surface.length - 1; index += 1) phrases.push(`${surface[index]} ${surface[index + 1]}`);
     return uniq(phrases.filter(value => value.length >= 4), 12);
   };
-  const rawRecoveryDocFrequency = passages => {
-    const docFreq = new Map();
-    for (const passage of passages) {
-      const unique = new Set(passage.docTokens || []);
-      unique.forEach(token => docFreq.set(token, (docFreq.get(token) || 0) + 1));
-    }
-    return docFreq;
-  };
   const rawRecoveryIdf = (term, docFreq, docCount) => {
     const df = Math.max(0, Number(docFreq.get(normalizeKey(term)) || 0));
     return Math.log(1 + ((Math.max(1, docCount) - df + 0.5) / (df + 0.5)));
@@ -26861,17 +26746,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       matched: positions.length,
       span: Number.isFinite(bestSpan) ? bestSpan : 0
     };
-  };
-  const rawRecoverySupportTerms = (contextFocus = null, primaryTerms = [], docFreq = new Map(), docCount = 1) => {
-    if (!contextFocus?.active || !contextFocus?.ambiguous) return [];
-    const primary = new Set(primaryTerms.map(normalizeKey));
-    return uniq([
-      ...ensureArray(contextFocus.entityTokens),
-      ...ensureArray(contextFocus.supportTokens),
-      ...ensureArray(contextFocus.primaryTokens)
-    ].map(normalizeKey).filter(term => term.length >= 2 && !primary.has(term) && Number(docFreq.get(term) || 0) > 0), 160)
-      .sort((a, b) => rawRecoveryIdf(b, docFreq, docCount) - rawRecoveryIdf(a, docFreq, docCount))
-      .slice(0, 14);
   };
   const RAW_RECOVERY_PRIVATE_THOUGHT_RE = /(?:속으로|마음속|내심|혼자\s*생각|생각했다|생각하며|독백|아무에게도\s*(?:말하지|알리지)|누구에게도\s*(?:말하지|알리지)|몰래|비밀로|숨기고|감추고|private\s*thought|internally|to\s*(?:himself|herself|themselves)|unspoken|without\s*telling|secretly|心の中|内心|誰にも言わ|秘密に|心里|内心|没有告诉任何人|秘密地)/i;
   const RAW_RECOVERY_PUBLIC_SPEECH_RE = /(?:말했다|대답했다|외쳤다|물었다|알렸다|고백했다|전했다|들었다|보았다|목격했다|said|asked|answered|told|heard|saw|witnessed|言った|聞いた|見た|说道|问道|听到|看到)/i;
@@ -31594,22 +31468,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       for(let i=0;i<=words.length-parts.length;i++)if(parts.every((part,j)=>words[i+j]===part))hits.push({entry,start:i,end:i+parts.length});}
     return [...new Set(hits.filter(hit=>!hits.some(other=>other.start<=hit.start&&other.end>=hit.end&&(other.end-other.start)>(hit.end-hit.start))).map(hit=>hit.entry.canonical))];
   };
-  const queryPrimaryKnowledgeActors = (store = {}, query = '', boundaryMap = characterBoundaryRefMap(store.entity?.characters || [])) => {
-    const rawQuery = text(query);
-    const actors = [];
-    const explicitNames=new Set(queryMentionedEntities(store,rawQuery));
-    ensureArray(store.entity?.characters).forEach(item => {
-      const canonical = canonicalBoundaryEntity(publicRefOf(item) || item.ref || item.id || item.name || '', boundaryMap);
-      if (!canonical || !explicitNames.has(text(item.name||item.title||item.label||'').trim())) return;
-      const names = mergeValues([
-        item.name, item.title, item.label, item.aliases, item.alias,
-        item.nicknames, item.nickname, item.identityAliases
-      ], 48).map(value => text(value).trim()).filter(value => value.length >= 1);
-      const markedAsTopic = names.some(name => new RegExp(`${escapeRegExp(name)}\\s*(?:은|는|이|가|께서는|에게는|한테는|は|が)`, 'i').test(rawQuery));
-      if (markedAsTopic) actors.push(canonical);
-    });
-    return uniq(actors, 8);
-  };
   const normalizeSceneVisibility = value => {
     const raw = text(value).trim().toLowerCase();
     return ['public', 'limited', 'private', 'omniscient'].includes(raw) ? raw : '';
@@ -31736,11 +31594,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       confidence: anchors.confidence == null ? null : clamp(anchors.confidence, 0, 1, null),
       updatedAt
     };
-  };
-  const recentMentionedEntities = (store = {}, settings = Memory.settings) => {
-    const age = now() - Number(store.context?.updatedAt || 0);
-    if (age > Number(settings.recentEntityContextMs || 0)) return [];
-    return uniq(store.context?.recentEntities || [], 32);
   };
   const buildKnowledgeContext = (store={},query='',settings=Memory.settings) => {
     const map=characterBoundaryRefMap(store.entity?.characters||[]),anchors=store.context?.sceneAnchors||{};
@@ -33372,10 +33225,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const transition = bool(['transition', 'stateTransition', 'state_transition', 'history', 'timeline']);
     return Object.freeze({ version: EXPLICIT_QUERY_INTENT_VERSION, temporal, compare, disputed, relation, contextMode, transition, specified: temporal !== 'unspecified' || disputed || !!relation || contextMode !== 'unspecified' || transition });
   };
-  const isStrongPresentStateLookupQuery = query => explicitQueryIntentOf(query).temporal === 'current';
   const isExplicitStateHistoryComparisonQuery = query => explicitQueryIntentOf(query).compare === true;
   const isPastStateLookupQuery = query => ['past', 'historical', 'timeline'].includes(explicitQueryIntentOf(query).temporal);
-  const isPresentStateLookupQuery = query => explicitQueryIntentOf(query).temporal === 'current';
   const isCurrentStateQuery = query => {
     const intent = explicitQueryIntentOf(query);
     return intent.temporal === 'current' && intent.compare !== true;
@@ -33816,8 +33667,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       viewCharBudget:stateViewCharBudgetForMode(settings.effectivePromptMode||settings.promptMode||'balanced'),totalRowLimit:PACKET_CORE_RECALL_ROW_LIMIT,
       canAdd:(row,chosen)=>!chosen.some(previous=>localRecallSourceKey(previous)===localRecallSourceKey(row))};
   };
-  const selectRowsPerAxis = (rows, settings = Memory.settings, profile = modeProfile(settings?.effectiveMode || settings?.mode), query = '', store = {}) =>
-    selectHayakuRowsOnly(rows,settings,profile,query,store);
   const HAYAKU_RRF_SPARSE_SIGNALS = Object.freeze([
     'bm25fSignal', 'identitySignal', 'canonicalExactSignal', 'associationSignal',
     'charNgramSignal', 'lexicalCoverageSignal', 'sparsePhraseSignal'
@@ -35149,41 +34998,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       });
   };
   const recallRowPacketHash = row => text(row?.packetHash || row?.locator?.sourceHash || '').trim();
-  const recallRowIsPrior = row => /^prior_/.test(text(row?.sceneRelation || ''))
-    || Number(row?.locator?.distanceFromLatest) > 0
-    || /^prior_snapshot/.test(effectivePublicTimeScope(row));
-  const currentSceneCohort = selected => {
-    const rows = recallCandidateRows(selected).map(item => item.row);
-    const anchors = rows.filter(row => (
-      (row.axis === 'world' && row.category === 'current_state')
-      || (row.axis === 'narrative' && /^(?:summary_memory|state)$/.test(text(row.category)))
-    ) && !recallRowIsPrior(row));
-    if (!anchors.length) return { anchor: null, hashes: new Set(), sceneIds: new Set(), text: '' };
-    const ranked = anchors.slice().sort(compareCurrentWorldFreshness);
-    const anchor = ranked[0];
-    const anchorHash = recallRowPacketHash(anchor);
-    const anchorScene = normalizeKey(anchor?.scene_id || anchor?.locator?.sceneId || '');
-    const cohortRows = rows.filter(row => {
-      const hash = recallRowPacketHash(row);
-      const scene = normalizeKey(row?.scene_id || row?.locator?.sceneId || '');
-      if (anchorHash && hash) return hash === anchorHash;
-      if (anchorScene && scene) return scene === anchorScene && !recallRowIsPrior(row);
-      return row === anchor;
-    });
-    return {
-      anchor,
-      hashes: new Set(cohortRows.map(recallRowPacketHash).filter(Boolean)),
-      sceneIds: new Set(cohortRows.map(row => normalizeKey(row?.scene_id || row?.locator?.sceneId || '')).filter(Boolean)),
-      text: cohortRows.map(row => text(row.publicText || '')).filter(Boolean).join('\n')
-    };
-  };
-  const rowBelongsToCurrentSceneCohort = (row, cohort) => {
-    if (!row || !cohort?.anchor) return false;
-    const hash = recallRowPacketHash(row);
-    if (hash && cohort.hashes?.has(hash)) return true;
-    const scene = normalizeKey(row?.scene_id || row?.locator?.sceneId || '');
-    return Boolean(scene && cohort.sceneIds?.has(scene) && !recallRowIsPrior(row));
-  };
   const characterStateProjectionKeyForRow = row => normalizeKey(
     row?.retrieval?.subject || row?.locator?.subject || characterProfileNames(row)[0] || row?.publicRef || row?.id || ''
   );
@@ -35261,7 +35075,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           `message.content ends with the packet sequence and the final "${PACKET_END} -->".`
         ];
   };
-  const recoveryRequestActive = settings => IN_BAND_RECOVERY_WRITE_ENABLED && isDetectedPacketRecoveryRequest(settings?.packetRecoveryRequest);
   const requestPacketLineageObject = settings => {
     const requestLineage = objectish(settings?.requestLineage) ? settings.requestLineage : null;
     if (!requestLineage?.logicalTurnId) return null;
@@ -35689,9 +35502,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const continuityEvidenceTimeScopeOf = row => normalizeKey(effectivePublicTimeScope(row));
   const continuityEvidenceIsInactive = row => CONTINUITY_EVIDENCE_INACTIVE_STATUS_RE.test(continuityEvidenceStatusOf(row))
     || CONTINUITY_EVIDENCE_INACTIVE_SCOPE_RE.test(continuityEvidenceTimeScopeOf(row));
-  const continuityEvidenceIsHistoryIntent = query => isPastStateLookupQuery(query)
-    || isExplicitStateHistoryComparisonQuery(query)
-    || isLiveOverlayPastOrComparisonQuery(query);
   const continuityEvidenceLaneFor = (axis, row = {}, options = {}) => {
     const override = text(options?.laneOverride || '').trim();
     if (CONTINUITY_EVIDENCE_LANE_ORDER.includes(override)) return override;
@@ -35827,128 +35637,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return compareContinuityEvidenceTemporalObservation(leftRow, rightRow)
       || left.score - right.score
       || left.importance - right.importance;
-  };
-  const continuityEvidenceEntryStableKey = entry => [
-    normalizeKey(entry?.axis || entry?.row?.axis || ''),
-    continuityEvidenceCategoryOf(entry?.row),
-    ...continuityEvidenceEntryRefs(entry).sort(),
-    normalizeKey(entry?.bodyKey || entry?.memory || entry?.row?.publicText || '')
-  ].join('\u0001');
-  const compareContinuityEvidenceEntryObservation = (left, right) => (
-    compareContinuityEvidenceObservation(left?.row, right?.row)
-    || continuityEvidenceEntryStableKey(left).localeCompare(continuityEvidenceEntryStableKey(right))
-  );
-  const compareContinuityEvidenceEvents = (left, right) => {
-    const leftTime = continuityEvidenceStrictTimeInfo(left?.row);
-    const rightTime = continuityEvidenceStrictTimeInfo(right?.row);
-    if (leftTime && rightTime && leftTime.domain === rightTime.domain && leftTime.value !== rightTime.value) {
-      return leftTime.value - rightTime.value;
-    }
-    return compareContinuityEvidenceEntryObservation(left, right);
-  };
-  const continuityEvidenceSortConfirmed = entries => {
-    const values = ensureArray(entries);
-    if (values.length < 2) return values;
-    const edges = values.map(() => new Set());
-    const indegree = values.map(() => 0);
-    for (let leftIndex = 0; leftIndex < values.length; leftIndex += 1) {
-      const leftTime = continuityEvidenceStrictTimeInfo(values[leftIndex]?.row);
-      if (!leftTime) continue;
-      for (let rightIndex = leftIndex + 1; rightIndex < values.length; rightIndex += 1) {
-        const rightTime = continuityEvidenceStrictTimeInfo(values[rightIndex]?.row);
-        if (!rightTime || leftTime.domain !== rightTime.domain || leftTime.value === rightTime.value) continue;
-        const before = leftTime.value < rightTime.value ? leftIndex : rightIndex;
-        const after = before === leftIndex ? rightIndex : leftIndex;
-        if (!edges[before].has(after)) {
-          edges[before].add(after);
-          indegree[after] += 1;
-        }
-      }
-    }
-    const ready = values.map((_, index) => index).filter(index => indegree[index] === 0);
-    const ordered = [];
-    while (ready.length) {
-      ready.sort((leftIndex, rightIndex) => compareContinuityEvidenceEntryObservation(values[leftIndex], values[rightIndex]));
-      const index = ready.shift();
-      ordered.push(values[index]);
-      for (const next of edges[index]) {
-        indegree[next] -= 1;
-        if (indegree[next] === 0) ready.push(next);
-      }
-    }
-    if (ordered.length !== values.length) return values.sort(compareContinuityEvidenceEntryObservation);
-    values.splice(0, values.length, ...ordered);
-    return values;
-  };
-  const continuityEvidenceStateKey = entry => {
-    const row = entry?.row || {};
-    const axis = text(entry?.axis || row?.axis || '').trim();
-    const category = continuityEvidenceCategoryOf(row);
-    const atomic = objectish(row?.retrieval?.atomicRecord) ? row.retrieval.atomicRecord : {};
-    const subjectRefs = uniq([
-      atomic.subjectRefs,
-      row?.retrieval?.subject,
-      row?.retrieval?.entityNames,
-      row?.retrieval?.relationEndpoints,
-      row?.locator?.subject
-    ].flatMap(value => ensureArray(value)).map(normalizeKey).filter(Boolean).sort(), 24);
-    const canonical = uniq([
-      row?.retrieval?.canonicalAnchors,
-      row?.retrieval?.canonicalTokens,
-      row?.retrieval?.conceptTokens
-    ].flatMap(value => ensureArray(value)).map(normalizeKey)
-      .filter(value => /^(?:entity|person|relation|place|object|info|state|event):/.test(text(value))), 16).sort();
-    const relation = ensureArray(row?.retrieval?.relationEndpoints).map(normalizeKey).filter(Boolean).sort();
-    const ref = normalizeKey(row?.publicRef || row?.ref || row?.id || '');
-    const scene = normalizeKey(row?.scene_id || row?.sceneId || row?.locator?.sceneId || '');
-    const predicate = normalizeKey(atomic.predicate || '');
-    const structuredSubject = subjectRefs.join('|');
-    if (category === 'character') {
-      const characterSubject = normalizeKey(row?.retrieval?.subject || row?.locator?.subject || subjectRefs[0] || ref || 'global');
-      return [axis, category, '', characterSubject || 'global'].join('\u0001');
-    }
-    const subject = relation.length
-      ? [relation.join('|'), predicate].filter(Boolean).join('|')
-      : (predicate && structuredSubject
-          ? [structuredSubject, predicate, canonical.join('|')].filter(Boolean).join('|')
-          : (ref || [structuredSubject, canonical.join('|')].filter(Boolean).join('|') || 'global'));
-    return [axis, category, category === 'currentstate' || category === 'state' ? scene : '', subject].join('\u0001');
-  };
-  const continuityEvidenceEntryRefs = entry => uniq([
-    entry?.row?.publicRef,
-    entry?.row?.ref,
-    entry?.row?.id,
-    entry?.row?._sourceRef
-  ].flatMap(value => ensureArray(value)).map(normalizeKey).filter(Boolean), 24);
-  const continuityEvidenceSameStableIdentity = (left, right) => {
-    const leftAxis = normalizeKey(left?.axis || left?.row?.axis || '');
-    const rightAxis = normalizeKey(right?.axis || right?.row?.axis || '');
-    const leftCategory = continuityEvidenceCategoryOf(left?.row);
-    const rightCategory = continuityEvidenceCategoryOf(right?.row);
-    // A reused public ref is not sufficient across schema axes or evidence
-    // classes. Implicit closure is intentionally narrower than an explicit
-    // replacement edge.
-    if (leftAxis !== rightAxis || leftCategory !== rightCategory) return false;
-    const leftRefs = continuityEvidenceEntryRefs(left);
-    const rightRefs = new Set(continuityEvidenceEntryRefs(right));
-    if (leftRefs.some(ref => rightRefs.has(ref))) return true;
-    if (!/^(?:character|relation|currentstate|state|worldrule|faction|region)$/.test(leftCategory)) return false;
-    const leftKey = continuityEvidenceStateKey(left);
-    const rightKey = continuityEvidenceStateKey(right);
-    if (!leftKey || leftKey !== rightKey) return false;
-    return text(leftKey).split('\u0001').pop() !== 'global';
-  };
-  const continuityEvidenceReplacementTargets = entry => uniq([
-    entry?.row?.lifecycle?.replaces,
-    entry?.row?.replaces,
-    entry?.row?.supersedes,
-    entry?.row?.invalidates
-  ].flatMap(value => ensureArray(value)).flatMap(value => text(value).split(/[\s,|]+/))
-    .map(normalizeKey).filter(Boolean), 24);
-  const continuityEvidenceSameObservationEpoch = (leftRow, rightRow) => {
-    const left = continuityEvidenceObservationRank(leftRow);
-    const right = continuityEvidenceObservationRank(rightRow);
-    return !left.epoch || !right.epoch || left.epoch === right.epoch;
   };
   const formatHayakuVisibilityBoundaryLine = (row = {}, language = 'ko') => {
     const boundary = objectish(row?.visibility) ? row.visibility : {};
@@ -36197,11 +35885,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   // Housekeeping is prepared before any recall frame is admitted. The lane also
   // drains an older semantic consent callback before a newer request snapshots
   // its journal; no already-admitted frame is rebased onto those writes.
-  let hayakuSourceBoundaryQueue=Promise.resolve();
-  const runHayakuSourceBoundary = operation => {
-    const work=hayakuSourceBoundaryQueue.catch(()=>{}).then(operation);
-    hayakuSourceBoundaryQueue=work;return work;
-  };
   const verifyHayakuReadset = async (frame,expectedHead=frame?.head) => {
     if (!frame) return true;
     try {
@@ -56212,12 +55895,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
     result.privacy.analysisResponses='included_for_debugging';
     return debugSanitizeForExport(result);
   };
-  const buildHayakuOperationDebugExportCached = () => {
-    const scope = Memory.ledgerViewer.scope;
-    const ledger = Memory.ledgerViewer.ledger;
-    if (!objectish(scope) || !objectish(ledger)) return null;
-    return composeHayakuOperationDebugExport(scope, ledger);
-  };
   const viewerClipboardEnvironment = () => {
     let doc = null;
     let href = '';
@@ -57044,7 +56721,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
     } catch (_e) { try { globalThis.__librarianDiag && globalThis.__librarianDiag('hayaku', 'viewer.list.filter', _e); } catch (__) {} }
   };
 
-  const viewerApplyAllListFilters = () => { for (const spec of VIEWER_LIST_FILTERS) viewerApplyListFilter(spec); };
 
   // Every viewer list is redrawn by replacing innerHTML, which resets the container's
   // scroll offset and closes every <details>. Snapshot both, run the render, put them back.
@@ -57273,30 +56949,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
       Memory.lastWarnings = [...ensureArray(Memory.lastWarnings), `server_connection_panel:${compact(error?.message || error, 180)}`].slice(-20);
     });
     return true;
-  };
-  const setNativeAutoRepairSetting = async enabled => {
-    await writeHayakuSavedSetting('hayaku_background_auto_repair', enabled ? 'true' : 'false');
-    await loadSettings(true);
-    if (Memory.settings.backgroundAutoRepair !== enabled) throw new Error('background_auto_repair_setting_readback_mismatch');
-    if (!enabled && Memory.nativeRecovery.repairTimer != null) {
-      try { clearTimeout(Memory.nativeRecovery.repairTimer); } catch (_) {}
-      Memory.nativeRecovery.repairTimer = null;
-      Memory.nativeRecovery.repairTimerDueAt = 0;
-    }
-    return enabled;
-  };
-  const setAfterRequestAutoRepairSetting = async enabled => {
-    await writeHayakuSavedSetting('hayaku_after_request_auto_repair', enabled ? 'true' : 'false');
-    await loadSettings(true);
-    if (Memory.settings.afterRequestAutoRepair !== enabled) throw new Error('after_request_auto_repair_setting_readback_mismatch');
-    return enabled;
-  };
-  const setColdStartBatchTurnsSetting = async value => {
-    const batchTurns = normalizeColdStartBatchTurns(value);
-    await writeHayakuSavedSetting('hayaku_cold_start_batch_turns', String(batchTurns));
-    await loadSettings(true);
-    if (Number(Memory.settings.coldStartBatchTurns) !== batchTurns) throw new Error('cold_start_batch_turns_setting_readback_mismatch');
-    return batchTurns;
   };
   const viewerSetArgumentValue = async (argument, value) => await writeHayakuSavedSetting(argument, value);
   const viewerReadRawArgumentValue = async argument => {
@@ -62723,21 +62375,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
         } catch (_) {}
       }
       return null;
-    };
-    const callFirst = async (owner, names, args = []) => {
-      for (const name of names) {
-        if (typeof owner?.[name] !== 'function') continue;
-        return await owner[name](...args);
-      }
-      return undefined;
-    };
-    const safeCall = async (owner, names, args = [], fallback = undefined) => {
-      try {
-        const value = await callFirst(owner, names, args);
-        return value === undefined ? fallback : value;
-      } catch (_) {
-        return fallback;
-      }
     };
     const storageAdapter = () => {
       const bridge = bridgeValue();
