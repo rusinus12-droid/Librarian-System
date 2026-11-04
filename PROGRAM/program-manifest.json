@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-04T05:07:25.694Z",
+  "generatedAt": "2026-11-04T05:43:51.601Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -5423,6 +5423,10 @@
       "sha256": "fd3e38e266de7acea73e872225fa1c8cf30f9bbc445f8451f159d87c30735f47",
       "bytes": 10946
     },
+    "tests/fixtures/gradia_owner_selection_stub.cjs": {
+      "sha256": "b95cfa0a1114b20084babc277b235049509290a54b89b2b5255ff38799845ce9",
+      "bytes": 1058
+    },
     "tests/fixtures/hayaku_cache_rediscovery_cap_mutation.cjs": {
       "sha256": "e2aa561db72fe744006d915c741077d47ae3cf3a3a589a26222ea9c0dcbea2ae",
       "bytes": 2033
@@ -6279,6 +6283,10 @@
       "sha256": "5f1248eac746a23c4e56f7213e62ced0699e1d8f3d553c12b3f76628cb73aedc",
       "bytes": 5679
     },
+    "tests/flashback_recall_only_selection_test.cjs": {
+      "sha256": "99558d48067714fe2a1548a708ad07523bd44c61e82b333831539ec2ced074b6",
+      "bytes": 5302
+    },
     "tests/flashback_recall_parity_public_path_test.cjs": {
       "sha256": "58ab59028e54897f354ef4f908e6d090dec42c9b380b885abd1a6590c86b7658",
       "bytes": 13069
@@ -6702,6 +6710,10 @@
     "tests/gradia_three_owner_sdk_test.cjs": {
       "sha256": "8ce8741c73d37bd0170ba546ffe29939b5f39756c49d0e703556d1b817997605",
       "bytes": 17402
+    },
+    "tests/gradia_writing_mode_authority_test.cjs": {
+      "sha256": "9c6bd52c600219f8c6f4b8411896e88eb18a44220a38ca3252482060df6d91d0",
+      "bytes": 4754
     },
     "tests/gradia/aide-full-draft-recovery-gui.test.cjs": {
       "sha256": "d57bfa75ec47ecc39698ea33185463b24707d718e787e64ca39f37ea4b08b523",
@@ -7342,6 +7354,10 @@
     "tests/hayaku_reanalysis_unification_test.cjs": {
       "sha256": "c0732152a7a1d92e0ebfa2463cbf95ce37570990f9558d9effb613a9b8a770e4",
       "bytes": 11601
+    },
+    "tests/hayaku_recall_only_selection_test.cjs": {
+      "sha256": "c78678283f7d7376030766109a2bb8ff4f91330032d2a3ff2c3b0a21381eed58",
+      "bytes": 3376
     },
     "tests/hayaku_recall_progress_and_dedupe_runtime_test.cjs": {
       "sha256": "1a6455a797ea3b4de3e6495d5ef2dd3245de5b8ccb160ac9917c450e51fa75c1",
